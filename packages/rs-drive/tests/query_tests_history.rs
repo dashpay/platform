@@ -41,7 +41,7 @@ use serde_json::json;
 
 use drive::common;
 use drive::common::helpers::setup::setup_drive;
-use drive::contract::{document::Document, Contract};
+use drive::contract::{document_stub::DocumentStub, Contract};
 use drive::drive::batch::GroveDbOpBatch;
 use drive::drive::config::DriveConfig;
 use drive::drive::contract::add_init_contracts_structure_operations;
@@ -194,7 +194,7 @@ pub fn setup(
             let value = serde_json::to_value(person).expect("serialized person");
             let document_cbor =
                 common::value_to_cbor(value, Some(drive::drive::defaults::PROTOCOL_VERSION));
-            let document = Document::from_cbor(document_cbor.as_slice(), None, None)
+            let document = DocumentStub::from_cbor(document_cbor.as_slice(), None, None)
                 .expect("document should be properly deserialized");
             let document_type = contract
                 .document_type_for_name("person")
@@ -298,7 +298,7 @@ fn test_query_historical() {
     let names: Vec<String> = results
         .into_iter()
         .map(|result| {
-            let document = Document::from_cbor(result.as_slice(), None, None)
+            let document = DocumentStub::from_cbor(result.as_slice(), None, None)
                 .expect("we should be able to deserialize the cbor");
             let first_name_value = document
                 .properties
@@ -368,7 +368,7 @@ fn test_query_historical() {
 
     assert_eq!(results.len(), 1);
 
-    let document = Document::from_cbor(results.first().unwrap().as_slice(), None, None)
+    let document = DocumentStub::from_cbor(results.first().unwrap().as_slice(), None, None)
         .expect("we should be able to deserialize the cbor");
     let last_name = document
         .properties
@@ -441,7 +441,7 @@ fn test_query_historical() {
 
     assert_eq!(results.len(), 1);
 
-    let document = Document::from_cbor(results.first().unwrap().as_slice(), None, None)
+    let document = DocumentStub::from_cbor(results.first().unwrap().as_slice(), None, None)
         .expect("we should be able to deserialize the cbor");
     let last_name = document
         .properties
@@ -530,7 +530,7 @@ fn test_query_historical() {
     let names: Vec<String> = results
         .into_iter()
         .map(|result| {
-            let document = Document::from_cbor(result.as_slice(), None, None)
+            let document = DocumentStub::from_cbor(result.as_slice(), None, None)
                 .expect("we should be able to deserialize the cbor");
             let first_name_value = document
                 .properties
@@ -575,7 +575,7 @@ fn test_query_historical() {
     let names: Vec<String> = results
         .into_iter()
         .map(|result| {
-            let document = Document::from_cbor(result.as_slice(), None, None)
+            let document = DocumentStub::from_cbor(result.as_slice(), None, None)
                 .expect("we should be able to deserialize the cbor");
             let first_name_value = document
                 .properties
@@ -618,7 +618,7 @@ fn test_query_historical() {
     let names: Vec<String> = results
         .iter()
         .map(|result| {
-            let document = Document::from_cbor(result.as_slice(), None, None)
+            let document = DocumentStub::from_cbor(result.as_slice(), None, None)
                 .expect("we should be able to deserialize the cbor");
             let first_name_value = document
                 .properties
@@ -648,7 +648,7 @@ fn test_query_historical() {
     let ids: HashMap<String, Vec<u8>> = results
         .into_iter()
         .map(|result| {
-            let document = Document::from_cbor(result.as_slice(), None, None)
+            let document = DocumentStub::from_cbor(result.as_slice(), None, None)
                 .expect("we should be able to deserialize the cbor");
             let name_value = document
                 .properties
@@ -693,7 +693,7 @@ fn test_query_historical() {
     let reduced_names_after: Vec<String> = results
         .into_iter()
         .map(|result| {
-            let document = Document::from_cbor(result.as_slice(), None, None)
+            let document = DocumentStub::from_cbor(result.as_slice(), None, None)
                 .expect("we should be able to deserialize the cbor");
             let first_name_value = document
                 .properties
@@ -742,7 +742,7 @@ fn test_query_historical() {
     let reduced_names_after: Vec<String> = results
         .into_iter()
         .map(|result| {
-            let document = Document::from_cbor(result.as_slice(), None, None)
+            let document = DocumentStub::from_cbor(result.as_slice(), None, None)
                 .expect("we should be able to deserialize the cbor");
             let first_name_value = document
                 .properties
@@ -783,7 +783,7 @@ fn test_query_historical() {
     let names: Vec<String> = results
         .into_iter()
         .map(|result| {
-            let document = Document::from_cbor(result.as_slice(), None, None)
+            let document = DocumentStub::from_cbor(result.as_slice(), None, None)
                 .expect("we should be able to deserialize the cbor");
             let first_name_value = document
                 .properties
@@ -821,7 +821,7 @@ fn test_query_historical() {
         .clone()
         .into_iter()
         .map(|result| {
-            let document = Document::from_cbor(result.as_slice(), None, None)
+            let document = DocumentStub::from_cbor(result.as_slice(), None, None)
                 .expect("we should be able to deserialize the cbor");
             let first_name_value = document
                 .properties
@@ -837,7 +837,7 @@ fn test_query_historical() {
     let ages: Vec<u64> = results
         .into_iter()
         .map(|result| {
-            let document = Document::from_cbor(result.as_slice(), None, None)
+            let document = DocumentStub::from_cbor(result.as_slice(), None, None)
                 .expect("we should be able to deserialize the cbor");
             let age_value = document
                 .properties
@@ -892,7 +892,7 @@ fn test_query_historical() {
     let names: Vec<String> = results
         .iter()
         .map(|result| {
-            let document = Document::from_cbor(result.as_slice(), None, None)
+            let document = DocumentStub::from_cbor(result.as_slice(), None, None)
                 .expect("we should be able to deserialize the cbor");
             let first_name_value = document
                 .properties
@@ -941,7 +941,7 @@ fn test_query_historical() {
     let names: Vec<String> = results
         .iter()
         .map(|result| {
-            let document = Document::from_cbor(result.as_slice(), None, None)
+            let document = DocumentStub::from_cbor(result.as_slice(), None, None)
                 .expect("we should be able to deserialize the cbor");
             let first_name_value = document
                 .properties
@@ -967,7 +967,7 @@ fn test_query_historical() {
     let ages: HashMap<String, u8> = results
         .into_iter()
         .map(|result| {
-            let document = Document::from_cbor(result.as_slice(), None, None)
+            let document = DocumentStub::from_cbor(result.as_slice(), None, None)
                 .expect("we should be able to deserialize the cbor");
             let name_value = document
                 .properties
@@ -1017,7 +1017,7 @@ fn test_query_historical() {
         serialized_person,
         Some(drive::drive::defaults::PROTOCOL_VERSION),
     );
-    let document = Document::from_cbor(person_cbor.as_slice(), None, None)
+    let document = DocumentStub::from_cbor(person_cbor.as_slice(), None, None)
         .expect("document should be properly deserialized");
 
     let document_type = contract
@@ -1067,7 +1067,7 @@ fn test_query_historical() {
         serialized_person,
         Some(drive::drive::defaults::PROTOCOL_VERSION),
     );
-    let document = Document::from_cbor(person_cbor.as_slice(), None, None)
+    let document = DocumentStub::from_cbor(person_cbor.as_slice(), None, None)
         .expect("document should be properly deserialized");
 
     let document_type = contract
@@ -1201,7 +1201,7 @@ fn test_query_historical() {
 
     assert_eq!(results.len(), 2);
 
-    let last_person = Document::from_cbor(results.first().unwrap().as_slice(), None, None)
+    let last_person = DocumentStub::from_cbor(results.first().unwrap().as_slice(), None, None)
         .expect("we should be able to deserialize the cbor");
 
     assert_eq!(
@@ -1241,7 +1241,7 @@ fn test_query_historical() {
 
     assert_eq!(results.len(), 2);
 
-    let last_person = Document::from_cbor(results.first().unwrap().as_slice(), None, None)
+    let last_person = DocumentStub::from_cbor(results.first().unwrap().as_slice(), None, None)
         .expect("we should be able to deserialize the cbor");
 
     assert_eq!(
@@ -1303,7 +1303,7 @@ fn test_query_historical() {
 
     assert_eq!(results.len(), 12);
 
-    let last_person = Document::from_cbor(results.first().unwrap().as_slice(), None, None)
+    let last_person = DocumentStub::from_cbor(results.first().unwrap().as_slice(), None, None)
         .expect("we should be able to deserialize the cbor");
 
     assert_eq!(

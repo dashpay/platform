@@ -32,7 +32,6 @@ use std::ops::BitXor;
 
 use ciborium::value::Value;
 
-use dpp::data_contract::extra::{encode_float, Index, IndexProperty};
 /// Import grovedb
 pub use grovedb::{
     Element, Error as GroveError, GroveDb, PathQuery, Query, QueryItem, SizedQuery, TransactionArg,
@@ -55,9 +54,10 @@ use dpp::data_contract::DriveContractExt;
 pub use ordering::OrderClause;
 
 use crate::common::bytes_for_system_value;
-use crate::contract::{document::Document, Contract};
+use crate::contract::{document_stub::DocumentStub, Contract};
 use crate::drive::block_info::BlockInfo;
 
+use crate::common::encode::encode_float;
 use crate::drive::contract::drive_ext::ContractPaths;
 use crate::drive::grove_operations::QueryType::StatefulQuery;
 use crate::drive::Drive;
@@ -66,8 +66,8 @@ use crate::error::query::QueryError;
 use crate::error::Error;
 use crate::fee::calculate_fee;
 use crate::fee::op::DriveOperation;
-use dpp::data_contract::errors::structure::StructureError;
-use dpp::data_contract::extra::DocumentType;
+use dpp::data_contract::errors::StructureError;
+use dpp::ProtocolError;
 
 pub mod conditions;
 mod defaults;
@@ -505,7 +505,7 @@ impl<'a> DriveQuery<'a> {
             .map(|a| a.to_vec())
             .collect::<Vec<Vec<u8>>>();
 
-        let starts_at_document: Option<(Document, bool)> = match &self.start_at {
+        let starts_at_document: Option<(DocumentStub, bool)> = match &self.start_at {
             None => Ok(None),
             Some(starts_at) => {
                 // First if we have a startAt or or startsAfter we must get the element
@@ -556,7 +556,7 @@ impl<'a> DriveQuery<'a> {
                     )))?;
 
                 if let Element::Item(item, _) = start_at_document {
-                    let document = Document::from_cbor(item.as_slice(), None, None)?;
+                    let document = DocumentStub::from_cbor(item.as_slice(), None, None)?;
                     Ok(Some((document, self.start_at_included)))
                 } else {
                     Err(Error::Drive(DriveError::CorruptedDocumentPath(
@@ -576,7 +576,7 @@ impl<'a> DriveQuery<'a> {
     pub fn get_primary_key_path_query(
         &self,
         document_type_path: Vec<Vec<u8>>,
-        starts_at_document: Option<(Document, bool)>,
+        starts_at_document: Option<(DocumentStub, bool)>,
     ) -> Result<PathQuery, Error> {
         let mut path = document_type_path;
 
@@ -783,7 +783,7 @@ impl<'a> DriveQuery<'a> {
 
     /// Returns a `Query` that either starts at or after the given document ID if given.
     fn inner_query_from_starts_at_for_id(
-        starts_at_document: &Option<(Document, &DocumentType, &IndexProperty, bool)>,
+        starts_at_document: &Option<(DocumentStub, &DocumentType, &IndexProperty, bool)>,
         left_to_right: bool,
     ) -> Query {
         // We only need items after the start at document
@@ -832,7 +832,7 @@ impl<'a> DriveQuery<'a> {
     // The index property (borrowed)
     // if the element itself should be included. ie StartAt vs StartAfter
     fn inner_query_from_starts_at(
-        starts_at_document: &Option<(Document, &DocumentType, &IndexProperty, bool)>,
+        starts_at_document: &Option<(DocumentStub, &DocumentType, &IndexProperty, bool)>,
         left_to_right: bool,
     ) -> Result<Query, Error> {
         let mut inner_query = Query::new_with_direction(left_to_right);
@@ -873,7 +873,7 @@ impl<'a> DriveQuery<'a> {
         query: Option<&mut Query>,
         left_over_index_properties: &[&IndexProperty],
         unique: bool,
-        starts_at_document: &Option<(Document, &DocumentType, &IndexProperty, bool)>, //for key level, included
+        starts_at_document: &Option<(DocumentStub, &DocumentType, &IndexProperty, bool)>, //for key level, included
         default_left_to_right: bool,
         order_by: Option<&IndexMap<String, OrderClause>>,
     ) -> Result<Option<Query>, Error> {
@@ -997,7 +997,7 @@ impl<'a> DriveQuery<'a> {
     pub fn get_non_primary_key_path_query(
         &self,
         document_type_path: Vec<Vec<u8>>,
-        starts_at_document: Option<(Document, bool)>,
+        starts_at_document: Option<(DocumentStub, bool)>,
     ) -> Result<PathQuery, Error> {
         let index = self.find_best_index()?;
         let ordered_clauses: Vec<&WhereClause> = index
@@ -1055,7 +1055,8 @@ impl<'a> DriveQuery<'a> {
                         }
                     }
                 })
-                .collect::<Result<Vec<Vec<u8>>, ContractError>>()?;
+                .collect::<Result<Vec<Vec<u8>>, ProtocolError>>()
+                .map_err(Error::Protocol)?;
 
         let final_query = match last_clause {
             None => {
@@ -1330,8 +1331,6 @@ mod tests {
     use crate::drive::flags::StorageFlags;
     use crate::drive::Drive;
     use crate::query::DriveQuery;
-    use dpp::data_contract::extra::DocumentType;
-    //noinspection RsUnusedImport
     use dpp::data_contract::document_type::DocumentType;
     use dpp::data_contract::DriveContractExt;
     use serde_json::Value::Null;

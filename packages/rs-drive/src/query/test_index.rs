@@ -1,18 +1,19 @@
 #[cfg(test)]
 mod tests {
+    use dpp::data_contract::document_type::{DocumentType, Index, IndexProperty};
     use serde_json::json;
 
     use crate::common;
     use crate::contract::Contract;
     use crate::error::{query::QueryError, Error};
     use crate::query::DriveQuery;
-    use dpp::data_contract::extra::{DocumentType, Index, IndexProperty};
 
     fn construct_indexed_document_type() -> DocumentType {
         DocumentType::new(
             "a".to_string(),
             vec![
                 Index {
+                    name: "a".to_string(),
                     properties: vec![IndexProperty {
                         name: "a".to_string(),
                         ascending: true,
@@ -20,6 +21,7 @@ mod tests {
                     unique: false,
                 },
                 Index {
+                    name: "b".to_string(),
                     properties: vec![IndexProperty {
                         name: "b".to_string(),
                         ascending: false,
@@ -27,6 +29,7 @@ mod tests {
                     unique: false,
                 },
                 Index {
+                    name: "c".to_string(),
                     properties: vec![
                         IndexProperty {
                             name: "b".to_string(),
@@ -40,6 +43,7 @@ mod tests {
                     unique: false,
                 },
                 Index {
+                    name: "d".to_string(),
                     properties: vec![
                         IndexProperty {
                             name: "b".to_string(),

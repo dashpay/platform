@@ -2,6 +2,7 @@ pub mod array_field;
 pub mod document_field;
 pub mod document_type;
 pub mod index;
+pub mod random_document;
 
 use super::errors::DataContractError;
 

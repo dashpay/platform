@@ -1,17 +1,14 @@
-pub mod document;
-pub mod random_document;
-
 use ciborium::value::Value;
 
 /// Import from dpp
 pub use dpp::data_contract::{
-    extra::{DocumentField, DocumentFieldType, DocumentType, IndexLevel},
-    extra::{Index, IndexProperty},
+    document_type::{DocumentField, DocumentFieldType, DocumentType, IndexLevel},
+    document_type::{Index, IndexProperty},
     DataContract, DataContract as Contract,
 };
 
 /// Import from random_document
-pub use random_document::CreateRandomDocument;
+pub use dpp::data_contract::document_type::random_document::CreateRandomDocument;
 
 fn reduced_value_string_representation(value: &Value) -> String {
     match value {

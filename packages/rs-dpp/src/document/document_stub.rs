@@ -33,30 +33,26 @@
 //!
 
 use std::collections::BTreeMap;
+use std::convert::{TryFrom, TryInto};
 use std::fmt;
 use std::io::{BufReader, Read};
 
 use byteorder::{BigEndian, WriteBytesExt};
 use ciborium::value::Value;
 
-use dpp::data_contract::document_type::DocumentType;
-use dpp::data_contract::DriveContractExt;
 use serde::{Deserialize, Serialize};
 
-use crate::common::get_key_from_cbor_map;
-use crate::contract::{reduced_value_string_representation, Contract};
-use crate::drive::defaults::PROTOCOL_VERSION;
-use crate::drive::Drive;
-use dpp::data_contract::extra::{ContractError, DocumentType};
-
-use crate::error::drive::DriveError;
-use crate::error::Error;
-use dpp::data_contract::errors::structure::StructureError;
-use dpp::data_contract::extra::common::bytes_for_system_value_from_tree_map;
+use crate::data_contract::document_type::document_type::PROTOCOL_VERSION;
+use crate::data_contract::document_type::DocumentType;
+use crate::data_contract::errors::{DataContractError, StructureError};
+use crate::data_contract::extra::common::{
+    bytes_for_system_value_from_tree_map, get_key_from_cbor_map,
+};
+use crate::ProtocolError;
 
 /// Documents contain the data that goes into data contracts.
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
-pub struct Document {
+pub struct DocumentStub {
     /// The unique document ID.
     #[serde(rename = "$id")]
     pub id: [u8; 32],
@@ -70,12 +66,12 @@ pub struct Document {
     pub owner_id: [u8; 32],
 }
 
-impl Document {
+impl DocumentStub {
     /// Serializes the document.
     ///
     /// The serialization of a document follows the pattern:
     /// id 32 bytes + owner_id 32 bytes + encoded values byte arrays
-    pub fn serialize(&self, document_type: &DocumentType) -> Result<Vec<u8>, Error> {
+    pub fn serialize(&self, document_type: &DocumentType) -> Result<Vec<u8>, ProtocolError> {
         let mut buffer: Vec<u8> = self.id.as_slice().to_vec();
         buffer.extend(self.owner_id.as_slice());
         document_type
@@ -89,9 +85,9 @@ impl Document {
                     buffer.extend(value.as_slice());
                     Ok(())
                 } else if field.required {
-                    Err(Error::Contract(ContractError::MissingRequiredKey(
-                        "a required field is not present",
-                    )))
+                    Err(ProtocolError::DataContractError(
+                        DataContractError::MissingRequiredKey("a required field is not present"),
+                    ))
                 } else {
                     // We don't have something that wasn't required
                     buffer.push(0);
@@ -105,7 +101,10 @@ impl Document {
     ///
     /// The serialization of a document follows the pattern:
     /// id 32 bytes + owner_id 32 bytes + encoded values byte arrays
-    pub fn serialize_consume(mut self, document_type: &DocumentType) -> Result<Vec<u8>, Error> {
+    pub fn serialize_consume(
+        mut self,
+        document_type: &DocumentType,
+    ) -> Result<Vec<u8>, ProtocolError> {
         let mut buffer: Vec<u8> = Vec::try_from(self.id).unwrap();
         let mut owner_id = Vec::try_from(self.owner_id).unwrap();
         buffer.append(&mut owner_id);
@@ -120,9 +119,9 @@ impl Document {
                     buffer.extend(value.as_slice());
                     Ok(())
                 } else if field.required {
-                    Err(Error::Contract(ContractError::MissingRequiredKey(
-                        "a required field is not present",
-                    )))
+                    Err(ProtocolError::DataContractError(
+                        DataContractError::MissingRequiredKey("a required field is not present"),
+                    ))
                 } else {
                     // We don't have something that wasn't required
                     buffer.push(0);
@@ -136,25 +135,21 @@ impl Document {
     pub fn from_bytes(
         serialized_document: &[u8],
         document_type: &DocumentType,
-    ) -> Result<Self, Error> {
+    ) -> Result<Self, ProtocolError> {
         let mut buf = BufReader::new(serialized_document);
         if serialized_document.len() < 64 {
-            return Err(Error::Drive(DriveError::CorruptedSerialization(
-                "serialized document is too small, must have id and owner id",
-            )));
+            return Err(ProtocolError::DecodingError(
+                "serialized document is too small, must have id and owner id".to_string(),
+            ));
         }
         let mut id = [0; 32];
         buf.read_exact(&mut id).map_err(|_| {
-            Error::Drive(DriveError::CorruptedSerialization(
-                "error reading from serialized document",
-            ))
+            ProtocolError::DecodingError("error reading from serialized document".to_string())
         })?;
 
         let mut owner_id = [0; 32];
         buf.read_exact(&mut owner_id).map_err(|_| {
-            Error::Drive(DriveError::CorruptedSerialization(
-                "error reading from serialized document",
-            ))
+            ProtocolError::DecodingError("error reading from serialized document".to_string())
         })?;
 
         let properties = document_type
@@ -168,7 +163,7 @@ impl Document {
                 }
             })
             .collect::<Result<BTreeMap<String, Value>, ContractError>>()?;
-        Ok(Document {
+        Ok(DocumentStub {
             id,
             properties,
             owner_id,
@@ -181,33 +176,33 @@ impl Document {
         document_cbor: &[u8],
         document_id: Option<[u8; 32]>,
         owner_id: Option<[u8; 32]>,
-    ) -> Result<Self, Error> {
+    ) -> Result<Self, ProtocolError> {
         let (version, read_document_cbor) = document_cbor.split_at(4);
         if !Drive::check_protocol_version_bytes(version) {
-            return Err(Error::Structure(StructureError::InvalidProtocolVersion(
-                "invalid protocol version",
-            )));
+            return Err(ProtocolError::StructureError(
+                StructureError::InvalidProtocolVersion("invalid protocol version"),
+            ));
         }
         // first we need to deserialize the document and contract indices
         // we would need dedicated deserialization functions based on the document type
         let mut document: BTreeMap<String, Value> = ciborium::de::from_reader(read_document_cbor)
             .map_err(|_| {
-            Error::Structure(StructureError::InvalidCBOR("unable to decode contract"))
+            ProtocolError::StructureError(StructureError::InvalidCBOR("unable to decode contract"))
         })?;
 
         let owner_id: [u8; 32] = match owner_id {
             None => {
                 let owner_id: Vec<u8> =
                     bytes_for_system_value_from_tree_map(&document, "$ownerId")?.ok_or({
-                        Error::Contract(ContractError::DocumentOwnerIdMissing(
+                        ProtocolError::DataContractError(DataContractError::DocumentOwnerIdMissing(
                             "unable to get document $ownerId",
                         ))
                     })?;
                 document.remove("$ownerId");
                 if owner_id.len() != 32 {
-                    return Err(Error::Contract(ContractError::FieldRequirementUnmet(
-                        "invalid owner id",
-                    )));
+                    return Err(ProtocolError::DataContractError(
+                        DataContractError::FieldRequirementUnmet("invalid owner id"),
+                    ));
                 }
                 owner_id.as_slice().try_into()
             }
@@ -219,15 +214,15 @@ impl Document {
             None => {
                 let document_id: Vec<u8> = bytes_for_system_value_from_tree_map(&document, "$id")?
                     .ok_or({
-                        Error::Contract(ContractError::DocumentIdMissing(
+                        ProtocolError::DataContractError(DataContractError::DocumentIdMissing(
                             "unable to get document $id",
                         ))
                     })?;
                 document.remove("$id");
                 if document_id.len() != 32 {
-                    return Err(Error::Contract(ContractError::FieldRequirementUnmet(
-                        "invalid document id",
-                    )));
+                    return Err(ProtocolError::DataContractError(
+                        DataContractError::FieldRequirementUnmet("invalid document id"),
+                    ));
                 }
                 document_id.as_slice().try_into()
             }
@@ -239,7 +234,7 @@ impl Document {
         .expect("document_id must be 32 bytes");
 
         // dev-note: properties is everything other than the id and owner id
-        Ok(Document {
+        Ok(DocumentStub {
             properties: document,
             owner_id,
             id,
@@ -251,36 +246,38 @@ impl Document {
         document_cbor: &[u8],
         document_id: &[u8],
         owner_id: &[u8],
-    ) -> Result<Self, Error> {
+    ) -> Result<Self, ProtocolError> {
         // we need to start by verifying that the owner_id is a 256 bit number (32 bytes)
         if owner_id.len() != 32 {
-            return Err(Error::Contract(ContractError::FieldRequirementUnmet(
-                "invalid owner id",
-            )));
+            return Err(ProtocolError::DataContractError(
+                DataContractError::FieldRequirementUnmet("invalid owner id"),
+            ));
         }
 
         if document_id.len() != 32 {
-            return Err(Error::Contract(ContractError::FieldRequirementUnmet(
-                "invalid document id",
-            )));
+            return Err(ProtocolError::DataContractError(
+                DataContractError::FieldRequirementUnmet("invalid document id"),
+            ));
         }
 
         let (version, read_document_cbor) = document_cbor.split_at(4);
         if !Drive::check_protocol_version_bytes(version) {
-            return Err(Error::Structure(StructureError::InvalidProtocolVersion(
-                "invalid protocol version",
-            )));
+            return Err(ProtocolError::StructureError(
+                StructureError::InvalidProtocolVersion("invalid protocol version"),
+            ));
         }
 
         // first we need to deserialize the document and contract indices
         // we would need dedicated deserialization functions based on the document type
         let properties: BTreeMap<String, Value> = ciborium::de::from_reader(read_document_cbor)
             .map_err(|_| {
-                Error::Structure(StructureError::InvalidCBOR("unable to decode contract"))
+                ProtocolError::StructureError(StructureError::InvalidCBOR(
+                    "unable to decode contract",
+                ))
             })?;
 
         // dev-note: properties is everything other than the id and owner id
-        Ok(Document {
+        Ok(DocumentStub {
             properties,
             owner_id: owner_id
                 .try_into()
@@ -307,7 +304,7 @@ impl Document {
         key_path: &str,
         document_type: &DocumentType,
         owner_id: Option<[u8; 32]>,
-    ) -> Result<Option<Vec<u8>>, Error> {
+    ) -> Result<Option<Vec<u8>>, ProtocolError> {
         // returns the owner id if the key path is $ownerId and an owner id is given
         if key_path == "$ownerId" && owner_id.is_some() {
             Ok(Some(Vec::from(owner_id.unwrap())))
@@ -322,7 +319,7 @@ impl Document {
             let key_paths: Vec<&str> = key_path.split('.').collect::<Vec<&str>>();
             // key is the first key of the key path and rest_key_paths are the rest
             let (key, rest_key_paths) = key_paths.split_first().ok_or({
-                Error::Contract(ContractError::MissingRequiredKey(
+                ProtocolError::DataContractError(DataContractError::MissingRequiredKey(
                     "key must not be null when getting from document",
                 ))
             })?;
@@ -331,19 +328,19 @@ impl Document {
             fn get_value_at_path<'a>(
                 value: &'a Value,
                 key_paths: &'a [&str],
-            ) -> Result<Option<&'a Value>, Error> {
+            ) -> Result<Option<&'a Value>, ProtocolError> {
                 // return value if key_paths is empty
                 if key_paths.is_empty() {
                     Ok(Some(value))
                 } else {
                     // split first again
                     let (key, rest_key_paths) = key_paths.split_first().ok_or({
-                        Error::Contract(ContractError::MissingRequiredKey(
+                        ProtocolError::DataContractError(DataContractError::MissingRequiredKey(
                             "key must not be null when getting from document",
                         ))
                     })?;
                     let map_values = value.as_map().ok_or({
-                        Error::Contract(ContractError::ValueWrongType(
+                        ProtocolError::DataContractError(DataContractError::ValueWrongType(
                             "inner key must refer to a value map",
                         ))
                     })?;
@@ -375,9 +372,9 @@ impl Document {
         document_type_name: &str,
         contract: &Contract,
         owner_id: Option<[u8; 32]>,
-    ) -> Result<Option<Vec<u8>>, Error> {
+    ) -> Result<Option<Vec<u8>>, ProtocolError> {
         let document_type = contract.document_types().get(document_type_name).ok_or({
-            Error::Contract(ContractError::DocumentTypeNotFound(
+            ProtocolError::DataContractError(DataContractError::DocumentTypeNotFound(
                 "document type should exist for name",
             ))
         })?;
@@ -385,7 +382,7 @@ impl Document {
     }
 }
 
-impl fmt::Display for Document {
+impl fmt::Display for DocumentStub {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         write!(f, "id:{} ", bs58::encode(self.id).into_string())?;
         write!(f, "owner_id:{} ", bs58::encode(self.owner_id).into_string())?;
@@ -403,12 +400,14 @@ impl fmt::Display for Document {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::common::json_document_to_cbor;
     use crate::contract::CreateRandomDocument;
+    use crate::data_contract::extra::common::json_document_to_cbor;
+    use crate::data_contract::DriveContractExt;
+    use dpp::data_contract::extra::common::json_document_to_cbor;
     use dpp::data_contract::DriveContractExt;
 
     #[test]
-    fn test_drive_serialization() {
+    fn test_serialization() {
         let dashpay_cbor = json_document_to_cbor(
             "tests/supporting_files/contract/dashpay/dashpay-contract.json",
             Some(1),
@@ -456,7 +455,7 @@ mod tests {
 
         let document_cbor = document.to_cbor();
 
-        let recovered_document = Document::from_cbor(document_cbor.as_slice(), None, None)
+        let recovered_document = DocumentStub::from_cbor(document_cbor.as_slice(), None, None)
             .expect("expected to get document");
 
         assert_eq!(recovered_document, document);

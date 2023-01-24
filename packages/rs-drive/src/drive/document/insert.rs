@@ -32,6 +32,8 @@
 //! This module implements functions in Drive relevant to inserting documents.
 //!
 
+use dpp::data_contract::document_type::IndexLevel;
+use dpp::data_contract::DriveContractExt;
 use grovedb::batch::key_info::KeyInfo;
 use grovedb::batch::key_info::KeyInfo::KnownKey;
 use grovedb::batch::KeyInfoPath;
@@ -74,7 +76,7 @@ use crate::fee::calculate_fee;
 use crate::fee::op::DriveOperation;
 
 use crate::common::encode::encode_unsigned_integer;
-use crate::contract::document::Document;
+use crate::contract::document_stub::DocumentStub;
 use crate::drive::block_info::BlockInfo;
 use crate::drive::grove_operations::DirectQueryType::{StatefulDirectQuery, StatelessDirectQuery};
 use crate::drive::grove_operations::QueryTarget::QueryTargetValue;
@@ -82,7 +84,6 @@ use crate::drive::grove_operations::{BatchInsertApplyType, BatchInsertTreeApplyT
 use crate::error::document::DocumentError;
 use crate::error::fee::FeeError;
 use crate::fee::result::FeeResult;
-use dpp::data_contract::extra::{DriveContractExt, IndexLevel};
 
 impl Drive {
     /// Adds a document to primary storage.
@@ -413,7 +414,7 @@ impl Drive {
     ) -> Result<FeeResult, Error> {
         let contract = <Contract as DriveContractExt>::from_cbor(serialized_contract, None)?;
 
-        let document = Document::from_cbor(serialized_document, None, owner_id)?;
+        let document = DocumentStub::from_cbor(serialized_document, None, owner_id)?;
 
         let document_info =
             DocumentRefAndSerialization((&document, serialized_document, storage_flags));
@@ -449,7 +450,7 @@ impl Drive {
         storage_flags: Option<&StorageFlags>,
         transaction: TransactionArg,
     ) -> Result<FeeResult, Error> {
-        let document = Document::from_cbor(serialized_document, None, owner_id)?;
+        let document = DocumentStub::from_cbor(serialized_document, None, owner_id)?;
 
         let document_info =
             DocumentRefAndSerialization((&document, serialized_document, storage_flags));
@@ -498,7 +499,7 @@ impl Drive {
 
         let contract = &contract_fetch_info.contract;
 
-        let document = Document::from_cbor(serialized_document, None, owner_id)?;
+        let document = DocumentStub::from_cbor(serialized_document, None, owner_id)?;
 
         let document_info =
             DocumentRefAndSerialization((&document, serialized_document, storage_flags));
@@ -1183,7 +1184,7 @@ mod tests {
     use tempfile::TempDir;
 
     use crate::common::{json_document_to_cbor, setup_contract};
-    use crate::contract::document::Document;
+    use crate::contract::document_stub::DocumentStub;
     use crate::drive::document::tests::setup_dashpay;
     use crate::drive::flags::StorageFlags;
     use crate::drive::object_size_info::DocumentAndContractInfo;
@@ -1544,8 +1545,9 @@ mod tests {
         .expect("expected to get cbor document");
 
         let owner_id = rand::thread_rng().gen::<[u8; 32]>();
-        let document = Document::from_cbor(&dashpay_cr_serialized_document, None, Some(owner_id))
-            .expect("expected to deserialize document successfully");
+        let document =
+            DocumentStub::from_cbor(&dashpay_cr_serialized_document, None, Some(owner_id))
+                .expect("expected to deserialize document successfully");
 
         let storage_flags = Some(StorageFlags::SingleEpoch(0));
 
@@ -1640,7 +1642,7 @@ mod tests {
 
         let random_owner_id = rand::thread_rng().gen::<[u8; 32]>();
 
-        let document = Document::from_cbor(
+        let document = DocumentStub::from_cbor(
             &dpns_domain_serialized_document,
             None,
             Some(random_owner_id),

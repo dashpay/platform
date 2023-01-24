@@ -27,7 +27,7 @@
 // DEALINGS IN THE SOFTWARE.
 //
 
-use crate::contract::document::Document;
+use crate::contract::document_stub::DocumentStub;
 use crate::contract::Contract;
 use crate::drive::block_info::BlockInfo;
 use crate::drive::flags::StorageFlags;
@@ -40,7 +40,8 @@ use crate::error::Error;
 use crate::fee::calculate_fee;
 use crate::fee::op::DriveOperation;
 use crate::fee::result::FeeResult;
-use dpp::data_contract::extra::{DocumentType, DriveContractExt};
+use dpp::data_contract::document_type::DocumentType;
+use dpp::data_contract::DriveContractExt;
 use grovedb::batch::KeyInfoPath;
 use grovedb::{EstimatedLayerInformation, TransactionArg};
 use std::collections::HashMap;
@@ -130,7 +131,7 @@ impl DriveOperationConverter for ContractOperationType<'_> {
 /// A wrapper for an update operation
 pub struct UpdateOperationInfo<'a> {
     /// The document to update
-    document: &'a Document,
+    document: &'a DocumentStub,
     /// The document in pre-serialized form
     serialized_document: Option<&'a [u8]>,
     /// The owner id, if none is specified will try to recover from serialized document
@@ -258,7 +259,7 @@ pub enum DocumentOperationType<'a> {
     /// Updates a document and returns the associated fee.
     UpdateDocumentForContract {
         /// The document to update
-        document: &'a Document,
+        document: &'a DocumentStub,
         /// The document in pre-serialized form
         serialized_document: &'a [u8],
         /// The contract
@@ -294,7 +295,7 @@ impl DriveOperationConverter for DocumentOperationType<'_> {
                 let contract =
                     <Contract as DriveContractExt>::from_cbor(serialized_contract, None)?;
 
-                let document = Document::from_cbor(serialized_document, None, owner_id)?;
+                let document = DocumentStub::from_cbor(serialized_document, None, owner_id)?;
 
                 let document_info =
                     DocumentRefAndSerialization((&document, serialized_document, storage_flags));
@@ -326,7 +327,7 @@ impl DriveOperationConverter for DocumentOperationType<'_> {
                 override_document,
                 storage_flags,
             } => {
-                let document = Document::from_cbor(serialized_document, None, owner_id)?;
+                let document = DocumentStub::from_cbor(serialized_document, None, owner_id)?;
 
                 let document_info =
                     DocumentRefAndSerialization((&document, serialized_document, storage_flags));
@@ -401,7 +402,7 @@ impl DriveOperationConverter for DocumentOperationType<'_> {
             } => {
                 let contract = <Contract as DriveContractExt>::from_cbor(contract_cbor, None)?;
 
-                let document = Document::from_cbor(serialized_document, None, owner_id)?;
+                let document = DocumentStub::from_cbor(serialized_document, None, owner_id)?;
 
                 let document_info =
                     DocumentRefAndSerialization((&document, serialized_document, storage_flags));
@@ -431,7 +432,7 @@ impl DriveOperationConverter for DocumentOperationType<'_> {
                 owner_id,
                 storage_flags,
             } => {
-                let document = Document::from_cbor(serialized_document, None, owner_id)?;
+                let document = DocumentStub::from_cbor(serialized_document, None, owner_id)?;
 
                 let document_info =
                     DocumentRefAndSerialization((&document, serialized_document, storage_flags));
@@ -913,7 +914,7 @@ mod tests {
 
         let mut operations = vec![];
 
-        let document0 = Document::from_cbor(
+        let document0 = DocumentStub::from_cbor(
             dashpay_cr_serialized_document0.as_slice(),
             None,
             Some(random_owner_id),
@@ -934,7 +935,7 @@ mod tests {
             override_document: false,
         });
 
-        let document1 = Document::from_cbor(
+        let document1 = DocumentStub::from_cbor(
             dashpay_cr_serialized_document1.as_slice(),
             None,
             Some(random_owner_id),
@@ -1054,7 +1055,7 @@ mod tests {
 
         let mut operations = vec![];
 
-        let document0 = Document::from_cbor(
+        let document0 = DocumentStub::from_cbor(
             person_serialized_document0.as_slice(),
             None,
             Some(random_owner_id0),
@@ -1077,7 +1078,7 @@ mod tests {
 
         let random_owner_id1 = rand::thread_rng().gen::<[u8; 32]>();
 
-        let document1 = Document::from_cbor(
+        let document1 = DocumentStub::from_cbor(
             person_serialized_document1.as_slice(),
             None,
             Some(random_owner_id1),
@@ -1185,7 +1186,7 @@ mod tests {
 
         let mut operations = vec![];
 
-        let document0 = Document::from_cbor(
+        let document0 = DocumentStub::from_cbor(
             person_serialized_document0.as_slice(),
             None,
             Some(random_owner_id0),
@@ -1208,7 +1209,7 @@ mod tests {
 
         let random_owner_id1 = rand::thread_rng().gen::<[u8; 32]>();
 
-        let document1 = Document::from_cbor(
+        let document1 = DocumentStub::from_cbor(
             person_serialized_document1.as_slice(),
             None,
             Some(random_owner_id1),
@@ -1266,7 +1267,7 @@ mod tests {
 
         let mut operations = vec![];
 
-        let document0 = Document::from_cbor(
+        let document0 = DocumentStub::from_cbor(
             person_serialized_document0.as_slice(),
             None,
             Some(random_owner_id0),
@@ -1280,7 +1281,7 @@ mod tests {
             storage_flags: None,
         }));
 
-        let document1 = Document::from_cbor(
+        let document1 = DocumentStub::from_cbor(
             person_serialized_document1.as_slice(),
             None,
             Some(random_owner_id1),
@@ -1425,7 +1426,7 @@ mod tests {
 
         let mut operations = vec![];
 
-        let document0 = Document::from_cbor(
+        let document0 = DocumentStub::from_cbor(
             person_serialized_document0.as_slice(),
             None,
             Some(random_owner_id0),
@@ -1448,7 +1449,7 @@ mod tests {
 
         let random_owner_id1 = rand::thread_rng().gen::<[u8; 32]>();
 
-        let document1 = Document::from_cbor(
+        let document1 = DocumentStub::from_cbor(
             person_serialized_document1.as_slice(),
             None,
             Some(random_owner_id1),
@@ -1506,7 +1507,7 @@ mod tests {
 
         let mut operations = vec![];
 
-        let document0 = Document::from_cbor(
+        let document0 = DocumentStub::from_cbor(
             person_serialized_document0.as_slice(),
             None,
             Some(random_owner_id0),
@@ -1520,7 +1521,7 @@ mod tests {
             storage_flags: None,
         }));
 
-        let document1 = Document::from_cbor(
+        let document1 = DocumentStub::from_cbor(
             person_serialized_document1.as_slice(),
             None,
             Some(random_owner_id1),

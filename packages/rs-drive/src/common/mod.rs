@@ -45,6 +45,7 @@ use std::path::Path;
 
 use byteorder::{BigEndian, WriteBytesExt};
 use ciborium::value::Value;
+use dpp::data_contract::DriveContractExt;
 use grovedb::TransactionArg;
 
 use crate::contract::Contract;

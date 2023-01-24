@@ -36,7 +36,7 @@ use criterion::{criterion_group, criterion_main, BatchSize, Criterion};
 use dpp::data_contract::extra::common::json_document_to_cbor;
 
 use drive::common::json_document_to_cbor;
-use drive::contract::document::Document;
+use drive::contract::document_stub::DocumentStub;
 use drive::contract::Contract;
 use drive::contract::CreateRandomDocument;
 use serde::Serialize;
@@ -125,7 +125,7 @@ fn test_drive_10_deserialization(c: &mut Criterion) {
     group.bench_function("DDSR 10", |b| {
         b.iter(|| {
             serialized_documents.iter().for_each(|serialized_document| {
-                Document::from_bytes(serialized_document, document_type)
+                DocumentStub::from_bytes(serialized_document, document_type)
                     .expect("expected to deserialize");
             })
         })
@@ -135,7 +135,7 @@ fn test_drive_10_deserialization(c: &mut Criterion) {
             cbor_serialized_documents
                 .iter()
                 .for_each(|serialized_document| {
-                    Document::from_cbor(serialized_document, None, None)
+                    DocumentStub::from_cbor(serialized_document, None, None)
                         .expect("expected to deserialize");
                 })
         })

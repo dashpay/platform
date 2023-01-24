@@ -20,6 +20,7 @@ use crate::util::hash::hash;
 use crate::util::json_value::{JsonValueExt, ReplaceWith};
 
 pub mod document_factory;
+pub mod document_stub;
 pub mod document_validator;
 pub mod errors;
 pub mod fetch_and_validate_data_contract;

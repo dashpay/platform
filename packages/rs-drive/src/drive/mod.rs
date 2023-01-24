@@ -31,6 +31,7 @@ use std::cell::RefCell;
 use std::collections::HashMap;
 use std::path::Path;
 
+use dpp::data_contract::DriveContractExt;
 use grovedb::batch::KeyInfoPath;
 use grovedb::{EstimatedLayerInformation, GroveDb, Transaction, TransactionArg};
 
@@ -311,9 +312,9 @@ mod tests {
     use std::collections::HashMap;
     use std::option::Option::None;
 
+    use dpp::data_contract::extra::common::json_document_to_cbor;
     use tempfile::TempDir;
 
-    use crate::common::json_document_to_cbor;
     use crate::drive::Drive;
 
     #[test]

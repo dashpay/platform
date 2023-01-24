@@ -39,10 +39,12 @@ use grovedb::EstimatedLayerCount::{ApproximateElements, PotentiallyAtMaxElements
 use grovedb::EstimatedLayerSizes::{AllItems, AllReference, AllSubtrees};
 use grovedb::{Element, EstimatedLayerInformation, TransactionArg};
 
+use dpp::data_contract::document_type::{DocumentType, IndexLevel};
+use dpp::data_contract::DriveContractExt;
 use grovedb::EstimatedSumTrees::NoSumTrees;
 use std::collections::HashMap;
 
-use crate::contract::document::Document;
+use crate::contract::document_stub::DocumentStub;
 use crate::contract::Contract;
 use crate::drive::block_info::BlockInfo;
 use crate::drive::defaults::{
@@ -73,7 +75,6 @@ use crate::error::Error;
 use crate::fee::calculate_fee;
 use crate::fee::op::DriveOperation;
 use crate::fee::result::FeeResult;
-use dpp::data_contract::extra::{DocumentType, DriveContractExt, IndexLevel};
 
 impl Drive {
     /// Deletes a document and returns the associated fee.
@@ -693,7 +694,7 @@ impl Drive {
                 DocumentEstimatedAverageSize(query_target.len())
             } else if let Some(document_element) = &document_element {
                 if let Element::Item(data, element_flags) = document_element {
-                    let document = Document::from_cbor(data.as_slice(), None, owner_id)?;
+                    let document = DocumentStub::from_cbor(data.as_slice(), None, owner_id)?;
                     let storage_flags = StorageFlags::from_some_element_flags_ref(element_flags)?;
                     DocumentWithoutSerialization((document, storage_flags))
                 } else {
@@ -749,7 +750,7 @@ mod tests {
         cbor_from_hex, json_document_to_cbor, setup_contract, setup_contract_from_hex,
         value_to_cbor,
     };
-    use crate::contract::document::Document;
+    use crate::contract::document_stub::DocumentStub;
     use crate::drive::document::tests::setup_dashpay;
     use crate::drive::flags::StorageFlags;
     use crate::drive::object_size_info::DocumentAndContractInfo;
@@ -785,7 +786,7 @@ mod tests {
         let random_owner_id = rand::thread_rng().gen::<[u8; 32]>();
 
         let document =
-            Document::from_cbor(&person_serialized_document, None, Some(random_owner_id))
+            DocumentStub::from_cbor(&person_serialized_document, None, Some(random_owner_id))
                 .expect("expected to deserialize the document");
 
         let document_type = contract
@@ -883,7 +884,7 @@ mod tests {
         let random_owner_id = rand::thread_rng().gen::<[u8; 32]>();
 
         let document =
-            Document::from_cbor(&person_serialized_document, None, Some(random_owner_id))
+            DocumentStub::from_cbor(&person_serialized_document, None, Some(random_owner_id))
                 .expect("expected to deserialize the document");
 
         let document_type = contract
@@ -997,7 +998,7 @@ mod tests {
         let random_owner_id = rand::thread_rng().gen::<[u8; 32]>();
 
         let document =
-            Document::from_cbor(&person_serialized_document, None, Some(random_owner_id))
+            DocumentStub::from_cbor(&person_serialized_document, None, Some(random_owner_id))
                 .expect("expected to deserialize the document");
 
         let document_type = contract
@@ -1036,7 +1037,7 @@ mod tests {
         let random_owner_id = rand::thread_rng().gen::<[u8; 32]>();
 
         let document =
-            Document::from_cbor(&person_serialized_document, None, Some(random_owner_id))
+            DocumentStub::from_cbor(&person_serialized_document, None, Some(random_owner_id))
                 .expect("expected to deserialize the document");
 
         let document_type = contract
@@ -1184,7 +1185,7 @@ mod tests {
         let random_owner_id = rand::thread_rng().gen::<[u8; 32]>();
 
         let document =
-            Document::from_cbor(&person_serialized_document, None, Some(random_owner_id))
+            DocumentStub::from_cbor(&person_serialized_document, None, Some(random_owner_id))
                 .expect("expected to deserialize the document");
 
         let document_type = contract
@@ -1223,7 +1224,7 @@ mod tests {
         let random_owner_id = rand::thread_rng().gen::<[u8; 32]>();
 
         let document =
-            Document::from_cbor(&person_serialized_document, None, Some(random_owner_id))
+            DocumentStub::from_cbor(&person_serialized_document, None, Some(random_owner_id))
                 .expect("expected to deserialize the document");
 
         let document_type = contract
@@ -1301,7 +1302,7 @@ mod tests {
         let db_transaction = drive.grove.start_transaction();
 
         let document =
-            Document::from_cbor(&person_serialized_document, None, Some(random_owner_id))
+            DocumentStub::from_cbor(&person_serialized_document, None, Some(random_owner_id))
                 .expect("expected to deserialize the document");
 
         let storage_flags = Some(StorageFlags::SingleEpoch(0));
@@ -1602,12 +1603,12 @@ mod tests {
 
         let storage_flags = Some(StorageFlags::SingleEpoch(0));
 
-        let documents: Vec<Document> = document_hexes
+        let documents: Vec<DocumentStub> = document_hexes
             .iter()
             .map(|document_hex| {
                 let serialized_document = cbor_from_hex(document_hex.to_string());
 
-                let document = Document::from_cbor(&serialized_document, None, None)
+                let document = DocumentStub::from_cbor(&serialized_document, None, None)
                     .expect("expected to deserialize the document");
 
                 let document_type = contract
