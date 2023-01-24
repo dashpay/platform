@@ -1,12 +1,12 @@
 use dashcore::BlockHeader;
 use serde_json::Value;
+use std::convert::TryInto;
 use std::sync::Arc;
 
 use crate::{
     block_time_window::validate_time_in_block_time_window::validate_time_in_block_time_window,
     consensus::basic::BasicError,
     identity::validation::{RequiredPurposeAndSecurityLevelValidator, TPublicKeysValidator},
-    prelude::Identity,
     state_repository::StateRepositoryLike,
     state_transition::StateTransitionLike,
     validation::SimpleValidationResult,
@@ -38,13 +38,16 @@ where
     ) -> Result<SimpleValidationResult, NonConsensusError> {
         let mut validation_result = SimpleValidationResult::default();
 
-        let maybe_stored_identity: Option<Identity> = self
+        let maybe_stored_identity = self
             .state_repository
             .fetch_identity(
                 state_transition.get_identity_id(),
                 state_transition.get_execution_context(),
             )
-            .await
+            .await?
+            .map(TryInto::try_into)
+            .transpose()
+            .map_err(Into::into)
             .map_err(|e| NonConsensusError::StateRepositoryFetchError(e.to_string()))?;
 
         if state_transition.get_execution_context().is_dry_run() {

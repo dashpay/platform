@@ -474,6 +474,9 @@ module.exports = {
                 nodeKey: {
                   type: 'object',
                 },
+                moniker: {
+                  type: ['string', 'null'],
+                },
                 genesis: {
                   type: 'object',
                 },
@@ -481,7 +484,8 @@ module.exports = {
                   type: ['string', 'null'],
                 },
               },
-              required: ['docker', 'p2p', 'rpc', 'consensus', 'nodeKey', 'genesis', 'nodeId'],
+              required: ['docker', 'p2p', 'rpc', 'consensus',
+                'nodeKey', 'moniker', 'genesis', 'nodeId'],
               additionalProperties: false,
             },
           },
