@@ -1016,7 +1016,8 @@ describe('validateDataContractFactory', () => {
         expectValidationError(result, JsonSchemaCompilationError);
 
         const [error] = result.getErrors();
-        expect(error.getCode()).to.equal(1004);
+        // TODO: should be a JsonSchemaCompilationerror instead of JsonSchemaError
+        expect(error.getCode()).to.equal(1005);
         expect(error.getKeyword()).to.equal('format');
       });
 

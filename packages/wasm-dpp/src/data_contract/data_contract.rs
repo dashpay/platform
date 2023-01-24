@@ -59,7 +59,7 @@ pub(crate) struct DataContractParameters {
     version: serde_json::Value,
 
     #[serde(flatten)]
-    _extras: serde_json::Value // Captures excess fields to trigger validation failure later.
+    _extras: serde_json::Value, // Captures excess fields to trigger validation failure later.
 }
 
 #[wasm_bindgen(js_class=DataContract)]
