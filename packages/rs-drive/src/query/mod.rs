@@ -1229,7 +1229,7 @@ impl<'a> DriveQuery<'a> {
     ) -> Result<Vec<u8>, Error> {
         let path_query =
             self.construct_path_query_operations(drive, transaction, drive_operations)?;
-        drive.grove_get_proved_path_query(&path_query, transaction, drive_operations)
+        drive.grove_get_proved_path_query(&path_query, false, transaction, drive_operations)
     }
 
     /// Executes a query with proof and returns the root hash, items, and fee.
@@ -1265,7 +1265,7 @@ impl<'a> DriveQuery<'a> {
             self.construct_path_query_operations(drive, transaction, drive_operations)?;
 
         let proof =
-            drive.grove_get_proved_path_query(&path_query, transaction, drive_operations)?;
+            drive.grove_get_proved_path_query(&path_query, false, transaction, drive_operations)?;
         let (root_hash, mut key_value_elements) =
             GroveDb::verify_query(proof.as_slice(), &path_query).map_err(Error::GroveDB)?;
 

@@ -20,10 +20,10 @@ impl Drive {
         public_key_hash: [u8; 20],
     ) -> Result<(RootHash, Option<Identity>), Error> {
         let (root_hash, identity_id) =
-            Self::verify_identity_id_by_public_key_hash(proof, public_key_hash)?;
+            Self::verify_identity_id_by_public_key_hash(proof, true, public_key_hash)?;
         let maybe_identity = identity_id
             .map(|identity_id| {
-                Self::verify_full_identity_by_identity_id(proof, identity_id)
+                Self::verify_full_identity_by_identity_id(proof, true, identity_id)
                     .map(|(_, maybe_identity)| maybe_identity)
             })
             .transpose()?
@@ -31,13 +31,49 @@ impl Drive {
         Ok((root_hash, maybe_identity))
     }
 
+    /// Verifies the identity with a public key hash
+    pub fn verify_full_identities_by_public_key_hashes<
+        T: FromIterator<([u8; 20], Option<Identity>)>,
+    >(
+        proof: &[u8],
+        public_key_hashes: &[[u8; 20]],
+    ) -> Result<(RootHash, T), Error> {
+        let (root_hash, identity_ids_by_key_hashes) =
+            Self::verify_identity_ids_by_public_key_hashes::<Vec<(_, _)>>(
+                proof,
+                true,
+                public_key_hashes,
+            )?;
+        let maybe_identity = identity_ids_by_key_hashes
+            .into_iter()
+            .map(|(key_hash, identity_id)| match identity_id {
+                None => Ok((key_hash, None)),
+                Some(identity_id) => {
+                    let identity =
+                        Self::verify_full_identity_by_identity_id(proof, true, identity_id)
+                            .map(|(_, maybe_identity)| maybe_identity)?;
+                    let identity = identity.ok_or(Error::Proof(ProofError::IncompleteProof(
+                        "proof returned an identity id without identity information",
+                    )))?;
+                    Ok((key_hash, Some(identity)))
+                }
+            })
+            .collect::<Result<T, Error>>()?;
+        Ok((root_hash, maybe_identity))
+    }
+
     /// Verifies the identity with its identity id
     pub fn verify_full_identity_by_identity_id(
         proof: &[u8],
+        is_proof_subset: bool,
         identity_id: [u8; 32],
     ) -> Result<(RootHash, Option<Identity>), Error> {
         let path_query = Self::full_identity_query(&identity_id)?;
-        let (root_hash, mut proved_key_values) = GroveDb::verify_query(proof, &path_query)?;
+        let (root_hash, mut proved_key_values) = if is_proof_subset {
+            GroveDb::verify_subset_query(proof, &path_query)?
+        } else {
+            GroveDb::verify_query(proof, &path_query)?
+        };
         let mut balance = None;
         let mut revision = None;
         let mut keys = BTreeMap::<KeyID, IdentityPublicKey>::new();
@@ -97,10 +133,15 @@ impl Drive {
     /// Verifies the identity id with a public key hash
     pub fn verify_identity_id_by_public_key_hash(
         proof: &[u8],
+        is_proof_subset: bool,
         public_key_hash: [u8; 20],
     ) -> Result<(RootHash, Option<[u8; 32]>), Error> {
         let path_query = Self::identity_id_by_unique_public_key_hash_query(public_key_hash);
-        let (root_hash, mut proved_key_values) = GroveDb::verify_query(proof, &path_query)?;
+        let (root_hash, mut proved_key_values) = if is_proof_subset {
+            GroveDb::verify_subset_query(proof, &path_query)?
+        } else {
+            GroveDb::verify_query(proof, &path_query)?
+        };
         if proved_key_values.len() == 1 {
             let maybe_element = proved_key_values.remove(0).2;
             match maybe_element {
@@ -157,10 +198,15 @@ impl Drive {
         T: FromIterator<([u8; 20], Option<[u8; 32]>)>,
     >(
         proof: &[u8],
+        is_proof_subset: bool,
         public_key_hashes: &[[u8; 20]],
     ) -> Result<(RootHash, T), Error> {
         let path_query = Self::identity_ids_by_unique_public_key_hash_query(public_key_hashes);
-        let (root_hash, mut proved_key_values) = GroveDb::verify_query(proof, &path_query)?;
+        let (root_hash, mut proved_key_values) = if is_proof_subset {
+            GroveDb::verify_subset_query(proof, &path_query)?
+        } else {
+            GroveDb::verify_query(proof, &path_query)?
+        };
         if proved_key_values.len() == public_key_hashes.len() {
             let values = proved_key_values
                 .into_iter()

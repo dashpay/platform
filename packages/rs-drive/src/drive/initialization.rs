@@ -218,7 +218,7 @@ mod tests {
         );
         let mut drive_operations = vec![];
         let proof = drive
-            .grove_get_proved_path_query(&root_path_query, None, &mut drive_operations)
+            .grove_get_proved_path_query(&root_path_query, false, None, &mut drive_operations)
             .expect("expected to get root elements");
         assert_eq!(proof.len(), 117); //it + left + right
 
@@ -235,7 +235,7 @@ mod tests {
         );
         let mut drive_operations = vec![];
         let proof = drive
-            .grove_get_proved_path_query(&root_path_query, None, &mut drive_operations)
+            .grove_get_proved_path_query(&root_path_query, false, None, &mut drive_operations)
             .expect("expected to get root elements");
         assert_eq!(proof.len(), 185); //it + left + right + parent + parent other
 
@@ -251,7 +251,7 @@ mod tests {
         );
         let mut drive_operations = vec![];
         let proof = drive
-            .grove_get_proved_path_query(&root_path_query, None, &mut drive_operations)
+            .grove_get_proved_path_query(&root_path_query, false, None, &mut drive_operations)
             .expect("expected to get root elements");
         assert_eq!(proof.len(), 186); //it + left + right + parent + parent other
 
@@ -268,7 +268,7 @@ mod tests {
         );
         let mut drive_operations = vec![];
         let proof = drive
-            .grove_get_proved_path_query(&root_path_query, None, &mut drive_operations)
+            .grove_get_proved_path_query(&root_path_query, false, None, &mut drive_operations)
             .expect("expected to get root elements");
         assert_eq!(proof.len(), 253);
         //it + left + right + parent + sibling + parent sibling + grandparent
@@ -285,7 +285,7 @@ mod tests {
         );
         let mut drive_operations = vec![];
         let proof = drive
-            .grove_get_proved_path_query(&root_path_query, None, &mut drive_operations)
+            .grove_get_proved_path_query(&root_path_query, false, None, &mut drive_operations)
             .expect("expected to get root elements");
         assert_eq!(proof.len(), 189); //it + parent + sibling + parent sibling + grandparent
 
@@ -301,7 +301,7 @@ mod tests {
         );
         let mut drive_operations = vec![];
         let proof = drive
-            .grove_get_proved_path_query(&root_path_query, None, &mut drive_operations)
+            .grove_get_proved_path_query(&root_path_query, false, None, &mut drive_operations)
             .expect("expected to get root elements");
         assert_eq!(proof.len(), 221); //it + left + parent + sibling + parent sibling + grandparent
 
@@ -317,7 +317,7 @@ mod tests {
         );
         let mut drive_operations = vec![];
         let proof = drive
-            .grove_get_proved_path_query(&root_path_query, None, &mut drive_operations)
+            .grove_get_proved_path_query(&root_path_query, false, None, &mut drive_operations)
             .expect("expected to get root elements");
         assert_eq!(proof.len(), 187); //it + parent + sibling + parent sibling + grandparent
 
@@ -335,7 +335,7 @@ mod tests {
         );
         let mut drive_operations = vec![];
         let proof = drive
-            .grove_get_proved_path_query(&root_path_query, None, &mut drive_operations)
+            .grove_get_proved_path_query(&root_path_query, false, None, &mut drive_operations)
             .expect("expected to get root elements");
         assert_eq!(proof.len(), 253);
 
@@ -353,7 +353,7 @@ mod tests {
         );
         let mut drive_operations = vec![];
         let proof = drive
-            .grove_get_proved_path_query(&root_path_query, None, &mut drive_operations)
+            .grove_get_proved_path_query(&root_path_query, false, None, &mut drive_operations)
             .expect("expected to get root elements");
         assert_eq!(proof.len(), 253);
 
@@ -369,7 +369,7 @@ mod tests {
         );
         let mut drive_operations = vec![];
         let proof = drive
-            .grove_get_proved_path_query(&root_path_query, None, &mut drive_operations)
+            .grove_get_proved_path_query(&root_path_query, false, None, &mut drive_operations)
             .expect("expected to get root elements");
         assert_eq!(proof.len(), 219);
     }
