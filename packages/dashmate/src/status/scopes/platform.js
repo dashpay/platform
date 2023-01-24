@@ -56,9 +56,6 @@ function getPlatformScopeFactory(dockerCompose,
       'drive_abci', 'yarn workspace @dashevo/drive echo');
 
     if (driveEchoResult.exitCode !== 0) {
-      // eslint-disable-next-line no-console
-      console.error(driveEchoResult.out);
-
       driveServiceStatus = ServiceStatusEnum.error;
     }
 
