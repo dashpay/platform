@@ -7,7 +7,6 @@ describe('getMasternodeScopeFactory', () => {
     let mockRpcClient;
     let mockCreateRpcClient;
     let mockDockerCompose;
-    let mockGetConnectionHost;
 
     let config;
     let getMasternodeScope;
@@ -20,11 +19,9 @@ describe('getMasternodeScopeFactory', () => {
       };
       mockCreateRpcClient = () => mockRpcClient;
       mockDockerCompose = { execCommand: this.sinon.stub() };
-      mockGetConnectionHost = this.sinon.stub();
 
       config = { get: this.sinon.stub(), toEnvs: this.sinon.stub() };
-      getMasternodeScope = getMasternodeScopeFactory(mockDockerCompose,
-        mockCreateRpcClient, mockGetConnectionHost);
+      getMasternodeScope = getMasternodeScopeFactory(mockDockerCompose, mockCreateRpcClient);
     });
 
     it('should just work', async () => {
