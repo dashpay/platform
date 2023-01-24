@@ -1,4 +1,4 @@
-use dpp::{data_contract::extra::IndexProperty, util::json_schema::Index};
+use dpp::{data_contract::document_type::IndexProperty, util::json_schema::Index};
 use wasm_bindgen::prelude::*;
 
 #[wasm_bindgen(js_name=IndexProperty)]

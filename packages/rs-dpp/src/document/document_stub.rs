@@ -401,9 +401,9 @@ impl fmt::Display for DocumentStub {
 
 #[cfg(test)]
 mod tests {
+    use super::*;
     use crate::data_contract::document_type::random_document::CreateRandomDocument;
     use crate::data_contract::extra::common::json_document_to_cbor;
-    use super::*;
 
     #[test]
     fn test_serialization() {

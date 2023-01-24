@@ -41,13 +41,12 @@ use crate::error::Error;
 use crate::platform::Platform;
 use drive::common::value_to_cbor;
 use drive::contract::Contract;
-use drive::dpp::data_contract::extra::DriveContractExt;
+use drive::dpp::data_contract::DriveContractExt;
+use drive::dpp::document::document_stub::DocumentStub;
 use drive::drive::block_info::BlockInfo;
 use drive::drive::flags::StorageFlags;
 use drive::grovedb::TransactionArg;
 use serde_json::json;
-use drive::dpp::data_contract::DriveContractExt;
-use drive::dpp::document::document_stub::DocumentStub;
 
 /// Masternode reward shares contract ID
 pub const MN_REWARD_SHARES_CONTRACT_ID: [u8; 32] = [
@@ -83,7 +82,7 @@ impl Platform {
 
         document_cbors
             .iter()
-            .map(|cbor| DocumentStub::from_cbor(cbor, None, None).map_err(Error::Drive))
+            .map(|cbor| DocumentStub::from_cbor(cbor, None, None).map_err(Error::Protocol))
             .collect::<Result<Vec<DocumentStub>, Error>>()
     }
 

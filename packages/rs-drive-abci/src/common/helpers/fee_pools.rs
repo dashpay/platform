@@ -39,7 +39,8 @@ use drive::dpp::identity::Identity;
 
 use drive::common::helpers::identities::create_test_identity;
 use drive::contract::Contract;
-use drive::dpp::data_contract::extra::DriveContractExt;
+use drive::dpp::data_contract::DriveContractExt;
+use drive::dpp::document::document_stub::DocumentStub;
 use drive::drive::block_info::BlockInfo;
 use drive::drive::flags::StorageFlags;
 use drive::drive::object_size_info::DocumentInfo::DocumentRefAndSerialization;
