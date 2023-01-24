@@ -408,7 +408,7 @@ mod tests {
     #[test]
     fn test_serialization() {
         let dashpay_cbor = json_document_to_cbor(
-            "tests/supporting_files/contract/dashpay/dashpay-contract.json",
+            "../rs-dpp/src/tests/payloads/contract/dashpay-contract.json",
             Some(1),
         )
         .expect("expected to get cbor contract");
@@ -441,7 +441,7 @@ mod tests {
     #[test]
     fn test_document_cbor_serialization() {
         let dashpay_cbor = json_document_to_cbor(
-            "tests/supporting_files/contract/dashpay/dashpay-contract.json",
+            "../rs-dpp/src/tests/payloads/contract/dashpay-contract.json",
             Some(1),
         )
         .expect("expected to get cbor contract");
@@ -463,7 +463,7 @@ mod tests {
     #[test]
     fn test_document_display() {
         let dashpay_cbor = json_document_to_cbor(
-            "tests/supporting_files/contract/dashpay/dashpay-contract.json",
+            "../rs-dpp/src/tests/payloads/contract/dashpay-contract.json",
             Some(1),
         )
         .expect("expected to get cbor contract");
