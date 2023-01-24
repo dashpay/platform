@@ -1,4 +1,4 @@
-const net = require("net")
+const net = require('net');
 
 async function sendEcho(ip) {
   const echoRequestBytes = Buffer.from('0a0a080a0668656c6c6f21', 'hex');
@@ -27,6 +27,6 @@ async function sendEcho(ip) {
 sendEcho('127.0.0.1')
   .then(console.log)
   .catch((e) => {
-  console.error(e)
-  process.exit(1)
-})
+    console.error(e);
+    process.exit(1);
+  });
