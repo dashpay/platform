@@ -42,8 +42,11 @@ impl Drive {
         let mut revision = None;
         let mut keys = BTreeMap::<KeyID, IdentityPublicKey>::new();
         for proved_key_value in proved_key_values {
-            let ProvedKeyValue { key, value, .. } = proved_key_value;
-            let element = Element::deserialize(&value)?;
+            let (path, key, element) = proved_key_value;
+            let Some(element) = element else {
+                //todo:make sure all parts are None
+                return Ok((root_hash, None));
+            };
 
             if key == identity_id {
                 //this is the balance
@@ -99,16 +102,20 @@ impl Drive {
         let path_query = Self::identity_id_by_unique_public_key_hash_query(public_key_hash);
         let (root_hash, mut proved_key_values) = GroveDb::verify_query(proof, &path_query)?;
         if proved_key_values.len() == 1 {
-            let value = &proved_key_values.get(0).unwrap().value;
-            let element = Element::deserialize(value)?;
-            let identity_id = element.into_item_bytes().map_err(Error::GroveDB)?;
-            //todo there shouldn't be a some here
-            Ok((
-                root_hash,
-                Some(identity_id.try_into().map_err(|_| {
-                    Error::Proof(ProofError::IncorrectValueSize("value size is incorrect"))
-                })?),
-            ))
+            let maybe_element = proved_key_values.remove(0).2;
+            match maybe_element {
+                None => Ok((root_hash, None)),
+                Some(element) => {
+                    let identity_id = element.into_item_bytes().map_err(Error::GroveDB)?;
+                    //todo there shouldn't be a some here
+                    Ok((
+                        root_hash,
+                        Some(identity_id.try_into().map_err(|_| {
+                            Error::Proof(ProofError::IncorrectValueSize("value size is incorrect"))
+                        })?),
+                    ))
+                }
+            }
         } else {
             Err(Error::Proof(ProofError::TooManyElements(
                 "expected one identity id",
@@ -124,19 +131,20 @@ impl Drive {
         let path_query = Self::identity_balance_query(&identity_id);
         let (root_hash, mut proved_key_values) = GroveDb::verify_query(proof, &path_query)?;
         if proved_key_values.len() == 1 {
-            let value = &proved_key_values.get(0).unwrap().value;
-            let element = Element::deserialize(value)?;
-            let signed_balance = element.as_sum_item_value().map_err(Error::GroveDB)?;
-            if signed_balance < 0 {
-                return Err(Error::Proof(ProofError::Overflow(
-                    "balance can't be negative",
-                )));
+            let maybe_element = proved_key_values.remove(0).2;
+            match maybe_element {
+                None => Ok((root_hash, None)),
+                Some(element) => {
+                    let signed_balance = element.as_sum_item_value().map_err(Error::GroveDB)?;
+                    if signed_balance < 0 {
+                        return Err(Error::Proof(ProofError::Overflow(
+                            "balance can't be negative",
+                        )));
+                    }
+                    //todo there shouldn't be a some here
+                    Ok((root_hash, Some(signed_balance as u64)))
+                }
             }
-            //todo there shouldn't be a some here
-            Ok((
-                root_hash,
-                Some(signed_balance as u64),
-            ))
         } else {
             Err(Error::Proof(ProofError::TooManyElements(
                 "expected one identity balance",
@@ -158,18 +166,25 @@ impl Drive {
                 .into_iter()
                 .map(|proved_key_value| {
                     let key: [u8; 20] = proved_key_value
-                        .key
+                        .1
                         .try_into()
                         .map_err(|_| Error::Proof(ProofError::IncorrectValueSize("value size")))?;
-                    let element = Element::deserialize(proved_key_value.value.as_slice())?;
-                    let identity_id = element
-                        .into_item_bytes()
-                        .map_err(Error::GroveDB)?
-                        .try_into()
-                        .map_err(|_| {
-                            Error::Proof(ProofError::IncorrectValueSize("value size is incorrect"))
-                        })?;
-                    Ok((key, Some(identity_id)))
+                    let maybe_element = proved_key_value.2;
+                    match maybe_element {
+                        None => Ok((key, None)),
+                        Some(element) => {
+                            let identity_id = element
+                                .into_item_bytes()
+                                .map_err(Error::GroveDB)?
+                                .try_into()
+                                .map_err(|_| {
+                                    Error::Proof(ProofError::IncorrectValueSize(
+                                        "value size is incorrect",
+                                    ))
+                                })?;
+                            Ok((key, Some(identity_id)))
+                        }
+                    }
                 })
                 .collect::<Result<T, Error>>()?;
             Ok((root_hash, values))

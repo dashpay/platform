@@ -1269,19 +1269,24 @@ impl<'a> DriveQuery<'a> {
         let (root_hash, mut key_value_elements) =
             GroveDb::verify_query(proof.as_slice(), &path_query).map_err(Error::GroveDB)?;
 
-        let mut values = vec![];
-        for proved_key_value in key_value_elements.into_iter() {
-            let element = Element::deserialize(proved_key_value.value.as_slice()).unwrap();
-            match element {
-                Element::Item(val, _) => values.push(val),
-                Element::SumItem(val, _) => values.push(val.encode_var_vec()),
-                Element::Tree(..) | Element::SumTree(..) | Element::Reference(..) => {
-                    return Err(Error::GroveDB(GroveError::InvalidQuery(
-                        "path query should only point to items: got trees",
-                    )));
+        let values = key_value_elements
+            .into_iter()
+            .filter_map(|proved_key_value| {
+                let Some(element) = proved_key_value.2 else {
+                return None;
+            };
+
+                match element {
+                    Element::Item(val, _) => Some(Ok(val)),
+                    Element::SumItem(val, _) => Some(Ok(val.encode_var_vec())),
+                    Element::Tree(..) | Element::SumTree(..) | Element::Reference(..) => {
+                        Some(Err(Error::GroveDB(GroveError::InvalidQuery(
+                            "path query should only point to items: got trees",
+                        ))))
+                    }
                 }
-            }
-        }
+            })
+            .collect::<Result<Vec<Vec<u8>>, Error>>()?;
 
         Ok((root_hash, values))
     }

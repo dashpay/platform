@@ -1,6 +1,6 @@
-use grovedb::PathQuery;
 use crate::drive::balances::balance_path_vec;
 use crate::drive::Drive;
+use grovedb::PathQuery;
 
 impl Drive {
     /// The query for proving the identities balance from an identity id.
