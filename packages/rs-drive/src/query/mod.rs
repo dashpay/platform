@@ -56,7 +56,7 @@ pub use ordering::OrderClause;
 
 use crate::common::encode::encode_float;
 use crate::contract::Contract;
-use crate::drive::contract::drive_ext::ContractPaths;
+use crate::drive::contract::paths::ContractPaths;
 use crate::drive::grove_operations::QueryType::StatefulQuery;
 use crate::drive::Drive;
 use crate::error::drive::DriveError;

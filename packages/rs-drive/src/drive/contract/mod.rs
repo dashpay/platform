@@ -32,7 +32,8 @@
 //! This module defines functions pertinent to Contracts stored in Drive.
 //!
 
-pub mod drive_ext;
+/// Various paths for contract operations
+pub(crate) mod paths;
 mod estimation_costs;
 
 use std::collections::{HashMap, HashSet};
@@ -71,42 +72,6 @@ use crate::fee::op::DriveOperation::{CalculatedCostOperation, PreCalculatedFeeRe
 use crate::fee::result::FeeResult;
 use crate::fee_pools::epochs::Epoch;
 
-/// The global root path for all contracts
-pub(crate) fn all_contracts_global_root_path() -> [&'static [u8]; 1] {
-    [Into::<&[u8; 1]>::into(RootTree::ContractDocuments)]
-}
-
-/// Takes a contract ID and returns the contract's root path.
-pub(crate) fn contract_root_path(contract_id: &[u8]) -> [&[u8]; 2] {
-    [
-        Into::<&[u8; 1]>::into(RootTree::ContractDocuments),
-        contract_id,
-    ]
-}
-
-/// Takes a contract ID and returns the contract's storage history path.
-pub(crate) fn contract_keeping_history_storage_path(contract_id: &[u8]) -> [&[u8]; 3] {
-    [
-        Into::<&[u8; 1]>::into(RootTree::ContractDocuments),
-        contract_id,
-        &[0],
-    ]
-}
-
-/// Takes a contract ID and an encoded timestamp and returns the contract's storage history path
-/// for that timestamp.
-pub(crate) fn contract_keeping_history_storage_time_reference_path(
-    contract_id: &[u8],
-    encoded_time: Vec<u8>,
-) -> Vec<Vec<u8>> {
-    vec![
-        Into::<&[u8; 1]>::into(RootTree::ContractDocuments).to_vec(),
-        contract_id.to_vec(),
-        vec![0],
-        encoded_time,
-    ]
-}
-
 /// Adds operations to the op batch relevant to initializing the contract's structure.
 /// Namely it inserts an empty tree at the contract's root path.
 pub fn add_init_contracts_structure_operations(batch: &mut GroveDbOpBatch) {
@@ -140,7 +105,7 @@ impl Drive {
         >,
         insert_operations: &mut Vec<DriveOperation>,
     ) -> Result<(), Error> {
-        let contract_root_path = contract_root_path(contract.id.as_bytes());
+        let contract_root_path = paths::contract_root_path(contract.id.as_bytes());
         if contract.keeps_history() {
             let element_flags = contract_element.get_flags().clone();
             let storage_flags =
@@ -162,7 +127,7 @@ impl Drive {
             )?;
             let encoded_time = encode_unsigned_integer(block_info.time_ms)?;
             let contract_keeping_history_storage_path =
-                contract_keeping_history_storage_path(contract.id.as_bytes());
+                paths::contract_keeping_history_storage_path(contract.id.as_bytes());
             self.batch_insert(
                 PathFixedSizeKeyElement((
                     contract_keeping_history_storage_path,
@@ -330,7 +295,7 @@ impl Drive {
         )?;
 
         // the documents
-        let contract_root_path = contract_root_path(contract.id.as_bytes());
+        let contract_root_path = paths::contract_root_path(contract.id.as_bytes());
         let key_info = Key(vec![1]);
         self.batch_insert_empty_tree(
             contract_root_path,
@@ -856,7 +821,7 @@ impl Drive {
         // fetching the contract.
         // We need to pass allow cache to false
         let CostContext { value, cost } = self.grove.get_raw_caching_optional(
-            contract_root_path(&contract_id),
+            paths::contract_root_path(&contract_id),
             &[0],
             false,
             transaction,
@@ -976,7 +941,7 @@ impl Drive {
 
         // We can do a get direct because there are no references involved
         if let Ok(Some(stored_element)) = self.grove_get_direct(
-            contract_root_path(contract.id.as_bytes()),
+            paths::contract_root_path(contract.id.as_bytes()),
             &[0],
             direct_query_type,
             transaction,

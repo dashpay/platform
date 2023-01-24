@@ -690,7 +690,7 @@ mod tests {
     };
     use crate::drive::batch::DriveOperationType::{ContractOperation, DocumentOperation};
     use crate::drive::config::DriveConfig;
-    use crate::drive::contract::contract_root_path;
+    use crate::drive::contract::paths::contract_root_path;
     use crate::drive::flags::StorageFlags;
     use crate::drive::Drive;
 

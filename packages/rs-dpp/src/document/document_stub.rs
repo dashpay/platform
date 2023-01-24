@@ -401,12 +401,9 @@ impl fmt::Display for DocumentStub {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
-    use crate::contract::CreateRandomDocument;
+    use crate::data_contract::document_type::random_document::CreateRandomDocument;
     use crate::data_contract::extra::common::json_document_to_cbor;
-    use crate::data_contract::DriveContractExt;
-    use dpp::data_contract::extra::common::json_document_to_cbor;
-    use dpp::data_contract::DriveContractExt;
+    use super::*;
 
     #[test]
     fn test_serialization() {
@@ -415,7 +412,7 @@ mod tests {
             Some(1),
         )
         .expect("expected to get cbor contract");
-        let contract = <Contract as DriveContractExt>::from_cbor(&dashpay_cbor, None).unwrap();
+        let contract = <DataContract as DriveContractExt>::from_cbor(&dashpay_cbor, None).unwrap();
 
         let document_type = contract
             .document_type_for_name("contactRequest")
@@ -448,7 +445,7 @@ mod tests {
             Some(1),
         )
         .expect("expected to get cbor contract");
-        let contract = <Contract as DriveContractExt>::from_cbor(&dashpay_cbor, None).unwrap();
+        let contract = <DataContract as DriveContractExt>::from_cbor(&dashpay_cbor, None).unwrap();
 
         let document_type = contract
             .document_type_for_name("profile")
@@ -470,7 +467,7 @@ mod tests {
             Some(1),
         )
         .expect("expected to get cbor contract");
-        let contract = <Contract as DriveContractExt>::from_cbor(&dashpay_cbor, None).unwrap();
+        let contract = <DataContract as DriveContractExt>::from_cbor(&dashpay_cbor, None).unwrap();
 
         let document_type = contract
             .document_type_for_name("profile")

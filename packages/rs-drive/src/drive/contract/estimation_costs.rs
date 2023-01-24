@@ -1,4 +1,4 @@
-use crate::drive::contract::contract_keeping_history_storage_path;
+use crate::drive::contract::paths::contract_keeping_history_storage_path;
 use crate::drive::defaults::{
     AVERAGE_NUMBER_OF_UPDATES, DEFAULT_FLOAT_SIZE, DEFAULT_FLOAT_SIZE_U8,
     ESTIMATED_AVERAGE_INDEX_NAME_SIZE,
