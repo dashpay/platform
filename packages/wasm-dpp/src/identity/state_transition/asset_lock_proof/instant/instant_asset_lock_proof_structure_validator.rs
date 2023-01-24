@@ -50,7 +50,7 @@ impl InstantAssetLockProofStructureValidatorWasm {
         Ok(validator.into())
     }
 
-    #[wasm_bindgen(js_name=validate)]
+    #[wasm_bindgen]
     pub async fn validate(
         &self,
         raw_asset_lock_proof: JsValue,
