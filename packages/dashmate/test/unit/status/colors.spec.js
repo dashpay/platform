@@ -1,7 +1,6 @@
 const chalk = require('chalk');
 const colors = require('../../../src/status/colors');
 const ServiceStatusEnum = require('../../../src/enums/serviceStatus');
-const DockerStatusEnum = require('../../../src/enums/dockerStatus');
 
 describe('colors.js', () => {
   describe('#portState', () => {
@@ -15,22 +14,6 @@ describe('colors.js', () => {
       expect(colors.portState('CLOSED')).to.be.equal(chalk.red);
       expect(colors.portState(null)).to.be.equal(chalk.red);
       expect(colors.portState('any other stuff')).to.be.equal(chalk.red);
-    });
-  });
-
-  describe('#docker', () => {
-    it('should color green', async () => {
-      const color = colors.docker(DockerStatusEnum.running);
-
-      expect(color).to.be.equal(chalk.green);
-    });
-
-    it('should color red', async () => {
-      expect(colors.docker(DockerStatusEnum.exited)).to.be.equal(chalk.red);
-      expect(colors.docker(DockerStatusEnum.dead)).to.be.equal(chalk.red);
-      expect(colors.docker(DockerStatusEnum.removing)).to.be.equal(chalk.red);
-      expect(colors.docker(DockerStatusEnum.created)).to.be.equal(chalk.red);
-      expect(colors.docker(DockerStatusEnum.restarting)).to.be.equal(chalk.red);
     });
   });
 

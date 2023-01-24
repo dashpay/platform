@@ -15,7 +15,6 @@ describe('getCoreScopeFactory', () => {
     let mockGithubProvider;
     let mockMNOWatchProvider;
     let mockInsightProvider;
-    let mockGetConnectionHost;
 
     let config;
     let getCoreScope;
@@ -32,11 +31,9 @@ describe('getCoreScopeFactory', () => {
       mockGithubProvider = this.sinon.stub(providers.github, 'release');
       mockMNOWatchProvider = this.sinon.stub(providers.mnowatch, 'checkPortStatus');
       mockInsightProvider = this.sinon.stub(providers, 'insight');
-      mockGetConnectionHost = this.sinon.stub();
 
       config = { get: this.sinon.stub(), toEnvs: this.sinon.stub() };
-      getCoreScope = getCoreScopeFactory(mockDockerCompose,
-        mockCreateRpcClient, mockGetConnectionHost);
+      getCoreScope = getCoreScopeFactory(mockDockerCompose, mockCreateRpcClient);
     });
 
     it('should just work', async function it() {
