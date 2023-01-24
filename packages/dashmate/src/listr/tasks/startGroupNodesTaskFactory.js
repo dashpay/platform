@@ -13,6 +13,7 @@ const { NETWORK_LOCAL } = require('../../constants');
  * @param {startNodeTask} startNodeTask
  * @param {waitForNodeToBeReadyTask} waitForNodeToBeReadyTask
  * @param {buildServicesTask} buildServicesTask
+ * @param {getConnectionHost} getConnectionHost
  * @return {startGroupNodesTask}
  */
 function startGroupNodesTaskFactory(
@@ -24,6 +25,7 @@ function startGroupNodesTaskFactory(
   startNodeTask,
   waitForNodeToBeReadyTask,
   buildServicesTask,
+  getConnectionHost,
 ) {
   /**
    * @typedef {startGroupNodesTask}
@@ -68,6 +70,7 @@ function startGroupNodesTaskFactory(
                 port: config.get('core.rpc.port'),
                 user: config.get('core.rpc.user'),
                 pass: config.get('core.rpc.password'),
+                host: await getConnectionHost(config, 'core'),
               });
 
               await waitForCorePeersConnected(rpcClient);

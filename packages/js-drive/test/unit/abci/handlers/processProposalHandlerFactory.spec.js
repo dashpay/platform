@@ -28,6 +28,7 @@ describe('processProposalHandlerFactory', () => {
   let proposalBlockExecutionContextMock;
   let consensusParamUpdates;
   let validatorSetUpdate;
+  let createContextLoggerMock;
 
   beforeEach(function beforeEach() {
     round = 0;
@@ -57,12 +58,14 @@ describe('processProposalHandlerFactory', () => {
     verifyChainLockMock = this.sinon.stub().resolves(true);
 
     processProposalMock = this.sinon.stub().resolves(new ResponseProcessProposal({ status: 1 }));
+    createContextLoggerMock = this.sinon.stub().returns(loggerMock);
 
     processProposalHandler = processProposalHandlerFactory(
       loggerMock,
       verifyChainLockMock,
       processProposalMock,
       proposalBlockExecutionContextMock,
+      createContextLoggerMock,
     );
 
     const txs = new Array(3).fill(Buffer.alloc(5, 0));
@@ -148,5 +151,10 @@ describe('processProposalHandlerFactory', () => {
     expect(processProposalMock).to.not.be.called();
 
     expect(verifyChainLockMock).to.not.be.called();
+    expect(createContextLoggerMock).to.be.calledOnceWithExactly(loggerMock, {
+      height: '42',
+      round,
+      abciMethod: 'processProposal',
+    });
   });
 });

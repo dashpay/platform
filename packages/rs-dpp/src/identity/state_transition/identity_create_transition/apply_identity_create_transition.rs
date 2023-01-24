@@ -21,6 +21,17 @@ impl<SR> ApplyIdentityCreateTransition<SR>
 where
     SR: StateRepositoryLike,
 {
+    pub fn new(state_repository: Arc<SR>) -> Self {
+        let asset_lock_transaction_output_fetcher = Arc::new(
+            AssetLockTransactionOutputFetcher::new(state_repository.clone()),
+        );
+
+        Self {
+            state_repository,
+            asset_lock_transaction_output_fetcher,
+        }
+    }
+
     pub async fn apply_identity_create_transition(
         &self,
         state_transition: &IdentityCreateTransition,

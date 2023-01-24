@@ -140,7 +140,7 @@ module.exports = {
       },
       tenderdash: {
         docker: {
-          image: 'dashpay/tenderdash:0.10.0-dev.6',
+          image: 'dashpay/tenderdash:0.10.0-dev.8',
         },
         p2p: {
           port: 26656,
@@ -165,6 +165,7 @@ module.exports = {
 
         },
         nodeId: null,
+        moniker: null,
       },
     },
     dpns: {

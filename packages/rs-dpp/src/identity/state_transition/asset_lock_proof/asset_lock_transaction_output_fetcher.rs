@@ -1,3 +1,4 @@
+use std::convert::TryInto;
 use std::sync::Arc;
 
 use dashcore::hashes::hex::ToHex;
@@ -50,8 +51,8 @@ pub async fn fetch_asset_lock_transaction_output(
             let output_index = out_point.vout as usize;
             let transaction_hash = out_point.txid;
 
-            let maybe_raw_transaction = state_repository
-                .fetch_transaction::<Vec<u8>>(&transaction_hash.to_hex(), execution_context)
+            let transaction_data = state_repository
+                .fetch_transaction(&transaction_hash.to_hex(), execution_context)
                 .await
                 .map_err(|_| DPPError::InvalidAssetLockTransaction)?;
 
@@ -62,9 +63,14 @@ pub async fn fetch_asset_lock_transaction_output(
                 });
             }
 
-            if let Some(raw_transaction) = maybe_raw_transaction {
+            let transaction_data = transaction_data
+                .try_into()
+                .map_err(|_| DPPError::InvalidAssetLockTransaction)?;
+
+            if let Some(raw_transaction) = transaction_data.data {
                 let transaction = Transaction::deserialize(&raw_transaction)
                     .map_err(|_| DPPError::InvalidAssetLockTransaction)?;
+
                 transaction
                     .output
                     .get(output_index)
@@ -81,6 +87,7 @@ pub async fn fetch_asset_lock_transaction_output(
 
 #[cfg(test)]
 mod test {
+    use crate::state_repository::FetchTransactionResponse;
     use crate::{
         identity::state_transition::asset_lock_proof::chain::ChainAssetLockProof,
         state_repository::MockStateRepositoryLike,
@@ -95,8 +102,8 @@ mod test {
         let execution_context = StateTransitionExecutionContext::default();
 
         state_repository_mock
-            .expect_fetch_transaction::<Vec<u8>>()
-            .return_once(|_, _| Ok(None));
+            .expect_fetch_transaction()
+            .return_once(|_, _| Ok(FetchTransactionResponse::default()));
         execution_context.enable_dry_run();
 
         let result = fetch_asset_lock_transaction_output(

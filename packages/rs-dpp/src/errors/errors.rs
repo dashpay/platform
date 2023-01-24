@@ -109,6 +109,9 @@ pub enum ProtocolError {
 
     #[error("Public key is disabled")]
     PublicKeyIsDisabledError { public_key: IdentityPublicKey },
+
+    #[error("Identity is not present")]
+    IdentityNotPresentError { id: Identifier },
 }
 
 impl From<NonConsensusError> for ProtocolError {

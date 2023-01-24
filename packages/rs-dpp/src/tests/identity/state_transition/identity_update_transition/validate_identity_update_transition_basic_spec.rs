@@ -115,7 +115,6 @@ fn property_should_be_present(property: &str) {
     let TestData {
         protocol_version_validator,
         validate_public_keys_mock,
-        public_keys_signatures_validator,
         mut raw_state_transition,
         ..
     } = setup_test();

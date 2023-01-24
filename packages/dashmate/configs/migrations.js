@@ -4,7 +4,7 @@ const lodashGet = require('lodash/get');
 
 const systemConfigs = require('./system');
 
-const { NETWORK_TESTNET } = require('../src/constants');
+const {NETWORK_TESTNET} = require('../src/constants');
 
 module.exports = {
   '0.17.2': (configFile) => {
@@ -405,12 +405,29 @@ module.exports = {
         config.core.indexes = config.name === 'mainnet' ? 0 : 1;
         config.core.minimumDifficultyBlocks = 0;
         config.core.powTargetSpacing = 150;
-        config.platform.tenderdash.log.level = 'debug';
         config.core.rpc.allowIps = [
           '127.0.0.1',
           '172.16.0.0/12',
           '192.168.0.0/16',
         ];
+
+        if (config.platform) {
+          config.platform.drive.tenderdash.log.level = 'debug';
+        }
+      });
+
+    return configFile;
+  },
+  '0.24.0-dev.13': (configFile) => {
+    Object.entries(configFile.configs)
+      .forEach(([, config]) => {
+        if (config.platform) {
+          if (config.group === 'local') {
+            config.platform.drive.tenderdash.moniker = config.name;
+          } else {
+            config.platform.drive.tenderdash.moniker = null;
+          }
+        }
       });
 
     return configFile;

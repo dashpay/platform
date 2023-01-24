@@ -27,6 +27,7 @@ const TIMERS = require('../timers');
  * @param {BlockExecutionContext} proposalBlockExecutionContext
  * @param {ExecutionTimer} executionTimer
  * @param {IdentityStoreRepository} identityRepository
+ * @param {createContextLogger} createContextLogger
  *
  * @return {deliverTx}
  */
@@ -36,18 +37,19 @@ function deliverTxFactory(
   proposalBlockExecutionContext,
   executionTimer,
   identityRepository,
+  createContextLogger,
 ) {
   /**
    * @typedef deliverTx
    *
    * @param {Buffer} stateTransitionByteArray
    * @param {number} round
-   * @param {BaseLogger} consensusLogger
+   * @param {BaseLogger} contextLogger
    * @return {Promise<{
    *  code: number,
    *  fees: BlockFees}>}
    */
-  async function deliverTx(stateTransitionByteArray, round, consensusLogger) {
+  async function deliverTx(stateTransitionByteArray, round, contextLogger) {
     const blockHeight = proposalBlockExecutionContext.getHeight();
 
     // Start execution timer
@@ -68,18 +70,16 @@ function deliverTxFactory(
       .toString('hex')
       .toUpperCase();
 
-    const txConsensusLogger = consensusLogger.child({
+    const txContextLogger = createContextLogger(contextLogger, {
       txId: stHash,
     });
 
-    proposalBlockExecutionContext.setConsensusLogger(txConsensusLogger);
-
-    txConsensusLogger.info(`Deliver state transition ${stHash} from block #${blockHeight}`);
+    txContextLogger.info(`Deliver state transition ${stHash} from block #${blockHeight}`);
 
     const stateTransition = await transactionalUnserializeStateTransition(
       stateTransitionByteArray,
       {
-        logger: txConsensusLogger,
+        logger: txContextLogger,
         executionTimer,
       },
     );
@@ -104,8 +104,8 @@ function deliverTxFactory(
       const consensusError = result.getFirstError();
       const message = 'State transition is invalid against the state';
 
-      txConsensusLogger.info(message);
-      txConsensusLogger.debug({
+      txContextLogger.info(message);
+      txContextLogger.debug({
         consensusError,
       });
 
@@ -129,7 +129,7 @@ function deliverTxFactory(
     const actualStateTransitionOperations = stateTransition.getExecutionContext().getOperations();
 
     if (actualStateTransitionFees.desiredAmount > predictedStateTransitionFees.desiredAmount) {
-      txConsensusLogger.warn({
+      txContextLogger.warn({
         predictedFee: predictedStateTransitionFees.desiredAmount,
         actualFee: actualStateTransitionFees.desiredAmount,
       }, `Actual fees are greater than predicted for ${actualStateTransitionFees.desiredAmount - predictedStateTransitionFees.desiredAmount} credits`);
@@ -161,7 +161,7 @@ function deliverTxFactory(
 
         const description = DATA_CONTRACT_ACTION_DESCRIPTIONS[stateTransition.getType()];
 
-        txConsensusLogger.info(
+        txContextLogger.info(
           {
             dataContractId: dataContract.getId().toString(),
           },
@@ -173,7 +173,7 @@ function deliverTxFactory(
       case stateTransitionTypes.IDENTITY_CREATE: {
         const identityId = stateTransition.getIdentityId();
 
-        txConsensusLogger.info(
+        txContextLogger.info(
           {
             identityId: identityId.toString(),
           },
@@ -185,7 +185,7 @@ function deliverTxFactory(
       case stateTransitionTypes.IDENTITY_TOP_UP: {
         const identityId = stateTransition.getIdentityId();
 
-        txConsensusLogger.info(
+        txContextLogger.info(
           {
             identityId: identityId.toString(),
           },
@@ -197,7 +197,7 @@ function deliverTxFactory(
       case stateTransitionTypes.IDENTITY_UPDATE: {
         const identityId = stateTransition.getIdentityId();
 
-        txConsensusLogger.info(
+        txContextLogger.info(
           {
             identityId: identityId.toString(),
           },
@@ -208,10 +208,12 @@ function deliverTxFactory(
       case stateTransitionTypes.DOCUMENTS_BATCH: {
         stateTransition.getTransitions().forEach((transition) => {
           const description = DOCUMENT_ACTION_DESCRIPTIONS[transition.getAction()];
+          const dataContract = transition.getDataContract();
 
-          txConsensusLogger.info(
+          txContextLogger.info(
             {
               documentId: transition.getId().toString(),
+              dataContractId: dataContract.getId().toString(),
             },
             `Document ${description} with id: ${transition.getId()}`,
           );
@@ -225,7 +227,7 @@ function deliverTxFactory(
 
     const deliverTxTiming = executionTimer.stopTimer(TIMERS.DELIVER_TX.OVERALL);
 
-    txConsensusLogger.trace(
+    txContextLogger.trace(
       {
         timings: {
           overall: deliverTxTiming,
