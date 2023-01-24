@@ -38,7 +38,7 @@ describe('validatePublicKeySignaturesFactory', () => {
       getIdentityCreateTransitionFixture().toObject(),
     );
 
-    const privateKey1 = new PrivateKey();
+    const privateKey1 = new PrivateKey('17e0b1703e226204c557bce68b0871683ea409ae90c7a733b72a33f7c129c959');
     const publicKey1 = privateKey1.toPublicKey();
 
     const identityPublicKey1 = new IdentityPublicKey({
@@ -50,7 +50,7 @@ describe('validatePublicKeySignaturesFactory', () => {
       readOnly: false,
     });
 
-    const privateKey2 = new PrivateKey();
+    const privateKey2 = new PrivateKey('afc20afac882f676af5a268a2eca9c763996c36dbeb3660648df2108006820c7');
     const publicKey2 = privateKey2.toPublicKey();
 
     const identityPublicKey2 = new IdentityPublicKey({
