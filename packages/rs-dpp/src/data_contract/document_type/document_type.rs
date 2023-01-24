@@ -220,7 +220,7 @@ impl DocumentType {
             .get_inner_borrowed_str_value_map::<BTreeMap<_, _>>(property_names::PROPERTIES)?;
 
         let mut required_fields =
-            document_type_value_map.get_inner_string_array(property_names::REQUIRED)?;
+            document_type_value_map.get_inner_string_array(property_names::REQUIRED).unwrap_or_default();
 
         fn insert_values(
             document_properties: &mut BTreeMap<String, DocumentField>,
