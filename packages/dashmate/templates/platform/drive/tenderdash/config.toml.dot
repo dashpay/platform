@@ -15,7 +15,7 @@
 proxy-app = "tcp://drive_abci:26658"
 
 # A custom human readable name for this node
-#moniker = ""
+{{?it.platform.drive.tenderdash.moniker}}moniker = "{{=it.platform.drive.tenderdash.moniker}}"{{??}}{{?}}
 
 # Database backend: goleveldb | cleveldb | boltdb | rocksdb | badgerdb
 # * goleveldb (github.com/syndtr/goleveldb - most popular implementation)
