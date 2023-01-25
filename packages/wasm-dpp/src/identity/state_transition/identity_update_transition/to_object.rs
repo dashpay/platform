@@ -1,4 +1,5 @@
 use dpp::identity::KeyID;
+use dpp::state_transition::StateTransitionIdentitySigned;
 use dpp::{
     identifier::Identifier,
     identity::{
@@ -43,6 +44,7 @@ pub fn to_object_struct(
 
     if !options.skip_signature.unwrap_or(false) {
         to_object.signature = Some(transition.get_signature().to_owned());
+        to_object.signature_public_key_id = transition.get_signature_public_key_id()
     }
 
     to_object.public_keys_disabled_at = transition.get_public_keys_disabled_at();

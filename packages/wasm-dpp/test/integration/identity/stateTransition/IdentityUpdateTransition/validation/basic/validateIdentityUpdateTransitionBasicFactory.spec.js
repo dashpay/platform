@@ -1,59 +1,60 @@
-const { getRE2Class } = require('@dashevo/wasm-re2');
 const { PrivateKey } = require('@dashevo/dashcore-lib');
-const validateIdentityUpdateTransitionBasicFactory = require(
-  '@dashevo/dpp/lib/identity/stateTransition/IdentityUpdateTransition/validation/basic/validateIdentityUpdateTransitionBasicFactory',
-);
-const JsonSchemaValidator = require('@dashevo/dpp/lib/validation/JsonSchemaValidator');
-const createAjv = require('@dashevo/dpp/lib/ajv/createAjv');
-const ValidationResult = require('@dashevo/dpp/lib/validation/ValidationResult');
-const IdentityPublicKey = require('@dashevo/dpp/lib/identity/IdentityPublicKey');
 const getIdentityUpdateTransitionFixture = require('@dashevo/dpp/lib/test/fixtures/getIdentityUpdateTransitionFixture');
-const { expectJsonSchemaError, expectValidationError } = require('@dashevo/dpp/lib/test/expect/expectError');
-const SomeConsensusError = require('@dashevo/dpp/lib/test/mocks/SomeConsensusError');
+
+const { expectJsonSchemaError, expectValidationError } = require('../../../../../../../lib/test/expect/expectError');
+const { default: loadWasmDpp } = require('../../../../../../../dist');
+const getBlsAdapterMock = require('../../../../../../../lib/test/mocks/getBlsAdapterMock');
 
 describe('validateIdentityUpdateTransitionBasicFactory', () => {
   let validateIdentityUpdateTransitionBasic;
-  let validateProtocolVersionMock;
-  let validatePublicKeysMock;
   let rawStateTransition;
   let stateTransition;
   let publicKeyToAdd;
-  let validatePublicKeySignaturesMock;
 
-  beforeEach(async function beforeEach() {
-    const RE2 = await getRE2Class();
-    const ajv = createAjv(RE2);
-    const jsonSchemaValidator = new JsonSchemaValidator(ajv);
+  let IdentityUpdateTransition;
+  let IdentityPublicKey;
+  let UnsupportedProtocolVersionError;
+  let InvalidIdentityKeySignatureError;
+  let DuplicatedIdentityPublicKeyIdError;
+  let IdentityUpdateTransitionBasicValidator;
 
-    validateProtocolVersionMock = this.sinonSandbox.stub().returns(new ValidationResult());
+  before(async () => {
+    ({
+      IdentityUpdateTransition,
+      UnsupportedProtocolVersionError,
+      InvalidIdentityKeySignatureError,
+      DuplicatedIdentityPublicKeyIdError,
+      IdentityPublicKey,
+      IdentityUpdateTransitionBasicValidator,
+    } = await loadWasmDpp());
+  });
 
-    validatePublicKeysMock = this.sinonSandbox.stub()
-      .returns(new ValidationResult());
+  beforeEach(async () => {
+    const blsAdapter = await getBlsAdapterMock();
 
-    validatePublicKeySignaturesMock = this.sinonSandbox.stub()
-      .returns(new ValidationResult());
+    const validator = new IdentityUpdateTransitionBasicValidator(blsAdapter);
+    validateIdentityUpdateTransitionBasic = (st) => validator.validate(st);
 
-    validateIdentityUpdateTransitionBasic = validateIdentityUpdateTransitionBasicFactory(
-      jsonSchemaValidator,
-      validateProtocolVersionMock,
-      validatePublicKeysMock,
-      validatePublicKeySignaturesMock,
-    );
+    const stateTransitionJS = getIdentityUpdateTransitionFixture();
+    stateTransition = new IdentityUpdateTransition(stateTransitionJS.toObject());
 
-    stateTransition = getIdentityUpdateTransitionFixture();
+    const privateKey = new PrivateKey('9b67f852093bc61cea0eeca38599dbfba0de28574d2ed9b99d10d33dc1bde7b2');
+    const publicKey = privateKey.toPublicKey().toBuffer();
 
-    const privateKeyModel = new PrivateKey();
-    const privateKeyHex = privateKeyModel.toBuffer().toString('hex');
-    const publicKey = privateKeyModel.toPublicKey().toBuffer();
+    let identityPublicKey = new IdentityPublicKey({
+      id: 1,
+      type: IdentityPublicKey.TYPES.ECDSA_SECP256K1,
+      data: publicKey,
+      purpose: IdentityPublicKey.PURPOSES.AUTHENTICATION,
+      securityLevel: IdentityPublicKey.SECURITY_LEVELS.MASTER,
+      readOnly: false,
+    });
+    stateTransition.setPublicKeysToAdd([identityPublicKey]);
+    await stateTransition.sign(identityPublicKey, privateKey.toBuffer());
 
-    const identityPublicKey = new IdentityPublicKey()
-      .setId(1)
-      .setType(IdentityPublicKey.TYPES.ECDSA_SECP256K1)
-      .setData(publicKey)
-      .setSecurityLevel(IdentityPublicKey.SECURITY_LEVELS.MASTER)
-      .setPurpose(IdentityPublicKey.PURPOSES.AUTHENTICATION);
-
-    await stateTransition.sign(identityPublicKey, privateKeyHex);
+    [identityPublicKey] = stateTransition.getPublicKeysToAdd();
+    identityPublicKey.setSignature(stateTransition.getSignature());
+    stateTransition.setPublicKeysToAdd([identityPublicKey]);
 
     rawStateTransition = stateTransition.toObject();
 
@@ -73,7 +74,7 @@ describe('validateIdentityUpdateTransitionBasicFactory', () => {
 
       const result = await validateIdentityUpdateTransitionBasic(rawStateTransition);
 
-      expectJsonSchemaError(result);
+      await expectJsonSchemaError(result);
 
       const [error] = result.getErrors();
 
@@ -87,7 +88,7 @@ describe('validateIdentityUpdateTransitionBasicFactory', () => {
 
       const result = await validateIdentityUpdateTransitionBasic(rawStateTransition);
 
-      expectJsonSchemaError(result);
+      await expectJsonSchemaError(result);
 
       const [error] = result.getErrors();
 
@@ -96,25 +97,11 @@ describe('validateIdentityUpdateTransitionBasicFactory', () => {
     });
 
     it('should be valid', async () => {
-      rawStateTransition.protocolVersion = -1;
-      const protocolVersionError = new SomeConsensusError('test');
-      const protocolVersionResult = new ValidationResult([
-        protocolVersionError,
-      ]);
-
-      validateProtocolVersionMock.returns(protocolVersionResult);
+      rawStateTransition.protocolVersion = 100;
 
       const result = await validateIdentityUpdateTransitionBasic(rawStateTransition);
 
-      expectValidationError(result, SomeConsensusError);
-
-      const [error] = result.getErrors();
-
-      expect(error).to.equal(protocolVersionError);
-
-      expect(validateProtocolVersionMock).to.be.calledOnceWith(
-        rawStateTransition.protocolVersion,
-      );
+      await expectValidationError(result, UnsupportedProtocolVersionError);
     });
   });
 
@@ -124,7 +111,7 @@ describe('validateIdentityUpdateTransitionBasicFactory', () => {
 
       const result = await validateIdentityUpdateTransitionBasic(rawStateTransition);
 
-      expectJsonSchemaError(result);
+      await expectJsonSchemaError(result);
 
       const [error] = result.getErrors();
 
@@ -138,7 +125,7 @@ describe('validateIdentityUpdateTransitionBasicFactory', () => {
 
       const result = await validateIdentityUpdateTransitionBasic(rawStateTransition);
 
-      expectJsonSchemaError(result);
+      await expectJsonSchemaError(result);
 
       const [error] = result.getErrors();
 
@@ -156,7 +143,7 @@ describe('validateIdentityUpdateTransitionBasicFactory', () => {
         rawStateTransition,
       );
 
-      expectJsonSchemaError(result);
+      await expectJsonSchemaError(result);
 
       const [error] = result.getErrors();
 
@@ -172,14 +159,12 @@ describe('validateIdentityUpdateTransitionBasicFactory', () => {
         rawStateTransition,
       );
 
-      expectJsonSchemaError(result, 2);
+      await expectJsonSchemaError(result, 32);
 
-      const [error, byteArrayError] = result.getErrors();
+      const [error] = result.getErrors();
 
       expect(error.getInstancePath()).to.equal('/identityId/0');
       expect(error.getKeyword()).to.equal('type');
-
-      expect(byteArrayError.getKeyword()).to.equal('byteArray');
     });
 
     it('should be no less than 32 bytes', async () => {
@@ -189,11 +174,11 @@ describe('validateIdentityUpdateTransitionBasicFactory', () => {
         rawStateTransition,
       );
 
-      expectJsonSchemaError(result);
+      await expectJsonSchemaError(result);
 
       const [error] = result.getErrors();
 
-      expect(error.instancePath).to.equal('/identityId');
+      expect(error.getInstancePath()).to.equal('/identityId');
       expect(error.getKeyword()).to.equal('minItems');
     });
 
@@ -204,11 +189,11 @@ describe('validateIdentityUpdateTransitionBasicFactory', () => {
         rawStateTransition,
       );
 
-      expectJsonSchemaError(result);
+      await expectJsonSchemaError(result);
 
       const [error] = result.getErrors();
 
-      expect(error.instancePath).to.equal('/identityId');
+      expect(error.getInstancePath()).to.equal('/identityId');
       expect(error.getKeyword()).to.equal('maxItems');
     });
   });
@@ -219,11 +204,11 @@ describe('validateIdentityUpdateTransitionBasicFactory', () => {
 
       const result = await validateIdentityUpdateTransitionBasic(rawStateTransition);
 
-      expectJsonSchemaError(result);
+      await expectJsonSchemaError(result);
 
       const [error] = result.getErrors();
 
-      expect(error.instancePath).to.equal('');
+      expect(error.getInstancePath()).to.equal('');
       expect(error.getKeyword()).to.equal('required');
       expect(error.getParams().missingProperty).to.equal('signature');
     });
@@ -233,14 +218,12 @@ describe('validateIdentityUpdateTransitionBasicFactory', () => {
 
       const result = await validateIdentityUpdateTransitionBasic(rawStateTransition);
 
-      expectJsonSchemaError(result, 2);
+      await expectJsonSchemaError(result, 65);
 
-      const [error, byteArrayError] = result.getErrors();
+      const [error] = result.getErrors();
 
-      expect(error.instancePath).to.equal('/signature/0');
+      expect(error.getInstancePath()).to.equal('/signature/0');
       expect(error.getKeyword()).to.equal('type');
-
-      expect(byteArrayError.getKeyword()).to.equal('byteArray');
     });
 
     it('should be not shorter than 65 bytes', async () => {
@@ -248,11 +231,11 @@ describe('validateIdentityUpdateTransitionBasicFactory', () => {
 
       const result = await validateIdentityUpdateTransitionBasic(rawStateTransition);
 
-      expectJsonSchemaError(result);
+      await expectJsonSchemaError(result);
 
       const [error] = result.getErrors();
 
-      expect(error.instancePath).to.equal('/signature');
+      expect(error.getInstancePath()).to.equal('/signature');
       expect(error.getKeyword()).to.equal('minItems');
     });
 
@@ -261,11 +244,11 @@ describe('validateIdentityUpdateTransitionBasicFactory', () => {
 
       const result = await validateIdentityUpdateTransitionBasic(rawStateTransition);
 
-      expectJsonSchemaError(result);
+      await expectJsonSchemaError(result);
 
       const [error] = result.getErrors();
 
-      expect(error.instancePath).to.equal('/signature');
+      expect(error.getInstancePath()).to.equal('/signature');
       expect(error.getKeyword()).to.equal('maxItems');
     });
   });
@@ -276,7 +259,7 @@ describe('validateIdentityUpdateTransitionBasicFactory', () => {
 
       const result = await validateIdentityUpdateTransitionBasic(rawStateTransition);
 
-      expectJsonSchemaError(result);
+      await expectJsonSchemaError(result);
 
       const [error] = result.getErrors();
 
@@ -290,7 +273,7 @@ describe('validateIdentityUpdateTransitionBasicFactory', () => {
 
       const result = await validateIdentityUpdateTransitionBasic(rawStateTransition);
 
-      expectJsonSchemaError(result);
+      await expectJsonSchemaError(result);
 
       const [error] = result.getErrors();
 
@@ -303,7 +286,7 @@ describe('validateIdentityUpdateTransitionBasicFactory', () => {
 
       const result = await validateIdentityUpdateTransitionBasic(rawStateTransition);
 
-      expectJsonSchemaError(result);
+      await expectJsonSchemaError(result);
 
       const [error] = result.getErrors();
 
@@ -319,7 +302,21 @@ describe('validateIdentityUpdateTransitionBasicFactory', () => {
     });
 
     it('should return valid result', async () => {
-      rawStateTransition.addPublicKeys = [publicKeyToAdd];
+      const privateKey = new PrivateKey();
+      const publicKey = privateKey.toPublicKey();
+
+      const identityPublicKey = new IdentityPublicKey(publicKeyToAdd);
+      identityPublicKey.setData(publicKey.toBuffer());
+
+      stateTransition.setPublicKeysToAdd([identityPublicKey]);
+      await stateTransition.signByPrivateKey(
+        privateKey.toBuffer(),
+        identityPublicKey.type,
+      );
+      identityPublicKey.setSignature(stateTransition.getSignature());
+      stateTransition.setPublicKeysToAdd([identityPublicKey]);
+
+      rawStateTransition = stateTransition.toObject();
 
       const result = await validateIdentityUpdateTransitionBasic(
         rawStateTransition,
@@ -333,7 +330,7 @@ describe('validateIdentityUpdateTransitionBasicFactory', () => {
 
       const result = await validateIdentityUpdateTransitionBasic(rawStateTransition);
 
-      expectJsonSchemaError(result);
+      await expectJsonSchemaError(result);
 
       const [error] = result.getErrors();
       expect(error.getKeyword()).to.equal('minItems');
@@ -344,14 +341,14 @@ describe('validateIdentityUpdateTransitionBasicFactory', () => {
       rawStateTransition.addPublicKeys = [];
 
       for (let i = 0; i <= 10; i++) {
-        rawStateTransition.addPublicKeys.push(publicKeyToAdd);
+        rawStateTransition.addPublicKeys.push({ ...publicKeyToAdd, id: i + 1 });
       }
 
       const result = await validateIdentityUpdateTransitionBasic(
         rawStateTransition,
       );
 
-      expectJsonSchemaError(result);
+      await expectJsonSchemaError(result);
 
       const [error] = result.getErrors();
 
@@ -366,7 +363,7 @@ describe('validateIdentityUpdateTransitionBasicFactory', () => {
         rawStateTransition,
       );
 
-      expectJsonSchemaError(result);
+      await expectJsonSchemaError(result);
 
       const [error] = result.getErrors();
 
@@ -375,47 +372,32 @@ describe('validateIdentityUpdateTransitionBasicFactory', () => {
     });
 
     it('should be valid', async () => {
-      rawStateTransition.addPublicKeys = [publicKeyToAdd];
+      const keyWithDupeId = { ...publicKeyToAdd, data: Buffer.alloc(33) };
 
-      const publicKeysError = new SomeConsensusError('test');
-      const publicKeysResult = new ValidationResult([
-        publicKeysError,
+      stateTransition.setPublicKeysToAdd([
+        new IdentityPublicKey(publicKeyToAdd),
+        new IdentityPublicKey(keyWithDupeId),
       ]);
 
-      validatePublicKeysMock.returns(publicKeysResult);
+      rawStateTransition = stateTransition.toObject();
 
       const result = await validateIdentityUpdateTransitionBasic(
         rawStateTransition,
       );
 
-      expectValidationError(result);
-
-      const [error] = result.getErrors();
-
-      expect(error).to.equal(publicKeysError);
-
-      expect(validatePublicKeysMock).to.be.calledOnceWithExactly(
-        rawStateTransition.addPublicKeys,
-      );
+      await expectValidationError(result, DuplicatedIdentityPublicKeyIdError);
     });
 
     it('should have valid signatures', async () => {
-      const publicKeysError = new SomeConsensusError('test');
-      const publicKeysResult = new ValidationResult([
-        publicKeysError,
-      ]);
-
-      validatePublicKeySignaturesMock.resolves(publicKeysResult);
+      const invalidSignature = Buffer.alloc(65);
+      rawStateTransition.signature = invalidSignature;
+      rawStateTransition.addPublicKeys[0].signature = invalidSignature;
 
       const result = await validateIdentityUpdateTransitionBasic(
         rawStateTransition,
       );
 
-      expectValidationError(result);
-
-      const [error] = result.getErrors();
-
-      expect(error).to.equal(publicKeysError);
+      await expectValidationError(result, InvalidIdentityKeySignatureError);
     });
   });
 
@@ -431,11 +413,11 @@ describe('validateIdentityUpdateTransitionBasicFactory', () => {
         rawStateTransition,
       );
 
-      expectJsonSchemaError(result);
+      await expectJsonSchemaError(result);
 
       const [error] = result.getErrors();
-      expect(error.getKeyword()).to.equal('dependentRequired');
-      expect(error.params.missingProperty).to.equal('publicKeysDisabledAt');
+      expect(error.getKeyword()).to.equal('required');
+      expect(error.getParams().missingProperty).to.equal('publicKeysDisabledAt');
     });
 
     it('should be valid', async () => {
@@ -457,7 +439,7 @@ describe('validateIdentityUpdateTransitionBasicFactory', () => {
         rawStateTransition,
       );
 
-      expectJsonSchemaError(result);
+      await expectJsonSchemaError(result);
 
       const [error] = result.getErrors();
 
@@ -473,7 +455,7 @@ describe('validateIdentityUpdateTransitionBasicFactory', () => {
         rawStateTransition,
       );
 
-      expectJsonSchemaError(result);
+      await expectJsonSchemaError(result);
 
       const [error] = result.getErrors();
 
@@ -489,7 +471,7 @@ describe('validateIdentityUpdateTransitionBasicFactory', () => {
         rawStateTransition,
       );
 
-      expectJsonSchemaError(result);
+      await expectJsonSchemaError(result);
 
       const [error] = result.getErrors();
 
@@ -505,7 +487,7 @@ describe('validateIdentityUpdateTransitionBasicFactory', () => {
         rawStateTransition,
       );
 
-      expectJsonSchemaError(result);
+      await expectJsonSchemaError(result);
 
       const [error] = result.getErrors();
 
@@ -522,11 +504,11 @@ describe('validateIdentityUpdateTransitionBasicFactory', () => {
         rawStateTransition,
       );
 
-      expectJsonSchemaError(result);
+      await expectJsonSchemaError(result);
 
       const [error] = result.getErrors();
-      expect(error.getKeyword()).to.equal('dependentRequired');
-      expect(error.params.missingProperty).to.equal('disablePublicKeys');
+      expect(error.getKeyword()).to.equal('required');
+      expect(error.getParams().missingProperty).to.equal('disablePublicKeys');
     });
 
     it('should be integer', async () => {
@@ -537,7 +519,7 @@ describe('validateIdentityUpdateTransitionBasicFactory', () => {
         rawStateTransition,
       );
 
-      expectJsonSchemaError(result);
+      await expectJsonSchemaError(result);
 
       const [error] = result.getErrors();
 
@@ -553,7 +535,7 @@ describe('validateIdentityUpdateTransitionBasicFactory', () => {
         rawStateTransition,
       );
 
-      expectJsonSchemaError(result);
+      await expectJsonSchemaError(result);
 
       const [error] = result.getErrors();
 
@@ -566,11 +548,6 @@ describe('validateIdentityUpdateTransitionBasicFactory', () => {
     const result = await validateIdentityUpdateTransitionBasic(rawStateTransition);
 
     expect(result.isValid()).to.be.true();
-
-    expect(validatePublicKeysMock)
-      .to.be.calledOnceWithExactly(
-        rawStateTransition.addPublicKeys,
-      );
   });
 
   it('should have either addPublicKeys or disablePublicKeys', async () => {
@@ -580,16 +557,10 @@ describe('validateIdentityUpdateTransitionBasicFactory', () => {
 
     const result = await validateIdentityUpdateTransitionBasic(rawStateTransition);
 
-    expectJsonSchemaError(result, 3);
+    await expectJsonSchemaError(result, 1);
 
-    const [addPublicKeysError, disablePublicKeysError, error] = result.getErrors();
+    const [error] = result.getErrors();
 
     expect(error.getKeyword()).to.equal('anyOf');
-
-    expect(disablePublicKeysError.schemaPath).to.equal('#/anyOf/1/required');
-    expect(disablePublicKeysError.getKeyword()).to.equal('required');
-
-    expect(addPublicKeysError.schemaPath).to.equal('#/anyOf/0/required');
-    expect(addPublicKeysError.getKeyword()).to.equal('required');
   });
 });

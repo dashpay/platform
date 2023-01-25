@@ -216,7 +216,7 @@ impl IdentityUpdateTransitionWasm {
                 js_sys::Reflect::set(
                     &js_object,
                     &"signaturePublicKeyId".to_owned().into(),
-                    &signature_public_key_id.into(),
+                    &JsValue::from(signature_public_key_id as u32),
                 )?;
             } else {
                 js_sys::Reflect::set(
@@ -430,5 +430,18 @@ impl IdentityUpdateTransitionWasm {
     #[wasm_bindgen(js_name=setRevision)]
     pub fn set_revision(&mut self, revision: u32) {
         self.0.set_revision(revision as u64)
+    }
+
+    #[wasm_bindgen]
+    pub fn sign(
+        &mut self,
+        identity_public_key: IdentityPublicKeyWasm,
+        private_key: Vec<u8>,
+        bls: JsBlsAdapter,
+    ) -> Result<(), JsValue> {
+        let bls_adapter = BlsAdapter(bls);
+        self.0
+            .sign(&identity_public_key.into(), &private_key, &bls_adapter)
+            .map_err(from_dpp_err)
     }
 }
