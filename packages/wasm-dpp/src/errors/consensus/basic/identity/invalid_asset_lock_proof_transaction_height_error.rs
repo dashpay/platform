@@ -22,9 +22,9 @@ impl InvalidAssetLockProofTransactionHeightErrorWasm {
         self.inner.proof_core_chain_locked_height()
     }
 
-    #[wasm_bindgen(js_name=getCurrentCoreChainLockedHeight)]
-    pub fn current_core_chain_locked_height(&self) -> Option<u32> {
-        self.inner.current_core_chain_locked_height()
+    #[wasm_bindgen(js_name=getTransactionHeight)]
+    pub fn transaction_height(&self) -> Option<u32> {
+        self.inner.transaction_height()
     }
 
     #[wasm_bindgen(js_name=getCode)]

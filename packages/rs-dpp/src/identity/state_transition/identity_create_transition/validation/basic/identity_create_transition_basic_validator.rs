@@ -24,7 +24,7 @@ const ASSET_LOCK_PROOF_PROPERTY_NAME: &str = "assetLockProof";
 
 pub struct IdentityCreateTransitionBasicValidator<T, S, SR: StateRepositoryLike, SV, BLS: BlsModule>
 {
-    protocol_version_validator: Arc<ProtocolVersionValidator>,
+    protocol_version_validator: ProtocolVersionValidator,
     json_schema_validator: JsonSchemaValidator,
     public_keys_validator: Arc<T>,
     public_keys_in_identity_transition_validator: Arc<S>,
@@ -42,7 +42,7 @@ impl<
     > IdentityCreateTransitionBasicValidator<T, S, SR, SV, BLS>
 {
     pub fn new(
-        protocol_version_validator: Arc<ProtocolVersionValidator>,
+        protocol_version_validator: ProtocolVersionValidator,
         public_keys_validator: Arc<T>,
         public_keys_in_identity_transition_validator: Arc<S>,
         asset_lock_proof_validator: Arc<AssetLockProofValidator<SR>>,
@@ -127,5 +127,9 @@ impl<
         );
 
         Ok(result)
+    }
+
+    pub fn protocol_version_validator(&mut self) -> &mut ProtocolVersionValidator {
+        &mut self.protocol_version_validator
     }
 }

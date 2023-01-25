@@ -36,10 +36,12 @@ impl PublicKeysValidatorWasm {
     ) -> Result<ValidationResultWasm, JsValue> {
         let raw_public_keys = to_vec_of_serde_values(public_keys.iter())?;
 
-        self.public_key_validator
+        let validation_result = self
+            .public_key_validator
             .validate_keys(&raw_public_keys)
-            .map(ValidationResultWasm::from)
-            .map_err(|e| JsValue::from(e.to_string()))
+            .map_err(|e| JsValue::from(e.to_string()))?;
+
+        Ok(validation_result.map(|_| JsValue::undefined()).into())
     }
 
     #[wasm_bindgen(js_name=validatePublicKeyStructure)]
@@ -49,10 +51,12 @@ impl PublicKeysValidatorWasm {
     ) -> Result<ValidationResultWasm, JsValue> {
         let pk_serde_json = public_key.with_serde_to_json_value()?;
 
-        self.public_key_validator
+        let validation_result = self
+            .public_key_validator
             .validate_public_key_structure(&pk_serde_json)
-            .map(ValidationResultWasm::from)
-            .map_err(|e| JsValue::from(e.to_string()))
+            .map_err(|e| JsValue::from(e.to_string()))?;
+
+        Ok(validation_result.map(|_| JsValue::undefined()).into())
     }
 
     #[wasm_bindgen(js_name=validateKeysInStateTransition)]
@@ -62,9 +66,11 @@ impl PublicKeysValidatorWasm {
     ) -> Result<ValidationResultWasm, JsValue> {
         let raw_public_keys = to_vec_of_serde_values(public_keys.iter())?;
 
-        self.public_key_in_state_transition_validator
+        let validation_result = self
+            .public_key_in_state_transition_validator
             .validate_keys(&raw_public_keys)
-            .map(ValidationResultWasm::from)
-            .map_err(|e| JsValue::from(e.to_string()))
+            .map_err(|e| JsValue::from(e.to_string()))?;
+
+        Ok(validation_result.map(|_| JsValue::undefined()).into())
     }
 }
