@@ -249,7 +249,7 @@ impl DocumentType {
 
             let type_value = base_inner_properties.get_optional_str(property_names::TYPE)?;
 
-            let result: Result<(String, BTreeMap<String, &Value>), DataContractError> =
+            let (type_value, inner_properties) =
                 match type_value {
                     None => {
                         let ref_value = base_inner_properties
@@ -286,9 +286,8 @@ impl DocumentType {
                         Ok((type_value.to_string(), inner_properties))
                     }
                     Some(type_value) => Ok((type_value.to_string(), base_inner_properties)),
-                };
+                }?;
 
-            let (type_value, inner_properties) = result?;
 
             let required = known_required.contains(&type_value);
 

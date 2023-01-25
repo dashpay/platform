@@ -1356,6 +1356,11 @@ mod tests {
         }
 
         #[test]
+        fn should_setup_reference_contract() {
+            setup_reference_contract();
+        }
+
+        #[test]
         fn should_always_have_then_same_cost() {
             // Merk trees have own cache and depends on does contract node cached or not
             // we get could get different costs. To avoid of it we fetch contracts without tree caching
