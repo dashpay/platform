@@ -520,30 +520,36 @@ describe('validateDocumentsUniquenessByIndices', () => {
     expect(result.isValid()).to.be.true();
   });
 
-  it('should return valid result if Document being created and has createdAt and updatedAt indices', async () => {
-    const [, , , , , , uniqueDatesDocument] = documentsJs;
-
+  it('should return valid result if Document being created and has createdAt and updatedAt indices - Rust', async () => {
+    const [, , , , , , uniqueDatesDocumentJs] = documentsJs;
+    const uniqueDatesDocument = new Document(uniqueDatesDocumentJs.toObject(), dataContract.clone());
     const uniqueDatesDocumentTransitions = getDocumentTransitionsFixture({
-      create: [uniqueDatesDocument],
-    });
-    stateRepositoryMockJs.fetchDocuments
+      create: [uniqueDatesDocumentJs],
+    }).map((t) =>
+      DocumentTransition.fromTransitionCreate(
+        new DocumentCreateTransition(t.toObject(), dataContract.clone())
+      )
+    );
+
+    stateRepositoryMock.fetchDocuments
       .withArgs(
-        dataContractJs.getId().toBuffer(),
-        uniqueDatesDocument.getType(),
+        sinon.match.instanceOf(Identifier),
+        uniqueDatesDocumentJs.getType(),
         {
           where: [
-            ['$createdAt', '==', uniqueDatesDocument.getCreatedAt().getTime()],
-            ['$updatedAt', '==', uniqueDatesDocument.getUpdatedAt().getTime()],
+            ['$createdAt', '==', uniqueDatesDocument.getCreatedAt()],
+            ['$updatedAt', '==', uniqueDatesDocument.getUpdatedAt()],
           ],
         },
       )
-      .resolves([uniqueDatesDocument]);
+      .returns([uniqueDatesDocument]);
 
-    const result = await validateDocumentsUniquenessByIndicesJs(
-      ownerIdJs,
+    const result = await validateDocumentsUniquenessByIndices(
+      stateRepositoryMock,
+      ownerId,
       uniqueDatesDocumentTransitions,
-      dataContractJs,
-      executionContextJs,
+      dataContract,
+      executionContext,
     );
 
     expect(result.isValid()).to.be.true();
