@@ -5,7 +5,7 @@ use anyhow::anyhow;
 use ciborium::value::Value as CborValue;
 use itertools::{Either, Itertools};
 use serde::{Deserialize, Serialize};
-use serde_json::Value as JsonValue;
+use serde_json::{Value as JsonValue, Value};
 
 use crate::data_contract::contract_config;
 use crate::data_contract::contract_config::{
@@ -13,7 +13,9 @@ use crate::data_contract::contract_config::{
     DEFAULT_CONTRACT_DOCUMENT_MUTABILITY, DEFAULT_CONTRACT_KEEPS_HISTORY,
     DEFAULT_CONTRACT_MUTABILITY,
 };
-use crate::data_contract::extra::common::cbor_map_to_btree_map;
+use crate::data_contract::extra::common::{
+    cbor_map_into_btree_map, cbor_map_into_serde_btree_map, cbor_map_to_btree_map,
+};
 use crate::data_contract::get_binary_properties_from_schema::get_binary_properties;
 use crate::util::cbor_value::{cbor_value_to_json_value, CborBTreeMapHelper, CborCanonicalMap};
 use crate::util::deserializer;
@@ -175,27 +177,7 @@ impl DataContract {
             .as_map()
             .ok_or_else(|| ProtocolError::DecodingError(String::from("documents must be a map")))?;
 
-        let documents_vec = contract_documents_cbor_map
-            .iter()
-            .map(|(key, value)| {
-                Ok((
-                    key.as_text()
-                        .ok_or_else(|| {
-                            ProtocolError::DecodingError(String::from(
-                                "expect document type to be a string",
-                            ))
-                        })?
-                        .to_string(),
-                    cbor_value_to_json_value(value)?,
-                ))
-            })
-            .collect::<Result<Vec<(String, JsonValue)>, ProtocolError>>()?;
-
-        let mut documents: BTreeMap<String, JsonValue> = BTreeMap::new();
-
-        for (key, value) in documents_vec {
-            documents.insert(key, value);
-        }
+        let documents = cbor_map_into_serde_btree_map(contract_documents_cbor_map.clone())?;
 
         let mutability = get_mutability(&data_contract_map)
             .map_err(|e| ProtocolError::ParsingError(e.to_string()))?;
@@ -381,28 +363,42 @@ impl DataContract {
         &self,
         doc_type: &str,
     ) -> Result<&BTreeMap<String, JsonValue>, ProtocolError> {
-        if !self.is_document_defined(doc_type) {
-            return Err(ProtocolError::DataContractError(
+        self.get_optional_binary_properties(doc_type)?
+            .ok_or(ProtocolError::DataContractError(
                 DataContractError::InvalidDocumentTypeError {
                     doc_type: doc_type.to_owned(),
                     data_contract: self.clone(),
-                }
-                .into(),
-            ));
+                },
+            ))
+    }
+
+    /// Returns the binary properties for the given document type
+    /// Comparing to JS version of DPP, the binary_properties are not generated automatically
+    /// if they're not present. It is up to the developer to use proper methods like ['DataContract::set_document_schema'] which
+    /// automatically generates binary properties when setting the Json Schema
+    pub fn get_optional_binary_properties(
+        &self,
+        doc_type: &str,
+    ) -> Result<Option<&BTreeMap<String, JsonValue>>, ProtocolError> {
+        if !self.is_document_defined(doc_type) {
+            return Ok(None);
         }
 
         // The rust implementation doesn't set the value if it is not present in `binary_properties`. The difference is caused by
         // required `mut` annotation. As `get_binary_properties` is reused in many other read-only methods, the mutation would require
         // propagating the `mut` to other getters which by the definition shouldn't be mutable.
-        self.binary_properties.get(doc_type).ok_or_else(|| {
-            {
-                anyhow::anyhow!(
-                    "document '{}' has not generated binary_properties",
-                    doc_type
-                )
-            }
-            .into()
-        })
+        self.binary_properties
+            .get(doc_type)
+            .ok_or_else(|| {
+                {
+                    anyhow::anyhow!(
+                        "document '{}' has not generated binary_properties",
+                        doc_type
+                    )
+                }
+                .into()
+            })
+            .map(|a| Some(a))
     }
 
     fn generate_binary_properties(&mut self) {
@@ -417,12 +413,13 @@ impl DataContract {
         &self,
         document_type: &str,
     ) -> Result<(Vec<&str>, Vec<&str>), ProtocolError> {
-        let binary_properties = self.get_binary_properties(document_type)?;
+        let binary_properties = self.get_optional_binary_properties(document_type)?;
 
         // At this point we don't bother about returned error from `get_binary_properties`.
         // If document of given type isn't found, then empty vectors will be returned.
-        let (binary_paths, identifiers_paths) =
-            binary_properties.iter().partition_map(|(path, v)| {
+        let (binary_paths, identifiers_paths) = match binary_properties {
+            None => (vec![], vec![]),
+            Some(binary_properties) => binary_properties.iter().partition_map(|(path, v)| {
                 if let Some(JsonValue::String(content_type)) = v.get("contentMediaType") {
                     if content_type == identifier::MEDIA_TYPE {
                         Either::Right(path.as_str())
@@ -432,7 +429,8 @@ impl DataContract {
                 } else {
                     Either::Left(path.as_str())
                 }
-            });
+            }),
+        };
         Ok((identifiers_paths, binary_paths))
     }
 }

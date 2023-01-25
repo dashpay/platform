@@ -23,7 +23,7 @@ pub(self) mod property_names {
     pub const PROPERTIES: &str = "properties";
     pub const REQUIRED: &str = "required";
     pub const TYPE: &str = "type";
-    pub const REF: &str = "$REF";
+    pub const REF: &str = "$ref";
     pub const CREATED_AT: &str = "$createdAt";
     pub const UPDATED_AT: &str = "$updatedAt";
     pub const MIN_ITEMS: &str = "minItems";

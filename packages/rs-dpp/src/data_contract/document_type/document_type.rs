@@ -217,10 +217,14 @@ impl DocumentType {
             .unwrap_or_default();
 
         let property_values = document_type_value_map
-            .get_inner_borrowed_str_value_map::<BTreeMap<_, _>>(property_names::PROPERTIES)?;
+            .get_optional_inner_borrowed_str_value_map::<BTreeMap<_, _>>(
+                property_names::PROPERTIES,
+            )?
+            .unwrap_or_default();
 
-        let mut required_fields =
-            document_type_value_map.get_inner_string_array(property_names::REQUIRED).unwrap_or_default();
+        let mut required_fields = document_type_value_map
+            .get_optional_inner_string_array(property_names::REQUIRED)?
+            .unwrap_or_default();
 
         fn insert_values(
             document_properties: &mut BTreeMap<String, DocumentField>,
@@ -249,7 +253,7 @@ impl DocumentType {
                 match type_value {
                     None => {
                         let ref_value = base_inner_properties
-                            .get_optional_string(property_names::TYPE)?
+                            .get_optional_string(property_names::REF)?
                             .ok_or({
                                 DataContractError::InvalidContractStructure(
                                     "cannot find type property",

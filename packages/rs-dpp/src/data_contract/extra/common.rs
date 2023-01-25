@@ -1,4 +1,5 @@
 use crate::data_contract::errors::StructureError;
+use crate::util::cbor_value::{cbor_value_into_json_value, cbor_value_to_json_value};
 use crate::util::serializer::value_to_cbor;
 use crate::ProtocolError;
 use ciborium::Value;
@@ -34,6 +35,24 @@ pub fn cbor_map_into_btree_map(
             Ok((key, value))
         })
         .collect::<Result<BTreeMap<String, Value>, ProtocolError>>()
+}
+
+//todo remove this function
+pub fn cbor_map_into_serde_btree_map(
+    cbor_map: Vec<(Value, Value)>,
+) -> Result<BTreeMap<String, serde_json::Value>, ProtocolError> {
+    cbor_map
+        .into_iter()
+        .map(|(key, value)| {
+            let key = key.into_text().map_err(|_| {
+                ProtocolError::StructureError(StructureError::KeyWrongType(
+                    "expected key to be string",
+                ))
+            })?;
+            let value = cbor_value_into_json_value(value)?;
+            Ok((key, value))
+        })
+        .collect::<Result<BTreeMap<String, serde_json::Value>, ProtocolError>>()
 }
 
 pub fn cbor_map_to_btree_map(cbor_map: &[(Value, Value)]) -> BTreeMap<String, &Value> {
