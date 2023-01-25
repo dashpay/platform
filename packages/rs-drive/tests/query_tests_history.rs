@@ -97,7 +97,7 @@ impl Person {
         let last_names =
             common::text_file_strings("tests/supporting_files/contract/family/last-names.txt");
         let quotes = common::text_file_strings("tests/supporting_files/contract/family/quotes.txt");
-        let mut people: Vec<Person> = Vec::with_capacity(count as usize);
+        let mut people: Vec<Person> = Vec::with_capacity(count);
 
         let mut rng = rand::rngs::StdRng::seed_from_u64(seed);
         for _ in 0..count {

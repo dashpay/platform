@@ -188,7 +188,7 @@ pub fn setup_family_tests(count: u32, with_batching: bool, seed: u64) -> (Drive,
 
     let people = Person::random_people(count, seed);
     for person in people {
-        let value = serde_json::to_value(&person).expect("serialized person");
+        let value = serde_json::to_value(person).expect("serialized person");
         let document_cbor =
             common::value_to_cbor(value, Some(drive::drive::defaults::PROTOCOL_VERSION));
         let document = DocumentStub::from_cbor(document_cbor.as_slice(), None, None)
@@ -265,7 +265,7 @@ pub fn setup_family_tests_with_nulls(
 
     let people = PersonWithOptionalValues::random_people(count, seed);
     for person in people {
-        let value = serde_json::to_value(&person).expect("serialized person");
+        let value = serde_json::to_value(person).expect("serialized person");
         let document_cbor =
             common::value_to_cbor(value, Some(drive::drive::defaults::PROTOCOL_VERSION));
         let document = DocumentStub::from_cbor(document_cbor.as_slice(), None, None)
@@ -341,7 +341,7 @@ pub fn setup_family_tests_only_first_name_index(
 
     let people = Person::random_people(count, seed);
     for person in people {
-        let value = serde_json::to_value(&person).expect("serialized person");
+        let value = serde_json::to_value(person).expect("serialized person");
         let document_cbor =
             common::value_to_cbor(value, Some(drive::drive::defaults::PROTOCOL_VERSION));
         let document = DocumentStub::from_cbor(document_cbor.as_slice(), None, None)
@@ -448,7 +448,7 @@ pub fn add_domains_to_contract(
 ) {
     let domains = Domain::random_domains_in_parent(count, seed, "dash");
     for domain in domains {
-        let value = serde_json::to_value(&domain).expect("serialized domain");
+        let value = serde_json::to_value(domain).expect("serialized domain");
         let document_cbor =
             common::value_to_cbor(value, Some(drive::drive::defaults::PROTOCOL_VERSION));
         let document = DocumentStub::from_cbor(document_cbor.as_slice(), None, None)
@@ -595,7 +595,7 @@ fn test_query_many() {
 
     let people = Person::random_people(10, 73409);
     for person in people {
-        let value = serde_json::to_value(&person).expect("serialized person");
+        let value = serde_json::to_value(person).expect("serialized person");
         let document_cbor =
             common::value_to_cbor(value, Some(drive::drive::defaults::PROTOCOL_VERSION));
         let document = DocumentStub::from_cbor(document_cbor.as_slice(), None, None)

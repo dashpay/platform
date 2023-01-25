@@ -117,7 +117,7 @@ pub fn add_domains_to_contract(
 ) {
     let domains = Domain::random_domains_in_parent(count, seed, "dash");
     for domain in domains {
-        let value = serde_json::to_value(&domain).expect("serialized domain");
+        let value = serde_json::to_value(domain).expect("serialized domain");
         let document_cbor =
             common::value_to_cbor(value, Some(drive::drive::defaults::PROTOCOL_VERSION));
         let document = DocumentStub::from_cbor(document_cbor.as_slice(), None, None)
