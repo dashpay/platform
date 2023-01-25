@@ -30,11 +30,9 @@ let DocumentNotProvidedError;
 
 describe('applyDocumentsBatchTransitionFactory', () => {
   let documentsJs;
-  let documents;
   let dataContractJs;
   let dataContract;
   let documentTransitionsJs;
-  let documentTransitions;
   let ownerId;
   let replaceDocumentJs;
   let replaceDocument;
