@@ -3,17 +3,16 @@ const {
 } = require('./constants');
 
 /**
- * @param {StateRepository} stateRepository
  * @param {calculateOperationFees} calculateOperationFees
  * @returns {calculateStateTransitionFee}
  */
-function calculateStateTransitionFeeFactory(stateRepository, calculateOperationFees) {
+function calculateStateTransitionFeeFactory(calculateOperationFees) {
   /**
    * @typedef {calculateStateTransitionFee}
    * @param {AbstractStateTransition} stateTransition
-   * @return {Promise<number>}
+   * @return {number}
    */
-  async function calculateStateTransitionFee(stateTransition) {
+  function calculateStateTransitionFee(stateTransition) {
     const executionContext = stateTransition.getExecutionContext();
 
     const calculatedFees = calculateOperationFees(executionContext.getOperations());
@@ -30,7 +29,7 @@ function calculateStateTransitionFeeFactory(stateRepository, calculateOperationF
     let totalRefunds = 0;
 
     if (ownerRefunds) {
-      totalRefunds = await Object.entries(ownerRefunds.creditsPerEpoch)
+      totalRefunds = Object.entries(ownerRefunds.creditsPerEpoch)
         .reduce((sum, [, credits]) => sum + credits, 0);
     }
 
@@ -39,6 +38,7 @@ function calculateStateTransitionFeeFactory(stateRepository, calculateOperationF
     const requiredAmount = (storageFee - totalRefunds) + DEFAULT_USER_TIP;
     const desiredAmount = (storageFee + processingFee - totalRefunds) + DEFAULT_USER_TIP;
 
+    // TODO: Do we really need this?
     executionContext.setLastCalculatedFeeDetails({
       ...calculatedFees,
       totalRefunds,

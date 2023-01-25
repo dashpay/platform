@@ -300,7 +300,6 @@ class StateTransitionFacade {
     });
 
     const calculateStateTransitionFee = calculateStateTransitionFeeFactory(
-      this.stateRepository,
       calculateOperationFees,
     );
 

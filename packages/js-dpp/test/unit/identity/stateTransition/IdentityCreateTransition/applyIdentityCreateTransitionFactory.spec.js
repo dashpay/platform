@@ -65,6 +65,11 @@ describe('applyIdentityCreateTransitionFactory', () => {
       executionContext,
     );
 
+    expect(stateRepositoryMock.addToSystemCredits).to.have.been.calledOnceWithExactly(
+      balance,
+      executionContext,
+    );
+
     expect(stateRepositoryMock.markAssetLockTransactionOutPointAsUsed).to.have.been
       .calledOnceWithExactly(
         stateTransition.getAssetLockProof().getOutPoint(),

@@ -143,6 +143,34 @@ class LoggedStateRepositoryDecorator {
   }
 
   /**
+   * Add to system credits
+   *
+   * @param {number} amount
+   * @param {StateTransitionExecutionContext} [executionContext]
+   * @returns {Promise<void>}
+   */
+  async addToSystemCredits(amount, executionContext = undefined) {
+    let response;
+
+    try {
+      response = await this.stateRepository.addToSystemCredits(
+        amount,
+        executionContext,
+      );
+    } finally {
+      this.log(
+        'addToSystemCredits',
+        {
+          amount,
+        },
+        response,
+      );
+    }
+
+    return response;
+  }
+
+  /**
    * Disable identity keys
    *
    * @param {Identifier} identityId

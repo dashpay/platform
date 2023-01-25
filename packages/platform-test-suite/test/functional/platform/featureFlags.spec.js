@@ -18,11 +18,11 @@ describe('Platform', () => {
 
       before(async () => {
         ownerClient = await createClientWithFundedWallet(
-          150000,
+          450000,
           process.env.FEATURE_FLAGS_OWNER_PRIVATE_KEY,
         );
 
-        await ownerClient.platform.identities.topUp(featureFlagsSystemIds.ownerId, 100000);
+        await ownerClient.platform.identities.topUp(featureFlagsSystemIds.ownerId, 250000);
 
         ({ contractId, ownerId } = featureFlagsSystemIds);
 
@@ -105,7 +105,7 @@ describe('Platform', () => {
         }, identity);
 
         // forcing creation of additional block (enableAtHeight + 2)
-        await ownerClient.platform.identities.register(1400);
+        await ownerClient.platform.identities.register(100000);
 
         // wait for block and check consensus params were changed
         let height;

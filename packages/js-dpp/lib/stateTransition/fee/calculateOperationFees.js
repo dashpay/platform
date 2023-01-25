@@ -37,11 +37,6 @@ function calculateOperationFees(operations) {
     }
   });
 
-  // TODO: Do we need to multiply pre calculated fees?
-
-  storageFee *= FEE_MULTIPLIER;
-  processingFee *= FEE_MULTIPLIER;
-
   return {
     storageFee,
     processingFee,

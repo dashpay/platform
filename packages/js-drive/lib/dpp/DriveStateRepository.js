@@ -20,7 +20,7 @@ class DriveStateRepository {
    * @param {RpcClient} coreRpcClient
    * @param {BlockExecutionContext} blockExecutionContext
    * @param {SimplifiedMasternodeList} simplifiedMasternodeList
-   * @param {RSDrive} rsDrive
+   * @param {Drive} rsDrive
    * @param {Object} [options]
    * @param {Object} [options.useTransaction=false]
    */
@@ -142,6 +142,24 @@ class DriveStateRepository {
     if (executionContext) {
       executionContext.addOperation(...result.getOperations());
     }
+  }
+
+  /**
+   * Add to system credits
+   *
+   * @param {number} amount
+   * @param {StateTransitionExecutionContext} [executionContext]
+   * @returns {Promise<void>}
+   */
+  async addToSystemCredits(amount, executionContext = undefined) {
+    if (executionContext.isDryRun()) {
+      return;
+    }
+
+    await this.rsDrive.addToSystemCredits(
+      amount,
+      this.#options.useTransaction || false,
+    );
   }
 
   /**

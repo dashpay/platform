@@ -27,6 +27,7 @@ const TIMERS = require('../timers');
  * @param {BlockExecutionContext} proposalBlockExecutionContext
  * @param {ExecutionTimer} executionTimer
  * @param {IdentityStoreRepository} identityRepository
+ * @param {calculateStateTransitionFee} calculateStateTransitionFee
  *
  * @return {deliverTx}
  */
@@ -36,6 +37,7 @@ function deliverTxFactory(
   proposalBlockExecutionContext,
   executionTimer,
   identityRepository,
+  calculateStateTransitionFee,
 ) {
   /**
    * @typedef deliverTx
@@ -123,6 +125,8 @@ function deliverTxFactory(
     executionTimer.stopTimer(TIMERS.DELIVER_TX.APPLY, true);
 
     // Update identity balance
+
+    calculateStateTransitionFee(stateTransition);
 
     const actualStateTransitionFees = stateTransitionExecutionContext
       .getLastCalculatedFeeDetails();

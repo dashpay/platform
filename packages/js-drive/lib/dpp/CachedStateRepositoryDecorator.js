@@ -64,6 +64,20 @@ class CachedStateRepositoryDecorator {
   }
 
   /**
+   * Add to system credits
+   *
+   * @param {number} amount
+   * @param {StateTransitionExecutionContext} [executionContext]
+   * @returns {Promise<void>}
+   */
+  async addToSystemCredits(amount, executionContext = undefined) {
+    return this.stateRepository.addToSystemCredits(
+      amount,
+      executionContext,
+    );
+  }
+
+  /**
    * Disable identity keys
    *
    * @param {Identifier} identityId

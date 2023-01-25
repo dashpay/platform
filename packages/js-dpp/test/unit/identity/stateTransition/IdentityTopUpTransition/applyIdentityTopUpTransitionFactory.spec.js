@@ -49,6 +49,11 @@ describe('applyIdentityTopUpTransitionFactory', () => {
       executionContext,
     );
 
+    expect(stateRepositoryMock.addToSystemCredits).to.have.been.calledOnceWithExactly(
+      balanceToTopUp,
+      executionContext,
+    );
+
     expect(stateRepositoryMock.markAssetLockTransactionOutPointAsUsed).to.have.been
       .calledOnceWithExactly(
         stateTransition.getAssetLockProof().getOutPoint(),

@@ -82,8 +82,6 @@ function validateStateTransitionFeeFactory(
       return result;
     }
 
-    // We could use `stateTransition.calculateFee()` but
-    // `calculateStateTransitionFee` is easier to mock in test
     const fee = calculateStateTransitionFee(stateTransition);
 
     if (balance < fee) {

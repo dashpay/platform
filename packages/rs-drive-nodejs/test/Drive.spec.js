@@ -655,6 +655,18 @@ describe('Drive', () => {
     });
   });
 
+  describe('#addToSystemCredits', () => {
+    beforeEach(async () => {
+      await drive.createInitialStateStructure();
+    });
+
+    it('should add to system credits', async () => {
+      await drive.addToSystemCredits(
+        100,
+      );
+    });
+  });
+
   describe('#fetchIdentitiesByPublicKeyHashes', () => {
     beforeEach(async () => {
       await drive.createInitialStateStructure();

@@ -39,6 +39,7 @@ const {
   calculateStorageFeeDistributionAmountAndLeftovers,
   driveFetchIdentitiesByPublicKeyHashes,
   driveProveIdentitiesByPublicKeyHashes,
+  driveAddToSystemCredits,
 } = require('neon-load-or-build')({
   dir: __dirname,
 });
@@ -77,6 +78,7 @@ const driveFetchManyProvedIdentitiesAsync = appendStackAsync(
 );
 const driveFetchIdentityWithCostsAsync = appendStackAsync(promisify(driveFetchIdentityWithCosts));
 const driveAddToIdentityBalanceAsync = appendStackAsync(promisify(driveAddToIdentityBalance));
+const driveAddToSystemCreditsAsync = appendStackAsync(promisify(driveAddToSystemCredits));
 const driveFetchIdentitiesByPublicKeyHashesAsync = appendStackAsync(
   promisify(driveFetchIdentitiesByPublicKeyHashes),
 );
@@ -527,6 +529,23 @@ class Drive {
       fees.inner,
       useTransaction,
     ).then((innerFeeResult) => new FeeResult(innerFeeResult));
+  }
+
+  /**
+   * @param {number} amount
+   * @param {boolean} [useTransaction=false]
+   *
+   * @returns {Promise<void>}
+   */
+  async addToSystemCredits(
+    amount,
+    useTransaction = false,
+  ) {
+    return driveAddToSystemCreditsAsync.call(
+      this.drive,
+      amount,
+      useTransaction,
+    );
   }
 
   /**

@@ -42,7 +42,7 @@ describe('Platform', () => {
       dpp = new Dash.PlatformProtocol();
       await dpp.initialize();
 
-      client = await createClientWithFundedWallet(550000);
+      client = await createClientWithFundedWallet(700000);
 
       walletAccount = await client.getWalletAccount();
     });
@@ -100,7 +100,7 @@ describe('Platform', () => {
         transaction,
         privateKey,
         outputIndex,
-      } = await client.platform.identities.utils.createAssetLockTransaction(7000);
+      } = await client.platform.identities.utils.createAssetLockTransaction(100000);
 
       const account = await client.getWalletAccount();
 
@@ -240,7 +240,7 @@ describe('Platform', () => {
           transaction,
           privateKey,
           outputIndex,
-        } = await client.platform.identities.utils.createAssetLockTransaction(7000);
+        } = await client.platform.identities.utils.createAssetLockTransaction(100000);
 
         const account = await client.getWalletAccount();
 
@@ -320,7 +320,7 @@ describe('Platform', () => {
       });
 
       it('should fail to create more documents if there are no more credits', async () => {
-        const lowBalanceIdentity = await client.platform.identities.register(7000);
+        const lowBalanceIdentity = await client.platform.identities.register(50000);
 
         const document = await client.platform.documents.create(
           'customContracts.niceDocument',

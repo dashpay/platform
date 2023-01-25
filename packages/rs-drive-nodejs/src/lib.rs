@@ -13,6 +13,7 @@ use drive::drive::config::DriveConfig;
 use drive::drive::flags::StorageFlags;
 use drive::drive::query::QueryDocumentsOutcome;
 use drive::error::Error;
+use drive::fee::credits::Credits;
 use drive::fee_pools::epochs::Epoch;
 use drive::grovedb::{PathQuery, Transaction};
 use drive::query::TransactionArg;
@@ -1526,6 +1527,61 @@ impl PlatformWrapper {
 
                             // First parameter of JS callbacks is error, which is null in this case
                             vec![task_context.null().upcast(), js_fee_result.upcast()]
+                        }
+
+                        // Convert the error to a JavaScript exception on failure
+                        Err(err) => vec![task_context.error(err)?.upcast()],
+                    };
+
+                    callback.call(&mut task_context, this, callback_arguments)?;
+
+                    Ok(())
+                });
+            })
+            .or_else(|err| cx.throw_error(err.to_string()))?;
+
+        Ok(cx.undefined())
+    }
+
+    fn js_add_to_system_credits(mut cx: FunctionContext) -> JsResult<JsUndefined> {
+        let js_amount = cx.argument::<JsNumber>(0)?;
+        let js_using_transaction = cx.argument::<JsBoolean>(1)?;
+        let js_callback = cx.argument::<JsFunction>(2)?.root(&mut cx);
+
+        let drive = cx
+            .this()
+            .downcast_or_throw::<JsBox<PlatformWrapper>, _>(&mut cx)?;
+
+        let amount = js_amount.value(&mut cx) as Credits;
+        let using_transaction = js_using_transaction.value(&mut cx);
+
+        drive
+            .send_to_drive_thread(move |platform: &Platform, transaction, channel| {
+                let transaction_result = if using_transaction {
+                    if transaction.is_none() {
+                        Err("transaction is not started".to_string())
+                    } else {
+                        Ok(transaction)
+                    }
+                } else {
+                    Ok(None)
+                };
+
+                let result = transaction_result.and_then(|transaction_arg| {
+                    platform
+                        .drive
+                        .add_to_system_credits(amount, transaction_arg)
+                        .map_err(|err| err.to_string())
+                });
+
+                channel.send(move |mut task_context| {
+                    let callback = js_callback.into_inner(&mut task_context);
+                    let this = task_context.undefined();
+
+                    let callback_arguments: Vec<Handle<JsValue>> = match result {
+                        Ok(()) => {
+                            // First parameter of JS callbacks is error, which is null in this case
+                            vec![task_context.null().upcast()]
                         }
 
                         // Convert the error to a JavaScript exception on failure
@@ -3182,6 +3238,10 @@ fn main(mut cx: ModuleContext) -> NeonResult<()> {
     cx.export_function(
         "driveApplyFeesToIdentityBalance",
         PlatformWrapper::js_apply_fees_to_identity_balance,
+    )?;
+    cx.export_function(
+        "driveAddToSystemCredits",
+        PlatformWrapper::js_add_to_system_credits,
     )?;
     cx.export_function(
         "driveFetchIdentitiesByPublicKeyHashes",

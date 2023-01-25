@@ -167,6 +167,17 @@
  */
 
 /**
+ * Add to system credits
+ *
+ * @async
+ * @method
+ * @name StateRepository#addToSystemCredits
+ * @param {number} amount
+ * @param {StateTransitionExecutionContext} [executionContext]
+ * @returns {Promise<void>}
+ */
+
+/**
  * Fetch the latest platform block time
  *
  * @async

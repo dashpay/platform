@@ -3,12 +3,9 @@ const calculateStateTransitionFeeFactory = require('../../../lib/stateTransition
 const getIdentityCreateTransitionFixture = require('../../../lib/test/fixtures/getIdentityCreateTransitionFixture');
 const IdentityPublicKey = require('../../../lib/identity/IdentityPublicKey');
 
-const createStateRepositoryMock = require('../../../lib/test/mocks/createStateRepositoryMock');
-
 describe('calculateStateTransitionFeeFactory', () => {
   let stateTransition;
   let calculateStateTransitionFee;
-  let stateRepositoryMock;
   let calculateOperationFeesMock;
 
   beforeEach(async function beforeEach() {
@@ -17,12 +14,9 @@ describe('calculateStateTransitionFeeFactory', () => {
     stateTransition = getIdentityCreateTransitionFixture();
     await stateTransition.signByPrivateKey(privateKey, IdentityPublicKey.TYPES.ECDSA_SECP256K1);
 
-    stateRepositoryMock = createStateRepositoryMock(this.sinonSandbox);
-
     calculateOperationFeesMock = this.sinonSandbox.stub();
 
     calculateStateTransitionFee = calculateStateTransitionFeeFactory(
-      stateRepositoryMock,
       calculateOperationFeesMock,
     );
   });
@@ -50,7 +44,7 @@ describe('calculateStateTransitionFeeFactory', () => {
 
     calculateOperationFeesMock.returns(calculatedOperationsFeesResult);
 
-    const result = await calculateStateTransitionFee(stateTransition);
+    const result = calculateStateTransitionFee(stateTransition);
 
     expect(result).to.equal(desiredAmount);
 

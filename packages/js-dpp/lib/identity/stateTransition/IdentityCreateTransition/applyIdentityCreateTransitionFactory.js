@@ -42,6 +42,8 @@ function applyIdentityCreateTransitionFactory(
 
     await stateRepository.createIdentity(identity, executionContext);
 
+    await stateRepository.addToSystemCredits(creditsAmount, executionContext);
+
     const outPoint = stateTransition.getAssetLockProof().getOutPoint();
 
     await stateRepository.markAssetLockTransactionOutPointAsUsed(outPoint, executionContext);
