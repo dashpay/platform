@@ -240,7 +240,7 @@ impl DocumentType {
                 property_key,
                 property_value,
                 definition_references,
-            )?
+            )?;
         }
 
         // Add system properties

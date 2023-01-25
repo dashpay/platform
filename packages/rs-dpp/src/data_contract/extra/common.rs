@@ -5,7 +5,6 @@ use crate::ProtocolError;
 use ciborium::Value;
 use std::collections::BTreeMap;
 use std::convert::TryInto;
-use std::env::current_dir;
 use std::fs::File;
 use std::io::BufReader;
 use std::iter::FromIterator;
@@ -274,7 +273,6 @@ pub fn json_document_to_cbor(
     path: impl AsRef<Path>,
     protocol_version: Option<u32>,
 ) -> Result<Vec<u8>, ProtocolError> {
-    println!("the current dir is {:?}", current_dir());
     let file = File::open(path).expect("file not found");
 
     let reader = BufReader::new(file);
