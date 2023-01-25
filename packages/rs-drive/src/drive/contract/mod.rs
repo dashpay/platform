@@ -1013,7 +1013,7 @@ mod tests {
 
     use crate::common::helpers::setup::setup_drive_with_initial_state_structure;
 
-    fn setup_deep_nested_contract() -> (Drive, Contract, Vec<u8>) {
+    fn setup_deep_nested_50_contract() -> (Drive, Contract, Vec<u8>) {
         // Todo: make TempDir based on _prefix
         let tmp_dir = TempDir::new().unwrap();
         let drive: Drive = Drive::open(tmp_dir, None).expect("expected to open Drive successfully");
@@ -1023,6 +1023,35 @@ mod tests {
             .expect("expected to create root tree successfully");
 
         let contract_path = "tests/supporting_files/contract/deepNested/deep-nested50.json";
+        // let's construct the grovedb structure for the dashpay data contract
+        let contract_cbor =
+            json_document_to_cbor(contract_path, Some(1)).expect("expected to get cbor document");
+        let contract = <Contract as DriveContractExt>::from_cbor(&contract_cbor, None)
+            .expect("expected to deserialize the contract");
+        drive
+            .apply_contract(
+                &contract,
+                contract_cbor.clone(),
+                BlockInfo::default(),
+                true,
+                StorageFlags::optional_default_as_ref(),
+                None,
+            )
+            .expect("expected to apply contract successfully");
+
+        (drive, contract, contract_cbor)
+    }
+
+    fn setup_deep_nested_10_contract() -> (Drive, Contract, Vec<u8>) {
+        // Todo: make TempDir based on _prefix
+        let tmp_dir = TempDir::new().unwrap();
+        let drive: Drive = Drive::open(tmp_dir, None).expect("expected to open Drive successfully");
+
+        drive
+            .create_initial_state_structure(None)
+            .expect("expected to create root tree successfully");
+
+        let contract_path = "tests/supporting_files/contract/deepNested/deep-nested10.json";
         // let's construct the grovedb structure for the dashpay data contract
         let contract_cbor =
             json_document_to_cbor(contract_path, Some(1)).expect("expected to get cbor document");
@@ -1109,7 +1138,7 @@ mod tests {
 
     #[test]
     fn test_create_deep_nested_contract_50() {
-        let (drive, contract, _contract_cbor) = setup_deep_nested_contract();
+        let (drive, contract, _contract_cbor) = setup_deep_nested_50_contract();
 
         let document_type = contract
             .document_type_for_name("nest")
@@ -1358,6 +1387,16 @@ mod tests {
         #[test]
         fn should_setup_reference_contract() {
             setup_reference_contract();
+        }
+
+        #[test]
+        fn should_setup_need_nested_10_contract() {
+            setup_deep_nested_10_contract();
+        }
+
+        #[test]
+        fn should_setup_need_nested_50_contract() {
+            setup_deep_nested_50_contract();
         }
 
         #[test]
