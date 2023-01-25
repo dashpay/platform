@@ -83,16 +83,17 @@ describe('validateDataContractFactory', () => {
       expect(error.getKeyword()).to.equal('type');
     });
 
-    it('should be valid', async () => {
+    it('should be an unsigned integer', async () => {
       const rawDataContract = dataContract.toObject();
       rawDataContract.protocolVersion = -1;
 
-      try {
-        await validateDataContract(rawDataContract);
-        expect.fail('Should throw an error');
-      } catch (e) {
-        expect(e).to.have.string('protocolVersion isn\'t unsigned integer');
-      }
+      const result = await validateDataContract(rawDataContract);
+      await expectJsonSchemaError(result);
+
+      const [error] = result.getErrors();
+
+      expect(error.getInstancePath()).to.equal('/protocolVersion');
+      expect(error.getKeyword()).to.equal('minimum');
     });
   });
 
