@@ -283,7 +283,7 @@ impl DocumentType {
                                 ),
                             )
                         })?;
-                        Ok((type_value.to_string(), inner_properties))
+                        Ok::<(std::string::String, BTreeMap<std::string::String, &ciborium::Value>), ProtocolError>((type_value.to_string(), inner_properties))
                     }
                     Some(type_value) => Ok((type_value.to_string(), base_inner_properties)),
                 }?;
