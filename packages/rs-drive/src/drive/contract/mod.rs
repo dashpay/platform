@@ -1026,6 +1026,7 @@ mod tests {
         // let's construct the grovedb structure for the dashpay data contract
         let contract_cbor =
             json_document_to_cbor(contract_path, Some(1)).expect("expected to get cbor document");
+
         let contract = <Contract as DriveContractExt>::from_cbor(&contract_cbor, None)
             .expect("expected to deserialize the contract");
         drive

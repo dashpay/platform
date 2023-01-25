@@ -274,6 +274,7 @@ pub fn json_document_to_cbor(
     protocol_version: Option<u32>,
 ) -> Result<Vec<u8>, ProtocolError> {
     let file = File::open(path).expect("file not found");
+
     let reader = BufReader::new(file);
     let json: serde_json::Value = serde_json::from_reader(reader).expect("expected a valid json");
     value_to_cbor(json, protocol_version)
