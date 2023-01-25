@@ -22,9 +22,7 @@ use serde_json::Value;
 use wasm_bindgen::prelude::*;
 
 use crate::{
-    bail_js,
     buffer::Buffer,
-    console_log,
     conversion::ConversionOptions,
     identifier::IdentifierWrapper,
     lodash::lodash_set,
@@ -164,7 +162,7 @@ impl DocumentTransitionWasm {
         JsValue::undefined()
     }
 
-    #[wasm_bindgen(js_name=getObject)]
+    #[wasm_bindgen(js_name=toObject)]
     pub fn to_object(&self, options: &JsValue) -> Result<JsValue, JsValue> {
         match self.0 {
             DocumentTransition::Create(ref t) => {
@@ -185,24 +183,30 @@ impl DocumentTransitionWasm {
         with_js_error!(json_value.serialize(&serde_wasm_bindgen::Serializer::json_compatible()))
     }
 
-    #[wasm_bindgen(js_name=fromTransitionCreate)]
-    pub fn from_transition_create(js_create_transition: DocumentCreateTransitionWasm) -> Self {
+    #[wasm_bindgen(js_name=fromTransitionCreate, constructor)]
+    pub fn from_transition_create(
+        js_create_transition: DocumentCreateTransitionWasm,
+    ) -> DocumentTransitionWasm {
         let transition_create: DocumentCreateTransition = js_create_transition.into();
         let document_transition = DocumentTransition::Create(transition_create);
 
         document_transition.into()
     }
 
-    #[wasm_bindgen(js_name=fromTransitionReplace)]
-    pub fn from_transition_replace(js_replace_transition: DocumentReplaceTransitionWasm) -> Self {
+    #[wasm_bindgen(js_name=fromTransitionReplace, constructor)]
+    pub fn from_transition_replace(
+        js_replace_transition: DocumentReplaceTransitionWasm,
+    ) -> DocumentTransitionWasm {
         let transition_replace: DocumentReplaceTransition = js_replace_transition.into();
         let document_transition = DocumentTransition::Replace(transition_replace);
 
         document_transition.into()
     }
 
-    #[wasm_bindgen(js_name=fromTransitionDelete)]
-    pub fn from_transition_delete(js_delete_transition: DocumentDeleteTransitionWasm) -> Self {
+    #[wasm_bindgen(js_name=fromTransitionDelete, constructor)]
+    pub fn from_transition_delete(
+        js_delete_transition: DocumentDeleteTransitionWasm,
+    ) -> DocumentTransitionWasm {
         let transition_delete: DocumentDeleteTransition = js_delete_transition.into();
         let document_transition = DocumentTransition::Delete(transition_delete);
 
