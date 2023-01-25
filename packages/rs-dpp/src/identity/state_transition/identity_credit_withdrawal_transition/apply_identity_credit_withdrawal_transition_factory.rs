@@ -7,9 +7,10 @@ use dashcore::{
     Script, TxOut,
 };
 use lazy_static::__Deref;
+use std::convert::TryInto;
 
 use crate::{
-    identity::convert_credits_to_satoshi, prelude::Identity, state_repository::StateRepositoryLike,
+    identity::convert_credits_to_satoshi, state_repository::StateRepositoryLike,
     state_transition::StateTransitionLike,
 };
 
@@ -67,13 +68,16 @@ where
             .enqueue_withdrawal_transaction(latest_withdrawal_index, transaction_buffer)
             .await?;
 
-        let maybe_existing_identity: Option<Identity> = self
+        let maybe_existing_identity = self
             .state_repository
             .fetch_identity(
                 &state_transition.identity_id,
                 state_transition.get_execution_context(),
             )
-            .await?;
+            .await?
+            .map(TryInto::try_into)
+            .transpose()
+            .map_err(Into::into)?;
 
         let mut existing_identity =
             maybe_existing_identity.ok_or_else(|| anyhow!("Identity not found"))?;

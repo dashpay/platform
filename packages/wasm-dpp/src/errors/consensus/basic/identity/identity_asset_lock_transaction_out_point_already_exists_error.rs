@@ -1,5 +1,6 @@
 use dpp::consensus::basic::identity::IdentityAssetLockTransactionOutPointAlreadyExistsError;
 use dpp::consensus::ConsensusError;
+use dpp::dashcore::hashes::Hash;
 use wasm_bindgen::prelude::*;
 
 use crate::buffer::Buffer;
@@ -19,7 +20,7 @@ impl From<&IdentityAssetLockTransactionOutPointAlreadyExistsError>
 
 #[wasm_bindgen(js_class=IdentityAssetLockTransactionOutPointAlreadyExistsError)]
 impl IdentityAssetLockTransactionOutPointAlreadyExistsErrorWasm {
-    #[wasm_bindgen(js_name=getDuplicatedIds)]
+    #[wasm_bindgen(js_name=getOutputIndex)]
     pub fn output_index(&self) -> usize {
         self.inner.output_index()
     }
@@ -27,7 +28,9 @@ impl IdentityAssetLockTransactionOutPointAlreadyExistsErrorWasm {
     #[wasm_bindgen(js_name=getTransactionId)]
     pub fn transaction_id(&self) -> Buffer {
         let tx_id = self.inner.transaction_id();
-        Buffer::from_bytes(tx_id.to_vec().as_ref())
+        let mut tx_id_bytes = tx_id.as_hash().into_inner();
+        tx_id_bytes.reverse();
+        Buffer::from_bytes(&tx_id_bytes)
     }
 
     #[wasm_bindgen(js_name=getCode)]

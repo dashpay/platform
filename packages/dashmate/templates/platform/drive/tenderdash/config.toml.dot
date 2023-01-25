@@ -17,6 +17,19 @@ proxy-app = "tcp://drive_abci:26658"
 # A custom human readable name for this node
 #moniker = ""
 
+# Mode of Node: full | validator | seed
+# * validator node
+#   - all reactors
+#   - with priv_validator_key.json, priv_validator_state.json
+# * full node
+#   - all reactors
+#   - No priv_validator_key.json, priv_validator_state.json
+# * seed node
+#   - only P2P, PEX Reactor
+#   - No priv_validator_key.json, priv_validator_state.json
+
+mode = {{?it.core.masternode.enable}}"validator"{{??}}"full"{{?}}
+
 # Database backend: goleveldb | cleveldb | boltdb | rocksdb | badgerdb
 # * goleveldb (github.com/syndtr/goleveldb - most popular implementation)
 #   - pure go
@@ -51,9 +64,6 @@ log-format = "{{=it.platform.drive.tenderdash.log.format}}"
 
 # Path to the JSON file containing the initial validator set and other meta data
 genesis-file = "config/genesis.json"
-
-# Set to whether we are a masternode or not
-mode = {{?it.core.masternode.enable}}"validator"{{??}}"full"{{?}}
 
 # Path to the JSON file containing the private key to use for node authentication in the p2p protocol
 node-key-file = "config/node_key.json"
@@ -92,6 +102,17 @@ core-rpc-username = "{{= it.core.rpc.user}}"
 # Local Dash Core RPC Password
 core-rpc-password = "{{= it.core.rpc.password}}"
 
+# Path to the client certificate generated while creating needed files for secure connection.
+# If a remote validator address is provided but no certificate, the connection will be insecure
+client-certificate-file = ""
+
+# Client key generated while creating certificates for secure connection
+client-key-file = ""
+
+# Path to the Root Certificate Authority used to sign both client and server certificates
+root-ca-file = ""
+
+
 #######################################################################
 ###                 Advanced Configuration Options                  ###
 #######################################################################
@@ -115,24 +136,10 @@ cors-allowed-methods = ["HEAD", "GET", "POST", ]
 # A list of non simple headers the client is allowed to use with cross-domain requests
 cors-allowed-headers = ["Origin", "Accept", "Content-Type", "X-Requested-With", "X-Server-Time", ]
 
-# TCP or UNIX socket address for the gRPC server to listen on
-# NOTE: This server only supports /broadcast_tx_commit
-grpc-laddr = ""
-
-# Maximum number of simultaneous connections.
-# Does not include RPC (HTTP&WebSocket) connections. See max_open_connections
-# If you want to accept a larger number than the default, make sure
-# you increase your OS limits.
-# 0 - unlimited.
-# Should be < {ulimit -Sn} - {MaxNumInboundPeers} - {MaxNumOutboundPeers} - {N of wal, db and other open files}
-# 1024 - 40 - 10 - 50 = 924 = ~900
-grpc-max-open-connections = 900
-
-# Activate unsafe RPC commands like /dial_seeds and /unsafe_flush_mempool
+# Activate unsafe RPC commands like /dial-seeds and /unsafe-flush-mempool
 unsafe = false
 
 # Maximum number of simultaneous connections (including WebSocket).
-# Does not include gRPC connections. See grpc_max_open_connections
 # If you want to accept a larger number than the default, make sure
 # you increase your OS limits.
 # 0 - unlimited.
@@ -149,6 +156,13 @@ max-subscription-clients = 100
 # If you're using a Local RPC client and /broadcast_tx_commit, set this
 # to the estimated maximum number of broadcast_tx_commit calls per block.
 max-subscriptions-per-client = 5
+
+# If true, disable the websocket interface to the RPC service.  This has
+# the effect of disabling the /subscribe, /unsubscribe, and /unsubscribe_all
+# methods for event subscription.
+#
+# EXPERIMENTAL: This setting will be removed in Tendermint v0.37.
+experimental-disable-websocket = false
 
 # The time window size for the event log. All events up to this long before
 # the latest (up to EventLogMaxItems) will be available for subscribers to
@@ -205,7 +219,9 @@ pprof-laddr = ""
 #######################################################
 [p2p]
 
-# Select the p2p internal queue
+# Select the p2p internal queue.
+# Options are: "fifo" and "simple-priority", and "priority",
+# with the default being "simple-priority".
 queue-type = "priority"
 
 # Address to listen for incoming connections
@@ -214,82 +230,84 @@ laddr = "tcp://0.0.0.0:{{=it.platform.drive.tenderdash.p2p.port}}"
 # Address to advertise to peers for them to dial
 # If empty, will use the same port as the laddr,
 # and will introspect on the listener or use UPnP
-# to figure out the address.
+# to figure out the address. ip and port are required
+# example: 159.89.10.97:26656
 external-address = "{{? it.externalIp}}{{=it.externalIp}}:{{=it.platform.drive.tenderdash.p2p.port}}{{?}}"
+
+# Comma separated list of peers to be added to the peer store
+# on startup. Either BootstrapPeers or PersistentPeers are
+# needed for peer discovery
+bootstrap-peers = "{{~it.platform.drive.tenderdash.p2p.seeds :seed:index}}{{? index }},{{?}}{{=seed.id}}@{{=seed.host}}:{{=seed.port}}{{~}}"
 
 # Comma separated list of nodes to keep persistent connections to
 persistent-peers = "{{~it.platform.drive.tenderdash.p2p.persistentPeers :peer:index}}{{? index }},{{?}}{{=peer.id}}@{{=peer.host}}:{{=peer.port}}{{~}}"
 
-bootstrap-peers = "{{~it.platform.drive.tenderdash.p2p.seeds :seed:index}}{{? index }},{{?}}{{=seed.id}}@{{=seed.host}}:{{=seed.port}}{{~}}"
-
 # UPNP port forwarding
 upnp = false
 
-# Path to address book
-addr-book-file = "data/addrbook.json"
+# Maximum number of connections (inbound and outbound).
+max-connections = 64
 
-# Set true for strict address routability rules
-# Set false for private or local networks
-addr-book-strict = {{?it.network == 'local'}}false{{??}}true{{?}}
+# Maximum number of connections reserved for outgoing
+# connections. Must be less than max-connections
+max-outgoing-connections = 12
 
-# Maximum number of inbound peers
-max-num-inbound-peers = 40
+# Rate limits the number of incoming connection attempts per IP address.
+max-incoming-connection-attempts = 100
 
-# Maximum number of outbound peers to connect to, excluding persistent peers
-max-num-outbound-peers = 10
+# Limits maximum duration after which incoming peer will be evicted.
+# Defaults to 0 which disables this mechanism.
+# Used on seed nodes to evict peers and make space for others.
+max-incoming-connection-time = "0s"
 
-# List of node IDs, to which a connection will be (re)established ignoring any existing limits
-unconditional-peer-ids = "{{?it.network == 'local'}}{{~it.platform.drive.tenderdash.p2p.persistentPeers :peer:index}}{{? index }},{{?}}{{=peer.id}}{{~}}{{?}}"
-
-# Maximum pause when redialing a persistent peer (if zero, exponential backoff is used)
-persistent-peers-max-dial-period = "0s"
-
-# Time to wait before flushing messages out on the connection
-flush-throttle-timeout = "100ms"
-
-# Maximum size of a message packet payload, in bytes
-max-packet-msg-payload-size = 1024
-
-# Rate at which packets can be sent, in bytes/second
-send-rate = 5120000
-
-# Rate at which packets can be received, in bytes/second
-recv-rate = 5120000
-
-# Set true to enable the peer-exchange reactor
-pex = {{?it.network == 'local'}}false{{??}}true{{?}}
-
-# Seed mode, in which node constantly crawls the network and looks for
-# peers. If another node asks it for addresses, it responds and disconnects.
-#
-# Does not work if the peer-exchange reactor is disabled.
-seed-mode = false
+# incoming-connection-window describes how often an IP address
+# can attempt to create a new connection. Defaults to 10
+# milliseconds, and cannot be less than 1 millisecond.
+incoming-connection-window = "10ms"
 
 # Comma separated list of peer IDs to keep private (will not be gossiped to other peers)
+# Warning: IPs will be exposed at /net_info, for more information https://github.com/tendermint/tendermint/issues/3055
 private-peer-ids = ""
-
-# Toggle to disable guard against peers connecting from the same ip.
-allow-duplicate-ip = {{?it.network == 'local'}}true{{??}}false{{?}}
 
 # Peer connection configuration.
 handshake-timeout = "20s"
 dial-timeout = "3s"
 
+# Time to wait before flushing messages out on the connection
+# TODO: Remove once MConnConnection is removed.
+flush-throttle-timeout = "100ms"
+
+# Maximum size of a message packet payload, in bytes
+# TODO: Remove once MConnConnection is removed.
+max-packet-msg-payload-size = 1024
+
+# Rate at which packets can be sent, in bytes/second
+# TODO: Remove once MConnConnection is removed.
+send-rate = 5120000
+
+# Rate at which packets can be received, in bytes/second
+# TODO: Remove once MConnConnection is removed.
+recv-rate = 5120000
+
+
 #######################################################
-###          Mempool Configurattion Option          ###
+###          Mempool Configuration Option          ###
 #######################################################
 [mempool]
 
-recheck = true
+# recheck has been moved from a config option to a global
+# consensus param in v0.36
+# See https://github.com/tendermint/tendermint/issues/8244 for more information.
+
+# Set true to broadcast transactions in the mempool to other nodes
 broadcast = true
-wal-dir = ""
 
 # Maximum number of transactions in the mempool
 size = 5000
 
 # Limit the total size of all txs in the mempool.
 # This only accounts for raw transactions (e.g. given 1MB transactions and
-# max_txs_bytes=5MB, mempool will only accept 5 transactions).
+# max-txs-bytes=5MB, mempool will only accept 5 transactions).
 max-txs-bytes = 1073741824
 
 # Size of the cache (used to filter transactions we saw earlier) in transactions
@@ -301,12 +319,29 @@ cache-size = 10000
 keep-invalid-txs-in-cache = true
 
 # Maximum size of a single transaction.
-# NOTE: the max size of a tx transmitted over the network is {max_tx_bytes}.
+# NOTE: the max size of a tx transmitted over the network is {max-tx-bytes}.
 max-tx-bytes = 1048576
 
 # Maximum size of a batch of transactions to send to a peer
 # Including space needed by encoding (one varint per transaction).
-max-batch-bytes = 10485760
+# XXX: Unused due to https://github.com/tendermint/tendermint/issues/5796
+max-batch-bytes = 0
+
+# ttl-duration, if non-zero, defines the maximum amount of time a transaction
+# can exist for in the mempool.
+#
+# Note, if ttl-num-blocks is also defined, a transaction will be removed if it
+# has existed in the mempool at least ttl-num-blocks number of blocks or if it's
+# insertion time into the mempool is beyond ttl-duration.
+ttl-duration = "0s"
+
+# ttl-num-blocks, if non-zero, defines the maximum number of blocks a transaction
+# can exist for in the mempool.
+#
+# Note, if ttl-duration is also defined, a transaction will be removed if it
+# has existed in the mempool at least ttl-num-blocks number of blocks or if
+# it's insertion time into the mempool is beyond ttl-duration.
+ttl-num-blocks = 0
 
 #######################################################
 ###         State Sync Configuration Options        ###
@@ -319,39 +354,38 @@ max-batch-bytes = 10485760
 # starting from the height of the snapshot.
 enable = false
 
-# RPC servers (comma-separated) for light client verification of the synced state machine and
-# retrieval of state data for node bootstrapping. Also needs a trusted height and corresponding
-# header hash obtained from a trusted source, and a period during which validators can be trusted.
-#
-# For Cosmos SDK-based chains, trust_period should usually be about 2/3 of the unbonding time (~2
-# weeks) during which they can be financially punished (slashed) for misbehavior.
+# State sync uses light client verification to verify state. This can be done either through the
+# P2P layer or RPC layer. Set this to true to use the P2P layer. If false (default), RPC layer
+# will be used.
+use-p2p = false
+
+# If using RPC, at least two addresses need to be provided. They should be compatible with net.Dial,
+# for example: "host.example.com:2125"
 rpc-servers = ""
+
+# The hash and height of a trusted block. Must be within the trust-period.
 trust-height = 0
 trust-hash = ""
+
+# The trust period should be set so that Tendermint can detect and gossip misbehavior before
+# it is considered expired. For chains based on the Cosmos SDK, one day less than the unbonding
+# period should suffice.
 trust-period = "168h0m0s"
 
 # Time to spend discovering snapshots before initiating a restore.
 discovery-time = "15s"
 
-# Temporary directory for state sync snapshot chunks, defaults to the OS tempdir (typically /tmp).
-# Will create a new, randomly named directory within, and remove it when done.
+# Temporary directory for state sync snapshot chunks, defaults to os.TempDir().
+# The synchronizer will create a new, randomly named directory within this directory
+# and remove it when the sync is complete.
 temp-dir = ""
 
-#######################################################
-###       Fast Sync Configuration Connections       ###
-#######################################################
-[blocksync]
+# The timeout duration before re-requesting a chunk, possibly from a different
+# peer (default: 15 seconds).
+chunk-request-timeout = "15s"
 
-# Fast Sync version to use:
-#   1) "v0" (default) - the legacy fast sync implementation
-#   2) "v1" - refactor of v0 version for better testability
-#   2) "v2" - complete redesign of v0, optimized for testability & readability
-version = "v0"
-
-# If this node is many blocks behind the tip of the chain, FastSync
-# allows them to catchup quickly by downloading blocks in parallel
-# and verifying their commits
-enable = true
+# The number of concurrent chunk and block fetchers to run (default: 4).
+fetchers = "4"
 
 #######################################################
 ###         Consensus Configuration Options         ###
@@ -359,9 +393,10 @@ enable = true
 [consensus]
 
 wal-file = "data/cs.wal/wal"
-
-# How many blocks are inspected in order to determine if we need to create an additional proof block.
-create-proof-block-range = 0
+# wal-skip-rounds-to-last set to true will skip replaying all non-committed rounds stored in 
+# WAL, increasing performance in a significant way. It should be set to false by default, as it
+# can have security side-effects.
+wal-skip-rounds-to-last = "false"
 
 # How many blocks to look back to check existence of the node's consensus votes before joining consensus
 # When non-zero, the node will panic upon restart
@@ -373,15 +408,56 @@ double-sign-check-height = 0
 create-empty-blocks = {{? it.platform.drive.tenderdash.consensus.createEmptyBlocks }}true{{??}}false{{?}}
 create-empty-blocks-interval = "{{= it.platform.drive.tenderdash.consensus.createEmptyBlocksInterval }}"
 
-# Set the Dash Core quorum type
-quorum-type = {{=it.platform.drive.abci.validatorSet.llmqType}}
-
-# Set the App hash size
-app-hash-size = 20
-
 # Reactor sleep duration parameters
 peer-gossip-sleep-duration = "100ms"
 peer-query-maj23-sleep-duration = "2s"
+
+### Unsafe Timeout Overrides ###
+
+# These fields provide temporary overrides for the Timeout consensus parameters.
+# Use of these parameters is strongly discouraged. Using these parameters may have serious
+# liveness implications for the validator and for the chain.
+#
+# These fields will be removed from the configuration file in the v0.37 release of Tendermint.
+# For additional information, see ADR-74:
+# https://github.com/tendermint/tendermint/blob/master/docs/architecture/adr-074-timeout-params.md
+
+# This field provides an unsafe override of the Propose timeout consensus parameter.
+# This field configures how long the consensus engine will wait for a proposal block before prevoting nil.
+# If this field is set to a value greater than 0, it will take effect.
+# unsafe-propose-timeout-override = 0s
+
+# This field provides an unsafe override of the ProposeDelta timeout consensus parameter.
+# This field configures how much the propose timeout increases with each round.
+# If this field is set to a value greater than 0, it will take effect.
+# unsafe-propose-timeout-delta-override = 0s
+
+# This field provides an unsafe override of the Vote timeout consensus parameter.
+# This field configures how long the consensus engine will wait after
+# receiving +2/3 votes in a round.
+# If this field is set to a value greater than 0, it will take effect.
+# unsafe-vote-timeout-override = 0s
+
+# This field provides an unsafe override of the VoteDelta timeout consensus parameter.
+# This field configures how much the vote timeout increases with each round.
+# If this field is set to a value greater than 0, it will take effect.
+# unsafe-vote-timeout-delta-override = 0s
+
+# This field provides an unsafe override of the Commit timeout consensus parameter.
+# This field configures how long the consensus engine will wait after receiving
+# +2/3 precommits before beginning the next height.
+# If this field is set to a value greater than 0, it will take effect.
+# unsafe-commit-timeout-override = 0s
+
+# This field provides an unsafe override of the BypassCommitTimeout consensus parameter.
+# This field configures if the consensus engine will wait for the full Commit timeout
+# before proceeding to the next height.
+# If this field is set to true, the consensus engine will proceed to the next height
+# as soon as the node has gathered votes from all of the validators on the network.
+# unsafe-bypass-commit-timeout-override =
+
+# Signing parameters
+quorum-type = {{=it.platform.drive.abci.validatorSet.llmqType}}
 
 #######################################################
 ###   Transaction Indexer Configuration Options     ###
@@ -399,7 +475,11 @@ peer-query-maj23-sleep-duration = "2s"
 #   2) "kv" - a simple indexer backed by key-value storage (see DBBackend)
 #   3) "psql" - the indexer services backed by PostgreSQL.
 # When "kv" or "psql" is chosen "tx.height" and "tx.hash" will always be indexed.
-indexer = "kv"
+indexer = ["kv"]
+
+# The PostgreSQL connection configuration, the connection format:
+#   postgresql://<user>:<password>@<host>:<port>/<db>?<opts>
+psql-conn = ""
 
 #######################################################
 ###       Instrumentation Configuration Options     ###

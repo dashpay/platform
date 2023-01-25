@@ -1,8 +1,8 @@
 use ciborium::value::Value as CborValue;
-use std::borrow::Borrow;
 use std::convert::TryFrom;
-use std::iter::FromIterator;
 use std::{collections::BTreeMap, convert::TryInto};
+use std::borrow::Borrow;
+use std::iter::FromIterator;
 
 use crate::util::cbor_value::value_to_hash;
 use crate::ProtocolError;
