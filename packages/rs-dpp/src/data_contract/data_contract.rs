@@ -5,7 +5,7 @@ use anyhow::anyhow;
 use ciborium::value::Value as CborValue;
 use itertools::{Either, Itertools};
 use serde::{Deserialize, Serialize};
-use serde_json::{Value as JsonValue};
+use serde_json::Value as JsonValue;
 
 use crate::data_contract::contract_config;
 use crate::data_contract::contract_config::{
@@ -13,9 +13,7 @@ use crate::data_contract::contract_config::{
     DEFAULT_CONTRACT_DOCUMENT_MUTABILITY, DEFAULT_CONTRACT_KEEPS_HISTORY,
     DEFAULT_CONTRACT_MUTABILITY,
 };
-use crate::data_contract::extra::common::{
-    cbor_map_into_serde_btree_map, cbor_map_to_btree_map,
-};
+use crate::data_contract::extra::common::{cbor_map_into_serde_btree_map, cbor_map_to_btree_map};
 use crate::data_contract::get_binary_properties_from_schema::get_binary_properties;
 use crate::util::cbor_value::{cbor_value_to_json_value, CborBTreeMapHelper, CborCanonicalMap};
 use crate::util::deserializer;

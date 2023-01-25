@@ -1,9 +1,7 @@
-
 use serde_json;
 use serde_wasm_bindgen::Error;
 use thiserror::Error;
 use wasm_bindgen::JsValue;
-
 
 /// This is a rust-specific errors. In addition to all errors defined in `js-dpp`, the
 /// error might be triggered when using JS bindings

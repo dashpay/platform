@@ -652,7 +652,7 @@ mod tests {
     use dpp::data_contract::DataContractFactory;
     use dpp::document::document_factory::DocumentFactory;
     use dpp::document::document_validator::DocumentValidator;
-    
+
     use dpp::prelude::DataContract;
     use dpp::version::{ProtocolVersionValidator, COMPATIBILITY_MAP, LATEST_VERSION};
     use rand::Rng;

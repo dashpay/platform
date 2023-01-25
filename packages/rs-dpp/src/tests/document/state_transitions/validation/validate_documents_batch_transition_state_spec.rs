@@ -1,6 +1,5 @@
 use std::time::Duration;
 
-
 use chrono::Utc;
 use dashcore::BlockHeader;
 use serde_json::{json, Value as JsonValue};

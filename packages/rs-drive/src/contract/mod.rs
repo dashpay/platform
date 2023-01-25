@@ -1,5 +1,3 @@
-
-
 /// Import from dpp
 pub use dpp::data_contract::{
     document_type::{DocumentField, DocumentFieldType, DocumentType, IndexLevel},

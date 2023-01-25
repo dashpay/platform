@@ -1523,9 +1523,6 @@ mod identifier {
 }
 
 mod indices {
-    
-
-    
 
     use super::*;
 

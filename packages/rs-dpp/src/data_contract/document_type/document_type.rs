@@ -9,9 +9,8 @@ use crate::data_contract::document_type::{property_names, ArrayFieldType};
 use crate::data_contract::errors::{DataContractError, StructureError};
 
 use crate::data_contract::extra::common::{
-    bytes_for_system_value,
-    cbor_inner_array_of_strings, cbor_inner_array_value, cbor_inner_bool_value,
-    cbor_inner_btree_map, cbor_inner_text_value, cbor_map_to_btree_map,
+    bytes_for_system_value, cbor_inner_array_of_strings, cbor_inner_array_value,
+    cbor_inner_bool_value, cbor_inner_btree_map, cbor_inner_text_value, cbor_map_to_btree_map,
 };
 use crate::util::cbor_value::CborBTreeMapHelper;
 use crate::ProtocolError;
