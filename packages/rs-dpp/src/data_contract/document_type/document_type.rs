@@ -434,8 +434,8 @@ fn insert_values(
 
             "string" => {
                 field_type = DocumentFieldType::String(
-                    inner_properties.get_optional_integer(property_names::MIN_ITEMS)?,
-                    inner_properties.get_optional_integer(property_names::MAX_ITEMS)?,
+                    inner_properties.get_optional_integer(property_names::MIN_LENGTH)?,
+                    inner_properties.get_optional_integer(property_names::MAX_LENGTH)?,
                 );
                 document_properties.insert(
                     prefixed_property_key,
