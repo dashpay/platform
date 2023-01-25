@@ -8,7 +8,11 @@ use super::{
 use crate::data_contract::document_type::{property_names, ArrayFieldType};
 use crate::data_contract::errors::{DataContractError, StructureError};
 use crate::data_contract::extra::common;
-use crate::data_contract::extra::common::bytes_for_system_value;
+use crate::data_contract::extra::common::{
+    btree_map_inner_btree_map, btree_map_inner_map_value, bytes_for_system_value,
+    cbor_inner_array_of_strings, cbor_inner_array_value, cbor_inner_bool_value,
+    cbor_inner_btree_map, cbor_inner_text_value, cbor_map_to_btree_map,
+};
 use crate::util::cbor_value::CborBTreeMapHelper;
 use crate::ProtocolError;
 use ciborium::value::Value;
@@ -177,7 +181,7 @@ impl DocumentType {
 
     pub fn from_cbor_value(
         name: &str,
-        document_type_value_map: BTreeMap<String, &Value>,
+        document_type_value_map: &[(Value, Value)],
         definition_references: &BTreeMap<String, &Value>,
         default_keeps_history: bool,
         default_mutability: bool,
@@ -185,17 +189,16 @@ impl DocumentType {
         let mut document_properties: BTreeMap<String, DocumentField> = BTreeMap::new();
 
         // Do documents of this type keep history? (Overrides contract value)
-        let documents_keep_history = document_type_value_map
-            .get_optional_bool(property_names::DOCUMENTS_KEEP_HISTORY)?
-            .unwrap_or(default_keeps_history);
+        let documents_keep_history: bool =
+            cbor_inner_bool_value(document_type_value_map, "documentsKeepHistory")
+                .unwrap_or(default_keeps_history);
 
         // Are documents of this type mutable? (Overrides contract value)
-        let documents_mutable = document_type_value_map
-            .get_optional_bool(property_names::DOCUMENTS_MUTABLE)?
-            .unwrap_or(default_mutability);
+        let documents_mutable: bool =
+            cbor_inner_bool_value(document_type_value_map, "documentsMutable")
+                .unwrap_or(default_mutability);
 
-        let index_values: Option<Vec<&Value>> =
-            document_type_value_map.get_optional_inner_value_array(property_names::INDICES)?;
+        let index_values = cbor_inner_array_value(document_type_value_map, property_names::INDICES);
         let indices: Vec<Index> = index_values
             .map(|index_values| {
                 index_values
@@ -216,15 +219,17 @@ impl DocumentType {
             .transpose()?
             .unwrap_or_default();
 
-        let property_values = document_type_value_map
-            .get_optional_inner_borrowed_str_value_map::<BTreeMap<_, _>>(
-                property_names::PROPERTIES,
-            )?
-            .unwrap_or_default();
+        // Extract the properties
+        let property_values =
+            cbor_inner_btree_map(document_type_value_map, property_names::PROPERTIES).ok_or({
+                ProtocolError::DataContractError(DataContractError::InvalidContractStructure(
+                    "unable to get document properties from the contract",
+                ))
+            })?;
 
-        let mut required_fields = document_type_value_map
-            .get_optional_inner_string_array(property_names::REQUIRED)?
-            .unwrap_or_default();
+        let mut required_fields =
+            cbor_inner_array_of_strings(document_type_value_map, property_names::REQUIRED)
+                .unwrap_or_default();
 
         fn insert_values(
             document_properties: &mut BTreeMap<String, DocumentField>,
@@ -244,56 +249,56 @@ impl DocumentType {
                     "document property is not a map as expected",
                 )));
             };
+            let base_inner_properties = cbor_map_to_btree_map(inner_property_values);
 
-            let base_inner_properties = common::cbor_map_to_btree_map(inner_property_values);
+            let type_value = cbor_inner_text_value(inner_property_values, "type")?;
 
-            let type_value = base_inner_properties.get_optional_str(property_names::TYPE)?;
-
-            let (type_value, inner_properties) =
-                match type_value {
-                    None => {
-                        let ref_value = base_inner_properties
-                            .get_optional_string(property_names::REF)?
-                            .ok_or({
-                                DataContractError::InvalidContractStructure(
-                                    "cannot find type property",
-                                )
-                            })?;
-                        let Some(ref_value) = ref_value.strip_prefix("#/$defs/") else {
+            let (type_value, inner_properties) = match type_value {
+                None => {
+                    let ref_value = base_inner_properties
+                        .get_optional_string(property_names::REF)?
+                        .ok_or({
+                            DataContractError::InvalidContractStructure("cannot find type property")
+                        })?;
+                    let Some(ref_value) = ref_value.strip_prefix("#/$defs/") else {
                             return Err(ProtocolError::DataContractError(
                                 DataContractError::InvalidContractStructure("malformed reference"),
                             ));
                         };
-                        let inner_properties = definition_references
-                            .get_optional_inner_borrowed_str_value_map::<BTreeMap<_, _>>(ref_value)?
-                            .ok_or({
-                                ProtocolError::DataContractError(
-                                    DataContractError::ReferenceDefinitionNotFound(
-                                        "document reference not found",
-                                    ),
-                                )
-                            })?;
-
-                        let type_value = inner_properties
-                            .get_optional_str(property_names::TYPE)?
-                            .ok_or({
+                    let inner_properties_map = definition_references
+                        .get_optional_inner_borrowed_map(ref_value)?
+                        .ok_or({
                             ProtocolError::DataContractError(
-                                DataContractError::InvalidContractStructure(
-                                    "cannot find type property on reference",
+                                DataContractError::ReferenceDefinitionNotFound(
+                                    "document reference not found",
                                 ),
                             )
                         })?;
-                        Ok::<(std::string::String, BTreeMap<std::string::String, &ciborium::Value>), ProtocolError>((type_value.to_string(), inner_properties))
-                    }
-                    Some(type_value) => Ok((type_value.to_string(), base_inner_properties)),
-                }?;
 
+                    let type_value =
+                        cbor_inner_text_value(inner_properties_map, property_names::TYPE)?.ok_or(
+                            {
+                                ProtocolError::DataContractError(
+                                    DataContractError::InvalidContractStructure(
+                                        "cannot find type property on reference",
+                                    ),
+                                )
+                            },
+                        )?;
+                    let inner_properties = cbor_map_to_btree_map(inner_properties_map);
+                    Ok::<(&str, BTreeMap<String, &Value>), ProtocolError>((
+                        type_value,
+                        inner_properties,
+                    ))
+                }
+                Some(type_value) => Ok((type_value, base_inner_properties)),
+            }?;
 
-            let required = known_required.contains(&type_value);
+            let required = known_required.contains(&type_value.to_string());
 
             let field_type: DocumentFieldType;
 
-            match type_value.as_str() {
+            match type_value {
                 "array" => {
                     // Only handling bytearrays for v1
                     // Return an error if it is not a byte array
@@ -371,7 +376,7 @@ impl DocumentType {
                     );
                 }
                 _ => {
-                    field_type = string_to_field_type(type_value.as_str())
+                    field_type = string_to_field_type(type_value)
                         .ok_or(DataContractError::ValueWrongType("invalid type"))?;
                     document_properties.insert(
                         prefixed_property_key,

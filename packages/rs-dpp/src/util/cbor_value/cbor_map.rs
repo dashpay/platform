@@ -39,6 +39,10 @@ pub trait CborBTreeMapHelper {
         &'a self,
         key: &str,
     ) -> Result<Option<I>, ProtocolError>;
+    fn get_optional_inner_borrowed_map(
+        &self,
+        key: &str,
+    ) -> Result<Option<&Vec<(CborValue, CborValue)>>, ProtocolError>;
     fn get_inner_borrowed_str_value_map<'a, I: FromIterator<(String, &'a CborValue)>>(
         &'a self,
         key: &str,
@@ -214,6 +218,19 @@ where
                     })
                     .transpose()?
                     .ok_or_else(|| ProtocolError::DecodingError(format!("{key} must be a bool")))
+            })
+            .transpose()
+    }
+
+    fn get_optional_inner_borrowed_map(
+        &self,
+        key: &str,
+    ) -> Result<Option<&Vec<(CborValue, CborValue)>>, ProtocolError> {
+        self.get(key)
+            .map(|v| {
+                v.borrow()
+                    .as_map()
+                    .ok_or_else(|| ProtocolError::DecodingError(format!("{key} must be a map")))
             })
             .transpose()
     }

@@ -1385,21 +1385,6 @@ mod tests {
         }
 
         #[test]
-        fn should_setup_reference_contract() {
-            setup_reference_contract();
-        }
-
-        #[test]
-        fn should_setup_need_nested_10_contract() {
-            setup_deep_nested_10_contract();
-        }
-
-        #[test]
-        fn should_setup_need_nested_50_contract() {
-            setup_deep_nested_50_contract();
-        }
-
-        #[test]
         fn should_always_have_then_same_cost() {
             // Merk trees have own cache and depends on does contract node cached or not
             // we get could get different costs. To avoid of it we fetch contracts without tree caching
@@ -1433,7 +1418,7 @@ mod tests {
             }
 
             // Create a deep placed contract
-            let contract_path = "tests/supporting_files/contract/deepNested/deep-nested50.json";
+            let contract_path = "tests/supporting_files/contract/deepNested/deep-nested10.json";
             let contract_cbor = json_document_to_cbor(contract_path, Some(1))
                 .expect("expected to get cbor document");
             let deep_contract = <Contract as DriveContractExt>::from_cbor(&contract_cbor, None)

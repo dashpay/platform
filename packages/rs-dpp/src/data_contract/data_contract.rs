@@ -533,13 +533,11 @@ pub fn get_document_types(
         };
 
         // Make sure the document_type_value is a map
-        let Some(document_type_raw_value_map) = document_type_value.as_map() else {
+        let Some(document_type_value_map) = document_type_value.as_map() else {
             return Err(ProtocolError::DataContractError(DataContractError::InvalidContractStructure(
                 "document type data is not a map as expected",
             )));
         };
-
-        let document_type_value_map = cbor_map_to_btree_map(document_type_raw_value_map);
 
         let document_type = DocumentType::from_cbor_value(
             type_key_str,

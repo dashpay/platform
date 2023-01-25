@@ -145,38 +145,6 @@ pub fn get_key_from_cbor_map<'a>(
     None
 }
 
-/// Converts a CBOR map to a BTree map.
-pub fn cbor_map_to_btree_map(cbor_map: &[(Value, Value)]) -> BTreeMap<String, &Value> {
-    cbor_map
-        .iter()
-        .filter_map(|(key, value)| key.as_text().map(|key| (key.to_string(), value)))
-        .collect::<BTreeMap<String, &Value>>()
-}
-
-/// Retrieves the value of a key from a CBOR map if it's an array of strings.
-pub fn cbor_inner_array_of_strings<'a>(
-    document_type: &'a [(Value, Value)],
-    key: &'a str,
-) -> Option<BTreeSet<String>> {
-    let key_value = get_key_from_cbor_map(document_type, key)?;
-    if let Value::Array(key_value) = key_value {
-        Some(
-            key_value
-                .iter()
-                .filter_map(|v| {
-                    if let Value::Text(text) = v {
-                        Some(text.clone())
-                    } else {
-                        None
-                    }
-                })
-                .collect(),
-        )
-    } else {
-        None
-    }
-}
-
 /// Retrieves the value of a key from a CBOR map if it's a map itself.
 pub fn cbor_inner_map_value<'a>(
     document_type: &'a [(Value, Value)],
@@ -185,56 +153,6 @@ pub fn cbor_inner_map_value<'a>(
     let key_value = get_key_from_cbor_map(document_type, key)?;
     if let Value::Map(map_value) = key_value {
         return Some(map_value);
-    }
-    None
-}
-
-/// Retrieves the value of a key from a CBOR map, and if it's a map itself,
-/// returns it as a B-tree map.
-pub fn cbor_inner_btree_map<'a>(
-    document_type: &'a [(Value, Value)],
-    key: &'a str,
-) -> Option<BTreeMap<String, &'a Value>> {
-    let key_value = get_key_from_cbor_map(document_type, key)?;
-    if let Value::Map(map_value) = key_value {
-        return Some(cbor_map_to_btree_map(map_value));
-    }
-    None
-}
-
-/// Retrieves the value of a key from a B-tree map, and if it's a map itself,
-/// returns it as a B-tree map.
-pub fn btree_map_inner_btree_map<'a>(
-    document_type: &'a BTreeMap<String, &'a Value>,
-    key: &'a str,
-) -> Option<BTreeMap<String, &'a Value>> {
-    let key_value = document_type.get(key)?;
-    if let Value::Map(map_value) = key_value {
-        return Some(cbor_map_to_btree_map(map_value));
-    }
-    None
-}
-
-/// Retrieves the value of a key from a B-tree map if it's a map itself.
-pub fn btree_map_inner_map_value<'a>(
-    document_type: &'a BTreeMap<String, &'a Value>,
-    key: &'a str,
-) -> Option<&'a Vec<(Value, Value)>> {
-    let key_value = document_type.get(key)?;
-    if let Value::Map(map_value) = key_value {
-        return Some(map_value);
-    }
-    None
-}
-
-/// Retrieves the value of a key from a CBOR map if it's a string.
-pub fn cbor_inner_text_value<'a>(
-    document_type: &'a [(Value, Value)],
-    key: &'a str,
-) -> Option<&'a str> {
-    let key_value = get_key_from_cbor_map(document_type, key)?;
-    if let Value::Text(string_value) = key_value {
-        return Some(string_value);
     }
     None
 }
