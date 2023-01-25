@@ -91,7 +91,7 @@ describe('validateDataContractFactory', () => {
         await validateDataContract(rawDataContract);
         expect.fail('Should throw an error');
       } catch (e) {
-        expect(e.message).to.have.string('protocolVersion isn\'t unsigned integer');
+        expect(e).to.have.string('protocolVersion isn\'t unsigned integer');
       }
     });
   });
