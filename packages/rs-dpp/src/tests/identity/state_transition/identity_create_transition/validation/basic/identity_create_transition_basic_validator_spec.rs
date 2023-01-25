@@ -9,7 +9,7 @@ use crate::identity::state_transition::asset_lock_proof::{
 };
 use crate::identity::state_transition::identity_create_transition::validation::basic::IdentityCreateTransitionBasicValidator;
 use crate::identity::state_transition::validate_public_key_signatures::{
-    PublicKeysSignaturesValidator, TPublicKeysSignaturesValidator,
+    TPublicKeysSignaturesValidator,
 };
 use crate::identity::validation::TPublicKeysValidator;
 use crate::state_repository::MockStateRepositoryLike;
@@ -97,7 +97,7 @@ mod validate_identity_create_transition_basic_factory {
 
         use crate::consensus::ConsensusError;
         use crate::identity::validation::{
-            PublicKeysValidator, RequiredPurposeAndSecurityLevelValidator,
+            RequiredPurposeAndSecurityLevelValidator,
         };
         use crate::state_repository::MockStateRepositoryLike;
         use crate::tests::fixtures::get_public_keys_validator_for_transition;
@@ -194,7 +194,7 @@ mod validate_identity_create_transition_basic_factory {
         use crate::assert_consensus_errors;
         use crate::consensus::ConsensusError;
         use crate::identity::validation::{
-            PublicKeysValidator, RequiredPurposeAndSecurityLevelValidator,
+            RequiredPurposeAndSecurityLevelValidator,
         };
         use crate::state_repository::MockStateRepositoryLike;
         use crate::tests::fixtures::get_public_keys_validator_for_transition;
@@ -267,14 +267,14 @@ mod validate_identity_create_transition_basic_factory {
 
         use crate::consensus::ConsensusError;
         use crate::identity::validation::{
-            PublicKeysValidator, RequiredPurposeAndSecurityLevelValidator,
+            RequiredPurposeAndSecurityLevelValidator,
         };
         use crate::state_repository::MockStateRepositoryLike;
         use crate::tests::fixtures::{
-            get_public_keys_validator, get_public_keys_validator_for_transition,
+            get_public_keys_validator_for_transition,
         };
         use crate::tests::utils::SerdeTestExtension;
-        use crate::{assert_consensus_errors, NonConsensusError};
+        use crate::{assert_consensus_errors};
 
         use super::super::setup_test;
 

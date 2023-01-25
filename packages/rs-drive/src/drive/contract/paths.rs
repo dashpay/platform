@@ -1,5 +1,5 @@
 use crate::drive::RootTree;
-use dpp::data_contract::document_type::DocumentType;
+
 use dpp::data_contract::DataContract;
 
 /// The various GroveDB paths underneath a contract

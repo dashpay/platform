@@ -7,9 +7,9 @@ use super::{
 };
 use crate::data_contract::document_type::{property_names, ArrayFieldType};
 use crate::data_contract::errors::{DataContractError, StructureError};
-use crate::data_contract::extra::common;
+
 use crate::data_contract::extra::common::{
-    btree_map_inner_btree_map, btree_map_inner_map_value, bytes_for_system_value,
+    bytes_for_system_value,
     cbor_inner_array_of_strings, cbor_inner_array_value, cbor_inner_bool_value,
     cbor_inner_btree_map, cbor_inner_text_value, cbor_map_to_btree_map,
 };

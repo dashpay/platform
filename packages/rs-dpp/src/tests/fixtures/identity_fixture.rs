@@ -1,7 +1,7 @@
 use serde_json::json;
 
 use crate::{
-    prelude::{Identity, IdentityPublicKey},
+    prelude::{Identity},
     util::string_encoding::{decode, Encoding},
 };
 

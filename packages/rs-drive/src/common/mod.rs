@@ -36,10 +36,10 @@ pub mod encode;
 /// Helpers module
 pub mod helpers;
 
-use std::collections::{BTreeMap, BTreeSet};
+
 use std::fs::File;
 use std::io;
-use std::io::{BufRead, BufReader};
+use std::io::{BufRead};
 use std::option::Option::None;
 use std::path::Path;
 
@@ -50,8 +50,8 @@ use grovedb::TransactionArg;
 
 use crate::contract::Contract;
 use crate::drive::Drive;
-use crate::error::Error;
-use dpp::data_contract::extra::common::{bytes_for_system_value, json_document_to_cbor};
+
+use dpp::data_contract::extra::common::{json_document_to_cbor};
 
 use crate::drive::block_info::BlockInfo;
 

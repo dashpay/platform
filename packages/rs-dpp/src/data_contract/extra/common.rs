@@ -1,5 +1,5 @@
 use crate::data_contract::errors::StructureError;
-use crate::util::cbor_value::{cbor_value_into_json_value, cbor_value_to_json_value};
+use crate::util::cbor_value::{cbor_value_into_json_value};
 use crate::util::serializer::value_to_cbor;
 use crate::ProtocolError;
 use ciborium::Value;

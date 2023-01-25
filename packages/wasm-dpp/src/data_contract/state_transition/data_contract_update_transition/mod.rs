@@ -15,7 +15,7 @@ use wasm_bindgen::prelude::*;
 
 use crate::{
     buffer::Buffer,
-    errors::{from_dpp_err, RustConversionError},
+    errors::{from_dpp_err},
     identifier::IdentifierWrapper,
     with_js_error, DataContractParameters, DataContractWasm, StateTransitionExecutionContextWasm,
 };

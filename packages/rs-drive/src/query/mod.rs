@@ -64,7 +64,7 @@ use crate::error::query::QueryError;
 use crate::error::Error;
 use crate::fee::calculate_fee;
 use crate::fee::op::DriveOperation;
-use dpp::data_contract::errors::StructureError;
+
 use dpp::data_contract::extra::common::bytes_for_system_value;
 use dpp::document::document_stub::DocumentStub;
 use dpp::ProtocolError;
@@ -1256,7 +1256,7 @@ impl<'a> DriveQuery<'a> {
 
         let proof =
             drive.grove_get_proved_path_query(&path_query, transaction, drive_operations)?;
-        let (root_hash, mut key_value_elements) =
+        let (root_hash, key_value_elements) =
             GroveDb::verify_query(proof.as_slice(), &path_query).map_err(Error::GroveDB)?;
 
         let mut values = vec![];
