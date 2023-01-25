@@ -1,4 +1,5 @@
 const Long = require('long');
+
 const crypto = require('crypto');
 
 const DashPlatformProtocol = require('@dashevo/dpp');
@@ -202,6 +203,14 @@ describe('deliverTxFactory', () => {
       .toString('hex')
       .toUpperCase();
 
+    expect(stateRepositoryMock.updateIdentity).to.be.calledOnceWith(identity);
+
+    const stHash = crypto
+      .createHash('sha256')
+      .update(documentTx)
+      .digest()
+      .toString('hex')
+      .toUpperCase();
     expect(createContextLoggerMock).to.be.calledOnceWithExactly(loggerMock, {
       txId: stHash,
     });

@@ -30,6 +30,19 @@ proxy-app = "tcp://drive_abci:26658"
 
 mode = {{?it.core.masternode.enable}}"validator"{{??}}"full"{{?}}
 
+# Mode of Node: full | validator | seed
+# * validator node
+#   - all reactors
+#   - with priv_validator_key.json, priv_validator_state.json
+# * full node
+#   - all reactors
+#   - No priv_validator_key.json, priv_validator_state.json
+# * seed node
+#   - only P2P, PEX Reactor
+#   - No priv_validator_key.json, priv_validator_state.json
+
+mode = {{?it.core.masternode.enable}}"validator"{{??}}"full"{{?}}
+
 # Database backend: goleveldb | cleveldb | boltdb | rocksdb | badgerdb
 # * goleveldb (github.com/syndtr/goleveldb - most popular implementation)
 #   - pure go

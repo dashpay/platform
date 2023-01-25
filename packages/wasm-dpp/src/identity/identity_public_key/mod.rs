@@ -155,16 +155,6 @@ impl IdentityPublicKeyWasm {
 
         Ok(js_object)
     }
-
-    #[wasm_bindgen(js_name=setSignature)]
-    pub fn set_signature(&mut self, signature: Vec<u8>) {
-        self.0.set_signature(signature);
-    }
-
-    #[wasm_bindgen(js_name=getSignature)]
-    pub fn get_signature(&mut self) -> Buffer {
-        Buffer::from_bytes(self.0.get_signature())
-    }
 }
 
 impl IdentityPublicKeyWasm {
