@@ -42,7 +42,7 @@ impl DataContractValidatorWasm {
         DataContractValidator::new(std::sync::Arc::new(ProtocolVersionValidator::default())).into()
     }
 
-    #[wasm_bindgen(js_name=validate)]
+    #[wasm_bindgen]
     pub fn validate(&self, raw_data_contract: JsValue) -> Result<ValidationResultWasm, JsValue> {
         let parameters: DataContractParameters =
             with_js_error!(serde_wasm_bindgen::from_value(raw_data_contract))?;

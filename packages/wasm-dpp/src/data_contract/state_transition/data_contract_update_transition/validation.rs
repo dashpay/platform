@@ -19,13 +19,14 @@ pub async fn validate_data_contract_update_transition_state(
     state_transition: DataContractUpdateTransitionWasm,
 ) -> Result<ValidationResultWasm, JsValue> {
     let wrapped_state_repository = ExternalStateRepositoryLikeWrapper::new(state_repository);
-    let validation_result = dpp_validate_data_contract_update_transition_state(
+    let result = dpp_validate_data_contract_update_transition_state(
         &wrapped_state_repository,
         &state_transition.into(),
     )
     .await
     .map_err(from_dpp_err)?;
-    Ok(validation_result.map(|_| JsValue::undefined()).into())
+
+    Ok(result.map(|_| JsValue::undefined()).into())
 }
 
 #[wasm_bindgen(js_name=validateIndicesAreBackwardCompatible)]
@@ -40,8 +41,9 @@ pub fn validate_indices_are_backward_compatible(
         new_documents_schema,
     )?;
 
-    let validation_result =
+    let result =
         dpp_validate_indices_are_backward_compatible(old_documents.iter(), new_documents.iter())
             .map_err(from_protocol_error)?;
-    Ok(validation_result.map(|_| JsValue::undefined()).into())
+
+    Ok(result.map(|_| JsValue::undefined()).into())
 }

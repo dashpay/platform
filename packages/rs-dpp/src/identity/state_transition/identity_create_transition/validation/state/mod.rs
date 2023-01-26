@@ -1,10 +1,10 @@
 use crate::consensus::state::identity::IdentityAlreadyExistsError;
 use crate::identity::state_transition::identity_create_transition::IdentityCreateTransition;
-use crate::prelude::Identity;
 use crate::state_repository::StateRepositoryLike;
 use crate::state_transition::StateTransitionLike;
 use crate::validation::ValidationResult;
 use crate::NonConsensusError;
+use std::convert::TryInto;
 
 /// Validate that identity exists
 ///
@@ -21,8 +21,11 @@ pub async fn validate_identity_create_transition_state(
 
     let identity_id = state_transition.get_identity_id();
     let maybe_identity = state_repository
-        .fetch_identity::<Identity>(identity_id, state_transition.get_execution_context())
-        .await
+        .fetch_identity(identity_id, state_transition.get_execution_context())
+        .await?
+        .map(TryInto::try_into)
+        .transpose()
+        .map_err(Into::into)
         .map_err(|e| NonConsensusError::StateRepositoryFetchError(e.to_string()))?;
 
     if state_transition.get_execution_context().is_dry_run() {
