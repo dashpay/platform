@@ -153,7 +153,10 @@ impl IdentityCreateTransition {
     }
 
     /// Adds public keys to the existing public keys array
-    pub fn add_public_keys(&mut self, public_keys: &mut Vec<IdentityPublicKeyInCreation>) -> &mut Self {
+    pub fn add_public_keys(
+        &mut self,
+        public_keys: &mut Vec<IdentityPublicKeyInCreation>,
+    ) -> &mut Self {
         self.public_keys.append(public_keys);
 
         self

@@ -34,6 +34,8 @@ mod system;
 
 use crate::contract::document::Document;
 use crate::contract::Contract;
+use crate::drive::batch::drive_op_batch::contract::ContractOperationType;
+use crate::drive::batch::drive_op_batch::document::DocumentOperationType;
 use crate::drive::batch::GroveDbOpBatch;
 use crate::drive::block_info::BlockInfo;
 use crate::drive::flags::StorageFlags;
@@ -46,18 +48,16 @@ use crate::error::Error;
 use crate::fee::calculate_fee;
 use crate::fee::op::DriveOperation;
 use crate::fee::result::FeeResult;
-use dpp::identity::{Identity, IdentityPublicKey, KeyID, TimestampMillis};
 use dpp::data_contract::document_type::DocumentType;
 use dpp::data_contract::DriveContractExt;
 use dpp::document::document_stub::DocumentStub;
+use dpp::identity::{Identity, IdentityPublicKey, KeyID, TimestampMillis};
 use grovedb::batch::{GroveDbOp, KeyInfoPath};
 use grovedb::{EstimatedLayerInformation, TransactionArg};
 pub use identity::IdentityOperationType;
 use itertools::Itertools;
 use std::collections::HashMap;
 pub use system::SystemOperationType;
-use crate::drive::batch::drive_op_batch::contract::ContractOperationType;
-use crate::drive::batch::drive_op_batch::document::DocumentOperationType;
 
 /// A converter that will get Drive Operations from High Level Operations
 pub trait DriveOperationConverter {
