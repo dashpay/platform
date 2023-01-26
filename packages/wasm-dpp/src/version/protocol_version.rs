@@ -19,8 +19,8 @@ impl From<ProtocolVersionValidator> for ProtocolVersionValidatorWasm {
     }
 }
 
-impl Into<ProtocolVersionValidator> for ProtocolVersionValidatorWasm {
-    fn into(self) -> ProtocolVersionValidator {
-        self.0
+impl From<ProtocolVersionValidatorWasm> for ProtocolVersionValidator {
+    fn from(val: ProtocolVersionValidatorWasm) -> Self {
+        val.0
     }
 }

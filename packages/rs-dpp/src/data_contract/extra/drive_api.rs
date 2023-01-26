@@ -1,12 +1,11 @@
 use std::collections::BTreeMap;
 
+use crate::data_contract::document_type::DocumentType;
 use crate::data_contract::DataContract;
 use crate::ProtocolError;
 
-use super::document_type::DocumentType;
-use super::errors::ContractError;
-use super::mutability;
-use super::root_tree::RootTree;
+use crate::data_contract::contract_config;
+use crate::data_contract::errors::DataContractError;
 
 pub enum DriveEncoding {
     DriveCbor,
@@ -40,33 +39,23 @@ pub trait DriveContractExt {
         serialized_contract: &[u8],
         contract_id: Option<[u8; 32]>,
         encoding: DriveEncoding,
-    ) -> Result<Self, ContractError>
+    ) -> Result<Self, ProtocolError>
     where
         Self: Sized;
 
     fn from_cbor(
         contract_cbor: &[u8],
         contract_id: Option<[u8; 32]>,
-    ) -> Result<Self, ContractError>
+    ) -> Result<Self, ProtocolError>
     where
         Self: Sized;
 
-    fn to_cbor(&self) -> Result<Vec<u8>, ContractError>;
+    fn to_cbor(&self) -> Result<Vec<u8>, ProtocolError>;
 
     fn document_type_for_name(
         &self,
         document_type_name: &str,
-    ) -> Result<&DocumentType, ContractError>;
-
-    fn root_path(&self) -> [&[u8]; 2];
-    fn documents_path(&self) -> [&[u8]; 3];
-    fn document_type_path<'a>(&'a self, document_type_name: &'a str) -> [&'a [u8]; 4];
-    fn documents_primary_key_path<'a>(&'a self, document_type_name: &'a str) -> [&'a [u8]; 5];
-    fn documents_with_history_primary_key_path<'a>(
-        &'a self,
-        document_type_name: &'a str,
-        id: &'a [u8],
-    ) -> [&'a [u8]; 6];
+    ) -> Result<&DocumentType, ProtocolError>;
 }
 
 impl DriveContractExt for DataContract {
@@ -123,7 +112,7 @@ impl DriveContractExt for DataContract {
         serialized_contract: &[u8],
         contract_id: Option<[u8; 32]>,
         encoding: DriveEncoding,
-    ) -> Result<Self, ContractError>
+    ) -> Result<Self, ProtocolError>
     where
         Self: Sized,
     {
@@ -139,7 +128,7 @@ impl DriveContractExt for DataContract {
         Ok(data_contract)
     }
 
-    fn from_cbor(contract_cbor: &[u8], contract_id: Option<[u8; 32]>) -> Result<Self, ContractError>
+    fn from_cbor(contract_cbor: &[u8], contract_id: Option<[u8; 32]>) -> Result<Self, ProtocolError>
     where
         Self: Sized,
     {
@@ -153,19 +142,22 @@ impl DriveContractExt for DataContract {
 
     /// `to_cbor` overloads the original method from [`DataContract`] and adds the properties
     /// from [`super::Mutability`].
-    fn to_cbor(&self) -> Result<Vec<u8>, ContractError> {
+    fn to_cbor(&self) -> Result<Vec<u8>, ProtocolError> {
         let mut buf = self.protocol_version().to_le_bytes().to_vec();
 
         let mut contract_cbor_map = self.to_cbor_canonical_map()?;
 
-        contract_cbor_map.insert(mutability::property::READONLY, self.readonly());
-        contract_cbor_map.insert(mutability::property::KEEPS_HISTORY, self.keeps_history());
+        contract_cbor_map.insert(contract_config::property::READONLY, self.readonly());
         contract_cbor_map.insert(
-            mutability::property::DOCUMENTS_KEEP_HISTORY_CONTRACT_DEFAULT,
+            contract_config::property::KEEPS_HISTORY,
+            self.keeps_history(),
+        );
+        contract_cbor_map.insert(
+            contract_config::property::DOCUMENTS_KEEP_HISTORY_CONTRACT_DEFAULT,
             self.documents_keep_history_contract_default(),
         );
         contract_cbor_map.insert(
-            mutability::property::DOCUMENTS_MUTABLE_CONTRACT_DEFAULT,
+            contract_config::property::DOCUMENTS_MUTABLE_CONTRACT_DEFAULT,
             self.documents_mutable_contract_default(),
         );
 
@@ -180,65 +172,18 @@ impl DriveContractExt for DataContract {
     fn document_type_for_name(
         &self,
         document_type_name: &str,
-    ) -> Result<&DocumentType, ContractError> {
+    ) -> Result<&DocumentType, ProtocolError> {
         self.document_types.get(document_type_name).ok_or({
-            ContractError::DocumentTypeNotFound("can not get document type from contract")
+            ProtocolError::DataContractError(DataContractError::DocumentTypeNotFound(
+                "can not get document type from contract",
+            ))
         })
-    }
-
-    fn root_path(&self) -> [&[u8]; 2] {
-        [
-            Into::<&[u8; 1]>::into(RootTree::ContractDocuments),
-            self.id().as_bytes(),
-        ]
-    }
-
-    fn documents_path(&self) -> [&[u8]; 3] {
-        [
-            Into::<&[u8; 1]>::into(RootTree::ContractDocuments),
-            self.id().as_bytes(),
-            &[1],
-        ]
-    }
-
-    fn document_type_path<'a>(&'a self, document_type_name: &'a str) -> [&'a [u8]; 4] {
-        [
-            Into::<&[u8; 1]>::into(RootTree::ContractDocuments),
-            self.id.as_bytes(),
-            &[1],
-            document_type_name.as_bytes(),
-        ]
-    }
-
-    fn documents_primary_key_path<'a>(&'a self, document_type_name: &'a str) -> [&'a [u8]; 5] {
-        [
-            Into::<&[u8; 1]>::into(RootTree::ContractDocuments),
-            self.id.as_bytes(),
-            &[1],
-            document_type_name.as_bytes(),
-            &[0],
-        ]
-    }
-
-    fn documents_with_history_primary_key_path<'a>(
-        &'a self,
-        document_type_name: &'a str,
-        id: &'a [u8],
-    ) -> [&'a [u8]; 6] {
-        [
-            Into::<&[u8; 1]>::into(RootTree::ContractDocuments),
-            self.id().as_bytes(),
-            &[1],
-            document_type_name.as_bytes(),
-            &[0],
-            id,
-        ]
     }
 }
 
 #[cfg(test)]
 mod test {
-    use mutability::ContractConfig;
+    use crate::data_contract::contract_config::ContractConfig;
 
     use crate::{
         data_contract::extra::common::json_document_to_cbor, data_contract::DataContract,
@@ -385,7 +330,7 @@ mod test {
                 .get_document_schema(expect.document_name)
                 .unwrap();
 
-            let document_indices = document.get_indices().unwrap_or_default();
+            let document_indices = document.get_indices::<Vec<_>>().unwrap_or_default();
             assert_eq!(expect.indexes.len(), document_indices.len());
         }
     }
@@ -393,7 +338,8 @@ mod test {
     #[test]
     fn should_drive_api_methods_contain_contract_data() {
         let dashpay_cbor =
-            json_document_to_cbor("src/tests/payloads/contract/dashpay-contract.json", Some(1));
+            json_document_to_cbor("src/tests/payloads/contract/dashpay-contract.json", Some(1))
+                .expect("expected to get cbor document");
         let contract = DataContract::from_cbor(&dashpay_cbor).unwrap();
 
         assert!(contract.documents_mutable_contract_default());
@@ -453,7 +399,8 @@ mod test {
     #[test]
     fn mutability_properties_should_be_stored_and_restored_during_serialization() {
         let dashpay_cbor =
-            json_document_to_cbor("src/tests/payloads/contract/dashpay-contract.json", Some(1));
+            json_document_to_cbor("src/tests/payloads/contract/dashpay-contract.json", Some(1))
+                .expect("expected to get a cbor document");
         let mut contract = DataContract::from_cbor(&dashpay_cbor).unwrap();
 
         assert!(!contract.readonly());

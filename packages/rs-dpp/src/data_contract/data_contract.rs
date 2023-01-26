@@ -7,6 +7,13 @@ use itertools::{Either, Itertools};
 use serde::{Deserialize, Serialize};
 use serde_json::Value as JsonValue;
 
+use crate::data_contract::contract_config;
+use crate::data_contract::contract_config::{
+    ContractConfig, DEFAULT_CONTRACT_CAN_BE_DELETED, DEFAULT_CONTRACT_DOCUMENTS_KEEPS_HISTORY,
+    DEFAULT_CONTRACT_DOCUMENT_MUTABILITY, DEFAULT_CONTRACT_KEEPS_HISTORY,
+    DEFAULT_CONTRACT_MUTABILITY,
+};
+use crate::data_contract::extra::common::{cbor_map_into_serde_btree_map, cbor_map_to_btree_map};
 use crate::data_contract::get_binary_properties_from_schema::get_binary_properties;
 use crate::util::cbor_value::{cbor_value_to_json_value, CborBTreeMapHelper, CborCanonicalMap};
 use crate::util::deserializer;
@@ -20,9 +27,8 @@ use crate::{
 };
 use crate::{identifier, Convertible};
 
+use super::document_type::DocumentType;
 use super::errors::*;
-use super::extra::DocumentType;
-use super::extra::{get_definitions, get_document_types, get_mutability, ContractConfig};
 
 use super::property_names;
 
@@ -49,7 +55,7 @@ impl Convertible for DataContract {
 
     /// Returns Data Contract as a JSON Value
     fn to_json(&self) -> Result<JsonValue, ProtocolError> {
-        Ok(serde_json::to_value(&self)?)
+        Ok(serde_json::to_value(self)?)
     }
 
     /// Returns Data Contract as a Buffer
@@ -96,7 +102,7 @@ pub struct DataContract {
     pub(crate) config: ContractConfig,
 
     #[serde(skip)]
-    pub(crate) document_types: BTreeMap<DocumentName, DocumentType>,
+    pub document_types: BTreeMap<DocumentName, DocumentType>,
 }
 
 impl DataContract {
@@ -144,8 +150,7 @@ impl DataContract {
         // Defs
         let defs = data_contract_map
             .get("$defs")
-            .map(CborValue::as_map)
-            .flatten()
+            .and_then(CborValue::as_map)
             .map(|definition_map| {
                 let mut res = BTreeMap::<String, JsonValue>::new();
                 for (key, value) in definition_map {
@@ -169,29 +174,9 @@ impl DataContract {
             .as_map()
             .ok_or_else(|| ProtocolError::DecodingError(String::from("documents must be a map")))?;
 
-        let documents_vec = contract_documents_cbor_map
-            .iter()
-            .map(|(key, value)| {
-                Ok((
-                    key.as_text()
-                        .ok_or_else(|| {
-                            ProtocolError::DecodingError(String::from(
-                                "expect document type to be a string",
-                            ))
-                        })?
-                        .to_string(),
-                    cbor_value_to_json_value(value)?,
-                ))
-            })
-            .collect::<Result<Vec<(String, JsonValue)>, ProtocolError>>()?;
+        let documents = cbor_map_into_serde_btree_map(contract_documents_cbor_map.clone())?;
 
-        let mut documents: BTreeMap<String, JsonValue> = BTreeMap::new();
-
-        for (key, value) in documents_vec {
-            documents.insert(key, value);
-        }
-
-        let mutability = get_mutability(&data_contract_map)
+        let mutability = get_contract_configuration_properties(&data_contract_map)
             .map_err(|e| ProtocolError::ParsingError(e.to_string()))?;
         let definition_references = get_definitions(&data_contract_map);
         let document_types = get_document_types(
@@ -337,23 +322,26 @@ impl DataContract {
     }
 
     pub fn get_document_schema(&self, doc_type: &str) -> Result<&JsonSchema, ProtocolError> {
-        let document =
-            self.documents
-                .get(doc_type)
-                .ok_or(DataContractError::InvalidDocumentTypeError {
+        let document = self
+            .documents
+            .get(doc_type)
+            .ok_or(ProtocolError::DataContractError(
+                DataContractError::InvalidDocumentTypeError {
                     doc_type: doc_type.to_owned(),
                     data_contract: self.clone(),
-                })?;
+                },
+            ))?;
         Ok(document)
     }
 
     pub fn get_document_schema_ref(&self, doc_type: &str) -> Result<String, ProtocolError> {
         if !self.is_document_defined(doc_type) {
-            return Err(DataContractError::InvalidDocumentTypeError {
-                doc_type: doc_type.to_owned(),
-                data_contract: self.clone(),
-            }
-            .into());
+            return Err(ProtocolError::DataContractError(
+                DataContractError::InvalidDocumentTypeError {
+                    doc_type: doc_type.to_owned(),
+                    data_contract: self.clone(),
+                },
+            ));
         };
 
         Ok(format!(
@@ -371,26 +359,44 @@ impl DataContract {
         &self,
         doc_type: &str,
     ) -> Result<&BTreeMap<String, JsonValue>, ProtocolError> {
+        self.get_optional_binary_properties(doc_type)?
+            .ok_or(ProtocolError::DataContractError(
+                DataContractError::InvalidDocumentTypeError {
+                    doc_type: doc_type.to_owned(),
+                    data_contract: self.clone(),
+                },
+            ))
+    }
+
+    /// Returns the binary properties for the given document type
+    /// Comparing to JS version of DPP, the binary_properties are not generated automatically
+    /// if they're not present. It is up to the developer to use proper methods like ['DataContract::set_document_schema'] which
+    /// automatically generates binary properties when setting the Json Schema
+    // TODO: Naming is confusing. It's not clear, it sounds like it will return optional document properties
+    //   but not None if document type is not present. Rename this
+    pub fn get_optional_binary_properties(
+        &self,
+        doc_type: &str,
+    ) -> Result<Option<&BTreeMap<String, JsonValue>>, ProtocolError> {
         if !self.is_document_defined(doc_type) {
-            return Err(DataContractError::InvalidDocumentTypeError {
-                doc_type: doc_type.to_owned(),
-                data_contract: self.clone(),
-            }
-            .into());
+            return Ok(None);
         }
 
         // The rust implementation doesn't set the value if it is not present in `binary_properties`. The difference is caused by
         // required `mut` annotation. As `get_binary_properties` is reused in many other read-only methods, the mutation would require
         // propagating the `mut` to other getters which by the definition shouldn't be mutable.
-        self.binary_properties.get(doc_type).ok_or_else(|| {
-            {
-                anyhow::anyhow!(
-                    "document '{}' has not generated binary_properties",
-                    doc_type
-                )
-            }
-            .into()
-        })
+        self.binary_properties
+            .get(doc_type)
+            .ok_or_else(|| {
+                {
+                    anyhow::anyhow!(
+                        "document '{}' has not generated binary_properties",
+                        doc_type
+                    )
+                }
+                .into()
+            })
+            .map(Some)
     }
 
     fn generate_binary_properties(&mut self) {
@@ -401,28 +407,29 @@ impl DataContract {
             .collect();
     }
 
-    pub fn get_identifiers_and_binary_paths(&self, document_type: &str) -> (Vec<&str>, Vec<&str>) {
-        let maybe_binary_properties = self.get_binary_properties(document_type);
-        let mut binary_paths: Vec<&str> = vec![];
-        let mut identifiers_paths: Vec<&str> = vec![];
+    pub fn get_identifiers_and_binary_paths(
+        &self,
+        document_type: &str,
+    ) -> Result<(Vec<&str>, Vec<&str>), ProtocolError> {
+        let binary_properties = self.get_optional_binary_properties(document_type)?;
 
         // At this point we don't bother about returned error from `get_binary_properties`.
         // If document of given type isn't found, then empty vectors will be returned.
-        if let Ok(binary_properties) = maybe_binary_properties {
-            (binary_paths, identifiers_paths) =
-                binary_properties.iter().partition_map(|(path, v)| {
-                    if let Some(JsonValue::String(content_type)) = v.get("contentMediaType") {
-                        if content_type == identifier::MEDIA_TYPE {
-                            Either::Right(path.as_str())
-                        } else {
-                            return Either::Left(path.as_str());
-                        }
+        let (binary_paths, identifiers_paths) = match binary_properties {
+            None => (vec![], vec![]),
+            Some(binary_properties) => binary_properties.iter().partition_map(|(path, v)| {
+                if let Some(JsonValue::String(content_type)) = v.get("contentMediaType") {
+                    if content_type == identifier::MEDIA_TYPE {
+                        Either::Right(path.as_str())
                     } else {
                         Either::Left(path.as_str())
                     }
-                });
-        }
-        (identifiers_paths, binary_paths)
+                } else {
+                    Either::Left(path.as_str())
+                }
+            }),
+        };
+        Ok((identifiers_paths, binary_paths))
     }
 }
 
@@ -464,6 +471,96 @@ impl TryFrom<Vec<u8>> for DataContract {
     fn try_from(_v: Vec<u8>) -> Result<Self, Self::Error> {
         todo!()
     }
+}
+
+pub fn get_contract_configuration_properties(
+    contract: &BTreeMap<String, CborValue>,
+) -> Result<ContractConfig, ProtocolError> {
+    let keeps_history = contract
+        .get_optional_bool(contract_config::property::KEEPS_HISTORY)?
+        .unwrap_or(DEFAULT_CONTRACT_KEEPS_HISTORY);
+    let can_be_deleted = contract
+        .get_optional_bool(contract_config::property::CAN_BE_DELETED)?
+        .unwrap_or(DEFAULT_CONTRACT_CAN_BE_DELETED);
+
+    let readonly = contract
+        .get_optional_bool(contract_config::property::READONLY)?
+        .unwrap_or(!DEFAULT_CONTRACT_MUTABILITY);
+
+    let documents_keep_history_contract_default = contract
+        .get_optional_bool(contract_config::property::DOCUMENTS_KEEP_HISTORY_CONTRACT_DEFAULT)?
+        .unwrap_or(DEFAULT_CONTRACT_DOCUMENTS_KEEPS_HISTORY);
+
+    let documents_mutable_contract_default = contract
+        .get_optional_bool(contract_config::property::DOCUMENTS_MUTABLE_CONTRACT_DEFAULT)?
+        .unwrap_or(DEFAULT_CONTRACT_DOCUMENT_MUTABILITY);
+
+    Ok(ContractConfig {
+        can_be_deleted,
+        readonly,
+        keeps_history,
+        documents_keep_history_contract_default,
+        documents_mutable_contract_default,
+    })
+}
+
+pub fn get_document_types(
+    contract: &BTreeMap<String, CborValue>,
+    definition_references: BTreeMap<String, &CborValue>,
+    documents_keep_history_contract_default: bool,
+    documents_mutable_contract_default: bool,
+) -> Result<BTreeMap<String, DocumentType>, ProtocolError> {
+    let documents_cbor_value =
+        contract
+            .get("documents")
+            .ok_or(ProtocolError::DataContractError(
+                DataContractError::MissingRequiredKey("unable to get documents"),
+            ))?;
+    let contract_document_types_raw =
+        documents_cbor_value
+            .as_map()
+            .ok_or(ProtocolError::DataContractError(
+                DataContractError::InvalidContractStructure("documents must be a map"),
+            ))?;
+    let mut contract_document_types: BTreeMap<String, DocumentType> = BTreeMap::new();
+    for (type_key_value, document_type_value) in contract_document_types_raw {
+        let Some(type_key_str) = type_key_value.as_text() else {
+            return Err(ProtocolError::DataContractError(DataContractError::InvalidContractStructure(
+                "document type name is not a string as expected",
+            )));
+        };
+
+        // Make sure the document_type_value is a map
+        let Some(document_type_value_map) = document_type_value.as_map() else {
+            return Err(ProtocolError::DataContractError(DataContractError::InvalidContractStructure(
+                "document type data is not a map as expected",
+            )));
+        };
+
+        let document_type = DocumentType::from_cbor_value(
+            type_key_str,
+            document_type_value_map,
+            &definition_references,
+            documents_keep_history_contract_default,
+            documents_mutable_contract_default,
+        )?;
+        contract_document_types.insert(type_key_str.to_string(), document_type);
+    }
+    Ok(contract_document_types)
+}
+
+pub fn get_definitions(contract: &BTreeMap<String, CborValue>) -> BTreeMap<String, &CborValue> {
+    let definition_references = match contract.get("$defs") {
+        None => BTreeMap::new(),
+        Some(definition_value) => {
+            let definition_map = definition_value.as_map();
+            match definition_map {
+                None => BTreeMap::new(),
+                Some(key_value) => cbor_map_to_btree_map(key_value),
+            }
+        }
+    };
+    definition_references
 }
 
 #[cfg(test)]

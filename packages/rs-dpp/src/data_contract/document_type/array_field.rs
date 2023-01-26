@@ -1,10 +1,9 @@
 use std::convert::TryInto;
 
+use super::*;
 use ciborium::value::Value;
 use integer_encoding::VarInt;
 use serde::{Deserialize, Serialize};
-
-use super::errors::ContractError;
 
 #[derive(Serialize, Deserialize, Debug, PartialEq, Eq, Clone)]
 pub enum ArrayFieldType {
@@ -17,7 +16,7 @@ pub enum ArrayFieldType {
 }
 
 impl ArrayFieldType {
-    pub fn encode_value_with_size(&self, value: Value) -> Result<Vec<u8>, ContractError> {
+    pub fn encode_value_with_size(&self, value: Value) -> Result<Vec<u8>, DataContractError> {
         match self {
             ArrayFieldType::String(_, _) => {
                 if let Value::Text(value) = value {
@@ -32,9 +31,9 @@ impl ArrayFieldType {
             ArrayFieldType::Date => {
                 let value_as_f64 = match value {
                     Value::Integer(value_as_integer) => {
-                        let value_as_i128: i128 = value_as_integer
-                            .try_into()
-                            .map_err(|_| ContractError::ValueWrongType("expected integer value"))?;
+                        let value_as_i128: i128 = value_as_integer.try_into().map_err(|_| {
+                            DataContractError::ValueWrongType("expected integer value")
+                        })?;
                         let value_as_f64: f64 = value_as_i128 as f64;
                         Ok(value_as_f64)
                     }
@@ -51,7 +50,7 @@ impl ArrayFieldType {
 
                 let value_as_i64: i64 = value_as_integer
                     .try_into()
-                    .map_err(|_| ContractError::ValueWrongType("expected integer value"))?;
+                    .map_err(|_| DataContractError::ValueWrongType("expected integer value"))?;
                 let value_bytes = value_as_i64.to_be_bytes().to_vec();
                 Ok(value_bytes)
             }
@@ -63,7 +62,7 @@ impl ArrayFieldType {
 
                     let value_as_i64: i64 = value_as_integer
                         .try_into()
-                        .map_err(|_| ContractError::ValueWrongType("expected number value"))?;
+                        .map_err(|_| DataContractError::ValueWrongType("expected number value"))?;
 
                     value_as_i64 as f64
                 } else {
@@ -77,7 +76,7 @@ impl ArrayFieldType {
                     Value::Bytes(bytes) => Ok(bytes),
                     Value::Text(text) => {
                         let value_as_bytes = base64::decode(text).map_err(|_| {
-                            ContractError::ValueDecodingError("bytearray: invalid base64 value")
+                            DataContractError::ValueDecodingError("bytearray: invalid base64 value")
                         })?;
                         Ok(value_as_bytes)
                     }
@@ -86,13 +85,15 @@ impl ArrayFieldType {
                         .map(|byte| match byte {
                             Value::Integer(int) => {
                                 let value_as_u8: u8 = int.try_into().map_err(|_| {
-                                    ContractError::ValueWrongType("expected u8 value")
+                                    DataContractError::ValueWrongType("expected u8 value")
                                 })?;
                                 Ok(value_as_u8)
                             }
-                            _ => Err(ContractError::ValueWrongType("not an array of integers")),
+                            _ => Err(DataContractError::ValueWrongType(
+                                "not an array of integers",
+                            )),
                         })
-                        .collect::<Result<Vec<u8>, ContractError>>(),
+                        .collect::<Result<Vec<u8>, DataContractError>>(),
                     _ => Err(get_field_type_matching_error()),
                 }?;
 
@@ -111,7 +112,7 @@ impl ArrayFieldType {
         }
     }
 
-    pub fn encode_value_ref_with_size(&self, value: &Value) -> Result<Vec<u8>, ContractError> {
+    pub fn encode_value_ref_with_size(&self, value: &Value) -> Result<Vec<u8>, DataContractError> {
         return match self {
             ArrayFieldType::String(_, _) => {
                 let value_as_text = value.as_text().ok_or_else(get_field_type_matching_error)?;
@@ -123,9 +124,9 @@ impl ArrayFieldType {
             ArrayFieldType::Date => {
                 let value_as_f64 = match *value {
                     Value::Integer(value_as_integer) => {
-                        let value_as_i128: i128 = value_as_integer
-                            .try_into()
-                            .map_err(|_| ContractError::ValueWrongType("expected integer value"))?;
+                        let value_as_i128: i128 = value_as_integer.try_into().map_err(|_| {
+                            DataContractError::ValueWrongType("expected integer value")
+                        })?;
                         let value_as_f64: f64 = value_as_i128 as f64;
                         Ok(value_as_f64)
                     }
@@ -142,7 +143,7 @@ impl ArrayFieldType {
 
                 let value_as_i64: i64 = value_as_integer
                     .try_into()
-                    .map_err(|_| ContractError::ValueWrongType("expected integer value"))?;
+                    .map_err(|_| DataContractError::ValueWrongType("expected integer value"))?;
                 let value_bytes = value_as_i64.to_be_bytes().to_vec();
                 Ok(value_bytes)
             }
@@ -154,7 +155,7 @@ impl ArrayFieldType {
 
                     let value_as_i64: i64 = value_as_integer
                         .try_into()
-                        .map_err(|_| ContractError::ValueWrongType("expected number value"))?;
+                        .map_err(|_| DataContractError::ValueWrongType("expected number value"))?;
 
                     value_as_i64 as f64
                 } else {
@@ -168,7 +169,7 @@ impl ArrayFieldType {
                     Value::Bytes(bytes) => Ok(bytes.clone()),
                     Value::Text(text) => {
                         let value_as_bytes = base64::decode(text).map_err(|_| {
-                            ContractError::ValueDecodingError("bytearray: invalid base64 value")
+                            DataContractError::ValueDecodingError("bytearray: invalid base64 value")
                         })?;
                         Ok(value_as_bytes)
                     }
@@ -177,13 +178,15 @@ impl ArrayFieldType {
                         .map(|byte| match byte {
                             Value::Integer(int) => {
                                 let value_as_u8: u8 = (*int).try_into().map_err(|_| {
-                                    ContractError::ValueWrongType("expected u8 value")
+                                    DataContractError::ValueWrongType("expected u8 value")
                                 })?;
                                 Ok(value_as_u8)
                             }
-                            _ => Err(ContractError::ValueWrongType("not an array of integers")),
+                            _ => Err(DataContractError::ValueWrongType(
+                                "not an array of integers",
+                            )),
                         })
-                        .collect::<Result<Vec<u8>, ContractError>>(),
+                        .collect::<Result<Vec<u8>, DataContractError>>(),
                     _ => Err(get_field_type_matching_error()),
                 }?;
 
@@ -204,6 +207,6 @@ impl ArrayFieldType {
     }
 }
 
-fn get_field_type_matching_error() -> ContractError {
-    ContractError::ValueWrongType("document field type doesn't match document value")
+fn get_field_type_matching_error() -> DataContractError {
+    DataContractError::ValueWrongType("document field type doesn't match document value")
 }

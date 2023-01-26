@@ -39,10 +39,11 @@ use grovedb::EstimatedLayerCount::{ApproximateElements, PotentiallyAtMaxElements
 use grovedb::EstimatedLayerSizes::{AllItems, AllReference, AllSubtrees};
 use grovedb::{Element, EstimatedLayerInformation, TransactionArg};
 
+use dpp::data_contract::document_type::{DocumentType, IndexLevel};
+use dpp::data_contract::DriveContractExt;
 use grovedb::EstimatedSumTrees::NoSumTrees;
 use std::collections::HashMap;
 
-use crate::contract::document::Document;
 use crate::contract::Contract;
 use crate::drive::block_info::BlockInfo;
 use crate::drive::defaults::{
@@ -58,6 +59,7 @@ use crate::drive::object_size_info::DocumentInfo::{
     DocumentEstimatedAverageSize, DocumentWithoutSerialization,
 };
 use crate::drive::object_size_info::DriveKeyInfo::KeyRef;
+use dpp::document::document_stub::DocumentStub;
 
 use crate::drive::grove_operations::BatchDeleteApplyType::{
     StatefulBatchDelete, StatelessBatchDelete,
@@ -73,7 +75,6 @@ use crate::error::Error;
 use crate::fee::calculate_fee;
 use crate::fee::op::DriveOperation;
 use crate::fee::result::FeeResult;
-use dpp::data_contract::extra::{DocumentType, DriveContractExt, IndexLevel};
 
 impl Drive {
     /// Deletes a document and returns the associated fee.
@@ -693,7 +694,7 @@ impl Drive {
                 DocumentEstimatedAverageSize(query_target.len())
             } else if let Some(document_element) = &document_element {
                 if let Element::Item(data, element_flags) = document_element {
-                    let document = Document::from_cbor(data.as_slice(), None, owner_id)?;
+                    let document = DocumentStub::from_cbor(data.as_slice(), None, owner_id)?;
                     let storage_flags = StorageFlags::from_some_element_flags_ref(element_flags)?;
                     DocumentWithoutSerialization((document, storage_flags))
                 } else {
@@ -739,17 +740,14 @@ impl Drive {
 
 #[cfg(test)]
 mod tests {
+    use dpp::data_contract::extra::common::json_document_to_cbor;
     use rand::Rng;
     use serde_json::json;
     use std::option::Option::None;
     use tempfile::TempDir;
 
     use super::*;
-    use crate::common::{
-        cbor_from_hex, json_document_to_cbor, setup_contract, setup_contract_from_hex,
-        value_to_cbor,
-    };
-    use crate::contract::document::Document;
+    use crate::common::{cbor_from_hex, setup_contract, setup_contract_from_hex, value_to_cbor};
     use crate::drive::document::tests::setup_dashpay;
     use crate::drive::flags::StorageFlags;
     use crate::drive::object_size_info::DocumentAndContractInfo;
@@ -759,6 +757,7 @@ mod tests {
     use crate::fee::default_costs::STORAGE_DISK_USAGE_CREDIT_PER_BYTE;
     use crate::fee_pools::epochs::Epoch;
     use crate::query::DriveQuery;
+    use dpp::document::document_stub::DocumentStub;
 
     #[test]
     fn test_add_and_remove_family_one_document_no_transaction() {
@@ -779,12 +778,13 @@ mod tests {
         let person_serialized_document = json_document_to_cbor(
             "tests/supporting_files/contract/family/person0.json",
             Some(1),
-        );
+        )
+        .expect("expected to get cbor document");
 
         let random_owner_id = rand::thread_rng().gen::<[u8; 32]>();
 
         let document =
-            Document::from_cbor(&person_serialized_document, None, Some(random_owner_id))
+            DocumentStub::from_cbor(&person_serialized_document, None, Some(random_owner_id))
                 .expect("expected to deserialize the document");
 
         let document_type = contract
@@ -876,12 +876,13 @@ mod tests {
         let person_serialized_document = json_document_to_cbor(
             "tests/supporting_files/contract/family/person0.json",
             Some(1),
-        );
+        )
+        .expect("expected to get cbor document");
 
         let random_owner_id = rand::thread_rng().gen::<[u8; 32]>();
 
         let document =
-            Document::from_cbor(&person_serialized_document, None, Some(random_owner_id))
+            DocumentStub::from_cbor(&person_serialized_document, None, Some(random_owner_id))
                 .expect("expected to deserialize the document");
 
         let document_type = contract
@@ -989,12 +990,13 @@ mod tests {
         let person_serialized_document = json_document_to_cbor(
             "tests/supporting_files/contract/family/person0.json",
             Some(1),
-        );
+        )
+        .expect("expected to get cbor document");
 
         let random_owner_id = rand::thread_rng().gen::<[u8; 32]>();
 
         let document =
-            Document::from_cbor(&person_serialized_document, None, Some(random_owner_id))
+            DocumentStub::from_cbor(&person_serialized_document, None, Some(random_owner_id))
                 .expect("expected to deserialize the document");
 
         let document_type = contract
@@ -1027,12 +1029,13 @@ mod tests {
         let person_serialized_document = json_document_to_cbor(
             "tests/supporting_files/contract/family/person1.json",
             Some(1),
-        );
+        )
+        .expect("expected to get cbor document");
 
         let random_owner_id = rand::thread_rng().gen::<[u8; 32]>();
 
         let document =
-            Document::from_cbor(&person_serialized_document, None, Some(random_owner_id))
+            DocumentStub::from_cbor(&person_serialized_document, None, Some(random_owner_id))
                 .expect("expected to deserialize the document");
 
         let document_type = contract
@@ -1174,12 +1177,13 @@ mod tests {
         let person_serialized_document = json_document_to_cbor(
             "tests/supporting_files/contract/family/person0.json",
             Some(1),
-        );
+        )
+        .expect("expected to get cbor document");
 
         let random_owner_id = rand::thread_rng().gen::<[u8; 32]>();
 
         let document =
-            Document::from_cbor(&person_serialized_document, None, Some(random_owner_id))
+            DocumentStub::from_cbor(&person_serialized_document, None, Some(random_owner_id))
                 .expect("expected to deserialize the document");
 
         let document_type = contract
@@ -1212,12 +1216,13 @@ mod tests {
         let person_serialized_document = json_document_to_cbor(
             "tests/supporting_files/contract/family/person2-no-middle-name.json",
             Some(1),
-        );
+        )
+        .expect("expected to get cbor document");
 
         let random_owner_id = rand::thread_rng().gen::<[u8; 32]>();
 
         let document =
-            Document::from_cbor(&person_serialized_document, None, Some(random_owner_id))
+            DocumentStub::from_cbor(&person_serialized_document, None, Some(random_owner_id))
                 .expect("expected to deserialize the document");
 
         let document_type = contract
@@ -1295,7 +1300,7 @@ mod tests {
         let db_transaction = drive.grove.start_transaction();
 
         let document =
-            Document::from_cbor(&person_serialized_document, None, Some(random_owner_id))
+            DocumentStub::from_cbor(&person_serialized_document, None, Some(random_owner_id))
                 .expect("expected to deserialize the document");
 
         let storage_flags = Some(StorageFlags::SingleEpoch(0));
@@ -1386,7 +1391,8 @@ mod tests {
         let dashpay_profile_serialized_document = json_document_to_cbor(
             "tests/supporting_files/contract/dashpay/profile0.json",
             Some(1),
-        );
+        )
+        .expect("expected to get cbor document");
 
         let random_owner_id = rand::thread_rng().gen::<[u8; 32]>();
         drive
@@ -1444,7 +1450,8 @@ mod tests {
         let dashpay_profile_serialized_document = json_document_to_cbor(
             "tests/supporting_files/contract/dashpay/profile0.json",
             Some(1),
-        );
+        )
+        .expect("expected to get cbor document");
 
         let random_owner_id = rand::thread_rng().gen::<[u8; 32]>();
         let storage_flags = StorageFlags::SingleEpochOwned(0, random_owner_id);
@@ -1519,7 +1526,8 @@ mod tests {
         let dashpay_profile_serialized_document = json_document_to_cbor(
             "tests/supporting_files/contract/dashpay/profile0.json",
             Some(1),
-        );
+        )
+        .expect("expected to get cbor document");
 
         let random_owner_id = rand::thread_rng().gen::<[u8; 32]>();
         let storage_flags = StorageFlags::SingleEpochOwned(0, random_owner_id);
@@ -1593,12 +1601,12 @@ mod tests {
 
         let storage_flags = Some(StorageFlags::SingleEpoch(0));
 
-        let documents: Vec<Document> = document_hexes
+        let documents: Vec<DocumentStub> = document_hexes
             .iter()
             .map(|document_hex| {
                 let serialized_document = cbor_from_hex(document_hex.to_string());
 
-                let document = Document::from_cbor(&serialized_document, None, None)
+                let document = DocumentStub::from_cbor(&serialized_document, None, None)
                     .expect("expected to deserialize the document");
 
                 let document_type = contract

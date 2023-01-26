@@ -11604,7 +11604,7 @@ function $$SETUP_STATE(hydrateRuntimeState, basePath) {
             ["socket.io", "npm:4.5.2"],\
             ["source-map", "npm:0.6.1"],\
             ["tmp", "npm:0.2.1"],\
-            ["ua-parser-js", "npm:0.7.31"],\
+            ["ua-parser-js", "npm:1.0.33"],\
             ["yargs", "npm:16.2.0"]\
           ],\
           "linkType": "HARD"\
@@ -17334,10 +17334,10 @@ function $$SETUP_STATE(hydrateRuntimeState, basePath) {
         }]\
       ]],\
       ["ua-parser-js", [\
-        ["npm:0.7.31", {\
-          "packageLocation": "./.yarn/cache/ua-parser-js-npm-0.7.31-aeb4c9aae9-e2f8324a83.zip/node_modules/ua-parser-js/",\
+        ["npm:1.0.33", {\
+          "packageLocation": "./.yarn/cache/ua-parser-js-npm-1.0.33-60ab7da777-460adef512.zip/node_modules/ua-parser-js/",\
           "packageDependencies": [\
-            ["ua-parser-js", "npm:0.7.31"]\
+            ["ua-parser-js", "npm:1.0.33"]\
           ],\
           "linkType": "HARD"\
         }]\

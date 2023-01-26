@@ -1525,9 +1525,6 @@ mod identifier {
 }
 
 mod indices {
-    use std::os::raw;
-
-    use crate::tests::utils::get_basic_error_from_result;
 
     use super::*;
 

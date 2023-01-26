@@ -20,6 +20,7 @@ use crate::util::hash::hash;
 use crate::util::json_value::{JsonValueExt, ReplaceWith};
 
 pub mod document_factory;
+pub mod document_stub;
 pub mod document_validator;
 pub mod errors;
 pub mod fetch_and_validate_data_contract;
@@ -84,7 +85,7 @@ impl Document {
         let mut document_data = document.data.take();
 
         // replace only the dynamic data
-        let (identifier_paths, binary_paths) = document.get_identifiers_and_binary_paths();
+        let (identifier_paths, binary_paths) = document.get_identifiers_and_binary_paths()?;
         document_data.replace_binary_paths(binary_paths, ReplaceWith::Base64)?;
         document_data.replace_identifier_paths(identifier_paths, ReplaceWith::Base58)?;
 
@@ -148,7 +149,7 @@ impl Document {
 
         let (identifier_paths, binary_paths) = self
             .data_contract
-            .get_identifiers_and_binary_paths(&self.document_type);
+            .get_identifiers_and_binary_paths(&self.document_type)?;
 
         value.replace_identifier_paths(identifier_paths, ReplaceWith::Base58)?;
         value.replace_binary_paths(binary_paths, ReplaceWith::Base64)?;
@@ -180,7 +181,7 @@ impl Document {
     pub fn to_object(&self) -> Result<JsonValue, ProtocolError> {
         let mut json_object = serde_json::to_value(self)?;
 
-        let (identifier_paths, binary_paths) = self.get_identifiers_and_binary_paths();
+        let (identifier_paths, binary_paths) = self.get_identifiers_and_binary_paths()?;
         let _ = json_object.replace_identifier_paths(identifier_paths, ReplaceWith::Bytes);
         let _ = json_object.replace_binary_paths(binary_paths, ReplaceWith::Bytes);
 
@@ -203,7 +204,7 @@ impl Document {
 
         let (identifier_paths, binary_paths) = self
             .data_contract
-            .get_identifiers_and_binary_paths(&self.document_type);
+            .get_identifiers_and_binary_paths(&self.document_type)?;
 
         // The static (part of structure) identifiers are being serialized to the String(base58)
         canonical_map.replace_values(IDENTIFIER_FIELDS, ReplaceWith::Bytes);
@@ -258,19 +259,21 @@ impl Document {
         &self.entropy
     }
 
-    pub fn get_identifiers_and_binary_paths(&self) -> (Vec<&str>, Vec<&str>) {
+    pub fn get_identifiers_and_binary_paths(
+        &self,
+    ) -> Result<(Vec<&str>, Vec<&str>), ProtocolError> {
         let (identifiers_paths, binary_paths) = self
             .data_contract
-            .get_identifiers_and_binary_paths(&self.document_type);
+            .get_identifiers_and_binary_paths(&self.document_type)?;
 
-        (
+        Ok((
             identifiers_paths
                 .into_iter()
                 .chain(IDENTIFIER_FIELDS)
                 .unique()
                 .collect(),
             binary_paths,
-        )
+        ))
     }
 }
 

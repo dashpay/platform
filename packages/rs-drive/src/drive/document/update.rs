@@ -34,12 +34,12 @@
 
 use std::collections::{HashMap, HashSet};
 
+use dpp::data_contract::DriveContractExt;
 use grovedb::batch::key_info::KeyInfo;
 use grovedb::batch::key_info::KeyInfo::KnownKey;
 use grovedb::batch::KeyInfoPath;
 use grovedb::{Element, EstimatedLayerInformation, TransactionArg};
 
-use crate::contract::document::Document;
 use crate::contract::Contract;
 use crate::drive::defaults::CONTRACT_DOCUMENTS_PATH_HEIGHT;
 use crate::drive::document::{
@@ -51,6 +51,7 @@ use crate::drive::flags::StorageFlags;
 use crate::drive::object_size_info::DocumentInfo::{
     DocumentRefAndSerialization, DocumentWithoutSerialization,
 };
+use dpp::document::document_stub::DocumentStub;
 
 use crate::drive::object_size_info::PathKeyElementInfo::PathKeyElement;
 use crate::drive::object_size_info::{
@@ -71,7 +72,6 @@ use crate::drive::grove_operations::{
     QueryType,
 };
 use crate::fee::result::FeeResult;
-use dpp::data_contract::extra::DriveContractExt;
 
 impl Drive {
     /// Updates a serialized document given a contract CBOR and returns the associated fee.
@@ -88,7 +88,7 @@ impl Drive {
     ) -> Result<FeeResult, Error> {
         let contract = <Contract as DriveContractExt>::from_cbor(contract_cbor, None)?;
 
-        let document = Document::from_cbor(serialized_document, None, owner_id)?;
+        let document = DocumentStub::from_cbor(serialized_document, None, owner_id)?;
 
         self.update_document_for_contract(
             &document,
@@ -133,7 +133,7 @@ impl Drive {
 
         let contract = &contract_fetch_info.contract;
 
-        let document = Document::from_cbor(serialized_document, None, owner_id)?;
+        let document = DocumentStub::from_cbor(serialized_document, None, owner_id)?;
 
         let document_info =
             DocumentRefAndSerialization((&document, serialized_document, storage_flags));
@@ -172,7 +172,7 @@ impl Drive {
         storage_flags: Option<&StorageFlags>,
         transaction: TransactionArg,
     ) -> Result<FeeResult, Error> {
-        let document = Document::from_cbor(serialized_document, None, owner_id)?;
+        let document = DocumentStub::from_cbor(serialized_document, None, owner_id)?;
 
         self.update_document_for_contract(
             &document,
@@ -190,7 +190,7 @@ impl Drive {
     /// Updates a document and returns the associated fee.
     pub fn update_document_for_contract(
         &self,
-        document: &Document,
+        document: &DocumentStub,
         serialized_document: &[u8],
         contract: &Contract,
         document_type_name: &str,
@@ -358,8 +358,11 @@ impl Drive {
             let old_document_info = if let Some(old_document_element) = old_document_element {
                 if let Element::Item(old_serialized_document, element_flags) = old_document_element
                 {
-                    let document =
-                        Document::from_cbor(old_serialized_document.as_slice(), None, owner_id)?;
+                    let document = DocumentStub::from_cbor(
+                        old_serialized_document.as_slice(),
+                        None,
+                        owner_id,
+                    )?;
                     Ok(DocumentWithoutSerialization((
                         document,
                         StorageFlags::from_some_element_flags_ref(&element_flags)?,
@@ -572,7 +575,7 @@ impl Drive {
                                 is_known_to_be_subtree_with_sum: Some((false, false)),
                             },
                             transaction,
-                            &previous_batch_operations,
+                            previous_batch_operations,
                             &mut batch_operations,
                         )?;
                     } else {
@@ -585,7 +588,7 @@ impl Drive {
                                 is_known_to_be_subtree_with_sum: Some((false, false)),
                             },
                             transaction,
-                            &previous_batch_operations,
+                            previous_batch_operations,
                             &mut batch_operations,
                         )?;
                     }
@@ -644,11 +647,12 @@ mod tests {
     use std::option::Option::None;
     use std::sync::Arc;
 
+    use dpp::data_contract::extra::common::json_document_to_cbor;
     use dpp::data_contract::validation::data_contract_validator::DataContractValidator;
     use dpp::data_contract::DataContractFactory;
     use dpp::document::document_factory::DocumentFactory;
     use dpp::document::document_validator::DocumentValidator;
-    use dpp::mocks;
+
     use dpp::prelude::DataContract;
     use dpp::version::{ProtocolVersionValidator, COMPATIBILITY_MAP, LATEST_VERSION};
     use rand::Rng;
@@ -657,7 +661,6 @@ mod tests {
     use tempfile::TempDir;
 
     use super::*;
-    use crate::contract::{document::Document, Contract};
     use crate::drive::config::{DriveConfig, DriveEncoding};
     use crate::drive::flags::StorageFlags;
     use crate::drive::object_size_info::DocumentAndContractInfo;
@@ -667,7 +670,7 @@ mod tests {
     use crate::fee::default_costs::STORAGE_DISK_USAGE_CREDIT_PER_BYTE;
     use crate::query::DriveQuery;
     use crate::{
-        common::{json_document_to_cbor, setup_contract, value_to_cbor},
+        common::{setup_contract, value_to_cbor},
         drive::test_utils::TestEntropyGenerator,
     };
 
@@ -759,7 +762,7 @@ mod tests {
 
         let alice_profile_cbor = hex::decode("01000000a763246964582035edfec54aea574df968990abb47b39c206abe5c43a6157885f62958a1f1230c6524747970656770726f66696c656561626f75746a4920616d20416c69636568246f776e65724964582041d52f93f6f7c5af79ce994381c90df73cce2863d3850b9c05ef586ff0fe795f69247265766973696f6e016961766174617255726c7819687474703a2f2f746573742e636f6d2f616c6963652e6a70676f2464617461436f6e747261637449645820b0248cd9a27f86d05badf475dd9ff574d63219cd60c52e2be1e540c2fdd71333").unwrap();
 
-        let alice_profile = Document::from_cbor(alice_profile_cbor.as_slice(), None, None)
+        let alice_profile = DocumentStub::from_cbor(alice_profile_cbor.as_slice(), None, None)
             .expect("expected to get a document");
 
         let document_type = contract
@@ -852,7 +855,7 @@ mod tests {
 
         let alice_profile_cbor = hex::decode("01000000a763246964582035edfec54aea574df968990abb47b39c206abe5c43a6157885f62958a1f1230c6524747970656770726f66696c656561626f75746a4920616d20416c69636568246f776e65724964582041d52f93f6f7c5af79ce994381c90df73cce2863d3850b9c05ef586ff0fe795f69247265766973696f6e016961766174617255726c7819687474703a2f2f746573742e636f6d2f616c6963652e6a70676f2464617461436f6e747261637449645820b0248cd9a27f86d05badf475dd9ff574d63219cd60c52e2be1e540c2fdd71333").unwrap();
 
-        let alice_profile = Document::from_cbor(alice_profile_cbor.as_slice(), None, None)
+        let alice_profile = DocumentStub::from_cbor(alice_profile_cbor.as_slice(), None, None)
             .expect("expected to get a document");
 
         let document_type = contract
@@ -965,7 +968,7 @@ mod tests {
 
         let alice_profile_cbor = hex::decode("01000000a763246964582035edfec54aea574df968990abb47b39c206abe5c43a6157885f62958a1f1230c6524747970656770726f66696c656561626f75746a4920616d20416c69636568246f776e65724964582041d52f93f6f7c5af79ce994381c90df73cce2863d3850b9c05ef586ff0fe795f69247265766973696f6e016961766174617255726c7819687474703a2f2f746573742e636f6d2f616c6963652e6a70676f2464617461436f6e747261637449645820b0248cd9a27f86d05badf475dd9ff574d63219cd60c52e2be1e540c2fdd71333").unwrap();
 
-        let alice_profile = Document::from_cbor(alice_profile_cbor.as_slice(), None, None)
+        let alice_profile = DocumentStub::from_cbor(alice_profile_cbor.as_slice(), None, None)
             .expect("expected to get a document");
 
         let document_type = contract
@@ -1224,7 +1227,8 @@ mod tests {
         let dashpay_cr_serialized_document = json_document_to_cbor(
             "tests/supporting_files/contract/dashpay/contact-request0.json",
             Some(1),
-        );
+        )
+        .expect("expected to get cbor document");
 
         let random_owner_id = rand::thread_rng().gen::<[u8; 32]>();
         drive
@@ -1290,12 +1294,14 @@ mod tests {
         let dashpay_profile_serialized_document = json_document_to_cbor(
             "tests/supporting_files/contract/dashpay/profile0.json",
             Some(1),
-        );
+        )
+        .expect("expected to get cbor document");
 
         let dashpay_profile_updated_public_message_serialized_document = json_document_to_cbor(
             "tests/supporting_files/contract/dashpay/profile0-updated-public-message.json",
             Some(1),
-        );
+        )
+        .expect("expected to get cbor document");
 
         let random_owner_id = rand::thread_rng().gen::<[u8; 32]>();
         drive
@@ -2025,7 +2031,7 @@ mod tests {
     ) -> FeeResult {
         let value = serde_json::to_value(person).expect("serialized person");
         let document_cbor = value_to_cbor(value, Some(defaults::PROTOCOL_VERSION));
-        let document = Document::from_cbor(document_cbor.as_slice(), None, None)
+        let document = DocumentStub::from_cbor(document_cbor.as_slice(), None, None)
             .expect("document should be properly deserialized");
         let document_type = contract
             .document_type_for_name("person")

@@ -148,7 +148,9 @@ impl DocumentFactoryWASM {
 
         // When data contract is available, replace remaining dynamic paths
         let mut document_data = document.data.take();
-        let (identifier_paths, binary_paths) = document.get_identifiers_and_binary_paths();
+        let (identifier_paths, binary_paths) = document
+            .get_identifiers_and_binary_paths()
+            .with_js_error()?;
         document_data
             .replace_identifier_paths(identifier_paths, ReplaceWith::Bytes)
             .with_js_error()?;
