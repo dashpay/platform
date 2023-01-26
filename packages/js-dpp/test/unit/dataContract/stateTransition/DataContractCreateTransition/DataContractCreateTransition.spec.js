@@ -1,3 +1,4 @@
+const varint = require('varint');
 const getDataContractFixture = require('../../../../../lib/test/fixtures/getDataContractFixture');
 const stateTransitionTypes = require('../../../../../lib/stateTransition/stateTransitionTypes');
 
@@ -74,13 +75,12 @@ describe('DataContractCreateTransition', () => {
 
       encodeMock.returns(serializedStateTransition);
 
-      const protocolVersionUInt32 = Buffer.alloc(4);
-      protocolVersionUInt32.writeUInt32LE(stateTransition.protocolVersion, 0);
+      const protocolVersionBytes = Buffer.from(varint.encode(this.getProtocolVersion()));
 
       const result = stateTransition.toBuffer();
 
       expect(result).to.deep.equal(
-        Buffer.concat([protocolVersionUInt32, serializedStateTransition]),
+        Buffer.concat([protocolVersionBytes, serializedStateTransition]),
       );
 
       const dataToEncode = stateTransition.toObject();
@@ -111,11 +111,10 @@ describe('DataContractCreateTransition', () => {
         dataToEncode,
       ]);
 
-      const protocolVersionUInt32 = Buffer.alloc(4);
-      protocolVersionUInt32.writeUInt32LE(stateTransition.protocolVersion, 0);
+      const protocolVersionBytes = Buffer.from(varint.encode(this.getProtocolVersion()));
 
       expect(hashMock).to.have.been.calledOnceWith(
-        Buffer.concat([protocolVersionUInt32, serializedDocument]),
+        Buffer.concat([protocolVersionBytes, serializedDocument]),
       );
     });
   });

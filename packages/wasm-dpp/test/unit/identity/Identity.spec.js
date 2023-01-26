@@ -145,8 +145,7 @@ describe('Identity', () => {
       const identityDataToEncode = identity.toObject();
       delete identityDataToEncode.protocolVersion;
 
-      const protocolVersionUInt32 = Buffer.alloc(4);
-      protocolVersionUInt32.writeUInt32LE(identity.getProtocolVersion(), 0);
+      varint.encode(this.getProtocolVersion());
 
       expect(result).to.deep.equal(expectedHash);
     });
