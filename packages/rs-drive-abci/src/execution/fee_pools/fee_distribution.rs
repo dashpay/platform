@@ -52,6 +52,7 @@ use rust_decimal_macros::dec;
 
 /// Struct containing the number of proposers to be paid and the index of the epoch
 /// they're to be paid from.
+#[derive(PartialEq, Eq, Debug)]
 pub struct ProposersPayouts {
     /// Number of proposers to be paid
     pub proposers_paid_count: u16,
@@ -60,6 +61,7 @@ pub struct ProposersPayouts {
 }
 
 /// Struct containing the amount of processing and storage fees in the distribution pools
+#[derive(PartialEq, Eq)]
 pub struct FeesInPools {
     /// Amount of processing fees in the distribution pools
     pub processing_fees: u64,
@@ -68,7 +70,7 @@ pub struct FeesInPools {
 }
 
 /// Struct containing info about an epoch containing fees that have not been paid out yet.
-#[derive(Default)]
+#[derive(Default, PartialEq, Eq)]
 pub struct UnpaidEpoch {
     /// Index of the current epoch
     pub epoch_index: u16,
@@ -871,13 +873,13 @@ mod tests {
                 .grove_apply_batch(batch, false, Some(&transaction))
                 .expect("should apply batch");
 
-            assert!(matches!(
-                proposer_payouts,
-                Some(ProposersPayouts {
+            assert_eq!(
+                proposer_payouts.unwrap(),
+                ProposersPayouts {
                     proposers_paid_count: proposers_count,
                     paid_epoch_index: 0,
-                })
-            ));
+                }
+            );
 
             // The Epoch 0 should still not marked as paid because proposers count == proposers limit
             let next_unpaid_epoch_index = platform

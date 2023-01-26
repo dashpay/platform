@@ -48,9 +48,6 @@ class PlatformStatusCommand extends ConfigBaseCommand {
         httpService,
         httpPort,
         httpPortState,
-        gRPCService,
-        gRPCPort,
-        gRPCPortState,
         p2pService,
         p2pPort,
         p2pPortState,
@@ -62,8 +59,6 @@ class PlatformStatusCommand extends ConfigBaseCommand {
       const plain = {
         'HTTP service': httpService,
         'HTTP port': `${httpPort} ${colors.portState(httpPortState)(httpPortState)}`,
-        'GRPC service': gRPCService,
-        'GRPC port': `${gRPCPort} ${colors.portState(gRPCPortState)(gRPCPortState)}`,
         'P2P service': p2pService,
         'P2P port': `${p2pPort} ${colors.portState(p2pPortState)(p2pPortState)}`,
         'RPC service': rpcService,

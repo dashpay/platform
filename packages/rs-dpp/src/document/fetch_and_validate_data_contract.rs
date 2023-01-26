@@ -7,7 +7,7 @@ use crate::{
     data_contract::DataContract,
     prelude::Identifier,
     state_repository::StateRepositoryLike,
-    state_transition::state_transition_execution_context::{self, StateTransitionExecutionContext},
+    state_transition::state_transition_execution_context::StateTransitionExecutionContext,
     util::json_value::JsonValueExt,
     validation::ValidationResult,
     ProtocolError,

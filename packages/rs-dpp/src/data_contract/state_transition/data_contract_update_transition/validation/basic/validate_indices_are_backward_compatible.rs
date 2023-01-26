@@ -1,18 +1,14 @@
-use std::collections::HashMap;
 use std::collections::HashSet;
+use std::collections::{BTreeMap, HashMap};
 
+use crate::consensus::basic::BasicError;
+use crate::data_contract::document_type::IndexProperty;
+use crate::util::json_schema::Index;
+use crate::util::json_schema::JsonSchemaExt;
+use crate::util::json_value::JsonValueExt;
+use crate::validation::ValidationResult;
+use crate::ProtocolError;
 use anyhow::anyhow;
-
-use crate::{
-    consensus::basic::BasicError,
-    data_contract::extra::IndexProperty,
-    util::{
-        json_schema::{Index, JsonSchemaExt},
-        json_value::JsonValueExt,
-    },
-    validation::ValidationResult,
-    ProtocolError,
-};
 
 type IndexName = String;
 type DocumentType = String;
@@ -27,17 +23,13 @@ pub fn validate_indices_are_backward_compatible<'a>(
         new_documents.into_iter().collect();
 
     for (document_type, existing_schema) in existing_documents.into_iter() {
-        let name_new_index_map = to_index_by_name(
-            new_documents_by_type
-                .get(document_type)
-                .ok_or_else(|| {
-                    anyhow!(
-                        "the document '{}' type doesn't exist in new definitions",
-                        document_type
-                    )
-                })?
-                .get_indices()?,
-        );
+        let new_documents_schema = *new_documents_by_type.get(document_type).ok_or_else(|| {
+            anyhow!(
+                "the document '{}' type doesn't exist in new definitions",
+                document_type
+            )
+        })?;
+        let name_new_index_map = new_documents_schema.get_indices_map::<BTreeMap<_, _>>()?;
 
         let old_properties_set: HashSet<&str> = existing_schema
             .get_schema_properties()?
@@ -68,7 +60,7 @@ pub fn validate_indices_are_backward_compatible<'a>(
 
         let added_properties = new_properties_set.difference(&old_properties_set);
 
-        let existing_schema_indices = existing_schema.get_indices().unwrap_or_default();
+        let existing_schema_indices = existing_schema.get_indices::<Vec<_>>().unwrap_or_default();
 
         let maybe_changed_unique_existing_index =
             get_changed_old_unique_index(&existing_schema_indices, &name_new_index_map);
@@ -102,7 +94,7 @@ pub fn validate_indices_are_backward_compatible<'a>(
         let maybe_wrongly_constructed_new_index = get_wrongly_constructed_new_index(
             existing_schema_indices.iter(),
             name_new_index_map.values(),
-            added_properties.map(|x| *x),
+            added_properties.copied(),
         )?;
         if let Some(index) = maybe_wrongly_constructed_new_index {
             result.add_error(BasicError::DataContractInvalidIndexDefinitionUpdateError {
@@ -119,7 +111,7 @@ pub fn validate_indices_are_backward_compatible<'a>(
 // Returns the first unique index that has changed when comparing to the `new_indices`
 fn get_changed_old_unique_index<'a>(
     existing_indices: &'a [Index],
-    new_indices: &'a HashMap<IndexName, Index>,
+    new_indices: &'a BTreeMap<IndexName, Index>,
 ) -> Option<&'a Index> {
     existing_indices
         .iter()
@@ -217,7 +209,7 @@ fn get_new_unique_index<'a>(
 
 fn get_wrongly_updated_non_unique_index<'a>(
     existing_schema_indices: &'a [Index],
-    new_indices: &'a HashMap<IndexName, Index>,
+    new_indices: &'a BTreeMap<IndexName, Index>,
     existing_schema: &'a JsonSchema,
 ) -> Option<&'a Index> {
     // Checking every existing non-unique index, and it's respective new index
@@ -245,15 +237,6 @@ fn get_wrongly_updated_non_unique_index<'a>(
         }
     }
     None
-}
-
-fn to_index_by_name(indices: Vec<Index>) -> HashMap<String, Index> {
-    let mut indices_by_name: HashMap<String, Index> = HashMap::new();
-    for index in indices.into_iter() {
-        // There is an assumption that the index name must be unique
-        indices_by_name.insert(index.name.clone(), index);
-    }
-    indices_by_name
 }
 
 #[cfg(test)]

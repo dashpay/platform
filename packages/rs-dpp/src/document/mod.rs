@@ -1,6 +1,7 @@
 use std::convert::TryInto;
 
 use ciborium::value::Value as CborValue;
+use integer_encoding::VarInt;
 use itertools::Itertools;
 use serde::{Deserialize, Serialize};
 use serde_json::Value as JsonValue;
@@ -13,13 +14,15 @@ use crate::data_contract::DataContract;
 use crate::errors::ProtocolError;
 use crate::identifier::Identifier;
 use crate::metadata::Metadata;
-use crate::util::cbor_value;
 use crate::util::cbor_value::CborCanonicalMap;
 use crate::util::cbor_value::FieldType;
+use crate::util::deserializer::SplitProtocolVersionOutcome;
 use crate::util::hash::hash;
 use crate::util::json_value::{JsonValueExt, ReplaceWith};
+use crate::util::{cbor_value, deserializer};
 
 pub mod document_factory;
+pub mod document_stub;
 pub mod document_validator;
 pub mod errors;
 pub mod fetch_and_validate_data_contract;
@@ -84,7 +87,7 @@ impl Document {
         let mut document_data = document.data.take();
 
         // replace only the dynamic data
-        let (identifier_paths, binary_paths) = document.get_identifiers_and_binary_paths();
+        let (identifier_paths, binary_paths) = document.get_identifiers_and_binary_paths()?;
         document_data.replace_binary_paths(binary_paths, ReplaceWith::Base64)?;
         document_data.replace_identifier_paths(identifier_paths, ReplaceWith::Base58)?;
 
@@ -148,7 +151,7 @@ impl Document {
 
         let (identifier_paths, binary_paths) = self
             .data_contract
-            .get_identifiers_and_binary_paths(&self.document_type);
+            .get_identifiers_and_binary_paths(&self.document_type)?;
 
         value.replace_identifier_paths(identifier_paths, ReplaceWith::Base58)?;
         value.replace_binary_paths(binary_paths, ReplaceWith::Base64)?;
@@ -157,17 +160,18 @@ impl Document {
     }
 
     pub fn from_buffer(cbor_bytes: impl AsRef<[u8]>) -> Result<Document, ProtocolError> {
-        let (protocol_version_bytes, document_cbor_bytes) = cbor_bytes.as_ref().split_at(4);
+        let SplitProtocolVersionOutcome {
+            protocol_version,
+            main_message_bytes: document_cbor_bytes,
+            ..
+        } = deserializer::split_protocol_version(cbor_bytes.as_ref())?;
 
         let cbor_value: CborValue = ciborium::de::from_reader(document_cbor_bytes)
             .map_err(|e| ProtocolError::EncodingError(format!("{}", e)))?;
 
         let mut json_value = cbor_value::cbor_value_to_json_value(&cbor_value)?;
 
-        json_value.parse_and_add_protocol_version(
-            property_names::PROTOCOL_VERSION,
-            protocol_version_bytes,
-        )?;
+        json_value.add_protocol_version(property_names::PROTOCOL_VERSION, protocol_version)?;
         json_value.replace_identifier_paths(IDENTIFIER_FIELDS, ReplaceWith::Base58)?;
 
         let document: Document = serde_json::from_value(json_value)?;
@@ -180,7 +184,7 @@ impl Document {
     pub fn to_object(&self) -> Result<JsonValue, ProtocolError> {
         let mut json_object = serde_json::to_value(self)?;
 
-        let (identifier_paths, binary_paths) = self.get_identifiers_and_binary_paths();
+        let (identifier_paths, binary_paths) = self.get_identifiers_and_binary_paths()?;
         let _ = json_object.replace_identifier_paths(identifier_paths, ReplaceWith::Bytes);
         let _ = json_object.replace_binary_paths(binary_paths, ReplaceWith::Bytes);
 
@@ -188,7 +192,7 @@ impl Document {
     }
 
     pub fn to_buffer(&self) -> Result<Vec<u8>, ProtocolError> {
-        let mut result_buf = self.protocol_version.to_le_bytes().to_vec();
+        let mut result_buf = self.protocol_version.encode_var_vec();
 
         let map = CborValue::serialized(&self)
             .map_err(|e| ProtocolError::EncodingError(e.to_string()))?;
@@ -203,7 +207,7 @@ impl Document {
 
         let (identifier_paths, binary_paths) = self
             .data_contract
-            .get_identifiers_and_binary_paths(&self.document_type);
+            .get_identifiers_and_binary_paths(&self.document_type)?;
 
         // The static (part of structure) identifiers are being serialized to the String(base58)
         canonical_map.replace_values(IDENTIFIER_FIELDS, ReplaceWith::Bytes);
@@ -263,19 +267,21 @@ impl Document {
         &self.entropy
     }
 
-    pub fn get_identifiers_and_binary_paths(&self) -> (Vec<&str>, Vec<&str>) {
+    pub fn get_identifiers_and_binary_paths(
+        &self,
+    ) -> Result<(Vec<&str>, Vec<&str>), ProtocolError> {
         let (identifiers_paths, binary_paths) = self
             .data_contract
-            .get_identifiers_and_binary_paths(&self.document_type);
+            .get_identifiers_and_binary_paths(&self.document_type)?;
 
-        (
+        Ok((
             identifiers_paths
                 .into_iter()
                 .chain(IDENTIFIER_FIELDS)
                 .unique()
                 .collect(),
             binary_paths,
-        )
+        ))
     }
 }
 
@@ -504,7 +510,7 @@ mod test {
     }
 
     fn document_cbor_bytes() -> Vec<u8> {
-        hex::decode("01000000a7632469645820715d3d65756024a2de0ab1b2bb1e83b5ef297bf0c6fa616aad5c887e4f10def9646e616d656543757469656524747970656c6e696365446f63756d656e7468246f776e657249645820b6bf374d302fbe2b511b43e23d033f965e2e33a024c7419db07533d4ba7d708e69247265766973696f6e016a246372656174656441741b00000181b40fa1fb6f2464617461436f6e7472616374496458207abc5f9ab4bcd0612ed6cacec204dd6d7411a56127d4248af1eadacb93525da2").unwrap()
+        hex::decode("01a7632469645820715d3d65756024a2de0ab1b2bb1e83b5ef297bf0c6fa616aad5c887e4f10def9646e616d656543757469656524747970656c6e696365446f63756d656e7468246f776e657249645820b6bf374d302fbe2b511b43e23d033f965e2e33a024c7419db07533d4ba7d708e69247265766973696f6e016a246372656174656441741b00000181b40fa1fb6f2464617461436f6e7472616374496458207abc5f9ab4bcd0612ed6cacec204dd6d7411a56127d4248af1eadacb93525da2").unwrap()
     }
 
     fn new_example_document() -> Document {

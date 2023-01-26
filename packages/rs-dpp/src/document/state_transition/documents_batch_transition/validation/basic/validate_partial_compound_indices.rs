@@ -23,7 +23,7 @@ pub fn validate_partial_compound_indices<'a>(
         let raw_transition = transition.borrow();
         let document_type = raw_transition.get_string("$type")?;
         let document_schema = data_contract.get_document_schema(document_type)?;
-        let indices = document_schema.get_indices().unwrap_or_default();
+        let indices = document_schema.get_indices::<Vec<_>>().unwrap_or_default();
 
         if indices.is_empty() {
             continue;

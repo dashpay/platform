@@ -16,4 +16,7 @@ pub enum StructureError {
     /// Value wrong type error
     #[error("value wrong type error: {0}")]
     ValueWrongType(&'static str),
+    /// A key value pair must exist
+    #[error("key value must exist: {0}")]
+    KeyValueMustExist(&'static str),
 }

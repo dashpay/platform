@@ -38,7 +38,10 @@ pub enum ProtocolError {
     Error(#[from] anyhow::Error),
 
     #[error(transparent)]
-    DataContractError(DataContractError),
+    DataContractError(#[from] DataContractError),
+
+    #[error(transparent)]
+    StructureError(#[from] StructureError),
 
     #[error(transparent)]
     AbstractConsensusError(Box<ConsensusError>),
@@ -132,12 +135,6 @@ impl From<String> for ProtocolError {
 impl From<ConsensusError> for ProtocolError {
     fn from(e: ConsensusError) -> Self {
         ProtocolError::AbstractConsensusError(Box::new(e))
-    }
-}
-
-impl From<DataContractError> for ProtocolError {
-    fn from(e: DataContractError) -> Self {
-        ProtocolError::DataContractError(e)
     }
 }
 

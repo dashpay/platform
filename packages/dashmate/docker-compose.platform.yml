@@ -104,8 +104,7 @@ services:
     image: ${PLATFORM_DAPI_ENVOY_DOCKER_IMAGE:?err}
     restart: unless-stopped
     ports:
-      - ${PLATFORM_DAPI_ENVOY_HTTP_PORT:?err}:10000 # JSON RPC and gRPC Web
-      - ${PLATFORM_DAPI_ENVOY_GRPC_PORT:?err}:50051 # gRPC Native
+      - ${PLATFORM_DAPI_ENVOY_HTTP_PORT:?err}:10000 # JSON RPC and gRPC Web & Native
     depends_on:
       - dapi_api
       - dapi_tx_filter_stream
