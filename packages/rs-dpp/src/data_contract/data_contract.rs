@@ -421,7 +421,7 @@ impl DataContract {
                     if content_type == identifier::MEDIA_TYPE {
                         Either::Right(path.as_str())
                     } else {
-                        return Either::Left(path.as_str());
+                        Either::Left(path.as_str())
                     }
                 } else {
                     Either::Left(path.as_str())
