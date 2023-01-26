@@ -1,3 +1,4 @@
+const varint = require('varint');
 const getDataContractFixture = require('@dashevo/dpp/lib/test/fixtures/getDataContractFixture');
 const stateTransitionTypes = require('@dashevo/dpp/lib/stateTransition/stateTransitionTypes');
 const protocolVersion = require('@dashevo/dpp/lib/version/protocolVersion');
