@@ -96,8 +96,7 @@ describe('DocumentFacade', () => {
     });
 
     it('should create Document from serialized', async () => {
-      const a = document.toBuffer();
-      const result = await dpp.document.createFromBuffer(a);
+      const result = await dpp.document.createFromBuffer(document.toBuffer());
 
       expect(result).to.be.an.instanceOf(Document);
 
