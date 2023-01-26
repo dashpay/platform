@@ -68,7 +68,7 @@ describe('DataContractCreateTransition', () => {
       const protocolVersionBytes = Buffer.from(varint.encode(stateTransition.getProtocolVersion()));
 
       const result = stateTransition.toBuffer();
-      expect(result.compare(protocolVersionBytes, 0, 4, 0, 4)).equals(0);
+      expect(result.compare(protocolVersionBytes, 0, 1, 0, 1)).equals(0);
     });
   });
 
