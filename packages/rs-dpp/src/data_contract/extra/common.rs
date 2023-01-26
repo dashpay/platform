@@ -267,18 +267,6 @@ pub fn json_document_to_cbor(
     let json: serde_json::Value = serde_json::from_reader(reader).expect("expected a valid json");
     value_to_cbor(json, protocol_version)
 }
-//
-// pub fn value_to_cbor(value: serde_json::Value, protocol_version: Option<u32>) -> Vec<u8> {
-//     let mut buffer: Vec<u8> = Vec::new();
-//     if let Some(protocol_version) = protocol_version {
-//         buffer
-//             .write_u32::<BigEndian>(protocol_version)
-//             .expect("writing protocol version caused error");
-//     }
-//     ciborium::ser::into_writer(&value, &mut buffer).expect("unable to serialize into cbor");
-//     buffer
-// }
-//
 
 /// Make sure the protocol version is correct.
 pub const fn check_protocol_version(_version: u32) -> bool {

@@ -42,7 +42,6 @@ use std::io::BufRead;
 use std::option::Option::None;
 use std::path::Path;
 
-use byteorder::{BigEndian, WriteBytesExt};
 use ciborium::value::Value;
 use dpp::data_contract::DriveContractExt;
 use grovedb::TransactionArg;
@@ -101,18 +100,6 @@ pub fn setup_contract_from_hex(
         )
         .expect("contract should be applied");
     contract
-}
-
-/// Serializes a JSON value to CBOR.
-pub fn value_to_cbor(value: serde_json::Value, protocol_version: Option<u32>) -> Vec<u8> {
-    let mut buffer: Vec<u8> = Vec::new();
-    if let Some(protocol_version) = protocol_version {
-        buffer
-            .write_u32::<BigEndian>(protocol_version)
-            .expect("writing protocol version caused error");
-    }
-    ciborium::ser::into_writer(&value, &mut buffer).expect("unable to serialize into cbor");
-    buffer
 }
 
 /// Serializes a hex string to CBOR.

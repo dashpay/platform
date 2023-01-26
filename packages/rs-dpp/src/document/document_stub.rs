@@ -39,6 +39,7 @@ use std::io::{BufReader, Read};
 
 use byteorder::{BigEndian, WriteBytesExt};
 use ciborium::value::Value;
+use integer_encoding::{VarInt, VarIntWriter};
 
 use crate::data_contract::{DataContract, DriveContractExt};
 use serde::{Deserialize, Serialize};
@@ -47,9 +48,11 @@ use crate::data_contract::document_type::document_type::PROTOCOL_VERSION;
 use crate::data_contract::document_type::DocumentType;
 use crate::data_contract::errors::{DataContractError, StructureError};
 use crate::data_contract::extra::common::{
-    bytes_for_system_value_from_tree_map, check_protocol_version_bytes, get_key_from_cbor_map,
-    reduced_value_string_representation,
+    bytes_for_system_value_from_tree_map, check_protocol_version, check_protocol_version_bytes,
+    get_key_from_cbor_map, reduced_value_string_representation,
 };
+use crate::util::deserializer;
+use crate::util::deserializer::SplitProtocolVersionOutcome;
 use crate::ProtocolError;
 
 //todo: rename
@@ -180,17 +183,18 @@ impl DocumentStub {
         document_id: Option<[u8; 32]>,
         owner_id: Option<[u8; 32]>,
     ) -> Result<Self, ProtocolError> {
-        let (version, read_document_cbor) = document_cbor.split_at(4);
-        if !check_protocol_version_bytes(version) {
-            return Err(ProtocolError::StructureError(
-                StructureError::InvalidProtocolVersion("invalid protocol version"),
-            ));
-        }
+        let SplitProtocolVersionOutcome {
+            main_message_bytes: read_document_cbor,
+            ..
+        } = deserializer::split_protocol_version(document_cbor.as_ref())?;
+
         // first we need to deserialize the document and contract indices
         // we would need dedicated deserialization functions based on the document type
         let mut document: BTreeMap<String, Value> = ciborium::de::from_reader(read_document_cbor)
             .map_err(|_| {
-            ProtocolError::StructureError(StructureError::InvalidCBOR("unable to decode contract"))
+            ProtocolError::StructureError(StructureError::InvalidCBOR(
+                "unable to decode contract for document call",
+            ))
         })?;
 
         let owner_id: [u8; 32] = match owner_id {
@@ -262,20 +266,17 @@ impl DocumentStub {
                 DataContractError::FieldRequirementUnmet("invalid document id"),
             ));
         }
-
-        let (version, read_document_cbor) = document_cbor.split_at(4);
-        if !check_protocol_version_bytes(version) {
-            return Err(ProtocolError::StructureError(
-                StructureError::InvalidProtocolVersion("invalid protocol version"),
-            ));
-        }
+        let SplitProtocolVersionOutcome {
+            main_message_bytes: read_document_cbor,
+            ..
+        } = deserializer::split_protocol_version(document_cbor.as_ref())?;
 
         // first we need to deserialize the document and contract indices
         // we would need dedicated deserialization functions based on the document type
         let properties: BTreeMap<String, Value> = ciborium::de::from_reader(read_document_cbor)
             .map_err(|_| {
                 ProtocolError::StructureError(StructureError::InvalidCBOR(
-                    "unable to decode contract",
+                    "unable to decode contract for document call with id",
                 ))
             })?;
 
@@ -295,7 +296,7 @@ impl DocumentStub {
     pub fn to_cbor(&self) -> Vec<u8> {
         let mut buffer: Vec<u8> = Vec::new();
         buffer
-            .write_u32::<BigEndian>(PROTOCOL_VERSION)
+            .write_varint(PROTOCOL_VERSION)
             .expect("writing protocol version caused error");
         ciborium::ser::into_writer(&self, &mut buffer).expect("unable to serialize into cbor");
         buffer

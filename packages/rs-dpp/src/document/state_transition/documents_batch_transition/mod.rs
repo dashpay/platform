@@ -3,6 +3,7 @@ use std::convert::TryInto;
 
 use anyhow::{anyhow, Context};
 use ciborium::value::Value as CborValue;
+use integer_encoding::VarInt;
 use serde::{Deserialize, Serialize};
 use serde_json::Value as JsonValue;
 
@@ -296,7 +297,7 @@ impl StateTransitionConvert for DocumentsBatchTransition {
     }
 
     fn to_buffer(&self, skip_signature: bool) -> Result<Vec<u8>, ProtocolError> {
-        let mut result_buf = self.protocol_version.to_le_bytes().to_vec();
+        let mut result_buf = self.protocol_version.encode_var_vec();
         let value = self.to_object(skip_signature)?;
 
         let map = CborValue::serialized(&value)
@@ -506,7 +507,7 @@ mod test {
     #[test]
     fn should_convert_to_batch_transition_to_the_buffer() {
         let transition_id_base58 = "6o8UfoeE2s7dTkxxyPCixuxe8TM5DtCGHTMummUN6t5M";
-        let expected_bytes_hex ="01000000a5647479706501676f776e657249645820a858bdc49c968148cd12648ee048d34003e9da3fbf2cbc62c31bb4c717bf690d697369676e6174757265f76b7472616e736974696f6e7381a7632469645820561b9b2e90b7c0ca355f729777b45bc646a18f5426a9462f0333c766135a3120646e616d656543757469656524747970656c6e696365446f63756d656e746724616374696f6e006824656e74726f707958202cdbaeda81c14765ba48432ff5cc900a7cacd4538b817fc71f38907aaa7023746a246372656174656441741b000001853a3602876f2464617461436f6e74726163744964582049aea5df2124a51d5d8dcf466e238fbc77fd72601be69daeb6dba75e8d26b30c747369676e61747572655075626c69634b65794964f7" ;
+        let expected_bytes_hex ="01a5647479706501676f776e657249645820a858bdc49c968148cd12648ee048d34003e9da3fbf2cbc62c31bb4c717bf690d697369676e6174757265f76b7472616e736974696f6e7381a7632469645820561b9b2e90b7c0ca355f729777b45bc646a18f5426a9462f0333c766135a3120646e616d656543757469656524747970656c6e696365446f63756d656e746724616374696f6e006824656e74726f707958202cdbaeda81c14765ba48432ff5cc900a7cacd4538b817fc71f38907aaa7023746a246372656174656441741b000001853a3602876f2464617461436f6e74726163744964582049aea5df2124a51d5d8dcf466e238fbc77fd72601be69daeb6dba75e8d26b30c747369676e61747572655075626c69634b65794964f7" ;
         let data_contract_id_base58 = "5xdDqypFMPfvF6UdWxefCGvRFyxgkPZCAK6TS4pvvw6T";
         let owner_id_base58 = "CL9ydpdxP4kQniGx6z5JUL8K72gnwcemKT2aJmh7sdwJ";
         let entropy_base64 = "LNuu2oHBR2W6SEMv9cyQCnys1FOLgX/HHziQeqpwI3Q=";

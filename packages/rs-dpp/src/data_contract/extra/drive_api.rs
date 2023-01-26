@@ -1,3 +1,4 @@
+use integer_encoding::VarInt;
 use std::collections::BTreeMap;
 
 use crate::data_contract::document_type::DocumentType;
@@ -143,7 +144,7 @@ impl DriveContractExt for DataContract {
     /// `to_cbor` overloads the original method from [`DataContract`] and adds the properties
     /// from [`super::Mutability`].
     fn to_cbor(&self) -> Result<Vec<u8>, ProtocolError> {
-        let mut buf = self.protocol_version().to_le_bytes().to_vec();
+        let mut buf = self.protocol_version().encode_var_vec();
 
         let mut contract_cbor_map = self.to_cbor_canonical_map()?;
 
