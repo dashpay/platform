@@ -614,6 +614,33 @@ mod test {
     }
 
     #[test]
+    fn conversion_to_buffer_from_buffer_high_version() {
+        init();
+        let mut data_contract = get_data_contract_fixture(None);
+        data_contract.protocol_version = 10000;
+
+        let data_contract_bytes = data_contract
+            .to_buffer()
+            .expect("data contract should be converted into the bytes");
+        let data_contract_restored = DataContract::from_buffer(&data_contract_bytes)
+            .expect("data contract should be created from bytes");
+
+        assert_eq!(
+            data_contract.protocol_version,
+            data_contract_restored.protocol_version
+        );
+        assert_eq!(data_contract.schema, data_contract_restored.schema);
+        assert_eq!(data_contract.version, data_contract_restored.version);
+        assert_eq!(data_contract.id, data_contract_restored.id);
+        assert_eq!(data_contract.owner_id, data_contract_restored.owner_id);
+        assert_eq!(
+            data_contract.binary_properties,
+            data_contract_restored.binary_properties
+        );
+        assert_eq!(data_contract.documents, data_contract_restored.documents);
+    }
+
+    #[test]
     fn conversion_from_json() -> Result<()> {
         init();
 
