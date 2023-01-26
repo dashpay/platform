@@ -15,7 +15,7 @@
 proxy-app = "tcp://drive_abci:26658"
 
 # A custom human readable name for this node
-#moniker = ""
+{{?it.platform.drive.tenderdash.moniker}}moniker = "{{=it.platform.drive.tenderdash.moniker}}"{{??}}{{?}}
 
 # Mode of Node: full | validator | seed
 # * validator node
