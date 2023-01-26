@@ -5,61 +5,99 @@ const fetchDocumentsFactory = require('@dashevo/dpp/lib/document/stateTransition
 
 const createStateRepositoryMock = require('@dashevo/dpp/lib/test/mocks/createStateRepositoryMock');
 
-const generateRandomIdentifier = require('@dashevo/dpp/lib/test/utils/generateRandomIdentifier');
-const StateTransitionExecutionContext = require('@dashevo/dpp/lib/stateTransition/StateTransitionExecutionContext');
+const generateRandomIdentifierJs = require('@dashevo/dpp/lib/test/utils/generateRandomIdentifier');
+const StateTransitionExecutionContextJs = require('@dashevo/dpp/lib/stateTransition/StateTransitionExecutionContext');
+
+const sinon = require('sinon');
+const { expectValidationError } = require('../../../../../../../lib/test/expect/expectError')
+const { default: loadWasmDpp } = require('../../../../../../../dist');
+
+
+
+let Identifier;
+let DataContract;
+let Document;
+let fetchDocuments;
+let DocumentTransition;
+let DocumentCreateTransition;
+let StateTransitionExecutionContext;
 
 describe('fetchDocumentsFactory', () => {
-  let fetchDocuments;
+  let fetchDocumentsJs;
+  let stateRepositoryMockJs;
   let stateRepositoryMock;
+  let documentTransitionsJs;
   let documentTransitions;
+  let documentsJs;
   let documents;
+  let executionContextJs;
   let executionContext;
 
-  beforeEach(function beforeEach() {
-    stateRepositoryMock = createStateRepositoryMock(this.sinonSandbox);
+  beforeEach(async function beforeEach() {
+    ({
+      Identifier,
+      Document,
+      DataContract,
+      DocumentTransition,
+      DocumentCreateTransition,
+      StateTransitionExecutionContext,
+      fetchDocuments,
+    } = await loadWasmDpp());
 
-    fetchDocuments = fetchDocumentsFactory(stateRepositoryMock);
+    stateRepositoryMock = createStateRepositoryMock(this.sinonSandbox);
+    stateRepositoryMockJs = createStateRepositoryMock(this.sinonSandbox);
+
+    fetchDocumentsJs = fetchDocumentsFactory(stateRepositoryMockJs);
 
     executionContext = new StateTransitionExecutionContext();
+    executionContextJs = new StateTransitionExecutionContextJs();
 
-    documents = getDocumentsFixture().slice(0, 5);
+    documentsJs = getDocumentsFixture().slice(0, 5);
+    const dataContractBuffer = documentsJs[0].dataContract.toBuffer();
+    const dataContract = DataContract.fromBuffer(dataContractBuffer);
 
-    documentTransitions = getDocumentTransitionsFixture({
-      create: documents,
+    documents = documentsJs.map((document) => new Document(document.toObject(), dataContract.clone()));
+    documentTransitionsJs = getDocumentTransitionsFixture({
+      create: documentsJs,
     });
+    documentTransitions = documentTransitionsJs.map((transition) =>
+      DocumentTransition.fromTransitionCreate(
+        new DocumentCreateTransition(transition.toObject(), dataContract.clone())
+      )
+    )
   });
 
   it('should fetch specified Documents using StateRepository', async () => {
-    const firstDocumentDataContractId = generateRandomIdentifier().toBuffer();
+    const firstDocumentDataContractId = generateRandomIdentifierJs().toBuffer();
 
-    documentTransitions[0].dataContractId = firstDocumentDataContractId;
-    documents[0].dataContractId = firstDocumentDataContractId;
+    documentTransitionsJs[0].dataContractId = firstDocumentDataContractId;
+    documentsJs[0].dataContractId = firstDocumentDataContractId;
 
-    stateRepositoryMock.fetchDocuments.withArgs(
-      documentTransitions[0].getDataContractId(),
-      documentTransitions[0].getType(),
-    ).resolves([documents[0]]);
+    stateRepositoryMockJs.fetchDocuments.withArgs(
+      documentTransitionsJs[0].getDataContractId(),
+      documentTransitionsJs[0].getType(),
+    ).resolves([documentsJs[0]]);
 
-    stateRepositoryMock.fetchDocuments.withArgs(
-      documentTransitions[1].getDataContractId(),
-      documentTransitions[1].getType(),
-    ).resolves([documents[1], documents[2]]);
+    stateRepositoryMockJs.fetchDocuments.withArgs(
+      documentTransitionsJs[1].getDataContractId(),
+      documentTransitionsJs[1].getType(),
+    ).resolves([documentsJs[1], documentsJs[2]]);
 
-    stateRepositoryMock.fetchDocuments.withArgs(
-      documentTransitions[3].getDataContractId(),
-      documentTransitions[3].getType(),
-    ).resolves([documents[3], documents[4]]);
+    stateRepositoryMockJs.fetchDocuments.withArgs(
+      documentTransitionsJs[3].getDataContractId(),
+      documentTransitionsJs[3].getType(),
+    ).resolves([documentsJs[3], documentsJs[4]]);
 
-    const fetchedDocuments = await fetchDocuments(documentTransitions, executionContext);
+    const fetchedDocuments = await fetchDocumentsJs(documentTransitionsJs, executionContextJs);
 
-    expect(stateRepositoryMock.fetchDocuments).to.have.been.calledThrice();
+    expect(stateRepositoryMockJs.fetchDocuments).to.have.been.calledThrice();
 
     const callArgsOne = [
-      documents[0].getDataContractId(),
-      documents[0].getType(),
+      documentsJs[0].getDataContractId(),
+      documentsJs[0].getType(),
       {
         where: [
-          ['$id', 'in', [documents[0].getId()]],
+          ['$id', 'in', [documentsJs[0].getId()]],
         ],
         orderBy: [
           [
@@ -68,17 +106,17 @@ describe('fetchDocumentsFactory', () => {
           ],
         ],
       },
-      executionContext,
+      executionContextJs,
     ];
 
     const callArgsTwo = [
-      documents[1].getDataContractId(),
-      documents[1].getType(),
+      documentsJs[1].getDataContractId(),
+      documentsJs[1].getType(),
       {
         where: [
           ['$id', 'in', [
-            documents[1].getId(),
-            documents[2].getId(),
+            documentsJs[1].getId(),
+            documentsJs[2].getId(),
           ]],
         ],
         orderBy: [
@@ -88,17 +126,17 @@ describe('fetchDocumentsFactory', () => {
           ],
         ],
       },
-      executionContext,
+      executionContextJs,
     ];
 
     const callArgsThree = [
-      documents[3].getDataContractId(),
-      documents[3].getType(),
+      documentsJs[3].getDataContractId(),
+      documentsJs[3].getType(),
       {
         where: [
           ['$id', 'in', [
-            documents[3].getId(),
-            documents[4].getId(),
+            documentsJs[3].getId(),
+            documentsJs[4].getId(),
           ]],
         ],
         orderBy: [
@@ -108,12 +146,12 @@ describe('fetchDocumentsFactory', () => {
           ],
         ],
       },
-      executionContext,
+      executionContextJs,
     ];
 
     const callsArgs = [];
-    for (let i = 0; i < stateRepositoryMock.fetchDocuments.callCount; i++) {
-      const call = stateRepositoryMock.fetchDocuments.getCall(i);
+    for (let i = 0; i < stateRepositoryMockJs.fetchDocuments.callCount; i++) {
+      const call = stateRepositoryMockJs.fetchDocuments.getCall(i);
       callsArgs.push(call.args);
     }
 
@@ -123,6 +161,32 @@ describe('fetchDocumentsFactory', () => {
       callArgsThree,
     ]);
 
-    expect(fetchedDocuments).to.deep.equal(documents);
+    expect(fetchedDocuments).to.deep.equal(documentsJs);
+  });
+
+  it('should fetch specified Documents using StateRepository - Rust', async () => {
+    const firstDocumentDataContractId = generateRandomIdentifierJs().toBuffer();
+
+    documentTransitions[0].setDataContractId(firstDocumentDataContractId);
+    documents[0].setDataContractId(firstDocumentDataContractId);
+
+    stateRepositoryMock.fetchDocuments.withArgs(
+      sinon.match.instanceOf(Identifier),
+      documentTransitions[0].getType(),
+    ).returns([documents[0]]);
+
+    stateRepositoryMock.fetchDocuments.withArgs(
+      sinon.match.instanceOf(Identifier),
+      documentTransitions[1].getType(),
+    ).returns([documents[1], documents[2]]);
+
+    stateRepositoryMock.fetchDocuments.withArgs(
+      sinon.match.instanceOf(Identifier),
+      documentTransitionsJs[3].getType(),
+    ).returns([documents[3], documents[4]]);
+
+
+    const fetchedDocuments = await fetchDocuments(stateRepositoryMock, documentTransitions, executionContext);
+    expect(stateRepositoryMock.fetchDocuments).to.have.been.calledThrice();
   });
 });

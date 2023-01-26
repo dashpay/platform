@@ -12,7 +12,7 @@ use dpp::document::{property_names, Document, IDENTIFIER_FIELDS};
 use crate::buffer::Buffer;
 use crate::conversion::ConversionOptions;
 use crate::errors::RustConversionError;
-use crate::identifier::IdentifierWrapper;
+use crate::identifier::{identifier_from_js_value, IdentifierWrapper};
 use crate::lodash::lodash_set;
 use crate::utils::WithJsError;
 use crate::utils::{with_serde_to_json_value, ToSerdeJSONExt};
@@ -98,6 +98,13 @@ impl DocumentWasm {
     #[wasm_bindgen(js_name=getDataContractId)]
     pub fn get_data_contract_id(&self) -> IdentifierWrapper {
         self.0.data_contract_id.clone().into()
+    }
+
+    #[wasm_bindgen(js_name=setDataContractId)]
+    pub fn set_data_contract_id(&mut self, js_data_contract_id: &JsValue) -> Result<(), JsValue> {
+        let data_contract_id = identifier_from_js_value(js_data_contract_id)?;
+        self.0.data_contract_id = data_contract_id;
+        Ok(())
     }
 
     #[wasm_bindgen(js_name=getDataContract)]
@@ -379,8 +386,8 @@ impl From<Document> for DocumentWasm {
     }
 }
 
-impl std::convert::Into<Document> for DocumentWasm {
-    fn into(self) -> Document {
-        self.0
+impl From<DocumentWasm> for Document {
+    fn from(d: DocumentWasm) -> Self {
+        d.0
     }
 }

@@ -23,10 +23,11 @@ use wasm_bindgen::prelude::*;
 
 use crate::{
     buffer::Buffer,
+    console_log,
     conversion::ConversionOptions,
-    identifier::IdentifierWrapper,
+    identifier::{identifier_from_js_value, IdentifierWrapper},
     lodash::lodash_set,
-    utils::{convert_number_to_u64, try_to_u64, ToSerdeJSONExt, WithJsError},
+    utils::{try_to_u64, ToSerdeJSONExt, WithJsError},
     with_js_error, BinaryType, DataContractWasm,
 };
 
@@ -59,6 +60,13 @@ impl DocumentTransitionWasm {
     #[wasm_bindgen(js_name=getDataContractId)]
     pub fn get_data_contract_id(&self) -> IdentifierWrapper {
         self.0.get_data_contract_id().to_owned().into()
+    }
+
+    #[wasm_bindgen(js_name=setDataContractId)]
+    pub fn set_data_contract_id(&mut self, js_data_contract_id: &JsValue) -> Result<(), JsValue> {
+        let identifier = identifier_from_js_value(js_data_contract_id)?;
+        self.0.set_data_contract_id(identifier);
+        Ok(())
     }
 
     #[wasm_bindgen(js_name=getRevision)]
@@ -183,7 +191,7 @@ impl DocumentTransitionWasm {
         with_js_error!(json_value.serialize(&serde_wasm_bindgen::Serializer::json_compatible()))
     }
 
-    #[wasm_bindgen(js_name=fromTransitionCreate, constructor)]
+    #[wasm_bindgen(js_name=fromTransitionCreate)]
     pub fn from_transition_create(
         js_create_transition: DocumentCreateTransitionWasm,
     ) -> DocumentTransitionWasm {
@@ -193,7 +201,7 @@ impl DocumentTransitionWasm {
         document_transition.into()
     }
 
-    #[wasm_bindgen(js_name=fromTransitionReplace, constructor)]
+    #[wasm_bindgen(js_name=fromTransitionReplace)]
     pub fn from_transition_replace(
         js_replace_transition: DocumentReplaceTransitionWasm,
     ) -> DocumentTransitionWasm {
@@ -203,7 +211,7 @@ impl DocumentTransitionWasm {
         document_transition.into()
     }
 
-    #[wasm_bindgen(js_name=fromTransitionDelete, constructor)]
+    #[wasm_bindgen(js_name=fromTransitionDelete)]
     pub fn from_transition_delete(
         js_delete_transition: DocumentDeleteTransitionWasm,
     ) -> DocumentTransitionWasm {

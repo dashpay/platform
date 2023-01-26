@@ -52,6 +52,8 @@ pub trait DocumentTransitionExt {
     #[cfg(test)]
     /// Inserts the dynamic property into the document
     fn insert_dynamic_property(&mut self, property_name: String, value: Value);
+    /// set data contract's ID
+    fn set_data_contract_id(&mut self, id: Identifier);
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -285,6 +287,20 @@ impl DocumentTransitionExt for DocumentTransition {
                 }
             }
             DocumentTransition::Delete(_) => {}
+        }
+    }
+
+    fn set_data_contract_id(&mut self, id: Identifier) {
+        match self {
+            DocumentTransition::Create(ref mut t) => {
+                t.base.data_contract_id = id;
+            }
+            DocumentTransition::Replace(ref mut t) => {
+                t.base.data_contract_id = id;
+            }
+            DocumentTransition::Delete(ref mut t) => {
+                t.base.data_contract_id = id;
+            }
         }
     }
 }

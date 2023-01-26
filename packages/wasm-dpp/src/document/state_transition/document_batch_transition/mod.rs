@@ -157,7 +157,7 @@ impl DocumentsBatchTransitionWASM {
         let mut transitions = vec![];
         for js_transition in js_transitions.iter() {
             let transition: DocumentTransition = js_transition
-                .to_wasm::<DocumentTransitionWasm>("DocumentTransitionWasm")?
+                .to_wasm::<DocumentTransitionWasm>("DocumentTransition")?
                 .to_owned()
                 .into();
             transitions.push(transition)

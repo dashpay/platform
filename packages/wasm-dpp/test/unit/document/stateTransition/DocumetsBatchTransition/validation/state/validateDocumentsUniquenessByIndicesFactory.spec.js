@@ -15,7 +15,6 @@ const StateTransitionExecutionContextJs = require('@dashevo/dpp/lib/stateTransit
 const sinon = require('sinon');
 const { expectValidationError } = require('../../../../../../../lib/test/expect/expectError')
 const { default: loadWasmDpp } = require('../../../../../../../dist');
-const { syncBuiltinESMExports } = require('module');
 
 let DataContract;
 let Document;
@@ -34,7 +33,6 @@ describe('validateDocumentsUniquenessByIndices', () => {
   let stateRepositoryMock;
   let validateDocumentsUniquenessByIndicesJs;
   let documentsJs;
-  let documents;
   let documentTransitionsJs;
   let documentTransitions;
   let dataContractJs;
@@ -43,8 +41,6 @@ describe('validateDocumentsUniquenessByIndices', () => {
   let ownerId;
   let executionContextJs;
   let executionContext;
-  let testMock;
-
 
   beforeEach(async function beforeEach() {
     ({
@@ -75,16 +71,6 @@ describe('validateDocumentsUniquenessByIndices', () => {
       DocumentTransition.fromTransitionCreate(
         new DocumentCreateTransition(transition.toObject(), dataContract.clone()))
     );
-
-    documents = documentsJs.map((d) => {
-      const doc = new Document(d.toObject(), dataContract);
-      doc.setEntropy(d.entropy);
-      return doc;
-    });
-
-    testMock = createStateRepositoryMock(this.sinonSandbox);
-    testMock.fetchDocuments.returns([]);
-
 
     stateRepositoryMock = createStateRepositoryMock(this.sinonSandbox);
     stateRepositoryMock.fetchDocuments.returns([]);
