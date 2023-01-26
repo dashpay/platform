@@ -29,4 +29,8 @@ pub enum FeeError {
     /// Decimal conversion error
     #[error("decimal conversion error: {0}")]
     DecimalConversion(&'static str),
+
+    /// Document type field not found for estimation
+    #[error("document type field not found for estimation  error: {0}")]
+    DocumentTypeFieldNotFoundForEstimation(&'static str),
 }

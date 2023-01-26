@@ -27,19 +27,18 @@
 // DEALINGS IN THE SOFTWARE.
 //
 
-use crate::drive::contract::{all_contracts_global_root_path, contract_root_path};
 use crate::drive::defaults::{DEFAULT_HASH_SIZE_U8, ESTIMATED_AVERAGE_DOCUMENT_TYPE_NAME_SIZE};
 
 use crate::drive::flags::StorageFlags;
 use crate::drive::{contract_documents_path, Drive};
 
-use dpp::data_contract::extra::DriveContractExt;
-use dpp::data_contract::DataContract;
+use dpp::data_contract::{DataContract, DriveContractExt};
 use grovedb::batch::KeyInfoPath;
 use grovedb::EstimatedLayerCount::{ApproximateElements, EstimatedLevel, PotentiallyAtMaxElements};
 use grovedb::EstimatedLayerInformation;
 use grovedb::EstimatedLayerSizes::AllSubtrees;
 
+use crate::drive::contract::paths::{all_contracts_global_root_path, contract_root_path};
 use grovedb::EstimatedSumTrees::NoSumTrees;
 use std::collections::HashMap;
 

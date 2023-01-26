@@ -375,7 +375,7 @@ mod test {
         let st = get_mock_state_transition();
         let hash = st.hash(false).unwrap();
         assert_eq!(
-            "be27201d895364e9543f0c4c6a372bb2e262af891296fbdc4cef09b3224d9b51",
+            "b067b5f84b748080684f3b203b07227a3b2db9f745815e3449113ac9e5619523",
             hex::encode(hash)
         )
     }
@@ -386,8 +386,8 @@ mod test {
         let hash = st.to_buffer(false).unwrap();
         let result = hex::encode(hash);
 
-        assert_eq!(216, result.len());
-        assert!(result.starts_with("01000000"))
+        assert_eq!(210, result.len());
+        assert!(result.starts_with("01"))
     }
 
     #[test]
@@ -396,8 +396,7 @@ mod test {
         let hash = st.to_buffer(true).unwrap();
         let result = hex::encode(hash);
 
-        assert_eq!(150, result.len());
-        assert_eq!("01000000a26e7472616e736974696f6e5479706501676f776e65724964782c4158356f323241525746595a45394a5a5441355353657976707274657442637662514c53425a376352374777", result);
+        assert_eq!("01a26e7472616e736974696f6e5479706501676f776e65724964782c4158356f323241525746595a45394a5a5441355353657976707274657442637662514c53425a376352374777", result);
     }
 
     #[test]

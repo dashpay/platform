@@ -458,7 +458,7 @@ impl Drive {
                             &key_info_path,
                             &key_info,
                             in_tree_using_sums,
-                            estimated_value_size as u32,
+                            estimated_value_size,
                             estimated_reference_sizes,
                         )
                     }
@@ -661,7 +661,7 @@ impl Drive {
                         GroveDb::average_case_for_has_raw(
                             &key_info_path,
                             &key_info,
-                            estimated_value_size as u32,
+                            estimated_value_size,
                             in_tree_using_sums,
                         )
                     }

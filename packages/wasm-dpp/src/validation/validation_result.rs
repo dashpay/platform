@@ -4,6 +4,7 @@ use js_sys::JsString;
 use wasm_bindgen::prelude::*;
 
 #[wasm_bindgen(js_name=ValidationResult)]
+#[derive(Debug)]
 pub struct ValidationResultWasm(ValidationResult<JsValue>);
 
 impl<T> From<ValidationResult<T>> for ValidationResultWasm

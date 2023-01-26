@@ -195,6 +195,7 @@ impl StateTransitionConvert for DataContractCreateTransition {
 
 #[cfg(test)]
 mod test {
+    use integer_encoding::VarInt;
     use serde_json::json;
 
     use crate::tests::fixtures::get_data_contract_fixture;
@@ -305,11 +306,9 @@ mod test {
             .state_transition
             .to_buffer(false)
             .expect("state transition should be converted to buffer");
-        let (protocol_bytes, _) = state_transition_bytes.split_at(4);
-        assert_eq!(
-            version::LATEST_VERSION,
-            get_protocol_version(protocol_bytes).expect("version should be valid")
-        )
+        let (protocol_version, _) =
+            u32::decode_var(state_transition_bytes.as_ref()).expect("expected to decode");
+        assert_eq!(version::LATEST_VERSION, protocol_version)
     }
 
     #[test]

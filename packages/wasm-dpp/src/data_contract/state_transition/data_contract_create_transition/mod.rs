@@ -14,10 +14,8 @@ use serde::{Deserialize, Serialize};
 use wasm_bindgen::prelude::*;
 
 use crate::{
-    buffer::Buffer,
-    errors::{from_dpp_err, RustConversionError},
-    identifier::IdentifierWrapper,
-    with_js_error, DataContractParameters, DataContractWasm, StateTransitionExecutionContextWasm,
+    buffer::Buffer, errors::from_dpp_err, identifier::IdentifierWrapper, with_js_error,
+    DataContractParameters, DataContractWasm, StateTransitionExecutionContextWasm,
 };
 
 #[wasm_bindgen(js_name=DataContractCreateTransition)]
