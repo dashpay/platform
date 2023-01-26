@@ -298,7 +298,7 @@ describe('DataContract', () => {
       const dataContractToEncode = dataContract.toObject();
       delete dataContractToEncode.protocolVersion;
 
-      const protocolVersionBytes = Buffer.from(varint.encode(this.getProtocolVersion()));
+      const protocolVersionBytes = Buffer.from(varint.encode(dataContract.getProtocolVersion()));
 
       expect(encodeMock).to.have.been.calledOnceWith(dataContractToEncode);
       expect(result).to.deep.equal(Buffer.concat([protocolVersionBytes, serializedDataContract]));
