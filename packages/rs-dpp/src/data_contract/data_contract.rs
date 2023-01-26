@@ -18,6 +18,7 @@ use crate::data_contract::extra::common::{cbor_map_into_serde_btree_map, cbor_ma
 use crate::data_contract::get_binary_properties_from_schema::get_binary_properties;
 use crate::util::cbor_value::{cbor_value_to_json_value, CborBTreeMapHelper, CborCanonicalMap};
 use crate::util::deserializer;
+use crate::util::deserializer::SplitProtocolVersionOutcome;
 use crate::util::json_value::{JsonValueExt, ReplaceWith};
 use crate::util::string_encoding::Encoding;
 use crate::{
@@ -135,17 +136,17 @@ impl DataContract {
     }
 
     pub fn from_cbor(cbor_bytes: impl AsRef<[u8]>) -> Result<Self, ProtocolError> {
-        let (protocol_version, offset) =
-            u32::decode_var(cbor_bytes.as_ref()).ok_or(ProtocolError::DecodingError(
-                "contract cbor could not decode protocol version".to_string(),
-            ))?;
-        let (_, contract_cbor_bytes) = cbor_bytes.as_ref().split_at(offset);
+        let SplitProtocolVersionOutcome {
+            protocol_version,
+            protocol_version_size,
+            main_message_bytes: contract_cbor_bytes,
+        } = deserializer::split_protocol_version(cbor_bytes.as_ref())?;
 
         let data_contract_map: BTreeMap<String, CborValue> =
             ciborium::de::from_reader(contract_cbor_bytes).map_err(|_| {
                 ProtocolError::DecodingError(format!(
                     "unable to decode contract with protocol version {} offset {}",
-                    protocol_version, offset
+                    protocol_version, protocol_version_size
                 ))
             })?;
 
@@ -653,7 +654,7 @@ mod test {
 
         let mut high_protocol_version_bytes = u64::MAX.encode_var_vec();
 
-        let (protocol_version, offset) = u32::decode_var(&data_contract_bytes)
+        let (_, offset) = u32::decode_var(&data_contract_bytes)
             .ok_or(ProtocolError::DecodingError(
                 "contract cbor could not decode protocol version".to_string(),
             ))

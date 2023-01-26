@@ -42,7 +42,6 @@ use std::io::BufRead;
 use std::option::Option::None;
 use std::path::Path;
 
-use byteorder::{BigEndian, WriteBytesExt};
 use ciborium::value::Value;
 use dpp::data_contract::DriveContractExt;
 use grovedb::TransactionArg;

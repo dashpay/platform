@@ -10,6 +10,7 @@ use crate::identity::state_transition::asset_lock_proof::AssetLockProof;
 use crate::prelude::Revision;
 use crate::util::cbor_value::{CborBTreeMapHelper, CborCanonicalMap};
 use crate::util::deserializer;
+use crate::util::deserializer::SplitProtocolVersionOutcome;
 use crate::util::json_value::{JsonValueExt, ReplaceWith};
 use crate::{errors::ProtocolError, identifier::Identifier, metadata::Metadata, util::hash};
 
@@ -170,11 +171,11 @@ impl Identity {
     }
 
     pub fn from_cbor(identity_cbor: &[u8]) -> Result<Self, ProtocolError> {
-        let (protocol_version, identity_cbor_offset) =
-            u32::decode_var(identity_cbor).ok_or(ProtocolError::DecodingError(
-                "identity cbor could not decode protocol version".to_string(),
-            ))?;
-        let (_, identity_cbor_bytes) = identity_cbor.split_at(identity_cbor_offset);
+        let SplitProtocolVersionOutcome {
+            protocol_version,
+            main_message_bytes: identity_cbor_bytes,
+            ..
+        } = deserializer::split_protocol_version(identity_cbor)?;
 
         // Deserialize the contract
         let identity_map: BTreeMap<String, CborValue> =

@@ -51,6 +51,8 @@ use crate::data_contract::extra::common::{
     bytes_for_system_value_from_tree_map, check_protocol_version, check_protocol_version_bytes,
     get_key_from_cbor_map, reduced_value_string_representation,
 };
+use crate::util::deserializer;
+use crate::util::deserializer::SplitProtocolVersionOutcome;
 use crate::ProtocolError;
 
 //todo: rename
@@ -181,16 +183,11 @@ impl DocumentStub {
         document_id: Option<[u8; 32]>,
         owner_id: Option<[u8; 32]>,
     ) -> Result<Self, ProtocolError> {
-        let (protocol_version, offset) =
-            u32::decode_var(document_cbor.as_ref()).ok_or(ProtocolError::DecodingError(
-                "contract cbor could not decode protocol version".to_string(),
-            ))?;
-        let (_, read_document_cbor) = document_cbor.as_ref().split_at(offset);
-        if !check_protocol_version(protocol_version) {
-            return Err(ProtocolError::StructureError(
-                StructureError::InvalidProtocolVersion("invalid protocol version"),
-            ));
-        }
+        let SplitProtocolVersionOutcome {
+            main_message_bytes: read_document_cbor,
+            ..
+        } = deserializer::split_protocol_version(document_cbor.as_ref())?;
+
         // first we need to deserialize the document and contract indices
         // we would need dedicated deserialization functions based on the document type
         let mut document: BTreeMap<String, Value> = ciborium::de::from_reader(read_document_cbor)
@@ -269,17 +266,10 @@ impl DocumentStub {
                 DataContractError::FieldRequirementUnmet("invalid document id"),
             ));
         }
-        let (protocol_version, offset) =
-            u32::decode_var(document_cbor.as_ref()).ok_or(ProtocolError::DecodingError(
-                "contract cbor could not decode protocol version".to_string(),
-            ))?;
-        let (_, read_document_cbor) = document_cbor.as_ref().split_at(offset);
-
-        if !check_protocol_version(protocol_version) {
-            return Err(ProtocolError::StructureError(
-                StructureError::InvalidProtocolVersion("invalid protocol version"),
-            ));
-        }
+        let SplitProtocolVersionOutcome {
+            main_message_bytes: read_document_cbor,
+            ..
+        } = deserializer::split_protocol_version(document_cbor.as_ref())?;
 
         // first we need to deserialize the document and contract indices
         // we would need dedicated deserialization functions based on the document type

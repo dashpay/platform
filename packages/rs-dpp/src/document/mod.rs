@@ -14,11 +14,12 @@ use crate::data_contract::DataContract;
 use crate::errors::ProtocolError;
 use crate::identifier::Identifier;
 use crate::metadata::Metadata;
-use crate::util::cbor_value;
 use crate::util::cbor_value::CborCanonicalMap;
 use crate::util::cbor_value::FieldType;
+use crate::util::deserializer::SplitProtocolVersionOutcome;
 use crate::util::hash::hash;
 use crate::util::json_value::{JsonValueExt, ReplaceWith};
+use crate::util::{cbor_value, deserializer};
 
 pub mod document_factory;
 pub mod document_stub;
@@ -159,11 +160,11 @@ impl Document {
     }
 
     pub fn from_buffer(cbor_bytes: impl AsRef<[u8]>) -> Result<Document, ProtocolError> {
-        let (protocol_version, offset) =
-            u32::decode_var(cbor_bytes.as_ref()).ok_or(ProtocolError::DecodingError(
-                "document cbor could not decode protocol version".to_string(),
-            ))?;
-        let (_, document_cbor_bytes) = cbor_bytes.as_ref().split_at(offset);
+        let SplitProtocolVersionOutcome {
+            protocol_version,
+            main_message_bytes: document_cbor_bytes,
+            ..
+        } = deserializer::split_protocol_version(cbor_bytes.as_ref())?;
 
         let cbor_value: CborValue = ciborium::de::from_reader(document_cbor_bytes)
             .map_err(|e| ProtocolError::EncodingError(format!("{}", e)))?;

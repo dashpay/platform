@@ -1,4 +1,3 @@
-use byteorder::{BigEndian, LittleEndian, WriteBytesExt};
 use integer_encoding::VarIntWriter;
 
 use crate::errors::ProtocolError;
