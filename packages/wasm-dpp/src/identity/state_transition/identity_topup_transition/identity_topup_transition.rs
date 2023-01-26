@@ -1,6 +1,5 @@
 use crate::utils::ToSerdeJSONExt;
-use dpp::util::json_value::JsonValueExt;
-use serde::{Deserialize, Serialize};
+
 use std::convert::TryInto;
 use std::default::Default;
 
@@ -36,14 +35,6 @@ use dpp::{
 #[derive(Clone)]
 pub struct IdentityTopUpTransitionWasm(IdentityTopUpTransition);
 
-#[derive(Deserialize, Serialize)]
-#[serde(rename_all = "camelCase")]
-struct IdentityTopUpTransitionParams {
-    signature: Option<Vec<u8>>,
-    protocol_version: u32,
-    identity_id: Vec<u8>,
-}
-
 impl From<IdentityTopUpTransition> for IdentityTopUpTransitionWasm {
     fn from(v: IdentityTopUpTransition) -> Self {
         IdentityTopUpTransitionWasm(v)
@@ -60,26 +51,11 @@ impl From<IdentityTopUpTransitionWasm> for IdentityTopUpTransition {
 impl IdentityTopUpTransitionWasm {
     #[wasm_bindgen(constructor)]
     pub fn new(raw_parameters: JsValue) -> Result<IdentityTopUpTransitionWasm, JsValue> {
-        let raw_asset_lock_proof =
-            js_sys::Reflect::get(&raw_parameters, &"assetLockProof".to_owned().into())?;
-        let asset_lock_proof_json = raw_asset_lock_proof.with_serde_to_json_value()?;
+        let raw_state_transition = raw_parameters.with_serde_to_json_value()?;
 
-        let parameters: IdentityTopUpTransitionParams =
-            with_js_error!(serde_wasm_bindgen::from_value(raw_parameters))?;
-
-        let mut raw_state_transition = with_js_error!(serde_json::to_value(&parameters))?;
-
-        raw_state_transition
-            .insert("assetLockProof".to_string(), asset_lock_proof_json)
-            .map_err(|e| RustConversionError::Error(e.to_string()))?;
-
-        let mut identity_topup_transition =
+        let identity_topup_transition =
             IdentityTopUpTransition::from_raw_object(raw_state_transition)
                 .map_err(|e| RustConversionError::Error(e.to_string()).to_js_value())?;
-
-        if let Some(signature) = parameters.signature {
-            identity_topup_transition.set_signature(signature);
-        }
 
         Ok(identity_topup_transition.into())
     }
