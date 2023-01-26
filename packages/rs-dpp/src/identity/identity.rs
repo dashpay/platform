@@ -116,6 +116,17 @@ impl Identity {
         self.revision
     }
 
+    /// Increment revision
+    pub fn increment_revision(&mut self) -> Result<(), ProtocolError> {
+        let result = self.revision.checked_add(1).ok_or(ProtocolError::Generic(
+            "identity revision is at max level".to_string(),
+        ))?;
+
+        self.revision = result;
+
+        Ok(())
+    }
+
     /// Get metadata
     pub fn get_metadata(&self) -> Option<&Metadata> {
         self.metadata.as_ref()

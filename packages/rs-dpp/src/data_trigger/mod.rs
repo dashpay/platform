@@ -14,6 +14,7 @@ use self::dashpay_data_triggers::create_contact_request_data_trigger;
 use self::dpns_triggers::create_domain_data_trigger;
 use self::feature_flags_data_triggers::create_feature_flag_data_trigger;
 use self::reward_share_data_triggers::create_masternode_reward_shares_data_trigger;
+use self::withdrawals_data_triggers::delete_withdrawal_data_trigger;
 
 mod data_trigger_execution_context;
 
@@ -42,6 +43,7 @@ pub enum DataTriggerKind {
     DataTriggerRewardShare,
     DataTriggerReject,
     CrateFeatureFlag,
+    DeleteWithdrawal,
 }
 
 pub struct DataTrigger {
@@ -126,6 +128,9 @@ where
         DataTriggerKind::DataTriggerRewardShare => {
             create_masternode_reward_shares_data_trigger(document_transition, context, identifier)
                 .await
+        }
+        DataTriggerKind::DeleteWithdrawal => {
+            delete_withdrawal_data_trigger(document_transition, context, identifier).await
         }
     }
 }

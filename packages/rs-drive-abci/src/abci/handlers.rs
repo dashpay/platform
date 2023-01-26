@@ -256,7 +256,7 @@ mod tests {
                         "coreFeePerByte": 1,
                         "pooling": Pooling::Never,
                         "outputScript": (0..23).collect::<Vec<u8>>(),
-                        "status": withdrawals_contract::statuses::POOLED,
+                        "status": withdrawals_contract::Status::POOLED,
                         "transactionIndex": 1,
                         "transactionSignHeight": 93,
                         "transactionId": tx_id,

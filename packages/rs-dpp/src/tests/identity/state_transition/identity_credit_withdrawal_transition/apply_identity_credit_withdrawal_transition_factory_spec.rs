@@ -6,7 +6,6 @@ mod apply_identity_credit_withdrawal_transition_factory {
 
     use crate::{
         contracts::withdrawals_contract,
-        data_contract::DataContract,
         identity::state_transition::identity_credit_withdrawal_transition::{
             apply_identity_credit_withdrawal_transition_factory::ApplyIdentityCreditWithdrawalTransition,
             IdentityCreditWithdrawalTransition, Pooling,
@@ -78,7 +77,7 @@ mod apply_identity_credit_withdrawal_transition_factory {
                         "coreFeePerByte": 0,
                         "pooling": Pooling::Never,
                         "outputScript": [],
-                        "status": withdrawals_contract::statuses::QUEUED,
+                        "status": withdrawals_contract::Status::QUEUED,
                     });
 
                 id_match && created_at_match && updated_at_match && document_data_match

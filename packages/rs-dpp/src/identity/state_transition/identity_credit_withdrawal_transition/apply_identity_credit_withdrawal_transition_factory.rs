@@ -6,13 +6,12 @@ use serde_json::{json, Value as JsonValue};
 use crate::{
     contracts::withdrawals_contract,
     data_contract::DataContract,
+    document::generate_document_id,
     document::Document,
     identity::state_transition::identity_credit_withdrawal_transition::Pooling,
-    prelude::Identifier,
     state_repository::StateRepositoryLike,
-    state_transition::StateTransitionConvert,
     state_transition::StateTransitionLike,
-    util::{entropy_generator::generate, json_value::JsonValueExt, string_encoding::Encoding},
+    util::{entropy_generator::generate, json_value::JsonValueExt},
 };
 
 use super::IdentityCreditWithdrawalTransition;
@@ -39,14 +38,8 @@ where
         &self,
         state_transition: &IdentityCreditWithdrawalTransition,
     ) -> Result<()> {
-        let data_contract_id = Identifier::from_string(
-            &withdrawals_contract::system_ids().contract_id,
-            Encoding::Base58,
-        )?;
-        let data_contract_owner_id = Identifier::from_string(
-            &withdrawals_contract::system_ids().owner_id,
-            Encoding::Base58,
-        )?;
+        let data_contract_id = withdrawals_contract::CONTRACT_ID.clone();
+        let data_contract_owner_id = withdrawals_contract::OWNER_ID.clone();
 
         let maybe_withdrawals_data_contract: Option<DataContract> = self
             .state_repository
@@ -73,22 +66,24 @@ where
             * 1000;
 
         let document_data = json!({
-            "amount": state_transition.amount,
-            "coreFeePerByte": state_transition.core_fee_per_byte,
-            "pooling": Pooling::Never,
-            "outputScript": state_transition.output_script.as_bytes(),
-            "status": withdrawals_contract::statuses::QUEUED,
+            withdrawals_contract::property_names::AMOUNT: state_transition.amount,
+            withdrawals_contract::property_names::CORE_FEE_PER_BYTE: state_transition.core_fee_per_byte,
+            withdrawals_contract::property_names::POOLING: Pooling::Never,
+            withdrawals_contract::property_names::OUTPUT_SCRIPT: state_transition.output_script.as_bytes(),
+            withdrawals_contract::property_names::STATUS: withdrawals_contract::Status::QUEUED,
         });
 
-        let document_id_bytes: [u8; 32] = state_transition
-            .hash(true)?
-            .try_into()
-            .map_err(|_| anyhow!("Can't convert state transition hash to a document id"))?;
+        let document_id = generate_document_id::generate_document_id(
+            &data_contract_id,
+            &data_contract_owner_id,
+            &document_type,
+            &document_entropy,
+        );
 
         // TODO: use DocumentFactory once it is complete
         let withdrawal_document = Document {
             protocol_version: state_transition.protocol_version,
-            id: Identifier::new(document_id_bytes),
+            id: document_id,
             document_type,
             revision: 0,
             data_contract_id,
@@ -98,7 +93,7 @@ where
             data: document_data,
             data_contract: withdrawals_data_contract,
             metadata: None,
-            entropy: document_entropy,
+            entropy: [0; 32],
         };
 
         self.state_repository
@@ -123,10 +118,7 @@ where
             maybe_existing_identity.ok_or_else(|| anyhow!("Identity not found"))?;
 
         existing_identity.reduce_balance(state_transition.amount);
-
-        let updated_identity_revision = existing_identity.get_revision() + 1;
-
-        existing_identity.set_revision(updated_identity_revision);
+        existing_identity.increment_revision()?;
 
         // TODO: we need to be able to batch state repository operations
         self.state_repository

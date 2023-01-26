@@ -11,8 +11,10 @@ if [ -n "$CARGO_BUILD_PROFILE" ]; then
     fi
 fi
 
-if [ -n "$ENABLE_CORE_RPC_MOCKING" ]; then
-    FEATURE_FLAG="--features enable-core-rpc-mocking"
+if [ -n "$NODE_ENV" ]; then
+    if [ "$NODE_ENV" == "test"  ]; then
+      FEATURE_FLAG="--features enable-mocking"
+    fi
 fi
 
 cargo-cp-artifact -ac drive-nodejs native/index.node -- \

@@ -21,10 +21,6 @@ where
 {
     let mut result = DataTriggerExecutionResult::default();
 
-    if context.state_transition_execution_context.is_dry_run() {
-        return Ok(result);
-    }
-
     let dt_delete = match document_transition {
         DocumentTransition::Delete(d) => d,
         _ => bail!(
@@ -71,8 +67,8 @@ where
         .as_u64()
         .ok_or(anyhow!("can't convert withdrawal status to u64"))? as u8;
 
-    if status != withdrawals_contract::statuses::COMPLETE
-        || status != withdrawals_contract::statuses::EXPIRED
+    if status != withdrawals_contract::Status::COMPLETE as u8
+        || status != withdrawals_contract::Status::EXPIRED as u8
     {
         let err = DataTriggerError::DataTriggerConditionError {
             data_contract_id: context.data_contract.id.clone(),

@@ -130,7 +130,7 @@ impl PlatformWrapper {
             // TODO: think how to pass this error to JS
             let mut platform: Platform = Platform::open(path, platform_config).unwrap();
 
-            if cfg!(feature = "enable-core-rpc-mocking") {
+            if cfg!(feature = "enable-mocking") {
                 platform.mock_core_rpc_client();
             }
 

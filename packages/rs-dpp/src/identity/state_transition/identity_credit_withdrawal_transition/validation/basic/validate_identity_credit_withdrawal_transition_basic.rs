@@ -8,6 +8,7 @@ use crate::{
         InvalidIdentityCreditWithdrawalTransitionCoreFeeError,
         InvalidIdentityCreditWithdrawalTransitionOutputScriptError,
     },
+    contracts::withdrawals_contract,
     identity::core_script::CoreScript,
     util::{is_fibonacci_number::is_fibonacci_number, protocol_data::get_protocol_version},
     validation::{JsonSchemaValidator, ValidationResult},
@@ -73,14 +74,20 @@ impl IdentityCreditWithdrawalTransitionBasicValidator {
 
         // validate core_fee is in fibonacci sequence
         let core_fee = transition_json
-            .get("coreFeePerByte")
+            .get(withdrawals_contract::property_names::CORE_FEE_PER_BYTE)
             .ok_or_else(|| {
-                SerdeParsingError::new(
-                    "Expected credit withdrawal transition to have coreFeePerByte",
-                )
+                SerdeParsingError::new(format!(
+                    "Expected credit withdrawal transition to have {} property",
+                    withdrawals_contract::property_names::CORE_FEE_PER_BYTE
+                ))
             })?
             .as_u64()
-            .ok_or_else(|| SerdeParsingError::new("Expected coreFeePerByte to be a uint"))?;
+            .ok_or_else(|| {
+                SerdeParsingError::new(format!(
+                    "Expected {} property to be a uint",
+                    withdrawals_contract::property_names::CORE_FEE_PER_BYTE
+                ))
+            })?;
 
         if !is_fibonacci_number(core_fee) {
             result.add_error(InvalidIdentityCreditWithdrawalTransitionCoreFeeError::new(
@@ -93,9 +100,14 @@ impl IdentityCreditWithdrawalTransitionBasicValidator {
         }
 
         // validate output_script types
-        let output_script_value = transition_json.get("outputScript").ok_or_else(|| {
-            SerdeParsingError::new("Expected credit withdrawal transition to have outputScript")
-        })?;
+        let output_script_value = transition_json
+            .get(withdrawals_contract::property_names::OUTPUT_SCRIPT)
+            .ok_or_else(|| {
+                SerdeParsingError::new(format!(
+                    "Expected credit withdrawal transition to have {} property",
+                    withdrawals_contract::property_names::OUTPUT_SCRIPT
+                ))
+            })?;
 
         let output_script_bytes: Vec<u8> = serde_json::from_value(output_script_value.clone())?;
 

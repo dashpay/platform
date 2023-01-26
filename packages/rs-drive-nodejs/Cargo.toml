@@ -20,4 +20,4 @@ default-features = false
 features = ["napi-6", "event-queue-api", "try-catch-api"]
 
 [features]
-enable-core-rpc-mocking = []
+enable-mocking = []

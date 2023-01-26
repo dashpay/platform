@@ -14,7 +14,7 @@ use dpp::{
     data_contract::extra::DriveContractExt,
     identity::convert_credits_to_satoshi,
     prelude::{Document, Identifier},
-    util::{hash, json_value::JsonValueExt, string_encoding::Encoding},
+    util::{hash, json_value::JsonValueExt},
 };
 use drive::{
     drive::{
@@ -44,15 +44,7 @@ impl Platform {
         block_execution_context: &BlockExecutionContext,
         transaction: TransactionArg,
     ) -> Result<(), Error> {
-        let data_contract_id = Identifier::from_string(
-            &withdrawals_contract::system_ids().contract_id,
-            Encoding::Base58,
-        )
-        .map_err(|_| {
-            Error::Execution(ExecutionError::CorruptedCodeExecution(
-                "Can't create withdrawals id identifier from string",
-            ))
-        })?;
+        let data_contract_id = withdrawals_contract::CONTRACT_ID.clone();
 
         let (_, maybe_data_contract) = self.drive.get_contract_with_fetch_info(
             data_contract_id.to_buffer(),
@@ -72,7 +64,7 @@ impl Platform {
         )?;
 
         let mut broadcasted_documents = self.drive.fetch_withdrawal_documents_by_status(
-            withdrawals_contract::statuses::BROADCASTED,
+            withdrawals_contract::Status::BROADCASTED.into(),
             transaction,
         )?;
 
@@ -87,34 +79,32 @@ impl Platform {
         for document in broadcasted_documents.iter_mut() {
             let transaction_sign_height = document
                 .get_data()
-                .get_u64("transactionSignHeight")
+                .get_u64(withdrawals_contract::property_names::TRANSACTION_SIGN_HEIGHT)
                 .map_err(|_| {
                     Error::Execution(ExecutionError::CorruptedCodeExecution(
                         "Can't get transactionSignHeight from withdrawal document",
                     ))
                 })?;
 
-            let transaction_id_bytes =
-                document
-                    .get_data()
-                    .get_bytes("transactionId")
-                    .map_err(|_| {
-                        Error::Execution(ExecutionError::CorruptedCodeExecution(
-                            "Can't get transactionId from withdrawal document",
-                        ))
-                    })?;
+            let transaction_id_bytes = document
+                .get_data()
+                .get_bytes(withdrawals_contract::property_names::TRANSACTION_ID)
+                .map_err(|_| {
+                    Error::Execution(ExecutionError::CorruptedCodeExecution(
+                        "Can't get transactionId from withdrawal document",
+                    ))
+                })?;
 
             let transaction_id = hex::encode(transaction_id_bytes);
 
-            let transaction_index =
-                document
-                    .get_data()
-                    .get_u64("transactionIndex")
-                    .map_err(|_| {
-                        Error::Execution(ExecutionError::CorruptedCodeExecution(
-                            "Can't get transactionIdex from withdrawal document",
-                        ))
-                    })?;
+            let transaction_index = document
+                .get_data()
+                .get_u64(withdrawals_contract::property_names::TRANSACTION_INDEX)
+                .map_err(|_| {
+                    Error::Execution(ExecutionError::CorruptedCodeExecution(
+                        "Can't get transactionIdex from withdrawal document",
+                    ))
+                })?;
 
             if core_transactions.contains(&transaction_id)
                 || block_execution_context.block_info.core_chain_locked_height
@@ -122,18 +112,21 @@ impl Platform {
                     > NUMBER_OF_BLOCKS_BEFORE_EXPIRED
             {
                 let status = if core_transactions.contains(&transaction_id) {
-                    withdrawals_contract::statuses::COMPLETE
+                    withdrawals_contract::Status::COMPLETE
                 } else {
                     self.drive.add_insert_expired_index_operation(
                         transaction_index,
                         &mut drive_operations,
                     );
 
-                    withdrawals_contract::statuses::EXPIRED
+                    withdrawals_contract::Status::EXPIRED
                 };
 
                 document
-                    .set("status", JsonValue::Number(Number::from(status)))
+                    .set(
+                        withdrawals_contract::property_names::STATUS,
+                        JsonValue::Number(Number::from(status as u8)),
+                    )
                     .map_err(|_| {
                         Error::Execution(ExecutionError::CorruptedCodeExecution(
                             "Can't update document field: status",
@@ -157,7 +150,7 @@ impl Platform {
             &contract_fetch_info.contract,
             contract_fetch_info
                 .contract
-                .document_type_for_name("withdrawal")
+                .document_type_for_name(withdrawals_contract::types::WITHDRAWAL)
                 .map_err(|_| {
                     Error::Execution(ExecutionError::CorruptedCodeExecution(
                         "Can't fetch withdrawal data contract",
@@ -181,15 +174,7 @@ impl Platform {
         validator_set_quorum_hash: [u8; 32],
         transaction: TransactionArg,
     ) -> Result<Vec<Vec<u8>>, Error> {
-        let data_contract_id = Identifier::from_string(
-            &withdrawals_contract::system_ids().contract_id,
-            Encoding::Base58,
-        )
-        .map_err(|_| {
-            Error::Execution(ExecutionError::CorruptedCodeExecution(
-                "Can't create withdrawals id identifier from string",
-            ))
-        })?;
+        let data_contract_id = withdrawals_contract::CONTRACT_ID.clone();
 
         let (_, maybe_data_contract) = self.drive.get_contract_with_fetch_info(
             data_contract_id.to_buffer(),
@@ -246,7 +231,7 @@ impl Platform {
 
                 document
                     .set(
-                        "transactionId",
+                        withdrawals_contract::property_names::TRANSACTION_ID,
                         JsonValue::Array(
                             update_transaction_id
                                 .iter()
@@ -282,7 +267,7 @@ impl Platform {
             &contract_fetch_info.contract,
             contract_fetch_info
                 .contract
-                .document_type_for_name("withdrawal")
+                .document_type_for_name(withdrawals_contract::types::WITHDRAWAL)
                 .map_err(|_| {
                     Error::Execution(ExecutionError::CorruptedCodeExecution(
                         "could not get document type",
@@ -308,15 +293,7 @@ impl Platform {
         block_execution_context: &BlockExecutionContext,
         transaction: TransactionArg,
     ) -> Result<(), Error> {
-        let data_contract_id = Identifier::from_string(
-            &withdrawals_contract::system_ids().contract_id,
-            Encoding::Base58,
-        )
-        .map_err(|_| {
-            Error::Execution(ExecutionError::CorruptedCodeExecution(
-                "Can't create withdrawals id identifier from string",
-            ))
-        })?;
+        let data_contract_id = withdrawals_contract::CONTRACT_ID.clone();
 
         let (_, maybe_data_contract) = self.drive.get_contract_with_fetch_info(
             data_contract_id.to_buffer(),
@@ -331,7 +308,7 @@ impl Platform {
         ))?;
 
         let mut documents = self.drive.fetch_withdrawal_documents_by_status(
-            withdrawals_contract::statuses::QUEUED,
+            withdrawals_contract::Status::QUEUED.into(),
             transaction,
         )?;
 
@@ -352,7 +329,7 @@ impl Platform {
 
             document
                 .set(
-                    "transactionId",
+                    withdrawals_contract::property_names::TRANSACTION_ID,
                     JsonValue::Array(
                         transaction_id
                             .clone()
@@ -369,8 +346,8 @@ impl Platform {
 
             document
                 .set(
-                    "status",
-                    JsonValue::Number(Number::from(withdrawals_contract::statuses::POOLED)),
+                    withdrawals_contract::property_names::STATUS,
+                    JsonValue::Number(Number::from(withdrawals_contract::Status::POOLED as u8)),
                 )
                 .map_err(|_| {
                     Error::Execution(ExecutionError::CorruptedCodeExecution(
@@ -393,7 +370,7 @@ impl Platform {
             &contract_fetch_info.contract,
             contract_fetch_info
                 .contract
-                .document_type_for_name("withdrawal")
+                .document_type_for_name(withdrawals_contract::types::WITHDRAWAL)
                 .map_err(|_| {
                     Error::Execution(ExecutionError::CorruptedCodeExecution(
                         "Can't fetch withdrawal data contract",
@@ -475,20 +452,28 @@ impl Platform {
             .fetch_latest_withdrawal_transaction_index(transaction)?;
 
         for (i, document) in documents.iter().enumerate() {
-            let output_script = document.get_data().get_bytes("outputScript").map_err(|_| {
-                Error::Execution(ExecutionError::CorruptedCodeExecution(
-                    "Can't get outputScript from withdrawal document",
-                ))
-            })?;
+            let output_script = document
+                .get_data()
+                .get_bytes(withdrawals_contract::property_names::OUTPUT_SCRIPT)
+                .map_err(|_| {
+                    Error::Execution(ExecutionError::CorruptedCodeExecution(
+                        "Can't get outputScript from withdrawal document",
+                    ))
+                })?;
 
-            let amount = document.get_data().get_u64("amount").map_err(|_| {
-                Error::Execution(ExecutionError::CorruptedCodeExecution(
-                    "Can't get amount from withdrawal document",
-                ))
-            })?;
+            let amount = document
+                .get_data()
+                .get_u64(withdrawals_contract::property_names::AMOUNT)
+                .map_err(|_| {
+                    Error::Execution(ExecutionError::CorruptedCodeExecution(
+                        "Can't get amount from withdrawal document",
+                    ))
+                })?;
 
-            let core_fee_per_byte =
-                document.get_data().get_u64("coreFeePerByte").map_err(|_| {
+            let core_fee_per_byte = document
+                .get_data()
+                .get_u64(withdrawals_contract::property_names::CORE_FEE_PER_BYTE)
+                .map_err(|_| {
                     Error::Execution(ExecutionError::CorruptedCodeExecution(
                         "Can't get coreFeePerByte from withdrawal document",
                     ))
@@ -640,7 +625,7 @@ mod tests {
                     "coreFeePerByte": 1,
                     "pooling": Pooling::Never,
                     "outputScript": (0..23).collect::<Vec<u8>>(),
-                    "status": withdrawals_contract::statuses::BROADCASTED,
+                    "status": withdrawals_contract::Status::BROADCASTED,
                     "transactionIndex": 1,
                     "transactionSignHeight": 93,
                     "transactionId": vec![1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1],
@@ -661,7 +646,7 @@ mod tests {
                     "coreFeePerByte": 1,
                     "pooling": Pooling::Never,
                     "outputScript": (0..23).collect::<Vec<u8>>(),
-                    "status": withdrawals_contract::statuses::BROADCASTED,
+                    "status": withdrawals_contract::Status::BROADCASTED,
                     "transactionIndex": 2,
                     "transactionSignHeight": 10,
                     "transactionId": vec![3, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1],
@@ -702,7 +687,7 @@ mod tests {
             let documents = platform
                 .drive
                 .fetch_withdrawal_documents_by_status(
-                    withdrawals_contract::statuses::EXPIRED,
+                    withdrawals_contract::Status::EXPIRED.into(),
                     Some(&transaction),
                 )
                 .expect("to fetch documents by status");
@@ -713,7 +698,7 @@ mod tests {
             let documents = platform
                 .drive
                 .fetch_withdrawal_documents_by_status(
-                    withdrawals_contract::statuses::COMPLETE,
+                    withdrawals_contract::Status::COMPLETE.into(),
                     Some(&transaction),
                 )
                 .expect("to fetch documents by status");
@@ -746,7 +731,7 @@ mod tests {
                     "coreFeePerByte": 1,
                     "pooling": Pooling::Never,
                     "outputScript": (0..23).collect::<Vec<u8>>(),
-                    "status": withdrawals_contract::statuses::QUEUED,
+                    "status": withdrawals_contract::Status::QUEUED,
                     "transactionIndex": 1,
                 }),
             );
@@ -765,7 +750,7 @@ mod tests {
                     "coreFeePerByte": 1,
                     "pooling": Pooling::Never,
                     "outputScript": (0..23).collect::<Vec<u8>>(),
-                    "status": withdrawals_contract::statuses::QUEUED,
+                    "status": withdrawals_contract::Status::QUEUED,
                     "transactionIndex": 2,
                 }),
             );
@@ -803,7 +788,7 @@ mod tests {
             let updated_documents = platform
                 .drive
                 .fetch_withdrawal_documents_by_status(
-                    withdrawals_contract::statuses::POOLED,
+                    withdrawals_contract::Status::POOLED.into(),
                     Some(&transaction),
                 )
                 .expect("to fetch withdrawal documents");
@@ -922,7 +907,7 @@ mod tests {
                     "coreFeePerByte": 1,
                     "pooling": Pooling::Never,
                     "outputScript": (0..23).collect::<Vec<u8>>(),
-                    "status": withdrawals_contract::statuses::POOLED,
+                    "status": withdrawals_contract::Status::POOLED,
                     "transactionIndex": 1,
                 }),
             );
@@ -941,7 +926,7 @@ mod tests {
                     "coreFeePerByte": 1,
                     "pooling": Pooling::Never,
                     "outputScript": (0..23).collect::<Vec<u8>>(),
-                    "status": withdrawals_contract::statuses::POOLED,
+                    "status": withdrawals_contract::Status::POOLED,
                     "transactionIndex": 2,
                 }),
             );

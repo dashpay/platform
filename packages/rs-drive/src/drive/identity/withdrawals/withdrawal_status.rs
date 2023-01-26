@@ -1,9 +1,4 @@
-use dpp::{
-    contracts::withdrawals_contract,
-    data_contract::extra::common,
-    prelude::{Document, Identifier},
-    util::string_encoding::Encoding,
-};
+use dpp::{contracts::withdrawals_contract, data_contract::extra::common, prelude::Document};
 use grovedb::TransactionArg;
 use serde_json::json;
 
@@ -21,10 +16,10 @@ impl Drive {
     ) -> Result<Vec<Document>, Error> {
         let query_value = json!({
             "where": [
-                ["status", "==", status],
+                [withdrawals_contract::property_names::STATUS, "==", status],
             ],
             "orderBy": [
-                ["$createdAt", "desc"],
+                [withdrawals_contract::property_names::CREATE_AT, "desc"],
             ]
         });
 
@@ -32,16 +27,7 @@ impl Drive {
 
         let (documents, _, _) = self.query_documents(
             &query_cbor,
-            Identifier::from_string(
-                &withdrawals_contract::system_ids().contract_id,
-                Encoding::Base58,
-            )
-            .map_err(|_| {
-                Error::Drive(DriveError::CorruptedCodeExecution(
-                    "Can't create withdrawals id identifier from string",
-                ))
-            })?
-            .to_buffer(),
+            withdrawals_contract::CONTRACT_ID.clone().to_buffer(),
             withdrawals_contract::types::WITHDRAWAL,
             None,
             transaction,
@@ -67,20 +53,12 @@ impl Drive {
         original_transaction_id: &[u8],
         transaction: TransactionArg,
     ) -> Result<Document, Error> {
-        let data_contract_id = Identifier::from_string(
-            &withdrawals_contract::system_ids().contract_id,
-            Encoding::Base58,
-        )
-        .map_err(|_| {
-            Error::Drive(DriveError::CorruptedCodeExecution(
-                "Can't create withdrawals id identifier from string",
-            ))
-        })?;
+        let data_contract_id = withdrawals_contract::CONTRACT_ID.clone();
 
         let query_value = json!({
             "where": [
-                ["transactionId", "==", original_transaction_id],
-                ["status", "==", withdrawals_contract::statuses::POOLED],
+                [withdrawals_contract::property_names::TRANSACTION_ID, "==", original_transaction_id],
+                [withdrawals_contract::property_names::STATUS, "==", withdrawals_contract::Status::POOLED],
             ],
         });
 
@@ -144,7 +122,7 @@ mod tests {
 
             let documents = drive
                 .fetch_withdrawal_documents_by_status(
-                    withdrawals_contract::statuses::QUEUED,
+                    withdrawals_contract::Status::QUEUED.into(),
                     Some(&transaction),
                 )
                 .expect("to fetch documents by status");
@@ -158,7 +136,7 @@ mod tests {
                     "coreFeePerByte": 1,
                     "pooling": Pooling::Never,
                     "outputScript": (0..23).collect::<Vec<u8>>(),
-                    "status": withdrawals_contract::statuses::QUEUED,
+                    "status": withdrawals_contract::Status::QUEUED,
                     "transactionIndex": 1,
                 }),
             );
@@ -172,7 +150,7 @@ mod tests {
                     "coreFeePerByte": 1,
                     "pooling": Pooling::Never,
                     "outputScript": (0..23).collect::<Vec<u8>>(),
-                    "status": withdrawals_contract::statuses::POOLED,
+                    "status": withdrawals_contract::Status::POOLED,
                     "transactionIndex": 2,
                 }),
             );
@@ -181,7 +159,7 @@ mod tests {
 
             let documents = drive
                 .fetch_withdrawal_documents_by_status(
-                    withdrawals_contract::statuses::QUEUED,
+                    withdrawals_contract::Status::QUEUED.into(),
                     Some(&transaction),
                 )
                 .expect("to fetch documents by status");
@@ -190,7 +168,7 @@ mod tests {
 
             let documents = drive
                 .fetch_withdrawal_documents_by_status(
-                    withdrawals_contract::statuses::POOLED,
+                    withdrawals_contract::Status::POOLED.into(),
                     Some(&transaction),
                 )
                 .expect("to fetch documents by status");
@@ -221,7 +199,7 @@ mod tests {
                     "coreFeePerByte": 1,
                     "pooling": Pooling::Never,
                     "outputScript": (0..23).collect::<Vec<u8>>(),
-                    "status": withdrawals_contract::statuses::POOLED,
+                    "status": withdrawals_contract::Status::POOLED,
                     "transactionIndex": 1,
                     "transactionId": (0..32).collect::<Vec<u8>>(),
                 }),

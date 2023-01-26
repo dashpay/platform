@@ -34,11 +34,7 @@ pub fn get_withdrawals_data_contract_fixture(owner_id: Option<Identifier>) -> Da
         .create(owner_id, withdrawals_schema)
         .expect("data in fixture should be correct");
 
-    data_contract.id = Identifier::from_string(
-        &withdrawals_contract::system_ids().contract_id,
-        Encoding::Base58,
-    )
-    .unwrap();
+    data_contract.id = withdrawals_contract::CONTRACT_ID.clone();
 
     data_contract
 }

@@ -118,7 +118,7 @@ jobs:
       - name: Build package and dependencies
         run: yarn build --filter "+${{ inputs.package }}"
         env:
-          ENABLE_CORE_RPC_MOCKING: true
+          NODE_ENV: test
 
       - name: Build SDK
         run: yarn build --filter "+dash"

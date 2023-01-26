@@ -5,7 +5,7 @@
   "main": "Drive.js",
   "scripts": {
     "build": "yarn exec scripts/build.sh",
-    "test": "ENABLE_CORE_RPC_MOCKING=true ultra --build && mocha test",
+    "test": "NODE_ENV=test ultra --build && mocha test",
     "lint": "eslint ."
   },
   "files": [
