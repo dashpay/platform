@@ -67,12 +67,7 @@ class GrpcTransport {
       );
     }
 
-    const nodeTlsRejectUnauthorized = process.env.NODE_TLS_REJECT_UNAUTHORIZED;
-
     try {
-      if (address.isSelfSignedCertificateAllowed()) {
-        process.env.NODE_TLS_REJECT_UNAUTHORIZED = 0;
-      }
       const result = await client[method](requestMessage, {}, requestOptions);
 
       this.lastUsedAddress = address;
@@ -116,10 +111,6 @@ class GrpcTransport {
           retries: options.retries - 1,
         },
       );
-    } finally {
-      if (address.isSelfSignedCertificateAllowed()) {
-        process.env.NODE_TLS_REJECT_UNAUTHORIZED = nodeTlsRejectUnauthorized;
-      }
     }
   }
 
@@ -141,7 +132,16 @@ class GrpcTransport {
    * @returns {string}
    */
   makeGrpcUrlFromAddress(address) {
-    return `${address.getProtocol()}://${address.getHost()}:${address.getPort()}`;
+    let protocol = address.getProtocol();
+    // For NodeJS Client
+    if (typeof process !== 'undefined'
+      && process.versions != null
+      && process.versions.node != null
+      && address.isSelfSignedCertificateAllowed()) {
+      protocol = 'http';
+    }
+
+    return `${protocol}://${address.getHost()}:${address.getPort()}`;
   }
 }
 
