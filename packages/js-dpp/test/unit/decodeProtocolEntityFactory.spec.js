@@ -1,3 +1,4 @@
+const varint = require('varint');
 const decodeProtocolEntityFactory = require('../../lib/decodeProtocolEntityFactory');
 const ProtocolVersionParsingError = require('../../lib/errors/consensus/basic/decode/ProtocolVersionParsingError');
 const SerializedObjectParsingError = require('../../lib/errors/consensus/basic/decode/SerializedObjectParsingError');
@@ -16,8 +17,7 @@ describe('decodeProtocolEntityFactory', () => {
   beforeEach(() => {
     parsedProtocolVersion = 0;
 
-    protocolVersionBuffer = Buffer.alloc(4);
-    protocolVersionBuffer.writeUInt32LE(parsedProtocolVersion, 0);
+    protocolVersionBuffer = Buffer.from(varint.encode(this.getProtocolVersion()));
 
     rawEntity = { test: 'successful' };
     entityBuffer = encode(rawEntity);

@@ -16,8 +16,7 @@ describe('decodeProtocolEntityFactory', () => {
   beforeEach(() => {
     parsedProtocolVersion = 0;
 
-    protocolVersionBuffer = Buffer.alloc(4);
-    protocolVersionBuffer.writeUInt32LE(parsedProtocolVersion, 0);
+    protocolVersionBuffer = Buffer.from(varint.encode(this.getProtocolVersion()));
 
     rawEntity = { test: 'successful' };
     entityBuffer = encode(rawEntity);
