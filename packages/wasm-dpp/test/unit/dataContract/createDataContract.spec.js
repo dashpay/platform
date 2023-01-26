@@ -16,7 +16,6 @@ describe('createDataContract', () => {
     rawDataContract = {
       $id: generateRandomIdentifier().toBuffer(),
       ownerId: generateRandomIdentifier().toBuffer(),
-      contractId: generateRandomIdentifier().toBuffer(),
       protocolVersion: 4,
       version: 20,
       $schema: 'http://test.com/schema',
