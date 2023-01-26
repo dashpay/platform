@@ -1,8 +1,11 @@
 use std::convert::TryInto;
 
 use anyhow::anyhow;
+use integer_encoding::VarInt;
 use serde_json::{Map, Number, Value as JsonValue};
 
+use crate::data_contract::errors::StructureError;
+use crate::data_contract::extra::common::check_protocol_version;
 use crate::{errors::consensus::ConsensusError, errors::ProtocolError};
 
 pub fn parse_protocol_version(
@@ -18,15 +21,51 @@ pub fn parse_protocol_version(
     Ok(())
 }
 
-pub fn get_protocol_version(version_bytes: &[u8]) -> Result<u32, ProtocolError> {
-    Ok(if version_bytes.len() != 4 {
-        return Err(ConsensusError::ProtocolVersionParsingError {
-            parsing_error: anyhow!("length is not 4 bytes"),
-        }
-        .into());
-    } else {
-        let version_set_bytes: [u8; 4] = version_bytes.try_into().unwrap();
-        u32::from_le_bytes(version_set_bytes)
+/// A protocol version
+pub type ProtocolVersion = u32;
+
+pub fn get_protocol_version(version_bytes: &[u8]) -> Result<ProtocolVersion, ProtocolError> {
+    u32::decode_var(version_bytes)
+        .ok_or_else(|| {
+            ConsensusError::ProtocolVersionParsingError {
+                parsing_error: anyhow!("length could not be decoded as a varint"),
+            }
+            .into()
+        })
+        .map(|(protocol_version, _size)| protocol_version)
+}
+
+/// The outcome of splitting a message that has a protocol version
+pub struct SplitProtocolVersionOutcome<'a> {
+    /// The protocol version
+    pub protocol_version: ProtocolVersion,
+    /// The protocol version size
+    pub protocol_version_size: usize,
+    /// The main message bytes of the protocol version
+    pub main_message_bytes: &'a [u8],
+}
+
+pub fn split_protocol_version(
+    message_bytes: &[u8],
+) -> Result<SplitProtocolVersionOutcome, ProtocolError> {
+    let (protocol_version, protocol_version_size) =
+        u32::decode_var(message_bytes).ok_or(ProtocolError::AbstractConsensusError(Box::new(
+            ConsensusError::ProtocolVersionParsingError {
+                parsing_error: anyhow!("length could not be decoded as a varint"),
+            },
+        )))?;
+    let (_, main_message_bytes) = message_bytes.split_at(protocol_version_size);
+
+    if !check_protocol_version(protocol_version) {
+        return Err(ProtocolError::StructureError(
+            StructureError::InvalidProtocolVersion("invalid protocol version"),
+        ));
+    }
+
+    Ok(SplitProtocolVersionOutcome {
+        protocol_version,
+        protocol_version_size,
+        main_message_bytes,
     })
 }
 
@@ -54,6 +93,6 @@ pub mod serde_entropy {
     where
         S: Serializer,
     {
-        serializer.serialize_str(&base64::encode(&buffer))
+        serializer.serialize_str(&base64::encode(buffer))
     }
 }

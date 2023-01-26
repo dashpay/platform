@@ -11,7 +11,7 @@ use crate::{
         enrich_data_contract_with_base_schema::PREFIX_BYTE_0, DataContract,
     },
     util::json_value::JsonValueExt,
-    validation::{DataValidator, JsonSchemaValidator, ValidationResult},
+    validation::{JsonSchemaValidator, ValidationResult},
     version::ProtocolVersionValidator,
     ProtocolError,
 };

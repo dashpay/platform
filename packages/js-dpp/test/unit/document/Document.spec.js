@@ -1,3 +1,4 @@
+const varint = require('varint');
 const DataContractFactory = require('../../../lib/dataContract/DataContractFactory');
 
 const generateRandomIdentifier = require('../../../lib/test/utils/generateRandomIdentifier');
@@ -355,10 +356,9 @@ describe('Document', () => {
 
       const result = document.toBuffer();
 
-      const protocolVersionUInt32 = Buffer.alloc(4);
-      protocolVersionUInt32.writeUInt32LE(rawDocument.$protocolVersion, 0);
+      const protocolVersionBytes = Buffer.from(varint.encode(rawDocument.$protocolVersion));
 
-      expect(result).to.deep.equal(Buffer.concat([protocolVersionUInt32, serializedDocument]));
+      expect(result).to.deep.equal(Buffer.concat([protocolVersionBytes, serializedDocument]));
 
       const documentToEncode = { ...rawDocument };
       delete documentToEncode.$protocolVersion;

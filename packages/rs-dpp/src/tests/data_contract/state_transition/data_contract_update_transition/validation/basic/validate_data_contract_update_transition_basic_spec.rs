@@ -4,14 +4,11 @@ use test_case::test_case;
 
 use crate::{
     consensus::basic::BasicError,
-    data_contract::{
-        state_transition::{
-            data_contract_update_transition::validation::basic::DataContractUpdateTransitionBasicValidator,
-            property_names, DataContractUpdateTransition,
-        },
-        DataContract,
+    data_contract::state_transition::{
+        data_contract_update_transition::validation::basic::DataContractUpdateTransitionBasicValidator,
+        property_names, DataContractUpdateTransition,
     },
-    state_repository::{self, MockStateRepositoryLike},
+    state_repository::MockStateRepositoryLike,
     state_transition::{
         state_transition_execution_context::StateTransitionExecutionContext,
         StateTransitionConvert, StateTransitionType,

@@ -35,11 +35,16 @@ impl std::convert::Into<DataContract> for DataContractWasm {
 #[derive(Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub(crate) struct DataContractParameters {
-    #[serde(rename = "$schema")]
-    schema: String,
-    #[serde(rename = "$id")]
-    id: Vec<u8>,
-    owner_id: Vec<u8>,
+    #[serde(
+        rename = "$schema",
+        skip_serializing_if = "serde_json::Value::is_null",
+        default
+    )]
+    schema: serde_json::Value,
+    #[serde(rename = "$id", skip_serializing_if = "Option::is_none")]
+    id: Option<Vec<u8>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    owner_id: Option<Vec<u8>>,
     #[serde(skip_serializing_if = "serde_json::Value::is_null", default)]
     documents: serde_json::Value,
     #[serde(
@@ -48,8 +53,13 @@ pub(crate) struct DataContractParameters {
         rename = "$defs"
     )]
     defs: serde_json::Value,
-    protocol_version: u32,
-    version: u32,
+    #[serde(skip_serializing_if = "serde_json::Value::is_null", default)]
+    protocol_version: serde_json::Value,
+    #[serde(skip_serializing_if = "serde_json::Value::is_null", default)]
+    version: serde_json::Value,
+
+    #[serde(flatten)]
+    _extras: serde_json::Value, // Captures excess fields to trigger validation failure later.
 }
 
 #[wasm_bindgen(js_class=DataContract)]

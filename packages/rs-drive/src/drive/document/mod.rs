@@ -33,11 +33,11 @@
 //! Namely functions to return the paths to certain objects and the path sizes.
 //!
 
-use crate::contract::document::Document;
 use crate::drive::defaults::DEFAULT_HASH_SIZE_U8;
 use crate::drive::flags::StorageFlags;
 use crate::drive::{defaults, RootTree};
-use dpp::data_contract::extra::DocumentType;
+use dpp::data_contract::document_type::DocumentType;
+use dpp::document::document_stub::DocumentStub;
 use grovedb::batch::key_info::KeyInfo;
 use grovedb::batch::KeyInfoPath;
 use grovedb::reference_path::ReferencePathType::UpstreamRootHeightReference;
@@ -138,7 +138,7 @@ fn contract_documents_keeping_history_storage_time_reference_path_size(
 
 /// Creates a reference to a document.
 fn make_document_reference(
-    document: &Document,
+    document: &DocumentStub,
     document_type: &DocumentType,
     storage_flags: Option<&StorageFlags>,
 ) -> Element {
@@ -205,10 +205,10 @@ pub(crate) mod tests {
 
     use tempfile::TempDir;
 
-    use crate::common::json_document_to_cbor;
     use crate::drive::block_info::BlockInfo;
     use crate::drive::flags::StorageFlags;
     use crate::drive::Drive;
+    use dpp::data_contract::extra::common::json_document_to_cbor;
 
     /// Setup Dashpay
     pub fn setup_dashpay(_prefix: &str, mutable_contact_requests: bool) -> (Drive, Vec<u8>) {
@@ -227,7 +227,8 @@ pub(crate) mod tests {
         };
 
         // let's construct the grovedb structure for the dashpay data contract
-        let dashpay_cbor = json_document_to_cbor(dashpay_path, Some(1));
+        let dashpay_cbor =
+            json_document_to_cbor(dashpay_path, Some(1)).expect("expected to get cbor document");
         drive
             .apply_contract_cbor(
                 dashpay_cbor.clone(),

@@ -146,7 +146,7 @@ mod test {
             KeyType,
         },
         state_repository::MockStateRepositoryLike,
-        state_transition::{StateTransition, StateTransitionConvert, StateTransitionLike},
+        state_transition::{StateTransition, StateTransitionLike},
         tests::{
             fixtures::{
                 identity_create_transition_fixture_json, identity_topup_transition_fixture_json,
@@ -186,7 +186,7 @@ mod test {
         let TestData {
             state_repository,
             asset_lock_public_key_hash_fetcher,
-            bls,
+            ..
         } = setup_test();
         let state_transition: StateTransition = DocumentsBatchTransition::default().into();
 
@@ -287,7 +287,7 @@ mod test {
         let TestData {
             mut state_repository,
             asset_lock_public_key_hash_fetcher,
-            bls,
+            bls: _,
         } = setup_test();
         let private_key_hex = "af432c476f65211f45f48f1d42c9c0b497e56696aa1736b40544ef1a496af837";
         let secret_key = SecretKey::from_slice(&hex::decode(private_key_hex).unwrap())

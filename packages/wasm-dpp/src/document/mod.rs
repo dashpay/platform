@@ -59,7 +59,8 @@ impl DocumentWasm {
 
         let (identifier_paths, _) = js_data_contract
             .inner()
-            .get_identifiers_and_binary_paths(document_type);
+            .get_identifiers_and_binary_paths(document_type)
+            .with_js_error()?;
 
         // Errors are ignored. When `Buffer` crosses the WASM boundary it becomes an Array.
         // When `Identifier` crosses the WASM boundary it becomes a String. From perspective of JS
@@ -161,7 +162,7 @@ impl DocumentWasm {
 
     #[wasm_bindgen(js_name=set)]
     pub fn set(&mut self, path: String, js_value_to_set: JsValue) -> Result<(), JsValue> {
-        let (identifier_paths, _) = self.0.get_identifiers_and_binary_paths();
+        let (identifier_paths, _) = self.0.get_identifiers_and_binary_paths().with_js_error()?;
         for property_path in identifier_paths {
             if property_path == path {
                 let id_value = js_value_to_set.with_serde_to_json_value()?;
@@ -269,7 +270,8 @@ impl DocumentWasm {
         };
         let mut value = self.0.to_object().with_js_error()?;
 
-        let (identifiers_paths, binary_paths) = self.0.get_identifiers_and_binary_paths();
+        let (identifiers_paths, binary_paths) =
+            self.0.get_identifiers_and_binary_paths().with_js_error()?;
         let serializer = serde_wasm_bindgen::Serializer::json_compatible();
         let js_value = value.serialize(&serializer)?;
 

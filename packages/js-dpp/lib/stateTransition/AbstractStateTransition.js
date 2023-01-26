@@ -4,6 +4,7 @@ const {
   Signer: { sign, verifySignature, verifyHashSignature },
 } = require('@dashevo/dashcore-lib');
 
+const varint = require('varint');
 const StateTransitionIsNotSignedError = require(
   './errors/StateTransitionIsNotSignedError',
 );
@@ -147,10 +148,9 @@ class AbstractStateTransition {
     const serializedData = this.toObject(options);
     delete serializedData.protocolVersion;
 
-    const protocolVersionUInt32 = Buffer.alloc(4);
-    protocolVersionUInt32.writeUInt32LE(this.getProtocolVersion(), 0);
+    const protocolVersionBytes = Buffer.from(varint.encode(this.getProtocolVersion()));
 
-    return Buffer.concat([protocolVersionUInt32, serializer.encode(serializedData)]);
+    return Buffer.concat([protocolVersionBytes, serializer.encode(serializedData)]);
   }
 
   /**

@@ -90,9 +90,6 @@ module.exports = {
         http: {
           port: 3000,
         },
-        grpc: {
-          port: 3010,
-        },
         rateLimiter: {
           maxTokens: 300,
           tokensPerFill: 150,

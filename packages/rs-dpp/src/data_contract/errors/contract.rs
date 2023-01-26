@@ -1,5 +1,25 @@
-#[derive(Debug, thiserror::Error)]
-pub enum ContractError {
+use thiserror::Error;
+
+use crate::data_contract::DataContract;
+use crate::errors::consensus::ConsensusError;
+
+#[derive(Error, Debug)]
+pub enum DataContractError {
+    #[error("Data Contract already exists")]
+    DataContractAlreadyExistsError,
+
+    #[error("Invalid Data Contract: {errors:?}")]
+    InvalidDataContractError {
+        errors: Vec<ConsensusError>,
+        raw_data_contract: DataContract,
+    },
+
+    #[error("Data Contract doesn't define document with type {doc_type}")]
+    InvalidDocumentTypeError {
+        doc_type: String,
+        data_contract: DataContract,
+    },
+
     #[error("missing required key: {0}")]
     MissingRequiredKey(&'static str),
 
@@ -44,29 +64,4 @@ pub enum ContractError {
 
     #[error("Corrupted Code Execution: {0}")]
     CorruptedCodeExecution(&'static str),
-
-    #[error(transparent)]
-    StructureError(#[from] StructureError),
-
-    /// DPP Protocol related error
-    #[error("Protocol Error: {0}")]
-    ProtocolError(#[from] crate::prelude::ProtocolError),
-}
-
-#[derive(Debug, thiserror::Error)]
-pub enum StructureError {
-    #[error("invalid protocol version error: {0}")]
-    InvalidProtocolVersion(&'static str),
-
-    #[error("invalid cbor error: {0}")]
-    InvalidCBOR(&'static str),
-
-    #[error("key wrong type error: {0}")]
-    KeyWrongType(&'static str),
-
-    #[error("key out of bounds error: {0}")]
-    KeyWrongBounds(&'static str),
-
-    #[error("value wrong type error: {0}")]
-    ValueWrongType(&'static str),
 }

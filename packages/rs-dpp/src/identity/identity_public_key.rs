@@ -443,5 +443,5 @@ pub fn se_vec_to_base64<S>(buffer: &Vec<u8>, serializer: S) -> Result<S::Ok, S::
 where
     S: Serializer,
 {
-    serializer.serialize_str(&base64::encode(&buffer))
+    serializer.serialize_str(&base64::encode(buffer))
 }

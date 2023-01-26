@@ -1,6 +1,9 @@
 /// Query errors
 #[derive(Debug, thiserror::Error)]
 pub enum QueryError {
+    /// Deserialization
+    #[error("deserialization error: {0}")]
+    DeserializationError(&'static str),
     /// Unsupported error
     #[error("unsupported error: {0}")]
     Unsupported(&'static str),
