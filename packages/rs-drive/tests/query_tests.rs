@@ -37,7 +37,8 @@ use std::io::{self, BufRead};
 use std::option::Option::None;
 use std::sync::Arc;
 
-use dpp::data_contract::DataContractFactory;
+use dpp::data_contract::extra::common::cbor_inner_bytes_value;
+use dpp::data_contract::{DataContractFactory, DriveContractExt};
 use rand::seq::SliceRandom;
 use rand::{Rng, SeedableRng};
 use serde::{Deserialize, Serialize};
@@ -46,8 +47,7 @@ use tempfile::TempDir;
 
 use drive::common;
 use drive::common::helpers::setup::setup_drive;
-use drive::common::{cbor_inner_bytes_value, setup_contract};
-use drive::contract::{document::Document, Contract};
+use drive::common::setup_contract;
 use drive::drive::batch::GroveDbOpBatch;
 use drive::drive::config::DriveConfig;
 use drive::drive::contract::add_init_contracts_structure_operations;
@@ -58,11 +58,12 @@ use drive::drive::Drive;
 use drive::error::{query::QueryError, Error};
 use drive::query::DriveQuery;
 
-use dpp::data_contract::extra::DriveContractExt;
 use dpp::data_contract::validation::data_contract_validator::DataContractValidator;
+use dpp::document::document_stub::DocumentStub;
 
 use dpp::prelude::DataContract;
 use dpp::version::{ProtocolVersionValidator, COMPATIBILITY_MAP, LATEST_VERSION};
+use drive::contract::Contract;
 use drive::drive::block_info::BlockInfo;
 
 #[derive(Serialize, Deserialize)]
@@ -187,10 +188,10 @@ pub fn setup_family_tests(count: u32, with_batching: bool, seed: u64) -> (Drive,
 
     let people = Person::random_people(count, seed);
     for person in people {
-        let value = serde_json::to_value(&person).expect("serialized person");
+        let value = serde_json::to_value(person).expect("serialized person");
         let document_cbor =
             common::value_to_cbor(value, Some(drive::drive::defaults::PROTOCOL_VERSION));
-        let document = Document::from_cbor(document_cbor.as_slice(), None, None)
+        let document = DocumentStub::from_cbor(document_cbor.as_slice(), None, None)
             .expect("document should be properly deserialized");
 
         let document_type = contract
@@ -264,10 +265,10 @@ pub fn setup_family_tests_with_nulls(
 
     let people = PersonWithOptionalValues::random_people(count, seed);
     for person in people {
-        let value = serde_json::to_value(&person).expect("serialized person");
+        let value = serde_json::to_value(person).expect("serialized person");
         let document_cbor =
             common::value_to_cbor(value, Some(drive::drive::defaults::PROTOCOL_VERSION));
-        let document = Document::from_cbor(document_cbor.as_slice(), None, None)
+        let document = DocumentStub::from_cbor(document_cbor.as_slice(), None, None)
             .expect("document should be properly deserialized");
         let document_type = contract
             .document_type_for_name("person")
@@ -340,10 +341,10 @@ pub fn setup_family_tests_only_first_name_index(
 
     let people = Person::random_people(count, seed);
     for person in people {
-        let value = serde_json::to_value(&person).expect("serialized person");
+        let value = serde_json::to_value(person).expect("serialized person");
         let document_cbor =
             common::value_to_cbor(value, Some(drive::drive::defaults::PROTOCOL_VERSION));
-        let document = Document::from_cbor(document_cbor.as_slice(), None, None)
+        let document = DocumentStub::from_cbor(document_cbor.as_slice(), None, None)
             .expect("document should be properly deserialized");
 
         let document_type = contract
@@ -447,10 +448,10 @@ pub fn add_domains_to_contract(
 ) {
     let domains = Domain::random_domains_in_parent(count, seed, "dash");
     for domain in domains {
-        let value = serde_json::to_value(&domain).expect("serialized domain");
+        let value = serde_json::to_value(domain).expect("serialized domain");
         let document_cbor =
             common::value_to_cbor(value, Some(drive::drive::defaults::PROTOCOL_VERSION));
-        let document = Document::from_cbor(document_cbor.as_slice(), None, None)
+        let document = DocumentStub::from_cbor(document_cbor.as_slice(), None, None)
             .expect("document should be properly deserialized");
         let document_type = contract
             .document_type_for_name("domain")
@@ -546,7 +547,7 @@ pub fn setup_dpns_test_with_data(path: &str) -> (Drive, Contract) {
             let domain_cbor =
                 common::value_to_cbor(domain_json, Some(drive::drive::defaults::PROTOCOL_VERSION));
 
-            let domain = Document::from_cbor(&domain_cbor, None, None)
+            let domain = DocumentStub::from_cbor(&domain_cbor, None, None)
                 .expect("expected to deserialize the document");
 
             let document_type = contract
@@ -594,10 +595,10 @@ fn test_query_many() {
 
     let people = Person::random_people(10, 73409);
     for person in people {
-        let value = serde_json::to_value(&person).expect("serialized person");
+        let value = serde_json::to_value(person).expect("serialized person");
         let document_cbor =
             common::value_to_cbor(value, Some(drive::drive::defaults::PROTOCOL_VERSION));
-        let document = Document::from_cbor(document_cbor.as_slice(), None, None)
+        let document = DocumentStub::from_cbor(document_cbor.as_slice(), None, None)
             .expect("document should be properly deserialized");
         let document_type = contract
             .document_type_for_name("person")
@@ -726,8 +727,8 @@ fn test_family_basic_queries() {
         .expect("there is always a root hash");
 
     let expected_app_hash = vec![
-        215, 91, 173, 219, 179, 145, 217, 218, 137, 212, 164, 79, 135, 107, 60, 107, 7, 66, 82, 49,
-        27, 36, 192, 233, 23, 152, 140, 237, 49, 23, 122, 168,
+        73, 121, 80, 69, 65, 184, 253, 105, 235, 192, 100, 207, 165, 249, 222, 157, 9, 90, 33, 113,
+        173, 90, 154, 189, 84, 27, 83, 94, 202, 179, 79, 206,
     ];
 
     assert_eq!(root_hash.as_slice(), expected_app_hash);
@@ -768,7 +769,7 @@ fn test_family_basic_queries() {
     let names: Vec<String> = results
         .iter()
         .map(|result| {
-            let document = Document::from_cbor(result.as_slice(), None, None)
+            let document = DocumentStub::from_cbor(result.as_slice(), None, None)
                 .expect("we should be able to deserialize the cbor");
             let first_name_value = document
                 .properties
@@ -866,7 +867,7 @@ fn test_family_basic_queries() {
     assert_eq!(root_hash, proof_root_hash);
     assert_eq!(results, proof_results);
 
-    let document = Document::from_cbor(results.first().unwrap().as_slice(), None, None)
+    let document = DocumentStub::from_cbor(results.first().unwrap().as_slice(), None, None)
         .expect("we should be able to deserialize the cbor");
     let last_name = document
         .properties
@@ -963,7 +964,7 @@ fn test_family_basic_queries() {
     assert_eq!(root_hash, proof_root_hash);
     assert_eq!(results, proof_results);
 
-    let document = Document::from_cbor(results.first().unwrap().as_slice(), None, None)
+    let document = DocumentStub::from_cbor(results.first().unwrap().as_slice(), None, None)
         .expect("we should be able to deserialize the cbor");
     let last_name = document
         .properties
@@ -1076,7 +1077,7 @@ fn test_family_basic_queries() {
     let names: Vec<String> = results
         .iter()
         .map(|result| {
-            let document = Document::from_cbor(result.as_slice(), None, None)
+            let document = DocumentStub::from_cbor(result.as_slice(), None, None)
                 .expect("we should be able to deserialize the cbor");
             let first_name_value = document
                 .properties
@@ -1127,7 +1128,7 @@ fn test_family_basic_queries() {
     let names: Vec<String> = results
         .iter()
         .map(|result| {
-            let document = Document::from_cbor(result.as_slice(), None, None)
+            let document = DocumentStub::from_cbor(result.as_slice(), None, None)
                 .expect("we should be able to deserialize the cbor");
             let first_name_value = document
                 .properties
@@ -1173,7 +1174,7 @@ fn test_family_basic_queries() {
     let names: Vec<String> = results
         .iter()
         .map(|result| {
-            let document = Document::from_cbor(result.as_slice(), None, None)
+            let document = DocumentStub::from_cbor(result.as_slice(), None, None)
                 .expect("we should be able to deserialize the cbor");
             let first_name_value = document
                 .properties
@@ -1222,7 +1223,7 @@ fn test_family_basic_queries() {
     let names: Vec<String> = results
         .iter()
         .map(|result| {
-            let document = Document::from_cbor(result.as_slice(), None, None)
+            let document = DocumentStub::from_cbor(result.as_slice(), None, None)
                 .expect("we should be able to deserialize the cbor");
             let first_name_value = document
                 .properties
@@ -1275,7 +1276,7 @@ fn test_family_basic_queries() {
     let names: Vec<String> = results
         .iter()
         .map(|result| {
-            let document = Document::from_cbor(result.as_slice(), None, None)
+            let document = DocumentStub::from_cbor(result.as_slice(), None, None)
                 .expect("we should be able to deserialize the cbor");
             let first_name_value = document
                 .properties
@@ -1318,7 +1319,7 @@ fn test_family_basic_queries() {
     let names: Vec<String> = results
         .iter()
         .map(|result| {
-            let document = Document::from_cbor(result.as_slice(), None, None)
+            let document = DocumentStub::from_cbor(result.as_slice(), None, None)
                 .expect("we should be able to deserialize the cbor");
             let first_name_value = document
                 .properties
@@ -1373,7 +1374,7 @@ fn test_family_basic_queries() {
     let names: Vec<String> = results
         .iter()
         .map(|result| {
-            let document = Document::from_cbor(result.as_slice(), None, None)
+            let document = DocumentStub::from_cbor(result.as_slice(), None, None)
                 .expect("we should be able to deserialize the cbor");
             let first_name_value = document
                 .properties
@@ -1427,7 +1428,7 @@ fn test_family_basic_queries() {
     let names: Vec<String> = results
         .iter()
         .map(|result| {
-            let document = Document::from_cbor(result.as_slice(), None, None)
+            let document = DocumentStub::from_cbor(result.as_slice(), None, None)
                 .expect("we should be able to deserialize the cbor");
             let first_name_value = document
                 .properties
@@ -1459,7 +1460,7 @@ fn test_family_basic_queries() {
     let ages: HashMap<String, u8> = results
         .into_iter()
         .map(|result| {
-            let document = Document::from_cbor(result.as_slice(), None, None)
+            let document = DocumentStub::from_cbor(result.as_slice(), None, None)
                 .expect("we should be able to deserialize the cbor");
             let name_value = document
                 .properties
@@ -1508,7 +1509,7 @@ fn test_family_basic_queries() {
         serialized_person,
         Some(drive::drive::defaults::PROTOCOL_VERSION),
     );
-    let document = Document::from_cbor(person_cbor.as_slice(), None, None)
+    let document = DocumentStub::from_cbor(person_cbor.as_slice(), None, None)
         .expect("document should be properly deserialized");
 
     let document_type = contract
@@ -1557,7 +1558,7 @@ fn test_family_basic_queries() {
         serialized_person,
         Some(drive::drive::defaults::PROTOCOL_VERSION),
     );
-    let document = Document::from_cbor(person_cbor.as_slice(), None, None)
+    let document = DocumentStub::from_cbor(person_cbor.as_slice(), None, None)
         .expect("document should be properly deserialized");
 
     let document_type = contract
@@ -1654,7 +1655,7 @@ fn test_family_basic_queries() {
 
     assert_eq!(results.len(), 2);
 
-    let last_person = Document::from_cbor(results.first().unwrap().as_slice(), None, None)
+    let last_person = DocumentStub::from_cbor(results.first().unwrap().as_slice(), None, None)
         .expect("we should be able to deserialize the cbor");
 
     assert_eq!(
@@ -1694,7 +1695,7 @@ fn test_family_basic_queries() {
 
     assert_eq!(results.len(), 2);
 
-    let last_person = Document::from_cbor(results.first().unwrap().as_slice(), None, None)
+    let last_person = DocumentStub::from_cbor(results.first().unwrap().as_slice(), None, None)
         .expect("we should be able to deserialize the cbor");
 
     assert_eq!(
@@ -1756,7 +1757,7 @@ fn test_family_basic_queries() {
 
     assert_eq!(results.len(), 12);
 
-    let last_person = Document::from_cbor(results.first().unwrap().as_slice(), None, None)
+    let last_person = DocumentStub::from_cbor(results.first().unwrap().as_slice(), None, None)
         .expect("we should be able to deserialize the cbor");
 
     assert_eq!(
@@ -1959,8 +1960,8 @@ fn test_family_basic_queries() {
     assert_eq!(
         root_hash.as_slice(),
         vec![
-            74, 202, 174, 32, 99, 100, 184, 117, 214, 243, 226, 57, 214, 160, 134, 146, 40, 111,
-            18, 96, 74, 73, 118, 193, 89, 127, 189, 215, 107, 222, 8, 224
+            233, 40, 166, 136, 44, 215, 104, 68, 222, 94, 111, 240, 212, 213, 219, 191, 159, 91,
+            170, 101, 238, 50, 130, 241, 30, 167, 48, 201, 61, 34, 77, 214,
         ],
     );
 }
@@ -1978,8 +1979,8 @@ fn test_family_starts_at_queries() {
         .expect("there is always a root hash");
 
     let expected_app_hash = vec![
-        215, 91, 173, 219, 179, 145, 217, 218, 137, 212, 164, 79, 135, 107, 60, 107, 7, 66, 82, 49,
-        27, 36, 192, 233, 23, 152, 140, 237, 49, 23, 122, 168,
+        73, 121, 80, 69, 65, 184, 253, 105, 235, 192, 100, 207, 165, 249, 222, 157, 9, 90, 33, 113,
+        173, 90, 154, 189, 84, 27, 83, 94, 202, 179, 79, 206,
     ];
 
     assert_eq!(root_hash.as_slice(), expected_app_hash);
@@ -2024,7 +2025,7 @@ fn test_family_starts_at_queries() {
     let reduced_names_after: Vec<String> = results
         .iter()
         .map(|result| {
-            let document = Document::from_cbor(result.as_slice(), None, None)
+            let document = DocumentStub::from_cbor(result.as_slice(), None, None)
                 .expect("we should be able to deserialize the cbor");
             let first_name_value = document
                 .properties
@@ -2078,7 +2079,7 @@ fn test_family_starts_at_queries() {
     let reduced_names_after: Vec<String> = results
         .iter()
         .map(|result| {
-            let document = Document::from_cbor(result.as_slice(), None, None)
+            let document = DocumentStub::from_cbor(result.as_slice(), None, None)
                 .expect("we should be able to deserialize the cbor");
             let first_name_value = document
                 .properties
@@ -2126,7 +2127,7 @@ fn test_family_starts_at_queries() {
     let reduced_names_after: Vec<String> = results
         .iter()
         .map(|result| {
-            let document = Document::from_cbor(result.as_slice(), None, None)
+            let document = DocumentStub::from_cbor(result.as_slice(), None, None)
                 .expect("we should be able to deserialize the cbor");
             let first_name_value = document
                 .properties
@@ -2181,7 +2182,7 @@ fn test_family_starts_at_queries() {
     let reduced_names_after: Vec<String> = results
         .iter()
         .map(|result| {
-            let document = Document::from_cbor(result.as_slice(), None, None)
+            let document = DocumentStub::from_cbor(result.as_slice(), None, None)
                 .expect("we should be able to deserialize the cbor");
             let first_name_value = document
                 .properties
@@ -2355,8 +2356,8 @@ fn test_family_with_nulls_query() {
         .expect("there is always a root hash");
 
     let expected_app_hash = vec![
-        178, 241, 139, 253, 59, 145, 77, 207, 176, 244, 121, 203, 162, 159, 100, 120, 220, 117, 91,
-        40, 218, 22, 141, 147, 122, 64, 67, 200, 224, 233, 128, 203,
+        4, 124, 183, 58, 99, 155, 86, 174, 87, 104, 228, 194, 11, 64, 40, 44, 151, 17, 92, 242, 0,
+        22, 112, 204, 146, 167, 216, 170, 242, 62, 251, 240,
     ];
 
     assert_eq!(root_hash.as_slice(), expected_app_hash);
@@ -2398,7 +2399,7 @@ fn test_family_with_nulls_query() {
         .clone()
         .into_iter()
         .map(|result| {
-            let document = Document::from_cbor(result.as_slice(), None, None)
+            let document = DocumentStub::from_cbor(result.as_slice(), None, None)
                 .expect("we should be able to deserialize the cbor");
             let first_name_value = document
                 .properties
@@ -2426,7 +2427,7 @@ fn test_family_with_nulls_query() {
     let ids: Vec<String> = results
         .iter()
         .map(|result| {
-            let document = Document::from_cbor(result.as_slice(), None, None)
+            let document = DocumentStub::from_cbor(result.as_slice(), None, None)
                 .expect("we should be able to deserialize the cbor");
             base64::encode(document.id)
         })
@@ -2470,8 +2471,8 @@ fn test_query_with_cached_contract() {
 
     // Make sure the state is deterministic
     let expected_app_hash = vec![
-        215, 91, 173, 219, 179, 145, 217, 218, 137, 212, 164, 79, 135, 107, 60, 107, 7, 66, 82, 49,
-        27, 36, 192, 233, 23, 152, 140, 237, 49, 23, 122, 168,
+        73, 121, 80, 69, 65, 184, 253, 105, 235, 192, 100, 207, 165, 249, 222, 157, 9, 90, 33, 113,
+        173, 90, 154, 189, 84, 27, 83, 94, 202, 179, 79, 206,
     ];
 
     assert_eq!(root_hash.as_slice(), expected_app_hash);
@@ -2527,8 +2528,8 @@ fn test_dpns_query() {
         .expect("there is always a root hash");
 
     let expected_app_hash = vec![
-        128, 29, 8, 219, 168, 144, 164, 161, 140, 211, 34, 28, 92, 44, 132, 121, 122, 24, 37, 62,
-        5, 79, 235, 55, 112, 138, 0, 59, 194, 148, 177, 156,
+        151, 117, 147, 1, 134, 14, 234, 126, 69, 71, 65, 239, 37, 4, 125, 225, 66, 152, 11, 170,
+        169, 191, 119, 126, 160, 188, 252, 15, 31, 146, 77, 134,
     ];
 
     assert_eq!(root_hash.as_slice(), expected_app_hash);
@@ -2570,7 +2571,7 @@ fn test_dpns_query() {
     let names: Vec<String> = results
         .iter()
         .map(|result| {
-            let document = Document::from_cbor(result.as_slice(), None, None)
+            let document = DocumentStub::from_cbor(result.as_slice(), None, None)
                 .expect("we should be able to deserialize the cbor");
             let normalized_label_value = document
                 .properties
@@ -2616,7 +2617,7 @@ fn test_dpns_query() {
     let names: Vec<String> = results
         .iter()
         .map(|result| {
-            let document = Document::from_cbor(result.as_slice(), None, None)
+            let document = DocumentStub::from_cbor(result.as_slice(), None, None)
                 .expect("we should be able to deserialize the cbor");
             let normalized_label_value = document
                 .properties
@@ -2646,7 +2647,7 @@ fn test_dpns_query() {
     let ids: Vec<String> = results
         .into_iter()
         .map(|result| {
-            let document = Document::from_cbor(result.as_slice(), None, None)
+            let document = DocumentStub::from_cbor(result.as_slice(), None, None)
                 .expect("we should be able to deserialize the cbor");
             hex::encode(document.id)
         })
@@ -2690,7 +2691,7 @@ fn test_dpns_query() {
     let names: Vec<String> = results
         .iter()
         .map(|result| {
-            let document = Document::from_cbor(result.as_slice(), None, None)
+            let document = DocumentStub::from_cbor(result.as_slice(), None, None)
                 .expect("we should be able to deserialize the cbor");
             let normalized_label_value = document
                 .properties
@@ -2743,7 +2744,7 @@ fn test_dpns_query() {
     let names: Vec<String> = results
         .iter()
         .map(|result| {
-            let document = Document::from_cbor(result.as_slice(), None, None)
+            let document = DocumentStub::from_cbor(result.as_slice(), None, None)
                 .expect("we should be able to deserialize the cbor");
             let normalized_label_value = document
                 .properties
@@ -2769,7 +2770,7 @@ fn test_dpns_query() {
     let record_id_base64: Vec<String> = results
         .into_iter()
         .map(|result| {
-            let document = Document::from_cbor(result.as_slice(), None, None)
+            let document = DocumentStub::from_cbor(result.as_slice(), None, None)
                 .expect("we should be able to deserialize the cbor");
 
             let records_value = document
@@ -2779,6 +2780,7 @@ fn test_dpns_query() {
             let map_records_value = records_value.as_map().expect("this should be a map");
             let record_dash_unique_identity_id =
                 cbor_inner_bytes_value(map_records_value, "dashUniqueIdentityId")
+                    .unwrap()
                     .expect("there should be a dashUniqueIdentityId");
             base64::encode(record_dash_unique_identity_id)
         })
@@ -2812,7 +2814,7 @@ fn test_dpns_query() {
     let names: Vec<String> = results
         .iter()
         .map(|result| {
-            let document = Document::from_cbor(result.as_slice(), None, None)
+            let document = DocumentStub::from_cbor(result.as_slice(), None, None)
                 .expect("we should be able to deserialize the cbor");
             let normalized_label_value = document
                 .properties
@@ -2863,7 +2865,7 @@ fn test_dpns_query() {
     let names: Vec<String> = results
         .iter()
         .map(|result| {
-            let document = Document::from_cbor(result.as_slice(), None, None)
+            let document = DocumentStub::from_cbor(result.as_slice(), None, None)
                 .expect("we should be able to deserialize the cbor");
             let normalized_label_value = document
                 .properties
@@ -3029,8 +3031,8 @@ fn test_dpns_query_start_at() {
         .expect("there is always a root hash");
 
     let expected_app_hash = vec![
-        128, 29, 8, 219, 168, 144, 164, 161, 140, 211, 34, 28, 92, 44, 132, 121, 122, 24, 37, 62,
-        5, 79, 235, 55, 112, 138, 0, 59, 194, 148, 177, 156,
+        151, 117, 147, 1, 134, 14, 234, 126, 69, 71, 65, 239, 37, 4, 125, 225, 66, 152, 11, 170,
+        169, 191, 119, 126, 160, 188, 252, 15, 31, 146, 77, 134,
     ];
 
     assert_eq!(root_hash.as_slice(), expected_app_hash,);
@@ -3077,7 +3079,7 @@ fn test_dpns_query_start_at() {
     let names: Vec<String> = results
         .iter()
         .map(|result| {
-            let document = Document::from_cbor(result.as_slice(), None, None)
+            let document = DocumentStub::from_cbor(result.as_slice(), None, None)
                 .expect("we should be able to deserialize the cbor");
             let normalized_label_value = document
                 .properties
@@ -3115,8 +3117,8 @@ fn test_dpns_query_start_after() {
         .expect("there is always a root hash");
 
     let expected_app_hash = vec![
-        128, 29, 8, 219, 168, 144, 164, 161, 140, 211, 34, 28, 92, 44, 132, 121, 122, 24, 37, 62,
-        5, 79, 235, 55, 112, 138, 0, 59, 194, 148, 177, 156,
+        151, 117, 147, 1, 134, 14, 234, 126, 69, 71, 65, 239, 37, 4, 125, 225, 66, 152, 11, 170,
+        169, 191, 119, 126, 160, 188, 252, 15, 31, 146, 77, 134,
     ];
 
     assert_eq!(root_hash.as_slice(), expected_app_hash);
@@ -3163,7 +3165,7 @@ fn test_dpns_query_start_after() {
     let names: Vec<String> = results
         .iter()
         .map(|result| {
-            let document = Document::from_cbor(result.as_slice(), None, None)
+            let document = DocumentStub::from_cbor(result.as_slice(), None, None)
                 .expect("we should be able to deserialize the cbor");
             let normalized_label_value = document
                 .properties
@@ -3201,8 +3203,8 @@ fn test_dpns_query_start_at_desc() {
         .expect("there is always a root hash");
 
     let expected_app_hash = vec![
-        128, 29, 8, 219, 168, 144, 164, 161, 140, 211, 34, 28, 92, 44, 132, 121, 122, 24, 37, 62,
-        5, 79, 235, 55, 112, 138, 0, 59, 194, 148, 177, 156,
+        151, 117, 147, 1, 134, 14, 234, 126, 69, 71, 65, 239, 37, 4, 125, 225, 66, 152, 11, 170,
+        169, 191, 119, 126, 160, 188, 252, 15, 31, 146, 77, 134,
     ];
 
     assert_eq!(root_hash.as_slice(), expected_app_hash);
@@ -3249,7 +3251,7 @@ fn test_dpns_query_start_at_desc() {
     let names: Vec<String> = results
         .iter()
         .map(|result| {
-            let document = Document::from_cbor(result.as_slice(), None, None)
+            let document = DocumentStub::from_cbor(result.as_slice(), None, None)
                 .expect("we should be able to deserialize the cbor");
             let normalized_label_value = document
                 .properties
@@ -3287,8 +3289,8 @@ fn test_dpns_query_start_after_desc() {
         .expect("there is always a root hash");
 
     let expected_app_hash = vec![
-        128, 29, 8, 219, 168, 144, 164, 161, 140, 211, 34, 28, 92, 44, 132, 121, 122, 24, 37, 62,
-        5, 79, 235, 55, 112, 138, 0, 59, 194, 148, 177, 156,
+        151, 117, 147, 1, 134, 14, 234, 126, 69, 71, 65, 239, 37, 4, 125, 225, 66, 152, 11, 170,
+        169, 191, 119, 126, 160, 188, 252, 15, 31, 146, 77, 134,
     ];
 
     assert_eq!(root_hash.as_slice(), expected_app_hash);
@@ -3335,7 +3337,7 @@ fn test_dpns_query_start_after_desc() {
     let names: Vec<String> = results
         .iter()
         .map(|result| {
-            let document = Document::from_cbor(result.as_slice(), None, None)
+            let document = DocumentStub::from_cbor(result.as_slice(), None, None)
                 .expect("we should be able to deserialize the cbor");
             let normalized_label_value = document
                 .properties
@@ -3391,7 +3393,7 @@ fn test_dpns_query_start_at_with_null_id() {
     let value0 = serde_json::to_value(&domain0).expect("serialized domain");
     let document_cbor0 =
         common::value_to_cbor(value0, Some(drive::drive::defaults::PROTOCOL_VERSION));
-    let document0 = Document::from_cbor(document_cbor0.as_slice(), None, None)
+    let document0 = DocumentStub::from_cbor(document_cbor0.as_slice(), None, None)
         .expect("document should be properly deserialized");
 
     let storage_flags = Some(StorageFlags::SingleEpoch(0));
@@ -3435,7 +3437,7 @@ fn test_dpns_query_start_at_with_null_id() {
     let value1 = serde_json::to_value(&domain1).expect("serialized domain");
     let document_cbor1 =
         common::value_to_cbor(value1, Some(drive::drive::defaults::PROTOCOL_VERSION));
-    let document1 = Document::from_cbor(document_cbor1.as_slice(), None, None)
+    let document1 = DocumentStub::from_cbor(document_cbor1.as_slice(), None, None)
         .expect("document should be properly deserialized");
 
     let storage_flags = Some(StorageFlags::SingleEpoch(0));
@@ -3475,8 +3477,8 @@ fn test_dpns_query_start_at_with_null_id() {
         .expect("there is always a root hash");
 
     let expected_app_hash = vec![
-        229, 114, 86, 69, 111, 102, 210, 191, 104, 3, 186, 247, 5, 71, 153, 25, 127, 247, 89, 59,
-        203, 69, 239, 117, 5, 148, 26, 222, 232, 104, 176, 0,
+        184, 38, 106, 62, 211, 62, 104, 6, 176, 185, 228, 175, 179, 59, 242, 36, 138, 78, 184, 8,
+        224, 53, 207, 233, 88, 245, 14, 242, 197, 4, 19, 126,
     ];
 
     assert_eq!(root_hash.as_slice(), expected_app_hash);
@@ -3523,7 +3525,7 @@ fn test_dpns_query_start_at_with_null_id() {
     let names: Vec<String> = results
         .iter()
         .map(|result| {
-            let document = Document::from_cbor(result.as_slice(), None, None)
+            let document = DocumentStub::from_cbor(result.as_slice(), None, None)
                 .expect("we should be able to deserialize the cbor");
             let normalized_label_value = document
                 .properties
@@ -3587,7 +3589,7 @@ fn test_dpns_query_start_after_with_null_id() {
     let value0 = serde_json::to_value(&domain0).expect("serialized domain");
     let document_cbor0 =
         common::value_to_cbor(value0, Some(drive::drive::defaults::PROTOCOL_VERSION));
-    let document0 = Document::from_cbor(document_cbor0.as_slice(), None, None)
+    let document0 = DocumentStub::from_cbor(document_cbor0.as_slice(), None, None)
         .expect("document should be properly deserialized");
 
     let storage_flags = Some(StorageFlags::SingleEpoch(0));
@@ -3631,7 +3633,7 @@ fn test_dpns_query_start_after_with_null_id() {
     let value1 = serde_json::to_value(&domain1).expect("serialized domain");
     let document_cbor1 =
         common::value_to_cbor(value1, Some(drive::drive::defaults::PROTOCOL_VERSION));
-    let document1 = Document::from_cbor(document_cbor1.as_slice(), None, None)
+    let document1 = DocumentStub::from_cbor(document_cbor1.as_slice(), None, None)
         .expect("document should be properly deserialized");
 
     let storage_flags = Some(StorageFlags::SingleEpoch(0));
@@ -3672,8 +3674,8 @@ fn test_dpns_query_start_after_with_null_id() {
         .expect("there is always a root hash");
 
     let expected_app_hash = vec![
-        229, 114, 86, 69, 111, 102, 210, 191, 104, 3, 186, 247, 5, 71, 153, 25, 127, 247, 89, 59,
-        203, 69, 239, 117, 5, 148, 26, 222, 232, 104, 176, 0,
+        184, 38, 106, 62, 211, 62, 104, 6, 176, 185, 228, 175, 179, 59, 242, 36, 138, 78, 184, 8,
+        224, 53, 207, 233, 88, 245, 14, 242, 197, 4, 19, 126,
     ];
 
     assert_eq!(root_hash.as_slice(), expected_app_hash);
@@ -3726,7 +3728,7 @@ fn test_dpns_query_start_after_with_null_id() {
     let names: Vec<String> = results
         .iter()
         .map(|result| {
-            let document = Document::from_cbor(result.as_slice(), None, None)
+            let document = DocumentStub::from_cbor(result.as_slice(), None, None)
                 .expect("we should be able to deserialize the cbor");
             let normalized_label_value = document
                 .properties
@@ -3786,7 +3788,7 @@ fn test_dpns_query_start_after_with_null_id_desc() {
     let value0 = serde_json::to_value(&domain0).expect("serialized domain");
     let document_cbor0 =
         common::value_to_cbor(value0, Some(drive::drive::defaults::PROTOCOL_VERSION));
-    let document0 = Document::from_cbor(document_cbor0.as_slice(), None, None)
+    let document0 = DocumentStub::from_cbor(document_cbor0.as_slice(), None, None)
         .expect("document should be properly deserialized");
 
     let storage_flags = Some(StorageFlags::SingleEpoch(0));
@@ -3830,7 +3832,7 @@ fn test_dpns_query_start_after_with_null_id_desc() {
     let value1 = serde_json::to_value(&domain1).expect("serialized domain");
     let document_cbor1 =
         common::value_to_cbor(value1, Some(drive::drive::defaults::PROTOCOL_VERSION));
-    let document1 = Document::from_cbor(document_cbor1.as_slice(), None, None)
+    let document1 = DocumentStub::from_cbor(document_cbor1.as_slice(), None, None)
         .expect("document should be properly deserialized");
 
     let storage_flags = Some(StorageFlags::SingleEpoch(0));
@@ -3871,8 +3873,8 @@ fn test_dpns_query_start_after_with_null_id_desc() {
         .expect("there is always a root hash");
 
     let expected_app_hash = vec![
-        229, 114, 86, 69, 111, 102, 210, 191, 104, 3, 186, 247, 5, 71, 153, 25, 127, 247, 89, 59,
-        203, 69, 239, 117, 5, 148, 26, 222, 232, 104, 176, 0,
+        184, 38, 106, 62, 211, 62, 104, 6, 176, 185, 228, 175, 179, 59, 242, 36, 138, 78, 184, 8,
+        224, 53, 207, 233, 88, 245, 14, 242, 197, 4, 19, 126,
     ];
 
     assert_eq!(root_hash.as_slice(), expected_app_hash,);
@@ -3929,7 +3931,7 @@ fn test_dpns_query_start_after_with_null_id_desc() {
         .clone()
         .into_iter()
         .map(|result| {
-            let document = Document::from_cbor(result.as_slice(), None, None)
+            let document = DocumentStub::from_cbor(result.as_slice(), None, None)
                 .expect("we should be able to deserialize the cbor");
             Vec::from(document.id)
         })
@@ -3976,7 +3978,7 @@ fn test_dpns_query_start_after_with_null_id_desc() {
     let docs: Vec<Vec<u8>> = results
         .iter()
         .map(|result| {
-            let document = Document::from_cbor(result.as_slice(), None, None)
+            let document = DocumentStub::from_cbor(result.as_slice(), None, None)
                 .expect("we should be able to deserialize the cbor");
             Vec::from(document.id)
         })
@@ -4024,7 +4026,7 @@ fn test_dpns_query_start_after_with_null_id_desc() {
     let names: Vec<String> = results
         .iter()
         .map(|result| {
-            let document = Document::from_cbor(result.as_slice(), None, None)
+            let document = DocumentStub::from_cbor(result.as_slice(), None, None)
                 .expect("we should be able to deserialize the cbor");
             let normalized_label_value = document
                 .properties

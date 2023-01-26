@@ -32,9 +32,10 @@
 
 use std::option::Option::None;
 
+use dpp::data_contract::DriveContractExt;
+use dpp::document::document_stub::DocumentStub;
 use drive::common;
 use drive::common::setup_contract;
-use drive::contract::document::Document;
 use drive::contract::Contract;
 use grovedb::{Element, Transaction, TransactionArg};
 use rand::seq::SliceRandom;
@@ -48,7 +49,6 @@ use drive::drive::object_size_info::DocumentInfo::DocumentRefAndSerialization;
 use drive::drive::object_size_info::{DocumentAndContractInfo, OwnedDocumentInfo};
 use drive::drive::{Drive, RootTree};
 
-use dpp::data_contract::extra::DriveContractExt;
 use drive::drive::block_info::BlockInfo;
 
 /// Contains the unique ID for a Dash identity.
@@ -117,10 +117,10 @@ pub fn add_domains_to_contract(
 ) {
     let domains = Domain::random_domains_in_parent(count, seed, "dash");
     for domain in domains {
-        let value = serde_json::to_value(&domain).expect("serialized domain");
+        let value = serde_json::to_value(domain).expect("serialized domain");
         let document_cbor =
             common::value_to_cbor(value, Some(drive::drive::defaults::PROTOCOL_VERSION));
-        let document = Document::from_cbor(document_cbor.as_slice(), None, None)
+        let document = DocumentStub::from_cbor(document_cbor.as_slice(), None, None)
             .expect("document should be properly deserialized");
         let document_type = contract
             .document_type_for_name("domain")

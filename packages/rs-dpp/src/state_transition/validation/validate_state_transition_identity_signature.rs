@@ -229,7 +229,7 @@ mod test {
         fn verify_signature(
             &self,
             public_key: &IdentityPublicKey,
-            bls: &impl BlsModule,
+            _bls: &impl BlsModule,
         ) -> Result<(), ProtocolError> {
             if let Some(error_num) = self.return_error {
                 match error_num {

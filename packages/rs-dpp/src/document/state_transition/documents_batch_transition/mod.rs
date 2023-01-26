@@ -318,7 +318,7 @@ impl StateTransitionConvert for DocumentsBatchTransition {
                 let (identifier_properties, binary_properties) = transition
                     .base()
                     .data_contract
-                    .get_identifiers_and_binary_paths(&self.transitions[i].base().document_type);
+                    .get_identifiers_and_binary_paths(&self.transitions[i].base().document_type)?;
 
                 if transition.get_updated_at().is_none() {
                     cbor_transition.remove("$updatedAt");
@@ -418,7 +418,6 @@ mod test {
             document_factory::DocumentFactory,
             fetch_and_validate_data_contract::DataContractFetcherAndValidator,
         },
-        mocks,
         state_repository::MockStateRepositoryLike,
         tests::fixtures::{
             get_data_contract_fixture, get_document_transitions_fixture,

@@ -33,18 +33,20 @@
 //!
 
 mod estimation_costs;
+/// Various paths for contract operations
+pub(crate) mod paths;
 
 use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 
 use crate::common::encode::encode_unsigned_integer;
 use costs::{cost_return_on_error_no_add, CostContext, CostResult, CostsExt, OperationCost};
-use dpp::data_contract::extra::DriveContractExt;
 
 use grovedb::batch::key_info::KeyInfo;
 use grovedb::batch::KeyInfoPath;
 use grovedb::reference_path::ReferencePathType::SiblingReference;
 
+use dpp::data_contract::DriveContractExt;
 use grovedb::{Element, EstimatedLayerInformation, TransactionArg};
 
 use crate::contract::Contract;
@@ -69,42 +71,6 @@ use crate::fee::op::DriveOperation;
 use crate::fee::op::DriveOperation::{CalculatedCostOperation, PreCalculatedFeeResult};
 use crate::fee::result::FeeResult;
 use crate::fee_pools::epochs::Epoch;
-
-/// The global root path for all contracts
-pub(crate) fn all_contracts_global_root_path() -> [&'static [u8]; 1] {
-    [Into::<&[u8; 1]>::into(RootTree::ContractDocuments)]
-}
-
-/// Takes a contract ID and returns the contract's root path.
-pub(crate) fn contract_root_path(contract_id: &[u8]) -> [&[u8]; 2] {
-    [
-        Into::<&[u8; 1]>::into(RootTree::ContractDocuments),
-        contract_id,
-    ]
-}
-
-/// Takes a contract ID and returns the contract's storage history path.
-pub(crate) fn contract_keeping_history_storage_path(contract_id: &[u8]) -> [&[u8]; 3] {
-    [
-        Into::<&[u8; 1]>::into(RootTree::ContractDocuments),
-        contract_id,
-        &[0],
-    ]
-}
-
-/// Takes a contract ID and an encoded timestamp and returns the contract's storage history path
-/// for that timestamp.
-pub(crate) fn contract_keeping_history_storage_time_reference_path(
-    contract_id: &[u8],
-    encoded_time: Vec<u8>,
-) -> Vec<Vec<u8>> {
-    vec![
-        Into::<&[u8; 1]>::into(RootTree::ContractDocuments).to_vec(),
-        contract_id.to_vec(),
-        vec![0],
-        encoded_time,
-    ]
-}
 
 /// Adds operations to the op batch relevant to initializing the contract's structure.
 /// Namely it inserts an empty tree at the contract's root path.
@@ -139,7 +105,7 @@ impl Drive {
         >,
         insert_operations: &mut Vec<DriveOperation>,
     ) -> Result<(), Error> {
-        let contract_root_path = contract_root_path(contract.id.as_bytes());
+        let contract_root_path = paths::contract_root_path(contract.id.as_bytes());
         if contract.keeps_history() {
             let element_flags = contract_element.get_flags().clone();
             let storage_flags =
@@ -161,7 +127,7 @@ impl Drive {
             )?;
             let encoded_time = encode_unsigned_integer(block_info.time_ms)?;
             let contract_keeping_history_storage_path =
-                contract_keeping_history_storage_path(contract.id.as_bytes());
+                paths::contract_keeping_history_storage_path(contract.id.as_bytes());
             self.batch_insert(
                 PathFixedSizeKeyElement((
                     contract_keeping_history_storage_path,
@@ -329,7 +295,7 @@ impl Drive {
         )?;
 
         // the documents
-        let contract_root_path = contract_root_path(contract.id.as_bytes());
+        let contract_root_path = paths::contract_root_path(contract.id.as_bytes());
         let key_info = Key(vec![1]);
         self.batch_insert_empty_tree(
             contract_root_path,
@@ -855,7 +821,7 @@ impl Drive {
         // fetching the contract.
         // We need to pass allow cache to false
         let CostContext { value, cost } = self.grove.get_raw_caching_optional(
-            contract_root_path(&contract_id),
+            paths::contract_root_path(&contract_id),
             &[0],
             false,
             transaction,
@@ -866,7 +832,7 @@ impl Drive {
                 let contract = cost_return_on_error_no_add!(
                     &cost,
                     <Contract as DriveContractExt>::from_cbor(&stored_contract_bytes, None,)
-                        .map_err(Error::Contract)
+                        .map_err(Error::Protocol)
                 );
                 let drive_operation = CalculatedCostOperation(cost.clone());
                 let fee = if let Some(epoch) = epoch {
@@ -975,7 +941,7 @@ impl Drive {
 
         // We can do a get direct because there are no references involved
         if let Ok(Some(stored_element)) = self.grove_get_direct(
-            contract_root_path(contract.id.as_bytes()),
+            paths::contract_root_path(contract.id.as_bytes()),
             &[0],
             direct_query_type,
             transaction,
@@ -1037,17 +1003,17 @@ mod tests {
     use tempfile::TempDir;
 
     use super::*;
-    use crate::common::json_document_to_cbor;
     use crate::contract::Contract;
     use crate::drive::flags::StorageFlags;
     use crate::drive::object_size_info::{
         DocumentAndContractInfo, DocumentInfo, OwnedDocumentInfo,
     };
     use crate::drive::Drive;
+    use dpp::data_contract::extra::common::json_document_to_cbor;
 
     use crate::common::helpers::setup::setup_drive_with_initial_state_structure;
 
-    fn setup_deep_nested_contract() -> (Drive, Contract, Vec<u8>) {
+    fn setup_deep_nested_50_contract() -> (Drive, Contract, Vec<u8>) {
         // Todo: make TempDir based on _prefix
         let tmp_dir = TempDir::new().unwrap();
         let drive: Drive = Drive::open(tmp_dir, None).expect("expected to open Drive successfully");
@@ -1058,7 +1024,38 @@ mod tests {
 
         let contract_path = "tests/supporting_files/contract/deepNested/deep-nested50.json";
         // let's construct the grovedb structure for the dashpay data contract
-        let contract_cbor = json_document_to_cbor(contract_path, Some(1));
+        let contract_cbor =
+            json_document_to_cbor(contract_path, Some(1)).expect("expected to get cbor document");
+
+        let contract = <Contract as DriveContractExt>::from_cbor(&contract_cbor, None)
+            .expect("expected to deserialize the contract");
+        drive
+            .apply_contract(
+                &contract,
+                contract_cbor.clone(),
+                BlockInfo::default(),
+                true,
+                StorageFlags::optional_default_as_ref(),
+                None,
+            )
+            .expect("expected to apply contract successfully");
+
+        (drive, contract, contract_cbor)
+    }
+
+    fn setup_deep_nested_10_contract() -> (Drive, Contract, Vec<u8>) {
+        // Todo: make TempDir based on _prefix
+        let tmp_dir = TempDir::new().unwrap();
+        let drive: Drive = Drive::open(tmp_dir, None).expect("expected to open Drive successfully");
+
+        drive
+            .create_initial_state_structure(None)
+            .expect("expected to create root tree successfully");
+
+        let contract_path = "tests/supporting_files/contract/deepNested/deep-nested10.json";
+        // let's construct the grovedb structure for the dashpay data contract
+        let contract_cbor =
+            json_document_to_cbor(contract_path, Some(1)).expect("expected to get cbor document");
         let contract = <Contract as DriveContractExt>::from_cbor(&contract_cbor, None)
             .expect("expected to deserialize the contract");
         drive
@@ -1086,7 +1083,8 @@ mod tests {
         let contract_path = "tests/supporting_files/contract/references/references.json";
 
         // let's construct the grovedb structure for the dashpay data contract
-        let contract_cbor = json_document_to_cbor(contract_path, Some(1));
+        let contract_cbor =
+            json_document_to_cbor(contract_path, Some(1)).expect("expected to get cbor document");
         let contract = <Contract as DriveContractExt>::from_cbor(&contract_cbor, None)
             .expect("expected to deserialize the contract");
         drive
@@ -1141,7 +1139,7 @@ mod tests {
 
     #[test]
     fn test_create_deep_nested_contract_50() {
-        let (drive, contract, _contract_cbor) = setup_deep_nested_contract();
+        let (drive, contract, _contract_cbor) = setup_deep_nested_50_contract();
 
         let document_type = contract
             .document_type_for_name("nest")
@@ -1229,7 +1227,8 @@ mod tests {
         let contract_path = "tests/supporting_files/contract/references/references.json";
 
         // let's construct the grovedb structure for the dashpay data contract
-        let contract_cbor = json_document_to_cbor(contract_path, Some(1));
+        let contract_cbor =
+            json_document_to_cbor(contract_path, Some(1)).expect("expected to get cbor document");
         let contract = <Contract as DriveContractExt>::from_cbor(&contract_cbor, None)
             .expect("expected to deserialize the contract");
         drive
@@ -1257,7 +1256,8 @@ mod tests {
             "tests/supporting_files/contract/references/references_with_contract_history.json";
 
         // let's construct the grovedb structure for the dashpay data contract
-        let contract_cbor = json_document_to_cbor(contract_path, Some(1));
+        let contract_cbor =
+            json_document_to_cbor(contract_path, Some(1)).expect("expected to get cbor document");
         let contract = <Contract as DriveContractExt>::from_cbor(&contract_cbor, None)
             .expect("expected to deserialize the contract");
         drive
@@ -1284,7 +1284,8 @@ mod tests {
         let contract_path = "tests/supporting_files/contract/references/references.json";
 
         // let's construct the grovedb structure for the dashpay data contract
-        let contract_cbor = json_document_to_cbor(contract_path, Some(1));
+        let contract_cbor =
+            json_document_to_cbor(contract_path, Some(1)).expect("expected to get cbor document");
         let contract = <Contract as DriveContractExt>::from_cbor(&contract_cbor, None)
             .expect("expected to deserialize the contract");
 
@@ -1418,8 +1419,9 @@ mod tests {
             }
 
             // Create a deep placed contract
-            let contract_path = "tests/supporting_files/contract/deepNested/deep-nested50.json";
-            let contract_cbor = json_document_to_cbor(contract_path, Some(1));
+            let contract_path = "tests/supporting_files/contract/deepNested/deep-nested10.json";
+            let contract_cbor = json_document_to_cbor(contract_path, Some(1))
+                .expect("expected to get cbor document");
             let deep_contract = <Contract as DriveContractExt>::from_cbor(&contract_cbor, None)
                 .expect("expected to deserialize the contract");
             drive

@@ -41,10 +41,10 @@ use WhereOperator::{
     GreaterThanOrEquals, In, LessThan, LessThanOrEquals, StartsWith,
 };
 
-use crate::contract::document::Document;
 use crate::error::query::QueryError;
 use crate::error::Error;
-use dpp::data_contract::extra::DocumentType;
+use dpp::data_contract::document_type::DocumentType;
+use dpp::document::document_stub::DocumentStub;
 
 /// Converts SQL values to CBOR.
 fn sql_value_to_cbor(sql_value: ast::Value) -> Option<Value> {
@@ -599,7 +599,7 @@ impl<'a> WhereClause {
     pub(crate) fn to_path_query(
         &self,
         document_type: &DocumentType,
-        start_at_document: &Option<(Document, bool)>,
+        start_at_document: &Option<(DocumentStub, bool)>,
         left_to_right: bool,
     ) -> Result<Query, Error> {
         // If there is a start_at_document, we need to get the value that it has for the

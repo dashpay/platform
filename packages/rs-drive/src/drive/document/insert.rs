@@ -32,6 +32,8 @@
 //! This module implements functions in Drive relevant to inserting documents.
 //!
 
+use dpp::data_contract::document_type::IndexLevel;
+use dpp::data_contract::DriveContractExt;
 use grovedb::batch::key_info::KeyInfo;
 use grovedb::batch::key_info::KeyInfo::KnownKey;
 use grovedb::batch::KeyInfoPath;
@@ -74,7 +76,6 @@ use crate::fee::calculate_fee;
 use crate::fee::op::DriveOperation;
 
 use crate::common::encode::encode_unsigned_integer;
-use crate::contract::document::Document;
 use crate::drive::block_info::BlockInfo;
 use crate::drive::grove_operations::DirectQueryType::{StatefulDirectQuery, StatelessDirectQuery};
 use crate::drive::grove_operations::QueryTarget::QueryTargetValue;
@@ -82,7 +83,7 @@ use crate::drive::grove_operations::{BatchInsertApplyType, BatchInsertTreeApplyT
 use crate::error::document::DocumentError;
 use crate::error::fee::FeeError;
 use crate::fee::result::FeeResult;
-use dpp::data_contract::extra::{DriveContractExt, IndexLevel};
+use dpp::document::document_stub::DocumentStub;
 
 impl Drive {
     /// Adds a document to primary storage.
@@ -413,7 +414,7 @@ impl Drive {
     ) -> Result<FeeResult, Error> {
         let contract = <Contract as DriveContractExt>::from_cbor(serialized_contract, None)?;
 
-        let document = Document::from_cbor(serialized_document, None, owner_id)?;
+        let document = DocumentStub::from_cbor(serialized_document, None, owner_id)?;
 
         let document_info =
             DocumentRefAndSerialization((&document, serialized_document, storage_flags));
@@ -449,7 +450,7 @@ impl Drive {
         storage_flags: Option<&StorageFlags>,
         transaction: TransactionArg,
     ) -> Result<FeeResult, Error> {
-        let document = Document::from_cbor(serialized_document, None, owner_id)?;
+        let document = DocumentStub::from_cbor(serialized_document, None, owner_id)?;
 
         let document_info =
             DocumentRefAndSerialization((&document, serialized_document, storage_flags));
@@ -498,7 +499,7 @@ impl Drive {
 
         let contract = &contract_fetch_info.contract;
 
-        let document = Document::from_cbor(serialized_document, None, owner_id)?;
+        let document = DocumentStub::from_cbor(serialized_document, None, owner_id)?;
 
         let document_info =
             DocumentRefAndSerialization((&document, serialized_document, storage_flags));
@@ -1179,11 +1180,11 @@ mod tests {
     use std::option::Option::None;
 
     use super::*;
+    use dpp::data_contract::extra::common::json_document_to_cbor;
     use rand::Rng;
     use tempfile::TempDir;
 
-    use crate::common::{json_document_to_cbor, setup_contract};
-    use crate::contract::document::Document;
+    use crate::common::setup_contract;
     use crate::drive::document::tests::setup_dashpay;
     use crate::drive::flags::StorageFlags;
     use crate::drive::object_size_info::DocumentAndContractInfo;
@@ -1191,6 +1192,7 @@ mod tests {
     use crate::drive::Drive;
     use crate::fee::default_costs::STORAGE_DISK_USAGE_CREDIT_PER_BYTE;
     use crate::fee::op::DriveOperation;
+    use dpp::document::document_stub::DocumentStub;
 
     #[test]
     fn test_add_dashpay_documents_no_transaction() {
@@ -1199,7 +1201,8 @@ mod tests {
         let dashpay_cr_serialized_document = json_document_to_cbor(
             "tests/supporting_files/contract/dashpay/contact-request0.json",
             Some(1),
-        );
+        )
+        .expect("expected to get cbor document");
 
         let random_owner_id = rand::thread_rng().gen::<[u8; 32]>();
         drive
@@ -1266,7 +1269,8 @@ mod tests {
         let dashpay_cr_serialized_document = json_document_to_cbor(
             "tests/supporting_files/contract/dashpay/contact-request0.json",
             Some(1),
-        );
+        )
+        .expect("expected to get cbor document");
 
         let random_owner_id = rand::thread_rng().gen::<[u8; 32]>();
         drive
@@ -1333,7 +1337,8 @@ mod tests {
         let dashpay_cr_serialized_document = json_document_to_cbor(
             "tests/supporting_files/contract/dashpay/contact-request0.json",
             Some(1),
-        );
+        )
+        .expect("expected to get cbor document");
 
         let random_owner_id = rand::thread_rng().gen::<[u8; 32]>();
 
@@ -1381,7 +1386,8 @@ mod tests {
         let dashpay_cr_serialized_document = json_document_to_cbor(
             "tests/supporting_files/contract/dashpay/profile0.json",
             Some(1),
-        );
+        )
+        .expect("expected to get cbor document");
 
         let random_owner_id = rand::thread_rng().gen::<[u8; 32]>();
 
@@ -1429,7 +1435,8 @@ mod tests {
         let dashpay_cr_serialized_document = json_document_to_cbor(
             "tests/supporting_files/contract/dashpay/profile0.json",
             Some(1),
-        );
+        )
+        .expect("expected to get cbor document");
 
         let random_owner_id = rand::thread_rng().gen::<[u8; 32]>();
 
@@ -1479,7 +1486,8 @@ mod tests {
         let dashpay_cr_serialized_document = json_document_to_cbor(
             "tests/supporting_files/contract/dashpay/contact-request0.json",
             Some(1),
-        );
+        )
+        .expect("expected to get cbor document");
 
         let random_owner_id = rand::thread_rng().gen::<[u8; 32]>();
         let fees = drive
@@ -1534,11 +1542,13 @@ mod tests {
         let dashpay_cr_serialized_document = json_document_to_cbor(
             "tests/supporting_files/contract/dashpay/contact-request0.json",
             Some(1),
-        );
+        )
+        .expect("expected to get cbor document");
 
         let owner_id = rand::thread_rng().gen::<[u8; 32]>();
-        let document = Document::from_cbor(&dashpay_cr_serialized_document, None, Some(owner_id))
-            .expect("expected to deserialize document successfully");
+        let document =
+            DocumentStub::from_cbor(&dashpay_cr_serialized_document, None, Some(owner_id))
+                .expect("expected to deserialize document successfully");
 
         let storage_flags = Some(StorageFlags::SingleEpoch(0));
 
@@ -1628,11 +1638,12 @@ mod tests {
         );
 
         let dpns_domain_serialized_document =
-            json_document_to_cbor("tests/supporting_files/contract/dpns/domain0.json", Some(1));
+            json_document_to_cbor("tests/supporting_files/contract/dpns/domain0.json", Some(1))
+                .expect("expected to get cbor document");
 
         let random_owner_id = rand::thread_rng().gen::<[u8; 32]>();
 
-        let document = Document::from_cbor(
+        let document = DocumentStub::from_cbor(
             &dpns_domain_serialized_document,
             None,
             Some(random_owner_id),
@@ -1688,17 +1699,20 @@ mod tests {
         let dashpay_cr_serialized_document_0 = json_document_to_cbor(
             "tests/supporting_files/contract/dashpay/contact-request0.json",
             Some(1),
-        );
+        )
+        .expect("expected to get cbor document");
 
         let dashpay_cr_serialized_document_1 = json_document_to_cbor(
             "tests/supporting_files/contract/dashpay/contact-request1.json",
             Some(1),
-        );
+        )
+        .expect("expected to get cbor document");
 
         let dashpay_cr_serialized_document_2 = json_document_to_cbor(
             "tests/supporting_files/contract/dashpay/contact-request2.json",
             Some(1),
-        );
+        )
+        .expect("expected to get cbor document");
 
         let random_owner_id = rand::thread_rng().gen::<[u8; 32]>();
         drive
@@ -1749,12 +1763,14 @@ mod tests {
         let dashpay_cr_serialized_document_0 = json_document_to_cbor(
             "tests/supporting_files/contract/dashpay/contact-request0.json",
             Some(1),
-        );
+        )
+        .expect("expected to get cbor document");
 
         let dashpay_cr_serialized_document_0_dup = json_document_to_cbor(
             "tests/supporting_files/contract/dashpay/contact-request0-dup-unique-index.json",
             Some(1),
-        );
+        )
+        .expect("expected to get cbor document");
 
         let random_owner_id = rand::thread_rng().gen::<[u8; 32]>();
         drive
