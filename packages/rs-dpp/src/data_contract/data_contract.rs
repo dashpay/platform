@@ -372,7 +372,8 @@ impl DataContract {
     /// Comparing to JS version of DPP, the binary_properties are not generated automatically
     /// if they're not present. It is up to the developer to use proper methods like ['DataContract::set_document_schema'] which
     /// automatically generates binary properties when setting the Json Schema
-    //todo: rename this
+    // TODO: Naming is confusing. It's not clear, it sounds like it will return optional document properties
+    //   but not None if document type is not present. Rename this
     pub fn get_optional_binary_properties(
         &self,
         doc_type: &str,
