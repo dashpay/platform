@@ -51,6 +51,13 @@ pub(crate) struct DataContractParameters {
     version: u32,
 }
 
+pub fn js_value_to_serde_value(raw_parameters: JsValue) -> Result<Value, JsValue> {
+    let parameters: DataContractParameters =
+        with_js_error!(serde_wasm_bindgen::from_value(raw_parameters))?;
+
+    serde_json::to_value(parameters).map_err(|e| e.to_string().into())
+}
+
 #[wasm_bindgen(js_class=DataContract)]
 impl DataContractWasm {
     #[wasm_bindgen(constructor)]

@@ -167,10 +167,10 @@ impl DataContractFactoryWasm {
     #[wasm_bindgen(js_name=createDataContractCreateTransition)]
     pub async fn create_data_contract_create_transition(
         &self,
-        data_contract: DataContractWasm,
+        data_contract: &DataContractWasm,
     ) -> Result<DataContractCreateTransitionWasm, JsValue> {
         self.0
-            .create_data_contract_create_transition(data_contract.into())
+            .create_data_contract_create_transition(data_contract.clone().into())
             .map(Into::into)
             .map_err(from_dpp_err)
     }

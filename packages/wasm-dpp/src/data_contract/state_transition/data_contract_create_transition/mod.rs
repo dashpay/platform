@@ -19,6 +19,7 @@ use crate::{
     identifier::IdentifierWrapper,
     with_js_error, DataContractParameters, DataContractWasm, StateTransitionExecutionContextWasm,
 };
+use crate::errors::protocol_error::from_protocol_error;
 
 #[wasm_bindgen(js_name=DataContractCreateTransition)]
 pub struct DataContractCreateTransitionWasm(DataContractCreateTransition);
@@ -134,5 +135,11 @@ impl DataContractCreateTransitionWasm {
     #[wasm_bindgen(js_name=setExecutionContext)]
     pub fn set_execution_context(&mut self, context: &StateTransitionExecutionContextWasm) {
         self.0.set_execution_context(context.into())
+    }
+
+    #[wasm_bindgen(js_name=toObject)]
+    pub fn to_object(&self, skip_signature: Option<bool>) -> Result<JsValue, JsValue> {
+        let something = self.0.to_object(skip_signature.unwrap_or(false)).map_err(from_protocol_error)?;
+        serde_wasm_bindgen::to_value(&something).map_err(|e| e.into())
     }
 }

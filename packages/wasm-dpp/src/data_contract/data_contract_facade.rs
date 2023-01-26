@@ -1,5 +1,5 @@
 use crate::errors::protocol_error::from_protocol_error;
-use crate::{DataContractCreateTransitionWasm, DataContractUpdateTransitionWasm, DataContractWasm};
+use crate::{DataContractCreateTransitionWasm, DataContractUpdateTransitionWasm, DataContractWasm, js_value_to_serde_value};
 use dpp::data_contract::DataContractFacade;
 use dpp::identifier::Identifier;
 use dpp::version::ProtocolVersionValidator;
@@ -47,7 +47,8 @@ impl DataContractFacadeWasm {
         js_raw_data_contract: JsValue,
         skip_validation: bool,
     ) -> Result<DataContractWasm, JsValue> {
-        let raw_data_contract = serde_wasm_bindgen::from_value(js_raw_data_contract)?;
+        let raw_data_contract = js_value_to_serde_value(js_raw_data_contract)?;
+
         self.0
             .create_from_object(raw_data_contract, skip_validation)
             .await
@@ -73,10 +74,10 @@ impl DataContractFacadeWasm {
     #[wasm_bindgen(js_name=createDataContractCreateTransition)]
     pub fn create_data_contract_create_transition(
         &self,
-        data_contract: DataContractWasm,
+        data_contract: &DataContractWasm,
     ) -> Result<DataContractCreateTransitionWasm, JsValue> {
         self.0
-            .create_data_contract_create_transition(data_contract.into())
+            .create_data_contract_create_transition(data_contract.clone().into())
             .map(Into::into)
             .map_err(from_protocol_error)
     }
@@ -96,9 +97,9 @@ impl DataContractFacadeWasm {
     /// Validate Data Contract
     pub async fn validate(
         &self,
-        data_contract_json: JsValue,
+        js_raw_data_contract: JsValue,
     ) -> Result<ValidationResultWasm, JsValue> {
-        let raw_data_contract = serde_wasm_bindgen::from_value(data_contract_json)?;
+        let raw_data_contract = js_value_to_serde_value(js_raw_data_contract)?;
 
         self.0
             .validate(raw_data_contract)

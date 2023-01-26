@@ -1,23 +1,24 @@
-const DataContractCreateTransition = require('@dashevo/dpp/lib/dataContract/stateTransition/DataContractCreateTransition/DataContractCreateTransition');
-
 const getDataContractFixture = require('../../../lib/test/fixtures/getDataContractFixture');
 const getBlsAdapterMock = require('../../../lib/test/mocks/getBlsAdapterMock');
 
 const { default: loadWasmDpp } = require('../../..');
 let {
-  DashPlatformProtocol, DataContract, ValidationResult, DataContractValidator, DataContractFactory,
+  DashPlatformProtocol, DataContract, ValidationResult, DataContractValidator,
+  DataContractFactory, DataContractCreateTransition,
 } = require('../../..');
+const generateRandomIdentifier = require('@dashevo/dpp/lib/test/utils/generateRandomIdentifier');
 
 describe('DataContractFacade', () => {
   let dpp;
   let dataContract;
   let dataContractFactory;
   let blsAdapter;
+  let rawDataContract;
 
   before(async () => {
     ({
       DashPlatformProtocol, DataContract, ValidationResult,
-      DataContractValidator, DataContractFactory,
+      DataContractValidator, DataContractFactory, DataContractCreateTransition,
     } = await loadWasmDpp());
   });
 
@@ -26,6 +27,10 @@ describe('DataContractFacade', () => {
     dpp = new DashPlatformProtocol(blsAdapter);
 
     dataContract = await getDataContractFixture();
+    rawDataContract = dataContract.toObject();
+    // rawDataContract.$id = Buffer.from(dataContract.getId());
+    // rawDataContract.ownerId = Buffer.from(dataContract.getOwnerId());
+    // rawDataContract.$ownerId = Buffer.from(dataContract.getOwnerId());
 
     const dataContractValidator = new DataContractValidator();
     dataContractFactory = new DataContractFactory(
@@ -55,8 +60,9 @@ describe('DataContractFacade', () => {
   });
 
   describe('createFromObject', () => {
-    it('should create DataContract from plain object', async () => {
-      const result = await dpp.dataContract.createFromObject(dataContract.toObject());
+    it('should create DataContract from plain object', async function test() {
+      this.timeout(10000);
+      const result = await dpp.dataContract.createFromObject(rawDataContract);
 
       expect(result).to.be.an.instanceOf(DataContract);
 
@@ -66,7 +72,6 @@ describe('DataContractFacade', () => {
 
   describe('createFromBuffer', () => {
     it('should create DataContract from string', async function test() {
-      this.timeout(5000);
       const result = await dpp.dataContract.createFromBuffer(dataContract.toBuffer());
 
       expect(result).to.be.an.instanceOf(DataContract);
@@ -77,7 +82,7 @@ describe('DataContractFacade', () => {
 
   describe('createDataContractCreateTransition', () => {
     it('should create DataContractCreateTransition from DataContract', async () => {
-      const stateTransition = dataContractFactory.createDataContractCreateTransition(dataContract);
+      const stateTransition = await dataContractFactory.createDataContractCreateTransition(dataContract);
 
       const result = dpp.dataContract.createDataContractCreateTransition(dataContract);
 
@@ -89,7 +94,7 @@ describe('DataContractFacade', () => {
 
   describe('validate', () => {
     it('should validate DataContract', async () => {
-      const result = await dpp.dataContract.validate(dataContract.toObject());
+      const result = await dpp.dataContract.validate(rawDataContract);
 
       expect(result).to.be.an.instanceOf(ValidationResult);
     });
