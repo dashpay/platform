@@ -225,6 +225,7 @@ impl TryFrom<&[(CborValue, CborValue)]> for Index {
         }
 
         // if the index didn't have a name let's make one
+        //todo: we should remove the name altogether
         let name = name.unwrap_or(Alphanumeric.sample_string(&mut rand::thread_rng(), 24));
 
         Ok(Index {

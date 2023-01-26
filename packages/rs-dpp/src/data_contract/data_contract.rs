@@ -177,7 +177,7 @@ impl DataContract {
 
         let documents = cbor_map_into_serde_btree_map(contract_documents_cbor_map.clone())?;
 
-        let mutability = get_mutability(&data_contract_map)
+        let mutability = get_contract_configuration_properties(&data_contract_map)
             .map_err(|e| ProtocolError::ParsingError(e.to_string()))?;
         let definition_references = get_definitions(&data_contract_map);
         let document_types = get_document_types(
@@ -374,6 +374,7 @@ impl DataContract {
     /// Comparing to JS version of DPP, the binary_properties are not generated automatically
     /// if they're not present. It is up to the developer to use proper methods like ['DataContract::set_document_schema'] which
     /// automatically generates binary properties when setting the Json Schema
+    //todo: rename this
     pub fn get_optional_binary_properties(
         &self,
         doc_type: &str,
@@ -473,7 +474,7 @@ impl TryFrom<Vec<u8>> for DataContract {
     }
 }
 
-pub fn get_mutability(
+pub fn get_contract_configuration_properties(
     contract: &BTreeMap<String, CborValue>,
 ) -> Result<ContractConfig, ProtocolError> {
     let keeps_history = contract

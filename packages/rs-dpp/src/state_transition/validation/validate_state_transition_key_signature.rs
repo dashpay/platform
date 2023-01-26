@@ -186,7 +186,7 @@ mod test {
         let TestData {
             state_repository,
             asset_lock_public_key_hash_fetcher,
-            bls: _,
+            ..
         } = setup_test();
         let state_transition: StateTransition = DocumentsBatchTransition::default().into();
 

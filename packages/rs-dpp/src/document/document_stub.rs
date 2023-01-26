@@ -52,6 +52,7 @@ use crate::data_contract::extra::common::{
 };
 use crate::ProtocolError;
 
+//todo: rename
 /// Documents contain the data that goes into data contracts.
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
 pub struct DocumentStub {

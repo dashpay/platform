@@ -10,18 +10,6 @@ use std::io::BufReader;
 use std::iter::FromIterator;
 use std::path::Path;
 
-// use std::collections::{BTreeMap, BTreeSet};
-// use std::convert::TryInto;
-// use std::fs::File;
-// use std::io::BufReader;
-// use std::path::Path;
-//
-// use byteorder::{BigEndian, WriteBytesExt};
-// use ciborium::value::Value;
-//
-// use super::errors::StructureError;
-//
-
 pub fn cbor_map_into_btree_map(
     cbor_map: Vec<(Value, Value)>,
 ) -> Result<BTreeMap<String, Value>, ProtocolError> {
