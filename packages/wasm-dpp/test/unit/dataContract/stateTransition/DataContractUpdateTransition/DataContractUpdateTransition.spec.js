@@ -63,7 +63,7 @@ describe('DataContractUpdateTransition', () => {
 
   describe('#toBuffer', () => {
     it('should return serialized State Transition that starts with protocol version', () => {
-      const protocolVersionBytes = Buffer.from(varint.encode(this.getProtocolVersion()));
+      const protocolVersionBytes = Buffer.from(varint.encode(stateTransition.getProtocolVersion()));
 
       const result = stateTransition.toBuffer();
       expect(result.compare(protocolVersionBytes, 0, 4, 0, 4)).equals(0);
