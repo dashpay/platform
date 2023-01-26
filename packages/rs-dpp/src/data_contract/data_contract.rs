@@ -143,7 +143,7 @@ impl DataContract {
 
         let data_contract_map: BTreeMap<String, CborValue> =
             ciborium::de::from_reader(contract_cbor_bytes).map_err(|_| {
-                ProtocolError::DecodingError(String::from("unable to decode contract"))
+                ProtocolError::DecodingError(format!("unable to decode contract with protocol version {} offset {}",protocol_version, offset))
             })?;
 
         let contract_id: [u8; 32] = data_contract_map.get_identifier(property_names::ID)?;
