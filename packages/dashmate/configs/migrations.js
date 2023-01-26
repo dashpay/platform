@@ -418,4 +418,18 @@ module.exports = {
 
     return configFile;
   },
+  '0.24.0-dev.13': (configFile) => {
+    Object.entries(configFile.configs)
+      .forEach(([, config]) => {
+        if (config.platform) {
+          if (config.group === 'local') {
+            config.platform.drive.tenderdash.moniker = config.name;
+          } else {
+            config.platform.drive.tenderdash.moniker = null;
+          }
+        }
+      });
+
+    return configFile;
+  },
 };

@@ -7,8 +7,9 @@ const MasternodeSyncAssetEnum = require('../../enums/masternodeSyncAsset');
  * @returns {getMasternodeScopeFactory}
  * @param dockerCompose {DockerCompose}
  * @param createRpcClient {createRpcClient}
+ * @param getConnectionHost {getConnectionHost}
  */
-function getMasternodeScopeFactory(dockerCompose, createRpcClient) {
+function getMasternodeScopeFactory(dockerCompose, createRpcClient, getConnectionHost) {
   /**
    * Get masternode status scope
    *
@@ -21,6 +22,7 @@ function getMasternodeScopeFactory(dockerCompose, createRpcClient) {
       port: config.get('core.rpc.port'),
       user: config.get('core.rpc.user'),
       pass: config.get('core.rpc.password'),
+      host: await getConnectionHost(config, 'core'),
     });
 
     const mnsyncStatus = await rpcClient.mnsync('status');
