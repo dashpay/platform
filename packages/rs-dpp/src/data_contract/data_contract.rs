@@ -56,7 +56,7 @@ impl Convertible for DataContract {
 
     /// Returns Data Contract as a JSON Value
     fn to_json(&self) -> Result<JsonValue, ProtocolError> {
-        Ok(serde_json::to_value(&self)?)
+        Ok(serde_json::to_value(self)?)
     }
 
     /// Returns Data Contract as a Buffer
@@ -154,8 +154,7 @@ impl DataContract {
         // Defs
         let defs = data_contract_map
             .get("$defs")
-            .map(CborValue::as_map)
-            .flatten()
+            .and_then(CborValue::as_map)
             .map(|definition_map| {
                 let mut res = BTreeMap::<String, JsonValue>::new();
                 for (key, value) in definition_map {
@@ -181,7 +180,7 @@ impl DataContract {
 
         let documents = cbor_map_into_serde_btree_map(contract_documents_cbor_map.clone())?;
 
-        let mutability = get_mutability(&data_contract_map)
+        let mutability = get_contract_configuration_properties(&data_contract_map)
             .map_err(|e| ProtocolError::ParsingError(e.to_string()))?;
         let definition_references = get_definitions(&data_contract_map);
         let document_types = get_document_types(
@@ -345,8 +344,7 @@ impl DataContract {
                 DataContractError::InvalidDocumentTypeError {
                     doc_type: doc_type.to_owned(),
                     data_contract: self.clone(),
-                }
-                .into(),
+                },
             ));
         };
 
@@ -378,6 +376,8 @@ impl DataContract {
     /// Comparing to JS version of DPP, the binary_properties are not generated automatically
     /// if they're not present. It is up to the developer to use proper methods like ['DataContract::set_document_schema'] which
     /// automatically generates binary properties when setting the Json Schema
+    // TODO: Naming is confusing. It's not clear, it sounds like it will return optional document properties
+    //   but not None if document type is not present. Rename this
     pub fn get_optional_binary_properties(
         &self,
         doc_type: &str,
@@ -400,7 +400,7 @@ impl DataContract {
                 }
                 .into()
             })
-            .map(|a| Some(a))
+            .map(Some)
     }
 
     fn generate_binary_properties(&mut self) {
@@ -426,7 +426,7 @@ impl DataContract {
                     if content_type == identifier::MEDIA_TYPE {
                         Either::Right(path.as_str())
                     } else {
-                        return Either::Left(path.as_str());
+                        Either::Left(path.as_str())
                     }
                 } else {
                     Either::Left(path.as_str())
@@ -477,7 +477,7 @@ impl TryFrom<Vec<u8>> for DataContract {
     }
 }
 
-pub fn get_mutability(
+pub fn get_contract_configuration_properties(
     contract: &BTreeMap<String, CborValue>,
 ) -> Result<ContractConfig, ProtocolError> {
     let keeps_history = contract

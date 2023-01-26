@@ -546,15 +546,12 @@ impl DocumentFieldType {
                 if let Value::Array(array) = value {
                     let mut r_vec = array.len().encode_var_vec();
 
-                    array
-                        .into_iter()
-                        .map(|value| {
-                            let mut serialized_value =
-                                array_field_type.encode_value_with_size(value)?;
-                            r_vec.append(&mut serialized_value);
-                            Ok(())
-                        })
-                        .collect::<Result<(), ProtocolError>>()?;
+                    array.into_iter().try_for_each(|value| {
+                        let mut serialized_value =
+                            array_field_type.encode_value_with_size(value)?;
+                        r_vec.append(&mut serialized_value);
+                        Ok::<(), ProtocolError>(())
+                    })?;
                     Ok(r_vec)
                 } else {
                     Err(get_field_type_matching_error())
@@ -728,15 +725,12 @@ impl DocumentFieldType {
                 if let Value::Array(array) = value {
                     let mut r_vec = array.len().encode_var_vec();
 
-                    array
-                        .iter()
-                        .map(|value| {
-                            let mut serialized_value =
-                                array_field_type.encode_value_ref_with_size(value)?;
-                            r_vec.append(&mut serialized_value);
-                            Ok(())
-                        })
-                        .collect::<Result<(), ProtocolError>>()?;
+                    array.iter().try_for_each(|value| {
+                        let mut serialized_value =
+                            array_field_type.encode_value_ref_with_size(value)?;
+                        r_vec.append(&mut serialized_value);
+                        Ok::<(), ProtocolError>(())
+                    })?;
                     Ok(r_vec)
                 } else {
                     Err(get_field_type_matching_error())

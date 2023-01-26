@@ -131,7 +131,7 @@ pub fn cbor_value_to_json_value(cbor: &CborValue) -> Result<serde_json::Value, a
         CborValue::Bytes(bytes) => Ok(JsonValue::Array(
             bytes.iter().map(|byte| JsonValue::from(*byte)).collect(),
         )),
-        CborValue::Float(float) => Ok(JsonValue::from(*float as f64)),
+        CborValue::Float(float) => Ok(JsonValue::from(*float)),
         CborValue::Text(text) => Ok(JsonValue::from(text.clone())),
         CborValue::Bool(boolean) => Ok(JsonValue::from(*boolean)),
         CborValue::Null => Ok(JsonValue::Null),
@@ -149,10 +149,7 @@ pub fn cbor_value_into_json_value(cbor: CborValue) -> Result<serde_json::Value, 
     match cbor {
         CborValue::Integer(num) => Ok(JsonValue::from(i128::from(num) as i64)),
         CborValue::Bytes(bytes) => Ok(JsonValue::Array(
-            bytes
-                .into_iter()
-                .map(|byte| JsonValue::from(byte))
-                .collect(),
+            bytes.into_iter().map(JsonValue::from).collect(),
         )),
         CborValue::Float(float) => Ok(JsonValue::from(float)),
         CborValue::Text(text) => Ok(JsonValue::from(text)),
