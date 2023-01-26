@@ -1,4 +1,5 @@
-use byteorder::{LittleEndian, WriteBytesExt};
+use byteorder::{BigEndian, LittleEndian, WriteBytesExt};
+use integer_encoding::VarIntWriter;
 
 use crate::errors::ProtocolError;
 
@@ -13,8 +14,8 @@ pub fn value_to_cbor(
     let mut buffer: Vec<u8> = Vec::new();
     if let Some(protocol_version) = protocol_version {
         buffer
-            .write_u32::<LittleEndian>(protocol_version)
-            .map_err(|e| ProtocolError::EncodingError(e.to_string()))?
+            .write_varint(protocol_version)
+            .map_err(|e| ProtocolError::EncodingError(e.to_string()))?;
     }
     let size_with_protocol = buffer.len();
 

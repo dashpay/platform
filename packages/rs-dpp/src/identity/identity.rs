@@ -1,6 +1,7 @@
 use std::collections::BTreeMap;
 
 use ciborium::value::Value as CborValue;
+use integer_encoding::VarInt;
 use serde::{Deserialize, Serialize};
 use serde_json::Value as JsonValue;
 
@@ -141,7 +142,7 @@ impl Identity {
 
     pub fn to_cbor(&self) -> Result<Vec<u8>, ProtocolError> {
         // Prepend protocol version to the result
-        let mut buf = self.get_protocol_version().to_le_bytes().to_vec();
+        let mut buf = self.get_protocol_version().encode_var_vec();
 
         let mut identity_map = CborCanonicalMap::new();
 
@@ -169,9 +170,11 @@ impl Identity {
     }
 
     pub fn from_cbor(identity_cbor: &[u8]) -> Result<Self, ProtocolError> {
-        let (protocol_version_bytes, identity_cbor_bytes) = identity_cbor.split_at(4);
-
-        let protocol_version = deserializer::get_protocol_version(protocol_version_bytes)?;
+        let (protocol_version, identity_cbor_offset) =
+            u32::decode_var(identity_cbor).ok_or(ProtocolError::DecodingError(
+                "identity cbor could not decode protocol version".to_string(),
+            ))?;
+        let (_, identity_cbor_bytes) = identity_cbor.split_at(identity_cbor_offset);
 
         // Deserialize the contract
         let identity_map: BTreeMap<String, CborValue> =

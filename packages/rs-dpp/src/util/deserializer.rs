@@ -1,6 +1,7 @@
 use std::convert::TryInto;
 
 use anyhow::anyhow;
+use integer_encoding::VarInt;
 use serde_json::{Map, Number, Value as JsonValue};
 
 use crate::{errors::consensus::ConsensusError, errors::ProtocolError};
@@ -19,15 +20,14 @@ pub fn parse_protocol_version(
 }
 
 pub fn get_protocol_version(version_bytes: &[u8]) -> Result<u32, ProtocolError> {
-    Ok(if version_bytes.len() != 4 {
-        return Err(ConsensusError::ProtocolVersionParsingError {
-            parsing_error: anyhow!("length is not 4 bytes"),
-        }
-        .into());
-    } else {
-        let version_set_bytes: [u8; 4] = version_bytes.try_into().unwrap();
-        u32::from_le_bytes(version_set_bytes)
-    })
+    u32::decode_var(version_bytes)
+        .ok_or(
+            ConsensusError::ProtocolVersionParsingError {
+                parsing_error: anyhow!("length is not 4 bytes"),
+            }
+            .into(),
+        )
+        .map(|(protocol_version, _size)| protocol_version)
 }
 
 pub mod serde_entropy {

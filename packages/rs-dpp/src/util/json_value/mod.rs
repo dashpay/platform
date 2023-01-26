@@ -76,10 +76,10 @@ pub trait JsonValueExt {
         with: ReplaceWith,
     ) -> Result<(), anyhow::Error>;
 
-    fn parse_and_add_protocol_version(
+    fn add_protocol_version(
         &mut self,
         property_name: &str,
-        protocol_bytes: &[u8],
+        protocol_version: u32,
     ) -> Result<(), ProtocolError>;
 
     /// Insert value under the path. Path is dot-separated string. i.e `properties[0].id`. If parents don't
@@ -341,12 +341,11 @@ impl JsonValueExt for JsonValue {
         results.into_iter().collect::<Result<_, _>>()
     }
 
-    fn parse_and_add_protocol_version<'a>(
+    fn add_protocol_version<'a>(
         &mut self,
         property_name: &str,
-        protocol_bytes: &[u8],
+        protocol_version: u32,
     ) -> Result<(), ProtocolError> {
-        let protocol_version = deserializer::get_protocol_version(protocol_bytes)?;
         match self {
             JsonValue::Object(ref mut m) => {
                 m.insert(

@@ -39,6 +39,7 @@ use std::io::{BufReader, Read};
 
 use byteorder::{BigEndian, WriteBytesExt};
 use ciborium::value::Value;
+use integer_encoding::{VarInt, VarIntWriter};
 
 use crate::data_contract::{DataContract, DriveContractExt};
 use serde::{Deserialize, Serialize};
@@ -47,8 +48,8 @@ use crate::data_contract::document_type::document_type::PROTOCOL_VERSION;
 use crate::data_contract::document_type::DocumentType;
 use crate::data_contract::errors::{DataContractError, StructureError};
 use crate::data_contract::extra::common::{
-    bytes_for_system_value_from_tree_map, check_protocol_version_bytes, get_key_from_cbor_map,
-    reduced_value_string_representation,
+    bytes_for_system_value_from_tree_map, check_protocol_version, check_protocol_version_bytes,
+    get_key_from_cbor_map, reduced_value_string_representation,
 };
 use crate::ProtocolError;
 
@@ -179,8 +180,12 @@ impl DocumentStub {
         document_id: Option<[u8; 32]>,
         owner_id: Option<[u8; 32]>,
     ) -> Result<Self, ProtocolError> {
-        let (version, read_document_cbor) = document_cbor.split_at(4);
-        if !check_protocol_version_bytes(version) {
+        let (protocol_version, offset) =
+            u32::decode_var(document_cbor.as_ref()).ok_or(ProtocolError::DecodingError(
+                "contract cbor could not decode protocol version".to_string(),
+            ))?;
+        let (_, read_document_cbor) = document_cbor.as_ref().split_at(offset);
+        if !check_protocol_version(protocol_version) {
             return Err(ProtocolError::StructureError(
                 StructureError::InvalidProtocolVersion("invalid protocol version"),
             ));
@@ -261,9 +266,13 @@ impl DocumentStub {
                 DataContractError::FieldRequirementUnmet("invalid document id"),
             ));
         }
+        let (protocol_version, offset) =
+            u32::decode_var(document_cbor.as_ref()).ok_or(ProtocolError::DecodingError(
+                "contract cbor could not decode protocol version".to_string(),
+            ))?;
+        let (_, read_document_cbor) = document_cbor.as_ref().split_at(offset);
 
-        let (version, read_document_cbor) = document_cbor.split_at(4);
-        if !check_protocol_version_bytes(version) {
+        if !check_protocol_version(protocol_version) {
             return Err(ProtocolError::StructureError(
                 StructureError::InvalidProtocolVersion("invalid protocol version"),
             ));
@@ -294,7 +303,7 @@ impl DocumentStub {
     pub fn to_cbor(&self) -> Vec<u8> {
         let mut buffer: Vec<u8> = Vec::new();
         buffer
-            .write_u32::<BigEndian>(PROTOCOL_VERSION)
+            .write_varint(PROTOCOL_VERSION)
             .expect("writing protocol version caused error");
         ciborium::ser::into_writer(&self, &mut buffer).expect("unable to serialize into cbor");
         buffer
