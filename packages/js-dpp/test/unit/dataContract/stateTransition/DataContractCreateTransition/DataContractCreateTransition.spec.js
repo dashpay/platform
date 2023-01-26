@@ -75,7 +75,7 @@ describe('DataContractCreateTransition', () => {
 
       encodeMock.returns(serializedStateTransition);
 
-      const protocolVersionBytes = Buffer.from(varint.encode(this.getProtocolVersion()));
+      const protocolVersionBytes = Buffer.from(varint.encode(stateTransition.protocolVersion));
 
       const result = stateTransition.toBuffer();
 
@@ -111,7 +111,7 @@ describe('DataContractCreateTransition', () => {
         dataToEncode,
       ]);
 
-      const protocolVersionBytes = Buffer.from(varint.encode(this.getProtocolVersion()));
+      const protocolVersionBytes = Buffer.from(varint.encode(stateTransition.protocolVersion));
 
       expect(hashMock).to.have.been.calledOnceWith(
         Buffer.concat([protocolVersionBytes, serializedDocument]),

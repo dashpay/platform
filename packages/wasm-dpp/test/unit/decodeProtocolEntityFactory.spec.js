@@ -1,3 +1,4 @@
+const varint = require('varint');
 const decodeProtocolEntityFactory = require('@dashevo/dpp/lib/decodeProtocolEntityFactory');
 const ProtocolVersionParsingError = require('@dashevo/dpp/lib/errors/consensus/basic/decode/ProtocolVersionParsingError');
 const SerializedObjectParsingError = require('@dashevo/dpp/lib/errors/consensus/basic/decode/SerializedObjectParsingError');
@@ -16,7 +17,7 @@ describe('decodeProtocolEntityFactory', () => {
   beforeEach(() => {
     parsedProtocolVersion = 0;
 
-    protocolVersionBuffer = Buffer.from(varint.encode(this.getProtocolVersion()));
+    protocolVersionBuffer = Buffer.from(varint.encode(parsedProtocolVersion));
 
     rawEntity = { test: 'successful' };
     entityBuffer = encode(rawEntity);
