@@ -356,7 +356,7 @@ describe('Document', () => {
 
       const result = document.toBuffer();
 
-      const protocolVersionBytes = Buffer.from(varint.encode(this.getProtocolVersion()));
+      const protocolVersionBytes = Buffer.from(varint.encode(rawDocument.$protocolVersion));
 
       expect(result).to.deep.equal(Buffer.concat([protocolVersionBytes, serializedDocument]));
 

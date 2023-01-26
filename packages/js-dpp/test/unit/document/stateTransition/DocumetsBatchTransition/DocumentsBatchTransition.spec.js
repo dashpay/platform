@@ -91,7 +91,7 @@ describe('DocumentsBatchTransition', () => {
 
       const result = stateTransition.toBuffer();
 
-      const protocolVersionBytes = Buffer.from(varint.encode(this.getProtocolVersion()));
+      const protocolVersionBytes = Buffer.from(varint.encode(stateTransition.protocolVersion));
 
       expect(result).to.deep.equal(
         Buffer.concat([protocolVersionBytes, serializedStateTransition]),
@@ -121,7 +121,7 @@ describe('DocumentsBatchTransition', () => {
 
       expect(encodeMock).to.have.been.calledOnceWith(dataToEncode);
 
-      const protocolVersionBytes = Buffer.from(varint.encode(this.getProtocolVersion()));
+      const protocolVersionBytes = Buffer.from(varint.encode(stateTransition.protocolVersion));
 
       expect(hashMock).to.have.been.calledOnceWith(
         Buffer.concat([protocolVersionBytes, serializedDocument]),
