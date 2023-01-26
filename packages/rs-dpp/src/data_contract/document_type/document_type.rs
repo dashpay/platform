@@ -201,7 +201,7 @@ impl DocumentType {
         let indices: Vec<Index> = index_values
             .map(|index_values| {
                 index_values
-                    .into_iter()
+                    .iter()
                     .map(|index_value| {
                         index_value
                             .as_map()

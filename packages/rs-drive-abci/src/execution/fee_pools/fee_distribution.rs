@@ -873,10 +873,13 @@ mod tests {
                 .grove_apply_batch(batch, false, Some(&transaction))
                 .expect("should apply batch");
 
-            assert_eq!(proposer_payouts.unwrap(), ProposersPayouts {
-                proposers_paid_count: proposers_count,
-                paid_epoch_index: 0,
-            });
+            assert_eq!(
+                proposer_payouts.unwrap(),
+                ProposersPayouts {
+                    proposers_paid_count: proposers_count,
+                    paid_epoch_index: 0,
+                }
+            );
 
             // The Epoch 0 should still not marked as paid because proposers count == proposers limit
             let next_unpaid_epoch_index = platform

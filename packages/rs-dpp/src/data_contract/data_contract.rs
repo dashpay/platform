@@ -55,7 +55,7 @@ impl Convertible for DataContract {
 
     /// Returns Data Contract as a JSON Value
     fn to_json(&self) -> Result<JsonValue, ProtocolError> {
-        Ok(serde_json::to_value(&self)?)
+        Ok(serde_json::to_value(self)?)
     }
 
     /// Returns Data Contract as a Buffer
@@ -150,8 +150,7 @@ impl DataContract {
         // Defs
         let defs = data_contract_map
             .get("$defs")
-            .map(CborValue::as_map)
-            .flatten()
+            .and_then(CborValue::as_map)
             .map(|definition_map| {
                 let mut res = BTreeMap::<String, JsonValue>::new();
                 for (key, value) in definition_map {
@@ -341,8 +340,7 @@ impl DataContract {
                 DataContractError::InvalidDocumentTypeError {
                     doc_type: doc_type.to_owned(),
                     data_contract: self.clone(),
-                }
-                .into(),
+                },
             ));
         };
 
@@ -397,7 +395,7 @@ impl DataContract {
                 }
                 .into()
             })
-            .map(|a| Some(a))
+            .map(Some)
     }
 
     fn generate_binary_properties(&mut self) {

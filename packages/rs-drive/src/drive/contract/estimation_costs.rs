@@ -33,7 +33,7 @@ impl Drive {
             None
         };
 
-        for (document_type_name, _) in contract.document_types() {
+        for document_type_name in contract.document_types().keys() {
             estimated_costs_only_with_layer_info.insert(
                 KeyInfoPath::from_known_path(contract_document_type_path(
                     contract.id.as_bytes(),

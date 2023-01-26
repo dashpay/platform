@@ -94,7 +94,7 @@ pub fn validate_indices_are_backward_compatible<'a>(
         let maybe_wrongly_constructed_new_index = get_wrongly_constructed_new_index(
             existing_schema_indices.iter(),
             name_new_index_map.values(),
-            added_properties.map(|x| *x),
+            added_properties.copied(),
         )?;
         if let Some(index) = maybe_wrongly_constructed_new_index {
             result.add_error(BasicError::DataContractInvalidIndexDefinitionUpdateError {

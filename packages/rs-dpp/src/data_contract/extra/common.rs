@@ -206,7 +206,7 @@ pub fn cbor_inner_bytes_value<'a>(
                     )),
                 })
                 .collect::<Result<Vec<u8>, ProtocolError>>()
-                .map(|v| Some(v)),
+                .map(Some),
             _ => Err(ProtocolError::StructureError(
                 StructureError::ValueWrongType("value should be a byte array"),
             )),

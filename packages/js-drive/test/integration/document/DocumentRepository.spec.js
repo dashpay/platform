@@ -1853,7 +1853,6 @@ describe('DocumentRepository', function main() {
                     expect.fail('should throw an error');
                   } catch (e) {
                     expect(e.message).to.equal('value wrong type error: document field type doesn\'t match document value');
-                    console.log(e.constructor.name);
                     expect(e).to.be.instanceOf(InvalidQueryError);
                   }
                 });
