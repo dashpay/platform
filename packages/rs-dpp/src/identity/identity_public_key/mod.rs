@@ -1,7 +1,7 @@
 #![allow(clippy::from_over_into)]
 
 pub mod factory;
-mod in_creation;
+pub mod in_creation;
 pub mod key_type;
 pub mod purpose;
 pub mod security_level;
@@ -62,16 +62,6 @@ impl std::convert::Into<IdentityPublicKeyInCreation> for &IdentityPublicKey {
 }
 
 impl IdentityPublicKey {
-    /// Get raw public key
-    pub fn get_data(&self) -> &[u8] {
-        &self.data
-    }
-
-    /// Set raw public key
-    pub fn set_data(&mut self, data: Vec<u8>) {
-        self.data = data;
-    }
-
     /// Set disabledAt
     pub fn set_disabled_at(&mut self, timestamp_millis: u64) {
         self.disabled_at = Some(timestamp_millis);

@@ -10,7 +10,6 @@ use crate::{
         state_transition::asset_lock_proof::{AssetLockProof, AssetLockPublicKeyHashFetcher},
         KeyType,
     },
-    prelude::Identity,
     state_repository::StateRepositoryLike,
     state_transition::{
         fee::operations::{Operation, SignatureVerificationOperation},
@@ -76,7 +75,7 @@ pub async fn validate_state_transition_key_signature<SR: StateRepositoryLike>(
 
         // Target identity must exist
         let identity = state_repository
-            .fetch_identity::<Identity>(target_identity_id, &tmp_execution_context)
+            .fetch_identity(target_identity_id, &tmp_execution_context)
             .await?;
 
         // Collect operations back from temporary context
@@ -146,9 +145,8 @@ mod test {
             },
             KeyType,
         },
-        prelude::Identity,
         state_repository::MockStateRepositoryLike,
-        state_transition::{StateTransition, StateTransitionConvert, StateTransitionLike},
+        state_transition::{StateTransition, StateTransitionLike},
         tests::{
             fixtures::{
                 identity_create_transition_fixture_json, identity_topup_transition_fixture_json,
@@ -188,7 +186,7 @@ mod test {
         let TestData {
             state_repository,
             asset_lock_public_key_hash_fetcher,
-            bls,
+            ..
         } = setup_test();
         let state_transition: StateTransition = DocumentsBatchTransition::default().into();
 
@@ -289,7 +287,7 @@ mod test {
         let TestData {
             mut state_repository,
             asset_lock_public_key_hash_fetcher,
-            bls,
+            bls: _,
         } = setup_test();
         let private_key_hex = "af432c476f65211f45f48f1d42c9c0b497e56696aa1736b40544ef1a496af837";
         let secret_key = SecretKey::from_slice(&hex::decode(private_key_hex).unwrap())
@@ -302,7 +300,7 @@ mod test {
                 .into();
 
         state_repository
-            .expect_fetch_identity::<Identity>()
+            .expect_fetch_identity()
             .return_once(|_, _| Ok(None));
 
         let result = validate_state_transition_key_signature(

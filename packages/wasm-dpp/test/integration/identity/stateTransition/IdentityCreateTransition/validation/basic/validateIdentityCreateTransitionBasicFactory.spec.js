@@ -1,83 +1,86 @@
-const { getRE2Class } = require('@dashevo/wasm-re2');
-
-const createAjv = require('@dashevo/dpp/lib/ajv/createAjv');
-
-const JsonSchemaValidator = require('@dashevo/dpp/lib/validation/JsonSchemaValidator');
+const { PrivateKey } = require('@dashevo/dashcore-lib');
 
 const getIdentityCreateTransitionFixture = require('@dashevo/dpp/lib/test/fixtures/getIdentityCreateTransitionFixture');
 
-const validateIdentityCreateTransitionBasicFactory = require(
-  '@dashevo/dpp/lib/identity/stateTransition/IdentityCreateTransition/validation/basic/validateIdentityCreateTransitionBasicFactory',
-);
-
-const {
-  expectJsonSchemaError,
-  expectValidationError,
-} = require('@dashevo/dpp/lib/test/expect/expectError');
-
-const ValidationResult = require('@dashevo/dpp/lib/validation/ValidationResult');
-const InstantAssetLockProof = require('@dashevo/dpp/lib/identity/stateTransition/assetLockProof/instant/InstantAssetLockProof');
-const ChainAssetLockProof = require('@dashevo/dpp/lib/identity/stateTransition/assetLockProof/chain/ChainAssetLockProof');
-const SomeConsensusError = require('@dashevo/dpp/lib/test/mocks/SomeConsensusError');
-const IdentityPublicKey = require('@dashevo/dpp/lib/identity/IdentityPublicKey');
-const StateTransitionExecutionContext = require('@dashevo/dpp/lib/stateTransition/StateTransitionExecutionContext');
+const createStateRepositoryMock = require('@dashevo/dpp/lib/test/mocks/createStateRepositoryMock');
+const { expectValidationError, expectJsonSchemaError } = require('../../../../../../../lib/test/expect/expectError');
+const { default: loadWasmDpp } = require('../../../../../../../dist');
+const getBlsAdapterMock = require('../../../../../../../lib/test/mocks/getBlsAdapterMock');
 
 describe('validateIdentityCreateTransitionBasicFactory', () => {
-  let validateIdentityCreateTransitionBasic;
   let rawStateTransition;
   let stateTransition;
-  let validatePublicKeysMock;
-  let validatePublicKeysInIdentityCreateTransition;
-  let assetLockPublicKeyHash;
-  let proofValidationFunctionsByTypeMock;
-  let validateProtocolVersionMock;
-  let validatePublicKeySignaturesMock;
 
-  beforeEach(async function beforeEach() {
-    validatePublicKeysMock = this.sinonSandbox.stub()
-      .returns(new ValidationResult());
+  let stateRepositoryMock;
+  let mockIdentityPublicKey;
+  let executionContext;
 
-    validatePublicKeysInIdentityCreateTransition = this.sinonSandbox.stub()
-      .returns(new ValidationResult());
+  let validateIdentityCreateTransitionBasic;
 
-    assetLockPublicKeyHash = Buffer.alloc(20, 1);
+  let StateTransitionExecutionContext;
+  let IdentityCreateTransition;
+  let IdentityPublicKey;
+  let UnsupportedProtocolVersionError;
+  let InvalidInstantAssetLockProofSignatureError;
+  let InvalidIdentityPublicKeySecurityLevelError;
+  let InvalidIdentityPublicKeyDataError;
+  let InvalidIdentityKeySignatureError;
+  let IdentityCreateTransitionBasicValidator;
 
-    const assetLockValidationResult = new ValidationResult();
+  before(async () => {
+    ({
+      IdentityCreateTransition,
+      StateTransitionExecutionContext,
+      UnsupportedProtocolVersionError,
+      InvalidInstantAssetLockProofSignatureError,
+      InvalidIdentityPublicKeySecurityLevelError,
+      InvalidIdentityPublicKeyDataError,
+      InvalidIdentityKeySignatureError,
+      IdentityPublicKey,
+      IdentityCreateTransitionBasicValidator,
+    } = await loadWasmDpp());
 
-    assetLockValidationResult.setData(assetLockPublicKeyHash);
+    mockIdentityPublicKey = (publicKey, opts = {}) => new IdentityPublicKey({
+      id: 0,
+      type: IdentityPublicKey.TYPES.ECDSA_SECP256K1,
+      data: publicKey,
+      purpose: IdentityPublicKey.PURPOSES.AUTHENTICATION,
+      securityLevel: IdentityPublicKey.SECURITY_LEVELS.MASTER,
+      readOnly: false,
+      ...opts,
+    });
+  });
 
-    const RE2 = await getRE2Class();
-    const ajv = createAjv(RE2);
+  beforeEach(async function () {
+    stateRepositoryMock = createStateRepositoryMock(this.sinonSandbox);
+    stateRepositoryMock.verifyInstantLock.returns(true);
 
-    const jsonSchemaValidator = new JsonSchemaValidator(ajv);
+    executionContext = new StateTransitionExecutionContext();
 
-    const proofValidationResult = new ValidationResult();
-    proofValidationResult.setData(assetLockPublicKeyHash);
+    const blsAdapter = await getBlsAdapterMock();
 
-    proofValidationFunctionsByTypeMock = {
-      [InstantAssetLockProof.type]: this.sinonSandbox.stub().resolves(proofValidationResult),
-      [ChainAssetLockProof.type]: this.sinonSandbox.stub().resolves(proofValidationResult),
-    };
+    const validator = new IdentityCreateTransitionBasicValidator(stateRepositoryMock, blsAdapter);
+    validateIdentityCreateTransitionBasic = (st, context) => validator.validate(st, context);
 
-    validateProtocolVersionMock = this.sinonSandbox.stub().returns(new ValidationResult());
+    const stateTransitionJS = getIdentityCreateTransitionFixture();
+    stateTransition = new IdentityCreateTransition(stateTransitionJS.toObject());
 
-    validatePublicKeySignaturesMock = this.sinonSandbox.stub()
-      .returns(new ValidationResult());
+    const privateKey = new PrivateKey('9b67f852093bc61cea0eeca38599dbfba0de28574d2ed9b99d10d33dc1bde7b2');
+    const publicKey = privateKey.toPublicKey();
 
-    validateIdentityCreateTransitionBasic = validateIdentityCreateTransitionBasicFactory(
-      jsonSchemaValidator,
-      validatePublicKeysMock,
-      validatePublicKeysInIdentityCreateTransition,
-      proofValidationFunctionsByTypeMock,
-      validateProtocolVersionMock,
-      validatePublicKeySignaturesMock,
+    const identityPublicKey = mockIdentityPublicKey(publicKey.toBuffer());
+
+    stateTransition.setPublicKeys([identityPublicKey]);
+
+    await stateTransition.signByPrivateKey(
+      privateKey.toBuffer(),
+      identityPublicKey.type,
     );
 
-    stateTransition = getIdentityCreateTransitionFixture();
+    const signature = stateTransition.getSignature();
+    identityPublicKey.setSignature(signature);
 
-    const privateKey = '9b67f852093bc61cea0eeca38599dbfba0de28574d2ed9b99d10d33dc1bde7b2';
-
-    await stateTransition.signByPrivateKey(privateKey, IdentityPublicKey.TYPES.ECDSA_SECP256K1);
+    stateTransition.setPublicKeys([identityPublicKey]);
 
     rawStateTransition = stateTransition.toObject();
   });
@@ -86,9 +89,12 @@ describe('validateIdentityCreateTransitionBasicFactory', () => {
     it('should be present', async () => {
       delete rawStateTransition.protocolVersion;
 
-      const result = await validateIdentityCreateTransitionBasic(rawStateTransition);
+      const result = await validateIdentityCreateTransitionBasic(
+        rawStateTransition,
+        executionContext,
+      );
 
-      expectJsonSchemaError(result);
+      await expectJsonSchemaError(result);
 
       const [error] = result.getErrors();
 
@@ -100,9 +106,12 @@ describe('validateIdentityCreateTransitionBasicFactory', () => {
     it('should be an integer', async () => {
       rawStateTransition.protocolVersion = '1';
 
-      const result = await validateIdentityCreateTransitionBasic(rawStateTransition);
+      const result = await validateIdentityCreateTransitionBasic(
+        rawStateTransition,
+        executionContext,
+      );
 
-      expectJsonSchemaError(result);
+      await expectJsonSchemaError(result);
 
       const [error] = result.getErrors();
 
@@ -111,26 +120,14 @@ describe('validateIdentityCreateTransitionBasicFactory', () => {
     });
 
     it('should be valid', async () => {
-      rawStateTransition.protocolVersion = -1;
+      rawStateTransition.protocolVersion = 1000;
 
-      const protocolVersionError = new SomeConsensusError('test');
-      const protocolVersionResult = new ValidationResult([
-        protocolVersionError,
-      ]);
-
-      validateProtocolVersionMock.returns(protocolVersionResult);
-
-      const result = await validateIdentityCreateTransitionBasic(rawStateTransition);
-
-      expectValidationError(result, SomeConsensusError);
-
-      const [error] = result.getErrors();
-
-      expect(error).to.equal(protocolVersionError);
-
-      expect(validateProtocolVersionMock).to.be.calledOnceWith(
-        rawStateTransition.protocolVersion,
+      const result = await validateIdentityCreateTransitionBasic(
+        rawStateTransition,
+        executionContext,
       );
+
+      await expectValidationError(result, UnsupportedProtocolVersionError);
     });
   });
 
@@ -138,9 +135,12 @@ describe('validateIdentityCreateTransitionBasicFactory', () => {
     it('should be present', async () => {
       delete rawStateTransition.type;
 
-      const result = await validateIdentityCreateTransitionBasic(rawStateTransition);
+      const result = await validateIdentityCreateTransitionBasic(
+        rawStateTransition,
+        executionContext,
+      );
 
-      expectJsonSchemaError(result);
+      await expectJsonSchemaError(result);
 
       const [error] = result.getErrors();
 
@@ -152,9 +152,12 @@ describe('validateIdentityCreateTransitionBasicFactory', () => {
     it('should be equal to 2', async () => {
       rawStateTransition.type = 666;
 
-      const result = await validateIdentityCreateTransitionBasic(rawStateTransition);
+      const result = await validateIdentityCreateTransitionBasic(
+        rawStateTransition,
+        executionContext,
+      );
 
-      expectJsonSchemaError(result);
+      await expectJsonSchemaError(result);
 
       const [error] = result.getErrors();
 
@@ -170,9 +173,10 @@ describe('validateIdentityCreateTransitionBasicFactory', () => {
 
       const result = await validateIdentityCreateTransitionBasic(
         rawStateTransition,
+        executionContext,
       );
 
-      expectJsonSchemaError(result);
+      await expectJsonSchemaError(result);
 
       const [error] = result.getErrors();
 
@@ -184,9 +188,12 @@ describe('validateIdentityCreateTransitionBasicFactory', () => {
     it('should be an object', async () => {
       rawStateTransition.assetLockProof = 1;
 
-      const result = await validateIdentityCreateTransitionBasic(rawStateTransition);
+      const result = await validateIdentityCreateTransitionBasic(
+        rawStateTransition,
+        executionContext,
+      );
 
-      expectJsonSchemaError(result, 1);
+      await expectJsonSchemaError(result, 1);
 
       const [error] = result.getErrors();
 
@@ -195,31 +202,18 @@ describe('validateIdentityCreateTransitionBasicFactory', () => {
     });
 
     it('should be valid', async () => {
-      const assetLockError = new SomeConsensusError('test');
-      const assetLockResult = new ValidationResult([
-        assetLockError,
-      ]);
-
-      const executionContext = new StateTransitionExecutionContext();
-
-      proofValidationFunctionsByTypeMock[InstantAssetLockProof.type].resolves(assetLockResult);
+      stateRepositoryMock.verifyInstantLock.returns(false);
 
       const result = await validateIdentityCreateTransitionBasic(
         rawStateTransition,
         executionContext,
       );
 
-      expectValidationError(result);
+      await expectValidationError(result);
 
       const [error] = result.getErrors();
 
-      expect(error).to.equal(assetLockError);
-
-      expect(proofValidationFunctionsByTypeMock[InstantAssetLockProof.type])
-        .to.be.calledOnceWithExactly(
-          rawStateTransition.assetLockProof,
-          executionContext,
-        );
+      expect(error).to.be.instanceOf(InvalidInstantAssetLockProofSignatureError);
     });
   });
 
@@ -229,9 +223,10 @@ describe('validateIdentityCreateTransitionBasicFactory', () => {
 
       const result = await validateIdentityCreateTransitionBasic(
         rawStateTransition,
+        executionContext,
       );
 
-      expectJsonSchemaError(result);
+      await expectJsonSchemaError(result);
 
       const [error] = result.getErrors();
 
@@ -245,9 +240,10 @@ describe('validateIdentityCreateTransitionBasicFactory', () => {
 
       const result = await validateIdentityCreateTransitionBasic(
         rawStateTransition,
+        executionContext,
       );
 
-      expectJsonSchemaError(result);
+      await expectJsonSchemaError(result);
 
       const [error] = result.getErrors();
 
@@ -259,14 +255,15 @@ describe('validateIdentityCreateTransitionBasicFactory', () => {
       const [key] = rawStateTransition.publicKeys;
 
       for (let i = 0; i < 10; i++) {
-        rawStateTransition.publicKeys.push(key);
+        rawStateTransition.publicKeys.push({ ...key, id: i + 1 });
       }
 
       const result = await validateIdentityCreateTransitionBasic(
         rawStateTransition,
+        executionContext,
       );
 
-      expectJsonSchemaError(result);
+      await expectJsonSchemaError(result);
 
       const [error] = result.getErrors();
 
@@ -279,9 +276,10 @@ describe('validateIdentityCreateTransitionBasicFactory', () => {
 
       const result = await validateIdentityCreateTransitionBasic(
         rawStateTransition,
+        executionContext,
       );
 
-      expectJsonSchemaError(result);
+      await expectJsonSchemaError(result);
 
       const [error] = result.getErrors();
 
@@ -290,66 +288,65 @@ describe('validateIdentityCreateTransitionBasicFactory', () => {
     });
 
     it('should be valid', async () => {
-      const publicKeysError = new SomeConsensusError('test');
-      const publicKeysResult = new ValidationResult([
-        publicKeysError,
-      ]);
+      const privateKey = new PrivateKey();
 
-      validatePublicKeysMock.returns(publicKeysResult);
+      // Mess up public key
+      const identityPublicKey = mockIdentityPublicKey(Buffer.alloc(33));
+
+      stateTransition.setPublicKeys([identityPublicKey]);
+      await stateTransition.signByPrivateKey(
+        privateKey.toBuffer(),
+        identityPublicKey.type,
+      );
+      identityPublicKey.setSignature(stateTransition.getSignature());
+      stateTransition.setPublicKeys([identityPublicKey]);
+
+      rawStateTransition = stateTransition.toObject();
 
       const result = await validateIdentityCreateTransitionBasic(
         rawStateTransition,
+        executionContext,
       );
 
-      expectValidationError(result);
-
-      const [error] = result.getErrors();
-
-      expect(error).to.equal(publicKeysError);
-
-      expect(validatePublicKeysMock)
-        .to.be.calledOnceWithExactly(rawStateTransition.publicKeys);
+      await expectValidationError(result, InvalidIdentityPublicKeyDataError);
     });
 
     it('should have at least 1 master key', async () => {
-      const publicKeysError = new SomeConsensusError('test');
-      const publicKeysResult = new ValidationResult([
-        publicKeysError,
-      ]);
+      const privateKey = new PrivateKey();
 
-      validatePublicKeysInIdentityCreateTransition.returns(publicKeysResult);
+      // Mess up public key's purpose
+      const identityPublicKey = mockIdentityPublicKey(privateKey.toPublicKey().toBuffer());
+      identityPublicKey.setPurpose(2);
+
+      stateTransition.setPublicKeys([identityPublicKey]);
+      await stateTransition.signByPrivateKey(
+        privateKey.toBuffer(),
+        identityPublicKey.type,
+      );
+      identityPublicKey.setSignature(stateTransition.getSignature());
+      stateTransition.setPublicKeys([identityPublicKey]);
+
+      rawStateTransition = stateTransition.toObject();
 
       const result = await validateIdentityCreateTransitionBasic(
         rawStateTransition,
+        executionContext,
       );
 
-      expectValidationError(result);
-
-      const [error] = result.getErrors();
-
-      expect(error).to.equal(publicKeysError);
-
-      expect(validatePublicKeysInIdentityCreateTransition)
-        .to.be.calledOnceWithExactly(rawStateTransition.publicKeys);
+      await expectValidationError(result, InvalidIdentityPublicKeySecurityLevelError);
     });
 
     it('should have valid signatures', async () => {
-      const publicKeysError = new SomeConsensusError('test');
-      const publicKeysResult = new ValidationResult([
-        publicKeysError,
-      ]);
-
-      validatePublicKeySignaturesMock.resolves(publicKeysResult);
+      const invalidSignature = Buffer.alloc(65);
+      rawStateTransition.signature = invalidSignature;
+      rawStateTransition.publicKeys[0].signature = invalidSignature;
 
       const result = await validateIdentityCreateTransitionBasic(
         rawStateTransition,
+        executionContext,
       );
 
-      expectValidationError(result);
-
-      const [error] = result.getErrors();
-
-      expect(error).to.equal(publicKeysError);
+      await expectValidationError(result, InvalidIdentityKeySignatureError);
     });
   });
 
@@ -357,13 +354,16 @@ describe('validateIdentityCreateTransitionBasicFactory', () => {
     it('should be present', async () => {
       delete rawStateTransition.signature;
 
-      const result = await validateIdentityCreateTransitionBasic(rawStateTransition);
+      const result = await validateIdentityCreateTransitionBasic(
+        rawStateTransition,
+        executionContext,
+      );
 
-      expectJsonSchemaError(result);
+      await expectJsonSchemaError(result);
 
       const [error] = result.getErrors();
 
-      expect(error.instancePath).to.equal('');
+      expect(error.getInstancePath()).to.equal('');
       expect(error.getKeyword()).to.equal('required');
       expect(error.getParams().missingProperty).to.equal('signature');
     });
@@ -371,52 +371,62 @@ describe('validateIdentityCreateTransitionBasicFactory', () => {
     it('should be a byte array', async () => {
       rawStateTransition.signature = new Array(65).fill('string');
 
-      const result = await validateIdentityCreateTransitionBasic(rawStateTransition);
+      const result = await validateIdentityCreateTransitionBasic(
+        rawStateTransition,
+        executionContext,
+      );
 
-      expectJsonSchemaError(result, 2);
+      await expectJsonSchemaError(result, 65);
 
-      const [error, byteArrayError] = result.getErrors();
+      const firstError = result.getErrors()[0];
+      const lastError = result.getErrors()[64];
 
-      expect(error.instancePath).to.equal('/signature/0');
-      expect(error.getKeyword()).to.equal('type');
+      expect(firstError.getInstancePath()).to.equal('/signature/0');
+      expect(firstError.getKeyword()).to.equal('type');
 
-      expect(byteArrayError.getKeyword()).to.equal('byteArray');
+      expect(lastError.getInstancePath()).to.equal('/signature/64');
+      expect(lastError.getKeyword()).to.equal('type');
     });
 
     it('should be not shorter than 65 bytes', async () => {
       rawStateTransition.signature = Buffer.alloc(64);
 
-      const result = await validateIdentityCreateTransitionBasic(rawStateTransition);
+      const result = await validateIdentityCreateTransitionBasic(
+        rawStateTransition,
+        executionContext,
+      );
 
-      expectJsonSchemaError(result);
+      await expectJsonSchemaError(result);
 
       const [error] = result.getErrors();
 
-      expect(error.instancePath).to.equal('/signature');
+      expect(error.getInstancePath()).to.equal('/signature');
       expect(error.getKeyword()).to.equal('minItems');
     });
 
     it('should be not longer than 65 bytes', async () => {
       rawStateTransition.signature = Buffer.alloc(66);
 
-      const result = await validateIdentityCreateTransitionBasic(rawStateTransition);
+      const result = await validateIdentityCreateTransitionBasic(
+        rawStateTransition,
+        executionContext,
+      );
 
-      expectJsonSchemaError(result);
+      await expectJsonSchemaError(result);
 
       const [error] = result.getErrors();
 
-      expect(error.instancePath).to.equal('/signature');
+      expect(error.getInstancePath()).to.equal('/signature');
       expect(error.getKeyword()).to.equal('maxItems');
     });
   });
 
   it('should return valid result', async () => {
-    const result = await validateIdentityCreateTransitionBasic(rawStateTransition);
+    const result = await validateIdentityCreateTransitionBasic(
+      rawStateTransition,
+      executionContext,
+    );
 
     expect(result.isValid()).to.be.true();
-
-    expect(validatePublicKeysMock).to.be.calledOnceWithExactly(
-      rawStateTransition.publicKeys,
-    );
   });
 });

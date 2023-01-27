@@ -29,11 +29,11 @@ function processProposalFactory(
 ) {
   /**
    * @param {abci.RequestProcessProposal} request
-   * @param {BaseLogger} consensusLogger
+   * @param {BaseLogger} contextLogger
    *
    * @typedef processProposal
    */
-  async function processProposal(request, consensusLogger) {
+  async function processProposal(request, contextLogger) {
     const {
       height,
       txs,
@@ -45,7 +45,7 @@ function processProposalFactory(
       round,
     } = request;
 
-    consensusLogger.info(`Processing a block proposal for height #${height} round #${round}`);
+    contextLogger.info(`Processing a block proposal for height #${height} round #${round}`);
 
     await beginBlock(
       {
@@ -57,7 +57,7 @@ function processProposalFactory(
         proposerProTxHash: Buffer.from(proposerProTxHash),
         round,
       },
-      consensusLogger,
+      contextLogger,
     );
 
     const txResults = [];
@@ -75,7 +75,7 @@ function processProposalFactory(
         code,
         info,
         fees,
-      } = await wrappedDeliverTx(tx, round, consensusLogger);
+      } = await wrappedDeliverTx(tx, round, contextLogger);
 
       if (code === 0) {
         validTxCount += 1;
@@ -95,7 +95,7 @@ function processProposalFactory(
     }
 
     // Revert consensus logger after deliverTx
-    proposalBlockExecutionContext.setConsensusLogger(consensusLogger);
+    proposalBlockExecutionContext.setContextLogger(contextLogger);
 
     const {
       consensusParamUpdates,
@@ -106,11 +106,11 @@ function processProposalFactory(
       round,
       fees: blockFees,
       coreChainLockedHeight,
-    }, consensusLogger);
+    }, contextLogger);
 
     const roundExecutionTime = executionTimer.getTimer('roundExecution', true);
 
-    consensusLogger.info(
+    contextLogger.info(
       {
         roundExecutionTime,
         validTxCount,

@@ -13,9 +13,12 @@ pub use purpose::*;
 mod security_level;
 pub use security_level::*;
 
+mod in_creation;
 mod key_type;
 
 pub use key_type::*;
+
+pub use in_creation::*;
 
 #[wasm_bindgen(js_name=IdentityPublicKey)]
 #[derive(Serialize, Deserialize, Debug, Clone)]
@@ -57,7 +60,7 @@ impl IdentityPublicKeyWasm {
 
     #[wasm_bindgen(js_name=setData)]
     pub fn set_data(&mut self, data: Vec<u8>) -> Result<(), JsValue> {
-        self.0.set_data(data);
+        self.0.data = data;
         Ok(())
     }
 
@@ -136,10 +139,16 @@ impl IdentityPublicKeyWasm {
             .to_raw_json_object()
             .map_err(|e| from_dpp_err(e.into()))?;
 
-        let data_buffer = Buffer::from_bytes(self.0.get_data());
+        let data_buffer = Buffer::from_bytes(self.0.data.as_slice());
 
         let json = val.to_string();
         let js_object = js_sys::JSON::parse(&json)?;
+
+        js_sys::Reflect::set(
+            &js_object,
+            &JsValue::from_str("type"),
+            &JsValue::from(self.get_type()),
+        )?;
 
         js_sys::Reflect::set(
             &js_object,

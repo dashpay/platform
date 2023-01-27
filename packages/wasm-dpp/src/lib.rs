@@ -1,3 +1,5 @@
+extern crate core;
+
 pub use dash_platform_protocol::*;
 pub use data_contract::*;
 pub use data_contract_factory::*;

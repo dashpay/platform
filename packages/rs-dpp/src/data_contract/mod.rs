@@ -6,7 +6,11 @@ mod data_contract;
 pub mod errors;
 pub mod extra;
 
+pub use extra::drive_api::DriveContractExt;
+
+pub mod contract_config;
 mod data_contract_factory;
+pub mod document_type;
 pub mod enrich_data_contract_with_base_schema;
 mod generate_data_contract;
 pub mod get_binary_properties_from_schema;

@@ -1,4 +1,4 @@
-use crate::drive::contract::contract_keeping_history_storage_path;
+use crate::drive::contract::paths::contract_keeping_history_storage_path;
 use crate::drive::defaults::{
     AVERAGE_NUMBER_OF_UPDATES, DEFAULT_FLOAT_SIZE, DEFAULT_FLOAT_SIZE_U8,
     ESTIMATED_AVERAGE_INDEX_NAME_SIZE,
@@ -6,8 +6,8 @@ use crate::drive::defaults::{
 use crate::drive::document::contract_document_type_path;
 use crate::drive::flags::StorageFlags;
 use crate::drive::Drive;
-use dpp::data_contract::extra::DriveContractExt;
-use dpp::data_contract::DataContract;
+
+use dpp::data_contract::{DataContract, DriveContractExt};
 use grovedb::batch::KeyInfoPath;
 use grovedb::EstimatedLayerCount::{ApproximateElements, EstimatedLevel};
 use grovedb::EstimatedLayerInformation;
@@ -33,7 +33,7 @@ impl Drive {
             None
         };
 
-        for (document_type_name, _) in contract.document_types() {
+        for document_type_name in contract.document_types().keys() {
             estimated_costs_only_with_layer_info.insert(
                 KeyInfoPath::from_known_path(contract_document_type_path(
                     contract.id.as_bytes(),

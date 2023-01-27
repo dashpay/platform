@@ -1,10 +1,11 @@
+use std::convert::TryInto;
 use std::sync::Arc;
 
 use crate::identity::IdentityPublicKey;
 use crate::{
     consensus::{basic::BasicError, ConsensusError},
     identity::get_biggest_possible_identity,
-    prelude::{Identifier, Identity},
+    prelude::Identifier,
     state_repository::StateRepositoryLike,
     state_transition::StateTransitionLike,
     ProtocolError,
@@ -34,12 +35,15 @@ pub async fn apply_identity_update_transition(
     state_repository: &impl StateRepositoryLike,
     state_transition: IdentityUpdateTransition,
 ) -> Result<(), ProtocolError> {
-    let mut maybe_identity: Option<Identity> = state_repository
+    let mut maybe_identity = state_repository
         .fetch_identity(
             state_transition.get_identity_id(),
             state_transition.get_execution_context(),
         )
-        .await?;
+        .await?
+        .map(TryInto::try_into)
+        .transpose()
+        .map_err(Into::into)?;
 
     if state_transition.get_execution_context().is_dry_run() {
         maybe_identity = Some(get_biggest_possible_identity())

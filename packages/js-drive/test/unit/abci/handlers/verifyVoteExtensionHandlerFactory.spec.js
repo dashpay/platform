@@ -17,7 +17,7 @@ describe('verifyVoteExtensionHandlerFactory', () => {
     proposalBlockExecutionContextMock = new BlockExecutionContextMock(this.sinon);
 
     const loggerMock = new LoggerMock(this.sinon);
-    proposalBlockExecutionContextMock.getConsensusLogger.returns(loggerMock);
+    proposalBlockExecutionContextMock.getContextLogger.returns(loggerMock);
 
     verifyVoteExtensionHandler = verifyVoteExtensionHandlerFactory(
       proposalBlockExecutionContextMock,

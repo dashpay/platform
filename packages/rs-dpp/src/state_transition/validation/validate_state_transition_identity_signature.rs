@@ -1,4 +1,4 @@
-use std::collections::HashSet;
+use std::{collections::HashSet, convert::TryInto};
 
 use anyhow::Context;
 use lazy_static::lazy_static;
@@ -6,7 +6,6 @@ use lazy_static::lazy_static;
 use crate::{
     consensus::{signature::SignatureError, ConsensusError},
     identity::KeyType,
-    prelude::Identity,
     state_repository::StateRepositoryLike,
     state_transition::{
         fee::operations::{Operation, SignatureVerificationOperation},
@@ -41,8 +40,11 @@ pub async fn validate_state_transition_identity_signature(
 
     // Owner must exist
     let maybe_identity = state_repository
-        .fetch_identity::<Identity>(state_transition.get_owner_id(), &tmp_execution_context)
-        .await?;
+        .fetch_identity(state_transition.get_owner_id(), &tmp_execution_context)
+        .await?
+        .map(TryInto::try_into)
+        .transpose()
+        .map_err(Into::into)?;
 
     // Collect operations back from temporary context
     state_transition
@@ -227,7 +229,7 @@ mod test {
         fn verify_signature(
             &self,
             public_key: &IdentityPublicKey,
-            bls: &impl BlsModule,
+            _bls: &impl BlsModule,
         ) -> Result<(), ProtocolError> {
             if let Some(error_num) = self.return_error {
                 match error_num {
@@ -327,7 +329,7 @@ mod test {
 
         state_transition.owner_id = owner_id.clone();
         state_repository_mock
-            .expect_fetch_identity::<Identity>()
+            .expect_fetch_identity()
             .returning(move |_, _| Ok(None));
 
         let result = validate_state_transition_identity_signature(

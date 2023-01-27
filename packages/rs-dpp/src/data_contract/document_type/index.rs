@@ -1,12 +1,15 @@
-use std::{collections::BTreeMap, convert::TryFrom};
-
-use super::errors::ContractError;
+use crate::data_contract::errors::{DataContractError, StructureError};
+use crate::ProtocolError;
 use anyhow::bail;
 use ciborium::value::Value as CborValue;
+use rand::distributions::{Alphanumeric, DistString};
 use serde::{Deserialize, Serialize};
+use std::{collections::BTreeMap, convert::TryFrom};
 
-#[derive(Clone, Serialize, Deserialize, Debug, PartialEq)]
+// Indices documentation:  https://dashplatform.readme.io/docs/reference-data-contracts#document-indices
+#[derive(Clone, Serialize, Deserialize, Debug, PartialEq, Eq)]
 pub struct Index {
+    pub name: String,
     pub properties: Vec<IndexProperty>,
     pub unique: bool,
 }
@@ -15,6 +18,16 @@ pub struct Index {
 pub struct IndexProperty {
     pub name: String,
     pub ascending: bool,
+}
+
+//todo: remove this intermediate structure that serves no purpose
+// The intermediate structure that holds the `BTreeMap<String, String>` instead of [`IndexProperty`]
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq)]
+pub struct IndexWithRawProperties {
+    pub name: String,
+    pub properties: Vec<BTreeMap<String, String>>,
+    #[serde(default)]
+    pub unique: bool,
 }
 
 impl TryFrom<BTreeMap<String, String>> for IndexProperty {
@@ -44,6 +57,32 @@ impl TryFrom<BTreeMap<String, String>> for IndexProperty {
             ascending,
         })
     }
+}
+
+impl TryFrom<IndexWithRawProperties> for Index {
+    type Error = anyhow::Error;
+
+    fn try_from(index: IndexWithRawProperties) -> Result<Self, Self::Error> {
+        let properties = index
+            .properties
+            .into_iter()
+            .map(IndexProperty::try_from)
+            .collect::<Result<Vec<IndexProperty>, anyhow::Error>>()?;
+
+        Ok(Self {
+            name: index.name,
+            unique: index.unique,
+            properties,
+        })
+    }
+}
+
+#[derive(Serialize, Deserialize, Debug, PartialEq, PartialOrd, Clone, Eq)]
+pub enum OrderBy {
+    #[serde(rename = "asc")]
+    Asc,
+    #[serde(rename = "desc")]
+    Desc,
 }
 
 impl Index {
@@ -122,10 +161,12 @@ impl Index {
 
         Some(d as u16)
     }
+}
 
-    pub fn from_cbor_value(
-        index_type_value_map: &[(CborValue, CborValue)],
-    ) -> Result<Self, ContractError> {
+impl TryFrom<&[(CborValue, CborValue)]> for Index {
+    type Error = ProtocolError;
+
+    fn try_from(index_type_value_map: &[(CborValue, CborValue)]) -> Result<Self, Self::Error> {
         // Decouple the map
         // It contains properties and a unique key
         // If the unique key is absent, then unique is false
@@ -133,39 +174,62 @@ impl Index {
         // For properties, we iterate each and move it to IndexProperty
 
         let mut unique = false;
+        let mut name = None;
         let mut index_properties: Vec<IndexProperty> = Vec::new();
 
         for (key_value, value_value) in index_type_value_map {
-            let key = key_value
-                .as_text()
-                .ok_or(ContractError::KeyWrongType("key should be of type text"))?;
+            let key = key_value.as_text().ok_or(ProtocolError::DataContractError(
+                DataContractError::KeyWrongType("key should be of type text"),
+            ))?;
 
-            if key == "unique" {
-                if value_value.is_bool() {
-                    unique = value_value.as_bool().expect("confirmed as bool");
+            match key {
+                "name" => {
+                    name = Some(
+                        value_value
+                            .as_text()
+                            .ok_or({
+                                ProtocolError::DataContractError(
+                                    DataContractError::InvalidContractStructure(
+                                        "index name should be a string",
+                                    ),
+                                )
+                            })?
+                            .to_owned(),
+                    );
                 }
-            } else if key == "properties" {
-                let properties = value_value.as_array().ok_or({
-                    ContractError::InvalidContractStructure("property value should be an array")
-                })?;
-
-                // Iterate over this and get the index properties
-                for property in properties {
-                    if !property.is_map() {
-                        return Err(ContractError::InvalidContractStructure(
-                            "table document is not a map as expected",
-                        ));
+                "unique" => {
+                    if value_value.is_bool() {
+                        unique = value_value.as_bool().expect("confirmed as bool");
                     }
-
-                    let index_property = IndexProperty::from_cbor_value(
-                        property.as_map().expect("confirmed as map"),
-                    )?;
-                    index_properties.push(index_property);
                 }
+                "properties" => {
+                    let properties =
+                        value_value.as_array().ok_or(ProtocolError::StructureError(
+                            StructureError::ValueWrongType("properties value should be an array"),
+                        ))?;
+
+                    // Iterate over this and get the index properties
+                    for property in properties {
+                        let property_map = property.as_map().ok_or(
+                            ProtocolError::StructureError(StructureError::ValueWrongType(
+                                "each property of an index should be a map",
+                            )),
+                        )?;
+
+                        let index_property = IndexProperty::from_cbor_value(property_map)?;
+                        index_properties.push(index_property);
+                    }
+                }
+                _ => {}
             }
         }
 
+        // if the index didn't have a name let's make one
+        //todo: we should remove the name altogether
+        let name = name.unwrap_or_else(|| Alphanumeric.sample_string(&mut rand::thread_rng(), 24));
+
         Ok(Index {
+            name,
             properties: index_properties,
             unique,
         })
@@ -175,18 +239,20 @@ impl Index {
 impl IndexProperty {
     pub fn from_cbor_value(
         index_property_map: &[(CborValue, CborValue)],
-    ) -> Result<Self, ContractError> {
+    ) -> Result<Self, ProtocolError> {
         let property = &index_property_map[0];
 
         let key = property
             .0 // key
             .as_text()
-            .ok_or(ContractError::KeyWrongType("key should be of type string"))?;
+            .ok_or(ProtocolError::DataContractError(
+                DataContractError::KeyWrongType("key should be of type string"),
+            ))?;
         let value = property
             .1 // value
             .as_text()
-            .ok_or(ContractError::ValueWrongType(
-                "value should be of type string",
+            .ok_or(ProtocolError::DataContractError(
+                DataContractError::ValueWrongType("value should be of type string"),
             ))?;
 
         let ascending = value == "asc";

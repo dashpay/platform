@@ -39,6 +39,7 @@ use grovedb::Element;
 use std::borrow::Cow;
 use std::collections::HashSet;
 
+use dpp::data_contract::document_type::{DocumentType, IndexLevel};
 use storage::worst_case_costs::WorstKeyLength;
 
 use DriveKeyInfo::{Key, KeyRef, KeySize};
@@ -47,17 +48,15 @@ use PathInfo::{PathFixedSizeIterator, PathIterator, PathWithSizes};
 use PathKeyElementInfo::{PathFixedSizeKeyRefElement, PathKeyElementSize, PathKeyRefElement};
 use PathKeyInfo::{PathFixedSizeKey, PathFixedSizeKeyRef, PathKey, PathKeyRef, PathKeySize};
 
-use crate::contract::document::Document;
 use crate::contract::Contract;
 use crate::drive::defaults::{DEFAULT_FLOAT_SIZE_U16, DEFAULT_HASH_SIZE_U16, DEFAULT_HASH_SIZE_U8};
 use crate::drive::flags::StorageFlags;
 use crate::error::drive::DriveError;
 use crate::error::Error;
-use dpp::data_contract::extra::{DocumentType, IndexLevel};
+use dpp::document::document_stub::DocumentStub;
 
 use crate::drive::object_size_info::PathKeyElementInfo::PathKeyUnknownElementSize;
-
-use dpp::data_contract::extra::ContractError;
+use crate::error::fee::FeeError;
 
 /// Info about a path.
 #[derive(Clone)]
@@ -530,11 +529,11 @@ pub struct DocumentAndContractInfo<'a> {
 #[derive(Clone, Debug)]
 pub enum DocumentInfo<'a> {
     /// The borrowed document and it's serialized form
-    DocumentRefAndSerialization((&'a Document, &'a [u8], Option<Cow<'a, StorageFlags>>)),
+    DocumentRefAndSerialization((&'a DocumentStub, &'a [u8], Option<Cow<'a, StorageFlags>>)),
     /// The borrowed document without it's serialized form
-    DocumentRefWithoutSerialization((&'a Document, Option<Cow<'a, StorageFlags>>)),
+    DocumentRefWithoutSerialization((&'a DocumentStub, Option<Cow<'a, StorageFlags>>)),
     /// The document without it's serialized form
-    DocumentWithoutSerialization((Document, Option<Cow<'a, StorageFlags>>)),
+    DocumentWithoutSerialization((DocumentStub, Option<Cow<'a, StorageFlags>>)),
     /// An element size
     DocumentEstimatedAverageSize(u32),
 }
@@ -551,7 +550,7 @@ impl<'a> DocumentInfo<'a> {
     }
 
     /// Gets the borrowed document
-    pub fn get_borrowed_document(&self) -> Option<&Document> {
+    pub fn get_borrowed_document(&self) -> Option<&DocumentStub> {
         match self {
             DocumentInfo::DocumentRefAndSerialization((document, _, _))
             | DocumentInfo::DocumentRefWithoutSerialization((document, _)) => Some(document),
@@ -587,7 +586,7 @@ impl<'a> DocumentInfo<'a> {
             "$createdAt" | "$updatedAt" => Ok(DEFAULT_FLOAT_SIZE_U16),
             _ => {
                 let document_field_type = document_type.properties.get(key_path).ok_or({
-                    Error::Contract(ContractError::DocumentTypeFieldNotFound(
+                    Error::Fee(FeeError::DocumentTypeFieldNotFoundForEstimation(
                         "incorrect key path for document type for estimated sizes",
                     ))
                 })?;
@@ -644,7 +643,7 @@ impl<'a> DocumentInfo<'a> {
                     _ => {
                         let document_field_type =
                             document_type.properties.get(key_path).ok_or({
-                                Error::Contract(ContractError::DocumentTypeFieldNotFound(
+                                Error::Fee(FeeError::DocumentTypeFieldNotFoundForEstimation(
                                     "incorrect key path for document type",
                                 ))
                             })?;

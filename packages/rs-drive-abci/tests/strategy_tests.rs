@@ -32,10 +32,8 @@
 
 use crate::DocumentAction::{DocumentActionDelete, DocumentActionInsert};
 use drive::common::helpers::identities::create_test_masternode_identities_with_rng;
-use drive::common::json_document_to_cbor;
-use drive::contract::document::Document;
 use drive::contract::{Contract, CreateRandomDocument, DocumentType};
-use drive::dpp::data_contract::extra::DriveContractExt;
+use drive::dpp::document::document_stub::DocumentStub;
 use drive::dpp::identity::{Identity, KeyID, PartialIdentityInfo};
 use drive::drive::batch::{
     ContractOperationType, DocumentOperationType, DriveOperationType, IdentityOperationType,
@@ -211,7 +209,7 @@ impl Strategy {
                         if !items.is_empty() {
                             let first_item = items.remove(0);
                             let document =
-                                Document::from_bytes(first_item.as_slice(), &op.document_type)
+                                DocumentStub::from_bytes(first_item.as_slice(), &op.document_type)
                                     .expect("expected to deserialize document");
                             let identity = platform
                                 .drive
@@ -402,6 +400,8 @@ fn run_chain_for_strategy(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use drive::dpp::data_contract::extra::common::json_document_to_cbor;
+    use drive::dpp::data_contract::DriveContractExt;
     #[test]
     fn run_chain_nothing_happening() {
         let strategy = Strategy {
@@ -468,7 +468,8 @@ mod tests {
         let contract_cbor = json_document_to_cbor(
             "tests/supporting_files/contract/dashpay/dashpay-contract-all-mutable.json",
             Some(PROTOCOL_VERSION),
-        );
+        )
+        .expect("expected to get cbor from a json document");
         let contract = <Contract as DriveContractExt>::from_cbor(&contract_cbor, None)
             .expect("contract should be deserialized");
 
@@ -492,7 +493,8 @@ mod tests {
         let contract_cbor = json_document_to_cbor(
             "tests/supporting_files/contract/dashpay/dashpay-contract-all-mutable.json",
             Some(PROTOCOL_VERSION),
-        );
+        )
+        .expect("expected to get cbor from a json document");
         let contract = <Contract as DriveContractExt>::from_cbor(&contract_cbor, None)
             .expect("contract should be deserialized");
 
@@ -531,7 +533,8 @@ mod tests {
         let contract_cbor = json_document_to_cbor(
             "tests/supporting_files/contract/dashpay/dashpay-contract-all-mutable.json",
             Some(PROTOCOL_VERSION),
-        );
+        )
+        .expect("expected to get cbor from a json document");
         let contract = <Contract as DriveContractExt>::from_cbor(&contract_cbor, None)
             .expect("contract should be deserialized");
 
@@ -580,7 +583,8 @@ mod tests {
         let contract_cbor = json_document_to_cbor(
             "tests/supporting_files/contract/dashpay/dashpay-contract-all-mutable.json",
             Some(PROTOCOL_VERSION),
-        );
+        )
+        .expect("expected to get cbor from a json document");
         let contract = <Contract as DriveContractExt>::from_cbor(&contract_cbor, None)
             .expect("contract should be deserialized");
 
@@ -647,7 +651,8 @@ mod tests {
         let contract_cbor = json_document_to_cbor(
             "tests/supporting_files/contract/dashpay/dashpay-contract-all-mutable.json",
             Some(PROTOCOL_VERSION),
-        );
+        )
+        .expect("expected to get cbor from a json document");
         let contract = <Contract as DriveContractExt>::from_cbor(&contract_cbor, None)
             .expect("contract should be deserialized");
 
@@ -714,7 +719,8 @@ mod tests {
         let contract_cbor = json_document_to_cbor(
             "tests/supporting_files/contract/dashpay/dashpay-contract-all-mutable.json",
             Some(PROTOCOL_VERSION),
-        );
+        )
+        .expect("expected to get cbor from a json document");
         let contract = <Contract as DriveContractExt>::from_cbor(&contract_cbor, None)
             .expect("contract should be deserialized");
 

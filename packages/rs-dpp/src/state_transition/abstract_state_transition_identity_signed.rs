@@ -35,9 +35,9 @@ where
                 // and here we compare the private key used to sing the state transition with
                 // the compressed key stored in the identity
 
-                if public_key_compressed.to_vec() != identity_public_key.get_data() {
+                if public_key_compressed.to_vec() != identity_public_key.data {
                     return Err(ProtocolError::InvalidSignaturePublicKeyError {
-                        public_key: identity_public_key.get_data().to_owned(),
+                        public_key: identity_public_key.data.to_owned(),
                     });
                 }
 
@@ -47,9 +47,9 @@ where
                 let public_key_compressed = get_compressed_public_ec_key(private_key)?;
                 let pub_key_hash = ripemd160_sha256(&public_key_compressed);
 
-                if pub_key_hash != identity_public_key.get_data() {
+                if pub_key_hash != identity_public_key.data {
                     return Err(ProtocolError::InvalidSignaturePublicKeyError {
-                        public_key: identity_public_key.get_data().to_owned(),
+                        public_key: identity_public_key.data.to_owned(),
                     });
                 }
                 self.sign_by_private_key(private_key, identity_public_key.key_type, bls)
@@ -57,9 +57,9 @@ where
             KeyType::BLS12_381 => {
                 let public_key = bls.private_key_to_public_key(private_key)?;
 
-                if public_key != identity_public_key.get_data() {
+                if public_key != identity_public_key.data {
                     return Err(ProtocolError::InvalidSignaturePublicKeyError {
-                        public_key: identity_public_key.get_data().to_owned(),
+                        public_key: identity_public_key.data.to_owned(),
                     });
                 }
                 self.sign_by_private_key(private_key, identity_public_key.key_type, bls)
@@ -94,7 +94,7 @@ where
             });
         }
 
-        let public_key_bytes = public_key.get_data();
+        let public_key_bytes = public_key.data.as_slice();
         match public_key.key_type {
             KeyType::ECDSA_HASH160 => {
                 self.verify_ecdsa_hash_160_signature_by_public_key_hash(public_key_bytes)
@@ -375,7 +375,7 @@ mod test {
         let st = get_mock_state_transition();
         let hash = st.hash(false).unwrap();
         assert_eq!(
-            "be27201d895364e9543f0c4c6a372bb2e262af891296fbdc4cef09b3224d9b51",
+            "b067b5f84b748080684f3b203b07227a3b2db9f745815e3449113ac9e5619523",
             hex::encode(hash)
         )
     }
@@ -386,8 +386,8 @@ mod test {
         let hash = st.to_buffer(false).unwrap();
         let result = hex::encode(hash);
 
-        assert_eq!(216, result.len());
-        assert!(result.starts_with("01000000"))
+        assert_eq!(210, result.len());
+        assert!(result.starts_with("01"))
     }
 
     #[test]
@@ -396,8 +396,7 @@ mod test {
         let hash = st.to_buffer(true).unwrap();
         let result = hex::encode(hash);
 
-        assert_eq!(150, result.len());
-        assert_eq!("01000000a26e7472616e736974696f6e5479706501676f776e65724964782c4158356f323241525746595a45394a5a5441355353657976707274657442637662514c53425a376352374777", result);
+        assert_eq!("01a26e7472616e736974696f6e5479706501676f776e65724964782c4158356f323241525746595a45394a5a5441355353657976707274657442637662514c53425a376352374777", result);
     }
 
     #[test]

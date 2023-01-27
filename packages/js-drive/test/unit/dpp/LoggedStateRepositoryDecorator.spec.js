@@ -19,7 +19,7 @@ describe('LoggedStateRepositoryDecorator', () => {
     loggerMock = new LoggerMock(this.sinon);
 
     blockExecutionContextMock = new BlockExecutionContextMock(this.sinon);
-    blockExecutionContextMock.getConsensusLogger.returns(loggerMock);
+    blockExecutionContextMock.getContextLogger.returns(loggerMock);
 
     loggedStateRepositoryDecorator = new LoggedStateRepositoryDecorator(
       stateRepositoryMock,

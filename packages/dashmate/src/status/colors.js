@@ -1,6 +1,7 @@
 const chalk = require('chalk');
 const PortStateEnum = require('../enums/portState');
 const ServiceStatusEnum = require('../enums/serviceStatus');
+const DockerStatusEnum = require('../enums/dockerStatus');
 
 module.exports = {
 
@@ -13,6 +14,14 @@ module.exports = {
       return chalk.green;
     }
     return chalk.red;
+  },
+  docker: (status) => {
+    switch (status) {
+      case DockerStatusEnum.running:
+        return chalk.green;
+      default:
+        return chalk.red;
+    }
   },
   status: (status) => {
     switch (status) {
