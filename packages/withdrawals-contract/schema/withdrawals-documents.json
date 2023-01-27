@@ -4,6 +4,21 @@
     "type": "object",
     "indices": [
       {
+        "name": "identityRecent",
+        "properties": [
+          {
+            "$ownerId": "asc"
+          },
+          {
+            "$updatedAt": "asc"
+          },
+          {
+            "status": "asc"
+          }
+        ],
+        "unique": false
+      },
+      {
         "name": "pooling",
         "properties": [
           {
@@ -29,15 +44,6 @@
           },
           {
             "transactionId": "asc"
-          }
-        ],
-        "unique": false
-      },
-      {
-        "name": "ownerId",
-        "properties": [
-          {
-            "$ownerId": "asc"
           }
         ],
         "unique": false
