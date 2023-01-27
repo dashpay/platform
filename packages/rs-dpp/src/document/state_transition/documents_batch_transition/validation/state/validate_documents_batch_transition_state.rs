@@ -1,6 +1,5 @@
 use std::convert::TryInto;
 
-use dashcore::BlockHeader;
 use futures::future::join_all;
 use itertools::Itertools;
 

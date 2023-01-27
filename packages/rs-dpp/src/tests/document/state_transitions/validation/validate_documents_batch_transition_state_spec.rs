@@ -1,7 +1,6 @@
 use std::time::Duration;
 
 use chrono::Utc;
-use dashcore::BlockHeader;
 use serde_json::{json, Value as JsonValue};
 
 use crate::{
@@ -21,7 +20,7 @@ use crate::{
         fixtures::{
             get_data_contract_fixture, get_document_transitions_fixture, get_documents_fixture,
         },
-        utils::{generate_random_identifier_struct, new_block_header},
+        utils::generate_random_identifier_struct,
     },
     validation::ValidationResult, state_transition::StateTransitionLike,
 };
@@ -68,10 +67,6 @@ fn setup_test() -> TestData {
     state_repository_mock
         .expect_fetch_data_contract()
         .returning(move |_, _| Ok(Some(data_contract_to_return.clone())));
-
-    // state_repository_mock
-    //     .expect_fetch_latest_platform_block_header::<BlockHeader>()
-    //     .returning(|| Ok(new_block_header(Some(Utc::now().timestamp() as u32))));
 
     state_repository_mock
         .expect_fetch_latest_platform_block_time()

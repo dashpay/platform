@@ -1,8 +1,6 @@
 use dpp::state_transition::state_transition_execution_context::StateTransitionExecutionContext;
 use wasm_bindgen::prelude::*;
 
-use crate::console_log;
-
 #[wasm_bindgen(js_name=StateTransitionExecutionContext)]
 pub struct StateTransitionExecutionContextWasm(StateTransitionExecutionContext);
 
@@ -45,7 +43,6 @@ impl StateTransitionExecutionContextWasm {
 
     #[wasm_bindgen(js_name=enableDryRun)]
     pub fn enable_dry_run(&self) {
-        console_log!("enabling the dry run");
         self.0.enable_dry_run();
     }
 

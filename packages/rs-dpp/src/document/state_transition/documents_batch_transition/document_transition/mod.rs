@@ -221,7 +221,6 @@ impl DocumentTransitionExt for DocumentTransition {
     }
 
     fn get_created_at(&self) -> Option<i64> {
-        // this is  the problem ... how we can divide things into the chunks
         match self {
             DocumentTransition::Create(t) => t.created_at,
             DocumentTransition::Replace(_) => None,

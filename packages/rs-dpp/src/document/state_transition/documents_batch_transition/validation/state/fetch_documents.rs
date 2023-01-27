@@ -3,7 +3,7 @@ use std::{
     convert::TryInto,
 };
 
-use futures::{future::join_all, FutureExt};
+use futures::future::join_all;
 use itertools::Itertools;
 use serde_json::json;
 

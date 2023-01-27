@@ -15,7 +15,7 @@ use super::{
     document_transition::{
         Action, DocumentCreateTransition, DocumentReplaceTransition, DocumentTransition,
     },
-    validation::state::fetch_documents::{self, fetch_documents},
+    validation::state::fetch_documents::fetch_documents,
     DocumentsBatchTransition,
 };
 
@@ -176,7 +176,7 @@ mod test {
     use crate::{
         document::{
             document_transition::{Action, DocumentTransitionObjectLike},
-            Document, DocumentsBatchTransition,
+            DocumentsBatchTransition,
         },
         state_repository::MockStateRepositoryLike,
         state_transition::StateTransitionLike,
@@ -184,7 +184,7 @@ mod test {
             fixtures::{
                 get_data_contract_fixture, get_document_transitions_fixture, get_documents_fixture,
             },
-            utils::{create_empty_block, generate_random_identifier_struct},
+            utils::generate_random_identifier_struct,
         },
     };
 

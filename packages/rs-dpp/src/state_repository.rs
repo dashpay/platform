@@ -1,7 +1,4 @@
-use std::{
-    convert::{Infallible, TryInto},
-    fmt::Debug,
-};
+use std::convert::{Infallible, TryInto};
 
 use anyhow::Result as AnyResult;
 use async_trait::async_trait;

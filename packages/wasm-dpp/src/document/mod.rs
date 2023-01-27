@@ -15,7 +15,7 @@ use crate::identifier::{identifier_from_js_value, IdentifierWrapper};
 use crate::lodash::lodash_set;
 use crate::utils::{try_to_u64, WithJsError};
 use crate::utils::{with_serde_to_json_value, ToSerdeJSONExt};
-use crate::{console_log, with_js_error};
+use crate::with_js_error;
 use crate::{DataContractWasm, MetadataWasm};
 
 pub mod errors;
@@ -215,8 +215,6 @@ impl DocumentWasm {
                 return self.0.set(&path, new_value).with_js_error();
             } else if property_path.starts_with(&path) {
                 let (_, suffix) = property_path.split_at(path.len() + 1);
-                // TODO run the tests
-                // let mut value = js_value_to_set.with_serde_to_json_value()?;
 
                 if value_to_set.get_value(suffix).is_ok() {
                     let id_string = value_to_set
@@ -365,11 +363,6 @@ impl DocumentWasm {
     pub fn hash(&self) -> Result<Buffer, JsValue> {
         let bytes = self.0.hash().with_js_error()?;
         Ok(Buffer::from_bytes(&bytes))
-    }
-
-    #[wasm_bindgen(js_name=ass)]
-    pub fn ass(&self) {
-        console_log!("this is an an ass")
     }
 
     #[wasm_bindgen(js_name=clone)]
