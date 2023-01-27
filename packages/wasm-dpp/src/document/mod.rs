@@ -10,7 +10,6 @@ use wasm_bindgen::prelude::*;
 use dpp::document::{property_names, Document, IDENTIFIER_FIELDS};
 
 use crate::buffer::Buffer;
-use crate::conversion::ConversionOptions;
 use crate::errors::RustConversionError;
 use crate::identifier::IdentifierWrapper;
 use crate::lodash::lodash_set;
@@ -29,6 +28,13 @@ mod validator;
 pub use document_batch_transition::{DocumentsBatchTransitionWASM, DocumentsContainer};
 pub use factory::DocumentFactoryWASM;
 pub use validator::DocumentValidatorWasm;
+
+#[derive(Serialize, Deserialize, Debug, Clone, Copy, Default)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct ConversionOptions {
+    #[serde(default)]
+    pub skip_identifiers_conversion: bool,
+}
 
 pub(super) enum BinaryType {
     Identifier,

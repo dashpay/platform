@@ -16,11 +16,10 @@ use wasm_bindgen::prelude::*;
 
 use crate::{
     buffer::Buffer,
-    conversion::ConversionOptions,
     identifier::IdentifierWrapper,
     lodash::lodash_set,
     utils::{ToSerdeJSONExt, WithJsError},
-    with_js_error, BinaryType, DataContractWasm,
+    with_js_error, BinaryType, ConversionOptions, DataContractWasm,
 };
 
 #[wasm_bindgen]
