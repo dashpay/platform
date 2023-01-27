@@ -168,7 +168,6 @@ mod test {
 
     use crate::{
         data_contract::{validation::data_contract_validator::DataContractValidator, DataContract},
-        state_transition::StateTransitionLike,
         tests::fixtures::get_data_contract_fixture,
         version::{ProtocolVersionValidator, COMPATIBILITY_MAP, LATEST_VERSION},
     };

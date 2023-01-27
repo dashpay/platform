@@ -2,9 +2,6 @@ mod document_create_transition;
 mod document_delete_transition;
 mod document_replace_transition;
 
-use std::convert::TryInto;
-
-use anyhow::anyhow;
 pub use document_create_transition::*;
 pub use document_delete_transition::*;
 pub use document_replace_transition::*;
@@ -23,7 +20,6 @@ use wasm_bindgen::prelude::*;
 
 use crate::{
     buffer::Buffer,
-    console_log,
     identifier::{identifier_from_js_value, IdentifierWrapper},
     lodash::lodash_set,
     utils::{try_to_u64, ToSerdeJSONExt, WithJsError},
@@ -126,7 +122,9 @@ impl DocumentTransitionWasm {
             let (identifier_paths, binary_paths) = self
                 .0
                 .get_data_contract()
-                .get_identifiers_and_binary_paths(self.0.get_document_type());
+                .get_identifiers_and_binary_paths(self.0.get_document_type())
+                .with_js_error()?;
+
             let js_value = convert_to_object(
                 data.to_owned(),
                 &JsValue::NULL,

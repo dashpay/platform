@@ -1,5 +1,3 @@
-use std::collections::{hash_map::Entry, HashMap};
-
 use dpp::{
     document::{
         document_transition::{document_base_transition, document_create_transition},

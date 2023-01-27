@@ -16,14 +16,13 @@ use dpp::{
     },
     state_transition::state_transition_execution_context::StateTransitionExecutionContext,
 };
-use serde::Serialize;
 use wasm_bindgen::prelude::*;
 
-use crate::{
-    identifier::IdentifierWrapper, DataContractWasm, IdentityWasm,
-    StateTransitionExecutionContextWasm, utils::IntoWasm, DocumentWasm,
-};
 use crate::buffer::Buffer;
+use crate::{
+    identifier::IdentifierWrapper, utils::IntoWasm, DataContractWasm, DocumentWasm, IdentityWasm,
+    StateTransitionExecutionContextWasm,
+};
 
 #[wasm_bindgen]
 extern "C" {
@@ -180,12 +179,9 @@ impl From<FetchTransactionResponse> for FetchTransactionResponseDPP {
 impl StateRepositoryLike for ExternalStateRepositoryLikeWrapper {
     type ConversionError = Infallible;
     type FetchDataContract = DataContractWasm;
-<<<<<<< HEAD
     type FetchDocument = DocumentWasm;
-=======
     type FetchIdentity = IdentityWasm;
     type FetchTransaction = FetchTransactionResponse;
->>>>>>> feat/wasm-fix/doccument-transitions
 
     async fn fetch_data_contract(
         &self,
@@ -468,7 +464,6 @@ impl StateRepositoryLike for ExternalStateRepositoryLikeWrapper {
                 bail!("received an invalid timestamp: the number is > u64::max")
             }
 
-            console_log!("returning the latest platform block time: {}", float_number);
             return Ok(float_number as u64);
         }
 

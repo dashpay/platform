@@ -1,4 +1,4 @@
-use crate::{buffer::Buffer, console_log};
+use crate::buffer::Buffer;
 use dpp::identifier::Identifier;
 use wasm_bindgen::prelude::*;
 

@@ -5,7 +5,6 @@ use dpp::errors::ProtocolError;
 use crate::data_contract::errors::from_data_contract_to_js_error;
 use crate::document::errors::from_document_to_js_error;
 
-use super::consensus::basic::document::DataContractNotPresentErrorWasm;
 use super::consensus_error::from_consensus_error;
 use super::data_contract_not_present_error::DataContractNotPresentNotConsensusErrorWasm;
 

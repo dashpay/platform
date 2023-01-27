@@ -1,4 +1,4 @@
-use dpp::document::state_transition::documents_batch_transition::apply_documents_batch_transition_factory::{self, apply_documents_batch_transition};
+use dpp::document::state_transition::documents_batch_transition::apply_documents_batch_transition_factory::{apply_documents_batch_transition};
 use wasm_bindgen::prelude::*;
 
 use crate::{

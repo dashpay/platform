@@ -236,7 +236,7 @@ where
 mod test {
     use crate::{
         data_trigger::DataTriggerExecutionContext,
-        document::{document_transition::Action, Document},
+        document::document_transition::Action,
         state_repository::MockStateRepositoryLike,
         state_transition::state_transition_execution_context::StateTransitionExecutionContext,
         tests::{
