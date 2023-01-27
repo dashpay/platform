@@ -1423,13 +1423,13 @@ mod tests {
             // 32 bytes for the unique id
             // 1 byte for key_size (required space for 64)
 
-            // Value -> 279
+            // Value -> 276
             //   1 for the flag option with flags
             //   1 for the flags size
             //   35 for flags 32 + 1 + 2
             //   1 for the enum type
             //   1 for item
-            //   173 for item serialized bytes
+            //   170 for item serialized bytes
             //   1 for Basic Merk
             // 32 for node hash
             // 32 for value hash
@@ -1442,7 +1442,7 @@ mod tests {
             // Child Heights 2
             // Basic Merk 1
 
-            // Total 65 + 279 + 68 = 412
+            // Total 65 + 276 + 68 = 409
 
             //// Tree 1 / <Person Contract> / 1 / person / message
             // Key: My apples are safe
@@ -1538,7 +1538,7 @@ mod tests {
             // Child Heights 2
             // Basic Merk 1
 
-            // Total 65 + 145 + 68 = 278
+            // Total 65 + 145 + 68 = 275
 
             1011
         };
@@ -1562,12 +1562,12 @@ mod tests {
                 .get(&0)
                 .unwrap();
 
-            assert_eq!(*removed_credits, 27309075);
+            assert_eq!(*removed_credits, 27228298);
             let refund_equivalent_bytes = removed_credits.to_unsigned()
                 / Epoch::new(0).cost_for_known_cost_item(StorageDiskUsageCreditPerByte);
 
             assert!(expected_added_bytes > refund_equivalent_bytes);
-            assert_eq!(refund_equivalent_bytes, 1011); // we refunded 1011 instead of 1014
+            assert_eq!(refund_equivalent_bytes, 1008); // we refunded 1008 instead of 1011
 
             // let's re-add it again
             let original_fees = apply_person(
@@ -1687,12 +1687,12 @@ mod tests {
                 .get(&0)
                 .unwrap();
 
-            assert_eq!(*removed_credits, 27309075);
+            assert_eq!(*removed_credits, 27228298);
             let refund_equivalent_bytes = removed_credits.to_unsigned()
                 / Epoch::new(0).cost_for_known_cost_item(StorageDiskUsageCreditPerByte);
 
             assert!(expected_added_bytes > refund_equivalent_bytes);
-            assert_eq!(refund_equivalent_bytes, 1011); // we refunded 1011 instead of 1014
+            assert_eq!(refund_equivalent_bytes, 1008); // we refunded 1008 instead of 1011
 
             // let's re-add it again
             let original_fees = apply_person(
@@ -1861,22 +1861,22 @@ mod tests {
             // Document Storage
 
             //// Item
-            // = 412 Bytes
+            // = 409 Bytes
 
-            // Explanation for 412 storage_written_bytes
+            // Explanation for 409 storage_written_bytes
 
             // Key -> 65 bytes
             // 32 bytes for the key prefix
             // 32 bytes for the unique id
             // 1 byte for key_size (required space for 64)
 
-            // Value -> 279
+            // Value -> 276
             //   1 for the flag option with flags
             //   1 for the flags size
             //   35 for flags 32 + 1 + 2
             //   1 for the enum type
             //   1 for item
-            //   173 for item serialized bytes
+            //   170 for item serialized bytes
             //   1 for Basic Merk
             // 32 for node hash
             // 32 for value hash
@@ -1987,7 +1987,7 @@ mod tests {
 
             // Total 65 + 145 + 68 = 278
 
-            // 412 + 179 + 145 + 278 = 1014
+            // 409 + 179 + 145 + 278 = 1011
 
             1011
         };
