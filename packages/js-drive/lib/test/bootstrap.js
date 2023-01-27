@@ -9,8 +9,6 @@ const chaiAsPromised = require('chai-as-promised');
 const chaiString = require('chai-string');
 const DashCoreOptions = require('@dashevo/dp-services-ctl/lib/services/dashCore/DashCoreOptions');
 
-const { PrivateKey } = require('@dashevo/dashcore-lib');
-
 use(sinonChai);
 use(chaiAsPromised);
 use(chaiString);

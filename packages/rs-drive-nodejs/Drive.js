@@ -77,8 +77,12 @@ const driveInsertIdentityAsync = appendStackAsync(promisify(driveInsertIdentity)
 const driveFetchIdentityAsync = appendStackAsync(promisify(driveFetchIdentity));
 const driveFetchProvedIdentityAsync = appendStackAsync(promisify(driveFetchProvedIdentity));
 const driveFetchIdentityBalanceAsync = appendStackAsync(promisify(driveFetchIdentityBalance));
-const driveFetchIdentityBalanceWithCostsAsync = appendStackAsync(promisify(driveFetchIdentityBalanceWithCosts));
-const driveFetchIdentityBalanceIncludeDebtAsync = appendStackAsync(promisify(driveFetchIdentityBalanceIncludeDebt));
+const driveFetchIdentityBalanceWithCostsAsync = appendStackAsync(
+  promisify(driveFetchIdentityBalanceWithCosts),
+);
+const driveFetchIdentityBalanceIncludeDebtAsync = appendStackAsync(
+  promisify(driveFetchIdentityBalanceIncludeDebt),
+);
 
 const driveFetchManyProvedIdentitiesAsync = appendStackAsync(
   promisify(driveFetchManyProvedIdentities),

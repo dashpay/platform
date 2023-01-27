@@ -258,6 +258,7 @@ function deliverTxFactory(
             desiredAmount: actualStateTransitionFees.desiredAmount,
             operations: actualStateTransitionOperations.map((operation) => operation.toJSON()),
           },
+          debt: actualStateTransitionFees.desiredAmount - transactionFees.processingFee,
         },
         txType: stateTransition.getType(),
       },

@@ -151,7 +151,10 @@ describe('LoggedStateRepositoryDecorator', () => {
       stateRepositoryMock.addKeysToIdentity.throws(error);
 
       try {
-        await loggedStateRepositoryDecorator.addKeysToIdentity(identity.getId(), identity.getPublicKeys());
+        await loggedStateRepositoryDecorator.addKeysToIdentity(
+          identity.getId(),
+          identity.getPublicKeys(),
+        );
 
         expect.fail('should throw an error');
       } catch (e) {
