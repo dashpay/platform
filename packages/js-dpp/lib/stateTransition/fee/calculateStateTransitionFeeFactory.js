@@ -15,6 +15,9 @@ function calculateStateTransitionFeeFactory(calculateOperationFees) {
   function calculateStateTransitionFee(stateTransition) {
     const executionContext = stateTransition.getExecutionContext();
 
+    console.log('operations to calculate state transition fees');
+    console.dir(executionContext.getOperations().map((o) => o.toJSON()));
+
     const calculatedFees = calculateOperationFees(executionContext.getOperations());
 
     const {

@@ -2,7 +2,6 @@ const Dash = require('dash');
 
 const {
   contractId: masternodeRewardSharesContractId,
-  ownerId: masternodeRewardSharesOwnerId,
 } = require('@dashevo/masternode-reward-shares-contract/lib/systemIds');
 
 const generateRandomIdentifier = require('../../lib/test/utils/generateRandomIdentifier');
@@ -22,11 +21,8 @@ describe('Masternode Reward Shares', () => {
     await dpp.initialize();
 
     client = await createClientWithFundedWallet(
-      2000000,
-      process.env.MASTERNODE_REWARD_SHARES_OWNER_PRIVATE_KEY,
+      8000000,
     );
-
-    await client.platform.identities.topUp(masternodeRewardSharesOwnerId, 500000);
 
     const masternodeRewardSharesContract = await client.platform.contracts.get(
       masternodeRewardSharesContractId,
@@ -73,43 +69,45 @@ describe('Masternode Reward Shares', () => {
     let anotherIdentity;
     let rewardShare;
     let anotherRewardShare;
-    let ownerPrivateKey;
-    let masternodeIdentity;
+    let masternodeOwnerMasterPrivateKey;
+    let masternodeOwnerIdentity;
     let derivedPrivateKey;
     let signaturePublicKeyId;
 
     before(async function before() {
-      if (!process.env.MASTERNODE_REWARD_SHARES_OWNER_PRIVATE_KEY
-        || !process.env.MASTERNODE_REWARD_SHARES_OWNER_PRO_REG_TX_HASH
-        || !process.env.MASTERNODE_REWARD_SHARES_MN_OWNER_PRIVATE_KEY) {
+      if (!process.env.MASTERNODE_OWNER_PRO_REG_TX_HASH
+        || !process.env.MASTERNODE_OWNER_MASTER_PRIVATE_KEY) {
         this.skip('masternode owner credentials are not set');
       }
 
-      const ownerIdentifier = Buffer.from(process.env.MASTERNODE_REWARD_SHARES_OWNER_PRO_REG_TX_HASH, 'hex');
+      const masternodeOwnerIdentifier = Buffer.from(process.env.MASTERNODE_OWNER_PRO_REG_TX_HASH, 'hex');
 
-      masternodeIdentity = await client.platform.identities.get(ownerIdentifier);
+      masternodeOwnerIdentity = await client.platform.identities.get(masternodeOwnerIdentifier);
 
-      ownerPrivateKey = process.env.MASTERNODE_REWARD_SHARES_MN_OWNER_PRIVATE_KEY;
+      masternodeOwnerMasterPrivateKey = process.env.MASTERNODE_OWNER_MASTER_PRIVATE_KEY;
 
       // Masternode identity should exist
-      expect(masternodeIdentity).to.exist();
+      expect(masternodeOwnerIdentity).to.exist();
 
-      await client.platform.identities.topUp(masternodeIdentity.getId(), 500000);
+      await client.platform.identities.topUp(masternodeOwnerIdentity.getId(), 1900000);
 
       // Since we cannot create "High" level key for masternode Identities automatically,
       // (this key is used to sign state transitions, other than "update")
       // we add this key here
-      const account = await client.platform.client.getWalletAccount();
 
-      const identityIndex = await account.getUnusedIdentityIndex();
+      signaturePublicKeyId = masternodeOwnerIdentity.getPublicKeyMaxId() + 1;
+
+      // Get Masternode Rewards Share Contract owner account
+      const account = await client.platform.client.getWalletAccount();
 
       ({ privateKey: derivedPrivateKey } = account
         .identities
-        .getIdentityHDKeyByIndex(identityIndex, 1));
+        .getIdentityHDKeyByIndex(
+          1000,
+          signaturePublicKeyId,
+        ));
 
       const identityPublicKey = derivedPrivateKey.toPublicKey().toBuffer();
-
-      signaturePublicKeyId = masternodeIdentity.getPublicKeyMaxId() + 1;
 
       const newPublicKey = new IdentityPublicKey(
         {
@@ -127,15 +125,13 @@ describe('Masternode Reward Shares', () => {
       };
 
       const stateTransition = dpp.identity.createIdentityUpdateTransition(
-        masternodeIdentity,
+        masternodeOwnerIdentity,
         update,
       );
 
-      const signerKey = masternodeIdentity.getPublicKeys()[0];
+      const signerKey = masternodeOwnerIdentity.getPublicKeys()[0];
 
       const promises = stateTransition.getPublicKeysToAdd().map(async (publicKey) => {
-        // const privateKey = privateKeys[publicKey.getId()];
-
         stateTransition.setSignaturePublicKeyId(signerKey.getId());
 
         await stateTransition.signByPrivateKey(derivedPrivateKey, publicKey.getType());
@@ -151,7 +147,7 @@ describe('Masternode Reward Shares', () => {
       stateTransition.setSignaturePublicKeyId(0);
 
       await stateTransition.signByPrivateKey(
-        ownerPrivateKey,
+        masternodeOwnerMasterPrivateKey,
         IdentityPublicKey.TYPES.ECDSA_SECP256K1,
       );
 
@@ -161,11 +157,11 @@ describe('Masternode Reward Shares', () => {
     });
 
     it('should be able to create reward shares with existing identity', async () => {
-      anotherIdentity = await client.platform.identities.register(10000);
+      anotherIdentity = await client.platform.identities.register(100000);
 
       rewardShare = await client.platform.documents.create(
         'masternodeRewardShares.rewardShare',
-        masternodeIdentity,
+        masternodeOwnerIdentity,
         {
           payToId: anotherIdentity.getId(),
           percentage: 1,
@@ -193,7 +189,7 @@ describe('Masternode Reward Shares', () => {
 
       const invalidRewardShare = await client.platform.documents.create(
         'masternodeRewardShares.rewardShare',
-        masternodeIdentity,
+        masternodeOwnerIdentity,
         {
           payToId,
           percentage: 1,
@@ -287,13 +283,13 @@ describe('Masternode Reward Shares', () => {
     });
 
     it('should not be able to share more than 100% of rewards', async () => {
-      anotherIdentity = await client.platform.identities.register(10000);
+      anotherIdentity = await client.platform.identities.register(100000);
 
       await waitForSTPropagated();
 
       anotherRewardShare = await client.platform.documents.create(
         'masternodeRewardShares.rewardShare',
-        masternodeIdentity,
+        masternodeOwnerIdentity,
         {
           payToId: anotherIdentity.getId(),
           percentage: 9999, // it will be 10001 in summary
@@ -354,7 +350,7 @@ describe('Masternode Reward Shares', () => {
     let identity;
 
     before(async () => {
-      identity = await client.platform.identities.register(40000);
+      identity = await client.platform.identities.register(100000);
 
       await waitForSTPropagated();
     });

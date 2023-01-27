@@ -8,7 +8,6 @@ const { FeeResult } = require('@dashevo/rs-drive');
 
 const ValidationResult = require('@dashevo/dpp/lib/validation/ValidationResult');
 
-const getIdentityFixture = require('@dashevo/dpp/lib/test/fixtures/getIdentityFixture');
 const createDPPMock = require('@dashevo/dpp/lib/test/mocks/createDPPMock');
 const getDataContractFixture = require('@dashevo/dpp/lib/test/fixtures/getDataContractFixture');
 const getDocumentsFixture = require('@dashevo/dpp/lib/test/fixtures/getDocumentsFixture');
@@ -17,6 +16,10 @@ const GrpcErrorCodes = require('@dashevo/grpc-common/lib/server/error/GrpcErrorC
 const StateTransitionExecutionContext = require('@dashevo/dpp/lib/stateTransition/StateTransitionExecutionContext');
 
 const SomeConsensusError = require('@dashevo/dpp/lib/test/mocks/SomeConsensusError');
+
+const calculateOperationFees = require('@dashevo/dpp/lib/stateTransition/fee/calculateOperationFees');
+const calculateStateTransitionFeeFactory = require('@dashevo/dpp/lib/stateTransition/fee/calculateStateTransitionFeeFactory');
+
 const BlockExecutionContextMock = require('../../../../../lib/test/mock/BlockExecutionContextMock');
 
 const deliverTxFactory = require('../../../../../lib/abci/handlers/proposal/deliverTxFactory');
@@ -24,6 +27,8 @@ const LoggerMock = require('../../../../../lib/test/mock/LoggerMock');
 const DPPValidationAbciError = require('../../../../../lib/abci/errors/DPPValidationAbciError');
 const InvalidArgumentAbciError = require('../../../../../lib/abci/errors/InvalidArgumentAbciError');
 const StorageResult = require('../../../../../lib/storage/StorageResult');
+const PreCalculatedOperation = require('@dashevo/dpp/lib/stateTransition/fee/operations/PreCalculatedOperation');
+const SignatureVerificationOperation = require('@dashevo/dpp/lib/stateTransition/fee/operations/SignatureVerificationOperation');
 
 describe('deliverTxFactory', () => {
   let deliverTx;
@@ -202,15 +207,6 @@ describe('deliverTxFactory', () => {
       .digest()
       .toString('hex')
       .toUpperCase();
-
-    expect(stateRepositoryMock.updateIdentity).to.be.calledOnceWith(identity);
-
-    const stHash = crypto
-      .createHash('sha256')
-      .update(documentTx)
-      .digest()
-      .toString('hex')
-      .toUpperCase();
     expect(createContextLoggerMock).to.be.calledOnceWithExactly(loggerMock, {
       txId: stHash,
     });
@@ -311,5 +307,32 @@ describe('deliverTxFactory', () => {
       expect(e.getCode()).to.equal(GrpcErrorCodes.INVALID_ARGUMENT);
       expect(dppMock.stateTransition.validate).to.not.be.called();
     }
+  });
+
+  it('should', async () => {
+    const calculateStateTransitionFee = calculateStateTransitionFeeFactory(calculateOperationFees);
+
+    const operations = [
+      new PreCalculatedOperation(FeeResult.create(181062000, 10751790, [])),
+      new SignatureVerificationOperation(0),
+      new PreCalculatedOperation(FeeResult.create(0, 562120, [])),
+    ];
+
+    stateTransitionExecutionContextMock.enableDryRun();
+
+    stateTransitionExecutionContextMock.addOperation(...operations);
+
+    stateTransitionExecutionContextMock.disableDryRun();
+
+    const otherOperations = [
+      new PreCalculatedOperation(FeeResult.create(0, 4060, [])),
+      new PreCalculatedOperation(FeeResult.create(90531000, 2010310, [])),
+    ];
+
+    stateTransitionExecutionContextMock.addOperation(...otherOperations);
+
+    calculateStateTransitionFee(documentsBatchTransitionFixture);
+
+    console.dir(stateTransitionExecutionContextMock.getLastCalculatedFeeDetails());
   });
 });

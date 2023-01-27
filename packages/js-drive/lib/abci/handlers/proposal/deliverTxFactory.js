@@ -9,14 +9,14 @@ const AbstractDocumentTransition = require(
 const DPPValidationAbciError = require('../../errors/DPPValidationAbciError');
 
 const DOCUMENT_ACTION_DESCRIPTIONS = {
-  [AbstractDocumentTransition.ACTIONS.CREATE]: 'created',
-  [AbstractDocumentTransition.ACTIONS.REPLACE]: 'replaced',
-  [AbstractDocumentTransition.ACTIONS.DELETE]: 'deleted',
+  [AbstractDocumentTransition.ACTIONS.CREATE]: 'Create',
+  [AbstractDocumentTransition.ACTIONS.REPLACE]: 'Replace',
+  [AbstractDocumentTransition.ACTIONS.DELETE]: 'Delete',
 };
 
 const DATA_CONTRACT_ACTION_DESCRIPTIONS = {
-  [stateTransitionTypes.DATA_CONTRACT_CREATE]: 'created',
-  [stateTransitionTypes.DATA_CONTRACT_UPDATE]: 'updated',
+  [stateTransitionTypes.DATA_CONTRACT_CREATE]: 'Create',
+  [stateTransitionTypes.DATA_CONTRACT_UPDATE]: 'Update',
 };
 
 const TIMERS = require('../timers');
@@ -89,6 +89,80 @@ function deliverTxFactory(
       },
     );
 
+    // Logging
+    /* istanbul ignore next */
+    switch (stateTransition.getType()) {
+      case stateTransitionTypes.DATA_CONTRACT_UPDATE:
+      case stateTransitionTypes.DATA_CONTRACT_CREATE: {
+        const dataContract = stateTransition.getDataContract();
+
+        // Save data contracts in order to create databases for documents on block commit
+        proposalBlockExecutionContext.addDataContract(dataContract);
+
+        const description = DATA_CONTRACT_ACTION_DESCRIPTIONS[stateTransition.getType()];
+
+        txContextLogger.info(
+          {
+            dataContractId: dataContract.getId().toString(),
+          },
+          `${description} Data Contract with id: ${dataContract.getId()}`,
+        );
+
+        break;
+      }
+      case stateTransitionTypes.IDENTITY_CREATE: {
+        const identityId = stateTransition.getIdentityId();
+
+        txContextLogger.info(
+          {
+            identityId: identityId.toString(),
+          },
+          `Create Identity with id: ${identityId}`,
+        );
+
+        break;
+      }
+      case stateTransitionTypes.IDENTITY_TOP_UP: {
+        const identityId = stateTransition.getIdentityId();
+
+        txContextLogger.info(
+          {
+            identityId: identityId.toString(),
+          },
+          `Top up Identity with id: ${identityId}`,
+        );
+
+        break;
+      }
+      case stateTransitionTypes.IDENTITY_UPDATE: {
+        const identityId = stateTransition.getIdentityId();
+
+        txContextLogger.info(
+          {
+            identityId: identityId.toString(),
+          },
+          `Update Identity with id: ${identityId}`,
+        );
+        break;
+      }
+      case stateTransitionTypes.DOCUMENTS_BATCH: {
+        stateTransition.getTransitions().forEach((transition) => {
+          const description = DOCUMENT_ACTION_DESCRIPTIONS[transition.getAction()];
+
+          txContextLogger.info(
+            {
+              documentId: transition.getId().toString(),
+            },
+            `${description} Document with id: ${transition.getId()}`,
+          );
+        });
+
+        break;
+      }
+      default:
+        break;
+    }
+
     // Remove dry run operations from state transition execution context
 
     const stateTransitionExecutionContext = stateTransition.getExecutionContext();
@@ -98,6 +172,8 @@ function deliverTxFactory(
       .getLastCalculatedFeeDetails();
 
     stateTransitionExecutionContext.clearDryOperations();
+
+    txContextLogger.debug(stateTransitionExecutionContext, 'after dry run cleanup');
 
     // Validate against state
 
@@ -127,9 +203,13 @@ function deliverTxFactory(
 
     executionTimer.stopTimer(TIMERS.DELIVER_TX.APPLY, true);
 
+    txContextLogger.debug(stateTransitionExecutionContext, 'before actual fee calculation');
+
     // Update identity balance
 
     calculateStateTransitionFee(stateTransition);
+
+    txContextLogger.debug(stateTransitionExecutionContext, 'after actual fee calculation');
 
     const actualStateTransitionFees = stateTransitionExecutionContext
       .getLastCalculatedFeeDetails();
@@ -148,6 +228,30 @@ function deliverTxFactory(
       actualStateTransitionFees.feeRefunds,
     );
 
+    txContextLogger.trace(
+      {
+        fees: {
+          predicted: {
+            storage: predictedStateTransitionFees.storageFee,
+            processing: predictedStateTransitionFees.processingFee,
+            refunds: predictedStateTransitionFees.totalRefunds,
+            requiredAmount: predictedStateTransitionFees.requiredAmount,
+            desiredAmount: predictedStateTransitionFees.desiredAmount,
+            operations: predictedStateTransitionOperations.map((operation) => operation.toJSON()),
+          },
+          actual: {
+            storage: actualStateTransitionFees.storageFee,
+            processing: actualStateTransitionFees.processingFee,
+            refunds: actualStateTransitionFees.totalRefunds,
+            requiredAmount: actualStateTransitionFees.requiredAmount,
+            desiredAmount: actualStateTransitionFees.desiredAmount,
+            operations: actualStateTransitionOperations.map((operation) => operation.toJSON()),
+          },
+        },
+        txType: stateTransition.getType(),
+      },
+    );
+
     const applyFeesToBalanceResult = await identityRepository.applyFeesToBalance(
       stateTransition.getOwnerId(),
       feeResult,
@@ -155,82 +259,6 @@ function deliverTxFactory(
     );
 
     const transactionFees = applyFeesToBalanceResult.getValue();
-
-    // Logging
-    /* istanbul ignore next */
-    switch (stateTransition.getType()) {
-      case stateTransitionTypes.DATA_CONTRACT_UPDATE:
-      case stateTransitionTypes.DATA_CONTRACT_CREATE: {
-        const dataContract = stateTransition.getDataContract();
-
-        // Save data contracts in order to create databases for documents on block commit
-        proposalBlockExecutionContext.addDataContract(dataContract);
-
-        const description = DATA_CONTRACT_ACTION_DESCRIPTIONS[stateTransition.getType()];
-
-        txContextLogger.info(
-          {
-            dataContractId: dataContract.getId().toString(),
-          },
-          `Data contract ${description} with id: ${dataContract.getId()}`,
-        );
-
-        break;
-      }
-      case stateTransitionTypes.IDENTITY_CREATE: {
-        const identityId = stateTransition.getIdentityId();
-
-        txContextLogger.info(
-          {
-            identityId: identityId.toString(),
-          },
-          `Identity created with id: ${identityId}`,
-        );
-
-        break;
-      }
-      case stateTransitionTypes.IDENTITY_TOP_UP: {
-        const identityId = stateTransition.getIdentityId();
-
-        txContextLogger.info(
-          {
-            identityId: identityId.toString(),
-          },
-          `Identity topped up with id: ${identityId}`,
-        );
-
-        break;
-      }
-      case stateTransitionTypes.IDENTITY_UPDATE: {
-        const identityId = stateTransition.getIdentityId();
-
-        txContextLogger.info(
-          {
-            identityId: identityId.toString(),
-          },
-          `Identity updated with id: ${identityId}`,
-        );
-        break;
-      }
-      case stateTransitionTypes.DOCUMENTS_BATCH: {
-        stateTransition.getTransitions().forEach((transition) => {
-          const description = DOCUMENT_ACTION_DESCRIPTIONS[transition.getAction()];
-          const dataContract = transition.getDataContract();
-
-          txContextLogger.info(
-            {
-              documentId: transition.getId().toString(),
-              dataContractId: dataContract.getId().toString(),
-            },
-            `Document ${description} with id: ${transition.getId()}`,
-          );
-        });
-
-        break;
-      }
-      default:
-        break;
-    }
 
     const deliverTxTiming = executionTimer.stopTimer(TIMERS.DELIVER_TX.OVERALL);
 

@@ -16,31 +16,37 @@ const {
  * }}
  */
 function calculateOperationFees(operations) {
-  let storageFee = 0;
-  let processingFee = 0;
+  let nonDriveStorageFee = 0;
+  let nonDriveProcessingFee = 0;
 
-  let feeResult;
+  let driveFeeResult;
 
   operations.forEach((operation) => {
-    // TODO should use checked add when moved to Rust
-
-    storageFee += operation.getStorageCost();
-    processingFee += operation.getProcessingCost();
-
-    // Combine refunds which are currently present only in RS Drive's Fee Result
-    if (operation.feeResult && operation.feeResult.inner) {
-      if (!feeResult) {
-        feeResult = operation.feeResult;
+    // Sum fees with RS Drive's Fee Result
+    if (operation.feeResult && operation.feeResult.inner && operation.feeResult.feeRefunds.length > 0) {
+      if (!driveFeeResult) {
+        driveFeeResult = operation.feeResult;
       } else {
-        feeResult.add(operation.feeResult);
+        driveFeeResult.add(operation.feeResult);
       }
+    } else {
+      nonDriveStorageFee += operation.getStorageCost();
+      nonDriveProcessingFee += operation.getProcessingCost();
     }
   });
 
+  if (driveFeeResult) {
+    return {
+      storageFee: driveFeeResult.storageFee + nonDriveStorageFee,
+      processingFee: driveFeeResult.processingFee + nonDriveProcessingFee,
+      feeRefunds: driveFeeResult.feeRefunds,
+    };
+  }
+
   return {
-    storageFee,
-    processingFee,
-    feeRefunds: feeResult ? feeResult.feeRefunds : [],
+    storageFee: nonDriveStorageFee,
+    processingFee: nonDriveProcessingFee,
+    feeRefunds: [],
   };
 }
 

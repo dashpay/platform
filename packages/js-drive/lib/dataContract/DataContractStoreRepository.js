@@ -33,7 +33,7 @@ class DataContractStoreRepository {
         dataContract,
         blockInfo.toObject(),
         Boolean(options.useTransaction),
-        Boolean(options.dryRun), // TODO rs-drive doesn't support this
+        Boolean(options.dryRun),
       );
 
       return new StorageResult(
@@ -74,7 +74,7 @@ class DataContractStoreRepository {
         dataContract,
         blockInfo.toObject(),
         Boolean(options.useTransaction),
-        Boolean(options.dryRun), // TODO rs-drive doesn't support this
+        Boolean(options.dryRun),
       );
 
       return new StorageResult(

@@ -78,10 +78,6 @@ function validateStateTransitionFeeFactory(
         throw new InvalidStateTransitionTypeError(stateTransition.getType());
     }
 
-    if (executionContext.isDryRun()) {
-      return result;
-    }
-
     const fee = calculateStateTransitionFee(stateTransition);
 
     if (balance < fee) {
