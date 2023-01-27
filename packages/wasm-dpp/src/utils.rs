@@ -6,7 +6,7 @@ use dpp::{
     ProtocolError,
 };
 
-use js_sys::{Function, Object, Reflect};
+use js_sys::Function;
 use serde::de::DeserializeOwned;
 use serde_json::Value;
 use wasm_bindgen::{convert::RefFromWasmAbi, prelude::*};

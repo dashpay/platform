@@ -10,7 +10,6 @@ use wasm_bindgen::prelude::*;
 use dpp::document::{property_names, Document, IDENTIFIER_FIELDS};
 
 use crate::buffer::Buffer;
-use crate::conversion::ConversionOptions;
 use crate::errors::RustConversionError;
 use crate::identifier::{identifier_from_js_value, IdentifierWrapper};
 use crate::lodash::lodash_set;
@@ -29,6 +28,13 @@ mod validator;
 pub use document_batch_transition::{DocumentsBatchTransitionWASM, DocumentsContainer};
 pub use factory::DocumentFactoryWASM;
 pub use validator::DocumentValidatorWasm;
+
+#[derive(Serialize, Deserialize, Debug, Clone, Copy, Default)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct ConversionOptions {
+    #[serde(default)]
+    pub skip_identifiers_conversion: bool,
+}
 
 pub(super) enum BinaryType {
     Identifier,
@@ -55,7 +61,8 @@ impl DocumentWasm {
 
         let (identifier_paths, _) = js_data_contract
             .inner()
-            .get_identifiers_and_binary_paths(document_type);
+            .get_identifiers_and_binary_paths(document_type)
+            .with_js_error()?;
 
         // Errors are ignored. When `Buffer` crosses the WASM boundary it becomes an Array.
         // When `Identifier` crosses the WASM boundary it becomes a String. From perspective of JS
@@ -164,7 +171,8 @@ impl DocumentWasm {
         let (identifier_paths, binary_paths) = self
             .0
             .data_contract
-            .get_identifiers_and_binary_paths(&self.0.document_type);
+            .get_identifiers_and_binary_paths(&self.0.document_type)
+            .with_js_error()?;
 
         for path in identifier_paths {
             if let Ok(value) = self.0.data.get_value(path) {
@@ -194,7 +202,7 @@ impl DocumentWasm {
             js_value_to_set.with_serde_to_json_value()?
         };
 
-        let (identifier_paths, _) = self.0.get_identifiers_and_binary_paths();
+        let (identifier_paths, _) = self.0.get_identifiers_and_binary_paths().with_js_error()?;
         for property_path in identifier_paths {
             if property_path == path {
                 let id_string = value_to_set
@@ -303,7 +311,8 @@ impl DocumentWasm {
         };
         let mut value = self.0.to_object().with_js_error()?;
 
-        let (identifiers_paths, binary_paths) = self.0.get_identifiers_and_binary_paths();
+        let (identifiers_paths, binary_paths) =
+            self.0.get_identifiers_and_binary_paths().with_js_error()?;
         let serializer = serde_wasm_bindgen::Serializer::json_compatible();
         let js_value = value.serialize(&serializer)?;
 

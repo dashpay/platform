@@ -27,7 +27,7 @@ pub async fn fetch_and_validate_data_contract_wasm(
     let _ =
         document_value.replace_identifier_paths(document::IDENTIFIER_FIELDS, ReplaceWith::Bytes);
 
-    // TODO! remove the context
+    // TODO! remove the context. The the providing the context in state repository should be optional
     let ctx = StateTransitionExecutionContext::default();
     let validation_result =
         fetch_and_validate_data_contract(&wrapped_state_repository, &document_value, &ctx)

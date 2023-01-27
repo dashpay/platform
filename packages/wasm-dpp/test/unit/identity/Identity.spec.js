@@ -1,3 +1,4 @@
+const varint = require('varint');
 const JSIdentityPublicKey = require('@dashevo/dpp/lib/identity/IdentityPublicKey');
 const protocolVersion = require('@dashevo/dpp/lib/version/protocolVersion');
 const JSIdentity = require('@dashevo/dpp/lib/identity/Identity');
@@ -145,8 +146,7 @@ describe('Identity', () => {
       const identityDataToEncode = identity.toObject();
       delete identityDataToEncode.protocolVersion;
 
-      const protocolVersionUInt32 = Buffer.alloc(4);
-      protocolVersionUInt32.writeUInt32LE(identity.getProtocolVersion(), 0);
+      varint.encode(identity.getProtocolVersion());
 
       expect(result).to.deep.equal(expectedHash);
     });

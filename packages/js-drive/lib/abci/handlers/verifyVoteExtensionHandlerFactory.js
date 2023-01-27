@@ -22,12 +22,12 @@ function verifyVoteExtensionHandlerFactory(proposalBlockExecutionContext) {
    * @return {Promise<abci.ResponseVerifyVoteExtension>}
    */
   async function verifyVoteExtensionHandler() {
-    const consensusLogger = proposalBlockExecutionContext.getConsensusLogger()
+    const contextLogger = proposalBlockExecutionContext.getContextLogger()
       .child({
         abciMethod: 'verifyVoteExtension',
       });
 
-    consensusLogger.debug('VerifyVote ABCI method requested');
+    contextLogger.debug('VerifyVote ABCI method requested');
 
     // TODO Verify withdrawal vote extensions and add logs
 

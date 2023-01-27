@@ -368,6 +368,7 @@
   "properties": {
     "protocolVersion": {
       "type": "integer",
+      "minimum": 0,
       "$comment": "Maximum is the latest protocol version"
     },
     "$schema": {

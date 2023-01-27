@@ -10,7 +10,7 @@ use crate::{
     },
     prelude::Identifier,
     state_repository::MockStateRepositoryLike,
-    tests::utils::{generate_random_identifier, generate_random_identifier_struct},
+    tests::utils::generate_random_identifier_struct,
     version::LATEST_VERSION,
 };
 

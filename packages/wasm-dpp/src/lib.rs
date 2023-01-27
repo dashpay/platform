@@ -22,6 +22,5 @@ mod utils;
 
 mod bls_adapter;
 mod buffer;
-mod conversion;
 mod lodash;
 mod validation;

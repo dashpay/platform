@@ -1,6 +1,7 @@
 use std::collections::BTreeMap;
 
 use ciborium::value::Value as CborValue;
+use integer_encoding::VarInt;
 use serde::{Deserialize, Serialize};
 use serde_json::Value as JsonValue;
 
@@ -9,6 +10,7 @@ use crate::identity::state_transition::asset_lock_proof::AssetLockProof;
 use crate::prelude::Revision;
 use crate::util::cbor_value::{CborBTreeMapHelper, CborCanonicalMap};
 use crate::util::deserializer;
+use crate::util::deserializer::SplitProtocolVersionOutcome;
 use crate::util::json_value::{JsonValueExt, ReplaceWith};
 use crate::{errors::ProtocolError, identifier::Identifier, metadata::Metadata, util::hash};
 
@@ -141,7 +143,7 @@ impl Identity {
 
     pub fn to_cbor(&self) -> Result<Vec<u8>, ProtocolError> {
         // Prepend protocol version to the result
-        let mut buf = self.get_protocol_version().to_le_bytes().to_vec();
+        let mut buf = self.get_protocol_version().encode_var_vec();
 
         let mut identity_map = CborCanonicalMap::new();
 
@@ -169,9 +171,11 @@ impl Identity {
     }
 
     pub fn from_cbor(identity_cbor: &[u8]) -> Result<Self, ProtocolError> {
-        let (protocol_version_bytes, identity_cbor_bytes) = identity_cbor.split_at(4);
-
-        let protocol_version = deserializer::get_protocol_version(protocol_version_bytes)?;
+        let SplitProtocolVersionOutcome {
+            protocol_version,
+            main_message_bytes: identity_cbor_bytes,
+            ..
+        } = deserializer::split_protocol_version(identity_cbor)?;
 
         // Deserialize the contract
         let identity_map: BTreeMap<String, CborValue> =
@@ -180,8 +184,8 @@ impl Identity {
             })?;
 
         let identity_id = identity_map.get_identifier("id")?;
-        let revision = identity_map.get_u64("revision")?;
-        let balance: u64 = identity_map.get_u64("balance")?;
+        let revision = identity_map.get_integer("revision")?;
+        let balance: u64 = identity_map.get_integer("balance")?;
 
         let keys_cbor_value = identity_map.get("publicKeys").ok_or_else(|| {
             ProtocolError::DecodingError(String::from(

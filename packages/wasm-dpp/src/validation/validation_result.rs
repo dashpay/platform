@@ -4,6 +4,7 @@ use js_sys::JsString;
 use wasm_bindgen::prelude::*;
 
 #[wasm_bindgen(js_name=ValidationResult)]
+#[derive(Debug)]
 pub struct ValidationResultWasm(ValidationResult<JsValue>);
 
 impl<T> From<ValidationResult<T>> for ValidationResultWasm
@@ -45,5 +46,14 @@ impl ValidationResultWasm {
     #[wasm_bindgen(js_name=getData)]
     pub fn get_data(&self) -> JsValue {
         self.0.data().unwrap_or(&JsValue::undefined()).to_owned()
+    }
+
+    #[wasm_bindgen(js_name=getFirstError)]
+    pub fn get_first_error(&self) -> JsValue {
+        if !self.0.errors.is_empty() {
+            from_consensus_error_ref(&self.0.errors[0])
+        } else {
+            JsValue::undefined()
+        }
     }
 }

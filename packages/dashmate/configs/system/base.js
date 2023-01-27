@@ -33,7 +33,7 @@ module.exports = {
   },
   core: {
     docker: {
-      image: 'dashpay/dashd:18.1.1',
+      image: 'dashpay/dashd:18.2.0',
     },
     p2p: {
       port: 20001,
@@ -90,9 +90,6 @@ module.exports = {
         http: {
           port: 3000,
         },
-        grpc: {
-          port: 3010,
-        },
         rateLimiter: {
           maxTokens: 300,
           tokensPerFill: 150,
@@ -140,7 +137,7 @@ module.exports = {
       },
       tenderdash: {
         docker: {
-          image: 'dashpay/tenderdash:0.10.0-dev.6',
+          image: 'dashpay/tenderdash:0.10.0-dev.8',
         },
         p2p: {
           port: 26656,
@@ -165,6 +162,7 @@ module.exports = {
 
         },
         nodeId: null,
+        moniker: null,
       },
     },
     dpns: {

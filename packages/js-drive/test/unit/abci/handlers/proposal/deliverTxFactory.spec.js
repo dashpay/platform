@@ -1,21 +1,22 @@
+const crypto = require('crypto');
+
 const DashPlatformProtocol = require('@dashevo/dpp');
 
 const ValidationResult = require('@dashevo/dpp/lib/validation/ValidationResult');
 
 const getIdentityFixture = require('@dashevo/dpp/lib/test/fixtures/getIdentityFixture');
-
 const createDPPMock = require('@dashevo/dpp/lib/test/mocks/createDPPMock');
 const createStateRepositoryMock = require('@dashevo/dpp/lib/test/mocks/createStateRepositoryMock');
 const getDataContractFixture = require('@dashevo/dpp/lib/test/fixtures/getDataContractFixture');
 const getDocumentFixture = require('@dashevo/dpp/lib/test/fixtures/getDocumentsFixture');
 const GrpcErrorCodes = require('@dashevo/grpc-common/lib/server/error/GrpcErrorCodes');
+
 const StateTransitionExecutionContext = require('@dashevo/dpp/lib/stateTransition/StateTransitionExecutionContext');
 
 const SomeConsensusError = require('@dashevo/dpp/lib/test/mocks/SomeConsensusError');
-
 const BlockExecutionContextMock = require('../../../../../lib/test/mock/BlockExecutionContextMock');
-const deliverTxFactory = require('../../../../../lib/abci/handlers/proposal/deliverTxFactory');
 
+const deliverTxFactory = require('../../../../../lib/abci/handlers/proposal/deliverTxFactory');
 const LoggerMock = require('../../../../../lib/test/mock/LoggerMock');
 const DPPValidationAbciError = require('../../../../../lib/abci/errors/DPPValidationAbciError');
 const InvalidArgumentAbciError = require('../../../../../lib/abci/errors/InvalidArgumentAbciError');
@@ -39,6 +40,7 @@ describe('deliverTxFactory', () => {
   let round;
   let proposalBlockExecutionContextMock;
   let stateTransitionExecutionContextMock;
+  let createContextLoggerMock;
 
   beforeEach(async function beforeEach() {
     round = 42;
@@ -105,11 +107,14 @@ describe('deliverTxFactory', () => {
       isStarted: this.sinon.stub(),
     };
 
+    createContextLoggerMock = this.sinon.stub().returns(loggerMock);
+
     deliverTx = deliverTxFactory(
       unserializeStateTransitionMock,
       dppMock,
       proposalBlockExecutionContextMock,
       executionTimerMock,
+      createContextLoggerMock,
     );
   });
 
@@ -148,6 +153,17 @@ describe('deliverTxFactory', () => {
     identity.reduceBalance(stateTransitionExecutionContextMock.getLastCalculatedFeeDetails().total);
 
     expect(stateRepositoryMock.updateIdentity).to.be.calledOnceWith(identity);
+
+    const stHash = crypto
+      .createHash('sha256')
+      .update(documentTx)
+      .digest()
+      .toString('hex')
+      .toUpperCase();
+
+    expect(createContextLoggerMock).to.be.calledOnceWithExactly(loggerMock, {
+      txId: stHash,
+    });
   });
 
   it('should apply a DataContractCreateTransition, add it to block execution state and return ResponseDeliverTx', async () => {

@@ -15,6 +15,14 @@ module.exports = {
     // as webpack names global object "self" for some reason
     globalObject: 'this',
   },
+  optimization: {
+    minimize: true,
+    minimizer: [new TerserPlugin({
+      terserOptions: {
+        keep_classnames: true,
+      },
+    })],
+  },
   mode: 'production',
   optimization: {
     minimize: true,

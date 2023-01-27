@@ -44,7 +44,7 @@ where
         let transition = t.as_ref();
         let document_schema =
             data_contract.get_document_schema(&transition.base().document_type)?;
-        let document_indices = document_schema.get_indices()?;
+        let document_indices = document_schema.get_indices::<Vec<_>>()?;
         if document_indices.is_empty() {
             continue;
         }

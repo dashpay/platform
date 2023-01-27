@@ -24,11 +24,10 @@ use wasm_bindgen::prelude::*;
 use crate::{
     buffer::Buffer,
     console_log,
-    conversion::ConversionOptions,
     identifier::{identifier_from_js_value, IdentifierWrapper},
     lodash::lodash_set,
     utils::{try_to_u64, ToSerdeJSONExt, WithJsError},
-    with_js_error, BinaryType, DataContractWasm,
+    with_js_error, BinaryType, ConversionOptions, DataContractWasm,
 };
 
 #[wasm_bindgen(js_name=DocumentTransition)]

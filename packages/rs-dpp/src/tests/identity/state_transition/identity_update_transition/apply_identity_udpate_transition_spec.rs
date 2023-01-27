@@ -3,7 +3,6 @@ use crate::{
         apply_identity_update_transition::apply_identity_update_transition,
         identity_update_transition::IdentityUpdateTransition,
     },
-    prelude::Identity,
     state_repository::MockStateRepositoryLike,
     state_transition::StateTransitionLike,
     tests::fixtures::{get_identity_update_transition_fixture, identity_fixture},
@@ -66,7 +65,7 @@ async fn should_use_max_identity_on_dry_run() {
 
     let mut state_repository_mock = MockStateRepositoryLike::new();
     state_repository_mock
-        .expect_fetch_identity::<Identity>()
+        .expect_fetch_identity()
         .returning(|_, _| Ok(None));
     state_repository_mock
         .expect_store_identity_public_key_hashes()

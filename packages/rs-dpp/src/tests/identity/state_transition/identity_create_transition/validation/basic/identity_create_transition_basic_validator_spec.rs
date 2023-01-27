@@ -8,9 +8,7 @@ use crate::identity::state_transition::asset_lock_proof::{
     InstantAssetLockProofStructureValidator,
 };
 use crate::identity::state_transition::identity_create_transition::validation::basic::IdentityCreateTransitionBasicValidator;
-use crate::identity::state_transition::validate_public_key_signatures::{
-    PublicKeysSignaturesValidator, TPublicKeysSignaturesValidator,
-};
+use crate::identity::state_transition::validate_public_key_signatures::TPublicKeysSignaturesValidator;
 use crate::identity::validation::TPublicKeysValidator;
 use crate::state_repository::MockStateRepositoryLike;
 use crate::validation::SimpleValidationResult;
@@ -68,7 +66,7 @@ pub fn setup_test(
     (
         crate::tests::fixtures::identity_create_transition_fixture_json(None),
         IdentityCreateTransitionBasicValidator::new(
-            Arc::new(protocol_version_validator),
+            protocol_version_validator,
             public_keys_validator,
             public_keys_transition_validator,
             asset_lock_proof_validator,
@@ -96,9 +94,7 @@ mod validate_identity_create_transition_basic_factory {
         use jsonschema::error::ValidationErrorKind;
 
         use crate::consensus::ConsensusError;
-        use crate::identity::validation::{
-            PublicKeysValidator, RequiredPurposeAndSecurityLevelValidator,
-        };
+        use crate::identity::validation::RequiredPurposeAndSecurityLevelValidator;
         use crate::state_repository::MockStateRepositoryLike;
         use crate::tests::fixtures::get_public_keys_validator_for_transition;
         use crate::tests::utils::SerdeTestExtension;
@@ -193,9 +189,7 @@ mod validate_identity_create_transition_basic_factory {
 
         use crate::assert_consensus_errors;
         use crate::consensus::ConsensusError;
-        use crate::identity::validation::{
-            PublicKeysValidator, RequiredPurposeAndSecurityLevelValidator,
-        };
+        use crate::identity::validation::RequiredPurposeAndSecurityLevelValidator;
         use crate::state_repository::MockStateRepositoryLike;
         use crate::tests::fixtures::get_public_keys_validator_for_transition;
         use crate::tests::utils::SerdeTestExtension;
@@ -265,16 +259,12 @@ mod validate_identity_create_transition_basic_factory {
 
         use jsonschema::error::ValidationErrorKind;
 
+        use crate::assert_consensus_errors;
         use crate::consensus::ConsensusError;
-        use crate::identity::validation::{
-            PublicKeysValidator, RequiredPurposeAndSecurityLevelValidator,
-        };
+        use crate::identity::validation::RequiredPurposeAndSecurityLevelValidator;
         use crate::state_repository::MockStateRepositoryLike;
-        use crate::tests::fixtures::{
-            get_public_keys_validator, get_public_keys_validator_for_transition,
-        };
+        use crate::tests::fixtures::get_public_keys_validator_for_transition;
         use crate::tests::utils::SerdeTestExtension;
-        use crate::{assert_consensus_errors, NonConsensusError};
 
         use super::super::setup_test;
 

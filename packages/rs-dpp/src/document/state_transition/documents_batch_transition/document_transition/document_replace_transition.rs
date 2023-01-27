@@ -42,7 +42,7 @@ impl DocumentTransitionObjectLike for DocumentReplaceTransition {
         let document_type = json_value.get_string("$type")?;
 
         let (identifiers_paths, binary_paths) =
-            data_contract.get_identifiers_and_binary_paths(document_type);
+            data_contract.get_identifiers_and_binary_paths(document_type)?;
 
         // Only dynamic binary paths are replaced with Bytes (no static ones)
         json_value.replace_binary_paths(binary_paths.into_iter(), ReplaceWith::Bytes)?;
@@ -86,7 +86,7 @@ impl DocumentTransitionObjectLike for DocumentReplaceTransition {
         let (identifier_paths, binary_paths) = self
             .base
             .data_contract
-            .get_identifiers_and_binary_paths(&self.base.document_type);
+            .get_identifiers_and_binary_paths(&self.base.document_type)?;
 
         value.replace_binary_paths(identifier_paths, ReplaceWith::Base58)?;
         value.replace_binary_paths(binary_paths, ReplaceWith::Base64)?;

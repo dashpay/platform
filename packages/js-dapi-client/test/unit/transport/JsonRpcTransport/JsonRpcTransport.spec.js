@@ -88,7 +88,7 @@ describe('JsonRpcTransport', () => {
       expect(requestJsonRpcMock).to.be.calledOnceWithExactly(
         dapiAddress.getProtocol(),
         dapiAddress.getHost(),
-        dapiAddress.getHttpPort(),
+        dapiAddress.getPort(),
         dapiAddress.isSelfSignedCertificateAllowed(),
         method,
         params,
@@ -115,7 +115,7 @@ describe('JsonRpcTransport', () => {
         expect(requestJsonRpcMock).to.be.calledOnceWithExactly(
           dapiAddress.getProtocol(),
           dapiAddress.getHost(),
-          dapiAddress.getHttpPort(),
+          dapiAddress.getPort(),
           dapiAddress.isSelfSignedCertificateAllowed(),
           method,
           params,
@@ -170,7 +170,7 @@ describe('JsonRpcTransport', () => {
         expect(requestJsonRpcMock).to.be.calledOnceWithExactly(
           dapiAddress.getProtocol(),
           dapiAddress.getHost(),
-          dapiAddress.getHttpPort(),
+          dapiAddress.getPort(),
           dapiAddress.isSelfSignedCertificateAllowed(),
           method,
           params,
@@ -212,7 +212,7 @@ describe('JsonRpcTransport', () => {
         expect(requestJsonRpcMock).to.be.calledOnceWithExactly(
           dapiAddress.getProtocol(),
           dapiAddress.getHost(),
-          dapiAddress.getHttpPort(),
+          dapiAddress.getPort(),
           dapiAddress.isSelfSignedCertificateAllowed(),
           method,
           {},
@@ -256,7 +256,7 @@ describe('JsonRpcTransport', () => {
         expect(requestJsonRpcMock).to.be.calledOnceWithExactly(
           dapiAddress.getProtocol(),
           dapiAddress.getHost(),
-          dapiAddress.getHttpPort(),
+          dapiAddress.getPort(),
           dapiAddress.isSelfSignedCertificateAllowed(),
           method,
           params,
