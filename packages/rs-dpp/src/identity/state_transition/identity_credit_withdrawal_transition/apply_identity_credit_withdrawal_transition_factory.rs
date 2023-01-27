@@ -14,7 +14,10 @@ use crate::{
     util::{entropy_generator::generate, json_value::JsonValueExt},
 };
 
-use super::IdentityCreditWithdrawalTransition;
+use super::{
+    validation::state::validate_existing_withdrawal_id::validate_existing_withdrawal_id,
+    IdentityCreditWithdrawalTransition,
+};
 
 const PLATFORM_BLOCK_HEADER_TIME_PROPERTY: &str = "time";
 const PLATFORM_BLOCK_HEADER_TIME_SECONDS_PROPERTY: &str = "seconds";
@@ -58,7 +61,6 @@ where
             .await?;
 
         let document_type = String::from(withdrawals_contract::types::WITHDRAWAL);
-        let document_entropy = generate()?;
         let document_created_at_millis = latest_platform_block_header
             .get(PLATFORM_BLOCK_HEADER_TIME_PROPERTY)
             .ok_or_else(|| anyhow!("time property is not set in block header"))?
@@ -73,12 +75,32 @@ where
             withdrawals_contract::property_names::STATUS: withdrawals_contract::Status::QUEUED,
         });
 
-        let document_id = generate_document_id::generate_document_id(
+        let document_entropy = generate()?;
+
+        let mut document_id = generate_document_id::generate_document_id(
             &data_contract_id,
             &data_contract_owner_id,
             &document_type,
             &document_entropy,
         );
+
+        while validate_existing_withdrawal_id(
+            &self.state_repository,
+            &document_id,
+            state_transition,
+        )
+        .await
+        .is_err()
+        {
+            let document_entropy = generate()?;
+
+            document_id = generate_document_id::generate_document_id(
+                &data_contract_id,
+                &data_contract_owner_id,
+                &document_type,
+                &document_entropy,
+            )
+        }
 
         // TODO: use DocumentFactory once it is complete
         let withdrawal_document = Document {

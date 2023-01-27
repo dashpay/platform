@@ -1,7 +1,8 @@
 use thiserror::Error;
 
 use crate::{
-    CompatibleProtocolVersionIsNotDefinedError, InvalidVectorSizeError, SerdeParsingError,
+    prelude::Identifier, CompatibleProtocolVersionIsNotDefinedError, InvalidVectorSizeError,
+    SerdeParsingError,
 };
 
 #[derive(Debug, Error)]
@@ -34,6 +35,9 @@ pub enum NonConsensusError {
         object_name: &'static str,
         details: String,
     },
+
+    #[error("Withdrawal with id {id_string} already exists")]
+    WithdrawalIdAlreadyExists { id_string: String },
 
     #[error(transparent)]
     Error(#[from] anyhow::Error),
