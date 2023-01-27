@@ -172,20 +172,20 @@ pub fn generic_of_js_val<T: RefFromWasmAbi<Abi = u32>>(
     }
 }
 
-pub fn try_to_u64(value: JsValue) -> Result<u64, JsValue> {
+pub fn try_to_u64(value: JsValue) -> Result<u64, anyhow::Error> {
     let result = if value.is_bigint() {
-        js_sys::BigInt::new(&value)?
+        js_sys::BigInt::new(&value)
+            .map_err(|e| anyhow!("unable to create bigInt: {}", e.to_string()))?
             .try_into()
             .map_err(|e| anyhow!("conversion of BigInt to u64 failed: {:#}", e))
-            .with_js_error()?
     } else if value.as_f64().is_some() {
         let number = js_sys::Number::from(value);
-        convert_number_to_u64(number).with_js_error()?
+        convert_number_to_u64(number)
     } else {
-        bail_js!("setCreatedAt supports numbers or bigint")
+        bail!("supported types are Number or BigInt")
     };
 
-    Ok(result)
+    result
 }
 
 pub fn convert_number_to_u64(js_number: js_sys::Number) -> Result<u64, anyhow::Error> {

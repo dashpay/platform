@@ -428,7 +428,7 @@ describe('validateDocumentsBatchTransitionStateFactory', () => {
       transitions: documentTransitionsJs.map((t) => t.toObject()),
     }, [dataContract]);
 
-    documents[0].setCreatedAt(replaceDocument.getCreatedAt());
+    documents[0].setCreatedAt(replaceDocument.getCreatedAt().getMilliseconds());
     stateRepositoryMock.fetchDocuments.returns([documents[0]]);
 
     const result = await validateDocumentsBatchTransitionState(
@@ -847,7 +847,7 @@ describe('validateDocumentsBatchTransitionStateFactory', () => {
 
         const transitions = stateTransition.getTransitions();
         transitions.forEach((t) => {
-          const createdAtMinus6Mins = t.getCreatedAt() - BigInt(6 * 60 * 1000);
+          const createdAtMinus6Mins = t.getCreatedAt() - (6 * 60 * 1000);
           t.setCreatedAt(createdAtMinus6Mins);
           t.setUpdatedAt(undefined);
         });
@@ -924,7 +924,7 @@ describe('validateDocumentsBatchTransitionStateFactory', () => {
 
         const transitions = stateTransition.getTransitions();
         transitions.forEach((t) => {
-          const createdAtMinus6Mins = t.getUpdatedAt() - BigInt(6 * 60 * 1000);
+          const createdAtMinus6Mins = t.getUpdatedAt() - (6 * 60 * 1000);
           t.setUpdatedAt(createdAtMinus6Mins);
           t.setCreatedAt(undefined);
         });
@@ -1002,7 +1002,7 @@ describe('validateDocumentsBatchTransitionStateFactory', () => {
 
         const transitions = stateTransition.getTransitions();
         transitions.forEach((t) => {
-          const createdAtMinus6Mins = t.getUpdatedAt() - BigInt(6 * 60 * 1000);
+          const createdAtMinus6Mins = t.getUpdatedAt() - (6 * 60 * 1000);
           t.setUpdatedAt(createdAtMinus6Mins);
           t.setCreatedAt(undefined);
         });
@@ -1143,7 +1143,7 @@ describe('validateDocumentsBatchTransitionStateFactory', () => {
 
         const transitions = stateTransition.getTransitions();
         transitions.forEach((t) => {
-          const createdAtMinus6Mins = t.getUpdatedAt() - BigInt(6 * 60 * 1000);
+          const createdAtMinus6Mins = t.getUpdatedAt() - (6 * 60 * 1000);
           t.setUpdatedAt(createdAtMinus6Mins);
         });
         stateTransition.setTransitions(transitions);
@@ -1227,7 +1227,7 @@ describe('validateDocumentsBatchTransitionStateFactory', () => {
         stateRepositoryMock.fetchDocuments.returns([documentToReturn]);
 
         const transitions = stateTransition.getTransitions(); transitions.forEach((t) => {
-          const createdAtMinus6Mins = t.getUpdatedAt() - BigInt(6 * 60 * 1000);
+          const createdAtMinus6Mins = t.getUpdatedAt() - (6 * 60 * 1000);
           t.setUpdatedAt(createdAtMinus6Mins);
         });
         stateTransition.setTransitions(transitions);

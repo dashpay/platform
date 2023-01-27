@@ -2,6 +2,7 @@ mod document_create_transition;
 mod document_delete_transition;
 mod document_replace_transition;
 
+use anyhow::Context;
 pub use document_create_transition::*;
 pub use document_delete_transition::*;
 pub use document_replace_transition::*;
@@ -67,7 +68,7 @@ impl DocumentTransitionWasm {
     #[wasm_bindgen(js_name=getRevision)]
     pub fn get_revision(&self) -> JsValue {
         if let Some(revision) = self.0.get_revision() {
-            revision.into()
+            (revision as f64).into()
         } else {
             JsValue::NULL
         }
@@ -76,7 +77,7 @@ impl DocumentTransitionWasm {
     #[wasm_bindgen(js_name=getCreatedAt)]
     pub fn get_created_at(&self) -> JsValue {
         if let Some(created_at) = self.0.get_created_at() {
-            created_at.into()
+            (created_at as f64).into()
         } else {
             JsValue::NULL
         }
@@ -84,7 +85,7 @@ impl DocumentTransitionWasm {
     #[wasm_bindgen(js_name=getUpdatedAt)]
     pub fn get_updated_at(&self) -> JsValue {
         if let Some(updated_at) = self.0.get_updated_at() {
-            updated_at.into()
+            (updated_at as f64).into()
         } else {
             JsValue::NULL
         }
@@ -96,8 +97,9 @@ impl DocumentTransitionWasm {
             self.0.set_updated_at(None);
             return Ok(());
         }
-        let timestamp_millis = try_to_u64(js_timestamp_millis)?;
-        // TODO we should store timestamps as u64 in DocumentTransitions
+        let timestamp_millis = try_to_u64(js_timestamp_millis)
+            .context("setting updatedAt in DocumentsBatchTransition")
+            .with_js_error()?;
         self.0.set_updated_at(Some(timestamp_millis as i64));
 
         Ok(())
@@ -109,8 +111,9 @@ impl DocumentTransitionWasm {
             self.0.set_created_at(None);
             return Ok(());
         }
-        let timestamp_millis = try_to_u64(js_timestamp_millis)?;
-        // TODO we should store timestamps as u64 in DocumentTransitions
+        let timestamp_millis = try_to_u64(js_timestamp_millis)
+            .context("setting createdAt in DocumentsBatchTransition")
+            .with_js_error()?;
         self.0.set_created_at(Some(timestamp_millis as i64));
 
         Ok(())

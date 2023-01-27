@@ -13,7 +13,7 @@ use crate::buffer::Buffer;
 use crate::errors::RustConversionError;
 use crate::identifier::{identifier_from_js_value, IdentifierWrapper};
 use crate::lodash::lodash_set;
-use crate::utils::{convert_number_to_u64, try_to_u64, WithJsError};
+use crate::utils::{try_to_u64, WithJsError};
 use crate::utils::{with_serde_to_json_value, ToSerdeJSONExt};
 use crate::{console_log, with_js_error};
 use crate::{DataContractWasm, MetadataWasm};
@@ -272,14 +272,18 @@ impl DocumentWasm {
 
     #[wasm_bindgen(js_name=setCreatedAt)]
     pub fn set_created_at(&mut self, number: JsValue) -> Result<(), JsValue> {
-        let ts = try_to_u64(number)?;
+        let ts = try_to_u64(number)
+            .context("setting createdAt in Document")
+            .with_js_error()?;
         self.0.created_at = Some(ts as i64);
         Ok(())
     }
 
     #[wasm_bindgen(js_name=setUpdatedAt)]
     pub fn set_updated_at(&mut self, number: JsValue) -> Result<(), JsValue> {
-        let ts = try_to_u64(number)?;
+        let ts = try_to_u64(number)
+            .context("setting updatedAt in Document")
+            .with_js_error()?;
         self.0.updated_at = Some(ts as i64);
         Ok(())
     }
