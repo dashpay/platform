@@ -422,6 +422,8 @@ module.exports = {
     Object.entries(configFile.configs)
       .forEach(([, config]) => {
         if (config.platform) {
+          delete config.platform.dapi.envoy.grpc;
+
           if (config.group === 'local') {
             config.platform.drive.tenderdash.moniker = config.name;
           } else {
