@@ -21,8 +21,10 @@ const MaxIdentityPublicKeyLimitReachedError = require(
    * @param {RawIdentityPublicKey[]} rawPublicKeys
    *
    * @return {ValidationResult}
-   */ function validatePublicKeysState(rawPublicKeys) {
+   */
+function validatePublicKeysState(rawPublicKeys) {
   const result = new ValidationResult();
+
   if (rawPublicKeys.length > identitySchema.properties.publicKeys.maxItems) {
     result.addError(
       new MaxIdentityPublicKeyLimitReachedError(identitySchema.properties.publicKeys.maxItems),
