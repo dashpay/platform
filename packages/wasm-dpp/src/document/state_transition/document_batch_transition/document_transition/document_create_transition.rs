@@ -48,7 +48,9 @@ impl DocumentCreateTransitionWasm {
             .get_string(document::property_names::DOCUMENT_TYPE)
             .with_js_error()?;
 
-        let (identifier_paths, _) = data_contract.get_identifiers_and_binary_paths(document_type);
+        let (identifier_paths, _) = data_contract
+            .get_identifiers_and_binary_paths(document_type)
+            .with_js_error()?;
         // Allow to fail as it could be a Buffer or Identifier
         let _ = value.replace_identifier_paths(
             identifier_paths
@@ -147,7 +149,8 @@ impl DocumentCreateTransitionWasm {
             .inner
             .base
             .data_contract
-            .get_identifiers_and_binary_paths(&self.inner.base.document_type);
+            .get_identifiers_and_binary_paths(&self.inner.base.document_type)
+            .with_js_error()?;
 
         for property_path in identifier_paths {
             if property_path.starts_with(&path) {
@@ -187,7 +190,8 @@ impl DocumentCreateTransitionWasm {
             .inner
             .base
             .data_contract
-            .get_identifiers_and_binary_paths(&self.inner.base.document_type);
+            .get_identifiers_and_binary_paths(&self.inner.base.document_type)
+            .with_js_error()?;
 
         to_object(
             &self.inner,

@@ -158,7 +158,8 @@ impl DocumentWasm {
         let (identifier_paths, binary_paths) = self
             .0
             .data_contract
-            .get_identifiers_and_binary_paths(&self.0.document_type);
+            .get_identifiers_and_binary_paths(&self.0.document_type)
+            .with_js_error()?;
 
         for path in identifier_paths {
             if let Ok(value) = self.0.data.get_value(path) {
