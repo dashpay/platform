@@ -9,10 +9,7 @@ const generateRandomIdentifierJs = require('@dashevo/dpp/lib/test/utils/generate
 const StateTransitionExecutionContextJs = require('@dashevo/dpp/lib/stateTransition/StateTransitionExecutionContext');
 
 const sinon = require('sinon');
-const { expectValidationError } = require('../../../../../../../lib/test/expect/expectError')
 const { default: loadWasmDpp } = require('../../../../../../../dist');
-
-
 
 let Identifier;
 let DataContract;
@@ -56,15 +53,19 @@ describe('fetchDocumentsFactory', () => {
     const dataContractBuffer = documentsJs[0].dataContract.toBuffer();
     const dataContract = DataContract.fromBuffer(dataContractBuffer);
 
-    documents = documentsJs.map((document) => new Document(document.toObject(), dataContract.clone()));
+    documents = documentsJs.map((document) => new Document(
+      document.toObject(), dataContract.clone(),
+    ));
     documentTransitionsJs = getDocumentTransitionsFixture({
       create: documentsJs,
     });
-    documentTransitions = documentTransitionsJs.map((transition) =>
-      DocumentTransition.fromTransitionCreate(
-        new DocumentCreateTransition(transition.toObject(), dataContract.clone())
-      )
-    )
+    documentTransitions = documentTransitionsJs.map(
+      (transition) => DocumentTransition.fromTransitionCreate(
+        new DocumentCreateTransition(
+          transition.toObject(), dataContract.clone(),
+        ),
+      ),
+    );
   });
 
   it('should fetch specified Documents using StateRepository', async () => {
@@ -185,8 +186,12 @@ describe('fetchDocumentsFactory', () => {
       documentTransitionsJs[3].getType(),
     ).returns([documents[3], documents[4]]);
 
+    await fetchDocuments(
+      stateRepositoryMock,
+      documentTransitions,
+      executionContext,
+    );
 
-    const fetchedDocuments = await fetchDocuments(stateRepositoryMock, documentTransitions, executionContext);
     expect(stateRepositoryMock.fetchDocuments).to.have.been.calledThrice();
   });
 });

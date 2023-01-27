@@ -13,7 +13,7 @@ const DuplicateUniqueIndexErrorJs = require('@dashevo/dpp/lib/errors/consensus/s
 const StateTransitionExecutionContextJs = require('@dashevo/dpp/lib/stateTransition/StateTransitionExecutionContext');
 
 const sinon = require('sinon');
-const { expectValidationError } = require('../../../../../../../lib/test/expect/expectError')
+const { expectValidationError } = require('../../../../../../../lib/test/expect/expectError');
 const { default: loadWasmDpp } = require('../../../../../../../dist');
 
 let DataContract;
@@ -25,8 +25,6 @@ let DocumentCreateTransition;
 let DocumentTransition;
 let Identifier;
 let StateTransitionExecutionContext;
-
-
 
 describe('validateDocumentsUniquenessByIndices', () => {
   let stateRepositoryMockJs;
@@ -60,16 +58,19 @@ describe('validateDocumentsUniquenessByIndices', () => {
     ownerId = Identifier.from(ownerIdJs.toBuffer());
 
     dataContractJs = getContractFixture();
-    dataContract = DataContract.fromBuffer(dataContractJs.toBuffer());
+    dataContract = new DataContract(dataContractJs.toObject());
 
     documentsJs = getDocumentsFixture(dataContractJs);
     documentTransitionsJs = getDocumentTransitionsFixture({
       create: documentsJs,
     });
 
-    documentTransitions = documentTransitionsJs.map((transition) =>
-      DocumentTransition.fromTransitionCreate(
-        new DocumentCreateTransition(transition.toObject(), dataContract.clone()))
+    documentTransitions = documentTransitionsJs.map(
+      (transition) => DocumentTransition.fromTransitionCreate(
+        new DocumentCreateTransition(
+          transition.toObject(), dataContract.clone(),
+        ),
+      ),
     );
 
     stateRepositoryMock = createStateRepositoryMock(this.sinonSandbox);
@@ -104,7 +105,6 @@ describe('validateDocumentsUniquenessByIndices', () => {
     expect(stateRepositoryMockJs.fetchDocuments).to.have.not.been.called();
   });
 
-
   it('should return valid result if Documents have no unique indices - Rust', async () => {
     const [niceDocument] = documentsJs;
     const noIndexDocumentTransitions = getDocumentTransitionsFixture({
@@ -112,7 +112,9 @@ describe('validateDocumentsUniquenessByIndices', () => {
     });
 
     const documentTransition = DocumentTransition.fromTransitionCreate(
-      new DocumentCreateTransition(noIndexDocumentTransitions[0].toObject(), dataContract)
+      new DocumentCreateTransition(
+        noIndexDocumentTransitions[0].toObject(), dataContract,
+      ),
     );
 
     const result = await validateDocumentsUniquenessByIndices(
@@ -197,7 +199,6 @@ describe('validateDocumentsUniquenessByIndices', () => {
         },
       )
       .resolves([williamDocument]);
-
 
     const result = await validateDocumentsUniquenessByIndices(
       stateRepositoryMock,
@@ -433,11 +434,10 @@ describe('validateDocumentsUniquenessByIndices', () => {
     const indexedDocument = new Document(indexedDocumentJs.toObject(), dataContract.clone());
     const indexedDocumentTransitions = getDocumentTransitionsFixture({
       create: [indexedDocumentJs],
-    }).map((t) =>
-      DocumentTransition.fromTransitionCreate(
-        new DocumentCreateTransition(t.toObject(), dataContract.clone())
-
-      )
+    }).map(
+      (t) => DocumentTransition.fromTransitionCreate(
+        new DocumentCreateTransition(t.toObject(), dataContract.clone()),
+      ),
     );
 
     stateRepositoryMockJs.fetchDocuments
@@ -508,13 +508,15 @@ describe('validateDocumentsUniquenessByIndices', () => {
 
   it('should return valid result if Document being created and has createdAt and updatedAt indices - Rust', async () => {
     const [, , , , , , uniqueDatesDocumentJs] = documentsJs;
-    const uniqueDatesDocument = new Document(uniqueDatesDocumentJs.toObject(), dataContract.clone());
+    const uniqueDatesDocument = new Document(
+      uniqueDatesDocumentJs.toObject(), dataContract.clone(),
+    );
     const uniqueDatesDocumentTransitions = getDocumentTransitionsFixture({
       create: [uniqueDatesDocumentJs],
-    }).map((t) =>
-      DocumentTransition.fromTransitionCreate(
-        new DocumentCreateTransition(t.toObject(), dataContract.clone())
-      )
+    }).map(
+      (t) => DocumentTransition.fromTransitionCreate(
+        new DocumentCreateTransition(t.toObject(), dataContract.clone()),
+      ),
     );
 
     stateRepositoryMock.fetchDocuments
@@ -570,7 +572,9 @@ describe('validateDocumentsUniquenessByIndices', () => {
 
     executionContext.enableDryRun();
     const documentTransition = DocumentTransition.fromTransitionCreate(
-      new DocumentCreateTransition(noIndexDocumentTransitions[0].toObject(), dataContract)
+      new DocumentCreateTransition(
+        noIndexDocumentTransitions[0].toObject(), dataContract,
+      ),
     );
 
     const result = await validateDocumentsUniquenessByIndices(

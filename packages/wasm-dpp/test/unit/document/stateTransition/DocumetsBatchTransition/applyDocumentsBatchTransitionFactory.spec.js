@@ -50,9 +50,13 @@ describe('applyDocumentsBatchTransitionFactory', () => {
 
   beforeEach(async function beforeEach() {
     ({
-      DataContract, Document, DocumentsBatchTransition, StateTransitionExecutionContext, applyDocumentsBatchTransition,
+      DataContract,
+      Document,
+      DocumentsBatchTransition,
+      StateTransitionExecutionContext,
+      applyDocumentsBatchTransition,
       // Errors:
-      DocumentNotProvidedError
+      DocumentNotProvidedError,
     } = await loadWasmDpp());
 
     dataContractJs = getDataContractFixture();
@@ -164,25 +168,29 @@ describe('applyDocumentsBatchTransitionFactory', () => {
     expect(stateRepositoryMock.createDocument).to.have.been.calledOnce();
 
     const [fetchContractId, fetchDocumentType] = stateRepositoryMock.fetchDocuments.getCall(0).args;
-    expect(fetchContractId.toBuffer()).to.deep.equal(documentTransitionsJs[1].getDataContractId())
-    expect(fetchDocumentType).to.equal(documentTransitionsJs[1].getType())
-
+    expect(fetchContractId.toBuffer()).to.deep.equal(documentTransitionsJs[1].getDataContractId());
+    expect(fetchDocumentType).to.equal(documentTransitionsJs[1].getType());
 
     expect(stateRepositoryMock.updateDocument).to.have.been.calledOnce();
     expect(stateRepositoryMock.fetchDocuments).to.have.been.calledOnce();
 
     const [createDocument] = stateRepositoryMock.createDocument.getCall(0).args;
     const [updateDocument] = stateRepositoryMock.updateDocument.getCall(0).args;
-    const [deleteDataContract, deleteDocumentType, deleteDocumentId] = stateRepositoryMock.removeDocument.getCall(0).args;
+    const [
+      deleteDataContract,
+      deleteDocumentType,
+      deleteDocumentId,
+    ] = stateRepositoryMock.removeDocument.getCall(0).args;
 
     expect(createDocument.toObject()).to.deep.equal(documentsFixtureJs[0].toObject());
-    let expectReplaceDocument = documentsJs[0].toJSON();
+    const expectDocument = documentsJs[0].toJSON();
 
-    // ! Why we need to replace. Apparently, `applyDocumentsTransition` somehow modifies `documentsJs` and
-    // ! increments revision and $updatedAt. I have no clue how its possible.
-    expectReplaceDocument.$updatedAt = documentTransitionsJs[1].toJSON().$updatedAt;
-    expectReplaceDocument.$revision = documentTransitionsJs[1].toJSON().$revision;
-    expect(updateDocument.toJSON()).to.deep.equal(expectReplaceDocument);
+    // ! Why we need to replace. Apparently, `applyDocumentsTransition` somehow
+    // ! modifies `documentsJs` and increments revision and $updatedAt. I have
+    // ! no clue how it's possible.
+    expectDocument.$updatedAt = documentTransitionsJs[1].toJSON().$updatedAt;
+    expectDocument.$revision = documentTransitionsJs[1].toJSON().$revision;
+    expect(updateDocument.toJSON()).to.deep.equal(expectDocument);
 
     expect(deleteDataContract.toObject()).to.deep.equal(dataContract.toObject());
     expect(deleteDocumentType).to.deep.equal(documentTransitionsJs[2].getType());
@@ -213,7 +221,8 @@ describe('applyDocumentsBatchTransitionFactory', () => {
       expect.fail('Error was not thrown');
     } catch (e) {
       expect(e).to.be.an.instanceOf(DocumentNotProvidedError);
-      expect(e.getDocumentTransition().toObject()).to.deep.equal(replaceDocumentTransition.toObject());
+      expect(e.getDocumentTransition().toObject())
+        .to.deep.equal(replaceDocumentTransition.toObject());
     }
   });
 
@@ -273,8 +282,6 @@ describe('applyDocumentsBatchTransitionFactory', () => {
       ownerId,
       transitions: documentTransitionsJs.map((t) => t.toObject()),
     }, [dataContract]);
-
-
 
     stateTransition.getExecutionContext().enableDryRun();
 

@@ -10,7 +10,6 @@ const { expectValidationError } = require('@dashevo/dpp/lib/test/expect/expectEr
 const { default: loadWasmDpp } = require('../../../../../../../dist');
 
 let DataContract;
-let Identifier;
 let validatePartialCompoundIndices;
 let InconsistentCompoundIndexDataError;
 let ValidationResult;
@@ -21,12 +20,10 @@ describe('validatePartialCompoundIndices', () => {
   let dataContractJs;
   let dataContract;
   let ownerIdJs;
-  let ownerId;
-
 
   beforeEach(async () => {
     ({
-      DataContract, Identifier, Document,
+      DataContract,
       validatePartialCompoundIndices,
       ValidationResult,
       // Errors:
@@ -36,7 +33,6 @@ describe('validatePartialCompoundIndices', () => {
     dataContractJs = getContractFixture();
     dataContract = DataContract.fromBuffer(dataContractJs.toBuffer());
     ownerIdJs = dataContractJs.getOwnerId();
-    ownerId = Identifier.from(ownerIdJs.toBuffer());
   });
 
   it('should return invalid result if compound index contains not all fields', () => {
@@ -48,7 +44,9 @@ describe('validatePartialCompoundIndices', () => {
       create: documentsJs,
     }).map((documentTransition) => documentTransition.toObject());
 
-    const result = validatePartialCompoundIndicesJs(ownerIdJs, rawDocumentTransitions, dataContractJs);
+    const result = validatePartialCompoundIndicesJs(
+      ownerIdJs, rawDocumentTransitions, dataContractJs,
+    );
 
     expectValidationError(result, InconsistentCompoundIndexDataErrorJs);
 
@@ -59,7 +57,9 @@ describe('validatePartialCompoundIndices', () => {
     const { optionalUniqueIndexedDocument } = dataContractJs.getDocuments();
 
     expect(error.getIndexedProperties()).to.deep.equal(
-      optionalUniqueIndexedDocument.indices[1].properties.map((i) => Object.keys(i)[0]),
+      optionalUniqueIndexedDocument.indices[1].properties.map(
+        (i) => Object.keys(i)[0],
+      ),
     );
 
     expect(error.getDocumentType()).to.equal('optionalUniqueIndexedDocument');
@@ -101,7 +101,9 @@ describe('validatePartialCompoundIndices', () => {
       create: documentsJs,
     }).map((documentTransition) => documentTransition.toObject());
 
-    const result = validatePartialCompoundIndicesJs(ownerIdJs, rawDocumentTransitions, dataContractJs);
+    const result = validatePartialCompoundIndicesJs(
+      ownerIdJs, rawDocumentTransitions, dataContractJs,
+    );
 
     expect(result).to.be.an.instanceOf(ValidationResultJs);
     expect(result.isValid()).to.be.true();
@@ -129,7 +131,9 @@ describe('validatePartialCompoundIndices', () => {
       create: documentsJs,
     }).map((documentTransition) => documentTransition.toObject());
 
-    const result = validatePartialCompoundIndicesJs(ownerIdJs, rawDocumentTransitions, dataContractJs);
+    const result = validatePartialCompoundIndicesJs(
+      ownerIdJs, rawDocumentTransitions, dataContractJs,
+    );
 
     expect(result).to.be.an.instanceOf(ValidationResultJs);
     expect(result.isValid()).to.be.true();

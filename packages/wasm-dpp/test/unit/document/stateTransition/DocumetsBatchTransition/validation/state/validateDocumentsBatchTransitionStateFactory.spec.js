@@ -77,20 +77,15 @@ describe('validateDocumentsBatchTransitionStateFactory', () => {
       validateDocumentsBatchTransitionState,
       // Errors
       DataContractNotPresentNotConsensusError,
-
-      // New errors
-      DocumentAlreadyPresentError,
       DocumentNotFoundError,
       InvalidDocumentRevisionError,
-      InvalidDocumentActionError,
       DocumentOwnerIdMismatchError,
       DocumentTimestampsMismatchError,
       DocumentTimestampWindowViolationError,
-
     } = await loadWasmDpp());
 
     dataContractJs = getDataContractFixture();
-    dataContract = DataContract.fromBuffer(dataContractJs.toBuffer());
+    dataContract = new DataContract(dataContractJs.toObject());
 
     documentsJs = getDocumentsFixture(dataContractJs);
     documents = documentsJs.map((d) => {
@@ -146,7 +141,6 @@ describe('validateDocumentsBatchTransitionStateFactory', () => {
       executeDataTriggersMock,
     );
 
-
     fakeTime = this.sinonSandbox.useFakeTimers(new Date());
   });
 
@@ -195,7 +189,6 @@ describe('validateDocumentsBatchTransitionStateFactory', () => {
     }
   });
 
-
   it('should return invalid result if document transition with action "create" is already present', async () => {
     fetchDocumentsMock.resolves([documentsJs[0]]);
 
@@ -225,7 +218,9 @@ describe('validateDocumentsBatchTransitionStateFactory', () => {
   it('should return invalid result if document transition with action "create" is already present  - Rust', async () => {
     stateRepositoryMock.fetchDocuments.returns([documents[0]]);
 
-    const result = await validateDocumentsBatchTransitionState(stateRepositoryMock, stateTransition);
+    const result = await validateDocumentsBatchTransitionState(
+      stateRepositoryMock, stateTransition,
+    );
 
     expect(result.isValid()).is.not.true();
 
@@ -234,12 +229,10 @@ describe('validateDocumentsBatchTransitionStateFactory', () => {
     expect(error.getCode()).to.equal(4004);
     expect(error.getDocumentId()).to.deep.equal(documentTransitionsJs[0].getId().toBuffer());
 
-
     expect(stateRepositoryMock.fetchDataContract).to.have.been.calledOnce();
     const [fetchDataContractId] = stateRepositoryMock.fetchDataContract.getCall(0).args;
     expect(fetchDataContractId.toBuffer()).to.deep.equal(dataContract.getId().toBuffer());
   });
-
 
   it('should return invalid result if document transition with action "replace" is not present', async () => {
     documentTransitionsJs = getDocumentTransitionsFixture({
@@ -291,8 +284,9 @@ describe('validateDocumentsBatchTransitionStateFactory', () => {
       transitions: documentTransitionsJs.map((t) => t.toObject()),
     }, [dataContract]);
 
-
-    const result = await validateDocumentsBatchTransitionState(stateRepositoryMock, stateTransition);
+    const result = await validateDocumentsBatchTransitionState(
+      stateRepositoryMock, stateTransition,
+    );
     expect(result).is.instanceOf(ValidationResult);
 
     const [error] = result.getErrors();
@@ -356,8 +350,9 @@ describe('validateDocumentsBatchTransitionStateFactory', () => {
       transitions: documentTransitionsJs.map((t) => t.toObject()),
     }, [dataContract]);
 
-
-    const result = await validateDocumentsBatchTransitionState(stateRepositoryMock, stateTransition);
+    const result = await validateDocumentsBatchTransitionState(
+      stateRepositoryMock, stateTransition,
+    );
 
     expect(result).is.instanceOf(ValidationResult);
 
@@ -436,7 +431,9 @@ describe('validateDocumentsBatchTransitionStateFactory', () => {
     documents[0].setCreatedAt(replaceDocument.getCreatedAt());
     stateRepositoryMock.fetchDocuments.returns([documents[0]]);
 
-    const result = await validateDocumentsBatchTransitionState(stateRepositoryMock, stateTransition);
+    const result = await validateDocumentsBatchTransitionState(
+      stateRepositoryMock, stateTransition,
+    );
 
     expect(result).is.instanceOf(ValidationResult);
 
@@ -530,7 +527,10 @@ describe('validateDocumentsBatchTransitionStateFactory', () => {
 
     stateRepositoryMock.fetchDocuments.returns([fetchedDocument]);
 
-    const result = await validateDocumentsBatchTransitionState(stateRepositoryMock, stateTransition);
+    const result = await validateDocumentsBatchTransitionState(
+      stateRepositoryMock,
+      stateTransition,
+    );
 
     expect(result).is.instanceOf(ValidationResult);
 
@@ -538,7 +538,9 @@ describe('validateDocumentsBatchTransitionStateFactory', () => {
     expect(error).is.instanceOf(DocumentOwnerIdMismatchError);
     expect(error.getCode()).to.equal(4006);
     expect(error.getDocumentId()).to.deep.equal(documentTransitionsJs[0].getId().toBuffer());
-    expect(error.getExistingDocumentOwnerId()).to.deep.equal(fetchedDocument.getOwnerId().toBuffer());
+    expect(error.getExistingDocumentOwnerId()).to.deep.equal(
+      fetchedDocument.getOwnerId().toBuffer(),
+    );
 
     expect(stateRepositoryMock.fetchDataContract).to.have.been.calledOnce();
     const [fetchDataContractId] = stateRepositoryMock.fetchDataContract.getCall(0).args;
@@ -570,10 +572,11 @@ describe('validateDocumentsBatchTransitionStateFactory', () => {
         stateTransitionJs.transitions[0].toObject(),
       );
 
-      expect(stateRepositoryMockJs.fetchDataContract).to.have.been.calledOnceWithExactly(
-        dataContractJs.getId(),
-        new StateTransitionExecutionContextJs(),
-      );
+      expect(stateRepositoryMockJs.fetchDataContract)
+        .to.have.been.calledOnceWithExactly(
+          dataContractJs.getId(),
+          new StateTransitionExecutionContextJs(),
+        );
 
       expect(fetchDocumentsMock).to.have.been.calledOnceWithExactly(
         stateTransitionJs.transitions,
@@ -586,8 +589,9 @@ describe('validateDocumentsBatchTransitionStateFactory', () => {
   });
 
   it('should throw an error if document transition has invalid action - Rust', async () => {
-    // Omitted - DocumentsBatchTransition cannot be created from the transition with an invalid action
-    // because the `DocumentTransition` uses enum
+    // Omitted - DocumentsBatchTransition cannot be created from the
+    // transition with an invalid action because the `DocumentTransition`
+    // uses enums
   });
 
   it('should return invalid result if there are duplicate document transitions according to unique indices', async () => {
@@ -634,8 +638,8 @@ describe('validateDocumentsBatchTransitionStateFactory', () => {
   });
 
   it('should return invalid result if there are duplicate document transitions according to unique indices - Rust', async () => {
-    // Omitted as it seems impossible to generate such a state without having UniqueIndicesValidation mocked
-
+    // Omitted as it seems impossible to generate such a state without
+    // having UniqueIndicesValidation mocked
   });
 
   it('should return invalid result if data triggers execution failed', async () => {
@@ -694,9 +698,10 @@ describe('validateDocumentsBatchTransitionStateFactory', () => {
       executionContextJs,
     ]);
 
-    const [triggerCallDocumentTransitions, triggerCallDataTriggersExecutionContext] = (
-      executeDataTriggersMock.getCall(0).args
-    );
+    const [
+      triggerCallDocumentTransitions,
+      triggerCallDataTriggersExecutionContext,
+    ] = executeDataTriggersMock.getCall(0).args;
 
     const triggerCallArgs = [
       triggerCallDocumentTransitions.map((t) => t.toObject()),
@@ -710,7 +715,8 @@ describe('validateDocumentsBatchTransitionStateFactory', () => {
   });
 
   it('should return invalid result if data triggers execution failed', async () => {
-    // Omitted as it seems impossible to generate such a state without having DataTrigger execution mocked
+    // Omitted as it seems impossible to generate such a state without
+    // having DataTrigger execution mocked
   });
 
   describe('Timestamps', () => {
@@ -771,7 +777,6 @@ describe('validateDocumentsBatchTransitionStateFactory', () => {
           transitions: documentTransitionsJs.map((t) => t.toObject()),
         }, [dataContract]);
 
-
         const transitions = stateTransition.getTransitions();
         transitions.forEach((t) => {
           // eslint-disable-next-line no-param-reassign
@@ -779,7 +784,9 @@ describe('validateDocumentsBatchTransitionStateFactory', () => {
         });
         stateTransition.setTransitions(transitions);
 
-        const result = await validateDocumentsBatchTransitionState(stateRepositoryMock, stateTransition);
+        const result = await validateDocumentsBatchTransitionState(
+          stateRepositoryMock, stateTransition,
+        );
 
         expect(result).is.instanceOf(ValidationResult);
 
@@ -846,7 +853,9 @@ describe('validateDocumentsBatchTransitionStateFactory', () => {
         });
         stateTransition.setTransitions(transitions);
 
-        const result = await validateDocumentsBatchTransitionState(stateRepositoryMock, stateTransition);
+        const result = await validateDocumentsBatchTransitionState(
+          stateRepositoryMock, stateTransition,
+        );
 
         expect(result).is.instanceOf(ValidationResult);
         expect(result.isValid()).is.not.true();
@@ -856,8 +865,9 @@ describe('validateDocumentsBatchTransitionStateFactory', () => {
         expect(error.getCode()).to.equal(4008);
         expect(error.getTimestampName()).to.equal('createdAt');
 
-
-        expect(error.getTimestamp().getMilliseconds()).to.equal(documentTransitionsJs[0].createdAt.getMilliseconds());
+        expect(error.getTimestamp().getMilliseconds()).to.equal(
+          documentTransitionsJs[0].createdAt.getMilliseconds(),
+        );
         expect(error.getTimeWindowStart()).to.deep.equal(timeWindowStart);
         expect(error.getTimeWindowEnd()).to.deep.equal(timeWindowEnd);
       });
@@ -912,7 +922,6 @@ describe('validateDocumentsBatchTransitionStateFactory', () => {
           transitions: documentTransitionsJs.map((t) => t.toObject()),
         }, [dataContract]);
 
-
         const transitions = stateTransition.getTransitions();
         transitions.forEach((t) => {
           const createdAtMinus6Mins = t.getUpdatedAt() - BigInt(6 * 60 * 1000);
@@ -921,7 +930,9 @@ describe('validateDocumentsBatchTransitionStateFactory', () => {
         });
         stateTransition.setTransitions(transitions);
 
-        const result = await validateDocumentsBatchTransitionState(stateRepositoryMock, stateTransition);
+        const result = await validateDocumentsBatchTransitionState(
+          stateRepositoryMock, stateTransition,
+        );
 
         expect(result).is.instanceOf(ValidationResult);
         expect(result.isValid()).is.not.true();
@@ -937,7 +948,9 @@ describe('validateDocumentsBatchTransitionStateFactory', () => {
 
         expect(error.getDocumentId()).to.deep.equal(documentTransitionsJs[0].getId().toBuffer());
         expect(error.getTimestampName()).to.equal('updatedAt');
-        expect(error.getTimestamp().getMilliseconds()).to.deep.equal(documentTransitionsJs[0].updatedAt.getMilliseconds());
+        expect(error.getTimestamp().getMilliseconds()).to.deep.equal(
+          documentTransitionsJs[0].updatedAt.getMilliseconds(),
+        );
         expect(error.getTimeWindowStart()).to.deep.equal(timeWindowStart);
         expect(error.getTimeWindowEnd()).to.deep.equal(timeWindowEnd);
       });
@@ -996,11 +1009,12 @@ describe('validateDocumentsBatchTransitionStateFactory', () => {
         stateTransition.setTransitions(transitions);
         stateTransition.getExecutionContext().enableDryRun();
 
-        const result = await validateDocumentsBatchTransitionState(stateRepositoryMock, stateTransition);
+        const result = await validateDocumentsBatchTransitionState(
+          stateRepositoryMock, stateTransition,
+        );
 
         expect(result).to.be.an.instanceOf(ValidationResult);
         expect(result.isValid()).to.be.true();
-
       });
 
       it('should return valid result if timestamps mismatch on dry run', async () => {
@@ -1055,7 +1069,9 @@ describe('validateDocumentsBatchTransitionStateFactory', () => {
         });
         stateTransition.getExecutionContext().enableDryRun();
 
-        const result = await validateDocumentsBatchTransitionState(stateRepositoryMock, stateTransition);
+        const result = await validateDocumentsBatchTransitionState(
+          stateRepositoryMock, stateTransition,
+        );
 
         expect(result).to.be.an.instanceOf(ValidationResult);
         expect(result.isValid()).to.be.true();
@@ -1123,7 +1139,7 @@ describe('validateDocumentsBatchTransitionStateFactory', () => {
         );
 
         const documentToReturn = new Document(documentsJs[1].toObject(), dataContract);
-        stateRepositoryMock.fetchDocuments.returns([documentToReturn])
+        stateRepositoryMock.fetchDocuments.returns([documentToReturn]);
 
         const transitions = stateTransition.getTransitions();
         transitions.forEach((t) => {
@@ -1132,7 +1148,9 @@ describe('validateDocumentsBatchTransitionStateFactory', () => {
         });
         stateTransition.setTransitions(transitions);
 
-        const result = await validateDocumentsBatchTransitionState(stateRepositoryMock, stateTransition);
+        const result = await validateDocumentsBatchTransitionState(
+          stateRepositoryMock, stateTransition,
+        );
 
         expect(result).is.instanceOf(ValidationResult);
         expect(result.isValid()).is.not.true();
@@ -1206,7 +1224,7 @@ describe('validateDocumentsBatchTransitionStateFactory', () => {
         );
 
         const documentToReturn = new Document(documentsJs[1].toObject(), dataContract);
-        stateRepositoryMock.fetchDocuments.returns([documentToReturn])
+        stateRepositoryMock.fetchDocuments.returns([documentToReturn]);
 
         const transitions = stateTransition.getTransitions(); transitions.forEach((t) => {
           const createdAtMinus6Mins = t.getUpdatedAt() - BigInt(6 * 60 * 1000);
@@ -1215,7 +1233,9 @@ describe('validateDocumentsBatchTransitionStateFactory', () => {
         stateTransition.setTransitions(transitions);
         stateTransition.getExecutionContext().enableDryRun();
 
-        const result = await validateDocumentsBatchTransitionState(stateRepositoryMock, stateTransition);
+        const result = await validateDocumentsBatchTransitionState(
+          stateRepositoryMock, stateTransition,
+        );
 
         expect(result).to.be.an.instanceOf(ValidationResult);
         expect(result.isValid()).to.be.true();
@@ -1310,7 +1330,9 @@ describe('validateDocumentsBatchTransitionStateFactory', () => {
       transitions: documentTransitionsJs.map((t) => t.toObject()),
     }, [dataContract]);
 
-    const result = await validateDocumentsBatchTransitionState(stateRepositoryMock, stateTransition);
+    const result = await validateDocumentsBatchTransitionState(
+      stateRepositoryMock, stateTransition,
+    );
 
     expect(result).to.be.an.instanceOf(ValidationResult);
     expect(result.isValid()).to.be.true();

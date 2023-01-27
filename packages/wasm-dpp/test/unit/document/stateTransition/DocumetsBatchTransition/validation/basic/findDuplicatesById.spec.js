@@ -10,7 +10,7 @@ describe('findDuplicatesById', () => {
 
   beforeEach(async () => {
     ({
-      findDuplicatesById
+      findDuplicatesById,
     } = await loadWasmDpp());
     rawDocumentTransitions = getDocumentTransitionsFixture().map((t) => t.toObject());
   });
