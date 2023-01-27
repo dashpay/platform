@@ -7,7 +7,7 @@ use crate::drive::Drive;
 use crate::error::drive::DriveError;
 use crate::error::Error;
 use crate::fee::calculate_fee;
-use crate::fee::credits::Credits;
+use crate::fee::credits::{Creditable, Credits, SignedCredits};
 use crate::fee::op::DriveOperation;
 use crate::fee::result::FeeResult;
 use grovedb::Element::{Item, SumItem};
@@ -19,16 +19,54 @@ impl Drive {
     pub fn fetch_identity_balance(
         &self,
         identity_id: [u8; 32],
-        apply: bool,
         transaction: TransactionArg,
     ) -> Result<Option<Credits>, Error> {
         let mut drive_operations: Vec<DriveOperation> = vec![];
         self.fetch_identity_balance_operations(
             identity_id,
-            apply,
+            true,
             transaction,
             &mut drive_operations,
         )
+    }
+
+    /// Fetches the Identity's balance from the backing store
+    /// If the balance is 0, then also provide debt
+    pub fn fetch_identity_balance_include_debt(
+        &self,
+        identity_id: [u8; 32],
+        transaction: TransactionArg,
+    ) -> Result<Option<SignedCredits>, Error> {
+        let mut drive_operations: Vec<DriveOperation> = vec![];
+        Ok(self
+            .fetch_identity_balance_operations(
+                identity_id,
+                true,
+                transaction,
+                &mut drive_operations,
+            )?
+            .map(|credits| {
+                if credits > 0 {
+                    Ok::<Option<SignedCredits>, Error>(Some(credits.to_signed()?))
+                } else {
+                    self.fetch_identity_negative_balance_operations(
+                        identity_id,
+                        true,
+                        transaction,
+                        &mut drive_operations,
+                    )
+                    .map(|negative_credits| {
+                        let negative_credits = negative_credits.ok_or(Error::Drive(
+                            DriveError::CorruptedDriveState(
+                                "Identity has balance but no negative credit holder".to_string(),
+                            ),
+                        ))?;
+                        Ok(Some(-negative_credits.to_signed()?))
+                    })?
+                }
+            })
+            .transpose()?
+            .flatten())
     }
 
     /// Fetches the Identity's balance from the backing store

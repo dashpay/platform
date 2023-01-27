@@ -72,8 +72,7 @@ impl Drive {
         transaction: TransactionArg,
     ) -> Result<Option<PartialIdentityInfo>, Error> {
         let id = Identifier::new(identity_key_request.identity_id);
-        let balance =
-            self.fetch_identity_balance(identity_key_request.identity_id, true, transaction)?;
+        let balance = self.fetch_identity_balance(identity_key_request.identity_id, transaction)?;
         let Some(balance) = balance else {
             return Ok(None);
         };
@@ -109,8 +108,7 @@ impl Drive {
         }
         // let's start by getting the balance
         let id = Identifier::new(identity_key_request.identity_id);
-        let balance =
-            self.fetch_identity_balance(identity_key_request.identity_id, apply, transaction)?;
+        let balance = self.fetch_identity_balance(identity_key_request.identity_id, transaction)?;
         let Some(balance) = balance else {
             return Ok((None, FeeResult::new_from_processing_fee(balance_cost)));
         };
