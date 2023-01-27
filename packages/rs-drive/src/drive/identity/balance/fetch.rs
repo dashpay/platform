@@ -71,7 +71,7 @@ impl Drive {
 
     /// Fetches the Identity's balance from the backing store
     /// Passing apply as false get the estimated cost instead
-    pub fn fetch_identity_balance_with_fees(
+    pub fn fetch_identity_balance_with_costs(
         &self,
         identity_id: [u8; 32],
         block_info: &BlockInfo,

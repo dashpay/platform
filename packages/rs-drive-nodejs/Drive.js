@@ -21,6 +21,9 @@ const {
   driveProveDocumentsQuery,
   driveInsertIdentity,
   driveFetchIdentity,
+  driveFetchIdentityBalance,
+  driveFetchIdentityBalanceWithCosts,
+  driveFetchIdentityBalanceIncludeDebt,
   driveFetchProvedIdentity,
   driveFetchManyProvedIdentities,
   driveFetchIdentityWithCosts,
@@ -73,6 +76,10 @@ const driveEnqueueWithdrawalTransactionAsync = appendStackAsync(
 const driveInsertIdentityAsync = appendStackAsync(promisify(driveInsertIdentity));
 const driveFetchIdentityAsync = appendStackAsync(promisify(driveFetchIdentity));
 const driveFetchProvedIdentityAsync = appendStackAsync(promisify(driveFetchProvedIdentity));
+const driveFetchIdentityBalanceAsync = appendStackAsync(promisify(driveFetchIdentityBalance));
+const driveFetchIdentityBalanceWithCostsAsync = appendStackAsync(promisify(driveFetchIdentityBalanceWithCosts));
+const driveFetchIdentityBalanceIncludeDebtAsync = appendStackAsync(promisify(driveFetchIdentityBalanceIncludeDebt));
+
 const driveFetchManyProvedIdentitiesAsync = appendStackAsync(
   promisify(driveFetchManyProvedIdentities),
 );
@@ -399,6 +406,48 @@ class Drive {
 
       return new Identity(rawIdentity);
     });
+  }
+
+  /**
+   * @param {Buffer|Identifier} id
+   * @param {boolean} [useTransaction=false]
+   *
+   * @returns {Promise<number|null>}
+   */
+  async fetchIdentityBalance(id, useTransaction = false) {
+    return driveFetchIdentityBalanceAsync.call(
+      this.drive,
+      Buffer.from(id),
+      useTransaction,
+    );
+  }
+
+  /**
+   * @param {Buffer|Identifier} id
+   * @param {boolean} [useTransaction=false]
+   *
+   * @returns {Promise<[number, FeeResult]>}
+   */
+  async fetchIdentityBalanceWithCosts(id, useTransaction = false) {
+    return driveFetchIdentityBalanceWithCostsAsync.call(
+      this.drive,
+      Buffer.from(id),
+      useTransaction,
+    );
+  }
+
+  /**
+   * @param {Buffer|Identifier} id
+   * @param {boolean} [useTransaction=false]
+   *
+   * @returns {Promise<number|null>}
+   */
+  async fetchIdentityBalanceIncludeDebt(id, useTransaction = false) {
+    return driveFetchIdentityBalanceIncludeDebtAsync.call(
+      this.drive,
+      Buffer.from(id),
+      useTransaction,
+    );
   }
 
   /**

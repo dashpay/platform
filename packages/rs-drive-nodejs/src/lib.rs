@@ -1103,7 +1103,7 @@ impl PlatformWrapper {
         Ok(cx.undefined())
     }
 
-    fn js_fetch_identity_balance_with_fees(mut cx: FunctionContext) -> JsResult<JsUndefined> {
+    fn js_fetch_identity_balance_with_costs(mut cx: FunctionContext) -> JsResult<JsUndefined> {
         let js_identity_id = cx.argument::<JsBuffer>(0)?;
         let js_block_info = cx.argument::<JsObject>(1)?;
         let js_apply = cx.argument::<JsBoolean>(2)?;
@@ -1137,7 +1137,7 @@ impl PlatformWrapper {
                 let result = transaction_result.and_then(|transaction_arg| {
                     platform
                         .drive
-                        .fetch_identity_balance_with_fees(
+                        .fetch_identity_balance_with_costs(
                             identity_id,
                             &block_info,
                             apply,
@@ -3418,6 +3418,9 @@ fn main(mut cx: ModuleContext) -> NeonResult<()> {
         PlatformWrapper::js_insert_identity_cbor,
     )?;
     cx.export_function("driveFetchIdentity", PlatformWrapper::js_fetch_identity)?;
+    cx.export_function("driveFetchIdentityBalance", PlatformWrapper::js_fetch_identity_balance)?;
+    cx.export_function("driveFetchIdentityBalanceWithCosts", PlatformWrapper::js_fetch_identity_balance_with_costs)?;
+    cx.export_function("driveFetchIdentityBalanceIncludeDebt", PlatformWrapper::js_fetch_identity_balance_include_debt)?;
     cx.export_function(
         "driveFetchProvedIdentity",
         PlatformWrapper::js_fetch_proved_identity,

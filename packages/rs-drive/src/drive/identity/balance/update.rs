@@ -523,7 +523,7 @@ mod tests {
                 .expect("expected to be able to commit a transaction");
 
             let (balance, _fee_cost) = drive
-                .fetch_identity_balance_with_fees(identity.id.to_buffer(), &block_info, true, None)
+                .fetch_identity_balance_with_costs(identity.id.to_buffer(), &block_info, true, None)
                 .expect("expected to get balance");
 
             assert_eq!(balance.unwrap(), old_balance + amount);
@@ -584,7 +584,7 @@ mod tests {
             );
 
             let (updated_balance, _fee_cost) = drive
-                .fetch_identity_balance_with_fees(identity.id.to_buffer(), &block_info, true, None)
+                .fetch_identity_balance_with_costs(identity.id.to_buffer(), &block_info, true, None)
                 .expect("expected to get balance");
 
             assert_eq!(
@@ -647,7 +647,7 @@ mod tests {
             );
 
             let (updated_balance, _fee_cost) = drive
-                .fetch_identity_balance_with_fees(identity.id.to_buffer(), &block_info, true, None)
+                .fetch_identity_balance_with_costs(identity.id.to_buffer(), &block_info, true, None)
                 .expect("expected to get balance");
 
             assert_eq!(updated_balance.expect("balance should present"), 0);
@@ -700,7 +700,7 @@ mod tests {
             assert_eq!(app_hash_after, app_hash_before);
 
             let (balance, _fee_cost) = drive
-                .fetch_identity_balance_with_fees(identity.id.to_buffer(), &block, true, None)
+                .fetch_identity_balance_with_costs(identity.id.to_buffer(), &block, true, None)
                 .expect("expected to get balance");
 
             assert!(balance.is_none()); //shouldn't have changed
@@ -754,7 +754,7 @@ mod tests {
                 .expect("expected to be able to commit a transaction");
 
             let (balance, _fee_cost) = drive
-                .fetch_identity_balance_with_fees(identity.id.to_buffer(), &block, true, None)
+                .fetch_identity_balance_with_costs(identity.id.to_buffer(), &block, true, None)
                 .expect("expected to get balance");
 
             assert_eq!(balance.unwrap(), old_balance - amount);
@@ -797,7 +797,7 @@ mod tests {
             );
 
             let (balance, _fee_cost) = drive
-                .fetch_identity_balance_with_fees(identity.id.to_buffer(), &block, true, None)
+                .fetch_identity_balance_with_costs(identity.id.to_buffer(), &block, true, None)
                 .expect("expected to get balance");
 
             assert!(balance.is_none()); //shouldn't have changed
