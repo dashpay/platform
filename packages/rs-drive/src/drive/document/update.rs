@@ -34,8 +34,8 @@
 
 use std::collections::{HashMap, HashSet};
 
-use dpp::data_contract::DriveContractExt;
 use dpp::data_contract::document_type::DocumentType;
+use dpp::data_contract::DriveContractExt;
 use grovedb::batch::key_info::KeyInfo;
 use grovedb::batch::key_info::KeyInfo::KnownKey;
 use grovedb::batch::KeyInfoPath;

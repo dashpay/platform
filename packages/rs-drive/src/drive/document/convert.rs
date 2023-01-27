@@ -1,4 +1,4 @@
-use dpp::{prelude::Document, document::document_stub::DocumentStub};
+use dpp::{document::document_stub::DocumentStub, prelude::Document};
 
 use crate::error::{drive::DriveError, Error};
 
@@ -19,7 +19,8 @@ where
                 })?,
                 None,
                 None,
-            ).map_err(|_| {
+            )
+            .map_err(|_| {
                 Error::Drive(DriveError::CorruptedCodeExecution(
                     "Can't create drive document from CBOR",
                 ))
