@@ -80,8 +80,7 @@ describe('SimplifiedMasternodeListDAPIAddressProvider', () => {
       expect(firstAddress).to.equal(addresses[0]);
       expect(firstAddress.toJSON()).to.deep.equal({
         host: validMasternodeList[0].getIp(),
-        httpPort: DAPIAddress.DEFAULT_HTTP_PORT,
-        grpcPort: DAPIAddress.DEFAULT_GRPC_PORT,
+        port: DAPIAddress.DEFAULT_PORT,
         proRegTxHash: validMasternodeList[0].proRegTxHash,
         protocol: DAPIAddress.DEFAULT_PROTOCOL,
         allowSelfSignedCertificate: false,
@@ -91,8 +90,7 @@ describe('SimplifiedMasternodeListDAPIAddressProvider', () => {
       expect(secondAddress).to.equal(addresses[1]);
       expect(secondAddress.toJSON()).to.deep.equal({
         host: validMasternodeList[1].getIp(),
-        httpPort: DAPIAddress.DEFAULT_HTTP_PORT,
-        grpcPort: DAPIAddress.DEFAULT_GRPC_PORT,
+        port: DAPIAddress.DEFAULT_PORT,
         proRegTxHash: validMasternodeList[1].proRegTxHash,
         protocol: DAPIAddress.DEFAULT_PROTOCOL,
         allowSelfSignedCertificate: false,
@@ -102,8 +100,7 @@ describe('SimplifiedMasternodeListDAPIAddressProvider', () => {
       expect(thirdAddress).to.not.equal(addresses[2]);
       expect(thirdAddress.toJSON()).to.deep.equal({
         host: validMasternodeList[2].getIp(),
-        httpPort: DAPIAddress.DEFAULT_HTTP_PORT,
-        grpcPort: DAPIAddress.DEFAULT_GRPC_PORT,
+        port: DAPIAddress.DEFAULT_PORT,
         proRegTxHash: validMasternodeList[2].proRegTxHash,
         protocol: DAPIAddress.DEFAULT_PROTOCOL,
         allowSelfSignedCertificate: false,
@@ -139,8 +136,7 @@ describe('SimplifiedMasternodeListDAPIAddressProvider', () => {
       expect(secondAddress).to.equal(addresses[1]);
       expect(secondAddress.toJSON()).to.deep.equal({
         host: validMasternodeList[1].getIp(),
-        httpPort: DAPIAddress.DEFAULT_HTTP_PORT,
-        grpcPort: DAPIAddress.DEFAULT_GRPC_PORT,
+        port: DAPIAddress.DEFAULT_PORT,
         proRegTxHash: validMasternodeList[1].proRegTxHash,
         protocol: DAPIAddress.DEFAULT_PROTOCOL,
         allowSelfSignedCertificate: false,
@@ -150,8 +146,7 @@ describe('SimplifiedMasternodeListDAPIAddressProvider', () => {
       expect(thirdAddress).to.not.equal(addresses[2]);
       expect(thirdAddress.toJSON()).to.deep.equal({
         host: validMasternodeList[2].getIp(),
-        httpPort: DAPIAddress.DEFAULT_HTTP_PORT,
-        grpcPort: DAPIAddress.DEFAULT_GRPC_PORT,
+        port: DAPIAddress.DEFAULT_PORT,
         proRegTxHash: validMasternodeList[2].proRegTxHash,
         protocol: DAPIAddress.DEFAULT_PROTOCOL,
         allowSelfSignedCertificate: false,

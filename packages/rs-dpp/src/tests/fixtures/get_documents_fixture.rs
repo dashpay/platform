@@ -7,7 +7,6 @@ use crate::{
         document_factory::DocumentFactory,
         fetch_and_validate_data_contract::DataContractFetcherAndValidator,
     },
-    mocks,
     prelude::*,
     state_repository::{MockStateRepositoryLike, StateRepositoryLike},
     tests::utils::generate_random_identifier_struct as gen_owner_id,

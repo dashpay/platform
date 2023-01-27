@@ -21,7 +21,7 @@ use crate::{
     util::json_value::JsonValueExt,
     version::{ProtocolVersionValidator, LATEST_VERSION},
 };
-use anyhow::anyhow;
+
 use jsonschema::error::ValidationErrorKind;
 use serde_json::{json, Value as JsonValue};
 use test_case::test_case;

@@ -18,7 +18,7 @@ use super::{
     document_transition::{self, Action},
     document_validator::DocumentValidator,
     errors::DocumentError,
-    fetch_and_validate_data_contract::{self, DataContractFetcherAndValidator},
+    fetch_and_validate_data_contract::DataContractFetcherAndValidator,
     generate_document_id::generate_document_id,
     property_names, Document, DocumentsBatchTransition,
 };
