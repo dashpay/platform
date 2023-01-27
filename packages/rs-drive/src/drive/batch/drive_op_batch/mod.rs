@@ -32,10 +32,7 @@ mod document;
 mod identity;
 mod system;
 
-use crate::contract::document::Document;
 use crate::contract::Contract;
-use crate::drive::batch::drive_op_batch::contract::ContractOperationType;
-use crate::drive::batch::drive_op_batch::document::DocumentOperationType;
 use crate::drive::batch::GroveDbOpBatch;
 use crate::drive::block_info::BlockInfo;
 use crate::drive::flags::StorageFlags;
@@ -48,6 +45,8 @@ use crate::error::Error;
 use crate::fee::calculate_fee;
 use crate::fee::op::DriveOperation;
 use crate::fee::result::FeeResult;
+pub use contract::ContractOperationType;
+pub use document::DocumentOperationType;
 use dpp::data_contract::document_type::DocumentType;
 use dpp::data_contract::DriveContractExt;
 use dpp::document::document_stub::DocumentStub;
@@ -199,7 +198,7 @@ mod tests {
     use serde_json::json;
     use tempfile::TempDir;
 
-    use crate::common::{json_document_to_cbor, setup_contract};
+    use crate::common::setup_contract;
     use crate::drive::batch::drive_op_batch::contract::ContractOperationType::ApplyContractWithSerialization;
     use crate::drive::batch::drive_op_batch::document::DocumentOperation::{
         AddOperation, UpdateOperation,

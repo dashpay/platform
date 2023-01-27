@@ -5,31 +5,18 @@ use wasm_bindgen::prelude::*;
 
 use crate::errors::from_dpp_err;
 use crate::{buffer::Buffer, utils};
-use dpp::identity::IdentityPublicKey;
-
-mod purpose;
-pub use purpose::*;
-
-mod security_level;
-pub use security_level::*;
-
-mod in_creation;
-mod key_type;
-
-pub use key_type::*;
-
-pub use in_creation::*;
+use dpp::identity::IdentityPublicKeyInCreation;
 
 #[wasm_bindgen(js_name=IdentityPublicKey)]
 #[derive(Serialize, Deserialize, Debug, Clone)]
-pub struct IdentityPublicKeyWasm(IdentityPublicKey);
+pub struct IdentityPublicKeyInCreationWasm(IdentityPublicKeyInCreation);
 
 #[wasm_bindgen(js_class = IdentityPublicKey)]
-impl IdentityPublicKeyWasm {
+impl IdentityPublicKeyInCreationWasm {
     #[wasm_bindgen(constructor)]
-    pub fn new(raw_public_key: JsValue) -> Result<IdentityPublicKeyWasm, JsValue> {
+    pub fn new(raw_public_key: JsValue) -> Result<IdentityPublicKeyInCreationWasm, JsValue> {
         let data_string = utils::stringify(&raw_public_key)?;
-        let pk: IdentityPublicKeyWasm =
+        let pk: IdentityPublicKeyInCreationWasm =
             serde_json::from_str(&data_string).map_err(|e| e.to_string())?;
 
         Ok(pk)
@@ -105,14 +92,14 @@ impl IdentityPublicKeyWasm {
         self.0.read_only
     }
 
-    #[wasm_bindgen(js_name=setDisabledAt)]
-    pub fn set_disabled_at(&mut self, timestamp: u32) {
-        self.0.set_disabled_at(timestamp as u64);
+    #[wasm_bindgen(js_name=setSignature)]
+    pub fn set_signature(&mut self, signature: Vec<u8>) {
+        self.0.signature = signature
     }
 
-    #[wasm_bindgen(js_name=getDisabledAt)]
-    pub fn get_disabled_at(&self) -> Option<f64> {
-        self.0.disabled_at.map(|timestamp| timestamp as f64)
+    #[wasm_bindgen(js_name=getSignature)]
+    pub fn get_signature(&self) -> Vec<u8> {
+        self.0.signature.clone()
     }
 
     #[wasm_bindgen(js_name=hash)]
@@ -160,40 +147,40 @@ impl IdentityPublicKeyWasm {
     }
 }
 
-impl IdentityPublicKeyWasm {
-    pub fn into_inner(self) -> IdentityPublicKey {
+impl IdentityPublicKeyInCreationWasm {
+    pub fn into_inner(self) -> IdentityPublicKeyInCreation {
         self.0
     }
 
-    pub fn inner(&self) -> &IdentityPublicKey {
+    pub fn inner(&self) -> &IdentityPublicKeyInCreation {
         &self.0
     }
 
-    pub fn inner_mut(&mut self) -> &mut IdentityPublicKey {
+    pub fn inner_mut(&mut self) -> &mut IdentityPublicKeyInCreation {
         &mut self.0
     }
 }
 
-impl From<IdentityPublicKey> for IdentityPublicKeyWasm {
-    fn from(v: IdentityPublicKey) -> Self {
-        IdentityPublicKeyWasm(v)
+impl From<IdentityPublicKeyInCreation> for IdentityPublicKeyInCreationWasm {
+    fn from(v: IdentityPublicKeyInCreation) -> Self {
+        IdentityPublicKeyInCreationWasm(v)
     }
 }
 
-impl TryFrom<JsValue> for IdentityPublicKeyWasm {
+impl TryFrom<JsValue> for IdentityPublicKeyInCreationWasm {
     type Error = JsValue;
 
     fn try_from(value: JsValue) -> Result<Self, Self::Error> {
         let str = String::from(js_sys::JSON::stringify(&value)?);
         let val = serde_json::from_str(&str).map_err(|e| from_dpp_err(e.into()))?;
         Ok(Self(
-            IdentityPublicKey::from_raw_object(val).map_err(from_dpp_err)?,
+            IdentityPublicKeyInCreation::from_raw_object(val).map_err(from_dpp_err)?,
         ))
     }
 }
 
-impl From<IdentityPublicKeyWasm> for IdentityPublicKey {
-    fn from(pk: IdentityPublicKeyWasm) -> Self {
+impl From<IdentityPublicKeyInCreationWasm> for IdentityPublicKeyInCreation {
+    fn from(pk: IdentityPublicKeyInCreationWasm) -> Self {
         pk.0
     }
 }

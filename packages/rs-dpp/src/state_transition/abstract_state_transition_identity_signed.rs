@@ -35,9 +35,9 @@ where
                 // and here we compare the private key used to sing the state transition with
                 // the compressed key stored in the identity
 
-                if public_key_compressed.to_vec() != identity_public_key.get_data() {
+                if public_key_compressed.to_vec() != identity_public_key.data {
                     return Err(ProtocolError::InvalidSignaturePublicKeyError {
-                        public_key: identity_public_key.get_data().to_owned(),
+                        public_key: identity_public_key.data.to_owned(),
                     });
                 }
 
@@ -47,9 +47,9 @@ where
                 let public_key_compressed = get_compressed_public_ec_key(private_key)?;
                 let pub_key_hash = ripemd160_sha256(&public_key_compressed);
 
-                if pub_key_hash != identity_public_key.get_data() {
+                if pub_key_hash != identity_public_key.data {
                     return Err(ProtocolError::InvalidSignaturePublicKeyError {
-                        public_key: identity_public_key.get_data().to_owned(),
+                        public_key: identity_public_key.data.to_owned(),
                     });
                 }
                 self.sign_by_private_key(private_key, identity_public_key.key_type, bls)
@@ -57,9 +57,9 @@ where
             KeyType::BLS12_381 => {
                 let public_key = bls.private_key_to_public_key(private_key)?;
 
-                if public_key != identity_public_key.get_data() {
+                if public_key != identity_public_key.data {
                     return Err(ProtocolError::InvalidSignaturePublicKeyError {
-                        public_key: identity_public_key.get_data().to_owned(),
+                        public_key: identity_public_key.data.to_owned(),
                     });
                 }
                 self.sign_by_private_key(private_key, identity_public_key.key_type, bls)
@@ -94,7 +94,7 @@ where
             });
         }
 
-        let public_key_bytes = public_key.get_data();
+        let public_key_bytes = public_key.data.as_slice();
         match public_key.key_type {
             KeyType::ECDSA_HASH160 => {
                 self.verify_ecdsa_hash_160_signature_by_public_key_hash(public_key_bytes)

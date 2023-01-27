@@ -57,7 +57,6 @@ pub use ordering::OrderClause;
 
 use crate::common::encode::encode_float;
 use crate::contract::Contract;
-use crate::drive::contract::paths::{ContractPaths, DriveContractPathExt};
 use crate::drive::grove_operations::QueryType::StatefulQuery;
 use crate::drive::Drive;
 use crate::error::drive::DriveError;
@@ -66,6 +65,7 @@ use crate::error::Error;
 use crate::fee::calculate_fee;
 use crate::fee::op::DriveOperation;
 
+use crate::drive::contract::paths::ContractPaths;
 use dpp::data_contract::extra::common::bytes_for_system_value;
 use dpp::document::document_stub::DocumentStub;
 use dpp::ProtocolError;

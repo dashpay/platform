@@ -76,7 +76,6 @@ use crate::error::Error;
 use crate::fee::calculate_fee;
 use crate::fee::op::DriveOperation;
 
-use crate::common::encode::encode_unsigned_integer;
 use crate::drive::block_info::BlockInfo;
 use crate::drive::grove_operations::DirectQueryType::{StatefulDirectQuery, StatelessDirectQuery};
 use crate::drive::grove_operations::QueryTarget::QueryTargetValue;

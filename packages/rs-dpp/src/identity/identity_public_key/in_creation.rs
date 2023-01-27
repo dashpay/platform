@@ -27,6 +27,7 @@ pub struct IdentityPublicKeyInCreation {
     pub key_type: KeyType,
     pub data: Vec<u8>,
     pub read_only: bool,
+    /// The signature is needed for ECDSA_SECP256K1 Key type and BLS12_381 Key type
     pub signature: Vec<u8>,
 }
 
@@ -68,21 +69,25 @@ impl IdentityPublicKeyInCreation {
     }
 
     /// Return raw data, with all binary fields represented as arrays
-    pub fn to_raw_json_object(
-        &self,
-        skip_signatures: bool,
-    ) -> Result<JsonValue, SerdeParsingError> {
+    pub fn to_raw_json_object(&self) -> Result<JsonValue, SerdeParsingError> {
         let mut value = serde_json::to_value(&self)?;
-        if skip_signatures {
-            let _ = value.remove("signature");
-        }
 
         Ok(value)
     }
 
+    /// Checks if public key security level is MASTER
+    pub fn is_master(&self) -> bool {
+        self.security_level == SecurityLevel::MASTER
+    }
+
+    /// Get the original public key hash
+    pub fn hash(&self) -> Result<Vec<u8>, ProtocolError> {
+        Into::<IdentityPublicKey>::into(self).hash()
+    }
+
     /// Return json with all binary data converted to base64
     pub fn to_json(&self) -> Result<JsonValue, SerdeParsingError> {
-        let mut value = self.to_raw_json_object(false)?;
+        let mut value = self.to_raw_json_object()?;
 
         value.replace_binary_paths(BINARY_DATA_FIELDS, ReplaceWith::Base64)?;
 
@@ -138,7 +143,7 @@ impl IdentityPublicKeyInCreation {
     }
 }
 
-impl std::convert::Into<IdentityPublicKey> for &IdentityPublicKeyInCreation {
+impl Into<IdentityPublicKey> for &IdentityPublicKeyInCreation {
     fn into(self) -> IdentityPublicKey {
         IdentityPublicKey {
             id: self.id,

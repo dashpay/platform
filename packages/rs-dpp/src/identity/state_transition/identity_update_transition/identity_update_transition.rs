@@ -238,7 +238,7 @@ impl StateTransitionConvert for IdentityUpdateTransition {
         // The property must be serialized manually
         let mut add_public_keys: Vec<JsonValue> = vec![];
         for key in self.add_public_keys.iter() {
-            add_public_keys.push(key.to_raw_json_object(skip_signature)?);
+            add_public_keys.push(key.to_raw_json_object()?);
         }
 
         let mut raw_object: JsonValue = state_transition_helpers::to_object(

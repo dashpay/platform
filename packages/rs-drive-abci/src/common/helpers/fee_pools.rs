@@ -41,7 +41,6 @@ use rand::rngs::StdRng;
 use rand::{Rng, SeedableRng};
 
 use drive::common::helpers::identities::create_test_identity_with_rng;
-use drive::contract::document::Document;
 use drive::contract::Contract;
 use drive::dpp::data_contract::DriveContractExt;
 use drive::dpp::document::document_stub::DocumentStub;

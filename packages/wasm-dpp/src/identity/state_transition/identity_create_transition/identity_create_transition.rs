@@ -17,12 +17,13 @@ use crate::{
         IdentityPublicKeyWasm,
     },
     state_transition::StateTransitionExecutionContextWasm,
-    with_js_error,
+    with_js_error, IdentityPublicKeyInCreationWasm,
 };
 
 use crate::bls_adapter::{BlsAdapter, JsBlsAdapter};
 use crate::errors::from_dpp_err;
 use crate::utils::generic_of_js_val;
+use dpp::identity::IdentityPublicKeyInCreation;
 use dpp::{
     identifier::Identifier,
     identity::{
@@ -43,7 +44,7 @@ pub struct IdentityCreateTransitionWasm(IdentityCreateTransition);
 #[derive(Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
 struct IdentityCreateTransitionParams {
-    public_keys: Vec<IdentityPublicKey>,
+    public_keys: Vec<IdentityPublicKeyInCreation>,
     signature: Option<Vec<u8>>,
     protocol_version: u32,
 }
@@ -122,11 +123,14 @@ impl IdentityCreateTransitionWasm {
         let public_keys = public_keys
             .iter()
             .map(|value| {
-                let public_key: Ref<IdentityPublicKeyWasm> =
-                    generic_of_js_val::<IdentityPublicKeyWasm>(value, "IdentityPublicKey")?;
+                let public_key: Ref<IdentityPublicKeyInCreationWasm> =
+                    generic_of_js_val::<IdentityPublicKeyInCreationWasm>(
+                        value,
+                        "IdentityPublicKey",
+                    )?;
                 Ok(public_key.clone().into())
             })
-            .collect::<Result<Vec<IdentityPublicKey>, JsValue>>()?;
+            .collect::<Result<Vec<IdentityPublicKeyInCreation>, JsValue>>()?;
 
         self.0.set_public_keys(public_keys);
 
@@ -138,11 +142,14 @@ impl IdentityCreateTransitionWasm {
         let mut public_keys = public_keys
             .iter()
             .map(|value| {
-                let public_key: Ref<IdentityPublicKeyWasm> =
-                    generic_of_js_val::<IdentityPublicKeyWasm>(value, "IdentityPublicKey")?;
+                let public_key: Ref<IdentityPublicKeyInCreationWasm> =
+                    generic_of_js_val::<IdentityPublicKeyInCreationWasm>(
+                        value,
+                        "IdentityPublicKey",
+                    )?;
                 Ok(public_key.clone().into())
             })
-            .collect::<Result<Vec<IdentityPublicKey>, JsValue>>()?;
+            .collect::<Result<Vec<IdentityPublicKeyInCreation>, JsValue>>()?;
 
         self.0.add_public_keys(&mut public_keys);
 
@@ -154,8 +161,8 @@ impl IdentityCreateTransitionWasm {
         self.0
             .get_public_keys()
             .iter()
-            .map(IdentityPublicKey::to_owned)
-            .map(IdentityPublicKeyWasm::from)
+            .map(IdentityPublicKeyInCreation::to_owned)
+            .map(IdentityPublicKeyInCreationWasm::from)
             .map(JsValue::from)
             .collect()
     }
@@ -237,8 +244,8 @@ impl IdentityCreateTransitionWasm {
         let keys_objects = object
             .public_keys
             .into_iter()
-            .map(IdentityPublicKeyWasm::from)
-            .map(|key| key.to_object(skip_signature))
+            .map(IdentityPublicKeyInCreationWasm::from)
+            .map(|key| key.to_object())
             .collect::<Result<js_sys::Array, _>>()?;
 
         js_sys::Reflect::set(&js_object, &"publicKeys".to_owned().into(), &keys_objects)?;
@@ -291,7 +298,7 @@ impl IdentityCreateTransitionWasm {
         let keys_objects = object
             .public_keys
             .into_iter()
-            .map(IdentityPublicKeyWasm::from)
+            .map(IdentityPublicKeyInCreationWasm::from)
             .map(|key| key.to_json())
             .collect::<Result<js_sys::Array, _>>()?;
 

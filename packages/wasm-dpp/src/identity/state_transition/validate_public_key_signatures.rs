@@ -4,6 +4,7 @@ use crate::utils::ToSerdeJSONExt;
 
 use crate::{
     identity::identity_public_key::IdentityPublicKeyWasm, validation::ValidationResultWasm,
+    IdentityPublicKeyInCreationWasm,
 };
 
 use dpp::identity::state_transition::validate_public_key_signatures::{
@@ -11,6 +12,7 @@ use dpp::identity::state_transition::validate_public_key_signatures::{
 };
 use dpp::prelude::IdentityPublicKey;
 
+use dpp::identity::IdentityPublicKeyInCreation;
 use serde_json::Value as JsonValue;
 use wasm_bindgen::prelude::wasm_bindgen;
 use wasm_bindgen::JsValue;
@@ -42,9 +44,10 @@ impl PublicKeysSignaturesValidatorWasm {
         let public_keys = raw_public_keys
             .into_iter()
             .map(|raw_key| {
-                let parsed_key: IdentityPublicKey = IdentityPublicKeyWasm::new(raw_key)?.into();
+                let parsed_key: IdentityPublicKeyInCreation =
+                    IdentityPublicKeyInCreationWasm::new(raw_key)?.into();
                 parsed_key
-                    .to_raw_json_object(false)
+                    .to_raw_json_object()
                     .map_err(|e| from_dpp_err(e.into()))
             })
             .collect::<Result<Vec<JsonValue>, JsValue>>()?;

@@ -157,7 +157,7 @@ impl DocumentWasm {
     pub fn get_data(&mut self) -> Result<JsValue, JsValue> {
         let serializer = serde_wasm_bindgen::Serializer::json_compatible();
 
-        Ok(with_js_error!(self.0.get_data().serialize(&serializer))?)
+        Ok(with_js_error!(self.0.data.serialize(&serializer))?)
     }
 
     #[wasm_bindgen(js_name=set)]

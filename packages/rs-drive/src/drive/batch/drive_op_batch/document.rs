@@ -1,4 +1,3 @@
-use crate::contract::document::Document;
 use crate::drive::batch::drive_op_batch::DriveOperationConverter;
 use crate::drive::block_info::BlockInfo;
 use crate::drive::flags::StorageFlags;
@@ -9,8 +8,9 @@ use crate::drive::object_size_info::{DocumentAndContractInfo, OwnedDocumentInfo}
 use crate::drive::Drive;
 use crate::error::Error;
 use crate::fee::op::DriveOperation;
-use dpp::data_contract::extra::{DocumentType, DriveContractExt};
-use dpp::data_contract::DataContract as Contract;
+use dpp::data_contract::document_type::DocumentType;
+use dpp::data_contract::{DataContract as Contract, DriveContractExt};
+use dpp::document::document_stub::DocumentStub;
 use grovedb::batch::KeyInfoPath;
 use grovedb::{EstimatedLayerInformation, TransactionArg};
 use std::borrow::Cow;
@@ -149,7 +149,7 @@ pub enum DocumentOperationType<'a> {
     /// Updates a document and returns the associated fee.
     UpdateDocumentForContract {
         /// The document to update
-        document: &'a Document,
+        document: &'a DocumentStub,
         /// The document in pre-serialized form
         serialized_document: &'a [u8],
         /// The contract
@@ -185,7 +185,7 @@ impl DriveOperationConverter for DocumentOperationType<'_> {
                 let contract =
                     <Contract as DriveContractExt>::from_cbor(serialized_contract, None)?;
 
-                let document = Document::from_cbor(serialized_document, None, owner_id)?;
+                let document = DocumentStub::from_cbor(serialized_document, None, owner_id)?;
 
                 let document_info =
                     DocumentRefAndSerialization((&document, serialized_document, storage_flags));
@@ -217,7 +217,7 @@ impl DriveOperationConverter for DocumentOperationType<'_> {
                 override_document,
                 storage_flags,
             } => {
-                let document = Document::from_cbor(serialized_document, None, owner_id)?;
+                let document = DocumentStub::from_cbor(serialized_document, None, owner_id)?;
 
                 let document_info =
                     DocumentRefAndSerialization((&document, serialized_document, storage_flags));
@@ -306,7 +306,7 @@ impl DriveOperationConverter for DocumentOperationType<'_> {
             } => {
                 let contract = <Contract as DriveContractExt>::from_cbor(contract_cbor, None)?;
 
-                let document = Document::from_cbor(serialized_document, None, owner_id)?;
+                let document = DocumentStub::from_cbor(serialized_document, None, owner_id)?;
 
                 let document_info =
                     DocumentRefAndSerialization((&document, serialized_document, storage_flags));
@@ -336,7 +336,7 @@ impl DriveOperationConverter for DocumentOperationType<'_> {
                 owner_id,
                 storage_flags,
             } => {
-                let document = Document::from_cbor(serialized_document, None, owner_id)?;
+                let document = DocumentStub::from_cbor(serialized_document, None, owner_id)?;
 
                 let document_info =
                     DocumentRefAndSerialization((&document, serialized_document, storage_flags));
@@ -466,7 +466,7 @@ impl DriveOperationConverter for DocumentOperationType<'_> {
 #[derive(Clone, Debug)]
 pub struct UpdateOperationInfo<'a> {
     /// The document to update
-    pub document: &'a Document,
+    pub document: &'a DocumentStub,
     /// The document in pre-serialized form
     pub serialized_document: Option<&'a [u8]>,
     /// The owner id, if none is specified will try to recover from serialized document
