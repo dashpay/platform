@@ -35,6 +35,7 @@
 use std::collections::{HashMap, HashSet};
 
 use dpp::data_contract::DriveContractExt;
+use dpp::data_contract::document_type::DocumentType;
 use grovedb::batch::key_info::KeyInfo;
 use grovedb::batch::key_info::KeyInfo::KnownKey;
 use grovedb::batch::KeyInfoPath;
@@ -76,7 +77,6 @@ use crate::drive::grove_operations::{
     QueryType,
 };
 use crate::fee::result::FeeResult;
-use dpp::data_contract::extra::{DocumentType, DriveContractExt};
 use dpp::prelude::DataContract;
 
 impl Drive {
@@ -646,7 +646,7 @@ impl Drive {
     /// Add update multiple documents operations
     pub fn add_update_multiple_documents_operations<'a>(
         &self,
-        documents: &'a [crate::contract::document::Document],
+        documents: &'a [DocumentStub],
         data_contract: &'a DataContract,
         document_type: &'a DocumentType,
         drive_operations: &mut Vec<DriveOperationType<'a>>,

@@ -1,4 +1,4 @@
-use dpp::{contracts::withdrawals_contract, data_contract::extra::common, prelude::Document};
+use dpp::{contracts::withdrawals_contract, prelude::Document, util::serializer};
 use grovedb::TransactionArg;
 use serde_json::json;
 
@@ -23,7 +23,7 @@ impl Drive {
             ]
         });
 
-        let query_cbor = common::value_to_cbor(query_value, None);
+        let query_cbor = serializer::value_to_cbor(query_value, None)?;
 
         let (documents, _, _) = self.query_documents(
             &query_cbor,
@@ -62,7 +62,7 @@ impl Drive {
             ],
         });
 
-        let query_cbor = common::value_to_cbor(query_value, None);
+        let query_cbor = serializer::value_to_cbor(query_value, None)?;
 
         let (documents, _, _) = self.query_documents(
             &query_cbor,

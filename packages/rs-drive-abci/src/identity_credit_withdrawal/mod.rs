@@ -11,10 +11,9 @@ use dashcore::{
 };
 use dpp::{
     contracts::withdrawals_contract,
-    data_contract::extra::DriveContractExt,
     identity::convert_credits_to_satoshi,
     prelude::{Document, Identifier},
-    util::{hash, json_value::JsonValueExt},
+    util::{hash, json_value::JsonValueExt}, data_contract::DriveContractExt,
 };
 use drive::{
     drive::{
