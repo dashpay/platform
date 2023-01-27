@@ -350,7 +350,7 @@ describe('Masternode Reward Shares', () => {
     let identity;
 
     before(async () => {
-      identity = await client.platform.identities.register(100000);
+      identity = await client.platform.identities.register(200000);
 
       await waitForSTPropagated();
     });

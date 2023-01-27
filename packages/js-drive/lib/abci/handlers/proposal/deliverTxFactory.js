@@ -27,11 +27,9 @@ const TIMERS = require('../timers');
  * @param {BlockExecutionContext} proposalBlockExecutionContext
  * @param {ExecutionTimer} executionTimer
  * @param {IdentityStoreRepository} identityRepository
-<<<<<<< HEAD
  * @param {calculateStateTransitionFee} calculateStateTransitionFee
-=======
+ * @param {calculateStateTransitionFeeFromOperations} calculateStateTransitionFeeFromOperations
  * @param {createContextLogger} createContextLogger
->>>>>>> v10merge
  *
  * @return {deliverTx}
  */
@@ -42,6 +40,7 @@ function deliverTxFactory(
   executionTimer,
   identityRepository,
   calculateStateTransitionFee,
+  calculateStateTransitionFeeFromOperations,
   createContextLogger,
 ) {
   /**
@@ -168,12 +167,12 @@ function deliverTxFactory(
     const stateTransitionExecutionContext = stateTransition.getExecutionContext();
 
     const predictedStateTransitionOperations = stateTransitionExecutionContext.getOperations();
-    const predictedStateTransitionFees = stateTransitionExecutionContext
-      .getLastCalculatedFeeDetails();
+    const predictedStateTransitionFees = calculateStateTransitionFeeFromOperations(
+      predictedStateTransitionOperations,
+      stateTransition.getOwnerId(),
+    );
 
     stateTransitionExecutionContext.clearDryOperations();
-
-    txContextLogger.debug(stateTransitionExecutionContext, 'after dry run cleanup');
 
     // Validate against state
 
@@ -203,16 +202,10 @@ function deliverTxFactory(
 
     executionTimer.stopTimer(TIMERS.DELIVER_TX.APPLY, true);
 
-    txContextLogger.debug(stateTransitionExecutionContext, 'before actual fee calculation');
-
     // Update identity balance
 
-    calculateStateTransitionFee(stateTransition);
+    const actualStateTransitionFees = calculateStateTransitionFee(stateTransition);
 
-    txContextLogger.debug(stateTransitionExecutionContext, 'after actual fee calculation');
-
-    const actualStateTransitionFees = stateTransitionExecutionContext
-      .getLastCalculatedFeeDetails();
     const actualStateTransitionOperations = stateTransition.getExecutionContext().getOperations();
 
     if (actualStateTransitionFees.desiredAmount > predictedStateTransitionFees.desiredAmount) {
@@ -226,30 +219,6 @@ function deliverTxFactory(
       actualStateTransitionFees.storageFee,
       actualStateTransitionFees.processingFee,
       actualStateTransitionFees.feeRefunds,
-    );
-
-    txContextLogger.trace(
-      {
-        fees: {
-          predicted: {
-            storage: predictedStateTransitionFees.storageFee,
-            processing: predictedStateTransitionFees.processingFee,
-            refunds: predictedStateTransitionFees.totalRefunds,
-            requiredAmount: predictedStateTransitionFees.requiredAmount,
-            desiredAmount: predictedStateTransitionFees.desiredAmount,
-            operations: predictedStateTransitionOperations.map((operation) => operation.toJSON()),
-          },
-          actual: {
-            storage: actualStateTransitionFees.storageFee,
-            processing: actualStateTransitionFees.processingFee,
-            refunds: actualStateTransitionFees.totalRefunds,
-            requiredAmount: actualStateTransitionFees.requiredAmount,
-            desiredAmount: actualStateTransitionFees.desiredAmount,
-            operations: actualStateTransitionOperations.map((operation) => operation.toJSON()),
-          },
-        },
-        txType: stateTransition.getType(),
-      },
     );
 
     const applyFeesToBalanceResult = await identityRepository.applyFeesToBalance(

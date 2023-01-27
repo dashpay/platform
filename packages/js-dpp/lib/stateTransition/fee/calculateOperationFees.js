@@ -1,7 +1,3 @@
-const {
-  FEE_MULTIPLIER,
-} = require('./constants');
-
 /**
  * Calculate processing and storage fees based on operations
  *
@@ -16,37 +12,41 @@ const {
  * }}
  */
 function calculateOperationFees(operations) {
-  let nonDriveStorageFee = 0;
-  let nonDriveProcessingFee = 0;
-
-  let driveFeeResult;
+  let storageFee = 0;
+  let processingFee = 0;
+  const feeRefunds = [];
 
   operations.forEach((operation) => {
-    // Sum fees with RS Drive's Fee Result
-    if (operation.feeResult && operation.feeResult.inner && operation.feeResult.feeRefunds.length > 0) {
-      if (!driveFeeResult) {
-        driveFeeResult = operation.feeResult;
-      } else {
-        driveFeeResult.add(operation.feeResult);
+    storageFee += operation.getStorageCost();
+    processingFee += operation.getProcessingCost();
+
+    // Merge refunds
+    const operationRefunds = operation.getRefunds();
+
+    operationRefunds.forEach((identityRefunds) => {
+      const existingIdentityRefunds = feeRefunds
+        .find(({ identifier }) => identifier.equals(identityRefunds.identifier));
+
+      if (!existingIdentityRefunds) {
+        feeRefunds.push(identityRefunds);
+
+        return;
       }
-    } else {
-      nonDriveStorageFee += operation.getStorageCost();
-      nonDriveProcessingFee += operation.getProcessingCost();
-    }
+
+      Object.entries(identityRefunds.creditsPerEpoch).forEach(([epochIndex, credits]) => {
+        if (!existingIdentityRefunds.creditsPerEpoch[epochIndex]) {
+          existingIdentityRefunds.refundsPerEpoch[epochIndex] = 0;
+        }
+
+        existingIdentityRefunds.refundsPerEpoch[epochIndex] += credits;
+      });
+    });
   });
 
-  if (driveFeeResult) {
-    return {
-      storageFee: driveFeeResult.storageFee + nonDriveStorageFee,
-      processingFee: driveFeeResult.processingFee + nonDriveProcessingFee,
-      feeRefunds: driveFeeResult.feeRefunds,
-    };
-  }
-
   return {
-    storageFee: nonDriveStorageFee,
-    processingFee: nonDriveProcessingFee,
-    feeRefunds: [],
+    storageFee,
+    processingFee,
+    feeRefunds,
   };
 }
 

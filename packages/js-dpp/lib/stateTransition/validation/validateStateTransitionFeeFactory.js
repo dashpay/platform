@@ -78,7 +78,11 @@ function validateStateTransitionFeeFactory(
         throw new InvalidStateTransitionTypeError(stateTransition.getType());
     }
 
-    const fee = calculateStateTransitionFee(stateTransition);
+    if (executionContext.isDryRun()) {
+      return result;
+    }
+
+    const { desiredAmount: fee } = calculateStateTransitionFee(stateTransition);
 
     if (balance < fee) {
       result.addError(

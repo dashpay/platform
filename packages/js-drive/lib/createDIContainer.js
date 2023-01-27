@@ -143,6 +143,7 @@ const LastSyncedCoreHeightRepository = require('./identity/masternode/LastSynced
 const fetchSimplifiedMNListFactory = require('./core/fetchSimplifiedMNListFactory');
 const processProposalFactory = require('./abci/handlers/proposal/processProposalFactory');
 const createContextLoggerFactory = require('./abci/errors/createContextLoggerFactory');
+const calculateStateTransitionFeeFromOperationsFactory = require('@dashevo/dpp/lib/stateTransition/fee/calculateStateTransitionFeeFromOperationsFactory');
 
 /**
  *
@@ -551,6 +552,10 @@ function createDIContainer(options) {
     decodeProtocolEntity: asFunction(decodeProtocolEntityFactory),
 
     calculateOperationFees: asValue(calculateOperationFees),
+
+    calculateStateTransitionFeeFromOperations:
+      asFunction(calculateStateTransitionFeeFromOperationsFactory),
+
     calculateStateTransitionFee: asFunction(calculateStateTransitionFeeFactory),
 
     stateRepository: asFunction((

@@ -17,7 +17,7 @@ function unserializeStateTransitionFactory(dpp, noopLogger) {
    * @param {Object} [options]
    * @param {BaseLogger} [options.logger]
    * @param {ExecutionTimer} [options.executionTimer]
-   * @return {DocumentsBatchTransition|DataContractCreateTransition|IdentityCreateTransition}
+   * @return {AbstractStateTransition}
    */
   async function unserializeStateTransition(stateTransitionByteArray, options = {}) {
     // either use a logger passed or use noop logger
@@ -30,7 +30,7 @@ function unserializeStateTransitionFactory(dpp, noopLogger) {
     });
 
     if (!stateTransitionByteArray) {
-      logger.info('State transition is not specified');
+      logger.warn('State transition is not specified');
 
       throw new InvalidArgumentAbciError('State Transition is not specified');
     }
@@ -85,8 +85,6 @@ function unserializeStateTransitionFactory(dpp, noopLogger) {
 
     const executionContext = stateTransition.getExecutionContext();
 
-    logger.debug(executionContext, 'before dry run');
-
     // Pre-calculate fee for validateState and state transition apply
     // with worst case costs to validate the whole state transition execution cost
     executionContext.enableDryRun();
@@ -96,11 +94,7 @@ function unserializeStateTransitionFactory(dpp, noopLogger) {
 
     executionContext.disableDryRun();
 
-    logger.debug(executionContext, 'after dry run');
-
     result = await dpp.stateTransition.validateFee(stateTransition);
-
-    logger.debug(executionContext, 'after fee validation');
 
     if (!result.isValid()) {
       const consensusError = result.getFirstError();

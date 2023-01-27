@@ -36,7 +36,10 @@ describe('validateStateTransitionFeeFactory', () => {
 
     const output = getIdentityCreateTransitionFixture().getAssetLockProof().getOutput();
 
-    calculateStateTransitionFeeMock = this.sinonSandbox.stub().returns(42);
+    calculateStateTransitionFeeMock = this.sinonSandbox.stub().returns({
+      desiredAmount: 42,
+    });
+
     fetchAssetLockTransactionOutputMock = this.sinonSandbox.stub().resolves(output);
 
     validateStateTransitionFee = validateStateTransitionFeeFactory(
@@ -195,7 +198,7 @@ describe('validateStateTransitionFeeFactory', () => {
     });
 
     it('should return invalid result if asset lock output amount is not enough', async () => {
-      calculateStateTransitionFeeMock.returns(outputAmount + 1);
+      calculateStateTransitionFeeMock.returns({ desiredAmount: outputAmount + 1 });
 
       const result = await validateStateTransitionFee(identityCreateTransition);
 
@@ -271,7 +274,7 @@ describe('validateStateTransitionFeeFactory', () => {
     it('should return invalid result if sum of balance and asset lock output amount is not enough', async () => {
       identity.balance = 1;
 
-      calculateStateTransitionFeeMock.returns(outputAmount + 2);
+      calculateStateTransitionFeeMock.returns({ desiredAmount: outputAmount + 2 });
 
       const result = await validateStateTransitionFee(identityTopUpTransition);
 

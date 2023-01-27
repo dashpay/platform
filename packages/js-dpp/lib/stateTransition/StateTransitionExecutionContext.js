@@ -65,35 +65,6 @@ class StateTransitionExecutionContext {
   isDryRun() {
     return this.dryRun;
   }
-
-  /**
-   * @return {{
-   *   storageFee: number,
-   *   processingFee: number,
-   *   feeRefunds: {identifier: Buffer, creditsPerEpoch: Object<string, number>}[],
-   *   totalRefunds: number,
-   *   total: number,
-   *   desiredAmount: number,
-   *   requiredAmount: number,
-   * }|null}
-   */
-  getLastCalculatedFeeDetails() {
-    return this.lastCalculatedFees;
-  }
-
-  /**
-   * @param {{
-   *   storageFee:number,
-   *   processingFee:number,
-   *   feeRefunds: {identifier: Buffer, creditsPerEpoch: Object<string, number>}[],
-   *   totalRefunds: number,
-   *   desiredAmount: number,
-   *   requiredAmount: number,
-   * }} lastCalculatedFees
-   */
-  setLastCalculatedFeeDetails(lastCalculatedFees) {
-    this.lastCalculatedFees = lastCalculatedFees;
-  }
 }
 
 module.exports = StateTransitionExecutionContext;

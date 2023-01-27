@@ -34,8 +34,8 @@ describe('identitiesByPublicKeyHashesQueryHandlerFactory', () => {
 
   beforeEach(function beforeEach() {
     identityRepositoryMock = {
-      fetchManyBuffers: this.sinon.stub(),
-      proveMany: this.sinon.stub(),
+      proveManyByPublicKeyHashes: this.sinon.stub(),
+      fetchManyByPublicKeyHashes: this.sinon.stub(),
     };
 
     maxIdentitiesPerRequest = 5;
@@ -65,8 +65,8 @@ describe('identitiesByPublicKeyHashesQueryHandlerFactory', () => {
     ];
 
     identityRepositoryMock
-      .fetchManyBuffers.resolves(
-        new StorageResult([identities[0].toBuffer(), identities[1].toBuffer()]),
+      .fetchManyByPublicKeyHashes.resolves(
+        new StorageResult([identities[0], identities[1]]),
       );
 
     params = {};
@@ -99,7 +99,7 @@ describe('identitiesByPublicKeyHashesQueryHandlerFactory', () => {
 
     const result = await identitiesByPublicKeyHashesQueryHandler(params, data, {});
 
-    expect(identityRepositoryMock.fetchManyBuffers).to.be.calledOnceWithExactly(
+    expect(identityRepositoryMock.fetchManyByPublicKeyHashes).to.be.calledOnceWithExactly(
       publicKeyHashes,
     );
 
@@ -118,7 +118,7 @@ describe('identitiesByPublicKeyHashesQueryHandlerFactory', () => {
 
     const proof = Buffer.alloc(20, 1);
 
-    identityRepositoryMock.proveMany.resolves(
+    identityRepositoryMock.proveManyByPublicKeyHashes.resolves(
       new StorageResult(proof),
     );
 
@@ -128,7 +128,7 @@ describe('identitiesByPublicKeyHashesQueryHandlerFactory', () => {
     expect(result.code).to.equal(0);
     expect(result.value).to.deep.equal(responseMock.serializeBinary());
 
-    expect(identityRepositoryMock.proveMany).to.be.calledOnceWithExactly(
+    expect(identityRepositoryMock.proveManyByPublicKeyHashes).to.be.calledOnceWithExactly(
       data.publicKeyHashes,
     );
   });

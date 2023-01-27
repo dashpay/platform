@@ -17,9 +17,6 @@ const StateTransitionExecutionContext = require('@dashevo/dpp/lib/stateTransitio
 
 const SomeConsensusError = require('@dashevo/dpp/lib/test/mocks/SomeConsensusError');
 
-const calculateOperationFees = require('@dashevo/dpp/lib/stateTransition/fee/calculateOperationFees');
-const calculateStateTransitionFeeFactory = require('@dashevo/dpp/lib/stateTransition/fee/calculateStateTransitionFeeFactory');
-
 const BlockExecutionContextMock = require('../../../../../lib/test/mock/BlockExecutionContextMock');
 
 const deliverTxFactory = require('../../../../../lib/abci/handlers/proposal/deliverTxFactory');
@@ -27,8 +24,6 @@ const LoggerMock = require('../../../../../lib/test/mock/LoggerMock');
 const DPPValidationAbciError = require('../../../../../lib/abci/errors/DPPValidationAbciError');
 const InvalidArgumentAbciError = require('../../../../../lib/abci/errors/InvalidArgumentAbciError');
 const StorageResult = require('../../../../../lib/storage/StorageResult');
-const PreCalculatedOperation = require('@dashevo/dpp/lib/stateTransition/fee/operations/PreCalculatedOperation');
-const SignatureVerificationOperation = require('@dashevo/dpp/lib/stateTransition/fee/operations/SignatureVerificationOperation');
 
 describe('deliverTxFactory', () => {
   let deliverTx;
@@ -51,6 +46,8 @@ describe('deliverTxFactory', () => {
   let refundsPerEpoch;
   let feeRefunds;
   let createContextLoggerMock;
+  let calculateStateTransitionFeeMock;
+  let calculateStateTransitionFeeFromOperationsMock;
 
   beforeEach(async function beforeEach() {
     round = 42;
@@ -92,15 +89,6 @@ describe('deliverTxFactory', () => {
       ),
     };
 
-    stateTransitionExecutionContextMock.setLastCalculatedFeeDetails({
-      storageFee,
-      processingFee,
-      feeRefunds,
-      totalRefunds,
-      requiredAmount: processingFee - totalRefunds,
-      desiredAmount: storageFee + processingFee - totalRefunds,
-    });
-
     documentsBatchTransitionFixture.setExecutionContext(stateTransitionExecutionContextMock);
     dataContractCreateTransitionFixture.setExecutionContext(stateTransitionExecutionContextMock);
 
@@ -135,12 +123,32 @@ describe('deliverTxFactory', () => {
 
     createContextLoggerMock = this.sinon.stub().returns(loggerMock);
 
+    calculateStateTransitionFeeMock = this.sinon.stub().returns({
+      storageFee,
+      processingFee,
+      feeRefunds,
+      totalRefunds,
+      requiredAmount: processingFee - totalRefunds,
+      desiredAmount: storageFee + processingFee - totalRefunds,
+    });
+
+    calculateStateTransitionFeeFromOperationsMock = this.sinon.stub().returns({
+      storageFee,
+      processingFee,
+      feeRefunds,
+      totalRefunds,
+      requiredAmount: processingFee - totalRefunds,
+      desiredAmount: storageFee + processingFee - totalRefunds,
+    });
+
     deliverTx = deliverTxFactory(
       unserializeStateTransitionMock,
       dppMock,
       proposalBlockExecutionContextMock,
       executionTimerMock,
       identityRepositoryMock,
+      calculateStateTransitionFeeMock,
+      calculateStateTransitionFeeFromOperationsMock,
       createContextLoggerMock,
     );
   });
@@ -307,32 +315,5 @@ describe('deliverTxFactory', () => {
       expect(e.getCode()).to.equal(GrpcErrorCodes.INVALID_ARGUMENT);
       expect(dppMock.stateTransition.validate).to.not.be.called();
     }
-  });
-
-  it('should', async () => {
-    const calculateStateTransitionFee = calculateStateTransitionFeeFactory(calculateOperationFees);
-
-    const operations = [
-      new PreCalculatedOperation(FeeResult.create(181062000, 10751790, [])),
-      new SignatureVerificationOperation(0),
-      new PreCalculatedOperation(FeeResult.create(0, 562120, [])),
-    ];
-
-    stateTransitionExecutionContextMock.enableDryRun();
-
-    stateTransitionExecutionContextMock.addOperation(...operations);
-
-    stateTransitionExecutionContextMock.disableDryRun();
-
-    const otherOperations = [
-      new PreCalculatedOperation(FeeResult.create(0, 4060, [])),
-      new PreCalculatedOperation(FeeResult.create(90531000, 2010310, [])),
-    ];
-
-    stateTransitionExecutionContextMock.addOperation(...otherOperations);
-
-    calculateStateTransitionFee(documentsBatchTransitionFixture);
-
-    console.dir(stateTransitionExecutionContextMock.getLastCalculatedFeeDetails());
   });
 });
