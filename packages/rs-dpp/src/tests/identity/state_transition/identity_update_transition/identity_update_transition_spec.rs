@@ -182,7 +182,8 @@ fn to_object_with_signature_skipped() {
                 "type": 0,
                 "securityLevel" : 0,
                 "data" :base64::decode("AkVuTKyF3YgKLAQlLEtaUL2HTditwGILfWUVqjzYnIgH").unwrap(),
-                "readOnly" : false
+                "readOnly" : false,
+                "signature" : vec![0; 65]
             }
         ]
     });
