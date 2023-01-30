@@ -1,31 +1,43 @@
 const Docker = require('dockerode');
-const StartedContainers = require('../../src/docker/StartedContainers');
-const DockerCompose = require('../../src/docker/DockerCompose');
+const StartedContainers = require('../../../src/docker/StartedContainers');
+const DockerCompose = require('../../../src/docker/DockerCompose');
+
 const fs = require("fs");
-const isEqual = require('lodash.isequal');
+const isEqual = require('lodash/isEqual');
 const { expect } = require('chai');
 const fetch = require("node-fetch");
 const publicIp = require('public-ip');
-const { EMPTY_TESTNET_CONFIG_FIELDS, INSIGHT_URLs, SERVICES } = require('../lib/test/constants/constants')
-const CoreService = require("../../src/core/CoreService");
-const createRpcClient = require("../../src/core/createRpcClient");
-const { removeVolumes, removeContainers } = require('../lib/test/manageDockerData')
-const generateBlsKeys = require("../../src/core/generateBlsKeys");
-const { execute } = require('../lib/test/commandRunner')
-const { getConfig } = require("../lib/test/manageConfig");
-const { core } = require("../../configs/system/base");
 const os = require("os");
+const path = require("path");
 const prettyByte = require('pretty-bytes');
 const prettyMs = require('pretty-ms');
+
+const generateBlsKeys = require("../../../src/core/generateBlsKeys");
 const wait = require("@dashevo/dpp/lib/test/utils/wait");
-const {CONFIG_FILE_PATH} = require("../../src/constants");
-const {STATUS} = require("../lib/test/constants/statusesConstants");
+
+const { EMPTY_TESTNET_CONFIG_FIELDS } = require('../lib/constants/configFields')
+const { INSIGHT_URLs } = require('../lib/constants/insightLinks')
+const { SERVICES } = require('../lib/constants/services')
+const {STATUS} = require("../lib/constants/statusOutput");
+
+const CoreService = require("../../../src/core/CoreService");
+const createRpcClient = require("../../../src/core/createRpcClient");
+const { removeVolumes, removeContainers } = require("../lib/manageDockerData");
+
+const { execute } = require('../../e2e/lib/runCommandInCli')
+const { getConfig, isConfigExist } = require("../../e2e/lib/manageConfig");
+const { core } = require("../../../configs/system/base");
+const {CONFIG_FILE_PATH} = require("../../../src/constants");
+const createSelfSignedCertificate = require('../../../src/ssl/selfSigned/createCertificate');
+const createCertificate = require("../../../src/ssl/selfSigned/createCertificate.js");
+const generateCsr = require("../../../src/ssl/zerossl/generateCsr");
+const generateKeyPair = require("../../../src/ssl/generateKeyPair");
 
 
-describe.skip('Testnet network', function main() {
+describe('Testnet dashmate', function main() {
   this.timeout(900000);
 
-  describe('Testnet network', function () {
+  describe('e2e testnet network', function () {
     let container;
     let testnetConfig, configEnvs;
     const testnetNetwork = 'testnet';
@@ -46,10 +58,18 @@ describe.skip('Testnet network', function main() {
       const ip = await publicIp.v4();
       const { privateKey: generatedPrivateKeyHex } = await generateBlsKeys();
       const nodeType = 'masternode';
-      const nodes = 3;
-      const minerInterval = '2.5m'
 
-      await execute(`yarn dashmate setup ${testnetNetwork} ${nodeType} -i=${ip} -k=${generatedPrivateKeyHex} --node-count=${nodes} --debug-logs --miner-interval=${minerInterval}`).then( res => {
+      const keyPair = await generateKeyPair();
+      const csr = await generateCsr(keyPair, ip);
+      const certificate = await createSelfSignedCertificate(keyPair, csr);
+
+      const tempDir = os.tmpdir();
+      const filePath = path.join(tempDir, 'bundle.crt');
+      const filePath2 = path.join(tempDir, 'private.key');
+      fs.writeFileSync(filePath, certificate, 'utf8');
+      fs.writeFileSync(filePath2, keyPair.privateKey, 'utf8');
+
+      await execute(`yarn dashmate setup ${testnetNetwork} ${nodeType} -i=${ip} -k=${generatedPrivateKeyHex} -s='manual' -c=${filePath} -l=${filePath2} --verbose`).then( res => {
         if(res.status !== undefined) {
           throw new Error(`${res.stderr} with exit code: ${res.status}`)
         }
@@ -60,20 +80,22 @@ describe.skip('Testnet network', function main() {
         testnetConfig = await getConfig(testnetNetwork)
         configEnvs = testnetConfig.toEnvs();
       } else {
-        throw new Error('No configuration file: ' + CONFIG_FILE_PATH);
+        throw new Error('No configuration file in ' + CONFIG_FILE_PATH);
       }
 
-      for (let key in configEnvs) {
-        if (!configEnvs[key]) {
-          const checkKeyInArray = EMPTY_TESTNET_CONFIG_FIELDS.includes(key);
-          expect(checkKeyInArray).to.equal(true, key + ' should not be empty.');
-        }
-      }
+      // waiting for a list of envs that should not be empty after setup
+      // for (let key in configEnvs) {
+      //   if (!configEnvs[key]) {
+      //     const checkKeyInArray = EMPTY_TESTNET_CONFIG_FIELDS.includes(key);
+      //     expect(checkKeyInArray).to.equal(true, key + ' should not be empty.');
+      //   }
+      // }
 
       for (const [key] of Object.entries(SERVICES)) {
         const isRunning = await container.isServiceRunning(configEnvs, SERVICES[key]);
         expect(isRunning).to.equal(false, `${key} is running!`)
       }
+      // fs.unlinkSync(filePath);
     });
 
     it('Start testnet nodes', async () => {
@@ -87,6 +109,7 @@ describe.skip('Testnet network', function main() {
         const isRunning = await container.isServiceRunning(configEnvs, SERVICES[key]);
         expect(isRunning).to.equal(true, `${key} is not running!`)
       }
+      //check isServiceRunning
     });
 
     it('Check core status before core sync process finish', async () => {
