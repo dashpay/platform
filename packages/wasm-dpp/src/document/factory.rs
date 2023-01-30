@@ -62,6 +62,7 @@ impl DocumentFactoryWASM {
         document_validator: DocumentValidatorWasm,
         state_repository: ExternalStateRepositoryLike,
     ) -> DocumentFactoryWASM {
+        //TODO -remove this
         console_error_panic_hook::set_once();
         let factory = DocumentFactory::new(
             protocol_version,
