@@ -606,7 +606,8 @@ mod tests {
 
             let transaction = platform.drive.grove.start_transaction();
 
-            let data_contract = get_withdrawals_data_contract_fixture(None);
+            let data_contract =
+                get_withdrawals_data_contract_fixture(Some(withdrawals_contract::OWNER_ID.clone()));
 
             // TODO: figure out the bug in data contract factory
             let data_contract = DataContract::from_cbor(

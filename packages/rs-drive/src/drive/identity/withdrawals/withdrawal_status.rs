@@ -16,6 +16,7 @@ impl Drive {
     ) -> Result<Vec<Document>, Error> {
         let query_value = json!({
             "where": [
+                [withdrawals_contract::property_names::OWNER_ID, "==", withdrawals_contract::OWNER_ID.clone()],
                 [withdrawals_contract::property_names::STATUS, "==", status],
             ],
             "orderBy": [
@@ -116,7 +117,8 @@ mod tests {
 
             let transaction = drive.grove.start_transaction();
 
-            let data_contract = get_withdrawals_data_contract_fixture(None);
+            let data_contract =
+                get_withdrawals_data_contract_fixture(Some(withdrawals_contract::OWNER_ID.clone()));
 
             setup_system_data_contract(&drive, &data_contract, Some(&transaction));
 

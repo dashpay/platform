@@ -18,6 +18,7 @@ pub mod property_names {
     pub const OUTPUT_SCRIPT: &str = "outputScript";
     pub const STATUS: &str = "status";
     pub const CREATE_AT: &str = "$createdAt";
+    pub const OWNER_ID: &str = "$ownerId";
 }
 
 #[repr(u8)]
