@@ -97,7 +97,10 @@ mod test {
         identity::state_transition::identity_credit_withdrawal_transition::Pooling,
         state_repository::MockStateRepositoryLike,
         state_transition::state_transition_execution_context::StateTransitionExecutionContext,
-        tests::fixtures::{get_data_contract_fixture, get_withdrawal_document_fixture, get_withdrawals_data_contract_fixture},
+        tests::fixtures::{
+            get_data_contract_fixture, get_withdrawal_document_fixture,
+            get_withdrawals_data_contract_fixture,
+        },
     };
     use serde_json::json;
 
@@ -174,6 +177,9 @@ mod test {
 
         let error = result.get_errors().get(0).unwrap();
 
-        assert_eq!(error.to_string(), "withdrawal deletion is allowed only for COMPLETE and EXPIRED statuses");
+        assert_eq!(
+            error.to_string(),
+            "withdrawal deletion is allowed only for COMPLETE and EXPIRED statuses"
+        );
     }
 }
