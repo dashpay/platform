@@ -91,21 +91,28 @@ where
 mod test {
     use super::delete_withdrawal_data_trigger;
     use crate::{
+        contracts::withdrawals_contract,
         data_trigger::DataTriggerExecutionContext,
-        document::document_transition::DocumentTransition,
+        document::{document_transition::DocumentTransition, Document},
+        identity::state_transition::identity_credit_withdrawal_transition::Pooling,
         state_repository::MockStateRepositoryLike,
         state_transition::state_transition_execution_context::StateTransitionExecutionContext,
-        tests::fixtures::get_data_contract_fixture,
+        tests::fixtures::{get_data_contract_fixture, get_withdrawal_document_fixture, get_withdrawals_data_contract_fixture},
     };
+    use serde_json::json;
 
     #[tokio::test]
-    async fn should_successfully_execute_on_dry_run() {
+    async fn should_throw_error_if_withdrawal_not_found() {
         let transition_execution_context = StateTransitionExecutionContext::default();
-        let state_repository = MockStateRepositoryLike::new();
+        let mut state_repository = MockStateRepositoryLike::new();
         let data_contract = get_data_contract_fixture(None);
         let owner_id = data_contract.owner_id().to_owned();
 
-        let document_transition = DocumentTransition::Create(Default::default());
+        state_repository
+            .expect_fetch_documents::<Document>()
+            .returning(|_, _, _, _| Ok(vec![]));
+
+        let document_transition = DocumentTransition::Delete(Default::default());
         let data_trigger_context = DataTriggerExecutionContext {
             data_contract: &data_contract,
             owner_id: &owner_id,
@@ -113,13 +120,60 @@ mod test {
             state_transition_execution_context: &transition_execution_context,
         };
 
-        transition_execution_context.enable_dry_run();
+        let result =
+            delete_withdrawal_data_trigger(&document_transition, &data_trigger_context, None)
+                .await
+                .expect("the execution result should be returned");
+
+        assert!(!result.is_ok());
+
+        let error = result.get_errors().get(0).unwrap();
+
+        assert_eq!(error.to_string(), "Withdrawal document was not found");
+    }
+
+    #[tokio::test]
+    async fn should_throw_error_if_withdrawal_has_wrong_status() {
+        let transition_execution_context = StateTransitionExecutionContext::default();
+        let mut state_repository = MockStateRepositoryLike::new();
+        let data_contract = get_withdrawals_data_contract_fixture(None);
+        let owner_id = data_contract.owner_id().to_owned();
+
+        let document = get_withdrawal_document_fixture(
+            &data_contract,
+            json!({
+                "amount": 1000,
+                "coreFeePerByte": 1,
+                "pooling": Pooling::Never,
+                "outputScript": (0..23).collect::<Vec<u8>>(),
+                "status": withdrawals_contract::Status::BROADCASTED,
+                "transactionIndex": 1,
+                "transactionSignHeight": 93,
+                "transactionId": vec![1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1],
+            }),
+        );
+
+        state_repository
+            .expect_fetch_documents::<Document>()
+            .return_once(move |_, _, _, _| Ok(vec![document]));
+
+        let document_transition = DocumentTransition::Delete(Default::default());
+        let data_trigger_context = DataTriggerExecutionContext {
+            data_contract: &data_contract,
+            owner_id: &owner_id,
+            state_repository: &state_repository,
+            state_transition_execution_context: &transition_execution_context,
+        };
 
         let result =
             delete_withdrawal_data_trigger(&document_transition, &data_trigger_context, None)
                 .await
                 .expect("the execution result should be returned");
 
-        assert!(result.is_ok());
+        assert!(!result.is_ok());
+
+        let error = result.get_errors().get(0).unwrap();
+
+        assert_eq!(error.to_string(), "withdrawal deletion is allowed only for COMPLETE and EXPIRED statuses");
     }
 }
