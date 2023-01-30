@@ -563,7 +563,9 @@ impl Drive {
         transaction: TransactionArg,
         drive_operations: &mut Vec<DriveOperation>,
     ) -> Result<Vec<u8>, Error> {
-        let CostContext { value, cost } = self.grove.get_proved_path_query(path_query, verbose, transaction);
+        let CostContext { value, cost } =
+            self.grove
+                .get_proved_path_query(path_query, verbose, transaction);
         drive_operations.push(CalculatedCostOperation(cost));
         value.map_err(Error::GroveDB)
     }

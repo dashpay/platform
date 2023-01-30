@@ -1043,16 +1043,24 @@ impl PlatformWrapper {
         Ok(cx.undefined())
     }
 
-    fn js_fetch_identity_balance_include_debt(mut cx: FunctionContext) -> JsResult<JsUndefined> {
+    fn js_fetch_identity_balance_include_debt_with_costs(
+        mut cx: FunctionContext,
+    ) -> JsResult<JsUndefined> {
         let js_identity_id = cx.argument::<JsBuffer>(0)?;
-        let js_using_transaction = cx.argument::<JsBoolean>(1)?;
-        let js_callback = cx.argument::<JsFunction>(2)?.root(&mut cx);
+        let js_block_info = cx.argument::<JsObject>(1)?;
+        let js_apply = cx.argument::<JsBoolean>(2)?;
+        let js_using_transaction = cx.argument::<JsBoolean>(3)?;
+        let js_callback = cx.argument::<JsFunction>(4)?.root(&mut cx);
 
         let drive = cx
             .this()
             .downcast_or_throw::<JsBox<PlatformWrapper>, _>(&mut cx)?;
 
         let identity_id = converter::js_buffer_to_identifier(&mut cx, js_identity_id)?;
+
+        let block_info = converter::js_object_to_block_info(&mut cx, js_block_info)?;
+
+        let apply = js_apply.value(&mut cx);
 
         let using_transaction = js_using_transaction.value(&mut cx);
 
@@ -1071,7 +1079,12 @@ impl PlatformWrapper {
                 let result = transaction_result.and_then(|transaction_arg| {
                     platform
                         .drive
-                        .fetch_identity_balance_include_debt(identity_id, transaction_arg)
+                        .fetch_identity_balance_include_debt_with_costs(
+                            identity_id,
+                            &block_info,
+                            apply,
+                            transaction_arg,
+                        )
                         .map_err(|err| err.to_string())
                 });
 
@@ -1080,13 +1093,25 @@ impl PlatformWrapper {
                     let this = task_context.undefined();
 
                     let callback_arguments: Vec<Handle<JsValue>> = match result {
-                        Ok(maybe_balance) => {
-                            if let Some(credits) = maybe_balance {
+                        Ok((maybe_balance, fee_result)) => {
+                            let js_result = task_context.empty_array();
+
+                            let js_balance: Handle<JsValue> = if let Some(credits) = maybe_balance {
                                 let value = JsNumber::new(&mut task_context, credits as f64);
-                                vec![task_context.null().upcast(), value.upcast()]
+                                value.upcast()
                             } else {
-                                vec![task_context.null().upcast(), task_context.null().upcast()]
-                            }
+                                task_context.null().upcast()
+                            };
+
+                            js_result.set(&mut task_context, 0, js_balance)?;
+
+                            let js_fee_result =
+                                task_context.boxed(FeeResultWrapper::new(fee_result));
+
+                            js_result.set(&mut task_context, 1, js_fee_result)?;
+
+                            // First parameter of JS callbacks is error, which is null in this case
+                            vec![task_context.null().upcast(), js_result.upcast()]
                         }
 
                         // Convert the error to a JavaScript exception on failure
@@ -2800,7 +2825,7 @@ impl PlatformWrapper {
 
             let result = transaction_result.and_then(|transaction_arg| {
                 grove_db
-                    .get_proved_path_query(&path_query,  get_verbose_proof, transaction_arg)
+                    .get_proved_path_query(&path_query, get_verbose_proof, transaction_arg)
                     .unwrap()
                     .map_err(Error::GroveDB)
                     .map_err(|err| err.to_string())
@@ -3421,9 +3446,18 @@ fn main(mut cx: ModuleContext) -> NeonResult<()> {
         PlatformWrapper::js_insert_identity_cbor,
     )?;
     cx.export_function("driveFetchIdentity", PlatformWrapper::js_fetch_identity)?;
-    cx.export_function("driveFetchIdentityBalance", PlatformWrapper::js_fetch_identity_balance)?;
-    cx.export_function("driveFetchIdentityBalanceWithCosts", PlatformWrapper::js_fetch_identity_balance_with_costs)?;
-    cx.export_function("driveFetchIdentityBalanceIncludeDebt", PlatformWrapper::js_fetch_identity_balance_include_debt)?;
+    cx.export_function(
+        "driveFetchIdentityBalance",
+        PlatformWrapper::js_fetch_identity_balance,
+    )?;
+    cx.export_function(
+        "driveFetchIdentityBalanceWithCosts",
+        PlatformWrapper::js_fetch_identity_balance_with_costs,
+    )?;
+    cx.export_function(
+        "driveFetchIdentityBalanceIncludeDebtWithCosts",
+        PlatformWrapper::js_fetch_identity_balance_include_debt_with_costs,
+    )?;
     cx.export_function(
         "driveFetchProvedIdentity",
         PlatformWrapper::js_fetch_proved_identity,
