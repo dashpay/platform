@@ -151,7 +151,7 @@ describe('applyIdentityUpdateTransition', () => {
       match.instanceOf(StateTransitionExecutionContext),
     );
 
-    expect(biggestPossibleIdentity.getRevision()).to.equal(stateTransition.getRevision());
+    expect(updatedIdentity.getRevision()).to.equal(stateTransition.getRevision());
   });
 
   it('should use biggestPossibleIdentity on dry run', async function () {
