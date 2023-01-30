@@ -12,10 +12,10 @@ const { EMPTY_LOCAL_CONFIG_FIELDS } = require("../lib/constants/configFields");
 const { execute } = require('../lib/runCommandInCli')
 const isEqual = require('lodash/isEqual');
 
-describe('Local network', function main() {
+describe('Local dashmate', function main() {
   this.timeout(900000);
 
-  describe('Local network', function () {
+  describe('e2e local network', function () {
     let container;
     let localConfig;
     const nodes = 3;
@@ -45,7 +45,7 @@ describe('Local network', function main() {
       if (fs.existsSync(CONFIG_FILE_PATH) && isConfExist) {
         localConfig = await getGroupConfig(localNetwork)
       } else {
-        throw new Error('No configuration file: ' + CONFIG_FILE_PATH);
+        throw new Error('No configuration file in ' + CONFIG_FILE_PATH);
       }
 
       // waiting for a list of envs that should not be empty after setup
