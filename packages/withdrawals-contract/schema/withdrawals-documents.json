@@ -4,6 +4,21 @@
     "type": "object",
     "indices": [
       {
+        "name": "identityStatus",
+        "properties": [
+          {
+            "$ownerId": "asc"
+          },
+          {
+            "status": "asc"
+          },
+          {
+            "$createdAt": "asc"
+          }
+        ],
+        "unique": false
+      },
+      {
         "name": "identityRecent",
         "properties": [
           {
@@ -44,18 +59,6 @@
           },
           {
             "transactionId": "asc"
-          }
-        ],
-        "unique": false
-      },
-      {
-        "name": "status",
-        "properties": [
-          {
-            "status": "asc"
-          },
-          {
-            "$createdAt": "asc"
           }
         ],
         "unique": false

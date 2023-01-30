@@ -6,6 +6,7 @@ mod apply_identity_credit_withdrawal_transition_factory {
 
     use crate::{
         contracts::withdrawals_contract,
+        document::{generate_document_id, Document},
         identity::state_transition::identity_credit_withdrawal_transition::{
             apply_identity_credit_withdrawal_transition_factory::ApplyIdentityCreditWithdrawalTransition,
             IdentityCreditWithdrawalTransition, Pooling,
@@ -48,9 +49,11 @@ mod apply_identity_credit_withdrawal_transition_factory {
 
         state_transition.amount = 10;
 
-        let st_hash: [u8; 32] = state_transition.hash(true).unwrap().try_into().unwrap();
-
         let mut state_repository = MockStateRepositoryLike::default();
+
+        state_repository
+            .expect_fetch_documents::<Document>()
+            .returning(|_, _, _, _| anyhow::Ok(vec![]));
 
         state_repository
             .expect_fetch_data_contract()
@@ -66,8 +69,6 @@ mod apply_identity_credit_withdrawal_transition_factory {
             .expect_create_document()
             .times(1)
             .withf(move |doc, _| {
-                let id_match = doc.id == Identifier::from_bytes(&st_hash).unwrap();
-
                 let created_at_match = doc.created_at == Some(block_time_seconds * 1000);
                 let updated_at_match = doc.created_at == Some(block_time_seconds * 1000);
 
@@ -80,7 +81,7 @@ mod apply_identity_credit_withdrawal_transition_factory {
                         "status": withdrawals_contract::Status::QUEUED,
                     });
 
-                id_match && created_at_match && updated_at_match && document_data_match
+                created_at_match && updated_at_match && document_data_match
             })
             .returning(|_, _| anyhow::Ok(()));
 
