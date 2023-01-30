@@ -587,7 +587,7 @@ dependencies = [
 [[package]]
 name = "costs"
 version = "1.0.0"
-source = "git+https://github.com/dashpay/grovedb?branch=fix/SumTreeRootCosts#ce56909c543866016e7f7f6e2500907819d3aed9"
+source = "git+https://github.com/dashpay/grovedb?rev=009787b79538dae833ed6711253852046dfcc59d#009787b79538dae833ed6711253852046dfcc59d"
 dependencies = [
  "integer-encoding",
  "intmap",
@@ -1285,8 +1285,8 @@ dependencies = [
 
 [[package]]
 name = "grovedb"
-version = "0.11.0"
-source = "git+https://github.com/dashpay/grovedb?branch=fix/SumTreeRootCosts#ce56909c543866016e7f7f6e2500907819d3aed9"
+version = "0.12.0"
+source = "git+https://github.com/dashpay/grovedb?rev=009787b79538dae833ed6711253852046dfcc59d#009787b79538dae833ed6711253852046dfcc59d"
 dependencies = [
  "bincode",
  "costs",
@@ -1719,8 +1719,8 @@ dependencies = [
 
 [[package]]
 name = "merk"
-version = "0.11.0"
-source = "git+https://github.com/dashpay/grovedb?branch=fix/SumTreeRootCosts#ce56909c543866016e7f7f6e2500907819d3aed9"
+version = "0.12.0"
+source = "git+https://github.com/dashpay/grovedb?rev=009787b79538dae833ed6711253852046dfcc59d#009787b79538dae833ed6711253852046dfcc59d"
 dependencies = [
  "blake3",
  "byteorder",
@@ -2790,7 +2790,7 @@ dependencies = [
 [[package]]
 name = "storage"
 version = "1.0.0"
-source = "git+https://github.com/dashpay/grovedb?branch=fix/SumTreeRootCosts#ce56909c543866016e7f7f6e2500907819d3aed9"
+source = "git+https://github.com/dashpay/grovedb?rev=009787b79538dae833ed6711253852046dfcc59d#009787b79538dae833ed6711253852046dfcc59d"
 dependencies = [
  "blake3",
  "costs",
@@ -3194,7 +3194,7 @@ checksum = "49874b5167b65d7193b8aba1567f5c7d93d001cafc34600cee003eda787e483f"
 [[package]]
 name = "visualize"
 version = "0.1.0"
-source = "git+https://github.com/dashpay/grovedb?branch=fix/SumTreeRootCosts#ce56909c543866016e7f7f6e2500907819d3aed9"
+source = "git+https://github.com/dashpay/grovedb?rev=009787b79538dae833ed6711253852046dfcc59d#009787b79538dae833ed6711253852046dfcc59d"
 dependencies = [
  "hex",
  "itertools",

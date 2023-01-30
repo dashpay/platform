@@ -37,15 +37,15 @@ lazy_static = "1.4.0"
 
 [dependencies.grovedb]
 git = "https://github.com/dashpay/grovedb"
-branch = "fix/SumTreeRootCosts"
+rev = "009787b79538dae833ed6711253852046dfcc59d"
 
 [dependencies.storage]
 git = "https://github.com/dashpay/grovedb"
-branch = "fix/SumTreeRootCosts"
+rev = "009787b79538dae833ed6711253852046dfcc59d"
 
 [dependencies.costs]
 git = "https://github.com/dashpay/grovedb"
-branch = "fix/SumTreeRootCosts"
+rev = "009787b79538dae833ed6711253852046dfcc59d"
 
 [dev-dependencies]
 criterion = "0.3.5"
