@@ -1,26 +1,29 @@
 use wasm_bindgen::prelude::*;
+use dpp::consensus::ConsensusError;
+use crate::errors::consensus_error::{from_consensus_error_ref};
 
 #[wasm_bindgen(js_name=InvalidDataContractError)]
 #[derive(Debug)]
 pub struct InvalidDataContractError {
     // we have to store it as JsValue as the errors of 'class' Consensus are of different types
-    errors: Vec<JsValue>,
+    errors: Vec<ConsensusError>,
     raw_data_contract: JsValue,
 }
 
-#[wasm_bindgen(js_class=InvalidDataContractError)]
 impl InvalidDataContractError {
-    #[wasm_bindgen(constructor)]
-    pub fn new(errors: Vec<JsValue>, raw_data_contract: JsValue) -> Self {
+    pub fn new(errors: Vec<ConsensusError>, raw_data_contract: JsValue) -> Self {
         InvalidDataContractError {
             errors,
             raw_data_contract,
         }
     }
+}
 
+#[wasm_bindgen(js_class=InvalidDataContractError)]
+impl InvalidDataContractError {
     #[wasm_bindgen(js_name=getErrors)]
     pub fn get_errors(&self) -> Vec<JsValue> {
-        self.errors.clone().into_iter().map(JsValue::from).collect()
+        self.errors.iter().map(from_consensus_error_ref).collect()
     }
 
     #[wasm_bindgen(js_name=getRawDataContract)]
@@ -33,7 +36,7 @@ impl InvalidDataContractError {
         let extended_message = if let Some(error_message) = self
             .errors
             .first()
-            .map(|e| Into::<js_sys::Error>::into(e.clone()).message())
+            .map(|e| e.to_string())
         {
             let narrowed_message = if self.errors.len() > 1 {
                 format!(" and {} more", self.errors.len() - 1)

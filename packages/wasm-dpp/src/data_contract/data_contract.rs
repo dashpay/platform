@@ -277,7 +277,7 @@ impl DataContractWasm {
     }
 
     #[wasm_bindgen(js_name=from)]
-    pub fn from(v: JsValue) -> Result<DataContractWasm, JsValue> {
+    pub fn from_js_value(v: JsValue) -> Result<DataContractWasm, JsValue> {
         let json_contract: Value = with_js_error!(serde_wasm_bindgen::from_value(v))?;
         Ok(DataContract::try_from(json_contract)
             .map_err(from_dpp_err)?

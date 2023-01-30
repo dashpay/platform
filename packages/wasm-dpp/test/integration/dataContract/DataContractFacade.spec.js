@@ -60,18 +60,22 @@ describe('DataContractFacade', () => {
   });
 
   describe('createFromObject', () => {
-    it('should create DataContract from plain object', async function test() {
-      this.timeout(10000);
-      const result = await dpp.dataContract.createFromObject(rawDataContract);
+    it('should create DataContract from plain object', async() => {
+      try {
+        const result = await dpp.dataContract.createFromObject(rawDataContract);
 
-      expect(result).to.be.an.instanceOf(DataContract);
+        expect(result).to.be.an.instanceOf(DataContract);
 
-      expect(result.toObject()).to.deep.equal(dataContract.toObject());
+        expect(result.toObject()).to.deep.equal(dataContract.toObject());
+      } catch (e) {
+        console.dir(e.getMessage());
+        expect.fail();
+      }
     });
   });
 
   describe('createFromBuffer', () => {
-    it('should create DataContract from string', async function test() {
+    it('should create DataContract from string', async() => {
       const result = await dpp.dataContract.createFromBuffer(dataContract.toBuffer());
 
       expect(result).to.be.an.instanceOf(DataContract);

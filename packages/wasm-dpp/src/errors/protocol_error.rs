@@ -1,4 +1,5 @@
 use wasm_bindgen::JsValue;
+use crate::data_contract::errors::InvalidDataContractError;
 
 use super::consensus_error::from_consensus_error;
 
@@ -7,6 +8,17 @@ pub fn from_protocol_error(e: dpp::ProtocolError) -> JsValue {
         dpp::ProtocolError::AbstractConsensusError(consensus_error) => {
             from_consensus_error(*consensus_error)
         }
-        _ => unimplemented!(),
+        dpp::ProtocolError::InvalidDataContractError { errors, raw_data_contract } => {
+            let protocol = serde_wasm_bindgen::to_value(&raw_data_contract);
+            protocol.map_or_else(|parsing_error| {
+                JsValue::from(parsing_error)
+            }, |raw_contract| {
+                InvalidDataContractError::new(
+                    errors,
+                    raw_contract
+                ).into()
+            })
+        }
+        e => JsValue::from(format!("{}", e.to_string())),
     }
 }

@@ -47,12 +47,10 @@ impl DataContractFacadeWasm {
         js_raw_data_contract: JsValue,
         skip_validation: bool,
     ) -> Result<DataContractWasm, JsValue> {
-        let raw_data_contract = js_value_to_serde_value(js_raw_data_contract)?;
-
         self.0
-            .create_from_object(raw_data_contract, skip_validation)
+            .create_from_object(js_value_to_serde_value(js_raw_data_contract)?, skip_validation)
             .await
-            .map(Into::into)
+            .map(DataContractWasm::from)
             .map_err(from_protocol_error)
     }
 
