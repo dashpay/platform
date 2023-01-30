@@ -3,7 +3,6 @@ const Drive = require('@dashevo/rs-drive');
 const { FeeResult } = require('@dashevo/rs-drive');
 const decodeProtocolEntityFactory = require('@dashevo/dpp/lib/decodeProtocolEntityFactory');
 const getIdentityFixture = require('@dashevo/dpp/lib/test/fixtures/getIdentityFixture');
-const Identity = require('@dashevo/dpp/lib/identity/Identity');
 const GroveDBStore = require('../../../lib/storage/GroveDBStore');
 const IdentityBalanceStoreRepository = require('../../../lib/identity/IdentityBalanceStoreRepository');
 const IdentityStoreRepository = require('../../../lib/identity/IdentityStoreRepository');

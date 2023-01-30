@@ -1,5 +1,3 @@
-const BlockInfo = require('../blockExecution/BlockInfo');
-
 /**
  * @implements StateRepository
  */

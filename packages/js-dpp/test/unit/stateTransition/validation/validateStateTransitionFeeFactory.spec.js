@@ -2,7 +2,6 @@ const validateStateTransitionFeeFactory = require('../../../../lib/stateTransiti
 
 const createStateRepositoryMock = require('../../../../lib/test/mocks/createStateRepositoryMock');
 
-const getIdentityFixture = require('../../../../lib/test/fixtures/getIdentityFixture');
 const getDocumentsFixture = require('../../../../lib/test/fixtures/getDocumentsFixture');
 const getDataContractFixture = require('../../../../lib/test/fixtures/getDataContractFixture');
 const getIdentityCreateTransitionFixture = require('../../../../lib/test/fixtures/getIdentityCreateTransitionFixture');

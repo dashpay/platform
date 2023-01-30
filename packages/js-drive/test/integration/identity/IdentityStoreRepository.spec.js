@@ -1,6 +1,5 @@
 const fs = require('fs');
 const Drive = require('@dashevo/rs-drive');
-const { FeeResult } = require('@dashevo/rs-drive');
 const decodeProtocolEntityFactory = require('@dashevo/dpp/lib/decodeProtocolEntityFactory');
 const getIdentityFixture = require('@dashevo/dpp/lib/test/fixtures/getIdentityFixture');
 const Identity = require('@dashevo/dpp/lib/identity/Identity');
