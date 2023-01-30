@@ -282,20 +282,22 @@ impl StateRepositoryLike for ExternalStateRepositoryLikeWrapper {
     }
 
     async fn fetch_latest_platform_block_header(&self) -> anyhow::Result<Vec<u8>> {
-        Ok(self
+        let header = self
             .0
             .lock()
             .expect("unexpected concurrency issue!")
-            .fetch_latest_platform_block_header())
+            .fetch_latest_platform_block_header();
+        Ok(header)
     }
 
     async fn fetch_latest_platform_core_chain_locked_height(&self) -> anyhow::Result<Option<u32>> {
-        Ok(self
+        let height = self
             .0
             .lock()
             .expect("unexpected concurrency issue!")
             .fetch_latest_platform_core_chain_locked_height()
-            .map(Into::into))
+            .map(Into::into);
+        Ok(height)
     }
 
     async fn verify_instant_lock(

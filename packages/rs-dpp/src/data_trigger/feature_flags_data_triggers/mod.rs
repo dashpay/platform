@@ -43,18 +43,15 @@ where
         )
     })?;
 
-    let latest_block_header_bytes = context
+    let core_chain_locked_height = context
         .state_repository
-        .fetch_latest_platform_block_header()
-        .await?;
+        .fetch_latest_platform_core_chain_locked_height()
+        .await?
+        .unwrap_or_default() as i64;
 
-    let latest_block_header: BlockHeader =
-        consensus::deserialize(&latest_block_header_bytes).map_err(|e| anyhow!(e.to_string()))?;
-
-    let block_height = latest_block_header.time as i64;
     let enable_at_height = data.get_i64(PROPERTY_ENABLE_AT_HEIGHT)?;
 
-    if enable_at_height < block_height {
+    if enable_at_height < core_chain_locked_height {
         let err = create_error(
             context,
             dt_create,
