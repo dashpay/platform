@@ -170,7 +170,7 @@ class DocumentRepository {
       return new StorageResult(
         documents,
         [
-          new PreCalculatedOperation(new DummyFeeResult(0, processingCost)),
+          new PreCalculatedOperation(new DummyFeeResult(0, processingCost, [])),
         ],
       );
     } catch (e) {
@@ -273,7 +273,7 @@ class DocumentRepository {
       return new StorageResult(
         prove,
         [
-          new PreCalculatedOperation(new DummyFeeResult(0, processingCost)),
+          new PreCalculatedOperation(new DummyFeeResult(0, processingCost, [])),
         ],
       );
     } catch (e) {

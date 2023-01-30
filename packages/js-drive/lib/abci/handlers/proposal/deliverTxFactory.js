@@ -26,7 +26,7 @@ const TIMERS = require('../timers');
  * @param {DashPlatformProtocol} transactionalDpp
  * @param {BlockExecutionContext} proposalBlockExecutionContext
  * @param {ExecutionTimer} executionTimer
- * @param {IdentityStoreRepository} identityRepository
+ * @param {IdentityBalanceStoreRepository} identityBalanceRepository
  * @param {calculateStateTransitionFee} calculateStateTransitionFee
  * @param {calculateStateTransitionFeeFromOperations} calculateStateTransitionFeeFromOperations
  * @param {createContextLogger} createContextLogger
@@ -38,7 +38,7 @@ function deliverTxFactory(
   transactionalDpp,
   proposalBlockExecutionContext,
   executionTimer,
-  identityRepository,
+  identityBalanceRepository,
   calculateStateTransitionFee,
   calculateStateTransitionFeeFromOperations,
   createContextLogger,
@@ -221,7 +221,7 @@ function deliverTxFactory(
       actualStateTransitionFees.feeRefunds,
     );
 
-    const applyFeesToBalanceResult = await identityRepository.applyFeesToBalance(
+    const applyFeesToBalanceResult = await identityBalanceRepository.applyFees(
       stateTransition.getOwnerId(),
       feeResult,
       { useTransaction: true },

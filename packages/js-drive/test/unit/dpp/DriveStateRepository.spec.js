@@ -16,6 +16,7 @@ const BlockInfo = require('../../../lib/blockExecution/BlockInfo');
 describe('DriveStateRepository', () => {
   let stateRepository;
   let identityRepositoryMock;
+  let identityBalanceRepositoryMock;
   let identityPublicKeyRepositoryMock;
   let dataContractRepositoryMock;
   let fetchDocumentsMock;
@@ -57,8 +58,13 @@ describe('DriveStateRepository', () => {
     identityRepositoryMock = {
       fetch: this.sinon.stub(),
       create: this.sinon.stub(),
-      addToBalance: this.sinon.stub(),
       updateRevision: this.sinon.stub(),
+    };
+
+    identityBalanceRepositoryMock = {
+      add: this.sinon.stub(),
+      fetch: this.sinon.stub(),
+      fetchWithDebt: this.sinon.stub(),
     };
 
     identityPublicKeyRepositoryMock = {
@@ -111,6 +117,7 @@ describe('DriveStateRepository', () => {
 
     stateRepository = new DriveStateRepository(
       identityRepositoryMock,
+      identityBalanceRepositoryMock,
       identityPublicKeyRepositoryMock,
       dataContractRepositoryMock,
       fetchDocumentsMock,
@@ -177,15 +184,64 @@ describe('DriveStateRepository', () => {
     });
   });
 
+  describe('#fetchIdentityBalance', () => {
+    it('should fetch identity balance', async () => {
+      identityBalanceRepositoryMock.fetch.resolves(
+        new StorageResult(1, operations),
+      );
+
+      const result = await stateRepository.fetchIdentityBalance(identity.getId(), executionContext);
+
+      expect(result).to.equals(1);
+
+      expect(identityBalanceRepositoryMock.fetch).to.be.calledOnceWith(
+        identity.getId(),
+        {
+          blockInfo,
+          useTransaction: repositoryOptions.useTransaction,
+          dryRun: false,
+        },
+      );
+
+      expect(executionContext.getOperations()).to.deep.equals(operations);
+    });
+  });
+
+  describe('#fetchIdentityBalanceWithDebt', () => {
+    it('should fetch identity balance', async () => {
+      identityBalanceRepositoryMock.fetchWithDebt.resolves(
+        new StorageResult(1, operations),
+      );
+
+      const result = await stateRepository.fetchIdentityBalanceWithDebt(
+        identity.getId(),
+        executionContext,
+      );
+
+      expect(result).to.equals(1);
+
+      expect(identityBalanceRepositoryMock.fetchWithDebt).to.be.calledOnceWith(
+        identity.getId(),
+        blockInfo,
+        {
+          useTransaction: repositoryOptions.useTransaction,
+          dryRun: false,
+        },
+      );
+
+      expect(executionContext.getOperations()).to.deep.equals(operations);
+    });
+  });
+
   describe('#addToIdentityBalance', () => {
     it('should update identity balance', async () => {
-      identityRepositoryMock.addToBalance.resolves(
+      identityBalanceRepositoryMock.add.resolves(
         new StorageResult(undefined, operations),
       );
 
       await stateRepository.addToIdentityBalance(identity.getId(), 1, executionContext);
 
-      expect(identityRepositoryMock.addToBalance).to.be.calledOnceWith(
+      expect(identityBalanceRepositoryMock.add).to.be.calledOnceWith(
         identity.getId(),
         1,
         blockInfo,

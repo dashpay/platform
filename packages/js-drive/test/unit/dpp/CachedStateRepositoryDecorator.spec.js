@@ -56,6 +56,26 @@ describe('CachedStateRepositoryDecorator', () => {
     });
   });
 
+  describe('#fetchIdentityBalance', () => {
+    it('should store identity to repository', async () => {
+      await cachedStateRepository.fetchIdentityBalance(identity.getId());
+
+      expect(stateRepositoryMock.fetchIdentityBalance).to.be.calledOnceWith(
+        identity.getId(),
+      );
+    });
+  });
+
+  describe('#fetchIdentityBalanceWithDebt', () => {
+    it('should store identity to repository', async () => {
+      await cachedStateRepository.fetchIdentityBalanceWithDebt(identity.getId());
+
+      expect(stateRepositoryMock.fetchIdentityBalanceWithDebt).to.be.calledOnceWith(
+        identity.getId(),
+      );
+    });
+  });
+
   describe('#addToIdentityBalance', () => {
     it('should store identity to repository', async () => {
       await cachedStateRepository.addToIdentityBalance(identity.getId(), 100);

@@ -144,6 +144,7 @@ const LastSyncedCoreHeightRepository = require('./identity/masternode/LastSynced
 const fetchSimplifiedMNListFactory = require('./core/fetchSimplifiedMNListFactory');
 const processProposalFactory = require('./abci/handlers/proposal/processProposalFactory');
 const createContextLoggerFactory = require('./abci/errors/createContextLoggerFactory');
+const IdentityBalanceStoreRepository = require('./identity/IdentityBalanceStoreRepository');
 
 /**
  *
@@ -480,6 +481,8 @@ function createDIContainer(options) {
   container.register({
     identityRepository: asClass(IdentityStoreRepository).singleton(),
 
+    identityBalanceRepository: asClass(IdentityBalanceStoreRepository).singleton(),
+
     identityPublicKeyRepository: asClass(IdentityPublicKeyStoreRepository).singleton(),
 
     synchronizeMasternodeIdentities: asFunction(synchronizeMasternodeIdentitiesFactory).singleton(),
@@ -560,6 +563,7 @@ function createDIContainer(options) {
 
     stateRepository: asFunction((
       identityRepository,
+      identityBalanceRepository,
       identityPublicKeyRepository,
       dataContractRepository,
       fetchDocuments,
@@ -572,6 +576,7 @@ function createDIContainer(options) {
     ) => {
       const stateRepository = new DriveStateRepository(
         identityRepository,
+        identityBalanceRepository,
         identityPublicKeyRepository,
         dataContractRepository,
         fetchDocuments,
@@ -590,6 +595,7 @@ function createDIContainer(options) {
 
     transactionalStateRepository: asFunction((
       identityRepository,
+      identityBalanceRepository,
       identityPublicKeyRepository,
       dataContractRepository,
       fetchDocuments,
@@ -603,6 +609,7 @@ function createDIContainer(options) {
     ) => {
       const stateRepository = new DriveStateRepository(
         identityRepository,
+        identityBalanceRepository,
         identityPublicKeyRepository,
         dataContractRepository,
         fetchDocuments,

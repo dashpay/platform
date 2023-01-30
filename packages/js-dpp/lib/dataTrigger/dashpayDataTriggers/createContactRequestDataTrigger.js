@@ -63,15 +63,13 @@ async function createContactRequestDataTrigger(documentTransition, context) {
     }
   }
 
-  // TODO: Replace to fetch balance
-
   // toUserId identity exists
-  const identity = await stateRepository.fetchIdentity(
+  const balance = await stateRepository.fetchIdentityBalance(
     toUserId,
     context.getStateTransitionExecutionContext(),
   );
 
-  if (!isDryRun && identity === null) {
+  if (!isDryRun && balance === null) {
     const error = new DataTriggerConditionError(
       context.getDataContract()
         .getId()

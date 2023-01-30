@@ -12,6 +12,7 @@ class DriveStateRepository {
 
   /**
    * @param {IdentityStoreRepository} identityRepository
+   * @param {IdentityBalanceStoreRepository} identityBalanceRepository
    * @param {IdentityPublicKeyStoreRepository} publicKeyToToIdentitiesRepository
    * @param {DataContractStoreRepository} dataContractRepository
    * @param {fetchDocuments} fetchDocuments
@@ -26,6 +27,7 @@ class DriveStateRepository {
    */
   constructor(
     identityRepository,
+    identityBalanceRepository,
     publicKeyToToIdentitiesRepository,
     dataContractRepository,
     fetchDocuments,
@@ -38,6 +40,7 @@ class DriveStateRepository {
     options = {},
   ) {
     this.identityRepository = identityRepository;
+    this.identityBalanceRepository = identityBalanceRepository;
     this.identityPublicKeyRepository = publicKeyToToIdentitiesRepository;
     this.dataContractRepository = dataContractRepository;
     this.fetchDocumentsFunction = fetchDocuments;
@@ -122,6 +125,54 @@ class DriveStateRepository {
   }
 
   /**
+   * Fetch identity balance
+   *
+   * @param {Identifier} identityId
+   * @param {StateTransitionExecutionContext} [executionContext]
+   * @returns {Promise<number|null>}
+   */
+  async fetchIdentityBalance(identityId, executionContext = undefined) {
+    const blockInfo = BlockInfo.createFromBlockExecutionContext(this.blockExecutionContext);
+
+    const result = await this.identityBalanceRepository.fetch(
+      identityId,
+      {
+        blockInfo,
+        ...this.#createRepositoryOptions(executionContext),
+      },
+    );
+
+    if (executionContext) {
+      executionContext.addOperation(...result.getOperations());
+    }
+
+    return result.getValue();
+  }
+
+  /**
+   * Fetch identity balance with debt
+   *
+   * @param {Identifier} identityId
+   * @param {StateTransitionExecutionContext} [executionContext]
+   * @returns {Promise<number|null>} - Balance can be negative in case of debt
+   */
+  async fetchIdentityBalanceWithDebt(identityId, executionContext = undefined) {
+    const blockInfo = BlockInfo.createFromBlockExecutionContext(this.blockExecutionContext);
+
+    const result = await this.identityBalanceRepository.fetchWithDebt(
+      identityId,
+      blockInfo,
+      this.#createRepositoryOptions(executionContext),
+    );
+
+    if (executionContext) {
+      executionContext.addOperation(...result.getOperations());
+    }
+
+    return result.getValue();
+  }
+
+  /**
    * Add to identity balance
    *
    * @param {Identifier} identityId
@@ -132,7 +183,7 @@ class DriveStateRepository {
   async addToIdentityBalance(identityId, amount, executionContext = undefined) {
     const blockInfo = BlockInfo.createFromBlockExecutionContext(this.blockExecutionContext);
 
-    const result = await this.identityRepository.addToBalance(
+    const result = await this.identityBalanceRepository.add(
       identityId,
       amount,
       blockInfo,

@@ -43,16 +43,16 @@ function validateStateTransitionFeeFactory(
         if (stateTransition.getType() === stateTransitionTypes.IDENTITY_TOP_UP) {
           const identityId = stateTransition.getOwnerId();
 
-          // TODO: We should fetch only balance
-          const identity = await stateRepository.fetchIdentity(identityId, executionContext);
+          const identityBalance = await stateRepository.fetchIdentityBalanceWithDebt(
+            identityId,
+            executionContext,
+          );
 
           if (executionContext.isDryRun()) {
             return result;
           }
 
-          // TODO: We should take into account negative balance as well
-
-          balance += identity.getBalance();
+          balance += identityBalance;
         }
 
         break;
@@ -63,14 +63,16 @@ function validateStateTransitionFeeFactory(
       case stateTransitionTypes.IDENTITY_UPDATE: {
         const identityId = stateTransition.getOwnerId();
 
-        // TODO: We should fetch only balance
-        const identity = await stateRepository.fetchIdentity(identityId, executionContext);
+        const identityBalance = await stateRepository.fetchIdentityBalance(
+          identityId,
+          executionContext,
+        );
 
         if (executionContext.isDryRun()) {
           return result;
         }
 
-        balance = identity.getBalance();
+        balance = identityBalance;
 
         break;
       }

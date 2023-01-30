@@ -171,6 +171,102 @@ describe('LoggedStateRepositoryDecorator', () => {
     });
   });
 
+  describe('#fetchIdentityBalance', () => {
+    let identity;
+
+    beforeEach(() => {
+      identity = getIdentityFixture();
+    });
+
+    it('should call logger with proper params', async () => {
+      const response = undefined;
+
+      stateRepositoryMock.fetchIdentityBalance.resolves(response);
+
+      await loggedStateRepositoryDecorator.fetchIdentityBalance(
+        identity.getId(),
+      );
+
+      expect(loggerMock.trace).to.be.calledOnceWithExactly({
+        stateRepository: {
+          method: 'fetchIdentityBalance',
+          parameters: { identityId: identity.getId() },
+          response,
+        },
+      }, 'StateRepository#fetchIdentityBalance');
+    });
+
+    it('should call logger in case of error', async () => {
+      const error = new Error('unknown error');
+
+      stateRepositoryMock.fetchIdentityBalance.throws(error);
+
+      try {
+        await loggedStateRepositoryDecorator.fetchIdentityBalance(identity.getId());
+
+        expect.fail('should throw an error');
+      } catch (e) {
+        expect(e).equals(error);
+      }
+
+      expect(loggerMock.trace).to.be.calledOnceWithExactly({
+        stateRepository: {
+          method: 'fetchIdentityBalance',
+          parameters: { identityId: identity.getId() },
+          response: undefined,
+        },
+      }, 'StateRepository#fetchIdentityBalance');
+    });
+  });
+
+  describe('#fetchIdentityBalanceWithDebt', () => {
+    let identity;
+
+    beforeEach(() => {
+      identity = getIdentityFixture();
+    });
+
+    it('should call logger with proper params', async () => {
+      const response = undefined;
+
+      stateRepositoryMock.fetchIdentityBalanceWithDebt.resolves(response);
+
+      await loggedStateRepositoryDecorator.fetchIdentityBalanceWithDebt(
+        identity.getId(),
+      );
+
+      expect(loggerMock.trace).to.be.calledOnceWithExactly({
+        stateRepository: {
+          method: 'fetchIdentityBalanceWithDebt',
+          parameters: { identityId: identity.getId() },
+          response,
+        },
+      }, 'StateRepository#fetchIdentityBalanceWithDebt');
+    });
+
+    it('should call logger in case of error', async () => {
+      const error = new Error('unknown error');
+
+      stateRepositoryMock.fetchIdentityBalanceWithDebt.throws(error);
+
+      try {
+        await loggedStateRepositoryDecorator.fetchIdentityBalanceWithDebt(identity.getId());
+
+        expect.fail('should throw an error');
+      } catch (e) {
+        expect(e).equals(error);
+      }
+
+      expect(loggerMock.trace).to.be.calledOnceWithExactly({
+        stateRepository: {
+          method: 'fetchIdentityBalanceWithDebt',
+          parameters: { identityId: identity.getId() },
+          response: undefined,
+        },
+      }, 'StateRepository#fetchIdentityBalanceWithDebt');
+    });
+  });
+
   describe('#addToIdentityBalance', () => {
     let identity;
 

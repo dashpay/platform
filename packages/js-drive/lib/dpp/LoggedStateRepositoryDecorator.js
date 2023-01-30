@@ -1,3 +1,5 @@
+const BlockInfo = require('../blockExecution/BlockInfo');
+
 /**
  * @implements StateRepository
  */
@@ -103,6 +105,62 @@ class LoggedStateRepositoryDecorator {
         {
           identityId,
           keys,
+        },
+        response,
+      );
+    }
+
+    return response;
+  }
+
+  /**
+   * Fetch identity balance
+   *
+   * @param {Identifier} identityId
+   * @param {StateTransitionExecutionContext} [executionContext]
+   * @returns {Promise<number|null>}
+   */
+  async fetchIdentityBalance(identityId, executionContext = undefined) {
+    let response;
+
+    try {
+      response = await this.stateRepository.fetchIdentityBalance(
+        identityId,
+        executionContext,
+      );
+    } finally {
+      this.log(
+        'fetchIdentityBalance',
+        {
+          identityId,
+        },
+        response,
+      );
+    }
+
+    return response;
+  }
+
+  /**
+   * Fetch identity balance with debt
+   *
+   * @param {Identifier} identityId
+   * @param {StateTransitionExecutionContext} [executionContext]
+   * @returns {Promise<number|null>} - Balance can be negative in case of debt
+   */
+  async fetchIdentityBalanceWithDebt(identityId, executionContext = undefined) {
+    let response;
+
+    try {
+      response = await this.stateRepository.fetchIdentityBalanceWithDebt(
+        identityId,
+        executionContext,
+      );
+    } finally {
+      this.log(
+        'fetchIdentityBalanceWithDebt',
+        {
+          identityId,
         },
         response,
       );

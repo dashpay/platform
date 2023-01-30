@@ -155,6 +155,28 @@
  */
 
 /**
+ * Fetch identity balance by identity ID
+ *
+ * @async
+ * @method
+ * @name StateRepository#fetchIdentityBalance
+ * @param {Identifier} id
+ * @param {StateTransitionExecutionContext} [executionContext]
+ * @returns {Promise<number|null>}
+ */
+
+/**
+ * Fetch identity balance including debt by identity ID
+ *
+ * @async
+ * @method
+ * @name StateRepository#fetchIdentityBalanceWithDebt
+ * @param {Identifier} id
+ * @param {StateTransitionExecutionContext} [executionContext]
+ * @returns {Promise<number|null>} - Balance can be negative in case of debt present
+ */
+
+/**
  * Add to identity balance
  *
  * @async

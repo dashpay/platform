@@ -23,16 +23,12 @@ const StateTransitionExecutionContext = require('../../../../lib/stateTransition
 describe('validateStateTransitionFeeFactory', () => {
   let stateRepositoryMock;
   let validateStateTransitionFee;
-  let identity;
   let dataContract;
   let calculateStateTransitionFeeMock;
   let fetchAssetLockTransactionOutputMock;
 
   beforeEach(function beforeEach() {
-    identity = getIdentityFixture();
-
     stateRepositoryMock = createStateRepositoryMock(this.sinonSandbox);
-    stateRepositoryMock.fetchIdentity.resolves(identity);
 
     const output = getIdentityCreateTransitionFixture().getAssetLockProof().getOutput();
 
@@ -62,7 +58,7 @@ describe('validateStateTransitionFeeFactory', () => {
     });
 
     it('should return invalid result if balance is not enough', async () => {
-      identity.balance = 1;
+      stateRepositoryMock.fetchIdentityBalance.resolves(1);
 
       const result = await validateStateTransitionFee(dataContractCreateTransition);
 
@@ -71,9 +67,9 @@ describe('validateStateTransitionFeeFactory', () => {
       const [error] = result.getErrors();
 
       expect(error.getCode()).to.equal(3000);
-      expect(error.getBalance()).to.equal(identity.balance);
+      expect(error.getBalance()).to.equal(1);
 
-      expect(stateRepositoryMock.fetchIdentity).to.be.calledOnceWithExactly(
+      expect(stateRepositoryMock.fetchIdentityBalance).to.be.calledOnceWithExactly(
         dataContract.getOwnerId(),
         dataContractCreateTransition.getExecutionContext(),
       );
@@ -86,13 +82,13 @@ describe('validateStateTransitionFeeFactory', () => {
     });
 
     it('should return valid result', async () => {
-      identity.balance = 42;
+      stateRepositoryMock.fetchIdentityBalance.resolves(42);
 
       const result = await validateStateTransitionFee(dataContractCreateTransition);
 
       expect(result.isValid()).to.be.true();
 
-      expect(stateRepositoryMock.fetchIdentity).to.be.calledOnceWithExactly(
+      expect(stateRepositoryMock.fetchIdentityBalance).to.be.calledOnceWithExactly(
         dataContract.getOwnerId(),
         dataContractCreateTransition.getExecutionContext(),
       );
@@ -123,7 +119,7 @@ describe('validateStateTransitionFeeFactory', () => {
     });
 
     it('should return invalid result if balance is not enough', async () => {
-      identity.balance = 1;
+      stateRepositoryMock.fetchIdentityBalance.resolves(1);
 
       const result = await validateStateTransitionFee(documentsBatchTransition);
 
@@ -132,9 +128,9 @@ describe('validateStateTransitionFeeFactory', () => {
       const [error] = result.getErrors();
 
       expect(error.getCode()).to.equal(3000);
-      expect(error.getBalance()).to.equal(identity.balance);
+      expect(error.getBalance()).to.equal(1);
 
-      expect(stateRepositoryMock.fetchIdentity).to.be.calledOnceWithExactly(
+      expect(stateRepositoryMock.fetchIdentityBalance).to.be.calledOnceWithExactly(
         getDocumentsFixture.ownerId,
         documentsBatchTransition.getExecutionContext(),
       );
@@ -147,13 +143,13 @@ describe('validateStateTransitionFeeFactory', () => {
     });
 
     it('should return valid result', async () => {
-      identity.balance = 42;
+      stateRepositoryMock.fetchIdentityBalance.resolves(42);
 
       const result = await validateStateTransitionFee(documentsBatchTransition);
 
       expect(result.isValid()).to.be.true();
 
-      expect(stateRepositoryMock.fetchIdentity).to.be.calledOnceWithExactly(
+      expect(stateRepositoryMock.fetchIdentityBalance).to.be.calledOnceWithExactly(
         getDocumentsFixture.ownerId,
         documentsBatchTransition.getExecutionContext(),
       );
@@ -175,7 +171,7 @@ describe('validateStateTransitionFeeFactory', () => {
       expect(result.isValid()).to.be.true();
 
       expect(calculateStateTransitionFeeMock).to.be.not.called();
-      expect(stateRepositoryMock.fetchIdentity).to.be.calledOnceWithExactly(
+      expect(stateRepositoryMock.fetchIdentityBalance).to.be.calledOnceWithExactly(
         getDocumentsFixture.ownerId,
         documentsBatchTransition.getExecutionContext(),
       );
@@ -272,7 +268,7 @@ describe('validateStateTransitionFeeFactory', () => {
     });
 
     it('should return invalid result if sum of balance and asset lock output amount is not enough', async () => {
-      identity.balance = 1;
+      stateRepositoryMock.fetchIdentityBalanceWithDebt.resolves(1);
 
       calculateStateTransitionFeeMock.returns({ desiredAmount: outputAmount + 2 });
 
@@ -283,9 +279,9 @@ describe('validateStateTransitionFeeFactory', () => {
       const [error] = result.getErrors();
 
       expect(error.getCode()).to.equal(3000);
-      expect(error.getBalance()).to.equal(outputAmount + identity.balance);
+      expect(error.getBalance()).to.equal(outputAmount + 1);
 
-      expect(stateRepositoryMock.fetchIdentity).to.be.calledOnceWithExactly(
+      expect(stateRepositoryMock.fetchIdentityBalanceWithDebt).to.be.calledOnceWithExactly(
         identityTopUpTransition.getIdentityId(),
         identityTopUpTransition.getExecutionContext(),
       );
@@ -301,7 +297,7 @@ describe('validateStateTransitionFeeFactory', () => {
     });
 
     it('should return valid result', async () => {
-      identity.balance = 41;
+      stateRepositoryMock.fetchIdentityBalanceWithDebt.resolves(41);
 
       calculateStateTransitionFeeMock.returns(outputAmount - 1);
 
@@ -309,7 +305,7 @@ describe('validateStateTransitionFeeFactory', () => {
 
       expect(result.isValid()).to.be.true();
 
-      expect(stateRepositoryMock.fetchIdentity).to.be.calledOnceWithExactly(
+      expect(stateRepositoryMock.fetchIdentityBalanceWithDebt).to.be.calledOnceWithExactly(
         identityTopUpTransition.getIdentityId(),
         identityTopUpTransition.getExecutionContext(),
       );
@@ -338,7 +334,7 @@ describe('validateStateTransitionFeeFactory', () => {
         identityTopUpTransition.getAssetLockProof(),
         identityTopUpTransition.getExecutionContext(),
       );
-      expect(stateRepositoryMock.fetchIdentity).to.be.calledOnceWithExactly(
+      expect(stateRepositoryMock.fetchIdentityBalanceWithDebt).to.be.calledOnceWithExactly(
         identityTopUpTransition.getIdentityId(),
         identityTopUpTransition.getExecutionContext(),
       );

@@ -40,7 +40,7 @@ describe('deliverTxFactory', () => {
   let round;
   let proposalBlockExecutionContextMock;
   let stateTransitionExecutionContextMock;
-  let identityRepositoryMock;
+  let identityBalanceRepositoryMock;
   let processingFee;
   let storageFee;
   let refundsPerEpoch;
@@ -83,8 +83,8 @@ describe('deliverTxFactory', () => {
 
     const actualSTFees = FeeResult.create(storageFee, processingFee, feeRefunds);
 
-    identityRepositoryMock = {
-      applyFeesToBalance: this.sinon.stub().resolves(
+    identityBalanceRepositoryMock = {
+      applyFees: this.sinon.stub().resolves(
         new StorageResult(actualSTFees),
       ),
     };
@@ -146,7 +146,7 @@ describe('deliverTxFactory', () => {
       dppMock,
       proposalBlockExecutionContextMock,
       executionTimerMock,
-      identityRepositoryMock,
+      identityBalanceRepositoryMock,
       calculateStateTransitionFeeMock,
       calculateStateTransitionFeeFromOperationsMock,
       createContextLoggerMock,
@@ -183,9 +183,9 @@ describe('deliverTxFactory', () => {
       documentsBatchTransitionFixture,
     );
 
-    expect(identityRepositoryMock.applyFeesToBalance).to.be.calledOnce();
+    expect(identityBalanceRepositoryMock.applyFees).to.be.calledOnce();
 
-    const applyFeesToBalanceArgs = identityRepositoryMock.applyFeesToBalance.getCall(0).args;
+    const applyFeesToBalanceArgs = identityBalanceRepositoryMock.applyFees.getCall(0).args;
 
     expect(applyFeesToBalanceArgs).to.have.lengthOf(3);
 
@@ -250,9 +250,9 @@ describe('deliverTxFactory', () => {
       dataContractCreateTransitionFixture,
     );
 
-    expect(identityRepositoryMock.applyFeesToBalance).to.be.calledOnce();
+    expect(identityBalanceRepositoryMock.applyFees).to.be.calledOnce();
 
-    const applyFeesToBalanceArgs = identityRepositoryMock.applyFeesToBalance.getCall(0).args;
+    const applyFeesToBalanceArgs = identityBalanceRepositoryMock.applyFees.getCall(0).args;
 
     expect(applyFeesToBalanceArgs).to.have.lengthOf(3);
 

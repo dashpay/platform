@@ -48,6 +48,34 @@ class CachedStateRepositoryDecorator {
   }
 
   /**
+   * Fetch identity balance
+   *
+   * @param {Identifier} identityId
+   * @param {StateTransitionExecutionContext} [executionContext]
+   * @returns {Promise<number|null>}
+   */
+  async fetchIdentityBalance(identityId, executionContext = undefined) {
+    return this.stateRepository.fetchIdentityBalance(
+      identityId,
+      executionContext,
+    );
+  }
+
+  /**
+   * Fetch identity balance with debt
+   *
+   * @param {Identifier} identityId
+   * @param {StateTransitionExecutionContext} [executionContext]
+   * @returns {Promise<number|null>} - Balance can be negative in case of debt
+   */
+  async fetchIdentityBalanceWithDebt(identityId, executionContext = undefined) {
+    return this.stateRepository.fetchIdentityBalanceWithDebt(
+      identityId,
+      executionContext,
+    );
+  }
+
+  /**
    * Add to identity balance
    *
    * @param {Identifier} identityId
