@@ -14,15 +14,12 @@ describe('IdentityUpdateTransition', () => {
   let stateTransition;
 
   let IdentityUpdateTransition;
-  let KeyType;
-  let KeyPurpose;
-  let KeySecurityLevel;
   let IdentityPublicKey;
   let Identifier;
 
   before(async () => {
     ({
-      IdentityUpdateTransition, IdentityPublicKey, KeyType, KeyPurpose, KeySecurityLevel,
+      IdentityUpdateTransition, IdentityPublicKey,
       Identifier,
     } = await loadWasmDpp());
   });

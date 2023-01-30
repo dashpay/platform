@@ -1,7 +1,6 @@
 const createStateRepositoryMock = require('@dashevo/dpp/lib/test/mocks/createStateRepositoryMock');
 const getIdentityUpdateTransitionFixture = require('@dashevo/dpp/lib/test/fixtures/getIdentityUpdateTransitionFixture');
 const getIdentityFixture = require('@dashevo/dpp/lib/test/fixtures/getIdentityFixture');
-const getBiggestPossibleIdentity = require('@dashevo/dpp/lib/identity/getBiggestPossibleIdentity');
 
 const { default: loadWasmDpp } = require('../../../../../dist');
 const generateRandomIdentifierAsync = require('../../../../../lib/test/utils/generateRandomIdentifierAsync');
@@ -116,8 +115,6 @@ describe('applyIdentityUpdateTransition', () => {
   });
 
   it('should not add public keys on dry run', async function () {
-    const biggestPossibleIdentity = getBiggestPossibleIdentity();
-
     stateTransition.setPublicKeysDisabledAt(undefined);
     stateTransition.setPublicKeyIdsToDisable(undefined);
 
