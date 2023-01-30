@@ -1,6 +1,4 @@
 use anyhow::{anyhow, bail};
-use dashcore::{consensus, BlockHeader};
-use serde_json::Value as JsonValue;
 
 use crate::{
     document::document_transition::DocumentTransition, errors::DataTriggerError,

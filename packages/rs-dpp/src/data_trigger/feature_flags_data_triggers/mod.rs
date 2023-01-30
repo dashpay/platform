@@ -1,7 +1,4 @@
 use anyhow::{anyhow, bail, Context};
-use dashcore::{consensus, BlockHeader};
-use futures::TryStreamExt;
-use serde_json::Value as JsonValue;
 
 use crate::{
     data_trigger::create_error, document::document_transition::DocumentTransition,
