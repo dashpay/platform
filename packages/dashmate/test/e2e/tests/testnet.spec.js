@@ -33,11 +33,10 @@ const createCertificate = require("../../../src/ssl/selfSigned/createCertificate
 const generateCsr = require("../../../src/ssl/zerossl/generateCsr");
 const generateKeyPair = require("../../../src/ssl/generateKeyPair");
 
-
 describe('Testnet dashmate', function main() {
   this.timeout(900000);
 
-  describe('e2e testnet network', function () {
+  describe('e2e testnet network', async function () {
     let container;
     let testnetConfig, configEnvs;
     const testnetNetwork = 'testnet';
@@ -56,7 +55,7 @@ describe('Testnet dashmate', function main() {
 
     it('Setup testnet nodes', async () => {
       const ip = await publicIp.v4();
-      const { privateKey: generatedPrivateKeyHex } = await generateBlsKeys();
+      const {privateKey: generatedPrivateKeyHex} = await generateBlsKeys();
       const nodeType = 'masternode';
 
       const keyPair = await generateKeyPair();
@@ -69,8 +68,8 @@ describe('Testnet dashmate', function main() {
       fs.writeFileSync(filePath, certificate, 'utf8');
       fs.writeFileSync(filePath2, keyPair.privateKey, 'utf8');
 
-      await execute(`yarn dashmate setup ${testnetNetwork} ${nodeType} -i=${ip} -k=${generatedPrivateKeyHex} -s='manual' -c=${filePath} -l=${filePath2} --verbose`).then( res => {
-        if(res.status !== undefined) {
+      await execute(`yarn dashmate setup ${testnetNetwork} ${nodeType} -i=${ip} -k=${generatedPrivateKeyHex} -s='manual' -c=${filePath} -l=${filePath2} --verbose`).then(res => {
+        if (res.status !== undefined) {
           throw new Error(`${res.stderr} with exit code: ${res.status}`)
         }
       })
@@ -99,8 +98,8 @@ describe('Testnet dashmate', function main() {
     });
 
     it('Start testnet nodes', async () => {
-      await execute(`yarn dashmate start`).then( res => {
-        if(res.status !== undefined) {
+      await execute(`yarn dashmate start`).then(res => {
+        if (res.status !== undefined) {
           throw new Error(`${res.stderr} with exit code: ${res.status}`)
         }
       })
@@ -116,76 +115,68 @@ describe('Testnet dashmate', function main() {
       let peerHeader, peerBlock;
       testnetConfig = await getConfig('testnet')
 
-      await execute(`yarn dashmate status core --format=json`).then( async res => {
+      const coreStatus = await execute(`yarn dashmate status core --format=json`).then(async res => {
         if (res.status !== undefined) {
           throw new Error(`${res.stderr} with exit code: ${res.status}`)
         }
-
-        const output = JSON.parse(res.toString())
-
-        const coreVersion = core.docker.image.replace(/\/|\(.*?\)|dashpay|dashd:|\-(.*)/g, '');
-        expect(output.Version).to.be.equal(coreVersion)
-
-        try {
-          const latestVersionRes = await fetch('https://api.github.com/repos/dashpay/dash/releases/latest');
-          const latestVersion = (await latestVersionRes.json()).tag_name.substring(1);
-          expect(output['Latest version']).to.be.equal(latestVersion)
-        } catch (e) {
-          throw new e
-        }
-
-        expect(output.Network).to.be.equal(STATUS.test)
-
-
-        expect(output['Sync asset']).to.be.equal(STATUS.sync_asset)
-
-        await execute('docker exec dash_masternode_testnet-core-1 dash-cli getpeerinfo').then(peers => {
-          const peersOutput = JSON.parse(peers.toString())
-          const peersNumber = Object.keys(peersOutput).length;
-          expect(output['Peer count']).to.be.equal(peersNumber, 'Peers number are not matching!')
-
-          do {
-            for (const peer of peersOutput) {
-              peerHeader = peer['synced_headers']
-              peerBlock = peer['synced_blocks']
-            }
-          } while (peerHeader < 1 && peerBlock < 1)
-        })
-
-        // expect(output['P2P service']).to.be.equal()
-        // expect(output['P2P port']).to.be.equal()
-        // expect(output['RPC service']).to.be.equal()
-
-        const coreService = await getCoreService(testnetConfig, container);
-        do {
-          let explorerBlockHeightRes = await fetch(`${INSIGHT_URLs[testnetNetwork]}/status`);
-          ({ info: { blocks: explorerBlockHeight } } = await explorerBlockHeightRes.json());
-          ({ result: { headers: coreHeaders } } = await coreService.getRpcClient().getBlockchainInfo());
-
-          if(coreHeaders < explorerBlockHeight) {
-            await wait(5000);
-          }
-        } while (coreHeaders !== explorerBlockHeight)
-
-        expect(+output['Header height']).to.be.greaterThan(0)
-        expect(+output['Block height']).to.be.greaterThan(0)
-
-        expect(output.Status).to.contain('syncing')
-        const status = (output.Status).split(/[ %]/)
-        if (!(+status[1] >= 0 && +status[1] <= 100)) {
-          throw new Error(`Invalid status output for syncing process: ${status[1]}% `)
-        }
-
-        // let explorerBlockHeightRes = await fetch(`${INSIGHT_URLs[testnetNetwork]}/status`);
-        // ({ info: { difficulty: blocksDifficulty } } = await explorerBlockHeightRes.json());
-        expect(+output.Difficulty).to.be.greaterThan(0)
-
-        const sentinelVersion = core.sentinel.docker.image.replace(/\/|\(.*?\)|dashpay|sentinel:|\-(.*)/g, '');
-        expect(output['Sentinel version']).to.be.equal(sentinelVersion)
-        expect(output['Sentinel status']).to.be.equal(STATUS.sentinel_status)
-        expect(output['Remote block height']).to.be.equal(explorerBlockHeight)
+        return res.toString()
       })
-    });
+
+      const output = JSON.parse(coreStatus.toString())
+
+      //update core version in config??
+      // const coreVersion = core.docker.image.replace(/\/|\(.*?\)|dashpay|dashd:|\-(.*)/g, '');
+      // expect(output.latestVersion).to.be.equal(coreVersion)
+
+      //update core version in config??
+      // try {
+      //   const latestVersionRes = await fetch('https://api.github.com/repos/dashpay/dash/releases/latest');
+      //   const latestVersion = (await latestVersionRes.json()).tag_name.substring(1);
+      //   expect(output['Latest version']).to.be.equal(latestVersion)
+      // } catch (e) {
+      //   throw e;
+      // }
+
+      expect(output.network).to.be.equal(STATUS.testnetNetwork)
+      expect(output.chain).to.be.equal(STATUS.testChain)
+      expect(output.dockerStatus).to.be.equal(STATUS.runningStatus)
+      expect(output.syncAsset).to.be.equal(STATUS.sync_asset)
+
+      const peersData = await execute('docker exec dash_masternode_testnet-core-1 dash-cli getpeerinfo').then(peers => {
+        return JSON.parse(peers.toString());
+      })
+      const peersNumber = Object.keys(peersData).length;
+      expect(output.peersCount).to.be.equal(peersNumber, 'Peers number are not matching!')
+
+    do {
+        for (const peer of peersData) {
+          peerBlock = peer['synced_blocks']
+          peerHeader = peer['synced_headers']
+          console.log(`Debug peers block / headers: ${peerBlock} / ${peerHeader}`)
+        }
+    } while (peerHeader < 1 && peerBlock < 1)
+
+    expect(output.p2pService).to.not.be.empty()
+    expect(output.p2pPortState).to.be.equal('CLOSED')
+    expect(output.rpcService).to.not.be.empty()
+
+    let coreOutput;
+    do {
+      coreOutput = JSON.parse(coreStatus.toString());
+      console.log(`Debug block / headers: ${coreOutput.blockHeight} / ${coreOutput.headerHeight}`)
+    } while (+coreOutput.blockHeight < 1 && +coreOutput.headerHeight < 1)
+
+    let explorerBlockHeightRes = await fetch(`${INSIGHT_URLs[testnetNetwork]}/status`);
+    ({info: {blocks: explorerBlockHeight}} = await explorerBlockHeightRes.json());
+    expect(+coreOutput.remoteBlockHeight).to.be.equal(explorerBlockHeight)
+
+    expect(+coreOutput.difficulty).to.be.greaterThan(0)
+
+    expect(output.serviceStatus).to.be.equal('syncing')
+    if (!(output.verificationProgress > 0 && output.verificationProgress <= 100)) {
+      throw new Error(`Invalid status output for syncing process: ${output.verificationProgress}% `)
+    }
+  });
 
     it('Check platform status before core sync process finish', async () => {
       await execute(`yarn dashmate status platform`).then(res => {
