@@ -20,15 +20,15 @@ lazy_static! {
 
 const ASSET_LOCK_PROOF_PROPERTY_NAME: &str = "assetLockProof";
 
-pub struct IdentityTopUoTransitionBasicValidator<SR: StateRepositoryLike> {
-    protocol_version_validator: Arc<ProtocolVersionValidator>,
+pub struct IdentityTopUpTransitionBasicValidator<SR: StateRepositoryLike> {
+    protocol_version_validator: ProtocolVersionValidator,
     json_schema_validator: JsonSchemaValidator,
     asset_lock_proof_validator: Arc<AssetLockProofValidator<SR>>,
 }
 
-impl<SR: StateRepositoryLike> IdentityTopUoTransitionBasicValidator<SR> {
+impl<SR: StateRepositoryLike> IdentityTopUpTransitionBasicValidator<SR> {
     pub fn new(
-        protocol_version_validator: Arc<ProtocolVersionValidator>,
+        protocol_version_validator: ProtocolVersionValidator,
         asset_lock_proof_validator: Arc<AssetLockProofValidator<SR>>,
     ) -> Result<Self, DashPlatformProtocolInitError> {
         let json_schema_validator =
@@ -86,5 +86,9 @@ impl<SR: StateRepositoryLike> IdentityTopUoTransitionBasicValidator<SR> {
         );
 
         Ok(result)
+    }
+
+    pub fn protocol_version_validator(&mut self) -> &mut ProtocolVersionValidator {
+        &mut self.protocol_version_validator
     }
 }
