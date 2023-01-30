@@ -1,7 +1,8 @@
+use crate::utils::ToSerdeJSONExt;
+
 use std::convert::TryInto;
 use std::default::Default;
 
-use wasm_bindgen::__rt::Ref;
 use wasm_bindgen::prelude::*;
 
 use crate::identifier::IdentifierWrapper;
@@ -10,57 +11,53 @@ use crate::{
     buffer::Buffer,
     create_asset_lock_proof_from_wasm_instance,
     errors::RustConversionError,
-    identity::{
-        state_transition::asset_lock_proof::{ChainAssetLockProofWasm, InstantAssetLockProofWasm},
-        IdentityPublicKeyWasm,
+    identity::state_transition::asset_lock_proof::{
+        ChainAssetLockProofWasm, InstantAssetLockProofWasm,
     },
     state_transition::StateTransitionExecutionContextWasm,
-    with_js_error, IdentityPublicKeyInCreationWasm,
+    with_js_error,
 };
 
 use crate::bls_adapter::{BlsAdapter, JsBlsAdapter};
 use crate::errors::from_dpp_err;
-use crate::utils::{generic_of_js_val, ToSerdeJSONExt};
-use dpp::identity::IdentityPublicKeyInCreation;
+
 use dpp::{
     identifier::Identifier,
-    identity::{
-        state_transition::{
-            asset_lock_proof::AssetLockProof, identity_create_transition::IdentityCreateTransition,
-        },
-        IdentityPublicKey,
+    identity::state_transition::{
+        asset_lock_proof::AssetLockProof, identity_topup_transition::IdentityTopUpTransition,
     },
     state_transition::StateTransitionLike,
     util::string_encoding,
     util::string_encoding::Encoding,
 };
 
-#[wasm_bindgen(js_name=IdentityCreateTransition)]
+#[wasm_bindgen(js_name=IdentityTopUpTransition)]
 #[derive(Clone)]
-pub struct IdentityCreateTransitionWasm(IdentityCreateTransition);
+pub struct IdentityTopUpTransitionWasm(IdentityTopUpTransition);
 
-impl From<IdentityCreateTransition> for IdentityCreateTransitionWasm {
-    fn from(v: IdentityCreateTransition) -> Self {
-        IdentityCreateTransitionWasm(v)
+impl From<IdentityTopUpTransition> for IdentityTopUpTransitionWasm {
+    fn from(v: IdentityTopUpTransition) -> Self {
+        IdentityTopUpTransitionWasm(v)
     }
 }
 
-impl From<IdentityCreateTransitionWasm> for IdentityCreateTransition {
-    fn from(v: IdentityCreateTransitionWasm) -> Self {
+impl From<IdentityTopUpTransitionWasm> for IdentityTopUpTransition {
+    fn from(v: IdentityTopUpTransitionWasm) -> Self {
         v.0
     }
 }
 
-#[wasm_bindgen(js_class = IdentityCreateTransition)]
-impl IdentityCreateTransitionWasm {
+#[wasm_bindgen(js_class = IdentityTopUpTransition)]
+impl IdentityTopUpTransitionWasm {
     #[wasm_bindgen(constructor)]
-    pub fn new(raw_parameters: JsValue) -> Result<IdentityCreateTransitionWasm, JsValue> {
+    pub fn new(raw_parameters: JsValue) -> Result<IdentityTopUpTransitionWasm, JsValue> {
         let raw_state_transition = raw_parameters.with_serde_to_json_value()?;
 
-        let identity_create_transition = IdentityCreateTransition::new(raw_state_transition)
-            .map_err(|e| RustConversionError::Error(e.to_string()).to_js_value())?;
+        let identity_topup_transition =
+            IdentityTopUpTransition::from_raw_object(raw_state_transition)
+                .map_err(|e| RustConversionError::Error(e.to_string()).to_js_value())?;
 
-        Ok(identity_create_transition.into())
+        Ok(identity_topup_transition.into())
     }
 
     #[wasm_bindgen(js_name=setAssetLockProof)]
@@ -93,60 +90,6 @@ impl IdentityCreateTransitionWasm {
         }
     }
 
-    #[wasm_bindgen(js_name=setPublicKeys)]
-    pub fn set_public_keys(&mut self, public_keys: Vec<JsValue>) -> Result<(), JsValue> {
-        let public_keys = public_keys
-            .iter()
-            .map(|value| {
-                let public_key: Ref<IdentityPublicKeyInCreationWasm> =
-                    generic_of_js_val::<IdentityPublicKeyInCreationWasm>(
-                        value,
-                        "IdentityPublicKey",
-                    )?;
-                Ok(public_key.clone().into())
-            })
-            .collect::<Result<Vec<IdentityPublicKeyInCreation>, JsValue>>()?;
-
-        self.0.set_public_keys(public_keys);
-
-        Ok(())
-    }
-
-    #[wasm_bindgen(js_name=addPublicKeys)]
-    pub fn add_public_keys(&mut self, public_keys: Vec<JsValue>) -> Result<(), JsValue> {
-        let mut public_keys = public_keys
-            .iter()
-            .map(|value| {
-                let public_key: Ref<IdentityPublicKeyInCreationWasm> =
-                    generic_of_js_val::<IdentityPublicKeyInCreationWasm>(
-                        value,
-                        "IdentityPublicKey",
-                    )?;
-                Ok(public_key.clone().into())
-            })
-            .collect::<Result<Vec<IdentityPublicKeyInCreation>, JsValue>>()?;
-
-        self.0.add_public_keys(&mut public_keys);
-
-        Ok(())
-    }
-
-    #[wasm_bindgen(js_name=getPublicKeys)]
-    pub fn get_public_keys(&self) -> Vec<JsValue> {
-        self.0
-            .get_public_keys()
-            .iter()
-            .map(IdentityPublicKeyInCreation::to_owned)
-            .map(IdentityPublicKeyInCreationWasm::from)
-            .map(JsValue::from)
-            .collect()
-    }
-
-    #[wasm_bindgen(getter, js_name=publicKeys)]
-    pub fn public_keys(&self) -> Vec<JsValue> {
-        self.get_public_keys()
-    }
-
     #[wasm_bindgen(js_name=getType)]
     pub fn get_type(&self) -> u8 {
         self.0.get_type() as u8
@@ -175,7 +118,6 @@ impl IdentityCreateTransitionWasm {
             Default::default()
         };
 
-        let skip_signature = opts.skip_signature;
         let object = super::to_object::to_object_struct(&self.0, opts);
         let js_object = js_sys::Object::new();
 
@@ -195,7 +137,7 @@ impl IdentityCreateTransitionWasm {
             let signature_value: JsValue = if signature.is_empty() {
                 JsValue::undefined()
             } else {
-                Buffer::from_bytes(&signature).into()
+                Buffer::from_bytes(signature.as_slice()).into()
             };
 
             js_sys::Reflect::set(&js_object, &"signature".to_owned().into(), &signature_value)?;
@@ -216,14 +158,11 @@ impl IdentityCreateTransitionWasm {
             &asset_lock_proof_object,
         )?;
 
-        let keys_objects = object
-            .public_keys
-            .into_iter()
-            .map(IdentityPublicKeyInCreationWasm::from)
-            .map(|key| key.to_object())
-            .collect::<Result<js_sys::Array, _>>()?;
-
-        js_sys::Reflect::set(&js_object, &"publicKeys".to_owned().into(), &keys_objects)?;
+        js_sys::Reflect::set(
+            &js_object,
+            &"identityId".to_owned().into(),
+            &Buffer::from_bytes(object.identity_id.buffer.as_slice()),
+        )?;
 
         Ok(js_object.into())
     }
@@ -270,14 +209,13 @@ impl IdentityCreateTransitionWasm {
             &asset_lock_proof_json,
         )?;
 
-        let keys_objects = object
-            .public_keys
-            .into_iter()
-            .map(IdentityPublicKeyInCreationWasm::from)
-            .map(|key| key.to_json())
-            .collect::<Result<js_sys::Array, _>>()?;
+        let identity_id = object.identity_id.to_string(Encoding::Base58);
 
-        js_sys::Reflect::set(&js_object, &"publicKeys".to_owned().into(), &keys_objects)?;
+        js_sys::Reflect::set(
+            &js_object,
+            &"identityId".to_owned().into(),
+            &identity_id.into(),
+        )?;
 
         Ok(js_object.into())
     }
@@ -337,6 +275,6 @@ impl IdentityCreateTransitionWasm {
 
     #[wasm_bindgen(js_name=getSignature)]
     pub fn get_signature(&self) -> Buffer {
-        Buffer::from_bytes(self.0.get_signature())
+        Buffer::from_bytes(self.0.get_signature().as_slice())
     }
 }
