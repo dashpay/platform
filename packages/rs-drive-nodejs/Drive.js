@@ -414,18 +414,14 @@ class Drive {
 
   /**
    * @param {Buffer|Identifier} id
-   * @param {RawBlockInfo} blockInfo
    * @param {boolean} [useTransaction=false]
-   * @param {boolean} [dryRun=false]
    *
    * @returns {Promise<number|null>}
    */
-  async fetchIdentityBalance(id, blockInfo, useTransaction = false, dryRun = false) {
+  async fetchIdentityBalance(id, useTransaction = false) {
     return driveFetchIdentityBalanceAsync.call(
       this.drive,
       Buffer.from(id),
-      blockInfo,
-      !dryRun,
       useTransaction,
     );
   }
@@ -445,21 +441,30 @@ class Drive {
       blockInfo,
       !dryRun,
       useTransaction,
-    );
+    ).then(([balance, innerFeeResult]) => [balance, new FeeResult(innerFeeResult)]);
   }
 
   /**
    * @param {Buffer|Identifier} id
+   * @param {RawBlockInfo} blockInfo
    * @param {boolean} [useTransaction=false]
+   * @param {boolean} [dryRun=false]
    *
-   * @returns {Promise<number|null>}
+   * @returns {Promise<[number|null, FeeResult]>}
    */
-  async fetchIdentityBalanceIncludeDebtWithCosts(id, useTransaction = false) {
+  async fetchIdentityBalanceIncludeDebtWithCosts(
+    id,
+    blockInfo,
+    useTransaction = false,
+    dryRun = false,
+  ) {
     return driveFetchIdentityBalanceIncludeDebtWithCostsAsync.call(
       this.drive,
       Buffer.from(id),
+      blockInfo,
+      !dryRun,
       useTransaction,
-    );
+    ).then(([balance, innerFeeResult]) => [balance, new FeeResult(innerFeeResult)]);
   }
 
   /**

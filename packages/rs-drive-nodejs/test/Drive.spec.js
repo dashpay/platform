@@ -529,6 +529,118 @@ describe('Drive', () => {
     });
   });
 
+  describe('#fetchIdentityBalance', () => {
+    beforeEach(async () => {
+      await drive.createInitialStateStructure();
+
+      initialRootHash = await drive.getGroveDB().getRootHash();
+    });
+
+    it('should return null if identity not exists', async () => {
+      const result = await drive.fetchIdentityBalance(Buffer.alloc(32));
+
+      expect(result).to.be.null();
+    });
+
+    it('should return balance if identity is present', async () => {
+      await drive.insertIdentity(identity, blockInfo);
+
+      const balance = await drive.fetchIdentityBalance(identity.getId());
+
+      expect(balance).to.deep.equal(identity.getBalance());
+    });
+  });
+
+  describe('#fetchIdentityBalanceWithCosts', () => {
+    beforeEach(async () => {
+      await drive.createInitialStateStructure();
+
+      initialRootHash = await drive.getGroveDB().getRootHash();
+    });
+
+    it('should return null if identity not exists', async () => {
+      const result = await drive.fetchIdentityBalanceWithCosts(Buffer.alloc(32), blockInfo);
+
+      expect(result).to.be.an.instanceOf(Array);
+      expect(result).to.have.lengthOf(2);
+
+      const [balance, feeResult] = result;
+
+      expect(balance).to.be.null();
+
+      expect(feeResult).to.be.instanceOf(FeeResult);
+
+      expect(feeResult.processingFee).to.greaterThan(0, 'processing fee must be higher than 0');
+      expect(feeResult.storageFee).to.be.equal(0, 'storage fee must be equal to 0');
+    });
+
+    it('should return contract if identity is present', async () => {
+      await drive.insertIdentity(identity, blockInfo);
+
+      const result = await drive.fetchIdentityBalanceWithCosts(identity.getId(), blockInfo);
+
+      expect(result).to.be.an.instanceOf(Array);
+      expect(result).to.have.lengthOf(2);
+
+      const [balance, feeResult] = result;
+
+      expect(balance).to.equal(identity.getBalance());
+
+      expect(feeResult).to.be.an.instanceOf(FeeResult);
+
+      expect(feeResult.processingFee).to.greaterThan(0, 'processing fee must be higher than 0');
+      expect(feeResult.storageFee).to.be.equal(0, 'storage fee must be equal to 0');
+    });
+  });
+
+  describe('#fetchIdentityBalanceIncludeDebtWithCosts', () => {
+    beforeEach(async () => {
+      await drive.createInitialStateStructure();
+
+      initialRootHash = await drive.getGroveDB().getRootHash();
+    });
+
+    it('should return null if identity not exists', async () => {
+      const result = await drive.fetchIdentityBalanceIncludeDebtWithCosts(
+        Buffer.alloc(32),
+        blockInfo,
+      );
+
+      expect(result).to.be.an.instanceOf(Array);
+      expect(result).to.have.lengthOf(2);
+
+      const [balance, feeResult] = result;
+
+      expect(balance).to.be.null();
+
+      expect(feeResult).to.be.instanceOf(FeeResult);
+
+      expect(feeResult.processingFee).to.greaterThan(0, 'processing fee must be higher than 0');
+      expect(feeResult.storageFee).to.be.equal(0, 'storage fee must be equal to 0');
+    });
+
+    it('should return balance if identity is present', async () => {
+      await drive.insertIdentity(identity, blockInfo);
+
+      const result = await drive.fetchIdentityBalanceIncludeDebtWithCosts(
+        identity.getId(),
+        blockInfo,
+      );
+
+      expect(result).to.be.an.instanceOf(Array);
+      expect(result).to.have.lengthOf(2);
+
+      const [balance, feeResult] = result;
+
+      expect(balance).to.equal(identity.getBalance());
+
+      expect(feeResult).to.be.an.instanceOf(FeeResult);
+
+      expect(feeResult.processingFee).to.greaterThan(0, 'processing fee must be higher than 0');
+      expect(feeResult.storageFee).to.be.equal(0, 'storage fee must be equal to 0');
+    });
+  });
+
   describe('#addToIdentityBalance', () => {
     beforeEach(async () => {
       await drive.createInitialStateStructure();
