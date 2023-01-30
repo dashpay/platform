@@ -510,8 +510,8 @@ mod tests {
             assert_eq!(
                 fee_result,
                 FeeResult {
-                    processing_fee: 562420,
-                    removed_bytes_from_system: 24, // TODO: That's fine?
+                    processing_fee: 530020,
+                    removed_bytes_from_system: 0,
                     ..Default::default()
                 }
             );
@@ -576,9 +576,9 @@ mod tests {
             assert_eq!(
                 fee_result,
                 FeeResult {
-                    storage_fee: 54000,
-                    processing_fee: 1240280,
-                    removed_bytes_from_system: 24, // TODO: That's fine?
+                    storage_fee: 0,
+                    processing_fee: 1201880,
+                    removed_bytes_from_system: 0,
                     ..Default::default()
                 }
             );
@@ -640,7 +640,7 @@ mod tests {
                 fee_result,
                 FeeResult {
                     storage_fee: 0,
-                    processing_fee: 899950,
+                    processing_fee: 875150,
                     removed_bytes_from_system: 0,
                     ..Default::default()
                 }
@@ -686,7 +686,7 @@ mod tests {
             assert_eq!(
                 fee_result,
                 FeeResult {
-                    processing_fee: 10175040,
+                    processing_fee: 10175440,
                     ..Default::default()
                 }
             );
@@ -741,8 +741,8 @@ mod tests {
             assert_eq!(
                 fee_result,
                 FeeResult {
-                    processing_fee: 562420,
-                    removed_bytes_from_system: 24, // TODO: That's fine?
+                    processing_fee: 530020,
+                    removed_bytes_from_system: 0,
                     ..Default::default()
                 }
             );
@@ -791,7 +791,7 @@ mod tests {
             assert_eq!(
                 fee_result,
                 FeeResult {
-                    processing_fee: 5430770,
+                    processing_fee: 5431170,
                     ..Default::default()
                 }
             );

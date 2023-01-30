@@ -1365,7 +1365,7 @@ mod tests {
             FeeResult {
                 storage_fee: 3244
                     * Epoch::new(0).cost_for_known_cost_item(StorageDiskUsageCreditPerByte),
-                processing_fee: 2415720,
+                processing_fee: 2392120,
                 ..Default::default()
             }
         );
@@ -1416,7 +1416,7 @@ mod tests {
             FeeResult {
                 storage_fee: 1425
                     * Epoch::new(0).cost_for_known_cost_item(StorageDiskUsageCreditPerByte),
-                processing_fee: 1569790,
+                processing_fee: 1546190,
                 ..Default::default()
             }
         );
@@ -1690,7 +1690,7 @@ mod tests {
             FeeResult {
                 storage_fee: 1983
                     * Epoch::new(0).cost_for_known_cost_item(StorageDiskUsageCreditPerByte),
-                processing_fee: 2206670,
+                processing_fee: 2177870,
                 ..Default::default()
             }
         );

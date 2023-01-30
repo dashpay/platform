@@ -220,7 +220,7 @@ mod tests {
         let proof = drive
             .grove_get_proved_path_query(&root_path_query, false, None, &mut drive_operations)
             .expect("expected to get root elements");
-        assert_eq!(proof.len(), 117); //it + left + right
+        assert_eq!(proof.len(), 110); //it + left + right
 
         // Merk Level 1
         let mut query = Query::new();
@@ -237,7 +237,7 @@ mod tests {
         let proof = drive
             .grove_get_proved_path_query(&root_path_query, false, None, &mut drive_operations)
             .expect("expected to get root elements");
-        assert_eq!(proof.len(), 185); //it + left + right + parent + parent other
+        assert_eq!(proof.len(), 179); //it + left + right + parent + parent other
 
         let mut query = Query::new();
         query.insert_key(vec![RootTree::Balances as u8]);
@@ -253,7 +253,7 @@ mod tests {
         let proof = drive
             .grove_get_proved_path_query(&root_path_query, false, None, &mut drive_operations)
             .expect("expected to get root elements");
-        assert_eq!(proof.len(), 186); //it + left + right + parent + parent other
+        assert_eq!(proof.len(), 180); //it + left + right + parent + parent other
 
         // Merk Level 2
         let mut query = Query::new();
@@ -270,7 +270,7 @@ mod tests {
         let proof = drive
             .grove_get_proved_path_query(&root_path_query, false, None, &mut drive_operations)
             .expect("expected to get root elements");
-        assert_eq!(proof.len(), 253);
+        assert_eq!(proof.len(), 247);
         //it + left + right + parent + sibling + parent sibling + grandparent
 
         let mut query = Query::new();
@@ -287,7 +287,7 @@ mod tests {
         let proof = drive
             .grove_get_proved_path_query(&root_path_query, false, None, &mut drive_operations)
             .expect("expected to get root elements");
-        assert_eq!(proof.len(), 189); //it + parent + sibling + parent sibling + grandparent
+        assert_eq!(proof.len(), 183); //it + parent + sibling + parent sibling + grandparent
 
         let mut query = Query::new();
         query.insert_key(vec![RootTree::WithdrawalTransactions as u8]);
@@ -303,7 +303,7 @@ mod tests {
         let proof = drive
             .grove_get_proved_path_query(&root_path_query, false, None, &mut drive_operations)
             .expect("expected to get root elements");
-        assert_eq!(proof.len(), 221); //it + left + parent + sibling + parent sibling + grandparent
+        assert_eq!(proof.len(), 215); //it + left + parent + sibling + parent sibling + grandparent
 
         let mut query = Query::new();
         query.insert_key(vec![RootTree::Misc as u8]);
@@ -319,7 +319,7 @@ mod tests {
         let proof = drive
             .grove_get_proved_path_query(&root_path_query, false, None, &mut drive_operations)
             .expect("expected to get root elements");
-        assert_eq!(proof.len(), 187); //it + parent + sibling + parent sibling + grandparent
+        assert_eq!(proof.len(), 181); //it + parent + sibling + parent sibling + grandparent
 
         // Merk Level 3
 
@@ -337,7 +337,7 @@ mod tests {
         let proof = drive
             .grove_get_proved_path_query(&root_path_query, false, None, &mut drive_operations)
             .expect("expected to get root elements");
-        assert_eq!(proof.len(), 253);
+        assert_eq!(proof.len(), 247);
 
         let mut query = Query::new();
         query.insert_key(vec![
@@ -355,7 +355,7 @@ mod tests {
         let proof = drive
             .grove_get_proved_path_query(&root_path_query, false, None, &mut drive_operations)
             .expect("expected to get root elements");
-        assert_eq!(proof.len(), 253);
+        assert_eq!(proof.len(), 247);
 
         let mut query = Query::new();
         query.insert_key(vec![RootTree::SpentAssetLockTransactions as u8]);
@@ -371,6 +371,6 @@ mod tests {
         let proof = drive
             .grove_get_proved_path_query(&root_path_query, false, None, &mut drive_operations)
             .expect("expected to get root elements");
-        assert_eq!(proof.len(), 219);
+        assert_eq!(proof.len(), 213);
     }
 }

@@ -37,15 +37,15 @@ lazy_static = "1.4.0"
 
 [dependencies.grovedb]
 git = "https://github.com/dashpay/grovedb"
-branch = "feat/proof-subset-verification"
+branch = "fix/SumTreeRootCosts"
 
 [dependencies.storage]
 git = "https://github.com/dashpay/grovedb"
-branch = "feat/proof-subset-verification"
+branch = "fix/SumTreeRootCosts"
 
 [dependencies.costs]
 git = "https://github.com/dashpay/grovedb"
-branch = "feat/proof-subset-verification"
+branch = "fix/SumTreeRootCosts"
 
 [dev-dependencies]
 criterion = "0.3.5"
