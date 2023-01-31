@@ -55,7 +55,8 @@ describe('applyIdentityCreateTransitionFactory', () => {
     const identity = new Identity({
       protocolVersion: protocolVersion.latestVersion,
       id: stateTransition.getIdentityId(),
-      publicKeys: stateTransition.getPublicKeys().map((key) => key.toObject()),
+      publicKeys: stateTransition.getPublicKeys()
+        .map((key) => key.toObject({ skipSignature: true })),
       balance,
       revision: 0,
     });
