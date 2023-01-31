@@ -99,9 +99,7 @@ impl IdentityUpdateTransitionWasm {
         self.0
             .get_public_keys_to_add()
             .iter()
-            .map(IdentityPublicKey::to_owned)
-            .map(IdentityPublicKeyWasm::from)
-            .map(JsValue::from)
+            .map(|key| IdentityPublicKeyWasm::from(key.to_owned()).into())
             .collect()
     }
 
@@ -238,8 +236,7 @@ impl IdentityUpdateTransitionWasm {
         if let Some(public_keys_to_add) = object.public_keys_to_add {
             let keys_objects = public_keys_to_add
                 .into_iter()
-                .map(IdentityPublicKeyWasm::from)
-                .map(|key| key.to_object(None))
+                .map(|key| IdentityPublicKeyWasm::from(key).to_object(None))
                 .collect::<Result<js_sys::Array, _>>()?;
 
             js_sys::Reflect::set(
@@ -329,8 +326,7 @@ impl IdentityUpdateTransitionWasm {
         if let Some(public_keys_to_add) = object.public_keys_to_add {
             let keys_objects = public_keys_to_add
                 .into_iter()
-                .map(IdentityPublicKeyWasm::from)
-                .map(|key| key.to_json())
+                .map(|key| IdentityPublicKeyWasm::from(key).to_json())
                 .collect::<Result<js_sys::Array, _>>()?;
 
             js_sys::Reflect::set(
