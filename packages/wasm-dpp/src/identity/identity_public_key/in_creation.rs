@@ -7,11 +7,11 @@ use crate::errors::from_dpp_err;
 use crate::{buffer::Buffer, utils};
 use dpp::identity::IdentityPublicKeyInCreation;
 
-#[wasm_bindgen(js_name=IdentityPublicKey)]
+#[wasm_bindgen(js_name=IdentityPublicKeyInCreation)]
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct IdentityPublicKeyInCreationWasm(IdentityPublicKeyInCreation);
 
-#[wasm_bindgen(js_class = IdentityPublicKey)]
+#[wasm_bindgen(js_class = IdentityPublicKeyInCreation)]
 impl IdentityPublicKeyInCreationWasm {
     #[wasm_bindgen(constructor)]
     pub fn new(raw_public_key: JsValue) -> Result<IdentityPublicKeyInCreationWasm, JsValue> {
