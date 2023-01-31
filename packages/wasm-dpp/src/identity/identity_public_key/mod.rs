@@ -152,7 +152,7 @@ impl IdentityPublicKeyWasm {
 
         js_sys::Reflect::set(
             &js_object,
-            &"data".to_owned().into(),
+            &JsValue::from_str("data"),
             &JsValue::from(data_buffer),
         )?;
 

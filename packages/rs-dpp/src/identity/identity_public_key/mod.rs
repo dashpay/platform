@@ -24,14 +24,13 @@ use crate::util::hash::ripemd160_sha256;
 use crate::util::json_value::{JsonValueExt, ReplaceWith};
 use crate::util::vec;
 use crate::SerdeParsingError;
-use bincode::{deserialize, serialize};
 
 pub use in_creation::IdentityPublicKeyInCreation;
 
 pub type KeyID = u32;
 pub type TimestampMillis = u64;
 
-pub const BINARY_DATA_FIELDS: [&str; 2] = ["data", "signature"];
+pub const BINARY_DATA_FIELDS: [&str; 1] = ["data"];
 
 #[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
@@ -43,11 +42,12 @@ pub struct IdentityPublicKey {
     pub key_type: KeyType,
     pub read_only: bool,
     pub data: Vec<u8>,
-    #[serde(default)]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    // #[serde(default)]
     pub disabled_at: Option<TimestampMillis>,
 }
 
-impl std::convert::Into<IdentityPublicKeyInCreation> for &IdentityPublicKey {
+impl Into<IdentityPublicKeyInCreation> for &IdentityPublicKey {
     fn into(self) -> IdentityPublicKeyInCreation {
         IdentityPublicKeyInCreation {
             id: self.id,
@@ -130,7 +130,7 @@ impl IdentityPublicKey {
 
     /// Return raw data, with all binary fields represented as arrays
     pub fn to_raw_json_object(&self) -> Result<JsonValue, SerdeParsingError> {
-        let mut value = serde_json::to_value(&self)?;
+        let value = serde_json::to_value(self)?;
 
         Ok(value)
     }

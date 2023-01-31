@@ -212,7 +212,7 @@ impl IdentityCreateTransition {
         let pk_values = self
             .public_keys
             .iter()
-            .map(|pk| pk.to_raw_json_object())
+            .map(|pk| pk.to_raw_json_object(options.skip_signature))
             .collect::<Result<Vec<JsonValue>, SerdeParsingError>>()?;
 
         json_map.insert(
@@ -264,7 +264,7 @@ impl StateTransitionConvert for IdentityCreateTransition {
 
         let mut public_keys: Vec<JsonValue> = vec![];
         for key in self.public_keys.iter() {
-            public_keys.push(key.to_raw_json_object()?);
+            public_keys.push(key.to_raw_json_object(skip_signature)?);
         }
 
         json_value.insert(

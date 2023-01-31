@@ -47,7 +47,7 @@ impl PublicKeysSignaturesValidatorWasm {
                 let parsed_key: IdentityPublicKeyInCreation =
                     IdentityPublicKeyInCreationWasm::new(raw_key)?.into();
                 parsed_key
-                    .to_raw_json_object()
+                    .to_raw_json_object(false)
                     .map_err(|e| from_dpp_err(e.into()))
             })
             .collect::<Result<Vec<JsonValue>, JsValue>>()?;

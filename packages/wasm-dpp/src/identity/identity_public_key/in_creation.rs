@@ -120,10 +120,10 @@ impl IdentityPublicKeyInCreationWasm {
     }
 
     #[wasm_bindgen(js_name=toObject)]
-    pub fn to_object(&self) -> Result<JsValue, JsValue> {
+    pub fn to_object(&self, skip_signatures: Option<bool>) -> Result<JsValue, JsValue> {
         let val = self
             .0
-            .to_raw_json_object()
+            .to_raw_json_object(skip_signatures.unwrap_or(false))
             .map_err(|e| from_dpp_err(e.into()))?;
 
         let data_buffer = Buffer::from_bytes(self.0.data.as_slice());
@@ -142,6 +142,14 @@ impl IdentityPublicKeyInCreationWasm {
             &"data".to_owned().into(),
             &JsValue::from(data_buffer),
         )?;
+
+        if !skip_signatures.unwrap_or(false) && !self.0.signature.is_empty() {
+            js_sys::Reflect::set(
+                &js_object,
+                &"signature".to_owned().into(),
+                &JsValue::from(Buffer::from_bytes(&self.0.signature)),
+            )?;
+        }
 
         Ok(js_object)
     }

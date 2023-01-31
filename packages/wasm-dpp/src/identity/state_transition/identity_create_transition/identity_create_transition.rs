@@ -10,9 +10,8 @@ use crate::{
     buffer::Buffer,
     create_asset_lock_proof_from_wasm_instance,
     errors::RustConversionError,
-    identity::{
-        state_transition::asset_lock_proof::{ChainAssetLockProofWasm, InstantAssetLockProofWasm},
-        IdentityPublicKeyWasm,
+    identity::state_transition::asset_lock_proof::{
+        ChainAssetLockProofWasm, InstantAssetLockProofWasm,
     },
     state_transition::StateTransitionExecutionContextWasm,
     with_js_error, IdentityPublicKeyInCreationWasm,
@@ -24,11 +23,8 @@ use crate::utils::{generic_of_js_val, ToSerdeJSONExt};
 use dpp::identity::IdentityPublicKeyInCreation;
 use dpp::{
     identifier::Identifier,
-    identity::{
-        state_transition::{
-            asset_lock_proof::AssetLockProof, identity_create_transition::IdentityCreateTransition,
-        },
-        IdentityPublicKey,
+    identity::state_transition::{
+        asset_lock_proof::AssetLockProof, identity_create_transition::IdentityCreateTransition,
     },
     state_transition::StateTransitionLike,
     util::string_encoding,
@@ -101,7 +97,7 @@ impl IdentityCreateTransitionWasm {
                 let public_key: Ref<IdentityPublicKeyInCreationWasm> =
                     generic_of_js_val::<IdentityPublicKeyInCreationWasm>(
                         value,
-                        "IdentityPublicKey",
+                        "IdentityPublicKeyInCreation",
                     )?;
                 Ok(public_key.clone().into())
             })
@@ -120,7 +116,7 @@ impl IdentityCreateTransitionWasm {
                 let public_key: Ref<IdentityPublicKeyInCreationWasm> =
                     generic_of_js_val::<IdentityPublicKeyInCreationWasm>(
                         value,
-                        "IdentityPublicKey",
+                        "IdentityPublicKeyInCreation",
                     )?;
                 Ok(public_key.clone().into())
             })
@@ -220,7 +216,7 @@ impl IdentityCreateTransitionWasm {
             .public_keys
             .into_iter()
             .map(IdentityPublicKeyInCreationWasm::from)
-            .map(|key| key.to_object())
+            .map(|key| key.to_object(skip_signature))
             .collect::<Result<js_sys::Array, _>>()?;
 
         js_sys::Reflect::set(&js_object, &"publicKeys".to_owned().into(), &keys_objects)?;
