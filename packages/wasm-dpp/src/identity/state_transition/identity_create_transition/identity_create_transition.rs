@@ -166,7 +166,7 @@ impl IdentityCreateTransitionWasm {
     #[wasm_bindgen(js_name=toObject)]
     pub fn to_object(&self, options: JsValue) -> Result<JsValue, JsValue> {
         let opts: super::to_object::ToObjectOptions = if options.is_object() {
-            with_js_error!(serde_wasm_bindgen::from_value(options))?
+            with_js_error!(serde_wasm_bindgen::from_value(options.clone()))?
         } else {
             Default::default()
         };
@@ -216,7 +216,7 @@ impl IdentityCreateTransitionWasm {
             .public_keys
             .into_iter()
             .map(IdentityPublicKeyInCreationWasm::from)
-            .map(|key| key.to_object(skip_signature))
+            .map(|key| key.to_object(options.clone()))
             .collect::<Result<js_sys::Array, _>>()?;
 
         js_sys::Reflect::set(&js_object, &"publicKeys".to_owned().into(), &keys_objects)?;

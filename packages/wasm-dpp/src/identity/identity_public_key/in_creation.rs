@@ -4,8 +4,14 @@ use std::convert::{TryFrom, TryInto};
 use wasm_bindgen::prelude::*;
 
 use crate::errors::from_dpp_err;
-use crate::{buffer::Buffer, utils};
+use crate::{buffer::Buffer, utils, with_js_error};
 use dpp::identity::IdentityPublicKeyInCreation;
+
+#[derive(Deserialize, Default)]
+#[serde(rename_all = "camelCase")]
+struct ToObjectOptions {
+    pub skip_signature: Option<bool>,
+}
 
 #[wasm_bindgen(js_name=IdentityPublicKeyInCreation)]
 #[derive(Serialize, Deserialize, Debug, Clone)]
@@ -120,10 +126,16 @@ impl IdentityPublicKeyInCreationWasm {
     }
 
     #[wasm_bindgen(js_name=toObject)]
-    pub fn to_object(&self, skip_signatures: Option<bool>) -> Result<JsValue, JsValue> {
+    pub fn to_object(&self, options: JsValue) -> Result<JsValue, JsValue> {
+        let opts: ToObjectOptions = if options.is_object() {
+            with_js_error!(serde_wasm_bindgen::from_value(options))?
+        } else {
+            Default::default()
+        };
+
         let val = self
             .0
-            .to_raw_json_object(skip_signatures.unwrap_or(false))
+            .to_raw_json_object(opts.skip_signature.unwrap_or(false))
             .map_err(|e| from_dpp_err(e.into()))?;
 
         let data_buffer = Buffer::from_bytes(self.0.data.as_slice());
@@ -139,14 +151,14 @@ impl IdentityPublicKeyInCreationWasm {
 
         js_sys::Reflect::set(
             &js_object,
-            &"data".to_owned().into(),
+            &JsValue::from_str("data"),
             &JsValue::from(data_buffer),
         )?;
 
-        if !skip_signatures.unwrap_or(false) && !self.0.signature.is_empty() {
+        if !opts.skip_signature.unwrap_or(false) && !self.0.signature.is_empty() {
             js_sys::Reflect::set(
                 &js_object,
-                &"signature".to_owned().into(),
+                &JsValue::from_str("signature"),
                 &JsValue::from(Buffer::from_bytes(&self.0.signature)),
             )?;
         }
