@@ -420,10 +420,12 @@ module.exports = {
   },
   '0.24.0-dev.13': (configFile) => {
     Object.entries(configFile.configs)
-      .forEach(([, config]) => {
+      .forEach(([configName, config]) => {
         if (config.platform) {
+          delete config.platform.dapi.envoy.grpc;
+
           if (config.group === 'local') {
-            config.platform.drive.tenderdash.moniker = config.name;
+            config.platform.drive.tenderdash.moniker = configName;
           } else {
             config.platform.drive.tenderdash.moniker = null;
           }
