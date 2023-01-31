@@ -21,6 +21,7 @@ use crate::util::hash::hash;
 use crate::util::json_value::{JsonValueExt, ReplaceWith};
 use crate::util::{cbor_value, deserializer};
 
+pub mod document_facade;
 pub mod document_factory;
 pub mod document_stub;
 pub mod document_validator;

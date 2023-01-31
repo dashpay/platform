@@ -28,6 +28,14 @@ pub struct DocumentValidator {
     protocol_version_validator: Arc<ProtocolVersionValidator>,
 }
 
+impl Clone for DocumentValidator {
+    fn clone(&self) -> Self {
+        Self {
+            protocol_version_validator: self.protocol_version_validator.clone(),
+        }
+    }
+}
+
 impl DocumentValidator {
     pub fn new(protocol_version_validator: Arc<ProtocolVersionValidator>) -> Self {
         Self {
