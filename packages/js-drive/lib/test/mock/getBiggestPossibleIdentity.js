@@ -1,8 +1,8 @@
 const identityCreateTransitionSchema = require('@dashevo/dpp/schema/identity/stateTransition/identityCreate.json');
 
-const IdentityPublicKey = require('@dashevo/dpp/lib/Identity/IdentityPublicKey');
+const IdentityPublicKey = require('@dashevo/dpp/lib/identity/IdentityPublicKey');
 
-const Identity = require('@dashevo/dpp/lib/Identity/Identity');
+const Identity = require('@dashevo/dpp/lib/identity/Identity');
 const generateRandomIdentifier = require('@dashevo/dpp/lib/test/utils/generateRandomIdentifier');
 
 let identity;
