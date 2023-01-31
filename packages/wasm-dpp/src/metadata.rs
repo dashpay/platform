@@ -22,6 +22,7 @@ impl std::convert::From<&MetadataWasm> for Metadata {
         v.0.clone()
     }
 }
+
 impl std::convert::Into<Metadata> for MetadataWasm {
     fn into(self) -> Metadata {
         self.0
