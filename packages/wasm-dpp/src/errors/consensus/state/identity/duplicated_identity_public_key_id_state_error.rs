@@ -1,6 +1,5 @@
-use dpp::dashcore::psbt::raw::Key;
 use dpp::identity::KeyID;
-use dpp::StateError;
+
 use wasm_bindgen::prelude::*;
 
 #[wasm_bindgen(js_name=DuplicatedIdentityPublicKeyIdStateError)]

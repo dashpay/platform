@@ -45,3 +45,9 @@ impl IdentityUpdatePublicKeysValidatorWasm {
         Ok(result.map(|_| JsValue::undefined()).into())
     }
 }
+
+impl Default for IdentityUpdatePublicKeysValidatorWasm {
+    fn default() -> Self {
+        Self::new()
+    }
+}

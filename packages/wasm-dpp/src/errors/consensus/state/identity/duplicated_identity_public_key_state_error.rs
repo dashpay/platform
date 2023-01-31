@@ -1,4 +1,3 @@
-use dpp::consensus::ConsensusError;
 use dpp::identity::KeyID;
 use wasm_bindgen::prelude::*;
 

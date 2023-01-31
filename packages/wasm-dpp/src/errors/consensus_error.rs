@@ -25,9 +25,6 @@ use crate::errors::consensus::state::identity::{
     DuplicatedIdentityPublicKeyIdStateErrorWasm, DuplicatedIdentityPublicKeyStateErrorWasm,
 };
 use dpp::codes::ErrorWithCode;
-use dpp::consensus::basic::identity::{
-    DuplicatedIdentityPublicKeyError, DuplicatedIdentityPublicKeyIdError,
-};
 use dpp::consensus::basic::BasicError;
 use dpp::consensus::signature::SignatureError;
 use dpp::StateError;
