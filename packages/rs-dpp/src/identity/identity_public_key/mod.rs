@@ -42,8 +42,7 @@ pub struct IdentityPublicKey {
     pub key_type: KeyType,
     pub read_only: bool,
     pub data: Vec<u8>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    // #[serde(default)]
+    #[serde(default)]
     pub disabled_at: Option<TimestampMillis>,
 }
 
@@ -130,7 +129,13 @@ impl IdentityPublicKey {
 
     /// Return raw data, with all binary fields represented as arrays
     pub fn to_raw_json_object(&self) -> Result<JsonValue, SerdeParsingError> {
-        let value = serde_json::to_value(self)?;
+        let mut value = serde_json::to_value(self)?;
+
+        if self.disabled_at.is_none() {
+            if let JsonValue::Object(ref mut o) = value {
+                o.remove("disabledAt");
+            }
+        }
 
         Ok(value)
     }
