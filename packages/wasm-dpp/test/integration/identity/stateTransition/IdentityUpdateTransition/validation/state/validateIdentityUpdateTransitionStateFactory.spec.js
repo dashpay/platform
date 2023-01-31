@@ -30,7 +30,7 @@ describe('validateIdentityUpdateTransitionStateFactory', () => {
   let InvalidIdentityPublicKeyIdError;
   let MissingMasterPublicKeyError;
   let IdentityPublicKeyDisabledAtWindowViolationError;
-  let DuplicatedIdentityPublicKeyIdError;
+  let DuplicatedIdentityPublicKeyIdStateError;
   let StateTransitionExecutionContext;
   let IdentityUpdateTransitionStateValidator;
 
@@ -44,7 +44,7 @@ describe('validateIdentityUpdateTransitionStateFactory', () => {
       IdentityPublicKeyIsDisabledError,
       InvalidIdentityPublicKeyIdError,
       IdentityPublicKeyDisabledAtWindowViolationError,
-      DuplicatedIdentityPublicKeyIdError,
+      DuplicatedIdentityPublicKeyIdStateError,
       StateTransitionExecutionContext,
       IdentityUpdateTransitionStateValidator,
       MissingMasterPublicKeyError,
@@ -258,7 +258,7 @@ describe('validateIdentityUpdateTransitionStateFactory', () => {
     ]);
     const result = await validateIdentityUpdateTransitionState(stateTransition);
 
-    await expectValidationError(result, DuplicatedIdentityPublicKeyIdError);
+    await expectValidationError(result, DuplicatedIdentityPublicKeyIdStateError);
   });
 
   // TODO: remove?

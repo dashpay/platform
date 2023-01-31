@@ -6,8 +6,8 @@ const { default: loadWasmDpp } = require('../../../../../../../dist');
 
 describe('validatePublicKeysState', () => {
   let IdentityUpdatePublicKeysValidator;
-  let DuplicatedIdentityPublicKeyIdError;
-  let DuplicatedIdentityPublicKeyError;
+  let DuplicatedIdentityPublicKeyIdStateError;
+  let DuplicatedIdentityPublicKeyStateError;
   let MaxIdentityPublicKeyLimitReachedError;
 
   let validatePublicKeys;
@@ -16,8 +16,8 @@ describe('validatePublicKeysState', () => {
   before(async () => {
     ({
       IdentityUpdatePublicKeysValidator,
-      DuplicatedIdentityPublicKeyError,
-      DuplicatedIdentityPublicKeyIdError,
+      DuplicatedIdentityPublicKeyStateError,
+      DuplicatedIdentityPublicKeyIdStateError,
       MaxIdentityPublicKeyLimitReachedError,
     } = await loadWasmDpp());
   });
@@ -33,15 +33,11 @@ describe('validatePublicKeysState', () => {
 
     const result = validatePublicKeys(rawPublicKeys);
 
-    await expectValidationError(result, DuplicatedIdentityPublicKeyIdError);
+    await expectValidationError(result, DuplicatedIdentityPublicKeyIdStateError);
 
     const [error] = result.getErrors();
 
-    // TODO: fix? DuplicatedIdentityPublicKeyIdError has error code that comes from
-    // consensusError scope, not the one that supposed to match StateError code.
-
-    // expect(error.getCode()).to.equal(4022);
-    expect(error.getCode()).to.equal(1030);
+    expect(error.getCode()).to.equal(4022);
     expect(error.getDuplicatedIds()).to.deep.equal([rawPublicKeys[1].id]);
   });
 
@@ -50,15 +46,11 @@ describe('validatePublicKeysState', () => {
 
     const result = validatePublicKeys(rawPublicKeys);
 
-    await expectValidationError(result, DuplicatedIdentityPublicKeyError);
+    await expectValidationError(result, DuplicatedIdentityPublicKeyStateError);
 
     const [error] = result.getErrors();
 
-    // TODO: fix? DuplicatedIdentityPublicKeyIdError has error code that comes from
-    // consensusError scope, not the one that supposed to match StateError code.
-
-    // expect(error.getCode()).to.equal(4021);
-    expect(error.getCode()).to.equal(1029);
+    expect(error.getCode()).to.equal(4021);
     expect(error.getDuplicatedPublicKeysIds()).to.deep.equal([rawPublicKeys[1].id]);
   });
 

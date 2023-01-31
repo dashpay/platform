@@ -15,7 +15,7 @@ describe('validateIdentityUpdateTransitionBasicFactory', () => {
   let IdentityPublicKey;
   let UnsupportedProtocolVersionError;
   let InvalidIdentityKeySignatureError;
-  let DuplicatedIdentityPublicKeyIdError;
+  let DuplicatedIdentityPublicKeyIdStateError;
   let IdentityUpdateTransitionBasicValidator;
 
   before(async () => {
@@ -23,7 +23,7 @@ describe('validateIdentityUpdateTransitionBasicFactory', () => {
       IdentityUpdateTransition,
       UnsupportedProtocolVersionError,
       InvalidIdentityKeySignatureError,
-      DuplicatedIdentityPublicKeyIdError,
+      DuplicatedIdentityPublicKeyIdStateError,
       IdentityPublicKey,
       IdentityUpdateTransitionBasicValidator,
     } = await loadWasmDpp());
@@ -385,7 +385,7 @@ describe('validateIdentityUpdateTransitionBasicFactory', () => {
         rawStateTransition,
       );
 
-      await expectValidationError(result, DuplicatedIdentityPublicKeyIdError);
+      await expectValidationError(result, DuplicatedIdentityPublicKeyIdStateError);
     });
 
     it('should have valid signatures', async () => {
