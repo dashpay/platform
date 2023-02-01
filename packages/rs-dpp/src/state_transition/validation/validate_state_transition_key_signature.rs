@@ -25,7 +25,7 @@ pub struct StateTransitionKeySignatureValidator<SR> {
     asset_lock_public_key_hash_fetcher: AssetLockPublicKeyHashFetcher<SR>,
 }
 
-#[async_trait]
+#[async_trait(?Send)]
 impl<SR> AsyncDataValidator for StateTransitionKeySignatureValidator<SR>
 where
     SR: StateRepositoryLike,
