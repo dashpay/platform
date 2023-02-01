@@ -1,4 +1,4 @@
-use std::convert::TryFrom;
+use std::{convert::TryFrom, sync::Arc};
 
 use async_trait::async_trait;
 #[cfg(test)]
@@ -14,11 +14,11 @@ use crate::{
     ProtocolError,
 };
 
-async fn validate_state_transition_basic(
-    state_repository: &impl StateRepositoryLike,
+async fn validate_state_transition_basic<SR>(
+    state_repository: Arc<SR>,
     validate_functions_by_type: &impl ValidatorByStateTransitionType,
     raw_state_transition: JsonValue,
-) -> Result<SimpleValidationResult, ProtocolError> {
+) -> Result<SimpleValidationResult, ProtocolError> where SR: StateRepositoryLike {
     let mut result = SimpleValidationResult::default();
 
     let raw_transition_type = match raw_state_transition.get_u64("type") {
@@ -43,7 +43,9 @@ async fn validate_state_transition_basic(
     let validate_result = validate_functions_by_type
         .validate(&raw_state_transition, state_transition_type)
         .await?;
+
     result.merge(validate_result);
+
     if !result.is_valid() {
         return Ok(result);
     }

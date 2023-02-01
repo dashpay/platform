@@ -1,5 +1,8 @@
 use anyhow::anyhow;
-use std::convert::{TryFrom, TryInto};
+use std::{
+    convert::{TryFrom, TryInto},
+    sync::Arc,
+};
 
 use crate::{
     consensus::{basic::BasicError, ConsensusError},
@@ -7,6 +10,7 @@ use crate::{
         state_transition::{DataContractCreateTransition, DataContractUpdateTransition},
         DataContract,
     },
+    decode_protocol_entity_factory::DecodeProtocolEntity,
     document::DocumentsBatchTransition,
     identity::state_transition::{
         identity_create_transition::IdentityCreateTransition,
@@ -18,12 +22,132 @@ use crate::{
     util::json_value::JsonValueExt,
     ProtocolError,
 };
+use serde_json::Number;
 use serde_json::Value as JsonValue;
 
 use super::{
     state_transition_execution_context::StateTransitionExecutionContext, StateTransition,
     StateTransitionType,
 };
+
+pub struct StateTransitionFactoryOptions {
+    pub skip_validation: bool,
+}
+
+impl Default for StateTransitionFactoryOptions {
+    fn default() -> Self {
+        StateTransitionFactoryOptions {
+            skip_validation: false,
+        }
+    }
+}
+
+pub struct StateTransitionFactory<SR> {
+    state_repository: Arc<SR>,
+}
+
+impl<SR> StateTransitionFactory<SR>
+where
+    SR: StateRepositoryLike,
+{
+    pub fn new(state_repository: Arc<SR>) -> Self {
+        StateTransitionFactory { state_repository }
+    }
+
+    pub async fn create_from_object(
+        &self,
+        raw_state_transition: JsonValue,
+        options: Option<StateTransitionFactoryOptions>,
+    ) -> Result<StateTransition, ProtocolError> {
+        let options = options.unwrap_or_default();
+
+        if !options.skip_validation {
+            // TODO: validate basic
+        }
+
+        self.create_state_transition(raw_state_transition).await
+    }
+
+    pub async fn create_from_buffer(
+        &self,
+        state_transition_buffer: &[u8],
+        options: Option<StateTransitionFactoryOptions>,
+    ) -> Result<StateTransition, ProtocolError> {
+        let (protocol_version, mut raw_state_transition) =
+            DecodeProtocolEntity::decode_protocol_entity(state_transition_buffer)?;
+
+        match raw_state_transition {
+            JsonValue::Object(ref mut m) => m.insert(
+                String::from("protocolVersion"),
+                JsonValue::Number(Number::from(protocol_version)),
+            ),
+            _ => {
+                return Err(ConsensusError::SerializedObjectParsingError {
+                    parsing_error: anyhow!("the '{:?}' is not a map", raw_state_transition),
+                }
+                .into())
+            }
+        };
+
+        self.create_from_object(raw_state_transition, options).await
+    }
+
+    pub async fn create_state_transition(
+        &self,
+        raw_state_transition: JsonValue,
+    ) -> Result<StateTransition, ProtocolError> {
+        let transition_type = try_get_transition_type(&raw_state_transition)?;
+        let execution_context = StateTransitionExecutionContext::default();
+
+        match transition_type {
+            StateTransitionType::DataContractCreate => {
+                let transition =
+                    DataContractCreateTransition::from_raw_object(raw_state_transition)?;
+                Ok(StateTransition::DataContractCreate(transition))
+            }
+            StateTransitionType::DataContractUpdate => {
+                let transition =
+                    DataContractUpdateTransition::from_raw_object(raw_state_transition)?;
+                Ok(StateTransition::DataContractUpdate(transition))
+            }
+            StateTransitionType::IdentityCreate => {
+                let transition = IdentityCreateTransition::new(raw_state_transition)?;
+                Ok(StateTransition::IdentityCreate(transition))
+            }
+            StateTransitionType::IdentityTopUp => {
+                let transition = IdentityTopUpTransition::new(raw_state_transition)?;
+                Ok(StateTransition::IdentityTopUp(transition))
+            }
+            StateTransitionType::IdentityCreditWithdrawal => {
+                let transition =
+                    IdentityCreditWithdrawalTransition::from_raw_object(raw_state_transition)?;
+                Ok(StateTransition::IdentityCreditWithdrawal(transition))
+            }
+            StateTransitionType::DocumentsBatch => {
+                let maybe_transitions = raw_state_transition
+                    .get("transitions")
+                    .ok_or_else(|| anyhow!("the transitions property doesn't exist"))?;
+                let raw_transitions = maybe_transitions
+                    .as_array()
+                    .ok_or_else(|| anyhow!("property transitions isn't an array"))?;
+                let data_contracts = fetch_data_contracts_for_document_transition(
+                    self.state_repository,
+                    raw_transitions,
+                    &execution_context,
+                )
+                .await?;
+                let documents_batch_transition = DocumentsBatchTransition::from_raw_object(
+                    raw_state_transition,
+                    data_contracts,
+                )?;
+                Ok(StateTransition::DocumentsBatch(documents_batch_transition))
+            }
+            StateTransitionType::IdentityUpdate => {
+                Err(ProtocolError::InvalidStateTransitionTypeError)
+            }
+        }
+    }
+}
 
 pub async fn create_state_transition(
     state_repository: &impl StateRepositoryLike,
