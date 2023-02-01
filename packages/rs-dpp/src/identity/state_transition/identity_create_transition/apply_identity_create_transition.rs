@@ -7,7 +7,6 @@ use crate::identity::state_transition::identity_create_transition::IdentityCreat
 use crate::identity::{convert_satoshi_to_credits, Identity};
 use crate::state_repository::StateRepositoryLike;
 use crate::state_transition::StateTransitionLike;
-use crate::ProtocolError;
 
 pub struct ApplyIdentityCreateTransition<SR>
 where
@@ -53,7 +52,7 @@ where
                 .get_public_keys()
                 .iter()
                 .cloned()
-                .map(|mut pk| (pk.id, pk.to_identity_public_key()))
+                .map(|pk| (pk.id, pk.to_identity_public_key()))
                 .collect(),
             balance: credits_amount,
             revision: 0,
@@ -65,18 +64,8 @@ where
             .create_identity(&identity, state_transition.get_execution_context())
             .await?;
 
-        let public_key_hashes = identity
-            .get_public_keys()
-            .iter()
-            .map(|(_, public_key)| public_key.hash())
-            .collect::<Result<Vec<Vec<u8>>, ProtocolError>>()?;
-
         self.state_repository
-            .store_identity_public_key_hashes(
-                identity.get_id(),
-                public_key_hashes,
-                state_transition.get_execution_context(),
-            )
+            .add_to_system_credits(credits_amount, state_transition.get_execution_context())
             .await?;
 
         let out_point = state_transition

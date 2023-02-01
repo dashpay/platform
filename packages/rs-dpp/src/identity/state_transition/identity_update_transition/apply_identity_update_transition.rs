@@ -1,14 +1,9 @@
-use std::convert::TryInto;
+use anyhow::anyhow;
 use std::sync::Arc;
 
 use crate::identity::IdentityPublicKey;
 use crate::{
-    consensus::{basic::BasicError, ConsensusError},
-    identity::get_biggest_possible_identity,
-    prelude::Identifier,
-    state_repository::StateRepositoryLike,
-    state_transition::StateTransitionLike,
-    ProtocolError,
+    state_repository::StateRepositoryLike, state_transition::StateTransitionLike, ProtocolError,
 };
 
 use super::identity_update_transition::IdentityUpdateTransition;
@@ -35,39 +30,27 @@ pub async fn apply_identity_update_transition(
     state_repository: &impl StateRepositoryLike,
     state_transition: IdentityUpdateTransition,
 ) -> Result<(), ProtocolError> {
-    let mut maybe_identity = state_repository
-        .fetch_identity(
-            state_transition.get_identity_id(),
+    state_repository
+        .update_identity_revision(
+            &state_transition.identity_id,
+            state_transition.revision,
             state_transition.get_execution_context(),
         )
-        .await?
-        .map(TryInto::try_into)
-        .transpose()
-        .map_err(Into::into)?;
-
-    if state_transition.get_execution_context().is_dry_run() {
-        maybe_identity = Some(get_biggest_possible_identity())
-    }
-
-    let mut identity = match maybe_identity {
-        None => {
-            return Err(identity_not_found_error(
-                state_transition.get_identity_id().to_owned(),
-            ))
-        }
-        Some(id) => id,
-    };
-
-    identity.revision = state_transition.get_revision();
+        .await?;
 
     if !state_transition.get_public_key_ids_to_disable().is_empty() {
-        for id in state_transition.get_public_key_ids_to_disable() {
-            if let Some(ref mut public_key) = identity.get_public_key_by_id_mut(*id) {
-                if let Some(disabled_at) = state_transition.get_public_keys_disabled_at() {
-                    public_key.set_disabled_at(disabled_at);
-                }
-            }
-        }
+        let disabled_at = state_transition
+            .get_public_keys_disabled_at()
+            .ok_or_else(|| anyhow!("disabled_at must be present"))?;
+
+        state_repository
+            .disable_identity_keys(
+                &state_transition.identity_id,
+                state_transition.get_public_key_ids_to_disable(),
+                disabled_at,
+                state_transition.get_execution_context(),
+            )
+            .await?;
     }
 
     if !state_transition.get_public_keys_to_add().is_empty() {
@@ -75,34 +58,17 @@ pub async fn apply_identity_update_transition(
             .get_public_keys_to_add()
             .iter()
             .cloned()
-            .map(|pkc| pkc.to_identity_public_key())
+            .map(|pk| pk.to_identity_public_key())
             .collect::<Vec<IdentityPublicKey>>();
 
-        let public_key_hashes: Vec<Vec<u8>> = keys_to_add
-            .iter()
-            .map(|pk| pk.hash())
-            .collect::<Result<_, _>>()?;
-
-        identity.add_public_keys(keys_to_add.into_iter());
-
         state_repository
-            .store_identity_public_key_hashes(
-                identity.get_id(),
-                public_key_hashes,
+            .add_keys_to_identity(
+                &state_transition.identity_id,
+                &keys_to_add,
                 state_transition.get_execution_context(),
             )
             .await?;
     }
 
-    state_repository
-        .update_identity(&identity, state_transition.get_execution_context())
-        .await?;
-
     Ok(())
-}
-
-fn identity_not_found_error(identity_id: Identifier) -> ProtocolError {
-    ProtocolError::AbstractConsensusError(Box::new(ConsensusError::BasicError(Box::new(
-        BasicError::IdentityNotFoundError { identity_id },
-    ))))
 }

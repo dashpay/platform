@@ -9,7 +9,7 @@ use crate::util::string_encoding::Encoding;
 
 pub const MEDIA_TYPE: &str = "application/x.dash.dpp.identifier";
 
-#[derive(Default, Debug, Clone, PartialEq, Eq, Hash)]
+#[derive(Default, Debug, Clone, PartialEq, Eq, Hash, Copy)]
 pub struct Identifier {
     pub buffer: [u8; 32],
 }

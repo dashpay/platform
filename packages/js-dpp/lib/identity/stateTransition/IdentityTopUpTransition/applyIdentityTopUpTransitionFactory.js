@@ -35,6 +35,7 @@ function applyIdentityTopUpTransitionFactory(
 
     await stateRepository.addToIdentityBalance(identityId, creditsAmount, executionContext);
 
+    // TODO: we should handle debt!!!
     await stateRepository.addToSystemCredits(creditsAmount, executionContext);
 
     await stateRepository.markAssetLockTransactionOutPointAsUsed(outPoint, executionContext);
