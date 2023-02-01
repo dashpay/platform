@@ -62,6 +62,7 @@ describe('DataContractFacade', () => {
   describe('createFromObject', () => {
     it('should create DataContract from plain object', async() => {
       try {
+        console.dir(rawDataContract);
         const result = await dpp.dataContract.createFromObject(rawDataContract);
 
         expect(result).to.be.an.instanceOf(DataContract);
@@ -76,21 +77,41 @@ describe('DataContractFacade', () => {
 
   describe('createFromBuffer', () => {
     it('should create DataContract from string', async() => {
-      const result = await dpp.dataContract.createFromBuffer(dataContract.toBuffer());
+      try {
+        const contract = dpp.dataContract.create(
+            dataContract.getOwnerId(),
+            dataContract.getDocuments(),
+        );
 
-      expect(result).to.be.an.instanceOf(DataContract);
+        const result = await dpp.dataContract.createFromBuffer(contract.toBuffer());
 
-      expect(result.toObject()).to.deep.equal(dataContract.toObject());
+        expect(result).to.be.an.instanceOf(DataContract);
+
+        expect(result.toObject()).to.deep.equal(dataContract.toObject());
+      } catch (e) {
+        console.log(e);
+        expect.fail();
+      }
     });
   });
 
   describe('createDataContractCreateTransition', () => {
     it('should create DataContractCreateTransition from DataContract', async () => {
+      console.dir(dataContract.toObject());
+
+      console.log('***********************');
+
       const stateTransition = await dataContractFactory.createDataContractCreateTransition(dataContract);
 
       const result = dpp.dataContract.createDataContractCreateTransition(dataContract);
 
       expect(result).to.be.an.instanceOf(DataContractCreateTransition);
+
+      console.dir(result.toObject());
+
+      console.log('=====================');
+
+      console.dir(stateTransition.toObject());
 
       expect(result.toObject()).to.deep.equal(stateTransition.toObject());
     });

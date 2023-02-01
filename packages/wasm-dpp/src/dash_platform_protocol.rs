@@ -6,7 +6,7 @@ use crate::bls_adapter::{BlsAdapter, JsBlsAdapter};
 use crate::DataContractFacadeWasm;
 use dpp::identity::validation::PublicKeysValidator;
 use dpp::identity::IdentityFacade;
-use dpp::version::ProtocolVersionValidator;
+use dpp::version::{LATEST_VERSION, ProtocolVersionValidator};
 
 #[wasm_bindgen(js_name=DashPlatformProtocol)]
 pub struct DashPlatformProtocol {
@@ -19,7 +19,7 @@ impl DashPlatformProtocol {
     #[wasm_bindgen(constructor)]
     pub fn new(bls_adapter: JsBlsAdapter) -> Self {
         // TODO: add protocol version to the constructor
-        let protocol_version = 0;
+        let protocol_version = LATEST_VERSION;
         let bls = BlsAdapter(bls_adapter);
         // TODO: remove default validator and make a real one instead
         let validator = ProtocolVersionValidator::default();

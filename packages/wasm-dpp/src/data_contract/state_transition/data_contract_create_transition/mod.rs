@@ -139,7 +139,7 @@ impl DataContractCreateTransitionWasm {
 
     #[wasm_bindgen(js_name=toObject)]
     pub fn to_object(&self, skip_signature: Option<bool>) -> Result<JsValue, JsValue> {
-        let something = self.0.to_object(skip_signature.unwrap_or(false)).map_err(from_protocol_error)?;
-        serde_wasm_bindgen::to_value(&something).map_err(|e| e.into())
+        let serde_object = self.0.to_object(skip_signature.unwrap_or(false)).map_err(from_protocol_error)?;
+        serde_object.serialize(&serde_wasm_bindgen::Serializer::json_compatible()).map_err(|e| e.into())
     }
 }
