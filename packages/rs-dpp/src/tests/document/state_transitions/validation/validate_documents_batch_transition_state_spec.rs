@@ -1,7 +1,7 @@
 use std::time::Duration;
 
 use chrono::Utc;
-use dashcore::BlockHeader;
+use dashcore::{consensus, BlockHeader};
 use serde_json::{json, Value as JsonValue};
 
 use crate::{
@@ -70,8 +70,12 @@ fn setup_test() -> TestData {
         .returning(move |_, _| Ok(Some(data_contract_to_return.clone())));
 
     state_repository_mock
-        .expect_fetch_latest_platform_block_header::<BlockHeader>()
-        .returning(|| Ok(new_block_header(Some(Utc::now().timestamp() as u32))));
+        .expect_fetch_latest_platform_block_header()
+        .returning(|| {
+            Ok(consensus::serialize(&new_block_header(Some(
+                Utc::now().timestamp() as u32,
+            ))))
+        });
 
     TestData {
         owner_id,

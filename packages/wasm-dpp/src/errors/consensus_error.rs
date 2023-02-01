@@ -21,10 +21,10 @@ use crate::errors::consensus::basic::identity::{
     InvalidIdentityPublicKeySecurityLevelErrorWasm, InvalidInstantAssetLockProofErrorWasm,
     InvalidInstantAssetLockProofSignatureErrorWasm, MissingMasterPublicKeyErrorWasm,
 };
-use dpp::codes::ErrorWithCode;
-use dpp::consensus::basic::identity::{
-    DuplicatedIdentityPublicKeyError, DuplicatedIdentityPublicKeyIdError,
+use crate::errors::consensus::state::identity::{
+    DuplicatedIdentityPublicKeyIdStateErrorWasm, DuplicatedIdentityPublicKeyStateErrorWasm,
 };
+use dpp::codes::ErrorWithCode;
 use dpp::consensus::basic::BasicError;
 use dpp::consensus::signature::SignatureError;
 use dpp::StateError;
@@ -201,14 +201,13 @@ fn from_state_error(state_error: &Box<StateError>) -> JsValue {
 
     match state_error.deref() {
         StateError::DuplicatedIdentityPublicKeyIdError { duplicated_ids } => {
-            let e = DuplicatedIdentityPublicKeyIdError::new(duplicated_ids.clone());
-            DuplicatedIdentityPublicKeyIdErrorWasm::from(&e).into()
+            DuplicatedIdentityPublicKeyIdStateErrorWasm::new(duplicated_ids.clone(), code).into()
         }
         StateError::DuplicatedIdentityPublicKeyError {
             duplicated_public_key_ids,
         } => {
-            let e = DuplicatedIdentityPublicKeyError::new(duplicated_public_key_ids.clone());
-            DuplicatedIdentityPublicKeyErrorWasm::from(&e).into()
+            DuplicatedIdentityPublicKeyStateErrorWasm::new(duplicated_public_key_ids.clone(), code)
+                .into()
         }
         StateError::DocumentAlreadyPresentError { document_id } => {
             DocumentAlreadyPresentErrorWasm::new(document_id.clone(), code).into()

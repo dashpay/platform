@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
 use chrono::Utc;
-use dashcore::BlockHeader;
+use dashcore::{consensus, BlockHeader};
 
 use crate::{
     block_time_window::validate_time_in_block_time_window::BLOCK_TIME_WINDOW_MILLIS,
@@ -30,13 +30,13 @@ struct TestData {
     validate_public_keys_mock: MockTPublicKeysValidator,
     state_repository_mock: MockStateRepositoryLike,
     state_transition: IdentityUpdateTransition,
-    block_header: BlockHeader,
+    block_header: Vec<u8>,
 }
 
 fn setup_test() -> TestData {
     let bls = NativeBlsModule::default();
     let identity = identity_fixture();
-    let block_header = new_block_header(Some(Utc::now().timestamp() as u32));
+    let block_header = consensus::serialize(&new_block_header(Some(Utc::now().timestamp() as u32)));
 
     let mut validate_public_keys_mock = MockTPublicKeysValidator::new();
     validate_public_keys_mock
@@ -50,7 +50,7 @@ fn setup_test() -> TestData {
         .expect_fetch_identity()
         .returning(move |_, _| Ok(Some(identity_to_return.clone())));
     state_repository_mock
-        .expect_fetch_latest_platform_block_header::<BlockHeader>()
+        .expect_fetch_latest_platform_block_header()
         .returning(move || Ok(block_header_to_return.clone()));
 
     let mut state_transition = get_identity_update_transition_fixture();
@@ -340,8 +340,8 @@ async fn should_validate_purpose_and_security_level() {
         .expect_fetch_identity()
         .returning(move |_, _| Ok(Some(identity_to_return.clone())));
     state_repository_mock
-        .expect_fetch_latest_platform_block_header::<BlockHeader>()
-        .returning(move || Ok(block_header.clone()));
+        .expect_fetch_latest_platform_block_header()
+        .returning(move || Ok(consensus::serialize(&block_header.clone())));
 
     let validator = IdentityUpdateTransitionStateValidator::new(
         Arc::new(state_repository_mock),

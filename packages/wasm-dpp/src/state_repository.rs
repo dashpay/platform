@@ -161,6 +161,9 @@ extern "C" {
         out_point_buffer: Buffer,
     );
 
+    #[wasm_bindgen(structural, method, js_name=fetchLatestPlatformBlockHeader)]
+    pub fn fetch_latest_platform_block_header(this: &ExternalStateRepositoryLike) -> Vec<u8>;
+
     // TODO add missing declarations
 }
 
@@ -480,11 +483,23 @@ impl StateRepositoryLike for ExternalStateRepositoryLikeWrapper {
         todo!()
     }
 
-    async fn fetch_latest_platform_block_header<T>(&self) -> Result<T>
-    where
-        T: for<'de> serde::de::Deserialize<'de> + 'static,
-    {
-        todo!()
+    async fn fetch_latest_platform_block_header(&self) -> anyhow::Result<Vec<u8>> {
+        let header = self
+            .0
+            .lock()
+            .expect("unexpected concurrency issue!")
+            .fetch_latest_platform_block_header();
+        Ok(header)
+    }
+
+    async fn fetch_latest_platform_core_chain_locked_height(&self) -> anyhow::Result<Option<u32>> {
+        let height = self
+            .0
+            .lock()
+            .expect("unexpected concurrency issue!")
+            .fetch_latest_platform_core_chain_locked_height()
+            .map(Into::into);
+        Ok(height)
     }
 
     async fn verify_instant_lock(
@@ -522,11 +537,11 @@ impl StateRepositoryLike for ExternalStateRepositoryLikeWrapper {
         &self,
         out_point_buffer: &[u8],
     ) -> Result<()> {
-        Ok(self
-            .0
+        self.0
             .lock()
             .expect("unexpected concurrency issue!")
-            .mark_asset_lock_transaction_out_point_as_used(Buffer::from_bytes(out_point_buffer)))
+            .mark_asset_lock_transaction_out_point_as_used(Buffer::from_bytes(out_point_buffer));
+        Ok(())
     }
 
     async fn fetch_sml_store<T>(&self) -> Result<T>
@@ -538,15 +553,6 @@ impl StateRepositoryLike for ExternalStateRepositoryLikeWrapper {
 
     async fn fetch_latest_withdrawal_transaction_index(&self) -> Result<u64> {
         todo!()
-    }
-
-    async fn fetch_latest_platform_core_chain_locked_height(&self) -> Result<Option<u32>> {
-        Ok(self
-            .0
-            .lock()
-            .expect("unexpected concurrency issue!")
-            .fetch_latest_platform_core_chain_locked_height()
-            .map(Into::into))
     }
 
     async fn enqueue_withdrawal_transaction(

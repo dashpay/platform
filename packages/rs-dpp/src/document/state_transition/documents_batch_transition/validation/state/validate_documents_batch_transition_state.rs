@@ -1,6 +1,6 @@
 use std::convert::TryInto;
 
-use dashcore::BlockHeader;
+use dashcore::{consensus, BlockHeader};
 use futures::future::join_all;
 use itertools::Itertools;
 use serde::{Deserialize, Serialize};
@@ -94,9 +94,13 @@ pub async fn validate_document_transitions(
         fetch_documents(state_repository, &transitions, execution_context).await?;
 
     // Calculate time window for timestamp
-    let block_header: BlockHeader = state_repository
+    let block_header_bytes = state_repository
         .fetch_latest_platform_block_header()
         .await?;
+
+    let block_header: BlockHeader = consensus::deserialize(&block_header_bytes)
+        .map_err(|e| ProtocolError::Generic(e.to_string()))?;
+
     let last_header_time_millis = block_header.time as u64 * 1000;
 
     if !execution_context.is_dry_run() {
