@@ -1,3 +1,4 @@
+const os = require('os');
 const path = require('path');
 const { Observable } = require('rxjs');
 
@@ -397,10 +398,13 @@ class DockerCompose {
    * @return {{cwd: string, env: Object}}
    */
   getOptions(envs) {
+    const {uid, gid} = os.userInfo();
+
     const env = {
       ...process.env,
       ...envs,
       DASHMATE_HOME_DIR: HOME_DIR_PATH,
+      DASHMATE_USER: `${uid}:${gid}`
     };
 
     if (isWsl) {
