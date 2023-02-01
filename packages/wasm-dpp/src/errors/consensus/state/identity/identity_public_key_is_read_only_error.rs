@@ -19,6 +19,11 @@ impl IdentityPublicKeyIsReadOnlyErrorWasm {
     pub fn get_code(&self) -> u32 {
         self.code
     }
+
+    #[wasm_bindgen(js_name=getPublicKeyIndex)]
+    pub fn public_key_index(&self) -> u32 {
+        self.key_id as u32
+    }
 }
 
 impl IdentityPublicKeyIsReadOnlyErrorWasm {

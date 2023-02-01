@@ -102,6 +102,9 @@ extern "C" {
         out_point_buffer: Buffer,
     );
 
+    #[wasm_bindgen(structural, method, js_name=fetchLatestPlatformBlockHeader)]
+    pub fn fetch_latest_platform_block_header(this: &ExternalStateRepositoryLike) -> Vec<u8>;
+
     // TODO add missing declarations
 }
 
@@ -257,15 +260,15 @@ impl StateRepositoryLike for ExternalStateRepositoryLikeWrapper {
             .map(|hash| Buffer::from_bytes(hash))
             .collect();
 
-        Ok(self
-            .0
+        self.0
             .lock()
             .expect("unexpected concurrency issue!")
             .store_identity_public_key_hashes(
                 identity_id.clone().into(),
                 hashes,
                 execution_context.clone().into(),
-            ))
+            );
+        Ok(())
     }
 
     async fn fetch_identity_by_public_key_hashes<T>(
@@ -278,20 +281,23 @@ impl StateRepositoryLike for ExternalStateRepositoryLikeWrapper {
         todo!()
     }
 
-    async fn fetch_latest_platform_block_header<T>(&self) -> anyhow::Result<T>
-    where
-        T: for<'de> serde::de::Deserialize<'de> + 'static,
-    {
-        todo!()
+    async fn fetch_latest_platform_block_header(&self) -> anyhow::Result<Vec<u8>> {
+        let header = self
+            .0
+            .lock()
+            .expect("unexpected concurrency issue!")
+            .fetch_latest_platform_block_header();
+        Ok(header)
     }
 
     async fn fetch_latest_platform_core_chain_locked_height(&self) -> anyhow::Result<Option<u32>> {
-        Ok(self
+        let height = self
             .0
             .lock()
             .expect("unexpected concurrency issue!")
             .fetch_latest_platform_core_chain_locked_height()
-            .map(Into::into))
+            .map(Into::into);
+        Ok(height)
     }
 
     async fn verify_instant_lock(
@@ -329,11 +335,11 @@ impl StateRepositoryLike for ExternalStateRepositoryLikeWrapper {
         &self,
         out_point_buffer: &[u8],
     ) -> anyhow::Result<()> {
-        Ok(self
-            .0
+        self.0
             .lock()
             .expect("unexpected concurrency issue!")
-            .mark_asset_lock_transaction_out_point_as_used(Buffer::from_bytes(out_point_buffer)))
+            .mark_asset_lock_transaction_out_point_as_used(Buffer::from_bytes(out_point_buffer));
+        Ok(())
     }
 
     async fn fetch_sml_store<T>(&self) -> anyhow::Result<T>
@@ -348,11 +354,11 @@ impl StateRepositoryLike for ExternalStateRepositoryLikeWrapper {
         identity: &Identity,
         execution_context: &StateTransitionExecutionContext,
     ) -> anyhow::Result<()> {
-        Ok(self
-            .0
+        self.0
             .lock()
             .expect("unexpected concurrency issue!")
-            .create_identity(identity.clone().into(), execution_context.clone().into()))
+            .create_identity(identity.clone().into(), execution_context.clone().into());
+        Ok(())
     }
 
     async fn update_identity(
@@ -360,11 +366,11 @@ impl StateRepositoryLike for ExternalStateRepositoryLikeWrapper {
         identity: &Identity,
         execution_context: &StateTransitionExecutionContext,
     ) -> anyhow::Result<()> {
-        Ok(self
-            .0
+        self.0
             .lock()
             .expect("unexpected concurrency issue!")
-            .update_identity(identity.clone().into(), execution_context.clone().into()))
+            .update_identity(identity.clone().into(), execution_context.clone().into());
+        Ok(())
     }
 
     async fn fetch_latest_withdrawal_transaction_index(&self) -> anyhow::Result<u64> {

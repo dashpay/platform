@@ -8,7 +8,7 @@ pub struct MaxIdentityPublicKeyLimitReachedErrorWasm {
 
 #[wasm_bindgen(js_class=MaxIdentityPublicKeyLimitReachedError)]
 impl MaxIdentityPublicKeyLimitReachedErrorWasm {
-    #[wasm_bindgen(js_name=getIdentityId)]
+    #[wasm_bindgen(js_name=getMaxItems)]
     pub fn max_items(&self) -> usize {
         self.max_items
     }

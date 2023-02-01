@@ -129,9 +129,7 @@ impl IdentityCreateTransitionWasm {
         self.0
             .get_public_keys()
             .iter()
-            .map(IdentityPublicKey::to_owned)
-            .map(IdentityPublicKeyWasm::from)
-            .map(JsValue::from)
+            .map(|key| IdentityPublicKeyWasm::from(key.to_owned()).into())
             .collect()
     }
 
@@ -212,8 +210,7 @@ impl IdentityCreateTransitionWasm {
         let keys_objects = object
             .public_keys
             .into_iter()
-            .map(IdentityPublicKeyWasm::from)
-            .map(|key| key.to_object(skip_signature))
+            .map(|key| IdentityPublicKeyWasm::from(key).to_object(skip_signature))
             .collect::<Result<js_sys::Array, _>>()?;
 
         js_sys::Reflect::set(&js_object, &"publicKeys".to_owned().into(), &keys_objects)?;
@@ -266,8 +263,7 @@ impl IdentityCreateTransitionWasm {
         let keys_objects = object
             .public_keys
             .into_iter()
-            .map(IdentityPublicKeyWasm::from)
-            .map(|key| key.to_json())
+            .map(|key| IdentityPublicKeyWasm::from(key).to_json())
             .collect::<Result<js_sys::Array, _>>()?;
 
         js_sys::Reflect::set(&js_object, &"publicKeys".to_owned().into(), &keys_objects)?;

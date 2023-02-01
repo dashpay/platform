@@ -120,11 +120,7 @@ pub trait StateRepositoryLike: Send + Sync {
     where
         T: for<'de> serde::de::Deserialize<'de> + 'static;
 
-    /// Fetch latest platform block header
-    /// By default, the method should return data as bytes (`Vec<u8>`), but the deserialization to [`serde_json::Value`] should be also possible
-    async fn fetch_latest_platform_block_header<T>(&self) -> AnyResult<T>
-    where
-        T: for<'de> serde::de::Deserialize<'de> + 'static;
+    async fn fetch_latest_platform_block_header(&self) -> AnyResult<Vec<u8>>;
 
     /// Verify Instant Lock
     async fn verify_instant_lock(

@@ -1,4 +1,5 @@
-use dashcore::BlockHeader;
+use anyhow::anyhow;
+use dashcore::{consensus, BlockHeader};
 use serde_json::Value;
 use std::convert::TryInto;
 use std::sync::Arc;
@@ -111,11 +112,14 @@ where
                     .disabled_at = state_transition.get_public_keys_disabled_at();
             }
 
-            let block_header: BlockHeader = self
+            let block_header_bytes = self
                 .state_repository
                 .fetch_latest_platform_block_header()
                 .await
                 .map_err(|e| NonConsensusError::StateRepositoryFetchError(e.to_string()))?;
+
+            let block_header: BlockHeader = consensus::deserialize(&block_header_bytes)
+                .map_err(|e| NonConsensusError::from(anyhow!(e.to_string())))?;
 
             let last_block_header_time = block_header.time as u64 * 1000;
             let disabled_at_time = state_transition.get_public_keys_disabled_at().ok_or(
@@ -138,7 +142,7 @@ where
             }
         }
 
-        let raw_public_keys: Vec<Value> = identity
+        let mut raw_public_keys: Vec<Value> = identity
             .public_keys
             .iter()
             .map(|pk| pk.to_raw_json_object(false))
@@ -146,6 +150,12 @@ where
 
         if !state_transition.get_public_keys_to_add().is_empty() {
             identity.add_public_keys(state_transition.get_public_keys_to_add().iter().cloned());
+
+            raw_public_keys = identity
+                .get_public_keys()
+                .iter()
+                .map(|pk| pk.to_raw_json_object(false))
+                .collect::<Result<_, SerdeParsingError>>()?;
 
             let result = self.public_keys_validator.validate_keys(&raw_public_keys)?;
             if !result.is_valid() {
