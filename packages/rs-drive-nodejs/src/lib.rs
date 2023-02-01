@@ -985,7 +985,7 @@ impl PlatformWrapper {
                 let result = transaction_result.and_then(|transaction_arg| {
                     platform
                         .drive
-                        .query_documents(
+                        .query_raw_documents_using_cbor_encoded_query_with_cost(
                             &query_cbor,
                             contract_id,
                             document_type_name.as_str(),
@@ -1058,7 +1058,7 @@ impl PlatformWrapper {
                 let result = transaction_result.and_then(|transaction_arg| {
                     platform
                         .drive
-                        .query_documents_as_grove_proof(
+                        .query_proof_of_documents_using_contract_id_using_cbor_encoded_query_with_cost(
                             &query_cbor,
                             contract_id,
                             document_type_name.as_str(),

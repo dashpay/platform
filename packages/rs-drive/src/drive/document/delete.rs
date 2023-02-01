@@ -1657,7 +1657,7 @@ mod tests {
             .expect("unable to commit transaction");
 
         let (results, _, _) = drive
-            .query_documents_from_contract(
+            .query_raw_documents_from_contract_using_cbor_encoded_query_with_cost(
                 &contract,
                 contract.document_types().get("niceDocument").unwrap(),
                 query_cbor.as_slice(),
@@ -1692,7 +1692,7 @@ mod tests {
             serializer::value_to_cbor(query_json, None).expect("expected to serialize to cbor");
 
         let (results, _, _) = drive
-            .query_documents_from_contract(
+            .query_raw_documents_from_contract_using_cbor_encoded_query_with_cost(
                 &contract,
                 contract.document_types().get("niceDocument").unwrap(),
                 query_cbor.as_slice(),
