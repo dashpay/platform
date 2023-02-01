@@ -21,6 +21,7 @@ use crate::{DataContractWasm, MetadataWasm};
 
 pub mod errors;
 pub use state_transition::*;
+pub mod document_facade;
 mod factory;
 pub mod fetch_and_validate_data_contract;
 pub mod state_transition;
@@ -138,9 +139,9 @@ impl DocumentWasm {
     }
 
     #[wasm_bindgen(js_name=setData)]
-    pub fn set_data(&mut self, d: JsValue) -> Result<(), JsValue> {
-        self.0.data = with_js_error!(serde_wasm_bindgen::from_value(d))?;
-        Ok(())
+    pub fn set_data(&mut self, document_data: JsValue) -> Result<(), JsValue> {
+        self.0.data = document_data.with_serde_to_json_value()?;
+        document_data_to_bytes(&mut self.0)
     }
 
     #[wasm_bindgen(js_name=getData)]
@@ -370,6 +371,25 @@ impl DocumentWasm {
     }
 }
 
+pub fn convert_binary_paths() {}
+
+/// document's dynamic data, regardless they are identifiers or binary, they should
+/// be stored as arrays of int
+pub(crate) fn document_data_to_bytes(document: &mut Document) -> Result<(), JsValue> {
+    let mut document_data = document.data.take();
+    let (identifier_paths, binary_paths) = document
+        .get_identifiers_and_binary_paths()
+        .with_js_error()?;
+    document_data
+        .replace_identifier_paths(identifier_paths, ReplaceWith::Bytes)
+        .with_js_error()?;
+    document_data
+        .replace_binary_paths(binary_paths, ReplaceWith::Bytes)
+        .with_js_error()?;
+    document.set_data(document_data);
+    Ok(())
+}
+
 pub(crate) fn raw_document_from_js_value(
     js_raw_document: &JsValue,
     data_contract: &DataContract,
@@ -407,5 +427,11 @@ impl From<Document> for DocumentWasm {
 impl From<DocumentWasm> for Document {
     fn from(d: DocumentWasm) -> Self {
         d.0
+    }
+}
+
+impl From<&DocumentWasm> for Document {
+    fn from(d: &DocumentWasm) -> Self {
+        d.0.clone()
     }
 }

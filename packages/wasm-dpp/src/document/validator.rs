@@ -17,6 +17,7 @@ use crate::{
     DataContractWasm,
 };
 
+#[derive(Clone)]
 #[wasm_bindgen(js_name = DocumentValidator)]
 pub struct DocumentValidatorWasm(DocumentValidator);
 

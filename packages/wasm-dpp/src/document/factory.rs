@@ -7,11 +7,13 @@ use dpp::{
         document_transition::Action,
         fetch_and_validate_data_contract::DataContractFetcherAndValidator,
     },
+    state_repository,
     util::json_value::{JsonValueExt, ReplaceWith},
 };
 use wasm_bindgen::prelude::*;
 
 use crate::{
+    document::document_data_to_bytes,
     identifier::identifier_from_js_value,
     state_repository::{ExternalStateRepositoryLike, ExternalStateRepositoryLikeWrapper},
     utils::{ToSerdeJSONExt, WithJsError},
@@ -54,6 +56,22 @@ impl DocumentTransitions {
 #[wasm_bindgen(js_name = DocumentFactory)]
 pub struct DocumentFactoryWASM(DocumentFactory<ExternalStateRepositoryLikeWrapper>);
 
+impl DocumentFactoryWASM {
+    pub(crate) fn new_with_state_repository_wrapper(
+        protocol_version: u32,
+        document_validator: DocumentValidatorWasm,
+        state_repository: ExternalStateRepositoryLikeWrapper,
+    ) -> Self {
+        let factory = DocumentFactory::new(
+            protocol_version,
+            document_validator.into(),
+            DataContractFetcherAndValidator::new(Arc::new(state_repository)),
+        );
+
+        DocumentFactoryWASM(factory)
+    }
+}
+
 #[wasm_bindgen(js_class=DocumentFactory)]
 impl DocumentFactoryWASM {
     #[wasm_bindgen(constructor)]
@@ -62,8 +80,6 @@ impl DocumentFactoryWASM {
         document_validator: DocumentValidatorWasm,
         state_repository: ExternalStateRepositoryLike,
     ) -> DocumentFactoryWASM {
-        //TODO -remove this
-        console_error_panic_hook::set_once();
         let factory = DocumentFactory::new(
             protocol_version,
             document_validator.into(),
@@ -147,19 +163,7 @@ impl DocumentFactoryWASM {
             .await
             .with_js_error()?;
 
-        // When data contract is available, replace remaining dynamic paths
-        let mut document_data = document.data.take();
-        let (identifier_paths, binary_paths) = document
-            .get_identifiers_and_binary_paths()
-            .with_js_error()?;
-        document_data
-            .replace_identifier_paths(identifier_paths, ReplaceWith::Bytes)
-            .with_js_error()?;
-        document_data
-            .replace_binary_paths(binary_paths, ReplaceWith::Bytes)
-            .with_js_error()?;
-        document.data = document_data;
-
+        document_data_to_bytes(&mut document)?;
         Ok(document.into())
     }
 

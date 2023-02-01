@@ -13,6 +13,12 @@ impl ProtocolVersionValidatorWasm {
     }
 }
 
+impl ProtocolVersionValidatorWasm {
+    pub fn protocol_version(&self) -> u32 {
+        self.0.protocol_version()
+    }
+}
+
 impl From<ProtocolVersionValidator> for ProtocolVersionValidatorWasm {
     fn from(doc_validator: ProtocolVersionValidator) -> Self {
         ProtocolVersionValidatorWasm(doc_validator)
@@ -22,5 +28,11 @@ impl From<ProtocolVersionValidator> for ProtocolVersionValidatorWasm {
 impl From<ProtocolVersionValidatorWasm> for ProtocolVersionValidator {
     fn from(val: ProtocolVersionValidatorWasm) -> Self {
         val.0
+    }
+}
+
+impl From<&ProtocolVersionValidatorWasm> for ProtocolVersionValidator {
+    fn from(val: &ProtocolVersionValidatorWasm) -> Self {
+        val.0.clone()
     }
 }

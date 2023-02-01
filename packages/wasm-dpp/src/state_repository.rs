@@ -1,6 +1,7 @@
 //! Bindings for state repository -like objects coming from JS.
 
 use serde::{Deserialize, Serialize};
+use std::sync::Arc;
 use std::{convert::Infallible, pin::Pin, sync::Mutex};
 
 use anyhow::{anyhow, bail};
@@ -136,14 +137,15 @@ extern "C" {
 
 /// Wraps external duck-typed thing into pinned box with mutex to ensure it'll stay at the same
 /// place in memory and will have synchronized access.
-pub(crate) struct ExternalStateRepositoryLikeWrapper(Pin<Box<Mutex<ExternalStateRepositoryLike>>>); // bruh
+#[derive(Clone)]
+pub(crate) struct ExternalStateRepositoryLikeWrapper(Pin<Arc<Mutex<ExternalStateRepositoryLike>>>); // bruh
 
 unsafe impl Send for ExternalStateRepositoryLikeWrapper {}
 unsafe impl Sync for ExternalStateRepositoryLikeWrapper {}
 
 impl ExternalStateRepositoryLikeWrapper {
     pub(crate) fn new(state_repository: ExternalStateRepositoryLike) -> Self {
-        ExternalStateRepositoryLikeWrapper(Box::pin(Mutex::new(state_repository)))
+        ExternalStateRepositoryLikeWrapper(Pin::new(Arc::new(Mutex::new(state_repository))))
     }
 }
 
