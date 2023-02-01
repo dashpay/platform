@@ -26,7 +26,7 @@ impl Drive {
 
         let query_cbor = serializer::value_to_cbor(query_value, None)?;
 
-        let (documents, _, _) = self.query_documents(
+        let (documents, _, _) = self.query_raw_documents_using_cbor_encoded_query_with_cost(
             &query_cbor,
             withdrawals_contract::CONTRACT_ID.clone().to_buffer(),
             withdrawals_contract::types::WITHDRAWAL,
@@ -65,7 +65,7 @@ impl Drive {
 
         let query_cbor = serializer::value_to_cbor(query_value, None)?;
 
-        let (documents, _, _) = self.query_documents(
+        let (documents, _, _) = self.query_raw_documents_using_cbor_encoded_query_with_cost(
             &query_cbor,
             data_contract_id.to_buffer(),
             withdrawals_contract::types::WITHDRAWAL,

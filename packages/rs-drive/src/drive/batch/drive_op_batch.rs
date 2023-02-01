@@ -905,7 +905,7 @@ mod tests {
             serializer::value_to_cbor(query_value, None).expect("expected to serialize to cbor");
 
         let (docs, _, _) = drive
-            .query_documents_from_contract(
+            .query_raw_documents_from_contract_using_cbor_encoded_query_with_cost(
                 &contract,
                 document_type,
                 where_cbor.as_slice(),
@@ -1126,7 +1126,7 @@ mod tests {
             serializer::value_to_cbor(query_value, None).expect("expected to serialize to cbor");
 
         let (docs, _, _) = drive
-            .query_documents_from_contract(
+            .query_raw_documents_from_contract_using_cbor_encoded_query_with_cost(
                 &contract,
                 document_type,
                 where_cbor.as_slice(),
@@ -1254,7 +1254,7 @@ mod tests {
             serializer::value_to_cbor(query_value, None).expect("expected to serialize to cbor");
 
         let (docs, _, _) = drive
-            .query_documents_from_contract(
+            .query_raw_documents_from_contract_using_cbor_encoded_query_with_cost(
                 &contract,
                 document_type,
                 where_cbor.as_slice(),
@@ -1447,7 +1447,7 @@ mod tests {
             serializer::value_to_cbor(query_value, None).expect("expected to serialize to cbor");
 
         let (docs, _, _) = drive
-            .query_documents_from_contract(
+            .query_raw_documents_from_contract_using_cbor_encoded_query_with_cost(
                 &contract,
                 document_type,
                 where_cbor.as_slice(),
@@ -1470,7 +1470,7 @@ mod tests {
             serializer::value_to_cbor(query_value, None).expect("expected to serialize to cbor");
 
         let (docs, _, _) = drive
-            .query_documents_from_contract(
+            .query_raw_documents_from_contract_using_cbor_encoded_query_with_cost(
                 &contract,
                 document_type,
                 where_cbor.as_slice(),
@@ -1493,7 +1493,7 @@ mod tests {
             serializer::value_to_cbor(query_value, None).expect("expected to serialize to cbor");
 
         let (docs, _, _) = drive
-            .query_documents_from_contract(
+            .query_raw_documents_from_contract_using_cbor_encoded_query_with_cost(
                 &contract,
                 document_type,
                 where_cbor.as_slice(),
@@ -1687,7 +1687,7 @@ mod tests {
             serializer::value_to_cbor(query_value, None).expect("expected to serialize to cbor");
 
         let (docs, _, _) = drive
-            .query_documents_from_contract(
+            .query_raw_documents_from_contract_using_cbor_encoded_query_with_cost(
                 &contract,
                 document_type,
                 where_cbor.as_slice(),
@@ -1710,7 +1710,7 @@ mod tests {
             serializer::value_to_cbor(query_value, None).expect("expected to serialize to cbor");
 
         let (docs, _, _) = drive
-            .query_documents_from_contract(
+            .query_raw_documents_from_contract_using_cbor_encoded_query_with_cost(
                 &contract,
                 document_type,
                 where_cbor.as_slice(),
@@ -1733,7 +1733,7 @@ mod tests {
             serializer::value_to_cbor(query_value, None).expect("expected to serialize to cbor");
 
         let (docs, _, _) = drive
-            .query_documents_from_contract(
+            .query_raw_documents_from_contract_using_cbor_encoded_query_with_cost(
                 &contract,
                 document_type,
                 where_cbor.as_slice(),

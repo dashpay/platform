@@ -818,7 +818,7 @@ fn test_family_basic_queries() {
         .expect("contract should have a person document type");
 
     let (results, _, _) = drive
-        .query_documents_from_contract(
+        .query_raw_documents_from_contract_using_cbor_encoded_query_with_cost(
             &contract,
             person_document_type,
             query_cbor.as_slice(),
@@ -829,7 +829,7 @@ fn test_family_basic_queries() {
     assert_eq!(results.len(), 1);
 
     let (proof_root_hash, proof_results, _) = drive
-        .query_documents_from_contract_as_grove_proof_only_get_elements(
+        .query_proof_of_documents_using_cbor_encoded_query_only_get_elements(
             &contract,
             person_document_type,
             query_cbor.as_slice(),
@@ -858,7 +858,7 @@ fn test_family_basic_queries() {
         .expect("contract should have a person document type");
 
     let (results, _, _) = drive
-        .query_documents_from_contract(
+        .query_raw_documents_from_contract_using_cbor_encoded_query_with_cost(
             &contract,
             person_document_type,
             query_cbor.as_slice(),
@@ -870,7 +870,7 @@ fn test_family_basic_queries() {
     assert_eq!(results.len(), 1);
 
     let (proof_root_hash, proof_results, _) = drive
-        .query_documents_from_contract_as_grove_proof_only_get_elements(
+        .query_proof_of_documents_using_cbor_encoded_query_only_get_elements(
             &contract,
             person_document_type,
             query_cbor.as_slice(),
@@ -914,7 +914,7 @@ fn test_family_basic_queries() {
         .expect("contract should have a person document type");
 
     let (results, _, _) = drive
-        .query_documents_from_contract(
+        .query_raw_documents_from_contract_using_cbor_encoded_query_with_cost(
             &contract,
             person_document_type,
             query_cbor.as_slice(),
@@ -926,7 +926,7 @@ fn test_family_basic_queries() {
     assert_eq!(results.len(), 1);
 
     let (proof_root_hash, proof_results, _) = drive
-        .query_documents_from_contract_as_grove_proof_only_get_elements(
+        .query_proof_of_documents_using_cbor_encoded_query_only_get_elements(
             &contract,
             person_document_type,
             query_cbor.as_slice(),
@@ -957,7 +957,7 @@ fn test_family_basic_queries() {
         .expect("contract should have a person document type");
 
     let (results, _, _) = drive
-        .query_documents_from_contract(
+        .query_raw_documents_from_contract_using_cbor_encoded_query_with_cost(
             &contract,
             person_document_type,
             query_cbor.as_slice(),
@@ -969,7 +969,7 @@ fn test_family_basic_queries() {
     assert_eq!(results.len(), 1);
 
     let (proof_root_hash, proof_results, _) = drive
-        .query_documents_from_contract_as_grove_proof_only_get_elements(
+        .query_proof_of_documents_using_cbor_encoded_query_only_get_elements(
             &contract,
             person_document_type,
             query_cbor.as_slice(),
@@ -1008,7 +1008,7 @@ fn test_family_basic_queries() {
         .expect("contract should have a person document type");
 
     let (results, _, _) = drive
-        .query_documents_from_contract(
+        .query_raw_documents_from_contract_using_cbor_encoded_query_with_cost(
             &contract,
             person_document_type,
             query_cbor.as_slice(),
@@ -1020,7 +1020,7 @@ fn test_family_basic_queries() {
     assert_eq!(results.len(), 0);
 
     let (proof_root_hash, proof_results, _) = drive
-        .query_documents_from_contract_as_grove_proof_only_get_elements(
+        .query_proof_of_documents_using_cbor_encoded_query_only_get_elements(
             &contract,
             person_document_type,
             query_cbor.as_slice(),
@@ -1048,7 +1048,7 @@ fn test_family_basic_queries() {
         .expect("contract should have a person document type");
 
     let (results, _, _) = drive
-        .query_documents_from_contract(
+        .query_raw_documents_from_contract_using_cbor_encoded_query_with_cost(
             &contract,
             person_document_type,
             query_cbor.as_slice(),
@@ -1060,7 +1060,7 @@ fn test_family_basic_queries() {
     assert_eq!(results.len(), 1);
 
     let (proof_root_hash, proof_results, _) = drive
-        .query_documents_from_contract_as_grove_proof_only_get_elements(
+        .query_proof_of_documents_using_cbor_encoded_query_only_get_elements(
             &contract,
             person_document_type,
             query_cbor.as_slice(),
@@ -1631,7 +1631,7 @@ fn test_family_basic_queries() {
         .expect("contract should have a person document type");
 
     let (results, _, _) = drive
-        .query_documents_from_contract(
+        .query_raw_documents_from_contract_using_cbor_encoded_query_with_cost(
             &contract,
             person_document_type,
             query_cbor.as_slice(),
@@ -1674,7 +1674,7 @@ fn test_family_basic_queries() {
         .expect("contract should have a person document type");
 
     let (results, _, _) = drive
-        .query_documents_from_contract(
+        .query_raw_documents_from_contract_using_cbor_encoded_query_with_cost(
             &contract,
             person_document_type,
             query_cbor.as_slice(),
@@ -1715,7 +1715,7 @@ fn test_family_basic_queries() {
         .expect("contract should have a person document type");
 
     let (results, _, _) = drive
-        .query_documents_from_contract(
+        .query_raw_documents_from_contract_using_cbor_encoded_query_with_cost(
             &contract,
             person_document_type,
             query_cbor.as_slice(),
@@ -1752,7 +1752,7 @@ fn test_family_basic_queries() {
         .expect("contract should have a person document type");
 
     let (results, _, _) = drive
-        .query_documents_from_contract(
+        .query_raw_documents_from_contract_using_cbor_encoded_query_with_cost(
             &contract,
             person_document_type,
             query_cbor.as_slice(),
@@ -1779,7 +1779,7 @@ fn test_family_basic_queries() {
         .expect("contract should have a person document type");
 
     let (results, _, _) = drive
-        .query_documents_from_contract(
+        .query_raw_documents_from_contract_using_cbor_encoded_query_with_cost(
             &contract,
             person_document_type,
             query_cbor.as_slice(),
@@ -1821,7 +1821,7 @@ fn test_family_basic_queries() {
         .expect("contract should have a person document type");
 
     let (results, _, _) = drive
-        .query_documents_from_contract(
+        .query_raw_documents_from_contract_using_cbor_encoded_query_with_cost(
             &contract,
             person_document_type,
             query_cbor.as_slice(),
@@ -1851,7 +1851,7 @@ fn test_family_basic_queries() {
         .expect("contract should have a person document type");
 
     let (results, _, _) = drive
-        .query_documents_from_contract(
+        .query_raw_documents_from_contract_using_cbor_encoded_query_with_cost(
             &contract,
             person_document_type,
             query_cbor.as_slice(),
@@ -1888,7 +1888,7 @@ fn test_family_basic_queries() {
         serializer::value_to_cbor(query_value, None).expect("expected to serialize to cbor");
 
     let (results, _, _) = drive
-        .query_documents_from_contract_cbor(
+        .query_raw_documents_from_contract_cbor_using_cbor_encoded_query_with_cost(
             contract_cbor.as_slice(),
             String::from("contact"),
             query_cbor.as_slice(),
@@ -1917,7 +1917,7 @@ fn test_family_basic_queries() {
         .expect("contract should have a person document type");
 
     let (results, _, _) = drive
-        .query_documents_from_contract(
+        .query_raw_documents_from_contract_using_cbor_encoded_query_with_cost(
             &contract,
             person_document_type,
             query_cbor.as_slice(),
@@ -1946,7 +1946,7 @@ fn test_family_basic_queries() {
         .get("person")
         .expect("contract should have a person document type");
 
-    let result = drive.query_documents_from_contract(
+    let result = drive.query_raw_documents_from_contract_using_cbor_encoded_query_with_cost(
         &contract,
         person_document_type,
         query_cbor.as_slice(),
@@ -1976,7 +1976,7 @@ fn test_family_basic_queries() {
         .get("person")
         .expect("contract should have a person document type");
 
-    let result = drive.query_documents_from_contract(
+    let result = drive.query_raw_documents_from_contract_using_cbor_encoded_query_with_cost(
         &contract,
         person_document_type,
         query_cbor.as_slice(),
@@ -2547,7 +2547,7 @@ fn test_query_with_cached_contract() {
         serializer::value_to_cbor(query_value, None).expect("expected to serialize to cbor");
 
     let (results, _, _) = drive
-        .query_documents(
+        .query_raw_documents_using_cbor_encoded_query_with_cost(
             where_cbor.as_slice(),
             *contract.id.as_bytes(),
             "person",
@@ -2994,7 +2994,7 @@ fn test_dpns_insertion_no_aliases() {
         .expect("contract should have a domain document type");
 
     let result = drive
-        .query_documents_from_contract(
+        .query_raw_documents_from_contract_using_cbor_encoded_query_with_cost(
             &contract,
             domain_document_type,
             query_cbor.as_slice(),
@@ -3006,7 +3006,7 @@ fn test_dpns_insertion_no_aliases() {
     assert_eq!(result.0.len(), 15);
 
     let (proof_root_hash, proof_results, _) = drive
-        .query_documents_from_contract_as_grove_proof_only_get_elements(
+        .query_proof_of_documents_using_cbor_encoded_query_only_get_elements(
             &contract,
             domain_document_type,
             query_cbor.as_slice(),
@@ -3046,7 +3046,7 @@ fn test_dpns_insertion_with_aliases() {
         .expect("contract should have a domain document type");
 
     let result = drive
-        .query_documents_from_contract(
+        .query_raw_documents_from_contract_using_cbor_encoded_query_with_cost(
             &contract,
             domain_document_type,
             query_cbor.as_slice(),
@@ -3058,7 +3058,7 @@ fn test_dpns_insertion_with_aliases() {
     assert_eq!(result.0.len(), 24);
 
     let (proof_root_hash, proof_results, _) = drive
-        .query_documents_from_contract_as_grove_proof_only_get_elements(
+        .query_proof_of_documents_using_cbor_encoded_query_only_get_elements(
             &contract,
             domain_document_type,
             query_cbor.as_slice(),
@@ -4237,7 +4237,7 @@ fn test_query_a_b_c_d_e_contract() {
         serializer::value_to_cbor(query_json, None).expect("expected to serialize to cbor");
 
     drive
-        .query_documents_from_contract(
+        .query_raw_documents_from_contract_using_cbor_encoded_query_with_cost(
             &contract,
             contract
                 .document_types()
