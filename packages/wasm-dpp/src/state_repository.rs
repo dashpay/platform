@@ -1,6 +1,8 @@
 //! Bindings for state repository -like objects coming from JS.
 
+use anyhow::anyhow;
 use serde::{Deserialize, Serialize};
+use std::sync::Arc;
 use std::{convert::Infallible, pin::Pin, sync::Mutex};
 
 use async_trait::async_trait;
@@ -96,11 +98,11 @@ extern "C" {
         execution_context: StateTransitionExecutionContextWasm,
     );
 
-    #[wasm_bindgen(structural, method, js_name=markAssetLockTransactionOutPointAsUsed)]
-    pub fn mark_asset_lock_transaction_out_point_as_used(
+    #[wasm_bindgen(catch, structural, method, js_name=markAssetLockTransactionOutPointAsUsed)]
+    pub async fn mark_asset_lock_transaction_out_point_as_used(
         this: &ExternalStateRepositoryLike,
         out_point_buffer: Buffer,
-    );
+    ) -> Result<(), JsValue>;
 
     #[wasm_bindgen(structural, method, js_name=fetchLatestPlatformBlockHeader)]
     pub fn fetch_latest_platform_block_header(this: &ExternalStateRepositoryLike) -> Vec<u8>;
@@ -110,14 +112,14 @@ extern "C" {
 
 /// Wraps external duck-typed thing into pinned box with mutex to ensure it'll stay at the same
 /// place in memory and will have synchronized access.
-pub(crate) struct ExternalStateRepositoryLikeWrapper(Pin<Box<Mutex<ExternalStateRepositoryLike>>>); // bruh
+pub(crate) struct ExternalStateRepositoryLikeWrapper(Arc<ExternalStateRepositoryLike>); // bruh
 
 unsafe impl Send for ExternalStateRepositoryLikeWrapper {}
 unsafe impl Sync for ExternalStateRepositoryLikeWrapper {}
 
 impl ExternalStateRepositoryLikeWrapper {
     pub(crate) fn new(state_repository: ExternalStateRepositoryLike) -> Self {
-        ExternalStateRepositoryLikeWrapper(Box::pin(Mutex::new(state_repository)))
+        ExternalStateRepositoryLikeWrapper(Arc::new(state_repository))
     }
 }
 
@@ -331,17 +333,6 @@ impl StateRepositoryLike for ExternalStateRepositoryLikeWrapper {
             ))
     }
 
-    async fn mark_asset_lock_transaction_out_point_as_used(
-        &self,
-        out_point_buffer: &[u8],
-    ) -> anyhow::Result<()> {
-        self.0
-            .lock()
-            .expect("unexpected concurrency issue!")
-            .mark_asset_lock_transaction_out_point_as_used(Buffer::from_bytes(out_point_buffer));
-        Ok(())
-    }
-
     async fn fetch_sml_store<T>(&self) -> anyhow::Result<T>
     where
         T: for<'de> serde::de::Deserialize<'de> + 'static,
@@ -371,6 +362,27 @@ impl StateRepositoryLike for ExternalStateRepositoryLikeWrapper {
             .expect("unexpected concurrency issue!")
             .update_identity(identity.clone().into(), execution_context.clone().into());
         Ok(())
+    }
+
+    async fn mark_asset_lock_transaction_out_point_as_used(
+        &self,
+        out_point_buffer: Vec<u8>,
+    ) -> anyhow::Result<()> {
+        self.0
+            .mark_asset_lock_transaction_out_point_as_used(Buffer::from_bytes(&out_point_buffer))
+            .await
+            .map_err(|_| anyhow!("Test error"))
+        // let state_repository = self.0;
+
+        // async {
+        // state_repository
+        //     .mark_asset_lock_transaction_out_point_as_used(Buffer::from_bytes(out_point_buffer))
+        //     .await
+        // }
+        // .await;
+        // .map_err(|e| anyhow!("Tets error")))
+
+        // Ok(())
     }
 
     async fn fetch_latest_withdrawal_transaction_index(&self) -> anyhow::Result<u64> {
