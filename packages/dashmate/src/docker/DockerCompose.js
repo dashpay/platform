@@ -8,6 +8,7 @@ const dockerCompose = require('@dashevo/docker-compose');
 
 const hasbin = require('hasbin');
 const semver = require('semver');
+const { statSync } = require('fs')
 
 const DockerComposeError = require('./errors/DockerComposeError');
 const ServiceAlreadyRunningError = require('./errors/ServiceAlreadyRunningError');
@@ -398,7 +399,8 @@ class DockerCompose {
    * @return {{cwd: string, env: Object}}
    */
   getOptions(envs) {
-    const {uid, gid} = os.userInfo();
+    const { uid } = os.userInfo();
+    const { gid } = statSync('/var/run/docker.sock');
 
     const env = {
       ...process.env,
