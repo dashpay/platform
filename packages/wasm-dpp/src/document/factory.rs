@@ -116,8 +116,6 @@ impl DocumentFactoryWASM {
 
         Ok(document.into())
     }
-
-    #[wasm_bindgen(js_name=createStateTransition)]
     pub fn create_state_transition(
         &self,
         documents: &JsValue,

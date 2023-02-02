@@ -172,6 +172,13 @@ pub fn generic_of_js_val<T: RefFromWasmAbi<Abi = u32>>(
     }
 }
 
+pub fn get_class_name(value: &JsValue) -> String {
+    js_sys::Object::get_prototype_of(value)
+        .constructor()
+        .name()
+        .into()
+}
+
 pub fn try_to_u64(value: JsValue) -> Result<u64, anyhow::Error> {
     let result = if value.is_bigint() {
         js_sys::BigInt::new(&value)

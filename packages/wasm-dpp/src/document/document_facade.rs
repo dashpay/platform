@@ -1,11 +1,18 @@
 use std::sync::Arc;
 
+use dpp::{
+    consensus::basic::BasicError, data_contract::errors::DataContractError, prelude::Document,
+};
 use wasm_bindgen::{prelude::*, JsValue};
 
 use crate::{
-    fetch_and_validate_data_contract::DataContractFetcherAndValidatorWasm, utils::IntoWasm,
-    validation::ValidationResultWasm, DataContractWasm, DocumentFactoryWASM, DocumentValidatorWasm,
-    DocumentWasm, DocumentsBatchTransitionWASM,
+    console_log, convert_identifiers_in_document_to_bytes,
+    fetch_and_validate_data_contract::DataContractFetcherAndValidatorWasm,
+    raw_document_from_js_value,
+    utils::{get_class_name, IntoWasm, ToSerdeJSONExt, WithJsError},
+    validation::ValidationResultWasm,
+    DataContractWasm, DocumentFactoryWASM, DocumentValidatorWasm, DocumentWasm,
+    DocumentsBatchTransitionWASM,
 };
 
 #[derive(Clone)]
@@ -87,13 +94,18 @@ impl DocumentFacadeWasm {
     }
 
     /// Creates Documents State Transition
-    #[wasm_bindgen(js_name=validateDocument)]
+    #[wasm_bindgen(js_name=validate)]
     pub async fn validate_document(
         &self,
-        // TODO this should be changed -> (it should be either a DocumentWasm or Object)
-        document: &DocumentWasm,
+        document: &JsValue,
     ) -> Result<ValidationResultWasm, JsValue> {
-        let raw_document = document.to_object(&JsValue::null())?;
+        let raw_document = if get_class_name(document) == "Document" {
+            let document = document.to_wasm::<DocumentWasm>("Document")?;
+            document.to_object(&JsValue::NULL)?
+        } else {
+            document.to_owned()
+        };
+
         self.validate_raw_document(raw_document).await
     }
 
@@ -106,10 +118,13 @@ impl DocumentFacadeWasm {
             .data_contract_fetcher_and_validator
             .validate(&js_raw_document)
             .await?;
-
+        if !result.is_valid() {
+            return Ok(result);
+        }
         let data_contract = result
             .get_data()
             .to_wasm::<DataContractWasm>("DataContract")?;
+
         self.validator.validate(&js_raw_document, &data_contract)
     }
 }

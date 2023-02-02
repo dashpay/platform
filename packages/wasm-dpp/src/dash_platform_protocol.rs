@@ -20,6 +20,14 @@ pub struct DashPlatformProtocol {
 
 #[wasm_bindgen(js_class=DashPlatformProtocol)]
 impl DashPlatformProtocol {
+    #[wasm_bindgen(getter=document)]
+    pub fn get_document(&self) -> DocumentFacadeWasm {
+        self.document.clone()
+    }
+}
+
+#[wasm_bindgen(js_class=DashPlatformProtocol)]
+impl DashPlatformProtocol {
     #[wasm_bindgen(constructor)]
     pub fn new(
         bls_adapter: JsBlsAdapter,
@@ -29,17 +37,20 @@ impl DashPlatformProtocol {
 
         let bls = BlsAdapter(bls_adapter);
         // TODO: remove default validator and make a real one instead
-        let validator = Arc::new(ProtocolVersionValidator::default());
+        let protocol_version_validator = ProtocolVersionValidator::default();
+        let protocol_version_validator_wasm: ProtocolVersionValidatorWasm =
+            (&protocol_version_validator).into();
 
         let public_keys_validator = PublicKeysValidator::new(bls).unwrap();
-        let identity_facade =
-            IdentityFacade::new(validator.clone(), Arc::new(public_keys_validator)).unwrap();
+        let identity_facade = IdentityFacade::new(
+            Arc::new(protocol_version_validator),
+            Arc::new(public_keys_validator),
+        )
+        .unwrap();
 
-        let protocol_version = validator.protocol_version();
-        let protocol_version_validator: ProtocolVersionValidatorWasm =
-            ProtocolVersionValidator::default().into();
-
-        let document_validator = DocumentValidatorWasm::new(protocol_version_validator);
+        // initialization of Document
+        let protocol_version = protocol_version_validator_wasm.protocol_version();
+        let document_validator = DocumentValidatorWasm::new(protocol_version_validator_wasm);
         let document_factory = DocumentFactoryWASM::new_with_state_repository_wrapper(
             protocol_version,
             document_validator.clone(),
@@ -50,17 +61,15 @@ impl DashPlatformProtocol {
                 wrapped_state_repository,
             );
 
-        let document_facade = DocumentFacadeWasm::new(
-            document_validator,
-            document_factory,
-            data_contract_fetcher_and_validator,
+        let document_facade = DocumentFacadeWasm::new_with_arc(
+            Arc::new(document_validator),
+            Arc::new(document_factory),
+            Arc::new(data_contract_fetcher_and_validator),
         );
 
         DashPlatformProtocol {
             _identity: identity_facade,
             document: document_facade,
         }
-
-        // DashPlatformProtocol(identity_facade)
     }
 }

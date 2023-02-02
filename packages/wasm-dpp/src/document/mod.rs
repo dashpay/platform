@@ -371,7 +371,17 @@ impl DocumentWasm {
     }
 }
 
-pub fn convert_binary_paths() {}
+pub(crate) fn convert_identifiers_in_document_to_bytes<'a>(
+    raw_document: &mut Value,
+    additional_paths: impl Iterator<Item = &'a str>,
+) {
+    let _ = raw_document
+        .replace_identifier_paths(
+            additional_paths.chain(IDENTIFIER_FIELDS),
+            ReplaceWith::Bytes,
+        )
+        .with_js_error();
+}
 
 /// document's dynamic data, regardless they are identifiers or binary, they should
 /// be stored as arrays of int
