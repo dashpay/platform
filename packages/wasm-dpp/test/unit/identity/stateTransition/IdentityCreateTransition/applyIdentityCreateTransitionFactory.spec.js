@@ -32,6 +32,7 @@ describe('applyIdentityCreateTransitionFactory', () => {
 
   beforeEach(function beforeEach() {
     stateRepositoryMock = createStateRepositoryMock(this.sinonSandbox);
+    stateRepositoryMock.markAssetLockTransactionOutPointAsUsed.resolves();
 
     stateTransition = new IdentityCreateTransition(
       getIdentityCreateTransitionFixture().toObject(),

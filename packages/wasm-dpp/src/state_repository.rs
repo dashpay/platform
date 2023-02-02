@@ -18,10 +18,11 @@ use dpp::{
     state_transition::state_transition_execution_context::StateTransitionExecutionContext,
 };
 use wasm_bindgen::prelude::*;
+use wasm_bindgen::JsCast;
 
 use crate::buffer::Buffer;
 use crate::{
-    identifier::IdentifierWrapper, DataContractWasm, IdentityWasm,
+    from_js_error, identifier::IdentifierWrapper, DataContractWasm, IdentityWasm,
     StateTransitionExecutionContextWasm,
 };
 
@@ -341,10 +342,12 @@ impl StateRepositoryLike for ExternalStateRepositoryLikeWrapper {
         &self,
         out_point_buffer: &'_ [u8],
     ) -> anyhow::Result<()> {
-        self.0
+        let result = self
+            .0
             .mark_asset_lock_transaction_out_point_as_used(Buffer::from_bytes(out_point_buffer))
-            .await
-            .map_err(|_| anyhow!("Test error"))
+            .await;
+
+        from_js_error!(result)
     }
 
     async fn fetch_latest_withdrawal_transaction_index(&self) -> anyhow::Result<u64> {

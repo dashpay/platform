@@ -46,6 +46,46 @@ macro_rules! with_js_error {
 }
 
 #[macro_export]
+macro_rules! from_js_error {
+    ($o:expr) => {
+        $o.map_err(|e: JsValue| {
+            let message = if e.is_instance_of::<js_sys::Error>() {
+                js_sys::Reflect::get(&e, &"message".into())
+                    .map(|e| {
+                        e.as_string()
+                            .unwrap_or(String::from("Unknown JS Error: empty error message."))
+                    })
+                    .unwrap_or(String::from(
+                        "Unknown JS Error: unable to access error message",
+                    ))
+            } else {
+                // TODO: is there a simpler way to to call `toString()`?
+                let to_string_value = js_sys::Reflect::get(&e, &JsValue::from_str("toString"))
+                    .unwrap_or(JsValue::undefined());
+
+                let message = if let Some(to_string_function) =
+                    to_string_value.dyn_ref::<js_sys::Function>()
+                {
+                    to_string_function
+                        .call0(&e)
+                        .unwrap_or(JsValue::from_str(
+                            "Unknown JS Error: call toString() failed",
+                        ))
+                        .as_string()
+                        .unwrap()
+                } else {
+                    String::from("Unknown Error: toString() is not a function")
+                };
+
+                message
+            };
+
+            anyhow!(message)
+        })
+    };
+}
+
+#[macro_export]
 macro_rules! bail_js {
     ($msg:literal) => ({
         return Err($crate::errors::RustConversionError::from(String::from($msg)).to_js_value())
