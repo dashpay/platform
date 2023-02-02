@@ -15,6 +15,13 @@ $0
 This is a one-liner script to set up your test instance of Dash Platform inside a VM.
 It will start a new Ubuntu 22.04 VM using multipass, and provision local Platform instance.
 
+This includes:
+
+- privisioning new VM using multipass https://multipass.run/
+- downloading and installing dependencies
+- building docker images
+- starting 'local' network
+
 It uses:
 
 - ubuntu 22.04 (recommended)
@@ -23,19 +30,21 @@ It uses:
 - ${MEM} GB RAM
 - ${DISK} GB HDD
 
+
 Usage:
 
 $0 [--branch BRANCHNAME] [--debug] [--mode MODE] [--name VMNAME] [--repo /path/to/repo/on/host]
 
 where:
 
-* --branch, -b - name of Platform branch to use; defaults to 'master'
+* --branch, -b - name of Platform branch to use
 * --cpus N - use N CPUs (defaults to ${CPUS})
 * --cache DIR - use DIR to cache some files
 * --debug, -d - more verbose output
 * --mode - mode of operation:
    * multipass - start Dash Platform using multipass
    * cleanup - delete and purge multipass Dash Platform instance
+   * local - don't create VM, install everything on local Ubuntu 22.04 machine; EXPERIMENTAL
 * --name , -n - name of multipass instance to be created; defaults to 'dash'
 * --repo - path on the host machine to the Platform repository to use; if not set, repository will be checked out inside the VM
 
@@ -152,9 +161,12 @@ function parse_args {
       exit 1
     fi
 
-    BRANCH="${BRANCH:-master}"
-    MODE="${MODE:-multipass}"
+    if [[ -z "${REPO}" ]] && [[ -z "${BRANCH}" ]] ; then
+      echo 'Please provide either --repo or --branch.'
+      exit 1
+    fi
 
+    MODE="${MODE:-multipass}"
 }
 
 # Download with caching
