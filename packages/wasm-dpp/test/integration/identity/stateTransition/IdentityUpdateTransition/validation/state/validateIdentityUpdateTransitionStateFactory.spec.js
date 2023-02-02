@@ -58,7 +58,7 @@ describe('validateIdentityUpdateTransitionStateFactory', () => {
     identity = new Identity(rawIdentity);
 
     stateRepositoryMock = createStateRepositoryMock(this.sinonSandbox);
-    stateRepositoryMock.fetchIdentity.returns(identity);
+    stateRepositoryMock.fetchIdentity.resolves(identity);
 
     blockTime = Date.now();
 

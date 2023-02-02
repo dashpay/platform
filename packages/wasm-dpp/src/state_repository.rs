@@ -17,12 +17,15 @@ use dpp::{
     },
     state_transition::state_transition_execution_context::StateTransitionExecutionContext,
 };
+use wasm_bindgen::__rt::Ref;
+
 use wasm_bindgen::prelude::*;
 use wasm_bindgen::JsCast;
 
 use crate::buffer::Buffer;
+use crate::utils::generic_of_js_val;
 use crate::{
-    from_js_error, identifier::IdentifierWrapper, DataContractWasm, IdentityWasm,
+    from_js_error, identifier::IdentifierWrapper, with_js_error, DataContractWasm, IdentityWasm,
     StateTransitionExecutionContextWasm,
 };
 
@@ -44,12 +47,12 @@ extern "C" {
         execution_context: StateTransitionExecutionContextWasm,
     ) -> JsValue;
 
-    #[wasm_bindgen(structural, method, js_name=fetchIdentity)]
-    pub fn fetch_identity(
+    #[wasm_bindgen(catch, structural, method, js_name=fetchIdentity)]
+    pub async fn fetch_identity(
         this: &ExternalStateRepositoryLike,
         id: IdentifierWrapper,
         execution_context: StateTransitionExecutionContextWasm,
-    ) -> Option<IdentityWasm>;
+    ) -> Result<JsValue, JsValue>;
 
     #[wasm_bindgen(structural, method, js_name=fetchLatestPlatformCoreChainLockedHeight)]
     pub fn fetch_latest_platform_core_chain_locked_height(
@@ -238,10 +241,18 @@ impl StateRepositoryLike for ExternalStateRepositoryLikeWrapper {
         id: &Identifier,
         execution_context: &StateTransitionExecutionContext,
     ) -> anyhow::Result<Option<Self::FetchIdentity>> {
-        Ok(self
-            .0
-            .fetch_identity(id.clone().into(), execution_context.clone().into())
-            .map(Into::into))
+        let raw_identity = from_js_error!(
+            self.0
+                .fetch_identity(id.clone().into(), execution_context.clone().into())
+                .await
+        )?;
+
+        let identity_conversion_result: Result<Ref<IdentityWasm>, JsValue> =
+            generic_of_js_val::<IdentityWasm>(&raw_identity, "Identity");
+
+        let identity = from_js_error!(identity_conversion_result)?.to_owned();
+
+        Ok(Some(identity))
     }
 
     async fn store_identity_public_key_hashes(
