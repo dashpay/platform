@@ -23,7 +23,7 @@ use crate::{
     identifier::IdentifierWrapper,
     lodash::lodash_set,
     utils::{IntoWasm, ToSerdeJSONExt, WithJsError},
-    DocumentWasm, IdentityPublicKeyWasm, StateTransitionExecutionContextWasm,
+    IdentityPublicKeyWasm, StateTransitionExecutionContextWasm,
 };
 pub mod apply_document_batch_transition;
 pub mod document_transition;
@@ -33,15 +33,6 @@ pub mod validation;
 #[wasm_bindgen(js_name = DocumentsBatchTransition)]
 pub struct DocumentsBatchTransitionWASM(DocumentsBatchTransition);
 
-/// Collections of Documents split by actions
-#[derive(Debug, Default)]
-#[wasm_bindgen(js_name=DocumentsContainer)]
-pub struct DocumentsContainer {
-    create: Vec<Document>,
-    replace: Vec<Document>,
-    delete: Vec<Document>,
-}
-
 #[derive(Debug, Serialize, Deserialize, Default, Clone, Copy)]
 #[serde(rename_all = "camelCase")]
 pub struct ToObjectOptions {
@@ -49,43 +40,6 @@ pub struct ToObjectOptions {
     skip_signature: bool,
     #[serde(default)]
     skip_identifiers_conversion: bool,
-}
-
-#[wasm_bindgen(js_class=DocumentsContainer)]
-impl DocumentsContainer {
-    #[wasm_bindgen(constructor)]
-    pub fn new() -> Self {
-        Default::default()
-    }
-
-    #[wasm_bindgen(js_name=pushDocumentCreate)]
-    pub fn push_document_create(&mut self, d: DocumentWasm) {
-        self.create.push(d.0);
-    }
-
-    #[wasm_bindgen(js_name=pushDocumentReplace)]
-    pub fn push_document_replace(&mut self, d: DocumentWasm) {
-        self.replace.push(d.0);
-    }
-
-    #[wasm_bindgen(js_name=pushDocumentDelete)]
-    pub fn push_document_delete(&mut self, d: DocumentWasm) {
-        self.delete.push(d.0);
-    }
-}
-
-impl DocumentsContainer {
-    pub fn take_documents_create(&mut self) -> Vec<Document> {
-        std::mem::take(&mut self.create)
-    }
-
-    pub fn take_documents_replace(&mut self) -> Vec<Document> {
-        std::mem::take(&mut self.replace)
-    }
-
-    pub fn take_documents_delete(&mut self) -> Vec<Document> {
-        std::mem::take(&mut self.delete)
-    }
 }
 
 #[wasm_bindgen(js_class=DocumentsBatchTransition)]

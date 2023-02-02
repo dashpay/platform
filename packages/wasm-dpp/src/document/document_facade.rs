@@ -1,16 +1,26 @@
+use std::sync::Arc;
+
 use wasm_bindgen::{prelude::*, JsValue};
 
 use crate::{
     fetch_and_validate_data_contract::DataContractFetcherAndValidatorWasm, utils::IntoWasm,
     validation::ValidationResultWasm, DataContractWasm, DocumentFactoryWASM, DocumentValidatorWasm,
-    DocumentWasm, DocumentsBatchTransitionWASM, DocumentsContainer,
+    DocumentWasm, DocumentsBatchTransitionWASM,
 };
 
+#[derive(Clone)]
+#[wasm_bindgen(js_name=DocumentFacade)]
+pub struct DocumentFacadeWasm {
+    validator: Arc<DocumentValidatorWasm>,
+    factory: Arc<DocumentFactoryWASM>,
+    data_contract_fetcher_and_validator: Arc<DataContractFetcherAndValidatorWasm>,
+}
+
 impl DocumentFacadeWasm {
-    pub fn new(
-        document_validator: DocumentValidatorWasm,
-        document_factory: DocumentFactoryWASM,
-        data_contract_fetcher_and_validator: DataContractFetcherAndValidatorWasm,
+    pub fn new_with_arc(
+        document_validator: Arc<DocumentValidatorWasm>,
+        document_factory: Arc<DocumentFactoryWASM>,
+        data_contract_fetcher_and_validator: Arc<DataContractFetcherAndValidatorWasm>,
     ) -> Self {
         Self {
             validator: document_validator,
@@ -20,15 +30,21 @@ impl DocumentFacadeWasm {
     }
 }
 
-#[wasm_bindgen(js_name=DocumentFacade)]
-pub struct DocumentFacadeWasm {
-    validator: DocumentValidatorWasm,
-    factory: DocumentFactoryWASM,
-    data_contract_fetcher_and_validator: DataContractFetcherAndValidatorWasm,
-}
-
 #[wasm_bindgen(js_class=DocumentFacade)]
 impl DocumentFacadeWasm {
+    #[wasm_bindgen(constructor)]
+    pub fn new(
+        document_validator: DocumentValidatorWasm,
+        document_factory: DocumentFactoryWASM,
+        data_contract_fetcher_and_validator: DataContractFetcherAndValidatorWasm,
+    ) -> Self {
+        Self {
+            validator: Arc::new(document_validator),
+            factory: Arc::new(document_factory),
+            data_contract_fetcher_and_validator: Arc::new(data_contract_fetcher_and_validator),
+        }
+    }
+
     #[wasm_bindgen(js_name=create)]
     pub fn create(
         &self,
@@ -42,6 +58,7 @@ impl DocumentFacadeWasm {
     }
 
     /// Creates Document from object
+    #[wasm_bindgen(js_name=createFromObject)]
     pub async fn create_from_object(
         &self,
         raw_document: JsValue,
@@ -51,6 +68,7 @@ impl DocumentFacadeWasm {
     }
 
     /// Creates Document form bytes
+    #[wasm_bindgen(js_name=createFromBuffer)]
     pub async fn create_from_buffer(
         &self,
         bytes: Vec<u8>,
@@ -60,16 +78,19 @@ impl DocumentFacadeWasm {
     }
 
     /// Creates Documents State Transition
+    #[wasm_bindgen(js_name=createStateTransition)]
     pub fn create_state_transition(
         &self,
-        documents_container: DocumentsContainer,
+        documents: &JsValue, // documents_container: DocumentsContainer,
     ) -> Result<DocumentsBatchTransitionWASM, JsValue> {
-        self.factory.create_state_transition(documents_container)
+        self.factory.create_state_transition(documents)
     }
 
     /// Creates Documents State Transition
+    #[wasm_bindgen(js_name=validateDocument)]
     pub async fn validate_document(
         &self,
+        // TODO this should be changed -> (it should be either a DocumentWasm or Object)
         document: &DocumentWasm,
     ) -> Result<ValidationResultWasm, JsValue> {
         let raw_document = document.to_object(&JsValue::null())?;

@@ -27,7 +27,7 @@ pub mod fetch_and_validate_data_contract;
 pub mod state_transition;
 mod validator;
 
-pub use document_batch_transition::{DocumentsBatchTransitionWASM, DocumentsContainer};
+pub use document_batch_transition::DocumentsBatchTransitionWASM;
 pub use factory::DocumentFactoryWASM;
 pub use validator::DocumentValidatorWasm;
 
