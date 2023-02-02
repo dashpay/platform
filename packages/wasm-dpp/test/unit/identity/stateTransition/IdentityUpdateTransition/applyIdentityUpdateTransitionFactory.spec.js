@@ -1,10 +1,7 @@
 const createStateRepositoryMock = require('@dashevo/dpp/lib/test/mocks/createStateRepositoryMock');
 const getIdentityUpdateTransitionFixture = require('@dashevo/dpp/lib/test/fixtures/getIdentityUpdateTransitionFixture');
-const StateTransitionExecutionContext = require('@dashevo/dpp/lib/stateTransition/StateTransitionExecutionContext');
-const getIdentityFixture = require('@dashevo/dpp/lib/test/fixtures/getIdentityFixture');
 
 const { default: loadWasmDpp } = require('../../../../../dist');
-const generateRandomIdentifierAsync = require('../../../../../lib/test/utils/generateRandomIdentifierAsync');
 
 describe('applyIdentityUpdateTransition', () => {
   let applyIdentityUpdateTransition;
@@ -14,7 +11,6 @@ describe('applyIdentityUpdateTransition', () => {
 
   let StateTransitionExecutionContext;
   let IdentityUpdateTransition;
-  let Identity;
 
   let applyIdentityUpdateTransitionDPP;
 
@@ -23,7 +19,6 @@ describe('applyIdentityUpdateTransition', () => {
       StateTransitionExecutionContext,
       IdentityUpdateTransition,
       applyIdentityUpdateTransition: applyIdentityUpdateTransitionDPP,
-      Identity,
     } = await loadWasmDpp());
   });
 
@@ -32,11 +27,6 @@ describe('applyIdentityUpdateTransition', () => {
       getIdentityUpdateTransitionFixture().toObject(),
     );
     stateTransition.setRevision(stateTransition.getRevision() + 1);
-
-    const rawIdentity = getIdentityFixture().toObject();
-    // Patch identity id to match expectation of wasm Identity class
-    rawIdentity.id = await generateRandomIdentifierAsync();
-    const identity = new Identity(rawIdentity);
 
     executionContext = new StateTransitionExecutionContext();
     stateTransition.setExecutionContext(executionContext);
@@ -68,20 +58,18 @@ describe('applyIdentityUpdateTransition', () => {
     );
 
     const publicKeysToAdd = stateTransition.getPublicKeysToAdd()
-      .map((publicKey) => {
-        const rawPublicKey = publicKey.toObject({ skipSignature: true });
-
-        return new IdentityPublicKey(rawPublicKey);
-      });
+      .map((publicKey) => publicKey.toObject({ skipSignature: true }));
 
     expect(stateRepositoryMock.addKeysToIdentity).to.be.calledOnceWithExactly(
       match((id) => id.toBuffer().equals(stateTransition.getOwnerId().toBuffer())),
-      publicKeysToAdd,
+      match((args) => expect(args.map((k) => k.toObject())).to.deep.equals(publicKeysToAdd)),
       match.instanceOf(StateTransitionExecutionContext),
     );
   });
 
-  it('should add and disable public keys on dry run', async () => {
+  it('should add and disable public keys on dry run', async function () {
+    const { match } = this.sinonSandbox;
+
     stateTransition.getExecutionContext().enableDryRun();
 
     await applyIdentityUpdateTransition(stateTransition);
@@ -89,29 +77,25 @@ describe('applyIdentityUpdateTransition', () => {
     stateTransition.getExecutionContext().disableDryRun();
 
     expect(stateRepositoryMock.updateIdentityRevision).to.be.calledOnceWithExactly(
-      stateTransition.getOwnerId(),
+      match((id) => id.toBuffer().equals(stateTransition.getOwnerId().toBuffer())),
       stateTransition.getRevision(),
-      executionContext,
+      match.instanceOf(StateTransitionExecutionContext),
     );
 
     expect(stateRepositoryMock.disableIdentityKeys).to.be.calledOnceWithExactly(
-      stateTransition.getOwnerId(),
+      match((id) => id.toBuffer().equals(stateTransition.getOwnerId().toBuffer())),
       stateTransition.getPublicKeyIdsToDisable(),
       stateTransition.getPublicKeysDisabledAt().getTime(),
-      executionContext,
+      match.instanceOf(StateTransitionExecutionContext),
     );
 
     const publicKeysToAdd = stateTransition.getPublicKeysToAdd()
-      .map((publicKey) => {
-        const rawPublicKey = publicKey.toObject({ skipSignature: true });
-
-        return new IdentityPublicKey(rawPublicKey);
-      });
+      .map((publicKey) => publicKey.toObject({ skipSignature: true }));
 
     expect(stateRepositoryMock.addKeysToIdentity).to.be.calledOnceWithExactly(
-      stateTransition.getOwnerId(),
-      publicKeysToAdd,
-      executionContext,
+      match((id) => id.toBuffer().equals(stateTransition.getOwnerId().toBuffer())),
+      match((args) => expect(args.map((k) => k.toObject())).to.deep.equals(publicKeysToAdd)),
+      match.instanceOf(StateTransitionExecutionContext),
     );
   });
 });

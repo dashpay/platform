@@ -2,15 +2,11 @@ use crate::bls_adapter::{BlsAdapter, JsBlsAdapter};
 use crate::errors::from_dpp_err;
 use crate::utils::ToSerdeJSONExt;
 
-use crate::{
-    identity::identity_public_key::IdentityPublicKeyWasm, validation::ValidationResultWasm,
-    IdentityPublicKeyInCreationWasm,
-};
+use crate::{validation::ValidationResultWasm, IdentityPublicKeyInCreationWasm};
 
 use dpp::identity::state_transition::validate_public_key_signatures::{
     PublicKeysSignaturesValidator, TPublicKeysSignaturesValidator,
 };
-use dpp::prelude::IdentityPublicKey;
 
 use dpp::identity::IdentityPublicKeyInCreation;
 use serde_json::Value as JsonValue;

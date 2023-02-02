@@ -72,8 +72,8 @@ extern "C" {
     pub fn disable_identity_keys(
         this: &crate::state_repository::ExternalStateRepositoryLike,
         identity_id: IdentifierWrapper,
-        keys: &[KeyID],
-        disable_at: TimestampMillis,
+        keys: js_sys::Array,
+        disable_at: Number,
         execution_context: StateTransitionExecutionContextWasm,
     );
 
@@ -352,8 +352,8 @@ impl StateRepositoryLike for ExternalStateRepositoryLikeWrapper {
             .expect("unexpected concurrency issue!")
             .disable_identity_keys(
                 identity_id.clone().into(),
-                keys,
-                disable_at,
+                keys.iter().map(|&k| JsValue::from(k as f64)).collect(),
+                Number::from(disable_at as f64),
                 execution_context.clone().into(),
             );
 

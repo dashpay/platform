@@ -145,26 +145,19 @@ where
             }
         }
 
-        let mut raw_public_keys: Vec<Value> = identity
-            .public_keys
-            .iter()
-            .map(|pk| pk.to_raw_json_object(false))
-            .collect::<Result<_, SerdeParsingError>>()?;
-
-        if !state_transition.get_public_keys_to_add().is_empty() {
-            identity.add_public_keys(state_transition.get_public_keys_to_add().iter().cloned());
-
-            raw_public_keys = identity
-                .get_public_keys()
+        identity.add_public_keys(
+            state_transition
+                .get_public_keys_to_add()
                 .iter()
-                .map(|pk| pk.to_raw_json_object(false))
-                .collect::<Result<_, SerdeParsingError>>()?;
+                .cloned()
+                .map(|k| k.to_identity_public_key()),
+        );
 
-            let result = self.public_keys_validator.validate_keys(&raw_public_keys)?;
-            if !result.is_valid() {
-                return Ok(result);
-            }
-        }
+        let raw_public_keys: Vec<Value> = identity
+            .public_keys
+            .values()
+            .map(|pk| pk.to_raw_json_object())
+            .collect::<Result<_, SerdeParsingError>>()?;
 
         let result = self.public_keys_validator.validate_keys(&raw_public_keys)?;
         if !result.is_valid() {

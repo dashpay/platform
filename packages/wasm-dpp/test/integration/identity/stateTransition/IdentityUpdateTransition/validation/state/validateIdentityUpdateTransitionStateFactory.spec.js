@@ -33,11 +33,13 @@ describe('validateIdentityUpdateTransitionStateFactory', () => {
   let DuplicatedIdentityPublicKeyIdStateError;
   let StateTransitionExecutionContext;
   let IdentityUpdateTransitionStateValidator;
+  let IdentityPublicKeyInCreation;
 
   before(async () => {
     ({
       Identity,
       IdentityPublicKey,
+      IdentityPublicKeyInCreation,
       IdentityUpdateTransition,
       InvalidIdentityRevisionError,
       IdentityPublicKeyIsReadOnlyError,
@@ -73,6 +75,11 @@ describe('validateIdentityUpdateTransitionStateFactory', () => {
       bits: 0,
       nonce: 1449878271,
     });
+
+    // TODO: This method is deprecated and removed from JS DPP. Update to new methods:
+    //  fetchLatestPlatformBlockHeight, fetchLatestPlatformCoreChainLockedHeight,
+    //  fetchLatestPlatformBlockTime
+    stateRepositoryMock.fetchLatestPlatformBlockHeader = this.sinonSandbox.stub();
 
     stateRepositoryMock.fetchLatestPlatformBlockHeader.returns(header.toBuffer());
 
