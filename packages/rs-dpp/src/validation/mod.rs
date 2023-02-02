@@ -20,7 +20,7 @@ pub trait DataValidator {
 }
 
 /// Async validator validates data of given type
-#[async_trait]
+#[async_trait(?Send)]
 pub trait AsyncDataValidator {
     // TODO, when GAT is available remove the reference in method and use: `type Item<'a>`
     type Item;

@@ -1,8 +1,8 @@
 //! Bindings for state repository -like objects coming from JS.
 
 use serde::{Deserialize, Serialize};
+use std::convert::Infallible;
 use std::sync::Arc;
-use std::{convert::Infallible, pin::Pin, sync::Mutex};
 
 use anyhow::{anyhow, bail};
 use async_trait::async_trait;
@@ -138,14 +138,14 @@ extern "C" {
 /// Wraps external duck-typed thing into pinned box with mutex to ensure it'll stay at the same
 /// place in memory and will have synchronized access.
 #[derive(Clone)]
-pub(crate) struct ExternalStateRepositoryLikeWrapper(Pin<Arc<Mutex<ExternalStateRepositoryLike>>>); // bruh
+pub(crate) struct ExternalStateRepositoryLikeWrapper(Arc<ExternalStateRepositoryLike>); // bruh
 
 unsafe impl Send for ExternalStateRepositoryLikeWrapper {}
 unsafe impl Sync for ExternalStateRepositoryLikeWrapper {}
 
 impl ExternalStateRepositoryLikeWrapper {
     pub(crate) fn new(state_repository: ExternalStateRepositoryLike) -> Self {
-        ExternalStateRepositoryLikeWrapper(Pin::new(Arc::new(Mutex::new(state_repository))))
+        ExternalStateRepositoryLikeWrapper(Arc::new(state_repository))
     }
 }
 
@@ -177,7 +177,7 @@ impl From<FetchTransactionResponse> for FetchTransactionResponseDPP {
     }
 }
 
-#[async_trait]
+#[async_trait(?Send)]
 impl StateRepositoryLike for ExternalStateRepositoryLikeWrapper {
     type ConversionError = Infallible;
     type FetchDataContract = DataContractWasm;
@@ -192,8 +192,6 @@ impl StateRepositoryLike for ExternalStateRepositoryLikeWrapper {
     ) -> anyhow::Result<Option<Self::FetchDataContract>> {
         Ok(self
             .0
-            .lock()
-            .expect("unexpected concurrency issue!")
             .fetch_data_contract(
                 data_contract_id.clone().into(),
                 execution_context.clone().into(),
@@ -207,8 +205,6 @@ impl StateRepositoryLike for ExternalStateRepositoryLikeWrapper {
         execution_context: &StateTransitionExecutionContext,
     ) -> anyhow::Result<()> {
         self.0
-            .lock()
-            .expect("unexpected concurrency issue!")
             .store_data_contract(data_contract.into(), execution_context.clone().into());
         Ok(())
     }
@@ -220,18 +216,14 @@ impl StateRepositoryLike for ExternalStateRepositoryLikeWrapper {
         where_query: serde_json::Value,
         execution_context: &StateTransitionExecutionContext,
     ) -> anyhow::Result<Vec<Self::FetchDocument>> {
-        let js_documents = self
-            .0
-            .lock()
-            .expect("unexpected concurrency issue!")
-            .fetch_documents(
-                contract_id.to_owned().into(),
-                data_contract_type.to_owned(),
-                where_query
-                    .serialize(&serde_wasm_bindgen::Serializer::json_compatible())
-                    .map_err(|e| anyhow!("serialization error: {}", e))?,
-                execution_context.clone().into(),
-            );
+        let js_documents = self.0.fetch_documents(
+            contract_id.to_owned().into(),
+            data_contract_type.to_owned(),
+            where_query
+                .serialize(&serde_wasm_bindgen::Serializer::json_compatible())
+                .map_err(|e| anyhow!("serialization error: {}", e))?,
+            execution_context.clone().into(),
+        );
 
         let mut documents: Vec<DocumentWasm> = vec![];
         for js_document in js_documents.iter() {
@@ -250,8 +242,6 @@ impl StateRepositoryLike for ExternalStateRepositoryLikeWrapper {
     ) -> anyhow::Result<()> {
         let document_wasm: DocumentWasm = document.to_owned().into();
         self.0
-            .lock()
-            .expect("unexpected concurrency issue!")
             .create_document(document_wasm, execution_context.clone().into());
         Ok(())
     }
@@ -263,8 +253,6 @@ impl StateRepositoryLike for ExternalStateRepositoryLikeWrapper {
     ) -> anyhow::Result<()> {
         let document_wasm: DocumentWasm = document.to_owned().into();
         self.0
-            .lock()
-            .expect("unexpected concurrency issue!")
             .update_document(document_wasm, execution_context.clone().into());
         Ok(())
     }
@@ -278,15 +266,12 @@ impl StateRepositoryLike for ExternalStateRepositoryLikeWrapper {
     ) -> anyhow::Result<()> {
         let data_contract: DataContractWasm = data_contract.to_owned().into();
         let document_id: IdentifierWrapper = document_id.to_owned().into();
-        self.0
-            .lock()
-            .expect("unexpected concurrency issue!")
-            .remove_document(
-                data_contract,
-                data_contract_type.to_owned(),
-                document_id,
-                execution_context.clone().into(),
-            );
+        self.0.remove_document(
+            data_contract,
+            data_contract_type.to_owned(),
+            document_id,
+            execution_context.clone().into(),
+        );
         Ok(())
     }
 
@@ -297,8 +282,6 @@ impl StateRepositoryLike for ExternalStateRepositoryLikeWrapper {
     ) -> anyhow::Result<Self::FetchTransaction> {
         let response = self
             .0
-            .lock()
-            .expect("unexpected concurrency issue!")
             .fetch_transaction(JsValue::from_str(id), execution_context.into());
         Ok(FetchTransactionResponse::from(response))
     }
@@ -310,8 +293,6 @@ impl StateRepositoryLike for ExternalStateRepositoryLikeWrapper {
     ) -> anyhow::Result<Option<Self::FetchIdentity>> {
         Ok(self
             .0
-            .lock()
-            .expect("unexpected concurrency issue!")
             .fetch_identity(id.clone().into(), execution_context.clone().into())
             .map(Into::into))
     }
@@ -327,15 +308,11 @@ impl StateRepositoryLike for ExternalStateRepositoryLikeWrapper {
             .map(|hash| Buffer::from_bytes(hash))
             .collect();
 
-        Ok(self
-            .0
-            .lock()
-            .expect("unexpected concurrency issue!")
-            .store_identity_public_key_hashes(
-                identity_id.clone().into(),
-                hashes,
-                execution_context.clone().into(),
-            ))
+        Ok(self.0.store_identity_public_key_hashes(
+            identity_id.clone().into(),
+            hashes,
+            execution_context.clone().into(),
+        ))
     }
 
     async fn fetch_identity_by_public_key_hashes<T>(
@@ -358,8 +335,6 @@ impl StateRepositoryLike for ExternalStateRepositoryLikeWrapper {
     async fn fetch_latest_platform_core_chain_locked_height(&self) -> anyhow::Result<Option<u32>> {
         Ok(self
             .0
-            .lock()
-            .expect("unexpected concurrency issue!")
             .fetch_latest_platform_core_chain_locked_height()
             .map(Into::into))
     }
@@ -373,8 +348,6 @@ impl StateRepositoryLike for ExternalStateRepositoryLikeWrapper {
 
         let verified = self
             .0
-            .lock()
-            .expect("unexpected concurrency issue!")
             .verify_instant_lock(raw_instant_lock, execution_context.clone().into());
 
         Ok(verified)
@@ -385,14 +358,10 @@ impl StateRepositoryLike for ExternalStateRepositoryLikeWrapper {
         out_point_buffer: &[u8],
         execution_context: &StateTransitionExecutionContext,
     ) -> anyhow::Result<bool> {
-        Ok(self
-            .0
-            .lock()
-            .expect("unexpected concurrency issue!")
-            .is_asset_lock_transaction_out_point_already_used(
-                Buffer::from_bytes(out_point_buffer),
-                execution_context.clone().into(),
-            ))
+        Ok(self.0.is_asset_lock_transaction_out_point_already_used(
+            Buffer::from_bytes(out_point_buffer),
+            execution_context.clone().into(),
+        ))
     }
 
     async fn mark_asset_lock_transaction_out_point_as_used(
@@ -401,8 +370,6 @@ impl StateRepositoryLike for ExternalStateRepositoryLikeWrapper {
     ) -> anyhow::Result<()> {
         Ok(self
             .0
-            .lock()
-            .expect("unexpected concurrency issue!")
             .mark_asset_lock_transaction_out_point_as_used(Buffer::from_bytes(out_point_buffer)))
     }
 
@@ -420,8 +387,6 @@ impl StateRepositoryLike for ExternalStateRepositoryLikeWrapper {
     ) -> anyhow::Result<()> {
         Ok(self
             .0
-            .lock()
-            .expect("unexpected concurrency issue!")
             .create_identity(identity.clone().into(), execution_context.clone().into()))
     }
 
@@ -446,11 +411,7 @@ impl StateRepositoryLike for ExternalStateRepositoryLikeWrapper {
     }
 
     async fn fetch_latest_platform_block_time(&self) -> anyhow::Result<u64> {
-        let js_number = self
-            .0
-            .lock()
-            .expect("unexpected concurrency issue!")
-            .fetch_latest_platform_block_time();
+        let js_number = self.0.fetch_latest_platform_block_time();
 
         if let Some(float_number) = js_number.as_f64() {
             if float_number.is_nan() || float_number.is_infinite() {
