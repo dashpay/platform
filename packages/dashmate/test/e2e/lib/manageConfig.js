@@ -9,33 +9,33 @@ const migrateConfigFile = require("../../../src/config/configFile/migrateConfigF
  * @return {Config[]}
  */
 
-async function getGroupConfig(configName) {
-  const configFileRepository = new ConfigFileJsonRepository(migrateConfigFile);
-  const configFile = await configFileRepository.read();
-  return configFile.getGroupConfigs(configName);
-}
-
 async function getConfig(configName) {
   const configFileRepository = new ConfigFileJsonRepository(migrateConfigFile);
   const configFile = await configFileRepository.read();
-  return configFile.getConfig(configName);
-}
 
-async function isGroupConfigExist(configName) {
-  const configFileRepository = new ConfigFileJsonRepository(migrateConfigFile);
-  const configFile = await configFileRepository.read();
-  return configFile.isGroupExists(configName);
+  switch(configName) {
+    case 'local':
+      return configFile.getGroupConfigs(configName);
+    case 'testnet':  // Fallthrough
+    case 'mainnet':
+      return configFile.getConfig(configName);
+  }
 }
 
 async function isConfigExist(configName) {
   const configFileRepository = new ConfigFileJsonRepository(migrateConfigFile);
   const configFile = await configFileRepository.read();
-  return configFile.isConfigExists(configName);
+
+  switch(configName) {
+    case 'local':
+      return configFile.isGroupExists(configName);
+    case 'testnet':  // Fallthrough
+    case 'mainnet':
+      return configFile.isConfigExists(configName);
+  }
 }
 
 module.exports = {
-  getGroupConfig,
   getConfig,
-  isGroupConfigExist,
   isConfigExist
 }

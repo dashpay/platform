@@ -20,8 +20,9 @@ async function removeContainers(configName, dockerContainer) {
   await dockerContainer.rm(config.toEnvs(), getContainers);
 }
 
-async function isGroupServicesRunning(isRunning, configFile, dockerContainer) {
+async function isGroupServicesRunning(isRunning, dockerContainer) {
   let result;
+  const configFile = await getConfig('local')
   for (const config of configFile) {
     for (const [key] of Object.entries(SERVICES)) {
       if (config.name === 'local_seed') {
@@ -37,9 +38,11 @@ async function isGroupServicesRunning(isRunning, configFile, dockerContainer) {
   }
 }
 
-async function isTestnetServicesRunning(isRunning, configFile, dockerContainer) {
+async function isTestnetServicesRunning(isRunning, dockerContainer) {
+  const configFile = await getConfig('testnet')
   for (const [key] of Object.entries(SERVICES)) {
     const result = await dockerContainer.isServiceRunning(configFile.toEnvs(), SERVICES[key]);
+    console.log(`${SERVICES[key]}: ${result}`)
     if (result !== isRunning) {
       throw new Error(`Running state for service ${key} should be ${isRunning}`)
     }

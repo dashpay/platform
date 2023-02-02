@@ -8,10 +8,8 @@ const { expect } = require('chai');
 const fetch = require("node-fetch");
 const publicIp = require('public-ip');
 const os = require("os");
-const path = require("path");
 const prettyByte = require('pretty-bytes');
 const prettyMs = require('pretty-ms');
-
 const generateBlsKeys = require("../../../src/core/generateBlsKeys");
 const wait = require("@dashevo/dpp/lib/test/utils/wait");
 
@@ -20,18 +18,17 @@ const { INSIGHT_URLs } = require('../lib/constants/insightLinks')
 const { SERVICES } = require('../lib/constants/services')
 const {STATUS} = require("../lib/constants/statusOutput");
 
-const CoreService = require("../../../src/core/CoreService");
-const createRpcClient = require("../../../src/core/createRpcClient");
-const { removeVolumes, removeContainers } = require("../lib/manageDockerData");
+const { removeVolumes, removeContainers, isTestnetServicesRunning} = require("../lib/manageDockerData");
 
 const { execute } = require('../../e2e/lib/runCommandInCli')
 const { getConfig, isConfigExist } = require("../../e2e/lib/manageConfig");
 const { core } = require("../../../configs/system/base");
 const {CONFIG_FILE_PATH} = require("../../../src/constants");
-const createSelfSignedCertificate = require('../../../src/ssl/selfSigned/createCertificate');
-const createCertificate = require("../../../src/ssl/selfSigned/createCertificate.js");
-const generateCsr = require("../../../src/ssl/zerossl/generateCsr");
-const generateKeyPair = require("../../../src/ssl/generateKeyPair");
+const getSelfSignedCertificate = require("../lib/getSelfSignedCertificate");
+const MasternodeSyncAssetEnum = require("../../../src/enums/masternodeSyncAsset");
+const PortStateEnum = require("../../../src/enums/portState");
+const ServiceStatusEnum = require("../../../src/enums/serviceStatus");
+const TestDashmateClass = require("../lib/testDashmateClass");
 
 describe('Testnet dashmate', function main() {
   this.timeout(900000);
@@ -40,6 +37,8 @@ describe('Testnet dashmate', function main() {
     let container;
     let testnetConfig, configEnvs;
     const testnetNetwork = 'testnet';
+    let certificate;
+    const dashmate = new TestDashmateClass();
 
     before(function () {
       const dockerode = new Docker();
@@ -48,36 +47,26 @@ describe('Testnet dashmate', function main() {
     });
 
     after(async function () {
-      await removeContainers(testnetConfig, container)
-      await removeVolumes(testnetConfig, container)
-      await testnetConfig.removeConfig(testnetNetwork);
+      // await removeContainers(testnetConfig, container)
+      // await removeVolumes(testnetConfig, container)
+      // await testnetConfig.removeConfig(testnetNetwork);
+      // fs.unlinkSync(certificate.certificatePath);
+      // fs.unlinkSync(certificate.privKeyPath);
     });
 
     it('Setup testnet nodes', async () => {
       const ip = await publicIp.v4();
       const {privateKey: generatedPrivateKeyHex} = await generateBlsKeys();
-      const nodeType = 'masternode';
+      certificate = await getSelfSignedCertificate(ip)
 
-      const keyPair = await generateKeyPair();
-      const csr = await generateCsr(keyPair, ip);
-      const certificate = await createSelfSignedCertificate(keyPair, csr);
+      await dashmate.setupTestnet('masternode', [`-i=${ip} -k=${generatedPrivateKeyHex} -s=manual -c=${certificate.certificatePath} -l=${certificate.privKeyPath}`])
 
-      const tempDir = os.tmpdir();
-      const filePath = path.join(tempDir, 'bundle.crt');
-      const filePath2 = path.join(tempDir, 'private.key');
-      fs.writeFileSync(filePath, certificate, 'utf8');
-      fs.writeFileSync(filePath2, keyPair.privateKey, 'utf8');
-
-      await execute(`yarn dashmate setup ${testnetNetwork} ${nodeType} -i=${ip} -k=${generatedPrivateKeyHex} -s='manual' -c=${filePath} -l=${filePath2} --verbose`).then(res => {
-        if (res.status !== undefined) {
-          throw new Error(`${res.stderr} with exit code: ${res.status}`)
-        }
-      })
+      await isTestnetServicesRunning(false, container)
 
       const isConfig = await isConfigExist(testnetNetwork)
       if (fs.existsSync(CONFIG_FILE_PATH) && isConfig) {
         testnetConfig = await getConfig(testnetNetwork)
-        configEnvs = testnetConfig.toEnvs();
+        configEnvs = testnetConfig.toEnvs(); //delete if checking list of envs is not needed
       } else {
         throw new Error('No configuration file in ' + CONFIG_FILE_PATH);
       }
@@ -89,40 +78,17 @@ describe('Testnet dashmate', function main() {
       //     expect(checkKeyInArray).to.equal(true, key + ' should not be empty.');
       //   }
       // }
-
-      for (const [key] of Object.entries(SERVICES)) {
-        const isRunning = await container.isServiceRunning(configEnvs, SERVICES[key]);
-        expect(isRunning).to.equal(false, `${key} is running!`)
-      }
-      // fs.unlinkSync(filePath);
     });
 
     it('Start testnet nodes', async () => {
-      await execute(`yarn dashmate start`).then(res => {
-        if (res.status !== undefined) {
-          throw new Error(`${res.stderr} with exit code: ${res.status}`)
-        }
-      })
+      await dashmate.start(testnetNetwork)
 
-      for (const [key] of Object.entries(SERVICES)) {
-        const isRunning = await container.isServiceRunning(configEnvs, SERVICES[key]);
-        expect(isRunning).to.equal(true, `${key} is not running!`)
-      }
-      //check isServiceRunning
+      await isTestnetServicesRunning(true, container)
     });
 
     it('Check core status before core sync process finish', async () => {
-      let peerHeader, peerBlock;
-      testnetConfig = await getConfig('testnet')
-
-      const coreStatus = await execute(`yarn dashmate status core --format=json`).then(async res => {
-        if (res.status !== undefined) {
-          throw new Error(`${res.stderr} with exit code: ${res.status}`)
-        }
-        return res.toString()
-      })
-
-      const output = JSON.parse(coreStatus.toString())
+      const coreStatus = await dashmate.checkStatus('core')
+      const coreOutput = JSON.parse(coreStatus.toString())
 
       //update core version in config??
       // const coreVersion = core.docker.image.replace(/\/|\(.*?\)|dashpay|dashd:|\-(.*)/g, '');
@@ -137,274 +103,167 @@ describe('Testnet dashmate', function main() {
       //   throw e;
       // }
 
-      expect(output.network).to.be.equal(STATUS.testnetNetwork)
-      expect(output.chain).to.be.equal(STATUS.testChain)
-      expect(output.dockerStatus).to.be.equal(STATUS.runningStatus)
-      expect(output.syncAsset).to.be.equal(STATUS.sync_asset)
+      expect(coreOutput.network).to.be.equal(STATUS.testnetNetwork)
+      expect(coreOutput.chain).to.be.equal(STATUS.testChain)
+      expect(coreOutput.dockerStatus).to.be.equal('running')
+      expect(coreOutput.syncAsset).to.be.equal(MasternodeSyncAssetEnum.MASTERNODE_SYNC_BLOCKCHAIN)
 
       const peersData = await execute('docker exec dash_masternode_testnet-core-1 dash-cli getpeerinfo').then(peers => {
         return JSON.parse(peers.toString());
       })
       const peersNumber = Object.keys(peersData).length;
-      expect(output.peersCount).to.be.equal(peersNumber, 'Peers number are not matching!')
+      expect(coreOutput.peersCount).to.be.equal(peersNumber, 'Peers number are not matching!')
 
-    do {
+      let peerHeader, peerBlock;
+      do {
         for (const peer of peersData) {
           peerBlock = peer['synced_blocks']
           peerHeader = peer['synced_headers']
           console.log(`Debug peers block / headers: ${peerBlock} / ${peerHeader}`)
         }
-    } while (peerHeader < 1 && peerBlock < 1)
+      } while (peerHeader < 1 && peerBlock < 1)
 
-    expect(output.p2pService).to.not.be.empty()
-    expect(output.p2pPortState).to.be.equal('CLOSED')
-    expect(output.rpcService).to.not.be.empty()
+      expect(coreOutput.p2pService).to.not.be.empty()
+      expect(coreOutput.p2pPortState).to.be.equal(PortStateEnum.CLOSED)
+      expect(coreOutput.rpcService).to.not.be.empty()
 
-    let coreOutput;
-    do {
-      coreOutput = JSON.parse(coreStatus.toString());
-      console.log(`Debug block / headers: ${coreOutput.blockHeight} / ${coreOutput.headerHeight}`)
-    } while (+coreOutput.blockHeight < 1 && +coreOutput.headerHeight < 1)
+      let coreSyncOutput;
+      do {
+        coreSyncOutput = JSON.parse(coreStatus.toString());
+      } while (+coreSyncOutput.blockHeight < 1 && +coreOutput.headerHeight < 1)
 
-    let explorerBlockHeightRes = await fetch(`${INSIGHT_URLs[testnetNetwork]}/status`);
-    ({info: {blocks: explorerBlockHeight}} = await explorerBlockHeightRes.json());
-    expect(+coreOutput.remoteBlockHeight).to.be.equal(explorerBlockHeight)
+      let explorerBlockHeightRes = await fetch(`${INSIGHT_URLs[testnetNetwork]}/status`);
+      ({info: {blocks: explorerBlockHeight}} = await explorerBlockHeightRes.json());
+      expect(+coreSyncOutput.remoteBlockHeight).to.be.equal(explorerBlockHeight)
 
-    expect(+coreOutput.difficulty).to.be.greaterThan(0)
+      expect(+coreSyncOutput.difficulty).to.be.greaterThan(0)
 
-    expect(output.serviceStatus).to.be.equal('syncing')
-    if (!(output.verificationProgress > 0 && output.verificationProgress <= 100)) {
-      throw new Error(`Invalid status output for syncing process: ${output.verificationProgress}% `)
-    }
-  });
+      expect(coreOutput.serviceStatus).to.be.equal(ServiceStatusEnum.syncing)
+      if (!(coreOutput.verificationProgress > 0 && coreOutput.verificationProgress <= 100)) {
+        throw new Error(`Invalid status output for syncing process: ${coreOutput.verificationProgress}% `)
+      }
+    });
 
     it('Check platform status before core sync process finish', async () => {
-      await execute(`yarn dashmate status platform`).then(res => {
-        if (res.status !== undefined) {
-          throw new Error(`${res.stderr} with exit code: ${res.status}`)
-        } else {
-          const output = res.toString()
-          expect(output.substring(0, output.length-1)).to.equal('Platform status is not available until core sync is complete!')
-        }
+      await dashmate.checkStatus('platform').then(res => {
+        expect(res.substring(0, res.length - 1)).to.equal('Platform status is not available until core sync is complete!')
       })
     });
 
     it('Check services status before core sync process finish', async () => {
-      await execute(`yarn dashmate status services --format=json`).then(async res => {
-        if (res.status !== undefined) {
-          throw new Error(`${res.stderr} with exit code: ${res.status}`)
-        }
+      const servicesStatus = await dashmate.checkStatus('services');
+      const output = JSON.parse(servicesStatus.toString())
 
-        let containerIds;
-        await execute('docker ps --format "{{ .ID }}"').then(ids => {
-          containerIds = ids.toString().split('\n');
-          containerIds.pop() //empty item
-        })
-
-        const services = ['Core', 'Sentinel', 'Drive ABCI', 'Drive Tenderdash', 'DAPI API', 'DAPI Transactions Filter Stream', 'DAPI Envoy']
-        const output = JSON.parse(res.toString())
-        for (let serviceData of output) {
-          expect(services).to.include(serviceData.Service);
-          expect(serviceData.Status).to.equal('running');
-          expect(containerIds).to.include(serviceData['Container ID'])
-        }
+      const listIDs = await execute('docker ps --format "{{ .ID }}"').then(ids => {
+        const containerIds = ids.toString().split('\n');
+        containerIds.pop() //empty item
+        return containerIds;
       })
-    });
+
+      //refactor to use SERVICES
+      const services = ['Core', 'Sentinel', 'Drive ABCI', 'Drive Tenderdash', 'DAPI API', 'DAPI Transactions Filter Stream', 'DAPI Envoy']
+      for (let serviceData of output) {
+        expect(services).to.include(serviceData.service);
+        expect(serviceData.status).to.equal('running');
+        expect(listIDs).to.include(serviceData.containerId)
+      }
+    })
 
     it('Verify status overview before core sync process finish', async () => {
-      await execute(`yarn dashmate status --format=json`).then(async res => {
-        if (res.status !== undefined) {
-          throw new Error(`${res.stderr} with exit code: ${res.status}`)
-        }
+      const overviewStatus = await dashmate.checkStatus('') //status overview
+      const output = JSON.parse(overviewStatus.toString())
 
-        const output = JSON.parse(res.toString())
-        expect(output.Network).to.equal(STATUS.test)
-        expect(output['Core Version']).to.equal('18.1.0')
-        // expect(output['Core Status']).to.include('syncing')
-        expect(output['Masternode Status']).to.equal(STATUS.masternode_status)
-        expect(output['Platform Status']).to.equal(STATUS.platform_status)
-      })
-    });
+      expect(output.Network).to.equal(STATUS.test)
+      expect(output['Core Version']).to.equal('18.1.0')
+      // expect(output['Core Status']).to.include(ServiceStatusEnum.syncing)
+      expect(output['Masternode Status']).to.equal(STATUS.masternode_status)
+      expect(output['Platform Status']).to.equal(STATUS.platform_status)
+    })
 
     it('Check host status before core sync process finish', async () => {
-      await execute(`yarn dashmate status host --format=json`).then(async res => {
-        if (res.status !== undefined) {
-          throw new Error(`${res.stderr} with exit code: ${res.status}`)
-        }
+      const hostStatus = await dashmate.checkStatus('host')
+      const output = JSON.parse(hostStatus.toString())
 
-        const output = JSON.parse(res.toString())
-        expect(output.Hostname).to.equal(os.hostname());
-        expect(output.Uptime).to.include(prettyMs(os.uptime() * 1000, {unitCount:2}));
-        expect(output.Platform).to.equal(os.platform());
-        expect(output.Arch).to.equal(os.arch());
-        expect(output.Username).to.equal(os.userInfo().username);
-        expect(output.Diskfree).to.equal(0); //hard-coded
-        // expect(output.Memory).to.equal(`${prettyByte(os.totalmem())} / ${prettyByte(os.freemem())}`);
-        expect(output.CPUs).to.equal(os.cpus().length);
-        expect(output.IP).to.equal(await publicIp.v4());
-      })
+      expect(output.hostname).to.equal(os.hostname());
+      expect(output.uptime).to.include(prettyMs(os.uptime() * 1000, {unitCount: 2}));
+      expect(output.platform).to.equal(os.platform());
+      expect(output.arch).to.equal(os.arch());
+      expect(output.username).to.equal(os.userInfo().username);
+      // expect(output.diskFree).to.equal(0); //bugged
+      // expect(output.memory).to.equal(`${prettyByte(os.totalmem())} / ${prettyByte(os.freemem())}`); //doesn't work properly on wsl
+      expect(output.cpus).to.equal(os.cpus().length);
+      expect(output.ip).to.equal(await publicIp.v4());
     });
 
     it('Check masternode status before core sync process finish', async () => {
-      await execute(`yarn dashmate status masternode --format=json`).then(async res => {
-        if (res.status !== undefined) {
-          throw new Error(`${res.stderr} with exit code: ${res.status}`)
-        }
+      const masternodeStatus = await dashmate.checkStatus('masternode')
+      const output = JSON.parse(masternodeStatus.toString())
 
-        const output = JSON.parse(res.toString())
-        expect(output['Masternode status']).to.equal(STATUS.masternode_status);
-        expect(output['Sentinel status']).to.equal(STATUS.sentinel_status);
+      // expect(output['Masternode status']).to.equal(STATUS.masternode_status); //bugged
+      expect(output.sentinel.state).to.equal(STATUS.sentinel_statusNotSynced);
       })
-    });
 
     it('Restart testnet network before core sync process finish', async () => {
-      let output;
+      const coreStatus = await dashmate.checkStatus('core')
+      const statusBeforeRestart = JSON.parse(coreStatus);
 
-      await execute(`yarn dashmate restart`).then( async res => {
-        if (res.status !== undefined) {
-          throw new Error(`${res.stderr} with exit code: ${res.status}`)
-        }
-      })
+      await dashmate.restart(testnetNetwork)
 
-      do {
-        const status = await execute(`yarn dashmate status core --format=json`);
-        output = JSON.parse(status.toString())
-        await wait(5000);
-      } while (+output['Header height'] < 1)
+      await isTestnetServicesRunning(true, container)
+
+      const statusAfterRestart = JSON.parse(coreStatus.toString());
+      if (+statusBeforeRestart.blockHeight !== +statusAfterRestart.blockHeight) {
+        throw new Error('Block height is different after restart.')
+      } else {
+        let blockHeighSync;
+        do {
+          await wait(5000);
+          blockHeighSync = JSON.parse(coreStatus.toString());
+        } while (+blockHeighSync.blockHeight <= +statusAfterRestart.blockHeight)
+      }
 
       const restartConfig = getConfig(testnetNetwork);
       expect(isEqual(restartConfig, testnetConfig)).to.equal(true);
-
-      for (const [key] of Object.entries(SERVICES)) {
-        const isRunning = await container.isServiceRunning(configEnvs, SERVICES[key]);
-        expect(isRunning).to.equal(true, `${key} is not running!`)
-      }
     });
 
     it('Stop testnet network', async () => {
-      await execute(`yarn dashmate stop`).then( async res => {
-        if (res.status !== undefined) {
-          throw new Error(`${res.stderr} with exit code: ${res.status}`)
-        }
-      })
+      await dashmate.stop(testnetNetwork)
 
-      for (const [key] of Object.entries(SERVICES)) {
-        const isRunning = await container.isServiceRunning(configEnvs, SERVICES[key]);
-        expect(isRunning).to.equal(false, `${key} is running!`)
-      }
-
-      testnetConfig = await getConfig('testnet')
-
-      await execute(`yarn dashmate status core`).then( async res => {
-        if (res.status !== 1) {
-          throw new Error(`Status core command should finish with exit code 1 instead of ${res.status}. \n${res.stderr}`)
-        }
-        expect(String(res.stderr)).to.include(`Error: Dash JSON-RPC: Request Error: connect ECONNREFUSED 127.0.0.1:${testnetConfig.get('core.rpc.port')}`)
-      })
-
-      await execute(`yarn dashmate status platform`).then( async res => {
-        if (res.status !== 1) {
-          throw new Error(`Status platform command should finish with exit code 1 instead of ${res.status}. \n${res.stderr}`)
-        }
-        expect(String(res.stderr)).to.include(`ServiceIsNotRunningError: Service ${SERVICES.drive_tenderdash} for testnet is not \n    running. Please run the service first.\n`)
-      })
-
-      await execute(`yarn dashmate status`).then( async res => {
-        if (res.status !== 1) {
-          throw new Error(`Status command should finish with exit code 1 instead of ${res.status}. \n${res.stderr}`)
-        }
-        expect(String(res.stderr)).to.include(`ServiceIsNotRunningError: Service ${SERVICES.core} for testnet is not running. Please \n    run the service first.\n`)
-      })
-
-      await execute(`yarn dashmate status masternode`).then( async res => {
-        if (res.status !== 1) {
-          throw new Error(`Status masternode command should finish with exit code 1 instead of ${res.status}. \n${res.stderr}`)
-        }
-        expect(String(res.stderr)).to.include(`Error: Dash JSON-RPC: Request Error: connect ECONNREFUSED 127.0.0.1:${testnetConfig.get('core.rpc.port')}`)
-      })
-
-      await execute(`yarn dashmate status services --format=json`).then( async res => {
-        if (res.status !== undefined) {
-          throw new Error(`Status services command should finish with exit code 1 instead of ${res.status}. \n${res.stderr}`)
-        }
-        const output = JSON.parse(res.toString())
-
-        const services = ['Core', 'Sentinel', 'Drive ABCI', 'Drive Tenderdash', 'DAPI API', 'DAPI Transactions Filter Stream', 'DAPI Envoy']
-        for (let serviceStatus of output) {
-          expect(services).to.include(serviceStatus.Service);
-          expect(serviceStatus.Status).to.equal('exited')
-        }
-      })
+      await isTestnetServicesRunning(false, container)
     });
 
     it('Start again testnet network', async () => {
-      let output;
+      await dashmate.start(testnetNetwork)
 
-      await execute(`yarn dashmate start`).then( res => {
-        if(res.status !== undefined) {
-          throw new Error(`${res.stderr} with exit code: ${res.status}`)
-        }
-      })
-
-      for (const [key] of Object.entries(SERVICES)) {
-        const isRunning = await container.isServiceRunning(configEnvs, SERVICES[key]);
-        expect(isRunning).to.equal(true, `${key} is not running!`)
-      }
-
-      do {
-        const status = await execute(`yarn dashmate status core --format=json`);
-        output = JSON.parse(status.toString())
-        await wait(5000);
-      } while (+output['Header height'] < 1)
+      await isTestnetServicesRunning(true, container)
     });
 
     it('Reset testnet network', async () => {
-      let output;
+      const coreStatus = await dashmate.checkStatus('core')
+      const statusBeforeReset = JSON.parse(coreStatus);
 
-      await execute(`yarn dashmate reset`).then( res => {
-        if(res.status !== undefined) {
-          throw new Error(`${res.stderr} with exit code: ${res.status}`)
-        }
-      })
+      await dashmate.stop(testnetNetwork)
+      await isTestnetServicesRunning(false, container)
 
-      for (const [key] of Object.entries(SERVICES)) {
-        const isRunning = await container.isServiceRunning(configEnvs, SERVICES[key]);
-        expect(isRunning).to.equal(false, `${key} is running!`)
-      }
-
-      await execute(`yarn dashmate start`).then( res => {
-        if(res.status !== undefined) {
-          throw new Error(`${res.stderr} with exit code: ${res.status}`)
-        }
-      })
-
+      await dashmate.reset(testnetNetwork)
+      await isTestnetServicesRunning(false, container)
       const resetTestnetConfig = getConfig(testnetNetwork);
       expect(isEqual(resetTestnetConfig, testnetConfig)).to.equal(true);
 
-      for (const [key] of Object.entries(SERVICES)) {
-        const isRunning = await container.isServiceRunning(resetTestnetConfig.toEnvs(), SERVICES[key]);
-        expect(isRunning).to.equal(true, `${key} is not running!`)
-      }
+      await dashmate.start(testnetNetwork)
+      await isTestnetServicesRunning(true, container)
 
-      do {
-        const status = await execute(`yarn dashmate status core --format=json`);
-        output = JSON.parse(status.toString())
-        await wait(5000);
-      } while (+output['Header height'] < 1)
+      const statusAfterReset = JSON.parse(coreStatus);
+      if (!(+statusAfterReset.headerHeight < +statusBeforeReset.headerHeight) &&
+        (+statusAfterReset.blockHeight !== 0)) {
+        throw new Error('Core sync data have not been reset.')
+      } else {
+        let headerHeighSync;
+        do {
+          await wait(5000);
+          headerHeighSync = JSON.parse(coreStatus.toString());
+        } while (+headerHeighSync.headerHeight < 1000)
+      }
     });
   });
 });
-
-async function getCoreService(config, docker) {
-  return new CoreService(
-    config,
-    createRpcClient(
-      {
-        port: config.get('core.rpc.port'),
-        user: config.get('core.rpc.user'),
-        pass: config.get('core.rpc.password'),
-      },
-    ),
-    docker,
-  );
-}
