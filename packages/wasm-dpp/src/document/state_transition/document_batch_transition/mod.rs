@@ -4,12 +4,12 @@ use dpp::{
         state_transition::documents_batch_transition::{self, property_names},
         DocumentsBatchTransition,
     },
-    prelude::{DataContract, Document, DocumentTransition, Identifier},
+    prelude::{DataContract, DocumentTransition, Identifier},
     state_transition::{
         StateTransitionConvert, StateTransitionIdentitySigned, StateTransitionLike,
         StateTransitionType,
     },
-    util::json_value::{JsonValueExt, ReplaceWith},
+    util::json_value::JsonValueExt,
 };
 use js_sys::{Array, Reflect};
 use serde::{Deserialize, Serialize};
@@ -22,7 +22,9 @@ use crate::{
     document_batch_transition::document_transition::DocumentTransitionWasm,
     identifier::IdentifierWrapper,
     lodash::lodash_set,
-    utils::{convert_identifiers_to_bytes_without_failing, IntoWasm, ToSerdeJSONExt, WithJsError},
+    utils::{
+        replace_identifiers_with_bytes_without_failing, IntoWasm, ToSerdeJSONExt, WithJsError,
+    },
     IdentityPublicKeyWasm, StateTransitionExecutionContextWasm,
 };
 pub mod apply_document_batch_transition;
@@ -59,7 +61,7 @@ impl DocumentsBatchTransitionWASM {
         }
 
         let mut batch_transition_value = js_raw_transition.with_serde_to_json_value()?;
-        convert_identifiers_to_bytes_without_failing(
+        replace_identifiers_with_bytes_without_failing(
             &mut batch_transition_value,
             DocumentsBatchTransition::identifiers_property_paths(),
         );
@@ -68,7 +70,7 @@ impl DocumentsBatchTransitionWASM {
             batch_transition_value.get_mut(documents_batch_transition::property_names::TRANSITIONS)
         {
             for t in transitions {
-                convert_identifiers_to_bytes_without_failing(
+                replace_identifiers_with_bytes_without_failing(
                     t,
                     document_base_transition::IDENTIFIER_FIELDS,
                 );

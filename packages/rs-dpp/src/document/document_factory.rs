@@ -62,7 +62,6 @@ pub struct DocumentFactory<ST> {
     data_contract_fetcher_and_validator: DataContractFetcherAndValidator<ST>,
 }
 
-// TODO rename into documentCreateOptions and move to the top
 #[derive(Debug, Copy, Clone, Serialize, Deserialize, Default)]
 #[serde(rename_all = "camelCase")]
 pub struct FactoryOptions {

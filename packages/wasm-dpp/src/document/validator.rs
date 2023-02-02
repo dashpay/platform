@@ -1,20 +1,10 @@
+use dpp::document::document_validator::DocumentValidator;
 use std::sync::Arc;
-
-use dpp::{
-    document::{document_validator::DocumentValidator, property_names, IDENTIFIER_FIELDS},
-    prelude::DataContract,
-    util::json_value::{JsonValueExt, ReplaceWith},
-};
-
-use serde_json::Value;
 use wasm_bindgen::prelude::*;
 
 use crate::{
-    raw_document_from_js_value,
-    utils::{ToSerdeJSONExt, WithJsError},
-    validation::ValidationResultWasm,
-    version::ProtocolVersionValidatorWasm,
-    DataContractWasm,
+    raw_document_from_js_value, utils::WithJsError, validation::ValidationResultWasm,
+    version::ProtocolVersionValidatorWasm, DataContractWasm,
 };
 
 #[derive(Clone)]

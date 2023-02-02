@@ -5,10 +5,7 @@ use dpp::{
         self, document_create_transition, DocumentCreateTransition, DocumentTransitionObjectLike,
     },
     prelude::{DataContract, Identifier},
-    util::{
-        json_schema::JsonSchemaExt,
-        json_value::{JsonValueExt, ReplaceWith},
-    },
+    util::{json_schema::JsonSchemaExt, json_value::JsonValueExt},
 };
 use serde::Serialize;
 use wasm_bindgen::prelude::*;
@@ -19,7 +16,7 @@ use crate::{
     document_batch_transition::document_transition::convert_to_object,
     identifier::IdentifierWrapper,
     lodash::lodash_set,
-    utils::{convert_identifiers_to_bytes_without_failing, ToSerdeJSONExt, WithJsError},
+    utils::{replace_identifiers_with_bytes_without_failing, ToSerdeJSONExt, WithJsError},
     BinaryType, DataContractWasm,
 };
 
@@ -57,7 +54,7 @@ impl DocumentCreateTransitionWasm {
         let (identifier_paths, _) = data_contract
             .get_identifiers_and_binary_paths(document_type)
             .with_js_error()?;
-        convert_identifiers_to_bytes_without_failing(
+        replace_identifiers_with_bytes_without_failing(
             &mut value,
             identifier_paths
                 .into_iter()

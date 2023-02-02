@@ -9,17 +9,16 @@ use dpp::{
         fetch_and_validate_data_contract::DataContractFetcherAndValidator,
     },
     prelude::Document,
-    state_repository,
-    util::json_value::{JsonValueExt, ReplaceWith},
 };
 use wasm_bindgen::prelude::*;
 
 use crate::{
-    console_log,
     document::document_data_to_bytes,
     identifier::identifier_from_js_value,
     state_repository::{ExternalStateRepositoryLike, ExternalStateRepositoryLikeWrapper},
-    utils::{convert_identifiers_to_bytes_without_failing, IntoWasm, ToSerdeJSONExt, WithJsError},
+    utils::{
+        replace_identifiers_with_bytes_without_failing, IntoWasm, ToSerdeJSONExt, WithJsError,
+    },
     DataContractWasm, DocumentWasm, DocumentsBatchTransitionWASM,
 };
 
@@ -142,7 +141,7 @@ impl DocumentFactoryWASM {
         } else {
             Default::default()
         };
-        convert_identifiers_to_bytes_without_failing(
+        replace_identifiers_with_bytes_without_failing(
             &mut raw_document,
             document::IDENTIFIER_FIELDS,
         );

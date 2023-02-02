@@ -213,7 +213,7 @@ pub fn convert_number_to_u64(js_number: js_sys::Number) -> Result<u64, anyhow::E
     bail!("the value is not a number")
 }
 
-pub(crate) fn convert_identifiers_to_bytes_without_failing<'a>(
+pub(crate) fn replace_identifiers_with_bytes_without_failing<'a>(
     value: &mut Value,
     paths: impl IntoIterator<Item = &'a str>,
 ) {

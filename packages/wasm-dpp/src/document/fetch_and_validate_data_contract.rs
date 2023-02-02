@@ -2,14 +2,13 @@ use dpp::{
     document::{self, fetch_and_validate_data_contract::fetch_and_validate_data_contract},
     prelude::DataContract,
     state_transition::state_transition_execution_context::StateTransitionExecutionContext,
-    util::json_value::{JsonValueExt, ReplaceWith},
     validation::ValidationResult,
 };
 use wasm_bindgen::prelude::*;
 
 use crate::{
     state_repository::{ExternalStateRepositoryLike, ExternalStateRepositoryLikeWrapper},
-    utils::{convert_identifiers_to_bytes_without_failing, ToSerdeJSONExt, WithJsError},
+    utils::{replace_identifiers_with_bytes_without_failing, ToSerdeJSONExt, WithJsError},
     validation::ValidationResultWasm,
     DataContractWasm,
 };
@@ -60,7 +59,10 @@ async fn fetch_and_validate_data_contract_inner(
     js_raw_document: &JsValue,
 ) -> Result<ValidationResultWasm, JsValue> {
     let mut document_value = js_raw_document.with_serde_to_json_value()?;
-    convert_identifiers_to_bytes_without_failing(&mut document_value, document::IDENTIFIER_FIELDS);
+    replace_identifiers_with_bytes_without_failing(
+        &mut document_value,
+        document::IDENTIFIER_FIELDS,
+    );
 
     // TODO! remove the context. The the providing the context in state repository should be optional
     let ctx = StateTransitionExecutionContext::default();

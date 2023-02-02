@@ -5,8 +5,6 @@ use wasm_bindgen::prelude::*;
 
 use dpp::metadata::Metadata;
 
-use crate::utils::ToSerdeJSONExt;
-
 #[wasm_bindgen(js_name=Metadata)]
 #[derive(Debug)]
 pub struct MetadataWasm(Metadata);

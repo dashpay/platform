@@ -1,9 +1,6 @@
-use dpp::{
-    document::{
-        document_transition::{document_base_transition, document_create_transition},
-        validation::basic::find_duplicates_by_indices::find_duplicates_by_indices,
-    },
-    util::json_value::{JsonValueExt, ReplaceWith},
+use dpp::document::{
+    document_transition::{document_base_transition, document_create_transition},
+    validation::basic::find_duplicates_by_indices::find_duplicates_by_indices,
 };
 use itertools::Itertools;
 use js_sys::Array;
@@ -12,7 +9,7 @@ use wasm_bindgen::prelude::*;
 
 use crate::{
     document_batch_transition::document_transition::convert_to_object,
-    utils::{convert_identifiers_to_bytes_without_failing, ToSerdeJSONExt, WithJsError},
+    utils::{replace_identifiers_with_bytes_without_failing, ToSerdeJSONExt, WithJsError},
     DataContractWasm,
 };
 
@@ -25,7 +22,7 @@ pub fn find_duplicates_by_indices_wasm(
         .iter()
         .map(|t| {
             t.with_serde_to_json_value().map(|mut v| {
-                convert_identifiers_to_bytes_without_failing(
+                replace_identifiers_with_bytes_without_failing(
                     &mut v,
                     document_base_transition::IDENTIFIER_FIELDS,
                 );

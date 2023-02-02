@@ -14,7 +14,7 @@ use crate::buffer::Buffer;
 use crate::errors::RustConversionError;
 use crate::identifier::{identifier_from_js_value, IdentifierWrapper};
 use crate::lodash::lodash_set;
-use crate::utils::{convert_identifiers_to_bytes_without_failing, ToSerdeJSONExt};
+use crate::utils::{replace_identifiers_with_bytes_without_failing, ToSerdeJSONExt};
 use crate::utils::{try_to_u64, WithJsError};
 use crate::with_js_error;
 use crate::{DataContractWasm, MetadataWasm};
@@ -402,7 +402,7 @@ pub(crate) fn raw_document_from_js_value(
         .get_identifiers_and_binary_paths(document_type)
         .with_js_error()?;
 
-    convert_identifiers_to_bytes_without_failing(
+    replace_identifiers_with_bytes_without_failing(
         &mut raw_document,
         identifier_paths.into_iter().chain(IDENTIFIER_FIELDS),
     );
