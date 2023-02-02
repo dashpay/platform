@@ -197,9 +197,11 @@ impl Platform {
         let mut drive_operations: Vec<DriveOperationType> = vec![];
 
         // Get 16 latest withdrawal transactions from the queue
-        let withdrawal_transactions = self
-            .drive
-            .dequeue_withdrawal_transactions(WITHDRAWAL_TRANSACTIONS_QUERY_LIMIT, transaction)?;
+        let withdrawal_transactions = self.drive.dequeue_withdrawal_transactions(
+            WITHDRAWAL_TRANSACTIONS_QUERY_LIMIT,
+            transaction,
+            &mut drive_operations,
+        )?;
 
         // Appending request_height and quorum_hash to withdrwal transaction
         // and pass it to JS Drive for singing and broadcasting
@@ -449,7 +451,7 @@ impl Platform {
 
         let latest_withdrawal_index = self
             .drive
-            .fetch_latest_withdrawal_transaction_index(transaction)?;
+            .remove_latest_withdrawal_transaction_index(transaction)?;
 
         for (i, document) in documents.iter().enumerate() {
             let output_script = document
@@ -534,7 +536,7 @@ mod tests {
         contracts::withdrawals_contract,
         tests::fixtures::{get_withdrawal_document_fixture, get_withdrawals_data_contract_fixture},
     };
-    use drive::{common::helpers::setup::setup_document, rpc::core::MockCoreRPCLike};
+    use drive::{rpc::core::MockCoreRPCLike, tests::helpers::setup::setup_document};
     use serde_json::json;
 
     use crate::common::helpers::setup::setup_system_data_contract;

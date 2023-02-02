@@ -43,7 +43,9 @@ use serde::{Deserialize, Serialize};
 use serde_json::json;
 
 use drive::common;
-use drive::common::helpers::setup::setup_drive;
+
+use drive::tests::helpers::setup::setup_drive;
+
 use drive::contract::Contract;
 use drive::drive::batch::GroveDbOpBatch;
 use drive::drive::config::DriveConfig;

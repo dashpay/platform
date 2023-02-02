@@ -234,9 +234,9 @@ impl Drive {
 
 #[cfg(test)]
 mod tests {
-    use crate::common::helpers::setup::setup_drive;
     use crate::drive::block_info::BlockInfo;
     use crate::drive::flags::StorageFlags;
+    use crate::tests::helpers::setup::setup_drive;
     use dpp::identity::Identity;
 
     #[test]

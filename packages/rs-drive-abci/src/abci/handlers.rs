@@ -120,6 +120,9 @@ impl TenderdashAbci for Platform {
             epoch_info: epoch_info.clone(),
         };
 
+        // If last synced Core block height is not set instead of scanning
+        // number of blocks for asset unlock transactions scan only one
+        // on Core chain locked height by setting last_synced_core_height to the same value
         let last_synced_core_height = if request.last_synced_core_height == 0 {
             block_execution_context.block_info.core_chain_locked_height
         } else {

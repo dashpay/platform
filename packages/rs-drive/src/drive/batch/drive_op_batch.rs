@@ -32,9 +32,10 @@ use crate::drive::block_info::BlockInfo;
 use crate::drive::flags::StorageFlags;
 use crate::drive::grove_operations::BatchDeleteApplyType;
 use crate::drive::identity::withdrawals::paths::{
-    get_withdrawal_root_path, get_withdrawal_transactions_expired_ids_path,
-    get_withdrawal_transactions_expired_ids_path_as_u8, get_withdrawal_transactions_queue_path,
-    WithdrawalTransaction, WITHDRAWAL_TRANSACTIONS_COUNTER_ID,
+    get_withdrawal_root_path_vec, get_withdrawal_transactions_expired_ids_path,
+    get_withdrawal_transactions_expired_ids_path_vec, get_withdrawal_transactions_queue_path,
+    get_withdrawal_transactions_queue_path_vec, WithdrawalTransaction,
+    WITHDRAWAL_TRANSACTIONS_COUNTER_ID,
 };
 use crate::drive::object_size_info::DocumentInfo::{
     DocumentRefAndSerialization, DocumentRefWithoutSerialization,
@@ -529,12 +530,6 @@ impl DriveOperationConverter for DocumentOperationType<'_> {
                                 storage_flags,
                             } = update_operation;
 
-                            let document_cbor = document.to_cbor();
-
-                            // If serialized document not submitted updates are not performed
-                            // TODO: figure that out
-                            let serialized_document = serialized_document.or(Some(&document_cbor));
-
                             let document_info =
                                 if let Some(serialized_document) = serialized_document {
                                     DocumentRefAndSerialization((
@@ -622,6 +617,11 @@ pub enum WithdrawalOperationType<'a> {
         /// transaction id bytes
         transactions: &'a [WithdrawalTransaction],
     },
+    /// Delete withdrawal
+    DeleteWithdrawalTransaction {
+        /// withdrawal transaction tuple with id and bytes
+        id: Vec<u8>,
+    },
 }
 
 impl DriveOperationConverter for WithdrawalOperationType<'_> {
@@ -640,7 +640,7 @@ impl DriveOperationConverter for WithdrawalOperationType<'_> {
 
                 let index_bytes = index.to_be_bytes();
 
-                let path = get_withdrawal_transactions_expired_ids_path();
+                let path = get_withdrawal_transactions_expired_ids_path_vec();
 
                 drive.batch_insert(
                     crate::drive::object_size_info::PathKeyElementInfo::PathKeyElement::<'_, 1>((
@@ -656,7 +656,7 @@ impl DriveOperationConverter for WithdrawalOperationType<'_> {
             WithdrawalOperationType::DeleteExpiredIndex { key } => {
                 let mut drive_operations = vec![];
 
-                let path: [&[u8]; 2] = get_withdrawal_transactions_expired_ids_path_as_u8();
+                let path: [&[u8]; 2] = get_withdrawal_transactions_expired_ids_path();
 
                 drive.batch_delete(
                     path,
@@ -673,7 +673,7 @@ impl DriveOperationConverter for WithdrawalOperationType<'_> {
             WithdrawalOperationType::UpdateIndexCounter { index } => {
                 let mut drive_operations = vec![];
 
-                let path = get_withdrawal_root_path();
+                let path = get_withdrawal_root_path_vec();
 
                 drive.batch_insert(
                     crate::drive::object_size_info::PathKeyElementInfo::PathKeyElement::<'_, 1>((
@@ -689,7 +689,7 @@ impl DriveOperationConverter for WithdrawalOperationType<'_> {
             WithdrawalOperationType::InsertTransactions { transactions } => {
                 let mut drive_operations = vec![];
 
-                let path = get_withdrawal_transactions_queue_path();
+                let path = get_withdrawal_transactions_queue_path_vec();
 
                 for (id, bytes) in transactions {
                     drive.batch_insert(
@@ -699,6 +699,24 @@ impl DriveOperationConverter for WithdrawalOperationType<'_> {
                         &mut drive_operations,
                     )?;
                 }
+
+                Ok(drive_operations)
+            }
+            WithdrawalOperationType::DeleteWithdrawalTransaction { id } => {
+                let mut drive_operations = vec![];
+
+                let path = get_withdrawal_transactions_queue_path();
+
+                drive.batch_delete(
+                    path,
+                    &id,
+                    // we know that we are not deleting a subtree
+                    BatchDeleteApplyType::StatefulBatchDelete {
+                        is_known_to_be_subtree_with_sum: Some((false, false)),
+                    },
+                    transaction,
+                    &mut drive_operations,
+                )?;
 
                 Ok(drive_operations)
             }

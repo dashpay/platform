@@ -2212,7 +2212,7 @@ impl PlatformWrapper {
             let result = transaction_result.and_then(|transaction_arg| {
                 platform
                     .drive
-                    .fetch_latest_withdrawal_transaction_index(transaction_arg)
+                    .remove_latest_withdrawal_transaction_index(transaction_arg)
                     .map_err(|err| err.to_string())
             });
 

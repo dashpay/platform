@@ -4,7 +4,7 @@ use serde_json::json;
 
 use crate::{
     drive::Drive,
-    error::{drive::DriveError, Error},
+    error::{drive::DriveError, Error}, query::DriveQuery,
 };
 
 impl Drive {
@@ -23,6 +23,8 @@ impl Drive {
                 [withdrawals_contract::property_names::CREATE_AT, "desc"],
             ]
         });
+
+        let dq = DriveQuery { contract: todo!(), document_type: todo!(), internal_clauses: todo!(), offset: todo!(), limit: todo!(), order_by: todo!(), start_at: todo!(), start_at_included: todo!(), block_time: todo!() };
 
         let query_cbor = serializer::value_to_cbor(query_value, None)?;
 
@@ -102,8 +104,8 @@ mod tests {
     use dpp::tests::fixtures::get_withdrawals_data_contract_fixture;
     use serde_json::json;
 
-    use crate::common::helpers::setup::setup_drive_with_initial_state_structure;
-    use crate::common::helpers::setup::{setup_document, setup_system_data_contract};
+    use crate::tests::helpers::setup::setup_drive_with_initial_state_structure;
+    use crate::tests::helpers::setup::{setup_document, setup_system_data_contract};
 
     mod fetch_withdrawal_documents_by_status {
 

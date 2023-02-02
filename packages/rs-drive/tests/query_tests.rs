@@ -46,7 +46,6 @@ use serde_json::json;
 use tempfile::TempDir;
 
 use drive::common;
-use drive::common::helpers::setup::setup_drive;
 use drive::common::setup_contract;
 use drive::drive::batch::GroveDbOpBatch;
 use drive::drive::config::DriveConfig;
@@ -57,6 +56,8 @@ use drive::drive::object_size_info::{DocumentAndContractInfo, OwnedDocumentInfo}
 use drive::drive::Drive;
 use drive::error::{query::QueryError, Error};
 use drive::query::DriveQuery;
+#[cfg(test)]
+use drive::tests::helpers::setup::setup_drive;
 
 use dpp::data_contract::validation::data_contract_validator::DataContractValidator;
 use dpp::document::document_stub::DocumentStub;
