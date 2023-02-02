@@ -144,7 +144,7 @@ describe('Document', () => {
       expect(result.$dataContractId.toBuffer()).to.deep.equal(dataContract.getId().toBuffer());
       expect(result.$id.toBuffer()).to.deep.equal(document.getId().toBuffer());
       expect(result.$ownerId.toBuffer()).to.deep.equal(getDocumentsFixture.ownerId.toBuffer());
-      expect(result.identifierField.toBuffer()).to.deep.equal(document.get("identifierField").toBuffer());
+      expect(result.identifierField.toBuffer()).to.deep.equal(document.get('identifierField').toBuffer());
       expect(result.$protocolVersion).to.deep.equal(document.getProtocolVersion());
       expect(result.$revision).to.deep.equal(document.getRevision());
       expect(result.$type).to.deep.equal(document.getType());

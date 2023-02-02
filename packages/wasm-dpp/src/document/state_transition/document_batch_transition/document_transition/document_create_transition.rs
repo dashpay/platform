@@ -19,7 +19,7 @@ use crate::{
     document_batch_transition::document_transition::convert_to_object,
     identifier::IdentifierWrapper,
     lodash::lodash_set,
-    utils::{ToSerdeJSONExt, WithJsError},
+    utils::{convert_identifiers_to_bytes_without_failing, ToSerdeJSONExt, WithJsError},
     BinaryType, DataContractWasm,
 };
 
@@ -57,12 +57,11 @@ impl DocumentCreateTransitionWasm {
         let (identifier_paths, _) = data_contract
             .get_identifiers_and_binary_paths(document_type)
             .with_js_error()?;
-        // Allow to fail as it could be a Buffer or Identifier
-        let _ = value.replace_identifier_paths(
+        convert_identifiers_to_bytes_without_failing(
+            &mut value,
             identifier_paths
                 .into_iter()
                 .chain(document_create_transition::IDENTIFIER_FIELDS),
-            ReplaceWith::Bytes,
         );
         let transition =
             DocumentCreateTransition::from_raw_object(value, data_contract).with_js_error()?;

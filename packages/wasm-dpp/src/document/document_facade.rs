@@ -1,15 +1,10 @@
 use std::sync::Arc;
 
-use dpp::{
-    consensus::basic::BasicError, data_contract::errors::DataContractError, prelude::Document,
-};
 use wasm_bindgen::{prelude::*, JsValue};
 
 use crate::{
-    console_log, convert_identifiers_in_document_to_bytes,
     fetch_and_validate_data_contract::DataContractFetcherAndValidatorWasm,
-    raw_document_from_js_value,
-    utils::{get_class_name, IntoWasm, ToSerdeJSONExt, WithJsError},
+    utils::{get_class_name, IntoWasm},
     validation::ValidationResultWasm,
     DataContractWasm, DocumentFactoryWASM, DocumentValidatorWasm, DocumentWasm,
     DocumentsBatchTransitionWASM,

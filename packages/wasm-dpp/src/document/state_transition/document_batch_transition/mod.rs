@@ -22,7 +22,7 @@ use crate::{
     document_batch_transition::document_transition::DocumentTransitionWasm,
     identifier::IdentifierWrapper,
     lodash::lodash_set,
-    utils::{IntoWasm, ToSerdeJSONExt, WithJsError},
+    utils::{convert_identifiers_to_bytes_without_failing, IntoWasm, ToSerdeJSONExt, WithJsError},
     IdentityPublicKeyWasm, StateTransitionExecutionContextWasm,
 };
 pub mod apply_document_batch_transition;
@@ -59,19 +59,18 @@ impl DocumentsBatchTransitionWASM {
         }
 
         let mut batch_transition_value = js_raw_transition.with_serde_to_json_value()?;
-
-        // Allow to fail as, the identifier could be type of `Identifier` of `Buffer`
-        let _ = batch_transition_value.replace_identifier_paths(
+        convert_identifiers_to_bytes_without_failing(
+            &mut batch_transition_value,
             DocumentsBatchTransition::identifiers_property_paths(),
-            ReplaceWith::Bytes,
         );
+
         if let Some(Value::Array(ref mut transitions)) =
             batch_transition_value.get_mut(documents_batch_transition::property_names::TRANSITIONS)
         {
             for t in transitions {
-                let _ = t.replace_identifier_paths(
+                convert_identifiers_to_bytes_without_failing(
+                    t,
                     document_base_transition::IDENTIFIER_FIELDS,
-                    ReplaceWith::Bytes,
                 );
             }
         }

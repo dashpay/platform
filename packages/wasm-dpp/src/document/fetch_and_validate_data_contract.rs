@@ -9,7 +9,7 @@ use wasm_bindgen::prelude::*;
 
 use crate::{
     state_repository::{ExternalStateRepositoryLike, ExternalStateRepositoryLikeWrapper},
-    utils::{ToSerdeJSONExt, WithJsError},
+    utils::{convert_identifiers_to_bytes_without_failing, ToSerdeJSONExt, WithJsError},
     validation::ValidationResultWasm,
     DataContractWasm,
 };
@@ -60,11 +60,7 @@ async fn fetch_and_validate_data_contract_inner(
     js_raw_document: &JsValue,
 ) -> Result<ValidationResultWasm, JsValue> {
     let mut document_value = js_raw_document.with_serde_to_json_value()?;
-
-    // Allow to fail as identifier can be type of Buffer  or Identifier
-    // We don't need to replace dynamic values because the function doesn't use them
-    let _ =
-        document_value.replace_identifier_paths(document::IDENTIFIER_FIELDS, ReplaceWith::Bytes);
+    convert_identifiers_to_bytes_without_failing(&mut document_value, document::IDENTIFIER_FIELDS);
 
     // TODO! remove the context. The the providing the context in state repository should be optional
     let ctx = StateTransitionExecutionContext::default();

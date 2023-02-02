@@ -14,15 +14,13 @@ const getDataContractFixture = require('@dashevo/dpp/lib/test/fixtures/getDataCo
 const getDocumentsFixture = require('@dashevo/dpp/lib/test/fixtures/getDocumentsFixture');
 
 const MissingDocumentTypeErrorJs = require('@dashevo/dpp/lib/errors/consensus/basic/document/MissingDocumentTypeError');
-
-const { default: loadWasmDpp } = require('../../../../dist');
-const { expectJsonSchemaError, expectValidationError } = require('../../../../lib/test/expect/expectError');
-
+const SomeConsensusError = require('@dashevo/dpp/lib/test/mocks/SomeConsensusError');
 const {
   expectValidationError: expectValidationErrorJs,
-  expectJsonSchemaError: expectJsonSchemaErrorJs,
 } = require('@dashevo/dpp/lib/test/expect/expectError');
-const SomeConsensusError = require('@dashevo/dpp/lib/test/mocks/SomeConsensusError');
+
+const { expectJsonSchemaError, expectValidationError } = require('../../../../lib/test/expect/expectError');
+const { default: loadWasmDpp } = require('../../../../dist');
 
 let DocumentValidator;
 let ProtocolVersionValidator;
@@ -48,7 +46,7 @@ describe('validateDocumentFactory', () => {
       ValidationResult,
       DataContract,
       InvalidDocumentTypeError,
-    } = await loadWasmDpp());;
+    } = await loadWasmDpp());
 
     const RE2 = await getRE2Class();
     const ajv = createAjv(RE2);
@@ -135,9 +133,8 @@ describe('validateDocumentFactory', () => {
           documentValidator.validate(rawDocument, dataContract);
         } catch (e) {
           // TODO - fix error when conversion errors are enabled
-          expect(e).to.equal("Error conversion not implemented: unable convert -1 to u64");
+          expect(e).to.equal('Error conversion not implemented: unable convert -1 to u64');
         }
-
       });
     });
 
@@ -229,7 +226,6 @@ describe('validateDocumentFactory', () => {
           // TODO - fix error when conversion errors are enabled
           expect(e).to.startsWith("the property '$type' doesn't exist");
         }
-
       });
 
       it('should be defined in Data Contract - Rust', async () => {
@@ -265,11 +261,10 @@ describe('validateDocumentFactory', () => {
         expect(dataContractJs.getDocumentSchemaRef).to.have.been.calledOnce();
       });
 
-      it('should throw an error if getDocumentSchemaRef throws error - Rust', function it() {
+      it('should throw an error if getDocumentSchemaRef throws error - Rust', () => {
         // the tess is impossible to trigger with the new wasm document validator
       });
     });
-
 
     describe('$revision', () => {
       it('should be present - Rust', async () => {
@@ -409,8 +404,6 @@ describe('validateDocumentFactory', () => {
 
         const [error] = result.getErrors();
 
-        console.log(error.constructor.name);
-
         expect(error.getInstancePath()).to.equal('/$ownerId/0');
         expect(error.getKeyword()).to.equal('type');
       });
@@ -456,7 +449,6 @@ describe('validateDocumentFactory', () => {
       expect(error.getInstancePath()).to.equal('/name');
       expect(error.getKeyword()).to.equal('type');
     });
-
 
     it('should return an error if the second document is not valid against Data Contract - Rust', async () => {
       // eslint-disable-next-line prefer-destructuring

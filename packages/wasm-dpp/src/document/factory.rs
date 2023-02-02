@@ -19,7 +19,7 @@ use crate::{
     document::document_data_to_bytes,
     identifier::identifier_from_js_value,
     state_repository::{ExternalStateRepositoryLike, ExternalStateRepositoryLikeWrapper},
-    utils::{IntoWasm, ToSerdeJSONExt, WithJsError},
+    utils::{convert_identifiers_to_bytes_without_failing, IntoWasm, ToSerdeJSONExt, WithJsError},
     DataContractWasm, DocumentWasm, DocumentsBatchTransitionWASM,
 };
 
@@ -142,13 +142,10 @@ impl DocumentFactoryWASM {
         } else {
             Default::default()
         };
-
-        // Errors are ignored. When `Buffer` crosses the WASM boundary it becomes an Array.
-        // When `Identifier` crosses the WASM boundary, it becomes a String. From perspective of JS
-        // `Identifier` and `Buffer` are used interchangeably, so we we can expect the replacing may fail when `Buffer` is provided
-        let _ = raw_document
-            .replace_identifier_paths(document::IDENTIFIER_FIELDS, ReplaceWith::Bytes)
-            .with_js_error();
+        convert_identifiers_to_bytes_without_failing(
+            &mut raw_document,
+            document::IDENTIFIER_FIELDS,
+        );
 
         let mut document = self
             .0

@@ -12,7 +12,7 @@ use wasm_bindgen::prelude::*;
 
 use crate::{
     document_batch_transition::document_transition::convert_to_object,
-    utils::{ToSerdeJSONExt, WithJsError},
+    utils::{convert_identifiers_to_bytes_without_failing, ToSerdeJSONExt, WithJsError},
     DataContractWasm,
 };
 
@@ -25,9 +25,9 @@ pub fn find_duplicates_by_indices_wasm(
         .iter()
         .map(|t| {
             t.with_serde_to_json_value().map(|mut v| {
-                let _ = v.replace_identifier_paths(
+                convert_identifiers_to_bytes_without_failing(
+                    &mut v,
                     document_base_transition::IDENTIFIER_FIELDS,
-                    ReplaceWith::Bytes,
                 );
                 v
             })

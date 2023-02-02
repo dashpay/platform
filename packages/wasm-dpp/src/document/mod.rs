@@ -14,8 +14,8 @@ use crate::buffer::Buffer;
 use crate::errors::RustConversionError;
 use crate::identifier::{identifier_from_js_value, IdentifierWrapper};
 use crate::lodash::lodash_set;
+use crate::utils::{convert_identifiers_to_bytes_without_failing, ToSerdeJSONExt};
 use crate::utils::{try_to_u64, WithJsError};
-use crate::utils::{with_serde_to_json_value, ToSerdeJSONExt};
 use crate::with_js_error;
 use crate::{DataContractWasm, MetadataWasm};
 
@@ -371,18 +371,6 @@ impl DocumentWasm {
     }
 }
 
-pub(crate) fn convert_identifiers_in_document_to_bytes<'a>(
-    raw_document: &mut Value,
-    additional_paths: impl Iterator<Item = &'a str>,
-) {
-    let _ = raw_document
-        .replace_identifier_paths(
-            additional_paths.chain(IDENTIFIER_FIELDS),
-            ReplaceWith::Bytes,
-        )
-        .with_js_error();
-}
-
 /// document's dynamic data, regardless they are identifiers or binary, they should
 /// be stored as arrays of int
 pub(crate) fn document_data_to_bytes(document: &mut Document) -> Result<(), JsValue> {
@@ -414,17 +402,12 @@ pub(crate) fn raw_document_from_js_value(
         .get_identifiers_and_binary_paths(document_type)
         .with_js_error()?;
 
-    // Errors are ignored. When `Buffer` crosses the WASM boundary it becomes an Array.
-    // When `Identifier` crosses the WASM boundary it becomes a String. From perspective of JS
-    // `Identifier` and `Buffer` are used interchangeably, so we we can expect the replacing may fail when `Buffer` is provided
-    let _ = raw_document
-        .replace_identifier_paths(
-            identifier_paths.into_iter().chain(IDENTIFIER_FIELDS),
-            ReplaceWith::Bytes,
-        )
-        .with_js_error();
-    // The binary paths are not being converted, because they always should be a `Buffer`. `Buffer` is always an Array
+    convert_identifiers_to_bytes_without_failing(
+        &mut raw_document,
+        identifier_paths.into_iter().chain(IDENTIFIER_FIELDS),
+    );
 
+    // The binary paths are not being converted, because they always should be a `Buffer`. `Buffer` is always an Array
     Ok(raw_document)
 }
 
