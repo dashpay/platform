@@ -33,13 +33,11 @@ describe('validateIdentityUpdateTransitionStateFactory', () => {
   let DuplicatedIdentityPublicKeyIdStateError;
   let StateTransitionExecutionContext;
   let IdentityUpdateTransitionStateValidator;
-  let IdentityPublicKeyInCreation;
 
   before(async () => {
     ({
       Identity,
       IdentityPublicKey,
-      IdentityPublicKeyInCreation,
       IdentityUpdateTransition,
       InvalidIdentityRevisionError,
       IdentityPublicKeyIsReadOnlyError,
