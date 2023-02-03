@@ -42,7 +42,7 @@ class TestDashmateClass {
       if (res.status !== undefined) {
         throw new Error(`${res.stderr} with exit code: ${res.status}`)
       }
-      console.log(res.toString()); //debug start logs
+      // console.log(res.toString()); debug start logs
     })
   }
 
@@ -113,14 +113,40 @@ class TestDashmateClass {
   /**
    * Get service status
    * @param {string} service - '', core, host, masternode, platform, services
+   * @param {boolean} allowErr - define if throw or return an error
    * @return {Promise<string>}
    */
-  async checkStatus(service) {
-    return await execute(`yarn dashmate status ${service} --format=json`).then(res => {
-      if (res.status !== undefined) {
-        throw new Error(`${res.stderr} with exit code: ${res.status}`)
+  async checkStatus(service, allowErr = false) {
+    return await execute(`yarn dashmate status ${service}`).then(res => {
+      if (!allowErr) {
+        if (res.status !== undefined) {
+          throw new Error(`${res.stderr} with exit code: ${res.status}`)
+        } else {
+          return res.toString();
+        }
+      } else {
+        return res.toString();
       }
-      return res.toString();
+    })
+  }
+
+  /**
+   * Get local status
+   * @param {string} command - status, list
+   * @param {boolean} allowErr - define if throw or return an error
+   * @return {Promise<string>}
+   */
+  async checkGroupStatus(command, allowErr = false) {
+    return await execute(`yarn dashmate group ${command}`).then(res => {
+      if (!allowErr) {
+        if (res.status !== undefined) {
+          throw new Error(`${res.stderr} with exit code: ${res.status}`)
+        } else {
+          return res.toString();
+        }
+      } else {
+        return res.toString();
+      }
     })
   }
 }

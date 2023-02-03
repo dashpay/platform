@@ -47,11 +47,8 @@ describe('Testnet dashmate', function main() {
     });
 
     after(async function () {
-      // await removeContainers(testnetConfig, container)
-      // await removeVolumes(testnetConfig, container)
-      // await testnetConfig.removeConfig(testnetNetwork);
-      // fs.unlinkSync(certificate.certificatePath);
-      // fs.unlinkSync(certificate.privKeyPath);
+      fs.unlinkSync(certificate.certificatePath);
+      fs.unlinkSync(certificate.privKeyPath);
     });
 
     it('Setup testnet nodes', async () => {

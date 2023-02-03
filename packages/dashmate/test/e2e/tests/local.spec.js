@@ -2,25 +2,25 @@ const Docker = require('dockerode');
 const StartedContainers = require('../../../src/docker/StartedContainers');
 const DockerCompose = require('../../../src/docker/DockerCompose');
 
-const { isGroupConfigExist, getGroupConfig } = require("../lib/manageConfig");
+const { isGroupConfigExist, getGroupConfig, isConfigExist} = require("../lib/manageConfig");
 const { removeContainers, removeVolumes, isGroupServicesRunning } = require("../lib/manageDockerData");
-const { core, platform } = require("../../../configs/system/base");
+const { core, platform, dashmate} = require("../../../configs/system/base");
 const fs = require("fs");
 const { expect } = require("chai");
 const { CONFIG_FILE_PATH } = require("../../../src/constants");
 const { EMPTY_LOCAL_CONFIG_FIELDS } = require("../lib/constants/configFields");
 const { execute } = require('../lib/runCommandInCli')
 const isEqual = require('lodash/isEqual');
+const TestDashmateClass = require("../lib/testDashmateClass");
+
 
 describe('Local dashmate', function main() {
   this.timeout(900000);
 
   describe('e2e local network', function () {
-    let container;
-    let localConfig;
-    const nodes = 3;
+    let container, localConfig, nodes;
     const localNetwork = 'local'
-    const minerInterval = '2.5m'
+    const dashmate = new TestDashmateClass();
 
     before(function () {
       const dockerode = new Docker();
@@ -28,18 +28,10 @@ describe('Local dashmate', function main() {
       container = new DockerCompose(dockerode, startedContainers);
     });
 
-    after(async function () {
-      await removeContainers(localNetwork, container)
-      await removeVolumes(localNetwork, container)
-      await localConfig.removeConfig(localNetwork);
-    });
-
     it('Setup local group nodes', async () => {
-      await execute(`dashmate setup ${localNetwork} --node-count=${nodes} --debug-logs --miner-interval=${minerInterval} --verbose`).then( res => {
-        if(res.status !== undefined) {
-          throw new Error(`${res.stderr} with exit code: ${res.status}`)
-        }
-      })
+      await dashmate.setupLocal(nodes = 3);
+
+      await isGroupServicesRunning(false, container)
 
       const isConfExist = await isGroupConfigExist(localNetwork)
       if (fs.existsSync(CONFIG_FILE_PATH) && isConfExist) {
@@ -58,34 +50,25 @@ describe('Local dashmate', function main() {
       //     }
       //   }
       // }
-
-      await isGroupServicesRunning(false, localConfig, container)
     });
 
     it('Start local group nodes', async () => {
-
-      await execute(`yarn dashmate group start --verbose`).then( res => {
-        if(res.status !== undefined) {
-          throw new Error(`${res.stderr} with exit code: ${res.status}`)
-        }
-      })
+      await dashmate.start(localNetwork)
 
       await isGroupServicesRunning(true, localConfig, container)
     });
 
     it('Check group list', async () => {
-      await execute(`yarn dashmate group list`).then( res => {
-        const data = res.toString();
+      const listOutput = await dashmate.checkGroupStatus('list');
 
-        let arr = []
-        for (let i = 0; i < nodes; i++){
-          arr.push(`local_${i + 1}`, `local node #${i + 1}`)
-        }
-        arr.push('local_seed', 'seed node for local network')
+      let arr = []
+      for (let i = 0; i < nodes; i++) {
+        arr.push(`local_${i + 1}`, `local node #${i + 1}`)
+      }
+      arr.push('local_seed', 'seed node for local network')
 
-        arr.forEach(node => {
-          expect(data).to.include(node, `List of group nodes does not contain expected ${node}! \n`);
-        })
+      arr.forEach(node => {
+        expect(listOutput).to.include(node, `List of group nodes does not contain expected ${node}! \n`);
       })
     });
 
@@ -93,111 +76,100 @@ describe('Local dashmate', function main() {
       const coreVersion = core.docker.image.replace(/\/|\(.*?\)|dashpay|dashd:|\-(.*)/g, '');
       const platformVersion = platform.drive.tenderdash.docker.image.replace(/\/|\(.*?\)|dashpay|tenderdash:/g, '')
 
-      await execute(`yarn dashmate group status --format=json`).then( res => {
-        const resString = res.toString();
-        const arrayOfResults = resString.split(/\n/)
-        arrayOfResults.pop();
+      const statusOutput = await dashmate.checkGroupStatus('list');
 
-        let output = arrayOfResults.map((n, index) => index % 2 === 0 ? n : JSON.parse(n));
+      const arrayOfResults = statusOutput.split(/\n/)
+      arrayOfResults.pop();
 
-        let node_index = 1;
-        for(let i = 0; i < output.length; i++) {
-          if(typeof output[i] === 'string') {
-            if(i === output.length - 2) {
-              expect(output[i]).to.be.equal('Node local_seed')
-              continue;
-            }
-            expect(output[i]).to.be.equal(`Node local_${node_index}`)
-            node_index++;
-          } else if(typeof output[i] === 'object') {
-            expect(output[i].Network).to.be.equal('regtest')
-            expect(output[i]['Core Version']).to.be.equal(coreVersion)
-            expect(output[i]['Core Status']).to.be.equal('running')
-            if(i === output.length - 1) { break }
-            expect(output[i]['Masternode Status']).to.be.equal('Ready')
-            expect(output[i]['Platform Version']).to.be.equal(platformVersion)
-            expect(output[i]['Platform Status']).to.be.equal('running')
-          } else {
-            throw new Error('Group status data conversion went wrong!')
+      let output = arrayOfResults.map((n, index) => index % 2 === 0 ? n : JSON.parse(n));
+
+      let node_index = 1;
+      for (let i = 0; i < output.length; i++) {
+        if (typeof output[i] === 'string') {
+          if (i === output.length - 2) {
+            expect(output[i]).to.be.equal('Node local_seed')
+            continue;
           }
+          expect(output[i]).to.be.equal(`Node local_${node_index}`)
+          node_index++;
+        } else if (typeof output[i] === 'object') {
+          expect(output[i].Network).to.be.equal('regtest')
+          expect(output[i]['Core Version']).to.be.equal(coreVersion)
+          expect(output[i]['Core Status']).to.be.equal('running')
+          if (i === output.length - 1) {
+            break
+          }
+          expect(output[i]['Masternode Status']).to.be.equal('Ready')
+          expect(output[i]['Platform Version']).to.be.equal(platformVersion)
+          expect(output[i]['Platform Status']).to.be.equal('running')
+        } else {
+          throw new Error('Group status data conversion went wrong!')
         }
-      });
+      }
     });
 
     it('Stop local group nodes', async () => {
-      await execute(`yarn dashmate group stop --verbose`).then( res => {
-        if(res.status !== undefined) {
-          throw new Error(`${res.stderr} with exit code: ${res.status}`)
-        }
-      })
+      await dashmate.stop(localNetwork)
 
-      const isConfigExist = await isGroupConfigExist(localNetwork)
-      expect(isConfigExist).to.equal(true);
+      await isGroupServicesRunning(false, container)
 
-      await isGroupServicesRunning(false, localConfig, container)
+      await dashmate.checkGroupStatus('status').then(async res => {
+        expect(res).to.be.empty()
+      });
     });
 
     it('Start again local group nodes', async () => {
-      await execute(`yarn dashmate group start --verbose`).then( res => {
-        if(res.status !== undefined) {
-          throw new Error(`${res.stderr} with exit code: ${res.status}`)
-        }
-      })
+      await dashmate.start(localNetwork)
 
-      await isGroupServicesRunning(true, localConfig, container)
+      await isGroupServicesRunning(true, container)
+
+      await dashmate.checkGroupStatus('status').then(async res => {
+        expect(res).to.not.be.empty()
+      });
     });
 
     it('Restart local group nodes', async () => {
-      await execute(`yarn dashmate group restart --verbose`).then( res => {
-        if (res.status !== undefined) {
-          throw new Error(`${res.stderr} with exit code: ${res.status}`)
-        }
-      })
+      await dashmate.restart(localNetwork)
 
-      const isConfigExist = await isGroupConfigExist(localNetwork)
-      expect(isConfigExist).to.equal(true);
-      if (isConfigExist) {
+      await isGroupServicesRunning(true, container)
+
+      await dashmate.checkGroupStatus('status').then(async res => {
+        expect(res).to.not.be.empty()
+      });
+
+      if (await isConfigExist(localNetwork)) {
         let restartConfig = await getGroupConfig(localNetwork);
-        expect(isEqual(restartConfig, localConfig)).to.equal(true, 'Local config is different after restart group of nodes');
+        expect(isEqual(restartConfig, localConfig)).to.equal(true, 'Local config is different after restart.');
       } else {
-        throw new Error('There is no local config after restart')
+        throw new Error('There is no local config after restart.')
       }
-      localConfig = await getGroupConfig(localNetwork)
-      await isGroupServicesRunning(true, localConfig, container)
     });
 
     it('Reset local group nodes', async () => {
-      await execute(`yarn dashmate group stop --verbose`).then( res => {
-        if(res.status !== undefined) {
-          throw new Error(`${res.stderr} with exit code: ${res.status}`)
-        }
-      })
-      await isGroupServicesRunning(false, localConfig, container)
+      const status = await dashmate.checkGroupStatus('status')
 
-      await execute(`yarn dashmate group reset --verbose`).then( res => {
-        if (res.status !== undefined) {
-          throw new Error(`${res.stderr} with exit code: ${res.status}`)
-        }
-      })
+      await dashmate.stop(localNetwork)
 
-      const isConfExist = await isGroupConfigExist(localNetwork)
+      await dashmate.reset(localNetwork)
+      await isGroupServicesRunning(false, container)
+      expect(status).to.be.empty()
 
-      if(!isConfExist) {
-        throw new Error(`${localNetwork} config file has been deleted!`)
+      if (await isConfigExist(localNetwork)) {
+        let resetConfig = await getGroupConfig(localNetwork);
+        expect(isEqual(resetConfig, localConfig)).to.equal(false, 'Local config is the same after restart.');
+      } else {
+        throw new Error('There is no local config after restart.')
       }
+    });
 
-      await isGroupServicesRunning(false, localConfig, container)
+    it('Start local group nodes after reset', async () => {
+      await dashmate.start(localNetwork)
 
-      await execute(`yarn dashmate group start --verbose`).then( res => {
-        if(res.status !== undefined) {
-          throw new Error(`${res.stderr} with exit code: ${res.status}`)
-        }
-      })
+      await isGroupServicesRunning(true, container)
 
-      const restartGroupConfig = await getGroupConfig(localNetwork);
-      expect(isEqual(restartGroupConfig, localConfig)).to.equal(true);
-
-      await isGroupServicesRunning(true, localConfig, container)
+      await dashmate.checkGroupStatus('status').then(async res => {
+        expect(res).to.not.be.empty()
+      });
     });
   });
 });
