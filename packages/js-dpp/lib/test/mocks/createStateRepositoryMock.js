@@ -28,7 +28,7 @@
  * }}
  */
 module.exports = function createStateRepositoryMock(sinonSandbox) {
-  return {
+  const stateRepository = {
     fetchDataContract: sinonSandbox.stub(),
     createDataContract: sinonSandbox.stub(),
     updateDataContract: sinonSandbox.stub(),
@@ -55,4 +55,8 @@ module.exports = function createStateRepositoryMock(sinonSandbox) {
     fetchLatestPlatformBlockHeader: sinonSandbox.stub(),
     calculateStorageFeeDistributionAmountAndLeftovers: sinonSandbox.stub(),
   };
+
+  Object.values(stateRepository).forEach((method) => method.resolves());
+
+  return stateRepository;
 };
