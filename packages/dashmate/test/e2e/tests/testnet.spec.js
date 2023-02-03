@@ -18,7 +18,7 @@ const { INSIGHT_URLs } = require('../lib/constants/insightLinks')
 const { SERVICES } = require('../lib/constants/services')
 const {STATUS} = require("../lib/constants/statusOutput");
 
-const { removeVolumes, removeContainers, isTestnetServicesRunning} = require("../lib/manageDockerData");
+const { isTestnetServicesRunning } = require("../lib/manageDockerData");
 
 const { execute } = require('../../e2e/lib/runCommandInCli')
 const { getConfig, isConfigExist } = require("../../e2e/lib/manageConfig");
@@ -157,10 +157,8 @@ describe('Testnet dashmate', function main() {
         return containerIds;
       })
 
-      //refactor to use SERVICES
-      const services = ['Core', 'Sentinel', 'Drive ABCI', 'Drive Tenderdash', 'DAPI API', 'DAPI Transactions Filter Stream', 'DAPI Envoy']
       for (let serviceData of output) {
-        expect(services).to.include(serviceData.service);
+        expect(Object.keys(SERVICES)).to.include(serviceData.service);
         expect(serviceData.status).to.equal('running');
         expect(listIDs).to.include(serviceData.containerId)
       }
@@ -169,10 +167,11 @@ describe('Testnet dashmate', function main() {
     it('Verify status overview before core sync process finish', async () => {
       const overviewStatus = await dashmate.checkStatus('') //status overview
       const output = JSON.parse(overviewStatus.toString())
+      const coreVersion = core.docker.image.replace(/\/|\(.*?\)|dashpay|dashd:|\-(.*)/g, '');
 
       expect(output.Network).to.equal(STATUS.test)
-      expect(output['Core Version']).to.equal('18.1.0')
-      // expect(output['Core Status']).to.include(ServiceStatusEnum.syncing)
+      expect(output['Core Version']).to.equal(coreVersion)
+      expect(output['Core Status']).to.include(ServiceStatusEnum.syncing)
       expect(output['Masternode Status']).to.equal(STATUS.masternode_status)
       expect(output['Platform Status']).to.equal(STATUS.platform_status)
     })

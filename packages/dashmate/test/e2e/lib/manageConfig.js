@@ -1,14 +1,11 @@
 const ConfigFileJsonRepository = require("../../../src/config/configFile/ConfigFileJsonRepository");
 const migrateConfigFile = require("../../../src/config/configFile/migrateConfigFile");
 
-
 /**
  * Return configuration file based on provided config name
- *
  * @param {string} configName
  * @return {Config[]}
  */
-
 async function getConfig(configName) {
   const configFileRepository = new ConfigFileJsonRepository(migrateConfigFile);
   const configFile = await configFileRepository.read();
@@ -22,6 +19,11 @@ async function getConfig(configName) {
   }
 }
 
+/**
+ * Check if config exist
+ * @param {string} configName
+ * @return {boolean}
+ */
 async function isConfigExist(configName) {
   const configFileRepository = new ConfigFileJsonRepository(migrateConfigFile);
   const configFile = await configFileRepository.read();

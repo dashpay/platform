@@ -2,14 +2,13 @@ const Docker = require('dockerode');
 const StartedContainers = require('../../../src/docker/StartedContainers');
 const DockerCompose = require('../../../src/docker/DockerCompose');
 
-const { isGroupConfigExist, getGroupConfig, isConfigExist} = require("../lib/manageConfig");
-const { removeContainers, removeVolumes, isGroupServicesRunning } = require("../lib/manageDockerData");
-const { core, platform, dashmate} = require("../../../configs/system/base");
+const { getConfig, isConfigExist} = require("../lib/manageConfig");
+const { isGroupServicesRunning } = require("../lib/manageDockerData");
+const { core, platform } = require("../../../configs/system/base");
 const fs = require("fs");
 const { expect } = require("chai");
 const { CONFIG_FILE_PATH } = require("../../../src/constants");
 const { EMPTY_LOCAL_CONFIG_FIELDS } = require("../lib/constants/configFields");
-const { execute } = require('../lib/runCommandInCli')
 const isEqual = require('lodash/isEqual');
 const TestDashmateClass = require("../lib/testDashmateClass");
 
@@ -33,9 +32,9 @@ describe('Local dashmate', function main() {
 
       await isGroupServicesRunning(false, container)
 
-      const isConfExist = await isGroupConfigExist(localNetwork)
+      const isConfExist = await isConfigExist(localNetwork)
       if (fs.existsSync(CONFIG_FILE_PATH) && isConfExist) {
-        localConfig = await getGroupConfig(localNetwork)
+        localConfig = await getConfig(localNetwork)
       } else {
         throw new Error('No configuration file in ' + CONFIG_FILE_PATH);
       }
@@ -138,7 +137,7 @@ describe('Local dashmate', function main() {
       });
 
       if (await isConfigExist(localNetwork)) {
-        let restartConfig = await getGroupConfig(localNetwork);
+        let restartConfig = await getConfig(localNetwork);
         expect(isEqual(restartConfig, localConfig)).to.equal(true, 'Local config is different after restart.');
       } else {
         throw new Error('There is no local config after restart.')
@@ -155,7 +154,7 @@ describe('Local dashmate', function main() {
       expect(status).to.be.empty()
 
       if (await isConfigExist(localNetwork)) {
-        let resetConfig = await getGroupConfig(localNetwork);
+        let resetConfig = await getConfig(localNetwork);
         expect(isEqual(resetConfig, localConfig)).to.equal(false, 'Local config is the same after restart.');
       } else {
         throw new Error('There is no local config after restart.')

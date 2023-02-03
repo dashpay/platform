@@ -27,6 +27,6 @@ const emptyTestnetConfigFields = [
   'PLATFORM_MASTERNODE_REWARD_SHARES_SECOND_PUBLIC_KEY']
 
 module.exports = {
-  EMPTY_LOCAL_CONFIG_FIELDS: emptyLocalConfigFields,
-  EMPTY_TESTNET_CONFIG_FIELDS: emptyTestnetConfigFields
+  // EMPTY_LOCAL_CONFIG_FIELDS: emptyLocalConfigFields,
+  // EMPTY_TESTNET_CONFIG_FIELDS: emptyTestnetConfigFields
 }

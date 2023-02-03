@@ -1,11 +1,11 @@
 const services = {
-  dapi_envoy1: 'dapi_envoy',
-  dapi_api: 'dapi_api',
-  drive_tenderdash: 'drive_tenderdash',
-  sentinel: 'sentinel',
-  drive_abci: 'drive_abci',
-  dapi_tx_filter_stream: 'dapi_tx_filter_stream',
-  core: 'core'
+  dapi_envoy: 'DAPI Envoy',
+  dapi_api: 'DAPI API',
+  drive_tenderdash: 'Drive Tenderdash',
+  sentinel: 'Sentinel',
+  drive_abci: 'Drive ABCI',
+  dapi_tx_filter_stream: 'DAPI Transactions Filter Stream',
+  core: 'Core'
 }
 
 module.exports = {

@@ -1,6 +1,11 @@
 const { getConfig } = require("./manageConfig");
 const { SERVICES } = require("./constants/services");
 
+/**
+ * Remove docker volumes
+ * @param {string} configName
+ * @param {object} dockerContainer
+ */
 async function removeVolumes(configName, dockerContainer) {
   const config = await getConfig(configName)
   const {COMPOSE_PROJECT_NAME: projectName} = config.toEnvs();
@@ -11,6 +16,11 @@ async function removeVolumes(configName, dockerContainer) {
     .map(async (volumeName) => await dockerContainer.getVolume(volumeName).remove());
 }
 
+/**
+ * Remove docker containers
+ * @param {string} configName
+ * @param {object} dockerContainer
+ */
 async function removeContainers(configName, dockerContainer) {
   const commandOptions = ['--services', '--status=running'];
 
@@ -20,6 +30,11 @@ async function removeContainers(configName, dockerContainer) {
   await dockerContainer.rm(config.toEnvs(), getContainers);
 }
 
+/**
+ * Check if containers running for group of local nodes
+ * @param {boolean} isRunning
+ * @param {object} dockerContainer
+ */
 async function isGroupServicesRunning(isRunning, dockerContainer) {
   let result;
   const configFile = await getConfig('local')
@@ -38,11 +53,15 @@ async function isGroupServicesRunning(isRunning, dockerContainer) {
   }
 }
 
+/**
+ * Check if containers running for testnet node
+ * @param {boolean} isRunning
+ * @param {object} dockerContainer
+ */
 async function isTestnetServicesRunning(isRunning, dockerContainer) {
   const configFile = await getConfig('testnet')
   for (const [key] of Object.entries(SERVICES)) {
     const result = await dockerContainer.isServiceRunning(configFile.toEnvs(), SERVICES[key]);
-    console.log(`${SERVICES[key]}: ${result}`)
     if (result !== isRunning) {
       throw new Error(`Running state for service ${key} should be ${isRunning}`)
     }
