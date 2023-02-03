@@ -37,7 +37,7 @@ function endBlockFactory(
    *    feeRefundsSum: number
    * } request.fees
    * @param {number} request.coreChainLockedHeight
-   * @param {BaseLogger} consensusLogger
+   * @param {BaseLogger} contextLogger
    * @return {Promise<{
    *   consensusParamUpdates: ConsensusParams,
    *   validatorSetUpdate: ValidatorSetUpdate,
@@ -46,7 +46,7 @@ function endBlockFactory(
    */
   async function endBlock(
     request,
-    consensusLogger,
+    contextLogger,
   ) {
     const {
       height,
@@ -61,11 +61,11 @@ function endBlockFactory(
       fees,
     };
 
-    consensusLogger.debug(rsRequest, 'Request RS Drive\'s BlockEnd method');
+    contextLogger.debug(rsRequest, 'Request RS Drive\'s BlockEnd method');
 
     const rsResponse = await rsAbci.blockEnd(rsRequest, true);
 
-    consensusLogger.debug(rsResponse, 'RS Drive\'s BlockEnd method response');
+    contextLogger.debug(rsResponse, 'RS Drive\'s BlockEnd method response');
 
     const { currentEpochIndex } = proposalBlockExecutionContext.getEpochInfo();
 
@@ -76,7 +76,7 @@ function endBlockFactory(
     } = fees;
 
     if (processingFee > 0 || storageFee > 0) {
-      consensusLogger.debug({
+      contextLogger.debug({
         currentEpochIndex,
         processingFee,
         storageFee,
@@ -85,20 +85,27 @@ function endBlockFactory(
     }
 
     if (rsResponse.proposersPaidCount) {
-      consensusLogger.debug({
+      contextLogger.debug({
         currentEpochIndex,
         proposersPaidCount: rsResponse.proposersPaidCount,
         paidEpochIndex: rsResponse.paidEpochIndex,
       }, `${rsResponse.proposersPaidCount} masternodes were paid for epoch #${rsResponse.paidEpochIndex}`);
     }
 
-    const consensusParamUpdates = await createConsensusParamUpdate(height, round, consensusLogger);
+    if (rsResponse.refundedEpochsCount) {
+      contextLogger.debug({
+        currentEpochIndex,
+        refundedEpochsCount: rsResponse.refundedEpochsCount,
+      }, `${rsResponse.refundedEpochsCount} epochs were refunded`);
+    }
+
+    const consensusParamUpdates = await createConsensusParamUpdate(height, round, contextLogger);
 
     const validatorSetUpdate = await rotateAndCreateValidatorSetUpdate(
       height,
       coreChainLockedHeight,
       round,
-      consensusLogger,
+      contextLogger,
     );
 
     const appHash = await groveDBStore.getRootHash({ useTransaction: true });

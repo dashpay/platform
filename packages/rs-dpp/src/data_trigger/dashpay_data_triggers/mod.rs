@@ -1,5 +1,4 @@
 use anyhow::{anyhow, bail};
-use serde_json::Value as JsonValue;
 
 use crate::{
     document::document_transition::DocumentTransition, errors::DataTriggerError,
@@ -41,13 +40,11 @@ where
 
     let core_height_created_at = data.get_i64(PROPERTY_CORE_HEIGHT_CREATED_AT)?;
 
-    let latest_block_header: JsonValue = context
+    let core_chain_locked_height = context
         .state_repository
-        .fetch_latest_platform_block_header()
-        .await?;
-
-    let core_chain_locked_height =
-        latest_block_header.get_i64(PROPERTY_CORE_CHAIN_LOCKED_HEIGHT)?;
+        .fetch_latest_platform_core_chain_locked_height()
+        .await?
+        .unwrap_or_default() as i64;
 
     let height_window_start = core_chain_locked_height - BLOCKS_SIZE_WINDOW;
     let height_window_end = core_chain_locked_height + BLOCKS_SIZE_WINDOW;

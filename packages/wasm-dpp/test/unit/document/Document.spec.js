@@ -1,36 +1,48 @@
-const DataContractFactory = require('@dashevo/dpp/lib/dataContract/DataContractFactory');
-
-const generateRandomIdentifier = require('@dashevo/dpp/lib/test/utils/generateRandomIdentifier');
-
+const JsDataContractFactory = require('@dashevo/dpp/lib/dataContract/DataContractFactory');
+const JsIdentifier = require('@dashevo/dpp/lib/identifier/Identifier');
+const JsDocument = require('@dashevo/dpp/lib/document/Document');
 const DocumentCreateTransition = require(
   '@dashevo/dpp/lib/document/stateTransition/DocumentsBatchTransition/documentTransition/DocumentCreateTransition',
 );
-
-const Identifier = require('@dashevo/dpp/lib/identifier/Identifier');
-
 const protocolVersion = require('@dashevo/dpp/lib/version/protocolVersion');
 const createDPPMock = require('@dashevo/dpp/lib/test/mocks/createDPPMock');
+const generateRandomIdentifier = require('@dashevo/dpp/lib/test/utils/generateRandomIdentifier');
+const lodash = require('lodash');
 
-const Document = require('@dashevo/dpp/lib/document/Document');
+const generateRandomIdentifierAsync = require('../../../lib/test/utils/generateRandomIdentifierAsync');
+const { default: loadWasmDpp } = require('../../../dist');
 
-const hash = require('@dashevo/dpp/lib/util/hash');
-const serializer = require('@dashevo/dpp/lib/util/serializer');
+let DataContractFactory;
+let DataContractValidator;
+let Identifier;
+let Document;
 
 describe('Document', () => {
-  let hashMock;
-  let encodeMock;
   let rawDocument;
   let document;
   let dataContract;
+  let documentJs;
+  let dataContractJs;
+  let rawDocumentJs;
+  let rawDocumentWithBuffers;
 
-  beforeEach(function beforeEach() {
+  // eslint-disable-next-line prefer-arrow-callback
+  beforeEach(async function beforeEach() {
+    ({
+      Identifier, Document, DataContractFactory, DataContractValidator,
+    } = await loadWasmDpp());
+
     const now = new Date().getTime();
+    const id = await generateRandomIdentifierAsync();
+    const jsId = new JsIdentifier(Buffer.from(id.toBuffer()));
 
-    const ownerId = generateRandomIdentifier().toBuffer();
+    const ownerId = await generateRandomIdentifierAsync();
+    const jsOwnerId = new JsIdentifier(Buffer.from(ownerId.toBuffer()));
+    const jsDataContractFactory = new JsDataContractFactory(createDPPMock(), () => { });
+    const dataContractValidator = new DataContractValidator();
+    const dataContractFactory = new DataContractFactory(1, dataContractValidator);
 
-    const dataContractFactory = new DataContractFactory(createDPPMock(), () => {});
-
-    dataContract = dataContractFactory.create(ownerId, {
+    const rawDataContract = {
       test: {
         properties: {
           name: {
@@ -45,7 +57,13 @@ describe('Document', () => {
                   identifier: {
                     type: 'array',
                     byteArray: true,
-                    contentMediaType: Identifier.MEDIA_TYPE,
+                    contentMediaType: JsIdentifier.MEDIA_TYPE,
+                    minItems: 32,
+                    maxItems: 32,
+                  },
+                  binaryData: {
+                    type: 'array',
+                    byteArray: true,
                     minItems: 32,
                     maxItems: 32,
                   },
@@ -55,11 +73,14 @@ describe('Document', () => {
           },
         },
       },
-    });
+    };
+
+    dataContract = dataContractFactory.create(ownerId.clone(), rawDataContract);
+    dataContractJs = jsDataContractFactory.create(jsOwnerId, rawDataContract);
 
     rawDocument = {
       $protocolVersion: protocolVersion.latestVersion,
-      $id: generateRandomIdentifier(),
+      $id: id,
       $type: 'test',
       $dataContractId: dataContract.getId(),
       $ownerId: ownerId,
@@ -68,32 +89,41 @@ describe('Document', () => {
       $updatedAt: now,
     };
 
+    rawDocumentWithBuffers = {
+      $protocolVersion: protocolVersion.latestVersion,
+      $id: id.toBuffer(),
+      $type: 'test',
+      $dataContractId: dataContract.getId().toBuffer(),
+      $ownerId: ownerId.toBuffer(),
+      $revision: DocumentCreateTransition.INITIAL_REVISION,
+      $createdAt: now,
+      $updatedAt: now,
+    };
+
     document = new Document(rawDocument, dataContract);
+    rawDocumentJs = lodash.cloneDeepWith(rawDocument);
+    rawDocumentJs.$id = jsId;
+    rawDocumentJs.$ownerId = jsOwnerId;
 
-    encodeMock = this.sinonSandbox.stub(serializer, 'encode');
-    hashMock = this.sinonSandbox.stub(hash, 'hash');
-  });
-
-  afterEach(() => {
-    encodeMock.restore();
-    hashMock.restore();
+    rawDocumentJs.$dataContractId = dataContractJs.id;
+    documentJs = new JsDocument(rawDocumentJs, dataContractJs);
+    documentJs.dataContractId = JsIdentifier.from(Buffer.from(dataContract.getId().toBuffer()));
   });
 
   describe('constructor', () => {
-    it('should create Document with $id and data if present', () => {
+    it('should create Document with $id and data if present', async () => {
       const data = {
         test: 1,
       };
 
       rawDocument = {
-        $id: Buffer.alloc(32),
+        $id: await generateRandomIdentifierAsync(),
         $type: 'test',
         ...data,
       };
 
       document = new Document(rawDocument, dataContract);
-
-      expect(document.id).to.deep.equal(rawDocument.$id);
+      expect(document.getId().toBuffer()).to.deep.equal(rawDocument.$id.toBuffer());
     });
 
     it('should create Document with $type and data if present', () => {
@@ -108,39 +138,40 @@ describe('Document', () => {
 
       document = new Document(rawDocument, dataContract);
 
-      expect(document.type).to.equal(rawDocument.$type);
+      expect(document.getType()).to.equal(rawDocument.$type);
     });
 
-    it('should create Document with $dataContractId and data if present', () => {
+    it('should create Document with $dataContractId and data if present', async () => {
       const data = {
         test: 1,
       };
 
       rawDocument = {
-        $dataContractId: generateRandomIdentifier().toBuffer(),
+        $dataContractId: await generateRandomIdentifierAsync(),
         $type: 'test',
         ...data,
       };
 
       document = new Document(rawDocument, dataContract);
 
-      expect(document.dataContractId).to.deep.equal(rawDocument.$dataContractId);
+      expect(document.getDataContractId().toBuffer())
+        .to.deep.equal(rawDocument.$dataContractId.toBuffer());
     });
 
-    it('should create Document with $ownerId and data if present', () => {
+    it('should create Document with $ownerId and data if present', async () => {
       const data = {
         test: 1,
       };
 
       rawDocument = {
-        $ownerId: generateRandomIdentifier().toBuffer(),
+        $ownerId: await generateRandomIdentifierAsync(),
         $type: 'test',
         ...data,
       };
 
       document = new Document(rawDocument, dataContract);
 
-      expect(document.ownerId.toBuffer()).to.deep.equal(rawDocument.$ownerId);
+      expect(document.getOwnerId().toBuffer()).to.deep.equal(rawDocument.$ownerId.toBuffer());
     });
 
     it('should create Document with undefined action and data if present', () => {
@@ -154,8 +185,7 @@ describe('Document', () => {
       };
 
       document = new Document(rawDocument, dataContract);
-
-      expect(document.action).to.equal(undefined);
+      expect(document.get('action')).to.equal(undefined);
     });
 
     it('should create Document with $revision and data if present', () => {
@@ -164,14 +194,14 @@ describe('Document', () => {
       };
 
       rawDocument = {
-        $revision: 'test',
+        $revision: 123,
         $type: 'test',
         ...data,
       };
 
       document = new Document(rawDocument, dataContract);
 
-      expect(document.revision).to.equal(rawDocument.$revision);
+      expect(document.getRevision()).to.equal(rawDocument.$revision);
     });
 
     it('should create Document with $createdAt and data if present', async () => {
@@ -189,7 +219,7 @@ describe('Document', () => {
 
       document = new Document(rawDocument, dataContract);
 
-      expect(document.getCreatedAt().getTime()).to.equal(rawDocument.$createdAt);
+      expect(document.getCreatedAt()).to.equal(rawDocument.$createdAt);
     });
 
     it('should create Document with $updatedAt and data if present', async () => {
@@ -207,21 +237,19 @@ describe('Document', () => {
 
       document = new Document(rawDocument, dataContract);
 
-      expect(document.getUpdatedAt().getTime()).to.equal(rawDocument.$updatedAt);
+      expect(document.getUpdatedAt()).to.equal(rawDocument.$updatedAt);
     });
   });
 
   describe('#getId', () => {
-    it('should return ID', () => {
-      const id = '123';
+    it('should return ID', async () => {
+      const id = await generateRandomIdentifierAsync();
 
-      document.id = id;
+      document.setId(id.clone());
 
       const actualId = document.getId();
 
-      expect(hashMock).to.have.not.been.called();
-
-      expect(id).to.equal(actualId);
+      expect(id.toBuffer()).to.deep.equal(actualId.toBuffer());
     });
   });
 
@@ -233,61 +261,36 @@ describe('Document', () => {
 
   describe('#getOwnerId', () => {
     it('should return $ownerId', () => {
-      expect(document.getOwnerId()).to.deep.equal(rawDocument.$ownerId);
+      expect(document.getOwnerId().toBuffer()).to.deep.equal(rawDocument.$ownerId.toBuffer());
     });
   });
 
   describe('#getDataContractId', () => {
     it('should return $dataContractId', () => {
-      expect(document.getOwnerId()).to.deep.equal(rawDocument.$ownerId);
+      expect(document.getOwnerId().toBuffer()).to.deep.equal(rawDocument.$ownerId.toBuffer());
     });
   });
 
-  describe('#setRevision', () => {
-    it('should set $revision', () => {
+  describe('#setRevision/#getRevision', () => {
+    it('should set $revision and get $revision', () => {
       const revision = 5;
 
-      const result = document.setRevision(revision);
-
-      expect(result).to.equal(document);
-
-      expect(document.revision).to.equal(revision);
-    });
-  });
-
-  describe('#getRevision', () => {
-    it('should return $revision', () => {
-      const revision = 5;
-
-      document.revision = revision;
+      document.setRevision(revision);
 
       expect(document.getRevision()).to.equal(revision);
     });
   });
 
-  describe('#setData', () => {
-    it('should call set for each document property', () => {
+  describe('#setData/#getDAta', () => {
+    it('should call set and get for each document property', () => {
       const data = {
         test1: 1,
         test2: 2,
       };
 
-      const result = document.setData(data);
+      document.setData(data);
 
-      expect(result).to.equal(document);
-    });
-  });
-
-  describe('#getData', () => {
-    it('should return all data', () => {
-      const data = {
-        test1: 1,
-        test2: 2,
-      };
-
-      document.data = data;
-
-      expect(document.getData()).to.equal(data);
+      expect(document.getData()).to.deep.equal(data);
     });
   });
 
@@ -296,41 +299,31 @@ describe('Document', () => {
       const path = 'test[0].$my';
       const value = 2;
 
-      const result = document.set(path, value);
+      document.set(path, value);
 
-      expect(result).to.equal(document);
+      expect(document.get(path)).to.deep.equal(2);
     });
 
     it('should set identifier', () => {
       const path = 'dataObject.binaryObject.identifier';
       const buffer = Buffer.alloc(32);
+      const identifier = new Identifier(buffer);
 
-      const result = document.set(path, buffer);
+      document.set(path, identifier);
 
-      expect(result).to.equal(document);
+      expect(document.get(path).toBuffer()).to.deep.equal(buffer);
     });
 
     it('should set identifier as part of object', () => {
       const buffer = Buffer.alloc(32, 'a');
       const path = 'dataObject.binaryObject';
-      const value = { identifier: buffer };
+      const identifierPath = 'dataObject.binaryObject.identifier';
+      const identifier = new Identifier(buffer);
+      const value = { identifier };
 
-      const result = document.set(path, value);
+      document.set(path, value);
 
-      expect(result).to.equal(document);
-    });
-  });
-
-  describe('#get', () => {
-    it('should return value for specified property name', () => {
-      const path = 'dataObject.binaryObject.identifier';
-      const buffer = Buffer.alloc(32);
-
-      document.set(path, buffer);
-
-      const result = document.get(path);
-
-      expect(result).to.deep.equal(buffer);
+      expect(document.get(identifierPath).toBuffer()).to.deep.equal(buffer);
     });
   });
 
@@ -338,83 +331,84 @@ describe('Document', () => {
     it('should return Document as plain JS object', () => {
       const jsonDocument = {
         ...rawDocument,
-        $dataContractId: document.dataContractId.toString(),
-        $id: document.id.toString(),
-        $ownerId: document.ownerId.toString(),
+        $dataContractId: document.getDataContractId().toString(),
+        $id: document.getId().toString(),
+        $ownerId: document.getOwnerId().toString(),
       };
 
       expect(document.toJSON()).to.deep.equal(jsonDocument);
     });
   });
 
+  describe('#toObject', () => {
+    it('should return Document as object', () => {
+      const result = document.toObject();
+
+      expect(rawDocumentWithBuffers).to.deep.equal(result);
+    });
+  });
+
   describe('#toBuffer', () => {
-    it('should return serialized Document', () => {
-      const serializedDocument = Buffer.from('123');
+    it('returned bytes should be the same as JS version', () => {
+      const jsBuffer = documentJs.toBuffer();
+      const buffer = document.toBuffer();
 
-      encodeMock.returns(serializedDocument);
+      expect(jsBuffer.length).to.equal(buffer.length);
+      expect(jsBuffer).to.deep.equal(buffer);
+    });
 
-      const result = document.toBuffer();
+    it('should return the same bytes as JS version when dynamic identifier is in Document', () => {
+      const jsId = generateRandomIdentifier();
+      const id = new Identifier(jsId.toBuffer());
+      const path = 'dataObject.binaryObject.identifier';
 
-      const protocolVersionUInt32 = Buffer.alloc(4);
-      protocolVersionUInt32.writeUInt32LE(rawDocument.$protocolVersion, 0);
+      documentJs.set(path, jsId);
+      document.set(path, id);
 
-      expect(result).to.deep.equal(Buffer.concat([protocolVersionUInt32, serializedDocument]));
+      expect(documentJs.get(path).toBuffer()).to.deep.equal(jsId);
+      expect(document.get(path).toBuffer()).to.deep.equal(jsId.toBuffer());
 
-      const documentToEncode = { ...rawDocument };
-      delete documentToEncode.$protocolVersion;
+      const jsBuffer = documentJs.toBuffer();
+      const buffer = document.toBuffer();
+      expect(jsBuffer).to.deep.equal(buffer);
+    });
 
-      expect(encodeMock.getCall(0).args).to.have.deep.members([
-        documentToEncode,
-      ]);
+    it('should return the same bytes as JS version when dynamic binaryData is in Document', () => {
+      const data = Buffer.alloc(32);
+      const path = 'dataObject.binaryObject.binaryData';
+
+      documentJs.set(path, data);
+      document.set(path, data);
+
+      const jsBuffer = documentJs.toBuffer();
+      const buffer = document.toBuffer();
+
+      expect(jsBuffer.length).to.equal(buffer.length);
+      expect(jsBuffer).to.deep.equal(buffer);
     });
   });
 
   describe('#hash', () => {
-    let toBufferMock;
-
-    beforeEach(function beforeEach() {
-      toBufferMock = this.sinonSandbox.stub(Document.prototype, 'toBuffer');
-    });
-
-    afterEach(() => {
-      toBufferMock.restore();
-    });
-
-    it('should return Document hash', () => {
-      const serializedDocument = '123';
-      const hashedDocument = '456';
-
-      toBufferMock.returns(serializedDocument);
-
-      hashMock.returns(hashedDocument);
-
-      const result = document.hash();
-
-      expect(result).to.equal(hashedDocument);
-
-      expect(toBufferMock).to.have.been.calledOnce();
-
-      expect(hashMock).to.have.been.calledOnceWith(serializedDocument);
+    it('returned hash should be the same as JS version', () => {
+      expect(documentJs.hash()).to.deep.equal(document.hash());
     });
   });
 
   describe('#setCreatedAt', () => {
     it('should set $createdAt', () => {
-      const time = new Date();
+      const time = new Date().getTime();
 
-      const result = document.setCreatedAt(time);
+      document.setCreatedAt(time);
 
-      expect(result).to.equal(document);
-
-      expect(document.createdAt).to.equal(time);
+      expect(document.getCreatedAt()).to.equal(time);
     });
   });
 
   describe('#getCreatedAt', () => {
     it('should return $createdAt', () => {
-      const time = new Date();
+      const time = new Date().getTime();
 
-      document.createdAt = time;
+      document.setCreatedAt(time);
 
       expect(document.getCreatedAt()).to.equal(time);
     });
@@ -422,21 +416,19 @@ describe('Document', () => {
 
   describe('#setUpdatedAt', () => {
     it('should set $updatedAt', () => {
-      const time = new Date();
+      const time = new Date().getTime();
 
-      const result = document.setUpdatedAt(time);
+      document.setUpdatedAt(time);
 
-      expect(result).to.equal(document);
-
-      expect(document.updatedAt).to.equal(time);
+      expect(document.getUpdatedAt()).to.equal(time);
     });
   });
 
   describe('#getUpdatedAt', () => {
     it('should return $updatedAt', () => {
-      const time = new Date();
+      const time = new Date().getTime();
 
-      document.updatedAt = time;
+      document.setUpdatedAt(time);
 
       expect(document.getUpdatedAt()).to.equal(time);
     });

@@ -38,7 +38,7 @@ use crate::error::Error;
 use crate::execution::fee_pools::epoch::EpochInfo;
 use crate::execution::fee_pools::process_block_fees::ProcessedBlockFeesResult;
 use drive::fee::epoch::CreditsPerEpoch;
-use serde::{Deserialize, Serialize};
+use serde::{de::DeserializeOwned, Deserialize, Serialize};
 
 /// A struct for handling chain initialization requests
 #[derive(Serialize, Deserialize)]
@@ -116,6 +116,8 @@ pub struct BlockEndResponse {
     pub proposers_paid_count: Option<u16>,
     /// Index of the last epoch that marked as paid
     pub paid_epoch_index: Option<u16>,
+    /// A number of epochs which had refunded
+    pub refunded_epochs_count: Option<usize>,
 }
 
 impl BlockEndResponse {
@@ -136,6 +138,7 @@ impl BlockEndResponse {
         Self {
             proposers_paid_count,
             paid_epoch_index,
+            refunded_epochs_count: process_block_fees_result.refunded_epochs_count,
         }
     }
 }
@@ -163,7 +166,7 @@ impl<'a> Serializable<'a> for AfterFinalizeBlockRequest {}
 impl<'a> Serializable<'a> for AfterFinalizeBlockResponse {}
 
 /// A trait for serializing or deserializing ABCI messages
-pub trait Serializable<'a>: Serialize + Deserialize<'a> {
+pub trait Serializable<'a>: Serialize + DeserializeOwned {
     /// Serialize ABCI message
     fn to_bytes(&self) -> Result<Vec<u8>, Error> {
         let mut bytes = vec![];

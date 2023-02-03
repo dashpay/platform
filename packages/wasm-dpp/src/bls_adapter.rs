@@ -1,9 +1,11 @@
 use dpp::dashcore::anyhow::anyhow;
 use dpp::{BlsModule, PublicKeyValidationError};
 use wasm_bindgen::prelude::*;
+use wasm_bindgen::JsCast;
 
 #[wasm_bindgen]
 extern "C" {
+    #[derive(Clone)]
     pub type JsBlsAdapter;
 
     #[wasm_bindgen(method)]
@@ -66,6 +68,19 @@ impl BlsModule for BlsAdapter {
         self.0
             .sign(data, private_key)
             .map(|arr| arr.to_vec())
-            .map_err(|_v| anyhow!("Can't sign").into())
+            .map_err(|e: JsValue| {
+                let error = e.dyn_into::<js_sys::Error>();
+
+                match error {
+                    Ok(e) => {
+                        let message: String = e
+                            .message()
+                            .as_string()
+                            .unwrap_or_else(|| String::from("Unknown error, can't sign"));
+                        anyhow!(message).into()
+                    }
+                    Err(_) => anyhow!("Unknown error, can't sign").into(),
+                }
+            })
     }
 }

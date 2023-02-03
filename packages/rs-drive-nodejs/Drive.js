@@ -527,6 +527,7 @@ Drive.calculateStorageFeeDistributionAmountAndLeftovers = calculateStorageFeeDis
  * @typedef BlockEndResponse
  * @property {number} [proposersPaidCount]
  * @property {number} [paidEpochIndex]
+ * @property {number} [refundedEpochsCount]
  */
 
 /**

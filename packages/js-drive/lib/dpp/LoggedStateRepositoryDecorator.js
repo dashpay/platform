@@ -21,7 +21,7 @@ class LoggedStateRepositoryDecorator {
    * @param {object} response - response of the state repository call
    */
   log(method, parameters, response) {
-    const logger = this.blockExecutionContext.getConsensusLogger();
+    const logger = this.blockExecutionContext.getContextLogger();
 
     logger.trace({
       stateRepository: {

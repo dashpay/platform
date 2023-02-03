@@ -16,9 +16,11 @@ mod identity;
 mod metadata;
 mod state_repository;
 mod state_transition;
+mod version;
 
 mod utils;
 
 mod bls_adapter;
 mod buffer;
+mod lodash;
 mod validation;

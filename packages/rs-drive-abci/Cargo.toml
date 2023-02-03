@@ -7,7 +7,7 @@ license = "MIT"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-ciborium = "0.2.0"
+ciborium = { git="https://github.com/qrayven/ciborium", branch="feat-ser-null-as-undefined"}
 chrono = "0.4.20"
 serde = { version = "1.0.132", features = ["derive"] }
 serde_json = { version="1.0", features=["preserve_order"] }

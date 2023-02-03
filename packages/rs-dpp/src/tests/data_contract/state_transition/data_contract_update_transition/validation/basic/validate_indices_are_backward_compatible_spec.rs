@@ -93,7 +93,7 @@ fn should_return_invalid_result_if_some_of_unique_indices_have_changed() {
     .expect("validation result should be returned");
 
     assert_eq!(1, result.errors().len());
-    assert_eq!(4016, result.errors()[0].code());
+    assert_eq!(1053, result.errors()[0].code());
 
     let basic_error = get_basic_error(&result, 0);
     matches!(basic_error, BasicError::DataContractUniqueIndicesChangedError { document_type, index_name }if {

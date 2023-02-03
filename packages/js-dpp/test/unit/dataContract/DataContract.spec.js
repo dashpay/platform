@@ -1,4 +1,5 @@
 const bs58 = require('bs58');
+const varint = require('varint');
 
 const Identifier = require('../../../lib/identifier/Identifier');
 
@@ -297,11 +298,10 @@ describe('DataContract', () => {
       const dataContractToEncode = dataContract.toObject();
       delete dataContractToEncode.protocolVersion;
 
-      const protocolVersionUInt32 = Buffer.alloc(4);
-      protocolVersionUInt32.writeUInt32LE(dataContract.getProtocolVersion(), 0);
+      const protocolVersionBytes = Buffer.from(varint.encode(dataContract.getProtocolVersion()));
 
       expect(encodeMock).to.have.been.calledOnceWith(dataContractToEncode);
-      expect(result).to.deep.equal(Buffer.concat([protocolVersionUInt32, serializedDataContract]));
+      expect(result).to.deep.equal(Buffer.concat([protocolVersionBytes, serializedDataContract]));
     });
   });
 

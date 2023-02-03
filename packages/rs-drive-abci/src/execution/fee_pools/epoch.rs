@@ -58,15 +58,6 @@ pub struct EpochInfo {
 }
 
 impl EpochInfo {
-    /// Default epoch info.
-    pub fn default() -> EpochInfo {
-        EpochInfo {
-            current_epoch_index: 0,
-            previous_epoch_index: None,
-            is_epoch_change: true,
-        }
-    }
-
     /// Converts some values to decimal types and calculates some relevant epoch info values.
     pub fn calculate(
         genesis_time_ms: u64,
@@ -132,9 +123,19 @@ impl EpochInfo {
     }
 }
 
+impl Default for EpochInfo {
+    /// Default epoch info.
+    fn default() -> EpochInfo {
+        EpochInfo {
+            current_epoch_index: 0,
+            previous_epoch_index: None,
+            is_epoch_change: true,
+        }
+    }
+}
+
 #[cfg(test)]
 mod test {
-
     mod calculate {
         use crate::execution::fee_pools::epoch::EpochInfo;
 

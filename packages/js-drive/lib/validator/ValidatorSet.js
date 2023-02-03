@@ -110,6 +110,7 @@ class ValidatorSet {
       sml,
       this.validatorSetLLMQType,
       rotationEntropy,
+      coreHeight,
     );
 
     const quorumMembers = await this.fetchQuorumMembers(

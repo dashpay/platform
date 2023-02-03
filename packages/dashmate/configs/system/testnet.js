@@ -16,6 +16,9 @@ module.exports = lodashMerge({}, baseConfig, {
     },
   },
   core: {
+    docker: {
+      image: 'dashpay/dashd:18.2.0',
+    },
     p2p: {
       port: 19999,
     },
@@ -52,9 +55,9 @@ module.exports = lodashMerge({}, baseConfig, {
         },
         genesis: {
           genesis_time: '2021-07-22T12:57:05.429Z',
-          chain_id: 'dash-testnet-15',
+          chain_id: 'dash-testnet-17',
           initial_height: '0',
-          initial_core_chain_locked_height: 841668,
+          initial_core_chain_locked_height: 814320,
           initial_proposal_core_chain_lock: null,
           consensus_params: {
             block: {

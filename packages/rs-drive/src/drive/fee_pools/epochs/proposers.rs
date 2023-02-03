@@ -113,7 +113,12 @@ impl Drive {
 
         let key_elements = self
             .grove
-            .query_raw(&path_query, QueryKeyElementPairResultType, transaction)
+            .query_raw(
+                &path_query,
+                transaction.is_some(),
+                QueryKeyElementPairResultType,
+                transaction,
+            )
             .unwrap()
             .map_err(Error::GroveDB)?
             .0

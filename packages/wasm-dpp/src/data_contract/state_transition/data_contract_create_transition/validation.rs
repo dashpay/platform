@@ -14,11 +14,11 @@ pub async fn validate_data_contract_create_transition_state(
     state_transition: DataContractCreateTransitionWasm,
 ) -> Result<ValidationResultWasm, JsValue> {
     let wrapped_state_repository = ExternalStateRepositoryLikeWrapper::new(state_repository);
-    dpp_validate_data_contract_create_transition_state(
+    let validation_result = dpp_validate_data_contract_create_transition_state(
         &wrapped_state_repository,
         &state_transition.into(),
     )
     .await
-    .map(Into::<ValidationResultWasm>::into)
-    .map_err(from_dpp_err)
+    .map_err(from_dpp_err)?;
+    Ok(validation_result.map(|_| JsValue::undefined()).into())
 }

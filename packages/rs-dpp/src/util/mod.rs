@@ -2,7 +2,6 @@ pub mod cbor_value;
 pub mod deserializer;
 pub mod entropy_generator;
 pub mod hash;
-pub mod index;
 pub mod is_fibonacci_number;
 pub mod json_path;
 pub mod json_schema;

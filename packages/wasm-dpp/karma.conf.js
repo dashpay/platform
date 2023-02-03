@@ -9,6 +9,11 @@ const webpackConfig = require('./webpack.config');
 
 module.exports = (config) => {
   config.set({
+    client: {
+      mocha: {
+        timeout: 4000,
+      },
+    },
     frameworks: ['mocha', 'chai', 'webpack'],
     files: [
       'lib/test/karma/loader.js',

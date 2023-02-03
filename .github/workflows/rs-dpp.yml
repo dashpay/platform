@@ -13,8 +13,9 @@ on:
       - packages/dpns-contract/**
       - packages/dashpay-contract/**
       - packages/masternode-reward-shares-contract/**
+      - packages/rs-dpp/**
   schedule:
-    - cron: '30 4 * * *'
+    - cron: "30 4 * * *"
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
@@ -25,4 +26,4 @@ jobs:
     name: Rust
     uses: ./.github/workflows/rs-checks.yml
     with:
-      package: 'dpp'
+      package: "dpp"

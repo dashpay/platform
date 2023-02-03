@@ -62,6 +62,7 @@ impl Drive {
             .grove
             .query_raw(
                 &PathQuery::new_unsized(pools_pending_updates_path(), query),
+                transaction.is_some(),
                 QueryResultType::QueryKeyElementPairResultType,
                 transaction,
             )
@@ -114,6 +115,7 @@ impl Drive {
             .grove
             .query_raw(
                 &PathQuery::new_unsized(pools_pending_updates_path(), query),
+                transaction.is_some(),
                 QueryResultType::QueryKeyElementPairResultType,
                 transaction,
             )
@@ -163,6 +165,7 @@ impl Drive {
             .grove
             .query_raw(
                 &PathQuery::new_unsized(pools_pending_updates_path(), query),
+                transaction.is_some(),
                 QueryResultType::QueryKeyElementPairResultType,
                 transaction,
             )

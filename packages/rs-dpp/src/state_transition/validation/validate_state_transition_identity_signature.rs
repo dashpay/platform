@@ -1,11 +1,11 @@
-use std::collections::HashSet;
+use std::{collections::HashSet, convert::TryInto};
 
+use anyhow::Context;
 use lazy_static::lazy_static;
 
 use crate::{
     consensus::{signature::SignatureError, ConsensusError},
     identity::KeyType,
-    prelude::Identity,
     state_repository::StateRepositoryLike,
     state_transition::{
         fee::operations::{Operation, SignatureVerificationOperation},
@@ -40,8 +40,11 @@ pub async fn validate_state_transition_identity_signature(
 
     // Owner must exist
     let maybe_identity = state_repository
-        .fetch_identity::<Identity>(state_transition.get_owner_id(), &tmp_execution_context)
-        .await?;
+        .fetch_identity(state_transition.get_owner_id(), &tmp_execution_context)
+        .await?
+        .map(TryInto::try_into)
+        .transpose()
+        .map_err(Into::into)?;
 
     // Collect operations back from temporary context
     state_transition
@@ -58,7 +61,10 @@ pub async fn validate_state_transition_identity_signature(
         }
     };
 
-    let signature_public_key_id = state_transition.get_signature_public_key_id();
+    let signature_public_key_id = state_transition
+        .get_signature_public_key_id()
+        //? what error should be returned here? MissingPublicKeyError only applies to the Identity
+        .context("State transition doesn't have signature public key")?;
     let maybe_public_key = identity.get_public_key_by_id(signature_public_key_id);
 
     let public_key = match maybe_public_key {
@@ -223,7 +229,7 @@ mod test {
         fn verify_signature(
             &self,
             public_key: &IdentityPublicKey,
-            bls: &impl BlsModule,
+            _bls: &impl BlsModule,
         ) -> Result<(), ProtocolError> {
             if let Some(error_num) = self.return_error {
                 match error_num {
@@ -266,8 +272,8 @@ mod test {
             SecurityLevel::MASTER
         }
 
-        fn get_signature_public_key_id(&self) -> KeyID {
-            self.signature_public_key_id
+        fn get_signature_public_key_id(&self) -> Option<KeyID> {
+            Some(self.signature_public_key_id)
         }
 
         fn set_signature_public_key_id(&mut self, key_id: KeyID) {
@@ -323,7 +329,7 @@ mod test {
 
         state_transition.owner_id = owner_id.clone();
         state_repository_mock
-            .expect_fetch_identity::<Identity>()
+            .expect_fetch_identity()
             .returning(move |_, _| Ok(None));
 
         let result = validate_state_transition_identity_signature(

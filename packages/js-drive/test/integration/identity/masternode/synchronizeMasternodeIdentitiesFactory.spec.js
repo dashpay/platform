@@ -367,7 +367,7 @@ describe('synchronizeMasternodeIdentitiesFactory', () => {
 
   beforeEach(async function beforeEach() {
     coreHeight = 3;
-    firstSyncAppHash = '5121fd70b91071bd1bec6bfd67763ed61c5797ce3256156e467bd455f1dc0227';
+    firstSyncAppHash = '56964579e1cd1814f0a7ee7c8340881b208b7253d3b574d15007ff585d6d9be6';
     blockInfo = new BlockInfo(10, 0, 1668702100799);
 
     container = await createTestDIContainer();
@@ -695,7 +695,7 @@ describe('synchronizeMasternodeIdentitiesFactory', () => {
 
     // Nothing happened
 
-    await expectDeterministicAppHash('570b71849a365109f6190e3dbf02d1ff961529dc36deb5798f6aa57fdd23f2db');
+    await expectDeterministicAppHash('72a6582fa713e6a0188c5037beb6a5c3f3c68bf4f62f9a083b0f848d98b4e394');
 
     // Core RPC should be called
 
@@ -750,7 +750,7 @@ describe('synchronizeMasternodeIdentitiesFactory', () => {
     expect(result.updatedEntities).to.have.lengthOf(0);
     expect(result.removedEntities).to.have.lengthOf(0);
 
-    await expectDeterministicAppHash('4bc6f9c7852e4db9a02c5fc517538cac779f49e4ad99926a278c5a3500c99e95');
+    await expectDeterministicAppHash('de31529588ed3545988367dfbeccc29704f3de95da0b8f1dc59d734dcfe20542');
 
     // New masternode identity should be created
 
@@ -834,7 +834,7 @@ describe('synchronizeMasternodeIdentitiesFactory', () => {
     expect(result.updatedEntities).to.have.lengthOf(0);
     expect(result.removedEntities).to.have.lengthOf(1);
 
-    await expectDeterministicAppHash('468ff1dc0db7bec9541bf036e6ab60ead37f679d9f4f958b46c7d1cc94a51c00');
+    await expectDeterministicAppHash('4055b1fd4ddfe79a43a90cb7fe8102bdf4eba2fcc565dc5f3f27d0552961c8d0');
 
     // Masternode identity should stay
 
@@ -902,7 +902,7 @@ describe('synchronizeMasternodeIdentitiesFactory', () => {
     expect(result.updatedEntities).to.have.lengthOf(0);
     expect(result.removedEntities).to.have.lengthOf(1);
 
-    await expectDeterministicAppHash('468ff1dc0db7bec9541bf036e6ab60ead37f679d9f4f958b46c7d1cc94a51c00');
+    await expectDeterministicAppHash('4055b1fd4ddfe79a43a90cb7fe8102bdf4eba2fcc565dc5f3f27d0552961c8d0');
 
     const invalidMasternodeIdentifier = Identifier.from(
       Buffer.from(invalidSmlEntry.proRegTxHash, 'hex'),
@@ -952,7 +952,7 @@ describe('synchronizeMasternodeIdentitiesFactory', () => {
     expect(result.updatedEntities).to.have.lengthOf(1);
     expect(result.removedEntities).to.have.lengthOf(1);
 
-    await expectDeterministicAppHash('7395fde7492c722a2d4e119550e893b5961726849facc1c6f01272cb130de21d');
+    await expectDeterministicAppHash('5cb5a8dc96548735498e532a0a24749efa4e945fa396c2cf03cf58e54ae5c6ab');
 
     // Masternode identity should stay
 
@@ -1027,7 +1027,7 @@ describe('synchronizeMasternodeIdentitiesFactory', () => {
 
     await synchronizeMasternodeIdentities(coreHeight + 1, blockInfo);
 
-    await expectDeterministicAppHash('1662fdf2f72f1082479b28044f8090dcac94a3a6210555a87e363a4d5a2ab407');
+    await expectDeterministicAppHash('09aa8c14efcd1b1d1e0aa025c54a9bd4510dd6bc5eb63fa5fea1bf047d9ae9a7');
 
     // Masternode identity should contain new public key
 
@@ -1110,7 +1110,7 @@ describe('synchronizeMasternodeIdentitiesFactory', () => {
 
     await synchronizeMasternodeIdentities(coreHeight, blockInfo);
 
-    await expectDeterministicAppHash('96dba6e9a051b795ce900fbfe17eda7f48c4f6b1dcf156a32f085c364ce537e9');
+    await expectDeterministicAppHash('ca2f5dde68e9d8bc3ad4cfab2919880a1018c807e22b726c5d59f3e021d2fe95');
 
     const votingIdentifier = createVotingIdentifier(smlFixture[0]);
 

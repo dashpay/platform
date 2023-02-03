@@ -104,4 +104,8 @@ impl ProtocolVersionValidator {
     pub fn protocol_version(&self) -> u32 {
         self.current_protocol_version
     }
+
+    pub fn set_current_protocol_version(&mut self, protocol_version: u32) {
+        self.current_protocol_version = protocol_version;
+    }
 }

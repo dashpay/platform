@@ -19,15 +19,24 @@ use crate::utils::to_vec_of_serde_values;
 use crate::MetadataWasm;
 pub use identity_public_key::*;
 
+pub use state_transition::*;
+
+pub mod errors;
+pub mod state_transition;
+
 #[wasm_bindgen(js_name=Identity)]
 #[derive(Clone)]
 pub struct IdentityWasm(Identity);
 
-#[wasm_bindgen(js_name=AssetLockProof)]
-pub struct AssetLockProofWasm(AssetLockProof);
-impl From<AssetLockProof> for AssetLockProofWasm {
-    fn from(v: AssetLockProof) -> Self {
-        AssetLockProofWasm(v)
+impl From<IdentityWasm> for Identity {
+    fn from(identity: IdentityWasm) -> Self {
+        identity.0
+    }
+}
+
+impl From<Identity> for IdentityWasm {
+    fn from(identity: Identity) -> Self {
+        Self(identity)
     }
 }
 

@@ -1,26 +1,39 @@
-const validatePublicKeys = require(
-  '@dashevo/dpp/lib/identity/stateTransition/IdentityUpdateTransition/validation/state/validatePublicKeysState',
-);
-const { expectValidationError } = require('@dashevo/dpp/lib/test/expect/expectError');
-const DuplicatedIdentityPublicKeyIdError = require('@dashevo/dpp/lib/errors/consensus/state/identity/DuplicatedIdentityPublicKeyIdError');
-const DuplicatedIdentityPublicKeyError = require('@dashevo/dpp/lib/errors/consensus/state/identity/DuplicatedIdentityPublicKeyError');
 const identitySchema = require('@dashevo/dpp/schema/identity/identity.json');
-const MaxIdentityPublicKeyLimitReachedError = require('@dashevo/dpp/lib/errors/consensus/state/identity/MaxIdentityPublicKeyLimitReachedError');
 const getIdentityFixture = require('@dashevo/dpp/lib/test/fixtures/getIdentityFixture');
+const { expectValidationError } = require('../../../../../../../lib/test/expect/expectError');
+
+const { default: loadWasmDpp } = require('../../../../../../../dist');
 
 describe('validatePublicKeysState', () => {
+  let IdentityUpdatePublicKeysValidator;
+  let DuplicatedIdentityPublicKeyIdStateError;
+  let DuplicatedIdentityPublicKeyStateError;
+  let MaxIdentityPublicKeyLimitReachedError;
+
+  let validatePublicKeys;
   let rawPublicKeys;
+
+  before(async () => {
+    ({
+      IdentityUpdatePublicKeysValidator,
+      DuplicatedIdentityPublicKeyStateError,
+      DuplicatedIdentityPublicKeyIdStateError,
+      MaxIdentityPublicKeyLimitReachedError,
+    } = await loadWasmDpp());
+  });
 
   beforeEach(() => {
     ({ publicKeys: rawPublicKeys } = getIdentityFixture().toObject());
+    const validator = new IdentityUpdatePublicKeysValidator();
+    validatePublicKeys = (keys) => validator.validate(keys);
   });
 
-  it('should return invalid result if there are duplicate key ids', () => {
+  it('should return invalid result if there are duplicate key ids', async () => {
     rawPublicKeys[1].id = rawPublicKeys[0].id;
 
     const result = validatePublicKeys(rawPublicKeys);
 
-    expectValidationError(result, DuplicatedIdentityPublicKeyIdError);
+    await expectValidationError(result, DuplicatedIdentityPublicKeyIdStateError);
 
     const [error] = result.getErrors();
 
@@ -28,12 +41,12 @@ describe('validatePublicKeysState', () => {
     expect(error.getDuplicatedIds()).to.deep.equal([rawPublicKeys[1].id]);
   });
 
-  it('should return invalid result if there are duplicate keys', () => {
+  it('should return invalid result if there are duplicate keys', async () => {
     rawPublicKeys[1].data = rawPublicKeys[0].data;
 
     const result = validatePublicKeys(rawPublicKeys);
 
-    expectValidationError(result, DuplicatedIdentityPublicKeyError);
+    await expectValidationError(result, DuplicatedIdentityPublicKeyStateError);
 
     const [error] = result.getErrors();
 
@@ -47,7 +60,7 @@ describe('validatePublicKeysState', () => {
     expect(result.isValid()).to.be.true();
   });
 
-  it('should return invalid result if number of public keys is bigger than 32', () => {
+  it('should return invalid result if number of public keys is bigger than 32', async () => {
     const { maxItems } = identitySchema.properties.publicKeys;
     const numToAdd = maxItems - rawPublicKeys.length;
 
@@ -57,10 +70,10 @@ describe('validatePublicKeysState', () => {
 
     const result = validatePublicKeys(rawPublicKeys);
 
-    expectValidationError(result, MaxIdentityPublicKeyLimitReachedError);
+    await expectValidationError(result, MaxIdentityPublicKeyLimitReachedError);
 
     const [error] = result.getErrors();
     expect(error.getCode()).to.equal(4020);
-    expect(error.geMaxItems()).to.equal(maxItems);
+    expect(error.getMaxItems()).to.equal(maxItems);
   });
 });

@@ -31,6 +31,7 @@ use std::cell::RefCell;
 use std::collections::HashMap;
 use std::path::Path;
 
+use dpp::data_contract::DriveContractExt;
 use grovedb::batch::KeyInfoPath;
 use grovedb::{EstimatedLayerInformation, GroveDb, Transaction, TransactionArg};
 
@@ -76,7 +77,6 @@ use crate::drive::cache::{DataContractCache, DriveCache};
 use crate::drive::object_size_info::OwnedDocumentInfo;
 use crate::fee::result::FeeResult;
 use crate::fee_pools::epochs::Epoch;
-use dpp::data_contract::extra::DriveContractExt;
 
 /// Drive struct
 pub struct Drive {
@@ -172,6 +172,20 @@ impl Drive {
         }
     }
 
+    /// Drops the drive cache
+    pub fn drop_cache(&self) {
+        let genesis_time_ms = self.config.default_genesis_time;
+        let data_contracts_global_cache_size = self.config.data_contracts_global_cache_size;
+        let data_contracts_block_cache_size = self.config.data_contracts_block_cache_size;
+        self.cache.replace(DriveCache {
+            cached_contracts: DataContractCache::new(
+                data_contracts_global_cache_size,
+                data_contracts_block_cache_size,
+            ),
+            genesis_time_ms,
+        });
+    }
+
     /// Commits a transaction.
     pub fn commit_transaction(&self, transaction: Transaction) -> Result<(), Error> {
         self.grove
@@ -186,25 +200,6 @@ impl Drive {
         self.grove
             .rollback_transaction(transaction)
             .map_err(Error::GroveDB)
-    }
-
-    /// Make sure the protocol version is correct.
-    pub const fn check_protocol_version(_version: u32) -> bool {
-        // Temporary disabled due protocol version is dynamic and goes from consensus params
-        true
-    }
-
-    /// Makes sure the protocol version is correct given the version as a u8.
-    pub fn check_protocol_version_bytes(version_bytes: &[u8]) -> bool {
-        if version_bytes.len() != 4 {
-            false
-        } else {
-            let version_set_bytes: [u8; 4] = version_bytes
-                .try_into()
-                .expect("slice with incorrect length");
-            let version = u32::from_be_bytes(version_set_bytes);
-            Drive::check_protocol_version(version)
-        }
     }
 
     /// Applies a batch of Drive operations to groveDB.
@@ -290,34 +285,5 @@ impl Drive {
             false,
             None,
         )
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use std::collections::HashMap;
-    use std::option::Option::None;
-
-    use tempfile::TempDir;
-
-    use crate::common::json_document_to_cbor;
-    use crate::drive::Drive;
-
-    #[test]
-    fn store_document_1() {
-        let tmp_dir = TempDir::new().unwrap();
-        let _drive = Drive::open(tmp_dir, None);
-    }
-
-    #[test]
-    fn test_cbor_deserialization() {
-        let serialized_document = json_document_to_cbor("simple.json", Some(1));
-        let (version, read_serialized_document) = serialized_document.split_at(4);
-        assert!(Drive::check_protocol_version_bytes(version));
-        let document: HashMap<String, ciborium::value::Value> =
-            ciborium::de::from_reader(read_serialized_document).expect("cannot deserialize cbor");
-        assert!(document.get("a").is_some());
-        let tmp_dir = TempDir::new().unwrap();
-        let _drive = Drive::open(tmp_dir, None);
     }
 }

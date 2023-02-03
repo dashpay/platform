@@ -1,17 +1,16 @@
 /**
  * @param {string} seedsString
- * @returns {{host: string, httpPort: string, grpcPort: string}[]}
+ * @returns {{host: string, port: string}[]}
  */
 function parseDAPISeedsString(seedsString) {
   return seedsString
     .split(',')
     .map((seed) => {
-      const [host, httpPort, grpcPort] = seed.split(':');
+      const [host, port] = seed.split(':');
 
       return {
         host,
-        httpPort,
-        grpcPort,
+        port,
       };
     });
 }

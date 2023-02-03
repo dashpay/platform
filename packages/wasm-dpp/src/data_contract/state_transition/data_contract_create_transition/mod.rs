@@ -15,10 +15,8 @@ use wasm_bindgen::prelude::*;
 
 use crate::errors::protocol_error::from_protocol_error;
 use crate::{
-    buffer::Buffer,
-    errors::{from_dpp_err, RustConversionError},
-    identifier::IdentifierWrapper,
-    with_js_error, DataContractParameters, DataContractWasm, StateTransitionExecutionContextWasm,
+    buffer::Buffer, errors::from_dpp_err, identifier::IdentifierWrapper, with_js_error,
+    DataContractParameters, DataContractWasm, StateTransitionExecutionContextWasm,
 };
 
 #[wasm_bindgen(js_name=DataContractCreateTransition)]

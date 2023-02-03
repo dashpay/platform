@@ -1,4 +1,4 @@
-use anyhow::anyhow;
+use anyhow::Context;
 use serde_json::Value as JsonValue;
 use std::collections::{hash_map::Entry, HashMap};
 
@@ -10,8 +10,8 @@ pub fn find_duplicates_by_id<'a>(
     let mut duplicates: Vec<JsonValue> = vec![];
 
     for transition in document_transitions {
-        let fingerprint = create_fingerprint(&transition)
-            .ok_or_else(|| anyhow!("Can't create fingerprint from a document transition"))?;
+        let fingerprint = create_fingerprint(transition)
+            .context("Can't create fingerprint from a document transition")?;
         match fingerprints.entry(fingerprint.clone()) {
             Entry::Occupied(val) => {
                 duplicates.push(val.get().clone());
@@ -28,7 +28,7 @@ fn create_fingerprint(document_transition: &JsonValue) -> Option<String> {
     Some(format!(
         "{}:{}",
         document_transition.as_object()?.get("$type")?,
-        document_transition.as_object()?.get("id")?,
+        document_transition.as_object()?.get("$id")?,
     ))
 }
 
@@ -38,7 +38,6 @@ mod test {
     use crate::{
         document::document_transition::{
             DocumentCreateTransition, DocumentDeleteTransition, DocumentReplaceTransition,
-            DocumentTransition,
         },
         tests::utils::generate_random_identifier_struct,
     };

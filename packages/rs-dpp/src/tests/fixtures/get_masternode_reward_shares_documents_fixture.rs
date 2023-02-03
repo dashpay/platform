@@ -1,9 +1,14 @@
+use std::sync::Arc;
+
 use serde_json::json;
 
 use crate::{
     data_contract::DataContract,
-    document::{document_factory::DocumentFactory, Document},
-    mocks,
+    document::{
+        document_factory::DocumentFactory,
+        fetch_and_validate_data_contract::DataContractFetcherAndValidator, Document,
+    },
+    state_repository::MockStateRepositoryLike,
     tests::utils::generate_random_identifier_struct,
     version::LATEST_VERSION,
 };
@@ -19,7 +24,7 @@ pub fn get_masternode_reward_shares_documents_fixture() -> (Vec<Document>, DataC
     let factory = DocumentFactory::new(
         LATEST_VERSION,
         document_validator,
-        mocks::FetchAndValidateDataContract {},
+        DataContractFetcherAndValidator::new(Arc::new(MockStateRepositoryLike::new())),
     );
 
     (

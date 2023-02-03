@@ -21,7 +21,7 @@ impl InvalidAssetLockProofTransactionHeightError {
         self.proof_core_chain_locked_height
     }
 
-    pub fn current_core_chain_locked_height(&self) -> Option<u32> {
+    pub fn transaction_height(&self) -> Option<u32> {
         self.transaction_height
     }
 }

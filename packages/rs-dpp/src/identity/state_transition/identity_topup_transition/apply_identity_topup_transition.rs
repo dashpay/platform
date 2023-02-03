@@ -1,10 +1,11 @@
+use std::convert::TryInto;
 use std::sync::Arc;
 
 use anyhow::{anyhow, Result};
 
 use crate::identity::state_transition::asset_lock_proof::AssetLockTransactionOutputFetcher;
 use crate::identity::state_transition::identity_topup_transition::IdentityTopUpTransition;
-use crate::identity::{convert_satoshi_to_credits, get_biggest_possible_identity, Identity};
+use crate::identity::{convert_satoshi_to_credits, get_biggest_possible_identity};
 use crate::state_repository::StateRepositoryLike;
 use crate::state_transition::StateTransitionLike;
 
@@ -47,11 +48,13 @@ where
             .out_point()
             .ok_or_else(|| anyhow!("Out point is missing from asset lock proof"))?;
         let identity_id = state_transition.get_identity_id();
-
         let mut maybe_identity = self
             .state_repository
-            .fetch_identity::<Identity>(identity_id, state_transition.get_execution_context())
-            .await?;
+            .fetch_identity(identity_id, state_transition.get_execution_context())
+            .await?
+            .map(TryInto::try_into)
+            .transpose()
+            .map_err(Into::into)?;
 
         if is_dry_run {
             maybe_identity = Some(get_biggest_possible_identity())
@@ -86,7 +89,6 @@ mod test {
             asset_lock_proof::AssetLockTransactionOutputFetcher,
             identity_topup_transition::IdentityTopUpTransition,
         },
-        prelude::Identity,
         state_repository::MockStateRepositoryLike,
         state_transition::StateTransitionLike,
         tests::fixtures::identity_topup_transition_fixture_json,
@@ -103,7 +105,7 @@ mod test {
         let state_repository_for_fetcher = MockStateRepositoryLike::new();
 
         state_repository_for_apply
-            .expect_fetch_identity::<Identity>()
+            .expect_fetch_identity()
             .return_once(|_, _| Ok(None));
         state_repository_for_apply
             .expect_update_identity()

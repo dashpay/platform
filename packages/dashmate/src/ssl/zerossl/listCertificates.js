@@ -1,4 +1,4 @@
-const axios = require('axios');
+const fetch = require('node-fetch');
 
 /**
  * List ZeroSSL certificates
@@ -8,19 +8,22 @@ const axios = require('axios');
  * @return {Promise<Object>}
  */
 async function listCertificates(apiKey) {
-  const config = {
-    method: 'get',
-    url: `https://api.zerossl.com/certificates?access_key=${apiKey}`,
-    headers: { },
+  const url = `https://api.zerossl.com/certificates?access_key=${apiKey}`;
+
+  const requestOptions = {
+    method: 'GET',
+    headers: {},
   };
 
-  const response = await axios(config);
+  const response = await fetch(url, requestOptions);
 
-  if (response.data.error) {
-    throw new Error(response.data.error.type);
+  const data = await response.json();
+
+  if (data.error) {
+    throw new Error(data.error.type);
   }
 
-  return response.data;
+  return data;
 }
 
 module.exports = listCertificates;

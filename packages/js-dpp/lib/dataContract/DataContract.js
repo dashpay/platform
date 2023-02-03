@@ -1,3 +1,4 @@
+const varint = require('varint');
 const hashModule = require('../util/hash');
 const serializer = require('../util/serializer');
 
@@ -308,10 +309,9 @@ class DataContract {
     const serializedData = this.toObject();
     delete serializedData.protocolVersion;
 
-    const protocolVersionUInt32 = Buffer.alloc(4);
-    protocolVersionUInt32.writeUInt32LE(this.getProtocolVersion(), 0);
+    const protocolVersionBytes = Buffer.from(varint.encode(this.getProtocolVersion()));
 
-    return Buffer.concat([protocolVersionUInt32, serializer.encode(serializedData)]);
+    return Buffer.concat([protocolVersionBytes, serializer.encode(serializedData)]);
   }
 
   /**

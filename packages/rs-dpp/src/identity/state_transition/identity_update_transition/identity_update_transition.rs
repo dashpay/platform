@@ -81,6 +81,10 @@ impl Default for IdentityUpdateTransition {
 }
 
 impl IdentityUpdateTransition {
+    pub fn new(raw_state_transition: serde_json::Value) -> Result<Self, ProtocolError> {
+        IdentityUpdateTransition::from_raw_object(raw_state_transition)
+    }
+
     pub fn from_raw_object(
         mut raw_object: JsonValue,
     ) -> Result<IdentityUpdateTransition, ProtocolError> {
@@ -168,6 +172,11 @@ impl IdentityUpdateTransition {
 
     pub fn get_public_keys_disabled_at(&self) -> Option<TimestampMillis> {
         self.public_keys_disabled_at
+    }
+
+    /// Returns ids of created identities
+    pub fn get_modified_data_ids(&self) -> Vec<&Identifier> {
+        vec![self.get_identity_id()]
     }
 }
 
@@ -314,8 +323,8 @@ impl StateTransitionIdentitySigned for IdentityUpdateTransition {
         SecurityLevel::MASTER
     }
 
-    fn get_signature_public_key_id(&self) -> KeyID {
-        self.signature_public_key_id
+    fn get_signature_public_key_id(&self) -> Option<KeyID> {
+        Some(self.signature_public_key_id)
     }
 
     fn set_signature_public_key_id(&mut self, key_id: KeyID) {

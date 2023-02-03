@@ -18,7 +18,7 @@ impl InvalidInitialRevisionError {
         Self { document }
     }
 
-    #[wasm_bindgen(js_name=getDocumentTransition)]
+    #[wasm_bindgen(js_name=getDocument)]
     pub fn get_document_transition(&self) -> DocumentWasm {
         self.document.clone()
     }

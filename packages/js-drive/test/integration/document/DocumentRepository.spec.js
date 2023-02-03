@@ -636,11 +636,11 @@ const invalidQueries = [
   },
   {
     query: 'abc',
-    error: 'invalid cbor error: unable to decode query',
+    error: 'deserialization error: unable to decode query from cbor',
   },
   {
     query: [],
-    error: 'invalid cbor error: unable to decode query',
+    error: 'deserialization error: unable to decode query from cbor',
   },
   {
     query: { where: [1, 2, 3] },
@@ -1219,7 +1219,7 @@ describe('DocumentRepository', function main() {
               expect.fail('should throw an error');
             } catch (e) {
               expect(e).to.be.instanceOf(InvalidQueryError);
-              expect(e.message).to.equal('invalid cbor error: unable to decode query');
+              expect(e.message).to.equal('deserialization error: unable to decode query from cbor');
             }
           });
         });
@@ -1852,8 +1852,8 @@ describe('DocumentRepository', function main() {
 
                     expect.fail('should throw an error');
                   } catch (e) {
-                    expect(e).to.be.instanceOf(InvalidQueryError);
                     expect(e.message).to.equal('value wrong type error: document field type doesn\'t match document value');
+                    expect(e).to.be.instanceOf(InvalidQueryError);
                   }
                 });
               });

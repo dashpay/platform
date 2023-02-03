@@ -33,6 +33,7 @@ describe('prepareProposalHandlerFactory', () => {
   let proposalBlockExecutionContextMock;
   let round;
   let executionTimerMock;
+  let createContextLoggerMock;
 
   beforeEach(function beforeEach() {
     round = 1;
@@ -93,6 +94,7 @@ describe('prepareProposalHandlerFactory', () => {
     executionTimerMock = {
       getTimer: this.sinon.stub().returns(0.1),
     };
+    createContextLoggerMock = this.sinon.stub().returns(loggerMock);
 
     prepareProposalHandler = prepareProposalHandlerFactory(
       deliverTxMock,
@@ -102,6 +104,7 @@ describe('prepareProposalHandlerFactory', () => {
       endBlockMock,
       updateCoreChainLockMock,
       executionTimerMock,
+      createContextLoggerMock,
     );
 
     const maxTxBytes = 42;
@@ -197,6 +200,11 @@ describe('prepareProposalHandlerFactory', () => {
       txResults: new Array(3).fill({ code: 0 }),
       consensusParamUpdates,
       validatorSetUpdate,
+    });
+    expect(createContextLoggerMock).to.be.calledOnceWithExactly(loggerMock, {
+      height: '42',
+      round,
+      abciMethod: 'prepareProposal',
     });
   });
 

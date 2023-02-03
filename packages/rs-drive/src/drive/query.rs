@@ -41,11 +41,11 @@ use crate::error::Error;
 use crate::fee::calculate_fee;
 use crate::fee::op::DriveOperation;
 use crate::query::DriveQuery;
-use dpp::data_contract::extra::DocumentType;
+use dpp::data_contract::document_type::DocumentType;
+use dpp::data_contract::DriveContractExt;
 
 use crate::drive::block_info::BlockInfo;
 use crate::fee_pools::epochs::Epoch;
-use dpp::data_contract::extra::DriveContractExt;
 
 impl Drive {
     /// Performs and returns the result of the specified query along with skipped items and the cost.

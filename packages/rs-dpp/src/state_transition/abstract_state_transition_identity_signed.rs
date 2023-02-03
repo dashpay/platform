@@ -15,7 +15,7 @@ where
     Self: StateTransitionLike,
 {
     fn get_owner_id(&self) -> &Identifier;
-    fn get_signature_public_key_id(&self) -> KeyID;
+    fn get_signature_public_key_id(&self) -> Option<KeyID>;
     fn set_signature_public_key_id(&mut self, key_id: KeyID);
 
     fn sign(
@@ -88,7 +88,7 @@ where
             });
         }
 
-        if self.get_signature_public_key_id() != public_key.get_id() {
+        if self.get_signature_public_key_id() != Some(public_key.get_id()) {
             return Err(ProtocolError::PublicKeyMismatchError {
                 public_key: public_key.clone(),
             });
@@ -259,8 +259,8 @@ mod test {
             SecurityLevel::HIGH
         }
 
-        fn get_signature_public_key_id(&self) -> KeyID {
-            self.signature_public_key_id
+        fn get_signature_public_key_id(&self) -> Option<KeyID> {
+            Some(self.signature_public_key_id)
         }
 
         fn set_signature_public_key_id(&mut self, key_id: KeyID) {
@@ -376,7 +376,7 @@ mod test {
         let st = get_mock_state_transition();
         let hash = st.hash(false).unwrap();
         assert_eq!(
-            "be27201d895364e9543f0c4c6a372bb2e262af891296fbdc4cef09b3224d9b51",
+            "b067b5f84b748080684f3b203b07227a3b2db9f745815e3449113ac9e5619523",
             hex::encode(hash)
         )
     }
@@ -387,8 +387,8 @@ mod test {
         let hash = st.to_buffer(false).unwrap();
         let result = hex::encode(hash);
 
-        assert_eq!(216, result.len());
-        assert!(result.starts_with("01000000"))
+        assert_eq!(210, result.len());
+        assert!(result.starts_with("01"))
     }
 
     #[test]
@@ -397,15 +397,14 @@ mod test {
         let hash = st.to_buffer(true).unwrap();
         let result = hex::encode(hash);
 
-        assert_eq!(150, result.len());
-        assert_eq!("01000000a26e7472616e736974696f6e5479706501676f776e65724964782c4158356f323241525746595a45394a5a5441355353657976707274657442637662514c53425a376352374777", result);
+        assert_eq!("01a26e7472616e736974696f6e5479706501676f776e65724964782c4158356f323241525746595a45394a5a5441355353657976707274657442637662514c53425a376352374777", result);
     }
 
     #[test]
     fn get_signature_public_key_id() {
         let st = get_mock_state_transition();
         let keys = get_test_keys();
-        assert_eq!(keys.public_key_id, st.get_signature_public_key_id())
+        assert_eq!(Some(keys.public_key_id), st.get_signature_public_key_id())
     }
 
     #[test]
@@ -559,7 +558,7 @@ mod test {
         let mut st = get_mock_state_transition();
         let public_key_id = 2;
         st.set_signature_public_key_id(public_key_id);
-        assert_eq!(public_key_id, st.get_signature_public_key_id());
+        assert_eq!(Some(public_key_id), st.get_signature_public_key_id());
     }
 
     #[test]

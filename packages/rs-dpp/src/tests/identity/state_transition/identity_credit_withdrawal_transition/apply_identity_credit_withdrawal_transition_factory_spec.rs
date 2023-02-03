@@ -25,7 +25,7 @@ mod apply_identity_credit_withdrawal_transition_factory {
             .returning(|_, _| anyhow::Ok(()));
 
         state_repository
-            .expect_fetch_identity::<Identity>()
+            .expect_fetch_identity()
             .times(1)
             .withf(|id, _| *id == Identifier::default())
             .returning(|_, _| {
