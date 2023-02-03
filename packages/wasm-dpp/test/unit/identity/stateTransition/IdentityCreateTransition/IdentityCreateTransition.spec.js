@@ -14,7 +14,6 @@ describe('IdentityCreateTransition', () => {
   let KeyType;
   let KeyPurpose;
   let KeySecurityLevel;
-  let IdentityPublicKey;
   let Identifier;
   let IdentityPublicKeyInCreation;
 
@@ -32,7 +31,6 @@ describe('IdentityCreateTransition', () => {
   before(async () => {
     ({
       IdentityCreateTransition,
-      IdentityPublicKey,
       IdentityPublicKeyInCreation,
       KeyType,
       KeyPurpose,
