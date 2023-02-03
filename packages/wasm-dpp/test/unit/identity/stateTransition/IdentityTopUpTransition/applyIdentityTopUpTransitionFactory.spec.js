@@ -60,55 +60,6 @@ describe('applyIdentityTopUpTransitionFactory', () => {
     );
   });
 
-  // it('should store identity created from state transition', async function () {
-  //   const balanceBeforeTopUp = identity.getBalance();
-  //
-  //   const balanceToTopUp = convertSatoshiToCredits(
-  //     stateTransition.getAssetLockProof().getOutput().satoshis,
-  //   );
-  //
-  //   await applyIdentityTopUpTransition(stateTransition);
-  //
-  //   const { args: [updatedIdentity] } = stateRepositoryMock.updateIdentity.firstCall;
-  //
-  //   expect(updatedIdentity.getBalance()).to.be.equal(balanceBeforeTopUp + balanceToTopUp);
-  //   expect(updatedIdentity.getBalance()).to.be.greaterThan(balanceBeforeTopUp);
-  //
-  //   expect(stateRepositoryMock.updateIdentity).to.have.been.calledOnceWithExactly(
-  //     updatedIdentity,
-  //     this.sinonSandbox.match.instanceOf(StateTransitionExecutionContext),
-  //   );
-  //
-  //   expect(stateRepositoryMock.markAssetLockTransactionOutPointAsUsed).to.have.been
-  //     .calledOnceWithExactly(
-  //       stateTransition.getAssetLockProof().getOutPoint(),
-  //     );
-  // });
-  //
-  // it('should add topup amount to identity balance on dry run', async () => {
-  //   const balanceToTopUp = convertSatoshiToCredits(
-  //     stateTransition.getAssetLockProof().getOutput().satoshis,
-  //   );
-  //
-  //   executionContext.enableDryRun();
-  //
-  //   await applyIdentityTopUpTransition(stateTransition);
-  //
-  //   executionContext.disableDryRun();
-  //
-  //   expect(stateRepositoryMock.addToIdentityBalance).to.have.been.calledOnceWithExactly(
-  //     stateTransition.getOwnerId(),
-  //     balanceToTopUp,
-  //     executionContext,
-  //   );
-  //
-  //   expect(stateRepositoryMock.markAssetLockTransactionOutPointAsUsed).to.have.been
-  //     .calledOnceWithExactly(
-  //       stateTransition.getAssetLockProof().getOutPoint(),
-  //       executionContext,
-  //     );
-  // });
-
   it('should add topup amount to identity balance', async function () {
     const balanceToTopUp = convertSatoshiToCredits(
       stateTransition.getAssetLockProof().getOutput().satoshis,
@@ -119,7 +70,7 @@ describe('applyIdentityTopUpTransitionFactory', () => {
     const { match } = this.sinonSandbox;
 
     expect(stateRepositoryMock.addToIdentityBalance).to.have.been.calledOnceWithExactly(
-      match((arg) => Buffer.from(arg).equals(stateTransition.getOwnerId().toBuffer())),
+      match((arg) => Buffer.from(arg.toBuffer()).equals(stateTransition.getOwnerId().toBuffer())),
       balanceToTopUp,
       match.instanceOf(StateTransitionExecutionContext),
     );
