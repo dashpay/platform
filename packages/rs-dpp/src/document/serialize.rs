@@ -9,7 +9,7 @@ impl Document {
             .reject_trailing_bytes()
             .with_big_endian()
             .serialize(self)
-            .map_err(|_| ProtocolError::EncodingError(String::from("unable to serialize identity")))
+            .map_err(|_| ProtocolError::EncodingError(String::from("unable to serialize document")))
     }
 
     pub fn serialized_size(&self) -> usize {
