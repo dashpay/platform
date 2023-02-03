@@ -54,6 +54,6 @@ pub mod serde_entropy {
     where
         S: Serializer,
     {
-        serializer.serialize_str(&base64::encode(&buffer))
+        serializer.serialize_str(&base64::encode(buffer))
     }
 }

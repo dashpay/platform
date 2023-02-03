@@ -22,6 +22,12 @@ impl<'a> From<&'a StateTransitionExecutionContextWasm> for StateTransitionExecut
     }
 }
 
+impl Default for StateTransitionExecutionContextWasm {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 #[wasm_bindgen(js_class=StateTransitionExecutionContext)]
 impl StateTransitionExecutionContextWasm {
     #[wasm_bindgen(constructor)]

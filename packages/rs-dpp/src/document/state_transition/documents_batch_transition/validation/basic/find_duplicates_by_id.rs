@@ -2,9 +2,6 @@ use anyhow::anyhow;
 use serde_json::Value as JsonValue;
 use std::collections::{hash_map::Entry, HashMap};
 
-
-
-
 /// Find the duplicates in the collection of Document Transitions
 pub fn find_duplicates_by_id<'a>(
     document_transitions: impl IntoIterator<Item = &'a JsonValue>,
@@ -13,9 +10,8 @@ pub fn find_duplicates_by_id<'a>(
     let mut duplicates: Vec<JsonValue> = vec![];
 
     for transition in document_transitions {
-        let fingerprint = create_fingerprint(&transition).ok_or_else(|| anyhow!(
-            "Can't create fingerprint from a document transition"
-        ))?;
+        let fingerprint = create_fingerprint(&transition)
+            .ok_or_else(|| anyhow!("Can't create fingerprint from a document transition"))?;
         match fingerprints.entry(fingerprint.clone()) {
             Entry::Occupied(val) => {
                 duplicates.push(val.get().clone());

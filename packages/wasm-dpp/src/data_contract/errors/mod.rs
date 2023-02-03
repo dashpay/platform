@@ -4,7 +4,6 @@ mod invalid_document_type;
 
 use wasm_bindgen::prelude::*;
 
-use crate::errors::consensus_error::from_consensus_error;
 pub use data_contract_already_exists::*;
 use dpp::data_contract::errors::DataContractError;
 pub use invalid_data_contract::*;

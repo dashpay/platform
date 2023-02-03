@@ -13,11 +13,10 @@ pub fn from_protocol_error(e: dpp::ProtocolError) -> JsValue {
             raw_data_contract,
         } => {
             let protocol = serde_wasm_bindgen::to_value(&raw_data_contract);
-            protocol.map_or_else(
-                |parsing_error| JsValue::from(parsing_error),
-                |raw_contract| InvalidDataContractError::new(errors, raw_contract).into(),
-            )
+            protocol.map_or_else(JsValue::from, |raw_contract| {
+                InvalidDataContractError::new(errors, raw_contract).into()
+            })
         }
-        e => JsValue::from(format!("{}", e.to_string())),
+        e => JsValue::from(e.to_string()),
     }
 }

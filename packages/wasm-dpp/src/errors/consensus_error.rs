@@ -196,7 +196,7 @@ pub fn from_consensus_error_ref(e: &DPPConsensusError) -> JsValue {
     }
 }
 
-fn from_state_error(state_error: &Box<StateError>) -> JsValue {
+fn from_state_error(state_error: &StateError) -> JsValue {
     let code = state_error.get_code();
 
     match state_error.deref() {
@@ -340,7 +340,7 @@ fn from_state_error(state_error: &Box<StateError>) -> JsValue {
     }
 }
 
-fn from_basic_error(basic_error: &Box<BasicError>) -> JsValue {
+fn from_basic_error(basic_error: &BasicError) -> JsValue {
     let code = basic_error.get_code();
 
     match basic_error.deref() {
