@@ -6,7 +6,7 @@ use crate::bls_adapter::{BlsAdapter, JsBlsAdapter};
 use crate::DataContractFacadeWasm;
 use dpp::identity::validation::PublicKeysValidator;
 use dpp::identity::IdentityFacade;
-use dpp::version::{LATEST_VERSION, ProtocolVersionValidator};
+use dpp::version::{ProtocolVersionValidator, LATEST_VERSION};
 
 #[wasm_bindgen(js_name=DashPlatformProtocol)]
 pub struct DashPlatformProtocol {

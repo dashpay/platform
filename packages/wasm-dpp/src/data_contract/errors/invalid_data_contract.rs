@@ -1,6 +1,6 @@
-use wasm_bindgen::prelude::*;
+use crate::errors::consensus_error::from_consensus_error_ref;
 use dpp::consensus::ConsensusError;
-use crate::errors::consensus_error::{from_consensus_error_ref};
+use wasm_bindgen::prelude::*;
 
 #[wasm_bindgen(js_name=InvalidDataContractError)]
 #[derive(Debug)]
@@ -33,20 +33,17 @@ impl InvalidDataContractError {
 
     #[wasm_bindgen(js_name=getMessage)]
     pub fn get_message(&self) -> String {
-        let extended_message = if let Some(error_message) = self
-            .errors
-            .first()
-            .map(|e| e.to_string())
-        {
-            let narrowed_message = if self.errors.len() > 1 {
-                format!(" and {} more", self.errors.len() - 1)
+        let extended_message =
+            if let Some(error_message) = self.errors.first().map(|e| e.to_string()) {
+                let narrowed_message = if self.errors.len() > 1 {
+                    format!(" and {} more", self.errors.len() - 1)
+                } else {
+                    "".to_owned()
+                };
+                format!(": \"{error_message}\"{narrowed_message}")
             } else {
                 "".to_owned()
             };
-            format!(": \"{error_message}\"{narrowed_message}")
-        } else {
-            "".to_owned()
-        };
 
         format!("Data contract decode error{extended_message}")
     }

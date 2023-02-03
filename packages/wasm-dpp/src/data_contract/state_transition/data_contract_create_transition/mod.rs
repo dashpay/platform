@@ -13,13 +13,13 @@ use dpp::{
 use serde::{Deserialize, Serialize};
 use wasm_bindgen::prelude::*;
 
+use crate::errors::protocol_error::from_protocol_error;
 use crate::{
     buffer::Buffer,
     errors::{from_dpp_err, RustConversionError},
     identifier::IdentifierWrapper,
     with_js_error, DataContractParameters, DataContractWasm, StateTransitionExecutionContextWasm,
 };
-use crate::errors::protocol_error::from_protocol_error;
 
 #[wasm_bindgen(js_name=DataContractCreateTransition)]
 pub struct DataContractCreateTransitionWasm(DataContractCreateTransition);
@@ -139,7 +139,12 @@ impl DataContractCreateTransitionWasm {
 
     #[wasm_bindgen(js_name=toObject)]
     pub fn to_object(&self, skip_signature: Option<bool>) -> Result<JsValue, JsValue> {
-        let serde_object = self.0.to_object(skip_signature.unwrap_or(false)).map_err(from_protocol_error)?;
-        serde_object.serialize(&serde_wasm_bindgen::Serializer::json_compatible()).map_err(|e| e.into())
+        let serde_object = self
+            .0
+            .to_object(skip_signature.unwrap_or(false))
+            .map_err(from_protocol_error)?;
+        serde_object
+            .serialize(&serde_wasm_bindgen::Serializer::json_compatible())
+            .map_err(|e| e.into())
     }
 }

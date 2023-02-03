@@ -1,16 +1,19 @@
 use crate::errors::protocol_error::from_protocol_error;
-use crate::{DataContractCreateTransitionWasm, DataContractUpdateTransitionWasm, DataContractWasm, js_value_to_serde_value, with_js_error};
 use crate::errors::RustConversionError;
+use crate::{
+    js_value_to_serde_value, with_js_error, DataContractCreateTransitionWasm,
+    DataContractUpdateTransitionWasm, DataContractWasm,
+};
 use dpp::data_contract::DataContractFacade;
 use dpp::identifier::Identifier;
 use dpp::version::ProtocolVersionValidator;
 
+use crate::data_contract::errors::InvalidDataContractError;
+use crate::data_contract::DataContractParameters;
+use crate::errors::from_dpp_err;
 use crate::validation::ValidationResultWasm;
 use std::sync::Arc;
 use wasm_bindgen::prelude::*;
-use crate::data_contract::DataContractParameters;
-use crate::data_contract::errors::InvalidDataContractError;
-use crate::errors::from_dpp_err;
 
 #[wasm_bindgen(js_name=DataContractFacade)]
 #[derive(Clone)]
@@ -52,7 +55,10 @@ impl DataContractFacadeWasm {
         skip_validation: bool,
     ) -> Result<DataContractWasm, JsValue> {
         self.0
-            .create_from_object(js_value_to_serde_value(js_raw_data_contract)?, skip_validation)
+            .create_from_object(
+                js_value_to_serde_value(js_raw_data_contract)?,
+                skip_validation,
+            )
             .await
             .map(DataContractWasm::from)
             .map_err(from_protocol_error)
