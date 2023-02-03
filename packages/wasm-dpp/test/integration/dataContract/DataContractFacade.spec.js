@@ -1,4 +1,4 @@
-const getDataContractFixture = require('../../../lib/test/fixtures/getDataContractFixture');
+const getDataContractJSFixture = require('@dashevo/dpp/lib/test/fixtures/getDataContractFixture');
 const getBlsAdapterMock = require('../../../lib/test/mocks/getBlsAdapterMock');
 
 const { default: loadWasmDpp } = require('../../..');
@@ -6,14 +6,14 @@ let {
   DashPlatformProtocol, DataContract, ValidationResult, DataContractValidator,
   DataContractFactory, DataContractCreateTransition,
 } = require('../../..');
-const generateRandomIdentifier = require('@dashevo/dpp/lib/test/utils/generateRandomIdentifier');
 
 describe('DataContractFacade', () => {
   let dpp;
-  let dataContract;
+  let dataContractJs;
   let dataContractFactory;
   let blsAdapter;
   let rawDataContract;
+  let dataContractWasm;
 
   before(async () => {
     ({
@@ -26,11 +26,8 @@ describe('DataContractFacade', () => {
     blsAdapter = await getBlsAdapterMock();
     dpp = new DashPlatformProtocol(blsAdapter);
 
-    dataContract = await getDataContractFixture();
-    rawDataContract = dataContract.toObject();
-    // rawDataContract.$id = Buffer.from(dataContract.getId());
-    // rawDataContract.ownerId = Buffer.from(dataContract.getOwnerId());
-    // rawDataContract.$ownerId = Buffer.from(dataContract.getOwnerId());
+    dataContractJs = await getDataContractJSFixture();
+    rawDataContract = dataContractJs.toObject();
 
     const dataContractValidator = new DataContractValidator();
     dataContractFactory = new DataContractFactory(
@@ -38,80 +35,55 @@ describe('DataContractFacade', () => {
       dataContractValidator,
     );
 
-    // dataContractFactory = new DataContractFactory(
-    //   { getProtocolVersion: () => 1 },
-    //   undefined,
-    //   undefined,
-    // );
+    dataContractWasm = await dataContractFactory.createFromObject(rawDataContract);
   });
 
   describe('create', () => {
     it('should create DataContract', () => {
       const result = dpp.dataContract.create(
-        dataContract.getOwnerId(),
-        dataContract.getDocuments(),
+        dataContractJs.getOwnerId(),
+        dataContractJs.getDocuments(),
       );
 
       expect(result).to.be.an.instanceOf(DataContract);
 
-      expect(result.getOwnerId().toBuffer()).to.deep.equal(dataContract.getOwnerId().toBuffer());
-      expect(result.getDocuments()).to.deep.equal(dataContract.getDocuments());
+      expect(result.getOwnerId().toBuffer()).to.deep.equal(dataContractJs.getOwnerId().toBuffer());
+      expect(result.getDocuments()).to.deep.equal(dataContractJs.getDocuments());
     });
   });
 
   describe('createFromObject', () => {
-    it('should create DataContract from plain object', async() => {
-      try {
-        console.dir(rawDataContract);
-        const result = await dpp.dataContract.createFromObject(rawDataContract);
+    it('should create DataContract from plain object', async () => {
+      const result = await dpp.dataContract.createFromObject(rawDataContract);
 
-        expect(result).to.be.an.instanceOf(DataContract);
+      expect(result).to.be.an.instanceOf(DataContract);
 
-        expect(result.toObject()).to.deep.equal(dataContract.toObject());
-      } catch (e) {
-        console.dir(e.getMessage());
-        expect.fail();
-      }
+      expect(result.toObject()).to.deep.equal(dataContractJs.toObject());
     });
   });
 
   describe('createFromBuffer', () => {
-    it('should create DataContract from string', async() => {
-      try {
-        const contract = dpp.dataContract.create(
-            dataContract.getOwnerId(),
-            dataContract.getDocuments(),
-        );
+    it('should create DataContract from string', async () => {
+      const contract = dpp.dataContract.create(
+        dataContractJs.getOwnerId(),
+        dataContractJs.getDocuments(),
+      );
 
-        const result = await dpp.dataContract.createFromBuffer(contract.toBuffer());
+      const result = await dpp.dataContract.createFromBuffer(contract.toBuffer());
 
-        expect(result).to.be.an.instanceOf(DataContract);
-
-        expect(result.toObject()).to.deep.equal(dataContract.toObject());
-      } catch (e) {
-        console.log(e);
-        expect.fail();
-      }
+      expect(result).to.be.an.instanceOf(DataContract);
+      expect(result.toObject()).to.deep.equal(contract.toObject());
     });
   });
 
   describe('createDataContractCreateTransition', () => {
     it('should create DataContractCreateTransition from DataContract', async () => {
-      console.dir(dataContract.toObject());
+      const stateTransition = await dataContractFactory
+        .createDataContractCreateTransition(dataContractWasm);
 
-      console.log('***********************');
-
-      const stateTransition = await dataContractFactory.createDataContractCreateTransition(dataContract);
-
-      const result = dpp.dataContract.createDataContractCreateTransition(dataContract);
+      const result = dpp.dataContract.createDataContractCreateTransition(dataContractWasm);
 
       expect(result).to.be.an.instanceOf(DataContractCreateTransition);
-
-      console.dir(result.toObject());
-
-      console.log('=====================');
-
-      console.dir(stateTransition.toObject());
 
       expect(result.toObject()).to.deep.equal(stateTransition.toObject());
     });
@@ -122,6 +94,7 @@ describe('DataContractFacade', () => {
       const result = await dpp.dataContract.validate(rawDataContract);
 
       expect(result).to.be.an.instanceOf(ValidationResult);
+      expect(result.getErrors().length).to.be.equal(0);
     });
   });
 });

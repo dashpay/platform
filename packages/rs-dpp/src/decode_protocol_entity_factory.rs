@@ -21,6 +21,7 @@ impl DecodeProtocolEntity {
                 parsing_error: anyhow!("Decode protocol entity: {:#?}", e),
             }
         })?;
+
         let json_value: JsonValue = serde_json::to_value(cbor_value).unwrap();
         Ok((protocol_version, json_value))
     }
