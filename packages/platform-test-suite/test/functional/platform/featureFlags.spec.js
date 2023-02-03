@@ -1,4 +1,5 @@
 const featureFlagsSystemIds = require('@dashevo/feature-flags-contract/lib/systemIds');
+const InvalidRequestError = require('@dashevo/dapi-client/lib/transport/errors/response/InvalidRequestError');
 
 const createClientWithFundedWallet = require('../../../lib/test/createClientWithFundedWallet');
 
@@ -117,9 +118,21 @@ describe('Platform', () => {
           ({ blockHeight: height } = someIdentity.getMetadata());
         } while (height <= updateConsensusParamsFeatureFlag.enableAtHeight);
 
-        let newConsensusParams = await ownerClient.getDAPIClient().platform.getConsensusParams(
-          updateConsensusParamsFeatureFlag.enableAtHeight + 1,
-        );
+        let newConsensusParams;
+
+        for (let i = 0; i < 5; i++) {
+          try {
+            newConsensusParams = await ownerClient.getDAPIClient()
+              .platform
+              .getConsensusParams(
+                updateConsensusParamsFeatureFlag.enableAtHeight + 1,
+              );
+          } catch (e) {
+            if (!(e instanceof InvalidRequestError) || !e.message.startsWith('Invalid height') || i + 1 === 5) {
+              throw e;
+            }
+          }
+        }
 
         const { block, evidence } = updateConsensusParamsFeatureFlag;
 
@@ -145,9 +158,19 @@ describe('Platform', () => {
           ({ blockHeight: height } = someIdentity.getMetadata());
         } while (height <= revertConsensusParamsFeatureFlag.enableAtHeight);
 
-        newConsensusParams = await ownerClient.getDAPIClient().platform.getConsensusParams(
-          revertConsensusParamsFeatureFlag.enableAtHeight + 1,
-        );
+        for (let i = 0; i < 5; i++) {
+          try {
+            newConsensusParams = await ownerClient.getDAPIClient()
+              .platform
+              .getConsensusParams(
+                revertConsensusParamsFeatureFlag.enableAtHeight + 1,
+              );
+          } catch (e) {
+            if (!(e instanceof InvalidRequestError) || !e.message.startsWith('Invalid height') || i + 1 === 5) {
+              throw e;
+            }
+          }
+        }
 
         updatedBlock = newConsensusParams.getBlock();
         const oldBlock = oldConsensusParams.getBlock();
