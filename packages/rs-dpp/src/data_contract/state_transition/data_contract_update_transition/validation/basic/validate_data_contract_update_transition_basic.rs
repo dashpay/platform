@@ -214,7 +214,7 @@ fn replace_bytes_with_hex_string(
         let bytes = data
             .get_bytes(property_name.as_ref())
             .with_context(|| "replacing bytes with hex string failed")?;
-        let hex_string = hex::encode(&bytes).to_string();
+        let hex_string = hex::encode(bytes).to_string();
         data[property_name.as_ref()] = JsonValue::String(hex_string);
     }
     Ok(())

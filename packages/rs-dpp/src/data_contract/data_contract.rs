@@ -36,7 +36,7 @@ pub const IDENTIFIER_FIELDS: [&str; 2] = [property_names::ID, property_names::OW
 
 impl Convertible for DataContract {
     fn to_object(&self) -> Result<JsonValue, ProtocolError> {
-        let mut json_object = serde_json::to_value(&self)?;
+        let mut json_object = serde_json::to_value(self)?;
         if !json_object.is_object() {
             return Err(anyhow!("the Data Contract isn't a JSON Value Object").into());
         }
@@ -47,7 +47,7 @@ impl Convertible for DataContract {
 
     /// Returns Data Contract as a JSON Value
     fn to_json(&self) -> Result<JsonValue, ProtocolError> {
-        Ok(serde_json::to_value(&self)?)
+        Ok(serde_json::to_value(self)?)
     }
 
     /// Returns Data Contract as a Buffer
@@ -132,8 +132,7 @@ impl DataContract {
         // Defs
         let defs = data_contract_map
             .get("$defs")
-            .map(CborValue::as_map)
-            .flatten()
+            .and_then(CborValue::as_map)
             .map(|definition_map| {
                 let mut res = BTreeMap::<String, JsonValue>::new();
                 for (key, value) in definition_map {
@@ -211,7 +210,7 @@ impl DataContract {
     }
 
     pub fn to_object(&self, skip_identifiers_conversion: bool) -> Result<JsonValue, ProtocolError> {
-        let mut json_object = serde_json::to_value(&self)?;
+        let mut json_object = serde_json::to_value(self)?;
         if !json_object.is_object() {
             return Err(anyhow!("the Data Contract isn't a JSON Value Object").into());
         }
@@ -224,7 +223,7 @@ impl DataContract {
 
     /// Returns Data Contract as a JSON Value
     pub fn to_json(&self) -> Result<JsonValue, ProtocolError> {
-        Ok(serde_json::to_value(&self)?)
+        Ok(serde_json::to_value(self)?)
     }
 
     /// Returns Data Contract as a Buffer
