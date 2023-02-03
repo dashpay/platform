@@ -70,7 +70,7 @@ describe('applyIdentityTopUpTransitionFactory', () => {
     const { match } = this.sinonSandbox;
 
     expect(stateRepositoryMock.addToIdentityBalance).to.have.been.calledOnceWithExactly(
-      match((arg) => Buffer.from(arg.toBuffer()).equals(stateTransition.getOwnerId().toBuffer())),
+      match((arg) => arg.toBuffer().equals(stateTransition.getOwnerId().toBuffer())),
       balanceToTopUp,
       match.instanceOf(StateTransitionExecutionContext),
     );
@@ -103,7 +103,7 @@ describe('applyIdentityTopUpTransitionFactory', () => {
     executionContext.disableDryRun();
 
     expect(stateRepositoryMock.addToIdentityBalance).to.have.been.calledOnceWithExactly(
-      match((arg) => Buffer.from(arg).equals(stateTransition.getOwnerId().toBuffer())),
+      match((arg) => arg.toBuffer().equals(stateTransition.getOwnerId().toBuffer())),
       balanceToTopUp,
       match.instanceOf(StateTransitionExecutionContext),
     );
