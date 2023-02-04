@@ -4,7 +4,6 @@ use ciborium::value::Value as CborValue;
 use integer_encoding::VarInt;
 use serde::{Deserialize, Serialize};
 use serde_json::Value as JsonValue;
-use sha2::digest::generic_array::functional::FunctionalSequence;
 
 use crate::identity::state_transition::asset_lock_proof::AssetLockProof;
 use crate::identity::{identity_public_key, PartialIdentityInfo};

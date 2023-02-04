@@ -47,6 +47,7 @@ impl KeyType {
         KEY_TYPE_SIZES[self]
     }
 
+    //todo: put this in a specific feature
     /// Gets the default size of the public key
     pub fn random_public_key_data(&self, rng: &mut StdRng) -> Vec<u8> {
         match self {
@@ -70,7 +71,7 @@ impl KeyType {
 
 impl std::fmt::Display for KeyType {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{:?}", self)
+        write!(f, "{self:?}")
     }
 }
 
