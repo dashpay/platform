@@ -29,13 +29,22 @@ function applyIdentityTopUpTransitionFactory(
 
     const outPoint = stateTransition.getAssetLockProof().getOutPoint();
 
-    const creditsAmount = convertSatoshiToCredits(output.satoshis);
+    let creditsAmount = convertSatoshiToCredits(output.satoshis);
 
     const identityId = stateTransition.getIdentityId();
 
     await stateRepository.addToIdentityBalance(identityId, creditsAmount, executionContext);
 
-    // TODO: we should handle debt!!!
+    // Ignore balance dept for system credits
+    const balance = await stateRepository.fetchIdentityBalanceWithDebt(
+      identityId,
+      executionContext,
+    );
+
+    if (balance < 0) {
+      creditsAmount += balance;
+    }
+
     await stateRepository.addToSystemCredits(creditsAmount, executionContext);
 
     await stateRepository.markAssetLockTransactionOutPointAsUsed(outPoint, executionContext);

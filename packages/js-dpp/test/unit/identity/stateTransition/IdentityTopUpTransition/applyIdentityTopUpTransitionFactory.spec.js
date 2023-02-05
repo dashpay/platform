@@ -19,6 +19,8 @@ describe('applyIdentityTopUpTransitionFactory', () => {
   beforeEach(function beforeEach() {
     stateRepositoryMock = createStateRepositoryMock(this.sinonSandbox);
 
+    stateRepositoryMock.fetchIdentityBalanceWithDebt.resolves(1);
+
     stateTransition = getIdentityTopUpTransitionFixture();
 
     executionContext = new StateTransitionExecutionContext();
@@ -64,6 +66,38 @@ describe('applyIdentityTopUpTransitionFactory', () => {
         stateTransition.getAssetLockProof(),
         executionContext,
       );
+  });
+
+  it('should ignore balance debt for system credits', async () => {
+    stateRepositoryMock.fetchIdentityBalanceWithDebt.resolves(-5);
+
+    const balanceToTopUp = convertSatoshiToCredits(
+      stateTransition.getAssetLockProof().getOutput().satoshis,
+    );
+
+    await applyIdentityTopUpTransition(stateTransition);
+
+    expect(stateRepositoryMock.addToIdentityBalance).to.have.been.calledOnceWithExactly(
+      stateTransition.getOwnerId(),
+      balanceToTopUp,
+      executionContext,
+    );
+
+    expect(stateRepositoryMock.addToSystemCredits).to.have.been.calledOnceWithExactly(
+      balanceToTopUp - 5,
+      executionContext,
+    );
+
+    expect(stateRepositoryMock.markAssetLockTransactionOutPointAsUsed).to.have.been
+      .calledOnceWithExactly(
+        stateTransition.getAssetLockProof().getOutPoint(),
+        executionContext,
+      );
+
+    expect(fetchAssetLockTransactionOutputMock).to.be.calledOnceWithExactly(
+      stateTransition.getAssetLockProof(),
+      executionContext,
+    );
   });
 
   it('should add topup amount to identity balance on dry run', async () => {

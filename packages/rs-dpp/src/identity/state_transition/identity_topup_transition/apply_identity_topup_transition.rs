@@ -39,7 +39,7 @@ where
             )
             .await?;
 
-        let credits_amount = convert_satoshi_to_credits(output.value);
+        let mut credits_amount = convert_satoshi_to_credits(output.value);
 
         let out_point = state_transition
             .get_asset_lock_proof()
@@ -56,7 +56,18 @@ where
             )
             .await?;
 
-        // TODO: we should handle debt!!!
+        let balance = self
+            .state_repository
+            .fetch_identity_balance_with_debt(identity_id, state_transition.get_execution_context())
+            .await?
+            .ok_or_else(|| anyhow!("balance must be persisted"))?;
+
+        if balance < 0 {
+            credits_amount = credits_amount
+                .checked_sub(balance.unsigned_abs())
+                .ok_or_else(|| anyhow!("balance debt is more than topup amount"))?;
+        }
+
         self.state_repository
             .add_to_system_credits(credits_amount, state_transition.get_execution_context())
             .await?;
@@ -108,9 +119,64 @@ mod test {
             .returning(|_, _, _| Ok(()));
 
         state_repository_for_apply
+            .expect_fetch_identity_balance_with_debt()
+            .times(1)
+            .with(eq(identity_id), always())
+            .returning(|_, _| Ok(Some(0)));
+
+        state_repository_for_apply
             .expect_add_to_system_credits()
             .times(1)
             .with(eq(90000000), always())
+            .returning(|_, _| Ok(()));
+
+        state_repository_for_apply
+            .expect_mark_asset_lock_transaction_out_point_as_used()
+            .returning(|_| Ok(()));
+
+        let apply_identity_topup_transition = ApplyIdentityTopUpTransition::new(
+            Arc::new(state_repository_for_apply),
+            Arc::new(asset_lock_transaction_fetcher),
+        );
+
+        let result = apply_identity_topup_transition
+            .apply(&state_transition)
+            .await;
+
+        assert!(result.is_ok())
+    }
+
+    #[tokio::test]
+    async fn should_ignore_balance_debt_for_system_credits() {
+        let raw_transition = identity_topup_transition_fixture_json(None);
+        let state_transition = IdentityTopUpTransition::new(raw_transition).unwrap();
+
+        let IdentityTopUpTransition { identity_id, .. } = state_transition.clone();
+
+        // TODO: We need to mock what fetcher actually returning and assert arguments
+
+        let mut state_repository_for_apply = MockStateRepositoryLike::new();
+        let state_repository_for_fetcher = MockStateRepositoryLike::new();
+
+        let asset_lock_transaction_fetcher =
+            AssetLockTransactionOutputFetcher::new(Arc::new(state_repository_for_fetcher));
+
+        state_repository_for_apply
+            .expect_add_to_identity_balance()
+            .times(1)
+            .with(eq(identity_id), eq(90000000), always())
+            .returning(|_, _, _| Ok(()));
+
+        state_repository_for_apply
+            .expect_fetch_identity_balance_with_debt()
+            .times(1)
+            .with(eq(identity_id), always())
+            .returning(|_, _| Ok(Some(-5)));
+
+        state_repository_for_apply
+            .expect_add_to_system_credits()
+            .times(1)
+            .with(eq(90000000 - 5), always())
             .returning(|_, _| Ok(()));
 
         state_repository_for_apply
@@ -149,6 +215,12 @@ mod test {
             .times(1)
             .with(eq(identity_id), eq(90000000), always())
             .returning(|_, _, _| Ok(()));
+
+        state_repository_for_apply
+            .expect_fetch_identity_balance_with_debt()
+            .times(1)
+            .with(eq(identity_id), always())
+            .returning(|_, _| Ok(Some(0)));
 
         state_repository_for_apply
             .expect_add_to_system_credits()
