@@ -83,7 +83,7 @@ impl DataContractWasm {
 
     #[wasm_bindgen(js_name=getId)]
     pub fn get_id(&self) -> IdentifierWrapper {
-        self.0.id.clone().into()
+        self.0.id.into()
     }
 
     #[wasm_bindgen(js_name=setId)]
@@ -93,7 +93,7 @@ impl DataContractWasm {
 
     #[wasm_bindgen(js_name=getOwnerId)]
     pub fn get_owner_id(&self) -> IdentifierWrapper {
-        self.0.owner_id.clone().into()
+        self.0.owner_id.into()
     }
 
     #[wasm_bindgen(js_name=getVersion)]

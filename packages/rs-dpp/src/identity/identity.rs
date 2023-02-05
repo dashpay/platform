@@ -164,8 +164,7 @@ impl Identity {
     /// Get the biggest public KeyID
     pub fn get_public_key_max_id(&self) -> KeyID {
         self.public_keys
-            .keys()
-            .map(|pk| *pk)
+            .keys().copied()
             .max()
             .unwrap_or_default()
     }
@@ -292,7 +291,7 @@ impl Identity {
 
     /// Computes the hash of an identity
     pub fn hash(&self) -> Result<Vec<u8>, ProtocolError> {
-        Ok(hash::hash(&self.to_buffer()?))
+        Ok(hash::hash(self.to_buffer()?))
     }
 
     /// Convenience method to get Partial Identity Info

@@ -293,7 +293,7 @@ pub mod public_keys {
         identity = serde_set(
             identity,
             "publicKeys",
-            Value::Array(vec![public_key.clone(), public_key.clone()]),
+            Value::Array(vec![public_key.clone(), public_key]),
         );
 
         let result = identity_validator.validate_identity(&identity).unwrap();
@@ -321,7 +321,7 @@ pub mod public_keys {
         identity = serde_set(
             identity,
             "publicKeys",
-            Value::Array(vec![public_key.clone(); 101]),
+            Value::Array(vec![public_key; 101]),
         );
 
         let result = identity_validator.validate_identity(&identity).unwrap();

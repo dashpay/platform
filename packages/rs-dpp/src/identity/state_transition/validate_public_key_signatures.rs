@@ -4,7 +4,6 @@ use crate::identity::IdentityPublicKeyInCreation;
 use crate::{
     consensus::{basic::BasicError, ConsensusError},
     object_names,
-    prelude::IdentityPublicKey,
     state_transition::{
         try_get_transition_type, StateTransition, StateTransitionLike, StateTransitionType,
     },

@@ -77,7 +77,7 @@ impl DataContractUpdateTransitionWasm {
 
     #[wasm_bindgen(js_name=getOwnerId)]
     pub fn get_owner_id(&self) -> IdentifierWrapper {
-        self.0.get_owner_id().clone().into()
+        (*self.0.get_owner_id()).into()
     }
 
     #[wasm_bindgen(js_name=getType)]
@@ -110,7 +110,7 @@ impl DataContractUpdateTransitionWasm {
         self.0
             .get_modified_data_ids()
             .into_iter()
-            .map(|identifier| Into::<IdentifierWrapper>::into(identifier.clone()).into())
+            .map(|identifier| Into::<IdentifierWrapper>::into(*identifier).into())
             .collect()
     }
 

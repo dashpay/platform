@@ -1,34 +1,32 @@
-use crate::drive::defaults::{DEFAULT_HASH_160_SIZE_U8, DEFAULT_HASH_SIZE_U8};
-use crate::drive::flags::{StorageFlags, SINGLE_EPOCH_FLAGS_SIZE};
-use crate::drive::grove_operations::BatchInsertApplyType::StatefulBatchInsert;
-use crate::drive::grove_operations::BatchInsertTreeApplyType::StatefulBatchInsertTree;
-use crate::drive::grove_operations::QueryTarget::QueryTargetValue;
-use crate::drive::grove_operations::{BatchInsertApplyType, BatchInsertTreeApplyType};
+
+use crate::drive::flags::{SINGLE_EPOCH_FLAGS_SIZE};
+
+
+
+use crate::drive::grove_operations::{BatchInsertTreeApplyType};
 use crate::drive::identity::IdentityRootStructure::{
-    IdentityContractInfo, IdentityTreeKeyReferences, IdentityTreeKeys,
+    IdentityTreeKeyReferences, IdentityTreeKeys,
 };
 use crate::drive::identity::{
-    identity_contract_info_root_path_vec, identity_key_location_within_identity_vec,
-    identity_key_path_vec, identity_key_tree_path, identity_key_tree_path_vec, identity_path,
-    identity_path_vec, identity_query_keys_full_tree_path, identity_query_keys_purpose_tree_path,
+    identity_key_location_within_identity_vec, identity_key_tree_path, identity_key_tree_path_vec, identity_path, identity_query_keys_full_tree_path, identity_query_keys_purpose_tree_path,
     identity_query_keys_tree_path,
 };
 use crate::drive::object_size_info::PathKeyElementInfo::{
-    PathFixedSizeKeyRefElement, PathKeyElement, PathKeyElementSize,
+    PathFixedSizeKeyRefElement,
 };
 use crate::drive::object_size_info::PathKeyInfo::PathFixedSizeKey;
-use crate::drive::object_size_info::{DriveKeyInfo, PathKeyElementInfo, PathKeyInfo};
-use crate::drive::{unique_key_hashes_tree_path_vec, Drive};
-use crate::error::drive::DriveError;
-use crate::error::identity::IdentityError;
+use crate::drive::object_size_info::{DriveKeyInfo};
+use crate::drive::{Drive};
+
+
 use crate::error::Error;
-use crate::fee::op::DriveOperation::FunctionOperation;
-use crate::fee::op::{DriveOperation, FunctionOp, HashFunction};
+
+use crate::fee::op::{DriveOperation};
 use dpp::identity::{IdentityPublicKey, Purpose, SecurityLevel};
-use grovedb::batch::key_info::KeyInfo;
+
 use grovedb::batch::KeyInfoPath;
 use grovedb::reference_path::ReferencePathType;
-use grovedb::reference_path::ReferencePathType::AbsolutePathReference;
+
 use grovedb::{Element, EstimatedLayerInformation, TransactionArg};
 use integer_encoding::VarInt;
 use serde::Serialize;
@@ -201,20 +199,18 @@ impl Drive {
             drive_operations,
         )?;
 
-        if with_references {
-            if matches!(
+        if with_references && matches!(
                 identity_key.purpose,
                 Purpose::AUTHENTICATION | Purpose::WITHDRAW
             ) {
-                self.insert_key_searchable_references_operations(
-                    identity_id,
-                    &identity_key,
-                    key_id_bytes.as_slice(),
-                    estimated_costs_only_with_layer_info,
-                    transaction,
-                    drive_operations,
-                )?;
-            }
+            self.insert_key_searchable_references_operations(
+                identity_id,
+                &identity_key,
+                key_id_bytes.as_slice(),
+                estimated_costs_only_with_layer_info,
+                transaction,
+                drive_operations,
+            )?;
         }
         Ok(())
     }

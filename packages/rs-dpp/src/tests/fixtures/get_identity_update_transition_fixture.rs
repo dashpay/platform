@@ -4,7 +4,6 @@ use crate::{
         state_transition::identity_update_transition::identity_update_transition::IdentityUpdateTransition,
         KeyType, Purpose, SecurityLevel,
     },
-    prelude::IdentityPublicKey,
     state_transition::StateTransitionType,
     tests::utils::generate_random_identifier_struct,
     version::LATEST_VERSION,

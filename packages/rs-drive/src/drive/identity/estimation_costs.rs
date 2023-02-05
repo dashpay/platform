@@ -58,7 +58,7 @@
 
 use crate::drive::defaults::{AVERAGE_BALANCE_SIZE, DEFAULT_HASH_SIZE_U8};
 
-use crate::drive::{identity_tree_path, unique_key_hashes_tree_path_vec, Drive};
+use crate::drive::{identity_tree_path, Drive};
 
 use grovedb::batch::KeyInfoPath;
 use grovedb::EstimatedLayerCount::{ApproximateElements, EstimatedLevel, PotentiallyAtMaxElements};
@@ -66,7 +66,7 @@ use grovedb::EstimatedLayerInformation;
 use grovedb::EstimatedLayerSizes::{AllItems, AllReference, AllSubtrees, Mix};
 
 use crate::drive::identity::{
-    identity_key_tree_path_vec, identity_path_vec, identity_query_keys_purpose_tree_path,
+    identity_key_tree_path_vec, identity_path_vec,
     identity_query_keys_purpose_tree_path_vec, identity_query_keys_security_level_tree_path_vec,
     identity_query_keys_tree_path_vec,
 };

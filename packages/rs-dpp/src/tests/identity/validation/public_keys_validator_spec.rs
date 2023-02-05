@@ -331,7 +331,7 @@ pub fn should_return_invalid_result_if_there_are_duplicate_key_ids() {
     let key0 = raw_public_keys.get(0).unwrap().clone();
     let mut key1 = raw_public_keys.get_mut(1).unwrap();
     serde_set_ref(
-        &mut key1,
+        key1,
         "id",
         key0.as_object().unwrap().get("id").unwrap().clone(),
     );
@@ -366,7 +366,7 @@ pub fn should_return_invalid_result_if_there_are_duplicate_keys() {
     let key0 = raw_public_keys.get(0).unwrap().clone();
     let mut key1 = raw_public_keys.get_mut(1).unwrap();
     serde_set_ref(
-        &mut key1,
+        key1,
         "data",
         key0.as_object().unwrap().get("data").unwrap().clone(),
     );
@@ -476,7 +476,7 @@ pub fn should_pass_valid_public_keys() {
 pub fn should_pass_valid_bls12_381_public_key() {
     //TODO: this test is broken due to the legacy key format that is used in the test.
     // needs reevaluation once v19 is released.
-    return;
+    
     // let (_, validator) = setup_test();
     // let raw_public_keys_json = json!([{
     //     "id": 0,

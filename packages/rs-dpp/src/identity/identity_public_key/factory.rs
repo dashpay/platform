@@ -72,7 +72,7 @@ impl IdentityPublicKey {
         let mut needed_pos = None;
         let mut counter = 0;
         key_matrix
-            .into_iter()
+            .iter_mut()
             .enumerate()
             .for_each(|(pos, is_set)| {
                 if !*is_set {
@@ -122,7 +122,7 @@ impl IdentityPublicKey {
         let mut needed_pos = None;
         let mut counter = 0;
         key_matrix
-            .into_iter()
+            .iter_mut()
             .enumerate()
             .for_each(|(pos, is_set)| {
                 if !*is_set {

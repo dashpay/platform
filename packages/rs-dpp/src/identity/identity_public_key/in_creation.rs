@@ -62,7 +62,7 @@ impl IdentityPublicKeyInCreation {
 
     /// Return raw data, with all binary fields represented as arrays
     pub fn to_raw_json_object(&self, skip_signature: bool) -> Result<JsonValue, SerdeParsingError> {
-        let mut value = serde_json::to_value(&self)?;
+        let mut value = serde_json::to_value(self)?;
 
         if skip_signature {
             if let JsonValue::Object(ref mut o) = value {

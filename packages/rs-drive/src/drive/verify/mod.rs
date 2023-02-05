@@ -1,17 +1,17 @@
-use crate::drive::balances::{balance_path, balance_path_vec};
+use crate::drive::balances::{balance_path};
 use crate::drive::defaults::PROTOCOL_VERSION;
 use crate::drive::identity::IdentityRootStructure::IdentityTreeRevision;
 use crate::drive::identity::{identity_key_tree_path, identity_path};
-use crate::drive::{identity_tree_path, unique_key_hashes_tree_path_vec, Drive};
-use crate::error::drive::DriveError;
+use crate::drive::{unique_key_hashes_tree_path_vec, Drive};
+
 use crate::error::proof::ProofError;
 use crate::error::Error;
 use dpp::identifier::Identifier;
 use dpp::identity::{IdentityPublicKey, KeyID};
 use dpp::prelude::{Identity, Revision};
-use grovedb::operations::proof::verify::ProvedKeyValue;
-use grovedb::query_result_type::PathKeyOptionalElementTrio;
-use grovedb::{Element, GroveDb};
+
+
+use grovedb::{GroveDb};
 use std::collections::BTreeMap;
 
 pub type RootHash = [u8; 32];
@@ -72,7 +72,7 @@ impl Drive {
         identity_id: [u8; 32],
     ) -> Result<(RootHash, Option<Identity>), Error> {
         let path_query = Self::full_identity_query(&identity_id)?;
-        let (root_hash, mut proved_key_values) = if is_proof_subset {
+        let (root_hash, proved_key_values) = if is_proof_subset {
             GroveDb::verify_subset_query(proof, &path_query)?
         } else {
             GroveDb::verify_query(proof, &path_query)?
@@ -107,39 +107,37 @@ impl Drive {
                         "balance wasn't for the identity requested",
                     )));
                 }
-            } else {
-                if path == identity_path && key == vec![IdentityTreeRevision as u8] {
-                    if let Some(element) = maybe_element {
-                        let item_bytes = element.into_item_bytes().map_err(Error::GroveDB)?;
-                        //this is the revision
-                        revision = Some(Revision::from_be_bytes(item_bytes.try_into().map_err(
-                            |_| {
-                                Error::Proof(ProofError::IncorrectValueSize(
-                                    "revision should be 8 bytes",
-                                ))
-                            },
-                        )?));
-                        continue;
-                    } else {
-                        return Err(Error::Proof(ProofError::IncompleteProof(
-                            "revision wasn't provided for the identity requested",
-                        )));
-                    }
-                } else if path == identity_keys_path {
-                    if let Some(element) = maybe_element {
-                        let item_bytes = element.into_item_bytes().map_err(Error::GroveDB)?;
-                        let key = IdentityPublicKey::deserialize(&item_bytes)?;
-                        keys.insert(key.id, key);
-                    } else {
-                        return Err(Error::Proof(ProofError::CorruptedProof(
-                            "we received an absence proof for a key but didn't request one",
-                        )));
-                    }
+            } else if path == identity_path && key == vec![IdentityTreeRevision as u8] {
+                if let Some(element) = maybe_element {
+                    let item_bytes = element.into_item_bytes().map_err(Error::GroveDB)?;
+                    //this is the revision
+                    revision = Some(Revision::from_be_bytes(item_bytes.try_into().map_err(
+                        |_| {
+                            Error::Proof(ProofError::IncorrectValueSize(
+                                "revision should be 8 bytes",
+                            ))
+                        },
+                    )?));
+                    continue;
                 } else {
-                    return Err(Error::Proof(ProofError::TooManyElements(
-                        "we got back items that we did not request",
+                    return Err(Error::Proof(ProofError::IncompleteProof(
+                        "revision wasn't provided for the identity requested",
                     )));
                 }
+            } else if path == identity_keys_path {
+                if let Some(element) = maybe_element {
+                    let item_bytes = element.into_item_bytes().map_err(Error::GroveDB)?;
+                    let key = IdentityPublicKey::deserialize(&item_bytes)?;
+                    keys.insert(key.id, key);
+                } else {
+                    return Err(Error::Proof(ProofError::CorruptedProof(
+                        "we received an absence proof for a key but didn't request one",
+                    )));
+                }
+            } else {
+                return Err(Error::Proof(ProofError::TooManyElements(
+                    "we got back items that we did not request",
+                )));
             }
         }
         let maybe_identity = if balance.is_none() && revision.is_none() && keys.is_empty() {
@@ -256,7 +254,7 @@ impl Drive {
         public_key_hashes: &[[u8; 20]],
     ) -> Result<(RootHash, T), Error> {
         let path_query = Self::identity_ids_by_unique_public_key_hash_query(public_key_hashes);
-        let (root_hash, mut proved_key_values) = if is_proof_subset {
+        let (root_hash, proved_key_values) = if is_proof_subset {
             GroveDb::verify_subset_query(proof, &path_query)?
         } else {
             GroveDb::verify_query(proof, &path_query)?

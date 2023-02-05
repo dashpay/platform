@@ -53,14 +53,14 @@ where
 
     if core_height_created_at < height_window_start || core_height_created_at > height_window_end {
         let err = DataTriggerError::DataTriggerConditionError {
-            data_contract_id: context.data_contract.id.clone(),
-            document_transition_id: dt_create.base.id.clone(),
+            data_contract_id: context.data_contract.id,
+            document_transition_id: dt_create.base.id,
             message: format!(
                 "Core height {} is out of block height window from {} to {}",
                 core_height_created_at, height_window_start, height_window_end
             ),
             document_transition: Some(DocumentTransition::Create(dt_create.clone())),
-            owner_id: Some(context.owner_id.clone()),
+            owner_id: Some(*context.owner_id),
         };
         result.add_error(err.into());
     }

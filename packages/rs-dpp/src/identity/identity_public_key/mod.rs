@@ -86,7 +86,7 @@ impl IdentityPublicKey {
             KeyType::ECDSA_SECP256K1 => {
                 let key = match self.data.len() {
                     // TODO: We need to update schema and tests for 65 len keys
-                    65 | 33 => ECDSAPublicKey::from_slice(&self.data.as_slice())
+                    65 | 33 => ECDSAPublicKey::from_slice(self.data.as_slice())
                         .map_err(|e| anyhow!("unable to create pub key - {}", e))?,
                     _ => {
                         return Err(ProtocolError::ParsingError(format!(
@@ -205,7 +205,7 @@ impl Into<CborValue> for &IdentityPublicKey {
 
 pub fn de_base64_to_vec<'de, D: Deserializer<'de>>(d: D) -> Result<Vec<u8>, D::Error> {
     let data: String = Deserialize::deserialize(d)?;
-    base64::decode(&data)
+    base64::decode(data)
         .map_err(|e| serde::de::Error::custom(format!("unable to decode from bas64 - {}", e)))
 }
 
@@ -213,5 +213,5 @@ pub fn se_vec_to_base64<S>(buffer: &Vec<u8>, serializer: S) -> Result<S::Ok, S::
 where
     S: Serializer,
 {
-    serializer.serialize_str(&base64::encode(&buffer))
+    serializer.serialize_str(&base64::encode(buffer))
 }

@@ -367,7 +367,7 @@ impl Drive {
                     let storage_flags = StorageFlags::map_some_element_flags_ref(&element_flags)?;
                     Ok(DocumentWithoutSerialization((
                         document,
-                        storage_flags.map(|s| Cow::Owned(s)),
+                        storage_flags.map(Cow::Owned),
                     )))
                 } else {
                     Err(Error::Drive(DriveError::CorruptedDocumentNotItem(

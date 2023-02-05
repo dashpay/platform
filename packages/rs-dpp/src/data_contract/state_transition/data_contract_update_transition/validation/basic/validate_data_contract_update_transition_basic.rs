@@ -107,7 +107,7 @@ where
             Some(data_contract) => data_contract,
             None => {
                 validation_result.add_error(BasicError::DataContractNotPresent {
-                    data_contract_id: data_contract_id.clone(),
+                    data_contract_id,
                 });
                 return Ok(validation_result);
             }
@@ -189,7 +189,7 @@ where
                     let (operation_name, property_name) =
                         get_operation_and_property_name(&diffs[0]);
                     validation_result.add_error(BasicError::IncompatibleDataContractSchemaError {
-                        data_contract_id: existing_data_contract.id.clone(),
+                        data_contract_id: existing_data_contract.id,
                         operation: operation_name.to_owned(),
                         field_path: property_name.to_owned(),
                         old_schema: document_schema.clone(),
@@ -214,7 +214,7 @@ fn replace_bytes_with_hex_string(
         let bytes = data
             .get_bytes(property_name.as_ref())
             .with_context(|| "replacing bytes with hex string failed")?;
-        let hex_string = hex::encode(&bytes).to_string();
+        let hex_string = hex::encode(bytes).to_string();
         data[property_name.as_ref()] = JsonValue::String(hex_string);
     }
     Ok(())

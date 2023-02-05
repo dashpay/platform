@@ -1,16 +1,15 @@
-use crate::drive::grove_operations::DirectQueryType::StatefulDirectQuery;
+
 use crate::drive::identity::key::fetch::IdentityKeysRequest;
 use crate::drive::{
-    non_unique_key_hashes_sub_tree_path, non_unique_key_hashes_tree_path,
-    unique_key_hashes_tree_path, unique_key_hashes_tree_path_vec, Drive,
+    unique_key_hashes_tree_path_vec, Drive,
 };
-use crate::error::drive::DriveError;
+
 use crate::error::Error;
-use crate::fee::op::DriveOperation;
-use dpp::identity::Identity;
-use grovedb::Element::Item;
-use grovedb::{PathQuery, Query, SizedQuery, TransactionArg};
-use std::collections::BTreeMap;
+
+
+
+use grovedb::{PathQuery, Query};
+
 
 impl Drive {
     /// The query for proving an identity id from a public key hash.
@@ -27,7 +26,7 @@ impl Drive {
         let mut query = Query::new();
         query.insert_keys(
             public_key_hashes
-                .into_iter()
+                .iter()
                 .map(|key_hash| key_hash.to_vec())
                 .collect(),
         );
@@ -47,10 +46,10 @@ impl Drive {
     /// The query getting all keys and balance and revision
     pub fn full_identities_query(identity_ids: &[[u8; 32]]) -> Result<PathQuery, Error> {
         let path_queries: Vec<PathQuery> = identity_ids
-            .into_iter()
-            .map(|identity_id| Self::full_identity_query(identity_id))
+            .iter()
+            .map(Self::full_identity_query)
             .collect::<Result<Vec<PathQuery>, Error>>()?;
-        PathQuery::merge(path_queries.iter().map(|query| query).collect()).map_err(Error::GroveDB)
+        PathQuery::merge(path_queries.iter().collect()).map_err(Error::GroveDB)
     }
 
     /// This query gets the full identity and the public key hash

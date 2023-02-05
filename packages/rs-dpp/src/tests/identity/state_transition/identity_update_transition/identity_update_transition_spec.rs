@@ -7,7 +7,6 @@ use crate::{
         state_transition::identity_update_transition::identity_update_transition::IdentityUpdateTransition,
         KeyType, Purpose, SecurityLevel,
     },
-    prelude::IdentityPublicKey,
     state_transition::{
         StateTransitionConvert, StateTransitionIdentitySigned, StateTransitionType,
     },
@@ -41,7 +40,7 @@ fn get_type() {
 fn set_identity_id() {
     let TestData { mut transition, .. } = setup_test();
     let id = generate_random_identifier_struct();
-    transition.set_identity_id(id.clone());
+    transition.set_identity_id(id);
     assert_eq!(&id, transition.get_identity_id());
 }
 
@@ -215,7 +214,7 @@ fn to_json() {
                 "securityLevel" : 0,
                 "data" : "AkVuTKyF3YgKLAQlLEtaUL2HTditwGILfWUVqjzYnIgH",
                 "readOnly" : false,
-                "signature" : base64::encode(vec![0;65]).to_string(),
+                "signature" : base64::encode(vec![0;65]),
             }
         ]
     });

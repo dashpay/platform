@@ -37,9 +37,9 @@ use std::convert::{TryFrom, TryInto};
 use std::fmt;
 use std::io::{BufReader, Read};
 
-use byteorder::{BigEndian, WriteBytesExt};
+
 use ciborium::value::Value;
-use integer_encoding::{VarInt, VarIntWriter};
+use integer_encoding::{VarIntWriter};
 
 use crate::data_contract::{DataContract, DriveContractExt};
 use serde::{Deserialize, Serialize};
@@ -48,7 +48,7 @@ use crate::data_contract::document_type::document_type::PROTOCOL_VERSION;
 use crate::data_contract::document_type::DocumentType;
 use crate::data_contract::errors::{DataContractError, StructureError};
 use crate::data_contract::extra::common::{
-    bytes_for_system_value_from_tree_map, check_protocol_version, check_protocol_version_bytes,
+    bytes_for_system_value_from_tree_map,
     get_key_from_cbor_map, reduced_value_string_representation,
 };
 use crate::util::deserializer;
@@ -186,7 +186,7 @@ impl DocumentStub {
         let SplitProtocolVersionOutcome {
             main_message_bytes: read_document_cbor,
             ..
-        } = deserializer::split_protocol_version(document_cbor.as_ref())?;
+        } = deserializer::split_protocol_version(document_cbor)?;
 
         // first we need to deserialize the document and contract indices
         // we would need dedicated deserialization functions based on the document type
@@ -269,7 +269,7 @@ impl DocumentStub {
         let SplitProtocolVersionOutcome {
             main_message_bytes: read_document_cbor,
             ..
-        } = deserializer::split_protocol_version(document_cbor.as_ref())?;
+        } = deserializer::split_protocol_version(document_cbor)?;
 
         // first we need to deserialize the document and contract indices
         // we would need dedicated deserialization functions based on the document type

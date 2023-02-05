@@ -32,14 +32,14 @@ mod document;
 mod identity;
 mod system;
 
-use crate::contract::Contract;
+
 use crate::drive::batch::GroveDbOpBatch;
 use crate::drive::block_info::BlockInfo;
-use crate::drive::flags::StorageFlags;
 use crate::drive::object_size_info::DocumentInfo::{
     DocumentRefAndSerialization, DocumentRefWithoutSerialization,
 };
-use crate::drive::object_size_info::{DocumentAndContractInfo, OwnedDocumentInfo};
+
+
 use crate::drive::Drive;
 use crate::error::Error;
 use crate::fee::calculate_fee;
@@ -47,10 +47,10 @@ use crate::fee::op::DriveOperation;
 use crate::fee::result::FeeResult;
 pub use contract::ContractOperationType;
 pub use document::DocumentOperationType;
-use dpp::data_contract::document_type::DocumentType;
-use dpp::data_contract::DriveContractExt;
-use dpp::document::document_stub::DocumentStub;
-use dpp::identity::{Identity, IdentityPublicKey, KeyID, TimestampMillis};
+
+
+
+
 use grovedb::batch::{GroveDbOp, KeyInfoPath};
 use grovedb::{EstimatedLayerInformation, TransactionArg};
 pub use identity::IdentityOperationType;
@@ -142,7 +142,7 @@ impl Drive {
         let ops = drive_batch_operations
             .into_iter()
             .map(|drive_op| {
-                let mut inner_drive_operations =
+                let inner_drive_operations =
                     drive_op.to_drive_operations(self, &mut None, block_info, transaction)?;
                 Ok(DriveOperation::grovedb_operations_consume(
                     inner_drive_operations,
@@ -197,8 +197,11 @@ mod tests {
     use rand::Rng;
     use serde_json::json;
     use tempfile::TempDir;
+    use dpp::data_contract::DriveContractExt;
+    use dpp::document::document_stub::DocumentStub;
 
     use crate::common::setup_contract;
+    use crate::contract::Contract;
     use crate::drive::batch::drive_op_batch::contract::ContractOperationType::ApplyContractWithSerialization;
     use crate::drive::batch::drive_op_batch::document::DocumentOperation::{
         AddOperation, UpdateOperation,
@@ -214,6 +217,7 @@ mod tests {
     use crate::drive::contract::paths::contract_root_path;
     use crate::drive::flags::StorageFlags;
     use crate::drive::Drive;
+    use crate::drive::object_size_info::OwnedDocumentInfo;
 
     #[test]
     fn test_add_dashpay_documents() {
