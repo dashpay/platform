@@ -31,9 +31,7 @@ impl IdentityPublicKey {
             .reject_trailing_bytes()
             .with_big_endian()
             .deserialize(bytes)
-            .map_err(|e| {
-                ProtocolError::EncodingError(format!("unable to deserialize key {}", e.to_string()))
-            })
+            .map_err(|e| ProtocolError::EncodingError(format!("unable to deserialize key {}", e)))
     }
 }
 

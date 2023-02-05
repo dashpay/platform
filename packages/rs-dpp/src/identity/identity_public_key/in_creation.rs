@@ -2,7 +2,7 @@ use crate::identity::{IdentityPublicKey, KeyID, KeyType, Purpose, SecurityLevel}
 use ciborium::value::Value as CborValue;
 use std::convert::TryInto;
 
-use serde::{Deserialize, Deserializer, Serialize, Serializer};
+use serde::{Deserialize, Serialize};
 use serde_json::Value as JsonValue;
 
 use crate::errors::ProtocolError;
