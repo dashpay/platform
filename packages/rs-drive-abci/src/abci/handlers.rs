@@ -187,6 +187,7 @@ mod tests {
         use drive::drive::batch::GroveDbOpBatch;
         use drive::fee::epoch::CreditsPerEpoch;
         use rust_decimal::prelude::ToPrimitive;
+        use std::cmp::Ordering;
         use std::ops::Div;
 
         use crate::abci::messages::{
@@ -308,12 +309,10 @@ mod tests {
                     let (epoch_index, epoch_change) = if day > epoch_1_start_day {
                         (1, false)
                     } else if day == epoch_1_start_day {
-                        if block_num < epoch_1_start_block {
-                            (0, false)
-                        } else if block_num == epoch_1_start_block {
-                            (1, true)
-                        } else {
-                            (1, false)
+                        match block_num.cmp(&epoch_1_start_block) {
+                            Ordering::Less => (0, false),
+                            Ordering::Equal => (1, true),
+                            Ordering::Greater => (1, false),
                         }
                     } else if day == 0 && block_num == 0 {
                         (0, true)

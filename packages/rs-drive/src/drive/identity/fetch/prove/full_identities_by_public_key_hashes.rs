@@ -58,13 +58,11 @@ mod tests {
     use super::*;
     use crate::common::helpers::setup::setup_drive_with_initial_state_structure;
 
-    use grovedb::GroveDb;
-
     mod prove_identities {
         use super::*;
         use crate::drive::block_info::BlockInfo;
         use dpp::identity::Identity;
-        use std::borrow::Borrow;
+
         use std::collections::BTreeMap;
 
         #[test]
@@ -72,7 +70,7 @@ mod tests {
             let drive = setup_drive_with_initial_state_structure();
             let identity = Identity::random_identity(3, Some(14));
 
-            let identity_id = identity.id.to_buffer();
+            let _identity_id = identity.id.to_buffer();
             drive
                 .add_new_identity(identity.clone(), &BlockInfo::default(), true, None)
                 .expect("expected to add an identity");

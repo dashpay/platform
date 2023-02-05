@@ -219,7 +219,7 @@ mod test {
     }
 
     impl From<ExampleStateTransition> for StateTransition {
-        fn from(val: ExampleStateTransition) -> Self {
+        fn from(_val: ExampleStateTransition) -> Self {
             let st = DocumentsBatchTransition::default();
             StateTransition::DocumentsBatch(st)
         }

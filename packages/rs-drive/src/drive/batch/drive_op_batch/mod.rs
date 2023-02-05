@@ -34,9 +34,6 @@ mod system;
 
 use crate::drive::batch::GroveDbOpBatch;
 use crate::drive::block_info::BlockInfo;
-use crate::drive::object_size_info::DocumentInfo::{
-    DocumentRefAndSerialization, DocumentRefWithoutSerialization,
-};
 
 use crate::drive::Drive;
 use crate::error::Error;
@@ -186,7 +183,7 @@ mod tests {
     use std::option::Option::None;
 
     use super::*;
-    use crate::common;
+
     use dpp::data_contract::extra::common::json_document_to_cbor;
     use dpp::data_contract::DriveContractExt;
     use dpp::document::document_stub::DocumentStub;
@@ -211,6 +208,7 @@ mod tests {
     use crate::drive::config::DriveConfig;
     use crate::drive::contract::paths::contract_root_path;
     use crate::drive::flags::StorageFlags;
+    use crate::drive::object_size_info::DocumentInfo::DocumentRefAndSerialization;
     use crate::drive::object_size_info::OwnedDocumentInfo;
     use crate::drive::Drive;
 
@@ -445,13 +443,11 @@ mod tests {
 
         operations.push(AddOperation {
             owned_document_info: OwnedDocumentInfo {
-                document_info: DocumentRefAndSerialization {
-                    0: (
-                        &document0,
-                        dashpay_cr_serialized_document0.as_slice(),
-                        StorageFlags::optional_default_as_cow(),
-                    ),
-                },
+                document_info: DocumentRefAndSerialization((
+                    &document0,
+                    dashpay_cr_serialized_document0.as_slice(),
+                    StorageFlags::optional_default_as_cow(),
+                )),
                 owner_id: Some(random_owner_id),
             },
             override_document: false,
@@ -466,13 +462,11 @@ mod tests {
 
         operations.push(AddOperation {
             owned_document_info: OwnedDocumentInfo {
-                document_info: DocumentRefAndSerialization {
-                    0: (
-                        &document1,
-                        dashpay_cr_serialized_document1.as_slice(),
-                        StorageFlags::optional_default_as_cow(),
-                    ),
-                },
+                document_info: DocumentRefAndSerialization((
+                    &document1,
+                    dashpay_cr_serialized_document1.as_slice(),
+                    StorageFlags::optional_default_as_cow(),
+                )),
                 owner_id: Some(random_owner_id),
             },
             override_document: false,
@@ -587,13 +581,11 @@ mod tests {
 
         operations.push(AddOperation {
             owned_document_info: OwnedDocumentInfo {
-                document_info: DocumentRefAndSerialization {
-                    0: (
-                        &document0,
-                        person_serialized_document0.as_slice(),
-                        StorageFlags::optional_default_as_cow(),
-                    ),
-                },
+                document_info: DocumentRefAndSerialization((
+                    &document0,
+                    person_serialized_document0.as_slice(),
+                    StorageFlags::optional_default_as_cow(),
+                )),
                 owner_id: Some(random_owner_id0),
             },
             override_document: false,
@@ -610,13 +602,11 @@ mod tests {
 
         operations.push(AddOperation {
             owned_document_info: OwnedDocumentInfo {
-                document_info: DocumentRefAndSerialization {
-                    0: (
-                        &document1,
-                        person_serialized_document0.as_slice(),
-                        StorageFlags::optional_default_as_cow(),
-                    ),
-                },
+                document_info: DocumentRefAndSerialization((
+                    &document1,
+                    person_serialized_document0.as_slice(),
+                    StorageFlags::optional_default_as_cow(),
+                )),
                 owner_id: Some(random_owner_id1),
             },
             override_document: false,
@@ -719,13 +709,11 @@ mod tests {
 
         operations.push(AddOperation {
             owned_document_info: OwnedDocumentInfo {
-                document_info: DocumentRefAndSerialization {
-                    0: (
-                        &document0,
-                        person_serialized_document0.as_slice(),
-                        StorageFlags::optional_default_as_cow(),
-                    ),
-                },
+                document_info: DocumentRefAndSerialization((
+                    &document0,
+                    person_serialized_document0.as_slice(),
+                    StorageFlags::optional_default_as_cow(),
+                )),
                 owner_id: Some(random_owner_id0),
             },
             override_document: false,
@@ -742,13 +730,11 @@ mod tests {
 
         operations.push(AddOperation {
             owned_document_info: OwnedDocumentInfo {
-                document_info: DocumentRefAndSerialization {
-                    0: (
-                        &document1,
-                        person_serialized_document1.as_slice(),
-                        StorageFlags::optional_default_as_cow(),
-                    ),
-                },
+                document_info: DocumentRefAndSerialization((
+                    &document1,
+                    person_serialized_document1.as_slice(),
+                    StorageFlags::optional_default_as_cow(),
+                )),
                 owner_id: Some(random_owner_id1),
             },
             override_document: false,
@@ -962,13 +948,11 @@ mod tests {
 
         operations.push(AddOperation {
             owned_document_info: OwnedDocumentInfo {
-                document_info: DocumentRefAndSerialization {
-                    0: (
-                        &document0,
-                        person_serialized_document0.as_slice(),
-                        StorageFlags::optional_default_as_cow(),
-                    ),
-                },
+                document_info: DocumentRefAndSerialization((
+                    &document0,
+                    person_serialized_document0.as_slice(),
+                    StorageFlags::optional_default_as_cow(),
+                )),
                 owner_id: Some(random_owner_id0),
             },
             override_document: false,
@@ -985,13 +969,11 @@ mod tests {
 
         operations.push(AddOperation {
             owned_document_info: OwnedDocumentInfo {
-                document_info: DocumentRefAndSerialization {
-                    0: (
-                        &document1,
-                        person_serialized_document1.as_slice(),
-                        StorageFlags::optional_default_as_cow(),
-                    ),
-                },
+                document_info: DocumentRefAndSerialization((
+                    &document1,
+                    person_serialized_document1.as_slice(),
+                    StorageFlags::optional_default_as_cow(),
+                )),
                 owner_id: Some(random_owner_id1),
             },
             override_document: false,

@@ -2350,7 +2350,7 @@ mod tests {
         );
 
         let contract = factory
-            .create(owner_id.clone(), documents)
+            .create(owner_id, documents)
             .expect("data in fixture should be correct");
 
         let contract_cbor = contract.to_cbor().expect("should encode contract to cbor");
@@ -2393,7 +2393,7 @@ mod tests {
         let mut document = document_factory
             .create(
                 contract.clone(),
-                owner_id.clone(),
+                owner_id,
                 document_type.clone(),
                 json!({ "name": "Ivan" }),
             )

@@ -21,12 +21,9 @@ mod tests {
     use crate::common::helpers::setup::setup_drive_with_initial_state_structure;
     use crate::drive::block_info::BlockInfo;
     use dpp::identity::Identity;
-    use grovedb::GroveDb;
-    use std::borrow::Borrow;
 
     mod prove_identity_ids {
         use super::*;
-        use std::collections::BTreeMap;
 
         #[test]
         fn should_prove_a_single_identity_balance() {

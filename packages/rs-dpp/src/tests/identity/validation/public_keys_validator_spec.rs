@@ -329,7 +329,7 @@ pub mod data {
 pub fn should_return_invalid_result_if_there_are_duplicate_key_ids() {
     let (mut raw_public_keys, validator) = setup_test();
     let key0 = raw_public_keys.get(0).unwrap().clone();
-    let mut key1 = raw_public_keys.get_mut(1).unwrap();
+    let key1 = raw_public_keys.get_mut(1).unwrap();
     serde_set_ref(
         key1,
         "id",
@@ -364,7 +364,7 @@ pub fn should_return_invalid_result_if_there_are_duplicate_key_ids() {
 pub fn should_return_invalid_result_if_there_are_duplicate_keys() {
     let (mut raw_public_keys, validator) = setup_test();
     let key0 = raw_public_keys.get(0).unwrap().clone();
-    let mut key1 = raw_public_keys.get_mut(1).unwrap();
+    let key1 = raw_public_keys.get_mut(1).unwrap();
     serde_set_ref(
         key1,
         "data",

@@ -148,7 +148,7 @@ mod test {
                 .expect("should calculate epochs info");
 
             assert_eq!(epoch_info.current_epoch_index, 0);
-            assert_eq!(epoch_info.is_epoch_change, true);
+            assert!(epoch_info.is_epoch_change);
         }
 
         #[test]
@@ -176,7 +176,7 @@ mod test {
                     .expect("should calculate epochs info");
 
             assert_eq!(epoch_info.current_epoch_index, 1);
-            assert_eq!(epoch_info.is_epoch_change, true);
+            assert!(epoch_info.is_epoch_change);
         }
     }
 }

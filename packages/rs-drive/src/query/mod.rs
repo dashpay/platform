@@ -1377,7 +1377,6 @@ mod tests {
     use std::option::Option::None;
     use tempfile::TempDir;
 
-    use crate::common;
     use crate::contract::Contract;
     use crate::drive::flags::StorageFlags;
     use crate::drive::Drive;

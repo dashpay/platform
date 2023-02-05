@@ -32,7 +32,7 @@ mod tests {
     use super::*;
     use crate::common::helpers::setup::setup_drive_with_initial_state_structure;
     use crate::drive::block_info::BlockInfo;
-    use crate::drive::identity::fetch::full_identity::*;
+
     use dpp::identity::Identity;
     use grovedb::query_result_type::QueryResultType;
     use grovedb::GroveDb;
@@ -278,7 +278,7 @@ mod tests {
         #[test]
         fn test_full_identity_query_construction() {
             let identity = Identity::random_identity(5, Some(12345));
-            let query = Drive::full_identity_query(identity.id.as_bytes())
+            let _query = Drive::full_identity_query(identity.id.as_bytes())
                 .expect("expected to make the query");
         }
         #[test]
