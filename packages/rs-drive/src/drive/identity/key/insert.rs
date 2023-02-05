@@ -1,27 +1,20 @@
+use crate::drive::flags::SINGLE_EPOCH_FLAGS_SIZE;
 
-use crate::drive::flags::{SINGLE_EPOCH_FLAGS_SIZE};
-
-
-
-use crate::drive::grove_operations::{BatchInsertTreeApplyType};
-use crate::drive::identity::IdentityRootStructure::{
-    IdentityTreeKeyReferences, IdentityTreeKeys,
-};
+use crate::drive::grove_operations::BatchInsertTreeApplyType;
+use crate::drive::identity::IdentityRootStructure::{IdentityTreeKeyReferences, IdentityTreeKeys};
 use crate::drive::identity::{
-    identity_key_location_within_identity_vec, identity_key_tree_path, identity_key_tree_path_vec, identity_path, identity_query_keys_full_tree_path, identity_query_keys_purpose_tree_path,
+    identity_key_location_within_identity_vec, identity_key_tree_path, identity_key_tree_path_vec,
+    identity_path, identity_query_keys_full_tree_path, identity_query_keys_purpose_tree_path,
     identity_query_keys_tree_path,
 };
-use crate::drive::object_size_info::PathKeyElementInfo::{
-    PathFixedSizeKeyRefElement,
-};
+use crate::drive::object_size_info::DriveKeyInfo;
+use crate::drive::object_size_info::PathKeyElementInfo::PathFixedSizeKeyRefElement;
 use crate::drive::object_size_info::PathKeyInfo::PathFixedSizeKey;
-use crate::drive::object_size_info::{DriveKeyInfo};
-use crate::drive::{Drive};
-
+use crate::drive::Drive;
 
 use crate::error::Error;
 
-use crate::fee::op::{DriveOperation};
+use crate::fee::op::DriveOperation;
 use dpp::identity::{IdentityPublicKey, Purpose, SecurityLevel};
 
 use grovedb::batch::KeyInfoPath;
@@ -199,10 +192,12 @@ impl Drive {
             drive_operations,
         )?;
 
-        if with_references && matches!(
+        if with_references
+            && matches!(
                 identity_key.purpose,
                 Purpose::AUTHENTICATION | Purpose::WITHDRAW
-            ) {
+            )
+        {
             self.insert_key_searchable_references_operations(
                 identity_id,
                 &identity_key,

@@ -181,7 +181,7 @@ mod test {
     use serde_json::json;
 
     use crate::tests::fixtures::get_data_contract_fixture;
-    use crate::{version};
+    use crate::version;
 
     use super::*;
 

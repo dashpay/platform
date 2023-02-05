@@ -364,9 +364,7 @@ impl IdentityUpdateTransitionWasm {
         let ids = self.0.get_modified_data_ids();
 
         ids.into_iter()
-            .map(|id| {
-                <IdentifierWrapper as std::convert::From<Identifier>>::from(*id).into()
-            })
+            .map(|id| <IdentifierWrapper as std::convert::From<Identifier>>::from(*id).into())
             .collect()
     }
 

@@ -73,9 +73,7 @@ where
                     .map(TryInto::try_into)
                     .transpose()
                     .map_err(Into::into)?
-                    .ok_or(ProtocolError::IdentityNotPresentError {
-                        id: *identity_id,
-                    })?;
+                    .ok_or(ProtocolError::IdentityNotPresentError { id: *identity_id })?;
 
                 if execution_context.is_dry_run() {
                     return Ok(result);
@@ -141,9 +139,7 @@ where
             .map(TryInto::try_into)
             .transpose()
             .map_err(Into::into)?
-            .ok_or(ProtocolError::IdentityNotPresentError {
-                id: *identity_id,
-            })?;
+            .ok_or(ProtocolError::IdentityNotPresentError { id: *identity_id })?;
 
         Ok(identity.get_balance())
     }

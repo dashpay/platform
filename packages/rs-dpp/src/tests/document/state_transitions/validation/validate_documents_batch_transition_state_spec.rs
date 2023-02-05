@@ -1,7 +1,7 @@
 use std::time::Duration;
 
 use chrono::Utc;
-use dashcore::{consensus};
+use dashcore::consensus;
 use serde_json::{json, Value as JsonValue};
 
 use crate::{

@@ -1,14 +1,8 @@
-
-use crate::drive::{
-    Drive,
-};
+use crate::drive::Drive;
 
 use crate::error::Error;
 
-
-
-use grovedb::{TransactionArg};
-
+use grovedb::TransactionArg;
 
 impl Drive {
     /// Proves an identity id against a public key hash.
@@ -42,9 +36,9 @@ mod tests {
     mod prove_identity_ids {
         use super::*;
         use crate::drive::block_info::BlockInfo;
+        use dpp::identity::Identity;
         use std::borrow::Borrow;
         use std::collections::BTreeMap;
-        use dpp::identity::Identity;
 
         #[test]
         fn should_prove_a_single_identity_id() {

@@ -1,14 +1,8 @@
-
-use crate::drive::{
-    Drive,
-};
+use crate::drive::Drive;
 
 use crate::error::Error;
 
-
-
 use grovedb::{PathQuery, TransactionArg};
-
 
 impl Drive {
     /// Fetches an identity with all its information from storage.
@@ -54,8 +48,7 @@ impl Drive {
             })
             .collect::<Result<Vec<PathQuery>, Error>>()?;
 
-        let path_query =
-            PathQuery::merge(path_queries.iter().collect()).map_err(Error::GroveDB)?;
+        let path_query = PathQuery::merge(path_queries.iter().collect()).map_err(Error::GroveDB)?;
         self.grove_get_proved_path_query(&path_query, true, transaction, &mut vec![])
     }
 }
@@ -70,9 +63,9 @@ mod tests {
     mod prove_identities {
         use super::*;
         use crate::drive::block_info::BlockInfo;
+        use dpp::identity::Identity;
         use std::borrow::Borrow;
         use std::collections::BTreeMap;
-        use dpp::identity::Identity;
 
         #[test]
         fn should_prove_a_single_identity() {

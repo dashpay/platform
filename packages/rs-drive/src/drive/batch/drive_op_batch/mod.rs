@@ -32,13 +32,11 @@ mod document;
 mod identity;
 mod system;
 
-
 use crate::drive::batch::GroveDbOpBatch;
 use crate::drive::block_info::BlockInfo;
 use crate::drive::object_size_info::DocumentInfo::{
     DocumentRefAndSerialization, DocumentRefWithoutSerialization,
 };
-
 
 use crate::drive::Drive;
 use crate::error::Error;
@@ -47,9 +45,6 @@ use crate::fee::op::DriveOperation;
 use crate::fee::result::FeeResult;
 pub use contract::ContractOperationType;
 pub use document::DocumentOperationType;
-
-
-
 
 use grovedb::batch::{GroveDbOp, KeyInfoPath};
 use grovedb::{EstimatedLayerInformation, TransactionArg};
@@ -193,12 +188,12 @@ mod tests {
     use super::*;
     use crate::common;
     use dpp::data_contract::extra::common::json_document_to_cbor;
+    use dpp::data_contract::DriveContractExt;
+    use dpp::document::document_stub::DocumentStub;
     use dpp::util::serializer;
     use rand::Rng;
     use serde_json::json;
     use tempfile::TempDir;
-    use dpp::data_contract::DriveContractExt;
-    use dpp::document::document_stub::DocumentStub;
 
     use crate::common::setup_contract;
     use crate::contract::Contract;
@@ -216,8 +211,8 @@ mod tests {
     use crate::drive::config::DriveConfig;
     use crate::drive::contract::paths::contract_root_path;
     use crate::drive::flags::StorageFlags;
-    use crate::drive::Drive;
     use crate::drive::object_size_info::OwnedDocumentInfo;
+    use crate::drive::Drive;
 
     #[test]
     fn test_add_dashpay_documents() {

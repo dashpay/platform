@@ -167,7 +167,9 @@ impl IdentityWasm {
     pub fn to_json(&self) -> Result<JsValue, JsValue> {
         let pks = self
             .0
-            .public_keys.values().map(|pk| pk.to_json())
+            .public_keys
+            .values()
+            .map(|pk| pk.to_json())
             .collect::<Result<Vec<serde_json::Value>, SerdeParsingError>>()
             .map_err(|e| from_dpp_err(e.into()))?;
 

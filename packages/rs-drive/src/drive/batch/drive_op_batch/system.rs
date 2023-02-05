@@ -5,7 +5,6 @@ use crate::error::Error;
 use crate::fee::credits::Credits;
 use crate::fee::op::DriveOperation;
 
-
 use grovedb::batch::KeyInfoPath;
 use grovedb::{EstimatedLayerInformation, TransactionArg};
 use std::collections::HashMap;

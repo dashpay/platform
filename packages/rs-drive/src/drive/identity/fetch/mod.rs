@@ -1,30 +1,17 @@
-
-
-
-
-
+use crate::drive::identity::identity_path_vec;
 use crate::drive::identity::IdentityRootStructure::IdentityTreeRevision;
-use crate::drive::identity::{identity_path_vec};
-
 
 use crate::drive::{Drive, RootTree};
 use crate::error::drive::DriveError;
 
 use crate::error::Error;
 
-
 use crate::query::{Query, QueryItem};
-
-
-
-
-
-
 
 use grovedb::query_result_type::QueryResultType::{
     QueryElementResultType, QueryKeyElementPairResultType,
 };
-use grovedb::Element::{SumItem};
+use grovedb::Element::SumItem;
 use grovedb::{PathQuery, SizedQuery, TransactionArg};
 
 use std::collections::BTreeMap;

@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
 use chrono::Utc;
-use dashcore::{consensus};
+use dashcore::consensus;
 
 use crate::{
     block_time_window::validate_time_in_block_time_window::BLOCK_TIME_WINDOW_MILLIS,

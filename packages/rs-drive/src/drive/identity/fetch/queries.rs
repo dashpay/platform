@@ -1,15 +1,9 @@
-
 use crate::drive::identity::key::fetch::IdentityKeysRequest;
-use crate::drive::{
-    unique_key_hashes_tree_path_vec, Drive,
-};
+use crate::drive::{unique_key_hashes_tree_path_vec, Drive};
 
 use crate::error::Error;
 
-
-
 use grovedb::{PathQuery, Query};
-
 
 impl Drive {
     /// The query for proving an identity id from a public key hash.

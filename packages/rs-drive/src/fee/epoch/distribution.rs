@@ -38,7 +38,7 @@
 
 use crate::error::fee::FeeError;
 use crate::error::Error;
-use crate::fee::credits::{Credits};
+use crate::fee::credits::Credits;
 use crate::fee::epoch::{
     EpochIndex, SignedCreditsPerEpoch, EPOCHS_PER_YEAR, PERPETUAL_STORAGE_YEARS,
 };
@@ -419,8 +419,8 @@ mod tests {
     }
 
     mod distribute_storage_fee_to_epochs_collection {
-        use crate::fee::credits::Creditable;
         use super::*;
+        use crate::fee::credits::Creditable;
 
         #[test]
         fn should_distribute_max_credits_value_without_overflow() {
@@ -563,8 +563,8 @@ mod tests {
     }
 
     mod subtract_refunds_from_epoch_credits_collection {
-        use crate::fee::credits::Creditable;
         use super::*;
+        use crate::fee::credits::Creditable;
 
         #[test]
         fn should_deduct_refunds_from_collection_since_specific_epoch_start_at_genesis() {

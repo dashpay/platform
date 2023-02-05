@@ -1,6 +1,6 @@
 //! Bindings for state repository -like objects coming from JS.
 
-use anyhow::{Result};
+use anyhow::Result;
 use serde::{Deserialize, Serialize};
 
 use std::{convert::Infallible, pin::Pin, sync::Mutex};
@@ -224,10 +224,7 @@ impl StateRepositoryLike for ExternalStateRepositoryLikeWrapper {
             .0
             .lock()
             .expect("unexpected concurrency issue!")
-            .fetch_data_contract(
-                (*data_contract_id).into(),
-                execution_context.clone().into(),
-            )
+            .fetch_data_contract((*data_contract_id).into(), execution_context.clone().into())
             .map(Into::into)) // TODO: Is it ok?
     }
 
@@ -313,11 +310,10 @@ impl StateRepositoryLike for ExternalStateRepositoryLikeWrapper {
         identity: &Identity,
         execution_context: &StateTransitionExecutionContext,
     ) -> Result<()> {
-        self
-        .0
-        .lock()
-        .expect("unexpected concurrency issue!")
-        .create_identity(identity.clone().into(), execution_context.clone().into());
+        self.0
+            .lock()
+            .expect("unexpected concurrency issue!")
+            .create_identity(identity.clone().into(), execution_context.clone().into());
         Ok(())
     }
 

@@ -1,4 +1,4 @@
-use crate::drive::balances::{balance_path};
+use crate::drive::balances::balance_path;
 use crate::drive::defaults::PROTOCOL_VERSION;
 use crate::drive::identity::IdentityRootStructure::IdentityTreeRevision;
 use crate::drive::identity::{identity_key_tree_path, identity_path};
@@ -10,8 +10,7 @@ use dpp::identifier::Identifier;
 use dpp::identity::{IdentityPublicKey, KeyID};
 use dpp::prelude::{Identity, Revision};
 
-
-use grovedb::{GroveDb};
+use grovedb::GroveDb;
 use std::collections::BTreeMap;
 
 pub type RootHash = [u8; 32];

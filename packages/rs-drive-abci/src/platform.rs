@@ -35,7 +35,6 @@ use crate::config::PlatformConfig;
 use crate::error::Error;
 use crate::state::PlatformState;
 
-
 use drive::drive::Drive;
 
 use std::cell::RefCell;

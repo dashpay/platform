@@ -43,7 +43,6 @@ use grovedb::batch::KeyInfoPath;
 use grovedb::reference_path::ReferencePathType::UpstreamRootHeightReference;
 use grovedb::Element;
 
-
 mod delete;
 mod estimation_costs;
 mod insert;

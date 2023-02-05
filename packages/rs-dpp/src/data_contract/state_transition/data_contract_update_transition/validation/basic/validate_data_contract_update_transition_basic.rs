@@ -106,9 +106,8 @@ where
         {
             Some(data_contract) => data_contract,
             None => {
-                validation_result.add_error(BasicError::DataContractNotPresent {
-                    data_contract_id,
-                });
+                validation_result
+                    .add_error(BasicError::DataContractNotPresent { data_contract_id });
                 return Ok(validation_result);
             }
         };

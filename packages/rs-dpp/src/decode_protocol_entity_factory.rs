@@ -5,9 +5,7 @@ use serde_json::Value as JsonValue;
 
 use crate::util::deserializer;
 use crate::util::deserializer::SplitProtocolVersionOutcome;
-use crate::{
-    errors::consensus::ConsensusError, errors::ProtocolError,
-};
+use crate::{errors::consensus::ConsensusError, errors::ProtocolError};
 
 #[derive(Default, Clone, Copy)]
 pub struct DecodeProtocolEntity {}

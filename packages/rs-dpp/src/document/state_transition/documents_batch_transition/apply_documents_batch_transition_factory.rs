@@ -192,7 +192,7 @@ mod test {
             fixtures::{
                 get_data_contract_fixture, get_document_transitions_fixture, get_documents_fixture,
             },
-            utils::{generate_random_identifier_struct},
+            utils::generate_random_identifier_struct,
         },
     };
 

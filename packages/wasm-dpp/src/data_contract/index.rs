@@ -2,7 +2,7 @@ use dpp::{data_contract::document_type::IndexProperty, util::json_schema::Index}
 use serde::{ser::SerializeMap, Serialize, Serializer};
 use wasm_bindgen::prelude::*;
 
-use crate::{with_js_error};
+use crate::with_js_error;
 
 #[wasm_bindgen(js_name=IndexProperty)]
 #[derive(Debug, Clone)]

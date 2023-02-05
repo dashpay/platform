@@ -163,10 +163,7 @@ impl Identity {
 
     /// Get the biggest public KeyID
     pub fn get_public_key_max_id(&self) -> KeyID {
-        self.public_keys
-            .keys().copied()
-            .max()
-            .unwrap_or_default()
+        self.public_keys.keys().copied().max().unwrap_or_default()
     }
 
     /// Converts the identity to a cbor buffer (same as to_cbor)

@@ -56,21 +56,16 @@
 // DEALINGS IN THE SOFTWARE.
 //
 
-
-
-use crate::drive::{Drive};
+use crate::drive::Drive;
 
 use grovedb::batch::KeyInfoPath;
 use grovedb::EstimatedLayerCount::{ApproximateElements, EstimatedLevel};
 use grovedb::EstimatedLayerInformation;
 use grovedb::EstimatedLayerSizes::{AllItems, AllSubtrees};
 
-
-
-
 use crate::drive::system::misc_path_vec;
 
-use grovedb::EstimatedSumTrees::{SomeSumTrees};
+use grovedb::EstimatedSumTrees::SomeSumTrees;
 use std::collections::HashMap;
 
 impl Drive {

@@ -66,9 +66,8 @@ use grovedb::EstimatedLayerInformation;
 use grovedb::EstimatedLayerSizes::{AllItems, AllReference, AllSubtrees, Mix};
 
 use crate::drive::identity::{
-    identity_key_tree_path_vec, identity_path_vec,
-    identity_query_keys_purpose_tree_path_vec, identity_query_keys_security_level_tree_path_vec,
-    identity_query_keys_tree_path_vec,
+    identity_key_tree_path_vec, identity_path_vec, identity_query_keys_purpose_tree_path_vec,
+    identity_query_keys_security_level_tree_path_vec, identity_query_keys_tree_path_vec,
 };
 
 use crate::drive::balances::balance_path_vec;

@@ -476,7 +476,7 @@ pub fn should_pass_valid_public_keys() {
 pub fn should_pass_valid_bls12_381_public_key() {
     //TODO: this test is broken due to the legacy key format that is used in the test.
     // needs reevaluation once v19 is released.
-    
+
     // let (_, validator) = setup_test();
     // let raw_public_keys_json = json!([{
     //     "id": 0,

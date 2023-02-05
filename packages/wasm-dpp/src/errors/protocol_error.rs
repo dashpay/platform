@@ -1,4 +1,4 @@
-use wasm_bindgen::{JsValue};
+use wasm_bindgen::JsValue;
 
 use super::consensus_error::from_consensus_error;
 

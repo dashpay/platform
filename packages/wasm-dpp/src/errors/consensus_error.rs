@@ -250,22 +250,16 @@ fn from_state_error(state_error: &Box<StateError>) -> JsValue {
         StateError::DuplicateUniqueIndexError {
             document_id,
             duplicating_properties,
-        } => DuplicateUniqueIndexErrorWasm::new(
-            *document_id,
-            duplicating_properties.clone(),
-            code,
-        )
-        .into(),
+        } => DuplicateUniqueIndexErrorWasm::new(*document_id, duplicating_properties.clone(), code)
+            .into(),
         StateError::InvalidDocumentRevisionError {
             document_id,
             current_revision,
-        } => InvalidDocumentRevisionErrorWasm::new(*document_id, *current_revision, code)
-            .into(),
+        } => InvalidDocumentRevisionErrorWasm::new(*document_id, *current_revision, code).into(),
         StateError::InvalidIdentityRevisionError {
             identity_id,
             current_revision,
-        } => InvalidIdentityRevisionErrorWasm::new(*identity_id, *current_revision, code)
-            .into(),
+        } => InvalidIdentityRevisionErrorWasm::new(*identity_id, *current_revision, code).into(),
         StateError::IdentityPublicKeyDisabledAtWindowViolationError {
             disabled_at,
             time_window_start,
@@ -357,8 +351,7 @@ fn from_basic_error(basic_error: &Box<BasicError>) -> JsValue {
             document_type,
             data_contract_id,
         } => {
-            InvalidDocumentTypeErrorWasm::new(document_type.clone(), *data_contract_id, code)
-                .into()
+            InvalidDocumentTypeErrorWasm::new(document_type.clone(), *data_contract_id, code).into()
         }
         BasicError::DuplicateIndexNameError {
             document_type,
@@ -471,10 +464,7 @@ fn from_basic_error(basic_error: &Box<BasicError>) -> JsValue {
         BasicError::InvalidDocumentTransitionIdError {
             expected_id,
             invalid_id,
-        } => {
-            InvalidDocumentTransitionIdErrorWasm::new(*expected_id, *invalid_id, code)
-                .into()
-        }
+        } => InvalidDocumentTransitionIdErrorWasm::new(*expected_id, *invalid_id, code).into(),
         BasicError::DuplicateDocumentTransitionsWithIndicesError { references } => {
             DuplicateDocumentTransitionsWithIndicesErrorWasm::new(references.clone(), code).into()
         }

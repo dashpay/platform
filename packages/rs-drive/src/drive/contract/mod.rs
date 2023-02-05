@@ -50,7 +50,6 @@ use grovedb::reference_path::ReferencePathType::SiblingReference;
 use dpp::data_contract::DriveContractExt;
 use grovedb::{Element, EstimatedLayerInformation, TransactionArg};
 
-
 use crate::contract::Contract;
 use crate::drive::batch::GroveDbOpBatch;
 use crate::drive::block_info::BlockInfo;
