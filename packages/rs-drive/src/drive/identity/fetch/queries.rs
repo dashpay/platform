@@ -37,6 +37,15 @@ impl Drive {
             .map_err(Error::GroveDB)
     }
 
+    /// The query getting all balances and revision
+    pub fn balances_for_identity_ids_query(identity_ids: &[[u8; 32]]) -> Result<PathQuery, Error> {
+        let path_queries: Vec<PathQuery> = identity_ids
+            .iter()
+            .map(Self::identity_balance_query)
+            .collect::<Vec<PathQuery>>();
+        PathQuery::merge(path_queries.iter().collect()).map_err(Error::GroveDB)
+    }
+
     /// The query getting all keys and balance and revision
     pub fn full_identities_query(identity_ids: &[[u8; 32]]) -> Result<PathQuery, Error> {
         let path_queries: Vec<PathQuery> = identity_ids

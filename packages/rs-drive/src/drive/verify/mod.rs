@@ -10,6 +10,7 @@ use dpp::identifier::Identifier;
 use dpp::identity::{IdentityPublicKey, KeyID};
 use dpp::prelude::{Identity, Revision};
 
+use crate::fee::credits::Credits;
 use grovedb::GroveDb;
 use std::collections::BTreeMap;
 
@@ -240,6 +241,54 @@ impl Drive {
         } else {
             Err(Error::Proof(ProofError::TooManyElements(
                 "expected one identity balance",
+            )))
+        }
+    }
+
+    /// Verifies multiple identities' balances with identity ids
+    pub fn verify_identity_balances_for_identity_ids<
+        T: FromIterator<([u8; 32], Option<Credits>)>,
+    >(
+        proof: &[u8],
+        is_proof_subset: bool,
+        identity_ids: &[[u8; 32]],
+    ) -> Result<(RootHash, T), Error> {
+        let path_query = Self::balances_for_identity_ids_query(identity_ids)?;
+        let (root_hash, proved_key_values) = if is_proof_subset {
+            GroveDb::verify_subset_query(proof, &path_query)?
+        } else {
+            GroveDb::verify_query(proof, &path_query)?
+        };
+        if proved_key_values.len() == identity_ids.len() {
+            let values = proved_key_values
+                .into_iter()
+                .map(|proved_key_value| {
+                    let key: [u8; 32] = proved_key_value
+                        .1
+                        .try_into()
+                        .map_err(|_| Error::Proof(ProofError::IncorrectValueSize("value size")))?;
+                    let maybe_element = proved_key_value.2;
+                    match maybe_element {
+                        None => Ok((key, None)),
+                        Some(element) => {
+                            let balance: Credits = element
+                                .as_sum_item_value()
+                                .map_err(Error::GroveDB)?
+                                .try_into()
+                                .map_err(|_| {
+                                    Error::Proof(ProofError::IncorrectValueSize(
+                                        "balance was negative",
+                                    ))
+                                })?;
+                            Ok((key, Some(balance)))
+                        }
+                    }
+                })
+                .collect::<Result<T, Error>>()?;
+            Ok((root_hash, values))
+        } else {
+            Err(Error::Proof(ProofError::WrongElementCount(
+                "expected same count as elements requested",
             )))
         }
     }
