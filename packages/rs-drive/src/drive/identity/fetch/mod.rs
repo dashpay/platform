@@ -113,6 +113,7 @@ impl Drive {
             .collect()
     }
 
+    // TODO: We deal with it in an upcoming PR (Sam!!)
     // /// Given a vector of identities, fetches the identities with their keys
     // /// matching the request from storage.
     // pub fn fetch_identities_with_keys(
