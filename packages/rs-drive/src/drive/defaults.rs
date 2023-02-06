@@ -80,9 +80,10 @@ pub const CONTRACT_MAX_SERIALIZED_SIZE: u16 = 16384;
 pub const MAX_ELEMENT_SIZE: u32 = 5000;
 
 /// Default required bytes to hold a user balance
+/// TODO We probably don't need it anymore since we always pay for 9 bytes
 pub const AVERAGE_BALANCE_SIZE: u32 = 6;
 
-/// Default required bytes to hold a user balance
+/// Default required bytes to hold a public key
 pub const AVERAGE_KEY_SIZE: u32 = 50;
 
 /// How many updates would occur on average for an item

@@ -10,8 +10,7 @@ pub struct IdentityPublicKeyIsReadOnlyErrorWasm {
 #[wasm_bindgen(js_class=IdentityPublicKeyIsReadOnlyError)]
 impl IdentityPublicKeyIsReadOnlyErrorWasm {
     #[wasm_bindgen(js_name=getKeyId)]
-    pub fn key_id(&self) -> u32 {
-        // TODO: make key ids u32?
+    pub fn key_id(&self) -> KeyID {
         self.key_id
     }
 
@@ -21,7 +20,7 @@ impl IdentityPublicKeyIsReadOnlyErrorWasm {
     }
 
     #[wasm_bindgen(js_name=getPublicKeyIndex)]
-    pub fn public_key_index(&self) -> u32 {
+    pub fn public_key_index(&self) -> KeyID {
         self.key_id
     }
 }
