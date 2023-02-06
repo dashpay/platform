@@ -57,20 +57,18 @@ impl Drive {
 mod tests {
     use super::*;
     use crate::common::helpers::setup::setup_drive_with_initial_state_structure;
+    use crate::drive::block_info::BlockInfo;
+    use dpp::identity::Identity;
+    use std::collections::BTreeMap;
 
-    mod prove_identities {
+    mod prove_full_identity_by_unique_public_key_hash {
         use super::*;
-        use crate::drive::block_info::BlockInfo;
-        use dpp::identity::Identity;
-
-        use std::collections::BTreeMap;
 
         #[test]
         fn should_prove_a_single_identity() {
             let drive = setup_drive_with_initial_state_structure();
             let identity = Identity::random_identity(3, Some(14));
 
-            let _identity_id = identity.id.to_buffer();
             drive
                 .add_new_identity(identity.clone(), &BlockInfo::default(), true, None)
                 .expect("expected to add an identity");
@@ -93,6 +91,10 @@ mod tests {
 
             assert_eq!(proved_identity, Some(identity));
         }
+    }
+
+    mod prove_full_identities_by_unique_public_key_hashes {
+        use super::*;
 
         #[test]
         fn should_prove_multiple_identities() {
