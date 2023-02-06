@@ -32,11 +32,8 @@ mod tests {
     use crate::drive::block_info::BlockInfo;
     use dpp::identity::Identity;
 
-    mod prove_identity_balances {
+    mod prove_identity_balance {
         use super::*;
-        use crate::fee::credits::Credits;
-        use std::collections::BTreeMap;
-        use std::convert::identity;
 
         #[test]
         fn should_prove_a_single_identity_balance() {
@@ -57,6 +54,12 @@ mod tests {
 
             assert_eq!(proved_identity_balance, Some(identity.balance));
         }
+    }
+
+    mod prove_many_identity_balances {
+        use super::*;
+        use crate::fee::credits::Credits;
+        use std::collections::BTreeMap;
 
         #[test]
         fn should_prove_multiple_identity_balances() {
