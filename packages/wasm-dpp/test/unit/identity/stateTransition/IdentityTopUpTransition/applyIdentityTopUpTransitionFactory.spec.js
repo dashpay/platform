@@ -50,33 +50,33 @@ describe('applyIdentityTopUpTransitionFactory', () => {
     );
   });
 
-  it('should add topup amount to identity balance', async () => {
+  it('should add topup amount to identity balance', async function () {
     const balanceToTopUp = convertSatoshiToCredits(
       stateTransition.getAssetLockProof().getOutput().satoshis,
     );
 
     await applyIdentityTopUpTransition(stateTransition);
-    //
-    // const { match } = this.sinonSandbox;
-    //
-    // expect(stateRepositoryMock.addToIdentityBalance).to.have.been.calledOnceWithExactly(
-    //   match((arg) => arg.toBuffer().equals(stateTransition.getOwnerId().toBuffer())),
-    //   balanceToTopUp,
-    //   match.instanceOf(StateTransitionExecutionContext),
-    // );
-    //
-    // expect(stateRepositoryMock.addToSystemCredits).to.have.been.calledOnceWithExactly(
-    //   balanceToTopUp,
-    //   match.instanceOf(StateTransitionExecutionContext),
-    // );
-    //
-    // const outPoint = stateTransition.getAssetLockProof().getOutPoint();
-    //
-    // // TODO: It should pass execution context as well
-    // expect(stateRepositoryMock.markAssetLockTransactionOutPointAsUsed).to.have.been
-    //   .calledOnceWithExactly(
-    //     match((arg) => Buffer.from(arg).equals(outPoint)),
-    //   );
+
+    const { match } = this.sinonSandbox;
+
+    expect(stateRepositoryMock.addToIdentityBalance).to.have.been.calledOnceWithExactly(
+      match((arg) => arg.toBuffer().equals(stateTransition.getOwnerId().toBuffer())),
+      balanceToTopUp,
+      match.instanceOf(StateTransitionExecutionContext),
+    );
+
+    expect(stateRepositoryMock.addToSystemCredits).to.have.been.calledOnceWithExactly(
+      balanceToTopUp,
+      match.instanceOf(StateTransitionExecutionContext),
+    );
+
+    const outPoint = stateTransition.getAssetLockProof().getOutPoint();
+
+    // TODO: It should pass execution context as well
+    expect(stateRepositoryMock.markAssetLockTransactionOutPointAsUsed).to.have.been
+      .calledOnceWithExactly(
+        match((arg) => Buffer.from(arg).equals(outPoint)),
+      );
   });
 
   it('should ignore balance debt for system credits', async function () {

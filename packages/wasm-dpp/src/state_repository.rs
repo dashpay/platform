@@ -229,18 +229,18 @@ impl StateRepositoryLike for ExternalStateRepositoryLikeWrapper {
         data_contract_id: &Identifier,
         execution_context: &StateTransitionExecutionContext,
     ) -> Result<Option<Self::FetchDataContract>> {
-        let js_value: JsValue = self
+        let maybe_data_contract: JsValue = self
             .0
             .fetch_data_contract((*data_contract_id).into(), execution_context.clone().into())
             .await
             .map_err(from_js_error)?;
 
-        if js_value.is_falsy() {
+        if maybe_data_contract.is_falsy() {
             return Ok(None);
         }
 
         let data_contract_conversion_result: Result<Ref<DataContractWasm>, JsValue> =
-            generic_of_js_val::<DataContractWasm>(&js_value, "DataContract");
+            generic_of_js_val::<DataContractWasm>(&maybe_data_contract, "DataContract");
 
         let data_contract = data_contract_conversion_result
             .map_err(from_js_error)?
@@ -318,24 +318,35 @@ impl StateRepositoryLike for ExternalStateRepositoryLikeWrapper {
         id: &Identifier,
         execution_context: &StateTransitionExecutionContext,
     ) -> Result<Option<Self::FetchIdentity>> {
-        let js_value = self
+        let maybe_identity = self
             .0
             .fetch_identity((*id).into(), execution_context.clone().into())
             .await
             .map_err(from_js_error)?;
 
-        if js_value.is_falsy() {
+        if maybe_identity.is_falsy() {
             return Ok(None);
         }
 
         let identity_conversion_result: Result<Ref<IdentityWasm>, JsValue> =
-            generic_of_js_val::<IdentityWasm>(&js_value, "Identity");
+            generic_of_js_val::<IdentityWasm>(&maybe_identity, "Identity");
 
         let identity = identity_conversion_result
             .map_err(from_js_error)?
             .to_owned();
 
         Ok(Some(identity))
+    }
+
+    async fn create_identity(
+        &self,
+        identity: &Identity,
+        execution_context: &StateTransitionExecutionContext,
+    ) -> Result<()> {
+        self.0
+            .create_identity(identity.clone().into(), execution_context.clone().into())
+            .await
+            .map_err(from_js_error)
     }
 
     async fn add_keys_to_identity(
@@ -395,17 +406,17 @@ impl StateRepositoryLike for ExternalStateRepositoryLikeWrapper {
         identity_id: &Identifier,
         execution_context: &StateTransitionExecutionContext,
     ) -> Result<Option<u64>> {
-        let js_value = self
+        let maybe_balance = self
             .0
             .fetch_identity_balance((*identity_id).into(), execution_context.clone().into())
             .await
             .map_err(from_js_error)?;
 
-        if js_value.is_falsy() {
+        if maybe_balance.is_falsy() {
             return Ok(None);
         }
 
-        let balance = js_value
+        let balance = maybe_balance
             .as_f64()
             .ok_or_else(|| anyhow!("Value is not a number"))?;
 
@@ -417,7 +428,7 @@ impl StateRepositoryLike for ExternalStateRepositoryLikeWrapper {
         identity_id: &Identifier,
         execution_context: &StateTransitionExecutionContext,
     ) -> Result<Option<i64>> {
-        let js_value = self
+        let maybe_balance = self
             .0
             .fetch_identity_balance_with_debt(
                 (*identity_id).into(),
@@ -426,11 +437,11 @@ impl StateRepositoryLike for ExternalStateRepositoryLikeWrapper {
             .await
             .map_err(from_js_error)?;
 
-        if js_value.is_falsy() {
+        if maybe_balance.is_falsy() {
             return Ok(None);
         }
 
-        let balance = js_value
+        let balance = maybe_balance
             .as_f64()
             .ok_or_else(|| anyhow!("Value is not a number"))?;
 
@@ -502,17 +513,17 @@ impl StateRepositoryLike for ExternalStateRepositoryLikeWrapper {
     }
 
     async fn fetch_latest_platform_core_chain_locked_height(&self) -> Result<Option<u32>> {
-        let js_value: JsValue = self
+        let maybe_height = self
             .0
             .fetch_latest_platform_core_chain_locked_height()
             .await
             .map_err(from_js_error)?;
 
-        if js_value.is_falsy() {
+        if maybe_height.is_falsy() {
             return Ok(None);
         }
 
-        let height = js_value
+        let height = maybe_height
             .as_f64()
             .ok_or_else(|| anyhow!("Value is not a number"))?;
         Ok(Some(height as u32))
@@ -525,13 +536,13 @@ impl StateRepositoryLike for ExternalStateRepositoryLikeWrapper {
     ) -> Result<bool> {
         let raw_instant_lock = consensus::serialize(instant_lock);
 
-        let js_value: JsValue = self
+        let verification_result = self
             .0
             .verify_instant_lock(raw_instant_lock, execution_context.clone().into())
             .await
             .map_err(from_js_error)?;
 
-        js_value
+        verification_result
             .as_bool()
             .ok_or_else(|| anyhow!("Value is not a bool"))
     }
@@ -541,7 +552,7 @@ impl StateRepositoryLike for ExternalStateRepositoryLikeWrapper {
         out_point_buffer: &[u8],
         execution_context: &StateTransitionExecutionContext,
     ) -> Result<bool> {
-        let js_value: JsValue = self
+        let is_used = self
             .0
             .is_asset_lock_transaction_out_point_already_used(
                 Buffer::from_bytes(out_point_buffer),
@@ -550,7 +561,7 @@ impl StateRepositoryLike for ExternalStateRepositoryLikeWrapper {
             .await
             .map_err(from_js_error)?;
 
-        js_value
+        is_used
             .as_bool()
             .ok_or_else(|| anyhow!("Value is not a bool"))
     }
@@ -570,17 +581,6 @@ impl StateRepositoryLike for ExternalStateRepositoryLikeWrapper {
         T: for<'de> serde::de::Deserialize<'de> + 'static,
     {
         todo!()
-    }
-
-    async fn create_identity(
-        &self,
-        identity: &Identity,
-        execution_context: &StateTransitionExecutionContext,
-    ) -> Result<()> {
-        self.0
-            .create_identity(identity.clone().into(), execution_context.clone().into())
-            .await
-            .map_err(from_js_error)
     }
 
     async fn fetch_latest_withdrawal_transaction_index(&self) -> Result<u64> {
