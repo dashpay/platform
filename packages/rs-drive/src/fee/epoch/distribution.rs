@@ -38,7 +38,7 @@
 
 use crate::error::fee::FeeError;
 use crate::error::Error;
-use crate::fee::credits::{Creditable, Credits};
+use crate::fee::credits::Credits;
 use crate::fee::epoch::{
     EpochIndex, SignedCreditsPerEpoch, EPOCHS_PER_YEAR, PERPETUAL_STORAGE_YEARS,
 };
@@ -47,7 +47,7 @@ use rust_decimal::prelude::*;
 use rust_decimal::Decimal;
 use rust_decimal_macros::dec;
 use std::cmp::Ordering;
-use std::collections::hash_map::Entry;
+
 use std::ops::Mul;
 
 // TODO: Should be updated from the doc
@@ -420,6 +420,7 @@ mod tests {
 
     mod distribute_storage_fee_to_epochs_collection {
         use super::*;
+        use crate::fee::credits::Creditable;
 
         #[test]
         fn should_distribute_max_credits_value_without_overflow() {
@@ -563,6 +564,7 @@ mod tests {
 
     mod subtract_refunds_from_epoch_credits_collection {
         use super::*;
+        use crate::fee::credits::Creditable;
 
         #[test]
         fn should_deduct_refunds_from_collection_since_specific_epoch_start_at_genesis() {

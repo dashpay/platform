@@ -674,7 +674,7 @@ mod tests {
                 .grove_apply_batch(batch, false, Some(&transaction))
                 .expect("should apply batch");
 
-            match drive
+            let error = drive
                 .grove
                 .get(
                     epoch.get_path(),
@@ -682,12 +682,11 @@ mod tests {
                     Some(&transaction),
                 )
                 .unwrap()
-            {
-                Ok(_) => assert!(false, "expect tree not exists"),
-                Err(e) => match e {
-                    grovedb::Error::PathKeyNotFound(_) => assert!(true),
-                    _ => assert!(false, "invalid error type"),
-                },
+                .expect_err("expect tree not exists");
+
+            match error {
+                grovedb::Error::PathKeyNotFound(_) => {}
+                _ => panic!("invalid error type"),
             }
         }
     }

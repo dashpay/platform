@@ -133,7 +133,7 @@ impl AssetLockProof {
     }
 
     pub fn to_raw_object(&self) -> Result<JsonValue, Error> {
-        serde_json::to_value(&self)
+        serde_json::to_value(self)
     }
 }
 

@@ -32,7 +32,7 @@
 
 use crate::drive::balances::TOTAL_SYSTEM_CREDITS_STORAGE_KEY;
 use crate::drive::batch::GroveDbOpBatch;
-use crate::drive::contract::add_init_contracts_structure_operations;
+
 use crate::drive::{Drive, RootTree};
 use crate::error::Error;
 use crate::fee_pools::add_create_fee_pool_trees_operations;

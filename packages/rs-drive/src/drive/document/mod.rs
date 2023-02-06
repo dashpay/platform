@@ -42,7 +42,6 @@ use grovedb::batch::key_info::KeyInfo;
 use grovedb::batch::KeyInfoPath;
 use grovedb::reference_path::ReferencePathType::UpstreamRootHeightReference;
 use grovedb::Element;
-use std::borrow::Cow;
 
 mod delete;
 mod estimation_costs;

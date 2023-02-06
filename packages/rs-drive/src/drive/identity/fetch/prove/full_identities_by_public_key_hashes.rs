@@ -1,15 +1,8 @@
-use crate::drive::grove_operations::DirectQueryType::StatefulDirectQuery;
-use crate::drive::{
-    non_unique_key_hashes_sub_tree_path, non_unique_key_hashes_tree_path,
-    unique_key_hashes_tree_path, unique_key_hashes_tree_path_vec, Drive,
-};
-use crate::error::drive::DriveError;
+use crate::drive::Drive;
+
 use crate::error::Error;
-use crate::fee::op::DriveOperation;
-use dpp::identity::Identity;
-use grovedb::Element::Item;
-use grovedb::{PathQuery, Query, SizedQuery, TransactionArg};
-use std::collections::BTreeMap;
+
+use grovedb::{PathQuery, TransactionArg};
 
 impl Drive {
     /// Fetches an identity with all its information from storage.
@@ -55,8 +48,7 @@ impl Drive {
             })
             .collect::<Result<Vec<PathQuery>, Error>>()?;
 
-        let mut path_query =
-            PathQuery::merge(path_queries.iter().collect()).map_err(Error::GroveDB)?;
+        let path_query = PathQuery::merge(path_queries.iter().collect()).map_err(Error::GroveDB)?;
         self.grove_get_proved_path_query(&path_query, true, transaction, &mut vec![])
     }
 }
@@ -66,19 +58,19 @@ mod tests {
     use super::*;
     use crate::common::helpers::setup::setup_drive_with_initial_state_structure;
 
-    use grovedb::GroveDb;
-
     mod prove_identities {
         use super::*;
         use crate::drive::block_info::BlockInfo;
-        use std::borrow::Borrow;
+        use dpp::identity::Identity;
+
+        use std::collections::BTreeMap;
 
         #[test]
         fn should_prove_a_single_identity() {
             let drive = setup_drive_with_initial_state_structure();
             let identity = Identity::random_identity(3, Some(14));
 
-            let identity_id = identity.id.to_buffer();
+            let _identity_id = identity.id.to_buffer();
             drive
                 .add_new_identity(identity.clone(), &BlockInfo::default(), true, None)
                 .expect("expected to add an identity");

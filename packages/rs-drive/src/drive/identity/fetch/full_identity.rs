@@ -1,6 +1,5 @@
-use crate::drive::balances::balance_path;
 use crate::drive::defaults::PROTOCOL_VERSION;
-use crate::drive::identity::key::fetch::IdentityKeysRequest;
+
 use crate::drive::Drive;
 use crate::error::drive::DriveError;
 use crate::error::Error;
@@ -10,10 +9,9 @@ use crate::fee::result::FeeResult;
 use crate::fee_pools::epochs::Epoch;
 use dpp::identifier::Identifier;
 use dpp::identity::Identity;
-use dpp::prelude::Revision;
-use grovedb::query_result_type::Path;
-use grovedb::{PathQuery, TransactionArg};
-use std::collections::{BTreeMap, BTreeSet};
+
+use grovedb::TransactionArg;
+use std::collections::BTreeMap;
 
 impl Drive {
     /// Fetches an identity with all its information and
@@ -154,8 +152,6 @@ impl Drive {
 mod tests {
     use super::*;
     use crate::common::helpers::setup::setup_drive_with_initial_state_structure;
-
-    use grovedb::GroveDb;
 
     mod fetch_full_identities {
         use super::*;

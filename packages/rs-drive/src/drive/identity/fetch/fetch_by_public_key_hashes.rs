@@ -86,7 +86,7 @@ impl Drive {
         let mut query = Query::new();
         query.insert_keys(
             public_key_hashes
-                .into_iter()
+                .iter()
                 .map(|key_hash| key_hash.to_vec())
                 .collect(),
         );

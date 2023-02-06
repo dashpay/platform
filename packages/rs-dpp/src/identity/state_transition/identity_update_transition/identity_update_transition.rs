@@ -5,7 +5,7 @@ use serde_json::Value as JsonValue;
 use crate::identity::IdentityPublicKeyInCreation;
 use crate::{
     identity::{KeyID, SecurityLevel},
-    prelude::{Identifier, IdentityPublicKey, Revision, TimestampMillis},
+    prelude::{Identifier, Revision, TimestampMillis},
     state_transition::{
         state_transition_execution_context::StateTransitionExecutionContext,
         state_transition_helpers, StateTransitionConvert, StateTransitionIdentitySigned,

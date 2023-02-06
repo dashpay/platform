@@ -1,8 +1,8 @@
 //! Bindings for state repository -like objects coming from JS.
 
-use anyhow::{anyhow, Result};
+use anyhow::Result;
 use serde::{Deserialize, Serialize};
-use std::convert::TryFrom;
+
 use std::{convert::Infallible, pin::Pin, sync::Mutex};
 
 use async_trait::async_trait;
@@ -224,10 +224,7 @@ impl StateRepositoryLike for ExternalStateRepositoryLikeWrapper {
             .0
             .lock()
             .expect("unexpected concurrency issue!")
-            .fetch_data_contract(
-                data_contract_id.clone().into(),
-                execution_context.clone().into(),
-            )
+            .fetch_data_contract((*data_contract_id).into(), execution_context.clone().into())
             .map(Into::into)) // TODO: Is it ok?
     }
 
@@ -304,7 +301,7 @@ impl StateRepositoryLike for ExternalStateRepositoryLikeWrapper {
             .0
             .lock()
             .expect("unexpected concurrency issue!")
-            .fetch_identity(id.clone().into(), execution_context.clone().into())
+            .fetch_identity((*id).into(), execution_context.clone().into())
             .map(Into::into))
     }
 
@@ -313,11 +310,11 @@ impl StateRepositoryLike for ExternalStateRepositoryLikeWrapper {
         identity: &Identity,
         execution_context: &StateTransitionExecutionContext,
     ) -> Result<()> {
-        Ok(self
-            .0
+        self.0
             .lock()
             .expect("unexpected concurrency issue!")
-            .create_identity(identity.clone().into(), execution_context.clone().into()))
+            .create_identity(identity.clone().into(), execution_context.clone().into());
+        Ok(())
     }
 
     async fn add_keys_to_identity(
@@ -330,7 +327,7 @@ impl StateRepositoryLike for ExternalStateRepositoryLikeWrapper {
             .lock()
             .expect("unexpected concurrency issue!")
             .add_keys_to_identity(
-                identity_id.clone().into(),
+                (*identity_id).into(),
                 keys.iter()
                     .map(|k| JsValue::from(IdentityPublicKeyWasm::from(k.clone())))
                     .collect::<Array>(),
@@ -351,7 +348,7 @@ impl StateRepositoryLike for ExternalStateRepositoryLikeWrapper {
             .lock()
             .expect("unexpected concurrency issue!")
             .disable_identity_keys(
-                identity_id.clone().into(),
+                (*identity_id).into(),
                 keys.iter().map(|&k| JsValue::from(k as f64)).collect(),
                 Number::from(disable_at as f64),
                 execution_context.clone().into(),
@@ -370,7 +367,7 @@ impl StateRepositoryLike for ExternalStateRepositoryLikeWrapper {
             .lock()
             .expect("unexpected concurrency issue!")
             .update_identity_revision(
-                identity_id.clone().into(),
+                (*identity_id).into(),
                 Number::from(revision as f64), // TODO: We should use BigInt
                 execution_context.clone().into(),
             );
@@ -387,7 +384,7 @@ impl StateRepositoryLike for ExternalStateRepositoryLikeWrapper {
             .0
             .lock()
             .expect("unexpected concurrency issue!")
-            .fetch_identity_balance(identity_id.clone().into(), execution_context.clone().into());
+            .fetch_identity_balance((*identity_id).into(), execution_context.clone().into());
 
         if let Some(balance) = maybe_balance {
             Ok(balance
@@ -409,7 +406,7 @@ impl StateRepositoryLike for ExternalStateRepositoryLikeWrapper {
             .lock()
             .expect("unexpected concurrency issue!")
             .fetch_identity_balance_with_debt(
-                identity_id.clone().into(),
+                (*identity_id).into(),
                 execution_context.clone().into(),
             );
 
@@ -433,7 +430,7 @@ impl StateRepositoryLike for ExternalStateRepositoryLikeWrapper {
             .lock()
             .expect("unexpected concurrency issue!")
             .add_to_identity_balance(
-                identity_id.clone().into(),
+                (*identity_id).into(),
                 Number::from(amount as f64),
                 execution_context.clone().into(),
             );
@@ -451,7 +448,7 @@ impl StateRepositoryLike for ExternalStateRepositoryLikeWrapper {
             .lock()
             .expect("unexpected concurrency issue!")
             .remove_from_identity_balance(
-                identity_id.clone().into(),
+                (*identity_id).into(),
                 Number::from(amount as f64),
                 execution_context.clone().into(),
             );

@@ -220,8 +220,8 @@ pub enum IdentityRootStructure {
 }
 
 impl IdentityRootStructure {
-    fn to_drive_key_info(&self) -> DriveKeyInfo {
-        DriveKeyInfo::Key(vec![*self as u8])
+    fn to_drive_key_info<'a>(self) -> DriveKeyInfo<'a> {
+        DriveKeyInfo::Key(vec![self as u8])
     }
 }
 

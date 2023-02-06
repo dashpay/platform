@@ -1,15 +1,8 @@
-use crate::drive::grove_operations::DirectQueryType::StatefulDirectQuery;
-use crate::drive::{
-    non_unique_key_hashes_sub_tree_path, non_unique_key_hashes_tree_path,
-    unique_key_hashes_tree_path, unique_key_hashes_tree_path_vec, Drive,
-};
-use crate::error::drive::DriveError;
+use crate::drive::Drive;
+
 use crate::error::Error;
-use crate::fee::op::DriveOperation;
-use dpp::identity::Identity;
-use grovedb::Element::Item;
-use grovedb::{PathQuery, Query, SizedQuery, TransactionArg};
-use std::collections::BTreeMap;
+
+use grovedb::TransactionArg;
 
 impl Drive {
     /// Proves an identity id against a public key hash.
@@ -38,12 +31,12 @@ mod tests {
     use super::*;
     use crate::common::helpers::setup::setup_drive_with_initial_state_structure;
 
-    use grovedb::GroveDb;
-
     mod prove_identity_ids {
         use super::*;
         use crate::drive::block_info::BlockInfo;
-        use std::borrow::Borrow;
+        use dpp::identity::Identity;
+
+        use std::collections::BTreeMap;
 
         #[test]
         fn should_prove_a_single_identity_id() {

@@ -522,7 +522,7 @@ mod test {
         let owner_id = Identifier::from_string(owner_id_base58, Encoding::Base58).unwrap();
         let entropy_bytes: [u8; 32] = base64::decode(entropy_base64).unwrap().try_into().unwrap();
 
-        let mut data_contract = get_data_contract_fixture(Some(owner_id.clone()));
+        let mut data_contract = get_data_contract_fixture(Some(owner_id));
         data_contract.id = data_contract_id;
 
         let documents = get_documents_fixture(data_contract.clone()).unwrap();

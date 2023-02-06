@@ -119,7 +119,7 @@ impl Drive {
         let keys = items
             .to_key_elements()
             .into_iter()
-            .map(|(key, element)| key)
+            .map(|(key, _element)| key)
             .collect();
 
         Ok(QueryDocumentIdsOutcome {

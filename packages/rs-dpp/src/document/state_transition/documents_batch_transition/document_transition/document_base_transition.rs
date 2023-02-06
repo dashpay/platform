@@ -96,7 +96,7 @@ impl DocumentTransitionObjectLike for DocumentBaseTransition {
     ) -> Result<Self, ProtocolError> {
         let mut document: DocumentBaseTransition = serde_json::from_value(json_value)?;
 
-        document.data_contract_id = data_contract.id.clone();
+        document.data_contract_id = data_contract.id;
         document.data_contract = data_contract;
         Ok(document)
     }
@@ -108,7 +108,7 @@ impl DocumentTransitionObjectLike for DocumentBaseTransition {
         raw_transition.replace_identifier_paths(IDENTIFIER_FIELDS, ReplaceWith::Base58)?;
         let mut document: DocumentBaseTransition = serde_json::from_value(raw_transition)?;
 
-        document.data_contract_id = data_contract.id.clone();
+        document.data_contract_id = data_contract.id;
         document.data_contract = data_contract;
 
         Ok(document)

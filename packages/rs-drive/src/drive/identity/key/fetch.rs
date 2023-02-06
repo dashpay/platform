@@ -259,7 +259,7 @@ impl IdentityKeysRequest {
             ))),
             SpecificKeys(keys) => Ok(keys.len() as u64
                 * epoch.cost_for_known_cost_item(FetchSingleIdentityKeyProcessingCost)),
-            SearchKey(search) => todo!(),
+            SearchKey(_search) => todo!(),
         }
     }
     /// Make a request for all current keys for the identity

@@ -71,18 +71,15 @@ impl IdentityPublicKey {
         // now we need to find the first bool that isn't set to true
         let mut needed_pos = None;
         let mut counter = 0;
-        key_matrix
-            .into_iter()
-            .enumerate()
-            .for_each(|(pos, is_set)| {
-                if !*is_set {
-                    if counter == key_number {
-                        needed_pos = Some(pos as u8);
-                        *is_set = true;
-                    }
-                    counter += 1;
+        key_matrix.iter_mut().enumerate().for_each(|(pos, is_set)| {
+            if !*is_set {
+                if counter == key_number {
+                    needed_pos = Some(pos as u8);
+                    *is_set = true;
                 }
-            });
+                counter += 1;
+            }
+        });
         let needed_pos = needed_pos.ok_or(ProtocolError::PublicKeyGenerationError(
             "too many keys already created".to_string(),
         ))?;
@@ -121,18 +118,15 @@ impl IdentityPublicKey {
         // now we need to find the first bool that isn't set to true
         let mut needed_pos = None;
         let mut counter = 0;
-        key_matrix
-            .into_iter()
-            .enumerate()
-            .for_each(|(pos, is_set)| {
-                if !*is_set {
-                    if counter == key_number {
-                        needed_pos = Some(pos as u8);
-                        *is_set = true;
-                    }
-                    counter += 1;
+        key_matrix.iter_mut().enumerate().for_each(|(pos, is_set)| {
+            if !*is_set {
+                if counter == key_number {
+                    needed_pos = Some(pos as u8);
+                    *is_set = true;
                 }
-            });
+                counter += 1;
+            }
+        });
         let needed_pos = needed_pos.ok_or(ProtocolError::PublicKeyGenerationError(
             "too many keys already created".to_string(),
         ))?;

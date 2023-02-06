@@ -59,7 +59,7 @@ impl IdentityWasm {
 
     #[wasm_bindgen(js_name=getId)]
     pub fn get_id(&self) -> IdentifierWrapper {
-        self.0.get_id().clone().into()
+        (*self.0.get_id()).into()
     }
 
     #[wasm_bindgen(js_name=setPublicKeys)]
@@ -168,8 +168,8 @@ impl IdentityWasm {
         let pks = self
             .0
             .public_keys
-            .iter()
-            .map(|(_, pk)| pk.to_json())
+            .values()
+            .map(|pk| pk.to_json())
             .collect::<Result<Vec<serde_json::Value>, SerdeParsingError>>()
             .map_err(|e| from_dpp_err(e.into()))?;
 
@@ -203,7 +203,7 @@ impl IdentityWasm {
             serde_json::to_string(&identity_json).map_err(|e| from_dpp_err(e.into()))?;
         let js_object = js_sys::JSON::parse(&identity_json_string)?;
 
-        let id: IdentifierWrapper = self.0.id.clone().into();
+        let id: IdentifierWrapper = self.0.id.into();
 
         js_sys::Reflect::set(
             &js_object,

@@ -309,11 +309,11 @@ fn create_identities_operations<'a>(
         .collect()
 }
 
-struct ChainExecutionOutcome {
-    platform: Platform,
-    masternode_identity_balances: BTreeMap<[u8; 32], Credits>,
-    identities: Vec<Identity>,
-    end_epoch_index: u16,
+pub struct ChainExecutionOutcome {
+    pub platform: Platform,
+    pub masternode_identity_balances: BTreeMap<[u8; 32], Credits>,
+    pub identities: Vec<Identity>,
+    pub end_epoch_index: u16,
 }
 
 fn run_chain_for_strategy(

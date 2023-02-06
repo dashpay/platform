@@ -43,7 +43,7 @@ impl Drive {
         transaction: TransactionArg,
     ) -> Result<(Option<PartialIdentityInfo>, FeeResult), Error> {
         let balance_cost = epoch.cost_for_known_cost_item(FetchIdentityBalanceProcessingCost);
-        if apply == false {
+        if !apply {
             return Ok((None, FeeResult::new_from_processing_fee(balance_cost)));
         }
         let mut drive_operations: Vec<DriveOperation> = vec![];
@@ -99,7 +99,7 @@ impl Drive {
         transaction: TransactionArg,
     ) -> Result<(Option<PartialIdentityInfo>, FeeResult), Error> {
         let balance_cost = epoch.cost_for_known_cost_item(FetchIdentityBalanceProcessingCost);
-        if apply == false {
+        if !apply {
             let keys_cost = identity_key_request.processing_cost(epoch)?;
             return Ok((
                 None,

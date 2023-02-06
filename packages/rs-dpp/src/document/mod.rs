@@ -367,8 +367,8 @@ mod test {
         let init_doc = new_example_document();
         let buffer_document = init_doc.to_buffer().expect("no errors");
 
-        let doc = Document::from_buffer(&buffer_document)
-            .expect("document should be created from buffer");
+        let doc =
+            Document::from_buffer(buffer_document).expect("document should be created from buffer");
 
         assert_eq!(init_doc.created_at, doc.created_at);
         assert_eq!(init_doc.updated_at, doc.updated_at);
@@ -418,7 +418,7 @@ mod test {
     fn deserialize_js_cpp_cbor() -> Result<()> {
         let document_cbor = document_cbor_bytes();
 
-        let document = Document::from_buffer(&document_cbor)?;
+        let document = Document::from_buffer(document_cbor)?;
 
         assert_eq!(document.protocol_version, 1);
         assert_eq!(

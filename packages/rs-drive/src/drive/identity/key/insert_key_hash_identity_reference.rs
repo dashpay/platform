@@ -1,11 +1,11 @@
 use crate::drive::defaults::{
-    DEFAULT_HASH_160_SIZE_U8, DEFAULT_HASH_SIZE_U16, DEFAULT_HASH_SIZE_U32, DEFAULT_HASH_SIZE_U8,
+    DEFAULT_HASH_160_SIZE_U8, DEFAULT_HASH_SIZE_U32, DEFAULT_HASH_SIZE_U8,
     ESTIMATED_NON_UNIQUE_KEY_DUPLICATES,
 };
-use crate::drive::identity::identity_key_path_vec;
+
 use crate::drive::object_size_info::DriveKeyInfo::KeyRef;
 use crate::drive::object_size_info::PathKeyElementInfo::PathKeyRefElement;
-use crate::drive::object_size_info::PathKeyInfo::PathKeyRef;
+
 use crate::drive::{
     non_unique_key_hashes_sub_tree_path_vec, non_unique_key_hashes_tree_path,
     non_unique_key_hashes_tree_path_vec, unique_key_hashes_tree_path_vec, Drive,

@@ -86,7 +86,7 @@ impl DataTrigger {
         if let Err(err) = execution_result {
             let consensus_error = DataTriggerError::DataTriggerExecutionError {
                 data_contract_id,
-                document_transition_id: get_from_transition!(document_transition, id).clone(),
+                document_transition_id: *get_from_transition!(document_transition, id),
                 message: err.to_string(),
                 execution_error: err,
                 document_transition: None,
@@ -138,10 +138,10 @@ where
     SR: StateRepositoryLike,
 {
     DataTriggerError::DataTriggerConditionError {
-        data_contract_id: context.data_contract.id.clone(),
-        document_transition_id: dt_create.base.id.clone(),
+        data_contract_id: context.data_contract.id,
+        document_transition_id: dt_create.base.id,
         message: msg,
-        owner_id: Some(context.owner_id.clone()),
+        owner_id: Some(*context.owner_id),
         document_transition: Some(DocumentTransition::Create(dt_create.clone())),
     }
 }

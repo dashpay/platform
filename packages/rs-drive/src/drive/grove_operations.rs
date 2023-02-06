@@ -39,7 +39,7 @@ use costs::CostContext;
 use grovedb::batch::estimated_costs::EstimatedCostsType::AverageCaseCostsType;
 use grovedb::batch::{key_info::KeyInfo, BatchApplyOptions, GroveDbOp, KeyInfoPath, Op};
 use grovedb::{Element, EstimatedLayerInformation, GroveDb, PathQuery, TransactionArg};
-use std::borrow::Cow;
+
 use std::collections::HashMap;
 
 use crate::drive::flags::StorageFlags;
@@ -373,7 +373,7 @@ impl Drive {
                         GroveDb::average_case_for_get_raw(
                             &key_info_path,
                             &key_info,
-                            estimated_value_size as u32,
+                            estimated_value_size,
                             in_tree_using_sums,
                         )
                     }
