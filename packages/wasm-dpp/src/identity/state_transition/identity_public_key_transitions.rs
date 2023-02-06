@@ -1,12 +1,12 @@
 //todo: move this file to transition
 use dpp::dashcore::anyhow;
+use dpp::identity::state_transition::identity_public_key_transitions::IdentityPublicKeyCreateTransition;
 pub use serde::{Deserialize, Serialize};
 use std::convert::{TryFrom, TryInto};
 use wasm_bindgen::prelude::*;
 
 use crate::errors::from_dpp_err;
 use crate::{buffer::Buffer, utils, with_js_error};
-use dpp::identity::IdentityPublicKeyInCreation;
 
 #[derive(Deserialize, Default)]
 #[serde(rename_all = "camelCase")]
@@ -14,16 +14,16 @@ struct ToObjectOptions {
     pub skip_signature: Option<bool>,
 }
 
-#[wasm_bindgen(js_name=IdentityPublicKeyInCreation)]
+#[wasm_bindgen(js_name=IdentityPublicKeyCreateTransition)]
 #[derive(Serialize, Deserialize, Debug, Clone)]
-pub struct IdentityPublicKeyInCreationWasm(IdentityPublicKeyInCreation);
+pub struct IdentityPublicKeyCreateTransitionWasm(IdentityPublicKeyCreateTransition);
 
-#[wasm_bindgen(js_class = IdentityPublicKeyInCreation)]
-impl IdentityPublicKeyInCreationWasm {
+#[wasm_bindgen(js_class = IdentityPublicKeyCreateTransition)]
+impl IdentityPublicKeyCreateTransitionWasm {
     #[wasm_bindgen(constructor)]
-    pub fn new(raw_public_key: JsValue) -> Result<IdentityPublicKeyInCreationWasm, JsValue> {
+    pub fn new(raw_public_key: JsValue) -> Result<IdentityPublicKeyCreateTransitionWasm, JsValue> {
         let data_string = utils::stringify(&raw_public_key)?;
-        let pk: IdentityPublicKeyInCreationWasm =
+        let pk: IdentityPublicKeyCreateTransitionWasm =
             serde_json::from_str(&data_string).map_err(|e| e.to_string())?;
 
         Ok(pk)
@@ -168,40 +168,40 @@ impl IdentityPublicKeyInCreationWasm {
     }
 }
 
-impl IdentityPublicKeyInCreationWasm {
-    pub fn into_inner(self) -> IdentityPublicKeyInCreation {
+impl IdentityPublicKeyCreateTransitionWasm {
+    pub fn into_inner(self) -> IdentityPublicKeyCreateTransition {
         self.0
     }
 
-    pub fn inner(&self) -> &IdentityPublicKeyInCreation {
+    pub fn inner(&self) -> &IdentityPublicKeyCreateTransition {
         &self.0
     }
 
-    pub fn inner_mut(&mut self) -> &mut IdentityPublicKeyInCreation {
+    pub fn inner_mut(&mut self) -> &mut IdentityPublicKeyCreateTransition {
         &mut self.0
     }
 }
 
-impl From<IdentityPublicKeyInCreation> for IdentityPublicKeyInCreationWasm {
-    fn from(v: IdentityPublicKeyInCreation) -> Self {
-        IdentityPublicKeyInCreationWasm(v)
+impl From<IdentityPublicKeyCreateTransition> for IdentityPublicKeyCreateTransitionWasm {
+    fn from(v: IdentityPublicKeyCreateTransition) -> Self {
+        IdentityPublicKeyCreateTransitionWasm(v)
     }
 }
 
-impl TryFrom<JsValue> for IdentityPublicKeyInCreationWasm {
+impl TryFrom<JsValue> for IdentityPublicKeyCreateTransitionWasm {
     type Error = JsValue;
 
     fn try_from(value: JsValue) -> Result<Self, Self::Error> {
         let str = String::from(js_sys::JSON::stringify(&value)?);
         let val = serde_json::from_str(&str).map_err(|e| from_dpp_err(e.into()))?;
         Ok(Self(
-            IdentityPublicKeyInCreation::from_raw_object(val).map_err(from_dpp_err)?,
+            IdentityPublicKeyCreateTransition::from_raw_object(val).map_err(from_dpp_err)?,
         ))
     }
 }
 
-impl From<IdentityPublicKeyInCreationWasm> for IdentityPublicKeyInCreation {
-    fn from(pk: IdentityPublicKeyInCreationWasm) -> Self {
+impl From<IdentityPublicKeyCreateTransitionWasm> for IdentityPublicKeyCreateTransition {
+    fn from(pk: IdentityPublicKeyCreateTransitionWasm) -> Self {
         pk.0
     }
 }

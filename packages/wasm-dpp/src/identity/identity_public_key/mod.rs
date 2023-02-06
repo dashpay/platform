@@ -13,12 +13,9 @@ pub use purpose::*;
 mod security_level;
 pub use security_level::*;
 
-mod in_creation;
 mod key_type;
 
 pub use key_type::*;
-
-pub use in_creation::*;
 
 #[wasm_bindgen(js_name=IdentityPublicKey)]
 #[derive(Serialize, Deserialize, Debug, Clone)]

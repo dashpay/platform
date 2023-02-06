@@ -14,7 +14,7 @@ pub const BINARY_DATA_FIELDS: [&str; 2] = ["data", "signature"];
 
 #[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
-pub struct IdentityPublicKeyInCreation {
+pub struct IdentityPublicKeyCreateTransition {
     pub id: KeyID,
     pub purpose: Purpose,
     pub security_level: SecurityLevel,
@@ -26,9 +26,9 @@ pub struct IdentityPublicKeyInCreation {
     pub signature: Vec<u8>,
 }
 
-impl IdentityPublicKeyInCreation {
+impl IdentityPublicKeyCreateTransition {
     pub fn to_identity_public_key(self) -> IdentityPublicKey {
-        let IdentityPublicKeyInCreation {
+        let Self {
             id,
             purpose,
             security_level,
@@ -112,7 +112,7 @@ impl IdentityPublicKeyInCreation {
             key_value_map.as_bytes("data", "Identity public key must have a data")?;
         let signature_bytes = key_value_map.as_bytes("signature", "").unwrap_or_default();
 
-        Ok(IdentityPublicKeyInCreation {
+        Ok(Self {
             id: id.into(),
             purpose: purpose.try_into()?,
             security_level: security_level.try_into()?,
@@ -141,7 +141,7 @@ impl IdentityPublicKeyInCreation {
     }
 }
 
-impl Into<IdentityPublicKey> for &IdentityPublicKeyInCreation {
+impl Into<IdentityPublicKey> for &IdentityPublicKeyCreateTransition {
     fn into(self) -> IdentityPublicKey {
         IdentityPublicKey {
             id: self.id,

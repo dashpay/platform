@@ -12,7 +12,7 @@ describe('validateIdentityCreateTransitionBasicFactory', () => {
   let stateTransition;
 
   let stateRepositoryMock;
-  let mockIdentityPublicKeyInCreation;
+  let mockIdentityPublicKeyCreateTransition;
   let executionContext;
 
   let validateIdentityCreateTransitionBasic;
@@ -26,7 +26,7 @@ describe('validateIdentityCreateTransitionBasicFactory', () => {
   let InvalidIdentityPublicKeyDataError;
   let InvalidIdentityKeySignatureError;
   let IdentityCreateTransitionBasicValidator;
-  let IdentityPublicKeyInCreation;
+  let IdentityPublicKeyCreateTransition;
 
   before(async () => {
     ({
@@ -37,21 +37,23 @@ describe('validateIdentityCreateTransitionBasicFactory', () => {
       InvalidIdentityPublicKeySecurityLevelError,
       InvalidIdentityPublicKeyDataError,
       InvalidIdentityKeySignatureError,
-      IdentityPublicKeyInCreation,
+      IdentityPublicKeyCreateTransition,
       IdentityCreateTransitionBasicValidator,
       IdentityPublicKey,
     } = await loadWasmDpp());
 
-    mockIdentityPublicKeyInCreation = (publicKey, opts = {}) => new IdentityPublicKeyInCreation({
-      id: 0,
-      type: IdentityPublicKey.TYPES.ECDSA_SECP256K1,
-      data: publicKey,
-      purpose: IdentityPublicKey.PURPOSES.AUTHENTICATION,
-      securityLevel: IdentityPublicKey.SECURITY_LEVELS.MASTER,
-      readOnly: false,
-      signature: Buffer.alloc(0),
-      ...opts,
-    });
+    mockIdentityPublicKeyCreateTransition = (publicKey, opts = {}) => (
+      new IdentityPublicKeyCreateTransition({
+        id: 0,
+        type: IdentityPublicKey.TYPES.ECDSA_SECP256K1,
+        data: publicKey,
+        purpose: IdentityPublicKey.PURPOSES.AUTHENTICATION,
+        securityLevel: IdentityPublicKey.SECURITY_LEVELS.MASTER,
+        readOnly: false,
+        signature: Buffer.alloc(0),
+        ...opts,
+      })
+    );
   });
 
   beforeEach(async function () {
@@ -71,7 +73,7 @@ describe('validateIdentityCreateTransitionBasicFactory', () => {
     const privateKey = new PrivateKey('9b67f852093bc61cea0eeca38599dbfba0de28574d2ed9b99d10d33dc1bde7b2');
     const publicKey = privateKey.toPublicKey();
 
-    const identityPublicKey = mockIdentityPublicKeyInCreation(publicKey.toBuffer());
+    const identityPublicKey = mockIdentityPublicKeyCreateTransition(publicKey.toBuffer());
 
     stateTransition.setPublicKeys([identityPublicKey]);
 
@@ -296,7 +298,7 @@ describe('validateIdentityCreateTransitionBasicFactory', () => {
       const privateKey = new PrivateKey();
 
       // Mess up public key
-      const identityPublicKey = mockIdentityPublicKeyInCreation(Buffer.alloc(33));
+      const identityPublicKey = mockIdentityPublicKeyCreateTransition(Buffer.alloc(33));
 
       stateTransition.setPublicKeys([identityPublicKey]);
       await stateTransition.signByPrivateKey(
@@ -320,7 +322,7 @@ describe('validateIdentityCreateTransitionBasicFactory', () => {
       const privateKey = new PrivateKey();
 
       // Mess up public key's purpose
-      const identityPublicKey = mockIdentityPublicKeyInCreation(
+      const identityPublicKey = mockIdentityPublicKeyCreateTransition(
         privateKey.toPublicKey().toBuffer(),
       );
 
@@ -434,8 +436,6 @@ describe('validateIdentityCreateTransitionBasicFactory', () => {
       rawStateTransition,
       executionContext,
     );
-
-    console.log(result.getErrors()[0]);
 
     expect(result.isValid()).to.be.true();
   });

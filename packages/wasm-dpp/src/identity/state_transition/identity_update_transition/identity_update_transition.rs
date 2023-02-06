@@ -8,15 +8,17 @@ use wasm_bindgen::prelude::*;
 use crate::identifier::IdentifierWrapper;
 
 use crate::{
-    buffer::Buffer, errors::RustConversionError, identity::IdentityPublicKeyWasm,
-    state_transition::StateTransitionExecutionContextWasm, with_js_error,
-    IdentityPublicKeyInCreationWasm,
+    buffer::Buffer, errors::RustConversionError,
+    identity::state_transition::identity_public_key_transitions::IdentityPublicKeyCreateTransitionWasm,
+    identity::IdentityPublicKeyWasm, state_transition::StateTransitionExecutionContextWasm,
+    with_js_error,
 };
 
 use crate::bls_adapter::{BlsAdapter, JsBlsAdapter};
 use crate::errors::from_dpp_err;
 use crate::utils::generic_of_js_val;
-use dpp::identity::{IdentityPublicKeyInCreation, KeyID, TimestampMillis};
+use dpp::identity::state_transition::identity_public_key_transitions::IdentityPublicKeyCreateTransition;
+use dpp::identity::{KeyID, TimestampMillis};
 use dpp::prelude::Revision;
 use dpp::state_transition::StateTransitionIdentitySigned;
 use dpp::{
@@ -36,7 +38,7 @@ struct IdentityUpdateTransitionParams {
     protocol_version: u32,
     identity_id: Vec<u8>,
     revision: Revision,
-    add_public_keys: Option<Vec<IdentityPublicKeyInCreation>>,
+    add_public_keys: Option<Vec<IdentityPublicKeyCreateTransition>>,
     disable_public_keys: Option<Vec<KeyID>>,
     public_keys_disabled_at: Option<TimestampMillis>,
 }
@@ -78,14 +80,14 @@ impl IdentityUpdateTransitionWasm {
             keys_to_add = keys
                 .iter()
                 .map(|value| {
-                    let public_key: Ref<IdentityPublicKeyInCreationWasm> =
-                        generic_of_js_val::<IdentityPublicKeyInCreationWasm>(
+                    let public_key: Ref<IdentityPublicKeyCreateTransitionWasm> =
+                        generic_of_js_val::<IdentityPublicKeyCreateTransitionWasm>(
                             value,
-                            "IdentityPublicKeyInCreation",
+                            "IdentityPublicKeyCreateTransition",
                         )?;
                     Ok(public_key.clone().into())
                 })
-                .collect::<Result<Vec<IdentityPublicKeyInCreation>, JsValue>>()?;
+                .collect::<Result<Vec<IdentityPublicKeyCreateTransition>, JsValue>>()?;
         }
 
         self.0.set_public_keys_to_add(keys_to_add);
@@ -98,7 +100,7 @@ impl IdentityUpdateTransitionWasm {
         self.0
             .get_public_keys_to_add()
             .iter()
-            .map(|key| IdentityPublicKeyInCreationWasm::from(key.to_owned()).into())
+            .map(|key| IdentityPublicKeyCreateTransitionWasm::from(key.to_owned()).into())
             .collect()
     }
 
@@ -235,7 +237,9 @@ impl IdentityUpdateTransitionWasm {
         if let Some(public_keys_to_add) = object.public_keys_to_add {
             let keys_objects = public_keys_to_add
                 .into_iter()
-                .map(|key| IdentityPublicKeyInCreationWasm::from(key).to_object(options.clone()))
+                .map(|key| {
+                    IdentityPublicKeyCreateTransitionWasm::from(key).to_object(options.clone())
+                })
                 .collect::<Result<js_sys::Array, _>>()?;
 
             js_sys::Reflect::set(
@@ -325,7 +329,7 @@ impl IdentityUpdateTransitionWasm {
         if let Some(public_keys_to_add) = object.public_keys_to_add {
             let keys_objects = public_keys_to_add
                 .into_iter()
-                .map(|key| IdentityPublicKeyInCreationWasm::from(key).to_json())
+                .map(|key| IdentityPublicKeyCreateTransitionWasm::from(key).to_json())
                 .collect::<Result<js_sys::Array, _>>()?;
 
             js_sys::Reflect::set(

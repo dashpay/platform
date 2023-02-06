@@ -13,7 +13,7 @@ describe('validateIdentityUpdateTransitionBasicFactory', () => {
 
   let IdentityUpdateTransition;
   let IdentityPublicKey;
-  let IdentityPublicKeyInCreation;
+  let IdentityPublicKeyCreateTransition;
   let UnsupportedProtocolVersionError;
   let InvalidIdentityKeySignatureError;
   let DuplicatedIdentityPublicKeyIdStateError;
@@ -26,7 +26,7 @@ describe('validateIdentityUpdateTransitionBasicFactory', () => {
       InvalidIdentityKeySignatureError,
       DuplicatedIdentityPublicKeyIdStateError,
       IdentityPublicKey,
-      IdentityPublicKeyInCreation,
+      IdentityPublicKeyCreateTransition,
       IdentityUpdateTransitionBasicValidator,
     } = await loadWasmDpp());
   });
@@ -52,18 +52,18 @@ describe('validateIdentityUpdateTransitionBasicFactory', () => {
       readOnly: false,
     });
 
-    let identityPublicKeyInCreation = new IdentityPublicKeyInCreation({
+    let identityPublicKeyCreateTransition = new IdentityPublicKeyCreateTransition({
       ...identityPublicKey.toObject(),
       signature: Buffer.alloc(0),
     });
 
-    stateTransition.setPublicKeysToAdd([identityPublicKeyInCreation]);
+    stateTransition.setPublicKeysToAdd([identityPublicKeyCreateTransition]);
 
     await stateTransition.sign(identityPublicKey, privateKey.toBuffer());
 
-    [identityPublicKeyInCreation] = stateTransition.getPublicKeysToAdd();
-    identityPublicKeyInCreation.setSignature(stateTransition.getSignature());
-    stateTransition.setPublicKeysToAdd([identityPublicKeyInCreation]);
+    [identityPublicKeyCreateTransition] = stateTransition.getPublicKeysToAdd();
+    identityPublicKeyCreateTransition.setSignature(stateTransition.getSignature());
+    stateTransition.setPublicKeysToAdd([identityPublicKeyCreateTransition]);
 
     rawStateTransition = stateTransition.toObject();
 
@@ -315,16 +315,18 @@ describe('validateIdentityUpdateTransitionBasicFactory', () => {
       const privateKey = new PrivateKey();
       const publicKey = privateKey.toPublicKey();
 
-      const identityPublicKey = new IdentityPublicKeyInCreation(publicKeyToAdd);
-      identityPublicKey.setData(publicKey.toBuffer());
+      const identityPublicKeyCreateTransition = new IdentityPublicKeyCreateTransition(
+        publicKeyToAdd,
+      );
+      identityPublicKeyCreateTransition.setData(publicKey.toBuffer());
 
-      stateTransition.setPublicKeysToAdd([identityPublicKey]);
+      stateTransition.setPublicKeysToAdd([identityPublicKeyCreateTransition]);
       await stateTransition.signByPrivateKey(
         privateKey.toBuffer(),
-        identityPublicKey.type,
+        identityPublicKeyCreateTransition.type,
       );
-      identityPublicKey.setSignature(stateTransition.getSignature());
-      stateTransition.setPublicKeysToAdd([identityPublicKey]);
+      identityPublicKeyCreateTransition.setSignature(stateTransition.getSignature());
+      stateTransition.setPublicKeysToAdd([identityPublicKeyCreateTransition]);
 
       rawStateTransition = stateTransition.toObject();
 
@@ -385,8 +387,8 @@ describe('validateIdentityUpdateTransitionBasicFactory', () => {
       const keyWithDupeId = { ...publicKeyToAdd, data: Buffer.alloc(33) };
 
       stateTransition.setPublicKeysToAdd([
-        new IdentityPublicKeyInCreation(publicKeyToAdd),
-        new IdentityPublicKeyInCreation(keyWithDupeId),
+        new IdentityPublicKeyCreateTransition(publicKeyToAdd),
+        new IdentityPublicKeyCreateTransition(keyWithDupeId),
       ]);
 
       rawStateTransition = stateTransition.toObject();

@@ -1,6 +1,6 @@
 use serde_json::Value;
 
-use crate::identity::IdentityPublicKeyInCreation;
+use crate::identity::state_transition::identity_public_key_transitions::IdentityPublicKeyCreateTransition;
 use crate::{
     consensus::{basic::BasicError, ConsensusError},
     object_names,
@@ -83,19 +83,19 @@ pub fn validate_public_key_signatures<'a, T: BlsModule>(
             }
         };
 
-    let identity_public_keys_being_added: Vec<IdentityPublicKeyInCreation> = raw_public_keys
+    let add_public_key_transitions: Vec<IdentityPublicKeyCreateTransition> = raw_public_keys
         .into_iter()
         .map(|k| {
-            IdentityPublicKeyInCreation::from_raw_object(k.to_owned())
+            IdentityPublicKeyCreateTransition::from_raw_object(k.to_owned())
                 .map_err(|e| NonConsensusError::IdentityPublicKeyCreateError(format!("{:#}", e)))
         })
         .collect::<Result<_, _>>()?;
 
-    let maybe_invalid_public_key =
-        find_invalid_public_key(&mut state_transition, identity_public_keys_being_added, bls);
-    if let Some(invalid_key) = maybe_invalid_public_key {
+    let maybe_invalid_public_key_transition =
+        find_invalid_public_key(&mut state_transition, add_public_key_transitions, bls);
+    if let Some(invalid_key_transition) = maybe_invalid_public_key_transition {
         validation_result.add_error(BasicError::InvalidIdentityKeySignatureError {
-            public_key_id: invalid_key.id,
+            public_key_id: invalid_key_transition.id,
         })
     }
 
@@ -110,9 +110,9 @@ fn invalid_state_transition_type_error(transition_type: u8) -> ProtocolError {
 
 fn find_invalid_public_key<T: BlsModule>(
     state_transition: &mut impl StateTransitionLike,
-    public_keys: impl IntoIterator<Item = IdentityPublicKeyInCreation>,
+    public_keys: impl IntoIterator<Item = IdentityPublicKeyCreateTransition>,
     bls: &T,
-) -> Option<IdentityPublicKeyInCreation> {
+) -> Option<IdentityPublicKeyCreateTransition> {
     for public_key in public_keys {
         state_transition.set_signature(public_key.signature.clone());
         if state_transition

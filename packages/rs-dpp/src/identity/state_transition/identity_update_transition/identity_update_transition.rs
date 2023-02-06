@@ -2,7 +2,7 @@ use anyhow::anyhow;
 use serde::{Deserialize, Serialize};
 use serde_json::Value as JsonValue;
 
-use crate::identity::IdentityPublicKeyInCreation;
+use crate::identity::state_transition::identity_public_key_transitions::IdentityPublicKeyCreateTransition;
 use crate::{
     identity::{KeyID, SecurityLevel},
     prelude::{Identifier, Revision, TimestampMillis},
@@ -48,9 +48,9 @@ pub struct IdentityUpdateTransition {
     pub revision: Revision,
 
     /// Public Keys to add to the Identity
-    // we want to skip serialization of transitions, as we does it manually in `to_object()`  and `to_json()`
+    /// we want to skip serialization of transitions, as we does it manually in `to_object()`  and `to_json()`
     #[serde(skip, default)]
-    pub add_public_keys: Vec<IdentityPublicKeyInCreation>,
+    pub add_public_keys: Vec<IdentityPublicKeyCreateTransition>,
 
     /// Identity Public Keys ID's to disable for the Identity
     #[serde(skip_serializing_if = "Vec::is_empty", default)]
@@ -144,15 +144,18 @@ impl IdentityUpdateTransition {
         self.revision
     }
 
-    pub fn set_public_keys_to_add(&mut self, add_public_keys: Vec<IdentityPublicKeyInCreation>) {
+    pub fn set_public_keys_to_add(
+        &mut self,
+        add_public_keys: Vec<IdentityPublicKeyCreateTransition>,
+    ) {
         self.add_public_keys = add_public_keys;
     }
 
-    pub fn get_public_keys_to_add(&self) -> &[IdentityPublicKeyInCreation] {
+    pub fn get_public_keys_to_add(&self) -> &[IdentityPublicKeyCreateTransition] {
         &self.add_public_keys
     }
 
-    pub fn get_public_keys_to_add_mut(&mut self) -> &mut [IdentityPublicKeyInCreation] {
+    pub fn get_public_keys_to_add_mut(&mut self) -> &mut [IdentityPublicKeyCreateTransition] {
         &mut self.add_public_keys
     }
 
@@ -186,12 +189,12 @@ impl IdentityUpdateTransition {
 fn get_list_of_public_keys(
     value: &mut JsonValue,
     property_name: &str,
-) -> Result<Vec<IdentityPublicKeyInCreation>, ProtocolError> {
+) -> Result<Vec<IdentityPublicKeyCreateTransition>, ProtocolError> {
     let mut identity_public_keys = vec![];
     if let Ok(maybe_list) = value.remove(property_names::ADD_PUBLIC_KEYS) {
         if let JsonValue::Array(list) = maybe_list {
             for maybe_public_key in list {
-                identity_public_keys.push(IdentityPublicKeyInCreation::from_raw_object(
+                identity_public_keys.push(IdentityPublicKeyCreateTransition::from_raw_object(
                     maybe_public_key,
                 )?);
             }

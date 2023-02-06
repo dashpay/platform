@@ -1,7 +1,6 @@
 #![allow(clippy::from_over_into)]
 
 pub mod factory;
-pub mod in_creation;
 pub mod key_type;
 pub mod purpose;
 pub mod security_level;
@@ -25,7 +24,7 @@ use crate::util::json_value::{JsonValueExt, ReplaceWith};
 use crate::util::vec;
 use crate::SerdeParsingError;
 
-pub use in_creation::IdentityPublicKeyInCreation;
+use crate::identity::state_transition::identity_public_key_transitions::IdentityPublicKeyCreateTransition;
 
 pub type KeyID = u32;
 pub type TimestampMillis = u64;
@@ -46,9 +45,9 @@ pub struct IdentityPublicKey {
     pub disabled_at: Option<TimestampMillis>,
 }
 
-impl Into<IdentityPublicKeyInCreation> for &IdentityPublicKey {
-    fn into(self) -> IdentityPublicKeyInCreation {
-        IdentityPublicKeyInCreation {
+impl Into<IdentityPublicKeyCreateTransition> for &IdentityPublicKey {
+    fn into(self) -> IdentityPublicKeyCreateTransition {
+        IdentityPublicKeyCreateTransition {
             id: self.id,
             purpose: self.purpose,
             security_level: self.security_level,
