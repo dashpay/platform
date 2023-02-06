@@ -5,7 +5,7 @@ use wasm_bindgen::prelude::*;
 
 use crate::errors::from_dpp_err;
 use crate::{buffer::Buffer, utils};
-use dpp::identity::IdentityPublicKey;
+use dpp::identity::{IdentityPublicKey, KeyID};
 
 mod purpose;
 pub use purpose::*;
@@ -33,12 +33,12 @@ impl IdentityPublicKeyWasm {
     }
 
     #[wasm_bindgen(js_name=getId)]
-    pub fn get_id(&self) -> u32 {
+    pub fn get_id(&self) -> KeyID {
         self.0.id
     }
 
     #[wasm_bindgen(js_name=setId)]
-    pub fn set_id(&mut self, id: u32) {
+    pub fn set_id(&mut self, id: KeyID) {
         self.0.id = id;
     }
 
@@ -104,6 +104,7 @@ impl IdentityPublicKeyWasm {
 
     #[wasm_bindgen(js_name=setDisabledAt)]
     pub fn set_disabled_at(&mut self, timestamp: u32) {
+        // TODO: It's not gonna work, must be BigInt
         self.0.set_disabled_at(timestamp as u64);
     }
 
