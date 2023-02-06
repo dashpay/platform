@@ -8,7 +8,6 @@ use grovedb::{
 use crate::{
     drive::{
         batch::{drive_op_batch::WithdrawalOperationType, DriveOperationType},
-        block_info::BlockInfo,
         Drive,
     },
     error::{drive::DriveError, Error},
