@@ -651,7 +651,7 @@ impl Drive {
         documents: &'a [DocumentStub],
         data_contract: &'a DataContract,
         document_type: &'a DocumentType,
-        drive_operations: &mut Vec<DriveOperationType<'a>>,
+        drive_operation_types: &mut Vec<DriveOperationType<'a>>,
     ) {
         let operations: Vec<DocumentOperation> = documents
             .iter()
@@ -666,7 +666,7 @@ impl Drive {
             .collect();
 
         if !operations.is_empty() {
-            drive_operations.push(DriveOperationType::DocumentOperation(
+            drive_operation_types.push(DriveOperationType::DocumentOperation(
                 DocumentOperationType::MultipleDocumentOperationsForSameContractDocumentType {
                     document_operations: DocumentOperationsForContractDocumentType {
                         operations,

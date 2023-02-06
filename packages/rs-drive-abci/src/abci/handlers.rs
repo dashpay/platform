@@ -120,6 +120,9 @@ impl TenderdashAbci for Platform {
             epoch_info: epoch_info.clone(),
         };
 
+        // If last synced Core block height is not set instead of scanning
+        // number of blocks for asset unlock transactions scan only one
+        // on Core chain locked height by setting last_synced_core_height to the same value
         let last_synced_core_height = if request.last_synced_core_height == 0 {
             block_execution_context.block_info.core_chain_locked_height
         } else {
@@ -206,12 +209,12 @@ mod tests {
         };
         use dpp::util::hash;
         use drive::common::helpers::identities::create_test_masternode_identities;
-        use drive::common::helpers::setup::setup_document;
         use drive::drive::block_info::BlockInfo;
         use drive::drive::identity::withdrawals::paths::WithdrawalTransaction;
         use drive::fee::epoch::CreditsPerEpoch;
         use drive::fee_pools::epochs::Epoch;
         use drive::rpc::core::MockCoreRPCLike;
+        use drive::tests::helpers::setup::setup_document;
         use rust_decimal::prelude::ToPrimitive;
         use serde_json::json;
         use std::cmp::Ordering;

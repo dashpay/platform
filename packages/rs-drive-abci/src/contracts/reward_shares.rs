@@ -75,8 +75,9 @@ impl Platform {
         let query_cbor =
             serializer::value_to_cbor(query_json, None).expect("expected to serialize to cbor");
 
-        let QueryDocumentsOutcome { items, .. } =
-            self.drive.query_documents_cbor_with_document_type_lookup(
+        let QueryDocumentsOutcome { items, .. } = self
+            .drive
+            .query_raw_documents_using_cbor_encoded_query_with_cost(
                 &query_cbor,
                 MN_REWARD_SHARES_CONTRACT_ID,
                 MN_REWARD_SHARES_DOCUMENT_TYPE,

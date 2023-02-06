@@ -12,13 +12,13 @@ use crate::{
 };
 
 use super::paths::{
-    get_withdrawal_transactions_expired_ids_path,
-    get_withdrawal_transactions_expired_ids_path_as_u8, WITHDRAWAL_TRANSACTIONS_COUNTER_ID,
+    get_withdrawal_transactions_expired_ids_path, get_withdrawal_transactions_expired_ids_path_vec,
+    WITHDRAWAL_TRANSACTIONS_COUNTER_ID,
 };
 
 impl Drive {
     /// Get latest withdrawal index in a queue
-    pub fn fetch_latest_withdrawal_transaction_index(
+    pub fn remove_latest_withdrawal_transaction_index(
         &self,
         transaction: TransactionArg,
     ) -> Result<u64, Error> {
@@ -27,7 +27,7 @@ impl Drive {
         inner_query.insert_all();
 
         let expired_index_query = PathQuery::new(
-            get_withdrawal_transactions_expired_ids_path(),
+            get_withdrawal_transactions_expired_ids_path_vec(),
             SizedQuery::new(inner_query, Some(1), None),
         );
 
@@ -53,7 +53,7 @@ impl Drive {
                     ))
                 })?);
 
-                let path: [&[u8]; 2] = get_withdrawal_transactions_expired_ids_path_as_u8();
+                let path: [&[u8]; 2] = get_withdrawal_transactions_expired_ids_path();
 
                 self.grove.delete(path, key, None, transaction).unwrap()?;
 
@@ -98,9 +98,9 @@ impl Drive {
     pub fn add_update_withdrawal_index_counter_operation(
         &self,
         value: u64,
-        drive_operations: &mut Vec<DriveOperationType>,
+        drive_operation_types: &mut Vec<DriveOperationType>,
     ) {
-        drive_operations.push(DriveOperationType::WithdrawalOperation(
+        drive_operation_types.push(DriveOperationType::WithdrawalOperation(
             WithdrawalOperationType::UpdateIndexCounter { index: value },
         ));
     }
@@ -109,9 +109,9 @@ impl Drive {
     pub fn add_insert_expired_index_operation(
         &self,
         transaction_index: u64,
-        drive_operations: &mut Vec<DriveOperationType>,
+        drive_operation_types: &mut Vec<DriveOperationType>,
     ) {
-        drive_operations.push(DriveOperationType::WithdrawalOperation(
+        drive_operation_types.push(DriveOperationType::WithdrawalOperation(
             WithdrawalOperationType::InsertExpiredIndex {
                 index: transaction_index,
             },
@@ -124,12 +124,12 @@ mod tests {
     use grovedb::Element;
 
     use crate::{
-        common::helpers::setup::setup_drive_with_initial_state_structure,
         drive::{
             block_info::BlockInfo,
-            identity::withdrawals::paths::get_withdrawal_transactions_expired_ids_path_as_u8,
+            identity::withdrawals::paths::get_withdrawal_transactions_expired_ids_path,
         },
         fee_pools::epochs::Epoch,
+        tests::helpers::setup::setup_drive_with_initial_state_structure,
     };
 
     #[test]
@@ -155,7 +155,7 @@ mod tests {
             .expect("to apply drive ops");
 
         let stored_counter = drive
-            .fetch_latest_withdrawal_transaction_index(Some(&transaction))
+            .remove_latest_withdrawal_transaction_index(Some(&transaction))
             .expect("to withdraw counter");
 
         assert_eq!(stored_counter, counter);
@@ -168,7 +168,7 @@ mod tests {
         let transaction = drive.grove.start_transaction();
 
         let stored_counter = drive
-            .fetch_latest_withdrawal_transaction_index(Some(&transaction))
+            .remove_latest_withdrawal_transaction_index(Some(&transaction))
             .expect("to withdraw counter");
 
         assert_eq!(stored_counter, 0);
@@ -182,7 +182,7 @@ mod tests {
 
         let bytes = 42u64.to_be_bytes();
 
-        let path = get_withdrawal_transactions_expired_ids_path_as_u8();
+        let path = get_withdrawal_transactions_expired_ids_path();
 
         drive
             .grove
@@ -197,7 +197,7 @@ mod tests {
             .expect("to update index counter");
 
         let stored_counter = drive
-            .fetch_latest_withdrawal_transaction_index(Some(&transaction))
+            .remove_latest_withdrawal_transaction_index(Some(&transaction))
             .expect("to withdraw counter");
 
         assert_eq!(stored_counter, 42);

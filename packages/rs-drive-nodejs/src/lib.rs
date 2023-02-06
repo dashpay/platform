@@ -2128,7 +2128,7 @@ impl PlatformWrapper {
                 let result = transaction_result.and_then(|transaction_arg| {
                     platform
                         .drive
-                        .query_documents_cbor_with_document_type_lookup(
+                        .query_raw_documents_using_cbor_encoded_query_with_cost(
                             &query_cbor,
                             contract_id,
                             document_type_name.as_str(),
@@ -2205,7 +2205,7 @@ impl PlatformWrapper {
                 let result = transaction_result.and_then(|transaction_arg| {
                     platform
                         .drive
-                        .query_documents_as_grove_proof(
+                        .query_proof_of_documents_using_contract_id_using_cbor_encoded_query_with_cost(
                             &query_cbor,
                             contract_id,
                             document_type_name.as_str(),
@@ -3346,7 +3346,7 @@ impl PlatformWrapper {
             let result = transaction_result.and_then(|transaction_arg| {
                 platform
                     .drive
-                    .fetch_latest_withdrawal_transaction_index(transaction_arg)
+                    .remove_latest_withdrawal_transaction_index(transaction_arg)
                     .map_err(|err| err.to_string())
             });
 
@@ -3382,6 +3382,7 @@ impl PlatformWrapper {
         // The result is returned through the callback, not through direct return
         Ok(cx.undefined())
     }
+<<<<<<< HEAD
 
     fn js_enqueue_withdrawal_transaction(mut cx: FunctionContext) -> JsResult<JsUndefined> {
         let js_index = cx.argument::<JsNumber>(0)?;
@@ -3449,6 +3450,8 @@ impl PlatformWrapper {
         // The result is returned through the callback, not through direct return
         Ok(cx.undefined())
     }
+=======
+>>>>>>> feat/withdrawal-sync
 }
 
 #[neon::main]
@@ -3541,10 +3544,6 @@ fn main(mut cx: ModuleContext) -> NeonResult<()> {
     cx.export_function(
         "driveFetchLatestWithdrawalTransactionIndex",
         PlatformWrapper::js_fetch_latest_withdrawal_transaction_index,
-    )?;
-    cx.export_function(
-        "driveEnqueueWithdrawalTransaction",
-        PlatformWrapper::js_enqueue_withdrawal_transaction,
     )?;
 
     cx.export_function("groveDbInsert", PlatformWrapper::js_grove_db_insert)?;

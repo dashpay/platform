@@ -8,28 +8,22 @@ use grovedb::{
 use crate::{
     drive::{
         batch::{drive_op_batch::WithdrawalOperationType, DriveOperationType},
-        block_info::BlockInfo,
-        grove_operations::BatchDeleteApplyType,
         Drive,
     },
     error::{drive::DriveError, Error},
-    fee::op::DriveOperation,
 };
 
-use super::paths::{
-    get_withdrawal_transactions_queue_path, get_withdrawal_transactions_queue_path_as_u8,
-    WithdrawalTransaction,
-};
+use super::paths::{get_withdrawal_transactions_queue_path_vec, WithdrawalTransaction};
 
 impl Drive {
     /// Add insert operations for withdrawal transactions to the batch
     pub fn add_enqueue_withdrawal_transaction_operations<'a>(
         &self,
         withdrawals: &'a [WithdrawalTransaction],
-        drive_operations: &mut Vec<DriveOperationType<'a>>,
+        drive_operation_types: &mut Vec<DriveOperationType<'a>>,
     ) {
         if !withdrawals.is_empty() {
-            drive_operations.push(DriveOperationType::WithdrawalOperation(
+            drive_operation_types.push(DriveOperationType::WithdrawalOperation(
                 WithdrawalOperationType::InsertTransactions {
                     transactions: withdrawals,
                 },
@@ -38,20 +32,21 @@ impl Drive {
     }
 
     /// Get specified amount of withdrawal transactions from the DB
-    pub fn dequeue_withdrawal_transactions(
+    pub fn dequeue_withdrawal_transactions<'a>(
         &self,
-        num_of_transactions: u16,
+        max_amount: u16,
         transaction: TransactionArg,
+        drive_operation_types: &mut Vec<DriveOperationType<'a>>,
     ) -> Result<Vec<WithdrawalTransaction>, Error> {
         let mut query = Query::new();
 
         query.insert_item(QueryItem::RangeFull(RangeFull));
 
         let path_query = PathQuery {
-            path: get_withdrawal_transactions_queue_path(),
+            path: get_withdrawal_transactions_queue_path_vec(),
             query: SizedQuery {
                 query,
-                limit: Some(num_of_transactions),
+                limit: Some(max_amount),
                 offset: None,
             },
         };
@@ -80,65 +75,23 @@ impl Drive {
             .collect::<Result<Vec<(Vec<u8>, Vec<u8>)>, Error>>()?;
 
         if !withdrawals.is_empty() {
-            let mut batch_operations: Vec<DriveOperation> = vec![];
-            let mut drive_operations: Vec<DriveOperation> = vec![];
-
-            let withdrawals_path: [&[u8]; 2] = get_withdrawal_transactions_queue_path_as_u8();
-
             for (id, _) in withdrawals.iter() {
-                self.batch_delete(
-                    withdrawals_path,
-                    id,
-                    // we know that we are not deleting a subtree
-                    BatchDeleteApplyType::StatefulBatchDelete {
-                        is_known_to_be_subtree_with_sum: Some((false, false)),
-                    },
-                    transaction,
-                    &mut batch_operations,
-                )?;
+                drive_operation_types.push(DriveOperationType::WithdrawalOperation(
+                    WithdrawalOperationType::DeleteWithdrawalTransaction { id: id.clone() },
+                ));
             }
-
-            self.apply_batch_drive_operations(
-                None,
-                transaction,
-                batch_operations,
-                &mut drive_operations,
-            )?;
         }
 
         Ok(withdrawals)
-    }
-
-    /// Enqueue single withdrawal transaction
-    pub fn enqueue_withdrawal_transaction(
-        &self,
-        index: u64,
-        transaction_bytes: Vec<u8>,
-        block_info: &BlockInfo,
-        transaction: TransactionArg,
-    ) -> Result<(), Error> {
-        let mut drive_operations = vec![];
-
-        let index_bytes = (index as u64).to_be_bytes().to_vec();
-
-        let withdrawals = vec![(index_bytes, transaction_bytes)];
-
-        self.add_enqueue_withdrawal_transaction_operations(&withdrawals, &mut drive_operations);
-
-        self.add_update_withdrawal_index_counter_operation(index, &mut drive_operations);
-
-        self.apply_drive_operations(drive_operations, true, &block_info, transaction)?;
-
-        Ok(())
     }
 }
 
 #[cfg(test)]
 mod tests {
     use crate::{
-        common::helpers::setup::setup_drive_with_initial_state_structure,
         drive::{batch::DriveOperationType, block_info::BlockInfo},
         fee_pools::epochs::Epoch,
+        tests::helpers::setup::setup_drive_with_initial_state_structure,
     };
 
     #[test]
@@ -165,22 +118,36 @@ mod tests {
             .apply_drive_operations(drive_operations, true, &block_info, Some(&transaction))
             .expect("to apply batch");
 
+        let mut drive_operations: Vec<DriveOperationType> = vec![];
+
         let withdrawals = drive
-            .dequeue_withdrawal_transactions(16, Some(&transaction))
+            .dequeue_withdrawal_transactions(16, Some(&transaction), &mut drive_operations)
             .expect("to dequeue withdrawals");
+
+        drive
+            .apply_drive_operations(drive_operations, true, &block_info, Some(&transaction))
+            .expect("to apply batch");
 
         assert_eq!(withdrawals.len(), 16);
 
+        let mut drive_operations: Vec<DriveOperationType> = vec![];
+
         let withdrawals = drive
-            .dequeue_withdrawal_transactions(16, Some(&transaction))
+            .dequeue_withdrawal_transactions(16, Some(&transaction), &mut drive_operations)
             .expect("to dequeue withdrawals");
+
+        drive
+            .apply_drive_operations(drive_operations, true, &block_info, Some(&transaction))
+            .expect("to apply batch");
 
         assert_eq!(withdrawals.len(), 1);
 
-        let withdrawals = drive
-            .dequeue_withdrawal_transactions(16, Some(&transaction))
+        let mut drive_operations: Vec<DriveOperationType> = vec![];
+
+        drive
+            .dequeue_withdrawal_transactions(16, Some(&transaction), &mut drive_operations)
             .expect("to dequeue withdrawals");
 
-        assert_eq!(withdrawals.len(), 0);
+        assert_eq!(drive_operations.len(), 0);
     }
 }

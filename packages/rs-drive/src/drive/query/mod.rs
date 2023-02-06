@@ -44,6 +44,7 @@ use crate::fee::op::DriveOperation;
 use crate::query::DriveQuery;
 use dpp::data_contract::document_type::DocumentType;
 use dpp::data_contract::DriveContractExt;
+use dpp::document::document_stub::DocumentStub;
 
 use crate::drive::block_info::BlockInfo;
 use crate::fee_pools::epochs::Epoch;
@@ -69,6 +70,7 @@ pub struct QueryDocumentIdsOutcome {
 }
 
 impl Drive {
+<<<<<<< HEAD:packages/rs-drive/src/drive/query/mod.rs
     /// Performs and returns the result of the specified query along with skipped items
     /// and the cost.
     pub fn query_documents(
@@ -80,6 +82,31 @@ impl Drive {
         let mut drive_operations: Vec<DriveOperation> = vec![];
         let (items, skipped) =
             query.execute_serialized_no_proof_internal(self, transaction, &mut drive_operations)?;
+=======
+    /// Performs and returns the result of the specified query along with skipped items.
+    /// Documents are returned as raw bytes and must later be decoded
+    /// Use query_documents instead if you would prefer the result be documents directly
+    pub fn query_raw_documents(
+        &self,
+        drive_query: DriveQuery,
+        transaction: TransactionArg,
+        drive_operations: &mut Vec<DriveOperation>,
+    ) -> Result<(Vec<Vec<u8>>, u16), Error> {
+        drive_query.execute_no_proof_internal(self, transaction, drive_operations)
+    }
+
+    /// Performs and returns the result of the specified query along with skipped items and the cost.
+    /// Documents are returned as raw bytes and must later be decoded
+    /// Use query_raw_documents_with_cost instead if you would prefer the result be documents directly
+    pub fn query_raw_documents_with_cost(
+        &self,
+        drive_query: DriveQuery,
+        transaction: TransactionArg,
+        epoch: Option<&Epoch>,
+    ) -> Result<(Vec<Vec<u8>>, u16, u64), Error> {
+        let mut drive_operations: Vec<DriveOperation> = vec![];
+        let (items, skipped) =
+            drive_query.execute_no_proof_internal(self, transaction, &mut drive_operations)?;
         let cost = if let Some(epoch) = epoch {
             let fee_result = calculate_fee(None, Some(drive_operations), epoch)?;
             fee_result.processing_fee
@@ -87,6 +114,49 @@ impl Drive {
             0
         };
 
+        Ok((items, skipped, cost))
+    }
+
+    /// Performs and returns the result of the specified query along with skipped items and the cost.
+    pub fn query_documents(
+        &self,
+        drive_query: DriveQuery,
+        transaction: TransactionArg,
+        drive_operations: &mut Vec<DriveOperation>,
+    ) -> Result<(Vec<DocumentStub>, u16), Error> {
+        let (items, skipped) =
+            drive_query.execute_no_proof_internal(self, transaction, drive_operations)?;
+
+        let documents = items
+            .into_iter()
+            .map(|document_bytes| {
+                DocumentStub::from_cbor(document_bytes.as_slice(), None, None)
+                    .map_err(Error::Protocol)
+            })
+            .collect::<Result<Vec<DocumentStub>, Error>>()?;
+
+        Ok((documents, skipped))
+    }
+
+    /// Performs and returns the result of the specified query along with skipped items and the cost.
+    pub fn query_documents_with_cost(
+        &self,
+        drive_query: DriveQuery,
+        transaction: TransactionArg,
+        epoch: Option<&Epoch>,
+    ) -> Result<(Vec<DocumentStub>, u16, u64), Error> {
+        let mut drive_operations: Vec<DriveOperation> = vec![];
+        let (items, skipped) =
+            drive_query.execute_no_proof_internal(self, transaction, &mut drive_operations)?;
+>>>>>>> feat/withdrawal-sync:packages/rs-drive/src/drive/query.rs
+        let cost = if let Some(epoch) = epoch {
+            let fee_result = calculate_fee(None, Some(drive_operations), epoch)?;
+            fee_result.processing_fee
+        } else {
+            0
+        };
+
+<<<<<<< HEAD:packages/rs-drive/src/drive/query/mod.rs
         Ok(QueryDocumentsOutcome {
             items,
             skipped,
@@ -130,6 +200,22 @@ impl Drive {
     }
     /// Performs and returns the result of the specified query along with skipped items and the cost.
     pub fn query_documents_cbor_with_document_type_lookup(
+=======
+        let documents = items
+            .into_iter()
+            .map(|document_bytes| {
+                DocumentStub::from_cbor(document_bytes.as_slice(), None, None)
+                    .map_err(Error::Protocol)
+            })
+            .collect::<Result<Vec<DocumentStub>, Error>>()?;
+
+        Ok((documents, skipped, cost))
+    }
+
+    /// Performs and returns the result of the specified query along with skipped items and the cost.
+    /// The query must be cbor encoded
+    pub fn query_raw_documents_using_cbor_encoded_query_with_cost(
+>>>>>>> feat/withdrawal-sync:packages/rs-drive/src/drive/query.rs
         &self,
         query_cbor: &[u8],
         contract_id: [u8; 32],
@@ -151,6 +237,22 @@ impl Drive {
         let document_type = contract
             .contract
             .document_type_for_name(document_type_name)?;
+<<<<<<< HEAD:packages/rs-drive/src/drive/query/mod.rs
+=======
+        let (items, skipped) = self.query_raw_documents_using_cbor_encoded_query(
+            &contract.contract,
+            document_type,
+            query_cbor,
+            transaction,
+            &mut drive_operations,
+        )?;
+        let cost = if let Some(epoch) = epoch {
+            let fee_result = calculate_fee(None, Some(drive_operations), epoch)?;
+            fee_result.processing_fee
+        } else {
+            0
+        };
+>>>>>>> feat/withdrawal-sync:packages/rs-drive/src/drive/query.rs
 
         let query = DriveQuery::from_cbor(query_cbor, &contract.contract, document_type)?;
 
@@ -158,7 +260,7 @@ impl Drive {
     }
 
     /// Performs and returns the result of the specified query along with skipped items and the cost.
-    pub fn query_documents_from_contract_cbor(
+    pub fn query_raw_documents_from_contract_cbor_using_cbor_encoded_query_with_cost(
         &self,
         query_cbor: &[u8],
         contract_cbor: &[u8],
@@ -171,7 +273,11 @@ impl Drive {
         //todo cbor cost
         let document_type = contract.document_type_for_name(document_type_name.as_str())?;
 
+<<<<<<< HEAD:packages/rs-drive/src/drive/query/mod.rs
         let (items, skipped) = self.query_documents_for_cbor_query_internal(
+=======
+        let (items, skipped) = self.query_raw_documents_using_cbor_encoded_query(
+>>>>>>> feat/withdrawal-sync:packages/rs-drive/src/drive/query.rs
             &contract,
             document_type,
             query_cbor,
@@ -188,7 +294,11 @@ impl Drive {
     }
 
     /// Performs and returns the result of the specified query along with skipped items and the cost.
+<<<<<<< HEAD:packages/rs-drive/src/drive/query/mod.rs
     pub fn query_documents_cbor_from_contract(
+=======
+    pub fn query_raw_documents_from_contract_using_cbor_encoded_query_with_cost(
+>>>>>>> feat/withdrawal-sync:packages/rs-drive/src/drive/query.rs
         &self,
         contract: &Contract,
         document_type: &DocumentType,
@@ -197,6 +307,7 @@ impl Drive {
         transaction: TransactionArg,
     ) -> Result<(Vec<Vec<u8>>, u16, u64), Error> {
         let mut drive_operations: Vec<DriveOperation> = vec![];
+<<<<<<< HEAD:packages/rs-drive/src/drive/query/mod.rs
         let (items, skipped) = self.query_documents_for_cbor_query_internal(
             contract,
             document_type,
@@ -224,6 +335,9 @@ impl Drive {
     ) -> Result<(Vec<Vec<u8>>, u16, u64), Error> {
         let mut drive_operations: Vec<DriveOperation> = vec![];
         let (items, skipped) = self.query_documents_for_cbor_query_internal(
+=======
+        let (items, skipped) = self.query_raw_documents_using_cbor_encoded_query(
+>>>>>>> feat/withdrawal-sync:packages/rs-drive/src/drive/query.rs
             contract,
             document_type,
             query_cbor,
@@ -240,7 +354,11 @@ impl Drive {
     }
 
     /// Performs and returns the result of the specified query along with skipped items.
+<<<<<<< HEAD:packages/rs-drive/src/drive/query/mod.rs
     pub(crate) fn query_documents_for_cbor_query_internal(
+=======
+    pub(crate) fn query_raw_documents_using_cbor_encoded_query(
+>>>>>>> feat/withdrawal-sync:packages/rs-drive/src/drive/query.rs
         &self,
         contract: &Contract,
         document_type: &DocumentType,
@@ -250,12 +368,16 @@ impl Drive {
     ) -> Result<(Vec<Vec<u8>>, u16), Error> {
         let query = DriveQuery::from_cbor(query_cbor, contract, document_type)?;
 
+<<<<<<< HEAD:packages/rs-drive/src/drive/query/mod.rs
         query.execute_serialized_no_proof_internal(self, transaction, drive_operations)
+=======
+        self.query_raw_documents(query, transaction, drive_operations)
+>>>>>>> feat/withdrawal-sync:packages/rs-drive/src/drive/query.rs
     }
 
     /// Performs and returns the result of the specified query along with the fee.
     /// Proof is generated.
-    pub fn query_documents_as_grove_proof(
+    pub fn query_proof_of_documents_using_contract_id_using_cbor_encoded_query_with_cost(
         &self,
         query_cbor: &[u8],
         contract_id: [u8; 32],
@@ -278,7 +400,7 @@ impl Drive {
         let document_type = contract
             .contract
             .document_type_for_name(document_type_name)?;
-        let items = self.query_documents_from_contract_as_grove_proof_internal(
+        let items = self.query_proof_of_documents_using_cbor_encoded_query(
             &contract.contract,
             document_type,
             query_cbor,
@@ -296,38 +418,7 @@ impl Drive {
 
     /// Performs and returns the result of the specified query along with the fee.
     /// Proof is generated.
-    pub fn query_documents_from_contract_cbor_as_grove_proof(
-        &self,
-        contract_cbor: &[u8],
-        document_type_name: String,
-        query_cbor: &[u8],
-        block_info: Option<BlockInfo>,
-        transaction: TransactionArg,
-    ) -> Result<(Vec<u8>, u64), Error> {
-        let mut drive_operations: Vec<DriveOperation> = vec![];
-        let contract = <Contract as DriveContractExt>::from_cbor(contract_cbor, None)?;
-
-        let document_type = contract.document_type_for_name(document_type_name.as_str())?;
-
-        let items = self.query_documents_from_contract_as_grove_proof_internal(
-            &contract,
-            document_type,
-            query_cbor,
-            transaction,
-            &mut drive_operations,
-        )?;
-        let cost = if let Some(block_info) = block_info {
-            let fee_result = calculate_fee(None, Some(drive_operations), &block_info.epoch)?;
-            fee_result.processing_fee
-        } else {
-            0
-        };
-        Ok((items, cost))
-    }
-
-    /// Performs and returns the result of the specified query along with the fee.
-    /// Proof is generated.
-    pub fn query_documents_from_contract_as_grove_proof(
+    pub fn query_proof_of_documents_using_cbor_encoded_query_with_cost(
         &self,
         contract: &Contract,
         document_type: &DocumentType,
@@ -337,7 +428,7 @@ impl Drive {
     ) -> Result<(Vec<u8>, u64), Error> {
         let mut drive_operations: Vec<DriveOperation> = vec![];
 
-        let items = self.query_documents_from_contract_as_grove_proof_internal(
+        let items = self.query_proof_of_documents_using_cbor_encoded_query(
             contract,
             document_type,
             query_cbor,
@@ -355,7 +446,7 @@ impl Drive {
 
     /// Performs and returns the result of the specified internal query.
     /// Proof is generated.
-    pub(crate) fn query_documents_from_contract_as_grove_proof_internal(
+    pub(crate) fn query_proof_of_documents_using_cbor_encoded_query(
         &self,
         contract: &Contract,
         document_type: &DocumentType,
@@ -369,7 +460,7 @@ impl Drive {
     }
 
     /// Performs the specified internal query and returns the root hash, values, and fee.
-    pub fn query_documents_from_contract_as_grove_proof_only_get_elements(
+    pub fn query_proof_of_documents_using_cbor_encoded_query_only_get_elements(
         &self,
         contract: &Contract,
         document_type: &DocumentType,
@@ -380,7 +471,7 @@ impl Drive {
         let mut drive_operations: Vec<DriveOperation> = vec![];
 
         let (root_hash, items) = self
-            .query_documents_from_contract_as_grove_proof_only_get_elements_internal(
+            .query_proof_of_documents_using_cbor_encoded_query_only_get_elements_internal(
                 contract,
                 document_type,
                 query_cbor,
@@ -397,7 +488,7 @@ impl Drive {
     }
 
     /// Performs the specified internal query and returns the root hash and values.
-    pub(crate) fn query_documents_from_contract_as_grove_proof_only_get_elements_internal(
+    pub(crate) fn query_proof_of_documents_using_cbor_encoded_query_only_get_elements_internal(
         &self,
         contract: &Contract,
         document_type: &DocumentType,

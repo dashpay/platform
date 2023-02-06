@@ -43,13 +43,10 @@ use grovedb::batch::KeyInfoPath;
 use grovedb::reference_path::ReferencePathType::UpstreamRootHeightReference;
 use grovedb::Element;
 
-mod convert;
 mod delete;
 mod estimation_costs;
 mod insert;
 mod update;
-
-pub use convert::*;
 
 /// Returns the path to a contract document type.
 pub(crate) fn contract_document_type_path<'a>(
