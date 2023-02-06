@@ -45,10 +45,10 @@ if (process.env.MASTERNODE_REWARD_SHARES_SECOND_PUBLIC_KEY === undefined) {
   process.env.MASTERNODE_REWARD_SHARES_SECOND_PUBLIC_KEY = '03a3002856ad91662dc34b6650a2c7f8b2726c947a419e0b880fb3acc38763a271';
 }
 if (process.env.WITHDRAWALS_MASTER_PUBLIC_KEY === undefined) {
-  process.env.WITHDRAWALS_MASTER_PUBLIC_KEY = testPublicKey;
+  process.env.WITHDRAWALS_MASTER_PUBLIC_KEY = '02c571ff0cdb72634de4fd23f40c4ed530b3d31defc987a55479d65e7e8c1e249b';
 }
 if (process.env.WITHDRAWALS_SECOND_PUBLIC_KEY === undefined) {
-  process.env.WITHDRAWALS_SECOND_PUBLIC_KEY = testPublicKey;
+  process.env.WITHDRAWALS_SECOND_PUBLIC_KEY = '03b3002856ad91662dc34b6650a2c7f8b2726c947a419e0b880fb3acc38763a271';
 }
 
 const dotenvConfig = dotenvSafe.config({
