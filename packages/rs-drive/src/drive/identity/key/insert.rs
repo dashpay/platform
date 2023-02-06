@@ -305,7 +305,7 @@ impl Drive {
             &[Purpose::AUTHENTICATION as u8],
         );
         // TODO: We probably don't need to create all security levels because DPP
-        //  requires only Master and Hight and we dont't want to do identity more expensive
+        //  requires only Master and High and we don't want to do identity more expensive
         //  than it's needed
         for security_level in SecurityLevel::full_range() {
             self.batch_insert_empty_tree(
