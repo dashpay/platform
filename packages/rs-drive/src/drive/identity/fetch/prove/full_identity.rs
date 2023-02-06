@@ -41,11 +41,11 @@ mod tests {
     use std::collections::BTreeMap;
     use std::ops::RangeFull;
 
-    mod fetch_proved_full_identities {
+    mod proved_full_identities {
         use super::*;
 
         #[test]
-        fn test_proved_two_full_identities_query_no_tx() {
+        fn should_prove_two_full_identities_query_no_tx() {
             let drive = setup_drive_with_initial_state_structure();
 
             let identities: BTreeMap<[u8; 32], Option<Identity>> =
@@ -105,7 +105,7 @@ mod tests {
         }
 
         #[test]
-        fn test_proved_ten_full_identities_query_no_tx() {
+        fn should_prove_ten_full_identities_query_no_tx() {
             let drive = setup_drive_with_initial_state_structure();
 
             let identities: BTreeMap<[u8; 32], Option<Identity>> =
@@ -268,21 +268,11 @@ mod tests {
         }
     }
 
-    mod fetch_proved_full_identity {
+    mod prove_full_identity {
         use super::*;
-        use crate::drive::block_info::BlockInfo;
-        use grovedb::query_result_type::QueryResultType;
-        use grovedb::QueryItem;
-        use std::ops::RangeFull;
 
         #[test]
-        fn test_full_identity_query_construction() {
-            let identity = Identity::random_identity(5, Some(12345));
-            let _query = Drive::full_identity_query(identity.id.as_bytes())
-                .expect("expected to make the query");
-        }
-        #[test]
-        fn test_proved_full_identity_query_no_tx() {
+        fn should_prove_full_identity_query_no_tx() {
             let drive = setup_drive_with_initial_state_structure();
 
             let identity = Identity::random_identity(5, Some(12345));
