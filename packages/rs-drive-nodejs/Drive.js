@@ -20,7 +20,6 @@ const {
   driveProveDocumentsQuery,
   driveInsertIdentity,
   driveFetchLatestWithdrawalTransactionIndex,
-  driveEnqueueWithdrawalTransaction,
   abciInitChain,
   abciBlockBegin,
   abciBlockEnd,
@@ -52,9 +51,6 @@ const driveQueryDocumentsAsync = appendStackAsync(promisify(driveQueryDocuments)
 const driveProveDocumentsQueryAsync = appendStackAsync(promisify(driveProveDocumentsQuery));
 const driveFetchLatestWithdrawalTransactionIndexAsync = appendStackAsync(
   promisify(driveFetchLatestWithdrawalTransactionIndex),
-);
-const driveEnqueueWithdrawalTransactionAsync = appendStackAsync(
-  promisify(driveEnqueueWithdrawalTransaction),
 );
 const driveInsertIdentityAsync = appendStackAsync(promisify(driveInsertIdentity));
 const abciInitChainAsync = appendStackAsync(promisify(abciInitChain));
@@ -348,25 +344,6 @@ class Drive {
   async fetchLatestWithdrawalTransactionIndex(useTransaction = false) {
     return driveFetchLatestWithdrawalTransactionIndexAsync.call(
       this.drive,
-      useTransaction,
-    );
-  }
-
-  /**
-   * Enqueue withdrawal transaction into the queue
-   *
-   * @param {number} index
-   * @param {Buffer} transactionBytes
-   * @param {boolean} [useTransaction=false]
-   *
-   * @returns {Promise<void>}
-   */
-  async enqueueWithdrawalTransaction(index, transactionBytes, blockInfo, useTransaction = false) {
-    return driveEnqueueWithdrawalTransactionAsync.call(
-      this.drive,
-      index,
-      transactionBytes,
-      blockInfo,
       useTransaction,
     );
   }

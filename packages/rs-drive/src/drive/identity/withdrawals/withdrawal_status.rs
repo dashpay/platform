@@ -1,5 +1,5 @@
 use dpp::{
-    contracts::withdrawals_contract, document::document_stub::DocumentStub, prelude::Document,
+    contracts::withdrawals_contract, document::document_stub::DocumentStub,
     util::serializer,
 };
 use grovedb::TransactionArg;
@@ -216,7 +216,7 @@ mod tests {
                 .find_document_by_transaction_id(&(0..32).collect::<Vec<u8>>(), Some(&transaction))
                 .expect("to find document by it's transaction id");
 
-            // assert_eq!(found_document.id, document.id);
+            assert_eq!(found_document.id.to_vec(), document.id.to_vec());
         }
     }
 }
