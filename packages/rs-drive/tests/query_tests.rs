@@ -1890,17 +1890,17 @@ fn test_family_basic_queries() {
     let query_cbor =
         serializer::value_to_cbor(query_value, None).expect("expected to serialize to cbor");
 
-    // let (results, _, _) = drive
-    //     .query_documents_from_contract_cbor(
-    //         query_cbor.as_slice(),
-    //         contract_cbor.as_slice(),
-    //         String::from("contact"),
-    //         None,
-    //         Some(&db_transaction),
-    //     )
-    //     .expect("query should be executed");
+    let (results, _, _) = drive
+        .query_raw_documents_from_contract_cbor_using_cbor_encoded_query_with_cost(
+            query_cbor.as_slice(),
+            contract_cbor.as_slice(),
+            String::from("contact"),
+            None,
+            Some(&db_transaction),
+        )
+        .expect("query should be executed");
 
-    // assert_eq!(results.len(), 0);
+    assert_eq!(results.len(), 0);
 
     // using non existing document in startAt
 
