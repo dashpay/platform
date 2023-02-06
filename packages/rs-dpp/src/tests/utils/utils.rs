@@ -87,7 +87,7 @@ where
 pub fn generate_random_identifier_struct() -> Identifier {
     let mut buffer = [0u8; 32];
     let _ = getrandom(&mut buffer);
-    return Identifier::from_bytes(&buffer).unwrap();
+    Identifier::from_bytes(&buffer).unwrap()
 }
 
 pub fn get_data_from_file(file_path: &str) -> Result<String> {

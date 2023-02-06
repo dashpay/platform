@@ -4,6 +4,7 @@ mod validation;
 pub use apply::*;
 pub use validation::*;
 
+use dpp::identity::KeyID;
 use dpp::{
     data_contract::state_transition::DataContractUpdateTransition,
     state_transition::{
@@ -42,7 +43,7 @@ struct DataContractUpdateTransitionParameters {
     #[serde(skip_serializing_if = "Option::is_none", default)]
     entropy: Option<Vec<u8>>,
     #[serde(skip_serializing_if = "Option::is_none", default)]
-    signature_public_key_id: Option<u64>,
+    signature_public_key_id: Option<KeyID>,
     #[serde(skip_serializing_if = "Option::is_none", default)]
     signature: Option<Vec<u8>>,
 }
@@ -77,7 +78,7 @@ impl DataContractUpdateTransitionWasm {
 
     #[wasm_bindgen(js_name=getOwnerId)]
     pub fn get_owner_id(&self) -> IdentifierWrapper {
-        self.0.get_owner_id().clone().into()
+        (*self.0.get_owner_id()).into()
     }
 
     #[wasm_bindgen(js_name=getType)]
@@ -110,7 +111,7 @@ impl DataContractUpdateTransitionWasm {
         self.0
             .get_modified_data_ids()
             .into_iter()
-            .map(|identifier| Into::<IdentifierWrapper>::into(identifier.clone()).into())
+            .map(|identifier| Into::<IdentifierWrapper>::into(*identifier).into())
             .collect()
     }
 

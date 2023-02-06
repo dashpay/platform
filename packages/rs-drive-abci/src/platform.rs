@@ -34,8 +34,12 @@ use crate::block::BlockExecutionContext;
 use crate::config::PlatformConfig;
 use crate::error::execution::ExecutionError;
 use crate::error::Error;
+use crate::state::PlatformState;
 use drive::drive::Drive;
 use drive::rpc::core::{CoreRPCLike, DefaultCoreRPC};
+
+use drive::drive::Drive;
+
 use std::cell::RefCell;
 use std::path::Path;
 
@@ -52,6 +56,10 @@ use serde_json::json;
 pub struct Platform {
     /// Drive
     pub drive: Drive,
+    /// State
+    pub state: PlatformState,
+    /// Configuration
+    pub config: PlatformConfig,
     /// Block execution context
     pub block_execution_context: RefCell<Option<BlockExecutionContext>>,
     /// Core RPC Client
@@ -66,14 +74,15 @@ impl std::fmt::Debug for Platform {
 
 impl Platform {
     /// Open Platform with Drive and block execution context.
-    pub fn open<P: AsRef<Path>>(path: P, config: PlatformConfig) -> Result<Self, Error> {
-        let drive = Drive::open(path, config.drive).map_err(Error::Drive)?;
+    pub fn open<P: AsRef<Path>>(path: P, config: Option<PlatformConfig>) -> Result<Self, Error> {
+        let config = config.unwrap_or_default();
+        let drive = Drive::open(path, Some(config.drive_config.clone())).map_err(Error::Drive)?;
 
         let core_rpc: Box<dyn CoreRPCLike> = Box::new(
             DefaultCoreRPC::open(
-                config.core.rpc.url,
-                config.core.rpc.username,
-                config.core.rpc.password,
+                config.core.rpc.url.as_str(),
+                config.core.rpc.username.clone(),
+                config.core.rpc.password.clone(),
             )
             .map_err(|e| {
                 dbg!(e);
@@ -83,8 +92,14 @@ impl Platform {
             })?,
         );
 
+        let state = PlatformState {
+            last_block_info: None,
+        };
+
         Ok(Platform {
             drive,
+            state,
+            config,
             block_execution_context: RefCell::new(None),
             core_rpc,
         })

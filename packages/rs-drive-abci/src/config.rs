@@ -19,18 +19,22 @@ pub struct CoreConfig {
 }
 
 /// Platform configuration
+#[derive(Clone, Debug)]
 pub struct PlatformConfig {
     /// Drive configuration
     pub drive: Option<DriveConfig>,
 
     /// Dash Core config
     pub core: CoreConfig,
+
+    /// Should we verify sum trees? Useful to set as no for tests
+    pub verify_sum_trees: bool,
 }
 
 impl Default for PlatformConfig {
     fn default() -> Self {
         Self {
-            drive: None,
+            drive: Default::default(),
             core: CoreConfig {
                 rpc: CoreRpcConfig {
                     url: "127.0.0.1".to_owned(),
@@ -38,6 +42,7 @@ impl Default for PlatformConfig {
                     password: "".to_owned(),
                 },
             },
+            verify_sum_trees: true,
         }
     }
 }

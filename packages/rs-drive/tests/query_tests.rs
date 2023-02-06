@@ -31,6 +31,7 @@
 //!
 
 use grovedb::TransactionArg;
+use std::borrow::Cow;
 use std::collections::HashMap;
 use std::fs::File;
 use std::io::{self, BufRead};
@@ -67,6 +68,7 @@ use dpp::util::serializer;
 use dpp::version::{ProtocolVersionValidator, COMPATIBILITY_MAP, LATEST_VERSION};
 use drive::contract::Contract;
 use drive::drive::block_info::BlockInfo;
+use drive::drive::query::QueryDocumentsOutcome;
 
 #[derive(Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -201,7 +203,7 @@ pub fn setup_family_tests(count: u32, with_batching: bool, seed: u64) -> (Drive,
             .document_type_for_name("person")
             .expect("expected to get document type");
 
-        let storage_flags = Some(StorageFlags::SingleEpoch(0));
+        let storage_flags = Some(Cow::Owned(StorageFlags::SingleEpoch(0)));
 
         drive
             .add_document_for_contract(
@@ -210,7 +212,7 @@ pub fn setup_family_tests(count: u32, with_batching: bool, seed: u64) -> (Drive,
                         document_info: DocumentRefAndSerialization((
                             &document,
                             &document_cbor,
-                            storage_flags.as_ref(),
+                            storage_flags,
                         )),
                         owner_id: None,
                     },
@@ -278,7 +280,7 @@ pub fn setup_family_tests_with_nulls(
             .document_type_for_name("person")
             .expect("expected to get document type");
 
-        let storage_flags = Some(StorageFlags::SingleEpoch(0));
+        let storage_flags = Some(Cow::Owned(StorageFlags::SingleEpoch(0)));
 
         drive
             .add_document_for_contract(
@@ -287,7 +289,7 @@ pub fn setup_family_tests_with_nulls(
                         document_info: DocumentRefAndSerialization((
                             &document,
                             &document_cbor,
-                            storage_flags.as_ref(),
+                            storage_flags,
                         )),
                         owner_id: None,
                     },
@@ -356,7 +358,7 @@ pub fn setup_family_tests_only_first_name_index(
             .document_type_for_name("person")
             .expect("expected to get document type");
 
-        let storage_flags = Some(StorageFlags::SingleEpoch(0));
+        let storage_flags = Some(Cow::Owned(StorageFlags::SingleEpoch(0)));
 
         drive
             .add_document_for_contract(
@@ -365,7 +367,7 @@ pub fn setup_family_tests_only_first_name_index(
                         document_info: DocumentRefAndSerialization((
                             &document,
                             &document_cbor,
-                            storage_flags.as_ref(),
+                            storage_flags,
                         )),
                         owner_id: None,
                     },
@@ -463,7 +465,7 @@ pub fn add_domains_to_contract(
             .document_type_for_name("domain")
             .expect("expected to get document type");
 
-        let storage_flags = Some(StorageFlags::SingleEpoch(0));
+        let storage_flags = Some(Cow::Owned(StorageFlags::SingleEpoch(0)));
 
         drive
             .add_document_for_contract(
@@ -472,7 +474,7 @@ pub fn add_domains_to_contract(
                         document_info: DocumentRefAndSerialization((
                             &document,
                             &document_cbor,
-                            storage_flags.as_ref(),
+                            storage_flags,
                         )),
                         owner_id: None,
                     },
@@ -563,7 +565,7 @@ pub fn setup_dpns_test_with_data(path: &str) -> (Drive, Contract) {
                 .document_type_for_name("domain")
                 .expect("expected to get document type");
 
-            let storage_flags = Some(StorageFlags::SingleEpoch(0));
+            let storage_flags = Some(Cow::Owned(StorageFlags::SingleEpoch(0)));
 
             drive
                 .add_document_for_contract(
@@ -572,7 +574,7 @@ pub fn setup_dpns_test_with_data(path: &str) -> (Drive, Contract) {
                             document_info: DocumentRefAndSerialization((
                                 &domain,
                                 &domain_cbor,
-                                storage_flags.as_ref(),
+                                storage_flags,
                             )),
                             owner_id: None,
                         },
@@ -614,7 +616,7 @@ fn test_query_many() {
             .document_type_for_name("person")
             .expect("expected to get document type");
 
-        let storage_flags = Some(StorageFlags::SingleEpoch(0));
+        let storage_flags = Some(Cow::Owned(StorageFlags::SingleEpoch(0)));
 
         drive
             .add_document_for_contract(
@@ -623,7 +625,7 @@ fn test_query_many() {
                         document_info: DocumentRefAndSerialization((
                             &document,
                             &document_cbor,
-                            storage_flags.as_ref(),
+                            storage_flags,
                         )),
                         owner_id: None,
                     },
@@ -675,7 +677,7 @@ fn test_reference_proof_single_index() {
     let query = DriveQuery::from_cbor(where_cbor.as_slice(), &contract, person_document_type)
         .expect("query should be built");
     let (results, _, _) = query
-        .execute_no_proof(&drive, None, Some(&db_transaction))
+        .execute_serialized_no_proof(&drive, None, Some(&db_transaction))
         .expect("proof should be executed");
 
     let (proof_root_hash, proof_results, _) = query
@@ -716,7 +718,7 @@ fn test_non_existence_reference_proof_single_index() {
     let query = DriveQuery::from_cbor(where_cbor.as_slice(), &contract, person_document_type)
         .expect("query should be built");
     let (results, _, _) = query
-        .execute_no_proof(&drive, None, Some(&db_transaction))
+        .execute_serialized_no_proof(&drive, None, Some(&db_transaction))
         .expect("proof should be executed");
 
     let (proof_root_hash, proof_results, _) = query
@@ -739,8 +741,8 @@ fn test_family_basic_queries() {
         .expect("there is always a root hash");
 
     let expected_app_hash = vec![
-        204, 64, 223, 15, 95, 155, 144, 122, 175, 177, 160, 29, 149, 222, 173, 227, 62, 174, 108,
-        219, 203, 131, 20, 190, 154, 42, 252, 8, 38, 200, 216, 218,
+        14, 30, 243, 35, 60, 65, 149, 207, 147, 239, 246, 80, 217, 1, 245, 128, 247, 215, 204, 191,
+        128, 132, 225, 37, 149, 212, 118, 64, 95, 39, 229, 212,
     ];
 
     assert_eq!(root_hash.as_slice(), expected_app_hash);
@@ -777,7 +779,7 @@ fn test_family_basic_queries() {
     let query = DriveQuery::from_cbor(where_cbor.as_slice(), &contract, person_document_type)
         .expect("query should be built");
     let (results, _, _) = query
-        .execute_no_proof(&drive, None, Some(&db_transaction))
+        .execute_serialized_no_proof(&drive, None, Some(&db_transaction))
         .expect("proof should be executed");
     let names: Vec<String> = results
         .iter()
@@ -819,7 +821,7 @@ fn test_family_basic_queries() {
         .expect("contract should have a person document type");
 
     let (results, _, _) = drive
-        .query_raw_documents_from_contract_using_cbor_encoded_query_with_cost(
+        .query_documents_cbor_from_contract(
             &contract,
             person_document_type,
             query_cbor.as_slice(),
@@ -859,7 +861,7 @@ fn test_family_basic_queries() {
         .expect("contract should have a person document type");
 
     let (results, _, _) = drive
-        .query_raw_documents_from_contract_using_cbor_encoded_query_with_cost(
+        .query_documents_cbor_from_contract(
             &contract,
             person_document_type,
             query_cbor.as_slice(),
@@ -915,7 +917,7 @@ fn test_family_basic_queries() {
         .expect("contract should have a person document type");
 
     let (results, _, _) = drive
-        .query_raw_documents_from_contract_using_cbor_encoded_query_with_cost(
+        .query_documents_cbor_from_contract(
             &contract,
             person_document_type,
             query_cbor.as_slice(),
@@ -958,7 +960,7 @@ fn test_family_basic_queries() {
         .expect("contract should have a person document type");
 
     let (results, _, _) = drive
-        .query_raw_documents_from_contract_using_cbor_encoded_query_with_cost(
+        .query_documents_cbor_from_contract(
             &contract,
             person_document_type,
             query_cbor.as_slice(),
@@ -1009,7 +1011,7 @@ fn test_family_basic_queries() {
         .expect("contract should have a person document type");
 
     let (results, _, _) = drive
-        .query_raw_documents_from_contract_using_cbor_encoded_query_with_cost(
+        .query_documents_cbor_from_contract(
             &contract,
             person_document_type,
             query_cbor.as_slice(),
@@ -1049,7 +1051,7 @@ fn test_family_basic_queries() {
         .expect("contract should have a person document type");
 
     let (results, _, _) = drive
-        .query_raw_documents_from_contract_using_cbor_encoded_query_with_cost(
+        .query_documents_cbor_from_contract(
             &contract,
             person_document_type,
             query_cbor.as_slice(),
@@ -1092,7 +1094,7 @@ fn test_family_basic_queries() {
     let query = DriveQuery::from_cbor(where_cbor.as_slice(), &contract, person_document_type)
         .expect("query should be built");
     let (results, _, _) = query
-        .execute_no_proof(&drive, None, None)
+        .execute_serialized_no_proof(&drive, None, None)
         .expect("proof should be executed");
     let names: Vec<String> = results
         .iter()
@@ -1144,7 +1146,7 @@ fn test_family_basic_queries() {
     let query = DriveQuery::from_cbor(where_cbor.as_slice(), &contract, person_document_type)
         .expect("query should be built");
     let (results, _, _) = query
-        .execute_no_proof(&drive, None, None)
+        .execute_serialized_no_proof(&drive, None, None)
         .expect("proof should be executed");
     let names: Vec<String> = results
         .iter()
@@ -1191,7 +1193,7 @@ fn test_family_basic_queries() {
     let query = DriveQuery::from_cbor(where_cbor.as_slice(), &contract, person_document_type)
         .expect("query should be built");
     let (results, _, _) = query
-        .execute_no_proof(&drive, None, None)
+        .execute_serialized_no_proof(&drive, None, None)
         .expect("proof should be executed");
     let names: Vec<String> = results
         .iter()
@@ -1239,7 +1241,7 @@ fn test_family_basic_queries() {
     let query = DriveQuery::from_cbor(where_cbor.as_slice(), &contract, person_document_type)
         .expect("query should be built");
     let (results, _, _) = query
-        .execute_no_proof(&drive, None, None)
+        .execute_serialized_no_proof(&drive, None, None)
         .expect("proof should be executed");
     assert_eq!(results.len(), 5);
 
@@ -1295,7 +1297,7 @@ fn test_family_basic_queries() {
     let query = DriveQuery::from_cbor(where_cbor.as_slice(), &contract, person_document_type)
         .expect("query should be built");
     let (results, _, _) = query
-        .execute_no_proof(&drive, None, None)
+        .execute_serialized_no_proof(&drive, None, None)
         .expect("proof should be executed");
     let names: Vec<String> = results
         .iter()
@@ -1339,7 +1341,7 @@ fn test_family_basic_queries() {
     let query = DriveQuery::from_cbor(where_cbor.as_slice(), &contract, person_document_type)
         .expect("query should be built");
     let (results, _, _) = query
-        .execute_no_proof(&drive, None, None)
+        .execute_serialized_no_proof(&drive, None, None)
         .expect("proof should be executed");
     let names: Vec<String> = results
         .iter()
@@ -1395,7 +1397,7 @@ fn test_family_basic_queries() {
     let query = DriveQuery::from_cbor(where_cbor.as_slice(), &contract, person_document_type)
         .expect("query should be built");
     let (results, _, _) = query
-        .execute_no_proof(&drive, None, None)
+        .execute_serialized_no_proof(&drive, None, None)
         .expect("proof should be executed");
     let names: Vec<String> = results
         .iter()
@@ -1450,7 +1452,7 @@ fn test_family_basic_queries() {
     let query = DriveQuery::from_cbor(where_cbor.as_slice(), &contract, person_document_type)
         .expect("query should be built");
     let (results, _, _) = query
-        .execute_no_proof(&drive, None, None)
+        .execute_serialized_no_proof(&drive, None, None)
         .expect("proof should be executed");
     let names: Vec<String> = results
         .iter()
@@ -1544,7 +1546,7 @@ fn test_family_basic_queries() {
         .document_type_for_name("person")
         .expect("expected to get document type");
 
-    let storage_flags = Some(StorageFlags::SingleEpoch(0));
+    let storage_flags = Some(Cow::Owned(StorageFlags::SingleEpoch(0)));
 
     drive
         .add_document_for_contract(
@@ -1553,7 +1555,7 @@ fn test_family_basic_queries() {
                     document_info: DocumentRefAndSerialization((
                         &document,
                         &person_cbor,
-                        storage_flags.as_ref(),
+                        storage_flags,
                     )),
                     owner_id: None,
                 },
@@ -1594,7 +1596,7 @@ fn test_family_basic_queries() {
         .document_type_for_name("person")
         .expect("expected to get document type");
 
-    let storage_flags = Some(StorageFlags::SingleEpoch(0));
+    let storage_flags = Some(Cow::Owned(StorageFlags::SingleEpoch(0)));
 
     drive
         .add_document_for_contract(
@@ -1603,7 +1605,7 @@ fn test_family_basic_queries() {
                     document_info: DocumentRefAndSerialization((
                         &document,
                         &person_cbor,
-                        storage_flags.as_ref(),
+                        storage_flags,
                     )),
                     owner_id: None,
                 },
@@ -1632,7 +1634,7 @@ fn test_family_basic_queries() {
         .expect("contract should have a person document type");
 
     let (results, _, _) = drive
-        .query_raw_documents_from_contract_using_cbor_encoded_query_with_cost(
+        .query_documents_cbor_from_contract(
             &contract,
             person_document_type,
             query_cbor.as_slice(),
@@ -1675,7 +1677,7 @@ fn test_family_basic_queries() {
         .expect("contract should have a person document type");
 
     let (results, _, _) = drive
-        .query_raw_documents_from_contract_using_cbor_encoded_query_with_cost(
+        .query_documents_cbor_from_contract(
             &contract,
             person_document_type,
             query_cbor.as_slice(),
@@ -1716,7 +1718,7 @@ fn test_family_basic_queries() {
         .expect("contract should have a person document type");
 
     let (results, _, _) = drive
-        .query_raw_documents_from_contract_using_cbor_encoded_query_with_cost(
+        .query_documents_cbor_from_contract(
             &contract,
             person_document_type,
             query_cbor.as_slice(),
@@ -1753,7 +1755,7 @@ fn test_family_basic_queries() {
         .expect("contract should have a person document type");
 
     let (results, _, _) = drive
-        .query_raw_documents_from_contract_using_cbor_encoded_query_with_cost(
+        .query_documents_cbor_from_contract(
             &contract,
             person_document_type,
             query_cbor.as_slice(),
@@ -1780,7 +1782,7 @@ fn test_family_basic_queries() {
         .expect("contract should have a person document type");
 
     let (results, _, _) = drive
-        .query_raw_documents_from_contract_using_cbor_encoded_query_with_cost(
+        .query_documents_cbor_from_contract(
             &contract,
             person_document_type,
             query_cbor.as_slice(),
@@ -1822,7 +1824,7 @@ fn test_family_basic_queries() {
         .expect("contract should have a person document type");
 
     let (results, _, _) = drive
-        .query_raw_documents_from_contract_using_cbor_encoded_query_with_cost(
+        .query_documents_cbor_from_contract(
             &contract,
             person_document_type,
             query_cbor.as_slice(),
@@ -1852,7 +1854,7 @@ fn test_family_basic_queries() {
         .expect("contract should have a person document type");
 
     let (results, _, _) = drive
-        .query_raw_documents_from_contract_using_cbor_encoded_query_with_cost(
+        .query_documents_cbor_from_contract(
             &contract,
             person_document_type,
             query_cbor.as_slice(),
@@ -1873,7 +1875,7 @@ fn test_family_basic_queries() {
             None,
             BlockInfo::genesis(),
             true,
-            StorageFlags::optional_default_as_ref(),
+            StorageFlags::optional_default_as_cow(),
             Some(&db_transaction),
         )
         .expect("expected to apply contract successfully");
@@ -1889,10 +1891,10 @@ fn test_family_basic_queries() {
         serializer::value_to_cbor(query_value, None).expect("expected to serialize to cbor");
 
     let (results, _, _) = drive
-        .query_raw_documents_from_contract_cbor_using_cbor_encoded_query_with_cost(
+        .query_documents_from_contract_cbor(
+            query_cbor.as_slice(),
             contract_cbor.as_slice(),
             String::from("contact"),
-            query_cbor.as_slice(),
             None,
             Some(&db_transaction),
         )
@@ -1918,7 +1920,7 @@ fn test_family_basic_queries() {
         .expect("contract should have a person document type");
 
     let (results, _, _) = drive
-        .query_raw_documents_from_contract_using_cbor_encoded_query_with_cost(
+        .query_documents_cbor_from_contract(
             &contract,
             person_document_type,
             query_cbor.as_slice(),
@@ -1947,7 +1949,7 @@ fn test_family_basic_queries() {
         .get("person")
         .expect("contract should have a person document type");
 
-    let result = drive.query_raw_documents_from_contract_using_cbor_encoded_query_with_cost(
+    let result = drive.query_documents_cbor_from_contract(
         &contract,
         person_document_type,
         query_cbor.as_slice(),
@@ -1977,7 +1979,7 @@ fn test_family_basic_queries() {
         .get("person")
         .expect("contract should have a person document type");
 
-    let result = drive.query_raw_documents_from_contract_using_cbor_encoded_query_with_cost(
+    let result = drive.query_documents_cbor_from_contract(
         &contract,
         person_document_type,
         query_cbor.as_slice(),
@@ -2000,8 +2002,8 @@ fn test_family_basic_queries() {
     assert_eq!(
         root_hash.as_slice(),
         vec![
-            104, 142, 224, 92, 201, 44, 242, 39, 17, 248, 135, 146, 108, 33, 81, 17, 48, 50, 88,
-            28, 252, 164, 171, 115, 226, 162, 255, 85, 140, 46, 35, 79,
+            26, 81, 46, 125, 88, 54, 113, 4, 64, 5, 165, 84, 197, 93, 109, 3, 60, 108, 146, 204,
+            10, 175, 168, 248, 199, 201, 24, 159, 213, 158, 58, 148,
         ],
     );
 }
@@ -2019,8 +2021,8 @@ fn test_family_starts_at_queries() {
         .expect("there is always a root hash");
 
     let expected_app_hash = vec![
-        204, 64, 223, 15, 95, 155, 144, 122, 175, 177, 160, 29, 149, 222, 173, 227, 62, 174, 108,
-        219, 203, 131, 20, 190, 154, 42, 252, 8, 38, 200, 216, 218,
+        14, 30, 243, 35, 60, 65, 149, 207, 147, 239, 246, 80, 217, 1, 245, 128, 247, 215, 204, 191,
+        128, 132, 225, 37, 149, 212, 118, 64, 95, 39, 229, 212,
     ];
 
     assert_eq!(root_hash.as_slice(), expected_app_hash);
@@ -2060,7 +2062,7 @@ fn test_family_starts_at_queries() {
     let query = DriveQuery::from_cbor(where_cbor.as_slice(), &contract, person_document_type)
         .expect("query should be built");
     let (results, _, _) = query
-        .execute_no_proof(&drive, None, None)
+        .execute_serialized_no_proof(&drive, None, None)
         .expect("proof should be executed");
 
     let reduced_names_after: Vec<String> = results
@@ -2115,7 +2117,7 @@ fn test_family_starts_at_queries() {
     let query = DriveQuery::from_cbor(where_cbor.as_slice(), &contract, person_document_type)
         .expect("query should be built");
     let (results, _, _) = query
-        .execute_no_proof(&drive, None, None)
+        .execute_serialized_no_proof(&drive, None, None)
         .expect("proof should be executed");
 
     let reduced_names_after: Vec<String> = results
@@ -2164,7 +2166,7 @@ fn test_family_starts_at_queries() {
     let query = DriveQuery::from_cbor(where_cbor.as_slice(), &contract, person_document_type)
         .expect("query should be built");
     let (results, _, _) = query
-        .execute_no_proof(&drive, None, None)
+        .execute_serialized_no_proof(&drive, None, None)
         .expect("proof should be executed");
 
     let reduced_names_after: Vec<String> = results
@@ -2219,7 +2221,7 @@ fn test_family_starts_at_queries() {
     let query = DriveQuery::from_cbor(where_cbor.as_slice(), &contract, person_document_type)
         .expect("query should be built");
     let (results, _, _) = query
-        .execute_no_proof(&drive, None, None)
+        .execute_serialized_no_proof(&drive, None, None)
         .expect("proof should be executed");
     assert_eq!(results.len(), 2);
 
@@ -2406,8 +2408,8 @@ fn test_family_with_nulls_query() {
         .expect("there is always a root hash");
 
     let expected_app_hash = vec![
-        160, 130, 3, 223, 85, 20, 37, 186, 133, 177, 53, 20, 65, 72, 228, 208, 213, 148, 225, 69,
-        58, 59, 184, 11, 239, 144, 163, 124, 63, 56, 69, 238,
+        70, 226, 41, 129, 14, 200, 145, 72, 107, 225, 14, 120, 163, 201, 87, 167, 102, 97, 4, 252,
+        24, 57, 124, 236, 104, 169, 84, 126, 88, 161, 73, 67,
     ];
 
     assert_eq!(root_hash.as_slice(), expected_app_hash);
@@ -2444,7 +2446,7 @@ fn test_family_with_nulls_query() {
     let query = DriveQuery::from_cbor(where_cbor.as_slice(), &contract, person_document_type)
         .expect("query should be built");
     let (results, _, _) = query
-        .execute_no_proof(&drive, None, Some(&db_transaction))
+        .execute_serialized_no_proof(&drive, None, Some(&db_transaction))
         .expect("proof should be executed");
     let names: Vec<String> = results
         .clone()
@@ -2522,8 +2524,8 @@ fn test_query_with_cached_contract() {
 
     // Make sure the state is deterministic
     let expected_app_hash = vec![
-        204, 64, 223, 15, 95, 155, 144, 122, 175, 177, 160, 29, 149, 222, 173, 227, 62, 174, 108,
-        219, 203, 131, 20, 190, 154, 42, 252, 8, 38, 200, 216, 218,
+        14, 30, 243, 35, 60, 65, 149, 207, 147, 239, 246, 80, 217, 1, 245, 128, 247, 215, 204, 191,
+        128, 132, 225, 37, 149, 212, 118, 64, 95, 39, 229, 212,
     ];
 
     assert_eq!(root_hash.as_slice(), expected_app_hash);
@@ -2547,8 +2549,8 @@ fn test_query_with_cached_contract() {
     let where_cbor =
         serializer::value_to_cbor(query_value, None).expect("expected to serialize to cbor");
 
-    let (results, _, _) = drive
-        .query_raw_documents_using_cbor_encoded_query_with_cost(
+    let QueryDocumentsOutcome { items, .. } = drive
+        .query_documents_cbor_with_document_type_lookup(
             where_cbor.as_slice(),
             *contract.id.as_bytes(),
             "person",
@@ -2557,7 +2559,7 @@ fn test_query_with_cached_contract() {
         )
         .expect("query should be executed");
 
-    assert_eq!(results.len(), 10);
+    assert_eq!(items.len(), 10);
 
     // Cache was populated and there only two ref two the cached fetched info (here and cache)
     let contract_ref = drive
@@ -2580,8 +2582,8 @@ fn test_dpns_query() {
         .expect("there is always a root hash");
 
     let expected_app_hash = vec![
-        56, 52, 194, 182, 247, 226, 237, 175, 54, 70, 110, 45, 220, 211, 128, 40, 83, 230, 58, 143,
-        38, 51, 90, 105, 201, 160, 163, 46, 215, 43, 92, 113,
+        202, 105, 213, 191, 7, 171, 20, 95, 124, 109, 201, 45, 204, 152, 150, 16, 177, 159, 2, 148,
+        238, 143, 171, 61, 233, 233, 248, 27, 219, 101, 204, 117,
     ];
 
     assert_eq!(root_hash.as_slice(), expected_app_hash);
@@ -2619,7 +2621,7 @@ fn test_dpns_query() {
     let query = DriveQuery::from_cbor(where_cbor.as_slice(), &contract, domain_document_type)
         .expect("query should be built");
     let (results, _, _) = query
-        .execute_no_proof(&drive, None, Some(&db_transaction))
+        .execute_serialized_no_proof(&drive, None, Some(&db_transaction))
         .expect("proof should be executed");
     let names: Vec<String> = results
         .iter()
@@ -2666,7 +2668,7 @@ fn test_dpns_query() {
     let query = DriveQuery::from_cbor(where_cbor.as_slice(), &contract, domain_document_type)
         .expect("query should be built");
     let (results, _, _) = query
-        .execute_no_proof(&drive, None, Some(&db_transaction))
+        .execute_serialized_no_proof(&drive, None, Some(&db_transaction))
         .expect("proof should be executed");
     let names: Vec<String> = results
         .iter()
@@ -2741,7 +2743,7 @@ fn test_dpns_query() {
     let query = DriveQuery::from_cbor(where_cbor.as_slice(), &contract, domain_document_type)
         .expect("query should be built");
     let (results, _, _) = query
-        .execute_no_proof(&drive, None, Some(&db_transaction))
+        .execute_serialized_no_proof(&drive, None, Some(&db_transaction))
         .expect("proof should be executed");
     let names: Vec<String> = results
         .iter()
@@ -2795,7 +2797,7 @@ fn test_dpns_query() {
     let query = DriveQuery::from_cbor(where_cbor.as_slice(), &contract, domain_document_type)
         .expect("query should be built");
     let (results, _, _) = query
-        .execute_no_proof(&drive, None, Some(&db_transaction))
+        .execute_serialized_no_proof(&drive, None, Some(&db_transaction))
         .expect("proof should be executed");
     let names: Vec<String> = results
         .iter()
@@ -2866,7 +2868,7 @@ fn test_dpns_query() {
     let query = DriveQuery::from_cbor(where_cbor.as_slice(), &contract, domain_document_type)
         .expect("query should be built");
     let (results, _, _) = query
-        .execute_no_proof(&drive, None, Some(&db_transaction))
+        .execute_serialized_no_proof(&drive, None, Some(&db_transaction))
         .expect("proof should be executed");
     let names: Vec<String> = results
         .iter()
@@ -2918,7 +2920,7 @@ fn test_dpns_query() {
     let query = DriveQuery::from_cbor(where_cbor.as_slice(), &contract, domain_document_type)
         .expect("query should be built");
     let (results, _, _) = query
-        .execute_no_proof(&drive, None, Some(&db_transaction))
+        .execute_serialized_no_proof(&drive, None, Some(&db_transaction))
         .expect("proof should be executed");
     let names: Vec<String> = results
         .iter()
@@ -2962,7 +2964,7 @@ fn test_dpns_query() {
     let query = DriveQuery::from_cbor(where_cbor.as_slice(), &contract, domain_document_type)
         .expect("query should be built");
     let (results, _, _) = query
-        .execute_no_proof(&drive, None, Some(&db_transaction))
+        .execute_serialized_no_proof(&drive, None, Some(&db_transaction))
         .expect("proof should be executed");
 
     assert_eq!(results.len(), 10);
@@ -2995,7 +2997,7 @@ fn test_dpns_insertion_no_aliases() {
         .expect("contract should have a domain document type");
 
     let result = drive
-        .query_raw_documents_from_contract_using_cbor_encoded_query_with_cost(
+        .query_documents_cbor_from_contract(
             &contract,
             domain_document_type,
             query_cbor.as_slice(),
@@ -3047,7 +3049,7 @@ fn test_dpns_insertion_with_aliases() {
         .expect("contract should have a domain document type");
 
     let result = drive
-        .query_raw_documents_from_contract_using_cbor_encoded_query_with_cost(
+        .query_documents_cbor_from_contract(
             &contract,
             domain_document_type,
             query_cbor.as_slice(),
@@ -3092,8 +3094,8 @@ fn test_dpns_query_start_at() {
         .expect("there is always a root hash");
 
     let expected_app_hash = vec![
-        56, 52, 194, 182, 247, 226, 237, 175, 54, 70, 110, 45, 220, 211, 128, 40, 83, 230, 58, 143,
-        38, 51, 90, 105, 201, 160, 163, 46, 215, 43, 92, 113,
+        202, 105, 213, 191, 7, 171, 20, 95, 124, 109, 201, 45, 204, 152, 150, 16, 177, 159, 2, 148,
+        238, 143, 171, 61, 233, 233, 248, 27, 219, 101, 204, 117,
     ];
 
     assert_eq!(root_hash.as_slice(), expected_app_hash,);
@@ -3136,7 +3138,7 @@ fn test_dpns_query_start_at() {
     let query = DriveQuery::from_cbor(where_cbor.as_slice(), &contract, domain_document_type)
         .expect("query should be built");
     let (results, _, _) = query
-        .execute_no_proof(&drive, None, Some(&db_transaction))
+        .execute_serialized_no_proof(&drive, None, Some(&db_transaction))
         .expect("proof should be executed");
     let names: Vec<String> = results
         .iter()
@@ -3179,8 +3181,8 @@ fn test_dpns_query_start_after() {
         .expect("there is always a root hash");
 
     let expected_app_hash = vec![
-        56, 52, 194, 182, 247, 226, 237, 175, 54, 70, 110, 45, 220, 211, 128, 40, 83, 230, 58, 143,
-        38, 51, 90, 105, 201, 160, 163, 46, 215, 43, 92, 113,
+        202, 105, 213, 191, 7, 171, 20, 95, 124, 109, 201, 45, 204, 152, 150, 16, 177, 159, 2, 148,
+        238, 143, 171, 61, 233, 233, 248, 27, 219, 101, 204, 117,
     ];
 
     assert_eq!(root_hash.as_slice(), expected_app_hash);
@@ -3223,7 +3225,7 @@ fn test_dpns_query_start_after() {
     let query = DriveQuery::from_cbor(where_cbor.as_slice(), &contract, domain_document_type)
         .expect("query should be built");
     let (results, _, _) = query
-        .execute_no_proof(&drive, None, Some(&db_transaction))
+        .execute_serialized_no_proof(&drive, None, Some(&db_transaction))
         .expect("proof should be executed");
     let names: Vec<String> = results
         .iter()
@@ -3266,8 +3268,8 @@ fn test_dpns_query_start_at_desc() {
         .expect("there is always a root hash");
 
     let expected_app_hash = vec![
-        56, 52, 194, 182, 247, 226, 237, 175, 54, 70, 110, 45, 220, 211, 128, 40, 83, 230, 58, 143,
-        38, 51, 90, 105, 201, 160, 163, 46, 215, 43, 92, 113,
+        202, 105, 213, 191, 7, 171, 20, 95, 124, 109, 201, 45, 204, 152, 150, 16, 177, 159, 2, 148,
+        238, 143, 171, 61, 233, 233, 248, 27, 219, 101, 204, 117,
     ];
 
     assert_eq!(root_hash.as_slice(), expected_app_hash);
@@ -3310,7 +3312,7 @@ fn test_dpns_query_start_at_desc() {
     let query = DriveQuery::from_cbor(where_cbor.as_slice(), &contract, domain_document_type)
         .expect("query should be built");
     let (results, _, _) = query
-        .execute_no_proof(&drive, None, Some(&db_transaction))
+        .execute_serialized_no_proof(&drive, None, Some(&db_transaction))
         .expect("proof should be executed");
     let names: Vec<String> = results
         .iter()
@@ -3353,8 +3355,8 @@ fn test_dpns_query_start_after_desc() {
         .expect("there is always a root hash");
 
     let expected_app_hash = vec![
-        56, 52, 194, 182, 247, 226, 237, 175, 54, 70, 110, 45, 220, 211, 128, 40, 83, 230, 58, 143,
-        38, 51, 90, 105, 201, 160, 163, 46, 215, 43, 92, 113,
+        202, 105, 213, 191, 7, 171, 20, 95, 124, 109, 201, 45, 204, 152, 150, 16, 177, 159, 2, 148,
+        238, 143, 171, 61, 233, 233, 248, 27, 219, 101, 204, 117,
     ];
 
     assert_eq!(root_hash.as_slice(), expected_app_hash);
@@ -3397,7 +3399,7 @@ fn test_dpns_query_start_after_desc() {
     let query = DriveQuery::from_cbor(where_cbor.as_slice(), &contract, domain_document_type)
         .expect("query should be built");
     let (results, _, _) = query
-        .execute_no_proof(&drive, None, Some(&db_transaction))
+        .execute_serialized_no_proof(&drive, None, Some(&db_transaction))
         .expect("proof should be executed");
     let names: Vec<String> = results
         .iter()
@@ -3462,7 +3464,7 @@ fn test_dpns_query_start_at_with_null_id() {
     let document0 = DocumentStub::from_cbor(document_cbor0.as_slice(), None, None)
         .expect("document should be properly deserialized");
 
-    let storage_flags = Some(StorageFlags::SingleEpoch(0));
+    let storage_flags = Some(Cow::Owned(StorageFlags::SingleEpoch(0)));
 
     drive
         .add_document_for_contract(
@@ -3471,7 +3473,7 @@ fn test_dpns_query_start_at_with_null_id() {
                     document_info: DocumentRefAndSerialization((
                         &document0,
                         &document_cbor0,
-                        storage_flags.as_ref(),
+                        storage_flags,
                     )),
                     owner_id: None,
                 },
@@ -3507,7 +3509,7 @@ fn test_dpns_query_start_at_with_null_id() {
     let document1 = DocumentStub::from_cbor(document_cbor1.as_slice(), None, None)
         .expect("document should be properly deserialized");
 
-    let storage_flags = Some(StorageFlags::SingleEpoch(0));
+    let storage_flags = Some(Cow::Owned(StorageFlags::SingleEpoch(0)));
     drive
         .add_document_for_contract(
             DocumentAndContractInfo {
@@ -3515,7 +3517,7 @@ fn test_dpns_query_start_at_with_null_id() {
                     document_info: DocumentRefAndSerialization((
                         &document1,
                         &document_cbor1,
-                        storage_flags.as_ref(),
+                        storage_flags,
                     )),
                     owner_id: None,
                 },
@@ -3544,8 +3546,8 @@ fn test_dpns_query_start_at_with_null_id() {
         .expect("there is always a root hash");
 
     let expected_app_hash = vec![
-        231, 175, 12, 127, 13, 85, 103, 13, 151, 185, 156, 247, 221, 59, 73, 233, 79, 111, 211,
-        254, 108, 137, 137, 230, 162, 95, 217, 195, 24, 231, 136, 225,
+        250, 31, 183, 195, 12, 105, 79, 233, 229, 177, 204, 218, 232, 208, 182, 157, 100, 201, 214,
+        202, 161, 199, 242, 36, 224, 115, 106, 126, 170, 55, 29, 25,
     ];
 
     assert_eq!(root_hash.as_slice(), expected_app_hash);
@@ -3588,7 +3590,7 @@ fn test_dpns_query_start_at_with_null_id() {
         .expect("query should be built");
 
     let (results, _, _) = query
-        .execute_no_proof(&drive, None, Some(&db_transaction))
+        .execute_serialized_no_proof(&drive, None, Some(&db_transaction))
         .expect("proof should be executed");
     let names: Vec<String> = results
         .iter()
@@ -3661,7 +3663,7 @@ fn test_dpns_query_start_after_with_null_id() {
     let document0 = DocumentStub::from_cbor(document_cbor0.as_slice(), None, None)
         .expect("document should be properly deserialized");
 
-    let storage_flags = Some(StorageFlags::SingleEpoch(0));
+    let storage_flags = Some(Cow::Owned(StorageFlags::SingleEpoch(0)));
 
     drive
         .add_document_for_contract(
@@ -3670,7 +3672,7 @@ fn test_dpns_query_start_after_with_null_id() {
                     document_info: DocumentRefAndSerialization((
                         &document0,
                         &document_cbor0,
-                        storage_flags.as_ref(),
+                        storage_flags,
                     )),
                     owner_id: None,
                 },
@@ -3706,7 +3708,7 @@ fn test_dpns_query_start_after_with_null_id() {
     let document1 = DocumentStub::from_cbor(document_cbor1.as_slice(), None, None)
         .expect("document should be properly deserialized");
 
-    let storage_flags = Some(StorageFlags::SingleEpoch(0));
+    let storage_flags = Some(Cow::Owned(StorageFlags::SingleEpoch(0)));
 
     drive
         .add_document_for_contract(
@@ -3715,7 +3717,7 @@ fn test_dpns_query_start_after_with_null_id() {
                     document_info: DocumentRefAndSerialization((
                         &document1,
                         &document_cbor1,
-                        storage_flags.as_ref(),
+                        storage_flags,
                     )),
                     owner_id: None,
                 },
@@ -3744,8 +3746,8 @@ fn test_dpns_query_start_after_with_null_id() {
         .expect("there is always a root hash");
 
     let expected_app_hash = vec![
-        231, 175, 12, 127, 13, 85, 103, 13, 151, 185, 156, 247, 221, 59, 73, 233, 79, 111, 211,
-        254, 108, 137, 137, 230, 162, 95, 217, 195, 24, 231, 136, 225,
+        250, 31, 183, 195, 12, 105, 79, 233, 229, 177, 204, 218, 232, 208, 182, 157, 100, 201, 214,
+        202, 161, 199, 242, 36, 224, 115, 106, 126, 170, 55, 29, 25,
     ];
 
     assert_eq!(root_hash.as_slice(), expected_app_hash);
@@ -3794,7 +3796,7 @@ fn test_dpns_query_start_after_with_null_id() {
     //     .expect("expected to construct a path query");
     // println!("{:#?}", path_query);
     let (results, _, _) = query
-        .execute_no_proof(&drive, None, Some(&db_transaction))
+        .execute_serialized_no_proof(&drive, None, Some(&db_transaction))
         .expect("proof should be executed");
     let names: Vec<String> = results
         .iter()
@@ -3863,7 +3865,7 @@ fn test_dpns_query_start_after_with_null_id_desc() {
     let document0 = DocumentStub::from_cbor(document_cbor0.as_slice(), None, None)
         .expect("document should be properly deserialized");
 
-    let storage_flags = Some(StorageFlags::SingleEpoch(0));
+    let storage_flags = Some(Cow::Owned(StorageFlags::SingleEpoch(0)));
 
     drive
         .add_document_for_contract(
@@ -3872,7 +3874,7 @@ fn test_dpns_query_start_after_with_null_id_desc() {
                     document_info: DocumentRefAndSerialization((
                         &document0,
                         &document_cbor0,
-                        storage_flags.as_ref(),
+                        storage_flags,
                     )),
                     owner_id: None,
                 },
@@ -3908,7 +3910,7 @@ fn test_dpns_query_start_after_with_null_id_desc() {
     let document1 = DocumentStub::from_cbor(document_cbor1.as_slice(), None, None)
         .expect("document should be properly deserialized");
 
-    let storage_flags = Some(StorageFlags::SingleEpoch(0));
+    let storage_flags = Some(Cow::Owned(StorageFlags::SingleEpoch(0)));
 
     drive
         .add_document_for_contract(
@@ -3917,7 +3919,7 @@ fn test_dpns_query_start_after_with_null_id_desc() {
                     document_info: DocumentRefAndSerialization((
                         &document1,
                         &document_cbor1,
-                        storage_flags.as_ref(),
+                        storage_flags,
                     )),
                     owner_id: None,
                 },
@@ -3946,8 +3948,8 @@ fn test_dpns_query_start_after_with_null_id_desc() {
         .expect("there is always a root hash");
 
     let expected_app_hash = vec![
-        231, 175, 12, 127, 13, 85, 103, 13, 151, 185, 156, 247, 221, 59, 73, 233, 79, 111, 211,
-        254, 108, 137, 137, 230, 162, 95, 217, 195, 24, 231, 136, 225,
+        250, 31, 183, 195, 12, 105, 79, 233, 229, 177, 204, 218, 232, 208, 182, 157, 100, 201, 214,
+        202, 161, 199, 242, 36, 224, 115, 106, 126, 170, 55, 29, 25,
     ];
 
     assert_eq!(root_hash.as_slice(), expected_app_hash,);
@@ -3999,7 +4001,7 @@ fn test_dpns_query_start_after_with_null_id_desc() {
     let query = DriveQuery::from_cbor(where_cbor.as_slice(), &contract, domain_document_type)
         .expect("query should be built");
     let (results, _, _) = query
-        .execute_no_proof(&drive, None, Some(&db_transaction))
+        .execute_serialized_no_proof(&drive, None, Some(&db_transaction))
         .expect("proof should be executed");
     let docs: Vec<Vec<u8>> = results
         .clone()
@@ -4048,7 +4050,7 @@ fn test_dpns_query_start_after_with_null_id_desc() {
     let query = DriveQuery::from_cbor(where_cbor.as_slice(), &contract, domain_document_type)
         .expect("query should be built");
     let (results, _, _) = query
-        .execute_no_proof(&drive, None, Some(&db_transaction))
+        .execute_serialized_no_proof(&drive, None, Some(&db_transaction))
         .expect("proof should be executed");
     let docs: Vec<Vec<u8>> = results
         .iter()
@@ -4097,7 +4099,7 @@ fn test_dpns_query_start_after_with_null_id_desc() {
     let query = DriveQuery::from_cbor(where_cbor.as_slice(), &contract, domain_document_type)
         .expect("query should be built");
     let (results, _, _) = query
-        .execute_no_proof(&drive, None, Some(&db_transaction))
+        .execute_serialized_no_proof(&drive, None, Some(&db_transaction))
         .expect("proof should be executed");
     let names: Vec<String> = results
         .iter()
@@ -4213,7 +4215,7 @@ fn test_query_a_b_c_d_e_contract() {
             contract_cbor,
             block_info,
             true,
-            StorageFlags::optional_default_as_ref(),
+            StorageFlags::optional_default_as_cow(),
             None,
         )
         .expect("should apply contract");
@@ -4238,7 +4240,7 @@ fn test_query_a_b_c_d_e_contract() {
         serializer::value_to_cbor(query_json, None).expect("expected to serialize to cbor");
 
     drive
-        .query_raw_documents_from_contract_using_cbor_encoded_query_with_cost(
+        .query_documents_cbor_from_contract(
             &contract,
             contract
                 .document_types()

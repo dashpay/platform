@@ -44,10 +44,11 @@ use drive::{
 use tempfile::TempDir;
 
 /// A function which sets up Platform.
-pub fn setup_platform() -> Platform {
+pub fn setup_platform_raw(config: Option<PlatformConfig>) -> Platform {
     let tmp_dir = TempDir::new().unwrap();
-    let mut platform: Platform = Platform::open(tmp_dir, PlatformConfig::default())
-        .expect("should open Platform successfully");
+
+    let platform: Platform =
+        Platform::open(tmp_dir, config).expect("should open Platform successfully");
 
     platform.mock_core_rpc_client();
 
@@ -55,8 +56,8 @@ pub fn setup_platform() -> Platform {
 }
 
 /// A function which sets up Platform with its initial state structure.
-pub fn setup_platform_with_initial_state_structure() -> Platform {
-    let mut platform = setup_platform();
+pub fn setup_platform_with_initial_state_structure(config: Option<PlatformConfig>) -> Platform {
+    let platform = setup_platform_raw(config);
     platform
         .drive
         .create_initial_state_structure(None)

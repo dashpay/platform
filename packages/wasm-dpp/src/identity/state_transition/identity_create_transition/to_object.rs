@@ -1,9 +1,8 @@
 use dpp::identity::state_transition::asset_lock_proof::AssetLockProof;
+use dpp::identity::state_transition::identity_public_key_transitions::IdentityPublicKeyCreateTransition;
 use dpp::{
     identifier::Identifier,
-    identity::{
-        state_transition::identity_create_transition::IdentityCreateTransition, IdentityPublicKey,
-    },
+    identity::state_transition::identity_create_transition::IdentityCreateTransition,
     state_transition::StateTransitionLike,
 };
 use serde::Deserialize;
@@ -21,7 +20,7 @@ pub struct ToObject {
     pub protocol_version: u32,
     pub identity_id: Identifier,
     pub asset_lock_proof: AssetLockProof,
-    pub public_keys: Vec<IdentityPublicKey>,
+    pub public_keys: Vec<IdentityPublicKeyCreateTransition>,
     pub signature: Option<Vec<u8>>,
 }
 

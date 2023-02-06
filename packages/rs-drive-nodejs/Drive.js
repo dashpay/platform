@@ -2,6 +2,7 @@ const { promisify } = require('util');
 const cbor = require('cbor');
 const Document = require('@dashevo/dpp/lib/document/Document');
 const DataContract = require('@dashevo/dpp/lib/dataContract/DataContract');
+const Identity = require('@dashevo/dpp/lib/identity/Identity');
 const decodeProtocolEntityFactory = require('@dashevo/dpp/lib/decodeProtocolEntityFactory');
 
 // This file is crated when run `npm run build`. The actual source file that
@@ -19,12 +20,28 @@ const {
   driveQueryDocuments,
   driveProveDocumentsQuery,
   driveInsertIdentity,
+  driveFetchIdentity,
+  driveFetchIdentityBalance,
+  driveFetchIdentityBalanceWithCosts,
+  driveFetchIdentityBalanceIncludeDebtWithCosts,
+  driveFetchProvedIdentity,
+  driveFetchManyProvedIdentities,
+  driveFetchIdentityWithCosts,
+  driveAddToIdentityBalance,
+  driveAddKeysToIdentity,
+  driveDisableIdentityKeys,
+  driveUpdateIdentityRevision,
+  driveRemoveFromIdentityBalance,
+  driveApplyFeesToIdentityBalance,
   driveFetchLatestWithdrawalTransactionIndex,
   abciInitChain,
   abciBlockBegin,
   abciBlockEnd,
   abciAfterFinalizeBlock,
   calculateStorageFeeDistributionAmountAndLeftovers,
+  driveFetchIdentitiesByPublicKeyHashes,
+  driveProveIdentitiesByPublicKeyHashes,
+  driveAddToSystemCredits,
 } = require('neon-load-or-build')({
   dir: __dirname,
 });
@@ -53,6 +70,37 @@ const driveFetchLatestWithdrawalTransactionIndexAsync = appendStackAsync(
   promisify(driveFetchLatestWithdrawalTransactionIndex),
 );
 const driveInsertIdentityAsync = appendStackAsync(promisify(driveInsertIdentity));
+const driveFetchIdentityAsync = appendStackAsync(promisify(driveFetchIdentity));
+const driveFetchProvedIdentityAsync = appendStackAsync(promisify(driveFetchProvedIdentity));
+const driveFetchIdentityBalanceAsync = appendStackAsync(promisify(driveFetchIdentityBalance));
+const driveFetchIdentityBalanceWithCostsAsync = appendStackAsync(
+  promisify(driveFetchIdentityBalanceWithCosts),
+);
+const driveFetchIdentityBalanceIncludeDebtWithCostsAsync = appendStackAsync(
+  promisify(driveFetchIdentityBalanceIncludeDebtWithCosts),
+);
+
+const driveFetchManyProvedIdentitiesAsync = appendStackAsync(
+  promisify(driveFetchManyProvedIdentities),
+);
+const driveFetchIdentityWithCostsAsync = appendStackAsync(promisify(driveFetchIdentityWithCosts));
+const driveAddToIdentityBalanceAsync = appendStackAsync(promisify(driveAddToIdentityBalance));
+const driveAddToSystemCreditsAsync = appendStackAsync(promisify(driveAddToSystemCredits));
+const driveFetchIdentitiesByPublicKeyHashesAsync = appendStackAsync(
+  promisify(driveFetchIdentitiesByPublicKeyHashes),
+);
+const driveProveIdentitiesByPublicKeyHashesAsync = appendStackAsync(
+  promisify(driveProveIdentitiesByPublicKeyHashes),
+);
+const driveAddKeysToIdentityAsync = appendStackAsync(promisify(driveAddKeysToIdentity));
+const driveDisableIdentityKeysAsync = appendStackAsync(promisify(driveDisableIdentityKeys));
+const driveUpdateIdentityRevisionAsync = appendStackAsync(promisify(driveUpdateIdentityRevision));
+const driveRemoveFromIdentityBalanceAsync = appendStackAsync(
+  promisify(driveRemoveFromIdentityBalance),
+);
+const driveApplyFeesToIdentityBalanceAsync = appendStackAsync(
+  promisify(driveApplyFeesToIdentityBalance),
+);
 const abciInitChainAsync = appendStackAsync(promisify(abciInitChain));
 const abciBlockBeginAsync = appendStackAsync(promisify(abciBlockBegin));
 const abciBlockEndAsync = appendStackAsync(promisify(abciBlockEnd));
@@ -335,6 +383,353 @@ class Drive {
   }
 
   /**
+   * @param {Buffer|Identifier} id
+   * @param {boolean} [useTransaction=false]
+   *
+   * @returns {Promise<Identity|null>}
+   */
+  async fetchIdentity(id, useTransaction = false) {
+    return driveFetchIdentityAsync.call(
+      this.drive,
+      Buffer.from(id),
+      useTransaction,
+    ).then((encodedIdentity) => {
+      if (encodedIdentity === null) {
+        return null;
+      }
+
+      const [protocolVersion, rawIdentity] = decodeProtocolEntity(
+        encodedIdentity,
+      );
+
+      rawIdentity.protocolVersion = protocolVersion;
+
+      return new Identity(rawIdentity);
+    });
+  }
+
+  /**
+   * @param {Buffer|Identifier} id
+   * @param {boolean} [useTransaction=false]
+   *
+   * @returns {Promise<number|null>}
+   */
+  async fetchIdentityBalance(id, useTransaction = false) {
+    return driveFetchIdentityBalanceAsync.call(
+      this.drive,
+      Buffer.from(id),
+      useTransaction,
+    );
+  }
+
+  /**
+   * @param {Buffer|Identifier} id
+   * @param {RawBlockInfo} blockInfo
+   * @param {boolean} [useTransaction=false]
+   * @param {boolean} [dryRun=false]
+   *
+   * @returns {Promise<[number, FeeResult]>}
+   */
+  async fetchIdentityBalanceWithCosts(id, blockInfo, useTransaction = false, dryRun = false) {
+    return driveFetchIdentityBalanceWithCostsAsync.call(
+      this.drive,
+      Buffer.from(id),
+      blockInfo,
+      !dryRun,
+      useTransaction,
+    ).then(([balance, innerFeeResult]) => [balance, new FeeResult(innerFeeResult)]);
+  }
+
+  /**
+   * @param {Buffer|Identifier} id
+   * @param {RawBlockInfo} blockInfo
+   * @param {boolean} [useTransaction=false]
+   * @param {boolean} [dryRun=false]
+   *
+   * @returns {Promise<[number|null, FeeResult]>}
+   */
+  async fetchIdentityBalanceIncludeDebtWithCosts(
+    id,
+    blockInfo,
+    useTransaction = false,
+    dryRun = false,
+  ) {
+    return driveFetchIdentityBalanceIncludeDebtWithCostsAsync.call(
+      this.drive,
+      Buffer.from(id),
+      blockInfo,
+      !dryRun,
+      useTransaction,
+    ).then(([balance, innerFeeResult]) => [balance, new FeeResult(innerFeeResult)]);
+  }
+
+  /**
+   * @param {Identifier} id
+   * @param {boolean} [useTransaction=false]
+   *
+   * @returns {Promise<Buffer|null>}
+   */
+  async proveIdentity(id, useTransaction = false) {
+    return driveFetchProvedIdentityAsync.call(
+      this.drive,
+      Buffer.from(id),
+      useTransaction,
+    );
+  }
+
+  /**
+   * @param {Identifier[]} ids
+   * @param {boolean} [useTransaction=false]
+   *
+   * @returns {Promise<Buffer|null>}
+   */
+  async proveManyIdentities(ids, useTransaction = false) {
+    return driveFetchManyProvedIdentitiesAsync.call(
+      this.drive,
+      ids.map((id) => Buffer.from(id)),
+      useTransaction,
+    );
+  }
+
+  /**
+   * @param {Buffer|Identifier} id
+   * @param {number} epochIndex
+   * @param {boolean} [useTransaction=false]
+   *
+   * @returns {Promise<[Identity|null, FeeResult]>}
+   */
+  async fetchIdentityWithCosts(id, epochIndex, useTransaction = false) {
+    return driveFetchIdentityWithCostsAsync.call(
+      this.drive,
+      Buffer.from(id),
+      epochIndex,
+      useTransaction,
+    ).then(([encodedIdentity, innerFeeResult]) => {
+      let identity = encodedIdentity;
+
+      if (encodedIdentity !== null) {
+        const [protocolVersion, rawIdentity] = decodeProtocolEntity(
+          encodedIdentity,
+        );
+
+        rawIdentity.protocolVersion = protocolVersion;
+
+        identity = new Identity(rawIdentity);
+      }
+
+      return [identity, new FeeResult(innerFeeResult)];
+    });
+  }
+
+  /**
+   * @param {Identifier} identityId
+   * @param {number} amount
+   * @param {RawBlockInfo} blockInfo
+   * @param {boolean} [useTransaction=false]
+   * @param {boolean} [dryRun=false]
+   *
+   * @returns {Promise<FeeResult>}
+   */
+  async addToIdentityBalance(
+    identityId,
+    amount,
+    blockInfo,
+    useTransaction = false,
+    dryRun = false,
+  ) {
+    return driveAddToIdentityBalanceAsync.call(
+      this.drive,
+      identityId.toBuffer(),
+      amount,
+      blockInfo,
+      !dryRun,
+      useTransaction,
+    ).then((innerFeeResult) => new FeeResult(innerFeeResult));
+  }
+
+  /**
+   * @param {Identifier} identityId
+   * @param {number} amount
+   * @param {RawBlockInfo} blockInfo
+   * @param {boolean} [useTransaction=false]
+   * @param {boolean} [dryRun=false]
+   *
+   * @returns {Promise<FeeResult>}
+   */
+  async removeFromIdentityBalance(
+    identityId,
+    amount,
+    blockInfo,
+    useTransaction = false,
+    dryRun = false,
+  ) {
+    return driveRemoveFromIdentityBalanceAsync.call(
+      this.drive,
+      identityId.toBuffer(),
+      amount,
+      blockInfo,
+      !dryRun,
+      useTransaction,
+    ).then((innerFeeResult) => new FeeResult(innerFeeResult));
+  }
+
+  /**
+   * @param {Identifier} identityId
+   * @param {FeeResult} fees
+   * @param {boolean} [useTransaction=false]
+   *
+   * @returns {Promise<FeeResult>}
+   */
+  async applyFeesToIdentityBalance(
+    identityId,
+    fees,
+    useTransaction = false,
+  ) {
+    return driveApplyFeesToIdentityBalanceAsync.call(
+      this.drive,
+      identityId.toBuffer(),
+      fees.inner,
+      useTransaction,
+    ).then((innerFeeResult) => new FeeResult(innerFeeResult));
+  }
+
+  /**
+   * @param {number} amount
+   * @param {boolean} [useTransaction=false]
+   *
+   * @returns {Promise<void>}
+   */
+  async addToSystemCredits(
+    amount,
+    useTransaction = false,
+  ) {
+    return driveAddToSystemCreditsAsync.call(
+      this.drive,
+      amount,
+      useTransaction,
+    );
+  }
+
+  /**
+   * @param {Buffer[]} hashes
+   * @param {boolean} [useTransaction=false]
+   *
+   * @returns {Promise<Array<Identity|null>>}
+   */
+  async fetchIdentitiesByPublicKeyHashes(hashes, useTransaction = false) {
+    return driveFetchIdentitiesByPublicKeyHashesAsync.call(
+      this.drive,
+      hashes.map((h) => Buffer.from(h)),
+      useTransaction,
+    ).then((encodedIdentities) => (
+      encodedIdentities.map((encodedIdentity) => {
+        const [protocolVersion, rawIdentity] = decodeProtocolEntity(
+          encodedIdentity,
+        );
+
+        rawIdentity.protocolVersion = protocolVersion;
+
+        return new Identity(rawIdentity);
+      })
+    ));
+  }
+
+  /**
+   * @param {Buffer[]} hashes
+   * @param {boolean} [useTransaction=false]
+   *
+   * @returns {Promise<Array<Identity|null>>}
+   */
+  async proveIdentitiesByPublicKeyHashes(hashes, useTransaction = false) {
+    return driveProveIdentitiesByPublicKeyHashesAsync.call(
+      this.drive,
+      hashes.map((h) => Buffer.from(h)),
+      useTransaction,
+    );
+  }
+
+  /**
+   * @param {Identifier} identityId
+   * @param {IdentityPublicKey[]} keys
+   * @param {RawBlockInfo} blockInfo
+   * @param {boolean} [useTransaction=false]
+   * @param {boolean} [dryRun=false]
+   *
+   * @returns {Promise<FeeResult>}
+   */
+  async addKeysToIdentity(
+    identityId,
+    keys,
+    blockInfo,
+    useTransaction = false,
+    dryRun = false,
+  ) {
+    return driveAddKeysToIdentityAsync.call(
+      this.drive,
+      identityId.toBuffer(),
+      keys,
+      blockInfo,
+      !dryRun,
+      useTransaction,
+    ).then((innerFeeResult) => new FeeResult(innerFeeResult));
+  }
+
+  /**
+   * @param {Identifier} identityId
+   * @param {number[]} keyIds
+   * @param {number} disableAt
+   * @param {RawBlockInfo} blockInfo
+   * @param {boolean} [useTransaction=false]
+   * @param {boolean} [dryRun=false]
+   *
+   * @returns {Promise<FeeResult>}
+   */
+  async disableIdentityKeys(
+    identityId,
+    keyIds,
+    disableAt,
+    blockInfo,
+    useTransaction = false,
+    dryRun = false,
+  ) {
+    return driveDisableIdentityKeysAsync.call(
+      this.drive,
+      identityId.toBuffer(),
+      keyIds,
+      disableAt,
+      blockInfo,
+      !dryRun,
+      useTransaction,
+    ).then((innerFeeResult) => new FeeResult(innerFeeResult));
+  }
+
+  /**
+   * @param {Identifier} identityId
+   * @param {number} revision
+   * @param {RawBlockInfo} blockInfo
+   * @param {boolean} [useTransaction=false]
+   * @param {boolean} [dryRun=false]
+   *
+   * @returns {Promise<FeeResult>}
+   */
+  async updateIdentityRevision(
+    identityId,
+    revision,
+    blockInfo,
+    useTransaction = false,
+    dryRun = false,
+  ) {
+    return driveUpdateIdentityRevisionAsync.call(
+      this.drive,
+      identityId.toBuffer(),
+      revision,
+      blockInfo,
+      !dryRun,
+      useTransaction,
+    ).then((innerFeeResult) => new FeeResult(innerFeeResult));
+  }
+
+  /**
    * Fetch the latest index of the withdrawal transaction in a queue
    *
    * @param {boolean} [useTransaction=false]
@@ -450,6 +845,7 @@ class Drive {
 
 // eslint-disable-next-line max-len
 Drive.calculateStorageFeeDistributionAmountAndLeftovers = calculateStorageFeeDistributionAmountAndLeftoversWithStack;
+Drive.FeeResult = FeeResult;
 
 /**
  * @typedef RawBlockInfo
@@ -492,15 +888,14 @@ Drive.calculateStorageFeeDistributionAmountAndLeftovers = calculateStorageFeeDis
 
 /**
  * @typedef BlockEndRequest
- * @property {BlockFeeResult} fees
+ * @property {BlockFees} fees
  */
 
 /**
- * @typedef BlockFeeResult
+ * @typedef BlockFees
  * @property {number} storageFee
  * @property {number} processingFee
- * @property {Object<string, number>} feeRefunds
- * @property {number} feeRefundsSum
+ * @property {Object<string, number>} refundsPerEpoch
  */
 
 /**

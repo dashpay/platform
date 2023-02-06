@@ -38,7 +38,7 @@ describe('validateIdentityCreateTransitionStateFactory', () => {
   });
 
   it('should return invalid result if identity already exists', async () => {
-    stateRepositoryMock.fetchIdentity.resolves({});
+    stateRepositoryMock.fetchIdentityBalance.resolves(1);
 
     const result = await validateIdentityCreateTransitionState(stateTransition);
 
@@ -52,6 +52,8 @@ describe('validateIdentityCreateTransitionStateFactory', () => {
   });
 
   it('should return valid result if state transition is valid', async () => {
+    stateRepositoryMock.fetchIdentityBalance.resolves(null);
+
     const result = await validateIdentityCreateTransitionState(stateTransition);
 
     expect(result.isValid()).to.be.true();

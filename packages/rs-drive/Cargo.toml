@@ -9,9 +9,9 @@ private = true
 [dependencies]
 serde = { version = "1.0.132", features = ["derive"] }
 ciborium = { git="https://github.com/qrayven/ciborium", branch="feat-ser-null-as-undefined"}
-integer-encoding = "3.0.3"
+integer-encoding = "3.0.4"
 bs58 = "0.4.0"
-base64 = "0.13.0"
+base64 = "0.21.0"
 rand = { version = "0.8.4", features = ["small_rng"] }
 byteorder = "1.4.3"
 indexmap = "1.8.0"
@@ -35,18 +35,19 @@ dashcore-rpc = { git="https://github.com/jawid-h/rust-dashcore-rpc", branch="fix
 mockall= { version ="0.11", optional = true }
 rust_decimal = "1.2.5"
 rust_decimal_macros = "1.25.0"
+lazy_static = "1.4.0"
 
 [dependencies.grovedb]
 git = "https://github.com/dashpay/grovedb"
-rev = "a9e168767c318b94b6edd119c51542c43e8772b2"
+rev = "009787b79538dae833ed6711253852046dfcc59d"
 
 [dependencies.storage]
 git = "https://github.com/dashpay/grovedb"
-rev = "a9e168767c318b94b6edd119c51542c43e8772b2"
+rev = "009787b79538dae833ed6711253852046dfcc59d"
 
 [dependencies.costs]
 git = "https://github.com/dashpay/grovedb"
-rev = "a9e168767c318b94b6edd119c51542c43e8772b2"
+rev = "009787b79538dae833ed6711253852046dfcc59d"
 
 [dev-dependencies]
 criterion = "0.3.5"

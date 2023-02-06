@@ -187,7 +187,7 @@ impl DocumentStub {
         let SplitProtocolVersionOutcome {
             main_message_bytes: read_document_cbor,
             ..
-        } = deserializer::split_protocol_version(document_cbor.as_ref())?;
+        } = deserializer::split_protocol_version(document_cbor)?;
 
         // first we need to deserialize the document and contract indices
         // we would need dedicated deserialization functions based on the document type
@@ -270,7 +270,7 @@ impl DocumentStub {
         let SplitProtocolVersionOutcome {
             main_message_bytes: read_document_cbor,
             ..
-        } = deserializer::split_protocol_version(document_cbor.as_ref())?;
+        } = deserializer::split_protocol_version(document_cbor)?;
 
         // first we need to deserialize the document and contract indices
         // we would need dedicated deserialization functions based on the document type

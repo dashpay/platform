@@ -38,7 +38,7 @@ pub fn get_dpns_parent_document_fixture(options: ParentDocumentOptions) -> Docum
         get_document_validator_fixture(),
         DataContractFetcherAndValidator::new(Arc::new(MockStateRepositoryLike::new())),
     );
-    let data_contract = get_dpns_data_contract_fixture(Some(options.owner_id.clone()));
+    let data_contract = get_dpns_data_contract_fixture(Some(options.owner_id));
     let mut pre_order_salt = [0u8; 32];
     let _ = getrandom(&mut pre_order_salt);
 

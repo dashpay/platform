@@ -1047,7 +1047,7 @@ describe('GroveDB', () => {
       expect(result).to.exist();
 
       expect(result).to.be.instanceOf(Buffer);
-      expect(result).to.have.lengthOf(234);
+      expect(result).to.have.lengthOf(213);
     });
   });
 
@@ -1167,7 +1167,7 @@ describe('GroveDB', () => {
       expect(result).to.exist();
 
       expect(result).to.be.instanceOf(Buffer);
-      expect(result).to.have.lengthOf(376);
+      expect(result).to.have.lengthOf(348);
     });
   });
 

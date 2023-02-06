@@ -36,7 +36,7 @@ use crate::abci::messages::{
     AfterFinalizeBlockRequest, AfterFinalizeBlockResponse, BlockBeginRequest, BlockBeginResponse,
     BlockEndRequest, BlockEndResponse, InitChainRequest, InitChainResponse,
 };
-use crate::block::{BlockExecutionContext, BlockInfo};
+use crate::block::{BlockExecutionContext, BlockStateInfo};
 use crate::execution::fee_pools::epoch::EpochInfo;
 use drive::grovedb::TransactionArg;
 
@@ -111,7 +111,7 @@ impl TenderdashAbci for Platform {
         };
 
         // Init block execution context
-        let block_info = BlockInfo::from_block_begin_request(&request);
+        let block_info = BlockStateInfo::from_block_begin_request(&request);
 
         let epoch_info = EpochInfo::from_genesis_time_and_block_info(genesis_time_ms, &block_info)?;
 
@@ -170,15 +170,15 @@ impl TenderdashAbci for Platform {
         self.pool_withdrawals_into_transactions_queue(block_execution_context, transaction)?;
 
         // Process fees
-        let process_block_fees_result = self.process_block_fees(
+        let process_block_fees_outcome = self.process_block_fees(
             &block_execution_context.block_info,
             &block_execution_context.epoch_info,
             request.fees,
             transaction,
         )?;
 
-        Ok(BlockEndResponse::from_process_block_fees_result(
-            &process_block_fees_result,
+        Ok(BlockEndResponse::from_process_block_fees_outcome(
+            &process_block_fees_outcome,
         ))
     }
 
@@ -217,17 +217,23 @@ mod tests {
         use drive::tests::helpers::setup::setup_document;
         use rust_decimal::prelude::ToPrimitive;
         use serde_json::json;
+        use std::cmp::Ordering;
         use std::ops::Div;
 
         use crate::abci::messages::{
             AfterFinalizeBlockRequest, BlockBeginRequest, BlockEndRequest, BlockFees,
             InitChainRequest,
         };
-        use crate::common::helpers::setup::{setup_platform, setup_system_data_contract};
+        use crate::common::helpers::setup::{
+            setup_platform, setup_platform_raw, setup_system_data_contract,
+        };
 
         #[test]
         fn test_abci_flow() {
-            let mut platform = setup_platform();
+            let mut platform = setup_platform_raw(Some(PlatformConfig {
+                drive_config: Default::default(),
+                verify_sum_trees: false,
+            }));
 
             let mut core_rpc_mock = MockCoreRPCLike::new();
 
@@ -312,6 +318,7 @@ mod tests {
             let proposers = create_test_masternode_identities(
                 &platform.drive,
                 proposers_count,
+                Some(51),
                 Some(&transaction),
             );
 
@@ -319,6 +326,7 @@ mod tests {
                 &platform.drive,
                 &contract,
                 &proposers,
+                Some(53),
                 Some(&transaction),
             );
 
@@ -389,12 +397,10 @@ mod tests {
                     let (epoch_index, epoch_change) = if day > epoch_1_start_day {
                         (1, false)
                     } else if day == epoch_1_start_day {
-                        if block_num < epoch_1_start_block {
-                            (0, false)
-                        } else if block_num == epoch_1_start_block {
-                            (1, true)
-                        } else {
-                            (1, false)
+                        match block_num.cmp(&epoch_1_start_block) {
+                            Ordering::Less => (0, false),
+                            Ordering::Equal => (1, true),
+                            Ordering::Greater => (1, false),
                         }
                     } else if day == 0 && block_num == 0 {
                         (0, true)
@@ -448,7 +454,7 @@ mod tests {
                         fees: BlockFees {
                             storage_fee: storage_fees_per_block,
                             processing_fee: 1600,
-                            fee_refunds: CreditsPerEpoch::from_iter([(0, 100)]),
+                            refunds_per_epoch: CreditsPerEpoch::from_iter([(0, 100)]),
                         },
                     };
 
@@ -496,7 +502,10 @@ mod tests {
         fn test_chain_halt_for_36_days() {
             // TODO refactor to remove code duplication
 
-            let mut platform = setup_platform();
+            let mut platform = setup_platform_raw(Some(PlatformConfig {
+                drive_config: Default::default(),
+                verify_sum_trees: false,
+            }));
 
             let mut core_rpc_mock = MockCoreRPCLike::new();
 
@@ -549,6 +558,7 @@ mod tests {
             let proposers = create_test_masternode_identities(
                 &platform.drive,
                 proposers_count,
+                Some(52),
                 Some(&transaction),
             );
 
@@ -556,6 +566,7 @@ mod tests {
                 &platform.drive,
                 &contract,
                 &proposers,
+                Some(54),
                 Some(&transaction),
             );
 
@@ -632,7 +643,7 @@ mod tests {
                         fees: BlockFees {
                             storage_fee: storage_fees_per_block,
                             processing_fee: 1600,
-                            fee_refunds: CreditsPerEpoch::from_iter([(0, 100)]),
+                            refunds_per_epoch: CreditsPerEpoch::from_iter([(0, 100)]),
                         },
                     };
 

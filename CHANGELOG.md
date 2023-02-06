@@ -1,3 +1,46 @@
+## [0.24.0-dev.13](https://github.com/dashpay/platform/compare/v0.24.0-dev.12...v0.24.0-dev.13) (2023-01-30)
+
+
+### ⚠ BREAKING CHANGES
+
+* **dapi:** use single envoy port for all connections (#752)
+
+### Features
+
+* allow to get drive status from dashmate helper ([#749](https://github.com/dashpay/platform/issues/749))
+* allow to get drive's status from dashmate helper ([#755](https://github.com/dashpay/platform/issues/755))
+* **dapi:** use single envoy port for all connections ([#752](https://github.com/dashpay/platform/issues/752))
+* **dashmate:** update Core to 18.2.0 ([#735](https://github.com/dashpay/platform/issues/735))
+* **drive:** ABCI context logger ([#693](https://github.com/dashpay/platform/issues/693))
+* **drive:** log contractId in deliverTx handler ([#730](https://github.com/dashpay/platform/issues/730))
+* **drive:** log number of refunded epochs ([#729](https://github.com/dashpay/platform/issues/729))
+* integrate wasm Document into JS tests ([#644](https://github.com/dashpay/platform/issues/644))
+* varint protocol version ([#758](https://github.com/dashpay/platform/issues/758))
+* **wasm-dpp:** implement function to produce generics from JsValue ([#712](https://github.com/dashpay/platform/issues/712))
+* **wasm-dpp:** implement identity create transition ([#697](https://github.com/dashpay/platform/issues/697))
+* **wasm-dpp:** Wasm dpp integration tests validate data contract factory ([#751](https://github.com/dashpay/platform/issues/751))
+
+
+### Bug Fixes
+
+* **dashmate:** Dash Core container is unable to restart properly under WSL ([#736](https://github.com/dashpay/platform/issues/736))
+* **dashmate:** fix migration for configs without platform ([#738](https://github.com/dashpay/platform/issues/738))
+* **dashmate:** migrations fixes ([#759](https://github.com/dashpay/platform/issues/759))
+* **dpp:** existing property in a new index ([#694](https://github.com/dashpay/platform/issues/694))
+* ua-parser-js vulnerability  ([#756](https://github.com/dashpay/platform/issues/756))
+
+
+### Miscellaneous Chores
+
+* **dashmate:** sync Tenderdash config with Tenderdash v0.10.0-dev.8 ([#746](https://github.com/dashpay/platform/issues/746))
+* update Tenderdash to 0.10.0-dev.8 ([#741](https://github.com/dashpay/platform/issues/741))
+
+
+### Code Refactoring
+
+* initial cleanup of Drive and DPP document types ([#750](https://github.com/dashpay/platform/issues/750))
+* use a trait to remove the need for some functions ([#747](https://github.com/dashpay/platform/issues/747))
+
 ### [0.23.2](https://github.com/dashpay/platform/compare/v0.23.0...v0.23.2) (2023-01-19)
 
 

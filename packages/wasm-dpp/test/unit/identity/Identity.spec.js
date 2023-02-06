@@ -37,7 +37,6 @@ describe('Identity', () => {
           purpose: KeyPurpose.AUTHENTICATION,
           securityLevel: KeySecurityLevel.MASTER,
           readOnly: false,
-          signature: Buffer.alloc(36).fill('a'),
         },
       ],
       balance: 0,
@@ -97,7 +96,6 @@ describe('Identity', () => {
         data: Buffer.alloc(36).fill('a'),
         purpose: KeyPurpose.AUTHENTICATION,
         securityLevel: KeySecurityLevel.MASTER,
-        signature: Buffer.alloc(36).fill('a'),
         readOnly: false,
       };
 
@@ -177,7 +175,6 @@ describe('Identity', () => {
             data: rawIdentity.publicKeys[0].data.toString('base64'),
             purpose: KeyPurpose.AUTHENTICATION,
             securityLevel: KeySecurityLevel.MASTER,
-            signature: rawIdentity.publicKeys[0].signature.toString('base64'),
             readOnly: false,
           },
         ],

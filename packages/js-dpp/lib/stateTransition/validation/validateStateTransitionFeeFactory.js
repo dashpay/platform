@@ -43,13 +43,16 @@ function validateStateTransitionFeeFactory(
         if (stateTransition.getType() === stateTransitionTypes.IDENTITY_TOP_UP) {
           const identityId = stateTransition.getOwnerId();
 
-          const identity = await stateRepository.fetchIdentity(identityId, executionContext);
+          const identityBalance = await stateRepository.fetchIdentityBalanceWithDebt(
+            identityId,
+            executionContext,
+          );
 
           if (executionContext.isDryRun()) {
             return result;
           }
 
-          balance += identity.getBalance();
+          balance += identityBalance;
         }
 
         break;
@@ -60,13 +63,16 @@ function validateStateTransitionFeeFactory(
       case stateTransitionTypes.IDENTITY_UPDATE: {
         const identityId = stateTransition.getOwnerId();
 
-        const identity = await stateRepository.fetchIdentity(identityId, executionContext);
+        const identityBalance = await stateRepository.fetchIdentityBalance(
+          identityId,
+          executionContext,
+        );
 
         if (executionContext.isDryRun()) {
           return result;
         }
 
-        balance = identity.getBalance();
+        balance = identityBalance;
 
         break;
       }
@@ -78,9 +84,7 @@ function validateStateTransitionFeeFactory(
       return result;
     }
 
-    // We could use `stateTransition.calculateFee()` but
-    // `calculateStateTransitionFee` is easier to mock in test
-    const fee = calculateStateTransitionFee(stateTransition);
+    const { desiredAmount: fee } = calculateStateTransitionFee(stateTransition);
 
     if (balance < fee) {
       result.addError(

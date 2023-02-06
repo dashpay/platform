@@ -55,6 +55,7 @@ pub fn validate_public_keys(
     if !duplicated_ids.is_empty() {
         validation_result
             .add_error(StateError::DuplicatedIdentityPublicKeyIdError { duplicated_ids });
+        return Ok(validation_result);
     }
 
     // Check that there's no duplicated keys

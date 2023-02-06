@@ -36,10 +36,11 @@ mod estimation_costs;
 /// Various paths for contract operations
 pub(crate) mod paths;
 
+use std::borrow::Cow;
 use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 
-use crate::common::encode::encode_unsigned_integer;
+use crate::common::encode::encode_u64;
 use costs::{cost_return_on_error_no_add, CostContext, CostResult, CostsExt, OperationCost};
 
 use grovedb::batch::key_info::KeyInfo;
@@ -57,10 +58,11 @@ use crate::drive::defaults::CONTRACT_MAX_SERIALIZED_SIZE;
 use crate::drive::flags::StorageFlags;
 use crate::drive::object_size_info::DriveKeyInfo::{Key, KeyRef};
 
+use crate::drive::contract::paths::contract_root_path;
 use crate::drive::grove_operations::QueryTarget::QueryTargetValue;
 use crate::drive::grove_operations::{BatchInsertTreeApplyType, DirectQueryType};
 use crate::drive::object_size_info::PathKeyElementInfo::{
-    PathFixedSizeKeyElement, PathKeyElementSize,
+    PathFixedSizeKeyRefElement, PathKeyElementSize,
 };
 use crate::drive::object_size_info::PathKeyInfo::PathFixedSizeKeyRef;
 use crate::drive::{contract_documents_path, Drive, RootTree};
@@ -109,7 +111,7 @@ impl Drive {
         if contract.keeps_history() {
             let element_flags = contract_element.get_flags().clone();
             let storage_flags =
-                StorageFlags::from_some_element_flags_ref(contract_element.get_flags())?;
+                StorageFlags::map_cow_some_element_flags_ref(contract_element.get_flags())?;
 
             if let Some(estimated_costs_only_with_layer_info) = estimated_costs_only_with_layer_info
             {
@@ -122,14 +124,14 @@ impl Drive {
             self.batch_insert_empty_tree(
                 contract_root_path,
                 KeyRef(&[0]),
-                storage_flags.as_ref(),
+                storage_flags.as_ref().map(|flags| flags.as_ref()),
                 insert_operations,
             )?;
-            let encoded_time = encode_unsigned_integer(block_info.time_ms)?;
+            let encoded_time = encode_u64(block_info.time_ms)?;
             let contract_keeping_history_storage_path =
                 paths::contract_keeping_history_storage_path(contract.id.as_bytes());
             self.batch_insert(
-                PathFixedSizeKeyElement((
+                PathFixedSizeKeyRefElement((
                     contract_keeping_history_storage_path,
                     encoded_time.as_slice(),
                     contract_element,
@@ -141,7 +143,7 @@ impl Drive {
                 Element::Reference(SiblingReference(encoded_time), Some(1), element_flags);
 
             let path_key_element_info = if estimated_costs_only_with_layer_info.is_none() {
-                PathFixedSizeKeyElement((
+                PathFixedSizeKeyRefElement((
                     contract_keeping_history_storage_path,
                     &[0],
                     reference_element,
@@ -157,7 +159,7 @@ impl Drive {
         } else {
             // the contract is just stored at key 0
             let path_key_element_info = if estimated_costs_only_with_layer_info.is_none() {
-                PathFixedSizeKeyElement((contract_root_path, &[0], contract_element))
+                PathFixedSizeKeyRefElement((contract_root_path, &[0], contract_element))
             } else {
                 PathKeyElementSize((
                     KeyInfoPath::from_known_path(contract_root_path),
@@ -276,8 +278,7 @@ impl Drive {
     ) -> Result<Vec<DriveOperation>, Error> {
         let mut batch_operations: Vec<DriveOperation> = vec![];
 
-        let storage_flags =
-            StorageFlags::from_some_element_flags_ref(contract_element.get_flags())?;
+        let storage_flags = StorageFlags::map_some_element_flags_ref(contract_element.get_flags())?;
 
         self.batch_insert_empty_tree(
             [Into::<&[u8; 1]>::into(RootTree::ContractDocuments).as_slice()],
@@ -557,7 +558,7 @@ impl Drive {
             &mut batch_operations,
         )?;
 
-        let storage_flags = StorageFlags::from_some_element_flags_ref(&element_flags)?;
+        let storage_flags = StorageFlags::map_cow_some_element_flags_ref(&element_flags)?;
 
         let contract_documents_path = contract_documents_path(contract.id.as_bytes());
         for (type_key, document_type) in contract.document_types() {
@@ -584,9 +585,9 @@ impl Drive {
                 ];
 
                 let apply_type = if estimated_costs_only_with_layer_info.is_none() {
-                    BatchInsertTreeApplyType::StatefulBatchInsert
+                    BatchInsertTreeApplyType::StatefulBatchInsertTree
                 } else {
-                    BatchInsertTreeApplyType::StatelessBatchInsert {
+                    BatchInsertTreeApplyType::StatelessBatchInsertTree {
                         in_tree_using_sums: false,
                         is_sum_tree: false,
                         flags_len: element_flags
@@ -604,7 +605,7 @@ impl Drive {
                     if !index_cache.contains(index_bytes) {
                         self.batch_insert_empty_tree_if_not_exists(
                             PathFixedSizeKeyRef((type_path, index.name.as_bytes())),
-                            storage_flags.as_ref(),
+                            storage_flags.as_ref().map(|flags| flags.as_ref()),
                             apply_type,
                             transaction,
                             &mut None,
@@ -618,7 +619,7 @@ impl Drive {
                 self.batch_insert_empty_tree(
                     contract_documents_path,
                     KeyRef(type_key.as_bytes()),
-                    storage_flags.as_ref(),
+                    storage_flags.as_ref().map(|flags| flags.as_ref()),
                     &mut batch_operations,
                 )?;
 
@@ -633,7 +634,7 @@ impl Drive {
                 self.batch_insert_empty_tree(
                     type_path,
                     KeyRef(&[0]),
-                    storage_flags.as_ref(),
+                    storage_flags.as_ref().map(|flags| flags.as_ref()),
                     &mut batch_operations,
                 )?;
 
@@ -646,7 +647,7 @@ impl Drive {
                         self.batch_insert_empty_tree(
                             type_path,
                             KeyRef(index.name.as_bytes()),
-                            storage_flags.as_ref(),
+                            storage_flags.as_ref().map(|flags| flags.as_ref()),
                             &mut batch_operations,
                         )?;
                         index_cache.insert(index_bytes);
@@ -664,7 +665,7 @@ impl Drive {
         contract_id: Option<[u8; 32]>,
         block_info: BlockInfo,
         apply: bool,
-        storage_flags: Option<&StorageFlags>,
+        storage_flags: Option<Cow<StorageFlags>>,
         transaction: TransactionArg,
     ) -> Result<FeeResult, Error> {
         // first we need to deserialize the contract
@@ -846,7 +847,7 @@ impl Drive {
 
                 let storage_flags = cost_return_on_error_no_add!(
                     &cost,
-                    StorageFlags::from_some_element_flags_ref(&element_flag)
+                    StorageFlags::map_some_element_flags_ref(&element_flag)
                 );
                 let contract_fetch_info = Arc::new(ContractFetchInfo {
                     contract,
@@ -878,7 +879,7 @@ impl Drive {
         contract_serialization: Vec<u8>,
         block_info: BlockInfo,
         apply: bool,
-        storage_flags: Option<&StorageFlags>,
+        storage_flags: Option<Cow<StorageFlags>>,
         transaction: TransactionArg,
     ) -> Result<FeeResult, Error> {
         let mut cost_operations = vec![];
@@ -887,7 +888,7 @@ impl Drive {
         } else {
             Some(HashMap::new())
         };
-        let batch_operations = self.apply_contract_operations(
+        let batch_operations = self.apply_contract_with_serialization_operations(
             contract,
             contract_serialization,
             &block_info,
@@ -913,12 +914,37 @@ impl Drive {
     pub(crate) fn apply_contract_operations(
         &self,
         contract: &Contract,
+        block_info: &BlockInfo,
+        estimated_costs_only_with_layer_info: &mut Option<
+            HashMap<KeyInfoPath, EstimatedLayerInformation>,
+        >,
+        storage_flags: Option<Cow<StorageFlags>>,
+        transaction: TransactionArg,
+    ) -> Result<Vec<DriveOperation>, Error> {
+        //todo: change this from cbor
+        let serialized_contract = contract.to_cbor().map_err(Error::Protocol)?;
+        self.apply_contract_with_serialization_operations(
+            contract,
+            serialized_contract,
+            block_info,
+            estimated_costs_only_with_layer_info,
+            storage_flags,
+            transaction,
+        )
+    }
+
+    /// Gets the operations for applying a contract with it's serialization
+    /// If the contract already exists, we get operations for an update
+    /// Otherwise we get operations for an insert
+    pub(crate) fn apply_contract_with_serialization_operations(
+        &self,
+        contract: &Contract,
         contract_serialization: Vec<u8>,
         block_info: &BlockInfo,
         estimated_costs_only_with_layer_info: &mut Option<
             HashMap<KeyInfoPath, EstimatedLayerInformation>,
         >,
-        storage_flags: Option<&StorageFlags>,
+        storage_flags: Option<Cow<StorageFlags>>,
         transaction: TransactionArg,
     ) -> Result<Vec<DriveOperation>, Error> {
         let mut drive_operations: Vec<DriveOperation> = vec![];
@@ -940,8 +966,8 @@ impl Drive {
         };
 
         // We can do a get direct because there are no references involved
-        if let Ok(Some(stored_element)) = self.grove_get_direct(
-            paths::contract_root_path(contract.id.as_bytes()),
+        if let Ok(Some(stored_element)) = self.grove_get_raw(
+            contract_root_path(contract.id.as_bytes()),
             &[0],
             direct_query_type,
             transaction,
@@ -962,7 +988,7 @@ impl Drive {
 
         let contract_element = Element::Item(
             contract_serialization,
-            StorageFlags::map_to_some_element_flags(storage_flags),
+            StorageFlags::map_cow_to_some_element_flags(storage_flags),
         );
 
         if already_exists {
@@ -1035,7 +1061,7 @@ mod tests {
                 contract_cbor.clone(),
                 BlockInfo::default(),
                 true,
-                StorageFlags::optional_default_as_ref(),
+                StorageFlags::optional_default_as_cow(),
                 None,
             )
             .expect("expected to apply contract successfully");
@@ -1064,7 +1090,7 @@ mod tests {
                 contract_cbor.clone(),
                 BlockInfo::default(),
                 true,
-                StorageFlags::optional_default_as_ref(),
+                StorageFlags::optional_default_as_cow(),
                 None,
             )
             .expect("expected to apply contract successfully");
@@ -1093,7 +1119,7 @@ mod tests {
                 contract_cbor.clone(),
                 BlockInfo::default(),
                 true,
-                StorageFlags::optional_default_as_ref(),
+                StorageFlags::optional_default_as_cow(),
                 None,
             )
             .expect("expected to apply contract successfully");
@@ -1118,7 +1144,7 @@ mod tests {
                 None,
                 BlockInfo::default(),
                 true,
-                StorageFlags::optional_default_as_ref(),
+                StorageFlags::optional_default_as_cow(),
                 None,
             )
             .expect("expected to apply contract successfully");
@@ -1131,7 +1157,7 @@ mod tests {
                 None,
                 BlockInfo::default(),
                 true,
-                StorageFlags::optional_default_as_ref(),
+                StorageFlags::optional_default_as_cow(),
                 None,
             )
             .expect("should update initial contract");
@@ -1151,7 +1177,7 @@ mod tests {
 
         assert!(nested_value.is_some());
 
-        let storage_flags = Some(StorageFlags::SingleEpoch(0));
+        let storage_flags = Some(Cow::Owned(StorageFlags::SingleEpoch(0)));
 
         let random_owner_id = rand::thread_rng().gen::<[u8; 32]>();
         drive
@@ -1161,7 +1187,7 @@ mod tests {
                         document_info: DocumentInfo::DocumentRefAndSerialization((
                             &document,
                             document.to_cbor().as_slice(),
-                            storage_flags.as_ref(),
+                            storage_flags,
                         )),
                         owner_id: Some(random_owner_id),
                     },
@@ -1190,7 +1216,7 @@ mod tests {
 
         assert!(ref_value.is_some());
 
-        let storage_flags = Some(StorageFlags::SingleEpoch(0));
+        let storage_flags = Some(Cow::Owned(StorageFlags::SingleEpoch(0)));
 
         let random_owner_id = rand::thread_rng().gen::<[u8; 32]>();
         drive
@@ -1200,7 +1226,7 @@ mod tests {
                         document_info: DocumentInfo::DocumentRefAndSerialization((
                             &document,
                             document.to_cbor().as_slice(),
-                            storage_flags.as_ref(),
+                            storage_flags,
                         )),
                         owner_id: Some(random_owner_id),
                     },
@@ -1237,7 +1263,7 @@ mod tests {
                 contract_cbor,
                 BlockInfo::default(),
                 false,
-                StorageFlags::optional_default_as_ref(),
+                StorageFlags::optional_default_as_cow(),
                 None,
             )
             .expect("expected to apply contract successfully");
@@ -1266,7 +1292,7 @@ mod tests {
                 contract_cbor,
                 BlockInfo::default(),
                 false,
-                StorageFlags::optional_default_as_ref(),
+                StorageFlags::optional_default_as_cow(),
                 None,
             )
             .expect("expected to apply contract successfully");
@@ -1296,7 +1322,7 @@ mod tests {
                 contract_cbor.clone(),
                 BlockInfo::default(),
                 true,
-                StorageFlags::optional_default_as_ref(),
+                StorageFlags::optional_default_as_cow(),
                 None,
             )
             .expect("expected to apply contract successfully");
@@ -1374,13 +1400,13 @@ mod tests {
                 .get_contract_with_fetch_info([0; 32], Some(&Epoch::new(0)), None)
                 .expect("should get contract");
 
-            assert!(matches!(
+            assert_eq!(
                 result.0,
                 Some(FeeResult {
-                    processing_fee: 6000,
-                    ..
+                    processing_fee: 4060,
+                    ..Default::default()
                 })
-            ));
+            );
 
             assert!(result.1.is_none());
         }
@@ -1412,7 +1438,7 @@ mod tests {
                         ref_contract_cbor,
                         BlockInfo::default(),
                         true,
-                        StorageFlags::optional_default_as_ref(),
+                        StorageFlags::optional_default_as_cow(),
                         Some(&transaction),
                     )
                     .expect("expected to apply contract successfully");
@@ -1430,7 +1456,7 @@ mod tests {
                     contract_cbor,
                     BlockInfo::default(),
                     true,
-                    StorageFlags::optional_default_as_ref(),
+                    StorageFlags::optional_default_as_cow(),
                     Some(&transaction),
                 )
                 .expect("expected to apply contract successfully");
@@ -1560,7 +1586,7 @@ mod tests {
                         ref_contract_cbor,
                         BlockInfo::default(),
                         true,
-                        StorageFlags::optional_default_as_ref(),
+                        StorageFlags::optional_default_as_cow(),
                         Some(&transaction),
                     )
                     .expect("expected to apply contract successfully");
@@ -1608,18 +1634,8 @@ mod tests {
             );
 
             assert_eq!(
-                deep_contract_fetch_info_transactional.contract,
-                deep_contract_fetch_info_transactional2.contract
-            );
-
-            assert_eq!(
-                deep_contract_fetch_info_transactional.storage_flags,
-                deep_contract_fetch_info_transactional2.storage_flags
-            );
-
-            assert_eq!(
-                deep_contract_fetch_info_transactional.cost,
-                deep_contract_fetch_info_transactional2.cost
+                deep_contract_fetch_info_transactional,
+                deep_contract_fetch_info_transactional2
             );
         }
     }

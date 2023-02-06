@@ -31,42 +31,45 @@ const createABCIServer = require('@dashevo/abci');
 
 const protocolVersion = require('@dashevo/dpp/lib/version/protocolVersion');
 
+const calculateOperationFees = require('@dashevo/dpp/lib/stateTransition/fee/calculateOperationFees');
+const calculateStateTransitionFeeFactory = require('@dashevo/dpp/lib/stateTransition/fee/calculateStateTransitionFeeFactory');
+
 const decodeProtocolEntityFactory = require('@dashevo/dpp/lib/decodeProtocolEntityFactory');
-
 const featureFlagsSystemIds = require('@dashevo/feature-flags-contract/lib/systemIds');
+
 const featureFlagsDocuments = require('@dashevo/feature-flags-contract/schema/feature-flags-documents.json');
-
 const dpnsSystemIds = require('@dashevo/dpns-contract/lib/systemIds');
+
 const dpnsDocuments = require('@dashevo/dpns-contract/schema/dpns-contract-documents.json');
-
 const masternodeRewardsSystemIds = require('@dashevo/masternode-reward-shares-contract/lib/systemIds');
-const masternodeRewardsDocuments = require('@dashevo/masternode-reward-shares-contract/schema/masternode-reward-shares-documents.json');
 
+const masternodeRewardsDocuments = require('@dashevo/masternode-reward-shares-contract/schema/masternode-reward-shares-documents.json');
 const dashpaySystemIds = require('@dashevo/dashpay-contract/lib/systemIds');
+
 const dashpayDocuments = require('@dashevo/dashpay-contract/schema/dashpay.schema.json');
 
 const withdrawalsSystemIds = require('@dashevo/withdrawals-contract/lib/systemIds');
 const withdrawalsDocuments = require('@dashevo/withdrawals-contract/schema/withdrawals-documents.json');
+const calculateStateTransitionFeeFromOperationsFactory = require('@dashevo/dpp/lib/stateTransition/fee/calculateStateTransitionFeeFromOperationsFactory');
 
 const packageJSON = require('../package.json');
 
 const ZMQClient = require('./core/ZmqClient');
 
 const sanitizeUrl = require('./util/sanitizeUrl');
-
 const LatestCoreChainLock = require('./core/LatestCoreChainLock');
 
 const GroveDBStore = require('./storage/GroveDBStore');
+
 const IdentityStoreRepository = require('./identity/IdentityStoreRepository');
 
-const PublicKeyToIdentitiesStoreRepository = require(
-  './identity/PublicKeyToIdentitiesStoreRepository',
+const IdentityPublicKeyStoreRepository = require(
+  './identity/IdentityPublicKeyStoreRepository',
 );
-
 const DataContractStoreRepository = require('./dataContract/DataContractStoreRepository');
-
 const fetchDocumentsFactory = require('./document/fetchDocumentsFactory');
 const proveDocumentsFactory = require('./document/proveDocumentsFactory');
+
 const fetchDataContractFactory = require('./document/fetchDataContractFactory');
 const BlockExecutionContext = require('./blockExecution/BlockExecutionContext');
 
@@ -74,16 +77,15 @@ const unserializeStateTransitionFactory = require(
   './abci/handlers/stateTransition/unserializeStateTransitionFactory',
 );
 const DriveStateRepository = require('./dpp/DriveStateRepository');
-
 const CachedStateRepositoryDecorator = require('./dpp/CachedStateRepositoryDecorator');
 const LoggedStateRepositoryDecorator = require('./dpp/LoggedStateRepositoryDecorator');
 const dataContractQueryHandlerFactory = require('./abci/handlers/query/dataContractQueryHandlerFactory');
 const identityQueryHandlerFactory = require('./abci/handlers/query/identityQueryHandlerFactory');
+
 const documentQueryHandlerFactory = require('./abci/handlers/query/documentQueryHandlerFactory');
+
 const identitiesByPublicKeyHashesQueryHandlerFactory = require('./abci/handlers/query/identitiesByPublicKeyHashesQueryHandlerFactory');
-
 const getProofsQueryHandlerFactory = require('./abci/handlers/query/getProofsQueryHandlerFactory');
-
 const wrapInErrorHandlerFactory = require('./abci/errors/wrapInErrorHandlerFactory');
 const errorHandlerFactory = require('./errorHandlerFactory');
 const checkTxHandlerFactory = require('./abci/handlers/checkTxHandlerFactory');
@@ -92,24 +94,24 @@ const infoHandlerFactory = require('./abci/handlers/infoHandlerFactory');
 const extendVoteHandlerFactory = require('./abci/handlers/extendVoteHandlerFactory');
 const finalizeBlockHandlerFactory = require('./abci/handlers/finalizeBlockHandlerFactory');
 const prepareProposalHandlerFactory = require('./abci/handlers/prepareProposalHandlerFactory');
+
 const processProposalHandlerFactory = require('./abci/handlers/processProposalHandlerFactory');
 const verifyVoteExtensionHandlerFactory = require('./abci/handlers/verifyVoteExtensionHandlerFactory');
-
 const beginBlockFactory = require('./abci/handlers/proposal/beginBlockFactory');
 const deliverTxFactory = require('./abci/handlers/proposal/deliverTxFactory');
 const endBlockFactory = require('./abci/handlers/proposal/endBlockFactory');
 const rotateAndCreateValidatorSetUpdateFactory = require('./abci/handlers/proposal/rotateAndCreateValidatorSetUpdateFactory');
 const createConsensusParamUpdateFactory = require('./abci/handlers/proposal/createConsensusParamUpdateFactory');
+
 const createCoreChainLockUpdateFactory = require('./abci/handlers/proposal/createCoreChainLockUpdateFactory');
 const verifyChainLockFactory = require('./abci/handlers/proposal/verifyChainLockFactory');
-
 const queryHandlerFactory = require('./abci/handlers/queryHandlerFactory');
 const waitForCoreSyncFactory = require('./core/waitForCoreSyncFactory');
 const waitForCoreChainLockSyncFactory = require('./core/waitForCoreChainLockSyncFactory');
 const updateSimplifiedMasternodeListFactory = require('./core/updateSimplifiedMasternodeListFactory');
+
 const waitForChainLockedHeightFactory = require('./core/waitForChainLockedHeightFactory');
 const SimplifiedMasternodeList = require('./core/SimplifiedMasternodeList');
-
 const SpentAssetLockTransactionsRepository = require('./identity/SpentAssetLockTransactionsRepository');
 const enrichErrorWithConsensusErrorFactory = require('./abci/errors/enrichErrorWithContextLoggerFactory');
 const closeAbciServerFactory = require('./abci/closeAbciServerFactory');
@@ -119,9 +121,9 @@ const ValidatorSet = require('./validator/ValidatorSet');
 const createValidatorSetUpdate = require('./abci/handlers/validator/createValidatorSetUpdate');
 const fetchQuorumMembersFactory = require('./core/fetchQuorumMembersFactory');
 const getRandomQuorumFactory = require('./core/getRandomQuorumFactory');
+
 const createQueryResponseFactory = require('./abci/handlers/query/response/createQueryResponseFactory');
 const BlockExecutionContextRepository = require('./blockExecution/BlockExecutionContextRepository');
-
 const registerSystemDataContractFactory = require('./state/registerSystemDataContractFactory');
 const registerTopLevelDomainFactory = require('./state/registerTopLevelDomainFactory');
 const synchronizeMasternodeIdentitiesFactory = require('./identity/masternode/synchronizeMasternodeIdentitiesFactory');
@@ -133,6 +135,7 @@ const registerSystemDataContractsFactory = require('./abci/handlers/state/regist
 const createRewardShareDocumentFactory = require('./identity/masternode/createRewardShareDocumentFactory');
 const handleRemovedMasternodeFactory = require('./identity/masternode/handleRemovedMasternodeFactory');
 const handleUpdatedScriptPayoutFactory = require('./identity/masternode/handleUpdatedScriptPayoutFactory');
+
 const getWithdrawPubKeyTypeFromPayoutScriptFactory = require('./identity/masternode/getWithdrawPubKeyTypeFromPayoutScriptFactory');
 const getPublicKeyFromPayoutScript = require('./identity/masternode/getPublicKeyFromPayoutScript');
 const updateWithdrawalTransactionIdAndStatusFactory = require('./identity/withdrawals/updateWithdrawalTransactionIdAndStatusFactory');
@@ -146,6 +149,7 @@ const LastSyncedCoreHeightRepository = require('./identity/masternode/LastSynced
 const fetchSimplifiedMNListFactory = require('./core/fetchSimplifiedMNListFactory');
 const processProposalFactory = require('./abci/handlers/proposal/processProposalFactory');
 const createContextLoggerFactory = require('./abci/errors/createContextLoggerFactory');
+const IdentityBalanceStoreRepository = require('./identity/IdentityBalanceStoreRepository');
 
 /**
  *
@@ -440,19 +444,19 @@ function createDIContainer(options) {
       logJsonFileLevel,
       logJsonFileStream,
     ) => [
-      {
-        level: logStdoutLevel,
-        stream: logStdoutStream,
-      },
-      {
-        level: logPrettyFileLevel,
-        stream: logPrettyFileStream,
-      },
-      {
-        level: logJsonFileLevel,
-        stream: logJsonFileStream,
-      },
-    ]),
+        {
+          level: logStdoutLevel,
+          stream: logStdoutStream,
+        },
+        {
+          level: logPrettyFileLevel,
+          stream: logPrettyFileStream,
+        },
+        {
+          level: logJsonFileLevel,
+          stream: logJsonFileStream,
+        },
+      ]),
 
     logger: asFunction(
       (loggerStreams) => pino({
@@ -494,7 +498,6 @@ function createDIContainer(options) {
         },
       },
     }))
-      // TODO: With signed state rotation we need to dispose each groveDB store.
       .disposer(async (rsDrive) => {
         // Flush data on disk
         await rsDrive.getGroveDB().flush();
@@ -519,7 +522,9 @@ function createDIContainer(options) {
   container.register({
     identityRepository: asClass(IdentityStoreRepository).singleton(),
 
-    publicKeyToIdentitiesRepository: asClass(PublicKeyToIdentitiesStoreRepository).singleton(),
+    identityBalanceRepository: asClass(IdentityBalanceStoreRepository).singleton(),
+
+    identityPublicKeyRepository: asClass(IdentityPublicKeyStoreRepository).singleton(),
 
     synchronizeMasternodeIdentities: asFunction(synchronizeMasternodeIdentitiesFactory).singleton(),
 
@@ -590,9 +595,17 @@ function createDIContainer(options) {
   container.register({
     decodeProtocolEntity: asFunction(decodeProtocolEntityFactory),
 
+    calculateOperationFees: asValue(calculateOperationFees),
+
+    calculateStateTransitionFeeFromOperations:
+      asFunction(calculateStateTransitionFeeFromOperationsFactory),
+
+    calculateStateTransitionFee: asFunction(calculateStateTransitionFeeFactory),
+
     stateRepository: asFunction((
       identityRepository,
-      publicKeyToIdentitiesRepository,
+      identityBalanceRepository,
+      identityPublicKeyRepository,
       dataContractRepository,
       fetchDocuments,
       documentRepository,
@@ -604,7 +617,8 @@ function createDIContainer(options) {
     ) => {
       const stateRepository = new DriveStateRepository(
         identityRepository,
-        publicKeyToIdentitiesRepository,
+        identityBalanceRepository,
+        identityPublicKeyRepository,
         dataContractRepository,
         fetchDocuments,
         documentRepository,
@@ -622,7 +636,8 @@ function createDIContainer(options) {
 
     transactionalStateRepository: asFunction((
       identityRepository,
-      publicKeyToIdentitiesRepository,
+      identityBalanceRepository,
+      identityPublicKeyRepository,
       dataContractRepository,
       fetchDocuments,
       documentRepository,
@@ -635,7 +650,8 @@ function createDIContainer(options) {
     ) => {
       const stateRepository = new DriveStateRepository(
         identityRepository,
-        publicKeyToIdentitiesRepository,
+        identityBalanceRepository,
+        identityPublicKeyRepository,
         dataContractRepository,
         fetchDocuments,
         documentRepository,

@@ -1,6 +1,6 @@
 {
   "name": "@dashevo/platform",
-  "version": "0.24.0-dev.12",
+  "version": "0.24.0-dev.13",
   "private": true,
   "scripts": {
     "setup": "yarn install && yarn run build && yarn run configure",
@@ -80,6 +80,7 @@
     "oclif@3.4.2": "patch:oclif@npm:3.4.2#.yarn/patches/oclif-npm-3.4.2-a655d32eed.patch",
     "qs": "^6.7.3",
     "engine.io": "^6.2.1",
-    "ua-parser-js": "^1.0.33"
+    "ua-parser-js": "^1.0.33",
+    "http-cache-semantics": "^4.1.1"
   }
 }

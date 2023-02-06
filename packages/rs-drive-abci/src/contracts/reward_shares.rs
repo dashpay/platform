@@ -45,8 +45,10 @@ use drive::dpp::document::document_stub::DocumentStub;
 use drive::dpp::util::serializer;
 use drive::drive::block_info::BlockInfo;
 use drive::drive::flags::StorageFlags;
+use drive::drive::query::QueryDocumentsOutcome;
 use drive::grovedb::TransactionArg;
 use serde_json::json;
+use std::borrow::Cow;
 
 /// Masternode reward shares contract ID
 pub const MN_REWARD_SHARES_CONTRACT_ID: [u8; 32] = [
@@ -73,9 +75,8 @@ impl Platform {
         let query_cbor =
             serializer::value_to_cbor(query_json, None).expect("expected to serialize to cbor");
 
-        let (document_cbors, _, _) = self
-            .drive
-            .query_raw_documents_using_cbor_encoded_query_with_cost(
+        let QueryDocumentsOutcome { items, .. } =
+            self.drive.query_documents_cbor_with_document_type_lookup(
                 &query_cbor,
                 MN_REWARD_SHARES_CONTRACT_ID,
                 MN_REWARD_SHARES_DOCUMENT_TYPE,
@@ -83,7 +84,7 @@ impl Platform {
                 transaction,
             )?;
 
-        document_cbors
+        items
             .iter()
             .map(|cbor| DocumentStub::from_cbor(cbor, None, None).map_err(Error::Protocol))
             .collect::<Result<Vec<DocumentStub>, Error>>()
@@ -98,7 +99,7 @@ impl Platform {
         let contract = <Contract as DriveContractExt>::from_cbor(&contract_cbor, None)
             .expect("expected to deserialize the contract");
 
-        let storage_flags = Some(StorageFlags::SingleEpoch(0));
+        let storage_flags = Some(Cow::Owned(StorageFlags::SingleEpoch(0)));
 
         self.drive
             .apply_contract(
@@ -106,7 +107,7 @@ impl Platform {
                 contract_cbor,
                 BlockInfo::genesis(),
                 true,
-                storage_flags.as_ref(),
+                storage_flags,
                 transaction,
             )
             .expect("expected to apply contract successfully");

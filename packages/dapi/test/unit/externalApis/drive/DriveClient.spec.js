@@ -5,7 +5,6 @@ const cbor = require('cbor');
 const chaiAsPromised = require('chai-as-promised');
 const dirtyChai = require('dirty-chai');
 
-const generateRandomIdentifier = require('@dashevo/dpp/lib/test/utils/generateRandomIdentifier');
 const getIdentityFixture = require('@dashevo/dpp/lib/test/fixtures/getIdentityFixture');
 const InvalidArgumentGrpcError = require('@dashevo/grpc-common/lib/server/error/InvalidArgumentGrpcError');
 const GrpcErrorCodes = require('@dashevo/grpc-common/lib/server/error/GrpcErrorCodes');
@@ -184,33 +183,6 @@ describe('DriveClient', () => {
 
       expect(drive.client.request).to.have.been.calledOnceWithExactly('abci_query', {
         path: '/identities/by-public-key-hash',
-        data: cbor.encode({ publicKeyHashes }).toString('hex'),
-        prove: true,
-      });
-      expect(result).to.be.deep.equal(buffer);
-    });
-  });
-
-  describe('#fetchIdentityIdsByPublicKeyHashes', () => {
-    it('Should call \'fetchIdentityIdsByPublicKeyHashes\' RPC with the given parameters', async () => {
-      const drive = new DriveClient({ host: '127.0.0.1', port: 3000 });
-
-      const identityId = generateRandomIdentifier();
-      const publicKeyHashes = [Buffer.alloc(1)];
-      const proof = Buffer.from('proof');
-      const buffer = cbor.encode({ data: [identityId], proof });
-
-      sinon.stub(drive.client, 'request')
-        .resolves({
-          result: {
-            response: { code: 0, value: buffer },
-          },
-        });
-
-      const result = await drive.fetchIdentityIdsByPublicKeyHashes(publicKeyHashes, true);
-
-      expect(drive.client.request).to.have.been.calledOnceWithExactly('abci_query', {
-        path: '/identities/by-public-key-hash/id',
         data: cbor.encode({ publicKeyHashes }).toString('hex'),
         prove: true,
       });
