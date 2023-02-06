@@ -197,6 +197,8 @@ mod tests {
         use crate::common::helpers::setup::setup_platform_raw;
         use crate::config::PlatformConfig;
 
+        // TODO: Should we remove this test in favor of strategy tests?
+
         #[test]
         fn test_abci_flow() {
             let platform = setup_platform_raw(Some(PlatformConfig {
