@@ -1,17 +1,14 @@
 use anyhow::{anyhow, Result};
+use dashcore::{consensus, BlockHeader};
 use std::convert::TryInto;
 
-use serde_json::{json, Value as JsonValue};
+use serde_json::json;
 
 use crate::{
-    contracts::withdrawals_contract,
-    data_contract::DataContract,
-    document::generate_document_id,
-    document::Document,
-    identity::state_transition::identity_credit_withdrawal_transition::Pooling,
-    state_repository::StateRepositoryLike,
-    state_transition::StateTransitionLike,
-    util::{entropy_generator::generate, json_value::JsonValueExt},
+    contracts::withdrawals_contract, data_contract::DataContract, document::generate_document_id,
+    document::Document, identity::state_transition::identity_credit_withdrawal_transition::Pooling,
+    state_repository::StateRepositoryLike, state_transition::StateTransitionLike,
+    util::entropy_generator::generate,
 };
 
 use super::{
@@ -55,17 +52,18 @@ where
         let withdrawals_data_contract = maybe_withdrawals_data_contract
             .ok_or_else(|| anyhow!("Withdrawals data contract not found"))?;
 
-        let latest_platform_block_header: JsonValue = self
+        let latest_platform_block_header_bytes: Vec<u8> = self
             .state_repository
             .fetch_latest_platform_block_header()
             .await?;
 
+        let latest_platform_block_header: BlockHeader =
+            consensus::deserialize(&latest_platform_block_header_bytes)?;
+
         let document_type = String::from(withdrawals_contract::types::WITHDRAWAL);
-        let document_created_at_millis = latest_platform_block_header
-            .get(PLATFORM_BLOCK_HEADER_TIME_PROPERTY)
-            .ok_or_else(|| anyhow!("time property is not set in block header"))?
-            .get_i64(PLATFORM_BLOCK_HEADER_TIME_SECONDS_PROPERTY)?
-            * 1000;
+        let document_created_at_millis: i64 = (latest_platform_block_header.time * 1000)
+            .try_into()
+            .map_err(|_| anyhow!("Can't convert block header time from u32 to i64"))?;
 
         let document_data = json!({
             withdrawals_contract::property_names::AMOUNT: state_transition.amount,

@@ -24,9 +24,9 @@ pub struct DefaultCoreRPC {
 
 impl DefaultCoreRPC {
     /// Create new instance
-    pub fn open(url: String, username: String, password: String) -> Result<Self, Error> {
+    pub fn open(url: &str, username: String, password: String) -> Result<Self, Error> {
         Ok(DefaultCoreRPC {
-            inner: Client::new(url.as_str(), Auth::UserPass(username, password))?,
+            inner: Client::new(url, Auth::UserPass(username, password))?,
         })
     }
 }
