@@ -7,6 +7,7 @@ use rand::{Rng, SeedableRng};
 pub const IDENTITY_PROTOCOL_VERSION: u32 = 1;
 
 impl Identity {
+    // TODO: Move to a separate module under a feature
     pub fn random_identity_with_rng(key_count: KeyCount, rng: &mut StdRng) -> Self {
         let id = Identifier::new(rng.gen::<[u8; 32]>());
         let revision = rng.gen_range(0..100);
@@ -29,6 +30,7 @@ impl Identity {
         }
     }
 
+    // TODO: Move to a separate module under a feature
     pub fn random_identity(key_count: KeyCount, seed: Option<u64>) -> Self {
         let mut rng = match seed {
             None => StdRng::from_entropy(),
@@ -37,6 +39,7 @@ impl Identity {
         Self::random_identity_with_rng(key_count, &mut rng)
     }
 
+    // TODO: Move to a separate module under a feature
     pub fn random_identities(count: u16, key_count: KeyCount, seed: Option<u64>) -> Vec<Self> {
         let mut rng = match seed {
             None => StdRng::from_entropy(),
@@ -45,6 +48,7 @@ impl Identity {
         Self::random_identities_with_rng(count, key_count, &mut rng)
     }
 
+    // TODO: Move to a separate module under a feature
     pub fn random_identities_with_rng(
         count: u16,
         key_count: KeyCount,
