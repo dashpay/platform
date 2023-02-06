@@ -144,14 +144,10 @@ mod tests {
 
         let mut drive_operations: Vec<DriveOperationType> = vec![];
 
-        let withdrawals = drive
+        drive
             .dequeue_withdrawal_transactions(16, Some(&transaction), &mut drive_operations)
             .expect("to dequeue withdrawals");
 
-        drive
-            .apply_drive_operations(drive_operations, true, &block_info, Some(&transaction))
-            .expect("to apply batch");
-
-        assert_eq!(withdrawals.len(), 0);
+        assert_eq!(drive_operations.len(), 0);
     }
 }
