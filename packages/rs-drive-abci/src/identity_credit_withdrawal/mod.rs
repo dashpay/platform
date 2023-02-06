@@ -514,24 +514,23 @@ mod tests {
     use drive::{rpc::core::MockCoreRPCLike, tests::helpers::setup::setup_document};
     use serde_json::json;
 
+    use crate::common::helpers::setup::setup_platform_with_initial_state_structure;
     use crate::common::helpers::setup::setup_system_data_contract;
 
-    use crate::common::helpers::setup::setup_platform_with_initial_state_structure;
     use dpp::identity::state_transition::identity_credit_withdrawal_transition::Pooling;
 
-    use crate::{
-        block::{BlockExecutionContext, BlockInfo},
-        execution::fee_pools::epoch::EpochInfo,
-    };
+    use crate::{block::BlockExecutionContext, execution::fee_pools::epoch::EpochInfo};
 
     mod update_withdrawal_statuses {
         use dpp::prelude::DataContract;
+
+        use crate::block::BlockStateInfo;
 
         use super::*;
 
         #[test]
         fn test_statuses_are_updated() {
-            let mut platform = setup_platform_with_initial_state_structure();
+            let mut platform = setup_platform_with_initial_state_structure(None);
 
             let mut mock_rpc_client = MockCoreRPCLike::new();
 
@@ -642,7 +641,7 @@ mod tests {
                 .update_broadcasted_withdrawal_transaction_statuses(
                     95,
                     &BlockExecutionContext {
-                        block_info: BlockInfo {
+                        block_info: BlockStateInfo {
                             block_height: 1,
                             block_time_ms: 1,
                             previous_block_time_ms: Some(1),
@@ -696,11 +695,13 @@ mod tests {
 
         use dpp::identity::state_transition::identity_credit_withdrawal_transition::Pooling;
 
+        use crate::block::BlockStateInfo;
+
         use super::*;
 
         #[test]
         fn test_pooling() {
-            let platform = setup_platform_with_initial_state_structure();
+            let platform = setup_platform_with_initial_state_structure(None);
 
             let transaction = platform.drive.grove.start_transaction();
 
@@ -749,7 +750,7 @@ mod tests {
             platform
                 .pool_withdrawals_into_transactions_queue(
                     &BlockExecutionContext {
-                        block_info: BlockInfo {
+                        block_info: BlockStateInfo {
                             block_height: 1,
                             block_time_ms: 1,
                             previous_block_time_ms: Some(1),
@@ -802,7 +803,7 @@ mod tests {
 
         #[test]
         fn test_fetches_core_transactions() {
-            let mut platform = setup_platform_with_initial_state_structure();
+            let mut platform = setup_platform_with_initial_state_structure(None);
 
             let mut mock_rpc_client = MockCoreRPCLike::new();
 
@@ -873,7 +874,7 @@ mod tests {
 
         #[test]
         fn test_build() {
-            let platform = setup_platform_with_initial_state_structure();
+            let platform = setup_platform_with_initial_state_structure(None);
 
             let transaction = platform.drive.grove.start_transaction();
 

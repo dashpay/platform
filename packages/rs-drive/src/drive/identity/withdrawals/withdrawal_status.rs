@@ -8,7 +8,7 @@ use grovedb::TransactionArg;
 use indexmap::IndexMap;
 
 use crate::{
-    drive::Drive,
+    drive::{query::QueryDocumentsOutcome, Drive},
     error::{drive::DriveError, Error},
     query::{DriveQuery, InternalClauses, OrderClause, WhereClause},
 };
@@ -85,7 +85,22 @@ impl Drive {
             block_time: None,
         };
 
-        let (documents, _) = self.query_documents(drive_query, transaction, &mut vec![])?;
+        let QueryDocumentsOutcome {
+            items,
+            skipped,
+            cost,
+        } = self.query_documents(drive_query, None, transaction)?;
+
+        let documents = items
+            .iter()
+            .map(|document_cbor| {
+                DocumentStub::from_cbor(document_cbor, None, None).map_err(|_| {
+                    Error::Drive(DriveError::CorruptedCodeExecution(
+                        "Can't  create document from CBOR",
+                    ))
+                })
+            })
+            .collect::<Result<Vec<DocumentStub>, Error>>()?;
 
         Ok(documents)
     }
@@ -151,7 +166,22 @@ impl Drive {
             block_time: None,
         };
 
-        let (documents, _) = self.query_documents(drive_query, transaction, &mut vec![])?;
+        let QueryDocumentsOutcome {
+            items,
+            skipped,
+            cost,
+        } = self.query_documents(drive_query, None, transaction)?;
+
+        let documents = items
+            .iter()
+            .map(|document_cbor| {
+                DocumentStub::from_cbor(document_cbor, None, None).map_err(|_| {
+                    Error::Drive(DriveError::CorruptedCodeExecution(
+                        "Can't  create document from CBOR",
+                    ))
+                })
+            })
+            .collect::<Result<Vec<DocumentStub>, Error>>()?;
 
         let document = documents
             .get(0)

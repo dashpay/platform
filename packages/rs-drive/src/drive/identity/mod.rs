@@ -51,7 +51,7 @@ mod insert;
 mod key;
 mod update;
 
-pub use withdrawal_queue::add_initial_withdrawal_state_structure_operations;
+pub use withdrawals::paths::add_initial_withdrawal_state_structure_operations;
 
 pub(crate) const IDENTITY_KEY: [u8; 1] = [0];
 

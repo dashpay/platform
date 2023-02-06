@@ -1,6 +1,7 @@
 use drive::drive::config::DriveConfig;
 
 /// Configuration for Dash Core RPC client
+#[derive(Clone, Debug)]
 pub struct CoreRpcConfig {
     /// Core RPC client url
     pub url: String,
@@ -13,6 +14,7 @@ pub struct CoreRpcConfig {
 }
 
 /// Configuration for Dash Core related things
+#[derive(Clone, Debug)]
 pub struct CoreConfig {
     /// Core RPC config
     pub rpc: CoreRpcConfig,

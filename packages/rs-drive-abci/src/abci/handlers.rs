@@ -199,6 +199,7 @@ mod tests {
     mod handlers {
         use crate::abci::handlers::TenderdashAbci;
         use crate::common::helpers::fee_pools::create_test_masternode_share_identities_and_documents;
+        use crate::config::PlatformConfig;
         use chrono::{Duration, Utc};
         use dashcore::hashes::hex::FromHex;
         use dashcore::BlockHash;
@@ -224,15 +225,13 @@ mod tests {
             AfterFinalizeBlockRequest, BlockBeginRequest, BlockEndRequest, BlockFees,
             InitChainRequest,
         };
-        use crate::common::helpers::setup::{
-            setup_platform, setup_platform_raw, setup_system_data_contract,
-        };
+        use crate::common::helpers::setup::{setup_platform_raw, setup_system_data_contract};
 
         #[test]
         fn test_abci_flow() {
             let mut platform = setup_platform_raw(Some(PlatformConfig {
-                drive_config: Default::default(),
                 verify_sum_trees: false,
+                ..Default::default()
             }));
 
             let mut core_rpc_mock = MockCoreRPCLike::new();
@@ -503,8 +502,8 @@ mod tests {
             // TODO refactor to remove code duplication
 
             let mut platform = setup_platform_raw(Some(PlatformConfig {
-                drive_config: Default::default(),
                 verify_sum_trees: false,
+                ..Default::default()
             }));
 
             let mut core_rpc_mock = MockCoreRPCLike::new();
