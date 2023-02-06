@@ -1,6 +1,7 @@
 use crate::drive::Drive;
 
 impl Drive {
+    // TODO: We deal with it in upcoming PR
     // /// Fetches the Identity's balance as PartialIdentityInfo from the backing store
     // /// Passing apply as false get the estimated cost instead
     // pub fn prove_identity_with_balance_with_cost(
