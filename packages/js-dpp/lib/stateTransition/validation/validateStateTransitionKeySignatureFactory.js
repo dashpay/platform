@@ -3,7 +3,6 @@ const InvalidStateTransitionSignatureError = require('../../errors/consensus/sig
 const ValidationResult = require('../../validation/ValidationResult');
 const SignatureVerificationOperation = require('../fee/operations/SignatureVerificationOperation');
 const { TYPES } = require('../../identity/IdentityPublicKey');
-const StateTransitionExecutionContext = require('../StateTransitionExecutionContext');
 const IdentityNotFoundError = require('../../errors/consensus/signature/IdentityNotFoundError');
 const stateTransitionTypes = require('../stateTransitionTypes');
 
@@ -32,20 +31,13 @@ function validateStateTransitionKeySignatureFactory(
     if (stateTransition.getType() === stateTransitionTypes.IDENTITY_TOP_UP) {
       const targetIdentityId = stateTransition.getIdentityId();
 
-      // We use temporary execution context without dry run,
-      // because despite the dryRun, we need to get the
-      // identity to proceed with following logic
-      const tmpExecutionContext = new StateTransitionExecutionContext();
-
-      // TODO: Change to get balance or create special identity exists method
-
       // Target identity must exist
-      const identity = await stateRepository.fetchIdentity(targetIdentityId, tmpExecutionContext);
+      const identityBalance = await stateRepository.fetchIdentityBalance(
+        targetIdentityId,
+        executionContext,
+      );
 
-      // Collect operations back from temporary context
-      executionContext.addOperation(...tmpExecutionContext.getOperations());
-
-      if (!identity) {
+      if (identityBalance === null) {
         result.addError(new IdentityNotFoundError(targetIdentityId.toBuffer()));
 
         return result;
