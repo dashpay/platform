@@ -5,7 +5,7 @@ use crate::abci::messages::{
 use crate::error::execution::ExecutionError;
 use crate::error::Error;
 use crate::platform::Platform;
-use drive::dpp::identity::PartialIdentityInfo;
+use drive::dpp::identity::PartialIdentity;
 use drive::drive::batch::DriveOperationType;
 use drive::drive::block_info::BlockInfo;
 use drive::error::Error::GroveDB;
@@ -17,7 +17,7 @@ pub enum ExecutionEvent<'a> {
     /// A drive event that is paid by an identity
     PaidDriveEvent {
         /// The identity requesting the event
-        identity: PartialIdentityInfo,
+        identity: PartialIdentity,
         /// Verify with dry run
         verify_balance_with_dry_run: bool,
         /// the operations that the identity is requesting to perform
@@ -33,7 +33,7 @@ pub enum ExecutionEvent<'a> {
 impl<'a> ExecutionEvent<'a> {
     /// Creates a new identity Insertion Event
     pub fn new_document_operation(
-        identity: PartialIdentityInfo,
+        identity: PartialIdentity,
         operation: DriveOperationType<'a>,
     ) -> Self {
         Self::PaidDriveEvent {
@@ -44,7 +44,7 @@ impl<'a> ExecutionEvent<'a> {
     }
     /// Creates a new identity Insertion Event
     pub fn new_contract_operation(
-        identity: PartialIdentityInfo,
+        identity: PartialIdentity,
         operation: DriveOperationType<'a>,
     ) -> Self {
         Self::PaidDriveEvent {
@@ -55,7 +55,7 @@ impl<'a> ExecutionEvent<'a> {
     }
     /// Creates a new identity Insertion Event
     pub fn new_identity_insertion(
-        identity: PartialIdentityInfo,
+        identity: PartialIdentity,
         operations: Vec<DriveOperationType<'a>>,
     ) -> Self {
         Self::PaidDriveEvent {

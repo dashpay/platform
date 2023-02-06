@@ -34,7 +34,7 @@ use crate::DocumentAction::{DocumentActionDelete, DocumentActionInsert};
 use drive::common::helpers::identities::create_test_masternode_identities_with_rng;
 use drive::contract::{Contract, CreateRandomDocument, DocumentType};
 use drive::dpp::document::document_stub::DocumentStub;
-use drive::dpp::identity::{Identity, KeyID, PartialIdentityInfo};
+use drive::dpp::identity::{Identity, KeyID, PartialIdentity};
 use drive::drive::batch::{
     ContractOperationType, DocumentOperationType, DriveOperationType, IdentityOperationType,
     SystemOperationType,
@@ -154,7 +154,7 @@ impl Strategy {
         block_info: &BlockInfo,
         current_identities: &Vec<Identity>,
         rng: &mut StdRng,
-    ) -> Vec<(PartialIdentityInfo, DriveOperationType)> {
+    ) -> Vec<(PartialIdentity, DriveOperationType)> {
         let mut operations = vec![];
         for (op, frequency) in &self.operations {
             if frequency.check_hit(rng) {

@@ -6,7 +6,7 @@ use crate::fee::op::DriveOperation;
 use crate::fee::result::FeeResult;
 use crate::fee_pools::epochs::Epoch;
 use dpp::identifier::Identifier;
-use dpp::identity::PartialIdentityInfo;
+use dpp::identity::PartialIdentity;
 use grovedb::TransactionArg;
 
 impl Drive {
@@ -16,7 +16,7 @@ impl Drive {
         &self,
         identity_id: [u8; 32],
         transaction: TransactionArg,
-    ) -> Result<Option<PartialIdentityInfo>, Error> {
+    ) -> Result<Option<PartialIdentity>, Error> {
         let mut drive_operations: Vec<DriveOperation> = vec![];
         Ok(self
             .fetch_identity_balance_operations(
@@ -25,7 +25,7 @@ impl Drive {
                 transaction,
                 &mut drive_operations,
             )?
-            .map(|balance| PartialIdentityInfo {
+            .map(|balance| PartialIdentity {
                 id: Identifier::new(identity_id),
                 loaded_public_keys: Default::default(),
                 balance: Some(balance),
@@ -41,7 +41,7 @@ impl Drive {
         apply: bool,
         epoch: &Epoch,
         transaction: TransactionArg,
-    ) -> Result<(Option<PartialIdentityInfo>, FeeResult), Error> {
+    ) -> Result<(Option<PartialIdentity>, FeeResult), Error> {
         let balance_cost = epoch.cost_for_known_cost_item(FetchIdentityBalanceProcessingCost);
         if !apply {
             return Ok((None, FeeResult::new_from_processing_fee(balance_cost)));
@@ -54,7 +54,7 @@ impl Drive {
                 transaction,
                 &mut drive_operations,
             )?
-            .map(|balance| PartialIdentityInfo {
+            .map(|balance| PartialIdentity {
                 id: Identifier::new(identity_id),
                 loaded_public_keys: Default::default(),
                 balance: Some(balance),
@@ -70,7 +70,7 @@ impl Drive {
         &self,
         identity_key_request: IdentityKeysRequest,
         transaction: TransactionArg,
-    ) -> Result<Option<PartialIdentityInfo>, Error> {
+    ) -> Result<Option<PartialIdentity>, Error> {
         let id = Identifier::new(identity_key_request.identity_id);
         let balance = self.fetch_identity_balance(identity_key_request.identity_id, transaction)?;
         let Some(balance) = balance else {
@@ -81,7 +81,7 @@ impl Drive {
             identity_key_request,
             transaction,
         )?;
-        Ok(Some(PartialIdentityInfo {
+        Ok(Some(PartialIdentity {
             id,
             loaded_public_keys,
             balance: Some(balance),
@@ -97,7 +97,7 @@ impl Drive {
         apply: bool,
         epoch: &Epoch,
         transaction: TransactionArg,
-    ) -> Result<(Option<PartialIdentityInfo>, FeeResult), Error> {
+    ) -> Result<(Option<PartialIdentity>, FeeResult), Error> {
         let balance_cost = epoch.cost_for_known_cost_item(FetchIdentityBalanceProcessingCost);
         if !apply {
             let keys_cost = identity_key_request.processing_cost(epoch)?;
@@ -120,7 +120,7 @@ impl Drive {
             transaction,
         )?;
         Ok((
-            Some(PartialIdentityInfo {
+            Some(PartialIdentity {
                 id,
                 loaded_public_keys,
                 balance: Some(balance),
