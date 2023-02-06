@@ -1,13 +1,16 @@
+use std::collections::BTreeMap;
+
 use dpp::{
-    contracts::withdrawals_contract, document::document_stub::DocumentStub,
-    util::serializer,
+    contracts::withdrawals_contract, data_contract::DriveContractExt,
+    document::document_stub::DocumentStub,
 };
 use grovedb::TransactionArg;
-use serde_json::json;
+use indexmap::IndexMap;
 
 use crate::{
     drive::Drive,
     error::{drive::DriveError, Error},
+    query::{DriveQuery, InternalClauses, OrderClause, WhereClause},
 };
 
 impl Drive {
@@ -17,36 +20,72 @@ impl Drive {
         status: u8,
         transaction: TransactionArg,
     ) -> Result<Vec<DocumentStub>, Error> {
-        let query_value = json!({
-            "where": [
-                [withdrawals_contract::property_names::OWNER_ID, "==", withdrawals_contract::OWNER_ID.clone()],
-                [withdrawals_contract::property_names::STATUS, "==", status],
-            ],
-            "orderBy": [
-                [withdrawals_contract::property_names::CREATE_AT, "desc"],
-            ]
-        });
+        let data_contract_id = withdrawals_contract::CONTRACT_ID.clone();
 
-        let query_cbor = serializer::value_to_cbor(query_value, None)?;
+        let contract_fetch_info = self
+            .fetch_contract(data_contract_id.to_buffer(), None, transaction)
+            .unwrap()?
+            .ok_or_else(|| {
+                Error::Drive(DriveError::CorruptedCodeExecution(
+                    "Can't fetch data contract",
+                ))
+            })?;
 
-        let (documents, _, _) = self.query_raw_documents_using_cbor_encoded_query_with_cost(
-            &query_cbor,
-            withdrawals_contract::CONTRACT_ID.clone().to_buffer(),
-            withdrawals_contract::types::WITHDRAWAL,
-            None,
-            transaction,
-        )?;
+        let document_type = contract_fetch_info
+            .contract
+            .document_type_for_name(withdrawals_contract::types::WITHDRAWAL)?;
 
-        let documents = documents
-            .into_iter()
-            .map(|document_cbor| {
-                DocumentStub::from_cbor(&document_cbor, None, None).map_err(|_| {
-                    Error::Drive(DriveError::CorruptedCodeExecution(
-                        "Can't create a document from cbor",
-                    ))
-                })
-            })
-            .collect::<Result<Vec<DocumentStub>, Error>>()?;
+        let mut where_clauses = BTreeMap::new();
+
+        where_clauses.insert(
+            withdrawals_contract::property_names::OWNER_ID.to_string(),
+            WhereClause {
+                field: withdrawals_contract::property_names::OWNER_ID.to_string(),
+                operator: crate::query::WhereOperator::Equal,
+                value: ciborium::Value::Bytes(
+                    withdrawals_contract::OWNER_ID.clone().to_buffer().to_vec(),
+                ),
+            },
+        );
+
+        where_clauses.insert(
+            withdrawals_contract::property_names::STATUS.to_string(),
+            WhereClause {
+                field: withdrawals_contract::property_names::STATUS.to_string(),
+                operator: crate::query::WhereOperator::Equal,
+                value: ciborium::Value::Integer(status.into()),
+            },
+        );
+
+        let mut order_by = IndexMap::new();
+
+        order_by.insert(
+            withdrawals_contract::property_names::CREATE_AT.to_string(),
+            OrderClause {
+                field: withdrawals_contract::property_names::CREATE_AT.to_string(),
+                ascending: false,
+            },
+        );
+
+        let drive_query = DriveQuery {
+            contract: &contract_fetch_info.contract,
+            document_type: document_type,
+            internal_clauses: InternalClauses {
+                primary_key_in_clause: None,
+                primary_key_equal_clause: None,
+                in_clause: None,
+                range_clause: None,
+                equal_clauses: where_clauses,
+            },
+            offset: 0,
+            limit: 100,
+            order_by,
+            start_at: None,
+            start_at_included: false,
+            block_time: None,
+        };
+
+        let (documents, _) = self.query_documents(drive_query, transaction, &mut vec![])?;
 
         Ok(documents)
     }
@@ -59,33 +98,60 @@ impl Drive {
     ) -> Result<DocumentStub, Error> {
         let data_contract_id = withdrawals_contract::CONTRACT_ID.clone();
 
-        let query_value = json!({
-            "where": [
-                [withdrawals_contract::property_names::TRANSACTION_ID, "==", original_transaction_id],
-                [withdrawals_contract::property_names::STATUS, "==", withdrawals_contract::Status::POOLED],
-            ],
-        });
+        let contract_fetch_info = self
+            .fetch_contract(data_contract_id.to_buffer(), None, transaction)
+            .unwrap()?
+            .ok_or_else(|| {
+                Error::Drive(DriveError::CorruptedCodeExecution(
+                    "Can't fetch data contract",
+                ))
+            })?;
 
-        let query_cbor = serializer::value_to_cbor(query_value, None)?;
+        let document_type = contract_fetch_info
+            .contract
+            .document_type_for_name(withdrawals_contract::types::WITHDRAWAL)?;
 
-        let (documents, _, _) = self.query_raw_documents_using_cbor_encoded_query_with_cost(
-            &query_cbor,
-            data_contract_id.to_buffer(),
-            withdrawals_contract::types::WITHDRAWAL,
-            None,
-            transaction,
-        )?;
+        let mut where_clauses = BTreeMap::new();
 
-        let documents = documents
-            .into_iter()
-            .map(|document_cbor| {
-                DocumentStub::from_cbor(&document_cbor, None, None).map_err(|_| {
-                    Error::Drive(DriveError::CorruptedCodeExecution(
-                        "Can't create a document from cbor",
-                    ))
-                })
-            })
-            .collect::<Result<Vec<DocumentStub>, Error>>()?;
+        where_clauses.insert(
+            withdrawals_contract::property_names::TRANSACTION_ID.to_string(),
+            WhereClause {
+                field: withdrawals_contract::property_names::TRANSACTION_ID.to_string(),
+                operator: crate::query::WhereOperator::Equal,
+                value: ciborium::Value::Bytes(original_transaction_id.to_vec()),
+            },
+        );
+
+        where_clauses.insert(
+            withdrawals_contract::property_names::STATUS.to_string(),
+            WhereClause {
+                field: withdrawals_contract::property_names::STATUS.to_string(),
+                operator: crate::query::WhereOperator::Equal,
+                value: ciborium::Value::Integer(
+                    (withdrawals_contract::Status::POOLED as u8).into(),
+                ),
+            },
+        );
+
+        let drive_query = DriveQuery {
+            contract: &contract_fetch_info.contract,
+            document_type: document_type,
+            internal_clauses: InternalClauses {
+                primary_key_in_clause: None,
+                primary_key_equal_clause: None,
+                in_clause: None,
+                range_clause: None,
+                equal_clauses: where_clauses,
+            },
+            offset: 0,
+            limit: 100,
+            order_by: IndexMap::new(),
+            start_at: None,
+            start_at_included: false,
+            block_time: None,
+        };
+
+        let (documents, _) = self.query_documents(drive_query, transaction, &mut vec![])?;
 
         let document = documents
             .get(0)
