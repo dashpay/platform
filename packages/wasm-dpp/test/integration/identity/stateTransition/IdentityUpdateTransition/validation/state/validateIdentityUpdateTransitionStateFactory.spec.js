@@ -1,5 +1,6 @@
 const { BlockHeader } = require('@dashevo/dashcore-lib');
 
+const identitySchema = require('@dashevo/dpp/schema/identity/identity.json');
 const createStateRepositoryMock = require('@dashevo/dpp/lib/test/mocks/createStateRepositoryMock');
 const getIdentityUpdateTransitionFixture = require('@dashevo/dpp/lib/test/fixtures/getIdentityUpdateTransitionFixture');
 const getIdentityFixture = require('@dashevo/dpp/lib/test/fixtures/getIdentityFixture');
@@ -30,7 +31,7 @@ describe('validateIdentityUpdateTransitionStateFactory', () => {
   let InvalidIdentityPublicKeyIdError;
   let MissingMasterPublicKeyError;
   let IdentityPublicKeyDisabledAtWindowViolationError;
-  let DuplicatedIdentityPublicKeyIdStateError;
+  let MaxIdentityPublicKeyLimitReachedError;
   let StateTransitionExecutionContext;
   let IdentityUpdateTransitionStateValidator;
 
@@ -44,7 +45,7 @@ describe('validateIdentityUpdateTransitionStateFactory', () => {
       IdentityPublicKeyIsDisabledError,
       InvalidIdentityPublicKeyIdError,
       IdentityPublicKeyDisabledAtWindowViolationError,
-      DuplicatedIdentityPublicKeyIdStateError,
+      MaxIdentityPublicKeyLimitReachedError,
       StateTransitionExecutionContext,
       IdentityUpdateTransitionStateValidator,
       MissingMasterPublicKeyError,
@@ -73,6 +74,11 @@ describe('validateIdentityUpdateTransitionStateFactory', () => {
       bits: 0,
       nonce: 1449878271,
     });
+
+    // TODO: This method is deprecated and removed from JS DPP. Update to new methods:
+    //  fetchLatestPlatformBlockHeight, fetchLatestPlatformCoreChainLockedHeight,
+    //  fetchLatestPlatformBlockTime
+    stateRepositoryMock.fetchLatestPlatformBlockHeader = this.sinonSandbox.stub();
 
     stateRepositoryMock.fetchLatestPlatformBlockHeader.resolves(header.toBuffer());
 
@@ -250,19 +256,21 @@ describe('validateIdentityUpdateTransitionStateFactory', () => {
   });
 
   it('should validate public keys to add', async () => {
-    // Set duplicated keys
-    const firstKey = identity.getPublicKeys()[0];
-    identity.setPublicKeys([
-      firstKey,
-      firstKey,
-    ]);
+    // Reach max allowed public keys to fail validation
+    const { maxItems } = identitySchema.properties.publicKeys;
+
+    const firstKey = identity.getPublicKeys()[0].toObject();
+    const keys = Array.from({ length: maxItems + 1 })
+      .map((_, index) => new IdentityPublicKey({ ...firstKey, id: index }));
+    identity.setPublicKeys(keys);
+
     const result = await validateIdentityUpdateTransitionState(stateTransition);
 
-    await expectValidationError(result, DuplicatedIdentityPublicKeyIdStateError);
+    await expectValidationError(result, MaxIdentityPublicKeyLimitReachedError);
   });
 
   // TODO: remove?
-  // Skipped, because two tests above are enough
+  // Skipped, because two tests above are seem to be enough
   it.skip('should validate resulting identity public keys', async () => {
     const publicKeysError = new SomeConsensusError('test');
 

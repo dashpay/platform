@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
 use chrono::Utc;
-use dashcore::{consensus, BlockHeader};
+use dashcore::consensus;
 
 use crate::{
     block_time_window::validate_time_in_block_time_window::BLOCK_TIME_WINDOW_MILLIS,
@@ -119,7 +119,7 @@ async fn should_return_identity_public_key_is_read_only_error_if_disabling_publi
         mut state_transition,
         ..
     } = setup_test();
-    identity.public_keys.get_mut(0).unwrap().read_only = true;
+    identity.public_keys.get_mut(&0).unwrap().read_only = true;
     state_transition.set_public_key_ids_to_disable(vec![0]);
 
     let identity_to_return = identity.clone();
@@ -154,7 +154,7 @@ async fn should_return_error_if_disabling_public_key_is_already_disabled() {
         mut state_transition,
         ..
     } = setup_test();
-    identity.public_keys.get_mut(0).unwrap().disabled_at =
+    identity.public_keys.get_mut(&0).unwrap().disabled_at =
         Some(Utc::now().timestamp_millis() as u64);
     state_transition.set_public_key_ids_to_disable(vec![0]);
 
@@ -282,7 +282,7 @@ async fn should_pass_when_adding_public_key() {
         .validate(&state_transition)
         .await
         .expect("the validation result should be returned");
-    assert!(result.is_valid());
+    assert!(result.is_valid(), "{:?}", result.errors);
 }
 
 #[tokio::test]
@@ -319,10 +319,13 @@ async fn should_validate_purpose_and_security_level() {
 
     // the identity after transition must contain at least one
     // key with: purpose: AUTHENTICATION AND security level: MASTER
-    identity.get_public_keys_mut().iter_mut().for_each(|k| {
-        k.purpose = Purpose::ENCRYPTION;
-        k.security_level = SecurityLevel::CRITICAL;
-    });
+    identity
+        .get_public_keys_mut()
+        .iter_mut()
+        .for_each(|(_, k)| {
+            k.purpose = Purpose::ENCRYPTION;
+            k.security_level = SecurityLevel::CRITICAL;
+        });
     state_transition
         .get_public_keys_to_add_mut()
         .iter_mut()

@@ -4,8 +4,6 @@ const IdentityPublicKey = require('@dashevo/dpp/lib/identity/IdentityPublicKey')
  * @param {DashPlatformProtocol} dpp
  * @param {IdentityStoreRepository} identityRepository
  * @param {DataContractStoreRepository} dataContractRepository
- * @param {PublicKeyToIdentitiesStoreRepository} publicKeyToIdentitiesRepository
- * @param {LRUCache} dataContractCache
  *
  * @return {registerSystemDataContract}
  */
@@ -13,7 +11,6 @@ function registerSystemDataContractFactory(
   dpp,
   identityRepository,
   dataContractRepository,
-  publicKeyToIdentitiesRepository,
 ) {
   /**
    * @typedef registerSystemDataContract
@@ -50,11 +47,7 @@ function registerSystemDataContractFactory(
       }],
     );
 
-    await identityRepository.create(ownerIdentity, {
-      useTransaction: true,
-    });
-
-    await publicKeyToIdentitiesRepository.store(masterPublicKey.hash, ownerId, {
+    await identityRepository.create(ownerIdentity, blockInfo, {
       useTransaction: true,
     });
 

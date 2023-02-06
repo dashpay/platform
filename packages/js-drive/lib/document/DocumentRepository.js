@@ -26,7 +26,7 @@ class DocumentRepository {
    * Create document
    *
    * @param {Document} document
-   * @param {RawBlockInfo} blockInfo
+   * @param {BlockInfo} blockInfo
    * @param {Object} [options]
    * @param {boolean} [options.useTransaction=false]
    * @param {boolean} [options.dryRun=false]
@@ -71,7 +71,7 @@ class DocumentRepository {
    * Update document
    *
    * @param {Document} document
-   * @param {RawBlockInfo} blockInfo
+   * @param {BlockInfo} blockInfo
    * @param {Object} [options]
    * @param {boolean} [options.useTransaction=false]
    * @param {boolean} [options.dryRun=false]
@@ -170,7 +170,7 @@ class DocumentRepository {
       return new StorageResult(
         documents,
         [
-          new PreCalculatedOperation(new DummyFeeResult(0, processingCost)),
+          new PreCalculatedOperation(new DummyFeeResult(0, processingCost, [])),
         ],
       );
     } catch (e) {
@@ -198,7 +198,7 @@ class DocumentRepository {
    * @param {DataContract} dataContract
    * @param {string} documentType
    * @param {Identifier} id
-   * @param {RawBlockInfo} blockInfo
+   * @param {BlockInfo} blockInfo
    * @param {Object} [options]
    * @param {boolean} [options.useTransaction=false]
    * @param {boolean} [options.dryRun=false]
@@ -273,7 +273,7 @@ class DocumentRepository {
       return new StorageResult(
         prove,
         [
-          new PreCalculatedOperation(new DummyFeeResult(0, processingCost)),
+          new PreCalculatedOperation(new DummyFeeResult(0, processingCost, [])),
         ],
       );
     } catch (e) {

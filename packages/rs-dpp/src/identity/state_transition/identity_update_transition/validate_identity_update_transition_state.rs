@@ -72,7 +72,7 @@ where
         if identity.get_revision() != (state_transition.get_revision() - 1) {
             validation_result.add_error(StateError::InvalidIdentityRevisionError {
                 identity_id: state_transition.get_identity_id().to_owned(),
-                current_revision: identity.get_revision() as u32,
+                current_revision: identity.get_revision(),
             });
             return Ok(validation_result);
         }
@@ -102,16 +102,6 @@ where
         }
 
         if !state_transition.get_public_key_ids_to_disable().is_empty() {
-            // Keys can only be disabled if another valid key is enabled in the same security level
-            for key_id in state_transition.get_public_key_ids_to_disable().iter() {
-                // the `unwrap()` can be used as the presence if of `key_id` is guaranteed by previous
-                // validation
-                identity
-                    .get_public_key_by_id_mut(*key_id)
-                    .unwrap()
-                    .disabled_at = state_transition.get_public_keys_disabled_at();
-            }
-
             let block_header_bytes = self
                 .state_repository
                 .fetch_latest_platform_block_header()
@@ -122,50 +112,58 @@ where
                 .map_err(|e| NonConsensusError::from(anyhow!(e.to_string())))?;
 
             let last_block_header_time = block_header.time as u64 * 1000;
-            let disabled_at_time = state_transition.get_public_keys_disabled_at().ok_or(
+            let disabled_at_ms = state_transition.get_public_keys_disabled_at().ok_or(
                 NonConsensusError::RequiredPropertyError {
                     property_name: property_names::PUBLIC_KEYS_DISABLED_AT.to_owned(),
                 },
             )?;
             let window_validation_result =
-                validate_time_in_block_time_window(last_block_header_time, disabled_at_time);
+                validate_time_in_block_time_window(last_block_header_time, disabled_at_ms);
 
             if !window_validation_result.is_valid() {
                 validation_result.add_error(
                     StateError::IdentityPublicKeyDisabledAtWindowViolationError {
-                        disabled_at: disabled_at_time,
+                        disabled_at: disabled_at_ms,
                         time_window_start: window_validation_result.time_window_start,
                         time_window_end: window_validation_result.time_window_end,
                     },
                 );
                 return Ok(validation_result);
             }
-        }
 
-        let mut raw_public_keys: Vec<Value> = identity
-            .public_keys
-            .iter()
-            .map(|pk| pk.to_raw_json_object(false))
-            .collect::<Result<_, SerdeParsingError>>()?;
+            // Keys can only be disabled if another valid key is enabled in the same security level
+            for key_id in state_transition.get_public_key_ids_to_disable().iter() {
+                let key =
+                    identity
+                        .get_public_key_by_id_mut(*key_id)
+                        .ok_or(NonConsensusError::Error(anyhow!(
+                            "public key must be present since it already validated during basic/stateless validation"
+                        )))?;
 
-        if !state_transition.get_public_keys_to_add().is_empty() {
-            identity.add_public_keys(state_transition.get_public_keys_to_add().iter().cloned());
-
-            raw_public_keys = identity
-                .get_public_keys()
-                .iter()
-                .map(|pk| pk.to_raw_json_object(false))
-                .collect::<Result<_, SerdeParsingError>>()?;
-
-            let result = self.public_keys_validator.validate_keys(&raw_public_keys)?;
-            if !result.is_valid() {
-                return Ok(result);
+                key.set_disabled_at(disabled_at_ms);
             }
         }
 
-        let validator = RequiredPurposeAndSecurityLevelValidator {};
-        let result = validator.validate_keys(&raw_public_keys)?;
+        identity.add_public_keys(
+            state_transition
+                .get_public_keys_to_add()
+                .iter()
+                .cloned()
+                .map(|k| k.to_identity_public_key()),
+        );
 
-        Ok(result)
+        let raw_public_keys: Vec<Value> = identity
+            .public_keys
+            .values()
+            .map(|pk| pk.to_raw_json_object())
+            .collect::<Result<_, SerdeParsingError>>()?;
+
+        let result = self.public_keys_validator.validate_keys(&raw_public_keys)?;
+        if !result.is_valid() {
+            return Ok(result);
+        }
+
+        let validator = RequiredPurposeAndSecurityLevelValidator {};
+        validator.validate_keys(&raw_public_keys)
     }
 }

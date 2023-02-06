@@ -118,7 +118,7 @@ impl IdentifierWrapper {
     #[wasm_bindgen(js_name=clone)]
     pub fn deep_clone(&self) -> IdentifierWrapper {
         IdentifierWrapper {
-            wrapped: self.wrapped.clone(),
+            wrapped: self.wrapped,
         }
     }
 }

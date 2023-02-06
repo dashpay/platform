@@ -39,7 +39,7 @@ impl BlsModule for NativeBlsModule {
         let pk = PublicKey::from_bytes(public_key).map_err(anyhow::Error::msg)?;
         let signature =
             bls_signatures::Signature::from_bytes(signature).map_err(anyhow::Error::msg)?;
-        match verify_messages(&signature, &[&data], &[pk]) {
+        match verify_messages(&signature, &[data], &[pk]) {
             true => Ok(true),
             // TODO change to specific error type
             false => Err(anyhow!("Verification failed").into()),

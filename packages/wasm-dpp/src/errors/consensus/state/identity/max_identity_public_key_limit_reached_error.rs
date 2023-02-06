@@ -2,6 +2,7 @@ use wasm_bindgen::prelude::*;
 
 #[wasm_bindgen(js_name=MaxIdentityPublicKeyLimitReachedError)]
 pub struct MaxIdentityPublicKeyLimitReachedErrorWasm {
+    // TODO we can't use usize otherwise it might be a big int in JS if count is too high
     max_items: usize,
     code: u32,
 }

@@ -152,7 +152,7 @@ fn validate_uniqueness<'a>(
         }
 
         validation_result.add_error(StateError::DuplicateUniqueIndexError {
-            document_id: futures_meta[i].1.base().id.clone(),
+            document_id: futures_meta[i].1.base().id,
             duplicating_properties: futures_meta[i]
                 .0
                 .properties
