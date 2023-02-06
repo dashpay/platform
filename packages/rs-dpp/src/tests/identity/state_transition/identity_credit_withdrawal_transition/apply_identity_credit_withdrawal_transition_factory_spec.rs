@@ -1,5 +1,6 @@
 #[cfg(test)]
 mod apply_identity_credit_withdrawal_transition_factory {
+    use dashcore::{consensus, BlockHeader};
     use serde_json::json;
 
     use crate::{
@@ -17,20 +18,12 @@ mod apply_identity_credit_withdrawal_transition_factory {
 
     #[tokio::test]
     async fn should_fail_if_data_contract_was_not_found() {
-        let state_transition = IdentityCreditWithdrawalTransition::default();
-
         let mut state_repository = MockStateRepositoryLike::default();
 
         let state_transition = IdentityCreditWithdrawalTransition {
             amount: 10,
             ..Default::default()
         };
-
-        let IdentityCreditWithdrawalTransition {
-            identity_id,
-            amount,
-            ..
-        } = state_transition.clone();
 
         state_repository
             .expect_fetch_data_contract()
@@ -52,7 +45,7 @@ mod apply_identity_credit_withdrawal_transition_factory {
 
     #[tokio::test]
     async fn should_call_state_repository_methods() {
-        let block_time_seconds = 1669260925;
+        let block_time_seconds = 1675709306;
 
         let mut state_transition = IdentityCreditWithdrawalTransition::default();
 
@@ -72,14 +65,25 @@ mod apply_identity_credit_withdrawal_transition_factory {
         state_repository
             .expect_fetch_latest_platform_block_header()
             .times(1)
-            .returning(move || anyhow::Ok(json!({"time": {"seconds": block_time_seconds}})));
+            .returning(move || {
+                let header = BlockHeader {
+                    time: block_time_seconds,
+                    version: 1,
+                    prev_blockhash: Default::default(),
+                    merkle_root: Default::default(),
+                    bits: Default::default(),
+                    nonce: Default::default(),
+                };
+
+                anyhow::Ok(consensus::serialize(&header))
+            });
 
         state_repository
             .expect_create_document()
             .times(1)
             .withf(move |doc, _| {
-                let created_at_match = doc.created_at == Some(block_time_seconds * 1000);
-                let updated_at_match = doc.created_at == Some(block_time_seconds * 1000);
+                let created_at_match = doc.created_at == Some((block_time_seconds * 1000) as i64);
+                let updated_at_match = doc.created_at == Some((block_time_seconds * 1000) as i64);
 
                 let document_data_match = doc.data
                     == json!({
@@ -98,13 +102,17 @@ mod apply_identity_credit_withdrawal_transition_factory {
             .expect_remove_from_identity_balance()
             .times(1)
             // TODO: we need to assert execution context as well
-            .with(eq(identity_id), eq(amount), always())
+            .with(
+                eq(state_transition.identity_id),
+                eq(state_transition.amount),
+                always(),
+            )
             .returning(|_, _, _| anyhow::Ok(()));
 
         state_repository
             .expect_remove_from_system_credits()
             .times(1)
-            .with(eq(amount), always())
+            .with(eq(state_transition.amount), always())
             .returning(|_, _| anyhow::Ok(()));
 
         let applier = ApplyIdentityCreditWithdrawalTransition::new(state_repository);

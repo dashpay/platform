@@ -413,8 +413,8 @@ mod tests {
             },
         };
         let config = PlatformConfig {
-            drive_config: Default::default(),
             verify_sum_trees: true,
+            ..Default::default()
         };
         run_chain_for_strategy(1000, 3000, strategy, config, 15);
     }
@@ -430,8 +430,8 @@ mod tests {
             },
         };
         let config = PlatformConfig {
-            drive_config: Default::default(),
             verify_sum_trees: true,
+            ..Default::default()
         };
         let outcome = run_chain_for_strategy(100, 3000, strategy, config, 15);
 
@@ -449,8 +449,8 @@ mod tests {
             },
         };
         let config = PlatformConfig {
-            drive_config: Default::default(),
             verify_sum_trees: true,
+            ..Default::default()
         };
         let day_in_ms = 1000 * 60 * 60 * 24;
         let outcome = run_chain_for_strategy(150, day_in_ms, strategy, config, 15);
@@ -482,8 +482,8 @@ mod tests {
             },
         };
         let config = PlatformConfig {
-            drive_config: Default::default(),
             verify_sum_trees: true,
+            ..Default::default()
         };
         run_chain_for_strategy(1, 3000, strategy, config, 15);
     }
@@ -522,8 +522,8 @@ mod tests {
             },
         };
         let config = PlatformConfig {
-            drive_config: Default::default(),
             verify_sum_trees: true,
+            ..Default::default()
         };
         run_chain_for_strategy(100, 3000, strategy, config, 15);
     }
@@ -562,8 +562,8 @@ mod tests {
             },
         };
         let config = PlatformConfig {
-            drive_config: Default::default(),
             verify_sum_trees: true,
+            ..Default::default()
         };
         let day_in_ms = 1000 * 60 * 60 * 24;
         let block_count = 120;
@@ -630,8 +630,8 @@ mod tests {
             },
         };
         let config = PlatformConfig {
-            drive_config: Default::default(),
             verify_sum_trees: true,
+            ..Default::default()
         };
         let day_in_ms = 1000 * 60 * 60 * 24;
         let block_count = 120;
@@ -698,8 +698,8 @@ mod tests {
             },
         };
         let config = PlatformConfig {
-            drive_config: Default::default(),
             verify_sum_trees: true,
+            ..Default::default()
         };
         let day_in_ms = 1000 * 60 * 60 * 24;
         let block_count = 120;
@@ -766,8 +766,8 @@ mod tests {
             },
         };
         let config = PlatformConfig {
-            drive_config: Default::default(),
             verify_sum_trees: true,
+            ..Default::default()
         };
         let day_in_ms = 1000 * 60 * 60 * 24;
         let block_count = 30;

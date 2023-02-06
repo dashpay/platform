@@ -1,20 +1,17 @@
 mod converter;
 mod fee;
 
+use drive::drive::config::DriveConfig;
 use drive_abci::config::{CoreConfig, CoreRpcConfig, PlatformConfig};
-use std::num::ParseIntError;
 
 use std::ops::Deref;
 use std::{option::Option::None, path::Path, sync::mpsc, thread};
 
 use crate::converter::js_object_to_fee_refunds;
 use crate::fee::result::FeeResultWrapper;
-use drive::dpp::identity::Identity;
 
 use drive::dpp::identity::{KeyID, TimestampMillis};
 use drive::dpp::prelude::Revision;
-use drive::drive::batch::GroveDbOpBatch;
-use drive::drive::config::DriveConfig;
 use drive::drive::flags::StorageFlags;
 use drive::drive::query::QueryDocumentsOutcome;
 use drive::error::Error;
@@ -27,7 +24,6 @@ use drive_abci::abci::messages::{
     AfterFinalizeBlockRequest, BlockBeginRequest, BlockEndRequest, BlockFees, InitChainRequest,
     Serializable,
 };
-use drive_abci::config::PlatformConfig;
 use drive_abci::platform::Platform;
 use fee::js_calculate_storage_fee_distribution_amount_and_leftovers;
 use neon::prelude::*;

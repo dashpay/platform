@@ -47,7 +47,7 @@ use tempfile::TempDir;
 pub fn setup_platform_raw(config: Option<PlatformConfig>) -> Platform {
     let tmp_dir = TempDir::new().unwrap();
 
-    let platform: Platform =
+    let mut platform: Platform =
         Platform::open(tmp_dir, config).expect("should open Platform successfully");
 
     platform.mock_core_rpc_client();
@@ -57,7 +57,8 @@ pub fn setup_platform_raw(config: Option<PlatformConfig>) -> Platform {
 
 /// A function which sets up Platform with its initial state structure.
 pub fn setup_platform_with_initial_state_structure(config: Option<PlatformConfig>) -> Platform {
-    let platform = setup_platform_raw(config);
+    let mut platform = setup_platform_raw(config);
+
     platform
         .drive
         .create_initial_state_structure(None)

@@ -159,6 +159,8 @@ impl Platform {
                 .map(|block_info| block_info.time_ms),
             proposer_pro_tx_hash: proposer,
             validator_set_quorum_hash: Default::default(),
+            last_synced_core_height: 1,
+            core_chain_locked_height: 1,
         };
 
         // println!("Block #{}", block_info.height);

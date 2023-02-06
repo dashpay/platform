@@ -215,7 +215,7 @@ impl Drive {
     }
 
     /// Performs and returns the result of the specified query along with skipped items and the cost.
-    pub fn query_documentss_from_contract(
+    pub fn query_documents_from_contract(
         &self,
         contract: &Contract,
         document_type: &DocumentType,

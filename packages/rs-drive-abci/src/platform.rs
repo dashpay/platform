@@ -75,7 +75,7 @@ impl Platform {
     pub fn open<P: AsRef<Path>>(path: P, config: Option<PlatformConfig>) -> Result<Self, Error> {
         let config = config.unwrap_or_default();
 
-        let drive = Drive::open(path, config.drive).map_err(Error::Drive)?;
+        let drive = Drive::open(path, config.drive.clone()).map_err(Error::Drive)?;
 
         let core_rpc: Box<dyn CoreRPCLike> = Box::new(
             DefaultCoreRPC::open(
