@@ -171,11 +171,4 @@ pub trait StateRepositoryLike: Send + Sync {
 
     // Get latest (in a queue) withdrawal transaction index
     async fn fetch_latest_platform_core_chain_locked_height(&self) -> AnyResult<Option<u32>>;
-
-    // Enqueue withdrawal transaction
-    async fn enqueue_withdrawal_transaction(
-        &self,
-        index: u64,
-        transaction_bytes: Vec<u8>,
-    ) -> AnyResult<()>;
 }

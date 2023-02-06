@@ -2248,73 +2248,6 @@ impl PlatformWrapper {
         // The result is returned through the callback, not through direct return
         Ok(cx.undefined())
     }
-
-    fn js_enqueue_withdrawal_transaction(mut cx: FunctionContext) -> JsResult<JsUndefined> {
-        let js_index = cx.argument::<JsNumber>(0)?;
-        let js_core_transaction = cx.argument::<JsBuffer>(1)?;
-        let js_block_info = cx.argument::<JsObject>(2)?;
-        let js_using_transaction = cx.argument::<JsBoolean>(3)?;
-        let js_callback = cx.argument::<JsFunction>(4)?.root(&mut cx);
-
-        let db = cx
-            .this()
-            .downcast_or_throw::<JsBox<PlatformWrapper>, _>(&mut cx)?;
-
-        let index = js_index.value(&mut cx);
-        let transaction_bytes = converter::js_buffer_to_vec_u8(js_core_transaction, &mut cx);
-        let using_transaction = js_using_transaction.value(&mut cx);
-        let block_info = converter::js_object_to_block_info(js_block_info, &mut cx)?;
-
-        db.send_to_drive_thread(move |platform: &Platform, transaction, channel| {
-            let transaction_result = if using_transaction {
-                if transaction.is_none() {
-                    Err("transaction is not started".to_string())
-                } else {
-                    Ok(transaction)
-                }
-            } else {
-                Ok(None)
-            };
-
-            let execution_function = |transaction: TransactionArg| -> Result<(), String> {
-                platform
-                    .drive
-                    .enqueue_withdrawal_transaction(
-                        index as u64,
-                        transaction_bytes,
-                        &block_info,
-                        transaction,
-                    )
-                    .map_err(|e| e.to_string())?;
-
-                Ok(())
-            };
-
-            let result = transaction_result.and_then(execution_function);
-
-            channel.send(move |mut task_context| {
-                let callback = js_callback.into_inner(&mut task_context);
-                let this = task_context.undefined();
-
-                let callback_arguments: Vec<Handle<JsValue>> = match result {
-                    Ok(_) => {
-                        vec![task_context.null().upcast(), task_context.null().upcast()]
-                    }
-
-                    // Convert the error to a JavaScript exception on failure
-                    Err(err) => vec![task_context.error(err)?.upcast()],
-                };
-
-                callback.call(&mut task_context, this, callback_arguments)?;
-
-                Ok(())
-            });
-        })
-        .or_else(|err| cx.throw_error(err.to_string()))?;
-
-        // The result is returned through the callback, not through direct return
-        Ok(cx.undefined())
-    }
 }
 
 #[neon::main]
@@ -2345,10 +2278,6 @@ fn main(mut cx: ModuleContext) -> NeonResult<()> {
     cx.export_function(
         "driveFetchLatestWithdrawalTransactionIndex",
         PlatformWrapper::js_fetch_latest_withdrawal_transaction_index,
-    )?;
-    cx.export_function(
-        "driveEnqueueWithdrawalTransaction",
-        PlatformWrapper::js_enqueue_withdrawal_transaction,
     )?;
 
     cx.export_function("groveDbInsert", PlatformWrapper::js_grove_db_insert)?;
