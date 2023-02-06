@@ -220,7 +220,7 @@ async fn fetch_data_contracts_for_document_transition(
             .map(TryInto::try_into)
             .transpose()
             .map_err(Into::into)?
-            .ok_or_else(|| ProtocolError::DataContractNotPresentError { data_contract_id })?;
+            .ok_or(ProtocolError::DataContractNotPresentError { data_contract_id })?;
 
         data_contracts.push(data_contract);
     }

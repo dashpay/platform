@@ -213,7 +213,7 @@ mod test {
             .clone();
 
         let result = factory
-            .create(data_contract.owner_id.clone(), raw_documents)
+            .create(data_contract.owner_id, raw_documents)
             .expect("Data Contract should be created");
 
         assert_eq!(data_contract.protocol_version, result.protocol_version);
