@@ -86,7 +86,7 @@ impl Drive {
         Ok(withdrawals)
     }
 
-    /// Enqueue single withdrawal transaction
+    ///
     pub fn enqueue_withdrawal_transaction(
         &self,
         index: u64,
@@ -94,7 +94,8 @@ impl Drive {
         block_info: &BlockInfo,
         transaction: TransactionArg,
     ) -> Result<(), Error> {
-        let mut drive_operation_types = vec![];
+        let vec = vec![];
+        let mut drive_operation_types = vec;
 
         let index_bytes = (index as u64).to_be_bytes().to_vec();
 

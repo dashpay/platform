@@ -209,7 +209,7 @@ mod tests {
         };
         use dpp::util::hash;
         use drive::common::helpers::identities::create_test_masternode_identities;
-        use drive::common::helpers::setup::setup_document;
+        use drive::tests::helpers::setup::setup_document;
         use drive::drive::block_info::BlockInfo;
         use drive::drive::identity::withdrawals::paths::WithdrawalTransaction;
         use drive::fee::epoch::CreditsPerEpoch;

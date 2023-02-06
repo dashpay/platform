@@ -37,9 +37,8 @@ use std::convert::{TryFrom, TryInto};
 use std::fmt;
 use std::io::{BufReader, Read};
 
-use byteorder::{BigEndian, WriteBytesExt};
-use ciborium::value::Value;
-use integer_encoding::{VarInt, VarIntWriter};
+use ciborium::value::{Integer, Value};
+use integer_encoding::VarIntWriter;
 
 use crate::data_contract::{DataContract, DriveContractExt};
 use serde::{Deserialize, Serialize};
@@ -48,12 +47,14 @@ use crate::data_contract::document_type::document_type::PROTOCOL_VERSION;
 use crate::data_contract::document_type::DocumentType;
 use crate::data_contract::errors::{DataContractError, StructureError};
 use crate::data_contract::extra::common::{
-    bytes_for_system_value_from_tree_map, check_protocol_version, check_protocol_version_bytes,
-    get_key_from_cbor_map, reduced_value_string_representation,
+    bytes_for_system_value_from_tree_map, get_key_from_cbor_map,
+    reduced_value_string_representation,
 };
 use crate::util::deserializer;
 use crate::util::deserializer::SplitProtocolVersionOutcome;
 use crate::ProtocolError;
+
+use anyhow::{anyhow, bail};
 
 //todo: rename
 /// Documents contain the data that goes into data contracts.
@@ -383,6 +384,109 @@ impl DocumentStub {
             ))
         })?;
         self.get_raw_for_document_type(key, document_type, owner_id)
+    }
+
+    /// Temporary helper method to get property in u64 format
+    /// Imitating JsonValueExt trait
+    pub fn get_u64(&self, property_name: &str) -> Result<u64, anyhow::Error> {
+        let property_value = self.properties.get(property_name).ok_or_else(|| {
+            anyhow!(
+                "the property '{}' doesn't exist in '{:?}'",
+                property_name,
+                self
+            )
+        })?;
+
+        if let Value::Integer(s) = property_value {
+            return (*s)
+                .try_into()
+                .map_err(|_| anyhow!("unable convert {} to u64", property_name));
+        }
+        bail!(
+            "getting property '{}' failed: {:?} isn't a number",
+            property_name,
+            property_value
+        );
+    }
+
+    /// Temporary helper method to get property in u32 format
+    /// Imitating JsonValueExt trait
+    pub fn get_u32(&self, property_name: &str) -> Result<u32, anyhow::Error> {
+        let property_value = self.properties.get(property_name).ok_or_else(|| {
+            anyhow!(
+                "the property '{}' doesn't exist in '{:?}'",
+                property_name,
+                self
+            )
+        })?;
+
+        if let Value::Integer(s) = property_value {
+            return (*s)
+                .try_into()
+                .map_err(|_| anyhow!("unable convert {} to u32", property_name));
+        }
+        bail!(
+            "getting property '{}' failed: {:?} isn't a number",
+            property_name,
+            property_value
+        );
+    }
+
+    /// Temporary helper method to get property in bytes format
+    /// Imitating JsonValueExt trait
+    pub fn get_bytes(&self, property_name: &str) -> Result<Vec<u8>, anyhow::Error> {
+        let property_value = self.properties.get(property_name).ok_or_else(|| {
+            anyhow!(
+                "the property '{}' doesn't exist in '{:?}'",
+                property_name,
+                self
+            )
+        })?;
+
+        if let Value::Bytes(s) = property_value {
+            return Ok(s.clone());
+        }
+        bail!(
+            "getting property '{}' failed: {:?} isn't an array of bytes",
+            property_name,
+            property_value
+        );
+    }
+
+    pub fn set_u8(&mut self, property_name: &str, value: u8) {
+        self.properties.insert(
+            property_name.to_string(),
+            Value::Integer(Integer::from(value)),
+        );
+    }
+
+    pub fn set_i64(&mut self, property_name: &str, value: i64) {
+        self.properties.insert(
+            property_name.to_string(),
+            Value::Integer(Integer::from(value)),
+        );
+    }
+
+    pub fn set_bytes(&mut self, property_name: &str, value: Vec<u8>) {
+        self.properties
+            .insert(property_name.to_string(), Value::Bytes(value));
+    }
+
+    pub fn increment_revision(&mut self) -> Result<(), anyhow::Error> {
+        let property_name = "$revision";
+
+        let revision = self.get_u32(property_name)?;
+
+        let new_revision = revision
+            .checked_add(1)
+            .ok_or_else(|| anyhow!("could not increment revision: overflow occured"))?;
+
+        self.properties.insert(
+            property_name.to_string(),
+            Value::Integer(Integer::from(new_revision)),
+        );
+
+        Ok(())
     }
 }
 
