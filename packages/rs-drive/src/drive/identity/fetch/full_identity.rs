@@ -29,6 +29,7 @@ impl Drive {
         Ok((maybe_identity, fee))
     }
 
+    // TODO: We deal with it in upcoming PR (Sam!!)
     // /// Fetches identities with all its information from storage.
     // #[deprecated(since = "0.24.0", note = "please use exact fetching")]
     // pub fn fetch_full_identities_efficient(
