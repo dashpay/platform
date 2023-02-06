@@ -16,9 +16,9 @@ use grovedb::{PathQuery, SizedQuery, TransactionArg};
 
 use std::collections::BTreeMap;
 
-mod balance;
 mod fetch_by_public_key_hashes;
 mod full_identity;
+mod partial_identity;
 mod prove;
 mod queries;
 mod revision;
