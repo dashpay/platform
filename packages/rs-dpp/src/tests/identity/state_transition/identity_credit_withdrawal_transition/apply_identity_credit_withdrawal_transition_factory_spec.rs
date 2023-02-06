@@ -82,8 +82,10 @@ mod apply_identity_credit_withdrawal_transition_factory {
             .expect_create_document()
             .times(1)
             .withf(move |doc, _| {
-                let created_at_match = doc.created_at == Some((block_time_seconds as i64 * 1000) as i64);
-                let updated_at_match = doc.created_at == Some((block_time_seconds as i64 * 1000) as i64);
+                let created_at_match =
+                    doc.created_at == Some((block_time_seconds as i64 * 1000) as i64);
+                let updated_at_match =
+                    doc.created_at == Some((block_time_seconds as i64 * 1000) as i64);
 
                 let document_data_match = doc.data
                     == json!({
