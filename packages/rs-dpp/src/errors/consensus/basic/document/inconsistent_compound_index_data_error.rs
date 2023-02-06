@@ -1,6 +1,5 @@
+use crate::consensus::basic::BasicError;
 use thiserror::Error;
-
-use crate::consensus::ConsensusError;
 
 #[derive(Error, Debug, Clone, PartialEq, Eq)]
 #[error(
@@ -28,7 +27,7 @@ impl InconsistentCompoundIndexDataError {
     }
 }
 
-impl From<InconsistentCompoundIndexDataError> for ConsensusError {
+impl From<InconsistentCompoundIndexDataError> for BasicError {
     fn from(err: InconsistentCompoundIndexDataError) -> Self {
         Self::InconsistentCompoundIndexDataError(err)
     }

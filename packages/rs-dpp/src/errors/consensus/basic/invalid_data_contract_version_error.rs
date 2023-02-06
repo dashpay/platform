@@ -1,6 +1,5 @@
+use crate::consensus::basic::BasicError;
 use thiserror::Error;
-
-use crate::consensus::ConsensusError;
 
 #[derive(Error, Debug, Clone, PartialEq, Eq)]
 #[error("Data Contract version must be {expected_version}, go {version}")]
@@ -26,7 +25,7 @@ impl InvalidDataContractVersionError {
     }
 }
 
-impl From<InvalidDataContractVersionError> for ConsensusError {
+impl From<InvalidDataContractVersionError> for BasicError {
     fn from(err: InvalidDataContractVersionError) -> Self {
         Self::InvalidDataContractVersionError(err)
     }

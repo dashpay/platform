@@ -1,6 +1,5 @@
+use crate::consensus::basic::BasicError;
 use thiserror::Error;
-
-use crate::consensus::ConsensusError;
 
 #[derive(Error, Debug, Clone, PartialEq, Eq)]
 #[error("State transition size {actual_size_kbytes} KB is more than maximum {max_size_kbytes} KB")]
@@ -25,7 +24,7 @@ impl StateTransitionMaxSizeExceededError {
     }
 }
 
-impl From<StateTransitionMaxSizeExceededError> for ConsensusError {
+impl From<StateTransitionMaxSizeExceededError> for BasicError {
     fn from(err: StateTransitionMaxSizeExceededError) -> Self {
         Self::StateTransitionMaxSizeExceededError(err)
     }

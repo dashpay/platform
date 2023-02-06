@@ -1,6 +1,5 @@
+use crate::consensus::basic::BasicError;
 use thiserror::Error;
-
-use crate::consensus::ConsensusError;
 
 #[derive(Error, Debug, Clone, PartialEq, Eq)]
 #[error(
@@ -21,7 +20,7 @@ impl DuplicateDocumentTransitionsWithIndicesError {
     }
 }
 
-impl From<DuplicateDocumentTransitionsWithIndicesError> for ConsensusError {
+impl From<DuplicateDocumentTransitionsWithIndicesError> for BasicError {
     fn from(err: DuplicateDocumentTransitionsWithIndicesError) -> Self {
         Self::DuplicateDocumentTransitionsWithIndicesError(err)
     }

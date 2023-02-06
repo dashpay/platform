@@ -1,6 +1,6 @@
+use crate::consensus::basic::BasicError;
 use thiserror::Error;
 
-use crate::consensus::ConsensusError;
 use crate::document::document_transition::document_base_transition::JsonValue;
 
 #[derive(Error, Debug, Clone, PartialEq, Eq)]
@@ -21,7 +21,7 @@ impl MissingDataContractIdError {
     }
 }
 
-impl From<MissingDataContractIdError> for ConsensusError {
+impl From<MissingDataContractIdError> for BasicError {
     fn from(err: MissingDataContractIdError) -> Self {
         Self::MissingDataContractIdError(err)
     }

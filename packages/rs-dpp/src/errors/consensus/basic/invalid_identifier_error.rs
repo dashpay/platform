@@ -1,6 +1,5 @@
+use crate::consensus::basic::BasicError;
 use thiserror::Error;
-
-use crate::consensus::ConsensusError;
 
 #[derive(Error, Debug, Clone, PartialEq, Eq)]
 #[error("Invalid {}: {}", identifier_name, error)]
@@ -26,7 +25,7 @@ impl InvalidIdentifierError {
     }
 }
 
-impl From<InvalidIdentifierError> for ConsensusError {
+impl From<InvalidIdentifierError> for BasicError {
     fn from(err: InvalidIdentifierError) -> Self {
         Self::InvalidIdentifierError(err)
     }

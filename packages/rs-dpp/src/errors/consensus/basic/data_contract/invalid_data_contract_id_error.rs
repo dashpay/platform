@@ -1,6 +1,5 @@
+use crate::consensus::basic::BasicError;
 use thiserror::Error;
-
-use crate::consensus::ConsensusError;
 
 #[derive(Error, Debug, Clone, PartialEq, Eq)]
 #[error("Data Contract Id must be {}, got {}", bs58::encode(expected_id).into_string(), bs58::encode(invalid_id).into_string())]
@@ -25,7 +24,7 @@ impl InvalidDataContractIdError {
     }
 }
 
-impl From<InvalidDataContractIdError> for ConsensusError {
+impl From<InvalidDataContractIdError> for BasicError {
     fn from(err: InvalidDataContractIdError) -> Self {
         Self::InvalidDataContractIdError(err)
     }

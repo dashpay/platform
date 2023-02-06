@@ -1,7 +1,7 @@
 use thiserror::Error;
 
-use crate::consensus::ConsensusError;
 use crate::identifier::Identifier;
+use crate::ProtocolError;
 
 #[derive(Error, Debug, Clone, PartialEq, Eq)]
 #[error("Data Contract is not present")]
@@ -19,7 +19,7 @@ impl DataContractNotPresentError {
     }
 }
 
-impl From<DataContractNotPresentError> for ConsensusError {
+impl From<DataContractNotPresentError> for ProtocolError {
     fn from(err: DataContractNotPresentError) -> Self {
         Self::DataContractNotPresentError(err)
     }

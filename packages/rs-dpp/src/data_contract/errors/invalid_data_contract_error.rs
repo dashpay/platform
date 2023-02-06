@@ -1,7 +1,8 @@
+use crate::consensus::ConsensusError;
 use thiserror::Error;
 
-use crate::consensus::ConsensusError;
 use crate::document::document_transition::document_base_transition::JsonValue;
+use crate::ProtocolError;
 
 #[derive(Error, Debug)]
 #[error("Invalid Data Contract: {errors:?}")]
@@ -26,7 +27,7 @@ impl InvalidDataContractError {
     }
 }
 
-impl From<InvalidDataContractError> for ConsensusError {
+impl From<InvalidDataContractError> for ProtocolError {
     fn from(err: InvalidDataContractError) -> Self {
         Self::InvalidDataContractError(err)
     }

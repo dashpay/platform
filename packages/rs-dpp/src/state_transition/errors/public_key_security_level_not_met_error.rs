@@ -1,7 +1,7 @@
 use thiserror::Error;
 
-use crate::consensus::ConsensusError;
 use crate::identity::SecurityLevel;
+use crate::ProtocolError;
 
 #[derive(Error, Debug, Clone, PartialEq, Eq)]
 #[error("Invalid key security level: {public_key_security_level}. The state transition requires at least: {required_security_level}")]
@@ -29,7 +29,7 @@ impl PublicKeySecurityLevelNotMetError {
     }
 }
 
-impl From<PublicKeySecurityLevelNotMetError> for ConsensusError {
+impl From<PublicKeySecurityLevelNotMetError> for ProtocolError {
     fn from(err: PublicKeySecurityLevelNotMetError) -> Self {
         Self::PublicKeySecurityLevelNotMetError(err)
     }

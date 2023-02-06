@@ -31,7 +31,7 @@ use super::basic::identity::{
 use super::fee::FeeError;
 use super::signature::SignatureError;
 
-#[derive(Error, Debug)]
+#[derive(Error, Debug, Clone)]
 //#[cfg_attr(test, derive(Clone))]
 pub enum ConsensusError {
     #[error(transparent)]

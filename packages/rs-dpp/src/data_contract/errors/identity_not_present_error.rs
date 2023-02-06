@@ -1,7 +1,7 @@
 use thiserror::Error;
 
-use crate::consensus::ConsensusError;
 use crate::identifier::Identifier;
+use crate::ProtocolError;
 
 #[derive(Error, Debug, Clone, PartialEq, Eq)]
 #[error("Identity is not present")]
@@ -19,7 +19,7 @@ impl IdentityNotPresentError {
     }
 }
 
-impl From<IdentityNotPresentError> for ConsensusError {
+impl From<IdentityNotPresentError> for ProtocolError {
     fn from(err: IdentityNotPresentError) -> Self {
         Self::IdentityNotPresentError(err)
     }

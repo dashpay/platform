@@ -1,7 +1,7 @@
 use thiserror::Error;
 
-use crate::consensus::ConsensusError;
 use crate::data_contract::DataContract;
+use crate::ProtocolError;
 
 #[derive(Error, Debug, Clone, PartialEq)]
 #[error("Data Contract doesn't define document with type {doc_type}")]
@@ -26,7 +26,7 @@ impl InvalidDataContractError {
     }
 }
 
-impl From<InvalidDataContractError> for ConsensusError {
+impl From<InvalidDataContractError> for ProtocolError {
     fn from(err: InvalidDataContractError) -> Self {
         Self::InvalidDataContractError(err)
     }

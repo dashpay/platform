@@ -3,7 +3,7 @@ use serde_json::{json, Number, Value as JsonValue};
 
 use data_contract::state_transition::property_names as st_prop;
 
-use crate::data_contract::errors::DataContractError::InvalidDataContractError;
+use crate::data_contract::errors::InvalidDataContractError;
 use crate::{
     data_contract::{self, generate_data_contract_id},
     decode_protocol_entity_factory::DecodeProtocolEntity,

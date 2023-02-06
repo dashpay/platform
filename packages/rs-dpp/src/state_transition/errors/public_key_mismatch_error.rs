@@ -1,7 +1,7 @@
 use thiserror::Error;
 
-use crate::consensus::ConsensusError;
 use crate::identity::IdentityPublicKey;
+use crate::ProtocolError;
 
 #[derive(Error, Debug, Clone, PartialEq, Eq)]
 #[error("Public key mismatched")]
@@ -19,7 +19,7 @@ impl PublicKeyMismatchError {
     }
 }
 
-impl From<PublicKeyMismatchError> for ConsensusError {
+impl From<PublicKeyMismatchError> for ProtocolError {
     fn from(err: PublicKeyMismatchError) -> Self {
         Self::PublicKeyMismatchError(err)
     }

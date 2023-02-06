@@ -1,6 +1,6 @@
+use crate::consensus::basic::IndexError;
 use thiserror::Error;
 
-use crate::consensus::ConsensusError;
 use crate::data_contract::document_type::Index;
 
 #[derive(Error, Debug, Clone, PartialEq, Eq)]
@@ -31,7 +31,7 @@ impl UndefinedIndexPropertyError {
     }
 }
 
-impl From<UndefinedIndexPropertyError> for ConsensusError {
+impl From<UndefinedIndexPropertyError> for IndexError {
     fn from(err: UndefinedIndexPropertyError) -> Self {
         Self::UndefinedIndexPropertyError(err)
     }

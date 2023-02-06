@@ -1,6 +1,5 @@
+use crate::consensus::basic::IndexError;
 use thiserror::Error;
-
-use crate::consensus::ConsensusError;
 
 #[derive(Error, Debug, Clone, PartialEq, Eq)]
 #[error("'{document_type}' document has more than '{index_limit}' unique indexes")]
@@ -25,7 +24,7 @@ impl UniqueIndicesLimitReachedError {
     }
 }
 
-impl From<UniqueIndicesLimitReachedError> for ConsensusError {
+impl From<UniqueIndicesLimitReachedError> for IndexError {
     fn from(err: UniqueIndicesLimitReachedError) -> Self {
         Self::UniqueIndicesLimitReachedError(err)
     }

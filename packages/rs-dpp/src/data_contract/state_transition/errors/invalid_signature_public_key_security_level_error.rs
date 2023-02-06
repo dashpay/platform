@@ -1,6 +1,5 @@
+use crate::ProtocolError;
 use thiserror::Error;
-
-use crate::consensus::ConsensusError;
 
 #[derive(Error, Debug, Clone, PartialEq, Eq)]
 #[error("Invalid State Transition type {transition_type}")]
@@ -18,7 +17,7 @@ impl InvalidStateTransitionTypeError {
     }
 }
 
-impl From<InvalidStateTransitionTypeError> for ConsensusError {
+impl From<InvalidStateTransitionTypeError> for ProtocolError {
     fn from(err: InvalidStateTransitionTypeError) -> Self {
         Self::InvalidStateTransitionTypeError(err)
     }

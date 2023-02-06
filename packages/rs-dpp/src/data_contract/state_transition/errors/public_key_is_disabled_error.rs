@@ -1,7 +1,7 @@
 use thiserror::Error;
 
-use crate::consensus::ConsensusError;
 use crate::identity::IdentityPublicKey;
+use crate::ProtocolError;
 
 #[derive(Error, Debug, Clone, PartialEq, Eq)]
 #[error("Public key is disabled")]
@@ -19,7 +19,7 @@ impl PublicKeyIsDisabledError {
     }
 }
 
-impl From<PublicKeyIsDisabledError> for ConsensusError {
+impl From<PublicKeyIsDisabledError> for ProtocolError {
     fn from(err: PublicKeyIsDisabledError) -> Self {
         Self::PublicKeyIsDisabledError(err)
     }

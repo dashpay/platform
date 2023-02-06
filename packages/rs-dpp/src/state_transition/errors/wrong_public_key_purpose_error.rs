@@ -1,7 +1,7 @@
 use thiserror::Error;
 
-use crate::consensus::ConsensusError;
 use crate::identity::Purpose;
+use crate::ProtocolError;
 
 #[derive(Error, Debug, Clone, PartialEq, Eq)]
 #[error("Invalid identity key purpose {public_key_purpose}. This state transition requires {key_purpose_requirement}")]
@@ -26,7 +26,7 @@ impl WrongPublicKeyPurposeError {
     }
 }
 
-impl From<WrongPublicKeyPurposeError> for ConsensusError {
+impl From<WrongPublicKeyPurposeError> for ProtocolError {
     fn from(err: WrongPublicKeyPurposeError) -> Self {
         Self::WrongPublicKeyPurposeError(err)
     }

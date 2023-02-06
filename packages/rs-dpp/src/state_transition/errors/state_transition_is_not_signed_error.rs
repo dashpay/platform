@@ -1,7 +1,7 @@
 use thiserror::Error;
 
-use crate::consensus::ConsensusError;
 use crate::state_transition::StateTransition;
+use crate::ProtocolError;
 
 #[derive(Error, Debug, Clone)]
 #[error("State Transition is not signed")]
@@ -19,7 +19,7 @@ impl StateTransitionIsNotSignedError {
     }
 }
 
-impl From<StateTransitionIsNotSignedError> for ConsensusError {
+impl From<StateTransitionIsNotSignedError> for ProtocolError {
     fn from(err: StateTransitionIsNotSignedError) -> Self {
         Self::StateTransitionIsNotSignedError(err)
     }

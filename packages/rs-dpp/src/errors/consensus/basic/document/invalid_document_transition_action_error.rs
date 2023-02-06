@@ -1,6 +1,5 @@
+use crate::consensus::basic::BasicError;
 use thiserror::Error;
-
-use crate::consensus::ConsensusError;
 
 #[derive(Error, Debug, Clone, PartialEq, Eq)]
 #[error("Document transition action {} is not supported", action)]
@@ -18,7 +17,7 @@ impl InvalidDocumentTransitionActionError {
     }
 }
 
-impl From<InvalidDocumentTransitionActionError> for ConsensusError {
+impl From<InvalidDocumentTransitionActionError> for BasicError {
     fn from(err: InvalidDocumentTransitionActionError) -> Self {
         Self::InvalidDocumentTransitionActionError(err)
     }

@@ -1,7 +1,7 @@
 use thiserror::Error;
 
-use crate::consensus::ConsensusError;
 use crate::identity::KeyType;
+use crate::ProtocolError;
 
 #[derive(Error, Debug, Clone, PartialEq, Eq)]
 #[error("Invalid signature type")]
@@ -19,7 +19,7 @@ impl InvalidIdentityPublicKeyTypeError {
     }
 }
 
-impl From<InvalidIdentityPublicKeyTypeError> for ConsensusError {
+impl From<InvalidIdentityPublicKeyTypeError> for ProtocolError {
     fn from(err: InvalidIdentityPublicKeyTypeError) -> Self {
         Self::InvalidIdentityPublicKeyTypeError(err)
     }
