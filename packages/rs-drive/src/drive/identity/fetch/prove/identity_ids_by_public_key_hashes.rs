@@ -30,13 +30,12 @@ impl Drive {
 mod tests {
     use super::*;
     use crate::common::helpers::setup::setup_drive_with_initial_state_structure;
+    use crate::drive::block_info::BlockInfo;
+    use dpp::identity::Identity;
+    use std::collections::BTreeMap;
 
-    mod prove_identity_ids {
+    mod prove_identity_id_by_unique_public_key_hash {
         use super::*;
-        use crate::drive::block_info::BlockInfo;
-        use dpp::identity::Identity;
-
-        use std::collections::BTreeMap;
 
         #[test]
         fn should_prove_a_single_identity_id() {
@@ -69,6 +68,10 @@ mod tests {
 
             assert_eq!(proved_identity_id, Some(identity_id));
         }
+    }
+
+    mod prove_identity_ids_by_unique_public_key_hashes {
+        use super::*;
 
         #[test]
         fn should_prove_multiple_identity_ids() {
