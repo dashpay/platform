@@ -61,9 +61,7 @@ where
             consensus::deserialize(&latest_platform_block_header_bytes)?;
 
         let document_type = String::from(withdrawals_contract::types::WITHDRAWAL);
-        let document_created_at_millis: i64 = (latest_platform_block_header.time * 1000)
-            .try_into()
-            .map_err(|_| anyhow!("Can't convert block header time from u32 to i64"))?;
+        let document_created_at_millis: i64 = latest_platform_block_header.time as i64 * 1000i64;
 
         let document_data = json!({
             withdrawals_contract::property_names::AMOUNT: state_transition.amount,
