@@ -231,10 +231,7 @@ impl StateRepositoryLike for ExternalStateRepositoryLikeWrapper {
     ) -> Result<Option<Self::FetchDataContract>> {
         let js_value: JsValue = self
             .0
-            .fetch_data_contract(
-                data_contract_id.clone().into(),
-                execution_context.clone().into(),
-            )
+            .fetch_data_contract((*data_contract_id).into(), execution_context.clone().into())
             .await
             .map_err(from_js_error)?;
 
@@ -323,7 +320,7 @@ impl StateRepositoryLike for ExternalStateRepositoryLikeWrapper {
     ) -> Result<Option<Self::FetchIdentity>> {
         let js_value = self
             .0
-            .fetch_identity(id.clone().into(), execution_context.clone().into())
+            .fetch_identity((*id).into(), execution_context.clone().into())
             .await
             .map_err(from_js_error)?;
 
