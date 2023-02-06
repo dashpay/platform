@@ -1,97 +1,74 @@
-const applyIdentityUpdateTransitionFactory = require('@dashevo/dpp/lib/identity/stateTransition/IdentityUpdateTransition/applyIdentityUpdateTransitionFactory');
 const createStateRepositoryMock = require('@dashevo/dpp/lib/test/mocks/createStateRepositoryMock');
 const getIdentityUpdateTransitionFixture = require('@dashevo/dpp/lib/test/fixtures/getIdentityUpdateTransitionFixture');
-const getIdentityFixture = require('@dashevo/dpp/lib/test/fixtures/getIdentityFixture');
-const StateTransitionExecutionContext = require('@dashevo/dpp/lib/stateTransition/StateTransitionExecutionContext');
-const getBiggestPossibleIdentity = require('@dashevo/dpp/lib/identity/getBiggestPossibleIdentity');
+
+const { default: loadWasmDpp } = require('../../../../../dist');
 
 describe('applyIdentityUpdateTransition', () => {
   let applyIdentityUpdateTransition;
   let stateRepositoryMock;
   let stateTransition;
-  let identity;
   let executionContext;
 
-  beforeEach(function beforeEach() {
-    stateTransition = getIdentityUpdateTransitionFixture();
+  let StateTransitionExecutionContext;
+  let IdentityUpdateTransition;
+
+  let applyIdentityUpdateTransitionDPP;
+
+  before(async () => {
+    ({
+      StateTransitionExecutionContext,
+      IdentityUpdateTransition,
+      applyIdentityUpdateTransition: applyIdentityUpdateTransitionDPP,
+    } = await loadWasmDpp());
+  });
+
+  beforeEach(async function beforeEach() {
+    stateTransition = new IdentityUpdateTransition(
+      getIdentityUpdateTransitionFixture().toObject(),
+    );
     stateTransition.setRevision(stateTransition.getRevision() + 1);
-    identity = getIdentityFixture();
 
     executionContext = new StateTransitionExecutionContext();
-
     stateTransition.setExecutionContext(executionContext);
 
     stateRepositoryMock = createStateRepositoryMock(this.sinonSandbox);
-    stateRepositoryMock.fetchIdentity.resolves(identity);
 
-    applyIdentityUpdateTransition = applyIdentityUpdateTransitionFactory(
+    applyIdentityUpdateTransition = (st) => applyIdentityUpdateTransitionDPP(
       stateRepositoryMock,
+      st,
     );
   });
 
-  it('should add public keys', async () => {
-    stateTransition.setPublicKeysDisabledAt(undefined);
-    stateTransition.setPublicKeyIdsToDisable(undefined);
-
+  it('should add and disable public keys', async function () {
     await applyIdentityUpdateTransition(stateTransition);
 
-    expect(identity.getPublicKeys()).to.have.lengthOf(3);
+    const { match } = this.sinonSandbox;
 
-    expect(identity.getPublicKeyById(3).toObject())
-      .to.deep.equal(stateTransition.getPublicKeysToAdd()[0]);
-
-    expect(stateRepositoryMock.fetchIdentity).to.be.calledOnceWithExactly(
-      stateTransition.getIdentityId(),
-      executionContext,
+    expect(stateRepositoryMock.updateIdentityRevision).to.be.calledOnceWithExactly(
+      match((id) => id.toBuffer().equals(stateTransition.getOwnerId().toBuffer())),
+      stateTransition.getRevision(),
+      match.instanceOf(StateTransitionExecutionContext),
     );
 
-    expect(stateRepositoryMock.updateIdentity).to.be.calledOnceWithExactly(
-      identity,
-      executionContext,
+    expect(stateRepositoryMock.disableIdentityKeys).to.be.calledOnceWithExactly(
+      match((id) => id.toBuffer().equals(stateTransition.getOwnerId().toBuffer())),
+      stateTransition.getPublicKeyIdsToDisable(),
+      stateTransition.getPublicKeysDisabledAt().getTime(),
+      match.instanceOf(StateTransitionExecutionContext),
     );
 
-    const publicKeyHashes = stateTransition.getPublicKeysToAdd()
-      .map((publicKey) => publicKey.hash());
+    const publicKeysToAdd = stateTransition.getPublicKeysToAdd()
+      .map((publicKey) => publicKey.toObject({ skipSignature: true }));
 
-    expect(stateRepositoryMock.storeIdentityPublicKeyHashes).to.be.calledOnceWithExactly(
-      identity.getId(),
-      publicKeyHashes,
-      executionContext,
+    expect(stateRepositoryMock.addKeysToIdentity).to.be.calledOnceWithExactly(
+      match((id) => id.toBuffer().equals(stateTransition.getOwnerId().toBuffer())),
+      match((args) => expect(args.map((k) => k.toObject())).to.deep.equals(publicKeysToAdd)),
+      match.instanceOf(StateTransitionExecutionContext),
     );
-
-    expect(identity.getRevision()).to.equal(stateTransition.getRevision());
   });
 
-  it('should disable public key', async () => {
-    stateTransition.setPublicKeysToAdd(undefined);
-
-    await applyIdentityUpdateTransition(stateTransition);
-
-    expect(stateRepositoryMock.fetchIdentity).to.be.calledOnceWithExactly(
-      stateTransition.getIdentityId(),
-      executionContext,
-    );
-
-    expect(stateRepositoryMock.storeIdentityPublicKeyHashes).to.not.be.called();
-
-    expect(stateRepositoryMock.updateIdentity).to.be.calledOnceWithExactly(
-      identity,
-      executionContext,
-    );
-
-    const [id] = stateTransition.getPublicKeyIdsToDisable();
-
-    expect(identity.getPublicKeyById(id).getDisabledAt())
-      .to.equal(stateTransition.getPublicKeysDisabledAt().getTime());
-
-    expect(identity.getRevision()).to.equal(stateTransition.getRevision());
-  });
-
-  it('should not add public keys on dry run', async () => {
-    const biggestPossibleIdentity = getBiggestPossibleIdentity();
-
-    stateTransition.setPublicKeysDisabledAt(undefined);
-    stateTransition.setPublicKeyIdsToDisable(undefined);
+  it('should add and disable public keys on dry run', async function () {
+    const { match } = this.sinonSandbox;
 
     stateTransition.getExecutionContext().enableDryRun();
 
@@ -99,51 +76,26 @@ describe('applyIdentityUpdateTransition', () => {
 
     stateTransition.getExecutionContext().disableDryRun();
 
-    expect(identity.getPublicKeys()).to.have.lengthOf(2);
-
-    expect(stateRepositoryMock.fetchIdentity).to.be.calledOnceWithExactly(
-      stateTransition.getIdentityId(),
-      executionContext,
+    expect(stateRepositoryMock.updateIdentityRevision).to.be.calledOnceWithExactly(
+      match((id) => id.toBuffer().equals(stateTransition.getOwnerId().toBuffer())),
+      stateTransition.getRevision(),
+      match.instanceOf(StateTransitionExecutionContext),
     );
 
-    expect(stateRepositoryMock.updateIdentity).to.be.calledOnceWithExactly(
-      biggestPossibleIdentity,
-      executionContext,
+    expect(stateRepositoryMock.disableIdentityKeys).to.be.calledOnceWithExactly(
+      match((id) => id.toBuffer().equals(stateTransition.getOwnerId().toBuffer())),
+      stateTransition.getPublicKeyIdsToDisable(),
+      stateTransition.getPublicKeysDisabledAt().getTime(),
+      match.instanceOf(StateTransitionExecutionContext),
     );
 
-    const publicKeyHashes = stateTransition.getPublicKeysToAdd()
-      .map((publicKey) => publicKey.hash());
+    const publicKeysToAdd = stateTransition.getPublicKeysToAdd()
+      .map((publicKey) => publicKey.toObject({ skipSignature: true }));
 
-    expect(stateRepositoryMock.storeIdentityPublicKeyHashes).to.be.calledOnceWithExactly(
-      biggestPossibleIdentity.getId(),
-      publicKeyHashes,
-      executionContext,
-    );
-
-    expect(biggestPossibleIdentity.getRevision()).to.equal(stateTransition.getRevision());
-  });
-
-  it('should use biggestPossibleIdentity on dry run', async () => {
-    const biggestPossibleIdentity = getBiggestPossibleIdentity();
-
-    stateTransition.setPublicKeysToAdd(undefined);
-
-    stateTransition.getExecutionContext().enableDryRun();
-
-    await applyIdentityUpdateTransition(stateTransition);
-
-    stateTransition.getExecutionContext().disableDryRun();
-
-    expect(stateRepositoryMock.fetchIdentity).to.be.calledOnceWithExactly(
-      stateTransition.getIdentityId(),
-      executionContext,
-    );
-
-    expect(stateRepositoryMock.storeIdentityPublicKeyHashes).to.not.be.called();
-
-    expect(stateRepositoryMock.updateIdentity).to.be.calledOnceWithExactly(
-      biggestPossibleIdentity,
-      executionContext,
+    expect(stateRepositoryMock.addKeysToIdentity).to.be.calledOnceWithExactly(
+      match((id) => id.toBuffer().equals(stateTransition.getOwnerId().toBuffer())),
+      match((args) => expect(args.map((k) => k.toObject())).to.deep.equals(publicKeysToAdd)),
+      match.instanceOf(StateTransitionExecutionContext),
     );
   });
 });

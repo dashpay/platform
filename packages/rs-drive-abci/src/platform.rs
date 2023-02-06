@@ -36,6 +36,7 @@ use crate::error::execution::ExecutionError;
 use crate::error::Error;
 use drive::drive::Drive;
 use drive::rpc::core::{CoreRPCLike, DefaultCoreRPC};
+use crate::state::PlatformState;
 use std::cell::RefCell;
 use std::path::Path;
 
@@ -52,6 +53,10 @@ use serde_json::json;
 pub struct Platform {
     /// Drive
     pub drive: Drive,
+    /// State
+    pub state: PlatformState,
+    /// Configuration
+    pub config: PlatformConfig,
     /// Block execution context
     pub block_execution_context: RefCell<Option<BlockExecutionContext>>,
     /// Core RPC Client
@@ -66,25 +71,28 @@ impl std::fmt::Debug for Platform {
 
 impl Platform {
     /// Open Platform with Drive and block execution context.
-    pub fn open<P: AsRef<Path>>(path: P, config: PlatformConfig) -> Result<Self, Error> {
-        let drive = Drive::open(path, config.drive).map_err(Error::Drive)?;
-
+    pub fn open<P: AsRef<Path>>(path: P, config: Option<PlatformConfig>) -> Result<Self, Error> {
+        let config = config.unwrap_or_default();
+        let drive = Drive::open(path, Some(config.drive.clone())).map_err(Error::Drive)?;
+        let state = PlatformState {
+            last_block_info: None,
+        };
         let core_rpc: Box<dyn CoreRPCLike> = Box::new(
             DefaultCoreRPC::open(
-                config.core.rpc.url,
-                config.core.rpc.username,
-                config.core.rpc.password,
+                config.core.rpc.url.as_str(),
+                config.core.rpc.username.clone(),
+                config.core.rpc.password.clone(),
             )
-            .map_err(|e| {
-                dbg!(e);
-                Error::Execution(ExecutionError::CorruptedCodeExecution(
-                    "Could not setup Dash Core RPC client",
-                ))
-            })?,
+                .map_err(|e| {
+                    Error::Execution(ExecutionError::CorruptedCodeExecution(
+                        "Could not setup Dash Core RPC client",
+                    ))
+                })?,
         );
-
         Ok(Platform {
             drive,
+            state,
+            config,
             block_execution_context: RefCell::new(None),
             core_rpc,
         })

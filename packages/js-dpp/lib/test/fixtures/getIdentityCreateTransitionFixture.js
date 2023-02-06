@@ -27,6 +27,7 @@ module.exports = function getIdentityCreateTransitionFixture(oneTimePrivateKey =
         purpose: IdentityPublicKey.PURPOSES.AUTHENTICATION,
         securityLevel: IdentityPublicKey.SECURITY_LEVELS.MASTER,
         readOnly: false,
+        signature: Buffer.alloc(0),
       },
     ],
   };

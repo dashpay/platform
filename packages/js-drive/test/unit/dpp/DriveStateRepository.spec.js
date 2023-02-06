@@ -16,7 +16,8 @@ const BlockInfo = require('../../../lib/blockExecution/BlockInfo');
 describe('DriveStateRepository', () => {
   let stateRepository;
   let identityRepositoryMock;
-  let publicKeyIdentityIdRepositoryMock;
+  let identityBalanceRepositoryMock;
+  let identityPublicKeyRepositoryMock;
   let dataContractRepositoryMock;
   let fetchDocumentsMock;
   let documentsRepositoryMock;
@@ -57,12 +58,19 @@ describe('DriveStateRepository', () => {
     identityRepositoryMock = {
       fetch: this.sinon.stub(),
       create: this.sinon.stub(),
-      update: this.sinon.stub(),
+      updateRevision: this.sinon.stub(),
     };
 
-    publicKeyIdentityIdRepositoryMock = {
+    identityBalanceRepositoryMock = {
+      add: this.sinon.stub(),
       fetch: this.sinon.stub(),
-      store: this.sinon.stub(),
+      fetchWithDebt: this.sinon.stub(),
+    };
+
+    identityPublicKeyRepositoryMock = {
+      fetch: this.sinon.stub(),
+      add: this.sinon.stub(),
+      disable: this.sinon.stub(),
     };
 
     fetchDocumentsMock = this.sinon.stub();
@@ -109,7 +117,8 @@ describe('DriveStateRepository', () => {
 
     stateRepository = new DriveStateRepository(
       identityRepositoryMock,
-      publicKeyIdentityIdRepositoryMock,
+      identityBalanceRepositoryMock,
+      identityPublicKeyRepositoryMock,
       dataContractRepositoryMock,
       fetchDocumentsMock,
       documentsRepositoryMock,
@@ -144,6 +153,7 @@ describe('DriveStateRepository', () => {
       expect(identityRepositoryMock.fetch).to.be.calledOnceWith(
         id,
         {
+          blockInfo,
           useTransaction: repositoryOptions.useTransaction,
           dryRun: false,
         },
@@ -163,6 +173,7 @@ describe('DriveStateRepository', () => {
 
       expect(identityRepositoryMock.create).to.be.calledOnceWith(
         identity,
+        blockInfo,
         {
           useTransaction: repositoryOptions.useTransaction,
           dryRun: false,
@@ -173,16 +184,45 @@ describe('DriveStateRepository', () => {
     });
   });
 
-  describe('#updateIdentity', () => {
-    it('should update identity', async () => {
-      identityRepositoryMock.update.resolves(
-        new StorageResult(undefined, operations),
+  describe('#fetchIdentityBalance', () => {
+    it('should fetch identity balance', async () => {
+      identityBalanceRepositoryMock.fetch.resolves(
+        new StorageResult(1, operations),
       );
 
-      await stateRepository.updateIdentity(identity, executionContext);
+      const result = await stateRepository.fetchIdentityBalance(identity.getId(), executionContext);
 
-      expect(identityRepositoryMock.update).to.be.calledOnceWith(
-        identity,
+      expect(result).to.equals(1);
+
+      expect(identityBalanceRepositoryMock.fetch).to.be.calledOnceWith(
+        identity.getId(),
+        {
+          blockInfo,
+          useTransaction: repositoryOptions.useTransaction,
+          dryRun: false,
+        },
+      );
+
+      expect(executionContext.getOperations()).to.deep.equals(operations);
+    });
+  });
+
+  describe('#fetchIdentityBalanceWithDebt', () => {
+    it('should fetch identity balance', async () => {
+      identityBalanceRepositoryMock.fetchWithDebt.resolves(
+        new StorageResult(1, operations),
+      );
+
+      const result = await stateRepository.fetchIdentityBalanceWithDebt(
+        identity.getId(),
+        executionContext,
+      );
+
+      expect(result).to.equals(1);
+
+      expect(identityBalanceRepositoryMock.fetchWithDebt).to.be.calledOnceWith(
+        identity.getId(),
+        blockInfo,
         {
           useTransaction: repositoryOptions.useTransaction,
           dryRun: false,
@@ -193,100 +233,101 @@ describe('DriveStateRepository', () => {
     });
   });
 
-  describe('#storeIdentityPublicKeyHashes', () => {
-    it('should store public key hashes for an identity id to repository', async () => {
-      publicKeyIdentityIdRepositoryMock.store.resolves(
+  describe('#addToIdentityBalance', () => {
+    it('should update identity balance', async () => {
+      identityBalanceRepositoryMock.add.resolves(
         new StorageResult(undefined, operations),
       );
 
-      await stateRepository.storeIdentityPublicKeyHashes(
+      await stateRepository.addToIdentityBalance(identity.getId(), 1, executionContext);
+
+      expect(identityBalanceRepositoryMock.add).to.be.calledOnceWith(
         identity.getId(),
-        [
-          identity.getPublicKeyById(0).hash(),
-          identity.getPublicKeyById(1).hash(),
-        ],
-        executionContext,
+        1,
+        blockInfo,
+        {
+          useTransaction: repositoryOptions.useTransaction,
+          dryRun: false,
+        },
       );
 
-      expect(publicKeyIdentityIdRepositoryMock.store).to.have.been.calledTwice();
-      expect(publicKeyIdentityIdRepositoryMock.store.getCall(0).args).to.have.deep.members([
-        identity.getPublicKeyById(0).hash(),
-        identity.getId(),
-        {
-          useTransaction: repositoryOptions.useTransaction,
-          dryRun: false,
-        },
-      ]);
-      expect(publicKeyIdentityIdRepositoryMock.store.getCall(1).args).to.have.deep.members([
-        identity.getPublicKeyById(1).hash(),
-        identity.getId(),
-        {
-          useTransaction: repositoryOptions.useTransaction,
-          dryRun: false,
-        },
-      ]);
-
-      expect(executionContext.getOperations()).to.deep.equals(operations.concat(operations));
+      expect(executionContext.getOperations()).to.deep.equals(operations);
     });
   });
 
-  describe('#fetchIdentityIdsByPublicKeyHashes', () => {
-    it('should fetch map of previously stored public key hash and identity id pairs', async () => {
-      const publicKeyHashes = [
-        identity.getPublicKeyById(0).hash(),
-        identity.getPublicKeyById(1).hash(),
-      ];
-
-      publicKeyIdentityIdRepositoryMock
-        .fetch
-        .withArgs(publicKeyHashes[0])
-        .resolves(new StorageResult(identity.getId(), operations));
-
-      publicKeyIdentityIdRepositoryMock
-        .fetch
-        .withArgs(publicKeyHashes[1])
-        .resolves(new StorageResult(identity.getId(), operations));
-
-      const result = await stateRepository.fetchIdentityIdsByPublicKeyHashes(
-        publicKeyHashes,
-        executionContext,
+  describe('#updateIdentityRevision', () => {
+    it('should update identity revision', async () => {
+      identityRepositoryMock.updateRevision.resolves(
+        new StorageResult(undefined, operations),
       );
 
-      expect(result).to.have.deep.members([
-        identity.getId(),
-        identity.getId(),
-      ]);
+      await stateRepository.updateIdentityRevision(identity.getId(), 1, executionContext);
 
-      expect(executionContext.getOperations()).to.deep.equals(operations.concat(operations));
+      expect(identityRepositoryMock.updateRevision).to.be.calledOnceWith(
+        identity.getId(),
+        1,
+        blockInfo,
+        {
+          useTransaction: repositoryOptions.useTransaction,
+          dryRun: false,
+        },
+      );
+
+      expect(executionContext.getOperations()).to.deep.equals(operations);
     });
+  });
 
-    it('should have null as value if pair was not found', async () => {
-      const publicKeyHashes = [
-        identity.getPublicKeyById(0).hash(),
-        identity.getPublicKeyById(1).hash(),
-      ];
+  describe('#addKeysToIdentity', () => {
+    it('should add keys to identity', async () => {
+      identityPublicKeyRepositoryMock.add.resolves(
+        new StorageResult(undefined, operations),
+      );
 
-      publicKeyIdentityIdRepositoryMock
-        .fetch
-        .withArgs(publicKeyHashes[0])
-        .resolves(new StorageResult(identity.getId(), operations));
-
-      publicKeyIdentityIdRepositoryMock
-        .fetch
-        .withArgs(publicKeyHashes[1])
-        .resolves(new StorageResult(null, operations));
-
-      const result = await stateRepository.fetchIdentityIdsByPublicKeyHashes(
-        publicKeyHashes,
+      await stateRepository.addKeysToIdentity(
+        identity.getId(),
+        identity.getPublicKeys(),
         executionContext,
       );
 
-      expect(result).to.have.deep.members([
+      expect(identityPublicKeyRepositoryMock.add).to.be.calledOnceWith(
         identity.getId(),
-        null,
-      ]);
+        identity.getPublicKeys(),
+        blockInfo,
+        {
+          useTransaction: repositoryOptions.useTransaction,
+          dryRun: false,
+        },
+      );
 
-      expect(executionContext.getOperations()).to.deep.equals(operations.concat(operations));
+      expect(executionContext.getOperations()).to.deep.equals(operations);
+    });
+  });
+
+  describe('#disableIdentityKeys', () => {
+    it('should disable identity keys', async () => {
+      identityPublicKeyRepositoryMock.disable.resolves(
+        new StorageResult(undefined, operations),
+      );
+
+      await stateRepository.disableIdentityKeys(
+        identity.getId(),
+        [1, 2],
+        123,
+        executionContext,
+      );
+
+      expect(identityPublicKeyRepositoryMock.disable).to.be.calledOnceWith(
+        identity.getId(),
+        [1, 2],
+        123,
+        blockInfo,
+        {
+          useTransaction: repositoryOptions.useTransaction,
+          dryRun: false,
+        },
+      );
+
+      expect(executionContext.getOperations()).to.deep.equals(operations);
     });
   });
 
@@ -304,7 +345,7 @@ describe('DriveStateRepository', () => {
         {
           blockInfo,
           dryRun: false,
-          useTransaction: false,
+          useTransaction: repositoryOptions.useTransaction,
         },
       );
 

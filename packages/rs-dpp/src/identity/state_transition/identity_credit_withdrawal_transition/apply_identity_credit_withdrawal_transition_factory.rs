@@ -1,6 +1,13 @@
 use std::convert::TryInto;
-
 use anyhow::{anyhow, Result};
+use dashcore::{
+    blockdata::transaction::special_transaction::asset_unlock::unqualified_asset_unlock::{
+        AssetUnlockBasePayload, AssetUnlockBaseTransactionInfo,
+    },
+    consensus::Encodable,
+    Script, TxOut,
+};
+use lazy_static::__Deref;
 use serde_json::{json, Value as JsonValue};
 
 use crate::{
@@ -125,26 +132,20 @@ where
             )
             .await?;
 
-        let maybe_existing_identity = self
-            .state_repository
-            .fetch_identity(
-                &state_transition.identity_id,
-                state_transition.get_execution_context(),
-            )
-            .await?
-            .map(TryInto::try_into)
-            .transpose()
-            .map_err(Into::into)?;
-
-        let mut existing_identity =
-            maybe_existing_identity.ok_or_else(|| anyhow!("Identity not found"))?;
-
-        existing_identity.reduce_balance(state_transition.amount);
-        existing_identity.increment_revision()?;
-
         // TODO: we need to be able to batch state repository operations
         self.state_repository
-            .update_identity(&existing_identity, state_transition.get_execution_context())
+            .remove_from_identity_balance(
+                &state_transition.identity_id,
+                state_transition.amount,
+                state_transition.get_execution_context(),
+            )
+            .await?;
+
+        self.state_repository
+            .remove_from_system_credits(
+                state_transition.amount,
+                state_transition.get_execution_context(),
+            )
             .await
     }
 }

@@ -34,7 +34,7 @@ describe('Platform', () => {
       await hashFunction.init();
       blake3 = hashFunction.hashFunction;
 
-      dashClient = await createClientWithFundedWallet(200000);
+      dashClient = await createClientWithFundedWallet(400000);
 
       await dashClient.platform.initialize();
 
@@ -136,11 +136,11 @@ describe('Platform', () => {
           let identity8PublicKeyHash;
 
           before(async () => {
-            identityAtKey5 = await dashClient.platform.identities.register(10000);
+            identityAtKey5 = await dashClient.platform.identities.register(100000);
 
-            identityAtKey6 = await dashClient.platform.identities.register(10000);
+            identityAtKey6 = await dashClient.platform.identities.register(100000);
 
-            identityAtKey8 = await dashClient.platform.identities.register(10000);
+            identityAtKey8 = await dashClient.platform.identities.register(100000);
 
             // await waitForBalanceToChange(walletAccount);
 

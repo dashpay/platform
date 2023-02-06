@@ -21,7 +21,7 @@ impl InvalidIdentityPublicKeyDataErrorWasm {
     #[wasm_bindgen(js_name=getPublicKeyId)]
     pub fn public_key_id(&self) -> u32 {
         // TODO: think about what to do with that conversion
-        self.inner.public_key_id() as u32
+        self.inner.public_key_id()
     }
 
     #[wasm_bindgen(js_name=getValidationError)]

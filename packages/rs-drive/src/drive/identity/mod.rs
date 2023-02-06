@@ -32,245 +32,222 @@
 //! fetching identities from the subtree.
 //!
 
-use dpp::identity::Identity;
-use grovedb::batch::KeyInfoPath;
-use grovedb::query_result_type::QueryResultType::QueryElementResultType;
-use grovedb::{
-    Element, EstimatedLayerInformation, PathQuery, Query, QueryItem, SizedQuery, TransactionArg,
-};
-use std::collections::HashMap;
+use crate::drive::object_size_info::DriveKeyInfo;
+use crate::drive::RootTree;
 
-use crate::drive::batch::GroveDbOpBatch;
-use crate::drive::block_info::BlockInfo;
-use crate::drive::flags::StorageFlags;
-use crate::drive::{Drive, RootTree};
-use crate::error::drive::DriveError;
-use crate::error::identity::IdentityError;
-use crate::error::Error;
-use crate::fee::calculate_fee;
-use crate::fee::op::DriveOperation;
-use crate::fee::result::FeeResult;
+use dpp::identity::{KeyID, Purpose, SecurityLevel};
 
 /// Everything related to withdrawals
 pub mod withdrawals;
 
-const IDENTITY_KEY: [u8; 1] = [0];
+use dpp::identity::Purpose::AUTHENTICATION;
+use integer_encoding::VarInt;
 
-impl Drive {
-    /// Adds operations to the op batch to insert a new identity in the `Identities` subtree
-    /// with its own empty subtree.
-    pub fn add_insert_identity_operations(
-        &self,
-        identity: Identity,
-        storage_flags: Option<&StorageFlags>,
-        batch: &mut GroveDbOpBatch,
-    ) -> Result<(), Error> {
-        // Serialize identity
-        let identity_bytes = identity.to_buffer().map_err(|_| {
-            Error::Identity(IdentityError::IdentitySerialization(
-                "failed to serialize identity to CBOR",
-            ))
-        })?;
+mod balance;
+mod contract_info;
+mod estimation_costs;
+mod fetch;
+mod insert;
+mod key;
+mod update;
+mod withdrawal_queue;
 
-        // Adds an operation to the op batch which inserts an empty subtree with flags
-        // at the key of the given identity in the `Identities` subtree.
-        batch.add_insert_empty_tree_with_flags(
-            vec![vec![RootTree::Identities as u8]],
-            identity.id.buffer.to_vec(),
-            storage_flags,
-        );
+pub use withdrawal_queue::add_initial_withdrawal_state_structure_operations;
 
-        // Adds an operation to the op batch which inserts the serialized identity
-        // in the `IDENTITY_KEY` key of the new subtree that was just created.
-        batch.add_insert(
-            vec![
-                vec![RootTree::Identities as u8],
-                identity.id.buffer.to_vec(),
-            ],
-            IDENTITY_KEY.to_vec(),
-            Element::Item(
-                identity_bytes,
-                StorageFlags::map_to_some_element_flags(storage_flags),
-            ),
-        );
+pub(crate) const IDENTITY_KEY: [u8; 1] = [0];
 
-        Ok(())
-    }
+pub(crate) fn identity_path(identity_id: &[u8]) -> [&[u8]; 2] {
+    [Into::<&[u8; 1]>::into(RootTree::Identities), identity_id]
+}
 
-    /// Inserts a new identity to the `Identities` subtree.
-    pub fn insert_identity(
-        &self,
-        identity: Identity,
-        block_info: BlockInfo,
-        apply: bool,
-        storage_flags: Option<&StorageFlags>,
-        transaction: TransactionArg,
-    ) -> Result<FeeResult, Error> {
-        let mut batch = GroveDbOpBatch::new();
-        let estimated_costs_only_with_layer_info = if apply {
-            None::<HashMap<KeyInfoPath, EstimatedLayerInformation>>
-        } else {
-            Some(HashMap::new())
-        };
+pub(crate) fn identity_path_vec(identity_id: &[u8]) -> Vec<Vec<u8>> {
+    vec![
+        Into::<&[u8; 1]>::into(RootTree::Identities).to_vec(),
+        identity_id.to_vec(),
+    ]
+}
 
-        self.add_insert_identity_operations(identity, storage_flags, &mut batch)?;
+pub(crate) fn identity_contract_info_root_path(identity_id: &[u8]) -> [&[u8]; 3] {
+    [
+        Into::<&[u8; 1]>::into(RootTree::Identities),
+        identity_id,
+        Into::<&[u8; 1]>::into(IdentityRootStructure::IdentityContractInfo),
+    ]
+}
 
-        let mut drive_operations: Vec<DriveOperation> = vec![];
+pub(crate) fn identity_contract_info_root_path_vec(identity_id: &[u8]) -> Vec<Vec<u8>> {
+    vec![
+        vec![RootTree::Identities as u8],
+        identity_id.to_vec(),
+        vec![IdentityRootStructure::IdentityContractInfo as u8],
+    ]
+}
 
-        self.apply_batch_grovedb_operations(
-            estimated_costs_only_with_layer_info,
-            transaction,
-            batch,
-            &mut drive_operations,
-        )?;
+pub(crate) fn identity_contract_info_path<'a>(
+    identity_id: &'a [u8],
+    contract_id: &'a [u8],
+) -> [&'a [u8]; 4] {
+    [
+        Into::<&[u8; 1]>::into(RootTree::Identities),
+        identity_id,
+        Into::<&[u8; 1]>::into(IdentityRootStructure::IdentityContractInfo),
+        contract_id,
+    ]
+}
 
-        calculate_fee(None, Some(drive_operations), &block_info.epoch)
-    }
+pub(crate) fn identity_contract_info_path_vec(
+    identity_id: &[u8],
+    contract_id: &[u8],
+) -> Vec<Vec<u8>> {
+    vec![
+        vec![RootTree::Identities as u8],
+        identity_id.to_vec(),
+        vec![IdentityRootStructure::IdentityContractInfo as u8],
+        contract_id.to_vec(),
+    ]
+}
 
-    /// Given an identity, fetches the identity with its flags from storage.
-    pub fn fetch_identity(
-        &self,
-        id: &[u8],
-        transaction: TransactionArg,
-    ) -> Result<(Identity, Option<StorageFlags>), Error> {
-        // get element from GroveDB
-        let element = self
-            .grove
-            .get(
-                [Into::<&[u8; 1]>::into(RootTree::Identities).as_slice(), id],
-                &IDENTITY_KEY,
-                transaction,
-            )
-            .unwrap()
-            .map_err(Error::GroveDB)?;
+pub(crate) fn identity_key_tree_path(identity_id: &[u8]) -> [&[u8]; 3] {
+    [
+        Into::<&[u8; 1]>::into(RootTree::Identities),
+        identity_id,
+        Into::<&[u8; 1]>::into(IdentityRootStructure::IdentityTreeKeys),
+    ]
+}
 
-        // extract identity from element and deserialize the identity
-        if let Element::Item(identity_cbor, element_flags) = &element {
-            let identity = Identity::from_buffer(identity_cbor.as_slice()).map_err(|_| {
-                Error::Identity(IdentityError::IdentitySerialization(
-                    "failed to de-serialize identity from CBOR",
-                ))
-            })?;
+pub(crate) fn identity_key_tree_path_vec(identity_id: &[u8]) -> Vec<Vec<u8>> {
+    vec![
+        vec![RootTree::Identities as u8],
+        identity_id.to_vec(),
+        vec![IdentityRootStructure::IdentityTreeKeys as u8],
+    ]
+}
 
-            Ok((
-                identity,
-                StorageFlags::from_some_element_flags_ref(element_flags)?,
-            ))
-        } else {
-            Err(Error::Drive(DriveError::CorruptedIdentityNotItem(
-                "identity must be an item",
-            )))
-        }
-    }
+pub(crate) fn identity_key_path_vec(identity_id: &[u8], key_id: KeyID) -> Vec<Vec<u8>> {
+    vec![
+        vec![RootTree::Identities as u8],
+        identity_id.to_vec(),
+        vec![IdentityRootStructure::IdentityTreeKeys as u8],
+        key_id.encode_var_vec(),
+    ]
+}
 
-    /// Given a vector of identities, fetches the identities from storage.
-    pub fn fetch_identities(
-        &self,
-        ids: &Vec<[u8; 32]>,
-        transaction: TransactionArg,
-    ) -> Result<Vec<Identity>, Error> {
-        Ok(self
-            .fetch_identities_with_flags(ids, transaction)?
-            .into_iter()
-            .map(|(identity, _)| identity)
-            .collect())
-    }
+pub(crate) fn identity_key_location_within_identity_vec(encoded_key_id: &[u8]) -> Vec<Vec<u8>> {
+    vec![
+        Into::<&[u8; 1]>::into(IdentityRootStructure::IdentityTreeKeys).to_vec(),
+        encoded_key_id.to_vec(),
+    ]
+}
 
-    /// Given a vector of identities, fetches the identities with their flags from storage.
-    pub fn fetch_identities_with_flags(
-        &self,
-        ids: &Vec<[u8; 32]>,
-        transaction: TransactionArg,
-    ) -> Result<Vec<(Identity, Option<StorageFlags>)>, Error> {
-        let mut query = Query::new();
-        query.set_subquery_key(IDENTITY_KEY.to_vec());
-        for id in ids {
-            query.insert_item(QueryItem::Key(id.to_vec()));
-        }
-        let path_query = PathQuery {
-            path: vec![vec![RootTree::Identities as u8]],
-            query: SizedQuery {
-                query,
-                limit: None,
-                offset: None,
-            },
-        };
-        let (result_items, _) = self
-            .grove
-            .query_raw(
-                &path_query,
-                transaction.is_some(),
-                QueryElementResultType,
-                transaction,
-            )
-            .unwrap()
-            .map_err(Error::GroveDB)?;
+pub(crate) fn identity_query_keys_tree_path(identity_id: &[u8]) -> [&[u8]; 3] {
+    [
+        Into::<&[u8; 1]>::into(RootTree::Identities),
+        identity_id,
+        Into::<&[u8; 1]>::into(IdentityRootStructure::IdentityTreeKeyReferences),
+    ]
+}
 
-        result_items
-            .to_elements()
-            .into_iter()
-            .map(|element| {
-                if let Element::Item(identity_cbor, element_flags) = &element {
-                    let identity =
-                        Identity::from_buffer(identity_cbor.as_slice()).map_err(|_| {
-                            Error::Identity(IdentityError::IdentitySerialization(
-                                "failed to de-serialize identity from CBOR",
-                            ))
-                        })?;
+pub(crate) fn identity_query_keys_tree_path_vec(identity_id: [u8; 32]) -> Vec<Vec<u8>> {
+    vec![
+        vec![RootTree::Identities as u8],
+        identity_id.to_vec(),
+        vec![IdentityRootStructure::IdentityTreeKeyReferences as u8],
+    ]
+}
 
-                    Ok((
-                        identity,
-                        StorageFlags::from_some_element_flags_ref(element_flags)?,
-                    ))
-                } else {
-                    Err(Error::Drive(DriveError::CorruptedIdentityNotItem(
-                        "identity must be an item",
-                    )))
-                }
-            })
-            .collect()
+pub(crate) fn identity_query_keys_purpose_tree_path<'a>(
+    identity_id: &'a [u8],
+    purpose: &'a [u8],
+) -> [&'a [u8]; 4] {
+    [
+        Into::<&[u8; 1]>::into(RootTree::Identities),
+        identity_id,
+        Into::<&[u8; 1]>::into(IdentityRootStructure::IdentityTreeKeyReferences),
+        purpose,
+    ]
+}
+
+pub(crate) fn identity_query_keys_purpose_tree_path_vec(
+    identity_id: &[u8],
+    purpose: Purpose,
+) -> Vec<Vec<u8>> {
+    vec![
+        vec![RootTree::Identities as u8],
+        identity_id.to_vec(),
+        vec![IdentityRootStructure::IdentityTreeKeyReferences as u8],
+        vec![purpose as u8],
+    ]
+}
+
+pub(crate) fn identity_query_keys_security_level_tree_path_vec(
+    identity_id: &[u8],
+    security_level: SecurityLevel,
+) -> Vec<Vec<u8>> {
+    vec![
+        vec![RootTree::Identities as u8],
+        identity_id.to_vec(),
+        vec![IdentityRootStructure::IdentityTreeKeyReferences as u8],
+        vec![AUTHENTICATION as u8],
+        vec![security_level as u8],
+    ]
+}
+
+pub(crate) fn identity_query_keys_full_tree_path<'a>(
+    identity_id: &'a [u8],
+    purpose: &'a [u8],
+    security_level: &'a [u8],
+) -> [&'a [u8]; 5] {
+    [
+        Into::<&[u8; 1]>::into(RootTree::Identities),
+        identity_id,
+        Into::<&[u8; 1]>::into(IdentityRootStructure::IdentityTreeKeyReferences),
+        purpose,
+        security_level,
+    ]
+}
+
+/// The root structure of identities
+#[repr(u8)]
+#[derive(Copy, Clone)]
+pub enum IdentityRootStructure {
+    /// The revision of identity data
+    IdentityTreeRevision = 0,
+    /// The keys that an identity has
+    IdentityTreeKeys = 1,
+    /// A Way to search for specific keys
+    IdentityTreeKeyReferences = 2,
+    /// Owed processing fees
+    IdentityTreeNegativeCredit = 3,
+    /// Identity contract information
+    IdentityContractInfo = 4,
+}
+
+impl IdentityRootStructure {
+    fn to_drive_key_info<'a>(self) -> DriveKeyInfo<'a> {
+        DriveKeyInfo::Key(vec![self as u8])
     }
 }
 
-#[cfg(test)]
-mod tests {
-    use crate::common::helpers::setup::setup_drive;
-    use crate::drive::block_info::BlockInfo;
-    use crate::drive::flags::StorageFlags;
-    use dpp::identity::Identity;
+impl From<IdentityRootStructure> for u8 {
+    fn from(root_tree: IdentityRootStructure) -> Self {
+        root_tree as u8
+    }
+}
 
-    #[test]
-    fn test_insert_and_fetch_identity() {
-        let drive = setup_drive(None);
+impl From<IdentityRootStructure> for [u8; 1] {
+    fn from(root_tree: IdentityRootStructure) -> Self {
+        [root_tree as u8]
+    }
+}
 
-        let transaction = drive.grove.start_transaction();
-
-        drive
-            .create_initial_state_structure(Some(&transaction))
-            .expect("expected to create root tree successfully");
-
-        let identity_bytes = hex::decode("01a462696458203012c19b98ec0033addb36cd64b7f510670f2a351a4304b5f6994144286efdac6762616c616e636500687265766973696f6e006a7075626c69634b65797381a6626964006464617461582102abb64674c5df796559eb3cf92a84525cc1a6068e7ad9d4ff48a1f0b179ae29e164747970650067707572706f73650068726561644f6e6c79f46d73656375726974794c6576656c00").expect("expected to decode identity hex");
-
-        let identity = Identity::from_buffer(identity_bytes.as_slice())
-            .expect("expected to deserialize an identity");
-
-        drive
-            .insert_identity(
-                identity.clone(),
-                BlockInfo::default(),
-                true,
-                StorageFlags::optional_default_as_ref(),
-                Some(&transaction),
-            )
-            .expect("expected to insert identity");
-
-        let (fetched_identity, _) = drive
-            .fetch_identity(&identity.id.buffer, Some(&transaction))
-            .expect("should fetch an identity");
-
-        assert_eq!(
-            fetched_identity.to_buffer().expect("should serialize"),
-            identity.to_buffer().expect("should serialize")
-        );
+impl From<IdentityRootStructure> for &'static [u8; 1] {
+    fn from(identity_tree: IdentityRootStructure) -> Self {
+        match identity_tree {
+            IdentityRootStructure::IdentityTreeRevision => &[0],
+            IdentityRootStructure::IdentityTreeKeys => &[1],
+            IdentityRootStructure::IdentityTreeKeyReferences => &[2],
+            IdentityRootStructure::IdentityTreeNegativeCredit => &[3],
+            IdentityRootStructure::IdentityContractInfo => &[4],
+        }
     }
 }

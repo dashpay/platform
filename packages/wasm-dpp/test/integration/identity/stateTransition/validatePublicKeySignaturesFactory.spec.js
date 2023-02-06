@@ -18,6 +18,7 @@ describe('validatePublicKeySignaturesFactory', () => {
 
   let IdentityCreateTransition;
   let IdentityPublicKey;
+  let IdentityPublicKeyCreateTransition;
   let InvalidIdentityKeySignatureError;
   let ValidationResult;
   let PublicKeysSignaturesValidator;
@@ -27,6 +28,7 @@ describe('validatePublicKeySignaturesFactory', () => {
     ({
       IdentityCreateTransition,
       IdentityPublicKey,
+      IdentityPublicKeyCreateTransition,
       InvalidIdentityKeySignatureError,
       PublicKeysSignaturesValidator,
       ValidationResult,
@@ -38,28 +40,30 @@ describe('validatePublicKeySignaturesFactory', () => {
       getIdentityCreateTransitionFixture().toObject(),
     );
 
-    const privateKey1 = new PrivateKey();
+    const privateKey1 = new PrivateKey('17e0b1703e226204c557bce68b0871683ea409ae90c7a733b72a33f7c129c959');
     const publicKey1 = privateKey1.toPublicKey();
 
-    const identityPublicKey1 = new IdentityPublicKey({
+    const identityPublicKey1 = new IdentityPublicKeyCreateTransition({
       id: 0,
       type: IdentityPublicKey.TYPES.ECDSA_SECP256K1,
       data: publicKey1.toBuffer(),
       purpose: IdentityPublicKey.PURPOSES.AUTHENTICATION,
       securityLevel: IdentityPublicKey.SECURITY_LEVELS.MASTER,
       readOnly: false,
+      signature: Buffer.alloc(0),
     });
 
-    const privateKey2 = new PrivateKey();
+    const privateKey2 = new PrivateKey('afc20afac882f676af5a268a2eca9c763996c36dbeb3660648df2108006820c7');
     const publicKey2 = privateKey2.toPublicKey();
 
-    const identityPublicKey2 = new IdentityPublicKey({
+    const identityPublicKey2 = new IdentityPublicKeyCreateTransition({
       id: 1,
       type: IdentityPublicKey.TYPES.ECDSA_HASH160,
       data: Hash.sha256ripemd160(publicKey2.toBuffer()),
       purpose: IdentityPublicKey.PURPOSES.AUTHENTICATION,
       securityLevel: IdentityPublicKey.SECURITY_LEVELS.CRITICAL,
       readOnly: false,
+      signature: Buffer.alloc(0),
     });
 
     const blsModule = await BlsSignatures.getInstance();
@@ -71,13 +75,14 @@ describe('validatePublicKeySignaturesFactory', () => {
     const privateKey3 = BlsPrivateKey.fromBytes(randomBytes, true);
     const publicKey3 = privateKey3.getPublicKey();
 
-    const identityPublicKey3 = new IdentityPublicKey({
+    const identityPublicKey3 = new IdentityPublicKeyCreateTransition({
       id: 2,
       type: IdentityPublicKey.TYPES.BLS12_381,
       data: Buffer.from(publicKey3.serialize()),
       purpose: IdentityPublicKey.PURPOSES.AUTHENTICATION,
       securityLevel: IdentityPublicKey.SECURITY_LEVELS.CRITICAL,
       readOnly: false,
+      signature: Buffer.alloc(0),
     });
 
     identityCreateTransition.setPublicKeys([

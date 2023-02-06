@@ -32,6 +32,7 @@
 //! This modules implements functions in Drive relevant to updating Documents.
 //!
 
+use std::borrow::Cow;
 use std::collections::{HashMap, HashSet};
 
 use dpp::data_contract::document_type::DocumentType;
@@ -58,7 +59,7 @@ use crate::drive::object_size_info::DocumentInfo::{
 };
 use dpp::document::document_stub::DocumentStub;
 
-use crate::drive::object_size_info::PathKeyElementInfo::PathKeyElement;
+use crate::drive::object_size_info::PathKeyElementInfo::PathKeyRefElement;
 use crate::drive::object_size_info::{
     DocumentAndContractInfo, DriveKeyInfo, OwnedDocumentInfo, PathKeyInfo,
 };
@@ -89,7 +90,7 @@ impl Drive {
         owner_id: Option<[u8; 32]>,
         block_info: BlockInfo,
         apply: bool,
-        storage_flags: Option<&StorageFlags>,
+        storage_flags: Option<Cow<StorageFlags>>,
         transaction: TransactionArg,
     ) -> Result<FeeResult, Error> {
         let contract = <Contract as DriveContractExt>::from_cbor(contract_cbor, None)?;
@@ -118,7 +119,7 @@ impl Drive {
         owner_id: Option<[u8; 32]>,
         block_info: BlockInfo,
         apply: bool,
-        storage_flags: Option<&StorageFlags>,
+        storage_flags: Option<Cow<StorageFlags>>,
         transaction: TransactionArg,
     ) -> Result<FeeResult, Error> {
         let mut drive_operations: Vec<DriveOperation> = vec![];
@@ -175,7 +176,7 @@ impl Drive {
         owner_id: Option<[u8; 32]>,
         block_info: BlockInfo,
         apply: bool,
-        storage_flags: Option<&StorageFlags>,
+        storage_flags: Option<Cow<StorageFlags>>,
         transaction: TransactionArg,
     ) -> Result<FeeResult, Error> {
         let document = DocumentStub::from_cbor(serialized_document, None, owner_id)?;
@@ -203,7 +204,7 @@ impl Drive {
         owner_id: Option<[u8; 32]>,
         block_info: BlockInfo,
         apply: bool,
-        storage_flags: Option<&StorageFlags>,
+        storage_flags: Option<Cow<StorageFlags>>,
         transaction: TransactionArg,
     ) -> Result<FeeResult, Error> {
         let mut drive_operations: Vec<DriveOperation> = vec![];
@@ -301,7 +302,7 @@ impl Drive {
         let document_type = document_and_contract_info.document_type;
         let owner_id = document_and_contract_info.owned_document_info.owner_id;
 
-        if let DocumentRefAndSerialization((document, _serialized_document, storage_flags)) =
+        if let DocumentRefAndSerialization((document, _serialized_document, ref storage_flags)) =
             document_and_contract_info.owned_document_info.document_info
         {
             // we need to construct the path for documents on the contract
@@ -320,7 +321,7 @@ impl Drive {
             let document_reference = make_document_reference(
                 document,
                 document_and_contract_info.document_type,
-                storage_flags,
+                storage_flags.as_ref().map(|flags| flags.as_ref()),
             );
 
             // next we need to get the old document from storage
@@ -341,7 +342,7 @@ impl Drive {
                     &mut batch_operations,
                 )?
             } else {
-                self.grove_get_direct(
+                self.grove_get_raw(
                     contract_documents_primary_key_path,
                     document.id.as_slice(),
                     DirectQueryType::StatefulDirectQuery,
@@ -369,9 +370,10 @@ impl Drive {
                         None,
                         owner_id,
                     )?;
+                    let storage_flags = StorageFlags::map_some_element_flags_ref(&element_flags)?;
                     Ok(DocumentWithoutSerialization((
                         document,
-                        StorageFlags::from_some_element_flags_ref(&element_flags)?,
+                        storage_flags.map(Cow::Owned),
                     )))
                 } else {
                     Err(Error::Drive(DriveError::CorruptedDocumentNotItem(
@@ -436,8 +438,8 @@ impl Drive {
                                 index_path.clone(),
                                 document_top_field.as_slice(),
                             )),
-                            storage_flags,
-                            BatchInsertTreeApplyType::StatefulBatchInsert,
+                            storage_flags.as_ref().map(|flags| flags.as_ref()),
+                            BatchInsertTreeApplyType::StatefulBatchInsertTree,
                             transaction,
                             previous_batch_operations,
                             &mut batch_operations,
@@ -501,8 +503,8 @@ impl Drive {
                                     index_path.clone(),
                                     index_property.name.as_bytes(),
                                 )),
-                                storage_flags,
-                                BatchInsertTreeApplyType::StatefulBatchInsert,
+                                storage_flags.as_ref().map(|flags| flags.as_ref()),
+                                BatchInsertTreeApplyType::StatefulBatchInsertTree,
                                 transaction,
                                 previous_batch_operations,
                                 &mut batch_operations,
@@ -532,8 +534,8 @@ impl Drive {
                                     index_path.clone(),
                                     document_index_field.as_slice(),
                                 )),
-                                storage_flags,
-                                BatchInsertTreeApplyType::StatefulBatchInsert,
+                                storage_flags.as_ref().map(|flags| flags.as_ref()),
+                                BatchInsertTreeApplyType::StatefulBatchInsertTree,
                                 transaction,
                                 previous_batch_operations,
                                 &mut batch_operations,
@@ -605,8 +607,8 @@ impl Drive {
                         // here we are inserting an empty tree that will have a subtree of all other index properties
                         self.batch_insert_empty_tree_if_not_exists(
                             PathKeyInfo::PathKeyRef::<0>((index_path.clone(), &[0])),
-                            storage_flags,
-                            BatchInsertTreeApplyType::StatefulBatchInsert,
+                            storage_flags.as_ref().map(|flags| flags.as_ref()),
+                            BatchInsertTreeApplyType::StatefulBatchInsertTree,
                             transaction,
                             previous_batch_operations,
                             &mut batch_operations,
@@ -615,7 +617,7 @@ impl Drive {
 
                         // here we should return an error if the element already exists
                         self.batch_insert(
-                            PathKeyElement::<0>((
+                            PathKeyRefElement::<0>((
                                 index_path,
                                 document.id.as_slice(),
                                 document_reference.clone(),
@@ -626,7 +628,7 @@ impl Drive {
                         // in one update you can't insert an element twice, so need to check the cache
                         // here we should return an error if the element already exists
                         let inserted = self.batch_insert_if_not_exists(
-                            PathKeyElement::<0>((index_path, &[0], document_reference.clone())),
+                            PathKeyRefElement::<0>((index_path, &[0], document_reference.clone())),
                             BatchInsertApplyType::StatefulBatchInsert,
                             transaction,
                             &mut batch_operations,
@@ -707,7 +709,8 @@ mod tests {
     use crate::drive::object_size_info::DocumentInfo::DocumentRefAndSerialization;
     use crate::drive::{defaults, Drive};
     use crate::fee::credits::Creditable;
-    use crate::fee::default_costs::STORAGE_DISK_USAGE_CREDIT_PER_BYTE;
+    use crate::fee::default_costs::KnownCostItem::StorageDiskUsageCreditPerByte;
+    use crate::fee_pools::epochs::Epoch;
     use crate::query::DriveQuery;
     use crate::{common::setup_contract, drive::test_utils::TestEntropyGenerator};
 
@@ -730,7 +733,7 @@ mod tests {
                 None,
                 BlockInfo::default(),
                 true,
-                StorageFlags::optional_default_as_ref(),
+                StorageFlags::optional_default_as_cow(),
                 Some(&db_transaction),
             )
             .expect("expected to apply contract successfully");
@@ -748,7 +751,7 @@ mod tests {
                 true,
                 BlockInfo::default(),
                 true,
-                StorageFlags::optional_default_as_ref(),
+                StorageFlags::optional_default_as_cow(),
                 Some(&db_transaction),
             )
             .expect("should create alice profile");
@@ -765,7 +768,7 @@ mod tests {
                 None,
                 BlockInfo::default(),
                 true,
-                StorageFlags::optional_default_as_ref(),
+                StorageFlags::optional_default_as_cow(),
                 Some(&db_transaction),
             )
             .expect("should update alice profile");
@@ -790,7 +793,7 @@ mod tests {
                 None,
                 BlockInfo::default(),
                 true,
-                StorageFlags::optional_default_as_ref(),
+                StorageFlags::optional_default_as_cow(),
                 None,
             )
             .expect("expected to apply contract successfully");
@@ -806,7 +809,7 @@ mod tests {
             .document_type_for_name("profile")
             .expect("expected to get a document type");
 
-        let storage_flags = Some(StorageFlags::SingleEpoch(0));
+        let storage_flags = Some(Cow::Owned(StorageFlags::SingleEpoch(0)));
 
         drive
             .add_document_for_contract(
@@ -815,7 +818,7 @@ mod tests {
                         document_info: DocumentRefAndSerialization((
                             &alice_profile,
                             alice_profile_cbor.as_slice(),
-                            storage_flags.as_ref(),
+                            storage_flags,
                         )),
                         owner_id: None,
                     },
@@ -833,7 +836,7 @@ mod tests {
         let query = DriveQuery::from_sql_expr(sql_string, &contract).expect("should build query");
 
         let (results_no_transaction, _, _) = query
-            .execute_no_proof(&drive, None, None)
+            .execute_serialized_no_proof(&drive, None, None)
             .expect("expected to execute query");
 
         assert_eq!(results_no_transaction.len(), 1);
@@ -850,13 +853,13 @@ mod tests {
                 None,
                 BlockInfo::default(),
                 true,
-                StorageFlags::optional_default_as_ref(),
+                StorageFlags::optional_default_as_cow(),
                 None,
             )
             .expect("should update alice profile");
 
         let (results_no_transaction, _, _) = query
-            .execute_no_proof(&drive, None, None)
+            .execute_serialized_no_proof(&drive, None, None)
             .expect("expected to execute query");
 
         assert_eq!(results_no_transaction.len(), 1);
@@ -883,7 +886,7 @@ mod tests {
                 None,
                 BlockInfo::default(),
                 true,
-                StorageFlags::optional_default_as_ref(),
+                StorageFlags::optional_default_as_cow(),
                 Some(&db_transaction),
             )
             .expect("expected to apply contract successfully");
@@ -899,7 +902,7 @@ mod tests {
             .document_type_for_name("profile")
             .expect("expected to get a document type");
 
-        let storage_flags = Some(StorageFlags::SingleEpoch(0));
+        let storage_flags = Some(Cow::Owned(StorageFlags::SingleEpoch(0)));
 
         drive
             .add_document_for_contract(
@@ -908,7 +911,7 @@ mod tests {
                         document_info: DocumentRefAndSerialization((
                             &alice_profile,
                             alice_profile_cbor.as_slice(),
-                            storage_flags.as_ref(),
+                            storage_flags,
                         )),
                         owner_id: None,
                     },
@@ -932,7 +935,7 @@ mod tests {
         let query = DriveQuery::from_sql_expr(sql_string, &contract).expect("should build query");
 
         let (results_no_transaction, _, _) = query
-            .execute_no_proof(&drive, None, None)
+            .execute_serialized_no_proof(&drive, None, None)
             .expect("expected to execute query");
 
         assert_eq!(results_no_transaction.len(), 1);
@@ -940,7 +943,7 @@ mod tests {
         let db_transaction = drive.grove.start_transaction();
 
         let (results_on_transaction, _, _) = query
-            .execute_no_proof(&drive, None, Some(&db_transaction))
+            .execute_serialized_no_proof(&drive, None, Some(&db_transaction))
             .expect("expected to execute query");
 
         assert_eq!(results_on_transaction.len(), 1);
@@ -957,13 +960,13 @@ mod tests {
                 None,
                 BlockInfo::default(),
                 true,
-                StorageFlags::optional_default_as_ref(),
+                StorageFlags::optional_default_as_cow(),
                 Some(&db_transaction),
             )
             .expect("should update alice profile");
 
         let (results_on_transaction, _, _) = query
-            .execute_no_proof(&drive, None, Some(&db_transaction))
+            .execute_serialized_no_proof(&drive, None, Some(&db_transaction))
             .expect("expected to execute query");
 
         assert_eq!(results_on_transaction.len(), 1);
@@ -996,7 +999,7 @@ mod tests {
                 None,
                 BlockInfo::default(),
                 true,
-                StorageFlags::optional_default_as_ref(),
+                StorageFlags::optional_default_as_cow(),
                 Some(&db_transaction),
             )
             .expect("expected to apply contract successfully");
@@ -1012,7 +1015,7 @@ mod tests {
             .document_type_for_name("profile")
             .expect("expected to get a document type");
 
-        let storage_flags = Some(StorageFlags::SingleEpoch(0));
+        let storage_flags = Some(Cow::Owned(StorageFlags::SingleEpoch(0)));
 
         drive
             .add_document_for_contract(
@@ -1021,7 +1024,7 @@ mod tests {
                         document_info: DocumentRefAndSerialization((
                             &alice_profile,
                             alice_profile_cbor.as_slice(),
-                            storage_flags.as_ref(),
+                            storage_flags,
                         )),
                         owner_id: None,
                     },
@@ -1045,7 +1048,7 @@ mod tests {
         let query = DriveQuery::from_sql_expr(sql_string, &contract).expect("should build query");
 
         let (results_no_transaction, _, _) = query
-            .execute_no_proof(&drive, None, None)
+            .execute_serialized_no_proof(&drive, None, None)
             .expect("expected to execute query");
 
         assert_eq!(results_no_transaction.len(), 1);
@@ -1053,7 +1056,7 @@ mod tests {
         let db_transaction = drive.grove.start_transaction();
 
         let (results_on_transaction, _, _) = query
-            .execute_no_proof(&drive, None, Some(&db_transaction))
+            .execute_serialized_no_proof(&drive, None, Some(&db_transaction))
             .expect("expected to execute query");
 
         assert_eq!(results_on_transaction.len(), 1);
@@ -1071,7 +1074,7 @@ mod tests {
             .expect("expected to delete document");
 
         let (results_on_transaction, _, _) = query
-            .execute_no_proof(&drive, None, Some(&db_transaction))
+            .execute_serialized_no_proof(&drive, None, Some(&db_transaction))
             .expect("expected to execute query");
 
         assert_eq!(results_on_transaction.len(), 0);
@@ -1082,7 +1085,7 @@ mod tests {
             .expect("expected to rollback transaction");
 
         let (results_on_transaction, _, _) = query
-            .execute_no_proof(&drive, None, Some(&db_transaction))
+            .execute_serialized_no_proof(&drive, None, Some(&db_transaction))
             .expect("expected to execute query");
 
         assert_eq!(results_on_transaction.len(), 1);
@@ -1099,7 +1102,7 @@ mod tests {
                 None,
                 BlockInfo::default(),
                 true,
-                StorageFlags::optional_default_as_ref(),
+                StorageFlags::optional_default_as_cow(),
                 Some(&db_transaction),
             )
             .expect("should update alice profile");
@@ -1156,7 +1159,7 @@ mod tests {
                 None,
                 BlockInfo::default(),
                 true,
-                StorageFlags::optional_default_as_ref(),
+                StorageFlags::optional_default_as_cow(),
                 None,
             )
             .expect("should create a contract");
@@ -1189,7 +1192,7 @@ mod tests {
                 true,
                 BlockInfo::default(),
                 true,
-                StorageFlags::optional_default_as_ref(),
+                StorageFlags::optional_default_as_cow(),
                 None,
             )
             .expect("should add document");
@@ -1221,7 +1224,7 @@ mod tests {
                 None,
                 BlockInfo::default(),
                 true,
-                StorageFlags::optional_default_as_ref(),
+                StorageFlags::optional_default_as_cow(),
                 None,
             )
             .expect("should update document");
@@ -1282,7 +1285,7 @@ mod tests {
                 false,
                 BlockInfo::default(),
                 true,
-                StorageFlags::optional_default_as_ref(),
+                StorageFlags::optional_default_as_cow(),
                 Some(&db_transaction),
             )
             .expect("expected to insert a document successfully");
@@ -1295,7 +1298,7 @@ mod tests {
                 Some(random_owner_id),
                 BlockInfo::default(),
                 true,
-                StorageFlags::optional_default_as_ref(),
+                StorageFlags::optional_default_as_cow(),
                 Some(&db_transaction),
             )
             .expect_err("expected not to be able to update a non mutable document");
@@ -1309,7 +1312,7 @@ mod tests {
                 true,
                 BlockInfo::default(),
                 true,
-                StorageFlags::optional_default_as_ref(),
+                StorageFlags::optional_default_as_cow(),
                 Some(&db_transaction),
             )
             .expect_err("expected not to be able to override a non mutable document");
@@ -1355,7 +1358,7 @@ mod tests {
                 false,
                 BlockInfo::default(),
                 true,
-                StorageFlags::optional_default_as_ref(),
+                StorageFlags::optional_default_as_cow(),
                 Some(&db_transaction),
             )
             .expect("expected to insert a document successfully");
@@ -1368,7 +1371,7 @@ mod tests {
                 Some(random_owner_id),
                 BlockInfo::default(),
                 true,
-                StorageFlags::optional_default_as_ref(),
+                StorageFlags::optional_default_as_cow(),
                 Some(&db_transaction),
             )
             .expect("expected to update a document with history successfully");
@@ -1437,7 +1440,8 @@ mod tests {
             true,
             transaction.as_ref(),
         );
-        let original_bytes = original_fees.storage_fee / STORAGE_DISK_USAGE_CREDIT_PER_BYTE;
+        let original_bytes = original_fees.storage_fee
+            / Epoch::new(0).cost_for_known_cost_item(StorageDiskUsageCreditPerByte);
         let expected_added_bytes = if using_history {
             //Explanation for 1290
 
@@ -1458,13 +1462,13 @@ mod tests {
             // 32 bytes for the unique id
             // 1 byte for key_size (required space for 64)
 
-            // Value -> 279
+            // Value -> 276
             //   1 for the flag option with flags
             //   1 for the flags size
             //   35 for flags 32 + 1 + 2
             //   1 for the enum type
             //   1 for item
-            //   173 for item serialized bytes
+            //   170 for item serialized bytes
             //   1 for Basic Merk
             // 32 for node hash
             // 32 for value hash
@@ -1477,7 +1481,7 @@ mod tests {
             // Child Heights 2
             // Basic Merk 1
 
-            // Total 65 + 279 + 68 = 412
+            // Total 65 + 276 + 68 = 409
 
             //// Tree 1 / <Person Contract> / 1 / person / message
             // Key: My apples are safe
@@ -1573,7 +1577,7 @@ mod tests {
             // Child Heights 2
             // Basic Merk 1
 
-            // Total 65 + 145 + 68 = 278
+            // Total 65 + 145 + 68 = 275
 
             1011
         };
@@ -1597,9 +1601,12 @@ mod tests {
                 .get(&0)
                 .unwrap();
 
-            let removed_bytes = removed_credits.to_unsigned() / STORAGE_DISK_USAGE_CREDIT_PER_BYTE;
+            assert_eq!(*removed_credits, 27228298);
+            let refund_equivalent_bytes = removed_credits.to_unsigned()
+                / Epoch::new(0).cost_for_known_cost_item(StorageDiskUsageCreditPerByte);
 
-            assert_eq!(original_bytes, removed_bytes);
+            assert!(expected_added_bytes > refund_equivalent_bytes);
+            assert_eq!(refund_equivalent_bytes, 1008); // we refunded 1008 instead of 1011
 
             // let's re-add it again
             let original_fees = apply_person(
@@ -1611,7 +1618,8 @@ mod tests {
                 transaction.as_ref(),
             );
 
-            let original_bytes = original_fees.storage_fee / STORAGE_DISK_USAGE_CREDIT_PER_BYTE;
+            let original_bytes = original_fees.storage_fee
+                / Epoch::new(0).cost_for_known_cost_item(StorageDiskUsageCreditPerByte);
 
             assert_eq!(original_bytes, expected_added_bytes);
         }
@@ -1627,7 +1635,8 @@ mod tests {
         );
         // we both add and remove bytes
         // this is because trees are added because of indexes, and also removed
-        let added_bytes = update_fees.storage_fee / STORAGE_DISK_USAGE_CREDIT_PER_BYTE;
+        let added_bytes = update_fees.storage_fee
+            / Epoch::new(0).cost_for_known_cost_item(StorageDiskUsageCreditPerByte);
 
         let expected_added_bytes = if using_history { 362 } else { 1 };
         assert_eq!(added_bytes, expected_added_bytes);
@@ -1696,7 +1705,8 @@ mod tests {
             true,
             transaction.as_ref(),
         );
-        let original_bytes = original_fees.storage_fee / STORAGE_DISK_USAGE_CREDIT_PER_BYTE;
+        let original_bytes = original_fees.storage_fee
+            / Epoch::new(0).cost_for_known_cost_item(StorageDiskUsageCreditPerByte);
         let expected_added_bytes = if using_history { 1287 } else { 1011 };
         assert_eq!(original_bytes, expected_added_bytes);
         if !using_history {
@@ -1716,9 +1726,12 @@ mod tests {
                 .get(&0)
                 .unwrap();
 
-            let removed_bytes = removed_credits.to_unsigned() / STORAGE_DISK_USAGE_CREDIT_PER_BYTE;
+            assert_eq!(*removed_credits, 27228298);
+            let refund_equivalent_bytes = removed_credits.to_unsigned()
+                / Epoch::new(0).cost_for_known_cost_item(StorageDiskUsageCreditPerByte);
 
-            assert_eq!(original_bytes, removed_bytes);
+            assert!(expected_added_bytes > refund_equivalent_bytes);
+            assert_eq!(refund_equivalent_bytes, 1008); // we refunded 1008 instead of 1011
 
             // let's re-add it again
             let original_fees = apply_person(
@@ -1730,7 +1743,8 @@ mod tests {
                 transaction.as_ref(),
             );
 
-            let original_bytes = original_fees.storage_fee / STORAGE_DISK_USAGE_CREDIT_PER_BYTE;
+            let original_bytes = original_fees.storage_fee
+                / Epoch::new(0).cost_for_known_cost_item(StorageDiskUsageCreditPerByte);
 
             assert_eq!(original_bytes, expected_added_bytes);
         }
@@ -1746,7 +1760,8 @@ mod tests {
         );
         // we both add and remove bytes
         // this is because trees are added because of indexes, and also removed
-        let added_bytes = update_fees.storage_fee / STORAGE_DISK_USAGE_CREDIT_PER_BYTE;
+        let added_bytes = update_fees.storage_fee
+            / Epoch::new(0).cost_for_known_cost_item(StorageDiskUsageCreditPerByte);
 
         let removed_credits = update_fees
             .fee_refunds
@@ -1755,14 +1770,18 @@ mod tests {
             .get(&0)
             .unwrap();
 
-        let removed_bytes = removed_credits.to_unsigned() / STORAGE_DISK_USAGE_CREDIT_PER_BYTE;
-
         // We added one byte, and since it is an index, and keys are doubled it's 2 extra bytes
         let expected_added_bytes = if using_history { 607 } else { 605 };
         assert_eq!(added_bytes, expected_added_bytes);
 
-        let expected_removed_bytes = if using_history { 604 } else { 602 };
-        assert_eq!(removed_bytes, expected_removed_bytes);
+        let expected_removed_credits = if using_history { 16266750 } else { 16212825 };
+        assert_eq!(*removed_credits, expected_removed_credits);
+        let refund_equivalent_bytes = removed_credits.to_unsigned()
+            / Epoch::new(0).cost_for_known_cost_item(StorageDiskUsageCreditPerByte);
+
+        assert!(expected_added_bytes > refund_equivalent_bytes);
+        let expected_remove_bytes = if using_history { 602 } else { 600 };
+        assert_eq!(refund_equivalent_bytes, expected_remove_bytes); // we refunded 1011 instead of 1014
     }
 
     #[test]
@@ -1868,7 +1887,8 @@ mod tests {
             false,
             transaction.as_ref(),
         );
-        let original_bytes = original_fees.storage_fee / STORAGE_DISK_USAGE_CREDIT_PER_BYTE;
+        let original_bytes = original_fees.storage_fee
+            / Epoch::new(0).cost_for_known_cost_item(StorageDiskUsageCreditPerByte);
         let expected_added_bytes = if using_history {
             //Explanation for 1290
 
@@ -1880,22 +1900,22 @@ mod tests {
             // Document Storage
 
             //// Item
-            // = 412 Bytes
+            // = 409 Bytes
 
-            // Explanation for 412 storage_written_bytes
+            // Explanation for 409 storage_written_bytes
 
             // Key -> 65 bytes
             // 32 bytes for the key prefix
             // 32 bytes for the unique id
             // 1 byte for key_size (required space for 64)
 
-            // Value -> 279
+            // Value -> 276
             //   1 for the flag option with flags
             //   1 for the flags size
             //   35 for flags 32 + 1 + 2
             //   1 for the enum type
             //   1 for item
-            //   173 for item serialized bytes
+            //   170 for item serialized bytes
             //   1 for Basic Merk
             // 32 for node hash
             // 32 for value hash
@@ -2006,7 +2026,7 @@ mod tests {
 
             // Total 65 + 145 + 68 = 278
 
-            // 412 + 179 + 145 + 278 = 1014
+            // 409 + 179 + 145 + 278 = 1011
 
             1011
         };
@@ -2023,7 +2043,8 @@ mod tests {
         );
         // we both add and remove bytes
         // this is because trees are added because of indexes, and also removed
-        let added_bytes = update_fees.storage_fee / STORAGE_DISK_USAGE_CREDIT_PER_BYTE;
+        let added_bytes = update_fees.storage_fee
+            / Epoch::new(0).cost_for_known_cost_item(StorageDiskUsageCreditPerByte);
 
         let expected_added_bytes = if using_history { 1288 } else { 1012 };
         assert_eq!(added_bytes, expected_added_bytes);
@@ -2079,13 +2100,13 @@ mod tests {
         let document_type = contract
             .document_type_for_name("person")
             .expect("expected to get document type");
-        let storage_flags = Some(StorageFlags::SingleEpochOwned(
+        let storage_flags = Some(Cow::Owned(StorageFlags::SingleEpochOwned(
             0,
             person
                 .owner_id
                 .try_into()
                 .expect("expected to get owner_id"),
-        ));
+        )));
 
         drive
             .add_document_for_contract(
@@ -2094,7 +2115,7 @@ mod tests {
                         document_info: DocumentRefAndSerialization((
                             &document,
                             document_cbor.as_slice(),
-                            storage_flags.as_ref(),
+                            storage_flags,
                         )),
                         owner_id: None,
                     },
@@ -2368,7 +2389,7 @@ mod tests {
         );
 
         let contract = factory
-            .create(owner_id.clone(), documents)
+            .create(owner_id, documents)
             .expect("data in fixture should be correct");
 
         let contract_cbor = contract.to_cbor().expect("should encode contract to cbor");
@@ -2383,7 +2404,7 @@ mod tests {
                 contract_cbor.clone(),
                 block_info.clone(),
                 true,
-                StorageFlags::optional_default_as_ref(),
+                StorageFlags::optional_default_as_cow(),
                 None,
             )
             .expect("should apply contract");
@@ -2411,7 +2432,7 @@ mod tests {
         let mut document = document_factory
             .create(
                 contract.clone(),
-                owner_id.clone(),
+                owner_id,
                 document_type.clone(),
                 json!({ "name": "Ivan" }),
             )
@@ -2419,7 +2440,10 @@ mod tests {
 
         let document_cbor = document.to_buffer().expect("should encode to buffer");
 
-        let storage_flags = StorageFlags::SingleEpochOwned(0, owner_id.to_buffer());
+        let storage_flags = Some(Cow::Owned(StorageFlags::SingleEpochOwned(
+            0,
+            owner_id.to_buffer(),
+        )));
 
         let create_fees = drive
             .add_serialized_document_for_contract(
@@ -2430,7 +2454,7 @@ mod tests {
                 false,
                 block_info,
                 true,
-                Some(&storage_flags),
+                storage_flags.clone(),
                 None,
             )
             .expect("should create document");
@@ -2455,7 +2479,7 @@ mod tests {
                 Some(owner_id.to_buffer()),
                 block_info,
                 false,
-                Some(&storage_flags),
+                storage_flags,
                 None,
             )
             .expect("should update document");

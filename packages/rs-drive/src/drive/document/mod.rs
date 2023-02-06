@@ -70,7 +70,7 @@ pub(crate) fn contract_document_type_path_vec(
     document_type_name: &str,
 ) -> Vec<Vec<u8>> {
     vec![
-        vec![1u8],
+        vec![RootTree::ContractDocuments as u8],
         contract_id.to_vec(),
         vec![1u8],
         document_type_name.as_bytes().to_vec(),
@@ -238,7 +238,7 @@ pub(crate) mod tests {
                 None,
                 BlockInfo::default(),
                 true,
-                StorageFlags::optional_default_as_ref(),
+                StorageFlags::optional_default_as_cow(),
                 None,
             )
             .expect("expected to apply contract successfully");

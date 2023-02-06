@@ -48,7 +48,7 @@ where
         let existing_identity = match maybe_existing_identity {
             None => {
                 let err = BasicError::IdentityNotFoundError {
-                    identity_id: state_transition.identity_id.clone(),
+                    identity_id: state_transition.identity_id,
                 };
 
                 result.add_error(err);
@@ -60,7 +60,7 @@ where
 
         if existing_identity.get_balance() < state_transition.amount {
             let err = IdentityInsufficientBalanceError {
-                identity_id: state_transition.identity_id.clone(),
+                identity_id: state_transition.identity_id,
                 balance: existing_identity.balance,
             };
 

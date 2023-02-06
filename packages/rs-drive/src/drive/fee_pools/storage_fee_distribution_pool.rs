@@ -41,7 +41,7 @@ use crate::fee_pools::epochs_root_tree_key_constants::KEY_STORAGE_FEE_POOL;
 
 impl Drive {
     /// Returns the amount of credits in the storage fee distribution pool.
-    pub fn get_aggregate_storage_fees_from_distribution_pool(
+    pub fn get_storage_fees_from_distribution_pool(
         &self,
         transaction: TransactionArg,
     ) -> Result<Credits, Error> {
@@ -66,7 +66,7 @@ mod tests {
 
     use crate::common::helpers::setup::{setup_drive, setup_drive_with_initial_state_structure};
 
-    mod get_aggregate_storage_fees_from_distribution_pool {
+    mod get_storage_fees_from_distribution_pool {
         use super::*;
         use crate::drive::batch::GroveDbOpBatch;
         use crate::drive::fee_pools::pools_vec_path;
@@ -76,8 +76,7 @@ mod tests {
             let drive = setup_drive(None);
             let transaction = drive.grove.start_transaction();
 
-            let result =
-                drive.get_aggregate_storage_fees_from_distribution_pool(Some(&transaction));
+            let result = drive.get_storage_fees_from_distribution_pool(Some(&transaction));
 
             assert!(matches!(
                 result,
@@ -102,8 +101,7 @@ mod tests {
                 .grove_apply_batch(batch, false, Some(&transaction))
                 .expect("should apply batch");
 
-            let result =
-                drive.get_aggregate_storage_fees_from_distribution_pool(Some(&transaction));
+            let result = drive.get_storage_fees_from_distribution_pool(Some(&transaction));
 
             assert!(matches!(
                 result,
@@ -127,7 +125,7 @@ mod tests {
                 .expect("should apply batch");
 
             let result = drive
-                .get_aggregate_storage_fees_from_distribution_pool(Some(&transaction))
+                .get_storage_fees_from_distribution_pool(Some(&transaction))
                 .expect("should get aggregated storage fees");
 
             assert_eq!(result, 0);

@@ -32,12 +32,15 @@
 //! This module defines helper functions related to fee distribution pools.
 //!
 
+use std::borrow::Cow;
 use std::collections::BTreeMap;
 
 use ciborium::value::Value;
 use drive::dpp::identity::Identity;
+use rand::rngs::StdRng;
+use rand::{Rng, SeedableRng};
 
-use drive::common::helpers::identities::create_test_identity;
+use drive::common::helpers::identities::create_test_identity_with_rng;
 use drive::contract::Contract;
 use drive::dpp::data_contract::DriveContractExt;
 use drive::dpp::document::document_stub::DocumentStub;
@@ -49,13 +52,12 @@ use drive::drive::Drive;
 use drive::grovedb::TransactionArg;
 
 use crate::contracts::reward_shares::MN_REWARD_SHARES_DOCUMENT_TYPE;
-use crate::error::Error;
 
 /// A function which creates a test MN_REWARD_SHARES_DOCUMENT_TYPE document.
 fn create_test_mn_share_document(
     drive: &Drive,
     contract: &Contract,
-    identity: &Identity,
+    identity_id: [u8; 32],
     pay_to_identity: &Identity,
     percentage: u16,
     transaction: TransactionArg,
@@ -73,14 +75,14 @@ fn create_test_mn_share_document(
     let document = DocumentStub {
         id,
         properties,
-        owner_id: identity.id.buffer,
+        owner_id: identity_id,
     };
 
     let document_type = contract
         .document_type_for_name(MN_REWARD_SHARES_DOCUMENT_TYPE)
         .expect("expected to get a document type");
 
-    let storage_flags = Some(StorageFlags::SingleEpoch(0));
+    let storage_flags = Some(Cow::Owned(StorageFlags::SingleEpoch(0)));
 
     let document_cbor = document.to_cbor();
 
@@ -91,7 +93,7 @@ fn create_test_mn_share_document(
                     document_info: DocumentRefAndSerialization((
                         &document,
                         &document_cbor,
-                        storage_flags.as_ref(),
+                        storage_flags,
                     )),
                     owner_id: None,
                 },
@@ -114,43 +116,34 @@ pub fn create_test_masternode_share_identities_and_documents(
     drive: &Drive,
     contract: &Contract,
     pro_tx_hashes: &Vec<[u8; 32]>,
+    seed: Option<u64>,
     transaction: TransactionArg,
 ) -> Vec<(Identity, DocumentStub)> {
-    drive
-        .fetch_identities(pro_tx_hashes, transaction)
-        .expect("expected to fetch identities")
-        .iter()
-        .map(|mn_identity| {
-            let id: [u8; 32] = rand::random();
-            let identity = create_test_identity(drive, id, transaction);
-            let document = create_test_mn_share_document(
-                drive,
-                contract,
-                mn_identity,
-                &identity,
-                5000,
-                transaction,
-            );
-
-            (identity, document)
-        })
-        .collect()
-}
-
-/// A function for refetching identities.
-///
-/// Takes a list of identities, queries the database for them, and returns the query result as a list of identities.
-pub fn refetch_identities(
-    drive: &Drive,
-    identities: Vec<&Identity>,
-    transaction: TransactionArg,
-) -> Result<Vec<Identity>, Error> {
-    let ids = identities
-        .into_iter()
-        .map(|identity| identity.id.buffer)
-        .collect();
-
-    drive
-        .fetch_identities(&ids, transaction)
-        .map_err(Error::Drive)
+    let mut rng = match seed {
+        None => StdRng::from_entropy(),
+        Some(seed_value) => StdRng::seed_from_u64(seed_value),
+    };
+    let all_exist = drive
+        .verify_all_identities_exist(pro_tx_hashes, transaction)
+        .expect("expected that all identities existed");
+    if all_exist {
+        pro_tx_hashes
+            .iter()
+            .map(|mn_identity| {
+                let id = rng.gen::<[u8; 32]>();
+                let identity = create_test_identity_with_rng(drive, id, &mut rng, transaction);
+                let document = create_test_mn_share_document(
+                    drive,
+                    contract,
+                    *mn_identity,
+                    &identity,
+                    5000,
+                    transaction,
+                );
+                (identity, document)
+            })
+            .collect()
+    } else {
+        panic!("all identities didn't exist")
+    }
 }
