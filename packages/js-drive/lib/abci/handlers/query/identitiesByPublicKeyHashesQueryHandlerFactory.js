@@ -16,13 +16,13 @@ const InvalidArgumentAbciError = require('../../errors/InvalidArgumentAbciError'
 
 /**
  *
- * @param {PublicKeyToIdentitiesStoreRepository} publicKeyToIdentitiesRepository
+ * @param {IdentityStoreRepository} identityRepository
  * @param {number} maxIdentitiesPerRequest
  * @param {createQueryResponse} createQueryResponse
  * @return {identitiesByPublicKeyHashesQueryHandler}
  */
 function identitiesByPublicKeyHashesQueryHandlerFactory(
-  publicKeyToIdentitiesRepository,
+  identityRepository,
   maxIdentitiesPerRequest,
   createQueryResponse,
 ) {
@@ -46,15 +46,17 @@ function identitiesByPublicKeyHashesQueryHandlerFactory(
     const response = createQueryResponse(GetIdentitiesByPublicKeyHashesResponse, request.prove);
 
     if (request.prove) {
-      const proof = await publicKeyToIdentitiesRepository.proveMany(publicKeyHashes);
+      const proof = await identityRepository.proveManyByPublicKeyHashes(publicKeyHashes);
 
       response.getProof().setMerkleProof(proof.getValue());
     } else {
-      const identitiesListResult = await publicKeyToIdentitiesRepository.fetchManyBuffers(
+      const identitiesListResult = await identityRepository.fetchManyByPublicKeyHashes(
         publicKeyHashes,
       );
 
-      response.setIdentitiesList(identitiesListResult.getValue());
+      response.setIdentitiesList(
+        identitiesListResult.getValue().map((identity) => identity.toBuffer()),
+      );
     }
 
     return new ResponseQuery({

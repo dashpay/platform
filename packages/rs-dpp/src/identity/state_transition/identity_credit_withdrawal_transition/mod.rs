@@ -3,6 +3,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value as JsonValue;
 use serde_repr::{Deserialize_repr, Serialize_repr};
 
+use crate::version::LATEST_VERSION;
 use crate::{
     identity::{core_script::CoreScript, KeyID},
     prelude::Identifier,
@@ -60,7 +61,7 @@ pub struct IdentityCreditWithdrawalTransition {
 impl std::default::Default for IdentityCreditWithdrawalTransition {
     fn default() -> Self {
         IdentityCreditWithdrawalTransition {
-            protocol_version: Default::default(),
+            protocol_version: LATEST_VERSION,
             transition_type: StateTransitionType::IdentityCreditWithdrawal,
             identity_id: Default::default(),
             amount: Default::default(),

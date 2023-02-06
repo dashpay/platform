@@ -56,6 +56,6 @@ module.exports = function createDPPMock(sinonSandbox = undefined) {
     getDataContract: sinonSandbox.stub(),
     setDataContract: sinonSandbox.stub(),
     getStateRepository: sinonSandbox.stub(),
-    getProtocolVersion: sinonSandbox.stub().returns(protocolVersion),
+    getProtocolVersion: sinonSandbox.stub().returns(protocolVersion.latestVersion),
   };
 };

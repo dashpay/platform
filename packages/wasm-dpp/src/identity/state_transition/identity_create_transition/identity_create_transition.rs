@@ -10,10 +10,10 @@ use crate::{
     buffer::Buffer,
     create_asset_lock_proof_from_wasm_instance,
     errors::RustConversionError,
-    identity::{
-        state_transition::asset_lock_proof::{ChainAssetLockProofWasm, InstantAssetLockProofWasm},
-        IdentityPublicKeyWasm,
+    identity::state_transition::asset_lock_proof::{
+        ChainAssetLockProofWasm, InstantAssetLockProofWasm,
     },
+    identity::state_transition::identity_public_key_transitions::IdentityPublicKeyCreateTransitionWasm,
     state_transition::StateTransitionExecutionContextWasm,
     with_js_error,
 };
@@ -23,11 +23,9 @@ use crate::errors::from_dpp_err;
 use crate::utils::{generic_of_js_val, ToSerdeJSONExt};
 use dpp::{
     identifier::Identifier,
-    identity::{
-        state_transition::{
-            asset_lock_proof::AssetLockProof, identity_create_transition::IdentityCreateTransition,
-        },
-        IdentityPublicKey,
+    identity::state_transition::{
+        asset_lock_proof::AssetLockProof, identity_create_transition::IdentityCreateTransition,
+        identity_public_key_transitions::IdentityPublicKeyCreateTransition,
     },
     state_transition::StateTransitionLike,
     util::string_encoding,
@@ -97,11 +95,14 @@ impl IdentityCreateTransitionWasm {
         let public_keys = public_keys
             .iter()
             .map(|value| {
-                let public_key: Ref<IdentityPublicKeyWasm> =
-                    generic_of_js_val::<IdentityPublicKeyWasm>(value, "IdentityPublicKey")?;
+                let public_key: Ref<IdentityPublicKeyCreateTransitionWasm> =
+                    generic_of_js_val::<IdentityPublicKeyCreateTransitionWasm>(
+                        value,
+                        "IdentityPublicKeyCreateTransition",
+                    )?;
                 Ok(public_key.clone().into())
             })
-            .collect::<Result<Vec<IdentityPublicKey>, JsValue>>()?;
+            .collect::<Result<Vec<IdentityPublicKeyCreateTransition>, JsValue>>()?;
 
         self.0.set_public_keys(public_keys);
 
@@ -113,11 +114,14 @@ impl IdentityCreateTransitionWasm {
         let mut public_keys = public_keys
             .iter()
             .map(|value| {
-                let public_key: Ref<IdentityPublicKeyWasm> =
-                    generic_of_js_val::<IdentityPublicKeyWasm>(value, "IdentityPublicKey")?;
+                let public_key: Ref<IdentityPublicKeyCreateTransitionWasm> =
+                    generic_of_js_val::<IdentityPublicKeyCreateTransitionWasm>(
+                        value,
+                        "IdentityPublicKeyCreateTransition",
+                    )?;
                 Ok(public_key.clone().into())
             })
-            .collect::<Result<Vec<IdentityPublicKey>, JsValue>>()?;
+            .collect::<Result<Vec<IdentityPublicKeyCreateTransition>, JsValue>>()?;
 
         self.0.add_public_keys(&mut public_keys);
 
@@ -129,7 +133,9 @@ impl IdentityCreateTransitionWasm {
         self.0
             .get_public_keys()
             .iter()
-            .map(|key| IdentityPublicKeyWasm::from(key.to_owned()).into())
+            .map(IdentityPublicKeyCreateTransition::to_owned)
+            .map(IdentityPublicKeyCreateTransitionWasm::from)
+            .map(JsValue::from)
             .collect()
     }
 
@@ -150,23 +156,23 @@ impl IdentityCreateTransitionWasm {
 
     #[wasm_bindgen(js_name=getIdentityId)]
     pub fn get_identity_id(&self) -> IdentifierWrapper {
-        self.0.get_identity_id().clone().into()
+        (*self.0.get_identity_id()).into()
     }
 
     #[wasm_bindgen(js_name=getOwnerId)]
     pub fn get_owner_id(&self) -> IdentifierWrapper {
-        self.0.get_owner_id().clone().into()
+        (*self.0.get_owner_id()).into()
     }
 
     #[wasm_bindgen(js_name=toObject)]
     pub fn to_object(&self, options: JsValue) -> Result<JsValue, JsValue> {
         let opts: super::to_object::ToObjectOptions = if options.is_object() {
-            with_js_error!(serde_wasm_bindgen::from_value(options))?
+            with_js_error!(serde_wasm_bindgen::from_value(options.clone()))?
         } else {
             Default::default()
         };
 
-        let skip_signature = opts.skip_signature;
+        let _skip_signature = opts.skip_signature;
         let object = super::to_object::to_object_struct(&self.0, opts);
         let js_object = js_sys::Object::new();
 
@@ -210,7 +216,8 @@ impl IdentityCreateTransitionWasm {
         let keys_objects = object
             .public_keys
             .into_iter()
-            .map(|key| IdentityPublicKeyWasm::from(key).to_object(skip_signature))
+            .map(IdentityPublicKeyCreateTransitionWasm::from)
+            .map(|key| key.to_object(options.clone()))
             .collect::<Result<js_sys::Array, _>>()?;
 
         js_sys::Reflect::set(&js_object, &"publicKeys".to_owned().into(), &keys_objects)?;
@@ -263,7 +270,8 @@ impl IdentityCreateTransitionWasm {
         let keys_objects = object
             .public_keys
             .into_iter()
-            .map(|key| IdentityPublicKeyWasm::from(key).to_json())
+            .map(IdentityPublicKeyCreateTransitionWasm::from)
+            .map(|key| key.to_json())
             .collect::<Result<js_sys::Array, _>>()?;
 
         js_sys::Reflect::set(&js_object, &"publicKeys".to_owned().into(), &keys_objects)?;
@@ -276,9 +284,7 @@ impl IdentityCreateTransitionWasm {
         let ids = self.0.get_modified_data_ids();
 
         ids.into_iter()
-            .map(|id| {
-                <IdentifierWrapper as std::convert::From<Identifier>>::from(id.clone()).into()
-            })
+            .map(|id| <IdentifierWrapper as std::convert::From<Identifier>>::from(*id).into())
             .collect()
     }
 

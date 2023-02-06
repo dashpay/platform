@@ -3,7 +3,7 @@ use serde_json::{json, Value};
 use crate::consensus::ConsensusError;
 use crate::identity::validation::PublicKeysValidator;
 use crate::identity::validation::TPublicKeysValidator;
-use crate::identity::{KeyType, Purpose, SecurityLevel};
+use crate::identity::{KeyID, KeyType, Purpose, SecurityLevel};
 use crate::tests::fixtures::get_public_keys_validator;
 use crate::tests::utils::serde_set_ref;
 use crate::{assert_consensus_errors, NativeBlsModule};
@@ -329,9 +329,9 @@ pub mod data {
 pub fn should_return_invalid_result_if_there_are_duplicate_key_ids() {
     let (mut raw_public_keys, validator) = setup_test();
     let key0 = raw_public_keys.get(0).unwrap().clone();
-    let mut key1 = raw_public_keys.get_mut(1).unwrap();
+    let key1 = raw_public_keys.get_mut(1).unwrap();
     serde_set_ref(
-        &mut key1,
+        key1,
         "id",
         key0.as_object().unwrap().get("id").unwrap().clone(),
     );
@@ -354,7 +354,7 @@ pub fn should_return_invalid_result_if_there_are_duplicate_key_ids() {
         .get("id")
         .unwrap()
         .as_u64()
-        .unwrap()];
+        .unwrap() as KeyID];
 
     assert_eq!(consensus_error.code(), 1030);
     assert_eq!(error.duplicated_ids(), &expected_ids);
@@ -364,9 +364,9 @@ pub fn should_return_invalid_result_if_there_are_duplicate_key_ids() {
 pub fn should_return_invalid_result_if_there_are_duplicate_keys() {
     let (mut raw_public_keys, validator) = setup_test();
     let key0 = raw_public_keys.get(0).unwrap().clone();
-    let mut key1 = raw_public_keys.get_mut(1).unwrap();
+    let key1 = raw_public_keys.get_mut(1).unwrap();
     serde_set_ref(
-        &mut key1,
+        key1,
         "data",
         key0.as_object().unwrap().get("data").unwrap().clone(),
     );
@@ -389,7 +389,7 @@ pub fn should_return_invalid_result_if_there_are_duplicate_keys() {
         .get("id")
         .unwrap()
         .as_u64()
-        .unwrap()];
+        .unwrap() as KeyID];
 
     assert_eq!(consensus_error.code(), 1029);
     assert_eq!(error.duplicated_public_keys_ids(), &expected_ids);
@@ -413,7 +413,7 @@ pub fn should_return_invalid_result_if_key_data_is_not_a_valid_der() {
     assert_eq!(consensus_error.code(), 1040);
     assert_eq!(
         error.public_key_id(),
-        raw_public_keys[1].get("id").unwrap().as_u64().unwrap()
+        raw_public_keys[1].get("id").unwrap().as_u64().unwrap() as KeyID
     );
     assert_eq!(
         error.validation_error().as_ref().unwrap().message(),
@@ -448,7 +448,7 @@ pub fn should_return_invalid_result_if_key_has_an_invalid_combination_of_purpose
     assert_eq!(consensus_error.code(), 1047);
     assert_eq!(
         error.public_key_id(),
-        raw_public_keys[1].get("id").unwrap().as_u64().unwrap()
+        raw_public_keys[1].get("id").unwrap().as_u64().unwrap() as KeyID
     );
     assert_eq!(
         error.security_level() as u64,
@@ -472,28 +472,29 @@ pub fn should_pass_valid_public_keys() {
     assert!(result.is_valid());
 }
 
+#[ignore]
 #[test]
 pub fn should_pass_valid_bls12_381_public_key() {
     //TODO: this test is broken due to the legacy key format that is used in the test.
     // needs reevaluation once v19 is released.
-    return;
-    // let (_, validator) = setup_test();
-    // let raw_public_keys_json = json!([{
-    //     "id": 0,
-    //     "type": KeyType::BLS12_381 as u64,
-    //     "purpose": 0,
-    //     "securityLevel": 0,
-    //     "readOnly": true,
-    //     "data": decode_hex("01fac99ca2c8f39c286717c213e190aba4b7af76db320ec43f479b7d9a2012313a0ae59ca576edf801444bc694686694").unwrap(),
-    // }]);
-    // let raw_public_keys = raw_public_keys_json.as_array().unwrap();
-    // let result = validator.validate_keys(raw_public_keys).unwrap();
-    //
-    // for err in result.errors() {
-    //     println!("{:?}", err);
-    // }
-    //
-    // assert!(result.is_valid());
+
+    let (_, validator) = setup_test();
+    let raw_public_keys_json = json!([{
+        "id": 0,
+        "type": KeyType::BLS12_381 as u64,
+        "purpose": 0,
+        "securityLevel": 0,
+        "readOnly": true,
+        "data": hex::decode("01fac99ca2c8f39c286717c213e190aba4b7af76db320ec43f479b7d9a2012313a0ae59ca576edf801444bc694686694").unwrap(),
+    }]);
+    let raw_public_keys = raw_public_keys_json.as_array().unwrap();
+    let result = validator.validate_keys(raw_public_keys).unwrap();
+
+    for err in result.errors() {
+        println!("{:?}", err);
+    }
+
+    assert!(result.is_valid());
 }
 
 #[test]
@@ -548,7 +549,7 @@ pub fn should_return_invalid_result_if_bls12_381_public_key_is_invalid() {
             .get("id")
             .unwrap()
             .as_u64()
-            .unwrap()
+            .unwrap() as KeyID
     );
     // TODO
     //assert_eq!(error.validation_error(), TypeError);

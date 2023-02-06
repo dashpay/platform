@@ -1,10 +1,14 @@
 //! Bindings for state repository -like objects coming from JS.
 
+use anyhow::Result;
 use serde::{Deserialize, Serialize};
+
 use std::{convert::Infallible, pin::Pin, sync::Mutex};
 
 use async_trait::async_trait;
 use dpp::dashcore::consensus;
+use dpp::identity::{IdentityPublicKey, KeyID};
+use dpp::prelude::{Revision, TimestampMillis};
 use dpp::{
     dashcore::InstantLock,
     data_contract::DataContract,
@@ -15,11 +19,12 @@ use dpp::{
     },
     state_transition::state_transition_execution_context::StateTransitionExecutionContext,
 };
+use js_sys::{Array, Number};
 use wasm_bindgen::prelude::*;
 
 use crate::buffer::Buffer;
 use crate::{
-    identifier::IdentifierWrapper, DataContractWasm, IdentityWasm,
+    identifier::IdentifierWrapper, DataContractWasm, IdentityPublicKeyWasm, IdentityWasm,
     StateTransitionExecutionContextWasm,
 };
 
@@ -48,6 +53,82 @@ extern "C" {
         execution_context: StateTransitionExecutionContextWasm,
     ) -> Option<IdentityWasm>;
 
+    #[wasm_bindgen(structural, method, js_name=createIdentity)]
+    pub fn create_identity(
+        this: &crate::state_repository::ExternalStateRepositoryLike,
+        identity: IdentityWasm,
+        execution_context: StateTransitionExecutionContextWasm,
+    );
+
+    #[wasm_bindgen(structural, method, js_name=addKeysToIdentity)]
+    pub fn add_keys_to_identity(
+        this: &crate::state_repository::ExternalStateRepositoryLike,
+        identity_id: IdentifierWrapper,
+        keys: js_sys::Array,
+        execution_context: StateTransitionExecutionContextWasm,
+    );
+
+    #[wasm_bindgen(structural, method, js_name=disableIdentityKeys)]
+    pub fn disable_identity_keys(
+        this: &crate::state_repository::ExternalStateRepositoryLike,
+        identity_id: IdentifierWrapper,
+        keys: js_sys::Array,
+        disable_at: Number,
+        execution_context: StateTransitionExecutionContextWasm,
+    );
+
+    #[wasm_bindgen(structural, method, js_name=updateIdentityRevision)]
+    pub fn update_identity_revision(
+        this: &crate::state_repository::ExternalStateRepositoryLike,
+        identity_id: IdentifierWrapper,
+        revision: Number,
+        execution_context: StateTransitionExecutionContextWasm,
+    );
+
+    #[wasm_bindgen(structural, method, js_name=fetchIdentityBalance)]
+    pub fn fetch_identity_balance(
+        this: &crate::state_repository::ExternalStateRepositoryLike,
+        identity_id: IdentifierWrapper,
+        execution_context: StateTransitionExecutionContextWasm,
+    ) -> Option<Number>;
+
+    #[wasm_bindgen(structural, method, js_name=fetchIdentityBalanceWithDebt)]
+    pub fn fetch_identity_balance_with_debt(
+        this: &crate::state_repository::ExternalStateRepositoryLike,
+        identity_id: IdentifierWrapper,
+        execution_context: StateTransitionExecutionContextWasm,
+    ) -> Option<Number>;
+
+    #[wasm_bindgen(structural, method, js_name=addToIdentityBalance)]
+    pub fn add_to_identity_balance(
+        this: &crate::state_repository::ExternalStateRepositoryLike,
+        identity_id: IdentifierWrapper,
+        amount: Number,
+        execution_context: StateTransitionExecutionContextWasm,
+    );
+
+    #[wasm_bindgen(structural, method, js_name=removeFromIdentityBalance)]
+    pub fn remove_from_identity_balance(
+        this: &crate::state_repository::ExternalStateRepositoryLike,
+        identity_id: IdentifierWrapper,
+        amount: Number,
+        execution_context: StateTransitionExecutionContextWasm,
+    );
+
+    #[wasm_bindgen(structural, method, js_name=addToSystemCredits)]
+    pub fn add_to_system_credits(
+        this: &crate::state_repository::ExternalStateRepositoryLike,
+        amount: Number,
+        execution_context: StateTransitionExecutionContextWasm,
+    );
+
+    #[wasm_bindgen(structural, method, js_name=removeFromSystemCredits)]
+    pub fn remove_from_system_credits(
+        this: &crate::state_repository::ExternalStateRepositoryLike,
+        amount: Number,
+        execution_context: StateTransitionExecutionContextWasm,
+    );
+
     #[wasm_bindgen(structural, method, js_name=fetchLatestPlatformCoreChainLockedHeight)]
     pub fn fetch_latest_platform_core_chain_locked_height(
         this: &ExternalStateRepositoryLike,
@@ -73,28 +154,6 @@ extern "C" {
         instant_lock: Vec<u8>,
         execution_context: StateTransitionExecutionContextWasm,
     ) -> bool;
-
-    #[wasm_bindgen(structural, method, js_name=createIdentity)]
-    pub fn create_identity(
-        this: &ExternalStateRepositoryLike,
-        identity: IdentityWasm,
-        execution_context: StateTransitionExecutionContextWasm,
-    );
-
-    #[wasm_bindgen(structural, method, js_name=updateIdentity)]
-    pub fn update_identity(
-        this: &ExternalStateRepositoryLike,
-        identity: IdentityWasm,
-        execution_context: StateTransitionExecutionContextWasm,
-    );
-
-    #[wasm_bindgen(structural, method, js_name=storeIdentityPublicKeyHashes)]
-    pub fn store_identity_public_key_hashes(
-        this: &ExternalStateRepositoryLike,
-        identity_id: IdentifierWrapper,
-        public_key_hashes: Vec<Buffer>,
-        execution_context: StateTransitionExecutionContextWasm,
-    );
 
     #[wasm_bindgen(structural, method, js_name=markAssetLockTransactionOutPointAsUsed)]
     pub fn mark_asset_lock_transaction_out_point_as_used(
@@ -160,23 +219,20 @@ impl StateRepositoryLike for ExternalStateRepositoryLikeWrapper {
         &self,
         data_contract_id: &Identifier,
         execution_context: &StateTransitionExecutionContext,
-    ) -> anyhow::Result<Option<Self::FetchDataContract>> {
+    ) -> Result<Option<Self::FetchDataContract>> {
         Ok(self
             .0
             .lock()
             .expect("unexpected concurrency issue!")
-            .fetch_data_contract(
-                data_contract_id.clone().into(),
-                execution_context.clone().into(),
-            )
-            .map(Into::into))
+            .fetch_data_contract((*data_contract_id).into(), execution_context.clone().into())
+            .map(Into::into)) // TODO: Is it ok?
     }
 
     async fn store_data_contract(
         &self,
         data_contract: DataContract,
         execution_context: &StateTransitionExecutionContext,
-    ) -> anyhow::Result<()> {
+    ) -> Result<()> {
         self.0
             .lock()
             .expect("unexpected concurrency issue!")
@@ -190,7 +246,7 @@ impl StateRepositoryLike for ExternalStateRepositoryLikeWrapper {
         _data_contract_type: &str,
         _where_query: serde_json::Value,
         _execution_context: &StateTransitionExecutionContext,
-    ) -> anyhow::Result<Vec<T>>
+    ) -> Result<Vec<T>>
     where
         T: for<'de> serde::de::Deserialize<'de> + 'static,
     {
@@ -201,7 +257,7 @@ impl StateRepositoryLike for ExternalStateRepositoryLikeWrapper {
         &self,
         _document: &Document,
         _execution_context: &StateTransitionExecutionContext,
-    ) -> anyhow::Result<()> {
+    ) -> Result<()> {
         todo!()
     }
 
@@ -209,7 +265,7 @@ impl StateRepositoryLike for ExternalStateRepositoryLikeWrapper {
         &self,
         _document: &Document,
         _execution_context: &StateTransitionExecutionContext,
-    ) -> anyhow::Result<()> {
+    ) -> Result<()> {
         todo!()
     }
 
@@ -219,7 +275,7 @@ impl StateRepositoryLike for ExternalStateRepositoryLikeWrapper {
         _data_contract_type: &str,
         _document_id: &Identifier,
         _execution_context: &StateTransitionExecutionContext,
-    ) -> anyhow::Result<()> {
+    ) -> Result<()> {
         todo!()
     }
 
@@ -227,7 +283,7 @@ impl StateRepositoryLike for ExternalStateRepositoryLikeWrapper {
         &self,
         id: &str,
         execution_context: &StateTransitionExecutionContext,
-    ) -> anyhow::Result<Self::FetchTransaction> {
+    ) -> Result<Self::FetchTransaction> {
         let response = self
             .0
             .lock()
@@ -240,44 +296,187 @@ impl StateRepositoryLike for ExternalStateRepositoryLikeWrapper {
         &self,
         id: &Identifier,
         execution_context: &StateTransitionExecutionContext,
-    ) -> anyhow::Result<Option<Self::FetchIdentity>> {
+    ) -> Result<Option<Self::FetchIdentity>> {
         Ok(self
             .0
             .lock()
             .expect("unexpected concurrency issue!")
-            .fetch_identity(id.clone().into(), execution_context.clone().into())
+            .fetch_identity((*id).into(), execution_context.clone().into())
             .map(Into::into))
     }
 
-    async fn store_identity_public_key_hashes(
+    async fn create_identity(
         &self,
-        identity_id: &Identifier,
-        public_key_hashes: Vec<Vec<u8>>,
+        identity: &Identity,
         execution_context: &StateTransitionExecutionContext,
-    ) -> anyhow::Result<()> {
-        let hashes = public_key_hashes
-            .iter()
-            .map(|hash| Buffer::from_bytes(hash))
-            .collect();
-
+    ) -> Result<()> {
         self.0
             .lock()
             .expect("unexpected concurrency issue!")
-            .store_identity_public_key_hashes(
-                identity_id.clone().into(),
-                hashes,
-                execution_context.clone().into(),
-            );
+            .create_identity(identity.clone().into(), execution_context.clone().into());
         Ok(())
     }
 
-    async fn fetch_identity_by_public_key_hashes<T>(
+    async fn add_keys_to_identity(
         &self,
-        _public_key_hashed: Vec<Vec<u8>>,
-    ) -> anyhow::Result<Vec<T>>
-    where
-        T: for<'de> serde::de::Deserialize<'de> + 'static,
-    {
+        identity_id: &Identifier,
+        keys: &[IdentityPublicKey],
+        execution_context: &StateTransitionExecutionContext,
+    ) -> Result<()> {
+        self.0
+            .lock()
+            .expect("unexpected concurrency issue!")
+            .add_keys_to_identity(
+                (*identity_id).into(),
+                keys.iter()
+                    .map(|k| JsValue::from(IdentityPublicKeyWasm::from(k.clone())))
+                    .collect::<Array>(),
+                execution_context.clone().into(),
+            );
+
+        Ok(())
+    }
+
+    async fn disable_identity_keys(
+        &self,
+        identity_id: &Identifier,
+        keys: &[KeyID],
+        disable_at: TimestampMillis,
+        execution_context: &StateTransitionExecutionContext,
+    ) -> Result<()> {
+        self.0
+            .lock()
+            .expect("unexpected concurrency issue!")
+            .disable_identity_keys(
+                (*identity_id).into(),
+                keys.iter().map(|&k| JsValue::from(k as f64)).collect(),
+                Number::from(disable_at as f64),
+                execution_context.clone().into(),
+            );
+
+        Ok(())
+    }
+
+    async fn update_identity_revision(
+        &self,
+        identity_id: &Identifier,
+        revision: Revision,
+        execution_context: &StateTransitionExecutionContext,
+    ) -> Result<()> {
+        self.0
+            .lock()
+            .expect("unexpected concurrency issue!")
+            .update_identity_revision(
+                (*identity_id).into(),
+                Number::from(revision as f64), // TODO: We should use BigInt
+                execution_context.clone().into(),
+            );
+
+        Ok(())
+    }
+
+    async fn fetch_identity_balance(
+        &self,
+        identity_id: &Identifier,
+        execution_context: &StateTransitionExecutionContext,
+    ) -> Result<Option<u64>> {
+        let maybe_balance = self
+            .0
+            .lock()
+            .expect("unexpected concurrency issue!")
+            .fetch_identity_balance((*identity_id).into(), execution_context.clone().into());
+
+        if let Some(balance) = maybe_balance {
+            Ok(balance
+                .as_f64()
+                .map(|b| b as u64)
+                .or_else(|| panic!("can't convert balance to u64")))
+        } else {
+            Ok(None)
+        }
+    }
+
+    async fn fetch_identity_balance_with_debt(
+        &self,
+        identity_id: &Identifier,
+        execution_context: &StateTransitionExecutionContext,
+    ) -> Result<Option<i64>> {
+        let maybe_balance = self
+            .0
+            .lock()
+            .expect("unexpected concurrency issue!")
+            .fetch_identity_balance_with_debt(
+                (*identity_id).into(),
+                execution_context.clone().into(),
+            );
+
+        if let Some(balance) = maybe_balance {
+            Ok(balance
+                .as_f64()
+                .map(|b| b as i64)
+                .or_else(|| panic!("can't convert balance to f64")))
+        } else {
+            Ok(None)
+        }
+    }
+
+    async fn add_to_identity_balance(
+        &self,
+        identity_id: &Identifier,
+        amount: u64,
+        execution_context: &StateTransitionExecutionContext,
+    ) -> Result<()> {
+        self.0
+            .lock()
+            .expect("unexpected concurrency issue!")
+            .add_to_identity_balance(
+                (*identity_id).into(),
+                Number::from(amount as f64),
+                execution_context.clone().into(),
+            );
+
+        Ok(())
+    }
+
+    async fn remove_from_identity_balance(
+        &self,
+        identity_id: &Identifier,
+        amount: u64,
+        execution_context: &StateTransitionExecutionContext,
+    ) -> Result<()> {
+        self.0
+            .lock()
+            .expect("unexpected concurrency issue!")
+            .remove_from_identity_balance(
+                (*identity_id).into(),
+                Number::from(amount as f64),
+                execution_context.clone().into(),
+            );
+
+        Ok(())
+    }
+
+    async fn add_to_system_credits(
+        &self,
+        amount: u64,
+        execution_context: &StateTransitionExecutionContext,
+    ) -> Result<()> {
+        self.0
+            .lock()
+            .expect("unexpected concurrency issue!")
+            .add_to_system_credits(
+                Number::from(amount as f64),
+                execution_context.clone().into(),
+            );
+
+        Ok(())
+    }
+
+    async fn remove_from_system_credits(
+        &self,
+        _amount: u64,
+        _execution_context: &StateTransitionExecutionContext,
+    ) -> Result<()> {
         todo!()
     }
 
@@ -304,7 +503,7 @@ impl StateRepositoryLike for ExternalStateRepositoryLikeWrapper {
         &self,
         instant_lock: &InstantLock,
         execution_context: &StateTransitionExecutionContext,
-    ) -> anyhow::Result<bool> {
+    ) -> Result<bool> {
         let raw_instant_lock = consensus::serialize(instant_lock);
 
         let verified = self
@@ -320,7 +519,7 @@ impl StateRepositoryLike for ExternalStateRepositoryLikeWrapper {
         &self,
         out_point_buffer: &[u8],
         execution_context: &StateTransitionExecutionContext,
-    ) -> anyhow::Result<bool> {
+    ) -> Result<bool> {
         Ok(self
             .0
             .lock()
@@ -334,7 +533,7 @@ impl StateRepositoryLike for ExternalStateRepositoryLikeWrapper {
     async fn mark_asset_lock_transaction_out_point_as_used(
         &self,
         out_point_buffer: &[u8],
-    ) -> anyhow::Result<()> {
+    ) -> Result<()> {
         self.0
             .lock()
             .expect("unexpected concurrency issue!")
@@ -342,38 +541,14 @@ impl StateRepositoryLike for ExternalStateRepositoryLikeWrapper {
         Ok(())
     }
 
-    async fn fetch_sml_store<T>(&self) -> anyhow::Result<T>
+    async fn fetch_sml_store<T>(&self) -> Result<T>
     where
         T: for<'de> serde::de::Deserialize<'de> + 'static,
     {
         todo!()
     }
 
-    async fn create_identity(
-        &self,
-        identity: &Identity,
-        execution_context: &StateTransitionExecutionContext,
-    ) -> anyhow::Result<()> {
-        self.0
-            .lock()
-            .expect("unexpected concurrency issue!")
-            .create_identity(identity.clone().into(), execution_context.clone().into());
-        Ok(())
-    }
-
-    async fn update_identity(
-        &self,
-        identity: &Identity,
-        execution_context: &StateTransitionExecutionContext,
-    ) -> anyhow::Result<()> {
-        self.0
-            .lock()
-            .expect("unexpected concurrency issue!")
-            .update_identity(identity.clone().into(), execution_context.clone().into());
-        Ok(())
-    }
-
-    async fn fetch_latest_withdrawal_transaction_index(&self) -> anyhow::Result<u64> {
+    async fn fetch_latest_withdrawal_transaction_index(&self) -> Result<u64> {
         todo!()
     }
 
@@ -381,7 +556,7 @@ impl StateRepositoryLike for ExternalStateRepositoryLikeWrapper {
         &self,
         _index: u64,
         _transaction_bytes: Vec<u8>,
-    ) -> anyhow::Result<()> {
+    ) -> Result<()> {
         todo!()
     }
 }

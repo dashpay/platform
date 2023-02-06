@@ -59,7 +59,8 @@ describe('applyIdentityCreateTransitionFactory', () => {
     const identity = new Identity({
       protocolVersion: protocolVersion.latestVersion,
       id: stateTransition.getIdentityId(),
-      publicKeys: stateTransition.getPublicKeys().map((key) => key.toObject()),
+      publicKeys: stateTransition.getPublicKeys()
+        .map((key) => key.toObject({ skipSignature: true })),
       balance,
       revision: 0,
     });
@@ -71,16 +72,12 @@ describe('applyIdentityCreateTransitionFactory', () => {
       match.instanceOf(StateTransitionExecutionContext),
     );
 
-    const publicKeyHashes = identity
-      .getPublicKeys()
-      .map((publicKey) => publicKey.hash());
-
-    expect(stateRepositoryMock.storeIdentityPublicKeyHashes).to.have.been.calledOnceWithExactly(
-      match((arg) => expect(arg.toBuffer()).to.deep.equal(identity.getId().toBuffer())),
-      match((arg) => expect(arg).to.deep.equal(publicKeyHashes)),
+    expect(stateRepositoryMock.addToSystemCredits).to.have.been.calledOnceWithExactly(
+      balance,
       match.instanceOf(StateTransitionExecutionContext),
     );
 
+    // TODO: It should pass execution context as well
     const outPoint = stateTransition.getAssetLockProof().getOutPoint();
     expect(stateRepositoryMock.markAssetLockTransactionOutPointAsUsed).to.have.been
       .calledOnceWithExactly(

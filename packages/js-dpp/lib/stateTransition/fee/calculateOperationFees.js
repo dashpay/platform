@@ -1,7 +1,3 @@
-const {
-  FEE_MULTIPLIER,
-} = require('./constants');
-
 /**
  * Calculate processing and storage fees based on operations
  *
@@ -18,34 +14,39 @@ const {
 function calculateOperationFees(operations) {
   let storageFee = 0;
   let processingFee = 0;
-
-  let feeResult;
+  const feeRefunds = [];
 
   operations.forEach((operation) => {
-    // TODO should use checked add when moved to Rust
-
     storageFee += operation.getStorageCost();
     processingFee += operation.getProcessingCost();
 
-    // Combine refunds which are currently present only in RS Drive's Fee Result
-    if (operation.feeResult && operation.feeResult.inner) {
-      if (!feeResult) {
-        feeResult = operation.feeResult;
-      } else {
-        feeResult.add(operation.feeResult);
+    // Merge refunds
+    const operationRefunds = operation.getRefunds();
+
+    operationRefunds.forEach((identityRefunds) => {
+      const existingIdentityRefunds = feeRefunds
+        .find(({ identifier }) => identifier.equals(identityRefunds.identifier));
+
+      if (!existingIdentityRefunds) {
+        feeRefunds.push(identityRefunds);
+
+        return;
       }
-    }
+
+      Object.entries(identityRefunds.creditsPerEpoch).forEach(([epochIndex, credits]) => {
+        if (!existingIdentityRefunds.creditsPerEpoch[epochIndex]) {
+          existingIdentityRefunds.refundsPerEpoch[epochIndex] = 0;
+        }
+
+        existingIdentityRefunds.refundsPerEpoch[epochIndex] += credits;
+      });
+    });
   });
-
-  // TODO: Do we need to multiply pre calculated fees?
-
-  storageFee *= FEE_MULTIPLIER;
-  processingFee *= FEE_MULTIPLIER;
 
   return {
     storageFee,
     processingFee,
-    feeRefunds: feeResult ? feeResult.feeRefunds : [],
+    feeRefunds,
   };
 }
 
