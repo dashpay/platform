@@ -3,6 +3,7 @@ use serde_json::{json, Number, Value as JsonValue};
 
 use data_contract::state_transition::property_names as st_prop;
 
+use crate::data_contract::errors::DataContractError::InvalidDataContractError;
 use crate::{
     data_contract::{self, generate_data_contract_id},
     decode_protocol_entity_factory::DecodeProtocolEntity,
@@ -103,10 +104,9 @@ impl DataContractFactory {
             let result = self.validate_data_contract.validate(&raw_data_contract)?;
 
             if !result.is_valid() {
-                return Err(ProtocolError::InvalidDataContractError {
-                    errors: result.errors,
-                    raw_data_contract,
-                });
+                return Err(ProtocolError::InvalidDataContractError(
+                    InvalidDataContractError::new(result.errors, raw_data_contract),
+                ));
             }
         }
         DataContract::from_raw_object(raw_data_contract)

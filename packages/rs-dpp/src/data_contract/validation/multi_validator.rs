@@ -1,6 +1,7 @@
 use regex::Regex;
 use serde_json::Value as JsonValue;
 
+use crate::consensus::basic::data_contract::IncompatibleRe2PatternError;
 use crate::{
     consensus::{basic::BasicError, ConsensusError},
     validation::ValidationResult,
@@ -58,11 +59,13 @@ pub fn pattern_is_valid_regex_validator(
     if key == "pattern" {
         if let Some(pattern) = value.as_str() {
             if let Err(err) = Regex::new(pattern) {
-                result.add_error(ConsensusError::IncompatibleRe2PatternError {
-                    pattern: String::from(pattern),
-                    path: path.to_string(),
-                    message: err.to_string(),
-                });
+                result.add_error(ConsensusError::IncompatibleRe2PatternError(
+                    IncompatibleRe2PatternError::new(
+                        String::from(pattern),
+                        path.to_string(),
+                        err.to_string(),
+                    ),
+                ));
             }
         }
     }

@@ -37,9 +37,8 @@ use std::convert::{TryFrom, TryInto};
 use std::fmt;
 use std::io::{BufReader, Read};
 
-use byteorder::{BigEndian, WriteBytesExt};
 use ciborium::value::Value;
-use integer_encoding::{VarInt, VarIntWriter};
+use integer_encoding::VarIntWriter;
 
 use crate::data_contract::{DataContract, DriveContractExt};
 use serde::{Deserialize, Serialize};
@@ -48,8 +47,8 @@ use crate::data_contract::document_type::document_type::PROTOCOL_VERSION;
 use crate::data_contract::document_type::DocumentType;
 use crate::data_contract::errors::{DataContractError, StructureError};
 use crate::data_contract::extra::common::{
-    bytes_for_system_value_from_tree_map, check_protocol_version, check_protocol_version_bytes,
-    get_key_from_cbor_map, reduced_value_string_representation,
+    bytes_for_system_value_from_tree_map, check_protocol_version_bytes, get_key_from_cbor_map,
+    reduced_value_string_representation,
 };
 use crate::util::deserializer;
 use crate::util::deserializer::SplitProtocolVersionOutcome;

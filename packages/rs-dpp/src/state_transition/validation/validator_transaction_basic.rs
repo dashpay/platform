@@ -5,6 +5,9 @@ use async_trait::async_trait;
 use mockall::{automock, predicate::*};
 use serde_json::Value as JsonValue;
 
+use crate::consensus::basic::state_transition::{
+    InvalidStateTransitionTypeError, StateTransitionMaxSizeExceededError,
+};
 use crate::{
     consensus::basic::BasicError,
     state_repository::StateRepositoryLike,
@@ -32,9 +35,9 @@ async fn validate_state_transition_basic(
 
     let state_transition_type = match StateTransitionType::try_from(raw_transition_type) {
         Err(_) => {
-            result.add_error(BasicError::InvalidStateTransitionTypeError {
-                transition_type: raw_transition_type,
-            });
+            result.add_error(BasicError::InvalidStateTransitionTypeError(
+                InvalidStateTransitionTypeError::new(raw_transition_type),
+            ));
             return Ok(result);
         }
         Ok(transition_type) => transition_type,
@@ -54,10 +57,9 @@ async fn validate_state_transition_basic(
         payload,
     }) = state_transition.to_buffer(false)
     {
-        result.add_error(BasicError::StateTransitionMaxSizeExceededError {
-            actual_size_kbytes: payload.len() / 1024,
-            max_size_kbytes,
-        });
+        result.add_error(BasicError::StateTransitionMaxSizeExceededError(
+            StateTransitionMaxSizeExceededError::new(payload.len() / 1024, max_size_kbytes),
+        ));
     }
 
     Ok(result)

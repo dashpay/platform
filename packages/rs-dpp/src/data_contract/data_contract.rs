@@ -8,6 +8,7 @@ use itertools::{Either, Itertools};
 use serde::{Deserialize, Serialize};
 use serde_json::Value as JsonValue;
 
+use crate::consensus::basic::document::InvalidDocumentTypeError;
 use crate::data_contract::contract_config;
 use crate::data_contract::contract_config::{
     ContractConfig, DEFAULT_CONTRACT_CAN_BE_DELETED, DEFAULT_CONTRACT_DOCUMENTS_KEEPS_HISTORY,
@@ -334,10 +335,10 @@ impl DataContract {
             .documents
             .get(doc_type)
             .ok_or(ProtocolError::DataContractError(
-                DataContractError::InvalidDocumentTypeError {
-                    doc_type: doc_type.to_owned(),
-                    data_contract: self.clone(),
-                },
+                DataContractError::InvalidDocumentTypeError(InvalidDocumentTypeError::new(
+                    doc_type.to_owned(),
+                    self.clone().id,
+                )),
             ))?;
         Ok(document)
     }
@@ -345,10 +346,10 @@ impl DataContract {
     pub fn get_document_schema_ref(&self, doc_type: &str) -> Result<String, ProtocolError> {
         if !self.is_document_defined(doc_type) {
             return Err(ProtocolError::DataContractError(
-                DataContractError::InvalidDocumentTypeError {
-                    doc_type: doc_type.to_owned(),
-                    data_contract: self.clone(),
-                },
+                DataContractError::InvalidDocumentTypeError(InvalidDocumentTypeError::new(
+                    doc_type.to_owned(),
+                    self.clone().id,
+                )),
             ));
         };
 
@@ -369,10 +370,10 @@ impl DataContract {
     ) -> Result<&BTreeMap<String, JsonValue>, ProtocolError> {
         self.get_optional_binary_properties(doc_type)?
             .ok_or(ProtocolError::DataContractError(
-                DataContractError::InvalidDocumentTypeError {
-                    doc_type: doc_type.to_owned(),
-                    data_contract: self.clone(),
-                },
+                DataContractError::InvalidDocumentTypeError(InvalidDocumentTypeError::new(
+                    doc_type.to_owned(),
+                    self.clone().id,
+                )),
             ))
     }
 

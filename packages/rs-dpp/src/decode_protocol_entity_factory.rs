@@ -1,14 +1,10 @@
 use anyhow::anyhow;
 use ciborium::value::Value as CborValue;
-use integer_encoding::VarInt;
 use serde_json::Value as JsonValue;
 
 use crate::util::deserializer;
 use crate::util::deserializer::SplitProtocolVersionOutcome;
-use crate::{
-    errors::consensus::ConsensusError, errors::ProtocolError,
-    util::deserializer::get_protocol_version,
-};
+use crate::{errors::consensus::ConsensusError, errors::ProtocolError};
 
 #[derive(Default, Clone, Copy)]
 pub struct DecodeProtocolEntity {}

@@ -1,6 +1,10 @@
 use std::collections::HashSet;
 use std::collections::{BTreeMap, HashMap};
 
+use crate::consensus::basic::data_contract::{
+    DataContractHaveNewUniqueIndexError, DataContractInvalidIndexDefinitionUpdateError,
+    DataContractUniqueIndicesChangedError,
+};
 use crate::consensus::basic::BasicError;
 use crate::data_contract::document_type::IndexProperty;
 use crate::util::json_schema::Index;
@@ -65,10 +69,12 @@ pub fn validate_indices_are_backward_compatible<'a>(
         let maybe_changed_unique_existing_index =
             get_changed_old_unique_index(&existing_schema_indices, &name_new_index_map);
         if let Some(changed_index) = maybe_changed_unique_existing_index {
-            result.add_error(BasicError::DataContractUniqueIndicesChangedError {
-                document_type: document_type.to_owned(),
-                index_name: changed_index.name.clone(),
-            });
+            result.add_error(BasicError::DataContractUniqueIndicesChangedError(
+                DataContractUniqueIndicesChangedError::new(
+                    document_type.to_owned(),
+                    changed_index.name.clone(),
+                ),
+            ));
         }
 
         let maybe_wrongly_updated_index = get_wrongly_updated_non_unique_index(
@@ -77,19 +83,23 @@ pub fn validate_indices_are_backward_compatible<'a>(
             existing_schema,
         );
         if let Some(index) = maybe_wrongly_updated_index {
-            result.add_error(BasicError::DataContractInvalidIndexDefinitionUpdateError {
-                document_type: document_type.to_owned(),
-                index_name: index.name.clone(),
-            })
+            result.add_error(BasicError::DataContractInvalidIndexDefinitionUpdateError(
+                DataContractInvalidIndexDefinitionUpdateError::new(
+                    document_type.to_owned(),
+                    index.name.clone(),
+                ),
+            ))
         }
 
         let maybe_new_unique_index =
             get_new_unique_index(&existing_schema_indices, name_new_index_map.values())?;
         if let Some(index) = maybe_new_unique_index {
-            result.add_error(BasicError::DataContractHaveNewUniqueIndexError {
-                document_type: document_type.to_owned(),
-                index_name: index.name.clone(),
-            })
+            result.add_error(BasicError::DataContractHaveNewUniqueIndexError(
+                DataContractHaveNewUniqueIndexError::new(
+                    document_type.to_owned(),
+                    index.name.clone(),
+                ),
+            ))
         }
         let maybe_wrongly_constructed_new_index = get_wrongly_constructed_new_index(
             existing_schema_indices.iter(),
@@ -97,10 +107,12 @@ pub fn validate_indices_are_backward_compatible<'a>(
             added_properties.copied(),
         )?;
         if let Some(index) = maybe_wrongly_constructed_new_index {
-            result.add_error(BasicError::DataContractInvalidIndexDefinitionUpdateError {
-                document_type: document_type.to_owned(),
-                index_name: index.name.clone(),
-            })
+            result.add_error(BasicError::DataContractInvalidIndexDefinitionUpdateError(
+                DataContractInvalidIndexDefinitionUpdateError::new(
+                    document_type.to_owned(),
+                    index.name.clone(),
+                ),
+            ))
         }
     }
 

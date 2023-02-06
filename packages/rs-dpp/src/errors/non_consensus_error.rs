@@ -8,17 +8,17 @@ use crate::{
 pub enum NonConsensusError {
     #[error("Unexpected serde parsing error: {0:#}")]
     SerdeParsingError(SerdeParsingError),
-    #[error("{0}")]
+    #[error(transparent)]
     CompatibleProtocolVersionIsNotDefinedError(CompatibleProtocolVersionIsNotDefinedError),
-    #[error("{0}")]
+    #[error(transparent)]
     SerdeJsonError(String),
-    #[error("{0}")]
+    #[error(transparent)]
     InvalidVectorSizeError(InvalidVectorSizeError),
-    #[error("{0}")]
+    #[error(transparent)]
     StateRepositoryFetchError(String),
-    #[error("{0}")]
+    #[error(transparent)]
     IdentifierCreateError(String),
-    #[error("{0}")]
+    #[error(transparent)]
     IdentityPublicKeyCreateError(String),
 
     /// When dynamic `Value` is validated it requires some specific properties to properly work

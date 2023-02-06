@@ -2,6 +2,8 @@ use jsonschema::ValidationError;
 use thiserror::Error;
 
 use crate::codes::ErrorWithCode;
+use crate::consensus::basic::data_contract::IncompatibleRe2PatternError;
+use crate::consensus::basic::decode::ProtocolVersionParsingError;
 use crate::consensus::basic::identity::{
     DuplicatedIdentityPublicKeyError, DuplicatedIdentityPublicKeyIdError,
     IdentityAssetLockProofLockedTransactionMismatchError,
@@ -32,41 +34,41 @@ use super::signature::SignatureError;
 #[derive(Error, Debug)]
 //#[cfg_attr(test, derive(Clone))]
 pub enum ConsensusError {
-    #[error("{0}")]
+    #[error(transparent)]
     JsonSchemaError(JsonSchemaError),
-    #[error("{0}")]
+    #[error(transparent)]
     UnsupportedProtocolVersionError(UnsupportedProtocolVersionError),
-    #[error("{0}")]
+    #[error(transparent)]
     IncompatibleProtocolVersionError(IncompatibleProtocolVersionError),
-    #[error("{0}")]
+    #[error(transparent)]
     DuplicatedIdentityPublicKeyBasicIdError(DuplicatedIdentityPublicKeyIdError),
-    #[error("{0}")]
+    #[error(transparent)]
     InvalidIdentityPublicKeyDataError(InvalidIdentityPublicKeyDataError),
-    #[error("{0}")]
+    #[error(transparent)]
     InvalidIdentityPublicKeySecurityLevelError(InvalidIdentityPublicKeySecurityLevelError),
-    #[error("{0}")]
+    #[error(transparent)]
     DuplicatedIdentityPublicKeyBasicError(DuplicatedIdentityPublicKeyError),
-    #[error("{0}")]
+    #[error(transparent)]
     MissingMasterPublicKeyError(MissingMasterPublicKeyError),
-    #[error("{0}")]
+    #[error(transparent)]
     IdentityAssetLockTransactionOutPointAlreadyExistsError(
         IdentityAssetLockTransactionOutPointAlreadyExistsError,
     ),
-    #[error("{0}")]
+    #[error(transparent)]
     InvalidIdentityAssetLockTransactionOutputError(InvalidIdentityAssetLockTransactionOutputError),
-    #[error("{0}")]
+    #[error(transparent)]
     InvalidAssetLockTransactionOutputReturnSize(InvalidAssetLockTransactionOutputReturnSizeError),
-    #[error("{0}")]
+    #[error(transparent)]
     IdentityAssetLockTransactionOutputNotFoundError(
         IdentityAssetLockTransactionOutputNotFoundError,
     ),
-    #[error("{0}")]
+    #[error(transparent)]
     InvalidIdentityAssetLockTransactionError(InvalidIdentityAssetLockTransactionError),
-    #[error("{0}")]
+    #[error(transparent)]
     InvalidInstantAssetLockProofError(InvalidInstantAssetLockProofError),
-    #[error("{0}")]
+    #[error(transparent)]
     InvalidInstantAssetLockProofSignatureError(InvalidInstantAssetLockProofSignatureError),
-    #[error("{0}")]
+    #[error(transparent)]
     IdentityAssetLockProofLockedTransactionMismatchError(
         IdentityAssetLockProofLockedTransactionMismatchError,
     ),
@@ -77,12 +79,12 @@ pub enum ConsensusError {
     #[error(transparent)]
     InvalidAssetLockProofTransactionHeightError(InvalidAssetLockProofTransactionHeightError),
 
-    #[error("{0}")]
+    #[error(transparent)]
     InvalidIdentityCreditWithdrawalTransitionCoreFeeError(
         InvalidIdentityCreditWithdrawalTransitionCoreFeeError,
     ),
 
-    #[error("{0}")]
+    #[error(transparent)]
     InvalidIdentityCreditWithdrawalTransitionOutputScriptError(
         InvalidIdentityCreditWithdrawalTransitionOutputScriptError,
     ),
@@ -96,17 +98,13 @@ pub enum ConsensusError {
     #[error("Parsing of serialized object failed due to: {parsing_error}")]
     SerializedObjectParsingError { parsing_error: anyhow::Error },
 
-    #[error("Can't read protocol version from serialized object: {parsing_error}")]
-    ProtocolVersionParsingError { parsing_error: anyhow::Error },
+    #[error(transparent)]
+    ProtocolVersionParsingError(ProtocolVersionParsingError),
 
-    #[error("Pattern '{pattern}' at '{path}' is not not compatible with Re2:  {message}")]
-    IncompatibleRe2PatternError {
-        pattern: String,
-        path: String,
-        message: String,
-    },
+    #[error(transparent)]
+    IncompatibleRe2PatternError(IncompatibleRe2PatternError),
 
-    #[error("{0}")]
+    #[error(transparent)]
     IdentityInsufficientBalanceError(IdentityInsufficientBalanceError),
 
     #[error(transparent)]
@@ -119,7 +117,7 @@ pub enum ConsensusError {
     FeeError(FeeError),
 
     #[cfg(test)]
-    #[cfg_attr(test, error("{0}"))]
+    #[cfg_attr(test, error(transparent))]
     TestConsensusError(TestConsensusError),
 }
 

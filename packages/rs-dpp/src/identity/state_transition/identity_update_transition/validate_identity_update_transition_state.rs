@@ -3,9 +3,9 @@ use serde_json::Value;
 use std::convert::TryInto;
 use std::sync::Arc;
 
+use crate::consensus::signature::{IdentityNotFoundError, SignatureError};
 use crate::{
     block_time_window::validate_time_in_block_time_window::validate_time_in_block_time_window,
-    consensus::basic::BasicError,
     identity::validation::{RequiredPurposeAndSecurityLevelValidator, TPublicKeysValidator},
     state_repository::StateRepositoryLike,
     state_transition::StateTransitionLike,
@@ -56,9 +56,9 @@ where
 
         let stored_identity = match maybe_stored_identity {
             None => {
-                validation_result.add_error(BasicError::IdentityNotFoundError {
-                    identity_id: state_transition.get_identity_id().to_owned(),
-                });
+                validation_result.add_error(SignatureError::IdentityNotFoundError(
+                    IdentityNotFoundError::new(state_transition.get_identity_id().to_owned()),
+                ));
                 return Ok(validation_result);
             }
             Some(identity) => identity,

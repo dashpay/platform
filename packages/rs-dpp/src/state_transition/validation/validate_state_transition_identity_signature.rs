@@ -3,6 +3,11 @@ use std::{collections::HashSet, convert::TryInto};
 use anyhow::Context;
 use lazy_static::lazy_static;
 
+use crate::consensus::signature::{
+    IdentityNotFoundError, InvalidIdentityPublicKeyTypeError,
+    InvalidSignaturePublicKeySecurityLevelError, MissingPublicKeyError, PublicKeyIsDisabledError,
+    PublicKeySecurityLevelNotMetError,
+};
 use crate::{
     consensus::{signature::SignatureError, ConsensusError},
     identity::KeyType,
@@ -54,9 +59,9 @@ pub async fn validate_state_transition_identity_signature(
     let identity = match maybe_identity {
         Some(identity) => identity,
         None => {
-            validation_result.add_error(SignatureError::IdentityNotFoundError {
-                identity_id: state_transition.get_owner_id().to_owned(),
-            });
+            validation_result.add_error(SignatureError::IdentityNotFoundError(
+                IdentityNotFoundError::new(state_transition.get_owner_id().to_owned()),
+            ));
             return Ok(validation_result);
         }
     };
@@ -69,18 +74,18 @@ pub async fn validate_state_transition_identity_signature(
 
     let public_key = match maybe_public_key {
         None => {
-            validation_result.add_error(SignatureError::MissingPublicKeyError {
-                public_key_id: signature_public_key_id,
-            });
+            validation_result.add_error(SignatureError::MissingPublicKeyError(
+                MissingPublicKeyError::new(signature_public_key_id),
+            ));
             return Ok(validation_result);
         }
         Some(pk) => pk,
     };
 
     if !SUPPORTED_KEY_TYPES.contains(&public_key.get_type()) {
-        validation_result.add_error(SignatureError::InvalidIdentityPublicKeyTypeError {
-            public_key_type: public_key.get_type(),
-        });
+        validation_result.add_error(SignatureError::InvalidIdentityPublicKeyTypeError(
+            InvalidIdentityPublicKeyTypeError::new(public_key.get_type()),
+        ));
         return Ok(validation_result);
     }
 
@@ -108,34 +113,44 @@ fn convert_to_consensus_signature_error(
     error: ProtocolError,
 ) -> Result<ConsensusError, ProtocolError> {
     match error {
-        ProtocolError::InvalidSignaturePublicKeySecurityLevelError {
-            public_key_security_level,
-            required_security_level,
-        } => Ok(ConsensusError::SignatureError(
-            SignatureError::InvalidSignaturePublicKeySecurityLevelError {
-                public_key_security_level,
-                required_key_security_level: required_security_level,
-            },
-        )),
-        ProtocolError::PublicKeySecurityLevelNotMetError {
-            public_key_security_level,
-            required_security_level,
-        } => Ok(ConsensusError::SignatureError(
-            SignatureError::PublicKeySecurityLevelNotMetError {
+        ProtocolError::InvalidSignaturePublicKeySecurityLevelError(
+            InvalidSignaturePublicKeySecurityLevelError::new(
                 public_key_security_level,
                 required_security_level,
-            },
+            ),
+        ) => Ok(ConsensusError::SignatureError(
+            SignatureError::InvalidSignaturePublicKeySecurityLevelError(
+                InvalidSignaturePublicKeySecurityLevelError::new(
+                    public_key_security_level,
+                    required_security_level,
+                ),
+            ),
         )),
-        ProtocolError::PublicKeyIsDisabledError { public_key } => Ok(
-            ConsensusError::SignatureError(SignatureError::PublicKeyIsDisabledError {
-                public_key_id: public_key.get_id(),
-            }),
+        ProtocolError::PublicKeySecurityLevelNotMetError(
+            PublicKeySecurityLevelNotMetError::new(
+                public_key_security_level,
+                required_security_level,
+            ),
+        ) => Ok(ConsensusError::SignatureError(
+            SignatureError::PublicKeySecurityLevelNotMetError(
+                PublicKeySecurityLevelNotMetError::new(
+                    public_key_security_level,
+                    required_security_level,
+                ),
+            ),
+        )),
+        ProtocolError::PublicKeyIsDisabledError(PublicKeyIsDisabledError::new(public_key)) => Ok(
+            ConsensusError::SignatureError(SignatureError::PublicKeyIsDisabledError(
+                PublicKeyIsDisabledError::new(public_key.get_id()),
+            )),
         ),
-        ProtocolError::InvalidIdentityPublicKeyTypeError { public_key_type } => {
-            Ok(ConsensusError::SignatureError(
-                SignatureError::InvalidIdentityPublicKeyTypeError { public_key_type },
-            ))
-        }
+        ProtocolError::InvalidIdentityPublicKeyTypeError(
+            InvalidIdentityPublicKeyTypeError::new(public_key_type),
+        ) => Ok(ConsensusError::SignatureError(
+            SignatureError::InvalidIdentityPublicKeyTypeError(
+                InvalidIdentityPublicKeyTypeError::new(public_key_type),
+            ),
+        )),
         ProtocolError::Error(_) => Err(error),
         _ => Ok(ConsensusError::SignatureError(
             SignatureError::InvalidStateTransitionSignatureError,
@@ -146,6 +161,7 @@ fn convert_to_consensus_signature_error(
 #[cfg(test)]
 mod test {
     use super::*;
+    use crate::state_transition::errors::WrongPublicKeyPurposeError;
     use crate::{
         document::DocumentsBatchTransition,
         identity::{KeyID, Purpose, SecurityLevel},
@@ -162,6 +178,7 @@ mod test {
         NativeBlsModule,
     };
     use serde::{Deserialize, Serialize};
+
     #[derive(Debug, Clone, Serialize, Deserialize)]
     #[serde(rename_all = "camelCase")]
     struct ExampleStateTransition {
@@ -234,32 +251,35 @@ mod test {
             if let Some(error_num) = self.return_error {
                 match error_num {
                     0 => {
-                        return Err(ProtocolError::PublicKeyMismatchError {
-                            public_key: public_key.clone(),
-                        })
+                        return Err(ProtocolError::PublicKeyMismatchError(
+                            PublicKeyMismatchError::new(public_key.clone()),
+                        ))
                     }
                     1 => {
-                        return Err(ProtocolError::InvalidSignaturePublicKeySecurityLevelError {
-                            public_key_security_level: SecurityLevel::CRITICAL,
-                            required_security_level: SecurityLevel::MASTER,
-                        })
+                        return Err(ProtocolError::InvalidSignaturePublicKeySecurityLevelError(
+                            InvalidSignaturePublicKeySecurityLevelError::new(
+                                SecurityLevel::CRITICAL,
+                                SecurityLevel::MASTER,
+                            ),
+                        ))
                     }
                     2 => {
-                        return Err(ProtocolError::PublicKeySecurityLevelNotMetError {
-                            public_key_security_level: SecurityLevel::CRITICAL,
-                            required_security_level: SecurityLevel::HIGH,
-                        })
+                        return Err(ProtocolError::PublicKeySecurityLevelNotMetError(
+                            PublicKeySecurityLevelNotMetError::new(
+                                SecurityLevel::CRITICAL,
+                                SecurityLevel::HIGH,
+                            ),
+                        ))
                     }
                     3 => {
-                        return Err(ProtocolError::PublicKeyIsDisabledError {
-                            public_key: public_key.clone(),
-                        })
+                        return Err(ProtocolError::PublicKeyIsDisabledError(
+                            PublicKeyIsDisabledError::new(public_key.clone()),
+                        ))
                     }
                     4 => {
-                        return Err(ProtocolError::WrongPublicKeyPurposeError {
-                            public_key_purpose: Purpose::WITHDRAW,
-                            key_purpose_requirement: Purpose::DECRYPTION,
-                        })
+                        return Err(ProtocolError::WrongPublicKeyPurposeError(
+                            WrongPublicKeyPurposeError::new(Purpose::WITHDRAW, Purpose::DECRYPTION),
+                        ))
                     }
                     _ => {}
                 }
@@ -342,7 +362,7 @@ mod test {
         let signature_error = get_signature_error_from_result(&result, 0);
 
         assert!(
-            matches!(signature_error, SignatureError::IdentityNotFoundError { identity_id }  if {
+            matches!(signature_error, SignatureError::IdentityNotFoundError(IdentityNotFoundError::new(identity_id))  if {
              identity_id == identity.get_id()
             })
         );
@@ -374,7 +394,7 @@ mod test {
         let signature_error = get_signature_error_from_result(&result, 0);
 
         assert!(
-            matches!(signature_error, SignatureError::MissingPublicKeyError { public_key_id }  if {
+            matches!(signature_error, SignatureError::MissingPublicKeyError(MissingPublicKeyError::new(public_key_id)) if {
                  *public_key_id == 12332
             })
         );

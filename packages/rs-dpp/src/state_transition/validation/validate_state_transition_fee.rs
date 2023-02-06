@@ -1,6 +1,7 @@
 use anyhow::Context;
 use std::convert::TryInto;
 
+use crate::data_contract::errors::IdentityNotPresentError;
 use crate::{
     consensus::fee::FeeError,
     identity::{
@@ -73,8 +74,10 @@ where
                     .map(TryInto::try_into)
                     .transpose()
                     .map_err(Into::into)?
-                    .ok_or_else(|| ProtocolError::IdentityNotPresentError {
-                        id: identity_id.clone(),
+                    .ok_or_else(|| {
+                        ProtocolError::IdentityNotPresentError(IdentityNotPresentError::new(
+                            identity_id.clone(),
+                        ))
                     })?;
 
                 if execution_context.is_dry_run() {
@@ -141,8 +144,10 @@ where
             .map(TryInto::try_into)
             .transpose()
             .map_err(Into::into)?
-            .ok_or_else(|| ProtocolError::IdentityNotPresentError {
-                id: identity_id.clone(),
+            .ok_or_else(|| {
+                ProtocolError::IdentityNotPresentError(IdentityNotPresentError::new(
+                    identity_id.clone(),
+                ))
             })?;
 
         Ok(identity.get_balance())

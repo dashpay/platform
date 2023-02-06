@@ -5,6 +5,7 @@ use futures::future::join_all;
 use itertools::Itertools;
 use serde::{Deserialize, Serialize};
 
+use crate::data_contract::errors::DataContractNotPresentError;
 use crate::{
     block_time_window::validate_time_in_block_time_window::validate_time_in_block_time_window,
     consensus::ConsensusError,
@@ -84,8 +85,10 @@ pub async fn validate_document_transitions(
         .map(TryInto::try_into)
         .transpose()
         .map_err(Into::into)?
-        .ok_or_else(|| ProtocolError::DataContractNotPresentError {
-            data_contract_id: data_contract_id.clone(),
+        .ok_or_else(|| {
+            ProtocolError::DataContractNotPresentError(DataContractNotPresentError::new(
+                data_contract_id.clone(),
+            ))
         })?;
 
     execution_context.add_operations(tmp_execution_context.get_operations());

@@ -3,6 +3,7 @@ use std::collections::BTreeSet;
 use anyhow::bail;
 use serde_json::Value as JsonValue;
 
+use crate::consensus::basic::data_contract::InvalidJsonSchemaRefError;
 use crate::{
     consensus::basic::BasicError, util::json_value::JsonValueExt, validation::ValidationResult,
 };
@@ -42,15 +43,21 @@ fn calc_max_depth(json_value: &JsonValue) -> Result<usize, BasicError> {
                     if property_name == "$ref" {
                         if let Some(uri) = v.as_str() {
                             let resolved = resolve_uri(json_value, uri).map_err(|e| {
-                                BasicError::InvalidJsonSchemaRefError {
-                                    ref_error: format!("invalid ref '{}': {}", uri, e),
-                                }
+                                BasicError::InvalidJsonSchemaRefError(
+                                    InvalidJsonSchemaRefError::new(format!(
+                                        "invalid ref '{}': {}",
+                                        uri, e
+                                    )),
+                                )
                             })?;
 
                             if visited.contains(&(resolved as *const JsonValue)) {
-                                return Err(BasicError::InvalidJsonSchemaRefError {
-                                    ref_error: format!("the ref '{}' contains cycles", uri),
-                                });
+                                return Err(BasicError::InvalidJsonSchemaRefError(
+                                    InvalidJsonSchemaRefError::new(format!(
+                                        "the ref '{}' contains cycles",
+                                        uri
+                                    )),
+                                ));
                             }
 
                             visited.insert(resolved as *const JsonValue);

@@ -1,12 +1,17 @@
 use serde_json::Value as JsonValue;
 use thiserror::Error;
 
+use crate::consensus::signature::InvalidSignaturePublicKeySecurityLevelError;
 use crate::consensus::ConsensusError;
 use crate::data_contract::errors::*;
+use crate::data_contract::state_transition::errors::MissingDataContractIdError;
+use crate::data_contract::state_transition::errors::PublicKeyIsDisabledError;
 use crate::document::errors::*;
-use crate::identity::{IdentityPublicKey, KeyType, Purpose, SecurityLevel};
-use crate::prelude::Identifier;
-use crate::state_transition::StateTransition;
+use crate::identity::{Purpose, SecurityLevel};
+use crate::state_transition::errors::{
+    InvalidIdentityPublicKeyTypeError, InvalidSignaturePublicKeyError, PublicKeyMismatchError,
+    PublicKeySecurityLevelNotMetError, StateTransitionIsNotSignedError, WrongPublicKeyPurposeError,
+};
 use crate::{CompatibleProtocolVersionIsNotDefinedError, NonConsensusError, SerdeParsingError};
 
 #[derive(Error, Debug)]
@@ -53,27 +58,18 @@ pub enum ProtocolError {
     Generic(String),
 
     // State Transition Errors
-    #[error("Invalid signature type")]
-    InvalidIdentityPublicKeyTypeError { public_key_type: KeyType },
-    #[error("State Transition is not signed")]
-    StateTransitionIsNotIsSignedError { state_transition: StateTransition },
-    #[error(
-        "Invalid key security level: {public_key_security_level}. The state transition requires at least: {required_security_level}"
-    )]
-    PublicKeySecurityLevelNotMetError {
-        public_key_security_level: SecurityLevel,
-        required_security_level: SecurityLevel,
-    },
-    #[error("Invalid identity key purpose {public_key_purpose}. This state transition requires {key_purpose_requirement}")]
-    WrongPublicKeyPurposeError {
-        public_key_purpose: Purpose,
-        key_purpose_requirement: Purpose,
-    },
-    #[error("Public key mismatched")]
-    PublicKeyMismatchError { public_key: IdentityPublicKey },
-
-    #[error("Invalid signature public key")]
-    InvalidSignaturePublicKeyError { public_key: Vec<u8> },
+    #[error(transparent)]
+    InvalidIdentityPublicKeyTypeError(InvalidIdentityPublicKeyTypeError),
+    #[error(transparent)]
+    StateTransitionIsNotSignedError(StateTransitionIsNotSignedError),
+    #[error(transparent)]
+    PublicKeySecurityLevelNotMetError(PublicKeySecurityLevelNotMetError),
+    #[error(transparent)]
+    WrongPublicKeyPurposeError(WrongPublicKeyPurposeError),
+    #[error(transparent)]
+    PublicKeyMismatchError(PublicKeyMismatchError),
+    #[error(transparent)]
+    InvalidSignaturePublicKeyError(InvalidSignaturePublicKeyError),
 
     // TODO decide if it should be a string
     #[error("Non-Consensus error: {0}")]
@@ -86,32 +82,26 @@ pub enum ProtocolError {
     #[error("Data Contract already exists")]
     DataContractAlreadyExistsError,
 
-    #[error("Invalid Data Contract: {errors:?}")]
-    InvalidDataContractError {
-        errors: Vec<ConsensusError>,
-        raw_data_contract: JsonValue,
-    },
+    #[error(transparent)]
+    InvalidDataContractError(InvalidDataContractError),
 
-    #[error("Data Contract is not present")]
-    DataContractNotPresentError { data_contract_id: Identifier },
+    #[error(transparent)]
+    DataContractNotPresentError(DataContractNotPresentError),
 
-    #[error("Invalid public key security level {public_key_security_level}. This state transition requires {required_security_level}")]
-    InvalidSignaturePublicKeySecurityLevelError {
-        public_key_security_level: SecurityLevel,
-        required_security_level: SecurityLevel,
-    },
+    #[error(transparent)]
+    InvalidSignaturePublicKeySecurityLevelError(InvalidSignaturePublicKeySecurityLevelError),
 
     #[error("State Transition type is not present")]
     InvalidStateTransitionTypeError,
 
-    #[error("$dataContractId is not present")]
-    MissingDataContractIdError { raw_document_transition: JsonValue },
+    #[error(transparent)]
+    MissingDataContractIdError(MissingDataContractIdError),
 
-    #[error("Public key is disabled")]
-    PublicKeyIsDisabledError { public_key: IdentityPublicKey },
+    #[error(transparent)]
+    PublicKeyIsDisabledError(PublicKeyIsDisabledError),
 
-    #[error("Identity is not present")]
-    IdentityNotPresentError { id: Identifier },
+    #[error(transparent)]
+    IdentityNotPresentError(IdentityNotPresentError),
 }
 
 impl From<NonConsensusError> for ProtocolError {

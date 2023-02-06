@@ -3,6 +3,12 @@ use std::{
     convert::{TryFrom, TryInto},
 };
 
+use crate::consensus::basic::document::{
+    DuplicateDocumentTransitionsWithIdsError, DuplicateDocumentTransitionsWithIndicesError,
+    InvalidDocumentTransitionActionError, InvalidDocumentTransitionIdError,
+    InvalidDocumentTypeError,
+};
+use crate::consensus::basic::invalid_identifier_error::InvalidIdentifierError;
 use crate::document::validation::basic::find_duplicates_by_id::find_duplicates_by_id;
 use crate::{
     consensus::basic::BasicError,
@@ -101,10 +107,9 @@ pub async fn validate_documents_batch_transition_basic(
         let identifier = match Identifier::from_bytes(&data_contract_id_bytes) {
             Ok(identifier) => identifier,
             Err(e) => {
-                result.add_error(BasicError::InvalidIdentifierError {
-                    identifier_name: String::from("$dataContractId"),
-                    error: e.to_string(),
-                });
+                result.add_error(BasicError::InvalidIdentifierError(
+                    InvalidIdentifierError::new(String::from("$dataContractId"), e.to_string()),
+                ));
                 continue;
             }
         };
@@ -216,10 +221,12 @@ fn validate_raw_transitions<'a>(
 
             Ok(document_type) => {
                 if !data_contract.is_document_defined(document_type) {
-                    result.add_error(BasicError::InvalidDocumentTypeError {
-                        document_type: document_type.to_string(),
-                        data_contract_id: data_contract.id().clone(),
-                    });
+                    result.add_error(BasicError::InvalidDocumentTypeError(
+                        InvalidDocumentTypeError::new(
+                            document_type.to_string(),
+                            data_contract.id().clone(),
+                        ),
+                    ));
                     return Ok(result);
                 }
                 document_type
@@ -237,9 +244,9 @@ fn validate_raw_transitions<'a>(
         let action = match Action::try_from(document_action as u8) {
             Ok(action) => action,
             Err(_) => {
-                result.add_error(BasicError::InvalidDocumentTransitionActionError {
-                    action: document_action.to_string(),
-                });
+                result.add_error(BasicError::InvalidDocumentTransitionActionError(
+                    InvalidDocumentTransitionActionError::new(document_action.to_string()),
+                ));
                 return Ok(result);
             }
         };
@@ -271,10 +278,12 @@ fn validate_raw_transitions<'a>(
                         generate_document_id(data_contract.id(), owner_id, document_type, &entropy);
 
                     if generated_document_id != document_id {
-                        result.add_error(BasicError::InvalidDocumentTransitionIdError {
-                            expected_id: generated_document_id,
-                            invalid_id: document_id,
-                        })
+                        result.add_error(BasicError::InvalidDocumentTransitionIdError(
+                            InvalidDocumentTransitionIdError::new(
+                                generated_document_id,
+                                document_id,
+                            ),
+                        ))
                     }
                 }
             }
@@ -303,7 +312,9 @@ fn validate_raw_transitions<'a>(
                 Ok((doc_type, id))
             })
             .collect::<Result<Vec<(String, Vec<u8>)>, anyhow::Error>>()?;
-        result.add_error(BasicError::DuplicateDocumentTransitionsWithIdsError { references });
+        result.add_error(BasicError::DuplicateDocumentTransitionsWithIdsError(
+            DuplicateDocumentTransitionsWithIdsError::new(references),
+        ));
     }
 
     let duplicate_transitions_by_indices =
@@ -317,7 +328,9 @@ fn validate_raw_transitions<'a>(
                 Ok((doc_type, id))
             })
             .collect::<Result<Vec<(String, Vec<u8>)>, anyhow::Error>>()?;
-        result.add_error(BasicError::DuplicateDocumentTransitionsWithIndicesError { references });
+        result.add_error(BasicError::DuplicateDocumentTransitionsWithIndicesError(
+            DuplicateDocumentTransitionsWithIndicesError::new(references),
+        ));
     }
 
     let validation_result = validate_partial_compound_indices(

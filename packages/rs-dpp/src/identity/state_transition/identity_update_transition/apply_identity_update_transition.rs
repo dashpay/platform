@@ -1,6 +1,7 @@
 use std::convert::TryInto;
 use std::sync::Arc;
 
+use crate::consensus::signature::{IdentityNotFoundError, SignatureError};
 use crate::{
     consensus::{basic::BasicError, ConsensusError},
     identity::get_biggest_possible_identity,
@@ -101,7 +102,7 @@ pub async fn apply_identity_update_transition(
 }
 
 fn identity_not_found_error(identity_id: Identifier) -> ProtocolError {
-    ProtocolError::AbstractConsensusError(Box::new(ConsensusError::BasicError(Box::new(
-        BasicError::IdentityNotFoundError { identity_id },
-    ))))
+    ProtocolError::AbstractConsensusError(Box::new(ConsensusError::SignatureError(
+        SignatureError::IdentityNotFoundError(IdentityNotFoundError::new(identity_id)),
+    )))
 }

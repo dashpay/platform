@@ -2,6 +2,7 @@ use std::{convert::TryInto, sync::Arc};
 
 use serde_json::Value;
 
+use crate::consensus::basic::invalid_identifier_error::InvalidIdentifierError;
 use crate::{
     consensus::{basic::BasicError, ConsensusError},
     data_contract::DataContract,
@@ -60,10 +61,9 @@ pub async fn fetch_and_validate_data_contract(
         Err(e) => {
             let id_base58 = bs58::encode(id_bytes).into_string();
             let consensus_error =
-                ConsensusError::BasicError(Box::new(BasicError::InvalidIdentifierError {
-                    identifier_name: id_base58,
-                    error: e.to_string(),
-                }));
+                ConsensusError::BasicError(Box::new(BasicError::InvalidIdentifierError(
+                    InvalidIdentifierError::new(id_base58, e.to_string()),
+                )));
             validation_result.add_error(consensus_error);
             return Ok(validation_result);
         }

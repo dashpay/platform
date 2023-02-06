@@ -1,6 +1,8 @@
 use anyhow::anyhow;
 use std::convert::{TryFrom, TryInto};
 
+use crate::data_contract::errors::DataContractNotPresentError;
+use crate::data_contract::state_transition::errors::MissingDataContractIdError;
 use crate::{
     consensus::{basic::BasicError, ConsensusError},
     data_contract::{
@@ -84,9 +86,9 @@ async fn fetch_data_contracts_for_document_transition(
     let mut data_contracts = vec![];
     for transition in raw_document_transitions {
         let data_contract_id_bytes = transition.get_bytes("$dataContractId").map_err(|_| {
-            ProtocolError::MissingDataContractIdError {
-                raw_document_transition: transition.to_owned(),
-            }
+            ProtocolError::MissingDataContractIdError(MissingDataContractIdError::new(
+                transition.to_owned(),
+            ))
         })?;
 
         let data_contract_id = Identifier::from_bytes(&data_contract_id_bytes)?;
@@ -96,7 +98,11 @@ async fn fetch_data_contracts_for_document_transition(
             .map(TryInto::try_into)
             .transpose()
             .map_err(Into::into)?
-            .ok_or_else(|| ProtocolError::DataContractNotPresentError { data_contract_id })?;
+            .ok_or_else(|| {
+                ProtocolError::DataContractNotPresentError(DataContractNotPresentError::new(
+                    data_contract_id,
+                ))
+            })?;
 
         data_contracts.push(data_contract);
     }

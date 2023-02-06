@@ -3,6 +3,7 @@ use std::sync::Arc;
 
 use anyhow::Result;
 
+use crate::consensus::signature::{IdentityNotFoundError, SignatureError};
 use crate::{
     consensus::basic::{identity::IdentityInsufficientBalanceError, BasicError},
     identity::state_transition::identity_credit_withdrawal_transition::IdentityCreditWithdrawalTransition,
@@ -47,9 +48,9 @@ where
 
         let existing_identity = match maybe_existing_identity {
             None => {
-                let err = BasicError::IdentityNotFoundError {
-                    identity_id: state_transition.identity_id.clone(),
-                };
+                let err = SignatureError::IdentityNotFoundError(IdentityNotFoundError::new(
+                    state_transition.identity_id.clone(),
+                ));
 
                 result.add_error(err);
 
