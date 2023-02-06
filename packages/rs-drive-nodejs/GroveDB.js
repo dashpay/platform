@@ -205,11 +205,12 @@ class GroveDB {
    * Get proof using query.
    *
    * @param {PathQuery} query
+   * @param {boolean} [verbose=false]
    * @param {boolean} [useTransaction=false]
    * @return {Promise<*>}
    */
-  async proveQuery(query, useTransaction = false) {
-    return groveDbProveQueryAsync.call(this.db, query, useTransaction);
+  async proveQuery(query, verbose = false, useTransaction = false) {
+    return groveDbProveQueryAsync.call(this.db, query, verbose, useTransaction);
   }
 
   /**

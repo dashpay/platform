@@ -10,9 +10,8 @@ pub struct InvalidIdentityPublicKeyIdErrorWasm {
 #[wasm_bindgen(js_class=InvalidIdentityPublicKeyIdError)]
 impl InvalidIdentityPublicKeyIdErrorWasm {
     #[wasm_bindgen(js_name=getId)]
-    pub fn id(&self) -> u32 {
-        // TODO: make key ids u32?
-        self.id as u32
+    pub fn id(&self) -> KeyID {
+        self.id
     }
 
     #[wasm_bindgen(js_name=getCode)]

@@ -45,49 +45,68 @@ describe('CachedStateRepositoryDecorator', () => {
     });
   });
 
-  describe('#updateIdentity', () => {
+  describe('#addKeysToIdentity', () => {
     it('should store identity to repository', async () => {
-      await cachedStateRepository.updateIdentity(identity);
+      await cachedStateRepository.addKeysToIdentity(identity.getId(), identity.getPublicKeys());
 
-      expect(stateRepositoryMock.updateIdentity).to.be.calledOnceWith(identity);
-    });
-  });
-
-  describe('#storeIdentityPublicKeyHashes', () => {
-    it('should store identity id and public key hashes to repository', async () => {
-      const publicKeyHashes = identity.getPublicKeys().map((pk) => pk.hash());
-
-      await cachedStateRepository.storeIdentityPublicKeyHashes(
-        identity.getId(), publicKeyHashes,
-      );
-
-      expect(stateRepositoryMock.storeIdentityPublicKeyHashes).to.be.calledOnceWithExactly(
-        identity.getId(), publicKeyHashes, undefined,
+      expect(stateRepositoryMock.addKeysToIdentity).to.be.calledOnceWith(
+        identity.getId(),
+        identity.getPublicKeys(),
       );
     });
   });
 
-  describe('#fetchIdentityIdsByPublicKeyHashes', () => {
-    it('should fetch identity id and public key hash pairs map from repository', async () => {
-      const publicKeys = identity.getPublicKeys();
+  describe('#fetchIdentityBalance', () => {
+    it('should store identity to repository', async () => {
+      await cachedStateRepository.fetchIdentityBalance(identity.getId());
 
-      stateRepositoryMock.fetchIdentityIdsByPublicKeyHashes.resolves({
-        [publicKeys[0].hash()]: identity.getId(),
-        [publicKeys[1].hash()]: identity.getId(),
-      });
-
-      const result = await cachedStateRepository.fetchIdentityIdsByPublicKeyHashes(
-        publicKeys.map((pk) => pk.hash()),
+      expect(stateRepositoryMock.fetchIdentityBalance).to.be.calledOnceWith(
+        identity.getId(),
       );
+    });
+  });
 
-      expect(stateRepositoryMock.fetchIdentityIdsByPublicKeyHashes).to.be.calledOnceWithExactly(
-        publicKeys.map((pk) => pk.hash()),
-        undefined,
+  describe('#fetchIdentityBalanceWithDebt', () => {
+    it('should store identity to repository', async () => {
+      await cachedStateRepository.fetchIdentityBalanceWithDebt(identity.getId());
+
+      expect(stateRepositoryMock.fetchIdentityBalanceWithDebt).to.be.calledOnceWith(
+        identity.getId(),
       );
-      expect(result).to.deep.equal({
-        [publicKeys[0].hash()]: identity.getId(),
-        [publicKeys[1].hash()]: identity.getId(),
-      });
+    });
+  });
+
+  describe('#addToIdentityBalance', () => {
+    it('should store identity to repository', async () => {
+      await cachedStateRepository.addToIdentityBalance(identity.getId(), 100);
+
+      expect(stateRepositoryMock.addToIdentityBalance).to.be.calledOnceWith(
+        identity.getId(),
+        100,
+      );
+    });
+  });
+
+  describe('#disableIdentityKeys', () => {
+    it('should store identity to repository', async () => {
+      await cachedStateRepository.disableIdentityKeys(identity.getId(), [100], 100);
+
+      expect(stateRepositoryMock.disableIdentityKeys).to.be.calledOnceWith(
+        identity.getId(),
+        [100],
+        100,
+      );
+    });
+  });
+
+  describe('#updateIdentityRevision', () => {
+    it('should store identity to repository', async () => {
+      await cachedStateRepository.updateIdentityRevision(identity.getId(), 1);
+
+      expect(stateRepositoryMock.updateIdentityRevision).to.be.calledOnceWith(
+        identity.getId(),
+        1,
+      );
     });
   });
 

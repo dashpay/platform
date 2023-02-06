@@ -94,6 +94,7 @@ const validatePublicKeySignaturesFactory = require('../identity/stateTransition/
 const StateTransitionExecutionContext = require('./StateTransitionExecutionContext');
 const calculateStateTransitionFeeFactory = require('./fee/calculateStateTransitionFeeFactory');
 const calculateOperationFees = require('./fee/calculateOperationFees');
+const calculateStateTransitionFeeFromOperationsFactory = require('./fee/calculateStateTransitionFeeFromOperationsFactory');
 
 class StateTransitionFacade {
   /**
@@ -299,9 +300,14 @@ class StateTransitionFacade {
       [stateTransitionTypes.IDENTITY_UPDATE]: validateIdentityUpdateTransitionState,
     });
 
+    const calculateStateTransitionFeeFromOperations = (
+      calculateStateTransitionFeeFromOperationsFactory(
+        calculateOperationFees,
+      )
+    );
+
     const calculateStateTransitionFee = calculateStateTransitionFeeFactory(
-      this.stateRepository,
-      calculateOperationFees,
+      calculateStateTransitionFeeFromOperations,
     );
 
     this.validateStateTransitionFee = validateStateTransitionFeeFactory(

@@ -56,28 +56,28 @@ fn data_triggers() -> Result<Vec<DataTrigger>, ProtocolError> {
 
     let data_triggers = vec![
         DataTrigger {
-            data_contract_id: dpns_data_contract_id.clone(),
+            data_contract_id: dpns_data_contract_id,
             document_type: "domain".to_string(),
             transition_action: Action::Create,
             data_trigger_kind: DataTriggerKind::DataTriggerCreateDomain,
             top_level_identity: Some(dpns_owner_id),
         },
         DataTrigger {
-            data_contract_id: dpns_data_contract_id.clone(),
+            data_contract_id: dpns_data_contract_id,
             document_type: "domain".to_string(),
             transition_action: Action::Replace,
             data_trigger_kind: DataTriggerKind::DataTriggerReject,
             top_level_identity: None,
         },
         DataTrigger {
-            data_contract_id: dpns_data_contract_id.clone(),
+            data_contract_id: dpns_data_contract_id,
             document_type: "domain".to_string(),
             transition_action: Action::Delete,
             data_trigger_kind: DataTriggerKind::DataTriggerReject,
             top_level_identity: None,
         },
         DataTrigger {
-            data_contract_id: dpns_data_contract_id.clone(),
+            data_contract_id: dpns_data_contract_id,
             document_type: "preorder".to_string(),
             transition_action: Action::Delete,
             data_trigger_kind: DataTriggerKind::DataTriggerReject,
@@ -91,14 +91,14 @@ fn data_triggers() -> Result<Vec<DataTrigger>, ProtocolError> {
             top_level_identity: None,
         },
         DataTrigger {
-            data_contract_id: dashpay_data_contract_id.clone(),
+            data_contract_id: dashpay_data_contract_id,
             document_type: "contactRequest".to_string(),
             transition_action: Action::Create,
             data_trigger_kind: DataTriggerKind::CreateDataContractRequest,
             top_level_identity: None,
         },
         DataTrigger {
-            data_contract_id: dashpay_data_contract_id.clone(),
+            data_contract_id: dashpay_data_contract_id,
             document_type: "contactRequest".to_string(),
             transition_action: Action::Replace,
             data_trigger_kind: DataTriggerKind::DataTriggerReject,
@@ -112,14 +112,14 @@ fn data_triggers() -> Result<Vec<DataTrigger>, ProtocolError> {
             top_level_identity: None,
         },
         DataTrigger {
-            data_contract_id: feature_flags_data_contract_id.clone(),
+            data_contract_id: feature_flags_data_contract_id,
             document_type: feature_flags_contract::types::UPDATE_CONSENSUS_PARAMS.to_string(),
             transition_action: Action::Create,
             data_trigger_kind: DataTriggerKind::CrateFeatureFlag,
             top_level_identity: Some(feature_flags_owner_id),
         },
         DataTrigger {
-            data_contract_id: feature_flags_data_contract_id.clone(),
+            data_contract_id: feature_flags_data_contract_id,
             document_type: feature_flags_contract::types::UPDATE_CONSENSUS_PARAMS.to_string(),
             transition_action: Action::Replace,
             data_trigger_kind: DataTriggerKind::DataTriggerReject,
@@ -133,7 +133,7 @@ fn data_triggers() -> Result<Vec<DataTrigger>, ProtocolError> {
             top_level_identity: None,
         },
         DataTrigger {
-            data_contract_id: master_node_reward_shares_contract_id.clone(),
+            data_contract_id: master_node_reward_shares_contract_id,
             document_type: feature_flags_contract::types::UPDATE_CONSENSUS_PARAMS.to_string(),
             transition_action: Action::Create,
             data_trigger_kind: DataTriggerKind::CreateDataContractRequest,

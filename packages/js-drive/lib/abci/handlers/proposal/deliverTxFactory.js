@@ -1,4 +1,5 @@
 const crypto = require('crypto');
+const { FeeResult } = require('@dashevo/rs-drive');
 
 const stateTransitionTypes = require('@dashevo/dpp/lib/stateTransition/stateTransitionTypes');
 const AbstractDocumentTransition = require(
@@ -8,14 +9,14 @@ const AbstractDocumentTransition = require(
 const DPPValidationAbciError = require('../../errors/DPPValidationAbciError');
 
 const DOCUMENT_ACTION_DESCRIPTIONS = {
-  [AbstractDocumentTransition.ACTIONS.CREATE]: 'created',
-  [AbstractDocumentTransition.ACTIONS.REPLACE]: 'replaced',
-  [AbstractDocumentTransition.ACTIONS.DELETE]: 'deleted',
+  [AbstractDocumentTransition.ACTIONS.CREATE]: 'Create',
+  [AbstractDocumentTransition.ACTIONS.REPLACE]: 'Replace',
+  [AbstractDocumentTransition.ACTIONS.DELETE]: 'Delete',
 };
 
 const DATA_CONTRACT_ACTION_DESCRIPTIONS = {
-  [stateTransitionTypes.DATA_CONTRACT_CREATE]: 'created',
-  [stateTransitionTypes.DATA_CONTRACT_UPDATE]: 'updated',
+  [stateTransitionTypes.DATA_CONTRACT_CREATE]: 'Create',
+  [stateTransitionTypes.DATA_CONTRACT_UPDATE]: 'Update',
 };
 
 const TIMERS = require('../timers');
@@ -25,6 +26,9 @@ const TIMERS = require('../timers');
  * @param {DashPlatformProtocol} transactionalDpp
  * @param {BlockExecutionContext} proposalBlockExecutionContext
  * @param {ExecutionTimer} executionTimer
+ * @param {IdentityBalanceStoreRepository} identityBalanceRepository
+ * @param {calculateStateTransitionFee} calculateStateTransitionFee
+ * @param {calculateStateTransitionFeeFromOperations} calculateStateTransitionFeeFromOperations
  * @param {createContextLogger} createContextLogger
  *
  * @return {deliverTx}
@@ -34,6 +38,9 @@ function deliverTxFactory(
   transactionalDpp,
   proposalBlockExecutionContext,
   executionTimer,
+  identityBalanceRepository,
+  calculateStateTransitionFee,
+  calculateStateTransitionFeeFromOperations,
   createContextLogger,
 ) {
   /**
@@ -44,7 +51,7 @@ function deliverTxFactory(
    * @param {BaseLogger} contextLogger
    * @return {Promise<{
    *  code: number,
-   *  fees: BlockFeeResult}>}
+   *  fees: BlockFees}>}
    */
   async function deliverTx(stateTransitionByteArray, round, contextLogger) {
     const blockHeight = proposalBlockExecutionContext.getHeight();
@@ -81,14 +88,93 @@ function deliverTxFactory(
       },
     );
 
-    // Keep only actual operations
+    // Logging
+    /* istanbul ignore next */
+    switch (stateTransition.getType()) {
+      case stateTransitionTypes.DATA_CONTRACT_UPDATE:
+      case stateTransitionTypes.DATA_CONTRACT_CREATE: {
+        const dataContract = stateTransition.getDataContract();
+
+        // Save data contracts in order to create databases for documents on block commit
+        proposalBlockExecutionContext.addDataContract(dataContract);
+
+        const description = DATA_CONTRACT_ACTION_DESCRIPTIONS[stateTransition.getType()];
+
+        txContextLogger.info(
+          {
+            dataContractId: dataContract.getId().toString(),
+          },
+          `${description} Data Contract with id: ${dataContract.getId()}`,
+        );
+
+        break;
+      }
+      case stateTransitionTypes.IDENTITY_CREATE: {
+        const identityId = stateTransition.getIdentityId();
+
+        txContextLogger.info(
+          {
+            identityId: identityId.toString(),
+          },
+          `Create Identity with id: ${identityId}`,
+        );
+
+        break;
+      }
+      case stateTransitionTypes.IDENTITY_TOP_UP: {
+        const identityId = stateTransition.getIdentityId();
+
+        txContextLogger.info(
+          {
+            identityId: identityId.toString(),
+          },
+          `Top up Identity with id: ${identityId}`,
+        );
+
+        break;
+      }
+      case stateTransitionTypes.IDENTITY_UPDATE: {
+        const identityId = stateTransition.getIdentityId();
+
+        txContextLogger.info(
+          {
+            identityId: identityId.toString(),
+          },
+          `Update Identity with id: ${identityId}`,
+        );
+        break;
+      }
+      case stateTransitionTypes.DOCUMENTS_BATCH: {
+        stateTransition.getTransitions().forEach((transition) => {
+          const description = DOCUMENT_ACTION_DESCRIPTIONS[transition.getAction()];
+
+          txContextLogger.info(
+            {
+              documentId: transition.getId().toString(),
+            },
+            `${description} Document with id: ${transition.getId()}`,
+          );
+        });
+
+        break;
+      }
+      default:
+        break;
+    }
+
+    // Remove dry run operations from state transition execution context
+
     const stateTransitionExecutionContext = stateTransition.getExecutionContext();
 
     const predictedStateTransitionOperations = stateTransitionExecutionContext.getOperations();
-    const predictedStateTransitionFees = stateTransitionExecutionContext
-      .getLastCalculatedFeeDetails();
+    const predictedStateTransitionFees = calculateStateTransitionFeeFromOperations(
+      predictedStateTransitionOperations,
+      stateTransition.getOwnerId(),
+    );
 
     stateTransitionExecutionContext.clearDryOperations();
+
+    // Validate against state
 
     executionTimer.startTimer(TIMERS.DELIVER_TX.VALIDATE_STATE);
 
@@ -111,113 +197,37 @@ function deliverTxFactory(
     executionTimer.startTimer(TIMERS.DELIVER_TX.APPLY);
 
     // Apply state transition to the state
+
     await transactionalDpp.stateTransition.apply(stateTransition);
 
     executionTimer.stopTimer(TIMERS.DELIVER_TX.APPLY, true);
 
-    // Reduce an identity balance and accumulate fees for all STs in the block
-    // in order to store them in credits distribution pool
-    const actualStateTransitionFees = stateTransitionExecutionContext
-      .getLastCalculatedFeeDetails();
+    // Update identity balance
+
+    const actualStateTransitionFees = calculateStateTransitionFee(stateTransition);
+
     const actualStateTransitionOperations = stateTransition.getExecutionContext().getOperations();
 
-    if (actualStateTransitionFees.total > predictedStateTransitionFees.total) {
+    if (actualStateTransitionFees.desiredAmount > predictedStateTransitionFees.desiredAmount) {
       txContextLogger.warn({
-        predictedFee: predictedStateTransitionFees.total,
-        actualFee: actualStateTransitionFees.total,
-      }, `Actual fees are greater than predicted for ${actualStateTransitionFees.total - predictedStateTransitionFees.total} credits`);
+        predictedFee: predictedStateTransitionFees.desiredAmount,
+        actualFee: actualStateTransitionFees.desiredAmount,
+      }, `Actual fees are greater than predicted for ${actualStateTransitionFees.desiredAmount - predictedStateTransitionFees.desiredAmount} credits`);
     }
 
-    const identity = await transactionalDpp.getStateRepository().fetchIdentity(
-      stateTransition.getOwnerId(),
+    const feeResult = FeeResult.create(
+      actualStateTransitionFees.storageFee,
+      actualStateTransitionFees.processingFee,
+      actualStateTransitionFees.feeRefunds,
     );
 
-    let updatedBalance = identity.getBalance() - actualStateTransitionFees.total;
+    const applyFeesToBalanceResult = await identityBalanceRepository.applyFees(
+      stateTransition.getOwnerId(),
+      feeResult,
+      { useTransaction: true },
+    );
 
-    // TODO: We should increment identity balance debt in case if it goes negative
-    if (updatedBalance < 0) {
-      updatedBalance = 0;
-    }
-
-    identity.setBalance(updatedBalance);
-
-    await transactionalDpp.getStateRepository().updateIdentity(identity);
-
-    // Logging
-    /* istanbul ignore next */
-    switch (stateTransition.getType()) {
-      case stateTransitionTypes.DATA_CONTRACT_UPDATE:
-      case stateTransitionTypes.DATA_CONTRACT_CREATE: {
-        const dataContract = stateTransition.getDataContract();
-
-        // Save data contracts in order to create databases for documents on block commit
-        proposalBlockExecutionContext.addDataContract(dataContract);
-
-        const description = DATA_CONTRACT_ACTION_DESCRIPTIONS[stateTransition.getType()];
-
-        txContextLogger.info(
-          {
-            dataContractId: dataContract.getId().toString(),
-          },
-          `Data contract ${description} with id: ${dataContract.getId()}`,
-        );
-
-        break;
-      }
-      case stateTransitionTypes.IDENTITY_CREATE: {
-        const identityId = stateTransition.getIdentityId();
-
-        txContextLogger.info(
-          {
-            identityId: identityId.toString(),
-          },
-          `Identity created with id: ${identityId}`,
-        );
-
-        break;
-      }
-      case stateTransitionTypes.IDENTITY_TOP_UP: {
-        const identityId = stateTransition.getIdentityId();
-
-        txContextLogger.info(
-          {
-            identityId: identityId.toString(),
-          },
-          `Identity topped up with id: ${identityId}`,
-        );
-
-        break;
-      }
-      case stateTransitionTypes.IDENTITY_UPDATE: {
-        const identityId = stateTransition.getIdentityId();
-
-        txContextLogger.info(
-          {
-            identityId: identityId.toString(),
-          },
-          `Identity updated with id: ${identityId}`,
-        );
-        break;
-      }
-      case stateTransitionTypes.DOCUMENTS_BATCH: {
-        stateTransition.getTransitions().forEach((transition) => {
-          const description = DOCUMENT_ACTION_DESCRIPTIONS[transition.getAction()];
-          const dataContract = transition.getDataContract();
-
-          txContextLogger.info(
-            {
-              documentId: transition.getId().toString(),
-              dataContractId: dataContract.getId().toString(),
-            },
-            `Document ${description} with id: ${transition.getId()}`,
-          );
-        });
-
-        break;
-      }
-      default:
-        break;
-    }
+    const transactionFees = applyFeesToBalanceResult.getValue();
 
     const deliverTxTiming = executionTimer.stopTimer(TIMERS.DELIVER_TX.OVERALL);
 
@@ -235,35 +245,32 @@ function deliverTxFactory(
           predicted: {
             storage: predictedStateTransitionFees.storageFee,
             processing: predictedStateTransitionFees.processingFee,
-            refunds: predictedStateTransitionFees.feeRefundsSum,
-            final: predictedStateTransitionFees.total,
+            refunds: predictedStateTransitionFees.totalRefunds,
+            requiredAmount: predictedStateTransitionFees.requiredAmount,
+            desiredAmount: predictedStateTransitionFees.desiredAmount,
             operations: predictedStateTransitionOperations.map((operation) => operation.toJSON()),
           },
           actual: {
             storage: actualStateTransitionFees.storageFee,
             processing: actualStateTransitionFees.processingFee,
-            refunds: actualStateTransitionFees.feeRefundsSum,
-            final: actualStateTransitionFees.total,
+            refunds: actualStateTransitionFees.totalRefunds,
+            requiredAmount: actualStateTransitionFees.requiredAmount,
+            desiredAmount: actualStateTransitionFees.desiredAmount,
             operations: actualStateTransitionOperations.map((operation) => operation.toJSON()),
           },
+          debt: actualStateTransitionFees.desiredAmount - transactionFees.processingFee,
         },
         txType: stateTransition.getType(),
       },
-      `${stateTransition.constructor.name} execution took ${deliverTxTiming} seconds and cost ${actualStateTransitionFees.total} credits`,
+      `${stateTransition.constructor.name} execution took ${deliverTxTiming} seconds and cost ${actualStateTransitionFees.desiredAmount} credits`,
     );
-
-    let feeRefunds = {};
-    if (actualStateTransitionFees.feeRefunds.length > 0) {
-      feeRefunds = actualStateTransitionFees.feeRefunds[0].creditsPerEpoch;
-    }
 
     return {
       code: 0,
       fees: {
-        storageFee: actualStateTransitionFees.storageFee,
-        processingFee: actualStateTransitionFees.processingFee,
-        feeRefunds,
-        feeRefundsSum: actualStateTransitionFees.feeRefundsSum,
+        storageFee: transactionFees.storageFee,
+        processingFee: transactionFees.processingFee,
+        refundsPerEpoch: transactionFees.sumFeeRefundsPerEpoch(),
       },
     };
   }

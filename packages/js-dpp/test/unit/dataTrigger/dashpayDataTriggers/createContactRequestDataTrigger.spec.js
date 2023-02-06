@@ -6,7 +6,6 @@ const DataTriggerConditionError = require('../../../../lib/errors/consensus/stat
 
 const createStateRepositoryMock = require('../../../../lib/test/mocks/createStateRepositoryMock');
 const getDocumentTransitionFixture = require('../../../../lib/test/fixtures/getDocumentTransitionsFixture');
-const getIdentityFixture = require('../../../../lib/test/fixtures/getIdentityFixture');
 
 const getDashPayContractFixture = require('../../../../lib/test/fixtures/getDashPayContractFixture');
 const { getContactRequestDocumentFixture } = require('../../../../lib/test/fixtures/getDashPayDocumentFixture');
@@ -19,7 +18,7 @@ describe('createContactRequestDataTrigger', () => {
   let dataContract;
   let contactRequestDocument;
   let documentTransition;
-  let identityFixture;
+  let identityBalance;
 
   beforeEach(function beforeEach() {
     contactRequestDocument = getContactRequestDocumentFixture();
@@ -29,11 +28,11 @@ describe('createContactRequestDataTrigger', () => {
       create: [contactRequestDocument],
     });
 
-    identityFixture = getIdentityFixture();
+    identityBalance = 100;
 
     stateRepositoryMock = createStateRepositoryMock(this.sinonSandbox);
     stateRepositoryMock.fetchLatestPlatformCoreChainLockedHeight.resolves(42);
-    stateRepositoryMock.fetchIdentity.resolves(identityFixture);
+    stateRepositoryMock.fetchIdentityBalance.resolves(identityBalance);
 
     context = new DataTriggerExecutionContext(
       stateRepositoryMock,
@@ -130,7 +129,7 @@ describe('createContactRequestDataTrigger', () => {
   });
 
   it('should fail if toUserId does not exist', async () => {
-    stateRepositoryMock.fetchIdentity.resolves(null);
+    stateRepositoryMock.fetchIdentityBalance.resolves(null);
 
     const result = await createContactRequestDataTrigger(
       documentTransition, context, dashPayIdentity,

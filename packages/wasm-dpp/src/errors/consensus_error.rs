@@ -21,10 +21,10 @@ use crate::errors::consensus::basic::identity::{
     InvalidIdentityPublicKeySecurityLevelErrorWasm, InvalidInstantAssetLockProofErrorWasm,
     InvalidInstantAssetLockProofSignatureErrorWasm, MissingMasterPublicKeyErrorWasm,
 };
-use dpp::codes::ErrorWithCode;
-use dpp::consensus::basic::identity::{
-    DuplicatedIdentityPublicKeyError, DuplicatedIdentityPublicKeyIdError,
+use crate::errors::consensus::state::identity::{
+    DuplicatedIdentityPublicKeyIdStateErrorWasm, DuplicatedIdentityPublicKeyStateErrorWasm,
 };
+use dpp::codes::ErrorWithCode;
 use dpp::consensus::basic::BasicError;
 use dpp::consensus::signature::SignatureError;
 use dpp::StateError;
@@ -201,37 +201,36 @@ fn from_state_error(state_error: &Box<StateError>) -> JsValue {
 
     match state_error.deref() {
         StateError::DuplicatedIdentityPublicKeyIdError { duplicated_ids } => {
-            let e = DuplicatedIdentityPublicKeyIdError::new(duplicated_ids.clone());
-            DuplicatedIdentityPublicKeyIdErrorWasm::from(&e).into()
+            DuplicatedIdentityPublicKeyIdStateErrorWasm::new(duplicated_ids.clone(), code).into()
         }
         StateError::DuplicatedIdentityPublicKeyError {
             duplicated_public_key_ids,
         } => {
-            let e = DuplicatedIdentityPublicKeyError::new(duplicated_public_key_ids.clone());
-            DuplicatedIdentityPublicKeyErrorWasm::from(&e).into()
+            DuplicatedIdentityPublicKeyStateErrorWasm::new(duplicated_public_key_ids.clone(), code)
+                .into()
         }
         StateError::DocumentAlreadyPresentError { document_id } => {
-            DocumentAlreadyPresentErrorWasm::new(document_id.clone(), code).into()
+            DocumentAlreadyPresentErrorWasm::new(*document_id, code).into()
         }
         StateError::DataContractAlreadyPresentError { data_contract_id } => {
-            DataContractAlreadyPresentErrorWasm::new(data_contract_id.clone(), code).into()
+            DataContractAlreadyPresentErrorWasm::new(*data_contract_id, code).into()
         }
         StateError::DocumentNotFoundError { document_id } => {
-            DocumentNotFoundErrorWasm::new(document_id.clone(), code).into()
+            DocumentNotFoundErrorWasm::new(*document_id, code).into()
         }
         StateError::DocumentOwnerIdMismatchError {
             document_id,
             document_owner_id,
             existing_document_owner_id,
         } => DocumentOwnerIdMismatchErrorWasm::new(
-            document_id.clone(),
-            document_owner_id.clone(),
-            existing_document_owner_id.clone(),
+            *document_id,
+            *document_owner_id,
+            *existing_document_owner_id,
             code,
         )
         .into(),
         StateError::DocumentTimestampsMismatchError { document_id } => {
-            DocumentTimestampsMismatchErrorWasm::new(document_id.clone(), code).into()
+            DocumentTimestampsMismatchErrorWasm::new(*document_id, code).into()
         }
         StateError::DocumentTimestampWindowViolationError {
             timestamp_name,
@@ -241,7 +240,7 @@ fn from_state_error(state_error: &Box<StateError>) -> JsValue {
             time_window_end,
         } => DocumentTimestampWindowViolationErrorWasm::new(
             timestamp_name.clone(),
-            document_id.clone(),
+            *document_id,
             *timestamp,
             *time_window_start,
             *time_window_end,
@@ -251,22 +250,16 @@ fn from_state_error(state_error: &Box<StateError>) -> JsValue {
         StateError::DuplicateUniqueIndexError {
             document_id,
             duplicating_properties,
-        } => DuplicateUniqueIndexErrorWasm::new(
-            document_id.clone(),
-            duplicating_properties.clone(),
-            code,
-        )
-        .into(),
+        } => DuplicateUniqueIndexErrorWasm::new(*document_id, duplicating_properties.clone(), code)
+            .into(),
         StateError::InvalidDocumentRevisionError {
             document_id,
             current_revision,
-        } => InvalidDocumentRevisionErrorWasm::new(document_id.clone(), *current_revision, code)
-            .into(),
+        } => InvalidDocumentRevisionErrorWasm::new(*document_id, *current_revision, code).into(),
         StateError::InvalidIdentityRevisionError {
             identity_id,
             current_revision,
-        } => InvalidIdentityRevisionErrorWasm::new(identity_id.clone(), *current_revision, code)
-            .into(),
+        } => InvalidIdentityRevisionErrorWasm::new(*identity_id, *current_revision, code).into(),
         StateError::IdentityPublicKeyDisabledAtWindowViolationError {
             disabled_at,
             time_window_start,
@@ -298,11 +291,11 @@ fn from_state_error(state_error: &Box<StateError>) -> JsValue {
                 document_transition,
                 owner_id,
             } => DataTriggerConditionErrorWasm::new(
-                data_contract_id.clone(),
-                document_transition_id.clone(),
+                *data_contract_id,
+                *document_transition_id,
                 message.clone(),
                 document_transition.clone(),
-                owner_id.clone(),
+                *owner_id,
                 code,
             )
             .into(),
@@ -314,12 +307,12 @@ fn from_state_error(state_error: &Box<StateError>) -> JsValue {
                 document_transition,
                 owner_id,
             } => DataTriggerExecutionErrorWasm::new(
-                data_contract_id.clone(),
-                document_transition_id.clone(),
+                *data_contract_id,
+                *document_transition_id,
                 message.clone(),
                 wasm_bindgen::JsError::new(execution_error.to_string().as_ref()),
                 document_transition.clone(),
-                owner_id.clone(),
+                *owner_id,
                 code,
             )
             .into(),
@@ -329,10 +322,10 @@ fn from_state_error(state_error: &Box<StateError>) -> JsValue {
                 document_transition,
                 owner_id,
             } => DataTriggerInvalidResultErrorWasm::new(
-                data_contract_id.clone(),
-                document_transition_id.clone(),
+                *data_contract_id,
+                *document_transition_id,
                 document_transition.clone(),
-                owner_id.clone(),
+                *owner_id,
                 code,
             )
             .into(),
@@ -345,7 +338,7 @@ fn from_basic_error(basic_error: &Box<BasicError>) -> JsValue {
 
     match basic_error.deref() {
         BasicError::DataContractNotPresent { data_contract_id } => {
-            DataContractNotPresentErrorWasm::new(data_contract_id.clone(), code).into()
+            DataContractNotPresentErrorWasm::new(*data_contract_id, code).into()
         }
         BasicError::InvalidDataContractVersionError {
             expected_version,
@@ -358,8 +351,7 @@ fn from_basic_error(basic_error: &Box<BasicError>) -> JsValue {
             document_type,
             data_contract_id,
         } => {
-            InvalidDocumentTypeErrorWasm::new(document_type.clone(), data_contract_id.clone(), code)
-                .into()
+            InvalidDocumentTypeErrorWasm::new(document_type.clone(), *data_contract_id, code).into()
         }
         BasicError::DuplicateIndexNameError {
             document_type,
@@ -472,10 +464,7 @@ fn from_basic_error(basic_error: &Box<BasicError>) -> JsValue {
         BasicError::InvalidDocumentTransitionIdError {
             expected_id,
             invalid_id,
-        } => {
-            InvalidDocumentTransitionIdErrorWasm::new(expected_id.clone(), invalid_id.clone(), code)
-                .into()
-        }
+        } => InvalidDocumentTransitionIdErrorWasm::new(*expected_id, *invalid_id, code).into(),
         BasicError::DuplicateDocumentTransitionsWithIndicesError { references } => {
             DuplicateDocumentTransitionsWithIndicesErrorWasm::new(references.clone(), code).into()
         }
@@ -515,7 +504,7 @@ fn from_basic_error(basic_error: &Box<BasicError>) -> JsValue {
         )
         .into(),
         BasicError::IdentityNotFoundError { identity_id } => {
-            IdentityNotFoundErrorWasm::new(identity_id.clone(), code).into()
+            IdentityNotFoundErrorWasm::new(*identity_id, code).into()
         }
         BasicError::MissingStateTransitionTypeError => {
             MissingStateTransitionTypeErrorWasm::new(code).into()
@@ -548,7 +537,7 @@ fn from_basic_error(basic_error: &Box<BasicError>) -> JsValue {
             old_schema,
             new_schema,
         } => IncompatibleDataContractSchemaErrorWasm::new(
-            data_contract_id.clone(),
+            *data_contract_id,
             operation.clone(),
             field_path.clone(),
             old_schema.clone(),
@@ -557,7 +546,7 @@ fn from_basic_error(basic_error: &Box<BasicError>) -> JsValue {
         )
         .into(),
         BasicError::InvalidIdentityKeySignatureError { public_key_id } => {
-            InvalidIdentityKeySignatureErrorWasm::new(*public_key_id as u32, code).into()
+            InvalidIdentityKeySignatureErrorWasm::new(*public_key_id, code).into()
         }
         BasicError::InvalidDataContractIdError {
             expected_id,
@@ -581,7 +570,7 @@ fn from_signature_error(signature_error: &SignatureError) -> JsValue {
             InvalidStateTransitionSignatureErrorWasm::new(code).into()
         }
         SignatureError::IdentityNotFoundError { identity_id } => {
-            IdentityNotFoundErrorWasm::new(identity_id.clone(), code).into()
+            IdentityNotFoundErrorWasm::new(*identity_id, code).into()
         }
         SignatureError::InvalidSignaturePublicKeySecurityLevelError {
             public_key_security_level,
