@@ -178,9 +178,9 @@ impl Drive {
         let documents = items
             .iter()
             .map(|document_cbor| {
-                DocumentStub::from_cbor(document_cbor, None, None).map_err(|_| {
-                    Error::Drive(DriveError::CorruptedCodeExecution(
-                        "Can't  create document from CBOR",
+                DocumentStub::from_bytes(document_cbor, document_type).map_err(|_| {
+                    Error::Drive(DriveError::CorruptedDriveState(
+                        "can't create document from bytes".to_string(),
                     ))
                 })
             })
@@ -189,7 +189,7 @@ impl Drive {
         let document = documents
             .get(0)
             .ok_or(Error::Drive(DriveError::CorruptedCodeExecution(
-                "Document was not found by transactionId",
+                "document was not found by transactionId",
             )))?
             .clone();
 
