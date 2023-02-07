@@ -2279,10 +2279,10 @@ function $$SETUP_STATE(hydrateRuntimeState, basePath) {
         }]\
       ]],\
       ["@dashevo/abci", [\
-        ["https://github.com/dashpay/js-abci.git#commit=0ed8258034f3e7521a110053570f5c5c024eab67", {\
-          "packageLocation": "./.yarn/cache/@dashevo-abci-https-69fbb104fd-aaf41ab7fa.zip/node_modules/@dashevo/abci/",\
+        ["https://github.com/dashpay/js-abci.git#commit=6cf69df653a26f53c696e6e141326b1d196cd868", {\
+          "packageLocation": "./.yarn/cache/@dashevo-abci-https-c6dac21738-b8d6b486f0.zip/node_modules/@dashevo/abci/",\
           "packageDependencies": [\
-            ["@dashevo/abci", "https://github.com/dashpay/js-abci.git#commit=0ed8258034f3e7521a110053570f5c5c024eab67"],\
+            ["@dashevo/abci", "https://github.com/dashpay/js-abci.git#commit=6cf69df653a26f53c696e6e141326b1d196cd868"],\
             ["@dashevo/protobufjs", "npm:6.10.5"],\
             ["bl", "npm:1.2.3"],\
             ["protocol-buffers-encodings", "npm:1.1.1"]\
@@ -2665,7 +2665,7 @@ function $$SETUP_STATE(hydrateRuntimeState, basePath) {
           "packageLocation": "./packages/js-drive/",\
           "packageDependencies": [\
             ["@dashevo/drive", "workspace:packages/js-drive"],\
-            ["@dashevo/abci", "https://github.com/dashpay/js-abci.git#commit=0ed8258034f3e7521a110053570f5c5c024eab67"],\
+            ["@dashevo/abci", "https://github.com/dashpay/js-abci.git#commit=6cf69df653a26f53c696e6e141326b1d196cd868"],\
             ["@dashevo/dapi-grpc", "workspace:packages/dapi-grpc"],\
             ["@dashevo/dashcore-lib", "https://github.com/dashevo/dashcore-lib.git#commit=85bb622ba45cccf7b1c2089f4453e87bbc5772e1"],\
             ["@dashevo/dashd-rpc", "npm:18.2.0"],\
