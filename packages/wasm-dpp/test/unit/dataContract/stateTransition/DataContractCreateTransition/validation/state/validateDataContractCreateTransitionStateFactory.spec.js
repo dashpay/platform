@@ -42,7 +42,7 @@ describe('validateDataContractCreateTransitionStateFactory', () => {
     dataContractFetched = false;
 
     const stateRepositoryLike = {
-      fetchDataContract: () => {
+      fetchDataContract: async () => {
         dataContractFetched = true;
       },
     };
@@ -57,7 +57,7 @@ describe('validateDataContractCreateTransitionStateFactory', () => {
     const wasmDataContract = await dataContractFactory.createFromBuffer(dataContract.toBuffer());
 
     const stateRepositoryLikeWithContract = {
-      fetchDataContract: () => wasmDataContract,
+      fetchDataContract: async () => wasmDataContract,
     };
 
     const result = await validateDataContractCreateTransitionState(
