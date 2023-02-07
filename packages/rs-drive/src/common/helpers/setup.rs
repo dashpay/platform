@@ -37,6 +37,12 @@ use crate::drive::config::DriveConfig;
 use crate::drive::Drive;
 use crate::fee_pools::epochs::Epoch;
 
+use crate::drive::object_size_info::DocumentInfo::{
+    DocumentRefAndSerialization, DocumentRefWithoutSerialization,
+};
+use crate::drive::object_size_info::{DocumentAndContractInfo, OwnedDocumentInfo};
+use dpp::data_contract::document_type::DocumentType;
+use dpp::document::document_stub::DocumentStub;
 use dpp::{
     contracts::withdrawals_contract,
     prelude::{DataContract, Document},
@@ -107,14 +113,25 @@ pub fn setup_document(
     drive: &Drive,
     document: &Document,
     data_contract: &DataContract,
+    document_type: &DocumentType,
     transaction: TransactionArg,
 ) {
+    //todo: remove this hack
+    let serialized_document = document
+        .to_buffer()
+        .expect("expected to serialize to buffer");
+    let document_stub = DocumentStub::from_cbor(&serialized_document, None, None)
+        .expect("expected to convert to document stub");
     drive
-        .add_serialized_document_for_serialized_contract(
-            &document.to_buffer().unwrap(),
-            &data_contract.to_cbor().unwrap(),
-            withdrawals_contract::types::WITHDRAWAL,
-            Some(data_contract.owner_id.to_buffer()),
+        .add_document_for_contract(
+            DocumentAndContractInfo {
+                owned_document_info: OwnedDocumentInfo {
+                    document_info: DocumentRefWithoutSerialization((&document_stub, None)),
+                    owner_id: None,
+                },
+                contract: data_contract,
+                document_type,
+            },
             false,
             BlockInfo {
                 time_ms: 1,
@@ -122,7 +139,6 @@ pub fn setup_document(
                 epoch: Epoch::new(1),
             },
             true,
-            None,
             transaction,
         )
         .unwrap();

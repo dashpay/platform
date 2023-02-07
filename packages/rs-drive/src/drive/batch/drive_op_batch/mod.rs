@@ -168,6 +168,9 @@ impl Drive {
         block_info: &BlockInfo,
         transaction: TransactionArg,
     ) -> Result<FeeResult, Error> {
+        if operations.is_empty() {
+            return Ok(FeeResult::default());
+        }
         let mut drive_operations = vec![];
         let mut estimated_costs_only_with_layer_info = if apply {
             None::<HashMap<KeyInfoPath, EstimatedLayerInformation>>

@@ -1,3 +1,9 @@
+/// Inserting a withdrawal
+pub(crate) mod delete;
+/// Inserting or Deleting an expired index
+pub(crate) mod expired_index;
+/// Inserting a withdrawal
+pub(crate) mod insert;
 /// Functions and constants related to GroveDB paths
 pub mod paths;
 /// Functions related to withdrawal queue

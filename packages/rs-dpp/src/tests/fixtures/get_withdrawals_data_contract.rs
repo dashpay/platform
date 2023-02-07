@@ -5,7 +5,7 @@ use serde_json::Value;
 
 use crate::contracts::withdrawals_contract;
 use crate::prelude::*;
-use crate::util::string_encoding::Encoding;
+
 use crate::{
     data_contract::validation::data_contract_validator::DataContractValidator,
     data_contract::DataContractFactory,

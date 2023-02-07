@@ -50,6 +50,7 @@ pub fn setup_platform_raw(config: Option<PlatformConfig>) -> Platform {
     let mut platform: Platform =
         Platform::open(tmp_dir, config).expect("should open Platform successfully");
 
+    #[cfg(feature = "fixtures-and-mocks")]
     platform.mock_core_rpc_client();
 
     platform
@@ -64,6 +65,7 @@ pub fn setup_platform_with_initial_state_structure(config: Option<PlatformConfig
         .create_initial_state_structure(None)
         .expect("should create root tree successfully");
 
+    #[cfg(feature = "fixtures-and-mocks")]
     platform.mock_core_rpc_client();
 
     platform

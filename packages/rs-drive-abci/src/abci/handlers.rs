@@ -204,18 +204,20 @@ mod tests {
         use dashcore::hashes::hex::FromHex;
         use dashcore::BlockHash;
         use dpp::contracts::withdrawals_contract;
+        use dpp::data_contract::DriveContractExt;
+        use dpp::document::document_stub::DocumentStub;
         use dpp::identity::state_transition::identity_credit_withdrawal_transition::Pooling;
         use dpp::tests::fixtures::{
             get_withdrawal_document_fixture, get_withdrawals_data_contract_fixture,
         };
         use dpp::util::hash;
         use drive::common::helpers::identities::create_test_masternode_identities;
+        use drive::common::helpers::setup::setup_document;
         use drive::drive::block_info::BlockInfo;
         use drive::drive::identity::withdrawals::paths::WithdrawalTransaction;
         use drive::fee::epoch::CreditsPerEpoch;
         use drive::fee_pools::epochs::Epoch;
         use drive::rpc::core::MockCoreRPCLike;
-        use drive::tests::helpers::setup::setup_document;
         use rust_decimal::prelude::ToPrimitive;
         use serde_json::json;
         use std::cmp::Ordering;
@@ -271,10 +273,15 @@ mod tests {
                     }),
                 );
 
+                let document_type = data_contract
+                    .document_type_for_name(withdrawals_contract::types::WITHDRAWAL)
+                    .expect("expected to get document type");
+
                 setup_document(
                     &platform.drive,
                     &document,
                     &data_contract,
+                    document_type,
                     Some(&transaction),
                 );
             }

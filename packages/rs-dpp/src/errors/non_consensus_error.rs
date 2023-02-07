@@ -1,8 +1,7 @@
 use thiserror::Error;
 
 use crate::{
-    prelude::Identifier, CompatibleProtocolVersionIsNotDefinedError, InvalidVectorSizeError,
-    SerdeParsingError,
+    CompatibleProtocolVersionIsNotDefinedError, InvalidVectorSizeError, SerdeParsingError,
 };
 
 #[derive(Debug, Error)]

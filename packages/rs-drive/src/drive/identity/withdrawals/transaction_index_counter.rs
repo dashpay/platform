@@ -3,6 +3,8 @@ use grovedb::{
     Element, PathQuery, Query, SizedQuery, TransactionArg,
 };
 
+use crate::drive::identity::withdrawals::paths::get_withdrawal_root_path_vec;
+use crate::fee::op::DriveOperation;
 use crate::{
     drive::{
         batch::{drive_op_batch::WithdrawalOperationType, DriveOperationType},
@@ -17,6 +19,26 @@ use super::paths::{
 };
 
 impl Drive {
+    pub(crate) fn update_transaction_index_counter(
+        &self,
+        index: u64,
+    ) -> Result<(Vec<DriveOperation>), Error> {
+        let mut drive_operations = vec![];
+
+        let path = get_withdrawal_root_path_vec();
+
+        self.batch_insert(
+            crate::drive::object_size_info::PathKeyElementInfo::PathKeyRefElement::<'_, 1>((
+                path,
+                &WITHDRAWAL_TRANSACTIONS_COUNTER_ID,
+                Element::Item(index.to_be_bytes().to_vec(), None),
+            )),
+            &mut drive_operations,
+        )?;
+
+        Ok(drive_operations)
+    }
+
     /// Get latest withdrawal index in a queue
     pub fn remove_latest_withdrawal_transaction_index(
         &self,
@@ -124,12 +146,12 @@ mod tests {
     use grovedb::Element;
 
     use crate::{
+        common::helpers::setup::setup_drive_with_initial_state_structure,
         drive::{
             block_info::BlockInfo,
             identity::withdrawals::paths::get_withdrawal_transactions_expired_ids_path,
         },
         fee_pools::epochs::Epoch,
-        tests::helpers::setup::setup_drive_with_initial_state_structure,
     };
 
     #[test]

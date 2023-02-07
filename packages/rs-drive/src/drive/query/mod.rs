@@ -44,7 +44,6 @@ use crate::fee::op::DriveOperation;
 use crate::query::DriveQuery;
 use dpp::data_contract::document_type::DocumentType;
 use dpp::data_contract::DriveContractExt;
-use dpp::document::document_stub::DocumentStub;
 
 use crate::drive::block_info::BlockInfo;
 use crate::fee_pools::epochs::Epoch;

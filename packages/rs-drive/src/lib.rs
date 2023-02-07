@@ -30,7 +30,3 @@ pub mod rpc;
 pub use dpp;
 /// GroveDB module
 pub use grovedb;
-
-/// Test helpers
-#[cfg(feature = "test-helpers")]
-pub mod tests;

@@ -1,5 +1,6 @@
 use std::collections::BTreeMap;
 
+use dpp::data_contract::document_type::random_document::CreateRandomDocument;
 use dpp::{
     contracts::withdrawals_contract, data_contract::DriveContractExt,
     document::document_stub::DocumentStub,
@@ -87,18 +88,20 @@ impl Drive {
 
         let QueryDocumentsOutcome {
             items,
-            skipped,
-            cost,
+            skipped: _,
+            cost: _,
         } = self.query_documents(drive_query, None, transaction)?;
 
         let documents = items
             .iter()
             .map(|document_cbor| {
-                DocumentStub::from_cbor(document_cbor, None, None).map_err(|_| {
-                    Error::Drive(DriveError::CorruptedCodeExecution(
-                        "Can't  create document from CBOR",
-                    ))
-                })
+                document_type
+                    .document_from_bytes(document_cbor)
+                    .map_err(|e| {
+                        Error::Drive(DriveError::CorruptedDriveState(format!(
+                            "can't create document from bytes : {e}"
+                        )))
+                    })
             })
             .collect::<Result<Vec<DocumentStub>, Error>>()?;
 
@@ -168,8 +171,8 @@ impl Drive {
 
         let QueryDocumentsOutcome {
             items,
-            skipped,
-            cost,
+            skipped: _,
+            cost: _,
         } = self.query_documents(drive_query, None, transaction)?;
 
         let documents = items
@@ -201,11 +204,11 @@ mod tests {
     use dpp::tests::fixtures::get_withdrawals_data_contract_fixture;
     use serde_json::json;
 
-    use crate::tests::helpers::setup::setup_drive_with_initial_state_structure;
-    use crate::tests::helpers::setup::{setup_document, setup_system_data_contract};
+    use crate::common::helpers::setup::setup_drive_with_initial_state_structure;
+    use crate::common::helpers::setup::{setup_document, setup_system_data_contract};
 
     mod fetch_withdrawal_documents_by_status {
-
+        use dpp::data_contract::DriveContractExt;
         use dpp::identity::state_transition::identity_credit_withdrawal_transition::Pooling;
 
         use super::*;
@@ -242,7 +245,17 @@ mod tests {
                 }),
             );
 
-            setup_document(&drive, &document, &data_contract, Some(&transaction));
+            let document_type = data_contract
+                .document_type_for_name(withdrawals_contract::types::WITHDRAWAL)
+                .expect("expected to get document type");
+
+            setup_document(
+                &drive,
+                &document,
+                &data_contract,
+                document_type,
+                Some(&transaction),
+            );
 
             let document = get_withdrawal_document_fixture(
                 &data_contract,
@@ -256,7 +269,13 @@ mod tests {
                 }),
             );
 
-            setup_document(&drive, &document, &data_contract, Some(&transaction));
+            setup_document(
+                &drive,
+                &document,
+                &data_contract,
+                document_type,
+                Some(&transaction),
+            );
 
             let documents = drive
                 .fetch_withdrawal_documents_by_status(
@@ -279,6 +298,7 @@ mod tests {
     }
 
     mod find_document_by_transaction_id {
+        use dpp::data_contract::DriveContractExt;
         use dpp::identity::state_transition::identity_credit_withdrawal_transition::Pooling;
 
         use super::*;
@@ -306,7 +326,17 @@ mod tests {
                 }),
             );
 
-            setup_document(&drive, &document, &data_contract, Some(&transaction));
+            let document_type = data_contract
+                .document_type_for_name(withdrawals_contract::types::WITHDRAWAL)
+                .expect("expected to get document type");
+
+            setup_document(
+                &drive,
+                &document,
+                &data_contract,
+                document_type,
+                Some(&transaction),
+            );
 
             let found_document = drive
                 .find_document_by_transaction_id(&(0..32).collect::<Vec<u8>>(), Some(&transaction))

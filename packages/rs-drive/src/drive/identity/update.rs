@@ -270,7 +270,7 @@ mod tests {
     use super::*;
     use dpp::prelude::*;
 
-    use crate::tests::helpers::setup::setup_drive_with_initial_state_structure;
+    use crate::common::helpers::setup::setup_drive_with_initial_state_structure;
 
     mod add_new_keys_to_identity {
         use super::*;

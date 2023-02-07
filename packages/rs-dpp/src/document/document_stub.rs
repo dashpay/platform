@@ -151,12 +151,14 @@ impl DocumentStub {
         }
         let mut id = [0; 32];
         buf.read_exact(&mut id).map_err(|_| {
-            ProtocolError::DecodingError("error reading from serialized document".to_string())
+            ProtocolError::DecodingError("error reading id from serialized document".to_string())
         })?;
 
         let mut owner_id = [0; 32];
         buf.read_exact(&mut owner_id).map_err(|_| {
-            ProtocolError::DecodingError("error reading from serialized document".to_string())
+            ProtocolError::DecodingError(
+                "error reading owner id from serialized document".to_string(),
+            )
         })?;
 
         let properties = document_type
@@ -194,7 +196,7 @@ impl DocumentStub {
         let mut document: BTreeMap<String, Value> = ciborium::de::from_reader(read_document_cbor)
             .map_err(|_| {
             ProtocolError::StructureError(StructureError::InvalidCBOR(
-                "unable to decode contract for document call",
+                "unable to decode document for document call",
             ))
         })?;
 
@@ -411,25 +413,24 @@ impl DocumentStub {
 
     /// Temporary helper method to get property in u32 format
     /// Imitating JsonValueExt trait
-    pub fn get_u32(&self, property_name: &str) -> Result<u32, anyhow::Error> {
-        let property_value = self.properties.get(property_name).ok_or_else(|| {
-            anyhow!(
-                "the property '{}' doesn't exist in '{:?}'",
-                property_name,
-                self
-            )
-        })?;
+    pub fn get_u32(&self, property_name: &str) -> Result<u32, ProtocolError> {
+        let property_value =
+            self.properties
+                .get(property_name)
+                .ok_or(ProtocolError::DocumentKeyMissing(format!(
+                    "the property '{}' doesn't exist in '{:?}'",
+                    property_name, self
+                )))?;
 
         if let Value::Integer(s) = property_value {
             return (*s)
                 .try_into()
-                .map_err(|_| anyhow!("unable convert {} to u32", property_name));
+                .map_err(|_| ProtocolError::DecodingError("expected a u32 integer".to_string()));
+        } else {
+            Err(ProtocolError::DecodingError(
+                "expected an integer".to_string(),
+            ))
         }
-        bail!(
-            "getting property '{}' failed: {:?} isn't a number",
-            property_name,
-            property_value
-        );
     }
 
     /// Temporary helper method to get property in bytes format
@@ -472,14 +473,14 @@ impl DocumentStub {
             .insert(property_name.to_string(), Value::Bytes(value));
     }
 
-    pub fn increment_revision(&mut self) -> Result<(), anyhow::Error> {
+    pub fn increment_revision(&mut self) -> Result<(), ProtocolError> {
         let property_name = "$revision";
 
         let revision = self.get_u32(property_name)?;
 
         let new_revision = revision
             .checked_add(1)
-            .ok_or_else(|| anyhow!("could not increment revision: overflow occured"))?;
+            .ok_or(ProtocolError::Overflow("overflow when adding 1"))?;
 
         self.properties.insert(
             property_name.to_string(),

@@ -41,7 +41,7 @@ impl Platform {
         block_execution_context: &BlockExecutionContext,
         transaction: TransactionArg,
     ) -> Result<(), Error> {
-        let data_contract_id = withdrawals_contract::CONTRACT_ID.clone();
+        let data_contract_id = &withdrawals_contract::CONTRACT_ID;
 
         let (_, maybe_data_contract) = self.drive.get_contract_with_fetch_info(
             data_contract_id.to_buffer(),
@@ -52,7 +52,7 @@ impl Platform {
         )?;
 
         let contract_fetch_info = maybe_data_contract.ok_or(Error::Execution(
-            ExecutionError::CorruptedCodeExecution("Can't fetch withdrawal data contract"),
+            ExecutionError::CorruptedCodeExecution("can't fetch withdrawal data contract"),
         ))?;
 
         let core_transactions = self.fetch_core_block_transactions(
@@ -127,11 +127,7 @@ impl Platform {
                     })?,
                 );
 
-                document.increment_revision().map_err(|_| {
-                    Error::Execution(ExecutionError::CorruptedCodeExecution(
-                        "Could not increment document revision",
-                    ))
-                })?;
+                document.increment_revision().map_err(Error::Protocol)?;
             }
         }
 
@@ -149,10 +145,8 @@ impl Platform {
             &mut drive_operations,
         );
 
-        if !drive_operations.is_empty() {
-            self.drive
-                .apply_drive_operations(drive_operations, true, &block_info, transaction)?;
-        }
+        self.drive
+            .apply_drive_operations(drive_operations, true, &block_info, transaction)?;
 
         Ok(())
     }
@@ -432,7 +426,7 @@ impl Platform {
             .remove_latest_withdrawal_transaction_index(transaction)?;
 
         for (i, document) in documents.iter().enumerate() {
-            let output_script = document
+            let output_script_bytes = document
                 .get_bytes(withdrawals_contract::property_names::OUTPUT_SCRIPT)
                 .map_err(|_| {
                     Error::Execution(ExecutionError::CorruptedCodeExecution(
@@ -458,7 +452,7 @@ impl Platform {
 
             let state_transition_size = 190;
 
-            let output_script: Script = Script::from(output_script);
+            let output_script: Script = Script::from(output_script_bytes);
 
             let tx_out = TxOut {
                 value: convert_credits_to_satoshi(amount),
@@ -511,7 +505,7 @@ mod tests {
         contracts::withdrawals_contract,
         tests::fixtures::{get_withdrawal_document_fixture, get_withdrawals_data_contract_fixture},
     };
-    use drive::{rpc::core::MockCoreRPCLike, tests::helpers::setup::setup_document};
+    use drive::{common::helpers::setup::setup_document, rpc::core::MockCoreRPCLike};
     use serde_json::json;
 
     use crate::common::helpers::setup::setup_platform_with_initial_state_structure;
@@ -522,9 +516,8 @@ mod tests {
     use crate::{block::BlockExecutionContext, execution::fee_pools::epoch::EpochInfo};
 
     mod update_withdrawal_statuses {
-        use dpp::prelude::DataContract;
-
         use crate::block::BlockStateInfo;
+        use dpp::data_contract::{DataContract, DriveContractExt};
 
         use super::*;
 
@@ -609,10 +602,15 @@ mod tests {
                 }),
             );
 
+            let document_type = data_contract
+                .document_type_for_name(withdrawals_contract::types::WITHDRAWAL)
+                .expect("expected to get document type");
+
             setup_document(
                 &platform.drive,
                 &document_1,
                 &data_contract,
+                document_type,
                 Some(&transaction),
             );
 
@@ -634,6 +632,7 @@ mod tests {
                 &platform.drive,
                 &document_2,
                 &data_contract,
+                document_type,
                 Some(&transaction),
             );
 
@@ -692,7 +691,7 @@ mod tests {
     }
 
     mod pool_withdrawals_into_transactions {
-
+        use dpp::data_contract::DriveContractExt;
         use dpp::identity::state_transition::identity_credit_withdrawal_transition::Pooling;
 
         use crate::block::BlockStateInfo;
@@ -721,10 +720,15 @@ mod tests {
                 }),
             );
 
+            let document_type = data_contract
+                .document_type_for_name(withdrawals_contract::types::WITHDRAWAL)
+                .expect("expected to get document type");
+
             setup_document(
                 &platform.drive,
                 &document_1,
                 &data_contract,
+                document_type,
                 Some(&transaction),
             );
 
@@ -744,6 +748,7 @@ mod tests {
                 &platform.drive,
                 &document_2,
                 &data_contract,
+                document_type,
                 Some(&transaction),
             );
 
@@ -863,6 +868,7 @@ mod tests {
     }
 
     mod build_withdrawal_transactions_from_documents {
+        use dpp::data_contract::DriveContractExt;
         use dpp::{
             document::document_stub::DocumentStub,
             identity::state_transition::identity_credit_withdrawal_transition::Pooling,
@@ -894,10 +900,15 @@ mod tests {
                 }),
             );
 
+            let document_type = data_contract
+                .document_type_for_name(withdrawals_contract::types::WITHDRAWAL)
+                .expect("expected to get document type");
+
             setup_document(
                 &platform.drive,
                 &document_1,
                 &data_contract,
+                document_type,
                 Some(&transaction),
             );
 
@@ -917,6 +928,7 @@ mod tests {
                 &platform.drive,
                 &document_2,
                 &data_contract,
+                document_type,
                 Some(&transaction),
             );
 

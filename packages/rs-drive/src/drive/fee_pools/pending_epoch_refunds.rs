@@ -219,7 +219,7 @@ pub fn add_update_pending_epoch_refunds_operations(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::tests::helpers::setup::setup_drive_with_initial_state_structure;
+    use crate::common::helpers::setup::setup_drive_with_initial_state_structure;
 
     mod fetch_and_add_pending_epoch_refunds_to_collection {
         use super::*;

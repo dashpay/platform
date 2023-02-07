@@ -217,7 +217,7 @@ impl Epoch {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::tests::helpers::setup::{setup_drive, setup_drive_with_initial_state_structure};
+    use crate::common::helpers::setup::{setup_drive, setup_drive_with_initial_state_structure};
     use chrono::Utc;
 
     mod increment_proposer_block_count_operation {
