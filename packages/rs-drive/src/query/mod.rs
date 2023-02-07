@@ -31,15 +31,14 @@ use std::collections::BTreeMap;
 use std::ops::BitXor;
 
 use ciborium::value::Value;
-use dpp::data_contract::extra::ContractError;
-use dpp::data_contract::extra::DriveContractExt;
-use dpp::data_contract::extra::{encode_float, Index, IndexProperty};
+use grovedb::query_result_type::{QueryResultElements, QueryResultType};
 /// Import grovedb
 pub use grovedb::{
     Element, Error as GroveError, GroveDb, PathQuery, Query, QueryItem, SizedQuery, TransactionArg,
 };
 
 use indexmap::IndexMap;
+use integer_encoding::VarInt;
 use sqlparser::ast;
 use sqlparser::ast::TableFactor::Table;
 use sqlparser::ast::Value::Number;
@@ -47,25 +46,29 @@ use sqlparser::ast::{OrderByExpr, Select, Statement};
 use sqlparser::dialect::GenericDialect;
 use sqlparser::parser::Parser;
 
+use crate::drive::block_info::BlockInfo;
 use conditions::WhereOperator::{Equal, In};
 /// Import conditions
 pub use conditions::{WhereClause, WhereOperator};
+use dpp::data_contract::document_type::{DocumentType, Index, IndexProperty};
+use dpp::data_contract::DriveContractExt;
 /// Import ordering
 pub use ordering::OrderClause;
 
-use crate::common::bytes_for_system_value;
-use crate::contract::{document::Document, Contract};
-use crate::drive::block_info::BlockInfo;
-
+use crate::common::encode::encode_float;
+use crate::contract::Contract;
 use crate::drive::grove_operations::QueryType::StatefulQuery;
 use crate::drive::Drive;
 use crate::error::drive::DriveError;
 use crate::error::query::QueryError;
-use crate::error::structure::StructureError;
 use crate::error::Error;
 use crate::fee::calculate_fee;
 use crate::fee::op::DriveOperation;
-use dpp::data_contract::extra::DocumentType;
+
+use crate::drive::contract::paths::ContractPaths;
+use dpp::data_contract::extra::common::bytes_for_system_value;
+use dpp::document::document_stub::DocumentStub;
+use dpp::ProtocolError;
 
 pub mod conditions;
 mod defaults;
@@ -217,6 +220,20 @@ pub struct DriveQuery<'a> {
 }
 
 impl<'a> DriveQuery<'a> {
+    /// Returns any item
+    pub fn any_item_query(contract: &'a Contract, document_type: &'a DocumentType) -> Self {
+        DriveQuery {
+            contract,
+            document_type,
+            internal_clauses: Default::default(),
+            offset: 0,
+            limit: 1,
+            order_by: Default::default(),
+            start_at: None,
+            start_at_included: true,
+            block_time: None,
+        }
+    }
     /// Returns true if the query clause if for primary keys.
     pub fn is_for_primary_key(&self) -> bool {
         self.internal_clauses.is_for_primary_key()
@@ -240,7 +257,11 @@ impl<'a> DriveQuery<'a> {
         document_type: &'a DocumentType,
     ) -> Result<Self, Error> {
         let mut query_document: BTreeMap<String, Value> = ciborium::de::from_reader(query_cbor)
-            .map_err(|_| Error::Structure(StructureError::InvalidCBOR("unable to decode query")))?;
+            .map_err(|_| {
+                Error::Query(QueryError::DeserializationError(
+                    "unable to decode query from cbor",
+                ))
+            })?;
 
         let limit: u16 = query_document
             .remove("limit")
@@ -499,7 +520,7 @@ impl<'a> DriveQuery<'a> {
             .map(|a| a.to_vec())
             .collect::<Vec<Vec<u8>>>();
 
-        let starts_at_document: Option<(Document, bool)> = match &self.start_at {
+        let starts_at_document: Option<(DocumentStub, bool)> = match &self.start_at {
             None => Ok(None),
             Some(starts_at) => {
                 // First if we have a startAt or or startsAfter we must get the element
@@ -550,7 +571,7 @@ impl<'a> DriveQuery<'a> {
                     )))?;
 
                 if let Element::Item(item, _) = start_at_document {
-                    let document = Document::from_cbor(item.as_slice(), None, None)?;
+                    let document = DocumentStub::from_cbor(item.as_slice(), None, None)?;
                     Ok(Some((document, self.start_at_included)))
                 } else {
                     Err(Error::Drive(DriveError::CorruptedDocumentPath(
@@ -570,7 +591,7 @@ impl<'a> DriveQuery<'a> {
     pub fn get_primary_key_path_query(
         &self,
         document_type_path: Vec<Vec<u8>>,
-        starts_at_document: Option<(Document, bool)>,
+        starts_at_document: Option<(DocumentStub, bool)>,
     ) -> Result<PathQuery, Error> {
         let mut path = document_type_path;
 
@@ -777,7 +798,7 @@ impl<'a> DriveQuery<'a> {
 
     /// Returns a `Query` that either starts at or after the given document ID if given.
     fn inner_query_from_starts_at_for_id(
-        starts_at_document: &Option<(Document, &DocumentType, &IndexProperty, bool)>,
+        starts_at_document: &Option<(DocumentStub, &DocumentType, &IndexProperty, bool)>,
         left_to_right: bool,
     ) -> Query {
         // We only need items after the start at document
@@ -826,7 +847,7 @@ impl<'a> DriveQuery<'a> {
     // The index property (borrowed)
     // if the element itself should be included. ie StartAt vs StartAfter
     fn inner_query_from_starts_at(
-        starts_at_document: &Option<(Document, &DocumentType, &IndexProperty, bool)>,
+        starts_at_document: &Option<(DocumentStub, &DocumentType, &IndexProperty, bool)>,
         left_to_right: bool,
     ) -> Result<Query, Error> {
         let mut inner_query = Query::new_with_direction(left_to_right);
@@ -867,7 +888,7 @@ impl<'a> DriveQuery<'a> {
         query: Option<&mut Query>,
         left_over_index_properties: &[&IndexProperty],
         unique: bool,
-        starts_at_document: &Option<(Document, &DocumentType, &IndexProperty, bool)>, //for key level, included
+        starts_at_document: &Option<(DocumentStub, &DocumentType, &IndexProperty, bool)>, //for key level, included
         default_left_to_right: bool,
         order_by: Option<&IndexMap<String, OrderClause>>,
     ) -> Result<Option<Query>, Error> {
@@ -991,7 +1012,7 @@ impl<'a> DriveQuery<'a> {
     pub fn get_non_primary_key_path_query(
         &self,
         document_type_path: Vec<Vec<u8>>,
-        starts_at_document: Option<(Document, bool)>,
+        starts_at_document: Option<(DocumentStub, bool)>,
     ) -> Result<PathQuery, Error> {
         let index = self.find_best_index()?;
         let ordered_clauses: Vec<&WhereClause> = index
@@ -1049,7 +1070,8 @@ impl<'a> DriveQuery<'a> {
                         }
                     }
                 })
-                .collect::<Result<Vec<Vec<u8>>, ContractError>>()?;
+                .collect::<Result<Vec<Vec<u8>>, ProtocolError>>()
+                .map_err(Error::Protocol)?;
 
         let final_query = match last_clause {
             None => {
@@ -1212,7 +1234,7 @@ impl<'a> DriveQuery<'a> {
     ) -> Result<Vec<u8>, Error> {
         let path_query =
             self.construct_path_query_operations(drive, transaction, drive_operations)?;
-        drive.grove_get_proved_path_query(&path_query, transaction, drive_operations)
+        drive.grove_get_proved_path_query(&path_query, false, transaction, drive_operations)
     }
 
     /// Executes a query with proof and returns the root hash, items, and fee.
@@ -1248,29 +1270,34 @@ impl<'a> DriveQuery<'a> {
             self.construct_path_query_operations(drive, transaction, drive_operations)?;
 
         let proof =
-            drive.grove_get_proved_path_query(&path_query, transaction, drive_operations)?;
-        let (root_hash, mut key_value_elements) =
+            drive.grove_get_proved_path_query(&path_query, false, transaction, drive_operations)?;
+        let (root_hash, key_value_elements) =
             GroveDb::verify_query(proof.as_slice(), &path_query).map_err(Error::GroveDB)?;
 
-        let mut values = vec![];
-        for proved_key_value in key_value_elements.into_iter() {
-            let element = Element::deserialize(proved_key_value.value.as_slice()).unwrap();
-            match element {
-                Element::Item(val, _) => values.push(val),
-                Element::SumItem(val, _) => values.push(val.to_be_bytes().to_vec()),
-                Element::Tree(..) | Element::SumTree(..) | Element::Reference(..) => {
-                    return Err(Error::GroveDB(GroveError::InvalidQuery(
-                        "path query should only point to items: got trees",
-                    )));
+        let values = key_value_elements
+            .into_iter()
+            .filter_map(|proved_key_value| {
+                let Some(element) = proved_key_value.2 else {
+                return None;
+            };
+
+                match element {
+                    Element::Item(val, _) => Some(Ok(val)),
+                    Element::SumItem(val, _) => Some(Ok(val.encode_var_vec())),
+                    Element::Tree(..) | Element::SumTree(..) | Element::Reference(..) => {
+                        Some(Err(Error::GroveDB(GroveError::InvalidQuery(
+                            "path query should only point to items: got trees",
+                        ))))
+                    }
                 }
-            }
-        }
+            })
+            .collect::<Result<Vec<Vec<u8>>, Error>>()?;
 
         Ok((root_hash, values))
     }
 
     /// Executes a query with no proof and returns the items, skipped items, and fee.
-    pub fn execute_no_proof(
+    pub fn execute_serialized_no_proof(
         &self,
         drive: &Drive,
         block_info: Option<BlockInfo>,
@@ -1278,7 +1305,7 @@ impl<'a> DriveQuery<'a> {
     ) -> Result<(Vec<Vec<u8>>, u16, u64), Error> {
         let mut drive_operations = vec![];
         let (items, skipped) =
-            self.execute_no_proof_internal(drive, transaction, &mut drive_operations)?;
+            self.execute_serialized_no_proof_internal(drive, transaction, &mut drive_operations)?;
         let cost = if let Some(block_info) = block_info {
             let fee_result = calculate_fee(None, Some(drive_operations), &block_info.epoch)?;
             fee_result.processing_fee
@@ -1289,7 +1316,7 @@ impl<'a> DriveQuery<'a> {
     }
 
     /// Executes an internal query with no proof and returns the values and skipped items.
-    pub(crate) fn execute_no_proof_internal(
+    pub(crate) fn execute_serialized_no_proof_internal(
         &self,
         drive: &Drive,
         transaction: TransactionArg,
@@ -1297,11 +1324,42 @@ impl<'a> DriveQuery<'a> {
     ) -> Result<(Vec<Vec<u8>>, u16), Error> {
         let path_query =
             self.construct_path_query_operations(drive, transaction, drive_operations)?;
-        let query_result = drive.grove_get_path_query(&path_query, transaction, drive_operations);
+        let query_result = drive.grove_get_path_query_serialized_results(
+            &path_query,
+            transaction,
+            drive_operations,
+        );
         match query_result {
             Err(Error::GroveDB(GroveError::PathKeyNotFound(_)))
             | Err(Error::GroveDB(GroveError::PathNotFound(_)))
             | Err(Error::GroveDB(GroveError::PathParentLayerNotFound(_))) => Ok((Vec::new(), 0)),
+            _ => {
+                let (data, skipped) = query_result?;
+                {
+                    Ok((data, skipped))
+                }
+            }
+        }
+    }
+
+    /// Executes an internal query with no proof and returns the values and skipped items.
+    pub(crate) fn execute_no_proof_internal(
+        &self,
+        drive: &Drive,
+        result_type: QueryResultType,
+        transaction: TransactionArg,
+        drive_operations: &mut Vec<DriveOperation>,
+    ) -> Result<(QueryResultElements, u16), Error> {
+        let path_query =
+            self.construct_path_query_operations(drive, transaction, drive_operations)?;
+        let query_result =
+            drive.grove_get_path_query(&path_query, transaction, result_type, drive_operations);
+        match query_result {
+            Err(Error::GroveDB(GroveError::PathKeyNotFound(_)))
+            | Err(Error::GroveDB(GroveError::PathNotFound(_)))
+            | Err(Error::GroveDB(GroveError::PathParentLayerNotFound(_))) => {
+                Ok((QueryResultElements::new(), 0))
+            }
             _ => {
                 let (data, skipped) = query_result?;
                 {
@@ -1315,21 +1373,21 @@ impl<'a> DriveQuery<'a> {
 #[cfg(test)]
 mod tests {
     use serde_json::json;
+    use std::borrow::Cow;
     use std::option::Option::None;
     use tempfile::TempDir;
 
-    use crate::common;
-    use crate::common::json_document_to_cbor;
     use crate::contract::Contract;
     use crate::drive::flags::StorageFlags;
     use crate::drive::Drive;
     use crate::query::DriveQuery;
-    use dpp::data_contract::extra::DocumentType;
-    //noinspection RsUnusedImport
+    use dpp::data_contract::document_type::DocumentType;
+    use dpp::data_contract::extra::common::json_document_to_cbor;
+    use dpp::data_contract::DriveContractExt;
+    use dpp::util::serializer;
     use serde_json::Value::Null;
 
     use crate::drive::block_info::BlockInfo;
-    use dpp::data_contract::extra::DriveContractExt;
 
     fn setup_family_contract() -> (Drive, Contract) {
         let tmp_dir = TempDir::new().unwrap();
@@ -1342,18 +1400,19 @@ mod tests {
         let contract_path = "tests/supporting_files/contract/family/family-contract.json";
 
         // let's construct the grovedb structure for the dashpay data contract
-        let contract_cbor = json_document_to_cbor(contract_path, Some(1));
+        let contract_cbor =
+            json_document_to_cbor(contract_path, Some(1)).expect("expected to get cbor document");
         let contract = <Contract as DriveContractExt>::from_cbor(&contract_cbor, None)
             .expect("expected to deserialize the contract");
 
-        let storage_flags = Some(StorageFlags::SingleEpoch(0));
+        let storage_flags = Some(Cow::Owned(StorageFlags::SingleEpoch(0)));
         drive
             .apply_contract(
                 &contract,
                 contract_cbor,
                 BlockInfo::default(),
                 true,
-                storage_flags.as_ref(),
+                storage_flags,
                 None,
             )
             .expect("expected to apply contract successfully");
@@ -1373,17 +1432,18 @@ mod tests {
             "tests/supporting_files/contract/family/family-contract-with-birthday.json";
 
         // let's construct the grovedb structure for the dashpay data contract
-        let contract_cbor = json_document_to_cbor(contract_path, Some(1));
+        let contract_cbor =
+            json_document_to_cbor(contract_path, Some(1)).expect("expected to get cbor document");
         let contract = <Contract as DriveContractExt>::from_cbor(&contract_cbor, None)
             .expect("expected to deserialize the contract");
-        let storage_flags = Some(StorageFlags::SingleEpoch(0));
+        let storage_flags = Some(Cow::Owned(StorageFlags::SingleEpoch(0)));
         drive
             .apply_contract(
                 &contract,
                 contract_cbor,
                 BlockInfo::default(),
                 true,
-                storage_flags.as_ref(),
+                storage_flags,
                 None,
             )
             .expect("expected to apply contract successfully");
@@ -1407,7 +1467,8 @@ mod tests {
         let contract = Contract::default();
         let document_type = DocumentType::default();
 
-        let where_cbor = common::value_to_cbor(query_value, None);
+        let where_cbor =
+            serializer::value_to_cbor(query_value, None).expect("expected to serialize to cbor");
         DriveQuery::from_cbor(where_cbor.as_slice(), &contract, &document_type)
             .expect_err("all ranges must be on same field");
     }
@@ -1428,7 +1489,8 @@ mod tests {
         let contract = Contract::default();
         let document_type = DocumentType::default();
 
-        let where_cbor = common::value_to_cbor(query_value, None);
+        let where_cbor =
+            serializer::value_to_cbor(query_value, None).expect("expected to serialize to cbor");
         DriveQuery::from_cbor(where_cbor.as_slice(), &contract, &document_type).expect_err(
             "fields of queries must of defined supported types (where, limit, orderBy...)",
         );
@@ -1451,7 +1513,8 @@ mod tests {
         let contract = Contract::default();
         let document_type = DocumentType::default();
 
-        let where_cbor = common::value_to_cbor(query_value, None);
+        let where_cbor =
+            serializer::value_to_cbor(query_value, None).expect("expected to serialize to cbor");
         DriveQuery::from_cbor(where_cbor.as_slice(), &contract, &document_type)
             .expect_err("the query should not be created");
     }
@@ -1473,7 +1536,8 @@ mod tests {
         let contract = Contract::default();
         let document_type = DocumentType::default();
 
-        let where_cbor = common::value_to_cbor(query_value, None);
+        let where_cbor =
+            serializer::value_to_cbor(query_value, None).expect("expected to serialize to cbor");
         DriveQuery::from_cbor(where_cbor.as_slice(), &contract, &document_type)
             .expect("the query should be created");
     }
@@ -1494,7 +1558,8 @@ mod tests {
         let contract = Contract::default();
         let document_type = DocumentType::default();
 
-        let where_cbor = common::value_to_cbor(query_value, None);
+        let where_cbor =
+            serializer::value_to_cbor(query_value, None).expect("expected to serialize to cbor");
         DriveQuery::from_cbor(where_cbor.as_slice(), &contract, &document_type)
             .expect("query should be fine for a 255 byte long string");
     }
@@ -1519,11 +1584,12 @@ mod tests {
             ],
         });
 
-        let where_cbor = common::value_to_cbor(query_value, None);
+        let where_cbor =
+            serializer::value_to_cbor(query_value, None).expect("expected to serialize to cbor");
         let query = DriveQuery::from_cbor(where_cbor.as_slice(), &contract, document_type)
             .expect("fields of queries length must be under 256 bytes long");
         query
-            .execute_no_proof(&drive, None, None)
+            .execute_serialized_no_proof(&drive, None, None)
             .expect_err("fields of queries length must be under 256 bytes long");
     }
 
@@ -1546,7 +1612,7 @@ mod tests {
     //         ],
     //     });
     //
-    //     let where_cbor = common::value_to_cbor(query_value, None);
+    //     let where_cbor = serializer::value_to_cbor(query_value, None).expect("expected to serialize to cbor");
     //     let query = DriveQuery::from_cbor(where_cbor.as_slice(), &contract, &document_type)
     //         .expect("The query itself should be valid for a null type");
     //     query
@@ -1574,7 +1640,7 @@ mod tests {
     //         ],
     //     });
     //
-    //     let where_cbor = common::value_to_cbor(query_value, None);
+    //     let where_cbor = serializer::value_to_cbor(query_value, None).expect("expected to serialize to cbor");
     //     let query = DriveQuery::from_cbor(where_cbor.as_slice(), &contract, &document_type)
     //         .expect("The query itself should be valid for a null type");
     //     query
@@ -1600,11 +1666,12 @@ mod tests {
             ],
         });
 
-        let where_cbor = common::value_to_cbor(query_value, None);
+        let where_cbor =
+            serializer::value_to_cbor(query_value, None).expect("expected to serialize to cbor");
         let query = DriveQuery::from_cbor(where_cbor.as_slice(), &contract, document_type)
             .expect("The query itself should be valid for a null type");
         query
-            .execute_no_proof(&drive, None, None)
+            .execute_serialized_no_proof(&drive, None, None)
             .expect("a Null value doesn't make sense for a float");
     }
 
@@ -1626,12 +1693,13 @@ mod tests {
             ],
         });
 
-        let where_cbor = common::value_to_cbor(query_value, None);
+        let where_cbor =
+            serializer::value_to_cbor(query_value, None).expect("expected to serialize to cbor");
         let query = DriveQuery::from_cbor(where_cbor.as_slice(), &contract, document_type)
             .expect("query should be valid for empty array");
 
         query
-            .execute_no_proof(&drive, None, None)
+            .execute_serialized_no_proof(&drive, None, None)
             .expect_err("query should not be able to execute for empty array");
     }
 
@@ -1657,12 +1725,13 @@ mod tests {
             ],
         });
 
-        let where_cbor = common::value_to_cbor(query_value, None);
+        let where_cbor =
+            serializer::value_to_cbor(query_value, None).expect("expected to serialize to cbor");
         let query = DriveQuery::from_cbor(where_cbor.as_slice(), &contract, document_type)
             .expect("query is valid for too many elements");
 
         query
-            .execute_no_proof(&drive, None, None)
+            .execute_serialized_no_proof(&drive, None, None)
             .expect_err("query should not be able to execute with too many elements");
     }
 
@@ -1684,7 +1753,8 @@ mod tests {
             ],
         });
 
-        let where_cbor = common::value_to_cbor(query_value, None);
+        let where_cbor =
+            serializer::value_to_cbor(query_value, None).expect("expected to serialize to cbor");
 
         // The is actually valid, however executing it is not
         // This is in order to optimize query execution
@@ -1693,7 +1763,7 @@ mod tests {
             .expect("the query should be created");
 
         query
-            .execute_no_proof(&drive, None, None)
+            .execute_serialized_no_proof(&drive, None, None)
             .expect_err("there should be no duplicates values for In query");
     }
 
@@ -1712,7 +1782,8 @@ mod tests {
         let contract = Contract::default();
         let document_type = DocumentType::default();
 
-        let where_cbor = common::value_to_cbor(query_value, None);
+        let where_cbor =
+            serializer::value_to_cbor(query_value, None).expect("expected to serialize to cbor");
         DriveQuery::from_cbor(where_cbor.as_slice(), &contract, &document_type)
             .expect_err("starts with can not start with an empty string");
     }
@@ -1732,7 +1803,8 @@ mod tests {
         let contract = Contract::default();
         let document_type = DocumentType::default();
 
-        let where_cbor = common::value_to_cbor(query_value, None);
+        let where_cbor =
+            serializer::value_to_cbor(query_value, None).expect("expected to serialize to cbor");
         DriveQuery::from_cbor(where_cbor.as_slice(), &contract, &document_type)
             .expect_err("starts with can not start with an empty string");
     }
@@ -1752,7 +1824,8 @@ mod tests {
         let contract = Contract::default();
         let document_type = DocumentType::default();
 
-        let where_cbor = common::value_to_cbor(query_value, None);
+        let where_cbor =
+            serializer::value_to_cbor(query_value, None).expect("expected to serialize to cbor");
         DriveQuery::from_cbor(where_cbor.as_slice(), &contract, &document_type)
             .expect_err("starts with can not start with an empty string");
     }
@@ -1772,7 +1845,8 @@ mod tests {
         let contract = Contract::default();
         let document_type = DocumentType::default();
 
-        let where_cbor = common::value_to_cbor(query_value, None);
+        let where_cbor =
+            serializer::value_to_cbor(query_value, None).expect("expected to serialize to cbor");
         DriveQuery::from_cbor(where_cbor.as_slice(), &contract, &document_type)
             .expect_err("starts with can not start with an empty string");
     }

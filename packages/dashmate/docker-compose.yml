@@ -13,6 +13,11 @@ services:
     command:
       - dashd
     stop_grace_period: 30s
+    environment:
+      # Solving issue under WSL when after restart container volume is not being mounted properly
+      # https://github.com/docker/for-win/issues/4812
+      # Following fix forces container recreation
+      - WSL2_FIX=${WSL2_FIX:-0}
 
 volumes:
   core_data:

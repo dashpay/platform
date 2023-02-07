@@ -1,4 +1,5 @@
 use anyhow::Context;
+use std::convert::TryInto;
 
 use crate::{
     consensus::fee::FeeError,
@@ -6,7 +7,6 @@ use crate::{
         convert_satoshi_to_credits,
         state_transition::asset_lock_proof::AssetLockTransactionOutputFetcher,
     },
-    prelude::Identity,
     state_repository::StateRepositoryLike,
     state_transition::{StateTransition, StateTransitionIdentitySigned, StateTransitionLike},
     validation::SimpleValidationResult,
@@ -66,11 +66,15 @@ where
                     })?;
                 let balance = convert_satoshi_to_credits(output.value);
                 let identity_id = st.get_owner_id();
-                let identity: Identity = self
+                let identity = self
                     .state_repository
-                    .fetch_identity(identity_id, execution_context)
+                    .fetch_identity(identity_id, st.get_execution_context())
                     .await?
-                    .with_context(|| format!("identity with ID {}' doesn't exist", identity_id))?;
+                    .map(TryInto::try_into)
+                    .transpose()
+                    .map_err(Into::into)?
+                    .ok_or(ProtocolError::IdentityNotPresentError { id: *identity_id })?;
+
                 if execution_context.is_dry_run() {
                     return Ok(result);
                 }
@@ -128,11 +132,14 @@ where
         st: &impl StateTransitionIdentitySigned,
     ) -> Result<u64, ProtocolError> {
         let identity_id = st.get_owner_id();
-        let identity: Identity = self
+        let identity = self
             .state_repository
             .fetch_identity(identity_id, st.get_execution_context())
             .await?
-            .with_context(|| format!("identity with ID {}' doesn't exist", identity_id))?;
+            .map(TryInto::try_into)
+            .transpose()
+            .map_err(Into::into)?
+            .ok_or(ProtocolError::IdentityNotPresentError { id: *identity_id })?;
 
         Ok(identity.get_balance())
     }

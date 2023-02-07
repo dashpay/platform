@@ -9,7 +9,7 @@ const fundWallet = require('@dashevo/wallet-lib/src/utils/fundWallet');
  *
  * @param {number} amount
  * @param {Object} config
- * @param {{host: string, httpPort: string, grpcPort: string}[]} config.seeds
+ * @param {{host: string, port: string}[]} config.seeds
  * @param {string} config.network
  * @param {string} config.faucetPrivateKey
  * @param {number} [config.skipSyncBeforeHeight]

@@ -38,7 +38,10 @@ pub enum ProtocolError {
     Error(#[from] anyhow::Error),
 
     #[error(transparent)]
-    DataContractError(DataContractError),
+    DataContractError(#[from] DataContractError),
+
+    #[error(transparent)]
+    StructureError(#[from] StructureError),
 
     #[error(transparent)]
     AbstractConsensusError(Box<ConsensusError>),
@@ -66,6 +69,9 @@ pub enum ProtocolError {
         public_key_purpose: Purpose,
         key_purpose_requirement: Purpose,
     },
+    #[error("Public key generation error {0}")]
+    PublicKeyGenerationError(String),
+
     #[error("Public key mismatched")]
     PublicKeyMismatchError { public_key: IdentityPublicKey },
 
@@ -106,6 +112,9 @@ pub enum ProtocolError {
 
     #[error("Public key is disabled")]
     PublicKeyIsDisabledError { public_key: IdentityPublicKey },
+
+    #[error("Identity is not present")]
+    IdentityNotPresentError { id: Identifier },
 }
 
 impl From<NonConsensusError> for ProtocolError {
@@ -129,12 +138,6 @@ impl From<String> for ProtocolError {
 impl From<ConsensusError> for ProtocolError {
     fn from(e: ConsensusError) -> Self {
         ProtocolError::AbstractConsensusError(Box::new(e))
-    }
-}
-
-impl From<DataContractError> for ProtocolError {
-    fn from(e: DataContractError) -> Self {
-        ProtocolError::DataContractError(e)
     }
 }
 

@@ -81,7 +81,7 @@ impl DocumentTransitionWasm {
     }
 
     #[wasm_bindgen(js_name=getObject)]
-    pub fn to_object(&self, options: &JsValue) -> Result<JsValue, JsValue> {
+    pub fn to_object(&self, _options: &JsValue) -> Result<JsValue, JsValue> {
         // TODO options??
 
         match self.0 {

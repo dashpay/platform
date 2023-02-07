@@ -5,13 +5,25 @@ mod apply_identity_credit_withdrawal_transition_factory {
             apply_identity_credit_withdrawal_transition_factory::ApplyIdentityCreditWithdrawalTransition,
             IdentityCreditWithdrawalTransition,
         },
-        prelude::{Identifier, Identity},
         state_repository::MockStateRepositoryLike,
     };
+    use mockall::predicate::{always, eq};
+    use std::default::Default;
 
     #[tokio::test]
     async fn should_call_state_repository_methods() {
         let mut state_repository = MockStateRepositoryLike::default();
+
+        let state_transition = IdentityCreditWithdrawalTransition {
+            amount: 10,
+            ..Default::default()
+        };
+
+        let IdentityCreditWithdrawalTransition {
+            identity_id,
+            amount,
+            ..
+        } = state_transition.clone();
 
         state_repository
             .expect_fetch_latest_withdrawal_transaction_index()
@@ -25,42 +37,24 @@ mod apply_identity_credit_withdrawal_transition_factory {
             .returning(|_, _| anyhow::Ok(()));
 
         state_repository
-            .expect_fetch_identity::<Identity>()
+            .expect_remove_from_identity_balance()
             .times(1)
-            .withf(|id, _| *id == Identifier::default())
-            .returning(|_, _| {
-                let mut identity = Identity::default();
-
-                identity.set_balance(42);
-
-                anyhow::Ok(Some(identity))
-            });
+            // TODO: we need to assert execution context as well
+            .with(eq(identity_id), eq(amount), always())
+            .returning(|_, _, _| anyhow::Ok(()));
 
         state_repository
-            .expect_update_identity()
+            .expect_remove_from_system_credits()
             .times(1)
-            .withf(|identity, _| {
-                let id_match = *identity.get_id() == Identifier::default();
-                let balance_match = identity.get_balance() == (42 - 10);
-
-                id_match && balance_match
-            })
+            .with(eq(amount), always())
             .returning(|_, _| anyhow::Ok(()));
 
         let applier = ApplyIdentityCreditWithdrawalTransition::new(state_repository);
 
-        let mut state_transition = IdentityCreditWithdrawalTransition::default();
-
-        state_transition.amount = 10;
-
-        match applier
+        let result = applier
             .apply_identity_credit_withdrawal_transition(&state_transition)
-            .await
-        {
-            Ok(_) => assert!(true),
-            Err(_) => {
-                assert!(false, "should be able to apply the state transition");
-            }
-        };
+            .await;
+
+        assert!(result.is_ok())
     }
 }

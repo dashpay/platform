@@ -49,7 +49,8 @@ describe('queryHandlerFactory', function main() {
     container.register('dataContractQueryHandler', asValue(dataContractQueryHandlerMock));
     container.register('documentQueryHandler', asValue(documentQueryHandlerMock));
 
-    queryHandler = container.resolve('queryHandler');
+    const enrichErrorWithContextError = container.resolve('enrichErrorWithContextError');
+    queryHandler = enrichErrorWithContextError(container.resolve('queryHandler'));
   });
 
   afterEach(async () => {

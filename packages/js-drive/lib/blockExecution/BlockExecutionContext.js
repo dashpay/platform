@@ -140,25 +140,25 @@ class BlockExecutionContext {
   }
 
   /**
-   * Set consensus logger
+   * Set context logger
    *
    * @param {BaseLogger} logger
    */
-  setConsensusLogger(logger) {
-    this.consensusLogger = logger;
+  setContextLogger(logger) {
+    this.contextLogger = logger;
   }
 
   /**
-   * Get consensus logger
+   * Get context logger
    *
    * @return {BaseLogger}
    */
-  getConsensusLogger() {
-    if (!this.consensusLogger) {
+  getContextLogger() {
+    if (!this.contextLogger) {
       throw new Error('Consensus logger has not been set');
     }
 
-    return this.consensusLogger;
+    return this.contextLogger;
   }
 
   /**
@@ -251,7 +251,7 @@ class BlockExecutionContext {
     this.version = null;
     this.time = null;
     this.lastCommitInfo = null;
-    this.consensusLogger = null;
+    this.contextLogger = null;
     this.withdrawalTransactionsMap = {};
     this.round = null;
     this.epochInfo = null;
@@ -280,7 +280,7 @@ class BlockExecutionContext {
     this.height = blockExecutionContext.height;
     this.coreChainLockedHeight = blockExecutionContext.coreChainLockedHeight;
     this.version = blockExecutionContext.version;
-    this.consensusLogger = blockExecutionContext.consensusLogger || null;
+    this.contextLogger = blockExecutionContext.contextLogger || null;
     this.withdrawalTransactionsMap = blockExecutionContext.withdrawalTransactionsMap;
     this.round = blockExecutionContext.round;
     this.epochInfo = blockExecutionContext.epochInfo;
@@ -297,7 +297,7 @@ class BlockExecutionContext {
     this.dataContracts = object.dataContracts
       .map((rawDataContract) => new DataContract(rawDataContract));
     this.lastCommitInfo = CommitInfo.fromObject(object.lastCommitInfo);
-    this.consensusLogger = object.consensusLogger;
+    this.contextLogger = object.contextLogger;
     this.epochInfo = object.epochInfo;
     this.timeMs = object.timeMs;
     this.height = Long.fromNumber(object.height);
@@ -310,7 +310,7 @@ class BlockExecutionContext {
 
   /**
    * @param {Object} options
-   * @param {boolean} [options.skipConsensusLogger=false]
+   * @param {boolean} [options.skipContextLogger=false]
    * @param {boolean} [options.skipPrepareProposalResult=false]
    * @return {{
    *  dataContracts: Object[],
@@ -344,8 +344,8 @@ class BlockExecutionContext {
       epochInfo: this.epochInfo,
     };
 
-    if (!options.skipConsensusLogger) {
-      object.consensusLogger = this.consensusLogger;
+    if (!options.skipContextLogger) {
+      object.contextLogger = this.contextLogger;
     }
 
     if (!options.skipPrepareProposalResult) {

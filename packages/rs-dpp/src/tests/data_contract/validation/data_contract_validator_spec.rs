@@ -57,7 +57,7 @@ fn get_schema_error(result: &ValidationResult<()>, number: usize) -> &JsonSchema
 
 fn get_basic_error(consensus_error: &ConsensusError) -> &BasicError {
     match consensus_error {
-        ConsensusError::BasicError(basic_error) => &**basic_error,
+        ConsensusError::BasicError(basic_error) => basic_error,
         _ => panic!("error '{:?}' isn't a basic error", consensus_error),
     }
 }
@@ -148,10 +148,12 @@ mod protocol {
 
         let result = data_contract_validator
             .validate(&raw_data_contract)
-            .expect_err("protocol error should be returned");
+            .expect("validation result should be returned");
         trace!("The validation result is: {:#?}", result);
 
-        assert!(matches!(result, ProtocolError::Error(..)))
+        let schema_error = get_schema_error(&result, 0);
+        assert_eq!("/protocolVersion", schema_error.instance_path().to_string());
+        assert_eq!(Some("minimum"), schema_error.keyword(),);
     }
 }
 
@@ -1523,9 +1525,6 @@ mod identifier {
 }
 
 mod indices {
-    use std::os::raw;
-
-    use crate::tests::utils::get_basic_error_from_result;
 
     use super::*;
 

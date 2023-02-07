@@ -7,7 +7,7 @@ const {
 } = require('@dashevo/abci/types');
 
 const lodashCloneDeep = require('lodash/cloneDeep');
-const addToFeeTxResults = require('./proposal/fees/addToFeeTxResults');
+const addStateTransitionFeesToBlockFees = require('./proposal/fees/addStateTransitionFeesToBlockFees');
 
 const txAction = {
   UNKNOWN: 0, // Unknown action
@@ -24,6 +24,7 @@ const txAction = {
  * @param {endBlock} endBlock
  * @param {createCoreChainLockUpdate} createCoreChainLockUpdate
  * @param {ExecutionTimer} executionTimer
+ * @param {createContextLogger} createContextLogger
  * @return {prepareProposalHandler}
  */
 function prepareProposalHandlerFactory(
@@ -34,6 +35,7 @@ function prepareProposalHandlerFactory(
   endBlock,
   createCoreChainLockUpdate,
   executionTimer,
+  createContextLogger,
 ) {
   /**
    * @typedef prepareProposalHandler
@@ -53,7 +55,7 @@ function prepareProposalHandlerFactory(
       round,
     } = request;
 
-    const consensusLogger = logger.child({
+    const contextLogger = createContextLogger(logger, {
       height: height.toString(),
       round,
       abciMethod: 'prepareProposal',
@@ -62,10 +64,10 @@ function prepareProposalHandlerFactory(
     const requestToLog = lodashCloneDeep(request);
     delete requestToLog.txs;
 
-    consensusLogger.debug('PrepareProposal ABCI method requested');
-    consensusLogger.trace({ abciRequest: requestToLog });
+    contextLogger.debug('PrepareProposal ABCI method requested');
+    contextLogger.trace({ abciRequest: requestToLog });
 
-    consensusLogger.info(`Preparing a block proposal for height #${height} round #${round}`);
+    contextLogger.info(`Preparing a block proposal for height #${height} round #${round}`);
 
     await beginBlock(
       {
@@ -77,18 +79,17 @@ function prepareProposalHandlerFactory(
         proposerProTxHash: Buffer.from(proposerProTxHash),
         round,
       },
-      consensusLogger,
+      contextLogger,
     );
 
     let totalSizeBytes = 0;
 
     const txRecords = [];
     const txResults = [];
-    const feeResults = {
+    const blockFees = {
       storageFee: 0,
       processingFee: 0,
-      feeRefunds: { },
-      feeRefundsSum: 0,
+      refundsPerEpoch: { },
     };
 
     let validTxCount = 0;
@@ -110,12 +111,12 @@ function prepareProposalHandlerFactory(
         code,
         info,
         fees,
-      } = await wrappedDeliverTx(tx, round, consensusLogger);
+      } = await wrappedDeliverTx(tx, round, contextLogger);
 
       if (code === 0) {
         validTxCount += 1;
         // TODO We probably should calculate fees for invalid transitions as well
-        addToFeeTxResults(feeResults, fees);
+        addStateTransitionFeesToBlockFees(blockFees, fees);
       } else {
         invalidTxCount += 1;
       }
@@ -129,13 +130,10 @@ function prepareProposalHandlerFactory(
       txResults.push(txResult);
     }
 
-    // Revert consensus logger after deliverTx
-    proposalBlockExecutionContext.setConsensusLogger(consensusLogger);
-
     const coreChainLockUpdate = await createCoreChainLockUpdate(
       coreChainLockedHeight,
       round,
-      consensusLogger,
+      contextLogger,
     );
 
     const {
@@ -145,15 +143,15 @@ function prepareProposalHandlerFactory(
     } = await endBlock({
       height,
       round,
-      fees: feeResults,
+      fees: blockFees,
       coreChainLockedHeight,
-    }, consensusLogger);
+    }, contextLogger);
 
     const roundExecutionTime = executionTimer.getTimer('roundExecution', true);
 
     const mempoolTxCount = txs.length - validTxCount - invalidTxCount;
 
-    consensusLogger.info(
+    contextLogger.info(
       {
         roundExecutionTime,
         validTxCount,

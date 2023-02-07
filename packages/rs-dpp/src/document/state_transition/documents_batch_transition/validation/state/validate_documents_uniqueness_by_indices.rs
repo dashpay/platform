@@ -42,7 +42,7 @@ where
         let transition = t.as_ref();
         let document_schema =
             data_contract.get_document_schema(&transition.base().document_type)?;
-        let document_indices = document_schema.get_indices()?;
+        let document_indices = document_schema.get_indices::<Vec<_>>()?;
         if document_indices.is_empty() {
             continue;
         }
@@ -152,7 +152,7 @@ fn validate_uniqueness<'a>(
         }
 
         validation_result.add_error(StateError::DuplicateUniqueIndexError {
-            document_id: futures_meta[i].1.base().id.clone(),
+            document_id: futures_meta[i].1.base().id,
             duplicating_properties: futures_meta[i]
                 .0
                 .properties

@@ -59,7 +59,7 @@ impl DocumentTransitionObjectLike for DocumentCreateTransition {
         let document_type = json_value.get_string("$type")?;
 
         let (identifiers_paths, binary_paths) =
-            data_contract.get_identifiers_and_binary_paths(document_type);
+            data_contract.get_identifiers_and_binary_paths(document_type)?;
 
         json_value.replace_binary_paths(
             binary_paths.into_iter().chain(BINARY_FIELDS),
@@ -105,7 +105,7 @@ impl DocumentTransitionObjectLike for DocumentCreateTransition {
         let (identifier_paths, binary_paths) = self
             .base
             .data_contract
-            .get_identifiers_and_binary_paths(&self.base.document_type);
+            .get_identifiers_and_binary_paths(&self.base.document_type)?;
 
         value.replace_identifier_paths(identifier_paths, ReplaceWith::Base58)?;
         value.replace_binary_paths(

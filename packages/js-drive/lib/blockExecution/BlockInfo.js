@@ -26,6 +26,17 @@ class BlockInfo {
   }
 
   /**
+   * @returns {RawBlockInfo}
+   */
+  toObject() {
+    return {
+      height: this.height,
+      epoch: this.epoch,
+      timeMs: this.timeMs,
+    };
+  }
+
+  /**
    * @param {BlockExecutionContext} blockExecutionContext
    * @returns {BlockInfo}
    */

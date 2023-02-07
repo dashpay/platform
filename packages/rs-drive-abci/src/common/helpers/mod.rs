@@ -1,10 +1,11 @@
 pub mod fee_pools;
 pub mod setup;
 
+// TODO: Move tests to appropriate place
+
 #[cfg(test)]
 mod tests {
     use rust_decimal::Decimal;
-    // TODO Move to tests from helpers
     mod overflow {
         use std::str::FromStr;
 

@@ -37,7 +37,10 @@ function errorHandlerFactory(logger, container, closeAbciServer) {
         console.log(printErrorFace());
 
         errors.forEach((e) => {
-          (error.consensusLogger || logger).fatal({ err: e }, e.message);
+          const preferredLogger = e.contextLogger || logger;
+          delete e.contextLogger;
+
+          preferredLogger.fatal({ err: e }, e.message);
         });
       } finally {
         await container.dispose();

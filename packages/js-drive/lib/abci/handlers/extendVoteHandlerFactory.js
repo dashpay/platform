@@ -11,21 +11,21 @@ const {
 
 /**
  * @param {BlockExecutionContext} proposalBlockExecutionContext
+ * @param {createContextLogger} createContextLogger
  *
  * @return {extendVoteHandler}
  */
-function extendVoteHandlerFactory(proposalBlockExecutionContext) {
+function extendVoteHandlerFactory(proposalBlockExecutionContext, createContextLogger) {
   /**
    * @typedef extendVoteHandler
    * @return {Promise<abci.ResponseExtendVote>}
    */
   async function extendVoteHandler() {
-    const consensusLogger = proposalBlockExecutionContext.getConsensusLogger()
-      .child({
-        abciMethod: 'extendVote',
-      });
+    const contextLogger = createContextLogger(proposalBlockExecutionContext.getContextLogger(), {
+      abciMethod: 'extendVote',
+    });
 
-    consensusLogger.debug('ExtendVote ABCI method requested');
+    contextLogger.debug('ExtendVote ABCI method requested');
 
     const unsignedWithdrawalTransactionsMap = proposalBlockExecutionContext
       .getWithdrawalTransactionsMap();
@@ -50,7 +50,7 @@ function extendVoteHandlerFactory(proposalBlockExecutionContext) {
         Math.min(30, extensionString.length),
       );
 
-      consensusLogger.debug({
+      contextLogger.debug({
         type,
         extension: extensionString,
       }, `Vote extended to obtain ${voteExtensionTypeName} signature for ${extensionTruncatedString}... payload`);

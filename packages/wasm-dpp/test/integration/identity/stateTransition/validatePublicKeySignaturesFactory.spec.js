@@ -3,59 +3,86 @@ const { PrivateKey, crypto: { Hash } } = require('@dashevo/dashcore-lib');
 const crypto = require('crypto');
 
 const getIdentityCreateTransitionFixture = require('@dashevo/dpp/lib/test/fixtures/getIdentityCreateTransitionFixture');
-const IdentityPublicKey = require('@dashevo/dpp/lib/identity/IdentityPublicKey');
 const BlsSignatures = require('@dashevo/dpp/lib/bls/bls');
-const validatePublicKeySignaturesFactory = require('@dashevo/dpp/lib/identity/stateTransition/validatePublicKeySignaturesFactory');
-const ValidationResult = require('@dashevo/dpp/lib/validation/ValidationResult');
-const { expectValidationError } = require('@dashevo/dpp/lib/test/expect/expectError');
-const InvalidIdentityKeySignatureError = require('@dashevo/dpp/lib/errors/consensus/basic/identity/InvalidIdentityKeySignatureError');
+
+const { expect } = require('chai');
+const { expectValidationError } = require('../../../../lib/test/expect/expectError');
+const getBlsAdapterMock = require('../../../../lib/test/mocks/getBlsAdapterMock');
+
+const { default: loadWasmDpp } = require('../../../../dist');
 
 describe('validatePublicKeySignaturesFactory', () => {
   let identityCreateTransition;
   let rawIdentityCreateTransition;
   let validatePublicKeySignatures;
 
-  beforeEach(async function beforeEach() {
-    identityCreateTransition = getIdentityCreateTransitionFixture();
+  let IdentityCreateTransition;
+  let IdentityPublicKey;
+  let IdentityPublicKeyCreateTransition;
+  let InvalidIdentityKeySignatureError;
+  let ValidationResult;
+  let PublicKeysSignaturesValidator;
+  let blsAdapter;
 
-    const privateKey1 = new PrivateKey();
+  before(async () => {
+    ({
+      IdentityCreateTransition,
+      IdentityPublicKey,
+      IdentityPublicKeyCreateTransition,
+      InvalidIdentityKeySignatureError,
+      PublicKeysSignaturesValidator,
+      ValidationResult,
+    } = await loadWasmDpp());
+  });
+
+  beforeEach(async () => {
+    identityCreateTransition = new IdentityCreateTransition(
+      getIdentityCreateTransitionFixture().toObject(),
+    );
+
+    const privateKey1 = new PrivateKey('17e0b1703e226204c557bce68b0871683ea409ae90c7a733b72a33f7c129c959');
     const publicKey1 = privateKey1.toPublicKey();
 
-    const identityPublicKey1 = new IdentityPublicKey({
+    const identityPublicKey1 = new IdentityPublicKeyCreateTransition({
       id: 0,
       type: IdentityPublicKey.TYPES.ECDSA_SECP256K1,
       data: publicKey1.toBuffer(),
       purpose: IdentityPublicKey.PURPOSES.AUTHENTICATION,
       securityLevel: IdentityPublicKey.SECURITY_LEVELS.MASTER,
       readOnly: false,
+      signature: Buffer.alloc(0),
     });
 
-    const privateKey2 = new PrivateKey();
+    const privateKey2 = new PrivateKey('afc20afac882f676af5a268a2eca9c763996c36dbeb3660648df2108006820c7');
     const publicKey2 = privateKey2.toPublicKey();
 
-    const identityPublicKey2 = new IdentityPublicKey({
+    const identityPublicKey2 = new IdentityPublicKeyCreateTransition({
       id: 1,
       type: IdentityPublicKey.TYPES.ECDSA_HASH160,
       data: Hash.sha256ripemd160(publicKey2.toBuffer()),
       purpose: IdentityPublicKey.PURPOSES.AUTHENTICATION,
       securityLevel: IdentityPublicKey.SECURITY_LEVELS.CRITICAL,
       readOnly: false,
+      signature: Buffer.alloc(0),
     });
 
-    const { PrivateKey: BlsPrivateKey } = await BlsSignatures.getInstance();
+    const blsModule = await BlsSignatures.getInstance();
+    blsAdapter = await getBlsAdapterMock();
+
+    const { PrivateKey: BlsPrivateKey } = blsModule;
 
     const randomBytes = new Uint8Array(crypto.randomBytes(256));
     const privateKey3 = BlsPrivateKey.fromBytes(randomBytes, true);
-    // blsPrivateKeyHex = Buffer.from(blsPrivateKey.serialize()).toString('hex');
     const publicKey3 = privateKey3.getPublicKey();
 
-    const identityPublicKey3 = new IdentityPublicKey({
+    const identityPublicKey3 = new IdentityPublicKeyCreateTransition({
       id: 2,
       type: IdentityPublicKey.TYPES.BLS12_381,
       data: Buffer.from(publicKey3.serialize()),
       purpose: IdentityPublicKey.PURPOSES.AUTHENTICATION,
       securityLevel: IdentityPublicKey.SECURITY_LEVELS.CRITICAL,
       readOnly: false,
+      signature: Buffer.alloc(0),
     });
 
     identityCreateTransition.setPublicKeys([
@@ -65,14 +92,14 @@ describe('validatePublicKeySignaturesFactory', () => {
     ]);
 
     await identityCreateTransition.signByPrivateKey(
-      privateKey1,
+      privateKey1.toBuffer(),
       IdentityPublicKey.TYPES.ECDSA_SECP256K1,
     );
 
     const signature1 = identityCreateTransition.getSignature();
 
     await identityCreateTransition.signByPrivateKey(
-      privateKey2,
+      privateKey2.toBuffer(),
       IdentityPublicKey.TYPES.ECDSA_HASH160,
     );
 
@@ -81,6 +108,7 @@ describe('validatePublicKeySignaturesFactory', () => {
     await identityCreateTransition.signByPrivateKey(
       Buffer.from(privateKey3.serialize()),
       IdentityPublicKey.TYPES.BLS12_381,
+      blsAdapter,
     );
 
     const signature3 = identityCreateTransition.getSignature();
@@ -89,11 +117,18 @@ describe('validatePublicKeySignaturesFactory', () => {
     identityPublicKey2.setSignature(signature2);
     identityPublicKey3.setSignature(signature3);
 
+    identityCreateTransition.setPublicKeys([
+      identityPublicKey1,
+      identityPublicKey2,
+      identityPublicKey3,
+    ]);
+
     rawIdentityCreateTransition = identityCreateTransition.toObject();
 
-    const createStateTransitionMock = this.sinonSandbox.stub().resolves(identityCreateTransition);
-
-    validatePublicKeySignatures = validatePublicKeySignaturesFactory(createStateTransitionMock);
+    const validator = new PublicKeysSignaturesValidator(blsAdapter);
+    validatePublicKeySignatures = (
+      stateTransition, keys,
+    ) => validator.validate(stateTransition, keys);
   });
 
   it('should return InvalidIdentityKeySignatureError if signature is not valid', async () => {
@@ -104,10 +139,9 @@ describe('validatePublicKeySignaturesFactory', () => {
     const result = await validatePublicKeySignatures(
       rawIdentityCreateTransition,
       rawIdentityCreateTransition.publicKeys,
-      identityCreateTransition.getExecutionContext(),
     );
 
-    expectValidationError(result, InvalidIdentityKeySignatureError);
+    await expectValidationError(result, InvalidIdentityKeySignatureError);
 
     const error = result.getFirstError();
 
@@ -118,7 +152,7 @@ describe('validatePublicKeySignaturesFactory', () => {
     const result = await validatePublicKeySignatures(
       rawIdentityCreateTransition,
       rawIdentityCreateTransition.publicKeys,
-      identityCreateTransition.getExecutionContext(),
+      blsAdapter,
     );
 
     expect(result).to.be.instanceOf(ValidationResult);

@@ -37,7 +37,7 @@ describe('BlockExecutionContext', () => {
 
     lastCommitInfo = CommitInfo.fromObject(plainObject.lastCommitInfo);
 
-    logger = plainObject.consensusLogger;
+    logger = plainObject.contextLogger;
     height = Long.fromNumber(plainObject.height);
     coreChainLockedHeight = plainObject.coreChainLockedHeight;
     version = Consensus.fromObject(plainObject.version);
@@ -283,7 +283,7 @@ describe('BlockExecutionContext', () => {
       anotherBlockExecutionContext.height = height;
       anotherBlockExecutionContext.version = version;
       anotherBlockExecutionContext.coreChainLockedHeight = coreChainLockedHeight;
-      anotherBlockExecutionContext.consensusLogger = logger;
+      anotherBlockExecutionContext.contextLogger = logger;
       anotherBlockExecutionContext.withdrawalTransactionsMap = plainObject
         .withdrawalTransactionsMap;
       anotherBlockExecutionContext.epochInfo = epochInfo;
@@ -306,8 +306,8 @@ describe('BlockExecutionContext', () => {
       expect(blockExecutionContext.coreChainLockedHeight).to.equal(
         anotherBlockExecutionContext.coreChainLockedHeight,
       );
-      expect(blockExecutionContext.consensusLogger).to.equal(
-        anotherBlockExecutionContext.consensusLogger,
+      expect(blockExecutionContext.contextLogger).to.equal(
+        anotherBlockExecutionContext.contextLogger,
       );
       expect(blockExecutionContext.withdrawalTransactionsMap).to.equal(
         anotherBlockExecutionContext.withdrawalTransactionsMap,
@@ -328,7 +328,7 @@ describe('BlockExecutionContext', () => {
       blockExecutionContext.height = height;
       blockExecutionContext.coreChainLockedHeight = coreChainLockedHeight;
       blockExecutionContext.version = version;
-      blockExecutionContext.consensusLogger = logger;
+      blockExecutionContext.contextLogger = logger;
       blockExecutionContext.epochInfo = epochInfo;
       blockExecutionContext.timeMs = timeMs;
       blockExecutionContext.withdrawalTransactionsMap = plainObject.withdrawalTransactionsMap;
@@ -338,22 +338,22 @@ describe('BlockExecutionContext', () => {
       expect(blockExecutionContext.toObject()).to.deep.equal(plainObject);
     });
 
-    it('should skipConsensusLogger if the option passed', () => {
+    it('should skipContextLogger if the option passed', () => {
       blockExecutionContext.dataContracts = [dataContract];
       blockExecutionContext.lastCommitInfo = lastCommitInfo;
       blockExecutionContext.height = height;
       blockExecutionContext.coreChainLockedHeight = coreChainLockedHeight;
       blockExecutionContext.version = version;
-      blockExecutionContext.consensusLogger = logger;
+      blockExecutionContext.contextLogger = logger;
       blockExecutionContext.withdrawalTransactionsMap = plainObject.withdrawalTransactionsMap;
       blockExecutionContext.round = plainObject.round;
       blockExecutionContext.epochInfo = epochInfo;
       blockExecutionContext.timeMs = timeMs;
       blockExecutionContext.prepareProposalResult = prepareProposalResult;
 
-      const result = blockExecutionContext.toObject({ skipConsensusLogger: true });
+      const result = blockExecutionContext.toObject({ skipContextLogger: true });
 
-      delete plainObject.consensusLogger;
+      delete plainObject.contextLogger;
 
       expect(result).to.deep.equal(plainObject);
     });
@@ -364,7 +364,7 @@ describe('BlockExecutionContext', () => {
       blockExecutionContext.height = height;
       blockExecutionContext.coreChainLockedHeight = coreChainLockedHeight;
       blockExecutionContext.version = version;
-      blockExecutionContext.consensusLogger = logger;
+      blockExecutionContext.contextLogger = logger;
       blockExecutionContext.withdrawalTransactionsMap = plainObject.withdrawalTransactionsMap;
       blockExecutionContext.round = plainObject.round;
       blockExecutionContext.epochInfo = epochInfo;
@@ -393,7 +393,7 @@ describe('BlockExecutionContext', () => {
       expect(blockExecutionContext.height).to.deep.equal(height);
       expect(blockExecutionContext.version).to.deep.equal(version);
       expect(blockExecutionContext.coreChainLockedHeight).to.deep.equal(coreChainLockedHeight);
-      expect(blockExecutionContext.consensusLogger).to.equal(logger);
+      expect(blockExecutionContext.contextLogger).to.equal(logger);
       expect(blockExecutionContext.withdrawalTransactionsMap).to.deep.equal(
         plainObject.withdrawalTransactionsMap,
       );

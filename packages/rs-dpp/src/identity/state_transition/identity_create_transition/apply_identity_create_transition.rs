@@ -1,14 +1,12 @@
 use std::sync::Arc;
 
 use anyhow::{anyhow, Result};
-use itertools::Itertools;
 
 use crate::identity::state_transition::asset_lock_proof::AssetLockTransactionOutputFetcher;
 use crate::identity::state_transition::identity_create_transition::IdentityCreateTransition;
 use crate::identity::{convert_satoshi_to_credits, Identity};
 use crate::state_repository::StateRepositoryLike;
 use crate::state_transition::StateTransitionLike;
-use crate::ProtocolError;
 
 pub struct ApplyIdentityCreateTransition<SR>
 where
@@ -22,6 +20,17 @@ impl<SR> ApplyIdentityCreateTransition<SR>
 where
     SR: StateRepositoryLike,
 {
+    pub fn new(state_repository: Arc<SR>) -> Self {
+        let asset_lock_transaction_output_fetcher = Arc::new(
+            AssetLockTransactionOutputFetcher::new(state_repository.clone()),
+        );
+
+        Self {
+            state_repository,
+            asset_lock_transaction_output_fetcher,
+        }
+    }
+
     pub async fn apply_identity_create_transition(
         &self,
         state_transition: &IdentityCreateTransition,
@@ -38,16 +47,13 @@ where
 
         let identity = Identity {
             protocol_version: state_transition.get_protocol_version(),
-            id: state_transition.get_identity_id().clone(),
+            id: *state_transition.get_identity_id(),
             public_keys: state_transition
                 .get_public_keys()
                 .iter()
                 .cloned()
-                .map(|mut pk| {
-                    pk.set_signature(vec![]);
-                    pk
-                })
-                .collect_vec(),
+                .map(|pk| (pk.id, pk.to_identity_public_key()))
+                .collect(),
             balance: credits_amount,
             revision: 0,
             asset_lock_proof: None,
@@ -58,18 +64,8 @@ where
             .create_identity(&identity, state_transition.get_execution_context())
             .await?;
 
-        let public_key_hashes = identity
-            .get_public_keys()
-            .iter()
-            .map(|public_key| public_key.hash())
-            .collect::<Result<Vec<Vec<u8>>, ProtocolError>>()?;
-
         self.state_repository
-            .store_identity_public_key_hashes(
-                identity.get_id(),
-                public_key_hashes,
-                state_transition.get_execution_context(),
-            )
+            .add_to_system_credits(credits_amount, state_transition.get_execution_context())
             .await?;
 
         let out_point = state_transition

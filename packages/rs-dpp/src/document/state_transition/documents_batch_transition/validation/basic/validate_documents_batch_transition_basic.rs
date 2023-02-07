@@ -133,9 +133,7 @@ pub async fn validate_documents_batch_transition_basic(
 
         let data_contract = match maybe_data_contract {
             None => {
-                result.add_error(BasicError::DataContractNotPresent {
-                    data_contract_id: data_contract_id.clone(),
-                });
+                result.add_error(BasicError::DataContractNotPresent { data_contract_id });
                 continue;
             }
             Some(data_contract) => data_contract,
@@ -218,7 +216,7 @@ fn validate_raw_transitions<'a>(
                 if !data_contract.is_document_defined(document_type) {
                     result.add_error(BasicError::InvalidDocumentTypeError {
                         document_type: document_type.to_string(),
-                        data_contract_id: data_contract.id().clone(),
+                        data_contract_id: *data_contract.id(),
                     });
                     return Ok(result);
                 }

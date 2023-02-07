@@ -6,6 +6,14 @@ pub enum FeeError {
     #[error("overflow error: {0}")]
     Overflow(&'static str),
 
+    /// The user does not have enough balance
+    #[error("insufficient balance error: {0}")]
+    InsufficientBalance(&'static str),
+
+    /// Operation not allowed error
+    #[error("operation not allowed error: {0}")]
+    OperationNotAllowed(&'static str),
+
     /// Corrupted estimated layer info missing error
     #[error("corrupted estimated layer info missing error: {0}")]
     CorruptedEstimatedLayerInfoMissing(String),
@@ -21,4 +29,8 @@ pub enum FeeError {
     /// Decimal conversion error
     #[error("decimal conversion error: {0}")]
     DecimalConversion(&'static str),
+
+    /// Document type field not found for estimation
+    #[error("document type field not found for estimation  error: {0}")]
+    DocumentTypeFieldNotFoundForEstimation(&'static str),
 }

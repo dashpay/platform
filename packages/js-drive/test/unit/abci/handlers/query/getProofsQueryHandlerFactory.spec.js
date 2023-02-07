@@ -26,9 +26,9 @@ describe('getProofsQueryHandlerFactory', () => {
   let documentsData;
   let identityData;
   let blockExecutionContextMock;
-  let signedIdentityRepositoryMock;
-  let signedDataContractRepositoryMock;
-  let signedDocumentRepository;
+  let identityRepositoryMock;
+  let dataContractRepositoryMock;
+  let documentRepository;
   let timeMs;
 
   beforeEach(function beforeEach() {
@@ -54,14 +54,14 @@ describe('getProofsQueryHandlerFactory', () => {
       blockSignature: Buffer.alloc(32, 1),
     });
 
-    signedIdentityRepositoryMock = {
+    identityRepositoryMock = {
       proveMany: this.sinon.stub().resolves(new StorageResult(Buffer.from([1]))),
     };
-    signedDataContractRepositoryMock = {
+    dataContractRepositoryMock = {
       proveMany: this.sinon.stub().resolves(new StorageResult(Buffer.from([1]))),
     };
 
-    signedDocumentRepository = {
+    documentRepository = {
       proveManyDocumentsFromDifferentContracts: this.sinon.stub().resolves(
         new StorageResult(Buffer.from([1])),
       ),
@@ -69,9 +69,9 @@ describe('getProofsQueryHandlerFactory', () => {
 
     getProofsQueryHandler = getProofsQueryHandlerFactory(
       blockExecutionContextMock,
-      signedIdentityRepositoryMock,
-      signedDataContractRepositoryMock,
-      signedDocumentRepository,
+      identityRepositoryMock,
+      dataContractRepositoryMock,
+      documentRepository,
     );
 
     dataContractData = {

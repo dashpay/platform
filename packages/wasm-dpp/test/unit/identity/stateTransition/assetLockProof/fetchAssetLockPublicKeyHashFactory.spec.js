@@ -1,32 +1,59 @@
-const fetchAssetLockPublicKeyHashFactory = require('@dashevo/dpp/lib/identity/stateTransition/assetLockProof/fetchAssetLockPublicKeyHashFactory');
+const { Script } = require('@dashevo/dashcore-lib');
+
 const getInstantAssetLockProofFixture = require('@dashevo/dpp/lib/test/fixtures/getInstantAssetLockProofFixture');
-const AssetLockOutputNotFoundError = require('@dashevo/dpp/lib/identity/errors/AssetLockOutputNotFoundError');
+
+const createStateRepositoryMock = require('@dashevo/dpp/lib/test/mocks/createStateRepositoryMock');
+const { default: loadWasmpDpp } = require('../../../../../dist');
 
 describe('fetchAssetLockPublicKeyHashFactory', () => {
   let fetchAssetLockPublicKeyHash;
-  let fetchAssetLockTransactionOutputMock;
-  let assetLockProof;
+  let stateRepositoryMock;
+  let executionContext;
+
+  let StateTransitionExecutionContext;
+  let InstantAssetLockProof;
+  let AssetLockOutputNotFoundError;
+  let fetchAssetLockPublicKeyHashDPP;
+
+  before(async () => {
+    ({
+      StateTransitionExecutionContext,
+      InstantAssetLockProof,
+      AssetLockOutputNotFoundError,
+      fetchAssetLockPublicKeyHash: fetchAssetLockPublicKeyHashDPP,
+    } = await loadWasmpDpp());
+  });
 
   beforeEach(function beforeEach() {
-    fetchAssetLockTransactionOutputMock = this.sinonSandbox.stub();
+    stateRepositoryMock = createStateRepositoryMock(this.sinonSandbox);
 
-    fetchAssetLockPublicKeyHash = fetchAssetLockPublicKeyHashFactory(
-      fetchAssetLockTransactionOutputMock,
+    executionContext = new StateTransitionExecutionContext();
+
+    fetchAssetLockPublicKeyHash = (proof) => fetchAssetLockPublicKeyHashDPP(
+      stateRepositoryMock,
+      proof,
+      executionContext,
     );
-
-    assetLockProof = getInstantAssetLockProofFixture();
   });
 
   it('should return public key hash for specified asset lock proof', async () => {
-    fetchAssetLockTransactionOutputMock.resolves(assetLockProof.getOutput());
+    const assetLockProof = new InstantAssetLockProof(
+      getInstantAssetLockProofFixture().toObject(),
+    );
 
     const result = await fetchAssetLockPublicKeyHash(assetLockProof);
 
-    expect(result).to.deep.equal(assetLockProof.getOutput().script.getData());
+    expect(result).to
+      .deep.equal(new Script(assetLockProof.getOutput().script).getData());
   });
 
   it('should throw AssetLockOutputNotFoundError if output is not found', async () => {
     try {
+      const assetLockProofJS = getInstantAssetLockProofFixture();
+      // Mess up TX outputs
+      assetLockProofJS.transaction.outputs = [];
+
+      const assetLockProof = new InstantAssetLockProof(assetLockProofJS.toObject());
       await fetchAssetLockPublicKeyHash(assetLockProof);
       expect.fail('should throw AssetLockOutputNotFoundError');
     } catch (e) {

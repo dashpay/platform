@@ -1,11 +1,11 @@
-use anyhow::{anyhow, bail};
+use crate::data_contract::document_type::index::IndexWithRawProperties;
+pub use crate::data_contract::document_type::Index;
+use anyhow::{anyhow, bail, Error};
 use serde_json::Value as JsonValue;
 use std::convert::TryFrom;
+use std::iter::FromIterator;
 
 use crate::identifier;
-
-pub use super::index::Index;
-use super::index::IndexWithRawProperties;
 
 pub trait JsonSchemaExt {
     /// returns true if json value contains property 'type`, and it equals 'object'
@@ -21,7 +21,9 @@ pub trait JsonSchemaExt {
     /// returns the required fields of Json Schema object
     fn get_schema_required_fields(&self) -> Result<Vec<&str>, anyhow::Error>;
     /// returns the indexes from Json Schema
-    fn get_indices(&self) -> Result<Vec<Index>, anyhow::Error>;
+    fn get_indices<I: FromIterator<Index>>(&self) -> Result<I, anyhow::Error>;
+    /// returns the indexes from Json Schema
+    fn get_indices_map<I: FromIterator<(String, Index)>>(&self) -> Result<I, anyhow::Error>;
     /// returns true if json value contains property `contentMediaType` and it equals to Identifier
     fn is_type_of_identifier(&self) -> bool;
 }
@@ -90,20 +92,17 @@ impl JsonSchemaExt for JsonValue {
         bail!("the {:?} isn't an map", self);
     }
 
-    fn get_indices(&self) -> Result<Vec<Index>, anyhow::Error> {
-        match self.get("indices") {
-            Some(raw_indices) => {
-                let indices_with_raw_properties: Vec<IndexWithRawProperties> =
-                    serde_json::from_value(raw_indices.to_owned())?;
+    fn get_indices<I: FromIterator<Index>>(&self) -> Result<I, anyhow::Error> {
+        let indices_with_raw_properties: Vec<IndexWithRawProperties> = match self.get("indices") {
+            Some(raw_indices) => serde_json::from_value(raw_indices.to_owned())?,
 
-                indices_with_raw_properties
-                    .into_iter()
-                    .map(Index::try_from)
-                    .collect::<Result<Vec<Index>, anyhow::Error>>()
-            }
+            None => vec![],
+        };
 
-            None => Ok(vec![]),
-        }
+        indices_with_raw_properties
+            .into_iter()
+            .map(Index::try_from)
+            .collect::<Result<I, anyhow::Error>>()
     }
 
     fn is_type_of_identifier(&self) -> bool {
@@ -113,6 +112,22 @@ impl JsonSchemaExt for JsonValue {
             }
         }
         false
+    }
+
+    fn get_indices_map<I: FromIterator<(String, Index)>>(&self) -> Result<I, Error> {
+        let indices_with_raw_properties: Vec<IndexWithRawProperties> = match self.get("indices") {
+            Some(raw_indices) => serde_json::from_value(raw_indices.to_owned())?,
+
+            None => vec![],
+        };
+
+        indices_with_raw_properties
+            .into_iter()
+            .map(|r| {
+                let index = Index::try_from(r)?;
+                Ok((index.name.clone(), index))
+            })
+            .collect::<Result<I, anyhow::Error>>()
     }
 }
 
@@ -151,7 +166,7 @@ mod test {
              ]
         });
 
-        let indices_result = input.get_indices();
+        let indices_result = input.get_indices::<Vec<_>>();
         let indices = indices_result.unwrap();
 
         assert_eq!(indices.len(), 2);

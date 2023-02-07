@@ -36,27 +36,27 @@ use grovedb::batch::key_info::KeyInfo;
 use grovedb::batch::key_info::KeyInfo::KnownKey;
 use grovedb::batch::KeyInfoPath;
 use grovedb::Element;
+use std::borrow::Cow;
 use std::collections::HashSet;
 
+use dpp::data_contract::document_type::{DocumentType, IndexLevel};
 use storage::worst_case_costs::WorstKeyLength;
 
 use DriveKeyInfo::{Key, KeyRef, KeySize};
 use KeyValueInfo::{KeyRefRequest, KeyValueMaxSize};
 use PathInfo::{PathFixedSizeIterator, PathIterator, PathWithSizes};
-use PathKeyElementInfo::{PathFixedSizeKeyElement, PathKeyElement, PathKeyElementSize};
+use PathKeyElementInfo::{PathFixedSizeKeyRefElement, PathKeyElementSize, PathKeyRefElement};
 use PathKeyInfo::{PathFixedSizeKey, PathFixedSizeKeyRef, PathKey, PathKeyRef, PathKeySize};
 
-use crate::contract::document::Document;
 use crate::contract::Contract;
 use crate::drive::defaults::{DEFAULT_FLOAT_SIZE_U16, DEFAULT_HASH_SIZE_U16, DEFAULT_HASH_SIZE_U8};
 use crate::drive::flags::StorageFlags;
 use crate::error::drive::DriveError;
 use crate::error::Error;
-use dpp::data_contract::extra::{DocumentType, IndexLevel};
+use dpp::document::document_stub::DocumentStub;
 
 use crate::drive::object_size_info::PathKeyElementInfo::PathKeyUnknownElementSize;
-
-use dpp::data_contract::extra::ContractError;
+use crate::error::fee::FeeError;
 
 /// Info about a path.
 #[derive(Clone)]
@@ -404,9 +404,11 @@ pub enum KeyElementInfo<'a> {
 /// Path key element info
 pub enum PathKeyElementInfo<'a, const N: usize> {
     /// A triple Path Key and Element
-    PathFixedSizeKeyElement(([&'a [u8]; N], &'a [u8], Element)),
+    PathFixedSizeKeyRefElement(([&'a [u8]; N], &'a [u8], Element)),
     /// A triple Path Key and Element
-    PathKeyElement((Vec<Vec<u8>>, &'a [u8], Element)),
+    PathKeyRefElement((Vec<Vec<u8>>, &'a [u8], Element)),
+    /// A triple Path Key and Element
+    PathKeyElement((Vec<Vec<u8>>, Vec<u8>, Element)),
     /// A triple of sum of Path lengths, Key length and Element size
     PathKeyElementSize((KeyInfoPath, KeyInfo, Element)),
     /// A triple of sum of Path lengths, Key length and Element size
@@ -422,7 +424,7 @@ impl<'a, const N: usize> PathKeyElementInfo<'a, N> {
         match path_info {
             PathIterator(path) => match key_element {
                 KeyElementInfo::KeyElement((key, element)) => {
-                    Ok(PathKeyElement((path, key, element)))
+                    Ok(PathKeyRefElement((path, key, element)))
                 }
                 KeyElementInfo::KeyElementSize((key, element)) => Ok(PathKeyElementSize((
                     KeyInfoPath::from_known_owned_path(path),
@@ -448,7 +450,7 @@ impl<'a, const N: usize> PathKeyElementInfo<'a, N> {
             },
             PathFixedSizeIterator(path) => match key_element {
                 KeyElementInfo::KeyElement((key, element)) => {
-                    Ok(PathFixedSizeKeyElement((path, key, element)))
+                    Ok(PathFixedSizeKeyRefElement((path, key, element)))
                 }
                 KeyElementInfo::KeyElementSize((key, element)) => Ok(PathKeyElementSize((
                     KeyInfoPath::from_known_path(path),
@@ -462,14 +464,14 @@ impl<'a, const N: usize> PathKeyElementInfo<'a, N> {
         }
     }
 
-    /// Create and return a `PathFixedSizeKeyElement` from a fixed-size path and `KeyElementInfo`
+    /// Create and return a `PathFixedSizeKeyRefElement` from a fixed-size path and `KeyElementInfo`
     pub fn from_fixed_size_path_and_key_element(
         path: [&'a [u8]; N],
         key_element: KeyElementInfo<'a>,
     ) -> Result<Self, Error> {
         match key_element {
             KeyElementInfo::KeyElement((key, element)) => {
-                Ok(PathFixedSizeKeyElement((path, key, element)))
+                Ok(PathFixedSizeKeyRefElement((path, key, element)))
             }
             KeyElementInfo::KeyElementSize((key, element)) => Ok(PathKeyElementSize((
                 KeyInfoPath::from_known_path(path),
@@ -488,7 +490,9 @@ impl<'a, const N: usize> PathKeyElementInfo<'a, N> {
         key_element: KeyElementInfo<'a>,
     ) -> Result<Self, Error> {
         match key_element {
-            KeyElementInfo::KeyElement((key, element)) => Ok(PathKeyElement((path, key, element))),
+            KeyElementInfo::KeyElement((key, element)) => {
+                Ok(PathKeyRefElement((path, key, element)))
+            }
             KeyElementInfo::KeyElementSize((key, element)) => Ok(PathKeyElementSize((
                 KeyInfoPath::from_known_owned_path(path),
                 key,
@@ -502,6 +506,7 @@ impl<'a, const N: usize> PathKeyElementInfo<'a, N> {
 }
 
 /// Document and contract info
+#[derive(Clone, Debug)]
 pub struct OwnedDocumentInfo<'a> {
     /// Document info
     pub document_info: DocumentInfo<'a>,
@@ -510,6 +515,7 @@ pub struct OwnedDocumentInfo<'a> {
 }
 
 /// Document and contract info
+#[derive(Clone, Debug)]
 pub struct DocumentAndContractInfo<'a> {
     /// Document info
     pub owned_document_info: OwnedDocumentInfo<'a>,
@@ -523,11 +529,11 @@ pub struct DocumentAndContractInfo<'a> {
 #[derive(Clone, Debug)]
 pub enum DocumentInfo<'a> {
     /// The borrowed document and it's serialized form
-    DocumentRefAndSerialization((&'a Document, &'a [u8], Option<&'a StorageFlags>)),
+    DocumentRefAndSerialization((&'a DocumentStub, &'a [u8], Option<Cow<'a, StorageFlags>>)),
     /// The borrowed document without it's serialized form
-    DocumentRefWithoutSerialization((&'a Document, Option<&'a StorageFlags>)),
+    DocumentRefWithoutSerialization((&'a DocumentStub, Option<Cow<'a, StorageFlags>>)),
     /// The document without it's serialized form
-    DocumentWithoutSerialization((Document, Option<StorageFlags>)),
+    DocumentWithoutSerialization((DocumentStub, Option<Cow<'a, StorageFlags>>)),
     /// An element size
     DocumentEstimatedAverageSize(u32),
 }
@@ -544,7 +550,7 @@ impl<'a> DocumentInfo<'a> {
     }
 
     /// Gets the borrowed document
-    pub fn get_borrowed_document(&self) -> Option<&Document> {
+    pub fn get_borrowed_document(&self) -> Option<&DocumentStub> {
         match self {
             DocumentInfo::DocumentRefAndSerialization((document, _, _))
             | DocumentInfo::DocumentRefWithoutSerialization((document, _)) => Some(document),
@@ -580,7 +586,7 @@ impl<'a> DocumentInfo<'a> {
             "$createdAt" | "$updatedAt" => Ok(DEFAULT_FLOAT_SIZE_U16),
             _ => {
                 let document_field_type = document_type.properties.get(key_path).ok_or({
-                    Error::Contract(ContractError::DocumentTypeFieldNotFound(
+                    Error::Fee(FeeError::DocumentTypeFieldNotFoundForEstimation(
                         "incorrect key path for document type for estimated sizes",
                     ))
                 })?;
@@ -637,7 +643,7 @@ impl<'a> DocumentInfo<'a> {
                     _ => {
                         let document_field_type =
                             document_type.properties.get(key_path).ok_or({
-                                Error::Contract(ContractError::DocumentTypeFieldNotFound(
+                                Error::Fee(FeeError::DocumentTypeFieldNotFoundForEstimation(
                                     "incorrect key path for document type",
                                 ))
                             })?;
@@ -672,9 +678,9 @@ impl<'a> DocumentInfo<'a> {
     pub fn get_storage_flags_ref(&self) -> Option<&StorageFlags> {
         match self {
             DocumentInfo::DocumentRefAndSerialization((_, _, storage_flags))
-            | DocumentInfo::DocumentRefWithoutSerialization((_, storage_flags)) => *storage_flags,
-            DocumentInfo::DocumentWithoutSerialization((_, storage_flags)) => {
-                storage_flags.as_ref()
+            | DocumentInfo::DocumentRefWithoutSerialization((_, storage_flags))
+            | DocumentInfo::DocumentWithoutSerialization((_, storage_flags)) => {
+                storage_flags.as_ref().map(|flags| flags.as_ref())
             }
             DocumentInfo::DocumentEstimatedAverageSize(_) => {
                 StorageFlags::optional_default_as_ref()

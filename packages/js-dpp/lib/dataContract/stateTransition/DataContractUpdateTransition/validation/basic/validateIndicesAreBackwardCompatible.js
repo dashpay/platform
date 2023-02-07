@@ -116,10 +116,16 @@ function getNewUniqueIndex(documentType, existingSchema, newSchema) {
  * @param {string} documentType
  * @param {object} existingSchema
  * @param {object[]} newDocumentDefinitions
+ * @param {Object<string, Object>} nameIndexMap
  *
  * @returns {object}
  */
-function getWronglyConstructedNewIndex(documentType, existingSchema, newDocumentDefinitions) {
+function getWronglyConstructedNewIndex(
+  documentType,
+  existingSchema,
+  newDocumentDefinitions,
+  nameIndexMap,
+) {
   const newSchemaIndices = lodashGet(newDocumentDefinitions, `${documentType}.indices`);
 
   const existingIndexNames = (existingSchema.indices || []).map(
@@ -150,6 +156,22 @@ function getWronglyConstructedNewIndex(documentType, existingSchema, newDocument
   );
 
   return (newIndices || []).find((indexDefinition) => {
+    const newIndexDefinition = nameIndexMap[indexDefinition.name];
+
+    const notNewProperty = newIndexDefinition.properties
+      .find((propertyWithOrder) => {
+        const propertyName = Object.keys(propertyWithOrder)[0];
+
+        return Boolean(
+          getPropertyDefinitionByPath(existingSchema, propertyName),
+        );
+      });
+
+    // index contains old property
+    if (notNewProperty) {
+      return true;
+    }
+
     const existingProperties = indexDefinition.properties.filter(
       (prop) => existingIndexedProperties.has(Object.keys(prop)[0]),
     );
@@ -162,7 +184,7 @@ function getWronglyConstructedNewIndex(documentType, existingSchema, newDocument
     // build a partial snapshot of the new index
     // containing only first part of it with a
     // length equal to number of old properties used
-    // sine they should be in the beginning of the
+    // since they should be in the beginning of the
     // index we can check it with previously built snapshot combinations
     const partialNewIndexSnapshot = serializer.encode(
       indexDefinition.properties.slice(0, existingProperties.length),
@@ -240,7 +262,7 @@ function validateIndicesAreBackwardCompatible(existingDocumentDefinitions, newDo
       }
 
       const wronglyConstructedNewIndex = getWronglyConstructedNewIndex(
-        documentType, existingSchema, newDocumentDefinitions,
+        documentType, existingSchema, newDocumentDefinitions, nameIndexMap,
       );
 
       if (wronglyConstructedNewIndex !== undefined) {

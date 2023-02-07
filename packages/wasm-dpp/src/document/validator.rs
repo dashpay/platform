@@ -23,8 +23,8 @@ impl From<DocumentValidator> for DocumentValidatorWasm {
     }
 }
 
-impl Into<DocumentValidator> for DocumentValidatorWasm {
-    fn into(self) -> DocumentValidator {
-        self.0
+impl From<DocumentValidatorWasm> for DocumentValidator {
+    fn from(val: DocumentValidatorWasm) -> Self {
+        val.0
     }
 }

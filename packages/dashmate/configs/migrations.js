@@ -405,12 +405,31 @@ module.exports = {
         config.core.indexes = config.name === 'mainnet' ? 0 : 1;
         config.core.minimumDifficultyBlocks = 0;
         config.core.powTargetSpacing = 150;
-        config.platform.tenderdash.log.level = 'debug';
         config.core.rpc.allowIps = [
           '127.0.0.1',
           '172.16.0.0/12',
           '192.168.0.0/16',
         ];
+
+        if (config.platform) {
+          config.platform.drive.tenderdash.log.level = 'debug';
+        }
+      });
+
+    return configFile;
+  },
+  '0.24.0-dev.13': (configFile) => {
+    Object.entries(configFile.configs)
+      .forEach(([configName, config]) => {
+        if (config.platform) {
+          delete config.platform.dapi.envoy.grpc;
+
+          if (config.group === 'local') {
+            config.platform.drive.tenderdash.moniker = configName;
+          } else {
+            config.platform.drive.tenderdash.moniker = null;
+          }
+        }
       });
 
     return configFile;

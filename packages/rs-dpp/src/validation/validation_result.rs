@@ -17,6 +17,16 @@ impl<TData: Clone> ValidationResult<TData> {
         }
     }
 
+    pub fn map<F, U: Clone>(self, f: F) -> ValidationResult<U>
+    where
+        F: FnOnce(TData) -> U,
+    {
+        ValidationResult {
+            errors: self.errors,
+            data: self.data.map(f),
+        }
+    }
+
     pub fn add_error<T>(&mut self, error: T)
     where
         T: Into<ConsensusError>,

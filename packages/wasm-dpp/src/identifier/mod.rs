@@ -27,6 +27,7 @@ extern "C" {
     fn log(a: &str);
 }
 
+#[derive(Clone)]
 #[wasm_bindgen(js_name=Identifier, inspectable)]
 pub struct IdentifierWrapper {
     wrapped: identifier::Identifier,
@@ -35,6 +36,12 @@ pub struct IdentifierWrapper {
 impl std::convert::From<identifier::Identifier> for IdentifierWrapper {
     fn from(s: identifier::Identifier) -> Self {
         IdentifierWrapper { wrapped: s }
+    }
+}
+
+impl std::convert::From<IdentifierWrapper> for Identifier {
+    fn from(s: IdentifierWrapper) -> Self {
+        s.wrapped
     }
 }
 
@@ -79,7 +86,7 @@ impl IdentifierWrapper {
 
     #[wasm_bindgen(js_name=toBuffer)]
     pub fn to_buffer(&self) -> Buffer {
-        Buffer::from_bytes(self.wrapped.buffer.as_slice())
+        Buffer::from_bytes(&self.wrapped.buffer)
     }
 
     #[wasm_bindgen(js_name=toJSON)]
@@ -111,7 +118,7 @@ impl IdentifierWrapper {
     #[wasm_bindgen(js_name=clone)]
     pub fn deep_clone(&self) -> IdentifierWrapper {
         IdentifierWrapper {
-            wrapped: self.wrapped.clone(),
+            wrapped: self.wrapped,
         }
     }
 }

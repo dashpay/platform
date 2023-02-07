@@ -18,7 +18,7 @@ use super::{
     document_transition::{self, Action},
     document_validator::DocumentValidator,
     errors::DocumentError,
-    fetch_and_validate_data_contract::{self, DataContractFetcherAndValidator},
+    fetch_and_validate_data_contract::DataContractFetcherAndValidator,
     generate_document_id::generate_document_id,
     property_names, Document, DocumentsBatchTransition,
 };
@@ -412,12 +412,12 @@ mod test {
         )
         .unwrap();
 
-        data_contract.id = contract_id.clone();
+        data_contract.id = contract_id;
 
         let document = factory
             .create(
                 data_contract,
-                owner_id.clone(),
+                owner_id,
                 document_type.to_string(),
                 json!({ "name": name }),
             )

@@ -367,6 +367,7 @@ pub fn replace_binary(to_replace: &mut CborValue, with: ReplaceWith) -> Result<(
     Ok(())
 }
 
+//todo: explain why this returns an option?
 pub fn value_to_bytes(value: &CborValue) -> Result<Option<Vec<u8>>, ProtocolError> {
     match value {
         CborValue::Bytes(bytes) => Ok(Some(bytes.clone())),
@@ -394,6 +395,42 @@ pub fn value_to_bytes(value: &CborValue) -> Result<Option<Vec<u8>>, ProtocolErro
     }
 }
 
+pub fn value_to_hash(value: &CborValue) -> Result<[u8; 32], ProtocolError> {
+    match value {
+        CborValue::Bytes(bytes) => bytes
+            .clone()
+            .try_into()
+            .map_err(|_| ProtocolError::DecodingError("expected 32 bytes".to_string())),
+        CborValue::Text(text) => match bs58::decode(text).into_vec() {
+            Ok(bytes) => bytes
+                .try_into()
+                .map_err(|_| ProtocolError::DecodingError("expected 32 bytes".to_string())),
+            Err(_) => Err(ProtocolError::DecodingError(
+                "expected 32 bytes".to_string(),
+            )),
+        },
+        CborValue::Array(array) => array
+            .iter()
+            .map(|byte| match byte {
+                CborValue::Integer(int) => {
+                    let value_as_u8: u8 = (*int).try_into().map_err(|_| {
+                        ProtocolError::DecodingError(String::from("expected u8 value"))
+                    })?;
+                    Ok(value_as_u8)
+                }
+                _ => Err(ProtocolError::DecodingError(String::from(
+                    "not an array of integers",
+                ))),
+            })
+            .collect::<Result<Vec<u8>, ProtocolError>>()?
+            .try_into()
+            .map_err(|_| ProtocolError::DecodingError("expected 32 bytes".to_string())),
+        _ => Err(ProtocolError::DecodingError(String::from(
+            "system value is incorrect type",
+        ))),
+    }
+}
+
 #[cfg(test)]
 mod test {
     use std::convert::TryInto;
@@ -402,7 +439,6 @@ mod test {
 
     use super::{CborValue, FieldType};
     use ciborium::cbor;
-    use serde::{Deserialize, Serialize};
 
     use super::CborCanonicalMap;
 

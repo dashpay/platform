@@ -23,9 +23,8 @@ impl DeleteOperation {
 
 impl OperationLike for DeleteOperation {
     fn get_processing_cost(&self) -> i64 {
-        (DELETE_BASE_PROCESSING_COST
-            + ((self.key_size as i64 + self.value_size as i64) * PROCESSING_CREDIT_PER_BYTE))
-            as i64
+        DELETE_BASE_PROCESSING_COST
+            + ((self.key_size as i64 + self.value_size as i64) * PROCESSING_CREDIT_PER_BYTE)
     }
 
     fn get_storage_cost(&self) -> i64 {

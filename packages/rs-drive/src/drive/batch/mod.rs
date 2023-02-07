@@ -35,5 +35,9 @@
 /// Operation module
 pub mod drive_op_batch;
 mod grovedb_op_batch;
-pub use drive_op_batch::{ContractOperationType, DocumentOperationType, DriveOperationType};
+pub use drive_op_batch::ContractOperationType;
+pub use drive_op_batch::DocumentOperationType;
+pub use drive_op_batch::DriveOperationType;
+pub use drive_op_batch::IdentityOperationType;
+pub use drive_op_batch::SystemOperationType;
 pub use grovedb_op_batch::GroveDbOpBatch;
