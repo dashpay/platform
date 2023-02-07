@@ -70,7 +70,7 @@ impl Drive {
 
         let drive_query = DriveQuery {
             contract: &contract_fetch_info.contract,
-            document_type: document_type,
+            document_type,
             internal_clauses: InternalClauses {
                 primary_key_in_clause: None,
                 primary_key_equal_clause: None,
