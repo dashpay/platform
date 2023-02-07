@@ -62,10 +62,15 @@ where
         let options = options.unwrap_or_default();
 
         if !options.skip_validation {
-            // TODO: validate basic
+            // let validation_result = validate_state_transition_basic(
+            //     self.state_repository.as_ref(),
+            //     ,
+            //     raw_state_transition,
+            // )
+            // .await?;
         }
 
-        self.create_state_transition(raw_state_transition).await
+        create_state_transition(self.state_repository.as_ref(), raw_state_transition).await
     }
 
     pub async fn create_from_buffer(
@@ -90,62 +95,6 @@ where
         };
 
         self.create_from_object(raw_state_transition, options).await
-    }
-
-    pub async fn create_state_transition(
-        &self,
-        raw_state_transition: JsonValue,
-    ) -> Result<StateTransition, ProtocolError> {
-        let transition_type = try_get_transition_type(&raw_state_transition)?;
-        let execution_context = StateTransitionExecutionContext::default();
-
-        match transition_type {
-            StateTransitionType::DataContractCreate => {
-                let transition =
-                    DataContractCreateTransition::from_raw_object(raw_state_transition)?;
-                Ok(StateTransition::DataContractCreate(transition))
-            }
-            StateTransitionType::DataContractUpdate => {
-                let transition =
-                    DataContractUpdateTransition::from_raw_object(raw_state_transition)?;
-                Ok(StateTransition::DataContractUpdate(transition))
-            }
-            StateTransitionType::IdentityCreate => {
-                let transition = IdentityCreateTransition::new(raw_state_transition)?;
-                Ok(StateTransition::IdentityCreate(transition))
-            }
-            StateTransitionType::IdentityTopUp => {
-                let transition = IdentityTopUpTransition::new(raw_state_transition)?;
-                Ok(StateTransition::IdentityTopUp(transition))
-            }
-            StateTransitionType::IdentityCreditWithdrawal => {
-                let transition =
-                    IdentityCreditWithdrawalTransition::from_raw_object(raw_state_transition)?;
-                Ok(StateTransition::IdentityCreditWithdrawal(transition))
-            }
-            StateTransitionType::DocumentsBatch => {
-                let maybe_transitions = raw_state_transition
-                    .get("transitions")
-                    .ok_or_else(|| anyhow!("the transitions property doesn't exist"))?;
-                let raw_transitions = maybe_transitions
-                    .as_array()
-                    .ok_or_else(|| anyhow!("property transitions isn't an array"))?;
-                let data_contracts = fetch_data_contracts_for_document_transition(
-                    self.state_repository,
-                    raw_transitions,
-                    &execution_context,
-                )
-                .await?;
-                let documents_batch_transition = DocumentsBatchTransition::from_raw_object(
-                    raw_state_transition,
-                    data_contracts,
-                )?;
-                Ok(StateTransition::DocumentsBatch(documents_batch_transition))
-            }
-            StateTransitionType::IdentityUpdate => {
-                Err(ProtocolError::InvalidStateTransitionTypeError)
-            }
-        }
     }
 }
 

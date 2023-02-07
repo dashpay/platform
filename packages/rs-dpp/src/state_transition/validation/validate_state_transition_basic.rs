@@ -1,4 +1,4 @@
-use std::{convert::TryFrom, sync::Arc};
+use std::convert::TryFrom;
 
 use async_trait::async_trait;
 #[cfg(test)]
@@ -7,18 +7,25 @@ use serde_json::Value as JsonValue;
 
 use crate::{
     consensus::basic::BasicError,
+    identity::{
+        state_transition::{
+            identity_update_transition::validate_identity_update_transition_basic::ValidateIdentityUpdateTransitionBasic,
+            validate_public_key_signatures::TPublicKeysSignaturesValidator,
+        },
+        validation::TPublicKeysValidator,
+    },
     state_repository::StateRepositoryLike,
     state_transition::{create_state_transition, StateTransitionConvert, StateTransitionType},
     util::json_value::JsonValueExt,
-    validation::SimpleValidationResult,
+    validation::{SimpleValidationResult, ValidationResult},
     ProtocolError,
 };
 
-async fn validate_state_transition_basic<SR>(
-    state_repository: Arc<SR>,
+pub async fn validate_state_transition_basic(
+    state_repository: &impl StateRepositoryLike,
     validate_functions_by_type: &impl ValidatorByStateTransitionType,
     raw_state_transition: JsonValue,
-) -> Result<SimpleValidationResult, ProtocolError> where SR: StateRepositoryLike {
+) -> Result<SimpleValidationResult, ProtocolError> {
     let mut result = SimpleValidationResult::default();
 
     let raw_transition_type = match raw_state_transition.get_u64("type") {
@@ -67,12 +74,53 @@ async fn validate_state_transition_basic<SR>(
 
 #[cfg_attr(test, automock)]
 #[async_trait]
-pub trait ValidatorByStateTransitionType {
+pub trait ValidatorByStateTransitionType: Sync + Send {
     async fn validate(
         &self,
         raw_state_transition: &JsonValue,
         state_transition_type: StateTransitionType,
     ) -> Result<SimpleValidationResult, ProtocolError>;
+}
+
+pub struct StateTransitionBasicValidator<KV, SV> {
+    data_contract_create_validator: ValidateIdentityUpdateTransitionBasic<KV, SV>,
+}
+
+impl<KV, SV> StateTransitionBasicValidator<KV, SV> {
+    pub fn new(
+        data_contract_create_validator: ValidateIdentityUpdateTransitionBasic<KV, SV>,
+    ) -> Self {
+        StateTransitionBasicValidator {
+            data_contract_create_validator,
+        }
+    }
+}
+
+#[async_trait]
+impl<KV, SV> ValidatorByStateTransitionType for StateTransitionBasicValidator<KV, SV>
+where
+    KV: TPublicKeysValidator + Sync + Send,
+    SV: TPublicKeysSignaturesValidator + Sync + Send,
+{
+    async fn validate(
+        &self,
+        raw_state_transition: &JsonValue,
+        state_transition_type: StateTransitionType,
+    ) -> Result<SimpleValidationResult, ProtocolError> {
+        let result = ValidationResult::default();
+
+        match state_transition_type {
+            StateTransitionType::DataContractCreate => (),
+            StateTransitionType::DocumentsBatch => (),
+            StateTransitionType::IdentityCreate => (),
+            StateTransitionType::IdentityTopUp => (),
+            StateTransitionType::DataContractUpdate => (),
+            StateTransitionType::IdentityUpdate => (),
+            StateTransitionType::IdentityCreditWithdrawal => (),
+        }
+
+        Ok(result)
+    }
 }
 
 #[cfg(test)]
