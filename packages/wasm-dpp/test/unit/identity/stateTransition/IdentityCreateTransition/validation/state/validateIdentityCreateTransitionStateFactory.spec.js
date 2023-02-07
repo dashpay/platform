@@ -83,6 +83,7 @@ describe('validateIdentityCreateTransitionStateFactory', () => {
   });
 
   it('should return valid result if state transition is valid', async () => {
+    stateRepositoryMock.fetchIdentity.resolves();
     const result = await validateIdentityCreateTransitionState(stateTransition);
 
     expect(result.isValid()).to.be.true();
