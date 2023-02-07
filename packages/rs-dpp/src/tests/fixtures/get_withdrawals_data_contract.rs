@@ -3,17 +3,9 @@ use std::sync::Arc;
 use lazy_static::lazy_static;
 use serde_json::Value;
 
-use crate::contracts::withdrawals_contract;
 use crate::prelude::*;
 
 use crate::data_contract::extra::common::json_document_to_cbor;
-use crate::tests::data_contract;
-use crate::{
-    data_contract::validation::data_contract_validator::DataContractValidator,
-    data_contract::DataContractFactory,
-    tests::utils::generate_random_identifier_struct,
-    version::{ProtocolVersionValidator, COMPATIBILITY_MAP, LATEST_VERSION},
-};
 
 lazy_static! {
     static ref WITHDRAWALS_SCHEMA: Value = serde_json::from_str(include_str!(
@@ -23,8 +15,7 @@ lazy_static! {
 }
 
 pub fn get_withdrawals_data_contract_fixture(owner_id: Option<Identifier>) -> DataContract {
-    let withdrawal_contract_path =
-        "../../../contracts/withdrawals/withdrawals-contract-documents.json";
+    let withdrawal_contract_path = "./contracts/withdrawals/withdrawals-contract-documents.json";
 
     let withdrawal_cbor = json_document_to_cbor(withdrawal_contract_path, Some(1))
         .expect("expected to get cbor document");

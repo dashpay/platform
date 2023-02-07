@@ -21,12 +21,11 @@ where
 {
     let mut result = DataTriggerExecutionResult::default();
 
-    let dt_delete = match document_transition {
-        DocumentTransition::Delete(d) => d,
-        _ => bail!(
+    let DocumentTransition::Delete(dt_delete) = document_transition else {
+        bail!(
             "the Document Transition {} isn't 'DELETE'",
             get_from_transition!(document_transition, id)
-        ),
+        );
     };
 
     let withdrawals: Vec<Document> = context
@@ -43,39 +42,35 @@ where
         )
         .await?;
 
-    if withdrawals.is_empty() {
+    let Some(withdrawal) = withdrawals.get(0) else {
         let err = DataTriggerError::DataTriggerConditionError {
-            data_contract_id: context.data_contract.id.clone(),
-            document_transition_id: dt_delete.base.id.clone(),
+            data_contract_id: context.data_contract.id,
+            document_transition_id: dt_delete.base.id,
             message: "Withdrawal document was not found".to_string(),
-            owner_id: Some(context.owner_id.clone()),
+            owner_id: Some(*context.owner_id),
             document_transition: Some(DocumentTransition::Delete(dt_delete.clone())),
         };
 
         result.add_error(err.into());
 
         return Ok(result);
-    }
-
-    let withdrawal = withdrawals.get(0).unwrap();
+    };
 
     let status = withdrawal
         .get("status")
-        .ok_or(anyhow!(
-            "can't get withdrawal status property from the document"
-        ))?
+        .ok_or_else(|| anyhow!("can't get withdrawal status property from the document"))?
         .as_u64()
-        .ok_or(anyhow!("can't convert withdrawal status to u64"))? as u8;
+        .ok_or_else(|| anyhow!("can't convert withdrawal status to u64"))? as u8;
 
     if status != withdrawals_contract::Status::COMPLETE as u8
         || status != withdrawals_contract::Status::EXPIRED as u8
     {
         let err = DataTriggerError::DataTriggerConditionError {
-            data_contract_id: context.data_contract.id.clone(),
-            document_transition_id: dt_delete.base.id.clone(),
+            data_contract_id: context.data_contract.id,
+            document_transition_id: dt_delete.base.id,
             message: "withdrawal deletion is allowed only for COMPLETE and EXPIRED statuses"
                 .to_string(),
-            owner_id: Some(context.owner_id.clone()),
+            owner_id: Some(*context.owner_id),
             document_transition: Some(DocumentTransition::Delete(dt_delete.clone())),
         };
 
@@ -88,21 +83,15 @@ where
 }
 
 #[cfg(test)]
-mod test {
-    use super::delete_withdrawal_data_trigger;
-    use crate::{
-        contracts::withdrawals_contract,
-        data_trigger::DataTriggerExecutionContext,
-        document::{document_transition::DocumentTransition, Document},
-        identity::state_transition::identity_credit_withdrawal_transition::Pooling,
-        state_repository::MockStateRepositoryLike,
-        state_transition::state_transition_execution_context::StateTransitionExecutionContext,
-        tests::fixtures::{
-            get_data_contract_fixture, get_withdrawal_document_fixture,
-            get_withdrawals_data_contract_fixture,
-        },
+mod tests {
+    use super::*;
+    use crate::identity::state_transition::identity_credit_withdrawal_transition::Pooling;
+    use crate::state_repository::MockStateRepositoryLike;
+    use crate::state_transition::state_transition_execution_context::StateTransitionExecutionContext;
+    use crate::tests::fixtures::{
+        get_data_contract_fixture, get_withdrawal_document_fixture,
+        get_withdrawals_data_contract_fixture,
     };
-    use serde_json::json;
 
     #[tokio::test]
     async fn should_throw_error_if_withdrawal_not_found() {
