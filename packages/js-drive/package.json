@@ -69,7 +69,7 @@
   "dependencies": {
     "@dashevo/abci": "github:dashpay/js-abci#0ed8258034f3e7521a110053570f5c5c024eab67",
     "@dashevo/dapi-grpc": "workspace:*",
-    "@dashevo/dashcore-lib": "github:dashevo/dashcore-lib#feat-update-bls",
+    "@dashevo/dashcore-lib": "github:dashevo/dashcore-lib#85bb622ba45cccf7b1c2089f4453e87bbc5772e1",
     "@dashevo/dashd-rpc": "^18.2.0",
     "@dashevo/dashpay-contract": "workspace:*",
     "@dashevo/dpns-contract": "workspace:*",
