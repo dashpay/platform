@@ -80,6 +80,7 @@ use crate::drive::grove_operations::{
 };
 use crate::fee::result::FeeResult;
 use dpp::prelude::DataContract;
+use dpp::ProtocolError;
 
 impl Drive {
     /// Updates a serialized document given a contract CBOR and returns the associated fee.
@@ -368,11 +369,18 @@ impl Drive {
                     if let Element::Item(old_serialized_document, element_flags) =
                         old_document_element
                     {
-                        let document = DocumentStub::from_cbor(
+                        let document_result = DocumentStub::from_cbor(
                             old_serialized_document.as_slice(),
                             None,
                             owner_id,
-                        )?;
+                        );
+                        let document = match document_result {
+                            Ok(document_result) => Ok(document_result),
+                            Err(_) => DocumentStub::from_bytes(
+                                old_serialized_document.as_slice(),
+                                document_type,
+                            ),
+                        }?;
                         let storage_flags =
                             StorageFlags::map_some_element_flags_ref(&element_flags)?;
                         Ok(DocumentWithoutSerialization((

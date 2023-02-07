@@ -38,7 +38,7 @@ use std::fmt;
 use std::io::{BufReader, Read};
 
 use ciborium::value::{Integer, Value};
-use integer_encoding::VarIntWriter;
+use integer_encoding::{VarInt, VarIntReader, VarIntWriter};
 
 use crate::data_contract::{DataContract, DriveContractExt};
 use serde::{Deserialize, Serialize};
@@ -54,6 +54,8 @@ use crate::util::deserializer;
 use crate::util::deserializer::SplitProtocolVersionOutcome;
 use crate::ProtocolError;
 
+use crate::document::document_transition::INITIAL_REVISION;
+use crate::util::cbor_value::CborBTreeMapHelper;
 use anyhow::{anyhow, bail};
 
 //todo: rename
@@ -71,6 +73,10 @@ pub struct DocumentStub {
     /// The ID of the document's owner.
     #[serde(rename = "$ownerId")]
     pub owner_id: [u8; 32],
+
+    /// The document revision.
+    #[serde(rename = "$revision")]
+    pub revision: u64,
 }
 
 impl DocumentStub {
@@ -81,6 +87,9 @@ impl DocumentStub {
     pub fn serialize(&self, document_type: &DocumentType) -> Result<Vec<u8>, ProtocolError> {
         let mut buffer: Vec<u8> = self.id.as_slice().to_vec();
         buffer.extend(self.owner_id.as_slice());
+        if document_type.documents_mutable {
+            buffer.append(&mut self.revision.encode_var_vec());
+        }
         document_type
             .properties
             .iter()
@@ -115,6 +124,9 @@ impl DocumentStub {
         let mut buffer: Vec<u8> = Vec::try_from(self.id).unwrap();
         let mut owner_id = Vec::try_from(self.owner_id).unwrap();
         buffer.append(&mut owner_id);
+        if document_type.documents_mutable {
+            buffer.append(&mut self.revision.encode_var_vec());
+        }
         document_type
             .properties
             .iter()
@@ -161,6 +173,17 @@ impl DocumentStub {
             )
         })?;
 
+        let revision = if document_type.documents_mutable {
+            let revision: u64 = buf.read_varint().map_err(|_| {
+                ProtocolError::DataContractError(DataContractError::CorruptedSerialization(
+                    "error reading varint revision from serialized document",
+                ))
+            })?;
+            revision
+        } else {
+            INITIAL_REVISION as u64
+        };
+
         let properties = document_type
             .properties
             .iter()
@@ -176,6 +199,7 @@ impl DocumentStub {
             id,
             properties,
             owner_id,
+            revision,
         })
     }
 
@@ -243,11 +267,16 @@ impl DocumentStub {
         }
         .expect("document_id must be 32 bytes");
 
+        let revision: u64 = document
+            .remove_optional_integer("$revision")?
+            .unwrap_or(INITIAL_REVISION as u64);
+
         // dev-note: properties is everything other than the id and owner id
         Ok(DocumentStub {
             properties: document,
             owner_id,
             id,
+            revision,
         })
     }
 
@@ -269,6 +298,7 @@ impl DocumentStub {
                 DataContractError::FieldRequirementUnmet("invalid document id"),
             ));
         }
+
         let SplitProtocolVersionOutcome {
             main_message_bytes: read_document_cbor,
             ..
@@ -283,6 +313,8 @@ impl DocumentStub {
                 ))
             })?;
 
+        let revision: u64 = properties.get_integer("$revision")?;
+
         // dev-note: properties is everything other than the id and owner id
         Ok(DocumentStub {
             properties,
@@ -292,6 +324,7 @@ impl DocumentStub {
             id: document_id
                 .try_into()
                 .expect("try_into shouldn't fail, document_id must be 32 bytes"),
+            revision,
         })
     }
 
@@ -476,7 +509,7 @@ impl DocumentStub {
     pub fn increment_revision(&mut self) -> Result<(), ProtocolError> {
         let property_name = "$revision";
 
-        let revision = self.get_u32(property_name)?;
+        let revision = self.revision;
 
         let new_revision = revision
             .checked_add(1)

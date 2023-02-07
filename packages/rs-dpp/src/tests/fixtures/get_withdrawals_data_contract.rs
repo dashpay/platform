@@ -6,6 +6,8 @@ use serde_json::Value;
 use crate::contracts::withdrawals_contract;
 use crate::prelude::*;
 
+use crate::data_contract::extra::common::json_document_to_cbor;
+use crate::tests::data_contract;
 use crate::{
     data_contract::validation::data_contract_validator::DataContractValidator,
     data_contract::DataContractFactory,
@@ -21,20 +23,17 @@ lazy_static! {
 }
 
 pub fn get_withdrawals_data_contract_fixture(owner_id: Option<Identifier>) -> DataContract {
-    let protocol_version_validator =
-        ProtocolVersionValidator::new(LATEST_VERSION, LATEST_VERSION, COMPATIBILITY_MAP.clone());
-    let data_contract_validator = DataContractValidator::new(Arc::new(protocol_version_validator));
-    let factory = DataContractFactory::new(1, data_contract_validator);
+    let withdrawal_contract_path =
+        "../../../contracts/withdrawals/withdrawals-contract-documents.json";
 
-    let owner_id = owner_id.unwrap_or_else(generate_random_identifier_struct);
+    let withdrawal_cbor = json_document_to_cbor(withdrawal_contract_path, Some(1))
+        .expect("expected to get cbor document");
 
-    let withdrawals_schema = WITHDRAWALS_SCHEMA.clone();
+    let mut data_contract = DataContract::from_cbor(withdrawal_cbor)
+        .expect("expected to deserialize withdrawal contract");
 
-    let mut data_contract = factory
-        .create(owner_id, withdrawals_schema)
-        .expect("data in fixture should be correct");
-
-    data_contract.id = withdrawals_contract::CONTRACT_ID.clone();
-
+    if let Some(owner_id) = owner_id {
+        data_contract.owner_id = owner_id;
+    }
     data_contract
 }
