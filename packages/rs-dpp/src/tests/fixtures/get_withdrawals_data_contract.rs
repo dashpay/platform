@@ -2,6 +2,7 @@ use std::sync::Arc;
 
 use lazy_static::lazy_static;
 use serde_json::Value;
+use crate::contracts::withdrawals_contract;
 
 use crate::prelude::*;
 
@@ -28,5 +29,7 @@ pub fn get_withdrawals_data_contract_fixture(owner_id: Option<Identifier>) -> Da
     if let Some(owner_id) = owner_id {
         data_contract.owner_id = owner_id;
     }
+
+    data_contract.id = withdrawals_contract::CONTRACT_ID.clone();
     data_contract
 }
