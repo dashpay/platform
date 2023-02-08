@@ -257,13 +257,17 @@ pub fn bytes_for_system_value_from_tree_map(
 }
 
 /// Reads a JSON file and converts it to serde_value.
-pub fn json_document_to_value(
-    path: impl AsRef<Path>,
-) -> Result<serde_json::Value, ProtocolError> {
-    let file = File::open(path.as_ref()).map_err(|_| ProtocolError::FileNotFound(format!("file not found at path {}", path.as_ref().to_str().unwrap())))?;
+pub fn json_document_to_value(path: impl AsRef<Path>) -> Result<serde_json::Value, ProtocolError> {
+    let file = File::open(path.as_ref()).map_err(|_| {
+        ProtocolError::FileNotFound(format!(
+            "file not found at path {}",
+            path.as_ref().to_str().unwrap()
+        ))
+    })?;
 
     let reader = BufReader::new(file);
-    serde_json::from_reader(reader).map_err(|_| ProtocolError::DecodingError("error decoding value from document".to_string()))
+    serde_json::from_reader(reader)
+        .map_err(|_| ProtocolError::DecodingError("error decoding value from document".to_string()))
 }
 
 /// Reads a JSON file and converts it to CBOR.
