@@ -6,3 +6,6 @@ edition = "2021"
 license = "MIT"
 private = true
 include = ["/src", "/*/LICENSE", "/*/schema/*.json"]
+
+[dependencies]
+dpp = { path = "../rs-dpp" }

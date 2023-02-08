@@ -4,7 +4,7 @@ use std::sync::Arc;
 
 lazy_static! {
     static ref MASTERNODE_REWARD_SHARES_DOCUMENTS: JsonValue = serde_json::from_str(include_str!(
-        "./../../../../masternode-reward-shares-contract/schema/masternode-reward-shares-documents.json"
+        "./../../../../contracts/masternode-reward-shares-contract/schema/masternode-reward-shares-documents.json"
     ))
     .unwrap();
 }

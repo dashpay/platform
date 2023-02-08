@@ -572,6 +572,9 @@ checksum = "f3ad85c1f65dc7b37604eb0e89748faf0b9653065f2a8ef69f96a687ec1e9279"
 [[package]]
 name = "contracts"
 version = "0.24.0-dev.1"
+dependencies = [
+ "dpp",
+]
 
 [[package]]
 name = "core-foundation-sys"

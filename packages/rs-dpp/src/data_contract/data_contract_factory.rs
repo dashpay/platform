@@ -1,7 +1,8 @@
 use anyhow::anyhow;
-use serde_json::{json, Number, Value as JsonValue};
+use serde_json::{json, Map, Number, Value as JsonValue};
 
 use data_contract::state_transition::property_names as st_prop;
+use ciborium::Value as CborValue;
 
 use crate::{
     data_contract::{self, generate_data_contract_id},
@@ -10,6 +11,8 @@ use crate::{
     prelude::Identifier,
     util::entropy_generator,
 };
+use crate::data_contract::property_names;
+use crate::util::serializer::value_to_cbor;
 
 use super::{
     state_transition::{DataContractCreateTransition, DataContractUpdateTransition},
@@ -68,29 +71,18 @@ impl DataContractFactory {
         let data_contract_id =
             Identifier::from_bytes(&generate_data_contract_id(owner_id.to_buffer(), entropy))?;
 
-        let mut data_contract = DataContract {
-            protocol_version: self.protocol_version,
-            schema: String::from(data_contract::SCHEMA_URI),
-            id: data_contract_id,
-            version: 1,
-            owner_id,
-            defs: None,
-            entropy,
+        let mut root_map = Map::new();
 
-            ..Default::default()
-        };
+        root_map.insert(property_names::ID.to_string(), JsonValue::String(bs58::encode(data_contract_id.to_buffer().as_slice()).into_string()));
+        root_map.insert(property_names::OWNER_ID.to_string(), JsonValue::String(bs58::encode(owner_id.as_buffer().as_slice()).into_string()));
+        root_map.insert(property_names::SCHEMA.to_string(), JsonValue::String(data_contract::SCHEMA_URI.to_string()));
+        root_map.insert(property_names::VERSION.to_string(), JsonValue::Number(1.into()));
+        root_map.insert(property_names::DOCUMENTS.to_string(), documents);
 
-        if let JsonValue::Object(documents) = documents {
-            for (document_name, value) in documents {
-                data_contract.set_document_schema(document_name, value);
-            }
-        } else {
-            return Err(ProtocolError::Generic(String::from(
-                "attached documents are not in form a map",
-            )));
-        }
+        //todo: remove this hack
+        let cbor = value_to_cbor(JsonValue::Object(root_map), Some(1))?;
 
-        Ok(data_contract)
+        DataContract::from_cbor(cbor)
     }
 
     /// Create Data Contract from plain object
