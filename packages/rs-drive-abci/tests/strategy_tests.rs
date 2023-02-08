@@ -337,8 +337,6 @@ fn run_chain_for_strategy(
         .init_chain(init_chain_request, None)
         .expect("should init chain");
 
-    platform.create_mn_shares_contract(None);
-
     let proposers =
         create_test_masternode_identities_with_rng(&platform.drive, quorum_size, &mut rng, None);
 

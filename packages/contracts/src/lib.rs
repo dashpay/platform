@@ -8,6 +8,13 @@ use std::collections::{BTreeMap, BTreeSet, HashSet};
 use std::sync::Arc;
 use crate::SystemContract::{Dashpay, DPNS, FeatureFlags, MasternodeRewards, Withdrawals};
 
+/// Masternode reward shares contract ID
+pub const MN_REWARD_SHARES_CONTRACT_ID: [u8; 32] = [
+    0x0c, 0xac, 0xe2, 0x05, 0x24, 0x66, 0x93, 0xa7, 0xc8, 0x15, 0x65, 0x23, 0x62, 0x0d, 0xaa, 0x93,
+    0x7d, 0x2f, 0x22, 0x47, 0x93, 0x44, 0x63, 0xee, 0xb0, 0x1f, 0xf7, 0x21, 0x95, 0x90, 0x95, 0x8c,
+];
+
+
 #[repr(u8)]
 #[derive(PartialEq, Eq, Clone, Copy, Debug, Ord, PartialOrd)]
 pub enum SystemContract {
@@ -19,6 +26,22 @@ pub enum SystemContract {
 }
 
 impl SystemContract {
+    pub fn contract_id() -> [u8;32] {
+        match self {
+            Withdrawals => {
+                "../contracts/withdrawals-contract/schema/withdrawals-documents.json"
+            }
+            MasternodeRewards => {
+                MN_REWARD_SHARES_CONTRACT_ID
+            }
+            FeatureFlags => {
+                "../contracts/feature-flags-contract/schema/feature-flags-documents.json"
+            }
+            DPNS => "../contracts/dpns-contract/schema/dpns-contract-documents.json",
+            Dashpay => "../contracts/dashpay-contract/schema/dashpay.schema.json",
+        }
+    }
+
     pub fn all_contracts() -> BTreeSet<Self> {
         BTreeSet::from([Withdrawals, MasternodeRewards, FeatureFlags, DPNS, Dashpay])
     }
@@ -50,8 +73,9 @@ impl SystemContract {
         let data_contract_validator =
             DataContractValidator::new(Arc::new(protocol_version_validator));
         let factory = DataContractFactory::new(1, data_contract_validator);
-        let value = json_document_to_value(self.path_to_contract())?;
-        factory.create(owner_id, value, None)
+        let value = serde_json::from_;
+        let mut contract = factory.create(owner_id, value, None)?;
+        contract.id = self.contract_id()
     }
 
     pub fn load_contracts(
@@ -70,7 +94,7 @@ impl SystemContract {
             .into_iter()
             .map(|system_contract| {
                 let value = json_document_to_value(system_contract.path_to_contract())?;
-                let data_contract = factory.create(owner_id, value, None)?;
+                let mut data_contract = factory.create(owner_id, value, None)?;
                 Ok((system_contract, data_contract))
             })
             .collect()

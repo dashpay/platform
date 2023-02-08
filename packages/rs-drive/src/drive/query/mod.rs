@@ -273,7 +273,7 @@ impl Drive {
                 &mut drive_operations,
             )?
             .ok_or(Error::Query(QueryError::ContractNotFound(
-                "contract not found",
+                "contract not found for proof",
             )))?;
         let document_type = contract
             .contract
