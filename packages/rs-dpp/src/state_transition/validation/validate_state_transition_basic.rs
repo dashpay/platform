@@ -18,7 +18,7 @@ use crate::{
     state_transition::{create_state_transition, StateTransitionConvert, StateTransitionType},
     util::json_value::JsonValueExt,
     validation::{SimpleValidationResult, ValidationResult},
-    ProtocolError,
+    ProtocolError, data_contract::state_transition::data_contract_update_transition::validation::basic::DataContractUpdateTransitionBasicValidator,
 };
 
 pub async fn validate_state_transition_basic(
@@ -82,39 +82,51 @@ pub trait ValidatorByStateTransitionType: Sync + Send {
     ) -> Result<SimpleValidationResult, ProtocolError>;
 }
 
-pub struct StateTransitionBasicValidator<KV, SV> {
+pub struct StateTransitionBasicValidator<KV, SV, SR: StateRepositoryLike> {
     data_contract_create_validator: ValidateIdentityUpdateTransitionBasic<KV, SV>,
+    data_contract_update_validator: DataContractUpdateTransitionBasicValidator<SR>,
 }
 
-impl<KV, SV> StateTransitionBasicValidator<KV, SV> {
+impl<KV, SV, SR> StateTransitionBasicValidator<KV, SV, SR> where SR: StateRepositoryLike {
     pub fn new(
         data_contract_create_validator: ValidateIdentityUpdateTransitionBasic<KV, SV>,
+        data_contract_update_validator: DataContractUpdateTransitionBasicValidator<SR>,
     ) -> Self {
         StateTransitionBasicValidator {
             data_contract_create_validator,
+            data_contract_update_validator,
         }
     }
 }
 
 #[async_trait]
-impl<KV, SV> ValidatorByStateTransitionType for StateTransitionBasicValidator<KV, SV>
+impl<KV, SV, SR> ValidatorByStateTransitionType for StateTransitionBasicValidator<KV, SV, SR>
 where
     KV: TPublicKeysValidator + Sync + Send,
     SV: TPublicKeysSignaturesValidator + Sync + Send,
+    SR: StateRepositoryLike,
 {
     async fn validate(
         &self,
         raw_state_transition: &JsonValue,
         state_transition_type: StateTransitionType,
     ) -> Result<SimpleValidationResult, ProtocolError> {
-        let result = ValidationResult::default();
+        let mut result = ValidationResult::default();
 
         match state_transition_type {
-            StateTransitionType::DataContractCreate => (),
+            StateTransitionType::DataContractCreate => {
+                let validation_result = self.data_contract_create_validator.validate(raw_state_transition)?;
+
+                result.merge(validation_result);
+            },
+            StateTransitionType::DataContractUpdate => {
+                let validation_result = self.data_contract_update_validator.validate(raw_state_transition).await?;
+
+                result.merge(validation_result);
+            },
             StateTransitionType::DocumentsBatch => (),
             StateTransitionType::IdentityCreate => (),
             StateTransitionType::IdentityTopUp => (),
-            StateTransitionType::DataContractUpdate => (),
             StateTransitionType::IdentityUpdate => (),
             StateTransitionType::IdentityCreditWithdrawal => (),
         }
