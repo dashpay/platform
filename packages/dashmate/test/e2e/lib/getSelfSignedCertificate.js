@@ -1,9 +1,9 @@
-const generateKeyPair = require("../../../src/ssl/generateKeyPair");
-const generateCsr = require("../../../src/ssl/zerossl/generateCsr");
-const createSelfSignedCertificate = require("../../../src/ssl/selfSigned/createCertificate");
-const os = require("os");
-const path = require("path");
-const fs = require("fs");
+const os = require('os');
+const path = require('path');
+const fs = require('fs');
+const generateKeyPair = require('../../../src/ssl/generateKeyPair');
+const generateCsr = require('../../../src/ssl/zerossl/generateCsr');
+const createSelfSignedCertificate = require('../../../src/ssl/selfSigned/createCertificate');
 
 async function getSelfSignedCertificate(ip) {
   const keyPair = await generateKeyPair();
@@ -15,7 +15,7 @@ async function getSelfSignedCertificate(ip) {
   const privKeyPath = path.join(tempDir, 'private.key');
   fs.writeFileSync(certificatePath, certificate, 'utf8');
   fs.writeFileSync(privKeyPath, keyPair.privateKey, 'utf8');
-  return {certificatePath, privKeyPath}
+  return { certificatePath, privKeyPath };
 }
 
 module.exports = getSelfSignedCertificate;

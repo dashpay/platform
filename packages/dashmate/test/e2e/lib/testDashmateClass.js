@@ -1,19 +1,18 @@
 const { execute } = require('./runCommandInCli')
 
 class TestDashmateClass {
-
   /**
    * Set preset whether it should be a single or group of nodes
    * @param {string} preset - local, testnet, mainnet
    * @return {string}
    */
   setNetwork(preset) {
-    if(preset === 'local') {
+    if (preset === 'local') {
       return 'group';
     } else if (preset === 'testnet' || preset === 'mainnet') {
       return '';
     } else {
-      throw new Error('Incorrect node configuration preset.')
+      throw new Error('Incorrect node configuration preset.');
     }
   }
 
@@ -23,14 +22,13 @@ class TestDashmateClass {
    * @param {string} minerInterval
    * @param {string} args
    */
-  async setupLocal(nodes = 3, minerInterval= '2.5m', ...args) {
-    await execute(`dashmate setup local --node-count=${nodes} --debug-logs --miner-interval=${minerInterval} ${args} --verbose`).then(res => {
+  async setupLocal(nodes = 3, minerInterval = '2.5m', ...args) {
+    await execute(`dashmate setup local --node-count=${nodes} --debug-logs --miner-interval=${minerInterval} ${args} --verbose`).then((res) => {
       if (res.status !== undefined) {
-        throw new Error(`${res.stderr} with exit code: ${res.status}`)
+        throw new Error(`${res.stderr} with exit code: ${res.status}`);
       }
-      // console.log(res.toString()); debug start logs
-    })
-  }
+    });
+  };
 
   /**
    * Setup testnet node
@@ -38,13 +36,12 @@ class TestDashmateClass {
    * @param {string} args
    */
   async setupTestnet(nodeType, ...args) {
-    await execute(`yarn dashmate setup testnet ${nodeType} ${args} --verbose`).then(res => {
+    await execute(`yarn dashmate setup testnet ${nodeType} ${args} --verbose`).then((res) => {
       if (res.status !== undefined) {
-        throw new Error(`${res.stderr} with exit code: ${res.status}`)
+        throw new Error(`${res.stderr} with exit code: ${res.status}`);
       }
-      // console.log(res.toString()); debug start logs
-    })
-  }
+    });
+  };
 
   /**
    * Start node
@@ -52,15 +49,14 @@ class TestDashmateClass {
    * @param {string} args
    */
   async start(preset, ...args) {
-    const group = this.setNetwork(preset)
+    const group = this.setNetwork(preset);
 
-    await execute(`yarn dashmate ${group} start ${args} --verbose`).then(res => {
+    await execute(`yarn dashmate ${group} start ${args} --verbose`).then((res) => {
       if (res.status !== undefined) {
-        throw new Error(`${res.stderr} with exit code: ${res.status}`)
+        throw new Error(`${res.stderr} with exit code: ${res.status}`);
       }
-      // console.log(res.toString()); debug start logs
-    })
-  }
+    });
+  };
 
   /**
    * Stop node
@@ -68,15 +64,14 @@ class TestDashmateClass {
    * @param {string} args
    */
   async stop(preset, ...args) {
-    const group = this.setNetwork(preset)
+    const group = this.setNetwork(preset);
 
-    await execute(`yarn dashmate ${group} stop ${args} --verbose`).then(res => {
+    await execute(`yarn dashmate ${group} stop ${args} --verbose`).then((res) => {
       if (res.status !== undefined) {
-        throw new Error(`${res.stderr} with exit code: ${res.status}`)
+        throw new Error(`${res.stderr} with exit code: ${res.status}`);
       }
-      // console.log(res.toString()); debug start logs
-    })
-  }
+    });
+  };
 
   /**
    * Reset node
@@ -84,15 +79,14 @@ class TestDashmateClass {
    * @param {string} args
    */
   async reset(preset, ...args) {
-    const group = this.setNetwork(preset)
+    const group = this.setNetwork(preset);
 
-    await execute(`yarn dashmate ${group} reset ${args} --verbose`).then(res => {
+    await execute(`yarn dashmate ${group} reset ${args} --verbose`).then((res) => {
       if (res.status !== undefined) {
-        throw new Error(`${res.stderr} with exit code: ${res.status}`)
+        throw new Error(`${res.stderr} with exit code: ${res.status}`);
       }
-      // console.log(res.toString()); debug start logs
-    })
-  }
+    });
+  };
 
   /**
    * Restart node
@@ -100,15 +94,14 @@ class TestDashmateClass {
    * @param {string} args
    */
   async restart(preset, ...args) {
-    const group = this.setNetwork(preset)
+    const group = this.setNetwork(preset);
 
-    await execute(`yarn dashmate ${group} restart ${args} --verbose`).then(res => {
+    await execute(`yarn dashmate ${group} restart ${args} --verbose`).then((res) => {
       if (res.status !== undefined) {
-        throw new Error(`${res.stderr} with exit code: ${res.status}`)
+        throw new Error(`${res.stderr} with exit code: ${res.status}`);
       }
-      // console.log(res.toString()); debug start logs
-    })
-  }
+    });
+  };
 
   /**
    * Get service status
@@ -117,18 +110,18 @@ class TestDashmateClass {
    * @return {Promise<string>}
    */
   async checkStatus(service, allowErr = false) {
-    return await execute(`yarn dashmate status ${service}`).then(res => {
+    return await execute(`yarn dashmate status ${service}`).then((res) => {
       if (!allowErr) {
         if (res.status !== undefined) {
-          throw new Error(`${res.stderr} with exit code: ${res.status}`)
+          throw new Error(`${res.stderr} with exit code: ${res.status}`);
         } else {
           return res.toString();
         }
       } else {
         return res.toString();
       }
-    })
-  }
+    });
+  };
 
   /**
    * Get local status
@@ -137,18 +130,18 @@ class TestDashmateClass {
    * @return {Promise<string>}
    */
   async checkGroupStatus(command, allowErr = false) {
-    return await execute(`yarn dashmate group ${command}`).then(res => {
+    return await execute(`yarn dashmate group ${command}`).then((res) => {
       if (!allowErr) {
         if (res.status !== undefined) {
-          throw new Error(`${res.stderr} with exit code: ${res.status}`)
+          throw new Error(`${res.stderr} with exit code: ${res.status}`);
         } else {
           return res.toString();
         }
       } else {
         return res.toString();
       }
-    })
-  }
+    });
+  };
 }
 
 module.exports = TestDashmateClass;

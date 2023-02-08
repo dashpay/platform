@@ -1,5 +1,5 @@
-const ConfigFileJsonRepository = require("../../../src/config/configFile/ConfigFileJsonRepository");
-const migrateConfigFile = require("../../../src/config/configFile/migrateConfigFile");
+const ConfigFileJsonRepository = require('../../../src/config/configFile/ConfigFileJsonRepository');
+const migrateConfigFile = require('../../../src/config/configFile/migrateConfigFile');
 
 /**
  * Return configuration file based on provided config name
@@ -7,16 +7,20 @@ const migrateConfigFile = require("../../../src/config/configFile/migrateConfigF
  * @return {Config[]}
  */
 async function getConfig(configName) {
+  let config;
   const configFileRepository = new ConfigFileJsonRepository(migrateConfigFile);
   const configFile = await configFileRepository.read();
 
-  switch(configName) {
+  switch (configName) {
     case 'local':
-      return configFile.getGroupConfigs(configName);
-    case 'testnet':  // Fallthrough
+      config = configFile.getGroupConfigs(configName);
+      break;
+    case 'testnet': //Fallthrough
     case 'mainnet':
-      return configFile.getConfig(configName);
+      config = configFile.getConfig(configName);
+      break;
   }
+  return config;
 }
 
 /**
@@ -25,19 +29,23 @@ async function getConfig(configName) {
  * @return {boolean}
  */
 async function isConfigExist(configName) {
+  let bool;
   const configFileRepository = new ConfigFileJsonRepository(migrateConfigFile);
   const configFile = await configFileRepository.read();
 
-  switch(configName) {
+  switch (configName) {
     case 'local':
-      return configFile.isGroupExists(configName);
-    case 'testnet':  // Fallthrough
+      bool = configFile.isGroupExists(configName);
+      break;
+    case 'testnet': //Fallthrough
     case 'mainnet':
-      return configFile.isConfigExists(configName);
+      bool = configFile.isConfigExists(configName);
+      break;
   }
+  return bool;
 }
 
 module.exports = {
   getConfig,
-  isConfigExist
-}
+  isConfigExist,
+};
