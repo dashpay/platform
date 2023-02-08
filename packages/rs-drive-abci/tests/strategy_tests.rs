@@ -141,7 +141,7 @@ impl Strategy {
             .iter()
             .map(|contract| {
                 DriveOperationType::ContractOperation(ContractOperationType::ApplyContract {
-                    contract,
+                    contract: Cow::Borrowed(contract),
                     storage_flags: None,
                 })
             })

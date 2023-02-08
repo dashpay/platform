@@ -6,6 +6,7 @@ use dpp::version::{ProtocolVersionValidator, COMPATIBILITY_MAP, LATEST_VERSION};
 use dpp::ProtocolError;
 use std::collections::{BTreeMap, BTreeSet, HashSet};
 use std::sync::Arc;
+use crate::SystemContract::{Dashpay, DPNS, FeatureFlags, MasternodeRewards, Withdrawals};
 
 #[repr(u8)]
 #[derive(PartialEq, Eq, Clone, Copy, Debug, Ord, PartialOrd)]
@@ -18,24 +19,27 @@ pub enum SystemContract {
 }
 
 impl SystemContract {
+    pub fn all_contracts() -> BTreeSet<Self> {
+        BTreeSet::from([Withdrawals, MasternodeRewards, FeatureFlags, DPNS, Dashpay])
+    }
+
     pub fn path_to_contract(&self) -> &str {
         match self {
-            SystemContract::Withdrawals => {
+            Withdrawals => {
                 "/withdrawals-contract/schema/withdrawals-documents.json"
             }
-            SystemContract::MasternodeRewards => {
+            MasternodeRewards => {
                 "/masternode-reward-shares-contract/schema/masternode-reward-shares-documents.json"
             }
-            SystemContract::FeatureFlags => {
+            FeatureFlags => {
                 "/feature-flags-contract/schema/feature-flags-documents.json"
             }
-            SystemContract::DPNS => "/dpns-contract/schema/dpns-contract-documents.json",
-            SystemContract::Dashpay => "/dashpay-contract/schema/dashpay.schema.json",
+            DPNS => "/dpns-contract/schema/dpns-contract-documents.json",
+            Dashpay => "/dashpay-contract/schema/dashpay.schema.json",
         }
     }
     pub fn load_contract(
         &self,
-        system_contract: SystemContract,
         owner_id: Identifier,
     ) -> Result<DataContract, ProtocolError> {
         let protocol_version_validator = ProtocolVersionValidator::new(
@@ -46,12 +50,11 @@ impl SystemContract {
         let data_contract_validator =
             DataContractValidator::new(Arc::new(protocol_version_validator));
         let factory = DataContractFactory::new(1, data_contract_validator);
-        let value = json_document_to_value(system_contract.path_to_contract())?;
+        let value = json_document_to_value(self.path_to_contract())?;
         factory.create(owner_id, value, None)
     }
 
     pub fn load_contracts(
-        &self,
         system_contracts: BTreeSet<SystemContract>,
         owner_id: Identifier,
     ) -> Result<BTreeMap<SystemContract, DataContract>, ProtocolError> {

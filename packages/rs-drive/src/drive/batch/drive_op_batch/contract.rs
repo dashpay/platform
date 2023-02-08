@@ -35,7 +35,7 @@ pub enum ContractOperationType<'a> {
     /// Applies a contract without serialization.
     ApplyContract {
         /// The contract
-        contract: &'a Contract,
+        contract: Cow<'a, Contract>,
         /// Storage flags for the contract
         storage_flags: Option<Cow<'a, StorageFlags>>,
     },
@@ -86,7 +86,7 @@ impl DriveOperationConverter for ContractOperationType<'_> {
                 contract,
                 storage_flags,
             } => drive.apply_contract_operations(
-                contract,
+                contract.as_ref(),
                 block_info,
                 estimated_costs_only_with_layer_info,
                 storage_flags,

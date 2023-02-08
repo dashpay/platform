@@ -966,6 +966,7 @@ dependencies = [
  "bs58",
  "chrono",
  "ciborium",
+ "contracts",
  "dashcore 0.29.1 (git+https://github.com/dashpay/rust-dashcore?branch=master)",
  "drive",
  "hex",

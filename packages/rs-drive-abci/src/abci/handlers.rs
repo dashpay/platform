@@ -85,6 +85,8 @@ impl TenderdashAbci for Platform {
             .create_initial_state_structure(transaction)
             .map_err(Error::Drive)?;
 
+        self.register_initial_identities_and_contracts()?;
+
         let response = InitChainResponse {};
 
         Ok(response)
