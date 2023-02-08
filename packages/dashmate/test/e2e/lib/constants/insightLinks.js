@@ -5,4 +5,4 @@ const insightURLs = {
 
 module.exports = {
   INSIGHT_URLs: insightURLs
-}
+};

@@ -113,7 +113,6 @@ describe('Testnet dashmate', function main() {
         for (const peer of peersData) {
           peerBlock = peer['synced_blocks']
           peerHeader = peer['synced_headers']
-          console.log(`Debug peers block / headers: ${peerBlock} / ${peerHeader}`)
         }
       } while (peerHeader < 1 && peerBlock < 1)
 
