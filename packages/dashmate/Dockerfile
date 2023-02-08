@@ -24,11 +24,8 @@ COPY package.json yarn.lock .yarnrc.yml .pnp.* ./
 
 # Copy only necessary packages from monorepo
 COPY packages/dashmate packages/dashmate
-COPY packages/contracts/dashpay-contract packages/contracts/dashpay-contract
-COPY packages/contracts/dpns-contract packages/contracts/dpns-contract
+COPY packages/contracts packages/contracts
 COPY packages/js-dpp packages/js-dpp
-COPY packages/contracts/feature-flags-contract packages/contracts/feature-flags-contract
-COPY packages/contracts/masternode-reward-shares-contract packages/contracts/masternode-reward-shares-contract
 COPY packages/wallet-lib packages/wallet-lib
 COPY packages/js-dash-sdk packages/js-dash-sdk
 COPY packages/js-dapi-client packages/js-dapi-client
