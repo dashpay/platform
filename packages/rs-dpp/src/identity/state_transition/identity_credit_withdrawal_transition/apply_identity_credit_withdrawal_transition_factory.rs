@@ -7,7 +7,6 @@ use dashcore::{
     Script, TxOut,
 };
 use lazy_static::__Deref;
-use std::convert::TryInto;
 
 use crate::{
     identity::convert_credits_to_satoshi, state_repository::StateRepositoryLike,
@@ -68,25 +67,20 @@ where
             .enqueue_withdrawal_transaction(latest_withdrawal_index, transaction_buffer)
             .await?;
 
-        let maybe_existing_identity = self
-            .state_repository
-            .fetch_identity(
-                &state_transition.identity_id,
-                state_transition.get_execution_context(),
-            )
-            .await?
-            .map(TryInto::try_into)
-            .transpose()
-            .map_err(Into::into)?;
-
-        let mut existing_identity =
-            maybe_existing_identity.ok_or_else(|| anyhow!("Identity not found"))?;
-
-        existing_identity.reduce_balance(state_transition.amount);
-
         // TODO: we need to be able to batch state repository operations
         self.state_repository
-            .update_identity(&existing_identity, state_transition.get_execution_context())
+            .remove_from_identity_balance(
+                &state_transition.identity_id,
+                state_transition.amount,
+                state_transition.get_execution_context(),
+            )
+            .await?;
+
+        self.state_repository
+            .remove_from_system_credits(
+                state_transition.amount,
+                state_transition.get_execution_context(),
+            )
             .await
     }
 }

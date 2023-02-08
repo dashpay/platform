@@ -1,7 +1,8 @@
 class DummyFeeResult {
-  constructor(storageFee, processingFee) {
+  constructor(storageFee, processingFee, feeRefunds) {
     this.storageFee = storageFee;
     this.processingFee = processingFee;
+    this.feeRefunds = feeRefunds;
   }
 }
 

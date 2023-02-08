@@ -112,7 +112,7 @@ describe('DocumentFactory', () => {
     fetchContractResult.setData(dataContractJs);
 
     stateRepositoryMock = createStateRepositoryMock(this.sinonSandbox);
-    stateRepositoryMock.fetchDataContract.returns(dc);
+    stateRepositoryMock.fetchDataContract.resolves(dc);
 
     fetchAndValidateDataContractMock = this.sinonSandbox.stub().returns(fetchContractResult);
     dppMock = createDPPMock();

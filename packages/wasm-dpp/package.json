@@ -10,8 +10,8 @@
     "test:browsers": "karma start ./karma.conf.js --single-run",
     "test:node": "NODE_ENV=test mocha",
     "webpack": "webpack",
-    "lint": "eslint . && cargo clippy && cargo fmt --check",
-    "lint:fix": "eslint . --fix && cargo clippy --fix && cargo fmt",
+    "lint": "eslint .",
+    "lint:fix": "eslint . --fix",
     "clean": "yarn exec scripts/clean.sh"
   },
   "ultra": {

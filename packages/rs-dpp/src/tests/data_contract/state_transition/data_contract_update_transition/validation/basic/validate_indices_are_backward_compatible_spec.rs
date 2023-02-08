@@ -67,7 +67,7 @@ fn get_basic_error(result: &ValidationResult<()>, error_number: usize) -> &Basic
         .get(error_number)
         .expect("error should be found")
     {
-        ConsensusError::BasicError(basic_error) => &**basic_error,
+        ConsensusError::BasicError(basic_error) => basic_error,
         _ => panic!(
             "error '{:?}' isn't a basic error",
             result.errors[error_number]

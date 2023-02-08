@@ -25,7 +25,7 @@ pub struct StateTransitionKeySignatureValidator<SR> {
     asset_lock_public_key_hash_fetcher: AssetLockPublicKeyHashFetcher<SR>,
 }
 
-#[async_trait]
+#[async_trait(?Send)]
 impl<SR> AsyncDataValidator for StateTransitionKeySignatureValidator<SR>
 where
     SR: StateRepositoryLike,
@@ -83,7 +83,7 @@ pub async fn validate_state_transition_key_signature<SR: StateRepositoryLike>(
 
         if identity.is_none() {
             result.add_error(SignatureError::IdentityNotFoundError {
-                identity_id: target_identity_id.clone(),
+                identity_id: *target_identity_id,
             });
             return Ok(result);
         }

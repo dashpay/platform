@@ -102,12 +102,12 @@ impl IdentityTopUpTransitionWasm {
 
     #[wasm_bindgen(js_name=getIdentityId)]
     pub fn get_identity_id(&self) -> IdentifierWrapper {
-        self.0.get_identity_id().clone().into()
+        (*self.0.get_identity_id()).into()
     }
 
     #[wasm_bindgen(js_name=getOwnerId)]
     pub fn get_owner_id(&self) -> IdentifierWrapper {
-        self.0.get_owner_id().clone().into()
+        (*self.0.get_owner_id()).into()
     }
 
     #[wasm_bindgen(js_name=toObject)]
@@ -225,9 +225,7 @@ impl IdentityTopUpTransitionWasm {
         let ids = self.0.get_modified_data_ids();
 
         ids.into_iter()
-            .map(|id| {
-                <IdentifierWrapper as std::convert::From<Identifier>>::from(id.clone()).into()
-            })
+            .map(|id| <IdentifierWrapper as std::convert::From<Identifier>>::from(*id).into())
             .collect()
     }
 

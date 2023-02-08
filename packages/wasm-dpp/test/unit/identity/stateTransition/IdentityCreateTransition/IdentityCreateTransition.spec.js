@@ -14,8 +14,8 @@ describe('IdentityCreateTransition', () => {
   let KeyType;
   let KeyPurpose;
   let KeySecurityLevel;
-  let IdentityPublicKey;
   let Identifier;
+  let IdentityPublicKeyCreateTransition;
 
   const mockRawPublicKey = (params = {}) => ({
     id: 0,
@@ -30,7 +30,11 @@ describe('IdentityCreateTransition', () => {
 
   before(async () => {
     ({
-      IdentityCreateTransition, IdentityPublicKey, KeyType, KeyPurpose, KeySecurityLevel,
+      IdentityCreateTransition,
+      IdentityPublicKeyCreateTransition,
+      KeyType,
+      KeyPurpose,
+      KeySecurityLevel,
       InstantAssetLockProof, Identifier,
     } = await loadWasmDpp());
   });
@@ -49,7 +53,7 @@ describe('IdentityCreateTransition', () => {
       );
 
       expect(stateTransition.publicKeys.map((key) => key.toObject())).to.deep.equal([
-        new IdentityPublicKey(rawStateTransition.publicKeys[0]).toObject(),
+        new IdentityPublicKeyCreateTransition(rawStateTransition.publicKeys[0]).toObject(),
       ]);
     });
 
@@ -100,8 +104,8 @@ describe('IdentityCreateTransition', () => {
   describe('#setPublicKeys', () => {
     it('should set public keys', () => {
       const publicKeys = [
-        new IdentityPublicKey(mockRawPublicKey({ id: 0 })),
-        new IdentityPublicKey(mockRawPublicKey({ id: 1 })),
+        new IdentityPublicKeyCreateTransition(mockRawPublicKey({ id: 0 })),
+        new IdentityPublicKeyCreateTransition(mockRawPublicKey({ id: 1 })),
       ];
 
       stateTransition.setPublicKeys(publicKeys);
@@ -115,7 +119,7 @@ describe('IdentityCreateTransition', () => {
     it('should return set public keys', () => {
       expect(stateTransition.getPublicKeys().map((key) => key.toObject())).to.deep.equal(
         rawStateTransition.publicKeys
-          .map((rawPublicKey) => new IdentityPublicKey(rawPublicKey).toObject()),
+          .map((rawPublicKey) => new IdentityPublicKeyCreateTransition(rawPublicKey).toObject()),
       );
     });
   });
@@ -123,8 +127,8 @@ describe('IdentityCreateTransition', () => {
   describe('#addPublicKeys', () => {
     it('should add more public keys', () => {
       const publicKeys = [
-        new IdentityPublicKey(mockRawPublicKey({ id: 0 })),
-        new IdentityPublicKey(mockRawPublicKey({ id: 1 })),
+        new IdentityPublicKeyCreateTransition(mockRawPublicKey({ id: 0 })),
+        new IdentityPublicKeyCreateTransition(mockRawPublicKey({ id: 1 })),
       ];
 
       stateTransition.setPublicKeys([]);

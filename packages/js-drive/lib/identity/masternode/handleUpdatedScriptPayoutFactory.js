@@ -4,14 +4,14 @@ const identitySchema = require('@dashevo/dpp/schema/identity/identity.json');
 /**
  *
  * @param {IdentityStoreRepository} identityRepository
- * @param {PublicKeyToIdentitiesStoreRepository} publicKeyToIdentitiesRepository
+ * @param {IdentityPublicKeyStoreRepository} identityPublicKeyRepository
  * @param {getWithdrawPubKeyTypeFromPayoutScript} getWithdrawPubKeyTypeFromPayoutScript
  * @param {getPublicKeyFromPayoutScript} getPublicKeyFromPayoutScript
  * @returns {handleUpdatedScriptPayout}
  */
 function handleUpdatedScriptPayoutFactory(
   identityRepository,
-  publicKeyToIdentitiesRepository,
+  identityPublicKeyRepository,
   getWithdrawPubKeyTypeFromPayoutScript,
   getPublicKeyFromPayoutScript,
 ) {
@@ -43,9 +43,7 @@ function handleUpdatedScriptPayoutFactory(
 
     const identity = identityResult.getValue();
 
-    identity.setRevision(identity.getRevision() + 1);
-
-    let identityPublicKeys = identity
+    const identityPublicKeys = identity
       .getPublicKeys();
 
     if (identityPublicKeys.length === identitySchema.properties.publicKeys.maxItems) {
@@ -61,15 +59,21 @@ function handleUpdatedScriptPayoutFactory(
         previousPubKeyType,
       );
 
-      identityPublicKeys = identityPublicKeys.map((pk) => {
-        if (pk.getData().equals(previousPubKeyData)) {
-          pk.setDisabledAt(
-            blockInfo.timeMs,
-          );
-        }
+      const keyIds = identityPublicKeys
+        .filter((pk) => pk.getData().equals(previousPubKeyData))
+        .map((pk) => pk.getId());
 
-        return pk;
-      });
+      if (keyIds.length > 0) {
+        await identityPublicKeyRepository.disable(
+          identityId,
+          keyIds,
+          blockInfo.timeMs,
+          blockInfo,
+          { useTransaction: true },
+        );
+
+        result.updatedEntities.push({ disabledKeys: keyIds });
+      }
     }
 
     // add new
@@ -81,21 +85,24 @@ function handleUpdatedScriptPayoutFactory(
       .setType(withdrawPubKeyType)
       .setData(pubKeyData)
       .setPurpose(IdentityPublicKey.PURPOSES.WITHDRAW)
+      .setReadOnly(true)
       .setSecurityLevel(IdentityPublicKey.SECURITY_LEVELS.MASTER);
 
-    identityPublicKeys.push(
-      newWithdrawalIdentityPublicKey,
+    await identityPublicKeyRepository.add(
+      identityId,
+      [newWithdrawalIdentityPublicKey],
+      blockInfo,
+      { useTransaction: true },
     );
 
-    identity.setPublicKeys(identityPublicKeys);
+    result.createdEntities.push(newWithdrawalIdentityPublicKey);
 
-    await identityRepository.update(identity, { useTransaction: true });
+    identity.setRevision(identity.getRevision() + 1);
 
-    const publicKeyHash = newWithdrawalIdentityPublicKey.hash();
-
-    await publicKeyToIdentitiesRepository.store(
-      publicKeyHash,
-      identity.getId(),
+    await identityRepository.updateRevision(
+      identityId,
+      identity.getRevision(),
+      blockInfo,
       { useTransaction: true },
     );
 

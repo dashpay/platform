@@ -189,7 +189,7 @@ impl Drive {
         transaction: TransactionArg,
         drive_operations: &mut Vec<DriveOperation>,
     ) -> Result<(), Error> {
-        let batch_operations = self.delete_document_for_contract_operations(
+        let batch_operations = self.delete_document_for_contract_with_named_type_operations(
             document_id,
             contract,
             document_type_name,
@@ -628,7 +628,7 @@ impl Drive {
     }
 
     /// Prepares the operations for deleting a document.
-    pub(crate) fn delete_document_for_contract_operations(
+    pub(crate) fn delete_document_for_contract_with_named_type_operations(
         &self,
         document_id: [u8; 32],
         contract: &Contract,
@@ -640,8 +640,32 @@ impl Drive {
         >,
         transaction: TransactionArg,
     ) -> Result<Vec<DriveOperation>, Error> {
-        let mut batch_operations: Vec<DriveOperation> = vec![];
         let document_type = contract.document_type_for_name(document_type_name)?;
+        self.delete_document_for_contract_operations(
+            document_id,
+            contract,
+            document_type,
+            owner_id,
+            previous_batch_operations,
+            estimated_costs_only_with_layer_info,
+            transaction,
+        )
+    }
+
+    /// Prepares the operations for deleting a document.
+    pub(crate) fn delete_document_for_contract_operations(
+        &self,
+        document_id: [u8; 32],
+        contract: &Contract,
+        document_type: &DocumentType,
+        owner_id: Option<[u8; 32]>,
+        previous_batch_operations: Option<&mut Vec<DriveOperation>>,
+        estimated_costs_only_with_layer_info: &mut Option<
+            HashMap<KeyInfoPath, EstimatedLayerInformation>,
+        >,
+        transaction: TransactionArg,
+    ) -> Result<Vec<DriveOperation>, Error> {
+        let mut batch_operations: Vec<DriveOperation> = vec![];
 
         if !document_type.documents_mutable {
             return Err(Error::Drive(DriveError::UpdatingReadOnlyImmutableDocument(
@@ -662,8 +686,10 @@ impl Drive {
         //  * Document and Contract root tree
         //  * Contract ID recovered from document
         //  * 0 to signify Documents and not Contract
-        let contract_documents_primary_key_path =
-            contract_documents_primary_key_path(contract.id.as_bytes(), document_type_name);
+        let contract_documents_primary_key_path = contract_documents_primary_key_path(
+            contract.id.as_bytes(),
+            document_type.name.as_str(),
+        );
 
         let direct_query_type = if let Some(estimated_costs_only_with_layer_info) =
             estimated_costs_only_with_layer_info
@@ -681,7 +707,7 @@ impl Drive {
         };
 
         // next we need to get the document from storage
-        let document_element: Option<Element> = self.grove_get_direct(
+        let document_element: Option<Element> = self.grove_get_raw(
             contract_documents_primary_key_path,
             document_id.as_slice(),
             direct_query_type,
@@ -689,24 +715,29 @@ impl Drive {
             &mut batch_operations,
         )?;
 
-        let document_info =
-            if let DirectQueryType::StatelessDirectQuery { query_target, .. } = direct_query_type {
-                DocumentEstimatedAverageSize(query_target.len())
-            } else if let Some(document_element) = &document_element {
-                if let Element::Item(data, element_flags) = document_element {
-                    let document = DocumentStub::from_cbor(data.as_slice(), None, owner_id)?;
-                    let storage_flags = StorageFlags::from_some_element_flags_ref(element_flags)?;
-                    DocumentWithoutSerialization((document, storage_flags))
-                } else {
-                    return Err(Error::Drive(DriveError::CorruptedDocumentNotItem(
-                        "document being deleted is not an item",
-                    )));
-                }
+        let document_info = if let DirectQueryType::StatelessDirectQuery { query_target, .. } =
+            direct_query_type
+        {
+            DocumentEstimatedAverageSize(query_target.len())
+        } else if let Some(document_element) = &document_element {
+            if let Element::Item(data, element_flags) = document_element {
+                //todo: remove this hack
+                let document = match DocumentStub::from_cbor(data.as_slice(), None, owner_id) {
+                    Ok(document) => Ok(document),
+                    Err(_) => DocumentStub::from_bytes(data.as_slice(), document_type),
+                }?;
+                let storage_flags = StorageFlags::map_cow_some_element_flags_ref(element_flags)?;
+                DocumentWithoutSerialization((document, storage_flags))
             } else {
-                return Err(Error::Drive(DriveError::DeletingDocumentThatDoesNotExist(
-                    "document being deleted does not exist",
+                return Err(Error::Drive(DriveError::CorruptedDocumentNotItem(
+                    "document being deleted is not an item",
                 )));
-            };
+            }
+        } else {
+            return Err(Error::Drive(DriveError::DeletingDocumentThatDoesNotExist(
+                "document being deleted does not exist",
+            )));
+        };
 
         // third we need to delete the document for it's primary key
         self.remove_document_from_primary_storage(
@@ -743,6 +774,7 @@ mod tests {
     use dpp::data_contract::extra::common::json_document_to_cbor;
     use rand::Rng;
     use serde_json::json;
+    use std::borrow::Cow;
     use std::option::Option::None;
     use tempfile::TempDir;
 
@@ -754,7 +786,7 @@ mod tests {
     use crate::drive::object_size_info::DocumentInfo::DocumentRefAndSerialization;
     use crate::drive::Drive;
     use crate::fee::credits::Creditable;
-    use crate::fee::default_costs::STORAGE_DISK_USAGE_CREDIT_PER_BYTE;
+    use crate::fee::default_costs::KnownCostItem::StorageDiskUsageCreditPerByte;
     use crate::fee_pools::epochs::Epoch;
     use crate::query::DriveQuery;
     use dpp::document::document_stub::DocumentStub;
@@ -792,7 +824,7 @@ mod tests {
             .document_type_for_name("person")
             .expect("expected to get a document type");
 
-        let storage_flags = Some(StorageFlags::SingleEpoch(0));
+        let storage_flags = Some(Cow::Owned(StorageFlags::SingleEpoch(0)));
 
         drive
             .add_document_for_contract(
@@ -801,7 +833,7 @@ mod tests {
                         document_info: DocumentRefAndSerialization((
                             &document,
                             &person_serialized_document,
-                            storage_flags.as_ref(),
+                            storage_flags,
                         )),
                         owner_id: None,
                     },
@@ -820,13 +852,13 @@ mod tests {
         let query = DriveQuery::from_sql_expr(sql_string, &contract).expect("should build query");
 
         let (results_no_transaction, _, _) = query
-            .execute_no_proof(&drive, None, None)
+            .execute_serialized_no_proof(&drive, None, None)
             .expect("expected to execute query");
 
         assert_eq!(results_no_transaction.len(), 1);
 
         let (results_on_transaction, _, _) = query
-            .execute_no_proof(&drive, None, None)
+            .execute_serialized_no_proof(&drive, None, None)
             .expect("expected to execute query");
 
         assert_eq!(results_on_transaction.len(), 1);
@@ -850,7 +882,7 @@ mod tests {
             .expect("expected to be able to delete the document");
 
         let (results_on_transaction, _, _) = query
-            .execute_no_proof(&drive, None, None)
+            .execute_serialized_no_proof(&drive, None, None)
             .expect("expected to execute query");
 
         assert_eq!(results_on_transaction.len(), 0);
@@ -890,7 +922,7 @@ mod tests {
             .document_type_for_name("person")
             .expect("expected to get a document type");
 
-        let storage_flags = Some(StorageFlags::SingleEpoch(0));
+        let storage_flags = Some(Cow::Owned(StorageFlags::SingleEpoch(0)));
 
         drive
             .add_document_for_contract(
@@ -899,7 +931,7 @@ mod tests {
                         document_info: DocumentRefAndSerialization((
                             &document,
                             &person_serialized_document,
-                            storage_flags.as_ref(),
+                            storage_flags,
                         )),
                         owner_id: None,
                     },
@@ -924,7 +956,7 @@ mod tests {
         let query = DriveQuery::from_sql_expr(sql_string, &contract).expect("should build query");
 
         let (results_no_transaction, _, _) = query
-            .execute_no_proof(&drive, None, None)
+            .execute_serialized_no_proof(&drive, None, None)
             .expect("expected to execute query");
 
         assert_eq!(results_no_transaction.len(), 1);
@@ -932,7 +964,7 @@ mod tests {
         let db_transaction = drive.grove.start_transaction();
 
         let (results_on_transaction, _, _) = query
-            .execute_no_proof(&drive, None, Some(&db_transaction))
+            .execute_serialized_no_proof(&drive, None, Some(&db_transaction))
             .expect("expected to execute query");
 
         assert_eq!(results_on_transaction.len(), 1);
@@ -964,7 +996,7 @@ mod tests {
         let db_transaction = drive.grove.start_transaction();
 
         let (results_on_transaction, _, _) = query
-            .execute_no_proof(&drive, None, Some(&db_transaction))
+            .execute_serialized_no_proof(&drive, None, Some(&db_transaction))
             .expect("expected to execute query");
 
         assert_eq!(results_on_transaction.len(), 0);
@@ -1004,7 +1036,7 @@ mod tests {
             .document_type_for_name("person")
             .expect("expected to get a document type");
 
-        let storage_flags = Some(StorageFlags::SingleEpoch(0));
+        let storage_flags = Some(Cow::Owned(StorageFlags::SingleEpoch(0)));
 
         drive
             .add_document_for_contract(
@@ -1013,7 +1045,7 @@ mod tests {
                         document_info: DocumentRefAndSerialization((
                             &document,
                             &person_serialized_document,
-                            storage_flags.as_ref(),
+                            storage_flags,
                         )),
                         owner_id: None,
                     },
@@ -1043,7 +1075,7 @@ mod tests {
             .document_type_for_name("person")
             .expect("expected to get a document type");
 
-        let storage_flags = Some(StorageFlags::SingleEpoch(0));
+        let storage_flags = Some(Cow::Owned(StorageFlags::SingleEpoch(0)));
 
         drive
             .add_document_for_contract(
@@ -1052,7 +1084,7 @@ mod tests {
                         document_info: DocumentRefAndSerialization((
                             &document,
                             &person_serialized_document,
-                            storage_flags.as_ref(),
+                            storage_flags,
                         )),
                         owner_id: None,
                     },
@@ -1077,7 +1109,7 @@ mod tests {
         let query = DriveQuery::from_sql_expr(sql_string, &contract).expect("should build query");
 
         let (results_no_transaction, _, _) = query
-            .execute_no_proof(&drive, None, None)
+            .execute_serialized_no_proof(&drive, None, None)
             .expect("expected to execute query");
 
         assert_eq!(results_no_transaction.len(), 2);
@@ -1114,7 +1146,7 @@ mod tests {
         let query = DriveQuery::from_sql_expr(sql_string, &contract).expect("should build query");
 
         let (results_no_transaction, _, _) = query
-            .execute_no_proof(&drive, None, None)
+            .execute_serialized_no_proof(&drive, None, None)
             .expect("expected to execute query");
 
         assert_eq!(results_no_transaction.len(), 1);
@@ -1151,7 +1183,7 @@ mod tests {
         let query = DriveQuery::from_sql_expr(sql_string, &contract).expect("should build query");
 
         let (results_no_transaction, _, _) = query
-            .execute_no_proof(&drive, None, None)
+            .execute_serialized_no_proof(&drive, None, None)
             .expect("expected to execute query");
 
         assert_eq!(results_no_transaction.len(), 0);
@@ -1191,7 +1223,7 @@ mod tests {
             .document_type_for_name("person")
             .expect("expected to get a document type");
 
-        let storage_flags = Some(StorageFlags::SingleEpoch(0));
+        let storage_flags = Some(Cow::Owned(StorageFlags::SingleEpoch(0)));
 
         drive
             .add_document_for_contract(
@@ -1200,7 +1232,7 @@ mod tests {
                         document_info: DocumentRefAndSerialization((
                             &document,
                             &person_serialized_document,
-                            storage_flags.as_ref(),
+                            storage_flags,
                         )),
                         owner_id: None,
                     },
@@ -1230,7 +1262,7 @@ mod tests {
             .document_type_for_name("person")
             .expect("expected to get a document type");
 
-        let storage_flags = Some(StorageFlags::SingleEpoch(0));
+        let storage_flags = Some(Cow::Owned(StorageFlags::SingleEpoch(0)));
 
         drive
             .add_document_for_contract(
@@ -1239,7 +1271,7 @@ mod tests {
                         document_info: DocumentRefAndSerialization((
                             &document,
                             &person_serialized_document,
-                            storage_flags.as_ref(),
+                            storage_flags,
                         )),
                         owner_id: None,
                     },
@@ -1264,7 +1296,7 @@ mod tests {
         let query = DriveQuery::from_sql_expr(sql_string, &contract).expect("should build query");
 
         let (results_no_transaction, _, _) = query
-            .execute_no_proof(&drive, None, None)
+            .execute_serialized_no_proof(&drive, None, None)
             .expect("expected to execute query");
 
         assert_eq!(results_no_transaction.len(), 2);
@@ -1304,7 +1336,7 @@ mod tests {
             DocumentStub::from_cbor(&person_serialized_document, None, Some(random_owner_id))
                 .expect("expected to deserialize the document");
 
-        let storage_flags = Some(StorageFlags::SingleEpoch(0));
+        let storage_flags = Some(Cow::Owned(StorageFlags::SingleEpoch(0)));
 
         drive
             .add_document_for_contract(
@@ -1313,7 +1345,7 @@ mod tests {
                         document_info: DocumentRefAndSerialization((
                             &document,
                             &person_serialized_document,
-                            storage_flags.as_ref(),
+                            storage_flags,
                         )),
                         owner_id: None,
                     },
@@ -1379,7 +1411,7 @@ mod tests {
         let query = DriveQuery::from_sql_expr(sql_string, &contract).expect("should build query");
 
         let (results_no_transaction, _, _) = query
-            .execute_no_proof(&drive, None, None)
+            .execute_serialized_no_proof(&drive, None, None)
             .expect("expected to execute query");
 
         assert_eq!(results_no_transaction.len(), 0);
@@ -1405,7 +1437,7 @@ mod tests {
                 false,
                 BlockInfo::default(),
                 true,
-                StorageFlags::optional_default_as_ref(),
+                StorageFlags::optional_default_as_cow(),
                 None,
             )
             .expect("expected to insert a document successfully");
@@ -1455,7 +1487,10 @@ mod tests {
         .expect("expected to get cbor document");
 
         let random_owner_id = rand::thread_rng().gen::<[u8; 32]>();
-        let storage_flags = StorageFlags::SingleEpochOwned(0, random_owner_id);
+        let storage_flags = Some(Cow::Owned(StorageFlags::SingleEpochOwned(
+            0,
+            random_owner_id,
+        )));
         let fee_result = drive
             .add_serialized_document_for_contract(
                 &dashpay_profile_serialized_document,
@@ -1465,12 +1500,13 @@ mod tests {
                 false,
                 BlockInfo::default(),
                 true,
-                Some(&storage_flags),
+                storage_flags,
                 Some(&db_transaction),
             )
             .expect("expected to insert a document successfully");
 
-        let added_bytes = fee_result.storage_fee / STORAGE_DISK_USAGE_CREDIT_PER_BYTE;
+        let added_bytes = fee_result.storage_fee
+            / Epoch::new(0).cost_for_known_cost_item(StorageDiskUsageCreditPerByte);
         // We added 1679 bytes
         assert_eq!(added_bytes, 1679);
 
@@ -1501,9 +1537,12 @@ mod tests {
             .get(&0)
             .unwrap();
 
-        let removed_bytes = removed_credits.to_unsigned() / STORAGE_DISK_USAGE_CREDIT_PER_BYTE;
+        assert_eq!(*removed_credits, 44879092);
+        let refund_equivalent_bytes = removed_credits.to_unsigned()
+            / Epoch::new(0).cost_for_known_cost_item(StorageDiskUsageCreditPerByte);
 
-        assert_eq!(added_bytes, removed_bytes);
+        assert!(added_bytes > refund_equivalent_bytes);
+        assert_eq!(refund_equivalent_bytes, 1662); // we refunded 1662 instead of 1679
     }
 
     #[test]
@@ -1531,7 +1570,10 @@ mod tests {
         .expect("expected to get cbor document");
 
         let random_owner_id = rand::thread_rng().gen::<[u8; 32]>();
-        let storage_flags = StorageFlags::SingleEpochOwned(0, random_owner_id);
+        let storage_flags = Some(Cow::Owned(StorageFlags::SingleEpochOwned(
+            0,
+            random_owner_id,
+        )));
         let fee_result = drive
             .add_serialized_document_for_contract(
                 &dashpay_profile_serialized_document,
@@ -1541,13 +1583,14 @@ mod tests {
                 false,
                 BlockInfo::default(),
                 true,
-                Some(&storage_flags),
+                storage_flags,
                 Some(&db_transaction),
             )
             .expect("expected to insert a document successfully");
 
-        let added_bytes = fee_result.storage_fee / STORAGE_DISK_USAGE_CREDIT_PER_BYTE;
-        // We added 1679 bytes
+        let added_bytes = fee_result.storage_fee
+            / Epoch::new(0).cost_for_known_cost_item(StorageDiskUsageCreditPerByte);
+        // We added 1682 bytes
         assert_eq!(added_bytes, 1679);
 
         let document_id = bs58::decode("AM47xnyLfTAC9f61ZQPGfMK5Datk2FeYZwgYvcAnzqFY")
@@ -1572,7 +1615,7 @@ mod tests {
 
         assert!(fee_result.fee_refunds.0.is_empty());
         assert_eq!(fee_result.storage_fee, 0);
-        assert_eq!(fee_result.processing_fee, 148212400);
+        assert_eq!(fee_result.processing_fee, 147665780);
     }
 
     #[test]
@@ -1600,7 +1643,7 @@ mod tests {
             "01aa6324696458208d2a661748268018725cf0dc612c74cf1e8621dc86c5e9cc64d2bbe17a2f855a6524747970656c6e696365446f63756d656e74656f726465720468246f776e657249645820cac675648b485d2606a53fca9942cb7bfdf34e08cee1ebe6e0e74e8502ac6c80686c6173744e616d65674b656e6e65647969247265766973696f6e016966697273744e616d65644c656f6e6a246372656174656441741b0000017f933437206a247570646174656441741b0000017f933437206f2464617461436f6e747261637449645820e8f72680f2e3910c95e1497a2b0029d9f7374891ac1f39ab1cfe3ae63336b9a9"
         ];
 
-        let storage_flags = Some(StorageFlags::SingleEpoch(0));
+        let storage_flags = Some(Cow::Owned(StorageFlags::SingleEpoch(0)));
 
         let documents: Vec<DocumentStub> = document_hexes
             .iter()
@@ -1621,7 +1664,7 @@ mod tests {
                                 document_info: DocumentRefAndSerialization((
                                     &document,
                                     &serialized_document,
-                                    storage_flags.as_ref(),
+                                    storage_flags.clone(),
                                 )),
                                 owner_id: None,
                             },
@@ -1657,7 +1700,7 @@ mod tests {
             .expect("unable to commit transaction");
 
         let (results, _, _) = drive
-            .query_documents_from_contract(
+            .query_documents_cbor_from_contract(
                 &contract,
                 contract.document_types().get("niceDocument").unwrap(),
                 query_cbor.as_slice(),
@@ -1692,7 +1735,7 @@ mod tests {
             serializer::value_to_cbor(query_json, None).expect("expected to serialize to cbor");
 
         let (results, _, _) = drive
-            .query_documents_from_contract(
+            .query_documents_cbor_from_contract(
                 &contract,
                 contract.document_types().get("niceDocument").unwrap(),
                 query_cbor.as_slice(),
