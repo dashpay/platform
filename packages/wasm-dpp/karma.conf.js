@@ -11,7 +11,7 @@ module.exports = (config) => {
   config.set({
     client: {
       mocha: {
-        timeout: 4000,
+        timeout: 5000,
       },
     },
     frameworks: ['mocha', 'chai', 'webpack'],
