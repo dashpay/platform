@@ -81,7 +81,7 @@ impl DataContractFactory {
         );
         root_map.insert(
             property_names::OWNER_ID.to_string(),
-            JsonValue::String(bs58::encode(owner_id.as_buffer().as_slice()).into_string()),
+            JsonValue::String(bs58::encode(owner_id.to_buffer().as_slice()).into_string()),
         );
         root_map.insert(
             property_names::SCHEMA.to_string(),

@@ -30,7 +30,7 @@ pub mod execution;
 
 pub mod platform;
 
-/// Functions related to IdentityCreditWithdrawalTransaction  
+/// Functions related to IdentityCreditWithdrawalTransaction
 pub mod identity_credit_withdrawal;
 
 /// Platform configuration
@@ -38,6 +38,3 @@ pub mod config;
 
 /// Platform state
 pub mod state;
-
-/// Initialization
-pub mod initialization;
