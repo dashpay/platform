@@ -5,3 +5,4 @@ version = "0.24.0-dev.1"
 edition = "2021"
 license = "MIT"
 private = true
+include = ["/src", "/*/LICENSE", "/*/schema/*.json"]

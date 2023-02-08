@@ -1,4 +1,4 @@
-use dpp::identity::Identity;
+use drive::dpp::identity::Identity;
 use drive::drive::batch::{ContractOperationType, DriveOperationType, IdentityOperationType};
 use crate::error::Error;
 use crate::platform::Platform;
@@ -17,7 +17,7 @@ impl Platform {
     /// Registering an Identity to hold system contracts
     /// Registering system contracts
     /// Registering documents for these contracts
-    pub fn register_initial_identities_and_contracts(&self) -> Result<(), Error> {
+    pub fn register_initial_identities_and_contracts(&self) {
         // We first want to register an Identity
 
     }
