@@ -18,13 +18,12 @@ const { INSIGHT_URLs } = require('../lib/constants/insightLinks')
 const { SERVICES } = require('../lib/constants/services')
 const {STATUS} = require("../lib/constants/statusOutput");
 
-const { isTestnetServicesRunning } = require("../lib/manageDockerData");
-
 const { execute } = require('../../e2e/lib/runCommandInCli')
 const { getConfig, isConfigExist } = require("../../e2e/lib/manageConfig");
 const { core } = require("../../../configs/system/base");
 const {CONFIG_FILE_PATH} = require("../../../src/constants");
 const getSelfSignedCertificate = require("../lib/getSelfSignedCertificate");
+const { isTestnetServicesRunning } = require("../lib/manageDockerData");
 const MasternodeSyncAssetEnum = require("../../../src/enums/masternodeSyncAsset");
 const PortStateEnum = require("../../../src/enums/portState");
 const ServiceStatusEnum = require("../../../src/enums/serviceStatus");
@@ -87,11 +86,9 @@ describe('Testnet dashmate', function main() {
       const coreStatus = await dashmate.checkStatus('core')
       const coreOutput = JSON.parse(coreStatus.toString())
 
-      //update core version in config??
+      //update core version in config because versions don't match??
       // const coreVersion = core.docker.image.replace(/\/|\(.*?\)|dashpay|dashd:|\-(.*)/g, '');
       // expect(output.latestVersion).to.be.equal(coreVersion)
-
-      //update core version in config??
       // try {
       //   const latestVersionRes = await fetch('https://api.github.com/repos/dashpay/dash/releases/latest');
       //   const latestVersion = (await latestVersionRes.json()).tag_name.substring(1);
@@ -153,7 +150,7 @@ describe('Testnet dashmate', function main() {
 
       const listIDs = await execute('docker ps --format "{{ .ID }}"').then(ids => {
         const containerIds = ids.toString().split('\n');
-        containerIds.pop() //empty item
+        containerIds.pop()
         return containerIds;
       })
 
