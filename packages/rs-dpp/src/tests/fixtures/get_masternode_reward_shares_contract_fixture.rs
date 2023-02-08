@@ -1,13 +1,4 @@
-use lazy_static::lazy_static;
-use serde_json::Value as JsonValue;
 use std::sync::Arc;
-
-lazy_static! {
-    static ref MASTERNODE_REWARD_SHARES_DOCUMENTS: JsonValue = serde_json::from_str(include_str!(
-        "./../../../../contracts/masternode-reward-shares-contract/schema/masternode-reward-shares-documents.json"
-    ))
-    .unwrap();
-}
 
 use crate::{
     data_contract::{
@@ -27,6 +18,10 @@ pub fn get_master_node_reward_shares_contract_fixture() -> DataContract {
     let factory = DataContractFactory::new(1, data_contract_validator);
 
     factory
-        .create(owner_id, MASTERNODE_REWARD_SHARES_DOCUMENTS.clone())
+        .create(
+            owner_id,
+            masternode_reward_shares_contract::DOCUMENT_SCHEMAS.clone(),
+            None,
+        )
         .expect("the contract for masternode reward shares documents should be created")
 }

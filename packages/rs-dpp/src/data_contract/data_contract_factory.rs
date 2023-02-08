@@ -2,8 +2,9 @@ use anyhow::anyhow;
 use serde_json::{json, Map, Number, Value as JsonValue};
 
 use data_contract::state_transition::property_names as st_prop;
-use ciborium::Value as CborValue;
 
+use crate::data_contract::property_names;
+use crate::util::serializer::value_to_cbor;
 use crate::{
     data_contract::{self, generate_data_contract_id},
     decode_protocol_entity_factory::DecodeProtocolEntity,
@@ -11,8 +12,6 @@ use crate::{
     prelude::Identifier,
     util::entropy_generator,
 };
-use crate::data_contract::property_names;
-use crate::util::serializer::value_to_cbor;
 
 use super::{
     state_transition::{DataContractCreateTransition, DataContractUpdateTransition},
@@ -65,21 +64,40 @@ impl DataContractFactory {
         &self,
         owner_id: Identifier,
         documents: JsonValue,
+        definitions: Option<JsonValue>,
     ) -> Result<DataContract, ProtocolError> {
         let entropy = self.entropy_generator.generate();
 
         let data_contract_id =
             Identifier::from_bytes(&generate_data_contract_id(owner_id.to_buffer(), entropy))?;
 
+        // todo: workaround
+
         let mut root_map = Map::new();
 
-        root_map.insert(property_names::ID.to_string(), JsonValue::String(bs58::encode(data_contract_id.to_buffer().as_slice()).into_string()));
-        root_map.insert(property_names::OWNER_ID.to_string(), JsonValue::String(bs58::encode(owner_id.as_buffer().as_slice()).into_string()));
-        root_map.insert(property_names::SCHEMA.to_string(), JsonValue::String(data_contract::SCHEMA_URI.to_string()));
-        root_map.insert(property_names::VERSION.to_string(), JsonValue::Number(1.into()));
+        root_map.insert(
+            property_names::ID.to_string(),
+            JsonValue::String(bs58::encode(data_contract_id.to_buffer().as_slice()).into_string()),
+        );
+        root_map.insert(
+            property_names::OWNER_ID.to_string(),
+            JsonValue::String(bs58::encode(owner_id.as_buffer().as_slice()).into_string()),
+        );
+        root_map.insert(
+            property_names::SCHEMA.to_string(),
+            JsonValue::String(data_contract::SCHEMA_URI.to_string()),
+        );
+        root_map.insert(
+            property_names::VERSION.to_string(),
+            JsonValue::Number(1.into()),
+        );
+
+        if let Some(defs) = definitions {
+            root_map.insert(property_names::DEFINITIONS.to_string(), defs);
+        }
+
         root_map.insert(property_names::DOCUMENTS.to_string(), documents);
 
-        //todo: remove this hack
         let cbor = value_to_cbor(JsonValue::Object(root_map), Some(1))?;
 
         DataContract::from_cbor(cbor)
@@ -153,19 +171,11 @@ impl DataContractFactory {
 }
 
 #[cfg(test)]
-mod test {
+mod tests {
+    use super::*;
+    use crate::tests::fixtures::get_data_contract_fixture;
+    use crate::version::{ProtocolVersionValidator, COMPATIBILITY_MAP, LATEST_VERSION};
     use std::sync::Arc;
-
-    use serde_json::Value as JsonValue;
-
-    use crate::{
-        data_contract::{validation::data_contract_validator::DataContractValidator, DataContract},
-        state_transition::StateTransitionLike,
-        tests::fixtures::get_data_contract_fixture,
-        version::{ProtocolVersionValidator, COMPATIBILITY_MAP, LATEST_VERSION},
-    };
-
-    use super::DataContractFactory;
 
     pub struct TestData {
         data_contract: DataContract,
@@ -199,13 +209,19 @@ mod test {
             raw_data_contract,
             factory,
         } = get_test_data();
+
+        let raw_defs = raw_data_contract
+            .get(property_names::DEFINITIONS)
+            .expect("documents property should exist")
+            .clone();
+
         let raw_documents = raw_data_contract
-            .get("documents")
+            .get(property_names::DOCUMENTS)
             .expect("documents property should exist")
             .clone();
 
         let result = factory
-            .create(data_contract.owner_id, raw_documents)
+            .create(data_contract.owner_id, raw_documents, Some(raw_defs))
             .expect("Data Contract should be created");
 
         assert_eq!(data_contract.protocol_version, result.protocol_version);

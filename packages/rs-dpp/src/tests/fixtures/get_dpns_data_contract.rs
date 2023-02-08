@@ -1,7 +1,6 @@
 use std::{collections::BTreeMap, sync::Arc};
 
-use lazy_static::lazy_static;
-use serde_json::{json, Value};
+use serde_json::json;
 
 use crate::prelude::*;
 use crate::{
@@ -11,13 +10,6 @@ use crate::{
     version::{ProtocolVersionValidator, COMPATIBILITY_MAP, LATEST_VERSION},
 };
 
-lazy_static! {
-    static ref DPNS_SCHEMA: Value = serde_json::from_str(include_str!(
-        "./../../../contracts/dpns/dpns-contract-documents.json"
-    ))
-    .expect("dpns contract should be valid json");
-}
-
 pub fn get_dpns_data_contract_fixture(owner_id: Option<Identifier>) -> DataContract {
     let protocol_version_validator =
         ProtocolVersionValidator::new(LATEST_VERSION, LATEST_VERSION, COMPATIBILITY_MAP.clone());
@@ -26,12 +18,12 @@ pub fn get_dpns_data_contract_fixture(owner_id: Option<Identifier>) -> DataContr
 
     let owner_id = owner_id.unwrap_or_else(generate_random_identifier_struct);
 
-    let mut dpns_schema = DPNS_SCHEMA.clone();
+    let mut dpns_schema = dpns_contract::DOCUMENT_SCHEMAS.clone();
     // TODO the pattern is invalid as it's a re2
     dpns_schema["domain"]["properties"]["normalizedParentDomainName"]["pattern"] = json!(".*");
 
     let mut data_contract = factory
-        .create(owner_id, dpns_schema)
+        .create(owner_id, dpns_schema, None)
         .expect("data in fixture should be correct");
 
     let defs: &mut BTreeMap<_, _> = data_contract.defs.get_or_insert(BTreeMap::new());
