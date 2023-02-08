@@ -9,12 +9,12 @@ on:
     paths:
       - .github/workflows/dashpay-contract.yml
       - .github/workflows/checks.yml
-      - packages/contracts/dashpay-contract/**
+      - packages/dashpay-contract/**
       - packages/js-dpp/**
       - packages/wasm-dpp/**
       - packages/rs-dpp/**
-      - packages/contracts/feature-flags-contract/**
-      - packages/contracts/dpns-contract/**
+      - packages/feature-flags-contract/**
+      - packages/dpns-contract/**
   schedule:
     - cron: '30 4 * * *'
 

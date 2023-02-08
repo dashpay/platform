@@ -31,14 +31,13 @@
 //!
 
 use crate::drive::balances::TOTAL_SYSTEM_CREDITS_STORAGE_KEY;
-use crate::drive::batch::{DriveOperationType, GroveDbOpBatch};
+use crate::drive::batch::GroveDbOpBatch;
 
 use crate::drive::{Drive, RootTree};
 use crate::error::Error;
 use crate::fee_pools::add_create_fee_pool_trees_operations;
 use grovedb::{Element, TransactionArg};
 use integer_encoding::VarInt;
-use dpp::identity::Identity;
 
 use super::identity::add_initial_withdrawal_state_structure_operations;
 
@@ -158,8 +157,6 @@ impl Drive {
 
         Ok(())
     }
-
-
 }
 
 #[cfg(test)]

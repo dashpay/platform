@@ -9,10 +9,10 @@ on:
     paths:
       - .github/workflows/rs-drive-abci.yml
       - .github/workflows/rs-checks.yml
-      - packages/contracts/feature-flags-contract/**
-      - packages/contracts/dpns-contract/**
-      - packages/contracts/dashpay-contract/**
-      - packages/contracts/masternode-reward-shares-contract/**
+      - packages/feature-flags-contract/**
+      - packages/dpns-contract/**
+      - packages/dashpay-contract/**
+      - packages/masternode-reward-shares-contract/**
       - packages/rs-dpp/**
       - packages/rs-drive/**
       - packages/rs-drive-abci/**

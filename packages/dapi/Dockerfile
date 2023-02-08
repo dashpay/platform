@@ -26,10 +26,10 @@ COPY packages/dapi packages/dapi
 COPY packages/dapi-grpc packages/dapi-grpc
 COPY packages/js-dpp packages/js-dpp
 COPY packages/js-grpc-common packages/js-grpc-common
-COPY packages/contracts/feature-flags-contract packages/contracts/feature-flags-contract
-COPY packages/contracts/masternode-reward-shares-contract packages/contracts/masternode-reward-shares-contract
-COPY packages/contracts/dpns-contract packages/contracts/dpns-contract
-COPY packages/contracts/dashpay-contract packages/contracts/dashpay-contract
+COPY packages/feature-flags-contract packages/feature-flags-contract
+COPY packages/masternode-reward-shares-contract packages/masternode-reward-shares-contract
+COPY packages/dpns-contract packages/dpns-contract
+COPY packages/dashpay-contract packages/dashpay-contract
 
 # Print build output
 RUN yarn config set enableInlineBuilds true

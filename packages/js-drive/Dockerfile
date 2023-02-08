@@ -68,13 +68,12 @@ COPY packages/rs-drive packages/rs-drive
 COPY packages/rs-drive-abci packages/rs-drive-abci
 COPY packages/rs-drive-nodejs packages/rs-drive-nodejs
 COPY packages/dapi-grpc packages/dapi-grpc
-COPY packages/contracts/feature-flags-contract packages/contracts/feature-flags-contract
+COPY packages/feature-flags-contract packages/feature-flags-contract
 COPY packages/js-dpp packages/js-dpp
 COPY packages/js-grpc-common packages/js-grpc-common
-COPY packages/contracts/masternode-reward-shares-contract packages/contracts/masternode-reward-shares-contract
-COPY packages/contracts/dpns-contract packages/contracts/dpns-contract
-COPY packages/contracts/dashpay-contract packages/contracts/dashpay-contract
-COPY packages/contracts/withdrawals-contract packages/contracts/withdrawals-contract
+COPY packages/masternode-reward-shares-contract packages/masternode-reward-shares-contract
+COPY packages/dpns-contract packages/dpns-contract
+COPY packages/dashpay-contract packages/dashpay-contract
 
 # Build RS Drive Node.JS binding
 RUN --mount=type=cache,target=target \

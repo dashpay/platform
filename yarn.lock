@@ -1512,9 +1512,9 @@ __metadata:
   languageName: node
   linkType: hard
 
-"@dashevo/dashpay-contract@workspace:*, @dashevo/dashpay-contract@workspace:packages/contracts/dashpay-contract":
+"@dashevo/dashpay-contract@workspace:*, @dashevo/dashpay-contract@workspace:packages/dashpay-contract":
   version: 0.0.0-use.local
-  resolution: "@dashevo/dashpay-contract@workspace:packages/contracts/dashpay-contract"
+  resolution: "@dashevo/dashpay-contract@workspace:packages/dashpay-contract"
   dependencies:
     "@dashevo/dpp": "workspace:*"
     chai: ^4.3.4
@@ -1550,9 +1550,9 @@ __metadata:
   languageName: node
   linkType: hard
 
-"@dashevo/dpns-contract@workspace:*, @dashevo/dpns-contract@workspace:packages/contracts/dpns-contract":
+"@dashevo/dpns-contract@workspace:*, @dashevo/dpns-contract@workspace:packages/dpns-contract":
   version: 0.0.0-use.local
-  resolution: "@dashevo/dpns-contract@workspace:packages/contracts/dpns-contract"
+  resolution: "@dashevo/dpns-contract@workspace:packages/dpns-contract"
   dependencies:
     "@dashevo/dpp": "workspace:*"
     chai: ^4.3.4
@@ -1687,9 +1687,9 @@ __metadata:
   languageName: unknown
   linkType: soft
 
-"@dashevo/feature-flags-contract@workspace:*, @dashevo/feature-flags-contract@workspace:packages/contracts/feature-flags-contract":
+"@dashevo/feature-flags-contract@workspace:*, @dashevo/feature-flags-contract@workspace:packages/feature-flags-contract":
   version: 0.0.0-use.local
-  resolution: "@dashevo/feature-flags-contract@workspace:packages/contracts/feature-flags-contract"
+  resolution: "@dashevo/feature-flags-contract@workspace:packages/feature-flags-contract"
   dependencies:
     "@dashevo/dpp": "workspace:*"
     chai: ^4.3.4
@@ -1728,9 +1728,9 @@ __metadata:
   languageName: unknown
   linkType: soft
 
-"@dashevo/masternode-reward-shares-contract@workspace:*, @dashevo/masternode-reward-shares-contract@workspace:packages/contracts/masternode-reward-shares-contract":
+"@dashevo/masternode-reward-shares-contract@workspace:*, @dashevo/masternode-reward-shares-contract@workspace:packages/masternode-reward-shares-contract":
   version: 0.0.0-use.local
-  resolution: "@dashevo/masternode-reward-shares-contract@workspace:packages/contracts/masternode-reward-shares-contract"
+  resolution: "@dashevo/masternode-reward-shares-contract@workspace:packages/masternode-reward-shares-contract"
   dependencies:
     "@dashevo/dpp": "workspace:*"
     chai: ^4.3.4

@@ -6,5 +6,4 @@ members = [
     "packages/rs-drive",
     "packages/rs-drive-abci",
     "packages/rs-drive-nodejs",
-    "packages/contracts",
 ]

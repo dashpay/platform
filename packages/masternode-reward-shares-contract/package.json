@@ -1,10 +1,9 @@
 {
-  "name": "@dashevo/feature-flags-contract",
+  "name": "@dashevo/masternode-reward-shares-contract",
   "version": "0.24.0-dev.13",
-  "description": "Data Contract to store Dash Platform feature flags",
+  "description": "A contract and helper scripts for reward sharing",
   "scripts": {
-    "build": "",
-    "lint": "eslint ",
+    "lint": "eslint .",
     "test": "yarn run test:unit",
     "test:unit": "mocha 'test/unit/**/*.spec.js'"
   },
