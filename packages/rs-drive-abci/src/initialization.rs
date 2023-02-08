@@ -1,7 +1,7 @@
-use drive::dpp::identity::Identity;
-use drive::drive::batch::{ContractOperationType, DriveOperationType, IdentityOperationType};
 use crate::error::Error;
 use crate::platform::Platform;
+use drive::dpp::identity::Identity;
+use drive::drive::batch::{ContractOperationType, DriveOperationType, IdentityOperationType};
 
 impl Platform {
     // fn register_initial_contract_operations(&self, path: &str, owner_id: Option<[u8;32]>, operations: &mut Vec<DriveOperationType>) {

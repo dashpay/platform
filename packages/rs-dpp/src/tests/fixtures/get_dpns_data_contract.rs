@@ -31,7 +31,7 @@ pub fn get_dpns_data_contract_fixture(owner_id: Option<Identifier>) -> DataContr
     dpns_schema["domain"]["properties"]["normalizedParentDomainName"]["pattern"] = json!(".*");
 
     let mut data_contract = factory
-        .create(owner_id, dpns_schema)
+        .create(owner_id, dpns_schema, None)
         .expect("data in fixture should be correct");
 
     let defs: &mut BTreeMap<_, _> = data_contract.defs.get_or_insert(BTreeMap::new());

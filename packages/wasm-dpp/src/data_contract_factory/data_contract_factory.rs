@@ -109,12 +109,19 @@ impl DataContractFactoryWasm {
         &self,
         owner_id: Vec<u8>,
         documents: JsValue,
+        definitions: JsValue,
     ) -> Result<DataContractWasm, JsValue> {
         let documents_json: serde_json::Value =
             with_js_error!(serde_wasm_bindgen::from_value(documents))?;
         let identifier = Identifier::from_bytes(&owner_id).map_err(from_dpp_err)?;
+        let definitions_json: Option<serde_json::Value> = if definitions.is_null() {
+            None
+        } else {
+            Some(with_js_error!(serde_wasm_bindgen::from_value(definitions))?)
+        };
+
         self.0
-            .create(identifier, documents_json)
+            .create(identifier, documents_json, definitions_json)
             .map(Into::into)
             .map_err(from_dpp_err)
     }
