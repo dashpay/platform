@@ -38,3 +38,6 @@ pub mod config;
 
 /// Platform state
 pub mod state;
+
+/// Initialization
+pub mod initialization;

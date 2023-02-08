@@ -18,10 +18,10 @@ on:
       - packages/wasm-dpp/**
       - packages/rs-dpp/**
       - packages/js-grpc-common/**
-      - packages/dashpay-contract/**
-      - packages/feature-flags-contract/**
-      - packages/masternode-reward-shares-contract/**
-      - packages/dpns-contract/**
+      - packages/contracts/dashpay-contract/**
+      - packages/contracts/feature-flags-contract/**
+      - packages/contracts/masternode-reward-shares-contract/**
+      - packages/contracts/dpns-contract/**
       - packages/dash-spv/**
   schedule:
     - cron: '30 4 * * *'

@@ -12,10 +12,10 @@ on:
       - .github/workflows/js-checks.yml
       - .github/workflows/rs-checks.yml
       - packages/js-dpp/**
-      - packages/feature-flags-contract/**
-      - packages/masternode-reward-shares-contract/**
-      - packages/dpns-contract/**
-      - packages/dashpay-contract/**
+      - packages/contracts/feature-flags-contract/**
+      - packages/contracts/masternode-reward-shares-contract/**
+      - packages/contracts/dpns-contract/**
+      - packages/contracts/dashpay-contract/**
       - packages/wasm-dpp/**
   schedule:
     - cron: '30 4 * * *'

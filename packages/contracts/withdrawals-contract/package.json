@@ -1,9 +1,10 @@
 {
-  "name": "@dashevo/dpns-contract",
+  "name": "@dashevo/withdrawals-contract",
   "version": "0.24.0-dev.13",
-  "description": "A contract and helper scripts for DPNS DApp",
+  "description": "Data Contract to manipulate and track withdrawals",
   "scripts": {
-    "lint": "eslint .",
+    "build": "",
+    "lint": "eslint ",
     "test": "yarn run test:unit",
     "test:unit": "mocha 'test/unit/**/*.spec.js'"
   },

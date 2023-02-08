@@ -3,7 +3,7 @@
   "version": "0.24.0-dev.13",
   "description": "Reference contract of the DashPay DPA on Dash Evolution",
   "scripts": {
-    "lint": "eslint .",
+    "lint": "eslint ",
     "test": "yarn run test:unit",
     "test:unit": "mocha 'test/unit/*.spec.js'"
   },

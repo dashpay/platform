@@ -22,16 +22,16 @@ COPY package.json yarn.lock .yarnrc.yml .pnp.* ./
 # Copy only necessary packages from monorepo
 COPY packages/dapi-grpc packages/dapi-grpc
 COPY packages/dash-spv packages/dash-spv
-COPY packages/dpns-contract packages/dpns-contract
-COPY packages/dashpay-contract packages/dashpay-contract
-COPY packages/feature-flags-contract packages/feature-flags-contract
+COPY packages/contracts/dpns-contract packages/contracts/dpns-contract
+COPY packages/contracts/dashpay-contract packages/contracts/dashpay-contract
+COPY packages/contracts/feature-flags-contract packages/contracts/feature-flags-contract
 COPY packages/js-dapi-client packages/js-dapi-client
 COPY packages/js-dash-sdk packages/js-dash-sdk
 COPY packages/js-dpp packages/js-dpp
 COPY packages/wallet-lib packages/wallet-lib
 COPY packages/js-grpc-common packages/js-grpc-common
 COPY packages/platform-test-suite packages/platform-test-suite
-COPY packages/masternode-reward-shares-contract packages/masternode-reward-shares-contract
+COPY packages/contracts/masternode-reward-shares-contract packages/contracts/masternode-reward-shares-contract
 
 # Install Test Suite specific dependencies using previous
 # node_modules directory to reuse built binaries

@@ -10,11 +10,11 @@ on:
       - .github/workflows/js-drive.yml
       - .github/workflows/js-checks.yml
       - packages/js-drive/**
-      - packages/feature-flags-contract/**
-      - packages/dpns-contract/**
-      - packages/dashpay-contract/**
+      - packages/contracts/feature-flags-contract/**
+      - packages/contracts/dpns-contract/**
+      - packages/contracts/dashpay-contract/**
       - packages/js-dpp/**
-      - packages/masternode-reward-shares-contract/**
+      - packages/contracts/masternode-reward-shares-contract/**
       - packages/dapi-grpc/**
       - packages/js-grpc-common/**
       - packages/withdrawals-contract/**
