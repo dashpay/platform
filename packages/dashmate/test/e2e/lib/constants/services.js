@@ -5,9 +5,9 @@ const services = {
   sentinel: 'Sentinel',
   drive_abci: 'Drive ABCI',
   dapi_tx_filter_stream: 'DAPI Transactions Filter Stream',
-  core: 'Core'
+  core: 'Core',
 };
 
 module.exports = {
-  SERVICES: services
+  SERVICES: services,
 };
