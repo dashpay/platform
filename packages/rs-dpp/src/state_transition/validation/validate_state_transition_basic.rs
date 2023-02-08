@@ -7,23 +7,31 @@ use serde_json::Value as JsonValue;
 
 use crate::{
     consensus::basic::BasicError,
+    data_contract::state_transition::data_contract_update_transition::validation::basic::DataContractUpdateTransitionBasicValidator,
     identity::{
         state_transition::{
+            identity_create_transition::validation::basic::IdentityCreateTransitionBasicValidator,
+            identity_topup_transition::validation::basic::IdentityTopUpTransitionBasicValidator,
             identity_update_transition::validate_identity_update_transition_basic::ValidateIdentityUpdateTransitionBasic,
-            validate_public_key_signatures::TPublicKeysSignaturesValidator,
+            validate_public_key_signatures::TPublicKeysSignaturesValidator, identity_credit_withdrawal_transition::validation::basic::validate_identity_credit_withdrawal_transition_basic::IdentityCreditWithdrawalTransitionBasicValidator,
         },
         validation::TPublicKeysValidator,
     },
     state_repository::StateRepositoryLike,
-    state_transition::{create_state_transition, StateTransitionConvert, StateTransitionType},
+    state_transition::{
+        create_state_transition,
+        state_transition_execution_context::StateTransitionExecutionContext,
+        StateTransitionConvert, StateTransitionType,
+    },
     util::json_value::JsonValueExt,
     validation::{SimpleValidationResult, ValidationResult},
-    ProtocolError,
+    BlsModule, ProtocolError,
 };
 
 pub async fn validate_state_transition_basic(
     state_repository: &impl StateRepositoryLike,
     validate_functions_by_type: &impl ValidatorByStateTransitionType,
+    execution_context: &StateTransitionExecutionContext,
     raw_state_transition: JsonValue,
 ) -> Result<SimpleValidationResult, ProtocolError> {
     let mut result = SimpleValidationResult::default();
@@ -48,7 +56,11 @@ pub async fn validate_state_transition_basic(
     };
 
     let validate_result = validate_functions_by_type
-        .validate(&raw_state_transition, state_transition_type)
+        .validate(
+            &raw_state_transition,
+            state_transition_type,
+            execution_context,
+        )
         .await?;
 
     result.merge(validate_result);
@@ -79,45 +91,96 @@ pub trait ValidatorByStateTransitionType: Sync + Send {
         &self,
         raw_state_transition: &JsonValue,
         state_transition_type: StateTransitionType,
+        execution_context: &StateTransitionExecutionContext,
     ) -> Result<SimpleValidationResult, ProtocolError>;
 }
 
-pub struct StateTransitionBasicValidator<KV, SV> {
+pub struct StateTransitionBasicValidator<KV, TXKV, SV, SR, BLS>
+where
+    SR: StateRepositoryLike,
+    BLS: BlsModule,
+{
     data_contract_create_validator: ValidateIdentityUpdateTransitionBasic<KV, SV>,
+    data_contract_update_validator: DataContractUpdateTransitionBasicValidator<SR>,
+    identity_create_validator: IdentityCreateTransitionBasicValidator<KV, TXKV, SR, SV, BLS>,
+    identity_update_validator: ValidateIdentityUpdateTransitionBasic<KV, SV>,
+    identity_top_up_validator: IdentityTopUpTransitionBasicValidator<SR>,
+    identity_credit_withdrawal_validator: IdentityCreditWithdrawalTransitionBasicValidator,
 }
 
-impl<KV, SV> StateTransitionBasicValidator<KV, SV> {
+impl<KV, TXKV, SV, SR, BLS> StateTransitionBasicValidator<KV, TXKV, SV, SR, BLS>
+where
+    SR: StateRepositoryLike,
+    BLS: BlsModule,
+{
     pub fn new(
         data_contract_create_validator: ValidateIdentityUpdateTransitionBasic<KV, SV>,
+        data_contract_update_validator: DataContractUpdateTransitionBasicValidator<SR>,
+        identity_create_validator: IdentityCreateTransitionBasicValidator<KV, TXKV, SR, SV, BLS>,
+        identity_update_validator: ValidateIdentityUpdateTransitionBasic<KV, SV>,
+        identity_top_up_validator: IdentityTopUpTransitionBasicValidator<SR>,
+        identity_credit_withdrawal_validator: IdentityCreditWithdrawalTransitionBasicValidator,
     ) -> Self {
         StateTransitionBasicValidator {
             data_contract_create_validator,
+            data_contract_update_validator,
+            identity_create_validator,
+            identity_update_validator,
+            identity_top_up_validator,
+            identity_credit_withdrawal_validator,
         }
     }
 }
 
 #[async_trait]
-impl<KV, SV> ValidatorByStateTransitionType for StateTransitionBasicValidator<KV, SV>
+impl<KV, TXKV, SV, SR, BLS> ValidatorByStateTransitionType
+    for StateTransitionBasicValidator<KV, TXKV, SV, SR, BLS>
 where
     KV: TPublicKeysValidator + Sync + Send,
+    TXKV: TPublicKeysValidator + Sync + Send,
     SV: TPublicKeysSignaturesValidator + Sync + Send,
+    SR: StateRepositoryLike,
+    BLS: BlsModule + Sync + Send,
 {
     async fn validate(
         &self,
         raw_state_transition: &JsonValue,
         state_transition_type: StateTransitionType,
+        execution_context: &StateTransitionExecutionContext,
     ) -> Result<SimpleValidationResult, ProtocolError> {
-        let result = ValidationResult::default();
+        let mut result = ValidationResult::default();
 
-        match state_transition_type {
-            StateTransitionType::DataContractCreate => (),
-            StateTransitionType::DocumentsBatch => (),
-            StateTransitionType::IdentityCreate => (),
-            StateTransitionType::IdentityTopUp => (),
-            StateTransitionType::DataContractUpdate => (),
-            StateTransitionType::IdentityUpdate => (),
-            StateTransitionType::IdentityCreditWithdrawal => (),
-        }
+        let validation_result = match state_transition_type {
+            StateTransitionType::DataContractCreate => self
+                .data_contract_create_validator
+                .validate(raw_state_transition)?,
+            StateTransitionType::DataContractUpdate => {
+                self.data_contract_update_validator
+                    .validate(raw_state_transition, execution_context)
+                    .await?
+            }
+            StateTransitionType::IdentityCreate => {
+                self.identity_create_validator
+                    .validate(raw_state_transition, execution_context)
+                    .await?
+            }
+            StateTransitionType::IdentityUpdate => self
+                .identity_update_validator
+                .validate(raw_state_transition)?,
+            StateTransitionType::IdentityTopUp => {
+                self.identity_top_up_validator
+                    .validate(raw_state_transition, execution_context)
+                    .await?
+            }
+            StateTransitionType::IdentityCreditWithdrawal => {
+                self.identity_credit_withdrawal_validator
+                    .validate(raw_state_transition)
+                    .await?
+            }
+            StateTransitionType::DocumentsBatch => todo!(),
+        };
+
+        result.merge(validation_result);
 
         Ok(result)
     }
@@ -136,7 +199,10 @@ mod test {
             DataContractFactory,
         },
         state_repository::MockStateRepositoryLike,
-        state_transition::{StateTransitionConvert, StateTransitionLike},
+        state_transition::{
+            state_transition_execution_context::StateTransitionExecutionContext,
+            StateTransitionConvert, StateTransitionLike,
+        },
         tests::{fixtures::get_data_contract_fixture, utils::get_basic_error_from_result},
         util::json_value::JsonValueExt,
         validation::ValidationResult,
@@ -205,9 +271,12 @@ mod test {
             .remove("type")
             .expect("type should exist and be remove");
 
+        let execution_context = StateTransitionExecutionContext::default();
+
         let result = validate_state_transition_basic(
             &state_repository_mock,
             &validate_by_type_mock,
+            &execution_context,
             raw_state_transition,
         )
         .await
@@ -232,9 +301,12 @@ mod test {
 
         raw_state_transition["type"] = json!(123);
 
+        let execution_context = StateTransitionExecutionContext::default();
+
         let result = validate_state_transition_basic(
             &state_repository_mock,
             &validate_by_type_mock,
+            &execution_context,
             raw_state_transition,
         )
         .await
@@ -260,9 +332,12 @@ mod test {
 
         raw_state_transition["type"] = json!(123);
 
+        let execution_context = StateTransitionExecutionContext::default();
+
         let result = validate_state_transition_basic(
             &state_repository_mock,
             &validate_by_type_mock,
+            &execution_context,
             raw_state_transition,
         )
         .await
@@ -286,7 +361,7 @@ mod test {
         let mut validate_by_type_mock = MockValidatorByStateTransitionType::new();
         validate_by_type_mock
             .expect_validate()
-            .returning(|_, _| Ok(ValidationResult::<()>::default()));
+            .returning(|_, _, _| Ok(ValidationResult::<()>::default()));
 
         for i in 0..500 {
             let document_type_name = format!("anotherDocument{}", i);
@@ -294,9 +369,12 @@ mod test {
                 raw_state_transition["dataContract"]["documents"]["niceDocument"].clone();
         }
 
+        let execution_context = StateTransitionExecutionContext::default();
+
         let result = validate_state_transition_basic(
             &state_repository_mock,
             &validate_by_type_mock,
+            &execution_context,
             raw_state_transition,
         )
         .await
@@ -324,11 +402,14 @@ mod test {
         let mut validate_by_type_mock = MockValidatorByStateTransitionType::new();
         validate_by_type_mock
             .expect_validate()
-            .returning(|_, _| Ok(ValidationResult::<()>::default()));
+            .returning(|_, _, _| Ok(ValidationResult::<()>::default()));
+
+        let execution_context = StateTransitionExecutionContext::default();
 
         let result = validate_state_transition_basic(
             &state_repository_mock,
             &validate_by_type_mock,
+            &execution_context,
             raw_state_transition,
         )
         .await

@@ -30,16 +30,9 @@ use super::{
     StateTransitionType,
 };
 
+#[derive(Default)]
 pub struct StateTransitionFactoryOptions {
     pub skip_validation: bool,
-}
-
-impl Default for StateTransitionFactoryOptions {
-    fn default() -> Self {
-        StateTransitionFactoryOptions {
-            skip_validation: false,
-        }
-    }
 }
 
 pub struct StateTransitionFactory<SR> {
