@@ -74,25 +74,6 @@ impl Platform {
 
         let mut operations = vec![];
 
-        self.register_system_identities_and_data_contract_operations(
-            system_identity_public_keys,
-            &mut operations,
-        )?;
-
-        let block_info = BlockInfo::default_with_time(genesis_time);
-
-        self.drive
-            .apply_drive_operations(operations, true, &block_info, transaction)?;
-
-        Ok(())
-    }
-
-    /// Registers system data contracts and corresponding data, like identities and documents
-    fn register_system_identities_and_data_contract_operations(
-        &self,
-        system_identity_public_keys: SystemIdentityPublicKeys,
-        operations: &mut Vec<DriveOperationType>,
-    ) -> Result<(), Error> {
         let system_data_contract_types = BTreeMap::from_iter([
             (
                 SystemDataContract::DPNS,
@@ -152,16 +133,21 @@ impl Platform {
                 metadata: None,
             };
 
-            self.register_system_data_contract_operations(data_contract, operations);
+            self.register_system_data_contract_operations(data_contract, &mut operations);
 
-            self.register_system_identity_operations(identity, operations);
+            self.register_system_identity_operations(identity, &mut operations);
         }
 
         // TODO: We shouldn't load it twice
         let data_contract =
             load_system_data_contract(SystemDataContract::DPNS).map_err(|e| Error::Protocol(e))?;
 
-        self.register_dpns_top_level_domain_operations(data_contract, operations)?;
+        self.register_dpns_top_level_domain_operations(&data_contract, &mut operations)?;
+
+        let block_info = BlockInfo::default_with_time(genesis_time);
+
+        self.drive
+            .apply_drive_operations(operations, true, &block_info, transaction)?;
 
         Ok(())
     }
@@ -189,10 +175,10 @@ impl Platform {
         ))
     }
 
-    fn register_dpns_top_level_domain_operations(
+    fn register_dpns_top_level_domain_operations<'a, 'b>(
         &self,
-        data_contract: DataContract,
-        operations: &mut Vec<DriveOperationType>,
+        contract: &'a DataContract,
+        operations: &'b mut Vec<DriveOperationType<'a>>,
     ) -> Result<(), Error> {
         let domain = "dash";
 
@@ -204,7 +190,7 @@ impl Platform {
             "normalizedParentDomainName" => "",
             "preorderSalt" => DPNS_DASH_TLD_PREORDER_SALT.to_vec(),
             "records" => {
-                "dashAliasIdentityId" => data_contract.owner_id.to_buffer_vec(),
+                "dashAliasIdentityId" => contract.owner_id.to_buffer_vec(),
             },
         })
         .map_err(|_| {
@@ -235,12 +221,10 @@ impl Platform {
         let document = DocumentStub {
             id: DPNS_DASH_TLD_DOCUMENT_ID,
             properties,
-            owner_id: data_contract.owner_id.to_buffer(),
+            owner_id: contract.owner_id.to_buffer(),
         };
 
-        let contract = Cow::Owned(data_contract);
-
-        let document_type = data_contract.document_type_for_name("domain")?;
+        let document_type = contract.document_type_for_name("domain")?;
 
         let operation =
             DriveOperationType::DocumentOperation(DocumentOperationType::AddDocumentForContract {

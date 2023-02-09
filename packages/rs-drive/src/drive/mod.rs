@@ -350,7 +350,7 @@ impl Drive {
                     document_info: DocumentEstimatedAverageSize(document_type.max_size() as u32),
                     owner_id: None,
                 },
-                contract: Cow::Borrowed(contract),
+                contract,
                 document_type,
             },
             false,

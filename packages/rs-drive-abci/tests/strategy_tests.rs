@@ -50,7 +50,7 @@ use drive::fee::credits::Credits;
 use drive::fee_pools::epochs::Epoch;
 use drive::query::DriveQuery;
 use drive_abci::abci::handlers::TenderdashAbci;
-use drive_abci::abci::messages::InitChainRequest;
+use drive_abci::abci::messages::{InitChainRequest, SystemIdentityPublicKeys};
 use drive_abci::common::helpers::setup::setup_platform_raw;
 use drive_abci::config::PlatformConfig;
 use drive_abci::execution::engine::ExecutionEvent;
@@ -141,7 +141,7 @@ impl Strategy {
             .iter()
             .map(|contract| {
                 DriveOperationType::ContractOperation(ContractOperationType::ApplyContract {
-                    contract,
+                    contract: Cow::Borrowed(contract),
                     storage_flags: None,
                 })
             })
@@ -331,7 +331,10 @@ fn run_chain_for_strategy(
     let quorum_size = 100;
     let mut i = 0;
     // init chain
-    let init_chain_request = InitChainRequest {};
+    let init_chain_request = InitChainRequest {
+        genesis_time_ms: 0,
+        system_identity_public_keys: SystemIdentityPublicKeys::default(),
+    };
 
     platform
         .init_chain(init_chain_request, None)
