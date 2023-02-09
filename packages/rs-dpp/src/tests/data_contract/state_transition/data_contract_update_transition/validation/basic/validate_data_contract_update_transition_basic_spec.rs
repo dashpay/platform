@@ -18,6 +18,7 @@ use crate::{
         utils::{get_basic_error_from_result, get_schema_error},
     },
     util::json_value::JsonValueExt,
+    validation::AsyncDataValidatorWithContext,
     version::{ProtocolVersionValidator, LATEST_VERSION},
 };
 

@@ -20,6 +20,7 @@ use crate::{
     prelude::Identifier,
     state_repository::StateRepositoryLike,
     util::json_value::JsonValueExt,
+    validation::AsyncDataValidatorWithContext,
     ProtocolError,
 };
 use serde_json::Number;
@@ -35,16 +36,24 @@ pub struct StateTransitionFactoryOptions {
     pub skip_validation: bool,
 }
 
-pub struct StateTransitionFactory<SR> {
+pub struct StateTransitionFactory<SR, ADV>
+where
+    ADV: AsyncDataValidatorWithContext<Item = JsonValue>,
+{
     state_repository: Arc<SR>,
+    basic_validator: ADV,
 }
 
-impl<SR> StateTransitionFactory<SR>
+impl<SR, ADV> StateTransitionFactory<SR, ADV>
 where
     SR: StateRepositoryLike,
+    ADV: AsyncDataValidatorWithContext<Item = JsonValue>,
 {
-    pub fn new(state_repository: Arc<SR>) -> Self {
-        StateTransitionFactory { state_repository }
+    pub fn new(state_repository: Arc<SR>, basic_validator: ADV) -> Self {
+        StateTransitionFactory {
+            state_repository,
+            basic_validator,
+        }
     }
 
     pub async fn create_from_object(
@@ -55,12 +64,14 @@ where
         let options = options.unwrap_or_default();
 
         if !options.skip_validation {
-            // let validation_result = validate_state_transition_basic(
-            //     self.state_repository.as_ref(),
-            //     ,
-            //     raw_state_transition,
-            // )
-            // .await?;
+            let execution_context = StateTransitionExecutionContext::default();
+
+            let validation_result = self
+                .basic_validator
+                .validate(&raw_state_transition, &execution_context)
+                .await?;
+
+            // TODO: return InvalidStateTransitionError
         }
 
         create_state_transition(self.state_repository.as_ref(), raw_state_transition).await
