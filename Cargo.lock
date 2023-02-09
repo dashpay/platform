@@ -844,6 +844,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "data-contracts"
+version = "0.24.0-dev.1"
+dependencies = [
+ "dashpay-contract",
+ "dpns-contract",
+ "feature-flags-contract",
+ "masternode-reward-shares-contract",
+ "serde_json",
+ "withdrawals-contract",
+]
+
+[[package]]
 name = "diff"
 version = "0.1.13"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -885,7 +897,6 @@ checksum = "1435fa1053d8b2fbbe9be7e97eca7f33d37b28409959813daefc1446a14247f1"
 name = "dpns-contract"
 version = "0.24.0-dev.1"
 dependencies = [
- "lazy_static",
  "serde_json",
 ]
 
@@ -903,7 +914,7 @@ dependencies = [
  "chrono",
  "ciborium",
  "dashcore 0.29.1 (git+https://github.com/dashevo/rust-dashcore?branch=master)",
- "dpns-contract",
+ "data-contracts",
  "env_logger",
  "futures",
  "getrandom",
@@ -915,7 +926,6 @@ dependencies = [
  "jsonschema",
  "lazy_static",
  "log",
- "masternode-reward-shares-contract",
  "mockall",
  "num_enum",
  "pretty_assertions",
@@ -930,7 +940,6 @@ dependencies = [
  "test-case",
  "thiserror",
  "tokio",
- "withdrawals-contract",
 ]
 
 [[package]]
@@ -1114,7 +1123,6 @@ dependencies = [
 name = "feature-flags-contract"
 version = "0.24.0-dev.1"
 dependencies = [
- "lazy_static",
  "serde_json",
 ]
 
@@ -1718,7 +1726,6 @@ dependencies = [
 name = "masternode-reward-shares-contract"
 version = "0.24.0-dev.1"
 dependencies = [
- "lazy_static",
  "serde_json",
 ]
 
@@ -3445,7 +3452,6 @@ checksum = "447660ad36a13288b1db4d4248e857b510e8c3a225c822ba4fb748c0aafecffd"
 name = "withdrawals-contract"
 version = "0.24.0-dev.1"
 dependencies = [
- "lazy_static",
  "serde_json",
 ]
 

@@ -75,7 +75,7 @@ impl IdentityWasm {
             .collect::<Result<_, _>>()
             .map_err(|e| format!("converting to collection of IdentityPublicKeys failed: {e:#}"))?;
 
-        self.0.set_public_keys(public_keys);
+        self.0.public_keys = public_keys;
 
         Ok(self.0.get_public_keys().len())
     }

@@ -97,7 +97,7 @@ fn create_test_mn_share_document(
                     )),
                     owner_id: None,
                 },
-                contract,
+                contract: Cow::Borrowed(contract),
                 document_type,
             },
             false,

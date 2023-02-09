@@ -27,6 +27,7 @@
 // DEALINGS IN THE SOFTWARE.
 //
 
+use std::borrow::Cow;
 use std::cell::RefCell;
 use std::collections::HashMap;
 use std::path::Path;
@@ -349,7 +350,7 @@ impl Drive {
                     document_info: DocumentEstimatedAverageSize(document_type.max_size() as u32),
                     owner_id: None,
                 },
-                contract,
+                contract: Cow::Borrowed(contract),
                 document_type,
             },
             false,

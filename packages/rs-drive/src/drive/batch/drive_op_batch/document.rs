@@ -13,7 +13,7 @@ use dpp::data_contract::{DataContract as Contract, DriveContractExt};
 use dpp::document::document_stub::DocumentStub;
 use grovedb::batch::KeyInfoPath;
 use grovedb::{EstimatedLayerInformation, TransactionArg};
-use std::borrow::Cow;
+use std::borrow::{Borrow, Cow};
 use std::collections::HashMap;
 
 /// A wrapper for a document operation
@@ -64,7 +64,7 @@ pub enum DocumentOperationType<'a> {
         /// The serialized document
         serialized_document: &'a [u8],
         /// The contract
-        contract: &'a Contract,
+        contract: Cow<'a, Contract>,
         /// The name of the document type
         document_type_name: &'a str,
         /// The owner id, if none is specified will try to recover from serialized document
@@ -91,7 +91,7 @@ pub enum DocumentOperationType<'a> {
         /// The document id
         document_id: [u8; 32],
         /// The contract
-        contract: &'a Contract,
+        contract: Cow<'a, Contract>,
         /// The name of the document type
         document_type_name: &'a str,
         /// The owner id, if none is specified will try to recover from serialized document
@@ -102,7 +102,7 @@ pub enum DocumentOperationType<'a> {
         /// The document id
         document_id: [u8; 32],
         /// The contract
-        contract: &'a Contract,
+        contract: Cow<'a, Contract>,
         /// The name of the document type
         document_type: &'a DocumentType,
         /// The owner id, if none is specified will try to recover from serialized document
@@ -138,7 +138,7 @@ pub enum DocumentOperationType<'a> {
         /// The serialized document
         serialized_document: &'a [u8],
         /// The contract
-        contract: &'a Contract,
+        contract: Cow<'a, Contract>,
         /// The name of the document type
         document_type_name: &'a str,
         /// The owner id, if none is specified will try to recover from serialized document
@@ -153,7 +153,7 @@ pub enum DocumentOperationType<'a> {
         /// The document in pre-serialized form
         serialized_document: &'a [u8],
         /// The contract
-        contract: &'a Contract,
+        contract: Cow<'a, Contract>,
         /// The name of the document type
         document_type_name: &'a str,
         /// The owner id, if none is specified will try to recover from serialized document
@@ -197,7 +197,7 @@ impl DriveOperationConverter for DocumentOperationType<'_> {
                         document_info,
                         owner_id,
                     },
-                    contract: &contract,
+                    contract: Cow::Borrowed(&contract),
                     document_type,
                 };
                 drive.add_document_for_contract_operations(
@@ -229,7 +229,7 @@ impl DriveOperationConverter for DocumentOperationType<'_> {
                         document_info,
                         owner_id,
                     },
-                    contract,
+                    contract: Cow::Borrowed(&contract),
                     document_type,
                 };
                 drive.add_document_for_contract_operations(
@@ -259,7 +259,7 @@ impl DriveOperationConverter for DocumentOperationType<'_> {
                 owner_id,
             } => drive.delete_document_for_contract_operations(
                 document_id,
-                contract,
+                contract.borrow(),
                 document_type,
                 owner_id,
                 None,
@@ -273,7 +273,7 @@ impl DriveOperationConverter for DocumentOperationType<'_> {
                 owner_id,
             } => drive.delete_document_for_contract_with_named_type_operations(
                 document_id,
-                contract,
+                contract.borrow(),
                 document_type_name,
                 owner_id,
                 None,
@@ -318,7 +318,7 @@ impl DriveOperationConverter for DocumentOperationType<'_> {
                         document_info,
                         owner_id,
                     },
-                    contract: &contract,
+                    contract: Cow::Borrowed(&contract),
                     document_type,
                 };
                 drive.update_document_for_contract_operations(
@@ -348,7 +348,7 @@ impl DriveOperationConverter for DocumentOperationType<'_> {
                         document_info,
                         owner_id,
                     },
-                    contract,
+                    contract: Cow::Borrowed(&contract),
                     document_type,
                 };
                 drive.update_document_for_contract_operations(
@@ -377,7 +377,7 @@ impl DriveOperationConverter for DocumentOperationType<'_> {
                         document_info,
                         owner_id,
                     },
-                    contract,
+                    contract: Cow::Borrowed(&contract),
                     document_type,
                 };
                 drive.update_document_for_contract_operations(
@@ -406,7 +406,7 @@ impl DriveOperationConverter for DocumentOperationType<'_> {
                         } => {
                             let document_and_contract_info = DocumentAndContractInfo {
                                 owned_document_info,
-                                contract,
+                                contract: Cow::Borrowed(contract),
                                 document_type,
                             };
                             let mut operations = drive.add_document_for_contract_operations(
@@ -442,7 +442,7 @@ impl DriveOperationConverter for DocumentOperationType<'_> {
                                     document_info,
                                     owner_id,
                                 },
-                                contract,
+                                contract: Cow::Borrowed(contract),
                                 document_type,
                             };
                             let mut operations = drive.update_document_for_contract_operations(

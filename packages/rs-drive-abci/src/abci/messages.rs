@@ -38,6 +38,7 @@ use crate::error::Error;
 use crate::execution::fee_pools::epoch::EpochInfo;
 use crate::execution::fee_pools::fee_distribution::FeesInPools;
 use crate::execution::fee_pools::process_block_fees::ProcessedBlockFeesOutcome;
+use drive::dpp::prelude::TimestampMillis;
 use drive::fee::epoch::CreditsPerEpoch;
 use drive::fee::result::FeeResult;
 use serde::{de::DeserializeOwned, Deserialize, Serialize};
@@ -45,7 +46,25 @@ use serde::{de::DeserializeOwned, Deserialize, Serialize};
 /// A struct for handling chain initialization requests
 #[derive(Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
-pub struct InitChainRequest {}
+pub struct InitChainRequest {
+    genesis_time_ms: TimestampMillis,
+    system_identity_public_keys: SystemIdentityPublicKeys,
+}
+
+#[derive(Serialize, Deserialize)]
+pub struct SystemIdentityPublicKeys {
+    pub masternode_reward_shares_contract_owner: RequiredIdentityPublicKeysSet,
+    pub feature_flags_contract_owner: RequiredIdentityPublicKeysSet,
+    pub dpns_contract_owner: RequiredIdentityPublicKeysSet,
+    pub withdrawals_contract_owner: RequiredIdentityPublicKeysSet,
+    pub dashpay_contract_owner: RequiredIdentityPublicKeysSet,
+}
+
+#[derive(Serialize, Deserialize)]
+pub struct RequiredIdentityPublicKeysSet {
+    pub master: Vec<u8>,
+    pub high: Vec<u8>,
+}
 
 /// A struct for handling chain initialization responses
 #[derive(Serialize, Deserialize)]

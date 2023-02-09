@@ -79,6 +79,56 @@ impl PlatformWrapper {
         )
         .or_else(|_| cx.throw_range_error("`dataContractsBlockCacheSize` must fit in u64"))?;
 
+        let js_masternode_reward_shares_owner_master_public_key: Handle<JsBuffer> =
+            drive_config.get(cx, "masternodeRewardSharesOwnerMasterPublicKey")?;
+        let masternode_reward_shares_owner_master_public_key =
+            converter::js_buffer_to_vec_u8(cx, js_masternode_reward_shares_owner_master_public_key);
+
+        let js_masternode_reward_shares_owner_second_public_key: Handle<JsBuffer> =
+            drive_config.get(cx, "masternodeRewardSharesOwnerSecondPublicKey")?;
+        let masternode_reward_shares_owner_second_public_key =
+            converter::js_buffer_to_vec_u8(cx, js_masternode_reward_shares_owner_second_public_key);
+
+        let js_feature_flags_owner_master_public_key: Handle<JsBuffer> =
+            drive_config.get(cx, "featureFlagsOwnerMasterPublicKey")?;
+        let feature_flags_owner_master_public_key =
+            converter::js_buffer_to_vec_u8(cx, js_feature_flags_owner_master_public_key);
+
+        let js_feature_flags_owner_second_public_key: Handle<JsBuffer> =
+            drive_config.get(cx, "featureFlagsOwnerSecondPublicKey")?;
+        let feature_flags_owner_second_public_key =
+            converter::js_buffer_to_vec_u8(cx, js_feature_flags_owner_second_public_key);
+
+        let js_dpns_owner_master_public_key: Handle<JsBuffer> =
+            drive_config.get(cx, "dpnsOwnerMasterPublicKey")?;
+        let dpns_owner_master_public_key =
+            converter::js_buffer_to_vec_u8(cx, js_dpns_owner_master_public_key);
+
+        let js_dpns_owner_second_public_key: Handle<JsBuffer> =
+            drive_config.get(cx, "dpnsOwnerSecondPublicKey")?;
+        let dpns_owner_second_public_key =
+            converter::js_buffer_to_vec_u8(cx, js_dpns_owner_second_public_key);
+
+        let js_dashpay_owner_master_public_key: Handle<JsBuffer> =
+            drive_config.get(cx, "dashpayOwnerMasterPublicKey")?;
+        let dashpay_owner_master_public_key =
+            converter::js_buffer_to_vec_u8(cx, js_dashpay_owner_master_public_key);
+
+        let js_dashpay_owner_second_public_key: Handle<JsBuffer> =
+            drive_config.get(cx, "dashpayOwnerSecondPublicKey")?;
+        let dashpay_owner_second_public_key =
+            converter::js_buffer_to_vec_u8(cx, js_dashpay_owner_second_public_key);
+
+        let js_withdrawals_owner_master_public_key: Handle<JsBuffer> =
+            drive_config.get(cx, "withdrawalsOwnerMasterPublicKey")?;
+        let withdrawals_owner_master_public_key =
+            converter::js_buffer_to_vec_u8(cx, js_withdrawals_owner_master_public_key);
+
+        let js_withdrawals_owner_second_public_key: Handle<JsBuffer> =
+            drive_config.get(cx, "withdrawalsSecondPublicKey")?;
+        let withdrawals_owner_second_public_key =
+            converter::js_buffer_to_vec_u8(cx, js_withdrawals_owner_second_public_key);
+
         // Channel for sending callbacks to execute on the Drive connection thread
         let (tx, rx) = mpsc::channel::<PlatformWrapperMessage>();
 
@@ -106,6 +156,16 @@ impl PlatformWrapper {
             let platform_config = PlatformConfig {
                 drive_config,
                 verify_sum_trees: true,
+                masternode_reward_shares_owner_master_public_key,
+                masternode_reward_shares_owner_second_public_key,
+                feature_flags_owner_master_public_key,
+                feature_flags_owner_second_public_key,
+                dpns_owner_master_public_key,
+                dpns_owner_second_public_key,
+                dashpay_owner_master_public_key,
+                dashpay_owner_second_public_key,
+                withdrawals_owner_master_public_key,
+                withdrawals_owner_second_public_key,
             };
 
             // TODO: think how to pass this error to JS

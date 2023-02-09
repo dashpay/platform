@@ -520,7 +520,7 @@ pub struct DocumentAndContractInfo<'a> {
     /// Document info
     pub owned_document_info: OwnedDocumentInfo<'a>,
     /// Contract
-    pub contract: &'a Contract,
+    pub contract: Cow<'a, Contract>,
     /// Document type
     pub document_type: &'a DocumentType,
 }

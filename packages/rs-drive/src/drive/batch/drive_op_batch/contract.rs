@@ -7,7 +7,7 @@ use crate::fee::op::DriveOperation;
 use dpp::data_contract::{DataContract as Contract, DriveContractExt};
 use grovedb::batch::KeyInfoPath;
 use grovedb::{EstimatedLayerInformation, TransactionArg};
-use std::borrow::Cow;
+use std::borrow::{Borrow, Cow};
 use std::collections::HashMap;
 
 /// Operations on Contracts
@@ -35,7 +35,7 @@ pub enum ContractOperationType<'a> {
     /// Applies a contract without serialization.
     ApplyContract {
         /// The contract
-        contract: &'a Contract,
+        contract: Cow<'a, Contract>,
         /// Storage flags for the contract
         storage_flags: Option<Cow<'a, StorageFlags>>,
     },
@@ -86,7 +86,7 @@ impl DriveOperationConverter for ContractOperationType<'_> {
                 contract,
                 storage_flags,
             } => drive.apply_contract_operations(
-                contract,
+                contract.borrow(),
                 block_info,
                 estimated_costs_only_with_layer_info,
                 storage_flags,

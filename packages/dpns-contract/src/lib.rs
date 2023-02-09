@@ -1,7 +1,13 @@
-use lazy_static::lazy_static;
-use serde_json::Value;
+use serde_json::{Error, Value};
 
-lazy_static! {
-    pub static ref DOCUMENT_SCHEMAS: Value =
-        serde_json::from_str(include_str!("../schema/dpns-contract-documents.json")).unwrap();
+pub const ID_BYTES: [u8; 32] = [
+    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+];
+
+pub const OWNER_ID_BYTES: [u8; 32] = [
+    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+];
+
+pub fn load_documents_schemas() -> Result<Value, Error> {
+    serde_json::from_str(include_str!("../schema/dpns-contract-documents.json"))
 }

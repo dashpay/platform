@@ -40,6 +40,8 @@ pub mod mocks;
 mod bls;
 #[cfg(test)]
 mod tests;
+pub mod system_data_contracts;
+
 pub use bls::*;
 
 pub mod prelude {

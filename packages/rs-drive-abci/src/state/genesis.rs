@@ -1,0 +1,262 @@
+// MIT LICENSE
+//
+// Copyright (c) 2021 Dash Core Group
+//
+// Permission is hereby granted, free of charge, to any
+// person obtaining a copy of this software and associated
+// documentation files (the "Software"), to deal in the
+// Software without restriction, including without
+// limitation the rights to use, copy, modify, merge,
+// publish, distribute, sublicense, and/or sell copies of
+// the Software, and to permit persons to whom the Software
+// is furnished to do so, subject to the following
+// conditions:
+//
+// The above copyright notice and this permission notice
+// shall be included in all copies or substantial portions
+// of the Software.
+//
+// THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF
+// ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED
+// TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A
+// PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT
+// SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY
+// CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION
+// OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR
+// IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
+// DEALINGS IN THE SOFTWARE.
+
+use crate::abci::messages::SystemIdentityPublicKeys;
+use crate::error::execution::ExecutionError;
+use crate::error::Error;
+use crate::platform::Platform;
+use ciborium::cbor;
+use drive::contract::DataContract;
+use drive::dpp::data_contract::DriveContractExt;
+use drive::dpp::document::document_stub::DocumentStub;
+use drive::dpp::identity::{
+    Identity, IdentityPublicKey, KeyType, Purpose, SecurityLevel, TimestampMillis,
+};
+use drive::dpp::system_data_contracts::{load_system_data_contract, SystemDataContract};
+use drive::drive::batch::{
+    ContractOperationType, DocumentOperationType, DriveOperationType, IdentityOperationType,
+};
+use drive::drive::block_info::BlockInfo;
+use drive::drive::defaults::PROTOCOL_VERSION;
+use drive::drive::object_size_info::{DocumentAndContractInfo, DocumentInfo, OwnedDocumentInfo};
+use drive::query::TransactionArg;
+use std::borrow::{Borrow, Cow};
+use std::collections::{BTreeMap, BTreeSet};
+use std::ops::Deref;
+
+// TODO: read about lazy_static
+
+const DPNS_DASH_TLD_DOCUMENT_ID: [u8; 32] = [
+    215, 242, 197, 63, 70, 169, 23, 171, 110, 91, 57, 162, 215, 188, 38, 11, 100, 146, 137, 69, 55,
+    68, 209, 224, 212, 242, 106, 141, 142, 255, 55, 207,
+];
+const DPNS_DASH_TLD_PREORDER_SALT: [u8; 32] = [
+    224, 181, 8, 197, 163, 104, 37, 162, 6, 105, 58, 31, 65, 74, 161, 62, 219, 236, 244, 60, 65,
+    227, 199, 153, 234, 158, 115, 123, 79, 154, 162, 38,
+];
+
+impl Platform {
+    /// Create genesys state
+    pub fn create_genesis_state(
+        &self,
+        genesis_time: TimestampMillis,
+        system_identity_public_keys: SystemIdentityPublicKeys,
+        transaction: TransactionArg,
+    ) -> Result<(), Error> {
+        self.drive
+            .create_initial_state_structure(transaction)
+            .map_err(Error::Drive)?;
+
+        let mut operations = vec![];
+
+        self.register_system_identities_and_data_contract_operations(
+            system_identity_public_keys,
+            &mut operations,
+        )?;
+
+        let block_info = BlockInfo::default_with_time(genesis_time);
+
+        self.drive
+            .apply_drive_operations(operations, true, &block_info, transaction)?;
+
+        Ok(())
+    }
+
+    /// Registers system data contracts and corresponding data, like identities and documents
+    fn register_system_identities_and_data_contract_operations(
+        &self,
+        system_identity_public_keys: SystemIdentityPublicKeys,
+        operations: &mut Vec<DriveOperationType>,
+    ) -> Result<(), Error> {
+        let system_data_contract_types = BTreeMap::from_iter([
+            (
+                SystemDataContract::DPNS,
+                system_identity_public_keys.dpns_contract_owner,
+            ),
+            (
+                SystemDataContract::Withdrawals,
+                system_identity_public_keys.withdrawals_contract_owner,
+            ),
+            (
+                SystemDataContract::FeatureFlags,
+                system_identity_public_keys.feature_flags_contract_owner,
+            ),
+            (
+                SystemDataContract::Dashpay,
+                system_identity_public_keys.dashpay_contract_owner,
+            ),
+            (
+                SystemDataContract::MasternodeRewards,
+                system_identity_public_keys.masternode_reward_shares_contract_owner,
+            ),
+        ]);
+
+        for (data_contract_type, identity_public_keys_set) in system_data_contract_types {
+            let data_contract = load_system_data_contract(data_contract_type)?;
+
+            let public_keys = BTreeSet::from_iter([
+                IdentityPublicKey {
+                    id: 0,
+                    purpose: Purpose::AUTHENTICATION,
+                    security_level: SecurityLevel::MASTER,
+                    key_type: KeyType::ECDSA_SECP256K1,
+                    read_only: false,
+                    data: identity_public_keys_set.master,
+                    disabled_at: None,
+                },
+                IdentityPublicKey {
+                    id: 1,
+                    purpose: Purpose::AUTHENTICATION,
+                    security_level: SecurityLevel::HIGH,
+                    key_type: KeyType::ECDSA_SECP256K1,
+                    read_only: false,
+                    data: identity_public_keys_set.high,
+                    disabled_at: None,
+                },
+            ]);
+
+            let identity = Identity {
+                protocol_version: PROTOCOL_VERSION,
+                id: data_contract.owner_id,
+                // TODO: It super inconvenient to have this boilerplate everywhere and there is no
+                //  way to control consistency. BTreeMap must be internal structure of IdentityPublicKey
+                public_keys: public_keys.into_iter().map(|pk| (pk.id, pk)).collect(),
+                balance: 0,
+                revision: 0,
+                asset_lock_proof: None,
+                metadata: None,
+            };
+
+            self.register_system_data_contract_operations(data_contract, operations);
+
+            self.register_system_identity_operations(identity, operations);
+        }
+
+        // TODO: We shouldn't load it twice
+        let data_contract =
+            load_system_data_contract(SystemDataContract::DPNS).map_err(|e| Error::Protocol(e))?;
+
+        self.register_dpns_top_level_domain_operations(data_contract, operations)?;
+
+        Ok(())
+    }
+
+    fn register_system_data_contract_operations(
+        &self,
+        data_contract: DataContract,
+        operations: &mut Vec<DriveOperationType>,
+    ) {
+        operations.push(DriveOperationType::ContractOperation(
+            ContractOperationType::ApplyContract {
+                contract: Cow::Owned(data_contract),
+                storage_flags: None,
+            },
+        ))
+    }
+
+    fn register_system_identity_operations(
+        &self,
+        identity: Identity,
+        operations: &mut Vec<DriveOperationType>,
+    ) {
+        operations.push(DriveOperationType::IdentityOperation(
+            IdentityOperationType::AddNewIdentity { identity },
+        ))
+    }
+
+    fn register_dpns_top_level_domain_operations(
+        &self,
+        data_contract: DataContract,
+        operations: &mut Vec<DriveOperationType>,
+    ) -> Result<(), Error> {
+        let domain = "dash";
+
+        // TODO: Add created and updated at to DPNS contract
+
+        let properties_cbor = cbor!({
+            "label" => domain,
+            "normalizedLabel" => domain,
+            "normalizedParentDomainName" => "",
+            "preorderSalt" => DPNS_DASH_TLD_PREORDER_SALT.to_vec(),
+            "records" => {
+                "dashAliasIdentityId" => data_contract.owner_id.to_buffer_vec(),
+            },
+        })
+        .map_err(|_| {
+            // TODO: Can't pass original error because the error expecting String
+            Error::Execution(ExecutionError::CorruptedCodeExecution(
+                "can't create cbor for dpns tld",
+            ))
+        })?;
+
+        let properties = properties_cbor
+            .as_map()
+            .ok_or(Error::Execution(ExecutionError::CorruptedCodeExecution(
+                "can't convert properties to map",
+            )))?
+            .into_iter()
+            .map(|(key, value)| {
+                let key_string = key
+                    .as_text()
+                    .ok_or(Error::Execution(ExecutionError::CorruptedCodeExecution(
+                        "can't convert properties to map",
+                    )))?
+                    .to_string();
+
+                Ok((key_string, value.to_owned()))
+            })
+            .collect::<Result<_, Error>>()?;
+
+        let document = DocumentStub {
+            id: DPNS_DASH_TLD_DOCUMENT_ID,
+            properties,
+            owner_id: data_contract.owner_id.to_buffer(),
+        };
+
+        let contract = Cow::Owned(data_contract);
+
+        let document_type = data_contract.document_type_for_name("domain")?;
+
+        let operation =
+            DriveOperationType::DocumentOperation(DocumentOperationType::AddDocumentForContract {
+                document_and_contract_info: DocumentAndContractInfo {
+                    owned_document_info: OwnedDocumentInfo {
+                        document_info: DocumentInfo::DocumentWithoutSerialization((document, None)),
+                        owner_id: None,
+                    },
+                    contract,
+                    document_type,
+                },
+                override_document: false,
+            });
+
+        operations.push(operation);
+
+        Ok(())
+    }
+}
