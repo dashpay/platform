@@ -330,11 +330,9 @@ fn run_chain_for_strategy(
     let mut current_identities = vec![];
     let quorum_size = 100;
     let mut i = 0;
+
     // init chain
-    let init_chain_request = InitChainRequest {
-        genesis_time_ms: 0,
-        system_identity_public_keys: SystemIdentityPublicKeys::default(),
-    };
+    let init_chain_request = InitChainRequest::default();
 
     platform
         .init_chain(init_chain_request, None)

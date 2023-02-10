@@ -45,9 +45,8 @@ use drive::drive::block_info::BlockInfo;
 use drive::drive::defaults::PROTOCOL_VERSION;
 use drive::drive::object_size_info::{DocumentAndContractInfo, DocumentInfo, OwnedDocumentInfo};
 use drive::query::TransactionArg;
-use std::borrow::{Borrow, Cow};
+use std::borrow::Cow;
 use std::collections::{BTreeMap, BTreeSet};
-use std::ops::Deref;
 
 // TODO: read about lazy_static
 
@@ -73,6 +72,8 @@ impl Platform {
             .map_err(Error::Drive)?;
 
         let mut operations = vec![];
+
+        // Create system identities and contracts
 
         let system_data_contract_types = BTreeMap::from_iter([
             (
@@ -133,16 +134,16 @@ impl Platform {
                 metadata: None,
             };
 
-            self.register_system_data_contract_operations(data_contract, &mut operations);
+            // self.register_system_data_contract_operations(data_contract, &mut operations);
 
             self.register_system_identity_operations(identity, &mut operations);
         }
 
         // TODO: We shouldn't load it twice
         let data_contract =
-            load_system_data_contract(SystemDataContract::DPNS).map_err(|e| Error::Protocol(e))?;
+            load_system_data_contract(SystemDataContract::DPNS).map_err(Error::Protocol)?;
 
-        self.register_dpns_top_level_domain_operations(&data_contract, &mut operations)?;
+        // self.register_dpns_top_level_domain_operations(&data_contract, &mut operations)?;
 
         let block_info = BlockInfo::default_with_time(genesis_time);
 
@@ -205,7 +206,7 @@ impl Platform {
             .ok_or(Error::Execution(ExecutionError::CorruptedCodeExecution(
                 "can't convert properties to map",
             )))?
-            .into_iter()
+            .iter()
             .map(|(key, value)| {
                 let key_string = key
                     .as_text()

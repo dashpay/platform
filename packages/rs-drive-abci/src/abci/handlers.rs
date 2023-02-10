@@ -78,12 +78,14 @@ impl TenderdashAbci for Platform {
     /// Creates initial state structure and returns response
     fn init_chain(
         &self,
-        _request: InitChainRequest,
+        request: InitChainRequest,
         transaction: TransactionArg,
     ) -> Result<InitChainResponse, Error> {
-        self.drive
-            .create_initial_state_structure(transaction)
-            .map_err(Error::Drive)?;
+        self.create_genesis_state(
+            request.genesis_time_ms,
+            request.system_identity_public_keys,
+            transaction,
+        )?;
 
         let response = InitChainResponse {};
 
@@ -208,7 +210,7 @@ mod tests {
             let transaction = platform.drive.grove.start_transaction();
 
             // init chain
-            let init_chain_request = InitChainRequest {};
+            let init_chain_request = InitChainRequest::default();
 
             platform
                 .init_chain(init_chain_request, Some(&transaction))
@@ -423,7 +425,7 @@ mod tests {
             let transaction = platform.drive.grove.start_transaction();
 
             // init chain
-            let init_chain_request = InitChainRequest {};
+            let init_chain_request = InitChainRequest::default();
 
             platform
                 .init_chain(init_chain_request, Some(&transaction))

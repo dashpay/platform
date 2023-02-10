@@ -39,7 +39,7 @@ use crate::execution::fee_pools::epoch::EpochInfo;
 use crate::execution::fee_pools::fee_distribution::FeesInPools;
 use crate::execution::fee_pools::process_block_fees::ProcessedBlockFeesOutcome;
 use drive::dpp::identity::KeyType::ECDSA_SECP256K1;
-use drive::dpp::identity::{IdentityPublicKey, TimestampMillis};
+use drive::dpp::identity::TimestampMillis;
 use drive::fee::epoch::CreditsPerEpoch;
 use drive::fee::result::FeeResult;
 use rand::rngs::StdRng;
@@ -47,13 +47,22 @@ use rand::SeedableRng;
 use serde::{de::DeserializeOwned, Deserialize, Serialize};
 
 /// A struct for handling chain initialization requests
-#[derive(Serialize, Deserialize, Default)]
+#[derive(Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct InitChainRequest {
     /// The genesis time in milliseconds
     pub genesis_time_ms: TimestampMillis,
     /// The system identity public keys
     pub system_identity_public_keys: SystemIdentityPublicKeys,
+}
+
+impl Default for InitChainRequest {
+    fn default() -> Self {
+        Self {
+            genesis_time_ms: Default::default(),
+            system_identity_public_keys: SystemIdentityPublicKeys::new_random(Some(0)),
+        }
+    }
 }
 
 /// a
@@ -71,9 +80,13 @@ pub struct SystemIdentityPublicKeys {
     pub dashpay_contract_owner: RequiredIdentityPublicKeysSet,
 }
 
-impl Default for SystemIdentityPublicKeys {
-    fn default() -> Self {
-        let mut rng = StdRng::seed_from_u64(300);
+impl SystemIdentityPublicKeys {
+    fn new_random(seed: Option<u64>) -> Self {
+        let mut rng = match seed {
+            None => StdRng::from_entropy(),
+            Some(seed_value) => StdRng::seed_from_u64(seed_value),
+        };
+
         SystemIdentityPublicKeys {
             masternode_reward_shares_contract_owner: RequiredIdentityPublicKeysSet {
                 master: ECDSA_SECP256K1.random_public_key_data(&mut rng),

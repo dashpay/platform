@@ -121,16 +121,6 @@ class Drive {
    * @param {Object} config
    * @param {number} config.dataContractsGlobalCacheSize
    * @param {number} config.dataContractsBlockCacheSize
-   * @param {number} config.masternodeRewardSharesOwnerMasterPublicKey
-   * @param {number} config.masternodeRewardSharesOwnerSecondPublicKey
-   * @param {number} config.featureFlagsOwnerMasterPublicKey
-   * @param {number} config.featureFlagsOwnerSecondPublicKey
-   * @param {number} config.dpnsOwnerMasterPublicKey
-   * @param {number} config.dpnsOwnerSecondPublicKey
-   * @param {number} config.dashpayOwnerMasterPublicKey
-   * @param {number} config.dashpayOwnerSecondPublicKey
-   * @param {number} config.withdrawalsOwnerMasterPublicKey
-   * @param {number} config.withdrawalsSecondPublicKey
    */
   constructor(dbPath, config) {
     this.drive = driveOpen(dbPath, config);
