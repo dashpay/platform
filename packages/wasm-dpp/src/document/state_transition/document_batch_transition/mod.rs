@@ -286,7 +286,7 @@ impl DocumentsBatchTransitionWASM {
         self.0.set_signature_public_key_id(key_id)
     }
 
-    #[wasm_bindgen(js_name=getSecurityLevelRequirement)]
+    #[wasm_bindgen(js_name=getKeySecurityLevelRequirement)]
     pub fn get_security_level_requirement(&self) -> u8 {
         self.0.get_security_level_requirement().into()
     }

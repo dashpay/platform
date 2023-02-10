@@ -33,6 +33,7 @@ const { default: loadWasmDpp } = require('../../../../../../../dist');
 const { expectJsonSchemaError, expectValidationError } = require('../../../../../../../lib/test/expect/expectError');
 
 let DataContract;
+let DocumentsBatchTransition;
 let StateTransitionExecutionContext;
 let validateDocumentsBatchTransitionBasic;
 let generateDocumentId;
@@ -79,8 +80,6 @@ describe('validateDocumentsBatchTransitionBasicFactory', () => {
       ValidationResult,
       validateDocumentsBatchTransitionBasic,
       generateDocumentId,
-      // Metadata,
-      // Identifier,
       InvalidIdentifierError,
       MissingDataContractIdError,
       DataContractNotPresentError,
