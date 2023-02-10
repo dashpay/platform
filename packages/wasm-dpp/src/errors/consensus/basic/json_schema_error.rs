@@ -1,12 +1,13 @@
 use dpp::errors::consensus::basic::JsonSchemaError;
 use serde::Serialize;
 use serde_json::Value;
-use std::ops::Deref;
+use std::{fmt::format, ops::Deref};
 
 use dpp::jsonschema::error::{TypeKind, ValidationErrorKind};
 use wasm_bindgen::prelude::*;
 
-#[wasm_bindgen(js_name=JsonSchemaError)]
+#[wasm_bindgen(js_name=JsonSchemaError, inspectable)]
+#[derive(Debug)]
 pub struct JsonSchemaErrorWasm {
     keyword: String,
     instance_path: String,
@@ -16,7 +17,7 @@ pub struct JsonSchemaErrorWasm {
     code: u32,
 }
 
-#[derive(Default)]
+#[derive(Default, Debug)]
 struct Params {
     pub keyword: String,
     pub params: serde_json::Map<String, Value>,
@@ -270,5 +271,10 @@ impl JsonSchemaErrorWasm {
     #[wasm_bindgen(js_name=getCode)]
     pub fn get_code(&self) -> u32 {
         self.code
+    }
+
+    #[wasm_bindgen(js_name=toString)]
+    pub fn to_string_js(&self) -> String {
+        format!("{:#?}", self)
     }
 }

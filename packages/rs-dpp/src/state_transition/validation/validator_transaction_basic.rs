@@ -64,8 +64,8 @@ async fn validate_state_transition_basic(
 }
 
 #[cfg_attr(test, automock)]
-#[async_trait]
-pub trait ValidatorByStateTransitionType {
+#[async_trait(?Send)]
+pub trait ValidatorByStateTransitionType: Sync {
     async fn validate(
         &self,
         raw_state_transition: &JsonValue,

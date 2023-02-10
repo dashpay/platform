@@ -129,7 +129,10 @@ impl IdentifierWrapper {
 }
 
 /// tries to create identifier from
-pub fn identifier_from_js_value(js_value: &JsValue) -> Result<Identifier, JsValue> {
+pub(crate) fn identifier_from_js_value(js_value: &JsValue) -> Result<Identifier, JsValue> {
+    if js_value.is_undefined() || js_value.is_null() {
+        bail_js!("the identifier cannot be null or undefined")
+    }
     let value = js_value.with_serde_to_json_value()?;
     match value {
         Value::Array(arr) => {

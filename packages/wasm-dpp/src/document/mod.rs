@@ -24,6 +24,7 @@ pub use state_transition::*;
 pub mod document_facade;
 mod factory;
 pub mod fetch_and_validate_data_contract;
+pub mod generate_document_id;
 pub mod state_transition;
 mod validator;
 

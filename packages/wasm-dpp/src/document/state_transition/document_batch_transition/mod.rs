@@ -19,6 +19,7 @@ use wasm_bindgen::prelude::*;
 use crate::{
     bls_adapter::{BlsAdapter, JsBlsAdapter},
     buffer::Buffer,
+    console_log,
     document_batch_transition::document_transition::DocumentTransitionWasm,
     identifier::IdentifierWrapper,
     lodash::lodash_set,
@@ -51,6 +52,9 @@ impl DocumentsBatchTransitionWASM {
         js_raw_transition: JsValue,
         data_contracts: Array,
     ) -> Result<DocumentsBatchTransitionWASM, JsValue> {
+        // remove
+        console_error_panic_hook::set_once();
+
         let data_contracts_array_js = Array::from(&data_contracts);
 
         let mut data_contracts: Vec<DataContract> = vec![];
@@ -163,6 +167,7 @@ impl DocumentsBatchTransitionWASM {
         let mut value = self.0.to_object(options.skip_signature).with_js_error()?;
         let serializer = serde_wasm_bindgen::Serializer::json_compatible();
         let js_value = value.serialize(&serializer)?;
+        let is_signature_present = value.get(property_names::SIGNATURE).is_some();
 
         // Transform every transition individually
         let transitions = Array::new();
@@ -197,7 +202,7 @@ impl DocumentsBatchTransitionWASM {
             }
         }
 
-        if value.get(property_names::SIGNATURE).is_none() && !options.skip_signature {
+        if !is_signature_present && !options.skip_signature {
             js_sys::Reflect::set(
                 &js_value,
                 &property_names::SIGNATURE.into(),
