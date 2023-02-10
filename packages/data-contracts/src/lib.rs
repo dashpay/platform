@@ -21,10 +21,10 @@ impl SystemDataContract {
     pub fn source(self) -> Result<DataContractSource, Error> {
         let data = match self {
             SystemDataContract::Withdrawals => DataContractSource {
-                id_bytes: dashpay_contract::ID_BYTES,
-                owner_id_bytes: dashpay_contract::OWNER_ID_BYTES,
+                id_bytes: withdrawals_contract::ID_BYTES,
+                owner_id_bytes: withdrawals_contract::OWNER_ID_BYTES,
                 definitions: None,
-                document_schemas: dashpay_contract::load_documents_schemas()?,
+                document_schemas: withdrawals_contract::load_documents_schemas()?,
             },
             SystemDataContract::MasternodeRewards => DataContractSource {
                 id_bytes: masternode_reward_shares_contract::ID_BYTES,
