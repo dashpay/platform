@@ -38,7 +38,6 @@ use crate::error::Error;
 use crate::execution::fee_pools::epoch::EpochInfo;
 use crate::execution::fee_pools::fee_distribution::FeesInPools;
 use crate::execution::fee_pools::process_block_fees::ProcessedBlockFeesOutcome;
-use drive::dpp::identity::KeyType::ECDSA_SECP256K1;
 use drive::dpp::identity::TimestampMillis;
 use drive::fee::epoch::CreditsPerEpoch;
 use drive::fee::result::FeeResult;
@@ -58,15 +57,15 @@ pub struct InitChainRequest {
 #[derive(Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct SystemIdentityPublicKeys {
-    /// a
+    /// Required public key set for masternode reward shares contract owner identity
     pub masternode_reward_shares_contract_owner: RequiredIdentityPublicKeysSet,
-    /// a
+    /// Required public key set for feature flags contract owner identity
     pub feature_flags_contract_owner: RequiredIdentityPublicKeysSet,
-    /// a
+    /// Required public key set for dpns contract owner identity
     pub dpns_contract_owner: RequiredIdentityPublicKeysSet,
-    /// a
+    /// Required public key set for withdrawals contract owner identity
     pub withdrawals_contract_owner: RequiredIdentityPublicKeysSet,
-    /// a
+    /// Required public key set for dashpay contract owner identity
     pub dashpay_contract_owner: RequiredIdentityPublicKeysSet,
 }
 
