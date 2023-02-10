@@ -42,8 +42,6 @@ use drive::dpp::identity::KeyType::ECDSA_SECP256K1;
 use drive::dpp::identity::TimestampMillis;
 use drive::fee::epoch::CreditsPerEpoch;
 use drive::fee::result::FeeResult;
-use rand::rngs::StdRng;
-use rand::SeedableRng;
 use serde::{de::DeserializeOwned, Deserialize, Serialize};
 
 /// A struct for handling chain initialization requests
@@ -56,17 +54,9 @@ pub struct InitChainRequest {
     pub system_identity_public_keys: SystemIdentityPublicKeys,
 }
 
-impl Default for InitChainRequest {
-    fn default() -> Self {
-        Self {
-            genesis_time_ms: Default::default(),
-            system_identity_public_keys: SystemIdentityPublicKeys::new_random(Some(0)),
-        }
-    }
-}
-
 /// a
 #[derive(Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct SystemIdentityPublicKeys {
     /// a
     pub masternode_reward_shares_contract_owner: RequiredIdentityPublicKeysSet,
@@ -80,40 +70,9 @@ pub struct SystemIdentityPublicKeys {
     pub dashpay_contract_owner: RequiredIdentityPublicKeysSet,
 }
 
-impl SystemIdentityPublicKeys {
-    fn new_random(seed: Option<u64>) -> Self {
-        let mut rng = match seed {
-            None => StdRng::from_entropy(),
-            Some(seed_value) => StdRng::seed_from_u64(seed_value),
-        };
-
-        SystemIdentityPublicKeys {
-            masternode_reward_shares_contract_owner: RequiredIdentityPublicKeysSet {
-                master: ECDSA_SECP256K1.random_public_key_data(&mut rng),
-                high: ECDSA_SECP256K1.random_public_key_data(&mut rng),
-            },
-            feature_flags_contract_owner: RequiredIdentityPublicKeysSet {
-                master: ECDSA_SECP256K1.random_public_key_data(&mut rng),
-                high: ECDSA_SECP256K1.random_public_key_data(&mut rng),
-            },
-            dpns_contract_owner: RequiredIdentityPublicKeysSet {
-                master: ECDSA_SECP256K1.random_public_key_data(&mut rng),
-                high: ECDSA_SECP256K1.random_public_key_data(&mut rng),
-            },
-            withdrawals_contract_owner: RequiredIdentityPublicKeysSet {
-                master: ECDSA_SECP256K1.random_public_key_data(&mut rng),
-                high: ECDSA_SECP256K1.random_public_key_data(&mut rng),
-            },
-            dashpay_contract_owner: RequiredIdentityPublicKeysSet {
-                master: ECDSA_SECP256K1.random_public_key_data(&mut rng),
-                high: ECDSA_SECP256K1.random_public_key_data(&mut rng),
-            },
-        }
-    }
-}
-
 /// a
 #[derive(Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct RequiredIdentityPublicKeysSet {
     /// a
     pub master: Vec<u8>,

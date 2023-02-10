@@ -1647,6 +1647,7 @@ __metadata:
     "@dashevo/grpc-common": "workspace:*"
     "@dashevo/masternode-reward-shares-contract": "workspace:*"
     "@dashevo/rs-drive": "workspace:*"
+    "@dashevo/withdrawals-contract": "workspace:*"
     "@types/pino": ^6.3.0
     ajv: ^8.6.0
     ajv-keywords: ^5.0.0
@@ -1848,6 +1849,7 @@ __metadata:
   version: 0.0.0-use.local
   resolution: "@dashevo/rs-drive@workspace:packages/rs-drive-nodejs"
   dependencies:
+    "@dashevo/dashcore-lib": ~0.19.44
     "@dashevo/dpp": "workspace:*"
     cargo-cp-artifact: ^0.1.6
     cbor: ^8.0.0
@@ -1981,7 +1983,7 @@ __metadata:
   languageName: node
   linkType: hard
 
-"@dashevo/withdrawals-contract@workspace:packages/withdrawals-contract":
+"@dashevo/withdrawals-contract@workspace:*, @dashevo/withdrawals-contract@workspace:packages/withdrawals-contract":
   version: 0.0.0-use.local
   resolution: "@dashevo/withdrawals-contract@workspace:packages/withdrawals-contract"
   dependencies:

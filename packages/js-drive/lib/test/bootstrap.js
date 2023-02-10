@@ -44,6 +44,12 @@ if (process.env.MASTERNODE_REWARD_SHARES_MASTER_PUBLIC_KEY === undefined) {
 if (process.env.MASTERNODE_REWARD_SHARES_SECOND_PUBLIC_KEY === undefined) {
   process.env.MASTERNODE_REWARD_SHARES_SECOND_PUBLIC_KEY = '03a3002856ad91662dc34b6650a2c7f8b2726c947a419e0b880fb3acc38763a271';
 }
+if (process.env.WITHDRAWALS_MASTER_PUBLIC_KEY === undefined) {
+  process.env.WITHDRAWALS_MASTER_PUBLIC_KEY = '02ee6d9b15ed1c310535297739e69973406dbd1a679be7fad2bdd2e08685033077';
+}
+if (process.env.WITHDRAWALS_SECOND_PUBLIC_KEY === undefined) {
+  process.env.WITHDRAWALS_SECOND_PUBLIC_KEY = '02711ce1fedafde67694d771950c474fe300e464d4f67c2a6447f9b61e90fa01f3';
+}
 
 const dotenvConfig = dotenvSafe.config({
   path: path.resolve(__dirname, '..', '..', '.env'),

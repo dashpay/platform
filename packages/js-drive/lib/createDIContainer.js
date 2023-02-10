@@ -48,6 +48,8 @@ const dashpaySystemIds = require('@dashevo/dashpay-contract/lib/systemIds');
 
 const dashpayDocuments = require('@dashevo/dashpay-contract/schema/dashpay.schema.json');
 
+const withdrawalsSystemIds = require('@dashevo/withdrawals-contract/lib/systemIds');
+const withdrawalsDocuments = require('@dashevo/withdrawals-contract/schema/withdrawals-documents.json');
 const calculateStateTransitionFeeFromOperationsFactory = require('@dashevo/dpp/lib/stateTransition/fee/calculateStateTransitionFeeFromOperationsFactory');
 
 const packageJSON = require('../package.json');
@@ -122,14 +124,11 @@ const getRandomQuorumFactory = require('./core/getRandomQuorumFactory');
 
 const createQueryResponseFactory = require('./abci/handlers/query/response/createQueryResponseFactory');
 const BlockExecutionContextRepository = require('./blockExecution/BlockExecutionContextRepository');
-const registerSystemDataContractFactory = require('./state/registerSystemDataContractFactory');
-const registerTopLevelDomainFactory = require('./state/registerTopLevelDomainFactory');
 const synchronizeMasternodeIdentitiesFactory = require('./identity/masternode/synchronizeMasternodeIdentitiesFactory');
 const createMasternodeIdentityFactory = require('./identity/masternode/createMasternodeIdentityFactory');
 const handleNewMasternodeFactory = require('./identity/masternode/handleNewMasternodeFactory');
 const handleUpdatedPubKeyOperatorFactory = require('./identity/masternode/handleUpdatedPubKeyOperatorFactory');
 const handleUpdatedVotingAddressFactory = require('./identity/masternode/handleUpdatedVotingAddressFactory');
-const registerSystemDataContractsFactory = require('./abci/handlers/state/registerSystemDataContractsFactory');
 const createRewardShareDocumentFactory = require('./identity/masternode/createRewardShareDocumentFactory');
 const handleRemovedMasternodeFactory = require('./identity/masternode/handleRemovedMasternodeFactory');
 const handleUpdatedScriptPayoutFactory = require('./identity/masternode/handleUpdatedScriptPayoutFactory');
@@ -171,6 +170,8 @@ const IdentityBalanceStoreRepository = require('./identity/IdentityBalanceStoreR
  * @param {string} options.FEATURE_FLAGS_SECOND_PUBLIC_KEY
  * @param {string} options.MASTERNODE_REWARD_SHARES_MASTER_PUBLIC_KEY
  * @param {string} options.MASTERNODE_REWARD_SHARES_SECOND_PUBLIC_KEY
+ * @param {string} options.WITHDRAWALS_MASTER_PUBLIC_KEY
+ * @param {string} options.WITHDRAWALS_SECOND_PUBLIC_KEY
  * @param {string} options.INITIAL_CORE_CHAINLOCKED_HEIGHT
  * @param {string} options.VALIDATOR_SET_LLMQ_TYPE
  * @param {string} options.TENDERDASH_P2P_PORT
@@ -214,6 +215,14 @@ function createDIContainer(options) {
 
   if (!options.MASTERNODE_REWARD_SHARES_SECOND_PUBLIC_KEY) {
     throw new Error('MASTERNODE_REWARD_SHARES_SECOND_PUBLIC_KEY must be set');
+  }
+
+  if (!options.WITHDRAWALS_MASTER_PUBLIC_KEY) {
+    throw new Error('WITHDRAWALS_MASTER_PUBLIC_KEY must be set');
+  }
+
+  if (!options.WITHDRAWALS_SECOND_PUBLIC_KEY) {
+    throw new Error('WITHDRAWALS_SECOND_PUBLIC_KEY must be set');
   }
 
   const container = createAwilixContainer({
@@ -340,6 +349,19 @@ function createDIContainer(options) {
       ),
     ),
     dashpayDocuments: asValue(dashpayDocuments),
+    withdrawalsContractId: asValue(Identifier.from(withdrawalsSystemIds.contractId)),
+    withdrawalsOwnerId: asValue(Identifier.from(withdrawalsSystemIds.ownerId)),
+    withdrawalsOwnerMasterPublicKey: asValue(
+      PublicKey.fromString(
+        options.WITHDRAWALS_MASTER_PUBLIC_KEY,
+      ),
+    ),
+    withdrawalsOwnerSecondPublicKey: asValue(
+      PublicKey.fromString(
+        options.WITHDRAWALS_SECOND_PUBLIC_KEY,
+      ),
+    ),
+    withdrawalsDocuments: asValue(withdrawalsDocuments),
     tenderdashP2pPort: asValue(options.TENDERDASH_P2P_PORT),
   });
 
@@ -453,29 +475,9 @@ function createDIContainer(options) {
       groveDBLatestFile,
       dataContractsGlobalCacheSize,
       dataContractsBlockCacheSize,
-      masternodeRewardSharesOwnerMasterPublicKey,
-      masternodeRewardSharesOwnerSecondPublicKey,
-      featureFlagsOwnerMasterPublicKey,
-      featureFlagsOwnerSecondPublicKey,
-      dpnsOwnerMasterPublicKey,
-      dpnsOwnerSecondPublicKey,
-      dashpayOwnerMasterPublicKey,
-      dashpayOwnerSecondPublicKey,
-      withdrawalsOwnerMasterPublicKey,
-      withdrawalsSecondPublicKey,
     ) => new RSDrive(groveDBLatestFile, {
       dataContractsGlobalCacheSize,
       dataContractsBlockCacheSize,
-      masternodeRewardSharesOwnerMasterPublicKey,
-      masternodeRewardSharesOwnerSecondPublicKey,
-      featureFlagsOwnerMasterPublicKey,
-      featureFlagsOwnerSecondPublicKey,
-      dpnsOwnerMasterPublicKey,
-      dpnsOwnerSecondPublicKey,
-      dashpayOwnerMasterPublicKey,
-      dashpayOwnerSecondPublicKey,
-      withdrawalsOwnerMasterPublicKey,
-      withdrawalsSecondPublicKey,
     }))
       .disposer(async (rsDrive) => {
         // Flush data on disk
@@ -527,6 +529,40 @@ function createDIContainer(options) {
       .singleton(),
 
     getPublicKeyFromPayoutScript: asValue(getPublicKeyFromPayoutScript),
+
+    systemIdentityPublicKeys: asFunction((
+      masternodeRewardSharesOwnerMasterPublicKey,
+      masternodeRewardSharesOwnerSecondPublicKey,
+      featureFlagsOwnerMasterPublicKey,
+      featureFlagsOwnerSecondPublicKey,
+      dpnsOwnerMasterPublicKey,
+      dpnsOwnerSecondPublicKey,
+      dashpayOwnerMasterPublicKey,
+      dashpayOwnerSecondPublicKey,
+      withdrawalsOwnerMasterPublicKey,
+      withdrawalsOwnerSecondPublicKey,
+    ) => ({
+      masternodeRewardSharesContractOwner: {
+        master: masternodeRewardSharesOwnerMasterPublicKey.toBuffer(),
+        high: masternodeRewardSharesOwnerSecondPublicKey.toBuffer(),
+      },
+      featureFlagsContractOwner: {
+        master: featureFlagsOwnerMasterPublicKey.toBuffer(),
+        high: featureFlagsOwnerSecondPublicKey.toBuffer(),
+      },
+      dpnsContractOwner: {
+        master: dpnsOwnerMasterPublicKey.toBuffer(),
+        high: dpnsOwnerSecondPublicKey.toBuffer(),
+      },
+      withdrawalsContractOwner: {
+        master: dashpayOwnerMasterPublicKey.toBuffer(),
+        high: dashpayOwnerSecondPublicKey.toBuffer(),
+      },
+      dashpayContractOwner: {
+        master: withdrawalsOwnerMasterPublicKey.toBuffer(),
+        high: withdrawalsOwnerSecondPublicKey.toBuffer(),
+      },
+    })),
   });
 
   /**
@@ -711,21 +747,6 @@ function createDIContainer(options) {
     waitForCoreChainLockSync: asFunction(waitForCoreChainLockSyncFactory).singleton(),
 
     fetchTransaction: asFunction(fetchTransactionFactory).singleton(),
-  });
-
-  /**
-   * State
-   */
-  container.register({
-    registerSystemDataContract: asFunction(registerSystemDataContractFactory).singleton(),
-    registerSystemDataContracts: asFunction(registerSystemDataContractsFactory).singleton(),
-    registerTopLevelDomain: asFunction(registerTopLevelDomainFactory).singleton(),
-    dashDomainDocumentId: asValue(
-      Identifier.from('FXyN2NZAdRFADgBQfb1XM1Qq7pWoEcgSWj1GaiQJqcrS'),
-    ),
-    dashPreorderSalt: asValue(
-      Buffer.from('e0b508c5a36825a206693a1f414aa13edbecf43c41e3c799ea9e737b4f9aa226', 'hex'),
-    ),
   });
 
   /**

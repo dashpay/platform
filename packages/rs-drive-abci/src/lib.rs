@@ -16,9 +16,6 @@ pub mod abci;
 /// Block module
 mod block;
 
-/// Common functions module
-pub mod common;
-
 /// Contracts module
 pub mod contracts;
 
@@ -38,3 +35,7 @@ pub mod config;
 
 /// Platform state
 pub mod state;
+
+// TODO We should compile it only for tests
+/// Test helpers and fixtures
+pub mod test;

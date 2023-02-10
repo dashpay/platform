@@ -98,6 +98,9 @@ impl TenderdashAbci for Platform {
         request: BlockBeginRequest,
         transaction: TransactionArg,
     ) -> Result<BlockBeginResponse, Error> {
+        // TODO: If genesis time is not set in genesis config then it set on the first block
+        //  which is great but we still need time on init chain. Having two genesis times is not great at all.
+
         // Set genesis time
         let genesis_time_ms = if request.block_height == 1 {
             self.drive.set_genesis_time(request.block_time_ms);
@@ -183,7 +186,6 @@ impl TenderdashAbci for Platform {
 mod tests {
     mod handlers {
         use crate::abci::handlers::TenderdashAbci;
-        use crate::common::helpers::fee_pools::create_test_masternode_share_identities_and_documents;
         use chrono::{Duration, Utc};
         use drive::common::helpers::identities::create_test_masternode_identities;
         use drive::drive::batch::GroveDbOpBatch;
@@ -194,10 +196,11 @@ mod tests {
 
         use crate::abci::messages::{
             AfterFinalizeBlockRequest, BlockBeginRequest, BlockEndRequest, BlockFees,
-            InitChainRequest,
         };
-        use crate::common::helpers::setup::setup_platform_raw;
         use crate::config::PlatformConfig;
+        use crate::test::fixture::abci::static_init_chain_request;
+        use crate::test::helpers::fee_pools::create_test_masternode_share_identities_and_documents;
+        use crate::test::helpers::setup::setup_platform_raw;
 
         // TODO: Should we remove this test in favor of strategy tests?
 
@@ -210,7 +213,7 @@ mod tests {
             let transaction = platform.drive.grove.start_transaction();
 
             // init chain
-            let init_chain_request = InitChainRequest::default();
+            let init_chain_request = static_init_chain_request();
 
             platform
                 .init_chain(init_chain_request, Some(&transaction))
@@ -425,7 +428,7 @@ mod tests {
             let transaction = platform.drive.grove.start_transaction();
 
             // init chain
-            let init_chain_request = InitChainRequest::default();
+            let init_chain_request = static_init_chain_request();
 
             platform
                 .init_chain(init_chain_request, Some(&transaction))

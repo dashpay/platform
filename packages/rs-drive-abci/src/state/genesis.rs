@@ -60,7 +60,7 @@ const DPNS_DASH_TLD_PREORDER_SALT: [u8; 32] = [
 ];
 
 impl Platform {
-    /// Create genesys state
+    /// Creates trees and populates them with necessary identities, contracts and documents
     pub fn create_genesis_state(
         &self,
         genesis_time: TimestampMillis,
@@ -134,7 +134,7 @@ impl Platform {
                 metadata: None,
             };
 
-            // self.register_system_data_contract_operations(data_contract, &mut operations);
+            self.register_system_data_contract_operations(data_contract, &mut operations);
 
             self.register_system_identity_operations(identity, &mut operations);
         }
@@ -143,7 +143,7 @@ impl Platform {
         let data_contract =
             load_system_data_contract(SystemDataContract::DPNS).map_err(Error::Protocol)?;
 
-        // self.register_dpns_top_level_domain_operations(&data_contract, &mut operations)?;
+        self.register_dpns_top_level_domain_operations(&data_contract, &mut operations)?;
 
         let block_info = BlockInfo::default_with_time(genesis_time);
 
@@ -243,5 +243,34 @@ impl Platform {
         operations.push(operation);
 
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    mod create_genesis_state {
+        use crate::test::helpers::setup::setup_platform_with_genesis_state;
+
+        #[test]
+        pub fn should_create_genesis_state_deterministically() {
+            let platform = setup_platform_with_genesis_state(None);
+
+            let root_hash = platform
+                .drive
+                .grove
+                .root_hash(None)
+                .unwrap()
+                .expect("should obtain root hash");
+
+            assert_eq!(
+                root_hash,
+                [
+                    60, 124, 103, 206, 3, 146, 243, 88, 224, 209, 142, 121, 239, 122, 118, 216,
+                    179, 158, 65, 74, 9, 169, 174, 26, 229, 147, 249, 147, 139, 212, 249, 45
+                ]
+            )
+        }
     }
 }

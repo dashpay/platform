@@ -1,5 +1,7 @@
 const fs = require('fs');
 
+const { PrivateKey } = require('@dashevo/dashcore-lib');
+
 const { expect, use } = require('chai');
 use(require('dirty-chai'));
 
@@ -971,11 +973,31 @@ describe('Drive', () => {
   });
 
   describe('ABCI', () => {
+    let initChainRequest;
+
+    function generateRequiredIdentityPublicKeysSet() {
+      return {
+        master: new PrivateKey().toPublicKey().toBuffer(),
+        high: new PrivateKey().toPublicKey().toBuffer(),
+      };
+    }
+
+    beforeEach(() => {
+      initChainRequest = {
+        genesisTimeMs: Date.now(),
+        systemIdentityPublicKeys: {
+          masternodeRewardSharesContractOwner: generateRequiredIdentityPublicKeysSet(),
+          featureFlagsContractOwner: generateRequiredIdentityPublicKeysSet(),
+          dpnsContractOwner: generateRequiredIdentityPublicKeysSet(),
+          withdrawalsContractOwner: generateRequiredIdentityPublicKeysSet(),
+          dashpayContractOwner: generateRequiredIdentityPublicKeysSet(),
+        },
+      };
+    });
+
     describe('InitChain', () => {
       it('should successfully init chain', async () => {
-        const request = {};
-
-        const response = await drive.getAbci().initChain(request);
+        const response = await drive.getAbci().initChain(initChainRequest);
 
         expect(response).to.be.empty('object');
       });
@@ -983,7 +1005,7 @@ describe('Drive', () => {
 
     describe('BlockBegin', () => {
       beforeEach(async () => {
-        await drive.getAbci().initChain({});
+        await drive.getAbci().initChain(initChainRequest);
       });
 
       it('should process a block without previous block time', async () => {
@@ -1033,7 +1055,7 @@ describe('Drive', () => {
 
     describe('BlockEnd', () => {
       beforeEach(async () => {
-        await drive.getAbci().initChain({});
+        await drive.getAbci().initChain(initChainRequest);
 
         await drive.getAbci().blockBegin({
           blockHeight: 1,
@@ -1064,7 +1086,7 @@ describe('Drive', () => {
       beforeEach(async function beforeEach() {
         this.timeout(10000);
 
-        await drive.getAbci().initChain({});
+        await drive.getAbci().initChain(initChainRequest);
 
         await drive.getAbci().blockBegin({
           blockHeight: 1,
