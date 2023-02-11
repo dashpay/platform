@@ -37,6 +37,7 @@ use crate::state::PlatformState;
 
 use drive::drive::Drive;
 
+use drive::drive::defaults::PROTOCOL_VERSION;
 use std::cell::RefCell;
 use std::path::Path;
 
@@ -59,6 +60,7 @@ impl Platform {
         let drive = Drive::open(path, Some(config.drive_config.clone())).map_err(Error::Drive)?;
         let state = PlatformState {
             last_block_info: None,
+            current_protocol_version_in_consensus: PROTOCOL_VERSION,
         };
         Ok(Platform {
             drive,

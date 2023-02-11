@@ -101,12 +101,30 @@ impl Drive {
         version: ProtocolVersion,
         transaction: TransactionArg,
     ) -> Result<bool, Error> {
+        let mut batch_operations: Vec<DriveOperation> = vec![];
+        let inserted = self.update_validator_proposed_app_version_operations(
+            validator_pro_tx_hash,
+            version,
+            transaction,
+            &mut batch_operations,
+        )?;
+        self.apply_batch_drive_operations(None, transaction, batch_operations, &mut vec![])?;
+        Ok(inserted)
+    }
+    /// Update the validator proposed app version
+    /// returns true if the value was changed, or is new
+    /// returns false if it was not changed
+    pub(crate) fn update_validator_proposed_app_version_operations(
+        &self,
+        validator_pro_tx_hash: [u8; 32],
+        version: ProtocolVersion,
+        transaction: TransactionArg,
+        drive_operations: &mut Vec<DriveOperation>,
+    ) -> Result<bool, Error> {
         let mut cache = self.cache.borrow_mut();
         let mut version_counter = cache
             .versions_counter
             .get_or_insert(self.fetch_versions_with_counter(transaction)?);
-
-        let mut batch_operations: Vec<DriveOperation> = vec![];
 
         let path = desired_version_for_validators_path();
         let version_bytes = version.encode_var_vec();
@@ -120,7 +138,7 @@ impl Drive {
             )),
             BatchInsertApplyType::StatefulBatchInsert,
             transaction,
-            &mut batch_operations,
+            drive_operations,
         )?;
 
         // if we had a different previous version we need to remove it from the version counter
@@ -151,7 +169,7 @@ impl Drive {
                     previous_version_bytes,
                     Element::new_item(previous_count.encode_var_vec()),
                 )),
-                &mut vec![],
+                drive_operations,
             )?;
         }
 
@@ -171,7 +189,7 @@ impl Drive {
                     version_bytes.as_slice(),
                     Element::new_item(version_count.encode_var_vec()),
                 )),
-                &mut vec![],
+                drive_operations,
             )?;
         }
 

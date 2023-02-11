@@ -1,7 +1,9 @@
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{run_chain_for_strategy, Frequency, Strategy, UpgradingInfo};
+    use crate::{
+        run_chain_for_strategy, ChainExecutionOutcome, Frequency, Strategy, UpgradingInfo,
+    };
     use drive::dpp::data_contract::extra::common::json_document_to_cbor;
     use drive::dpp::data_contract::DriveContractExt;
     use drive_abci::config::PlatformConfig;
@@ -29,6 +31,23 @@ mod tests {
             quorum_size: 100,
             quorum_switch_block_count: 25,
         };
-        run_chain_for_strategy(1000, 3000, strategy, config, 15);
+        let ChainExecutionOutcome {
+            platform,
+            masternode_identity_balances,
+            identities,
+            end_epoch_index,
+        } = run_chain_for_strategy(1000, 3000, strategy, config, 15);
+        let mut drive_cache = platform.drive.cache.borrow_mut();
+        let counter = drive_cache
+            .versions_counter
+            .as_ref()
+            .expect("expected a version counter");
+        platform
+            .drive
+            .fetch_versions_with_counter(None)
+            .expect("expected to get versions");
+        assert_eq!(counter.get(&1), Some(&14)); //14 nodes still didn't upgrade
+        assert_eq!(counter.get(&2), Some(&986));
+        assert_eq!(platform.state.current_protocol_version_in_consensus, 2);
     }
 }
