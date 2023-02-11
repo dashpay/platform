@@ -6,6 +6,7 @@ use crate::error::execution::ExecutionError;
 use crate::error::Error;
 use crate::platform::Platform;
 use drive::dpp::identity::PartialIdentity;
+use drive::dpp::util::deserializer::ProtocolVersion;
 use drive::drive::batch::DriveOperationType;
 use drive::drive::block_info::BlockInfo;
 use drive::error::Error::GroveDB;
@@ -144,6 +145,7 @@ impl Platform {
     pub fn execute_block(
         &mut self,
         proposer: [u8; 32],
+        proposed_version: ProtocolVersion,
         block_info: &BlockInfo,
         state_transitions: Vec<ExecutionEvent>,
     ) -> Result<(), Error> {
@@ -158,7 +160,7 @@ impl Platform {
                 .as_ref()
                 .map(|block_info| block_info.time_ms),
             proposer_pro_tx_hash: proposer,
-            proposer_proposed_version: 1,
+            proposer_proposed_version: proposed_version,
             validator_set_quorum_hash: Default::default(),
         };
 

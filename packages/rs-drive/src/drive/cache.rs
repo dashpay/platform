@@ -1,4 +1,5 @@
 use crate::drive::contract::ContractFetchInfo;
+use dpp::util::deserializer::ProtocolVersion;
 use moka::sync::Cache;
 use nohash_hasher::IntMap;
 use std::sync::Arc;
@@ -10,7 +11,7 @@ pub struct DriveCache {
     /// Genesis time in ms
     pub genesis_time_ms: Option<u64>,
     /// Counter of versions
-    pub versions_counter: Option<IntMap<u64, u32>>,
+    pub versions_counter: Option<IntMap<ProtocolVersion, u32>>,
 }
 
 /// Data Contract cache that handle both non global and block data

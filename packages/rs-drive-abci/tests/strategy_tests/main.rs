@@ -35,6 +35,7 @@ use drive::common::helpers::identities::create_test_masternode_identities_with_r
 use drive::contract::{Contract, CreateRandomDocument, DocumentType};
 use drive::dpp::document::document_stub::DocumentStub;
 use drive::dpp::identity::{Identity, KeyID, PartialIdentity};
+use drive::dpp::util::deserializer::ProtocolVersion;
 use drive::drive::batch::{
     ContractOperationType, DocumentOperationType, DriveOperationType, IdentityOperationType,
     SystemOperationType,
@@ -60,7 +61,7 @@ use rand::rngs::StdRng;
 use rand::seq::SliceRandom;
 use rand::{Rng, SeedableRng};
 use std::borrow::Cow;
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, HashMap};
 use std::ops::Range;
 
 mod upgrade_fork_tests;
@@ -103,12 +104,61 @@ pub struct DocumentOp {
 
 pub type ProTxHash = [u8; 32];
 
+pub type BlockHeight = u64;
+
 #[derive(Clone, Debug)]
 pub(crate) struct Strategy {
     contracts: Vec<Contract>,
     operations: Vec<(DocumentOp, Frequency)>,
     identities_inserts: Frequency,
     total_hpmns: u16,
+    upgrading_info: Option<UpgradingInfo>,
+}
+
+#[derive(Clone, Debug)]
+pub(crate) struct UpgradingInfo {
+    current_protocol_version: ProtocolVersion,
+    proposed_protocol_versions_with_weight: Vec<(ProtocolVersion, u16)>,
+    /// The upgrade three quarters life is the expected amount of blocks in the window
+    /// for three quarters of the network to upgrade
+    /// if it is 1, there is a 50/50% chance that the network will upgrade in the first window
+    /// if it lower than 1 there is a high chance it will upgrade in the first window
+    /// the higher it is the lower the chance it will upgrade in the first window
+    upgrade_three_quarters_life: f64,
+}
+
+#[derive(Clone, Debug)]
+pub(crate) struct ValidatorVersionMigration {
+    current_protocol_version: ProtocolVersion,
+    next_protocol_version: ProtocolVersion,
+    change_block_height: BlockHeight,
+}
+
+impl UpgradingInfo {
+    fn apply_to_proposers(
+        &self,
+        proposers: Vec<[u8; 32]>,
+        rng: &mut StdRng,
+    ) -> HashMap<[u8; 32], ValidatorVersionMigration> {
+        proposers
+            .into_iter()
+            .map(|pro_tx_hash| {
+                let next_version = self
+                    .proposed_protocol_versions_with_weight
+                    .choose_weighted(rng, |item| item.1)
+                    .unwrap()
+                    .0;
+                (
+                    pro_tx_hash,
+                    ValidatorVersionMigration {
+                        current_protocol_version: self.current_protocol_version,
+                        next_protocol_version: next_version,
+                        change_block_height: 15,
+                    },
+                )
+            })
+            .collect()
+    }
 }
 
 impl Strategy {
@@ -350,10 +400,16 @@ pub(crate) fn run_chain_for_strategy(
         None,
     );
 
+    let proposer_versions = strategy
+        .upgrading_info
+        .as_ref()
+        .map(|upgrading_info| upgrading_info.apply_to_proposers(proposers.clone(), &mut rng));
+
     let current_proposers: Vec<[u8; 32]> = proposers
         .choose_multiple(&mut rng, quorum_size as usize)
         .cloned()
         .collect();
+
     for block_height in 1..=block_count {
         let epoch_info = EpochInfo::calculate(
             first_block_time,
@@ -380,8 +436,26 @@ pub(crate) fn run_chain_for_strategy(
             &mut rng,
         );
 
+        let proposed_version = proposer_versions
+            .as_ref()
+            .map(|proposer_versions| {
+                let ValidatorVersionMigration {
+                    current_protocol_version,
+                    next_protocol_version,
+                    change_block_height,
+                } = proposer_versions
+                    .get(proposer)
+                    .expect("expected to have version");
+                if &block_height >= change_block_height {
+                    *next_protocol_version
+                } else {
+                    *current_protocol_version
+                }
+            })
+            .unwrap_or(1);
+
         platform
-            .execute_block(*proposer, &block_info, state_transitions)
+            .execute_block(*proposer, proposed_version, &block_info, state_transitions)
             .expect("expected to execute a block");
 
         current_time_ms += block_spacing_ms;
@@ -424,6 +498,7 @@ mod tests {
                 chance_per_block: None,
             },
             total_hpmns: 100,
+            upgrading_info: None,
         };
         let config = PlatformConfig {
             drive_config: Default::default(),
@@ -444,6 +519,7 @@ mod tests {
                 chance_per_block: None,
             },
             total_hpmns: 100,
+            upgrading_info: None,
         };
         let config = PlatformConfig {
             drive_config: Default::default(),
@@ -466,6 +542,7 @@ mod tests {
                 chance_per_block: None,
             },
             total_hpmns: 100,
+            upgrading_info: None,
         };
         let config = PlatformConfig {
             drive_config: Default::default(),
@@ -502,6 +579,7 @@ mod tests {
                 chance_per_block: None,
             },
             total_hpmns: 100,
+            upgrading_info: None,
         };
         let config = PlatformConfig {
             drive_config: Default::default(),
@@ -545,6 +623,7 @@ mod tests {
                 chance_per_block: None,
             },
             total_hpmns: 100,
+            upgrading_info: None,
         };
         let config = PlatformConfig {
             drive_config: Default::default(),
@@ -588,6 +667,7 @@ mod tests {
                 chance_per_block: None,
             },
             total_hpmns: 100,
+            upgrading_info: None,
         };
         let config = PlatformConfig {
             drive_config: Default::default(),
@@ -659,6 +739,7 @@ mod tests {
                 chance_per_block: None,
             },
             total_hpmns: 100,
+            upgrading_info: None,
         };
         let config = PlatformConfig {
             drive_config: Default::default(),
@@ -730,6 +811,7 @@ mod tests {
                 chance_per_block: None,
             },
             total_hpmns: 100,
+            upgrading_info: None,
         };
         let config = PlatformConfig {
             drive_config: Default::default(),
@@ -801,6 +883,7 @@ mod tests {
                 chance_per_block: None,
             },
             total_hpmns: 100,
+            upgrading_info: None,
         };
         let config = PlatformConfig {
             drive_config: Default::default(),

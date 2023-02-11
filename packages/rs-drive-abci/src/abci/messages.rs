@@ -38,6 +38,7 @@ use crate::error::Error;
 use crate::execution::fee_pools::epoch::EpochInfo;
 use crate::execution::fee_pools::fee_distribution::FeesInPools;
 use crate::execution::fee_pools::process_block_fees::ProcessedBlockFeesOutcome;
+use drive::dpp::util::deserializer::ProtocolVersion;
 use drive::fee::epoch::CreditsPerEpoch;
 use drive::fee::result::FeeResult;
 use serde::{de::DeserializeOwned, Deserialize, Serialize};
@@ -65,7 +66,7 @@ pub struct BlockBeginRequest {
     /// The block proposer's proTxHash
     pub proposer_pro_tx_hash: [u8; 32],
     /// The block proposer's proposed version
-    pub proposer_proposed_version: u64,
+    pub proposer_proposed_version: ProtocolVersion,
     /// Validator set quorum hash
     pub validator_set_quorum_hash: [u8; 32],
 }

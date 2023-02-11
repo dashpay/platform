@@ -7,6 +7,7 @@ use crate::error::Error;
 use crate::error::Error::GroveDB;
 use crate::fee::op::DriveOperation;
 use crate::query::QueryItem;
+use dpp::util::deserializer::ProtocolVersion;
 use grovedb::query_result_type::QueryResultType;
 use grovedb::{Element, PathQuery, Query, TransactionArg};
 use integer_encoding::VarInt;
@@ -64,8 +65,8 @@ impl Drive {
     pub fn fetch_versions_with_counter(
         &self,
         transaction: TransactionArg,
-    ) -> Result<IntMap<u64, u32>, Error> {
-        let mut version_counter = IntMap::<u64, u32>::default();
+    ) -> Result<IntMap<ProtocolVersion, u32>, Error> {
+        let mut version_counter = IntMap::<ProtocolVersion, u32>::default();
         let path_query = PathQuery::new_unsized(
             versions_counter_path_vec(),
             Query::new_single_query_item(QueryItem::RangeFull(RangeFull)),
@@ -77,7 +78,7 @@ impl Drive {
             &mut vec![],
         )?;
         for (version_bytes, count_element) in results.to_key_elements() {
-            let version = u64::decode_var(version_bytes.as_slice())
+            let version = ProtocolVersion::decode_var(version_bytes.as_slice())
                 .ok_or(Error::Drive(DriveError::CorruptedElementType(
                     "encoded value could not be decoded",
                 )))
@@ -97,7 +98,7 @@ impl Drive {
     pub fn update_validator_proposed_app_version(
         &self,
         validator_pro_tx_hash: [u8; 32],
-        version: u64,
+        version: ProtocolVersion,
         transaction: TransactionArg,
     ) -> Result<bool, Error> {
         let mut cache = self.cache.borrow_mut();
@@ -125,7 +126,7 @@ impl Drive {
         // if we had a different previous version we need to remove it from the version counter
         if let Some(previous_element) = previous_element {
             let previous_version_bytes = previous_element.as_item_bytes().map_err(GroveDB)?;
-            let previous_version = u64::decode_var(previous_version_bytes)
+            let previous_version = ProtocolVersion::decode_var(previous_version_bytes)
                 .ok_or(Error::Drive(DriveError::CorruptedElementType(
                     "encoded value could not be decoded",
                 )))
