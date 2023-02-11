@@ -64,6 +64,8 @@ pub struct BlockBeginRequest {
     pub previous_block_time_ms: Option<u64>,
     /// The block proposer's proTxHash
     pub proposer_pro_tx_hash: [u8; 32],
+    /// The block proposer's proposed version
+    pub proposer_proposed_version: u64,
     /// Validator set quorum hash
     pub validator_set_quorum_hash: [u8; 32],
 }

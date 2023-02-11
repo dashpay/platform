@@ -102,6 +102,7 @@ impl TenderdashAbci for Platform {
 
             request.block_time_ms
         } else {
+            //todo: lazy load genesis time
             self.drive
                 .get_genesis_time(transaction)
                 .map_err(Error::Drive)?
@@ -109,6 +110,15 @@ impl TenderdashAbci for Platform {
                     "the genesis time must be set",
                 )))?
         };
+
+        // Update versions
+        let proposed_app_version = request.proposer_proposed_version;
+
+        self.drive.update_validator_proposed_app_version(
+            request.proposer_pro_tx_hash,
+            proposed_app_version,
+            transaction,
+        )?;
 
         // Init block execution context
         let block_info = BlockStateInfo::from_block_begin_request(&request);
@@ -292,15 +302,16 @@ mod tests {
                         previous_block_time_ms,
                         proposer_pro_tx_hash: proposers
                             [block_height as usize % (proposers_count as usize)],
+                        proposer_proposed_version: 1,
                         validator_set_quorum_hash: Default::default(),
                     };
 
                     let block_begin_response = platform
                         .block_begin(block_begin_request, Some(&transaction))
-                        .unwrap_or_else(|_| {
+                        .unwrap_or_else(|e| {
                             panic!(
-                                "should begin process block #{} for day #{}",
-                                block_height, day
+                                "should begin process block #{} for day #{} : {}",
+                                block_height, day, e
                             )
                         });
 
@@ -487,6 +498,7 @@ mod tests {
                         previous_block_time_ms,
                         proposer_pro_tx_hash: proposers
                             [block_height as usize % (proposers_count as usize)],
+                        proposer_proposed_version: 1,
                         validator_set_quorum_hash: Default::default(),
                     };
 

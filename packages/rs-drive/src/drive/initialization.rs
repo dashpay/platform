@@ -33,6 +33,7 @@
 use crate::drive::balances::TOTAL_SYSTEM_CREDITS_STORAGE_KEY;
 use crate::drive::batch::GroveDbOpBatch;
 
+use crate::drive::fork_update::add_initial_fork_update_structure_operations;
 use crate::drive::{Drive, RootTree};
 use crate::error::Error;
 use crate::fee_pools::add_create_fee_pool_trees_operations;
@@ -136,6 +137,14 @@ impl Drive {
             &mut drive_operations,
         )?;
 
+        self.grove_insert_empty_tree(
+            [],
+            &[RootTree::Versions as u8],
+            transaction,
+            None,
+            &mut drive_operations,
+        )?;
+
         // On lower layers we can use batching
 
         let mut batch = GroveDbOpBatch::new();
@@ -152,6 +161,9 @@ impl Drive {
 
         // In Withdrawals
         add_initial_withdrawal_state_structure_operations(&mut batch);
+
+        // For Versioning via forks
+        add_initial_fork_update_structure_operations(&mut batch);
 
         self.grove_apply_batch(batch, false, transaction)?;
 
@@ -193,7 +205,7 @@ mod tests {
                 &mut drive_operations,
             )
             .expect("expected to get root elements");
-        assert_eq!(elements.len(), 10);
+        assert_eq!(elements.len(), 11);
     }
 
     #[test]
@@ -319,7 +331,7 @@ mod tests {
         let proof = drive
             .grove_get_proved_path_query(&root_path_query, false, None, &mut drive_operations)
             .expect("expected to get root elements");
-        assert_eq!(proof.len(), 181); //it + parent + sibling + parent sibling + grandparent
+        assert_eq!(proof.len(), 215); //it + right + parent + sibling + parent sibling + grandparent
 
         // Merk Level 3
 
@@ -372,5 +384,21 @@ mod tests {
             .grove_get_proved_path_query(&root_path_query, false, None, &mut drive_operations)
             .expect("expected to get root elements");
         assert_eq!(proof.len(), 213);
+
+        let mut query = Query::new();
+        query.insert_key(vec![RootTree::Versions as u8]);
+        let root_path_query = PathQuery::new(
+            vec![],
+            SizedQuery {
+                query,
+                limit: None,
+                offset: None,
+            },
+        );
+        let mut drive_operations = vec![];
+        let proof = drive
+            .grove_get_proved_path_query(&root_path_query, false, None, &mut drive_operations)
+            .expect("expected to get root elements");
+        assert_eq!(proof.len(), 215);
     }
 }
