@@ -65,8 +65,8 @@ impl Drive {
     pub fn fetch_versions_with_counter(
         &self,
         transaction: TransactionArg,
-    ) -> Result<IntMap<ProtocolVersion, u32>, Error> {
-        let mut version_counter = IntMap::<ProtocolVersion, u32>::default();
+    ) -> Result<IntMap<ProtocolVersion, u64>, Error> {
+        let mut version_counter = IntMap::<ProtocolVersion, u64>::default();
         let path_query = PathQuery::new_unsized(
             versions_counter_path_vec(),
             Query::new_single_query_item(QueryItem::RangeFull(RangeFull)),
@@ -83,7 +83,7 @@ impl Drive {
                     "encoded value could not be decoded",
                 )))
                 .map(|(value, _)| value)?;
-            let count = u32::decode_var(version_bytes.as_slice())
+            let count = u64::decode_var(version_bytes.as_slice())
                 .ok_or(Error::Drive(DriveError::CorruptedElementType(
                     "encoded value could not be decoded",
                 )))
@@ -186,7 +186,7 @@ impl Drive {
             }
 
             let version_count = version_counter.entry(version).or_default();
-            if version_count == &u32::MAX {
+            if version_count == &u64::MAX {
                 return Err(Error::Drive(DriveError::CorruptedCacheState(
                     "trying to raise the count of a version from cache that is already at max"
                         .to_string(),

@@ -11,7 +11,7 @@ pub struct DriveCache {
     /// Genesis time in ms
     pub genesis_time_ms: Option<u64>,
     /// Counter of versions
-    pub versions_counter: Option<IntMap<ProtocolVersion, u32>>,
+    pub versions_counter: Option<IntMap<ProtocolVersion, u64>>,
 }
 
 /// Data Contract cache that handle both non global and block data

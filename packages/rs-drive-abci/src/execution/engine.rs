@@ -11,6 +11,7 @@ use drive::drive::batch::DriveOperationType;
 use drive::drive::block_info::BlockInfo;
 use drive::error::Error::GroveDB;
 use drive::fee::result::FeeResult;
+use drive::fee_pools::epochs::Epoch;
 use drive::grovedb::Transaction;
 
 /// An execution event
@@ -175,7 +176,31 @@ impl Platform {
                 )
             });
 
-        if block_begin_response.epoch_info.is_epoch_change {
+        if block_begin_response.epoch_info.is_epoch_change
+            && block_begin_response
+                .epoch_info
+                .previous_epoch_index
+                .is_some()
+        {
+            let previous_start_block_height = self
+                .drive
+                .get_epoch_start_block_height(
+                    &Epoch::new(
+                        block_begin_response
+                            .epoch_info
+                            .previous_epoch_index
+                            .unwrap(),
+                    ),
+                    Some(&transaction),
+                )
+                .map_err(Error::Drive)?;
+            let total_block_count = block_info.height - previous_start_block_height;
+            let required_block_count = 1 + total_block_count
+                .checked_mul(75)
+                .and_then(|product| product.checked_div(100))
+                .ok_or(Error::Execution(ExecutionError::Overflow(
+                    "overflow for required block count",
+                )))?;
             self.state.current_protocol_version_in_consensus =
                 self.state.next_epoch_protocol_version;
             // if we are at an epoch change, check to see if over 75% of blocks of previous epoch
@@ -188,8 +213,7 @@ impl Platform {
                     version_counter
                         .iter()
                         .filter_map(|(protocol_version, count)| {
-                            //todo: replace 100 with threshold
-                            if count > &100 {
+                            if count >= &required_block_count {
                                 Some(*protocol_version)
                             } else {
                                 None
