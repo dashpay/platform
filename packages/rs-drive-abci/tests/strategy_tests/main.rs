@@ -57,10 +57,13 @@ use drive_abci::execution::engine::ExecutionEvent;
 use drive_abci::execution::fee_pools::epoch::EpochInfo;
 use drive_abci::platform::Platform;
 use rand::rngs::StdRng;
+use rand::seq::SliceRandom;
 use rand::{Rng, SeedableRng};
 use std::borrow::Cow;
 use std::collections::BTreeMap;
 use std::ops::Range;
+
+mod upgrade_fork_tests;
 
 #[derive(Clone, Debug)]
 pub struct Frequency {
@@ -101,10 +104,11 @@ pub struct DocumentOp {
 pub type ProTxHash = [u8; 32];
 
 #[derive(Clone, Debug)]
-struct Strategy {
+pub(crate) struct Strategy {
     contracts: Vec<Contract>,
     operations: Vec<(DocumentOp, Frequency)>,
     identities_inserts: Frequency,
+    total_hpmns: u16,
 }
 
 impl Strategy {
@@ -316,7 +320,7 @@ pub struct ChainExecutionOutcome {
     pub end_epoch_index: u16,
 }
 
-fn run_chain_for_strategy(
+pub(crate) fn run_chain_for_strategy(
     block_count: u64,
     block_spacing_ms: u64,
     strategy: Strategy,
@@ -324,11 +328,11 @@ fn run_chain_for_strategy(
     seed: u64,
 ) -> ChainExecutionOutcome {
     let mut rng = StdRng::seed_from_u64(seed);
+    let quorum_size = config.quorum_size;
     let mut platform = setup_platform_raw(Some(config));
     let mut current_time_ms = 0;
     let first_block_time = 0;
     let mut current_identities = vec![];
-    let quorum_size = 100;
     let mut i = 0;
     // init chain
     let init_chain_request = InitChainRequest {};
@@ -339,9 +343,17 @@ fn run_chain_for_strategy(
 
     platform.create_mn_shares_contract(None);
 
-    let proposers =
-        create_test_masternode_identities_with_rng(&platform.drive, quorum_size, &mut rng, None);
+    let proposers = create_test_masternode_identities_with_rng(
+        &platform.drive,
+        strategy.total_hpmns,
+        &mut rng,
+        None,
+    );
 
+    let current_proposers: Vec<[u8; 32]> = proposers
+        .choose_multiple(&mut rng, quorum_size as usize)
+        .cloned()
+        .collect();
     for block_height in 1..=block_count {
         let epoch_info = EpochInfo::calculate(
             first_block_time,
@@ -360,7 +372,7 @@ fn run_chain_for_strategy(
             epoch: Epoch::new(epoch_info.current_epoch_index),
         };
 
-        let proposer = proposers.get(i as usize).unwrap();
+        let proposer = current_proposers.get(i as usize).unwrap();
         let state_transitions = strategy.state_transitions_for_block_with_new_identities(
             &platform,
             &block_info,
@@ -411,10 +423,13 @@ mod tests {
                 times_per_block_range: Default::default(),
                 chance_per_block: None,
             },
+            total_hpmns: 100,
         };
         let config = PlatformConfig {
             drive_config: Default::default(),
             verify_sum_trees: true,
+            quorum_size: 100,
+            quorum_switch_block_count: 25,
         };
         run_chain_for_strategy(1000, 3000, strategy, config, 15);
     }
@@ -428,10 +443,13 @@ mod tests {
                 times_per_block_range: 1..2,
                 chance_per_block: None,
             },
+            total_hpmns: 100,
         };
         let config = PlatformConfig {
             drive_config: Default::default(),
             verify_sum_trees: true,
+            quorum_size: 100,
+            quorum_switch_block_count: 25,
         };
         let outcome = run_chain_for_strategy(100, 3000, strategy, config, 15);
 
@@ -447,10 +465,13 @@ mod tests {
                 times_per_block_range: 1..2,
                 chance_per_block: None,
             },
+            total_hpmns: 100,
         };
         let config = PlatformConfig {
             drive_config: Default::default(),
             verify_sum_trees: true,
+            quorum_size: 100,
+            quorum_switch_block_count: 25,
         };
         let day_in_ms = 1000 * 60 * 60 * 24;
         let outcome = run_chain_for_strategy(150, day_in_ms, strategy, config, 15);
@@ -480,10 +501,13 @@ mod tests {
                 times_per_block_range: 1..2,
                 chance_per_block: None,
             },
+            total_hpmns: 100,
         };
         let config = PlatformConfig {
             drive_config: Default::default(),
             verify_sum_trees: true,
+            quorum_size: 100,
+            quorum_switch_block_count: 25,
         };
         run_chain_for_strategy(1, 3000, strategy, config, 15);
     }
@@ -520,10 +544,13 @@ mod tests {
                 times_per_block_range: 1..2,
                 chance_per_block: None,
             },
+            total_hpmns: 100,
         };
         let config = PlatformConfig {
             drive_config: Default::default(),
             verify_sum_trees: true,
+            quorum_size: 100,
+            quorum_switch_block_count: 25,
         };
         run_chain_for_strategy(100, 3000, strategy, config, 15);
     }
@@ -560,10 +587,13 @@ mod tests {
                 times_per_block_range: 1..2,
                 chance_per_block: None,
             },
+            total_hpmns: 100,
         };
         let config = PlatformConfig {
             drive_config: Default::default(),
             verify_sum_trees: true,
+            quorum_size: 100,
+            quorum_switch_block_count: 25,
         };
         let day_in_ms = 1000 * 60 * 60 * 24;
         let block_count = 120;
@@ -628,10 +658,13 @@ mod tests {
                 times_per_block_range: 1..2,
                 chance_per_block: None,
             },
+            total_hpmns: 100,
         };
         let config = PlatformConfig {
             drive_config: Default::default(),
             verify_sum_trees: true,
+            quorum_size: 100,
+            quorum_switch_block_count: 25,
         };
         let day_in_ms = 1000 * 60 * 60 * 24;
         let block_count = 120;
@@ -696,10 +729,13 @@ mod tests {
                 times_per_block_range: 1..2,
                 chance_per_block: None,
             },
+            total_hpmns: 100,
         };
         let config = PlatformConfig {
             drive_config: Default::default(),
             verify_sum_trees: true,
+            quorum_size: 100,
+            quorum_switch_block_count: 25,
         };
         let day_in_ms = 1000 * 60 * 60 * 24;
         let block_count = 120;
@@ -764,15 +800,18 @@ mod tests {
                 times_per_block_range: 1..30,
                 chance_per_block: None,
             },
+            total_hpmns: 100,
         };
         let config = PlatformConfig {
             drive_config: Default::default(),
             verify_sum_trees: true,
+            quorum_size: 100,
+            quorum_switch_block_count: 25,
         };
         let day_in_ms = 1000 * 60 * 60 * 24;
         let block_count = 30;
         let outcome = run_chain_for_strategy(block_count, day_in_ms, strategy, config, 15);
-        assert_eq!(outcome.identities.len() as u64, 368);
+        assert_eq!(outcome.identities.len() as u64, 464);
         assert_eq!(outcome.masternode_identity_balances.len(), 100);
         let balance_count = outcome
             .masternode_identity_balances
