@@ -22,6 +22,10 @@ pub enum ExecutionError {
     DriveIncoherence(&'static str),
 
     /// Error
+    #[error("upgrade incoherence error: {0}")]
+    UpgradeIncoherence(&'static str),
+
+    /// Error
     #[error("drive missing data error: {0}")]
     DriveMissingData(&'static str),
 

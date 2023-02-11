@@ -166,7 +166,7 @@ impl Platform {
 
         // println!("Block #{}", block_info.height);
 
-        let _block_begin_response = self
+        let block_begin_response = self
             .block_begin(block_begin_request, Some(&transaction))
             .unwrap_or_else(|e| {
                 panic!(
@@ -174,6 +174,43 @@ impl Platform {
                     block_info.height, block_info.time_ms
                 )
             });
+
+        if block_begin_response.epoch_info.is_epoch_change {
+            self.state.current_protocol_version_in_consensus =
+                self.state.next_epoch_protocol_version;
+            // if we are at an epoch change, check to see if over 75% of blocks of previous epoch
+            // were on the future version
+            let cache = self.drive.cache.borrow_mut();
+            let mut versions_passing_threshold = cache
+                .versions_counter
+                .as_ref()
+                .map(|version_counter| {
+                    version_counter
+                        .iter()
+                        .filter_map(|(protocol_version, count)| {
+                            //todo: replace 100 with threshold
+                            if count > &100 {
+                                Some(*protocol_version)
+                            } else {
+                                None
+                            }
+                        })
+                        .collect::<Vec<ProtocolVersion>>()
+                })
+                .unwrap_or_default();
+
+            if versions_passing_threshold.len() > 1 {
+                return Err(Error::Execution(ExecutionError::UpgradeIncoherence(
+                    "only at most 1 version should be able to pass the threshold to upgrade",
+                )));
+            }
+            if versions_passing_threshold.len() == 1 {
+                self.state.next_epoch_protocol_version = versions_passing_threshold.remove(0);
+            } else {
+                self.state.next_epoch_protocol_version =
+                    self.state.current_protocol_version_in_consensus;
+            }
+        }
 
         // println!("{:#?}", block_begin_response);
 

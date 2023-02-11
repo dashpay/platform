@@ -31,12 +31,13 @@ mod tests {
             quorum_size: 100,
             quorum_rotation_block_count: 125,
         };
+        let hour_in_ms = 1000 * 60 * 60;
         let ChainExecutionOutcome {
             platform,
             masternode_identity_balances,
             identities,
             end_epoch_index,
-        } = run_chain_for_strategy(2000, 3000, strategy, config, 15);
+        } = run_chain_for_strategy(2000, hour_in_ms, strategy, config, 15);
         let mut drive_cache = platform.drive.cache.borrow_mut();
         let counter = drive_cache
             .versions_counter
@@ -48,6 +49,7 @@ mod tests {
             .expect("expected to get versions");
         assert_eq!(counter.get(&1), Some(&0)); //all nodes upgraded
         assert_eq!(counter.get(&2), Some(&448)); //most nodes were hit (12 were not)
+        assert_eq!(platform.state.last_block_info.unwrap().epoch.index, 4);
         assert_eq!(platform.state.current_protocol_version_in_consensus, 2);
     }
 }

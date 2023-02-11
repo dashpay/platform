@@ -99,7 +99,6 @@ impl TenderdashAbci for Platform {
         // Set genesis time
         let genesis_time_ms = if request.block_height == 1 {
             self.drive.set_genesis_time(request.block_time_ms);
-
             request.block_time_ms
         } else {
             //todo: lazy load genesis time

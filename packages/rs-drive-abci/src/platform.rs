@@ -61,6 +61,7 @@ impl Platform {
         let state = PlatformState {
             last_block_info: None,
             current_protocol_version_in_consensus: PROTOCOL_VERSION,
+            next_epoch_protocol_version: PROTOCOL_VERSION,
         };
         Ok(Platform {
             drive,

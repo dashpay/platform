@@ -7,4 +7,6 @@ pub struct PlatformState {
     pub last_block_info: Option<BlockInfo>,
     /// Current Version
     pub current_protocol_version_in_consensus: ProtocolVersion,
+    /// upcoming protocol version
+    pub next_epoch_protocol_version: ProtocolVersion,
 }
