@@ -108,7 +108,16 @@ impl Drive {
             transaction,
             &mut batch_operations,
         )?;
-        self.apply_batch_drive_operations(None, transaction, batch_operations, &mut vec![])?;
+
+        let grove_db_operations = DriveOperation::grovedb_operations_batch(&batch_operations);
+        if !grove_db_operations.is_empty() {
+            self.apply_batch_grovedb_operations(
+                None,
+                transaction,
+                grove_db_operations,
+                &mut vec![],
+            )?;
+        }
         Ok(inserted)
     }
     /// Update the validator proposed app version
@@ -130,7 +139,7 @@ impl Drive {
         let version_bytes = version.encode_var_vec();
         let version_element = Element::new_item(version_bytes.clone());
 
-        let (will_insert, previous_element) = self.batch_insert_if_changed_value(
+        let (value_changed, previous_element) = self.batch_insert_if_changed_value(
             PathKeyElementInfo::PathFixedSizeKeyRefElement((
                 path,
                 validator_pro_tx_hash.as_slice(),
@@ -141,40 +150,41 @@ impl Drive {
             drive_operations,
         )?;
 
-        // if we had a different previous version we need to remove it from the version counter
-        if let Some(previous_element) = previous_element {
-            let previous_version_bytes = previous_element.as_item_bytes().map_err(GroveDB)?;
-            let previous_version = ProtocolVersion::decode_var(previous_version_bytes)
-                .ok_or(Error::Drive(DriveError::CorruptedElementType(
-                    "encoded value could not be decoded",
-                )))
-                .map(|(value, _)| value)?;
-            //we should remove 1 from the previous version
-            let previous_count = version_counter
-                .get_mut(&previous_version)
-                .ok_or(Error::Drive(DriveError::CorruptedCacheState(
-                    "trying to lower the count of a version from cache that is not found"
-                        .to_string(),
-                )))?;
-            if previous_count == &0 {
-                return Err(Error::Drive(DriveError::CorruptedCacheState(
-                    "trying to lower the count of a version from cache that is already at 0"
-                        .to_string(),
-                )));
-            }
-            *previous_count -= 1;
-            self.batch_insert(
-                PathKeyElementInfo::PathFixedSizeKeyRefElement((
-                    versions_counter_path(),
-                    previous_version_bytes,
-                    Element::new_item(previous_count.encode_var_vec()),
-                )),
-                drive_operations,
-            )?;
-        }
-
         // if we will insert we need to add it to the version counter
-        if will_insert {
+        if value_changed {
+            // if we had a different previous version we need to remove it from the version counter
+            if let Some(previous_element) = previous_element {
+                let previous_version_bytes = previous_element.as_item_bytes().map_err(GroveDB)?;
+                let previous_version = ProtocolVersion::decode_var(previous_version_bytes)
+                    .ok_or(Error::Drive(DriveError::CorruptedElementType(
+                        "encoded value could not be decoded",
+                    )))
+                    .map(|(value, _)| value)?;
+                //we should remove 1 from the previous version
+                let previous_count =
+                    version_counter
+                        .get_mut(&previous_version)
+                        .ok_or(Error::Drive(DriveError::CorruptedCacheState(
+                            "trying to lower the count of a version from cache that is not found"
+                                .to_string(),
+                        )))?;
+                if previous_count == &0 {
+                    return Err(Error::Drive(DriveError::CorruptedCacheState(
+                        "trying to lower the count of a version from cache that is already at 0"
+                            .to_string(),
+                    )));
+                }
+                *previous_count -= 1;
+                self.batch_insert(
+                    PathKeyElementInfo::PathFixedSizeKeyRefElement((
+                        versions_counter_path(),
+                        previous_version_bytes,
+                        Element::new_item(previous_count.encode_var_vec()),
+                    )),
+                    drive_operations,
+                )?;
+            }
+
             let version_count = version_counter.entry(version).or_default();
             if version_count == &u32::MAX {
                 return Err(Error::Drive(DriveError::CorruptedCacheState(
@@ -193,6 +203,6 @@ impl Drive {
             )?;
         }
 
-        Ok(will_insert)
+        Ok(value_changed)
     }
 }

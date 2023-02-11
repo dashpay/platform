@@ -379,6 +379,7 @@ pub(crate) fn run_chain_for_strategy(
 ) -> ChainExecutionOutcome {
     let mut rng = StdRng::seed_from_u64(seed);
     let quorum_size = config.quorum_size;
+    let quorum_rotation_block_count = config.quorum_rotation_block_count;
     let mut platform = setup_platform_raw(Some(config));
     let mut current_time_ms = 0;
     let first_block_time = 0;
@@ -405,7 +406,7 @@ pub(crate) fn run_chain_for_strategy(
         .as_ref()
         .map(|upgrading_info| upgrading_info.apply_to_proposers(proposers.clone(), &mut rng));
 
-    let current_proposers: Vec<[u8; 32]> = proposers
+    let mut current_proposers: Vec<[u8; 32]> = proposers
         .choose_multiple(&mut rng, quorum_size as usize)
         .cloned()
         .collect();
@@ -461,6 +462,13 @@ pub(crate) fn run_chain_for_strategy(
         current_time_ms += block_spacing_ms;
         i += 1;
         i %= quorum_size;
+        let needs_rotation = block_height % quorum_rotation_block_count == 0;
+        if needs_rotation {
+            current_proposers = proposers
+                .choose_multiple(&mut rng, quorum_size as usize)
+                .cloned()
+                .collect();
+        }
     }
 
     let masternode_identity_balances = platform
@@ -504,7 +512,7 @@ mod tests {
             drive_config: Default::default(),
             verify_sum_trees: true,
             quorum_size: 100,
-            quorum_switch_block_count: 25,
+            quorum_rotation_block_count: 25,
         };
         run_chain_for_strategy(1000, 3000, strategy, config, 15);
     }
@@ -525,7 +533,7 @@ mod tests {
             drive_config: Default::default(),
             verify_sum_trees: true,
             quorum_size: 100,
-            quorum_switch_block_count: 25,
+            quorum_rotation_block_count: 25,
         };
         let outcome = run_chain_for_strategy(100, 3000, strategy, config, 15);
 
@@ -548,7 +556,7 @@ mod tests {
             drive_config: Default::default(),
             verify_sum_trees: true,
             quorum_size: 100,
-            quorum_switch_block_count: 25,
+            quorum_rotation_block_count: 25,
         };
         let day_in_ms = 1000 * 60 * 60 * 24;
         let outcome = run_chain_for_strategy(150, day_in_ms, strategy, config, 15);
@@ -585,7 +593,7 @@ mod tests {
             drive_config: Default::default(),
             verify_sum_trees: true,
             quorum_size: 100,
-            quorum_switch_block_count: 25,
+            quorum_rotation_block_count: 25,
         };
         run_chain_for_strategy(1, 3000, strategy, config, 15);
     }
@@ -629,7 +637,7 @@ mod tests {
             drive_config: Default::default(),
             verify_sum_trees: true,
             quorum_size: 100,
-            quorum_switch_block_count: 25,
+            quorum_rotation_block_count: 25,
         };
         run_chain_for_strategy(100, 3000, strategy, config, 15);
     }
@@ -673,7 +681,7 @@ mod tests {
             drive_config: Default::default(),
             verify_sum_trees: true,
             quorum_size: 100,
-            quorum_switch_block_count: 25,
+            quorum_rotation_block_count: 25,
         };
         let day_in_ms = 1000 * 60 * 60 * 24;
         let block_count = 120;
@@ -745,7 +753,7 @@ mod tests {
             drive_config: Default::default(),
             verify_sum_trees: true,
             quorum_size: 100,
-            quorum_switch_block_count: 25,
+            quorum_rotation_block_count: 25,
         };
         let day_in_ms = 1000 * 60 * 60 * 24;
         let block_count = 120;
@@ -817,7 +825,7 @@ mod tests {
             drive_config: Default::default(),
             verify_sum_trees: true,
             quorum_size: 100,
-            quorum_switch_block_count: 25,
+            quorum_rotation_block_count: 25,
         };
         let day_in_ms = 1000 * 60 * 60 * 24;
         let block_count = 120;
@@ -889,7 +897,7 @@ mod tests {
             drive_config: Default::default(),
             verify_sum_trees: true,
             quorum_size: 100,
-            quorum_switch_block_count: 25,
+            quorum_rotation_block_count: 25,
         };
         let day_in_ms = 1000 * 60 * 60 * 24;
         let block_count = 30;

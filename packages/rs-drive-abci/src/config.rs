@@ -13,7 +13,7 @@ pub struct PlatformConfig {
     pub quorum_size: u16,
 
     /// How often should quorums change?
-    pub quorum_switch_block_count: u32,
+    pub quorum_rotation_block_count: u64,
 }
 
 impl Default for PlatformConfig {
@@ -22,7 +22,7 @@ impl Default for PlatformConfig {
             drive_config: Default::default(),
             verify_sum_trees: true,
             quorum_size: 100,
-            quorum_switch_block_count: 25,
+            quorum_rotation_block_count: 25,
         }
     }
 }
