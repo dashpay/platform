@@ -556,7 +556,7 @@ mod tests {
             drive_config: Default::default(),
             verify_sum_trees: true,
             quorum_size: 100,
-            quorum_rotation_block_count: 25,
+            quorum_rotation_block_count: 100,
         };
         let day_in_ms = 1000 * 60 * 60 * 24;
         let outcome = run_chain_for_strategy(150, day_in_ms, strategy, config, 15);
@@ -681,7 +681,7 @@ mod tests {
             drive_config: Default::default(),
             verify_sum_trees: true,
             quorum_size: 100,
-            quorum_rotation_block_count: 25,
+            quorum_rotation_block_count: 100,
         };
         let day_in_ms = 1000 * 60 * 60 * 24;
         let block_count = 120;
@@ -753,7 +753,7 @@ mod tests {
             drive_config: Default::default(),
             verify_sum_trees: true,
             quorum_size: 100,
-            quorum_rotation_block_count: 25,
+            quorum_rotation_block_count: 100,
         };
         let day_in_ms = 1000 * 60 * 60 * 24;
         let block_count = 120;
@@ -825,7 +825,7 @@ mod tests {
             drive_config: Default::default(),
             verify_sum_trees: true,
             quorum_size: 100,
-            quorum_rotation_block_count: 25,
+            quorum_rotation_block_count: 100,
         };
         let day_in_ms = 1000 * 60 * 60 * 24;
         let block_count = 120;
@@ -897,7 +897,7 @@ mod tests {
             drive_config: Default::default(),
             verify_sum_trees: true,
             quorum_size: 100,
-            quorum_rotation_block_count: 25,
+            quorum_rotation_block_count: 100,
         };
         let day_in_ms = 1000 * 60 * 60 * 24;
         let block_count = 30;

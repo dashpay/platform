@@ -1,5 +1,5 @@
 use crate::drive::batch::GroveDbOpBatch;
-use crate::drive::grove_operations::{BatchInsertApplyType, DirectQueryType};
+use crate::drive::grove_operations::BatchInsertApplyType;
 use crate::drive::object_size_info::PathKeyElementInfo;
 use crate::drive::{Drive, RootTree};
 use crate::error::drive::DriveError;
@@ -77,7 +77,7 @@ impl Drive {
             QueryResultType::QueryKeyElementPairResultType,
             &mut vec![],
         )?;
-        for (version_bytes, count_element) in results.to_key_elements() {
+        for (version_bytes, _count_element) in results.to_key_elements() {
             let version = ProtocolVersion::decode_var(version_bytes.as_slice())
                 .ok_or(Error::Drive(DriveError::CorruptedElementType(
                     "encoded value could not be decoded",
@@ -131,7 +131,7 @@ impl Drive {
         drive_operations: &mut Vec<DriveOperation>,
     ) -> Result<bool, Error> {
         let mut cache = self.cache.borrow_mut();
-        let mut version_counter = cache
+        let version_counter = cache
             .versions_counter
             .get_or_insert(self.fetch_versions_with_counter(transaction)?);
 

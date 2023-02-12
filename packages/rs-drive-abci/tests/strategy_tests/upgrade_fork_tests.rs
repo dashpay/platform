@@ -1,13 +1,11 @@
 #[cfg(test)]
 mod tests {
-    use super::*;
+
     use crate::{
         run_chain_for_strategy, ChainExecutionOutcome, Frequency, Strategy, UpgradingInfo,
     };
-    use drive::dpp::data_contract::extra::common::json_document_to_cbor;
-    use drive::dpp::data_contract::DriveContractExt;
+
     use drive_abci::config::PlatformConfig;
-    use std::collections::HashMap;
 
     #[test]
     fn run_chain_version_upgrade() {
@@ -34,11 +32,11 @@ mod tests {
         let hour_in_ms = 1000 * 60 * 60;
         let ChainExecutionOutcome {
             platform,
-            masternode_identity_balances,
-            identities,
-            end_epoch_index,
+            masternode_identity_balances: _,
+            identities: _,
+            end_epoch_index: _,
         } = run_chain_for_strategy(2000, hour_in_ms, strategy, config, 15);
-        let mut drive_cache = platform.drive.cache.borrow_mut();
+        let drive_cache = platform.drive.cache.borrow_mut();
         let counter = drive_cache
             .versions_counter
             .as_ref()

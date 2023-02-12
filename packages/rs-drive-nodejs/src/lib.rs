@@ -105,7 +105,7 @@ impl PlatformWrapper {
 
             let platform_config = PlatformConfig {
                 drive_config,
-                verify_sum_trees: true,
+                ..Default::default()
             };
 
             // TODO: think how to pass this error to JS

@@ -558,6 +558,7 @@ mod tests {
             let platform = setup_platform_with_initial_state_structure(Some(PlatformConfig {
                 drive_config: Default::default(),
                 verify_sum_trees: false,
+                ..Default::default()
             }));
             let transaction = platform.drive.grove.start_transaction();
 
