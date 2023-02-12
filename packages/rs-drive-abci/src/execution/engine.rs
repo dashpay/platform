@@ -193,16 +193,16 @@ impl Platform {
                 self.state.next_epoch_protocol_version;
             // if we are at an epoch change, check to see if over 75% of blocks of previous epoch
             // were on the future version
-            let cache = self.drive.cache.borrow_mut();
+            let mut cache = self.drive.cache.borrow_mut();
             let mut versions_passing_threshold = cache
                 .versions_counter
-                .as_ref()
+                .take()
                 .map(|version_counter| {
                     version_counter
-                        .iter()
+                        .into_iter()
                         .filter_map(|(protocol_version, count)| {
-                            if count >= &required_upgraded_hpns {
-                                Some(*protocol_version)
+                            if count >= required_upgraded_hpns {
+                                Some(protocol_version)
                             } else {
                                 None
                             }
@@ -222,6 +222,10 @@ impl Platform {
                 self.state.next_epoch_protocol_version =
                     self.state.current_protocol_version_in_consensus;
             }
+            // we need to drop all version information
+            self.drive
+                .clear_version_information(Some(&transaction))
+                .map_err(Error::Drive)?;
         }
 
         // println!("{:#?}", block_begin_response);

@@ -150,9 +150,11 @@ impl UpgradingInfo {
                     .choose_weighted(rng, |item| item.1)
                     .unwrap()
                     .0;
+                // we generate a random number between 0 and 1
                 let u: f64 = rng.gen();
+                // we want to alter the randomness so that 75% of time we get
                 let change_block_height =
-                    ((-1.0 * expected_blocks) / 0.75 * f64::ln(1.0 - u)) as u64;
+                    (expected_blocks * 0.75 * f64::ln(1.0 - u) / f64::ln(0.5)) as u64;
                 (
                     pro_tx_hash,
                     ValidatorVersionMigration {
