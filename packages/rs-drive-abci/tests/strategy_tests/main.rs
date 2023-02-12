@@ -367,7 +367,22 @@ pub struct ChainExecutionOutcome {
     pub platform: Platform,
     pub masternode_identity_balances: BTreeMap<[u8; 32], Credits>,
     pub identities: Vec<Identity>,
+    pub proposers: Vec<[u8; 32]>,
+    pub current_proposers: Vec<[u8; 32]>,
     pub end_epoch_index: u16,
+}
+
+pub struct ChainExecutionParameters {
+    pub block_start: u64,
+    pub block_count: u64,
+    pub block_spacing_ms: u64,
+    pub proposers: Vec<[u8; 32]>,
+    pub current_proposers: Vec<[u8; 32]>,
+}
+
+pub enum StrategyRandomness {
+    SeedEntropy(u64),
+    RNGEntropy(StdRng),
 }
 
 pub(crate) fn run_chain_for_strategy(
@@ -377,14 +392,10 @@ pub(crate) fn run_chain_for_strategy(
     config: PlatformConfig,
     seed: u64,
 ) -> ChainExecutionOutcome {
-    let mut rng = StdRng::seed_from_u64(seed);
     let quorum_size = config.quorum_size;
-    let quorum_rotation_block_count = config.quorum_rotation_block_count;
-    let mut platform = setup_platform_raw(Some(config));
-    let mut current_time_ms = 0;
-    let first_block_time = 0;
-    let mut current_identities = vec![];
-    let mut i = 0;
+    let mut platform = setup_platform_raw(Some(config.clone()));
+    let mut rng = StdRng::seed_from_u64(seed);
+
     // init chain
     let init_chain_request = InitChainRequest {};
 
@@ -401,17 +412,57 @@ pub(crate) fn run_chain_for_strategy(
         None,
     );
 
-    let proposer_versions = strategy
-        .upgrading_info
-        .as_ref()
-        .map(|upgrading_info| upgrading_info.apply_to_proposers(proposers.clone(), &mut rng));
-
     let mut current_proposers: Vec<[u8; 32]> = proposers
         .choose_multiple(&mut rng, quorum_size as usize)
         .cloned()
         .collect();
 
-    for block_height in 1..=block_count {
+    continue_chain_for_strategy(
+        platform,
+        ChainExecutionParameters {
+            block_start: 1,
+            block_count,
+            block_spacing_ms,
+            proposers,
+            current_proposers,
+        },
+        strategy,
+        config,
+        StrategyRandomness::RNGEntropy(rng),
+    )
+}
+
+pub(crate) fn continue_chain_for_strategy(
+    mut platform: Platform,
+    chain_execution_parameters: ChainExecutionParameters,
+    strategy: Strategy,
+    config: PlatformConfig,
+    seed: StrategyRandomness,
+) -> ChainExecutionOutcome {
+    let ChainExecutionParameters {
+        block_start,
+        block_count,
+        block_spacing_ms,
+        mut proposers,
+        mut current_proposers,
+    } = chain_execution_parameters;
+    let mut rng = match seed {
+        StrategyRandomness::SeedEntropy(seed) => StdRng::seed_from_u64(seed),
+        StrategyRandomness::RNGEntropy(rng) => rng,
+    };
+    let quorum_size = config.quorum_size;
+    let quorum_rotation_block_count = config.quorum_rotation_block_count;
+    let mut current_time_ms = 0;
+    let first_block_time = 0;
+    let mut current_identities = vec![];
+    let mut i = 0;
+
+    let proposer_versions = strategy
+        .upgrading_info
+        .as_ref()
+        .map(|upgrading_info| upgrading_info.apply_to_proposers(proposers.clone(), &mut rng));
+
+    for block_height in block_start..=block_count {
         let epoch_info = EpochInfo::calculate(
             first_block_time,
             current_time_ms,
@@ -487,6 +538,8 @@ pub(crate) fn run_chain_for_strategy(
         platform,
         masternode_identity_balances,
         identities: current_identities,
+        proposers,
+        current_proposers,
         end_epoch_index,
     }
 }
