@@ -147,6 +147,7 @@ impl Platform {
         &mut self,
         proposer: [u8; 32],
         proposed_version: ProtocolVersion,
+        total_hpmns: u64,
         block_info: &BlockInfo,
         state_transitions: Vec<ExecutionEvent>,
     ) -> Result<(), Error> {
@@ -182,20 +183,7 @@ impl Platform {
                 .previous_epoch_index
                 .is_some()
         {
-            let previous_start_block_height = self
-                .drive
-                .get_epoch_start_block_height(
-                    &Epoch::new(
-                        block_begin_response
-                            .epoch_info
-                            .previous_epoch_index
-                            .unwrap(),
-                    ),
-                    Some(&transaction),
-                )
-                .map_err(Error::Drive)?;
-            let total_block_count = block_info.height - previous_start_block_height;
-            let required_block_count = 1 + total_block_count
+            let required_upgraded_hpns = 1 + total_hpmns
                 .checked_mul(75)
                 .and_then(|product| product.checked_div(100))
                 .ok_or(Error::Execution(ExecutionError::Overflow(
@@ -213,7 +201,7 @@ impl Platform {
                     version_counter
                         .iter()
                         .filter_map(|(protocol_version, count)| {
-                            if count >= &required_block_count {
+                            if count >= &required_upgraded_hpns {
                                 Some(*protocol_version)
                             } else {
                                 None

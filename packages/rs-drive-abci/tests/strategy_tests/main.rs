@@ -55,7 +55,7 @@ use drive_abci::abci::messages::InitChainRequest;
 use drive_abci::common::helpers::setup::setup_platform_raw;
 use drive_abci::config::PlatformConfig;
 use drive_abci::execution::engine::ExecutionEvent;
-use drive_abci::execution::fee_pools::epoch::EpochInfo;
+use drive_abci::execution::fee_pools::epoch::{EpochInfo, EPOCH_CHANGE_TIME_MS};
 use drive_abci::platform::Platform;
 use rand::rngs::StdRng;
 use rand::seq::SliceRandom;
@@ -128,7 +128,7 @@ pub(crate) struct UpgradingInfo {
 }
 
 #[derive(Clone, Debug)]
-pub(crate) struct ValidatorVersionMigration {
+pub struct ValidatorVersionMigration {
     current_protocol_version: ProtocolVersion,
     next_protocol_version: ProtocolVersion,
     change_block_height: BlockHeight,
@@ -138,8 +138,10 @@ impl UpgradingInfo {
     fn apply_to_proposers(
         &self,
         proposers: Vec<[u8; 32]>,
+        blocks_per_epoch: u64,
         rng: &mut StdRng,
     ) -> HashMap<[u8; 32], ValidatorVersionMigration> {
+        let expected_blocks = blocks_per_epoch as f64 * self.upgrade_three_quarters_life;
         proposers
             .into_iter()
             .map(|pro_tx_hash| {
@@ -148,12 +150,15 @@ impl UpgradingInfo {
                     .choose_weighted(rng, |item| item.1)
                     .unwrap()
                     .0;
+                let u: f64 = rng.gen();
+                let change_block_height =
+                    ((-1.0 * expected_blocks) / 0.75 * f64::ln(1.0 - u)) as u64;
                 (
                     pro_tx_hash,
                     ValidatorVersionMigration {
                         current_protocol_version: self.current_protocol_version,
                         next_protocol_version: next_version,
-                        change_block_height: 15,
+                        change_block_height,
                     },
                 )
             })
@@ -369,7 +374,9 @@ pub struct ChainExecutionOutcome {
     pub identities: Vec<Identity>,
     pub proposers: Vec<[u8; 32]>,
     pub current_proposers: Vec<[u8; 32]>,
+    pub current_proposer_versions: Option<HashMap<[u8; 32], ValidatorVersionMigration>>,
     pub end_epoch_index: u16,
+    pub end_time_ms: u64,
 }
 
 pub struct ChainExecutionParameters {
@@ -378,6 +385,10 @@ pub struct ChainExecutionParameters {
     pub block_spacing_ms: u64,
     pub proposers: Vec<[u8; 32]>,
     pub current_proposers: Vec<[u8; 32]>,
+    // the first option is if it is set
+    // the second option is if we are even upgrading
+    pub current_proposer_versions: Option<Option<HashMap<[u8; 32], ValidatorVersionMigration>>>,
+    pub current_time_ms: u64,
 }
 
 pub enum StrategyRandomness {
@@ -425,6 +436,8 @@ pub(crate) fn run_chain_for_strategy(
             block_spacing_ms,
             proposers,
             current_proposers,
+            current_proposer_versions: None,
+            current_time_ms: 0,
         },
         strategy,
         config,
@@ -445,6 +458,8 @@ pub(crate) fn continue_chain_for_strategy(
         block_spacing_ms,
         mut proposers,
         mut current_proposers,
+        current_proposer_versions,
+        mut current_time_ms,
     } = chain_execution_parameters;
     let mut rng = match seed {
         StrategyRandomness::SeedEntropy(seed) => StdRng::seed_from_u64(seed),
@@ -452,17 +467,21 @@ pub(crate) fn continue_chain_for_strategy(
     };
     let quorum_size = config.quorum_size;
     let quorum_rotation_block_count = config.quorum_rotation_block_count;
-    let mut current_time_ms = 0;
     let first_block_time = 0;
     let mut current_identities = vec![];
     let mut i = 0;
 
-    let proposer_versions = strategy
-        .upgrading_info
-        .as_ref()
-        .map(|upgrading_info| upgrading_info.apply_to_proposers(proposers.clone(), &mut rng));
+    let blocks_per_epoch = EPOCH_CHANGE_TIME_MS / block_spacing_ms;
 
-    for block_height in block_start..=block_count {
+    let proposer_count = proposers.len() as u64;
+
+    let proposer_versions = current_proposer_versions.unwrap_or(
+        strategy.upgrading_info.as_ref().map(|upgrading_info| {
+            upgrading_info.apply_to_proposers(proposers.clone(), blocks_per_epoch, &mut rng)
+        }),
+    );
+
+    for block_height in block_start..(block_start + block_count) {
         let epoch_info = EpochInfo::calculate(
             first_block_time,
             current_time_ms,
@@ -507,7 +526,13 @@ pub(crate) fn continue_chain_for_strategy(
             .unwrap_or(1);
 
         platform
-            .execute_block(*proposer, proposed_version, &block_info, state_transitions)
+            .execute_block(
+                *proposer,
+                proposed_version,
+                proposer_count,
+                &block_info,
+                state_transitions,
+            )
             .expect("expected to execute a block");
 
         current_time_ms += block_spacing_ms;
@@ -530,7 +555,7 @@ pub(crate) fn continue_chain_for_strategy(
     let end_epoch_index = platform
         .block_execution_context
         .take()
-        .expect("expected context")
+        .expect("expected block execution context")
         .epoch_info
         .current_epoch_index;
 
@@ -540,7 +565,9 @@ pub(crate) fn continue_chain_for_strategy(
         identities: current_identities,
         proposers,
         current_proposers,
+        current_proposer_versions: proposer_versions,
         end_epoch_index,
+        end_time_ms: current_time_ms,
     }
 }
 
