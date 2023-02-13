@@ -50,6 +50,7 @@ function getBlockExecutionContextObjectFixture(dataContract = getDataContractFix
     dataContracts: [dataContract.toObject()],
     lastCommitInfo: CommitInfo.toObject(lastCommitInfo),
     height: 10,
+    proposedAppVersion: 42,
     coreChainLockedHeight: 10,
     version,
     contextLogger: pino(),
