@@ -81,6 +81,7 @@
     "qs": "^6.7.3",
     "engine.io": "^6.2.1",
     "ua-parser-js": "^1.0.33",
-    "http-cache-semantics": "^4.1.1"
+    "http-cache-semantics": "^4.1.1",
+    "cacheable-request": "^10.2.7"
   }
 }
