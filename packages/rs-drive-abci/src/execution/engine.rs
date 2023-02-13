@@ -167,7 +167,7 @@ impl Platform {
             .block_begin(block_begin_request, Some(&transaction))
             .unwrap_or_else(|e| {
                 panic!(
-                    "should begin process block #{} at time #{} : {e}",
+                    "should begin process block #{} at time #{}: {e}",
                     block_info.height, block_info.time_ms
                 )
             });
