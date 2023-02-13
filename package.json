@@ -80,8 +80,6 @@
     "oclif@3.4.2": "patch:oclif@npm:3.4.2#.yarn/patches/oclif-npm-3.4.2-a655d32eed.patch",
     "qs": "^6.7.3",
     "engine.io": "^6.2.1",
-    "ua-parser-js": "^1.0.33",
-    "http-cache-semantics": "^4.1.1",
-    "cacheable-request": "^10.2.7"
+    "ua-parser-js": "^1.0.33"
   }
 }
