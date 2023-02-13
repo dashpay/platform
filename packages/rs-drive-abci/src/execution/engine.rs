@@ -14,6 +14,7 @@ use drive::fee::result::FeeResult;
 use drive::fee_pools::epochs::Epoch;
 use drive::grovedb::Transaction;
 use drive::query::TransactionArg;
+use crate::constants::PROTOCOL_VERSION_UPGRADE_PERCENTAGE_NEEDED;
 
 /// An execution event
 pub enum ExecutionEvent<'a> {
@@ -151,7 +152,7 @@ impl Platform {
         transaction: TransactionArg,
     ) -> Result<Option<ProtocolVersion>, Error> {
         let required_upgraded_hpns = 1 + total_hpmns
-            .checked_mul(75)
+            .checked_mul(PROTOCOL_VERSION_UPGRADE_PERCENTAGE_NEEDED)
             .and_then(|product| product.checked_div(100))
             .ok_or(Error::Execution(ExecutionError::Overflow(
                 "overflow for required block count",
