@@ -32,7 +32,7 @@
 //! This modules implements functions in Drive relevant to updating Documents.
 //!
 
-use std::borrow::{Borrow, Cow};
+use std::borrow::Cow;
 use std::collections::{HashMap, HashSet};
 
 use dpp::data_contract::DriveContractExt;
@@ -53,7 +53,6 @@ use crate::drive::object_size_info::DocumentInfo::{
     DocumentRefAndSerialization, DocumentWithoutSerialization,
 };
 use dpp::document::document_stub::DocumentStub;
-use dpp::prelude::DataContract;
 
 use crate::drive::object_size_info::PathKeyElementInfo::PathKeyRefElement;
 use crate::drive::object_size_info::{
@@ -293,7 +292,7 @@ impl Drive {
             );
         }
 
-        let contract: &DataContract = document_and_contract_info.contract.borrow();
+        let contract = document_and_contract_info.contract;
         let document_type = document_and_contract_info.document_type;
         let owner_id = document_and_contract_info.owned_document_info.owner_id;
 

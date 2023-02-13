@@ -66,7 +66,7 @@ impl Drive {
         } else {
             return;
         };
-        let contract = &document_and_contract_info.contract;
+        let contract = document_and_contract_info.contract;
         let document_type = document_and_contract_info.document_type;
         // at this level we have all the documents for the contract
         if document_type.documents_keep_history {

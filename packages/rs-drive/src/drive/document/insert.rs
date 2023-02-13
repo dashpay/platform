@@ -42,7 +42,7 @@ use grovedb::EstimatedLayerCount::{ApproximateElements, PotentiallyAtMaxElements
 use grovedb::EstimatedLayerSizes::AllSubtrees;
 use grovedb::EstimatedSumTrees::NoSumTrees;
 use grovedb::{Element, EstimatedLayerInformation, TransactionArg};
-use std::borrow::{Borrow, Cow};
+use std::borrow::Cow;
 use std::collections::HashMap;
 use std::option::Option::None;
 
@@ -84,7 +84,6 @@ use crate::error::document::DocumentError;
 use crate::error::fee::FeeError;
 use crate::fee::result::FeeResult;
 use dpp::document::document_stub::DocumentStub;
-use dpp::prelude::DataContract;
 
 impl Drive {
     /// Adds a document to primary storage.
@@ -102,7 +101,7 @@ impl Drive {
         drive_operations: &mut Vec<DriveOperation>,
     ) -> Result<(), Error> {
         //let mut base_operations : EnumMap<Op, u64> = EnumMap::default();
-        let contract: &DataContract = document_and_contract_info.contract.borrow();
+        let contract = document_and_contract_info.contract;
         let document_type = document_and_contract_info.document_type;
         let primary_key_path = contract_documents_primary_key_path(
             contract.id().as_bytes(),
@@ -944,7 +943,7 @@ impl Drive {
         batch_operations: &mut Vec<DriveOperation>,
     ) -> Result<(), Error> {
         let index_level = &document_and_contract_info.document_type.index_structure;
-        let contract: &DataContract = document_and_contract_info.contract.borrow();
+        let contract = document_and_contract_info.contract;
         let event_id = unique_event_id();
         let document_type = document_and_contract_info.document_type;
         let storage_flags = if document_type.documents_mutable || contract.can_be_deleted() {
@@ -1153,7 +1152,7 @@ impl Drive {
             if let Some(estimated_costs_only_with_layer_info) = estimated_costs_only_with_layer_info
             {
                 Self::add_estimation_costs_for_levels_up_to_contract_document_type_excluded(
-                    &document_and_contract_info.contract,
+                    document_and_contract_info.contract,
                     estimated_costs_only_with_layer_info,
                 );
             }

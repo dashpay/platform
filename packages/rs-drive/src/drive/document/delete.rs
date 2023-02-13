@@ -34,14 +34,13 @@
 
 use grovedb::batch::key_info::KeyInfo::KnownKey;
 use grovedb::batch::KeyInfoPath;
-use std::borrow::{Borrow, Cow};
 
 use grovedb::EstimatedLayerCount::{ApproximateElements, PotentiallyAtMaxElements};
 use grovedb::EstimatedLayerSizes::{AllItems, AllReference, AllSubtrees};
 use grovedb::{Element, EstimatedLayerInformation, TransactionArg};
 
 use dpp::data_contract::document_type::{DocumentType, IndexLevel};
-use dpp::data_contract::{DataContract, DriveContractExt};
+use dpp::data_contract::DriveContractExt;
 use grovedb::EstimatedSumTrees::NoSumTrees;
 use std::collections::HashMap;
 
@@ -507,7 +506,7 @@ impl Drive {
     ) -> Result<(), Error> {
         let document_type = document_and_contract_info.document_type;
         let index_level = &document_type.index_structure;
-        let contract: &DataContract = document_and_contract_info.contract.borrow();
+        let contract = document_and_contract_info.contract;
         let event_id = unique_event_id();
         let storage_flags = if document_type.documents_mutable || contract.can_be_deleted() {
             document_and_contract_info
