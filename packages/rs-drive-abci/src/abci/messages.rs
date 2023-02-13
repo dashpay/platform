@@ -66,7 +66,7 @@ pub struct BlockBeginRequest {
     /// The block proposer's proTxHash
     pub proposer_pro_tx_hash: [u8; 32],
     /// The block proposer's proposed version
-    pub proposer_proposed_version: ProtocolVersion,
+    pub proposed_app_version: ProtocolVersion,
     /// Validator set quorum hash
     pub validator_set_quorum_hash: [u8; 32],
 }

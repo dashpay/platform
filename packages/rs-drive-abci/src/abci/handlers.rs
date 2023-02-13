@@ -111,7 +111,7 @@ impl TenderdashAbci for Platform {
         };
 
         // Update versions
-        let proposed_app_version = request.proposer_proposed_version;
+        let proposed_app_version = request.proposed_app_version;
 
         self.drive.update_validator_proposed_app_version(
             request.proposer_pro_tx_hash,
@@ -302,7 +302,7 @@ mod tests {
                         previous_block_time_ms,
                         proposer_pro_tx_hash: proposers
                             [block_height as usize % (proposers_count as usize)],
-                        proposer_proposed_version: 1,
+                        proposed_app_version: 1,
                         validator_set_quorum_hash: Default::default(),
                     };
 
@@ -499,7 +499,7 @@ mod tests {
                         previous_block_time_ms,
                         proposer_pro_tx_hash: proposers
                             [block_height as usize % (proposers_count as usize)],
-                        proposer_proposed_version: 1,
+                        proposed_app_version: 1,
                         validator_set_quorum_hash: Default::default(),
                     };
 

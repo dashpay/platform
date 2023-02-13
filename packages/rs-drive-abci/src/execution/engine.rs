@@ -162,7 +162,7 @@ impl Platform {
                 .as_ref()
                 .map(|block_info| block_info.time_ms),
             proposer_pro_tx_hash: proposer,
-            proposer_proposed_version: proposed_version,
+            proposed_app_version: proposed_version,
             validator_set_quorum_hash: Default::default(),
         };
 
