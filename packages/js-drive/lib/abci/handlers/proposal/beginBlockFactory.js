@@ -43,6 +43,7 @@ function beginBlockFactory(
    * @param {Long} request.height
    * @param {number} request.coreChainLockedHeight
    * @param {IConsensus} request.version
+   * @param {Long} request.proposedAppVersion
    * @param {ITimestamp} request.time
    * @param {Buffer} request.proposerProTxHash
    * @param {BaseLogger} contextLogger
@@ -57,6 +58,7 @@ function beginBlockFactory(
       version,
       time,
       proposerProTxHash,
+      proposedAppVersion,
       round,
     } = request;
 
@@ -91,6 +93,7 @@ function beginBlockFactory(
     proposalBlockExecutionContext.setContextLogger(contextLogger);
     proposalBlockExecutionContext.setHeight(height);
     proposalBlockExecutionContext.setVersion(version);
+    proposalBlockExecutionContext.setProposedAppVersion(proposedAppVersion);
     proposalBlockExecutionContext.setRound(round);
     proposalBlockExecutionContext.setTimeMs(protoTimestampToMillis(time));
     proposalBlockExecutionContext.setCoreChainLockedHeight(coreChainLockedHeight);

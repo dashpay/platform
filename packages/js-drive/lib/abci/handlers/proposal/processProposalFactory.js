@@ -42,6 +42,7 @@ function processProposalFactory(
       proposedLastCommit: lastCommitInfo,
       time,
       proposerProTxHash,
+      proposedAppVersion,
       round,
     } = request;
 
@@ -55,6 +56,7 @@ function processProposalFactory(
         version,
         time,
         proposerProTxHash: Buffer.from(proposerProTxHash),
+        proposedAppVersion,
         round,
       },
       contextLogger,

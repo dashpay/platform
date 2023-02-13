@@ -37,6 +37,7 @@ describe('beginBlockFactory', () => {
   let version;
   let rsAbciMock;
   let proposerProTxHash;
+  let proposedAppVersion;
   let round;
   let executionTimerMock;
   let latestBlockExecutionContextMock;
@@ -50,6 +51,7 @@ describe('beginBlockFactory', () => {
   beforeEach(function beforeEach() {
     round = 0;
     protocolVersion = Long.fromInt(1);
+    proposedAppVersion = Long.fromInt(1);
     blockHeight = Long.fromNumber(1);
     time = millisToProtoTimestamp(Date.now());
     timeMs = protoTimestampToMillis(time);
@@ -135,6 +137,7 @@ describe('beginBlockFactory', () => {
       version,
       time: millisToProtoTimestamp(timeMs),
       proposerProTxHash,
+      proposedAppVersion,
       round,
     };
   });
@@ -177,6 +180,8 @@ describe('beginBlockFactory', () => {
       .to.be.calledOnceWithExactly(blockHeight);
     expect(proposalBlockExecutionContextMock.setVersion)
       .to.be.calledOnceWithExactly(version);
+    expect(proposalBlockExecutionContextMock.setProposedAppVersion)
+      .to.be.calledOnceWithExactly(proposedAppVersion);
     expect(proposalBlockExecutionContextMock.setTimeMs)
       .to.be.calledOnceWithExactly(timeMs);
     expect(proposalBlockExecutionContextMock.setCoreChainLockedHeight)

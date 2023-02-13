@@ -106,6 +106,25 @@ class BlockExecutionContext {
   }
 
   /**
+   *
+   * @param {Long} version
+   * @return {BlockExecutionContext}
+   */
+  setProposedAppVersion(version) {
+    this.proposedAppVersion = version;
+
+    return this;
+  }
+
+  /**
+   *
+   * @return {Long}
+   */
+  getProposedAppVersion() {
+    return this.proposedAppVersion;
+  }
+
+  /**
    * @param {number} timeMs
    */
   setTimeMs(timeMs) {
