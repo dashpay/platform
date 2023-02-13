@@ -532,6 +532,8 @@ pub enum DocumentInfo<'a> {
     DocumentRefAndSerialization((&'a DocumentStub, &'a [u8], Option<Cow<'a, StorageFlags>>)),
     /// The borrowed document without it's serialized form
     DocumentRefWithoutSerialization((&'a DocumentStub, Option<Cow<'a, StorageFlags>>)),
+    /// The document and it's serialized form
+    DocumentAndSerialization((DocumentStub, Vec<u8>, Option<Cow<'a, StorageFlags>>)),
     /// The document without it's serialized form
     DocumentWithoutSerialization((DocumentStub, Option<Cow<'a, StorageFlags>>)),
     /// An element size
@@ -554,7 +556,8 @@ impl<'a> DocumentInfo<'a> {
         match self {
             DocumentInfo::DocumentRefAndSerialization((document, _, _))
             | DocumentInfo::DocumentRefWithoutSerialization((document, _)) => Some(document),
-            DocumentInfo::DocumentWithoutSerialization((document, _)) => Some(document),
+            DocumentInfo::DocumentWithoutSerialization((document, _))
+            | DocumentInfo::DocumentAndSerialization((document, _, _)) => Some(document),
             DocumentInfo::DocumentEstimatedAverageSize(_) => None,
         }
     }
@@ -566,7 +569,8 @@ impl<'a> DocumentInfo<'a> {
             | DocumentInfo::DocumentRefWithoutSerialization((document, _)) => {
                 KeyRefRequest(document.id.as_slice())
             }
-            DocumentInfo::DocumentWithoutSerialization((document, _)) => {
+            DocumentInfo::DocumentWithoutSerialization((document, _))
+            | DocumentInfo::DocumentAndSerialization((document, _, _)) => {
                 KeyRefRequest(document.id.as_slice())
             }
             DocumentInfo::DocumentEstimatedAverageSize(document_max_size) => {
@@ -621,7 +625,8 @@ impl<'a> DocumentInfo<'a> {
                     Some(value) => Ok(Some(Key(value))),
                 }
             }
-            DocumentInfo::DocumentWithoutSerialization((document, _)) => {
+            DocumentInfo::DocumentWithoutSerialization((document, _))
+            | DocumentInfo::DocumentAndSerialization((document, _, _)) => {
                 let raw_value =
                     document.get_raw_for_document_type(key_path, document_type, owner_id)?;
                 match raw_value {
@@ -679,7 +684,8 @@ impl<'a> DocumentInfo<'a> {
         match self {
             DocumentInfo::DocumentRefAndSerialization((_, _, storage_flags))
             | DocumentInfo::DocumentRefWithoutSerialization((_, storage_flags))
-            | DocumentInfo::DocumentWithoutSerialization((_, storage_flags)) => {
+            | DocumentInfo::DocumentWithoutSerialization((_, storage_flags))
+            | DocumentInfo::DocumentAndSerialization((_, _, storage_flags)) => {
                 storage_flags.as_ref().map(|flags| flags.as_ref())
             }
             DocumentInfo::DocumentEstimatedAverageSize(_) => {
@@ -695,7 +701,8 @@ impl<'a> DocumentInfo<'a> {
             | DocumentInfo::DocumentRefWithoutSerialization((document, _)) => {
                 Some(document.id.as_slice())
             }
-            DocumentInfo::DocumentWithoutSerialization((document, _)) => {
+            DocumentInfo::DocumentWithoutSerialization((document, _))
+            | DocumentInfo::DocumentAndSerialization((document, _, _)) => {
                 Some(document.id.as_slice())
             }
             DocumentInfo::DocumentEstimatedAverageSize(_) => None,

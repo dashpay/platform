@@ -169,9 +169,12 @@ impl Platform {
         data_contract: DataContract,
         operations: &mut Vec<DriveOperationType>,
     ) {
+        let serialization = data_contract.to_cbor().unwrap();
         operations.push(DriveOperationType::ContractOperation(
-            ContractOperationType::ApplyContract {
+            //todo: remove cbor
+            ContractOperationType::ApplyContractWithSerialization {
                 contract: Cow::Owned(data_contract),
+                serialized_contract: serialization,
                 storage_flags: None,
             },
         ))
@@ -238,11 +241,18 @@ impl Platform {
 
         let document_type = contract.document_type_for_name("domain")?;
 
+        let serialization = document.to_cbor();
         let operation =
             DriveOperationType::DocumentOperation(DocumentOperationType::AddDocumentForContract {
                 document_and_contract_info: DocumentAndContractInfo {
                     owned_document_info: OwnedDocumentInfo {
-                        document_info: DocumentInfo::DocumentWithoutSerialization((document, None)),
+                        //todo: remove cbor
+                        document_info: DocumentInfo::DocumentAndSerialization((
+                            document,
+                            serialization,
+                            None,
+                        )),
+                        // document_info: DocumentInfo::DocumentWithoutSerialization((document, None)),
                         owner_id: None,
                     },
                     contract,
@@ -278,8 +288,8 @@ mod tests {
             assert_eq!(
                 root_hash,
                 [
-                    60, 124, 103, 206, 3, 146, 243, 88, 224, 209, 142, 121, 239, 122, 118, 216,
-                    179, 158, 65, 74, 9, 169, 174, 26, 229, 147, 249, 147, 139, 212, 249, 45
+                    44, 107, 8, 186, 190, 201, 48, 103, 201, 199, 114, 15, 206, 175, 121, 151, 6,
+                    39, 5, 183, 112, 106, 196, 237, 115, 14, 155, 175, 11, 172, 27, 79
                 ]
             )
         }

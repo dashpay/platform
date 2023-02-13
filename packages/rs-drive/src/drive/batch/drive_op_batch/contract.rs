@@ -26,7 +26,7 @@ pub enum ContractOperationType<'a> {
     /// If the contract already exists, an update is applied, otherwise an insert.
     ApplyContractWithSerialization {
         /// The contract
-        contract: &'a Contract,
+        contract: Cow<'a, Contract>,
         /// The serialized contract
         serialized_contract: Vec<u8>,
         /// Storage flags for the contract
@@ -80,7 +80,7 @@ impl DriveOperationConverter for ContractOperationType<'_> {
                 serialized_contract: contract_serialization,
                 storage_flags,
             } => drive.apply_contract_with_serialization_operations(
-                contract,
+                contract.borrow(),
                 contract_serialization,
                 block_info,
                 estimated_costs_only_with_layer_info,
