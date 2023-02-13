@@ -75,32 +75,47 @@ impl Platform {
 
         // Create system identities and contracts
 
+        let dpns_contract = load_system_data_contract(SystemDataContract::DPNS)?;
+
         let system_data_contract_types = BTreeMap::from_iter([
             (
                 SystemDataContract::DPNS,
-                system_identity_public_keys.dpns_contract_owner,
+                (
+                    dpns_contract.clone(),
+                    system_identity_public_keys.dpns_contract_owner,
+                ),
             ),
             (
                 SystemDataContract::Withdrawals,
-                system_identity_public_keys.withdrawals_contract_owner,
+                (
+                    load_system_data_contract(SystemDataContract::Withdrawals)?,
+                    system_identity_public_keys.withdrawals_contract_owner,
+                ),
             ),
             (
                 SystemDataContract::FeatureFlags,
-                system_identity_public_keys.feature_flags_contract_owner,
+                (
+                    load_system_data_contract(SystemDataContract::FeatureFlags)?,
+                    system_identity_public_keys.feature_flags_contract_owner,
+                ),
             ),
             (
                 SystemDataContract::Dashpay,
-                system_identity_public_keys.dashpay_contract_owner,
+                (
+                    load_system_data_contract(SystemDataContract::Dashpay)?,
+                    system_identity_public_keys.dashpay_contract_owner,
+                ),
             ),
             (
                 SystemDataContract::MasternodeRewards,
-                system_identity_public_keys.masternode_reward_shares_contract_owner,
+                (
+                    load_system_data_contract(SystemDataContract::MasternodeRewards)?,
+                    system_identity_public_keys.masternode_reward_shares_contract_owner,
+                ),
             ),
         ]);
 
-        for (data_contract_type, identity_public_keys_set) in system_data_contract_types {
-            let data_contract = load_system_data_contract(data_contract_type)?;
-
+        for (_, (data_contract, identity_public_keys_set)) in system_data_contract_types {
             let public_keys = BTreeSet::from_iter([
                 IdentityPublicKey {
                     id: 0,
@@ -139,11 +154,7 @@ impl Platform {
             self.register_system_identity_operations(identity, &mut operations);
         }
 
-        // TODO: We shouldn't load it twice
-        let data_contract =
-            load_system_data_contract(SystemDataContract::DPNS).map_err(Error::Protocol)?;
-
-        self.register_dpns_top_level_domain_operations(&data_contract, &mut operations)?;
+        self.register_dpns_top_level_domain_operations(&dpns_contract, &mut operations)?;
 
         let block_info = BlockInfo::default_with_time(genesis_time);
 
