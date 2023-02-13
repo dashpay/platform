@@ -1,4 +1,8 @@
 mod estimation_costs;
+/// Constants for the misc tree
+pub mod misc_tree_constants;
+/// Protocol version module
+pub mod protocol_version;
 
 use crate::drive::RootTree;
 

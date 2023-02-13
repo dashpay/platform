@@ -2,6 +2,7 @@ use crate::abci::handlers::TenderdashAbci;
 use crate::abci::messages::{
     AfterFinalizeBlockRequest, BlockBeginRequest, BlockEndRequest, BlockFees,
 };
+use crate::constants::PROTOCOL_VERSION_UPGRADE_PERCENTAGE_NEEDED;
 use crate::error::execution::ExecutionError;
 use crate::error::Error;
 use crate::platform::Platform;
@@ -14,7 +15,6 @@ use drive::fee::result::FeeResult;
 use drive::fee_pools::epochs::Epoch;
 use drive::grovedb::Transaction;
 use drive::query::TransactionArg;
-use crate::constants::PROTOCOL_VERSION_UPGRADE_PERCENTAGE_NEEDED;
 
 /// An execution event
 pub enum ExecutionEvent<'a> {
@@ -146,6 +146,7 @@ impl Platform {
 
     /// checks for a network upgrade and resets activation window
     /// this should only be called on epoch change
+    /// this will change backing state, but does not change drive cache
     pub fn check_for_desired_protocol_upgrade(
         &self,
         total_hpmns: u64,
@@ -182,13 +183,23 @@ impl Platform {
                 "only at most 1 version should be able to pass the threshold to upgrade",
             )));
         }
-        // we need to drop all version information
-        self.drive
-            .clear_version_information(transaction)
-            .map_err(Error::Drive)?;
+
         if versions_passing_threshold.len() == 1 {
-            Ok(Some(versions_passing_threshold.remove(0)))
+            let new_version = versions_passing_threshold.remove(0);
+            // we need to drop all version information
+            self.drive
+                .change_to_new_version_and_clear_version_information(
+                    self.state.current_protocol_version_in_consensus,
+                    new_version,
+                    transaction,
+                )
+                .map_err(Error::Drive)?;
+            Ok(Some(new_version))
         } else {
+            // we need to drop all version information
+            self.drive
+                .clear_version_information(transaction)
+                .map_err(Error::Drive)?;
             Ok(None)
         }
     }

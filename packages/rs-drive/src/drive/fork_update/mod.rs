@@ -2,6 +2,7 @@ use crate::drive::batch::GroveDbOpBatch;
 use crate::drive::grove_operations::BatchDeleteApplyType::StatefulBatchDelete;
 use crate::drive::grove_operations::BatchInsertApplyType;
 use crate::drive::object_size_info::PathKeyElementInfo;
+use crate::drive::system::{misc_path, misc_path_vec};
 use crate::drive::{Drive, RootTree};
 use crate::error::drive::DriveError;
 use crate::error::Error;
@@ -78,6 +79,39 @@ impl Drive {
         }
         Ok(())
     }
+
+    /// Clear all version information from the backing store, this is done on epoch change in
+    /// execution logic
+    pub fn change_to_new_version_and_clear_version_information(
+        &self,
+        current_version: ProtocolVersion,
+        next_version: ProtocolVersion,
+        transaction: TransactionArg,
+    ) -> Result<(), Error> {
+        let mut batch_operations: Vec<DriveOperation> = vec![];
+        self.clear_version_information_operations(transaction, &mut batch_operations)?;
+        self.set_current_protocol_version_operations(
+            current_version,
+            transaction,
+            &mut batch_operations,
+        )?;
+        self.set_next_protocol_version_operations(
+            next_version,
+            transaction,
+            &mut batch_operations,
+        )?;
+        let grove_db_operations = DriveOperation::grovedb_operations_batch(&batch_operations);
+        if !grove_db_operations.is_empty() {
+            self.apply_batch_grovedb_operations(
+                None,
+                transaction,
+                grove_db_operations,
+                &mut vec![],
+            )?;
+        }
+        Ok(())
+    }
+
     /// Clear all version information from the backing store, this is done on epoch change in
     /// execution logic
     pub fn clear_version_information_operations(
