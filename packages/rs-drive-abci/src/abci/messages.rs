@@ -53,7 +53,7 @@ pub struct InitChainRequest {
     pub system_identity_public_keys: SystemIdentityPublicKeys,
 }
 
-/// a
+/// System identity public keys
 #[derive(Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct SystemIdentityPublicKeys {
@@ -69,13 +69,13 @@ pub struct SystemIdentityPublicKeys {
     pub dashpay_contract_owner: RequiredIdentityPublicKeysSet,
 }
 
-/// a
+/// Required public key set for an identity
 #[derive(Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct RequiredIdentityPublicKeysSet {
-    /// a
+    /// Authentication key with master security level
     pub master: Vec<u8>,
-    /// a
+    /// Authentication key with high security level
     pub high: Vec<u8>,
 }
 

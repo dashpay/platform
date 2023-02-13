@@ -26,8 +26,6 @@ describe('createDIContainer', function describeContainer() {
     it('should resolve abciHandlers', () => {
       const abciHandlers = container.resolve('abciHandlers');
 
-      console.dir(container.resolve('systemIdentityPublicKeys'));
-
       expect(abciHandlers).to.have.property('info');
       expect(abciHandlers).to.have.property('checkTx');
       expect(abciHandlers).to.have.property('finalizeBlock');
