@@ -13,6 +13,7 @@ use drive::error::Error::GroveDB;
 use drive::fee::result::FeeResult;
 use drive::fee_pools::epochs::Epoch;
 use drive::grovedb::Transaction;
+use drive::query::TransactionArg;
 
 /// An execution event
 pub enum ExecutionEvent<'a> {
@@ -142,6 +143,55 @@ impl Platform {
         Ok(total_fees)
     }
 
+    /// checks for a network upgrade and resets activation window
+    /// this should only be called on epoch change
+    pub fn check_for_desired_protocol_upgrade(
+        &self,
+        total_hpmns: u64,
+        transaction: TransactionArg,
+    ) -> Result<Option<ProtocolVersion>, Error> {
+        let required_upgraded_hpns = 1 + total_hpmns
+            .checked_mul(75)
+            .and_then(|product| product.checked_div(100))
+            .ok_or(Error::Execution(ExecutionError::Overflow(
+                "overflow for required block count",
+            )))?;
+        // if we are at an epoch change, check to see if over 75% of blocks of previous epoch
+        // were on the future version
+        let mut cache = self.drive.cache.borrow_mut();
+        let mut versions_passing_threshold = cache
+            .protocol_versions_counter
+            .take()
+            .map(|version_counter| {
+                version_counter
+                    .into_iter()
+                    .filter_map(|(protocol_version, count)| {
+                        if count >= required_upgraded_hpns {
+                            Some(protocol_version)
+                        } else {
+                            None
+                        }
+                    })
+                    .collect::<Vec<ProtocolVersion>>()
+            })
+            .unwrap_or_default();
+
+        if versions_passing_threshold.len() > 1 {
+            return Err(Error::Execution(ExecutionError::UpgradeIncoherence(
+                "only at most 1 version should be able to pass the threshold to upgrade",
+            )));
+        }
+        // we need to drop all version information
+        self.drive
+            .clear_version_information(transaction)
+            .map_err(Error::Drive)?;
+        if versions_passing_threshold.len() == 1 {
+            Ok(Some(versions_passing_threshold.remove(0)))
+        } else {
+            Ok(None)
+        }
+    }
+
     /// Execute a block with various state transitions
     pub fn execute_block(
         &mut self,
@@ -183,49 +233,16 @@ impl Platform {
                 .previous_epoch_index
                 .is_some()
         {
-            let required_upgraded_hpns = 1 + total_hpmns
-                .checked_mul(75)
-                .and_then(|product| product.checked_div(100))
-                .ok_or(Error::Execution(ExecutionError::Overflow(
-                    "overflow for required block count",
-                )))?;
             self.state.current_protocol_version_in_consensus =
                 self.state.next_epoch_protocol_version;
-            // if we are at an epoch change, check to see if over 75% of blocks of previous epoch
-            // were on the future version
-            let mut cache = self.drive.cache.borrow_mut();
-            let mut versions_passing_threshold = cache
-                .versions_counter
-                .take()
-                .map(|version_counter| {
-                    version_counter
-                        .into_iter()
-                        .filter_map(|(protocol_version, count)| {
-                            if count >= required_upgraded_hpns {
-                                Some(protocol_version)
-                            } else {
-                                None
-                            }
-                        })
-                        .collect::<Vec<ProtocolVersion>>()
-                })
-                .unwrap_or_default();
-
-            if versions_passing_threshold.len() > 1 {
-                return Err(Error::Execution(ExecutionError::UpgradeIncoherence(
-                    "only at most 1 version should be able to pass the threshold to upgrade",
-                )));
-            }
-            if versions_passing_threshold.len() == 1 {
-                self.state.next_epoch_protocol_version = versions_passing_threshold.remove(0);
+            let maybe_new_protocol_version =
+                self.check_for_desired_protocol_upgrade(total_hpmns, Some(&transaction))?;
+            if let Some(new_protocol_version) = maybe_new_protocol_version {
+                self.state.next_epoch_protocol_version = new_protocol_version;
             } else {
                 self.state.next_epoch_protocol_version =
                     self.state.current_protocol_version_in_consensus;
             }
-            // we need to drop all version information
-            self.drive
-                .clear_version_information(Some(&transaction))
-                .map_err(Error::Drive)?;
         }
 
         // println!("{:#?}", block_begin_response);

@@ -48,7 +48,7 @@ mod tests {
         {
             let drive_cache = platform.drive.cache.borrow_mut();
             let counter = drive_cache
-                .versions_counter
+                .protocol_versions_counter
                 .as_ref()
                 .expect("expected a version counter");
             platform
@@ -94,7 +94,7 @@ mod tests {
         {
             let drive_cache = platform.drive.cache.borrow_mut();
             let counter = drive_cache
-                .versions_counter
+                .protocol_versions_counter
                 .as_ref()
                 .expect("expected a version counter");
             assert_eq!(
@@ -135,7 +135,7 @@ mod tests {
         {
             let drive_cache = platform.drive.cache.borrow_mut();
             let counter = drive_cache
-                .versions_counter
+                .protocol_versions_counter
                 .as_ref()
                 .expect("expected a version counter");
             assert_eq!(
@@ -183,7 +183,7 @@ mod tests {
         {
             let drive_cache = platform.drive.cache.borrow_mut();
             let counter = drive_cache
-                .versions_counter
+                .protocol_versions_counter
                 .as_ref()
                 .expect("expected a version counter");
             assert_eq!(
@@ -222,7 +222,7 @@ mod tests {
         {
             let drive_cache = platform.drive.cache.borrow_mut();
             let counter = drive_cache
-                .versions_counter
+                .protocol_versions_counter
                 .as_ref()
                 .expect("expected a version counter");
             assert_eq!(
@@ -256,7 +256,7 @@ mod tests {
         {
             let drive_cache = platform.drive.cache.borrow_mut();
             let counter = drive_cache
-                .versions_counter
+                .protocol_versions_counter
                 .as_ref()
                 .expect("expected a version counter");
             assert_eq!(platform.state.last_block_info.unwrap().epoch.index, 9);
@@ -299,7 +299,7 @@ mod tests {
         {
             let drive_cache = platform.drive.cache.borrow_mut();
             let counter = drive_cache
-                .versions_counter
+                .protocol_versions_counter
                 .as_ref()
                 .expect("expected a version counter");
             assert_eq!(
@@ -337,7 +337,7 @@ mod tests {
         {
             let drive_cache = platform.drive.cache.borrow_mut();
             let counter = drive_cache
-                .versions_counter
+                .protocol_versions_counter
                 .as_ref()
                 .expect("expected a version counter");
             assert_eq!(
@@ -394,7 +394,7 @@ mod tests {
         {
             let drive_cache = platform.drive.cache.borrow_mut();
             let counter = drive_cache
-                .versions_counter
+                .protocol_versions_counter
                 .as_ref()
                 .expect("expected a version counter");
             assert_eq!((counter.get(&1), counter.get(&2)), (Some(&170), Some(&23)));
@@ -426,7 +426,7 @@ mod tests {
         {
             let drive_cache = platform.drive.cache.borrow_mut();
             let counter = drive_cache
-                .versions_counter
+                .protocol_versions_counter
                 .as_ref()
                 .expect("expected a version counter");
             assert_eq!((counter.get(&1), counter.get(&2)), (Some(&22), Some(&2)));
@@ -470,7 +470,7 @@ mod tests {
         {
             let drive_cache = platform.drive.cache.borrow_mut();
             let counter = drive_cache
-                .versions_counter
+                .protocol_versions_counter
                 .as_ref()
                 .expect("expected a version counter");
 
@@ -529,7 +529,7 @@ mod tests {
         {
             let drive_cache = platform.drive.cache.borrow_mut();
             let counter = drive_cache
-                .versions_counter
+                .protocol_versions_counter
                 .as_ref()
                 .expect("expected a version counter");
             assert_eq!(

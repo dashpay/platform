@@ -241,7 +241,7 @@ impl Drive {
                             data_contracts_block_cache_size,
                         ),
                         genesis_time_ms,
-                        versions_counter: None,
+                        protocol_versions_counter: None,
                     }),
                 })
             }
@@ -260,7 +260,7 @@ impl Drive {
                 data_contracts_block_cache_size,
             ),
             genesis_time_ms,
-            versions_counter: None,
+            protocol_versions_counter: None,
         });
     }
 

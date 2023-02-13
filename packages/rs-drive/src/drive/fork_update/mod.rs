@@ -201,7 +201,7 @@ impl Drive {
     ) -> Result<bool, Error> {
         let mut cache = self.cache.borrow_mut();
         let version_counter = cache
-            .versions_counter
+            .protocol_versions_counter
             .get_or_insert(self.fetch_versions_with_counter(transaction)?);
 
         let path = desired_version_for_validators_path();
