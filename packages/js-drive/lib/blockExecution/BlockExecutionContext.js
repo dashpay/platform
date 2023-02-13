@@ -276,6 +276,7 @@ class BlockExecutionContext {
     this.epochInfo = null;
     this.timeMs = null;
     this.prepareProposalResult = null;
+    this.proposedAppVersion = null;
   }
 
   /**
@@ -305,6 +306,7 @@ class BlockExecutionContext {
     this.epochInfo = blockExecutionContext.epochInfo;
     this.timeMs = blockExecutionContext.timeMs;
     this.prepareProposalResult = blockExecutionContext.prepareProposalResult || null;
+    this.proposedAppVersion = blockExecutionContext.proposedAppVersion;
   }
 
   /**
@@ -325,6 +327,7 @@ class BlockExecutionContext {
     this.withdrawalTransactionsMap = object.withdrawalTransactionsMap;
     this.round = object.round;
     this.prepareProposalResult = object.prepareProposalResult;
+    this.proposedAppVersion = Long.fromNumber(object.proposedAppVersion);
   }
 
   /**
@@ -341,6 +344,7 @@ class BlockExecutionContext {
    *  epochInfo: EpochInfo,
    *  withdrawalTransactionsMap: Object,
    *  round: number,
+   *  proposedAppVersion: number,
    * }}
    */
   toObject(options = {}) {
@@ -361,6 +365,7 @@ class BlockExecutionContext {
       withdrawalTransactionsMap: this.withdrawalTransactionsMap,
       round: this.round,
       epochInfo: this.epochInfo,
+      proposedAppVersion: this.proposedAppVersion ? this.proposedAppVersion.toNumber() : null,
     };
 
     if (!options.skipContextLogger) {
