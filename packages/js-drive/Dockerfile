@@ -75,6 +75,7 @@ COPY packages/dpns-contract packages/dpns-contract
 COPY packages/feature-flags-contract packages/feature-flags-contract
 COPY packages/masternode-reward-shares-contract packages/masternode-reward-shares-contract
 COPY packages/withdrawals-contract packages/withdrawals-contract
+COPY packages/data-contracts packages/data-contracts
 
 # Build RS Drive Node.JS binding
 RUN --mount=type=cache,target=target \
