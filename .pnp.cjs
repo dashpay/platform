@@ -7674,6 +7674,7 @@ function $$SETUP_STATE(hydrateRuntimeState, basePath) {
             ["@dashevo/feature-flags-contract", "workspace:packages/feature-flags-contract"],\
             ["@dashevo/masternode-reward-shares-contract", "workspace:packages/masternode-reward-shares-contract"],\
             ["@dashevo/wallet-lib", "workspace:packages/wallet-lib"],\
+            ["@dashevo/withdrawals-contract", "workspace:packages/withdrawals-contract"],\
             ["@oclif/core", "npm:1.22.0"],\
             ["@oclif/plugin-help", "npm:5.1.20"],\
             ["ajv", "npm:8.8.1"],\
