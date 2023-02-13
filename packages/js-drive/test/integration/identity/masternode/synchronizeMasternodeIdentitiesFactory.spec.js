@@ -362,7 +362,7 @@ describe('synchronizeMasternodeIdentitiesFactory', () => {
 
   beforeEach(async function beforeEach() {
     coreHeight = 3;
-    firstSyncAppHash = 'bd4cca5581d96db60093fa558b10653569b38e250556a5a03f612df80562113d';
+    firstSyncAppHash = '2423a367271e1bec8539abcaf4d76085943f264b2fa150c8713eb8bb2dc10b31';
     blockInfo = new BlockInfo(10, 0, 1668702100799);
 
     container = await createTestDIContainer();
@@ -1084,7 +1084,7 @@ describe('synchronizeMasternodeIdentitiesFactory', () => {
 
     await synchronizeMasternodeIdentities(coreHeight, blockInfo);
 
-    await expectDeterministicAppHash('e30027e4927c6e661129b46fe314cb7bf73e207e77fba565a80a6af458fff49d');
+    await expectDeterministicAppHash('462bf1db5c988cf9365e1a6c69acf53efbfc004a9d0080c1fbf15bb40a99d3b5');
 
     const votingIdentifier = createVotingIdentifier(smlFixture[0]);
 
