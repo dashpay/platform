@@ -3,7 +3,7 @@ use crate::data_contract::state_transition::{
 };
 use crate::data_contract::validation::data_contract_validator::DataContractValidator;
 use crate::data_contract::{DataContract, DataContractFactory};
-use crate::document::document_transition::JsonValue;
+use crate::document::document_transition::document_base_transition::JsonValue;
 use crate::prelude::{Identifier, ValidationResult};
 use crate::version::ProtocolVersionValidator;
 use crate::ProtocolError;

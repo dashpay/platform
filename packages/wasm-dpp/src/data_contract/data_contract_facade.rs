@@ -109,6 +109,7 @@ impl DataContractFacadeWasm {
         self.0
             .validate(raw_data_contract)
             .await
+            .map(|v| v.map(|_| JsValue::UNDEFINED))
             .map(Into::into)
             .map_err(from_protocol_error)
     }
