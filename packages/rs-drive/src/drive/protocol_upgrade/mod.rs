@@ -20,9 +20,6 @@ use std::ops::RangeFull;
 pub const VERSIONS_COUNTER: [u8; 1] = [0];
 /// constant id for subtree containing the desired versions for each validator
 pub const VALIDATOR_DESIRED_VERSIONS: [u8; 1] = [1];
-/// constant id for value of the starting window
-/// This is set to the genesis time
-pub const WINDOW_START: [u8; 1] = [2];
 
 /// Add operations for creating initial versioning state structure
 pub fn add_initial_fork_update_structure_operations(batch: &mut GroveDbOpBatch) {

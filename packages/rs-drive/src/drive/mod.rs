@@ -62,7 +62,7 @@ mod estimation_costs;
 /// Fee pools module
 pub mod fee_pools;
 pub mod flags;
-mod fork_update;
+mod protocol_upgrade;
 /// Genesis time module
 pub mod genesis_time;
 pub(crate) mod grove_operations;
