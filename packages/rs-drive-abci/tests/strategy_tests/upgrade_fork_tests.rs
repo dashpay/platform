@@ -27,8 +27,8 @@ mod tests {
         let config = PlatformConfig {
             drive_config: Default::default(),
             verify_sum_trees: true,
-            quorum_size: 100,
-            quorum_rotation_block_count: 125,
+            validator_set_quorum_size: 100,
+            validator_set_quorum_rotation_block_count: 125,
         };
         let twenty_minutes_in_ms = 1000 * 60 * 20;
         let ChainExecutionOutcome {
@@ -221,8 +221,8 @@ mod tests {
         let config = PlatformConfig {
             drive_config: Default::default(),
             verify_sum_trees: true,
-            quorum_size: 40,
-            quorum_rotation_block_count: 50,
+            validator_set_quorum_size: 40,
+            validator_set_quorum_rotation_block_count: 50,
         };
         let hour_in_ms = 1000 * 60 * 60;
         let ChainExecutionOutcome {
@@ -393,8 +393,8 @@ mod tests {
         let config = PlatformConfig {
             drive_config: Default::default(),
             verify_sum_trees: true,
-            quorum_size: 50,
-            quorum_rotation_block_count: 60,
+            validator_set_quorum_size: 50,
+            validator_set_quorum_rotation_block_count: 60,
         };
         let hour_in_ms = 1000 * 60 * 60;
         let ChainExecutionOutcome {
@@ -640,8 +640,8 @@ mod tests {
         let config = PlatformConfig {
             drive_config: Default::default(),
             verify_sum_trees: true,
-            quorum_size: 50,
-            quorum_rotation_block_count: 60,
+            validator_set_quorum_size: 50,
+            validator_set_quorum_rotation_block_count: 60,
         };
         let hour_in_ms = 1000 * 60 * 60;
         let ChainExecutionOutcome {

@@ -11,7 +11,7 @@ pub struct DriveCache {
     pub cached_contracts: DataContractCache,
     /// Genesis time in ms
     pub genesis_time_ms: Option<TimestampMillis>,
-    /// Counter of versions
+    /// Lazy loaded counter of votes to upgrade protocol version
     pub protocol_versions_counter: Option<IntMap<ProtocolVersion, u64>>,
 }
 

@@ -38,6 +38,7 @@ use crate::abci::messages::{
 };
 use crate::block::{BlockExecutionContext, BlockStateInfo};
 use crate::execution::fee_pools::epoch::EpochInfo;
+use drive::fee::epoch::GENESIS_EPOCH_INDEX;
 use drive::grovedb::TransactionArg;
 
 use crate::error::execution::ExecutionError;
@@ -175,21 +176,24 @@ impl TenderdashAbci for Platform {
             transaction,
         )?;
 
-        let changed_protocol_version = if block_execution_context.epoch_info.is_epoch_change
-            && block_execution_context
-                .epoch_info
-                .previous_epoch_index
-                .is_some()
+        // Determine a new protocol version if enough proposers voted
+        let changed_protocol_version = if block_execution_context
+            .epoch_info
+            .is_epoch_change_but_not_genesis()
         {
+            // Set current protocol version to the version from upcoming epoch
             self.state.replace_with(|state| {
                 state.current_protocol_version_in_consensus = state.next_epoch_protocol_version;
 
                 state.clone()
             });
+
+            // Determine new protocol version based on votes for the next epoch
             let maybe_new_protocol_version = self.check_for_desired_protocol_upgrade(
                 block_execution_context.hpmn_count,
                 transaction,
             )?;
+
             self.state.replace_with(|state| {
                 if let Some(new_protocol_version) = maybe_new_protocol_version {
                     state.next_epoch_protocol_version = new_protocol_version;

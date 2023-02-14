@@ -908,6 +908,8 @@ Drive.FeeResult = FeeResult;
  * @property {number} [previousBlockTimeMs] - timestamp in milliseconds
  * @property {Buffer} proposerProTxHash
  * @property {Buffer} validatorSetQuorumHash
+ * @property {number} proposedAppVersion
+ * @property {number} totalHpmns
  */
 
 /**

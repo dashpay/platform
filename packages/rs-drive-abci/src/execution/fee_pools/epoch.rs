@@ -36,6 +36,7 @@
 use crate::block::BlockStateInfo;
 use crate::error::execution::ExecutionError;
 use crate::error::Error;
+use drive::fee::epoch::GENESIS_EPOCH_INDEX;
 use rust_decimal::Decimal;
 use serde::{Deserialize, Serialize};
 
@@ -58,6 +59,11 @@ pub struct EpochInfo {
 }
 
 impl EpochInfo {
+    /// Returns true if it's an epoch change but not the Epoch 0 on genesis
+    pub fn is_epoch_change_but_not_genesis(&self) -> bool {
+        self.is_epoch_change && self.current_epoch_index != GENESIS_EPOCH_INDEX
+    }
+
     /// Converts some values to decimal types and calculates some relevant epoch info values.
     pub fn calculate(
         genesis_time_ms: u64,

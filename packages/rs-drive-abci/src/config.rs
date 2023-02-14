@@ -38,18 +38,18 @@ pub struct PlatformConfig {
     pub verify_sum_trees: bool,
 
     /// The default quorum size
-    pub quorum_size: u16,
+    pub validator_set_quorum_size: u16,
 
     /// How often should quorums change?
-    pub quorum_rotation_block_count: u64,
+    pub validator_set_quorum_rotation_block_count: u64,
 }
 
 impl Default for PlatformConfig {
     fn default() -> Self {
         PlatformConfig {
             verify_sum_trees: true,
-            quorum_size: 100,
-            quorum_rotation_block_count: 25,
+            validator_set_quorum_size: 100,
+            validator_set_quorum_rotation_block_count: 15,
             drive_config: Default::default(),
         }
     }

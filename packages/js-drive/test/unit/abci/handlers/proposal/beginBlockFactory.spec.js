@@ -19,6 +19,7 @@ const GroveDBStoreMock = require('../../../../../lib/test/mock/GroveDBStoreMock'
 const millisToProtoTimestamp = require('../../../../../lib/util/millisToProtoTimestamp');
 const protoTimestampToMillis = require('../../../../../lib/util/protoTimestampToMillis');
 const BlockInfo = require('../../../../../lib/blockExecution/BlockInfo');
+const { fromNumber } = require('long');
 
 describe('beginBlockFactory', () => {
   let protocolVersion;
@@ -47,6 +48,8 @@ describe('beginBlockFactory', () => {
   let timeMs;
   let epochInfo;
   let time;
+  let simplifyMasternodeListMock;
+  let validMasternodesListLength;
 
   beforeEach(function beforeEach() {
     round = 0;
@@ -108,6 +111,22 @@ describe('beginBlockFactory', () => {
       blockBegin: this.sinon.stub().resolves(rsResponseMock),
     };
 
+    validMasternodesListLength = 400;
+
+    simplifyMasternodeListMock = {
+      getStore() {
+        return {
+          getCurrentSML() {
+            return {
+              getValidMasternodesList() {
+                return validMasternodesListLength;
+              },
+            };
+          },
+        };
+      },
+    };
+
     beginBlock = beginBlockFactory(
       groveDBStoreMock,
       latestBlockExecutionContextMock,
@@ -120,6 +139,7 @@ describe('beginBlockFactory', () => {
       synchronizeMasternodeIdentitiesMock,
       rsAbciMock,
       executionTimerMock,
+      simplifyMasternodeListMock,
     );
 
     lastCommitInfo = {};
