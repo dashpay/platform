@@ -132,7 +132,7 @@ impl TenderdashAbci for Platform {
         let block_execution_context = BlockExecutionContext {
             block_info,
             epoch_info: epoch_info.clone(),
-            active_hpmns: request.active_hpmns,
+            hpmn_count: request.total_hpmns,
         };
 
         self.block_execution_context
@@ -187,7 +187,7 @@ impl TenderdashAbci for Platform {
                 state.clone()
             });
             let maybe_new_protocol_version = self.check_for_desired_protocol_upgrade(
-                block_execution_context.active_hpmns.as_slice(),
+                block_execution_context.hpmn_count,
                 transaction,
             )?;
             self.state.replace_with(|state| {
@@ -336,12 +336,11 @@ mod tests {
                         block_height,
                         block_time_ms,
                         previous_block_time_ms,
-                        proposer_pro_tx_hash: *proposers
-                            .get(block_height as usize % (proposers_count as usize))
-                            .unwrap(),
+                        proposer_pro_tx_hash: proposers
+                            [block_height as usize % (proposers_count as usize)],
                         proposed_app_version: 1,
                         validator_set_quorum_hash: Default::default(),
-                        active_hpmns: proposers.clone(),
+                        total_hpmns: 100,
                     };
 
                     let block_begin_response = platform
@@ -535,12 +534,11 @@ mod tests {
                         block_height,
                         block_time_ms,
                         previous_block_time_ms,
-                        proposer_pro_tx_hash: *proposers
-                            .get(block_height as usize % (proposers_count as usize))
-                            .unwrap(),
+                        proposer_pro_tx_hash: proposers
+                            [block_height as usize % (proposers_count as usize)],
                         proposed_app_version: 1,
                         validator_set_quorum_hash: Default::default(),
-                        active_hpmns: proposers.clone(),
+                        total_hpmns: 100,
                     };
 
                     let block_begin_response = platform

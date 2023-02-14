@@ -475,6 +475,8 @@ pub(crate) fn continue_chain_for_strategy(
 
     let blocks_per_epoch = EPOCH_CHANGE_TIME_MS / block_spacing_ms;
 
+    let proposer_count = proposers.len() as u32;
+
     let proposer_versions = current_proposer_versions.unwrap_or(
         strategy.upgrading_info.as_ref().map(|upgrading_info| {
             upgrading_info.apply_to_proposers(proposers.clone(), blocks_per_epoch, &mut rng)
@@ -530,7 +532,7 @@ pub(crate) fn continue_chain_for_strategy(
             .execute_block(
                 *proposer,
                 proposed_version,
-                proposers.as_slice(),
+                proposer_count,
                 block_info,
                 state_transitions,
             )

@@ -150,11 +150,11 @@ impl Platform {
     /// this will change backing state, but does not change drive cache
     pub fn check_for_desired_protocol_upgrade(
         &self,
-        active_hpmns: &[[u8; 32]],
+        total_hpmns: u32,
         transaction: TransactionArg,
     ) -> Result<Option<ProtocolVersion>, Error> {
         let required_upgraded_hpns = 1
-            + (active_hpmns.len() as u64)
+            + (total_hpmns as u64)
                 .checked_mul(PROTOCOL_VERSION_UPGRADE_PERCENTAGE_NEEDED)
                 .and_then(|product| product.checked_div(100))
                 .ok_or(Error::Execution(ExecutionError::Overflow(
@@ -213,7 +213,7 @@ impl Platform {
         &self,
         proposer: [u8; 32],
         proposed_version: ProtocolVersion,
-        active_hpmns: &[[u8; 32]],
+        total_hpmns: u32,
         block_info: BlockInfo,
         state_transitions: Vec<ExecutionEvent>,
     ) -> Result<(), Error> {
@@ -231,7 +231,7 @@ impl Platform {
             proposer_pro_tx_hash: proposer,
             proposed_app_version: proposed_version,
             validator_set_quorum_hash: Default::default(),
-            active_hpmns: active_hpmns.to_vec(),
+            total_hpmns,
         };
 
         // println!("Block #{}", block_info.height);
