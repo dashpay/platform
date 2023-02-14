@@ -101,8 +101,8 @@ pub struct BlockBeginRequest {
     pub proposed_app_version: ProtocolVersion,
     /// Validator set quorum hash
     pub validator_set_quorum_hash: [u8; 32],
-    /// The total number of HPMNs in the system
-    pub total_hpmns: u32,
+    /// The hpmns in the system
+    pub active_hpmns: Vec<[u8; 32]>,
 }
 
 /// A struct for handling block begin responses

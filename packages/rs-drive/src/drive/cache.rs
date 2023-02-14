@@ -13,6 +13,8 @@ pub struct DriveCache {
     pub genesis_time_ms: Option<TimestampMillis>,
     /// Counter of versions
     pub protocol_versions_counter: Option<IntMap<ProtocolVersion, u64>>,
+    /// The current hpmns
+    pub active_hpmns: Option<Vec<[u8; 32]>>,
 }
 
 /// Data Contract cache that handle both non global and block data

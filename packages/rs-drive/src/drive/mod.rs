@@ -242,6 +242,7 @@ impl Drive {
                         ),
                         genesis_time_ms,
                         protocol_versions_counter: None,
+                        active_hpmns: None,
                     }),
                 })
             }
@@ -261,6 +262,7 @@ impl Drive {
             ),
             genesis_time_ms,
             protocol_versions_counter: None,
+            active_hpmns: None,
         });
     }
 
