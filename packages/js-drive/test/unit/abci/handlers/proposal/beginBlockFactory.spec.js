@@ -19,7 +19,6 @@ const GroveDBStoreMock = require('../../../../../lib/test/mock/GroveDBStoreMock'
 const millisToProtoTimestamp = require('../../../../../lib/util/millisToProtoTimestamp');
 const protoTimestampToMillis = require('../../../../../lib/util/protoTimestampToMillis');
 const BlockInfo = require('../../../../../lib/blockExecution/BlockInfo');
-const { fromNumber } = require('long');
 
 describe('beginBlockFactory', () => {
   let protocolVersion;
