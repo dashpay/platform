@@ -1,6 +1,6 @@
-use std::sync::Arc;
 use anyhow::anyhow;
 use serde_json::{json, Map, Number, Value as JsonValue};
+use std::sync::Arc;
 
 use data_contract::state_transition::property_names as st_prop;
 
