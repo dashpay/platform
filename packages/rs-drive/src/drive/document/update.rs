@@ -2345,7 +2345,7 @@ mod tests {
 
         let factory = DataContractFactory::new_with_entropy_generator(
             1,
-            data_contract_validator,
+            Arc::new(data_contract_validator),
             Box::new(TestEntropyGenerator::new()),
         );
 

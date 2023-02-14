@@ -34,7 +34,7 @@ fn create_fingerprint(document_transition: &JsonValue) -> Option<String> {
 
 #[cfg(test)]
 mod test {
-    use crate::document::document_transition::{DocumentTransitionObjectLike, JsonValue};
+    use crate::document::document_transition::{DocumentTransitionObjectLike};
     use crate::{
         document::document_transition::{
             DocumentCreateTransition, DocumentDeleteTransition, DocumentReplaceTransition,
