@@ -38,6 +38,7 @@ use crate::error::Error;
 use crate::execution::fee_pools::epoch::EpochInfo;
 use crate::execution::fee_pools::fee_distribution::FeesInPools;
 use crate::execution::fee_pools::process_block_fees::ProcessedBlockFeesOutcome;
+use drive::dpp::identity::TimestampMillis;
 use drive::fee::epoch::CreditsPerEpoch;
 use drive::fee::result::FeeResult;
 use serde::{de::DeserializeOwned, Deserialize, Serialize};
@@ -45,7 +46,38 @@ use serde::{de::DeserializeOwned, Deserialize, Serialize};
 /// A struct for handling chain initialization requests
 #[derive(Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
-pub struct InitChainRequest {}
+pub struct InitChainRequest {
+    /// The genesis time in milliseconds
+    pub genesis_time_ms: TimestampMillis,
+    /// The system identity public keys
+    pub system_identity_public_keys: SystemIdentityPublicKeys,
+}
+
+/// System identity public keys
+#[derive(Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SystemIdentityPublicKeys {
+    /// Required public key set for masternode reward shares contract owner identity
+    pub masternode_reward_shares_contract_owner: RequiredIdentityPublicKeysSet,
+    /// Required public key set for feature flags contract owner identity
+    pub feature_flags_contract_owner: RequiredIdentityPublicKeysSet,
+    /// Required public key set for dpns contract owner identity
+    pub dpns_contract_owner: RequiredIdentityPublicKeysSet,
+    /// Required public key set for withdrawals contract owner identity
+    pub withdrawals_contract_owner: RequiredIdentityPublicKeysSet,
+    /// Required public key set for dashpay contract owner identity
+    pub dashpay_contract_owner: RequiredIdentityPublicKeysSet,
+}
+
+/// Required public key set for an identity
+#[derive(Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RequiredIdentityPublicKeysSet {
+    /// Authentication key with master security level
+    pub master: Vec<u8>,
+    /// Authentication key with high security level
+    pub high: Vec<u8>,
+}
 
 /// A struct for handling chain initialization responses
 #[derive(Serialize, Deserialize)]

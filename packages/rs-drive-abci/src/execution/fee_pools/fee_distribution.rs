@@ -421,7 +421,7 @@ impl Platform {
 mod tests {
     use super::*;
 
-    use crate::common::helpers::setup::setup_platform_with_initial_state_structure;
+    use crate::test::helpers::setup::setup_platform_with_initial_state_structure;
     use drive::common::helpers::identities::create_test_masternode_identities_and_add_them_as_epoch_block_proposers;
 
     mod add_distribute_fees_from_oldest_unpaid_epoch_pool_to_proposers_operations {
@@ -1190,7 +1190,7 @@ mod tests {
 
     mod add_epoch_pool_to_proposers_payout_operations {
         use super::*;
-        use crate::common::helpers::fee_pools::create_test_masternode_share_identities_and_documents;
+        use crate::test::helpers::fee_pools::create_test_masternode_share_identities_and_documents;
         use rust_decimal::Decimal;
         use rust_decimal_macros::dec;
 

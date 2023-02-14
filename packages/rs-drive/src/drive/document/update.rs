@@ -2350,7 +2350,7 @@ mod tests {
         );
 
         let contract = factory
-            .create(owner_id, documents)
+            .create(owner_id, documents, None)
             .expect("data in fixture should be correct");
 
         let contract_cbor = contract.to_cbor().expect("should encode contract to cbor");
