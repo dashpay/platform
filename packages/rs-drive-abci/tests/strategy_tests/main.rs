@@ -406,7 +406,7 @@ pub(crate) fn run_chain_for_strategy(
     config: PlatformConfig,
     seed: u64,
 ) -> ChainExecutionOutcome {
-    let quorum_size = config.validator_set_quorum_size;
+    let quorum_size = config.quorum_size;
     let mut platform = setup_platform_raw(Some(config.clone()));
     let mut rng = StdRng::seed_from_u64(seed);
     // init chain
@@ -467,7 +467,7 @@ pub(crate) fn continue_chain_for_strategy(
         StrategyRandomness::SeedEntropy(seed) => StdRng::seed_from_u64(seed),
         StrategyRandomness::RNGEntropy(rng) => rng,
     };
-    let quorum_size = config.validator_set_quorum_size;
+    let quorum_size = config.quorum_size;
     let quorum_rotation_block_count = config.validator_set_quorum_rotation_block_count;
     let first_block_time = 0;
     let mut current_identities = vec![];
@@ -594,7 +594,7 @@ mod tests {
         let config = PlatformConfig {
             drive_config: Default::default(),
             verify_sum_trees: true,
-            validator_set_quorum_size: 100,
+            quorum_size: 100,
             validator_set_quorum_rotation_block_count: 25,
         };
         run_chain_for_strategy(1000, 3000, strategy, config, 15);
@@ -615,7 +615,7 @@ mod tests {
         let config = PlatformConfig {
             drive_config: Default::default(),
             verify_sum_trees: true,
-            validator_set_quorum_size: 100,
+            quorum_size: 100,
             validator_set_quorum_rotation_block_count: 25,
         };
         let outcome = run_chain_for_strategy(100, 3000, strategy, config, 15);
@@ -638,7 +638,7 @@ mod tests {
         let config = PlatformConfig {
             drive_config: Default::default(),
             verify_sum_trees: true,
-            validator_set_quorum_size: 100,
+            quorum_size: 100,
             validator_set_quorum_rotation_block_count: 100,
         };
         let day_in_ms = 1000 * 60 * 60 * 24;
@@ -675,7 +675,7 @@ mod tests {
         let config = PlatformConfig {
             drive_config: Default::default(),
             verify_sum_trees: true,
-            validator_set_quorum_size: 100,
+            quorum_size: 100,
             validator_set_quorum_rotation_block_count: 25,
         };
         run_chain_for_strategy(1, 3000, strategy, config, 15);
@@ -719,7 +719,7 @@ mod tests {
         let config = PlatformConfig {
             drive_config: Default::default(),
             verify_sum_trees: true,
-            validator_set_quorum_size: 100,
+            quorum_size: 100,
             validator_set_quorum_rotation_block_count: 25,
         };
         run_chain_for_strategy(100, 3000, strategy, config, 15);
@@ -763,7 +763,7 @@ mod tests {
         let config = PlatformConfig {
             drive_config: Default::default(),
             verify_sum_trees: true,
-            validator_set_quorum_size: 100,
+            quorum_size: 100,
             validator_set_quorum_rotation_block_count: 100,
         };
         let day_in_ms = 1000 * 60 * 60 * 24;
@@ -835,7 +835,7 @@ mod tests {
         let config = PlatformConfig {
             drive_config: Default::default(),
             verify_sum_trees: true,
-            validator_set_quorum_size: 100,
+            quorum_size: 100,
             validator_set_quorum_rotation_block_count: 100,
         };
         let day_in_ms = 1000 * 60 * 60 * 24;
@@ -907,7 +907,7 @@ mod tests {
         let config = PlatformConfig {
             drive_config: Default::default(),
             verify_sum_trees: true,
-            validator_set_quorum_size: 100,
+            quorum_size: 100,
             validator_set_quorum_rotation_block_count: 100,
         };
         let day_in_ms = 1000 * 60 * 60 * 24;
@@ -979,7 +979,7 @@ mod tests {
         let config = PlatformConfig {
             drive_config: Default::default(),
             verify_sum_trees: true,
-            validator_set_quorum_size: 100,
+            quorum_size: 100,
             validator_set_quorum_rotation_block_count: 100,
         };
         let day_in_ms = 1000 * 60 * 60 * 24;

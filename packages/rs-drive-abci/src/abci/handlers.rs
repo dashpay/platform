@@ -340,11 +340,12 @@ mod tests {
                         block_height,
                         block_time_ms,
                         previous_block_time_ms,
-                        proposer_pro_tx_hash: proposers
-                            [block_height as usize % (proposers_count as usize)],
+                        proposer_pro_tx_hash: *proposers
+                            .get(block_height as usize % (proposers_count as usize))
+                            .unwrap(),
                         proposed_app_version: 1,
                         validator_set_quorum_hash: Default::default(),
-                        total_hpmns: 100,
+                        total_hpmns: proposers_count as u32,
                     };
 
                     let block_begin_response = platform
@@ -538,11 +539,12 @@ mod tests {
                         block_height,
                         block_time_ms,
                         previous_block_time_ms,
-                        proposer_pro_tx_hash: proposers
-                            [block_height as usize % (proposers_count as usize)],
+                        proposer_pro_tx_hash: *proposers
+                            .get(block_height as usize % (proposers_count as usize))
+                            .unwrap(),
                         proposed_app_version: 1,
                         validator_set_quorum_hash: Default::default(),
-                        total_hpmns: 100,
+                        total_hpmns: proposers_count as u32,
                     };
 
                     let block_begin_response = platform
