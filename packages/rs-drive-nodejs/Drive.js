@@ -878,6 +878,23 @@ Drive.FeeResult = FeeResult;
 
 /**
  * @typedef InitChainRequest
+ * @property {number} genesisTimeMs
+ * @property {SystemIdentityPublicKeys} systemIdentityPublicKeys
+ */
+
+/**
+ * @typedef SystemIdentityPublicKeys
+ * @property {RequiredIdentityPublicKeysSet} masternodeRewardSharesContractOwner
+ * @property {RequiredIdentityPublicKeysSet} featureFlagsContractOwner
+ * @property {RequiredIdentityPublicKeysSet} dpnsContractOwner
+ * @property {RequiredIdentityPublicKeysSet} withdrawalsContractOwner
+ * @property {RequiredIdentityPublicKeysSet} dashpayContractOwner
+ */
+
+/**
+ * @typedef RequiredIdentityPublicKeysSet
+ * @property {Buffer} master
+ * @property {Buffer} high
  */
 
 /**

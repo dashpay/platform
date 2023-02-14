@@ -1,7 +1,9 @@
 use std::sync::Arc;
 
+use data_contracts::SystemDataContract;
 use serde_json::json;
 
+use crate::system_data_contracts::load_system_data_contract;
 use crate::{
     data_contract::DataContract,
     document::{
@@ -13,12 +15,13 @@ use crate::{
     version::LATEST_VERSION,
 };
 
-use super::{get_document_validator_fixture, get_master_node_reward_shares_contract_fixture};
+use super::get_document_validator_fixture;
 
 pub fn get_masternode_reward_shares_documents_fixture() -> (Vec<Document>, DataContract) {
     let owner_id = generate_random_identifier_struct();
     let pay_to_id = generate_random_identifier_struct();
-    let data_contract = get_master_node_reward_shares_contract_fixture();
+    let data_contract = load_system_data_contract(SystemDataContract::MasternodeRewards)
+        .expect("should load masternode rewards contract");
 
     let document_validator = get_document_validator_fixture();
     let factory = DocumentFactory::new(

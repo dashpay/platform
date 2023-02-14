@@ -6,6 +6,7 @@ mod data_contract;
 pub mod errors;
 pub mod extra;
 
+mod data_contract_facade;
 pub use extra::drive_api::DriveContractExt;
 
 pub mod contract_config;
@@ -28,3 +29,5 @@ pub(self) mod property_names {
     pub const DEFINITIONS: &str = "$defs";
     pub const ENTROPY: &str = "entropy";
 }
+
+pub use data_contract_facade::DataContractFacade;

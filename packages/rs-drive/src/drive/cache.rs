@@ -1,4 +1,5 @@
 use crate::drive::contract::ContractFetchInfo;
+use dpp::identity::TimestampMillis;
 use moka::sync::Cache;
 use std::sync::Arc;
 
@@ -7,7 +8,7 @@ pub struct DriveCache {
     /// Cached contracts
     pub cached_contracts: DataContractCache,
     /// Genesis time in ms
-    pub genesis_time_ms: Option<u64>,
+    pub genesis_time_ms: Option<TimestampMillis>,
 }
 
 /// Data Contract cache that handle both non global and block data

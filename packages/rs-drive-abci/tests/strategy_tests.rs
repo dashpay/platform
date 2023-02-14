@@ -50,12 +50,13 @@ use drive::fee::credits::Credits;
 use drive::fee_pools::epochs::Epoch;
 use drive::query::DriveQuery;
 use drive_abci::abci::handlers::TenderdashAbci;
-use drive_abci::abci::messages::InitChainRequest;
-use drive_abci::common::helpers::setup::setup_platform_raw;
+use drive_abci::abci::messages::{InitChainRequest, SystemIdentityPublicKeys};
 use drive_abci::config::PlatformConfig;
 use drive_abci::execution::engine::ExecutionEvent;
 use drive_abci::execution::fee_pools::epoch::EpochInfo;
 use drive_abci::platform::Platform;
+use drive_abci::test::fixture::abci::static_init_chain_request;
+use drive_abci::test::helpers::setup::setup_platform_raw;
 use rand::rngs::StdRng;
 use rand::{Rng, SeedableRng};
 use std::borrow::Cow;
@@ -141,7 +142,7 @@ impl Strategy {
             .iter()
             .map(|contract| {
                 DriveOperationType::ContractOperation(ContractOperationType::ApplyContract {
-                    contract,
+                    contract: Cow::Borrowed(contract),
                     storage_flags: None,
                 })
             })
@@ -330,8 +331,9 @@ fn run_chain_for_strategy(
     let mut current_identities = vec![];
     let quorum_size = 100;
     let mut i = 0;
+
     // init chain
-    let init_chain_request = InitChainRequest {};
+    let init_chain_request = static_init_chain_request();
 
     platform
         .init_chain(init_chain_request, None)

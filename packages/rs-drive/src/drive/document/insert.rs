@@ -58,8 +58,8 @@ use crate::drive::document::{
 };
 use crate::drive::flags::StorageFlags;
 use crate::drive::object_size_info::DocumentInfo::{
-    DocumentEstimatedAverageSize, DocumentRefAndSerialization, DocumentRefWithoutSerialization,
-    DocumentWithoutSerialization,
+    DocumentAndSerialization, DocumentEstimatedAverageSize, DocumentRefAndSerialization,
+    DocumentRefWithoutSerialization, DocumentWithoutSerialization,
 };
 use crate::drive::object_size_info::DriveKeyInfo::{Key, KeyRef};
 use crate::drive::object_size_info::KeyElementInfo::{KeyElement, KeyUnknownElementSize};
@@ -197,6 +197,23 @@ impl Drive {
                             element,
                         ))
                     }
+                    DocumentAndSerialization((document, serialized_document, storage_flags)) => {
+                        let element = Element::Item(
+                            serialized_document.to_vec(),
+                            StorageFlags::map_borrowed_cow_to_some_element_flags(storage_flags),
+                        );
+                        let document_id_in_primary_path =
+                            contract_documents_keeping_history_primary_key_path_for_document_id(
+                                contract.id().as_bytes(),
+                                document_type.name.as_str(),
+                                document.id.as_slice(),
+                            );
+                        PathFixedSizeKeyRefElement((
+                            document_id_in_primary_path,
+                            encoded_time.as_slice(),
+                            element,
+                        ))
+                    }
                     DocumentWithoutSerialization((document, storage_flags)) => {
                         let serialized_document =
                             document.serialize(document_and_contract_info.document_type)?;
@@ -307,6 +324,13 @@ impl Drive {
                     );
                     PathFixedSizeKeyRefElement((primary_key_path, document.id.as_slice(), element))
                 }
+                DocumentAndSerialization((document, serialized_document, storage_flags)) => {
+                    let element = Element::Item(
+                        serialized_document.to_vec(),
+                        StorageFlags::map_borrowed_cow_to_some_element_flags(storage_flags),
+                    );
+                    PathFixedSizeKeyRefElement((primary_key_path, document.id.as_slice(), element))
+                }
                 DocumentRefWithoutSerialization((document, storage_flags)) => {
                     let serialized_document =
                         document.serialize(document_and_contract_info.document_type)?;
@@ -341,6 +365,13 @@ impl Drive {
                 .document_info
             {
                 DocumentRefAndSerialization((document, serialized_document, storage_flags)) => {
+                    let element = Element::Item(
+                        serialized_document.to_vec(),
+                        StorageFlags::map_borrowed_cow_to_some_element_flags(storage_flags),
+                    );
+                    PathFixedSizeKeyRefElement((primary_key_path, document.id.as_slice(), element))
+                }
+                DocumentAndSerialization((document, serialized_document, storage_flags)) => {
                     let element = Element::Item(
                         serialized_document.to_vec(),
                         StorageFlags::map_borrowed_cow_to_some_element_flags(storage_flags),
@@ -677,7 +708,8 @@ impl Drive {
                         );
                         KeyElement((document.id.as_slice(), document_reference))
                     }
-                    DocumentWithoutSerialization((document, storage_flags)) => {
+                    DocumentWithoutSerialization((document, storage_flags))
+                    | DocumentAndSerialization((document, _, storage_flags)) => {
                         let document_reference = make_document_reference(
                             document,
                             document_and_contract_info.document_type,
@@ -716,7 +748,8 @@ impl Drive {
                         );
                         KeyElement((&[0], document_reference))
                     }
-                    DocumentWithoutSerialization((document, storage_flags)) => {
+                    DocumentWithoutSerialization((document, storage_flags))
+                    | DocumentAndSerialization((document, _, storage_flags)) => {
                         let document_reference = make_document_reference(
                             document,
                             document_and_contract_info.document_type,

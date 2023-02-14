@@ -32,8 +32,10 @@
 //! This module defines helper functions related to setting up Platform.
 //!
 
+use crate::abci::messages::SystemIdentityPublicKeys;
 use crate::config::PlatformConfig;
 use crate::platform::Platform;
+use crate::test::fixture::abci::static_system_identity_public_keys;
 use tempfile::TempDir;
 
 /// A function which sets up Platform.
@@ -51,6 +53,21 @@ pub fn setup_platform_with_initial_state_structure(config: Option<PlatformConfig
     platform
         .drive
         .create_initial_state_structure(None)
+        .expect("should create root tree successfully");
+
+    platform
+}
+
+/// A function which sets up Platform with its genesis state
+pub fn setup_platform_with_genesis_state(config: Option<PlatformConfig>) -> Platform {
+    let platform = setup_platform_raw(config);
+
+    platform
+        .create_genesis_state(
+            Default::default(),
+            static_system_identity_public_keys(),
+            None,
+        )
         .expect("should create root tree successfully");
 
     platform

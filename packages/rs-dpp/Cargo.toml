@@ -37,7 +37,7 @@ serde_repr = { version = "0.1.7" }
 sha2  = { version="0.10"}
 thiserror = { version = "1.0"}
 mockall = { version="0.11.3", optional=true}
-
+data-contracts = { path = "../data-contracts" }
 
 [dev-dependencies]
 mockall= { version ="0.11"}

@@ -56,10 +56,13 @@ impl Platform {
     /// Open Platform with Drive and block execution context.
     pub fn open<P: AsRef<Path>>(path: P, config: Option<PlatformConfig>) -> Result<Self, Error> {
         let config = config.unwrap_or_default();
+
         let drive = Drive::open(path, Some(config.drive_config.clone())).map_err(Error::Drive)?;
+
         let state = PlatformState {
             last_block_info: None,
         };
+
         Ok(Platform {
             drive,
             state,

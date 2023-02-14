@@ -2669,6 +2669,7 @@ function $$SETUP_STATE(hydrateRuntimeState, basePath) {
             ["@dashevo/grpc-common", "workspace:packages/js-grpc-common"],\
             ["@dashevo/masternode-reward-shares-contract", "workspace:packages/masternode-reward-shares-contract"],\
             ["@dashevo/rs-drive", "workspace:packages/rs-drive-nodejs"],\
+            ["@dashevo/withdrawals-contract", "workspace:packages/withdrawals-contract"],\
             ["@types/pino", "npm:6.3.12"],\
             ["ajv", "npm:8.8.1"],\
             ["ajv-keywords", "virtual:34fbe5a7dba3086dcbcce8a7faed986b10f7a208f11db70499feb2c1afd76e24089e5b95f9e3b937e89512de1cf4937177cc2000303a1e908baefc73362a7d48#npm:5.0.0"],\
@@ -2886,6 +2887,7 @@ function $$SETUP_STATE(hydrateRuntimeState, basePath) {
           "packageLocation": "./packages/rs-drive-nodejs/",\
           "packageDependencies": [\
             ["@dashevo/rs-drive", "workspace:packages/rs-drive-nodejs"],\
+            ["@dashevo/dashcore-lib", "npm:0.19.44"],\
             ["@dashevo/dpp", "workspace:packages/js-dpp"],\
             ["cargo-cp-artifact", "npm:0.1.6"],\
             ["cbor", "npm:8.1.0"],\
@@ -7664,6 +7666,7 @@ function $$SETUP_STATE(hydrateRuntimeState, basePath) {
             ["@dashevo/feature-flags-contract", "workspace:packages/feature-flags-contract"],\
             ["@dashevo/masternode-reward-shares-contract", "workspace:packages/masternode-reward-shares-contract"],\
             ["@dashevo/wallet-lib", "workspace:packages/wallet-lib"],\
+            ["@dashevo/withdrawals-contract", "workspace:packages/withdrawals-contract"],\
             ["@oclif/core", "npm:1.22.0"],\
             ["@oclif/plugin-help", "npm:5.1.20"],\
             ["ajv", "npm:8.8.1"],\

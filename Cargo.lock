@@ -836,6 +836,26 @@ dependencies = [
 ]
 
 [[package]]
+name = "dashpay-contract"
+version = "0.24.0-dev.1"
+dependencies = [
+ "lazy_static",
+ "serde_json",
+]
+
+[[package]]
+name = "data-contracts"
+version = "0.24.0-dev.1"
+dependencies = [
+ "dashpay-contract",
+ "dpns-contract",
+ "feature-flags-contract",
+ "masternode-reward-shares-contract",
+ "serde_json",
+ "withdrawals-contract",
+]
+
+[[package]]
 name = "diff"
 version = "0.1.13"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -874,6 +894,13 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "1435fa1053d8b2fbbe9be7e97eca7f33d37b28409959813daefc1446a14247f1"
 
 [[package]]
+name = "dpns-contract"
+version = "0.24.0-dev.1"
+dependencies = [
+ "serde_json",
+]
+
+[[package]]
 name = "dpp"
 version = "0.1.0"
 dependencies = [
@@ -887,6 +914,7 @@ dependencies = [
  "chrono",
  "ciborium",
  "dashcore 0.29.1 (git+https://github.com/dashevo/rust-dashcore?branch=master)",
+ "data-contracts",
  "env_logger",
  "futures",
  "getrandom",
@@ -1089,6 +1117,13 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "a7a407cfaa3385c4ae6b23e84623d48c2798d06e3e6a1878f7f59f17b3f86499"
 dependencies = [
  "instant",
+]
+
+[[package]]
+name = "feature-flags-contract"
+version = "0.24.0-dev.1"
+dependencies = [
+ "serde_json",
 ]
 
 [[package]]
@@ -1685,6 +1720,13 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "b823e83b2affd8f40a9ee8c29dbc56404c1e34cd2710921f2801e2cf29527afa"
 dependencies = [
  "libc",
+]
+
+[[package]]
+name = "masternode-reward-shares-contract"
+version = "0.24.0-dev.1"
+dependencies = [
+ "serde_json",
 ]
 
 [[package]]
@@ -3405,6 +3447,13 @@ name = "windows_x86_64_msvc"
 version = "0.42.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "447660ad36a13288b1db4d4248e857b510e8c3a225c822ba4fb748c0aafecffd"
+
+[[package]]
+name = "withdrawals-contract"
+version = "0.24.0-dev.1"
+dependencies = [
+ "serde_json",
+]
 
 [[package]]
 name = "wyz"
