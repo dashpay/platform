@@ -179,9 +179,11 @@ impl Platform {
             .unwrap_or_default();
 
         if versions_passing_threshold.len() > 1 {
-            return Err(Error::Execution(ExecutionError::UpgradeIncoherence(
-                "only at most 1 version should be able to pass the threshold to upgrade",
-            )));
+            return Err(Error::Execution(
+                ExecutionError::ProtocolUpgradeIncoherence(
+                    "only at most 1 version should be able to pass the threshold to upgrade",
+                ),
+            ));
         }
 
         if versions_passing_threshold.len() == 1 {
