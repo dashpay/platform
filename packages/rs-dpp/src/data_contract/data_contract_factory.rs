@@ -1,5 +1,6 @@
 use anyhow::anyhow;
 use serde_json::{json, Map, Number, Value as JsonValue};
+use std::sync::Arc;
 
 use data_contract::state_transition::property_names as st_prop;
 
@@ -34,12 +35,12 @@ impl EntropyGenerator for DefaultEntropyGenerator {
 
 pub struct DataContractFactory {
     protocol_version: u32,
-    validate_data_contract: DataContractValidator,
+    validate_data_contract: Arc<DataContractValidator>,
     entropy_generator: Box<dyn EntropyGenerator>,
 }
 
 impl DataContractFactory {
-    pub fn new(protocol_version: u32, validate_data_contract: DataContractValidator) -> Self {
+    pub fn new(protocol_version: u32, validate_data_contract: Arc<DataContractValidator>) -> Self {
         Self {
             protocol_version,
             validate_data_contract,
@@ -49,7 +50,7 @@ impl DataContractFactory {
 
     pub fn new_with_entropy_generator(
         protocol_version: u32,
-        validate_data_contract: DataContractValidator,
+        validate_data_contract: Arc<DataContractValidator>,
         entropy_generator: Box<dyn EntropyGenerator>,
     ) -> Self {
         Self {
@@ -191,8 +192,9 @@ mod tests {
             LATEST_VERSION,
             COMPATIBILITY_MAP.clone(),
         );
-        let data_contract_validator =
-            DataContractValidator::new(Arc::new(protocol_version_validator));
+        let data_contract_validator = Arc::new(DataContractValidator::new(Arc::new(
+            protocol_version_validator,
+        )));
 
         let factory = DataContractFactory::new(1, data_contract_validator);
         TestData {
