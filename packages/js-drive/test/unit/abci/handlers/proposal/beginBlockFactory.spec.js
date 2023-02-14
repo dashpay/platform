@@ -115,7 +115,8 @@ describe('beginBlockFactory', () => {
       fetch: this.sinon.stub().resolves({
         getValue: () => undefined,
       }),
-    }
+    };
+
     validMasternodesListLength = 400;
 
     simplifyMasternodeListMock = {

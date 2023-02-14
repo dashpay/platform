@@ -64,7 +64,7 @@ function beginBlockFactory(
       proposerProTxHash,
       proposedAppVersion,
       round,
-      quorumHash,
+      // quorumHash, TODO: revisit once Tenderdash sents something here
     } = request;
 
     if (proposalBlockExecutionContext.isEmpty()) {
