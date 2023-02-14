@@ -1015,6 +1015,7 @@ describe('Drive', () => {
           proposerProTxHash: Buffer.alloc(32, 1),
           proposedAppVersion: 1,
           validatorSetQuorumHash: Buffer.alloc(32, 2),
+          totalHpmns: 100,
         };
 
         const response = await drive.getAbci().blockBegin(request);
@@ -1036,6 +1037,7 @@ describe('Drive', () => {
           proposerProTxHash: Buffer.alloc(32, 1),
           proposedAppVersion: 1,
           validatorSetQuorumHash: Buffer.alloc(32, 2),
+          totalHpmns: 100,
         });
 
         const response = await drive.getAbci().blockBegin({
@@ -1045,6 +1047,7 @@ describe('Drive', () => {
           previousBlockTimeMs: blockTimeMs,
           proposedAppVersion: 1,
           validatorSetQuorumHash: Buffer.alloc(32, 2),
+          totalHpmns: 100,
         });
 
         expect(response.unsignedWithdrawalTransactions).to.be.empty();
@@ -1066,6 +1069,7 @@ describe('Drive', () => {
           proposedAppVersion: 1,
           proposerProTxHash: Buffer.alloc(32, 1),
           validatorSetQuorumHash: Buffer.alloc(32, 2),
+          totalHpmns: 100,
         });
       });
 
@@ -1098,6 +1102,7 @@ describe('Drive', () => {
           proposedAppVersion: 1,
           proposerProTxHash: Buffer.alloc(32, 1),
           validatorSetQuorumHash: Buffer.alloc(32, 2),
+          totalHpmns: 100,
         });
 
         await drive.getAbci().blockEnd({

@@ -145,75 +145,12 @@ impl Platform {
         Ok(total_fees)
     }
 
-    /// checks for a network upgrade and resets activation window
-    /// this should only be called on epoch change
-    /// this will change backing state, but does not change drive cache
-    pub fn check_for_desired_protocol_upgrade(
-        &self,
-        active_hpmns: &[[u8; 32]],
-        transaction: TransactionArg,
-    ) -> Result<Option<ProtocolVersion>, Error> {
-        let required_upgraded_hpns = 1
-            + (active_hpmns.len() as u64)
-                .checked_mul(PROTOCOL_VERSION_UPGRADE_PERCENTAGE_NEEDED)
-                .and_then(|product| product.checked_div(100))
-                .ok_or(Error::Execution(ExecutionError::Overflow(
-                    "overflow for required block count",
-                )))?;
-        // if we are at an epoch change, check to see if over 75% of blocks of previous epoch
-        // were on the future version
-        let mut cache = self.drive.cache.borrow_mut();
-        let mut versions_passing_threshold = cache
-            .protocol_versions_counter
-            .take()
-            .map(|version_counter| {
-                version_counter
-                    .into_iter()
-                    .filter_map(|(protocol_version, count)| {
-                        if count >= required_upgraded_hpns {
-                            Some(protocol_version)
-                        } else {
-                            None
-                        }
-                    })
-                    .collect::<Vec<ProtocolVersion>>()
-            })
-            .unwrap_or_default();
-
-        if versions_passing_threshold.len() > 1 {
-            return Err(Error::Execution(
-                ExecutionError::ProtocolUpgradeIncoherence(
-                    "only at most 1 version should be able to pass the threshold to upgrade",
-                ),
-            ));
-        }
-
-        if versions_passing_threshold.len() == 1 {
-            let new_version = versions_passing_threshold.remove(0);
-            // we need to drop all version information
-            self.drive
-                .change_to_new_version_and_clear_version_information(
-                    self.state.borrow().current_protocol_version_in_consensus,
-                    new_version,
-                    transaction,
-                )
-                .map_err(Error::Drive)?;
-            Ok(Some(new_version))
-        } else {
-            // we need to drop all version information
-            self.drive
-                .clear_version_information(transaction)
-                .map_err(Error::Drive)?;
-            Ok(None)
-        }
-    }
-
     /// Execute a block with various state transitions
     pub fn execute_block(
         &self,
         proposer: [u8; 32],
         proposed_version: ProtocolVersion,
-        active_hpmns: &[[u8; 32]],
+        total_hpmns: u32,
         block_info: BlockInfo,
         state_transitions: Vec<ExecutionEvent>,
     ) -> Result<(), Error> {
@@ -231,7 +168,7 @@ impl Platform {
             proposer_pro_tx_hash: proposer,
             proposed_app_version: proposed_version,
             validator_set_quorum_hash: Default::default(),
-            active_hpmns: active_hpmns.to_vec(),
+            total_hpmns,
         };
 
         // println!("Block #{}", block_info.height);
@@ -282,6 +219,7 @@ impl Platform {
                 )
             });
 
+        // TODO: Move to `after_finalize_block` so it will be called by JS Drive too
         self.state.replace_with(|platform_state| {
             platform_state.last_block_info = Some(block_info.clone());
             platform_state.clone()

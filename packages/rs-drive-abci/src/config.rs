@@ -41,7 +41,7 @@ pub struct PlatformConfig {
     pub quorum_size: u16,
 
     /// How often should quorums change?
-    pub quorum_rotation_block_count: u64,
+    pub validator_set_quorum_rotation_block_count: u64,
 }
 
 impl Default for PlatformConfig {
@@ -49,7 +49,7 @@ impl Default for PlatformConfig {
         PlatformConfig {
             verify_sum_trees: true,
             quorum_size: 100,
-            quorum_rotation_block_count: 25,
+            validator_set_quorum_rotation_block_count: 15,
             drive_config: Default::default(),
         }
     }

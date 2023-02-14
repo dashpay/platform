@@ -468,12 +468,14 @@ pub(crate) fn continue_chain_for_strategy(
         StrategyRandomness::RNGEntropy(rng) => rng,
     };
     let quorum_size = config.quorum_size;
-    let quorum_rotation_block_count = config.quorum_rotation_block_count;
+    let quorum_rotation_block_count = config.validator_set_quorum_rotation_block_count;
     let first_block_time = 0;
     let mut current_identities = vec![];
     let mut i = 0;
 
     let blocks_per_epoch = EPOCH_CHANGE_TIME_MS / block_spacing_ms;
+
+    let proposer_count = proposers.len() as u32;
 
     let proposer_versions = current_proposer_versions.unwrap_or(
         strategy.upgrading_info.as_ref().map(|upgrading_info| {
@@ -530,7 +532,7 @@ pub(crate) fn continue_chain_for_strategy(
             .execute_block(
                 *proposer,
                 proposed_version,
-                proposers.as_slice(),
+                proposer_count,
                 block_info,
                 state_transitions,
             )
@@ -593,7 +595,7 @@ mod tests {
             drive_config: Default::default(),
             verify_sum_trees: true,
             quorum_size: 100,
-            quorum_rotation_block_count: 25,
+            validator_set_quorum_rotation_block_count: 25,
         };
         run_chain_for_strategy(1000, 3000, strategy, config, 15);
     }
@@ -614,7 +616,7 @@ mod tests {
             drive_config: Default::default(),
             verify_sum_trees: true,
             quorum_size: 100,
-            quorum_rotation_block_count: 25,
+            validator_set_quorum_rotation_block_count: 25,
         };
         let outcome = run_chain_for_strategy(100, 3000, strategy, config, 15);
 
@@ -637,7 +639,7 @@ mod tests {
             drive_config: Default::default(),
             verify_sum_trees: true,
             quorum_size: 100,
-            quorum_rotation_block_count: 100,
+            validator_set_quorum_rotation_block_count: 100,
         };
         let day_in_ms = 1000 * 60 * 60 * 24;
         let outcome = run_chain_for_strategy(150, day_in_ms, strategy, config, 15);
@@ -674,7 +676,7 @@ mod tests {
             drive_config: Default::default(),
             verify_sum_trees: true,
             quorum_size: 100,
-            quorum_rotation_block_count: 25,
+            validator_set_quorum_rotation_block_count: 25,
         };
         run_chain_for_strategy(1, 3000, strategy, config, 15);
     }
@@ -718,7 +720,7 @@ mod tests {
             drive_config: Default::default(),
             verify_sum_trees: true,
             quorum_size: 100,
-            quorum_rotation_block_count: 25,
+            validator_set_quorum_rotation_block_count: 25,
         };
         run_chain_for_strategy(100, 3000, strategy, config, 15);
     }
@@ -762,7 +764,7 @@ mod tests {
             drive_config: Default::default(),
             verify_sum_trees: true,
             quorum_size: 100,
-            quorum_rotation_block_count: 100,
+            validator_set_quorum_rotation_block_count: 100,
         };
         let day_in_ms = 1000 * 60 * 60 * 24;
         let block_count = 120;
@@ -834,7 +836,7 @@ mod tests {
             drive_config: Default::default(),
             verify_sum_trees: true,
             quorum_size: 100,
-            quorum_rotation_block_count: 100,
+            validator_set_quorum_rotation_block_count: 100,
         };
         let day_in_ms = 1000 * 60 * 60 * 24;
         let block_count = 120;
@@ -906,7 +908,7 @@ mod tests {
             drive_config: Default::default(),
             verify_sum_trees: true,
             quorum_size: 100,
-            quorum_rotation_block_count: 100,
+            validator_set_quorum_rotation_block_count: 100,
         };
         let day_in_ms = 1000 * 60 * 60 * 24;
         let block_count = 120;
@@ -978,7 +980,7 @@ mod tests {
             drive_config: Default::default(),
             verify_sum_trees: true,
             quorum_size: 100,
-            quorum_rotation_block_count: 100,
+            validator_set_quorum_rotation_block_count: 100,
         };
         let day_in_ms = 1000 * 60 * 60 * 24;
         let block_count = 30;
