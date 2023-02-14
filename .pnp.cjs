@@ -2887,7 +2887,7 @@ function $$SETUP_STATE(hydrateRuntimeState, basePath) {
           "packageLocation": "./packages/rs-drive-nodejs/",\
           "packageDependencies": [\
             ["@dashevo/rs-drive", "workspace:packages/rs-drive-nodejs"],\
-            ["@dashevo/dashcore-lib", "npm:0.19.44"],\
+            ["@dashevo/dashcore-lib", "https://github.com/dashevo/dashcore-lib.git#commit=ffed27c9e973b23e7013b6eb4933e7dc9f2a50ad"],\
             ["@dashevo/dpp", "workspace:packages/js-dpp"],\
             ["cargo-cp-artifact", "npm:0.1.6"],\
             ["cbor", "npm:8.1.0"],\

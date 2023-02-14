@@ -1849,7 +1849,7 @@ __metadata:
   version: 0.0.0-use.local
   resolution: "@dashevo/rs-drive@workspace:packages/rs-drive-nodejs"
   dependencies:
-    "@dashevo/dashcore-lib": ~0.19.44
+    "@dashevo/dashcore-lib": "github:dashevo/dashcore-lib#ffed27c9e973b23e7013b6eb4933e7dc9f2a50ad"
     "@dashevo/dpp": "workspace:*"
     cargo-cp-artifact: ^0.1.6
     cbor: ^8.0.0
