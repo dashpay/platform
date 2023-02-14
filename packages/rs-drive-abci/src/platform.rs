@@ -57,7 +57,9 @@ impl Platform {
     /// Open Platform with Drive and block execution context.
     pub fn open<P: AsRef<Path>>(path: P, config: Option<PlatformConfig>) -> Result<Self, Error> {
         let config = config.unwrap_or_default();
+
         let drive = Drive::open(path, Some(config.drive_config.clone())).map_err(Error::Drive)?;
+
         let current_protocol_version_in_consensus = drive
             .fetch_current_protocol_version(None)
             .map_err(Error::Drive)?
@@ -71,6 +73,7 @@ impl Platform {
             current_protocol_version_in_consensus,
             next_epoch_protocol_version,
         };
+
         Ok(Platform {
             drive,
             state: RefCell::new(state),

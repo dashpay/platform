@@ -252,8 +252,8 @@ impl Platform {
 mod tests {
     use super::*;
 
-    use crate::common::helpers::setup::setup_platform_with_initial_state_structure;
     use crate::execution::fee_pools::epoch::EPOCH_CHANGE_TIME_MS;
+    use crate::test::helpers::setup::setup_platform_with_initial_state_structure;
     use chrono::Utc;
     use rust_decimal::prelude::ToPrimitive;
 

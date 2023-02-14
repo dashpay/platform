@@ -1647,6 +1647,7 @@ __metadata:
     "@dashevo/grpc-common": "workspace:*"
     "@dashevo/masternode-reward-shares-contract": "workspace:*"
     "@dashevo/rs-drive": "workspace:*"
+    "@dashevo/withdrawals-contract": "workspace:*"
     "@types/pino": ^6.3.0
     ajv: ^8.6.0
     ajv-keywords: ^5.0.0
@@ -1848,6 +1849,7 @@ __metadata:
   version: 0.0.0-use.local
   resolution: "@dashevo/rs-drive@workspace:packages/rs-drive-nodejs"
   dependencies:
+    "@dashevo/dashcore-lib": ~0.19.44
     "@dashevo/dpp": "workspace:*"
     cargo-cp-artifact: ^0.1.6
     cbor: ^8.0.0
@@ -1981,7 +1983,7 @@ __metadata:
   languageName: node
   linkType: hard
 
-"@dashevo/withdrawals-contract@workspace:packages/withdrawals-contract":
+"@dashevo/withdrawals-contract@workspace:*, @dashevo/withdrawals-contract@workspace:packages/withdrawals-contract":
   version: 0.0.0-use.local
   resolution: "@dashevo/withdrawals-contract@workspace:packages/withdrawals-contract"
   dependencies:
@@ -5730,6 +5732,7 @@ __metadata:
     "@dashevo/feature-flags-contract": "workspace:*"
     "@dashevo/masternode-reward-shares-contract": "workspace:*"
     "@dashevo/wallet-lib": "workspace:*"
+    "@dashevo/withdrawals-contract": "workspace:*"
     "@oclif/core": ^1.21.0
     "@oclif/plugin-help": ^5.1.20
     ajv: ^8.6.0
@@ -7849,7 +7852,7 @@ fsevents@~2.3.2:
   languageName: node
   linkType: hard
 
-"http-cache-semantics@npm:^4.1.1":
+"http-cache-semantics@npm:^4.0.0, http-cache-semantics@npm:^4.1.0":
   version: 4.1.1
   resolution: "http-cache-semantics@npm:4.1.1"
   checksum: 83ac0bc60b17a3a36f9953e7be55e5c8f41acc61b22583060e8dedc9dd5e3607c823a88d0926f9150e571f90946835c7fe150732801010845c72cd8bbff1a236

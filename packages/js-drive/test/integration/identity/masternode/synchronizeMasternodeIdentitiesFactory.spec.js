@@ -13,6 +13,7 @@ const createTestDIContainer = require('../../../../lib/test/createTestDIContaine
 const createOperatorIdentifier = require('../../../../lib/identity/masternode/createOperatorIdentifier');
 const BlockInfo = require('../../../../lib/blockExecution/BlockInfo');
 const createVotingIdentifier = require('../../../../lib/identity/masternode/createVotingIdentifier');
+const getSystemIdentityPublicKeysFixture = require('../../../../lib/test/fixtures/getSystemIdentityPublicKeysFixture');
 
 /**
  * @param {IdentityStoreRepository} identityRepository
@@ -465,23 +466,14 @@ describe('synchronizeMasternodeIdentitiesFactory', () => {
      * @type {Drive}
      */
     const rsDrive = container.resolve('rsDrive');
-    await rsDrive.createInitialStateStructure(true);
+    await rsDrive.getAbci().initChain({
+      genesisTimeMs: 0,
+      systemIdentityPublicKeys: getSystemIdentityPublicKeysFixture(),
+    }, true);
 
-    const registerSystemDataContract = container.resolve('registerSystemDataContract');
     const masternodeRewardSharesContractId = container.resolve('masternodeRewardSharesContractId');
-    const masternodeRewardSharesOwnerId = container.resolve('masternodeRewardSharesOwnerId');
-    const masternodeRewardSharesOwnerMasterPublicKey = container.resolve('masternodeRewardSharesOwnerMasterPublicKey');
-    const masternodeRewardSharesOwnerSecondPublicKey = container.resolve('masternodeRewardSharesOwnerSecondPublicKey');
-    const masternodeRewardSharesDocuments = container.resolve('masternodeRewardSharesDocuments');
 
-    rewardsDataContract = await registerSystemDataContract(
-      masternodeRewardSharesOwnerId,
-      masternodeRewardSharesContractId,
-      masternodeRewardSharesOwnerMasterPublicKey,
-      masternodeRewardSharesOwnerSecondPublicKey,
-      masternodeRewardSharesDocuments,
-      blockInfo,
-    );
+    [rewardsDataContract] = await rsDrive.fetchContract(masternodeRewardSharesContractId, 0, true);
 
     /**
      * @type {synchronizeMasternodeIdentities}
@@ -688,7 +680,7 @@ describe('synchronizeMasternodeIdentitiesFactory', () => {
 
     // Nothing happened
 
-    await expectDeterministicAppHash('a4d95c27d3b5f5cf814d09842ea05e1d4afa2b42c1208c97166d55f639c44344');
+    await expectDeterministicAppHash('c338bcd7a4d9484d3790d348c4f437214d2d9fa087ce57c2dc5b9942843bd95e');
 
     // Core RPC should be called
 
@@ -724,7 +716,7 @@ describe('synchronizeMasternodeIdentitiesFactory', () => {
     expect(result2.updatedEntities).to.have.lengthOf(0);
     expect(result2.removedEntities).to.have.lengthOf(0);
 
-    await expectDeterministicAppHash('dce0865c7d806e06e895321b7ca58916b71800439deccd80b8e3352083400f0d');
+    await expectDeterministicAppHash('f00749c0be3d3d2b4a9d9b63e757849a93b929494667fefb3128a4102fbe1f00');
 
     // New masternode identity should be created
 
@@ -808,7 +800,7 @@ describe('synchronizeMasternodeIdentitiesFactory', () => {
     expect(result.updatedEntities).to.have.lengthOf(0);
     expect(result.removedEntities).to.have.lengthOf(1);
 
-    await expectDeterministicAppHash('6b9affb683180a216cf4565b036032caa746a6552382caa54c791799436e1ee5');
+    await expectDeterministicAppHash('53f0aba700f599602b843d0957369cf2506836e8044fb544d136d68f4972cd08');
 
     // Masternode identity should stay
 
@@ -876,7 +868,7 @@ describe('synchronizeMasternodeIdentitiesFactory', () => {
     expect(result.updatedEntities).to.have.lengthOf(0);
     expect(result.removedEntities).to.have.lengthOf(1);
 
-    await expectDeterministicAppHash('6b9affb683180a216cf4565b036032caa746a6552382caa54c791799436e1ee5');
+    await expectDeterministicAppHash('53f0aba700f599602b843d0957369cf2506836e8044fb544d136d68f4972cd08');
 
     const invalidMasternodeIdentifier = Identifier.from(
       Buffer.from(invalidSmlEntry.proRegTxHash, 'hex'),
@@ -926,7 +918,7 @@ describe('synchronizeMasternodeIdentitiesFactory', () => {
     expect(result.updatedEntities).to.have.lengthOf(1);
     expect(result.removedEntities).to.have.lengthOf(1);
 
-    await expectDeterministicAppHash('81a4ab92c4b7907fb5c9eef1992aa3c0c2f5d851f12d1e7f26c2db3b39a6cecd');
+    await expectDeterministicAppHash('31f657eb0b2a345909a524632a8003db3a3ec5864520006d4e90bd490d86e6d4');
 
     // Masternode identity should stay
 
@@ -1001,7 +993,7 @@ describe('synchronizeMasternodeIdentitiesFactory', () => {
 
     await synchronizeMasternodeIdentities(coreHeight + 1, blockInfo);
 
-    await expectDeterministicAppHash('3c3c466ede7f55b76dea66b0f143ef00eac6f7c731b0e8f9b7153aedca79602d');
+    await expectDeterministicAppHash('a8eabca17f517548b4094bcaa6c410f9ea18d08eeb54d9cd63d441276c093e95');
 
     // Masternode identity should contain new public key
 
@@ -1083,9 +1075,7 @@ describe('synchronizeMasternodeIdentitiesFactory', () => {
     // Initial sync
 
     await synchronizeMasternodeIdentities(coreHeight, blockInfo);
-
     await expectDeterministicAppHash('462bf1db5c988cf9365e1a6c69acf53efbfc004a9d0080c1fbf15bb40a99d3b5');
-
     const votingIdentifier = createVotingIdentifier(smlFixture[0]);
 
     const votingIdentityResult = await identityRepository.fetch(

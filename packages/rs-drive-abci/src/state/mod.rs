@@ -1,6 +1,8 @@
 use drive::dpp::util::deserializer::ProtocolVersion;
 use drive::drive::block_info::BlockInfo;
 
+mod genesis;
+
 /// Platform state
 #[derive(Clone)]
 pub struct PlatformState {
