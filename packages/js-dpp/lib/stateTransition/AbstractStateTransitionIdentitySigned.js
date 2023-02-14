@@ -99,9 +99,7 @@ class AbstractStateTransitionIdentitySigned extends AbstractStateTransition {
       case IdentityPublicKey.TYPES.BLS12_381:
         privateKeyModel = await blsPrivateKeyFactory(privateKey);
         // eslint-disable-next-line no-case-declarations
-        const { BasicSchemeMPL } = await BlsSignatures.getInstance();
-        // eslint-disable-next-line no-case-declarations
-        const publicKeyInstance = BasicSchemeMPL.sk_to_g1(privateKeyModel);
+        const publicKeyInstance = privateKeyModel.get_g1();
         pubKeyBase = Buffer.from(publicKeyInstance.serialize());
 
         publicKeyInstance.delete();
@@ -113,8 +111,6 @@ class AbstractStateTransitionIdentitySigned extends AbstractStateTransition {
         }
 
         await this.signByPrivateKey(privateKeyModel, identityPublicKey.getType());
-
-        privateKeyModel.delete();
         break;
       default:
         throw new InvalidIdentityPublicKeyTypeError(identityPublicKey.getType());

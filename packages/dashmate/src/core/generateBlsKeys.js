@@ -13,7 +13,7 @@ async function generateBlsKeys() {
 
   const randomBytes = new Uint8Array(crypto.randomBytes(256));
   const operatorPrivateKey = BasicSchemeMPL.key_gen(randomBytes);
-  const operatorPublicKey = BasicSchemeMPL.sk_to_g1(operatorPrivateKey);
+  const operatorPublicKey = operatorPrivateKey.get_g1();
 
   const operatorPrivateKeyHex = Buffer.from(operatorPrivateKey.serialize()).toString('hex');
   const operatorPublicKeyHex = Buffer.from(operatorPublicKey.serialize()).toString('hex');

@@ -157,17 +157,23 @@ describe('feesPrediction', () => {
       identity.setAssetLockProof(instantAssetLockProof);
 
       // Generate real keys
-      const { PrivateKey: BlsPrivateKey } = await BlsSignatures.getInstance();
+      const { BasicSchemeMPL } = await BlsSignatures.getInstance();
 
       privateKeys = identity.getPublicKeys().map((identityPublicKey) => {
         const randomBytes = new Uint8Array(crypto.randomBytes(256));
-        const privateKey = BlsPrivateKey.fromBytes(randomBytes, true);
-        const publicKey = privateKey.getPublicKey();
+
+        const privateKey = BasicSchemeMPL.key_gen(randomBytes);
+        const publicKey = privateKey.get_g1();
         const publicKeyBuffer = Buffer.from(publicKey.serialize());
 
         identityPublicKey.setData(publicKeyBuffer);
 
-        return Buffer.from(privateKey.serialize());
+        const result = Buffer.from(privateKey.serialize());
+
+        privateKey.delete();
+        publicKey.delete();
+
+        return result;
       });
 
       stateRepository.verifyInstantLock = this.sinon.stub().resolves(true);
@@ -226,13 +232,13 @@ describe('feesPrediction', () => {
         const newIdentityPublicKeys = [];
         const disableIdentityPublicKeys = [];
 
-        const { PrivateKey: BlsPrivateKey } = await BlsSignatures.getInstance();
+        const { BasicSchemeMPL } = await BlsSignatures.getInstance();
 
         const newPrivateKeys = [];
         for (let i = 0; i < identityUpdateTransitionSchema.properties.addPublicKeys.maxItems; i++) {
           const randomBytes = new Uint8Array(crypto.randomBytes(256));
-          const privateKey = BlsPrivateKey.fromBytes(randomBytes, true);
-          const publicKey = privateKey.getPublicKey();
+          const privateKey = BasicSchemeMPL.key_gen(randomBytes);
+          const publicKey = privateKey.get_g1();
           const publicKeyBuffer = Buffer.from(publicKey.serialize());
 
           newPrivateKeys.push(privateKey);
@@ -250,6 +256,8 @@ describe('feesPrediction', () => {
           );
 
           disableIdentityPublicKeys.push(identity.getPublicKeyById(i));
+
+          publicKey.delete();
         }
 
         const stateTransition = dpp.identity.createIdentityUpdateTransition(
