@@ -57,10 +57,23 @@ mod tests {
                 .expect("expected to get versions");
 
             assert_eq!(
-                platform.state.last_block_info.as_ref().unwrap().epoch.index,
+                platform
+                    .state
+                    .borrow()
+                    .last_block_info
+                    .as_ref()
+                    .unwrap()
+                    .epoch
+                    .index,
                 0
             );
-            assert_eq!(platform.state.current_protocol_version_in_consensus, 1);
+            assert_eq!(
+                platform
+                    .state
+                    .borrow()
+                    .current_protocol_version_in_consensus,
+                1
+            );
             assert_eq!(counter.get(&1), Some(&13)); //most nodes were hit (60 were not)
             assert_eq!(counter.get(&2), Some(&400)); //most nodes were hit (60 were not)
         }
@@ -69,7 +82,14 @@ mod tests {
         // let's go a little longer
 
         let hour_in_ms = 1000 * 60 * 60;
-        let block_start = platform.state.last_block_info.as_ref().unwrap().height + 1;
+        let block_start = platform
+            .state
+            .borrow()
+            .last_block_info
+            .as_ref()
+            .unwrap()
+            .height
+            + 1;
         let ChainExecutionOutcome {
             platform,
             proposers,
@@ -98,11 +118,24 @@ mod tests {
                 .as_ref()
                 .expect("expected a version counter");
             assert_eq!(
-                platform.state.last_block_info.as_ref().unwrap().epoch.index,
+                platform
+                    .state
+                    .borrow()
+                    .last_block_info
+                    .as_ref()
+                    .unwrap()
+                    .epoch
+                    .index,
                 1
             );
-            assert_eq!(platform.state.current_protocol_version_in_consensus, 1);
-            assert_eq!(platform.state.next_epoch_protocol_version, 2);
+            assert_eq!(
+                platform
+                    .state
+                    .borrow()
+                    .current_protocol_version_in_consensus,
+                1
+            );
+            assert_eq!(platform.state.borrow().next_epoch_protocol_version, 2);
             assert_eq!(counter.get(&1), None); //no one has proposed 1 yet
             assert_eq!(counter.get(&2), Some(&154));
         }
@@ -110,7 +143,14 @@ mod tests {
         // we locked in
         // let's go a little longer to see activation
 
-        let block_start = platform.state.last_block_info.as_ref().unwrap().height + 1;
+        let block_start = platform
+            .state
+            .borrow()
+            .last_block_info
+            .as_ref()
+            .unwrap()
+            .height
+            + 1;
         let ChainExecutionOutcome {
             platform,
             proposers,
@@ -139,11 +179,24 @@ mod tests {
                 .as_ref()
                 .expect("expected a version counter");
             assert_eq!(
-                platform.state.last_block_info.as_ref().unwrap().epoch.index,
+                platform
+                    .state
+                    .borrow()
+                    .last_block_info
+                    .as_ref()
+                    .unwrap()
+                    .epoch
+                    .index,
                 2
             );
-            assert_eq!(platform.state.current_protocol_version_in_consensus, 2);
-            assert_eq!(platform.state.next_epoch_protocol_version, 2);
+            assert_eq!(
+                platform
+                    .state
+                    .borrow()
+                    .current_protocol_version_in_consensus,
+                2
+            );
+            assert_eq!(platform.state.borrow().next_epoch_protocol_version, 2);
             assert_eq!(counter.get(&1), None); //no one has proposed 1 yet
             assert_eq!(counter.get(&2), Some(&124));
         }
@@ -187,17 +240,37 @@ mod tests {
                 .as_ref()
                 .expect("expected a version counter");
             assert_eq!(
-                platform.state.last_block_info.as_ref().unwrap().epoch.index,
+                platform
+                    .state
+                    .borrow()
+                    .last_block_info
+                    .as_ref()
+                    .unwrap()
+                    .epoch
+                    .index,
                 4
             );
-            assert_eq!(platform.state.current_protocol_version_in_consensus, 1);
-            assert_eq!(platform.state.next_epoch_protocol_version, 1);
+            assert_eq!(
+                platform
+                    .state
+                    .borrow()
+                    .current_protocol_version_in_consensus,
+                1
+            );
+            assert_eq!(platform.state.borrow().next_epoch_protocol_version, 1);
         }
 
         // we did not yet hit the required threshold to upgrade
         // let's go a little longer
 
-        let block_start = platform.state.last_block_info.as_ref().unwrap().height + 1;
+        let block_start = platform
+            .state
+            .borrow()
+            .last_block_info
+            .as_ref()
+            .unwrap()
+            .height
+            + 1;
         let ChainExecutionOutcome {
             platform,
             proposers,
@@ -226,18 +299,38 @@ mod tests {
                 .as_ref()
                 .expect("expected a version counter");
             assert_eq!(
-                platform.state.last_block_info.as_ref().unwrap().epoch.index,
+                platform
+                    .state
+                    .borrow()
+                    .last_block_info
+                    .as_ref()
+                    .unwrap()
+                    .epoch
+                    .index,
                 8
             );
-            assert_eq!(platform.state.current_protocol_version_in_consensus, 1);
-            assert_eq!(platform.state.next_epoch_protocol_version, 2);
+            assert_eq!(
+                platform
+                    .state
+                    .borrow()
+                    .current_protocol_version_in_consensus,
+                1
+            );
+            assert_eq!(platform.state.borrow().next_epoch_protocol_version, 2);
             // the counter is for the current voting during that window
             assert_eq!((counter.get(&1), counter.get(&2)), (Some(&13), Some(&54)));
         }
 
         // we are now locked in, the current protocol version will change on next epoch
 
-        let block_start = platform.state.last_block_info.as_ref().unwrap().height + 1;
+        let block_start = platform
+            .state
+            .borrow()
+            .last_block_info
+            .as_ref()
+            .unwrap()
+            .height
+            + 1;
         let ChainExecutionOutcome { platform, .. } = continue_chain_for_strategy(
             platform,
             ChainExecutionParameters {
@@ -259,9 +352,25 @@ mod tests {
                 .protocol_versions_counter
                 .as_ref()
                 .expect("expected a version counter");
-            assert_eq!(platform.state.last_block_info.unwrap().epoch.index, 9);
-            assert_eq!(platform.state.current_protocol_version_in_consensus, 2);
-            assert_eq!(platform.state.next_epoch_protocol_version, 2);
+            assert_eq!(
+                platform
+                    .state
+                    .borrow()
+                    .last_block_info
+                    .as_ref()
+                    .unwrap()
+                    .epoch
+                    .index,
+                9
+            );
+            assert_eq!(
+                platform
+                    .state
+                    .borrow()
+                    .current_protocol_version_in_consensus,
+                2
+            );
+            assert_eq!(platform.state.borrow().next_epoch_protocol_version, 2);
         }
     }
 
@@ -303,16 +412,36 @@ mod tests {
                 .as_ref()
                 .expect("expected a version counter");
             assert_eq!(
-                platform.state.last_block_info.as_ref().unwrap().epoch.index,
+                platform
+                    .state
+                    .borrow()
+                    .last_block_info
+                    .as_ref()
+                    .unwrap()
+                    .epoch
+                    .index,
                 4
             );
-            assert_eq!(platform.state.current_protocol_version_in_consensus, 1);
+            assert_eq!(
+                platform
+                    .state
+                    .borrow()
+                    .current_protocol_version_in_consensus,
+                1
+            );
         }
 
         // we still did not yet hit the required threshold to upgrade
         // let's go a just a little longer
 
-        let block_start = platform.state.last_block_info.as_ref().unwrap().height + 1;
+        let block_start = platform
+            .state
+            .borrow()
+            .last_block_info
+            .as_ref()
+            .unwrap()
+            .height
+            + 1;
         let ChainExecutionOutcome {
             platform,
             proposers,
@@ -341,11 +470,24 @@ mod tests {
                 .as_ref()
                 .expect("expected a version counter");
             assert_eq!(
-                platform.state.last_block_info.as_ref().unwrap().epoch.index,
+                platform
+                    .state
+                    .borrow()
+                    .last_block_info
+                    .as_ref()
+                    .unwrap()
+                    .epoch
+                    .index,
                 11
             );
-            assert_eq!(platform.state.current_protocol_version_in_consensus, 1);
-            assert_eq!(platform.state.next_epoch_protocol_version, 2);
+            assert_eq!(
+                platform
+                    .state
+                    .borrow()
+                    .current_protocol_version_in_consensus,
+                1
+            );
+            assert_eq!(platform.state.borrow().next_epoch_protocol_version, 2);
             assert_eq!((counter.get(&1), counter.get(&2)), (Some(&11), Some(&105)));
             //not all nodes have upgraded
         }
@@ -368,7 +510,14 @@ mod tests {
             }),
         };
 
-        let block_start = platform.state.last_block_info.as_ref().unwrap().height + 1;
+        let block_start = platform
+            .state
+            .borrow()
+            .last_block_info
+            .as_ref()
+            .unwrap()
+            .height
+            + 1;
         let ChainExecutionOutcome {
             platform,
             proposers,
@@ -400,14 +549,34 @@ mod tests {
             assert_eq!((counter.get(&1), counter.get(&2)), (Some(&170), Some(&23)));
             //a lot nodes reverted to previous version, however this won't impact things
             assert_eq!(
-                platform.state.last_block_info.as_ref().unwrap().epoch.index,
+                platform
+                    .state
+                    .borrow()
+                    .last_block_info
+                    .as_ref()
+                    .unwrap()
+                    .epoch
+                    .index,
                 12
             );
-            assert_eq!(platform.state.current_protocol_version_in_consensus, 2);
-            assert_eq!(platform.state.next_epoch_protocol_version, 1);
+            assert_eq!(
+                platform
+                    .state
+                    .borrow()
+                    .current_protocol_version_in_consensus,
+                2
+            );
+            assert_eq!(platform.state.borrow().next_epoch_protocol_version, 1);
         }
 
-        let block_start = platform.state.last_block_info.as_ref().unwrap().height + 1;
+        let block_start = platform
+            .state
+            .borrow()
+            .last_block_info
+            .as_ref()
+            .unwrap()
+            .height
+            + 1;
         let ChainExecutionOutcome { platform, .. } = continue_chain_for_strategy(
             platform,
             ChainExecutionParameters {
@@ -430,9 +599,25 @@ mod tests {
                 .as_ref()
                 .expect("expected a version counter");
             assert_eq!((counter.get(&1), counter.get(&2)), (Some(&22), Some(&2)));
-            assert_eq!(platform.state.last_block_info.unwrap().epoch.index, 13);
-            assert_eq!(platform.state.current_protocol_version_in_consensus, 1);
-            assert_eq!(platform.state.next_epoch_protocol_version, 1);
+            assert_eq!(
+                platform
+                    .state
+                    .borrow()
+                    .last_block_info
+                    .as_ref()
+                    .unwrap()
+                    .epoch
+                    .index,
+                13
+            );
+            assert_eq!(
+                platform
+                    .state
+                    .borrow()
+                    .current_protocol_version_in_consensus,
+                1
+            );
+            assert_eq!(platform.state.borrow().next_epoch_protocol_version, 1);
         }
     }
 
@@ -475,11 +660,24 @@ mod tests {
                 .expect("expected a version counter");
 
             assert_eq!(
-                platform.state.last_block_info.as_ref().unwrap().epoch.index,
+                platform
+                    .state
+                    .borrow()
+                    .last_block_info
+                    .as_ref()
+                    .unwrap()
+                    .epoch
+                    .index,
                 3
             );
-            assert_eq!(platform.state.current_protocol_version_in_consensus, 1);
-            assert_eq!(platform.state.next_epoch_protocol_version, 2);
+            assert_eq!(
+                platform
+                    .state
+                    .borrow()
+                    .current_protocol_version_in_consensus,
+                1
+            );
+            assert_eq!(platform.state.borrow().next_epoch_protocol_version, 2);
             assert_eq!(
                 (counter.get(&1), counter.get(&2), counter.get(&3)),
                 (Some(&3), Some(&59), Some(&4))
@@ -504,7 +702,14 @@ mod tests {
         // we hit the required threshold to upgrade
         // let's go a little longer
 
-        let block_start = platform.state.last_block_info.as_ref().unwrap().height + 1;
+        let block_start = platform
+            .state
+            .borrow()
+            .last_block_info
+            .as_ref()
+            .unwrap()
+            .height
+            + 1;
         let ChainExecutionOutcome {
             platform,
             proposers,
@@ -533,11 +738,24 @@ mod tests {
                 .as_ref()
                 .expect("expected a version counter");
             assert_eq!(
-                platform.state.last_block_info.as_ref().unwrap().epoch.index,
+                platform
+                    .state
+                    .borrow()
+                    .last_block_info
+                    .as_ref()
+                    .unwrap()
+                    .epoch
+                    .index,
                 4
             );
-            assert_eq!(platform.state.current_protocol_version_in_consensus, 2);
-            assert_eq!(platform.state.next_epoch_protocol_version, 3);
+            assert_eq!(
+                platform
+                    .state
+                    .borrow()
+                    .current_protocol_version_in_consensus,
+                2
+            );
+            assert_eq!(platform.state.borrow().next_epoch_protocol_version, 3);
             assert_eq!(
                 (counter.get(&1), counter.get(&2), counter.get(&3)),
                 (None, Some(&6), Some(&154))

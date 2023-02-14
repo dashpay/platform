@@ -2,6 +2,7 @@ use drive::dpp::util::deserializer::ProtocolVersion;
 use drive::drive::block_info::BlockInfo;
 
 /// Platform state
+#[derive(Clone)]
 pub struct PlatformState {
     /// Information about the last block
     pub last_block_info: Option<BlockInfo>,

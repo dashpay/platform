@@ -60,4 +60,6 @@ pub struct BlockExecutionContext {
     pub block_info: BlockStateInfo,
     /// Epoch info
     pub epoch_info: EpochInfo,
+    /// Total hpmn count
+    pub hpmn_count: u32,
 }

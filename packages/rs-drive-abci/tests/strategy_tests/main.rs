@@ -475,7 +475,7 @@ pub(crate) fn continue_chain_for_strategy(
 
     let blocks_per_epoch = EPOCH_CHANGE_TIME_MS / block_spacing_ms;
 
-    let proposer_count = proposers.len() as u64;
+    let proposer_count = proposers.len() as u32;
 
     let proposer_versions = current_proposer_versions.unwrap_or(
         strategy.upgrading_info.as_ref().map(|upgrading_info| {
@@ -489,6 +489,7 @@ pub(crate) fn continue_chain_for_strategy(
             current_time_ms,
             platform
                 .state
+                .borrow()
                 .last_block_info
                 .as_ref()
                 .map(|block_info| block_info.time_ms),
@@ -532,7 +533,7 @@ pub(crate) fn continue_chain_for_strategy(
                 *proposer,
                 proposed_version,
                 proposer_count,
-                &block_info,
+                block_info,
                 state_transitions,
             )
             .expect("expected to execute a block");

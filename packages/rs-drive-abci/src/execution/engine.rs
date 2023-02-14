@@ -6,6 +6,7 @@ use crate::constants::PROTOCOL_VERSION_UPGRADE_PERCENTAGE_NEEDED;
 use crate::error::execution::ExecutionError;
 use crate::error::Error;
 use crate::platform::Platform;
+use crate::state::PlatformState;
 use drive::dpp::identity::PartialIdentity;
 use drive::dpp::util::deserializer::ProtocolVersion;
 use drive::drive::batch::DriveOperationType;
@@ -149,15 +150,16 @@ impl Platform {
     /// this will change backing state, but does not change drive cache
     pub fn check_for_desired_protocol_upgrade(
         &self,
-        total_hpmns: u64,
+        total_hpmns: u32,
         transaction: TransactionArg,
     ) -> Result<Option<ProtocolVersion>, Error> {
-        let required_upgraded_hpns = 1 + total_hpmns
-            .checked_mul(PROTOCOL_VERSION_UPGRADE_PERCENTAGE_NEEDED)
-            .and_then(|product| product.checked_div(100))
-            .ok_or(Error::Execution(ExecutionError::Overflow(
-                "overflow for required block count",
-            )))?;
+        let required_upgraded_hpns = 1
+            + (total_hpmns as u64)
+                .checked_mul(PROTOCOL_VERSION_UPGRADE_PERCENTAGE_NEEDED)
+                .and_then(|product| product.checked_div(100))
+                .ok_or(Error::Execution(ExecutionError::Overflow(
+                    "overflow for required block count",
+                )))?;
         // if we are at an epoch change, check to see if over 75% of blocks of previous epoch
         // were on the future version
         let mut cache = self.drive.cache.borrow_mut();
@@ -191,7 +193,7 @@ impl Platform {
             // we need to drop all version information
             self.drive
                 .change_to_new_version_and_clear_version_information(
-                    self.state.current_protocol_version_in_consensus,
+                    self.state.borrow().current_protocol_version_in_consensus,
                     new_version,
                     transaction,
                 )
@@ -208,11 +210,11 @@ impl Platform {
 
     /// Execute a block with various state transitions
     pub fn execute_block(
-        &mut self,
+        &self,
         proposer: [u8; 32],
         proposed_version: ProtocolVersion,
-        total_hpmns: u64,
-        block_info: &BlockInfo,
+        total_hpmns: u32,
+        block_info: BlockInfo,
         state_transitions: Vec<ExecutionEvent>,
     ) -> Result<(), Error> {
         let transaction = self.drive.grove.start_transaction();
@@ -222,12 +224,14 @@ impl Platform {
             block_time_ms: block_info.time_ms,
             previous_block_time_ms: self
                 .state
+                .borrow()
                 .last_block_info
                 .as_ref()
                 .map(|block_info| block_info.time_ms),
             proposer_pro_tx_hash: proposer,
             proposed_app_version: proposed_version,
             validator_set_quorum_hash: Default::default(),
+            total_hpmns,
         };
 
         // println!("Block #{}", block_info.height);
@@ -241,27 +245,9 @@ impl Platform {
                 )
             });
 
-        if block_begin_response.epoch_info.is_epoch_change
-            && block_begin_response
-                .epoch_info
-                .previous_epoch_index
-                .is_some()
-        {
-            self.state.current_protocol_version_in_consensus =
-                self.state.next_epoch_protocol_version;
-            let maybe_new_protocol_version =
-                self.check_for_desired_protocol_upgrade(total_hpmns, Some(&transaction))?;
-            if let Some(new_protocol_version) = maybe_new_protocol_version {
-                self.state.next_epoch_protocol_version = new_protocol_version;
-            } else {
-                self.state.next_epoch_protocol_version =
-                    self.state.current_protocol_version_in_consensus;
-            }
-        }
-
         // println!("{:#?}", block_begin_response);
 
-        let total_fees = self.run_events(state_transitions, block_info, &transaction)?;
+        let total_fees = self.run_events(state_transitions, &block_info, &transaction)?;
 
         let fees = BlockFees::from_fee_result(total_fees);
 
@@ -296,7 +282,10 @@ impl Platform {
                 )
             });
 
-        self.state.last_block_info = Some(block_info.clone());
+        self.state.replace_with(|platform_state| {
+            platform_state.last_block_info = Some(block_info.clone());
+            platform_state.clone()
+        });
 
         Ok(())
     }

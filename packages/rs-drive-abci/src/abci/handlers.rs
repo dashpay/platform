@@ -127,6 +127,7 @@ impl TenderdashAbci for Platform {
         let block_execution_context = BlockExecutionContext {
             block_info,
             epoch_info: epoch_info.clone(),
+            hpmn_count: request.total_hpmns,
         };
 
         self.block_execution_context
@@ -169,8 +170,38 @@ impl TenderdashAbci for Platform {
             transaction,
         )?;
 
-        Ok(BlockEndResponse::from_process_block_fees_outcome(
+        let changed_protocol_version = if block_execution_context.epoch_info.is_epoch_change
+            && block_execution_context
+                .epoch_info
+                .previous_epoch_index
+                .is_some()
+        {
+            self.state.replace_with(|state| {
+                state.current_protocol_version_in_consensus = state.next_epoch_protocol_version;
+
+                state.clone()
+            });
+            let maybe_new_protocol_version = self.check_for_desired_protocol_upgrade(
+                block_execution_context.hpmn_count,
+                transaction,
+            )?;
+            self.state.replace_with(|state| {
+                if let Some(new_protocol_version) = maybe_new_protocol_version {
+                    state.next_epoch_protocol_version = new_protocol_version;
+                } else {
+                    state.next_epoch_protocol_version = state.current_protocol_version_in_consensus;
+                }
+                state.clone()
+            });
+
+            Some(self.state.borrow().current_protocol_version_in_consensus)
+        } else {
+            None
+        };
+
+        Ok(BlockEndResponse::from_outcomes(
             &process_block_fees_outcome,
+            changed_protocol_version,
         ))
     }
 
@@ -304,6 +335,7 @@ mod tests {
                             [block_height as usize % (proposers_count as usize)],
                         proposed_app_version: 1,
                         validator_set_quorum_hash: Default::default(),
+                        total_hpmns: 100,
                     };
 
                     let block_begin_response = platform
@@ -501,6 +533,7 @@ mod tests {
                             [block_height as usize % (proposers_count as usize)],
                         proposed_app_version: 1,
                         validator_set_quorum_hash: Default::default(),
+                        total_hpmns: 100,
                     };
 
                     let block_begin_response = platform

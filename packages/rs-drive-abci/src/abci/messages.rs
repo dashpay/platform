@@ -69,6 +69,8 @@ pub struct BlockBeginRequest {
     pub proposed_app_version: ProtocolVersion,
     /// Validator set quorum hash
     pub validator_set_quorum_hash: [u8; 32],
+    /// The total number of HPMNs in the system
+    pub total_hpmns: u32,
 }
 
 /// A struct for handling block begin responses
@@ -133,12 +135,15 @@ pub struct BlockEndResponse {
     pub refunded_epochs_count: Option<u16>,
     /// Amount of fees in the storage and processing fee distribution pools
     pub fees_in_pools: FeesInPools,
+    /// Next protocol app version
+    pub changed_protocol_app_version: Option<ProtocolVersion>,
 }
 
 impl BlockEndResponse {
     /// Retrieves fee info for the block to be implemented in the BlockEndResponse
-    pub(crate) fn from_process_block_fees_outcome(
+    pub(crate) fn from_outcomes(
         process_block_fees_result: &ProcessedBlockFeesOutcome,
+        changed_protocol_app_version: Option<ProtocolVersion>,
     ) -> Self {
         let (proposers_paid_count, paid_epoch_index) = process_block_fees_result
             .payouts
@@ -155,6 +160,7 @@ impl BlockEndResponse {
             paid_epoch_index,
             refunded_epochs_count: process_block_fees_result.refunded_epochs_count,
             fees_in_pools: process_block_fees_result.fees_in_pools,
+            changed_protocol_app_version,
         }
     }
 }

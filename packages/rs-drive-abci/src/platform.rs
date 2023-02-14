@@ -46,7 +46,7 @@ pub struct Platform {
     /// Drive
     pub drive: Drive,
     /// State
-    pub state: PlatformState,
+    pub state: RefCell<PlatformState>,
     /// Configuration
     pub config: PlatformConfig,
     /// Block execution context
@@ -65,7 +65,7 @@ impl Platform {
         };
         Ok(Platform {
             drive,
-            state,
+            state: RefCell::new(state),
             config,
             block_execution_context: RefCell::new(None),
         })
