@@ -17,7 +17,6 @@ const blsPrivateKeyFactory = require('../bls/blsPrivateKeyFactory');
 const blsPublicKeyFactory = require('../bls/blsPublicKeyFactory');
 const PublicKeyIsDisabledError = require('./errors/PublicKeyIsDisabledError');
 const InvalidSignaturePublicKeySecurityLevelError = require('./errors/InvalidSignaturePublicKeySecurityLevelError');
-const BlsSignatures = require('../bls/bls');
 
 /**
  * @abstract
