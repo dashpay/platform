@@ -83,7 +83,8 @@
   },
   "dependencies": {
     "@apidevtools/json-schema-ref-parser": "^8.0.0",
-    "@dashevo/dashcore-lib": "github:dashevo/dashcore-lib#85bb622ba45cccf7b1c2089f4453e87bbc5772e1",
+    "@dashevo/bls": "~1.0.0-beta.4",
+    "@dashevo/dashcore-lib": "github:dashevo/dashcore-lib#ffed27c9e973b23e7013b6eb4933e7dc9f2a50ad",
     "@dashevo/dashpay-contract": "workspace:*",
     "@dashevo/dpns-contract": "workspace:*",
     "@dashevo/feature-flags-contract": "workspace:*",
@@ -92,7 +93,6 @@
     "ajv": "^8.6.0",
     "ajv-formats": "^2.1.1",
     "bignumber.js": "^9.0.1",
-    "bls-signatures": "^0.2.5",
     "bs58": "^4.0.1",
     "cbor": "^8.0.0",
     "fast-json-patch": "^3.1.1",

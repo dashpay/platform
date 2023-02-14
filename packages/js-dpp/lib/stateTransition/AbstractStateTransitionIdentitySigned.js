@@ -17,6 +17,7 @@ const blsPrivateKeyFactory = require('../bls/blsPrivateKeyFactory');
 const blsPublicKeyFactory = require('../bls/blsPublicKeyFactory');
 const PublicKeyIsDisabledError = require('./errors/PublicKeyIsDisabledError');
 const InvalidSignaturePublicKeySecurityLevelError = require('./errors/InvalidSignaturePublicKeySecurityLevelError');
+const BlsSignatures = require('../bls/bls');
 
 /**
  * @abstract
@@ -97,13 +98,23 @@ class AbstractStateTransitionIdentitySigned extends AbstractStateTransition {
       }
       case IdentityPublicKey.TYPES.BLS12_381:
         privateKeyModel = await blsPrivateKeyFactory(privateKey);
-        pubKeyBase = Buffer.from(privateKeyModel.getPublicKey().serialize());
+        // eslint-disable-next-line no-case-declarations
+        const { BasicSchemeMPL } = await BlsSignatures.getInstance();
+        // eslint-disable-next-line no-case-declarations
+        const publicKeyInstance = BasicSchemeMPL.sk_to_g1(privateKeyModel);
+        pubKeyBase = Buffer.from(publicKeyInstance.serialize());
+
+        publicKeyInstance.delete();
 
         if (!pubKeyBase.equals(identityPublicKey.getData())) {
+          privateKeyModel.delete();
+
           throw new InvalidSignaturePublicKeyError(identityPublicKey.getData());
         }
 
         await this.signByPrivateKey(privateKeyModel, identityPublicKey.getType());
+
+        privateKeyModel.delete();
         break;
       default:
         throw new InvalidIdentityPublicKeyTypeError(identityPublicKey.getType());
@@ -188,7 +199,11 @@ class AbstractStateTransitionIdentitySigned extends AbstractStateTransition {
       case IdentityPublicKey.TYPES.BLS12_381: {
         const publicKeyModel = await blsPublicKeyFactory(new Uint8Array(publicKeyBuffer));
 
-        return this.verifyBLSSignatureByPublicKey(publicKeyModel);
+        const result = await this.verifyBLSSignatureByPublicKey(publicKeyModel);
+
+        publicKeyModel.delete();
+
+        return result;
       }
       default:
         throw new InvalidIdentityPublicKeyTypeError(publicKey.getType());

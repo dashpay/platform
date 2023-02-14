@@ -36,7 +36,7 @@
   "homepage": "https://github.com/dashevo/DashJS#readme",
   "dependencies": {
     "@dashevo/dapi-client": "workspace:*",
-    "@dashevo/dashcore-lib": "github:dashevo/dashcore-lib#85bb622ba45cccf7b1c2089f4453e87bbc5772e1",
+    "@dashevo/dashcore-lib": "github:dashevo/dashcore-lib#ffed27c9e973b23e7013b6eb4933e7dc9f2a50ad",
     "@dashevo/dashpay-contract": "workspace:*",
     "@dashevo/dpns-contract": "workspace:*",
     "@dashevo/dpp": "workspace:*",

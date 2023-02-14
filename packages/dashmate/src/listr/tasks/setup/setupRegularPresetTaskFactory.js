@@ -3,7 +3,7 @@ const fs = require('fs');
 
 const publicIp = require('public-ip');
 
-const BlsSignatures = require('bls-signatures');
+const BlsSignatures = require('@dashevo/bls');
 
 const { PrivateKey } = require('@dashevo/dashcore-lib');
 
@@ -110,7 +110,7 @@ function setupRegularPresetTaskFactory(
           const { PrivateKey: BlsPrivateKey } = blsSignatures;
 
           const privateKey = BlsPrivateKey.fromBytes(operatorBlsPrivateKeyBuffer, true);
-          const publicKey = privateKey.getPublicKey();
+          const publicKey = privateKey.get_g1();
           const publicKeyHex = Buffer.from(publicKey.serialize()).toString('hex');
 
           ctx.config.set('core.masternode.operator.privateKey', ctx.operatorBlsPrivateKey);
@@ -118,6 +118,9 @@ function setupRegularPresetTaskFactory(
           ctx.operator = {
             publicKey: publicKeyHex,
           };
+
+          privateKey.delete();
+          publicKey.delete();
 
           // eslint-disable-next-line no-param-reassign
           task.output = `BLS public key: ${publicKeyHex}\nBLS private key: ${ctx.operatorBlsPrivateKey}`;

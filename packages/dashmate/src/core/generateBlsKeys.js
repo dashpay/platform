@@ -1,5 +1,5 @@
 const crypto = require('crypto');
-const BlsSignatures = require('bls-signatures');
+const BlsSignatures = require('@dashevo/bls');
 
 /**
  * Generate BLS keys
@@ -9,15 +9,21 @@ const BlsSignatures = require('bls-signatures');
  */
 async function generateBlsKeys() {
   const blsSignatures = await BlsSignatures();
-  const { PrivateKey: BlsPrivateKey } = blsSignatures;
+  const { BasicSchemeMPL } = blsSignatures;
 
   const randomBytes = new Uint8Array(crypto.randomBytes(256));
-  const operatorPrivateKey = BlsPrivateKey.fromBytes(randomBytes, true);
-  const operatorPublicKey = operatorPrivateKey.getPublicKey();
+  const operatorPrivateKey = BasicSchemeMPL.key_gen(randomBytes);
+  const operatorPublicKey = BasicSchemeMPL.sk_to_g1(operatorPrivateKey);
+
+  const operatorPrivateKeyHex = Buffer.from(operatorPrivateKey.serialize()).toString('hex');
+  const operatorPublicKeyHex = Buffer.from(operatorPublicKey.serialize()).toString('hex');
+
+  operatorPrivateKey.delete();
+  operatorPublicKey.delete();
 
   return {
-    publicKey: Buffer.from(operatorPublicKey.serialize()).toString('hex'),
-    privateKey: Buffer.from(operatorPrivateKey.serialize()).toString('hex'),
+    publicKey: operatorPublicKeyHex,
+    privateKey: operatorPrivateKeyHex,
   };
 }
 

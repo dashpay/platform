@@ -34,6 +34,7 @@ describe('createMasternodeRewardSharesDataTrigger', () => {
           pubKeyOperator: '809519c5f6f3be1c08782ac42ae9a83b6c7205eba43f9a96a4f032ec7a73f1a7c25fa78cce0d6d9c135f7e2c28527179',
           votingAddress: 'yXmprXYP51uzfMyndtWwxz96MnkCKkFc9x',
           isValid: true,
+          nType: 0,
         }),
         new SimplifiedMNListEntry({
           proRegTxHash: 'a3e1edc6bd352eeaf0ae58e30781ef4b127854241a3fe7fddf36d5b7e1dc2b3f',
@@ -42,6 +43,7 @@ describe('createMasternodeRewardSharesDataTrigger', () => {
           pubKeyOperator: '987a4873caba62cd45a2f7d4aa6d94519ee6753e9bef777c927cb94ade768a542b0ff34a93231d3a92b4e75ffdaa366e',
           votingAddress: 'ycL7L4mhYoaZdm9TH85svvpfeKtdfo249u',
           isValid: true,
+          nType: 0,
         }),
       ]),
     };

@@ -25,6 +25,7 @@ describe('AbstractStateTransitionIdentitySigned', () => {
   let blsPrivateKey;
   let blsPrivateKeyHex;
   let blsInstance;
+  let BasicSchemeMPL;
 
   beforeEach(async () => {
     const privateKeyModel = new PrivateKey();
@@ -40,12 +41,12 @@ describe('AbstractStateTransitionIdentitySigned', () => {
     });
 
     blsInstance = await BlsSignatures.getInstance();
-    const {
-      PrivateKey: BlsPrivateKey,
-    } = blsInstance;
+    ({
+      BasicSchemeMPL,
+    } = blsInstance);
 
     const randomBytes = new Uint8Array(crypto.randomBytes(256));
-    blsPrivateKey = BlsPrivateKey.fromBytes(randomBytes, true);
+    blsPrivateKey = BasicSchemeMPL.key_gen(randomBytes);
     blsPrivateKeyHex = Buffer.from(blsPrivateKey.serialize()).toString('hex');
 
     identityPublicKey = new IdentityPublicKey()
@@ -54,6 +55,12 @@ describe('AbstractStateTransitionIdentitySigned', () => {
       .setData(publicKey)
       .setSecurityLevel(IdentityPublicKey.SECURITY_LEVELS.HIGH)
       .setPurpose(IdentityPublicKey.PURPOSES.AUTHENTICATION);
+  });
+
+  afterEach(() => {
+    if (blsPrivateKey) {
+      blsPrivateKey.delete();
+    }
   });
 
   describe('#toObject', () => {
@@ -225,8 +232,12 @@ describe('AbstractStateTransitionIdentitySigned', () => {
 
     it('should sign data and validate signature with BLS12_381 identityPublicKey', async () => {
       identityPublicKey.setType(IdentityPublicKey.TYPES.BLS12_381);
-      identityPublicKey.setData(Buffer.from(blsPrivateKey.getPublicKey().serialize()));
 
+      const publicKey = BasicSchemeMPL.sk_to_g1(blsPrivateKey);
+
+      identityPublicKey.setData(Buffer.from(publicKey.serialize()));
+
+      publicKey.delete();
       await stateTransition.sign(identityPublicKey, blsPrivateKeyHex);
 
       expect(stateTransition.signature).to.be.an.instanceOf(Buffer);
@@ -251,17 +262,21 @@ describe('AbstractStateTransitionIdentitySigned', () => {
 
     it('should sign and validate with BLS private key', async () => {
       identityPublicKey.setType(IdentityPublicKey.TYPES.BLS12_381);
-      identityPublicKey.setData(Buffer.from(blsPrivateKey.getPublicKey().serialize()));
+      const publicKey = BasicSchemeMPL.sk_to_g1(blsPrivateKey);
+
+      identityPublicKey.setData(Buffer.from(publicKey.serialize()));
 
       await stateTransition.signByPrivateKey(blsPrivateKeyHex, IdentityPublicKey.TYPES.BLS12_381);
 
       expect(stateTransition.signature).to.be.an.instanceOf(Buffer);
 
       const isValid = await stateTransition.verifyBLSSignatureByPublicKey(
-        blsPrivateKey.getPublicKey(),
+        publicKey,
       );
 
       expect(isValid).to.be.true();
+
+      publicKey.delete();
     });
   });
 
@@ -354,7 +369,10 @@ describe('AbstractStateTransitionIdentitySigned', () => {
 
     it('should validate BLS signature', async () => {
       identityPublicKey.setType(IdentityPublicKey.TYPES.BLS12_381);
-      identityPublicKey.setData(Buffer.from(blsPrivateKey.getPublicKey().serialize()));
+
+      const publicKey = BasicSchemeMPL.sk_to_g1(blsPrivateKey);
+
+      identityPublicKey.setData(Buffer.from(publicKey.serialize()));
 
       await stateTransition.sign(identityPublicKey, blsPrivateKeyHex);
 
@@ -363,6 +381,8 @@ describe('AbstractStateTransitionIdentitySigned', () => {
       const isValid = await stateTransition.verifySignature(identityPublicKey);
 
       expect(isValid).to.be.true();
+
+      publicKey.delete();
     });
 
     it('should throw PublicKeyIsDisabledError if public key is disabled', async () => {
@@ -451,7 +471,7 @@ describe('AbstractStateTransitionIdentitySigned', () => {
 
   describe('#verifyBLSSignatureByPublicKey', () => {
     it('should validate sign by public key', async () => {
-      const publicKey = blsPrivateKey.getPublicKey();
+      const publicKey = BasicSchemeMPL.sk_to_g1(blsPrivateKey);
 
       identityPublicKey.setType(IdentityPublicKey.TYPES.BLS12_381);
       identityPublicKey.setData(Buffer.from(publicKey.serialize()));
@@ -461,17 +481,22 @@ describe('AbstractStateTransitionIdentitySigned', () => {
       const isValid = await stateTransition.verifyBLSSignatureByPublicKey(publicKey);
 
       expect(isValid).to.be.true();
+
+      publicKey.delete();
     });
 
     it('should throw an StateTransitionIsNotSignedError error if transition is not signed', async () => {
-      const publicKey = Buffer.from(blsPrivateKey.getPublicKey().serialize());
+      const publicKey = BasicSchemeMPL.sk_to_g1(blsPrivateKey);
+
       try {
-        await stateTransition.verifyBLSSignatureByPublicKey(publicKey);
+        await stateTransition.verifyBLSSignatureByPublicKey(Buffer.from(publicKey.serialize()));
 
         expect.fail('should throw StateTransitionIsNotSignedError');
       } catch (e) {
         expect(e).to.be.instanceOf(StateTransitionIsNotSignedError);
         expect(e.getStateTransition()).to.equal(stateTransition);
+      } finally {
+        publicKey.delete();
       }
     });
   });
