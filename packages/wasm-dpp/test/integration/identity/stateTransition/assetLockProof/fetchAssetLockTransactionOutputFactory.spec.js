@@ -83,7 +83,7 @@ describe('fetchAssetLockTransactionOutputFactory', () => {
 
       assetLockProofFixture = new ChainAssetLockProof(rawProof);
 
-      stateRepositoryMock.fetchTransaction.returns({
+      stateRepositoryMock.fetchTransaction.resolves({
         data: Buffer.from(rawTransaction, 'hex'),
         height: 42,
       });

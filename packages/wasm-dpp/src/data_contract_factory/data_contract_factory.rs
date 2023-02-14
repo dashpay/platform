@@ -119,7 +119,7 @@ impl DataContractFactoryWasm {
             with_js_error!(serde_wasm_bindgen::from_value(documents))?;
         let identifier = Identifier::from_bytes(&owner_id).map_err(from_dpp_err)?;
         self.0
-            .create(identifier, documents_json)
+            .create(identifier, documents_json, None)
             .map(Into::into)
             .map_err(from_dpp_err)
     }

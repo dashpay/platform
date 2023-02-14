@@ -78,10 +78,9 @@ describe('prepareProposalHandlerFactory', () => {
       fees: {
         processingFee: 10,
         storageFee: 100,
-        feeRefunds: {
+        refundsPerEpoch: {
           1: 15,
         },
-        feeRefundsSum: 15,
       },
     });
 
@@ -185,10 +184,9 @@ describe('prepareProposalHandlerFactory', () => {
         fees: {
           processingFee: 10 * 3,
           storageFee: 100 * 3,
-          feeRefunds: {
+          refundsPerEpoch: {
             1: 15 * 3,
           },
-          feeRefundsSum: 15 * 3,
         },
         coreChainLockedHeight: request.coreChainLockedHeight,
       },

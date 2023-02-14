@@ -21,7 +21,7 @@ impl DuplicatedIdentityPublicKeyErrorWasm {
         self.inner
             .duplicated_public_keys_ids()
             .iter()
-            .map(|id| JsValue::from(*id as u32))
+            .map(|id| JsValue::from(*id))
             .collect()
     }
 

@@ -93,7 +93,7 @@ describe('validateStateTransitionKeySignatureFactory', () => {
 
   it('should return IdentityNotFoundError if identity not exist on topup transaction', async () => {
     stateTransition = getIdentityTopUpTransitionFixture();
-    stateRepositoryMock.fetchIdentity.resolves(null);
+    stateRepositoryMock.fetchIdentityBalance.resolves(null);
 
     const result = await validateStateTransitionKeySignature(
       stateTransition,
@@ -105,9 +105,9 @@ describe('validateStateTransitionKeySignatureFactory', () => {
 
     expect(error.getCode()).to.equal(2000);
 
-    expect(stateRepositoryMock.fetchIdentity).to.be.calledOnceWithExactly(
+    expect(stateRepositoryMock.fetchIdentityBalance).to.be.calledOnceWithExactly(
       stateTransition.getIdentityId(),
-      new StateTransitionExecutionContext(),
+      executionContext,
     );
   });
 });

@@ -26,6 +26,8 @@ pub enum ProtocolError {
     EncodingError(String),
     #[error("Decoding Error - {0}")]
     DecodingError(String),
+    #[error("File not found Error - {0}")]
+    FileNotFound(String),
     #[error("Not included or invalid protocol version")]
     NoProtocolVersionError,
     #[error("Parsing error: {0}")]
@@ -69,6 +71,9 @@ pub enum ProtocolError {
         public_key_purpose: Purpose,
         key_purpose_requirement: Purpose,
     },
+    #[error("Public key generation error {0}")]
+    PublicKeyGenerationError(String),
+
     #[error("Public key mismatched")]
     PublicKeyMismatchError { public_key: IdentityPublicKey },
 

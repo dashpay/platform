@@ -19,6 +19,7 @@ module.exports = function getIdentityUpdateTransitionFixture() {
         data: Buffer.from('AkVuTKyF3YgKLAQlLEtaUL2HTditwGILfWUVqjzYnIgH', 'base64'),
         purpose: IdentityPublicKey.PURPOSES.AUTHENTICATION,
         securityLevel: IdentityPublicKey.SECURITY_LEVELS.MASTER,
+        signature: Buffer.alloc(0),
         readOnly: false,
       },
     ],

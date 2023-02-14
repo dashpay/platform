@@ -35,6 +35,7 @@ COPY packages/js-dapi-client packages/js-dapi-client
 COPY packages/js-grpc-common packages/js-grpc-common
 COPY packages/dapi-grpc packages/dapi-grpc
 COPY packages/dash-spv packages/dash-spv
+COPY packages/withdrawals-contract packages/withdrawals-contract
 
 # Print build output
 RUN yarn config set enableInlineBuilds true

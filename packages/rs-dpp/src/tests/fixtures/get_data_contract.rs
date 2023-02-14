@@ -12,6 +12,13 @@ use crate::{
 };
 
 pub fn get_data_contract_fixture(owner_id: Option<Identifier>) -> DataContract {
+    let defs = json!(
+    {
+        "lastName": {
+            "type" : "string",
+        },
+    });
+
     let documents = json!(
     {
         "niceDocument": {
@@ -279,12 +286,7 @@ pub fn get_data_contract_fixture(owner_id: Option<Identifier>) -> DataContract {
 
     let owner_id = owner_id.unwrap_or_else(generate_random_identifier_struct);
 
-    let mut data_contract = factory
-        .create(owner_id, documents)
-        .expect("data in fixture should be correct");
-
-    let defs: &mut BTreeMap<_, _> = data_contract.defs.get_or_insert(BTreeMap::new());
-    defs.insert(String::from("lastName"), json!({ "type" : "string"}));
-
-    data_contract
+    factory
+        .create(owner_id, documents, Some(defs))
+        .expect("data in fixture should be correct")
 }

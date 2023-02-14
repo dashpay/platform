@@ -1,5 +1,4 @@
 const identitySchema = require('@dashevo/dpp/schema/identity/identity.json');
-const getIdentityFixture = require('@dashevo/dpp/lib/test/fixtures/getIdentityFixture');
 const { expectValidationError } = require('../../../../../../../lib/test/expect/expectError');
 
 const { default: loadWasmDpp } = require('../../../../../../../dist');
@@ -8,6 +7,7 @@ describe('validatePublicKeysState', () => {
   let IdentityUpdatePublicKeysValidator;
   let DuplicatedIdentityPublicKeyIdStateError;
   let DuplicatedIdentityPublicKeyStateError;
+  let IdentityPublicKey;
   let MaxIdentityPublicKeyLimitReachedError;
 
   let validatePublicKeys;
@@ -15,6 +15,7 @@ describe('validatePublicKeysState', () => {
 
   before(async () => {
     ({
+      IdentityPublicKey,
       IdentityUpdatePublicKeysValidator,
       DuplicatedIdentityPublicKeyStateError,
       DuplicatedIdentityPublicKeyIdStateError,
@@ -23,7 +24,27 @@ describe('validatePublicKeysState', () => {
   });
 
   beforeEach(() => {
-    ({ publicKeys: rawPublicKeys } = getIdentityFixture().toObject());
+    rawPublicKeys = [
+      {
+        id: 0,
+        type: IdentityPublicKey.TYPES.ECDSA_SECP256K1,
+        data: Buffer.from('AuryIuMtRrl/VviQuyLD1l4nmxi9ogPzC9LT7tdpo0di', 'base64'),
+        purpose: IdentityPublicKey.PURPOSES.AUTHENTICATION,
+        securityLevel: IdentityPublicKey.SECURITY_LEVELS.MASTER,
+        signature: Buffer.alloc(0),
+        readOnly: false,
+      },
+      {
+        id: 1,
+        type: IdentityPublicKey.TYPES.ECDSA_SECP256K1,
+        data: Buffer.from('A8AK95PYMVX5VQKzOhcVQRCUbc9pyg3RiL7jttEMDU+L', 'base64'),
+        purpose: IdentityPublicKey.PURPOSES.ENCRYPTION,
+        securityLevel: IdentityPublicKey.SECURITY_LEVELS.MEDIUM,
+        signature: Buffer.alloc(0),
+        readOnly: false,
+      },
+    ];
+
     const validator = new IdentityUpdatePublicKeysValidator();
     validatePublicKeys = (keys) => validator.validate(keys);
   });

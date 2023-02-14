@@ -31,9 +31,12 @@
 //!
 
 use crate::block::BlockExecutionContext;
+use crate::config::PlatformConfig;
 use crate::error::Error;
-use drive::drive::config::DriveConfig;
+use crate::state::PlatformState;
+
 use drive::drive::Drive;
+
 use std::cell::RefCell;
 use std::path::Path;
 
@@ -41,16 +44,29 @@ use std::path::Path;
 pub struct Platform {
     /// Drive
     pub drive: Drive,
+    /// State
+    pub state: PlatformState,
+    /// Configuration
+    pub config: PlatformConfig,
     /// Block execution context
     pub block_execution_context: RefCell<Option<BlockExecutionContext>>,
 }
 
 impl Platform {
     /// Open Platform with Drive and block execution context.
-    pub fn open<P: AsRef<Path>>(path: P, config: Option<DriveConfig>) -> Result<Self, Error> {
-        let drive = Drive::open(path, config).map_err(Error::Drive)?;
+    pub fn open<P: AsRef<Path>>(path: P, config: Option<PlatformConfig>) -> Result<Self, Error> {
+        let config = config.unwrap_or_default();
+
+        let drive = Drive::open(path, Some(config.drive_config.clone())).map_err(Error::Drive)?;
+
+        let state = PlatformState {
+            last_block_info: None,
+        };
+
         Ok(Platform {
             drive,
+            state,
+            config,
             block_execution_context: RefCell::new(None),
         })
     }

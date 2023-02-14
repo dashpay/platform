@@ -19,7 +19,7 @@ where
     state_repository: SR,
 }
 
-#[async_trait]
+#[async_trait(?Send)]
 impl<SR> AsyncDataValidator for DataContractCreateTransitionStateValidator<SR>
 where
     SR: StateRepositoryLike,

@@ -1,11 +1,13 @@
 use crate::buffer::Buffer;
 use dpp::identifier::Identifier;
+use dpp::prelude::Revision;
+use js_sys::Number;
 use wasm_bindgen::prelude::*;
 
 #[wasm_bindgen(js_name=InvalidIdentityRevisionError)]
 pub struct InvalidIdentityRevisionErrorWasm {
     identity_id: Identifier,
-    current_revision: u32,
+    current_revision: Revision,
     code: u32,
 }
 
@@ -17,8 +19,9 @@ impl InvalidIdentityRevisionErrorWasm {
     }
 
     #[wasm_bindgen(js_name=getCurrentRevision)]
-    pub fn current_revision(&self) -> u32 {
-        self.current_revision
+    pub fn current_revision(&self) -> Number {
+        // It might be overflow
+        Number::from(self.current_revision as f64)
     }
 
     #[wasm_bindgen(js_name=getCode)]
@@ -28,7 +31,7 @@ impl InvalidIdentityRevisionErrorWasm {
 }
 
 impl InvalidIdentityRevisionErrorWasm {
-    pub fn new(identity_id: Identifier, current_revision: u32, code: u32) -> Self {
+    pub fn new(identity_id: Identifier, current_revision: Revision, code: u32) -> Self {
         Self {
             identity_id,
             current_revision,
