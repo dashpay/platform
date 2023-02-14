@@ -52,6 +52,7 @@ function prepareProposalHandlerFactory(
       localLastCommit: lastCommitInfo,
       time,
       proposerProTxHash,
+      proposedAppVersion,
       round,
       quorumHash,
     } = request;
@@ -78,6 +79,7 @@ function prepareProposalHandlerFactory(
         version,
         time,
         proposerProTxHash: Buffer.from(proposerProTxHash),
+        proposedAppVersion,
         round,
         quorumHash,
       },

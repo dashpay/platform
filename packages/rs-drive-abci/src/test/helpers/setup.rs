@@ -32,15 +32,10 @@
 //! This module defines helper functions related to setting up Platform.
 //!
 
-use crate::{config::PlatformConfig, platform::Platform};
-#[cfg(test)]
-use dpp::prelude::DataContract;
-#[cfg(test)]
-use drive::{
-    drive::{block_info::BlockInfo, Drive},
-    fee_pools::epochs::Epoch,
-    query::TransactionArg,
-};
+use crate::abci::messages::SystemIdentityPublicKeys;
+use crate::config::PlatformConfig;
+use crate::platform::Platform;
+use crate::test::fixture::abci::static_system_identity_public_keys;
 use tempfile::TempDir;
 
 /// A function which sets up Platform.
@@ -71,25 +66,17 @@ pub fn setup_platform_with_initial_state_structure(config: Option<PlatformConfig
     platform
 }
 
-#[cfg(test)]
-/// A function to setup system data contract
-pub fn setup_system_data_contract(
-    drive: &Drive,
-    data_contract: &DataContract,
-    transaction: TransactionArg,
-) {
-    drive
-        .apply_contract_cbor(
-            data_contract.to_cbor().unwrap(),
-            Some(data_contract.id.to_buffer()),
-            BlockInfo {
-                time_ms: 1,
-                height: 1,
-                epoch: Epoch::new(1),
-            },
-            true,
+/// A function which sets up Platform with its genesis state
+pub fn setup_platform_with_genesis_state(config: Option<PlatformConfig>) -> Platform {
+    let platform = setup_platform_raw(config);
+
+    platform
+        .create_genesis_state(
+            Default::default(),
+            static_system_identity_public_keys(),
             None,
-            transaction,
         )
-        .unwrap();
+        .expect("should create root tree successfully");
+
+    platform
 }

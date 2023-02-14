@@ -21,6 +21,7 @@ const protoTimestampToMillis = require('../../../util/protoTimestampToMillis');
  * @param {RSAbci} rsAbci
  * @param {ExecutionTimer} executionTimer
  * @param {LastSyncedCoreHeightRepository} lastSyncedCoreHeightRepository
+ * @param {SimplifiedMasternodeList} simplifiedMasternodeList
  *
  * @return {beginBlock}
  */
@@ -37,6 +38,7 @@ function beginBlockFactory(
   rsAbci,
   executionTimer,
   lastSyncedCoreHeightRepository,
+  simplifiedMasternodeList,
 ) {
   /**
    * @typedef beginBlock
@@ -45,6 +47,7 @@ function beginBlockFactory(
    * @param {Long} request.height
    * @param {number} request.coreChainLockedHeight
    * @param {IConsensus} request.version
+   * @param {Long} request.proposedAppVersion
    * @param {ITimestamp} request.time
    * @param {Buffer} request.proposerProTxHash
    * @param {BaseLogger} contextLogger
@@ -59,6 +62,7 @@ function beginBlockFactory(
       version,
       time,
       proposerProTxHash,
+      proposedAppVersion,
       round,
       quorumHash,
     } = request;
@@ -94,10 +98,19 @@ function beginBlockFactory(
     proposalBlockExecutionContext.setContextLogger(contextLogger);
     proposalBlockExecutionContext.setHeight(height);
     proposalBlockExecutionContext.setVersion(version);
+    proposalBlockExecutionContext.setProposedAppVersion(proposedAppVersion);
     proposalBlockExecutionContext.setRound(round);
     proposalBlockExecutionContext.setTimeMs(protoTimestampToMillis(time));
     proposalBlockExecutionContext.setCoreChainLockedHeight(coreChainLockedHeight);
     proposalBlockExecutionContext.setLastCommitInfo(lastCommitInfo);
+
+    // Update SML
+    const isSimplifiedMasternodeListUpdated = await updateSimplifiedMasternodeList(
+      coreChainLockedHeight,
+      {
+        logger: contextLogger,
+      },
+    );
 
     // Set protocol version to DPP
     dpp.setProtocolVersion(version.app.toNumber());
@@ -125,9 +138,17 @@ function beginBlockFactory(
       blockHeight: height.toNumber(),
       blockTimeMs: proposalBlockExecutionContext.getTimeMs(),
       proposerProTxHash,
-      validatorSetQuorumHash: quorumHash,
+      // TODO replace with real value
+      validatorSetQuorumHash: Buffer.alloc(32),
       coreChainLockedHeight,
       lastSyncedCoreHeight,
+      // TODO: Since we don't have HPMNs now and every masternode can be a validator,
+      //  we pass the whole list
+      totalHpmns: simplifiedMasternodeList.getStore()
+        .getCurrentSML()
+        .getValidMasternodesList()
+        .length,
+      proposedAppVersion: proposedAppVersion.toNumber(),
     };
 
     if (!latestBlockExecutionContext.isEmpty()) {
@@ -166,13 +187,7 @@ function beginBlockFactory(
       contextLogger.info(debugData, `Epoch #${currentEpochIndex} started on block #${height} at ${blockTimeFormatted}`);
     }
 
-    // Update SML
-    const isSimplifiedMasternodeListUpdated = await updateSimplifiedMasternodeList(
-      coreChainLockedHeight,
-      {
-        logger: contextLogger,
-      },
-    );
+    // Synchronize masternode identities
 
     if (isSimplifiedMasternodeListUpdated) {
       const blockInfo = BlockInfo.createFromBlockExecutionContext(proposalBlockExecutionContext);

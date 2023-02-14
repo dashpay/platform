@@ -89,6 +89,8 @@ impl Identity {
     }
 
     /// Set Identity public key
+    /// TODO: It's inconvenient to put id as keys all the time. Either we change setter and getter
+    ///   to accept BTreeSet and keep BTreeMap only for field or change to BTreeSet entirely
     pub fn set_public_keys(&mut self, pub_key: BTreeMap<KeyID, IdentityPublicKey>) {
         self.public_keys = pub_key;
     }

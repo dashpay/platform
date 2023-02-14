@@ -51,7 +51,7 @@ describe('validateDataContractUpdateTransitionStateFactory', () => {
     const wasmDataContract = await dataContractFactory.createFromBuffer(dataContract.toBuffer());
 
     const stateRepositoryLike = {
-      fetchDataContract: () => wasmDataContract,
+      fetchDataContract: async () => wasmDataContract,
     };
 
     validateTransitionWithExistingContract = (t) => validateDataContractUpdateTransitionState(
@@ -62,7 +62,7 @@ describe('validateDataContractUpdateTransitionStateFactory', () => {
 
   it('should return invalid result if Data Contract with specified contractId was not found', async () => {
     const stateRepositoryLikeNoDataContract = {
-      fetchDataContract: () => undefined,
+      fetchDataContract: async () => undefined,
     };
 
     const validateTransitionWithNoContract = (t) => validateDataContractUpdateTransitionState(
@@ -108,7 +108,7 @@ describe('validateDataContractUpdateTransitionStateFactory', () => {
 
   it('should return valid result on dry run', async () => {
     const stateRepositoryLikeNoDataContract = {
-      fetchDataContract: () => undefined,
+      fetchDataContract: async () => undefined,
     };
 
     const validateTransitionWithNoContract = (t) => validateDataContractUpdateTransitionState(

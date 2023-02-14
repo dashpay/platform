@@ -38,8 +38,11 @@ pub mod block_time_window;
 pub mod mocks;
 
 mod bls;
+
 #[cfg(feature = "fixtures-and-mocks")]
 pub mod tests;
+
+pub mod system_data_contracts;
 pub use bls::*;
 
 pub mod prelude {

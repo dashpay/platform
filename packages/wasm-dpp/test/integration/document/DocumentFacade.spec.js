@@ -140,7 +140,7 @@ describe('DocumentFacade', () => {
     });
 
     it('should return invalid result if Data Contract is invalid', async () => {
-      stateRepositoryMock.fetchDataContract.returns(null);
+      stateRepositoryMock.fetchDataContract.resolves(null);
 
       const result = await dpp.document.validate(document);
 

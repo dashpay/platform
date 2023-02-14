@@ -7,7 +7,7 @@ use crate::fee::op::DriveOperation;
 use dpp::data_contract::{DataContract as Contract, DriveContractExt};
 use grovedb::batch::KeyInfoPath;
 use grovedb::{EstimatedLayerInformation, TransactionArg};
-use std::borrow::Cow;
+use std::borrow::{Borrow, Cow};
 use std::collections::HashMap;
 
 /// Operations on Contracts
@@ -26,7 +26,7 @@ pub enum ContractOperationType<'a> {
     /// If the contract already exists, an update is applied, otherwise an insert.
     ApplyContractWithSerialization {
         /// The contract
-        contract: &'a Contract,
+        contract: Cow<'a, Contract>,
         /// The serialized contract
         serialized_contract: Vec<u8>,
         /// Storage flags for the contract
@@ -34,8 +34,13 @@ pub enum ContractOperationType<'a> {
     },
     /// Applies a contract without serialization.
     ApplyContract {
+        // this is Cow because we want allow the contract to be owned or not
+        // ownership is interesting because you can easily create the contract
+        // in sub functions
+        // borrowing is interesting because you can create the contract and then
+        // use it as borrowed for document insertions
         /// The contract
-        contract: &'a Contract,
+        contract: Cow<'a, Contract>,
         /// Storage flags for the contract
         storage_flags: Option<Cow<'a, StorageFlags>>,
     },
@@ -75,7 +80,7 @@ impl DriveOperationConverter for ContractOperationType<'_> {
                 serialized_contract: contract_serialization,
                 storage_flags,
             } => drive.apply_contract_with_serialization_operations(
-                contract,
+                contract.borrow(),
                 contract_serialization,
                 block_info,
                 estimated_costs_only_with_layer_info,
@@ -86,7 +91,7 @@ impl DriveOperationConverter for ContractOperationType<'_> {
                 contract,
                 storage_flags,
             } => drive.apply_contract_operations(
-                contract,
+                contract.borrow(),
                 block_info,
                 estimated_costs_only_with_layer_info,
                 storage_flags,

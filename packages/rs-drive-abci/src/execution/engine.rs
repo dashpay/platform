@@ -2,15 +2,20 @@ use crate::abci::handlers::TenderdashAbci;
 use crate::abci::messages::{
     AfterFinalizeBlockRequest, BlockBeginRequest, BlockEndRequest, BlockFees,
 };
+use crate::constants::PROTOCOL_VERSION_UPGRADE_PERCENTAGE_NEEDED;
 use crate::error::execution::ExecutionError;
 use crate::error::Error;
 use crate::platform::Platform;
+use crate::state::PlatformState;
 use drive::dpp::identity::PartialIdentity;
+use drive::dpp::util::deserializer::ProtocolVersion;
 use drive::drive::batch::DriveOperationType;
 use drive::drive::block_info::BlockInfo;
 use drive::error::Error::GroveDB;
 use drive::fee::result::FeeResult;
+use drive::fee_pools::epochs::Epoch;
 use drive::grovedb::Transaction;
+use drive::query::TransactionArg;
 
 /// An execution event
 pub enum ExecutionEvent<'a> {
@@ -142,9 +147,11 @@ impl Platform {
 
     /// Execute a block with various state transitions
     pub fn execute_block(
-        &mut self,
+        &self,
         proposer: [u8; 32],
-        block_info: &BlockInfo,
+        proposed_version: ProtocolVersion,
+        total_hpmns: u32,
+        block_info: BlockInfo,
         state_transitions: Vec<ExecutionEvent>,
     ) -> Result<(), Error> {
         let transaction = self.drive.grove.start_transaction();
@@ -154,29 +161,32 @@ impl Platform {
             block_time_ms: block_info.time_ms,
             previous_block_time_ms: self
                 .state
+                .borrow()
                 .last_block_info
                 .as_ref()
                 .map(|block_info| block_info.time_ms),
             proposer_pro_tx_hash: proposer,
+            proposed_app_version: proposed_version,
             validator_set_quorum_hash: Default::default(),
             last_synced_core_height: 1,
             core_chain_locked_height: 1,
+            total_hpmns,
         };
 
         // println!("Block #{}", block_info.height);
 
-        let _block_begin_response = self
+        let block_begin_response = self
             .block_begin(block_begin_request, Some(&transaction))
-            .unwrap_or_else(|_| {
+            .unwrap_or_else(|e| {
                 panic!(
-                    "should begin process block #{} at time #{}",
+                    "should begin process block #{} at time #{} : {e}",
                     block_info.height, block_info.time_ms
                 )
             });
 
         // println!("{:#?}", block_begin_response);
 
-        let total_fees = self.run_events(state_transitions, block_info, &transaction)?;
+        let total_fees = self.run_events(state_transitions, &block_info, &transaction)?;
 
         let fees = BlockFees::from_fee_result(total_fees);
 
@@ -211,7 +221,11 @@ impl Platform {
                 )
             });
 
-        self.state.last_block_info = Some(block_info.clone());
+        // TODO: Move to `after_finalize_block` so it will be called by JS Drive too
+        self.state.replace_with(|platform_state| {
+            platform_state.last_block_info = Some(block_info.clone());
+            platform_state.clone()
+        });
 
         Ok(())
     }

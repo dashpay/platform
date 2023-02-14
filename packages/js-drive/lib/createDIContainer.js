@@ -124,14 +124,11 @@ const getRandomQuorumFactory = require('./core/getRandomQuorumFactory');
 
 const createQueryResponseFactory = require('./abci/handlers/query/response/createQueryResponseFactory');
 const BlockExecutionContextRepository = require('./blockExecution/BlockExecutionContextRepository');
-const registerSystemDataContractFactory = require('./state/registerSystemDataContractFactory');
-const registerTopLevelDomainFactory = require('./state/registerTopLevelDomainFactory');
 const synchronizeMasternodeIdentitiesFactory = require('./identity/masternode/synchronizeMasternodeIdentitiesFactory');
 const createMasternodeIdentityFactory = require('./identity/masternode/createMasternodeIdentityFactory');
 const handleNewMasternodeFactory = require('./identity/masternode/handleNewMasternodeFactory');
 const handleUpdatedPubKeyOperatorFactory = require('./identity/masternode/handleUpdatedPubKeyOperatorFactory');
 const handleUpdatedVotingAddressFactory = require('./identity/masternode/handleUpdatedVotingAddressFactory');
-const registerSystemDataContractsFactory = require('./abci/handlers/state/registerSystemDataContractsFactory');
 const createRewardShareDocumentFactory = require('./identity/masternode/createRewardShareDocumentFactory');
 const handleRemovedMasternodeFactory = require('./identity/masternode/handleRemovedMasternodeFactory');
 const handleUpdatedScriptPayoutFactory = require('./identity/masternode/handleUpdatedScriptPayoutFactory');
@@ -548,6 +545,40 @@ function createDIContainer(options) {
       .singleton(),
 
     getPublicKeyFromPayoutScript: asValue(getPublicKeyFromPayoutScript),
+
+    systemIdentityPublicKeys: asFunction((
+      masternodeRewardSharesOwnerMasterPublicKey,
+      masternodeRewardSharesOwnerSecondPublicKey,
+      featureFlagsOwnerMasterPublicKey,
+      featureFlagsOwnerSecondPublicKey,
+      dpnsOwnerMasterPublicKey,
+      dpnsOwnerSecondPublicKey,
+      dashpayOwnerMasterPublicKey,
+      dashpayOwnerSecondPublicKey,
+      withdrawalsOwnerMasterPublicKey,
+      withdrawalsOwnerSecondPublicKey,
+    ) => ({
+      masternodeRewardSharesContractOwner: {
+        master: masternodeRewardSharesOwnerMasterPublicKey.toBuffer(),
+        high: masternodeRewardSharesOwnerSecondPublicKey.toBuffer(),
+      },
+      featureFlagsContractOwner: {
+        master: featureFlagsOwnerMasterPublicKey.toBuffer(),
+        high: featureFlagsOwnerSecondPublicKey.toBuffer(),
+      },
+      dpnsContractOwner: {
+        master: dpnsOwnerMasterPublicKey.toBuffer(),
+        high: dpnsOwnerSecondPublicKey.toBuffer(),
+      },
+      withdrawalsContractOwner: {
+        master: dashpayOwnerMasterPublicKey.toBuffer(),
+        high: dashpayOwnerSecondPublicKey.toBuffer(),
+      },
+      dashpayContractOwner: {
+        master: withdrawalsOwnerMasterPublicKey.toBuffer(),
+        high: withdrawalsOwnerSecondPublicKey.toBuffer(),
+      },
+    })),
   });
 
   /**
@@ -742,21 +773,6 @@ function createDIContainer(options) {
     waitForCoreChainLockSync: asFunction(waitForCoreChainLockSyncFactory).singleton(),
 
     fetchTransaction: asFunction(fetchTransactionFactory).singleton(),
-  });
-
-  /**
-   * State
-   */
-  container.register({
-    registerSystemDataContract: asFunction(registerSystemDataContractFactory).singleton(),
-    registerSystemDataContracts: asFunction(registerSystemDataContractsFactory).singleton(),
-    registerTopLevelDomain: asFunction(registerTopLevelDomainFactory).singleton(),
-    dashDomainDocumentId: asValue(
-      Identifier.from('FXyN2NZAdRFADgBQfb1XM1Qq7pWoEcgSWj1GaiQJqcrS'),
-    ),
-    dashPreorderSalt: asValue(
-      Buffer.from('e0b508c5a36825a206693a1f414aa13edbecf43c41e3c799ea9e737b4f9aa226', 'hex'),
-    ),
   });
 
   /**

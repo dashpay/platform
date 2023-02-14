@@ -46,7 +46,7 @@ describe('validateAssetLockTransactionFactory', () => {
 
     stateRepositoryMock = createStateRepositoryMock(this.sinonSandbox);
 
-    stateRepositoryMock.isAssetLockTransactionOutPointAlreadyUsed.returns(false);
+    stateRepositoryMock.isAssetLockTransactionOutPointAlreadyUsed.resolves(false);
 
     validateAssetLockTransaction = (tx, index, context) => validateAssetLockTransactionDPP(
       stateRepositoryMock,
@@ -136,7 +136,7 @@ describe('validateAssetLockTransactionFactory', () => {
   });
 
   it('should return IdentityAssetLockTransactionOutPointAlreadyExistsError if outPoint was already used', async function () {
-    stateRepositoryMock.isAssetLockTransactionOutPointAlreadyUsed.returns(true);
+    stateRepositoryMock.isAssetLockTransactionOutPointAlreadyUsed.resolves(true);
 
     const result = await validateAssetLockTransaction(
       rawTransaction,

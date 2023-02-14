@@ -16,9 +16,6 @@ pub mod abci;
 /// Block module
 mod block;
 
-/// Common functions module
-pub mod common;
-
 /// Contracts module
 pub mod contracts;
 
@@ -28,6 +25,7 @@ pub mod error;
 /// Execution module
 pub mod execution;
 
+/// Platform module
 pub mod platform;
 
 /// Functions related to IdentityCreditWithdrawalTransaction
@@ -38,3 +36,10 @@ pub mod config;
 
 /// Platform state
 pub mod state;
+
+/// Platform constants
+pub mod constants;
+
+// TODO We should compile it only for tests
+/// Test helpers and fixtures
+pub mod test;

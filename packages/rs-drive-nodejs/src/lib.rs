@@ -128,6 +128,7 @@ impl PlatformWrapper {
                 drive: Some(drive_config),
                 core: core_config,
                 verify_sum_trees: true,
+                ..Default::default()
             };
 
             // TODO: think how to pass this error to JS

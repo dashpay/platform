@@ -2415,12 +2415,12 @@ mod tests {
 
         let factory = DataContractFactory::new_with_entropy_generator(
             1,
-            data_contract_validator,
+            Arc::new(data_contract_validator),
             Box::new(TestEntropyGenerator::new()),
         );
 
         let contract = factory
-            .create(owner_id, documents)
+            .create(owner_id, documents, None)
             .expect("data in fixture should be correct");
 
         let contract_cbor = contract.to_cbor().expect("should encode contract to cbor");

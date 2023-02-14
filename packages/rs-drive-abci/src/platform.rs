@@ -38,6 +38,7 @@ use crate::state::PlatformState;
 use drive::drive::Drive;
 use drive::rpc::core::{CoreRPCLike, DefaultCoreRPC};
 
+use drive::drive::defaults::PROTOCOL_VERSION;
 use std::cell::RefCell;
 use std::path::Path;
 
@@ -55,7 +56,7 @@ pub struct Platform {
     /// Drive
     pub drive: Drive,
     /// State
-    pub state: PlatformState,
+    pub state: RefCell<PlatformState>,
     /// Configuration
     pub config: PlatformConfig,
     /// Block execution context
@@ -74,7 +75,6 @@ impl Platform {
     /// Open Platform with Drive and block execution context.
     pub fn open<P: AsRef<Path>>(path: P, config: Option<PlatformConfig>) -> Result<Self, Error> {
         let config = config.unwrap_or_default();
-
         let drive = Drive::open(path, config.drive.clone()).map_err(Error::Drive)?;
 
         let core_rpc: Box<dyn CoreRPCLike> = Box::new(
@@ -91,13 +91,24 @@ impl Platform {
             })?,
         );
 
+        let current_protocol_version_in_consensus = drive
+            .fetch_current_protocol_version(None)
+            .map_err(Error::Drive)?
+            .unwrap_or(PROTOCOL_VERSION);
+        let next_epoch_protocol_version = drive
+            .fetch_next_protocol_version(None)
+            .map_err(Error::Drive)?
+            .unwrap_or(PROTOCOL_VERSION);
+
         let state = PlatformState {
             last_block_info: None,
+            current_protocol_version_in_consensus,
+            next_epoch_protocol_version,
         };
 
         Ok(Platform {
             drive,
-            state,
+            state: RefCell::new(state),
             config,
             block_execution_context: RefCell::new(None),
             core_rpc,

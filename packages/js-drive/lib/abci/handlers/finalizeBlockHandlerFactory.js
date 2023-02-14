@@ -73,6 +73,7 @@ function finalizeBlockHandlerFactory(
             time,
             version,
             proposerProTxHash,
+            proposedAppVersion,
             coreChainLockedHeight,
           },
           data: {
@@ -89,6 +90,7 @@ function finalizeBlockHandlerFactory(
         proposedLastCommit: commitInfo,
         time,
         proposerProTxHash,
+        proposedAppVersion,
         round,
       });
 

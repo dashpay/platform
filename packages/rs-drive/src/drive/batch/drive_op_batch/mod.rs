@@ -199,6 +199,7 @@ impl Drive {
 #[cfg(test)]
 mod tests {
     use grovedb::Element;
+    use std::borrow::Cow;
     use std::option::Option::None;
 
     use super::*;
@@ -258,7 +259,7 @@ mod tests {
             .expect("expected to get document type");
 
         drive_operations.push(ContractOperation(ApplyContractWithSerialization {
-            contract: &contract,
+            contract: Cow::Borrowed(&contract),
             serialized_contract: serialized_contract.clone(),
             storage_flags: None,
         }));
@@ -351,7 +352,7 @@ mod tests {
             .expect("expected to get document type");
 
         drive_operations.push(ContractOperation(ApplyContractWithSerialization {
-            contract: &contract,
+            contract: Cow::Borrowed(&contract),
             serialized_contract,
             storage_flags: None,
         }));
@@ -432,7 +433,7 @@ mod tests {
             .expect("expected to get document type");
 
         drive_operations.push(ContractOperation(ApplyContractWithSerialization {
-            contract: &contract,
+            contract: Cow::Borrowed(&contract),
             serialized_contract: serialized_contract.clone(),
             storage_flags: None,
         }));

@@ -144,6 +144,7 @@ describe('processProposalFactory', () => {
         version: request.version,
         time: request.time,
         proposerProTxHash: Buffer.from(request.proposerProTxHash),
+        proposedAppVersion: request.proposedAppVersion,
         round,
         quorumHash,
       },

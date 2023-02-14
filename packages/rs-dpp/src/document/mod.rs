@@ -55,6 +55,7 @@ pub struct Document {
     #[serde(rename = "$id")]
     pub id: Identifier,
     #[serde(rename = "$type")]
+    /// TODO: Why not &str?
     pub document_type: String,
     #[serde(rename = "$revision")]
     pub revision: u32,
@@ -63,6 +64,7 @@ pub struct Document {
     #[serde(rename = "$ownerId")]
     pub owner_id: Identifier,
     #[serde(rename = "$createdAt", skip_serializing_if = "Option::is_none")]
+    // TODO: Must be TimestampMillis
     pub created_at: Option<i64>,
     #[serde(rename = "$updatedAt", skip_serializing_if = "Option::is_none")]
     pub updated_at: Option<i64>,

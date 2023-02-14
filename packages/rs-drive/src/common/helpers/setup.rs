@@ -65,7 +65,7 @@ impl Default for SetupFeePoolsOptions {
     }
 }
 
-/// Sets up Drive using the optionally given Drive configuration settings.
+/// Sets up Drive using a temporary directory and the optionally given Drive configuration settings.
 pub fn setup_drive(drive_config: Option<DriveConfig>) -> Drive {
     let tmp_dir = TempDir::new().unwrap();
     let drive: Drive = Drive::open(tmp_dir, drive_config).expect("should open Drive successfully");
@@ -73,7 +73,7 @@ pub fn setup_drive(drive_config: Option<DriveConfig>) -> Drive {
     drive
 }
 
-/// Sets up Drive with the initial state structure.
+/// Sets up Drive using a temporary directory and the default initial state structure.
 pub fn setup_drive_with_initial_state_structure() -> Drive {
     let drive = setup_drive(Some(DriveConfig {
         batching_consistency_verification: true,
