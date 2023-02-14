@@ -30,14 +30,16 @@ use crate::abci::messages::SystemIdentityPublicKeys;
 use crate::error::execution::ExecutionError;
 use crate::error::Error;
 use crate::platform::Platform;
-use ciborium::cbor;
+use ciborium::{cbor, Value};
 use drive::contract::DataContract;
 use drive::dpp::data_contract::DriveContractExt;
 use drive::dpp::document::document_stub::DocumentStub;
 use drive::dpp::identity::{
     Identity, IdentityPublicKey, KeyType, Purpose, SecurityLevel, TimestampMillis,
 };
+use drive::dpp::prelude::{Document, Identifier};
 use drive::dpp::system_data_contracts::{load_system_data_contract, SystemDataContract};
+use drive::dpp::util::string_encoding::{encode, Encoding};
 use drive::drive::batch::{
     ContractOperationType, DocumentOperationType, DriveOperationType, IdentityOperationType,
 };
@@ -45,10 +47,9 @@ use drive::drive::block_info::BlockInfo;
 use drive::drive::defaults::PROTOCOL_VERSION;
 use drive::drive::object_size_info::{DocumentAndContractInfo, DocumentInfo, OwnedDocumentInfo};
 use drive::query::TransactionArg;
+use serde_json::json;
 use std::borrow::Cow;
 use std::collections::{BTreeMap, BTreeSet};
-
-// TODO: read about lazy_static
 
 const DPNS_DASH_TLD_DOCUMENT_ID: [u8; 32] = [
     215, 242, 197, 63, 70, 169, 23, 171, 110, 91, 57, 162, 215, 188, 38, 11, 100, 146, 137, 69, 55,
@@ -197,15 +198,44 @@ impl Platform {
     ) -> Result<(), Error> {
         let domain = "dash";
 
+        let preorder_salt_string = encode(&DPNS_DASH_TLD_PREORDER_SALT, Encoding::Base64);
+        let alias_identity_id = encode(&contract.owner_id.to_buffer(), Encoding::Base58);
+
         // TODO: Add created and updated at to DPNS contract
 
-        let properties_cbor = cbor!({
+        let document = Document {
+            protocol_version: PROTOCOL_VERSION,
+            id: Identifier::new(DPNS_DASH_TLD_DOCUMENT_ID),
+            document_type: "domain".to_string(),
+            revision: 0,
+            data_contract_id: contract.id,
+            owner_id: contract.owner_id,
+            created_at: None,
+            updated_at: None,
+            data: json!({
+                "label": domain,
+                "normalizedLabel": domain,
+                "normalizedParentDomainName": "",
+                "preorderSalt": preorder_salt_string,
+                "records": {
+                    "dashAliasIdentityId": alias_identity_id,
+                },
+                "subdomainRules": {
+                    "allowSubdomains": true,
+                }
+            }),
+            data_contract: contract.clone(),
+            metadata: None,
+            entropy: [0; 32],
+        };
+
+        let document_stub_properties_cbor = cbor!({
             "label" => domain,
             "normalizedLabel" => domain,
             "normalizedParentDomainName" => "",
-            "preorderSalt" => DPNS_DASH_TLD_PREORDER_SALT.to_vec(),
+            "preorderSalt" => Value::Bytes(DPNS_DASH_TLD_PREORDER_SALT.to_vec()),
             "records" => {
-                "dashAliasIdentityId" => contract.owner_id.to_buffer_vec(),
+                "dashAliasIdentityId" => Value::Bytes(contract.owner_id.to_buffer_vec()),
             },
         })
         .map_err(|_| {
@@ -215,7 +245,7 @@ impl Platform {
             ))
         })?;
 
-        let properties = properties_cbor
+        let document_stub_properties = document_stub_properties_cbor
             .as_map()
             .ok_or(Error::Execution(ExecutionError::CorruptedCodeExecution(
                 "can't convert properties to map",
@@ -233,26 +263,26 @@ impl Platform {
             })
             .collect::<Result<_, Error>>()?;
 
-        let document = DocumentStub {
+        let document_cbor = document.to_buffer()?;
+
+        let document_stub = DocumentStub {
             id: DPNS_DASH_TLD_DOCUMENT_ID,
-            properties,
+            properties: document_stub_properties,
             owner_id: contract.owner_id.to_buffer(),
         };
 
         let document_type = contract.document_type_for_name("domain")?;
 
-        let serialization = document.to_cbor();
         let operation =
             DriveOperationType::DocumentOperation(DocumentOperationType::AddDocumentForContract {
                 document_and_contract_info: DocumentAndContractInfo {
                     owned_document_info: OwnedDocumentInfo {
-                        //todo: remove cbor
+                        //todo: remove cbor and use DocumentInfo::DocumentWithoutSerialization((document, None))
                         document_info: DocumentInfo::DocumentAndSerialization((
-                            document,
-                            serialization,
+                            document_stub,
+                            document_cbor,
                             None,
                         )),
-                        // document_info: DocumentInfo::DocumentWithoutSerialization((document, None)),
                         owner_id: None,
                     },
                     contract,
@@ -288,8 +318,8 @@ mod tests {
             assert_eq!(
                 root_hash,
                 [
-                    44, 107, 8, 186, 190, 201, 48, 103, 201, 199, 114, 15, 206, 175, 121, 151, 6,
-                    39, 5, 183, 112, 106, 196, 237, 115, 14, 155, 175, 11, 172, 27, 79
+                    21, 65, 176, 57, 7, 183, 234, 81, 74, 237, 54, 110, 13, 1, 152, 159, 226, 240,
+                    13, 37, 157, 173, 36, 50, 62, 218, 196, 243, 32, 79, 8, 71
                 ]
             )
         }
