@@ -31,8 +31,9 @@ impl DataContractFacade {
         &self,
         owner_id: Identifier,
         documents: JsonValue,
+        definitions: Option<JsonValue>,
     ) -> Result<DataContract, ProtocolError> {
-        self.factory.create(owner_id, documents)
+        self.factory.create(owner_id, documents, definitions)
     }
 
     /// Create Data Contract from plain object

@@ -15,7 +15,7 @@ fn create_data_contract_factory() -> DataContractFactory {
 
     let data_contract_validator = DataContractValidator::new(Arc::new(protocol_version_validator));
 
-    DataContractFactory::new(1, data_contract_validator)
+    DataContractFactory::new(1, Arc::new(data_contract_validator))
 }
 
 fn create_data_contract(

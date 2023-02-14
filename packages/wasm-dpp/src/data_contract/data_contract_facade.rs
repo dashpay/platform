@@ -36,11 +36,18 @@ impl DataContractFacadeWasm {
         &self,
         owner_id: Vec<u8>,
         documents: JsValue,
+        definitions: JsValue,
     ) -> Result<DataContractWasm, JsValue> {
         let id = Identifier::from_bytes(&owner_id).map_err(from_protocol_error)?;
 
+        let definitions: Option<serde_json::Value> = if definitions.is_object() {
+            Some(serde_wasm_bindgen::from_value(definitions)?)
+        } else {
+            None
+        };
+
         self.0
-            .create(id, serde_wasm_bindgen::from_value(documents)?)
+            .create(id, serde_wasm_bindgen::from_value(documents)?, definitions)
             .map(Into::into)
             .map_err(from_protocol_error)
     }
