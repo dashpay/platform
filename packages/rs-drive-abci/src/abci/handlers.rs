@@ -38,6 +38,7 @@ use crate::abci::messages::{
 };
 use crate::block::{BlockExecutionContext, BlockStateInfo};
 use crate::execution::fee_pools::epoch::EpochInfo;
+use drive::fee::epoch::GENESIS_EPOCH_INDEX;
 use drive::grovedb::TransactionArg;
 
 use crate::error::execution::ExecutionError;
@@ -104,9 +105,9 @@ impl TenderdashAbci for Platform {
         // Set genesis time
         let genesis_time_ms = if request.block_height == 1 {
             self.drive.set_genesis_time(request.block_time_ms);
-
             request.block_time_ms
         } else {
+            //todo: lazy load genesis time
             self.drive
                 .get_genesis_time(transaction)
                 .map_err(Error::Drive)?
@@ -114,6 +115,15 @@ impl TenderdashAbci for Platform {
                     "the genesis time must be set",
                 )))?
         };
+
+        // Update versions
+        let proposed_app_version = request.proposed_app_version;
+
+        self.drive.update_validator_proposed_app_version(
+            request.proposer_pro_tx_hash,
+            proposed_app_version,
+            transaction,
+        )?;
 
         // Init block execution context
         let block_info = BlockStateInfo::from_block_begin_request(&request);
@@ -123,6 +133,7 @@ impl TenderdashAbci for Platform {
         let block_execution_context = BlockExecutionContext {
             block_info,
             epoch_info: epoch_info.clone(),
+            hpmn_count: request.total_hpmns,
         };
 
         self.block_execution_context
@@ -165,8 +176,41 @@ impl TenderdashAbci for Platform {
             transaction,
         )?;
 
-        Ok(BlockEndResponse::from_process_block_fees_outcome(
+        // Determine a new protocol version if enough proposers voted
+        let changed_protocol_version = if block_execution_context
+            .epoch_info
+            .is_epoch_change_but_not_genesis()
+        {
+            // Set current protocol version to the version from upcoming epoch
+            self.state.replace_with(|state| {
+                state.current_protocol_version_in_consensus = state.next_epoch_protocol_version;
+
+                state.clone()
+            });
+
+            // Determine new protocol version based on votes for the next epoch
+            let maybe_new_protocol_version = self.check_for_desired_protocol_upgrade(
+                block_execution_context.hpmn_count,
+                transaction,
+            )?;
+
+            self.state.replace_with(|state| {
+                if let Some(new_protocol_version) = maybe_new_protocol_version {
+                    state.next_epoch_protocol_version = new_protocol_version;
+                } else {
+                    state.next_epoch_protocol_version = state.current_protocol_version_in_consensus;
+                }
+                state.clone()
+            });
+
+            Some(self.state.borrow().current_protocol_version_in_consensus)
+        } else {
+            None
+        };
+
+        Ok(BlockEndResponse::from_outcomes(
             &process_block_fees_outcome,
+            changed_protocol_version,
         ))
     }
 
@@ -209,6 +253,7 @@ mod tests {
             let platform = setup_platform_raw(Some(PlatformConfig {
                 drive_config: Default::default(),
                 verify_sum_trees: false,
+                ..Default::default()
             }));
             let transaction = platform.drive.grove.start_transaction();
 
@@ -295,17 +340,20 @@ mod tests {
                         block_height,
                         block_time_ms,
                         previous_block_time_ms,
-                        proposer_pro_tx_hash: proposers
-                            [block_height as usize % (proposers_count as usize)],
+                        proposer_pro_tx_hash: *proposers
+                            .get(block_height as usize % (proposers_count as usize))
+                            .unwrap(),
+                        proposed_app_version: 1,
                         validator_set_quorum_hash: Default::default(),
+                        total_hpmns: proposers_count as u32,
                     };
 
                     let block_begin_response = platform
                         .block_begin(block_begin_request, Some(&transaction))
-                        .unwrap_or_else(|_| {
+                        .unwrap_or_else(|e| {
                             panic!(
-                                "should begin process block #{} for day #{}",
-                                block_height, day
+                                "should begin process block #{} for day #{} : {}",
+                                block_height, day, e
                             )
                         });
 
@@ -424,6 +472,7 @@ mod tests {
             let platform = setup_platform_raw(Some(PlatformConfig {
                 drive_config: Default::default(),
                 verify_sum_trees: false,
+                ..Default::default()
             }));
             let transaction = platform.drive.grove.start_transaction();
 
@@ -490,9 +539,12 @@ mod tests {
                         block_height,
                         block_time_ms,
                         previous_block_time_ms,
-                        proposer_pro_tx_hash: proposers
-                            [block_height as usize % (proposers_count as usize)],
+                        proposer_pro_tx_hash: *proposers
+                            .get(block_height as usize % (proposers_count as usize))
+                            .unwrap(),
+                        proposed_app_version: 1,
                         validator_set_quorum_hash: Default::default(),
+                        total_hpmns: proposers_count as u32,
                     };
 
                     let block_begin_response = platform

@@ -36,12 +36,20 @@ pub struct PlatformConfig {
 
     /// Should we verify sum trees? Useful to set as no for tests
     pub verify_sum_trees: bool,
+
+    /// The default quorum size
+    pub quorum_size: u16,
+
+    /// How often should quorums change?
+    pub validator_set_quorum_rotation_block_count: u64,
 }
 
 impl Default for PlatformConfig {
     fn default() -> Self {
         PlatformConfig {
             verify_sum_trees: true,
+            quorum_size: 100,
+            validator_set_quorum_rotation_block_count: 15,
             drive_config: Default::default(),
         }
     }

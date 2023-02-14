@@ -1013,7 +1013,9 @@ describe('Drive', () => {
           blockHeight: 1,
           blockTimeMs: (new Date()).getTime(),
           proposerProTxHash: Buffer.alloc(32, 1),
+          proposedAppVersion: 1,
           validatorSetQuorumHash: Buffer.alloc(32, 2),
+          totalHpmns: 100,
         };
 
         const response = await drive.getAbci().blockBegin(request);
@@ -1033,7 +1035,9 @@ describe('Drive', () => {
           blockHeight: 1,
           blockTimeMs,
           proposerProTxHash: Buffer.alloc(32, 1),
+          proposedAppVersion: 1,
           validatorSetQuorumHash: Buffer.alloc(32, 2),
+          totalHpmns: 100,
         });
 
         const response = await drive.getAbci().blockBegin({
@@ -1041,7 +1045,9 @@ describe('Drive', () => {
           blockTimeMs: blockTimeMs + 100,
           proposerProTxHash: Buffer.alloc(32, 1),
           previousBlockTimeMs: blockTimeMs,
+          proposedAppVersion: 1,
           validatorSetQuorumHash: Buffer.alloc(32, 2),
+          totalHpmns: 100,
         });
 
         expect(response.unsignedWithdrawalTransactions).to.be.empty();
@@ -1060,8 +1066,10 @@ describe('Drive', () => {
         await drive.getAbci().blockBegin({
           blockHeight: 1,
           blockTimeMs: (new Date()).getTime(),
+          proposedAppVersion: 1,
           proposerProTxHash: Buffer.alloc(32, 1),
           validatorSetQuorumHash: Buffer.alloc(32, 2),
+          totalHpmns: 100,
         });
       });
 
@@ -1091,8 +1099,10 @@ describe('Drive', () => {
         await drive.getAbci().blockBegin({
           blockHeight: 1,
           blockTimeMs: (new Date()).getTime(),
+          proposedAppVersion: 1,
           proposerProTxHash: Buffer.alloc(32, 1),
           validatorSetQuorumHash: Buffer.alloc(32, 2),
+          totalHpmns: 100,
         });
 
         await drive.getAbci().blockEnd({

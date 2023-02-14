@@ -390,6 +390,60 @@ impl Drive {
         }
     }
 
+    /// grove_get_raw basically means that there are no reference hops, this only matters
+    /// when calculating worst case costs
+    pub fn grove_get_raw_optional<'p, P>(
+        &self,
+        path: P,
+        key: &'p [u8],
+        direct_query_type: DirectQueryType,
+        transaction: TransactionArg,
+        drive_operations: &mut Vec<DriveOperation>,
+    ) -> Result<Option<Element>, Error>
+    where
+        P: IntoIterator<Item = &'p [u8]>,
+        <P as IntoIterator>::IntoIter: ExactSizeIterator + DoubleEndedIterator + Clone,
+    {
+        let path_iter = path.into_iter();
+        match direct_query_type {
+            DirectQueryType::StatelessDirectQuery {
+                in_tree_using_sums,
+                query_target,
+            } => {
+                let key_info_path = KeyInfoPath::from_known_path(path_iter);
+                let key_info = KeyInfo::KnownKey(key.to_vec());
+                let cost = match query_target {
+                    QueryTarget::QueryTargetTree(flags_size, is_sum_tree) => {
+                        GroveDb::average_case_for_get_tree(
+                            &key_info_path,
+                            &key_info,
+                            flags_size,
+                            is_sum_tree,
+                            in_tree_using_sums,
+                        )
+                    }
+                    QueryTarget::QueryTargetValue(estimated_value_size) => {
+                        GroveDb::average_case_for_get_raw(
+                            &key_info_path,
+                            &key_info,
+                            estimated_value_size,
+                            in_tree_using_sums,
+                        )
+                    }
+                };
+
+                drive_operations.push(CalculatedCostOperation(cost));
+                Ok(None)
+            }
+            DirectQueryType::StatefulDirectQuery => {
+                let CostContext { value, cost } =
+                    self.grove.get_raw_optional(path_iter, key, transaction);
+                drive_operations.push(CalculatedCostOperation(cost));
+                Ok(value.map_err(Error::GroveDB)?)
+            }
+        }
+    }
+
     /// grove_get_direct_u64 is a helper function to get a
     pub fn grove_get_raw_value_u64_from_encoded_var_vec<'p, P>(
         &self,
@@ -403,8 +457,13 @@ impl Drive {
         P: IntoIterator<Item = &'p [u8]>,
         <P as IntoIterator>::IntoIter: ExactSizeIterator + DoubleEndedIterator + Clone,
     {
-        let element =
-            self.grove_get_raw(path, key, direct_query_type, transaction, drive_operations)?;
+        let element = self.grove_get_raw_optional(
+            path,
+            key,
+            direct_query_type,
+            transaction,
+            drive_operations,
+        )?;
         element
             .map(|element| match element {
                 Element::Item(value, ..) => u64::decode_var(value.as_slice())
@@ -1246,6 +1305,116 @@ impl Drive {
                             ),
                         );
                         Ok(true)
+                    }
+                    BatchInsertApplyType::StatefulBatchInsert => {
+                        Err(Error::Drive(DriveError::NotSupportedPrivate(
+                            "document sizes for stateful insert in batch operations not supported",
+                        )))
+                    }
+                }
+            }
+            PathKeyUnknownElementSize(_) => Err(Error::Drive(DriveError::NotSupportedPrivate(
+                "document sizes in batch operations not supported",
+            ))),
+        }
+    }
+
+    /// Pushes an "insert element if element was changed or is new" operation to `drive_operations`.
+    /// Returns true if the path key already exists without references.
+    pub(crate) fn batch_insert_if_changed_value<'a, 'c, const N: usize>(
+        &'a self,
+        path_key_element_info: PathKeyElementInfo<'c, N>,
+        apply_type: BatchInsertApplyType,
+        transaction: TransactionArg,
+        drive_operations: &mut Vec<DriveOperation>,
+    ) -> Result<(bool, Option<Element>), Error> {
+        match path_key_element_info {
+            PathKeyRefElement((path, key, element)) => {
+                let path_iter: Vec<&[u8]> = path.iter().map(|x| x.as_slice()).collect();
+                let previous_element = self.grove_get_raw_optional(
+                    path_iter.clone(),
+                    key,
+                    apply_type.to_direct_query_type(),
+                    transaction,
+                    drive_operations,
+                )?;
+                let needs_insert = match &previous_element {
+                    None => true,
+                    Some(previous_element) => previous_element != &element,
+                };
+                if needs_insert {
+                    drive_operations.push(DriveOperation::insert_for_known_path_key_element(
+                        path,
+                        key.to_vec(),
+                        element,
+                    ));
+                }
+                Ok((needs_insert, previous_element))
+            }
+            PathKeyElement((path, key, element)) => {
+                let path_iter: Vec<&[u8]> = path.iter().map(|x| x.as_slice()).collect();
+                let previous_element = self.grove_get_raw_optional(
+                    path_iter.clone(),
+                    key.as_slice(),
+                    apply_type.to_direct_query_type(),
+                    transaction,
+                    drive_operations,
+                )?;
+                let needs_insert = match &previous_element {
+                    None => true,
+                    Some(previous_element) => previous_element != &element,
+                };
+                if needs_insert {
+                    drive_operations.push(DriveOperation::insert_for_known_path_key_element(
+                        path, key, element,
+                    ));
+                }
+                Ok((needs_insert, previous_element))
+            }
+            PathFixedSizeKeyRefElement((path, key, element)) => {
+                let previous_element = self.grove_get_raw_optional(
+                    path,
+                    key,
+                    apply_type.to_direct_query_type(),
+                    transaction,
+                    drive_operations,
+                )?;
+                let needs_insert = match &previous_element {
+                    None => true,
+                    Some(previous_element) => previous_element != &element,
+                };
+                if needs_insert {
+                    let path_items: Vec<Vec<u8>> = path.into_iter().map(Vec::from).collect();
+                    drive_operations.push(DriveOperation::insert_for_known_path_key_element(
+                        path_items,
+                        key.to_vec(),
+                        element,
+                    ));
+                }
+                Ok((needs_insert, previous_element))
+            }
+            PathKeyElementSize((key_info_path, key_info, element)) => {
+                match apply_type {
+                    BatchInsertApplyType::StatelessBatchInsert {
+                        in_tree_using_sums, ..
+                    } => {
+                        // we can estimate that the element was the same size
+                        drive_operations.push(CalculatedCostOperation(
+                            GroveDb::average_case_for_get_raw(
+                                &key_info_path,
+                                &key_info,
+                                element.serialized_size() as u32,
+                                in_tree_using_sums,
+                            ),
+                        ));
+                        drive_operations.push(
+                            DriveOperation::insert_for_estimated_path_key_element(
+                                key_info_path,
+                                key_info,
+                                element,
+                            ),
+                        );
+                        Ok((true, None))
                     }
                     BatchInsertApplyType::StatefulBatchInsert => {
                         Err(Error::Drive(DriveError::NotSupportedPrivate(
