@@ -11,7 +11,7 @@ impl Drive {
     pub(crate) fn insert_withdrawal_expired_index(
         &self,
         index: u64,
-    ) -> Result<(Vec<DriveOperation>), Error> {
+    ) -> Result<Vec<DriveOperation>, Error> {
         let mut drive_operations = vec![];
 
         let index_bytes = index.to_be_bytes();
@@ -34,7 +34,7 @@ impl Drive {
         &self,
         key: &[u8],
         transaction: TransactionArg,
-    ) -> Result<(Vec<DriveOperation>), Error> {
+    ) -> Result<Vec<DriveOperation>, Error> {
         let mut drive_operations = vec![];
 
         let path: [&[u8]; 2] = get_withdrawal_transactions_expired_ids_path();

@@ -9,11 +9,12 @@ use dashcore::{
     hashes::Hash,
     QuorumHash, Script, TxOut,
 };
-use dpp::{
-    contracts::withdrawals_contract, data_contract::DriveContractExt,
-    document::document_stub::DocumentStub, identity::convert_credits_to_satoshi,
-    prelude::Identifier, util::hash,
-};
+use drive::dpp::contracts::withdrawals_contract;
+use drive::dpp::data_contract::DriveContractExt;
+use drive::dpp::document::document_stub::DocumentStub;
+use drive::dpp::identifier::Identifier;
+use drive::dpp::identity::convert_credits_to_satoshi;
+use drive::dpp::util::hash;
 use drive::{
     drive::{
         batch::DriveOperationType, block_info::BlockInfo,
@@ -508,8 +509,7 @@ mod tests {
     use drive::{common::helpers::setup::setup_document, rpc::core::MockCoreRPCLike};
     use serde_json::json;
 
-    use crate::common::helpers::setup::setup_platform_with_initial_state_structure;
-    use crate::common::helpers::setup::setup_system_data_contract;
+    use crate::test::helpers::setup::setup_platform_with_initial_state_structure;
 
     use dpp::identity::state_transition::identity_credit_withdrawal_transition::Pooling;
 
@@ -517,7 +517,9 @@ mod tests {
 
     mod update_withdrawal_statuses {
         use crate::block::BlockStateInfo;
+        use crate::test::helpers::setup::setup_platform_with_initial_state_structure;
         use dpp::data_contract::{DataContract, DriveContractExt};
+        use drive::common::helpers::setup::setup_system_data_contract;
 
         use super::*;
 
@@ -655,6 +657,7 @@ mod tests {
                             previous_epoch_index: None,
                             is_epoch_change: false,
                         },
+                        hpmn_count: 100,
                     },
                     Some(&transaction),
                 )
@@ -693,8 +696,11 @@ mod tests {
     mod pool_withdrawals_into_transactions {
         use dpp::data_contract::DriveContractExt;
         use dpp::identity::state_transition::identity_credit_withdrawal_transition::Pooling;
+        use drive::common::helpers::setup::setup_system_data_contract;
+        use drive::dpp::contracts::withdrawals_contract;
 
         use crate::block::BlockStateInfo;
+        use crate::test::helpers::setup::setup_platform_with_initial_state_structure;
 
         use super::*;
 
@@ -770,6 +776,7 @@ mod tests {
                             previous_epoch_index: None,
                             is_epoch_change: false,
                         },
+                        hpmn_count: 100,
                     },
                     Some(&transaction),
                 )
@@ -803,8 +810,8 @@ mod tests {
     }
 
     mod fetch_core_block_transactions {
-
         use super::*;
+        use crate::test::helpers::setup::setup_platform_with_initial_state_structure;
 
         #[test]
         fn test_fetches_core_transactions() {
@@ -868,11 +875,13 @@ mod tests {
     }
 
     mod build_withdrawal_transactions_from_documents {
+        use crate::test::helpers::setup::setup_platform_with_initial_state_structure;
         use dpp::data_contract::DriveContractExt;
         use dpp::{
             document::document_stub::DocumentStub,
             identity::state_transition::identity_credit_withdrawal_transition::Pooling,
         };
+        use drive::common::helpers::setup::setup_system_data_contract;
         use drive::drive::identity::withdrawals::paths::WithdrawalTransaction;
         use itertools::Itertools;
 

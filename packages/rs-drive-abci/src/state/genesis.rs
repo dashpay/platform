@@ -269,6 +269,7 @@ impl Platform {
             id: DPNS_DASH_TLD_DOCUMENT_ID,
             properties: document_stub_properties,
             owner_id: contract.owner_id.to_buffer(),
+            revision: 1,
         };
 
         let document_type = contract.document_type_for_name("domain")?;
@@ -318,8 +319,8 @@ mod tests {
             assert_eq!(
                 root_hash,
                 [
-                    223, 238, 172, 129, 164, 189, 41, 188, 64, 164, 89, 92, 216, 66, 225, 17, 106,
-                    82, 196, 145, 103, 87, 239, 183, 226, 201, 79, 71, 248, 183, 191, 178,
+                    110, 6, 47, 121, 177, 99, 0, 7, 150, 5, 202, 92, 21, 81, 169, 64, 87, 150, 198,
+                    125, 110, 57, 207, 50, 251, 8, 138, 166, 106, 80, 232, 142,
                 ]
             )
         }

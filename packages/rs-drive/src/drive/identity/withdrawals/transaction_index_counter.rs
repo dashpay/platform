@@ -22,7 +22,7 @@ impl Drive {
     pub(crate) fn update_transaction_index_counter(
         &self,
         index: u64,
-    ) -> Result<(Vec<DriveOperation>), Error> {
+    ) -> Result<Vec<DriveOperation>, Error> {
         let mut drive_operations = vec![];
 
         let path = get_withdrawal_root_path_vec();

@@ -260,7 +260,7 @@ mod tests {
         };
         use dpp::util::hash;
         use drive::common::helpers::identities::create_test_masternode_identities;
-        use drive::common::helpers::setup::setup_document;
+        use drive::common::helpers::setup::{setup_document, setup_system_data_contract};
         use drive::drive::block_info::BlockInfo;
         use drive::drive::identity::withdrawals::paths::WithdrawalTransaction;
         use drive::fee::epoch::CreditsPerEpoch;
@@ -274,7 +274,6 @@ mod tests {
         use crate::abci::messages::{
             AfterFinalizeBlockRequest, BlockBeginRequest, BlockEndRequest, BlockFees,
         };
-        use crate::config::PlatformConfig;
         use crate::test::fixture::abci::static_init_chain_request;
         use crate::test::helpers::fee_pools::create_test_masternode_share_identities_and_documents;
         use crate::test::helpers::setup::setup_platform_raw;

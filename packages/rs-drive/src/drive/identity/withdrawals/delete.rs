@@ -12,7 +12,7 @@ impl Drive {
         &self,
         id: &[u8],
         transaction: TransactionArg,
-    ) -> Result<(Vec<DriveOperation>), Error> {
+    ) -> Result<Vec<DriveOperation>, Error> {
         let mut drive_operations = vec![];
 
         let path = get_withdrawal_transactions_queue_path();
