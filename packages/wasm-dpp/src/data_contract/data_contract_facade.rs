@@ -8,6 +8,7 @@ use dpp::data_contract::DataContractFacade;
 use dpp::identifier::Identifier;
 use dpp::version::ProtocolVersionValidator;
 
+use crate::utils::{get_bool_from_options, SKIP_VALIDATION_PROPERTY_NAME};
 use crate::validation::ValidationResultWasm;
 use std::sync::Arc;
 use wasm_bindgen::prelude::*;
@@ -49,8 +50,10 @@ impl DataContractFacadeWasm {
     pub async fn create_from_object(
         &self,
         js_raw_data_contract: JsValue,
-        skip_validation: bool,
+        options: JsValue,
     ) -> Result<DataContractWasm, JsValue> {
+        let skip_validation = get_bool_from_options(options, SKIP_VALIDATION_PROPERTY_NAME, false)?;
+
         self.0
             .create_from_object(
                 js_value_to_serde_value(js_raw_data_contract)?,
@@ -66,8 +69,10 @@ impl DataContractFacadeWasm {
     pub async fn create_from_buffer(
         &self,
         buffer: Vec<u8>,
-        skip_validation: bool,
+        options: JsValue,
     ) -> Result<DataContractWasm, JsValue> {
+        let skip_validation = get_bool_from_options(options, SKIP_VALIDATION_PROPERTY_NAME, false)?;
+
         self.0
             .create_from_buffer(buffer, skip_validation)
             .await

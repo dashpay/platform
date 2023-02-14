@@ -13,10 +13,7 @@ use wasm_bindgen::prelude::*;
 
 use crate::{
     data_contract::errors::InvalidDataContractError,
-    errors::{RustConversionError},
-    errors::{
-        consensus_error::from_consensus_error, from_dpp_err, protocol_error::from_protocol_error,
-    },
+    errors::{from_dpp_err, protocol_error::from_protocol_error},
     validation::ValidationResultWasm,
     with_js_error, DataContractCreateTransitionWasm, DataContractParameters, DataContractWasm,
 };

@@ -152,3 +152,26 @@ pub fn generic_of_js_val<T: RefFromWasmAbi<Abi = u32>>(
         Err(JsValue::from(&error_string))
     }
 }
+
+pub const SKIP_VALIDATION_PROPERTY_NAME: &str = "skipValidation";
+
+pub fn get_bool_from_options(
+    options: JsValue,
+    property: &str,
+    default: bool,
+) -> Result<bool, JsValue> {
+    if options.is_object() {
+        let val2 = options.with_serde_to_json_value()?;
+        let kek = val2
+            .as_object()
+            .ok_or_else(|| JsError::new("Can't parse options"))?;
+        let kek2 = kek
+            .get(property)
+            .ok_or_else(|| JsError::new(&format!("Can't get property {} of options", property)))?;
+        Ok(kek2
+            .as_bool()
+            .ok_or_else(|| JsError::new(&format!("Option {} is not a boolean", property)))?)
+    } else {
+        Ok(default)
+    }
+}

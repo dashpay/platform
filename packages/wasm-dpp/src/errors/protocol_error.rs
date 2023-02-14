@@ -1,5 +1,5 @@
 use crate::data_contract::errors::InvalidDataContractError;
-use wasm_bindgen::{JsError, JsValue};
+use wasm_bindgen::JsValue;
 
 use super::consensus_error::from_consensus_error;
 
@@ -17,7 +17,6 @@ pub fn from_protocol_error(protocol_error: dpp::ProtocolError) -> JsValue {
                 InvalidDataContractError::new(errors, raw_contract).into()
             })
         }
-        e => JsValue::from(e.to_string()),
         dpp::ProtocolError::Error(anyhow_error) => {
             format!("Non-protocol error: {}", anyhow_error).into()
         }
