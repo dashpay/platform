@@ -337,7 +337,7 @@ function expectDeterministicAppHashFactory(groveDBStore) {
   return expectDeterministicAppHash;
 }
 
-describe('synchronizeMasternodeIdentitiesFactory', function main () {
+describe('synchronizeMasternodeIdentitiesFactory', function main() {
   this.timeout(10000);
   let container;
   let coreHeight;
