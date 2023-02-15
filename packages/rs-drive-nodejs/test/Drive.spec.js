@@ -1,5 +1,7 @@
 const fs = require('fs');
 
+const { PrivateKey } = require('@dashevo/dashcore-lib');
+
 const { expect, use } = require('chai');
 use(require('dirty-chai'));
 
@@ -971,11 +973,31 @@ describe('Drive', () => {
   });
 
   describe('ABCI', () => {
+    let initChainRequest;
+
+    function generateRequiredIdentityPublicKeysSet() {
+      return {
+        master: new PrivateKey().toPublicKey().toBuffer(),
+        high: new PrivateKey().toPublicKey().toBuffer(),
+      };
+    }
+
+    beforeEach(() => {
+      initChainRequest = {
+        genesisTimeMs: Date.now(),
+        systemIdentityPublicKeys: {
+          masternodeRewardSharesContractOwner: generateRequiredIdentityPublicKeysSet(),
+          featureFlagsContractOwner: generateRequiredIdentityPublicKeysSet(),
+          dpnsContractOwner: generateRequiredIdentityPublicKeysSet(),
+          withdrawalsContractOwner: generateRequiredIdentityPublicKeysSet(),
+          dashpayContractOwner: generateRequiredIdentityPublicKeysSet(),
+        },
+      };
+    });
+
     describe('InitChain', () => {
       it('should successfully init chain', async () => {
-        const request = {};
-
-        const response = await drive.getAbci().initChain(request);
+        const response = await drive.getAbci().initChain(initChainRequest);
 
         expect(response).to.be.empty('object');
       });
@@ -983,7 +1005,7 @@ describe('Drive', () => {
 
     describe('BlockBegin', () => {
       beforeEach(async () => {
-        await drive.getAbci().initChain({});
+        await drive.getAbci().initChain(initChainRequest);
       });
 
       it('should process a block without previous block time', async () => {
@@ -991,7 +1013,9 @@ describe('Drive', () => {
           blockHeight: 1,
           blockTimeMs: (new Date()).getTime(),
           proposerProTxHash: Buffer.alloc(32, 1),
+          proposedAppVersion: 1,
           validatorSetQuorumHash: Buffer.alloc(32, 2),
+          totalHpmns: 100,
         };
 
         const response = await drive.getAbci().blockBegin(request);
@@ -1011,7 +1035,9 @@ describe('Drive', () => {
           blockHeight: 1,
           blockTimeMs,
           proposerProTxHash: Buffer.alloc(32, 1),
+          proposedAppVersion: 1,
           validatorSetQuorumHash: Buffer.alloc(32, 2),
+          totalHpmns: 100,
         });
 
         const response = await drive.getAbci().blockBegin({
@@ -1019,7 +1045,9 @@ describe('Drive', () => {
           blockTimeMs: blockTimeMs + 100,
           proposerProTxHash: Buffer.alloc(32, 1),
           previousBlockTimeMs: blockTimeMs,
+          proposedAppVersion: 1,
           validatorSetQuorumHash: Buffer.alloc(32, 2),
+          totalHpmns: 100,
         });
 
         expect(response.unsignedWithdrawalTransactions).to.be.empty();
@@ -1033,13 +1061,15 @@ describe('Drive', () => {
 
     describe('BlockEnd', () => {
       beforeEach(async () => {
-        await drive.getAbci().initChain({});
+        await drive.getAbci().initChain(initChainRequest);
 
         await drive.getAbci().blockBegin({
           blockHeight: 1,
           blockTimeMs: (new Date()).getTime(),
+          proposedAppVersion: 1,
           proposerProTxHash: Buffer.alloc(32, 1),
           validatorSetQuorumHash: Buffer.alloc(32, 2),
+          totalHpmns: 100,
         });
       });
 
@@ -1064,13 +1094,15 @@ describe('Drive', () => {
       beforeEach(async function beforeEach() {
         this.timeout(10000);
 
-        await drive.getAbci().initChain({});
+        await drive.getAbci().initChain(initChainRequest);
 
         await drive.getAbci().blockBegin({
           blockHeight: 1,
           blockTimeMs: (new Date()).getTime(),
+          proposedAppVersion: 1,
           proposerProTxHash: Buffer.alloc(32, 1),
           validatorSetQuorumHash: Buffer.alloc(32, 2),
+          totalHpmns: 100,
         });
 
         await drive.getAbci().blockEnd({

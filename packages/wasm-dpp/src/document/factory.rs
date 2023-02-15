@@ -184,9 +184,3 @@ impl DocumentFactoryWASM {
         Ok(document.into())
     }
 }
-
-impl DocumentFactoryWASM {
-    pub(crate) fn into_inner(self) -> DocumentFactory<ExternalStateRepositoryLikeWrapper> {
-        self.0
-    }
-}

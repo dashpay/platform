@@ -37,6 +37,7 @@ describe('beginBlockFactory', () => {
   let version;
   let rsAbciMock;
   let proposerProTxHash;
+  let proposedAppVersion;
   let round;
   let executionTimerMock;
   let latestBlockExecutionContextMock;
@@ -46,10 +47,13 @@ describe('beginBlockFactory', () => {
   let timeMs;
   let epochInfo;
   let time;
+  let simplifyMasternodeListMock;
+  let validMasternodesListLength;
 
   beforeEach(function beforeEach() {
     round = 0;
     protocolVersion = Long.fromInt(1);
+    proposedAppVersion = Long.fromInt(1);
     blockHeight = Long.fromNumber(1);
     time = millisToProtoTimestamp(Date.now());
     timeMs = protoTimestampToMillis(time);
@@ -106,6 +110,22 @@ describe('beginBlockFactory', () => {
       blockBegin: this.sinon.stub().resolves(rsResponseMock),
     };
 
+    validMasternodesListLength = 400;
+
+    simplifyMasternodeListMock = {
+      getStore() {
+        return {
+          getCurrentSML() {
+            return {
+              getValidMasternodesList() {
+                return validMasternodesListLength;
+              },
+            };
+          },
+        };
+      },
+    };
+
     beginBlock = beginBlockFactory(
       groveDBStoreMock,
       latestBlockExecutionContextMock,
@@ -118,6 +138,7 @@ describe('beginBlockFactory', () => {
       synchronizeMasternodeIdentitiesMock,
       rsAbciMock,
       executionTimerMock,
+      simplifyMasternodeListMock,
     );
 
     lastCommitInfo = {};
@@ -135,6 +156,7 @@ describe('beginBlockFactory', () => {
       version,
       time: millisToProtoTimestamp(timeMs),
       proposerProTxHash,
+      proposedAppVersion,
       round,
     };
   });
@@ -177,6 +199,8 @@ describe('beginBlockFactory', () => {
       .to.be.calledOnceWithExactly(blockHeight);
     expect(proposalBlockExecutionContextMock.setVersion)
       .to.be.calledOnceWithExactly(version);
+    expect(proposalBlockExecutionContextMock.setProposedAppVersion)
+      .to.be.calledOnceWithExactly(proposedAppVersion);
     expect(proposalBlockExecutionContextMock.setTimeMs)
       .to.be.calledOnceWithExactly(timeMs);
     expect(proposalBlockExecutionContextMock.setCoreChainLockedHeight)

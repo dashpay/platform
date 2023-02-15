@@ -878,6 +878,23 @@ Drive.FeeResult = FeeResult;
 
 /**
  * @typedef InitChainRequest
+ * @property {number} genesisTimeMs
+ * @property {SystemIdentityPublicKeys} systemIdentityPublicKeys
+ */
+
+/**
+ * @typedef SystemIdentityPublicKeys
+ * @property {RequiredIdentityPublicKeysSet} masternodeRewardSharesContractOwner
+ * @property {RequiredIdentityPublicKeysSet} featureFlagsContractOwner
+ * @property {RequiredIdentityPublicKeysSet} dpnsContractOwner
+ * @property {RequiredIdentityPublicKeysSet} withdrawalsContractOwner
+ * @property {RequiredIdentityPublicKeysSet} dashpayContractOwner
+ */
+
+/**
+ * @typedef RequiredIdentityPublicKeysSet
+ * @property {Buffer} master
+ * @property {Buffer} high
  */
 
 /**
@@ -891,6 +908,8 @@ Drive.FeeResult = FeeResult;
  * @property {number} [previousBlockTimeMs] - timestamp in milliseconds
  * @property {Buffer} proposerProTxHash
  * @property {Buffer} validatorSetQuorumHash
+ * @property {number} proposedAppVersion
+ * @property {number} totalHpmns
  */
 
 /**

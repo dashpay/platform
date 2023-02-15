@@ -69,6 +69,7 @@ pub(crate) mod grove_operations;
 pub mod identity;
 pub mod initialization;
 pub mod object_size_info;
+mod protocol_upgrade;
 pub mod query;
 mod system;
 #[cfg(test)]
@@ -101,8 +102,8 @@ pub struct Drive {
 //             Identities 32                           Balances 96
 //             /        \                         /                   \
 //   Token_Balances 16    Pools 48      WithdrawalTransactions 80    Misc  112
-//       /      \                                /
-//     NUPKH->I 8 UPKH->I 24        SpentAssetLockTransactions 72
+//       /      \                                /                       \
+//     NUPKH->I 8 UPKH->I 24        SpentAssetLockTransactions 72        Versions 120
 
 /// Keys for the root tree.
 #[repr(u8)]
@@ -128,6 +129,8 @@ pub enum RootTree {
     Balances = 96,
     /// Token Balances
     TokenBalances = 16,
+    /// Versions desired by proposers
+    Versions = 120,
 }
 
 /// Storage cost
@@ -158,6 +161,7 @@ impl From<RootTree> for &'static [u8; 1] {
             RootTree::Balances => &[96],
             RootTree::TokenBalances => &[16],
             RootTree::NonUniquePublicKeyKeyHashesToIdentities => &[8],
+            RootTree::Versions => &[120],
         }
     }
 }
@@ -237,6 +241,7 @@ impl Drive {
                             data_contracts_block_cache_size,
                         ),
                         genesis_time_ms,
+                        protocol_versions_counter: None,
                     }),
                 })
             }
@@ -255,6 +260,7 @@ impl Drive {
                 data_contracts_block_cache_size,
             ),
             genesis_time_ms,
+            protocol_versions_counter: None,
         });
     }
 
