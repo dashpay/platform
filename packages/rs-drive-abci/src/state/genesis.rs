@@ -266,10 +266,11 @@ impl Platform {
 
         let document_cbor = document.to_buffer()?;
 
-        let document_stub = Document {
+        let document = Document {
             id: DPNS_DASH_TLD_DOCUMENT_ID,
             properties: document_stub_properties,
             owner_id: contract.owner_id.to_buffer(),
+            revision: None,
         };
 
         let document_type = contract.document_type_for_name("domain")?;
@@ -280,7 +281,7 @@ impl Platform {
                     owned_document_info: OwnedDocumentInfo {
                         //todo: remove cbor and use DocumentInfo::DocumentWithoutSerialization((document, None))
                         document_info: DocumentInfo::DocumentAndSerialization((
-                            document_stub,
+                            document,
                             document_cbor,
                             None,
                         )),

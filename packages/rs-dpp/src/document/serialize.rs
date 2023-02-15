@@ -4,10 +4,12 @@ use crate::data_contract::errors::{DataContractError, StructureError};
 use crate::data_contract::extra::common::bytes_for_system_value_from_tree_map;
 use crate::document::Document;
 use crate::document::DocumentInStateTransition;
+use crate::util::cbor_value::CborBTreeMapHelper;
 use crate::util::deserializer;
 use crate::util::deserializer::SplitProtocolVersionOutcome;
 use crate::ProtocolError;
 use bincode::Options;
+use byteorder::{BigEndian, ReadBytesExt};
 use ciborium::Value;
 use integer_encoding::VarIntWriter;
 use std::collections::BTreeMap;
@@ -22,6 +24,9 @@ impl Document {
     pub fn serialize(&self, document_type: &DocumentType) -> Result<Vec<u8>, ProtocolError> {
         let mut buffer: Vec<u8> = self.id.as_slice().to_vec();
         buffer.extend(self.owner_id.as_slice());
+        if let Some(revision) = self.revision {
+            buffer.extend(revision.to_be_bytes())
+        }
         document_type
             .properties
             .iter()
@@ -56,6 +61,10 @@ impl Document {
         let mut buffer: Vec<u8> = Vec::try_from(self.id).unwrap();
         let mut owner_id = Vec::try_from(self.owner_id).unwrap();
         buffer.append(&mut owner_id);
+
+        if let Some(revision) = self.revision {
+            buffer.extend(revision.to_be_bytes())
+        }
         document_type
             .properties
             .iter()
@@ -92,13 +101,29 @@ impl Document {
         }
         let mut id = [0; 32];
         buf.read_exact(&mut id).map_err(|_| {
-            ProtocolError::DecodingError("error reading from serialized document".to_string())
+            ProtocolError::DecodingError(
+                "error reading from serialized document for id".to_string(),
+            )
         })?;
 
         let mut owner_id = [0; 32];
         buf.read_exact(&mut owner_id).map_err(|_| {
-            ProtocolError::DecodingError("error reading from serialized document".to_string())
+            ProtocolError::DecodingError(
+                "error reading from serialized document for owner id".to_string(),
+            )
         })?;
+
+        // if the document type is mutable then we should deserialize the revision
+        let revision = if document_type.documents_mutable {
+            let revision = buf.read_u32::<BigEndian>().map_err(|_| {
+                ProtocolError::DecodingError(
+                    "error reading revision from serialized document for revision".to_string(),
+                )
+            })?;
+            Some(revision)
+        } else {
+            None
+        };
 
         let properties = document_type
             .properties
@@ -115,6 +140,7 @@ impl Document {
             id,
             properties,
             owner_id,
+            revision,
         })
     }
 
@@ -182,14 +208,18 @@ impl Document {
         }
         .expect("document_id must be 32 bytes");
 
+        let revision = document.remove_optional_integer("$revision")?;
+
         // dev-note: properties is everything other than the id and owner id
         Ok(Document {
             properties: document,
             owner_id,
             id,
+            revision,
         })
     }
 
+    //todo: remove (I think)
     /// Reads a CBOR-serialized document and creates a Document from it with the provided IDs.
     pub fn from_cbor_with_id(
         document_cbor: &[u8],
@@ -222,6 +252,8 @@ impl Document {
                 ))
             })?;
 
+        let revision = properties.get_optional_integer("$revision")?;
+
         // dev-note: properties is everything other than the id and owner id
         Ok(Document {
             properties,
@@ -231,6 +263,7 @@ impl Document {
             id: document_id
                 .try_into()
                 .expect("try_into shouldn't fail, document_id must be 32 bytes"),
+            revision,
         })
     }
 

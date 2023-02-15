@@ -105,10 +105,17 @@ impl CreateRandomDocument for DocumentType {
             })
             .collect();
 
+        let revision = if self.documents_mutable {
+            Some(1)
+        } else {
+            None
+        };
+
         Document {
             id,
             properties,
             owner_id,
+            revision,
         }
     }
 
@@ -152,10 +159,17 @@ impl CreateRandomDocument for DocumentType {
             })
             .collect();
 
+        let revision = if self.documents_mutable {
+            Some(1)
+        } else {
+            None
+        };
+
         Document {
             id,
             properties,
             owner_id,
+            revision,
         }
     }
 }

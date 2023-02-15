@@ -67,6 +67,10 @@ pub struct Document {
     /// The ID of the document's owner.
     #[serde(rename = "$ownerId")]
     pub owner_id: [u8; 32],
+
+    /// The document revision.
+    #[serde(rename = "$revision")]
+    pub revision: Option<u32>,
 }
 
 impl Document {
