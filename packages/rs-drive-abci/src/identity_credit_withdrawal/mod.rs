@@ -796,7 +796,7 @@ mod tests {
             ];
 
             for document in updated_documents {
-                assert_eq!(document.get_u32("$revision").expect("to get $revision"), 2);
+                assert_eq!(document.revision, 2);
 
                 let tx_id: Vec<u8> = document
                     .get_bytes("transactionId")

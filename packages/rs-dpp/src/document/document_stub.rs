@@ -507,18 +507,13 @@ impl DocumentStub {
     }
 
     pub fn increment_revision(&mut self) -> Result<(), ProtocolError> {
-        let property_name = "$revision";
-
         let revision = self.revision;
 
         let new_revision = revision
             .checked_add(1)
             .ok_or(ProtocolError::Overflow("overflow when adding 1"))?;
 
-        self.properties.insert(
-            property_name.to_string(),
-            Value::Integer(Integer::from(new_revision)),
-        );
+        self.revision = new_revision;
 
         Ok(())
     }

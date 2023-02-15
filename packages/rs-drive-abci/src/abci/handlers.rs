@@ -262,7 +262,7 @@ mod tests {
         use drive::fee::epoch::CreditsPerEpoch;
         use drive::fee_pools::epochs::Epoch;
         use drive::rpc::core::MockCoreRPCLike;
-        use drive::tests::helpers::setup::{setup_document, setup_system_data_contract};
+        use drive::tests::helpers::setup::setup_document;
         use rust_decimal::prelude::ToPrimitive;
         use serde_json::json;
         use std::cmp::Ordering;
@@ -297,8 +297,6 @@ mod tests {
 
             let data_contract = load_system_data_contract(SystemDataContract::Withdrawals)
                 .expect("to load system data contract");
-
-            setup_system_data_contract(&platform.drive, &data_contract, Some(&transaction));
 
             // Init withdrawal requests
             let withdrawals: Vec<WithdrawalTransaction> = (0..16)
@@ -592,13 +590,6 @@ mod tests {
             platform
                 .init_chain(init_chain_request, Some(&transaction))
                 .expect("should init chain");
-
-            setup_system_data_contract(
-                &platform.drive,
-                &load_system_data_contract(SystemDataContract::Withdrawals)
-                    .expect("to load system data contract"),
-                Some(&transaction),
-            );
 
             // setup the contract
             let contract = platform.create_mn_shares_contract(Some(&transaction));
