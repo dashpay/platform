@@ -37,15 +37,11 @@ use crate::drive::config::DriveConfig;
 use crate::drive::Drive;
 use crate::fee_pools::epochs::Epoch;
 
-use crate::drive::object_size_info::DocumentInfo::{
-    DocumentRefWithoutSerialization,
-};
+use crate::drive::object_size_info::DocumentInfo::DocumentRefWithoutSerialization;
 use crate::drive::object_size_info::{DocumentAndContractInfo, OwnedDocumentInfo};
 use dpp::data_contract::document_type::DocumentType;
 use dpp::document::document_stub::DocumentStub;
-use dpp::{
-    prelude::{DataContract, Document},
-};
+use dpp::prelude::{DataContract, Document};
 use grovedb::TransactionArg;
 use tempfile::TempDir;
 
