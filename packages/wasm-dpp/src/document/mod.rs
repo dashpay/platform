@@ -185,7 +185,6 @@ impl DocumentWasm {
             }
         }
 
-        // Ok(with_js_error!(self.0.data.serialize(&serializer))?)
         Ok(js_value)
     }
 
