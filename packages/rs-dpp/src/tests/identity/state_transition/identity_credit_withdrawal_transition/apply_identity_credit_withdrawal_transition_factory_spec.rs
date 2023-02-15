@@ -36,7 +36,7 @@ mod apply_identity_credit_withdrawal_transition_factory {
             .apply_identity_credit_withdrawal_transition(&state_transition)
             .await
         {
-            Ok(_) => assert!(false, "should not be able to apply state transition"),
+            Ok(_) => panic!("should not be able to apply state transition"),
             Err(e) => {
                 assert_eq!(e.to_string(), "Withdrawals data contract not found");
             }
@@ -44,12 +44,13 @@ mod apply_identity_credit_withdrawal_transition_factory {
     }
 
     #[tokio::test]
-    async fn should_call_state_repository_methods() {
+    async fn should_create_withdrawal_and_reduce_balance() {
         let block_time_seconds = 1675709306;
 
-        let mut state_transition = IdentityCreditWithdrawalTransition::default();
-
-        state_transition.amount = 10;
+        let state_transition = IdentityCreditWithdrawalTransition {
+            amount: 10,
+            ..Default::default()
+        };
 
         let mut state_repository = MockStateRepositoryLike::default();
 
@@ -82,10 +83,8 @@ mod apply_identity_credit_withdrawal_transition_factory {
             .expect_create_document()
             .times(1)
             .withf(move |doc, _| {
-                let created_at_match =
-                    doc.created_at == Some((block_time_seconds as i64 * 1000) as i64);
-                let updated_at_match =
-                    doc.created_at == Some((block_time_seconds as i64 * 1000) as i64);
+                let created_at_match = doc.created_at == Some(block_time_seconds as i64 * 1000);
+                let updated_at_match = doc.created_at == Some(block_time_seconds as i64 * 1000);
 
                 let document_data_match = doc.data
                     == json!({
