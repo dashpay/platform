@@ -93,7 +93,7 @@ function prepareProposalHandlerFactory(
     const blockFees = {
       storageFee: 0,
       processingFee: 0,
-      refundsPerEpoch: { },
+      refundsPerEpoch: {},
     };
 
     let validTxCount = 0;

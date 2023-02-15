@@ -50,6 +50,7 @@ function beginBlockFactory(
    * @param {Long} request.proposedAppVersion
    * @param {ITimestamp} request.time
    * @param {Buffer} request.proposerProTxHash
+   * @param {Buffer} request.quorumHash
    * @param {BaseLogger} contextLogger
    *
    * @return {Promise<void>}
@@ -64,7 +65,7 @@ function beginBlockFactory(
       proposerProTxHash,
       proposedAppVersion,
       round,
-      // quorumHash, TODO: revisit once Tenderdash sents something here
+      quorumHash,
     } = request;
 
     if (proposalBlockExecutionContext.isEmpty()) {
