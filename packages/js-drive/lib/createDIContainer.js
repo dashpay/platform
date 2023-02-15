@@ -8,6 +8,8 @@ const {
 
 const fs = require('fs');
 
+const { AsyncLocalStorage } = require('node:async_hooks');
+
 const Long = require('long');
 
 const RSDrive = require('@dashevo/rs-drive');
@@ -29,39 +31,45 @@ const createABCIServer = require('@dashevo/abci');
 
 const protocolVersion = require('@dashevo/dpp/lib/version/protocolVersion');
 
+const calculateOperationFees = require('@dashevo/dpp/lib/stateTransition/fee/calculateOperationFees');
+const calculateStateTransitionFeeFactory = require('@dashevo/dpp/lib/stateTransition/fee/calculateStateTransitionFeeFactory');
+
 const decodeProtocolEntityFactory = require('@dashevo/dpp/lib/decodeProtocolEntityFactory');
-
 const featureFlagsSystemIds = require('@dashevo/feature-flags-contract/lib/systemIds');
+
 const featureFlagsDocuments = require('@dashevo/feature-flags-contract/schema/feature-flags-documents.json');
-
 const dpnsSystemIds = require('@dashevo/dpns-contract/lib/systemIds');
+
 const dpnsDocuments = require('@dashevo/dpns-contract/schema/dpns-contract-documents.json');
-
 const masternodeRewardsSystemIds = require('@dashevo/masternode-reward-shares-contract/lib/systemIds');
-const masternodeRewardsDocuments = require('@dashevo/masternode-reward-shares-contract/schema/masternode-reward-shares-documents.json');
 
+const masternodeRewardsDocuments = require('@dashevo/masternode-reward-shares-contract/schema/masternode-reward-shares-documents.json');
 const dashpaySystemIds = require('@dashevo/dashpay-contract/lib/systemIds');
+
 const dashpayDocuments = require('@dashevo/dashpay-contract/schema/dashpay.schema.json');
+
+const withdrawalsSystemIds = require('@dashevo/withdrawals-contract/lib/systemIds');
+const withdrawalsDocuments = require('@dashevo/withdrawals-contract/schema/withdrawals-documents.json');
+const calculateStateTransitionFeeFromOperationsFactory = require('@dashevo/dpp/lib/stateTransition/fee/calculateStateTransitionFeeFromOperationsFactory');
 
 const packageJSON = require('../package.json');
 
 const ZMQClient = require('./core/ZmqClient');
 
 const sanitizeUrl = require('./util/sanitizeUrl');
-
 const LatestCoreChainLock = require('./core/LatestCoreChainLock');
 
 const GroveDBStore = require('./storage/GroveDBStore');
+
 const IdentityStoreRepository = require('./identity/IdentityStoreRepository');
 
-const PublicKeyToIdentitiesStoreRepository = require(
-  './identity/PublicKeyToIdentitiesStoreRepository',
+const IdentityPublicKeyStoreRepository = require(
+  './identity/IdentityPublicKeyStoreRepository',
 );
-
 const DataContractStoreRepository = require('./dataContract/DataContractStoreRepository');
-
 const fetchDocumentsFactory = require('./document/fetchDocumentsFactory');
 const proveDocumentsFactory = require('./document/proveDocumentsFactory');
+
 const fetchDataContractFactory = require('./document/fetchDataContractFactory');
 const BlockExecutionContext = require('./blockExecution/BlockExecutionContext');
 
@@ -69,16 +77,15 @@ const unserializeStateTransitionFactory = require(
   './abci/handlers/stateTransition/unserializeStateTransitionFactory',
 );
 const DriveStateRepository = require('./dpp/DriveStateRepository');
-
 const CachedStateRepositoryDecorator = require('./dpp/CachedStateRepositoryDecorator');
 const LoggedStateRepositoryDecorator = require('./dpp/LoggedStateRepositoryDecorator');
 const dataContractQueryHandlerFactory = require('./abci/handlers/query/dataContractQueryHandlerFactory');
 const identityQueryHandlerFactory = require('./abci/handlers/query/identityQueryHandlerFactory');
+
 const documentQueryHandlerFactory = require('./abci/handlers/query/documentQueryHandlerFactory');
+
 const identitiesByPublicKeyHashesQueryHandlerFactory = require('./abci/handlers/query/identitiesByPublicKeyHashesQueryHandlerFactory');
-
 const getProofsQueryHandlerFactory = require('./abci/handlers/query/getProofsQueryHandlerFactory');
-
 const wrapInErrorHandlerFactory = require('./abci/errors/wrapInErrorHandlerFactory');
 const errorHandlerFactory = require('./errorHandlerFactory');
 const checkTxHandlerFactory = require('./abci/handlers/checkTxHandlerFactory');
@@ -87,50 +94,47 @@ const infoHandlerFactory = require('./abci/handlers/infoHandlerFactory');
 const extendVoteHandlerFactory = require('./abci/handlers/extendVoteHandlerFactory');
 const finalizeBlockHandlerFactory = require('./abci/handlers/finalizeBlockHandlerFactory');
 const prepareProposalHandlerFactory = require('./abci/handlers/prepareProposalHandlerFactory');
+
 const processProposalHandlerFactory = require('./abci/handlers/processProposalHandlerFactory');
 const verifyVoteExtensionHandlerFactory = require('./abci/handlers/verifyVoteExtensionHandlerFactory');
-
 const beginBlockFactory = require('./abci/handlers/proposal/beginBlockFactory');
 const deliverTxFactory = require('./abci/handlers/proposal/deliverTxFactory');
 const endBlockFactory = require('./abci/handlers/proposal/endBlockFactory');
 const rotateAndCreateValidatorSetUpdateFactory = require('./abci/handlers/proposal/rotateAndCreateValidatorSetUpdateFactory');
 const createConsensusParamUpdateFactory = require('./abci/handlers/proposal/createConsensusParamUpdateFactory');
+
 const createCoreChainLockUpdateFactory = require('./abci/handlers/proposal/createCoreChainLockUpdateFactory');
 const verifyChainLockFactory = require('./abci/handlers/proposal/verifyChainLockFactory');
-
 const queryHandlerFactory = require('./abci/handlers/queryHandlerFactory');
 const waitForCoreSyncFactory = require('./core/waitForCoreSyncFactory');
 const waitForCoreChainLockSyncFactory = require('./core/waitForCoreChainLockSyncFactory');
 const updateSimplifiedMasternodeListFactory = require('./core/updateSimplifiedMasternodeListFactory');
+
 const waitForChainLockedHeightFactory = require('./core/waitForChainLockedHeightFactory');
 const SimplifiedMasternodeList = require('./core/SimplifiedMasternodeList');
-
 const SpentAssetLockTransactionsRepository = require('./identity/SpentAssetLockTransactionsRepository');
-const enrichErrorWithConsensusErrorFactory = require('./abci/errors/enrichErrorWithConsensusLoggerFactory');
+const enrichErrorWithConsensusErrorFactory = require('./abci/errors/enrichErrorWithContextLoggerFactory');
 const closeAbciServerFactory = require('./abci/closeAbciServerFactory');
 const getLatestFeatureFlagFactory = require('./featureFlag/getLatestFeatureFlagFactory');
 const getFeatureFlagForHeightFactory = require('./featureFlag/getFeatureFlagForHeightFactory');
 const ValidatorSet = require('./validator/ValidatorSet');
 const createValidatorSetUpdate = require('./abci/handlers/validator/createValidatorSetUpdate');
 const fetchQuorumMembersFactory = require('./core/fetchQuorumMembersFactory');
-const getRandomQuorum = require('./core/getRandomQuorum');
+const getRandomQuorumFactory = require('./core/getRandomQuorumFactory');
+
 const createQueryResponseFactory = require('./abci/handlers/query/response/createQueryResponseFactory');
 const BlockExecutionContextRepository = require('./blockExecution/BlockExecutionContextRepository');
-
-const registerSystemDataContractFactory = require('./state/registerSystemDataContractFactory');
-const registerTopLevelDomainFactory = require('./state/registerTopLevelDomainFactory');
 const synchronizeMasternodeIdentitiesFactory = require('./identity/masternode/synchronizeMasternodeIdentitiesFactory');
 const createMasternodeIdentityFactory = require('./identity/masternode/createMasternodeIdentityFactory');
 const handleNewMasternodeFactory = require('./identity/masternode/handleNewMasternodeFactory');
 const handleUpdatedPubKeyOperatorFactory = require('./identity/masternode/handleUpdatedPubKeyOperatorFactory');
 const handleUpdatedVotingAddressFactory = require('./identity/masternode/handleUpdatedVotingAddressFactory');
-const registerSystemDataContractsFactory = require('./abci/handlers/state/registerSystemDataContractsFactory');
 const createRewardShareDocumentFactory = require('./identity/masternode/createRewardShareDocumentFactory');
 const handleRemovedMasternodeFactory = require('./identity/masternode/handleRemovedMasternodeFactory');
 const handleUpdatedScriptPayoutFactory = require('./identity/masternode/handleUpdatedScriptPayoutFactory');
+
 const getWithdrawPubKeyTypeFromPayoutScriptFactory = require('./identity/masternode/getWithdrawPubKeyTypeFromPayoutScriptFactory');
 const getPublicKeyFromPayoutScript = require('./identity/masternode/getPublicKeyFromPayoutScript');
-
 const DocumentRepository = require('./document/DocumentRepository');
 const ExecutionTimer = require('./util/ExecutionTimer');
 const noopLoggerInstance = require('./util/noopLogger');
@@ -138,6 +142,8 @@ const fetchTransactionFactory = require('./core/fetchTransactionFactory');
 const LastSyncedCoreHeightRepository = require('./identity/masternode/LastSyncedCoreHeightRepository');
 const fetchSimplifiedMNListFactory = require('./core/fetchSimplifiedMNListFactory');
 const processProposalFactory = require('./abci/handlers/proposal/processProposalFactory');
+const createContextLoggerFactory = require('./abci/errors/createContextLoggerFactory');
+const IdentityBalanceStoreRepository = require('./identity/IdentityBalanceStoreRepository');
 
 /**
  *
@@ -164,6 +170,8 @@ const processProposalFactory = require('./abci/handlers/proposal/processProposal
  * @param {string} options.FEATURE_FLAGS_SECOND_PUBLIC_KEY
  * @param {string} options.MASTERNODE_REWARD_SHARES_MASTER_PUBLIC_KEY
  * @param {string} options.MASTERNODE_REWARD_SHARES_SECOND_PUBLIC_KEY
+ * @param {string} options.WITHDRAWALS_MASTER_PUBLIC_KEY
+ * @param {string} options.WITHDRAWALS_SECOND_PUBLIC_KEY
  * @param {string} options.INITIAL_CORE_CHAINLOCKED_HEIGHT
  * @param {string} options.VALIDATOR_SET_LLMQ_TYPE
  * @param {string} options.TENDERDASH_P2P_PORT
@@ -207,6 +215,14 @@ function createDIContainer(options) {
 
   if (!options.MASTERNODE_REWARD_SHARES_SECOND_PUBLIC_KEY) {
     throw new Error('MASTERNODE_REWARD_SHARES_SECOND_PUBLIC_KEY must be set');
+  }
+
+  if (!options.WITHDRAWALS_MASTER_PUBLIC_KEY) {
+    throw new Error('WITHDRAWALS_MASTER_PUBLIC_KEY must be set');
+  }
+
+  if (!options.WITHDRAWALS_SECOND_PUBLIC_KEY) {
+    throw new Error('WITHDRAWALS_SECOND_PUBLIC_KEY must be set');
   }
 
   const container = createAwilixContainer({
@@ -333,6 +349,19 @@ function createDIContainer(options) {
       ),
     ),
     dashpayDocuments: asValue(dashpayDocuments),
+    withdrawalsContractId: asValue(Identifier.from(withdrawalsSystemIds.contractId)),
+    withdrawalsOwnerId: asValue(Identifier.from(withdrawalsSystemIds.ownerId)),
+    withdrawalsOwnerMasterPublicKey: asValue(
+      PublicKey.fromString(
+        options.WITHDRAWALS_MASTER_PUBLIC_KEY,
+      ),
+    ),
+    withdrawalsOwnerSecondPublicKey: asValue(
+      PublicKey.fromString(
+        options.WITHDRAWALS_SECOND_PUBLIC_KEY,
+      ),
+    ),
+    withdrawalsDocuments: asValue(withdrawalsDocuments),
     tenderdashP2pPort: asValue(options.TENDERDASH_P2P_PORT),
   });
 
@@ -350,8 +379,8 @@ function createDIContainer(options) {
     latestCoreChainLock: asValue(new LatestCoreChainLock()),
     simplifiedMasternodeList: asClass(SimplifiedMasternodeList).proxy().singleton(),
     fetchQuorumMembers: asFunction(fetchQuorumMembersFactory),
-    getRandomQuorum: asValue(getRandomQuorum),
     fetchSimplifiedMNList: asFunction(fetchSimplifiedMNListFactory),
+    getRandomQuorum: asFunction(getRandomQuorumFactory),
     coreZMQClient: asFunction((
       coreZMQHost,
       coreZMQPort,
@@ -450,7 +479,6 @@ function createDIContainer(options) {
       dataContractsGlobalCacheSize,
       dataContractsBlockCacheSize,
     }))
-      // TODO: With signed state rotation we need to dispose each groveDB store.
       .disposer(async (rsDrive) => {
         // Flush data on disk
         await rsDrive.getGroveDB().flush();
@@ -475,7 +503,9 @@ function createDIContainer(options) {
   container.register({
     identityRepository: asClass(IdentityStoreRepository).singleton(),
 
-    publicKeyToIdentitiesRepository: asClass(PublicKeyToIdentitiesStoreRepository).singleton(),
+    identityBalanceRepository: asClass(IdentityBalanceStoreRepository).singleton(),
+
+    identityPublicKeyRepository: asClass(IdentityPublicKeyStoreRepository).singleton(),
 
     synchronizeMasternodeIdentities: asFunction(synchronizeMasternodeIdentitiesFactory).singleton(),
 
@@ -499,6 +529,40 @@ function createDIContainer(options) {
       .singleton(),
 
     getPublicKeyFromPayoutScript: asValue(getPublicKeyFromPayoutScript),
+
+    systemIdentityPublicKeys: asFunction((
+      masternodeRewardSharesOwnerMasterPublicKey,
+      masternodeRewardSharesOwnerSecondPublicKey,
+      featureFlagsOwnerMasterPublicKey,
+      featureFlagsOwnerSecondPublicKey,
+      dpnsOwnerMasterPublicKey,
+      dpnsOwnerSecondPublicKey,
+      dashpayOwnerMasterPublicKey,
+      dashpayOwnerSecondPublicKey,
+      withdrawalsOwnerMasterPublicKey,
+      withdrawalsOwnerSecondPublicKey,
+    ) => ({
+      masternodeRewardSharesContractOwner: {
+        master: masternodeRewardSharesOwnerMasterPublicKey.toBuffer(),
+        high: masternodeRewardSharesOwnerSecondPublicKey.toBuffer(),
+      },
+      featureFlagsContractOwner: {
+        master: featureFlagsOwnerMasterPublicKey.toBuffer(),
+        high: featureFlagsOwnerSecondPublicKey.toBuffer(),
+      },
+      dpnsContractOwner: {
+        master: dpnsOwnerMasterPublicKey.toBuffer(),
+        high: dpnsOwnerSecondPublicKey.toBuffer(),
+      },
+      withdrawalsContractOwner: {
+        master: dashpayOwnerMasterPublicKey.toBuffer(),
+        high: dashpayOwnerSecondPublicKey.toBuffer(),
+      },
+      dashpayContractOwner: {
+        master: withdrawalsOwnerMasterPublicKey.toBuffer(),
+        high: withdrawalsOwnerSecondPublicKey.toBuffer(),
+      },
+    })),
   });
 
   /**
@@ -546,9 +610,17 @@ function createDIContainer(options) {
   container.register({
     decodeProtocolEntity: asFunction(decodeProtocolEntityFactory),
 
+    calculateOperationFees: asValue(calculateOperationFees),
+
+    calculateStateTransitionFeeFromOperations:
+      asFunction(calculateStateTransitionFeeFromOperationsFactory),
+
+    calculateStateTransitionFee: asFunction(calculateStateTransitionFeeFactory),
+
     stateRepository: asFunction((
       identityRepository,
-      publicKeyToIdentitiesRepository,
+      identityBalanceRepository,
+      identityPublicKeyRepository,
       dataContractRepository,
       fetchDocuments,
       documentRepository,
@@ -560,7 +632,8 @@ function createDIContainer(options) {
     ) => {
       const stateRepository = new DriveStateRepository(
         identityRepository,
-        publicKeyToIdentitiesRepository,
+        identityBalanceRepository,
+        identityPublicKeyRepository,
         dataContractRepository,
         fetchDocuments,
         documentRepository,
@@ -578,7 +651,8 @@ function createDIContainer(options) {
 
     transactionalStateRepository: asFunction((
       identityRepository,
-      publicKeyToIdentitiesRepository,
+      identityBalanceRepository,
+      identityPublicKeyRepository,
       dataContractRepository,
       fetchDocuments,
       documentRepository,
@@ -591,7 +665,8 @@ function createDIContainer(options) {
     ) => {
       const stateRepository = new DriveStateRepository(
         identityRepository,
-        publicKeyToIdentitiesRepository,
+        identityBalanceRepository,
+        identityPublicKeyRepository,
         dataContractRepository,
         fetchDocuments,
         documentRepository,
@@ -675,24 +750,11 @@ function createDIContainer(options) {
   });
 
   /**
-   * State
-   */
-  container.register({
-    registerSystemDataContract: asFunction(registerSystemDataContractFactory).singleton(),
-    registerSystemDataContracts: asFunction(registerSystemDataContractsFactory).singleton(),
-    registerTopLevelDomain: asFunction(registerTopLevelDomainFactory).singleton(),
-    dashDomainDocumentId: asValue(
-      Identifier.from('FXyN2NZAdRFADgBQfb1XM1Qq7pWoEcgSWj1GaiQJqcrS'),
-    ),
-    dashPreorderSalt: asValue(
-      Buffer.from('e0b508c5a36825a206693a1f414aa13edbecf43c41e3c799ea9e737b4f9aa226', 'hex'),
-    ),
-  });
-
-  /**
    * Register ABCI handlers
    */
   container.register({
+    createContextLogger: asFunction(createContextLoggerFactory),
+    abciAsyncLocalStorage: asValue(new AsyncLocalStorage()),
     createQueryResponse: asFunction(createQueryResponseFactory).singleton(),
     createValidatorSetUpdate: asValue(createValidatorSetUpdate),
     identityQueryHandler: asFunction(identityQueryHandlerFactory).singleton(),
@@ -730,11 +792,10 @@ function createDIContainer(options) {
 
     wrappedDeliverTx: asFunction((
       wrapInErrorHandler,
-      enrichErrorWithConsensusError,
+      enrichErrorWithContextError,
       deliverTx,
     ) => wrapInErrorHandler(
-      enrichErrorWithConsensusError(deliverTx),
-      { respondWithInternalError: true },
+      enrichErrorWithContextError(deliverTx),
     )).singleton(),
 
     endBlock: asFunction(endBlockFactory).singleton(),
@@ -768,7 +829,7 @@ function createDIContainer(options) {
     verifyVoteExtensionHandler: asFunction(verifyVoteExtensionHandlerFactory).singleton(),
 
     wrapInErrorHandler: asFunction(wrapInErrorHandlerFactory).singleton(),
-    enrichErrorWithConsensusError: asFunction(enrichErrorWithConsensusErrorFactory).singleton(),
+    enrichErrorWithContextError: asFunction(enrichErrorWithConsensusErrorFactory).singleton(),
     errorHandler: asFunction(errorHandlerFactory).singleton(),
 
     abciHandlers: asFunction((
@@ -776,7 +837,7 @@ function createDIContainer(options) {
       checkTxHandler,
       initChainHandler,
       wrapInErrorHandler,
-      enrichErrorWithConsensusError,
+      enrichErrorWithContextError,
       queryHandler,
       extendVoteHandler,
       finalizeBlockHandler,
@@ -784,15 +845,15 @@ function createDIContainer(options) {
       processProposalHandler,
       verifyVoteExtensionHandler,
     ) => ({
-      info: infoHandler,
-      checkTx: wrapInErrorHandler(checkTxHandler, { respondWithInternalError: true }),
-      initChain: initChainHandler,
-      query: wrapInErrorHandler(queryHandler, { respondWithInternalError: true }),
-      extendVote: enrichErrorWithConsensusError(extendVoteHandler),
-      finalizeBlock: enrichErrorWithConsensusError(finalizeBlockHandler),
-      prepareProposal: enrichErrorWithConsensusError(prepareProposalHandler),
-      processProposal: enrichErrorWithConsensusError(processProposalHandler),
-      verifyVoteExtension: enrichErrorWithConsensusError(verifyVoteExtensionHandler),
+      info: enrichErrorWithContextError(infoHandler),
+      checkTx: wrapInErrorHandler(enrichErrorWithContextError(checkTxHandler)),
+      initChain: enrichErrorWithContextError(initChainHandler),
+      query: wrapInErrorHandler(enrichErrorWithContextError(queryHandler)),
+      extendVote: enrichErrorWithContextError(extendVoteHandler),
+      finalizeBlock: enrichErrorWithContextError(finalizeBlockHandler),
+      prepareProposal: enrichErrorWithContextError(prepareProposalHandler),
+      processProposal: enrichErrorWithContextError(processProposalHandler),
+      verifyVoteExtension: enrichErrorWithContextError(verifyVoteExtensionHandler),
     })).singleton(),
 
     closeAbciServer: asFunction(closeAbciServerFactory).singleton(),

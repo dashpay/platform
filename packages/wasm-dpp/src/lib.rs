@@ -1,3 +1,5 @@
+extern crate core;
+
 pub use dash_platform_protocol::*;
 pub use data_contract::*;
 pub use data_contract_factory::*;
@@ -16,9 +18,11 @@ mod identity;
 mod metadata;
 mod state_repository;
 mod state_transition;
+mod version;
 
 mod utils;
 
 mod bls_adapter;
 mod buffer;
+mod lodash;
 mod validation;

@@ -8,7 +8,7 @@ const {
 
 const statuses = require('./statuses');
 
-const addToFeeTxResults = require('./fees/addToFeeTxResults');
+const addStateTransitionFeesToBlockFees = require('./fees/addStateTransitionFeesToBlockFees');
 
 /**
  *
@@ -29,11 +29,11 @@ function processProposalFactory(
 ) {
   /**
    * @param {abci.RequestProcessProposal} request
-   * @param {BaseLogger} consensusLogger
+   * @param {BaseLogger} contextLogger
    *
    * @typedef processProposal
    */
-  async function processProposal(request, consensusLogger) {
+  async function processProposal(request, contextLogger) {
     const {
       height,
       txs,
@@ -42,10 +42,11 @@ function processProposalFactory(
       proposedLastCommit: lastCommitInfo,
       time,
       proposerProTxHash,
+      proposedAppVersion,
       round,
     } = request;
 
-    consensusLogger.info(`Processing a block proposal for height #${height} round #${round}`);
+    contextLogger.info(`Processing a block proposal for height #${height} round #${round}`);
 
     await beginBlock(
       {
@@ -55,17 +56,17 @@ function processProposalFactory(
         version,
         time,
         proposerProTxHash: Buffer.from(proposerProTxHash),
+        proposedAppVersion,
         round,
       },
-      consensusLogger,
+      contextLogger,
     );
 
     const txResults = [];
-    const feeResults = {
+    const blockFees = {
       storageFee: 0,
       processingFee: 0,
-      feeRefunds: { },
-      feeRefundsSum: 0,
+      refundsPerEpoch: { },
     };
 
     let validTxCount = 0;
@@ -76,12 +77,12 @@ function processProposalFactory(
         code,
         info,
         fees,
-      } = await wrappedDeliverTx(tx, round, consensusLogger);
+      } = await wrappedDeliverTx(tx, round, contextLogger);
 
       if (code === 0) {
         validTxCount += 1;
         // TODO We should calculate fees for invalid transitions as well
-        addToFeeTxResults(feeResults, fees);
+        addStateTransitionFeesToBlockFees(blockFees, fees);
       } else {
         invalidTxCount += 1;
       }
@@ -96,7 +97,7 @@ function processProposalFactory(
     }
 
     // Revert consensus logger after deliverTx
-    proposalBlockExecutionContext.setConsensusLogger(consensusLogger);
+    proposalBlockExecutionContext.setContextLogger(contextLogger);
 
     const {
       consensusParamUpdates,
@@ -105,13 +106,13 @@ function processProposalFactory(
     } = await endBlock({
       height,
       round,
-      fees: feeResults,
+      fees: blockFees,
       coreChainLockedHeight,
-    }, consensusLogger);
+    }, contextLogger);
 
     const roundExecutionTime = executionTimer.getTimer('roundExecution', true);
 
-    consensusLogger.info(
+    contextLogger.info(
       {
         roundExecutionTime,
         validTxCount,

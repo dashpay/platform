@@ -20,7 +20,7 @@ pub trait DataValidator {
 }
 
 /// Async validator validates data of given type
-#[async_trait]
+#[async_trait(?Send)]
 pub trait AsyncDataValidator {
     // TODO, when GAT is available remove the reference in method and use: `type Item<'a>`
     type Item;
@@ -39,9 +39,13 @@ pub trait DataValidatorWithContext {
 }
 
 /// Async validator takes additionally an execution context and generates fee
-#[async_trait]
+#[async_trait(?Send)]
 pub trait AsyncDataValidatorWithContext {
     // TODO, when GAT is available remove the reference in method and use: `type Item<'a>`
     type Item;
-    async fn validate(&self, data: &Self::Item) -> Result<SimpleValidationResult, ProtocolError>;
+    async fn validate(
+        &self,
+        data: &Self::Item,
+        execution_context: &StateTransitionExecutionContext,
+    ) -> Result<SimpleValidationResult, ProtocolError>;
 }

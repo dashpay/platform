@@ -14,7 +14,8 @@ The WASM JavaScript binding of the Rust implementation of the [Dash Platform Pro
 In order for this binding to work, you have to have a rs-platform cloned
 alongside platform repo, so you can have access to the rust dpp.
 
-## IMPORTANT! Build on a Mac
+## IMPORTANT! 
+### Build on a Mac
 
 To build on a mac, you need to perform two steps. First, install `clang`
 from the homebrew. XCode's `clang` doesn't ship with the WASM support. Second,
@@ -23,6 +24,9 @@ just adding llvm to the `.zshrc` doesn't seem to work - run
 instead.
 
 Alternatively, you can add the following to the `yarn workspace @dashevo/wasm-dpp build:node:mac` instead.
+
+### Class names minification
+Library consumers must ignore class names minification for `@dashevo/wasm-dpp` library in their bundlers.  
 
 ## Table of Contents
 

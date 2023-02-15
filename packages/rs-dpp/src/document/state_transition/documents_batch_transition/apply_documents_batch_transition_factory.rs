@@ -1,11 +1,14 @@
 use std::collections::HashMap;
 
-use dashcore::Block;
+use dashcore::{consensus, BlockHeader};
 use serde_json::Value;
 
 use crate::{
-    document::Document, prelude::Identifier, state_repository::StateRepositoryLike,
-    state_transition::StateTransitionLike, ProtocolError,
+    document::{errors::DocumentError, Document},
+    prelude::Identifier,
+    state_repository::StateRepositoryLike,
+    state_transition::StateTransitionLike,
+    ProtocolError,
 };
 
 use super::{
@@ -73,15 +76,19 @@ pub async fn apply_documents_batch_transition(
             }
             DocumentTransition::Replace(dt) => {
                 let document = if state_transition.execution_context.is_dry_run() {
-                    let latest_platform_block: Block = state_repository
+                    let block_header_bytes = state_repository
                         .fetch_latest_platform_block_header()
                         .await?;
-                    let timestamp_millis = (latest_platform_block.header.time * 1000) as i64;
+
+                    let block_header: BlockHeader = consensus::deserialize(&block_header_bytes)
+                        .map_err(|e| ProtocolError::Generic(e.to_string()))?;
+
+                    let timestamp_millis = (block_header.time * 1000) as i64;
                     document_from_transition_replace(dt, state_transition, timestamp_millis)
                 } else {
                     let mut document = fetched_documents_by_id
                         .get(&dt.base.id)
-                        .ok_or(ProtocolError::DocumentNotProvided {
+                        .ok_or(DocumentError::DocumentNotProvidedError {
                             document_transition: document_transition.clone(),
                         })?
                         .to_owned()
@@ -117,10 +124,10 @@ fn document_from_transition_create(
     // TODO cloning is costly. Probably the [`Document`] should have properties of type `Cov<'a, K>`
     Document {
         protocol_version: state_transition.protocol_version,
-        id: document_create_transition.base.id.clone(),
+        id: document_create_transition.base.id,
         document_type: document_create_transition.base.document_type.clone(),
-        data_contract_id: document_create_transition.base.data_contract_id.clone(),
-        owner_id: state_transition.owner_id.clone(),
+        data_contract_id: document_create_transition.base.data_contract_id,
+        owner_id: state_transition.owner_id,
         data: document_create_transition
             .data
             .as_ref()
@@ -146,10 +153,10 @@ fn document_from_transition_replace(
     // TODO cloning is costly. Probably the [`Document`] should have properties of type `Cov<'a, K>`
     Document {
         protocol_version: state_transition.protocol_version,
-        id: document_replace_transition.base.id.clone(),
+        id: document_replace_transition.base.id,
         document_type: document_replace_transition.base.document_type.clone(),
-        data_contract_id: document_replace_transition.base.data_contract_id.clone(),
-        owner_id: state_transition.owner_id.clone(),
+        data_contract_id: document_replace_transition.base.data_contract_id,
+        owner_id: state_transition.owner_id,
         data: document_replace_transition
             .data
             .as_ref()
@@ -170,8 +177,10 @@ fn document_from_transition_replace(
 
 #[cfg(test)]
 mod test {
+    use dashcore::consensus;
     use serde_json::{json, Value};
 
+    use crate::tests::utils::new_block_header;
     use crate::{
         document::{
             document_transition::{Action, DocumentTransitionObjectLike},
@@ -183,7 +192,7 @@ mod test {
             fixtures::{
                 get_data_contract_fixture, get_document_transitions_fixture, get_documents_fixture,
             },
-            utils::{create_empty_block, generate_random_identifier_struct},
+            utils::generate_random_identifier_struct,
         },
     };
 
@@ -223,7 +232,7 @@ mod test {
             .returning(|_, _| Ok(()));
         state_repository
             .expect_fetch_latest_platform_block_header()
-            .returning(|| Ok(create_empty_block(None)));
+            .returning(|| Ok(consensus::serialize(&new_block_header(None))));
 
         let result = apply_documents_batch_transition(&state_repository, &state_transition).await;
         assert!(result.is_ok());

@@ -289,16 +289,6 @@ module.exports = {
                   required: ['port'],
                   additionalProperties: false,
                 },
-                grpc: {
-                  type: 'object',
-                  properties: {
-                    port: {
-                      $ref: '#/definitions/port',
-                    },
-                  },
-                  required: ['port'],
-                  additionalProperties: false,
-                },
                 rateLimiter: {
                   type: 'object',
                   properties: {
@@ -356,7 +346,7 @@ module.exports = {
                   additionalProperties: false,
                 },
               },
-              required: ['docker', 'http', 'grpc', 'rateLimiter', 'ssl'],
+              required: ['docker', 'http', 'rateLimiter', 'ssl'],
               additionalProperties: false,
             },
             api: {
@@ -491,6 +481,9 @@ module.exports = {
                 nodeKey: {
                   type: 'object',
                 },
+                moniker: {
+                  type: ['string', 'null'],
+                },
                 genesis: {
                   type: 'object',
                 },
@@ -498,7 +491,8 @@ module.exports = {
                   type: ['string', 'null'],
                 },
               },
-              required: ['docker', 'p2p', 'rpc', 'consensus', 'nodeKey', 'genesis', 'nodeId'],
+              required: ['docker', 'p2p', 'rpc', 'consensus',
+                'nodeKey', 'moniker', 'genesis', 'nodeId'],
               additionalProperties: false,
             },
           },
@@ -621,8 +615,34 @@ module.exports = {
           required: ['contract', 'masterPublicKey', 'secondPublicKey'],
           additionalProperties: false,
         },
+        withdrawals: {
+          type: 'object',
+          properties: {
+            contract: {
+              type: 'object',
+              properties: {
+                id: {
+                  type: ['string', 'null'],
+                  minLength: 1,
+                },
+              },
+              required: ['id'],
+              additionalProperties: false,
+            },
+            masterPublicKey: {
+              type: ['string', 'null'],
+              minLength: 1,
+            },
+            secondPublicKey: {
+              type: ['string', 'null'],
+              minLength: 1,
+            },
+          },
+          required: ['contract', 'masterPublicKey', 'secondPublicKey'],
+          additionalProperties: false,
+        },
       },
-      required: ['dapi', 'drive', 'dpns', 'dashpay', 'featureFlags', 'sourcePath', 'masternodeRewardShares'],
+      required: ['dapi', 'drive', 'dpns', 'dashpay', 'featureFlags', 'sourcePath', 'masternodeRewardShares', 'withdrawals'],
       additionalProperties: false,
     },
     dashmate: {

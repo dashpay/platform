@@ -1,14 +1,14 @@
 use std::collections::HashMap;
+use std::sync::Arc;
 
-use crate::version::LATEST_VERSION;
-use crate::{
-    document::{
-        document_factory::DocumentFactory,
-        document_transition::{Action, DocumentTransition},
-        Document,
-    },
-    mocks,
+use crate::document::fetch_and_validate_data_contract::DataContractFetcherAndValidator;
+use crate::document::{
+    document_factory::DocumentFactory,
+    document_transition::{Action, DocumentTransition},
+    Document,
 };
+use crate::state_repository::MockStateRepositoryLike;
+use crate::version::LATEST_VERSION;
 
 use super::{get_data_contract_fixture, get_document_validator_fixture, get_documents_fixture};
 
@@ -18,7 +18,7 @@ pub fn get_document_transitions_fixture(
     let document_factory = DocumentFactory::new(
         LATEST_VERSION,
         get_document_validator_fixture(),
-        mocks::FetchAndValidateDataContract {},
+        DataContractFetcherAndValidator::new(Arc::new(MockStateRepositoryLike::new())),
     );
 
     let mut documents_collected: HashMap<Action, Vec<Document>> = documents.into_iter().collect();

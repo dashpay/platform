@@ -1,16 +1,44 @@
-use crate::drive::contract::{all_contracts_global_root_path, contract_root_path};
+// MIT LICENSE
+//
+// Copyright (c) 2022 Dash Core Group
+//
+// Permission is hereby granted, free of charge, to any
+// person obtaining a copy of this software and associated
+// documentation files (the "Software"), to deal in the
+// Software without restriction, including without
+// limitation the rights to use, copy, modify, merge,
+// publish, distribute, sublicense, and/or sell copies of
+// the Software, and to permit persons to whom the Software
+// is furnished to do so, subject to the following
+// conditions:
+//
+// The above copyright notice and this permission notice
+// shall be included in all copies or substantial portions
+// of the Software.
+//
+// THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF
+// ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED
+// TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A
+// PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT
+// SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY
+// CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION
+// OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR
+// IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
+// DEALINGS IN THE SOFTWARE.
+//
+
 use crate::drive::defaults::{DEFAULT_HASH_SIZE_U8, ESTIMATED_AVERAGE_DOCUMENT_TYPE_NAME_SIZE};
 
 use crate::drive::flags::StorageFlags;
 use crate::drive::{contract_documents_path, Drive};
 
-use dpp::data_contract::extra::DriveContractExt;
-use dpp::data_contract::DataContract;
+use dpp::data_contract::{DataContract, DriveContractExt};
 use grovedb::batch::KeyInfoPath;
 use grovedb::EstimatedLayerCount::{ApproximateElements, EstimatedLevel, PotentiallyAtMaxElements};
 use grovedb::EstimatedLayerInformation;
 use grovedb::EstimatedLayerSizes::AllSubtrees;
 
+use crate::drive::contract::paths::{all_contracts_global_root_path, contract_root_path};
 use grovedb::EstimatedSumTrees::NoSumTrees;
 use std::collections::HashMap;
 

@@ -43,7 +43,7 @@ mod validate_identity_credit_withdrawal_transition_state_factory {
         let mut state_repository = MockStateRepositoryLike::default();
 
         state_repository
-            .expect_fetch_identity::<Identity>()
+            .expect_fetch_identity()
             .times(1)
             .withf(|id, _| *id == Identifier::default())
             .returning(|_, _| anyhow::Ok(None));
@@ -67,7 +67,7 @@ mod validate_identity_credit_withdrawal_transition_state_factory {
         let mut state_repository = MockStateRepositoryLike::default();
 
         state_repository
-            .expect_fetch_identity::<Identity>()
+            .expect_fetch_identity()
             .times(1)
             .withf(|id, _| *id == Identifier::default())
             .returning(|_, _| {
@@ -97,7 +97,7 @@ mod validate_identity_credit_withdrawal_transition_state_factory {
         let mut state_repository = MockStateRepositoryLike::default();
 
         state_repository
-            .expect_fetch_identity::<Identity>()
+            .expect_fetch_identity()
             .times(1)
             .withf(|id, _| *id == Identifier::default())
             .returning(|_, _| Err(Error::msg("Some error")));
@@ -119,7 +119,7 @@ mod validate_identity_credit_withdrawal_transition_state_factory {
         let mut state_repository = MockStateRepositoryLike::default();
 
         state_repository
-            .expect_fetch_identity::<Identity>()
+            .expect_fetch_identity()
             .times(1)
             .withf(|id, _| *id == Identifier::default())
             .returning(|_, _| {

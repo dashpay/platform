@@ -35,6 +35,7 @@ COPY packages/js-dapi-client packages/js-dapi-client
 COPY packages/js-grpc-common packages/js-grpc-common
 COPY packages/dapi-grpc packages/dapi-grpc
 COPY packages/dash-spv packages/dash-spv
+COPY packages/withdrawals-contract packages/withdrawals-contract
 
 # Print build output
 RUN yarn config set enableInlineBuilds true
@@ -50,10 +51,11 @@ FROM node:16-alpine3.16
 
 ARG NODE_ENV=production
 ENV NODE_ENV ${NODE_ENV}
+ENV DASHMATE_HELPER=1
 
 RUN apk update && \
     apk --no-cache upgrade && \
-    apk add --no-cache docker-cli
+    apk add --no-cache docker-cli docker-cli-compose
 
 LABEL maintainer="Dash Developers <dev@dash.org>"
 LABEL description="Dashmate Helper Node.JS"

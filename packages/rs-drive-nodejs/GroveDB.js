@@ -193,22 +193,24 @@ class GroveDB {
    * Get data using query.
    *
    * @param {PathQuery} query
+   * @param {boolean} [skipCache=false]
    * @param {boolean} [useTransaction=false]
    * @return {Promise<*>}
    */
-  async query(query, useTransaction = false) {
-    return groveDbQueryAsync.call(this.db, query, useTransaction);
+  async query(query, skipCache = false, useTransaction = false) {
+    return groveDbQueryAsync.call(this.db, query, skipCache, useTransaction);
   }
 
   /**
    * Get proof using query.
    *
    * @param {PathQuery} query
+   * @param {boolean} [verbose=false]
    * @param {boolean} [useTransaction=false]
    * @return {Promise<*>}
    */
-  async proveQuery(query, useTransaction = false) {
-    return groveDbProveQueryAsync.call(this.db, query, useTransaction);
+  async proveQuery(query, verbose = false, useTransaction = false) {
+    return groveDbProveQueryAsync.call(this.db, query, verbose, useTransaction);
   }
 
   /**
@@ -269,7 +271,7 @@ class GroveDB {
  *    QueryItemRangeAfterTo|
  *    QueryItemRangeAfterToInclusive
  * >} [items]
- * @property {Buffer} [subqueryKey]
+ * @property {Buffer} [subqueryPath]
  * @property {Query} [subquery]
  * @property {boolean} [leftToRight]
  */

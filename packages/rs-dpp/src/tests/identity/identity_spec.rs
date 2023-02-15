@@ -43,7 +43,7 @@ use serde::{Deserialize, Serialize};
 // }
 
 pub fn identity_cbor_hex() -> &'static str {
-    return "01000000a46269645820881d2d29c075f45d6ca724ce16e327f7e4a6441b131b77c00ae88f0824e21f946762616c616e636500687265766973696f6e006a7075626c69634b65797382a6626964006464617461582102eaf222e32d46b97f56f890bb22c3d65e279b18bda203f30bd2d3eed769a3476264747970650067707572706f73650068726561644f6e6c79f46d73656375726974794c6576656c00a6626964016464617461582103c00af793d83155f95502b33a17154110946dcf69ca0dd188bee3b6d10c0d4f8b64747970650067707572706f73650168726561644f6e6c79f46d73656375726974794c6576656c03";
+    "01a46269645820881d2d29c075f45d6ca724ce16e327f7e4a6441b131b77c00ae88f0824e21f946762616c616e636500687265766973696f6e006a7075626c69634b65797382a6626964006464617461582102eaf222e32d46b97f56f890bb22c3d65e279b18bda203f30bd2d3eed769a3476264747970650067707572706f73650068726561644f6e6c79f46d73656375726974794c6576656c00a6626964016464617461582103c00af793d83155f95502b33a17154110946dcf69ca0dd188bee3b6d10c0d4f8b64747970650067707572706f73650168726561644f6e6c79f46d73656375726974794c6576656c03"
 }
 
 pub fn get_buffer() -> Vec<u8> {
@@ -80,7 +80,7 @@ mod from_buffer {
     pub fn should_parse_hex_from_js_dpp() {
         let identity_cbor = hex::decode(identity_cbor_hex()).unwrap();
 
-        let identity = Identity::from_buffer(&identity_cbor).unwrap();
+        let identity = Identity::from_buffer(identity_cbor).unwrap();
         assert_eq!(identity.get_protocol_version(), 1);
         assert_eq!(
             identity.get_id().to_buffer(),
@@ -94,8 +94,8 @@ mod from_buffer {
 
         assert_eq!(identity.public_keys.len(), 2);
 
-        let pk_1 = identity.public_keys.first().unwrap();
-        let pk_2 = identity.public_keys.get(1).unwrap();
+        let pk_1 = identity.public_keys.get(&0).unwrap();
+        let pk_2 = identity.public_keys.get(&1).unwrap();
 
         assert_eq!(pk_1.id, 0);
         assert_eq!(pk_1.key_type, KeyType::try_from(0u8).unwrap());
@@ -183,7 +183,6 @@ mod api {
             security_level: SecurityLevel::MASTER,
             read_only: false,
             disabled_at: None,
-            signature: vec![],
         };
         let identity_public_key_2 = IdentityPublicKey {
             id: 50,
@@ -193,7 +192,6 @@ mod api {
             security_level: SecurityLevel::MASTER,
             read_only: false,
             disabled_at: None,
-            signature: vec![],
         };
 
         identity.add_public_keys([identity_public_key_1, identity_public_key_2]);

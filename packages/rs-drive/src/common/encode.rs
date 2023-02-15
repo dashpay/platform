@@ -35,8 +35,8 @@
 use crate::error::Error;
 use byteorder::{BigEndian, WriteBytesExt};
 
-/// Encodes an unsigned integer.
-pub fn encode_unsigned_integer(val: u64) -> Result<Vec<u8>, Error> {
+/// Encodes an unsigned integer on 64 bits.
+pub fn encode_u64(val: u64) -> Result<Vec<u8>, Error> {
     // Positive integers are represented in binary with the signed bit set to 0
     // Negative integers are represented in 2's complement form
 
@@ -61,8 +61,8 @@ pub fn encode_unsigned_integer(val: u64) -> Result<Vec<u8>, Error> {
     Ok(wtr)
 }
 
-/// Encodes a signed integer.
-pub fn encode_signed_integer(val: i64) -> Result<Vec<u8>, Error> {
+/// Encodes a signed integer on 64 bits.
+pub fn encode_i64(val: i64) -> Result<Vec<u8>, Error> {
     // Positive integers are represented in binary with the signed bit set to 0
     // Negative integers are represented in 2's complement form
 
@@ -125,4 +125,56 @@ pub fn encode_float(val: f64) -> Result<Vec<u8>, Error> {
     }
 
     Ok(wtr)
+}
+
+/// Encodes an unsigned integer on 16 bits.
+pub fn encode_u16(val: u16) -> Result<Vec<u8>, Error> {
+    // Positive integers are represented in binary with the signed bit set to 0
+    // Negative integers are represented in 2's complement form
+
+    // Encode the integer in big endian form
+    // This ensures that most significant bits are compared first
+    // a bigger positive number would be greater than a smaller one
+    // and a bigger negative number would be greater than a smaller one
+    // maintains sort order for each domain
+    let mut wtr = vec![];
+    wtr.write_u16::<BigEndian>(val).unwrap();
+
+    // Flip the sign bit
+    // to deal with interaction between the domains
+    // 2's complement values have the sign bit set to 1
+    // this makes them greater than the positive domain in terms of sort order
+    // to fix this, we just flip the sign bit
+    // so positive integers have the high bit and negative integers have the low bit
+    // the relative order of elements in each domain is still maintained, as the
+    // change was uniform across all elements
+    wtr[0] ^= 0b1000_0000;
+
+    Ok(wtr)
+}
+
+/// Encodes an unsigned integer on 32 bits.
+pub fn encode_u32(val: u32) -> Vec<u8> {
+    // Positive integers are represented in binary with the signed bit set to 0
+    // Negative integers are represented in 2's complement form
+
+    // Encode the integer in big endian form
+    // This ensures that most significant bits are compared first
+    // a bigger positive number would be greater than a smaller one
+    // and a bigger negative number would be greater than a smaller one
+    // maintains sort order for each domain
+    let mut wtr = vec![];
+    wtr.write_u32::<BigEndian>(val).unwrap();
+
+    // Flip the sign bit
+    // to deal with interaction between the domains
+    // 2's complement values have the sign bit set to 1
+    // this makes them greater than the positive domain in terms of sort order
+    // to fix this, we just flip the sign bit
+    // so positive integers have the high bit and negative integers have the low bit
+    // the relative order of elements in each domain is still maintained, as the
+    // change was uniform across all elements
+    wtr[0] ^= 0b1000_0000;
+
+    wtr
 }

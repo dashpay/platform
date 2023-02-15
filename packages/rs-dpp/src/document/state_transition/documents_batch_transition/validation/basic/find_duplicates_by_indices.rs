@@ -105,7 +105,7 @@ fn get_unique_indices(document_type: &str, data_contract: &DataContract) -> Vec<
     let indices = data_contract
         .get_document_schema(document_type)
         .unwrap()
-        .get_indices();
+        .get_indices::<Vec<_>>();
     indices
         // TODO should we panic or we should return and error or empty vector
         .expect("error while getting indices from json schema")

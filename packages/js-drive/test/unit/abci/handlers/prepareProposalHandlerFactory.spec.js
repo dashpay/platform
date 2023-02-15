@@ -33,6 +33,7 @@ describe('prepareProposalHandlerFactory', () => {
   let proposalBlockExecutionContextMock;
   let round;
   let executionTimerMock;
+  let createContextLoggerMock;
 
   beforeEach(function beforeEach() {
     round = 1;
@@ -77,10 +78,9 @@ describe('prepareProposalHandlerFactory', () => {
       fees: {
         processingFee: 10,
         storageFee: 100,
-        feeRefunds: {
+        refundsPerEpoch: {
           1: 15,
         },
-        feeRefundsSum: 15,
       },
     });
 
@@ -93,6 +93,7 @@ describe('prepareProposalHandlerFactory', () => {
     executionTimerMock = {
       getTimer: this.sinon.stub().returns(0.1),
     };
+    createContextLoggerMock = this.sinon.stub().returns(loggerMock);
 
     prepareProposalHandler = prepareProposalHandlerFactory(
       deliverTxMock,
@@ -102,6 +103,7 @@ describe('prepareProposalHandlerFactory', () => {
       endBlockMock,
       updateCoreChainLockMock,
       executionTimerMock,
+      createContextLoggerMock,
     );
 
     const maxTxBytes = 42;
@@ -119,6 +121,8 @@ describe('prepareProposalHandlerFactory', () => {
 
     const proposerProTxHash = Uint8Array.from([1, 2, 3, 4]);
 
+    const proposedAppVersion = Long.fromInt(1);
+
     const coreChainLockedHeight = 10;
 
     const localLastCommit = {};
@@ -132,6 +136,7 @@ describe('prepareProposalHandlerFactory', () => {
       localLastCommit,
       time,
       proposerProTxHash,
+      proposedAppVersion,
       round,
     };
   });
@@ -162,6 +167,7 @@ describe('prepareProposalHandlerFactory', () => {
         version: request.version,
         time: request.time,
         proposerProTxHash: Buffer.from(request.proposerProTxHash),
+        proposedAppVersion: request.proposedAppVersion,
         round,
       },
       loggerMock,
@@ -182,10 +188,9 @@ describe('prepareProposalHandlerFactory', () => {
         fees: {
           processingFee: 10 * 3,
           storageFee: 100 * 3,
-          feeRefunds: {
+          refundsPerEpoch: {
             1: 15 * 3,
           },
-          feeRefundsSum: 15 * 3,
         },
         coreChainLockedHeight: request.coreChainLockedHeight,
       },
@@ -197,6 +202,11 @@ describe('prepareProposalHandlerFactory', () => {
       txResults: new Array(3).fill({ code: 0 }),
       consensusParamUpdates,
       validatorSetUpdate,
+    });
+    expect(createContextLoggerMock).to.be.calledOnceWithExactly(loggerMock, {
+      height: '42',
+      round,
+      abciMethod: 'prepareProposal',
     });
   });
 

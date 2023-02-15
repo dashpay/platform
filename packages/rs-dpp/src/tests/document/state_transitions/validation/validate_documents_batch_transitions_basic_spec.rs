@@ -21,7 +21,7 @@ use crate::{
     util::json_value::JsonValueExt,
     version::{ProtocolVersionValidator, LATEST_VERSION},
 };
-use anyhow::anyhow;
+
 use jsonschema::error::ValidationErrorKind;
 use serde_json::{json, Value as JsonValue};
 use test_case::test_case;
@@ -51,7 +51,7 @@ fn setup_test(action: Action) -> TestData {
         ]),
     };
 
-    let owner_id = data_contract.owner_id.clone();
+    let owner_id = data_contract.owner_id;
     let raw_transitions: Vec<JsonValue> =
         transitions.iter().map(|d| d.to_object().unwrap()).collect();
     let signature = [0_u8; 65].to_vec();

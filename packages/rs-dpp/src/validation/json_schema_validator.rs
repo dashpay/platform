@@ -1,4 +1,4 @@
-use std::collections::BTreeMap;
+use std::collections::HashMap;
 
 use anyhow::Context;
 use jsonschema::{JSONSchema, KeywordDefinition};
@@ -45,11 +45,15 @@ impl JsonSchemaValidator {
     }
 
     /// creates a new json schema validator from the json schema and allows to add the definitions
-    pub fn new_with_definitions(
+    pub fn new_with_definitions<'a>(
         mut schema_json: Value,
-        definitions: &BTreeMap<String, Value>,
+        definitions: impl IntoIterator<Item = (&'a String, &'a Value)>,
     ) -> Result<Self, DashPlatformProtocolInitError> {
-        let _ = schema_json.insert(String::from("$defs"), json!(definitions));
+        let defs: HashMap<&str, &'a Value> = definitions
+            .into_iter()
+            .map(|(k, v)| (k.as_ref(), v))
+            .collect();
+        let _ = schema_json.insert(String::from("$defs"), json!(defs));
 
         let mut json_schema_validator = Self {
             raw_schema_json: schema_json,

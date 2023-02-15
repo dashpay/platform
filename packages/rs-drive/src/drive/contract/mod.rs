@@ -33,18 +33,21 @@
 //!
 
 mod estimation_costs;
+/// Various paths for contract operations
+pub(crate) mod paths;
 
+use std::borrow::Cow;
 use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 
-use crate::common::encode::encode_unsigned_integer;
+use crate::common::encode::encode_u64;
 use costs::{cost_return_on_error_no_add, CostContext, CostResult, CostsExt, OperationCost};
-use dpp::data_contract::extra::DriveContractExt;
 
 use grovedb::batch::key_info::KeyInfo;
 use grovedb::batch::KeyInfoPath;
 use grovedb::reference_path::ReferencePathType::SiblingReference;
 
+use dpp::data_contract::DriveContractExt;
 use grovedb::{Element, EstimatedLayerInformation, TransactionArg};
 
 use crate::contract::Contract;
@@ -55,10 +58,11 @@ use crate::drive::defaults::CONTRACT_MAX_SERIALIZED_SIZE;
 use crate::drive::flags::StorageFlags;
 use crate::drive::object_size_info::DriveKeyInfo::{Key, KeyRef};
 
+use crate::drive::contract::paths::contract_root_path;
 use crate::drive::grove_operations::QueryTarget::QueryTargetValue;
 use crate::drive::grove_operations::{BatchInsertTreeApplyType, DirectQueryType};
 use crate::drive::object_size_info::PathKeyElementInfo::{
-    PathFixedSizeKeyElement, PathKeyElementSize,
+    PathFixedSizeKeyRefElement, PathKeyElementSize,
 };
 use crate::drive::object_size_info::PathKeyInfo::PathFixedSizeKeyRef;
 use crate::drive::{contract_documents_path, Drive, RootTree};
@@ -70,42 +74,6 @@ use crate::fee::op::DriveOperation::{CalculatedCostOperation, PreCalculatedFeeRe
 use crate::fee::result::FeeResult;
 use crate::fee_pools::epochs::Epoch;
 
-/// The global root path for all contracts
-pub(crate) fn all_contracts_global_root_path() -> [&'static [u8]; 1] {
-    [Into::<&[u8; 1]>::into(RootTree::ContractDocuments)]
-}
-
-/// Takes a contract ID and returns the contract's root path.
-pub(crate) fn contract_root_path(contract_id: &[u8]) -> [&[u8]; 2] {
-    [
-        Into::<&[u8; 1]>::into(RootTree::ContractDocuments),
-        contract_id,
-    ]
-}
-
-/// Takes a contract ID and returns the contract's storage history path.
-pub(crate) fn contract_keeping_history_storage_path(contract_id: &[u8]) -> [&[u8]; 3] {
-    [
-        Into::<&[u8; 1]>::into(RootTree::ContractDocuments),
-        contract_id,
-        &[0],
-    ]
-}
-
-/// Takes a contract ID and an encoded timestamp and returns the contract's storage history path
-/// for that timestamp.
-pub(crate) fn contract_keeping_history_storage_time_reference_path(
-    contract_id: &[u8],
-    encoded_time: Vec<u8>,
-) -> Vec<Vec<u8>> {
-    vec![
-        Into::<&[u8; 1]>::into(RootTree::ContractDocuments).to_vec(),
-        contract_id.to_vec(),
-        vec![0],
-        encoded_time,
-    ]
-}
-
 /// Adds operations to the op batch relevant to initializing the contract's structure.
 /// Namely it inserts an empty tree at the contract's root path.
 pub fn add_init_contracts_structure_operations(batch: &mut GroveDbOpBatch) {
@@ -113,7 +81,7 @@ pub fn add_init_contracts_structure_operations(batch: &mut GroveDbOpBatch) {
 }
 
 /// Contract and fetch information
-#[derive(Default, PartialEq, Debug)]
+#[derive(Default, PartialEq, Debug, Clone)]
 pub struct ContractFetchInfo {
     /// The contract
     pub contract: Contract,
@@ -139,11 +107,11 @@ impl Drive {
         >,
         insert_operations: &mut Vec<DriveOperation>,
     ) -> Result<(), Error> {
-        let contract_root_path = contract_root_path(contract.id.as_bytes());
+        let contract_root_path = paths::contract_root_path(contract.id.as_bytes());
         if contract.keeps_history() {
             let element_flags = contract_element.get_flags().clone();
             let storage_flags =
-                StorageFlags::from_some_element_flags_ref(contract_element.get_flags())?;
+                StorageFlags::map_cow_some_element_flags_ref(contract_element.get_flags())?;
 
             if let Some(estimated_costs_only_with_layer_info) = estimated_costs_only_with_layer_info
             {
@@ -156,14 +124,14 @@ impl Drive {
             self.batch_insert_empty_tree(
                 contract_root_path,
                 KeyRef(&[0]),
-                storage_flags.as_ref(),
+                storage_flags.as_ref().map(|flags| flags.as_ref()),
                 insert_operations,
             )?;
-            let encoded_time = encode_unsigned_integer(block_info.time_ms)?;
+            let encoded_time = encode_u64(block_info.time_ms)?;
             let contract_keeping_history_storage_path =
-                contract_keeping_history_storage_path(contract.id.as_bytes());
+                paths::contract_keeping_history_storage_path(contract.id.as_bytes());
             self.batch_insert(
-                PathFixedSizeKeyElement((
+                PathFixedSizeKeyRefElement((
                     contract_keeping_history_storage_path,
                     encoded_time.as_slice(),
                     contract_element,
@@ -175,7 +143,7 @@ impl Drive {
                 Element::Reference(SiblingReference(encoded_time), Some(1), element_flags);
 
             let path_key_element_info = if estimated_costs_only_with_layer_info.is_none() {
-                PathFixedSizeKeyElement((
+                PathFixedSizeKeyRefElement((
                     contract_keeping_history_storage_path,
                     &[0],
                     reference_element,
@@ -191,7 +159,7 @@ impl Drive {
         } else {
             // the contract is just stored at key 0
             let path_key_element_info = if estimated_costs_only_with_layer_info.is_none() {
-                PathFixedSizeKeyElement((contract_root_path, &[0], contract_element))
+                PathFixedSizeKeyRefElement((contract_root_path, &[0], contract_element))
             } else {
                 PathKeyElementSize((
                     KeyInfoPath::from_known_path(contract_root_path),
@@ -310,8 +278,7 @@ impl Drive {
     ) -> Result<Vec<DriveOperation>, Error> {
         let mut batch_operations: Vec<DriveOperation> = vec![];
 
-        let storage_flags =
-            StorageFlags::from_some_element_flags_ref(contract_element.get_flags())?;
+        let storage_flags = StorageFlags::map_some_element_flags_ref(contract_element.get_flags())?;
 
         self.batch_insert_empty_tree(
             [Into::<&[u8; 1]>::into(RootTree::ContractDocuments).as_slice()],
@@ -329,7 +296,7 @@ impl Drive {
         )?;
 
         // the documents
-        let contract_root_path = contract_root_path(contract.id.as_bytes());
+        let contract_root_path = paths::contract_root_path(contract.id.as_bytes());
         let key_info = Key(vec![1]);
         self.batch_insert_empty_tree(
             contract_root_path,
@@ -591,7 +558,7 @@ impl Drive {
             &mut batch_operations,
         )?;
 
-        let storage_flags = StorageFlags::from_some_element_flags_ref(&element_flags)?;
+        let storage_flags = StorageFlags::map_cow_some_element_flags_ref(&element_flags)?;
 
         let contract_documents_path = contract_documents_path(contract.id.as_bytes());
         for (type_key, document_type) in contract.document_types() {
@@ -618,9 +585,9 @@ impl Drive {
                 ];
 
                 let apply_type = if estimated_costs_only_with_layer_info.is_none() {
-                    BatchInsertTreeApplyType::StatefulBatchInsert
+                    BatchInsertTreeApplyType::StatefulBatchInsertTree
                 } else {
-                    BatchInsertTreeApplyType::StatelessBatchInsert {
+                    BatchInsertTreeApplyType::StatelessBatchInsertTree {
                         in_tree_using_sums: false,
                         is_sum_tree: false,
                         flags_len: element_flags
@@ -638,9 +605,10 @@ impl Drive {
                     if !index_cache.contains(index_bytes) {
                         self.batch_insert_empty_tree_if_not_exists(
                             PathFixedSizeKeyRef((type_path, index.name.as_bytes())),
-                            storage_flags.as_ref(),
+                            storage_flags.as_ref().map(|flags| flags.as_ref()),
                             apply_type,
                             transaction,
+                            &mut None,
                             &mut batch_operations,
                         )?;
                         index_cache.insert(index_bytes);
@@ -651,7 +619,7 @@ impl Drive {
                 self.batch_insert_empty_tree(
                     contract_documents_path,
                     KeyRef(type_key.as_bytes()),
-                    storage_flags.as_ref(),
+                    storage_flags.as_ref().map(|flags| flags.as_ref()),
                     &mut batch_operations,
                 )?;
 
@@ -666,7 +634,7 @@ impl Drive {
                 self.batch_insert_empty_tree(
                     type_path,
                     KeyRef(&[0]),
-                    storage_flags.as_ref(),
+                    storage_flags.as_ref().map(|flags| flags.as_ref()),
                     &mut batch_operations,
                 )?;
 
@@ -679,7 +647,7 @@ impl Drive {
                         self.batch_insert_empty_tree(
                             type_path,
                             KeyRef(index.name.as_bytes()),
-                            storage_flags.as_ref(),
+                            storage_flags.as_ref().map(|flags| flags.as_ref()),
                             &mut batch_operations,
                         )?;
                         index_cache.insert(index_bytes);
@@ -697,7 +665,7 @@ impl Drive {
         contract_id: Option<[u8; 32]>,
         block_info: BlockInfo,
         apply: bool,
-        storage_flags: Option<&StorageFlags>,
+        storage_flags: Option<Cow<StorageFlags>>,
         transaction: TransactionArg,
     ) -> Result<FeeResult, Error> {
         // first we need to deserialize the contract
@@ -850,16 +818,22 @@ impl Drive {
         epoch: Option<&Epoch>,
         transaction: TransactionArg,
     ) -> CostResult<Option<Arc<ContractFetchInfo>>, Error> {
-        let CostContext { value, cost } =
-            self.grove
-                .get(contract_root_path(&contract_id), &[0], transaction);
+        // As we want deterministic costs, we want the cost to always be the same for
+        // fetching the contract.
+        // We need to pass allow cache to false
+        let CostContext { value, cost } = self.grove.get_raw_caching_optional(
+            paths::contract_root_path(&contract_id),
+            &[0],
+            false,
+            transaction,
+        );
 
         match value {
             Ok(Element::Item(stored_contract_bytes, element_flag)) => {
                 let contract = cost_return_on_error_no_add!(
                     &cost,
                     <Contract as DriveContractExt>::from_cbor(&stored_contract_bytes, None,)
-                        .map_err(Error::Contract)
+                        .map_err(Error::Protocol)
                 );
                 let drive_operation = CalculatedCostOperation(cost.clone());
                 let fee = if let Some(epoch) = epoch {
@@ -873,7 +847,7 @@ impl Drive {
 
                 let storage_flags = cost_return_on_error_no_add!(
                     &cost,
-                    StorageFlags::from_some_element_flags_ref(&element_flag)
+                    StorageFlags::map_some_element_flags_ref(&element_flag)
                 );
                 let contract_fetch_info = Arc::new(ContractFetchInfo {
                     contract,
@@ -905,7 +879,7 @@ impl Drive {
         contract_serialization: Vec<u8>,
         block_info: BlockInfo,
         apply: bool,
-        storage_flags: Option<&StorageFlags>,
+        storage_flags: Option<Cow<StorageFlags>>,
         transaction: TransactionArg,
     ) -> Result<FeeResult, Error> {
         let mut cost_operations = vec![];
@@ -914,7 +888,7 @@ impl Drive {
         } else {
             Some(HashMap::new())
         };
-        let batch_operations = self.apply_contract_operations(
+        let batch_operations = self.apply_contract_with_serialization_operations(
             contract,
             contract_serialization,
             &block_info,
@@ -940,12 +914,37 @@ impl Drive {
     pub(crate) fn apply_contract_operations(
         &self,
         contract: &Contract,
+        block_info: &BlockInfo,
+        estimated_costs_only_with_layer_info: &mut Option<
+            HashMap<KeyInfoPath, EstimatedLayerInformation>,
+        >,
+        storage_flags: Option<Cow<StorageFlags>>,
+        transaction: TransactionArg,
+    ) -> Result<Vec<DriveOperation>, Error> {
+        //todo: change this from cbor
+        let serialized_contract = contract.to_cbor().map_err(Error::Protocol)?;
+        self.apply_contract_with_serialization_operations(
+            contract,
+            serialized_contract,
+            block_info,
+            estimated_costs_only_with_layer_info,
+            storage_flags,
+            transaction,
+        )
+    }
+
+    /// Gets the operations for applying a contract with it's serialization
+    /// If the contract already exists, we get operations for an update
+    /// Otherwise we get operations for an insert
+    pub(crate) fn apply_contract_with_serialization_operations(
+        &self,
+        contract: &Contract,
         contract_serialization: Vec<u8>,
         block_info: &BlockInfo,
         estimated_costs_only_with_layer_info: &mut Option<
             HashMap<KeyInfoPath, EstimatedLayerInformation>,
         >,
-        storage_flags: Option<&StorageFlags>,
+        storage_flags: Option<Cow<StorageFlags>>,
         transaction: TransactionArg,
     ) -> Result<Vec<DriveOperation>, Error> {
         let mut drive_operations: Vec<DriveOperation> = vec![];
@@ -967,7 +966,7 @@ impl Drive {
         };
 
         // We can do a get direct because there are no references involved
-        if let Ok(Some(stored_element)) = self.grove_get_direct(
+        if let Ok(Some(stored_element)) = self.grove_get_raw(
             contract_root_path(contract.id.as_bytes()),
             &[0],
             direct_query_type,
@@ -989,7 +988,7 @@ impl Drive {
 
         let contract_element = Element::Item(
             contract_serialization,
-            StorageFlags::map_to_some_element_flags(storage_flags),
+            StorageFlags::map_cow_to_some_element_flags(storage_flags),
         );
 
         if already_exists {
@@ -1030,13 +1029,17 @@ mod tests {
     use tempfile::TempDir;
 
     use super::*;
-    use crate::common::json_document_to_cbor;
     use crate::contract::Contract;
     use crate::drive::flags::StorageFlags;
-    use crate::drive::object_size_info::{DocumentAndContractInfo, DocumentInfo};
+    use crate::drive::object_size_info::{
+        DocumentAndContractInfo, DocumentInfo, OwnedDocumentInfo,
+    };
     use crate::drive::Drive;
+    use dpp::data_contract::extra::common::json_document_to_cbor;
 
-    fn setup_deep_nested_contract() -> (Drive, Contract, Vec<u8>) {
+    use crate::common::helpers::setup::setup_drive_with_initial_state_structure;
+
+    fn setup_deep_nested_50_contract() -> (Drive, Contract, Vec<u8>) {
         // Todo: make TempDir based on _prefix
         let tmp_dir = TempDir::new().unwrap();
         let drive: Drive = Drive::open(tmp_dir, None).expect("expected to open Drive successfully");
@@ -1047,7 +1050,9 @@ mod tests {
 
         let contract_path = "tests/supporting_files/contract/deepNested/deep-nested50.json";
         // let's construct the grovedb structure for the dashpay data contract
-        let contract_cbor = json_document_to_cbor(contract_path, Some(1));
+        let contract_cbor =
+            json_document_to_cbor(contract_path, Some(1)).expect("expected to get cbor document");
+
         let contract = <Contract as DriveContractExt>::from_cbor(&contract_cbor, None)
             .expect("expected to deserialize the contract");
         drive
@@ -1056,7 +1061,36 @@ mod tests {
                 contract_cbor.clone(),
                 BlockInfo::default(),
                 true,
-                StorageFlags::optional_default_as_ref(),
+                StorageFlags::optional_default_as_cow(),
+                None,
+            )
+            .expect("expected to apply contract successfully");
+
+        (drive, contract, contract_cbor)
+    }
+
+    fn setup_deep_nested_10_contract() -> (Drive, Contract, Vec<u8>) {
+        // Todo: make TempDir based on _prefix
+        let tmp_dir = TempDir::new().unwrap();
+        let drive: Drive = Drive::open(tmp_dir, None).expect("expected to open Drive successfully");
+
+        drive
+            .create_initial_state_structure(None)
+            .expect("expected to create root tree successfully");
+
+        let contract_path = "tests/supporting_files/contract/deepNested/deep-nested10.json";
+        // let's construct the grovedb structure for the dashpay data contract
+        let contract_cbor =
+            json_document_to_cbor(contract_path, Some(1)).expect("expected to get cbor document");
+        let contract = <Contract as DriveContractExt>::from_cbor(&contract_cbor, None)
+            .expect("expected to deserialize the contract");
+        drive
+            .apply_contract(
+                &contract,
+                contract_cbor.clone(),
+                BlockInfo::default(),
+                true,
+                StorageFlags::optional_default_as_cow(),
                 None,
             )
             .expect("expected to apply contract successfully");
@@ -1075,7 +1109,8 @@ mod tests {
         let contract_path = "tests/supporting_files/contract/references/references.json";
 
         // let's construct the grovedb structure for the dashpay data contract
-        let contract_cbor = json_document_to_cbor(contract_path, Some(1));
+        let contract_cbor =
+            json_document_to_cbor(contract_path, Some(1)).expect("expected to get cbor document");
         let contract = <Contract as DriveContractExt>::from_cbor(&contract_cbor, None)
             .expect("expected to deserialize the contract");
         drive
@@ -1084,7 +1119,7 @@ mod tests {
                 contract_cbor.clone(),
                 BlockInfo::default(),
                 true,
-                StorageFlags::optional_default_as_ref(),
+                StorageFlags::optional_default_as_cow(),
                 None,
             )
             .expect("expected to apply contract successfully");
@@ -1101,7 +1136,7 @@ mod tests {
             .create_initial_state_structure(None)
             .expect("expected to create root tree successfully");
 
-        let initial_contract_cbor = hex::decode("01000000a66324696458209c2b800c5ea525d032a9fda4dda22a896f1e763af5f0e15ae7f93882b7439d77652464656673a1686c6173744e616d65a1647479706566737472696e676724736368656d61783468747470733a2f2f736368656d612e646173682e6f72672f6470702d302d342d302f6d6574612f646174612d636f6e7472616374676f776e657249645820636d3188dfffe62efb10e20347ec6c41b3e49fa31cb757ef4bad6cd8f1c7f4b66776657273696f6e0169646f63756d656e7473a76b756e697175654461746573a56474797065666f626a65637467696e646963657382a3646e616d6566696e6465783166756e69717565f56a70726f7065727469657382a16a2463726561746564417463617363a16a2475706461746564417463617363a2646e616d6566696e646578326a70726f7065727469657381a16a2475706461746564417463617363687265717569726564836966697273744e616d656a246372656174656441746a247570646174656441746a70726f70657274696573a2686c6173744e616d65a1647479706566737472696e676966697273744e616d65a1647479706566737472696e67746164646974696f6e616c50726f70657274696573f46c6e696365446f63756d656e74a46474797065666f626a656374687265717569726564816a246372656174656441746a70726f70657274696573a1646e616d65a1647479706566737472696e67746164646974696f6e616c50726f70657274696573f46e6e6f54696d65446f63756d656e74a36474797065666f626a6563746a70726f70657274696573a1646e616d65a1647479706566737472696e67746164646974696f6e616c50726f70657274696573f46e707265747479446f63756d656e74a46474797065666f626a65637468726571756972656482686c6173744e616d656a247570646174656441746a70726f70657274696573a1686c6173744e616d65a1642472656670232f24646566732f6c6173744e616d65746164646974696f6e616c50726f70657274696573f46e7769746842797465417272617973a56474797065666f626a65637467696e646963657381a2646e616d6566696e646578316a70726f7065727469657381a16e6279746541727261794669656c6463617363687265717569726564816e6279746541727261794669656c646a70726f70657274696573a26e6279746541727261794669656c64a36474797065656172726179686d61784974656d731069627974654172726179f56f6964656e7469666965724669656c64a56474797065656172726179686d61784974656d731820686d696e4974656d73182069627974654172726179f570636f6e74656e744d656469615479706578216170706c69636174696f6e2f782e646173682e6470702e6964656e746966696572746164646974696f6e616c50726f70657274696573f46f696e6465786564446f63756d656e74a56474797065666f626a65637467696e646963657386a3646e616d6566696e6465783166756e69717565f56a70726f7065727469657382a168246f776e6572496463617363a16966697273744e616d656464657363a3646e616d6566696e6465783266756e69717565f56a70726f7065727469657382a168246f776e6572496463617363a1686c6173744e616d656464657363a2646e616d6566696e646578336a70726f7065727469657381a1686c6173744e616d6563617363a2646e616d6566696e646578346a70726f7065727469657382a16a2463726561746564417463617363a16a2475706461746564417463617363a2646e616d6566696e646578356a70726f7065727469657381a16a2475706461746564417463617363a2646e616d6566696e646578366a70726f7065727469657381a16a2463726561746564417463617363687265717569726564846966697273744e616d656a246372656174656441746a24757064617465644174686c6173744e616d656a70726f70657274696573a2686c6173744e616d65a2647479706566737472696e67696d61784c656e6774681901006966697273744e616d65a2647479706566737472696e67696d61784c656e677468190100746164646974696f6e616c50726f70657274696573f4781d6f7074696f6e616c556e69717565496e6465786564446f63756d656e74a56474797065666f626a65637467696e646963657383a3646e616d6566696e6465783166756e69717565f56a70726f7065727469657381a16966697273744e616d656464657363a3646e616d6566696e6465783266756e69717565f56a70726f7065727469657383a168246f776e6572496463617363a16966697273744e616d6563617363a1686c6173744e616d6563617363a3646e616d6566696e6465783366756e69717565f56a70726f7065727469657382a167636f756e74727963617363a1646369747963617363687265717569726564826966697273744e616d65686c6173744e616d656a70726f70657274696573a46463697479a2647479706566737472696e67696d61784c656e67746819010067636f756e747279a2647479706566737472696e67696d61784c656e677468190100686c6173744e616d65a2647479706566737472696e67696d61784c656e6774681901006966697273744e616d65a2647479706566737472696e67696d61784c656e677468190100746164646974696f6e616c50726f70657274696573f4").unwrap();
+        let initial_contract_cbor = hex::decode("01a66324696458209c2b800c5ea525d032a9fda4dda22a896f1e763af5f0e15ae7f93882b7439d77652464656673a1686c6173744e616d65a1647479706566737472696e676724736368656d61783468747470733a2f2f736368656d612e646173682e6f72672f6470702d302d342d302f6d6574612f646174612d636f6e7472616374676f776e657249645820636d3188dfffe62efb10e20347ec6c41b3e49fa31cb757ef4bad6cd8f1c7f4b66776657273696f6e0169646f63756d656e7473a76b756e697175654461746573a56474797065666f626a65637467696e646963657382a3646e616d6566696e6465783166756e69717565f56a70726f7065727469657382a16a2463726561746564417463617363a16a2475706461746564417463617363a2646e616d6566696e646578326a70726f7065727469657381a16a2475706461746564417463617363687265717569726564836966697273744e616d656a246372656174656441746a247570646174656441746a70726f70657274696573a2686c6173744e616d65a1647479706566737472696e676966697273744e616d65a1647479706566737472696e67746164646974696f6e616c50726f70657274696573f46c6e696365446f63756d656e74a46474797065666f626a656374687265717569726564816a246372656174656441746a70726f70657274696573a1646e616d65a1647479706566737472696e67746164646974696f6e616c50726f70657274696573f46e6e6f54696d65446f63756d656e74a36474797065666f626a6563746a70726f70657274696573a1646e616d65a1647479706566737472696e67746164646974696f6e616c50726f70657274696573f46e707265747479446f63756d656e74a46474797065666f626a65637468726571756972656482686c6173744e616d656a247570646174656441746a70726f70657274696573a1686c6173744e616d65a1642472656670232f24646566732f6c6173744e616d65746164646974696f6e616c50726f70657274696573f46e7769746842797465417272617973a56474797065666f626a65637467696e646963657381a2646e616d6566696e646578316a70726f7065727469657381a16e6279746541727261794669656c6463617363687265717569726564816e6279746541727261794669656c646a70726f70657274696573a26e6279746541727261794669656c64a36474797065656172726179686d61784974656d731069627974654172726179f56f6964656e7469666965724669656c64a56474797065656172726179686d61784974656d731820686d696e4974656d73182069627974654172726179f570636f6e74656e744d656469615479706578216170706c69636174696f6e2f782e646173682e6470702e6964656e746966696572746164646974696f6e616c50726f70657274696573f46f696e6465786564446f63756d656e74a56474797065666f626a65637467696e646963657386a3646e616d6566696e6465783166756e69717565f56a70726f7065727469657382a168246f776e6572496463617363a16966697273744e616d656464657363a3646e616d6566696e6465783266756e69717565f56a70726f7065727469657382a168246f776e6572496463617363a1686c6173744e616d656464657363a2646e616d6566696e646578336a70726f7065727469657381a1686c6173744e616d6563617363a2646e616d6566696e646578346a70726f7065727469657382a16a2463726561746564417463617363a16a2475706461746564417463617363a2646e616d6566696e646578356a70726f7065727469657381a16a2475706461746564417463617363a2646e616d6566696e646578366a70726f7065727469657381a16a2463726561746564417463617363687265717569726564846966697273744e616d656a246372656174656441746a24757064617465644174686c6173744e616d656a70726f70657274696573a2686c6173744e616d65a2647479706566737472696e67696d61784c656e6774681901006966697273744e616d65a2647479706566737472696e67696d61784c656e677468190100746164646974696f6e616c50726f70657274696573f4781d6f7074696f6e616c556e69717565496e6465786564446f63756d656e74a56474797065666f626a65637467696e646963657383a3646e616d6566696e6465783166756e69717565f56a70726f7065727469657381a16966697273744e616d656464657363a3646e616d6566696e6465783266756e69717565f56a70726f7065727469657383a168246f776e6572496463617363a16966697273744e616d6563617363a1686c6173744e616d6563617363a3646e616d6566696e6465783366756e69717565f56a70726f7065727469657382a167636f756e74727963617363a1646369747963617363687265717569726564826966697273744e616d65686c6173744e616d656a70726f70657274696573a46463697479a2647479706566737472696e67696d61784c656e67746819010067636f756e747279a2647479706566737472696e67696d61784c656e677468190100686c6173744e616d65a2647479706566737472696e67696d61784c656e6774681901006966697273744e616d65a2647479706566737472696e67696d61784c656e677468190100746164646974696f6e616c50726f70657274696573f4").unwrap();
 
         drive
             .apply_contract_cbor(
@@ -1109,12 +1144,12 @@ mod tests {
                 None,
                 BlockInfo::default(),
                 true,
-                StorageFlags::optional_default_as_ref(),
+                StorageFlags::optional_default_as_cow(),
                 None,
             )
             .expect("expected to apply contract successfully");
 
-        let updated_contract_cbor = hex::decode("01000000a66324696458209c2b800c5ea525d032a9fda4dda22a896f1e763af5f0e15ae7f93882b7439d77652464656673a1686c6173744e616d65a1647479706566737472696e676724736368656d61783468747470733a2f2f736368656d612e646173682e6f72672f6470702d302d342d302f6d6574612f646174612d636f6e7472616374676f776e657249645820636d3188dfffe62efb10e20347ec6c41b3e49fa31cb757ef4bad6cd8f1c7f4b66776657273696f6e0269646f63756d656e7473a86b756e697175654461746573a56474797065666f626a65637467696e646963657382a3646e616d6566696e6465783166756e69717565f56a70726f7065727469657382a16a2463726561746564417463617363a16a2475706461746564417463617363a2646e616d6566696e646578326a70726f7065727469657381a16a2475706461746564417463617363687265717569726564836966697273744e616d656a246372656174656441746a247570646174656441746a70726f70657274696573a2686c6173744e616d65a1647479706566737472696e676966697273744e616d65a1647479706566737472696e67746164646974696f6e616c50726f70657274696573f46c6e696365446f63756d656e74a46474797065666f626a656374687265717569726564816a246372656174656441746a70726f70657274696573a1646e616d65a1647479706566737472696e67746164646974696f6e616c50726f70657274696573f46e6e6f54696d65446f63756d656e74a36474797065666f626a6563746a70726f70657274696573a1646e616d65a1647479706566737472696e67746164646974696f6e616c50726f70657274696573f46e707265747479446f63756d656e74a46474797065666f626a65637468726571756972656482686c6173744e616d656a247570646174656441746a70726f70657274696573a1686c6173744e616d65a1642472656670232f24646566732f6c6173744e616d65746164646974696f6e616c50726f70657274696573f46e7769746842797465417272617973a56474797065666f626a65637467696e646963657381a2646e616d6566696e646578316a70726f7065727469657381a16e6279746541727261794669656c6463617363687265717569726564816e6279746541727261794669656c646a70726f70657274696573a26e6279746541727261794669656c64a36474797065656172726179686d61784974656d731069627974654172726179f56f6964656e7469666965724669656c64a56474797065656172726179686d61784974656d731820686d696e4974656d73182069627974654172726179f570636f6e74656e744d656469615479706578216170706c69636174696f6e2f782e646173682e6470702e6964656e746966696572746164646974696f6e616c50726f70657274696573f46f696e6465786564446f63756d656e74a56474797065666f626a65637467696e646963657386a3646e616d6566696e6465783166756e69717565f56a70726f7065727469657382a168246f776e6572496463617363a16966697273744e616d656464657363a3646e616d6566696e6465783266756e69717565f56a70726f7065727469657382a168246f776e6572496463617363a1686c6173744e616d656464657363a2646e616d6566696e646578336a70726f7065727469657381a1686c6173744e616d6563617363a2646e616d6566696e646578346a70726f7065727469657382a16a2463726561746564417463617363a16a2475706461746564417463617363a2646e616d6566696e646578356a70726f7065727469657381a16a2475706461746564417463617363a2646e616d6566696e646578366a70726f7065727469657381a16a2463726561746564417463617363687265717569726564846966697273744e616d656a246372656174656441746a24757064617465644174686c6173744e616d656a70726f70657274696573a2686c6173744e616d65a2647479706566737472696e67696d61784c656e6774681901006966697273744e616d65a2647479706566737472696e67696d61784c656e677468190100746164646974696f6e616c50726f70657274696573f4716d79417765736f6d65446f63756d656e74a56474797065666f626a65637467696e646963657382a3646e616d656966697273744e616d6566756e69717565f56a70726f7065727469657381a16966697273744e616d6563617363a3646e616d657166697273744e616d654c6173744e616d6566756e69717565f56a70726f7065727469657382a16966697273744e616d6563617363a1686c6173744e616d6563617363687265717569726564846966697273744e616d656a246372656174656441746a24757064617465644174686c6173744e616d656a70726f70657274696573a2686c6173744e616d65a2647479706566737472696e67696d61784c656e6774681901006966697273744e616d65a2647479706566737472696e67696d61784c656e677468190100746164646974696f6e616c50726f70657274696573f4781d6f7074696f6e616c556e69717565496e6465786564446f63756d656e74a56474797065666f626a65637467696e646963657383a3646e616d6566696e6465783166756e69717565f56a70726f7065727469657381a16966697273744e616d656464657363a3646e616d6566696e6465783266756e69717565f56a70726f7065727469657383a168246f776e6572496463617363a16966697273744e616d6563617363a1686c6173744e616d6563617363a3646e616d6566696e6465783366756e69717565f56a70726f7065727469657382a167636f756e74727963617363a1646369747963617363687265717569726564826966697273744e616d65686c6173744e616d656a70726f70657274696573a46463697479a2647479706566737472696e67696d61784c656e67746819010067636f756e747279a2647479706566737472696e67696d61784c656e677468190100686c6173744e616d65a2647479706566737472696e67696d61784c656e6774681901006966697273744e616d65a2647479706566737472696e67696d61784c656e677468190100746164646974696f6e616c50726f70657274696573f4").unwrap();
+        let updated_contract_cbor = hex::decode("01a66324696458209c2b800c5ea525d032a9fda4dda22a896f1e763af5f0e15ae7f93882b7439d77652464656673a1686c6173744e616d65a1647479706566737472696e676724736368656d61783468747470733a2f2f736368656d612e646173682e6f72672f6470702d302d342d302f6d6574612f646174612d636f6e7472616374676f776e657249645820636d3188dfffe62efb10e20347ec6c41b3e49fa31cb757ef4bad6cd8f1c7f4b66776657273696f6e0269646f63756d656e7473a86b756e697175654461746573a56474797065666f626a65637467696e646963657382a3646e616d6566696e6465783166756e69717565f56a70726f7065727469657382a16a2463726561746564417463617363a16a2475706461746564417463617363a2646e616d6566696e646578326a70726f7065727469657381a16a2475706461746564417463617363687265717569726564836966697273744e616d656a246372656174656441746a247570646174656441746a70726f70657274696573a2686c6173744e616d65a1647479706566737472696e676966697273744e616d65a1647479706566737472696e67746164646974696f6e616c50726f70657274696573f46c6e696365446f63756d656e74a46474797065666f626a656374687265717569726564816a246372656174656441746a70726f70657274696573a1646e616d65a1647479706566737472696e67746164646974696f6e616c50726f70657274696573f46e6e6f54696d65446f63756d656e74a36474797065666f626a6563746a70726f70657274696573a1646e616d65a1647479706566737472696e67746164646974696f6e616c50726f70657274696573f46e707265747479446f63756d656e74a46474797065666f626a65637468726571756972656482686c6173744e616d656a247570646174656441746a70726f70657274696573a1686c6173744e616d65a1642472656670232f24646566732f6c6173744e616d65746164646974696f6e616c50726f70657274696573f46e7769746842797465417272617973a56474797065666f626a65637467696e646963657381a2646e616d6566696e646578316a70726f7065727469657381a16e6279746541727261794669656c6463617363687265717569726564816e6279746541727261794669656c646a70726f70657274696573a26e6279746541727261794669656c64a36474797065656172726179686d61784974656d731069627974654172726179f56f6964656e7469666965724669656c64a56474797065656172726179686d61784974656d731820686d696e4974656d73182069627974654172726179f570636f6e74656e744d656469615479706578216170706c69636174696f6e2f782e646173682e6470702e6964656e746966696572746164646974696f6e616c50726f70657274696573f46f696e6465786564446f63756d656e74a56474797065666f626a65637467696e646963657386a3646e616d6566696e6465783166756e69717565f56a70726f7065727469657382a168246f776e6572496463617363a16966697273744e616d656464657363a3646e616d6566696e6465783266756e69717565f56a70726f7065727469657382a168246f776e6572496463617363a1686c6173744e616d656464657363a2646e616d6566696e646578336a70726f7065727469657381a1686c6173744e616d6563617363a2646e616d6566696e646578346a70726f7065727469657382a16a2463726561746564417463617363a16a2475706461746564417463617363a2646e616d6566696e646578356a70726f7065727469657381a16a2475706461746564417463617363a2646e616d6566696e646578366a70726f7065727469657381a16a2463726561746564417463617363687265717569726564846966697273744e616d656a246372656174656441746a24757064617465644174686c6173744e616d656a70726f70657274696573a2686c6173744e616d65a2647479706566737472696e67696d61784c656e6774681901006966697273744e616d65a2647479706566737472696e67696d61784c656e677468190100746164646974696f6e616c50726f70657274696573f4716d79417765736f6d65446f63756d656e74a56474797065666f626a65637467696e646963657382a3646e616d656966697273744e616d6566756e69717565f56a70726f7065727469657381a16966697273744e616d6563617363a3646e616d657166697273744e616d654c6173744e616d6566756e69717565f56a70726f7065727469657382a16966697273744e616d6563617363a1686c6173744e616d6563617363687265717569726564846966697273744e616d656a246372656174656441746a24757064617465644174686c6173744e616d656a70726f70657274696573a2686c6173744e616d65a2647479706566737472696e67696d61784c656e6774681901006966697273744e616d65a2647479706566737472696e67696d61784c656e677468190100746164646974696f6e616c50726f70657274696573f4781d6f7074696f6e616c556e69717565496e6465786564446f63756d656e74a56474797065666f626a65637467696e646963657383a3646e616d6566696e6465783166756e69717565f56a70726f7065727469657381a16966697273744e616d656464657363a3646e616d6566696e6465783266756e69717565f56a70726f7065727469657383a168246f776e6572496463617363a16966697273744e616d6563617363a1686c6173744e616d6563617363a3646e616d6566696e6465783366756e69717565f56a70726f7065727469657382a167636f756e74727963617363a1646369747963617363687265717569726564826966697273744e616d65686c6173744e616d656a70726f70657274696573a46463697479a2647479706566737472696e67696d61784c656e67746819010067636f756e747279a2647479706566737472696e67696d61784c656e677468190100686c6173744e616d65a2647479706566737472696e67696d61784c656e6774681901006966697273744e616d65a2647479706566737472696e67696d61784c656e677468190100746164646974696f6e616c50726f70657274696573f4").unwrap();
 
         drive
             .apply_contract_cbor(
@@ -1122,7 +1157,7 @@ mod tests {
                 None,
                 BlockInfo::default(),
                 true,
-                StorageFlags::optional_default_as_ref(),
+                StorageFlags::optional_default_as_cow(),
                 None,
             )
             .expect("should update initial contract");
@@ -1130,7 +1165,7 @@ mod tests {
 
     #[test]
     fn test_create_deep_nested_contract_50() {
-        let (drive, contract, _contract_cbor) = setup_deep_nested_contract();
+        let (drive, contract, _contract_cbor) = setup_deep_nested_50_contract();
 
         let document_type = contract
             .document_type_for_name("nest")
@@ -1142,20 +1177,22 @@ mod tests {
 
         assert!(nested_value.is_some());
 
-        let storage_flags = Some(StorageFlags::SingleEpoch(0));
+        let storage_flags = Some(Cow::Owned(StorageFlags::SingleEpoch(0)));
 
         let random_owner_id = rand::thread_rng().gen::<[u8; 32]>();
         drive
             .add_document_for_contract(
                 DocumentAndContractInfo {
-                    document_info: DocumentInfo::DocumentRefAndSerialization((
-                        &document,
-                        document.to_cbor().as_slice(),
-                        storage_flags.as_ref(),
-                    )),
+                    owned_document_info: OwnedDocumentInfo {
+                        document_info: DocumentInfo::DocumentRefAndSerialization((
+                            &document,
+                            document.to_cbor().as_slice(),
+                            storage_flags,
+                        )),
+                        owner_id: Some(random_owner_id),
+                    },
                     contract: &contract,
                     document_type,
-                    owner_id: Some(random_owner_id),
                 },
                 false,
                 BlockInfo::default(),
@@ -1179,20 +1216,22 @@ mod tests {
 
         assert!(ref_value.is_some());
 
-        let storage_flags = Some(StorageFlags::SingleEpoch(0));
+        let storage_flags = Some(Cow::Owned(StorageFlags::SingleEpoch(0)));
 
         let random_owner_id = rand::thread_rng().gen::<[u8; 32]>();
         drive
             .add_document_for_contract(
                 DocumentAndContractInfo {
-                    document_info: DocumentInfo::DocumentRefAndSerialization((
-                        &document,
-                        document.to_cbor().as_slice(),
-                        storage_flags.as_ref(),
-                    )),
+                    owned_document_info: OwnedDocumentInfo {
+                        document_info: DocumentInfo::DocumentRefAndSerialization((
+                            &document,
+                            document.to_cbor().as_slice(),
+                            storage_flags,
+                        )),
+                        owner_id: Some(random_owner_id),
+                    },
                     contract: &contract,
                     document_type,
-                    owner_id: Some(random_owner_id),
                 },
                 false,
                 BlockInfo::default(),
@@ -1214,7 +1253,8 @@ mod tests {
         let contract_path = "tests/supporting_files/contract/references/references.json";
 
         // let's construct the grovedb structure for the dashpay data contract
-        let contract_cbor = json_document_to_cbor(contract_path, Some(1));
+        let contract_cbor =
+            json_document_to_cbor(contract_path, Some(1)).expect("expected to get cbor document");
         let contract = <Contract as DriveContractExt>::from_cbor(&contract_cbor, None)
             .expect("expected to deserialize the contract");
         drive
@@ -1223,7 +1263,7 @@ mod tests {
                 contract_cbor,
                 BlockInfo::default(),
                 false,
-                StorageFlags::optional_default_as_ref(),
+                StorageFlags::optional_default_as_cow(),
                 None,
             )
             .expect("expected to apply contract successfully");
@@ -1242,7 +1282,8 @@ mod tests {
             "tests/supporting_files/contract/references/references_with_contract_history.json";
 
         // let's construct the grovedb structure for the dashpay data contract
-        let contract_cbor = json_document_to_cbor(contract_path, Some(1));
+        let contract_cbor =
+            json_document_to_cbor(contract_path, Some(1)).expect("expected to get cbor document");
         let contract = <Contract as DriveContractExt>::from_cbor(&contract_cbor, None)
             .expect("expected to deserialize the contract");
         drive
@@ -1251,7 +1292,7 @@ mod tests {
                 contract_cbor,
                 BlockInfo::default(),
                 false,
-                StorageFlags::optional_default_as_ref(),
+                StorageFlags::optional_default_as_cow(),
                 None,
             )
             .expect("expected to apply contract successfully");
@@ -1269,7 +1310,8 @@ mod tests {
         let contract_path = "tests/supporting_files/contract/references/references.json";
 
         // let's construct the grovedb structure for the dashpay data contract
-        let contract_cbor = json_document_to_cbor(contract_path, Some(1));
+        let contract_cbor =
+            json_document_to_cbor(contract_path, Some(1)).expect("expected to get cbor document");
         let contract = <Contract as DriveContractExt>::from_cbor(&contract_cbor, None)
             .expect("expected to deserialize the contract");
 
@@ -1280,7 +1322,7 @@ mod tests {
                 contract_cbor.clone(),
                 BlockInfo::default(),
                 true,
-                StorageFlags::optional_default_as_ref(),
+                StorageFlags::optional_default_as_cow(),
                 None,
             )
             .expect("expected to apply contract successfully");
@@ -1297,11 +1339,12 @@ mod tests {
             .expect("expected to apply contract successfully");
     }
 
-    mod get_contract_with_fetch_info_and_add_to_operations {
+    mod get_contract_with_fetch_info {
         use super::*;
+        use dpp::prelude::Identifier;
 
         #[test]
-        fn test_get_contract_from_global_and_transactional_cache() {
+        fn should_get_contract_from_global_and_block_cache() {
             let (drive, mut contract, _) = setup_reference_contract();
 
             let transaction = drive.grove.start_transaction();
@@ -1338,41 +1381,262 @@ mod tests {
         }
 
         #[test]
-        fn test_get_non_existent_contract() {
-            let tmp_dir = TempDir::new().unwrap();
-            let drive: Drive =
-                Drive::open(tmp_dir, None).expect("expected to open Drive successfully");
-
-            drive
-                .create_initial_state_structure(None)
-                .expect("expected to create state structure");
-            let contract_id = rand::thread_rng().gen::<[u8; 32]>();
+        fn should_return_none_if_contract_not_exist() {
+            let drive = setup_drive_with_initial_state_structure();
 
             let result = drive
-                .get_contract_with_fetch_info(contract_id, None, None)
+                .get_contract_with_fetch_info([0; 32], None, None)
                 .expect("should get contract");
+
+            assert!(result.0.is_none());
+            assert!(result.1.is_none());
+        }
+
+        #[test]
+        fn should_return_fees_for_non_existing_contract_if_epoch_is_passed() {
+            let drive = setup_drive_with_initial_state_structure();
+
+            let result = drive
+                .get_contract_with_fetch_info([0; 32], Some(&Epoch::new(0)), None)
+                .expect("should get contract");
+
+            assert_eq!(
+                result.0,
+                Some(FeeResult {
+                    processing_fee: 4060,
+                    ..Default::default()
+                })
+            );
 
             assert!(result.1.is_none());
         }
 
         #[test]
-        fn test_get_non_existent_contract_has_fees() {
-            let tmp_dir = TempDir::new().unwrap();
-            let drive: Drive =
-                Drive::open(tmp_dir, None).expect("expected to open Drive successfully");
+        fn should_always_have_then_same_cost() {
+            // Merk trees have own cache and depends on does contract node cached or not
+            // we get could get different costs. To avoid of it we fetch contracts without tree caching
 
+            let (drive, mut ref_contract, _) = setup_reference_contract();
+
+            /*
+             * Firstly, we create multiple contracts during block processing (in transaction)
+             */
+
+            let ref_contract_id_buffer = Identifier::from([0; 32]).to_buffer();
+
+            let transaction = drive.grove.start_transaction();
+
+            // Create more contracts to trigger re-balancing
+            for i in 0..150u8 {
+                ref_contract.id = Identifier::from([i; 32]);
+
+                let ref_contract_cbor = ref_contract.to_cbor().expect("should serialize contract");
+
+                drive
+                    .apply_contract(
+                        &ref_contract,
+                        ref_contract_cbor,
+                        BlockInfo::default(),
+                        true,
+                        StorageFlags::optional_default_as_cow(),
+                        Some(&transaction),
+                    )
+                    .expect("expected to apply contract successfully");
+            }
+
+            // Create a deep placed contract
+            let contract_path = "tests/supporting_files/contract/deepNested/deep-nested10.json";
+            let contract_cbor = json_document_to_cbor(contract_path, Some(1))
+                .expect("expected to get cbor document");
+            let deep_contract = <Contract as DriveContractExt>::from_cbor(&contract_cbor, None)
+                .expect("expected to deserialize the contract");
             drive
-                .create_initial_state_structure(None)
-                .expect("expected to create state structure");
-            let contract_id = rand::thread_rng().gen::<[u8; 32]>();
+                .apply_contract(
+                    &deep_contract,
+                    contract_cbor,
+                    BlockInfo::default(),
+                    true,
+                    StorageFlags::optional_default_as_cow(),
+                    Some(&transaction),
+                )
+                .expect("expected to apply contract successfully");
 
-            let result = drive
-                .get_contract_with_fetch_info(contract_id, Some(&Epoch::new(0)), None)
-                .expect("should get contract");
+            let mut ref_contract_fetch_info_transactional = drive
+                .get_contract_with_fetch_info(
+                    ref_contract_id_buffer,
+                    Some(&Epoch::new(0)),
+                    Some(&transaction),
+                )
+                .expect("got contract")
+                .1
+                .expect("got contract fetch info");
 
-            let fees = result.0;
-            assert!(fees.is_some());
-            assert_eq!(fees.unwrap().processing_fee, 6000)
+            let mut deep_contract_fetch_info_transactional = drive
+                .get_contract_with_fetch_info(
+                    deep_contract.id().to_buffer(),
+                    Some(&Epoch::new(0)),
+                    Some(&transaction),
+                )
+                .expect("got contract")
+                .1
+                .expect("got contract fetch info");
+
+            /*
+             * Then we commit the block
+             */
+
+            // Commit transaction and merge block (transactional) cache to global cache
+            transaction.commit().expect("expected to commit");
+
+            let mut drive_cache = drive.cache.borrow_mut();
+            drive_cache.cached_contracts.merge_block_cache();
+            drop(drive_cache);
+
+            /*
+             * Contracts fetched with user query and during block execution must have equal costs
+             */
+
+            let deep_contract_fetch_info = drive
+                .get_contract_with_fetch_info(deep_contract.id().to_buffer(), None, None)
+                .expect("got contract")
+                .1
+                .expect("got contract fetch info");
+
+            let ref_contract_fetch_info = drive
+                .get_contract_with_fetch_info(ref_contract_id_buffer, None, None)
+                .expect("got contract")
+                .1
+                .expect("got contract fetch info");
+
+            assert_eq!(
+                deep_contract_fetch_info_transactional,
+                deep_contract_fetch_info
+            );
+
+            assert_eq!(
+                ref_contract_fetch_info_transactional,
+                ref_contract_fetch_info
+            );
+
+            /*
+             * User restarts the node
+             */
+
+            // Drop cache so contract will be fetched once again
+            drive.drop_cache();
+
+            /*
+             * Other nodes weren't restarted so contracts queried by user after restart
+             * must have the same costs as transactional contracts and contracts before
+             * restart
+             */
+
+            let deep_contract_fetch_info_without_cache = drive
+                .get_contract_with_fetch_info(deep_contract.id().to_buffer(), None, None)
+                .expect("got contract")
+                .1
+                .expect("got contract fetch info");
+
+            let ref_contract_fetch_info_without_cache = drive
+                .get_contract_with_fetch_info(ref_contract_id_buffer, None, None)
+                .expect("got contract")
+                .1
+                .expect("got contract fetch info");
+
+            // Remove fees to match with fetch with epoch provided
+            let mut deep_contract_fetch_info_transactional_without_arc =
+                Arc::make_mut(&mut deep_contract_fetch_info_transactional);
+
+            deep_contract_fetch_info_transactional_without_arc.fee = None;
+
+            let mut ref_contract_fetch_info_transactional_without_arc =
+                Arc::make_mut(&mut ref_contract_fetch_info_transactional);
+
+            ref_contract_fetch_info_transactional_without_arc.fee = None;
+
+            assert_eq!(
+                deep_contract_fetch_info_transactional,
+                deep_contract_fetch_info_without_cache
+            );
+            assert_eq!(
+                ref_contract_fetch_info_transactional,
+                ref_contract_fetch_info_without_cache
+            );
+
+            /*
+             * Let's imagine that many blocks were executed and the node is restarted again
+             */
+            drive.drop_cache();
+
+            /*
+             * Drive executes a new block
+             */
+
+            let transaction = drive.grove.start_transaction();
+
+            // Create more contracts to trigger re-balancing
+            for i in 150..200u8 {
+                ref_contract.id = Identifier::from([i; 32]);
+
+                let ref_contract_cbor = ref_contract.to_cbor().expect("should serialize contract");
+
+                drive
+                    .apply_contract(
+                        &ref_contract,
+                        ref_contract_cbor,
+                        BlockInfo::default(),
+                        true,
+                        StorageFlags::optional_default_as_cow(),
+                        Some(&transaction),
+                    )
+                    .expect("expected to apply contract successfully");
+            }
+
+            /*
+             * Other nodes weren't restarted so contracts fetched during block execution
+             * should have the same cost as previously fetched contracts
+             */
+
+            let mut deep_contract_fetch_info_transactional2 = drive
+                .get_contract_with_fetch_info(
+                    deep_contract.id().to_buffer(),
+                    Some(&Epoch::new(0)),
+                    Some(&transaction),
+                )
+                .expect("got contract")
+                .1
+                .expect("got contract fetch info");
+
+            let mut ref_contract_fetch_info_transactional2 = drive
+                .get_contract_with_fetch_info(
+                    ref_contract_id_buffer,
+                    Some(&Epoch::new(0)),
+                    Some(&transaction),
+                )
+                .expect("got contract")
+                .1
+                .expect("got contract fetch info");
+
+            // Remove fees to match with fetch with epoch provided
+            let mut deep_contract_fetch_info_transactional_without_arc =
+                Arc::make_mut(&mut deep_contract_fetch_info_transactional2);
+
+            deep_contract_fetch_info_transactional_without_arc.fee = None;
+
+            let mut ref_contract_fetch_info_transactional_without_arc =
+                Arc::make_mut(&mut ref_contract_fetch_info_transactional2);
+
+            ref_contract_fetch_info_transactional_without_arc.fee = None;
+
+            assert_eq!(
+                ref_contract_fetch_info_transactional,
+                ref_contract_fetch_info_transactional2,
+            );
+
+            assert_eq!(
+                deep_contract_fetch_info_transactional,
+                deep_contract_fetch_info_transactional2
+            );
         }
     }
 }

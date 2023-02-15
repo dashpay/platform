@@ -9,7 +9,7 @@ use crate::util::string_encoding::Encoding;
 
 pub const MEDIA_TYPE: &str = "application/x.dash.dpp.identifier";
 
-#[derive(Default, Debug, Clone, PartialEq, Eq, Hash)]
+#[derive(Default, Debug, Clone, PartialEq, Eq, Hash, Copy)]
 pub struct Identifier {
     pub buffer: [u8; 32],
 }
@@ -79,6 +79,11 @@ impl Identifier {
         self.buffer
     }
 
+    /// Convenience method to get underlying buffer as a vec
+    pub fn to_buffer_vec(&self) -> Vec<u8> {
+        self.buffer.to_vec()
+    }
+
     pub fn to_string(&self, encoding: Encoding) -> String {
         string_encoding::encode(&self.buffer, encoding)
     }
@@ -95,6 +100,22 @@ impl TryFrom<&[u8]> for Identifier {
 
     fn try_from(bytes: &[u8]) -> Result<Self, Self::Error> {
         Self::from_bytes(bytes)
+    }
+}
+
+impl TryFrom<Vec<u8>> for Identifier {
+    type Error = ProtocolError;
+
+    fn try_from(bytes: Vec<u8>) -> Result<Self, Self::Error> {
+        Self::from_bytes(&bytes)
+    }
+}
+
+impl TryFrom<String> for Identifier {
+    type Error = ProtocolError;
+
+    fn try_from(data: String) -> Result<Self, Self::Error> {
+        Self::from_string(&data, Encoding::Base58)
     }
 }
 
@@ -118,7 +139,6 @@ impl Serialize for Identifier {
 impl<'de> Deserialize<'de> for Identifier {
     fn deserialize<D: Deserializer<'de>>(d: D) -> Result<Identifier, D::Error> {
         let data: String = Deserialize::deserialize(d)?;
-
         // by default we use base58 as Identifier type should be encoded in that way
         Identifier::from_string_with_encoding_string(&data, Some("base58"))
             .map_err(|e| serde::de::Error::custom(e.to_string()))

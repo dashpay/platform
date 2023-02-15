@@ -17,10 +17,10 @@ function createCoreChainLockUpdateFactory(
    * @typedef createCoreChainLockUpdate
    * @param {number} contextCoreChainLockedHeight
    * @param {number} round
-   * @param {BaseLogger} consensusLogger
+   * @param {BaseLogger} contextLogger
    * @return {Promise<CoreChainLock>}
    */
-  async function createCoreChainLockUpdate(contextCoreChainLockedHeight, round, consensusLogger) {
+  async function createCoreChainLockUpdate(contextCoreChainLockedHeight, round, contextLogger) {
     // Update Core Chain Locks
     const coreChainLock = latestCoreChainLock.getChainLock();
 
@@ -32,7 +32,7 @@ function createCoreChainLockUpdateFactory(
         signature: coreChainLock.signature,
       });
 
-      consensusLogger.debug(
+      contextLogger.debug(
         {
           nextCoreChainLockHeight: coreChainLock.height,
         },

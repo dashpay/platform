@@ -231,6 +231,7 @@ class GroveDBStore {
    *
    * @param {PathQuery} query
    * @param {Object} [options]
+   * @param {boolean} [options.skipCache=false]
    * @param {boolean} [options.useTransaction=false]
    * @return {Promise<StorageResult<Buffer|null>>}
    */
@@ -240,6 +241,7 @@ class GroveDBStore {
     try {
       [items] = await this.db.query(
         query,
+        options.skipCache || false,
         options.useTransaction || false,
       );
     } catch (e) {

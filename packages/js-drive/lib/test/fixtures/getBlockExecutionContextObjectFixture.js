@@ -25,7 +25,7 @@ const { hash } = require('@dashevo/dpp/lib/util/hash');
  *   version: number,
  *   timeMs: number,
  *   validTxs: number,
- *   consensusLogger: Logger,
+ *   contextLogger: Logger,
  *   withdrawalTransactionsMap: Object,
  *   round: number,
  * }}
@@ -50,9 +50,10 @@ function getBlockExecutionContextObjectFixture(dataContract = getDataContractFix
     dataContracts: [dataContract.toObject()],
     lastCommitInfo: CommitInfo.toObject(lastCommitInfo),
     height: 10,
+    proposedAppVersion: 42,
     coreChainLockedHeight: 10,
     version,
-    consensusLogger: pino(),
+    contextLogger: pino(),
     epochInfo: {
       height: 1,
       timeMs: 100,

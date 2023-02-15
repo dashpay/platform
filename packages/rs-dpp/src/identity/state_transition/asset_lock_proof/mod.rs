@@ -24,7 +24,7 @@ mod asset_lock_transaction_validator;
 pub mod chain;
 pub mod instant;
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub enum AssetLockProof {
     Instant(InstantAssetLockProof),
     Chain(ChainAssetLockProof),
@@ -114,10 +114,7 @@ impl AssetLockProof {
     pub fn create_identifier(&self) -> Result<Identifier, NonConsensusError> {
         match self {
             AssetLockProof::Instant(instant_proof) => instant_proof.create_identifier(),
-            AssetLockProof::Chain(chain_proof) => {
-                // TODO: fix return type
-                Ok(chain_proof.create_identifier())
-            }
+            AssetLockProof::Chain(chain_proof) => chain_proof.create_identifier(),
         }
     }
 
@@ -136,7 +133,7 @@ impl AssetLockProof {
     }
 
     pub fn to_raw_object(&self) -> Result<JsonValue, Error> {
-        serde_json::to_value(&self)
+        serde_json::to_value(self)
     }
 }
 

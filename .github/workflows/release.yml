@@ -841,7 +841,7 @@ jobs:
         run: yarn workspace dashmate oclif manifest
 
       - name: Create package
-        run: yarn workspace dashmate oclif pack {{ matrix.package_type }}
+        run: yarn workspace dashmate oclif pack ${{ matrix.package_type }}
 
       - name: Upload artifacts to action summary
         uses: actions/upload-artifact@v3

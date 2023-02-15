@@ -5,17 +5,17 @@ use super::*;
 #[wasm_bindgen]
 #[derive(Error, Debug)]
 #[error("No documents were supplied to state transition")]
-pub struct NotDocumentsSuppliedError {}
+pub struct NoDocumentsSuppliedError {}
 
 #[wasm_bindgen]
-impl NotDocumentsSuppliedError {
+impl NoDocumentsSuppliedError {
     #[wasm_bindgen(constructor)]
     pub fn new() -> Self {
-        NotDocumentsSuppliedError {}
+        NoDocumentsSuppliedError {}
     }
 }
 
-impl Default for NotDocumentsSuppliedError {
+impl Default for NoDocumentsSuppliedError {
     fn default() -> Self {
         Self::new()
     }

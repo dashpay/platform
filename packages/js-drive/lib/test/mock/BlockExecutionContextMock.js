@@ -7,12 +7,14 @@
  * @method getHeight
  * @method setVersion
  * @method getVersion
+ * @method setProposedAppVersion
+ * @method getProposedAppVersion
  * @method setLastCommitInfo
  * @method getLastCommitInfo
  * @method getValidTxCount
  * @method getInvalidTxCount
- * @method setConsensusLogger
- * @method getConsensusLogger
+ * @method setContextLogger
+ * @method getContextLogger
  * @method getRound
  * @method fromObject
  * @method toObject
@@ -38,10 +40,12 @@ class BlockExecutionContextMock {
     this.reset = sinon.stub();
     this.setVersion = sinon.stub();
     this.getVersion = sinon.stub();
+    this.setProposedAppVersion = sinon.stub();
+    this.getProposedAppVersion = sinon.stub();
     this.setLastCommitInfo = sinon.stub();
     this.getLastCommitInfo = sinon.stub();
-    this.setConsensusLogger = sinon.stub();
-    this.getConsensusLogger = sinon.stub();
+    this.setContextLogger = sinon.stub();
+    this.getContextLogger = sinon.stub();
     this.setWithdrawalTransactionsMap = sinon.stub();
     this.getWithdrawalTransactionsMap = sinon.stub();
     this.getRound = sinon.stub();

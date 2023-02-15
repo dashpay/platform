@@ -1,11 +1,11 @@
 use self::drive::DriveError;
+use crate::error::proof::ProofError;
 use crate::error::storage_flags::StorageFlagsError;
 use document::DocumentError;
-use dpp::data_contract::extra::ContractError;
+use dpp::ProtocolError;
 use fee::FeeError;
 use identity::IdentityError;
 use query::QueryError;
-use structure::StructureError;
 
 /// Document module
 pub mod document;
@@ -15,12 +15,12 @@ pub mod drive;
 pub mod fee;
 /// Identity module
 pub mod identity;
+/// Proof module
+pub mod proof;
 /// Query module
 pub mod query;
 /// Storage flags module
 pub mod storage_flags;
-/// Structure module
-pub mod structure;
 
 /// Errors
 #[derive(Debug, thiserror::Error)]
@@ -34,18 +34,18 @@ pub enum Error {
     /// Drive error
     #[error("drive: {0}")]
     Drive(#[from] DriveError),
+    /// Drive error
+    #[error("proof: {0}")]
+    Proof(#[from] ProofError),
     /// GroveDB error
     #[error("grovedb: {0}")]
     GroveDB(#[from] grovedb::Error),
-    /// Contract error
-    #[error("contract: {0}")]
-    Contract(#[from] ContractError),
+    /// Protocol error
+    #[error("protocol: {0}")]
+    Protocol(#[from] ProtocolError),
     /// Identity error
     #[error("identity: {0}")]
     Identity(#[from] IdentityError),
-    /// Structure error
-    #[error("structure: {0}")]
-    Structure(#[from] StructureError),
     /// Fee error
     #[error("fee: {0}")]
     Fee(#[from] FeeError),

@@ -2,8 +2,6 @@ use std::convert::TryFrom;
 
 use anyhow::{anyhow, bail};
 
-use crate::errors::ProtocolError;
-
 /// JsonPath represents a deserialized [JsonPathLiteral]. The JsonPath is made
 /// of [JsonPathStep]. [JsonPath] can be created from string
 /// ## Example
@@ -43,8 +41,12 @@ impl<'a> From<&'a str> for JsonPathLiteral<'a> {
 }
 
 impl<'a> TryFrom<JsonPathLiteral<'a>> for JsonPath {
-    type Error = ProtocolError;
+    type Error = anyhow::Error;
 
+    // TODO include validation:
+    // - validation: empty steps.
+    // - Valid and invalid characters should take into account the Schema
+    // - no path steps
     fn try_from(path: JsonPathLiteral<'a>) -> Result<Self, Self::Error> {
         let mut steps: Vec<JsonPathStep> = vec![];
         let raw_steps = path.split('.');
@@ -94,8 +96,6 @@ fn try_parse_indexed_field(step: &str) -> Result<(String, usize), anyhow::Error>
 
 #[cfg(test)]
 mod test {
-    use std::convert::TryInto;
-
     use super::*;
 
     #[test]

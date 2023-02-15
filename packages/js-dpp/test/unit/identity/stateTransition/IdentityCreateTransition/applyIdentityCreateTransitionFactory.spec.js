@@ -55,7 +55,8 @@ describe('applyIdentityCreateTransitionFactory', () => {
     const identity = new Identity({
       protocolVersion: protocolVersion.latestVersion,
       id: stateTransition.getIdentityId(),
-      publicKeys: stateTransition.getPublicKeys().map((key) => key.toObject()),
+      publicKeys: stateTransition.getPublicKeys()
+        .map((key) => key.toObject({ skipSignature: true })),
       balance,
       revision: 0,
     });
@@ -65,13 +66,8 @@ describe('applyIdentityCreateTransitionFactory', () => {
       executionContext,
     );
 
-    const publicKeyHashes = identity
-      .getPublicKeys()
-      .map((publicKey) => publicKey.hash());
-
-    expect(stateRepositoryMock.storeIdentityPublicKeyHashes).to.have.been.calledOnceWithExactly(
-      identity.getId(),
-      publicKeyHashes,
+    expect(stateRepositoryMock.addToSystemCredits).to.have.been.calledOnceWithExactly(
+      balance,
       executionContext,
     );
 

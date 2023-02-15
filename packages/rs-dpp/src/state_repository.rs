@@ -1,12 +1,12 @@
-use std::convert::{Infallible, TryInto};
-
 use anyhow::Result as AnyResult;
 use async_trait::async_trait;
 use dashcore::InstantLock;
-#[cfg(test)]
+#[cfg(any(test, feature = "mocks"))]
 use mockall::{automock, predicate::*};
 use serde_json::Value as JsonValue;
+use std::convert::{Infallible, TryInto};
 
+use crate::identity::KeyID;
 use crate::{
     prelude::*,
     state_transition::state_transition_execution_context::StateTransitionExecutionContext,
@@ -18,12 +18,25 @@ impl From<Infallible> for ProtocolError {
     }
 }
 
+#[derive(Clone, Default)]
+pub struct FetchTransactionResponse {
+    pub height: Option<u32>,
+    pub data: Option<Vec<u8>>,
+}
+
 // Let StateRepositoryLike mock return DataContracts instead of bytes to simplify things a bit.
-#[cfg_attr(test, automock(type ConversionError=Infallible; type FetchDataContract=DataContract;))]
-#[async_trait]
-pub trait StateRepositoryLike: Send + Sync {
+#[cfg_attr(any(test, feature="mocks"), automock(
+    type ConversionError=Infallible;
+    type FetchDataContract=DataContract;
+    type FetchIdentity=Identity;
+    type FetchTransaction=FetchTransactionResponse;
+))]
+#[async_trait(?Send)]
+pub trait StateRepositoryLike: Sync {
     type ConversionError: Into<ProtocolError>;
     type FetchDataContract: TryInto<DataContract, Error = Self::ConversionError>;
+    type FetchIdentity: TryInto<Identity, Error = Self::ConversionError>;
+    type FetchTransaction: TryInto<FetchTransactionResponse, Error = Self::ConversionError>;
 
     /// Fetch the Data Contract by ID
     /// By default, the method should return data as bytes (`Vec<u8>`), but the deserialization to [`DataContract`] should be also possible
@@ -77,46 +90,97 @@ pub trait StateRepositoryLike: Send + Sync {
 
     /// Fetch the Transaction
     /// By default, the method should return data as bytes (`Vec<u8>`), but the deserialization to [`Transaction`] should be also possible
-    async fn fetch_transaction<T>(
+    async fn fetch_transaction(
         &self,
         id: &str,
         execution_context: &StateTransitionExecutionContext,
-    ) -> AnyResult<Option<T>>
-    where
-        T: for<'de> serde::de::Deserialize<'de> + 'static;
+    ) -> AnyResult<Self::FetchTransaction>;
 
     /// Fetch Identity by ID
     /// By default, the method should return data as bytes (`Vec<u8>`), but the deserialization to [`Identity`] should be also possible
-    async fn fetch_identity<T>(
+    async fn fetch_identity(
         &self,
         id: &Identifier,
         execution_context: &StateTransitionExecutionContext,
-    ) -> AnyResult<Option<T>>
-    where
-        T: for<'de> serde::de::Deserialize<'de> + 'static;
+    ) -> AnyResult<Option<Self::FetchIdentity>>;
 
-    /// Store Public Key hashes and Identity id pair
-    async fn store_identity_public_key_hashes(
+    /// Create an identity
+    async fn create_identity(
         &self,
-        identity_id: &Identifier,
-        public_key_hashes: Vec<Vec<u8>>,
+        identity: &Identity,
         execution_context: &StateTransitionExecutionContext,
     ) -> AnyResult<()>;
 
-    /// Fetch Identity Ids by Public Key hashes
-    /// By default, the method should return data as bytes (`Vec<u8>`), but the deserialization to [`Identity`] should be also possible
-    async fn fetch_identity_by_public_key_hashes<T>(
+    /// Add keys to identity
+    async fn add_keys_to_identity(
         &self,
-        public_key_hashed: Vec<Vec<u8>>,
-    ) -> AnyResult<Vec<T>>
-    where
-        T: for<'de> serde::de::Deserialize<'de> + 'static;
+        identity_id: &Identifier,
+        keys: &[IdentityPublicKey],
+        execution_context: &StateTransitionExecutionContext,
+    ) -> AnyResult<()>;
 
-    /// Fetch latest platform block header
-    /// By default, the method should return data as bytes (`Vec<u8>`), but the deserialization to [`serde_json::Value`] should be also possible
-    async fn fetch_latest_platform_block_header<T>(&self) -> AnyResult<T>
-    where
-        T: for<'de> serde::de::Deserialize<'de> + 'static;
+    /// Disable identity keys
+    async fn disable_identity_keys(
+        &self,
+        identity_id: &Identifier,
+        keys: &[KeyID],
+        disable_at: TimestampMillis,
+        execution_context: &StateTransitionExecutionContext,
+    ) -> AnyResult<()>;
+
+    /// Update identity revision
+    async fn update_identity_revision(
+        &self,
+        identity_id: &Identifier,
+        revision: Revision,
+        execution_context: &StateTransitionExecutionContext,
+    ) -> AnyResult<()>;
+
+    /// Fetch identity balance by identity ID
+    async fn fetch_identity_balance(
+        &self,
+        identity_id: &Identifier,
+        execution_context: &StateTransitionExecutionContext,
+    ) -> AnyResult<Option<u64>>; // TODO we should use Credits type
+
+    /// Fetch identity balance including debt by identity ID
+    async fn fetch_identity_balance_with_debt(
+        &self,
+        identity_id: &Identifier,
+        execution_context: &StateTransitionExecutionContext,
+    ) -> AnyResult<Option<i64>>; // TODO we should use SignedCredits type
+
+    /// Add to identity balance
+    async fn add_to_identity_balance(
+        &self,
+        identity_id: &Identifier,
+        amount: u64, // TODO we should use Credits type
+        execution_context: &StateTransitionExecutionContext,
+    ) -> AnyResult<()>;
+
+    /// Remove from identity balance
+    async fn remove_from_identity_balance(
+        &self,
+        identity_id: &Identifier,
+        amount: u64, // TODO we should use Credits type
+        execution_context: &StateTransitionExecutionContext,
+    ) -> AnyResult<()>;
+
+    /// Add to system credits
+    async fn add_to_system_credits(
+        &self,
+        amount: u64, // TODO we should use Credits type
+        execution_context: &StateTransitionExecutionContext,
+    ) -> AnyResult<()>;
+
+    /// Remove from system credits
+    async fn remove_from_system_credits(
+        &self,
+        amount: u64, // TODO we should use Credits type
+        execution_context: &StateTransitionExecutionContext,
+    ) -> AnyResult<()>;
+
+    async fn fetch_latest_platform_block_header(&self) -> AnyResult<Vec<u8>>;
 
     /// Verify Instant Lock
     async fn verify_instant_lock(
@@ -144,22 +208,11 @@ pub trait StateRepositoryLike: Send + Sync {
     where
         T: for<'de> serde::de::Deserialize<'de> + 'static;
 
-    /// Create an identity
-    async fn create_identity(
-        &self,
-        identity: &Identity,
-        execution_context: &StateTransitionExecutionContext,
-    ) -> AnyResult<()>;
-
-    /// Update an identity
-    async fn update_identity(
-        &self,
-        identity: &Identity,
-        execution_context: &StateTransitionExecutionContext,
-    ) -> AnyResult<()>;
-
     // Get latest (in a queue) withdrawal transaction index
     async fn fetch_latest_withdrawal_transaction_index(&self) -> AnyResult<u64>;
+
+    // Get latest (in a queue) withdrawal transaction index
+    async fn fetch_latest_platform_core_chain_locked_height(&self) -> AnyResult<Option<u32>>;
 
     // Enqueue withdrawal transaction
     async fn enqueue_withdrawal_transaction(

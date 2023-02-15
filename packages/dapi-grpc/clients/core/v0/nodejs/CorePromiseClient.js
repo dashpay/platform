@@ -73,8 +73,9 @@ class CorePromiseClient {
     const url = new URL(hostname);
     const { protocol, host: strippedHostname } = url;
 
+    // See this issue https://github.com/nodejs/node/issues/3176
     // eslint-disable-next-line no-param-reassign
-    credentials = protocol === 'https' ? grpc.credentials.createSsl() : grpc.credentials.createInsecure();
+    credentials = protocol.replace(':', '') === 'https' ? grpc.credentials.createSsl() : grpc.credentials.createInsecure();
 
     this.client = new CoreNodeJSClient(strippedHostname, credentials, options);
 

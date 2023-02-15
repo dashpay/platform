@@ -37,40 +37,52 @@ use crate::drive::block_info::BlockInfo;
 use crate::drive::Drive;
 use crate::fee_pools::epochs::Epoch;
 use dpp::identifier::Identifier;
-use dpp::identity::{Identity, IdentityPublicKey, KeyType};
+use dpp::identity::{Identity, IdentityPublicKey};
 use grovedb::TransactionArg;
+use rand::rngs::StdRng;
+use rand::{Rng, SeedableRng};
+use std::collections::BTreeMap;
 
 /// Creates a test identity from an id and inserts it into Drive.
-pub fn create_test_identity(drive: &Drive, id: [u8; 32], transaction: TransactionArg) -> Identity {
-    let identity_key = IdentityPublicKey {
-        id: 1,
-        key_type: KeyType::ECDSA_SECP256K1,
-        data: vec![0, 1, 2, 3],
-        purpose: dpp::identity::Purpose::AUTHENTICATION,
-        security_level: dpp::identity::SecurityLevel::MASTER,
-        read_only: false,
-        disabled_at: None,
-        signature: Default::default(),
+pub fn create_test_identity(
+    drive: &Drive,
+    id: [u8; 32],
+    seed: Option<u64>,
+    transaction: TransactionArg,
+) -> Identity {
+    let mut rng = match seed {
+        None => StdRng::from_entropy(),
+        Some(seed_value) => StdRng::seed_from_u64(seed_value),
     };
+
+    create_test_identity_with_rng(drive, id, &mut rng, transaction)
+}
+
+/// Creates a test identity from an id with random generator and inserts it into Drive.
+pub fn create_test_identity_with_rng(
+    drive: &Drive,
+    id: [u8; 32],
+    rng: &mut StdRng,
+    transaction: TransactionArg,
+) -> Identity {
+    let identity_key = IdentityPublicKey::random_ecdsa_master_authentication_key_with_rng(1, rng);
+
+    let mut public_keys = BTreeMap::new();
+
+    public_keys.insert(identity_key.id, identity_key);
 
     let identity = Identity {
         id: Identifier::new(id),
         revision: 1,
         balance: 0,
         protocol_version: 0,
-        public_keys: vec![identity_key],
+        public_keys,
         asset_lock_proof: None,
         metadata: None,
     };
 
     drive
-        .insert_identity(
-            identity.clone(),
-            BlockInfo::default(),
-            true,
-            None,
-            transaction,
-        )
+        .add_new_identity(identity.clone(), &BlockInfo::default(), true, transaction)
         .expect("should insert identity");
 
     identity
@@ -107,9 +119,10 @@ pub fn create_test_masternode_identities_and_add_them_as_epoch_block_proposers(
     drive: &Drive,
     epoch: &Epoch,
     count: u16,
+    seed: Option<u64>,
     transaction: TransactionArg,
 ) -> Vec<[u8; 32]> {
-    let proposers = create_test_masternode_identities(drive, count, transaction);
+    let proposers = create_test_masternode_identities(drive, count, seed, transaction);
 
     increment_in_epoch_each_proposers_block_count(drive, epoch, &proposers, transaction);
 
@@ -120,14 +133,28 @@ pub fn create_test_masternode_identities_and_add_them_as_epoch_block_proposers(
 pub fn create_test_masternode_identities(
     drive: &Drive,
     count: u16,
+    seed: Option<u64>,
+    transaction: TransactionArg,
+) -> Vec<[u8; 32]> {
+    let mut rng = match seed {
+        None => StdRng::from_entropy(),
+        Some(seed_value) => StdRng::seed_from_u64(seed_value),
+    };
+    create_test_masternode_identities_with_rng(drive, count, &mut rng, transaction)
+}
+
+/// Creates a list of test Masternode identities of size `count` with random data
+pub fn create_test_masternode_identities_with_rng(
+    drive: &Drive,
+    count: u16,
+    rng: &mut StdRng,
     transaction: TransactionArg,
 ) -> Vec<[u8; 32]> {
     let mut identity_ids: Vec<[u8; 32]> = Vec::with_capacity(count as usize);
 
     for _ in 0..count {
-        let proposer_pro_tx_hash: [u8; 32] = rand::random();
-
-        create_test_identity(drive, proposer_pro_tx_hash, transaction);
+        let proposer_pro_tx_hash = rng.gen::<[u8; 32]>();
+        create_test_identity_with_rng(drive, proposer_pro_tx_hash, rng, transaction);
 
         identity_ids.push(proposer_pro_tx_hash);
     }

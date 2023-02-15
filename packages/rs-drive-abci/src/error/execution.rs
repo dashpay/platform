@@ -22,6 +22,14 @@ pub enum ExecutionError {
     DriveIncoherence(&'static str),
 
     /// Error
+    #[error("protocol upgrade incoherence error: {0}")]
+    ProtocolUpgradeIncoherence(&'static str),
+
+    /// Error
     #[error("drive missing data error: {0}")]
     DriveMissingData(&'static str),
+
+    /// Error
+    #[error("corrupted credits not balanced error: {0}")]
+    CorruptedCreditsNotBalanced(String),
 }

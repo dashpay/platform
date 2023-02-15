@@ -20,6 +20,7 @@ const protoTimestampToMillis = require('../../../util/protoTimestampToMillis');
  * @param {synchronizeMasternodeIdentities} synchronizeMasternodeIdentities
  * @param {RSAbci} rsAbci
  * @param {ExecutionTimer} executionTimer
+ * @param {SimplifiedMasternodeList} simplifiedMasternodeList
  *
  * @return {beginBlock}
  */
@@ -35,6 +36,7 @@ function beginBlockFactory(
   synchronizeMasternodeIdentities,
   rsAbci,
   executionTimer,
+  simplifiedMasternodeList,
 ) {
   /**
    * @typedef beginBlock
@@ -43,13 +45,14 @@ function beginBlockFactory(
    * @param {Long} request.height
    * @param {number} request.coreChainLockedHeight
    * @param {IConsensus} request.version
+   * @param {Long} request.proposedAppVersion
    * @param {ITimestamp} request.time
    * @param {Buffer} request.proposerProTxHash
-   * @param {BaseLogger} consensusLogger
+   * @param {BaseLogger} contextLogger
    *
    * @return {Promise<void>}
    */
-  async function beginBlock(request, consensusLogger) {
+  async function beginBlock(request, contextLogger) {
     const {
       lastCommitInfo,
       height,
@@ -57,6 +60,7 @@ function beginBlockFactory(
       version,
       time,
       proposerProTxHash,
+      proposedAppVersion,
       round,
     } = request;
 
@@ -88,13 +92,22 @@ function beginBlockFactory(
     // Reset block execution context
     proposalBlockExecutionContext.reset();
 
-    proposalBlockExecutionContext.setConsensusLogger(consensusLogger);
+    proposalBlockExecutionContext.setContextLogger(contextLogger);
     proposalBlockExecutionContext.setHeight(height);
     proposalBlockExecutionContext.setVersion(version);
+    proposalBlockExecutionContext.setProposedAppVersion(proposedAppVersion);
     proposalBlockExecutionContext.setRound(round);
     proposalBlockExecutionContext.setTimeMs(protoTimestampToMillis(time));
     proposalBlockExecutionContext.setCoreChainLockedHeight(coreChainLockedHeight);
     proposalBlockExecutionContext.setLastCommitInfo(lastCommitInfo);
+
+    // Update SML
+    const isSimplifiedMasternodeListUpdated = await updateSimplifiedMasternodeList(
+      coreChainLockedHeight,
+      {
+        logger: contextLogger,
+      },
+    );
 
     // Set protocol version to DPP
     dpp.setProtocolVersion(version.app.toNumber());
@@ -118,13 +131,20 @@ function beginBlockFactory(
       proposerProTxHash,
       // TODO replace with real value
       validatorSetQuorumHash: Buffer.alloc(32),
+      // TODO: Since we don't have HPMNs now and every masternode can be a validator,
+      //  we pass the whole list
+      totalHpmns: simplifiedMasternodeList.getStore()
+        .getCurrentSML()
+        .getValidMasternodesList()
+        .length,
+      proposedAppVersion: proposedAppVersion.toNumber(),
     };
 
     if (!latestBlockExecutionContext.isEmpty()) {
       rsRequest.previousBlockTimeMs = latestBlockExecutionContext.getTimeMs();
     }
 
-    consensusLogger.debug(rsRequest, 'Request RS Drive\'s BlockBegin method');
+    contextLogger.debug(rsRequest, 'Request RS Drive\'s BlockBegin method');
 
     const rsResponse = await rsAbci.blockBegin(rsRequest, true);
 
@@ -153,16 +173,10 @@ function beginBlockFactory(
 
       const blockTimeFormatted = new Date(proposalBlockExecutionContext.getTimeMs()).toUTCString();
 
-      consensusLogger.info(debugData, `Epoch #${currentEpochIndex} started on block #${height} at ${blockTimeFormatted}`);
+      contextLogger.info(debugData, `Epoch #${currentEpochIndex} started on block #${height} at ${blockTimeFormatted}`);
     }
 
-    // Update SML
-    const isSimplifiedMasternodeListUpdated = await updateSimplifiedMasternodeList(
-      coreChainLockedHeight,
-      {
-        logger: consensusLogger,
-      },
-    );
+    // Synchronize masternode identities
 
     if (isSimplifiedMasternodeListUpdated) {
       const blockInfo = BlockInfo.createFromBlockExecutionContext(proposalBlockExecutionContext);
@@ -176,12 +190,12 @@ function beginBlockFactory(
         createdEntities, updatedEntities, removedEntities, fromHeight, toHeight,
       } = synchronizeMasternodeIdentitiesResult;
 
-      consensusLogger.info(
+      contextLogger.info(
         `Masternode identities are synced for heights from ${fromHeight} to ${toHeight}: ${createdEntities.length} created, ${updatedEntities.length} updated, ${removedEntities.length} removed`,
       );
 
       if (createdEntities.length > 0 || updatedEntities.length > 0 || removedEntities.length > 0) {
-        consensusLogger.trace(
+        contextLogger.trace(
           {
             createdEntities: createdEntities.map((item) => item.toJSON()),
             updatedEntities: updatedEntities.map((item) => item.toJSON()),

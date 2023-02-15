@@ -31,6 +31,7 @@ use std::cell::RefCell;
 use std::collections::HashMap;
 use std::path::Path;
 
+use dpp::data_contract::DriveContractExt;
 use grovedb::batch::KeyInfoPath;
 use grovedb::{EstimatedLayerInformation, GroveDb, Transaction, TransactionArg};
 
@@ -44,6 +45,7 @@ use crate::error::Error;
 use crate::fee::op::DriveOperation;
 use crate::fee::op::DriveOperation::GroveOperation;
 
+pub mod balances;
 /// Batch module
 pub mod batch;
 /// Block info module
@@ -67,15 +69,18 @@ pub(crate) mod grove_operations;
 pub mod identity;
 pub mod initialization;
 pub mod object_size_info;
+mod protocol_upgrade;
 pub mod query;
+mod system;
 #[cfg(test)]
 mod test_utils;
+mod verify;
 
 use crate::drive::block_info::BlockInfo;
 use crate::drive::cache::{DataContractCache, DriveCache};
+use crate::drive::object_size_info::OwnedDocumentInfo;
 use crate::fee::result::FeeResult;
 use crate::fee_pools::epochs::Epoch;
-use dpp::data_contract::extra::DriveContractExt;
 
 /// Drive struct
 pub struct Drive {
@@ -87,24 +92,45 @@ pub struct Drive {
     pub cache: RefCell<DriveCache>,
 }
 
+// The root tree structure is very important!
+// It must be constructed in such a way that important information
+// is at the top of the tree in order to reduce proof size
+// the most import tree is the Contract Documents tree
+
+//                         Contract_Documents 64
+//                  /                               \
+//             Identities 32                           Balances 96
+//             /        \                         /                   \
+//   Token_Balances 16    Pools 48      WithdrawalTransactions 80    Misc  112
+//       /      \                                /                       \
+//     NUPKH->I 8 UPKH->I 24        SpentAssetLockTransactions 72        Versions 120
+
 /// Keys for the root tree.
 #[repr(u8)]
 pub enum RootTree {
     // Input data errors
-    /// Identities
-    Identities = 0,
     /// Contract Documents
-    ContractDocuments = 1,
-    /// Public Key Hashes to Identities
-    PublicKeyHashesToIdentities = 2,
-    /// Spent Asset Lock Transactions
-    SpentAssetLockTransactions = 3,
+    ContractDocuments = 64,
+    /// Identities
+    Identities = 32,
+    /// Unique Public Key Hashes to Identities
+    UniquePublicKeyHashesToIdentities = 24, // UPKH->I above
+    /// Non Unique Public Key Hashes to Identities, useful for Masternode Identities
+    NonUniquePublicKeyKeyHashesToIdentities = 8, // NUPKH->I
     /// Pools
-    Pools = 4,
+    Pools = 48,
+    /// Spent Asset Lock Transactions
+    SpentAssetLockTransactions = 72,
     /// Misc
-    Misc = 5,
+    Misc = 112,
     /// Asset Unlock Transactions
-    WithdrawalTransactions = 6,
+    WithdrawalTransactions = 80,
+    /// Balances
+    Balances = 96,
+    /// Token Balances
+    TokenBalances = 16,
+    /// Versions desired by proposers
+    Versions = 120,
 }
 
 /// Storage cost
@@ -125,15 +151,66 @@ impl From<RootTree> for [u8; 1] {
 impl From<RootTree> for &'static [u8; 1] {
     fn from(root_tree: RootTree) -> Self {
         match root_tree {
-            RootTree::Identities => &[0],
-            RootTree::ContractDocuments => &[1],
-            RootTree::PublicKeyHashesToIdentities => &[2],
-            RootTree::SpentAssetLockTransactions => &[3],
-            RootTree::Pools => &[4],
-            RootTree::Misc => &[5],
-            RootTree::WithdrawalTransactions => &[6],
+            RootTree::Identities => &[32],
+            RootTree::ContractDocuments => &[64],
+            RootTree::UniquePublicKeyHashesToIdentities => &[24],
+            RootTree::SpentAssetLockTransactions => &[72],
+            RootTree::Pools => &[48],
+            RootTree::Misc => &[112],
+            RootTree::WithdrawalTransactions => &[80],
+            RootTree::Balances => &[96],
+            RootTree::TokenBalances => &[16],
+            RootTree::NonUniquePublicKeyKeyHashesToIdentities => &[8],
+            RootTree::Versions => &[120],
         }
     }
+}
+
+/// Returns the path to the identities
+pub(crate) fn identity_tree_path() -> [&'static [u8]; 1] {
+    [Into::<&[u8; 1]>::into(RootTree::Identities)]
+}
+
+/// Returns the path to the key hashes.
+pub(crate) fn unique_key_hashes_tree_path() -> [&'static [u8]; 1] {
+    [Into::<&[u8; 1]>::into(
+        RootTree::UniquePublicKeyHashesToIdentities,
+    )]
+}
+
+/// Returns the path to the key hashes.
+pub(crate) fn unique_key_hashes_tree_path_vec() -> Vec<Vec<u8>> {
+    vec![vec![RootTree::UniquePublicKeyHashesToIdentities as u8]]
+}
+
+/// Returns the path to the masternode key hashes.
+pub(crate) fn non_unique_key_hashes_tree_path() -> [&'static [u8]; 1] {
+    [Into::<&[u8; 1]>::into(
+        RootTree::NonUniquePublicKeyKeyHashesToIdentities,
+    )]
+}
+
+/// Returns the path to the masternode key hashes.
+pub(crate) fn non_unique_key_hashes_tree_path_vec() -> Vec<Vec<u8>> {
+    vec![vec![
+        RootTree::NonUniquePublicKeyKeyHashesToIdentities as u8,
+    ]]
+}
+
+/// Returns the path to the masternode key hashes sub tree.
+pub(crate) fn non_unique_key_hashes_sub_tree_path(public_key_hash: &[u8]) -> [&[u8]; 2] {
+    [
+        Into::<&[u8; 1]>::into(RootTree::NonUniquePublicKeyKeyHashesToIdentities),
+        public_key_hash,
+    ]
+}
+
+/// Returns the path to the masternode key hashes sub tree.
+pub(crate) fn non_unique_key_hashes_sub_tree_path_vec(public_key_hash: [u8; 20]) -> Vec<Vec<u8>> {
+    vec![
+        vec![RootTree::NonUniquePublicKeyKeyHashesToIdentities as u8],
+        public_key_hash.to_vec(),
+    ]
 }
 
 /// Returns the path to a contract's document types.
@@ -164,11 +241,27 @@ impl Drive {
                             data_contracts_block_cache_size,
                         ),
                         genesis_time_ms,
+                        protocol_versions_counter: None,
                     }),
                 })
             }
             Err(e) => Err(Error::GroveDB(e)),
         }
+    }
+
+    /// Drops the drive cache
+    pub fn drop_cache(&self) {
+        let genesis_time_ms = self.config.default_genesis_time;
+        let data_contracts_global_cache_size = self.config.data_contracts_global_cache_size;
+        let data_contracts_block_cache_size = self.config.data_contracts_block_cache_size;
+        self.cache.replace(DriveCache {
+            cached_contracts: DataContractCache::new(
+                data_contracts_global_cache_size,
+                data_contracts_block_cache_size,
+            ),
+            genesis_time_ms,
+            protocol_versions_counter: None,
+        });
     }
 
     /// Commits a transaction.
@@ -185,25 +278,6 @@ impl Drive {
         self.grove
             .rollback_transaction(transaction)
             .map_err(Error::GroveDB)
-    }
-
-    /// Make sure the protocol version is correct.
-    pub const fn check_protocol_version(_version: u32) -> bool {
-        // Temporary disabled due protocol version is dynamic and goes from consensus params
-        true
-    }
-
-    /// Makes sure the protocol version is correct given the version as a u8.
-    pub fn check_protocol_version_bytes(version_bytes: &[u8]) -> bool {
-        if version_bytes.len() != 4 {
-            false
-        } else {
-            let version_set_bytes: [u8; 4] = version_bytes
-                .try_into()
-                .expect("slice with incorrect length");
-            let version = u32::from_be_bytes(version_set_bytes);
-            Drive::check_protocol_version(version)
-        }
     }
 
     /// Applies a batch of Drive operations to groveDB.
@@ -277,44 +351,17 @@ impl Drive {
         let document_type = contract.document_type_for_name(document_type_name)?;
         self.add_document_for_contract(
             DocumentAndContractInfo {
-                document_info: DocumentEstimatedAverageSize(document_type.max_size() as u32),
+                owned_document_info: OwnedDocumentInfo {
+                    document_info: DocumentEstimatedAverageSize(document_type.max_size() as u32),
+                    owner_id: None,
+                },
                 contract,
                 document_type,
-                owner_id: None,
             },
             false,
             BlockInfo::default_with_epoch(Epoch::new(epoch_index)),
             false,
             None,
         )
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use std::collections::HashMap;
-    use std::option::Option::None;
-
-    use tempfile::TempDir;
-
-    use crate::common::json_document_to_cbor;
-    use crate::drive::Drive;
-
-    #[test]
-    fn store_document_1() {
-        let tmp_dir = TempDir::new().unwrap();
-        let _drive = Drive::open(tmp_dir, None);
-    }
-
-    #[test]
-    fn test_cbor_deserialization() {
-        let serialized_document = json_document_to_cbor("simple.json", Some(1));
-        let (version, read_serialized_document) = serialized_document.split_at(4);
-        assert!(Drive::check_protocol_version_bytes(version));
-        let document: HashMap<String, ciborium::value::Value> =
-            ciborium::de::from_reader(read_serialized_document).expect("cannot deserialize cbor");
-        assert!(document.get("a").is_some());
-        let tmp_dir = TempDir::new().unwrap();
-        let _drive = Drive::open(tmp_dir, None);
     }
 }

@@ -100,11 +100,7 @@ impl Drive {
         limit: u16,
         transaction: TransactionArg,
     ) -> Result<Vec<(Vec<u8>, u64)>, Error> {
-        let path_as_vec: Vec<Vec<u8>> = epoch_tree
-            .get_proposers_path()
-            .iter()
-            .map(|slice| slice.to_vec())
-            .collect();
+        let path_as_vec = epoch_tree.get_proposers_path_vec();
 
         let mut query = Query::new();
         query.insert_all();
@@ -113,7 +109,12 @@ impl Drive {
 
         let key_elements = self
             .grove
-            .query_raw(&path_query, QueryKeyElementPairResultType, transaction)
+            .query_raw(
+                &path_query,
+                transaction.is_some(),
+                QueryKeyElementPairResultType,
+                transaction,
+            )
             .unwrap()
             .map_err(Error::GroveDB)?
             .0
@@ -167,7 +168,7 @@ mod tests {
             batch.push(epoch.init_proposers_tree_operation());
 
             batch.add_insert(
-                epoch.get_proposers_vec_path(),
+                epoch.get_proposers_path_vec(),
                 pro_tx_hash.to_vec(),
                 Element::Item(u128::MAX.to_be_bytes().to_vec(), None),
             );

@@ -18,7 +18,7 @@ export default async function loadDpp() {
       let wasmUrl = URL.createObjectURL(blob);
       await init(wasmUrl);
       isInitialized = true;
-    }  else {
+    } else {
       dpp_module.initSync(bytes);
       isInitialized = true;
     }

@@ -27,6 +27,7 @@ describe('BlockExecutionContext', () => {
   let epochInfo;
   let timeMs;
   let prepareProposalResult;
+  let proposedAppVersion;
 
   beforeEach(() => {
     blockExecutionContext = new BlockExecutionContext();
@@ -37,8 +38,9 @@ describe('BlockExecutionContext', () => {
 
     lastCommitInfo = CommitInfo.fromObject(plainObject.lastCommitInfo);
 
-    logger = plainObject.consensusLogger;
+    logger = plainObject.contextLogger;
     height = Long.fromNumber(plainObject.height);
+    proposedAppVersion = Long.fromNumber(plainObject.proposedAppVersion);
     coreChainLockedHeight = plainObject.coreChainLockedHeight;
     version = Consensus.fromObject(plainObject.version);
     epochInfo = plainObject.epochInfo;
@@ -102,6 +104,7 @@ describe('BlockExecutionContext', () => {
       expect(blockExecutionContext.getVersion()).to.be.null();
       expect(blockExecutionContext.getTimeMs()).to.be.null();
       expect(blockExecutionContext.getLastCommitInfo()).to.be.null();
+      expect(blockExecutionContext.getProposedAppVersion()).to.be.null();
       expect(blockExecutionContext.getWithdrawalTransactionsMap()).to.deep.equal({});
     });
   });
@@ -139,6 +142,24 @@ describe('BlockExecutionContext', () => {
       blockExecutionContext.height = height;
 
       expect(blockExecutionContext.getHeight()).to.deep.equal(height);
+    });
+  });
+
+  describe('#setProposedAppVersion', () => {
+    it('should set proposed app version', async () => {
+      const result = blockExecutionContext.setProposedAppVersion(proposedAppVersion);
+
+      expect(result).to.equal(blockExecutionContext);
+
+      expect(blockExecutionContext.proposedAppVersion).to.deep.equal(proposedAppVersion);
+    });
+  });
+
+  describe('#getProposedAppVersion', () => {
+    it('should get proposed app version', async () => {
+      blockExecutionContext.proposedAppVersion = proposedAppVersion;
+
+      expect(blockExecutionContext.getProposedAppVersion()).to.deep.equal(proposedAppVersion);
     });
   });
 
@@ -283,7 +304,7 @@ describe('BlockExecutionContext', () => {
       anotherBlockExecutionContext.height = height;
       anotherBlockExecutionContext.version = version;
       anotherBlockExecutionContext.coreChainLockedHeight = coreChainLockedHeight;
-      anotherBlockExecutionContext.consensusLogger = logger;
+      anotherBlockExecutionContext.contextLogger = logger;
       anotherBlockExecutionContext.withdrawalTransactionsMap = plainObject
         .withdrawalTransactionsMap;
       anotherBlockExecutionContext.epochInfo = epochInfo;
@@ -306,8 +327,8 @@ describe('BlockExecutionContext', () => {
       expect(blockExecutionContext.coreChainLockedHeight).to.equal(
         anotherBlockExecutionContext.coreChainLockedHeight,
       );
-      expect(blockExecutionContext.consensusLogger).to.equal(
-        anotherBlockExecutionContext.consensusLogger,
+      expect(blockExecutionContext.contextLogger).to.equal(
+        anotherBlockExecutionContext.contextLogger,
       );
       expect(blockExecutionContext.withdrawalTransactionsMap).to.equal(
         anotherBlockExecutionContext.withdrawalTransactionsMap,
@@ -328,32 +349,34 @@ describe('BlockExecutionContext', () => {
       blockExecutionContext.height = height;
       blockExecutionContext.coreChainLockedHeight = coreChainLockedHeight;
       blockExecutionContext.version = version;
-      blockExecutionContext.consensusLogger = logger;
+      blockExecutionContext.contextLogger = logger;
       blockExecutionContext.epochInfo = epochInfo;
       blockExecutionContext.timeMs = timeMs;
       blockExecutionContext.withdrawalTransactionsMap = plainObject.withdrawalTransactionsMap;
       blockExecutionContext.round = plainObject.round;
       blockExecutionContext.prepareProposalResult = plainObject.prepareProposalResult;
+      blockExecutionContext.proposedAppVersion = proposedAppVersion;
 
       expect(blockExecutionContext.toObject()).to.deep.equal(plainObject);
     });
 
-    it('should skipConsensusLogger if the option passed', () => {
+    it('should skipContextLogger if the option passed', () => {
       blockExecutionContext.dataContracts = [dataContract];
       blockExecutionContext.lastCommitInfo = lastCommitInfo;
       blockExecutionContext.height = height;
       blockExecutionContext.coreChainLockedHeight = coreChainLockedHeight;
       blockExecutionContext.version = version;
-      blockExecutionContext.consensusLogger = logger;
+      blockExecutionContext.contextLogger = logger;
       blockExecutionContext.withdrawalTransactionsMap = plainObject.withdrawalTransactionsMap;
       blockExecutionContext.round = plainObject.round;
       blockExecutionContext.epochInfo = epochInfo;
       blockExecutionContext.timeMs = timeMs;
       blockExecutionContext.prepareProposalResult = prepareProposalResult;
+      blockExecutionContext.proposedAppVersion = proposedAppVersion;
 
-      const result = blockExecutionContext.toObject({ skipConsensusLogger: true });
+      const result = blockExecutionContext.toObject({ skipContextLogger: true });
 
-      delete plainObject.consensusLogger;
+      delete plainObject.contextLogger;
 
       expect(result).to.deep.equal(plainObject);
     });
@@ -364,11 +387,12 @@ describe('BlockExecutionContext', () => {
       blockExecutionContext.height = height;
       blockExecutionContext.coreChainLockedHeight = coreChainLockedHeight;
       blockExecutionContext.version = version;
-      blockExecutionContext.consensusLogger = logger;
+      blockExecutionContext.contextLogger = logger;
       blockExecutionContext.withdrawalTransactionsMap = plainObject.withdrawalTransactionsMap;
       blockExecutionContext.round = plainObject.round;
       blockExecutionContext.epochInfo = epochInfo;
       blockExecutionContext.timeMs = timeMs;
+      blockExecutionContext.proposedAppVersion = proposedAppVersion;
 
       const result = blockExecutionContext.toObject({ skipPrepareProposalResult: true });
 
@@ -393,7 +417,7 @@ describe('BlockExecutionContext', () => {
       expect(blockExecutionContext.height).to.deep.equal(height);
       expect(blockExecutionContext.version).to.deep.equal(version);
       expect(blockExecutionContext.coreChainLockedHeight).to.deep.equal(coreChainLockedHeight);
-      expect(blockExecutionContext.consensusLogger).to.equal(logger);
+      expect(blockExecutionContext.contextLogger).to.equal(logger);
       expect(blockExecutionContext.withdrawalTransactionsMap).to.deep.equal(
         plainObject.withdrawalTransactionsMap,
       );

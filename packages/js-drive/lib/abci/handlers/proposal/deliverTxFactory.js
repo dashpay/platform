@@ -1,4 +1,5 @@
 const crypto = require('crypto');
+const { FeeResult } = require('@dashevo/rs-drive');
 
 const stateTransitionTypes = require('@dashevo/dpp/lib/stateTransition/stateTransitionTypes');
 const AbstractDocumentTransition = require(
@@ -8,14 +9,14 @@ const AbstractDocumentTransition = require(
 const DPPValidationAbciError = require('../../errors/DPPValidationAbciError');
 
 const DOCUMENT_ACTION_DESCRIPTIONS = {
-  [AbstractDocumentTransition.ACTIONS.CREATE]: 'created',
-  [AbstractDocumentTransition.ACTIONS.REPLACE]: 'replaced',
-  [AbstractDocumentTransition.ACTIONS.DELETE]: 'deleted',
+  [AbstractDocumentTransition.ACTIONS.CREATE]: 'Create',
+  [AbstractDocumentTransition.ACTIONS.REPLACE]: 'Replace',
+  [AbstractDocumentTransition.ACTIONS.DELETE]: 'Delete',
 };
 
 const DATA_CONTRACT_ACTION_DESCRIPTIONS = {
-  [stateTransitionTypes.DATA_CONTRACT_CREATE]: 'created',
-  [stateTransitionTypes.DATA_CONTRACT_UPDATE]: 'updated',
+  [stateTransitionTypes.DATA_CONTRACT_CREATE]: 'Create',
+  [stateTransitionTypes.DATA_CONTRACT_UPDATE]: 'Update',
 };
 
 const TIMERS = require('../timers');
@@ -25,6 +26,10 @@ const TIMERS = require('../timers');
  * @param {DashPlatformProtocol} transactionalDpp
  * @param {BlockExecutionContext} proposalBlockExecutionContext
  * @param {ExecutionTimer} executionTimer
+ * @param {IdentityBalanceStoreRepository} identityBalanceRepository
+ * @param {calculateStateTransitionFee} calculateStateTransitionFee
+ * @param {calculateStateTransitionFeeFromOperations} calculateStateTransitionFeeFromOperations
+ * @param {createContextLogger} createContextLogger
  *
  * @return {deliverTx}
  */
@@ -33,18 +38,22 @@ function deliverTxFactory(
   transactionalDpp,
   proposalBlockExecutionContext,
   executionTimer,
+  identityBalanceRepository,
+  calculateStateTransitionFee,
+  calculateStateTransitionFeeFromOperations,
+  createContextLogger,
 ) {
   /**
    * @typedef deliverTx
    *
    * @param {Buffer} stateTransitionByteArray
    * @param {number} round
-   * @param {BaseLogger} consensusLogger
+   * @param {BaseLogger} contextLogger
    * @return {Promise<{
    *  code: number,
-   *  fees: BlockFeeResult}>}
+   *  fees: BlockFees}>}
    */
-  async function deliverTx(stateTransitionByteArray, round, consensusLogger) {
+  async function deliverTx(stateTransitionByteArray, round, contextLogger) {
     const blockHeight = proposalBlockExecutionContext.getHeight();
 
     // Start execution timer
@@ -65,83 +74,19 @@ function deliverTxFactory(
       .toString('hex')
       .toUpperCase();
 
-    const txConsensusLogger = consensusLogger.child({
+    const txContextLogger = createContextLogger(contextLogger, {
       txId: stHash,
     });
 
-    proposalBlockExecutionContext.setConsensusLogger(txConsensusLogger);
-
-    txConsensusLogger.info(`Deliver state transition ${stHash} from block #${blockHeight}`);
+    txContextLogger.info(`Deliver state transition ${stHash} from block #${blockHeight}`);
 
     const stateTransition = await transactionalUnserializeStateTransition(
       stateTransitionByteArray,
       {
-        logger: txConsensusLogger,
+        logger: txContextLogger,
         executionTimer,
       },
     );
-
-    // Keep only actual operations
-    const stateTransitionExecutionContext = stateTransition.getExecutionContext();
-
-    const predictedStateTransitionOperations = stateTransitionExecutionContext.getOperations();
-    const predictedStateTransitionFees = stateTransitionExecutionContext
-      .getLastCalculatedFeeDetails();
-
-    stateTransitionExecutionContext.clearDryOperations();
-
-    executionTimer.startTimer(TIMERS.DELIVER_TX.VALIDATE_STATE);
-
-    const result = await transactionalDpp.stateTransition.validateState(stateTransition);
-
-    if (!result.isValid()) {
-      const consensusError = result.getFirstError();
-      const message = 'State transition is invalid against the state';
-
-      txConsensusLogger.info(message);
-      txConsensusLogger.debug({
-        consensusError,
-      });
-
-      throw new DPPValidationAbciError(message, result.getFirstError());
-    }
-
-    executionTimer.stopTimer(TIMERS.DELIVER_TX.VALIDATE_STATE, true);
-
-    executionTimer.startTimer(TIMERS.DELIVER_TX.APPLY);
-
-    // Apply state transition to the state
-    await transactionalDpp.stateTransition.apply(stateTransition);
-
-    executionTimer.stopTimer(TIMERS.DELIVER_TX.APPLY, true);
-
-    // Reduce an identity balance and accumulate fees for all STs in the block
-    // in order to store them in credits distribution pool
-    const actualStateTransitionFees = stateTransitionExecutionContext
-      .getLastCalculatedFeeDetails();
-    const actualStateTransitionOperations = stateTransition.getExecutionContext().getOperations();
-
-    if (actualStateTransitionFees.total > predictedStateTransitionFees.total) {
-      txConsensusLogger.warn({
-        predictedFee: predictedStateTransitionFees.total,
-        actualFee: actualStateTransitionFees.total,
-      }, `Actual fees are greater than predicted for ${actualStateTransitionFees.total - predictedStateTransitionFees.total} credits`);
-    }
-
-    const identity = await transactionalDpp.getStateRepository().fetchIdentity(
-      stateTransition.getOwnerId(),
-    );
-
-    let updatedBalance = identity.getBalance() - actualStateTransitionFees.total;
-
-    // TODO: We should increment identity balance debt in case if it goes negative
-    if (updatedBalance < 0) {
-      updatedBalance = 0;
-    }
-
-    identity.setBalance(updatedBalance);
-
-    await transactionalDpp.getStateRepository().updateIdentity(identity);
 
     // Logging
     /* istanbul ignore next */
@@ -155,11 +100,11 @@ function deliverTxFactory(
 
         const description = DATA_CONTRACT_ACTION_DESCRIPTIONS[stateTransition.getType()];
 
-        txConsensusLogger.info(
+        txContextLogger.info(
           {
             dataContractId: dataContract.getId().toString(),
           },
-          `Data contract ${description} with id: ${dataContract.getId()}`,
+          `${description} Data Contract with id: ${dataContract.getId()}`,
         );
 
         break;
@@ -167,11 +112,11 @@ function deliverTxFactory(
       case stateTransitionTypes.IDENTITY_CREATE: {
         const identityId = stateTransition.getIdentityId();
 
-        txConsensusLogger.info(
+        txContextLogger.info(
           {
             identityId: identityId.toString(),
           },
-          `Identity created with id: ${identityId}`,
+          `Create Identity with id: ${identityId}`,
         );
 
         break;
@@ -179,11 +124,11 @@ function deliverTxFactory(
       case stateTransitionTypes.IDENTITY_TOP_UP: {
         const identityId = stateTransition.getIdentityId();
 
-        txConsensusLogger.info(
+        txContextLogger.info(
           {
             identityId: identityId.toString(),
           },
-          `Identity topped up with id: ${identityId}`,
+          `Top up Identity with id: ${identityId}`,
         );
 
         break;
@@ -191,11 +136,11 @@ function deliverTxFactory(
       case stateTransitionTypes.IDENTITY_UPDATE: {
         const identityId = stateTransition.getIdentityId();
 
-        txConsensusLogger.info(
+        txContextLogger.info(
           {
             identityId: identityId.toString(),
           },
-          `Identity updated with id: ${identityId}`,
+          `Update Identity with id: ${identityId}`,
         );
         break;
       }
@@ -203,11 +148,11 @@ function deliverTxFactory(
         stateTransition.getTransitions().forEach((transition) => {
           const description = DOCUMENT_ACTION_DESCRIPTIONS[transition.getAction()];
 
-          txConsensusLogger.info(
+          txContextLogger.info(
             {
               documentId: transition.getId().toString(),
             },
-            `Document ${description} with id: ${transition.getId()}`,
+            `${description} Document with id: ${transition.getId()}`,
           );
         });
 
@@ -217,9 +162,76 @@ function deliverTxFactory(
         break;
     }
 
+    // Remove dry run operations from state transition execution context
+
+    const stateTransitionExecutionContext = stateTransition.getExecutionContext();
+
+    const predictedStateTransitionOperations = stateTransitionExecutionContext.getOperations();
+    const predictedStateTransitionFees = calculateStateTransitionFeeFromOperations(
+      predictedStateTransitionOperations,
+      stateTransition.getOwnerId(),
+    );
+
+    stateTransitionExecutionContext.clearDryOperations();
+
+    // Validate against state
+
+    executionTimer.startTimer(TIMERS.DELIVER_TX.VALIDATE_STATE);
+
+    const result = await transactionalDpp.stateTransition.validateState(stateTransition);
+
+    if (!result.isValid()) {
+      const consensusError = result.getFirstError();
+      const message = 'State transition is invalid against the state';
+
+      txContextLogger.info(message);
+      txContextLogger.debug({
+        consensusError,
+      });
+
+      throw new DPPValidationAbciError(message, result.getFirstError());
+    }
+
+    executionTimer.stopTimer(TIMERS.DELIVER_TX.VALIDATE_STATE, true);
+
+    executionTimer.startTimer(TIMERS.DELIVER_TX.APPLY);
+
+    // Apply state transition to the state
+
+    await transactionalDpp.stateTransition.apply(stateTransition);
+
+    executionTimer.stopTimer(TIMERS.DELIVER_TX.APPLY, true);
+
+    // Update identity balance
+
+    const actualStateTransitionFees = calculateStateTransitionFee(stateTransition);
+
+    const actualStateTransitionOperations = stateTransition.getExecutionContext().getOperations();
+
+    if (actualStateTransitionFees.desiredAmount > predictedStateTransitionFees.desiredAmount) {
+      txContextLogger.warn({
+        predictedFee: predictedStateTransitionFees.desiredAmount,
+        actualFee: actualStateTransitionFees.desiredAmount,
+      }, `Actual fees are greater than predicted for ${actualStateTransitionFees.desiredAmount - predictedStateTransitionFees.desiredAmount} credits`);
+    }
+
+    const feeResult = FeeResult.create(
+      actualStateTransitionFees.storageFee,
+      actualStateTransitionFees.processingFee,
+      actualStateTransitionFees.feeRefunds,
+    );
+
+    const applyFeesToBalanceResult = await identityBalanceRepository.applyFees(
+      stateTransition.getOwnerId(),
+      feeResult,
+      { useTransaction: true },
+    );
+
+    const transactionFees = applyFeesToBalanceResult.getValue();
+
     const deliverTxTiming = executionTimer.stopTimer(TIMERS.DELIVER_TX.OVERALL);
 
-    txConsensusLogger.trace(
+    txContextLogger.trace(
       {
         timings: {
           overall: deliverTxTiming,
@@ -233,35 +245,32 @@ function deliverTxFactory(
           predicted: {
             storage: predictedStateTransitionFees.storageFee,
             processing: predictedStateTransitionFees.processingFee,
-            refunds: predictedStateTransitionFees.feeRefundsSum,
-            final: predictedStateTransitionFees.total,
+            refunds: predictedStateTransitionFees.totalRefunds,
+            requiredAmount: predictedStateTransitionFees.requiredAmount,
+            desiredAmount: predictedStateTransitionFees.desiredAmount,
             operations: predictedStateTransitionOperations.map((operation) => operation.toJSON()),
           },
           actual: {
             storage: actualStateTransitionFees.storageFee,
             processing: actualStateTransitionFees.processingFee,
-            refunds: actualStateTransitionFees.feeRefundsSum,
-            final: actualStateTransitionFees.total,
+            refunds: actualStateTransitionFees.totalRefunds,
+            requiredAmount: actualStateTransitionFees.requiredAmount,
+            desiredAmount: actualStateTransitionFees.desiredAmount,
             operations: actualStateTransitionOperations.map((operation) => operation.toJSON()),
           },
+          debt: actualStateTransitionFees.desiredAmount - transactionFees.processingFee,
         },
         txType: stateTransition.getType(),
       },
-      `${stateTransition.constructor.name} execution took ${deliverTxTiming} seconds and cost ${actualStateTransitionFees.total} credits`,
+      `${stateTransition.constructor.name} execution took ${deliverTxTiming} seconds and cost ${actualStateTransitionFees.desiredAmount} credits`,
     );
-
-    let feeRefunds = {};
-    if (actualStateTransitionFees.feeRefunds.length > 0) {
-      feeRefunds = actualStateTransitionFees.feeRefunds[0].creditsPerEpoch;
-    }
 
     return {
       code: 0,
       fees: {
-        storageFee: actualStateTransitionFees.storageFee,
-        processingFee: actualStateTransitionFees.processingFee,
-        feeRefunds,
-        feeRefundsSum: actualStateTransitionFees.feeRefundsSum,
+        storageFee: transactionFees.storageFee,
+        processingFee: transactionFees.processingFee,
+        refundsPerEpoch: transactionFees.sumFeeRefundsPerEpoch(),
       },
     };
   }

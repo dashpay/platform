@@ -34,7 +34,7 @@ describe('applyDataContractUpdateTransitionFactory', () => {
     stateTransition.setExecutionContext(executionContext);
 
     const stateRepositoryLike = {
-      storeDataContract: () => {
+      storeDataContract: async () => {
         dataContractStored = true;
       },
     };

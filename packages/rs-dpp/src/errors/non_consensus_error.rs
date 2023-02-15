@@ -4,7 +4,7 @@ use crate::{
     CompatibleProtocolVersionIsNotDefinedError, InvalidVectorSizeError, SerdeParsingError,
 };
 
-#[derive(Debug, Error, Clone)]
+#[derive(Debug, Error)]
 pub enum NonConsensusError {
     #[error("Unexpected serde parsing error: {0:#}")]
     SerdeParsingError(SerdeParsingError),
@@ -34,6 +34,9 @@ pub enum NonConsensusError {
         object_name: &'static str,
         details: String,
     },
+
+    #[error(transparent)]
+    Error(#[from] anyhow::Error),
 }
 
 pub mod object_names {
