@@ -3,12 +3,14 @@ use std::sync::Arc;
 use data_contracts::SystemDataContract;
 use serde_json::json;
 
+use crate::document::Document;
+use crate::document::DocumentInStateTransition;
 use crate::system_data_contracts::load_system_data_contract;
 use crate::{
     data_contract::DataContract,
     document::{
         document_factory::DocumentFactory,
-        fetch_and_validate_data_contract::DataContractFetcherAndValidator, Document,
+        fetch_and_validate_data_contract::DataContractFetcherAndValidator,
     },
     state_repository::MockStateRepositoryLike,
     tests::utils::generate_random_identifier_struct,
@@ -17,7 +19,8 @@ use crate::{
 
 use super::get_document_validator_fixture;
 
-pub fn get_masternode_reward_shares_documents_fixture() -> (Vec<Document>, DataContract) {
+pub fn get_masternode_reward_shares_documents_fixture(
+) -> (Vec<DocumentInStateTransition>, DataContract) {
     let owner_id = generate_random_identifier_struct();
     let pay_to_id = generate_random_identifier_struct();
     let data_contract = load_system_data_contract(SystemDataContract::MasternodeRewards)

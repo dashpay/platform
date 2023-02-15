@@ -54,7 +54,7 @@ pub trait StateRepositoryLike: Sync {
     ) -> AnyResult<()>;
 
     /// Fetch Documents by Data Contract Id and type
-    /// By default, the method should return data as bytes (`Vec<u8>`), but the deserialization to [`Document`] should be also possible
+    /// By default, the method should return data as bytes (`Vec<u8>`), but the deserialization to [`DocumentInStateTransition`] should be also possible
     async fn fetch_documents<T>(
         &self,
         contract_id: &Identifier,
@@ -68,14 +68,14 @@ pub trait StateRepositoryLike: Sync {
     /// Create Document
     async fn create_document(
         &self,
-        document: &Document,
+        document: &DocumentInStateTransition,
         execution_context: &StateTransitionExecutionContext,
     ) -> AnyResult<()>;
 
     /// Update Document
     async fn update_document(
         &self,
-        document: &Document,
+        document: &DocumentInStateTransition,
         execution_context: &StateTransitionExecutionContext,
     ) -> AnyResult<()>;
 

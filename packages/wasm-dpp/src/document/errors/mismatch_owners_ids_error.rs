@@ -1,4 +1,4 @@
-use dpp::prelude::Document;
+use dpp::document::DocumentInStateTransition;
 use itertools::Itertools;
 use thiserror::Error;
 
@@ -29,7 +29,7 @@ impl MismatchOwnerIdsError {
 }
 
 impl MismatchOwnerIdsError {
-    pub fn from_documents(documents: Vec<Document>) -> MismatchOwnerIdsError {
+    pub fn from_documents(documents: Vec<DocumentInStateTransition>) -> MismatchOwnerIdsError {
         Self {
             documents: documents.into_iter().map(DocumentWasm::from).collect_vec(),
         }

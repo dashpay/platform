@@ -67,7 +67,7 @@ use crate::fee::op::DriveOperation;
 
 use crate::drive::contract::paths::ContractPaths;
 use dpp::data_contract::extra::common::bytes_for_system_value;
-use dpp::document::document_stub::DocumentStub;
+use dpp::document::Document;
 use dpp::ProtocolError;
 
 pub mod conditions;
@@ -520,7 +520,7 @@ impl<'a> DriveQuery<'a> {
             .map(|a| a.to_vec())
             .collect::<Vec<Vec<u8>>>();
 
-        let starts_at_document: Option<(DocumentStub, bool)> = match &self.start_at {
+        let starts_at_document: Option<(Document, bool)> = match &self.start_at {
             None => Ok(None),
             Some(starts_at) => {
                 // First if we have a startAt or or startsAfter we must get the element
@@ -571,7 +571,7 @@ impl<'a> DriveQuery<'a> {
                     )))?;
 
                 if let Element::Item(item, _) = start_at_document {
-                    let document = DocumentStub::from_cbor(item.as_slice(), None, None)?;
+                    let document = Document::from_cbor(item.as_slice(), None, None)?;
                     Ok(Some((document, self.start_at_included)))
                 } else {
                     Err(Error::Drive(DriveError::CorruptedDocumentPath(
@@ -591,7 +591,7 @@ impl<'a> DriveQuery<'a> {
     pub fn get_primary_key_path_query(
         &self,
         document_type_path: Vec<Vec<u8>>,
-        starts_at_document: Option<(DocumentStub, bool)>,
+        starts_at_document: Option<(Document, bool)>,
     ) -> Result<PathQuery, Error> {
         let mut path = document_type_path;
 
@@ -798,7 +798,7 @@ impl<'a> DriveQuery<'a> {
 
     /// Returns a `Query` that either starts at or after the given document ID if given.
     fn inner_query_from_starts_at_for_id(
-        starts_at_document: &Option<(DocumentStub, &DocumentType, &IndexProperty, bool)>,
+        starts_at_document: &Option<(Document, &DocumentType, &IndexProperty, bool)>,
         left_to_right: bool,
     ) -> Query {
         // We only need items after the start at document
@@ -847,7 +847,7 @@ impl<'a> DriveQuery<'a> {
     // The index property (borrowed)
     // if the element itself should be included. ie StartAt vs StartAfter
     fn inner_query_from_starts_at(
-        starts_at_document: &Option<(DocumentStub, &DocumentType, &IndexProperty, bool)>,
+        starts_at_document: &Option<(Document, &DocumentType, &IndexProperty, bool)>,
         left_to_right: bool,
     ) -> Result<Query, Error> {
         let mut inner_query = Query::new_with_direction(left_to_right);
@@ -888,7 +888,7 @@ impl<'a> DriveQuery<'a> {
         query: Option<&mut Query>,
         left_over_index_properties: &[&IndexProperty],
         unique: bool,
-        starts_at_document: &Option<(DocumentStub, &DocumentType, &IndexProperty, bool)>, //for key level, included
+        starts_at_document: &Option<(Document, &DocumentType, &IndexProperty, bool)>, //for key level, included
         default_left_to_right: bool,
         order_by: Option<&IndexMap<String, OrderClause>>,
     ) -> Result<Option<Query>, Error> {
@@ -1012,7 +1012,7 @@ impl<'a> DriveQuery<'a> {
     pub fn get_non_primary_key_path_query(
         &self,
         document_type_path: Vec<Vec<u8>>,
-        starts_at_document: Option<(DocumentStub, bool)>,
+        starts_at_document: Option<(Document, bool)>,
     ) -> Result<PathQuery, Error> {
         let index = self.find_best_index()?;
         let ordered_clauses: Vec<&WhereClause> = index

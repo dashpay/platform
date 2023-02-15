@@ -4,7 +4,7 @@ use thiserror::Error;
 use crate::errors::consensus::ConsensusError;
 
 use super::document_transition::DocumentTransition;
-use super::Document;
+use crate::document::DocumentInStateTransition;
 
 #[derive(Error, Debug)]
 pub enum DocumentError {
@@ -28,10 +28,14 @@ pub enum DocumentError {
         raw_document: Value,
     },
     #[error("Invalid Document initial revision '{}'", document.revision)]
-    InvalidInitialRevisionError { document: Box<Document> },
+    InvalidInitialRevisionError {
+        document: Box<DocumentInStateTransition>,
+    },
 
     #[error("Documents have mixed owner ids")]
-    MismatchOwnerIdsError { documents: Vec<Document> },
+    MismatchOwnerIdsError {
+        documents: Vec<DocumentInStateTransition>,
+    },
 
     #[error("No documents were supplied to state transition")]
     NoDocumentsSuppliedError,

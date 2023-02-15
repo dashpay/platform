@@ -43,7 +43,7 @@ use rand::{Rng, SeedableRng};
 use drive::common::helpers::identities::create_test_identity_with_rng;
 use drive::contract::Contract;
 use drive::dpp::data_contract::DriveContractExt;
-use drive::dpp::document::document_stub::DocumentStub;
+use drive::dpp::document::Document;
 use drive::drive::block_info::BlockInfo;
 use drive::drive::flags::StorageFlags;
 use drive::drive::object_size_info::DocumentInfo::DocumentRefAndSerialization;
@@ -61,7 +61,7 @@ fn create_test_mn_share_document(
     pay_to_identity: &Identity,
     percentage: u16,
     transaction: TransactionArg,
-) -> DocumentStub {
+) -> Document {
     let id = rand::random::<[u8; 32]>();
 
     let mut properties: BTreeMap<String, Value> = BTreeMap::new();
@@ -72,7 +72,7 @@ fn create_test_mn_share_document(
     );
     properties.insert(String::from("percentage"), percentage.into());
 
-    let document = DocumentStub {
+    let document = Document {
         id,
         properties,
         owner_id: identity_id,
@@ -118,7 +118,7 @@ pub fn create_test_masternode_share_identities_and_documents(
     pro_tx_hashes: &Vec<[u8; 32]>,
     seed: Option<u64>,
     transaction: TransactionArg,
-) -> Vec<(Identity, DocumentStub)> {
+) -> Vec<(Identity, Document)> {
     let mut rng = match seed {
         None => StdRng::from_entropy(),
         Some(seed_value) => StdRng::seed_from_u64(seed_value),

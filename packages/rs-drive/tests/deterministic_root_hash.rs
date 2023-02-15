@@ -34,7 +34,7 @@ use std::borrow::Cow;
 use std::option::Option::None;
 
 use dpp::data_contract::DriveContractExt;
-use dpp::document::document_stub::DocumentStub;
+use dpp::document::Document;
 use dpp::util::serializer;
 use drive::common;
 use drive::common::setup_contract;
@@ -123,7 +123,7 @@ pub fn add_domains_to_contract(
         let document_cbor =
             serializer::value_to_cbor(value, Some(drive::drive::defaults::PROTOCOL_VERSION))
                 .expect("expected to serialize to cbor");
-        let document = DocumentStub::from_cbor(document_cbor.as_slice(), None, None)
+        let document = Document::from_cbor(document_cbor.as_slice(), None, None)
             .expect("document should be properly deserialized");
         let document_type = contract
             .document_type_for_name("domain")

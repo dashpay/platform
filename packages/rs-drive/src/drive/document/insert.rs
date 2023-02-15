@@ -83,7 +83,7 @@ use crate::drive::grove_operations::{BatchInsertApplyType, BatchInsertTreeApplyT
 use crate::error::document::DocumentError;
 use crate::error::fee::FeeError;
 use crate::fee::result::FeeResult;
-use dpp::document::document_stub::DocumentStub;
+use dpp::document::Document;
 
 impl Drive {
     /// Adds a document to primary storage.
@@ -448,7 +448,7 @@ impl Drive {
     ) -> Result<FeeResult, Error> {
         let contract = <Contract as DriveContractExt>::from_cbor(serialized_contract, None)?;
 
-        let document = DocumentStub::from_cbor(serialized_document, None, owner_id)?;
+        let document = Document::from_cbor(serialized_document, None, owner_id)?;
 
         let document_info =
             DocumentRefAndSerialization((&document, serialized_document, storage_flags));
@@ -484,7 +484,7 @@ impl Drive {
         storage_flags: Option<Cow<StorageFlags>>,
         transaction: TransactionArg,
     ) -> Result<FeeResult, Error> {
-        let document = DocumentStub::from_cbor(serialized_document, None, owner_id)?;
+        let document = Document::from_cbor(serialized_document, None, owner_id)?;
 
         let document_info =
             DocumentRefAndSerialization((&document, serialized_document, storage_flags));
@@ -533,7 +533,7 @@ impl Drive {
 
         let contract = &contract_fetch_info.contract;
 
-        let document = DocumentStub::from_cbor(serialized_document, None, owner_id)?;
+        let document = Document::from_cbor(serialized_document, None, owner_id)?;
 
         let document_info =
             DocumentRefAndSerialization((&document, serialized_document, storage_flags));
@@ -1229,7 +1229,7 @@ mod tests {
     use crate::fee::default_costs::KnownCostItem::StorageDiskUsageCreditPerByte;
     use crate::fee::op::DriveOperation;
     use crate::fee_pools::epochs::Epoch;
-    use dpp::document::document_stub::DocumentStub;
+    use dpp::document::Document;
 
     #[test]
     fn test_add_dashpay_documents_no_transaction() {
@@ -1587,9 +1587,8 @@ mod tests {
         .expect("expected to get cbor document");
 
         let owner_id = rand::thread_rng().gen::<[u8; 32]>();
-        let document =
-            DocumentStub::from_cbor(&dashpay_cr_serialized_document, None, Some(owner_id))
-                .expect("expected to deserialize document successfully");
+        let document = Document::from_cbor(&dashpay_cr_serialized_document, None, Some(owner_id))
+            .expect("expected to deserialize document successfully");
 
         let storage_flags = Some(Cow::Owned(StorageFlags::SingleEpoch(0)));
 
@@ -1684,7 +1683,7 @@ mod tests {
 
         let random_owner_id = rand::thread_rng().gen::<[u8; 32]>();
 
-        let document = DocumentStub::from_cbor(
+        let document = Document::from_cbor(
             &dpns_domain_serialized_document,
             None,
             Some(random_owner_id),

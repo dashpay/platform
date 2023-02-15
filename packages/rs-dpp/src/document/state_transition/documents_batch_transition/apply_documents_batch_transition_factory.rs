@@ -3,12 +3,10 @@ use std::collections::HashMap;
 use dashcore::{consensus, BlockHeader};
 use serde_json::Value;
 
+use crate::document::DocumentInStateTransition;
 use crate::{
-    document::{errors::DocumentError, Document},
-    prelude::Identifier,
-    state_repository::StateRepositoryLike,
-    state_transition::StateTransitionLike,
-    ProtocolError,
+    document::errors::DocumentError, prelude::Identifier, state_repository::StateRepositoryLike,
+    state_transition::StateTransitionLike, ProtocolError,
 };
 
 use super::{
@@ -61,7 +59,7 @@ pub async fn apply_documents_batch_transition(
     )
     .await?;
 
-    let fetched_documents_by_id: HashMap<&Identifier, &Document> =
+    let fetched_documents_by_id: HashMap<&Identifier, &DocumentInStateTransition> =
         fetched_documents.iter().map(|dt| (&dt.id, dt)).collect();
 
     // since groveDB doesn't support parallel inserts, wee need to make them sequential
@@ -120,9 +118,9 @@ pub async fn apply_documents_batch_transition(
 fn document_from_transition_create(
     document_create_transition: &DocumentCreateTransition,
     state_transition: &DocumentsBatchTransition,
-) -> Document {
+) -> DocumentInStateTransition {
     // TODO cloning is costly. Probably the [`Document`] should have properties of type `Cov<'a, K>`
-    Document {
+    DocumentInStateTransition {
         protocol_version: state_transition.protocol_version,
         id: document_create_transition.base.id,
         document_type: document_create_transition.base.document_type.clone(),
@@ -149,9 +147,9 @@ fn document_from_transition_replace(
     document_replace_transition: &DocumentReplaceTransition,
     state_transition: &DocumentsBatchTransition,
     created_at: i64,
-) -> Document {
+) -> DocumentInStateTransition {
     // TODO cloning is costly. Probably the [`Document`] should have properties of type `Cov<'a, K>`
-    Document {
+    DocumentInStateTransition {
         protocol_version: state_transition.protocol_version,
         id: document_replace_transition.base.id,
         document_type: document_replace_transition.base.document_type.clone(),
@@ -180,11 +178,12 @@ mod test {
     use dashcore::consensus;
     use serde_json::{json, Value};
 
+    use crate::document::DocumentInStateTransition;
     use crate::tests::utils::new_block_header;
     use crate::{
         document::{
             document_transition::{Action, DocumentTransitionObjectLike},
-            Document, DocumentsBatchTransition,
+            DocumentsBatchTransition,
         },
         state_repository::MockStateRepositoryLike,
         state_transition::StateTransitionLike,
@@ -225,7 +224,7 @@ mod test {
 
         state_transition.get_execution_context().enable_dry_run();
         state_repository
-            .expect_fetch_documents::<Document>()
+            .expect_fetch_documents::<DocumentInStateTransition>()
             .returning(|_, _, _, _| Ok(vec![]));
         state_repository
             .expect_update_document()

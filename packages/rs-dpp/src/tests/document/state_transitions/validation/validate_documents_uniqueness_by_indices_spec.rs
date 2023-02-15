@@ -5,12 +5,12 @@ use crate::{
     consensus::ConsensusError,
     data_contract::DataContract,
     document::{
-        Document,
         document_transition::{Action, DocumentTransition},
         state_transition::documents_batch_transition::validation::state::validate_documents_uniqueness_by_indices::*,
     },
     prelude::Identifier,
     state_repository::MockStateRepositoryLike,
+    state_transition::state_transition_execution_context::StateTransitionExecutionContext,
     StateError,
     tests::{
         fixtures::{
@@ -18,14 +18,14 @@ use crate::{
         },
         utils::generate_random_identifier_struct,
     },
-    util::string_encoding::Encoding,
-    validation::ValidationResult, state_transition::state_transition_execution_context::StateTransitionExecutionContext,
+    util::string_encoding::Encoding, validation::ValidationResult,
 };
+use crate::document::DocumentInStateTransition;
 
 struct TestData {
     owner_id: Identifier,
     data_contract: DataContract,
-    documents: Vec<Document>,
+    documents: Vec<DocumentInStateTransition>,
     document_transitions: Vec<DocumentTransition>,
 }
 
@@ -55,7 +55,7 @@ async fn should_return_valid_result_if_documents_have_no_unique_indices() {
     } = setup_test();
     let mut state_repository_mock = MockStateRepositoryLike::default();
     state_repository_mock
-        .expect_fetch_documents::<Document>()
+        .expect_fetch_documents::<DocumentInStateTransition>()
         .returning(|_, _, _, _| Ok(vec![]));
 
     let document_transitions =
@@ -88,7 +88,7 @@ async fn should_return_valid_result_if_document_has_unique_indices_and_there_are
     let expect_document = william_doc.to_owned();
 
     state_repository_mock
-        .expect_fetch_documents::<Document>()
+        .expect_fetch_documents::<DocumentInStateTransition>()
         .with(
             predicate::eq(data_contract.id),
             predicate::eq("indexedDocument"),
@@ -104,7 +104,7 @@ async fn should_return_valid_result_if_document_has_unique_indices_and_there_are
 
     let expect_document = william_doc.to_owned();
     state_repository_mock
-        .expect_fetch_documents::<Document>()
+        .expect_fetch_documents::<DocumentInStateTransition>()
         .with(
             predicate::eq(data_contract.id),
             predicate::eq("indexedDocument"),
@@ -149,7 +149,7 @@ async fn should_return_invalid_result_if_document_has_unique_indices_and_there_a
 
     let expect_document = leon_doc.to_owned();
     state_repository_mock
-        .expect_fetch_documents::<Document>()
+        .expect_fetch_documents::<DocumentInStateTransition>()
         .with(
             predicate::eq(data_contract.id),
             predicate::eq("indexedDocument"),
@@ -165,7 +165,7 @@ async fn should_return_invalid_result_if_document_has_unique_indices_and_there_a
 
     let expect_document = leon_doc.to_owned();
     state_repository_mock
-        .expect_fetch_documents::<Document>()
+        .expect_fetch_documents::<DocumentInStateTransition>()
         .with(
             predicate::eq(data_contract.id),
             predicate::eq("indexedDocument"),
@@ -181,7 +181,7 @@ async fn should_return_invalid_result_if_document_has_unique_indices_and_there_a
 
     let expect_document = william_doc.to_owned();
     state_repository_mock
-        .expect_fetch_documents::<Document>()
+        .expect_fetch_documents::<DocumentInStateTransition>()
         .with(
             predicate::eq(data_contract.id),
             predicate::eq("indexedDocument"),
@@ -197,7 +197,7 @@ async fn should_return_invalid_result_if_document_has_unique_indices_and_there_a
 
     let expect_document = william_doc.to_owned();
     state_repository_mock
-        .expect_fetch_documents::<Document>()
+        .expect_fetch_documents::<DocumentInStateTransition>()
         .with(
             predicate::eq(data_contract.id),
             predicate::eq("indexedDocument"),
@@ -257,7 +257,7 @@ async fn should_return_valid_result_in_dry_run_if_document_has_unique_indices_an
 
     let expect_document = leon_doc.to_owned();
     state_repository_mock
-        .expect_fetch_documents::<Document>()
+        .expect_fetch_documents::<DocumentInStateTransition>()
         .with(
             predicate::eq(data_contract.id),
             predicate::eq("indexedDocument"),
@@ -273,7 +273,7 @@ async fn should_return_valid_result_in_dry_run_if_document_has_unique_indices_an
 
     let expect_document = leon_doc.to_owned();
     state_repository_mock
-        .expect_fetch_documents::<Document>()
+        .expect_fetch_documents::<DocumentInStateTransition>()
         .with(
             predicate::eq(data_contract.id),
             predicate::eq("indexedDocument"),
@@ -289,7 +289,7 @@ async fn should_return_valid_result_in_dry_run_if_document_has_unique_indices_an
 
     let expect_document = william_doc.to_owned();
     state_repository_mock
-        .expect_fetch_documents::<Document>()
+        .expect_fetch_documents::<DocumentInStateTransition>()
         .with(
             predicate::eq(data_contract.id),
             predicate::eq("indexedDocument"),
@@ -305,7 +305,7 @@ async fn should_return_valid_result_in_dry_run_if_document_has_unique_indices_an
 
     let expect_document = william_doc.to_owned();
     state_repository_mock
-        .expect_fetch_documents::<Document>()
+        .expect_fetch_documents::<DocumentInStateTransition>()
         .with(
             predicate::eq(data_contract.id),
             predicate::eq("indexedDocument"),
@@ -350,7 +350,7 @@ async fn should_return_valid_result_if_document_has_undefined_field_from_index()
 
     let expect_document = indexed_document.to_owned();
     state_repository_mock
-        .expect_fetch_documents::<Document>()
+        .expect_fetch_documents::<DocumentInStateTransition>()
         .with(
             predicate::eq(data_contract.id),
             predicate::eq("indexedDocument"),
@@ -366,7 +366,7 @@ async fn should_return_valid_result_if_document_has_undefined_field_from_index()
 
     let expect_document = indexed_document.to_owned();
     state_repository_mock
-        .expect_fetch_documents::<Document>()
+        .expect_fetch_documents::<DocumentInStateTransition>()
         .with(
             predicate::eq(data_contract.id),
             predicate::eq("indexedDocument"),
@@ -408,7 +408,7 @@ async fn should_return_valid_result_if_document_being_created_and_has_created_at
 
     let expect_document = unique_dates_doc.to_owned();
     state_repository_mock
-            .expect_fetch_documents::<Document>()
+            .expect_fetch_documents::<DocumentInStateTransition>()
             .with(
                 predicate::eq(data_contract.id),
                 predicate::eq("uniqueDates"),

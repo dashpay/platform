@@ -5,13 +5,14 @@ use futures::future::join_all;
 use itertools::Itertools;
 use serde::{Deserialize, Serialize};
 
+use crate::document::DocumentInStateTransition;
 use crate::{
     block_time_window::validate_time_in_block_time_window::validate_time_in_block_time_window,
     consensus::ConsensusError,
     data_trigger::DataTriggerExecutionContext,
     document::{
         document_transition::{Action, DocumentTransition, DocumentTransitionExt},
-        Document, DocumentsBatchTransition,
+        DocumentsBatchTransition,
     },
     prelude::{Identifier, TimestampMillis},
     state_repository::StateRepositoryLike,
@@ -159,7 +160,7 @@ pub async fn validate_document_transitions(
 
 fn validate_transition(
     transition: &DocumentTransition,
-    fetched_documents: &[Document],
+    fetched_documents: &[DocumentInStateTransition],
     last_header_block_time_millis: u64,
     owner_id: &Identifier,
 ) -> ValidationResult<()> {
@@ -214,7 +215,7 @@ fn validate_transition(
 
 fn check_ownership(
     document_transition: &DocumentTransition,
-    fetched_documents: &[Document],
+    fetched_documents: &[DocumentInStateTransition],
     owner_id: &Identifier,
 ) -> ValidationResult<()> {
     let mut result = ValidationResult::default();
@@ -239,7 +240,7 @@ fn check_ownership(
 
 fn check_revision(
     document_transition: &DocumentTransition,
-    fetched_documents: &[Document],
+    fetched_documents: &[DocumentInStateTransition],
 ) -> ValidationResult<()> {
     let mut result = ValidationResult::default();
     let fetched_document = match fetched_documents
@@ -267,7 +268,7 @@ fn check_revision(
 
 fn check_if_document_is_already_present(
     document_transition: &DocumentTransition,
-    fetched_documents: &[Document],
+    fetched_documents: &[DocumentInStateTransition],
 ) -> ValidationResult<()> {
     let mut result = ValidationResult::default();
     let maybe_fetched_document = fetched_documents
@@ -286,7 +287,7 @@ fn check_if_document_is_already_present(
 
 fn check_if_document_can_be_found(
     document_transition: &DocumentTransition,
-    fetched_documents: &[Document],
+    fetched_documents: &[DocumentInStateTransition],
 ) -> ValidationResult<()> {
     let mut result = ValidationResult::default();
     let maybe_fetched_document = fetched_documents

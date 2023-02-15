@@ -7,8 +7,6 @@ use serde::{Deserialize, Serialize};
 use std::convert::TryInto;
 use wasm_bindgen::prelude::*;
 
-use dpp::document::{property_names, Document, IDENTIFIER_FIELDS};
-
 use crate::buffer::Buffer;
 use crate::errors::RustConversionError;
 use crate::identifier::IdentifierWrapper;
@@ -25,6 +23,10 @@ pub mod state_transition;
 mod validator;
 
 pub use document_batch_transition::{DocumentsBatchTransitionWASM, DocumentsContainer};
+use dpp::document::{
+    document_in_state_transition_property_names, DocumentInStateTransition,
+    DOCUMENT_IN_STATE_TRANSITION_IDENTIFIER_FIELDS,
+};
 pub use factory::DocumentFactoryWASM;
 pub use validator::DocumentValidatorWasm;
 
@@ -42,7 +44,7 @@ pub struct ConversionOptions {
 
 #[wasm_bindgen(js_name=Document)]
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct DocumentWasm(Document);
+pub struct DocumentWasm(DocumentInStateTransition);
 
 #[wasm_bindgen(js_class=Document)]
 impl DocumentWasm {
@@ -54,7 +56,7 @@ impl DocumentWasm {
         let mut raw_document = with_serde_to_json_value(&js_raw_document)?;
 
         let document_type = raw_document
-            .get_string(property_names::DOCUMENT_TYPE)
+            .get_string(document_in_state_transition_property_names::DOCUMENT_TYPE)
             .with_js_error()?;
 
         let (identifier_paths, _) = js_data_contract
@@ -67,15 +69,19 @@ impl DocumentWasm {
         // `Identifier` and `Buffer` are used interchangeably, so we we can expect the replacing may fail when `Buffer` is provided
         let _ = raw_document
             .replace_identifier_paths(
-                identifier_paths.into_iter().chain(IDENTIFIER_FIELDS),
+                identifier_paths
+                    .into_iter()
+                    .chain(DOCUMENT_IN_STATE_TRANSITION_IDENTIFIER_FIELDS),
                 ReplaceWith::Bytes,
             )
             .with_js_error();
         // The binary paths are not being converted, because they always should be a `Buffer`. `Buffer` is always an Array
 
-        let document =
-            Document::from_raw_document(raw_document, js_data_contract.to_owned().into())
-                .with_js_error()?;
+        let document = DocumentInStateTransition::from_raw_document(
+            raw_document,
+            js_data_contract.to_owned().into(),
+        )
+        .with_js_error()?;
 
         Ok(document.into())
     }
@@ -275,7 +281,10 @@ impl DocumentWasm {
         let serializer = serde_wasm_bindgen::Serializer::json_compatible();
         let js_value = value.serialize(&serializer)?;
 
-        for path in identifiers_paths.into_iter().chain(IDENTIFIER_FIELDS) {
+        for path in identifiers_paths
+            .into_iter()
+            .chain(DOCUMENT_IN_STATE_TRANSITION_IDENTIFIER_FIELDS)
+        {
             if let Ok(bytes) = value.remove_path_into::<Vec<u8>>(path) {
                 if !options.skip_identifiers_conversion {
                     let buffer = Buffer::from_bytes(&bytes);
@@ -343,8 +352,8 @@ impl DocumentWasm {
     }
 }
 
-impl From<Document> for DocumentWasm {
-    fn from(d: Document) -> Self {
+impl From<DocumentInStateTransition> for DocumentWasm {
+    fn from(d: DocumentInStateTransition) -> Self {
         DocumentWasm(d)
     }
 }

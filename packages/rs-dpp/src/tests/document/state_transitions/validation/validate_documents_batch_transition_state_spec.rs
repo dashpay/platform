@@ -9,27 +9,27 @@ use crate::{
     consensus::ConsensusError,
     data_contract::DataContract,
     document::{
-        Document,
         document_transition::{Action, DocumentTransition, DocumentTransitionObjectLike},
         DocumentsBatchTransition, state_transition::documents_batch_transition::validation::state::validate_documents_batch_transition_state::*,
     },
     prelude::Identifier,
     prelude::ProtocolError,
     state_repository::MockStateRepositoryLike,
+    state_transition::StateTransitionLike,
     StateError,
     tests::{
         fixtures::{
             get_data_contract_fixture, get_document_transitions_fixture, get_documents_fixture,
         },
         utils::{generate_random_identifier_struct, new_block_header},
-    },
-    validation::ValidationResult, state_transition::StateTransitionLike,
+    }, validation::ValidationResult,
 };
+use crate::document::DocumentInStateTransition;
 
 struct TestData {
     owner_id: Identifier,
     data_contract: DataContract,
-    documents: Vec<Document>,
+    documents: Vec<DocumentInStateTransition>,
     document_transitions: Vec<DocumentTransition>,
     state_transition: DocumentsBatchTransition,
     state_repository_mock: MockStateRepositoryLike,
@@ -176,7 +176,7 @@ async fn should_return_invalid_result_if_document_transition_with_action_delete_
     .expect("documents batch state transition should be created");
 
     state_repository_mock
-        .expect_fetch_documents::<Document>()
+        .expect_fetch_documents::<DocumentInStateTransition>()
         .returning(move |_, _, _, _| Ok(vec![]));
 
     let validation_result =
@@ -202,9 +202,11 @@ async fn should_return_invalid_result_if_document_transition_with_action_replace
         mut state_repository_mock,
         ..
     } = setup_test();
-    let mut replace_document =
-        Document::from_raw_document(documents[0].to_object().unwrap(), data_contract.clone())
-            .expect("document should be created");
+    let mut replace_document = DocumentInStateTransition::from_raw_document(
+        documents[0].to_object().unwrap(),
+        data_contract.clone(),
+    )
+    .expect("document should be created");
     replace_document.revision = 3;
 
     documents[0].created_at = replace_document.created_at;
@@ -259,14 +261,18 @@ async fn should_return_invalid_result_if_document_transition_with_action_replace
         mut state_repository_mock,
         ..
     } = setup_test();
-    let mut replace_document =
-        Document::from_raw_document(documents[0].to_object().unwrap(), data_contract.clone())
-            .expect("document should be created");
+    let mut replace_document = DocumentInStateTransition::from_raw_document(
+        documents[0].to_object().unwrap(),
+        data_contract.clone(),
+    )
+    .expect("document should be created");
     replace_document.revision = 1;
 
-    let mut fetched_document =
-        Document::from_raw_document(documents[0].to_object().unwrap(), data_contract.clone())
-            .expect("document should be created");
+    let mut fetched_document = DocumentInStateTransition::from_raw_document(
+        documents[0].to_object().unwrap(),
+        data_contract.clone(),
+    )
+    .expect("document should be created");
     let another_owner_id = generate_random_identifier_struct();
     fetched_document.owner_id = another_owner_id;
 
@@ -357,7 +363,7 @@ async fn should_return_invalid_result_if_timestamps_mismatch() {
         .for_each(|t| set_updated_at(t, Some(now_ts)));
 
     state_repository_mock
-        .expect_fetch_documents::<Document>()
+        .expect_fetch_documents::<DocumentInStateTransition>()
         .returning(move |_, _, _, _| Ok(vec![]));
 
     let validation_result =
@@ -409,7 +415,7 @@ async fn should_return_invalid_result_if_crated_at_has_violated_time_window() {
         .for_each(|t| set_created_at(t, Some(now_ts_minus_6_mins)));
 
     state_repository_mock
-        .expect_fetch_documents::<Document>()
+        .expect_fetch_documents::<DocumentInStateTransition>()
         .returning(move |_, _, _, _| Ok(vec![]));
 
     let validation_result =
@@ -462,7 +468,7 @@ async fn should_not_validate_time_in_block_window_on_dry_run() {
         .for_each(|t| set_created_at(t, Some(now_ts_minus_6_mins)));
 
     state_repository_mock
-        .expect_fetch_documents::<Document>()
+        .expect_fetch_documents::<DocumentInStateTransition>()
         .returning(move |_, _, _, _| Ok(vec![]));
 
     let result =
@@ -507,7 +513,7 @@ async fn should_return_invalid_result_if_updated_at_has_violated_time_window() {
     });
 
     state_repository_mock
-        .expect_fetch_documents::<Document>()
+        .expect_fetch_documents::<DocumentInStateTransition>()
         .returning(move |_, _, _, _| Ok(vec![]));
 
     let validation_result =
@@ -535,19 +541,23 @@ async fn should_return_valid_result_if_document_transitions_are_valid() {
         mut state_repository_mock,
         ..
     } = setup_test();
-    let mut fetched_document_1 =
-        Document::from_raw_document(documents[1].to_object().unwrap(), data_contract.clone())
-            .unwrap();
-    let mut fetched_document_2 =
-        Document::from_raw_document(documents[2].to_object().unwrap(), data_contract.clone())
-            .unwrap();
+    let mut fetched_document_1 = DocumentInStateTransition::from_raw_document(
+        documents[1].to_object().unwrap(),
+        data_contract.clone(),
+    )
+    .unwrap();
+    let mut fetched_document_2 = DocumentInStateTransition::from_raw_document(
+        documents[2].to_object().unwrap(),
+        data_contract.clone(),
+    )
+    .unwrap();
     fetched_document_1.revision = 1;
     fetched_document_2.revision = 1;
     fetched_document_1.owner_id = owner_id;
     fetched_document_2.owner_id = owner_id;
 
     state_repository_mock
-        .expect_fetch_documents::<Document>()
+        .expect_fetch_documents::<DocumentInStateTransition>()
         .returning(move |_, _, _, _| {
             Ok(vec![fetched_document_1.clone(), fetched_document_2.clone()])
         });

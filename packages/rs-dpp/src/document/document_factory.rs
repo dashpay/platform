@@ -4,6 +4,9 @@ use itertools::Itertools;
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value as JsonValue};
 
+use crate::document::document_transition::document_in_state_transition::{
+    property_names, DocumentInStateTransition,
+};
 use crate::{
     data_contract::{errors::DataContractError, DataContract},
     decode_protocol_entity_factory::DecodeProtocolEntity,
@@ -20,7 +23,7 @@ use super::{
     errors::DocumentError,
     fetch_and_validate_data_contract::DataContractFetcherAndValidator,
     generate_document_id::generate_document_id,
-    property_names, Document, DocumentsBatchTransition,
+    DocumentsBatchTransition,
 };
 
 // TODO remove these const and use ones from super::document::property_names
@@ -93,7 +96,7 @@ where
         owner_id: Identifier,
         document_type: String,
         data: JsonValue,
-    ) -> Result<Document, ProtocolError> {
+    ) -> Result<DocumentInStateTransition, ProtocolError> {
         if !data_contract.is_document_defined(&document_type) {
             return Err(DataContractError::InvalidDocumentTypeError {
                 doc_type: document_type,
@@ -151,7 +154,8 @@ where
             )));
         }
 
-        let mut document = Document::from_raw_document(raw_document, data_contract)?;
+        let mut document =
+            DocumentInStateTransition::from_raw_document(raw_document, data_contract)?;
         document.entropy = document_entropy;
 
         Ok(document)
@@ -159,11 +163,12 @@ where
 
     pub fn create_state_transition(
         &self,
-        documents_iter: impl IntoIterator<Item = (Action, Vec<Document>)>,
+        documents_iter: impl IntoIterator<Item = (Action, Vec<DocumentInStateTransition>)>,
     ) -> Result<DocumentsBatchTransition, ProtocolError> {
         let mut raw_documents_transitions: Vec<JsonValue> = vec![];
         let mut data_contracts: Vec<DataContract> = vec![];
-        let documents: Vec<(Action, Vec<Document>)> = documents_iter.into_iter().collect();
+        let documents: Vec<(Action, Vec<DocumentInStateTransition>)> =
+            documents_iter.into_iter().collect();
         let flattened_documents_iter = documents.iter().flat_map(|(_, v)| v);
 
         if Self::is_empty(flattened_documents_iter.clone()) {
@@ -214,7 +219,7 @@ where
         &self,
         buffer: impl AsRef<[u8]>,
         options: FactoryOptions,
-    ) -> Result<Document, ProtocolError> {
+    ) -> Result<DocumentInStateTransition, ProtocolError> {
         let result = DecodeProtocolEntity::decode_protocol_entity(buffer);
 
         match result {
@@ -238,12 +243,12 @@ where
         &self,
         raw_document: JsonValue,
         options: FactoryOptions,
-    ) -> Result<Document, ProtocolError> {
+    ) -> Result<DocumentInStateTransition, ProtocolError> {
         let data_contract = self
             .validate_data_contract_for_document(&raw_document, options)
             .await?;
 
-        Document::from_raw_document(raw_document, data_contract)
+        DocumentInStateTransition::from_raw_document(raw_document, data_contract)
     }
 
     async fn validate_data_contract_for_document(
@@ -286,7 +291,7 @@ where
     }
 
     fn raw_document_create_transitions(
-        documents: Vec<Document>,
+        documents: Vec<DocumentInStateTransition>,
     ) -> Result<Vec<JsonValue>, ProtocolError> {
         let mut raw_transitions = vec![];
         for document in documents {
@@ -318,7 +323,7 @@ where
     }
 
     fn raw_document_replace_transitions(
-        documents: Vec<Document>,
+        documents: Vec<DocumentInStateTransition>,
     ) -> Result<Vec<JsonValue>, ProtocolError> {
         let mut raw_transitions = vec![];
         for document in documents {
@@ -349,7 +354,7 @@ where
     }
 
     fn raw_document_delete_transitions(
-        documents: Vec<Document>,
+        documents: Vec<DocumentInStateTransition>,
     ) -> Result<Vec<JsonValue>, ProtocolError> {
         Ok(documents
             .into_iter()

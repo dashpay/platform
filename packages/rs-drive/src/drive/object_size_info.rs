@@ -53,7 +53,7 @@ use crate::drive::defaults::{DEFAULT_FLOAT_SIZE_U16, DEFAULT_HASH_SIZE_U16, DEFA
 use crate::drive::flags::StorageFlags;
 use crate::error::drive::DriveError;
 use crate::error::Error;
-use dpp::document::document_stub::DocumentStub;
+use dpp::document::Document;
 
 use crate::drive::object_size_info::PathKeyElementInfo::PathKeyUnknownElementSize;
 use crate::error::fee::FeeError;
@@ -529,13 +529,13 @@ pub struct DocumentAndContractInfo<'a> {
 #[derive(Clone, Debug)]
 pub enum DocumentInfo<'a> {
     /// The borrowed document and it's serialized form
-    DocumentRefAndSerialization((&'a DocumentStub, &'a [u8], Option<Cow<'a, StorageFlags>>)),
+    DocumentRefAndSerialization((&'a Document, &'a [u8], Option<Cow<'a, StorageFlags>>)),
     /// The borrowed document without it's serialized form
-    DocumentRefWithoutSerialization((&'a DocumentStub, Option<Cow<'a, StorageFlags>>)),
+    DocumentRefWithoutSerialization((&'a Document, Option<Cow<'a, StorageFlags>>)),
     /// The document and it's serialized form
-    DocumentAndSerialization((DocumentStub, Vec<u8>, Option<Cow<'a, StorageFlags>>)),
+    DocumentAndSerialization((Document, Vec<u8>, Option<Cow<'a, StorageFlags>>)),
     /// The document without it's serialized form
-    DocumentWithoutSerialization((DocumentStub, Option<Cow<'a, StorageFlags>>)),
+    DocumentWithoutSerialization((Document, Option<Cow<'a, StorageFlags>>)),
     /// An element size
     DocumentEstimatedAverageSize(u32),
 }
@@ -552,7 +552,7 @@ impl<'a> DocumentInfo<'a> {
     }
 
     /// Gets the borrowed document
-    pub fn get_borrowed_document(&self) -> Option<&DocumentStub> {
+    pub fn get_borrowed_document(&self) -> Option<&Document> {
         match self {
             DocumentInfo::DocumentRefAndSerialization((document, _, _))
             | DocumentInfo::DocumentRefWithoutSerialization((document, _)) => Some(document),

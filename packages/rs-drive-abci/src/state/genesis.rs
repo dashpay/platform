@@ -33,11 +33,12 @@ use crate::platform::Platform;
 use ciborium::{cbor, Value};
 use drive::contract::DataContract;
 use drive::dpp::data_contract::DriveContractExt;
-use drive::dpp::document::document_stub::DocumentStub;
+use drive::dpp::document::Document;
+use drive::dpp::document::DocumentInStateTransition;
 use drive::dpp::identity::{
     Identity, IdentityPublicKey, KeyType, Purpose, SecurityLevel, TimestampMillis,
 };
-use drive::dpp::prelude::{Document, Identifier};
+use drive::dpp::prelude::Identifier;
 use drive::dpp::system_data_contracts::{load_system_data_contract, SystemDataContract};
 use drive::dpp::util::string_encoding::{encode, Encoding};
 use drive::drive::batch::{
@@ -203,7 +204,7 @@ impl Platform {
 
         // TODO: Add created and updated at to DPNS contract
 
-        let document = Document {
+        let document = DocumentInStateTransition {
             protocol_version: PROTOCOL_VERSION,
             id: Identifier::new(DPNS_DASH_TLD_DOCUMENT_ID),
             document_type: "domain".to_string(),
@@ -265,7 +266,7 @@ impl Platform {
 
         let document_cbor = document.to_buffer()?;
 
-        let document_stub = DocumentStub {
+        let document_stub = Document {
             id: DPNS_DASH_TLD_DOCUMENT_ID,
             properties: document_stub_properties,
             owner_id: contract.owner_id.to_buffer(),

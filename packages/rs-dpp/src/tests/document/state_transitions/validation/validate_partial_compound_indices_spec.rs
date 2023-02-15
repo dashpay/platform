@@ -4,7 +4,6 @@ use crate::{
     consensus::{basic::BasicError, ConsensusError},
     data_contract::DataContract,
     document::{
-        Document,
         document_transition::{Action, DocumentTransitionObjectLike},
         state_transition::documents_batch_transition::validation::basic::validate_partial_compound_indices::*,
     },
@@ -14,10 +13,11 @@ use crate::{
     util::json_value::JsonValueExt,
     validation::ValidationResult,
 };
+use crate::document::DocumentInStateTransition;
 
 struct TestData {
     data_contract: DataContract,
-    documents: Vec<Document>,
+    documents: Vec<DocumentInStateTransition>,
 }
 
 fn setup_test() -> TestData {

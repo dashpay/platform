@@ -14,7 +14,6 @@ use dpp::prelude::{Revision, TimestampMillis};
 use dpp::{
     dashcore::InstantLock,
     data_contract::DataContract,
-    document::Document,
     prelude::{Identifier, Identity},
     state_repository::{
         FetchTransactionResponse as FetchTransactionResponseDPP, StateRepositoryLike,
@@ -25,6 +24,7 @@ use js_sys::Uint8Array;
 use js_sys::{Array, Number};
 use wasm_bindgen::__rt::Ref;
 
+use dpp::document::DocumentInStateTransition;
 use wasm_bindgen::prelude::*;
 
 use crate::buffer::Buffer;
@@ -275,7 +275,7 @@ impl StateRepositoryLike for ExternalStateRepositoryLikeWrapper {
 
     async fn create_document(
         &self,
-        _document: &Document,
+        _document: &DocumentInStateTransition,
         _execution_context: &StateTransitionExecutionContext,
     ) -> Result<()> {
         todo!()
@@ -283,7 +283,7 @@ impl StateRepositoryLike for ExternalStateRepositoryLikeWrapper {
 
     async fn update_document(
         &self,
-        _document: &Document,
+        _document: &DocumentInStateTransition,
         _execution_context: &StateTransitionExecutionContext,
     ) -> Result<()> {
         todo!()

@@ -1,9 +1,10 @@
 use anyhow::{anyhow, bail};
 use serde_json::json;
 
+use crate::document::DocumentInStateTransition;
 use crate::{
     data_trigger::create_error,
-    document::{document_transition::DocumentTransition, Document},
+    document::document_transition::DocumentTransition,
     get_from_transition,
     mocks::SMLStore,
     prelude::Identifier,
@@ -87,7 +88,7 @@ where
         result.add_error(err.into())
     }
 
-    let documents: Vec<Document> = context
+    let documents: Vec<DocumentInStateTransition> = context
         .state_repository
         .fetch_documents(
             &context.data_contract.id,
@@ -139,14 +140,12 @@ mod test {
     use itertools::Itertools;
     use serde_json::json;
 
+    use crate::document::DocumentInStateTransition;
     use crate::identity::Identity;
     use crate::{
         data_contract::DataContract,
         data_trigger::DataTriggerExecutionContext,
-        document::{
-            document_transition::{Action, DocumentTransition, DocumentTransitionExt},
-            Document,
-        },
+        document::document_transition::{Action, DocumentTransition, DocumentTransitionExt},
         mocks::{SMLEntry, SMLStore, SimplifiedMNList},
         prelude::Identifier,
         state_repository::MockStateRepositoryLike,
@@ -164,7 +163,7 @@ mod test {
         top_level_identifier: Identifier,
         data_contract: DataContract,
         sml_store: SMLStore,
-        documents: Vec<Document>,
+        documents: Vec<DocumentInStateTransition>,
         document_transition: DocumentTransition,
         identity: Identity,
     }
@@ -296,7 +295,7 @@ mod test {
             .expect_fetch_identity()
             .returning(move |_, _| Ok(None));
         state_repository_mock
-            .expect_fetch_documents::<Document>()
+            .expect_fetch_documents::<DocumentInStateTransition>()
             .returning(move |_, _, _, _| Ok(vec![]));
 
         let execution_context = StateTransitionExecutionContext::default();
@@ -344,7 +343,7 @@ mod test {
             .expect_fetch_identity()
             .returning(move |_, _| Ok(None));
         state_repository_mock
-            .expect_fetch_documents::<Document>()
+            .expect_fetch_documents::<DocumentInStateTransition>()
             .returning(move |_, _, _, _| Ok(vec![]));
 
         let execution_context = StateTransitionExecutionContext::default();
@@ -384,7 +383,7 @@ mod test {
             .expect_fetch_identity()
             .returning(move |_, _| Ok(Some(identity.clone())));
         state_repository_mock
-            .expect_fetch_documents::<Document>()
+            .expect_fetch_documents::<DocumentInStateTransition>()
             .returning(move |_, _, _, _| Ok(vec![]));
 
         let execution_context = StateTransitionExecutionContext::default();
@@ -419,9 +418,11 @@ mod test {
         state_repository_mock
             .expect_fetch_identity()
             .returning(move |_, _| Ok(Some(identity.clone())));
-        let documents_to_return: Vec<Document> = (0..16).map(|_| Document::default()).collect();
+        let documents_to_return: Vec<DocumentInStateTransition> = (0..16)
+            .map(|_| DocumentInStateTransition::default())
+            .collect();
         state_repository_mock
-            .expect_fetch_documents::<Document>()
+            .expect_fetch_documents::<DocumentInStateTransition>()
             .return_once(move |_, _, _, _| Ok(documents_to_return));
 
         let execution_context = StateTransitionExecutionContext::default();
@@ -457,7 +458,7 @@ mod test {
             .expect_fetch_identity()
             .returning(move |_, _| Ok(None));
         state_repository_mock
-            .expect_fetch_documents::<Document>()
+            .expect_fetch_documents::<DocumentInStateTransition>()
             .returning(move |_, _, _, _| Ok(vec![]));
 
         let execution_context = StateTransitionExecutionContext::default();

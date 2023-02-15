@@ -33,7 +33,7 @@
 use crate::DocumentAction::{DocumentActionDelete, DocumentActionInsert};
 use drive::common::helpers::identities::create_test_masternode_identities_with_rng;
 use drive::contract::{Contract, CreateRandomDocument, DocumentType};
-use drive::dpp::document::document_stub::DocumentStub;
+use drive::dpp::document::Document;
 use drive::dpp::identity::{Identity, KeyID, PartialIdentity};
 use drive::dpp::util::deserializer::ProtocolVersion;
 use drive::drive::batch::{
@@ -271,7 +271,7 @@ impl Strategy {
                         if !items.is_empty() {
                             let first_item = items.remove(0);
                             let document =
-                                DocumentStub::from_bytes(first_item.as_slice(), &op.document_type)
+                                Document::from_bytes(first_item.as_slice(), &op.document_type)
                                     .expect("expected to deserialize document");
                             let identity = platform
                                 .drive

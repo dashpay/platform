@@ -41,7 +41,7 @@ use crate::error::Error;
 use crate::platform::Platform;
 use drive::contract::Contract;
 use drive::dpp::data_contract::DriveContractExt;
-use drive::dpp::document::document_stub::DocumentStub;
+use drive::dpp::document::Document;
 use drive::dpp::util::serializer;
 use drive::drive::block_info::BlockInfo;
 use drive::drive::flags::StorageFlags;
@@ -65,7 +65,7 @@ impl Platform {
         &self,
         masternode_owner_id: &Vec<u8>,
         transaction: TransactionArg,
-    ) -> Result<Vec<DocumentStub>, Error> {
+    ) -> Result<Vec<Document>, Error> {
         let query_json = json!({
             "where": [
                 ["$ownerId", "==", bs58::encode(masternode_owner_id).into_string()]
@@ -86,8 +86,8 @@ impl Platform {
 
         items
             .iter()
-            .map(|cbor| DocumentStub::from_cbor(cbor, None, None).map_err(Error::Protocol))
-            .collect::<Result<Vec<DocumentStub>, Error>>()
+            .map(|cbor| Document::from_cbor(cbor, None, None).map_err(Error::Protocol))
+            .collect::<Result<Vec<Document>, Error>>()
     }
 
     /// A function to create and apply the masternode reward shares contract.

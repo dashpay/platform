@@ -1,9 +1,10 @@
+use dpp::document::DocumentInStateTransition;
 use dpp::identity::KeyID;
 use dpp::{
     document::{
         state_transition::documents_batch_transition::property_names, DocumentsBatchTransition,
     },
-    prelude::{DataContract, Document, Identifier},
+    prelude::{DataContract, Identifier},
     state_transition::{
         state_transition_execution_context::StateTransitionExecutionContext,
         StateTransitionConvert, StateTransitionIdentitySigned, StateTransitionLike,
@@ -34,9 +35,9 @@ pub struct DocumentsBatchTransitionWASM(DocumentsBatchTransition);
 #[derive(Debug, Default)]
 #[wasm_bindgen(js_name=DocumentsContainer)]
 pub struct DocumentsContainer {
-    create: Vec<Document>,
-    replace: Vec<Document>,
-    delete: Vec<Document>,
+    create: Vec<DocumentInStateTransition>,
+    replace: Vec<DocumentInStateTransition>,
+    delete: Vec<DocumentInStateTransition>,
 }
 
 #[wasm_bindgen(js_class=DocumentsContainer)]
@@ -63,15 +64,15 @@ impl DocumentsContainer {
 }
 
 impl DocumentsContainer {
-    pub fn take_documents_create(&mut self) -> Vec<Document> {
+    pub fn take_documents_create(&mut self) -> Vec<DocumentInStateTransition> {
         std::mem::take(&mut self.create)
     }
 
-    pub fn take_documents_replace(&mut self) -> Vec<Document> {
+    pub fn take_documents_replace(&mut self) -> Vec<DocumentInStateTransition> {
         std::mem::take(&mut self.replace)
     }
 
-    pub fn take_documents_delete(&mut self) -> Vec<Document> {
+    pub fn take_documents_delete(&mut self) -> Vec<DocumentInStateTransition> {
         std::mem::take(&mut self.delete)
     }
 }

@@ -3,9 +3,9 @@ use std::collections::hash_map::{Entry, HashMap};
 use futures::future::join_all;
 use serde_json::json;
 
+use crate::document::DocumentInStateTransition;
 use crate::{
-    document::{document_transition::DocumentTransition, Document},
-    get_from_transition,
+    document::document_transition::DocumentTransition, get_from_transition,
     state_repository::StateRepositoryLike,
     state_transition::state_transition_execution_context::StateTransitionExecutionContext,
     util::string_encoding::Encoding,
@@ -15,7 +15,7 @@ pub async fn fetch_documents(
     state_repository: &impl StateRepositoryLike,
     document_transitions: impl IntoIterator<Item = impl AsRef<DocumentTransition>>,
     execution_context: &StateTransitionExecutionContext,
-) -> Result<Vec<Document>, anyhow::Error> {
+) -> Result<Vec<DocumentInStateTransition>, anyhow::Error> {
     let mut transitions_by_contracts_and_types: HashMap<String, Vec<&DocumentTransition>> =
         HashMap::new();
     let collected_transitions: Vec<_> = document_transitions.into_iter().collect();
@@ -55,10 +55,11 @@ pub async fn fetch_documents(
         fetch_documents_futures.push(documents);
     }
 
-    let results: Result<Vec<Vec<Document>>, anyhow::Error> = join_all(fetch_documents_futures)
-        .await
-        .into_iter()
-        .collect();
+    let results: Result<Vec<Vec<DocumentInStateTransition>>, anyhow::Error> =
+        join_all(fetch_documents_futures)
+            .await
+            .into_iter()
+            .collect();
 
     let documents = results?.into_iter().flatten().collect();
     Ok(documents)

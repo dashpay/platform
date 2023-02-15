@@ -60,7 +60,7 @@ use drive::error::{query::QueryError, Error};
 use drive::query::DriveQuery;
 
 use dpp::data_contract::validation::data_contract_validator::DataContractValidator;
-use dpp::document::document_stub::DocumentStub;
+use dpp::document::Document;
 
 use dpp::prelude::DataContract;
 use dpp::util::serializer;
@@ -195,7 +195,7 @@ pub fn setup_family_tests(count: u32, with_batching: bool, seed: u64) -> (Drive,
         let document_cbor =
             serializer::value_to_cbor(value, Some(drive::drive::defaults::PROTOCOL_VERSION))
                 .expect("expected to serialize to cbor");
-        let document = DocumentStub::from_cbor(document_cbor.as_slice(), None, None)
+        let document = Document::from_cbor(document_cbor.as_slice(), None, None)
             .expect("document should be properly deserialized");
 
         let document_type = contract
@@ -273,7 +273,7 @@ pub fn setup_family_tests_with_nulls(
         let document_cbor =
             serializer::value_to_cbor(value, Some(drive::drive::defaults::PROTOCOL_VERSION))
                 .expect("expected to serialize to cbor");
-        let document = DocumentStub::from_cbor(document_cbor.as_slice(), None, None)
+        let document = Document::from_cbor(document_cbor.as_slice(), None, None)
             .expect("document should be properly deserialized");
         let document_type = contract
             .document_type_for_name("person")
@@ -350,7 +350,7 @@ pub fn setup_family_tests_only_first_name_index(
         let document_cbor =
             serializer::value_to_cbor(value, Some(drive::drive::defaults::PROTOCOL_VERSION))
                 .expect("expected to serialize to cbor");
-        let document = DocumentStub::from_cbor(document_cbor.as_slice(), None, None)
+        let document = Document::from_cbor(document_cbor.as_slice(), None, None)
             .expect("document should be properly deserialized");
 
         let document_type = contract
@@ -458,7 +458,7 @@ pub fn add_domains_to_contract(
         let document_cbor =
             serializer::value_to_cbor(value, Some(drive::drive::defaults::PROTOCOL_VERSION))
                 .expect("expected to serialize to cbor");
-        let document = DocumentStub::from_cbor(document_cbor.as_slice(), None, None)
+        let document = Document::from_cbor(document_cbor.as_slice(), None, None)
             .expect("document should be properly deserialized");
         let document_type = contract
             .document_type_for_name("domain")
@@ -557,7 +557,7 @@ pub fn setup_dpns_test_with_data(path: &str) -> (Drive, Contract) {
             )
             .expect("expected to serialize to cbor");
 
-            let domain = DocumentStub::from_cbor(&domain_cbor, None, None)
+            let domain = Document::from_cbor(&domain_cbor, None, None)
                 .expect("expected to deserialize the document");
 
             let document_type = contract
@@ -609,7 +609,7 @@ fn test_query_many() {
         let document_cbor =
             serializer::value_to_cbor(value, Some(drive::drive::defaults::PROTOCOL_VERSION))
                 .expect("expected to serialize to cbor");
-        let document = DocumentStub::from_cbor(document_cbor.as_slice(), None, None)
+        let document = Document::from_cbor(document_cbor.as_slice(), None, None)
             .expect("document should be properly deserialized");
         let document_type = contract
             .document_type_for_name("person")
@@ -783,7 +783,7 @@ fn test_family_basic_queries() {
     let names: Vec<String> = results
         .iter()
         .map(|result| {
-            let document = DocumentStub::from_cbor(result.as_slice(), None, None)
+            let document = Document::from_cbor(result.as_slice(), None, None)
                 .expect("we should be able to deserialize the cbor");
             let first_name_value = document
                 .properties
@@ -883,7 +883,7 @@ fn test_family_basic_queries() {
     assert_eq!(root_hash, proof_root_hash);
     assert_eq!(results, proof_results);
 
-    let document = DocumentStub::from_cbor(results.first().unwrap().as_slice(), None, None)
+    let document = Document::from_cbor(results.first().unwrap().as_slice(), None, None)
         .expect("we should be able to deserialize the cbor");
     let last_name = document
         .properties
@@ -982,7 +982,7 @@ fn test_family_basic_queries() {
     assert_eq!(root_hash, proof_root_hash);
     assert_eq!(results, proof_results);
 
-    let document = DocumentStub::from_cbor(results.first().unwrap().as_slice(), None, None)
+    let document = Document::from_cbor(results.first().unwrap().as_slice(), None, None)
         .expect("we should be able to deserialize the cbor");
     let last_name = document
         .properties
@@ -1098,7 +1098,7 @@ fn test_family_basic_queries() {
     let names: Vec<String> = results
         .iter()
         .map(|result| {
-            let document = DocumentStub::from_cbor(result.as_slice(), None, None)
+            let document = Document::from_cbor(result.as_slice(), None, None)
                 .expect("we should be able to deserialize the cbor");
             let first_name_value = document
                 .properties
@@ -1150,7 +1150,7 @@ fn test_family_basic_queries() {
     let names: Vec<String> = results
         .iter()
         .map(|result| {
-            let document = DocumentStub::from_cbor(result.as_slice(), None, None)
+            let document = Document::from_cbor(result.as_slice(), None, None)
                 .expect("we should be able to deserialize the cbor");
             let first_name_value = document
                 .properties
@@ -1197,7 +1197,7 @@ fn test_family_basic_queries() {
     let names: Vec<String> = results
         .iter()
         .map(|result| {
-            let document = DocumentStub::from_cbor(result.as_slice(), None, None)
+            let document = Document::from_cbor(result.as_slice(), None, None)
                 .expect("we should be able to deserialize the cbor");
             let first_name_value = document
                 .properties
@@ -1247,7 +1247,7 @@ fn test_family_basic_queries() {
     let names: Vec<String> = results
         .iter()
         .map(|result| {
-            let document = DocumentStub::from_cbor(result.as_slice(), None, None)
+            let document = Document::from_cbor(result.as_slice(), None, None)
                 .expect("we should be able to deserialize the cbor");
             let first_name_value = document
                 .properties
@@ -1301,7 +1301,7 @@ fn test_family_basic_queries() {
     let names: Vec<String> = results
         .iter()
         .map(|result| {
-            let document = DocumentStub::from_cbor(result.as_slice(), None, None)
+            let document = Document::from_cbor(result.as_slice(), None, None)
                 .expect("we should be able to deserialize the cbor");
             let first_name_value = document
                 .properties
@@ -1345,7 +1345,7 @@ fn test_family_basic_queries() {
     let names: Vec<String> = results
         .iter()
         .map(|result| {
-            let document = DocumentStub::from_cbor(result.as_slice(), None, None)
+            let document = Document::from_cbor(result.as_slice(), None, None)
                 .expect("we should be able to deserialize the cbor");
             let first_name_value = document
                 .properties
@@ -1401,7 +1401,7 @@ fn test_family_basic_queries() {
     let names: Vec<String> = results
         .iter()
         .map(|result| {
-            let document = DocumentStub::from_cbor(result.as_slice(), None, None)
+            let document = Document::from_cbor(result.as_slice(), None, None)
                 .expect("we should be able to deserialize the cbor");
             let first_name_value = document
                 .properties
@@ -1456,7 +1456,7 @@ fn test_family_basic_queries() {
     let names: Vec<String> = results
         .iter()
         .map(|result| {
-            let document = DocumentStub::from_cbor(result.as_slice(), None, None)
+            let document = Document::from_cbor(result.as_slice(), None, None)
                 .expect("we should be able to deserialize the cbor");
             let first_name_value = document
                 .properties
@@ -1488,7 +1488,7 @@ fn test_family_basic_queries() {
     let ages: HashMap<String, u8> = results
         .into_iter()
         .map(|result| {
-            let document = DocumentStub::from_cbor(result.as_slice(), None, None)
+            let document = Document::from_cbor(result.as_slice(), None, None)
                 .expect("we should be able to deserialize the cbor");
             let name_value = document
                 .properties
@@ -1538,7 +1538,7 @@ fn test_family_basic_queries() {
         Some(drive::drive::defaults::PROTOCOL_VERSION),
     )
     .expect("expected to serialize to cbor");
-    let document = DocumentStub::from_cbor(person_cbor.as_slice(), None, None)
+    let document = Document::from_cbor(person_cbor.as_slice(), None, None)
         .expect("document should be properly deserialized");
 
     let document_type = contract
@@ -1588,7 +1588,7 @@ fn test_family_basic_queries() {
         Some(drive::drive::defaults::PROTOCOL_VERSION),
     )
     .expect("expected to serialize to cbor");
-    let document = DocumentStub::from_cbor(person_cbor.as_slice(), None, None)
+    let document = Document::from_cbor(person_cbor.as_slice(), None, None)
         .expect("document should be properly deserialized");
 
     let document_type = contract
@@ -1687,7 +1687,7 @@ fn test_family_basic_queries() {
 
     assert_eq!(results.len(), 2);
 
-    let last_person = DocumentStub::from_cbor(results.first().unwrap().as_slice(), None, None)
+    let last_person = Document::from_cbor(results.first().unwrap().as_slice(), None, None)
         .expect("we should be able to deserialize the cbor");
 
     assert_eq!(
@@ -1728,7 +1728,7 @@ fn test_family_basic_queries() {
 
     assert_eq!(results.len(), 2);
 
-    let last_person = DocumentStub::from_cbor(results.first().unwrap().as_slice(), None, None)
+    let last_person = Document::from_cbor(results.first().unwrap().as_slice(), None, None)
         .expect("we should be able to deserialize the cbor");
 
     assert_eq!(
@@ -1792,7 +1792,7 @@ fn test_family_basic_queries() {
 
     assert_eq!(results.len(), 12);
 
-    let last_person = DocumentStub::from_cbor(results.first().unwrap().as_slice(), None, None)
+    let last_person = Document::from_cbor(results.first().unwrap().as_slice(), None, None)
         .expect("we should be able to deserialize the cbor");
 
     assert_eq!(
@@ -2067,7 +2067,7 @@ fn test_family_starts_at_queries() {
     let reduced_names_after: Vec<String> = results
         .iter()
         .map(|result| {
-            let document = DocumentStub::from_cbor(result.as_slice(), None, None)
+            let document = Document::from_cbor(result.as_slice(), None, None)
                 .expect("we should be able to deserialize the cbor");
             let first_name_value = document
                 .properties
@@ -2122,7 +2122,7 @@ fn test_family_starts_at_queries() {
     let reduced_names_after: Vec<String> = results
         .iter()
         .map(|result| {
-            let document = DocumentStub::from_cbor(result.as_slice(), None, None)
+            let document = Document::from_cbor(result.as_slice(), None, None)
                 .expect("we should be able to deserialize the cbor");
             let first_name_value = document
                 .properties
@@ -2171,7 +2171,7 @@ fn test_family_starts_at_queries() {
     let reduced_names_after: Vec<String> = results
         .iter()
         .map(|result| {
-            let document = DocumentStub::from_cbor(result.as_slice(), None, None)
+            let document = Document::from_cbor(result.as_slice(), None, None)
                 .expect("we should be able to deserialize the cbor");
             let first_name_value = document
                 .properties
@@ -2227,7 +2227,7 @@ fn test_family_starts_at_queries() {
     let reduced_names_after: Vec<String> = results
         .iter()
         .map(|result| {
-            let document = DocumentStub::from_cbor(result.as_slice(), None, None)
+            let document = Document::from_cbor(result.as_slice(), None, None)
                 .expect("we should be able to deserialize the cbor");
             let first_name_value = document
                 .properties
@@ -2451,7 +2451,7 @@ fn test_family_with_nulls_query() {
         .clone()
         .into_iter()
         .map(|result| {
-            let document = DocumentStub::from_cbor(result.as_slice(), None, None)
+            let document = Document::from_cbor(result.as_slice(), None, None)
                 .expect("we should be able to deserialize the cbor");
             let first_name_value = document
                 .properties
@@ -2479,7 +2479,7 @@ fn test_family_with_nulls_query() {
     let ids: Vec<String> = results
         .iter()
         .map(|result| {
-            let document = DocumentStub::from_cbor(result.as_slice(), None, None)
+            let document = Document::from_cbor(result.as_slice(), None, None)
                 .expect("we should be able to deserialize the cbor");
             base64::encode(document.id)
         })
@@ -2625,7 +2625,7 @@ fn test_dpns_query() {
     let names: Vec<String> = results
         .iter()
         .map(|result| {
-            let document = DocumentStub::from_cbor(result.as_slice(), None, None)
+            let document = Document::from_cbor(result.as_slice(), None, None)
                 .expect("we should be able to deserialize the cbor");
             let normalized_label_value = document
                 .properties
@@ -2672,7 +2672,7 @@ fn test_dpns_query() {
     let names: Vec<String> = results
         .iter()
         .map(|result| {
-            let document = DocumentStub::from_cbor(result.as_slice(), None, None)
+            let document = Document::from_cbor(result.as_slice(), None, None)
                 .expect("we should be able to deserialize the cbor");
             let normalized_label_value = document
                 .properties
@@ -2702,7 +2702,7 @@ fn test_dpns_query() {
     let ids: Vec<String> = results
         .into_iter()
         .map(|result| {
-            let document = DocumentStub::from_cbor(result.as_slice(), None, None)
+            let document = Document::from_cbor(result.as_slice(), None, None)
                 .expect("we should be able to deserialize the cbor");
             hex::encode(document.id)
         })
@@ -2747,7 +2747,7 @@ fn test_dpns_query() {
     let names: Vec<String> = results
         .iter()
         .map(|result| {
-            let document = DocumentStub::from_cbor(result.as_slice(), None, None)
+            let document = Document::from_cbor(result.as_slice(), None, None)
                 .expect("we should be able to deserialize the cbor");
             let normalized_label_value = document
                 .properties
@@ -2801,7 +2801,7 @@ fn test_dpns_query() {
     let names: Vec<String> = results
         .iter()
         .map(|result| {
-            let document = DocumentStub::from_cbor(result.as_slice(), None, None)
+            let document = Document::from_cbor(result.as_slice(), None, None)
                 .expect("we should be able to deserialize the cbor");
             let normalized_label_value = document
                 .properties
@@ -2827,7 +2827,7 @@ fn test_dpns_query() {
     let record_id_base64: Vec<String> = results
         .into_iter()
         .map(|result| {
-            let document = DocumentStub::from_cbor(result.as_slice(), None, None)
+            let document = Document::from_cbor(result.as_slice(), None, None)
                 .expect("we should be able to deserialize the cbor");
 
             let records_value = document
@@ -2872,7 +2872,7 @@ fn test_dpns_query() {
     let names: Vec<String> = results
         .iter()
         .map(|result| {
-            let document = DocumentStub::from_cbor(result.as_slice(), None, None)
+            let document = Document::from_cbor(result.as_slice(), None, None)
                 .expect("we should be able to deserialize the cbor");
             let normalized_label_value = document
                 .properties
@@ -2924,7 +2924,7 @@ fn test_dpns_query() {
     let names: Vec<String> = results
         .iter()
         .map(|result| {
-            let document = DocumentStub::from_cbor(result.as_slice(), None, None)
+            let document = Document::from_cbor(result.as_slice(), None, None)
                 .expect("we should be able to deserialize the cbor");
             let normalized_label_value = document
                 .properties
@@ -3142,7 +3142,7 @@ fn test_dpns_query_start_at() {
     let names: Vec<String> = results
         .iter()
         .map(|result| {
-            let document = DocumentStub::from_cbor(result.as_slice(), None, None)
+            let document = Document::from_cbor(result.as_slice(), None, None)
                 .expect("we should be able to deserialize the cbor");
             let normalized_label_value = document
                 .properties
@@ -3229,7 +3229,7 @@ fn test_dpns_query_start_after() {
     let names: Vec<String> = results
         .iter()
         .map(|result| {
-            let document = DocumentStub::from_cbor(result.as_slice(), None, None)
+            let document = Document::from_cbor(result.as_slice(), None, None)
                 .expect("we should be able to deserialize the cbor");
             let normalized_label_value = document
                 .properties
@@ -3316,7 +3316,7 @@ fn test_dpns_query_start_at_desc() {
     let names: Vec<String> = results
         .iter()
         .map(|result| {
-            let document = DocumentStub::from_cbor(result.as_slice(), None, None)
+            let document = Document::from_cbor(result.as_slice(), None, None)
                 .expect("we should be able to deserialize the cbor");
             let normalized_label_value = document
                 .properties
@@ -3403,7 +3403,7 @@ fn test_dpns_query_start_after_desc() {
     let names: Vec<String> = results
         .iter()
         .map(|result| {
-            let document = DocumentStub::from_cbor(result.as_slice(), None, None)
+            let document = Document::from_cbor(result.as_slice(), None, None)
                 .expect("we should be able to deserialize the cbor");
             let normalized_label_value = document
                 .properties
@@ -3460,7 +3460,7 @@ fn test_dpns_query_start_at_with_null_id() {
     let document_cbor0 =
         serializer::value_to_cbor(value0, Some(drive::drive::defaults::PROTOCOL_VERSION))
             .expect("expected to serialize to cbor");
-    let document0 = DocumentStub::from_cbor(document_cbor0.as_slice(), None, None)
+    let document0 = Document::from_cbor(document_cbor0.as_slice(), None, None)
         .expect("document should be properly deserialized");
 
     let storage_flags = Some(Cow::Owned(StorageFlags::SingleEpoch(0)));
@@ -3505,7 +3505,7 @@ fn test_dpns_query_start_at_with_null_id() {
     let document_cbor1 =
         serializer::value_to_cbor(value1, Some(drive::drive::defaults::PROTOCOL_VERSION))
             .expect("expected to serialize to cbor");
-    let document1 = DocumentStub::from_cbor(document_cbor1.as_slice(), None, None)
+    let document1 = Document::from_cbor(document_cbor1.as_slice(), None, None)
         .expect("document should be properly deserialized");
 
     let storage_flags = Some(Cow::Owned(StorageFlags::SingleEpoch(0)));
@@ -3594,7 +3594,7 @@ fn test_dpns_query_start_at_with_null_id() {
     let names: Vec<String> = results
         .iter()
         .map(|result| {
-            let document = DocumentStub::from_cbor(result.as_slice(), None, None)
+            let document = Document::from_cbor(result.as_slice(), None, None)
                 .expect("we should be able to deserialize the cbor");
             let normalized_label_value = document
                 .properties
@@ -3659,7 +3659,7 @@ fn test_dpns_query_start_after_with_null_id() {
     let document_cbor0 =
         serializer::value_to_cbor(value0, Some(drive::drive::defaults::PROTOCOL_VERSION))
             .expect("expected to serialize to cbor");
-    let document0 = DocumentStub::from_cbor(document_cbor0.as_slice(), None, None)
+    let document0 = Document::from_cbor(document_cbor0.as_slice(), None, None)
         .expect("document should be properly deserialized");
 
     let storage_flags = Some(Cow::Owned(StorageFlags::SingleEpoch(0)));
@@ -3704,7 +3704,7 @@ fn test_dpns_query_start_after_with_null_id() {
     let document_cbor1 =
         serializer::value_to_cbor(value1, Some(drive::drive::defaults::PROTOCOL_VERSION))
             .expect("expected to serialize to cbor");
-    let document1 = DocumentStub::from_cbor(document_cbor1.as_slice(), None, None)
+    let document1 = Document::from_cbor(document_cbor1.as_slice(), None, None)
         .expect("document should be properly deserialized");
 
     let storage_flags = Some(Cow::Owned(StorageFlags::SingleEpoch(0)));
@@ -3800,7 +3800,7 @@ fn test_dpns_query_start_after_with_null_id() {
     let names: Vec<String> = results
         .iter()
         .map(|result| {
-            let document = DocumentStub::from_cbor(result.as_slice(), None, None)
+            let document = Document::from_cbor(result.as_slice(), None, None)
                 .expect("we should be able to deserialize the cbor");
             let normalized_label_value = document
                 .properties
@@ -3861,7 +3861,7 @@ fn test_dpns_query_start_after_with_null_id_desc() {
     let document_cbor0 =
         serializer::value_to_cbor(value0, Some(drive::drive::defaults::PROTOCOL_VERSION))
             .expect("expected to serialize to cbor");
-    let document0 = DocumentStub::from_cbor(document_cbor0.as_slice(), None, None)
+    let document0 = Document::from_cbor(document_cbor0.as_slice(), None, None)
         .expect("document should be properly deserialized");
 
     let storage_flags = Some(Cow::Owned(StorageFlags::SingleEpoch(0)));
@@ -3906,7 +3906,7 @@ fn test_dpns_query_start_after_with_null_id_desc() {
     let document_cbor1 =
         serializer::value_to_cbor(value1, Some(drive::drive::defaults::PROTOCOL_VERSION))
             .expect("expected to serialize to cbor");
-    let document1 = DocumentStub::from_cbor(document_cbor1.as_slice(), None, None)
+    let document1 = Document::from_cbor(document_cbor1.as_slice(), None, None)
         .expect("document should be properly deserialized");
 
     let storage_flags = Some(Cow::Owned(StorageFlags::SingleEpoch(0)));
@@ -4006,7 +4006,7 @@ fn test_dpns_query_start_after_with_null_id_desc() {
         .clone()
         .into_iter()
         .map(|result| {
-            let document = DocumentStub::from_cbor(result.as_slice(), None, None)
+            let document = Document::from_cbor(result.as_slice(), None, None)
                 .expect("we should be able to deserialize the cbor");
             Vec::from(document.id)
         })
@@ -4054,7 +4054,7 @@ fn test_dpns_query_start_after_with_null_id_desc() {
     let docs: Vec<Vec<u8>> = results
         .iter()
         .map(|result| {
-            let document = DocumentStub::from_cbor(result.as_slice(), None, None)
+            let document = Document::from_cbor(result.as_slice(), None, None)
                 .expect("we should be able to deserialize the cbor");
             Vec::from(document.id)
         })
@@ -4103,7 +4103,7 @@ fn test_dpns_query_start_after_with_null_id_desc() {
     let names: Vec<String> = results
         .iter()
         .map(|result| {
-            let document = DocumentStub::from_cbor(result.as_slice(), None, None)
+            let document = Document::from_cbor(result.as_slice(), None, None)
                 .expect("we should be able to deserialize the cbor");
             let normalized_label_value = document
                 .properties
