@@ -38,13 +38,12 @@ use crate::drive::Drive;
 use crate::fee_pools::epochs::Epoch;
 
 use crate::drive::object_size_info::DocumentInfo::{
-    DocumentRefAndSerialization, DocumentRefWithoutSerialization,
+    DocumentRefWithoutSerialization,
 };
 use crate::drive::object_size_info::{DocumentAndContractInfo, OwnedDocumentInfo};
 use dpp::data_contract::document_type::DocumentType;
 use dpp::document::document_stub::DocumentStub;
 use dpp::{
-    contracts::withdrawals_contract,
     prelude::{DataContract, Document},
 };
 use grovedb::TransactionArg;
