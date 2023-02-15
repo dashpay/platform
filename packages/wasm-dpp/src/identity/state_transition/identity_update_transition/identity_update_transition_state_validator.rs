@@ -6,8 +6,8 @@ use crate::{IdentityUpdateTransitionWasm};
 use wasm_bindgen::prelude::*;
 use wasm_bindgen::JsValue;
 use dpp::identity::state_transition::identity_update_transition::identity_update_transition::IdentityUpdateTransition;
-use dpp::identity::state_transition::identity_update_transition::validate_identity_update_transition_state::IdentityUpdateTransitionStateValidator;
-use dpp::identity::state_transition::identity_update_transition::validate_public_keys::IdentityUpdatePublicKeysValidator;
+use dpp::identity::state_transition::identity_update_transition::validation::state::validate_identity_update_transition_state::IdentityUpdateTransitionStateValidator;
+use dpp::identity::state_transition::identity_update_transition::validation::state::validate_public_keys::IdentityUpdatePublicKeysValidator;
 
 #[wasm_bindgen(js_name=IdentityUpdateTransitionStateValidator)]
 pub struct IdentityUpdateTransitionStateValidatorWasm(

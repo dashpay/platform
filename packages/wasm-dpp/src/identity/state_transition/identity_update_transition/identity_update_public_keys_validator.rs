@@ -3,10 +3,10 @@ use crate::identity::state_transition::identity_public_key_transitions::Identity
 use crate::validation::ValidationResultWasm;
 use dpp::document::document_transition::document_base_transition::JsonValue;
 use dpp::identity::state_transition::identity_public_key_transitions::IdentityPublicKeyCreateTransition;
-use dpp::identity::state_transition::identity_update_transition::validate_public_keys::IdentityUpdatePublicKeysValidator;
 use dpp::identity::validation::TPublicKeysValidator;
 use wasm_bindgen::prelude::wasm_bindgen;
 use wasm_bindgen::JsValue;
+use dpp::identity::state_transition::identity_update_transition::validation::state::validate_public_keys::IdentityUpdatePublicKeysValidator;
 
 #[wasm_bindgen(js_name=IdentityUpdatePublicKeysValidator)]
 pub struct IdentityUpdatePublicKeysValidatorWasm(IdentityUpdatePublicKeysValidator);

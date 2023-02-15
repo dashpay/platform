@@ -1,7 +1,3 @@
-use dpp::identity::state_transition::identity_update_transition::{
-    validate_identity_update_transition_basic::ValidateIdentityUpdateTransitionBasic,
-    validate_public_keys::IdentityUpdatePublicKeysValidator,
-};
 use dpp::identity::state_transition::validate_public_key_signatures::PublicKeysSignaturesValidator;
 
 use dpp::version::{ProtocolVersionValidator, COMPATIBILITY_MAP, LATEST_VERSION};
@@ -9,6 +5,8 @@ use dpp::ProtocolError;
 
 use std::sync::Arc;
 use wasm_bindgen::prelude::*;
+use dpp::identity::state_transition::identity_update_transition::validation::basic::validate_identity_update_transition_basic::ValidateIdentityUpdateTransitionBasic;
+use dpp::identity::state_transition::identity_update_transition::validation::state::validate_public_keys::IdentityUpdatePublicKeysValidator;
 
 use crate::bls_adapter::{BlsAdapter, JsBlsAdapter};
 use crate::errors::from_dpp_err;
