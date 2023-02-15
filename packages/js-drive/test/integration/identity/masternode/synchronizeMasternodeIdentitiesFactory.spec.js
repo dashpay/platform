@@ -390,6 +390,7 @@ describe('synchronizeMasternodeIdentitiesFactory', () => {
         isValid: true,
         payoutAddress: 'yR843jN58m5dubmQjfUmKDDJMJzNatFV9M',
         payoutOperatorAddress: 'yNjsnYM16J5NZPA2P8BKJG3MKfUD7XHAFE',
+        nType: 0,
       }),
       new SimplifiedMNListEntry({
         proRegTxHash: '9673b21f45b216dce2b4ffb4a85e1471d57aed6bf8e34d961a48296fe9b7f51a',
@@ -399,6 +400,7 @@ describe('synchronizeMasternodeIdentitiesFactory', () => {
         votingAddress: 'yVRXh9Tgf9qt9tCbXmeX9FQsEYa526FMxR',
         isValid: true,
         payoutAddress: 'ycL7L4mhYoaZdm9TH85svvpfeKtdfo249u',
+        nType: 0,
       }),
     ];
 
@@ -412,6 +414,7 @@ describe('synchronizeMasternodeIdentitiesFactory', () => {
         isValid: true,
         payoutAddress: '7UkJidhNjEPJCQnCTXeaJKbJmL4JuyV66w',
         payoutOperatorAddress: 'yPDBTHAjPwJfZSSQYczccA78XRS2tZ5fZF',
+        nType: 0,
       }),
     ];
 
