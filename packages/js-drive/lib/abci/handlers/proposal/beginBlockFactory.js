@@ -139,8 +139,7 @@ function beginBlockFactory(
       blockHeight: height.toNumber(),
       blockTimeMs: proposalBlockExecutionContext.getTimeMs(),
       proposerProTxHash,
-      // TODO replace with real value
-      validatorSetQuorumHash: Buffer.alloc(32),
+      validatorSetQuorumHash: quorumHash,
       coreChainLockedHeight,
       lastSyncedCoreHeight,
       // TODO: Since we don't have HPMNs now and every masternode can be a validator,
