@@ -1,2 +1,1 @@
-pub mod validate_existing_withdrawal_id;
 pub mod validate_identity_credit_withdrawal_transition_state;

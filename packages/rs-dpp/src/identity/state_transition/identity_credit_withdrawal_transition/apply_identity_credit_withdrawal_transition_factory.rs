@@ -12,10 +12,7 @@ use crate::{
     util::entropy_generator::generate,
 };
 
-use super::{
-    validation::state::validate_existing_withdrawal_id::validate_existing_withdrawal_id,
-    IdentityCreditWithdrawalTransition,
-};
+use super::IdentityCreditWithdrawalTransition;
 
 const PLATFORM_BLOCK_HEADER_TIME_PROPERTY: &str = "time";
 const PLATFORM_BLOCK_HEADER_TIME_SECONDS_PROPERTY: &str = "seconds";
@@ -72,23 +69,9 @@ where
             withdrawals_contract::property_names::STATUS: withdrawals_contract::Status::QUEUED,
         });
 
-        let document_entropy = generate()?;
+        let mut document_id;
 
-        let mut document_id = generate_document_id::generate_document_id(
-            data_contract_id,
-            data_contract_owner_id,
-            &document_type,
-            &document_entropy,
-        );
-
-        while validate_existing_withdrawal_id(
-            &self.state_repository,
-            &document_id,
-            state_transition,
-        )
-        .await
-        .is_err()
-        {
+        loop {
             let document_entropy = generate()?;
 
             document_id = generate_document_id::generate_document_id(
@@ -96,7 +79,25 @@ where
                 data_contract_owner_id,
                 &document_type,
                 &document_entropy,
-            )
+            );
+
+            let documents: Vec<Document> = self
+                .state_repository
+                .fetch_documents(
+                    withdrawals_contract::CONTRACT_ID.deref(),
+                    withdrawals_contract::types::WITHDRAWAL,
+                    json!({
+                        "where": [
+                            ["$id", "==", document_id],
+                        ],
+                    }),
+                    &state_transition.execution_context,
+                )
+                .await?;
+
+            if documents.is_empty() {
+                break;
+            }
         }
 
         // TODO: use DocumentFactory once it is complete
