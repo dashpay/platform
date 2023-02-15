@@ -4,8 +4,7 @@ use serde_json::json;
 use crate::{
     contracts::withdrawals_contract, document::Document,
     identity::state_transition::identity_credit_withdrawal_transition::IdentityCreditWithdrawalTransition,
-    prelude::Identifier, state_repository::StateRepositoryLike, util::string_encoding::Encoding,
-    NonConsensusError,
+    prelude::Identifier, state_repository::StateRepositoryLike, NonConsensusError,
 };
 
 pub async fn validate_existing_withdrawal_id<SR>(
@@ -30,9 +29,7 @@ where
         .await?;
 
     if !documents.is_empty() {
-        return Err(NonConsensusError::WithdrawalIdAlreadyExists {
-            id_string: document_id.to_string(Encoding::Base58),
-        });
+        return Err(NonConsensusError::WithdrawalIdAlreadyExists { id: *document_id });
     }
 
     Ok(())
