@@ -32,7 +32,6 @@
 //! This module defines helper functions related to setting up Platform.
 //!
 
-use crate::abci::messages::SystemIdentityPublicKeys;
 use crate::config::PlatformConfig;
 use crate::platform::Platform;
 use crate::test::fixture::abci::static_system_identity_public_keys;
