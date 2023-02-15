@@ -1,12 +1,10 @@
 use crate::{
-    identity::state_transition::identity_update_transition::validate_public_keys::{
-        validate_public_keys, IDENTITY_JSON_SCHEMA,
-    },
     prelude::Identity,
     tests::{fixtures::identity_fixture, utils::get_state_error_from_result},
     StateError,
 };
 use serde_json::Value as JsonValue;
+use crate::identity::state_transition::identity_update_transition::validation::state::validate_public_keys::{IDENTITY_JSON_SCHEMA, validate_public_keys};
 
 struct TestData {
     raw_public_keys: Vec<JsonValue>,
