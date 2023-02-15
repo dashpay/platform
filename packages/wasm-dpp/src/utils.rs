@@ -227,3 +227,11 @@ pub(crate) fn replace_identifiers_with_bytes_without_failing<'a>(
         .replace_identifier_paths(paths, ReplaceWith::Bytes)
         .with_js_error();
 }
+
+pub trait Inner {
+    type InnerItem;
+
+    fn into_inner(self) -> Self::InnerItem;
+    fn inner(&self) -> &Self::InnerItem;
+    fn inner_mut(&mut self) -> &mut Self::InnerItem;
+}

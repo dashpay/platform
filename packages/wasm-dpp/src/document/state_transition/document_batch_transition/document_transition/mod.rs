@@ -23,7 +23,7 @@ use crate::{
     buffer::Buffer,
     identifier::{identifier_from_js_value, IdentifierWrapper},
     lodash::lodash_set,
-    utils::{try_to_u64, ToSerdeJSONExt, WithJsError},
+    utils::{try_to_u64, Inner, ToSerdeJSONExt, WithJsError},
     with_js_error, BinaryType, ConversionOptions, DataContractWasm,
 };
 
@@ -250,6 +250,22 @@ impl From<DocumentTransition> for DocumentTransitionWasm {
 impl From<DocumentTransitionWasm> for DocumentTransition {
     fn from(v: DocumentTransitionWasm) -> Self {
         v.0
+    }
+}
+
+impl Inner for DocumentTransitionWasm {
+    type InnerItem = DocumentTransition;
+
+    fn into_inner(self) -> Self::InnerItem {
+        self.0
+    }
+
+    fn inner(&self) -> &Self::InnerItem {
+        &self.0
+    }
+
+    fn inner_mut(&mut self) -> &mut Self::InnerItem {
+        &mut self.0
     }
 }
 

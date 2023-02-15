@@ -24,7 +24,8 @@ use crate::{
     identifier::IdentifierWrapper,
     lodash::lodash_set,
     utils::{
-        replace_identifiers_with_bytes_without_failing, IntoWasm, ToSerdeJSONExt, WithJsError,
+        replace_identifiers_with_bytes_without_failing, Inner, IntoWasm, ToSerdeJSONExt,
+        WithJsError,
     },
     IdentityPublicKeyWasm, StateTransitionExecutionContextWasm,
 };

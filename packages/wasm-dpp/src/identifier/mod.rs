@@ -9,6 +9,7 @@ use wasm_bindgen::JsCast;
 use crate::bail_js;
 use crate::buffer::Buffer;
 use crate::errors::from_dpp_err;
+use crate::utils::Inner;
 use crate::utils::ToSerdeJSONExt;
 use crate::utils::WithJsError;
 use dpp::identifier;
@@ -122,9 +123,19 @@ impl IdentifierWrapper {
     }
 }
 
-impl IdentifierWrapper {
-    pub fn inner(self) -> Identifier {
+impl Inner for IdentifierWrapper {
+    type InnerItem = Identifier;
+
+    fn into_inner(self) -> Identifier {
         self.wrapped
+    }
+
+    fn inner(&self) -> &Identifier {
+        &self.wrapped
+    }
+
+    fn inner_mut(&mut self) -> &mut Identifier {
+        &mut self.wrapped
     }
 }
 

@@ -4,6 +4,7 @@ use std::convert::{TryFrom, TryInto};
 use wasm_bindgen::prelude::*;
 
 use crate::errors::from_dpp_err;
+use crate::utils::Inner;
 use crate::{buffer::Buffer, utils};
 use dpp::identity::IdentityPublicKey;
 
@@ -184,16 +185,18 @@ impl IdentityPublicKeyWasm {
     }
 }
 
-impl IdentityPublicKeyWasm {
-    pub fn into_inner(self) -> IdentityPublicKey {
+impl Inner for IdentityPublicKeyWasm {
+    type InnerItem = IdentityPublicKey;
+
+    fn into_inner(self) -> IdentityPublicKey {
         self.0
     }
 
-    pub fn inner(&self) -> &IdentityPublicKey {
+    fn inner(&self) -> &IdentityPublicKey {
         &self.0
     }
 
-    pub fn inner_mut(&mut self) -> &mut IdentityPublicKey {
+    fn inner_mut(&mut self) -> &mut IdentityPublicKey {
         &mut self.0
     }
 }

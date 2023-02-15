@@ -1,3 +1,5 @@
+use std::fmt::Display;
+
 use futures::future::LocalBoxFuture;
 
 pub use data_trigger_execution_context::*;
@@ -26,14 +28,6 @@ pub mod reward_share_data_triggers;
 mod data_trigger_execution_result;
 mod reject_data_trigger;
 
-pub type BoxedTrigger<'a, SR> = Box<Trigger<'a, SR>>;
-pub type Trigger<'a, SR> =
-    dyn Fn(
-        &'a DocumentTransition,
-        &'a DataTriggerExecutionContext<SR>,
-        Option<&'a Identifier>,
-    ) -> LocalBoxFuture<'a, Result<DataTriggerExecutionResult, anyhow::Error>>;
-
 #[derive(Debug, Clone, Copy)]
 pub enum DataTriggerKind {
     CreateDataContractRequest,
@@ -42,7 +36,25 @@ pub enum DataTriggerKind {
     DataTriggerReject,
     CrateFeatureFlag,
 }
+impl From<DataTriggerKind> for &str {
+    fn from(value: DataTriggerKind) -> Self {
+        match value {
+            DataTriggerKind::CrateFeatureFlag => "createFeatureFlag",
+            DataTriggerKind::DataTriggerReject => "dataTriggerReject",
+            DataTriggerKind::DataTriggerRewardShare => "dataTriggerRewardShare",
+            DataTriggerKind::DataTriggerCreateDomain => "dataTriggerCreateDomain",
+            DataTriggerKind::CreateDataContractRequest => "createDataContractRequest",
+        }
+    }
+}
 
+impl Default for DataTriggerKind {
+    fn default() -> Self {
+        DataTriggerKind::CrateFeatureFlag
+    }
+}
+
+#[derive(Default, Clone)]
 pub struct DataTrigger {
     pub data_contract_id: Identifier,
     pub document_type: String,
