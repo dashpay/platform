@@ -40,11 +40,11 @@ where
         state_transition: &IdentityCreditWithdrawalTransition,
     ) -> Result<()> {
         let data_contract_id = withdrawals_contract::CONTRACT_ID.deref();
-        let data_contract_owner_id = withdrawals_contract::OWNER_ID.clone();
+        let data_contract_owner_id = withdrawals_contract::OWNER_ID.deref();
 
         let maybe_withdrawals_data_contract: Option<DataContract> = self
             .state_repository
-            .fetch_data_contract(&data_contract_id, state_transition.get_execution_context())
+            .fetch_data_contract(data_contract_id, state_transition.get_execution_context())
             .await?
             .map(TryInto::try_into)
             .transpose()
@@ -75,8 +75,8 @@ where
         let document_entropy = generate()?;
 
         let mut document_id = generate_document_id::generate_document_id(
-            &data_contract_id,
-            &data_contract_owner_id,
+            data_contract_id,
+            data_contract_owner_id,
             &document_type,
             &document_entropy,
         );
@@ -92,8 +92,8 @@ where
             let document_entropy = generate()?;
 
             document_id = generate_document_id::generate_document_id(
-                &data_contract_id,
-                &data_contract_owner_id,
+                data_contract_id,
+                data_contract_owner_id,
                 &document_type,
                 &document_entropy,
             )
@@ -105,8 +105,8 @@ where
             id: document_id,
             document_type,
             revision: 0,
-            data_contract_id: data_contract_id.clone(),
-            owner_id: data_contract_owner_id.clone(),
+            data_contract_id: *data_contract_id,
+            owner_id: *data_contract_owner_id,
             created_at: Some(document_created_at_millis),
             updated_at: Some(document_created_at_millis),
             data: document_data,

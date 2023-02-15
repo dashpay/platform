@@ -120,7 +120,7 @@ pub fn get_withdrawal_document_fixture(data_contract: &DataContract, data: Value
     factory
         .create(
             data_contract.clone(),
-            data_contract.owner_id.clone(),
+            data_contract.owner_id,
             withdrawals_contract::types::WITHDRAWAL.to_string(),
             data,
         )

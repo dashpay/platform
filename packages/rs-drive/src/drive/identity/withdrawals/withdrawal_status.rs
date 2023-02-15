@@ -45,7 +45,7 @@ impl Drive {
                 field: withdrawals_contract::property_names::OWNER_ID.to_string(),
                 operator: crate::query::WhereOperator::Equal,
                 value: ciborium::Value::Bytes(
-                    withdrawals_contract::OWNER_ID.clone().to_buffer().to_vec(),
+                    withdrawals_contract::OWNER_ID.deref().to_buffer().to_vec(),
                 ),
             },
         );

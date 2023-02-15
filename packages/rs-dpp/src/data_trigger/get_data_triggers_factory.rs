@@ -56,7 +56,7 @@ fn data_triggers() -> Result<Vec<DataTrigger>, ProtocolError> {
         &masternode_reward_shares_contract::system_ids().contract_id,
         Encoding::Base58,
     )?;
-    let withdrawals_owner_id = withdrawals_contract::OWNER_ID.clone();
+    let withdrawals_owner_id = withdrawals_contract::OWNER_ID.deref();
     let withdrawals_contract_id = withdrawals_contract::CONTRACT_ID.deref();
 
     let data_triggers = vec![
@@ -152,25 +152,25 @@ fn data_triggers() -> Result<Vec<DataTrigger>, ProtocolError> {
             top_level_identity: None,
         },
         DataTrigger {
-            data_contract_id: withdrawals_contract_id.clone(),
+            data_contract_id: *withdrawals_contract_id,
             document_type: withdrawals_contract::types::WITHDRAWAL.to_string(),
             transition_action: Action::Create,
             data_trigger_kind: DataTriggerKind::DataTriggerReject,
             top_level_identity: None,
         },
         DataTrigger {
-            data_contract_id: withdrawals_contract_id.clone(),
+            data_contract_id: *withdrawals_contract_id,
             document_type: withdrawals_contract::types::WITHDRAWAL.to_string(),
             transition_action: Action::Replace,
             data_trigger_kind: DataTriggerKind::DataTriggerReject,
             top_level_identity: None,
         },
         DataTrigger {
-            data_contract_id: withdrawals_contract_id.clone(),
+            data_contract_id: *withdrawals_contract_id,
             document_type: withdrawals_contract::types::WITHDRAWAL.to_string(),
             transition_action: Action::Delete,
             data_trigger_kind: DataTriggerKind::DeleteWithdrawal,
-            top_level_identity: Some(withdrawals_owner_id),
+            top_level_identity: Some(*withdrawals_owner_id),
         },
     ];
     Ok(data_triggers)
