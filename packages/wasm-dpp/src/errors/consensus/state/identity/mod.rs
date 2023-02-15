@@ -17,3 +17,4 @@ pub use identity_public_key_is_read_only_error::*;
 pub use invalid_identity_public_key_id_error::*;
 pub use invalid_identity_revision_error::*;
 pub use max_identity_public_key_limit_reached_error::*;
+
