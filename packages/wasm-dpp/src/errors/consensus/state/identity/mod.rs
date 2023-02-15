@@ -1,5 +1,3 @@
-mod duplicated_identity_public_key_error;
-mod duplicated_identity_public_key_id_error;
 mod duplicated_identity_public_key_id_state_error;
 mod duplicated_identity_public_key_state_error;
 mod identity_already_exists_error;
