@@ -35,6 +35,7 @@ use drive::common::helpers::identities::create_test_masternode_identities_with_r
 use drive::contract::{Contract, CreateRandomDocument, DocumentType};
 use drive::dpp::document::document_stub::DocumentStub;
 use drive::dpp::identity::{Identity, KeyID, PartialIdentity};
+use drive::dpp::util::deserializer::ProtocolVersion;
 use drive::drive::batch::{
     ContractOperationType, DocumentOperationType, DriveOperationType, IdentityOperationType,
     SystemOperationType,
@@ -53,15 +54,18 @@ use drive_abci::abci::handlers::TenderdashAbci;
 use drive_abci::abci::messages::{InitChainRequest, SystemIdentityPublicKeys};
 use drive_abci::config::PlatformConfig;
 use drive_abci::execution::engine::ExecutionEvent;
-use drive_abci::execution::fee_pools::epoch::EpochInfo;
+use drive_abci::execution::fee_pools::epoch::{EpochInfo, EPOCH_CHANGE_TIME_MS};
 use drive_abci::platform::Platform;
 use drive_abci::test::fixture::abci::static_init_chain_request;
 use drive_abci::test::helpers::setup::setup_platform_raw;
 use rand::rngs::StdRng;
+use rand::seq::SliceRandom;
 use rand::{Rng, SeedableRng};
 use std::borrow::Cow;
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, HashMap};
 use std::ops::Range;
+
+mod upgrade_fork_tests;
 
 #[derive(Clone, Debug)]
 pub struct Frequency {
@@ -101,11 +105,68 @@ pub struct DocumentOp {
 
 pub type ProTxHash = [u8; 32];
 
+pub type BlockHeight = u64;
+
 #[derive(Clone, Debug)]
-struct Strategy {
+pub(crate) struct Strategy {
     contracts: Vec<Contract>,
     operations: Vec<(DocumentOp, Frequency)>,
     identities_inserts: Frequency,
+    total_hpmns: u16,
+    upgrading_info: Option<UpgradingInfo>,
+}
+
+#[derive(Clone, Debug)]
+pub(crate) struct UpgradingInfo {
+    current_protocol_version: ProtocolVersion,
+    proposed_protocol_versions_with_weight: Vec<(ProtocolVersion, u16)>,
+    /// The upgrade three quarters life is the expected amount of blocks in the window
+    /// for three quarters of the network to upgrade
+    /// if it is 1, there is a 50/50% chance that the network will upgrade in the first window
+    /// if it lower than 1 there is a high chance it will upgrade in the first window
+    /// the higher it is the lower the chance it will upgrade in the first window
+    upgrade_three_quarters_life: f64,
+}
+
+#[derive(Clone, Debug)]
+pub struct ValidatorVersionMigration {
+    current_protocol_version: ProtocolVersion,
+    next_protocol_version: ProtocolVersion,
+    change_block_height: BlockHeight,
+}
+
+impl UpgradingInfo {
+    fn apply_to_proposers(
+        &self,
+        proposers: Vec<[u8; 32]>,
+        blocks_per_epoch: u64,
+        rng: &mut StdRng,
+    ) -> HashMap<[u8; 32], ValidatorVersionMigration> {
+        let expected_blocks = blocks_per_epoch as f64 * self.upgrade_three_quarters_life;
+        proposers
+            .into_iter()
+            .map(|pro_tx_hash| {
+                let next_version = self
+                    .proposed_protocol_versions_with_weight
+                    .choose_weighted(rng, |item| item.1)
+                    .unwrap()
+                    .0;
+                // we generate a random number between 0 and 1
+                let u: f64 = rng.gen();
+                // we want to alter the randomness so that 75% of time we get
+                let change_block_height =
+                    (expected_blocks * 0.75 * f64::ln(1.0 - u) / f64::ln(0.5)) as u64;
+                (
+                    pro_tx_hash,
+                    ValidatorVersionMigration {
+                        current_protocol_version: self.current_protocol_version,
+                        next_protocol_version: next_version,
+                        change_block_height,
+                    },
+                )
+            })
+            .collect()
+    }
 }
 
 impl Strategy {
@@ -314,24 +375,40 @@ pub struct ChainExecutionOutcome {
     pub platform: Platform,
     pub masternode_identity_balances: BTreeMap<[u8; 32], Credits>,
     pub identities: Vec<Identity>,
+    pub proposers: Vec<[u8; 32]>,
+    pub current_proposers: Vec<[u8; 32]>,
+    pub current_proposer_versions: Option<HashMap<[u8; 32], ValidatorVersionMigration>>,
     pub end_epoch_index: u16,
+    pub end_time_ms: u64,
 }
 
-fn run_chain_for_strategy(
+pub struct ChainExecutionParameters {
+    pub block_start: u64,
+    pub block_count: u64,
+    pub block_spacing_ms: u64,
+    pub proposers: Vec<[u8; 32]>,
+    pub current_proposers: Vec<[u8; 32]>,
+    // the first option is if it is set
+    // the second option is if we are even upgrading
+    pub current_proposer_versions: Option<Option<HashMap<[u8; 32], ValidatorVersionMigration>>>,
+    pub current_time_ms: u64,
+}
+
+pub enum StrategyRandomness {
+    SeedEntropy(u64),
+    RNGEntropy(StdRng),
+}
+
+pub(crate) fn run_chain_for_strategy(
     block_count: u64,
     block_spacing_ms: u64,
     strategy: Strategy,
     config: PlatformConfig,
     seed: u64,
 ) -> ChainExecutionOutcome {
+    let quorum_size = config.quorum_size;
+    let mut platform = setup_platform_raw(Some(config.clone()));
     let mut rng = StdRng::seed_from_u64(seed);
-    let mut platform = setup_platform_raw(Some(config));
-    let mut current_time_ms = 0;
-    let first_block_time = 0;
-    let mut current_identities = vec![];
-    let quorum_size = 100;
-    let mut i = 0;
-
     // init chain
     let init_chain_request = static_init_chain_request();
 
@@ -341,15 +418,78 @@ fn run_chain_for_strategy(
 
     platform.create_mn_shares_contract(None);
 
-    let proposers =
-        create_test_masternode_identities_with_rng(&platform.drive, quorum_size, &mut rng, None);
+    let proposers = create_test_masternode_identities_with_rng(
+        &platform.drive,
+        strategy.total_hpmns,
+        &mut rng,
+        None,
+    );
 
-    for block_height in 1..=block_count {
+    let mut current_proposers: Vec<[u8; 32]> = proposers
+        .choose_multiple(&mut rng, quorum_size as usize)
+        .cloned()
+        .collect();
+
+    continue_chain_for_strategy(
+        platform,
+        ChainExecutionParameters {
+            block_start: 1,
+            block_count,
+            block_spacing_ms,
+            proposers,
+            current_proposers,
+            current_proposer_versions: None,
+            current_time_ms: 0,
+        },
+        strategy,
+        config,
+        StrategyRandomness::RNGEntropy(rng),
+    )
+}
+
+pub(crate) fn continue_chain_for_strategy(
+    mut platform: Platform,
+    chain_execution_parameters: ChainExecutionParameters,
+    strategy: Strategy,
+    config: PlatformConfig,
+    seed: StrategyRandomness,
+) -> ChainExecutionOutcome {
+    let ChainExecutionParameters {
+        block_start,
+        block_count,
+        block_spacing_ms,
+        mut proposers,
+        mut current_proposers,
+        current_proposer_versions,
+        mut current_time_ms,
+    } = chain_execution_parameters;
+    let mut rng = match seed {
+        StrategyRandomness::SeedEntropy(seed) => StdRng::seed_from_u64(seed),
+        StrategyRandomness::RNGEntropy(rng) => rng,
+    };
+    let quorum_size = config.quorum_size;
+    let quorum_rotation_block_count = config.validator_set_quorum_rotation_block_count;
+    let first_block_time = 0;
+    let mut current_identities = vec![];
+    let mut i = 0;
+
+    let blocks_per_epoch = EPOCH_CHANGE_TIME_MS / block_spacing_ms;
+
+    let proposer_count = proposers.len() as u32;
+
+    let proposer_versions = current_proposer_versions.unwrap_or(
+        strategy.upgrading_info.as_ref().map(|upgrading_info| {
+            upgrading_info.apply_to_proposers(proposers.clone(), blocks_per_epoch, &mut rng)
+        }),
+    );
+
+    for block_height in block_start..(block_start + block_count) {
         let epoch_info = EpochInfo::calculate(
             first_block_time,
             current_time_ms,
             platform
                 .state
+                .borrow()
                 .last_block_info
                 .as_ref()
                 .map(|block_info| block_info.time_ms),
@@ -362,7 +502,7 @@ fn run_chain_for_strategy(
             epoch: Epoch::new(epoch_info.current_epoch_index),
         };
 
-        let proposer = proposers.get(i as usize).unwrap();
+        let proposer = current_proposers.get(i as usize).unwrap();
         let state_transitions = strategy.state_transitions_for_block_with_new_identities(
             &platform,
             &block_info,
@@ -370,13 +510,44 @@ fn run_chain_for_strategy(
             &mut rng,
         );
 
+        let proposed_version = proposer_versions
+            .as_ref()
+            .map(|proposer_versions| {
+                let ValidatorVersionMigration {
+                    current_protocol_version,
+                    next_protocol_version,
+                    change_block_height,
+                } = proposer_versions
+                    .get(proposer)
+                    .expect("expected to have version");
+                if &block_height >= change_block_height {
+                    *next_protocol_version
+                } else {
+                    *current_protocol_version
+                }
+            })
+            .unwrap_or(1);
+
         platform
-            .execute_block(*proposer, &block_info, state_transitions)
+            .execute_block(
+                *proposer,
+                proposed_version,
+                proposer_count,
+                block_info,
+                state_transitions,
+            )
             .expect("expected to execute a block");
 
         current_time_ms += block_spacing_ms;
         i += 1;
         i %= quorum_size;
+        let needs_rotation = block_height % quorum_rotation_block_count == 0;
+        if needs_rotation {
+            current_proposers = proposers
+                .choose_multiple(&mut rng, quorum_size as usize)
+                .cloned()
+                .collect();
+        }
     }
 
     let masternode_identity_balances = platform
@@ -387,7 +558,7 @@ fn run_chain_for_strategy(
     let end_epoch_index = platform
         .block_execution_context
         .take()
-        .expect("expected context")
+        .expect("expected block execution context")
         .epoch_info
         .current_epoch_index;
 
@@ -395,7 +566,11 @@ fn run_chain_for_strategy(
         platform,
         masternode_identity_balances,
         identities: current_identities,
+        proposers,
+        current_proposers,
+        current_proposer_versions: proposer_versions,
         end_epoch_index,
+        end_time_ms: current_time_ms,
     }
 }
 
@@ -413,10 +588,14 @@ mod tests {
                 times_per_block_range: Default::default(),
                 chance_per_block: None,
             },
+            total_hpmns: 100,
+            upgrading_info: None,
         };
         let config = PlatformConfig {
             drive_config: Default::default(),
             verify_sum_trees: true,
+            quorum_size: 100,
+            validator_set_quorum_rotation_block_count: 25,
         };
         run_chain_for_strategy(1000, 3000, strategy, config, 15);
     }
@@ -430,10 +609,14 @@ mod tests {
                 times_per_block_range: 1..2,
                 chance_per_block: None,
             },
+            total_hpmns: 100,
+            upgrading_info: None,
         };
         let config = PlatformConfig {
             drive_config: Default::default(),
             verify_sum_trees: true,
+            quorum_size: 100,
+            validator_set_quorum_rotation_block_count: 25,
         };
         let outcome = run_chain_for_strategy(100, 3000, strategy, config, 15);
 
@@ -449,10 +632,14 @@ mod tests {
                 times_per_block_range: 1..2,
                 chance_per_block: None,
             },
+            total_hpmns: 100,
+            upgrading_info: None,
         };
         let config = PlatformConfig {
             drive_config: Default::default(),
             verify_sum_trees: true,
+            quorum_size: 100,
+            validator_set_quorum_rotation_block_count: 100,
         };
         let day_in_ms = 1000 * 60 * 60 * 24;
         let outcome = run_chain_for_strategy(150, day_in_ms, strategy, config, 15);
@@ -482,10 +669,14 @@ mod tests {
                 times_per_block_range: 1..2,
                 chance_per_block: None,
             },
+            total_hpmns: 100,
+            upgrading_info: None,
         };
         let config = PlatformConfig {
             drive_config: Default::default(),
             verify_sum_trees: true,
+            quorum_size: 100,
+            validator_set_quorum_rotation_block_count: 25,
         };
         run_chain_for_strategy(1, 3000, strategy, config, 15);
     }
@@ -522,10 +713,14 @@ mod tests {
                 times_per_block_range: 1..2,
                 chance_per_block: None,
             },
+            total_hpmns: 100,
+            upgrading_info: None,
         };
         let config = PlatformConfig {
             drive_config: Default::default(),
             verify_sum_trees: true,
+            quorum_size: 100,
+            validator_set_quorum_rotation_block_count: 25,
         };
         run_chain_for_strategy(100, 3000, strategy, config, 15);
     }
@@ -562,10 +757,14 @@ mod tests {
                 times_per_block_range: 1..2,
                 chance_per_block: None,
             },
+            total_hpmns: 100,
+            upgrading_info: None,
         };
         let config = PlatformConfig {
             drive_config: Default::default(),
             verify_sum_trees: true,
+            quorum_size: 100,
+            validator_set_quorum_rotation_block_count: 100,
         };
         let day_in_ms = 1000 * 60 * 60 * 24;
         let block_count = 120;
@@ -630,10 +829,14 @@ mod tests {
                 times_per_block_range: 1..2,
                 chance_per_block: None,
             },
+            total_hpmns: 100,
+            upgrading_info: None,
         };
         let config = PlatformConfig {
             drive_config: Default::default(),
             verify_sum_trees: true,
+            quorum_size: 100,
+            validator_set_quorum_rotation_block_count: 100,
         };
         let day_in_ms = 1000 * 60 * 60 * 24;
         let block_count = 120;
@@ -698,10 +901,14 @@ mod tests {
                 times_per_block_range: 1..2,
                 chance_per_block: None,
             },
+            total_hpmns: 100,
+            upgrading_info: None,
         };
         let config = PlatformConfig {
             drive_config: Default::default(),
             verify_sum_trees: true,
+            quorum_size: 100,
+            validator_set_quorum_rotation_block_count: 100,
         };
         let day_in_ms = 1000 * 60 * 60 * 24;
         let block_count = 120;
@@ -766,15 +973,19 @@ mod tests {
                 times_per_block_range: 1..30,
                 chance_per_block: None,
             },
+            total_hpmns: 100,
+            upgrading_info: None,
         };
         let config = PlatformConfig {
             drive_config: Default::default(),
             verify_sum_trees: true,
+            quorum_size: 100,
+            validator_set_quorum_rotation_block_count: 100,
         };
         let day_in_ms = 1000 * 60 * 60 * 24;
         let block_count = 30;
         let outcome = run_chain_for_strategy(block_count, day_in_ms, strategy, config, 15);
-        assert_eq!(outcome.identities.len() as u64, 368);
+        assert_eq!(outcome.identities.len() as u64, 464);
         assert_eq!(outcome.masternode_identity_balances.len(), 100);
         let balance_count = outcome
             .masternode_identity_balances
