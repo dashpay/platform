@@ -502,14 +502,9 @@ mod tests {
         hashes::hex::{FromHex, ToHex},
         BlockHash,
     };
-    use dpp::{
-        contracts::withdrawals_contract,
-        tests::fixtures::{get_withdrawal_document_fixture, get_withdrawals_data_contract_fixture},
-    };
+    use dpp::{contracts::withdrawals_contract, tests::fixtures::get_withdrawal_document_fixture};
     use drive::{common::helpers::setup::setup_document, rpc::core::MockCoreRPCLike};
     use serde_json::json;
-
-    use crate::test::helpers::setup::setup_platform_with_initial_state_structure;
 
     use dpp::identity::state_transition::identity_credit_withdrawal_transition::Pooling;
 
@@ -518,7 +513,10 @@ mod tests {
     mod update_withdrawal_statuses {
         use crate::block::BlockStateInfo;
         use crate::test::helpers::setup::setup_platform_with_initial_state_structure;
-        use dpp::data_contract::{DataContract, DriveContractExt};
+        use dpp::{
+            data_contract::{DataContract, DriveContractExt},
+            system_data_contracts::{load_system_data_contract, SystemDataContract},
+        };
         use drive::common::helpers::setup::setup_system_data_contract;
 
         use super::*;
@@ -577,8 +575,8 @@ mod tests {
 
             let transaction = platform.drive.grove.start_transaction();
 
-            let data_contract =
-                get_withdrawals_data_contract_fixture(Some(withdrawals_contract::OWNER_ID.clone()));
+            let data_contract = load_system_data_contract(SystemDataContract::Withdrawals)
+                .expect("to load system data contract");
 
             // TODO: figure out the bug in data contract factory
             let data_contract = DataContract::from_cbor(
@@ -696,6 +694,7 @@ mod tests {
     mod pool_withdrawals_into_transactions {
         use dpp::data_contract::DriveContractExt;
         use dpp::identity::state_transition::identity_credit_withdrawal_transition::Pooling;
+        use dpp::system_data_contracts::{load_system_data_contract, SystemDataContract};
         use drive::common::helpers::setup::setup_system_data_contract;
         use drive::dpp::contracts::withdrawals_contract;
 
@@ -710,7 +709,8 @@ mod tests {
 
             let transaction = platform.drive.grove.start_transaction();
 
-            let data_contract = get_withdrawals_data_contract_fixture(None);
+            let data_contract = load_system_data_contract(SystemDataContract::Withdrawals)
+                .expect("to load system data contract");
 
             setup_system_data_contract(&platform.drive, &data_contract, Some(&transaction));
 
@@ -877,6 +877,7 @@ mod tests {
     mod build_withdrawal_transactions_from_documents {
         use crate::test::helpers::setup::setup_platform_with_initial_state_structure;
         use dpp::data_contract::DriveContractExt;
+        use dpp::system_data_contracts::{load_system_data_contract, SystemDataContract};
         use dpp::{
             document::document_stub::DocumentStub,
             identity::state_transition::identity_credit_withdrawal_transition::Pooling,
@@ -893,7 +894,8 @@ mod tests {
 
             let transaction = platform.drive.grove.start_transaction();
 
-            let data_contract = get_withdrawals_data_contract_fixture(None);
+            let data_contract = load_system_data_contract(SystemDataContract::Withdrawals)
+                .expect("to load system data contract");
 
             setup_system_data_contract(&platform.drive, &data_contract, Some(&transaction));
 

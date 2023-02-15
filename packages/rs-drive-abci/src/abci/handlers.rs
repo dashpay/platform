@@ -253,11 +253,9 @@ mod tests {
         use dashcore::BlockHash;
         use dpp::contracts::withdrawals_contract;
         use dpp::data_contract::DriveContractExt;
-        use dpp::document::document_stub::DocumentStub;
         use dpp::identity::state_transition::identity_credit_withdrawal_transition::Pooling;
-        use dpp::tests::fixtures::{
-            get_withdrawal_document_fixture, get_withdrawals_data_contract_fixture,
-        };
+        use dpp::system_data_contracts::{load_system_data_contract, SystemDataContract};
+        use dpp::tests::fixtures::get_withdrawal_document_fixture;
         use dpp::util::hash;
         use drive::common::helpers::identities::create_test_masternode_identities;
         use drive::common::helpers::setup::{setup_document, setup_system_data_contract};
@@ -298,7 +296,8 @@ mod tests {
                 .init_chain(init_chain_request, Some(&transaction))
                 .expect("should init chain");
 
-            let data_contract = get_withdrawals_data_contract_fixture(None);
+            let data_contract = load_system_data_contract(SystemDataContract::Withdrawals)
+                .expect("to load system data contract");
 
             setup_system_data_contract(&platform.drive, &data_contract, Some(&transaction));
 
@@ -597,7 +596,8 @@ mod tests {
 
             setup_system_data_contract(
                 &platform.drive,
-                &get_withdrawals_data_contract_fixture(None),
+                &load_system_data_contract(SystemDataContract::Withdrawals)
+                    .expect("to load system data contract"),
                 Some(&transaction),
             );
 

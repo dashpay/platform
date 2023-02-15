@@ -88,10 +88,8 @@ mod tests {
     use crate::identity::state_transition::identity_credit_withdrawal_transition::Pooling;
     use crate::state_repository::MockStateRepositoryLike;
     use crate::state_transition::state_transition_execution_context::StateTransitionExecutionContext;
-    use crate::tests::fixtures::{
-        get_data_contract_fixture, get_withdrawal_document_fixture,
-        get_withdrawals_data_contract_fixture,
-    };
+    use crate::system_data_contracts::load_system_data_contract;
+    use crate::tests::fixtures::{get_data_contract_fixture, get_withdrawal_document_fixture};
 
     #[tokio::test]
     async fn should_throw_error_if_withdrawal_not_found() {
@@ -128,7 +126,9 @@ mod tests {
     async fn should_throw_error_if_withdrawal_has_wrong_status() {
         let transition_execution_context = StateTransitionExecutionContext::default();
         let mut state_repository = MockStateRepositoryLike::new();
-        let data_contract = get_withdrawals_data_contract_fixture(None);
+        let data_contract =
+            load_system_data_contract(data_contracts::SystemDataContract::Withdrawals)
+                .expect("to load system data contract");
         let owner_id = data_contract.owner_id().to_owned();
 
         let document = get_withdrawal_document_fixture(

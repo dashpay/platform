@@ -201,7 +201,6 @@ impl Drive {
 mod tests {
     use dpp::contracts::withdrawals_contract;
     use dpp::tests::fixtures::get_withdrawal_document_fixture;
-    use dpp::tests::fixtures::get_withdrawals_data_contract_fixture;
     use serde_json::json;
 
     use crate::common::helpers::setup::setup_drive_with_initial_state_structure;
@@ -210,6 +209,7 @@ mod tests {
     mod fetch_withdrawal_documents_by_status {
         use dpp::data_contract::DriveContractExt;
         use dpp::identity::state_transition::identity_credit_withdrawal_transition::Pooling;
+        use dpp::system_data_contracts::{load_system_data_contract, SystemDataContract};
 
         use super::*;
 
@@ -219,8 +219,8 @@ mod tests {
 
             let transaction = drive.grove.start_transaction();
 
-            let data_contract =
-                get_withdrawals_data_contract_fixture(Some(withdrawals_contract::OWNER_ID.clone()));
+            let data_contract = load_system_data_contract(SystemDataContract::Withdrawals)
+                .expect("to load system data contract");
 
             setup_system_data_contract(&drive, &data_contract, Some(&transaction));
 
@@ -300,6 +300,7 @@ mod tests {
     mod find_document_by_transaction_id {
         use dpp::data_contract::DriveContractExt;
         use dpp::identity::state_transition::identity_credit_withdrawal_transition::Pooling;
+        use dpp::system_data_contracts::{load_system_data_contract, SystemDataContract};
 
         use super::*;
 
@@ -309,7 +310,8 @@ mod tests {
 
             let transaction = drive.grove.start_transaction();
 
-            let data_contract = get_withdrawals_data_contract_fixture(None);
+            let data_contract = load_system_data_contract(SystemDataContract::Withdrawals)
+                .expect("to load system data contract");
 
             setup_system_data_contract(&drive, &data_contract, Some(&transaction));
 
