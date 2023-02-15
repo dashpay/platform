@@ -1,5 +1,6 @@
 use anyhow::{anyhow, Result};
 use dashcore::{consensus, BlockHeader};
+use lazy_static::__Deref;
 use std::convert::TryInto;
 
 use serde_json::json;
@@ -38,7 +39,7 @@ where
         &self,
         state_transition: &IdentityCreditWithdrawalTransition,
     ) -> Result<()> {
-        let data_contract_id = withdrawals_contract::CONTRACT_ID.clone();
+        let data_contract_id = withdrawals_contract::CONTRACT_ID.deref();
         let data_contract_owner_id = withdrawals_contract::OWNER_ID.clone();
 
         let maybe_withdrawals_data_contract: Option<DataContract> = self
@@ -104,7 +105,7 @@ where
             id: document_id,
             document_type,
             revision: 0,
-            data_contract_id,
+            data_contract_id: data_contract_id.clone(),
             owner_id: data_contract_owner_id.clone(),
             created_at: Some(document_created_at_millis),
             updated_at: Some(document_created_at_millis),

@@ -1,11 +1,9 @@
 use crate::drive::grove_operations::BatchDeleteApplyType;
-use crate::drive::identity::withdrawals::paths::{
-    get_withdrawal_transactions_queue_path, WithdrawalTransaction,
-};
+use crate::drive::identity::withdrawals::paths::get_withdrawal_transactions_queue_path;
 use crate::drive::Drive;
 use crate::error::Error;
 use crate::fee::op::DriveOperation;
-use grovedb::{Element, TransactionArg};
+use grovedb::TransactionArg;
 
 impl Drive {
     pub(crate) fn delete_withdrawal_transaction(

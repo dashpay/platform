@@ -7,6 +7,7 @@ use dpp::{
 };
 use grovedb::TransactionArg;
 use indexmap::IndexMap;
+use lazy_static::__Deref;
 
 use crate::{
     drive::{query::QueryDocumentsOutcome, Drive},
@@ -21,7 +22,7 @@ impl Drive {
         status: u8,
         transaction: TransactionArg,
     ) -> Result<Vec<DocumentStub>, Error> {
-        let data_contract_id = withdrawals_contract::CONTRACT_ID.clone();
+        let data_contract_id = withdrawals_contract::CONTRACT_ID.deref();
 
         let contract_fetch_info = self
             .fetch_contract(data_contract_id.to_buffer(), None, transaction)
@@ -114,7 +115,7 @@ impl Drive {
         original_transaction_id: &[u8],
         transaction: TransactionArg,
     ) -> Result<DocumentStub, Error> {
-        let data_contract_id = withdrawals_contract::CONTRACT_ID.clone();
+        let data_contract_id = withdrawals_contract::CONTRACT_ID.deref();
 
         let contract_fetch_info = self
             .fetch_contract(data_contract_id.to_buffer(), None, transaction)
@@ -153,7 +154,7 @@ impl Drive {
 
         let drive_query = DriveQuery {
             contract: &contract_fetch_info.contract,
-            document_type: document_type,
+            document_type,
             internal_clauses: InternalClauses {
                 primary_key_in_clause: None,
                 primary_key_equal_clause: None,

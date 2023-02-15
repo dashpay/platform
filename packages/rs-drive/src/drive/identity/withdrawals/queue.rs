@@ -32,11 +32,11 @@ impl Drive {
     }
 
     /// Get specified amount of withdrawal transactions from the DB
-    pub fn dequeue_withdrawal_transactions<'a>(
+    pub fn dequeue_withdrawal_transactions(
         &self,
         max_amount: u16,
         transaction: TransactionArg,
-        drive_operation_types: &mut Vec<DriveOperationType<'a>>,
+        drive_operation_types: &mut Vec<DriveOperationType>,
     ) -> Result<Vec<WithdrawalTransaction>, Error> {
         let mut query = Query::new();
 

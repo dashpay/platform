@@ -32,7 +32,6 @@
 //! This module implements functions in Drive relevant to inserting documents.
 //!
 
-use dpp::data_contract::document_type::random_document::CreateRandomDocument;
 use dpp::data_contract::document_type::{encode_unsigned_integer, IndexLevel};
 use dpp::data_contract::DriveContractExt;
 use grovedb::batch::key_info::KeyInfo;

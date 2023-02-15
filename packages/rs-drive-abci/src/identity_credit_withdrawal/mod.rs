@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::{collections::HashMap, ops::Deref};
 
 use dashcore::{
     blockdata::transaction::special_transaction::asset_unlock::{
@@ -159,7 +159,7 @@ impl Platform {
         validator_set_quorum_hash: [u8; 32],
         transaction: TransactionArg,
     ) -> Result<Vec<Vec<u8>>, Error> {
-        let data_contract_id = withdrawals_contract::CONTRACT_ID.clone();
+        let data_contract_id = withdrawals_contract::CONTRACT_ID.deref();
 
         let (_, maybe_data_contract) = self.drive.get_contract_with_fetch_info(
             data_contract_id.to_buffer(),
@@ -218,7 +218,7 @@ impl Platform {
 
                 document.set_bytes(
                     withdrawals_contract::property_names::TRANSACTION_ID,
-                    update_transaction_id.clone(),
+                    update_transaction_id,
                 );
 
                 document.set_i64(
@@ -278,7 +278,7 @@ impl Platform {
         block_execution_context: &BlockExecutionContext,
         transaction: TransactionArg,
     ) -> Result<(), Error> {
-        let data_contract_id = withdrawals_contract::CONTRACT_ID.clone();
+        let data_contract_id = withdrawals_contract::CONTRACT_ID.deref();
 
         let (_, maybe_data_contract) = self.drive.get_contract_with_fetch_info(
             data_contract_id.to_buffer(),

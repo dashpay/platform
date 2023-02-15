@@ -1,5 +1,7 @@
 use std::vec;
 
+use lazy_static::__Deref;
+
 use crate::{
     contracts::{
         dashpay_contract, dpns_contract, feature_flags_contract, masternode_reward_shares_contract,
@@ -55,7 +57,7 @@ fn data_triggers() -> Result<Vec<DataTrigger>, ProtocolError> {
         Encoding::Base58,
     )?;
     let withdrawals_owner_id = withdrawals_contract::OWNER_ID.clone();
-    let withdrawals_contract_id = withdrawals_contract::CONTRACT_ID.clone();
+    let withdrawals_contract_id = withdrawals_contract::CONTRACT_ID.deref();
 
     let data_triggers = vec![
         DataTrigger {
@@ -164,7 +166,7 @@ fn data_triggers() -> Result<Vec<DataTrigger>, ProtocolError> {
             top_level_identity: None,
         },
         DataTrigger {
-            data_contract_id: withdrawals_contract_id,
+            data_contract_id: withdrawals_contract_id.clone(),
             document_type: withdrawals_contract::types::WITHDRAWAL.to_string(),
             transition_action: Action::Delete,
             data_trigger_kind: DataTriggerKind::DeleteWithdrawal,

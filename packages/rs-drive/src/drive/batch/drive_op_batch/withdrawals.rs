@@ -1,19 +1,9 @@
 use std::collections::HashMap;
 
-use grovedb::{batch::KeyInfoPath, Element, EstimatedLayerInformation, TransactionArg};
+use grovedb::{batch::KeyInfoPath, EstimatedLayerInformation, TransactionArg};
 
 use crate::{
-    drive::{
-        block_info::BlockInfo,
-        grove_operations::BatchDeleteApplyType,
-        identity::withdrawals::paths::{
-            get_withdrawal_root_path_vec, get_withdrawal_transactions_expired_ids_path,
-            get_withdrawal_transactions_expired_ids_path_vec,
-            get_withdrawal_transactions_queue_path, get_withdrawal_transactions_queue_path_vec,
-            WithdrawalTransaction, WITHDRAWAL_TRANSACTIONS_COUNTER_ID,
-        },
-        Drive,
-    },
+    drive::{block_info::BlockInfo, identity::withdrawals::paths::WithdrawalTransaction, Drive},
     error::Error,
     fee::op::DriveOperation,
 };

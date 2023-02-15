@@ -1,4 +1,3 @@
-use crate::drive::grove_operations::BatchDeleteApplyType;
 use crate::drive::identity::withdrawals::paths::{
     get_withdrawal_transactions_queue_path_vec, WithdrawalTransaction,
 };

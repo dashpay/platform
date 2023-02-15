@@ -55,14 +55,13 @@ use crate::drive::document::{
 };
 use crate::drive::flags::StorageFlags;
 use crate::drive::object_size_info::DocumentInfo::{
-    DocumentEstimatedAverageSize, DocumentRefAndSerialization, DocumentRefWithoutSerialization,
-    DocumentWithoutSerialization,
+    DocumentRefAndSerialization, DocumentWithoutSerialization,
 };
 use dpp::document::document_stub::DocumentStub;
 
 use crate::drive::object_size_info::PathKeyElementInfo::PathKeyRefElement;
 use crate::drive::object_size_info::{
-    DocumentAndContractInfo, DocumentInfo, DriveKeyInfo, OwnedDocumentInfo, PathKeyInfo,
+    DocumentAndContractInfo, DriveKeyInfo, OwnedDocumentInfo, PathKeyInfo,
 };
 use crate::drive::Drive;
 use crate::error::drive::DriveError;
@@ -80,7 +79,6 @@ use crate::drive::grove_operations::{
 };
 use crate::fee::result::FeeResult;
 use dpp::prelude::DataContract;
-use dpp::ProtocolError;
 
 impl Drive {
     /// Updates a serialized document given a contract CBOR and returns the associated fee.

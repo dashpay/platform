@@ -1,3 +1,4 @@
+use lazy_static::__Deref;
 use serde_json::json;
 
 use crate::{
@@ -17,7 +18,7 @@ where
 {
     let documents: Vec<Document> = state_repository
         .fetch_documents(
-            &withdrawals_contract::CONTRACT_ID.clone(),
+            withdrawals_contract::CONTRACT_ID.deref(),
             withdrawals_contract::types::WITHDRAWAL,
             json!({
                 "where": [
