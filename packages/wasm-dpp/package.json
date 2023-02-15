@@ -1,6 +1,6 @@
 {
   "name": "@dashevo/wasm-dpp",
-  "version": "0.24.0-dev.12",
+  "version": "0.24.0-dev.13",
   "description": "The JavaScript implementation of the Dash Platform Protocol",
   "main": "dist/index.js",
   "types": "dist/lib/index.d.ts",
@@ -10,8 +10,8 @@
     "test:browsers": "karma start ./karma.conf.js --single-run",
     "test:node": "NODE_ENV=test mocha",
     "webpack": "webpack",
-    "lint": "eslint . && cargo clippy && cargo fmt --check",
-    "lint:fix": "eslint . --fix && cargo clippy --fix && cargo fmt",
+    "lint": "eslint .",
+    "lint:fix": "eslint . --fix",
     "clean": "yarn exec scripts/clean.sh"
   },
   "ultra": {

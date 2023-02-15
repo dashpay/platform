@@ -89,7 +89,7 @@ impl DocumentWasm {
 
     #[wasm_bindgen(js_name=getId)]
     pub fn get_id(&self) -> IdentifierWrapper {
-        self.0.id.clone().into()
+        self.0.id.into()
     }
 
     #[wasm_bindgen(js_name=setId)]
@@ -104,7 +104,7 @@ impl DocumentWasm {
 
     #[wasm_bindgen(js_name=getDataContractId)]
     pub fn get_data_contract_id(&self) -> IdentifierWrapper {
-        self.0.data_contract_id.clone().into()
+        self.0.data_contract_id.into()
     }
 
     #[wasm_bindgen(js_name=getDataContract)]
@@ -119,7 +119,7 @@ impl DocumentWasm {
 
     #[wasm_bindgen(js_name=getOwnerId)]
     pub fn get_owner_id(&self) -> IdentifierWrapper {
-        self.0.owner_id.clone().into()
+        self.0.owner_id.into()
     }
 
     #[wasm_bindgen(js_name=setRevision)]
@@ -161,6 +161,7 @@ impl DocumentWasm {
             .0
             .data
             .serialize(&serde_wasm_bindgen::Serializer::json_compatible())?;
+
         let (identifier_paths, binary_paths) = self
             .0
             .data_contract
@@ -184,6 +185,7 @@ impl DocumentWasm {
             }
         }
 
+        // Ok(with_js_error!(self.0.data.serialize(&serializer))?)
         Ok(js_value)
     }
 

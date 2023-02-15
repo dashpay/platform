@@ -52,6 +52,9 @@ function validateStateTransitionIdentitySignatureFactory(
     // identity to proceed with following logic
     const tmpExecutionContext = new StateTransitionExecutionContext();
 
+    // TODO: Would make sense to have one call to fetch key and figure out does identity exist
+    //  or not
+
     // Owner must exist
     const identity = await stateRepository.fetchIdentity(ownerId, tmpExecutionContext);
 

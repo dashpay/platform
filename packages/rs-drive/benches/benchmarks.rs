@@ -37,7 +37,6 @@ use dpp::data_contract::extra::common::json_document_to_cbor;
 
 use dpp::data_contract::DriveContractExt;
 use dpp::document::document_stub::DocumentStub;
-use drive::common::json_document_to_cbor;
 use drive::contract::Contract;
 use drive::contract::CreateRandomDocument;
 use serde::Serialize;

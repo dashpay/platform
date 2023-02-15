@@ -1,7 +1,7 @@
 use std::time::Duration;
 
 use chrono::Utc;
-use dashcore::BlockHeader;
+use dashcore::consensus;
 use serde_json::{json, Value as JsonValue};
 
 use crate::{
@@ -44,7 +44,7 @@ fn init() {
 fn setup_test() -> TestData {
     init();
     let owner_id = generate_random_identifier_struct();
-    let data_contract = get_data_contract_fixture(Some(owner_id.clone()));
+    let data_contract = get_data_contract_fixture(Some(owner_id));
     let documents = get_documents_fixture(data_contract.clone()).unwrap();
 
     let document_transitions =
@@ -70,8 +70,12 @@ fn setup_test() -> TestData {
         .returning(move |_, _| Ok(Some(data_contract_to_return.clone())));
 
     state_repository_mock
-        .expect_fetch_latest_platform_block_header::<BlockHeader>()
-        .returning(|| Ok(new_block_header(Some(Utc::now().timestamp() as u32))));
+        .expect_fetch_latest_platform_block_header()
+        .returning(|| {
+            Ok(consensus::serialize(&new_block_header(Some(
+                Utc::now().timestamp() as u32,
+            ))))
+        });
 
     TestData {
         owner_id,
@@ -89,7 +93,7 @@ fn get_state_error(result: &ValidationResult<()>, error_number: usize) -> &State
         .get(error_number)
         .expect("error should be found")
     {
-        ConsensusError::StateError(state_error) => &*state_error,
+        ConsensusError::StateError(state_error) => state_error,
         _ => panic!(
             "error '{:?}' isn't a basic error",
             result.errors[error_number]
@@ -155,7 +159,7 @@ async fn should_return_invalid_result_if_document_transition_with_action_delete_
         (Action::Create, vec![]),
         (Action::Delete, vec![documents[0].clone()]),
     ]);
-    let transition_id = document_transitions[0].base().id.clone();
+    let transition_id = document_transitions[0].base().id;
 
     let owner_id_bytes = owner_id.to_buffer();
     let raw_document_transitions: Vec<JsonValue> = document_transitions
@@ -209,7 +213,7 @@ async fn should_return_invalid_result_if_document_transition_with_action_replace
         (Action::Create, vec![]),
         (Action::Replace, vec![replace_document]),
     ]);
-    let transition_id = document_transitions[0].base().id.clone();
+    let transition_id = document_transitions[0].base().id;
 
     let raw_document_transitions: Vec<JsonValue> = document_transitions
         .into_iter()
@@ -264,13 +268,13 @@ async fn should_return_invalid_result_if_document_transition_with_action_replace
         Document::from_raw_document(documents[0].to_object().unwrap(), data_contract.clone())
             .expect("document should be created");
     let another_owner_id = generate_random_identifier_struct();
-    fetched_document.owner_id = another_owner_id.clone();
+    fetched_document.owner_id = another_owner_id;
 
     let document_transitions = get_document_transitions_fixture([
         (Action::Create, vec![]),
         (Action::Replace, vec![replace_document]),
     ]);
-    let transition_id = document_transitions[0].base().id.clone();
+    let transition_id = document_transitions[0].base().id;
 
     let raw_document_transitions: Vec<JsonValue> = document_transitions
         .into_iter()
@@ -332,7 +336,7 @@ async fn should_return_invalid_result_if_timestamps_mismatch() {
 
     let document_transitions =
         get_document_transitions_fixture([(Action::Create, vec![documents[0].clone()])]);
-    let transition_id = document_transitions[0].base().id.clone();
+    let transition_id = document_transitions[0].base().id;
     let raw_document_transitions: Vec<JsonValue> = document_transitions
         .into_iter()
         .map(|dt| dt.to_object().unwrap())
@@ -383,7 +387,7 @@ async fn should_return_invalid_result_if_crated_at_has_violated_time_window() {
 
     let document_transitions =
         get_document_transitions_fixture([(Action::Create, vec![documents[0].clone()])]);
-    let transition_id = document_transitions[0].base().id.clone();
+    let transition_id = document_transitions[0].base().id;
     let raw_document_transitions: Vec<JsonValue> = document_transitions
         .into_iter()
         .map(|dt| dt.to_object().unwrap())
@@ -481,7 +485,7 @@ async fn should_return_invalid_result_if_updated_at_has_violated_time_window() {
 
     let document_transitions =
         get_document_transitions_fixture([(Action::Create, vec![documents[1].clone()])]);
-    let transition_id = document_transitions[0].base().id.clone();
+    let transition_id = document_transitions[0].base().id;
     let raw_document_transitions: Vec<JsonValue> = document_transitions
         .into_iter()
         .map(|dt| dt.to_object().unwrap())
@@ -539,8 +543,8 @@ async fn should_return_valid_result_if_document_transitions_are_valid() {
             .unwrap();
     fetched_document_1.revision = 1;
     fetched_document_2.revision = 1;
-    fetched_document_1.owner_id = owner_id.clone();
-    fetched_document_2.owner_id = owner_id.clone();
+    fetched_document_1.owner_id = owner_id;
+    fetched_document_2.owner_id = owner_id;
 
     state_repository_mock
         .expect_fetch_documents::<Document>()

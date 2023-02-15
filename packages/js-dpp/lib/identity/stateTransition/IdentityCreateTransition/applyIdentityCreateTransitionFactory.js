@@ -42,15 +42,7 @@ function applyIdentityCreateTransitionFactory(
 
     await stateRepository.createIdentity(identity, executionContext);
 
-    const publicKeyHashes = identity
-      .getPublicKeys()
-      .map((publicKey) => publicKey.hash());
-
-    await stateRepository.storeIdentityPublicKeyHashes(
-      identity.getId(),
-      publicKeyHashes,
-      executionContext,
-    );
+    await stateRepository.addToSystemCredits(creditsAmount, executionContext);
 
     const outPoint = stateTransition.getAssetLockProof().getOutPoint();
 

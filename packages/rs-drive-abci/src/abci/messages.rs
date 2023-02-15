@@ -36,14 +36,49 @@
 use crate::error::serialization::SerializationError;
 use crate::error::Error;
 use crate::execution::fee_pools::epoch::EpochInfo;
-use crate::execution::fee_pools::process_block_fees::ProcessedBlockFeesResult;
+use crate::execution::fee_pools::fee_distribution::FeesInPools;
+use crate::execution::fee_pools::process_block_fees::ProcessedBlockFeesOutcome;
+use drive::dpp::identity::TimestampMillis;
+use drive::dpp::util::deserializer::ProtocolVersion;
 use drive::fee::epoch::CreditsPerEpoch;
+use drive::fee::result::FeeResult;
 use serde::{de::DeserializeOwned, Deserialize, Serialize};
 
 /// A struct for handling chain initialization requests
 #[derive(Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
-pub struct InitChainRequest {}
+pub struct InitChainRequest {
+    /// The genesis time in milliseconds
+    pub genesis_time_ms: TimestampMillis,
+    /// The system identity public keys
+    pub system_identity_public_keys: SystemIdentityPublicKeys,
+}
+
+/// System identity public keys
+#[derive(Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SystemIdentityPublicKeys {
+    /// Required public key set for masternode reward shares contract owner identity
+    pub masternode_reward_shares_contract_owner: RequiredIdentityPublicKeysSet,
+    /// Required public key set for feature flags contract owner identity
+    pub feature_flags_contract_owner: RequiredIdentityPublicKeysSet,
+    /// Required public key set for dpns contract owner identity
+    pub dpns_contract_owner: RequiredIdentityPublicKeysSet,
+    /// Required public key set for withdrawals contract owner identity
+    pub withdrawals_contract_owner: RequiredIdentityPublicKeysSet,
+    /// Required public key set for dashpay contract owner identity
+    pub dashpay_contract_owner: RequiredIdentityPublicKeysSet,
+}
+
+/// Required public key set for an identity
+#[derive(Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RequiredIdentityPublicKeysSet {
+    /// Authentication key with master security level
+    pub master: Vec<u8>,
+    /// Authentication key with high security level
+    pub high: Vec<u8>,
+}
 
 /// A struct for handling chain initialization responses
 #[derive(Serialize, Deserialize)]
@@ -62,8 +97,12 @@ pub struct BlockBeginRequest {
     pub previous_block_time_ms: Option<u64>,
     /// The block proposer's proTxHash
     pub proposer_pro_tx_hash: [u8; 32],
+    /// The block proposer's proposed version
+    pub proposed_app_version: ProtocolVersion,
     /// Validator set quorum hash
     pub validator_set_quorum_hash: [u8; 32],
+    /// The total number of HPMNs in the system
+    pub total_hpmns: u32,
 }
 
 /// A struct for handling block begin responses
@@ -86,15 +125,15 @@ pub struct BlockEndRequest {
 }
 
 /// Aggregated fees after block execution
-#[derive(Serialize, Deserialize, Default, Clone)]
+#[derive(Serialize, Deserialize, Default, Clone, Debug)]
 #[serde(rename_all = "camelCase")]
 pub struct BlockFees {
     /// Processing fee
     pub processing_fee: u64,
     /// Storage fee
     pub storage_fee: u64,
-    /// Fee refunds
-    pub fee_refunds: CreditsPerEpoch,
+    /// Fee refunds per epoch
+    pub refunds_per_epoch: CreditsPerEpoch,
 }
 
 impl BlockFees {
@@ -106,10 +145,18 @@ impl BlockFees {
             ..Default::default()
         }
     }
+    /// Get block fees from fee results
+    pub fn from_fee_result(fee_result: FeeResult) -> Self {
+        Self {
+            storage_fee: fee_result.storage_fee,
+            processing_fee: fee_result.processing_fee,
+            refunds_per_epoch: fee_result.fee_refunds.sum_per_epoch(),
+        }
+    }
 }
 
 /// A struct for handling block end responses
-#[derive(Serialize, Deserialize)]
+#[derive(Serialize, Deserialize, Debug)]
 #[serde(rename_all = "camelCase")]
 pub struct BlockEndResponse {
     /// Number of proposers to be paid
@@ -117,13 +164,18 @@ pub struct BlockEndResponse {
     /// Index of the last epoch that marked as paid
     pub paid_epoch_index: Option<u16>,
     /// A number of epochs which had refunded
-    pub refunded_epochs_count: Option<usize>,
+    pub refunded_epochs_count: Option<u16>,
+    /// Amount of fees in the storage and processing fee distribution pools
+    pub fees_in_pools: FeesInPools,
+    /// Next protocol app version
+    pub changed_protocol_app_version: Option<ProtocolVersion>,
 }
 
 impl BlockEndResponse {
     /// Retrieves fee info for the block to be implemented in the BlockEndResponse
-    pub(crate) fn from_process_block_fees_result(
-        process_block_fees_result: &ProcessedBlockFeesResult,
+    pub(crate) fn from_outcomes(
+        process_block_fees_result: &ProcessedBlockFeesOutcome,
+        changed_protocol_app_version: Option<ProtocolVersion>,
     ) -> Self {
         let (proposers_paid_count, paid_epoch_index) = process_block_fees_result
             .payouts
@@ -139,6 +191,8 @@ impl BlockEndResponse {
             proposers_paid_count,
             paid_epoch_index,
             refunded_epochs_count: process_block_fees_result.refunded_epochs_count,
+            fees_in_pools: process_block_fees_result.fees_in_pools,
+            changed_protocol_app_version,
         }
     }
 }

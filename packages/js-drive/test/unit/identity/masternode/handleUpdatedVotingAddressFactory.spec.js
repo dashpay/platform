@@ -3,6 +3,7 @@ const IdentityPublicKey = require('@dashevo/dpp/lib/identity/IdentityPublicKey')
 const Identifier = require('@dashevo/dpp/lib/identifier/Identifier');
 const handleUpdatedVotingAddressFactory = require('../../../../lib/identity/masternode/handleUpdatedVotingAddressFactory');
 const StorageResult = require('../../../../lib/storage/StorageResult');
+const BlockInfo = require('../../../../lib/blockExecution/BlockInfo');
 
 describe('handleUpdatedVotingAddressFactory', () => {
   let handleUpdatedVotingAddress;
@@ -12,6 +13,7 @@ describe('handleUpdatedVotingAddressFactory', () => {
   let fetchTransactionMock;
   let transactionFixture;
   let identityRepositoryMock;
+  let blockInfo;
 
   beforeEach(function beforeEach() {
     smlEntry = {
@@ -42,6 +44,8 @@ describe('handleUpdatedVotingAddressFactory', () => {
 
     createMasternodeIdentityMock = this.sinon.stub();
 
+    blockInfo = new BlockInfo(1, 0, Date.now());
+
     handleUpdatedVotingAddress = handleUpdatedVotingAddressFactory(
       identityRepositoryMock,
       createMasternodeIdentityMock,
@@ -52,7 +56,7 @@ describe('handleUpdatedVotingAddressFactory', () => {
   it('should store updated identity', async () => {
     createMasternodeIdentityMock.resolves(identity);
 
-    const result = await handleUpdatedVotingAddress(smlEntry);
+    const result = await handleUpdatedVotingAddress(smlEntry, blockInfo);
 
     expect(result.createdEntities).to.have.lengthOf(1);
     expect(result.updatedEntities).to.have.lengthOf(0);
@@ -60,6 +64,7 @@ describe('handleUpdatedVotingAddressFactory', () => {
 
     expect(result.createdEntities[0]).to.deep.equal(identity);
     expect(createMasternodeIdentityMock).to.be.calledOnceWithExactly(
+      blockInfo,
       Identifier.from('G1p14MYdpNRLNWuKgQ9SjJUPxfuaJMTwYjdRWu9sLzvL'),
       Buffer.from('8fd1a9502c58ab103792693e951bf39f10ee46a9', 'hex'),
       IdentityPublicKey.TYPES.ECDSA_HASH160,
@@ -70,7 +75,7 @@ describe('handleUpdatedVotingAddressFactory', () => {
   it('should not update identity if identity already exists', async () => {
     identityRepositoryMock.fetch.resolves(new StorageResult(identity, []));
 
-    const result = await handleUpdatedVotingAddress(smlEntry);
+    const result = await handleUpdatedVotingAddress(smlEntry, blockInfo);
 
     expect(result.createdEntities).to.have.lengthOf(0);
     expect(result.updatedEntities).to.have.lengthOf(0);
@@ -85,7 +90,7 @@ describe('handleUpdatedVotingAddressFactory', () => {
 
     fetchTransactionMock.resolves(transactionFixture);
 
-    const result = await handleUpdatedVotingAddress(smlEntry);
+    const result = await handleUpdatedVotingAddress(smlEntry, blockInfo);
 
     expect(result.createdEntities).to.have.lengthOf(0);
     expect(result.updatedEntities).to.have.lengthOf(0);

@@ -1,22 +1,37 @@
-const IdentityPublicKey = require('@dashevo/dpp/lib/identity/IdentityPublicKey');
-
 const stateTransitionTypes = require(
   '@dashevo/dpp/lib/stateTransition/stateTransitionTypes',
 );
 
 const protocolVersion = require('@dashevo/dpp/lib/version/protocolVersion');
-const Identifier = require('@dashevo/dpp/lib/identifier/Identifier');
 
 const getIdentityUpdateTransitionFixture = require('@dashevo/dpp/lib/test/fixtures/getIdentityUpdateTransitionFixture');
-const generateRandomIdentifier = require('@dashevo/dpp/lib/test/utils/generateRandomIdentifier');
+
+const { default: loadWasmDpp } = require('../../../../../dist');
+const generateRandomIdentifierAsync = require('../../../../../lib/test/utils/generateRandomIdentifierAsync');
 
 describe('IdentityUpdateTransition', () => {
   let rawStateTransition;
   let stateTransition;
 
+  let IdentityUpdateTransition;
+  let IdentityPublicKey;
+  let Identifier;
+  let IdentityPublicKeyCreateTransition;
+
+  before(async () => {
+    ({
+      IdentityUpdateTransition,
+      IdentityPublicKey,
+      Identifier,
+      IdentityPublicKeyCreateTransition,
+    } = await loadWasmDpp());
+  });
+
   beforeEach(() => {
-    stateTransition = getIdentityUpdateTransitionFixture();
-    rawStateTransition = stateTransition.toObject();
+    rawStateTransition = getIdentityUpdateTransitionFixture().toObject();
+    stateTransition = new IdentityUpdateTransition(
+      rawStateTransition,
+    );
   });
 
   describe('#getType', () => {
@@ -26,18 +41,20 @@ describe('IdentityUpdateTransition', () => {
   });
 
   describe('#setIdentityId', () => {
-    it('should set identityId', () => {
-      const id = generateRandomIdentifier();
+    it('should set identityId', async () => {
+      const id = await generateRandomIdentifierAsync();
 
       stateTransition.setIdentityId(id);
 
-      expect(stateTransition.identityId).to.deep.equal(id);
+      expect(stateTransition.identityId.toBuffer())
+        .to.deep.equal(id.toBuffer());
     });
   });
 
   describe('#getIdentityId', () => {
     it('should return identityId', () => {
-      expect(stateTransition.getIdentityId()).to.deep.equal(rawStateTransition.identityId);
+      expect(stateTransition.getIdentityId().toBuffer())
+        .to.deep.equal(rawStateTransition.identityId);
     });
   });
 
@@ -51,13 +68,13 @@ describe('IdentityUpdateTransition', () => {
     it('should set revision', () => {
       stateTransition.setRevision(42);
 
-      expect(stateTransition.revision).to.equal(42);
+      expect(stateTransition.getRevision()).to.equal(42);
     });
   });
 
   describe('#getOwnerId', () => {
     it('should return owner id', () => {
-      expect(stateTransition.getOwnerId()).to.deep.equal(
+      expect(stateTransition.getOwnerId().toBuffer()).to.deep.equal(
         rawStateTransition.identityId,
       );
     });
@@ -65,33 +82,37 @@ describe('IdentityUpdateTransition', () => {
 
   describe('#getPublicKeysToAdd', () => {
     it('should return public keys to add', () => {
-      expect(stateTransition.getPublicKeysToAdd()).to.deep.equal(
-        rawStateTransition.addPublicKeys.map((rawPublicKey) => new IdentityPublicKey(rawPublicKey)),
-      );
+      expect(stateTransition.getPublicKeysToAdd().map((key) => key.toObject()))
+        .to.deep.equal(
+          rawStateTransition.addPublicKeys
+            .map((rawPublicKey) => new IdentityPublicKeyCreateTransition(rawPublicKey).toObject()),
+        );
     });
   });
 
   describe('#setPublicKeysToAdd', () => {
     it('should set public keys to add', () => {
-      const publicKeys = [new IdentityPublicKey({
+      const publicKeys = [new IdentityPublicKeyCreateTransition({
         id: 0,
         type: IdentityPublicKey.TYPES.BLS12_381,
         purpose: 0,
         securityLevel: 0,
         readOnly: true,
+        signature: Buffer.alloc(0),
         data: Buffer.from('01fac99ca2c8f39c286717c213e190aba4b7af76db320ec43f479b7d9a2012313a0ae59ca576edf801444bc694686694', 'hex'),
       })];
 
       stateTransition.setPublicKeysToAdd(publicKeys);
 
-      expect(stateTransition.addPublicKeys).to.have.deep.members(publicKeys);
+      expect(stateTransition.addPublicKeys.map((key) => key.toObject()))
+        .to.have.deep.members(publicKeys.map((key) => key.toObject()));
     });
   });
 
   describe('#getPublicKeyIdsToDisable', () => {
     it('should return public key ids to disable', () => {
       expect(stateTransition.getPublicKeyIdsToDisable())
-        .to.deep.equal(stateTransition.disablePublicKeys);
+        .to.deep.equal(rawStateTransition.disablePublicKeys);
     });
   });
 
@@ -99,14 +120,15 @@ describe('IdentityUpdateTransition', () => {
     it('should set public key ids to disable', () => {
       stateTransition.setPublicKeyIdsToDisable([1, 2]);
 
-      expect(stateTransition.disablePublicKeys).to.deep.equal([1, 2]);
+      expect(stateTransition.getPublicKeyIdsToDisable())
+        .to.deep.equal([1, 2]);
     });
   });
 
   describe('#getPublicKeysDisabledAt', () => {
     it('should return time to disable public keys', () => {
       expect(stateTransition.getPublicKeysDisabledAt())
-        .to.deep.equal(new Date(stateTransition.publicKeysDisabledAt));
+        .to.deep.equal(new Date(rawStateTransition.publicKeysDisabledAt));
     });
   });
 
@@ -116,7 +138,7 @@ describe('IdentityUpdateTransition', () => {
 
       stateTransition.setPublicKeysDisabledAt(now);
 
-      expect(stateTransition.publicKeysDisabledAt).to.deep.equal(new Date(now));
+      expect(stateTransition.getPublicKeysDisabledAt()).to.deep.equal(new Date(now));
     });
   });
 
@@ -195,7 +217,7 @@ describe('IdentityUpdateTransition', () => {
       const identityId = result[0];
 
       expect(identityId).to.be.an.instanceOf(Identifier);
-      expect(identityId).to.be.deep.equal(rawStateTransition.identityId);
+      expect(identityId.toBuffer()).to.be.deep.equal(rawStateTransition.identityId);
     });
   });
 
