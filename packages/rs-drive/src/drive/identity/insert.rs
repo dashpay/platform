@@ -161,7 +161,7 @@ impl Drive {
 
 #[cfg(test)]
 mod tests {
-    use crate::{common::helpers::setup::setup_drive, drive::block_info::BlockInfo};
+    use crate::{drive::block_info::BlockInfo, tests::helpers::setup::setup_drive};
     use dpp::identity::Identity;
 
     use tempfile::TempDir;

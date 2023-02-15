@@ -89,9 +89,9 @@ impl Drive {
 #[cfg(test)]
 mod tests {
     use crate::{
-        common::helpers::setup::setup_drive_with_initial_state_structure,
         drive::{batch::DriveOperationType, block_info::BlockInfo},
         fee_pools::epochs::Epoch,
+        tests::helpers::setup::setup_drive_with_initial_state_structure,
     };
 
     #[test]

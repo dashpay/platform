@@ -503,7 +503,7 @@ mod tests {
         BlockHash,
     };
     use dpp::{contracts::withdrawals_contract, tests::fixtures::get_withdrawal_document_fixture};
-    use drive::{common::helpers::setup::setup_document, rpc::core::MockCoreRPCLike};
+    use drive::{rpc::core::MockCoreRPCLike, tests::helpers::setup::setup_document};
     use serde_json::json;
 
     use dpp::identity::state_transition::identity_credit_withdrawal_transition::Pooling;
@@ -517,7 +517,7 @@ mod tests {
             data_contract::{DataContract, DriveContractExt},
             system_data_contracts::{load_system_data_contract, SystemDataContract},
         };
-        use drive::common::helpers::setup::setup_system_data_contract;
+        use drive::tests::helpers::setup::setup_system_data_contract;
 
         use super::*;
 
@@ -695,8 +695,8 @@ mod tests {
         use dpp::data_contract::DriveContractExt;
         use dpp::identity::state_transition::identity_credit_withdrawal_transition::Pooling;
         use dpp::system_data_contracts::{load_system_data_contract, SystemDataContract};
-        use drive::common::helpers::setup::setup_system_data_contract;
         use drive::dpp::contracts::withdrawals_contract;
+        use drive::tests::helpers::setup::setup_system_data_contract;
 
         use crate::block::BlockStateInfo;
         use crate::test::helpers::setup::setup_platform_with_initial_state_structure;
@@ -882,8 +882,8 @@ mod tests {
             document::document_stub::DocumentStub,
             identity::state_transition::identity_credit_withdrawal_transition::Pooling,
         };
-        use drive::common::helpers::setup::setup_system_data_contract;
         use drive::drive::identity::withdrawals::paths::WithdrawalTransaction;
+        use drive::tests::helpers::setup::setup_system_data_contract;
         use itertools::Itertools;
 
         use super::*;

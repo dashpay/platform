@@ -146,12 +146,12 @@ mod tests {
     use grovedb::Element;
 
     use crate::{
-        common::helpers::setup::setup_drive_with_initial_state_structure,
         drive::{
             block_info::BlockInfo,
             identity::withdrawals::paths::get_withdrawal_transactions_expired_ids_path,
         },
         fee_pools::epochs::Epoch,
+        tests::helpers::setup::setup_drive_with_initial_state_structure,
     };
 
     #[test]

@@ -475,7 +475,7 @@ mod tests {
 
     use crate::{
         common::helpers::identities::create_test_identity,
-        common::helpers::setup::setup_drive_with_initial_state_structure,
+        tests::helpers::setup::setup_drive_with_initial_state_structure,
     };
 
     mod add_to_identity_balance {

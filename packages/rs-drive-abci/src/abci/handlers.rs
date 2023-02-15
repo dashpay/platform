@@ -38,7 +38,6 @@ use crate::abci::messages::{
 };
 use crate::block::{BlockExecutionContext, BlockStateInfo};
 use crate::execution::fee_pools::epoch::EpochInfo;
-use drive::fee::epoch::GENESIS_EPOCH_INDEX;
 use drive::grovedb::TransactionArg;
 
 use crate::error::execution::ExecutionError;
@@ -258,12 +257,12 @@ mod tests {
         use dpp::tests::fixtures::get_withdrawal_document_fixture;
         use dpp::util::hash;
         use drive::common::helpers::identities::create_test_masternode_identities;
-        use drive::common::helpers::setup::{setup_document, setup_system_data_contract};
         use drive::drive::block_info::BlockInfo;
         use drive::drive::identity::withdrawals::paths::WithdrawalTransaction;
         use drive::fee::epoch::CreditsPerEpoch;
         use drive::fee_pools::epochs::Epoch;
         use drive::rpc::core::MockCoreRPCLike;
+        use drive::tests::helpers::setup::{setup_document, setup_system_data_contract};
         use rust_decimal::prelude::ToPrimitive;
         use serde_json::json;
         use std::cmp::Ordering;
