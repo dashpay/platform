@@ -22,7 +22,7 @@ mod deserialization {
 
         assert_eq!(
             state_transition.identity_id,
-            Identifier::from_bytes(&vec![1; 32]).unwrap()
+            Identifier::from_bytes(&[1; 32]).unwrap()
         );
 
         assert_eq!(
@@ -41,7 +41,7 @@ mod deserialization {
 
         assert_eq!(
             state_transition.identity_id,
-            Identifier::from_bytes(&vec![1; 32]).unwrap()
+            Identifier::from_bytes(&[1; 32]).unwrap()
         );
 
         assert_eq!(

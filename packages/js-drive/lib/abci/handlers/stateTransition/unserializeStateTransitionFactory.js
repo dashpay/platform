@@ -17,7 +17,7 @@ function unserializeStateTransitionFactory(dpp, noopLogger) {
    * @param {Object} [options]
    * @param {BaseLogger} [options.logger]
    * @param {ExecutionTimer} [options.executionTimer]
-   * @return {DocumentsBatchTransition|DataContractCreateTransition|IdentityCreateTransition}
+   * @return {AbstractStateTransition}
    */
   async function unserializeStateTransition(stateTransitionByteArray, options = {}) {
     // either use a logger passed or use noop logger
@@ -30,7 +30,7 @@ function unserializeStateTransitionFactory(dpp, noopLogger) {
     });
 
     if (!stateTransitionByteArray) {
-      logger.info('State transition is not specified');
+      logger.warn('State transition is not specified');
 
       throw new InvalidArgumentAbciError('State Transition is not specified');
     }
@@ -83,17 +83,16 @@ function unserializeStateTransitionFactory(dpp, noopLogger) {
 
     executionTimer.startTimer(TIMERS.DELIVER_TX.VALIDATE_FEE);
 
-    // const executionContext = stateTransition.getExecutionContext();
+    const executionContext = stateTransition.getExecutionContext();
 
-    // TODO: Enable fee validation when RS Drive is ready
     // Pre-calculate fee for validateState and state transition apply
     // with worst case costs to validate the whole state transition execution cost
-    // executionContext.enableDryRun();
-    //
-    // await dpp.stateTransition.validateState(stateTransition);
-    // await dpp.stateTransition.apply(stateTransition);
-    //
-    // executionContext.disableDryRun();
+    executionContext.enableDryRun();
+
+    await dpp.stateTransition.validateState(stateTransition);
+    await dpp.stateTransition.apply(stateTransition);
+
+    executionContext.disableDryRun();
 
     result = await dpp.stateTransition.validateFee(stateTransition);
 

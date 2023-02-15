@@ -9,7 +9,7 @@ use crate::util::string_encoding::Encoding;
 
 pub const MEDIA_TYPE: &str = "application/x.dash.dpp.identifier";
 
-#[derive(Default, Debug, Clone, PartialEq, Eq, Hash)]
+#[derive(Default, Debug, Clone, PartialEq, Eq, Hash, Copy)]
 pub struct Identifier {
     pub buffer: [u8; 32],
 }
@@ -77,6 +77,11 @@ impl Identifier {
     // TODO - consider to change the name to 'asBuffer`
     pub fn to_buffer(&self) -> [u8; 32] {
         self.buffer
+    }
+
+    /// Convenience method to get underlying buffer as a vec
+    pub fn to_buffer_vec(&self) -> Vec<u8> {
+        self.buffer.to_vec()
     }
 
     pub fn to_string(&self, encoding: Encoding) -> String {

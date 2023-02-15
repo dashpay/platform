@@ -77,8 +77,8 @@ pub async fn validate_document_transitions(
         .map(TryInto::try_into)
         .transpose()
         .map_err(Into::into)?
-        .ok_or_else(|| ProtocolError::DataContractNotPresentError {
-            data_contract_id: data_contract_id.clone(),
+        .ok_or(ProtocolError::DataContractNotPresentError {
+            data_contract_id: *data_contract_id,
         })?;
 
     execution_context.add_operations(tmp_execution_context.get_operations());
@@ -214,9 +214,9 @@ fn check_ownership(
     if &fetched_document.owner_id != owner_id {
         result.add_error(ConsensusError::StateError(Box::new(
             StateError::DocumentOwnerIdMismatchError {
-                document_id: document_transition.base().id.clone(),
+                document_id: document_transition.base().id,
                 document_owner_id: owner_id.to_owned(),
-                existing_document_owner_id: fetched_document.owner_id.clone(),
+                existing_document_owner_id: fetched_document.owner_id,
             },
         )));
     }
@@ -243,7 +243,7 @@ fn check_revision(
     if revision != expected_revision {
         result.add_error(ConsensusError::StateError(Box::new(
             StateError::InvalidDocumentRevisionError {
-                document_id: document_transition.base().id.clone(),
+                document_id: document_transition.base().id,
                 current_revision: fetched_document.revision,
             },
         )))
@@ -263,7 +263,7 @@ fn check_if_document_is_already_present(
     if maybe_fetched_document.is_some() {
         result.add_error(ConsensusError::StateError(Box::new(
             StateError::DocumentAlreadyPresentError {
-                document_id: document_transition.base().id.clone(),
+                document_id: document_transition.base().id,
             },
         )))
     }
@@ -282,7 +282,7 @@ fn check_if_document_can_be_found(
     if maybe_fetched_document.is_none() {
         result.add_error(ConsensusError::StateError(Box::new(
             StateError::DocumentNotFoundError {
-                document_id: document_transition.base().id.clone(),
+                document_id: document_transition.base().id,
             },
         )))
     }
@@ -297,7 +297,7 @@ fn check_if_timestamps_are_equal(document_transition: &DocumentTransition) -> Va
     if created_at.is_some() && updated_at.is_some() && updated_at.unwrap() != created_at.unwrap() {
         result.add_error(ConsensusError::StateError(Box::new(
             StateError::DocumentTimestampsMismatchError {
-                document_id: document_transition.base().id.clone(),
+                document_id: document_transition.base().id,
             },
         )));
     }
@@ -320,7 +320,7 @@ fn check_created_inside_time_window(
         result.add_error(ConsensusError::StateError(Box::new(
             StateError::DocumentTimestampWindowViolationError {
                 timestamp_name: String::from("createdAt"),
-                document_id: document_transition.base().id.clone(),
+                document_id: document_transition.base().id,
                 timestamp: created_at as i64,
                 time_window_start: window_validation.time_window_start as i64,
                 time_window_end: window_validation.time_window_end as i64,
@@ -345,7 +345,7 @@ fn check_updated_inside_time_window(
         result.add_error(ConsensusError::StateError(Box::new(
             StateError::DocumentTimestampWindowViolationError {
                 timestamp_name: String::from("updatedAt"),
-                document_id: document_transition.base().id.clone(),
+                document_id: document_transition.base().id,
                 timestamp: updated_at as i64,
                 time_window_start: window_validation.time_window_start as i64,
                 time_window_end: window_validation.time_window_end as i64,

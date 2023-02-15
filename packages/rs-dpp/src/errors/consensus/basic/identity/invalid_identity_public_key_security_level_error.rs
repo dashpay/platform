@@ -1,11 +1,11 @@
 use thiserror::Error;
 
-use crate::identity::{Purpose, SecurityLevel};
+use crate::identity::{KeyID, Purpose, SecurityLevel};
 
 #[derive(Error, Debug, Clone, PartialEq, Eq)]
 #[error("Invalid identity public key {public_key_id:?} security level: purpose {purpose:?} allows only for {allowed_security_levels:?} security levels, but got {security_level:?}")]
 pub struct InvalidIdentityPublicKeySecurityLevelError {
-    public_key_id: u64,
+    public_key_id: KeyID,
     purpose: Purpose,
     security_level: SecurityLevel,
     allowed_security_levels: String,
@@ -13,7 +13,7 @@ pub struct InvalidIdentityPublicKeySecurityLevelError {
 
 impl InvalidIdentityPublicKeySecurityLevelError {
     pub fn new(
-        public_key_id: u64,
+        public_key_id: KeyID,
         purpose: Purpose,
         security_level: SecurityLevel,
         allowed_security_levels: Option<Vec<SecurityLevel>>,
@@ -27,7 +27,7 @@ impl InvalidIdentityPublicKeySecurityLevelError {
         }
     }
 
-    pub fn public_key_id(&self) -> u64 {
+    pub fn public_key_id(&self) -> KeyID {
         self.public_key_id
     }
 

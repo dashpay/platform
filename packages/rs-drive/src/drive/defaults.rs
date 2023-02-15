@@ -50,10 +50,14 @@ pub const BASE_CONTRACT_DOCUMENTS_PATH: u32 = 34;
 pub const BASE_CONTRACT_DOCUMENTS_PRIMARY_KEY_PATH: u32 = 35;
 /// Default hash size
 pub const DEFAULT_HASH_SIZE: u32 = 32;
+/// Default hash 160 size as u8
+pub const DEFAULT_HASH_160_SIZE_U8: u8 = 20;
 /// Default hash size as u8
 pub const DEFAULT_HASH_SIZE_U8: u8 = 32;
 /// Default hash size as u16
 pub const DEFAULT_HASH_SIZE_U16: u16 = 32;
+/// Default hash size as u32
+pub const DEFAULT_HASH_SIZE_U32: u32 = 32;
 /// Some optimized document reference size
 pub const OPTIMIZED_DOCUMENT_REFERENCE: u16 = 34; // 1 + hops + DEFAULT_HASH_SIZE
 /// Default float size
@@ -75,6 +79,13 @@ pub const CONTRACT_MAX_SERIALIZED_SIZE: u16 = 16384;
 /// Max element size
 pub const MAX_ELEMENT_SIZE: u32 = 5000;
 
+/// Default required bytes to hold a user balance
+/// TODO We probably don't need it anymore since we always pay for 9 bytes
+pub const AVERAGE_BALANCE_SIZE: u32 = 6;
+
+/// Default required bytes to hold a public key
+pub const AVERAGE_KEY_SIZE: u32 = 50;
+
 /// How many updates would occur on average for an item
 pub const AVERAGE_NUMBER_OF_UPDATES: u8 = 10;
 
@@ -87,3 +98,6 @@ pub const ESTIMATED_AVERAGE_DOCUMENT_TYPE_NAME_SIZE: u8 = 12;
 
 /// The estimated average index name size
 pub const ESTIMATED_AVERAGE_INDEX_NAME_SIZE: u8 = 16;
+
+/// The estimated count of identities having the same key if they are not unique
+pub const ESTIMATED_NON_UNIQUE_KEY_DUPLICATES: u32 = 2;

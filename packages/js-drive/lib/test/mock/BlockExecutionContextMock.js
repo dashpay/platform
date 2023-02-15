@@ -7,6 +7,8 @@
  * @method getHeight
  * @method setVersion
  * @method getVersion
+ * @method setProposedAppVersion
+ * @method getProposedAppVersion
  * @method setLastCommitInfo
  * @method getLastCommitInfo
  * @method getValidTxCount
@@ -38,6 +40,8 @@ class BlockExecutionContextMock {
     this.reset = sinon.stub();
     this.setVersion = sinon.stub();
     this.getVersion = sinon.stub();
+    this.setProposedAppVersion = sinon.stub();
+    this.getProposedAppVersion = sinon.stub();
     this.setLastCommitInfo = sinon.stub();
     this.getLastCommitInfo = sinon.stub();
     this.setContextLogger = sinon.stub();

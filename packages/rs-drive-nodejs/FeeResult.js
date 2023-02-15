@@ -7,6 +7,7 @@ const {
   feeResultAddFees,
   feeResultCreate,
   feeResultGetRefunds,
+  feeResultSumRefundsPerEpoch,
 } = require('neon-load-or-build')({
   dir: __dirname,
 });
@@ -19,6 +20,7 @@ const feeResultGetStorageFeeWithStack = appendStack(feeResultGetStorageFee);
 const feeResultGetProcessingFeeWithStack = appendStack(feeResultGetProcessingFee);
 const feeResultCreateWithStack = appendStack(feeResultCreate);
 const feeResultGetRefundsWithStack = appendStack(feeResultGetRefunds);
+const feeResultSumRefundsPerEpochWithStack = appendStack(feeResultSumRefundsPerEpoch);
 
 class FeeResult {
   constructor(inner) {
@@ -53,6 +55,15 @@ class FeeResult {
   }
 
   /**
+   * Sum credit refunds per epoch
+   *
+   * @returns {Object<string, number>}[]}
+   */
+  sumFeeRefundsPerEpoch() {
+    return feeResultSumRefundsPerEpochWithStack.call(this.inner);
+  }
+
+  /**
    * Adds and self assigns result between two Fee Results
    *
    * @param {FeeResult} feeResult
@@ -74,8 +85,8 @@ class FeeResult {
    *
    * @returns {FeeResult}
    */
-  static create(storageFee = 0, processingFee = 0) {
-    const inner = feeResultCreateWithStack(storageFee, processingFee);
+  static create(storageFee, processingFee, feeRefunds) {
+    const inner = feeResultCreateWithStack(storageFee, processingFee, feeRefunds);
 
     return new FeeResult(inner);
   }
