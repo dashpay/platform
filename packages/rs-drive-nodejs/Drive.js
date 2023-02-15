@@ -732,13 +732,17 @@ class Drive {
   /**
    * Fetch the latest index of the withdrawal transaction in a queue
    *
+   * @param {RawBlockInfo} blockInfo
    * @param {boolean} [useTransaction=false]
+   * @param {boolean} [dryRun=false]
    *
    * @returns {Promise<number>}
    */
-  async fetchLatestWithdrawalTransactionIndex(useTransaction = false) {
+  async fetchLatestWithdrawalTransactionIndex(blockInfo, useTransaction = false, dryRun = false) {
     return driveFetchLatestWithdrawalTransactionIndexAsync.call(
       this.drive,
+      blockInfo,
+      !dryRun,
       useTransaction,
     );
   }

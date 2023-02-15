@@ -3323,9 +3323,13 @@ impl PlatformWrapper {
     fn js_fetch_latest_withdrawal_transaction_index(
         mut cx: FunctionContext,
     ) -> JsResult<JsUndefined> {
-        let js_using_transaction = cx.argument::<JsBoolean>(0)?;
-        let js_callback = cx.argument::<JsFunction>(1)?.root(&mut cx);
+        let js_block_info = cx.argument::<JsObject>(0)?;
+        let js_apply = cx.argument::<JsBoolean>(1)?;
+        let js_using_transaction = cx.argument::<JsBoolean>(2)?;
+        let js_callback = cx.argument::<JsFunction>(3)?.root(&mut cx);
 
+        let apply = js_apply.value(&mut cx);
+        let block_info = converter::js_object_to_block_info(&mut cx, js_block_info)?;
         let using_transaction = js_using_transaction.value(&mut cx);
 
         let db = cx
@@ -3344,10 +3348,27 @@ impl PlatformWrapper {
             };
 
             let result = transaction_result.and_then(|transaction_arg| {
+                let mut drive_operation_types = vec![];
+
+                let result = platform
+                    .drive
+                    .remove_latest_withdrawal_transaction_index(
+                        &mut drive_operation_types,
+                        transaction_arg,
+                    )
+                    .map_err(|err| err.to_string())?;
+
                 platform
                     .drive
-                    .remove_latest_withdrawal_transaction_index(transaction_arg)
-                    .map_err(|err| err.to_string())
+                    .apply_drive_operations(
+                        drive_operation_types,
+                        apply,
+                        &block_info,
+                        transaction_arg,
+                    )
+                    .map_err(|err| err.to_string())?;
+
+                Ok(result)
             });
 
             channel.send(move |mut task_context| {

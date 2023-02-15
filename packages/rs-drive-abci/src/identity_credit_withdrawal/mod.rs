@@ -297,16 +297,19 @@ impl Platform {
             transaction,
         )?;
 
-        let withdrawal_transactions =
-            self.build_withdrawal_transactions_from_documents(&documents, transaction)?;
+        let mut drive_operations = vec![];
+
+        let withdrawal_transactions = self.build_withdrawal_transactions_from_documents(
+            &documents,
+            &mut drive_operations,
+            transaction,
+        )?;
 
         let block_info = BlockInfo {
             time_ms: block_execution_context.block_info.block_time_ms,
             height: block_execution_context.block_info.block_height,
             epoch: Epoch::new(block_execution_context.epoch_info.current_epoch_index),
         };
-
-        let mut drive_operations = vec![];
 
         for document in documents.iter_mut() {
             let document_id = Identifier::from_bytes(&document.id)?;
@@ -418,13 +421,14 @@ impl Platform {
     pub fn build_withdrawal_transactions_from_documents(
         &self,
         documents: &[DocumentStub],
+        drive_operation_types: &mut Vec<DriveOperationType>,
         transaction: TransactionArg,
     ) -> Result<HashMap<Identifier, WithdrawalTransaction>, Error> {
         let mut withdrawals: HashMap<Identifier, WithdrawalTransaction> = HashMap::new();
 
         let latest_withdrawal_index = self
             .drive
-            .remove_latest_withdrawal_transaction_index(transaction)?;
+            .remove_latest_withdrawal_transaction_index(drive_operation_types, transaction)?;
 
         for (i, document) in documents.iter().enumerate() {
             let output_script_bytes = document
@@ -882,6 +886,7 @@ mod tests {
             document::document_stub::DocumentStub,
             identity::state_transition::identity_credit_withdrawal_transition::Pooling,
         };
+        use drive::drive::block_info::BlockInfo;
         use drive::drive::identity::withdrawals::paths::WithdrawalTransaction;
         use drive::tests::helpers::setup::setup_system_data_contract;
         use itertools::Itertools;
@@ -958,9 +963,20 @@ mod tests {
                 .expect("to create document from cbor"),
             ];
 
+            let mut batch = vec![];
+
             let transactions = platform
-                .build_withdrawal_transactions_from_documents(&documents, Some(&transaction))
+                .build_withdrawal_transactions_from_documents(
+                    &documents,
+                    &mut batch,
+                    Some(&transaction),
+                )
                 .expect("to build transactions from documents");
+
+            platform
+                .drive
+                .apply_drive_operations(batch, true, &BlockInfo::default(), Some(&transaction))
+                .expect("to apply drive op batch");
 
             assert_eq!(
                 transactions

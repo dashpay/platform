@@ -32,7 +32,7 @@ impl Drive {
 
     pub(crate) fn delete_withdrawal_expired_index(
         &self,
-        key: &[u8],
+        key: Vec<u8>,
         transaction: TransactionArg,
     ) -> Result<Vec<DriveOperation>, Error> {
         let mut drive_operations = vec![];
@@ -41,7 +41,7 @@ impl Drive {
 
         self.batch_delete(
             path,
-            key,
+            &key,
             BatchDeleteApplyType::StatefulBatchDelete {
                 is_known_to_be_subtree_with_sum: Some((false, false)),
             },

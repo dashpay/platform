@@ -14,8 +14,7 @@ use crate::{
 };
 
 use super::paths::{
-    get_withdrawal_transactions_expired_ids_path, get_withdrawal_transactions_expired_ids_path_vec,
-    WITHDRAWAL_TRANSACTIONS_COUNTER_ID,
+    get_withdrawal_transactions_expired_ids_path_vec, WITHDRAWAL_TRANSACTIONS_COUNTER_ID,
 };
 
 impl Drive {
@@ -42,6 +41,7 @@ impl Drive {
     /// Get latest withdrawal index in a queue
     pub fn remove_latest_withdrawal_transaction_index(
         &self,
+        drive_operation_types: &mut Vec<DriveOperationType>,
         transaction: TransactionArg,
     ) -> Result<u64, Error> {
         let mut inner_query = Query::new();
@@ -69,15 +69,15 @@ impl Drive {
             if let QueryResultElement::KeyElementPairResultItem((key, _)) =
                 expired_index_element_pair
             {
+                drive_operation_types.push(DriveOperationType::WithdrawalOperation(
+                    WithdrawalOperationType::DeleteExpiredIndex { key: key.clone() },
+                ));
+
                 let index = u64::from_be_bytes(key.clone().try_into().map_err(|_| {
                     Error::Drive(DriveError::CorruptedCodeExecution(
                         "Transaction index has wrong length",
                     ))
                 })?);
-
-                let path: [&[u8]; 2] = get_withdrawal_transactions_expired_ids_path();
-
-                self.grove.delete(path, key, None, transaction).unwrap()?;
 
                 return Ok(index);
             }
@@ -176,9 +176,15 @@ mod tests {
             .apply_drive_operations(batch, true, &block_info, Some(&transaction))
             .expect("to apply drive ops");
 
+        let mut batch = vec![];
+
         let stored_counter = drive
-            .remove_latest_withdrawal_transaction_index(Some(&transaction))
+            .remove_latest_withdrawal_transaction_index(&mut batch, Some(&transaction))
             .expect("to withdraw counter");
+
+        drive
+            .apply_drive_operations(batch, true, &block_info, Some(&transaction))
+            .expect("to apply drive ops");
 
         assert_eq!(stored_counter, counter);
     }
@@ -189,8 +195,10 @@ mod tests {
 
         let transaction = drive.grove.start_transaction();
 
+        let mut batch = vec![];
+
         let stored_counter = drive
-            .remove_latest_withdrawal_transaction_index(Some(&transaction))
+            .remove_latest_withdrawal_transaction_index(&mut batch, Some(&transaction))
             .expect("to withdraw counter");
 
         assert_eq!(stored_counter, 0);
@@ -218,8 +226,10 @@ mod tests {
             .unwrap()
             .expect("to update index counter");
 
+        let mut batch = vec![];
+
         let stored_counter = drive
-            .remove_latest_withdrawal_transaction_index(Some(&transaction))
+            .remove_latest_withdrawal_transaction_index(&mut batch, Some(&transaction))
             .expect("to withdraw counter");
 
         assert_eq!(stored_counter, 42);

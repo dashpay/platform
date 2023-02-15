@@ -703,7 +703,9 @@ describe('DriveStateRepository', () => {
       expect(
         rsDriveMock.fetchLatestWithdrawalTransactionIndex,
       ).to.have.been.calledOnceWithExactly(
+        blockInfo,
         repositoryOptions.useTransaction,
+        repositoryOptions.dryRun,
       );
     });
   });

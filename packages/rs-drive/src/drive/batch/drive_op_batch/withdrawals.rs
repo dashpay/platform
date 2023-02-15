@@ -21,7 +21,7 @@ pub enum WithdrawalOperationType<'a> {
     /// Removes expired index from the tree
     DeleteExpiredIndex {
         /// index value
-        key: &'a [u8],
+        key: Vec<u8>,
     },
     /// Update index counter
     UpdateIndexCounter {

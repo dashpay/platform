@@ -986,7 +986,11 @@ describe('Drive', function main() {
     });
 
     it('should return 0 on the first call', async () => {
-      const result = await drive.fetchLatestWithdrawalTransactionIndex();
+      const result = await drive.fetchLatestWithdrawalTransactionIndex({
+        height: 1,
+        epoch: 1,
+        timeMs: (new Date()).getTime(),
+      });
 
       expect(result).to.equal(0);
     });
