@@ -1029,9 +1029,6 @@ describe('Drive', function main() {
 
     describe('BlockBegin', () => {
       beforeEach(async () => {
-        await drive.createInitialStateStructure();
-        await drive.createContract(withdrawalsDataContract, blockInfo);
-
         await drive.getAbci().initChain(initChainRequest);
       });
 
@@ -1094,9 +1091,6 @@ describe('Drive', function main() {
 
     describe('BlockEnd', () => {
       beforeEach(async () => {
-        await drive.createInitialStateStructure();
-        await drive.createContract(withdrawalsDataContract, blockInfo);
-
         await drive.getAbci().initChain(initChainRequest);
 
         await drive.getAbci().blockBegin({
