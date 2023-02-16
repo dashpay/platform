@@ -13,13 +13,10 @@ use crate::identity::state_transition::identity_topup_transition::IdentityTopUpT
 use crate::identity::state_transition::identity_update_transition::identity_update_transition::IdentityUpdateTransition;
 use crate::identity::validation::{IdentityValidator, PublicKeysValidator};
 use crate::identity::{Identity, IdentityPublicKey, KeyID, TimestampMillis};
-use crate::state_repository::StateRepositoryLike;
+
 use crate::validation::ValidationResult;
 use crate::version::ProtocolVersionValidator;
-use crate::{
-    BlsModule, DashPlatformProtocol, DashPlatformProtocolInitError, NonConsensusError,
-    ProtocolError,
-};
+use crate::{BlsModule, DashPlatformProtocolInitError, NonConsensusError, ProtocolError};
 
 #[derive(Clone)]
 pub struct IdentityFacade<T: BlsModule> {

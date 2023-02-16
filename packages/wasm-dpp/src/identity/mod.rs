@@ -124,7 +124,8 @@ impl IdentityWasm {
     #[wasm_bindgen(js_name=setAssetLockProof)]
     pub fn set_asset_lock_proof(&mut self, lock: JsValue) -> Result<(), JsValue> {
         let asset_lock_proof = create_asset_lock_proof_from_wasm_instance(&lock)?;
-        Ok(self.0.set_asset_lock_proof(asset_lock_proof))
+        self.0.set_asset_lock_proof(asset_lock_proof);
+        Ok(())
     }
 
     #[wasm_bindgen(js_name=getAssetLockProof)]

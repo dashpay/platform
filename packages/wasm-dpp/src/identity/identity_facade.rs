@@ -1,6 +1,6 @@
 use serde_json::Value;
 use std::convert::TryInto;
-use std::process::id;
+
 use std::sync::Arc;
 
 use wasm_bindgen::prelude::*;
@@ -8,13 +8,13 @@ use wasm_bindgen::prelude::*;
 use dpp::identity::validation::PublicKeysValidator;
 use dpp::identity::{Identity, IdentityFacade, IdentityPublicKey, KeyID};
 
-use crate::bls_adapter::{BlsAdapter, JsBlsAdapter};
+use crate::bls_adapter::BlsAdapter;
 use crate::buffer::Buffer;
 use crate::errors::{from_dpp_err, RustConversionError};
 use crate::identifier::IdentifierWrapper;
 use crate::identity::errors::InvalidIdentityError;
 use crate::identity::identity_public_key_transitions::IdentityPublicKeyCreateTransitionWasm;
-use crate::utils::{generic_of_js_val, to_vec_of_serde_values, ToSerdeJSONExt};
+use crate::utils::{generic_of_js_val, to_vec_of_serde_values};
 use crate::validation::ValidationResultWasm;
 use crate::{
     create_asset_lock_proof_from_wasm_instance, utils, with_js_error, ChainAssetLockProofWasm,
@@ -22,7 +22,7 @@ use crate::{
     IdentityUpdateTransitionWasm, IdentityWasm, InstantAssetLockProofWasm,
 };
 use dpp::dashcore::{consensus, InstantLock, Transaction};
-use dpp::document::document_transition::document_base_transition::JsonValue;
+
 use dpp::identity::state_transition::identity_public_key_transitions::IdentityPublicKeyCreateTransition;
 use dpp::version::ProtocolVersionValidator;
 use dpp::NonConsensusError;
@@ -80,7 +80,7 @@ impl IdentityFacadeWasm {
         options: JsValue,
     ) -> Result<IdentityWasm, JsValue> {
         let options: FromObjectOptions = if options.is_object() {
-            with_js_error!(serde_wasm_bindgen::from_value(options.clone()))?
+            with_js_error!(serde_wasm_bindgen::from_value(options))?
         } else {
             Default::default()
         };
@@ -109,7 +109,7 @@ impl IdentityFacadeWasm {
         options: JsValue,
     ) -> Result<IdentityWasm, JsValue> {
         let options: FromObjectOptions = if options.is_object() {
-            with_js_error!(serde_wasm_bindgen::from_value(options.clone()))?
+            with_js_error!(serde_wasm_bindgen::from_value(options))?
         } else {
             Default::default()
         };

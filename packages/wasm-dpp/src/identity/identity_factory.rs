@@ -1,4 +1,4 @@
-use crate::bls_adapter::{BlsAdapter, JsBlsAdapter};
+use crate::bls_adapter::BlsAdapter;
 use crate::buffer::Buffer;
 use crate::errors::{from_dpp_err, RustConversionError};
 use crate::identifier::IdentifierWrapper;
@@ -14,22 +14,21 @@ use crate::{
 };
 use dpp::dashcore::{consensus, InstantLock, Transaction};
 use dpp::identity::factory::IdentityFactory;
-use dpp::identity::state_transition::identity_create_transition::IdentityCreateTransition;
+
 use dpp::identity::state_transition::identity_public_key_transitions::IdentityPublicKeyCreateTransition;
-use dpp::identity::state_transition::identity_topup_transition::IdentityTopUpTransition;
-use dpp::identity::validation::PublicKeysValidator;
+
 use dpp::identity::{IdentityPublicKey, KeyID};
 use dpp::prelude::Identity;
-use dpp::BlsModule;
+
 use serde::Deserialize;
 use serde_json::Value;
-use std::convert::{identity, TryInto};
-use std::process::id;
+use std::convert::TryInto;
+
 use std::sync::Arc;
-use std::time::SystemTime;
+
 use wasm_bindgen::__rt::Ref;
 use wasm_bindgen::prelude::wasm_bindgen;
-use wasm_bindgen::{JsCast, JsError, JsValue};
+use wasm_bindgen::{JsCast, JsValue};
 
 #[wasm_bindgen(js_name=IdentityFactory)]
 pub struct IdentityFactoryWasm(IdentityFactory<BlsAdapter>);
@@ -80,7 +79,7 @@ impl IdentityFactoryWasm {
         options: JsValue,
     ) -> Result<IdentityWasm, JsValue> {
         let options: FromObjectOptions = if options.is_object() {
-            with_js_error!(serde_wasm_bindgen::from_value(options.clone()))?
+            with_js_error!(serde_wasm_bindgen::from_value(options))?
         } else {
             Default::default()
         };
@@ -109,7 +108,7 @@ impl IdentityFactoryWasm {
         options: JsValue,
     ) -> Result<IdentityWasm, JsValue> {
         let options: FromObjectOptions = if options.is_object() {
-            with_js_error!(serde_wasm_bindgen::from_value(options.clone()))?
+            with_js_error!(serde_wasm_bindgen::from_value(options))?
         } else {
             Default::default()
         };

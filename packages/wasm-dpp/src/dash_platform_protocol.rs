@@ -6,7 +6,7 @@ use crate::bls_adapter::{BlsAdapter, JsBlsAdapter};
 use crate::identity_facade::IdentityFacadeWasm;
 use crate::DataContractFacadeWasm;
 use dpp::identity::validation::PublicKeysValidator;
-use dpp::identity::IdentityFacade;
+
 use dpp::version::{ProtocolVersionValidator, LATEST_VERSION};
 
 #[wasm_bindgen(js_name=DashPlatformProtocol)]
@@ -25,7 +25,7 @@ impl DashPlatformProtocol {
         // TODO: remove default validator and make a real one instead
         let validator = ProtocolVersionValidator::default();
         let protocol_version_validator = Arc::new(validator);
-        let public_keys_validator = Arc::new(PublicKeysValidator::new(bls.clone()).unwrap());
+        let public_keys_validator = Arc::new(PublicKeysValidator::new(bls).unwrap());
 
         let identity_facade =
             IdentityFacadeWasm::new(protocol_version_validator.clone(), public_keys_validator);

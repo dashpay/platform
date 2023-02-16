@@ -10,17 +10,15 @@ use crate::identity::state_transition::identity_topup_transition::IdentityTopUpT
 use crate::identity::state_transition::identity_update_transition::identity_update_transition::IdentityUpdateTransition;
 use crate::identity::validation::{IdentityValidator, PublicKeysValidator};
 use crate::identity::{Identity, IdentityPublicKey, KeyID, TimestampMillis};
-use crate::state_repository::StateRepositoryLike;
-use crate::state_transition::StateTransitionType::IdentityUpdate;
-use crate::{BlsModule, DashPlatformProtocol, NonConsensusError, ProtocolError};
+
+use crate::{BlsModule, ProtocolError};
 use anyhow::anyhow;
 use dashcore::{InstantLock, Transaction};
 use rand::rngs::StdRng;
 use rand::{Rng, SeedableRng};
 use serde_json::{Number, Value};
 use std::collections::BTreeMap;
-use std::convert::TryInto;
-use std::process::id;
+
 use std::sync::Arc;
 
 pub const IDENTITY_PROTOCOL_VERSION: u32 = 1;
@@ -197,7 +195,7 @@ where
 
         identity_create_transition
             .set_asset_lock_proof(asset_lock_proof.to_owned())
-            .map_err(|e| ProtocolError::from(e))?;
+            .map_err(ProtocolError::from)?;
 
         Ok(identity_create_transition)
     }
@@ -213,7 +211,7 @@ where
 
         identity_topup_transition
             .set_asset_lock_proof(asset_lock_proof)
-            .map_err(|e| ProtocolError::from(e))?;
+            .map_err(ProtocolError::from)?;
 
         Ok(identity_topup_transition)
     }
@@ -237,7 +235,7 @@ where
         }
 
         if let Some(public_key_ids_to_disable) = public_key_ids_to_disable {
-            if let None = disable_time {
+            if disable_time.is_none() {
                 return Err(ProtocolError::Generic(
                     "Public keys disabled at must be present".to_string(),
                 ));
