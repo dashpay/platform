@@ -97,7 +97,9 @@
         "type": "integer",
         "description": "This indicated the level at which Platform should try to pool this transaction",
         "enum": [
-          0
+          0,
+          1,
+          2
         ]
       },
       "outputScript": {

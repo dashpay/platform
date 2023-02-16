@@ -346,13 +346,14 @@ mod validate_identity_credit_withdrawal_transition_basic_factory {
 
             raw_state_transition.set_key_value("coreFeePerByte", u32::MAX as u64 + 1u64);
 
-            let result = validator.validate(&raw_state_transition).await;
+            let result = validator.validate(&raw_state_transition).await.unwrap();
 
-            assert!(result.is_err());
-            assert_eq!(
-                result.err().unwrap().to_string(),
-                "unable convert 4294967296 to u32: out of range integral type conversion attempted"
-            );
+            let errors = assert_consensus_errors!(result, ConsensusError::JsonSchemaError, 1);
+
+            let error = errors.first().unwrap();
+
+            assert_eq!(error.instance_path().to_string(), "/coreFeePerByte");
+            assert_eq!(error.keyword().unwrap(), "maximum");
         }
 
         #[tokio::test]
@@ -431,6 +432,25 @@ mod validate_identity_credit_withdrawal_transition_basic_factory {
 
             assert_eq!(error.instance_path().to_string(), "/pooling");
             assert_eq!(error.keyword().unwrap(), "enum");
+        }
+
+        #[tokio::test]
+        async fn should_constraint_variant_to_0() {
+            let (mut raw_state_transition, validator) = setup_test();
+
+            raw_state_transition.set_key_value("pooling", 2);
+
+            let result = validator.validate(&raw_state_transition).await.unwrap();
+
+            let errors = assert_consensus_errors!(
+                result,
+                ConsensusError::InvalidIdentityCreditWithdrawalTransitionPoolingError,
+                1
+            );
+
+            let error = errors.first().unwrap();
+
+            assert_eq!(error.pooling(), 2);
         }
     }
 

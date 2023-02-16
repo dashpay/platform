@@ -7,6 +7,7 @@ use crate::{
     consensus::basic::identity::{
         InvalidIdentityCreditWithdrawalTransitionCoreFeeError,
         InvalidIdentityCreditWithdrawalTransitionOutputScriptError,
+        InvalidIdentityCreditWithdrawalTransitionPoolingError,
     },
     contracts::withdrawals_contract,
     identity::core_script::CoreScript,
@@ -75,6 +76,17 @@ impl IdentityCreditWithdrawalTransitionBasicValidator {
             return Ok(result);
         }
 
+        // validate pooling is always equals to 0
+        let pooling = transition_json.get_u8(withdrawals_contract::property_names::POOLING)?;
+
+        if pooling > 0 {
+            result.add_error(InvalidIdentityCreditWithdrawalTransitionPoolingError::new(
+                pooling,
+            ));
+
+            return Ok(result);
+        }
+
         // validate core_fee is in fibonacci sequence
         let core_fee_per_byte =
             transition_json.get_u32(withdrawals_contract::property_names::CORE_FEE_PER_BYTE)?;
@@ -83,9 +95,7 @@ impl IdentityCreditWithdrawalTransitionBasicValidator {
             result.add_error(InvalidIdentityCreditWithdrawalTransitionCoreFeeError::new(
                 core_fee_per_byte,
             ));
-        }
 
-        if !result.is_valid() {
             return Ok(result);
         }
 
