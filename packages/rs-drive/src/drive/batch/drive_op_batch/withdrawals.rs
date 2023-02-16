@@ -2,10 +2,9 @@ use std::collections::HashMap;
 
 use grovedb::{batch::KeyInfoPath, EstimatedLayerInformation, TransactionArg};
 
+use crate::drive::identity::withdrawals::WithdrawalTransactionIdAndBytes;
 use crate::{
-    drive::{
-        block_info::BlockInfo, identity::withdrawals::paths::WithdrawalTransactionIdAndBytes, Drive,
-    },
+    drive::{block_info::BlockInfo, Drive},
     error::Error,
     fee::op::DriveOperation,
 };
@@ -54,20 +53,19 @@ impl DriveOperationConverter for WithdrawalOperationType<'_> {
     ) -> Result<Vec<DriveOperation>, Error> {
         match self {
             WithdrawalOperationType::InsertExpiredIndex { index } => {
-                drive.insert_withdrawal_expired_index(index)
+                drive.insert_withdrawal_expired_index_operations(index)
             }
             WithdrawalOperationType::DeleteExpiredIndex { key } => {
-                drive.delete_withdrawal_expired_index(key, transaction)
+                drive.delete_withdrawal_expired_index_operations(key, transaction)
             }
             WithdrawalOperationType::UpdateIndexCounter { index } => {
-                drive.update_transaction_index_counter(index)
+                drive.update_transaction_index_counter_operations(index)
             }
             WithdrawalOperationType::InsertTransactions {
                 withdrawal_transactions,
             } => drive.insert_withdrawal_transactions(withdrawal_transactions),
-            WithdrawalOperationType::DeleteWithdrawalTransaction { id } => {
-                drive.delete_withdrawal_transaction(id.as_slice(), transaction)
-            }
+            WithdrawalOperationType::DeleteWithdrawalTransaction { id } => drive
+                .delete_withdrawal_transaction_from_queue_operations(id.as_slice(), transaction),
         }
     }
 }

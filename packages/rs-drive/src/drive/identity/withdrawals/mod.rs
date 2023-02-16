@@ -1,7 +1,7 @@
 /// Inserting a withdrawal
 pub(crate) mod delete;
-/// Inserting or Deleting an expired index
-pub(crate) mod expired_index;
+/// Functions related to updating of a withdrawal status
+pub mod documents;
 /// Inserting a withdrawal
 pub(crate) mod insert;
 /// Functions and constants related to GroveDB paths
@@ -9,6 +9,7 @@ pub mod paths;
 /// Functions related to withdrawal queue
 pub mod queue;
 /// Functions related to transaction index counter
-pub mod transaction_index_counter;
-/// Functions related to updating of a withdrawal status
-pub mod withdrawal_status;
+pub mod transaction_index;
+
+/// Simple type alias for withdrawal transaction with it's id
+pub type WithdrawalTransactionIdAndBytes = (Vec<u8>, Vec<u8>);

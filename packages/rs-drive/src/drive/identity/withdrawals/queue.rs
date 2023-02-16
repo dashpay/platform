@@ -5,6 +5,7 @@ use grovedb::{
     TransactionArg,
 };
 
+use crate::drive::identity::withdrawals::WithdrawalTransactionIdAndBytes;
 use crate::{
     drive::{
         batch::{drive_op_batch::WithdrawalOperationType, DriveOperationType},
@@ -13,7 +14,7 @@ use crate::{
     error::{drive::DriveError, Error},
 };
 
-use super::paths::{get_withdrawal_transactions_queue_path_vec, WithdrawalTransactionIdAndBytes};
+use super::paths::get_withdrawal_transactions_queue_path_vec;
 
 impl Drive {
     /// Add insert operations for withdrawal transactions to the batch

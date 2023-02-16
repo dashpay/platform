@@ -3,7 +3,10 @@ use grovedb::{
     Element, PathQuery, Query, SizedQuery, TransactionArg,
 };
 
-use crate::drive::identity::withdrawals::paths::get_withdrawal_root_path_vec;
+use crate::drive::grove_operations::BatchDeleteApplyType;
+use crate::drive::identity::withdrawals::paths::{
+    get_withdrawal_root_path_vec, get_withdrawal_transactions_expired_ids_path,
+};
 use crate::fee::op::DriveOperation;
 use crate::{
     drive::{
@@ -18,7 +21,7 @@ use super::paths::{
 };
 
 impl Drive {
-    pub(crate) fn update_transaction_index_counter(
+    pub(crate) fn update_transaction_index_counter_operations(
         &self,
         index: u64,
     ) -> Result<Vec<DriveOperation>, Error> {
@@ -38,8 +41,8 @@ impl Drive {
         Ok(drive_operations)
     }
 
-    /// Get latest withdrawal index in a queue
-    pub fn remove_latest_withdrawal_transaction_index(
+    /// Get and remove latest withdrawal index in a queue
+    pub fn fetch_and_remove_latest_withdrawal_transaction_index_operations(
         &self,
         drive_operation_types: &mut Vec<DriveOperationType>,
         transaction: TransactionArg,
@@ -139,6 +142,50 @@ impl Drive {
             },
         ));
     }
+
+    pub(crate) fn insert_withdrawal_expired_index_operations(
+        &self,
+        index: u64,
+    ) -> Result<Vec<DriveOperation>, Error> {
+        let mut drive_operations = vec![];
+
+        let index_bytes = index.to_be_bytes();
+
+        let path = get_withdrawal_transactions_expired_ids_path_vec();
+
+        self.batch_insert(
+            crate::drive::object_size_info::PathKeyElementInfo::PathKeyElement::<'_, 1>((
+                path,
+                index_bytes.to_vec(),
+                Element::Item(vec![], None),
+            )),
+            &mut drive_operations,
+        )?;
+
+        Ok(drive_operations)
+    }
+
+    pub(crate) fn delete_withdrawal_expired_index_operations(
+        &self,
+        key: Vec<u8>,
+        transaction: TransactionArg,
+    ) -> Result<Vec<DriveOperation>, Error> {
+        let mut drive_operations = vec![];
+
+        let path: [&[u8]; 2] = get_withdrawal_transactions_expired_ids_path();
+
+        self.batch_delete(
+            path,
+            &key,
+            BatchDeleteApplyType::StatefulBatchDelete {
+                is_known_to_be_subtree_with_sum: Some((false, false)),
+            },
+            transaction,
+            &mut drive_operations,
+        )?;
+
+        Ok(drive_operations)
+    }
 }
 
 #[cfg(test)]
@@ -179,7 +226,10 @@ mod tests {
         let mut batch = vec![];
 
         let stored_counter = drive
-            .remove_latest_withdrawal_transaction_index(&mut batch, Some(&transaction))
+            .fetch_and_remove_latest_withdrawal_transaction_index_operations(
+                &mut batch,
+                Some(&transaction),
+            )
             .expect("to withdraw counter");
 
         drive
@@ -198,7 +248,10 @@ mod tests {
         let mut batch = vec![];
 
         let stored_counter = drive
-            .remove_latest_withdrawal_transaction_index(&mut batch, Some(&transaction))
+            .fetch_and_remove_latest_withdrawal_transaction_index_operations(
+                &mut batch,
+                Some(&transaction),
+            )
             .expect("to withdraw counter");
 
         assert_eq!(stored_counter, 0);
@@ -229,7 +282,10 @@ mod tests {
         let mut batch = vec![];
 
         let stored_counter = drive
-            .remove_latest_withdrawal_transaction_index(&mut batch, Some(&transaction))
+            .fetch_and_remove_latest_withdrawal_transaction_index_operations(
+                &mut batch,
+                Some(&transaction),
+            )
             .expect("to withdraw counter");
 
         assert_eq!(stored_counter, 42);

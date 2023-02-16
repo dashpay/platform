@@ -1,6 +1,5 @@
-use crate::drive::identity::withdrawals::paths::{
-    get_withdrawal_transactions_queue_path_vec, WithdrawalTransactionIdAndBytes,
-};
+use crate::drive::identity::withdrawals::paths::get_withdrawal_transactions_queue_path_vec;
+use crate::drive::identity::withdrawals::WithdrawalTransactionIdAndBytes;
 use crate::drive::object_size_info::PathKeyElementInfo::PathKeyElement;
 use crate::drive::Drive;
 use crate::error::Error;

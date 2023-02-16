@@ -256,7 +256,7 @@ mod tests {
         use dpp::util::hash;
         use drive::common::helpers::identities::create_test_masternode_identities;
         use drive::drive::block_info::BlockInfo;
-        use drive::drive::identity::withdrawals::paths::WithdrawalTransactionIdAndBytes;
+        use drive::drive::identity::withdrawals::WithdrawalTransactionIdAndBytes;
         use drive::fee::epoch::CreditsPerEpoch;
         use drive::fee_pools::epochs::Epoch;
         use drive::rpc::core::MockCoreRPCLike;

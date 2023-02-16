@@ -6,7 +6,7 @@ use crate::fee::op::DriveOperation;
 use grovedb::TransactionArg;
 
 impl Drive {
-    pub(crate) fn delete_withdrawal_transaction(
+    pub(crate) fn delete_withdrawal_transaction_from_queue_operations(
         &self,
         id: &[u8],
         transaction: TransactionArg,

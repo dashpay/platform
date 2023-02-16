@@ -9,9 +9,6 @@ pub const WITHDRAWAL_TRANSACTIONS_QUEUE_ID: [u8; 1] = [1];
 /// constant id for subtree containing expired transaction ids
 pub const WITHDRAWAL_TRANSACTIONS_EXPIRED_IDS: [u8; 1] = [2];
 
-/// Simple type alias for withdrawal transaction with it's id
-pub type WithdrawalTransactionIdAndBytes = (Vec<u8>, Vec<u8>);
-
 /// Add operations for creating initial withdrawal state structure
 pub fn add_initial_withdrawal_state_structure_operations(batch: &mut GroveDbOpBatch) {
     batch.add_insert(

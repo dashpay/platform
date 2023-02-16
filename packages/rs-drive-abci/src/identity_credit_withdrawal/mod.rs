@@ -15,11 +15,9 @@ use drive::dpp::document::document_stub::DocumentStub;
 use drive::dpp::identifier::Identifier;
 use drive::dpp::identity::convert_credits_to_satoshi;
 use drive::dpp::util::hash;
+use drive::drive::identity::withdrawals::WithdrawalTransactionIdAndBytes;
 use drive::{
-    drive::{
-        batch::DriveOperationType, block_info::BlockInfo,
-        identity::withdrawals::paths::WithdrawalTransactionIdAndBytes,
-    },
+    drive::{batch::DriveOperationType, block_info::BlockInfo},
     fee_pools::epochs::Epoch,
     query::TransactionArg,
 };
@@ -459,7 +457,10 @@ impl Platform {
 
         let latest_withdrawal_index = self
             .drive
-            .remove_latest_withdrawal_transaction_index(drive_operation_types, transaction)?;
+            .fetch_and_remove_latest_withdrawal_transaction_index_operations(
+                drive_operation_types,
+                transaction,
+            )?;
 
         for (i, document) in documents.iter().enumerate() {
             let output_script_bytes = document
@@ -919,7 +920,7 @@ mod tests {
             identity::state_transition::identity_credit_withdrawal_transition::Pooling,
         };
         use drive::drive::block_info::BlockInfo;
-        use drive::drive::identity::withdrawals::paths::WithdrawalTransactionIdAndBytes;
+        use drive::drive::identity::withdrawals::WithdrawalTransactionIdAndBytes;
         use drive::tests::helpers::setup::setup_system_data_contract;
         use itertools::Itertools;
 

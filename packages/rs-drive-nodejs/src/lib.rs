@@ -3352,7 +3352,7 @@ impl PlatformWrapper {
 
                 let result = platform
                     .drive
-                    .remove_latest_withdrawal_transaction_index(
+                    .fetch_and_remove_latest_withdrawal_transaction_index_operations(
                         &mut drive_operation_types,
                         transaction_arg,
                     )
