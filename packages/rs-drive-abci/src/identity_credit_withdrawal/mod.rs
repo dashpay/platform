@@ -219,8 +219,7 @@ impl Platform {
                 .into_iter()
                 .map(|(_, untied_transaction_bytes)| {
                     let request_info = AssetUnlockRequestInfo {
-                        request_height: block_execution_context.block_info.core_chain_locked_height
-                            as u32,
+                        request_height: block_execution_context.block_info.core_chain_locked_height,
                         quorum_hash: QuorumHash::hash(&validator_set_quorum_hash),
                     };
 

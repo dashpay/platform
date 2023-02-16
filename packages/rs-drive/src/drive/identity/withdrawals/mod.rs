@@ -1,9 +1,5 @@
-/// Inserting a withdrawal
-pub(crate) mod delete;
 /// Functions related to updating of a withdrawal status
 pub mod documents;
-/// Inserting a withdrawal
-pub(crate) mod insert;
 /// Functions and constants related to GroveDB paths
 pub mod paths;
 /// Functions related to withdrawal queue

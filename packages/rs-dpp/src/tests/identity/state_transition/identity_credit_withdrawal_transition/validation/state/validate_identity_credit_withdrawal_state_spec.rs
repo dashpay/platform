@@ -109,7 +109,7 @@ mod validate_identity_credit_withdrawal_transition_state_factory {
             .await;
 
         match result {
-            Ok(_) => assert!(false, "should not return Ok result"),
+            Ok(_) => panic!("should not return Ok result"),
             Err(e) => assert_eq!(e.to_string(), "Some error"),
         }
     }
@@ -139,6 +139,6 @@ mod validate_identity_credit_withdrawal_transition_state_factory {
             .await
             .unwrap();
 
-        assert_eq!(result.is_valid(), true);
+        assert!(result.is_valid());
     }
 }

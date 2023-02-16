@@ -48,6 +48,7 @@ function updateWithdrawalTransactionIdAndStatusFactory(
     );
 
     for (const document of documents) {
+      // TODO: set transactionSignHeight!
       document.set('transactionId', updatedTransactionId);
       document.set('status', WITHDRAWALS_STATUS_BROADCASTED);
       document.setRevision(document.getRevision() + 1);
