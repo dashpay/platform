@@ -115,8 +115,16 @@ impl TenderdashAbci for Platform {
                 )))?
         };
 
-        // Init block execution context
+        // Update versions
+        let proposed_app_version = request.proposed_app_version;
 
+        self.drive.update_validator_proposed_app_version(
+            request.proposer_pro_tx_hash,
+            proposed_app_version,
+            transaction,
+        )?;
+
+        // Init block execution context
         let block_info = BlockStateInfo::from_block_begin_request(&request);
 
         let epoch_info = EpochInfo::from_genesis_time_and_block_info(genesis_time_ms, &block_info)?;
@@ -127,29 +135,6 @@ impl TenderdashAbci for Platform {
             hpmn_count: request.total_hpmns,
         };
 
-        self.block_execution_context
-            .replace(Some(block_execution_context));
-
-        // Update protocol version signals
-
-        let proposed_app_version = request.proposed_app_version;
-
-        self.drive.update_validator_proposed_app_version(
-            request.proposer_pro_tx_hash,
-            proposed_app_version,
-            transaction,
-        )?;
-
-        // Credit withdrawals
-
-        // TODO: Find a way to do not duplicate this 5 lines everywhere
-        let block_execution_context = self.block_execution_context.borrow();
-        let block_execution_context = block_execution_context.as_ref().ok_or(Error::Execution(
-            ExecutionError::CorruptedCodeExecution(
-                "block execution context must be set in block begin handler",
-            ),
-        ))?;
-
         // If last synced Core block height is not set instead of scanning
         // number of blocks for asset unlock transactions scan only one
         // on Core chain locked height by setting last_synced_core_height to the same value
@@ -159,15 +144,16 @@ impl TenderdashAbci for Platform {
             request.last_synced_core_height
         };
 
+        self.block_execution_context
+            .replace(Some(block_execution_context));
+
         self.update_broadcasted_withdrawal_transaction_statuses(
             last_synced_core_height,
-            block_execution_context,
             transaction,
         )?;
 
         let unsigned_withdrawal_transaction_bytes = self
             .fetch_and_prepare_unsigned_withdrawal_transactions(
-                block_execution_context,
                 request.validator_set_quorum_hash,
                 transaction,
             )?;
@@ -194,7 +180,7 @@ impl TenderdashAbci for Platform {
             ),
         ))?;
 
-        self.pool_withdrawals_into_transactions_queue(block_execution_context, transaction)?;
+        self.pool_withdrawals_into_transactions_queue(transaction)?;
 
         // Process fees
         let process_block_fees_outcome = self.process_block_fees(
