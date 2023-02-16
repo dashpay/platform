@@ -17,6 +17,7 @@ use crate::errors::consensus::basic::identity::{
     InvalidIdentityAssetLockTransactionOutputErrorWasm,
     InvalidIdentityCreditWithdrawalTransitionCoreFeeErrorWasm,
     InvalidIdentityCreditWithdrawalTransitionOutputScriptErrorWasm,
+    InvalidIdentityCreditWithdrawalTransitionPoolingErrorWasm,
     InvalidIdentityKeySignatureErrorWasm, InvalidIdentityPublicKeyDataErrorWasm,
     InvalidIdentityPublicKeySecurityLevelErrorWasm, InvalidInstantAssetLockProofErrorWasm,
     InvalidInstantAssetLockProofSignatureErrorWasm, MissingMasterPublicKeyErrorWasm,
@@ -153,6 +154,9 @@ pub fn from_consensus_error_ref(e: &DPPConsensusError) -> JsValue {
         }
         DPPConsensusError::InvalidIdentityCreditWithdrawalTransitionOutputScriptError(e) => {
             InvalidIdentityCreditWithdrawalTransitionOutputScriptErrorWasm::from(e).into()
+        }
+        DPPConsensusError::InvalidIdentityCreditWithdrawalTransitionPoolingError(e) => {
+            InvalidIdentityCreditWithdrawalTransitionPoolingErrorWasm::from(e).into()
         }
         DPPConsensusError::IdentityInsufficientBalanceError(e) => {
             IdentityInsufficientBalanceErrorWasm::from(e).into()
