@@ -55,6 +55,7 @@ use crate::util::deserializer::SplitProtocolVersionOutcome;
 use crate::ProtocolError;
 
 use crate::document::document_transition::INITIAL_REVISION;
+use crate::prelude::*;
 use crate::util::cbor_value::CborBTreeMapHelper;
 use anyhow::{anyhow, bail};
 
@@ -76,7 +77,7 @@ pub struct DocumentStub {
 
     /// The document revision.
     #[serde(rename = "$revision")]
-    pub revision: u64,
+    pub revision: Revision,
 }
 
 impl DocumentStub {
@@ -174,14 +175,14 @@ impl DocumentStub {
         })?;
 
         let revision = if document_type.documents_mutable {
-            let revision: u64 = buf.read_varint().map_err(|_| {
+            let revision: Revision = buf.read_varint().map_err(|_| {
                 ProtocolError::DataContractError(DataContractError::CorruptedSerialization(
                     "error reading varint revision from serialized document",
                 ))
             })?;
             revision
         } else {
-            INITIAL_REVISION as u64
+            INITIAL_REVISION as Revision
         };
 
         let properties = document_type
@@ -267,9 +268,9 @@ impl DocumentStub {
         }
         .expect("document_id must be 32 bytes");
 
-        let revision: u64 = document
+        let revision: Revision = document
             .remove_optional_integer("$revision")?
-            .unwrap_or(INITIAL_REVISION as u64);
+            .unwrap_or(INITIAL_REVISION as Revision);
 
         // dev-note: properties is everything other than the id and owner id
         Ok(DocumentStub {
@@ -313,7 +314,7 @@ impl DocumentStub {
                 ))
             })?;
 
-        let revision: u64 = properties.get_integer("$revision")?;
+        let revision: Revision = properties.get_integer("$revision")?;
 
         // dev-note: properties is everything other than the id and owner id
         Ok(DocumentStub {
@@ -456,9 +457,8 @@ impl DocumentStub {
                 )))?;
 
         if let Value::Integer(s) = property_value {
-            return (*s)
-                .try_into()
-                .map_err(|_| ProtocolError::DecodingError("expected a u32 integer".to_string()));
+            (*s).try_into()
+                .map_err(|_| ProtocolError::DecodingError("expected a u32 integer".to_string()))
         } else {
             Err(ProtocolError::DecodingError(
                 "expected an integer".to_string(),
