@@ -63,3 +63,5 @@ LABEL description="Dashmate Helper Node.JS"
 WORKDIR /platform
 
 COPY --from=builder /platform /platform
+
+ENTRYPOINT ["/platform/packages/dashmate/docker/entrypoint.sh"]
