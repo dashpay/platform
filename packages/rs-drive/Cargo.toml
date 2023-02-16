@@ -58,4 +58,3 @@ harness = false
 
 [features]
 fixtures-and-mocks = ["mockall"]
-test-helpers = []

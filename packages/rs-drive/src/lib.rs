@@ -32,5 +32,5 @@ pub use dpp;
 pub use grovedb;
 
 /// Test helpers
-#[cfg(feature = "test-helpers")]
+#[cfg(feature = "fixtures-and-mocks")]
 pub mod tests;
