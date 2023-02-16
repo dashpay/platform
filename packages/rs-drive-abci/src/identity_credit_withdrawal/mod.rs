@@ -67,7 +67,7 @@ impl Platform {
             block_execution_context.block_info.core_chain_locked_height,
         )?;
 
-        let mut broadcasted_documents = self.drive.fetch_withdrawal_documents_by_status(
+        let broadcasted_documents = self.drive.fetch_withdrawal_documents_by_status(
             withdrawals_contract::WithdrawalStatus::BROADCASTED.into(),
             transaction,
         )?;
@@ -80,66 +80,83 @@ impl Platform {
 
         let mut drive_operations: Vec<DriveOperationType> = vec![];
 
-        for document in broadcasted_documents.iter_mut() {
-            let transaction_sign_height = document
-                .get_u64(withdrawals_contract::property_names::TRANSACTION_SIGN_HEIGHT)
-                .map_err(|_| {
-                    Error::Execution(ExecutionError::CorruptedCodeExecution(
-                        "Can't get transactionSignHeight from withdrawal document",
-                    ))
-                })?;
+        // Collecting only documents that have been updated
+        let documents_to_update: Vec<DocumentStub> = broadcasted_documents
+            .into_iter()
+            .map(|mut document| {
+                let transaction_sign_height = document
+                    .get_u64(withdrawals_contract::property_names::TRANSACTION_SIGN_HEIGHT)
+                    .map_err(|_| {
+                        Error::Execution(ExecutionError::CorruptedCodeExecution(
+                            "Can't get transactionSignHeight from withdrawal document",
+                        ))
+                    })?;
 
-            let transaction_id_bytes = document
-                .get_bytes(withdrawals_contract::property_names::TRANSACTION_ID)
-                .map_err(|_| {
-                    Error::Execution(ExecutionError::CorruptedCodeExecution(
-                        "Can't get transactionId from withdrawal document",
-                    ))
-                })?;
+                let transaction_id_bytes = document
+                    .get_bytes(withdrawals_contract::property_names::TRANSACTION_ID)
+                    .map_err(|_| {
+                        Error::Execution(ExecutionError::CorruptedCodeExecution(
+                            "Can't get transactionId from withdrawal document",
+                        ))
+                    })?;
 
-            let transaction_id = hex::encode(transaction_id_bytes);
+                let transaction_index = document
+                    .get_u64(withdrawals_contract::property_names::TRANSACTION_INDEX)
+                    .map_err(|_| {
+                        Error::Execution(ExecutionError::CorruptedCodeExecution(
+                            "Can't get transactionIdex from withdrawal document",
+                        ))
+                    })?;
 
-            let transaction_index = document
-                .get_u64(withdrawals_contract::property_names::TRANSACTION_INDEX)
-                .map_err(|_| {
-                    Error::Execution(ExecutionError::CorruptedCodeExecution(
-                        "Can't get transactionIdex from withdrawal document",
-                    ))
-                })?;
+                let transaction_id = hex::encode(transaction_id_bytes);
 
-            if core_transactions.contains(&transaction_id)
-                || block_execution_context.block_info.core_chain_locked_height
-                    - transaction_sign_height
+                let current_and_signed_block_height_difference =
+                    block_execution_context.block_info.core_chain_locked_height
+                        - transaction_sign_height;
+
+                let withdrawal_status = if core_transactions.contains(&transaction_id) {
+                    Some(withdrawals_contract::WithdrawalStatus::COMPLETE)
+                } else if current_and_signed_block_height_difference
                     > NUMBER_OF_BLOCKS_BEFORE_EXPIRED
-            {
-                let status = if core_transactions.contains(&transaction_id) {
-                    withdrawals_contract::WithdrawalStatus::COMPLETE
+                {
+                    Some(withdrawals_contract::WithdrawalStatus::EXPIRED)
                 } else {
-                    self.drive.add_insert_expired_index_operation(
-                        transaction_index,
-                        &mut drive_operations,
-                    );
-
-                    withdrawals_contract::WithdrawalStatus::EXPIRED
+                    None
                 };
 
-                document.set_u8(withdrawals_contract::property_names::STATUS, status.into());
+                if let Some(status) = withdrawal_status {
+                    document.set_u8(withdrawals_contract::property_names::STATUS, status.into());
 
-                document.set_i64(
-                    withdrawals_contract::property_names::UPDATED_AT,
-                    block_info.time_ms.try_into().map_err(|_| {
-                        Error::Execution(ExecutionError::CorruptedCodeExecution(
-                            "Can't convert u64 block time to i64 updated_at",
-                        ))
-                    })?,
-                );
+                    document.set_i64(
+                        withdrawals_contract::property_names::UPDATED_AT,
+                        block_info.time_ms.try_into().map_err(|_| {
+                            Error::Execution(ExecutionError::CorruptedCodeExecution(
+                                "Can't convert u64 block time to i64 updated_at",
+                            ))
+                        })?,
+                    );
 
-                document.increment_revision().map_err(Error::Protocol)?;
-            }
-        }
+                    document.increment_revision().map_err(Error::Protocol)?;
+
+                    if status == withdrawals_contract::WithdrawalStatus::EXPIRED {
+                        self.drive.add_insert_expired_index_operation(
+                            transaction_index,
+                            &mut drive_operations,
+                        );
+                    }
+
+                    Ok(Some(document))
+                } else {
+                    Ok(None)
+                }
+            })
+            .collect::<Result<Vec<Option<DocumentStub>>, Error>>()?
+            .into_iter()
+            .flatten()
+            .collect();
 
         self.drive.add_update_multiple_documents_operations(
-            &broadcasted_documents,
+            &documents_to_update,
             &contract_fetch_info.contract,
             contract_fetch_info
                 .contract
