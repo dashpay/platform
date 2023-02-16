@@ -121,7 +121,7 @@ pub fn get_withdrawal_document_fixture(data_contract: &DataContract, data: Value
         .create(
             data_contract.clone(),
             data_contract.owner_id,
-            withdrawals_contract::types::WITHDRAWAL.to_string(),
+            withdrawals_contract::document_types::WITHDRAWAL.to_string(),
             data,
         )
         .unwrap()

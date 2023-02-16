@@ -35,7 +35,7 @@ impl Drive {
 
         let document_type = contract_fetch_info
             .contract
-            .document_type_for_name(withdrawals_contract::types::WITHDRAWAL)?;
+            .document_type_for_name(withdrawals_contract::document_types::WITHDRAWAL)?;
 
         let mut where_clauses = BTreeMap::new();
 
@@ -128,7 +128,7 @@ impl Drive {
 
         let document_type = contract_fetch_info
             .contract
-            .document_type_for_name(withdrawals_contract::types::WITHDRAWAL)?;
+            .document_type_for_name(withdrawals_contract::document_types::WITHDRAWAL)?;
 
         let mut where_clauses = BTreeMap::new();
 
@@ -147,7 +147,7 @@ impl Drive {
                 field: withdrawals_contract::property_names::STATUS.to_string(),
                 operator: crate::query::WhereOperator::Equal,
                 value: ciborium::Value::Integer(
-                    (withdrawals_contract::Status::POOLED as u8).into(),
+                    (withdrawals_contract::WithdrawalStatus::POOLED as u8).into(),
                 ),
             },
         );
@@ -227,7 +227,7 @@ mod tests {
 
             let documents = drive
                 .fetch_withdrawal_documents_by_status(
-                    withdrawals_contract::Status::QUEUED.into(),
+                    withdrawals_contract::WithdrawalStatus::QUEUED.into(),
                     Some(&transaction),
                 )
                 .expect("to fetch documents by status");
@@ -241,13 +241,13 @@ mod tests {
                     "coreFeePerByte": 1,
                     "pooling": Pooling::Never,
                     "outputScript": (0..23).collect::<Vec<u8>>(),
-                    "status": withdrawals_contract::Status::QUEUED,
+                    "status": withdrawals_contract::WithdrawalStatus::QUEUED,
                     "transactionIndex": 1,
                 }),
             );
 
             let document_type = data_contract
-                .document_type_for_name(withdrawals_contract::types::WITHDRAWAL)
+                .document_type_for_name(withdrawals_contract::document_types::WITHDRAWAL)
                 .expect("expected to get document type");
 
             setup_document(
@@ -265,7 +265,7 @@ mod tests {
                     "coreFeePerByte": 1,
                     "pooling": Pooling::Never,
                     "outputScript": (0..23).collect::<Vec<u8>>(),
-                    "status": withdrawals_contract::Status::POOLED,
+                    "status": withdrawals_contract::WithdrawalStatus::POOLED,
                     "transactionIndex": 2,
                 }),
             );
@@ -280,7 +280,7 @@ mod tests {
 
             let documents = drive
                 .fetch_withdrawal_documents_by_status(
-                    withdrawals_contract::Status::QUEUED.into(),
+                    withdrawals_contract::WithdrawalStatus::QUEUED.into(),
                     Some(&transaction),
                 )
                 .expect("to fetch documents by status");
@@ -289,7 +289,7 @@ mod tests {
 
             let documents = drive
                 .fetch_withdrawal_documents_by_status(
-                    withdrawals_contract::Status::POOLED.into(),
+                    withdrawals_contract::WithdrawalStatus::POOLED.into(),
                     Some(&transaction),
                 )
                 .expect("to fetch documents by status");
@@ -323,14 +323,14 @@ mod tests {
                     "coreFeePerByte": 1,
                     "pooling": Pooling::Never,
                     "outputScript": (0..23).collect::<Vec<u8>>(),
-                    "status": withdrawals_contract::Status::POOLED,
+                    "status": withdrawals_contract::WithdrawalStatus::POOLED,
                     "transactionIndex": 1,
                     "transactionId": (0..32).collect::<Vec<u8>>(),
                 }),
             );
 
             let document_type = data_contract
-                .document_type_for_name(withdrawals_contract::types::WITHDRAWAL)
+                .document_type_for_name(withdrawals_contract::document_types::WITHDRAWAL)
                 .expect("expected to get document type");
 
             setup_document(

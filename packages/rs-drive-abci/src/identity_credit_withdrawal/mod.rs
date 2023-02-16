@@ -62,7 +62,7 @@ impl Platform {
         )?;
 
         let mut broadcasted_documents = self.drive.fetch_withdrawal_documents_by_status(
-            withdrawals_contract::Status::BROADCASTED.into(),
+            withdrawals_contract::WithdrawalStatus::BROADCASTED.into(),
             transaction,
         )?;
 
@@ -107,14 +107,14 @@ impl Platform {
                     > NUMBER_OF_BLOCKS_BEFORE_EXPIRED
             {
                 let status = if core_transactions.contains(&transaction_id) {
-                    withdrawals_contract::Status::COMPLETE
+                    withdrawals_contract::WithdrawalStatus::COMPLETE
                 } else {
                     self.drive.add_insert_expired_index_operation(
                         transaction_index,
                         &mut drive_operations,
                     );
 
-                    withdrawals_contract::Status::EXPIRED
+                    withdrawals_contract::WithdrawalStatus::EXPIRED
                 };
 
                 document.set_u8(withdrawals_contract::property_names::STATUS, status.into());
@@ -137,7 +137,7 @@ impl Platform {
             &contract_fetch_info.contract,
             contract_fetch_info
                 .contract
-                .document_type_for_name(withdrawals_contract::types::WITHDRAWAL)
+                .document_type_for_name(withdrawals_contract::document_types::WITHDRAWAL)
                 .map_err(|_| {
                     Error::Execution(ExecutionError::CorruptedCodeExecution(
                         "Can't fetch withdrawal data contract",
@@ -255,7 +255,7 @@ impl Platform {
             &contract_fetch_info.contract,
             contract_fetch_info
                 .contract
-                .document_type_for_name(withdrawals_contract::types::WITHDRAWAL)
+                .document_type_for_name(withdrawals_contract::document_types::WITHDRAWAL)
                 .map_err(|_| {
                     Error::Execution(ExecutionError::CorruptedCodeExecution(
                         "could not get document type",
@@ -293,7 +293,7 @@ impl Platform {
         ))?;
 
         let mut documents = self.drive.fetch_withdrawal_documents_by_status(
-            withdrawals_contract::Status::QUEUED.into(),
+            withdrawals_contract::WithdrawalStatus::QUEUED.into(),
             transaction,
         )?;
 
@@ -324,7 +324,7 @@ impl Platform {
 
             document.set_u8(
                 withdrawals_contract::property_names::STATUS,
-                withdrawals_contract::Status::POOLED as u8,
+                withdrawals_contract::WithdrawalStatus::POOLED as u8,
             );
 
             document.set_i64(
@@ -348,7 +348,7 @@ impl Platform {
             &contract_fetch_info.contract,
             contract_fetch_info
                 .contract
-                .document_type_for_name(withdrawals_contract::types::WITHDRAWAL)
+                .document_type_for_name(withdrawals_contract::document_types::WITHDRAWAL)
                 .map_err(|_| {
                     Error::Execution(ExecutionError::CorruptedCodeExecution(
                         "Can't fetch withdrawal data contract",
@@ -599,7 +599,7 @@ mod tests {
                     "coreFeePerByte": 1,
                     "pooling": Pooling::Never,
                     "outputScript": (0..23).collect::<Vec<u8>>(),
-                    "status": withdrawals_contract::Status::BROADCASTED,
+                    "status": withdrawals_contract::WithdrawalStatus::BROADCASTED,
                     "transactionIndex": 1,
                     "transactionSignHeight": 93,
                     "transactionId": vec![1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1],
@@ -607,7 +607,7 @@ mod tests {
             );
 
             let document_type = data_contract
-                .document_type_for_name(withdrawals_contract::types::WITHDRAWAL)
+                .document_type_for_name(withdrawals_contract::document_types::WITHDRAWAL)
                 .expect("expected to get document type");
 
             setup_document(
@@ -625,7 +625,7 @@ mod tests {
                     "coreFeePerByte": 1,
                     "pooling": Pooling::Never,
                     "outputScript": (0..23).collect::<Vec<u8>>(),
-                    "status": withdrawals_contract::Status::BROADCASTED,
+                    "status": withdrawals_contract::WithdrawalStatus::BROADCASTED,
                     "transactionIndex": 2,
                     "transactionSignHeight": 10,
                     "transactionId": vec![3, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1],
@@ -668,7 +668,7 @@ mod tests {
             let documents = platform
                 .drive
                 .fetch_withdrawal_documents_by_status(
-                    withdrawals_contract::Status::EXPIRED.into(),
+                    withdrawals_contract::WithdrawalStatus::EXPIRED.into(),
                     Some(&transaction),
                 )
                 .expect("to fetch documents by status");
@@ -682,7 +682,7 @@ mod tests {
             let documents = platform
                 .drive
                 .fetch_withdrawal_documents_by_status(
-                    withdrawals_contract::Status::COMPLETE.into(),
+                    withdrawals_contract::WithdrawalStatus::COMPLETE.into(),
                     Some(&transaction),
                 )
                 .expect("to fetch documents by status");
@@ -725,13 +725,13 @@ mod tests {
                     "coreFeePerByte": 1,
                     "pooling": Pooling::Never,
                     "outputScript": (0..23).collect::<Vec<u8>>(),
-                    "status": withdrawals_contract::Status::QUEUED,
+                    "status": withdrawals_contract::WithdrawalStatus::QUEUED,
                     "transactionIndex": 1,
                 }),
             );
 
             let document_type = data_contract
-                .document_type_for_name(withdrawals_contract::types::WITHDRAWAL)
+                .document_type_for_name(withdrawals_contract::document_types::WITHDRAWAL)
                 .expect("expected to get document type");
 
             setup_document(
@@ -749,7 +749,7 @@ mod tests {
                     "coreFeePerByte": 1,
                     "pooling": Pooling::Never,
                     "outputScript": (0..23).collect::<Vec<u8>>(),
-                    "status": withdrawals_contract::Status::QUEUED,
+                    "status": withdrawals_contract::WithdrawalStatus::QUEUED,
                     "transactionIndex": 2,
                 }),
             );
@@ -789,7 +789,7 @@ mod tests {
             let updated_documents = platform
                 .drive
                 .fetch_withdrawal_documents_by_status(
-                    withdrawals_contract::Status::POOLED.into(),
+                    withdrawals_contract::WithdrawalStatus::POOLED.into(),
                     Some(&transaction),
                 )
                 .expect("to fetch withdrawal documents");
@@ -911,13 +911,13 @@ mod tests {
                     "coreFeePerByte": 1,
                     "pooling": Pooling::Never,
                     "outputScript": (0..23).collect::<Vec<u8>>(),
-                    "status": withdrawals_contract::Status::POOLED,
+                    "status": withdrawals_contract::WithdrawalStatus::POOLED,
                     "transactionIndex": 1,
                 }),
             );
 
             let document_type = data_contract
-                .document_type_for_name(withdrawals_contract::types::WITHDRAWAL)
+                .document_type_for_name(withdrawals_contract::document_types::WITHDRAWAL)
                 .expect("expected to get document type");
 
             setup_document(
@@ -935,7 +935,7 @@ mod tests {
                     "coreFeePerByte": 1,
                     "pooling": Pooling::Never,
                     "outputScript": (0..23).collect::<Vec<u8>>(),
-                    "status": withdrawals_contract::Status::POOLED,
+                    "status": withdrawals_contract::WithdrawalStatus::POOLED,
                     "transactionIndex": 2,
                 }),
             );
