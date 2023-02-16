@@ -26,7 +26,6 @@ use drive::{
 use serde_json::Value as JsonValue;
 
 use crate::{
-    block::BlockExecutionContext,
     error::{execution::ExecutionError, Error},
     platform::Platform,
 };
@@ -39,9 +38,16 @@ impl Platform {
     pub fn update_broadcasted_withdrawal_transaction_statuses(
         &self,
         last_synced_core_height: u64,
-        block_execution_context: &BlockExecutionContext,
         transaction: TransactionArg,
     ) -> Result<(), Error> {
+        // Retrieve block execution context
+        let block_execution_context = self.block_execution_context.borrow();
+        let block_execution_context = block_execution_context.as_ref().ok_or(Error::Execution(
+            ExecutionError::CorruptedCodeExecution(
+                "block execution context must be set in block begin handler",
+            ),
+        ))?;
+
         let data_contract_id = &withdrawals_contract::CONTRACT_ID;
 
         let (_, maybe_data_contract) = self.drive.get_contract_with_fetch_info(
@@ -155,10 +161,17 @@ impl Platform {
     /// Prepares a list of an unsigned withdrawal transaction bytes
     pub fn fetch_and_prepare_unsigned_withdrawal_transactions(
         &self,
-        block_execution_context: &BlockExecutionContext,
         validator_set_quorum_hash: [u8; 32],
         transaction: TransactionArg,
     ) -> Result<Vec<Vec<u8>>, Error> {
+        // Retrieve block execution context
+        let block_execution_context = self.block_execution_context.borrow();
+        let block_execution_context = block_execution_context.as_ref().ok_or(Error::Execution(
+            ExecutionError::CorruptedCodeExecution(
+                "block execution context must be set in block begin handler",
+            ),
+        ))?;
+
         let data_contract_id = withdrawals_contract::CONTRACT_ID.deref();
 
         let (_, maybe_data_contract) = self.drive.get_contract_with_fetch_info(
@@ -275,9 +288,16 @@ impl Platform {
     /// Pool withdrawal documents into transactions
     pub fn pool_withdrawals_into_transactions_queue(
         &self,
-        block_execution_context: &BlockExecutionContext,
         transaction: TransactionArg,
     ) -> Result<(), Error> {
+        // Retrieve block execution context
+        let block_execution_context = self.block_execution_context.borrow();
+        let block_execution_context = block_execution_context.as_ref().ok_or(Error::Execution(
+            ExecutionError::CorruptedCodeExecution(
+                "block execution context must be set in block begin handler",
+            ),
+        ))?;
+
         let data_contract_id = withdrawals_contract::CONTRACT_ID.deref();
 
         let (_, maybe_data_contract) = self.drive.get_contract_with_fetch_info(
@@ -515,6 +535,8 @@ mod tests {
     use crate::{block::BlockExecutionContext, execution::fee_pools::epoch::EpochInfo};
 
     mod update_withdrawal_statuses {
+        use std::cell::RefCell;
+
         use crate::block::BlockStateInfo;
         use crate::test::helpers::setup::setup_platform_with_initial_state_structure;
         use dpp::{
@@ -640,29 +662,27 @@ mod tests {
                 Some(&transaction),
             );
 
+            platform.block_execution_context = RefCell::new(Some(BlockExecutionContext {
+                block_info: BlockStateInfo {
+                    block_height: 1,
+                    block_time_ms: 1,
+                    previous_block_time_ms: Some(1),
+                    proposer_pro_tx_hash: [
+                        0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+                        0, 0, 0, 0, 0, 0, 0,
+                    ],
+                    core_chain_locked_height: 96,
+                },
+                epoch_info: EpochInfo {
+                    current_epoch_index: 1,
+                    previous_epoch_index: None,
+                    is_epoch_change: false,
+                },
+                hpmn_count: 100,
+            }));
+
             platform
-                .update_broadcasted_withdrawal_transaction_statuses(
-                    95,
-                    &BlockExecutionContext {
-                        block_info: BlockStateInfo {
-                            block_height: 1,
-                            block_time_ms: 1,
-                            previous_block_time_ms: Some(1),
-                            proposer_pro_tx_hash: [
-                                0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-                                0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-                            ],
-                            core_chain_locked_height: 96,
-                        },
-                        epoch_info: EpochInfo {
-                            current_epoch_index: 1,
-                            previous_epoch_index: None,
-                            is_epoch_change: false,
-                        },
-                        hpmn_count: 100,
-                    },
-                    Some(&transaction),
-                )
+                .update_broadcasted_withdrawal_transaction_statuses(95, Some(&transaction))
                 .expect("to update withdrawal statuses");
 
             let documents = platform
@@ -696,6 +716,8 @@ mod tests {
     }
 
     mod pool_withdrawals_into_transactions {
+        use std::cell::RefCell;
+
         use dpp::data_contract::DriveContractExt;
         use dpp::identity::state_transition::identity_credit_withdrawal_transition::Pooling;
         use dpp::system_data_contracts::{load_system_data_contract, SystemDataContract};
@@ -709,7 +731,7 @@ mod tests {
 
         #[test]
         fn test_pooling() {
-            let platform = setup_platform_with_initial_state_structure(None);
+            let mut platform = setup_platform_with_initial_state_structure(None);
 
             let transaction = platform.drive.grove.start_transaction();
 
@@ -762,28 +784,27 @@ mod tests {
                 Some(&transaction),
             );
 
+            platform.block_execution_context = RefCell::new(Some(BlockExecutionContext {
+                block_info: BlockStateInfo {
+                    block_height: 1,
+                    block_time_ms: 1,
+                    previous_block_time_ms: Some(1),
+                    proposer_pro_tx_hash: [
+                        0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+                        0, 0, 0, 0, 0, 0, 0,
+                    ],
+                    core_chain_locked_height: 96,
+                },
+                epoch_info: EpochInfo {
+                    current_epoch_index: 1,
+                    previous_epoch_index: None,
+                    is_epoch_change: false,
+                },
+                hpmn_count: 100,
+            }));
+
             platform
-                .pool_withdrawals_into_transactions_queue(
-                    &BlockExecutionContext {
-                        block_info: BlockStateInfo {
-                            block_height: 1,
-                            block_time_ms: 1,
-                            previous_block_time_ms: Some(1),
-                            proposer_pro_tx_hash: [
-                                0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-                                0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-                            ],
-                            core_chain_locked_height: 96,
-                        },
-                        epoch_info: EpochInfo {
-                            current_epoch_index: 1,
-                            previous_epoch_index: None,
-                            is_epoch_change: false,
-                        },
-                        hpmn_count: 100,
-                    },
-                    Some(&transaction),
-                )
+                .pool_withdrawals_into_transactions_queue(Some(&transaction))
                 .expect("to pool withdrawal documents into transactions");
 
             let updated_documents = platform

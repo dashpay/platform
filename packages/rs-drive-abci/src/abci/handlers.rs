@@ -144,22 +144,19 @@ impl TenderdashAbci for Platform {
             request.last_synced_core_height
         };
 
+        self.block_execution_context
+            .replace(Some(block_execution_context));
+
         self.update_broadcasted_withdrawal_transaction_statuses(
             last_synced_core_height,
-            &block_execution_context,
             transaction,
         )?;
 
         let unsigned_withdrawal_transaction_bytes = self
             .fetch_and_prepare_unsigned_withdrawal_transactions(
-                &block_execution_context,
                 request.validator_set_quorum_hash,
                 transaction,
             )?;
-
-        self.block_execution_context
-            .replace(Some(block_execution_context));
-
         let response = BlockBeginResponse {
             epoch_info,
             unsigned_withdrawal_transactions: unsigned_withdrawal_transaction_bytes,
@@ -182,7 +179,7 @@ impl TenderdashAbci for Platform {
             ),
         ))?;
 
-        self.pool_withdrawals_into_transactions_queue(block_execution_context, transaction)?;
+        self.pool_withdrawals_into_transactions_queue(transaction)?;
 
         // Process fees
         let process_block_fees_outcome = self.process_block_fees(
