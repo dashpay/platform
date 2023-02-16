@@ -185,17 +185,15 @@ impl Platform {
 
         let data_contract_id = withdrawals_contract::CONTRACT_ID.deref();
 
-        let (_, maybe_data_contract) = self.drive.get_contract_with_fetch_info(
+        let (_, Some(contract_fetch_info)) = self.drive.get_contract_with_fetch_info(
             data_contract_id.to_buffer(),
-            Some(&Epoch::new(
-                block_execution_context.epoch_info.current_epoch_index,
-            )),
+            None,
             transaction,
-        )?;
-
-        let contract_fetch_info = maybe_data_contract.ok_or(Error::Execution(
-            ExecutionError::CorruptedCodeExecution("Can't fetch withdrawal data contract"),
-        ))?;
+        )? else {
+            return Err(Error::Execution(
+                ExecutionError::CorruptedCodeExecution("can't fetch withdrawal data contract"),
+            ));
+        };
 
         let block_info = BlockInfo {
             time_ms: block_execution_context.block_info.block_time_ms,
@@ -206,76 +204,77 @@ impl Platform {
         let mut drive_operations: Vec<DriveOperationType> = vec![];
 
         // Get 16 latest withdrawal transactions from the queue
-        let withdrawal_transactions = self.drive.dequeue_withdrawal_transactions(
+        let untied_withdrawal_transactions = self.drive.dequeue_withdrawal_transactions(
             WITHDRAWAL_TRANSACTIONS_QUERY_LIMIT,
             transaction,
             &mut drive_operations,
         )?;
 
-        // Appending request_height and quorum_hash to withdrwal transaction
+        if untied_withdrawal_transactions.is_empty() {
+            return Ok(Vec::new());
+        }
+
+        // Appending request_height and quorum_hash to withdrawal transaction
         // and pass it to JS Drive for singing and broadcasting
-        let transactions_and_documents = withdrawal_transactions
-            .into_iter()
-            .map(|(_, bytes)| {
-                let request_info = AssetUnlockRequestInfo {
-                    request_height: block_execution_context.block_info.core_chain_locked_height
-                        as u32,
-                    quorum_hash: QuorumHash::hash(&validator_set_quorum_hash),
-                };
+        let (unsigned_withdrawal_transactions, documents_to_update): (Vec<_>, Vec<_>) =
+            untied_withdrawal_transactions
+                .into_iter()
+                .map(|(_, untied_transaction_bytes)| {
+                    let request_info = AssetUnlockRequestInfo {
+                        request_height: block_execution_context.block_info.core_chain_locked_height
+                            as u32,
+                        quorum_hash: QuorumHash::hash(&validator_set_quorum_hash),
+                    };
 
-                let mut bytes_buffer = vec![];
+                    let mut unsigned_transaction_bytes = vec![];
 
-                request_info
-                    .consensus_append_to_base_encode(bytes.clone(), &mut bytes_buffer)
-                    .map_err(|_| {
+                    request_info
+                        .consensus_append_to_base_encode(
+                            untied_transaction_bytes.clone(),
+                            &mut unsigned_transaction_bytes,
+                        )
+                        .map_err(|_| {
+                            Error::Execution(ExecutionError::CorruptedCodeExecution(
+                                "could not add additional request info to asset unlock transaction",
+                            ))
+                        })?;
+
+                    let original_transaction_id = hash::hash(untied_transaction_bytes);
+                    let update_transaction_id = hash::hash(unsigned_transaction_bytes.clone());
+
+                    let mut document = self.drive.find_withdrawal_document_by_transaction_id(
+                        &original_transaction_id,
+                        transaction,
+                    )?;
+
+                    document.set_bytes(
+                        withdrawals_contract::property_names::TRANSACTION_ID,
+                        update_transaction_id,
+                    );
+
+                    document.set_i64(
+                        withdrawals_contract::property_names::UPDATED_AT,
+                        block_info.time_ms.try_into().map_err(|_| {
+                            Error::Execution(ExecutionError::CorruptedCodeExecution(
+                                "Can't convert u64 block time to i64 updated_at",
+                            ))
+                        })?,
+                    );
+
+                    document.increment_revision().map_err(|_| {
                         Error::Execution(ExecutionError::CorruptedCodeExecution(
-                            "could not add aditional request info to asset unlock transaction",
+                            "Could not increment document revision",
                         ))
                     })?;
 
-                let original_transaction_id = hash::hash(bytes);
-                let update_transaction_id = hash::hash(bytes_buffer.clone());
-
-                let mut document = self
-                    .drive
-                    .find_document_by_transaction_id(&original_transaction_id, transaction)?;
-
-                document.set_bytes(
-                    withdrawals_contract::property_names::TRANSACTION_ID,
-                    update_transaction_id,
-                );
-
-                document.set_i64(
-                    withdrawals_contract::property_names::UPDATED_AT,
-                    block_info.time_ms.try_into().map_err(|_| {
-                        Error::Execution(ExecutionError::CorruptedCodeExecution(
-                            "Can't convert u64 block time to i64 updated_at",
-                        ))
-                    })?,
-                );
-
-                document.increment_revision().map_err(|_| {
-                    Error::Execution(ExecutionError::CorruptedCodeExecution(
-                        "Could not increment document revision",
-                    ))
-                })?;
-
-                Ok((bytes_buffer, document))
-            })
-            .collect::<Result<Vec<(Vec<u8>, DocumentStub)>, Error>>()?;
-
-        let withdrawals = transactions_and_documents
-            .iter()
-            .map(|(bytes, _)| bytes.clone())
-            .collect();
-
-        let documents: Vec<DocumentStub> = transactions_and_documents
-            .into_iter()
-            .map(|(_, document)| document)
-            .collect();
+                    Ok((unsigned_transaction_bytes, document))
+                })
+                .collect::<Result<Vec<(Vec<u8>, DocumentStub)>, Error>>()?
+                .into_iter()
+                .unzip();
 
         self.drive.add_update_multiple_documents_operations(
-            &documents,
+            &documents_to_update,
             &contract_fetch_info.contract,
             contract_fetch_info
                 .contract
@@ -288,12 +287,10 @@ impl Platform {
             &mut drive_operations,
         );
 
-        if !drive_operations.is_empty() {
-            self.drive
-                .apply_drive_operations(drive_operations, true, &block_info, transaction)?;
-        }
+        self.drive
+            .apply_drive_operations(drive_operations, true, &block_info, transaction)?;
 
-        Ok(withdrawals)
+        Ok(unsigned_withdrawal_transactions)
     }
 
     /// Pool withdrawal documents into transactions

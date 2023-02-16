@@ -110,7 +110,7 @@ impl Drive {
     }
 
     /// Find one document by it's transactionId field
-    pub fn find_document_by_transaction_id(
+    pub fn find_withdrawal_document_by_transaction_id(
         &self,
         original_transaction_id: &[u8],
         transaction: TransactionArg,
@@ -342,7 +342,10 @@ mod tests {
             );
 
             let found_document = drive
-                .find_document_by_transaction_id(&(0..32).collect::<Vec<u8>>(), Some(&transaction))
+                .find_withdrawal_document_by_transaction_id(
+                    &(0..32).collect::<Vec<u8>>(),
+                    Some(&transaction),
+                )
                 .expect("to find document by it's transaction id");
 
             assert_eq!(found_document.id.to_vec(), document.id.to_vec());
