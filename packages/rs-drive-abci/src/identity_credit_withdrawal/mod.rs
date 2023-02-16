@@ -65,7 +65,7 @@ impl Platform {
             block_execution_context.block_info.core_chain_locked_height,
         )?;
 
-        let broadcasted_documents = self.drive.fetch_withdrawal_documents_by_status(
+        let broadcasted_withdrawal_documents = self.drive.fetch_withdrawal_documents_by_status(
             withdrawals_contract::WithdrawalStatus::BROADCASTED.into(),
             transaction,
         )?;
@@ -79,7 +79,7 @@ impl Platform {
         let mut drive_operations: Vec<DriveOperationType> = vec![];
 
         // Collecting only documents that have been updated
-        let documents_to_update: Vec<DocumentStub> = broadcasted_documents
+        let documents_to_update: Vec<DocumentStub> = broadcasted_withdrawal_documents
             .into_iter()
             .map(|mut document| {
                 let transaction_sign_height = document
@@ -108,45 +108,41 @@ impl Platform {
 
                 let transaction_id = hex::encode(transaction_id_bytes);
 
-                let current_and_signed_block_height_difference =
+                let block_height_difference =
                     block_execution_context.block_info.core_chain_locked_height
                         - transaction_sign_height;
 
-                let withdrawal_status = if core_transactions.contains(&transaction_id) {
-                    Some(withdrawals_contract::WithdrawalStatus::COMPLETE)
-                } else if current_and_signed_block_height_difference
-                    > NUMBER_OF_BLOCKS_BEFORE_EXPIRED
-                {
-                    Some(withdrawals_contract::WithdrawalStatus::EXPIRED)
+                let status;
+
+                if core_transactions.contains(&transaction_id) {
+                    status = withdrawals_contract::WithdrawalStatus::COMPLETE;
+                } else if block_height_difference > NUMBER_OF_BLOCKS_BEFORE_EXPIRED {
+                    status = withdrawals_contract::WithdrawalStatus::EXPIRED;
                 } else {
-                    None
+                    return Ok(None);
                 };
 
-                if let Some(status) = withdrawal_status {
-                    document.set_u8(withdrawals_contract::property_names::STATUS, status.into());
+                document.set_u8(withdrawals_contract::property_names::STATUS, status.into());
 
-                    document.set_i64(
-                        withdrawals_contract::property_names::UPDATED_AT,
-                        block_info.time_ms.try_into().map_err(|_| {
-                            Error::Execution(ExecutionError::CorruptedCodeExecution(
-                                "Can't convert u64 block time to i64 updated_at",
-                            ))
-                        })?,
+                document.set_i64(
+                    withdrawals_contract::property_names::UPDATED_AT,
+                    block_info.time_ms.try_into().map_err(|_| {
+                        Error::Execution(ExecutionError::CorruptedCodeExecution(
+                            "Can't convert u64 block time to i64 updated_at",
+                        ))
+                    })?,
+                );
+
+                document.increment_revision().map_err(Error::Protocol)?;
+
+                if status == withdrawals_contract::WithdrawalStatus::EXPIRED {
+                    self.drive.add_insert_expired_index_operation(
+                        transaction_index,
+                        &mut drive_operations,
                     );
-
-                    document.increment_revision().map_err(Error::Protocol)?;
-
-                    if status == withdrawals_contract::WithdrawalStatus::EXPIRED {
-                        self.drive.add_insert_expired_index_operation(
-                            transaction_index,
-                            &mut drive_operations,
-                        );
-                    }
-
-                    Ok(Some(document))
-                } else {
-                    Ok(None)
                 }
+
+                Ok(Some(document))
             })
             .collect::<Result<Vec<Option<DocumentStub>>, Error>>()?
             .into_iter()
