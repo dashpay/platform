@@ -1,22 +1,22 @@
-use dpp::consensus::basic::identity::InvalidIdentityCreditWithdrawalTransitionPoolingError;
+use dpp::consensus::basic::identity::NotImplementedIdentityCreditWithdrawalTransitionPoolingError;
 use dpp::consensus::ConsensusError;
 use wasm_bindgen::prelude::*;
 
-#[wasm_bindgen(js_name=InvalidIdentityCreditWithdrawalTransitionPoolingError)]
-pub struct InvalidIdentityCreditWithdrawalTransitionPoolingErrorWasm {
-    inner: InvalidIdentityCreditWithdrawalTransitionPoolingError,
+#[wasm_bindgen(js_name=NotImplementedIdentityCreditWithdrawalTransitionPoolingError)]
+pub struct NotImplementedIdentityCreditWithdrawalTransitionPoolingErrorWasm {
+    inner: NotImplementedIdentityCreditWithdrawalTransitionPoolingError,
 }
 
-impl From<&InvalidIdentityCreditWithdrawalTransitionPoolingError>
-    for InvalidIdentityCreditWithdrawalTransitionPoolingErrorWasm
+impl From<&NotImplementedIdentityCreditWithdrawalTransitionPoolingError>
+    for NotImplementedIdentityCreditWithdrawalTransitionPoolingErrorWasm
 {
-    fn from(e: &InvalidIdentityCreditWithdrawalTransitionPoolingError) -> Self {
+    fn from(e: &NotImplementedIdentityCreditWithdrawalTransitionPoolingError) -> Self {
         Self { inner: e.clone() }
     }
 }
 
-#[wasm_bindgen(js_class=InvalidIdentityCreditWithdrawalTransitionPoolingError)]
-impl InvalidIdentityCreditWithdrawalTransitionPoolingErrorWasm {
+#[wasm_bindgen(js_class=NotImplementedIdentityCreditWithdrawalTransitionPoolingError)]
+impl NotImplementedIdentityCreditWithdrawalTransitionPoolingErrorWasm {
     #[wasm_bindgen(js_name=getPooling)]
     pub fn pooling(&self) -> u8 {
         self.inner.pooling()

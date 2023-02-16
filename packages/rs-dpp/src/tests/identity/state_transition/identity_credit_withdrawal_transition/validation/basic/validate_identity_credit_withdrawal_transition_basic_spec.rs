@@ -444,7 +444,7 @@ mod validate_identity_credit_withdrawal_transition_basic_factory {
 
             let errors = assert_consensus_errors!(
                 result,
-                ConsensusError::InvalidIdentityCreditWithdrawalTransitionPoolingError,
+                ConsensusError::NotImplementedIdentityCreditWithdrawalTransitionPoolingError,
                 1
             );
 
