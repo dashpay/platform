@@ -7,7 +7,7 @@ use crate::{
     consensus::basic::identity::{
         InvalidIdentityCreditWithdrawalTransitionCoreFeeError,
         InvalidIdentityCreditWithdrawalTransitionOutputScriptError,
-        InvalidIdentityCreditWithdrawalTransitionPoolingError,
+        NotImplementedIdentityCreditWithdrawalTransitionPoolingError,
     },
     contracts::withdrawals_contract,
     identity::core_script::CoreScript,
@@ -80,9 +80,9 @@ impl IdentityCreditWithdrawalTransitionBasicValidator {
         let pooling = transition_json.get_u8(withdrawals_contract::property_names::POOLING)?;
 
         if pooling > 0 {
-            result.add_error(InvalidIdentityCreditWithdrawalTransitionPoolingError::new(
-                pooling,
-            ));
+            result.add_error(
+                NotImplementedIdentityCreditWithdrawalTransitionPoolingError::new(pooling),
+            );
 
             return Ok(result);
         }
