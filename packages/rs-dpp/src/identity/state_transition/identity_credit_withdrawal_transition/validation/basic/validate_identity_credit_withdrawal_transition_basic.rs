@@ -10,7 +10,10 @@ use crate::{
     },
     contracts::withdrawals_contract,
     identity::core_script::CoreScript,
-    util::{is_fibonacci_number::is_fibonacci_number, protocol_data::get_protocol_version},
+    util::{
+        is_fibonacci_number::is_fibonacci_number, json_value::JsonValueExt,
+        protocol_data::get_protocol_version,
+    },
     validation::{JsonSchemaValidator, ValidationResult},
     version::ProtocolVersionValidator,
     DashPlatformProtocolInitError, NonConsensusError, SerdeParsingError,
@@ -73,25 +76,12 @@ impl IdentityCreditWithdrawalTransitionBasicValidator {
         }
 
         // validate core_fee is in fibonacci sequence
-        let core_fee = transition_json
-            .get(withdrawals_contract::property_names::CORE_FEE_PER_BYTE)
-            .ok_or_else(|| {
-                SerdeParsingError::new(format!(
-                    "Expected credit withdrawal transition to have {} property",
-                    withdrawals_contract::property_names::CORE_FEE_PER_BYTE
-                ))
-            })?
-            .as_u64()
-            .ok_or_else(|| {
-                SerdeParsingError::new(format!(
-                    "Expected {} property to be a uint",
-                    withdrawals_contract::property_names::CORE_FEE_PER_BYTE
-                ))
-            })?;
+        let core_fee_per_byte =
+            transition_json.get_u32(withdrawals_contract::property_names::CORE_FEE_PER_BYTE)?;
 
-        if !is_fibonacci_number(core_fee) {
+        if !is_fibonacci_number(core_fee_per_byte) {
             result.add_error(InvalidIdentityCreditWithdrawalTransitionCoreFeeError::new(
-                core_fee as u32,
+                core_fee_per_byte,
             ));
         }
 

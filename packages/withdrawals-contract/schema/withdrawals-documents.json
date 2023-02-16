@@ -90,7 +90,8 @@
       "coreFeePerByte": {
         "type": "integer",
         "description": "This is the fee that you are willing to spend for this transaction in Duffs/Byte",
-        "minimum": 1
+        "minimum": 1,
+        "maximum": 4294967295
       },
       "pooling": {
         "type": "integer",
