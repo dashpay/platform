@@ -44,7 +44,7 @@ use integer_encoding::VarIntWriter;
 use crate::data_contract::{DataContract, DriveContractExt};
 use serde::{Deserialize, Serialize};
 
-use crate::data_contract::document_type::DocumentType;
+use crate::data_contract::document_type::{encode_unsigned_integer, DocumentType};
 use crate::data_contract::errors::{DataContractError, StructureError};
 use crate::data_contract::extra::common::{
     bytes_for_system_value_from_tree_map, get_key_from_cbor_map,
@@ -102,6 +102,16 @@ impl Document {
                 // returns self.id or self.owner_id if key path is $id or $ownerId
                 "$id" => return Ok(Some(Vec::from(self.id))),
                 "$ownerId" => return Ok(Some(Vec::from(self.owner_id))),
+                "$createdAt" => {
+                    return Ok(self
+                        .created_at
+                        .map(|time| encode_unsigned_integer(time).unwrap()))
+                }
+                "$updatedAt" => {
+                    return Ok(self
+                        .updated_at
+                        .map(|time| encode_unsigned_integer(time).unwrap()))
+                }
                 _ => {}
             }
             // split the key path

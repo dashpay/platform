@@ -985,7 +985,7 @@ mod tests {
         let day_in_ms = 1000 * 60 * 60 * 24;
         let block_count = 30;
         let outcome = run_chain_for_strategy(block_count, day_in_ms, strategy, config, 15);
-        assert_eq!(outcome.identities.len() as u64, 464);
+        assert_eq!(outcome.identities.len() as u64, 398);
         assert_eq!(outcome.masternode_identity_balances.len(), 100);
         let balance_count = outcome
             .masternode_identity_balances
