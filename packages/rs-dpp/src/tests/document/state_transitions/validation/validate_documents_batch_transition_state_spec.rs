@@ -70,7 +70,7 @@ fn setup_test() -> TestData {
 
     state_repository_mock
         .expect_fetch_latest_platform_block_time()
-        .returning(|| Ok(Utc::now().timestamp() as u64));
+        .returning(|| Ok(Utc::now().timestamp_millis() as u64));
 
     TestData {
         owner_id,
@@ -568,5 +568,6 @@ async fn should_return_valid_result_if_document_transitions_are_valid() {
         validate_document_batch_transition_state(&state_repository_mock, &state_transition)
             .await
             .expect("validation result should be returned");
+    println!("result is {:#?}", validation_result);
     assert!(validation_result.is_valid());
 }

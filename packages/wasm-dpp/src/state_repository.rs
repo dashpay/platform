@@ -54,37 +54,37 @@ extern "C" {
         execution_context: StateTransitionExecutionContextWasm,
     ) -> Result<(), JsValue>;
 
-    #[wasm_bindgen(structural, method, js_name=createDocument)]
-    pub fn create_document(
+    #[wasm_bindgen(catch, structural, method, js_name=createDocument)]
+    pub async fn create_document(
         this: &ExternalStateRepositoryLike,
         document: DocumentWasm,
         execution_context: StateTransitionExecutionContextWasm,
-    ) -> JsValue;
+    ) -> Result<(), JsValue>;
 
-    #[wasm_bindgen(structural, method, js_name=updateDocument)]
-    pub fn update_document(
+    #[wasm_bindgen(catch, structural, method, js_name=updateDocument)]
+    pub async fn update_document(
         this: &ExternalStateRepositoryLike,
         document: DocumentWasm,
         execution_context: StateTransitionExecutionContextWasm,
-    ) -> JsValue;
+    ) -> Result<(), JsValue>;
 
-    #[wasm_bindgen(structural, method, js_name=removeDocument)]
-    pub fn remove_document(
+    #[wasm_bindgen(catch, structural, method, js_name=removeDocument)]
+    pub async fn remove_document(
         this: &ExternalStateRepositoryLike,
         data_contract: DataContractWasm,
         data_contract_type: String,
         document_id: IdentifierWrapper,
         execution_context: StateTransitionExecutionContextWasm,
-    ) -> JsValue;
+    ) -> Result<(), JsValue>;
 
-    #[wasm_bindgen(structural, method, js_name=fetchDocuments)]
-    pub fn fetch_documents(
+    #[wasm_bindgen(catch, structural, method, js_name=fetchDocuments)]
+    pub async fn fetch_documents(
         this: &ExternalStateRepositoryLike,
         data_contract_id: IdentifierWrapper,
         data_contract_type: String,
         where_query: JsValue,
         execution_context: StateTransitionExecutionContextWasm,
-    ) -> js_sys::Array;
+    ) -> Result<JsValue, JsValue>;
 
     #[wasm_bindgen(catch, structural, method, js_name=fetchIdentity)]
     pub async fn fetch_identity(
@@ -306,17 +306,22 @@ impl StateRepositoryLike for ExternalStateRepositoryLikeWrapper {
         where_query: serde_json::Value,
         execution_context: &StateTransitionExecutionContext,
     ) -> anyhow::Result<Vec<Self::FetchDocument>> {
-        let js_documents = self.0.fetch_documents(
-            contract_id.to_owned().into(),
-            data_contract_type.to_owned(),
-            where_query
-                .serialize(&serde_wasm_bindgen::Serializer::json_compatible())
-                .map_err(|e| anyhow!("serialization error: {}", e))?,
-            execution_context.clone().into(),
-        );
+        let js_documents = self
+            .0
+            .fetch_documents(
+                contract_id.to_owned().into(),
+                data_contract_type.to_owned(),
+                where_query
+                    .serialize(&serde_wasm_bindgen::Serializer::json_compatible())
+                    .map_err(|e| anyhow!("serialization error: {}", e))?,
+                execution_context.clone().into(),
+            )
+            .await
+            .map_err(from_js_error)?;
+        let js_documents_array = js_sys::Array::from(&js_documents);
 
         let mut documents: Vec<DocumentWasm> = vec![];
-        for js_document in js_documents.iter() {
+        for js_document in js_documents_array.iter() {
             let document = js_document
                 .to_wasm::<DocumentWasm>("Document")
                 .map_err(|e| anyhow!("{e:#?}"))?;
@@ -332,8 +337,9 @@ impl StateRepositoryLike for ExternalStateRepositoryLikeWrapper {
     ) -> anyhow::Result<()> {
         let document_wasm: DocumentWasm = document.to_owned().into();
         self.0
-            .create_document(document_wasm, execution_context.clone().into());
-        Ok(())
+            .create_document(document_wasm, execution_context.clone().into())
+            .await
+            .map_err(from_js_error)
     }
 
     async fn update_document(
@@ -343,8 +349,9 @@ impl StateRepositoryLike for ExternalStateRepositoryLikeWrapper {
     ) -> anyhow::Result<()> {
         let document_wasm: DocumentWasm = document.to_owned().into();
         self.0
-            .update_document(document_wasm, execution_context.clone().into());
-        Ok(())
+            .update_document(document_wasm, execution_context.clone().into())
+            .await
+            .map_err(from_js_error)
     }
 
     async fn remove_document(
@@ -356,13 +363,15 @@ impl StateRepositoryLike for ExternalStateRepositoryLikeWrapper {
     ) -> anyhow::Result<()> {
         let data_contract: DataContractWasm = data_contract.to_owned().into();
         let document_id: IdentifierWrapper = document_id.to_owned().into();
-        self.0.remove_document(
-            data_contract,
-            data_contract_type.to_owned(),
-            document_id,
-            execution_context.clone().into(),
-        );
-        Ok(())
+        self.0
+            .remove_document(
+                data_contract,
+                data_contract_type.to_owned(),
+                document_id,
+                execution_context.clone().into(),
+            )
+            .await
+            .map_err(from_js_error)
     }
 
     async fn fetch_transaction(

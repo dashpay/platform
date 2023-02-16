@@ -118,16 +118,16 @@ describe('validateDocumentsBatchTransitionStateFactory', () => {
     stateRepositoryMock = createStateRepositoryMock(this.sinonSandbox);
     stateRepositoryMockJs = createStateRepositoryMock(this.sinonSandbox);
 
-    stateRepositoryMock.fetchDataContract.returns(dataContract.clone());
+    stateRepositoryMock.fetchDataContract.resolves(dataContract.clone());
     stateRepositoryMockJs.fetchDataContract.resolves(dataContractJs);
 
     blockTime = Date.now();
 
     stateRepositoryMockJs.fetchLatestPlatformBlockTime.resolves(blockTime);
-    stateRepositoryMock.fetchLatestPlatformBlockTime.returns(blockTime);
+    stateRepositoryMock.fetchLatestPlatformBlockTime.resolves(blockTime);
 
     fetchDocumentsMock = this.sinonSandbox.stub().resolves([]);
-    stateRepositoryMock.fetchDocuments.returns([]);
+    stateRepositoryMock.fetchDocuments.resolves([]);
 
     executeDataTriggersMock = this.sinonSandbox.stub();
     validateDocumentsUniquenessByIndicesMock = this.sinonSandbox.stub();
@@ -172,7 +172,7 @@ describe('validateDocumentsBatchTransitionStateFactory', () => {
   });
 
   it('should throw DataContractNotPresentError if data contract was not found - Rust', async () => {
-    stateRepositoryMock.fetchDataContract.returns(null);
+    stateRepositoryMock.fetchDataContract.resolves(null);
 
     try {
       await validateDocumentsBatchTransitionState(stateRepositoryMock, stateTransition);
@@ -216,7 +216,7 @@ describe('validateDocumentsBatchTransitionStateFactory', () => {
   });
 
   it('should return invalid result if document transition with action "create" is already present  - Rust', async () => {
-    stateRepositoryMock.fetchDocuments.returns([documents[0]]);
+    stateRepositoryMock.fetchDocuments.resolves([documents[0]]);
 
     const result = await validateDocumentsBatchTransitionState(
       stateRepositoryMock, stateTransition,
@@ -429,7 +429,7 @@ describe('validateDocumentsBatchTransitionStateFactory', () => {
     }, [dataContract]);
 
     documents[0].setCreatedAt(replaceDocument.getCreatedAt().getMilliseconds());
-    stateRepositoryMock.fetchDocuments.returns([documents[0]]);
+    stateRepositoryMock.fetchDocuments.resolves([documents[0]]);
 
     const result = await validateDocumentsBatchTransitionState(
       stateRepositoryMock, stateTransition,
@@ -525,7 +525,7 @@ describe('validateDocumentsBatchTransitionStateFactory', () => {
       transitions: documentTransitionsJs.map((t) => t.toObject()),
     }, [dataContract]);
 
-    stateRepositoryMock.fetchDocuments.returns([fetchedDocument]);
+    stateRepositoryMock.fetchDocuments.resolves([fetchedDocument]);
 
     const result = await validateDocumentsBatchTransitionState(
       stateRepositoryMock,
@@ -1139,7 +1139,7 @@ describe('validateDocumentsBatchTransitionStateFactory', () => {
         );
 
         const documentToReturn = new Document(documentsJs[1].toObject(), dataContract);
-        stateRepositoryMock.fetchDocuments.returns([documentToReturn]);
+        stateRepositoryMock.fetchDocuments.resolves([documentToReturn]);
 
         const transitions = stateTransition.getTransitions();
         transitions.forEach((t) => {
@@ -1224,7 +1224,7 @@ describe('validateDocumentsBatchTransitionStateFactory', () => {
         );
 
         const documentToReturn = new Document(documentsJs[1].toObject(), dataContract);
-        stateRepositoryMock.fetchDocuments.returns([documentToReturn]);
+        stateRepositoryMock.fetchDocuments.resolves([documentToReturn]);
 
         const transitions = stateTransition.getTransitions(); transitions.forEach((t) => {
           const createdAtMinus6Mins = t.getUpdatedAt() - (6 * 60 * 1000);
@@ -1313,7 +1313,7 @@ describe('validateDocumentsBatchTransitionStateFactory', () => {
       new Document(documentsJs[2].toObject(), dataContract),
     ];
 
-    stateRepositoryMock.fetchDocuments.returns(fetchedDocuments);
+    stateRepositoryMock.fetchDocuments.resolves(fetchedDocuments);
 
     documentsJs[1].setRevision(1);
     documentsJs[2].setRevision(1);
