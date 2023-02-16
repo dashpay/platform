@@ -44,27 +44,26 @@ impl Platform {
     ) -> Result<(), Error> {
         let data_contract_id = &withdrawals_contract::CONTRACT_ID;
 
-        let (_, maybe_data_contract) = self.drive.get_contract_with_fetch_info(
+        let (_, Some(contract_fetch_info)) = self.drive.get_contract_with_fetch_info(
             data_contract_id.to_buffer(),
-            Some(&Epoch::new(
-                block_execution_context.epoch_info.current_epoch_index,
-            )),
+            None,
             transaction,
-        )?;
-
-        let contract_fetch_info = maybe_data_contract.ok_or(Error::Execution(
-            ExecutionError::CorruptedCodeExecution("can't fetch withdrawal data contract"),
-        ))?;
+        )? else {
+            return Err(Error::Execution(
+                ExecutionError::CorruptedCodeExecution("can't fetch withdrawal data contract"),
+            ));
+        };
 
         let core_transactions = self.fetch_core_block_transactions(
             last_synced_core_height,
             block_execution_context.block_info.core_chain_locked_height,
         )?;
 
-        let mut broadcasted_documents = self.drive.fetch_withdrawal_documents_by_status(
-            withdrawals_contract::WithdrawalStatus::BROADCASTED.into(),
-            transaction,
-        )?;
+        let mut broadcasted_withdrawal_documents =
+            self.drive.fetch_withdrawal_documents_by_status(
+                withdrawals_contract::WithdrawalStatus::BROADCASTED.into(),
+                transaction,
+            )?;
 
         let block_info = BlockInfo {
             time_ms: block_execution_context.block_info.block_time_ms,
@@ -74,12 +73,20 @@ impl Platform {
 
         let mut drive_operations: Vec<DriveOperationType> = vec![];
 
-        for document in broadcasted_documents.iter_mut() {
+        for document in broadcasted_withdrawal_documents.iter_mut() {
             let transaction_sign_height = document
                 .get_u64(withdrawals_contract::property_names::TRANSACTION_SIGN_HEIGHT)
                 .map_err(|_| {
                     Error::Execution(ExecutionError::CorruptedCodeExecution(
                         "Can't get transactionSignHeight from withdrawal document",
+                    ))
+                })?;
+
+            let transaction_index = document
+                .get_u64(withdrawals_contract::property_names::TRANSACTION_INDEX)
+                .map_err(|_| {
+                    Error::Execution(ExecutionError::CorruptedCodeExecution(
+                        "Can't get transactionIndex from withdrawal document",
                     ))
                 })?;
 
@@ -91,22 +98,14 @@ impl Platform {
                     ))
                 })?;
 
-            let transaction_id = hex::encode(transaction_id_bytes);
+            let transaction_id_hex = hex::encode(transaction_id_bytes);
 
-            let transaction_index = document
-                .get_u64(withdrawals_contract::property_names::TRANSACTION_INDEX)
-                .map_err(|_| {
-                    Error::Execution(ExecutionError::CorruptedCodeExecution(
-                        "Can't get transactionIdex from withdrawal document",
-                    ))
-                })?;
-
-            if core_transactions.contains(&transaction_id)
+            if core_transactions.contains(&transaction_id_hex)
                 || block_execution_context.block_info.core_chain_locked_height
                     - transaction_sign_height
                     > NUMBER_OF_BLOCKS_BEFORE_EXPIRED
             {
-                let status = if core_transactions.contains(&transaction_id) {
+                let status = if core_transactions.contains(&transaction_id_hex) {
                     withdrawals_contract::WithdrawalStatus::COMPLETE
                 } else {
                     self.drive.add_insert_expired_index_operation(
@@ -133,7 +132,7 @@ impl Platform {
         }
 
         self.drive.add_update_multiple_documents_operations(
-            &broadcasted_documents,
+            &broadcasted_withdrawal_documents,
             &contract_fetch_info.contract,
             contract_fetch_info
                 .contract
