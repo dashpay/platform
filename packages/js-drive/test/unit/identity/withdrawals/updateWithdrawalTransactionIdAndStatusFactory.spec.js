@@ -36,9 +36,15 @@ describe('updateWithdrawalTransactionIdAndStatusFactory', () => {
     const updatedTxId = Buffer.alloc(32, 2);
     const coreChainLockedHeight = 42;
 
-    await updateWithdrawalTransactionIdAndStatus(blockInfo, coreChainLockedHeight, Buffer.alloc(0), updatedTxId, {
-      useTransaction: true,
-    });
+    await updateWithdrawalTransactionIdAndStatus(
+      blockInfo,
+      coreChainLockedHeight,
+      Buffer.alloc(0),
+      updatedTxId,
+      {
+        useTransaction: true,
+      },
+    );
 
     expect(fetchDocumentsMock).to.have.been.calledOnceWithExactly(
       withdrawalsContractId,
