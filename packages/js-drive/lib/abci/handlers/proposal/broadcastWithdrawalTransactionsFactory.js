@@ -44,6 +44,7 @@ function broadcastWithdrawalTransactionsFactory(
 
         await updateWithdrawalTransactionIdAndStatus(
           blockInfo,
+          proposalBlockExecutionContext.getCoreChainLockedHeight(),
           unsignedWithdrawalTransactionBytes,
           transactionBytes,
           {

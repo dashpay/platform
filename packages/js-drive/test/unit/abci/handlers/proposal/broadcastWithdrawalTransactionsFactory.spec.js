@@ -19,6 +19,7 @@ describe('broadcastWithdrawalTransactionsFactory', () => {
     });
     proposalBlockExecutionContextMock.getHeight.returns(new Long(1));
     proposalBlockExecutionContextMock.getTimeMs.returns(1);
+    proposalBlockExecutionContextMock.getCoreChainLockedHeight.returns(42);
 
     coreRpcMock = {
       sendRawTransaction: this.sinon.stub(),
@@ -56,6 +57,7 @@ describe('broadcastWithdrawalTransactionsFactory', () => {
     );
     expect(updateWithdrawalTransactionIdAndStatusMock).to.have.been.calledOnceWithExactly(
       BlockInfo.createFromBlockExecutionContext(proposalBlockExecutionContextMock),
+      42,
       txBytes,
       Buffer.concat([txBytes, signature]),
       {

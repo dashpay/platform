@@ -21,6 +21,7 @@ function updateWithdrawalTransactionIdAndStatusFactory(
      * @typedef updateWithdrawalTransactionIdAndStatus
      *
      * @param {BlockInfo} blockInfo
+     * @param {number} coreChainLockedHeight
      * @param {Buffer} originalTransactionId
      * @param {Buffer} updatedTransactionId
      * @param {Object} options
@@ -29,6 +30,7 @@ function updateWithdrawalTransactionIdAndStatusFactory(
      */
   async function updateWithdrawalTransactionIdAndStatus(
     blockInfo,
+    coreChainLockedHeight,
     originalTransactionId,
     updatedTransactionId,
     options,
@@ -48,7 +50,7 @@ function updateWithdrawalTransactionIdAndStatusFactory(
     );
 
     for (const document of documents) {
-      // TODO: set transactionSignHeight!
+      document.set('transactionSignHeight', coreChainLockedHeight);
       document.set('transactionId', updatedTransactionId);
       document.set('status', WITHDRAWALS_STATUS_BROADCASTED);
       document.setRevision(document.getRevision() + 1);

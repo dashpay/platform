@@ -34,8 +34,9 @@ describe('updateWithdrawalTransactionIdAndStatusFactory', () => {
     const blockInfo = new BlockInfo(1, 1, 1);
 
     const updatedTxId = Buffer.alloc(32, 2);
+    const coreChainLockedHeight = 42;
 
-    await updateWithdrawalTransactionIdAndStatus(blockInfo, Buffer.alloc(0), updatedTxId, {
+    await updateWithdrawalTransactionIdAndStatus(blockInfo, coreChainLockedHeight, Buffer.alloc(0), updatedTxId, {
       useTransaction: true,
     });
 
@@ -55,6 +56,7 @@ describe('updateWithdrawalTransactionIdAndStatusFactory', () => {
       documentFixture[0], blockInfo, { useTransaction: true },
     );
 
+    expect(documentFixture[0].get('transactionSignHeight')).to.deep.equal(coreChainLockedHeight);
     expect(documentFixture[0].get('transactionId')).to.deep.equal(updatedTxId);
     expect(documentFixture[0].get('status')).to.deep.equal(2);
     expect(documentFixture[0].getRevision()).to.deep.equal(2);
