@@ -113,11 +113,12 @@ services:
     stop_grace_period: 10s
 
   dashmate_helper:
-    image: ${DASHMATE_HELPER_DOCKER_IMAGE:?err}
+    image: pshenmic/dashmate_helper
     restart: unless-stopped
     environment:
       - DASHMATE_HOME_DIR=/home/dashmate/.dashmate
-    user: ${DASHMATE_USER:?err}
+      - LOCAL_UID=${LOCAL_UID:?err}
+      - LOCAL_GID=${LOCAL_GID:?err}
     command: yarn workspace dashmate helper ${CONFIG_NAME:?err}
     volumes:
       - ${DASHMATE_HOME_DIR:?err}:/home/dashmate/.dashmate

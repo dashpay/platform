@@ -399,14 +399,14 @@ class DockerCompose {
    * @return {{cwd: string, env: Object}}
    */
   getOptions(envs) {
-    const { uid } = os.userInfo();
-    const { gid } = statSync('/var/run/docker.sock');
+    const { uid, gid } = os.userInfo();
 
     const env = {
       ...process.env,
       ...envs,
       DASHMATE_HOME_DIR: HOME_DIR_PATH,
-      DASHMATE_USER: `${uid}:${gid}`
+      LOCAL_UID: uid,
+      LOCAL_GID: gid,
     };
 
     if (isWsl) {
