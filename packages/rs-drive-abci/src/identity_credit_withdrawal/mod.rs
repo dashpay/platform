@@ -18,7 +18,7 @@ use drive::dpp::util::hash;
 use drive::{
     drive::{
         batch::DriveOperationType, block_info::BlockInfo,
-        identity::withdrawals::paths::WithdrawalTransaction,
+        identity::withdrawals::paths::WithdrawalTransactionIdAndBytes,
     },
     fee_pools::epochs::Epoch,
     query::TransactionArg,
@@ -48,6 +48,12 @@ impl Platform {
             ),
         ))?;
 
+        let block_info = BlockInfo {
+            time_ms: block_execution_context.block_info.block_time_ms,
+            height: block_execution_context.block_info.block_height,
+            epoch: Epoch::new(block_execution_context.epoch_info.current_epoch_index),
+        };
+
         let data_contract_id = &withdrawals_contract::CONTRACT_ID;
 
         let (_, Some(contract_fetch_info)) = self.drive.get_contract_with_fetch_info(
@@ -69,12 +75,6 @@ impl Platform {
             withdrawals_contract::WithdrawalStatus::BROADCASTED.into(),
             transaction,
         )?;
-
-        let block_info = BlockInfo {
-            time_ms: block_execution_context.block_info.block_time_ms,
-            height: block_execution_context.block_info.block_height,
-            epoch: Epoch::new(block_execution_context.epoch_info.current_epoch_index),
-        };
 
         let mut drive_operations: Vec<DriveOperationType> = vec![];
 
@@ -183,6 +183,12 @@ impl Platform {
             ),
         ))?;
 
+        let block_info = BlockInfo {
+            time_ms: block_execution_context.block_info.block_time_ms,
+            height: block_execution_context.block_info.block_height,
+            epoch: Epoch::new(block_execution_context.epoch_info.current_epoch_index),
+        };
+
         let data_contract_id = withdrawals_contract::CONTRACT_ID.deref();
 
         let (_, Some(contract_fetch_info)) = self.drive.get_contract_with_fetch_info(
@@ -193,12 +199,6 @@ impl Platform {
             return Err(Error::Execution(
                 ExecutionError::CorruptedCodeExecution("can't fetch withdrawal data contract"),
             ));
-        };
-
-        let block_info = BlockInfo {
-            time_ms: block_execution_context.block_info.block_time_ms,
-            height: block_execution_context.block_info.block_height,
-            epoch: Epoch::new(block_execution_context.epoch_info.current_epoch_index),
         };
 
         let mut drive_operations: Vec<DriveOperationType> = vec![];
@@ -306,24 +306,32 @@ impl Platform {
             ),
         ))?;
 
+        let block_info = BlockInfo {
+            time_ms: block_execution_context.block_info.block_time_ms,
+            height: block_execution_context.block_info.block_height,
+            epoch: Epoch::new(block_execution_context.epoch_info.current_epoch_index),
+        };
+
         let data_contract_id = withdrawals_contract::CONTRACT_ID.deref();
 
-        let (_, maybe_data_contract) = self.drive.get_contract_with_fetch_info(
+        let (_, Some(contract_fetch_info)) = self.drive.get_contract_with_fetch_info(
             data_contract_id.to_buffer(),
-            Some(&Epoch::new(
-                block_execution_context.epoch_info.current_epoch_index,
-            )),
+            None,
             transaction,
-        )?;
-
-        let contract_fetch_info = maybe_data_contract.ok_or(Error::Execution(
-            ExecutionError::CorruptedCodeExecution("Can't fetch withdrawal data contract"),
-        ))?;
+        )? else {
+            return Err(Error::Execution(
+                ExecutionError::CorruptedCodeExecution("can't fetch withdrawal data contract"),
+            ));
+        };
 
         let mut documents = self.drive.fetch_withdrawal_documents_by_status(
             withdrawals_contract::WithdrawalStatus::QUEUED.into(),
             transaction,
         )?;
+
+        if documents.is_empty() {
+            return Ok(());
+        }
 
         let mut drive_operations = vec![];
 
@@ -333,17 +341,14 @@ impl Platform {
             transaction,
         )?;
 
-        let block_info = BlockInfo {
-            time_ms: block_execution_context.block_info.block_time_ms,
-            height: block_execution_context.block_info.block_height,
-            epoch: Epoch::new(block_execution_context.epoch_info.current_epoch_index),
-        };
-
         for document in documents.iter_mut() {
             let document_id = Identifier::from_bytes(&document.id)?;
 
-            let transaction_id =
-                hash::hash(withdrawal_transactions.get(&document_id).unwrap().1.clone());
+            let Some((_, transaction_bytes)) = withdrawal_transactions.get(&document_id) else {
+                return Err(Error::Execution(ExecutionError::CorruptedCodeExecution("transactions must contain a transaction")))
+            };
+
+            let transaction_id = hash::hash(transaction_bytes);
 
             document.set_bytes(
                 withdrawals_contract::property_names::TRANSACTION_ID,
@@ -385,7 +390,7 @@ impl Platform {
             &mut drive_operations,
         );
 
-        let withdrawal_transactions: Vec<WithdrawalTransaction> = withdrawal_transactions
+        let withdrawal_transactions: Vec<WithdrawalTransactionIdAndBytes> = withdrawal_transactions
             .values()
             .into_iter()
             .cloned()
@@ -396,10 +401,8 @@ impl Platform {
             &mut drive_operations,
         );
 
-        if !drive_operations.is_empty() {
-            self.drive
-                .apply_drive_operations(drive_operations, true, &block_info, transaction)?;
-        }
+        self.drive
+            .apply_drive_operations(drive_operations, true, &block_info, transaction)?;
 
         Ok(())
     }
@@ -451,8 +454,8 @@ impl Platform {
         documents: &[DocumentStub],
         drive_operation_types: &mut Vec<DriveOperationType>,
         transaction: TransactionArg,
-    ) -> Result<HashMap<Identifier, WithdrawalTransaction>, Error> {
-        let mut withdrawals: HashMap<Identifier, WithdrawalTransaction> = HashMap::new();
+    ) -> Result<HashMap<Identifier, WithdrawalTransactionIdAndBytes>, Error> {
+        let mut withdrawals: HashMap<Identifier, WithdrawalTransactionIdAndBytes> = HashMap::new();
 
         let latest_withdrawal_index = self
             .drive
@@ -916,7 +919,7 @@ mod tests {
             identity::state_transition::identity_credit_withdrawal_transition::Pooling,
         };
         use drive::drive::block_info::BlockInfo;
-        use drive::drive::identity::withdrawals::paths::WithdrawalTransaction;
+        use drive::drive::identity::withdrawals::paths::WithdrawalTransactionIdAndBytes;
         use drive::tests::helpers::setup::setup_system_data_contract;
         use itertools::Itertools;
 
@@ -1012,7 +1015,7 @@ mod tests {
                     .values()
                     .cloned()
                     .sorted()
-                    .collect::<Vec<WithdrawalTransaction>>(),
+                    .collect::<Vec<WithdrawalTransactionIdAndBytes>>(),
                 vec![
                     (
                         vec![0, 0, 0, 0, 0, 0, 0, 0],
@@ -1033,7 +1036,7 @@ mod tests {
                 ]
                 .into_iter()
                 .sorted()
-                .collect::<Vec<WithdrawalTransaction>>(),
+                .collect::<Vec<WithdrawalTransactionIdAndBytes>>(),
             );
         }
     }

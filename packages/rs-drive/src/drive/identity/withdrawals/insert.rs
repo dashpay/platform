@@ -1,5 +1,5 @@
 use crate::drive::identity::withdrawals::paths::{
-    get_withdrawal_transactions_queue_path_vec, WithdrawalTransaction,
+    get_withdrawal_transactions_queue_path_vec, WithdrawalTransactionIdAndBytes,
 };
 use crate::drive::object_size_info::PathKeyElementInfo::PathKeyElement;
 use crate::drive::Drive;
@@ -10,7 +10,7 @@ use grovedb::Element;
 impl Drive {
     pub(crate) fn insert_withdrawal_transactions(
         &self,
-        transactions: &[WithdrawalTransaction],
+        transactions: &[WithdrawalTransactionIdAndBytes],
     ) -> Result<Vec<DriveOperation>, Error> {
         let mut drive_operations = vec![];
 

@@ -256,7 +256,7 @@ mod tests {
         use dpp::util::hash;
         use drive::common::helpers::identities::create_test_masternode_identities;
         use drive::drive::block_info::BlockInfo;
-        use drive::drive::identity::withdrawals::paths::WithdrawalTransaction;
+        use drive::drive::identity::withdrawals::paths::WithdrawalTransactionIdAndBytes;
         use drive::fee::epoch::CreditsPerEpoch;
         use drive::fee_pools::epochs::Epoch;
         use drive::rpc::core::MockCoreRPCLike;
@@ -297,7 +297,7 @@ mod tests {
                 .expect("to load system data contract");
 
             // Init withdrawal requests
-            let withdrawals: Vec<WithdrawalTransaction> = (0..16)
+            let withdrawals: Vec<WithdrawalTransactionIdAndBytes> = (0..16)
                 .map(|index: u64| (index.to_be_bytes().to_vec(), vec![index as u8; 32]))
                 .collect();
 

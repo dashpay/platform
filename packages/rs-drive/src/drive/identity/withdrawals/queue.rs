@@ -13,13 +13,13 @@ use crate::{
     error::{drive::DriveError, Error},
 };
 
-use super::paths::{get_withdrawal_transactions_queue_path_vec, WithdrawalTransaction};
+use super::paths::{get_withdrawal_transactions_queue_path_vec, WithdrawalTransactionIdAndBytes};
 
 impl Drive {
     /// Add insert operations for withdrawal transactions to the batch
     pub fn add_enqueue_withdrawal_transaction_operations<'a>(
         &self,
-        withdrawals: &'a [WithdrawalTransaction],
+        withdrawals: &'a [WithdrawalTransactionIdAndBytes],
         drive_operation_types: &mut Vec<DriveOperationType<'a>>,
     ) {
         if !withdrawals.is_empty() {
@@ -37,7 +37,7 @@ impl Drive {
         max_amount: u16,
         transaction: TransactionArg,
         drive_operation_types: &mut Vec<DriveOperationType>,
-    ) -> Result<Vec<WithdrawalTransaction>, Error> {
+    ) -> Result<Vec<WithdrawalTransactionIdAndBytes>, Error> {
         let mut query = Query::new();
 
         query.insert_item(QueryItem::RangeFull(RangeFull));

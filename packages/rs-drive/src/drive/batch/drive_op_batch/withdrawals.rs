@@ -3,7 +3,9 @@ use std::collections::HashMap;
 use grovedb::{batch::KeyInfoPath, EstimatedLayerInformation, TransactionArg};
 
 use crate::{
-    drive::{block_info::BlockInfo, identity::withdrawals::paths::WithdrawalTransaction, Drive},
+    drive::{
+        block_info::BlockInfo, identity::withdrawals::paths::WithdrawalTransactionIdAndBytes, Drive,
+    },
     error::Error,
     fee::op::DriveOperation,
 };
@@ -31,7 +33,7 @@ pub enum WithdrawalOperationType<'a> {
     /// Insert Core Transaction into queue
     InsertTransactions {
         /// transaction id bytes
-        withdrawal_transactions: &'a [WithdrawalTransaction],
+        withdrawal_transactions: &'a [WithdrawalTransactionIdAndBytes],
     },
     /// Delete withdrawal
     DeleteWithdrawalTransaction {
