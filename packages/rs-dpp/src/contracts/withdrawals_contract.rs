@@ -4,7 +4,7 @@ use serde_repr::{Deserialize_repr, Serialize_repr};
 
 use crate::prelude::Identifier;
 
-pub mod types {
+pub mod document_types {
     pub const WITHDRAWAL: &str = "withdrawal";
 }
 
@@ -34,7 +34,7 @@ pub mod property_names {
     TryFromPrimitive,
     IntoPrimitive,
 )]
-pub enum Status {
+pub enum WithdrawalStatus {
     QUEUED = 0,
     POOLED = 1,
     BROADCASTED = 2,

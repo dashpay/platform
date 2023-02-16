@@ -50,7 +50,7 @@
     "revision": {
       "type": "integer",
       "minimum": 0,
-      "description": "State transition revision"
+      "description": "Target identity revision"
     }
   },
   "additionalProperties": false,

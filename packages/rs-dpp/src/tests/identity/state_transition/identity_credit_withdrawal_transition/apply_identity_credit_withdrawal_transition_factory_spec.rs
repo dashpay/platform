@@ -92,7 +92,7 @@ mod apply_identity_credit_withdrawal_transition_factory {
                         "coreFeePerByte": 0,
                         "pooling": Pooling::Never,
                         "outputScript": [],
-                        "status": withdrawals_contract::Status::QUEUED,
+                        "status": withdrawals_contract::WithdrawalStatus::QUEUED,
                     });
 
                 created_at_match && updated_at_match && document_data_match

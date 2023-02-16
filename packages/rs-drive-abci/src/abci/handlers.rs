@@ -313,7 +313,7 @@ mod tests {
                         "coreFeePerByte": 1,
                         "pooling": Pooling::Never,
                         "outputScript": (0..23).collect::<Vec<u8>>(),
-                        "status": withdrawals_contract::Status::POOLED,
+                        "status": withdrawals_contract::WithdrawalStatus::POOLED,
                         "transactionIndex": 1,
                         "transactionSignHeight": 93,
                         "transactionId": tx_id,
@@ -321,7 +321,7 @@ mod tests {
                 );
 
                 let document_type = data_contract
-                    .document_type_for_name(withdrawals_contract::types::WITHDRAWAL)
+                    .document_type_for_name(withdrawals_contract::document_types::WITHDRAWAL)
                     .expect("expected to get document type");
 
                 setup_document(

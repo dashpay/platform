@@ -58,7 +58,7 @@ where
         let latest_platform_block_header: BlockHeader =
             consensus::deserialize(&latest_platform_block_header_bytes)?;
 
-        let document_type = String::from(withdrawals_contract::types::WITHDRAWAL);
+        let document_type = String::from(withdrawals_contract::document_types::WITHDRAWAL);
         let document_created_at_millis: i64 = latest_platform_block_header.time as i64 * 1000i64;
 
         let document_data = json!({
@@ -66,7 +66,7 @@ where
             withdrawals_contract::property_names::CORE_FEE_PER_BYTE: state_transition.core_fee_per_byte,
             withdrawals_contract::property_names::POOLING: Pooling::Never,
             withdrawals_contract::property_names::OUTPUT_SCRIPT: state_transition.output_script.as_bytes(),
-            withdrawals_contract::property_names::STATUS: withdrawals_contract::Status::QUEUED,
+            withdrawals_contract::property_names::STATUS: withdrawals_contract::WithdrawalStatus::QUEUED,
         });
 
         let mut document_id;
@@ -85,7 +85,7 @@ where
                 .state_repository
                 .fetch_documents(
                     withdrawals_contract::CONTRACT_ID.deref(),
-                    withdrawals_contract::types::WITHDRAWAL,
+                    withdrawals_contract::document_types::WITHDRAWAL,
                     json!({
                         "where": [
                             ["$id", "==", document_id],

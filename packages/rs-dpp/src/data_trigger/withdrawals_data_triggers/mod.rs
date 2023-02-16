@@ -32,7 +32,7 @@ where
         .state_repository
         .fetch_documents(
             &context.data_contract.id,
-            withdrawals_contract::types::WITHDRAWAL,
+            withdrawals_contract::document_types::WITHDRAWAL,
             json!({
                 "where" : [
                     ["$id", "==", dt_delete.base.id],
@@ -62,8 +62,8 @@ where
         .as_u64()
         .ok_or_else(|| anyhow!("can't convert withdrawal status to u64"))? as u8;
 
-    if status != withdrawals_contract::Status::COMPLETE as u8
-        || status != withdrawals_contract::Status::EXPIRED as u8
+    if status != withdrawals_contract::WithdrawalStatus::COMPLETE as u8
+        || status != withdrawals_contract::WithdrawalStatus::EXPIRED as u8
     {
         let err = DataTriggerError::DataTriggerConditionError {
             data_contract_id: context.data_contract.id,
@@ -138,7 +138,7 @@ mod tests {
                 "coreFeePerByte": 1,
                 "pooling": Pooling::Never,
                 "outputScript": (0..23).collect::<Vec<u8>>(),
-                "status": withdrawals_contract::Status::BROADCASTED,
+                "status": withdrawals_contract::WithdrawalStatus::BROADCASTED,
                 "transactionIndex": 1,
                 "transactionSignHeight": 93,
                 "transactionId": vec![1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1],
