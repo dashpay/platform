@@ -7,6 +7,7 @@ const ConfigBaseCommand = require('../../oclif/command/ConfigBaseCommand');
 const printObject = require('../../printers/printObject');
 const colors = require('../../status/colors');
 const MasternodeStateEnum = require('../../enums/masternodeState');
+const MasternodeSyncAssetEnum = require("../../enums/masternodeSyncAsset");
 
 class MasternodeStatusCommand extends ConfigBaseCommand {
   /**
@@ -35,12 +36,16 @@ class MasternodeStatusCommand extends ConfigBaseCommand {
     if (flags.format === OUTPUT_FORMATS.PLAIN) {
       const plain = {};
 
-      plain['Masternode State'] = (scope.state === MasternodeStateEnum.READY
-        ? chalk.green : chalk.red)(scope.state);
-
       if (scope.sentinel.version) {
         plain['Sentinel Version'] = scope.sentinel.version;
         plain['Sentinel Status'] = colors.sentinel(scope.sentinel.state)(scope.sentinel.state);
+      }
+
+      if (scope.syncAsset === MasternodeSyncAssetEnum.MASTERNODE_SYNC_FINISHED) {
+        plain['Masternode State'] = (scope.state === MasternodeStateEnum.READY
+          ? chalk.green : chalk.red)(scope.state);
+      } else {
+        plain['Masternode Sync Status'] = chalk.yellow(scope.syncAsset);
       }
 
       if (scope.state === MasternodeStateEnum.READY) {
