@@ -133,6 +133,11 @@ impl IdentityTopUpTransition {
         &self.asset_lock_proof
     }
 
+    /// Set identity id
+    pub fn set_identity_id(&mut self, identity_id: Identifier) {
+        self.identity_id = identity_id;
+    }
+
     /// Returns identity id
     pub fn get_identity_id(&self) -> &Identifier {
         &self.identity_id
@@ -187,6 +192,10 @@ impl IdentityTopUpTransition {
         )?;
 
         Ok(json_map)
+    }
+
+    pub fn set_protocol_version(&mut self, protocol_version: u32) {
+        self.protocol_version = protocol_version;
     }
 
     /// Returns ids of created identities

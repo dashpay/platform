@@ -182,6 +182,10 @@ impl IdentityUpdateTransition {
     pub fn get_modified_data_ids(&self) -> Vec<&Identifier> {
         vec![self.get_identity_id()]
     }
+
+    pub fn set_protocol_version(&mut self, protocol_version: u32) {
+        self.protocol_version = protocol_version;
+    }
 }
 
 /// if the property isn't present the empty list is returned. If property is defined, the function

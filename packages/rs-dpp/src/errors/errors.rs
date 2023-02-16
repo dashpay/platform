@@ -117,6 +117,12 @@ pub enum ProtocolError {
 
     #[error("Identity is not present")]
     IdentityNotPresentError { id: Identifier },
+
+    #[error("Invalid Identity: {errors:?}")]
+    InvalidIdentityError {
+        errors: Vec<ConsensusError>,
+        raw_identity: JsonValue,
+    },
 }
 
 impl From<NonConsensusError> for ProtocolError {

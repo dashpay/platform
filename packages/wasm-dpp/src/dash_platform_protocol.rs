@@ -26,6 +26,7 @@ impl DashPlatformProtocol {
         let protocol_version_validator = Arc::new(validator);
         let public_keys_validator = PublicKeysValidator::new(bls).unwrap();
         let identity_facade = IdentityFacade::new(
+            protocol_version_validator.protocol_version(),
             protocol_version_validator.clone(),
             Arc::new(public_keys_validator),
         )

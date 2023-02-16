@@ -22,6 +22,7 @@ impl IdentityFacadeWasm {
         let protocol_version_validator = ProtocolVersionValidator::default();
         let public_keys_validator = PublicKeysValidator::new(bls).unwrap();
         let identity_facade = IdentityFacade::new(
+            protocol_version_validator.protocol_version(),
             Arc::new(protocol_version_validator),
             Arc::new(public_keys_validator),
         )
