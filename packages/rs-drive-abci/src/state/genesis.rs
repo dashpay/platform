@@ -271,6 +271,8 @@ impl Platform {
             properties: document_stub_properties,
             owner_id: contract.owner_id.to_buffer(),
             revision: None,
+            created_at: None,
+            updated_at: None,
         };
 
         let document_type = contract.document_type_for_name("domain")?;

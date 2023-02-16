@@ -77,6 +77,8 @@ fn create_test_mn_share_document(
         properties,
         owner_id: identity_id,
         revision: Some(1),
+        created_at: None,
+        updated_at: None,
     };
 
     let document_type = contract

@@ -2,6 +2,7 @@ use crate::data_contract::document_type::document_type::PROTOCOL_VERSION;
 use crate::data_contract::document_type::DocumentType;
 use crate::data_contract::errors::{DataContractError, StructureError};
 use crate::data_contract::extra::common::bytes_for_system_value_from_tree_map;
+use crate::document::document::property_names::{CREATED_AT, UPDATED_AT};
 use crate::document::Document;
 use crate::document::DocumentInStateTransition;
 use crate::util::cbor_value::CborBTreeMapHelper;
@@ -31,7 +32,37 @@ impl Document {
             .properties
             .iter()
             .try_for_each(|(field_name, field)| {
-                if let Some(value) = self.properties.get(field_name) {
+                if field_name == CREATED_AT {
+                    if let Some(created_at) = self.created_at {
+                        buffer.extend(created_at.to_be_bytes());
+                        Ok(())
+                    } else if field.required {
+                        Err(ProtocolError::DataContractError(
+                            DataContractError::MissingRequiredKey(
+                                "created at field is not present",
+                            ),
+                        ))
+                    } else {
+                        // We don't have the created_at that wasn't required
+                        buffer.push(0);
+                        Ok(())
+                    }
+                } else if field_name == UPDATED_AT {
+                    if let Some(updated_at) = self.updated_at {
+                        buffer.extend(updated_at.to_be_bytes());
+                        Ok(())
+                    } else if field.required {
+                        Err(ProtocolError::DataContractError(
+                            DataContractError::MissingRequiredKey(
+                                "created at field is not present",
+                            ),
+                        ))
+                    } else {
+                        // We don't have the updated_at that wasn't required
+                        buffer.push(0);
+                        Ok(())
+                    }
+                } else if let Some(value) = self.properties.get(field_name) {
                     let value = field
                         .document_type
                         .encode_value_ref_with_size(value, field.required)?;
@@ -47,6 +78,7 @@ impl Document {
                     Ok(())
                 }
             })?;
+
         Ok(buffer)
     }
 
@@ -69,7 +101,37 @@ impl Document {
             .properties
             .iter()
             .try_for_each(|(field_name, field)| {
-                if let Some(value) = self.properties.remove(field_name) {
+                if field_name == CREATED_AT {
+                    if let Some(created_at) = self.created_at {
+                        buffer.extend(created_at.to_be_bytes());
+                        Ok(())
+                    } else if field.required {
+                        Err(ProtocolError::DataContractError(
+                            DataContractError::MissingRequiredKey(
+                                "created at field is not present",
+                            ),
+                        ))
+                    } else {
+                        // We don't have the created_at that wasn't required
+                        buffer.push(0);
+                        Ok(())
+                    }
+                } else if field_name == UPDATED_AT {
+                    if let Some(updated_at) = self.updated_at {
+                        buffer.extend(updated_at.to_be_bytes());
+                        Ok(())
+                    } else if field.required {
+                        Err(ProtocolError::DataContractError(
+                            DataContractError::MissingRequiredKey(
+                                "created at field is not present",
+                            ),
+                        ))
+                    } else {
+                        // We don't have the updated_at that wasn't required
+                        buffer.push(0);
+                        Ok(())
+                    }
+                } else if let Some(value) = self.properties.remove(field_name) {
                     let value = field
                         .document_type
                         .encode_value_with_size(value, field.required)?;
@@ -85,6 +147,7 @@ impl Document {
                     Ok(())
                 }
             })?;
+
         Ok(buffer)
     }
 
@@ -124,15 +187,74 @@ impl Document {
         } else {
             None
         };
-
-        let properties = document_type
+        let mut created_at = None;
+        let mut updated_at = None;
+        let mut properties = document_type
             .properties
             .iter()
             .filter_map(|(key, field)| {
-                let read_value = field.document_type.read_from(&mut buf, field.required);
-                match read_value {
-                    Ok(read_value) => read_value.map(|read_value| Ok((key.clone(), read_value))),
-                    Err(e) => Some(Err(e)),
+                if key == CREATED_AT {
+                    if !field.required {
+                        let marker_result = buf.read_u8().map_err(|_| {
+                            ProtocolError::DataContractError(DataContractError::CorruptedSerialization(
+                                "error reading created at optional byte from serialized document",
+                            ))
+                        });
+                        match marker_result {
+                            Ok(marker) => {
+                                if marker == 0 {
+                                    return None;
+                                }
+                            }
+                            Err(e) => return Some(Err(e)),
+                        }
+                    }
+                    let integer_result = buf.read_u64::<BigEndian>().map_err(|_| {
+                        ProtocolError::DataContractError(DataContractError::CorruptedSerialization(
+                            "error reading created at from serialized document",
+                        ))
+                    });
+                    match integer_result {
+                        Ok(integer) => {
+                            created_at = Some(integer);
+                            None
+                        }
+                        Err(e) => Some(Err(e)),
+                    }
+                } else if key == UPDATED_AT {
+                    if !field.required {
+                        let marker_result = buf.read_u8().map_err(|_| {
+                            ProtocolError::DataContractError(DataContractError::CorruptedSerialization(
+                                "error reading updated at optional byte from serialized document",
+                            ))
+                        });
+                        match marker_result {
+                            Ok(marker) => {
+                                if marker == 0 {
+                                    return None;
+                                }
+                            }
+                            Err(e) => return Some(Err(e)),
+                        }
+                    }
+                    let integer_result = buf.read_u64::<BigEndian>().map_err(|_| {
+                        ProtocolError::DataContractError(DataContractError::CorruptedSerialization(
+                            "error reading updated at from serialized document",
+                        ))
+                    });
+                    match integer_result {
+                        Ok(integer) => {
+                            updated_at = Some(integer);
+                            None
+                        }
+                        Err(e) => Some(Err(e)),
+                    }
+                } else {
+                    let read_value = field.document_type.read_from(&mut buf, field.required);
+                    match read_value {
+                        Ok(read_value) => read_value.map(|read_value| Ok((key.clone(), read_value))),
+                        Err(e) => Some(Err(e)),
+                    }
                 }
             })
             .collect::<Result<BTreeMap<String, Value>, ProtocolError>>()?;
@@ -141,6 +263,8 @@ impl Document {
             properties,
             owner_id,
             revision,
+            created_at,
+            updated_at,
         })
     }
 
@@ -209,6 +333,8 @@ impl Document {
         .expect("document_id must be 32 bytes");
 
         let revision = document.remove_optional_integer("$revision")?;
+        let created_at = document.remove_optional_integer("$createdAt")?;
+        let updated_at = document.remove_optional_integer("$updatedAt")?;
 
         // dev-note: properties is everything other than the id and owner id
         Ok(Document {
@@ -216,54 +342,8 @@ impl Document {
             owner_id,
             id,
             revision,
-        })
-    }
-
-    //todo: remove (I think)
-    /// Reads a CBOR-serialized document and creates a Document from it with the provided IDs.
-    pub fn from_cbor_with_id(
-        document_cbor: &[u8],
-        document_id: &[u8],
-        owner_id: &[u8],
-    ) -> Result<Self, ProtocolError> {
-        // we need to start by verifying that the owner_id is a 256 bit number (32 bytes)
-        if owner_id.len() != 32 {
-            return Err(ProtocolError::DataContractError(
-                DataContractError::FieldRequirementUnmet("invalid owner id"),
-            ));
-        }
-
-        if document_id.len() != 32 {
-            return Err(ProtocolError::DataContractError(
-                DataContractError::FieldRequirementUnmet("invalid document id"),
-            ));
-        }
-        let SplitProtocolVersionOutcome {
-            main_message_bytes: read_document_cbor,
-            ..
-        } = deserializer::split_protocol_version(document_cbor)?;
-
-        // first we need to deserialize the document and contract indices
-        // we would need dedicated deserialization functions based on the document type
-        let properties: BTreeMap<String, Value> = ciborium::de::from_reader(read_document_cbor)
-            .map_err(|_| {
-                ProtocolError::StructureError(StructureError::InvalidCBOR(
-                    "unable to decode contract for document call with id",
-                ))
-            })?;
-
-        let revision = properties.get_optional_integer("$revision")?;
-
-        // dev-note: properties is everything other than the id and owner id
-        Ok(Document {
-            properties,
-            owner_id: owner_id
-                .try_into()
-                .expect("try_into shouldn't fail, document_id must be 32 bytes"),
-            id: document_id
-                .try_into()
-                .expect("try_into shouldn't fail, document_id must be 32 bytes"),
-            revision,
+            created_at,
+            updated_at,
         })
     }
 

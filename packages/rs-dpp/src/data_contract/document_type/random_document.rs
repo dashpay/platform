@@ -33,6 +33,7 @@
 //! create various types of random documents.
 //!
 
+use crate::data_contract::document_type::property_names::{CREATED_AT, UPDATED_AT};
 use crate::data_contract::document_type::DocumentType;
 use crate::document::Document;
 use crate::ProtocolError;
@@ -97,14 +98,31 @@ impl CreateRandomDocument for DocumentType {
     fn random_document_with_rng(&self, rng: &mut StdRng) -> Document {
         let id = rng.gen::<[u8; 32]>();
         let owner_id = rng.gen::<[u8; 32]>();
-        let properties = self
+        let mut created_at = None;
+        let mut updated_at = None;
+        let mut properties = self
             .properties
             .iter()
-            .map(|(key, document_field)| {
-                (key.clone(), document_field.document_type.random_value(rng))
+            .filter_map(|(key, document_field)| {
+                if key == CREATED_AT {
+                    created_at = Some(rng.gen_range(1575072000000..1890691200000));
+                    None
+                } else if key == UPDATED_AT {
+                    updated_at = Some(0);
+                    None
+                } else {
+                    Some((key.clone(), document_field.document_type.random_value(rng)))
+                }
             })
             .collect();
 
+        if updated_at.is_some() {
+            if let Some(created_at) = created_at {
+                updated_at = Some(rng.gen_range(created_at..1990691200000));
+            } else {
+                updated_at = Some(rng.gen_range(1575072000000..1890691200000));
+            }
+        }
         let revision = if self.documents_mutable {
             Some(1)
         } else {
@@ -116,6 +134,8 @@ impl CreateRandomDocument for DocumentType {
             properties,
             owner_id,
             revision,
+            created_at,
+            updated_at,
         }
     }
 
@@ -170,6 +190,8 @@ impl CreateRandomDocument for DocumentType {
             properties,
             owner_id,
             revision,
+            created_at: None,
+            updated_at: None,
         }
     }
 }

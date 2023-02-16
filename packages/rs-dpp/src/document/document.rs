@@ -32,6 +32,7 @@
 //! This module defines the `Document` struct and implements its functions.
 //!
 
+use chrono::{DateTime, NaiveDateTime, Utc};
 use std::collections::BTreeMap;
 use std::convert::{TryFrom, TryInto};
 use std::fmt;
@@ -49,9 +50,20 @@ use crate::data_contract::extra::common::{
     bytes_for_system_value_from_tree_map, get_key_from_cbor_map,
     reduced_value_string_representation,
 };
+use crate::identity::TimestampMillis;
 use crate::util::deserializer;
 use crate::util::deserializer::SplitProtocolVersionOutcome;
 use crate::ProtocolError;
+
+/// The property names of a document
+pub mod property_names {
+    pub const ID: &str = "$id";
+    pub const DOCUMENT_TYPE: &str = "$type";
+    pub const REVISION: &str = "$revision";
+    pub const OWNER_ID: &str = "$ownerId";
+    pub const CREATED_AT: &str = "$createdAt";
+    pub const UPDATED_AT: &str = "$updatedAt";
+}
 
 /// Documents contain the data that goes into data contracts.
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
@@ -59,18 +71,19 @@ pub struct Document {
     /// The unique document ID.
     #[serde(rename = "$id")]
     pub id: [u8; 32],
-
-    /// The document's properties (data).
-    #[serde(flatten)]
-    pub properties: BTreeMap<String, Value>,
-
     /// The ID of the document's owner.
     #[serde(rename = "$ownerId")]
     pub owner_id: [u8; 32],
-
+    /// The document's properties (data).
+    #[serde(flatten)]
+    pub properties: BTreeMap<String, Value>,
     /// The document revision.
     #[serde(rename = "$revision")]
     pub revision: Option<u32>,
+    #[serde(rename = "$createdAt")]
+    pub created_at: Option<TimestampMillis>,
+    #[serde(rename = "$updatedAt")]
+    pub updated_at: Option<TimestampMillis>,
 }
 
 impl Document {
@@ -162,6 +175,17 @@ impl fmt::Display for Document {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         write!(f, "id:{} ", bs58::encode(self.id).into_string())?;
         write!(f, "owner_id:{} ", bs58::encode(self.owner_id).into_string())?;
+        if let Some(created_at) = self.created_at {
+            let naive = NaiveDateTime::from_timestamp_millis(created_at as i64).unwrap_or_default();
+            let datetime: DateTime<Utc> = DateTime::from_utc(naive, Utc);
+            write!(f, "created_at:{} ", datetime.format("%Y-%m-%d %H:%M:%S"))?;
+        }
+        if let Some(updated_at) = self.updated_at {
+            let naive = NaiveDateTime::from_timestamp_millis(updated_at as i64).unwrap_or_default();
+            let datetime: DateTime<Utc> = DateTime::from_utc(naive, Utc);
+            write!(f, "updated_at:{} ", datetime.format("%Y-%m-%d %H:%M:%S"))?;
+        }
+
         if self.properties.is_empty() {
             write!(f, "no properties")?;
         } else {
@@ -249,6 +273,6 @@ mod tests {
         let document = document_type.random_document(Some(3333));
 
         let document_string = format!("{}", document);
-        assert_eq!(document_string.as_str(), "id:2vq574DjKi7ZD8kJ6dMHxT5wu6ZKD2bW5xKAyKAGW7qZ owner_id:ChTEGXJcpyknkADUC5s6tAzvPqVG7x6Lo1Nr5mFtj2mk $createdAt:1627081806.116 $updatedAt:1575820087.909 avatarUrl:1DbW18RuyblDX7hxB38O[...(106)] displayName:rzhRkzY2L213txD6gR2S[...(21)] publicMessage:ixPGeedfb4oeyipRFe8y[...(57)] ")
+        assert_eq!(document_string.as_str(), "id:2vq574DjKi7ZD8kJ6dMHxT5wu6ZKD2bW5xKAyKAGW7qZ owner_id:ChTEGXJcpyknkADUC5s6tAzvPqVG7x6Lo1Nr5mFtj2mk created_at:2027-09-24 14:16:54 updated_at:2030-06-20 21:52:44 avatarUrl:RD1DbW18RuyblDX7hxB3[...(1936)] displayName:jALmlamgYbnlKUkT1 publicMessage:oyGtAOjibsOvx9OUjxVO[...(110)] ")
     }
 }
