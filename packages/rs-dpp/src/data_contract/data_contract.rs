@@ -596,7 +596,7 @@ mod test {
         let data_contract_bytes = data_contract
             .to_buffer()
             .expect("data contract should be converted into the bytes");
-        let data_contract_restored = DataContract::from_buffer(&data_contract_bytes)
+        let data_contract_restored = DataContract::from_buffer(data_contract_bytes)
             .expect("data contract should be created from bytes");
 
         assert_eq!(
@@ -624,7 +624,7 @@ mod test {
             .to_buffer()
             .expect("data contract should be converted into the bytes");
 
-        let data_contract_restored = DataContract::from_buffer(&data_contract_bytes)
+        let data_contract_restored = DataContract::from_buffer(data_contract_bytes)
             .expect("data contract should be created from bytes");
 
         assert_eq!(
@@ -645,7 +645,7 @@ mod test {
     #[test]
     fn conversion_to_buffer_from_buffer_too_high_version() {
         init();
-        let mut data_contract = get_data_contract_fixture(None);
+        let data_contract = get_data_contract_fixture(None);
         data_contract.protocol_version;
 
         let data_contract_bytes = data_contract
@@ -796,7 +796,7 @@ mod test {
     fn deserialize_dpp_cbor() {
         let data_contract_cbor = get_data_contract_cbor_bytes();
 
-        let data_contract = DataContract::from_buffer(&data_contract_cbor).unwrap();
+        let data_contract = DataContract::from_buffer(data_contract_cbor).unwrap();
 
         assert_eq!(data_contract.version(), 1);
         assert_eq!(data_contract.protocol_version(), 1);

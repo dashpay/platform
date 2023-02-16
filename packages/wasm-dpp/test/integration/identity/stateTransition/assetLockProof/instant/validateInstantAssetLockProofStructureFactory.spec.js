@@ -43,7 +43,8 @@ describe('validateInstantAssetLockProofStructureFactory', () => {
     rawProof = assetLock.toObject();
 
     stateRepositoryMock = createStateRepositoryMock(this.sinonSandbox);
-    stateRepositoryMock.verifyInstantLock.returns(true);
+    stateRepositoryMock.verifyInstantLock.resolves(true);
+    stateRepositoryMock.isAssetLockTransactionOutPointAlreadyUsed.resolves(false);
 
     executionContext = new StateTransitionExecutionContext();
 

@@ -145,9 +145,10 @@ pub fn generic_of_js_val<T: RefFromWasmAbi<Abi = u32>>(
     class_name: &str,
 ) -> Result<T::Anchor, JsValue> {
     if !js_value.is_object() {
-        return Err(JsValue::from_str(
+        return Err(JsError::new(
             format!("Value supplied as {} is not an object", class_name).as_str(),
-        ));
+        )
+        .into());
     }
 
     let ctor_name = js_sys::Object::get_prototype_of(js_value)
@@ -156,9 +157,10 @@ pub fn generic_of_js_val<T: RefFromWasmAbi<Abi = u32>>(
 
     if ctor_name == class_name {
         let ptr = js_sys::Reflect::get(js_value, &JsValue::from_str("ptr"))?;
-        let ptr_u32: u32 =
-            ptr.as_f64()
-                .ok_or_else(|| JsValue::from("Invalid JS object pointer"))? as u32;
+        let ptr_u32: u32 = ptr
+            .as_f64()
+            .ok_or_else(|| JsValue::from(JsError::new("Invalid JS object pointer")))?
+            as u32;
         let reference = unsafe { T::ref_from_abi(ptr_u32) };
         Ok(reference)
     } else {
@@ -166,7 +168,30 @@ pub fn generic_of_js_val<T: RefFromWasmAbi<Abi = u32>>(
             "JS object constructor name mismatch. Expected {}, provided {}.",
             class_name, ctor_name
         );
-        Err(JsValue::from(&error_string))
+        Err(JsError::new(&error_string).into())
+    }
+}
+
+pub const SKIP_VALIDATION_PROPERTY_NAME: &str = "skipValidation";
+
+pub fn get_bool_from_options(
+    options: JsValue,
+    property: &str,
+    default: bool,
+) -> Result<bool, JsValue> {
+    if options.is_object() {
+        let val2 = options.with_serde_to_json_value()?;
+        let kek = val2
+            .as_object()
+            .ok_or_else(|| JsError::new("Can't parse options"))?;
+        let kek2 = kek
+            .get(property)
+            .ok_or_else(|| JsError::new(&format!("Can't get property {} of options", property)))?;
+        Ok(kek2
+            .as_bool()
+            .ok_or_else(|| JsError::new(&format!("Option {} is not a boolean", property)))?)
+    } else {
+        Ok(default)
     }
 }
 

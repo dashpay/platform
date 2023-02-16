@@ -1,3 +1,4 @@
+use crate::identity::IdentityPublicKey;
 use crate::{
     identity::state_transition::identity_update_transition::{
         apply_identity_update_transition::apply_identity_update_transition,
@@ -5,8 +6,9 @@ use crate::{
     },
     state_repository::MockStateRepositoryLike,
     state_transition::StateTransitionLike,
-    tests::fixtures::{get_identity_update_transition_fixture, identity_fixture},
+    tests::fixtures::get_identity_update_transition_fixture,
 };
+use mockall::predicate::{always, eq};
 
 struct TestData {
     state_transition: IdentityUpdateTransition,
@@ -15,15 +17,10 @@ struct TestData {
 
 fn setup_test() -> TestData {
     let mut state_transition = get_identity_update_transition_fixture();
+
     state_transition.set_revision(state_transition.get_revision() + 1);
 
-    let identity = identity_fixture();
-
-    let mut state_repository_mock = MockStateRepositoryLike::new();
-    let identity_to_return = identity;
-    state_repository_mock
-        .expect_fetch_identity()
-        .returning(move |_, _| Ok(Some(identity_to_return.clone())));
+    let state_repository_mock = MockStateRepositoryLike::new();
 
     TestData {
         state_transition,
@@ -32,20 +29,49 @@ fn setup_test() -> TestData {
 }
 
 #[tokio::test]
-async fn should_add_public_key() {
+async fn should_add_and_disable_public_keys() {
     let TestData {
-        mut state_transition,
+        state_transition,
         mut state_repository_mock,
     } = setup_test();
 
-    state_transition.set_public_keys_disabled_at(None);
-    state_transition.set_public_key_ids_to_disable(vec![]);
+    let IdentityUpdateTransition {
+        identity_id,
+        revision,
+        add_public_keys,
+        disable_public_keys,
+        public_keys_disabled_at,
+        ..
+    } = state_transition.clone();
+
     state_repository_mock
-        .expect_store_identity_public_key_hashes()
+        .expect_update_identity_revision()
+        .times(1)
+        .with(eq(identity_id), eq(revision), always())
         .returning(|_, _, _| Ok(()));
+
     state_repository_mock
-        .expect_update_identity()
-        .returning(|_, _| Ok(()));
+        .expect_disable_identity_keys()
+        .times(1)
+        .with(
+            eq(identity_id),
+            eq(disable_public_keys),
+            eq(public_keys_disabled_at.expect("disabled_at must be set")),
+            always(),
+        )
+        .returning(|_, _, _, _| Ok(()));
+
+    let keys_to_add = add_public_keys
+        .iter()
+        .cloned()
+        .map(|pk| pk.to_identity_public_key())
+        .collect::<Vec<IdentityPublicKey>>();
+
+    state_repository_mock
+        .expect_add_keys_to_identity()
+        .times(1)
+        .with(eq(identity_id), eq(keys_to_add), always())
+        .returning(|_, _, _| Ok(()));
 
     let result = apply_identity_update_transition(&state_repository_mock, state_transition).await;
 
@@ -53,26 +79,52 @@ async fn should_add_public_key() {
 }
 
 #[tokio::test]
-async fn should_use_max_identity_on_dry_run() {
+async fn should_add_and_disable_public_keys_on_dry_run() {
     let TestData {
-        mut state_transition,
-        ..
+        state_transition, ..
     } = setup_test();
 
-    state_transition.set_public_keys_disabled_at(None);
-    state_transition.set_public_key_ids_to_disable(vec![]);
-    state_transition.get_execution_context().enable_dry_run();
+    let IdentityUpdateTransition {
+        identity_id,
+        revision,
+        add_public_keys,
+        disable_public_keys,
+        public_keys_disabled_at,
+        ..
+    } = state_transition.clone();
 
     let mut state_repository_mock = MockStateRepositoryLike::new();
+
     state_repository_mock
-        .expect_fetch_identity()
-        .returning(|_, _| Ok(None));
-    state_repository_mock
-        .expect_store_identity_public_key_hashes()
+        .expect_update_identity_revision()
+        .times(1)
+        .with(eq(identity_id), eq(revision), always())
         .returning(|_, _, _| Ok(()));
+
     state_repository_mock
-        .expect_update_identity()
-        .returning(|_, _| Ok(()));
+        .expect_disable_identity_keys()
+        .times(1)
+        .with(
+            eq(identity_id),
+            eq(disable_public_keys),
+            eq(public_keys_disabled_at.expect("disabled_at must be set")),
+            always(),
+        )
+        .returning(|_, _, _, _| Ok(()));
+
+    let keys_to_add = add_public_keys
+        .iter()
+        .cloned()
+        .map(|pk| pk.to_identity_public_key())
+        .collect::<Vec<IdentityPublicKey>>();
+
+    state_repository_mock
+        .expect_add_keys_to_identity()
+        .times(1)
+        .with(eq(identity_id), eq(keys_to_add), always())
+        .returning(|_, _, _| Ok(()));
+
+    state_transition.get_execution_context().enable_dry_run();
 
     let result = apply_identity_update_transition(&state_repository_mock, state_transition).await;
 

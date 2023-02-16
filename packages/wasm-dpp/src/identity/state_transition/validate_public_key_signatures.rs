@@ -2,14 +2,15 @@ use crate::bls_adapter::{BlsAdapter, JsBlsAdapter};
 use crate::errors::from_dpp_err;
 use crate::utils::ToSerdeJSONExt;
 
-use crate::{
-    identity::identity_public_key::IdentityPublicKeyWasm, validation::ValidationResultWasm,
-};
+use crate::validation::ValidationResultWasm;
+
+use crate::identity::state_transition::identity_public_key_transitions::IdentityPublicKeyCreateTransitionWasm;
 
 use dpp::identity::state_transition::validate_public_key_signatures::{
     PublicKeysSignaturesValidator, TPublicKeysSignaturesValidator,
 };
-use dpp::prelude::IdentityPublicKey;
+
+use dpp::identity::state_transition::identity_public_key_transitions::IdentityPublicKeyCreateTransition;
 
 use serde_json::Value as JsonValue;
 use wasm_bindgen::prelude::wasm_bindgen;
@@ -42,7 +43,8 @@ impl PublicKeysSignaturesValidatorWasm {
         let public_keys = raw_public_keys
             .into_iter()
             .map(|raw_key| {
-                let parsed_key: IdentityPublicKey = IdentityPublicKeyWasm::new(raw_key)?.into();
+                let parsed_key: IdentityPublicKeyCreateTransition =
+                    IdentityPublicKeyCreateTransitionWasm::new(raw_key)?.into();
                 parsed_key
                     .to_raw_json_object(false)
                     .map_err(|e| from_dpp_err(e.into()))

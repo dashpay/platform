@@ -45,6 +45,7 @@ use crate::error::Error;
 use crate::fee::op::DriveOperation;
 use crate::fee::op::DriveOperation::GroveOperation;
 
+pub mod balances;
 /// Batch module
 pub mod batch;
 /// Block info module
@@ -68,9 +69,12 @@ pub(crate) mod grove_operations;
 pub mod identity;
 pub mod initialization;
 pub mod object_size_info;
+mod protocol_upgrade;
 pub mod query;
+mod system;
 #[cfg(test)]
 mod test_utils;
+mod verify;
 
 use crate::drive::block_info::BlockInfo;
 use crate::drive::cache::{DataContractCache, DriveCache};
@@ -88,24 +92,45 @@ pub struct Drive {
     pub cache: RefCell<DriveCache>,
 }
 
+// The root tree structure is very important!
+// It must be constructed in such a way that important information
+// is at the top of the tree in order to reduce proof size
+// the most import tree is the Contract Documents tree
+
+//                         Contract_Documents 64
+//                  /                               \
+//             Identities 32                           Balances 96
+//             /        \                         /                   \
+//   Token_Balances 16    Pools 48      WithdrawalTransactions 80    Misc  112
+//       /      \                                /                       \
+//     NUPKH->I 8 UPKH->I 24        SpentAssetLockTransactions 72        Versions 120
+
 /// Keys for the root tree.
 #[repr(u8)]
 pub enum RootTree {
     // Input data errors
-    /// Identities
-    Identities = 0,
     /// Contract Documents
-    ContractDocuments = 1,
-    /// Public Key Hashes to Identities
-    PublicKeyHashesToIdentities = 2,
-    /// Spent Asset Lock Transactions
-    SpentAssetLockTransactions = 3,
+    ContractDocuments = 64,
+    /// Identities
+    Identities = 32,
+    /// Unique Public Key Hashes to Identities
+    UniquePublicKeyHashesToIdentities = 24, // UPKH->I above
+    /// Non Unique Public Key Hashes to Identities, useful for Masternode Identities
+    NonUniquePublicKeyKeyHashesToIdentities = 8, // NUPKH->I
     /// Pools
-    Pools = 4,
+    Pools = 48,
+    /// Spent Asset Lock Transactions
+    SpentAssetLockTransactions = 72,
     /// Misc
-    Misc = 5,
+    Misc = 112,
     /// Asset Unlock Transactions
-    WithdrawalTransactions = 6,
+    WithdrawalTransactions = 80,
+    /// Balances
+    Balances = 96,
+    /// Token Balances
+    TokenBalances = 16,
+    /// Versions desired by proposers
+    Versions = 120,
 }
 
 /// Storage cost
@@ -126,15 +151,66 @@ impl From<RootTree> for [u8; 1] {
 impl From<RootTree> for &'static [u8; 1] {
     fn from(root_tree: RootTree) -> Self {
         match root_tree {
-            RootTree::Identities => &[0],
-            RootTree::ContractDocuments => &[1],
-            RootTree::PublicKeyHashesToIdentities => &[2],
-            RootTree::SpentAssetLockTransactions => &[3],
-            RootTree::Pools => &[4],
-            RootTree::Misc => &[5],
-            RootTree::WithdrawalTransactions => &[6],
+            RootTree::Identities => &[32],
+            RootTree::ContractDocuments => &[64],
+            RootTree::UniquePublicKeyHashesToIdentities => &[24],
+            RootTree::SpentAssetLockTransactions => &[72],
+            RootTree::Pools => &[48],
+            RootTree::Misc => &[112],
+            RootTree::WithdrawalTransactions => &[80],
+            RootTree::Balances => &[96],
+            RootTree::TokenBalances => &[16],
+            RootTree::NonUniquePublicKeyKeyHashesToIdentities => &[8],
+            RootTree::Versions => &[120],
         }
     }
+}
+
+/// Returns the path to the identities
+pub(crate) fn identity_tree_path() -> [&'static [u8]; 1] {
+    [Into::<&[u8; 1]>::into(RootTree::Identities)]
+}
+
+/// Returns the path to the key hashes.
+pub(crate) fn unique_key_hashes_tree_path() -> [&'static [u8]; 1] {
+    [Into::<&[u8; 1]>::into(
+        RootTree::UniquePublicKeyHashesToIdentities,
+    )]
+}
+
+/// Returns the path to the key hashes.
+pub(crate) fn unique_key_hashes_tree_path_vec() -> Vec<Vec<u8>> {
+    vec![vec![RootTree::UniquePublicKeyHashesToIdentities as u8]]
+}
+
+/// Returns the path to the masternode key hashes.
+pub(crate) fn non_unique_key_hashes_tree_path() -> [&'static [u8]; 1] {
+    [Into::<&[u8; 1]>::into(
+        RootTree::NonUniquePublicKeyKeyHashesToIdentities,
+    )]
+}
+
+/// Returns the path to the masternode key hashes.
+pub(crate) fn non_unique_key_hashes_tree_path_vec() -> Vec<Vec<u8>> {
+    vec![vec![
+        RootTree::NonUniquePublicKeyKeyHashesToIdentities as u8,
+    ]]
+}
+
+/// Returns the path to the masternode key hashes sub tree.
+pub(crate) fn non_unique_key_hashes_sub_tree_path(public_key_hash: &[u8]) -> [&[u8]; 2] {
+    [
+        Into::<&[u8; 1]>::into(RootTree::NonUniquePublicKeyKeyHashesToIdentities),
+        public_key_hash,
+    ]
+}
+
+/// Returns the path to the masternode key hashes sub tree.
+pub(crate) fn non_unique_key_hashes_sub_tree_path_vec(public_key_hash: [u8; 20]) -> Vec<Vec<u8>> {
+    vec![
+        vec![RootTree::NonUniquePublicKeyKeyHashesToIdentities as u8],
+        public_key_hash.to_vec(),
+    ]
 }
 
 /// Returns the path to a contract's document types.
@@ -165,6 +241,7 @@ impl Drive {
                             data_contracts_block_cache_size,
                         ),
                         genesis_time_ms,
+                        protocol_versions_counter: None,
                     }),
                 })
             }
@@ -183,6 +260,7 @@ impl Drive {
                 data_contracts_block_cache_size,
             ),
             genesis_time_ms,
+            protocol_versions_counter: None,
         });
     }
 

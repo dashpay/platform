@@ -1,3 +1,4 @@
+use dpp::identity::KeyID;
 use dpp::{
     document::{
         document_transition::document_base_transition,
@@ -277,13 +278,13 @@ impl DocumentsBatchTransitionWASM {
     }
 
     #[wasm_bindgen(js_name=setSignaturePublicKey)]
-    pub fn set_signature_public_key(&mut self, key_id: u64) {
+    pub fn set_signature_public_key(&mut self, key_id: KeyID) {
         self.0.set_signature_public_key_id(key_id)
     }
 
     #[wasm_bindgen(js_name=getSecurityLevelRequirement)]
     pub fn get_security_level_requirement(&self) -> u8 {
-        self.0.get_security_level_requirement().into()
+        self.0.get_security_level_requirement() as u8
     }
 
     // AbstractStateTransition methods

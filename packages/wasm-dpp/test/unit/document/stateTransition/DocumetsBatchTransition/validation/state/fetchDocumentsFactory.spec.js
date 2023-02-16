@@ -174,17 +174,17 @@ describe('fetchDocumentsFactory', () => {
     stateRepositoryMock.fetchDocuments.withArgs(
       sinon.match.instanceOf(Identifier),
       documentTransitions[0].getType(),
-    ).returns([documents[0]]);
+    ).resolves([documents[0]]);
 
     stateRepositoryMock.fetchDocuments.withArgs(
       sinon.match.instanceOf(Identifier),
       documentTransitions[1].getType(),
-    ).returns([documents[1], documents[2]]);
+    ).resolves([documents[1], documents[2]]);
 
     stateRepositoryMock.fetchDocuments.withArgs(
       sinon.match.instanceOf(Identifier),
       documentTransitionsJs[3].getType(),
-    ).returns([documents[3], documents[4]]);
+    ).resolves([documents[3], documents[4]]);
 
     await fetchDocuments(
       stateRepositoryMock,

@@ -7,23 +7,17 @@ use crate::document_facade::DocumentFacadeWasm;
 use crate::fetch_and_validate_data_contract::DataContractFetcherAndValidatorWasm;
 use crate::state_repository::{ExternalStateRepositoryLike, ExternalStateRepositoryLikeWrapper};
 use crate::version::ProtocolVersionValidatorWasm;
+use crate::DataContractFacadeWasm;
 use crate::{DocumentFactoryWASM, DocumentValidatorWasm};
 use dpp::identity::validation::PublicKeysValidator;
 use dpp::identity::IdentityFacade;
-use dpp::version::ProtocolVersionValidator;
+use dpp::version::{ProtocolVersionValidator, LATEST_VERSION};
 
 #[wasm_bindgen(js_name=DashPlatformProtocol)]
 pub struct DashPlatformProtocol {
     _identity: IdentityFacade<BlsAdapter>,
     document: DocumentFacadeWasm,
-}
-
-#[wasm_bindgen(js_class=DashPlatformProtocol)]
-impl DashPlatformProtocol {
-    #[wasm_bindgen(getter=document)]
-    pub fn get_document(&self) -> DocumentFacadeWasm {
-        self.document.clone()
-    }
+    data_contract: DataContractFacadeWasm,
 }
 
 #[wasm_bindgen(js_class=DashPlatformProtocol)]
@@ -34,22 +28,25 @@ impl DashPlatformProtocol {
         state_repository: ExternalStateRepositoryLike,
     ) -> DashPlatformProtocol {
         let wrapped_state_repository = ExternalStateRepositoryLikeWrapper::new(state_repository);
-
         let bls = BlsAdapter(bls_adapter);
+
+        // TODO: add protocol version to the constructor
+        let protocol_version = LATEST_VERSION;
         // TODO: remove default validator and make a real one instead
         let protocol_version_validator = ProtocolVersionValidator::default();
         let protocol_version_validator_wasm: ProtocolVersionValidatorWasm =
             (&protocol_version_validator).into();
+        let protocol_version_validator_arc = Arc::new(protocol_version_validator);
 
         let public_keys_validator = PublicKeysValidator::new(bls).unwrap();
+
         let identity_facade = IdentityFacade::new(
-            Arc::new(protocol_version_validator),
+            protocol_version_validator_arc.clone(),
             Arc::new(public_keys_validator),
         )
         .unwrap();
 
         // initialization of Document
-        let protocol_version = protocol_version_validator_wasm.protocol_version();
         let document_validator = DocumentValidatorWasm::new(protocol_version_validator_wasm);
         let document_factory = DocumentFactoryWASM::new_with_state_repository_wrapper(
             protocol_version,
@@ -60,16 +57,29 @@ impl DashPlatformProtocol {
             DataContractFetcherAndValidatorWasm::new_with_state_repository_wrapper(
                 wrapped_state_repository,
             );
-
         let document_facade = DocumentFacadeWasm::new_with_arc(
             Arc::new(document_validator),
             Arc::new(document_factory),
             Arc::new(data_contract_fetcher_and_validator),
         );
 
-        DashPlatformProtocol {
+        let data_contract_facade =
+            DataContractFacadeWasm::new(protocol_version, protocol_version_validator_arc);
+
+        Self {
             _identity: identity_facade,
             document: document_facade,
+            data_contract: data_contract_facade,
         }
+    }
+
+    #[wasm_bindgen(getter = dataContract)]
+    pub fn data_contract(&self) -> DataContractFacadeWasm {
+        self.data_contract.clone()
+    }
+
+    #[wasm_bindgen(getter=document)]
+    pub fn get_document(&self) -> DocumentFacadeWasm {
+        self.document.clone()
     }
 }

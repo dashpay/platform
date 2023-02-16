@@ -256,10 +256,10 @@ mod test {
         let transition_execution_context = StateTransitionExecutionContext::default();
         let owner_id = generate_random_identifier_struct();
         let document = get_dpns_parent_document_fixture(ParentDocumentOptions {
-            owner_id: owner_id.clone(),
+            owner_id,
             ..Default::default()
         });
-        let data_contract = get_dpns_data_contract_fixture(Some(owner_id.clone()));
+        let data_contract = get_dpns_data_contract_fixture(Some(owner_id));
         let transitions = get_document_transitions_fixture([(Action::Create, vec![document])]);
         let first_transition = transitions.get(0).expect("transition should be present");
 

@@ -43,7 +43,7 @@ describe('fetchAndValidateDataContractFactory', () => {
     stateRepositoryMockJs.fetchDataContract.resolves(dataContractJs);
 
     stateRepositoryMock = createStateRepositoryMock(this.sinonSandbox);
-    stateRepositoryMock.fetchDataContract.returns(dataContract);
+    stateRepositoryMock.fetchDataContract.resolves(dataContract);
 
     fetchAndValidateDataContractJs = fetchAndValidateDataContractFactory(
       stateRepositoryMockJs,
@@ -85,7 +85,7 @@ describe('fetchAndValidateDataContractFactory', () => {
   });
 
   it('should return with invalid result if Data Contract is not present - Rust', async () => {
-    stateRepositoryMock.fetchDataContract.returns(null);
+    stateRepositoryMock.fetchDataContract.resolves(null);
 
     const result = await fetchAndValidateDataContract(stateRepositoryMock, rawDocument);
 

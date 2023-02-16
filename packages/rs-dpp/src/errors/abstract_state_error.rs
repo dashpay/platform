@@ -1,5 +1,6 @@
 use thiserror::Error;
 
+use crate::prelude::Revision;
 use crate::{identity::KeyID, prelude::Identifier};
 
 use super::DataTriggerError;
@@ -57,7 +58,7 @@ pub enum StateError {
     )]
     InvalidIdentityRevisionError {
         identity_id: Identifier,
-        current_revision: u32,
+        current_revision: Revision,
     },
 
     #[error("Duplicated public keys {duplicated_public_key_ids:?} found")]
