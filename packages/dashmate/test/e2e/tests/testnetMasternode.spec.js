@@ -11,7 +11,6 @@ const Docker = require('dockerode');
 const StartedContainers = require('../../../src/docker/StartedContainers');
 const DockerCompose = require('../../../src/docker/DockerCompose');
 const generateBlsKeys = require('../../../src/core/generateBlsKeys');
-const { EMPTY_TESTNET_CONFIG_FIELDS } = require('../lib/constants/configFields')
 const { INSIGHT_URLs } = require('../lib/constants/insightLinks')
 const { SERVICES } = require('../lib/constants/services')
 const {STATUS} = require('../lib/constants/statusOutput');
@@ -26,10 +25,10 @@ const PortStateEnum = require('../../../src/enums/portState');
 const ServiceStatusEnum = require('../../../src/enums/serviceStatus');
 const TestDashmateClass = require('../lib/testDashmateClass');
 
-describe('Testnet dashmate', function main() {
+describe('Dashmate testnet masternode tests', function main() {
   this.timeout(900000);
 
-  describe('e2e testnet network', async function () {
+  describe('e2e testnet masternode', async function () {
     let container;
     let testnetConfig;
     let configEnvs;
@@ -48,7 +47,7 @@ describe('Testnet dashmate', function main() {
       fs.unlinkSync(certificate.privKeyPath);
     });
 
-    it('Setup testnet nodes', async () => {
+    it('Setup masternode', async () => {
       const ip = await publicIp.v4();
       const {privateKey: generatedPrivateKeyHex} = await generateBlsKeys();
       certificate = await getSelfSignedCertificate(ip);
@@ -61,18 +60,15 @@ describe('Testnet dashmate', function main() {
       const isConfig = await isConfigExist(testnetNetwork);
       if (fs.existsSync(CONFIG_FILE_PATH) && isConfig) {
         testnetConfig = await getConfig(testnetNetwork);
-        // configEnvs = testnetConfig.toEnvs(); delete if checking list of envs is not needed
+        configEnvs = testnetConfig.toEnvs();
       } else {
         throw new Error(`'No configuration file in ${CONFIG_FILE_PATH}`);
       }
 
-      // waiting for a list of envs that should not be empty after setup
-      // for (let key in configEnvs) {
-      //   if (!configEnvs[key]) {
-      //     const checkKeyInArray = EMPTY_TESTNET_CONFIG_FIELDS.includes(key);
-      //     expect(checkKeyInArray).to.equal(true, key + ' should not be empty.');
-      //   }
-      // }
+      if (configEnvs.CORE_MASTERNODE_ENABLE !== 'true'
+        || !configEnvs.CORE_MASTERNODE_OPERATOR_PRIVATE_KEY) {
+        throw new Error('This is not masternode configuration. Core masternode parameter is disabled.')
+      }
     });
 
     it('Start testnet nodes', async () => {
@@ -147,7 +143,7 @@ describe('Testnet dashmate', function main() {
       const servicesStatus = await dashmate.checkStatus('services');
       const output = JSON.parse(servicesStatus.toString());
 
-      const listIDs = await execute('docker ps --format "{{ .ID }}"').then(ids => {
+      const listIDs = await execute('docker ps --format "{{ .ID }}"').then((ids) => {
         const containerIds = ids.toString().split('\n');
         containerIds.pop();
         return containerIds;

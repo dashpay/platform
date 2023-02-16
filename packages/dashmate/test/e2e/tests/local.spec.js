@@ -8,7 +8,6 @@ const { getConfig, isConfigExist } = require('../lib/manageConfig');
 const { isGroupServicesRunning } = require('../lib/manageDockerData');
 const { core, platform } = require('../../../configs/system/base');
 const { CONFIG_FILE_PATH } = require('../../../src/constants');
-const { EMPTY_LOCAL_CONFIG_FIELDS } = require('../lib/constants/configFields');
 const TestDashmateClass = require('../lib/testDashmateClass');
 
 describe('Local dashmate', function main() {
@@ -38,17 +37,6 @@ describe('Local dashmate', function main() {
       } else {
         throw new Error(`'No configuration file in ${CONFIG_FILE_PATH}`);
       }
-
-      // waiting for a list of envs that should not be empty after setup
-      // for (let i = 0; i <= localConfig.length - 1; i++) {
-      //   const envs = localConfig[i].toEnvs();
-      //   for (let key in envs) {
-      //     if (!envs[key]) {
-      //       const checkKeyInArray = EMPTY_LOCAL_CONFIG_FIELDS.includes(key);
-      //       expect(checkKeyInArray).to.equal(true, key + ' should not be empty .');
-      //     }
-      //   }
-      // }
     });
 
     it('Start local group nodes', async () => {
