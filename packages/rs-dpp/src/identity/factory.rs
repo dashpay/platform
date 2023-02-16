@@ -81,6 +81,7 @@ impl Identity {
     }
 }
 
+#[derive(Clone)]
 pub struct IdentityFactory<T: BlsModule> {
     protocol_version: u32,
     identity_validator: Arc<IdentityValidator<PublicKeysValidator<T>>>,
