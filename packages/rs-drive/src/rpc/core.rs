@@ -8,7 +8,7 @@ use serde_json::Value;
 #[cfg_attr(feature = "fixtures-and-mocks", automock)]
 pub trait CoreRPCLike {
     /// Get block hash by height
-    fn get_block_hash(&self, height: u64) -> Result<BlockHash, Error>;
+    fn get_block_hash(&self, height: u32) -> Result<BlockHash, Error>;
 
     /// Get block by hash
     fn get_block(&self, block_hash: &BlockHash) -> Result<Block, Error>;
@@ -32,8 +32,8 @@ impl DefaultCoreRPC {
 }
 
 impl CoreRPCLike for DefaultCoreRPC {
-    fn get_block_hash(&self, height: u64) -> Result<BlockHash, Error> {
-        self.inner.get_block_hash(height)
+    fn get_block_hash(&self, height: u32) -> Result<BlockHash, Error> {
+        self.inner.get_block_hash(height as u64)
     }
 
     fn get_block(&self, block_hash: &BlockHash) -> Result<Block, Error> {

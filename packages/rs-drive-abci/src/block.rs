@@ -41,7 +41,7 @@ pub struct BlockStateInfo {
     /// Block proposer's proTxHash
     pub proposer_pro_tx_hash: [u8; 32],
     /// Core chain locked height
-    pub core_chain_locked_height: u64,
+    pub core_chain_locked_height: u32,
 }
 
 impl BlockStateInfo {

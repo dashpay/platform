@@ -102,9 +102,9 @@ pub struct BlockBeginRequest {
     /// Validator set quorum hash
     pub validator_set_quorum_hash: [u8; 32],
     /// Last synced core height
-    pub last_synced_core_height: u64,
+    pub last_synced_core_height: u32,
     /// Core chain locked height
-    pub core_chain_locked_height: u64,
+    pub core_chain_locked_height: u32,
     /// The total number of HPMNs in the system
     pub total_hpmns: u32,
 }

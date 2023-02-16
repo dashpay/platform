@@ -29,13 +29,13 @@ use crate::{
 };
 
 const WITHDRAWAL_TRANSACTIONS_QUERY_LIMIT: u16 = 16;
-const NUMBER_OF_BLOCKS_BEFORE_EXPIRED: u64 = 48;
+const NUMBER_OF_BLOCKS_BEFORE_EXPIRED: u32 = 48;
 
 impl Platform {
     /// Update statuses for broadcasted withdrawals
     pub fn update_broadcasted_withdrawal_transaction_statuses(
         &self,
-        last_synced_core_height: u64,
+        last_synced_core_height: u32,
         transaction: TransactionArg,
     ) -> Result<(), Error> {
         // Retrieve block execution context
@@ -81,7 +81,7 @@ impl Platform {
             .into_iter()
             .map(|mut document| {
                 let transaction_sign_height = document
-                    .get_u64(withdrawals_contract::property_names::TRANSACTION_SIGN_HEIGHT)
+                    .get_u32(withdrawals_contract::property_names::TRANSACTION_SIGN_HEIGHT)
                     .map_err(|_| {
                         Error::Execution(ExecutionError::CorruptedCodeExecution(
                             "Can't get transactionSignHeight from withdrawal document",
@@ -408,8 +408,8 @@ impl Platform {
     /// Fetch Core transactions by range of Core heights
     pub fn fetch_core_block_transactions(
         &self,
-        last_synced_core_height: u64,
-        core_chain_locked_height: u64,
+        last_synced_core_height: u32,
+        core_chain_locked_height: u32,
     ) -> Result<Vec<String>, Error> {
         let mut tx_hashes: Vec<String> = vec![];
 
