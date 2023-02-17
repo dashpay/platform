@@ -141,6 +141,11 @@ extern "C" {
         this: &ExternalStateRepositoryLike,
     ) -> Result<JsValue, JsValue>;
 
+    #[wasm_bindgen(catch, structural, method, js_name=fetchLatestPlatformBlockHeight)]
+    pub async fn fetch_latest_platform_block_height(
+        this: &ExternalStateRepositoryLike,
+    ) -> Result<JsValue, JsValue>;
+
     #[wasm_bindgen(catch, structural, method, js_name=fetchTransaction)]
     pub async fn fetch_transaction(
         this: &ExternalStateRepositoryLike,
@@ -516,6 +521,23 @@ impl StateRepositoryLike for ExternalStateRepositoryLikeWrapper {
         let maybe_height = self
             .0
             .fetch_latest_platform_core_chain_locked_height()
+            .await
+            .map_err(from_js_error)?;
+
+        if maybe_height.is_undefined() {
+            return Ok(None);
+        }
+
+        let height = maybe_height
+            .as_f64()
+            .ok_or_else(|| anyhow!("Value is not a number"))?;
+        Ok(Some(height as u32))
+    }
+
+    async fn fetch_latest_platform_block_height(&self) -> Result<Option<u32>> {
+        let maybe_height = self
+            .0
+            .fetch_latest_platform_block_height()
             .await
             .map_err(from_js_error)?;
 
