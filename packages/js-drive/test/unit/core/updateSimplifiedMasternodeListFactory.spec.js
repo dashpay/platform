@@ -29,6 +29,7 @@ describe('updateSimplifiedMasternodeListFactory', () => {
           service: '127.0.0.1:20001',
           pubKeyOperator: '906d84cb88f532145d8838414f777b971c976ffcf8ccfc57413a13cf2f8a7750a92f9b997a5a741f1afa34d989f4312b',
           votingAddress: 'ydC3Qkhq6qc1qgHD8PVSHyAB6t3NYa7aw4',
+          nType: 0,
           isValid: true,
         },
       ],

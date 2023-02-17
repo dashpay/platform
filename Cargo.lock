@@ -1630,11 +1630,11 @@ dependencies = [
 [[package]]
 name = "jsonschema"
 version = "0.15.0"
-source = "git+https://github.com/qrayven/jsonschema-rs?branch=feat-unknown-format-cutsom-keywords#7a1657bc8acce1b4270a26bce72423b4ba3b7c23"
+source = "git+https://github.com/fominok/jsonschema-rs?branch=feat-unevaluated-properties#18f61ab46b4a06fb313fadadffd669058bddeafd"
 dependencies = [
  "ahash 0.7.6",
  "anyhow",
- "base64 0.21.0",
+ "base64 0.13.1",
  "bytecount",
  "fancy-regex",
  "fraction",

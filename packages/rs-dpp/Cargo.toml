@@ -22,7 +22,7 @@ integer-encoding = { version="3.0.4"}
 itertools = { version ="0.10"}
 json-patch = "0.2.6"
 jsonptr = "0.1.5"
-jsonschema = { git="https://github.com/qrayven/jsonschema-rs", branch="feat-unknown-format-cutsom-keywords", default-features=false, features=["draft202012"] }
+jsonschema = { git="https://github.com/fominok/jsonschema-rs", branch="feat-unevaluated-properties", default-features=false, features=["draft202012"] }
 lazy_static = { version ="1.4"}
 log = { version="0.4"}
 num_enum = "0.5.7"
