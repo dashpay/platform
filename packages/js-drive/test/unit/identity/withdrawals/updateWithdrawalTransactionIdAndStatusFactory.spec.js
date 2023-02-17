@@ -55,7 +55,7 @@ describe('updateWithdrawalTransactionIdAndStatusFactory', () => {
 
     expect(fetchDocumentsMock).to.have.been.calledOnceWithExactly(
       withdrawalsContractId,
-      'withdrawals',
+      'withdrawal',
       {
         where: [
           ['status', '==', 1],

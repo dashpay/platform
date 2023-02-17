@@ -1,4 +1,4 @@
-const WITHDRAWALS_DOCUMENT_TYPE = 'withdrawals';
+const WITHDRAWALS_DOCUMENT_TYPE = 'withdrawal';
 
 const WITHDRAWALS_STATUS_POOLED = 1;
 const WITHDRAWALS_STATUS_BROADCASTED = 2;
@@ -35,10 +35,17 @@ function updateWithdrawalTransactionIdAndStatusFactory(
   ) {
     const originalTransactionIds = Object.keys(transactionIdMap).map((key) => Buffer.from(key, 'hex'));
 
+    if (originalTransactionIds.length === 0) {
+      return;
+    }
+
     const fetchOptions = {
       where: [
         ['status', '==', WITHDRAWALS_STATUS_POOLED],
         ['transactionId', 'in', originalTransactionIds],
+      ],
+      orderBy: [
+        ['transactionId', 'asc'],
       ],
       ...options,
     };

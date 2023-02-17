@@ -97,6 +97,18 @@ function finalizeBlockHandlerFactory(
       await processProposal(processProposalRequest, contextLogger);
     }
 
+    // Send withdrawal transactions to Core
+    const unsignedWithdrawalTransactionsMap = proposalBlockExecutionContext
+      .getWithdrawalTransactionsMap();
+
+    const { thresholdVoteExtensions } = commitInfo;
+
+    await broadcastWithdrawalTransactions(
+      proposalBlockExecutionContext,
+      thresholdVoteExtensions,
+      unsignedWithdrawalTransactionsMap,
+    );
+
     proposalBlockExecutionContext.setLastCommitInfo(commitInfo);
 
     // Store proposal block execution context
@@ -112,18 +124,6 @@ function finalizeBlockHandlerFactory(
 
     // Update last block execution context with proposal data
     latestBlockExecutionContext.populate(proposalBlockExecutionContext);
-
-    // Send withdrawal transactions to Core
-    const unsignedWithdrawalTransactionsMap = proposalBlockExecutionContext
-      .getWithdrawalTransactionsMap();
-
-    const { thresholdVoteExtensions } = commitInfo;
-
-    await broadcastWithdrawalTransactions(
-      proposalBlockExecutionContext,
-      thresholdVoteExtensions,
-      unsignedWithdrawalTransactionsMap,
-    );
 
     proposalBlockExecutionContext.reset();
 
