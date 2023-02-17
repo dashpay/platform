@@ -13,7 +13,7 @@ use dpp::data_contract::{DataContract as Contract, DriveContractExt};
 use dpp::document::document_stub::DocumentStub;
 use grovedb::batch::KeyInfoPath;
 use grovedb::{EstimatedLayerInformation, TransactionArg};
-use std::borrow::Cow;
+use std::borrow::{Borrow, Cow};
 use std::collections::HashMap;
 
 /// A wrapper for a document operation
@@ -229,7 +229,7 @@ impl DriveOperationConverter for DocumentOperationType<'_> {
                         document_info,
                         owner_id,
                     },
-                    contract,
+                    contract: &contract,
                     document_type,
                 };
                 drive.add_document_for_contract_operations(
@@ -259,7 +259,7 @@ impl DriveOperationConverter for DocumentOperationType<'_> {
                 owner_id,
             } => drive.delete_document_for_contract_operations(
                 document_id,
-                contract,
+                contract.borrow(),
                 document_type,
                 owner_id,
                 None,
@@ -273,7 +273,7 @@ impl DriveOperationConverter for DocumentOperationType<'_> {
                 owner_id,
             } => drive.delete_document_for_contract_with_named_type_operations(
                 document_id,
-                contract,
+                contract.borrow(),
                 document_type_name,
                 owner_id,
                 None,
@@ -348,7 +348,7 @@ impl DriveOperationConverter for DocumentOperationType<'_> {
                         document_info,
                         owner_id,
                     },
-                    contract,
+                    contract: &contract,
                     document_type,
                 };
                 drive.update_document_for_contract_operations(
@@ -377,7 +377,7 @@ impl DriveOperationConverter for DocumentOperationType<'_> {
                         document_info,
                         owner_id,
                     },
-                    contract,
+                    contract: &contract,
                     document_type,
                 };
                 drive.update_document_for_contract_operations(

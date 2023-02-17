@@ -4196,10 +4196,10 @@ fn test_query_a_b_c_d_e_contract() {
         ProtocolVersionValidator::new(LATEST_VERSION, LATEST_VERSION, COMPATIBILITY_MAP.clone());
 
     let data_contract_validator = DataContractValidator::new(Arc::new(protocol_version_validator));
-    let factory = DataContractFactory::new(1, data_contract_validator);
+    let factory = DataContractFactory::new(1, Arc::new(data_contract_validator));
 
     let contract = factory
-        .create(owner_id, documents)
+        .create(owner_id, documents, None)
         .expect("data in fixture should be correct");
 
     let contract_cbor = contract.to_cbor().expect("should encode contract to cbor");

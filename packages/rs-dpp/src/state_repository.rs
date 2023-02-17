@@ -31,8 +31,8 @@ pub struct FetchTransactionResponse {
     type FetchIdentity=Identity;
     type FetchTransaction=FetchTransactionResponse;
 ))]
-#[async_trait]
-pub trait StateRepositoryLike: Send + Sync {
+#[async_trait(?Send)]
+pub trait StateRepositoryLike: Sync {
     type ConversionError: Into<ProtocolError>;
     type FetchDataContract: TryInto<DataContract, Error = Self::ConversionError>;
     type FetchIdentity: TryInto<Identity, Error = Self::ConversionError>;

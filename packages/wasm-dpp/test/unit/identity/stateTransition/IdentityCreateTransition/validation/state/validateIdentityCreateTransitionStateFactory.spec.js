@@ -44,7 +44,7 @@ describe('validateIdentityCreateTransitionStateFactory', () => {
 
     const rawTransaction = '030000000137feb5676d0851337ea3c9a992496aab7a0b3eee60aeeb9774000b7f4bababa5000000006b483045022100d91557de37645c641b948c6cd03b4ae3791a63a650db3e2fee1dcf5185d1b10402200e8bd410bf516ca61715867666d31e44495428ce5c1090bf2294a829ebcfa4ef0121025c3cc7fbfc52f710c941497fd01876c189171ea227458f501afcb38a297d65b4ffffffff021027000000000000166a14152073ca2300a86b510fa2f123d3ea7da3af68dcf77cb0090a0000001976a914152073ca2300a86b510fa2f123d3ea7da3af68dc88ac00000000';
 
-    stateRepositoryMock.fetchTransaction.returns({
+    stateRepositoryMock.fetchTransaction.resolves({
       data: Buffer.from(rawTransaction, 'hex'),
       height: 42,
     });
@@ -69,7 +69,7 @@ describe('validateIdentityCreateTransitionStateFactory', () => {
   });
 
   it('should return invalid result if identity already exists', async () => {
-    stateRepositoryMock.fetchIdentity.returns(identity);
+    stateRepositoryMock.fetchIdentity.resolves(identity);
 
     const result = await validateIdentityCreateTransitionState(stateTransition);
 
@@ -83,13 +83,14 @@ describe('validateIdentityCreateTransitionStateFactory', () => {
   });
 
   it('should return valid result if state transition is valid', async () => {
+    stateRepositoryMock.fetchIdentity.resolves();
     const result = await validateIdentityCreateTransitionState(stateTransition);
 
     expect(result.isValid()).to.be.true();
   });
 
   it('should return valid result on dry run', async () => {
-    stateRepositoryMock.fetchIdentity.returns(identity);
+    stateRepositoryMock.fetchIdentity.resolves(identity);
 
     stateTransition.getExecutionContext().enableDryRun();
 

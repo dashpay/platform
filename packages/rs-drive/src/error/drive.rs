@@ -105,6 +105,10 @@ pub enum DriveError {
     CorruptedDriveState(String),
 
     /// Error
+    #[error("corrupted cache state error: {0}")]
+    CorruptedCacheState(String),
+
+    /// Error
     #[error("corrupted element flags error: {0}")]
     CorruptedElementFlags(&'static str),
 

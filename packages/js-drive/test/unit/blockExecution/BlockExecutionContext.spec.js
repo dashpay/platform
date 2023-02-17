@@ -27,6 +27,7 @@ describe('BlockExecutionContext', () => {
   let epochInfo;
   let timeMs;
   let prepareProposalResult;
+  let proposedAppVersion;
 
   beforeEach(() => {
     blockExecutionContext = new BlockExecutionContext();
@@ -39,6 +40,7 @@ describe('BlockExecutionContext', () => {
 
     logger = plainObject.contextLogger;
     height = Long.fromNumber(plainObject.height);
+    proposedAppVersion = Long.fromNumber(plainObject.proposedAppVersion);
     coreChainLockedHeight = plainObject.coreChainLockedHeight;
     version = Consensus.fromObject(plainObject.version);
     epochInfo = plainObject.epochInfo;
@@ -102,6 +104,7 @@ describe('BlockExecutionContext', () => {
       expect(blockExecutionContext.getVersion()).to.be.null();
       expect(blockExecutionContext.getTimeMs()).to.be.null();
       expect(blockExecutionContext.getLastCommitInfo()).to.be.null();
+      expect(blockExecutionContext.getProposedAppVersion()).to.be.null();
       expect(blockExecutionContext.getWithdrawalTransactionsMap()).to.deep.equal({});
     });
   });
@@ -139,6 +142,24 @@ describe('BlockExecutionContext', () => {
       blockExecutionContext.height = height;
 
       expect(blockExecutionContext.getHeight()).to.deep.equal(height);
+    });
+  });
+
+  describe('#setProposedAppVersion', () => {
+    it('should set proposed app version', async () => {
+      const result = blockExecutionContext.setProposedAppVersion(proposedAppVersion);
+
+      expect(result).to.equal(blockExecutionContext);
+
+      expect(blockExecutionContext.proposedAppVersion).to.deep.equal(proposedAppVersion);
+    });
+  });
+
+  describe('#getProposedAppVersion', () => {
+    it('should get proposed app version', async () => {
+      blockExecutionContext.proposedAppVersion = proposedAppVersion;
+
+      expect(blockExecutionContext.getProposedAppVersion()).to.deep.equal(proposedAppVersion);
     });
   });
 
@@ -334,6 +355,7 @@ describe('BlockExecutionContext', () => {
       blockExecutionContext.withdrawalTransactionsMap = plainObject.withdrawalTransactionsMap;
       blockExecutionContext.round = plainObject.round;
       blockExecutionContext.prepareProposalResult = plainObject.prepareProposalResult;
+      blockExecutionContext.proposedAppVersion = proposedAppVersion;
 
       expect(blockExecutionContext.toObject()).to.deep.equal(plainObject);
     });
@@ -350,6 +372,7 @@ describe('BlockExecutionContext', () => {
       blockExecutionContext.epochInfo = epochInfo;
       blockExecutionContext.timeMs = timeMs;
       blockExecutionContext.prepareProposalResult = prepareProposalResult;
+      blockExecutionContext.proposedAppVersion = proposedAppVersion;
 
       const result = blockExecutionContext.toObject({ skipContextLogger: true });
 
@@ -369,6 +392,7 @@ describe('BlockExecutionContext', () => {
       blockExecutionContext.round = plainObject.round;
       blockExecutionContext.epochInfo = epochInfo;
       blockExecutionContext.timeMs = timeMs;
+      blockExecutionContext.proposedAppVersion = proposedAppVersion;
 
       const result = blockExecutionContext.toObject({ skipPrepareProposalResult: true });
 

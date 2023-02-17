@@ -141,15 +141,15 @@ impl IdentityPublicKeyCreateTransition {
     }
 }
 
-impl Into<IdentityPublicKey> for &IdentityPublicKeyCreateTransition {
-    fn into(self) -> IdentityPublicKey {
+impl From<&IdentityPublicKeyCreateTransition> for IdentityPublicKey {
+    fn from(val: &IdentityPublicKeyCreateTransition) -> Self {
         IdentityPublicKey {
-            id: self.id,
-            purpose: self.purpose,
-            security_level: self.security_level,
-            key_type: self.key_type,
-            read_only: self.read_only,
-            data: self.data.clone(),
+            id: val.id,
+            purpose: val.purpose,
+            security_level: val.security_level,
+            key_type: val.key_type,
+            read_only: val.read_only,
+            data: val.data.clone(),
             disabled_at: None,
         }
     }
