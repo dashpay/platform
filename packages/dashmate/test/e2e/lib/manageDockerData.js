@@ -11,9 +11,11 @@ async function removeVolumes(configName, dockerContainer) {
   const { COMPOSE_PROJECT_NAME: projectName } = config.toEnvs();
   const projectVolumeNames = await dockerContainer.getVolumeNames(config.toEnvs());
 
-  projectVolumeNames
-    .map((volumeName) => `${projectName}_${volumeName}`)
-    .map(async (volumeName) => await dockerContainer.getVolume(volumeName).remove());
+  await Promise.all(
+    projectVolumeNames
+      .map((volumeName) => `${projectName}_${volumeName}`)
+      .map(async (volumeName) => dockerContainer.getVolume(volumeName).remove())
+  );
 }
 
 /**
@@ -22,10 +24,10 @@ async function removeVolumes(configName, dockerContainer) {
  * @param {object} dockerContainer
  */
 async function removeContainers(configName, dockerContainer) {
-  const commandOptions = ['--services', '--status=running'];
+  const options = ['--services', '--status=running'];
 
   const config = await getConfig(configName);
-  const getContainers = await dockerContainer.getContainersList(config.toEnvs(), commandOptions, true);
+  const getContainers = await dockerContainer.getContainersList(config.toEnvs(), options, true);
   // await dockerContainer.stop(config.toEnvs(), getContainers);
   await dockerContainer.rm(config.toEnvs(), getContainers);
 }
@@ -62,6 +64,7 @@ async function isGroupServicesRunning(isRunning, dockerContainer) {
  */
 async function isTestnetServicesRunning(isRunning, dockerContainer) {
   const configFile = await getConfig('testnet');
+
   for (const [key] of Object.entries(SERVICES)) {
     const result = await dockerContainer.isServiceRunning(configFile.toEnvs(), SERVICES[key]);
     if (result !== isRunning) {

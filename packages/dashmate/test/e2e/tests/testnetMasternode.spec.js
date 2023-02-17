@@ -5,7 +5,6 @@ const { expect } = require('chai');
 const fetch = require('node-fetch');
 const publicIp = require('public-ip');
 const os = require('os');
-const prettyByte = require('pretty-bytes');
 const prettyMs = require('pretty-ms');
 const Docker = require('dockerode');
 const StartedContainers = require('../../../src/docker/StartedContainers');
@@ -28,7 +27,7 @@ const TestDashmateClass = require('../lib/testDashmateClass');
 describe('Dashmate testnet masternode tests', function main() {
   this.timeout(900000);
 
-  describe('e2e testnet masternode', async function () {
+  describe('e2e testnet masternode', () => {
     let container;
     let testnetConfig;
     let configEnvs;
@@ -36,13 +35,13 @@ describe('Dashmate testnet masternode tests', function main() {
     const testnetNetwork = 'testnet';
     const dashmate = new TestDashmateClass();
 
-    before(function () {
+    before(() => {
       const dockerode = new Docker();
       const startedContainers = new StartedContainers();
       container = new DockerCompose(dockerode, startedContainers);
     });
 
-    after(async function () {
+    after(() =>  {
       fs.unlinkSync(certificate.certificatePath);
       fs.unlinkSync(certificate.privKeyPath);
     });
@@ -103,8 +102,8 @@ describe('Dashmate testnet masternode tests', function main() {
       const peersNumber = Object.keys(peersData).length;
       expect(coreOutput.peersCount).to.be.equal(peersNumber, 'Peers number are not matching!');
 
-      let peerHeader;
-      let peerBlock;
+      let peerHeader = 0;
+      let peerBlock = 0;
       do {
         for (const peer of peersData) {
           peerBlock = peer['synced_blocks'];
@@ -128,7 +127,7 @@ describe('Dashmate testnet masternode tests', function main() {
       expect(+coreSyncOutput.difficulty).to.be.greaterThan(0);
 
       expect(coreOutput.serviceStatus).to.be.equal(ServiceStatusEnum.syncing);
-      if (!(coreOutput.verificationProgress > 0 && coreOutput.verificationProgress <= 100)) {
+      if (!(coreOutput.verificationProgress > 0 && coreOutput.verificationProgress <= 1)) {
         throw new Error(`Invalid status output for syncing process: ${coreOutput.verificationProgress}% `);
       }
     });
@@ -177,8 +176,6 @@ describe('Dashmate testnet masternode tests', function main() {
       expect(output.platform).to.equal(os.platform());
       expect(output.arch).to.equal(os.arch());
       expect(output.username).to.equal(os.userInfo().username);
-      // expect(output.diskFree).to.equal(0); bugged
-      // expect(output.memory).to.equal(`${prettyByte(os.totalmem())} / ${prettyByte(os.freemem())}`); doesn't work properly on wsl
       expect(output.cpus).to.equal(os.cpus().length);
       expect(output.ip).to.equal(await publicIp.v4());
     });
@@ -203,11 +200,11 @@ describe('Dashmate testnet masternode tests', function main() {
       if (+statusBeforeRestart.blockHeight !== +statusAfterRestart.blockHeight) {
         throw new Error('Block height is different after restart.');
       } else {
-        let blockHeighSync;
+        let blockHeightSync;
         do {
           await wait(5000);
-          blockHeighSync = JSON.parse(coreStatus.toString());
-        } while (+blockHeighSync.blockHeight <= +statusAfterRestart.blockHeight);
+          blockHeightSync = JSON.parse(coreStatus.toString());
+        } while (+blockHeightSync.blockHeight <= +statusAfterRestart.blockHeight);
       }
 
       const restartConfig = getConfig(testnetNetwork);

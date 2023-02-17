@@ -13,14 +13,14 @@ const TestDashmateClass = require('../lib/testDashmateClass');
 describe('Local dashmate', function main() {
   this.timeout(900000);
 
-  describe('e2e local network', function () {
+  describe('e2e local network', () => {
     let container;
     let localConfig;
     let nodes;
     const localNetwork = 'local'
     const dashmate = new TestDashmateClass();
 
-    before(function () {
+    before(() => {
       const dockerode = new Docker();
       const startedContainers = new StartedContainers();
       container = new DockerCompose(dockerode, startedContainers);

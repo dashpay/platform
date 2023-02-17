@@ -15,10 +15,12 @@ async function getConfig(configName) {
     case 'local':
       config = configFile.getGroupConfigs(configName);
       break;
-    case 'testnet': //Fallthrough
+    case 'testnet': // Fallthrough
     case 'mainnet':
       config = configFile.getConfig(configName);
       break;
+    default:
+      throw new Error('Wrong config name.')
   }
   return config;
 }
@@ -37,10 +39,12 @@ async function isConfigExist(configName) {
     case 'local':
       bool = configFile.isGroupExists(configName);
       break;
-    case 'testnet': //Fallthrough
+    case 'testnet': // Fallthrough
     case 'mainnet':
       bool = configFile.isConfigExists(configName);
       break;
+    default:
+      throw new Error('Wrong config name.')
   }
   return bool;
 }
