@@ -52,14 +52,15 @@ describe('broadcastWithdrawalTransactionsFactory', () => {
       unsignedWithdrawalTransactionsMap,
     );
 
+    const expectedMap = { [txBytes.toString('hex')]: Buffer.concat([txBytes, signature]) };
+
     expect(coreRpcMock.sendRawTransaction).to.have.been.calledOnceWithExactly(
       Buffer.concat([txBytes, signature]).toString('hex'),
     );
     expect(updateWithdrawalTransactionIdAndStatusMock).to.have.been.calledOnceWithExactly(
       BlockInfo.createFromBlockExecutionContext(proposalBlockExecutionContextMock),
       42,
-      txBytes,
-      Buffer.concat([txBytes, signature]),
+      expectedMap,
       {
         useTransaction: true,
       },

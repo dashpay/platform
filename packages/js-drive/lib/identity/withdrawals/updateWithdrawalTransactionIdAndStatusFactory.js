@@ -22,8 +22,7 @@ function updateWithdrawalTransactionIdAndStatusFactory(
      *
      * @param {BlockInfo} blockInfo
      * @param {number} coreChainLockedHeight
-     * @param {Buffer} originalTransactionId
-     * @param {Buffer} updatedTransactionId
+     * @param {Object<string, Buffer>} transactionIdMap
      * @param {Object} options
      *
      * @returns {Promise<void>}
@@ -31,14 +30,15 @@ function updateWithdrawalTransactionIdAndStatusFactory(
   async function updateWithdrawalTransactionIdAndStatus(
     blockInfo,
     coreChainLockedHeight,
-    originalTransactionId,
-    updatedTransactionId,
+    transactionIdMap,
     options,
   ) {
+    const originalTransactionIds = Object.keys(transactionIdMap).map((key) => Buffer.from(key, 'hex'));
+
     const fetchOptions = {
       where: [
         ['status', '==', WITHDRAWALS_STATUS_POOLED],
-        ['transactionId', '==', originalTransactionId],
+        ['transactionId', 'in', originalTransactionIds],
       ],
       ...options,
     };
@@ -50,8 +50,12 @@ function updateWithdrawalTransactionIdAndStatusFactory(
     );
 
     for (const document of documents) {
-      document.set('transactionSignHeight', coreChainLockedHeight);
+      const originalTransactionIdHex = document.get('transactionId').toString('hex');
+
+      const updatedTransactionId = transactionIdMap[originalTransactionIdHex];
+
       document.set('transactionId', updatedTransactionId);
+      document.set('transactionSignHeight', coreChainLockedHeight);
       document.set('status', WITHDRAWALS_STATUS_BROADCASTED);
       document.setRevision(document.getRevision() + 1);
 

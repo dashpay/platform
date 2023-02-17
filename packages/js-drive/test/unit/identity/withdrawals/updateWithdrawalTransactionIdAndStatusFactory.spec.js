@@ -1,4 +1,4 @@
-const getDocumentFixture = require('@dashevo/dpp/lib/test/fixtures/getDocumentsFixture');
+const getDocumentsFixture = require('@dashevo/dpp/lib/test/fixtures/getDocumentsFixture');
 const Identifier = require('@dashevo/dpp/lib/identifier/Identifier');
 
 const updateWithdrawalTransactionIdAndStatusFactory = require('../../../../lib/identity/withdrawals/updateWithdrawalTransactionIdAndStatusFactory');
@@ -9,10 +9,14 @@ describe('updateWithdrawalTransactionIdAndStatusFactory', () => {
   let withdrawalsContractId;
   let documentRepositoryMock;
   let fetchDocumentsMock;
-  let documentFixture;
+  let document1Fixture;
+  let document2Fixture;
 
   beforeEach(function beforeEach() {
-    documentFixture = getDocumentFixture();
+    ([document1Fixture, document2Fixture] = getDocumentsFixture());
+
+    document1Fixture.set('transactionId', Buffer.alloc(32, 1));
+    document2Fixture.set('transactionId', Buffer.alloc(32, 3));
 
     withdrawalsContractId = Identifier.from(Buffer.alloc(32));
 
@@ -21,7 +25,7 @@ describe('updateWithdrawalTransactionIdAndStatusFactory', () => {
     };
 
     fetchDocumentsMock = this.sinon.stub();
-    fetchDocumentsMock.resolves([documentFixture[0]]);
+    fetchDocumentsMock.resolves([document1Fixture, document2Fixture]);
 
     updateWithdrawalTransactionIdAndStatus = updateWithdrawalTransactionIdAndStatusFactory(
       documentRepositoryMock,
@@ -33,14 +37,17 @@ describe('updateWithdrawalTransactionIdAndStatusFactory', () => {
   it('should update documents transactionId, status and revision', async () => {
     const blockInfo = new BlockInfo(1, 1, 1);
 
-    const updatedTxId = Buffer.alloc(32, 2);
     const coreChainLockedHeight = 42;
+
+    const transactionIdMap = {
+      [Buffer.alloc(32, 1).toString('hex')]: Buffer.alloc(32, 2),
+      [Buffer.alloc(32, 3).toString('hex')]: Buffer.alloc(32, 4),
+    };
 
     await updateWithdrawalTransactionIdAndStatus(
       blockInfo,
       coreChainLockedHeight,
-      Buffer.alloc(0),
-      updatedTxId,
+      transactionIdMap,
       {
         useTransaction: true,
       },
@@ -52,19 +59,28 @@ describe('updateWithdrawalTransactionIdAndStatusFactory', () => {
       {
         where: [
           ['status', '==', 1],
-          ['transactionId', '==', Buffer.alloc(0)],
+          ['transactionId', 'in', [Buffer.alloc(32, 1), Buffer.alloc(32, 3)]],
         ],
         useTransaction: true,
       },
     );
 
-    expect(documentRepositoryMock.update).to.have.been.calledOnceWithExactly(
-      documentFixture[0], blockInfo, { useTransaction: true },
+    expect(documentRepositoryMock.update).to.have.been.calledTwice();
+    expect(documentRepositoryMock.update.getCall(0).args).to.deep.equal(
+      [document1Fixture, blockInfo, { useTransaction: true }],
+    );
+    expect(documentRepositoryMock.update.getCall(1).args).to.deep.equal(
+      [document2Fixture, blockInfo, { useTransaction: true }],
     );
 
-    expect(documentFixture[0].get('transactionSignHeight')).to.deep.equal(coreChainLockedHeight);
-    expect(documentFixture[0].get('transactionId')).to.deep.equal(updatedTxId);
-    expect(documentFixture[0].get('status')).to.deep.equal(2);
-    expect(documentFixture[0].getRevision()).to.deep.equal(2);
+    expect(document1Fixture.get('transactionSignHeight')).to.deep.equal(coreChainLockedHeight);
+    expect(document1Fixture.get('transactionId')).to.deep.equal(Buffer.alloc(32, 2));
+    expect(document1Fixture.get('status')).to.deep.equal(2);
+    expect(document1Fixture.getRevision()).to.deep.equal(2);
+
+    expect(document2Fixture.get('transactionSignHeight')).to.deep.equal(coreChainLockedHeight);
+    expect(document2Fixture.get('transactionId')).to.deep.equal(Buffer.alloc(32, 4));
+    expect(document2Fixture.get('status')).to.deep.equal(2);
+    expect(document2Fixture.getRevision()).to.deep.equal(2);
   });
 });

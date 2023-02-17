@@ -26,6 +26,8 @@ function broadcastWithdrawalTransactionsFactory(
   ) {
     const blockInfo = BlockInfo.createFromBlockExecutionContext(proposalBlockExecutionContext);
 
+    const transactionIdMap = {};
+
     for (const { extension, signature } of (thresholdVoteExtensions || [])) {
       const withdrawalTransactionHash = extension.toString('hex');
 
@@ -39,20 +41,21 @@ function broadcastWithdrawalTransactionsFactory(
           signature,
         ]);
 
+        transactionIdMap[unsignedWithdrawalTransactionBytes.toString('hex')] = transactionBytes;
+
         // TODO: think about Core error handling
         await coreRpcClient.sendRawTransaction(transactionBytes.toString('hex'));
-
-        await updateWithdrawalTransactionIdAndStatus(
-          blockInfo,
-          proposalBlockExecutionContext.getCoreChainLockedHeight(),
-          unsignedWithdrawalTransactionBytes,
-          transactionBytes,
-          {
-            useTransaction: true,
-          },
-        );
       }
     }
+
+    await updateWithdrawalTransactionIdAndStatus(
+      blockInfo,
+      proposalBlockExecutionContext.getCoreChainLockedHeight(),
+      transactionIdMap,
+      {
+        useTransaction: true,
+      },
+    );
   }
 
   return broadcastWithdrawalTransactions;

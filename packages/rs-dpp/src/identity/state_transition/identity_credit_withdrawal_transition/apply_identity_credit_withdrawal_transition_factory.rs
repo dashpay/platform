@@ -107,7 +107,7 @@ where
             document_type,
             revision: 0,
             data_contract_id: *data_contract_id,
-            owner_id: *data_contract_owner_id,
+            owner_id: state_transition.identity_id,
             created_at: Some(document_created_at_millis),
             updated_at: Some(document_created_at_millis),
             data: document_data,
