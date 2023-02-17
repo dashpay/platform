@@ -61,6 +61,9 @@ describe('updateWithdrawalTransactionIdAndStatusFactory', () => {
           ['status', '==', 1],
           ['transactionId', 'in', [Buffer.alloc(32, 1), Buffer.alloc(32, 3)]],
         ],
+        orderBy: [
+          ['transactionId', 'asc'],
+        ],
         useTransaction: true,
       },
     );
