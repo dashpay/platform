@@ -45,7 +45,7 @@ describe('AbstractStateTransitionIdentitySigned', () => {
     } = blsInstance;
 
     const randomBytes = new Uint8Array(crypto.randomBytes(256));
-    blsPrivateKey = BasicSchemeMPL.key_gen(randomBytes);
+    blsPrivateKey = BasicSchemeMPL.keyGen(randomBytes);
     blsPrivateKeyHex = Buffer.from(blsPrivateKey.serialize()).toString('hex');
 
     identityPublicKey = new IdentityPublicKey()
@@ -232,7 +232,7 @@ describe('AbstractStateTransitionIdentitySigned', () => {
     it('should sign data and validate signature with BLS12_381 identityPublicKey', async () => {
       identityPublicKey.setType(IdentityPublicKey.TYPES.BLS12_381);
 
-      const publicKey = blsPrivateKey.get_g1();
+      const publicKey = blsPrivateKey.getG1();
 
       identityPublicKey.setData(Buffer.from(publicKey.serialize()));
 
@@ -261,7 +261,7 @@ describe('AbstractStateTransitionIdentitySigned', () => {
 
     it('should sign and validate with BLS private key', async () => {
       identityPublicKey.setType(IdentityPublicKey.TYPES.BLS12_381);
-      const publicKey = blsPrivateKey.get_g1();
+      const publicKey = blsPrivateKey.getG1();
 
       identityPublicKey.setData(Buffer.from(publicKey.serialize()));
 
@@ -369,7 +369,7 @@ describe('AbstractStateTransitionIdentitySigned', () => {
     it('should validate BLS signature', async () => {
       identityPublicKey.setType(IdentityPublicKey.TYPES.BLS12_381);
 
-      const publicKey = blsPrivateKey.get_g1();
+      const publicKey = blsPrivateKey.getG1();
 
       identityPublicKey.setData(Buffer.from(publicKey.serialize()));
 
@@ -470,7 +470,7 @@ describe('AbstractStateTransitionIdentitySigned', () => {
 
   describe('#verifyBLSSignatureByPublicKey', () => {
     it('should validate sign by public key', async () => {
-      const publicKey = blsPrivateKey.get_g1();
+      const publicKey = blsPrivateKey.getG1();
 
       identityPublicKey.setType(IdentityPublicKey.TYPES.BLS12_381);
       identityPublicKey.setData(Buffer.from(publicKey.serialize()));
@@ -485,7 +485,7 @@ describe('AbstractStateTransitionIdentitySigned', () => {
     });
 
     it('should throw an StateTransitionIsNotSignedError error if transition is not signed', async () => {
-      const publicKey = blsPrivateKey.get_g1();
+      const publicKey = blsPrivateKey.getG1();
 
       try {
         await stateTransition.verifyBLSSignatureByPublicKey(Buffer.from(publicKey.serialize()));

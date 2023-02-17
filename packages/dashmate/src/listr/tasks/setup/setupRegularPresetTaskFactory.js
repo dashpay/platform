@@ -110,7 +110,7 @@ function setupRegularPresetTaskFactory(
           const { PrivateKey: BlsPrivateKey } = blsSignatures;
 
           const privateKey = BlsPrivateKey.fromBytes(operatorBlsPrivateKeyBuffer, true);
-          const publicKey = privateKey.get_g1();
+          const publicKey = privateKey.getG1();
           const publicKeyHex = Buffer.from(publicKey.serialize()).toString('hex');
 
           ctx.config.set('core.masternode.operator.privateKey', ctx.operatorBlsPrivateKey);

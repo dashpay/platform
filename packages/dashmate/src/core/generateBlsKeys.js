@@ -12,8 +12,8 @@ async function generateBlsKeys() {
   const { BasicSchemeMPL } = blsSignatures;
 
   const randomBytes = new Uint8Array(crypto.randomBytes(256));
-  const operatorPrivateKey = BasicSchemeMPL.key_gen(randomBytes);
-  const operatorPublicKey = operatorPrivateKey.get_g1();
+  const operatorPrivateKey = BasicSchemeMPL.keyGen(randomBytes);
+  const operatorPublicKey = operatorPrivateKey.getG1();
 
   const operatorPrivateKeyHex = Buffer.from(operatorPrivateKey.serialize()).toString('hex');
   const operatorPublicKeyHex = Buffer.from(operatorPublicKey.serialize()).toString('hex');

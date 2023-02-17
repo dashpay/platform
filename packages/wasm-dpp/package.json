@@ -30,13 +30,13 @@
   ],
   "license": "MIT",
   "dependencies": {
-    "@dashevo/bls": "~1.0.0-beta.4",
+    "@dashevo/bls": "~1.2.7",
     "lodash": "^4.17.21",
     "varint": "^6.0.0"
   },
   "devDependencies": {
     "@apidevtools/json-schema-ref-parser": "^8.0.0",
-    "@dashevo/dashcore-lib": "github:dashevo/dashcore-lib#ffed27c9e973b23e7013b6eb4933e7dc9f2a50ad",
+    "@dashevo/dashcore-lib": "github:dashevo/dashcore-lib#3527419e8739b5e7d4017028d642dba8851c3e25",
     "@dashevo/dpns-contract": "workspace:*",
     "@dashevo/dpp": "workspace:*",
     "@dashevo/wasm-re2": "~1.0.2",

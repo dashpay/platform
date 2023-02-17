@@ -46,8 +46,8 @@ describe('validatePublicKeySignaturesFactory', () => {
 
     const randomBytes = new Uint8Array(crypto.randomBytes(256));
 
-    const privateKey3 = BasicSchemeMPL.key_gen(randomBytes);
-    const publicKey3 = privateKey3.get_g1();
+    const privateKey3 = BasicSchemeMPL.keyGen(randomBytes);
+    const publicKey3 = privateKey3.getG1();
 
     const identityPublicKey3 = new IdentityPublicKey({
       id: 2,

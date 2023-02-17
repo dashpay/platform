@@ -162,8 +162,8 @@ describe('feesPrediction', () => {
       privateKeys = identity.getPublicKeys().map((identityPublicKey) => {
         const randomBytes = new Uint8Array(crypto.randomBytes(256));
 
-        const privateKey = BasicSchemeMPL.key_gen(randomBytes);
-        const publicKey = privateKey.get_g1();
+        const privateKey = BasicSchemeMPL.keyGen(randomBytes);
+        const publicKey = privateKey.getG1();
         const publicKeyBuffer = Buffer.from(publicKey.serialize());
 
         identityPublicKey.setData(publicKeyBuffer);
@@ -237,8 +237,8 @@ describe('feesPrediction', () => {
         const newPrivateKeys = [];
         for (let i = 0; i < identityUpdateTransitionSchema.properties.addPublicKeys.maxItems; i++) {
           const randomBytes = new Uint8Array(crypto.randomBytes(256));
-          const privateKey = BasicSchemeMPL.key_gen(randomBytes);
-          const publicKey = privateKey.get_g1();
+          const privateKey = BasicSchemeMPL.keyGen(randomBytes);
+          const publicKey = privateKey.getG1();
           const publicKeyBuffer = Buffer.from(publicKey.serialize());
 
           newPrivateKeys.push(privateKey);

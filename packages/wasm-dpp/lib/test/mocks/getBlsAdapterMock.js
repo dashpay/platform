@@ -34,7 +34,7 @@ module.exports = async function getBlsAdapterMock() {
 
       const blsKey = G1Element.fromBytes(Uint8Array.from(publicKey));
 
-      const blsSignature = G2Element.from_bytes(
+      const blsSignature = G2Element.fromBytes(
         Uint8Array.from(signature),
       );
 
