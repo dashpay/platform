@@ -17,7 +17,7 @@ describe('Local dashmate', function main() {
     let container;
     let localConfig;
     let nodes;
-    const localNetwork = 'local'
+    const localNetwork = 'local';
     const dashmate = new TestDashmateClass();
 
     before(() => {
