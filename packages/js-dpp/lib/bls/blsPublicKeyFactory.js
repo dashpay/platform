@@ -8,7 +8,7 @@ const BlsSignatures = require('./bls');
    */
 async function blsPublicKeyFactory(publicKey) {
   const blsSignatures = await BlsSignatures.getInstance();
-  const { PublicKey } = blsSignatures;
+  const { G1Element: PublicKey } = blsSignatures;
 
   let bytes;
 
