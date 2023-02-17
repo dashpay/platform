@@ -76,7 +76,7 @@ where
 
             document_id = generate_document_id::generate_document_id(
                 data_contract_id,
-                data_contract_owner_id,
+                &state_transition.identity_id,
                 &document_type,
                 &document_entropy,
             );
