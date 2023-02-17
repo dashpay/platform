@@ -30,13 +30,14 @@ struct TestData {
     validate_public_keys_mock: MockTPublicKeysValidator,
     state_repository_mock: MockStateRepositoryLike,
     state_transition: IdentityUpdateTransition,
-    block_header: Vec<u8>,
+    header_timestamp: u64,
 }
 
 fn setup_test() -> TestData {
     let bls = NativeBlsModule::default();
     let identity = identity_fixture();
-    let block_header = consensus::serialize(&new_block_header(Some(Utc::now().timestamp() as u32)));
+    let header_timestamp = Utc::now().timestamp_millis() as u64;
+    // let block_header = consensus::serialize(&new_block_header(Some(Utc::now().timestamp() as u32)));
 
     let mut validate_public_keys_mock = MockTPublicKeysValidator::new();
     validate_public_keys_mock
@@ -45,13 +46,14 @@ fn setup_test() -> TestData {
 
     let mut state_repository_mock = MockStateRepositoryLike::new();
     let identity_to_return = identity.clone();
-    let block_header_to_return = block_header.clone();
+    // let block_header_to_return = block_header.clone();
+
     state_repository_mock
         .expect_fetch_identity()
         .returning(move |_, _| Ok(Some(identity_to_return.clone())));
     state_repository_mock
-        .expect_fetch_latest_platform_block_header()
-        .returning(move || Ok(block_header_to_return.clone()));
+        .expect_fetch_latest_platform_block_time()
+        .returning(move || Ok(header_timestamp));
 
     let mut state_transition = get_identity_update_transition_fixture();
     state_transition.set_revision(identity.get_revision() + 1);
@@ -73,7 +75,7 @@ fn setup_test() -> TestData {
         state_repository_mock,
         validate_public_keys_mock,
         state_transition,
-        block_header,
+        header_timestamp,
     }
 }
 
@@ -313,7 +315,7 @@ async fn should_validate_purpose_and_security_level() {
         validate_public_keys_mock,
         mut state_transition,
         mut identity,
-        block_header,
+        header_timestamp,
         ..
     } = setup_test();
 
@@ -339,9 +341,10 @@ async fn should_validate_purpose_and_security_level() {
     state_repository_mock
         .expect_fetch_identity()
         .returning(move |_, _| Ok(Some(identity_to_return.clone())));
+
     state_repository_mock
-        .expect_fetch_latest_platform_block_header()
-        .returning(move || Ok(consensus::serialize(&block_header.clone())));
+        .expect_fetch_latest_platform_block_time()
+        .returning(move || Ok(header_timestamp));
 
     let validator = IdentityUpdateTransitionStateValidator::new(
         Arc::new(state_repository_mock),
