@@ -133,6 +133,7 @@ mod tests {
 
         let document = get_withdrawal_document_fixture(
             &data_contract,
+            owner_id,
             json!({
                 "amount": 1000,
                 "coreFeePerByte": 1,

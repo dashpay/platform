@@ -251,6 +251,7 @@ mod tests {
         use dpp::contracts::withdrawals_contract;
         use dpp::data_contract::DriveContractExt;
         use dpp::identity::state_transition::identity_credit_withdrawal_transition::Pooling;
+        use dpp::prelude::Identifier;
         use dpp::system_data_contracts::{load_system_data_contract, SystemDataContract};
         use dpp::tests::fixtures::get_withdrawal_document_fixture;
         use dpp::util::hash;
@@ -301,11 +302,14 @@ mod tests {
                 .map(|index: u64| (index.to_be_bytes().to_vec(), vec![index as u8; 32]))
                 .collect();
 
+            let owner_id = Identifier::new([1u8; 32]);
+
             for (_, tx_bytes) in withdrawals.iter() {
                 let tx_id = hash::hash(tx_bytes);
 
                 let document = get_withdrawal_document_fixture(
                     &data_contract,
+                    owner_id,
                     json!({
                         "amount": 1000,
                         "coreFeePerByte": 1,

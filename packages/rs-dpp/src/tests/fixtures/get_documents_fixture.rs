@@ -110,7 +110,11 @@ fn get_documents<ST: StateRepositoryLike>(
     Ok(documents)
 }
 
-pub fn get_withdrawal_document_fixture(data_contract: &DataContract, data: Value) -> Document {
+pub fn get_withdrawal_document_fixture(
+    data_contract: &DataContract,
+    owner_id: Identifier,
+    data: Value,
+) -> Document {
     let factory = DocumentFactory::new(
         LATEST_VERSION,
         get_document_validator_fixture(),
@@ -120,7 +124,7 @@ pub fn get_withdrawal_document_fixture(data_contract: &DataContract, data: Value
     factory
         .create(
             data_contract.clone(),
-            data_contract.owner_id,
+            owner_id,
             withdrawals_contract::document_types::WITHDRAWAL.to_string(),
             data,
         )

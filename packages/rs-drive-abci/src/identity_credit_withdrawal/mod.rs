@@ -552,6 +552,7 @@ mod tests {
         use crate::test::helpers::setup::setup_platform_with_initial_state_structure;
         use dpp::{
             data_contract::{DataContract, DriveContractExt},
+            prelude::Identifier,
             system_data_contracts::{load_system_data_contract, SystemDataContract},
         };
         use drive::tests::helpers::setup::setup_system_data_contract;
@@ -625,8 +626,11 @@ mod tests {
 
             setup_system_data_contract(&platform.drive, &data_contract, Some(&transaction));
 
+            let owner_id = Identifier::new([1u8; 32]);
+
             let document_1 = get_withdrawal_document_fixture(
                 &data_contract,
+                owner_id,
                 json!({
                     "amount": 1000,
                     "coreFeePerByte": 1,
@@ -653,6 +657,7 @@ mod tests {
 
             let document_2 = get_withdrawal_document_fixture(
                 &data_contract,
+                owner_id,
                 json!({
                     "amount": 1000,
                     "coreFeePerByte": 1,
@@ -731,6 +736,7 @@ mod tests {
 
         use dpp::data_contract::DriveContractExt;
         use dpp::identity::state_transition::identity_credit_withdrawal_transition::Pooling;
+        use dpp::prelude::Identifier;
         use dpp::system_data_contracts::{load_system_data_contract, SystemDataContract};
         use drive::dpp::contracts::withdrawals_contract;
         use drive::tests::helpers::setup::setup_system_data_contract;
@@ -751,8 +757,11 @@ mod tests {
 
             setup_system_data_contract(&platform.drive, &data_contract, Some(&transaction));
 
+            let owner_id = Identifier::new([1u8; 32]);
+
             let document_1 = get_withdrawal_document_fixture(
                 &data_contract,
+                owner_id,
                 json!({
                     "amount": 1000,
                     "coreFeePerByte": 1,
@@ -777,6 +786,7 @@ mod tests {
 
             let document_2 = get_withdrawal_document_fixture(
                 &data_contract,
+                owner_id,
                 json!({
                     "amount": 1000,
                     "coreFeePerByte": 1,
@@ -913,6 +923,7 @@ mod tests {
     mod build_withdrawal_transactions_from_documents {
         use crate::test::helpers::setup::setup_platform_with_initial_state_structure;
         use dpp::data_contract::DriveContractExt;
+        use dpp::prelude::Identifier;
         use dpp::system_data_contracts::{load_system_data_contract, SystemDataContract};
         use dpp::{
             document::document_stub::DocumentStub,
@@ -936,8 +947,11 @@ mod tests {
 
             setup_system_data_contract(&platform.drive, &data_contract, Some(&transaction));
 
+            let owner_id = Identifier::new([1u8; 32]);
+
             let document_1 = get_withdrawal_document_fixture(
                 &data_contract,
+                owner_id,
                 json!({
                     "amount": 1000,
                     "coreFeePerByte": 1,
@@ -962,6 +976,7 @@ mod tests {
 
             let document_2 = get_withdrawal_document_fixture(
                 &data_contract,
+                owner_id,
                 json!({
                     "amount": 1000,
                     "coreFeePerByte": 1,

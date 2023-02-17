@@ -41,17 +41,6 @@ impl Drive {
 
         //todo: make this lazy loaded or const
         where_clauses.insert(
-            withdrawals_contract::property_names::OWNER_ID.to_string(),
-            WhereClause {
-                field: withdrawals_contract::property_names::OWNER_ID.to_string(),
-                operator: crate::query::WhereOperator::Equal,
-                value: ciborium::Value::Bytes(
-                    withdrawals_contract::OWNER_ID.deref().to_buffer().to_vec(),
-                ),
-            },
-        );
-
-        where_clauses.insert(
             withdrawals_contract::property_names::STATUS.to_string(),
             WhereClause {
                 field: withdrawals_contract::property_names::STATUS.to_string(),
@@ -63,10 +52,10 @@ impl Drive {
         let mut order_by = IndexMap::new();
 
         order_by.insert(
-            withdrawals_contract::property_names::CREATE_AT.to_string(),
+            withdrawals_contract::property_names::UPDATED_AT.to_string(),
             OrderClause {
-                field: withdrawals_contract::property_names::CREATE_AT.to_string(),
-                ascending: false,
+                field: withdrawals_contract::property_names::UPDATED_AT.to_string(),
+                ascending: true,
             },
         );
 
@@ -202,6 +191,7 @@ impl Drive {
 #[cfg(test)]
 mod tests {
     use dpp::contracts::withdrawals_contract;
+    use dpp::prelude::Identifier;
     use dpp::tests::fixtures::get_withdrawal_document_fixture;
     use serde_json::json;
 
@@ -235,8 +225,11 @@ mod tests {
 
             assert_eq!(documents.len(), 0);
 
+            let owner_id = Identifier::new([1u8; 32]);
+
             let document = get_withdrawal_document_fixture(
                 &data_contract,
+                owner_id,
                 json!({
                     "amount": 1000,
                     "coreFeePerByte": 1,
@@ -261,6 +254,7 @@ mod tests {
 
             let document = get_withdrawal_document_fixture(
                 &data_contract,
+                owner_id,
                 json!({
                     "amount": 1000,
                     "coreFeePerByte": 1,
@@ -317,8 +311,11 @@ mod tests {
 
             setup_system_data_contract(&drive, &data_contract, Some(&transaction));
 
+            let owner_id = Identifier::new([1u8; 32]);
+
             let document = get_withdrawal_document_fixture(
                 &data_contract,
+                owner_id,
                 json!({
                     "amount": 1000,
                     "coreFeePerByte": 1,

@@ -300,8 +300,6 @@ impl Platform {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
-
     mod create_genesis_state {
         use crate::test::helpers::setup::setup_platform_with_genesis_state;
 
