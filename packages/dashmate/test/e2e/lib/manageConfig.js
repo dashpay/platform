@@ -20,7 +20,7 @@ async function getConfig(configName) {
       config = configFile.getConfig(configName);
       break;
     default:
-      throw new Error('Wrong config name.')
+      throw new Error('Wrong config name.');
   }
   return config;
 }
@@ -44,7 +44,7 @@ async function isConfigExist(configName) {
       bool = configFile.isConfigExists(configName);
       break;
     default:
-      throw new Error('Wrong config name.')
+      throw new Error('Wrong config name.');
   }
   return bool;
 }

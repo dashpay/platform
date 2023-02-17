@@ -56,7 +56,7 @@ class TestDashmateClass {
         throw new Error(`${res.stderr} with exit code: ${res.status}`);
       }
     });
-  };
+  }
 
   /**
    * Stop node
@@ -71,7 +71,7 @@ class TestDashmateClass {
         throw new Error(`${res.stderr} with exit code: ${res.status}`);
       }
     });
-  };
+  }
 
   /**
    * Reset node
@@ -86,7 +86,7 @@ class TestDashmateClass {
         throw new Error(`${res.stderr} with exit code: ${res.status}`);
       }
     });
-  };
+  }
 
   /**
    * Restart node
@@ -101,7 +101,7 @@ class TestDashmateClass {
         throw new Error(`${res.stderr} with exit code: ${res.status}`);
       }
     });
-  };
+  }
 
   /**
    * Get service status
@@ -121,7 +121,7 @@ class TestDashmateClass {
         return res.toString();
       }
     });
-  };
+  }
 
   /**
    * Get local status
@@ -141,7 +141,7 @@ class TestDashmateClass {
         return res.toString();
       }
     });
-  };
+  }
 }
 
 module.exports = TestDashmateClass;
