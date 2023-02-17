@@ -29,6 +29,7 @@ jobs:
       - uses: actions-rs/clippy-check@v1
         with:
           token: ${{ secrets.GITHUB_TOKEN }}
+          args: --all-features
 
   formatting:
     name: Formatting
@@ -83,4 +84,4 @@ jobs:
         uses: Swatinem/rust-cache@v2
 
       - name: Run tests
-        run: cargo test --package=${{ inputs.package }}
+        run: cargo test --package=${{ inputs.package }} --all-features

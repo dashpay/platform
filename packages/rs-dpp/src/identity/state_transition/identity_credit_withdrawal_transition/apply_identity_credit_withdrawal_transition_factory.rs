@@ -37,7 +37,6 @@ where
         state_transition: &IdentityCreditWithdrawalTransition,
     ) -> Result<()> {
         let data_contract_id = withdrawals_contract::CONTRACT_ID.deref();
-        let data_contract_owner_id = withdrawals_contract::OWNER_ID.deref();
 
         let maybe_withdrawals_data_contract: Option<DataContract> = self
             .state_repository
