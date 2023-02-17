@@ -1,7 +1,6 @@
 use std::sync::Arc;
 
 use chrono::Utc;
-use dashcore::consensus;
 
 use crate::{
     block_time_window::validate_time_in_block_time_window::BLOCK_TIME_WINDOW_MILLIS,
@@ -19,7 +18,7 @@ use crate::{
     state_transition::StateTransitionLike,
     tests::{
         fixtures::{get_identity_update_transition_fixture, identity_fixture},
-        utils::{get_state_error_from_result, new_block_header},
+        utils::get_state_error_from_result,
     },
     validation::SimpleValidationResult,
     NativeBlsModule, StateError,
@@ -37,7 +36,6 @@ fn setup_test() -> TestData {
     let bls = NativeBlsModule::default();
     let identity = identity_fixture();
     let header_timestamp = Utc::now().timestamp_millis() as u64;
-    // let block_header = consensus::serialize(&new_block_header(Some(Utc::now().timestamp() as u32)));
 
     let mut validate_public_keys_mock = MockTPublicKeysValidator::new();
     validate_public_keys_mock
@@ -46,7 +44,6 @@ fn setup_test() -> TestData {
 
     let mut state_repository_mock = MockStateRepositoryLike::new();
     let identity_to_return = identity.clone();
-    // let block_header_to_return = block_header.clone();
 
     state_repository_mock
         .expect_fetch_identity()
