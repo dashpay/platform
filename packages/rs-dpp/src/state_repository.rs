@@ -36,7 +36,9 @@ pub trait StateRepositoryLike: Sync {
     type ConversionError: Into<ProtocolError>;
     type FetchDataContract: TryInto<DataContract, Error = Self::ConversionError>;
     type FetchIdentity: TryInto<Identity, Error = Self::ConversionError>;
-    type FetchTransaction: TryInto<FetchTransactionResponse, Error = Self::ConversionError>;
+    type FetchTransaction: TryInto<FetchTransactionResponse, Error = Self::ConversionError>
+        + Send
+        + Sync;
 
     /// Fetch the Data Contract by ID
     /// By default, the method should return data as bytes (`Vec<u8>`), but the deserialization to [`DataContract`] should be also possible
