@@ -25,8 +25,8 @@ impl Drive {
         let data_contract_id = withdrawals_contract::CONTRACT_ID.deref();
 
         let contract_fetch_info = self
-            .fetch_contract(data_contract_id.to_buffer(), None, transaction)
-            .unwrap()?
+            .get_contract_with_fetch_info(data_contract_id.to_buffer(), None, transaction)?
+            .1
             .ok_or_else(|| {
                 Error::Drive(DriveError::CorruptedCodeExecution(
                     "Can't fetch data contract",
@@ -39,6 +39,7 @@ impl Drive {
 
         let mut where_clauses = BTreeMap::new();
 
+        //todo: make this lazy loaded or const
         where_clauses.insert(
             withdrawals_contract::property_names::OWNER_ID.to_string(),
             WhereClause {
@@ -118,8 +119,8 @@ impl Drive {
         let data_contract_id = withdrawals_contract::CONTRACT_ID.deref();
 
         let contract_fetch_info = self
-            .fetch_contract(data_contract_id.to_buffer(), None, transaction)
-            .unwrap()?
+            .get_contract_with_fetch_info(data_contract_id.to_buffer(), None, transaction)?
+            .1
             .ok_or_else(|| {
                 Error::Drive(DriveError::CorruptedCodeExecution(
                     "Can't fetch data contract",
