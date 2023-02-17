@@ -24,7 +24,7 @@ mod asset_lock_transaction_validator;
 pub mod chain;
 pub mod instant;
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub enum AssetLockProof {
     Instant(InstantAssetLockProof),
     Chain(ChainAssetLockProof),
@@ -133,7 +133,7 @@ impl AssetLockProof {
     }
 
     pub fn to_raw_object(&self) -> Result<JsonValue, Error> {
-        serde_json::to_value(&self)
+        serde_json::to_value(self)
     }
 }
 

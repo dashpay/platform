@@ -1,5 +1,3 @@
-const { calculateStorageFeeDistributionAmountAndLeftovers } = require('@dashevo/rs-drive');
-
 const { TYPES } = require('@dashevo/dpp/lib/identity/IdentityPublicKey');
 
 const ReadOperation = require('@dashevo/dpp/lib/stateTransition/fee/operations/ReadOperation');
@@ -14,7 +12,8 @@ class DriveStateRepository {
 
   /**
    * @param {IdentityStoreRepository} identityRepository
-   * @param {PublicKeyToIdentitiesStoreRepository} publicKeyToToIdentitiesRepository
+   * @param {IdentityBalanceStoreRepository} identityBalanceRepository
+   * @param {IdentityPublicKeyStoreRepository} publicKeyToToIdentitiesRepository
    * @param {DataContractStoreRepository} dataContractRepository
    * @param {fetchDocuments} fetchDocuments
    * @param {DocumentRepository} documentRepository
@@ -22,12 +21,13 @@ class DriveStateRepository {
    * @param {RpcClient} coreRpcClient
    * @param {BlockExecutionContext} blockExecutionContext
    * @param {SimplifiedMasternodeList} simplifiedMasternodeList
-   * @param {RSDrive} rsDrive
+   * @param {Drive} rsDrive
    * @param {Object} [options]
    * @param {Object} [options.useTransaction=false]
    */
   constructor(
     identityRepository,
+    identityBalanceRepository,
     publicKeyToToIdentitiesRepository,
     dataContractRepository,
     fetchDocuments,
@@ -40,7 +40,8 @@ class DriveStateRepository {
     options = {},
   ) {
     this.identityRepository = identityRepository;
-    this.publicKeyToIdentitiesRepository = publicKeyToToIdentitiesRepository;
+    this.identityBalanceRepository = identityBalanceRepository;
+    this.identityPublicKeyRepository = publicKeyToToIdentitiesRepository;
     this.dataContractRepository = dataContractRepository;
     this.fetchDocumentsFunction = fetchDocuments;
     this.documentRepository = documentRepository;
@@ -61,9 +62,14 @@ class DriveStateRepository {
    * @return {Promise<Identity|null>}
    */
   async fetchIdentity(id, executionContext = undefined) {
+    const blockInfo = BlockInfo.createFromBlockExecutionContext(this.blockExecutionContext);
+
     const result = await this.identityRepository.fetch(
       id,
-      this.#createRepositoryOptions(executionContext),
+      {
+        blockInfo,
+        ...this.#createRepositoryOptions(executionContext),
+      },
     );
 
     if (executionContext) {
@@ -82,8 +88,11 @@ class DriveStateRepository {
    * @returns {Promise<void>}
    */
   async createIdentity(identity, executionContext = undefined) {
+    const blockInfo = BlockInfo.createFromBlockExecutionContext(this.blockExecutionContext);
+
     const result = await this.identityRepository.create(
       identity,
+      blockInfo,
       this.#createRepositoryOptions(executionContext),
     );
 
@@ -93,44 +102,162 @@ class DriveStateRepository {
   }
 
   /**
-   * Update identity
-   *
-   * @param {Identity} identity
-   * @param {StateTransitionExecutionContext} [executionContext]
-   *
-   * @returns {Promise<void>}
-   */
-  async updateIdentity(identity, executionContext = undefined) {
-    const result = await this.identityRepository.update(
-      identity,
-      this.#createRepositoryOptions(executionContext),
-    );
-
-    if (executionContext) {
-      executionContext.addOperation(...result.getOperations());
-    }
-  }
-
-  /**
-   * Store public key hashes for an identity id
+   * Add keys to identity
    *
    * @param {Identifier} identityId
-   * @param {Buffer[]} publicKeyHashes
+   * @param {IdentityPublicKey[]} keys
    * @param {StateTransitionExecutionContext} [executionContext]
-   *
    * @returns {Promise<void>}
    */
-  async storeIdentityPublicKeyHashes(identityId, publicKeyHashes, executionContext = undefined) {
-    for (const publicKeyHash of publicKeyHashes) {
-      const result = await this.publicKeyToIdentitiesRepository.store(
-        publicKeyHash,
-        identityId,
-        this.#createRepositoryOptions(executionContext),
-      );
+  async addKeysToIdentity(identityId, keys, executionContext = undefined) {
+    const blockInfo = BlockInfo.createFromBlockExecutionContext(this.blockExecutionContext);
 
-      if (executionContext) {
-        executionContext.addOperation(...result.getOperations());
-      }
+    const result = await this.identityPublicKeyRepository.add(
+      identityId,
+      keys,
+      blockInfo,
+      this.#createRepositoryOptions(executionContext),
+    );
+
+    if (executionContext) {
+      executionContext.addOperation(...result.getOperations());
+    }
+  }
+
+  /**
+   * Fetch identity balance
+   *
+   * @param {Identifier} identityId
+   * @param {StateTransitionExecutionContext} [executionContext]
+   * @returns {Promise<number|null>}
+   */
+  async fetchIdentityBalance(identityId, executionContext = undefined) {
+    const blockInfo = BlockInfo.createFromBlockExecutionContext(this.blockExecutionContext);
+
+    const result = await this.identityBalanceRepository.fetch(
+      identityId,
+      {
+        blockInfo,
+        ...this.#createRepositoryOptions(executionContext),
+      },
+    );
+
+    if (executionContext) {
+      executionContext.addOperation(...result.getOperations());
+    }
+
+    return result.getValue();
+  }
+
+  /**
+   * Fetch identity balance with debt
+   *
+   * @param {Identifier} identityId
+   * @param {StateTransitionExecutionContext} [executionContext]
+   * @returns {Promise<number|null>} - Balance can be negative in case of debt
+   */
+  async fetchIdentityBalanceWithDebt(identityId, executionContext = undefined) {
+    const blockInfo = BlockInfo.createFromBlockExecutionContext(this.blockExecutionContext);
+
+    const result = await this.identityBalanceRepository.fetchWithDebt(
+      identityId,
+      blockInfo,
+      this.#createRepositoryOptions(executionContext),
+    );
+
+    if (executionContext) {
+      executionContext.addOperation(...result.getOperations());
+    }
+
+    return result.getValue();
+  }
+
+  /**
+   * Add to identity balance
+   *
+   * @param {Identifier} identityId
+   * @param {number} amount
+   * @param {StateTransitionExecutionContext} [executionContext]
+   * @returns {Promise<void>}
+   */
+  async addToIdentityBalance(identityId, amount, executionContext = undefined) {
+    const blockInfo = BlockInfo.createFromBlockExecutionContext(this.blockExecutionContext);
+
+    const result = await this.identityBalanceRepository.add(
+      identityId,
+      amount,
+      blockInfo,
+      this.#createRepositoryOptions(executionContext),
+    );
+
+    if (executionContext) {
+      executionContext.addOperation(...result.getOperations());
+    }
+  }
+
+  /**
+   * Add to system credits
+   *
+   * @param {number} amount
+   * @param {StateTransitionExecutionContext} [executionContext]
+   * @returns {Promise<void>}
+   */
+  async addToSystemCredits(amount, executionContext = undefined) {
+    if (executionContext.isDryRun()) {
+      return;
+    }
+
+    await this.rsDrive.addToSystemCredits(
+      amount,
+      this.#options.useTransaction || false,
+    );
+  }
+
+  /**
+   * Disable identity keys
+   *
+   * @param {Identifier} identityId
+   * @param {number[]} keyIds
+   * @param {number} disableAt
+   * @param {StateTransitionExecutionContext} [executionContext]
+   * @returns {Promise<void>}
+   */
+  async disableIdentityKeys(identityId, keyIds, disableAt, executionContext = undefined) {
+    const blockInfo = BlockInfo.createFromBlockExecutionContext(this.blockExecutionContext);
+
+    const result = await this.identityPublicKeyRepository.disable(
+      identityId,
+      keyIds,
+      disableAt,
+      blockInfo,
+      this.#createRepositoryOptions(executionContext),
+    );
+
+    if (executionContext) {
+      executionContext.addOperation(...result.getOperations());
+    }
+  }
+
+  /**
+   * Update identity revision
+   *
+   * @param {Identifier} identityId
+   * @param {number} revision
+   * @param {StateTransitionExecutionContext} [executionContext]
+   * @returns {Promise<void>}
+   */
+  async updateIdentityRevision(identityId, revision, executionContext = undefined) {
+    const blockInfo = BlockInfo.createFromBlockExecutionContext(this.blockExecutionContext);
+
+    const result = await this.identityRepository.updateRevision(
+      identityId,
+      revision,
+      blockInfo,
+      this.#createRepositoryOptions(executionContext),
+    );
+
+    if (executionContext) {
+      executionContext.addOperation(...result.getOperations());
     }
   }
 
@@ -175,35 +302,6 @@ class DriveStateRepository {
   }
 
   /**
-   * Fetch identity ids by related public key hashes
-   *
-   * @param {Buffer[]} publicKeyHashes
-   * @param {StateTransitionExecutionContext} [executionContext]
-   *
-   * @returns {Promise<Array<Identifier[]>>}
-   */
-  async fetchIdentityIdsByPublicKeyHashes(publicKeyHashes, executionContext = undefined) {
-    // Keep await here.
-    // noinspection UnnecessaryLocalVariableJS
-    const results = await Promise.all(
-      publicKeyHashes.map(async (publicKeyHash) => (
-        this.publicKeyToIdentitiesRepository.fetch(
-          publicKeyHash,
-          this.#createRepositoryOptions(executionContext),
-        )
-      )),
-    );
-
-    return results.map((result) => {
-      if (executionContext) {
-        executionContext.addOperation(...result.getOperations());
-      }
-
-      return result.getValue();
-    });
-  }
-
-  /**
    * Fetch Data Contract by ID
    *
    * @param {Identifier} id
@@ -217,14 +315,11 @@ class DriveStateRepository {
     const result = await this.dataContractRepository.fetch(
       id,
       {
-        blockInfo,
+        ...this.#createRepositoryOptions(executionContext),
         // This method doesn't implement dry run because we need a contract
         // to proceed dry run validation and collect further operations
         dryRun: false,
-        // Transaction is not using since Data Contract
-        // should be always committed to use
-        // TODO: We don't need this anymore
-        useTransaction: false,
+        blockInfo,
       },
     );
 
@@ -515,7 +610,7 @@ class DriveStateRepository {
   }
 
   /**
-   * Fetch latest withdrawal transaction index
+   * Fetch the latest withdrawal transaction index
    *
    * @returns {Promise<number>}
    */
@@ -540,27 +635,6 @@ class DriveStateRepository {
       index,
       transactionBytes,
       this.#options.useTransaction,
-    );
-  }
-
-  /**
-   * Calculates storage fee to epochs distribution amount and leftovers
-   *
-   * @param {number} storageFee
-   * @param {number} startEpochIndex
-   * @returns {Promise<[number, number]>}
-   */
-  async calculateStorageFeeDistributionAmountAndLeftovers(storageFee, startEpochIndex) {
-    const epochInfo = this.blockExecutionContext.getEpochInfo();
-
-    if (!epochInfo) {
-      throw new Error('epoch info is not set');
-    }
-
-    return calculateStorageFeeDistributionAmountAndLeftovers(
-      storageFee,
-      startEpochIndex,
-      epochInfo.currentEpochIndex,
     );
   }
 

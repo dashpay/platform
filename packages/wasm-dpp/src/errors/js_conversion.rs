@@ -1,7 +1,8 @@
+use anyhow::anyhow;
 use serde_json;
 use serde_wasm_bindgen::Error;
 use thiserror::Error;
-use wasm_bindgen::JsValue;
+use wasm_bindgen::{JsCast, JsValue};
 
 /// This is a rust-specific errors. In addition to all errors defined in `js-dpp`, the
 /// error might be triggered when using JS bindings
@@ -75,4 +76,35 @@ macro_rules! console_log {
     ($fmt:expr, $($arg:tt)*) => {
         web_sys::console::log_1(&format!($fmt, $($arg)*).into())
     };
+}
+
+pub fn from_js_error(e: JsValue) -> anyhow::Error {
+    let message = if e.is_instance_of::<js_sys::Error>() {
+        js_sys::Reflect::get(&e, &"message".into())
+            .map(|e| {
+                e.as_string()
+                    .unwrap_or_else(|| String::from("Unknown JS Error: empty error message."))
+            })
+            .unwrap_or_else(|_| String::from("Unknown JS Error: unable to access error message"))
+    } else {
+        // TODO: is there a simpler way to to call `toString()`?
+        let to_string_value = js_sys::Reflect::get(&e, &JsValue::from_str("toString"))
+            .unwrap_or_else(|_| JsValue::undefined());
+
+        let message = if let Some(to_string_function) =
+            to_string_value.dyn_ref::<js_sys::Function>()
+        {
+            to_string_function
+                .call0(&e)
+                .unwrap_or_else(|_| JsValue::from_str("Unknown JS Error: call toString() failed"))
+                .as_string()
+                .unwrap()
+        } else {
+            String::from("Unknown Error: toString() is not a function")
+        };
+
+        message
+    };
+
+    anyhow!(message)
 }

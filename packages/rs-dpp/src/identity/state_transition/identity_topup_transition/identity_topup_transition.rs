@@ -14,6 +14,7 @@ use crate::state_transition::{
 };
 use crate::util::json_value::JsonValueExt;
 use crate::util::string_encoding::Encoding;
+use crate::version::LATEST_VERSION;
 use crate::{NonConsensusError, ProtocolError, SerdeParsingError};
 
 mod property_names {
@@ -81,18 +82,35 @@ impl<'de> Deserialize<'de> for IdentityTopUpTransition {
 
 /// Main state transition functionality implementation
 impl IdentityTopUpTransition {
-    pub fn new(raw_state_transition: serde_json::Value) -> Result<Self, NonConsensusError> {
-        let mut state_transition = Self::default();
+    pub fn new(raw_state_transition: serde_json::Value) -> Result<Self, ProtocolError> {
+        Self::from_raw_object(raw_state_transition)
+    }
 
-        let transition_map = raw_state_transition.as_object().ok_or_else(|| {
-            SerdeParsingError::new("Expected raw identity transition to be a map")
-        })?;
+    pub fn from_raw_object(
+        raw_object: JsonValue,
+    ) -> Result<IdentityTopUpTransition, ProtocolError> {
+        let protocol_version = raw_object
+            .get_u64(property_names::PROTOCOL_VERSION)
+            .unwrap_or(LATEST_VERSION as u64) as u32;
+        let signature = raw_object
+            .get_bytes(property_names::SIGNATURE)
+            .unwrap_or_default();
+        let identity_id =
+            Identifier::from_bytes(&raw_object.get_bytes(property_names::IDENTITY_ID)?)?;
 
-        if let Some(proof) = transition_map.get(property_names::ASSET_LOCK_PROOF) {
-            state_transition.set_asset_lock_proof(AssetLockProof::try_from(proof)?)?;
-        }
+        let raw_asset_lock_proof = raw_object
+            .get(property_names::ASSET_LOCK_PROOF)
+            .ok_or_else(|| ProtocolError::Generic("Asset lock proof is missing".to_string()))?;
+        let asset_lock_proof = AssetLockProof::try_from(raw_asset_lock_proof)?;
 
-        Ok(state_transition)
+        Ok(IdentityTopUpTransition {
+            protocol_version,
+            signature,
+            identity_id,
+            asset_lock_proof,
+            transition_type: StateTransitionType::IdentityTopUp,
+            execution_context: Default::default(),
+        })
     }
 
     /// Get State Transition type
@@ -105,8 +123,6 @@ impl IdentityTopUpTransition {
         &mut self,
         asset_lock_proof: AssetLockProof,
     ) -> Result<(), NonConsensusError> {
-        self.identity_id = asset_lock_proof.create_identifier()?;
-
         self.asset_lock_proof = asset_lock_proof;
 
         Ok(())
@@ -188,6 +204,20 @@ impl StateTransitionConvert for IdentityTopUpTransition {
     }
     fn binary_property_paths() -> Vec<&'static str> {
         vec![]
+    }
+
+    fn to_object(&self, skip_signature: bool) -> Result<JsonValue, ProtocolError> {
+        let mut json_value: JsonValue = serde_json::to_value(self)?;
+
+        if skip_signature {
+            if let JsonValue::Object(ref mut o) = json_value {
+                for path in Self::signature_property_paths() {
+                    o.remove(path);
+                }
+            }
+        }
+
+        Ok(json_value)
     }
 
     fn to_json(&self, skip_signature: bool) -> Result<JsonValue, ProtocolError> {

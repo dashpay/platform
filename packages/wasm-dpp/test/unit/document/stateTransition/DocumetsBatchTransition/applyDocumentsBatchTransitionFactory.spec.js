@@ -117,12 +117,12 @@ describe('applyDocumentsBatchTransitionFactory', () => {
     ]);
 
     stateRepositoryMock = createStateRepositoryMock(this.sinonSandbox);
-    stateRepositoryMock.fetchDataContract.returns(dataContract);
-    stateRepositoryMock.fetchLatestPlatformBlockTime.returns(blockTimeMs);
-    stateRepositoryMock.updateDocument.returns(null);
-    stateRepositoryMock.removeDocument.returns(null);
-    stateRepositoryMock.createDocument.returns(null);
-    stateRepositoryMock.fetchDocuments.returns([replaceDocument]);
+    stateRepositoryMock.fetchDataContract.resolves(dataContract);
+    stateRepositoryMock.fetchLatestPlatformBlockTime.resolves(blockTimeMs);
+    stateRepositoryMock.updateDocument.resolves(null);
+    stateRepositoryMock.removeDocument.resolves(null);
+    stateRepositoryMock.createDocument.resolves(null);
+    stateRepositoryMock.fetchDocuments.resolves([replaceDocument]);
 
     applyDocumentsBatchTransitionJs = applyDocumentsBatchTransitionFactory(
       stateRepositoryMockJs,
@@ -212,7 +212,7 @@ describe('applyDocumentsBatchTransitionFactory', () => {
   });
 
   it('should throw an error if document was not provided for a replacement - Rust', async () => {
-    stateRepositoryMock.fetchDocuments.returns([]);
+    stateRepositoryMock.fetchDocuments.resolves([]);
 
     const replaceDocumentTransition = documentTransitionsJs[1];
 
@@ -270,7 +270,7 @@ describe('applyDocumentsBatchTransitionFactory', () => {
 
   it('should call `replace` functions on dry run - Rust', async function test() {
     this.timeout(10000);
-    stateRepositoryMock.fetchLatestPlatformBlockTime.returns(blockTimeMs);
+    stateRepositoryMock.fetchLatestPlatformBlockTime.resolves(blockTimeMs);
     documentTransitionsJs = getDocumentTransitionsFixture({
       create: [],
       replace: [documentsJs[0]],

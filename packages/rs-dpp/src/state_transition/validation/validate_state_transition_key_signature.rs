@@ -83,7 +83,7 @@ pub async fn validate_state_transition_key_signature<SR: StateRepositoryLike>(
 
         if identity.is_none() {
             result.add_error(SignatureError::IdentityNotFoundError {
-                identity_id: target_identity_id.clone(),
+                identity_id: *target_identity_id,
             });
             return Ok(result);
         }

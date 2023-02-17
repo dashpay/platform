@@ -24,7 +24,7 @@ lazy_static! {
 }
 
 pub struct ValidateIdentityUpdateTransitionBasic<KV, SV> {
-    protocol_version_validator: Arc<ProtocolVersionValidator>,
+    protocol_version_validator: ProtocolVersionValidator,
     json_schema_validator: JsonSchemaValidator,
     public_keys_validator: Arc<KV>,
 
@@ -37,7 +37,7 @@ where
     SV: TPublicKeysSignaturesValidator,
 {
     pub fn new(
-        protocol_version_validator: Arc<ProtocolVersionValidator>,
+        protocol_version_validator: ProtocolVersionValidator,
         public_keys_validator: Arc<KV>,
         public_keys_signatures_validator: SV,
     ) -> Result<Self, ProtocolError> {
@@ -104,5 +104,9 @@ where
             }
             None => Ok(result),
         }
+    }
+
+    pub fn protocol_version_validator(&mut self) -> &mut ProtocolVersionValidator {
+        &mut self.protocol_version_validator
     }
 }

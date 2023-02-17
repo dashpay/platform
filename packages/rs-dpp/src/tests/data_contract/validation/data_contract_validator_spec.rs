@@ -57,7 +57,7 @@ fn get_schema_error(result: &ValidationResult<()>, number: usize) -> &JsonSchema
 
 fn get_basic_error(consensus_error: &ConsensusError) -> &BasicError {
     match consensus_error {
-        ConsensusError::BasicError(basic_error) => &**basic_error,
+        ConsensusError::BasicError(basic_error) => basic_error,
         _ => panic!("error '{:?}' isn't a basic error", consensus_error),
     }
 }

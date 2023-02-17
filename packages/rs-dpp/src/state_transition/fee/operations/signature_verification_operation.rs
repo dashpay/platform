@@ -3,7 +3,7 @@ use serde::{Deserialize, Serialize};
 use super::OperationLike;
 use crate::{identity::KeyType, state_transition::fee::constants::signature_verify_cost};
 
-#[derive(Default, Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
 pub struct SignatureVerificationOperation {
     pub signature_type: KeyType,

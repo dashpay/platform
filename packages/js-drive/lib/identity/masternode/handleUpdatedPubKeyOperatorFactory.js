@@ -74,6 +74,7 @@ function handleUpdatedPubKeyOperatorFactory(
     if (operatorIdentityResult.isNull()) {
       createdEntities.push(
         await createMasternodeIdentity(
+          blockInfo,
           operatorIdentifier,
           operatorPublicKey,
           IdentityPublicKey.TYPES.BLS12_381,

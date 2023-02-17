@@ -69,6 +69,13 @@ pub(crate) struct DataContractParameters {
     _extras: serde_json::Value, // Captures excess fields to trigger validation failure later.
 }
 
+pub fn js_value_to_serde_value(raw_parameters: JsValue) -> Result<Value, JsValue> {
+    let parameters: DataContractParameters =
+        with_js_error!(serde_wasm_bindgen::from_value(raw_parameters))?;
+
+    serde_json::to_value(parameters).map_err(|e| e.to_string().into())
+}
+
 #[wasm_bindgen(js_class=DataContract)]
 impl DataContractWasm {
     #[wasm_bindgen(constructor)]
@@ -90,7 +97,7 @@ impl DataContractWasm {
 
     #[wasm_bindgen(js_name=getId)]
     pub fn get_id(&self) -> IdentifierWrapper {
-        self.0.id.clone().into()
+        self.0.id.into()
     }
 
     #[wasm_bindgen(js_name=setId)]
@@ -102,7 +109,7 @@ impl DataContractWasm {
 
     #[wasm_bindgen(js_name=getOwnerId)]
     pub fn get_owner_id(&self) -> IdentifierWrapper {
-        self.0.owner_id.clone().into()
+        self.0.owner_id.into()
     }
 
     #[wasm_bindgen(js_name=getVersion)]
@@ -295,7 +302,7 @@ impl DataContractWasm {
     }
 
     #[wasm_bindgen(js_name=from)]
-    pub fn from(v: JsValue) -> Result<DataContractWasm, JsValue> {
+    pub fn from_js_value(v: JsValue) -> Result<DataContractWasm, JsValue> {
         let json_contract: Value = with_js_error!(serde_wasm_bindgen::from_value(v))?;
         Ok(DataContract::try_from(json_contract)
             .map_err(from_dpp_err)?

@@ -1,6 +1,5 @@
 use std::collections::HashMap;
 
-use dashcore::Block;
 use serde_json::Value;
 
 use crate::{
@@ -118,10 +117,10 @@ fn document_from_transition_create(
     // TODO cloning is costly. Probably the [`Document`] should have properties of type `Cov<'a, K>`
     Document {
         protocol_version: state_transition.protocol_version,
-        id: document_create_transition.base.id.clone(),
+        id: document_create_transition.base.id,
         document_type: document_create_transition.base.document_type.clone(),
-        data_contract_id: document_create_transition.base.data_contract_id.clone(),
-        owner_id: state_transition.owner_id.clone(),
+        data_contract_id: document_create_transition.base.data_contract_id,
+        owner_id: state_transition.owner_id,
         data: document_create_transition
             .data
             .as_ref()
@@ -147,10 +146,10 @@ fn document_from_transition_replace(
     // TODO cloning is costly. Probably the [`Document`] should have properties of type `Cov<'a, K>`
     Document {
         protocol_version: state_transition.protocol_version,
-        id: document_replace_transition.base.id.clone(),
+        id: document_replace_transition.base.id,
         document_type: document_replace_transition.base.document_type.clone(),
-        data_contract_id: document_replace_transition.base.data_contract_id.clone(),
-        owner_id: state_transition.owner_id.clone(),
+        data_contract_id: document_replace_transition.base.data_contract_id,
+        owner_id: state_transition.owner_id,
         data: document_replace_transition
             .data
             .as_ref()

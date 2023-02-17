@@ -150,6 +150,7 @@ function synchronizeMasternodeIdentitiesFactory(
         if (previousVotingMnEntry) {
           const affectedEntities = await handleUpdatedVotingAddress(
             mnEntry,
+            blockInfo,
           );
 
           result = mergeEntities(result, affectedEntities);

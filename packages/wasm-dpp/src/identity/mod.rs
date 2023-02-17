@@ -59,7 +59,7 @@ impl IdentityWasm {
 
     #[wasm_bindgen(js_name=getId)]
     pub fn get_id(&self) -> IdentifierWrapper {
-        self.0.get_id().clone().into()
+        (*self.0.get_id()).into()
     }
 
     #[wasm_bindgen(js_name=setPublicKeys)]
@@ -71,7 +71,7 @@ impl IdentityWasm {
 
         let public_keys = raw_public_keys
             .into_iter()
-            .map(IdentityPublicKey::from_json_object)
+            .map(|v| IdentityPublicKey::from_json_object(v).map(|key| (key.id, key)))
             .collect::<Result<_, _>>()
             .map_err(|e| format!("converting to collection of IdentityPublicKeys failed: {e:#}"))?;
 
@@ -85,7 +85,7 @@ impl IdentityWasm {
         self.0
             .get_public_keys()
             .iter()
-            .map(IdentityPublicKey::to_owned)
+            .map(|(_, k)| k.to_owned())
             .map(IdentityPublicKeyWasm::from)
             .map(JsValue::from)
             .collect()
@@ -168,7 +168,7 @@ impl IdentityWasm {
         let pks = self
             .0
             .public_keys
-            .iter()
+            .values()
             .map(|pk| pk.to_json())
             .collect::<Result<Vec<serde_json::Value>, SerdeParsingError>>()
             .map_err(|e| from_dpp_err(e.into()))?;
@@ -190,11 +190,11 @@ impl IdentityWasm {
     }
 
     #[wasm_bindgen(js_name=toObject)]
-    pub fn to_object(&self, _some_option: Option<bool>) -> Result<JsValue, JsValue> {
+    pub fn to_object(&self) -> Result<JsValue, JsValue> {
         let js_public_keys = js_sys::Array::new();
-        for pk in self.0.public_keys.iter() {
+        for pk in self.0.public_keys.values() {
             let pk_wasm = IdentityPublicKeyWasm::from(pk.to_owned());
-            js_public_keys.push(&pk_wasm.to_object(None)?);
+            js_public_keys.push(&pk_wasm.to_object()?);
         }
 
         let identity_json =
@@ -203,7 +203,7 @@ impl IdentityWasm {
             serde_json::to_string(&identity_json).map_err(|e| from_dpp_err(e.into()))?;
         let js_object = js_sys::JSON::parse(&identity_json_string)?;
 
-        let id: IdentifierWrapper = self.0.id.clone().into();
+        let id: IdentifierWrapper = self.0.id.into();
 
         js_sys::Reflect::set(
             &js_object,
@@ -231,7 +231,9 @@ impl IdentityWasm {
 
     #[wasm_bindgen(js_name=addPublicKey)]
     pub fn add_public_key(&mut self, public_key: IdentityPublicKeyWasm) {
-        self.0.public_keys.push(public_key.into());
+        self.0
+            .public_keys
+            .insert(public_key.get_id(), public_key.into());
     }
 
     // The method `addPublicKeys()` takes an variadic array of `IdentityPublicKeyWasm` as an input. But elements of the array

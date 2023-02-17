@@ -39,7 +39,7 @@ pub trait DataValidatorWithContext {
 }
 
 /// Async validator takes additionally an execution context and generates fee
-#[async_trait]
+#[async_trait(?Send)]
 pub trait AsyncDataValidatorWithContext {
     // TODO, when GAT is available remove the reference in method and use: `type Item<'a>`
     type Item;

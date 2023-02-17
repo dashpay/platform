@@ -74,7 +74,7 @@ describe('validateDocumentsUniquenessByIndices', () => {
     );
 
     stateRepositoryMock = createStateRepositoryMock(this.sinonSandbox);
-    stateRepositoryMock.fetchDocuments.returns([]);
+    stateRepositoryMock.fetchDocuments.resolves([]);
 
     stateRepositoryMockJs = createStateRepositoryMock(this.sinonSandbox);
     stateRepositoryMockJs.fetchDocuments.resolves([]);
@@ -318,7 +318,7 @@ describe('validateDocumentsUniquenessByIndices', () => {
           ],
         },
       )
-      .returns([leon]);
+      .resolves([leon]);
 
     stateRepositoryMock.fetchDocuments
       .withArgs(
@@ -331,7 +331,7 @@ describe('validateDocumentsUniquenessByIndices', () => {
           ],
         },
       )
-      .returns([leon]);
+      .resolves([leon]);
 
     stateRepositoryMock.fetchDocuments
       .withArgs(
@@ -344,7 +344,7 @@ describe('validateDocumentsUniquenessByIndices', () => {
           ],
         },
       )
-      .returns([william]);
+      .resolves([william]);
 
     stateRepositoryMock.fetchDocuments
       .withArgs(
@@ -357,7 +357,7 @@ describe('validateDocumentsUniquenessByIndices', () => {
           ],
         },
       )
-      .returns([william]);
+      .resolves([william]);
 
     const result = await validateDocumentsUniquenessByIndices(
       stateRepositoryMock,
@@ -451,7 +451,7 @@ describe('validateDocumentsUniquenessByIndices', () => {
           ],
         },
       )
-      .returns([indexedDocument]);
+      .resolves([indexedDocument]);
 
     stateRepositoryMockJs.fetchDocuments
       .withArgs(
@@ -463,7 +463,7 @@ describe('validateDocumentsUniquenessByIndices', () => {
           ],
         },
       )
-      .returns([indexedDocument]);
+      .resolves([indexedDocument]);
 
     const result = await validateDocumentsUniquenessByIndices(
       stateRepositoryMock,
@@ -530,7 +530,7 @@ describe('validateDocumentsUniquenessByIndices', () => {
           ],
         },
       )
-      .returns([uniqueDatesDocument]);
+      .resolves([uniqueDatesDocument]);
 
     const result = await validateDocumentsUniquenessByIndices(
       stateRepositoryMock,

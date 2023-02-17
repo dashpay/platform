@@ -39,6 +39,7 @@ use costs::storage_cost::removal::{StorageRemovalPerEpochByIdentifier, StorageRe
 use grovedb::ElementFlags;
 use integer_encoding::VarInt;
 use intmap::IntMap;
+use std::borrow::Cow;
 use std::cmp::Ordering;
 use std::collections::BTreeMap;
 
@@ -52,6 +53,9 @@ type BaseEpoch = EpochIndex;
 type BytesAddedInEpoch = u32;
 
 type OwnerId = [u8; 32];
+
+/// The size of single epoch flags
+pub const SINGLE_EPOCH_FLAGS_SIZE: u32 = 3;
 
 /// Storage flags
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -305,6 +309,11 @@ impl StorageFlags {
         None
     }
 
+    /// Returns default optional storage flag as ref
+    pub fn optional_default_as_cow() -> Option<Cow<'static, Self>> {
+        None
+    }
+
     /// Returns type byte
     pub fn type_byte(&self) -> u8 {
         match self {
@@ -550,10 +559,20 @@ impl StorageFlags {
     }
 
     /// Create Storage flags from optional element flags ref
-    pub fn from_some_element_flags_ref(data: &Option<ElementFlags>) -> Result<Option<Self>, Error> {
+    pub fn map_some_element_flags_ref(data: &Option<ElementFlags>) -> Result<Option<Self>, Error> {
         match data {
             None => Ok(None),
             Some(data) => Self::from_slice(data.as_slice()),
+        }
+    }
+
+    /// Create Storage flags from optional element flags ref
+    pub fn map_cow_some_element_flags_ref(
+        data: &Option<ElementFlags>,
+    ) -> Result<Option<Cow<Self>>, Error> {
+        match data {
+            None => Ok(None),
+            Some(data) => Self::from_slice(data.as_slice()).map(|option| option.map(Cow::Owned)),
         }
     }
 
@@ -567,6 +586,22 @@ impl StorageFlags {
     /// Map to optional element flags
     pub fn map_to_some_element_flags(maybe_storage_flags: Option<&Self>) -> Option<ElementFlags> {
         maybe_storage_flags.map(|storage_flags| storage_flags.serialize())
+    }
+
+    /// Map to optional element flags
+    pub fn map_cow_to_some_element_flags(
+        maybe_storage_flags: Option<Cow<Self>>,
+    ) -> Option<ElementFlags> {
+        maybe_storage_flags.map(|storage_flags| storage_flags.serialize())
+    }
+
+    /// Map to optional element flags
+    pub fn map_borrowed_cow_to_some_element_flags(
+        maybe_storage_flags: &Option<Cow<Self>>,
+    ) -> Option<ElementFlags> {
+        maybe_storage_flags
+            .as_ref()
+            .map(|storage_flags| storage_flags.serialize())
     }
 
     /// Creates optional element flags
@@ -692,5 +727,10 @@ impl StorageFlags {
                 Ok((key_storage_removal, value_storage_removal))
             }
         }
+    }
+
+    /// Wrap Storage Flags into optional owned cow
+    pub fn into_optional_cow<'a>(self) -> Option<Cow<'a, Self>> {
+        Some(Cow::Owned(self))
     }
 }
