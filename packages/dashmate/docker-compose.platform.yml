@@ -113,7 +113,7 @@ services:
     stop_grace_period: 10s
 
   dashmate_helper:
-    image: pshenmic/dashmate_helper
+    image: ${DASHMATE_HELPER_DOCKER_IMAGE:?err}
     restart: unless-stopped
     environment:
       - DASHMATE_HOME_DIR=/home/dashmate/.dashmate
