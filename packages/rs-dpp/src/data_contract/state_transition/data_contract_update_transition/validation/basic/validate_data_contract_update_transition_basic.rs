@@ -64,10 +64,10 @@ where
     }
 }
 
-#[async_trait]
+#[async_trait(?Send)]
 impl<SR> AsyncDataValidatorWithContext for DataContractUpdateTransitionBasicValidator<SR>
 where
-    SR: StateRepositoryLike,
+    SR: StateRepositoryLike + Send,
 {
     type Item = JsonValue;
 

@@ -42,7 +42,7 @@ where
 #[async_trait]
 impl<SR, VBT> AsyncDataValidatorWithContext for StateTransitionBasicValidator<SR, VBT>
 where
-    SR: StateRepositoryLike,
+    SR: StateRepositoryLike + Send,
     VBT: ValidatorByStateTransitionType,
 {
     type Item = JsonValue;

@@ -48,7 +48,7 @@ pub trait DataValidatorWithContext {
 /// Async validator takes additionally an execution context and generates fee
 #[cfg_attr(test, automock(type Item = JsonValue;))]
 #[async_trait]
-pub trait AsyncDataValidatorWithContext {
+pub trait AsyncDataValidatorWithContext: Send + Sync {
     // TODO, when GAT is available remove the reference in method and use: `type Item<'a>`
     type Item;
     async fn validate(
