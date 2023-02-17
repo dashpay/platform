@@ -34,20 +34,20 @@ use crate::block::BlockExecutionContext;
 use crate::config::PlatformConfig;
 use crate::error::execution::ExecutionError;
 use crate::error::Error;
+use crate::rpc::core::{CoreRPCLike, DefaultCoreRPC};
 use crate::state::PlatformState;
 use drive::drive::Drive;
-use drive::rpc::core::{CoreRPCLike, DefaultCoreRPC};
 
 use drive::drive::defaults::PROTOCOL_VERSION;
 use std::cell::RefCell;
 use std::path::Path;
 
 #[cfg(feature = "fixtures-and-mocks")]
+use crate::rpc::core::MockCoreRPCLike;
+#[cfg(feature = "fixtures-and-mocks")]
 use dashcore::hashes::hex::FromHex;
 #[cfg(feature = "fixtures-and-mocks")]
 use dashcore::BlockHash;
-#[cfg(feature = "fixtures-and-mocks")]
-use drive::rpc::core::MockCoreRPCLike;
 #[cfg(feature = "fixtures-and-mocks")]
 use serde_json::json;
 

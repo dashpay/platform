@@ -245,6 +245,7 @@ mod tests {
     mod handlers {
         use crate::abci::handlers::TenderdashAbci;
         use crate::config::PlatformConfig;
+        use crate::rpc::core::MockCoreRPCLike;
         use chrono::{Duration, Utc};
         use dashcore::hashes::hex::FromHex;
         use dashcore::BlockHash;
@@ -260,7 +261,6 @@ mod tests {
         use drive::drive::identity::withdrawals::WithdrawalTransactionIdAndBytes;
         use drive::fee::epoch::CreditsPerEpoch;
         use drive::fee_pools::epochs::Epoch;
-        use drive::rpc::core::MockCoreRPCLike;
         use drive::tests::helpers::setup::setup_document;
         use rust_decimal::prelude::ToPrimitive;
         use serde_json::json;

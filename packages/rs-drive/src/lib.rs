@@ -23,8 +23,6 @@ pub mod fee;
 pub mod fee_pools;
 /// Query module
 pub mod query;
-/// Everything related to RPC
-pub mod rpc;
 
 /// DPP module
 pub use dpp;

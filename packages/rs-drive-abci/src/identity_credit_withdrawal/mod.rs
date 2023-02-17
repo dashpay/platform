@@ -538,12 +538,15 @@ mod tests {
         BlockHash,
     };
     use dpp::{contracts::withdrawals_contract, tests::fixtures::get_withdrawal_document_fixture};
-    use drive::{rpc::core::MockCoreRPCLike, tests::helpers::setup::setup_document};
+    use drive::tests::helpers::setup::setup_document;
     use serde_json::json;
 
     use dpp::identity::state_transition::identity_credit_withdrawal_transition::Pooling;
 
-    use crate::{block::BlockExecutionContext, execution::fee_pools::epoch::EpochInfo};
+    use crate::{
+        block::BlockExecutionContext, execution::fee_pools::epoch::EpochInfo,
+        rpc::core::MockCoreRPCLike,
+    };
 
     mod update_withdrawal_statuses {
         use std::cell::RefCell;
