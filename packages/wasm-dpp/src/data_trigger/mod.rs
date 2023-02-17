@@ -5,12 +5,12 @@ use wasm_bindgen::prelude::*;
 
 use crate::{
     identifier::{identifier_from_js_value, IdentifierWrapper},
-    utils::WithJsError,
+    utils::{Inner, WithJsError},
 };
 pub mod data_trigger_execution_context;
 pub mod data_trigger_execution_result;
 pub mod execute_data_triggers;
-pub mod get_data_triggers;
+pub mod get_data_triggers_factory;
 
 #[wasm_bindgen(js_name=DataTrigger)]
 #[derive(Clone)]
@@ -106,5 +106,21 @@ impl DataTriggerWasm {
             self.0.top_level_identity = Some(id);
         }
         Ok(())
+    }
+}
+
+impl Inner for DataTriggerWasm {
+    type InnerItem = DataTrigger;
+
+    fn into_inner(self) -> Self::InnerItem {
+        self.0
+    }
+
+    fn inner(&self) -> &Self::InnerItem {
+        &self.0
+    }
+
+    fn inner_mut(&mut self) -> &mut Self::InnerItem {
+        &mut self.0
     }
 }

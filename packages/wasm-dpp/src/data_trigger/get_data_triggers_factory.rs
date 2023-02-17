@@ -3,12 +3,16 @@ use std::{convert::TryFrom, iter::FromIterator};
 use dpp::{
     data_trigger::get_data_triggers_factory::{data_triggers, get_data_triggers},
     document::document_transition::Action,
-    prelude::Identifier,
+    prelude::{DataTrigger, Identifier},
 };
+use itertools::Itertools;
 use js_sys::Array;
 use wasm_bindgen::prelude::*;
 
-use crate::{identifier::IdentifierWrapper, utils::WithJsError};
+use crate::{
+    identifier::IdentifierWrapper,
+    utils::{Inner, IntoWasm, WithJsError},
+};
 
 use super::DataTriggerWasm;
 
@@ -17,15 +21,25 @@ pub fn get_data_triggers_wasm(
     js_data_contract_id: &IdentifierWrapper,
     document_type: String,
     transition_action_string: String,
+    data_triggers_list: Array,
 ) -> Result<Array, JsValue> {
     let transition_action = Action::try_from(transition_action_string).with_js_error()?;
     let data_contract_id: Identifier = js_data_contract_id.into();
+
+    let data_triggers: Vec<DataTrigger> = data_triggers_list
+        .iter()
+        .map(|value| {
+            value
+                .to_wasm::<DataTriggerWasm>("DataTrigger")
+                .map(|v| v.to_owned().into_inner())
+        })
+        .try_collect()?;
 
     let data_triggers: Vec<JsValue> = get_data_triggers(
         &data_contract_id,
         &document_type,
         transition_action,
-        data_triggers().with_js_error()?.iter(),
+        data_triggers.iter(),
     )
     .with_js_error()?
     .into_iter()

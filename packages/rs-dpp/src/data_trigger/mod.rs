@@ -1,7 +1,3 @@
-use std::fmt::Display;
-
-use futures::future::LocalBoxFuture;
-
 pub use data_trigger_execution_context::*;
 pub use data_trigger_execution_result::*;
 pub use reject_data_trigger::*;
@@ -87,7 +83,7 @@ impl DataTrigger {
         // TODO remove the clone
         let data_contract_id = context.data_contract.id.to_owned();
 
-        let execution_result = execute_trigger(
+        let maybe_execution_result = execute_trigger(
             self.data_trigger_kind,
             document_transition,
             context,
@@ -95,20 +91,22 @@ impl DataTrigger {
         )
         .await;
 
-        if let Err(err) = execution_result {
-            let consensus_error = DataTriggerError::DataTriggerExecutionError {
-                data_contract_id,
-                document_transition_id: *get_from_transition!(document_transition, id),
-                message: err.to_string(),
-                execution_error: err,
-                document_transition: None,
-                owner_id: None,
-            };
-            result.add_error(consensus_error.into());
-            return result;
-        }
+        match maybe_execution_result {
+            Err(err) => {
+                let consensus_error = DataTriggerError::DataTriggerExecutionError {
+                    data_contract_id,
+                    document_transition_id: *get_from_transition!(document_transition, id),
+                    message: err.to_string(),
+                    execution_error: err,
+                    document_transition: None,
+                    owner_id: None,
+                };
+                result.add_error(consensus_error.into());
+                result
+            }
 
-        result
+            Ok(execution_result) => execution_result,
+        }
     }
 }
 
