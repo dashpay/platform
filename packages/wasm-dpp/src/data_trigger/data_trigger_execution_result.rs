@@ -7,6 +7,12 @@ use crate::{errors::consensus_error::from_state_error, utils::Inner};
 #[wasm_bindgen(js_name=DataTriggerExecutionResult)]
 pub struct DataTriggerExecutionResultWasm(DataTriggerExecutionResult);
 
+impl From<DataTriggerExecutionResult> for DataTriggerExecutionResultWasm {
+    fn from(value: DataTriggerExecutionResult) -> Self {
+        DataTriggerExecutionResultWasm(value)
+    }
+}
+
 #[wasm_bindgen(js_class=DataTriggerExecutionResult)]
 impl DataTriggerExecutionResultWasm {
     #[wasm_bindgen(js_name=isOk)]
@@ -25,11 +31,6 @@ impl DataTriggerExecutionResultWasm {
     }
 }
 
-impl From<DataTriggerExecutionResult> for DataTriggerExecutionResultWasm {
-    fn from(value: DataTriggerExecutionResult) -> Self {
-        DataTriggerExecutionResultWasm(value)
-    }
-}
 
 impl Inner for DataTriggerExecutionResultWasm {
     type InnerItem = DataTriggerExecutionResult;

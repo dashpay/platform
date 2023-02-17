@@ -48,6 +48,7 @@ let InvalidDocumentTransitionIdError;
 let DuplicateDocumentTransitionsWithIndicesError;
 let DuplicateDocumentTransitionsWithIdsError;
 let ValidationResult;
+let ProtocolVersionValidator;
 
 describe('validateDocumentsBatchTransitionBasicFactory', () => {
   let dataContractJs;
@@ -69,6 +70,7 @@ describe('validateDocumentsBatchTransitionBasicFactory', () => {
   let validatePartialCompoundIndicesMock;
   let validateProtocolVersionMockJs;
   let executionContextJs;
+  let protocolVersionValidator;
   let executionContext;
 
   beforeEach(async function beforeEach() {
@@ -92,13 +94,10 @@ describe('validateDocumentsBatchTransitionBasicFactory', () => {
       DuplicateDocumentTransitionsWithIdsError,
     } = await loadWasmDpp());
 
-
     dataContractJs = getDataContractFixture();
     dataContract = new DataContract(dataContractJs.toObject());
 
     documents = getDocumentsFixture(dataContractJs);
-
-
     ownerId = getDocumentsFixture.ownerId;
 
     documentTransitions = getDocumentTransitionsFixture({
@@ -126,8 +125,6 @@ describe('validateDocumentsBatchTransitionBasicFactory', () => {
       signaturePublicKeyId: 0,
     }, [dataContract.clone()]);
 
-
-
     rawStateTransitionJs = stateTransitionJs.toObject();
     rawStateTransition = stateTransition.toObject();
 
@@ -152,7 +149,7 @@ describe('validateDocumentsBatchTransitionBasicFactory', () => {
 
     validatePartialCompoundIndicesMock = this.sinonSandbox.stub().returns(
       new ValidationResultJs(),
-    )
+    );
 
     validateProtocolVersionMockJs = this.sinonSandbox.stub().returns(new ValidationResultJs());
     protocolVersionValidator = new ProtocolVersionValidator();
@@ -186,7 +183,7 @@ describe('validateDocumentsBatchTransitionBasicFactory', () => {
       expect(error.getParams().missingProperty).to.equal('protocolVersion');
     });
 
-    it('should be present - Rust', async function test() {
+    it('should be present - Rust', async () => {
       delete rawStateTransition.protocolVersion;
 
       const result = await validateDocumentsBatchTransitionBasic(
@@ -204,7 +201,6 @@ describe('validateDocumentsBatchTransitionBasicFactory', () => {
       expect(error.getKeyword()).to.equal('required');
       expect(error.getParams().missingProperty).to.equal('protocolVersion');
     });
-
 
     it('should be an integer', async () => {
       rawStateTransitionJs.protocolVersion = '1';
@@ -266,20 +262,17 @@ describe('validateDocumentsBatchTransitionBasicFactory', () => {
       );
     });
 
-
     it('should be valid - Rust', async () => {
       rawStateTransition.protocolVersion = -1;
       try {
-
         await validateDocumentsBatchTransitionBasic(
           protocolVersionValidator,
           stateRepositoryMock,
           rawStateTransition,
           executionContext,
         );
-
       } catch (e) {
-        expect(e).equal("Error conversion not implemented: unable convert -1 to u64");
+        expect(e).equal('Error conversion not implemented: unable convert -1 to u64');
       }
     });
   });
@@ -425,7 +418,7 @@ describe('validateDocumentsBatchTransitionBasicFactory', () => {
 
       await expectJsonSchemaError(result, 32);
 
-      const [error, byteArrayError] = result.getErrors();
+      const [error] = result.getErrors();
 
       expect(error.getInstancePath()).to.equal('/ownerId/0');
       expect(error.getKeyword()).to.equal('type');
@@ -699,7 +692,7 @@ describe('validateDocumentsBatchTransitionBasicFactory', () => {
 
         it('should be present - Rust', async () => {
           const [documentTransition] = rawStateTransition.transitions;
-          delete documentTransition.$id
+          delete documentTransition.$id;
 
           const result = await validateDocumentsBatchTransitionBasic(
             protocolVersionValidator,
@@ -896,10 +889,9 @@ describe('validateDocumentsBatchTransitionBasicFactory', () => {
           expect(error.getCode()).to.equal(1019);
 
           expect(stateRepositoryMock.fetchDataContract).to.have.been.calledOnce();
-          const [fetchDataContractId] = stateRepositoryMock.fetchDataContract.getCall(0).args
-          expect(fetchDataContractId.toBuffer()).is.deep.equal(dataContract.getId().toBuffer())
+          const [fetchDataContractId] = stateRepositoryMock.fetchDataContract.getCall(0).args;
+          expect(fetchDataContractId.toBuffer()).is.deep.equal(dataContract.getId().toBuffer());
         });
-
       });
 
       describe('$dataContractId', () => {
@@ -921,8 +913,8 @@ describe('validateDocumentsBatchTransitionBasicFactory', () => {
           expect(error.getCode()).to.equal(1025);
 
           expect(stateRepositoryMock.fetchDataContract).to.have.been.calledOnce();
-          const [fetchDataContractId] = stateRepositoryMock.fetchDataContract.getCall(0).args
-          expect(fetchDataContractId.toBuffer()).is.deep.equal(dataContract.getId().toBuffer())
+          const [fetchDataContractId] = stateRepositoryMock.fetchDataContract.getCall(0).args;
+          expect(fetchDataContractId.toBuffer()).is.deep.equal(dataContract.getId().toBuffer());
         });
 
         it('should be a byte array - Rust', async () => {
@@ -947,10 +939,9 @@ describe('validateDocumentsBatchTransitionBasicFactory', () => {
           expect(error.getIdentifierError()).to.equal('Identifier Error: Identifier must be 32 bytes long');
 
           expect(stateRepositoryMock.fetchDataContract).to.have.been.calledOnce();
-          const [fetchDataContractId] = stateRepositoryMock.fetchDataContract.getCall(0).args
-          expect(fetchDataContractId.toBuffer()).is.deep.equal(dataContract.getId().toBuffer())
+          const [fetchDataContractId] = stateRepositoryMock.fetchDataContract.getCall(0).args;
+          expect(fetchDataContractId.toBuffer()).is.deep.equal(dataContract.getId().toBuffer());
         });
-
 
         it('should exists in the state - Rust', async () => {
           stateRepositoryMock.fetchDataContract.returns(undefined);
@@ -970,8 +961,8 @@ describe('validateDocumentsBatchTransitionBasicFactory', () => {
           expect(error.getDataContractId()).to.deep.equal(dataContract.getId().toBuffer());
 
           expect(stateRepositoryMock.fetchDataContract).to.have.been.calledOnce();
-          const [fetchDataContractId] = stateRepositoryMock.fetchDataContract.getCall(0).args
-          expect(fetchDataContractId.toBuffer()).is.deep.equal(dataContract.getId().toBuffer())
+          const [fetchDataContractId] = stateRepositoryMock.fetchDataContract.getCall(0).args;
+          expect(fetchDataContractId.toBuffer()).is.deep.equal(dataContract.getId().toBuffer());
         });
       });
 
@@ -994,8 +985,8 @@ describe('validateDocumentsBatchTransitionBasicFactory', () => {
           expect(error.getCode()).to.equal(1027);
 
           expect(stateRepositoryMock.fetchDataContract).to.have.been.calledOnce();
-          const [fetchDataContractId] = stateRepositoryMock.fetchDataContract.getCall(0).args
-          expect(fetchDataContractId.toBuffer()).is.deep.equal(dataContract.getId().toBuffer())
+          const [fetchDataContractId] = stateRepositoryMock.fetchDataContract.getCall(0).args;
+          expect(fetchDataContractId.toBuffer()).is.deep.equal(dataContract.getId().toBuffer());
         });
 
         it('should be defined in Data Contract - Rust', async () => {
@@ -1020,8 +1011,8 @@ describe('validateDocumentsBatchTransitionBasicFactory', () => {
           expect(error.getDataContractId()).to.deep.equal(dataContract.getId().toBuffer());
 
           expect(stateRepositoryMock.fetchDataContract).to.have.been.calledOnce();
-          const [fetchDataContractId] = stateRepositoryMock.fetchDataContract.getCall(0).args
-          expect(fetchDataContractId.toBuffer()).is.deep.equal(dataContract.getId().toBuffer())
+          const [fetchDataContractId] = stateRepositoryMock.fetchDataContract.getCall(0).args;
+          expect(fetchDataContractId.toBuffer()).is.deep.equal(dataContract.getId().toBuffer());
         });
       });
 
@@ -1045,8 +1036,8 @@ describe('validateDocumentsBatchTransitionBasicFactory', () => {
           expect(error.getCode()).to.equal(1026);
 
           expect(stateRepositoryMock.fetchDataContract).to.have.been.calledOnce();
-          const [fetchDataContractId] = stateRepositoryMock.fetchDataContract.getCall(0).args
-          expect(fetchDataContractId.toBuffer()).is.deep.equal(dataContract.getId().toBuffer())
+          const [fetchDataContractId] = stateRepositoryMock.fetchDataContract.getCall(0).args;
+          expect(fetchDataContractId.toBuffer()).is.deep.equal(dataContract.getId().toBuffer());
         });
 
         it('should throw InvalidDocumentTransitionActionError if action is not valid - Rust', async () => {
@@ -1066,9 +1057,9 @@ describe('validateDocumentsBatchTransitionBasicFactory', () => {
             expect(e.getAction()).to.equal(firstDocumentTransition.$action);
             expect(e.getRawDocumentTransition()).to.deep.equal(firstDocumentTransition);
 
-            expect(stateRepositoryMock.fetchDataContract).to.have.been.calledOnce()
-            const [fetchDataContractId] = stateRepositoryMock.fetchDataContract.getCall(0).args
-            expect(fetchDataContractId.toBuffer()).is.deep.equal(dataContract.getId().toBuffer())
+            expect(stateRepositoryMock.fetchDataContract).to.have.been.calledOnce();
+            const [fetchDataContractId] = stateRepositoryMock.fetchDataContract.getCall(0).args;
+            expect(fetchDataContractId.toBuffer()).is.deep.equal(dataContract.getId().toBuffer());
           }
         });
       });
@@ -1099,8 +1090,8 @@ describe('validateDocumentsBatchTransitionBasicFactory', () => {
             expect(error.getInvalidId()).to.deep.equal(firstTransition.$id);
 
             expect(stateRepositoryMock.fetchDataContract).to.have.been.calledOnce();
-            const [fetchDataContractId] = stateRepositoryMock.fetchDataContract.getCall(0).args
-            expect(fetchDataContractId.toBuffer()).is.deep.equal(dataContract.getId().toBuffer())
+            const [fetchDataContractId] = stateRepositoryMock.fetchDataContract.getCall(0).args;
+            expect(fetchDataContractId.toBuffer()).is.deep.equal(dataContract.getId().toBuffer());
           });
         });
 
@@ -1395,7 +1386,8 @@ describe('validateDocumentsBatchTransitionBasicFactory', () => {
           dataContract.getId(),
           ownerId,
           duplicatedTransition.$type,
-          duplicatedTransition.$entropy);
+          duplicatedTransition.$entropy,
+        );
         const duplicates = [duplicatedTransition, indexedTransition];
 
         stateTransition = new DocumentsBatchTransition({
@@ -1423,8 +1415,8 @@ describe('validateDocumentsBatchTransitionBasicFactory', () => {
         expect(error.getCode()).to.equal(1020);
 
         expect(stateRepositoryMock.fetchDataContract).to.have.been.calledOnce();
-        const [fetchDataContractId] = stateRepositoryMock.fetchDataContract.getCall(0).args
-        expect(fetchDataContractId.toBuffer()).is.deep.equal(dataContract.getId().toBuffer())
+        const [fetchDataContractId] = stateRepositoryMock.fetchDataContract.getCall(0).args;
+        expect(fetchDataContractId.toBuffer()).is.deep.equal(dataContract.getId().toBuffer());
       });
 
       it('should return invalid result if compound index doesn\'t contain all fields ', async () => {
@@ -1635,8 +1627,8 @@ describe('validateDocumentsBatchTransitionBasicFactory', () => {
     expect(result.isValid()).to.be.true();
 
     expect(stateRepositoryMock.fetchDataContract).to.have.been.calledOnce();
-    const [fetchDataContractId] = stateRepositoryMock.fetchDataContract.getCall(0).args
-    expect(fetchDataContractId.toBuffer()).is.deep.equal(dataContract.getId().toBuffer())
+    const [fetchDataContractId] = stateRepositoryMock.fetchDataContract.getCall(0).args;
+    expect(fetchDataContractId.toBuffer()).is.deep.equal(dataContract.getId().toBuffer());
   });
 
   it('should not validate Document transitions on dry run - Rust', async () => {
@@ -1657,7 +1649,7 @@ describe('validateDocumentsBatchTransitionBasicFactory', () => {
     expect(result.isValid()).to.be.true();
 
     expect(stateRepositoryMock.fetchDataContract).to.have.been.calledOnce();
-    const [fetchDataContractId] = stateRepositoryMock.fetchDataContract.getCall(0).args
-    expect(fetchDataContractId.toBuffer()).is.deep.equal(dataContract.getId().toBuffer())
+    const [fetchDataContractId] = stateRepositoryMock.fetchDataContract.getCall(0).args;
+    expect(fetchDataContractId.toBuffer()).is.deep.equal(dataContract.getId().toBuffer());
   });
 });

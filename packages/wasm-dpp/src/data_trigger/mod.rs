@@ -9,7 +9,7 @@ use crate::{
 };
 pub mod data_trigger_execution_context;
 pub mod data_trigger_execution_result;
-pub mod execute_data_triggers;
+pub mod execute_data_triggers_factory;
 pub mod get_data_triggers_factory;
 
 #[wasm_bindgen(js_name=DataTrigger)]
@@ -42,14 +42,9 @@ impl From<&DataTriggerWasm> for DataTrigger {
 
 #[wasm_bindgen(js_class=DataTrigger)]
 impl DataTriggerWasm {
-    #[wasm_bindgen(constructor)]
-    pub fn new() -> Self {
-        DataTriggerWasm(DataTrigger::default())
-    }
-
     #[wasm_bindgen(getter=dataContractId)]
     pub fn get_data_contract_id(&self) -> IdentifierWrapper {
-        self.0.data_contract_id.clone().into()
+        self.0.data_contract_id.into()
     }
 
     #[wasm_bindgen(setter=dataContractId)]

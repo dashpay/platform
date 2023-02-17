@@ -45,7 +45,7 @@ describe('DocumentBatchTransition', () => {
     // 3 and 4 are indexed documents that do not have security level specified
     documentsFixture = getDocumentsFixture(dataContractFixtureJs).map((doc) => {
       const document = new Document(doc.toObject(), dataContractFixture.clone());
-      document.setEntropy(doc.entropy)
+      document.setEntropy(doc.entropy);
       return document;
     });
 

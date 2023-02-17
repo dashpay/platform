@@ -113,14 +113,21 @@ describe('executeDataTriggersFactory', () => {
     stateTransitionExecutionContext = new StateTransitionExecutionContext();
     stateTransitionExecutionContext.disableDryRun();
 
-    context = new DataTriggerExecutionContext(stateRepositoryMock, childDocument.getOwnerId(), contractMock.clone(), stateTransitionExecutionContext);
+    context = new DataTriggerExecutionContext(
+      stateRepositoryMock,
+      childDocument.getOwnerId(),
+      contractMock.clone(),
+      stateTransitionExecutionContext,
+    );
 
     documentTransitionsJs = getDocumentTransitionsFixture({
       create: [childDocumentJs],
     });
 
     documentTransitions = documentTransitionsJs.map((transition) => {
-      const transitionCreate = new DocumentCreateTransition(transition.toObject(), dataContract.clone());
+      const transitionCreate = new DocumentCreateTransition(
+        transition.toObject(), dataContract.clone(),
+      );
       return DocumentTransition.fromTransitionCreate(transitionCreate);
     });
 
@@ -163,40 +170,44 @@ describe('executeDataTriggersFactory', () => {
 
   it('should execute multiple data triggers if there is more than one data trigger for'
     + ' the same document and action in the contract', async () => {
-      getDataTriggersMock.returns([
-        dpnsCreateDomainDataTriggerMock,
-        dpnsCreateDomainDataTriggerMock,
-        dpnsCreateDomainDataTriggerMock,
-      ]);
+    getDataTriggersMock.returns([
+      dpnsCreateDomainDataTriggerMock,
+      dpnsCreateDomainDataTriggerMock,
+      dpnsCreateDomainDataTriggerMock,
+    ]);
 
-      const expectedTriggersCount = 3;
-      expect(dpnsTriggers.length).to.equal(expectedTriggersCount);
+    const expectedTriggersCount = 3;
+    expect(dpnsTriggers.length).to.equal(expectedTriggersCount);
 
-      const dataTriggerExecutionResults = await executeDataTriggersJs(
-        documentTransitionsJs, contextJs,
-      );
+    const dataTriggerExecutionResults = await executeDataTriggersJs(
+      documentTransitionsJs, contextJs,
+    );
 
-      expect(dataTriggerExecutionResults).to.have.a.lengthOf(expectedTriggersCount);
+    expect(dataTriggerExecutionResults).to.have.a.lengthOf(expectedTriggersCount);
 
-      dataTriggerExecutionResults.forEach((dataTriggerExecutionResult) => {
-        expect(dataTriggerExecutionResult.getErrors()).to.have.a.lengthOf(0);
-      });
+    dataTriggerExecutionResults.forEach((dataTriggerExecutionResult) => {
+      expect(dataTriggerExecutionResult.getErrors()).to.have.a.lengthOf(0);
     });
+  });
 
   it('should return multiple data triggers if there is more than one data trigger for'
     + ' the same document and action in the contract - Rust', async () => {
-      const dataTriggersList = getAllDataTriggers();
-      const dataTriggerListWithDuplicates = [dataTriggersList[0], dataTriggersList[0], dataTriggersList[0]];
+    const dataTriggersList = getAllDataTriggers();
+    const dataTriggerListWithDuplicates = [
+      dataTriggersList[0],
+      dataTriggersList[0],
+      dataTriggersList[0],
+    ];
 
-      const expectedTriggersCount = 3;
-      expect(dpnsTriggers.length).to.equal(expectedTriggersCount);
+    const expectedTriggersCount = 3;
+    expect(dpnsTriggers.length).to.equal(expectedTriggersCount);
 
-      const dataTriggerExecutionResults = await executeDataTriggers(
-        documentTransitions, context, dataTriggerListWithDuplicates
-      );
+    const dataTriggerExecutionResults = await executeDataTriggers(
+      documentTransitions, context, dataTriggerListWithDuplicates,
+    );
 
-      expect(dataTriggerExecutionResults).to.have.a.lengthOf(expectedTriggersCount);
-    });
+    expect(dataTriggerExecutionResults).to.have.a.lengthOf(expectedTriggersCount);
+  });
 
   it('should return a result for each passed document with success or error', async function test() {
     const doc1 = getDocumentsFixture(dataContractJs)[0];
@@ -266,16 +277,20 @@ describe('executeDataTriggersFactory', () => {
     expect(throwingTriggerMockFunction.callCount).to.equal(1);
   });
 
-  it('should return a result for each passed document with success or error - Rust', async function test() {
+  it('should return a result for each passed document with success or error - Rust', async () => {
     const documentTransition = documentTransitions[0];
     const rawDocumentTransition = documentTransition.toObject();
-    rawDocumentTransition.normalizedLabel = "a".repeat(257);
+    rawDocumentTransition.normalizedLabel = 'a'.repeat(257);
 
-    const invalidDocumentCreateTransition = new DocumentCreateTransition(rawDocumentTransition, dataContract.clone());
-    const invalidDocumentTransition = DocumentTransition.fromTransitionCreate(invalidDocumentCreateTransition);
+    const invalidDocumentCreateTransition = new DocumentCreateTransition(
+      rawDocumentTransition, dataContract.clone(),
+    );
+    const invalidDocumentTransition = DocumentTransition.fromTransitionCreate(
+      invalidDocumentCreateTransition,
+    );
 
     const dataTriggerExecutionResults = await executeDataTriggers(
-      [documentTransition, invalidDocumentTransition], context, getAllDataTriggers()
+      [documentTransition, invalidDocumentTransition], context, getAllDataTriggers(),
     );
 
     expect(dataTriggerExecutionResults).to.have.a.lengthOf(2);
@@ -314,7 +329,9 @@ describe('executeDataTriggersFactory', () => {
 
   it("should not call any triggers if documents have no triggers associated with it's type or action - Rust", async () => {
     const dataTriggers = [getAllDataTriggers()[1]];
-    const dataTriggerExecutionResults = await executeDataTriggers(documentTransitions, context, dataTriggers);
+    const dataTriggerExecutionResults = await executeDataTriggers(
+      documentTransitions, context, dataTriggers,
+    );
 
     expect(dataTriggerExecutionResults).to.have.a.lengthOf(0);
   });
@@ -373,11 +390,15 @@ describe('executeDataTriggersFactory', () => {
     });
 
     documentTransitions = documentTransitionsJs.map((transition) => {
-      const transitionCreate = new DocumentCreateTransition(transition.toObject(), dataContract.clone());
+      const transitionCreate = new DocumentCreateTransition(
+        transition.toObject(), dataContract.clone(),
+      );
       return DocumentTransition.fromTransitionCreate(transitionCreate);
     });
 
-    const dataTriggerExecutionResults = await executeDataTriggers(documentTransitions, context, getAllDataTriggers());
+    const dataTriggerExecutionResults = await executeDataTriggers(
+      documentTransitions, context, getAllDataTriggers(),
+    );
 
     expect(dataTriggerExecutionResults).to.have.a.lengthOf(1);
   });
@@ -422,11 +443,15 @@ describe('executeDataTriggersFactory', () => {
     });
 
     documentTransitions = documentTransitionsJs.map((transition) => {
-      const transitionCreate = new DocumentCreateTransition(transition.toObject(), dataContract.clone());
+      const transitionCreate = new DocumentCreateTransition(
+        transition.toObject(), dataContract.clone(),
+      );
       return DocumentTransition.fromTransitionCreate(transitionCreate);
     });
 
-    const dataTriggerExecutionResults = await executeDataTriggers(documentTransitions, context, getAllDataTriggers());
+    const dataTriggerExecutionResults = await executeDataTriggers(
+      documentTransitions, context, getAllDataTriggers(),
+    );
 
     expect(dataTriggerExecutionResults).to.have.a.lengthOf(0);
   });

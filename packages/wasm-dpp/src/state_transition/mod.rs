@@ -4,6 +4,7 @@ use wasm_bindgen::prelude::*;
 use crate::utils::Inner;
 
 #[wasm_bindgen(js_name=StateTransitionExecutionContext)]
+#[derive(Clone)]
 pub struct StateTransitionExecutionContextWasm(StateTransitionExecutionContext);
 
 impl From<StateTransitionExecutionContext> for StateTransitionExecutionContextWasm {
