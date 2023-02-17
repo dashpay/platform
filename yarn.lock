@@ -1745,6 +1745,34 @@ __metadata:
   languageName: unknown
   linkType: soft
 
+"@dashevo/oclif@npm:^1.0.0":
+  version: 1.0.0
+  resolution: "@dashevo/oclif@npm:1.0.0"
+  dependencies:
+    "@oclif/core": ^1.20.4
+    "@oclif/plugin-help": ^5.1.19
+    "@oclif/plugin-not-found": ^2.3.7
+    "@oclif/plugin-warn-if-update-available": ^2.0.14
+    aws-sdk: ^2.1231.0
+    concurrently: ^7.6.0
+    debug: ^4.3.3
+    find-yarn-workspace-root: ^2.0.0
+    fs-extra: ^8.1
+    github-slugger: ^1.5.0
+    got: ^11
+    lodash: ^4.17.21
+    normalize-package-data: ^3.0.3
+    semver: ^7.3.8
+    tslib: ^2.3.1
+    yeoman-environment: ^3.11.1
+    yeoman-generator: ^5.6.1
+    yosay: ^2.0.2
+  bin:
+    oclif: bin/run
+  checksum: f095f30dcc26aaa7ee8708b08db55ba2c97a12b066b94783ca30e3d19e5c2005734948489ca057d40dfb19450877c2a30d26c0c50f97df534ce293a938d8168e
+  languageName: node
+  linkType: hard
+
 "@dashevo/platform-test-suite@workspace:packages/platform-test-suite":
   version: 0.0.0-use.local
   resolution: "@dashevo/platform-test-suite@workspace:packages/platform-test-suite"
@@ -5725,6 +5753,7 @@ __metadata:
     "@dashevo/dpp": "workspace:*"
     "@dashevo/feature-flags-contract": "workspace:*"
     "@dashevo/masternode-reward-shares-contract": "workspace:*"
+    "@dashevo/oclif": ^1.0.0
     "@dashevo/wallet-lib": "workspace:*"
     "@dashevo/withdrawals-contract": "workspace:*"
     "@oclif/core": ^1.21.0
@@ -5758,7 +5787,6 @@ __metadata:
     node-fetch: ^2.6.7
     node-forge: ^1.3.1
     node-graceful: ^3.0.1
-    oclif: ^3.4.2
     pretty-bytes: ^5.3.0
     pretty-ms: ^7.0.0
     public-ip: ^4.0.4
@@ -5769,7 +5797,7 @@ __metadata:
     sinon-chai: ^3.7.0
     table: ^5.4.6
   bin:
-    dashmate: bin/dashmate
+    dashmate: ./bin/run
   languageName: unknown
   linkType: soft
 
@@ -10865,34 +10893,6 @@ fsevents@~2.3.2:
     define-properties: ^1.1.3
     es-abstract: ^1.19.1
   checksum: 0f17e99741ebfbd0fa55ce942f6184743d3070c61bd39221afc929c8422c4907618c8da694c6915bc04a83ab3224260c779ba37fc07bb668bdc5f33b66a902a4
-  languageName: node
-  linkType: hard
-
-"oclif@npm:^3.4.2":
-  version: 3.4.2
-  resolution: "oclif@npm:3.4.2"
-  dependencies:
-    "@oclif/core": ^1.20.4
-    "@oclif/plugin-help": ^5.1.19
-    "@oclif/plugin-not-found": ^2.3.7
-    "@oclif/plugin-warn-if-update-available": ^2.0.14
-    aws-sdk: ^2.1231.0
-    concurrently: ^7.6.0
-    debug: ^4.3.3
-    find-yarn-workspace-root: ^2.0.0
-    fs-extra: ^8.1
-    github-slugger: ^1.5.0
-    got: ^11
-    lodash: ^4.17.21
-    normalize-package-data: ^3.0.3
-    semver: ^7.3.8
-    tslib: ^2.3.1
-    yeoman-environment: ^3.11.1
-    yeoman-generator: ^5.6.1
-    yosay: ^2.0.2
-  bin:
-    oclif: bin/run
-  checksum: fb2d21f9a53b81f4ad08778c186d6ebe3de0e82d29f42afc9d473ef1839786be26e0a9051f17de15513c68e95c86aa89ccd78684a374c804bda0b36941abac0a
   languageName: node
   linkType: hard
 
