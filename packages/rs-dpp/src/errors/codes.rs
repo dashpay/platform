@@ -44,6 +44,7 @@ impl ErrorWithCode for ConsensusError {
             Self::IdentityInsufficientBalanceError(_) => 4024,
             Self::InvalidIdentityCreditWithdrawalTransitionCoreFeeError(_) => 4025,
             Self::InvalidIdentityCreditWithdrawalTransitionOutputScriptError(_) => 4026,
+            Self::NotImplementedIdentityCreditWithdrawalTransitionPoolingError(_) => 4027,
 
             Self::StateError(e) => e.get_code(),
             Self::BasicError(e) => e.get_code(),

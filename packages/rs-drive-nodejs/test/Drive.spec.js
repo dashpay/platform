@@ -5,11 +5,18 @@ const { PrivateKey } = require('@dashevo/dashcore-lib');
 const { expect, use } = require('chai');
 use(require('dirty-chai'));
 
+const DashPlatformProtocol = require('@dashevo/dpp');
+
 const Document = require('@dashevo/dpp/lib/document/Document');
+const Identifier = require('@dashevo/dpp/lib/Identifier');
 
 const getDataContractFixture = require('@dashevo/dpp/lib/test/fixtures/getDataContractFixture');
 const getDocumentsFixture = require('@dashevo/dpp/lib/test/fixtures/getDocumentsFixture');
 const getIdentityFixture = require('@dashevo/dpp/lib/test/fixtures/getIdentityFixture');
+const generateRandomIdentifier = require('@dashevo/dpp/lib/test/utils/generateRandomIdentifier');
+
+const withdrawalContractDocumentsSchema = require('@dashevo/withdrawals-contract/schema/withdrawals-documents.json');
+const withdrawalContractIds = require('@dashevo/withdrawals-contract/lib/systemIds');
 
 const {
   expectFeeResult,
@@ -21,19 +28,46 @@ const FeeResult = require('../FeeResult');
 
 const TEST_DATA_PATH = './test_data';
 
-describe('Drive', () => {
+describe('Drive', function main() {
+  this.timeout(10000);
+
   let drive;
   let dataContract;
   let identity;
   let blockInfo;
   let documents;
   let initialRootHash;
+  let withdrawalsDataContract;
 
   beforeEach(async () => {
     drive = new Drive(TEST_DATA_PATH, {
-      dataContractsGlobalCacheSize: 500,
-      dataContractsBlockCacheSize: 500,
+      drive: {
+        dataContractsGlobalCacheSize: 500,
+        dataContractsBlockCacheSize: 500,
+      },
+      core: {
+        rpc: {
+          url: '127.0.0.1',
+          username: '',
+          password: '',
+        },
+      },
     });
+
+    const dpp = new DashPlatformProtocol({
+      stateRepository: {
+        fetchDataContract: () => { },
+      },
+    });
+
+    await dpp.initialize();
+
+    withdrawalsDataContract = dpp.dataContract.create(
+      generateRandomIdentifier(),
+      withdrawalContractDocumentsSchema,
+    );
+
+    withdrawalsDataContract.id = Identifier.from(withdrawalContractIds.contractId);
 
     dataContract = getDataContractFixture();
     identity = getIdentityFixture();
@@ -952,23 +986,13 @@ describe('Drive', () => {
     });
 
     it('should return 0 on the first call', async () => {
-      const result = await drive.fetchLatestWithdrawalTransactionIndex();
+      const result = await drive.fetchLatestWithdrawalTransactionIndex({
+        height: 1,
+        epoch: 1,
+        timeMs: (new Date()).getTime(),
+      });
 
       expect(result).to.equal(0);
-    });
-  });
-
-  describe('#enqueueWithdrawalTransaction', () => {
-    beforeEach(async () => {
-      await drive.createInitialStateStructure();
-    });
-
-    it('should enqueue withdrawal transaction into the queue', async () => {
-      await drive.enqueueWithdrawalTransaction(1, Buffer.alloc(32, 1));
-
-      const result = await drive.fetchLatestWithdrawalTransactionIndex();
-
-      expect(result).to.equal(1);
     });
   });
 
@@ -1015,6 +1039,8 @@ describe('Drive', () => {
           proposerProTxHash: Buffer.alloc(32, 1),
           proposedAppVersion: 1,
           validatorSetQuorumHash: Buffer.alloc(32, 2),
+          lastSyncedCoreHeight: 1,
+          coreChainLockedHeight: 1,
           totalHpmns: 100,
         };
 
@@ -1037,6 +1063,8 @@ describe('Drive', () => {
           proposerProTxHash: Buffer.alloc(32, 1),
           proposedAppVersion: 1,
           validatorSetQuorumHash: Buffer.alloc(32, 2),
+          lastSyncedCoreHeight: 1,
+          coreChainLockedHeight: 1,
           totalHpmns: 100,
         });
 
@@ -1047,6 +1075,8 @@ describe('Drive', () => {
           previousBlockTimeMs: blockTimeMs,
           proposedAppVersion: 1,
           validatorSetQuorumHash: Buffer.alloc(32, 2),
+          lastSyncedCoreHeight: 1,
+          coreChainLockedHeight: 1,
           totalHpmns: 100,
         });
 
@@ -1069,6 +1099,8 @@ describe('Drive', () => {
           proposedAppVersion: 1,
           proposerProTxHash: Buffer.alloc(32, 1),
           validatorSetQuorumHash: Buffer.alloc(32, 2),
+          lastSyncedCoreHeight: 1,
+          coreChainLockedHeight: 1,
           totalHpmns: 100,
         });
       });
@@ -1078,7 +1110,7 @@ describe('Drive', () => {
           fees: {
             storageFee: 0,
             processingFee: 0,
-            refundsPerEpoch: { },
+            refundsPerEpoch: {},
           },
         };
 
@@ -1096,12 +1128,17 @@ describe('Drive', () => {
 
         await drive.getAbci().initChain(initChainRequest);
 
+        await drive.createContract(dataContract, blockInfo);
+        await drive.createContract(withdrawalsDataContract, blockInfo);
+
         await drive.getAbci().blockBegin({
           blockHeight: 1,
           blockTimeMs: (new Date()).getTime(),
           proposedAppVersion: 1,
           proposerProTxHash: Buffer.alloc(32, 1),
           validatorSetQuorumHash: Buffer.alloc(32, 2),
+          lastSyncedCoreHeight: 1,
+          coreChainLockedHeight: 1,
           totalHpmns: 100,
         });
 

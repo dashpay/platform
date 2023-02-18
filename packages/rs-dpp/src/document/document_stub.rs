@@ -37,8 +37,8 @@ use std::convert::{TryFrom, TryInto};
 use std::fmt;
 use std::io::{BufReader, Read};
 
-use ciborium::value::Value;
-use integer_encoding::VarIntWriter;
+use ciborium::value::{Integer, Value};
+use integer_encoding::{VarInt, VarIntReader, VarIntWriter};
 
 use crate::data_contract::{DataContract, DriveContractExt};
 use serde::{Deserialize, Serialize};
@@ -53,6 +53,11 @@ use crate::data_contract::extra::common::{
 use crate::util::deserializer;
 use crate::util::deserializer::SplitProtocolVersionOutcome;
 use crate::ProtocolError;
+
+use crate::document::document_transition::INITIAL_REVISION;
+use crate::prelude::*;
+use crate::util::cbor_value::CborBTreeMapHelper;
+use anyhow::{anyhow, bail};
 
 //todo: rename
 /// Documents contain the data that goes into data contracts.
@@ -69,6 +74,10 @@ pub struct DocumentStub {
     /// The ID of the document's owner.
     #[serde(rename = "$ownerId")]
     pub owner_id: [u8; 32],
+
+    /// The document revision.
+    #[serde(rename = "$revision")]
+    pub revision: Revision,
 }
 
 impl DocumentStub {
@@ -79,6 +88,9 @@ impl DocumentStub {
     pub fn serialize(&self, document_type: &DocumentType) -> Result<Vec<u8>, ProtocolError> {
         let mut buffer: Vec<u8> = self.id.as_slice().to_vec();
         buffer.extend(self.owner_id.as_slice());
+        if document_type.documents_mutable {
+            buffer.append(&mut self.revision.encode_var_vec());
+        }
         document_type
             .properties
             .iter()
@@ -113,6 +125,9 @@ impl DocumentStub {
         let mut buffer: Vec<u8> = Vec::try_from(self.id).unwrap();
         let mut owner_id = Vec::try_from(self.owner_id).unwrap();
         buffer.append(&mut owner_id);
+        if document_type.documents_mutable {
+            buffer.append(&mut self.revision.encode_var_vec());
+        }
         document_type
             .properties
             .iter()
@@ -149,13 +164,26 @@ impl DocumentStub {
         }
         let mut id = [0; 32];
         buf.read_exact(&mut id).map_err(|_| {
-            ProtocolError::DecodingError("error reading from serialized document".to_string())
+            ProtocolError::DecodingError("error reading id from serialized document".to_string())
         })?;
 
         let mut owner_id = [0; 32];
         buf.read_exact(&mut owner_id).map_err(|_| {
-            ProtocolError::DecodingError("error reading from serialized document".to_string())
+            ProtocolError::DecodingError(
+                "error reading owner id from serialized document".to_string(),
+            )
         })?;
+
+        let revision = if document_type.documents_mutable {
+            let revision: Revision = buf.read_varint().map_err(|_| {
+                ProtocolError::DataContractError(DataContractError::CorruptedSerialization(
+                    "error reading varint revision from serialized document",
+                ))
+            })?;
+            revision
+        } else {
+            INITIAL_REVISION as Revision
+        };
 
         let properties = document_type
             .properties
@@ -172,6 +200,7 @@ impl DocumentStub {
             id,
             properties,
             owner_id,
+            revision,
         })
     }
 
@@ -192,7 +221,7 @@ impl DocumentStub {
         let mut document: BTreeMap<String, Value> = ciborium::de::from_reader(read_document_cbor)
             .map_err(|_| {
             ProtocolError::StructureError(StructureError::InvalidCBOR(
-                "unable to decode contract for document call",
+                "unable to decode document for document call",
             ))
         })?;
 
@@ -239,11 +268,16 @@ impl DocumentStub {
         }
         .expect("document_id must be 32 bytes");
 
+        let revision: Revision = document
+            .remove_optional_integer("$revision")?
+            .unwrap_or(INITIAL_REVISION as Revision);
+
         // dev-note: properties is everything other than the id and owner id
         Ok(DocumentStub {
             properties: document,
             owner_id,
             id,
+            revision,
         })
     }
 
@@ -265,6 +299,7 @@ impl DocumentStub {
                 DataContractError::FieldRequirementUnmet("invalid document id"),
             ));
         }
+
         let SplitProtocolVersionOutcome {
             main_message_bytes: read_document_cbor,
             ..
@@ -279,6 +314,8 @@ impl DocumentStub {
                 ))
             })?;
 
+        let revision: Revision = properties.get_integer("$revision")?;
+
         // dev-note: properties is everything other than the id and owner id
         Ok(DocumentStub {
             properties,
@@ -288,6 +325,7 @@ impl DocumentStub {
             id: document_id
                 .try_into()
                 .expect("try_into shouldn't fail, document_id must be 32 bytes"),
+            revision,
         })
     }
 
@@ -382,6 +420,102 @@ impl DocumentStub {
             ))
         })?;
         self.get_raw_for_document_type(key, document_type, owner_id)
+    }
+
+    /// Temporary helper method to get property in u64 format
+    /// Imitating JsonValueExt trait
+    pub fn get_u64(&self, property_name: &str) -> Result<u64, anyhow::Error> {
+        let property_value = self.properties.get(property_name).ok_or_else(|| {
+            anyhow!(
+                "the property '{}' doesn't exist in '{:?}'",
+                property_name,
+                self
+            )
+        })?;
+
+        if let Value::Integer(s) = property_value {
+            return (*s)
+                .try_into()
+                .map_err(|_| anyhow!("unable convert {} to u64", property_name));
+        }
+        bail!(
+            "getting property '{}' failed: {:?} isn't a number",
+            property_name,
+            property_value
+        );
+    }
+
+    /// Temporary helper method to get property in u32 format
+    /// Imitating JsonValueExt trait
+    pub fn get_u32(&self, property_name: &str) -> Result<u32, ProtocolError> {
+        let property_value =
+            self.properties
+                .get(property_name)
+                .ok_or(ProtocolError::DocumentKeyMissing(format!(
+                    "the property '{}' doesn't exist in '{:?}'",
+                    property_name, self
+                )))?;
+
+        if let Value::Integer(s) = property_value {
+            (*s).try_into()
+                .map_err(|_| ProtocolError::DecodingError("expected a u32 integer".to_string()))
+        } else {
+            Err(ProtocolError::DecodingError(
+                "expected an integer".to_string(),
+            ))
+        }
+    }
+
+    /// Temporary helper method to get property in bytes format
+    /// Imitating JsonValueExt trait
+    pub fn get_bytes(&self, property_name: &str) -> Result<Vec<u8>, anyhow::Error> {
+        let property_value = self.properties.get(property_name).ok_or_else(|| {
+            anyhow!(
+                "the property '{}' doesn't exist in '{:?}'",
+                property_name,
+                self
+            )
+        })?;
+
+        if let Value::Bytes(s) = property_value {
+            return Ok(s.clone());
+        }
+        bail!(
+            "getting property '{}' failed: {:?} isn't an array of bytes",
+            property_name,
+            property_value
+        );
+    }
+
+    pub fn set_u8(&mut self, property_name: &str, value: u8) {
+        self.properties.insert(
+            property_name.to_string(),
+            Value::Integer(Integer::from(value)),
+        );
+    }
+
+    pub fn set_i64(&mut self, property_name: &str, value: i64) {
+        self.properties.insert(
+            property_name.to_string(),
+            Value::Integer(Integer::from(value)),
+        );
+    }
+
+    pub fn set_bytes(&mut self, property_name: &str, value: Vec<u8>) {
+        self.properties
+            .insert(property_name.to_string(), Value::Bytes(value));
+    }
+
+    pub fn increment_revision(&mut self) -> Result<(), ProtocolError> {
+        let revision = self.revision;
+
+        let new_revision = revision
+            .checked_add(1)
+            .ok_or(ProtocolError::Overflow("overflow when adding 1"))?;
+
+        self.revision = new_revision;
+
+        Ok(())
     }
 }
 

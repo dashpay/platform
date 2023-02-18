@@ -1879,6 +1879,7 @@ __metadata:
   dependencies:
     "@dashevo/dashcore-lib": "github:dashevo/dashcore-lib#3527419e8739b5e7d4017028d642dba8851c3e25"
     "@dashevo/dpp": "workspace:*"
+    "@dashevo/withdrawals-contract": "workspace:*"
     cargo-cp-artifact: ^0.1.6
     cbor: ^8.0.0
     chai: ^4.3.4

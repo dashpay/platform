@@ -2,7 +2,7 @@ use crate::drive::batch::GroveDbOpBatch;
 use crate::drive::grove_operations::BatchDeleteApplyType::StatefulBatchDelete;
 use crate::drive::grove_operations::BatchInsertApplyType;
 use crate::drive::object_size_info::PathKeyElementInfo;
-use crate::drive::system::{misc_path, misc_path_vec};
+
 use crate::drive::{Drive, RootTree};
 use crate::error::drive::DriveError;
 use crate::error::Error;

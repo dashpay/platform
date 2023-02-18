@@ -2916,6 +2916,7 @@ function $$SETUP_STATE(hydrateRuntimeState, basePath) {
             ["@dashevo/rs-drive", "workspace:packages/rs-drive-nodejs"],\
             ["@dashevo/dashcore-lib", "https://github.com/dashevo/dashcore-lib.git#commit=3527419e8739b5e7d4017028d642dba8851c3e25"],\
             ["@dashevo/dpp", "workspace:packages/js-dpp"],\
+            ["@dashevo/withdrawals-contract", "workspace:packages/withdrawals-contract"],\
             ["cargo-cp-artifact", "npm:0.1.6"],\
             ["cbor", "npm:8.1.0"],\
             ["chai", "npm:4.3.4"],\

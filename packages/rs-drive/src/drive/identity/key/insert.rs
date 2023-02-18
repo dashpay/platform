@@ -22,7 +22,6 @@ use grovedb::reference_path::ReferencePathType;
 
 use grovedb::{Element, EstimatedLayerInformation, TransactionArg};
 use integer_encoding::VarInt;
-use serde::Serialize;
 use std::collections::HashMap;
 
 pub enum ContractApplyInfo {

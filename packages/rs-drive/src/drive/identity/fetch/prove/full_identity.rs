@@ -30,8 +30,8 @@ impl Drive {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::common::helpers::setup::setup_drive_with_initial_state_structure;
     use crate::drive::block_info::BlockInfo;
+    use crate::tests::helpers::setup::setup_drive_with_initial_state_structure;
 
     use dpp::identity::Identity;
     use grovedb::query_result_type::QueryResultType;
