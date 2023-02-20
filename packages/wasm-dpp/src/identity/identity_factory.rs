@@ -4,20 +4,15 @@ use crate::errors::{from_dpp_err, RustConversionError};
 use crate::identifier::IdentifierWrapper;
 use crate::identity::errors::InvalidIdentityError;
 use crate::identity::validation::IdentityValidatorWasm;
-use crate::utils::{generic_of_js_val, to_vec_of_serde_values};
+
 use crate::{
-    create_asset_lock_proof_from_wasm_instance,
-    identity::state_transition::identity_public_key_transitions::IdentityPublicKeyCreateTransitionWasm,
-    utils, with_js_error, ChainAssetLockProofWasm, IdentityCreateTransitionWasm,
-    IdentityPublicKeyWasm, IdentityTopUpTransitionWasm, IdentityUpdateTransitionWasm, IdentityWasm,
-    InstantAssetLockProofWasm,
+    create_asset_lock_proof_from_wasm_instance, utils, with_js_error, ChainAssetLockProofWasm,
+    IdentityCreateTransitionWasm, IdentityTopUpTransitionWasm, IdentityUpdateTransitionWasm,
+    IdentityWasm, InstantAssetLockProofWasm,
 };
 use dpp::dashcore::{consensus, InstantLock, Transaction};
 use dpp::identity::factory::IdentityFactory;
 
-use dpp::identity::state_transition::identity_public_key_transitions::IdentityPublicKeyCreateTransition;
-
-use dpp::identity::{IdentityPublicKey, KeyID};
 use dpp::prelude::Identity;
 
 use serde::Deserialize;
@@ -26,9 +21,8 @@ use std::convert::TryInto;
 
 use std::sync::Arc;
 
-use wasm_bindgen::__rt::Ref;
 use wasm_bindgen::prelude::wasm_bindgen;
-use wasm_bindgen::{JsCast, JsValue};
+use wasm_bindgen::JsValue;
 
 #[wasm_bindgen(js_name=IdentityFactory)]
 pub struct IdentityFactoryWasm(IdentityFactory<BlsAdapter>);
@@ -56,15 +50,8 @@ impl IdentityFactoryWasm {
         asset_lock_proof: JsValue,
         public_keys: js_sys::Array,
     ) -> Result<IdentityWasm, JsValue> {
-        let asset_lock_proof = create_asset_lock_proof_from_wasm_instance(&asset_lock_proof)?;
-
-        let raw_public_keys = to_vec_of_serde_values(public_keys.iter())?;
-
-        let public_keys = raw_public_keys
-            .into_iter()
-            .map(|v| IdentityPublicKey::from_raw_object(v).map(|key| (key.id, key)))
-            .collect::<Result<_, _>>()
-            .map_err(|e| format!("converting to collection of IdentityPublicKeys failed: {e:#}"))?;
+        let (asset_lock_proof, public_keys) =
+            super::factory_utils::parse_create_args(asset_lock_proof, public_keys)?;
 
         self.0
             .create(asset_lock_proof, public_keys)
@@ -198,57 +185,8 @@ impl IdentityFactoryWasm {
         identity: &IdentityWasm,
         public_keys: &JsValue,
     ) -> Result<IdentityUpdateTransitionWasm, JsValue> {
-        let mut add_public_keys = None;
-
-        if js_sys::Reflect::has(public_keys, &"add".into()).unwrap_or(false) {
-            let raw_add_public_keys = js_sys::Reflect::get(public_keys, &"add".into()).unwrap();
-
-            let add_public_keys_array: &js_sys::Array = raw_add_public_keys
-                .dyn_ref::<js_sys::Array>()
-                .ok_or_else(|| {
-                    RustConversionError::Error(String::from("public keys to add must be array"))
-                        .to_js_value()
-                })?;
-
-            let keys: Vec<IdentityPublicKeyCreateTransition> = add_public_keys_array
-                .iter()
-                .map(|key| {
-                    let public_key: Ref<IdentityPublicKeyCreateTransitionWasm> =
-                        generic_of_js_val::<IdentityPublicKeyCreateTransitionWasm>(
-                            &key,
-                            "IdentityPublicKeyCreateTransition",
-                        )?;
-
-                    Ok(public_key.clone().into())
-                })
-                .collect::<Result<Vec<IdentityPublicKeyCreateTransition>, JsValue>>()?;
-
-            add_public_keys = Some(keys)
-        }
-
-        let mut disable_public_keys = None;
-
-        if js_sys::Reflect::has(public_keys, &"disable".into()).unwrap_or(false) {
-            let raw_disable_public_keys =
-                js_sys::Reflect::get(public_keys, &"disable".into()).unwrap();
-            let disable_public_keys_array: &js_sys::Array = raw_disable_public_keys
-                .dyn_ref::<js_sys::Array>()
-                .ok_or_else(|| {
-                    RustConversionError::Error(String::from("public keys to disable must be array"))
-                        .to_js_value()
-                })?;
-
-            let keys: Vec<KeyID> = disable_public_keys_array
-                .iter()
-                .map(|key| {
-                    let public_key_wasm: Ref<IdentityPublicKeyWasm> =
-                        generic_of_js_val::<IdentityPublicKeyWasm>(&key, "IdentityPublicKey")?;
-                    Ok(public_key_wasm.get_id())
-                })
-                .collect::<Result<Vec<KeyID>, JsValue>>()?;
-
-            disable_public_keys = Some(keys)
-        }
+        let (add_public_keys, disable_public_keys) =
+            super::factory_utils::parse_create_identity_update_transition_keys(public_keys)?;
 
         let now = js_sys::Date::now() as u64;
 
