@@ -20,6 +20,7 @@ const protoTimestampToMillis = require('../../../util/protoTimestampToMillis');
  * @param {synchronizeMasternodeIdentities} synchronizeMasternodeIdentities
  * @param {RSAbci} rsAbci
  * @param {ExecutionTimer} executionTimer
+ * @param {LastSyncedCoreHeightRepository} lastSyncedCoreHeightRepository
  * @param {SimplifiedMasternodeList} simplifiedMasternodeList
  *
  * @return {beginBlock}
@@ -36,6 +37,7 @@ function beginBlockFactory(
   synchronizeMasternodeIdentities,
   rsAbci,
   executionTimer,
+  lastSyncedCoreHeightRepository,
   simplifiedMasternodeList,
 ) {
   /**
@@ -48,6 +50,7 @@ function beginBlockFactory(
    * @param {Long} request.proposedAppVersion
    * @param {ITimestamp} request.time
    * @param {Buffer} request.proposerProTxHash
+   * @param {Buffer} request.quorumHash
    * @param {BaseLogger} contextLogger
    *
    * @return {Promise<void>}
@@ -62,6 +65,7 @@ function beginBlockFactory(
       proposerProTxHash,
       proposedAppVersion,
       round,
+      quorumHash,
     } = request;
 
     if (proposalBlockExecutionContext.isEmpty()) {
@@ -120,6 +124,12 @@ function beginBlockFactory(
 
     await groveDBStore.startTransaction();
 
+    const lastSyncedHeightResult = await lastSyncedCoreHeightRepository.fetch({
+      useTransaction: true,
+    });
+
+    const lastSyncedCoreHeight = lastSyncedHeightResult.getValue() || 0;
+
     // Call RS ABCI
 
     /**
@@ -129,8 +139,9 @@ function beginBlockFactory(
       blockHeight: height.toNumber(),
       blockTimeMs: proposalBlockExecutionContext.getTimeMs(),
       proposerProTxHash,
-      // TODO replace with real value
-      validatorSetQuorumHash: Buffer.alloc(32),
+      validatorSetQuorumHash: quorumHash,
+      coreChainLockedHeight,
+      lastSyncedCoreHeight,
       // TODO: Since we don't have HPMNs now and every masternode can be a validator,
       //  we pass the whole list
       totalHpmns: simplifiedMasternodeList.getStore()

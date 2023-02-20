@@ -44,7 +44,7 @@ pub enum StateError {
     )]
     InvalidDocumentRevisionError {
         document_id: Identifier,
-        current_revision: u32,
+        current_revision: Revision,
     },
 
     #[error("Data Contract {data_contract_id} is already present")]

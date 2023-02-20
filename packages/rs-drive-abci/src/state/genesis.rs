@@ -269,6 +269,7 @@ impl Platform {
             id: DPNS_DASH_TLD_DOCUMENT_ID,
             properties: document_stub_properties,
             owner_id: contract.owner_id.to_buffer(),
+            revision: 1,
         };
 
         let document_type = contract.document_type_for_name("domain")?;
@@ -299,8 +300,6 @@ impl Platform {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
-
     mod create_genesis_state {
         use crate::test::helpers::setup::setup_platform_with_genesis_state;
 
@@ -318,8 +317,8 @@ mod tests {
             assert_eq!(
                 root_hash,
                 [
-                    223, 238, 172, 129, 164, 189, 41, 188, 64, 164, 89, 92, 216, 66, 225, 17, 106,
-                    82, 196, 145, 103, 87, 239, 183, 226, 201, 79, 71, 248, 183, 191, 178,
+                    59, 16, 30, 145, 9, 47, 66, 85, 133, 88, 194, 109, 241, 15, 226, 214, 163, 196,
+                    146, 107, 122, 145, 111, 45, 251, 242, 250, 157, 153, 43, 219, 184
                 ]
             )
         }
