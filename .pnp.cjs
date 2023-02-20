@@ -6992,6 +6992,13 @@ function $$SETUP_STATE(hydrateRuntimeState, basePath) {
             ["colorette", "npm:2.0.16"]\
           ],\
           "linkType": "HARD"\
+        }],\
+        ["npm:2.0.19", {\
+          "packageLocation": "./.yarn/cache/colorette-npm-2.0.19-f73dfe6a4e-888cf5493f.zip/node_modules/colorette/",\
+          "packageDependencies": [\
+            ["colorette", "npm:2.0.19"]\
+          ],\
+          "linkType": "HARD"\
         }]\
       ]],\
       ["colors", [\
@@ -7719,7 +7726,7 @@ function $$SETUP_STATE(hydrateRuntimeState, basePath) {
             ["hasbin", "npm:1.2.3"],\
             ["is-wsl", "npm:2.2.0"],\
             ["jayson", "npm:3.6.5"],\
-            ["listr2", "virtual:880cda903c2a2be387819a3f857d21494004437a03c92969b9853f7bdeebdfed08d417e68364ee9e158338603a6d78d690c457a55ab11e56398bc10f0ad232fc#npm:3.5.0"],\
+            ["listr2", "virtual:880cda903c2a2be387819a3f857d21494004437a03c92969b9853f7bdeebdfed08d417e68364ee9e158338603a6d78d690c457a55ab11e56398bc10f0ad232fc#npm:5.0.7"],\
             ["lodash", "npm:4.17.21"],\
             ["memory-streams", "npm:0.1.3"],\
             ["mocha", "npm:9.2.2"],\
@@ -11989,26 +11996,25 @@ function $$SETUP_STATE(hydrateRuntimeState, basePath) {
         }]\
       ]],\
       ["listr2", [\
-        ["npm:3.5.0", {\
-          "packageLocation": "./.yarn/cache/listr2-npm-3.5.0-6aad1da502-cf30837462.zip/node_modules/listr2/",\
+        ["npm:5.0.7", {\
+          "packageLocation": "./.yarn/cache/listr2-npm-5.0.7-f7d9c71212-5c2cb6ba3f.zip/node_modules/listr2/",\
           "packageDependencies": [\
-            ["listr2", "npm:3.5.0"]\
+            ["listr2", "npm:5.0.7"]\
           ],\
           "linkType": "SOFT"\
         }],\
-        ["virtual:880cda903c2a2be387819a3f857d21494004437a03c92969b9853f7bdeebdfed08d417e68364ee9e158338603a6d78d690c457a55ab11e56398bc10f0ad232fc#npm:3.5.0", {\
-          "packageLocation": "./.yarn/__virtual__/listr2-virtual-30886726f2/0/cache/listr2-npm-3.5.0-6aad1da502-cf30837462.zip/node_modules/listr2/",\
+        ["virtual:880cda903c2a2be387819a3f857d21494004437a03c92969b9853f7bdeebdfed08d417e68364ee9e158338603a6d78d690c457a55ab11e56398bc10f0ad232fc#npm:5.0.7", {\
+          "packageLocation": "./.yarn/__virtual__/listr2-virtual-11e98e34b3/0/cache/listr2-npm-5.0.7-f7d9c71212-5c2cb6ba3f.zip/node_modules/listr2/",\
           "packageDependencies": [\
-            ["listr2", "virtual:880cda903c2a2be387819a3f857d21494004437a03c92969b9853f7bdeebdfed08d417e68364ee9e158338603a6d78d690c457a55ab11e56398bc10f0ad232fc#npm:3.5.0"],\
+            ["listr2", "virtual:880cda903c2a2be387819a3f857d21494004437a03c92969b9853f7bdeebdfed08d417e68364ee9e158338603a6d78d690c457a55ab11e56398bc10f0ad232fc#npm:5.0.7"],\
             ["@types/enquirer", null],\
-            ["chalk", "npm:4.1.2"],\
             ["cli-truncate", "npm:2.1.0"],\
+            ["colorette", "npm:2.0.19"],\
             ["enquirer", "npm:2.3.6"],\
-            ["figures", "npm:3.2.0"],\
-            ["indent-string", "npm:4.0.0"],\
             ["log-update", "npm:4.0.0"],\
             ["p-map", "npm:4.0.0"],\
-            ["rxjs", "npm:6.6.7"],\
+            ["rfdc", "npm:1.3.0"],\
+            ["rxjs", "npm:7.8.0"],\
             ["through", "npm:2.3.8"],\
             ["wrap-ansi", "npm:7.0.0"]\
           ],\

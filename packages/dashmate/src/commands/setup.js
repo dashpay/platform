@@ -2,6 +2,8 @@ const { Listr } = require('listr2');
 
 const { Flags } = require('@oclif/core');
 
+const chalk = require('chalk');
+
 const BaseCommand = require('../oclif/command/BaseCommand');
 
 const MuteOneLineError = require('../oclif/errors/MuteOneLineError');
@@ -31,8 +33,9 @@ class SetupCommand extends BaseCommand {
     },
     {
       'external-ip': externalIp,
-      'operator-bls-private-key': operatorBlsPrivateKey,
+      'masternode-operator-private-key': operatorBlsPrivateKey,
       'funding-private-key': fundingPrivateKeyString,
+      'platform-p2p-key': platformP2PKey,
       'node-count': nodeCount,
       'debug-logs': debugLogs,
       'miner-interval': minerInterval,
@@ -63,18 +66,26 @@ class SetupCommand extends BaseCommand {
 
     const tasks = new Listr([
       {
-        title: 'Set configuration preset',
+        title: 'Configuration preset',
         task: async (ctx, task) => {
           if (ctx.preset === undefined) {
             ctx.preset = await task.prompt([
               {
                 type: 'select',
-                message: 'Select configuration preset',
+                header: '  Dashmate provides default configuration presets:\n  local - la la'
+                  + ' la\n  mainnet - bla bla bla\n',
+                message: 'Select preset',
                 choices: PRESETS,
                 initial: 'testnet',
               },
             ]);
+
+            // eslint-disable-next-line no-param-reassign
+            task.output = ctx.preset;
           }
+        },
+        options: {
+          persistentOutput: true,
         },
       },
       {
@@ -88,6 +99,7 @@ class SetupCommand extends BaseCommand {
       },
     ],
     {
+      concurrent: false,
       renderer: isVerbose ? 'verbose' : 'default',
       rendererOptions: {
         showTimer: isVerbose,
@@ -97,6 +109,9 @@ class SetupCommand extends BaseCommand {
       },
     });
 
+    // eslint-disable-next-line no-console
+    console.log(`Hello! I'm your ${chalk.bold.cyanBright('Dash')} mate\n\nI will help you to setup ...\n`);
+
     try {
       await tasks.run({
         preset,
@@ -105,6 +120,7 @@ class SetupCommand extends BaseCommand {
         debugLogs,
         minerInterval,
         externalIp,
+        platformP2PKey,
         operatorBlsPrivateKey,
         fundingPrivateKeyString,
         isVerbose,
@@ -140,10 +156,13 @@ SetupCommand.args = [{
 SetupCommand.flags = {
   'debug-logs': Flags.boolean({ char: 'd', description: 'enable debug logs', allowNo: true }),
   'external-ip': Flags.string({ char: 'i', description: 'external ip' }),
-  'operator-bls-private-key': Flags.string({ char: 'k', description: 'operator bls private key' }),
-  'funding-private-key': Flags.string({ char: 'p', description: `private key with more than ${MASTERNODE_DASH_AMOUNT} dash for funding collateral` }),
+  'masternode-operator-private-key': Flags.string({ char: 'k', description: 'masternode operator BLS private key' }),
+  'platform-p2p-key': Flags.string({ char: 'p', description: 'platform p2p private key' }),
+  // TODO: Remove this one?
+  'funding-private-key': Flags.string({ char: 'f', description: `private key with more than ${MASTERNODE_DASH_AMOUNT} dash for funding collateral` }),
   'node-count': Flags.integer({ description: 'number of nodes to setup' }),
   'miner-interval': Flags.string({ char: 'm', description: 'interval between blocks' }),
+  // TODO: Refactor this
   'ssl-provider': Flags.string({ char: 's', description: '', options: SSL_PROVIDERS.filter((item) => item !== 'selfSigned') }),
   'zerossl-apikey': Flags.string({ char: 'z', description: 'ZeroSSL API key', dependsOn: ['ssl-provider'] }),
   'ssl-certificate-file': Flags.string({ char: 'c', description: 'SSL certificate file path', dependsOn: ['ssl-provider'] }),

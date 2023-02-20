@@ -7,11 +7,14 @@ const BlsSignatures = require('@dashevo/bls');
 
 const { PrivateKey } = require('@dashevo/dashcore-lib');
 
+const crypto = require('crypto');
+
 const {
   SSL_PROVIDERS,
   NODE_TYPES,
   NODE_TYPE_MASTERNODE,
   PRESET_MAINNET,
+  NODE_TYPE_HPMN,
 } = require('../../../constants');
 
 /**
@@ -28,7 +31,6 @@ const {
 function setupRegularPresetTaskFactory(
   configFile,
   generateBlsKeys,
-  tenderdashInitTask,
   registerMasternodeTask,
   renderServiceTemplates,
   writeServiceConfigs,
@@ -48,34 +50,183 @@ function setupRegularPresetTaskFactory(
         },
       },
       {
-        title: 'Set node type',
+        title: 'Node type',
         task: async (ctx, task) => {
           if (ctx.nodeType === undefined) {
             ctx.nodeType = await task.prompt([
               {
                 type: 'select',
+                header: '  Dash network has different node types\n  Blue\n  Green\n  Red\n  We'
+                  + ' should'
+                  + ' explain their purpose and costs\n',
                 message: 'Select node type',
-                choices: NODE_TYPES,
-                initial: NODE_TYPE_MASTERNODE,
+                choices: NODE_TYPES, // TODO: message and value
+                initial: NODE_TYPE_HPMN,
               },
             ]);
+
+            // eslint-disable-next-line no-param-reassign
+            task.output = ctx.nodeType;
           }
-
-          ctx.config.set('core.masternode.enable', ctx.nodeType === NODE_TYPE_MASTERNODE);
-
-          // eslint-disable-next-line no-param-reassign
-          task.output = `Selected ${ctx.nodeType} type\n`;
         },
-        options: { persistentOutput: true },
+        options: {
+          persistentOutput: true,
+        },
       },
       {
-        title: 'Configure external IP address',
+        enabled: (ctx) => ctx.nodeType === NODE_TYPE_MASTERNODE || ctx.nodeType === NODE_TYPE_HPMN,
+        task: async (ctx, task) => {
+          ctx.isMasternodeRegistered = await task.prompt([
+            {
+              type: 'toggle',
+              header: 'Tell what it means and what we gonna do in both cases\n',
+              message: 'Is your masternode already registered?',
+              enabled: 'Yep',
+              disabled: 'Nope',
+            },
+          ]);
+
+          ctx.config.set('core.masternode.enable', true);
+        },
+      },
+      {
+        title: 'Masternode operator key',
+        enabled: (ctx) => ctx.isMasternodeRegistered,
+        task: async (ctx, task) => {
+          const blsSignatures = await BlsSignatures();
+          const { PrivateKey: BlsPrivateKey } = blsSignatures;
+
+          function validate(value) {
+            if (value.length < 1) {
+              return 'should not be empty';
+            }
+
+            const operatorBlsPrivateKeyBuffer = Buffer.from(value, 'hex');
+
+            let key;
+            try {
+              key = BlsPrivateKey.fromBytes(operatorBlsPrivateKeyBuffer, true);
+            } catch (e) {
+              return 'invalid key';
+            } finally {
+              if (key) {
+                key.delete();
+              }
+            }
+
+            return true;
+          }
+
+          if (ctx.operatorBlsPrivateKey === undefined) {
+            ctx.operatorBlsPrivateKey = await task.prompt([
+              {
+                type: 'input',
+                header: 'Masternode operator BLS private key... \n'
+                  + 'you can take it there and put here. Must be HEX.\n',
+                message: 'Enter BLS private key',
+                validate,
+              },
+            ]);
+          } else {
+            const result = validate(ctx.operatorBlsPrivateKey);
+
+            if (result !== true) {
+              throw new Error(`operator private key: ${result}`);
+            }
+          }
+
+          ctx.config.set('core.masternode.operator.privateKey', ctx.operatorBlsPrivateKey);
+
+          // eslint-disable-next-line no-param-reassign
+          task.output = '*******************************************';
+        },
+        options: {
+          persistentOutput: true,
+        },
+      },
+      {
+        title: 'Platform P2P Key',
+        enabled: (ctx) => ctx.isMasternodeRegistered && ctx.nodeType === NODE_TYPE_HPMN,
+        task: async (ctx, task) => {
+          // TODO: Do we accept HEX or base64?
+
+          function validate(value) {
+            if (value.length < 1) {
+              return 'should not be empty';
+            }
+
+            // TODO: Implement validation
+            // const privateKeyDer = Buffer.concat([
+            //   Buffer.from('302a300506032b6570032100', 'hex'), // Static value
+            //   Buffer.from(value, 'hex'),
+            // ]);
+            //
+            // const verifyKey = crypto.createPrivateKey({
+            //   format: 'der',
+            //   type: 'pkcs8',
+            //   privateKeyDer,
+            // });
+            //
+
+            return true;
+          }
+
+          if (ctx.platformP2PKey === undefined) {
+            ctx.platformP2PKey = await task.prompt([
+              {
+                type: 'input',
+                header: 'Platform P2P private key ... we accept base64 or hex?...',
+                message: 'Enter ED25519 private key',
+                validate,
+              },
+            ]);
+          } else {
+            const result = validate(ctx.platformP2PKey);
+
+            if (result !== true) {
+              throw new Error(`platform p2p key: ${result}`);
+            }
+          }
+
+          // TODO: Derive node id from key
+          // config.set('platform.drive.tenderdash.nodeId', nodeId);
+
+          ctx.config.set('platform.drive.tenderdash.nodeKey', ctx.platformP2PKey);
+        },
+        options: {
+          persistentOutput: true,
+        },
+      },
+      {
+        title: 'Masternode keys',
+        enabled: (ctx) => !ctx.isMasternodeRegistered
+          && (ctx.nodeType === NODE_TYPE_HPMN || ctx.nodeType === NODE_TYPE_MASTERNODE),
+        task: async (ctx, task) => {
+          ctx.masternodeOwnerKeys = await task.prompt([
+            {
+              type: 'form',
+              header: 'The user should use a secured wallet to generate a key, and provide the'
+                + ' resulting public keys. (deploy tool example)\n',
+              message: 'Please provide the following information:',
+              choices: [
+                { name: 'owner', message: 'Owner public key' },
+                { name: 'voting', message: 'Voting public key' },
+                { name: 'payout', message: 'Payout script' },
+              ],
+            },
+          ]);
+        },
+      },
+      {
+        title: 'External IP address',
         task: async (ctx, task) => {
           if (ctx.externalIp === undefined) {
             ctx.externalIp = await task.prompt([
               {
                 type: 'input',
-                message: 'Enter node public IP (Enter to accept detected IP)',
+                header: 'The node external IP address must be static and will be used by the'
+                  + ' network ..',
+                message: 'Enter host public IP',
                 initial: () => publicIp.v4(),
               },
             ]);
@@ -84,9 +235,11 @@ function setupRegularPresetTaskFactory(
           ctx.config.set('externalIp', ctx.externalIp);
 
           // eslint-disable-next-line no-param-reassign
-          task.output = `${ctx.externalIp} is set\n`;
+          task.output = ctx.externalIp;
         },
-        options: { persistentOutput: true },
+        options: {
+          persistentOutput: true,
+        },
       },
       {
         title: 'Set masternode operator private key',
@@ -128,38 +281,7 @@ function setupRegularPresetTaskFactory(
         options: { persistentOutput: true },
       },
       {
-        title: 'Register masternode',
-        enabled: (ctx) => (
-          ctx.nodeType === NODE_TYPE_MASTERNODE
-          && ctx.fundingPrivateKeyString !== undefined
-        ),
-        task: (ctx) => {
-          if (ctx.preset === PRESET_MAINNET) {
-            throw new Error('For your own security, this tool will not process mainnet private keys. You should consider the private key you entered to be compromised.');
-          }
-
-          const fundingPrivateKey = new PrivateKey(ctx.fundingPrivateKeyString, ctx.preset);
-          ctx.fundingAddress = fundingPrivateKey.toAddress(ctx.preset).toString();
-
-          // Write configs
-          const configFiles = renderServiceTemplates(ctx.config);
-          writeServiceConfigs(ctx.config.getName(), configFiles);
-
-          return registerMasternodeTask(ctx.config);
-        },
-        options: { persistentOutput: true },
-      },
-      {
-        title: 'Set default config',
-        task: (ctx, task) => {
-          configFile.setDefaultConfigName(ctx.preset);
-
-          // eslint-disable-next-line no-param-reassign
-          task.output = `${ctx.config.getName()} set as default config\n`;
-        },
-      },
-      {
-        title: 'Set SSL certificate',
+        title: 'SSL certificate',
         enabled: (ctx) => !ctx.certificateProvider,
         task: async (ctx, task) => {
           const sslProviders = [...SSL_PROVIDERS].filter((item) => item !== 'selfSigned');
@@ -244,9 +366,9 @@ function setupRegularPresetTaskFactory(
         },
       },
       {
-        title: 'Initialize Tenderdash',
-        enabled: (ctx) => ctx.preset !== PRESET_MAINNET,
-        task: (ctx) => tenderdashInitTask(ctx.config),
+        task: (ctx) => {
+          configFile.setDefaultConfigName(ctx.preset);
+        },
       },
     ]);
   }
