@@ -310,6 +310,7 @@ mod tests {
                     block_time_ms,
                     previous_block_time_ms,
                     proposer_pro_tx_hash,
+                    core_chain_locked_height: 1,
                 };
 
                 let epoch_info =
@@ -479,6 +480,7 @@ mod tests {
                     block_time_ms,
                     previous_block_time_ms,
                     proposer_pro_tx_hash,
+                    core_chain_locked_height: 1,
                 };
 
                 let epoch_info =
@@ -556,7 +558,6 @@ mod tests {
             // We are not adding to the overall platform credits so we can't verify
             // the sum trees
             let platform = setup_platform_with_initial_state_structure(Some(PlatformConfig {
-                drive_config: Default::default(),
                 verify_sum_trees: false,
                 ..Default::default()
             }));

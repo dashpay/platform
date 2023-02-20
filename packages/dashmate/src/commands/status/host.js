@@ -14,7 +14,7 @@ class HostStatusCommand extends ConfigBaseCommand {
     if (flags.format === OUTPUT_FORMATS.PLAIN) {
       const {
         hostname, uptime, platform, arch,
-        username, diskFree, memory, cpus, ip,
+        username, memory, cpus, ip,
       } = scope;
 
       const plain = {
@@ -23,7 +23,6 @@ class HostStatusCommand extends ConfigBaseCommand {
         Platform: platform,
         Arch: arch,
         Username: username,
-        Diskfree: diskFree,
         Memory: memory,
         CPUs: cpus,
         IP: ip,

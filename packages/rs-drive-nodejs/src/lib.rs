@@ -1,15 +1,17 @@
 mod converter;
 mod fee;
 
+use drive::drive::config::DriveConfig;
+use drive_abci::config::{CoreConfig, CoreRpcConfig, PlatformConfig};
+
 use std::ops::Deref;
 use std::{option::Option::None, path::Path, sync::mpsc, thread};
 
 use crate::converter::js_object_to_fee_refunds;
 use crate::fee::result::FeeResultWrapper;
+
 use drive::dpp::identity::{KeyID, TimestampMillis};
 use drive::dpp::prelude::Revision;
-use drive::drive::batch::GroveDbOpBatch;
-use drive::drive::config::DriveConfig;
 use drive::drive::flags::StorageFlags;
 use drive::drive::query::QueryDocumentsOutcome;
 use drive::error::Error;
@@ -22,7 +24,6 @@ use drive_abci::abci::messages::{
     AfterFinalizeBlockRequest, BlockBeginRequest, BlockEndRequest, BlockFees, InitChainRequest,
     Serializable,
 };
-use drive_abci::config::PlatformConfig;
 use drive_abci::platform::Platform;
 use fee::js_calculate_storage_fee_distribution_amount_and_leftovers;
 use neon::prelude::*;
@@ -63,7 +64,19 @@ impl PlatformWrapper {
     fn new(cx: &mut FunctionContext) -> NeonResult<Self> {
         // Drive's configuration
         let path_string = cx.argument::<JsString>(0)?.value(cx);
-        let drive_config = cx.argument::<JsObject>(1)?;
+        let platform_config = cx.argument::<JsObject>(1)?;
+
+        let drive_config: Handle<JsObject> = platform_config.get(cx, "drive")?;
+        let core_config: Handle<JsObject> = platform_config.get(cx, "core")?;
+        let core_rpc_config: Handle<JsObject> = core_config.get(cx, "rpc")?;
+
+        let js_core_rpc_url: Handle<JsString> = core_rpc_config.get(cx, "url")?;
+        let js_core_rpc_username: Handle<JsString> = core_rpc_config.get(cx, "username")?;
+        let js_core_rpc_password: Handle<JsString> = core_rpc_config.get(cx, "password")?;
+
+        let core_rpc_url = js_core_rpc_url.value(cx);
+        let core_rpc_username = js_core_rpc_username.value(cx);
+        let core_rpc_password = js_core_rpc_password.value(cx);
 
         let js_data_contracts_cache_size: Handle<JsNumber> =
             drive_config.get(cx, "dataContractsGlobalCacheSize")?;
@@ -103,13 +116,27 @@ impl PlatformWrapper {
                 ..Default::default()
             };
 
+            let core_config = CoreConfig {
+                rpc: CoreRpcConfig {
+                    url: core_rpc_url,
+                    username: core_rpc_username,
+                    password: core_rpc_password,
+                },
+            };
+
             let platform_config = PlatformConfig {
-                drive_config,
+                drive: Some(drive_config),
+                core: core_config,
+                verify_sum_trees: true,
                 ..Default::default()
             };
 
             // TODO: think how to pass this error to JS
-            let platform: Platform = Platform::open(path, Some(platform_config)).unwrap();
+            let mut platform: Platform = Platform::open(path, Some(platform_config)).unwrap();
+
+            if cfg!(feature = "enable-mocking") {
+                platform.mock_core_rpc_client();
+            }
 
             let mut maybe_transaction: Option<Transaction> = None;
 
@@ -2178,7 +2205,7 @@ impl PlatformWrapper {
                 let result = transaction_result.and_then(|transaction_arg| {
                     platform
                         .drive
-                        .query_documents_as_grove_proof(
+                        .query_proof_of_documents_using_contract_id_using_cbor_encoded_query_with_cost(
                             &query_cbor,
                             contract_id,
                             document_type_name.as_str(),
@@ -3296,9 +3323,13 @@ impl PlatformWrapper {
     fn js_fetch_latest_withdrawal_transaction_index(
         mut cx: FunctionContext,
     ) -> JsResult<JsUndefined> {
-        let js_using_transaction = cx.argument::<JsBoolean>(0)?;
-        let js_callback = cx.argument::<JsFunction>(1)?.root(&mut cx);
+        let js_block_info = cx.argument::<JsObject>(0)?;
+        let js_apply = cx.argument::<JsBoolean>(1)?;
+        let js_using_transaction = cx.argument::<JsBoolean>(2)?;
+        let js_callback = cx.argument::<JsFunction>(3)?.root(&mut cx);
 
+        let apply = js_apply.value(&mut cx);
+        let block_info = converter::js_object_to_block_info(&mut cx, js_block_info)?;
         let using_transaction = js_using_transaction.value(&mut cx);
 
         let db = cx
@@ -3317,10 +3348,27 @@ impl PlatformWrapper {
             };
 
             let result = transaction_result.and_then(|transaction_arg| {
+                let mut drive_operation_types = vec![];
+
+                let result = platform
+                    .drive
+                    .fetch_and_remove_latest_withdrawal_transaction_index_operations(
+                        &mut drive_operation_types,
+                        transaction_arg,
+                    )
+                    .map_err(|err| err.to_string())?;
+
                 platform
                     .drive
-                    .fetch_latest_withdrawal_transaction_index(transaction_arg)
-                    .map_err(|err| err.to_string())
+                    .apply_drive_operations(
+                        drive_operation_types,
+                        apply,
+                        &block_info,
+                        transaction_arg,
+                    )
+                    .map_err(|err| err.to_string())?;
+
+                Ok(result)
             });
 
             channel.send(move |mut task_context| {
@@ -3339,76 +3387,6 @@ impl PlatformWrapper {
 
                             vec![task_context.null().upcast(), value.upcast()]
                         }
-                    }
-
-                    // Convert the error to a JavaScript exception on failure
-                    Err(err) => vec![task_context.error(err)?.upcast()],
-                };
-
-                callback.call(&mut task_context, this, callback_arguments)?;
-
-                Ok(())
-            });
-        })
-        .or_else(|err| cx.throw_error(err.to_string()))?;
-
-        // The result is returned through the callback, not through direct return
-        Ok(cx.undefined())
-    }
-
-    fn js_enqueue_withdrawal_transaction(mut cx: FunctionContext) -> JsResult<JsUndefined> {
-        let js_index = cx.argument::<JsNumber>(0)?;
-        let js_core_transaction = cx.argument::<JsBuffer>(1)?;
-        let js_using_transaction = cx.argument::<JsBoolean>(2)?;
-        let js_callback = cx.argument::<JsFunction>(3)?.root(&mut cx);
-
-        let db = cx
-            .this()
-            .downcast_or_throw::<JsBox<PlatformWrapper>, _>(&mut cx)?;
-
-        let index = js_index.value(&mut cx);
-        let transaction_bytes = converter::js_buffer_to_vec_u8(&mut cx, js_core_transaction);
-        let using_transaction = js_using_transaction.value(&mut cx);
-
-        db.send_to_drive_thread(move |platform: &Platform, transaction, channel| {
-            let transaction_result = if using_transaction {
-                if transaction.is_none() {
-                    Err("transaction is not started".to_string())
-                } else {
-                    Ok(transaction)
-                }
-            } else {
-                Ok(None)
-            };
-
-            let mut batch = GroveDbOpBatch::new();
-
-            let index_bytes = (index as u64).to_be_bytes().to_vec();
-
-            let withdrawals = vec![(index_bytes.clone(), transaction_bytes)];
-
-            platform
-                .drive
-                .add_enqueue_withdrawal_transaction_operations(&mut batch, withdrawals);
-
-            platform
-                .drive
-                .add_update_withdrawal_index_counter_operation(&mut batch, index_bytes);
-
-            let result = transaction_result.and_then(|transaction_arg| {
-                platform
-                    .drive
-                    .grove_apply_batch(batch, false, transaction_arg)
-                    .map_err(|err| err.to_string())
-            });
-
-            channel.send(move |mut task_context| {
-                let callback = js_callback.into_inner(&mut task_context);
-                let this = task_context.undefined();
-
-                let callback_arguments: Vec<Handle<JsValue>> = match result {
-                    Ok(_) => {
-                        vec![task_context.null().upcast(), task_context.null().upcast()]
                     }
 
                     // Convert the error to a JavaScript exception on failure
@@ -3517,10 +3495,6 @@ fn main(mut cx: ModuleContext) -> NeonResult<()> {
     cx.export_function(
         "driveFetchLatestWithdrawalTransactionIndex",
         PlatformWrapper::js_fetch_latest_withdrawal_transaction_index,
-    )?;
-    cx.export_function(
-        "driveEnqueueWithdrawalTransaction",
-        PlatformWrapper::js_enqueue_withdrawal_transaction,
     )?;
 
     cx.export_function("groveDbInsert", PlatformWrapper::js_grove_db_insert)?;

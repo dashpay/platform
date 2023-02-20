@@ -1037,7 +1037,7 @@ mod tests {
     use crate::drive::Drive;
     use dpp::data_contract::extra::common::json_document_to_cbor;
 
-    use crate::common::helpers::setup::setup_drive_with_initial_state_structure;
+    use crate::tests::helpers::setup::setup_drive_with_initial_state_structure;
 
     fn setup_deep_nested_50_contract() -> (Drive, Contract, Vec<u8>) {
         // Todo: make TempDir based on _prefix

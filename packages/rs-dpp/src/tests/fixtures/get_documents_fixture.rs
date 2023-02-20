@@ -1,8 +1,9 @@
 use std::sync::Arc;
 
-use serde_json::json;
+use serde_json::{json, Value};
 
 use crate::{
+    contracts::withdrawals_contract,
     document::{
         document_factory::DocumentFactory,
         fetch_and_validate_data_contract::DataContractFetcherAndValidator,
@@ -109,6 +110,27 @@ fn get_documents<ST: StateRepositoryLike>(
     ];
 
     Ok(documents)
+}
+
+pub fn get_withdrawal_document_fixture(
+    data_contract: &DataContract,
+    owner_id: Identifier,
+    data: Value,
+) -> Document {
+    let factory = DocumentFactory::new(
+        LATEST_VERSION,
+        get_document_validator_fixture(),
+        DataContractFetcherAndValidator::new(Arc::new(MockStateRepositoryLike::new())),
+    );
+
+    factory
+        .create(
+            data_contract.clone(),
+            owner_id,
+            withdrawals_contract::document_types::WITHDRAWAL.to_string(),
+            data,
+        )
+        .unwrap()
 }
 
 fn get_random_10_bytes() -> Vec<u8> {

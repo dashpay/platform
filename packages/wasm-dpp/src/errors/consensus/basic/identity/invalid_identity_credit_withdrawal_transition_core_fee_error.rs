@@ -18,8 +18,8 @@ impl From<&InvalidIdentityCreditWithdrawalTransitionCoreFeeError>
 #[wasm_bindgen(js_class=InvalidIdentityCreditWithdrawalTransitionCoreFeeError)]
 impl InvalidIdentityCreditWithdrawalTransitionCoreFeeErrorWasm {
     #[wasm_bindgen(js_name=getCoreFee)]
-    pub fn core_fee(&self) -> u32 {
-        self.inner.core_fee()
+    pub fn core_fee_per_byte(&self) -> u32 {
+        self.inner.core_fee_per_byte()
     }
 
     #[wasm_bindgen(js_name=getCode)]

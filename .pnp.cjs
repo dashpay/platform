@@ -2279,10 +2279,10 @@ function $$SETUP_STATE(hydrateRuntimeState, basePath) {
         }]\
       ]],\
       ["@dashevo/abci", [\
-        ["https://github.com/dashpay/js-abci.git#commit=0ed8258034f3e7521a110053570f5c5c024eab67", {\
-          "packageLocation": "./.yarn/cache/@dashevo-abci-https-69fbb104fd-aaf41ab7fa.zip/node_modules/@dashevo/abci/",\
+        ["https://github.com/dashpay/js-abci.git#commit=09f72120bc2059144f72eb7a246d632ead3fc3c6", {\
+          "packageLocation": "./.yarn/cache/@dashevo-abci-https-9fb519f2ca-aaf41ab7fa.zip/node_modules/@dashevo/abci/",\
           "packageDependencies": [\
-            ["@dashevo/abci", "https://github.com/dashpay/js-abci.git#commit=0ed8258034f3e7521a110053570f5c5c024eab67"],\
+            ["@dashevo/abci", "https://github.com/dashpay/js-abci.git#commit=09f72120bc2059144f72eb7a246d632ead3fc3c6"],\
             ["@dashevo/protobufjs", "npm:6.10.5"],\
             ["bl", "npm:1.2.3"],\
             ["protocol-buffers-encodings", "npm:1.1.1"]\
@@ -2295,7 +2295,7 @@ function $$SETUP_STATE(hydrateRuntimeState, basePath) {
           "packageLocation": "./packages/bench-suite/",\
           "packageDependencies": [\
             ["@dashevo/bench-suite", "workspace:packages/bench-suite"],\
-            ["@dashevo/dashcore-lib", "npm:0.19.44"],\
+            ["@dashevo/dashcore-lib", "https://github.com/dashevo/dashcore-lib.git#commit=3527419e8739b5e7d4017028d642dba8851c3e25"],\
             ["@dashevo/dpns-contract", "workspace:packages/dpns-contract"],\
             ["@dashevo/dpp", "workspace:packages/js-dpp"],\
             ["@dashevo/wallet-lib", "workspace:packages/wallet-lib"],\
@@ -2314,10 +2314,10 @@ function $$SETUP_STATE(hydrateRuntimeState, basePath) {
         }]\
       ]],\
       ["@dashevo/bls", [\
-        ["npm:1.0.0-beta.2", {\
-          "packageLocation": "./.yarn/cache/@dashevo-bls-npm-1.0.0-beta.2-a499c2ec55-d1c329bedc.zip/node_modules/@dashevo/bls/",\
+        ["npm:1.2.7", {\
+          "packageLocation": "./.yarn/cache/@dashevo-bls-npm-1.2.7-12f201d556-e2dbf1bbbc.zip/node_modules/@dashevo/bls/",\
           "packageDependencies": [\
-            ["@dashevo/bls", "npm:1.0.0-beta.2"],\
+            ["@dashevo/bls", "npm:1.2.7"],\
             ["binascii", "npm:0.0.2"]\
           ],\
           "linkType": "HARD"\
@@ -2330,7 +2330,7 @@ function $$SETUP_STATE(hydrateRuntimeState, basePath) {
             ["@dashevo/dapi", "workspace:packages/dapi"],\
             ["@dashevo/dapi-client", "workspace:packages/js-dapi-client"],\
             ["@dashevo/dapi-grpc", "workspace:packages/dapi-grpc"],\
-            ["@dashevo/dashcore-lib", "npm:0.19.44"],\
+            ["@dashevo/dashcore-lib", "https://github.com/dashevo/dashcore-lib.git#commit=3527419e8739b5e7d4017028d642dba8851c3e25"],\
             ["@dashevo/dashd-rpc", "npm:18.2.0"],\
             ["@dashevo/dp-services-ctl", "https://github.com/dashevo/js-dp-services-ctl.git#commit=3976076b0018c5b4632ceda4c752fc597f27a640"],\
             ["@dashevo/dpp", "workspace:packages/js-dpp"],\
@@ -2373,7 +2373,7 @@ function $$SETUP_STATE(hydrateRuntimeState, basePath) {
             ["@babel/core", "npm:7.16.0"],\
             ["@dashevo/dapi-grpc", "workspace:packages/dapi-grpc"],\
             ["@dashevo/dash-spv", "workspace:packages/dash-spv"],\
-            ["@dashevo/dashcore-lib", "npm:0.19.44"],\
+            ["@dashevo/dashcore-lib", "https://github.com/dashevo/dashcore-lib.git#commit=3527419e8739b5e7d4017028d642dba8851c3e25"],\
             ["@dashevo/dpp", "workspace:packages/js-dpp"],\
             ["@dashevo/grpc-common", "workspace:packages/js-grpc-common"],\
             ["assert-browserify", "npm:2.0.0"],\
@@ -2461,7 +2461,7 @@ function $$SETUP_STATE(hydrateRuntimeState, basePath) {
             ["@dashevo/dash-spv", "workspace:packages/dash-spv"],\
             ["@dashevo/dark-gravity-wave", "npm:1.1.1"],\
             ["@dashevo/dash-util", "npm:2.0.3"],\
-            ["@dashevo/dashcore-lib", "npm:0.19.44"],\
+            ["@dashevo/dashcore-lib", "https://github.com/dashevo/dashcore-lib.git#commit=3527419e8739b5e7d4017028d642dba8851c3e25"],\
             ["chai", "npm:4.3.4"],\
             ["eslint", "npm:7.32.0"],\
             ["eslint-config-airbnb-base", "virtual:12a596dc9572e25ce715d3736dc74b317c5ca5cfb3b4f67864b1e76b3a401006f84d381aaf975bb5b4da9cafac5125e6869fc78d5202f4c95780c81479112f32#npm:14.2.1"],\
@@ -2486,14 +2486,14 @@ function $$SETUP_STATE(hydrateRuntimeState, basePath) {
         }]\
       ]],\
       ["@dashevo/dashcore-lib", [\
-        ["npm:0.19.44", {\
-          "packageLocation": "./.yarn/cache/@dashevo-dashcore-lib-npm-0.19.44-228550a3d0-00fb3a109a.zip/node_modules/@dashevo/dashcore-lib/",\
+        ["https://github.com/dashevo/dashcore-lib.git#commit=3527419e8739b5e7d4017028d642dba8851c3e25", {\
+          "packageLocation": "./.yarn/cache/@dashevo-dashcore-lib-https-2d1b8b21a5-c43eb802f6.zip/node_modules/@dashevo/dashcore-lib/",\
           "packageDependencies": [\
-            ["@dashevo/dashcore-lib", "npm:0.19.44"],\
+            ["@dashevo/dashcore-lib", "https://github.com/dashevo/dashcore-lib.git#commit=3527419e8739b5e7d4017028d642dba8851c3e25"],\
+            ["@dashevo/bls", "npm:1.2.7"],\
             ["@dashevo/x11-hash-js", "npm:1.0.2"],\
             ["@types/node", "npm:12.20.37"],\
             ["bloom-filter", "npm:0.2.0"],\
-            ["bls-signatures", "npm:0.2.5"],\
             ["bn.js", "npm:4.12.0"],\
             ["bs58", "npm:4.0.1"],\
             ["elliptic", "npm:6.5.4"],\
@@ -2593,7 +2593,8 @@ function $$SETUP_STATE(hydrateRuntimeState, basePath) {
             ["@apidevtools/json-schema-ref-parser", "npm:8.0.0"],\
             ["@babel/core", "npm:7.16.0"],\
             ["@babel/preset-env", "virtual:58fb68f2aed20e5e0f2e48520ab903ae9bb3440369bfd5e912034003cf27c5aae368649fc5620dd2acbed578131f3a0975e75b838d77d12335fb0412e24026c6#npm:7.16.4"],\
-            ["@dashevo/dashcore-lib", "npm:0.19.44"],\
+            ["@dashevo/bls", "npm:1.2.7"],\
+            ["@dashevo/dashcore-lib", "https://github.com/dashevo/dashcore-lib.git#commit=3527419e8739b5e7d4017028d642dba8851c3e25"],\
             ["@dashevo/dashpay-contract", "workspace:packages/dashpay-contract"],\
             ["@dashevo/dpns-contract", "workspace:packages/dpns-contract"],\
             ["@dashevo/feature-flags-contract", "workspace:packages/feature-flags-contract"],\
@@ -2605,7 +2606,6 @@ function $$SETUP_STATE(hydrateRuntimeState, basePath) {
             ["assert", "npm:2.0.0"],\
             ["babel-loader", "virtual:58fb68f2aed20e5e0f2e48520ab903ae9bb3440369bfd5e912034003cf27c5aae368649fc5620dd2acbed578131f3a0975e75b838d77d12335fb0412e24026c6#npm:8.2.3"],\
             ["bignumber.js", "npm:9.0.1"],\
-            ["bls-signatures", "npm:0.2.5"],\
             ["bs58", "npm:4.0.1"],\
             ["buffer", "npm:6.0.3"],\
             ["cbor", "npm:8.1.0"],\
@@ -2657,9 +2657,9 @@ function $$SETUP_STATE(hydrateRuntimeState, basePath) {
           "packageLocation": "./packages/js-drive/",\
           "packageDependencies": [\
             ["@dashevo/drive", "workspace:packages/js-drive"],\
-            ["@dashevo/abci", "https://github.com/dashpay/js-abci.git#commit=0ed8258034f3e7521a110053570f5c5c024eab67"],\
+            ["@dashevo/abci", "https://github.com/dashpay/js-abci.git#commit=09f72120bc2059144f72eb7a246d632ead3fc3c6"],\
             ["@dashevo/dapi-grpc", "workspace:packages/dapi-grpc"],\
-            ["@dashevo/dashcore-lib", "npm:0.19.44"],\
+            ["@dashevo/dashcore-lib", "https://github.com/dashevo/dashcore-lib.git#commit=3527419e8739b5e7d4017028d642dba8851c3e25"],\
             ["@dashevo/dashd-rpc", "npm:18.2.0"],\
             ["@dashevo/dashpay-contract", "workspace:packages/dashpay-contract"],\
             ["@dashevo/dp-services-ctl", "https://github.com/dashevo/js-dp-services-ctl.git#commit=3976076b0018c5b4632ceda4c752fc597f27a640"],\
@@ -2774,6 +2774,33 @@ function $$SETUP_STATE(hydrateRuntimeState, basePath) {
           "linkType": "SOFT"\
         }]\
       ]],\
+      ["@dashevo/oclif", [\
+        ["npm:1.0.0", {\
+          "packageLocation": "./.yarn/cache/@dashevo-oclif-npm-1.0.0-66914dc9c1-f095f30dcc.zip/node_modules/@dashevo/oclif/",\
+          "packageDependencies": [\
+            ["@dashevo/oclif", "npm:1.0.0"],\
+            ["@oclif/core", "npm:1.22.0"],\
+            ["@oclif/plugin-help", "npm:5.1.20"],\
+            ["@oclif/plugin-not-found", "npm:2.3.11"],\
+            ["@oclif/plugin-warn-if-update-available", "npm:2.0.17"],\
+            ["aws-sdk", "npm:2.1278.0"],\
+            ["concurrently", "npm:7.6.0"],\
+            ["debug", "virtual:c2bff3e67180802999655a22d390062982690e911b9d9225c258f3b25e7409f3867b2682c16232b77415f560a09d05a95042dc512a5b8c566c42bbbed88b0bbc#npm:4.3.4"],\
+            ["find-yarn-workspace-root", "npm:2.0.0"],\
+            ["fs-extra", "npm:8.1.0"],\
+            ["github-slugger", "npm:1.5.0"],\
+            ["got", "npm:11.8.6"],\
+            ["lodash", "npm:4.17.21"],\
+            ["normalize-package-data", "npm:3.0.3"],\
+            ["semver", "npm:7.3.8"],\
+            ["tslib", "npm:2.4.1"],\
+            ["yeoman-environment", "virtual:66914dc9c12d11e7cc47e518d9eb484a35535fd67f14538e19689b2c9890a5b81be03af53a5a0a64a0b50b82a112e3448c82bce40a722f57a2d286a7a3eb830a#npm:3.13.0"],\
+            ["yeoman-generator", "virtual:66914dc9c12d11e7cc47e518d9eb484a35535fd67f14538e19689b2c9890a5b81be03af53a5a0a64a0b50b82a112e3448c82bce40a722f57a2d286a7a3eb830a#npm:5.6.1"],\
+            ["yosay", "npm:2.0.2"]\
+          ],\
+          "linkType": "HARD"\
+        }]\
+      ]],\
       ["@dashevo/platform", [\
         ["workspace:.", {\
           "packageLocation": "./",\
@@ -2795,7 +2822,7 @@ function $$SETUP_STATE(hydrateRuntimeState, basePath) {
           "packageDependencies": [\
             ["@dashevo/platform-test-suite", "workspace:packages/platform-test-suite"],\
             ["@dashevo/dapi-client", "workspace:packages/js-dapi-client"],\
-            ["@dashevo/dashcore-lib", "npm:0.19.44"],\
+            ["@dashevo/dashcore-lib", "https://github.com/dashevo/dashcore-lib.git#commit=3527419e8739b5e7d4017028d642dba8851c3e25"],\
             ["@dashevo/dpns-contract", "workspace:packages/dpns-contract"],\
             ["@dashevo/dpp", "workspace:packages/js-dpp"],\
             ["@dashevo/feature-flags-contract", "workspace:packages/feature-flags-contract"],\
@@ -2887,8 +2914,9 @@ function $$SETUP_STATE(hydrateRuntimeState, basePath) {
           "packageLocation": "./packages/rs-drive-nodejs/",\
           "packageDependencies": [\
             ["@dashevo/rs-drive", "workspace:packages/rs-drive-nodejs"],\
-            ["@dashevo/dashcore-lib", "npm:0.19.44"],\
+            ["@dashevo/dashcore-lib", "https://github.com/dashevo/dashcore-lib.git#commit=3527419e8739b5e7d4017028d642dba8851c3e25"],\
             ["@dashevo/dpp", "workspace:packages/js-dpp"],\
+            ["@dashevo/withdrawals-contract", "workspace:packages/withdrawals-contract"],\
             ["cargo-cp-artifact", "npm:0.1.6"],\
             ["cbor", "npm:8.1.0"],\
             ["chai", "npm:4.3.4"],\
@@ -2912,7 +2940,7 @@ function $$SETUP_STATE(hydrateRuntimeState, basePath) {
             ["@dashevo/wallet-lib", "workspace:packages/wallet-lib"],\
             ["@dashevo/dapi-client", "workspace:packages/js-dapi-client"],\
             ["@dashevo/dash-spv", "workspace:packages/dash-spv"],\
-            ["@dashevo/dashcore-lib", "npm:0.19.44"],\
+            ["@dashevo/dashcore-lib", "https://github.com/dashevo/dashcore-lib.git#commit=3527419e8739b5e7d4017028d642dba8851c3e25"],\
             ["@dashevo/dpp", "workspace:packages/js-dpp"],\
             ["@dashevo/grpc-common", "workspace:packages/js-grpc-common"],\
             ["assert", "npm:2.0.0"],\
@@ -2967,8 +2995,8 @@ function $$SETUP_STATE(hydrateRuntimeState, basePath) {
           "packageDependencies": [\
             ["@dashevo/wasm-dpp", "workspace:packages/wasm-dpp"],\
             ["@apidevtools/json-schema-ref-parser", "npm:8.0.0"],\
-            ["@dashevo/bls", "npm:1.0.0-beta.2"],\
-            ["@dashevo/dashcore-lib", "npm:0.19.44"],\
+            ["@dashevo/bls", "npm:1.2.7"],\
+            ["@dashevo/dashcore-lib", "https://github.com/dashevo/dashcore-lib.git#commit=3527419e8739b5e7d4017028d642dba8851c3e25"],\
             ["@dashevo/dpns-contract", "workspace:packages/dpns-contract"],\
             ["@dashevo/dpp", "workspace:packages/js-dpp"],\
             ["@dashevo/wasm-re2", "npm:1.0.2"],\
@@ -5990,15 +6018,6 @@ function $$SETUP_STATE(hydrateRuntimeState, basePath) {
           "linkType": "HARD"\
         }]\
       ]],\
-      ["bls-signatures", [\
-        ["npm:0.2.5", {\
-          "packageLocation": "./.yarn/cache/bls-signatures-npm-0.2.5-2b4387e166-472d697f09.zip/node_modules/bls-signatures/",\
-          "packageDependencies": [\
-            ["bls-signatures", "npm:0.2.5"]\
-          ],\
-          "linkType": "HARD"\
-        }]\
-      ]],\
       ["bluebird", [\
         ["npm:3.7.2", {\
           "packageLocation": "./.yarn/cache/bluebird-npm-3.7.2-6a54136ee3-869417503c.zip/node_modules/bluebird/",\
@@ -7600,7 +7619,7 @@ function $$SETUP_STATE(hydrateRuntimeState, basePath) {
           "packageDependencies": [\
             ["dash", "workspace:packages/js-dash-sdk"],\
             ["@dashevo/dapi-client", "workspace:packages/js-dapi-client"],\
-            ["@dashevo/dashcore-lib", "npm:0.19.44"],\
+            ["@dashevo/dashcore-lib", "https://github.com/dashevo/dashcore-lib.git#commit=3527419e8739b5e7d4017028d642dba8851c3e25"],\
             ["@dashevo/dashpay-contract", "workspace:packages/dashpay-contract"],\
             ["@dashevo/dpns-contract", "workspace:packages/dpns-contract"],\
             ["@dashevo/dpp", "workspace:packages/js-dpp"],\
@@ -7665,7 +7684,8 @@ function $$SETUP_STATE(hydrateRuntimeState, basePath) {
           "packageLocation": "./packages/dashmate/",\
           "packageDependencies": [\
             ["dashmate", "workspace:packages/dashmate"],\
-            ["@dashevo/dashcore-lib", "npm:0.19.44"],\
+            ["@dashevo/bls", "npm:1.2.7"],\
+            ["@dashevo/dashcore-lib", "https://github.com/dashevo/dashcore-lib.git#commit=3527419e8739b5e7d4017028d642dba8851c3e25"],\
             ["@dashevo/dashd-rpc", "npm:18.2.0"],\
             ["@dashevo/dashpay-contract", "workspace:packages/dashpay-contract"],\
             ["@dashevo/docker-compose", "npm:0.24.1"],\
@@ -7673,6 +7693,7 @@ function $$SETUP_STATE(hydrateRuntimeState, basePath) {
             ["@dashevo/dpp", "workspace:packages/js-dpp"],\
             ["@dashevo/feature-flags-contract", "workspace:packages/feature-flags-contract"],\
             ["@dashevo/masternode-reward-shares-contract", "workspace:packages/masternode-reward-shares-contract"],\
+            ["@dashevo/oclif", "npm:1.0.0"],\
             ["@dashevo/wallet-lib", "workspace:packages/wallet-lib"],\
             ["@dashevo/withdrawals-contract", "workspace:packages/withdrawals-contract"],\
             ["@oclif/core", "npm:1.22.0"],\
@@ -7680,7 +7701,6 @@ function $$SETUP_STATE(hydrateRuntimeState, basePath) {
             ["ajv", "npm:8.8.1"],\
             ["ajv-formats", "virtual:58fb68f2aed20e5e0f2e48520ab903ae9bb3440369bfd5e912034003cf27c5aae368649fc5620dd2acbed578131f3a0975e75b838d77d12335fb0412e24026c6#npm:2.1.1"],\
             ["awilix", "npm:4.3.4"],\
-            ["bls-signatures", "npm:0.2.5"],\
             ["chai", "npm:4.3.4"],\
             ["chai-as-promised", "virtual:58fb68f2aed20e5e0f2e48520ab903ae9bb3440369bfd5e912034003cf27c5aae368649fc5620dd2acbed578131f3a0975e75b838d77d12335fb0412e24026c6#npm:7.1.1"],\
             ["chalk", "npm:4.1.2"],\
@@ -7707,7 +7727,6 @@ function $$SETUP_STATE(hydrateRuntimeState, basePath) {
             ["node-fetch", "virtual:8f25fc90e0fb5fd89843707863857591fa8c52f9f33eadced4bf404b1871d91959f7bb86948ae0e1b53ee94d491ef8fde9c0b58b39c9490c0d0fa6c931945f97#npm:2.6.7"],\
             ["node-forge", "npm:1.3.1"],\
             ["node-graceful", "npm:3.1.0"],\
-            ["oclif", "npm:3.4.2"],\
             ["pretty-bytes", "npm:5.6.0"],\
             ["pretty-ms", "npm:7.0.1"],\
             ["public-ip", "npm:4.0.4"],\
@@ -12481,10 +12500,10 @@ function $$SETUP_STATE(hydrateRuntimeState, basePath) {
           ],\
           "linkType": "SOFT"\
         }],\
-        ["virtual:deae8c075f2f5c7d3a9ac400b9ee6d46407fe72915f76237823c81e6e5e59bdff851f398d7deb47c2bebabe0a51faa73cc357c51220a73546fb9dae729fffa10#npm:9.4.0", {\
-          "packageLocation": "./.yarn/__virtual__/mem-fs-editor-virtual-c0a63c7c7c/0/cache/mem-fs-editor-npm-9.4.0-97c608fb01-427b71d59a.zip/node_modules/mem-fs-editor/",\
+        ["virtual:8047c0357343f93e35a05296445e93b7165657a67381d4dcb85270ee12dc2829349826ce81d157d77eb10cf65ea864099989fed3ef30ee2814cd402d8a0f094b#npm:9.4.0", {\
+          "packageLocation": "./.yarn/__virtual__/mem-fs-editor-virtual-3d752ce26b/0/cache/mem-fs-editor-npm-9.4.0-97c608fb01-427b71d59a.zip/node_modules/mem-fs-editor/",\
           "packageDependencies": [\
-            ["mem-fs-editor", "virtual:deae8c075f2f5c7d3a9ac400b9ee6d46407fe72915f76237823c81e6e5e59bdff851f398d7deb47c2bebabe0a51faa73cc357c51220a73546fb9dae729fffa10#npm:9.4.0"],\
+            ["mem-fs-editor", "virtual:8047c0357343f93e35a05296445e93b7165657a67381d4dcb85270ee12dc2829349826ce81d157d77eb10cf65ea864099989fed3ef30ee2814cd402d8a0f094b#npm:9.4.0"],\
             ["@types/mem-fs", null],\
             ["binaryextensions", "npm:4.18.0"],\
             ["commondir", "npm:1.0.1"],\
@@ -13690,33 +13709,6 @@ function $$SETUP_STATE(hydrateRuntimeState, basePath) {
             ["call-bind", "npm:1.0.2"],\
             ["define-properties", "npm:1.1.3"],\
             ["es-abstract", "npm:1.19.1"]\
-          ],\
-          "linkType": "HARD"\
-        }]\
-      ]],\
-      ["oclif", [\
-        ["npm:3.4.2", {\
-          "packageLocation": "./.yarn/cache/oclif-npm-3.4.2-a655d32eed-fb2d21f9a5.zip/node_modules/oclif/",\
-          "packageDependencies": [\
-            ["oclif", "npm:3.4.2"],\
-            ["@oclif/core", "npm:1.22.0"],\
-            ["@oclif/plugin-help", "npm:5.1.20"],\
-            ["@oclif/plugin-not-found", "npm:2.3.11"],\
-            ["@oclif/plugin-warn-if-update-available", "npm:2.0.17"],\
-            ["aws-sdk", "npm:2.1278.0"],\
-            ["concurrently", "npm:7.6.0"],\
-            ["debug", "virtual:c2bff3e67180802999655a22d390062982690e911b9d9225c258f3b25e7409f3867b2682c16232b77415f560a09d05a95042dc512a5b8c566c42bbbed88b0bbc#npm:4.3.4"],\
-            ["find-yarn-workspace-root", "npm:2.0.0"],\
-            ["fs-extra", "npm:8.1.0"],\
-            ["github-slugger", "npm:1.5.0"],\
-            ["got", "npm:11.8.6"],\
-            ["lodash", "npm:4.17.21"],\
-            ["normalize-package-data", "npm:3.0.3"],\
-            ["semver", "npm:7.3.8"],\
-            ["tslib", "npm:2.4.1"],\
-            ["yeoman-environment", "virtual:a655d32eedbbd7cec454bd319d24b4ad5dbced5ae99d9ec90232ce97677c006787817d286128bef1062e7761d7ea8d3cf3188910eb568c017402e1c8119fc8ee#npm:3.13.0"],\
-            ["yeoman-generator", "virtual:a655d32eedbbd7cec454bd319d24b4ad5dbced5ae99d9ec90232ce97677c006787817d286128bef1062e7761d7ea8d3cf3188910eb568c017402e1c8119fc8ee#npm:5.6.1"],\
-            ["yosay", "npm:2.0.2"]\
           ],\
           "linkType": "HARD"\
         }]\
@@ -18740,10 +18732,10 @@ function $$SETUP_STATE(hydrateRuntimeState, basePath) {
           ],\
           "linkType": "SOFT"\
         }],\
-        ["virtual:a655d32eedbbd7cec454bd319d24b4ad5dbced5ae99d9ec90232ce97677c006787817d286128bef1062e7761d7ea8d3cf3188910eb568c017402e1c8119fc8ee#npm:3.13.0", {\
-          "packageLocation": "./.yarn/__virtual__/yeoman-environment-virtual-deae8c075f/0/cache/yeoman-environment-npm-3.13.0-f7ad653f8e-2d622d18d2.zip/node_modules/yeoman-environment/",\
+        ["virtual:66914dc9c12d11e7cc47e518d9eb484a35535fd67f14538e19689b2c9890a5b81be03af53a5a0a64a0b50b82a112e3448c82bce40a722f57a2d286a7a3eb830a#npm:3.13.0", {\
+          "packageLocation": "./.yarn/__virtual__/yeoman-environment-virtual-8047c03573/0/cache/yeoman-environment-npm-3.13.0-f7ad653f8e-2d622d18d2.zip/node_modules/yeoman-environment/",\
           "packageDependencies": [\
-            ["yeoman-environment", "virtual:a655d32eedbbd7cec454bd319d24b4ad5dbced5ae99d9ec90232ce97677c006787817d286128bef1062e7761d7ea8d3cf3188910eb568c017402e1c8119fc8ee#npm:3.13.0"],\
+            ["yeoman-environment", "virtual:66914dc9c12d11e7cc47e518d9eb484a35535fd67f14538e19689b2c9890a5b81be03af53a5a0a64a0b50b82a112e3448c82bce40a722f57a2d286a7a3eb830a#npm:3.13.0"],\
             ["@npmcli/arborist", "npm:4.3.1"],\
             ["@types/mem-fs", null],\
             ["@types/mem-fs-editor", null],\
@@ -18768,7 +18760,7 @@ function $$SETUP_STATE(hydrateRuntimeState, basePath) {
             ["lodash", "npm:4.17.21"],\
             ["log-symbols", "npm:4.1.0"],\
             ["mem-fs", "npm:2.2.1"],\
-            ["mem-fs-editor", "virtual:deae8c075f2f5c7d3a9ac400b9ee6d46407fe72915f76237823c81e6e5e59bdff851f398d7deb47c2bebabe0a51faa73cc357c51220a73546fb9dae729fffa10#npm:9.4.0"],\
+            ["mem-fs-editor", "virtual:8047c0357343f93e35a05296445e93b7165657a67381d4dcb85270ee12dc2829349826ce81d157d77eb10cf65ea864099989fed3ef30ee2814cd402d8a0f094b#npm:9.4.0"],\
             ["minimatch", "npm:3.1.2"],\
             ["npmlog", "npm:5.0.1"],\
             ["p-queue", "npm:6.6.2"],\
@@ -18798,10 +18790,10 @@ function $$SETUP_STATE(hydrateRuntimeState, basePath) {
           ],\
           "linkType": "SOFT"\
         }],\
-        ["virtual:a655d32eedbbd7cec454bd319d24b4ad5dbced5ae99d9ec90232ce97677c006787817d286128bef1062e7761d7ea8d3cf3188910eb568c017402e1c8119fc8ee#npm:5.6.1", {\
-          "packageLocation": "./.yarn/__virtual__/yeoman-generator-virtual-93d618279a/0/cache/yeoman-generator-npm-5.6.1-a49b7654c4-ef036210b6.zip/node_modules/yeoman-generator/",\
+        ["virtual:66914dc9c12d11e7cc47e518d9eb484a35535fd67f14538e19689b2c9890a5b81be03af53a5a0a64a0b50b82a112e3448c82bce40a722f57a2d286a7a3eb830a#npm:5.6.1", {\
+          "packageLocation": "./.yarn/__virtual__/yeoman-generator-virtual-89e21a6e1b/0/cache/yeoman-generator-npm-5.6.1-a49b7654c4-ef036210b6.zip/node_modules/yeoman-generator/",\
           "packageDependencies": [\
-            ["yeoman-generator", "virtual:a655d32eedbbd7cec454bd319d24b4ad5dbced5ae99d9ec90232ce97677c006787817d286128bef1062e7761d7ea8d3cf3188910eb568c017402e1c8119fc8ee#npm:5.6.1"],\
+            ["yeoman-generator", "virtual:66914dc9c12d11e7cc47e518d9eb484a35535fd67f14538e19689b2c9890a5b81be03af53a5a0a64a0b50b82a112e3448c82bce40a722f57a2d286a7a3eb830a#npm:5.6.1"],\
             ["@types/yeoman-environment", null],\
             ["chalk", "npm:4.1.2"],\
             ["dargs", "npm:7.0.0"],\
@@ -18816,7 +18808,7 @@ function $$SETUP_STATE(hydrateRuntimeState, basePath) {
             ["shelljs", "npm:0.8.5"],\
             ["sort-keys", "npm:4.2.0"],\
             ["text-table", "npm:0.2.0"],\
-            ["yeoman-environment", "virtual:a655d32eedbbd7cec454bd319d24b4ad5dbced5ae99d9ec90232ce97677c006787817d286128bef1062e7761d7ea8d3cf3188910eb568c017402e1c8119fc8ee#npm:3.13.0"]\
+            ["yeoman-environment", "virtual:66914dc9c12d11e7cc47e518d9eb484a35535fd67f14538e19689b2c9890a5b81be03af53a5a0a64a0b50b82a112e3448c82bce40a722f57a2d286a7a3eb830a#npm:3.13.0"]\
           ],\
           "packagePeers": [\
             "@types/yeoman-environment",\

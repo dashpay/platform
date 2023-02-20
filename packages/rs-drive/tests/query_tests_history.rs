@@ -44,7 +44,9 @@ use serde::{Deserialize, Serialize};
 use serde_json::json;
 
 use drive::common;
-use drive::common::helpers::setup::setup_drive;
+
+use drive::tests::helpers::setup::setup_drive;
+
 use drive::contract::Contract;
 use drive::drive::batch::GroveDbOpBatch;
 use drive::drive::config::DriveConfig;
@@ -1495,7 +1497,7 @@ fn test_query_historical() {
         serializer::value_to_cbor(query_value, None).expect("expected to serialize to cbor");
 
     let (results, _, _) = drive
-        .query_documents_from_contract_cbor(
+        .query_raw_documents_from_contract_cbor_using_cbor_encoded_query_with_cost(
             query_cbor.as_slice(),
             contract_cbor.as_slice(),
             String::from("contact"),

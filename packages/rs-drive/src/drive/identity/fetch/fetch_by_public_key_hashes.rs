@@ -278,8 +278,8 @@ impl Drive {
 
 #[cfg(test)]
 mod tests {
-    use crate::common::helpers::setup::setup_drive;
     use crate::drive::block_info::BlockInfo;
+    use crate::tests::helpers::setup::setup_drive;
 
     use super::*;
 

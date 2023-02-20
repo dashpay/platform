@@ -36,6 +36,7 @@ use std::borrow::Cow;
 use std::collections::BTreeMap;
 
 use ciborium::value::Value;
+use dpp::document::document_transition::INITIAL_REVISION;
 use drive::dpp::identity::Identity;
 use rand::rngs::StdRng;
 use rand::{Rng, SeedableRng};
@@ -76,7 +77,7 @@ fn create_test_mn_share_document(
         id,
         properties,
         owner_id: identity_id,
-        revision: Some(1),
+        revision: Some(INITIAL_REVISION as u64),
         created_at: None,
         updated_at: None,
     };

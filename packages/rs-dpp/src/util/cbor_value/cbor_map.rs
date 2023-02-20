@@ -17,6 +17,11 @@ pub trait CborBTreeMapHelper {
     fn get_optional_integer<T: TryFrom<i128>>(&self, key: &str)
         -> Result<Option<T>, ProtocolError>;
     fn get_integer<T: TryFrom<i128>>(&self, key: &str) -> Result<T, ProtocolError>;
+    fn remove_optional_integer<T: TryFrom<i128>>(
+        &mut self,
+        key: &str,
+    ) -> Result<Option<T>, ProtocolError>;
+    fn remove_integer<T: TryFrom<i128>>(&mut self, key: &str) -> Result<T, ProtocolError>;
     fn get_optional_bool(&self, key: &str) -> Result<Option<bool>, ProtocolError>;
     fn get_bool(&self, key: &str) -> Result<bool, ProtocolError>;
     fn get_optional_inner_value_array<'a, I: FromIterator<&'a CborValue>>(
@@ -73,8 +78,9 @@ where
     }
 
     fn get_identifier(&self, key: &str) -> Result<[u8; 32], ProtocolError> {
-        self.get_optional_identifier(key)?
-            .ok_or_else(|| ProtocolError::DecodingError(format!("unable to get property {key}")))
+        self.get_optional_identifier(key)?.ok_or_else(|| {
+            ProtocolError::DecodingError(format!("unable to get identifier property {key}"))
+        })
     }
 
     fn get_optional_string(&self, key: &str) -> Result<Option<String>, ProtocolError> {
@@ -89,8 +95,9 @@ where
     }
 
     fn get_string(&self, key: &str) -> Result<String, ProtocolError> {
-        self.get_optional_string(key)?
-            .ok_or_else(|| ProtocolError::DecodingError(format!("unable to get property {key}")))
+        self.get_optional_string(key)?.ok_or_else(|| {
+            ProtocolError::DecodingError(format!("unable to get string property {key}"))
+        })
     }
 
     fn get_optional_str(&self, key: &str) -> Result<Option<&str>, ProtocolError> {
@@ -104,8 +111,9 @@ where
     }
 
     fn get_str(&self, key: &str) -> Result<&str, ProtocolError> {
-        self.get_optional_str(key)?
-            .ok_or_else(|| ProtocolError::DecodingError(format!("unable to get property {key}")))
+        self.get_optional_str(key)?.ok_or_else(|| {
+            ProtocolError::DecodingError(format!("unable to get str property {key}"))
+        })
     }
 
     fn get_optional_integer<T: TryFrom<i128>>(
@@ -134,8 +142,9 @@ where
     }
 
     fn get_integer<T: TryFrom<i128>>(&self, key: &str) -> Result<T, ProtocolError> {
-        self.get_optional_integer(key)?
-            .ok_or_else(|| ProtocolError::DecodingError(format!("unable to get property {key}")))
+        self.get_optional_integer(key)?.ok_or_else(|| {
+            ProtocolError::DecodingError(format!("unable to get integer property {key}"))
+        })
     }
 
     fn remove_optional_integer<T: TryFrom<i128>>(
@@ -179,8 +188,32 @@ where
     }
 
     fn get_bool(&self, key: &str) -> Result<bool, ProtocolError> {
-        self.get_optional_bool(key)?
-            .ok_or_else(|| ProtocolError::DecodingError(format!("unable to get property {key}")))
+        self.get_optional_bool(key)?.ok_or_else(|| {
+            ProtocolError::DecodingError(format!("unable to get bool property {key}"))
+        })
+    }
+
+    fn remove_optional_integer<T: TryFrom<i128>>(
+        &mut self,
+        key: &str,
+    ) -> Result<Option<T>, ProtocolError> {
+        self.remove(key)
+            .map(|v| {
+                i128::from(v.borrow().as_integer().ok_or_else(|| {
+                    ProtocolError::DecodingError(format!("{key} must be an integer"))
+                })?)
+                .try_into()
+                .map_err(|_| {
+                    ProtocolError::DecodingError(format!("{key} is out of required bounds"))
+                })
+            })
+            .transpose()
+    }
+
+    fn remove_integer<T: TryFrom<i128>>(&mut self, key: &str) -> Result<T, ProtocolError> {
+        self.remove_optional_integer(key)?.ok_or_else(|| {
+            ProtocolError::DecodingError(format!("unable to remove integer property {key}"))
+        })
     }
 
     fn get_optional_inner_value_array<'a, I: FromIterator<&'a CborValue>>(
@@ -201,8 +234,9 @@ where
         &'a self,
         key: &str,
     ) -> Result<I, ProtocolError> {
-        self.get_optional_inner_value_array(key)?
-            .ok_or_else(|| ProtocolError::DecodingError(format!("unable to get property {key}")))
+        self.get_optional_inner_value_array(key)?.ok_or_else(|| {
+            ProtocolError::DecodingError(format!("unable to get inner value array property {key}"))
+        })
     }
 
     fn get_optional_inner_string_array<I: FromIterator<String>>(
@@ -234,8 +268,9 @@ where
         &self,
         key: &str,
     ) -> Result<I, ProtocolError> {
-        self.get_optional_inner_string_array(key)?
-            .ok_or_else(|| ProtocolError::DecodingError(format!("unable to get property {key}")))
+        self.get_optional_inner_string_array(key)?.ok_or_else(|| {
+            ProtocolError::DecodingError(format!("unable to get inner string property {key}"))
+        })
     }
 
     fn get_optional_inner_borrowed_str_value_map<
@@ -284,6 +319,10 @@ where
         key: &str,
     ) -> Result<I, ProtocolError> {
         self.get_optional_inner_borrowed_str_value_map(key)?
-            .ok_or_else(|| ProtocolError::DecodingError(format!("unable to get property {key}")))
+            .ok_or_else(|| {
+                ProtocolError::DecodingError(format!(
+                    "unable to get borrowed str value map property {key}"
+                ))
+            })
     }
 }

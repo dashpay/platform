@@ -393,7 +393,7 @@ fetchers = "4"
 [consensus]
 
 wal-file = "data/cs.wal/wal"
-# wal-skip-rounds-to-last set to true will skip replaying all non-committed rounds stored in 
+# wal-skip-rounds-to-last set to true will skip replaying all non-committed rounds stored in
 # WAL, increasing performance in a significant way. It should be set to false by default, as it
 # can have security side-effects.
 wal-skip-rounds-to-last = "false"
@@ -455,9 +455,6 @@ peer-query-maj23-sleep-duration = "2s"
 # If this field is set to true, the consensus engine will proceed to the next height
 # as soon as the node has gathered votes from all of the validators on the network.
 # unsafe-bypass-commit-timeout-override =
-
-# Signing parameters
-quorum-type = {{=it.platform.drive.abci.validatorSet.llmqType}}
 
 #######################################################
 ###   Transaction Indexer Configuration Options     ###

@@ -8,27 +8,42 @@ module.exports = async function getBlsAdapterMock() {
       let pk;
 
       try {
-        pk = bls.PublicKey.fromBytes(publicKeyBuffer);
+        pk = bls.G1Element.fromBytes(Uint8Array.from(publicKeyBuffer));
       } catch (e) {
         return false;
+      } finally {
+        if (pk) {
+          pk.delete();
+        }
       }
 
       return Boolean(pk);
     },
     sign(data, key) {
-      const blsKey = bls.PrivateKey.fromBytes(key, true);
-      const signature = blsKey.sign(data);
-      return Buffer.from(signature.serialize());
+      const blsKey = bls.PrivateKey.fromBytes(Uint8Array.from(key), true);
+      const signature = bls.BasicSchemeMPL.sign(blsKey, data);
+      const result = Buffer.from(signature.serialize());
+
+      signature.delete();
+      blsKey.delete();
+
+      return result;
     },
     verifySignature(signature, data, publicKey) {
-      const { PublicKey, Signature: BlsSignature, AggregationInfo } = bls;
+      const { G1Element, G2Element, BasicSchemeMPL } = bls;
 
-      const blsKey = PublicKey.fromBytes(publicKey);
+      const blsKey = G1Element.fromBytes(Uint8Array.from(publicKey));
 
-      const aggregationInfo = AggregationInfo.fromMsg(blsKey, data);
-      const blsSignature = BlsSignature.fromBytesAndAggregationInfo(signature, aggregationInfo);
+      const blsSignature = G2Element.fromBytes(
+        Uint8Array.from(signature),
+      );
 
-      return blsSignature.verify();
+      const result = BasicSchemeMPL.verify(blsKey, Uint8Array.from(data), blsSignature);
+
+      blsKey.delete();
+      blsSignature.delete();
+
+      return result;
     },
   };
 

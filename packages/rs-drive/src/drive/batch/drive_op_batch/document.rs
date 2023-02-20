@@ -229,7 +229,7 @@ impl DriveOperationConverter for DocumentOperationType<'_> {
                         document_info,
                         owner_id,
                     },
-                    contract: &contract,
+                    contract,
                     document_type,
                 };
                 drive.add_document_for_contract_operations(
@@ -348,7 +348,7 @@ impl DriveOperationConverter for DocumentOperationType<'_> {
                         document_info,
                         owner_id,
                     },
-                    contract: &contract,
+                    contract,
                     document_type,
                 };
                 drive.update_document_for_contract_operations(
@@ -377,7 +377,7 @@ impl DriveOperationConverter for DocumentOperationType<'_> {
                         document_info,
                         owner_id,
                     },
-                    contract: &contract,
+                    contract,
                     document_type,
                 };
                 drive.update_document_for_contract_operations(

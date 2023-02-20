@@ -15,8 +15,17 @@ describe('GroveDBStore', () => {
 
   beforeEach(async () => {
     rsDrive = new Drive('./db/grovedb_test', {
-      dataContractsGlobalCacheSize: 500,
-      dataContractsBlockCacheSize: 500,
+      drive: {
+        dataContractsGlobalCacheSize: 500,
+        dataContractsBlockCacheSize: 500,
+      },
+      core: {
+        rpc: {
+          url: '127.0.0.1',
+          username: '',
+          password: '',
+        },
+      },
     });
 
     store = new GroveDBStore(rsDrive, logger);
@@ -381,8 +390,17 @@ describe('GroveDBStore', () => {
       rimraf.sync('./db/grovedb_test');
 
       rsDrive = new Drive('./db/grovedb_test', {
-        dataContractsGlobalCacheSize: 500,
-        dataContractsBlockCacheSize: 500,
+        drive: {
+          dataContractsGlobalCacheSize: 500,
+          dataContractsBlockCacheSize: 500,
+        },
+        core: {
+          rpc: {
+            url: '127.0.0.1',
+            username: '',
+            password: '',
+          },
+        },
       });
 
       store = new GroveDBStore(rsDrive, logger);

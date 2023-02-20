@@ -1,7 +1,7 @@
 use anyhow::Result as AnyResult;
 use async_trait::async_trait;
 use dashcore::InstantLock;
-#[cfg(any(test, feature = "mocks"))]
+#[cfg(feature = "fixtures-and-mocks")]
 use mockall::{automock, predicate::*};
 use serde_json::Value as JsonValue;
 use std::convert::{Infallible, TryInto};
@@ -25,7 +25,7 @@ pub struct FetchTransactionResponse {
 }
 
 // Let StateRepositoryLike mock return DataContracts instead of bytes to simplify things a bit.
-#[cfg_attr(any(test, feature="mocks"), automock(
+#[cfg_attr(any(test, feature="fixtures-and-mocks"), automock(
     type ConversionError=Infallible;
     type FetchDataContract=DataContract;
     type FetchIdentity=Identity;
@@ -213,11 +213,4 @@ pub trait StateRepositoryLike: Sync {
 
     // Get latest (in a queue) withdrawal transaction index
     async fn fetch_latest_platform_core_chain_locked_height(&self) -> AnyResult<Option<u32>>;
-
-    // Enqueue withdrawal transaction
-    async fn enqueue_withdrawal_transaction(
-        &self,
-        index: u64,
-        transaction_bytes: Vec<u8>,
-    ) -> AnyResult<()>;
 }
