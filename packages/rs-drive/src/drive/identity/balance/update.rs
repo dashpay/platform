@@ -471,13 +471,15 @@ mod tests {
     use super::*;
     use dpp::prelude::*;
 
-    use crate::common::helpers::setup::setup_drive_with_initial_state_structure;
-
     use crate::fee_pools::epochs::Epoch;
+
+    use crate::{
+        common::helpers::identities::create_test_identity,
+        tests::helpers::setup::setup_drive_with_initial_state_structure,
+    };
 
     mod add_to_identity_balance {
         use super::*;
-        use crate::common::helpers::identities::create_test_identity;
 
         #[test]
         fn should_add_to_balance() {

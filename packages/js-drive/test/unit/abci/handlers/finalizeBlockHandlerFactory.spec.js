@@ -25,13 +25,13 @@ describe('finalizeBlockHandlerFactory', () => {
   let requestMock;
   let appHash;
   let groveDBStoreMock;
-  let coreRpcClientMock;
   let blockExecutionContextRepositoryMock;
   let dataContract;
   let proposalBlockExecutionContextMock;
   let round;
   let block;
   let processProposalMock;
+  let broadcastWithdrawalTransactions;
   let createContextLoggerMock;
 
   beforeEach(function beforeEach() {
@@ -85,13 +85,13 @@ describe('finalizeBlockHandlerFactory', () => {
     proposalBlockExecutionContextMock.getHeight.returns(new Long(42));
     proposalBlockExecutionContextMock.getRound.returns(round);
     proposalBlockExecutionContextMock.getDataContracts.returns([dataContract]);
+    proposalBlockExecutionContextMock.getEpochInfo.returns({
+      currentEpochIndex: 1,
+    });
+    proposalBlockExecutionContextMock.getTimeMs.returns((new Date()).getTime());
 
     groveDBStoreMock = new GroveDBStoreMock(this.sinon);
     groveDBStoreMock.getRootHash.resolves(appHash);
-
-    coreRpcClientMock = {
-      sendRawTransaction: this.sinon.stub(),
-    };
 
     blockExecutionContextRepositoryMock = new BlockExecutionContextRepositoryMock(
       this.sinon,
@@ -100,15 +100,17 @@ describe('finalizeBlockHandlerFactory', () => {
     processProposalMock = this.sinon.stub();
     createContextLoggerMock = this.sinon.stub().returns(loggerMock);
 
+    broadcastWithdrawalTransactions = this.sinon.stub();
+
     finalizeBlockHandler = finalizeBlockHandlerFactory(
       groveDBStoreMock,
       blockExecutionContextRepositoryMock,
-      coreRpcClientMock,
       loggerMock,
       executionTimerMock,
       latestBlockExecutionContextMock,
       proposalBlockExecutionContextMock,
       processProposalMock,
+      broadcastWithdrawalTransactions,
       createContextLoggerMock,
     );
   });
@@ -133,6 +135,13 @@ describe('finalizeBlockHandlerFactory', () => {
 
     expect(latestBlockExecutionContextMock.populate).to.be.calledOnce();
     expect(processProposalMock).to.be.not.called();
+
+    expect(broadcastWithdrawalTransactions).to.have.been.calledOnceWith(
+      proposalBlockExecutionContextMock,
+      undefined,
+      undefined,
+    );
+
     expect(createContextLoggerMock).to.be.calledOnceWithExactly(
       loggerMock, {
         height: '42',
@@ -168,7 +177,6 @@ describe('finalizeBlockHandlerFactory', () => {
 
     await finalizeBlockHandler(requestMock);
 
-    expect(coreRpcClientMock.sendRawTransaction).to.have.been.calledTwice();
     expect(processProposalMock).to.be.not.called();
     expect(createContextLoggerMock).to.be.calledOnceWithExactly(
       loggerMock, {

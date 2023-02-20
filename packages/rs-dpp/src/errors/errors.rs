@@ -118,6 +118,14 @@ pub enum ProtocolError {
     #[error("Identity is not present")]
     IdentityNotPresentError { id: Identifier },
 
+    /// Error
+    #[error("overflow error: {0}")]
+    Overflow(&'static str),
+
+    /// Error
+    #[error("missing key: {0}")]
+    DocumentKeyMissing(String),
+
     #[error("Invalid Identity: {errors:?}")]
     InvalidIdentityError {
         errors: Vec<ConsensusError>,

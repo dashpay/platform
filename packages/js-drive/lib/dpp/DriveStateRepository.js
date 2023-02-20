@@ -615,9 +615,12 @@ class DriveStateRepository {
    * @returns {Promise<number>}
    */
   async fetchLatestWithdrawalTransactionIndex() {
-    // TODO: handle dry run via passing state transition execution context
+    const blockInfo = BlockInfo.createFromBlockExecutionContext(this.blockExecutionContext);
+
     return this.rsDrive.fetchLatestWithdrawalTransactionIndex(
+      blockInfo,
       this.#options.useTransaction,
+      this.#options.dryRun,
     );
   }
 
@@ -630,10 +633,13 @@ class DriveStateRepository {
    * @returns {Promise<void>}
    */
   async enqueueWithdrawalTransaction(index, transactionBytes) {
+    const blockInfo = BlockInfo.createFromBlockExecutionContext(this.blockExecutionContext);
+
     // TODO: handle dry run via passing state transition execution context
     return this.rsDrive.enqueueWithdrawalTransaction(
       index,
       transactionBytes,
+      blockInfo,
       this.#options.useTransaction,
     );
   }

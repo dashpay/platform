@@ -37,6 +37,9 @@ use crate::drive::RootTree;
 
 use dpp::identity::{KeyID, Purpose, SecurityLevel};
 
+/// Everything related to withdrawals
+pub mod withdrawals;
+
 use dpp::identity::Purpose::AUTHENTICATION;
 use integer_encoding::VarInt;
 
@@ -47,9 +50,8 @@ mod fetch;
 mod insert;
 mod key;
 mod update;
-mod withdrawal_queue;
 
-pub use withdrawal_queue::add_initial_withdrawal_state_structure_operations;
+pub use withdrawals::paths::add_initial_withdrawal_state_structure_operations;
 
 pub(crate) const IDENTITY_KEY: [u8; 1] = [0];
 

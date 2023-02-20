@@ -109,6 +109,7 @@ impl CreateRandomDocument for DocumentType {
             id,
             properties,
             owner_id,
+            revision: 1,
         }
     }
 
@@ -156,6 +157,7 @@ impl CreateRandomDocument for DocumentType {
             id,
             properties,
             owner_id,
+            revision: 1,
         }
     }
 }
