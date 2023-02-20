@@ -95,7 +95,7 @@ function configureCoreTaskFactory(
             {
               title: 'Activating DIP3',
               task: () => new Observable(async (observer) => {
-                const dip3ActivationHeight = 500;
+                const dip3ActivationHeight = 1000;
                 const blocksToGenerateInOneStep = 10;
 
                 let blocksGenerated = 0;

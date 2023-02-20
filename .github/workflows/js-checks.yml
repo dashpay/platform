@@ -117,6 +117,8 @@ jobs:
 
       - name: Build package and dependencies
         run: yarn build --filter "+${{ inputs.package }}"
+        env:
+          NODE_ENV: test
 
       - name: Build SDK
         run: yarn build --filter "+dash"

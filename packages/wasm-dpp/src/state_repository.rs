@@ -608,12 +608,4 @@ impl StateRepositoryLike for ExternalStateRepositoryLikeWrapper {
     async fn fetch_latest_withdrawal_transaction_index(&self) -> Result<u64> {
         todo!()
     }
-
-    async fn enqueue_withdrawal_transaction(
-        &self,
-        _index: u64,
-        _transaction_bytes: Vec<u8>,
-    ) -> Result<()> {
-        todo!()
-    }
 }

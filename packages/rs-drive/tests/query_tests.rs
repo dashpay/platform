@@ -47,7 +47,6 @@ use serde_json::json;
 use tempfile::TempDir;
 
 use drive::common;
-use drive::common::helpers::setup::setup_drive;
 use drive::common::setup_contract;
 use drive::drive::batch::GroveDbOpBatch;
 use drive::drive::config::DriveConfig;
@@ -58,6 +57,8 @@ use drive::drive::object_size_info::{DocumentAndContractInfo, OwnedDocumentInfo}
 use drive::drive::Drive;
 use drive::error::{query::QueryError, Error};
 use drive::query::DriveQuery;
+#[cfg(test)]
+use drive::tests::helpers::setup::setup_drive;
 
 use dpp::data_contract::validation::data_contract_validator::DataContractValidator;
 use dpp::document::document_stub::DocumentStub;
@@ -831,7 +832,7 @@ fn test_family_basic_queries() {
     assert_eq!(results.len(), 1);
 
     let (proof_root_hash, proof_results, _) = drive
-        .query_documents_from_contract_as_grove_proof_only_get_elements(
+        .query_proof_of_documents_using_cbor_encoded_query_only_get_elements(
             &contract,
             person_document_type,
             query_cbor.as_slice(),
@@ -872,7 +873,7 @@ fn test_family_basic_queries() {
     assert_eq!(results.len(), 1);
 
     let (proof_root_hash, proof_results, _) = drive
-        .query_documents_from_contract_as_grove_proof_only_get_elements(
+        .query_proof_of_documents_using_cbor_encoded_query_only_get_elements(
             &contract,
             person_document_type,
             query_cbor.as_slice(),
@@ -928,7 +929,7 @@ fn test_family_basic_queries() {
     assert_eq!(results.len(), 1);
 
     let (proof_root_hash, proof_results, _) = drive
-        .query_documents_from_contract_as_grove_proof_only_get_elements(
+        .query_proof_of_documents_using_cbor_encoded_query_only_get_elements(
             &contract,
             person_document_type,
             query_cbor.as_slice(),
@@ -971,7 +972,7 @@ fn test_family_basic_queries() {
     assert_eq!(results.len(), 1);
 
     let (proof_root_hash, proof_results, _) = drive
-        .query_documents_from_contract_as_grove_proof_only_get_elements(
+        .query_proof_of_documents_using_cbor_encoded_query_only_get_elements(
             &contract,
             person_document_type,
             query_cbor.as_slice(),
@@ -1022,7 +1023,7 @@ fn test_family_basic_queries() {
     assert_eq!(results.len(), 0);
 
     let (proof_root_hash, proof_results, _) = drive
-        .query_documents_from_contract_as_grove_proof_only_get_elements(
+        .query_proof_of_documents_using_cbor_encoded_query_only_get_elements(
             &contract,
             person_document_type,
             query_cbor.as_slice(),
@@ -1062,7 +1063,7 @@ fn test_family_basic_queries() {
     assert_eq!(results.len(), 1);
 
     let (proof_root_hash, proof_results, _) = drive
-        .query_documents_from_contract_as_grove_proof_only_get_elements(
+        .query_proof_of_documents_using_cbor_encoded_query_only_get_elements(
             &contract,
             person_document_type,
             query_cbor.as_slice(),
@@ -1890,7 +1891,7 @@ fn test_family_basic_queries() {
         serializer::value_to_cbor(query_value, None).expect("expected to serialize to cbor");
 
     let (results, _, _) = drive
-        .query_documents_from_contract_cbor(
+        .query_raw_documents_from_contract_cbor_using_cbor_encoded_query_with_cost(
             query_cbor.as_slice(),
             contract_cbor.as_slice(),
             String::from("contact"),
@@ -3008,7 +3009,7 @@ fn test_dpns_insertion_no_aliases() {
     assert_eq!(result.0.len(), 15);
 
     let (proof_root_hash, proof_results, _) = drive
-        .query_documents_from_contract_as_grove_proof_only_get_elements(
+        .query_proof_of_documents_using_cbor_encoded_query_only_get_elements(
             &contract,
             domain_document_type,
             query_cbor.as_slice(),
@@ -3060,7 +3061,7 @@ fn test_dpns_insertion_with_aliases() {
     assert_eq!(result.0.len(), 24);
 
     let (proof_root_hash, proof_results, _) = drive
-        .query_documents_from_contract_as_grove_proof_only_get_elements(
+        .query_proof_of_documents_using_cbor_encoded_query_only_get_elements(
             &contract,
             domain_document_type,
             query_cbor.as_slice(),

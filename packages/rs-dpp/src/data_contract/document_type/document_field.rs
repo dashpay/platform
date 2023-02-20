@@ -263,7 +263,7 @@ impl DocumentFieldType {
     fn read_varint_value(buf: &mut BufReader<&[u8]>) -> Result<Option<Vec<u8>>, ProtocolError> {
         let bytes: usize = buf.read_varint().map_err(|_| {
             ProtocolError::DataContractError(DataContractError::CorruptedSerialization(
-                "error reading from serialized document",
+                "error reading varint length from serialized document",
             ))
         })?;
         if bytes == 0 {
@@ -272,7 +272,7 @@ impl DocumentFieldType {
             let mut value: Vec<u8> = vec![0u8; bytes];
             buf.read_exact(&mut value).map_err(|_| {
                 ProtocolError::DataContractError(DataContractError::CorruptedSerialization(
-                    "error reading from serialized document",
+                    "error reading varint from serialized document",
                 ))
             })?;
             Ok(Some(value))

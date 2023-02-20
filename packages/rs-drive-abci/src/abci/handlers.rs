@@ -38,7 +38,6 @@ use crate::abci::messages::{
 };
 use crate::block::{BlockExecutionContext, BlockStateInfo};
 use crate::execution::fee_pools::epoch::EpochInfo;
-use drive::fee::epoch::GENESIS_EPOCH_INDEX;
 use drive::grovedb::TransactionArg;
 
 use crate::error::execution::ExecutionError;
@@ -136,12 +135,25 @@ impl TenderdashAbci for Platform {
             hpmn_count: request.total_hpmns,
         };
 
+        // If last synced Core block height is not set instead of scanning
+        // number of blocks for asset unlock transactions scan only one
+        // on Core chain locked height by setting last_synced_core_height to the same value
+        let last_synced_core_height = if request.last_synced_core_height == 0 {
+            block_execution_context.block_info.core_chain_locked_height
+        } else {
+            request.last_synced_core_height
+        };
+
         self.block_execution_context
             .replace(Some(block_execution_context));
 
+        self.update_broadcasted_withdrawal_transaction_statuses(
+            last_synced_core_height,
+            transaction,
+        )?;
+
         let unsigned_withdrawal_transaction_bytes = self
             .fetch_and_prepare_unsigned_withdrawal_transactions(
-                request.block_height as u32,
                 request.validator_set_quorum_hash,
                 transaction,
             )?;
@@ -167,6 +179,8 @@ impl TenderdashAbci for Platform {
                 "block execution context must be set in block begin handler",
             ),
         ))?;
+
+        self.pool_withdrawals_into_transactions_queue(transaction)?;
 
         // Process fees
         let process_block_fees_outcome = self.process_block_fees(
@@ -230,18 +244,32 @@ impl TenderdashAbci for Platform {
 mod tests {
     mod handlers {
         use crate::abci::handlers::TenderdashAbci;
+        use crate::config::PlatformConfig;
+        use crate::rpc::core::MockCoreRPCLike;
         use chrono::{Duration, Utc};
+        use dashcore::hashes::hex::FromHex;
+        use dashcore::BlockHash;
+        use dpp::contracts::withdrawals_contract;
+        use dpp::data_contract::DriveContractExt;
+        use dpp::identity::state_transition::identity_credit_withdrawal_transition::Pooling;
+        use dpp::prelude::Identifier;
+        use dpp::system_data_contracts::{load_system_data_contract, SystemDataContract};
+        use dpp::tests::fixtures::get_withdrawal_document_fixture;
+        use dpp::util::hash;
         use drive::common::helpers::identities::create_test_masternode_identities;
-        use drive::drive::batch::GroveDbOpBatch;
+        use drive::drive::block_info::BlockInfo;
+        use drive::drive::identity::withdrawals::WithdrawalTransactionIdAndBytes;
         use drive::fee::epoch::CreditsPerEpoch;
+        use drive::fee_pools::epochs::Epoch;
+        use drive::tests::helpers::setup::setup_document;
         use rust_decimal::prelude::ToPrimitive;
+        use serde_json::json;
         use std::cmp::Ordering;
         use std::ops::Div;
 
         use crate::abci::messages::{
             AfterFinalizeBlockRequest, BlockBeginRequest, BlockEndRequest, BlockFees,
         };
-        use crate::config::PlatformConfig;
         use crate::test::fixture::abci::static_init_chain_request;
         use crate::test::helpers::fee_pools::create_test_masternode_share_identities_and_documents;
         use crate::test::helpers::setup::setup_platform_raw;
@@ -250,11 +278,13 @@ mod tests {
 
         #[test]
         fn test_abci_flow() {
-            let platform = setup_platform_raw(Some(PlatformConfig {
-                drive_config: Default::default(),
+            let mut platform = setup_platform_raw(Some(PlatformConfig {
                 verify_sum_trees: false,
                 ..Default::default()
             }));
+
+            let mut core_rpc_mock = MockCoreRPCLike::new();
+
             let transaction = platform.drive.grove.start_transaction();
 
             // init chain
@@ -264,21 +294,63 @@ mod tests {
                 .init_chain(init_chain_request, Some(&transaction))
                 .expect("should init chain");
 
+            let data_contract = load_system_data_contract(SystemDataContract::Withdrawals)
+                .expect("to load system data contract");
+
             // Init withdrawal requests
-            let withdrawals = (0..16)
+            let withdrawals: Vec<WithdrawalTransactionIdAndBytes> = (0..16)
                 .map(|index: u64| (index.to_be_bytes().to_vec(), vec![index as u8; 32]))
                 .collect();
 
-            let mut batch = GroveDbOpBatch::new();
+            let owner_id = Identifier::new([1u8; 32]);
+
+            for (_, tx_bytes) in withdrawals.iter() {
+                let tx_id = hash::hash(tx_bytes);
+
+                let document = get_withdrawal_document_fixture(
+                    &data_contract,
+                    owner_id,
+                    json!({
+                        "amount": 1000,
+                        "coreFeePerByte": 1,
+                        "pooling": Pooling::Never,
+                        "outputScript": (0..23).collect::<Vec<u8>>(),
+                        "status": withdrawals_contract::WithdrawalStatus::POOLED,
+                        "transactionIndex": 1,
+                        "transactionSignHeight": 93,
+                        "transactionId": tx_id,
+                    }),
+                );
+
+                let document_type = data_contract
+                    .document_type_for_name(withdrawals_contract::document_types::WITHDRAWAL)
+                    .expect("expected to get document type");
+
+                setup_document(
+                    &platform.drive,
+                    &document,
+                    &data_contract,
+                    document_type,
+                    Some(&transaction),
+                );
+            }
+
+            let block_info = BlockInfo {
+                time_ms: 1,
+                height: 1,
+                epoch: Epoch::new(1),
+            };
+
+            let mut drive_operations = vec![];
 
             platform
                 .drive
-                .add_enqueue_withdrawal_transaction_operations(&mut batch, withdrawals);
+                .add_enqueue_withdrawal_transaction_operations(&withdrawals, &mut drive_operations);
 
             platform
                 .drive
-                .grove_apply_batch(batch, true, Some(&transaction))
-                .expect("to apply batch");
+                .apply_drive_operations(drive_operations, true, &block_info, Some(&transaction))
+                .expect("to apply drive operations");
 
             // setup the contract
             let contract = platform.create_mn_shares_contract(Some(&transaction));
@@ -317,6 +389,23 @@ mod tests {
 
             let mut previous_block_time_ms: Option<u64> = None;
 
+            core_rpc_mock
+                .expect_get_block_hash()
+                // .times(total_days)
+                .returning(|_| {
+                    Ok(BlockHash::from_hex(
+                        "0000000000000000000000000000000000000000000000000000000000000000",
+                    )
+                    .unwrap())
+                });
+
+            core_rpc_mock
+                .expect_get_block_json()
+                // .times(total_days)
+                .returning(|_| Ok(json!({})));
+
+            platform.core_rpc = Box::new(core_rpc_mock);
+
             // process blocks
             for day in 0..total_days {
                 for block_num in 0..blocks_per_day {
@@ -345,6 +434,8 @@ mod tests {
                             .unwrap(),
                         proposed_app_version: 1,
                         validator_set_quorum_hash: Default::default(),
+                        last_synced_core_height: 1,
+                        core_chain_locked_height: 1,
                         total_hpmns: proposers_count as u32,
                     };
 
@@ -469,11 +560,30 @@ mod tests {
         fn test_chain_halt_for_36_days() {
             // TODO refactor to remove code duplication
 
-            let platform = setup_platform_raw(Some(PlatformConfig {
-                drive_config: Default::default(),
+            let mut platform = setup_platform_raw(Some(PlatformConfig {
                 verify_sum_trees: false,
                 ..Default::default()
             }));
+
+            let mut core_rpc_mock = MockCoreRPCLike::new();
+
+            core_rpc_mock
+                .expect_get_block_hash()
+                // .times(1) // TODO: investigate why it always n + 1
+                .returning(|_| {
+                    Ok(BlockHash::from_hex(
+                        "0000000000000000000000000000000000000000000000000000000000000000",
+                    )
+                    .unwrap())
+                });
+
+            core_rpc_mock
+                .expect_get_block_json()
+                // .times(1) // TODO: investigate why it always n + 1
+                .returning(|_| Ok(json!({})));
+
+            platform.core_rpc = Box::new(core_rpc_mock);
+
             let transaction = platform.drive.grove.start_transaction();
 
             // init chain
@@ -544,6 +654,8 @@ mod tests {
                             .unwrap(),
                         proposed_app_version: 1,
                         validator_set_quorum_hash: Default::default(),
+                        last_synced_core_height: 1,
+                        core_chain_locked_height: 1,
                         total_hpmns: proposers_count as u32,
                     };
 
