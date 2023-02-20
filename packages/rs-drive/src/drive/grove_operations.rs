@@ -93,8 +93,8 @@ fn push_drive_operation_result_optional<T>(
     value.map_err(Error::GroveDB)
 }
 
-pub type _EstimatedIntermediateFlagSizes = IntMap<u32>;
-pub type _EstimatedValueSize = u32;
+pub type EstimatedIntermediateFlagSizes = IntMap<u32>;
+pub type EstimatedValueSize = u32;
 pub type IsSubTree = bool;
 pub type IsSumSubTree = bool;
 pub type IsSumTree = bool;

@@ -229,7 +229,7 @@ mod tests {
         } = run_chain_for_strategy(2000, hour_in_ms, strategy.clone(), config.clone(), 15);
         {
             let drive_cache = platform.drive.cache.borrow_mut();
-            let _counter = drive_cache
+            let counter = drive_cache
                 .protocol_versions_counter
                 .as_ref()
                 .expect("expected a version counter");
