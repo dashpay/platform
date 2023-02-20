@@ -191,10 +191,10 @@ impl Platform {
         ))
     }
 
-    fn register_dpns_top_level_domain_operations<'a, 'b>(
+    fn register_dpns_top_level_domain_operations<'a>(
         &self,
         contract: &'a DataContract,
-        operations: &'b mut Vec<DriveOperationType<'a>>,
+        operations: &mut Vec<DriveOperationType<'a>>,
     ) -> Result<(), Error> {
         let domain = "dash";
 

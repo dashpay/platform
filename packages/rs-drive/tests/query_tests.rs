@@ -547,47 +547,43 @@ pub fn setup_dpns_test_with_data(path: &str) -> (Drive, Contract) {
 
     let file = File::open(path).expect("should read domains from file");
 
-    for line in io::BufReader::new(file).lines() {
-        if let Ok(domain_json) = line {
-            let domain_json: serde_json::Value =
-                serde_json::from_str(&domain_json).expect("should parse json");
+    for domain_json in io::BufReader::new(file).lines().flatten() {
+        let domain_json: serde_json::Value =
+            serde_json::from_str(&domain_json).expect("should parse json");
 
-            let domain_cbor = serializer::value_to_cbor(
-                domain_json,
-                Some(drive::drive::defaults::PROTOCOL_VERSION),
-            )
-            .expect("expected to serialize to cbor");
+        let domain_cbor =
+            serializer::value_to_cbor(domain_json, Some(drive::drive::defaults::PROTOCOL_VERSION))
+                .expect("expected to serialize to cbor");
 
-            let domain = DocumentStub::from_cbor(&domain_cbor, None, None)
-                .expect("expected to deserialize the document");
+        let domain = DocumentStub::from_cbor(&domain_cbor, None, None)
+            .expect("expected to deserialize the document");
 
-            let document_type = contract
-                .document_type_for_name("domain")
-                .expect("expected to get document type");
+        let document_type = contract
+            .document_type_for_name("domain")
+            .expect("expected to get document type");
 
-            let storage_flags = Some(Cow::Owned(StorageFlags::SingleEpoch(0)));
+        let storage_flags = Some(Cow::Owned(StorageFlags::SingleEpoch(0)));
 
-            drive
-                .add_document_for_contract(
-                    DocumentAndContractInfo {
-                        owned_document_info: OwnedDocumentInfo {
-                            document_info: DocumentRefAndSerialization((
-                                &domain,
-                                &domain_cbor,
-                                storage_flags,
-                            )),
-                            owner_id: None,
-                        },
-                        contract: &contract,
-                        document_type,
+        drive
+            .add_document_for_contract(
+                DocumentAndContractInfo {
+                    owned_document_info: OwnedDocumentInfo {
+                        document_info: DocumentRefAndSerialization((
+                            &domain,
+                            &domain_cbor,
+                            storage_flags,
+                        )),
+                        owner_id: None,
                     },
-                    false,
-                    BlockInfo::genesis(),
-                    true,
-                    Some(&db_transaction),
-                )
-                .expect("expected to insert a document successfully");
-        }
+                    contract: &contract,
+                    document_type,
+                },
+                false,
+                BlockInfo::genesis(),
+                true,
+                Some(&db_transaction),
+            )
+            .expect("expected to insert a document successfully");
     }
     drive
         .grove

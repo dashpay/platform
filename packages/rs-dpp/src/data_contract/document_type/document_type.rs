@@ -138,8 +138,8 @@ impl DocumentType {
         bytes
     }
 
-    pub fn serialize_value_for_key<'a>(
-        &'a self,
+    pub fn serialize_value_for_key(
+        &self,
         key: &str,
         value: &Value,
     ) -> Result<Vec<u8>, ProtocolError> {

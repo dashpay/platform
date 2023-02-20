@@ -93,8 +93,8 @@ fn push_drive_operation_result_optional<T>(
     value.map_err(Error::GroveDB)
 }
 
-pub type EstimatedIntermediateFlagSizes = IntMap<u32>;
-pub type EstimatedValueSize = u32;
+pub type _EstimatedIntermediateFlagSizes = IntMap<u32>;
+pub type _EstimatedValueSize = u32;
 pub type IsSubTree = bool;
 pub type IsSumSubTree = bool;
 pub type IsSumTree = bool;
@@ -791,9 +791,9 @@ impl Drive {
 
     /// Pushes an "insert empty tree where path key does not yet exist" operation to `drive_operations`.
     /// Will also check the current drive operations
-    pub(crate) fn batch_insert_empty_tree_if_not_exists<'a, 'c, const N: usize>(
-        &'a self,
-        path_key_info: PathKeyInfo<'c, N>,
+    pub(crate) fn batch_insert_empty_tree_if_not_exists<const N: usize>(
+        &self,
+        path_key_info: PathKeyInfo<N>,
         storage_flags: Option<&StorageFlags>,
         apply_type: BatchInsertTreeApplyType,
         transaction: TransactionArg,
@@ -1063,12 +1063,10 @@ impl Drive {
     /// Pushes an "insert empty tree where path key does not yet exist" operation to `drive_operations`.
     /// Will also check the current drive operations
     pub(crate) fn batch_insert_empty_tree_if_not_exists_check_existing_operations<
-        'a,
-        'c,
         const N: usize,
     >(
-        &'a self,
-        path_key_info: PathKeyInfo<'c, N>,
+        &self,
+        path_key_info: PathKeyInfo<N>,
         storage_flags: Option<&StorageFlags>,
         apply_type: BatchInsertTreeApplyType,
         transaction: TransactionArg,
@@ -1223,9 +1221,9 @@ impl Drive {
 
     /// Pushes an "insert element if the path key does not yet exist" operation to `drive_operations`.
     /// Returns true if the path key already exists without references.
-    pub(crate) fn batch_insert_if_not_exists<'a, 'c, const N: usize>(
-        &'a self,
-        path_key_element_info: PathKeyElementInfo<'c, N>,
+    pub(crate) fn batch_insert_if_not_exists<const N: usize>(
+        &self,
+        path_key_element_info: PathKeyElementInfo<N>,
         apply_type: BatchInsertApplyType,
         transaction: TransactionArg,
         drive_operations: &mut Vec<DriveOperation>,
@@ -1321,9 +1319,9 @@ impl Drive {
 
     /// Pushes an "insert element if element was changed or is new" operation to `drive_operations`.
     /// Returns true if the path key already exists without references.
-    pub(crate) fn batch_insert_if_changed_value<'a, 'c, const N: usize>(
-        &'a self,
-        path_key_element_info: PathKeyElementInfo<'c, N>,
+    pub(crate) fn batch_insert_if_changed_value<const N: usize>(
+        &self,
+        path_key_element_info: PathKeyElementInfo<N>,
         apply_type: BatchInsertApplyType,
         transaction: TransactionArg,
         drive_operations: &mut Vec<DriveOperation>,
@@ -1486,10 +1484,10 @@ impl Drive {
     }
 
     /// Pushes a "delete up tree while empty" operation to `drive_operations`.
-    pub(crate) fn batch_delete_up_tree_while_empty<'a, 'c>(
-        &'a self,
+    pub(crate) fn batch_delete_up_tree_while_empty(
+        &self,
         path: KeyInfoPath,
-        key: &'c [u8],
+        key: &[u8],
         stop_path_height: Option<u16>,
         apply_type: BatchDeleteUpTreeApplyType,
         transaction: TransactionArg,
