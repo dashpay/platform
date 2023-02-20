@@ -534,21 +534,17 @@ impl StateRepositoryLike for ExternalStateRepositoryLikeWrapper {
         Ok(Some(height as u32))
     }
 
-    async fn fetch_latest_platform_block_height(&self) -> Result<Option<u32>> {
-        let maybe_height = self
+    async fn fetch_latest_platform_block_height(&self) -> Result<u32> {
+        let height = self
             .0
             .fetch_latest_platform_block_height()
             .await
             .map_err(from_js_error)?;
 
-        if maybe_height.is_undefined() {
-            return Ok(None);
-        }
-
-        let height = maybe_height
+        let height = height
             .as_f64()
             .ok_or_else(|| anyhow!("Value is not a number"))?;
-        Ok(Some(height as u32))
+        Ok(height as u32)
     }
 
     async fn verify_instant_lock(

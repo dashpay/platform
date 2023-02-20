@@ -43,8 +43,7 @@ where
     let block_height = context
         .state_repository
         .fetch_latest_platform_block_height()
-        .await?
-        .unwrap_or_default() as i64;
+        .await? as i64;
 
     let enable_at_height = data.get_i64(PROPERTY_ENABLE_AT_HEIGHT)?;
 

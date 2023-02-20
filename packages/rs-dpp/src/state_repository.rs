@@ -215,5 +215,5 @@ pub trait StateRepositoryLike: Sync {
     async fn fetch_latest_platform_core_chain_locked_height(&self) -> AnyResult<Option<u32>>;
 
     // Get latest platform block height
-    async fn fetch_latest_platform_block_height(&self) -> AnyResult<Option<u32>>;
+    async fn fetch_latest_platform_block_height(&self) -> AnyResult<u32>;
 }
