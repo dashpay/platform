@@ -11,6 +11,7 @@ logips={{=it.core.logIps }}
 server=1
 rpcuser={{=it.core.rpc.user}}
 rpcpassword={{=it.core.rpc.password}}
+rpcwallet=main
 
 {{~it.core.rpc.allowIps :host}}
 rpcallowip={{=host}}{{~}}
