@@ -15,6 +15,7 @@ const {
   NODE_TYPE_MASTERNODE,
   PRESET_MAINNET,
   NODE_TYPE_HPMN,
+  NODE_TYPE_FULLNODE,
 } = require('../../../constants');
 
 /**
@@ -60,7 +61,11 @@ function setupRegularPresetTaskFactory(
                   + ' should'
                   + ' explain their purpose and costs\n',
                 message: 'Select node type',
-                choices: NODE_TYPES, // TODO: message and value
+                choices: [
+                  { name: NODE_TYPE_MASTERNODE },
+                  { name: NODE_TYPE_HPMN, message: 'high-performance masternode' },
+                  { name: NODE_TYPE_FULLNODE },
+                ],
                 initial: NODE_TYPE_HPMN,
               },
             ]);
