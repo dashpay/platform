@@ -31,8 +31,8 @@ async function registerMasternode(
 
   const ipAndPort = `${config.get('externalIp', true)}:${config.get('core.p2p.port')}`;
 
-  const { result: proRegTxId } = await coreService.getRpcClient().protx(
-    'register',
+  const proTxArgs = [
+    hp ? 'register_hpnm' : 'register',
     collateralHash, // The txid of the 1000 Dash collateral funding transaction
     parseInt(collateralOutputIndex, 10), // The output index of the 1000 Dash funding transaction
     ipAndPort, // Masternode IP address and port, in the format x.x.x.x:yyyy
@@ -41,7 +41,24 @@ async function registerMasternode(
     ownerAddress, // The new Dash address, or the address of a delegate, used for proposal voting
     operatorReward, // The percentage of the block reward allocated to the operator as payment
     fundSourceAddress, // A new or existing Dash address to receive the owner’s masternode rewards
+  ];
+
+  if (hp) {
+    const nodeKeyId = config.get('platform.drive.tenderdash.node.id');
+    const tenderdashP2PPort = config.get('platform.drive.tenderdash.p2p.port');
+    const dapiPort = config.get('platform.dapi.envoy.http.port');
+
+    proTxArgs.push(nodeKeyId);
+    proTxArgs.push(tenderdashP2PPort);
+    proTxArgs.push(dapiPort);
+  }
+
+  proTxArgs.push(
     { wallet: 'main' },
+  );
+
+  const { result: proRegTxId } = await coreService.getRpcClient().protx(
+    ...proTxArgs,
   );
 
   return proRegTxId;
