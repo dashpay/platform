@@ -429,6 +429,14 @@ module.exports = {
           } else {
             config.platform.drive.tenderdash.moniker = null;
           }
+
+          config.platform.drive.tenderdash.node = {
+            id: config.platform.drive.tenderdash.nodeId,
+            key: config.platform.drive.tenderdash.nodeKey,
+          };
+
+          delete config.platform.drive.tenderdash.nodeId;
+          delete config.platform.drive.tenderdash.nodeKey;
         }
       });
 
