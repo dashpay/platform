@@ -36,8 +36,10 @@ function enableCoreQuorumsTaskFactory(generateBlocks) {
           ctx.expectedJustifications = 0;
           ctx.expectedComplaints = 0;
 
-          ctx.masternodeRpcClients = ctx.coreServices
-            .filter((coreService) => coreService.getConfig().getName() !== 'local_seed')
+          ctx.masternodeCoreServices = ctx.coreServices
+            .filter((coreService) => coreService.getConfig().getName() !== 'local_seed');
+
+          ctx.masternodeRpcClients = ctx.masternodeCoreServices
             .map((coreService) => coreService.getRpcClient());
         },
       },
@@ -269,8 +271,9 @@ function enableCoreQuorumsTaskFactory(generateBlocks) {
           // eslint-disable-next-line prefer-destructuring
           ctx.quorumHash = quorumList[LLMQ_TYPE_TEST][0];
 
-          // TODO: We need to take quorum type from config
-          const { result: quorumInfo } = await ctx.seedRpcClient.quorum('info', 100, ctx.quorumHash);
+          const llmqType = ctx.masternodeCoreServices[0].getConfig().get('platform.drive.abci.validatorSet.llmqType');
+
+          const { result: quorumInfo } = await ctx.seedRpcClient.quorum('info', llmqType, ctx.quorumHash);
 
           // Mine 8 (SIGN_HEIGHT_OFFSET) more blocks to make sure
           // that the new quorum gets eligable for signing sessions
