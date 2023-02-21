@@ -68,6 +68,7 @@ pub mod property_names {
 /// Documents contain the data that goes into data contracts.
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
 pub struct Document {
+    //todo: add an optional version
     /// The unique document ID.
     #[serde(rename = "$id")]
     pub id: [u8; 32],
@@ -178,6 +179,18 @@ impl Document {
             ))
         })?;
         self.get_raw_for_document_type(key, document_type, owner_id)
+    }
+
+    /// Set the value under given path.
+    /// The path supports syntax from `lodash` JS lib. Example: "root.people[0].name".
+    /// If parents are not present they will be automatically created
+    pub fn set(&mut self, path: &str, value: Value) {
+        self.properties.insert(path.to_string(), value);
+    }
+
+    /// Retrieves field specified by path
+    pub fn get(&self, path: &str) -> Option<&Value> {
+        self.properties.get(path)
     }
 }
 

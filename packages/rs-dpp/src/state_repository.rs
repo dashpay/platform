@@ -11,6 +11,7 @@ use crate::{
     prelude::*,
     state_transition::state_transition_execution_context::StateTransitionExecutionContext,
 };
+use crate::document::Document;
 
 impl From<Infallible> for ProtocolError {
     fn from(_: Infallible) -> Self {
@@ -68,14 +69,14 @@ pub trait StateRepositoryLike: Sync {
     /// Create Document
     async fn create_document(
         &self,
-        document: &DocumentInStateTransition,
+        document: &Document,
         execution_context: &StateTransitionExecutionContext,
     ) -> AnyResult<()>;
 
     /// Update Document
     async fn update_document(
         &self,
-        document: &DocumentInStateTransition,
+        document: &Document,
         execution_context: &StateTransitionExecutionContext,
     ) -> AnyResult<()>;
 

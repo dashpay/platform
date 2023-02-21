@@ -3,7 +3,7 @@ use std::collections::HashMap;
 use dashcore::{consensus, BlockHeader};
 use serde_json::Value;
 
-use crate::document::DocumentInStateTransition;
+use crate::document::{Document, DocumentInStateTransition};
 use crate::{
     document::errors::DocumentError, prelude::Identifier, state_repository::StateRepositoryLike,
     state_transition::StateTransitionLike, ProtocolError,
@@ -114,33 +114,6 @@ pub async fn apply_documents_batch_transition(
         };
     }
     Ok(())
-}
-fn document_from_transition_create(
-    document_create_transition: &DocumentCreateTransition,
-    state_transition: &DocumentsBatchTransition,
-) -> DocumentInStateTransition {
-    // TODO cloning is costly. Probably the [`Document`] should have properties of type `Cov<'a, K>`
-    DocumentInStateTransition {
-        protocol_version: state_transition.protocol_version,
-        id: document_create_transition.base.id,
-        document_type: document_create_transition.base.document_type.clone(),
-        data_contract_id: document_create_transition.base.data_contract_id,
-        owner_id: state_transition.owner_id,
-        data: document_create_transition
-            .data
-            .as_ref()
-            .unwrap_or(&serde_json::Value::Null)
-            .clone(),
-        created_at: document_create_transition.created_at,
-        updated_at: document_create_transition.updated_at,
-        entropy: document_create_transition.entropy,
-        revision: document_create_transition.get_revision(),
-        metadata: None,
-
-        //? In the JS implementation the `data_contract` property is completely omitted, what suggest we should make
-        //? it optional. On the other end the `data_contract` seems obligatory as it's used by methods like `get_binary_properties()`
-        data_contract: Default::default(),
-    }
 }
 
 fn document_from_transition_replace(

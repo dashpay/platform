@@ -17,11 +17,6 @@ pub trait CborBTreeMapHelper {
     fn get_optional_integer<T: TryFrom<i128>>(&self, key: &str)
         -> Result<Option<T>, ProtocolError>;
     fn get_integer<T: TryFrom<i128>>(&self, key: &str) -> Result<T, ProtocolError>;
-    fn remove_optional_integer<T: TryFrom<i128>>(
-        &mut self,
-        key: &str,
-    ) -> Result<Option<T>, ProtocolError>;
-    fn remove_integer<T: TryFrom<i128>>(&mut self, key: &str) -> Result<T, ProtocolError>;
     fn get_optional_bool(&self, key: &str) -> Result<Option<bool>, ProtocolError>;
     fn get_bool(&self, key: &str) -> Result<bool, ProtocolError>;
     fn get_optional_inner_value_array<'a, I: FromIterator<&'a CborValue>>(
@@ -147,36 +142,6 @@ where
         })
     }
 
-    fn remove_optional_integer<T: TryFrom<i128>>(
-        &mut self,
-        key: &str,
-    ) -> Result<Option<T>, ProtocolError> {
-        self.remove(key)
-            .map(|v| {
-                if v.borrow().is_null() {
-                    Ok::<Option<Result<T, ProtocolError>>, ProtocolError>(None)
-                } else {
-                    Ok(Some(
-                        i128::from(v.borrow().as_integer().ok_or_else(|| {
-                            ProtocolError::DecodingError(format!("{key} must be an integer"))
-                        })?)
-                        .try_into()
-                        .map_err(|_| {
-                            ProtocolError::DecodingError(format!("{key} is out of required bounds"))
-                        }),
-                    ))
-                }
-            })
-            .transpose()?
-            .flatten()
-            .transpose()
-    }
-
-    fn remove_integer<T: TryFrom<i128>>(&mut self, key: &str) -> Result<T, ProtocolError> {
-        self.remove_optional_integer(key)?
-            .ok_or_else(|| ProtocolError::DecodingError(format!("unable to remove property {key}")))
-    }
-
     fn get_optional_bool(&self, key: &str) -> Result<Option<bool>, ProtocolError> {
         self.get(key)
             .map(|v| {
@@ -199,14 +164,22 @@ where
     ) -> Result<Option<T>, ProtocolError> {
         self.remove(key)
             .map(|v| {
-                i128::from(v.borrow().as_integer().ok_or_else(|| {
-                    ProtocolError::DecodingError(format!("{key} must be an integer"))
-                })?)
-                .try_into()
-                .map_err(|_| {
-                    ProtocolError::DecodingError(format!("{key} is out of required bounds"))
-                })
+                if v.borrow().is_null() {
+                    Ok::<Option<Result<T, ProtocolError>>, ProtocolError>(None)
+                } else {
+                    Ok(Some(
+                        i128::from(v.borrow().as_integer().ok_or_else(|| {
+                            ProtocolError::DecodingError(format!("{key} must be an integer"))
+                        })?)
+                            .try_into()
+                            .map_err(|_| {
+                                ProtocolError::DecodingError(format!("{key} is out of required bounds"))
+                            }),
+                    ))
+                }
             })
+            .transpose()?
+            .flatten()
             .transpose()
     }
 

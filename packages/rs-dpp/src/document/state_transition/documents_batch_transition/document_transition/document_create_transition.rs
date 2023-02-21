@@ -6,6 +6,9 @@ use crate::{
     data_contract::DataContract, document::document_transition::Action, errors::ProtocolError,
     util::json_value::JsonValueExt, util::json_value::ReplaceWith,
 };
+use crate::document::{Document, DocumentsBatchTransition};
+use crate::identity::TimestampMillis;
+use crate::util::serializer::value_to_cbor;
 
 use super::INITIAL_REVISION;
 use super::{
@@ -30,9 +33,9 @@ pub struct DocumentCreateTransition {
     pub entropy: [u8; 32],
 
     #[serde(rename = "$createdAt", skip_serializing_if = "Option::is_none")]
-    pub created_at: Option<i64>,
+    pub created_at: Option<TimestampMillis>,
     #[serde(rename = "$updatedAt", skip_serializing_if = "Option::is_none")]
-    pub updated_at: Option<i64>,
+    pub updated_at: Option<TimestampMillis>,
 
     #[serde(flatten, skip_serializing_if = "Option::is_none")]
     pub data: Option<serde_json::Value>,
@@ -48,6 +51,29 @@ impl DocumentCreateTransition {
     ) -> Result<(), ProtocolError> {
         raw_create_document_transition.replace_binary_paths(BINARY_FIELDS, ReplaceWith::Base64)?;
         Ok(())
+    }
+
+
+    fn into_document(
+        self,
+        owner_id: [u8;32],
+    ) -> Document {
+        let properties = self.data.map(|value| value_to_cbor(a));
+        Document {
+            id: document_create_transition.base.id,
+            owner_id,
+            properties:
+            data_contract_id: document_create_transition.base.data_contract_id,
+
+            data: document_create_transition
+                .data
+                .as_ref()
+                .unwrap_or(&serde_json::Value::Null)
+                .clone(),
+            created_at: self.created_at,
+            updated_at: self.updated_at,
+            revision: document_create_transition.get_revision(),
+        }
     }
 }
 

@@ -24,7 +24,7 @@ use js_sys::Uint8Array;
 use js_sys::{Array, Number};
 use wasm_bindgen::__rt::Ref;
 
-use dpp::document::DocumentInStateTransition;
+use dpp::document::{Document, DocumentInStateTransition};
 use wasm_bindgen::prelude::*;
 
 use crate::buffer::Buffer;
@@ -275,7 +275,7 @@ impl StateRepositoryLike for ExternalStateRepositoryLikeWrapper {
 
     async fn create_document(
         &self,
-        _document: &DocumentInStateTransition,
+        _document: &Document,
         _execution_context: &StateTransitionExecutionContext,
     ) -> Result<()> {
         todo!()
@@ -283,7 +283,7 @@ impl StateRepositoryLike for ExternalStateRepositoryLikeWrapper {
 
     async fn update_document(
         &self,
-        _document: &DocumentInStateTransition,
+        _document: &Document,
         _execution_context: &StateTransitionExecutionContext,
     ) -> Result<()> {
         todo!()

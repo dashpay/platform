@@ -58,7 +58,7 @@ where
             consensus::deserialize(&latest_platform_block_header_bytes)?;
 
         let document_type = String::from(withdrawals_contract::document_types::WITHDRAWAL);
-        let document_created_at_millis: i64 = latest_platform_block_header.time as i64 * 1000i64;
+        let document_created_at_millis: u64 = latest_platform_block_header.time as u64 * 1000u64;
 
         let document_data = json!({
             withdrawals_contract::property_names::AMOUNT: state_transition.amount,
@@ -101,18 +101,12 @@ where
 
         // TODO: use DocumentFactory once it is complete
         let withdrawal_document = Document {
-            protocol_version: state_transition.protocol_version,
-            id: document_id,
-            document_type,
+            id: document_id.buffer,
             revision: 0,
-            data_contract_id: *data_contract_id,
             owner_id: state_transition.identity_id,
             created_at: Some(document_created_at_millis),
-            updated_at: Some(document_created_at_millis),
-            data: document_data,
-            data_contract: withdrawals_data_contract,
-            metadata: None,
-            entropy: [0; 32],
+            updated_at: Some(document_created_at_millis), ,
+            properties: Default::default(),
         };
 
         self.state_repository

@@ -10,6 +10,7 @@ use crate::get_from_transition;
 use crate::prelude::DocumentTransition;
 use crate::prelude::Identifier;
 use crate::state_repository::StateRepositoryLike;
+use crate::util::cbor_value::CborBTreeMapHelper;
 
 pub async fn delete_withdrawal_data_trigger<'a, SR>(
     document_transition: &DocumentTransition,
@@ -56,11 +57,7 @@ where
         return Ok(result);
     };
 
-    let status = withdrawal
-        .get("status")
-        .ok_or_else(|| anyhow!("can't get withdrawal status property from the document"))?
-        .as_u64()
-        .ok_or_else(|| anyhow!("can't convert withdrawal status to u64"))? as u8;
+    let status : u8 = withdrawal.properties.get_integer("status")?;
 
     if status != withdrawals_contract::WithdrawalStatus::COMPLETE as u8
         || status != withdrawals_contract::WithdrawalStatus::EXPIRED as u8
