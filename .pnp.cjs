@@ -7710,6 +7710,7 @@ function $$SETUP_STATE(hydrateRuntimeState, basePath) {
             ["dockerode", "npm:3.3.1"],\
             ["dot", "npm:1.1.3"],\
             ["dotenv", "npm:8.6.0"],\
+            ["ed25519-hd-key", "npm:1.3.0"],\
             ["enquirer", "npm:2.3.6"],\
             ["eslint", "npm:7.32.0"],\
             ["eslint-config-airbnb-base", "virtual:12a596dc9572e25ce715d3736dc74b317c5ca5cfb3b4f67864b1e76b3a401006f84d381aaf975bb5b4da9cafac5125e6869fc78d5202f4c95780c81479112f32#npm:14.2.1"],\
@@ -8328,6 +8329,17 @@ function $$SETUP_STATE(hydrateRuntimeState, basePath) {
           "packageLocation": "./.yarn/cache/duplexer3-npm-0.1.5-343d4ab7e3-e677cb4c48.zip/node_modules/duplexer3/",\
           "packageDependencies": [\
             ["duplexer3", "npm:0.1.5"]\
+          ],\
+          "linkType": "HARD"\
+        }]\
+      ]],\
+      ["ed25519-hd-key", [\
+        ["npm:1.3.0", {\
+          "packageLocation": "./.yarn/cache/ed25519-hd-key-npm-1.3.0-248db2e234-65dcf405f9.zip/node_modules/ed25519-hd-key/",\
+          "packageDependencies": [\
+            ["ed25519-hd-key", "npm:1.3.0"],\
+            ["create-hmac", "npm:1.1.7"],\
+            ["tweetnacl", "npm:1.0.3"]\
           ],\
           "linkType": "HARD"\
         }]\
@@ -17207,6 +17219,13 @@ function $$SETUP_STATE(hydrateRuntimeState, basePath) {
           "packageLocation": "./.yarn/cache/tweetnacl-npm-0.14.5-a3f766c0d1-6061daba17.zip/node_modules/tweetnacl/",\
           "packageDependencies": [\
             ["tweetnacl", "npm:0.14.5"]\
+          ],\
+          "linkType": "HARD"\
+        }],\
+        ["npm:1.0.3", {\
+          "packageLocation": "./.yarn/cache/tweetnacl-npm-1.0.3-b7eef04660-e4a57cac18.zip/node_modules/tweetnacl/",\
+          "packageDependencies": [\
+            ["tweetnacl", "npm:1.0.3"]\
           ],\
           "linkType": "HARD"\
         }]\
