@@ -164,7 +164,26 @@ module.exports = {
           key: null,
         },
         genesis: {
-
+          consensus_params: {
+            block: {
+              max_bytes: '22020096',
+              max_gas: '-1',
+              time_iota_ms: '5000',
+            },
+            evidence: {
+              max_age: '100000',
+              max_age_num_blocks: '100000',
+              max_age_duration: '172800000000000',
+            },
+            validator: {
+              pub_key_types: [
+                'bls12381',
+              ],
+            },
+            version: {
+              app_version: '1',
+            },
+          },
         },
         moniker: null,
       },

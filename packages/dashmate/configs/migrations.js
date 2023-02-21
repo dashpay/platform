@@ -419,12 +419,24 @@ module.exports = {
     return configFile;
   },
   '0.24.0-dev.13': (configFile) => {
+    configFile.configs.base.platform.drive.tenderdash.genesis = systemConfigs.base.platform
+      .drive.tenderdash.genesis;
+
+    configFile.configs.base.platform.drive.tenderdash.genesis = systemConfigs.base.platform
+      .drive.tenderdash.genesis;
+
+    configFile.configs.local.platform.drive.abci.validatorSet.llmqType = systemConfigs.local
+      .platform.drive.abci.validatorSet.llmqType;
+
     Object.entries(configFile.configs)
       .forEach(([configName, config]) => {
         if (config.platform) {
           delete config.platform.dapi.envoy.grpc;
 
           if (config.group === 'local') {
+            config.platform.drive.abci.validatorSet.llmqType = systemConfigs.local
+              .platform.drive.abci.validatorSet.llmqType;
+
             config.platform.drive.tenderdash.moniker = configName;
           } else {
             config.platform.drive.tenderdash.moniker = null;
