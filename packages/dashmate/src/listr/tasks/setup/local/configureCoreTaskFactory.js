@@ -8,7 +8,7 @@ const {
 const waitForNodesToHaveTheSameSporks = require('../../../../core/waitForNodesToHaveTheSameSporks');
 const waitForNodesToHaveTheSameHeight = require('../../../../core/waitForNodesToHaveTheSameHeight');
 
-const { NETWORK_LOCAL, MASTERNODE_DASH_AMOUNT } = require('../../../../constants');
+const { NETWORK_LOCAL, HPMN_COLLATERAL_AMOUNT } = require('../../../../constants');
 
 /**
  * @param {renderServiceTemplates} renderServiceTemplates
@@ -148,7 +148,7 @@ function configureCoreTaskFactory(
             {
               title: 'Generating funds to use as a collateral for masternodes',
               task: () => {
-                const amount = MASTERNODE_DASH_AMOUNT * configGroup.length;
+                const amount = HPMN_COLLATERAL_AMOUNT * configGroup.length;
                 return generateToAddressTask(
                   configGroup.find((c) => c.getName() === 'local_seed'),
                   amount,
