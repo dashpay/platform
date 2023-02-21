@@ -160,7 +160,7 @@ function configureCoreTaskFactory(
               task: async () => {
                 const masternodeConfigs = configGroup.filter((config) => config.get('core.masternode.enable'));
 
-                const subTasks = masternodeConfigs.map((config, masternodeNumber) => ({
+                const subTasks = masternodeConfigs.map((config, index) => ({
                   title: `Register ${config.getName()} masternode`,
                   skip: () => {
                     if (config.get('core.masternode.operator.privateKey')) {
@@ -188,7 +188,7 @@ function configureCoreTaskFactory(
                     },
                     {
                       // first masternode has 10% operatorReward
-                      task: () => registerMasternodeTask(config, masternodeNumber === 0 ? 10 : 0),
+                      task: () => registerMasternodeTask(config, true, index === 0 ? '10.00' : '0.00'),
                     },
                   ]),
                 }));

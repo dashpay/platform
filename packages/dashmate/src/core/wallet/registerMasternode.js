@@ -7,7 +7,7 @@
  * @param {string} ownerAddress
  * @param {string} operatorPublicKey
  * @param {string} fundSourceAddress
- * @param {number} operatorReward
+ * @param {string} operatorReward
  * @param {Config} config
  * @param {boolean} [hp=false]
  * @return {Promise<string>}

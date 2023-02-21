@@ -40,10 +40,10 @@ function registerMasternodeTaskFactory(
    * @typedef {registerMasternodeTask}
    * @param {Config} config
    * @param {boolean} [hp=false] - Register high-performance masternode
-   * @param {number} [operatorReward=0]
+   * @param {string} [operatorReward='0.00']
    * @return {Listr}
    */
-  function registerMasternodeTask(config, hp = false, operatorReward = 0) {
+  function registerMasternodeTask(config, hp = false, operatorReward = '0.00') {
     const collateralAmount = hp ? HPMN_COLLATERAL_AMOUNT : MASTERNODE_COLLATERAL_AMOUNT;
 
     return new Listr([
