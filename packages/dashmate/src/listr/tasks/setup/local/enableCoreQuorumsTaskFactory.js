@@ -269,6 +269,7 @@ function enableCoreQuorumsTaskFactory(generateBlocks) {
           // eslint-disable-next-line prefer-destructuring
           ctx.quorumHash = quorumList[LLMQ_TYPE_TEST][0];
 
+          // TODO: We need to take quorum type from config
           const { result: quorumInfo } = await ctx.seedRpcClient.quorum('info', 100, ctx.quorumHash);
 
           // Mine 8 (SIGN_HEIGHT_OFFSET) more blocks to make sure

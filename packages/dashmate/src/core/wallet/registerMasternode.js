@@ -9,6 +9,7 @@
  * @param {string} fundSourceAddress
  * @param {number} operatorReward
  * @param {Config} config
+ * @param {boolean} [hp=false]
  * @return {Promise<string>}
  */
 async function registerMasternode(
@@ -19,6 +20,7 @@ async function registerMasternode(
   fundSourceAddress,
   operatorReward,
   config,
+  hp = false,
 ) {
   // get collateral index
   const { result: masternodeOutputs } = await coreService.getRpcClient().masternode('outputs', { wallet: 'main' });

@@ -159,13 +159,13 @@ module.exports = {
           level: 'debug',
           format: 'plain',
         },
-        nodeKey: {
-
+        node: {
+          id: null,
+          key: null,
         },
         genesis: {
 
         },
-        nodeId: null,
         moniker: null,
       },
     },

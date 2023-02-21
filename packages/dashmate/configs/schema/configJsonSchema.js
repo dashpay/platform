@@ -478,8 +478,17 @@ module.exports = {
                   required: ['port'],
                   additionalProperties: false,
                 },
-                nodeKey: {
+                node: {
                   type: 'object',
+                  properties: {
+                    id: {
+                      type: ['string', 'null'],
+                    },
+                    key: {
+                      type: ['string', 'null'],
+                    },
+                  },
+                  additionalProperties: false,
                 },
                 moniker: {
                   type: ['string', 'null'],
@@ -487,12 +496,8 @@ module.exports = {
                 genesis: {
                   type: 'object',
                 },
-                nodeId: {
-                  type: ['string', 'null'],
-                },
               },
-              required: ['docker', 'p2p', 'rpc', 'consensus',
-                'nodeKey', 'moniker', 'genesis', 'nodeId'],
+              required: ['docker', 'p2p', 'rpc', 'consensus', 'node', 'moniker', 'genesis'],
               additionalProperties: false,
             },
           },
