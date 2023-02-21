@@ -230,8 +230,22 @@ fn get_wrongly_updated_non_unique_index<'a>(
             for property in
                 new_index_definition.properties[index_definition.properties.len()..].iter()
             {
-                if existing_schema.get_value(&property.name).is_ok() {
-                    return Some(index_definition);
+                if let Some(indices) = existing_schema.get_value("indices").ok() {
+                    let indices_array = indices.as_array().expect("Indices must be an array");
+                    for index in indices_array {
+                        let properties_value = index
+                            .get_value("properties")
+                            .expect("Indices must have properties");
+                        let properties_array = properties_value
+                            .as_array()
+                            .expect("Properties must be an array");
+
+                        for property_to_check in properties_array {
+                            if property_to_check.get_value(&property.name).is_ok() {
+                                return Some(index_definition);
+                            }
+                        }
+                    }
                 }
             }
         }
