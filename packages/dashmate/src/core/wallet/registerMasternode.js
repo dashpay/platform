@@ -49,8 +49,8 @@ async function registerMasternode(
     const platformHttpPort = config.get('platform.dapi.envoy.http.port');
 
     proTxArgs.push(platformNodeId);
-    proTxArgs.push(platformP2PPort);
-    proTxArgs.push(platformHttpPort);
+    proTxArgs.push(platformP2PPort.toString());
+    proTxArgs.push(platformHttpPort.toString());
   }
 
   const { result: proRegTxId } = await coreService.getRpcClient().protx(
