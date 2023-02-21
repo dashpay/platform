@@ -1,7 +1,7 @@
 use dpp::errors::consensus::basic::JsonSchemaError;
 use serde::Serialize;
 use serde_json::Value;
-use std::{fmt::format, ops::Deref};
+use std::ops::Deref;
 
 use dpp::jsonschema::error::{TypeKind, ValidationErrorKind};
 use wasm_bindgen::prelude::*;
@@ -274,7 +274,7 @@ impl JsonSchemaErrorWasm {
     }
 
     #[wasm_bindgen(js_name=toString)]
-    pub fn to_string_js(&self) -> String {
+    pub fn to_string_format(&self) -> String {
         format!("{:#?}", self)
     }
 }

@@ -20,7 +20,6 @@ use wasm_bindgen::prelude::*;
 use crate::{
     bls_adapter::{BlsAdapter, JsBlsAdapter},
     buffer::Buffer,
-    console_log,
     document_batch_transition::document_transition::DocumentTransitionWasm,
     identifier::IdentifierWrapper,
     lodash::lodash_set,
@@ -54,9 +53,6 @@ impl DocumentsBatchTransitionWASM {
         js_raw_transition: JsValue,
         data_contracts: Array,
     ) -> Result<DocumentsBatchTransitionWASM, JsValue> {
-        // remove
-        console_error_panic_hook::set_once();
-
         let data_contracts_array_js = Array::from(&data_contracts);
 
         let mut data_contracts: Vec<DataContract> = vec![];

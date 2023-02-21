@@ -146,7 +146,8 @@ impl Inner for IdentifierWrapper {
     }
 }
 
-/// tries to create identifier from
+// Try to extract Identifier from **stringified** identifier.
+// The `js_value` can be a stringified instance of: `Identifier`, `Buffer` or `Array`
 pub(crate) fn identifier_from_js_value(js_value: &JsValue) -> Result<Identifier, JsValue> {
     if js_value.is_undefined() || js_value.is_null() {
         bail_js!("the identifier cannot be null or undefined")

@@ -278,7 +278,6 @@ impl StateTransitionConvert for DocumentsBatchTransition {
 
     fn to_object(&self, skip_signature: bool) -> Result<JsonValue, ProtocolError> {
         let mut json_object: JsonValue = serde_json::to_value(self)?;
-        // TODO - change serde serialization options
         if self.signature.is_none() {
             json_object.insert(property_names::SIGNATURE.to_string(), JsonValue::Null);
         }
