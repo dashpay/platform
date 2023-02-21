@@ -1,53 +1,49 @@
-use std::convert::TryInto;
-
-use std::sync::Arc;
-
-use wasm_bindgen::prelude::*;
-
-use dpp::identity::validation::PublicKeysValidator;
-use dpp::identity::{Identity, IdentityFacade};
-
 use crate::bls_adapter::BlsAdapter;
 use crate::buffer::Buffer;
 use crate::errors::{from_dpp_err, RustConversionError};
 use crate::identifier::IdentifierWrapper;
 use crate::identity::errors::InvalidIdentityError;
+use crate::identity::validation::IdentityValidatorWasm;
 
-use crate::utils::ToSerdeJSONExt;
-use crate::validation::ValidationResultWasm;
 use crate::{
-    create_asset_lock_proof_from_wasm_instance, with_js_error, ChainAssetLockProofWasm,
+    create_asset_lock_proof_from_wasm_instance, utils, with_js_error, ChainAssetLockProofWasm,
     IdentityCreateTransitionWasm, IdentityTopUpTransitionWasm, IdentityUpdateTransitionWasm,
     IdentityWasm, InstantAssetLockProofWasm,
 };
 use dpp::dashcore::{consensus, InstantLock, Transaction};
+use dpp::identity::factory::IdentityFactory;
 
-use dpp::version::ProtocolVersionValidator;
-use dpp::NonConsensusError;
+use dpp::prelude::Identity;
+
 use serde::Deserialize;
+use serde_json::Value;
+use std::convert::TryInto;
 
-#[derive(Clone)]
-#[wasm_bindgen(js_name=IdentityFacade)]
-pub struct IdentityFacadeWasm(IdentityFacade<BlsAdapter>);
+use std::sync::Arc;
 
-impl IdentityFacadeWasm {
-    pub fn new(
-        protocol_version_validator: Arc<ProtocolVersionValidator>,
-        public_keys_validator: Arc<PublicKeysValidator<BlsAdapter>>,
-    ) -> IdentityFacadeWasm {
-        let identity_facade = IdentityFacade::new(
-            protocol_version_validator.protocol_version(),
-            protocol_version_validator,
-            public_keys_validator,
-        )
-        .unwrap();
+use wasm_bindgen::prelude::wasm_bindgen;
+use wasm_bindgen::JsValue;
 
-        IdentityFacadeWasm(identity_facade)
+#[wasm_bindgen(js_name=IdentityFactory)]
+pub struct IdentityFactoryWasm(IdentityFactory<BlsAdapter>);
+
+impl From<IdentityFactory<BlsAdapter>> for IdentityFactoryWasm {
+    fn from(factory: IdentityFactory<BlsAdapter>) -> Self {
+        Self(factory)
     }
 }
 
-#[wasm_bindgen(js_class=IdentityFacade)]
-impl IdentityFacadeWasm {
+#[wasm_bindgen(js_class=IdentityFactory)]
+impl IdentityFactoryWasm {
+    #[wasm_bindgen(constructor)]
+    pub fn new(
+        protocol_version: u32,
+        identity_validator: IdentityValidatorWasm,
+    ) -> Result<IdentityFactoryWasm, JsValue> {
+        let factory = IdentityFactory::new(protocol_version, Arc::new(identity_validator.into()));
+        Ok(factory.into())
+    }
+
     #[wasm_bindgen]
     pub fn create(
         &self,
@@ -75,7 +71,9 @@ impl IdentityFacadeWasm {
             Default::default()
         };
 
-        let raw_identity = identity_object.with_serde_to_json_value()?;
+        let identity_json = utils::stringify(&identity_object)?;
+        let raw_identity: Value =
+            serde_json::from_str(&identity_json).map_err(|e| e.to_string())?;
 
         let result = self
             .0
@@ -115,18 +113,6 @@ impl IdentityFacadeWasm {
         }
     }
 
-    #[wasm_bindgen]
-    pub fn validate(&self, identity: IdentityWasm) -> Result<ValidationResultWasm, JsValue> {
-        let identity: Identity = identity.into();
-        let identity_json = identity.to_object().map_err(from_dpp_err)?;
-
-        let validation_result = self
-            .0
-            .validate(&identity_json)
-            .map_err(|e| from_dpp_err(e.into()))?;
-        Ok(validation_result.map(|_| JsValue::undefined()).into())
-    }
-
     #[wasm_bindgen(js_name=createInstantAssetLockProof)]
     pub fn create_instant_asset_lock_proof(
         &self,
@@ -140,7 +126,7 @@ impl IdentityFacadeWasm {
         let asset_lock_transaction: Transaction =
             consensus::deserialize(&asset_lock_transaction).map_err(|e| e.to_string())?;
 
-        Ok(IdentityFacade::<BlsAdapter>::create_instant_lock_proof(
+        Ok(IdentityFactory::<BlsAdapter>::create_instant_lock_proof(
             instant_lock,
             asset_lock_transaction,
             output_index,
@@ -159,11 +145,13 @@ impl IdentityFacadeWasm {
                 .to_js_value()
         })?;
 
-        Ok(IdentityFacade::<BlsAdapter>::create_chain_asset_lock_proof(
-            core_chain_locked_height,
-            out_point,
+        Ok(
+            IdentityFactory::<BlsAdapter>::create_chain_asset_lock_proof(
+                core_chain_locked_height,
+                out_point,
+            )
+            .into(),
         )
-        .into())
     }
 
     #[wasm_bindgen(js_name=createIdentityCreateTransition)]
@@ -199,6 +187,7 @@ impl IdentityFacadeWasm {
     ) -> Result<IdentityUpdateTransitionWasm, JsValue> {
         let (add_public_keys, disable_public_keys) =
             super::factory_utils::parse_create_identity_update_transition_keys(public_keys)?;
+
         let now = js_sys::Date::now() as u64;
 
         self.0
@@ -210,15 +199,6 @@ impl IdentityFacadeWasm {
             )
             .map(Into::into)
             .map_err(from_dpp_err)
-    }
-}
-
-#[wasm_bindgen(js_name=NonConsensusErrorWasm)]
-pub struct NonConsensusErrorWasm(NonConsensusError);
-
-impl From<NonConsensusError> for NonConsensusErrorWasm {
-    fn from(err: NonConsensusError) -> Self {
-        Self(err)
     }
 }
 
