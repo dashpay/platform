@@ -72,8 +72,9 @@ class SetupCommand extends BaseCommand {
             ctx.preset = await task.prompt([
               {
                 type: 'select',
-                header: '  Dashmate provides default configuration presets:\n  local - la la'
-                  + ' la\n  mainnet - bla bla bla\n',
+                header: '  Dashmate provides default configuration presets:\n    local - Run a fully functional network environment on your machine for local development'
+                  + '\n    mainnet - Run a node connected to the primary Dash network'
+                  + '\n    testnet - Run a node connected to the Dash test network\n',
                 message: 'Select preset',
                 choices: PRESETS,
                 initial: 'testnet',
@@ -110,7 +111,7 @@ class SetupCommand extends BaseCommand {
     });
 
     // eslint-disable-next-line no-console
-    console.log(`Hello! I'm your ${chalk.bold.cyanBright('Dash')} mate\n\nI will help you to setup ...\n`);
+    console.log(`Hello! I'm your ${chalk.bold.cyanBright('Dash')} mate\n\nI will assist you with setting up a Dash masternode or full node on Dash's\nmainnet or testnet. I can also help you setup and run a development network\non your local system.\n`);
 
     try {
       await tasks.run({

@@ -57,9 +57,10 @@ function setupRegularPresetTaskFactory(
             ctx.nodeType = await task.prompt([
               {
                 type: 'select',
-                header: '  Dash network has different node types\n  Blue\n  Green\n  Red\n  We'
-                  + ' should'
-                  + ' explain their purpose and costs\n',
+                header: '  The Dash network has several different node types:'
+                  + ' \n    Full nodes: Host a full copy of the Dash blockchain (no collateral required)'
+                  + ' \n    Masternodes: Full node features plus additional Core services such as ChainLocks and InstantSend (1000 DASH collateral)'
+                  + ' \n    High-performance masternodes: Masternode features plus hosting of Dash Platform (4000 DASH collateral)\n',
                 message: 'Select node type',
                 choices: [
                   { name: NODE_TYPE_MASTERNODE },
@@ -84,7 +85,7 @@ function setupRegularPresetTaskFactory(
           ctx.isMasternodeRegistered = await task.prompt([
             {
               type: 'toggle',
-              header: 'Tell what it means and what we gonna do in both cases\n',
+              header: 'If your masternode is already registered, we will import your BLS operator key and use it to generate the transaction to move your masternode to dashmate. If you are registering a new masternode, we will generate a BLS operator key for you.\n',
               message: 'Is your masternode already registered?',
               enabled: 'Yep',
               disabled: 'Nope',
@@ -126,8 +127,8 @@ function setupRegularPresetTaskFactory(
             ctx.operatorBlsPrivateKey = await task.prompt([
               {
                 type: 'input',
-                header: 'Masternode operator BLS private key... \n'
-                  + 'you can take it there and put here. Must be HEX.\n',
+                header: 'To import your masternode operator BLS private key, copy the\n'
+                  + '"masternodeblsprivkey" field from your masternode\'s dash.conf file.Must be HEX.\n',
                 message: 'Enter BLS private key',
                 validate,
               },
