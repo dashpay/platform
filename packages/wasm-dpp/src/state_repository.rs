@@ -534,7 +534,7 @@ impl StateRepositoryLike for ExternalStateRepositoryLikeWrapper {
         Ok(Some(height as u32))
     }
 
-    async fn fetch_latest_platform_block_height(&self) -> Result<u32> {
+    async fn fetch_latest_platform_block_height(&self) -> Result<u64> {
         let height = self
             .0
             .fetch_latest_platform_block_height()
@@ -544,7 +544,7 @@ impl StateRepositoryLike for ExternalStateRepositoryLikeWrapper {
         let height = height
             .as_f64()
             .ok_or_else(|| anyhow!("Value is not a number"))?;
-        Ok(height as u32)
+        Ok(height as u64)
     }
 
     async fn verify_instant_lock(
