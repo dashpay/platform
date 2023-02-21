@@ -60,7 +60,7 @@ describe('Local dashmate', function main() {
     });
 
     it('Check group status', async () => {
-      const coreVersion = core.docker.image.replace(/\/|\(.*?\)|dashpay|dashd:|\-(.*)/g, '');
+      const coreVersion = core.docker.image.replace(/\/|\(.*?\)|dashpay|dashd:|-(.*)/g, '');
       const platformVersion = platform.drive.tenderdash.docker.image.replace(/\/|\(.*?\)|dashpay|tenderdash:/g, '');
 
       const statusOutput = await dashmate.checkGroupStatus('list');
@@ -68,7 +68,7 @@ describe('Local dashmate', function main() {
       const arrayOfResults = statusOutput.split(/\n/);
       arrayOfResults.pop();
 
-      const output = arrayOfResults.map((n, index) => index % 2 === 0 ? n : JSON.parse(n));
+      const output = arrayOfResults.map((n, index) => (index % 2 === 0 ? n : JSON.parse(n)));
 
       let nodeIndex = 1;
       for (let i = 0; i < output.length; i++) {

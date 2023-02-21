@@ -9,7 +9,7 @@ class TestDashmateClass {
   setNetwork(preset) {
     if (preset === 'local') {
       return 'group';
-    } else if (preset === 'testnet' || preset === 'mainnet') {
+    } if (preset === 'testnet' || preset === 'mainnet') {
       return '';
     }
 
@@ -81,11 +81,11 @@ class TestDashmateClass {
   async reset(preset, ...args) {
     const group = this.setNetwork(preset);
 
-    execute(`yarn dashmate ${group} reset ${args} --verbose`).then((res) => {
-      if (res.status !== undefined) {
-        throw new Error(`${res.stderr} with exit code: ${res.status}`);
-      }
-    });
+    const res = await execute(`yarn dashmate ${group} reset ${args} --verbose`);
+
+    if (res.status !== undefined) {
+      throw new Error(`${res.stderr} with exit code: ${res.status}`);
+    }
   }
 
   /**
@@ -104,13 +104,13 @@ class TestDashmateClass {
   }
 
   /**
-   * Get service status
-   * @param {string} service - '', core, host, masternode, platform, services
+   * Get status
+   * @param {string} scope - '', core, host, masternode, platform, services
    * @param {boolean} allowErr - define if throw or return an error
    * @return {Promise<string>}
    */
-  async checkStatus(service, allowErr = false) {
-    return execute(`yarn dashmate status ${service}`).then((res) => {
+  async checkStatus(scope, allowErr = false) {
+    return execute(`yarn dashmate status ${scope}`).then((res) => {
       if (!allowErr) {
         if (res.status !== undefined) {
           throw new Error(`${res.stderr} with exit code: ${res.status}`);
@@ -123,6 +123,7 @@ class TestDashmateClass {
     });
   }
 
+  // refactor
   /**
    * Get local status
    * @param {string} command - status, list

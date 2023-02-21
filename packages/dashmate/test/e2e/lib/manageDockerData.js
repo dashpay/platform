@@ -14,7 +14,9 @@ async function removeVolumes(configName, dockerContainer) {
   await Promise.all(
     projectVolumeNames
       .map((volumeName) => `${projectName}_${volumeName}`)
-      .map(async (volumeName) => dockerContainer.getVolume(volumeName).remove()));
+      .map(async (volumeName) => dockerContainer.getVolume(volumeName).remove()
+      ),
+  );
 }
 
 /**
@@ -38,19 +40,21 @@ async function removeContainers(configName, dockerContainer) {
  */
 async function isGroupServicesRunning(isRunning, dockerContainer) {
   let result;
-
-  const configFile = await getConfig('local');
+  const [configFile] = await Promise.all([getConfig('local')]);
 
   for (const config of configFile) {
-    for (const [key] of Object.entries(SERVICES)) {
-      if (config.name === 'local_seed') {
-        result = await dockerContainer.isServiceRunning(config.toEnvs(), SERVICES.core);
-      } else {
-        result = await dockerContainer.isServiceRunning(config.toEnvs(), SERVICES[key]);
-      }
-
+    if (config.name === 'local_seed') {
+      const keyLocalSeed = Object.keys(SERVICES).find((key) => SERVICES[key] === 'Core');
+      result = await dockerContainer.isServiceRunning(config.toEnvs(), keyLocalSeed);
       if (result !== isRunning) {
-        throw new Error(`Running state for service ${key} should be ${isRunning}`);
+        throw new Error(`Running state for service ${keyLocalSeed} should be ${isRunning}`);
+      }
+    } else {
+      for (const [key] of Object.entries(SERVICES)) {
+        result = await dockerContainer.isServiceRunning(config.toEnvs(), key);
+        if (result !== isRunning) {
+          throw new Error(`Running state for service ${key} should be ${isRunning}`);
+        }
       }
     }
   }
@@ -62,10 +66,10 @@ async function isGroupServicesRunning(isRunning, dockerContainer) {
  * @param {object} dockerContainer
  */
 async function isTestnetServicesRunning(isRunning, dockerContainer) {
-  const configFile = await getConfig('testnet');
+  const [configFile] = await Promise.all([getConfig('testnet')]);
 
   for (const [key] of Object.entries(SERVICES)) {
-    const result = await dockerContainer.isServiceRunning(configFile.toEnvs(), SERVICES[key]);
+    const result = await dockerContainer.isServiceRunning(configFile.toEnvs(), key);
     if (result !== isRunning) {
       throw new Error(`Running state for service ${key} should be ${isRunning}`);
     }

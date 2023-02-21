@@ -10,13 +10,13 @@ const Docker = require('dockerode');
 const StartedContainers = require('../../../src/docker/StartedContainers');
 const DockerCompose = require('../../../src/docker/DockerCompose');
 const generateBlsKeys = require('../../../src/core/generateBlsKeys');
-const { INSIGHT_URLs } = require('../lib/constants/insightLinks');
+const { INSIGHT } = require('../lib/constants/insightLinks');
 const { SERVICES } = require('../lib/constants/services');
 const { STATUS } = require('../lib/constants/statusOutput');
-const { execute } = require('../../e2e/lib/runCommandInCli');
-const { getConfig, isConfigExist } = require('../../e2e/lib/manageConfig');
+const { execute } = require('../lib/runCommandInCli');
+const { getConfig, isConfigExist } = require('../lib/manageConfig');
 const { core } = require('../../../configs/system/base');
-const {CONFIG_FILE_PATH} = require('../../../src/constants');
+const { CONFIG_FILE_PATH } = require('../../../src/constants');
 const getSelfSignedCertificate = require('../lib/getSelfSignedCertificate');
 const { isTestnetServicesRunning } = require('../lib/manageDockerData');
 const MasternodeSyncAssetEnum = require('../../../src/enums/masternodeSyncAsset');
@@ -41,14 +41,14 @@ describe('Dashmate testnet masternode tests', function main() {
       container = new DockerCompose(dockerode, startedContainers);
     });
 
-    after(() =>  {
+    after(() => {
       fs.unlinkSync(certificate.certificatePath);
       fs.unlinkSync(certificate.privKeyPath);
     });
 
     it('Setup masternode', async () => {
       const ip = await publicIp.v4();
-      const {privateKey: generatedPrivateKeyHex} = await generateBlsKeys();
+      const { privateKey: generatedPrivateKeyHex } = await generateBlsKeys();
       certificate = await getSelfSignedCertificate(ip);
       const args = `-i=${ip} -k=${generatedPrivateKeyHex} -s=manual -c=${certificate.certificatePath} -l=${certificate.privKeyPath}`;
 
@@ -66,7 +66,7 @@ describe('Dashmate testnet masternode tests', function main() {
 
       if (configEnvs.CORE_MASTERNODE_ENABLE !== 'true'
         || !configEnvs.CORE_MASTERNODE_OPERATOR_PRIVATE_KEY) {
-        throw new Error('This is not masternode configuration. Core masternode parameter is disabled.')
+        throw new Error('This is not masternode configuration. Core masternode parameter is disabled.');
       }
     });
 
@@ -80,7 +80,7 @@ describe('Dashmate testnet masternode tests', function main() {
       const coreStatus = await dashmate.checkStatus('core');
       const coreOutput = JSON.parse(coreStatus.toString());
 
-      //update core version in config because versions don't match??
+      // update core version in config because versions don't match??
       // const coreVersion = core.docker.image.replace(/\/|\(.*?\)|dashpay|dashd:|\-(.*)/g, '');
       // expect(output.latestVersion).to.be.equal(coreVersion)
       // try {
@@ -96,9 +96,7 @@ describe('Dashmate testnet masternode tests', function main() {
       expect(coreOutput.dockerStatus).to.be.equal('running');
       expect(coreOutput.syncAsset).to.be.equal(MasternodeSyncAssetEnum.MASTERNODE_SYNC_BLOCKCHAIN);
 
-      const peersData = await execute('docker exec dash_masternode_testnet-core-1 dash-cli getpeerinfo').then((peers) => {
-        return JSON.parse(peers.toString());
-      });
+      const peersData = await execute('docker exec dash_masternode_testnet-core-1 dash-cli getpeerinfo').then((peers) => JSON.parse(peers.toString()));
       const peersNumber = Object.keys(peersData).length;
       expect(coreOutput.peersCount).to.be.equal(peersNumber, 'Peers number are not matching!');
 
@@ -106,8 +104,8 @@ describe('Dashmate testnet masternode tests', function main() {
       let peerBlock = 0;
       do {
         for (const peer of peersData) {
-          peerBlock = peer['synced_blocks'];
-          peerHeader = peer['synced_headers'];
+          peerBlock = peer.synced_blocks;
+          peerHeader = peer.synced_headers;
         }
       } while (peerHeader < 1 && peerBlock < 1);
 
@@ -120,8 +118,8 @@ describe('Dashmate testnet masternode tests', function main() {
         coreSyncOutput = JSON.parse(coreStatus.toString());
       } while (+coreSyncOutput.blockHeight < 1 && +coreOutput.headerHeight < 1);
 
-      const explorerBlockHeightRes = await fetch(`${INSIGHT_URLs[testnetNetwork]}/status`);
-      ({info: {blocks: explorerBlockHeight}} = await explorerBlockHeightRes.json());
+      const explorerBlockHeightRes = await fetch(`${INSIGHT[testnetNetwork]}/status`);
+      const { info: { blocks: explorerBlockHeight } } = await explorerBlockHeightRes.json();
       expect(+coreSyncOutput.remoteBlockHeight).to.be.equal(explorerBlockHeight);
 
       expect(+coreSyncOutput.difficulty).to.be.greaterThan(0);
@@ -148,7 +146,7 @@ describe('Dashmate testnet masternode tests', function main() {
         return containerIds;
       });
 
-      for (let serviceData of output) {
+      for (const serviceData of output) {
         expect(Object.keys(SERVICES)).to.include(serviceData.service);
         expect(serviceData.status).to.equal('running');
         expect(listIDs).to.include(serviceData.containerId);
@@ -158,7 +156,7 @@ describe('Dashmate testnet masternode tests', function main() {
     it('Verify status overview before core sync process finish', async () => {
       const overviewStatus = await dashmate.checkStatus('');
       const output = JSON.parse(overviewStatus.toString());
-      const coreVersion = core.docker.image.replace(/\/|\(.*?\)|dashpay|dashd:|\-(.*)/g, '');
+      const coreVersion = core.docker.image.replace(/\/|\(.*?\)|dashpay|dashd:|-(.*)/g, '');
 
       expect(output.Network).to.equal(STATUS.test);
       expect(output['Core Version']).to.equal(coreVersion);
@@ -172,7 +170,7 @@ describe('Dashmate testnet masternode tests', function main() {
       const output = JSON.parse(hostStatus.toString());
 
       expect(output.hostname).to.equal(os.hostname());
-      expect(output.uptime).to.include(prettyMs(os.uptime() * 1000, {unitCount: 2}));
+      expect(output.uptime).to.include(prettyMs(os.uptime() * 1000, { unitCount: 2 }));
       expect(output.platform).to.equal(os.platform());
       expect(output.arch).to.equal(os.arch());
       expect(output.username).to.equal(os.userInfo().username);
@@ -186,7 +184,7 @@ describe('Dashmate testnet masternode tests', function main() {
 
       // expect(output['Masternode status']).to.equal(STATUS.masternode_status); bugged
       expect(output.sentinel.state).to.equal(STATUS.sentinel_statusNotSynced);
-      });
+    });
 
     it('Restart testnet network before core sync process finish', async () => {
       const coreStatus = await dashmate.checkStatus('core');
