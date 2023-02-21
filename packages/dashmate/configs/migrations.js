@@ -432,8 +432,14 @@ module.exports = {
 
           config.platform.drive.tenderdash.node = {
             id: config.platform.drive.tenderdash.nodeId,
-            key: config.platform.drive.tenderdash.nodeKey,
           };
+
+          if (config.platform.drive.tenderdash.nodeKey.priv_key
+            && config.platform.drive.tenderdash.nodeKey.priv_key.value
+          ) {
+            config.platform.drive.tenderdash.node.key = config.platform.drive
+              .tenderdash.nodeKey.priv_key.value;
+          }
 
           delete config.platform.drive.tenderdash.nodeId;
           delete config.platform.drive.tenderdash.nodeKey;
