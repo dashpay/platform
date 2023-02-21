@@ -42,7 +42,7 @@ function configureTenderdashTaskFactory(
                 const p2pPeers = platformConfigs
                   .filter((_, i) => i !== index)
                   .map((innerConfig) => {
-                    const nodeId = innerConfig.get('platform.drive.tenderdash.nodeId');
+                    const nodeId = innerConfig.get('platform.drive.tenderdash.node.id');
                     const port = innerConfig.get('platform.drive.tenderdash.p2p.port');
 
                     return {

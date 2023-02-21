@@ -44,21 +44,18 @@ async function registerMasternode(
   ];
 
   if (hp) {
-    const nodeKeyId = config.get('platform.drive.tenderdash.node.id');
-    const tenderdashP2PPort = config.get('platform.drive.tenderdash.p2p.port');
-    const dapiPort = config.get('platform.dapi.envoy.http.port');
+    const platformNodeId = config.get('platform.drive.tenderdash.node.id');
+    const platformP2PPort = config.get('platform.drive.tenderdash.p2p.port');
+    const platformHttpPort = config.get('platform.dapi.envoy.http.port');
 
-    proTxArgs.push(nodeKeyId);
-    proTxArgs.push(tenderdashP2PPort);
-    proTxArgs.push(dapiPort);
+    proTxArgs.push(platformNodeId);
+    proTxArgs.push(platformP2PPort);
+    proTxArgs.push(platformHttpPort);
   }
-
-  proTxArgs.push(
-    { wallet: 'main' },
-  );
 
   const { result: proRegTxId } = await coreService.getRpcClient().protx(
     ...proTxArgs,
+    { wallet: 'main' },
   );
 
   return proRegTxId;
