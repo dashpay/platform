@@ -66,7 +66,7 @@ impl DataValidatorWithContext for DataContractCreateTransitionBasicValidator {
     }
 }
 
-pub fn validate_data_contract_create_transition_basic(
+fn validate_data_contract_create_transition_basic(
     json_schema_validator: &impl DataValidator<Item = Value>,
     protocol_validator: &impl DataValidator<Item = u32>,
     data_contract_validator: &impl DataValidator<Item = Value>,
@@ -87,13 +87,12 @@ pub fn validate_data_contract_create_transition_basic(
     let raw_data_contract = raw_state_transition.get_value(property_names::DATA_CONTRACT)?;
 
     // Validate Data Contract
-    let result = data_contract_validator.validate(raw_state_transition)?;
+    let result = data_contract_validator.validate(raw_data_contract)?;
     if !result.is_valid() {
         return Ok(result);
     }
-
     let owner_id = raw_data_contract.get_bytes(data_contract_property_names::OWNER_ID)?;
-    let entropy = raw_data_contract.get_bytes(data_contract_property_names::ENTROPY)?;
+    let entropy = raw_state_transition.get_bytes(property_names::ENTROPY)?;
     let raw_data_contract_id = raw_data_contract.get_bytes(data_contract_property_names::ID)?;
 
     // Validate Data Contract ID

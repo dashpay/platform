@@ -47,6 +47,8 @@ struct DataContractCreateTransitionParameters {
     signature_public_key_id: Option<KeyID>,
     #[serde(skip_serializing_if = "Option::is_none", default)]
     signature: Option<Vec<u8>>,
+    #[serde(skip_serializing_if = "Option::is_none", default, rename = "type")]
+    _type: Option<i32>,
 }
 
 #[wasm_bindgen(js_class=DataContractCreateTransition)]
