@@ -1409,6 +1409,7 @@ __metadata:
     "@dashevo/dp-services-ctl": "github:dashevo/js-dp-services-ctl#v0.19-dev"
     "@dashevo/dpp": "workspace:*"
     "@dashevo/grpc-common": "workspace:*"
+    "@dashevo/wasm-dpp": "workspace:*"
     "@grpc/grpc-js": ^1.3.7
     ajv: ^8.6.0
     bs58: ^4.0.1
@@ -1949,7 +1950,7 @@ __metadata:
   languageName: unknown
   linkType: soft
 
-"@dashevo/wasm-dpp@workspace:packages/wasm-dpp":
+"@dashevo/wasm-dpp@workspace:*, @dashevo/wasm-dpp@workspace:packages/wasm-dpp":
   version: 0.0.0-use.local
   resolution: "@dashevo/wasm-dpp@workspace:packages/wasm-dpp"
   dependencies:
