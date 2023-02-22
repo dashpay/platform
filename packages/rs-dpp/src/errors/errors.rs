@@ -6,6 +6,7 @@ use crate::data_contract::errors::*;
 use crate::document::errors::*;
 use crate::identity::{IdentityPublicKey, KeyType, Purpose, SecurityLevel};
 use crate::prelude::Identifier;
+use crate::state_transition::errors::StateTransitionError;
 use crate::state_transition::StateTransition;
 use crate::{CompatibleProtocolVersionIsNotDefinedError, NonConsensusError, SerdeParsingError};
 
@@ -41,6 +42,9 @@ pub enum ProtocolError {
 
     #[error(transparent)]
     DataContractError(#[from] DataContractError),
+
+    #[error(transparent)]
+    StateTransitionError(#[from] StateTransitionError),
 
     #[error(transparent)]
     StructureError(#[from] StructureError),

@@ -71,7 +71,16 @@ where
                 .validate(&raw_state_transition, &execution_context)
                 .await?;
 
-            // TODO: return InvalidStateTransitionError
+            if !validation_result.is_valid() {
+                return Err(
+                    ProtocolError::StateTransitionError(
+                        super::errors::StateTransitionError::InvalidStateTransitionError {
+                            errors: validation_result.errors,
+                            raw_state_transition
+                        }
+                    )
+                );
+            }
         }
 
         create_state_transition(self.state_repository.as_ref(), raw_state_transition).await

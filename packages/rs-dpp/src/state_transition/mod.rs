@@ -28,6 +28,7 @@ pub mod validation;
 
 pub mod fee;
 pub mod state_transition_execution_context;
+pub mod errors;
 
 mod example;
 macro_rules! call_method {
