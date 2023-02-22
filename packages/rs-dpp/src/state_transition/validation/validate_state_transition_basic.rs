@@ -39,7 +39,7 @@ where
     }
 }
 
-#[async_trait]
+#[async_trait(?Send)]
 impl<SR, VBT> AsyncDataValidatorWithContext for StateTransitionBasicValidator<SR, VBT>
 where
     SR: StateRepositoryLike + Send,

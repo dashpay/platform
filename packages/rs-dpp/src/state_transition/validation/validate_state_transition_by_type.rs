@@ -14,8 +14,8 @@ use crate::{
 };
 
 #[cfg_attr(test, automock)]
-#[async_trait]
-pub trait ValidatorByStateTransitionType: Sync + Send {
+#[async_trait(?Send)]
+pub trait ValidatorByStateTransitionType {
     async fn validate(
         &self,
         raw_state_transition: &JsonValue,
@@ -62,7 +62,7 @@ where
     }
 }
 
-#[async_trait]
+#[async_trait(?Send)]
 impl<ADV> ValidatorByStateTransitionType for StateTransitionByTypeValidator<ADV>
 where
     ADV: AsyncDataValidatorWithContext<Item = JsonValue> + Send + Sync,
@@ -144,7 +144,7 @@ mod tests {
         );
         let data_contract_validator =
             DataContractValidator::new(Arc::new(protocol_version_validator));
-        let data_contract_factory = DataContractFactory::new(1, data_contract_validator);
+        let data_contract_factory = DataContractFactory::new(1, Arc::new(data_contract_validator));
 
         let mut state_transition = data_contract_factory
             .create_data_contract_create_transition(data_contract.clone())
