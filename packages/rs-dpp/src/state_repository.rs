@@ -213,4 +213,7 @@ pub trait StateRepositoryLike: Sync {
 
     // Get latest (in a queue) withdrawal transaction index
     async fn fetch_latest_platform_core_chain_locked_height(&self) -> AnyResult<Option<u32>>;
+
+    // Get latest platform block height
+    async fn fetch_latest_platform_block_height(&self) -> AnyResult<u64>;
 }
