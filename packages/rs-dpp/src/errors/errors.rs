@@ -2,6 +2,7 @@ use serde_json::Value as JsonValue;
 use thiserror::Error;
 
 use crate::consensus::ConsensusError;
+use platform_value::Error as ValueError;
 use crate::data_contract::errors::*;
 use crate::document::errors::*;
 use crate::identity::{IdentityPublicKey, KeyType, Purpose, SecurityLevel};
@@ -125,6 +126,10 @@ pub enum ProtocolError {
     /// Error
     #[error("missing key: {0}")]
     DocumentKeyMissing(String),
+
+    /// Value error
+    #[error("value error: {0}")]
+    ValueError(#[from] ValueError),
 }
 
 impl From<NonConsensusError> for ProtocolError {

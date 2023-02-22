@@ -7,6 +7,8 @@ use integer_encoding::VarInt;
 use itertools::{Either, Itertools};
 use serde::{Deserialize, Serialize};
 use serde_json::Value as JsonValue;
+use platform_value::btreemap_extensions::BTreeValueMapHelper;
+use platform_value::Value;
 
 use crate::data_contract::contract_config;
 use crate::data_contract::contract_config::{
@@ -142,13 +144,15 @@ impl DataContract {
             main_message_bytes: contract_cbor_bytes,
         } = deserializer::split_protocol_version(cbor_bytes.as_ref())?;
 
-        let data_contract_map: BTreeMap<String, CborValue> =
+        let data_contract_cbor_map: BTreeMap<String, CborValue> =
             ciborium::de::from_reader(contract_cbor_bytes).map_err(|_| {
                 ProtocolError::DecodingError(format!(
                     "unable to decode contract with protocol version {} offset {}",
                     protocol_version, protocol_version_size
                 ))
             })?;
+
+        let data_contract_map : BTreeMap<String, Value> = Value::convert_from_cbor_map(data_contract_cbor_map);
 
         let contract_id: [u8; 32] = data_contract_map.get_identifier(property_names::ID)?;
         let owner_id: [u8; 32] = data_contract_map.get_identifier(property_names::OWNER_ID)?;
@@ -157,8 +161,7 @@ impl DataContract {
 
         // Defs
         let defs = data_contract_map
-            .get("$defs")
-            .and_then(CborValue::as_map)
+            .get_inner_borrowed_str_value_map::<BTreeMap<_,_>>("$defs")?
             .map(|definition_map| {
                 let mut res = BTreeMap::<String, JsonValue>::new();
                 for (key, value) in definition_map {
@@ -175,14 +178,14 @@ impl DataContract {
             .map_or(Ok(None), |r: Result<_, ProtocolError>| r.map(Some))?;
 
         // Documents
-        let documents_cbor_value = data_contract_map
+        let documents_value = data_contract_map
             .get("documents")
             .ok_or_else(|| ProtocolError::DecodingError(String::from("unable to get documents")))?;
-        let contract_documents_cbor_map = documents_cbor_value
+        let contract_documents_map = documents_value
             .as_map()
             .ok_or_else(|| ProtocolError::DecodingError(String::from("documents must be a map")))?;
 
-        let documents = cbor_map_into_serde_btree_map(contract_documents_cbor_map.clone())?;
+        let documents = cbor_map_into_serde_btree_map(contract_documents_map.clone())?;
 
         let mutability = get_contract_configuration_properties(&data_contract_map)
             .map_err(|e| ProtocolError::ParsingError(e.to_string()))?;
@@ -513,8 +516,8 @@ pub fn get_contract_configuration_properties(
 }
 
 pub fn get_document_types(
-    contract: &BTreeMap<String, CborValue>,
-    definition_references: BTreeMap<String, &CborValue>,
+    contract: &BTreeMap<String, Value>,
+    definition_references: BTreeMap<String, &Value>,
     documents_keep_history_contract_default: bool,
     documents_mutable_contract_default: bool,
 ) -> Result<BTreeMap<String, DocumentType>, ProtocolError> {

@@ -81,7 +81,7 @@ impl Platform {
             .into_iter()
             .map(|mut document| {
                 let transaction_sign_height = document
-                    .get_u32(withdrawals_contract::property_names::TRANSACTION_SIGN_HEIGHT)
+                    .get_integer(withdrawals_contract::property_names::TRANSACTION_SIGN_HEIGHT)
                     .map_err(|_| {
                         Error::Execution(ExecutionError::CorruptedCodeExecution(
                             "Can't get transactionSignHeight from withdrawal document",
@@ -97,7 +97,7 @@ impl Platform {
                     })?;
 
                 let transaction_index = document
-                    .get_u64(withdrawals_contract::property_names::TRANSACTION_INDEX)
+                    .get_integer(withdrawals_contract::property_names::TRANSACTION_INDEX)
                     .map_err(|_| {
                         Error::Execution(ExecutionError::CorruptedCodeExecution(
                             "Can't get transactionIdex from withdrawal document",
@@ -471,7 +471,7 @@ impl Platform {
                 })?;
 
             let amount = document
-                .get_u64(withdrawals_contract::property_names::AMOUNT)
+                .get_integer(withdrawals_contract::property_names::AMOUNT)
                 .map_err(|_| {
                     Error::Execution(ExecutionError::CorruptedCodeExecution(
                         "Can't get amount from withdrawal document",
@@ -479,7 +479,7 @@ impl Platform {
                 })?;
 
             let core_fee_per_byte = document
-                .get_u64(withdrawals_contract::property_names::CORE_FEE_PER_BYTE)
+                .get_integer(withdrawals_contract::property_names::CORE_FEE_PER_BYTE)
                 .map_err(|_| {
                     Error::Execution(ExecutionError::CorruptedCodeExecution(
                         "Can't get coreFeePerByte from withdrawal document",

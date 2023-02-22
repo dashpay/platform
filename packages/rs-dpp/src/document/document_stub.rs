@@ -37,7 +37,7 @@ use std::convert::{TryFrom, TryInto};
 use std::fmt;
 use std::io::{BufReader, Read};
 
-use ciborium::value::{Integer, Value};
+use ciborium::value::{Integer, Value as CborValue};
 use integer_encoding::{VarInt, VarIntReader, VarIntWriter};
 
 use crate::data_contract::{DataContract, DriveContractExt};
@@ -58,6 +58,7 @@ use crate::document::document_transition::INITIAL_REVISION;
 use crate::prelude::*;
 use crate::util::cbor_value::CborBTreeMapHelper;
 use anyhow::{anyhow, bail};
+use platform_value::Value;
 
 //todo: rename
 /// Documents contain the data that goes into data contracts.
@@ -424,7 +425,8 @@ impl DocumentStub {
 
     /// Temporary helper method to get property in u64 format
     /// Imitating JsonValueExt trait
-    pub fn get_u64(&self, property_name: &str) -> Result<u64, anyhow::Error> {
+    pub fn get_integer<T>(&self, property_name: &str) -> Result<T, anyhow::Error>
+        where T: TryFrom<i128> + TryFrom<u128> + TryFrom<u64> + TryFrom<i64> + TryFrom<u32> + TryFrom<i32> + TryFrom<u16> + TryFrom<i16> + TryFrom<u8> + TryFrom<i8> {
         let property_value = self.properties.get(property_name).ok_or_else(|| {
             anyhow!(
                 "the property '{}' doesn't exist in '{:?}'",
@@ -433,37 +435,7 @@ impl DocumentStub {
             )
         })?;
 
-        if let Value::Integer(s) = property_value {
-            return (*s)
-                .try_into()
-                .map_err(|_| anyhow!("unable convert {} to u64", property_name));
-        }
-        bail!(
-            "getting property '{}' failed: {:?} isn't a number",
-            property_name,
-            property_value
-        );
-    }
-
-    /// Temporary helper method to get property in u32 format
-    /// Imitating JsonValueExt trait
-    pub fn get_u32(&self, property_name: &str) -> Result<u32, ProtocolError> {
-        let property_value =
-            self.properties
-                .get(property_name)
-                .ok_or(ProtocolError::DocumentKeyMissing(format!(
-                    "the property '{}' doesn't exist in '{:?}'",
-                    property_name, self
-                )))?;
-
-        if let Value::Integer(s) = property_value {
-            (*s).try_into()
-                .map_err(|_| ProtocolError::DecodingError("expected a u32 integer".to_string()))
-        } else {
-            Err(ProtocolError::DecodingError(
-                "expected an integer".to_string(),
-            ))
-        }
+        property_value.to_integer().map_err(|_| anyhow!("unable convert {} to u64", property_name))
     }
 
     /// Temporary helper method to get property in bytes format

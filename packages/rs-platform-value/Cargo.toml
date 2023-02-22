@@ -1,0 +1,13 @@
+[package]
+name = "platform-value"
+description = "A simple value module"
+version = "0.1.0"
+edition = "2021"
+license = "MIT"
+private = true
+
+[dependencies]
+ciborium = { git="https://github.com/qrayven/ciborium", branch="feat-ser-null-as-undefined"}
+thiserror = "1.0.30"
+bs58 = "0.4.0"
+hex = "0.4.3"

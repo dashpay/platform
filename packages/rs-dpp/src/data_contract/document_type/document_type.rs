@@ -14,8 +14,9 @@ use crate::data_contract::extra::common::{
 };
 use crate::util::cbor_value::CborBTreeMapHelper;
 use crate::ProtocolError;
-use ciborium::value::Value;
 use serde::{Deserialize, Serialize};
+use platform_value::btreemap_extensions::BTreeValueMapHelper;
+use platform_value::Value;
 
 pub const PROTOCOL_VERSION: u32 = 1;
 pub const CONTRACT_DOCUMENTS_PATH_HEIGHT: u16 = 4;
@@ -145,11 +146,7 @@ impl DocumentType {
     ) -> Result<Vec<u8>, ProtocolError> {
         match key {
             "$ownerId" | "$id" => {
-                let bytes = bytes_for_system_value(value)?.ok_or({
-                    ProtocolError::DataContractError(DataContractError::FieldRequirementUnmet(
-                        "expected system value to be deserialized",
-                    ))
-                })?;
+                let bytes = value.to_system_bytes().map_err(ProtocolError::ValueError)?;
                 if bytes.len() != DEFAULT_HASH_SIZE {
                     Err(ProtocolError::DataContractError(
                         DataContractError::FieldRequirementUnmet(
@@ -189,15 +186,15 @@ impl DocumentType {
 
         // Do documents of this type keep history? (Overrides contract value)
         let documents_keep_history: bool =
-            cbor_inner_bool_value(document_type_value_map, "documentsKeepHistory")
+            Value::inner_bool_value(document_type_value_map, "documentsKeepHistory")
                 .unwrap_or(default_keeps_history);
 
         // Are documents of this type mutable? (Overrides contract value)
         let documents_mutable: bool =
-            cbor_inner_bool_value(document_type_value_map, "documentsMutable")
+            Value::inner_bool_value(document_type_value_map, "documentsMutable")
                 .unwrap_or(default_mutability);
 
-        let index_values = cbor_inner_array_value(document_type_value_map, property_names::INDICES);
+        let index_values = Value::inner_array_slice_value(document_type_value_map, property_names::INDICES);
         let indices: Vec<Index> = index_values
             .map(|index_values| {
                 index_values
@@ -220,7 +217,7 @@ impl DocumentType {
 
         // Extract the properties
         let property_values =
-            cbor_inner_btree_map(document_type_value_map, property_names::PROPERTIES).ok_or({
+            Value::inner_btree_map(document_type_value_map, property_names::PROPERTIES)?.ok_or({
                 ProtocolError::DataContractError(DataContractError::InvalidContractStructure(
                     "unable to get document properties from the contract",
                 ))
