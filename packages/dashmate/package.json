@@ -63,6 +63,7 @@
     "ajv": "^8.6.0",
     "ajv-formats": "^2.1.1",
     "awilix": "^4.2.6",
+    "begoo": "^2.0.2",
     "chalk": "^4.1.0",
     "cron": "^2.1.0",
     "dash": "workspace:*",
@@ -86,7 +87,8 @@
     "qs": "^6.11.0",
     "rxjs": "^6.6.7",
     "semver": "^7.3.2",
-    "table": "^5.4.6"
+    "table": "^5.4.6",
+    "yosay": "^2.0.2"
   },
   "devDependencies": {
     "@dashevo/oclif": "^1.0.0",

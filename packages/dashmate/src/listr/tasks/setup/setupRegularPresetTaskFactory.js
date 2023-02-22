@@ -5,9 +5,11 @@ const publicIp = require('public-ip');
 
 const BlsSignatures = require('@dashevo/bls');
 
-const { PrivateKey } = require('@dashevo/dashcore-lib');
+const { PrivateKey, PublicKey, Address } = require('@dashevo/dashcore-lib');
 
 const crypto = require('crypto');
+
+const placeholder = require('enquirer/lib/placeholder');
 
 const {
   SSL_PROVIDERS,
@@ -17,6 +19,7 @@ const {
   NODE_TYPE_HPMN,
   NODE_TYPE_FULLNODE,
 } = require('../../../constants');
+const { base } = require('../../../../configs/system');
 
 /**
  * @param {ConfigFile} configFile
@@ -63,7 +66,7 @@ function setupRegularPresetTaskFactory(
                   + ' \n    High-performance masternodes: Masternode features plus hosting of Dash Platform (4000 DASH collateral)\n',
                 message: 'Select node type',
                 choices: [
-                  { name: NODE_TYPE_MASTERNODE },
+                  { name: NODE_TYPE_MASTERNODE, hint: 'Take me, I\'m cheaper' },
                   { name: NODE_TYPE_HPMN, message: 'high-performance masternode' },
                   { name: NODE_TYPE_FULLNODE },
                 ],
@@ -82,10 +85,31 @@ function setupRegularPresetTaskFactory(
       {
         enabled: (ctx) => ctx.nodeType === NODE_TYPE_MASTERNODE || ctx.nodeType === NODE_TYPE_HPMN,
         task: async (ctx, task) => {
+          let header;
+          if (ctx.nodeType === NODE_TYPE_HPMN) {
+            header = 'If your masternode is already registered, we will import your masternode '
+              + ' operator and platform node keys to configure an HP masternode. Please make '
+              + ' sure your IP address didn\'t change, otherwise you need to update. If'
+              + ' you are'
+              + ' registering a'
+              + ' new'
+              + ' masternode, I will provide more information and help you to generate'
+              + ' necessary keys.\n';
+          } else {
+            header = 'If your masternode is already registered, we will import your masternode '
+              + ' operator to configure a masternode. Please make '
+              + ' sure your IP address didn\'t change, otherwise you need to update If'
+              + ' you are'
+              + ' registering a'
+              + ' new'
+              + ' masternode, I will provide more information and help you to generate'
+              + ' necessary keys.\n';
+          }
+
           ctx.isMasternodeRegistered = await task.prompt([
             {
               type: 'toggle',
-              header: 'If your masternode is already registered, we will import your BLS operator key and use it to generate the transaction to move your masternode to dashmate. If you are registering a new masternode, we will generate a BLS operator key for you.\n',
+              header,
               message: 'Is your masternode already registered?',
               enabled: 'Yep',
               disabled: 'Nope',
@@ -96,14 +120,200 @@ function setupRegularPresetTaskFactory(
         },
       },
       {
+        enabled: (ctx) => (ctx.nodeType === NODE_TYPE_MASTERNODE || ctx.nodeType === NODE_TYPE_HPMN)
+          && !ctx.isMasternodeRegistered,
+        task: async (ctx, task) => {
+          ctx.registrar = await task.prompt([
+            {
+              type: 'select',
+              header: 'Dashmate is not going to register masternode for you because it\'s not' +
+                ' secure. You can use Dash Core so we can generate a RPC command for you or you' +
+                ' can use other tools and we can help you to generate operator key and node id' +
+                ' because that\'s only what dashmate cares\n',
+              message: 'What do you want to use to register masternode?',
+              choices: [
+                { name: 'core', message: 'Dash Core (Wallet?)' },
+                { name: 'other', message: 'Other' },
+              ],
+              initial: 'core',
+            },
+          ]);
+        },
+      },
+      {
+        title: 'Register masternode with Dash Core (Wallet?)',
+        enabled: (ctx) => ctx.registrar === 'core'
+          && (ctx.nodeType === NODE_TYPE_HPMN || ctx.nodeType === NODE_TYPE_MASTERNODE),
+        task: async (ctx, task) => {
+          function validateOutputIndex(value) {
+            const index = Math.floor(Number(value));
+
+            return index >= 0 && index.toString() === value;
+          }
+
+          function validateTxHash(value) {
+            return value.length === 64;
+          }
+
+          function validateECDSAPublicKey(value) {
+            try {
+              PublicKey(value);
+
+              return true;
+            } catch (e) {
+              return false;
+            }
+          }
+
+          function validateAddress(value) {
+            try {
+              Address(value);
+
+              return true;
+            } catch (e) {
+              return false;
+            }
+          }
+
+          const blsSignatures = await BlsSignatures();
+          const { PrivateKey: BlsPrivateKey, BasicSchemeMPL } = blsSignatures;
+
+          const randomBytes = new Uint8Array(crypto.randomBytes(256));
+          const operatorPrivateKey = BasicSchemeMPL.keyGen(randomBytes);
+
+          const initialOperatorPrivateKey = Buffer.from(operatorPrivateKey.serialize()).toString('hex');
+
+          function validateBLSPrivateKey(value) {
+            if (value.length === 0) {
+              return 'should not be empty';
+            }
+
+            const operatorPrivateKeyBuffer = Buffer.from(value, 'hex');
+
+            let key;
+            try {
+              key = BlsPrivateKey.fromBytes(operatorPrivateKeyBuffer, true);
+            } catch (e) {
+              return 'invalid key';
+            } finally {
+              if (key) {
+                key.delete();
+              }
+            }
+
+            return true;
+          }
+
+          function validateRewardShare(value) {
+            const reminder = value.split('.')[1];
+
+            return Number(value) <= 100 && (!reminder || reminder.length <= 2);
+          }
+
+          function formatRewardShares(input, choice) {
+            let str;
+
+            const number = Number(input);
+            if (Number.isNaN(number) || number.toFixed(2).length < input.length) {
+              str = input;
+            } else {
+              str = number.toFixed(2);
+            }
+
+            const pos = Math.min(choice.cursor, str.length);
+
+            const options = {
+              input: str,
+              initial: choice.initial,
+              pos,
+              showCursor: this.state.index === 1,
+            };
+
+            return placeholder(this, options);
+          }
+
+          const form = await task.prompt([
+            // {
+            //   type: 'form',
+            //   header: 'Help user with collateral \n',
+            //   message: 'Enter collateral information:',
+            //   choices: [
+            //     {
+            //       name: 'txId',
+            //       message: 'Transaction hash',
+            //       validate: validateTxHash,
+            //     },
+            //     {
+            //       name: 'outputIndex',
+            //       message: 'Output index',
+            //       validate: validateOutputIndex,
+            //     },
+            //   ],
+            //   validate: ({ txId, outputIndex }) => validateTxHash(txId)
+            //     && validateOutputIndex(outputIndex),
+            // },
+            // {
+            //   type: 'form',
+            //   header: 'Help user with these keys \n',
+            //   message: 'Enter masternode keys and payout address:',
+            //   choices: [
+            //     {
+            //       name: 'ownerPublicKey',
+            //       message: 'Owner public key',
+            //       validate: validateECDSAPublicKey,
+            //     },
+            //     {
+            //       name: 'votingPublicKey',
+            //       message: 'Voting public key',
+            //       validate: validateECDSAPublicKey,
+            //     },
+            //     {
+            //       name: 'payoutAddress',
+            //       message: 'Payout address',
+            //       validate: validateAddress,
+            //     },
+            //   ],
+            //   validate: ({ ownerPublicKey, votingPublicKey, payoutAddress }) => (
+            //     validateECDSAPublicKey(ownerPublicKey)
+            //     && validateECDSAPublicKey(votingPublicKey)
+            //     && validateAddress(payoutAddress)
+            //   ),
+            // },
+            {
+              type: 'form',
+              header: 'Explain options with operator key and explain operator rewards\n',
+              message: 'Please provide the following information:',
+              choices: [
+                {
+                  name: 'privateKey',
+                  message: 'BLS private key',
+                  initial: initialOperatorPrivateKey,
+                  validate: validateBLSPrivateKey,
+                },
+                {
+                  name: 'rewardShare',
+                  message: 'Reward share',
+                  initial: '0.00',
+                  validate: validateRewardShare,
+                  format: formatRewardShares,
+                  result: (value) => Number(value).toFixed(2),
+                },
+              ],
+              validate: ({ privateKey, rewardShare }) => validateBLSPrivateKey(privateKey)
+                && validateRewardShare(rewardShare),
+            },
+          ]);
+        },
+      },
+      {
         title: 'Masternode operator key',
         enabled: (ctx) => ctx.isMasternodeRegistered,
         task: async (ctx, task) => {
           const blsSignatures = await BlsSignatures();
           const { PrivateKey: BlsPrivateKey } = blsSignatures;
 
-          function validate(value) {
-            if (value.length < 1) {
+          function validateBLSPrivateKey(value) {
+            if (value.length === 0) {
               return 'should not be empty';
             }
 
@@ -128,13 +338,13 @@ function setupRegularPresetTaskFactory(
               {
                 type: 'input',
                 header: 'To import your masternode operator BLS private key, copy the\n'
-                  + '"masternodeblsprivkey" field from your masternode\'s dash.conf file.Must be HEX.\n',
+                  + '"masternodeblsprivkey" field from your masternode\'s dash.conf file.\n',
                 message: 'Enter BLS private key',
-                validate,
+                validate: validateBLSPrivateKey,
               },
             ]);
           } else {
-            const result = validate(ctx.operatorBlsPrivateKey);
+            const result = validateBLSPrivateKey(ctx.operatorBlsPrivateKey);
 
             if (result !== true) {
               throw new Error(`operator private key: ${result}`);
@@ -151,7 +361,7 @@ function setupRegularPresetTaskFactory(
         },
       },
       {
-        title: 'Platform P2P Key',
+        title: 'Platform node key',
         enabled: (ctx) => ctx.isMasternodeRegistered && ctx.nodeType === NODE_TYPE_HPMN,
         task: async (ctx, task) => {
           // TODO: Do we accept HEX or base64?
@@ -181,8 +391,8 @@ function setupRegularPresetTaskFactory(
             ctx.platformP2PKey = await task.prompt([
               {
                 type: 'input',
-                header: 'Platform P2P private key ... we accept base64 or hex?...',
-                message: 'Enter ED25519 private key',
+                header: 'Platform node key. Must be base64\n',
+                message: 'Enter ED25519 key',
                 validate,
               },
             ]);
@@ -197,51 +407,62 @@ function setupRegularPresetTaskFactory(
           // TODO: Derive node id from key
           // config.set('platform.drive.tenderdash.nodeId', nodeId);
 
-          ctx.config.set('platform.drive.tenderdash.nodeKey', ctx.platformP2PKey);
+          // ctx.config.set('platform.drive.tenderdash.nodeKey', ctx.platformP2PKey);
         },
         options: {
           persistentOutput: true,
         },
       },
       {
-        title: 'Masternode keys',
-        enabled: (ctx) => !ctx.isMasternodeRegistered
-          && (ctx.nodeType === NODE_TYPE_HPMN || ctx.nodeType === NODE_TYPE_MASTERNODE),
-        task: async (ctx, task) => {
-          ctx.masternodeOwnerKeys = await task.prompt([
-            {
-              type: 'form',
-              header: 'The user should use a secured wallet to generate a key, and provide the'
-                + ' resulting public keys. (deploy tool example)\n',
-              message: 'Please provide the following information:',
-              choices: [
-                { name: 'owner', message: 'Owner public key' },
-                { name: 'voting', message: 'Voting public key' },
-                { name: 'payout', message: 'Payout script' },
-              ],
-            },
-          ]);
-        },
-      },
-      {
-        title: 'External IP address',
+        title: 'IP address and port',
+        enabled: (ctx) => ctx.nodeType === NODE_TYPE_HPMN || ctx.nodeType === NODE_TYPE_MASTERNODE,
         task: async (ctx, task) => {
           if (ctx.externalIp === undefined) {
-            ctx.externalIp = await task.prompt([
+
+            const initialIp = !ctx.isMasternodeRegistered ? publicIp.v4() : undefined;
+
+            function validateIp(ip) {
+              return Boolean(ip.match(/^((25[0-5]|(2[0-4]|1\d|[1-9]|)\d)\.?\b){4}$/));
+            }
+
+            function validatePort(port) {
+              const portNumber = Math.floor(Number(port));
+
+              return portNumber >= 1
+              && portNumber <= 65535
+              && portNumber.toString() === port;
+            }
+
+            const form = await task.prompt([
               {
-                type: 'input',
+                type: 'form',
                 header: 'The node external IP address must be static and will be used by the'
-                  + ' network ..',
-                message: 'Enter host public IP',
-                initial: () => publicIp.v4(),
+                  + ' network ..\n',
+                message: 'Enter IP address and port:',
+                choices: [
+                  {
+                    name: 'ip',
+                    message: 'IPv4',
+                    initial: initialIp,
+                    validate: validateIp,
+                  },
+                  {
+                    name: 'port',
+                    message: 'Port',
+                    initial: base.core.p2p.port.toString(),
+                    validate: validatePort,
+                  },
+                ],
+                validate: ({ ip, port }) => validateIp(ip) && validatePort(port),
               },
             ]);
+
+            ctx.config.set('externalIp', form.ip);
+            ctx.config.set('core.p2p.port', form.port);
+
+            // eslint-disable-next-line no-param-reassign
+            task.output = `${form.ip}:${form.port}`;
           }
-
-          ctx.config.set('externalIp', ctx.externalIp);
-
-          // eslint-disable-next-line no-param-reassign
-          task.output = ctx.externalIp;
         },
         options: {
           persistentOutput: true,
