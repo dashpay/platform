@@ -28,6 +28,7 @@ COPY packages/feature-flags-contract packages/feature-flags-contract
 COPY packages/js-dapi-client packages/js-dapi-client
 COPY packages/js-dash-sdk packages/js-dash-sdk
 COPY packages/js-dpp packages/js-dpp
+COPY packages/wasm-dpp packages/wasm-dpp
 COPY packages/wallet-lib packages/wallet-lib
 COPY packages/js-grpc-common packages/js-grpc-common
 COPY packages/platform-test-suite packages/platform-test-suite

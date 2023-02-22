@@ -25,6 +25,7 @@ COPY package.json yarn.lock .yarnrc.yml .pnp.* ./
 COPY packages/dapi packages/dapi
 COPY packages/dapi-grpc packages/dapi-grpc
 COPY packages/js-dpp packages/js-dpp
+COPY packages/wasm-dpp packages/wasm-dpp
 COPY packages/js-grpc-common packages/js-grpc-common
 COPY packages/feature-flags-contract packages/feature-flags-contract
 COPY packages/masternode-reward-shares-contract packages/masternode-reward-shares-contract

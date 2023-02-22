@@ -70,6 +70,7 @@ COPY packages/rs-platform-value packages/rs-platform-value
 COPY packages/rs-drive-nodejs packages/rs-drive-nodejs
 COPY packages/dapi-grpc packages/dapi-grpc
 COPY packages/js-dpp packages/js-dpp
+COPY packages/wasm-dpp packages/wasm-dpp
 COPY packages/js-grpc-common packages/js-grpc-common
 COPY packages/dashpay-contract packages/dashpay-contract
 COPY packages/dpns-contract packages/dpns-contract
