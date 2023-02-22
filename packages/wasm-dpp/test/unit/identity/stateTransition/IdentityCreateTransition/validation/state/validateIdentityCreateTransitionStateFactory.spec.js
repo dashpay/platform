@@ -11,7 +11,6 @@ describe('validateIdentityCreateTransitionStateFactory', () => {
   let validateIdentityCreateTransitionState;
   let stateTransition;
   let stateRepositoryMock;
-  let identity;
 
   let IdentityCreateTransition;
   let IdentityPublicKey;
@@ -48,28 +47,10 @@ describe('validateIdentityCreateTransitionStateFactory', () => {
       data: Buffer.from(rawTransaction, 'hex'),
       height: 42,
     });
-
-    identity = new Identity({
-      protocolVersion: protocolVersion.latestVersion,
-      id: await generateRandomIdentifierAsync(),
-      publicKeys: [
-        {
-          id: 0,
-          type: 0,
-          data: Buffer.alloc(36).fill('a'),
-          purpose: 0,
-          securityLevel: 0,
-          readOnly: false,
-          signature: Buffer.alloc(36).fill('a'),
-        },
-      ],
-      balance: 0,
-      revision: 0,
-    });
   });
 
   it('should return invalid result if identity already exists', async () => {
-    stateRepositoryMock.fetchIdentity.resolves(identity);
+    stateRepositoryMock.fetchIdentityBalance.resolves(1);
 
     const result = await validateIdentityCreateTransitionState(stateTransition);
 
@@ -83,14 +64,14 @@ describe('validateIdentityCreateTransitionStateFactory', () => {
   });
 
   it('should return valid result if state transition is valid', async () => {
-    stateRepositoryMock.fetchIdentity.resolves();
+    stateRepositoryMock.fetchIdentityBalance.resolves();
     const result = await validateIdentityCreateTransitionState(stateTransition);
 
     expect(result.isValid()).to.be.true();
   });
 
   it('should return valid result on dry run', async () => {
-    stateRepositoryMock.fetchIdentity.resolves(identity);
+    stateRepositoryMock.fetchIdentityBalance.resolves(1);
 
     stateTransition.getExecutionContext().enableDryRun();
 
