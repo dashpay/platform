@@ -2,9 +2,7 @@ const getIdentityCreateTransitionFixture = require('@dashevo/dpp/lib/test/fixtur
 
 const createStateRepositoryMock = require('@dashevo/dpp/lib/test/mocks/createStateRepositoryMock');
 
-const protocolVersion = require('@dashevo/dpp/lib/version/protocolVersion');
 const { default: loadWasmDpp } = require('../../../../../../../dist');
-const generateRandomIdentifierAsync = require('../../../../../../../lib/test/utils/generateRandomIdentifierAsync');
 const { expectValidationError } = require('../../../../../../../lib/test/expect/expectError');
 
 describe('validateIdentityCreateTransitionStateFactory', () => {
@@ -15,7 +13,6 @@ describe('validateIdentityCreateTransitionStateFactory', () => {
   let IdentityCreateTransition;
   let IdentityPublicKey;
   let IdentityAlreadyExistsError;
-  let Identity;
   let IdentityCreateTransitionStateValidator;
 
   before(async () => {
@@ -23,7 +20,6 @@ describe('validateIdentityCreateTransitionStateFactory', () => {
       IdentityCreateTransition,
       IdentityAlreadyExistsError,
       IdentityPublicKey,
-      Identity,
       IdentityCreateTransitionStateValidator,
     } = await loadWasmDpp());
   });
