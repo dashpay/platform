@@ -56,5 +56,7 @@ name = "benchmarks"
 harness = false
 
 [features]
-default = ["fixtures-and-mocks"]
+default = ["fixtures-and-mocks", "full"]
 fixtures-and-mocks = ["mockall"]
+full = []
+verify = []
