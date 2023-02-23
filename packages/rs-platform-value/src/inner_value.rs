@@ -1,5 +1,5 @@
-use std::collections::BTreeMap;
 use crate::{Error, Value};
+use std::collections::BTreeMap;
 
 impl Value {
     /// Retrieves the value of a key from a map if it's an array of strings.
@@ -54,7 +54,9 @@ impl Value {
         document_type: &'a [(Value, Value)],
         key: &'a str,
     ) -> Result<Option<&'a str>, Error> {
-        Self::get_from_map(document_type, key).map(|v| v.as_str()).transpose()
+        Self::get_from_map(document_type, key)
+            .map(|v| v.as_str())
+            .transpose()
     }
 
     /// Retrieves the value of a key from a map if it's a byte array.
@@ -62,7 +64,9 @@ impl Value {
         document_type: &'a [(Value, Value)],
         key: &'a str,
     ) -> Result<Option<Vec<u8>>, Error> {
-        Self::get_from_map(document_type, key).map(|v| v.to_bytes()).transpose()
+        Self::get_from_map(document_type, key)
+            .map(|v| v.to_bytes())
+            .transpose()
     }
 
     /// Retrieves the value of a key from a map if it's a byte array.
@@ -70,7 +74,9 @@ impl Value {
         document_type: &'a [(Value, Value)],
         key: &'a str,
     ) -> Result<Option<&'a [u8]>, Error> {
-        Self::get_from_map(document_type, key).map(|v| v.as_bytes_slice()).transpose()
+        Self::get_from_map(document_type, key)
+            .map(|v| v.as_bytes_slice())
+            .transpose()
     }
 
     /// Gets the inner array value from a borrowed ValueMap
@@ -78,14 +84,13 @@ impl Value {
         document_type: &'a [(Value, Value)],
         key: &'a str,
     ) -> Result<Option<&'a [Value]>, Error> {
-        Self::get_from_map(document_type, key).map(|v| v.as_slice()).transpose()
+        Self::get_from_map(document_type, key)
+            .map(|v| v.as_slice())
+            .transpose()
     }
 
     /// Gets a value from a map
-    pub fn get_from_map<'a>(
-        map: &'a [(Value, Value)],
-        search_key: &'a str,
-    ) -> Option<&'a Value> {
+    pub fn get_from_map<'a>(map: &'a [(Value, Value)], search_key: &'a str) -> Option<&'a Value> {
         for (key, value) in map.iter() {
             if !key.is_text() {
                 continue;

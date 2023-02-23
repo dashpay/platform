@@ -5,10 +5,10 @@ use anyhow::anyhow;
 use ciborium::value::Value as CborValue;
 use integer_encoding::VarInt;
 use itertools::{Either, Itertools};
-use serde::{Deserialize, Serialize};
-use serde_json::Value as JsonValue;
 use platform_value::btreemap_extensions::BTreeValueMapHelper;
 use platform_value::Value;
+use serde::{Deserialize, Serialize};
+use serde_json::Value as JsonValue;
 
 use crate::data_contract::contract_config;
 use crate::data_contract::contract_config::{
@@ -152,7 +152,8 @@ impl DataContract {
                 ))
             })?;
 
-        let data_contract_map : BTreeMap<String, Value> = Value::convert_from_cbor_map(data_contract_cbor_map);
+        let data_contract_map: BTreeMap<String, Value> =
+            Value::convert_from_cbor_map(data_contract_cbor_map);
 
         let contract_id: [u8; 32] = data_contract_map.get_identifier(property_names::ID)?;
         let owner_id: [u8; 32] = data_contract_map.get_identifier(property_names::OWNER_ID)?;
@@ -161,7 +162,7 @@ impl DataContract {
 
         // Defs
         let defs = data_contract_map
-            .get_inner_borrowed_str_value_map::<BTreeMap<_,_>>("$defs")?
+            .get_inner_borrowed_str_value_map::<BTreeMap<_, _>>("$defs")?
             .map(|definition_map| {
                 let mut res = BTreeMap::<String, JsonValue>::new();
                 for (key, value) in definition_map {

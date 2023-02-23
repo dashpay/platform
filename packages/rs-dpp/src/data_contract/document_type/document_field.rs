@@ -8,11 +8,11 @@ use crate::data_contract::extra::common::cbor_map_to_btree_map;
 use crate::ProtocolError;
 use byteorder::{BigEndian, ReadBytesExt, WriteBytesExt};
 use integer_encoding::{VarInt, VarIntReader};
+use platform_value::{Error, Integer, Value};
 use rand::distributions::{Alphanumeric, Standard};
 use rand::rngs::StdRng;
 use rand::Rng;
 use serde::{Deserialize, Serialize};
-use platform_value::{Error, Integer, Value};
 
 use super::array_field::ArrayFieldType;
 
@@ -181,9 +181,7 @@ impl DocumentFieldType {
 
     pub fn random_value(&self, rng: &mut StdRng) -> Value {
         match self {
-            DocumentFieldType::Integer => {
-                Value::I64(rng.gen::<i64>())
-            }
+            DocumentFieldType::Integer => Value::I64(rng.gen::<i64>()),
             DocumentFieldType::Number => Value::Float(rng.gen::<f64>()),
             DocumentFieldType::String(_, _) => {
                 let size = self.random_size(rng);
@@ -222,9 +220,7 @@ impl DocumentFieldType {
 
     pub fn random_filled_value(&self, rng: &mut StdRng) -> Value {
         match self {
-            DocumentFieldType::Integer => {
-                Value::I64(rng.gen::<i64>())
-            }
+            DocumentFieldType::Integer => Value::I64(rng.gen::<i64>()),
             DocumentFieldType::Number => Value::Float(rng.gen::<f64>()),
             DocumentFieldType::String(_, _) => {
                 let size = self.max_size().unwrap();
@@ -415,8 +411,7 @@ impl DocumentFieldType {
                 }
             }
             DocumentFieldType::Integer => {
-                let value_as_i64: i64 = value
-                    .into_integer().map_err(ProtocolError::ValueError)?;
+                let value_as_i64: i64 = value.into_integer().map_err(ProtocolError::ValueError)?;
                 let mut value_bytes = value_as_i64.to_be_bytes().to_vec();
                 if required {
                     Ok(value_bytes)
@@ -453,9 +448,7 @@ impl DocumentFieldType {
                     Value::Array(array) => array
                         .into_iter()
                         .map(|byte| match byte {
-                            Value::U8(value_as_u8) => {
-                                Ok(value_as_u8)
-                            }
+                            Value::U8(value_as_u8) => Ok(value_as_u8),
                             _ => Err(ProtocolError::DataContractError(
                                 DataContractError::ValueWrongType("not an array of bytes"),
                             )),
@@ -479,7 +472,8 @@ impl DocumentFieldType {
             }
             DocumentFieldType::Object(inner_fields) => {
                 if let Value::Map(map) = value {
-                    let mut value_map = Value::map_into_btree_map(map).map_err(ProtocolError::ValueError)?;
+                    let mut value_map =
+                        Value::map_into_btree_map(map).map_err(ProtocolError::ValueError)?;
                     let mut r_vec = vec![];
                     inner_fields.iter().try_for_each(|(key, field)| {
                         if let Some(value) = value_map.remove(key) {
@@ -557,8 +551,7 @@ impl DocumentFieldType {
                 }
             }
             DocumentFieldType::Integer => {
-                let value_as_i64: i64 = value
-                    .into_integer().map_err(ProtocolError::ValueError)?;
+                let value_as_i64: i64 = value.into_integer().map_err(ProtocolError::ValueError)?;
                 let mut value_bytes = value_as_i64.to_be_bytes().to_vec();
                 if required {
                     Ok(value_bytes)
@@ -595,9 +588,7 @@ impl DocumentFieldType {
                     Value::Array(array) => array
                         .iter()
                         .map(|byte| match byte {
-                            Value::U8(value_as_u8) => {
-                                Ok(*value_as_u8)
-                            }
+                            Value::U8(value_as_u8) => Ok(*value_as_u8),
                             _ => Err(ProtocolError::DataContractError(
                                 DataContractError::ValueWrongType("not an array of integers"),
                             )),
@@ -686,10 +677,9 @@ impl DocumentFieldType {
             }
             DocumentFieldType::Date => {
                 encode_float(value.into_float().map_err(ProtocolError::ValueError)?)
-            },
+            }
             DocumentFieldType::Integer => {
-                let value_as_i64 = value
-                    .into_integer().map_err(ProtocolError::ValueError)?;
+                let value_as_i64 = value.into_integer().map_err(ProtocolError::ValueError)?;
 
                 encode_signed_integer(value_as_i64)
             }
@@ -709,9 +699,7 @@ impl DocumentFieldType {
                 Value::Array(array) => array
                     .iter()
                     .map(|byte| match byte {
-                        Value::U8(value_as_u8) => {
-                            Ok(*value_as_u8)
-                        }
+                        Value::U8(value_as_u8) => Ok(*value_as_u8),
                         _ => Err(ProtocolError::DataContractError(
                             DataContractError::ValueWrongType("not an array of integers"),
                         )),
@@ -762,14 +750,13 @@ impl DocumentFieldType {
                 }
                 Ok(Value::Text(str.to_string()))
             }
-            DocumentFieldType::Integer => str
-                .parse::<i128>()
-                .map(|f| Value::I128(f))
-                .map_err(|_| {
+            DocumentFieldType::Integer => {
+                str.parse::<i128>().map(|f| Value::I128(f)).map_err(|_| {
                     ProtocolError::DataContractError(DataContractError::ValueWrongType(
                         "value is not an integer",
                     ))
-                }),
+                })
+            }
             DocumentFieldType::Number | DocumentFieldType::Date => {
                 str.parse::<f64>().map(Value::Float).map_err(|_| {
                     ProtocolError::DataContractError(DataContractError::ValueWrongType(

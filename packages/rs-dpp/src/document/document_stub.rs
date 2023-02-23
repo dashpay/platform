@@ -426,7 +426,18 @@ impl DocumentStub {
     /// Temporary helper method to get property in u64 format
     /// Imitating JsonValueExt trait
     pub fn get_integer<T>(&self, property_name: &str) -> Result<T, anyhow::Error>
-        where T: TryFrom<i128> + TryFrom<u128> + TryFrom<u64> + TryFrom<i64> + TryFrom<u32> + TryFrom<i32> + TryFrom<u16> + TryFrom<i16> + TryFrom<u8> + TryFrom<i8> {
+    where
+        T: TryFrom<i128>
+            + TryFrom<u128>
+            + TryFrom<u64>
+            + TryFrom<i64>
+            + TryFrom<u32>
+            + TryFrom<i32>
+            + TryFrom<u16>
+            + TryFrom<i16>
+            + TryFrom<u8>
+            + TryFrom<i8>,
+    {
         let property_value = self.properties.get(property_name).ok_or_else(|| {
             anyhow!(
                 "the property '{}' doesn't exist in '{:?}'",
@@ -435,7 +446,9 @@ impl DocumentStub {
             )
         })?;
 
-        property_value.to_integer().map_err(|_| anyhow!("unable convert {} to u64", property_name))
+        property_value
+            .to_integer()
+            .map_err(|_| anyhow!("unable convert {} to u64", property_name))
     }
 
     /// Temporary helper method to get property in bytes format

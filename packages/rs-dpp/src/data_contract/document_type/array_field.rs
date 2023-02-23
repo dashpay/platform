@@ -1,10 +1,10 @@
 use std::convert::TryInto;
 
 use super::*;
-use integer_encoding::VarInt;
-use serde::{Deserialize, Serialize};
-use platform_value::Value;
 use crate::ProtocolError;
+use integer_encoding::VarInt;
+use platform_value::Value;
+use serde::{Deserialize, Serialize};
 
 #[derive(Serialize, Deserialize, Debug, PartialEq, Eq, Clone)]
 pub enum ArrayFieldType {
@@ -35,8 +35,7 @@ impl ArrayFieldType {
                 Ok(value_bytes)
             }
             ArrayFieldType::Integer => {
-                let value_as_i64: i64  = value
-                    .into_integer().map_err(ProtocolError::ValueError)?;
+                let value_as_i64: i64 = value.into_integer().map_err(ProtocolError::ValueError)?;
 
                 let value_bytes = value_as_i64.to_be_bytes().to_vec();
                 Ok(value_bytes)
@@ -51,19 +50,19 @@ impl ArrayFieldType {
                     Value::Bytes(bytes) => Ok(bytes),
                     Value::Text(text) => {
                         let value_as_bytes = base64::decode(text).map_err(|_| {
-                            ProtocolError::DataContractError(DataContractError::ValueDecodingError("bytearray: invalid base64 value"))
+                            ProtocolError::DataContractError(DataContractError::ValueDecodingError(
+                                "bytearray: invalid base64 value",
+                            ))
                         })?;
                         Ok(value_as_bytes)
                     }
                     Value::Array(array) => array
                         .into_iter()
                         .map(|byte| match byte {
-                            Value::U8(value_as_u8) => {
-                                Ok(value_as_u8)
-                            }
-                            _ => Err(ProtocolError::DataContractError(DataContractError::ValueWrongType(
-                                "not an array of integers",
-                            ))),
+                            Value::U8(value_as_u8) => Ok(value_as_u8),
+                            _ => Err(ProtocolError::DataContractError(
+                                DataContractError::ValueWrongType("not an array of integers"),
+                            )),
                         })
                         .collect::<Result<Vec<u8>, ProtocolError>>(),
                     _ => Err(get_field_type_matching_error()),
@@ -99,8 +98,7 @@ impl ArrayFieldType {
                 Ok(value_bytes)
             }
             ArrayFieldType::Integer => {
-                let value_as_i64: i64  = value
-                    .into_integer().map_err(ProtocolError::ValueError)?;
+                let value_as_i64: i64 = value.into_integer().map_err(ProtocolError::ValueError)?;
                 let value_bytes = value_as_i64.to_be_bytes().to_vec();
                 Ok(value_bytes)
             }
@@ -121,12 +119,10 @@ impl ArrayFieldType {
                     Value::Array(array) => array
                         .iter()
                         .map(|byte| match byte {
-                            Value::U8(value_as_u8) => {
-                                Ok(*value_as_u8)
-                            }
-                            _ => Err(ProtocolError::DataContractError(DataContractError::ValueWrongType(
-                                "not an array of integers",
-                            ))),
+                            Value::U8(value_as_u8) => Ok(*value_as_u8),
+                            _ => Err(ProtocolError::DataContractError(
+                                DataContractError::ValueWrongType("not an array of integers"),
+                            )),
                         })
                         .collect::<Result<Vec<u8>, ProtocolError>>(),
                     _ => Err(get_field_type_matching_error()),
@@ -150,5 +146,7 @@ impl ArrayFieldType {
 }
 
 fn get_field_type_matching_error() -> ProtocolError {
-    ProtocolError::DataContractError(DataContractError::ValueWrongType("document field type doesn't match document value"))
+    ProtocolError::DataContractError(DataContractError::ValueWrongType(
+        "document field type doesn't match document value",
+    ))
 }

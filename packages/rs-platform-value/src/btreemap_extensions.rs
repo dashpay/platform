@@ -12,18 +12,54 @@ pub trait BTreeValueMapHelper {
     fn get_string(&self, key: &str) -> Result<String, Error>;
     fn get_optional_str(&self, key: &str) -> Result<Option<&str>, Error>;
     fn get_str(&self, key: &str) -> Result<&str, Error>;
-    fn get_optional_integer<T>(&self, key: &str)
-                                              -> Result<Option<T>, Error>
-        where T: TryFrom<i128> + TryFrom<u128> + TryFrom<u64> + TryFrom<i64> + TryFrom<u32> + TryFrom<i32> + TryFrom<u16> + TryFrom<i16> + TryFrom<u8> + TryFrom<i8>;
+    fn get_optional_integer<T>(&self, key: &str) -> Result<Option<T>, Error>
+    where
+        T: TryFrom<i128>
+            + TryFrom<u128>
+            + TryFrom<u64>
+            + TryFrom<i64>
+            + TryFrom<u32>
+            + TryFrom<i32>
+            + TryFrom<u16>
+            + TryFrom<i16>
+            + TryFrom<u8>
+            + TryFrom<i8>;
     fn get_integer<T>(&self, key: &str) -> Result<T, Error>
-        where T: TryFrom<i128> + TryFrom<u128> + TryFrom<u64> + TryFrom<i64> + TryFrom<u32> + TryFrom<i32> + TryFrom<u16> + TryFrom<i16> + TryFrom<u8> + TryFrom<i8>;
-    fn remove_optional_integer<T>(
-        &mut self,
-        key: &str,
-    ) -> Result<Option<T>, Error>
-        where T: TryFrom<i128> + TryFrom<u128> + TryFrom<u64> + TryFrom<i64> + TryFrom<u32> + TryFrom<i32> + TryFrom<u16> + TryFrom<i16> + TryFrom<u8> + TryFrom<i8>;
+    where
+        T: TryFrom<i128>
+            + TryFrom<u128>
+            + TryFrom<u64>
+            + TryFrom<i64>
+            + TryFrom<u32>
+            + TryFrom<i32>
+            + TryFrom<u16>
+            + TryFrom<i16>
+            + TryFrom<u8>
+            + TryFrom<i8>;
+    fn remove_optional_integer<T>(&mut self, key: &str) -> Result<Option<T>, Error>
+    where
+        T: TryFrom<i128>
+            + TryFrom<u128>
+            + TryFrom<u64>
+            + TryFrom<i64>
+            + TryFrom<u32>
+            + TryFrom<i32>
+            + TryFrom<u16>
+            + TryFrom<i16>
+            + TryFrom<u8>
+            + TryFrom<i8>;
     fn remove_integer<T>(&mut self, key: &str) -> Result<T, Error>
-        where T: TryFrom<i128> + TryFrom<u128> + TryFrom<u64> + TryFrom<i64> + TryFrom<u32> + TryFrom<i32> + TryFrom<u16> + TryFrom<i16> + TryFrom<u8> + TryFrom<i8>;
+    where
+        T: TryFrom<i128>
+            + TryFrom<u128>
+            + TryFrom<u64>
+            + TryFrom<i64>
+            + TryFrom<u32>
+            + TryFrom<i32>
+            + TryFrom<u16>
+            + TryFrom<i16>
+            + TryFrom<u8>
+            + TryFrom<i8>;
     fn get_optional_bool(&self, key: &str) -> Result<Option<bool>, Error>;
     fn get_bool(&self, key: &str) -> Result<bool, Error>;
     fn get_optional_inner_value_array<'a, I: FromIterator<&'a Value>>(
@@ -38,10 +74,7 @@ pub trait BTreeValueMapHelper {
         &self,
         key: &str,
     ) -> Result<Option<I>, Error>;
-    fn get_inner_string_array<I: FromIterator<String>>(
-        &self,
-        key: &str,
-    ) -> Result<I, Error>;
+    fn get_inner_string_array<I: FromIterator<String>>(&self, key: &str) -> Result<I, Error>;
     fn get_optional_inner_borrowed_str_value_map<'a, I: FromIterator<(String, &'a Value)>>(
         &'a self,
         key: &str,
@@ -66,11 +99,13 @@ pub trait ValueMapExtension {
 }
 
 impl<V> BTreeValueMapHelper for BTreeMap<String, V>
-    where
-        V: Borrow<Value>,
+where
+    V: Borrow<Value>,
 {
     fn get_optional_identifier(&self, key: &str) -> Result<Option<[u8; 32]>, Error> {
-        self.get(key).map(|v| v.borrow().to_system_hash256()).transpose()
+        self.get(key)
+            .map(|v| v.borrow().to_system_hash256())
+            .transpose()
     }
 
     fn get_identifier(&self, key: &str) -> Result<[u8; 32], Error> {
@@ -91,9 +126,8 @@ impl<V> BTreeValueMapHelper for BTreeMap<String, V>
     }
 
     fn get_string(&self, key: &str) -> Result<String, Error> {
-        self.get_optional_string(key)?.ok_or_else(|| {
-            Error::StructureError(format!("unable to get string property {key}"))
-        })
+        self.get_optional_string(key)?
+            .ok_or_else(|| Error::StructureError(format!("unable to get string property {key}")))
     }
 
     fn get_optional_str(&self, key: &str) -> Result<Option<&str>, Error> {
@@ -107,44 +141,74 @@ impl<V> BTreeValueMapHelper for BTreeMap<String, V>
     }
 
     fn get_str(&self, key: &str) -> Result<&str, Error> {
-        self.get_optional_str(key)?.ok_or_else(|| {
-            Error::StructureError(format!("unable to get str property {key}"))
-        })
+        self.get_optional_str(key)?
+            .ok_or_else(|| Error::StructureError(format!("unable to get str property {key}")))
     }
 
-    fn get_optional_integer<T>(
-        &self,
-        key: &str,
-    ) -> Result<Option<T>, Error>
-    where T: TryFrom<i128> + TryFrom<u128> + TryFrom<u64> + TryFrom<i64> + TryFrom<u32> + TryFrom<i32> + TryFrom<u16> + TryFrom<i16> + TryFrom<u8> + TryFrom<i8> {
-        self.get(key)
-            .map(|v| {
-                v.borrow().to_integer()
-            })
-            .transpose()
+    fn get_optional_integer<T>(&self, key: &str) -> Result<Option<T>, Error>
+    where
+        T: TryFrom<i128>
+            + TryFrom<u128>
+            + TryFrom<u64>
+            + TryFrom<i64>
+            + TryFrom<u32>
+            + TryFrom<i32>
+            + TryFrom<u16>
+            + TryFrom<i16>
+            + TryFrom<u8>
+            + TryFrom<i8>,
+    {
+        self.get(key).map(|v| v.borrow().to_integer()).transpose()
     }
 
     fn get_integer<T>(&self, key: &str) -> Result<T, Error>
-        where T: TryFrom<i128> + TryFrom<u128> + TryFrom<u64> + TryFrom<i64> + TryFrom<u32> + TryFrom<i32> + TryFrom<u16> + TryFrom<i16> + TryFrom<u8> + TryFrom<i8> {
-        self.get_optional_integer(key)?.ok_or_else(|| {
-            Error::StructureError(format!("unable to get integer property {key}"))
-        })
+    where
+        T: TryFrom<i128>
+            + TryFrom<u128>
+            + TryFrom<u64>
+            + TryFrom<i64>
+            + TryFrom<u32>
+            + TryFrom<i32>
+            + TryFrom<u16>
+            + TryFrom<i16>
+            + TryFrom<u8>
+            + TryFrom<i8>,
+    {
+        self.get_optional_integer(key)?
+            .ok_or_else(|| Error::StructureError(format!("unable to get integer property {key}")))
     }
 
-    fn remove_optional_integer<T>(
-        &mut self,
-        key: &str,
-    ) -> Result<Option<T>, Error>
-        where T: TryFrom<i128> + TryFrom<u128> + TryFrom<u64> + TryFrom<i64> + TryFrom<u32> + TryFrom<i32> + TryFrom<u16> + TryFrom<i16> + TryFrom<u8> + TryFrom<i8> {
+    fn remove_optional_integer<T>(&mut self, key: &str) -> Result<Option<T>, Error>
+    where
+        T: TryFrom<i128>
+            + TryFrom<u128>
+            + TryFrom<u64>
+            + TryFrom<i64>
+            + TryFrom<u32>
+            + TryFrom<i32>
+            + TryFrom<u16>
+            + TryFrom<i16>
+            + TryFrom<u8>
+            + TryFrom<i8>,
+    {
         self.remove(key)
-            .map(|v| {
-                v.borrow().to_integer()
-            })
+            .map(|v| v.borrow().to_integer())
             .transpose()
     }
 
     fn remove_integer<T>(&mut self, key: &str) -> Result<T, Error>
-        where T: TryFrom<i128> + TryFrom<u128> + TryFrom<u64> + TryFrom<i64> + TryFrom<u32> + TryFrom<i32> + TryFrom<u16> + TryFrom<i16> + TryFrom<u8> + TryFrom<i8> {
+    where
+        T: TryFrom<i128>
+            + TryFrom<u128>
+            + TryFrom<u64>
+            + TryFrom<i64>
+            + TryFrom<u32>
+            + TryFrom<i32>
+            + TryFrom<u16>
+            + TryFrom<i16>
+            + TryFrom<u8>
+            + TryFrom<i8>,
+    {
         self.remove_optional_integer(key)?.ok_or_else(|| {
             Error::StructureError(format!("unable to remove integer property {key}"))
         })
@@ -161,9 +225,8 @@ impl<V> BTreeValueMapHelper for BTreeMap<String, V>
     }
 
     fn get_bool(&self, key: &str) -> Result<bool, Error> {
-        self.get_optional_bool(key)?.ok_or_else(|| {
-            Error::StructureError(format!("unable to get bool property {key}"))
-        })
+        self.get_optional_bool(key)?
+            .ok_or_else(|| Error::StructureError(format!("unable to get bool property {key}")))
     }
 
     fn get_optional_inner_value_array<'a, I: FromIterator<&'a Value>>(
@@ -214,19 +277,13 @@ impl<V> BTreeValueMapHelper for BTreeMap<String, V>
             .transpose()
     }
 
-    fn get_inner_string_array<I: FromIterator<String>>(
-        &self,
-        key: &str,
-    ) -> Result<I, Error> {
+    fn get_inner_string_array<I: FromIterator<String>>(&self, key: &str) -> Result<I, Error> {
         self.get_optional_inner_string_array(key)?.ok_or_else(|| {
             Error::StructureError(format!("unable to get inner string property {key}"))
         })
     }
 
-    fn get_optional_inner_borrowed_str_value_map<
-        'a,
-        I: FromIterator<(String, &'a Value)>,
-    >(
+    fn get_optional_inner_borrowed_str_value_map<'a, I: FromIterator<(String, &'a Value)>>(
         &'a self,
         key: &str,
     ) -> Result<Option<I>, Error> {
@@ -237,9 +294,7 @@ impl<V> BTreeValueMapHelper for BTreeMap<String, V>
                     .map(|inner| {
                         inner
                             .iter()
-                            .map(|(k, v)| {
-                                Ok((k.to_text()?, v))
-                            })
+                            .map(|(k, v)| Ok((k.to_text()?, v)))
                             .collect::<Result<I, Error>>()
                     })
                     .transpose()?

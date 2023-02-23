@@ -1,5 +1,5 @@
-use std::collections::BTreeMap;
 use crate::{Error, Value, ValueMap};
+use std::collections::BTreeMap;
 
 impl Value {
     /// If the `Value` is a `Map`, returns a the associated `BTreeMap<String, Value>` data as `Ok`.
@@ -26,17 +26,12 @@ impl Value {
     /// Takes a ValueMap which is a `Vec<(Value, Value)>`
     /// Returns a BTreeMap<String, Value> as long as each Key is a String
     /// Returns `Err(Error::Structure("reason"))` otherwise.
-    pub fn map_into_btree_map(
-        map: ValueMap,
-    ) -> Result<BTreeMap<String, Value>, Error> {
-        map
-            .into_iter()
+    pub fn map_into_btree_map(map: ValueMap) -> Result<BTreeMap<String, Value>, Error> {
+        map.into_iter()
             .map(|(key, value)| {
-                let key = key.into_text().map_err(|_| {
-                    Error::StructureError(
-                        "expected key to be string".to_string(),
-                    )
-                })?;
+                let key = key
+                    .into_text()
+                    .map_err(|_| Error::StructureError("expected key to be string".to_string()))?;
                 Ok((key, value))
             })
             .collect::<Result<BTreeMap<String, Value>, Error>>()
@@ -45,17 +40,12 @@ impl Value {
     /// Takes a ref to a ValueMap which is a `&Vec<(Value, Value)>`
     /// Returns a BTreeMap<String, &Value> as long as each Key is a String
     /// Returns `Err(Error::Structure("reason"))` otherwise.
-    pub fn map_ref_into_btree_map(
-        map: &ValueMap,
-    ) -> Result<BTreeMap<String, &Value>, Error> {
-        map
-            .iter()
+    pub fn map_ref_into_btree_map(map: &ValueMap) -> Result<BTreeMap<String, &Value>, Error> {
+        map.iter()
             .map(|(key, value)| {
-                let key = key.to_text().map_err(|_| {
-                    Error::StructureError(
-                        "expected key to be string".to_string(),
-                    )
-                })?;
+                let key = key
+                    .to_text()
+                    .map_err(|_| Error::StructureError("expected key to be string".to_string()))?;
                 Ok((key, value))
             })
             .collect::<Result<BTreeMap<String, &Value>, Error>>()

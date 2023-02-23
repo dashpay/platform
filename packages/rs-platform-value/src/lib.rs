@@ -5,21 +5,20 @@
 //! Forked from ciborium value
 //!
 //!
-pub mod value_map;
-mod integer;
-mod error;
-pub mod system_bytes;
-pub mod inner_value;
-pub mod converter;
 pub mod btreemap_extensions;
+pub mod converter;
 pub mod display;
-
+mod error;
+pub mod inner_value;
+mod integer;
+pub mod system_bytes;
+pub mod value_map;
 
 pub use error::Error;
 pub use integer::Integer;
 
 pub type ValueMap = Vec<(Value, Value)>;
-pub type Hash256 = [u8;32];
+pub type Hash256 = [u8; 32];
 
 /// A representation of a dynamic value that can handled dynamically
 #[non_exhaustive]
@@ -58,7 +57,6 @@ pub enum Value {
     // Todo: add this in
     // /// A 256 bit hash
     // Hash256(Hash256),
-
     /// Bytes
     Bytes(Vec<u8>),
 
@@ -122,7 +120,18 @@ impl Value {
     /// assert_eq!(17, value.as_integer().unwrap().try_into().unwrap());
     /// ```
     pub fn as_integer<T>(&self) -> Option<T>
-    where T: TryFrom<i128> + TryFrom<u128> + TryFrom<u64> + TryFrom<i64> + TryFrom<u32> + TryFrom<i32> + TryFrom<u16> + TryFrom<i16> + TryFrom<u8> + TryFrom<i8> {
+    where
+        T: TryFrom<i128>
+            + TryFrom<u128>
+            + TryFrom<u64>
+            + TryFrom<i64>
+            + TryFrom<u32>
+            + TryFrom<i32>
+            + TryFrom<u16>
+            + TryFrom<i16>
+            + TryFrom<u8>
+            + TryFrom<i8>,
+    {
         match self {
             Value::U128(int) => (*int).try_into().ok(),
             Value::I128(int) => (*int).try_into().ok(),
@@ -151,7 +160,18 @@ impl Value {
     /// assert_eq!(value.into_integer(), Err(Error::StructureError("value is not an integer".to_string())));
     /// ```
     pub fn into_integer<T>(self) -> Result<T, Error>
-        where T: TryFrom<i128> + TryFrom<u128> + TryFrom<u64> + TryFrom<i64> + TryFrom<u32> + TryFrom<i32> + TryFrom<u16> + TryFrom<i16> + TryFrom<u8> + TryFrom<i8> {
+    where
+        T: TryFrom<i128>
+            + TryFrom<u128>
+            + TryFrom<u64>
+            + TryFrom<i64>
+            + TryFrom<u32>
+            + TryFrom<i32>
+            + TryFrom<u16>
+            + TryFrom<i16>
+            + TryFrom<u8>
+            + TryFrom<i8>,
+    {
         match self {
             Value::U128(int) => int.try_into().map_err(|_| Error::IntegerSizeError),
             Value::I128(int) => int.try_into().map_err(|_| Error::IntegerSizeError),
@@ -180,7 +200,18 @@ impl Value {
     /// assert_eq!(value.into_integer(), Err(Error::StructureError("value is not an integer".to_string())));
     /// ```
     pub fn to_integer<T>(&self) -> Result<T, Error>
-        where T: TryFrom<i128> + TryFrom<u128> + TryFrom<u64> + TryFrom<i64> + TryFrom<u32> + TryFrom<i32> + TryFrom<u16> + TryFrom<i16> + TryFrom<u8> + TryFrom<i8> {
+    where
+        T: TryFrom<i128>
+            + TryFrom<u128>
+            + TryFrom<u64>
+            + TryFrom<i64>
+            + TryFrom<u32>
+            + TryFrom<i32>
+            + TryFrom<u16>
+            + TryFrom<i16>
+            + TryFrom<u8>
+            + TryFrom<i8>,
+    {
         match self {
             Value::U128(int) => (*int).try_into().map_err(|_| Error::IntegerSizeError),
             Value::I128(int) => (*int).try_into().map_err(|_| Error::IntegerSizeError),

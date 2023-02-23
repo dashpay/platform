@@ -22,18 +22,23 @@ impl Value {
     /// ```
     pub fn into_system_bytes(self) -> Result<Vec<u8>, Error> {
         match self {
-            Value::Text(text) => bs58::decode(text).into_vec().map_err(|_| Error::StructureError("value was a string, but could not be decoded from base 58".to_string())),
+            Value::Text(text) => bs58::decode(text).into_vec().map_err(|_| {
+                Error::StructureError(
+                    "value was a string, but could not be decoded from base 58".to_string(),
+                )
+            }),
             Value::Array(array) => array
                 .into_iter()
                 .map(|byte| match byte {
-                    Value::U8(value_as_u8) => {
-                        Ok(value_as_u8)
-                    }
+                    Value::U8(value_as_u8) => Ok(value_as_u8),
                     _ => Err(Error::StructureError("not an array of bytes".to_string())),
                 })
                 .collect::<Result<Vec<u8>, Error>>(),
             Value::Bytes(vec) => Ok(vec),
-            other => Err(Error::StructureError("value are not bytes, a string, or an array of values representing bytes".to_string())),
+            other => Err(Error::StructureError(
+                "value are not bytes, a string, or an array of values representing bytes"
+                    .to_string(),
+            )),
         }
     }
 
@@ -58,18 +63,23 @@ impl Value {
     /// ```
     pub fn to_system_bytes(&self) -> Result<Vec<u8>, Error> {
         match self {
-            Value::Text(text) => bs58::decode(text).into_vec().map_err(|_| Error::StructureError("value was a string, but could not be decoded from base 58".to_string())),
+            Value::Text(text) => bs58::decode(text).into_vec().map_err(|_| {
+                Error::StructureError(
+                    "value was a string, but could not be decoded from base 58".to_string(),
+                )
+            }),
             Value::Array(array) => array
                 .iter()
                 .map(|byte| match byte {
-                    Value::U8(value_as_u8) => {
-                        Ok(*value_as_u8)
-                    }
+                    Value::U8(value_as_u8) => Ok(*value_as_u8),
                     _ => Err(Error::StructureError("not an array of bytes".to_string())),
                 })
                 .collect::<Result<Vec<u8>, Error>>(),
             Value::Bytes(vec) => Ok(vec.clone()),
-            other => Err(Error::StructureError("value are not bytes, a string, or an array of values representing bytes".to_string())),
+            other => Err(Error::StructureError(
+                "value are not bytes, a string, or an array of values representing bytes"
+                    .to_string(),
+            )),
         }
     }
 

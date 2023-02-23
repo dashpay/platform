@@ -11,3 +11,5 @@ ciborium = { git="https://github.com/qrayven/ciborium", branch="feat-ser-null-as
 thiserror = "1.0.30"
 bs58 = "0.4.0"
 hex = "0.4.3"
+serde = { version = "1.0.152", features = ["derive"] }
+serde_json = { version="1.0", features=["preserve_order"] }

@@ -14,9 +14,9 @@ use crate::data_contract::extra::common::{
 };
 use crate::util::cbor_value::CborBTreeMapHelper;
 use crate::ProtocolError;
-use serde::{Deserialize, Serialize};
 use platform_value::btreemap_extensions::BTreeValueMapHelper;
 use platform_value::Value;
+use serde::{Deserialize, Serialize};
 
 pub const PROTOCOL_VERSION: u32 = 1;
 pub const CONTRACT_DOCUMENTS_PATH_HEIGHT: u16 = 4;
@@ -194,7 +194,8 @@ impl DocumentType {
             Value::inner_bool_value(document_type_value_map, "documentsMutable")
                 .unwrap_or(default_mutability);
 
-        let index_values = Value::inner_array_slice_value(document_type_value_map, property_names::INDICES);
+        let index_values =
+            Value::inner_array_slice_value(document_type_value_map, property_names::INDICES);
         let indices: Vec<Index> = index_values
             .map(|index_values| {
                 index_values
@@ -217,11 +218,13 @@ impl DocumentType {
 
         // Extract the properties
         let property_values =
-            Value::inner_btree_map(document_type_value_map, property_names::PROPERTIES)?.ok_or({
-                ProtocolError::DataContractError(DataContractError::InvalidContractStructure(
-                    "unable to get document properties from the contract",
-                ))
-            })?;
+            Value::inner_btree_map(document_type_value_map, property_names::PROPERTIES)?.ok_or(
+                {
+                    ProtocolError::DataContractError(DataContractError::InvalidContractStructure(
+                        "unable to get document properties from the contract",
+                    ))
+                },
+            )?;
 
         let mut required_fields =
             cbor_inner_array_of_strings(document_type_value_map, property_names::REQUIRED)

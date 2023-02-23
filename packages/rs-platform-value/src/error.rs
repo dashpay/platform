@@ -2,6 +2,9 @@ use thiserror::Error;
 
 #[derive(Error, Debug)]
 pub enum Error {
+    #[error("Unsupported: {0}")]
+    Unsupported(String),
+
     #[error("Structure Error: {0}")]
     StructureError(String),
 
