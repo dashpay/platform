@@ -96,18 +96,18 @@ describe('validateDataContractCreateTransitionBasicFactory', () => {
       expect(error.getParams().missingProperty).to.equal('protocolVersion');
     });
 
-    // it('should be an integer', async () => {
-    //   rawStateTransition.protocolVersion = '1';
+    it('should be an integer', async () => {
+      rawStateTransition.protocolVersion = '1';
 
-    //   const result = await validateDataContractCreateTransitionBasic(rawStateTransition);
+      const result = await validateDataContractCreateTransitionBasic(rawStateTransition);
 
-    //   expectJsonSchemaError(result);
+      expectJsonSchemaError(result);
 
-    //   const [error] = result.getErrors();
+      const [error] = result.getErrors();
 
-    //   expect(error.getInstancePath()).to.equal('/protocolVersion');
-    //   expect(error.getKeyword()).to.equal('type');
-    // });
+      expect(error.getInstancePath()).to.equal('/protocolVersion');
+      expect(error.getKeyword()).to.equal('type');
+    });
 
     // it('should be valid', async () => {
     //   rawStateTransition.protocolVersion = -1;

@@ -1,6 +1,8 @@
 mod apply;
 mod validation;
 
+use std::collections::HashMap;
+
 pub use apply::*;
 pub use validation::*;
 
@@ -39,8 +41,6 @@ impl From<DataContractCreateTransitionWasm> for DataContractCreateTransition {
 #[serde(rename_all = "camelCase")]
 struct DataContractCreateTransitionParameters {
     #[serde(skip_serializing_if = "Option::is_none", default)]
-    protocol_version: Option<u32>,
-    #[serde(skip_serializing_if = "Option::is_none", default)]
     data_contract: Option<DataContractParameters>,
     #[serde(skip_serializing_if = "Option::is_none", default)]
     entropy: Option<Vec<u8>>,
@@ -48,8 +48,8 @@ struct DataContractCreateTransitionParameters {
     signature_public_key_id: Option<KeyID>,
     #[serde(skip_serializing_if = "Option::is_none", default)]
     signature: Option<Vec<u8>>,
-    #[serde(skip_serializing_if = "Option::is_none", default, rename = "type")]
-    _type: Option<i32>,
+    #[serde(flatten)]
+    extra: HashMap<String, serde_json::Value>,
 }
 
 #[wasm_bindgen(js_class=DataContractCreateTransition)]
