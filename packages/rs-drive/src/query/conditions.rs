@@ -30,11 +30,9 @@
 //! Query Conditions
 //!
 
-use std::collections::{BTreeMap, BTreeSet};
-
-use ciborium::value::{Integer, Value};
 use grovedb::Query;
 use sqlparser::ast;
+use std::collections::{BTreeMap, BTreeSet};
 
 use WhereOperator::{
     Between, BetweenExcludeBounds, BetweenExcludeLeft, BetweenExcludeRight, Equal, GreaterThan,
@@ -45,9 +43,10 @@ use crate::error::query::QueryError;
 use crate::error::Error;
 use dpp::data_contract::document_type::DocumentType;
 use dpp::document::document_stub::DocumentStub;
+use dpp::platform_value::Value;
 
 /// Converts SQL values to CBOR.
-fn sql_value_to_cbor(sql_value: ast::Value) -> Option<Value> {
+fn sql_value_to_platform_value(sql_value: ast::Value) -> Option<Value> {
     match sql_value {
         ast::Value::Boolean(bool) => Some(Value::Bool(bool)),
         ast::Value::Number(num, _) => {
@@ -59,7 +58,7 @@ fn sql_value_to_cbor(sql_value: ast::Value) -> Option<Value> {
             } else {
                 // Integer
                 let num_as_int = number_as_string.parse::<i64>().ok();
-                num_as_int.map(|num| Value::Integer(Integer::from(num)))
+                num_as_int.map(|num| Value::I64(num))
             }
         }
         ast::Value::DoubleQuotedString(s) => Some(Value::Text(s)),
@@ -249,7 +248,70 @@ impl<'a> WhereClause {
     /// Returns true if the less than where clause is true
     pub fn less_than(&self, other: &Self, allow_eq: bool) -> Result<bool, Error> {
         match (&self.value, &other.value) {
-            (Value::Integer(x), Value::Integer(y)) => {
+            (Value::I128(x), Value::I128(y)) => {
+                if allow_eq {
+                    Ok(x.le(y))
+                } else {
+                    Ok(x.lt(y))
+                }
+            }
+            (Value::U128(x), Value::U128(y)) => {
+                if allow_eq {
+                    Ok(x.le(y))
+                } else {
+                    Ok(x.lt(y))
+                }
+            }
+            (Value::I64(x), Value::I64(y)) => {
+                if allow_eq {
+                    Ok(x.le(y))
+                } else {
+                    Ok(x.lt(y))
+                }
+            }
+            (Value::U64(x), Value::U64(y)) => {
+                if allow_eq {
+                    Ok(x.le(y))
+                } else {
+                    Ok(x.lt(y))
+                }
+            }
+            (Value::I32(x), Value::I32(y)) => {
+                if allow_eq {
+                    Ok(x.le(y))
+                } else {
+                    Ok(x.lt(y))
+                }
+            }
+            (Value::U32(x), Value::U32(y)) => {
+                if allow_eq {
+                    Ok(x.le(y))
+                } else {
+                    Ok(x.lt(y))
+                }
+            }
+            (Value::I16(x), Value::I16(y)) => {
+                if allow_eq {
+                    Ok(x.le(y))
+                } else {
+                    Ok(x.lt(y))
+                }
+            }
+            (Value::U16(x), Value::U16(y)) => {
+                if allow_eq {
+                    Ok(x.le(y))
+                } else {
+                    Ok(x.lt(y))
+                }
+            }
+            (Value::I8(x), Value::I8(y)) => {
+                if allow_eq {
+                    Ok(x.le(y))
+                } else {
+                    Ok(x.lt(y))
+                }
+            }
+            (Value::U8(x), Value::U8(y)) => {
                 if allow_eq {
                     Ok(x.le(y))
                 } else {
@@ -960,7 +1022,7 @@ impl<'a> WhereClause {
                 let mut in_values: Vec<Value> = Vec::new();
                 for value in list {
                     if let ast::Expr::Value(sql_value) = value {
-                        let cbor_val = sql_value_to_cbor(sql_value.clone()).ok_or({
+                        let cbor_val = sql_value_to_platform_value(sql_value.clone()).ok_or({
                             Error::Query(QueryError::InvalidSQL(
                                 "Invalid query: unexpected value type",
                             ))
@@ -1016,7 +1078,7 @@ impl<'a> WhereClause {
                     };
 
                     let value = if let ast::Expr::Value(value) = value_expr {
-                        let cbor_val = sql_value_to_cbor(value.clone()).ok_or({
+                        let cbor_val = sql_value_to_platform_value(value.clone()).ok_or({
                             Error::Query(QueryError::InvalidSQL(
                                 "Invalid query: unexpected value type",
                             ))
@@ -1062,12 +1124,11 @@ impl<'a> WhereClause {
 
 #[cfg(test)]
 mod tests {
-    use ciborium::value::Value;
-
     use crate::query::conditions::WhereClause;
     use crate::query::conditions::WhereOperator::{
         Equal, GreaterThan, GreaterThanOrEquals, In, LessThan, LessThanOrEquals,
     };
+    use dpp::platform_value::Value;
 
     #[test]
     fn test_allowed_sup_query_pairs() {

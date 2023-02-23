@@ -30,7 +30,6 @@
 use std::collections::BTreeMap;
 use std::ops::BitXor;
 
-use ciborium::value::Value;
 use grovedb::query_result_type::{QueryResultElements, QueryResultType};
 /// Import grovedb
 pub use grovedb::{
@@ -68,6 +67,8 @@ use crate::fee::op::DriveOperation;
 use crate::drive::contract::paths::ContractPaths;
 use dpp::data_contract::extra::common::bytes_for_system_value;
 use dpp::document::document_stub::DocumentStub;
+use dpp::platform_value::btreemap_extensions::BTreeValueMapHelper;
+use dpp::platform_value::Value;
 use dpp::ProtocolError;
 
 pub mod conditions;
@@ -256,40 +257,34 @@ impl<'a> DriveQuery<'a> {
         contract: &'a Contract,
         document_type: &'a DocumentType,
     ) -> Result<Self, Error> {
-        let mut query_document: BTreeMap<String, Value> = ciborium::de::from_reader(query_cbor)
-            .map_err(|_| {
+        let query_document_cbor: BTreeMap<String, ciborium::Value> =
+            ciborium::de::from_reader(query_cbor).map_err(|_| {
                 Error::Query(QueryError::DeserializationError(
                     "unable to decode query from cbor",
                 ))
             })?;
+        let mut query_document: BTreeMap<String, Value> =
+            Value::convert_from_cbor_map(query_document_cbor);
 
-        let limit: u16 = query_document
-            .remove("limit")
-            .map_or(Some(defaults::DEFAULT_QUERY_LIMIT), |id_cbor| {
-                if let Value::Integer(b) = id_cbor {
-                    let reduced = i128::from(b) as u64;
-                    if reduced == 0 || reduced > (defaults::DEFAULT_QUERY_LIMIT as u64) {
-                        None
-                    } else {
-                        Some(reduced as u16)
-                    }
-                } else {
+        let maybe_limit: Option<u16> = query_document
+            .remove_optional_integer("limit")
+            .map_err(|e| Error::Protocol(ProtocolError::ValueError(e)))?;
+
+        let limit = maybe_limit
+            .map_or(Some(defaults::DEFAULT_QUERY_LIMIT), |limit_value| {
+                if limit_value == 0 || limit_value > defaults::DEFAULT_QUERY_LIMIT {
                     None
+                } else {
+                    Some(limit_value as u16)
                 }
             })
             .ok_or(Error::Query(QueryError::InvalidLimit(
                 "limit should be a integer from 1 to 100",
             )))?;
 
-        let block_time: Option<f64> = query_document.remove("blockTime").and_then(|id_cbor| {
-            if let Value::Float(b) = id_cbor {
-                Some(b)
-            } else if let Value::Integer(b) = id_cbor {
-                Some(i128::from(b) as f64)
-            } else {
-                None
-            }
-        });
+        let block_time: Option<f64> = query_document
+            .remove_optional_float("blockTime")
+            .map_err(|e| Error::Protocol(ProtocolError::ValueError(e)))?;
 
         let all_where_clauses: Vec<WhereClause> =
             query_document
@@ -337,11 +332,12 @@ impl<'a> DriveQuery<'a> {
             start_at_included = true;
         }
 
-        let start_at: Option<Vec<u8>> = if start_option.is_some() {
-            bytes_for_system_value(&start_option.unwrap())?
-        } else {
-            None
-        };
+        let start_at: Option<Vec<u8>> = start_option
+            .map(|v| {
+                v.into_system_bytes()
+                    .map_err(|e| Error::Protocol(ProtocolError::ValueError(e)))
+            })
+            .transpose()?;
 
         let order_by: IndexMap<String, OrderClause> = query_document
             .remove("orderBy")

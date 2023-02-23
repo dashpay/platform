@@ -13,6 +13,8 @@ pub trait BTreeValueMapHelper {
     fn get_string(&self, key: &str) -> Result<String, Error>;
     fn get_optional_str(&self, key: &str) -> Result<Option<&str>, Error>;
     fn get_str(&self, key: &str) -> Result<&str, Error>;
+    fn get_optional_float(&self, key: &str) -> Result<Option<f64>, Error>;
+    fn get_float(&self, key: &str) -> Result<f64, Error>;
     fn get_optional_integer<T>(&self, key: &str) -> Result<Option<T>, Error>
     where
         T: TryFrom<i128>
@@ -78,6 +80,8 @@ pub trait BTreeValueMapHelper {
     fn get_system_bytes(&self, key: &str) -> Result<Vec<u8>, Error>;
     fn remove_optional_string(&mut self, key: &str) -> Result<Option<String>, Error>;
     fn remove_string(&mut self, key: &str) -> Result<String, Error>;
+    fn remove_optional_float(&mut self, key: &str) -> Result<Option<f64>, Error>;
+    fn remove_float(&mut self, key: &str) -> Result<f64, Error>;
     fn remove_optional_integer<T>(&mut self, key: &str) -> Result<Option<T>, Error>
     where
         T: TryFrom<i128>
@@ -409,7 +413,7 @@ where
     fn remove_system_hash256_bytes(&mut self, key: &str) -> Result<[u8; 32], Error> {
         self.remove_optional_system_hash256_bytes(key)?
             .ok_or_else(|| {
-                Error::StructureError(format!("unable to get system hash256 property {key}"))
+                Error::StructureError(format!("unable to remove system hash256 property {key}"))
             })
     }
 
@@ -421,7 +425,7 @@ where
 
     fn remove_system_bytes(&mut self, key: &str) -> Result<Vec<u8>, Error> {
         self.remove_optional_system_bytes(key)?.ok_or_else(|| {
-            Error::StructureError(format!("unable to get system bytes property {key}"))
+            Error::StructureError(format!("unable to remove system bytes property {key}"))
         })
     }
 
@@ -431,6 +435,24 @@ where
 
     fn remove_string(&mut self, key: &str) -> Result<String, Error> {
         self.remove_optional_string(key)?
-            .ok_or_else(|| Error::StructureError(format!("unable to get str property {key}")))
+            .ok_or_else(|| Error::StructureError(format!("unable to remove string property {key}")))
+    }
+
+    fn remove_optional_float(&mut self, key: &str) -> Result<Option<f64>, Error> {
+        self.remove(key).map(|v| v.borrow().to_float()).transpose()
+    }
+
+    fn remove_float(&mut self, key: &str) -> Result<f64, Error> {
+        self.remove_optional_float(key)?
+            .ok_or_else(|| Error::StructureError(format!("unable to remove float property {key}")))
+    }
+
+    fn get_optional_float(&self, key: &str) -> Result<Option<f64>, Error> {
+        self.get(key).map(|v| v.borrow().to_float()).transpose()
+    }
+
+    fn get_float(&self, key: &str) -> Result<f64, Error> {
+        self.get_optional_float(key)?
+            .ok_or_else(|| Error::StructureError(format!("unable to get float property {key}")))
     }
 }
