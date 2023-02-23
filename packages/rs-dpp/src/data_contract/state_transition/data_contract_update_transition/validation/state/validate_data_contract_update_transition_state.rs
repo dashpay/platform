@@ -4,7 +4,10 @@ use anyhow::Result;
 use async_trait::async_trait;
 
 use crate::{
-    data_contract::{ DataContract},
+    data_contract::{
+        state_transition::data_contract_update_transition::DataContractUpdateTransition,
+        DataContract,
+    },
     errors::consensus::basic::BasicError,
     state_repository::StateRepositoryLike,
     state_transition::StateTransitionLike,
@@ -94,7 +97,7 @@ pub async fn validate_data_contract_update_transition_state(
 mod test {
     use super::*;
     use crate::{
-        data_contract::state_transition::DataContractUpdateTransition,
+        data_contract::state_transition::data_contract_update_transition::DataContractUpdateTransition,
         state_repository::MockStateRepositoryLike, state_transition::StateTransitionLike,
         tests::fixtures::get_data_contract_fixture,
     };

@@ -63,6 +63,16 @@ impl<SR> DocumentBatchTransitionBasicValidator<SR>
 where
     SR: StateRepositoryLike,
 {
+    pub fn new(
+        state_repository: Arc<SR>,
+        protocol_version_validator: Arc<ProtocolVersionValidator>,
+    ) -> Self {
+        Self {
+            state_repository,
+            protocol_version_validator,
+        }
+    }
+
     pub async fn validate(
         &self,
         raw_state_transition: &JsonValue,

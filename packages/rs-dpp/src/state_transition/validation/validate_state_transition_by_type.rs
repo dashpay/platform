@@ -9,7 +9,7 @@ use crate::{
     state_transition::{
         state_transition_execution_context::StateTransitionExecutionContext, StateTransitionType,
     },
-    validation::{AsyncDataValidatorWithContext, SimpleValidationResult, ValidationResult},
+    validation::{AsyncDataValidatorWithContext, DataValidatorWithContext, SimpleValidationResult, ValidationResult},
     ProtocolError,  BlsModule, state_repository::StateRepositoryLike, data_contract::state_transition::{data_contract_update_transition::validation::basic::DataContractUpdateTransitionBasicValidator, data_contract_create_transition::validation::state::validate_data_contract_create_transition_basic::DataContractCreateTransitionBasicValidator}, identity::{state_transition::{identity_create_transition::validation::basic::IdentityCreateTransitionBasicValidator, validate_public_key_signatures::PublicKeysSignaturesValidator, identity_update_transition::validate_identity_update_transition_basic::ValidateIdentityUpdateTransitionBasic, identity_topup_transition::validation::basic::IdentityTopUpTransitionBasicValidator, identity_credit_withdrawal_transition::validation::basic::validate_identity_credit_withdrawal_transition_basic::IdentityCreditWithdrawalTransitionBasicValidator}, validation::PublicKeysValidator}, document::validation::basic::validate_documents_batch_transition_basic::DocumentBatchTransitionBasicValidator,
 };
 
@@ -96,21 +96,39 @@ where
     ) -> Result<SimpleValidationResult, ProtocolError> {
         let mut result = ValidationResult::default();
 
-        let validator = match state_transition_type {
-            StateTransitionType::DataContractCreate => &self.data_contract_create_validator,
-            StateTransitionType::DataContractUpdate => &self.data_contract_update_validator,
-            StateTransitionType::IdentityCreate => &self.identity_create_validator,
-            StateTransitionType::IdentityUpdate => &self.identity_update_validator,
-            StateTransitionType::IdentityTopUp => &self.identity_top_up_validator,
-            StateTransitionType::IdentityCreditWithdrawal => {
-                &self.identity_credit_withdrawal_validator
+        let validation_result = match state_transition_type {
+            StateTransitionType::DataContractCreate => self
+                .data_contract_create_validator
+                .validate(raw_state_transition, execution_context)?,
+            StateTransitionType::DataContractUpdate => {
+                self.data_contract_update_validator
+                    .validate(raw_state_transition, execution_context)
+                    .await?
             }
-            StateTransitionType::DocumentsBatch => &self.document_batch_validator,
+            StateTransitionType::IdentityCreate => {
+                self.identity_create_validator
+                    .validate(raw_state_transition, execution_context)
+                    .await?
+            }
+            StateTransitionType::IdentityUpdate => self
+                .identity_update_validator
+                .validate(raw_state_transition)?,
+            StateTransitionType::IdentityTopUp => {
+                self.identity_top_up_validator
+                    .validate(raw_state_transition, execution_context)
+                    .await?
+            }
+            StateTransitionType::IdentityCreditWithdrawal => {
+                self.identity_credit_withdrawal_validator
+                    .validate(raw_state_transition)
+                    .await?
+            }
+            StateTransitionType::DocumentsBatch => {
+                self.document_batch_validator
+                    .validate(raw_state_transition, execution_context)
+                    .await?
+            }
         };
-
-        let validation_result = validator
-            .validate(raw_state_transition, execution_context)
-            .await?;
 
         result.merge(validation_result);
 

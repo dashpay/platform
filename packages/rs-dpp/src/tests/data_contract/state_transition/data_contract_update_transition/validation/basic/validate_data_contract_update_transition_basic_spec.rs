@@ -5,7 +5,10 @@ use test_case::test_case;
 use crate::{
     consensus::basic::BasicError,
     data_contract::state_transition::{
-        data_contract_update_transition::validation::basic::DataContractUpdateTransitionBasicValidator,
+        data_contract_update_transition::{
+            validation::basic::DataContractUpdateTransitionBasicValidator,
+            DataContractUpdateTransition,
+        },
         property_names,
     },
     state_repository::MockStateRepositoryLike,

@@ -6,7 +6,13 @@ use std::{
 
 use crate::{
     consensus::{basic::BasicError, ConsensusError},
-    data_contract::DataContract,
+    data_contract::{
+        state_transition::{
+            data_contract_create_transition::DataContractCreateTransition,
+            data_contract_update_transition::DataContractUpdateTransition,
+        },
+        DataContract,
+    },
     decode_protocol_entity_factory::DecodeProtocolEntity,
     document::DocumentsBatchTransition,
     identity::state_transition::{
@@ -215,7 +221,7 @@ mod test {
     use serde_json::{json, Value as JsonValue};
 
     use crate::{
-        data_contract::state_transition::DataContractCreateTransition,
+        data_contract::state_transition::data_contract_create_transition::DataContractCreateTransition,
         document::{
             document_transition::{Action, DocumentTransitionObjectLike},
             DocumentsBatchTransition,

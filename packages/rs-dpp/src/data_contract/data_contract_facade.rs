@@ -6,6 +6,9 @@ use crate::version::ProtocolVersionValidator;
 use crate::ProtocolError;
 use std::sync::Arc;
 
+use super::state_transition::data_contract_create_transition::DataContractCreateTransition;
+use super::state_transition::data_contract_update_transition::DataContractUpdateTransition;
+
 pub struct DataContractFacade {
     factory: DataContractFactory,
     data_contract_validator: Arc<DataContractValidator>,

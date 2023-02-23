@@ -149,6 +149,7 @@ where
 mod test {
     use std::sync::Arc;
 
+    use crate::data_contract::state_transition::data_contract_create_transition::DataContractCreateTransition;
     use crate::identity::state_transition::identity_topup_transition::IdentityTopUpTransition;
     use crate::state_transition::StateTransitionLike;
     use crate::tests::fixtures::identity_topup_transition_fixture_json;

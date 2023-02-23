@@ -1,22 +1,23 @@
+use std::sync::Arc;
+
 use crate::{
-    data_contract::{DataContract},
+    data_contract::DataContract,
     document::{
         document_transition::{Action, DocumentTransitionObjectLike},
-        state_transition::documents_batch_transition::validation::basic::validate_documents_batch_transition_basic::validate_documents_batch_transition_basic,
+        validation::basic::validate_documents_batch_transition_basic::DocumentBatchTransitionBasicValidator,
         DocumentsBatchTransition,
     },
-    state_repository::{MockStateRepositoryLike},
-    state_transition::{StateTransitionConvert, state_transition_execution_context::StateTransitionExecutionContext},
+    state_repository::MockStateRepositoryLike,
+    state_transition::{
+        state_transition_execution_context::StateTransitionExecutionContext, StateTransitionConvert,
+    },
     tests::{
         fixtures::{
             get_data_contract_fixture, get_document_transitions_fixture,
             get_documents_fixture_with_owner_id_from_contract,
             get_protocol_version_validator_fixture,
         },
-        utils::{
-            generate_random_identifier,
-            get_schema_error,
-        },
+        utils::{generate_random_identifier, get_schema_error},
     },
     util::json_value::JsonValueExt,
     version::{ProtocolVersionValidator, LATEST_VERSION},
@@ -105,14 +106,15 @@ async fn property_should_be_present(property: &str) {
 
     raw_state_transition.remove(property).unwrap();
 
-    let result = validate_documents_batch_transition_basic(
-        &protocol_version_validator,
-        &raw_state_transition,
-        &state_repository_mock,
-        &Default::default(),
-    )
-    .await
-    .expect("validation result should be returned");
+    let validator = DocumentBatchTransitionBasicValidator::new(
+        Arc::new(state_repository_mock),
+        Arc::new(protocol_version_validator),
+    );
+
+    let result = validator
+        .validate(&raw_state_transition, &Default::default())
+        .await
+        .expect("validation result should be returned");
     let schema_error = get_schema_error(&result, 0);
 
     assert!(matches!(
@@ -134,16 +136,17 @@ async fn protocol_version_should_be_integer() {
 
     raw_state_transition["protocolVersion"] = json!("1");
 
-    let result = validate_documents_batch_transition_basic(
-        &protocol_version_validator,
-        &raw_state_transition,
-        &state_repository_mock,
-        &Default::default(),
-    )
-    .await
-    .expect("validation result should be returned");
+    let validator = DocumentBatchTransitionBasicValidator::new(
+        Arc::new(state_repository_mock),
+        Arc::new(protocol_version_validator),
+    );
 
+    let result = validator
+        .validate(&raw_state_transition, &Default::default())
+        .await
+        .expect("validation result should be returned");
     let schema_error = get_schema_error(&result, 0);
+
     assert_eq!("/protocolVersion", schema_error.instance_path().to_string());
     assert_eq!(Some("type"), schema_error.keyword(),);
 }
@@ -159,16 +162,17 @@ async fn protocol_version_should_be_valid() {
 
     raw_state_transition["protocolVersion"] = json!("-1");
 
-    let result = validate_documents_batch_transition_basic(
-        &protocol_version_validator,
-        &raw_state_transition,
-        &state_repository_mock,
-        &Default::default(),
-    )
-    .await
-    .expect("protocol error should be returned");
+    let validator = DocumentBatchTransitionBasicValidator::new(
+        Arc::new(state_repository_mock),
+        Arc::new(protocol_version_validator),
+    );
 
+    let result = validator
+        .validate(&raw_state_transition, &Default::default())
+        .await
+        .expect("validation result should be returned");
     let schema_error = get_schema_error(&result, 0);
+
     assert_eq!("/protocolVersion", schema_error.instance_path().to_string());
     assert_eq!(Some("type"), schema_error.keyword(),);
 }
@@ -184,14 +188,15 @@ async fn type_should_be_equal_1() {
 
     raw_state_transition["type"] = json!(666);
 
-    let result = validate_documents_batch_transition_basic(
-        &protocol_version_validator,
-        &raw_state_transition,
-        &state_repository_mock,
-        &Default::default(),
-    )
-    .await
-    .expect("validation result should be returned");
+    let validator = DocumentBatchTransitionBasicValidator::new(
+        Arc::new(state_repository_mock),
+        Arc::new(protocol_version_validator),
+    );
+
+    let result = validator
+        .validate(&raw_state_transition, &Default::default())
+        .await
+        .expect("validation result should be returned");
     let schema_error = get_schema_error(&result, 0);
 
     assert_eq!("/type", schema_error.instance_path().to_string());
@@ -212,16 +217,17 @@ async fn property_in_state_transition_should_be_byte_array(property_name: &str) 
     let array = ["string"; 32];
     raw_state_transition[property_name] = json!(array);
 
-    let result = validate_documents_batch_transition_basic(
-        &protocol_version_validator,
-        &raw_state_transition,
-        &state_repository_mock,
-        &Default::default(),
-    )
-    .await
-    .expect("validation result should be returned");
+    let validator = DocumentBatchTransitionBasicValidator::new(
+        Arc::new(state_repository_mock),
+        Arc::new(protocol_version_validator),
+    );
 
+    let result = validator
+        .validate(&raw_state_transition, &Default::default())
+        .await
+        .expect("validation result should be returned");
     let schema_error = get_schema_error(&result, 0);
+
     let byte_array_schema_error = get_schema_error(&result, 1);
     assert_eq!(
         format!("/{}/0", property_name),
@@ -246,16 +252,17 @@ async fn owner_id_should_be_no_less_than_32_bytes() {
     let array = [0u8; 31];
     raw_state_transition["ownerId"] = json!(array);
 
-    let result = validate_documents_batch_transition_basic(
-        &protocol_version_validator,
-        &raw_state_transition,
-        &state_repository_mock,
-        &Default::default(),
-    )
-    .await
-    .expect("validation result should be returned");
+    let validator = DocumentBatchTransitionBasicValidator::new(
+        Arc::new(state_repository_mock),
+        Arc::new(protocol_version_validator),
+    );
 
+    let result = validator
+        .validate(&raw_state_transition, &Default::default())
+        .await
+        .expect("validation result should be returned");
     let schema_error = get_schema_error(&result, 0);
+
     assert_eq!("/ownerId", schema_error.instance_path().to_string());
     assert_eq!(Some("minItems"), schema_error.keyword(),);
 }
@@ -273,16 +280,17 @@ async fn owner_id_should_be_no_longer_than_32_bytes() {
     array.resize(33, 0u8);
     raw_state_transition["ownerId"] = json!(array);
 
-    let result = validate_documents_batch_transition_basic(
-        &protocol_version_validator,
-        &raw_state_transition,
-        &state_repository_mock,
-        &Default::default(),
-    )
-    .await
-    .expect("validation result should be returned");
+    let validator = DocumentBatchTransitionBasicValidator::new(
+        Arc::new(state_repository_mock),
+        Arc::new(protocol_version_validator),
+    );
 
+    let result = validator
+        .validate(&raw_state_transition, &Default::default())
+        .await
+        .expect("validation result should be returned");
     let schema_error = get_schema_error(&result, 0);
+
     assert_eq!("/ownerId", schema_error.instance_path().to_string());
     assert_eq!(Some("maxItems"), schema_error.keyword(),);
 }
@@ -298,16 +306,17 @@ async fn transitions_should_be_an_array() {
 
     raw_state_transition["transitions"] = json!("not an array");
 
-    let result = validate_documents_batch_transition_basic(
-        &protocol_version_validator,
-        &raw_state_transition,
-        &state_repository_mock,
-        &Default::default(),
-    )
-    .await
-    .expect("validation result should be returned");
+    let validator = DocumentBatchTransitionBasicValidator::new(
+        Arc::new(state_repository_mock),
+        Arc::new(protocol_version_validator),
+    );
 
+    let result = validator
+        .validate(&raw_state_transition, &Default::default())
+        .await
+        .expect("validation result should be returned");
     let schema_error = get_schema_error(&result, 0);
+
     assert_eq!("/transitions", schema_error.instance_path().to_string());
     assert_eq!(Some("type"), schema_error.keyword(),);
 }
@@ -323,16 +332,17 @@ async fn transitions_should_have_at_least_one_element() {
 
     raw_state_transition["transitions"] = json!([]);
 
-    let result = validate_documents_batch_transition_basic(
-        &protocol_version_validator,
-        &raw_state_transition,
-        &state_repository_mock,
-        &Default::default(),
-    )
-    .await
-    .expect("validation result should be returned");
+    let validator = DocumentBatchTransitionBasicValidator::new(
+        Arc::new(state_repository_mock),
+        Arc::new(protocol_version_validator),
+    );
 
+    let result = validator
+        .validate(&raw_state_transition, &Default::default())
+        .await
+        .expect("validation result should be returned");
     let schema_error = get_schema_error(&result, 0);
+
     assert_eq!("/transitions", schema_error.instance_path().to_string());
     assert_eq!(Some("minItems"), schema_error.keyword(),);
 }
@@ -352,16 +362,17 @@ async fn transitions_should_have_no_more_than_10_elements() {
     }
     raw_state_transition["transitions"] = JsonValue::Array(elements);
 
-    let result = validate_documents_batch_transition_basic(
-        &protocol_version_validator,
-        &raw_state_transition,
-        &state_repository_mock,
-        &Default::default(),
-    )
-    .await
-    .expect("validation result should be returned");
+    let validator = DocumentBatchTransitionBasicValidator::new(
+        Arc::new(state_repository_mock),
+        Arc::new(protocol_version_validator),
+    );
 
+    let result = validator
+        .validate(&raw_state_transition, &Default::default())
+        .await
+        .expect("validation result should be returned");
     let schema_error = get_schema_error(&result, 0);
+
     assert_eq!("/transitions", schema_error.instance_path().to_string());
     assert_eq!(Some("maxItems"), schema_error.keyword(),);
 }
@@ -378,16 +389,17 @@ async fn transitions_should_have_an_object_as_elements() {
     let elements = vec![json!(1)];
     raw_state_transition["transitions"] = JsonValue::Array(elements);
 
-    let result = validate_documents_batch_transition_basic(
-        &protocol_version_validator,
-        &raw_state_transition,
-        &state_repository_mock,
-        &Default::default(),
-    )
-    .await
-    .expect("validation result should be returned");
+    let validator = DocumentBatchTransitionBasicValidator::new(
+        Arc::new(state_repository_mock),
+        Arc::new(protocol_version_validator),
+    );
 
+    let result = validator
+        .validate(&raw_state_transition, &Default::default())
+        .await
+        .expect("validation result should be returned");
     let schema_error = get_schema_error(&result, 0);
+
     assert_eq!("/transitions/0", schema_error.instance_path().to_string());
     assert_eq!(Some("type"), schema_error.keyword(),);
 }
@@ -409,16 +421,17 @@ async fn property_in_document_transition_should_be_present(property: &str) {
         .remove(property)
         .expect("the property should exist and be removed");
 
-    let result = validate_documents_batch_transition_basic(
-        &protocol_version_validator,
-        &raw_state_transition,
-        &state_repository_mock,
-        &Default::default(),
-    )
-    .await
-    .expect("validation result should be returned");
+    let validator = DocumentBatchTransitionBasicValidator::new(
+        Arc::new(state_repository_mock),
+        Arc::new(protocol_version_validator),
+    );
 
+    let result = validator
+        .validate(&raw_state_transition, &Default::default())
+        .await
+        .expect("validation result should be returned");
     let schema_error = get_schema_error(&result, 0);
+
     assert!(matches!(
         schema_error.kind(),
         ValidationErrorKind::Required {
@@ -443,14 +456,16 @@ async fn property_should_should_exist_with_code(property_name: &str, error_code:
         .remove(property_name)
         .expect("the property should exist and be removed");
 
-    let result = validate_documents_batch_transition_basic(
-        &protocol_version_validator,
-        &raw_state_transition,
-        &state_repository_mock,
-        &Default::default(),
-    )
-    .await
-    .expect("validation result should be returned");
+    let validator = DocumentBatchTransitionBasicValidator::new(
+        Arc::new(state_repository_mock),
+        Arc::new(protocol_version_validator),
+    );
+
+    let result = validator
+        .validate(&raw_state_transition, &Default::default())
+        .await
+        .expect("validation result should be returned");
+    let schema_error = get_schema_error(&result, 0);
 
     let error = &result.errors()[0];
     assert_eq!(error_code, error.code());
@@ -470,16 +485,17 @@ async fn property_should_be_byte_array(property_name: &str) {
     let array = ["string"; 32];
     raw_state_transition["transitions"][0][property_name] = json!(array);
 
-    let result = validate_documents_batch_transition_basic(
-        &protocol_version_validator,
-        &raw_state_transition,
-        &state_repository_mock,
-        &Default::default(),
-    )
-    .await
-    .expect("validation result should be returned");
+    let validator = DocumentBatchTransitionBasicValidator::new(
+        Arc::new(state_repository_mock),
+        Arc::new(protocol_version_validator),
+    );
 
+    let result = validator
+        .validate(&raw_state_transition, &Default::default())
+        .await
+        .expect("validation result should be returned");
     let schema_error = get_schema_error(&result, 0);
+
     let byte_array_schema_error = get_schema_error(&result, 1);
     assert_eq!(
         format!("/{}/0", property_name),
@@ -503,14 +519,16 @@ async fn data_contract_id_should_be_byte_array() {
 
     raw_state_transition["transitions"][0]["$dataContractId"] = json!("something");
 
-    let result = validate_documents_batch_transition_basic(
-        &protocol_version_validator,
-        &raw_state_transition,
-        &state_repository_mock,
-        &Default::default(),
-    )
-    .await
-    .expect("validation result should be returned");
+    let validator = DocumentBatchTransitionBasicValidator::new(
+        Arc::new(state_repository_mock),
+        Arc::new(protocol_version_validator),
+    );
+
+    let result = validator
+        .validate(&raw_state_transition, &Default::default())
+        .await
+        .expect("validation result should be returned");
+    let schema_error = get_schema_error(&result, 0);
 
     let error = &result.errors()[0];
     assert_eq!(1025, error.code());
@@ -530,16 +548,17 @@ async fn property_should_be_no_less_than_32_bytes(property_name: &str) {
     let array = [0u8; 31];
     raw_state_transition["transitions"][0][property_name] = json!(array);
 
-    let result = validate_documents_batch_transition_basic(
-        &protocol_version_validator,
-        &raw_state_transition,
-        &state_repository_mock,
-        &Default::default(),
-    )
-    .await
-    .expect("validation result should be returned");
+    let validator = DocumentBatchTransitionBasicValidator::new(
+        Arc::new(state_repository_mock),
+        Arc::new(protocol_version_validator),
+    );
 
+    let result = validator
+        .validate(&raw_state_transition, &Default::default())
+        .await
+        .expect("validation result should be returned");
     let schema_error = get_schema_error(&result, 0);
+
     assert_eq!(
         format!("/{}", property_name),
         schema_error.instance_path().to_string()
@@ -562,16 +581,17 @@ async fn id_should_be_no_longer_than_32_bytes(property_name: &str) {
     array.resize(33, 0u8);
     raw_state_transition["transitions"][0][property_name] = json!(array);
 
-    let result = validate_documents_batch_transition_basic(
-        &protocol_version_validator,
-        &raw_state_transition,
-        &state_repository_mock,
-        &Default::default(),
-    )
-    .await
-    .expect("validation result should be returned");
+    let validator = DocumentBatchTransitionBasicValidator::new(
+        Arc::new(state_repository_mock),
+        Arc::new(protocol_version_validator),
+    );
 
+    let result = validator
+        .validate(&raw_state_transition, &Default::default())
+        .await
+        .expect("validation result should be returned");
     let schema_error = get_schema_error(&result, 0);
+
     assert_eq!(
         format!("/{}", property_name),
         schema_error.instance_path().to_string()
@@ -595,14 +615,16 @@ async fn data_contract_should_exist_in_the_state() {
         .expect_fetch_data_contract()
         .returning(|_, _| Ok(None));
 
-    let result = validate_documents_batch_transition_basic(
-        &protocol_version_validator,
-        &raw_state_transition,
-        &state_repository_mock,
-        &Default::default(),
-    )
-    .await
-    .expect("validation result should be returned");
+    let validator = DocumentBatchTransitionBasicValidator::new(
+        Arc::new(state_repository_mock),
+        Arc::new(protocol_version_validator),
+    );
+
+    let result = validator
+        .validate(&raw_state_transition, &Default::default())
+        .await
+        .expect("validation result should be returned");
+    let schema_error = get_schema_error(&result, 0);
 
     let error = &result.errors()[0];
     assert_eq!(1018, error.code());
@@ -619,14 +641,16 @@ async fn type_should_be_defined_in_data_contract() {
 
     raw_state_transition["transitions"][0]["$type"] = json!("wrong");
 
-    let result = validate_documents_batch_transition_basic(
-        &protocol_version_validator,
-        &raw_state_transition,
-        &state_repository_mock,
-        &Default::default(),
-    )
-    .await
-    .expect("validation result should be returned");
+    let validator = DocumentBatchTransitionBasicValidator::new(
+        Arc::new(state_repository_mock),
+        Arc::new(protocol_version_validator),
+    );
+
+    let result = validator
+        .validate(&raw_state_transition, &Default::default())
+        .await
+        .expect("validation result should be returned");
+    let schema_error = get_schema_error(&result, 0);
 
     let error = &result.errors()[0];
     assert_eq!(1024, error.code());
@@ -643,14 +667,16 @@ async fn should_throw_invalid_document_transaction_action_error_if_action_is_not
 
     raw_state_transition["transitions"][0]["$action"] = json!(4);
 
-    let result = validate_documents_batch_transition_basic(
-        &protocol_version_validator,
-        &raw_state_transition,
-        &state_repository_mock,
-        &Default::default(),
-    )
-    .await
-    .expect("validation result should be returned");
+    let validator = DocumentBatchTransitionBasicValidator::new(
+        Arc::new(state_repository_mock),
+        Arc::new(protocol_version_validator),
+    );
+
+    let result = validator
+        .validate(&raw_state_transition, &Default::default())
+        .await
+        .expect("validation result should be returned");
+    let schema_error = get_schema_error(&result, 0);
 
     let error = &result.errors()[0];
     assert_eq!(1022, error.code());
@@ -667,14 +693,16 @@ async fn id_should_be_valid_generated_id() {
 
     raw_state_transition["transitions"][0]["$id"] = json!(generate_random_identifier());
 
-    let result = validate_documents_batch_transition_basic(
-        &protocol_version_validator,
-        &raw_state_transition,
-        &state_repository_mock,
-        &Default::default(),
-    )
-    .await
-    .expect("validation result should be returned");
+    let validator = DocumentBatchTransitionBasicValidator::new(
+        Arc::new(state_repository_mock),
+        Arc::new(protocol_version_validator),
+    );
+
+    let result = validator
+        .validate(&raw_state_transition, &Default::default())
+        .await
+        .expect("validation result should be returned");
+    let schema_error = get_schema_error(&result, 0);
 
     let error = &result.errors()[0];
     assert_eq!(1023, error.code());
@@ -694,16 +722,17 @@ async fn property_in_replace_transition_should_be_present(property: &str) {
         .remove(property)
         .expect("the property should exist and be removed");
 
-    let result = validate_documents_batch_transition_basic(
-        &protocol_version_validator,
-        &raw_state_transition,
-        &state_repository_mock,
-        &Default::default(),
-    )
-    .await
-    .expect("validation result should be returned");
+    let validator = DocumentBatchTransitionBasicValidator::new(
+        Arc::new(state_repository_mock),
+        Arc::new(protocol_version_validator),
+    );
 
+    let result = validator
+        .validate(&raw_state_transition, &Default::default())
+        .await
+        .expect("validation result should be returned");
     let schema_error = get_schema_error(&result, 0);
+
     assert!(matches!(
         schema_error.kind(),
         ValidationErrorKind::Required {
@@ -723,16 +752,17 @@ async fn revision_should_be_number() {
 
     raw_state_transition["transitions"][0]["$revision"] = json!("1");
 
-    let result = validate_documents_batch_transition_basic(
-        &protocol_version_validator,
-        &raw_state_transition,
-        &state_repository_mock,
-        &Default::default(),
-    )
-    .await
-    .expect("validation result should be returned");
+    let validator = DocumentBatchTransitionBasicValidator::new(
+        Arc::new(state_repository_mock),
+        Arc::new(protocol_version_validator),
+    );
 
+    let result = validator
+        .validate(&raw_state_transition, &Default::default())
+        .await
+        .expect("validation result should be returned");
     let schema_error = get_schema_error(&result, 0);
+
     assert_eq!("/$revision", schema_error.instance_path().to_string());
     assert_eq!(Some("type"), schema_error.keyword(),);
 }
@@ -748,16 +778,17 @@ async fn revision_should_not_be_fractional() {
 
     raw_state_transition["transitions"][0]["$revision"] = json!(1.2);
 
-    let result = validate_documents_batch_transition_basic(
-        &protocol_version_validator,
-        &raw_state_transition,
-        &state_repository_mock,
-        &Default::default(),
-    )
-    .await
-    .expect("validation result should be returned");
+    let validator = DocumentBatchTransitionBasicValidator::new(
+        Arc::new(state_repository_mock),
+        Arc::new(protocol_version_validator),
+    );
 
+    let result = validator
+        .validate(&raw_state_transition, &Default::default())
+        .await
+        .expect("validation result should be returned");
     let schema_error = get_schema_error(&result, 0);
+
     assert_eq!("/$revision", schema_error.instance_path().to_string());
     assert_eq!(Some("type"), schema_error.keyword(),);
 }
@@ -773,16 +804,17 @@ async fn revision_should_be_at_least_1() {
 
     raw_state_transition["transitions"][0]["$revision"] = json!(0);
 
-    let result = validate_documents_batch_transition_basic(
-        &protocol_version_validator,
-        &raw_state_transition,
-        &state_repository_mock,
-        &Default::default(),
-    )
-    .await
-    .expect("validation result should be returned");
+    let validator = DocumentBatchTransitionBasicValidator::new(
+        Arc::new(state_repository_mock),
+        Arc::new(protocol_version_validator),
+    );
 
+    let result = validator
+        .validate(&raw_state_transition, &Default::default())
+        .await
+        .expect("validation result should be returned");
     let schema_error = get_schema_error(&result, 0);
+
     assert_eq!("/$revision", schema_error.instance_path().to_string());
     assert_eq!(Some("minimum"), schema_error.keyword(),);
 }
@@ -800,16 +832,17 @@ async fn id_should_be_present_in_delete_transition() {
         .remove("$id")
         .unwrap();
 
-    let result = validate_documents_batch_transition_basic(
-        &protocol_version_validator,
-        &raw_state_transition,
-        &state_repository_mock,
-        &Default::default(),
-    )
-    .await
-    .expect("validation result should be returned");
+    let validator = DocumentBatchTransitionBasicValidator::new(
+        Arc::new(state_repository_mock),
+        Arc::new(protocol_version_validator),
+    );
 
+    let result = validator
+        .validate(&raw_state_transition, &Default::default())
+        .await
+        .expect("validation result should be returned");
     let schema_error = get_schema_error(&result, 0);
+
     assert!(matches!(
         schema_error.kind(),
         ValidationErrorKind::Required {
@@ -842,16 +875,17 @@ async fn signature_should_be_not_less_than_65_bytes() {
     let array = [0u8; 64].to_vec();
     raw_state_transition["signature"] = json!(array);
 
-    let result = validate_documents_batch_transition_basic(
-        &protocol_version_validator,
-        &raw_state_transition,
-        &state_repository_mock,
-        &Default::default(),
-    )
-    .await
-    .expect("validation result should be returned");
+    let validator = DocumentBatchTransitionBasicValidator::new(
+        Arc::new(state_repository_mock),
+        Arc::new(protocol_version_validator),
+    );
 
+    let result = validator
+        .validate(&raw_state_transition, &Default::default())
+        .await
+        .expect("validation result should be returned");
     let schema_error = get_schema_error(&result, 0);
+
     assert_eq!("/signature", schema_error.instance_path().to_string());
     assert_eq!(Some("minItems"), schema_error.keyword(),);
 }
@@ -868,16 +902,17 @@ async fn signature_should_be_not_longer_than_96_bytes() {
     let array = [0u8; 97].to_vec();
     raw_state_transition["signature"] = json!(array);
 
-    let result = validate_documents_batch_transition_basic(
-        &protocol_version_validator,
-        &raw_state_transition,
-        &state_repository_mock,
-        &Default::default(),
-    )
-    .await
-    .expect("validation result should be returned");
+    let validator = DocumentBatchTransitionBasicValidator::new(
+        Arc::new(state_repository_mock),
+        Arc::new(protocol_version_validator),
+    );
 
+    let result = validator
+        .validate(&raw_state_transition, &Default::default())
+        .await
+        .expect("validation result should be returned");
     let schema_error = get_schema_error(&result, 0);
+
     assert_eq!("/signature", schema_error.instance_path().to_string());
     assert_eq!(Some("maxItems"), schema_error.keyword(),);
 }
@@ -893,16 +928,17 @@ async fn signature_public_key_should_be_an_integer() {
 
     raw_state_transition["signaturePublicKeyId"] = json!(1.4);
 
-    let result = validate_documents_batch_transition_basic(
-        &protocol_version_validator,
-        &raw_state_transition,
-        &state_repository_mock,
-        &Default::default(),
-    )
-    .await
-    .expect("validation result should be returned");
+    let validator = DocumentBatchTransitionBasicValidator::new(
+        Arc::new(state_repository_mock),
+        Arc::new(protocol_version_validator),
+    );
 
+    let result = validator
+        .validate(&raw_state_transition, &Default::default())
+        .await
+        .expect("validation result should be returned");
     let schema_error = get_schema_error(&result, 0);
+
     assert_eq!(
         "/signaturePublicKeyId",
         schema_error.instance_path().to_string()
@@ -919,14 +955,16 @@ async fn validation_should_be_successful() {
         ..
     } = setup_test(Action::Create);
 
-    let result = validate_documents_batch_transition_basic(
-        &protocol_version_validator,
-        &raw_state_transition,
-        &state_repository_mock,
-        &Default::default(),
-    )
-    .await
-    .expect("validation result should be returned");
+    let validator = DocumentBatchTransitionBasicValidator::new(
+        Arc::new(state_repository_mock),
+        Arc::new(protocol_version_validator),
+    );
+
+    let result = validator
+        .validate(&raw_state_transition, &Default::default())
+        .await
+        .expect("validation result should be returned");
+    let schema_error = get_schema_error(&result, 0);
 
     assert!(result.is_valid());
 }
@@ -947,14 +985,17 @@ async fn should_not_validate_document_transitions_on_dry_run() {
         .expect_fetch_data_contract()
         .return_once(|_, _| Ok(None));
 
-    let result = validate_documents_batch_transition_basic(
-        &protocol_version_validator,
-        &raw_state_transition,
-        &state_repository_mock,
-        &execution_context,
-    )
-    .await
-    .expect("validation result should be returned");
+    let validator = DocumentBatchTransitionBasicValidator::new(
+        Arc::new(state_repository_mock),
+        Arc::new(protocol_version_validator),
+    );
+
+    let result = validator
+        .validate(&raw_state_transition, &Default::default())
+        .await
+        .expect("validation result should be returned");
+    let schema_error = get_schema_error(&result, 0);
+
     dbg!(&result);
     assert!(result.is_valid());
 }
