@@ -5,7 +5,6 @@ const { Flags } = require('@oclif/core');
 const chalk = require('chalk');
 
 const yosay = require('yosay');
-// const begoo = require('begoo');
 
 const BaseCommand = require('../oclif/command/BaseCommand');
 
@@ -114,12 +113,16 @@ class SetupCommand extends BaseCommand {
     });
 
     // eslint-disable-next-line no-console
-    console.log(
-      yosay(
-        `Hello! I'm your ${chalk.bold.cyanBright('Dash')} mate!\n\nI will assist you with setting up a Dash node on mainnet or testnet. I can also help you setup a development network on your local system.`,
-        { maxLength: 45 },
-      ),
-    );
+    await import('begoo').then(({ begoo }) => {
+      console.log(
+        begoo(
+          `Hello! I'm your ${chalk.bold.cyanBright('Dash')} mate!\n\nI will assist you with setting up a Dash node on mainnet or testnet. I can also help you setup a development network on your local system.`,
+          { maxLength: 45 },
+        ),
+      );
+    })
+
+
 
     try {
       await tasks.run({
