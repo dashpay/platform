@@ -11,7 +11,7 @@
 #[cfg(feature = "full")]
 extern crate core;
 
-#[cfg(feature = "full")]
+#[cfg(any(feature = "full", feature = "verify"))]
 pub mod common;
 /// Contract module
 #[cfg(any(feature = "full", feature = "verify"))]

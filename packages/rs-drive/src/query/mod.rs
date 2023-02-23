@@ -38,9 +38,9 @@ use ciborium::value::Value;
 use grovedb::query_result_type::{QueryResultElements, QueryResultType};
 /// Import grovedb
 #[cfg(feature = "full")]
-pub use grovedb::{Element, Error as GroveError, GroveDb, PathQuery, SizedQuery, TransactionArg};
+pub use grovedb::{Element, Error as GroveError, GroveDb, TransactionArg};
 #[cfg(any(feature = "full", feature = "verify"))]
-pub use grovedb::{Query, QueryItem};
+pub use grovedb::{PathQuery, Query, QueryItem, SizedQuery};
 
 #[cfg(any(feature = "full", feature = "verify"))]
 use indexmap::IndexMap;
@@ -78,7 +78,7 @@ use dpp::data_contract::DriveContractExt;
 #[cfg(any(feature = "full", feature = "verify"))]
 pub use ordering::OrderClause;
 
-#[cfg(feature = "full")]
+#[cfg(any(feature = "full", feature = "verify"))]
 use crate::common::encode::encode_float;
 #[cfg(any(feature = "full", feature = "verify"))]
 use crate::contract::Contract;
@@ -101,7 +101,7 @@ use crate::fee::op::DriveOperation;
 use crate::drive::contract::paths::ContractPaths;
 #[cfg(any(feature = "full", feature = "verify"))]
 use dpp::data_contract::extra::common::bytes_for_system_value;
-#[cfg(feature = "full")]
+#[cfg(any(feature = "full", feature = "verify"))]
 use dpp::document::document_stub::DocumentStub;
 #[cfg(feature = "full")]
 use dpp::ProtocolError;
@@ -641,7 +641,8 @@ impl<'a> DriveQuery<'a> {
         }
     }
 
-    #[cfg(feature = "full")]
+    // #[cfg(feature = "full")]
+    #[cfg(any(feature = "full", feature = "verify"))]
     /// Returns a path query given a document type path and starting document.
     pub fn get_primary_key_path_query(
         &self,
