@@ -80,11 +80,11 @@ describe('applyIdentityCreateTransitionFactory', () => {
       match.instanceOf(StateTransitionExecutionContext),
     );
 
-    // TODO: It should pass execution context as well
     const outPoint = stateTransition.getAssetLockProof().getOutPoint();
     expect(stateRepositoryMock.markAssetLockTransactionOutPointAsUsed).to.have.been
       .calledOnceWithExactly(
         match((arg) => Buffer.from(arg).equals(outPoint)),
+        match.instanceOf(StateTransitionExecutionContext),
       );
   });
 });

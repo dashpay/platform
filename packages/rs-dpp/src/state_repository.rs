@@ -200,6 +200,7 @@ pub trait StateRepositoryLike: Sync {
     async fn mark_asset_lock_transaction_out_point_as_used(
         &self,
         out_point_buffer: &[u8],
+        execution_context: &StateTransitionExecutionContext,
     ) -> AnyResult<()>;
 
     /// Fetch Simplified Masternode List Store
