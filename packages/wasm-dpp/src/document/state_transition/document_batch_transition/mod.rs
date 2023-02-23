@@ -26,7 +26,7 @@ use crate::{
 };
 pub mod document_transition;
 
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 #[wasm_bindgen(js_name = DocumentsBatchTransition)]
 pub struct DocumentsBatchTransitionWASM(DocumentsBatchTransition);
 
@@ -37,6 +37,12 @@ pub struct DocumentsContainer {
     create: Vec<Document>,
     replace: Vec<Document>,
     delete: Vec<Document>,
+}
+
+impl From<DocumentsBatchTransitionWASM> for DocumentsBatchTransition {
+    fn from(val: DocumentsBatchTransitionWASM) -> Self {
+        val.0
+    }
 }
 
 #[wasm_bindgen(js_class=DocumentsContainer)]
