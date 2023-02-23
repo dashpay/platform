@@ -4,7 +4,7 @@ const migrateConfigFile = require('../../../src/config/configFile/migrateConfigF
 /**
  * Return configuration file based on provided config name
  * @param {string} configName
- * @return {Config[]}
+ * @return {Promise<Config[]>}
  */
 async function getConfig(configName) {
   let config;
@@ -28,7 +28,7 @@ async function getConfig(configName) {
 /**
  * Check if config exist
  * @param {string} configName
- * @return {boolean}
+ * @return {Promise<boolean>}
  */
 async function isConfigExist(configName) {
   let bool;

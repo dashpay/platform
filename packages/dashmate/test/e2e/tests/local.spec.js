@@ -6,9 +6,10 @@ const StartedContainers = require('../../../src/docker/StartedContainers');
 const DockerCompose = require('../../../src/docker/DockerCompose');
 const { getConfig, isConfigExist } = require('../lib/manageConfig');
 const { isGroupServicesRunning } = require('../lib/manageDockerData');
-const { core, platform } = require('../../../configs/system/base');
+const { platform } = require('../../../configs/system/base');
 const { CONFIG_FILE_PATH } = require('../../../src/constants');
 const TestDashmateClass = require('../lib/testDashmateClass');
+const {execute} = require("../lib/runCommandInCli");
 
 describe('Local dashmate', function main() {
   this.timeout(900000);
@@ -42,7 +43,7 @@ describe('Local dashmate', function main() {
     it('Start local group nodes', async () => {
       await dashmate.start(localNetwork);
 
-      await isGroupServicesRunning(true, localConfig, container);
+      await isGroupServicesRunning(true, container);
     });
 
     it('Check group list', async () => {
@@ -60,38 +61,30 @@ describe('Local dashmate', function main() {
     });
 
     it('Check group status', async () => {
-      const coreVersion = core.docker.image.replace(/\/|\(.*?\)|dashpay|dashd:|-(.*)/g, '');
       const platformVersion = platform.drive.tenderdash.docker.image.replace(/\/|\(.*?\)|dashpay|tenderdash:/g, '');
 
-      const statusOutput = await dashmate.checkGroupStatus('list');
+      const blockchainInfo = await execute('docker exec dash_masternode_local_seed-core-1 dash-cli getblockchaininfo');
+      const blockHeight = JSON.parse(blockchainInfo.toString());
 
-      const arrayOfResults = statusOutput.split(/\n/);
-      arrayOfResults.pop();
+      const statusOutput = await dashmate.checkGroupStatus('status --format=json');
+      const parse = JSON.parse(statusOutput);
 
-      const output = arrayOfResults.map((n, index) => (index % 2 === 0 ? n : JSON.parse(n)));
+      for (const node of parse) {
+        expect(node.network).to.be.equal('local');
+        expect(node.core.serviceStatus).to.be.equal('up');
+        expect(node.core.blockHeight).to.be.at.least(blockHeight.blocks);
 
-      let nodeIndex = 1;
-      for (let i = 0; i < output.length; i++) {
-        if (typeof output[i] === 'string') {
-          if (i === output.length - 2) {
-            expect(output[i]).to.be.equal('Node local_seed');
-            continue;
-          }
-          expect(output[i]).to.be.equal(`Node local_${nodeIndex}`);
-          nodeIndex++;
-        } else if (typeof output[i] === 'object') {
-          expect(output[i].Network).to.be.equal('regtest');
-          expect(output[i]['Core Version']).to.be.equal(coreVersion);
-          expect(output[i]['Core Status']).to.be.equal('running');
-          if (i === output.length - 1) {
-            break;
-          }
-          expect(output[i]['Masternode Status']).to.be.equal('Ready');
-          expect(output[i]['Platform Version']).to.be.equal(platformVersion);
-          expect(output[i]['Platform Status']).to.be.equal('running');
-        } else {
-          throw new Error('Group status data conversion went wrong!');
+        if( node.platform.tenderdash === null ) {
+          expect(node.platform.enabled).to.be.equal(false);
+          break;
         }
+
+        expect(node.platform.enabled).to.be.equal(true);
+        expect(node.platform.tenderdash.serviceStatus).to.be.equal('up');
+        expect(node.platform.tenderdash.version).to.be.equal(platformVersion);
+        expect(+node.platform.tenderdash.lastBlockHeight).to.be.at.least(1);
+        expect(+node.platform.tenderdash.peers).to.be.at.least(2);
+        expect(node.platform.tenderdash.network).to.include('dash_masternode_local');
       }
     });
 
@@ -100,9 +93,8 @@ describe('Local dashmate', function main() {
 
       await isGroupServicesRunning(false, container);
 
-      await dashmate.checkGroupStatus('status').then(async (res) => {
-        expect(res).to.be.empty();
-      });
+      const status = await dashmate.checkGroupStatus('status');
+      expect(status).to.be.empty();
     });
 
     it('Start again local group nodes', async () => {
@@ -110,9 +102,8 @@ describe('Local dashmate', function main() {
 
       await isGroupServicesRunning(true, container);
 
-      await dashmate.checkGroupStatus('status').then(async (res) => {
-        expect(res).to.not.be.empty();
-      });
+      const status = await dashmate.checkGroupStatus('status');
+      expect(status).to.not.be.empty();
     });
 
     it('Restart local group nodes', async () => {
@@ -120,9 +111,8 @@ describe('Local dashmate', function main() {
 
       await isGroupServicesRunning(true, container);
 
-      await dashmate.checkGroupStatus('status').then(async (res) => {
-        expect(res).to.not.be.empty();
-      });
+      const status = await dashmate.checkGroupStatus('status');
+      expect(status).to.not.be.empty();
 
       if (await isConfigExist(localNetwork)) {
         const restartConfig = await getConfig(localNetwork);
@@ -154,9 +144,8 @@ describe('Local dashmate', function main() {
 
       await isGroupServicesRunning(true, container);
 
-      await dashmate.checkGroupStatus('status').then(async (res) => {
-        expect(res).to.not.be.empty();
-      });
+      const status = await dashmate.checkGroupStatus('status')
+      expect(status).to.not.be.empty();
     });
   });
 });
