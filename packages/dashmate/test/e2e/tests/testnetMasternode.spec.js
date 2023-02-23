@@ -80,7 +80,7 @@ describe('Dashmate testnet masternode tests', function main() {
       const coreStatus = await dashmate.checkStatus('core');
       const coreOutput = JSON.parse(coreStatus.toString());
 
-      // update core version in config because versions don't match??
+      // core versions doesn't maches
       // const coreVersion = core.docker.image.replace(/\/|\(.*?\)|dashpay|dashd:|\-(.*)/g, '');
       // expect(output.latestVersion).to.be.equal(coreVersion)
       // try {
@@ -96,14 +96,15 @@ describe('Dashmate testnet masternode tests', function main() {
       expect(coreOutput.dockerStatus).to.be.equal('running');
       expect(coreOutput.syncAsset).to.be.equal(MasternodeSyncAssetEnum.MASTERNODE_SYNC_BLOCKCHAIN);
 
-      const peersData = await execute('docker exec dash_masternode_testnet-core-1 dash-cli getpeerinfo').then((peers) => JSON.parse(peers.toString()));
-      const peersNumber = Object.keys(peersData).length;
+      const peersData = await execute('docker exec dash_masternode_testnet-core-1 dash-cli getpeerinfo');
+      const parsedPeersOutput = JSON.parse(peersData.toString());
+      const peersNumber = Object.keys(parsedPeersOutput).length;
       expect(coreOutput.peersCount).to.be.equal(peersNumber, 'Peers number are not matching!');
 
       let peerHeader = 0;
       let peerBlock = 0;
       do {
-        for (const peer of peersData) {
+        for (const peer of parsedPeersOutput) {
           peerBlock = peer.synced_blocks;
           peerHeader = peer.synced_headers;
         }
@@ -131,20 +132,17 @@ describe('Dashmate testnet masternode tests', function main() {
     });
 
     it('Check platform status before core sync process finish', async () => {
-      await dashmate.checkStatus('platform').then((res) => {
-        expect(res.substring(0, res.length - 1)).to.equal('Platform status is not available until core sync is complete!');
-      });
+      const platformStatus = await dashmate.checkStatus('platform');
+      expect(platformStatus.substring(0, platformStatus.length - 1)).to.equal('Platform status is not available until core sync is complete!');
     });
 
     it('Check services status before core sync process finish', async () => {
       const servicesStatus = await dashmate.checkStatus('services');
       const output = JSON.parse(servicesStatus.toString());
 
-      const listIDs = await execute('docker ps --format "{{ .ID }}"').then((ids) => {
-        const containerIds = ids.toString().split('\n');
-        containerIds.pop();
-        return containerIds;
-      });
+      const listIDs = await execute('docker ps --format "{{ .ID }}"');
+      const containerIds = listIDs.toString().split('\n');
+      containerIds.pop();
 
       for (const serviceData of output) {
         expect(Object.keys(SERVICES)).to.include(serviceData.service);
