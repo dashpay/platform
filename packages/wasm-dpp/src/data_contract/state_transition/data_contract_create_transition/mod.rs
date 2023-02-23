@@ -45,8 +45,6 @@ struct DataContractCreateTransitionParameters {
     #[serde(skip_serializing_if = "Option::is_none", default)]
     entropy: Option<Vec<u8>>,
     #[serde(skip_serializing_if = "Option::is_none", default)]
-    signature_public_key_id: Option<KeyID>,
-    #[serde(skip_serializing_if = "Option::is_none", default)]
     signature: Option<Vec<u8>>,
     #[serde(flatten)]
     extra: HashMap<String, serde_json::Value>,

@@ -91,7 +91,7 @@ describe('validateDataContractCreateTransitionBasicFactory', () => {
 
       const result = await validateDataContractCreateTransitionBasic(rawStateTransition);
 
-      expectJsonSchemaError(result);
+      await expectJsonSchemaError(result);
 
       const [error] = result.getErrors();
 
@@ -105,7 +105,7 @@ describe('validateDataContractCreateTransitionBasicFactory', () => {
 
       const result = await validateDataContractCreateTransitionBasic(rawStateTransition);
 
-      expectJsonSchemaError(result);
+      await expectJsonSchemaError(result);
 
       const [error] = result.getErrors();
 
@@ -138,7 +138,7 @@ describe('validateDataContractCreateTransitionBasicFactory', () => {
 
       const result = await validateDataContractCreateTransitionBasic(rawStateTransition);
 
-      expectJsonSchemaError(result);
+      await expectJsonSchemaError(result);
 
       const [error] = result.getErrors();
 
@@ -152,7 +152,7 @@ describe('validateDataContractCreateTransitionBasicFactory', () => {
 
       const result = await validateDataContractCreateTransitionBasic(rawStateTransition);
 
-      expectJsonSchemaError(result);
+      await expectJsonSchemaError(result);
 
       const [error] = result.getErrors();
 
@@ -168,7 +168,7 @@ describe('validateDataContractCreateTransitionBasicFactory', () => {
 
       const result = await validateDataContractCreateTransitionBasic(rawStateTransition);
 
-      expectJsonSchemaError(result);
+      await expectJsonSchemaError(result);
 
       const [error] = result.getErrors();
 
@@ -229,7 +229,7 @@ describe('validateDataContractCreateTransitionBasicFactory', () => {
 
       const result = await validateDataContractCreateTransitionBasic(rawStateTransition);
 
-      expectJsonSchemaError(result);
+      await expectJsonSchemaError(result);
 
       const [error] = result.getErrors();
 
@@ -267,92 +267,77 @@ describe('validateDataContractCreateTransitionBasicFactory', () => {
     });
   });
 
-  // describe('signature', () => {
-  //   it('should be present', async () => {
-  //     delete rawStateTransition.signature;
+  describe('signature', () => {
+    it('should be present', async () => {
+      delete rawStateTransition.signature;
 
-  //     const result = await validateDataContractCreateTransitionBasic(rawStateTransition);
+      const result = await validateDataContractCreateTransitionBasic(rawStateTransition);
 
-  //     expectJsonSchemaError(result);
+      await expectJsonSchemaError(result);
 
-  //     const [error] = result.getErrors();
+      const [error] = result.getErrors();
 
-  //     expect(error.getInstancePath()).to.equal('');
-  //     expect(error.getKeyword()).to.equal('required');
-  //     expect(error.getParams().missingProperty).to.equal('signature');
-  //   });
+      expect(error.getInstancePath()).to.equal('');
+      expect(error.getKeyword()).to.equal('required');
+      expect(error.getParams().missingProperty).to.equal('signature');
+    });
 
-  //   it('should be a byte array', async () => {
-  //     rawStateTransition.signature = new Array(65).fill('string');
+    it('should be not less than 65 bytes', async () => {
+      rawStateTransition.signature = Buffer.alloc(64);
 
-  //     const result = await validateDataContractCreateTransitionBasic(rawStateTransition);
+      const result = await validateDataContractCreateTransitionBasic(rawStateTransition);
 
-  //     expectJsonSchemaError(result, 2);
+      await expectJsonSchemaError(result);
 
-  //     const [error, byteArrayError] = result.getErrors();
+      const [error] = result.getErrors();
 
-  //     expect(error.getInstancePath()).to.equal('/signature/0');
-  //     expect(error.getKeyword()).to.equal('type');
+      expect(error.getInstancePath()).to.equal('/signature');
+      expect(error.getKeyword()).to.equal('minItems');
+      expect(error.getParams().minItems).to.equal(65);
+    });
 
-  //     expect(byteArrayError.getKeyword()).to.equal('byteArray');
-  //   });
+    it('should be not longer than 96 bytes', async () => {
+      rawStateTransition.signature = Buffer.alloc(97);
 
-  //   it('should be not less than 65 bytes', async () => {
-  //     rawStateTransition.signature = Buffer.alloc(64);
+      const result = await validateDataContractCreateTransitionBasic(rawStateTransition);
 
-  //     const result = await validateDataContractCreateTransitionBasic(rawStateTransition);
+      await expectJsonSchemaError(result);
 
-  //     expectJsonSchemaError(result);
+      const [error] = result.getErrors();
 
-  //     const [error] = result.getErrors();
+      expect(error.getInstancePath()).to.equal('/signature');
+      expect(error.getKeyword()).to.equal('maxItems');
+      expect(error.getParams().maxItems).to.equal(96);
+    });
+  });
 
-  //     expect(error.getInstancePath()).to.equal('/signature');
-  //     expect(error.getKeyword()).to.equal('minItems');
-  //     expect(error.getParams().limit).to.equal(65);
-  //   });
+  describe('signaturePublicKeyId', () => {
+    it('should be an integer', async () => {
+      rawStateTransition.signaturePublicKeyId = 1.4;
 
-  //   it('should be not longer than 96 bytes', async () => {
-  //     rawStateTransition.signature = Buffer.alloc(97);
+      const result = await validateDataContractCreateTransitionBasic(rawStateTransition);
 
-  //     const result = await validateDataContractCreateTransitionBasic(rawStateTransition);
+      await expectJsonSchemaError(result, 1);
 
-  //     expectJsonSchemaError(result);
+      const [error] = result.getErrors();
 
-  //     const [error] = result.getErrors();
+      expect(error.getInstancePath()).to.equal('/signaturePublicKeyId');
+      expect(error.getKeyword()).to.equal('type');
+    });
 
-  //     expect(error.getInstancePath()).to.equal('/signature');
-  //     expect(error.getKeyword()).to.equal('maxItems');
-  //     expect(error.getParams().limit).to.equal(96);
-  //   });
-  // });
+    it('should not be < 0', async () => {
+      rawStateTransition.signaturePublicKeyId = -1;
 
-  // describe('signaturePublicKeyId', () => {
-  //   it('should be an integer', async () => {
-  //     rawStateTransition.signaturePublicKeyId = 1.4;
+      const result = await validateDataContractCreateTransitionBasic(rawStateTransition);
 
-  //     const result = await validateDataContractCreateTransitionBasic(rawStateTransition);
+      await expectJsonSchemaError(result, 1);
 
-  //     expectJsonSchemaError(result, 1);
+      const [error] = result.getErrors();
 
-  //     const [error] = result.getErrors();
-
-  //     expect(error.instancePath).to.equal('/signaturePublicKeyId');
-  //     expect(error.getKeyword()).to.equal('type');
-  //   });
-
-  //   it('should not be < 0', async () => {
-  //     rawStateTransition.signaturePublicKeyId = -1;
-
-  //     const result = await validateDataContractCreateTransitionBasic(rawStateTransition);
-
-  //     expectJsonSchemaError(result, 1);
-
-  //     const [error] = result.getErrors();
-
-  //     expect(error.instancePath).to.equal('/signaturePublicKeyId');
-  //     expect(error.getKeyword()).to.equal('minimum');
-  //   });
-  // });
+      expect(error.getInstancePath()).to.equal('/signaturePublicKeyId');
+      expect(error.getKeyword()).to.equal('minimum');
+    });
+  });
 
   it('should return valid result', async () => {
     const result = await validateDataContractCreateTransitionBasic(rawStateTransition);
