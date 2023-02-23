@@ -130,6 +130,12 @@ pub enum ProtocolError {
     /// Value error
     #[error("value error: {0}")]
     ValueError(#[from] ValueError),
+
+    #[error("Invalid Identity: {errors:?}")]
+    InvalidIdentityError {
+        errors: Vec<ConsensusError>,
+        raw_identity: JsonValue,
+    },
 }
 
 impl From<NonConsensusError> for ProtocolError {
