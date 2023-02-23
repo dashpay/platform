@@ -1,11 +1,18 @@
+#[cfg(any(feature = "full", feature = "verify"))]
 use crate::drive::contract::ContractFetchInfo;
+#[cfg(any(feature = "full", feature = "verify"))]
 use dpp::identity::TimestampMillis;
+#[cfg(any(feature = "full", feature = "verify"))]
 use dpp::util::deserializer::ProtocolVersion;
+#[cfg(any(feature = "full", feature = "verify"))]
 use moka::sync::Cache;
+#[cfg(any(feature = "full", feature = "verify"))]
 use nohash_hasher::IntMap;
+#[cfg(any(feature = "full", feature = "verify"))]
 use std::sync::Arc;
 
 /// Drive cache struct
+#[cfg(any(feature = "full", feature = "verify"))]
 pub struct DriveCache {
     /// Cached contracts
     pub cached_contracts: DataContractCache,
@@ -16,11 +23,13 @@ pub struct DriveCache {
 }
 
 /// Data Contract cache that handle both non global and block data
+#[cfg(any(feature = "full", feature = "verify"))]
 pub struct DataContractCache {
     global_cache: Cache<[u8; 32], Arc<ContractFetchInfo>>,
     block_cache: Cache<[u8; 32], Arc<ContractFetchInfo>>,
 }
 
+#[cfg(feature = "full")]
 impl DataContractCache {
     /// Create a new Data Contract cache instance
     pub fn new(global_cache_max_capacity: u64, block_cache_max_capacity: u64) -> Self {

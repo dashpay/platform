@@ -27,54 +27,93 @@
 // DEALINGS IN THE SOFTWARE.
 //
 
+#[cfg(feature = "full")]
 use std::collections::BTreeMap;
+#[cfg(feature = "full")]
 use std::ops::BitXor;
 
+#[cfg(feature = "full")]
 use ciborium::value::Value;
+#[cfg(feature = "full")]
 use grovedb::query_result_type::{QueryResultElements, QueryResultType};
 /// Import grovedb
+#[cfg(feature = "full")]
 pub use grovedb::{
-    Element, Error as GroveError, GroveDb, PathQuery, Query, QueryItem, SizedQuery, TransactionArg,
+    Element, Error as GroveError, GroveDb, PathQuery, SizedQuery, TransactionArg,
 };
+#[cfg(any(feature = "full", feature = "verify"))]
+pub use grovedb::{Query, QueryItem};
 
+#[cfg(feature = "full")]
 use indexmap::IndexMap;
+#[cfg(feature = "full")]
 use integer_encoding::VarInt;
+#[cfg(feature = "full")]
 use sqlparser::ast;
+#[cfg(feature = "full")]
 use sqlparser::ast::TableFactor::Table;
+#[cfg(feature = "full")]
 use sqlparser::ast::Value::Number;
+#[cfg(feature = "full")]
 use sqlparser::ast::{OrderByExpr, Select, Statement};
+#[cfg(feature = "full")]
 use sqlparser::dialect::GenericDialect;
+#[cfg(feature = "full")]
 use sqlparser::parser::Parser;
 
+#[cfg(feature = "full")]
 use crate::drive::block_info::BlockInfo;
+#[cfg(feature = "full")]
 use conditions::WhereOperator::{Equal, In};
 /// Import conditions
+#[cfg(feature = "full")]
 pub use conditions::{WhereClause, WhereOperator};
+#[cfg(feature = "full")]
 use dpp::data_contract::document_type::{DocumentType, Index, IndexProperty};
+#[cfg(feature = "full")]
 use dpp::data_contract::DriveContractExt;
 /// Import ordering
+#[cfg(feature = "full")]
 pub use ordering::OrderClause;
 
+#[cfg(feature = "full")]
 use crate::common::encode::encode_float;
+#[cfg(feature = "full")]
 use crate::contract::Contract;
+#[cfg(feature = "full")]
 use crate::drive::grove_operations::QueryType::StatefulQuery;
+#[cfg(feature = "full")]
 use crate::drive::Drive;
+#[cfg(feature = "full")]
 use crate::error::drive::DriveError;
+#[cfg(feature = "full")]
 use crate::error::query::QueryError;
+#[cfg(feature = "full")]
 use crate::error::Error;
+#[cfg(feature = "full")]
 use crate::fee::calculate_fee;
+#[cfg(feature = "full")]
 use crate::fee::op::DriveOperation;
 
+#[cfg(feature = "full")]
 use crate::drive::contract::paths::ContractPaths;
+#[cfg(feature = "full")]
 use dpp::data_contract::extra::common::bytes_for_system_value;
+#[cfg(feature = "full")]
 use dpp::document::document_stub::DocumentStub;
+#[cfg(feature = "full")]
 use dpp::ProtocolError;
 
+#[cfg(feature = "full")]
 pub mod conditions;
+#[cfg(feature = "full")]
 mod defaults;
+#[cfg(feature = "full")]
 pub mod ordering;
+#[cfg(feature = "full")]
 mod test_index;
 
+#[cfg(feature = "full")]
 /// Internal clauses struct
 #[derive(Clone, Debug, PartialEq, Default)]
 pub struct InternalClauses {
@@ -90,6 +129,7 @@ pub struct InternalClauses {
     pub equal_clauses: BTreeMap<String, WhereClause>,
 }
 
+#[cfg(feature = "full")]
 impl InternalClauses {
     /// Returns true if the clause is a valid format.
     pub fn verify(&self) -> bool {
@@ -196,6 +236,8 @@ impl InternalClauses {
     }
 }
 
+// TODO: expose drive query
+#[cfg(feature = "full")]
 /// Drive query struct
 #[derive(Debug, PartialEq)]
 pub struct DriveQuery<'a> {
@@ -219,6 +261,7 @@ pub struct DriveQuery<'a> {
     pub block_time: Option<f64>,
 }
 
+#[cfg(feature = "full")]
 impl<'a> DriveQuery<'a> {
     /// Returns any item
     pub fn any_item_query(contract: &'a Contract, document_type: &'a DocumentType) -> Self {

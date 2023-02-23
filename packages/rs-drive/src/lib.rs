@@ -14,22 +14,22 @@ extern crate core;
 #[cfg(feature = "full")]
 pub mod common;
 /// Contract module
-#[cfg(feature = "full")]
+#[cfg(any(feature = "full", feature = "verify"))]
 pub mod contract;
 /// Drive module
-#[cfg(feature = "full")]
+#[cfg(any(feature = "full", feature="verify"))]
 pub mod drive;
 /// Error module
-#[cfg(feature = "full")]
+#[cfg(any(feature = "full", feature = "verify"))]
 pub mod error;
 /// Fee module
-#[cfg(feature = "full")]
+#[cfg(any(feature = "full", feature = "verify"))]
 pub mod fee;
 /// Fee pools module
 #[cfg(feature = "full")]
 pub mod fee_pools;
 /// Query module
-#[cfg(feature = "full")]
+#[cfg(any(feature = "full", feature = "verify"))]
 pub mod query;
 
 /// DPP module
