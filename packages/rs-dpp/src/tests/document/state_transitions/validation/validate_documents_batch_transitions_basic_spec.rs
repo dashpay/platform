@@ -465,7 +465,6 @@ async fn property_should_should_exist_with_code(property_name: &str, error_code:
         .validate(&raw_state_transition, &Default::default())
         .await
         .expect("validation result should be returned");
-    let schema_error = get_schema_error(&result, 0);
 
     let error = &result.errors()[0];
     assert_eq!(error_code, error.code());
@@ -528,7 +527,6 @@ async fn data_contract_id_should_be_byte_array() {
         .validate(&raw_state_transition, &Default::default())
         .await
         .expect("validation result should be returned");
-    let schema_error = get_schema_error(&result, 0);
 
     let error = &result.errors()[0];
     assert_eq!(1025, error.code());
@@ -624,7 +622,6 @@ async fn data_contract_should_exist_in_the_state() {
         .validate(&raw_state_transition, &Default::default())
         .await
         .expect("validation result should be returned");
-    let schema_error = get_schema_error(&result, 0);
 
     let error = &result.errors()[0];
     assert_eq!(1018, error.code());
@@ -650,7 +647,6 @@ async fn type_should_be_defined_in_data_contract() {
         .validate(&raw_state_transition, &Default::default())
         .await
         .expect("validation result should be returned");
-    let schema_error = get_schema_error(&result, 0);
 
     let error = &result.errors()[0];
     assert_eq!(1024, error.code());
@@ -676,7 +672,6 @@ async fn should_throw_invalid_document_transaction_action_error_if_action_is_not
         .validate(&raw_state_transition, &Default::default())
         .await
         .expect("validation result should be returned");
-    let schema_error = get_schema_error(&result, 0);
 
     let error = &result.errors()[0];
     assert_eq!(1022, error.code());
@@ -702,7 +697,6 @@ async fn id_should_be_valid_generated_id() {
         .validate(&raw_state_transition, &Default::default())
         .await
         .expect("validation result should be returned");
-    let schema_error = get_schema_error(&result, 0);
 
     let error = &result.errors()[0];
     assert_eq!(1023, error.code());
@@ -964,7 +958,6 @@ async fn validation_should_be_successful() {
         .validate(&raw_state_transition, &Default::default())
         .await
         .expect("validation result should be returned");
-    let schema_error = get_schema_error(&result, 0);
 
     assert!(result.is_valid());
 }
@@ -991,11 +984,9 @@ async fn should_not_validate_document_transitions_on_dry_run() {
     );
 
     let result = validator
-        .validate(&raw_state_transition, &Default::default())
+        .validate(&raw_state_transition, &execution_context)
         .await
         .expect("validation result should be returned");
-    let schema_error = get_schema_error(&result, 0);
 
-    dbg!(&result);
     assert!(result.is_valid());
 }
