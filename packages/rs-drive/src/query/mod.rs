@@ -275,7 +275,7 @@ impl<'a> DriveQuery<'a> {
                 if limit_value == 0 || limit_value > defaults::DEFAULT_QUERY_LIMIT {
                     None
                 } else {
-                    Some(limit_value as u16)
+                    Some(limit_value)
                 }
             })
             .ok_or(Error::Query(QueryError::InvalidLimit(

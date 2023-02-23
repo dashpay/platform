@@ -172,7 +172,7 @@ impl Value {
             },
             Value::Array(array) => {
                 Ok(array
-                    .into_iter()
+                    .iter()
                     .map(|byte| byte.to_integer())
                     .collect::<Result<Vec<u8>, Error>>()?
                     .try_into()

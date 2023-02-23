@@ -381,8 +381,8 @@ fn insert_values(
                     .get_inner_borrowed_str_value_map(ref_value)
                     .map_err(ProtocolError::ValueError)?;
 
-                let type_value = inner_properties.get_string(property_names::TYPE)?;
-                type_value
+                
+                inner_properties.get_string(property_names::TYPE)?
             }
             Some(type_value) => type_value,
         };

@@ -46,7 +46,7 @@ impl Drive {
             WhereClause {
                 field: withdrawals_contract::property_names::STATUS.to_string(),
                 operator: crate::query::WhereOperator::Equal,
-                value: Value::U8(status.into()),
+                value: Value::U8(status),
             },
         );
 

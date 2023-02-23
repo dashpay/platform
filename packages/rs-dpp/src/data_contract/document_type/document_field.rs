@@ -741,7 +741,7 @@ impl DocumentFieldType {
                 Ok(Value::Text(str.to_string()))
             }
             DocumentFieldType::Integer => {
-                str.parse::<i128>().map(|f| Value::I128(f)).map_err(|_| {
+                str.parse::<i128>().map(Value::I128).map_err(|_| {
                     ProtocolError::DataContractError(DataContractError::ValueWrongType(
                         "value is not an integer",
                     ))

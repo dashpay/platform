@@ -550,7 +550,7 @@ pub fn get_definitions(
         .map(|definition_value| {
             definition_value
                 .as_map()
-                .map(|map| Value::map_ref_into_btree_map(map))
+                .map(Value::map_ref_into_btree_map)
                 .transpose()
         })
         .transpose()?

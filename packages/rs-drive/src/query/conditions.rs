@@ -59,7 +59,7 @@ fn sql_value_to_platform_value(sql_value: ast::Value) -> Option<Value> {
             } else {
                 // Integer
                 let num_as_int = number_as_string.parse::<i64>().ok();
-                num_as_int.map(|num| Value::I64(num))
+                num_as_int.map(Value::I64)
             }
         }
         ast::Value::DoubleQuotedString(s) => Some(Value::Text(s)),

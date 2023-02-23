@@ -504,7 +504,7 @@ impl Platform {
                 base_payload: AssetUnlockBasePayload {
                     version: 1,
                     index: transaction_index,
-                    fee: (state_transition_size * core_fee_per_byte * 1000) as u32,
+                    fee: (state_transition_size * core_fee_per_byte * 1000),
                 },
             };
 
