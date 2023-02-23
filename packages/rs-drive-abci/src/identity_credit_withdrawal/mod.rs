@@ -80,7 +80,7 @@ impl Platform {
         let documents_to_update: Vec<DocumentStub> = broadcasted_withdrawal_documents
             .into_iter()
             .map(|mut document| {
-                let transaction_sign_height = document
+                let transaction_sign_height: u32 = document
                     .get_integer(withdrawals_contract::property_names::TRANSACTION_SIGN_HEIGHT)
                     .map_err(|_| {
                         Error::Execution(ExecutionError::CorruptedCodeExecution(
@@ -478,7 +478,7 @@ impl Platform {
                     ))
                 })?;
 
-            let core_fee_per_byte = document
+            let core_fee_per_byte: u32 = document
                 .get_integer(withdrawals_contract::property_names::CORE_FEE_PER_BYTE)
                 .map_err(|_| {
                     Error::Execution(ExecutionError::CorruptedCodeExecution(
