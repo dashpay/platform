@@ -1,3 +1,4 @@
+use serde_json::Value as JsonValue;
 use std::borrow::Borrow;
 use std::convert::TryFrom;
 use std::iter::FromIterator;
@@ -75,16 +76,24 @@ pub trait BTreeValueMapHelper {
         key: &str,
     ) -> Result<Option<I>, Error>;
     fn get_inner_string_array<I: FromIterator<String>>(&self, key: &str) -> Result<I, Error>;
-    fn get_optional_inner_borrowed_str_value_map<'a, I: FromIterator<(String, &'a Value)>>(
-        &'a self,
-        key: &str,
-    ) -> Result<Option<I>, Error>;
     fn get_optional_inner_borrowed_map(
         &self,
         key: &str,
     ) -> Result<Option<&Vec<(Value, Value)>>, Error>;
+    fn get_optional_inner_borrowed_str_value_map<'a, I: FromIterator<(String, &'a Value)>>(
+        &'a self,
+        key: &str,
+    ) -> Result<Option<I>, Error>;
     fn get_inner_borrowed_str_value_map<'a, I: FromIterator<(String, &'a Value)>>(
         &'a self,
+        key: &str,
+    ) -> Result<I, Error>;
+    fn get_optional_inner_str_json_value_map<I: FromIterator<(String, JsonValue)>>(
+        &self,
+        key: &str,
+    ) -> Result<Option<I>, Error>;
+    fn get_inner_str_json_value_map<I: FromIterator<(String, JsonValue)>>(
+        &self,
         key: &str,
     ) -> Result<I, Error>;
 }
@@ -283,6 +292,19 @@ where
         })
     }
 
+    fn get_optional_inner_borrowed_map(
+        &self,
+        key: &str,
+    ) -> Result<Option<&Vec<(Value, Value)>>, Error> {
+        self.get(key)
+            .map(|v| {
+                v.borrow()
+                    .as_map()
+                    .ok_or_else(|| Error::StructureError(format!("{key} must be a map")))
+            })
+            .transpose()
+    }
+
     fn get_optional_inner_borrowed_str_value_map<'a, I: FromIterator<(String, &'a Value)>>(
         &'a self,
         key: &str,
@@ -303,19 +325,6 @@ where
             .transpose()
     }
 
-    fn get_optional_inner_borrowed_map(
-        &self,
-        key: &str,
-    ) -> Result<Option<&Vec<(Value, Value)>>, Error> {
-        self.get(key)
-            .map(|v| {
-                v.borrow()
-                    .as_map()
-                    .ok_or_else(|| Error::StructureError(format!("{key} must be a map")))
-            })
-            .transpose()
-    }
-
     fn get_inner_borrowed_str_value_map<'a, I: FromIterator<(String, &'a Value)>>(
         &'a self,
         key: &str,
@@ -324,6 +333,38 @@ where
             .ok_or_else(|| {
                 Error::StructureError(format!(
                     "unable to get borrowed str value map property {key}"
+                ))
+            })
+    }
+
+    fn get_optional_inner_str_json_value_map<I: FromIterator<(String, JsonValue)>>(
+        &self,
+        key: &str,
+    ) -> Result<Option<I>, Error> {
+        self.get(key)
+            .map(|v| {
+                v.borrow()
+                    .as_map()
+                    .map(|inner| {
+                        inner
+                            .iter()
+                            .map(|(k, v)| Ok((k.to_text()?, v.clone().try_into()?)))
+                            .collect::<Result<I, Error>>()
+                    })
+                    .transpose()?
+                    .ok_or_else(|| Error::StructureError(format!("{key} must be a bool")))
+            })
+            .transpose()
+    }
+
+    fn get_inner_str_json_value_map<I: FromIterator<(String, JsonValue)>>(
+        &self,
+        key: &str,
+    ) -> Result<I, Error> {
+        self.get_optional_inner_str_json_value_map(key)?
+            .ok_or_else(|| {
+                Error::StructureError(format!(
+                    "unable to get borrowed str json value map property {key}"
                 ))
             })
     }
