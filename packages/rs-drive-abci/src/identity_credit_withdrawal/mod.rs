@@ -80,8 +80,8 @@ impl Platform {
         let documents_to_update: Vec<DocumentStub> = broadcasted_withdrawal_documents
             .into_iter()
             .map(|mut document| {
-                let transaction_sign_height = document
-                    .get_u32(withdrawals_contract::property_names::TRANSACTION_SIGN_HEIGHT)
+                let transaction_sign_height: u32 = document
+                    .get_integer(withdrawals_contract::property_names::TRANSACTION_SIGN_HEIGHT)
                     .map_err(|_| {
                         Error::Execution(ExecutionError::CorruptedCodeExecution(
                             "Can't get transactionSignHeight from withdrawal document",
@@ -97,7 +97,7 @@ impl Platform {
                     })?;
 
                 let transaction_index = document
-                    .get_u64(withdrawals_contract::property_names::TRANSACTION_INDEX)
+                    .get_integer(withdrawals_contract::property_names::TRANSACTION_INDEX)
                     .map_err(|_| {
                         Error::Execution(ExecutionError::CorruptedCodeExecution(
                             "Can't get transactionIdex from withdrawal document",
@@ -471,15 +471,15 @@ impl Platform {
                 })?;
 
             let amount = document
-                .get_u64(withdrawals_contract::property_names::AMOUNT)
+                .get_integer(withdrawals_contract::property_names::AMOUNT)
                 .map_err(|_| {
                     Error::Execution(ExecutionError::CorruptedCodeExecution(
                         "Can't get amount from withdrawal document",
                     ))
                 })?;
 
-            let core_fee_per_byte = document
-                .get_u64(withdrawals_contract::property_names::CORE_FEE_PER_BYTE)
+            let core_fee_per_byte: u32 = document
+                .get_integer(withdrawals_contract::property_names::CORE_FEE_PER_BYTE)
                 .map_err(|_| {
                     Error::Execution(ExecutionError::CorruptedCodeExecution(
                         "Can't get coreFeePerByte from withdrawal document",
@@ -504,7 +504,7 @@ impl Platform {
                 base_payload: AssetUnlockBasePayload {
                     version: 1,
                     index: transaction_index,
-                    fee: (state_transition_size * core_fee_per_byte * 1000) as u32,
+                    fee: (state_transition_size * core_fee_per_byte * 1000),
                 },
             };
 

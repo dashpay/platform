@@ -229,7 +229,7 @@ mod tests {
         } = run_chain_for_strategy(2000, hour_in_ms, strategy.clone(), config.clone(), 15);
         {
             let drive_cache = platform.drive.cache.borrow_mut();
-            let counter = drive_cache
+            let _counter = drive_cache
                 .protocol_versions_counter
                 .as_ref()
                 .expect("expected a version counter");
@@ -342,7 +342,7 @@ mod tests {
         );
         {
             let drive_cache = platform.drive.cache.borrow_mut();
-            let counter = drive_cache
+            let _counter = drive_cache
                 .protocol_versions_counter
                 .as_ref()
                 .expect("expected a version counter");
@@ -401,7 +401,7 @@ mod tests {
         } = run_chain_for_strategy(2000, hour_in_ms, strategy.clone(), config.clone(), 15);
         {
             let drive_cache = platform.drive.cache.borrow_mut();
-            let counter = drive_cache
+            let _counter = drive_cache
                 .protocol_versions_counter
                 .as_ref()
                 .expect("expected a version counter");
@@ -642,7 +642,7 @@ mod tests {
             platform,
             proposers,
             current_proposers,
-            current_proposer_versions,
+
             end_time_ms,
             ..
         } = run_chain_for_strategy(1400, hour_in_ms, strategy, config.clone(), 15);

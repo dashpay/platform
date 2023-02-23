@@ -38,7 +38,6 @@ use std::io::{self, BufRead};
 use std::option::Option::None;
 use std::sync::Arc;
 
-use dpp::data_contract::extra::common::cbor_inner_bytes_value;
 use dpp::data_contract::{DataContractFactory, DriveContractExt};
 use rand::seq::SliceRandom;
 use rand::{Rng, SeedableRng};
@@ -62,6 +61,7 @@ use drive::tests::helpers::setup::setup_drive;
 
 use dpp::data_contract::validation::data_contract_validator::DataContractValidator;
 use dpp::document::document_stub::DocumentStub;
+use dpp::platform_value::Value;
 
 use dpp::prelude::DataContract;
 use dpp::util::serializer;
@@ -1499,8 +1499,7 @@ fn test_family_basic_queries() {
                 .properties
                 .get("age")
                 .expect("we should be able to get the age");
-            let age_integer = age_value.as_integer().expect("age should be an integer");
-            let age: u8 = age_integer.try_into().expect("expected u8 value");
+            let age: u8 = age_value.to_integer().expect("expected u8 value");
             (name, age)
         })
         .collect();
@@ -2833,7 +2832,7 @@ fn test_dpns_query() {
                 .expect("we should be able to get the records");
             let map_records_value = records_value.as_map().expect("this should be a map");
             let record_dash_unique_identity_id =
-                cbor_inner_bytes_value(map_records_value, "dashUniqueIdentityId")
+                Value::inner_bytes_value(map_records_value, "dashUniqueIdentityId")
                     .unwrap()
                     .expect("there should be a dashUniqueIdentityId");
             base64::encode(record_dash_unique_identity_id)
