@@ -29,10 +29,10 @@
 
 #[cfg(any(feature = "full", feature = "verify"))]
 use std::collections::BTreeMap;
-#[cfg(feature = "full")]
+#[cfg(any(feature = "full", feature = "verify"))]
 use std::ops::BitXor;
 
-#[cfg(feature = "full")]
+#[cfg(any(feature = "full", feature = "verify"))]
 use ciborium::value::Value;
 #[cfg(feature = "full")]
 use grovedb::query_result_type::{QueryResultElements, QueryResultType};
@@ -90,9 +90,9 @@ use crate::drive::grove_operations::QueryType::StatefulQuery;
 use crate::drive::Drive;
 #[cfg(feature = "full")]
 use crate::error::drive::DriveError;
-#[cfg(feature = "full")]
+#[cfg(any(feature = "full", feature = "verify"))]
 use crate::error::query::QueryError;
-#[cfg(feature = "full")]
+#[cfg(any(feature = "full", feature = "verify"))]
 use crate::error::Error;
 #[cfg(feature = "full")]
 use crate::fee::calculate_fee;
@@ -101,7 +101,7 @@ use crate::fee::op::DriveOperation;
 
 #[cfg(feature = "full")]
 use crate::drive::contract::paths::ContractPaths;
-#[cfg(feature = "full")]
+#[cfg(any(feature = "full", feature = "verify"))]
 use dpp::data_contract::extra::common::bytes_for_system_value;
 #[cfg(feature = "full")]
 use dpp::document::document_stub::DocumentStub;
@@ -110,7 +110,7 @@ use dpp::ProtocolError;
 
 #[cfg(any(feature = "full", feature = "verify"))]
 pub mod conditions;
-#[cfg(feature = "full")]
+#[cfg(any(feature = "full", feature = "verify"))]
 mod defaults;
 #[cfg(any(feature = "full", feature = "verify"))]
 pub mod ordering;
@@ -133,8 +133,8 @@ pub struct InternalClauses {
     pub equal_clauses: BTreeMap<String, WhereClause>,
 }
 
-#[cfg(feature = "full")]
 impl InternalClauses {
+    #[cfg(any(feature = "full", feature = "verify"))]
     /// Returns true if the clause is a valid format.
     pub fn verify(&self) -> bool {
         // There can only be 1 primary key clause, or many other clauses
@@ -152,11 +152,13 @@ impl InternalClauses {
         }
     }
 
+    #[cfg(feature = "full")]
     /// Returns true if the query clause is for primary keys.
     pub fn is_for_primary_key(&self) -> bool {
         self.primary_key_in_clause.is_some() || self.primary_key_equal_clause.is_some()
     }
 
+    #[cfg(feature = "full")]
     /// Returns true if self is empty.
     pub fn is_empty(&self) -> bool {
         self.in_clause.is_none()
@@ -166,6 +168,7 @@ impl InternalClauses {
             && self.primary_key_equal_clause.is_none()
     }
 
+    #[cfg(any(feature = "full", feature = "verify"))]
     /// Extracts the `WhereClause`s and returns them as type `InternalClauses`.
     fn extract_from_clauses(all_where_clauses: Vec<WhereClause>) -> Result<Self, Error> {
         let primary_key_equal_clauses_array = all_where_clauses
@@ -266,8 +269,8 @@ pub struct DriveQuery<'a> {
 
 // TODO: expose this also
 //  also figure out main export
-#[cfg(feature = "full")]
 impl<'a> DriveQuery<'a> {
+    #[cfg(feature = "full")]
     /// Returns any item
     pub fn any_item_query(contract: &'a Contract, document_type: &'a DocumentType) -> Self {
         DriveQuery {
@@ -282,6 +285,8 @@ impl<'a> DriveQuery<'a> {
             block_time: None,
         }
     }
+
+    #[cfg(feature = "full")]
     /// Returns true if the query clause if for primary keys.
     pub fn is_for_primary_key(&self) -> bool {
         self.internal_clauses.is_for_primary_key()
@@ -298,6 +303,7 @@ impl<'a> DriveQuery<'a> {
                             == "$id")))
     }
 
+    #[cfg(any(feature = "full", feature = "verify"))]
     /// Converts a query CBOR to a `DriveQuery`.
     pub fn from_cbor(
         query_cbor: &[u8],
@@ -432,6 +438,7 @@ impl<'a> DriveQuery<'a> {
         })
     }
 
+    #[cfg(feature = "full")]
     /// Converts a SQL expression to a `DriveQuery`.
     pub fn from_sql_expr(sql_string: &str, contract: &'a Contract) -> Result<Self, Error> {
         let dialect: GenericDialect = sqlparser::dialect::GenericDialect {};
@@ -553,6 +560,7 @@ impl<'a> DriveQuery<'a> {
         })
     }
 
+    #[cfg(feature = "full")]
     /// Operations to construct a path query.
     pub fn construct_path_query_operations(
         &self,
@@ -635,6 +643,7 @@ impl<'a> DriveQuery<'a> {
         }
     }
 
+    #[cfg(feature = "full")]
     /// Returns a path query given a document type path and starting document.
     pub fn get_primary_key_path_query(
         &self,
@@ -782,6 +791,7 @@ impl<'a> DriveQuery<'a> {
         }
     }
 
+    #[cfg(feature = "full")]
     /// Finds the best index for the query.
     pub fn find_best_index(&self) -> Result<&Index, Error> {
         let equal_fields = self
@@ -835,6 +845,7 @@ impl<'a> DriveQuery<'a> {
         Ok(index)
     }
 
+    #[cfg(feature = "full")]
     /// Returns a `QueryItem` given a start key and query direction.
     fn query_item_for_starts_at_key(starts_at_key: Vec<u8>, left_to_right: bool) -> QueryItem {
         if left_to_right {
@@ -844,6 +855,7 @@ impl<'a> DriveQuery<'a> {
         }
     }
 
+    #[cfg(feature = "full")]
     /// Returns a `Query` that either starts at or after the given document ID if given.
     fn inner_query_from_starts_at_for_id(
         starts_at_document: &Option<(DocumentStub, &DocumentType, &IndexProperty, bool)>,
@@ -866,6 +878,7 @@ impl<'a> DriveQuery<'a> {
         inner_query
     }
 
+    #[cfg(feature = "full")]
     /// Returns a `Query` that either starts at or after the given key.
     fn inner_query_starts_from_key(
         start_at_key: Vec<u8>,
@@ -888,6 +901,7 @@ impl<'a> DriveQuery<'a> {
         inner_query
     }
 
+    #[cfg(feature = "full")]
     /// Returns a `Query` that either starts at or after the given document if given.
     // We are passing in starts_at_document 4 parameters
     // The document
@@ -931,6 +945,7 @@ impl<'a> DriveQuery<'a> {
         Ok(inner_query)
     }
 
+    #[cfg(feature = "full")]
     /// Recursively queries as long as there are leftover index properties.
     fn recursive_insert_on_query(
         query: Option<&mut Query>,
@@ -1056,6 +1071,7 @@ impl<'a> DriveQuery<'a> {
         }
     }
 
+    #[cfg(feature = "full")]
     /// Returns a path query for non-primary keys given a document type path and starting document.
     pub fn get_non_primary_key_path_query(
         &self,
@@ -1255,6 +1271,7 @@ impl<'a> DriveQuery<'a> {
         ))
     }
 
+    #[cfg(feature = "full")]
     /// Executes a query with proof and returns the items and fee.
     pub fn execute_with_proof(
         self,
@@ -1273,6 +1290,7 @@ impl<'a> DriveQuery<'a> {
         Ok((items, cost))
     }
 
+    #[cfg(feature = "full")]
     /// Executes an internal query with proof and returns the items.
     pub(crate) fn execute_with_proof_internal(
         self,
@@ -1285,6 +1303,7 @@ impl<'a> DriveQuery<'a> {
         drive.grove_get_proved_path_query(&path_query, false, transaction, drive_operations)
     }
 
+    #[cfg(feature = "full")]
     /// Executes a query with proof and returns the root hash, items, and fee.
     pub fn execute_with_proof_only_get_elements(
         self,
@@ -1307,6 +1326,7 @@ impl<'a> DriveQuery<'a> {
         Ok((root_hash, items, cost))
     }
 
+    #[cfg(feature = "full")]
     /// Executes an internal query with proof and returns the root hash and values.
     pub(crate) fn execute_with_proof_only_get_elements_internal(
         self,
@@ -1344,6 +1364,7 @@ impl<'a> DriveQuery<'a> {
         Ok((root_hash, values))
     }
 
+    #[cfg(feature = "full")]
     /// Executes a query with no proof and returns the items, skipped items, and fee.
     pub fn execute_serialized_no_proof(
         &self,
@@ -1363,6 +1384,7 @@ impl<'a> DriveQuery<'a> {
         Ok((items, skipped, cost))
     }
 
+    #[cfg(feature = "full")]
     /// Executes an internal query with no proof and returns the values and skipped items.
     pub(crate) fn execute_serialized_no_proof_internal(
         &self,
@@ -1390,6 +1412,7 @@ impl<'a> DriveQuery<'a> {
         }
     }
 
+    #[cfg(feature = "full")]
     /// Executes an internal query with no proof and returns the values and skipped items.
     pub(crate) fn execute_no_proof_internal(
         &self,
