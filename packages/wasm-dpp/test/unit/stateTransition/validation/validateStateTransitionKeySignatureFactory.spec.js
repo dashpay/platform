@@ -2,26 +2,32 @@ const { Transaction, PrivateKey, Script } = require('@dashevo/dashcore-lib');
 
 const getIdentityCreateTransitionFixture = require('@dashevo/dpp/lib/test/fixtures/getIdentityCreateTransitionFixture');
 const createStateRepositoryMock = require('@dashevo/dpp/lib/test/mocks/createStateRepositoryMock');
+const getIdentityTopUpTransitionFixture = require('@dashevo/dpp/lib/test/fixtures/getIdentityTopUpTransitionFixture');
 const { expectValidationError } = require('../../../../lib/test/expect/expectError');
 
 const { default: loadWasmDpp } = require('../../../../dist');
 
 describe('validateStateTransitionKeySignatureFactory', () => {
   let stateTransition;
+  let stateRepositoryMock;
   let validateStateTransitionKeySignature;
 
   let InvalidStateTransitionSignatureError;
   let StateTransitionKeySignatureValidator;
-  // let StateTransitionExecutionContext;
+  let StateTransitionExecutionContext;
   let IdentityCreateTransition;
+  let IdentityTopUpTransition;
+  let IdentityNotFoundError;
   let ValidationResult;
 
   before(async () => {
     ({
       InvalidStateTransitionSignatureError,
       StateTransitionKeySignatureValidator,
-      // StateTransitionExecutionContext,
+      StateTransitionExecutionContext,
       IdentityCreateTransition,
+      IdentityTopUpTransition,
+      IdentityNotFoundError,
       ValidationResult,
     } = await loadWasmDpp());
   });
@@ -32,10 +38,7 @@ describe('validateStateTransitionKeySignatureFactory', () => {
 
     stateTransition = new IdentityCreateTransition(rawStateTransition);
 
-    // const executionContext = new StateTransitionExecutionContext();
-    // stateTransition.setExecutionContext(executionContext);
-
-    const stateRepositoryMock = createStateRepositoryMock(this.sinonSandbox);
+    stateRepositoryMock = createStateRepositoryMock(this.sinonSandbox);
 
     const validator = new StateTransitionKeySignatureValidator(stateRepositoryMock);
 
@@ -83,5 +86,28 @@ describe('validateStateTransitionKeySignatureFactory', () => {
 
     expect(result).to.be.instanceof(ValidationResult);
     expect(result.isValid()).to.be.true();
+  });
+
+  it('should return IdentityNotFoundError if identity not exist on topup transaction', async function () {
+    const stateTransitionJS = getIdentityTopUpTransitionFixture();
+    stateTransition = new IdentityTopUpTransition(stateTransitionJS.toObject());
+    stateRepositoryMock.fetchIdentityBalance.resolves(undefined);
+
+    const result = await validateStateTransitionKeySignature(
+      stateTransition,
+    );
+
+    await expectValidationError(result, IdentityNotFoundError);
+
+    const [error] = result.getErrors();
+
+    expect(error.getCode()).to.equal(2000);
+
+    const { match } = this.sinonSandbox;
+    expect(stateRepositoryMock.fetchIdentityBalance).to.be.calledOnceWithExactly(
+      match((identityId) => Buffer.from(identityId.toBuffer())
+        .equals(stateTransition.getIdentityId().toBuffer())),
+      match.instanceOf(StateTransitionExecutionContext),
+    );
   });
 });
