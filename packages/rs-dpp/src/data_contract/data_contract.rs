@@ -530,7 +530,7 @@ pub fn get_document_types(
             )));
         };
 
-        let document_type = DocumentType::from_cbor_value(
+        let document_type = DocumentType::from_platform_value(
             type_key_str,
             document_type_value_map,
             &definition_references,

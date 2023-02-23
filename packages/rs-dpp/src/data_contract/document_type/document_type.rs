@@ -175,7 +175,7 @@ impl DocumentType {
         }
     }
 
-    pub fn from_cbor_value(
+    pub fn from_platform_value(
         name: &str,
         document_type_value_map: &[(Value, Value)],
         definition_references: &BTreeMap<String, &Value>,
@@ -195,7 +195,7 @@ impl DocumentType {
                 .unwrap_or(default_mutability);
 
         let index_values =
-            Value::inner_array_slice_value(document_type_value_map, property_names::INDICES);
+            Value::inner_array_slice_value(document_type_value_map, property_names::INDICES)?;
         let indices: Vec<Index> = index_values
             .map(|index_values| {
                 index_values
@@ -227,7 +227,7 @@ impl DocumentType {
             )?;
 
         let mut required_fields =
-            cbor_inner_array_of_strings(document_type_value_map, property_names::REQUIRED)
+            Value::inner_array_of_strings(document_type_value_map, property_names::REQUIRED)
                 .unwrap_or_default();
 
         // Based on the property name, determine the type
@@ -466,45 +466,27 @@ fn get_type_and_properties<'a>(
     property_value: &'a Value,
     definition_references: &'a BTreeMap<String, &Value>,
 ) -> Result<(&'a str, BTreeMap<String, &'a Value>), ProtocolError> {
-    let Some(inner_property_values) = property_value.as_map() else {
-                return Err(ProtocolError::DataContractError(DataContractError::InvalidContractStructure(
-                    "document property is not a map as expected",
-                )));
-            };
-    let base_inner_properties = cbor_map_to_btree_map(inner_property_values);
-    let type_value = cbor_inner_text_value(inner_property_values, "type")?;
-    let (type_value, inner_properties) = match type_value {
+    let properties = property_value
+        .to_btree_ref_map()
+        .map_err(ProtocolError::ValueError)?;
+    let (type_value, inner_properties) = match properties.get_optional_str(property_names::TYPE)? {
         None => {
-            let ref_value = base_inner_properties
-                .get_optional_string(property_names::REF)?
-                .ok_or({
-                    DataContractError::InvalidContractStructure("cannot find type property")
-                })?;
+            let ref_value = properties
+                .get_str(property_names::REF)
+                .map_err(ProtocolError::ValueError)?;
             let Some(ref_value) = ref_value.strip_prefix("#/$defs/") else {
                             return Err(ProtocolError::DataContractError(
                                 DataContractError::InvalidContractStructure("malformed reference"),
                             ));
                         };
-            let inner_properties_map = definition_references
-                .get_optional_inner_borrowed_map(ref_value)?
-                .ok_or({
-                    ProtocolError::DataContractError(
-                        DataContractError::ReferenceDefinitionNotFound(
-                            "document reference not found",
-                        ),
-                    )
-                })?;
+            let inner_properties: BTreeMap<String, &Value> = definition_references
+                .get_inner_borrowed_str_value_map(ref_value)
+                .map_err(ProtocolError::ValueError)?;
 
-            let type_value = cbor_inner_text_value(inner_properties_map, property_names::TYPE)?
-                .ok_or({
-                    ProtocolError::DataContractError(DataContractError::InvalidContractStructure(
-                        "cannot find type property on reference",
-                    ))
-                })?;
-            let inner_properties = cbor_map_to_btree_map(inner_properties_map);
+            let type_value = inner_properties.get_str(property_names::TYPE)?;
             Ok::<(&str, BTreeMap<String, &Value>), ProtocolError>((type_value, inner_properties))
         }
-        Some(type_value) => Ok((type_value, base_inner_properties)),
+        Some(type_value) => Ok((type_value, properties)),
     }?;
     Ok((type_value, inner_properties))
 }

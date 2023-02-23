@@ -845,6 +845,30 @@ impl Value {
             other => Err(Error::StructureError("value is not a map".to_string())),
         }
     }
+
+    /// If the `Value` is a `Map`, returns the associated ValueMap ref which is a `&Vec<(Value, Value)>`
+    /// data as `Ok`.
+    /// Returns `Err(Error::Structure("reason"))` otherwise.
+    ///
+    /// ```
+    /// # use platform_value::{Error, Value};
+    /// #
+    /// let mut value = Value::Map(
+    ///     vec![
+    ///         (Value::Text(String::from("key")), Value::Float(18.)),
+    ///     ]
+    /// );
+    /// assert_eq!(value.to_map_ref(), Ok(vec![(Value::Text(String::from("key")), &Value::Float(18.))]));
+    ///
+    /// let value = Value::Bool(true);
+    /// assert_eq!(value.to_map_ref(), Err(Error::StructureError("value is not a map".to_string())))
+    /// ```
+    pub fn to_map_ref(&self) -> Result<&ValueMap, Error> {
+        match self {
+            Value::Map(map) => Ok(map),
+            other => Err(Error::StructureError("value is not a map".to_string())),
+        }
+    }
 }
 
 macro_rules! implfrom {
