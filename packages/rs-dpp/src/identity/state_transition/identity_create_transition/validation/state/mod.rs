@@ -28,7 +28,7 @@ pub async fn validate_identity_create_transition_state(
         return Ok(result);
     }
 
-    if let Some(_balance) = balance {
+    if balance.is_some() {
         result.add_error(IdentityAlreadyExistsError::new(identity_id.to_buffer()));
     }
 
