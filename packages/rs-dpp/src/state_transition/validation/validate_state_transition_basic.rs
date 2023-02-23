@@ -1,16 +1,17 @@
-use std::sync::Arc;
+use std::{convert::TryFrom, sync::Arc};
 
 use async_trait::async_trait;
 use serde_json::Value as JsonValue;
 
 use crate::{
-    consensus::basic::BasicError,
+    consensus::{basic::BasicError, ConsensusError},
     state_repository::StateRepositoryLike,
     state_transition::{
         create_state_transition,
         state_transition_execution_context::StateTransitionExecutionContext,
-        try_get_transition_type, StateTransitionConvert,
+        StateTransitionConvert, StateTransitionType,
     },
+    util::json_value::JsonValueExt,
     validation::{AsyncDataValidatorWithContext, SimpleValidationResult},
     ProtocolError,
 };
@@ -54,9 +55,29 @@ where
     ) -> Result<SimpleValidationResult, ProtocolError> {
         let mut result = SimpleValidationResult::default();
 
-        let state_transition_type_result = try_get_transition_type(raw_state_transition);
+        let Ok(state_transition_type) = raw_state_transition.get_u8("type") else {
+            result.add_error(
+                ConsensusError::BasicError(
+                    Box::new(BasicError::MissingStateTransitionTypeError)
+                )
+            );
 
-        let state_transition_type = state_transition_type_result?;
+            return Ok(result);
+        };
+
+        let Ok(state_transition_type) = StateTransitionType::try_from(state_transition_type) else {
+            result.add_error(
+                ConsensusError::BasicError(
+                    Box::new(
+                        BasicError::InvalidStateTransitionTypeError {
+                            transition_type: state_transition_type
+                        }
+                    )
+                )
+            );
+
+            return Ok(result);
+        };
 
         let validate_result = self
             .validate_state_transition_by_type

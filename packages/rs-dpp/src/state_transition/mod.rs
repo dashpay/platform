@@ -26,9 +26,9 @@ use self::state_transition_execution_context::StateTransitionExecutionContext;
 mod state_transition_types;
 pub mod validation;
 
+pub mod errors;
 pub mod fee;
 pub mod state_transition_execution_context;
-pub mod errors;
 
 mod example;
 macro_rules! call_method {
