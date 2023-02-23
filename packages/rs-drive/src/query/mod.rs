@@ -27,7 +27,7 @@
 // DEALINGS IN THE SOFTWARE.
 //
 
-#[cfg(feature = "full")]
+#[cfg(any(feature = "full", feature = "verify"))]
 use std::collections::BTreeMap;
 #[cfg(feature = "full")]
 use std::ops::BitXor;
@@ -44,7 +44,7 @@ pub use grovedb::{
 #[cfg(any(feature = "full", feature = "verify"))]
 pub use grovedb::{Query, QueryItem};
 
-#[cfg(feature = "full")]
+#[cfg(any(feature = "full", feature = "verify"))]
 use indexmap::IndexMap;
 #[cfg(feature = "full")]
 use integer_encoding::VarInt;
@@ -67,18 +67,22 @@ use crate::drive::block_info::BlockInfo;
 use conditions::WhereOperator::{Equal, In};
 /// Import conditions
 #[cfg(feature = "full")]
-pub use conditions::{WhereClause, WhereOperator};
+pub use conditions::{WhereOperator};
+#[cfg(any(feature = "full", feature = "verify"))]
+pub use conditions::{WhereClause};
 #[cfg(feature = "full")]
-use dpp::data_contract::document_type::{DocumentType, Index, IndexProperty};
+use dpp::data_contract::document_type::{Index, IndexProperty};
+#[cfg(any(feature = "full", feature = "verify"))]
+use dpp::data_contract::document_type::{DocumentType};
 #[cfg(feature = "full")]
 use dpp::data_contract::DriveContractExt;
 /// Import ordering
-#[cfg(feature = "full")]
+#[cfg(any(feature = "full", feature = "verify"))]
 pub use ordering::OrderClause;
 
 #[cfg(feature = "full")]
 use crate::common::encode::encode_float;
-#[cfg(feature = "full")]
+#[cfg(any(feature = "full", feature = "verify"))]
 use crate::contract::Contract;
 #[cfg(feature = "full")]
 use crate::drive::grove_operations::QueryType::StatefulQuery;
@@ -104,16 +108,16 @@ use dpp::document::document_stub::DocumentStub;
 #[cfg(feature = "full")]
 use dpp::ProtocolError;
 
-#[cfg(feature = "full")]
+#[cfg(any(feature = "full", feature = "verify"))]
 pub mod conditions;
 #[cfg(feature = "full")]
 mod defaults;
-#[cfg(feature = "full")]
+#[cfg(any(feature = "full", feature = "verify"))]
 pub mod ordering;
 #[cfg(feature = "full")]
 mod test_index;
 
-#[cfg(feature = "full")]
+#[cfg(any(feature = "full", feature = "verify"))]
 /// Internal clauses struct
 #[derive(Clone, Debug, PartialEq, Default)]
 pub struct InternalClauses {
@@ -236,8 +240,7 @@ impl InternalClauses {
     }
 }
 
-// TODO: expose drive query
-#[cfg(feature = "full")]
+#[cfg(any(feature = "full", feature = "verify"))]
 /// Drive query struct
 #[derive(Debug, PartialEq)]
 pub struct DriveQuery<'a> {
@@ -261,6 +264,8 @@ pub struct DriveQuery<'a> {
     pub block_time: Option<f64>,
 }
 
+// TODO: expose this also
+//  also figure out main export
 #[cfg(feature = "full")]
 impl<'a> DriveQuery<'a> {
     /// Returns any item
