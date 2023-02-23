@@ -23,11 +23,11 @@ class TestDashmateClass {
    * @param {string} args
    */
   async setupLocal(nodes = 3, minerInterval = '2.5m', ...args) {
-    execute(`dashmate setup local --node-count=${nodes} --debug-logs --miner-interval=${minerInterval} ${args} --verbose`).then((res) => {
-      if (res.status !== undefined) {
-        throw new Error(`${res.stderr} with exit code: ${res.status}`);
-      }
-    });
+    const res = await execute(`dashmate setup local --node-count=${nodes} --debug-logs --miner-interval=${minerInterval} ${args} --verbose`);
+
+    if (res.status !== undefined) {
+      throw new Error(`${res.stderr} with exit code: ${res.status}`);
+    }
   }
 
   /**
@@ -36,11 +36,11 @@ class TestDashmateClass {
    * @param {string} args
    */
   async setupTestnet(nodeType, ...args) {
-    execute(`yarn dashmate setup testnet ${nodeType} ${args} --verbose`).then((res) => {
-      if (res.status !== undefined) {
-        throw new Error(`${res.stderr} with exit code: ${res.status}`);
-      }
-    });
+    const res = await execute(`yarn dashmate setup testnet ${nodeType} ${args} --verbose`);
+
+    if (res.status !== undefined) {
+      throw new Error(`${res.stderr} with exit code: ${res.status}`);
+    }
   }
 
   /**
@@ -51,11 +51,11 @@ class TestDashmateClass {
   async start(preset, ...args) {
     const group = this.setNetwork(preset);
 
-    execute(`yarn dashmate ${group} start ${args} --verbose`).then((res) => {
-      if (res.status !== undefined) {
-        throw new Error(`${res.stderr} with exit code: ${res.status}`);
-      }
-    });
+    const res = await execute(`yarn dashmate ${group} start ${args} --verbose`);
+
+    if (res.status !== undefined) {
+      throw new Error(`${res.stderr} with exit code: ${res.status}`);
+    }
   }
 
   /**
@@ -66,11 +66,11 @@ class TestDashmateClass {
   async stop(preset, ...args) {
     const group = this.setNetwork(preset);
 
-    execute(`yarn dashmate ${group} stop ${args} --verbose`).then((res) => {
-      if (res.status !== undefined) {
-        throw new Error(`${res.stderr} with exit code: ${res.status}`);
-      }
-    });
+    const res = await execute(`yarn dashmate ${group} stop ${args} --verbose`);
+
+    if (res.status !== undefined) {
+      throw new Error(`${res.stderr} with exit code: ${res.status}`);
+    }
   }
 
   /**
@@ -96,52 +96,41 @@ class TestDashmateClass {
   async restart(preset, ...args) {
     const group = this.setNetwork(preset);
 
-    execute(`yarn dashmate ${group} restart ${args} --verbose`).then((res) => {
-      if (res.status !== undefined) {
-        throw new Error(`${res.stderr} with exit code: ${res.status}`);
-      }
-    });
+    const res = await execute(`yarn dashmate ${group} restart ${args} --verbose`);
+
+    if (res.status !== undefined) {
+      throw new Error(`${res.stderr} with exit code: ${res.status}`);
+    }
   }
 
   /**
    * Get status
    * @param {string} scope - '', core, host, masternode, platform, services
-   * @param {boolean} allowErr - define if throw or return an error
    * @return {Promise<string>}
    */
-  async checkStatus(scope, allowErr = false) {
-    return execute(`yarn dashmate status ${scope}`).then((res) => {
-      if (!allowErr) {
-        if (res.status !== undefined) {
-          throw new Error(`${res.stderr} with exit code: ${res.status}`);
-        } else {
-          return res.toString();
-        }
-      } else {
-        return res.toString();
-      }
-    });
+  async checkStatus(scope) {
+    const res = await execute(`yarn dashmate status ${scope}`);
+
+    if (res.status !== undefined) {
+      throw new Error(`${res.stderr} with exit code: ${res.status}`);
+    }
+
+    return res.toString();
   }
 
-  // refactor
   /**
    * Get local status
-   * @param {string} command - status, list
-   * @param {boolean} allowErr - define if throw or return an error
+   * @param {string} scope - status, list
    * @return {Promise<string>}
    */
-  async checkGroupStatus(command, allowErr = false) {
-    return execute(`yarn dashmate group ${command}`).then((res) => {
-      if (!allowErr) {
-        if (res.status !== undefined) {
-          throw new Error(`${res.stderr} with exit code: ${res.status}`);
-        } else {
-          return res.toString();
-        }
-      } else {
-        return res.toString();
-      }
-    });
+  async checkGroupStatus(scope) {
+    const res = await execute(`yarn dashmate ${scope} --format=json`);
+
+    if (res.status !== undefined) {
+      throw new Error(`${res.stderr} with exit code: ${res.status}`);
+    }
+
+    return res.toString();
   }
 }
 
