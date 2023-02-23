@@ -2608,7 +2608,7 @@ describe('DocumentRepository', function main() {
             expect.fail('should throw an error');
           } catch (e) {
             expect(e).to.be.instanceOf(InvalidQueryError);
-            expect(e.message).to.equal('query invalid limit error: limit should be a integer from 1 to 100');
+            expect(e.message).to.equal('value error: Structure Error: value is not an integer');
           }
         });
 
@@ -2626,7 +2626,7 @@ describe('DocumentRepository', function main() {
               expect.fail('should throw an error');
             } catch (e) {
               expect(e).to.be.instanceOf(InvalidQueryError);
-              expect(e.message).to.equal('query invalid limit error: limit should be a integer from 1 to 100');
+              expect(e.message).to.equal('value error: Structure Error: value is not an integer');
             }
           });
         });
