@@ -646,7 +646,6 @@ mod test {
     fn conversion_to_buffer_from_buffer_too_high_version() {
         init();
         let data_contract = get_data_contract_fixture(None);
-        data_contract.protocol_version;
 
         let data_contract_bytes = data_contract
             .to_buffer()
