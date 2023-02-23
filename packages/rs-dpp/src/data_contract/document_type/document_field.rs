@@ -539,7 +539,7 @@ impl DocumentFieldType {
                 Ok(r_vec)
             }
             DocumentFieldType::Date => {
-                let value_as_f64 = value.into_float().map_err(ProtocolError::ValueError)?;
+                let value_as_f64 = value.to_float().map_err(ProtocolError::ValueError)?;
                 let mut value_bytes = value_as_f64.to_be_bytes().to_vec();
                 if required {
                     Ok(value_bytes)
@@ -551,7 +551,7 @@ impl DocumentFieldType {
                 }
             }
             DocumentFieldType::Integer => {
-                let value_as_i64: i64 = value.into_integer().map_err(ProtocolError::ValueError)?;
+                let value_as_i64: i64 = value.to_integer().map_err(ProtocolError::ValueError)?;
                 let mut value_bytes = value_as_i64.to_be_bytes().to_vec();
                 if required {
                     Ok(value_bytes)
@@ -563,7 +563,7 @@ impl DocumentFieldType {
                 }
             }
             DocumentFieldType::Number => {
-                let value_as_f64 = value.into_float().map_err(ProtocolError::ValueError)?;
+                let value_as_f64 = value.to_float().map_err(ProtocolError::ValueError)?;
                 let mut value_bytes = value_as_f64.to_be_bytes().to_vec();
                 if required {
                     Ok(value_bytes)
@@ -676,15 +676,15 @@ impl DocumentFieldType {
                 }
             }
             DocumentFieldType::Date => {
-                encode_float(value.into_float().map_err(ProtocolError::ValueError)?)
+                encode_float(value.to_float().map_err(ProtocolError::ValueError)?)
             }
             DocumentFieldType::Integer => {
-                let value_as_i64 = value.into_integer().map_err(ProtocolError::ValueError)?;
+                let value_as_i64 = value.to_integer().map_err(ProtocolError::ValueError)?;
 
                 encode_signed_integer(value_as_i64)
             }
             DocumentFieldType::Number => {
-                encode_float(value.into_float().map_err(ProtocolError::ValueError)?)
+                encode_float(value.to_float().map_err(ProtocolError::ValueError)?)
             }
             DocumentFieldType::ByteArray(_, _) => match value {
                 Value::Bytes(bytes) => Ok(bytes.clone()),

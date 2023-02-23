@@ -403,6 +403,35 @@ impl Value {
         }
     }
 
+    /// If the `Value` is a `Float`, returns a the associated `f64` data as `Ok`.
+    /// Returns `Err(Error::Structure("reason"))` otherwise.
+    ///
+    /// ```
+    /// # use platform_value::{Error, Value};
+    /// #
+    /// let value = Value::Float(17.);
+    /// assert_eq!(value.to_float(), Ok(17.));
+    ///
+    /// let value = Value::Bool(true);
+    /// assert_eq!(value.to_float(), Err(Error::StructureError("value is not a float".to_string())));
+    /// ```
+    pub fn to_float(&self) -> Result<f64, Error> {
+        match self {
+            Value::U128(int) => Ok(*int as f64),
+            Value::I128(int) => Ok(*int as f64),
+            Value::U64(int) => Ok(*int as f64),
+            Value::I64(int) => Ok(*int as f64),
+            Value::U32(int) => Ok(*int as f64),
+            Value::I32(int) => Ok(*int as f64),
+            Value::U16(int) => Ok(*int as f64),
+            Value::I16(int) => Ok(*int as f64),
+            Value::U8(int) => Ok(*int as f64),
+            Value::I8(int) => Ok(*int as f64),
+            Value::Float(f) => Ok(*f),
+            other => Err(Error::StructureError("value is not a float".to_string())),
+        }
+    }
+
     /// Returns true if the `Value` is a `Text`. Returns false otherwise.
     ///
     /// ```

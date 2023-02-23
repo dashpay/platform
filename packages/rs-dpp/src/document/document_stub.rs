@@ -348,7 +348,7 @@ impl DocumentStub {
                         ))
                     })?;
                     // given a map of values and a key, get the corresponding value
-                    match get_key_from_cbor_map(map_values, key) {
+                    match Value::get_from_map(map_values, key) {
                         None => Ok(None),
                         Some(value) => get_value_at_path(value, rest_key_paths),
                     }
@@ -434,17 +434,13 @@ impl DocumentStub {
     }
 
     pub fn set_u8(&mut self, property_name: &str, value: u8) {
-        self.properties.insert(
-            property_name.to_string(),
-            Value::Integer(Integer::from(value)),
-        );
+        self.properties
+            .insert(property_name.to_string(), Value::U8(value));
     }
 
     pub fn set_i64(&mut self, property_name: &str, value: i64) {
-        self.properties.insert(
-            property_name.to_string(),
-            Value::Integer(Integer::from(value)),
-        );
+        self.properties
+            .insert(property_name.to_string(), Value::I64(value));
     }
 
     pub fn set_bytes(&mut self, property_name: &str, value: Vec<u8>) {
@@ -473,7 +469,7 @@ impl fmt::Display for DocumentStub {
             write!(f, "no properties")?;
         } else {
             for (key, value) in self.properties.iter() {
-                write!(f, "{}:{} ", key, reduced_value_string_representation(value))?
+                write!(f, "{}:{} ", key, Value::string_representation(value))?
             }
         }
         Ok(())

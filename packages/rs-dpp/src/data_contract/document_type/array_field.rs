@@ -93,17 +93,17 @@ impl ArrayFieldType {
                 Ok(r_vec)
             }
             ArrayFieldType::Date => {
-                let value_as_f64 = value.into_float().map_err(ProtocolError::ValueError)?;
+                let value_as_f64 = value.to_float().map_err(ProtocolError::ValueError)?;
                 let value_bytes = value_as_f64.to_be_bytes().to_vec();
                 Ok(value_bytes)
             }
             ArrayFieldType::Integer => {
-                let value_as_i64: i64 = value.into_integer().map_err(ProtocolError::ValueError)?;
+                let value_as_i64: i64 = value.to_integer().map_err(ProtocolError::ValueError)?;
                 let value_bytes = value_as_i64.to_be_bytes().to_vec();
                 Ok(value_bytes)
             }
             ArrayFieldType::Number => {
-                let value_as_f64 = value.into_float().map_err(ProtocolError::ValueError)?;
+                let value_as_f64 = value.to_float().map_err(ProtocolError::ValueError)?;
                 let value_bytes = value_as_f64.to_be_bytes().to_vec();
                 Ok(value_bytes)
             }

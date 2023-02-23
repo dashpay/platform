@@ -76,6 +76,8 @@ pub trait BTreeValueMapHelper {
     fn get_system_hash256_bytes(&self, key: &str) -> Result<[u8; 32], Error>;
     fn get_optional_system_bytes(&self, key: &str) -> Result<Option<Vec<u8>>, Error>;
     fn get_system_bytes(&self, key: &str) -> Result<Vec<u8>, Error>;
+    fn remove_optional_string(&mut self, key: &str) -> Result<Option<String>, Error>;
+    fn remove_string(&mut self, key: &str) -> Result<String, Error>;
     fn remove_optional_integer<T>(&mut self, key: &str) -> Result<Option<T>, Error>
     where
         T: TryFrom<i128>
@@ -421,5 +423,14 @@ where
         self.remove_optional_system_bytes(key)?.ok_or_else(|| {
             Error::StructureError(format!("unable to get system bytes property {key}"))
         })
+    }
+
+    fn remove_optional_string(&mut self, key: &str) -> Result<Option<String>, Error> {
+        self.remove(key).map(|v| v.borrow().to_text()).transpose()
+    }
+
+    fn remove_string(&mut self, key: &str) -> Result<String, Error> {
+        self.remove_optional_string(key)?
+            .ok_or_else(|| Error::StructureError(format!("unable to get str property {key}")))
     }
 }

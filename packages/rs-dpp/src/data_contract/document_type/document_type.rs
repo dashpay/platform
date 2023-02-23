@@ -366,12 +366,33 @@ fn insert_values(
             None => property_key,
             Some(prefix) => [prefix, property_key].join(".").to_owned(),
         };
-        let (type_value, inner_properties) =
-            get_type_and_properties(property_value, definition_references)?;
+        let mut inner_properties = property_value.to_btree_ref_map()?;
+        let type_value = inner_properties
+            .remove_optional_string(property_names::TYPE)
+            .map_err(ProtocolError::ValueError)?;
+        let type_value = match type_value {
+            None => {
+                let ref_value = inner_properties
+                    .get_str(property_names::REF)
+                    .map_err(ProtocolError::ValueError)?;
+                let Some(ref_value) = ref_value.strip_prefix("#/$defs/") else {
+                    return Err(ProtocolError::DataContractError(
+                        DataContractError::InvalidContractStructure("malformed reference"),
+                    ));
+                };
+                inner_properties = definition_references
+                    .get_inner_borrowed_str_value_map(ref_value)
+                    .map_err(ProtocolError::ValueError)?;
+
+                let type_value = inner_properties.get_string(property_names::TYPE)?;
+                type_value
+            }
+            Some(type_value) => type_value,
+        };
         let is_required = known_required.contains(&type_value.to_string());
         let field_type: DocumentFieldType;
 
-        match type_value {
+        match type_value.as_str() {
             "array" => {
                 // Only handling bytearrays for v1
                 // Return an error if it is not a byte array
@@ -446,7 +467,7 @@ fn insert_values(
             }
 
             _ => {
-                field_type = string_to_field_type(type_value)
+                field_type = string_to_field_type(type_value.as_str())
                     .ok_or(DataContractError::ValueWrongType("invalid type"))?;
                 document_properties.insert(
                     prefixed_property_key,
@@ -460,33 +481,4 @@ fn insert_values(
     }
 
     Ok(())
-}
-
-fn get_type_and_properties<'a>(
-    property_value: &'a Value,
-    definition_references: &'a BTreeMap<String, &Value>,
-) -> Result<(&'a str, BTreeMap<String, &'a Value>), ProtocolError> {
-    let properties = property_value
-        .to_btree_ref_map()
-        .map_err(ProtocolError::ValueError)?;
-    let (type_value, inner_properties) = match properties.get_optional_str(property_names::TYPE)? {
-        None => {
-            let ref_value = properties
-                .get_str(property_names::REF)
-                .map_err(ProtocolError::ValueError)?;
-            let Some(ref_value) = ref_value.strip_prefix("#/$defs/") else {
-                            return Err(ProtocolError::DataContractError(
-                                DataContractError::InvalidContractStructure("malformed reference"),
-                            ));
-                        };
-            let inner_properties: BTreeMap<String, &Value> = definition_references
-                .get_inner_borrowed_str_value_map(ref_value)
-                .map_err(ProtocolError::ValueError)?;
-
-            let type_value = inner_properties.get_str(property_names::TYPE)?;
-            Ok::<(&str, BTreeMap<String, &Value>), ProtocolError>((type_value, inner_properties))
-        }
-        Some(type_value) => Ok((type_value, properties)),
-    }?;
-    Ok((type_value, inner_properties))
 }
