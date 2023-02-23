@@ -21,7 +21,7 @@ impl DuplicateIndexError {
     pub fn document_type(&self) -> String {
         self.document_type.clone()
     }
-   
+
     pub fn index_definition(&self) -> Index {
         self.index_definition.clone()
     }

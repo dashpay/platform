@@ -20,7 +20,7 @@ impl DataContractImmutablePropertiesUpdateError {
     pub fn operation(&self) -> String {
         self.operation.clone()
     }
-    
+
     pub fn field_path(&self) -> String {
         self.field_path.clone()
     }

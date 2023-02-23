@@ -48,9 +48,7 @@ where
             .map_err(|e| NonConsensusError::StateRepositoryFetchError(e.to_string()))?;
 
         let Some(existing_identity) = maybe_existing_identity else {
-            let err = BasicError::IdentityNotFoundError {
-                identity_id: state_transition.identity_id,
-            };
+            let err = IdentityNotFoundError::new(state_transition.identity_id);
 
             result.add_error(err);
 

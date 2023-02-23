@@ -43,9 +43,7 @@ where
 
                 if public_key_compressed.to_vec() != identity_public_key.data {
                     return Err(ProtocolError::InvalidSignaturePublicKeyError(
-                        InvalidSignaturePublicKeyError::new(
-                            identity_public_key.data.to_owned(),
-                        ),
+                        InvalidSignaturePublicKeyError::new(identity_public_key.data.to_owned()),
                     ));
                 }
 
@@ -57,9 +55,7 @@ where
 
                 if pub_key_hash != identity_public_key.data {
                     return Err(ProtocolError::InvalidSignaturePublicKeyError(
-                        InvalidSignaturePublicKeyError::new(
-                            identity_public_key.data.to_owned(),
-                        ),
+                        InvalidSignaturePublicKeyError::new(identity_public_key.data.to_owned()),
                     ));
                 }
                 self.sign_by_private_key(private_key, identity_public_key.key_type, bls)
@@ -69,9 +65,7 @@ where
 
                 if public_key != identity_public_key.data {
                     return Err(ProtocolError::InvalidSignaturePublicKeyError(
-                        InvalidSignaturePublicKeyError::new(
-                            identity_public_key.data.to_owned(),
-                        ),
+                        InvalidSignaturePublicKeyError::new(identity_public_key.data.to_owned()),
                     ));
                 }
                 self.sign_by_private_key(private_key, identity_public_key.key_type, bls)

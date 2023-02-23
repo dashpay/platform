@@ -1,8 +1,8 @@
 use anyhow::anyhow;
 use std::sync::Arc;
 
-use crate::identity::IdentityPublicKey;
 use crate::consensus::signature::{IdentityNotFoundError, SignatureError};
+use crate::identity::IdentityPublicKey;
 use crate::{
     state_repository::StateRepositoryLike, state_transition::StateTransitionLike, ProtocolError,
 };
@@ -72,10 +72,4 @@ pub async fn apply_identity_update_transition(
     }
 
     Ok(())
-}
-
-fn identity_not_found_error(identity_id: Identifier) -> ProtocolError {
-    ProtocolError::AbstractConsensusError(Box::new(ConsensusError::SignatureError(
-        SignatureError::IdentityNotFoundError(IdentityNotFoundError::new(identity_id)),
-    )))
 }

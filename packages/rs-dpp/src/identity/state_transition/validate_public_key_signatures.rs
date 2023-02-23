@@ -2,6 +2,7 @@ use serde_json::Value;
 
 use crate::consensus::basic::identity::InvalidIdentityKeySignatureError;
 use crate::consensus::basic::state_transition::InvalidStateTransitionTypeError;
+use crate::identity::state_transition::identity_public_key_transitions::IdentityPublicKeyCreateTransition;
 use crate::{
     consensus::{basic::BasicError, ConsensusError},
     object_names,
@@ -95,9 +96,9 @@ pub fn validate_public_key_signatures<'a, T: BlsModule>(
     let maybe_invalid_public_key_transition =
         find_invalid_public_key(&mut state_transition, add_public_key_transitions, bls);
     if let Some(invalid_key_transition) = maybe_invalid_public_key_transition {
-        validation_result.add_error(BasicError::InvalidIdentityKeySignatureError {
-            public_key_id: invalid_key_transition.id,
-        })
+        validation_result.add_error(BasicError::InvalidIdentityKeySignatureError(
+            InvalidIdentityKeySignatureError::new(invalid_key_transition.id),
+        ))
     }
 
     Ok(validation_result)

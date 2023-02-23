@@ -11,10 +11,7 @@ pub struct InvalidCompoundIndexError {
 }
 
 impl InvalidCompoundIndexError {
-    pub fn new(
-        document_type: String,
-        index_definition: Index,
-    ) -> Self {
+    pub fn new(document_type: String, index_definition: Index) -> Self {
         Self {
             document_type,
             index_definition,

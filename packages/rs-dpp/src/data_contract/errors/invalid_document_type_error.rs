@@ -5,12 +5,12 @@ use crate::ProtocolError;
 
 #[derive(Error, Debug, Clone, PartialEq)]
 #[error("Data Contract doesn't define document with type {doc_type}")]
-pub struct InvalidDataContractError {
+pub struct InvalidDocumentTypeError {
     doc_type: String,
     data_contract: DataContract,
 }
 
-impl InvalidDataContractError {
+impl InvalidDocumentTypeError {
     pub fn new(doc_type: String, data_contract: DataContract) -> Self {
         Self {
             doc_type,
@@ -26,8 +26,8 @@ impl InvalidDataContractError {
     }
 }
 
-impl From<InvalidDataContractError> for ProtocolError {
-    fn from(err: InvalidDataContractError) -> Self {
-        Self::InvalidDataContractError(err)
+impl From<InvalidDocumentTypeError> for ProtocolError {
+    fn from(err: InvalidDocumentTypeError) -> Self {
+        Self::InvalidDocumentTypeError(err)
     }
 }

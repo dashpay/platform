@@ -88,6 +88,9 @@ pub enum ProtocolError {
     InvalidDataContractError(InvalidDataContractError),
 
     #[error(transparent)]
+    InvalidDocumentTypeError(InvalidDocumentTypeError),
+
+    #[error(transparent)]
     DataContractNotPresentError(DataContractNotPresentError),
 
     #[error(transparent)]
@@ -104,8 +107,6 @@ pub enum ProtocolError {
 
     #[error(transparent)]
     IdentityNotPresentError(IdentityNotPresentError),
-    #[error("Identity is not present")]
-    IdentityNotPresentError { id: Identifier },
 
     /// Error
     #[error("overflow error: {0}")]
