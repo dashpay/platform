@@ -25,35 +25,39 @@ const getDataContractFixture = require('@dashevo/dpp/lib/test/fixtures/getDataCo
 
 // const ValidationResult = require('@dashevo/dpp/lib/validation/ValidationResult');
 
-const InvalidDataContractIdError = require('@dashevo/dpp/lib/errors/consensus/basic/dataContract/InvalidDataContractIdError');
-const SomeConsensusError = require('@dashevo/dpp/lib/test/mocks/SomeConsensusError');
+// const InvalidDataContractIdError = require('@dashevo/dpp/lib/errors/consensus/basic/dataContract/InvalidDataContractIdError');
+// const SomeConsensusError = require('@dashevo/dpp/lib/test/mocks/SomeConsensusError');
 
 const { default: loadWasmDpp } = require('../../../../../../../dist');
 
 describe('validateDataContractCreateTransitionBasicFactory', () => {
-  let validateDataContractMock;
+  // let validateDataContractMock;
   let stateTransition;
   let rawStateTransition;
   let dataContract;
   let rawDataContract;
-  let validateProtocolVersionMock;
+  // let validateProtocolVersionMock;
 
   let DataContractCreateTransition;
   let ProtocolVersionValidator;
   let validateDataContractCreateTransitionBasic;
   let ValidationResult;
+  let ProtocolVersionParsingError;
+  let InvalidDataContractIdError;
 
   before(async () => {
     ({
       DataContractCreateTransition,
       validateDataContractCreateTransitionBasic,
       ValidationResult,
+      ProtocolVersionParsingError,
+      InvalidDataContractIdError,
     } = await loadWasmDpp());
   });
 
   beforeEach(async function beforeEach() {
-    validateDataContractMock = this.sinonSandbox.stub().returns(new ValidationResult());
-    validateProtocolVersionMock = this.sinonSandbox.stub().returns(new ValidationResult());
+    // validateDataContractMock = this.sinonSandbox.stub().returns(new ValidationResult());
+    // validateProtocolVersionMock = this.sinonSandbox.stub().returns(new ValidationResult());
 
     dataContract = getDataContractFixture();
     rawDataContract = dataContract.toObject();
@@ -109,173 +113,159 @@ describe('validateDataContractCreateTransitionBasicFactory', () => {
       expect(error.getKeyword()).to.equal('type');
     });
 
-    // it('should be valid', async () => {
-    //   rawStateTransition.protocolVersion = -1;
+    it('should be valid', async () => {
+      rawStateTransition.protocolVersion = -1;
 
-    //   const protocolVersionError = new SomeConsensusError('test');
-    //   const protocolVersionResult = new ValidationResult([
-    //     protocolVersionError,
-    //   ]);
+      // const protocolVersionError = new SomeConsensusError('test');
+      // const protocolVersionResult = new ValidationResult([
+      //   protocolVersionError,
+      // ]);
 
-    //   validateProtocolVersionMock.returns(protocolVersionResult);
+      // validateProtocolVersionMock.returns(protocolVersionResult);
 
-    //   const result = await validateDataContractCreateTransitionBasic(rawStateTransition);
+      const result = await validateDataContractCreateTransitionBasic(rawStateTransition);
 
-    //   expectValidationError(result, SomeConsensusError);
+      // expectValidationError(result, SomeConsensusError);
 
-    //   const [error] = result.getErrors();
-
-    //   expect(error).to.equal(protocolVersionError);
-
-    //   expect(validateProtocolVersionMock).to.be.calledOnceWith(
-    //     rawStateTransition.protocolVersion,
-    //   );
-    // });
+      const [error] = result.getErrors();
+      expect(error).to.be.an.instanceOf(ProtocolVersionParsingError);
+    });
   });
 
-  // describe('type', () => {
-  //   it('should be present', async () => {
-  //     delete rawStateTransition.type;
+  describe('type', () => {
+    it('should be present', async () => {
+      delete rawStateTransition.type;
 
-  //     const result = await validateDataContractCreateTransitionBasic(rawStateTransition);
+      const result = await validateDataContractCreateTransitionBasic(rawStateTransition);
 
-  //     expectJsonSchemaError(result);
+      expectJsonSchemaError(result);
 
-  //     const [error] = result.getErrors();
+      const [error] = result.getErrors();
 
-  //     expect(error.getInstancePath()).to.equal('');
-  //     expect(error.getKeyword()).to.equal('required');
-  //     expect(error.getParams().missingProperty).to.equal('type');
-  //   });
+      expect(error.getInstancePath()).to.equal('');
+      expect(error.getKeyword()).to.equal('required');
+      expect(error.getParams().missingProperty).to.equal('type');
+    });
 
-  //   it('should be equal to 0', async () => {
-  //     rawStateTransition.type = 666;
+    it('should be equal to 0', async () => {
+      rawStateTransition.type = 666;
 
-  //     const result = await validateDataContractCreateTransitionBasic(rawStateTransition);
+      const result = await validateDataContractCreateTransitionBasic(rawStateTransition);
 
-  //     expectJsonSchemaError(result);
+      expectJsonSchemaError(result);
 
-  //     const [error] = result.getErrors();
+      const [error] = result.getErrors();
 
-  //     expect(error.getInstancePath()).to.equal('/type');
-  //     expect(error.getKeyword()).to.equal('const');
-  //     expect(error.getParams().allowedValue).to.equal(0);
-  //   });
-  // });
+      expect(error.getInstancePath()).to.equal('/type');
+      expect(error.getKeyword()).to.equal('const');
+      expect(error.getParams().allowedValue).to.equal(0);
+    });
+  });
 
-  // describe('dataContract', () => {
-  //   it('should be present', async () => {
-  //     delete rawStateTransition.dataContract;
+  describe('dataContract', () => {
+    it('should be present', async () => {
+      delete rawStateTransition.dataContract;
 
-  //     const result = await validateDataContractCreateTransitionBasic(rawStateTransition);
+      const result = await validateDataContractCreateTransitionBasic(rawStateTransition);
 
-  //     expectJsonSchemaError(result);
+      expectJsonSchemaError(result);
 
-  //     const [error] = result.getErrors();
+      const [error] = result.getErrors();
 
-  //     expect(error.getInstancePath()).to.equal('');
-  //     expect(error.getKeyword()).to.equal('required');
-  //     expect(error.getParams().missingProperty).to.equal('dataContract');
-  //   });
+      expect(error.getInstancePath()).to.equal('');
+      expect(error.getKeyword()).to.equal('required');
+      expect(error.getParams().missingProperty).to.equal('dataContract');
+    });
 
-  //   it('should be valid', async () => {
-  //     const dataContractError = new SomeConsensusError('test');
-  //     const dataContractResult = new ValidationResult([
-  //       dataContractError,
-  //     ]);
+    it('should be valid', async () => {
+      // const dataContractError = new SomeConsensusError('test');
+      // const dataContractResult = new ValidationResult([
+      //   dataContractError,
+      // ]);
 
-  //     validateDataContractMock.returns(dataContractResult);
+      // validateDataContractMock.returns(dataContractResult);
 
-  //     const result = await validateDataContractCreateTransitionBasic(rawStateTransition);
+      const result = await validateDataContractCreateTransitionBasic(rawStateTransition);
+      
+      expect(result).to.be.an.instanceOf(ValidationResult);
+      expect(result.isValid()).to.be.true();
 
-  //     expectValidationError(result);
+      // await expectValidationError(result);
 
-  //     const [error] = result.getErrors();
+      // const [error] = result.getErrors();
 
-  //     expect(error).to.equal(dataContractError);
+      // console.log(error.getCode());
 
-  //     expect(validateDataContractMock.getCall(0).args).to.have.deep.members([rawDataContract]);
-  //   });
+      // expect(error).to.equal(dataContractError);
 
-  //   it('should return invalid result on invalid Data Contract id', async () => {
-  //     const dataContractResult = new ValidationResult();
+      // expect(validateDataContractMock.getCall(0).args).to.have.deep.members([rawDataContract]);
+    });
 
-  //     validateDataContractMock.returns(dataContractResult);
+    it('should return invalid result on invalid Data Contract id', async () => {
+      // const dataContractResult = new ValidationResult();
 
-  //     const expectedId = rawStateTransition.dataContract.$id;
-  //     rawStateTransition.dataContract.$id = crypto.randomBytes(34);
+      // validateDataContractMock.returns(dataContractResult);
 
-  //     const result = await validateDataContractCreateTransitionBasic(rawStateTransition);
+      const expectedId = Buffer.from(rawStateTransition.dataContract.$id);
+      rawStateTransition.dataContract.$id = Buffer.from(crypto.randomBytes(32));
 
-  //     expectValidationError(result);
+      const result = await validateDataContractCreateTransitionBasic(rawStateTransition);
 
-  //     const [error] = result.getErrors();
+      await expectValidationError(result);
 
-  //     expect(error).to.be.an.instanceOf(InvalidDataContractIdError);
-  //     expect(error.getExpectedId()).to.deep.equal(expectedId);
-  //     expect(error.getInvalidId()).to.deep.equal(rawStateTransition.dataContract.$id);
-  //     expect(error.getCode()).to.equal(1011);
-  //   });
-  // });
+      const [error] = result.getErrors();
 
-  // describe('entropy', () => {
-  //   it('should be present', async () => {
-  //     delete rawStateTransition.entropy;
+      expect(error.getCode()).to.equal(1011);
+      expect(error.getExpectedId()).to.deep.equal(expectedId);
+      expect(error.getInvalidId()).to.deep.equal(rawStateTransition.dataContract.$id);
+      expect(error).to.be.an.instanceOf(InvalidDataContractIdError);
 
-  //     const result = await validateDataContractCreateTransitionBasic(rawStateTransition);
+    });
+  });
 
-  //     expectJsonSchemaError(result);
+  describe('entropy', () => {
+    it('should be present', async () => {
+      delete rawStateTransition.entropy;
 
-  //     const [error] = result.getErrors();
+      const result = await validateDataContractCreateTransitionBasic(rawStateTransition);
 
-  //     expect(error.getInstancePath()).to.equal('');
-  //     expect(error.getKeyword()).to.equal('required');
-  //     expect(error.getParams().missingProperty).to.equal('entropy');
-  //   });
+      expectJsonSchemaError(result);
 
-  //   it('should be a byte array', async () => {
-  //     rawStateTransition.entropy = new Array(32).fill('string');
+      const [error] = result.getErrors();
 
-  //     const result = await validateDataContractCreateTransitionBasic(rawStateTransition);
+      expect(error.getInstancePath()).to.equal('');
+      expect(error.getKeyword()).to.equal('required');
+      expect(error.getParams().missingProperty).to.equal('entropy');
+    });
 
-  //     expectJsonSchemaError(result, 2);
+    it('should be no less than 32 bytes', async () => {
+      rawStateTransition.entropy = Buffer.alloc(31);
 
-  //     const [error, byteArrayError] = result.getErrors();
+      const result = await validateDataContractCreateTransitionBasic(rawStateTransition);
 
-  //     expect(error.getInstancePath()).to.equal('/entropy/0');
-  //     expect(error.getKeyword()).to.equal('type');
+      await expectJsonSchemaError(result);
 
-  //     expect(byteArrayError.getKeyword()).to.equal('byteArray');
-  //   });
+      const [error] = result.getErrors();
 
-  //   it('should be no less than 32 bytes', async () => {
-  //     rawStateTransition.entropy = Buffer.alloc(31);
+      expect(error.getInstancePath()).to.equal('/entropy');
+      expect(error.getKeyword()).to.equal('minItems');
+      expect(error.getParams().minItems).to.equal(32);
+    });
 
-  //     const result = await validateDataContractCreateTransitionBasic(rawStateTransition);
+    it('should be no longer than 32 bytes', async () => {
+      rawStateTransition.entropy = Buffer.alloc(33);
 
-  //     expectJsonSchemaError(result);
+      const result = await validateDataContractCreateTransitionBasic(rawStateTransition);
 
-  //     const [error] = result.getErrors();
+      await expectJsonSchemaError(result);
 
-  //     expect(error.getInstancePath()).to.equal('/entropy');
-  //     expect(error.getKeyword()).to.equal('minItems');
-  //     expect(error.getParams().limit).to.equal(32);
-  //   });
+      const [error] = result.getErrors();
 
-  //   it('should be no longer than 32 bytes', async () => {
-  //     rawStateTransition.entropy = Buffer.alloc(33);
-
-  //     const result = await validateDataContractCreateTransitionBasic(rawStateTransition);
-
-  //     expectJsonSchemaError(result);
-
-  //     const [error] = result.getErrors();
-
-  //     expect(error.getInstancePath()).to.equal('/entropy');
-  //     expect(error.getKeyword()).to.equal('maxItems');
-  //     expect(error.getParams().limit).to.equal(32);
-  //   });
-  // });
+      expect(error.getInstancePath()).to.equal('/entropy');
+      expect(error.getKeyword()).to.equal('maxItems');
+      expect(error.getParams().maxItems).to.equal(32);
+    });
+  });
 
   // describe('signature', () => {
   //   it('should be present', async () => {
