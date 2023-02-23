@@ -59,7 +59,6 @@ const notArrayTestCases = [
   typesTestCases.string,
   typesTestCases.null,
   typesTestCases.object,
-  typesTestCases.buffer,
 ];
 
 const nonScalarTestCases = [
@@ -1512,7 +1511,7 @@ describe('DocumentRepository', function main() {
                       expect.fail('should throw an error');
                     } catch (e) {
                       expect(e).to.be.instanceOf(InvalidQueryError);
-                      expect(e.message).to.equal('value error: Structure Error: value is not a float');
+                      expect(e.message).to.equal('value error: structure Error: value is not a float');
                     }
                   });
                 });
@@ -1852,7 +1851,7 @@ describe('DocumentRepository', function main() {
 
                     expect.fail('should throw an error');
                   } catch (e) {
-                    expect(e.message).to.equal('value error: Structure Error: value is not a float');
+                    expect(e.message).to.equal('value error: structure Error: value is not a float');
                     expect(e).to.be.instanceOf(InvalidQueryError);
                   }
                 });
@@ -1867,7 +1866,7 @@ describe('DocumentRepository', function main() {
                   } catch (e) {
                     expect(e).to.be.instanceOf(InvalidQueryError);
                     expect(e.message).to.equal(
-                      'value error: Structure Error: value is not a float',
+                      'value error: structure Error: value is not a float',
                     );
                   }
                 });
@@ -1985,7 +1984,7 @@ describe('DocumentRepository', function main() {
                   expect.fail('should throw an error');
                 } catch (e) {
                   expect(e).to.be.instanceOf(InvalidQueryError);
-                  expect(e.message).to.equal('value error: Structure Error: value is not a float');
+                  expect(e.message).to.equal('value error: structure Error: value is not a float');
                 }
               });
             });
@@ -2051,7 +2050,7 @@ describe('DocumentRepository', function main() {
                     expect.fail('should throw an error');
                   } catch (e) {
                     expect(e).to.be.instanceOf(InvalidQueryError);
-                    expect(e.message).to.equal('value error: Structure Error: value is not a float');
+                    expect(e.message).to.equal('value wrong type error: document field type doesn\'t match document value');
                   }
                 });
               });
@@ -2608,7 +2607,7 @@ describe('DocumentRepository', function main() {
             expect.fail('should throw an error');
           } catch (e) {
             expect(e).to.be.instanceOf(InvalidQueryError);
-            expect(e.message).to.equal('value error: Structure Error: value is not an integer');
+            expect(e.message).to.equal('value error: structure Error: value is not an integer');
           }
         });
 
@@ -2626,7 +2625,7 @@ describe('DocumentRepository', function main() {
               expect.fail('should throw an error');
             } catch (e) {
               expect(e).to.be.instanceOf(InvalidQueryError);
-              expect(e.message).to.equal('value error: Structure Error: value is not an integer');
+              expect(e.message).to.equal('value error: structure Error: value is not an integer');
             }
           });
         });
@@ -2800,7 +2799,7 @@ describe('DocumentRepository', function main() {
               expect.fail('should throw an error');
             } catch (e) {
               expect(e).to.be.instanceOf(InvalidQueryError);
-              expect(e.message).to.equal('value error: Structure Error: value are not bytes, a string, or an array of values representing bytes');
+              expect(e.message).to.equal('value error: structure Error: value are not bytes, a string, or an array of values representing bytes');
             }
           });
         });
