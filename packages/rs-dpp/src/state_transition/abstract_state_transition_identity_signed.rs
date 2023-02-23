@@ -33,7 +33,7 @@ where
         self.verify_public_key_level_and_purpose(identity_public_key)?;
         self.verify_public_key_is_enabled(identity_public_key)?;
 
-        match identity_public_key.get_type() {
+        match identity_public_key.key_type {
             KeyType::ECDSA_SECP256K1 => {
                 let public_key_compressed = get_compressed_public_ec_key(private_key)?;
 
@@ -41,47 +41,47 @@ where
                 // and here we compare the private key used to sing the state transition with
                 // the compressed key stored in the identity
 
-                if public_key_compressed.to_vec() != identity_public_key.get_data() {
+                if public_key_compressed.to_vec() != identity_public_key.data {
                     return Err(ProtocolError::InvalidSignaturePublicKeyError(
                         InvalidSignaturePublicKeyError::new(
-                            identity_public_key.get_data().to_owned(),
+                            identity_public_key.data.to_owned(),
                         ),
                     ));
                 }
 
-                self.sign_by_private_key(private_key, identity_public_key.get_type(), bls)
+                self.sign_by_private_key(private_key, identity_public_key.key_type, bls)
             }
             KeyType::ECDSA_HASH160 => {
                 let public_key_compressed = get_compressed_public_ec_key(private_key)?;
                 let pub_key_hash = ripemd160_sha256(&public_key_compressed);
 
-                if pub_key_hash != identity_public_key.get_data() {
+                if pub_key_hash != identity_public_key.data {
                     return Err(ProtocolError::InvalidSignaturePublicKeyError(
                         InvalidSignaturePublicKeyError::new(
-                            identity_public_key.get_data().to_owned(),
+                            identity_public_key.data.to_owned(),
                         ),
                     ));
                 }
-                self.sign_by_private_key(private_key, identity_public_key.get_type(), bls)
+                self.sign_by_private_key(private_key, identity_public_key.key_type, bls)
             }
             KeyType::BLS12_381 => {
                 let public_key = bls.private_key_to_public_key(private_key)?;
 
-                if public_key != identity_public_key.get_data() {
+                if public_key != identity_public_key.data {
                     return Err(ProtocolError::InvalidSignaturePublicKeyError(
                         InvalidSignaturePublicKeyError::new(
-                            identity_public_key.get_data().to_owned(),
+                            identity_public_key.data.to_owned(),
                         ),
                     ));
                 }
-                self.sign_by_private_key(private_key, identity_public_key.get_type(), bls)
+                self.sign_by_private_key(private_key, identity_public_key.key_type, bls)
             }
 
             // the default behavior from
             // https://github.com/dashevo/platform/blob/6b02b26e5cd3a7c877c5fdfe40c4a4385a8dda15/packages/js-dpp/lib/stateTransition/AbstractStateTransitionIdentitySigned.js#L108
             // is to return the error for the BIP13_SCRIPT_HASH
             KeyType::BIP13_SCRIPT_HASH => Err(ProtocolError::InvalidIdentityPublicKeyTypeError(
-                InvalidIdentityPublicKeyTypeError::new(identity_public_key.get_type()),
+                InvalidIdentityPublicKeyTypeError::new(identity_public_key.key_type),
             )),
         }
     }
@@ -100,14 +100,14 @@ where
             ));
         }
 
-        if self.get_signature_public_key_id() != Some(public_key.get_id()) {
+        if self.get_signature_public_key_id() != Some(public_key.id) {
             return Err(ProtocolError::PublicKeyMismatchError(
                 PublicKeyMismatchError::new(public_key.clone()),
             ));
         }
 
-        let public_key_bytes = public_key.get_data();
-        match public_key.get_type() {
+        let public_key_bytes = public_key.data.as_slice();
+        match public_key.key_type {
             KeyType::ECDSA_HASH160 => {
                 self.verify_ecdsa_hash_160_signature_by_public_key_hash(public_key_bytes)
             }
@@ -133,25 +133,25 @@ where
         {
             return Err(ProtocolError::InvalidSignaturePublicKeySecurityLevelError(
                 InvalidSignaturePublicKeySecurityLevelError::new(
-                    public_key.get_security_level(),
+                    public_key.security_level,
                     self.get_security_level_requirement(),
                 ),
             ));
         }
 
         // Otherwise, key security level should be less than MASTER but more or equal than required
-        if self.get_security_level_requirement() < public_key.get_security_level() {
+        if self.get_security_level_requirement() < public_key.security_level {
             return Err(ProtocolError::PublicKeySecurityLevelNotMetError(
                 PublicKeySecurityLevelNotMetError::new(
-                    public_key.get_security_level(),
+                    public_key.security_level,
                     self.get_security_level_requirement(),
                 ),
             ));
         }
 
-        if public_key.get_purpose() != Purpose::AUTHENTICATION {
+        if public_key.purpose != Purpose::AUTHENTICATION {
             return Err(ProtocolError::WrongPublicKeyPurposeError(
-                WrongPublicKeyPurposeError::new(public_key.get_purpose(), Purpose::AUTHENTICATION),
+                WrongPublicKeyPurposeError::new(public_key.purpose, Purpose::AUTHENTICATION),
             ));
         }
         Ok(())
@@ -161,7 +161,7 @@ where
         &self,
         public_key: &IdentityPublicKey,
     ) -> Result<(), ProtocolError> {
-        if public_key.get_disabled_at().is_some() {
+        if public_key.disabled_at.is_some() {
             return Err(ProtocolError::PublicKeyIsDisabledError(
                 PublicKeyIsDisabledError::new(public_key.to_owned()),
             ));
@@ -233,8 +233,8 @@ mod test {
         }
     }
 
-    impl Into<StateTransition> for ExampleStateTransition {
-        fn into(self) -> StateTransition {
+    impl From<ExampleStateTransition> for StateTransition {
+        fn from(_val: ExampleStateTransition) -> Self {
             let st = DocumentsBatchTransition::default();
             StateTransition::DocumentsBatch(st)
         }
@@ -306,7 +306,7 @@ mod test {
         pub bls_private: Vec<u8>,
         pub bls_public: Vec<u8>,
         pub identity_public_key: IdentityPublicKey,
-        pub public_key_id: u64,
+        pub public_key_id: KeyID,
     }
 
     fn get_test_keys() -> Keys {
@@ -334,7 +334,6 @@ mod test {
             data: ec_public_compressed_bytes.try_into().unwrap(),
             read_only: false,
             disabled_at: None,
-            signature: Default::default(),
         };
 
         Keys {
@@ -601,8 +600,7 @@ mod test {
         let mut keys = get_test_keys();
 
         st.transition_type = StateTransitionType::DataContractCreate;
-        keys.identity_public_key
-            .set_security_level(SecurityLevel::MASTER);
+        keys.identity_public_key.security_level = SecurityLevel::MASTER;
 
         let result = st
             .sign(&keys.identity_public_key, &keys.bls_private, &bls)

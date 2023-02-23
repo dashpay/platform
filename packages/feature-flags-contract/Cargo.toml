@@ -1,0 +1,9 @@
+[package]
+name = "feature-flags-contract"
+description = "Feature flags data contract schema and tools"
+version = "0.24.0-dev.1"
+edition = "2021"
+license = "MIT"
+
+[dependencies]
+serde_json = { version = "1.0" }

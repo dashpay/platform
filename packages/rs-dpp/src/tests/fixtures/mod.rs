@@ -30,9 +30,6 @@ pub use get_document_validator_fixture::*;
 mod get_masternode_reward_shares_documents_fixture;
 pub use get_masternode_reward_shares_documents_fixture::*;
 
-mod get_masternode_reward_shares_contract_fixture;
-pub use get_masternode_reward_shares_contract_fixture::*;
-
 pub use get_documents_fixture::*;
 
 mod get_data_contract;

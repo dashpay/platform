@@ -31,7 +31,7 @@ use crate::abci::messages::BlockBeginRequest;
 use crate::execution::fee_pools::epoch::EpochInfo;
 
 /// Block info
-pub struct BlockInfo {
+pub struct BlockStateInfo {
     /// Block height
     pub block_height: u64,
     /// Block time in ms
@@ -40,16 +40,19 @@ pub struct BlockInfo {
     pub previous_block_time_ms: Option<u64>,
     /// Block proposer's proTxHash
     pub proposer_pro_tx_hash: [u8; 32],
+    /// Core chain locked height
+    pub core_chain_locked_height: u32,
 }
 
-impl BlockInfo {
+impl BlockStateInfo {
     /// Given a `BlockBeginRequest` return `BlockInfo`
-    pub fn from_block_begin_request(block_begin_request: &BlockBeginRequest) -> BlockInfo {
-        BlockInfo {
+    pub fn from_block_begin_request(block_begin_request: &BlockBeginRequest) -> BlockStateInfo {
+        BlockStateInfo {
             block_height: block_begin_request.block_height,
             block_time_ms: block_begin_request.block_time_ms,
             previous_block_time_ms: block_begin_request.previous_block_time_ms,
             proposer_pro_tx_hash: block_begin_request.proposer_pro_tx_hash,
+            core_chain_locked_height: block_begin_request.core_chain_locked_height,
         }
     }
 }
@@ -57,7 +60,9 @@ impl BlockInfo {
 /// Block execution context
 pub struct BlockExecutionContext {
     /// Block info
-    pub block_info: BlockInfo,
+    pub block_info: BlockStateInfo,
     /// Epoch info
     pub epoch_info: EpochInfo,
+    /// Total hpmn count
+    pub hpmn_count: u32,
 }

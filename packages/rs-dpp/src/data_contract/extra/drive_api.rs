@@ -292,7 +292,7 @@ mod test {
         let expect_owner_id = bs58::decode(expect_owner_id_base58).into_vec().unwrap();
 
         let data_contract =
-            DataContract::from_cbor(&cbor_bytes).expect("contract should be deserialized");
+            DataContract::from_cbor(cbor_bytes).expect("contract should be deserialized");
 
         assert_eq!(1, data_contract.protocol_version());
         assert_eq!(expect_id, data_contract.id().as_bytes());
@@ -341,7 +341,7 @@ mod test {
         let dashpay_cbor =
             json_document_to_cbor("src/tests/payloads/contract/dashpay-contract.json", Some(1))
                 .expect("expected to get cbor document");
-        let contract = DataContract::from_cbor(&dashpay_cbor).unwrap();
+        let contract = DataContract::from_cbor(dashpay_cbor).unwrap();
 
         assert!(contract.documents_mutable_contract_default());
         assert!(!contract.keeps_history());
@@ -402,7 +402,7 @@ mod test {
         let dashpay_cbor =
             json_document_to_cbor("src/tests/payloads/contract/dashpay-contract.json", Some(1))
                 .expect("expected to get a cbor document");
-        let mut contract = DataContract::from_cbor(&dashpay_cbor).unwrap();
+        let mut contract = DataContract::from_cbor(dashpay_cbor).unwrap();
 
         assert!(!contract.readonly());
         assert!(!contract.keeps_history());
@@ -417,7 +417,7 @@ mod test {
         let contract_cbor =
             DriveContractExt::to_cbor(&contract).expect("serialization shouldn't fail");
         let deserialized_contract =
-            DataContract::from_cbor(&contract_cbor).expect("deserialization shouldn't fail");
+            DataContract::from_cbor(contract_cbor).expect("deserialization shouldn't fail");
 
         assert!(matches!(
             deserialized_contract.config,

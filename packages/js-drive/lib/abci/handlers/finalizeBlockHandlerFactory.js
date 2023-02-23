@@ -6,6 +6,7 @@ const {
     },
   },
 } = require('@dashevo/abci/types');
+
 const lodashCloneDeep = require('lodash/cloneDeep');
 
 /**
@@ -13,24 +14,24 @@ const lodashCloneDeep = require('lodash/cloneDeep');
  * @return {finalizeBlockHandler}
  * @param {GroveDBStore} groveDBStore
  * @param {BlockExecutionContextRepository} blockExecutionContextRepository
- * @param {CoreRpcClient} coreRpcClient
  * @param {BaseLogger} logger
  * @param {ExecutionTimer} executionTimer
  * @param {BlockExecutionContext} latestBlockExecutionContext
  * @param {BlockExecutionContext} proposalBlockExecutionContext
  * @param {processProposal} processProposal
+ * @param {broadcastWithdrawalTransactions} broadcastWithdrawalTransactions
  * @param {createContextLogger} createContextLogger
  *
  */
 function finalizeBlockHandlerFactory(
   groveDBStore,
   blockExecutionContextRepository,
-  coreRpcClient,
   logger,
   executionTimer,
   latestBlockExecutionContext,
   proposalBlockExecutionContext,
   processProposal,
+  broadcastWithdrawalTransactions,
   createContextLogger,
 ) {
   /**
@@ -72,6 +73,7 @@ function finalizeBlockHandlerFactory(
             time,
             version,
             proposerProTxHash,
+            proposedAppVersion,
             coreChainLockedHeight,
           },
           data: {
@@ -88,11 +90,24 @@ function finalizeBlockHandlerFactory(
         proposedLastCommit: commitInfo,
         time,
         proposerProTxHash,
+        proposedAppVersion,
         round,
       });
 
       await processProposal(processProposalRequest, contextLogger);
     }
+
+    // Send withdrawal transactions to Core
+    const unsignedWithdrawalTransactionsMap = proposalBlockExecutionContext
+      .getWithdrawalTransactionsMap();
+
+    const { thresholdVoteExtensions } = commitInfo;
+
+    await broadcastWithdrawalTransactions(
+      proposalBlockExecutionContext,
+      thresholdVoteExtensions,
+      unsignedWithdrawalTransactionsMap,
+    );
 
     proposalBlockExecutionContext.setLastCommitInfo(commitInfo);
 
@@ -109,30 +124,6 @@ function finalizeBlockHandlerFactory(
 
     // Update last block execution context with proposal data
     latestBlockExecutionContext.populate(proposalBlockExecutionContext);
-
-    // Send withdrawal transactions to Core
-    const unsignedWithdrawalTransactionsMap = proposalBlockExecutionContext
-      .getWithdrawalTransactionsMap();
-
-    const { thresholdVoteExtensions } = commitInfo;
-
-    for (const { extension, signature } of (thresholdVoteExtensions || [])) {
-      const withdrawalTransactionHash = extension.toString('hex');
-
-      const unsignedWithdrawalTransactionBytes = unsignedWithdrawalTransactionsMap[
-        withdrawalTransactionHash
-      ];
-
-      if (unsignedWithdrawalTransactionBytes) {
-        const transactionBytes = Buffer.concat([
-          unsignedWithdrawalTransactionBytes,
-          signature,
-        ]);
-
-        // TODO: think about Core error handling
-        await coreRpcClient.sendRawTransaction(transactionBytes.toString('hex'));
-      }
-    }
 
     proposalBlockExecutionContext.reset();
 

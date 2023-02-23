@@ -31,6 +31,8 @@ pub enum ProtocolError {
     EncodingError(String),
     #[error("Decoding Error - {0}")]
     DecodingError(String),
+    #[error("File not found Error - {0}")]
+    FileNotFound(String),
     #[error("Not included or invalid protocol version")]
     NoProtocolVersionError,
     #[error("Parsing error: {0}")]
@@ -102,6 +104,25 @@ pub enum ProtocolError {
 
     #[error(transparent)]
     IdentityNotPresentError(IdentityNotPresentError),
+    #[error("Identity is not present")]
+    IdentityNotPresentError { id: Identifier },
+
+    /// Error
+    #[error("overflow error: {0}")]
+    Overflow(&'static str),
+
+    /// Error
+    #[error("missing key: {0}")]
+    DocumentKeyMissing(String),
+
+    #[error("Invalid Identity: {errors:?}")]
+    InvalidIdentityError {
+        errors: Vec<ConsensusError>,
+        raw_identity: JsonValue,
+    },
+
+    #[error("Public key generation error {0}")]
+    PublicKeyGenerationError(String),
 }
 
 impl From<NonConsensusError> for ProtocolError {

@@ -45,12 +45,12 @@ use grovedb::{batch::GroveDbOp, Element};
 use crate::drive::flags::StorageFlags;
 use crate::error::drive::DriveError;
 use crate::error::Error;
-use crate::fee::default_costs::{
-    STORAGE_DISK_USAGE_CREDIT_PER_BYTE, STORAGE_LOAD_CREDIT_PER_BYTE,
-    STORAGE_PROCESSING_CREDIT_PER_BYTE, STORAGE_SEEK_COST,
+use crate::fee::default_costs::KnownCostItem::{
+    StorageDiskUsageCreditPerByte, StorageLoadCreditPerByte, StorageProcessingCreditPerByte,
+    StorageSeekCost,
 };
 use crate::fee::op::DriveOperation::{
-    CalculatedCostOperation, GroveOperation, PreCalculatedFeeResult,
+    CalculatedCostOperation, FunctionOperation, GroveOperation, PreCalculatedFeeResult,
 };
 use crate::fee::result::refunds::FeeRefunds;
 use crate::fee::{get_overflow_error, FeeResult};
@@ -135,25 +135,74 @@ impl BaseOp {
     }
 }
 
-/// Function ops
-#[derive(Debug, Enum)]
-pub enum FunctionOp {
-    /// SHA256
+/// Supported Hash Functions
+#[derive(Debug, Enum, PartialEq, Eq)]
+pub enum HashFunction {
+    /// Used for crypto addresses
+    Sha256RipeMD160,
+    /// Single Sha256
     Sha256,
-    /// SHA256_2
+    /// Double Sha256
     Sha256_2,
-    /// BLAKE3
+    /// Single Blake3
     Blake3,
 }
 
-impl FunctionOp {
-    /// Cost
-    pub fn cost(&self, _epoch: &Epoch) -> u64 {
+impl HashFunction {
+    fn block_size(&self) -> u16 {
         match self {
-            FunctionOp::Sha256 => 4000,
-            FunctionOp::Sha256_2 => 8000,
-            FunctionOp::Blake3 => 1000,
+            HashFunction::Sha256 => 64,
+            HashFunction::Sha256_2 => 64,
+            HashFunction::Blake3 => 64,
+            HashFunction::Sha256RipeMD160 => 64,
         }
+    }
+
+    fn rounds(&self) -> u16 {
+        match self {
+            HashFunction::Sha256 => 1,
+            HashFunction::Sha256_2 => 2,
+            HashFunction::Blake3 => 1,
+            HashFunction::Sha256RipeMD160 => 1,
+        }
+    }
+
+    //todo: put real costs in
+    fn base_cost(&self, _epoch: &Epoch) -> u64 {
+        match self {
+            HashFunction::Sha256 => 30,
+            HashFunction::Sha256_2 => 30,
+            HashFunction::Blake3 => 30,
+            HashFunction::Sha256RipeMD160 => 30,
+        }
+    }
+}
+
+/// A Hash Function Operation
+#[derive(Debug, PartialEq, Eq)]
+pub struct FunctionOp {
+    pub(crate) hash: HashFunction,
+    pub(crate) rounds: u16,
+}
+
+impl FunctionOp {
+    /// The cost of the function
+    fn cost(&self, epoch: &Epoch) -> u64 {
+        self.rounds as u64 * self.hash.base_cost(epoch)
+    }
+
+    /// Create a new function operation with the following hash knowing the rounds it will take
+    /// in advance
+    pub fn new_with_round_count(hash: HashFunction, rounds: u16) -> Self {
+        FunctionOp { hash, rounds }
+    }
+
+    /// Create a new function operation with the following hash knowing the number of bytes
+    /// it will hash
+    pub fn new_with_byte_count(hash: HashFunction, byte_count: u16) -> Self {
+        let blocks = byte_count / hash.block_size() + 1;
+        let rounds = blocks + hash.rounds() - 1;
+        FunctionOp { hash, rounds }
     }
 }
 
@@ -162,6 +211,8 @@ impl FunctionOp {
 pub enum DriveOperation {
     /// Grove operation
     GroveOperation(GroveDbOp),
+    /// A drive operation
+    FunctionOperation(FunctionOp),
     /// Calculated cost operation
     CalculatedCostOperation(OperationCost),
     /// Pre Calculated Fee Result
@@ -178,11 +229,15 @@ impl DriveOperation {
             .into_iter()
             .map(|operation| match operation {
                 PreCalculatedFeeResult(f) => Ok(f),
+                FunctionOperation(op) => Ok(FeeResult {
+                    processing_fee: op.cost(epoch),
+                    ..Default::default()
+                }),
                 _ => {
                     let cost = operation.operation_cost()?;
                     let storage_fee = cost.storage_cost(epoch)?;
                     let processing_fee = cost.ephemeral_cost(epoch)?;
-                    let (removed_bytes_from_epochs_by_identities, removed_bytes_from_system) =
+                    let (fee_refunds, removed_bytes_from_system) =
                         match cost.storage_cost.removed_bytes {
                             NoStorageRemoval => (FeeRefunds::default(), 0),
                             BasicStorageRemoval(amount) => {
@@ -197,6 +252,7 @@ impl DriveOperation {
                                 (
                                     FeeRefunds::from_storage_removal(
                                         removal_per_epoch_by_identifier,
+                                        epoch.index,
                                     )?,
                                     system_amount,
                                 )
@@ -205,7 +261,7 @@ impl DriveOperation {
                     Ok(FeeResult {
                         storage_fee,
                         processing_fee,
-                        fee_refunds: removed_bytes_from_epochs_by_identities,
+                        fee_refunds,
                         removed_bytes_from_system,
                     })
                 }
@@ -221,7 +277,10 @@ impl DriveOperation {
             ))),
             CalculatedCostOperation(c) => Ok(c),
             PreCalculatedFeeResult(_) => Err(Error::Drive(DriveError::CorruptedCodeExecution(
-                "pre calculated fees should be requested by operation costs",
+                "pre calculated fees should not be requested by operation costs",
+            ))),
+            FunctionOperation(_) => Err(Error::Drive(DriveError::CorruptedCodeExecution(
+                "function operations should not be requested by operation costs",
             ))),
         }
     }
@@ -249,6 +308,17 @@ impl DriveOperation {
         GroveDbOpBatch::from_operations(operations)
     }
 
+    /// Filters the groveDB ops from a list of operations and collects them in a `Vec<GroveDbOp>`.
+    pub fn grovedb_operations_consume(insert_operations: Vec<DriveOperation>) -> Vec<GroveDbOp> {
+        insert_operations
+            .into_iter()
+            .filter_map(|op| match op {
+                GroveOperation(grovedb_op) => Some(grovedb_op),
+                _ => None,
+            })
+            .collect()
+    }
+
     /// Sets `GroveOperation` for inserting an empty tree at the given path and key
     pub fn for_known_path_key_empty_tree(
         path: Vec<Vec<u8>>,
@@ -262,7 +332,7 @@ impl DriveOperation {
             None => Element::empty_tree(),
         };
 
-        DriveOperation::for_known_path_key_element(path, key, tree)
+        DriveOperation::insert_for_known_path_key_element(path, key, tree)
     }
 
     /// Sets `GroveOperation` for inserting an empty tree at the given path and key
@@ -278,21 +348,54 @@ impl DriveOperation {
             None => Element::empty_tree(),
         };
 
-        DriveOperation::for_estimated_path_key_element(path, key, tree)
+        DriveOperation::insert_for_estimated_path_key_element(path, key, tree)
     }
 
     /// Sets `GroveOperation` for inserting an element at the given path and key
-    pub fn for_known_path_key_element(path: Vec<Vec<u8>>, key: Vec<u8>, element: Element) -> Self {
+    pub fn insert_for_known_path_key_element(
+        path: Vec<Vec<u8>>,
+        key: Vec<u8>,
+        element: Element,
+    ) -> Self {
         GroveOperation(GroveDbOp::insert_op(path, key, element))
     }
 
+    /// Sets `GroveOperation` for replacement of an element at the given path and key
+    pub fn replace_for_known_path_key_element(
+        path: Vec<Vec<u8>>,
+        key: Vec<u8>,
+        element: Element,
+    ) -> Self {
+        GroveOperation(GroveDbOp::replace_op(path, key, element))
+    }
+
+    /// Sets `GroveOperation` for patching of an element at the given path and key
+    /// This is different from replacement which does not add or delete bytes
+    pub fn patch_for_known_path_key_element(
+        path: Vec<Vec<u8>>,
+        key: Vec<u8>,
+        element: Element,
+        change_in_bytes: i32,
+    ) -> Self {
+        GroveOperation(GroveDbOp::patch_op(path, key, element, change_in_bytes))
+    }
+
     /// Sets `GroveOperation` for inserting an element at an unknown estimated path and key
-    pub fn for_estimated_path_key_element(
+    pub fn insert_for_estimated_path_key_element(
         path: KeyInfoPath,
         key: KeyInfo,
         element: Element,
     ) -> Self {
         GroveOperation(GroveDbOp::insert_estimated_op(path, key, element))
+    }
+
+    /// Sets `GroveOperation` for replacement of an element at an unknown estimated path and key
+    pub fn replace_for_estimated_path_key_element(
+        path: KeyInfoPath,
+        key: KeyInfo,
+        element: Element,
+    ) -> Self {
+        GroveOperation(GroveDbOp::replace_estimated_op(path, key, element))
     }
 }
 
@@ -314,25 +417,27 @@ impl DriveCost for OperationCost {
             storage_loaded_bytes,
             hash_node_calls,
         } = self;
+        let epoch_cost_for_processing_credit_per_byte =
+            epoch.cost_for_known_cost_item(StorageProcessingCreditPerByte);
         let seek_cost = (*seek_count as u64)
-            .checked_mul(STORAGE_SEEK_COST)
+            .checked_mul(epoch.cost_for_known_cost_item(StorageSeekCost))
             .ok_or_else(|| get_overflow_error("seek cost overflow"))?;
         let storage_added_bytes_ephemeral_cost = (storage_cost.added_bytes as u64)
-            .checked_mul(STORAGE_PROCESSING_CREDIT_PER_BYTE)
+            .checked_mul(epoch_cost_for_processing_credit_per_byte)
             .ok_or_else(|| get_overflow_error("storage written bytes cost overflow"))?;
         let storage_replaced_bytes_ephemeral_cost = (storage_cost.replaced_bytes as u64)
-            .checked_mul(STORAGE_PROCESSING_CREDIT_PER_BYTE)
+            .checked_mul(epoch_cost_for_processing_credit_per_byte)
             .ok_or_else(|| get_overflow_error("storage written bytes cost overflow"))?;
         let storage_removed_bytes_ephemeral_cost =
             (storage_cost.removed_bytes.total_removed_bytes() as u64)
-                .checked_mul(STORAGE_PROCESSING_CREDIT_PER_BYTE)
+                .checked_mul(epoch_cost_for_processing_credit_per_byte)
                 .ok_or_else(|| get_overflow_error("storage written bytes cost overflow"))?;
         let storage_loaded_bytes_cost = (*storage_loaded_bytes as u64)
-            .checked_mul(STORAGE_LOAD_CREDIT_PER_BYTE)
+            .checked_mul(epoch.cost_for_known_cost_item(StorageLoadCreditPerByte))
             .ok_or_else(|| get_overflow_error("storage loaded cost overflow"))?;
-        let hash_node_cost = (*hash_node_calls as u64)
-            .checked_mul(FunctionOp::Blake3.cost(epoch))
-            .ok_or_else(|| get_overflow_error("hash node cost overflow"))?;
+        // this can't overflow
+        let hash_node_cost =
+            FunctionOp::new_with_round_count(HashFunction::Blake3, *hash_node_calls).cost(epoch);
         seek_cost
             .checked_add(storage_added_bytes_ephemeral_cost)
             .and_then(|c| c.checked_add(storage_replaced_bytes_ephemeral_cost))
@@ -343,11 +448,11 @@ impl DriveCost for OperationCost {
     }
 
     /// Return the storage cost from the operation
-    fn storage_cost(&self, _epoch: &Epoch) -> Result<u64, Error> {
+    fn storage_cost(&self, epoch: &Epoch) -> Result<u64, Error> {
         //todo: deal with epochs
         let OperationCost { storage_cost, .. } = self;
         (storage_cost.added_bytes as u64)
-            .checked_mul(STORAGE_DISK_USAGE_CREDIT_PER_BYTE)
+            .checked_mul(epoch.cost_for_known_cost_item(StorageDiskUsageCreditPerByte))
             .ok_or_else(|| get_overflow_error("storage written bytes cost overflow"))
     }
 }

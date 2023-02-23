@@ -10,8 +10,8 @@
     "test:browsers": "karma start ./karma.conf.js --single-run",
     "test:node": "NODE_ENV=test mocha",
     "webpack": "webpack",
-    "lint": "eslint . && cargo clippy && cargo fmt --check",
-    "lint:fix": "eslint . --fix && cargo clippy --fix && cargo fmt",
+    "lint": "eslint .",
+    "lint:fix": "eslint . --fix",
     "clean": "yarn exec scripts/clean.sh"
   },
   "ultra": {
@@ -30,13 +30,13 @@
   ],
   "license": "MIT",
   "dependencies": {
-    "@dashevo/bls": "~1.0.0-beta.2",
+    "@dashevo/bls": "~1.2.7",
     "lodash": "^4.17.21",
     "varint": "^6.0.0"
   },
   "devDependencies": {
     "@apidevtools/json-schema-ref-parser": "^8.0.0",
-    "@dashevo/dashcore-lib": "~0.19.44",
+    "@dashevo/dashcore-lib": "github:dashevo/dashcore-lib#3527419e8739b5e7d4017028d642dba8851c3e25",
     "@dashevo/dpns-contract": "workspace:*",
     "@dashevo/dpp": "workspace:*",
     "@dashevo/wasm-re2": "~1.0.2",

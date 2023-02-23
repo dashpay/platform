@@ -1,5 +1,4 @@
 use anyhow::{anyhow, bail, Context};
-use serde_json::Value as JsonValue;
 
 use crate::{
     data_trigger::create_error, document::document_transition::DocumentTransition,
@@ -41,12 +40,11 @@ where
         )
     })?;
 
-    let latest_block_header: JsonValue = context
+    let block_height = context
         .state_repository
-        .fetch_latest_platform_block_header()
-        .await?;
+        .fetch_latest_platform_block_height()
+        .await? as i64;
 
-    let block_height = latest_block_header.get_i64(PROPERTY_BLOCK_HEIGHT)?;
     let enable_at_height = data.get_i64(PROPERTY_ENABLE_AT_HEIGHT)?;
 
     if enable_at_height < block_height {

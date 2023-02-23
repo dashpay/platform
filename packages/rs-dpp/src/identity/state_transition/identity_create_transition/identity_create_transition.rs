@@ -6,7 +6,7 @@ use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use serde_json::Value as JsonValue;
 
 use crate::identity::state_transition::asset_lock_proof::AssetLockProof;
-use crate::identity::IdentityPublicKey;
+use crate::identity::state_transition::identity_public_key_transitions::IdentityPublicKeyCreateTransition;
 use crate::prelude::Identifier;
 use crate::state_transition::state_transition_execution_context::StateTransitionExecutionContext;
 use crate::state_transition::{
@@ -34,7 +34,7 @@ pub struct SerializationOptions {
 #[derive(Debug, Clone)]
 pub struct IdentityCreateTransition {
     // Own ST fields
-    pub public_keys: Vec<IdentityPublicKey>,
+    pub public_keys: Vec<IdentityPublicKeyCreateTransition>,
     pub asset_lock_proof: AssetLockProof,
     pub identity_id: Identifier,
     // Generic identity ST fields
@@ -103,7 +103,7 @@ impl IdentityCreateTransition {
             let keys = keys_value_arr
                 .iter()
                 .map(|val| serde_json::from_value(val.clone()))
-                .collect::<Result<Vec<IdentityPublicKey>, serde_json::Error>>()?;
+                .collect::<Result<Vec<IdentityPublicKeyCreateTransition>, serde_json::Error>>()?;
             state_transition.set_public_keys(keys);
         }
 
@@ -141,19 +141,25 @@ impl IdentityCreateTransition {
     }
 
     /// Get identity public keys
-    pub fn get_public_keys(&self) -> &[IdentityPublicKey] {
+    pub fn get_public_keys(&self) -> &[IdentityPublicKeyCreateTransition] {
         &self.public_keys
     }
 
     /// Replaces existing set of public keys with a new one
-    pub fn set_public_keys(&mut self, public_keys: Vec<IdentityPublicKey>) -> &mut Self {
+    pub fn set_public_keys(
+        &mut self,
+        public_keys: Vec<IdentityPublicKeyCreateTransition>,
+    ) -> &mut Self {
         self.public_keys = public_keys;
 
         self
     }
 
     /// Adds public keys to the existing public keys array
-    pub fn add_public_keys(&mut self, public_keys: &mut Vec<IdentityPublicKey>) -> &mut Self {
+    pub fn add_public_keys(
+        &mut self,
+        public_keys: &mut Vec<IdentityPublicKeyCreateTransition>,
+    ) -> &mut Self {
         self.public_keys.append(public_keys);
 
         self
@@ -234,6 +240,10 @@ impl IdentityCreateTransition {
     /// Returns ids of created identities
     pub fn get_modified_data_ids(&self) -> Vec<&Identifier> {
         vec![self.get_identity_id()]
+    }
+
+    pub fn set_protocol_version(&mut self, protocol_version: u32) {
+        self.protocol_version = protocol_version;
     }
 }
 
@@ -338,11 +348,3 @@ impl StateTransitionLike for IdentityCreateTransition {
         self.execution_context = execution_context
     }
 }
-
-// @typedef {RawStateTransition & Object} RawIdentityCreateTransition
-// @property {RawInstantAssetLockProof|RawChainAssetLockProof} assetLockProof
-// @property {RawIdentityPublicKey[]} publicKeys
-//
-// @typedef {JsonStateTransition & Object} JsonIdentityCreateTransition
-// @property {JsonInstantAssetLockProof|JsonChainAssetLockProof} assetLockProof
-// @property {JsonIdentityPublicKey[]} publicKeys

@@ -14,6 +14,7 @@ use self::dashpay_data_triggers::create_contact_request_data_trigger;
 use self::dpns_triggers::create_domain_data_trigger;
 use self::feature_flags_data_triggers::create_feature_flag_data_trigger;
 use self::reward_share_data_triggers::create_masternode_reward_shares_data_trigger;
+use self::withdrawals_data_triggers::delete_withdrawal_data_trigger;
 
 mod data_trigger_execution_context;
 
@@ -22,6 +23,7 @@ pub mod dpns_triggers;
 pub mod feature_flags_data_triggers;
 pub mod get_data_triggers_factory;
 pub mod reward_share_data_triggers;
+pub mod withdrawals_data_triggers;
 
 mod data_trigger_execution_result;
 mod reject_data_trigger;
@@ -41,6 +43,7 @@ pub enum DataTriggerKind {
     DataTriggerRewardShare,
     DataTriggerReject,
     CrateFeatureFlag,
+    DeleteWithdrawal,
 }
 
 pub struct DataTrigger {
@@ -86,7 +89,7 @@ impl DataTrigger {
         if let Err(err) = execution_result {
             let consensus_error = DataTriggerError::DataTriggerExecutionError {
                 data_contract_id,
-                document_transition_id: get_from_transition!(document_transition, id).clone(),
+                document_transition_id: *get_from_transition!(document_transition, id),
                 message: err.to_string(),
                 execution_error: err,
                 document_transition: None,
@@ -126,6 +129,9 @@ where
             create_masternode_reward_shares_data_trigger(document_transition, context, identifier)
                 .await
         }
+        DataTriggerKind::DeleteWithdrawal => {
+            delete_withdrawal_data_trigger(document_transition, context, identifier).await
+        }
     }
 }
 
@@ -138,10 +144,10 @@ where
     SR: StateRepositoryLike,
 {
     DataTriggerError::DataTriggerConditionError {
-        data_contract_id: context.data_contract.id.clone(),
-        document_transition_id: dt_create.base.id.clone(),
+        data_contract_id: context.data_contract.id,
+        document_transition_id: dt_create.base.id,
         message: msg,
-        owner_id: Some(context.owner_id.clone()),
+        owner_id: Some(*context.owner_id),
         document_transition: Some(DocumentTransition::Create(dt_create.clone())),
     }
 }

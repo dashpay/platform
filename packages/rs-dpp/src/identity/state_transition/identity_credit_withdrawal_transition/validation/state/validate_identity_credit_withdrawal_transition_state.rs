@@ -10,7 +10,7 @@ use crate::{
     state_repository::StateRepositoryLike,
     state_transition::StateTransitionLike,
     validation::ValidationResult,
-    NonConsensusError,
+    NonConsensusError, StateError,
 };
 
 pub struct IdentityCreditWithdrawalTransitionValidator<SR>
@@ -34,6 +34,7 @@ where
     ) -> Result<ValidationResult<()>, NonConsensusError> {
         let mut result: ValidationResult<()> = ValidationResult::default();
 
+        // TODO: Use fetchIdentityBalance
         let maybe_existing_identity = self
             .state_repository
             .fetch_identity(
@@ -46,26 +47,33 @@ where
             .map_err(Into::into)
             .map_err(|e| NonConsensusError::StateRepositoryFetchError(e.to_string()))?;
 
-        let existing_identity = match maybe_existing_identity {
-            None => {
-                let err = SignatureError::IdentityNotFoundError(IdentityNotFoundError::new(
-                    state_transition.identity_id.clone(),
-                ));
+        let Some(existing_identity) = maybe_existing_identity else {
+            let err = BasicError::IdentityNotFoundError {
+                identity_id: state_transition.identity_id,
+            };
 
-                result.add_error(err);
+            result.add_error(err);
 
-                return Ok(result);
-            }
-            Some(identity) => identity,
+            return Ok(result);
         };
 
         if existing_identity.get_balance() < state_transition.amount {
             let err = IdentityInsufficientBalanceError {
-                identity_id: state_transition.identity_id.clone(),
+                identity_id: state_transition.identity_id,
                 balance: existing_identity.balance,
             };
 
             result.add_error(err);
+
+            return Ok(result);
+        }
+
+        // Check revision
+        if existing_identity.get_revision() != (state_transition.get_revision() - 1) {
+            result.add_error(StateError::InvalidIdentityRevisionError {
+                identity_id: existing_identity.get_id().to_owned(),
+                current_revision: existing_identity.get_revision(),
+            });
 
             return Ok(result);
         }

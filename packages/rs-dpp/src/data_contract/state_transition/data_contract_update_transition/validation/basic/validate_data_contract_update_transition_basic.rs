@@ -109,9 +109,8 @@ where
         {
             Some(data_contract) => data_contract,
             None => {
-                validation_result.add_error(BasicError::DataContractNotPresent {
-                    data_contract_id: data_contract_id.clone(),
-                });
+                validation_result
+                    .add_error(BasicError::DataContractNotPresent { data_contract_id });
                 return Ok(validation_result);
             }
         };
@@ -220,7 +219,7 @@ fn replace_bytes_with_hex_string(
         let bytes = data
             .get_bytes(property_name.as_ref())
             .with_context(|| "replacing bytes with hex string failed")?;
-        let hex_string = hex::encode(&bytes).to_string();
+        let hex_string = hex::encode(bytes).to_string();
         data[property_name.as_ref()] = JsonValue::String(hex_string);
     }
     Ok(())

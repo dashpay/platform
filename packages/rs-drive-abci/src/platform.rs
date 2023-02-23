@@ -31,27 +31,109 @@
 //!
 
 use crate::block::BlockExecutionContext;
+use crate::config::PlatformConfig;
+use crate::error::execution::ExecutionError;
 use crate::error::Error;
-use drive::drive::config::DriveConfig;
+use crate::rpc::core::{CoreRPCLike, DefaultCoreRPC};
+use crate::state::PlatformState;
 use drive::drive::Drive;
+
+use drive::drive::defaults::PROTOCOL_VERSION;
 use std::cell::RefCell;
 use std::path::Path;
+
+#[cfg(feature = "fixtures-and-mocks")]
+use crate::rpc::core::MockCoreRPCLike;
+#[cfg(feature = "fixtures-and-mocks")]
+use dashcore::hashes::hex::FromHex;
+#[cfg(feature = "fixtures-and-mocks")]
+use dashcore::BlockHash;
+#[cfg(feature = "fixtures-and-mocks")]
+use serde_json::json;
 
 /// Platform
 pub struct Platform {
     /// Drive
     pub drive: Drive,
+    /// State
+    pub state: RefCell<PlatformState>,
+    /// Configuration
+    pub config: PlatformConfig,
     /// Block execution context
     pub block_execution_context: RefCell<Option<BlockExecutionContext>>,
+    /// Core RPC Client
+    pub core_rpc: Box<dyn CoreRPCLike>,
+}
+
+impl std::fmt::Debug for Platform {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("Platform").finish()
+    }
 }
 
 impl Platform {
     /// Open Platform with Drive and block execution context.
-    pub fn open<P: AsRef<Path>>(path: P, config: Option<DriveConfig>) -> Result<Self, Error> {
-        let drive = Drive::open(path, config).map_err(Error::Drive)?;
+    pub fn open<P: AsRef<Path>>(path: P, config: Option<PlatformConfig>) -> Result<Self, Error> {
+        let config = config.unwrap_or_default();
+        let drive = Drive::open(path, config.drive.clone()).map_err(Error::Drive)?;
+
+        let core_rpc: Box<dyn CoreRPCLike> = Box::new(
+            DefaultCoreRPC::open(
+                config.core.rpc.url.as_str(),
+                config.core.rpc.username.clone(),
+                config.core.rpc.password.clone(),
+            )
+            .map_err(|e| {
+                dbg!(e);
+                Error::Execution(ExecutionError::CorruptedCodeExecution(
+                    "Could not setup Dash Core RPC client",
+                ))
+            })?,
+        );
+
+        let current_protocol_version_in_consensus = drive
+            .fetch_current_protocol_version(None)
+            .map_err(Error::Drive)?
+            .unwrap_or(PROTOCOL_VERSION);
+        let next_epoch_protocol_version = drive
+            .fetch_next_protocol_version(None)
+            .map_err(Error::Drive)?
+            .unwrap_or(PROTOCOL_VERSION);
+
+        let state = PlatformState {
+            last_block_info: None,
+            current_protocol_version_in_consensus,
+            next_epoch_protocol_version,
+        };
+
         Ok(Platform {
             drive,
+            state: RefCell::new(state),
+            config,
             block_execution_context: RefCell::new(None),
+            core_rpc,
         })
+    }
+
+    /// Helper function to be able
+    /// to quickly mock core rpc for tests
+    #[cfg(feature = "fixtures-and-mocks")]
+    pub fn mock_core_rpc_client(&mut self) {
+        let mut core_rpc_mock = MockCoreRPCLike::new();
+
+        core_rpc_mock.expect_get_block_hash().returning(|_| {
+            Ok(BlockHash::from_hex(
+                "0000000000000000000000000000000000000000000000000000000000000000",
+            )
+            .unwrap())
+        });
+
+        core_rpc_mock.expect_get_block_json().returning(|_| {
+            Ok(json!({
+                "tx": [],
+            }))
+        });
+
+        self.core_rpc = Box::new(core_rpc_mock);
     }
 }

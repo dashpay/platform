@@ -57,7 +57,7 @@ fn get_schema_error(result: &ValidationResult<()>, number: usize) -> &JsonSchema
 
 fn get_basic_error(consensus_error: &ConsensusError) -> &BasicError {
     match consensus_error {
-        ConsensusError::BasicError(basic_error) => &**basic_error,
+        ConsensusError::BasicError(basic_error) => basic_error,
         _ => panic!("error '{:?}' isn't a basic error", consensus_error),
     }
 }
@@ -1046,7 +1046,6 @@ mod documents {
     }
 
     #[test]
-    #[ignore = "unevaluatedProperties is waiting for implementation https://github.com/Stranger6667/jsonschema-rs/issues/288"]
     fn should_return_invalid_result_if_default_keyword_is_used() {
         let TestData {
             mut raw_data_contract,
@@ -1065,10 +1064,10 @@ mod documents {
         print_json_schema_errors(&result);
 
         assert_eq!(
-            "/documents/new/properties/something/items",
+            "/documents/indexedDocument/properties/firstName/default",
             schema_error.instance_path().to_string()
         );
-        assert_eq!(Some("const"), schema_error.keyword());
+        assert_eq!(Some("unevaluatedProperties"), schema_error.keyword());
     }
 
     #[test]
@@ -1095,7 +1094,6 @@ mod documents {
     }
 
     #[test]
-    #[ignore = "unevaluatedProperties is waiting for implementation https://github.com/Stranger6667/jsonschema-rs/issues/288"]
     fn documents_should_not_have_property_names() {
         let TestData {
             mut raw_data_contract,
@@ -1123,7 +1121,7 @@ mod documents {
 
         print_json_schema_errors(&result);
         assert_eq!(
-            "/documents/indexedDocument",
+            "/documents/indexedDocument/propertyNames",
             schema_error.instance_path().to_string()
         );
         assert_eq!(Some("unevaluatedProperties"), schema_error.keyword());

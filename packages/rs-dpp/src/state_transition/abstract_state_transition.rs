@@ -30,9 +30,10 @@ const PROPERTY_PROTOCOL_VERSION: &str = "protocolVersion";
 pub const DOCUMENT_TRANSITION_TYPES: [StateTransitionType; 1] =
     [StateTransitionType::DocumentsBatch];
 
-pub const IDENTITY_TRANSITION_TYPE: [StateTransitionType; 2] = [
+pub const IDENTITY_TRANSITION_TYPE: [StateTransitionType; 3] = [
     StateTransitionType::IdentityCreate,
     StateTransitionType::IdentityTopUp,
+    StateTransitionType::IdentityUpdate,
 ];
 
 pub const DATA_CONTRACT_TRANSITION_TYPES: [StateTransitionType; 2] = [

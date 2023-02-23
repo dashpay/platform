@@ -412,12 +412,12 @@ mod test {
         )
         .unwrap();
 
-        data_contract.id = contract_id.clone();
+        data_contract.id = contract_id;
 
         let document = factory
             .create(
                 data_contract,
-                owner_id.clone(),
+                owner_id,
                 document_type.to_string(),
                 json!({ "name": name }),
             )

@@ -18,11 +18,11 @@ const protoTimestampToMillis = require('../../util/protoTimestampToMillis');
  * @param {createValidatorSetUpdate} createValidatorSetUpdate
  * @param {synchronizeMasternodeIdentities} synchronizeMasternodeIdentities
  * @param {BaseLogger} logger
- * @param {registerSystemDataContracts} registerSystemDataContracts
  * @param {GroveDBStore} groveDBStore
  * @param {RSAbci} rsAbci
  * @param {createCoreChainLockUpdate} createCoreChainLockUpdate
  * @param {createContextLogger} createContextLogger
+ * @param {SystemIdentityPublicKeys} systemIdentityPublicKeys
  * @return {initChainHandler}
  */
 function initChainHandlerFactory(
@@ -32,11 +32,11 @@ function initChainHandlerFactory(
   createValidatorSetUpdate,
   synchronizeMasternodeIdentities,
   logger,
-  registerSystemDataContracts,
   groveDBStore,
   rsAbci,
   createCoreChainLockUpdate,
   createContextLogger,
+  systemIdentityPublicKeys,
 ) {
   /**
    * @typedef initChainHandler
@@ -46,6 +46,7 @@ function initChainHandlerFactory(
    */
   async function initChainHandler(request) {
     const { time } = request;
+    const timeMs = protoTimestampToMillis(time);
 
     const contextLogger = createContextLogger(logger, {
       height: request.initialHeight.toString(),
@@ -67,17 +68,21 @@ function initChainHandlerFactory(
 
     // Call RS ABCI
 
-    logger.debug('Request RS Drive\'s InitChain method');
+    const initChainRequest = {
+      genesisTimeMs: timeMs,
+      systemIdentityPublicKeys,
+    };
 
-    await rsAbci.initChain({ }, true);
+    logger.debug('Request RS Drive\'s InitChain method');
+    logger.trace(initChainRequest);
+
+    await rsAbci.initChain(initChainRequest, true);
 
     const blockInfo = new BlockInfo(
       0,
       0,
-      protoTimestampToMillis(time),
+      timeMs,
     );
-
-    await registerSystemDataContracts(contextLogger, blockInfo);
 
     const synchronizeMasternodeIdentitiesResult = await synchronizeMasternodeIdentities(
       initialCoreChainLockedHeight,

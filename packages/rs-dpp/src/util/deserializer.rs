@@ -1,5 +1,3 @@
-use std::convert::TryInto;
-
 use anyhow::anyhow;
 use integer_encoding::VarInt;
 use serde_json::{Map, Number, Value as JsonValue};

@@ -59,7 +59,7 @@ impl Drive {
 mod tests {
     use super::*;
 
-    use crate::common::helpers::setup::setup_drive_with_initial_state_structure;
+    use crate::tests::helpers::setup::setup_drive_with_initial_state_structure;
 
     mod is_epoch_tree_exists {
         use super::*;

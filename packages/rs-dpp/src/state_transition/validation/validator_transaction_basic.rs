@@ -119,7 +119,7 @@ mod test {
         );
         let data_contract_validator =
             DataContractValidator::new(Arc::new(protocol_version_validator));
-        let data_contract_factory = DataContractFactory::new(1, data_contract_validator);
+        let data_contract_factory = DataContractFactory::new(1, Arc::new(data_contract_validator));
 
         let mut state_transition = data_contract_factory
             .create_data_contract_create_transition(data_contract.clone())

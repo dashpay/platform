@@ -20,7 +20,7 @@ where
     state_repository: SR,
 }
 
-#[async_trait]
+#[async_trait(?Send)]
 impl<SR> AsyncDataValidator for DataContractUpdateTransitionStateValidator<SR>
 where
     SR: StateRepositoryLike,
@@ -68,7 +68,7 @@ pub async fn validate_data_contract_update_transition_state(
     let existing_data_contract: DataContract = match maybe_existing_data_contract {
         None => {
             let err = BasicError::DataContractNotPresent {
-                data_contract_id: state_transition.data_contract.id.clone(),
+                data_contract_id: state_transition.data_contract.id,
             };
             result.add_error(err);
             return Ok(result);

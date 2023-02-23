@@ -38,31 +38,32 @@ use crate::platform::Platform;
 use drive::drive::batch::GroveDbOpBatch;
 use drive::fee::credits::Credits;
 use drive::fee::epoch::distribution::{
-    distribute_refunds_to_epochs_collection, distribute_storage_fee_to_epochs_collection,
+    distribute_storage_fee_to_epochs_collection, subtract_refunds_from_epoch_credits_collection,
 };
 use drive::fee::epoch::{EpochIndex, SignedCreditsPerEpoch};
 use drive::grovedb::TransactionArg;
 
 /// Result of storage fee distribution
-pub struct DistributionStorageFeeResult {
+pub struct StorageFeeDistributionOutcome {
     /// Leftovers in result of divisions and rounding after storage fee distribution to epochs
     pub leftovers: Credits,
     /// A number of epochs which had refunded
-    pub refunded_epochs_count: usize,
+    pub refunded_epochs_count: u16,
 }
 
 impl Platform {
-    /// Adds operations to the GroveDB op batch which calculate and distribute storage fees
-    /// from the distribution pool and pending updates to the epoch pools and returns the leftovers.
+    /// Adds operations to the GroveDB op batch which distribute storage fees
+    /// from the distribution pool and subtract pending refunds
+    /// Returns distribution leftovers
     pub fn add_distribute_storage_fee_to_epochs_operations(
         &self,
         current_epoch_index: EpochIndex,
         transaction: TransactionArg,
         batch: &mut GroveDbOpBatch,
-    ) -> Result<DistributionStorageFeeResult, Error> {
+    ) -> Result<StorageFeeDistributionOutcome, Error> {
         let storage_distribution_fees = self
             .drive
-            .get_aggregate_storage_fees_from_distribution_pool(transaction)?;
+            .get_storage_fees_from_distribution_pool(transaction)?;
 
         let mut credits_per_epochs = SignedCreditsPerEpoch::default();
 
@@ -73,15 +74,15 @@ impl Platform {
             current_epoch_index,
         )?;
 
-        // Deduct refunds since epoch where data was removed skipping previous (already paid or pay-in-progress) epochs.
+        // Deduct pending refunds since epoch where data was removed skipping previous
+        // (already paid or pay-in-progress) epochs. We want people to pay for the current epoch
         // Leftovers are ignored since they already deducted from Identity's refund amount
 
-        let refunds = self.drive.fetch_pending_updates(transaction)?;
-        let refunded_epochs_count = refunds.len();
+        let refunds = self.drive.fetch_pending_epoch_refunds(transaction)?;
+        let refunded_epochs_count = refunds.len() as u16;
 
-        // TODO Better to use iterator do not load everything into memory
         for (epoch_index, credits) in refunds {
-            distribute_refunds_to_epochs_collection(
+            subtract_refunds_from_epoch_credits_collection(
                 &mut credits_per_epochs,
                 credits,
                 epoch_index,
@@ -96,7 +97,7 @@ impl Platform {
                 transaction,
             )?;
 
-        Ok(DistributionStorageFeeResult {
+        Ok(StorageFeeDistributionOutcome {
             leftovers,
             refunded_epochs_count,
         })
@@ -107,11 +108,11 @@ impl Platform {
 mod tests {
     use super::*;
 
-    use crate::common::helpers::setup::setup_platform_with_initial_state_structure;
+    use crate::test::helpers::setup::setup_platform_with_initial_state_structure;
     use drive::common::helpers::epoch::get_storage_credits_for_distribution_for_epochs_in_range;
 
     mod add_distribute_storage_fee_to_epochs_operations {
-        use drive::drive::fee_pools::pending_epoch_updates::add_update_pending_epoch_storage_pool_update_operations;
+        use drive::drive::fee_pools::pending_epoch_refunds::add_update_pending_epoch_refunds_operations;
         use drive::fee::credits::Creditable;
         use drive::fee::epoch::{CreditsPerEpoch, GENESIS_EPOCH_INDEX, PERPETUAL_STORAGE_EPOCHS};
         use drive::fee_pools::epochs::Epoch;
@@ -121,7 +122,7 @@ mod tests {
 
         #[test]
         fn should_add_operations_to_distribute_distribution_storage_pool_and_refunds() {
-            let platform = setup_platform_with_initial_state_structure();
+            let platform = setup_platform_with_initial_state_structure(None);
             let transaction = platform.drive.grove.start_transaction();
 
             /*
@@ -163,7 +164,6 @@ mod tests {
             Distribute since epoch 2 with refunds
             */
 
-            let storage_pool = 1000000;
             let current_epoch_index = 3;
 
             let mut batch = GroveDbOpBatch::new();
@@ -187,8 +187,8 @@ mod tests {
             let refunds =
                 CreditsPerEpoch::from_iter([(0, 10000), (1, 15000), (2, 20000), (3, 25000)]);
 
-            add_update_pending_epoch_storage_pool_update_operations(&mut batch, refunds.clone())
-                .expect("should update pending updates");
+            add_update_pending_epoch_refunds_operations(&mut batch, refunds.clone())
+                .expect("should update pending epoch refunds");
 
             platform
                 .drive
@@ -197,7 +197,7 @@ mod tests {
 
             let mut batch = GroveDbOpBatch::new();
 
-            let result = platform
+            let outcome = platform
                 .add_distribute_storage_fee_to_epochs_operations(
                     current_epoch_index,
                     Some(&transaction),
@@ -211,8 +211,8 @@ mod tests {
                 .expect("should apply batch");
 
             // check leftover
-            assert_eq!(result.leftovers, 180);
-            assert_eq!(result.refunded_epochs_count, refunds.len());
+            assert_eq!(outcome.leftovers, 180);
+            assert_eq!(outcome.refunded_epochs_count, refunds.len() as u16);
 
             // collect all the storage fee values of the 1000 epochs pools
             let storage_fees = get_storage_credits_for_distribution_for_epochs_in_range(
@@ -223,33 +223,25 @@ mod tests {
 
             // Assert total distributed fees
 
-            let total_storage_pool_distribution = (storage_pool - result.leftovers) * 2;
+            let total_storage_pool_distribution = (storage_pool - outcome.leftovers) * 2;
 
             let total_refunds: Credits = refunds
                 .into_iter()
                 .map(|(epoch_index, credits)| {
                     let mut credits_per_epochs = SignedCreditsPerEpoch::default();
 
-                    let leftovers = distribute_storage_fee_to_epochs_collection(
+                    subtract_refunds_from_epoch_credits_collection(
                         &mut credits_per_epochs,
                         credits,
                         epoch_index,
+                        current_epoch_index,
                     )
-                    .expect("should distribute refunds");
+                    .expect("should subtract refunds");
 
-                    let already_paid_epochs = current_epoch_index as u64 - epoch_index as u64;
-
-                    let already_paid_credits = if already_paid_epochs > 0 {
-                        credits_per_epochs
-                            .into_iter()
-                            .take(already_paid_epochs as usize)
-                            .map(|(_, credits)| credits.to_unsigned())
-                            .sum()
-                    } else {
-                        0
-                    };
-
-                    credits - leftovers - already_paid_credits
+                    credits_per_epochs
+                        .into_values()
+                        .map(|credits| credits.to_unsigned())
+                        .sum::<Credits>()
                 })
                 .sum();
 

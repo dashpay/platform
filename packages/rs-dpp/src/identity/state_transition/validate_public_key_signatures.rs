@@ -5,7 +5,6 @@ use crate::consensus::basic::state_transition::InvalidStateTransitionTypeError;
 use crate::{
     consensus::{basic::BasicError, ConsensusError},
     object_names,
-    prelude::IdentityPublicKey,
     state_transition::{
         try_get_transition_type, StateTransition, StateTransitionLike, StateTransitionType,
     },
@@ -85,20 +84,20 @@ pub fn validate_public_key_signatures<'a, T: BlsModule>(
             }
         };
 
-    let identity_public_keys: Vec<IdentityPublicKey> = raw_public_keys
+    let add_public_key_transitions: Vec<IdentityPublicKeyCreateTransition> = raw_public_keys
         .into_iter()
         .map(|k| {
-            IdentityPublicKey::from_raw_object(k.to_owned())
+            IdentityPublicKeyCreateTransition::from_raw_object(k.to_owned())
                 .map_err(|e| NonConsensusError::IdentityPublicKeyCreateError(format!("{:#}", e)))
         })
         .collect::<Result<_, _>>()?;
 
-    let maybe_invalid_public_key =
-        find_invalid_public_key(&mut state_transition, identity_public_keys, bls);
-    if let Some(invalid_key) = maybe_invalid_public_key {
-        validation_result.add_error(BasicError::InvalidIdentityKeySignatureError(
-            InvalidIdentityKeySignatureError::new(invalid_key.get_id()),
-        ))
+    let maybe_invalid_public_key_transition =
+        find_invalid_public_key(&mut state_transition, add_public_key_transitions, bls);
+    if let Some(invalid_key_transition) = maybe_invalid_public_key_transition {
+        validation_result.add_error(BasicError::InvalidIdentityKeySignatureError {
+            public_key_id: invalid_key_transition.id,
+        })
     }
 
     Ok(validation_result)
@@ -114,13 +113,13 @@ fn invalid_state_transition_type_error(transition_type: u8) -> ProtocolError {
 
 fn find_invalid_public_key<T: BlsModule>(
     state_transition: &mut impl StateTransitionLike,
-    public_keys: impl IntoIterator<Item = IdentityPublicKey>,
+    public_keys: impl IntoIterator<Item = IdentityPublicKeyCreateTransition>,
     bls: &T,
-) -> Option<IdentityPublicKey> {
+) -> Option<IdentityPublicKeyCreateTransition> {
     for public_key in public_keys {
-        state_transition.set_signature(public_key.get_signature().to_owned());
+        state_transition.set_signature(public_key.signature.clone());
         if state_transition
-            .verify_by_public_key(public_key.get_data(), public_key.get_type(), bls)
+            .verify_by_public_key(&public_key.data, public_key.key_type, bls)
             .is_err()
         {
             return Some(public_key);

@@ -6,13 +6,14 @@ const IdentityPublicKey = require('@dashevo/dpp/lib/identity/IdentityPublicKey')
 const Identity = require('@dashevo/dpp/lib/identity/Identity');
 const generateRandomIdentifier = require('@dashevo/dpp/lib/test/utils/generateRandomIdentifier');
 
-const getBiggestPossibleIdentity = require('@dashevo/dpp/lib/identity/getBiggestPossibleIdentity');
 const getInstantAssetLockProofFixture = require('@dashevo/dpp/lib/test/fixtures/getInstantAssetLockProofFixture');
 const identityUpdateTransitionSchema = require('@dashevo/dpp/schema/identity/stateTransition/identityUpdate.json');
 const StateTransitionExecutionContext = require('@dashevo/dpp/lib/stateTransition/StateTransitionExecutionContext');
-
 const PrivateKey = require('@dashevo/dashcore-lib/lib/privatekey');
+
 const BlsSignatures = require('@dashevo/dpp/lib/bls/bls');
+
+const getBiggestPossibleIdentity = require('../../../lib/test/mock/getBiggestPossibleIdentity');
 
 const createTestDIContainer = require('../../../lib/test/createTestDIContainer');
 const createDataContractDocuments = require('../../../lib/test/fixtures/createDataContractDocuments');
@@ -156,17 +157,23 @@ describe('feesPrediction', () => {
       identity.setAssetLockProof(instantAssetLockProof);
 
       // Generate real keys
-      const { PrivateKey: BlsPrivateKey } = await BlsSignatures.getInstance();
+      const { BasicSchemeMPL } = await BlsSignatures.getInstance();
 
       privateKeys = identity.getPublicKeys().map((identityPublicKey) => {
         const randomBytes = new Uint8Array(crypto.randomBytes(256));
-        const privateKey = BlsPrivateKey.fromBytes(randomBytes, true);
-        const publicKey = privateKey.getPublicKey();
+
+        const privateKey = BasicSchemeMPL.keyGen(randomBytes);
+        const publicKey = privateKey.getG1();
         const publicKeyBuffer = Buffer.from(publicKey.serialize());
 
         identityPublicKey.setData(publicKeyBuffer);
 
-        return Buffer.from(privateKey.serialize());
+        const result = Buffer.from(privateKey.serialize());
+
+        privateKey.delete();
+        publicKey.delete();
+
+        return result;
       });
 
       stateRepository.verifyInstantLock = this.sinon.stub().resolves(true);
@@ -225,13 +232,13 @@ describe('feesPrediction', () => {
         const newIdentityPublicKeys = [];
         const disableIdentityPublicKeys = [];
 
-        const { PrivateKey: BlsPrivateKey } = await BlsSignatures.getInstance();
+        const { BasicSchemeMPL } = await BlsSignatures.getInstance();
 
         const newPrivateKeys = [];
         for (let i = 0; i < identityUpdateTransitionSchema.properties.addPublicKeys.maxItems; i++) {
           const randomBytes = new Uint8Array(crypto.randomBytes(256));
-          const privateKey = BlsPrivateKey.fromBytes(randomBytes, true);
-          const publicKey = privateKey.getPublicKey();
+          const privateKey = BasicSchemeMPL.keyGen(randomBytes);
+          const publicKey = privateKey.getG1();
           const publicKeyBuffer = Buffer.from(publicKey.serialize());
 
           newPrivateKeys.push(privateKey);
@@ -249,6 +256,8 @@ describe('feesPrediction', () => {
           );
 
           disableIdentityPublicKeys.push(identity.getPublicKeyById(i));
+
+          publicKey.delete();
         }
 
         const stateTransition = dpp.identity.createIdentityUpdateTransition(
@@ -308,7 +317,7 @@ describe('feesPrediction', () => {
         publicKeys: [
           {
             id: 0,
-            type: IdentityPublicKey.TYPES.ECDSA_SECP256K1,
+            type: IdentityPublicKey.TYPES.BLS12_381,
             purpose: IdentityPublicKey.PURPOSES.AUTHENTICATION,
             securityLevel: IdentityPublicKey.SECURITY_LEVELS.MASTER,
             readOnly: false,
@@ -318,12 +327,12 @@ describe('feesPrediction', () => {
             id: 1,
             type: IdentityPublicKey.TYPES.ECDSA_SECP256K1,
             purpose: IdentityPublicKey.PURPOSES.AUTHENTICATION,
-            securityLevel: IdentityPublicKey.SECURITY_LEVELS.HEIGHT,
+            securityLevel: IdentityPublicKey.SECURITY_LEVELS.HIGH,
             readOnly: false,
             data: privateKey.toPublicKey().toBuffer(),
           },
         ],
-        balance: Number.MAX_VALUE,
+        balance: Math.floor(9223372036854775807 / 10000),
         revision: 0,
       });
 
@@ -414,7 +423,7 @@ describe('feesPrediction', () => {
         publicKeys: [
           {
             id: 0,
-            type: IdentityPublicKey.TYPES.ECDSA_SECP256K1,
+            type: IdentityPublicKey.TYPES.BLS12_381,
             purpose: IdentityPublicKey.PURPOSES.AUTHENTICATION,
             securityLevel: IdentityPublicKey.SECURITY_LEVELS.MASTER,
             readOnly: false,
@@ -424,12 +433,12 @@ describe('feesPrediction', () => {
             id: 1,
             type: IdentityPublicKey.TYPES.ECDSA_SECP256K1,
             purpose: IdentityPublicKey.PURPOSES.AUTHENTICATION,
-            securityLevel: IdentityPublicKey.SECURITY_LEVELS.HEIGHT,
+            securityLevel: IdentityPublicKey.SECURITY_LEVELS.HIGH,
             readOnly: false,
             data: privateKey.toPublicKey().toBuffer(),
           },
         ],
-        balance: Number.MAX_VALUE,
+        balance: Math.floor(9223372036854775807 / 10000),
         revision: 0,
       });
 
