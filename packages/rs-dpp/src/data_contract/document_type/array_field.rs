@@ -58,12 +58,7 @@ impl ArrayFieldType {
                     }
                     Value::Array(array) => array
                         .into_iter()
-                        .map(|byte| match byte {
-                            Value::U8(value_as_u8) => Ok(value_as_u8),
-                            _ => Err(ProtocolError::DataContractError(
-                                DataContractError::ValueWrongType("not an array of integers"),
-                            )),
-                        })
+                        .map(|byte| byte.to_integer().map_err(ProtocolError::ValueError))
                         .collect::<Result<Vec<u8>, ProtocolError>>(),
                     _ => Err(get_field_type_matching_error()),
                 }?;
@@ -118,12 +113,7 @@ impl ArrayFieldType {
                     }
                     Value::Array(array) => array
                         .iter()
-                        .map(|byte| match byte {
-                            Value::U8(value_as_u8) => Ok(*value_as_u8),
-                            _ => Err(ProtocolError::DataContractError(
-                                DataContractError::ValueWrongType("not an array of integers"),
-                            )),
-                        })
+                        .map(|byte| byte.to_integer().map_err(ProtocolError::ValueError))
                         .collect::<Result<Vec<u8>, ProtocolError>>(),
                     _ => Err(get_field_type_matching_error()),
                 }?;

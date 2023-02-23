@@ -14,10 +14,10 @@ impl Value {
     ///         (Value::Text(String::from("key")), Value::Float(18.)),
     ///     ]
     /// );
-    /// assert_eq!(value.into_map(), Ok(BTreeMap::from([(String::from("key"), Value::Float(18.))])));
+    /// assert_eq!(value.into_btree_map(), Ok(BTreeMap::from([(String::from("key"), Value::Float(18.))])));
     ///
     /// let value = Value::Bool(true);
-    /// assert_eq!(value.into_map(), Err(Error::StructureError("value is not a map".to_string())))
+    /// assert_eq!(value.into_btree_map(), Err(Error::StructureError("value is not a map".to_string())))
     /// ```
     pub fn into_btree_map(self) -> Result<BTreeMap<String, Value>, Error> {
         Self::map_into_btree_map(self.into_map()?)

@@ -1,4 +1,5 @@
 use crate::{Error, Value};
+use ciborium::value::Integer;
 use ciborium::Value as CborValue;
 use std::collections::BTreeMap;
 
@@ -34,7 +35,26 @@ impl From<CborValue> for Value {
             CborValue::Bool(value) => Self::Bool(value),
             CborValue::Null => Self::Null,
             CborValue::Tag(int, value) => Self::Tag(int, value.into()),
-            CborValue::Array(array) => Self::Array(array.into_iter().map(|v| v.into()).collect()),
+            CborValue::Array(array) => {
+                if !array.is_empty()
+                    && array.iter().all(|v| {
+                        let Some(int) = v.as_integer() else {
+                        return false;
+                    };
+                        int.le(&Integer::from(u8::MAX)) && int.ge(&Integer::from(0))
+                    })
+                {
+                    //this is an array of bytes
+                    Self::Bytes(
+                        array
+                            .into_iter()
+                            .map(|v| v.into_integer().unwrap().try_into().unwrap())
+                            .collect(),
+                    )
+                } else {
+                    Self::Array(array.into_iter().map(|v| v.into()).collect())
+                }
+            }
             CborValue::Map(map) => {
                 Self::Map(map.into_iter().map(|(k, v)| (k.into(), v.into())).collect())
             }

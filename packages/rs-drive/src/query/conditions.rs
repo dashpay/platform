@@ -30,6 +30,7 @@
 //! Query Conditions
 //!
 
+use std::borrow::Cow;
 use grovedb::Query;
 use sqlparser::ast;
 use std::collections::{BTreeMap, BTreeSet};
@@ -215,9 +216,12 @@ impl<'a> WhereClause {
     }
 
     /// Returns the where clause `in` values if they are an array of values, else an error
-    pub fn in_values(&self) -> Result<&Vec<Value>, Error> {
+    pub fn in_values(&self) -> Result<Cow<Vec<Value>>, Error> {
         let in_values = match &self.value {
-            Value::Array(array) => Ok(array),
+            Value::Array(array) => Ok(Cow::Borrowed(array)),
+            Value::Bytes(bytes) => {
+                Ok(Cow::Owned(bytes.iter().map(|int| Value::U8(*int)).collect()))
+            }
             _ => Err(Error::Query(QueryError::InvalidInClause(
                 "when using in operator you must provide an array of values",
             ))),

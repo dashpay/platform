@@ -66,15 +66,19 @@ use platform_value::Value;
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
 pub struct DocumentStubForCbor {
     /// The unique document ID.
+    #[serde(rename = "$id")]
     pub id: [u8; 32],
 
     /// The document's properties (data).
+    #[serde(flatten)]
     pub properties: BTreeMap<String, CborValue>,
 
     /// The ID of the document's owner.
+    #[serde(rename = "$ownerId")]
     pub owner_id: [u8; 32],
 
     /// The document revision.
+    #[serde(rename = "$revision")]
     pub revision: Revision,
 }
 

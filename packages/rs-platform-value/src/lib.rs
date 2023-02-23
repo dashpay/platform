@@ -11,7 +11,6 @@ pub mod display;
 mod error;
 pub mod inner_value;
 mod integer;
-mod serde_serialize;
 pub mod system_bytes;
 pub mod value_map;
 
@@ -89,7 +88,7 @@ impl Value {
     /// ```
     /// # use platform_value::Value;
     /// #
-    /// let value = Value::U64(17.into());
+    /// let value = Value::U64(17);
     ///
     /// assert!(value.is_integer());
     /// ```
@@ -115,10 +114,11 @@ impl Value {
     /// ```
     /// # use platform_value::Value;
     /// #
-    /// let value = Value::Integer(17.into());
+    /// let value = Value::U64(17);
     ///
     /// // We can read the number
-    /// assert_eq!(17, value.as_integer().unwrap().try_into().unwrap());
+    /// let r_value : u64 = value.as_integer().unwrap();
+    /// assert_eq!(17, r_value);
     /// ```
     pub fn as_integer<T>(&self) -> Option<T>
     where
@@ -154,11 +154,13 @@ impl Value {
     /// ```
     /// # use platform_value::{Value, Integer, Error};
     /// #
-    /// let value = Value::Integer(17.into());
-    /// assert_eq!(value.into_integer(), Ok(Integer::from(17)));
+    /// let value = Value::U64(17);
+    /// let r_value : Result<u64,Error> = value.into_integer();
+    /// assert_eq!(r_value, Ok(17));
     ///
     /// let value = Value::Bool(true);
-    /// assert_eq!(value.into_integer(), Err(Error::StructureError("value is not an integer".to_string())));
+    /// let r_value : Result<u64,Error> = value.into_integer();
+    /// assert_eq!(r_value, Err(Error::StructureError("value is not an integer".to_string())));
     /// ```
     pub fn into_integer<T>(self) -> Result<T, Error>
     where
@@ -194,11 +196,13 @@ impl Value {
     /// ```
     /// # use platform_value::{Value, Integer, Error};
     /// #
-    /// let value = Value::Integer(17.into());
-    /// assert_eq!(value.into_integer(), Ok(Integer::from(17)));
+    /// let value = Value::U64(17);
+    /// let r_value : Result<u64,Error> = value.to_integer();
+    /// assert_eq!(r_value, Ok(17));
     ///
     /// let value = Value::Bool(true);
-    /// assert_eq!(value.into_integer(), Err(Error::StructureError("value is not an integer".to_string())));
+    /// let r_value : Result<u64,Error> = value.to_integer();
+    /// assert_eq!(r_value, Err(Error::StructureError("value is not an integer".to_string())));
     /// ```
     pub fn to_integer<T>(&self) -> Result<T, Error>
     where
@@ -305,12 +309,15 @@ impl Value {
     /// assert_eq!(value.to_bytes(), Ok(vec![104, 101, 108, 108, 111]));
     ///
     /// let value = Value::Bool(true);
-    /// assert_eq!(value.to_bytes(), Err(Error::StructureError("value are not bytes".to_string())));
+    /// assert_eq!(value.to_bytes(), Err(Error::StructureError("ref value are not bytes found true instead".to_string())));
     /// ```
     pub fn to_bytes(&self) -> Result<Vec<u8>, Error> {
         match self {
             Value::Bytes(vec) => Ok(vec.clone()),
-            other => Err(Error::StructureError("value are not bytes".to_string())),
+            other => Err(Error::StructureError(format!(
+                "ref value are not bytes found {} instead",
+                other.string_representation()
+            ))),
         }
     }
 
@@ -324,12 +331,14 @@ impl Value {
     /// assert_eq!(value.as_bytes_slice(), Ok(vec![104, 101, 108, 108, 111].as_slice()));
     ///
     /// let value = Value::Bool(true);
-    /// assert_eq!(value.as_bytes_slice(), Err(Error::StructureError("value are not bytes".to_string())));
+    /// assert_eq!(value.as_bytes_slice(), Err(Error::StructureError("ref value are not bytes slice".to_string())));
     /// ```
     pub fn as_bytes_slice(&self) -> Result<&[u8], Error> {
         match self {
             Value::Bytes(vec) => Ok(vec),
-            other => Err(Error::StructureError("value are not bytes".to_string())),
+            other => Err(Error::StructureError(
+                "ref value are not bytes slice".to_string(),
+            )),
         }
     }
 
@@ -526,10 +535,10 @@ impl Value {
     /// # use platform_value::{Error, Value};
     /// #
     /// let value = Value::Text(String::from("hello"));
-    /// assert_eq!(value.to_str(), Ok("hello"));
+    /// assert_eq!(value.as_str(), Ok("hello"));
     ///
     /// let value = Value::Bool(true);
-    /// assert_eq!(value.to_str(), Err(Error::StructureError("value is not a string".to_string())));
+    /// assert_eq!(value.as_str(), Err(Error::StructureError("value is not a string".to_string())));
     /// ```
     pub fn as_str(&self) -> Result<&str, Error> {
         match self {
@@ -572,13 +581,13 @@ impl Value {
     /// Returns `Err(Error::Structure("reason"))` otherwise.
     ///
     /// ```
-    /// # use platform_value::Value;
+    /// # use platform_value::{Error, Value};
     /// #
     /// let value = Value::Bool(false);
     /// assert_eq!(value.into_bool(), Ok(false));
     ///
     /// let value = Value::Float(17.);
-    /// assert_eq!(value.into_bool(), Err(Value::Float(17.)));
+    /// assert_eq!(value.into_bool(), Err(Error::StructureError("value is not a bool".to_string())));
     /// ```
     pub fn into_bool(self) -> Result<bool, Error> {
         match self {
@@ -744,11 +753,11 @@ impl Value {
     /// #
     /// let mut value = Value::Array(
     ///     vec![
-    ///         Value::Integer(17.into()),
+    ///         Value::U64(17),
     ///         Value::Float(18.),
     ///     ]
     /// );
-    /// assert_eq!(value.into_array(), Ok(vec![Value::Integer(17.into()), Value::Float(18.)]));
+    /// assert_eq!(value.into_array(), Ok(vec![Value::U64(17), Value::Float(18.)]));
     ///
     /// let value = Value::Bool(true);
     /// assert_eq!(value.into_array(), Err(Error::StructureError("value is not an array".to_string())));
@@ -768,11 +777,11 @@ impl Value {
     /// #
     /// let mut value = Value::Array(
     ///     vec![
-    ///         Value::Integer(17.into()),
+    ///         Value::U64(17),
     ///         Value::Float(18.),
     ///     ]
     /// );
-    /// assert_eq!(value.as_slice(), Ok(vec![Value::Integer(17.into()), Value::Float(18.)]));
+    /// assert_eq!(value.as_slice(), Ok(vec![Value::U64(17), Value::Float(18.)].as_slice()));
     ///
     /// let value = Value::Bool(true);
     /// assert_eq!(value.as_slice(), Err(Error::StructureError("value is not an array".to_string())));
@@ -888,7 +897,7 @@ impl Value {
     ///         (Value::Text(String::from("key")), Value::Float(18.)),
     ///     ]
     /// );
-    /// assert_eq!(value.to_map_ref(), Ok(vec![(Value::Text(String::from("key")), &Value::Float(18.))]));
+    /// assert_eq!(value.to_map_ref(), Ok(&vec![(Value::Text(String::from("key")), Value::Float(18.))]));
     ///
     /// let value = Value::Bool(true);
     /// assert_eq!(value.to_map_ref(), Err(Error::StructureError("value is not a map".to_string())))
