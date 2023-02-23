@@ -1,6 +1,7 @@
 use std::{
     collections::{hash_map::Entry, HashMap},
     convert::{TryFrom, TryInto},
+    sync::Arc,
 };
 
 use crate::document::validation::basic::find_duplicates_by_id::find_duplicates_by_id;
@@ -53,100 +54,111 @@ pub trait Validator {
     fn validate(&self, data: JsonValue) -> Result<ValidationResult<()>, ProtocolError>;
 }
 
-pub async fn validate_documents_batch_transition_basic(
-    protocol_version_validator: &ProtocolVersionValidator,
-    raw_state_transition: &JsonValue,
-    state_repository: &impl StateRepositoryLike,
-    execution_context: &StateTransitionExecutionContext,
-) -> Result<ValidationResult<()>, ProtocolError> {
-    let mut result = ValidationResult::default();
-    let validator =
-        JsonSchemaValidator::new(DOCUMENTS_BATCH_TRANSITIONS_SCHEMA.clone()).map_err(|e| {
-            anyhow!(
-                "unable to compile the batch transitions schema: {}",
-                e.to_string()
-            )
-        })?;
+pub struct DocumentBatchTransitionBasicValidator<SR> {
+    state_repository: Arc<SR>,
+    protocol_version_validator: Arc<ProtocolVersionValidator>,
+}
 
-    let validation_result = validator.validate(raw_state_transition)?;
-    result.merge(validation_result);
-    if !result.is_valid() {
-        return Ok(result);
-    }
+impl<SR> DocumentBatchTransitionBasicValidator<SR>
+where
+    SR: StateRepositoryLike,
+{
+    pub async fn validate(
+        &self,
+        raw_state_transition: &JsonValue,
+        execution_context: &StateTransitionExecutionContext,
+    ) -> Result<ValidationResult<()>, ProtocolError> {
+        let mut result = ValidationResult::default();
+        let validator = JsonSchemaValidator::new(DOCUMENTS_BATCH_TRANSITIONS_SCHEMA.clone())
+            .map_err(|e| {
+                anyhow!(
+                    "unable to compile the batch transitions schema: {}",
+                    e.to_string()
+                )
+            })?;
 
-    let protocol_version = raw_state_transition.get_u64("protocolVersion")? as u32;
-    let validation_result = protocol_version_validator.validate(protocol_version)?;
-    result.merge(validation_result);
-    if !result.is_valid() {
-        return Ok(result);
-    }
-
-    let raw_document_transitions = raw_state_transition
-        .get("transitions")
-        .ok_or_else(|| anyhow!("transitions property doesn't exist"))?
-        .as_array()
-        .ok_or_else(|| anyhow!("transitions property isn't an array"))?;
-    let mut document_transitions_by_contracts: HashMap<Identifier, Vec<&JsonValue>> =
-        HashMap::new();
-
-    for raw_document_transition in raw_document_transitions {
-        let data_contract_id_bytes = match raw_document_transition.get_bytes("$dataContractId") {
-            Err(_) => {
-                result.add_error(BasicError::MissingDataContractIdError);
-                continue;
-            }
-            Ok(id) => id,
-        };
-
-        let identifier = match Identifier::from_bytes(&data_contract_id_bytes) {
-            Ok(identifier) => identifier,
-            Err(e) => {
-                result.add_error(BasicError::InvalidIdentifierError {
-                    identifier_name: String::from("$dataContractId"),
-                    error: e.to_string(),
-                });
-                continue;
-            }
-        };
-
-        match document_transitions_by_contracts.entry(identifier) {
-            Entry::Vacant(vacant) => {
-                vacant.insert(vec![raw_document_transition]);
-            }
-            Entry::Occupied(mut identifiers) => {
-                identifiers.get_mut().push(raw_document_transition);
-            }
-        };
-    }
-
-    for (data_contract_id, transitions) in document_transitions_by_contracts {
-        let maybe_data_contract = state_repository
-            .fetch_data_contract(&data_contract_id, execution_context)
-            .await?
-            .map(TryInto::try_into)
-            .transpose()
-            .map_err(Into::into)?;
-
-        if execution_context.is_dry_run() {
+        let validation_result = validator.validate(raw_state_transition)?;
+        result.merge(validation_result);
+        if !result.is_valid() {
             return Ok(result);
         }
 
-        let data_contract = match maybe_data_contract {
-            None => {
-                result.add_error(BasicError::DataContractNotPresent { data_contract_id });
-                continue;
-            }
-            Some(data_contract) => data_contract,
-        };
-
-        let owner_id = Identifier::from_bytes(&raw_state_transition.get_bytes("ownerId")?)?;
-
-        let validation_result =
-            validate_document_transitions(&data_contract, &owner_id, transitions)?;
+        let protocol_version = raw_state_transition.get_u64("protocolVersion")? as u32;
+        let validation_result = self.protocol_version_validator.validate(protocol_version)?;
         result.merge(validation_result);
-    }
+        if !result.is_valid() {
+            return Ok(result);
+        }
 
-    Ok(result)
+        let raw_document_transitions = raw_state_transition
+            .get("transitions")
+            .ok_or_else(|| anyhow!("transitions property doesn't exist"))?
+            .as_array()
+            .ok_or_else(|| anyhow!("transitions property isn't an array"))?;
+        let mut document_transitions_by_contracts: HashMap<Identifier, Vec<&JsonValue>> =
+            HashMap::new();
+
+        for raw_document_transition in raw_document_transitions {
+            let data_contract_id_bytes = match raw_document_transition.get_bytes("$dataContractId")
+            {
+                Err(_) => {
+                    result.add_error(BasicError::MissingDataContractIdError);
+                    continue;
+                }
+                Ok(id) => id,
+            };
+
+            let identifier = match Identifier::from_bytes(&data_contract_id_bytes) {
+                Ok(identifier) => identifier,
+                Err(e) => {
+                    result.add_error(BasicError::InvalidIdentifierError {
+                        identifier_name: String::from("$dataContractId"),
+                        error: e.to_string(),
+                    });
+                    continue;
+                }
+            };
+
+            match document_transitions_by_contracts.entry(identifier) {
+                Entry::Vacant(vacant) => {
+                    vacant.insert(vec![raw_document_transition]);
+                }
+                Entry::Occupied(mut identifiers) => {
+                    identifiers.get_mut().push(raw_document_transition);
+                }
+            };
+        }
+
+        for (data_contract_id, transitions) in document_transitions_by_contracts {
+            let maybe_data_contract = self
+                .state_repository
+                .fetch_data_contract(&data_contract_id, execution_context)
+                .await?
+                .map(TryInto::try_into)
+                .transpose()
+                .map_err(Into::into)?;
+
+            if execution_context.is_dry_run() {
+                return Ok(result);
+            }
+
+            let data_contract = match maybe_data_contract {
+                None => {
+                    result.add_error(BasicError::DataContractNotPresent { data_contract_id });
+                    continue;
+                }
+                Some(data_contract) => data_contract,
+            };
+
+            let owner_id = Identifier::from_bytes(&raw_state_transition.get_bytes("ownerId")?)?;
+
+            let validation_result =
+                validate_document_transitions(&data_contract, &owner_id, transitions)?;
+            result.merge(validation_result);
+        }
+
+        Ok(result)
+    }
 }
 
 fn validate_document_transitions<'a>(

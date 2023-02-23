@@ -6,10 +6,7 @@ use std::{
 
 use crate::{
     consensus::{basic::BasicError, ConsensusError},
-    data_contract::{
-        state_transition::{DataContractCreateTransition, DataContractUpdateTransition},
-        DataContract,
-    },
+    data_contract::DataContract,
     decode_protocol_entity_factory::DecodeProtocolEntity,
     document::DocumentsBatchTransition,
     identity::state_transition::{
@@ -21,14 +18,18 @@ use crate::{
     state_repository::StateRepositoryLike,
     util::json_value::JsonValueExt,
     validation::AsyncDataValidatorWithContext,
-    ProtocolError,
+    BlsModule, ProtocolError,
 };
 use serde_json::Number;
 use serde_json::Value as JsonValue;
 
 use super::{
-    state_transition_execution_context::StateTransitionExecutionContext, StateTransition,
-    StateTransitionType,
+    state_transition_execution_context::StateTransitionExecutionContext,
+    validation::{
+        validate_state_transition_basic::StateTransitionBasicValidator,
+        validate_state_transition_by_type::StateTransitionByTypeValidator,
+    },
+    StateTransition, StateTransitionType,
 };
 
 #[derive(Default)]
@@ -36,20 +37,24 @@ pub struct StateTransitionFactoryOptions {
     pub skip_validation: bool,
 }
 
-pub struct StateTransitionFactory<SR, ADV>
-where
-    ADV: AsyncDataValidatorWithContext<Item = JsonValue>,
-{
-    state_repository: Arc<SR>,
-    basic_validator: ADV,
-}
-
-impl<SR, ADV> StateTransitionFactory<SR, ADV>
+pub struct StateTransitionFactory<SR, BLS>
 where
     SR: StateRepositoryLike,
-    ADV: AsyncDataValidatorWithContext<Item = JsonValue>,
+    BLS: BlsModule,
 {
-    pub fn new(state_repository: Arc<SR>, basic_validator: ADV) -> Self {
+    state_repository: Arc<SR>,
+    basic_validator: StateTransitionBasicValidator<SR, StateTransitionByTypeValidator<SR, BLS>>,
+}
+
+impl<SR, BLS> StateTransitionFactory<SR, BLS>
+where
+    SR: StateRepositoryLike,
+    BLS: BlsModule,
+{
+    pub fn new(
+        state_repository: Arc<SR>,
+        basic_validator: StateTransitionBasicValidator<SR, StateTransitionByTypeValidator<SR, BLS>>,
+    ) -> Self {
         StateTransitionFactory {
             state_repository,
             basic_validator,

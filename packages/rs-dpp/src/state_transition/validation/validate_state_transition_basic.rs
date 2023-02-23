@@ -119,6 +119,7 @@ mod test {
     use std::sync::Arc;
 
     use crate::{
+        data_contract::state_transition::data_contract_create_transition::DataContractCreateTransition,
         state_transition::validation::validate_state_transition_by_type::MockValidatorByStateTransitionType,
         validation::AsyncDataValidatorWithContext,
     };
@@ -128,7 +129,6 @@ mod test {
     use crate::{
         consensus::basic::BasicError,
         data_contract::{
-            state_transition::DataContractCreateTransition,
             validation::data_contract_validator::DataContractValidator, DataContract,
             DataContractFactory,
         },

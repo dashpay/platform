@@ -155,7 +155,6 @@ mod test {
     use crate::ProtocolError;
     use crate::{
         consensus::fee::FeeError,
-        data_contract::state_transition::DataContractCreateTransition,
         document::{document_transition::Action, DocumentsBatchTransition},
         identity::state_transition::identity_credit_withdrawal_transition::IdentityCreditWithdrawalTransition,
         state_repository::MockStateRepositoryLike,

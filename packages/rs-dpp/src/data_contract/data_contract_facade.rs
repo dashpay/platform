@@ -1,6 +1,3 @@
-use crate::data_contract::state_transition::{
-    DataContractCreateTransition, DataContractUpdateTransition,
-};
 use crate::data_contract::validation::data_contract_validator::DataContractValidator;
 use crate::data_contract::{DataContract, DataContractFactory};
 use crate::document::document_transition::document_base_transition::JsonValue;

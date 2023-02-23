@@ -4,7 +4,7 @@ use anyhow::Result;
 use async_trait::async_trait;
 
 use crate::{
-    data_contract::{state_transition::DataContractUpdateTransition, DataContract},
+    data_contract::{ DataContract},
     errors::consensus::basic::BasicError,
     state_repository::StateRepositoryLike,
     state_transition::StateTransitionLike,

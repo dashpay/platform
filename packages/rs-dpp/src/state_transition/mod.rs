@@ -6,9 +6,8 @@ pub use abstract_state_transition::{
 pub use abstract_state_transition_identity_signed::StateTransitionIdentitySigned;
 pub use state_transition_types::*;
 
-use crate::data_contract::state_transition::{
-    DataContractCreateTransition, DataContractUpdateTransition,
-};
+use crate::data_contract::state_transition::data_contract_create_transition::DataContractCreateTransition;
+use crate::data_contract::state_transition::data_contract_update_transition::DataContractUpdateTransition;
 // TODO unify the import paths ::object::state_transition::*
 use crate::document::DocumentsBatchTransition;
 use crate::identity::state_transition::identity_create_transition::IdentityCreateTransition;

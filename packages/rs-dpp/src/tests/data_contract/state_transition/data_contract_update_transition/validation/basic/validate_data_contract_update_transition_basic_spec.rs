@@ -6,7 +6,7 @@ use crate::{
     consensus::basic::BasicError,
     data_contract::state_transition::{
         data_contract_update_transition::validation::basic::DataContractUpdateTransitionBasicValidator,
-        property_names, DataContractUpdateTransition,
+        property_names,
     },
     state_repository::MockStateRepositoryLike,
     state_transition::{

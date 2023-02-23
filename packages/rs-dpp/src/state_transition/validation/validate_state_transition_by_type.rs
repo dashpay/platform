@@ -10,7 +10,7 @@ use crate::{
         state_transition_execution_context::StateTransitionExecutionContext, StateTransitionType,
     },
     validation::{AsyncDataValidatorWithContext, SimpleValidationResult, ValidationResult},
-    ProtocolError,
+    ProtocolError,  BlsModule, state_repository::StateRepositoryLike, data_contract::state_transition::{data_contract_update_transition::validation::basic::DataContractUpdateTransitionBasicValidator, data_contract_create_transition::validation::state::validate_data_contract_create_transition_basic::DataContractCreateTransitionBasicValidator}, identity::{state_transition::{identity_create_transition::validation::basic::IdentityCreateTransitionBasicValidator, validate_public_key_signatures::PublicKeysSignaturesValidator, identity_update_transition::validate_identity_update_transition_basic::ValidateIdentityUpdateTransitionBasic, identity_topup_transition::validation::basic::IdentityTopUpTransitionBasicValidator, identity_credit_withdrawal_transition::validation::basic::validate_identity_credit_withdrawal_transition_basic::IdentityCreditWithdrawalTransitionBasicValidator}, validation::PublicKeysValidator}, document::validation::basic::validate_documents_batch_transition_basic::DocumentBatchTransitionBasicValidator,
 };
 
 #[cfg_attr(test, automock)]
@@ -24,31 +24,51 @@ pub trait ValidatorByStateTransitionType {
     ) -> Result<SimpleValidationResult, ProtocolError>;
 }
 
-pub struct StateTransitionByTypeValidator<ADV>
+pub struct StateTransitionByTypeValidator<SR, BLS>
 where
-    ADV: AsyncDataValidatorWithContext<Item = JsonValue>,
+    SR: StateRepositoryLike,
+    BLS: BlsModule,
 {
-    data_contract_create_validator: ADV,
-    data_contract_update_validator: ADV,
-    identity_create_validator: ADV,
-    identity_update_validator: ADV,
-    identity_top_up_validator: ADV,
-    identity_credit_withdrawal_validator: ADV,
-    document_batch_validator: ADV,
+    data_contract_create_validator: DataContractCreateTransitionBasicValidator,
+    data_contract_update_validator: DataContractUpdateTransitionBasicValidator<SR>,
+    identity_create_validator: IdentityCreateTransitionBasicValidator<
+        PublicKeysValidator<BLS>,
+        PublicKeysValidator<BLS>,
+        SR,
+        PublicKeysSignaturesValidator<BLS>,
+        BLS,
+    >,
+    identity_update_validator: ValidateIdentityUpdateTransitionBasic<
+        PublicKeysValidator<BLS>,
+        PublicKeysSignaturesValidator<BLS>,
+    >,
+    identity_top_up_validator: IdentityTopUpTransitionBasicValidator<SR>,
+    identity_credit_withdrawal_validator: IdentityCreditWithdrawalTransitionBasicValidator,
+    document_batch_validator: DocumentBatchTransitionBasicValidator<SR>,
 }
 
-impl<ADV> StateTransitionByTypeValidator<ADV>
+impl<SR, BLS> StateTransitionByTypeValidator<SR, BLS>
 where
-    ADV: AsyncDataValidatorWithContext<Item = JsonValue>,
+    SR: StateRepositoryLike,
+    BLS: BlsModule,
 {
     pub fn new(
-        data_contract_create_validator: ADV,
-        data_contract_update_validator: ADV,
-        identity_create_validator: ADV,
-        identity_update_validator: ADV,
-        identity_top_up_validator: ADV,
-        identity_credit_withdrawal_validator: ADV,
-        document_batch_validator: ADV,
+        data_contract_create_validator: DataContractCreateTransitionBasicValidator,
+        data_contract_update_validator: DataContractUpdateTransitionBasicValidator<SR>,
+        identity_create_validator: IdentityCreateTransitionBasicValidator<
+            PublicKeysValidator<BLS>,
+            PublicKeysValidator<BLS>,
+            SR,
+            PublicKeysSignaturesValidator<BLS>,
+            BLS,
+        >,
+        identity_update_validator: ValidateIdentityUpdateTransitionBasic<
+            PublicKeysValidator<BLS>,
+            PublicKeysSignaturesValidator<BLS>,
+        >,
+        identity_top_up_validator: IdentityTopUpTransitionBasicValidator<SR>,
+        identity_credit_withdrawal_validator: IdentityCreditWithdrawalTransitionBasicValidator,
+        document_batch_validator: DocumentBatchTransitionBasicValidator<SR>,
     ) -> Self {
         StateTransitionByTypeValidator {
             data_contract_create_validator,
@@ -63,9 +83,10 @@ where
 }
 
 #[async_trait(?Send)]
-impl<ADV> ValidatorByStateTransitionType for StateTransitionByTypeValidator<ADV>
+impl<SR, BLS> ValidatorByStateTransitionType for StateTransitionByTypeValidator<SR, BLS>
 where
-    ADV: AsyncDataValidatorWithContext<Item = JsonValue> + Send + Sync,
+    SR: StateRepositoryLike,
+    BLS: BlsModule,
 {
     async fn validate(
         &self,
@@ -105,7 +126,7 @@ mod tests {
 
     use crate::{
         data_contract::{
-            state_transition::DataContractCreateTransition,
+            state_transition::data_contract_create_transition::DataContractCreateTransition,
             validation::data_contract_validator::DataContractValidator, DataContract,
             DataContractFactory,
         },
