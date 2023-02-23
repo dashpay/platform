@@ -316,7 +316,7 @@ impl Value {
             Value::Bytes(vec) => Ok(vec.clone()),
             other => Err(Error::StructureError(format!(
                 "ref value are not bytes found {} instead",
-                other.string_representation()
+                other
             ))),
         }
     }

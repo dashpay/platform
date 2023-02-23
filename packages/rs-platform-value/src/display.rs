@@ -1,4 +1,11 @@
 use crate::Value;
+use std::fmt::{Display, Formatter};
+
+impl Display for Value {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        f.write_str(&self.string_representation())
+    }
+}
 
 impl Value {
     pub fn string_representation(&self) -> String {

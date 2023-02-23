@@ -305,7 +305,7 @@ impl<'a> DriveQuery<'a> {
                             .collect::<Result<Vec<WhereClause>, Error>>()
                     } else {
                         Err(Error::Query(QueryError::InvalidFormatWhereClause(
-                            "where clause must exist",
+                            "where clause must be an array",
                         )))
                     }
                 })?;

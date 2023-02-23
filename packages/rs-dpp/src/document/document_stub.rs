@@ -470,7 +470,7 @@ impl fmt::Display for DocumentStub {
             write!(f, "no properties")?;
         } else {
             for (key, value) in self.properties.iter() {
-                write!(f, "{}:{} ", key, Value::string_representation(value))?
+                write!(f, "{}:{} ", key, value)?
             }
         }
         Ok(())
