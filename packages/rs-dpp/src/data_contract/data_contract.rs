@@ -337,7 +337,7 @@ impl DataContract {
             .ok_or(ProtocolError::DataContractError(
                 DataContractError::InvalidDocumentTypeError(InvalidDocumentTypeError::new(
                     doc_type.to_owned(),
-                    self.clone().id,
+                    self.id.clone(),
                 )),
             ))?;
         Ok(document)
@@ -348,7 +348,7 @@ impl DataContract {
             return Err(ProtocolError::DataContractError(
                 DataContractError::InvalidDocumentTypeError(InvalidDocumentTypeError::new(
                     doc_type.to_owned(),
-                    self.clone().id,
+                    self.id.clone(),
                 )),
             ));
         };
@@ -372,7 +372,7 @@ impl DataContract {
             .ok_or(ProtocolError::DataContractError(
                 DataContractError::InvalidDocumentTypeError(InvalidDocumentTypeError::new(
                     doc_type.to_owned(),
-                    self.clone().id,
+                    self.id.clone(),
                 )),
             ))
     }

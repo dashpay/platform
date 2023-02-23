@@ -30,6 +30,7 @@ use crate::{
 use anyhow::anyhow;
 use lazy_static::lazy_static;
 use serde_json::Value as JsonValue;
+use crate::data_contract::state_transition::errors::MissingDataContractIdError;
 
 use super::{
     find_duplicates_by_indices::find_duplicates_by_indices,
@@ -98,7 +99,7 @@ pub async fn validate_documents_batch_transition_basic(
     for raw_document_transition in raw_document_transitions {
         let data_contract_id_bytes = match raw_document_transition.get_bytes("$dataContractId") {
             Err(_) => {
-                result.add_error(BasicError::MissingDataContractIdError);
+                result.add_error(BasicError::MissingDataContractIdError(MissingDataContractIdError::new(raw_document_transition.clone())));
                 continue;
             }
             Ok(id) => id,

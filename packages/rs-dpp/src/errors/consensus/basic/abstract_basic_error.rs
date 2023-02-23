@@ -20,6 +20,7 @@ use crate::consensus::basic::invalid_identifier_error::InvalidIdentifierError;
 use crate::consensus::basic::state_transition::{
     InvalidStateTransitionTypeError, StateTransitionMaxSizeExceededError,
 };
+use crate::data_contract::state_transition::errors::MissingDataContractIdError;
 use crate::prelude::*;
 
 #[derive(Error, Debug)]
@@ -73,8 +74,8 @@ pub enum BasicError {
     #[error(transparent)]
     DuplicateDocumentTransitionsWithIndicesError(DuplicateDocumentTransitionsWithIndicesError),
 
-    #[error("$dataContractId is not present")]
-    MissingDataContractIdError,
+    #[error(transparent)]
+    MissingDataContractIdError(MissingDataContractIdError),
 
     #[error(transparent)]
     InvalidIdentifierError(InvalidIdentifierError),

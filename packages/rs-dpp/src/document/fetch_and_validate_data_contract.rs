@@ -13,6 +13,7 @@ use crate::{
     validation::ValidationResult,
     ProtocolError,
 };
+use crate::data_contract::state_transition::errors::MissingDataContractIdError;
 
 use super::property_names;
 
@@ -50,7 +51,7 @@ pub async fn fetch_and_validate_data_contract(
         id_bytes
     } else {
         validation_result.add_error(ConsensusError::BasicError(Box::new(
-            BasicError::MissingDataContractIdError,
+            BasicError::MissingDataContractIdError(MissingDataContractIdError::new(raw_document.clone())),
         )));
         return Ok(validation_result);
     };

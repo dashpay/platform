@@ -14,6 +14,8 @@ use crate::{
     ProtocolError,
 };
 use std::sync::Arc;
+use crate::consensus::basic::state_transition::InvalidStateTransitionTypeError;
+use crate::state_transition::StateTransitionType;
 
 pub struct StateTransitionFeeValidator<SR: StateRepositoryLike> {
     state_repository: Arc<SR>,
@@ -115,7 +117,7 @@ where
                 balance
             }
             StateTransition::IdentityCreditWithdrawal(_) => {
-                return Err(ProtocolError::InvalidStateTransitionTypeError);
+                return Err(ProtocolError::InvalidStateTransitionTypeError(InvalidStateTransitionTypeError::new(StateTransitionType::IdentityCreditWithdrawal as u8)));
             }
         };
 

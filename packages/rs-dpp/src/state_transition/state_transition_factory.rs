@@ -21,6 +21,7 @@ use crate::{
     ProtocolError,
 };
 use serde_json::Value as JsonValue;
+use crate::consensus::basic::state_transition::InvalidStateTransitionTypeError;
 
 use super::{
     state_transition_execution_context::StateTransitionExecutionContext, StateTransition,
@@ -74,7 +75,7 @@ pub async fn create_state_transition(
             Ok(StateTransition::DocumentsBatch(documents_batch_transition))
         }
         // TODO!! add basic validation
-        StateTransitionType::IdentityUpdate => Err(ProtocolError::InvalidStateTransitionTypeError),
+        StateTransitionType::IdentityUpdate => Err(ProtocolError::InvalidStateTransitionTypeError(InvalidStateTransitionTypeError::new(transition_type as u8))),
     }
 }
 

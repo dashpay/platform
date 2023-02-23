@@ -4,7 +4,7 @@ use thiserror::Error;
 use crate::consensus::signature::InvalidSignaturePublicKeySecurityLevelError;
 use crate::consensus::ConsensusError;
 use crate::data_contract::errors::*;
-use crate::data_contract::state_transition::errors::MissingDataContractIdError;
+use crate::data_contract::state_transition::errors::{InvalidStateTransitionTypeError, MissingDataContractIdError};
 use crate::data_contract::state_transition::errors::PublicKeyIsDisabledError;
 use crate::document::errors::*;
 use crate::identity::{Purpose, SecurityLevel};
@@ -96,8 +96,8 @@ pub enum ProtocolError {
     #[error(transparent)]
     InvalidSignaturePublicKeySecurityLevelError(InvalidSignaturePublicKeySecurityLevelError),
 
-    #[error("State Transition type is not present")]
-    InvalidStateTransitionTypeError,
+    #[error(transparent)]
+    InvalidStateTransitionTypeError(InvalidStateTransitionTypeError),
 
     #[error(transparent)]
     MissingDataContractIdError(MissingDataContractIdError),

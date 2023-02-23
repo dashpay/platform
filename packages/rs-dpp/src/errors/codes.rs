@@ -130,7 +130,6 @@ impl ErrorWithCode for BasicError {
             Self::DataContractHaveNewUniqueIndexError { .. } => 0,
             Self::DataContractInvalidIndexDefinitionUpdateError { .. } => 0,
             Self::IndexError(ref e) => e.get_code(),
-            Self::IdentityNotFoundError { .. } => 2000,
             Self::InvalidDataContractIdError { .. } => 1011,
 
             // State Transition
