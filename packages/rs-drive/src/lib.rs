@@ -17,7 +17,7 @@ pub mod common;
 #[cfg(any(feature = "full", feature = "verify"))]
 pub mod contract;
 /// Drive module
-#[cfg(any(feature = "full", feature="verify"))]
+#[cfg(any(feature = "full", feature = "verify"))]
 pub mod drive;
 /// Error module
 #[cfg(any(feature = "full", feature = "verify"))]

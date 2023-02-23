@@ -48,20 +48,20 @@ use crate::fee::credits::Credits;
 use crate::fee::default_costs::KnownCostItem::StorageDiskUsageCreditPerByte;
 #[cfg(feature = "full")]
 use crate::fee::epoch::distribution::calculate_storage_fee_refund_amount_and_leftovers;
-#[cfg(feature = "full")]
-use crate::fee::epoch::{EpochIndex};
 #[cfg(any(feature = "full", feature = "verify"))]
 use crate::fee::epoch::CreditsPerEpoch;
+#[cfg(feature = "full")]
+use crate::fee::epoch::EpochIndex;
 #[cfg(feature = "full")]
 use crate::fee::get_overflow_error;
 #[cfg(feature = "full")]
 use crate::fee_pools::epochs::Epoch;
 #[cfg(feature = "full")]
 use bincode::Options;
-#[cfg(feature = "full")]
-use costs::storage_cost::removal::{StorageRemovalPerEpochByIdentifier};
 #[cfg(any(feature = "full", feature = "verify"))]
 use costs::storage_cost::removal::Identifier;
+#[cfg(feature = "full")]
+use costs::storage_cost::removal::StorageRemovalPerEpochByIdentifier;
 #[cfg(any(feature = "full", feature = "verify"))]
 use serde::{Deserialize, Serialize};
 #[cfg(feature = "full")]
@@ -261,6 +261,7 @@ impl IntoIterator for FeeRefunds {
     }
 }
 
+#[cfg(feature = "full")]
 #[cfg(test)]
 mod tests {
     use super::*;

@@ -47,10 +47,10 @@ use std::sync::Arc;
 
 #[cfg(feature = "full")]
 use crate::common::encode::encode_u64;
+#[cfg(any(feature = "full", feature = "verify"))]
+use costs::OperationCost;
 #[cfg(feature = "full")]
 use costs::{cost_return_on_error_no_add, CostContext, CostResult, CostsExt};
-#[cfg(any(feature = "full", feature = "verify"))]
-use costs::{OperationCost};
 
 #[cfg(feature = "full")]
 use grovedb::batch::key_info::KeyInfo;
@@ -1057,6 +1057,7 @@ impl Drive {
     }
 }
 
+#[cfg(feature = "full")]
 #[cfg(test)]
 mod tests {
     use crate::contract::CreateRandomDocument;

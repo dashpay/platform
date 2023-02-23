@@ -38,10 +38,10 @@ use std::path::Path;
 use dpp::data_contract::DriveContractExt;
 #[cfg(feature = "full")]
 use grovedb::batch::KeyInfoPath;
-#[cfg(feature = "full")]
-use grovedb::{EstimatedLayerInformation, Transaction, TransactionArg};
 #[cfg(any(feature = "full", feature = "verify"))]
 use grovedb::GroveDb;
+#[cfg(feature = "full")]
+use grovedb::{EstimatedLayerInformation, Transaction, TransactionArg};
 
 #[cfg(feature = "full")]
 use object_size_info::DocumentAndContractInfo;
@@ -115,7 +115,7 @@ mod verify;
 #[cfg(feature = "full")]
 use crate::drive::block_info::BlockInfo;
 #[cfg(feature = "full")]
-use crate::drive::cache::{DataContractCache};
+use crate::drive::cache::DataContractCache;
 #[cfg(any(feature = "full", feature = "verify"))]
 use crate::drive::cache::DriveCache;
 #[cfg(feature = "full")]

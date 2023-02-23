@@ -1,7 +1,7 @@
 #[cfg(feature = "full")]
-use crate::drive::balances::{balance_path};
+use crate::drive::balances::balance_path;
 #[cfg(any(feature = "full", feature = "verify"))]
-use crate::drive::balances::{balance_path_vec};
+use crate::drive::balances::balance_path_vec;
 #[cfg(feature = "full")]
 use crate::drive::block_info::BlockInfo;
 #[cfg(feature = "full")]
@@ -27,9 +27,9 @@ use crate::fee::result::FeeResult;
 #[cfg(feature = "full")]
 use grovedb::Element::{Item, SumItem};
 #[cfg(feature = "full")]
-use grovedb::{TransactionArg};
+use grovedb::TransactionArg;
 #[cfg(any(feature = "full", feature = "verify"))]
-use grovedb::{PathQuery, SizedQuery, Query};
+use grovedb::{PathQuery, Query, SizedQuery};
 
 impl Drive {
     #[cfg(feature = "full")]

@@ -81,6 +81,7 @@ impl DataContractCache {
     }
 }
 
+#[cfg(feature = "full")]
 #[cfg(test)]
 mod tests {
     use super::*;

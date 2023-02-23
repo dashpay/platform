@@ -28,7 +28,7 @@ use crate::fee_pools::epochs::Epoch;
 #[cfg(any(feature = "full", feature = "verify"))]
 use crate::query::{Query, QueryItem};
 #[cfg(any(feature = "full", feature = "verify"))]
-use dpp::identity::{KeyID};
+use dpp::identity::KeyID;
 #[cfg(feature = "full")]
 use dpp::identity::{Purpose, SecurityLevel};
 #[cfg(feature = "full")]
@@ -558,6 +558,7 @@ impl Drive {
     }
 }
 
+#[cfg(feature = "full")]
 #[cfg(test)]
 mod tests {
     use crate::drive::block_info::BlockInfo;

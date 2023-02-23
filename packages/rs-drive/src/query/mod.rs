@@ -38,9 +38,7 @@ use ciborium::value::Value;
 use grovedb::query_result_type::{QueryResultElements, QueryResultType};
 /// Import grovedb
 #[cfg(feature = "full")]
-pub use grovedb::{
-    Element, Error as GroveError, GroveDb, PathQuery, SizedQuery, TransactionArg,
-};
+pub use grovedb::{Element, Error as GroveError, GroveDb, PathQuery, SizedQuery, TransactionArg};
 #[cfg(any(feature = "full", feature = "verify"))]
 pub use grovedb::{Query, QueryItem};
 
@@ -48,33 +46,33 @@ pub use grovedb::{Query, QueryItem};
 use indexmap::IndexMap;
 #[cfg(feature = "full")]
 use integer_encoding::VarInt;
-#[cfg(feature = "full")]
+#[cfg(any(feature = "full", feature = "verify"))]
 use sqlparser::ast;
-#[cfg(feature = "full")]
+#[cfg(any(feature = "full", feature = "verify"))]
 use sqlparser::ast::TableFactor::Table;
-#[cfg(feature = "full")]
+#[cfg(any(feature = "full", feature = "verify"))]
 use sqlparser::ast::Value::Number;
-#[cfg(feature = "full")]
+#[cfg(any(feature = "full", feature = "verify"))]
 use sqlparser::ast::{OrderByExpr, Select, Statement};
-#[cfg(feature = "full")]
+#[cfg(any(feature = "full", feature = "verify"))]
 use sqlparser::dialect::GenericDialect;
-#[cfg(feature = "full")]
+#[cfg(any(feature = "full", feature = "verify"))]
 use sqlparser::parser::Parser;
 
 #[cfg(feature = "full")]
 use crate::drive::block_info::BlockInfo;
-#[cfg(feature = "full")]
-use conditions::WhereOperator::{Equal, In};
+#[cfg(any(feature = "full", feature = "verify"))]
+pub use conditions::WhereClause;
 /// Import conditions
 #[cfg(feature = "full")]
-pub use conditions::{WhereOperator};
+pub use conditions::WhereOperator;
+#[cfg(feature = "full")]
+use conditions::WhereOperator::{Equal, In};
 #[cfg(any(feature = "full", feature = "verify"))]
-pub use conditions::{WhereClause};
+use dpp::data_contract::document_type::DocumentType;
 #[cfg(feature = "full")]
 use dpp::data_contract::document_type::{Index, IndexProperty};
 #[cfg(any(feature = "full", feature = "verify"))]
-use dpp::data_contract::document_type::{DocumentType};
-#[cfg(feature = "full")]
 use dpp::data_contract::DriveContractExt;
 /// Import ordering
 #[cfg(any(feature = "full", feature = "verify"))]
@@ -438,7 +436,7 @@ impl<'a> DriveQuery<'a> {
         })
     }
 
-    #[cfg(feature = "full")]
+    #[cfg(any(feature = "full", feature = "verify"))]
     /// Converts a SQL expression to a `DriveQuery`.
     pub fn from_sql_expr(sql_string: &str, contract: &'a Contract) -> Result<Self, Error> {
         let dialect: GenericDialect = sqlparser::dialect::GenericDialect {};
@@ -1441,6 +1439,7 @@ impl<'a> DriveQuery<'a> {
     }
 }
 
+#[cfg(feature = "full")]
 #[cfg(test)]
 mod tests {
     use serde_json::json;

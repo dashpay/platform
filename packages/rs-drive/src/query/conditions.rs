@@ -1060,6 +1060,7 @@ impl<'a> WhereClause {
     }
 }
 
+#[cfg(feature = "full")]
 #[cfg(test)]
 mod tests {
     use ciborium::value::Value;

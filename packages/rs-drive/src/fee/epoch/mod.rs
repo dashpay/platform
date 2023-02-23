@@ -32,10 +32,10 @@
 //! Fee distribution is based on epochs. One epoch is about 18 days
 //!
 
-#[cfg(feature = "full")]
-use crate::fee::credits::{SignedCredits};
 #[cfg(any(feature = "full", feature = "verify"))]
 use crate::fee::credits::Credits;
+#[cfg(feature = "full")]
+use crate::fee::credits::SignedCredits;
 #[cfg(any(feature = "full", feature = "verify"))]
 use nohash_hasher::IntMap;
 

@@ -4,19 +4,19 @@ use crate::drive::identity::identity_path_vec;
 use crate::drive::identity::IdentityRootStructure::IdentityTreeRevision;
 
 #[cfg(any(feature = "full", feature = "verify"))]
-use crate::drive::{Drive};
+use crate::drive::Drive;
 #[cfg(feature = "full")]
-use crate::drive::{RootTree};
+use crate::drive::RootTree;
 #[cfg(feature = "full")]
 use crate::error::drive::DriveError;
 
 #[cfg(feature = "full")]
 use crate::error::Error;
 
-#[cfg(feature = "full")]
-use crate::query::{QueryItem};
 #[cfg(any(feature = "full", feature = "verify"))]
-use crate::query::{Query};
+use crate::query::Query;
+#[cfg(feature = "full")]
+use crate::query::QueryItem;
 
 #[cfg(feature = "full")]
 use grovedb::query_result_type::QueryResultType::{
@@ -25,7 +25,7 @@ use grovedb::query_result_type::QueryResultType::{
 #[cfg(feature = "full")]
 use grovedb::Element::SumItem;
 #[cfg(feature = "full")]
-use grovedb::{TransactionArg};
+use grovedb::TransactionArg;
 #[cfg(any(feature = "full", feature = "verify"))]
 use grovedb::{PathQuery, SizedQuery};
 

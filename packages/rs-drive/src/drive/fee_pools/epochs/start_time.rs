@@ -70,6 +70,7 @@ impl Drive {
     }
 }
 
+#[cfg(feature = "full")]
 #[cfg(test)]
 mod tests {
     use crate::tests::helpers::setup::setup_drive_with_initial_state_structure;
