@@ -8,7 +8,7 @@ impl Display for Value {
 }
 
 impl Value {
-    pub fn string_representation(&self) -> String {
+    fn string_representation(&self) -> String {
         match self {
             Value::Bytes(bytes) => format!("bytes {}", hex::encode(bytes)),
             Value::Float(float) => {
