@@ -10,16 +10,18 @@ const crypto = require('crypto');
 
 const protocolVersion = require('@dashevo/dpp/lib/version/protocolVersion');
 
+const { expectJsonSchemaError, expectValidationError } = require('../../../../../../../lib/test/expect/expectError');
+
 const validateDataContractCreateTransitionBasicFactory = require('@dashevo/dpp/lib/dataContract/stateTransition/DataContractCreateTransition/validation/basic/validateDataContractCreateTransitionBasicFactory');
 
 //const DataContractCreateTransition = require('@dashevo/dpp/lib/dataContract/stateTransition/DataContractCreateTransition/DataContractCreateTransition');
 
 const getDataContractFixture = require('@dashevo/dpp/lib/test/fixtures/getDataContractFixture');
 
-const {
-  expectValidationError,
-  expectJsonSchemaError,
-} = require('@dashevo/dpp/lib/test/expect/expectError');
+// const {
+//   expectValidationError,
+//   expectJsonSchemaError,
+// } = require('@dashevo/dpp/lib/test/expect/expectError');
 
 // const ValidationResult = require('@dashevo/dpp/lib/validation/ValidationResult');
 
@@ -79,57 +81,57 @@ describe('validateDataContractCreateTransitionBasicFactory', () => {
     // );
   });
 
-  // describe('protocolVersion', () => {
-  //   it('should be present', async () => {
-  //     delete rawStateTransition.protocolVersion;
+  describe('protocolVersion', () => {
+    it('should be present', async () => {
+      delete rawStateTransition.protocolVersion;
 
-  //     const result = await validateDataContractCreateTransitionBasic(rawStateTransition);
+      const result = await validateDataContractCreateTransitionBasic(rawStateTransition);
 
-  //     expectJsonSchemaError(result);
+      expectJsonSchemaError(result);
 
-  //     const [error] = result.getErrors();
+      const [error] = result.getErrors();
 
-  //     expect(error.getInstancePath()).to.equal('');
-  //     expect(error.getKeyword()).to.equal('required');
-  //     expect(error.getParams().missingProperty).to.equal('protocolVersion');
-  //   });
+      expect(error.getInstancePath()).to.equal('');
+      expect(error.getKeyword()).to.equal('required');
+      expect(error.getParams().missingProperty).to.equal('protocolVersion');
+    });
 
-  //   it('should be an integer', async () => {
-  //     rawStateTransition.protocolVersion = '1';
+    // it('should be an integer', async () => {
+    //   rawStateTransition.protocolVersion = '1';
 
-  //     const result = await validateDataContractCreateTransitionBasic(rawStateTransition);
+    //   const result = await validateDataContractCreateTransitionBasic(rawStateTransition);
 
-  //     expectJsonSchemaError(result);
+    //   expectJsonSchemaError(result);
 
-  //     const [error] = result.getErrors();
+    //   const [error] = result.getErrors();
 
-  //     expect(error.getInstancePath()).to.equal('/protocolVersion');
-  //     expect(error.getKeyword()).to.equal('type');
-  //   });
+    //   expect(error.getInstancePath()).to.equal('/protocolVersion');
+    //   expect(error.getKeyword()).to.equal('type');
+    // });
 
-  //   it('should be valid', async () => {
-  //     rawStateTransition.protocolVersion = -1;
+    // it('should be valid', async () => {
+    //   rawStateTransition.protocolVersion = -1;
 
-  //     const protocolVersionError = new SomeConsensusError('test');
-  //     const protocolVersionResult = new ValidationResult([
-  //       protocolVersionError,
-  //     ]);
+    //   const protocolVersionError = new SomeConsensusError('test');
+    //   const protocolVersionResult = new ValidationResult([
+    //     protocolVersionError,
+    //   ]);
 
-  //     validateProtocolVersionMock.returns(protocolVersionResult);
+    //   validateProtocolVersionMock.returns(protocolVersionResult);
 
-  //     const result = await validateDataContractCreateTransitionBasic(rawStateTransition);
+    //   const result = await validateDataContractCreateTransitionBasic(rawStateTransition);
 
-  //     expectValidationError(result, SomeConsensusError);
+    //   expectValidationError(result, SomeConsensusError);
 
-  //     const [error] = result.getErrors();
+    //   const [error] = result.getErrors();
 
-  //     expect(error).to.equal(protocolVersionError);
+    //   expect(error).to.equal(protocolVersionError);
 
-  //     expect(validateProtocolVersionMock).to.be.calledOnceWith(
-  //       rawStateTransition.protocolVersion,
-  //     );
-  //   });
-  // });
+    //   expect(validateProtocolVersionMock).to.be.calledOnceWith(
+    //     rawStateTransition.protocolVersion,
+    //   );
+    // });
+  });
 
   // describe('type', () => {
   //   it('should be present', async () => {

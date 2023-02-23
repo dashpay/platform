@@ -38,7 +38,8 @@ impl From<DataContractCreateTransitionWasm> for DataContractCreateTransition {
 #[derive(Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct DataContractCreateTransitionParameters {
-    protocol_version: u32,
+    #[serde(skip_serializing_if = "Option::is_none", default)]
+    protocol_version: Option<u32>,
     #[serde(skip_serializing_if = "Option::is_none", default)]
     data_contract: Option<DataContractParameters>,
     #[serde(skip_serializing_if = "Option::is_none", default)]

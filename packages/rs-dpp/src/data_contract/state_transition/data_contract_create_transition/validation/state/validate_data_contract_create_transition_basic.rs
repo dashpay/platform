@@ -1,3 +1,4 @@
+use std::convert::TryFrom;
 use std::sync::Arc;
 
 use anyhow::anyhow;
@@ -5,7 +6,7 @@ use lazy_static::lazy_static;
 use serde_json::Value;
 
 use crate::{
-    consensus::basic::BasicError,
+    consensus::{basic::BasicError, ConsensusError},
     data_contract::{generate_data_contract_id, state_transition::property_names},
     data_contract::{
         property_names as data_contract_property_names,
@@ -15,6 +16,7 @@ use crate::{
     util::json_value::JsonValueExt,
     validation::{
         DataValidator, DataValidatorWithContext, JsonSchemaValidator, SimpleValidationResult,
+        ValidationResult,
     },
     version::ProtocolVersionValidator,
     ProtocolError,
@@ -78,7 +80,18 @@ fn validate_data_contract_create_transition_basic(
         return Ok(result);
     }
 
-    let protocol_version = raw_state_transition.get_u64(property_names::PROTOCOL_VERSION)? as u32;
+    let protocol_version = match raw_state_transition
+        .get_u64(property_names::PROTOCOL_VERSION)
+        .and_then(|x| u32::try_from(x).map_err(Into::into))
+    {
+        Ok(v) => v,
+        Err(parsing_error) => {
+            return Ok(SimpleValidationResult::new(Some(vec![
+                ConsensusError::ProtocolVersionParsingError { parsing_error },
+            ])))
+        }
+    };
+
     let result = protocol_validator.validate(&protocol_version)?;
     if !result.is_valid() {
         return Ok(result);
