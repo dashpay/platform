@@ -38,7 +38,6 @@ use std::io::{self, BufRead};
 use std::option::Option::None;
 use std::sync::Arc;
 
-
 use dpp::data_contract::{DataContractFactory, DriveContractExt};
 use rand::seq::SliceRandom;
 use rand::{Rng, SeedableRng};

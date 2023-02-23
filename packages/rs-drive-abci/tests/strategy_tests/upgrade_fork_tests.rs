@@ -151,13 +151,7 @@ mod tests {
             .unwrap()
             .height
             + 1;
-        let ChainExecutionOutcome {
-            platform,
-            
-            
-            
-            ..
-        } = continue_chain_for_strategy(
+        let ChainExecutionOutcome { platform, .. } = continue_chain_for_strategy(
             platform,
             ChainExecutionParameters {
                 block_start,
@@ -648,7 +642,7 @@ mod tests {
             platform,
             proposers,
             current_proposers,
-            
+
             end_time_ms,
             ..
         } = run_chain_for_strategy(1400, hour_in_ms, strategy, config.clone(), 15);
@@ -710,13 +704,7 @@ mod tests {
             .unwrap()
             .height
             + 1;
-        let ChainExecutionOutcome {
-            platform,
-            
-            
-            
-            ..
-        } = continue_chain_for_strategy(
+        let ChainExecutionOutcome { platform, .. } = continue_chain_for_strategy(
             platform,
             ChainExecutionParameters {
                 block_start,

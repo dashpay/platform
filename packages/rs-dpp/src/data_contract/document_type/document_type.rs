@@ -8,7 +8,6 @@ use super::{
 use crate::data_contract::document_type::{property_names, ArrayFieldType};
 use crate::data_contract::errors::{DataContractError, StructureError};
 
-
 use crate::util::cbor_value::CborBTreeMapHelper;
 use crate::ProtocolError;
 use platform_value::btreemap_extensions::BTreeValueMapHelper;
@@ -381,7 +380,6 @@ fn insert_values(
                     .get_inner_borrowed_str_value_map(ref_value)
                     .map_err(ProtocolError::ValueError)?;
 
-                
                 inner_properties.get_string(property_names::TYPE)?
             }
             Some(type_value) => type_value,

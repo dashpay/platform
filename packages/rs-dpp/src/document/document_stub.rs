@@ -33,11 +33,11 @@
 //!
 
 use std::collections::BTreeMap;
-use std::convert::{TryFrom};
+use std::convert::TryFrom;
 use std::fmt;
 use std::io::{BufReader, Read};
 
-use ciborium::value::{Value as CborValue};
+use ciborium::value::Value as CborValue;
 use integer_encoding::{VarInt, VarIntReader, VarIntWriter};
 
 use crate::data_contract::{DataContract, DriveContractExt};

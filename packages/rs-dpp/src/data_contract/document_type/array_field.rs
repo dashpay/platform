@@ -1,5 +1,3 @@
-
-
 use super::*;
 use crate::ProtocolError;
 use integer_encoding::VarInt;

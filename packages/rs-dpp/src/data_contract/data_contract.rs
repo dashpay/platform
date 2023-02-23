@@ -1,5 +1,5 @@
 use std::collections::BTreeMap;
-use std::convert::{TryFrom};
+use std::convert::TryFrom;
 
 use anyhow::anyhow;
 use ciborium::value::Value as CborValue;

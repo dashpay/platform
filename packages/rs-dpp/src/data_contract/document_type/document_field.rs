@@ -4,11 +4,10 @@ use std::io::{BufReader, Read};
 
 use crate::data_contract::errors::DataContractError;
 
-
 use crate::ProtocolError;
 use byteorder::{BigEndian, ReadBytesExt, WriteBytesExt};
 use integer_encoding::{VarInt, VarIntReader};
-use platform_value::{Value};
+use platform_value::Value;
 use rand::distributions::{Alphanumeric, Standard};
 use rand::rngs::StdRng;
 use rand::Rng;
@@ -740,13 +739,11 @@ impl DocumentFieldType {
                 }
                 Ok(Value::Text(str.to_string()))
             }
-            DocumentFieldType::Integer => {
-                str.parse::<i128>().map(Value::I128).map_err(|_| {
-                    ProtocolError::DataContractError(DataContractError::ValueWrongType(
-                        "value is not an integer",
-                    ))
-                })
-            }
+            DocumentFieldType::Integer => str.parse::<i128>().map(Value::I128).map_err(|_| {
+                ProtocolError::DataContractError(DataContractError::ValueWrongType(
+                    "value is not an integer",
+                ))
+            }),
             DocumentFieldType::Number | DocumentFieldType::Date => {
                 str.parse::<f64>().map(Value::Float).map_err(|_| {
                     ProtocolError::DataContractError(DataContractError::ValueWrongType(
