@@ -1512,7 +1512,7 @@ describe('DocumentRepository', function main() {
                       expect.fail('should throw an error');
                     } catch (e) {
                       expect(e).to.be.instanceOf(InvalidQueryError);
-                      expect(e.message).to.equal('value wrong type error: document field type doesn\'t match document value');
+                      expect(e.message).to.equal('value error: Structure Error: value is not a float');
                     }
                   });
                 });
@@ -1852,7 +1852,7 @@ describe('DocumentRepository', function main() {
 
                     expect.fail('should throw an error');
                   } catch (e) {
-                    expect(e.message).to.equal('value wrong type error: document field type doesn\'t match document value');
+                    expect(e.message).to.equal('value error: Structure Error: value is not a float');
                     expect(e).to.be.instanceOf(InvalidQueryError);
                   }
                 });
@@ -1867,7 +1867,7 @@ describe('DocumentRepository', function main() {
                   } catch (e) {
                     expect(e).to.be.instanceOf(InvalidQueryError);
                     expect(e.message).to.equal(
-                      'value wrong type error: document field type doesn\'t match document value',
+                      'value error: Structure Error: value is not a float',
                     );
                   }
                 });
@@ -1985,7 +1985,7 @@ describe('DocumentRepository', function main() {
                   expect.fail('should throw an error');
                 } catch (e) {
                   expect(e).to.be.instanceOf(InvalidQueryError);
-                  expect(e.message).to.equal('value wrong type error: document field type doesn\'t match document value');
+                  expect(e.message).to.equal('value error: Structure Error: value is not a float');
                 }
               });
             });
@@ -2051,7 +2051,7 @@ describe('DocumentRepository', function main() {
                     expect.fail('should throw an error');
                   } catch (e) {
                     expect(e).to.be.instanceOf(InvalidQueryError);
-                    expect(e.message).to.equal('value wrong type error: document field type doesn\'t match document value');
+                    expect(e.message).to.equal('value error: Structure Error: value is not a float');
                   }
                 });
               });
@@ -2559,7 +2559,7 @@ describe('DocumentRepository', function main() {
             expect.fail('should throw an error');
           } catch (e) {
             expect(e).to.be.instanceOf(InvalidQueryError);
-            expect(e.message).to.equal('query invalid limit error: limit should be a integer from 1 to 100');
+            expect(e.message).to.equal('value error: integer out of bounds');
           }
         });
 
