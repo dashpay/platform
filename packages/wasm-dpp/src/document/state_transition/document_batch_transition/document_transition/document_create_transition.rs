@@ -108,10 +108,10 @@ impl DocumentCreateTransitionWasm {
 
     #[wasm_bindgen(js_name=getDataContractId)]
     pub fn data_contract_id(&self) -> IdentifierWrapper {
-        self.inner.base.data_contract.id.clone().into()
+        self.inner.base.data_contract.id.into()
     }
 
-    #[wasm_bindgen(js_name=get)]
+    #[wasm_bindgen]
     pub fn get(&self, path: String) -> Result<JsValue, JsValue> {
         let document_data = if let Some(ref data) = self.inner.data {
             data
@@ -134,7 +134,7 @@ impl DocumentCreateTransitionWasm {
             BinaryType::Identifier => {
                 let bytes: Vec<u8> = serde_json::from_value(value).unwrap();
                 let id = <IdentifierWrapper as convert::From<Identifier>>::from(
-                    Identifier::from_bytes(&bytes).unwrap(),
+                    Identifier::from_bytes(&bytes).with_js_error()?,
                 );
                 return Ok(id.into());
             }
