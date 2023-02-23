@@ -11,6 +11,7 @@ pub mod display;
 mod error;
 pub mod inner_value;
 mod integer;
+mod serde_serialize;
 pub mod system_bytes;
 pub mod value_map;
 

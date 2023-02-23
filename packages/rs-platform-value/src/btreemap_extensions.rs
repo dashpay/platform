@@ -37,30 +37,6 @@ pub trait BTreeValueMapHelper {
             + TryFrom<i16>
             + TryFrom<u8>
             + TryFrom<i8>;
-    fn remove_optional_integer<T>(&mut self, key: &str) -> Result<Option<T>, Error>
-    where
-        T: TryFrom<i128>
-            + TryFrom<u128>
-            + TryFrom<u64>
-            + TryFrom<i64>
-            + TryFrom<u32>
-            + TryFrom<i32>
-            + TryFrom<u16>
-            + TryFrom<i16>
-            + TryFrom<u8>
-            + TryFrom<i8>;
-    fn remove_integer<T>(&mut self, key: &str) -> Result<T, Error>
-    where
-        T: TryFrom<i128>
-            + TryFrom<u128>
-            + TryFrom<u64>
-            + TryFrom<i64>
-            + TryFrom<u32>
-            + TryFrom<i32>
-            + TryFrom<u16>
-            + TryFrom<i16>
-            + TryFrom<u8>
-            + TryFrom<i8>;
     fn get_optional_bool(&self, key: &str) -> Result<Option<bool>, Error>;
     fn get_bool(&self, key: &str) -> Result<bool, Error>;
     fn get_optional_inner_value_array<'a, I: FromIterator<&'a Value>>(
@@ -96,15 +72,41 @@ pub trait BTreeValueMapHelper {
         &self,
         key: &str,
     ) -> Result<I, Error>;
-}
-
-pub trait ValueMapExtension {
-    fn as_u16(&self, key: &str, error_message: &str) -> Result<u16, Error>;
-    fn as_u8(&self, key: &str, error_message: &str) -> Result<u8, Error>;
-    fn as_bool(&self, key: &str, error_message: &str) -> Result<bool, Error>;
-    fn as_bytes(&self, key: &str, error_message: &str) -> Result<Vec<u8>, Error>;
-    fn as_string(&self, key: &str, error_message: &str) -> Result<String, Error>;
-    fn as_u64(&self, key: &str, error_message: &str) -> Result<u64, Error>;
+    fn get_optional_system_hash256_bytes(&self, key: &str) -> Result<Option<[u8; 32]>, Error>;
+    fn get_system_hash256_bytes(&self, key: &str) -> Result<[u8; 32], Error>;
+    fn get_optional_system_bytes(&self, key: &str) -> Result<Option<Vec<u8>>, Error>;
+    fn get_system_bytes(&self, key: &str) -> Result<Vec<u8>, Error>;
+    fn remove_optional_integer<T>(&mut self, key: &str) -> Result<Option<T>, Error>
+    where
+        T: TryFrom<i128>
+            + TryFrom<u128>
+            + TryFrom<u64>
+            + TryFrom<i64>
+            + TryFrom<u32>
+            + TryFrom<i32>
+            + TryFrom<u16>
+            + TryFrom<i16>
+            + TryFrom<u8>
+            + TryFrom<i8>;
+    fn remove_integer<T>(&mut self, key: &str) -> Result<T, Error>
+    where
+        T: TryFrom<i128>
+            + TryFrom<u128>
+            + TryFrom<u64>
+            + TryFrom<i64>
+            + TryFrom<u32>
+            + TryFrom<i32>
+            + TryFrom<u16>
+            + TryFrom<i16>
+            + TryFrom<u8>
+            + TryFrom<i8>;
+    fn remove_optional_system_hash256_bytes(
+        &mut self,
+        key: &str,
+    ) -> Result<Option<[u8; 32]>, Error>;
+    fn remove_system_hash256_bytes(&mut self, key: &str) -> Result<[u8; 32], Error>;
+    fn remove_optional_system_bytes(&mut self, key: &str) -> Result<Option<Vec<u8>>, Error>;
+    fn remove_system_bytes(&mut self, key: &str) -> Result<Vec<u8>, Error>;
 }
 
 impl<V> BTreeValueMapHelper for BTreeMap<String, V>
@@ -367,5 +369,57 @@ where
                     "unable to get borrowed str json value map property {key}"
                 ))
             })
+    }
+
+    fn get_optional_system_hash256_bytes(&self, key: &str) -> Result<Option<[u8; 32]>, Error> {
+        self.get(key)
+            .map(|v| v.borrow().to_system_hash256())
+            .transpose()
+    }
+
+    fn get_system_hash256_bytes(&self, key: &str) -> Result<[u8; 32], Error> {
+        self.get_optional_system_hash256_bytes(key)?.ok_or_else(|| {
+            Error::StructureError(format!("unable to get system hash256 property {key}"))
+        })
+    }
+
+    fn get_optional_system_bytes(&self, key: &str) -> Result<Option<Vec<u8>>, Error> {
+        self.get(key)
+            .map(|v| v.borrow().to_system_bytes())
+            .transpose()
+    }
+
+    fn get_system_bytes(&self, key: &str) -> Result<Vec<u8>, Error> {
+        self.get_optional_system_bytes(key)?.ok_or_else(|| {
+            Error::StructureError(format!("unable to get system bytes property {key}"))
+        })
+    }
+
+    fn remove_optional_system_hash256_bytes(
+        &mut self,
+        key: &str,
+    ) -> Result<Option<[u8; 32]>, Error> {
+        self.remove(key)
+            .map(|v| v.borrow().to_system_hash256())
+            .transpose()
+    }
+
+    fn remove_system_hash256_bytes(&mut self, key: &str) -> Result<[u8; 32], Error> {
+        self.remove_optional_system_hash256_bytes(key)?
+            .ok_or_else(|| {
+                Error::StructureError(format!("unable to get system hash256 property {key}"))
+            })
+    }
+
+    fn remove_optional_system_bytes(&mut self, key: &str) -> Result<Option<Vec<u8>>, Error> {
+        self.remove(key)
+            .map(|v| v.borrow().to_system_bytes())
+            .transpose()
+    }
+
+    fn remove_system_bytes(&mut self, key: &str) -> Result<Vec<u8>, Error> {
+        self.remove_optional_system_bytes(key)?.ok_or_else(|| {
+            Error::StructureError(format!("unable to get system bytes property {key}"))
+        })
     }
 }
