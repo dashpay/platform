@@ -186,7 +186,7 @@ impl Value {
             Value::I16(int) => int.try_into().map_err(|_| Error::IntegerSizeError),
             Value::U8(int) => int.try_into().map_err(|_| Error::IntegerSizeError),
             Value::I8(int) => int.try_into().map_err(|_| Error::IntegerSizeError),
-            other => Err(Error::StructureError("value is not an integer".to_string())),
+            _other => Err(Error::StructureError("value is not an integer".to_string())),
         }
     }
 
@@ -228,7 +228,7 @@ impl Value {
             Value::I16(int) => (*int).try_into().map_err(|_| Error::IntegerSizeError),
             Value::U8(int) => (*int).try_into().map_err(|_| Error::IntegerSizeError),
             Value::I8(int) => (*int).try_into().map_err(|_| Error::IntegerSizeError),
-            other => Err(Error::StructureError("value is not an integer".to_string())),
+            _other => Err(Error::StructureError("value is not an integer".to_string())),
         }
     }
 
@@ -295,7 +295,7 @@ impl Value {
     pub fn into_bytes(self) -> Result<Vec<u8>, Error> {
         match self {
             Value::Bytes(vec) => Ok(vec),
-            other => Err(Error::StructureError("value are not bytes".to_string())),
+            _other => Err(Error::StructureError("value are not bytes".to_string())),
         }
     }
 
@@ -336,7 +336,7 @@ impl Value {
     pub fn as_bytes_slice(&self) -> Result<&[u8], Error> {
         match self {
             Value::Bytes(vec) => Ok(vec),
-            other => Err(Error::StructureError(
+            _other => Err(Error::StructureError(
                 "ref value are not bytes slice".to_string(),
             )),
         }
@@ -408,7 +408,7 @@ impl Value {
             Value::U8(int) => Ok(int as f64),
             Value::I8(int) => Ok(int as f64),
             Value::Float(f) => Ok(f),
-            other => Err(Error::StructureError("value is not a float".to_string())),
+            _other => Err(Error::StructureError("value is not a float".to_string())),
         }
     }
 
@@ -437,7 +437,7 @@ impl Value {
             Value::U8(int) => Ok(*int as f64),
             Value::I8(int) => Ok(*int as f64),
             Value::Float(f) => Ok(*f),
-            other => Err(Error::StructureError("value is not a float".to_string())),
+            _other => Err(Error::StructureError("value is not a float".to_string())),
         }
     }
 
@@ -505,7 +505,7 @@ impl Value {
     pub fn into_text(self) -> Result<String, Error> {
         match self {
             Value::Text(s) => Ok(s),
-            other => Err(Error::StructureError("value is not a string".to_string())),
+            _other => Err(Error::StructureError("value is not a string".to_string())),
         }
     }
 
@@ -524,7 +524,7 @@ impl Value {
     pub fn to_text(&self) -> Result<String, Error> {
         match self {
             Value::Text(s) => Ok(s.clone()),
-            other => Err(Error::StructureError("value is not a string".to_string())),
+            _other => Err(Error::StructureError("value is not a string".to_string())),
         }
     }
 
@@ -543,7 +543,7 @@ impl Value {
     pub fn as_str(&self) -> Result<&str, Error> {
         match self {
             Value::Text(s) => Ok(s),
-            other => Err(Error::StructureError("value is not a string".to_string())),
+            _other => Err(Error::StructureError("value is not a string".to_string())),
         }
     }
 
@@ -592,7 +592,7 @@ impl Value {
     pub fn into_bool(self) -> Result<bool, Error> {
         match self {
             Value::Bool(b) => Ok(b),
-            other => Err(Error::StructureError("value is not a bool".to_string())),
+            _other => Err(Error::StructureError("value is not a bool".to_string())),
         }
     }
 
@@ -677,7 +677,7 @@ impl Value {
     pub fn into_tag(self) -> Result<(u64, Box<Value>), Error> {
         match self {
             Value::Tag(tag, value) => Ok((tag, value)),
-            other => Err(Error::StructureError("value is not a tag".to_string())),
+            _other => Err(Error::StructureError("value is not a tag".to_string())),
         }
     }
 
@@ -765,7 +765,7 @@ impl Value {
     pub fn into_array(self) -> Result<Vec<Value>, Error> {
         match self {
             Value::Array(vec) => Ok(vec),
-            other => Err(Error::StructureError("value is not an array".to_string())),
+            _other => Err(Error::StructureError("value is not an array".to_string())),
         }
     }
 
@@ -789,7 +789,7 @@ impl Value {
     pub fn as_slice(&self) -> Result<&[Value], Error> {
         match self {
             Value::Array(vec) => Ok(vec),
-            other => Err(Error::StructureError("value is not an array".to_string())),
+            _other => Err(Error::StructureError("value is not an array".to_string())),
         }
     }
 
@@ -881,7 +881,7 @@ impl Value {
     pub fn into_map(self) -> Result<ValueMap, Error> {
         match self {
             Value::Map(map) => Ok(map),
-            other => Err(Error::StructureError("value is not a map".to_string())),
+            _other => Err(Error::StructureError("value is not a map".to_string())),
         }
     }
 
@@ -905,7 +905,7 @@ impl Value {
     pub fn to_map_ref(&self) -> Result<&ValueMap, Error> {
         match self {
             Value::Map(map) => Ok(map),
-            other => Err(Error::StructureError("value is not a map".to_string())),
+            _other => Err(Error::StructureError("value is not a map".to_string())),
         }
     }
 }

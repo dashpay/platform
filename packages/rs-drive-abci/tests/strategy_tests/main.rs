@@ -406,7 +406,7 @@ pub(crate) fn run_chain_for_strategy(
     seed: u64,
 ) -> ChainExecutionOutcome {
     let quorum_size = config.quorum_size;
-    let mut platform = setup_platform_raw(Some(config.clone()));
+    let platform = setup_platform_raw(Some(config.clone()));
     let mut rng = StdRng::seed_from_u64(seed);
     // init chain
     let init_chain_request = static_init_chain_request();
@@ -424,7 +424,7 @@ pub(crate) fn run_chain_for_strategy(
         None,
     );
 
-    let mut current_proposers: Vec<[u8; 32]> = proposers
+    let current_proposers: Vec<[u8; 32]> = proposers
         .choose_multiple(&mut rng, quorum_size as usize)
         .cloned()
         .collect();
@@ -447,7 +447,7 @@ pub(crate) fn run_chain_for_strategy(
 }
 
 pub(crate) fn continue_chain_for_strategy(
-    mut platform: Platform,
+    platform: Platform,
     chain_execution_parameters: ChainExecutionParameters,
     strategy: Strategy,
     config: PlatformConfig,
@@ -457,7 +457,7 @@ pub(crate) fn continue_chain_for_strategy(
         block_start,
         block_count,
         block_spacing_ms,
-        mut proposers,
+        proposers,
         mut current_proposers,
         current_proposer_versions,
         mut current_time_ms,

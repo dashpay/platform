@@ -1,14 +1,14 @@
 use std::collections::BTreeMap;
-use std::convert::{TryFrom, TryInto};
+
 use std::io::{BufReader, Read};
 
 use crate::data_contract::errors::DataContractError;
-use crate::data_contract::extra::common;
-use crate::data_contract::extra::common::cbor_map_to_btree_map;
+
+
 use crate::ProtocolError;
 use byteorder::{BigEndian, ReadBytesExt, WriteBytesExt};
 use integer_encoding::{VarInt, VarIntReader};
-use platform_value::{Error, Integer, Value};
+use platform_value::{Value};
 use rand::distributions::{Alphanumeric, Standard};
 use rand::rngs::StdRng;
 use rand::Rng;

@@ -1,7 +1,7 @@
 use crate::data_contract::errors::{DataContractError, StructureError};
 use crate::ProtocolError;
 use anyhow::bail;
-use ciborium::value::Value as CborValue;
+
 use platform_value::Value;
 use rand::distributions::{Alphanumeric, DistString};
 use serde::{Deserialize, Serialize};

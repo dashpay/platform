@@ -35,7 +35,7 @@ impl Value {
                 })
                 .collect::<Result<Vec<u8>, Error>>(),
             Value::Bytes(vec) => Ok(vec),
-            other => Err(Error::StructureError(
+            _other => Err(Error::StructureError(
                 "value are not bytes, a string, or an array of values representing bytes"
                     .to_string(),
             )),
@@ -76,7 +76,7 @@ impl Value {
                 })
                 .collect::<Result<Vec<u8>, Error>>(),
             Value::Bytes(vec) => Ok(vec.clone()),
-            other => Err(Error::StructureError(
+            _other => Err(Error::StructureError(
                 "value are not bytes, a string, or an array of values representing bytes"
                     .to_string(),
             )),
@@ -133,7 +133,7 @@ impl Value {
                 vec.try_into()
                     .map_err(|_| Error::StructureError("value was bytes, but was not 32 bytes long".to_string()))
             },
-            other => Err(Error::StructureError("value are not bytes, a string, or an array of values representing bytes".to_string())),
+            _other => Err(Error::StructureError("value are not bytes, a string, or an array of values representing bytes".to_string())),
         }
     }
 
@@ -182,7 +182,7 @@ impl Value {
                 vec.clone().try_into()
                     .map_err(|_| Error::StructureError("value was bytes, but was not 32 bytes long".to_string()))
             },
-            other => Err(Error::StructureError("value are not bytes, a string, or an array of values representing bytes".to_string())),
+            _other => Err(Error::StructureError("value are not bytes, a string, or an array of values representing bytes".to_string())),
         }
     }
 }
