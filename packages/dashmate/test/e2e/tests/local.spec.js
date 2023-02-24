@@ -9,7 +9,7 @@ const { isGroupServicesRunning } = require('../lib/manageDockerData');
 const { platform } = require('../../../configs/system/base');
 const { CONFIG_FILE_PATH } = require('../../../src/constants');
 const TestDashmateClass = require('../lib/testDashmateClass');
-const {execute} = require("../lib/runCommandInCli");
+const { execute } = require('../lib/runCommandInCli');
 
 describe('Local dashmate', function main() {
   this.timeout(900000);
@@ -74,7 +74,7 @@ describe('Local dashmate', function main() {
         expect(node.core.serviceStatus).to.be.equal('up');
         expect(node.core.blockHeight).to.be.at.least(blockHeight.blocks);
 
-        if( node.platform.tenderdash === null ) {
+        if (node.platform.tenderdash === null) {
           expect(node.platform.enabled).to.be.equal(false);
           break;
         }
@@ -144,7 +144,7 @@ describe('Local dashmate', function main() {
 
       await isGroupServicesRunning(true, container);
 
-      const status = await dashmate.getGroupStatus('status')
+      const status = await dashmate.getGroupStatus('status');
       expect(status).to.not.be.empty();
     });
   });

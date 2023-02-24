@@ -14,8 +14,7 @@ async function removeVolumes(configName, dockerContainer) {
   await Promise.all(
     projectVolumeNames
       .map((volumeName) => `${projectName}_${volumeName}`)
-      .map(async (volumeName) => dockerContainer.getVolume(volumeName).remove()
-      ),
+      .map(async (volumeName) => dockerContainer.getVolume(volumeName).remove()),
   );
 }
 
