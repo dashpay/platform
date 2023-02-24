@@ -14,10 +14,7 @@ use dpp::{
 use serde::{Deserialize, Serialize};
 use wasm_bindgen::prelude::*;
 
-use crate::{
-    buffer::Buffer, errors::from_dpp_err, identifier::IdentifierWrapper, with_js_error,
-    DataContractParameters, DataContractWasm, StateTransitionExecutionContextWasm,
-};
+use crate::{DataContractParameters, DataContractWasm, StateTransitionExecutionContextWasm, buffer::Buffer, errors::{from_dpp_err, protocol_error::from_protocol_error}, identifier::IdentifierWrapper, with_js_error};
 
 #[derive(Clone)]
 #[wasm_bindgen(js_name=DataContractUpdateTransition)]
@@ -143,5 +140,16 @@ impl DataContractUpdateTransitionWasm {
             .hash(skip_signature.unwrap_or(false))
             .map_err(from_dpp_err)?;
         Ok(Buffer::from_bytes(&bytes))
+    }
+
+    #[wasm_bindgen(js_name=toObject)]
+    pub fn to_object(&self, skip_signature: Option<bool>) -> Result<JsValue, JsValue> {
+        let serde_object = self
+            .0
+            .to_object(skip_signature.unwrap_or(false))
+            .map_err(from_protocol_error)?;
+        serde_object
+            .serialize(&serde_wasm_bindgen::Serializer::json_compatible())
+            .map_err(|e| e.into())
     }
 }
