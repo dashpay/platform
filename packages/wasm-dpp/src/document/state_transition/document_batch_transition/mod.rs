@@ -12,7 +12,7 @@ use dpp::{
     util::json_value::JsonValueExt,
 };
 use js_sys::{Array, Reflect};
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use wasm_bindgen::prelude::*;
 
 use crate::{
@@ -37,6 +37,15 @@ pub struct DocumentsContainer {
     create: Vec<Document>,
     replace: Vec<Document>,
     delete: Vec<Document>,
+}
+
+#[derive(Debug, Serialize, Deserialize, Default, Clone, Copy)]
+#[serde(rename_all = "camelCase")]
+pub struct ToObjectOptions {
+    #[serde(default)]
+    skip_signature: bool,
+    #[serde(default)]
+    skip_identifiers_conversion: bool,
 }
 
 #[wasm_bindgen(js_class=DocumentsContainer)]
@@ -154,15 +163,15 @@ impl DocumentsBatchTransitionWASM {
     }
 
     #[wasm_bindgen(js_name=toObject)]
-    pub fn to_object(&self, options: &JsValue) -> Result<JsValue, JsValue> {
-        let skip_signature = if options.is_object() {
-            let options = options.with_serde_to_json_value()?;
-            options.get_bool("skipSignature").unwrap_or_default()
+    pub fn to_object(&self, js_options: &JsValue) -> Result<JsValue, JsValue> {
+        let options: ToObjectOptions = if js_options.is_object() {
+            let raw_options = js_options.with_serde_to_json_value()?;
+            serde_json::from_value(raw_options).with_js_error()?
         } else {
-            false
+            Default::default()
         };
 
-        let mut value = self.0.to_object(skip_signature).with_js_error()?;
+        let mut value = self.0.to_object(options.skip_signature).with_js_error()?;
         let serializer = serde_wasm_bindgen::Serializer::json_compatible();
         let js_value = value.serialize(&serializer)?;
 
@@ -170,7 +179,7 @@ impl DocumentsBatchTransitionWASM {
         let transitions = Array::new();
         for transition in self.0.transitions.iter() {
             let js_value =
-                DocumentTransitionWasm::from(transition.to_owned()).to_object(options)?;
+                DocumentTransitionWasm::from(transition.to_owned()).to_object(js_options)?;
             transitions.push(&js_value);
         }
         // Replace the whole collection of transitions
@@ -189,12 +198,17 @@ impl DocumentsBatchTransitionWASM {
         }
         for path in DocumentsBatchTransition::identifiers_property_paths() {
             if let Ok(bytes) = value.remove_path_into::<Vec<u8>>(path) {
-                let id = IdentifierWrapper::new(bytes)?;
-                lodash_set(&js_value, path, id.into());
+                if !options.skip_identifiers_conversion {
+                    let buffer = Buffer::from_bytes(&bytes);
+                    lodash_set(&js_value, path, buffer.into());
+                } else {
+                    let id = IdentifierWrapper::new(bytes)?;
+                    lodash_set(&js_value, path, id.into());
+                }
             }
         }
 
-        if value.get(property_names::SIGNATURE).is_none() && !skip_signature {
+        if value.get(property_names::SIGNATURE).is_none() && !options.skip_signature {
             js_sys::Reflect::set(
                 &js_value,
                 &property_names::SIGNATURE.into(),
