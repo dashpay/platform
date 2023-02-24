@@ -32,7 +32,6 @@ use std::collections::BTreeMap;
 #[cfg(any(feature = "full", feature = "verify"))]
 use std::ops::BitXor;
 
-
 #[cfg(feature = "full")]
 use grovedb::query_result_type::{QueryResultElements, QueryResultType};
 /// Import grovedb
@@ -102,11 +101,11 @@ use crate::drive::contract::paths::ContractPaths;
 use dpp::data_contract::extra::common::bytes_for_system_value;
 #[cfg(any(feature = "full", feature = "verify"))]
 use dpp::document::document_stub::DocumentStub;
-#[cfg(feature = "full")]
+#[cfg(any(feature = "full", feature = "verify"))]
 use dpp::platform_value::btreemap_extensions::BTreeValueMapHelper;
 #[cfg(any(feature = "full", feature = "verify"))]
 use dpp::platform_value::Value;
-#[cfg(feature = "full")]
+#[cfg(any(feature = "full", feature = "verify"))]
 use dpp::ProtocolError;
 
 #[cfg(any(feature = "full", feature = "verify"))]
