@@ -22,12 +22,6 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  rs-checks:
-    name: Rust
-    uses: ./.github/workflows/rs-checks.yml
-    with:
-      package: 'drive'
-
   feature-compilation:
     name: Feature compilation errors
     runs-on: ubuntu-22-04
@@ -46,3 +40,9 @@ jobs:
         uses: Swatinem/rust-cache@v2
 
       - run: cargo check --package=drive --no-default-features --features=verify
+
+  rs-checks:
+    name: Rust
+    uses: ./.github/workflows/rs-checks.yml
+    with:
+      package: 'drive'
