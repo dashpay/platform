@@ -42,14 +42,17 @@ mockall= { version ="0.11", optional = true }
 [dependencies.grovedb]
 git = "https://github.com/dashpay/grovedb"
 rev = "3f07f53175d99e4a3eab7b53d8bd221f59ea9047"
+optional = true
 
 [dependencies.storage]
 git = "https://github.com/dashpay/grovedb"
 rev = "3f07f53175d99e4a3eab7b53d8bd221f59ea9047"
+optional = true
 
 [dependencies.costs]
 git = "https://github.com/dashpay/grovedb"
 rev = "3f07f53175d99e4a3eab7b53d8bd221f59ea9047"
+optional = true
 
 [dev-dependencies]
 criterion = "0.3.5"
@@ -63,6 +66,9 @@ default = ["fixtures-and-mocks", "full"]
 #default = ["verify"]
 fixtures-and-mocks = ["mockall"]
 full = [
+    "grovedb/full",
+    "storage",
+    "costs",
     "bs58",
     "base64",
     "hex",
@@ -75,6 +81,9 @@ full = [
     "itertools",
     "rust_decimal",
     "rust_decimal_macros",
-    "lazy_static"
+    "lazy_static",
 ]
-verify = []
+verify = [
+    "grovedb/verify",
+    "costs",
+]
