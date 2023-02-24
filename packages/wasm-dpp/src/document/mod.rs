@@ -4,7 +4,7 @@ use dpp::util::json_schema::JsonSchemaExt;
 use dpp::util::json_value::{JsonValueExt, ReplaceWith};
 use dpp::util::string_encoding::Encoding;
 use serde::{Deserialize, Serialize};
-use std::convert::TryInto;
+use std::convert::{self, TryInto};
 use wasm_bindgen::prelude::*;
 
 use dpp::document::{property_names, Document, IDENTIFIER_FIELDS};
@@ -21,6 +21,7 @@ use crate::{DataContractWasm, MetadataWasm};
 pub mod errors;
 pub use state_transition::*;
 mod factory;
+pub mod fetch_and_validate_data_contract;
 pub mod state_transition;
 mod validator;
 
@@ -28,16 +29,17 @@ pub use document_batch_transition::{DocumentsBatchTransitionWASM, DocumentsConta
 pub use factory::DocumentFactoryWASM;
 pub use validator::DocumentValidatorWasm;
 
+#[derive(Serialize, Deserialize, Debug, Clone, Copy, Default)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct ConversionOptions {
+    #[serde(default)]
+    pub skip_identifiers_conversion: bool,
+}
+
 pub(super) enum BinaryType {
     Identifier,
     Buffer,
     None,
-}
-
-#[derive(Serialize, Deserialize, Debug, Clone, Copy, Default)]
-#[serde(rename_all = "camelCase")]
-pub struct ConversionOptions {
-    skip_identifiers_conversion: bool,
 }
 
 #[wasm_bindgen(js_name=Document)]
@@ -155,9 +157,35 @@ impl DocumentWasm {
 
     #[wasm_bindgen(js_name=getData)]
     pub fn get_data(&mut self) -> Result<JsValue, JsValue> {
-        let serializer = serde_wasm_bindgen::Serializer::json_compatible();
+        let js_value = self
+            .0
+            .data
+            .serialize(&serde_wasm_bindgen::Serializer::json_compatible())?;
 
-        Ok(with_js_error!(self.0.data.serialize(&serializer))?)
+        let (identifier_paths, binary_paths) = self
+            .0
+            .data_contract
+            .get_identifiers_and_binary_paths(&self.0.document_type)
+            .with_js_error()?;
+
+        for path in identifier_paths {
+            if let Ok(value) = self.0.data.get_value(path) {
+                let bytes: Vec<u8> = serde_json::from_value(value.to_owned()).with_js_error()?;
+                let id = <IdentifierWrapper as convert::From<Identifier>>::from(
+                    Identifier::from_bytes(&bytes).unwrap(),
+                );
+                lodash_set(&js_value, path, id.into());
+            }
+        }
+        for path in binary_paths {
+            if let Ok(value) = self.0.data.get_value(path) {
+                let bytes: Vec<u8> = serde_json::from_value(value.to_owned()).with_js_error()?;
+                let buffer = Buffer::from_bytes(&bytes);
+                lodash_set(&js_value, path, buffer.into());
+            }
+        }
+
+        Ok(js_value)
     }
 
     #[wasm_bindgen(js_name=set)]
