@@ -74,8 +74,8 @@ class SetupCommand extends BaseCommand {
             ctx.preset = await task.prompt([
               {
                 type: 'select',
-                header: '  Dashmate provides default configuration presets:\n    local - Run a fully functional network environment on your machine for local development'
-                  + '\n    mainnet - Run a node connected to the primary Dash network'
+                header: '  Dashmate provides three default configuration presets:\n    local - Run a fully functional network environment on your machine for local development'
+                  + '\n    mainnet - Run a node connected to the Dash main network'
                   + '\n    testnet - Run a node connected to the Dash test network\n',
                 message: 'Select preset',
                 choices: PRESETS,
@@ -116,7 +116,7 @@ class SetupCommand extends BaseCommand {
     await import('begoo').then(({ begoo }) => {
       console.log(
         begoo(
-          `Hello! I'm your ${chalk.bold.cyanBright('Dash')} mate!\n\nI will assist you with setting up a Dash node on mainnet or testnet. I can also help you setup a development network on your local system.`,
+          `Hello! I'm your ${chalk.bold.cyanBright('Dash')} mate!\n\nI will assist you with setting up a Dash node on mainnet or testnet. I can also help you set up a development network on your local system.`,
           { maxLength: 45 },
         ),
       );

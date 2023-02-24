@@ -60,14 +60,14 @@ function setupRegularPresetTaskFactory(
             ctx.nodeType = await task.prompt([
               {
                 type: 'select',
-                header: '  The Dash network has several different node types:'
+                header: '  The Dash network consists of several different node types:'
                   + ' \n    Full nodes: Host a full copy of the Dash blockchain (no collateral required)'
-                  + ' \n    Masternodes: Full node features plus additional Core services such as ChainLocks and InstantSend (1000 DASH collateral)'
-                  + ' \n    High-performance masternodes: Masternode features plus hosting of Dash Platform (4000 DASH collateral)\n',
+                  + ' \n    Masternodes: Full node features, plus Core services such as ChainLocks and InstantSend (1000 DASH collateral)'
+                  + ' \n    High-performance masternodes: Masternode features, plus Platform services such as DAPI and Drive (4000 DASH collateral)\n',
                 message: 'Select node type',
                 choices: [
-                  { name: NODE_TYPE_MASTERNODE, hint: 'Take me, I\'m cheaper' },
-                  { name: NODE_TYPE_HPMN, message: 'high-performance masternode' },
+                  { name: NODE_TYPE_MASTERNODE, hint: '1000 DASH collateral' },
+                  { name: NODE_TYPE_HPMN, message: 'high-performance masternode', hint: '4000 DASH collateral' },
                   { name: NODE_TYPE_FULLNODE },
                 ],
                 initial: NODE_TYPE_HPMN,
@@ -87,23 +87,19 @@ function setupRegularPresetTaskFactory(
         task: async (ctx, task) => {
           let header;
           if (ctx.nodeType === NODE_TYPE_HPMN) {
-            header = 'If your masternode is already registered, we will import your masternode '
-              + ' operator and platform node keys to configure an HP masternode. Please make '
-              + ' sure your IP address didn\'t change, otherwise you need to update. If'
-              + ' you are'
-              + ' registering a'
-              + ' new'
-              + ' masternode, I will provide more information and help you to generate'
-              + ' necessary keys.\n';
+            header = 'If your HP masternode is already registered, we will import your masternode'
+              + ' operator and platform node keys to configure an HP masternode.'
+              + ' Please make sure your IP address has not changed, otherwise you will need'
+              + ' to create a provider update service transaction.\n\n'
+              + ' If you are registering a new HP masternode, I will provide more information'
+              + ' and help you to generate the necessary keys.\n';
           } else {
-            header = 'If your masternode is already registered, we will import your masternode '
-              + ' operator to configure a masternode. Please make '
-              + ' sure your IP address didn\'t change, otherwise you need to update If'
-              + ' you are'
-              + ' registering a'
-              + ' new'
-              + ' masternode, I will provide more information and help you to generate'
-              + ' necessary keys.\n';
+            header = 'If your masternode is already registered, we will import your masternode'
+              + ' operator key to configure a masternode.'
+              + ' Please make sure your IP address has not changed, otherwise you will need'
+              + ' to create a provider update service transaction.\n\n'
+              + ' If you are registering a new masternode, I will provide more information'
+              + ' and help you to generate the necessary keys.\n';
           }
 
           ctx.isMasternodeRegistered = await task.prompt([
@@ -111,8 +107,8 @@ function setupRegularPresetTaskFactory(
               type: 'toggle',
               header,
               message: 'Is your masternode already registered?',
-              enabled: 'Yep',
-              disabled: 'Nope',
+              enabled: 'Yes',
+              disabled: 'No',
             },
           ]);
 
@@ -126,11 +122,14 @@ function setupRegularPresetTaskFactory(
           ctx.registrar = await task.prompt([
             {
               type: 'select',
-              header: 'Dashmate is not going to register masternode for you because it\'s not' +
-                ' secure. You can use Dash Core so we can generate a RPC command for you or you' +
-                ' can use other tools and we can help you to generate operator key and node id' +
-                ' because that\'s only what dashmate cares\n',
-              message: 'What do you want to use to register masternode?',
+              header: 'For security reasons, Dash masternodes should never store masternode owner'
+                + ' or collateral private keys. Dashmate therefore cannot register a masternode for'
+                + ' you directly. Instead, we will generate RPC commands that you can use in Dash'
+                + ' Core or other external tools where the keys are handled securely. During this'
+                + ' process, dashmate can optionally generate configuration elements as necessary,'
+                + ' such as certificates, the BLS operator key and the node id, since this is the'
+                + ' only information necessary for dashmate to configure the masternode.',
+              message: 'Which tool will you use to register your masternode?',
               choices: [
                 { name: 'core', message: 'Dash Core (Wallet?)' },
                 { name: 'other', message: 'Other' },
@@ -141,7 +140,7 @@ function setupRegularPresetTaskFactory(
         },
       },
       {
-        title: 'Register masternode with Dash Core (Wallet?)',
+        title: 'Register masternode with Dash Core',
         enabled: (ctx) => ctx.registrar === 'core'
           && (ctx.nodeType === NODE_TYPE_HPMN || ctx.nodeType === NODE_TYPE_MASTERNODE),
         task: async (ctx, task) => {
@@ -469,7 +468,7 @@ function setupRegularPresetTaskFactory(
         },
       },
       {
-        title: 'Set masternode operator private key',
+        title: 'Set masternode operator BLS private key',
         enabled: (ctx) => ctx.nodeType === NODE_TYPE_MASTERNODE,
         task: async (ctx, task) => {
           if (ctx.operatorBlsPrivateKey === undefined) {
