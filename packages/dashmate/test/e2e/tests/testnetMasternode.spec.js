@@ -21,7 +21,8 @@ const getSelfSignedCertificate = require('../lib/getSelfSignedCertificate');
 const { isTestnetServicesRunning } = require('../lib/manageDockerData');
 const MasternodeSyncAssetEnum = require('../../../src/enums/masternodeSyncAsset');
 const PortStateEnum = require('../../../src/enums/portState');
-const ServiceStatusEnum = require('../../../src/enums/serviceStatus');
+const { ServiceStatusEnum: serviceStatus } = require('../../../src/enums/serviceStatus');
+const { ServiceStatusEnum: dockerStatus } = require('../../../src/enums/dockerStatus');
 const TestDashmateClass = require('../lib/testDashmateClass');
 
 describe('Dashmate testnet masternode tests', function main() {
@@ -91,9 +92,9 @@ describe('Dashmate testnet masternode tests', function main() {
       //   throw e;
       // }
 
-      expect(coreOutput.network).to.be.equal(STATUS.testnetNetwork);
+      expect(coreOutput.network).to.be.equal(STATUS.testnet);
       expect(coreOutput.chain).to.be.equal(STATUS.testChain);
-      expect(coreOutput.dockerStatus).to.be.equal('running');
+      expect(coreOutput.dockerStatus).to.be.equal(dockerStatus.running);
       expect(coreOutput.syncAsset).to.be.equal(MasternodeSyncAssetEnum.MASTERNODE_SYNC_BLOCKCHAIN);
 
       const peersData = await execute('docker exec dash_masternode_testnet-core-1 dash-cli getpeerinfo');
@@ -125,7 +126,7 @@ describe('Dashmate testnet masternode tests', function main() {
 
       expect(+coreSyncOutput.difficulty).to.be.greaterThan(0);
 
-      expect(coreOutput.serviceStatus).to.be.equal(ServiceStatusEnum.syncing);
+      expect(coreOutput.serviceStatus).to.be.equal(serviceStatus.syncing);
       if (!(coreOutput.verificationProgress > 0 && coreOutput.verificationProgress <= 1)) {
         throw new Error(`Invalid status output for syncing process: ${coreOutput.verificationProgress}% `);
       }
@@ -146,7 +147,7 @@ describe('Dashmate testnet masternode tests', function main() {
 
       for (const serviceData of output) {
         expect(Object.keys(SERVICES)).to.include(serviceData.service);
-        expect(serviceData.status).to.equal('running');
+        expect(serviceData.status).to.equal(dockerStatus.running);
         expect(listIDs).to.include(serviceData.containerId);
       }
     });
@@ -158,7 +159,7 @@ describe('Dashmate testnet masternode tests', function main() {
 
       expect(output.Network).to.equal(STATUS.test);
       expect(output['Core Version']).to.equal(coreVersion);
-      expect(output['Core Status']).to.include(ServiceStatusEnum.syncing);
+      expect(output['Core Status']).to.include(serviceStatus.syncing);
       expect(output['Masternode Status']).to.equal(STATUS.masternode_status);
       expect(output['Platform Status']).to.equal(STATUS.platform_status);
     });

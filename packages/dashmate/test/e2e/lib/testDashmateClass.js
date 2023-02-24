@@ -109,7 +109,7 @@ class TestDashmateClass {
    * @return {Promise<string>}
    */
   async checkStatus(scope) {
-    const res = await execute(`yarn dashmate status ${scope}`);
+    const res = await execute(`yarn dashmate status ${scope} --format=json`);
 
     if (res.status !== undefined) {
       throw new Error(`${res.stderr} with exit code: ${res.status}`);
