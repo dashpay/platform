@@ -24,7 +24,7 @@ concurrency:
 jobs:
   feature-compilation:
     name: Feature compilation errors
-    runs-on: ubuntu-22-04
+    runs-on: ubuntu-22.04
     timeout-minutes: 20
     steps:
       - name: Check out repo
