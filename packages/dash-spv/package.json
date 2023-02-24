@@ -14,7 +14,7 @@
   "dependencies": {
     "@dashevo/dark-gravity-wave": "^1.1.1",
     "@dashevo/dash-util": "^2.0.3",
-    "@dashevo/dashcore-lib": "github:dashevo/dashcore-lib#6621690ab0f04ee7b309662c49dfe98a98b01ba2",
+    "@dashevo/dashcore-lib": "github:dashevo/dashcore-lib#06989ed1a305fd6e2494a409d0ea3a05258de191",
     "levelup": "^4.4.0",
     "memdown": "^5.1.0"
   },
