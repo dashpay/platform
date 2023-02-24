@@ -7,7 +7,7 @@ license = "MIT"
 private = true
 
 [dependencies]
-serde = { version = "1.0.132", features = ["derive"]}
+serde = { version = "1.0.152", features = ["derive"]}
 ciborium = { git="https://github.com/qrayven/ciborium", branch="feat-ser-null-as-undefined" }
 integer-encoding = {version = "3.0.4" }
 rand = { version = "0.8.4", features = ["small_rng"] }
