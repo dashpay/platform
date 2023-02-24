@@ -62,10 +62,10 @@ name = "benchmarks"
 harness = false
 
 [features]
-default = ["fixtures-and-mocks", "full"]
-#default = ["verify"]
+default = ["full"]
 fixtures-and-mocks = ["mockall"]
 full = [
+    "fixtures-and-mocks",
     "grovedb/full",
     "storage",
     "costs",

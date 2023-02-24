@@ -27,3 +27,22 @@ jobs:
     uses: ./.github/workflows/rs-checks.yml
     with:
       package: 'drive'
+
+  feature-compilation:
+    name: Feature compilation errors
+    runs-on: ubuntu-22-04
+    timeout-minutes: 20
+    steps:
+      - name: Check out repo
+        uses: actions/checkout@v3
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: stable
+          target: wasm32-unknown-unknown
+
+      - name: Enable Rust Cache
+        uses: Swatinem/rust-cache@v2
+
+      - run: cargo check --package=drive --no-default-features --features=verify
