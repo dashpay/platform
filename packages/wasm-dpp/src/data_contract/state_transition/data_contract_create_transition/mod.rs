@@ -1,6 +1,8 @@
 mod apply;
 mod validation;
 
+use std::collections::HashMap;
+
 pub use apply::*;
 pub use validation::*;
 
@@ -39,15 +41,14 @@ impl From<DataContractCreateTransitionWasm> for DataContractCreateTransition {
 #[derive(Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct DataContractCreateTransitionParameters {
-    protocol_version: u32,
     #[serde(skip_serializing_if = "Option::is_none", default)]
     data_contract: Option<DataContractParameters>,
     #[serde(skip_serializing_if = "Option::is_none", default)]
     entropy: Option<Vec<u8>>,
     #[serde(skip_serializing_if = "Option::is_none", default)]
-    signature_public_key_id: Option<KeyID>,
-    #[serde(skip_serializing_if = "Option::is_none", default)]
     signature: Option<Vec<u8>>,
+    #[serde(flatten)]
+    extra: HashMap<String, serde_json::Value>,
 }
 
 #[wasm_bindgen(js_class=DataContractCreateTransition)]
