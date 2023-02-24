@@ -35,10 +35,6 @@ rust_decimal_macros = { version = "1.25.0", optional = true }
 lazy_static = { version = "1.4.0", optional = true }
 mockall= { version ="0.11", optional = true }
 
-#array_tool = { version = "1.0.3", optional = true }
-#rand_distr = { version = "0.4.3", optional = true }
-#dashcore = { git="https://github.com/dashevo/rust-dashcore", features=["std", "secp-recovery", "rand", "signer", "use-serde"], default-features = false, rev = "51548a4a1b9eca7430f5f3caf94d9784886ff2e9", optional = true }
-
 [dependencies.grovedb]
 git = "https://github.com/dashpay/grovedb"
 rev = "3f07f53175d99e4a3eab7b53d8bd221f59ea9047"
