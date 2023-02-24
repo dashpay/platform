@@ -104,7 +104,7 @@ class TestDashmateClass {
   }
 
   /**
-   * Get status
+   * Get single node status
    * @param {string} scope - '', core, host, masternode, platform, services
    * @return {Promise<string>}
    */
@@ -119,12 +119,12 @@ class TestDashmateClass {
   }
 
   /**
-   * Get local status
+   * Get group nodes status/list
    * @param {string} scope - status, list
    * @return {Promise<string>}
    */
-  async checkGroupStatus(scope) {
-    const res = await execute(`yarn dashmate ${scope} --format=json`);
+  async getGroupStatus(scope) {
+    const res = await execute(`yarn dashmate group ${scope} --format=json`);
 
     if (res.status !== undefined) {
       throw new Error(`${res.stderr} with exit code: ${res.status}`);

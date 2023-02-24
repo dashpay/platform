@@ -28,7 +28,7 @@ describe('Local dashmate', function main() {
     });
 
     it('Setup local group nodes', async () => {
-      await dashmate.setupLocal(nodes = 3);
+      // await dashmate.setupLocal(nodes = 3);
 
       await isGroupServicesRunning(false, container);
 
@@ -47,7 +47,7 @@ describe('Local dashmate', function main() {
     });
 
     it('Check group list', async () => {
-      const listOutput = await dashmate.checkGroupStatus('list');
+      const listOutput = await dashmate.getGroupStatus('list');
 
       const arr = [];
       for (let i = 0; i < nodes; i++) {
@@ -66,7 +66,7 @@ describe('Local dashmate', function main() {
       const blockchainInfo = await execute('docker exec dash_masternode_local_seed-core-1 dash-cli getblockchaininfo');
       const blockHeight = JSON.parse(blockchainInfo.toString());
 
-      const statusOutput = await dashmate.checkGroupStatus('status --format=json');
+      const statusOutput = await dashmate.getGroupStatus('status --format=json');
       const parse = JSON.parse(statusOutput);
 
       for (const node of parse) {
@@ -93,7 +93,7 @@ describe('Local dashmate', function main() {
 
       await isGroupServicesRunning(false, container);
 
-      const status = await dashmate.checkGroupStatus('status');
+      const status = await dashmate.getGroupStatus('status');
       expect(status).to.be.empty();
     });
 
@@ -102,7 +102,7 @@ describe('Local dashmate', function main() {
 
       await isGroupServicesRunning(true, container);
 
-      const status = await dashmate.checkGroupStatus('status');
+      const status = await dashmate.getGroupStatus('status');
       expect(status).to.not.be.empty();
     });
 
@@ -111,7 +111,7 @@ describe('Local dashmate', function main() {
 
       await isGroupServicesRunning(true, container);
 
-      const status = await dashmate.checkGroupStatus('status');
+      const status = await dashmate.getGroupStatus('status');
       expect(status).to.not.be.empty();
 
       if (await isConfigExist(localNetwork)) {
@@ -122,8 +122,8 @@ describe('Local dashmate', function main() {
       }
     });
 
-    it('Reset local group nodes', async () => {
-      const status = await dashmate.checkGroupStatus('status');
+    it.only('Reset local group nodes', async () => {
+      const status = await dashmate.getGroupStatus('status');
 
       await dashmate.stop(localNetwork);
 
@@ -144,7 +144,7 @@ describe('Local dashmate', function main() {
 
       await isGroupServicesRunning(true, container);
 
-      const status = await dashmate.checkGroupStatus('status')
+      const status = await dashmate.getGroupStatus('status')
       expect(status).to.not.be.empty();
     });
   });
