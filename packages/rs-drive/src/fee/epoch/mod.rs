@@ -32,27 +32,39 @@
 //! Fee distribution is based on epochs. One epoch is about 18 days
 //!
 
-use crate::fee::credits::{Credits, SignedCredits};
+#[cfg(any(feature = "full", feature = "verify"))]
+use crate::fee::credits::Credits;
+#[cfg(feature = "full")]
+use crate::fee::credits::SignedCredits;
+#[cfg(any(feature = "full", feature = "verify"))]
 use nohash_hasher::IntMap;
 
+#[cfg(feature = "full")]
 pub mod distribution;
 
+#[cfg(any(feature = "full", feature = "verify"))]
 /// Epoch index type
 pub type EpochIndex = u16;
 
+#[cfg(feature = "full")]
 /// Genesis epoch index
 pub const GENESIS_EPOCH_INDEX: EpochIndex = 0;
 
+#[cfg(feature = "full")]
 /// Epochs per year
 pub const EPOCHS_PER_YEAR: u16 = 20;
 
+#[cfg(feature = "full")]
 /// Years of fees charged for perpetual storage
 pub const PERPETUAL_STORAGE_YEARS: u16 = 50;
 
+#[cfg(feature = "full")]
 /// Perpetual storage epochs
 pub const PERPETUAL_STORAGE_EPOCHS: u16 = PERPETUAL_STORAGE_YEARS * EPOCHS_PER_YEAR;
 
+#[cfg(any(feature = "full", feature = "verify"))]
 /// Credits per epoch map
 pub type CreditsPerEpoch = IntMap<EpochIndex, Credits>;
+#[cfg(feature = "full")]
 /// Signed credits per epoch map
 pub type SignedCreditsPerEpoch = IntMap<EpochIndex, SignedCredits>;
