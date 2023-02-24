@@ -4,6 +4,7 @@ members = [
     "packages/rs-dpp",
     "packages/wasm-dpp",
     "packages/rs-drive",
+    "packages/rs-platform-value",
     "packages/rs-drive-abci",
     "packages/rs-drive-nodejs",
     "packages/dashpay-contract",

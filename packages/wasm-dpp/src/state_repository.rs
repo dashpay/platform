@@ -141,6 +141,11 @@ extern "C" {
         this: &ExternalStateRepositoryLike,
     ) -> Result<JsValue, JsValue>;
 
+    #[wasm_bindgen(catch, structural, method, js_name=fetchLatestPlatformBlockHeight)]
+    pub async fn fetch_latest_platform_block_height(
+        this: &ExternalStateRepositoryLike,
+    ) -> Result<JsValue, JsValue>;
+
     #[wasm_bindgen(catch, structural, method, js_name=fetchTransaction)]
     pub async fn fetch_transaction(
         this: &ExternalStateRepositoryLike,
@@ -166,6 +171,7 @@ extern "C" {
     pub async fn mark_asset_lock_transaction_out_point_as_used(
         this: &ExternalStateRepositoryLike,
         out_point_buffer: Buffer,
+        execution_context: StateTransitionExecutionContextWasm,
     ) -> Result<(), JsValue>;
 
     #[wasm_bindgen(catch, structural, method, js_name=fetchLatestPlatformBlockHeader)]
@@ -529,6 +535,19 @@ impl StateRepositoryLike for ExternalStateRepositoryLikeWrapper {
         Ok(Some(height as u32))
     }
 
+    async fn fetch_latest_platform_block_height(&self) -> Result<u64> {
+        let height = self
+            .0
+            .fetch_latest_platform_block_height()
+            .await
+            .map_err(from_js_error)?;
+
+        let height = height
+            .as_f64()
+            .ok_or_else(|| anyhow!("Value is not a number"))?;
+        Ok(height as u64)
+    }
+
     async fn verify_instant_lock(
         &self,
         instant_lock: &InstantLock,
@@ -569,9 +588,13 @@ impl StateRepositoryLike for ExternalStateRepositoryLikeWrapper {
     async fn mark_asset_lock_transaction_out_point_as_used(
         &self,
         out_point_buffer: &[u8],
+        execution_context: &StateTransitionExecutionContext,
     ) -> Result<()> {
         self.0
-            .mark_asset_lock_transaction_out_point_as_used(Buffer::from_bytes(out_point_buffer))
+            .mark_asset_lock_transaction_out_point_as_used(
+                Buffer::from_bytes(out_point_buffer),
+                execution_context.clone().into(),
+            )
             .await
             .map_err(from_js_error)
     }

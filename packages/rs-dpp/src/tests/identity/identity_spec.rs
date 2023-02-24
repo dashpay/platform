@@ -108,7 +108,7 @@ mod from_buffer {
                 155, 24, 189, 162, 3, 243, 11, 210, 211, 238, 215, 105, 163, 71, 98
             ]
         );
-        assert_eq!(pk_1.read_only, false);
+        assert!(!pk_1.read_only);
 
         assert_eq!(pk_2.id, 1);
         assert_eq!(pk_2.key_type, KeyType::try_from(0u8).unwrap());
@@ -121,7 +121,7 @@ mod from_buffer {
                 207, 105, 202, 13, 209, 136, 190, 227, 182, 209, 12, 13, 79, 139
             ]
         );
-        assert_eq!(pk_2.read_only, false);
+        assert!(!pk_2.read_only);
     }
 }
 

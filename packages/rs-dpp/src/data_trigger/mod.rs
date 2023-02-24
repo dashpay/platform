@@ -135,8 +135,8 @@ where
     }
 }
 
-fn create_error<'a, SR>(
-    context: &DataTriggerExecutionContext<'a, SR>,
+fn create_error<SR>(
+    context: &DataTriggerExecutionContext<SR>,
     dt_create: &DocumentCreateTransition,
     msg: String,
 ) -> DataTriggerError

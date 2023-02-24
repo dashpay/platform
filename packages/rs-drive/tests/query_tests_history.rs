@@ -895,9 +895,7 @@ fn test_query_historical() {
                 .get("age")
                 .expect("we should be able to get the age");
             let age: u64 = age_value
-                .as_integer()
-                .expect("the age should be an integer")
-                .try_into()
+                .to_integer()
                 .expect("the age should be put in an u64");
             age
         })
@@ -1034,8 +1032,7 @@ fn test_query_historical() {
                 .properties
                 .get("age")
                 .expect("we should be able to get the age");
-            let age_integer = age_value.as_integer().expect("age should be an integer");
-            let age: u8 = age_integer.try_into().expect("expected u8 value");
+            let age: u8 = age_value.to_integer().expect("age should be an integer");
             (name, age)
         })
         .collect();
