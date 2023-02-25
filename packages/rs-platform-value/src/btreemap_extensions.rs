@@ -392,9 +392,7 @@ where
     }
 
     fn get_optional_bytes(&self, key: &str) -> Result<Option<Vec<u8>>, Error> {
-        self.get(key)
-            .map(|v| v.borrow().to_bytes())
-            .transpose()
+        self.get(key).map(|v| v.borrow().to_bytes()).transpose()
     }
 
     fn get_bytes(&self, key: &str) -> Result<Vec<u8>, Error> {

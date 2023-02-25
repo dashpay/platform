@@ -321,7 +321,8 @@ mod tests {
                         "transactionId": tx_id,
                     }),
                     None,
-                ).expect("expected withdrawal document");
+                )
+                .expect("expected withdrawal document");
 
                 let document_type = data_contract
                     .document_type_for_name(withdrawals_contract::document_types::WITHDRAWAL)

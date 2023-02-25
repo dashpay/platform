@@ -1,11 +1,14 @@
-use std::convert::TryInto;
-use std::sync::Arc;
 use rand::rngs::StdRng;
 use rand::SeedableRng;
+use std::convert::TryInto;
+use std::sync::Arc;
 
-use serde_json::{json, Value as JsonValue};
 use platform_value::Value;
+use serde_json::{json, Value as JsonValue};
 
+use crate::contracts::withdrawals_contract::document_types;
+use crate::data_contract::DriveContractExt;
+use crate::document::Document;
 use crate::{
     contracts::withdrawals_contract,
     document::{
@@ -17,9 +20,6 @@ use crate::{
     tests::utils::generate_random_identifier_struct as gen_owner_id,
     version::LATEST_VERSION,
 };
-use crate::contracts::withdrawals_contract::document_types;
-use crate::data_contract::DriveContractExt;
-use crate::document::Document;
 
 use super::get_document_validator_fixture;
 

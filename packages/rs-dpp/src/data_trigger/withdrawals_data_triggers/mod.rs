@@ -57,7 +57,7 @@ where
         return Ok(result);
     };
 
-    let status : u8 = withdrawal.properties.get_integer("status")?;
+    let status: u8 = withdrawal.properties.get_integer("status")?;
 
     if status != withdrawals_contract::WithdrawalStatus::COMPLETE as u8
         || status != withdrawals_contract::WithdrawalStatus::EXPIRED as u8

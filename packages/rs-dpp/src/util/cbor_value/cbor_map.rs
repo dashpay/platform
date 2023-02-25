@@ -171,10 +171,10 @@ where
                         i128::from(v.borrow().as_integer().ok_or_else(|| {
                             ProtocolError::DecodingError(format!("{key} must be an integer"))
                         })?)
-                            .try_into()
-                            .map_err(|_| {
-                                ProtocolError::DecodingError(format!("{key} is out of required bounds"))
-                            }),
+                        .try_into()
+                        .map_err(|_| {
+                            ProtocolError::DecodingError(format!("{key} is out of required bounds"))
+                        }),
                     ))
                 }
             })

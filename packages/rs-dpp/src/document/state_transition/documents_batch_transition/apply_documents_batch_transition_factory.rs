@@ -5,11 +5,11 @@ use dashcore::{consensus, BlockHeader};
 use serde_json::Value;
 
 use crate::document::{Document, DocumentInStateTransition};
+use crate::prelude::TimestampMillis;
 use crate::{
     document::errors::DocumentError, prelude::Identifier, state_repository::StateRepositoryLike,
     state_transition::StateTransitionLike, ProtocolError,
 };
-use crate::prelude::TimestampMillis;
 
 use super::{
     document_transition::{
@@ -61,15 +61,18 @@ pub async fn apply_documents_batch_transition(
     )
     .await?;
 
-    let mut fetched_documents_by_id: HashMap<Identifier, Document> =
-        fetched_documents.into_iter().map(|dt| (dt.id.into(), dt)).collect();
+    let mut fetched_documents_by_id: HashMap<Identifier, Document> = fetched_documents
+        .into_iter()
+        .map(|dt| (dt.id.into(), dt))
+        .collect();
 
     // since groveDB doesn't support parallel inserts, we need to make them sequential
 
     for document_transition in state_transition.get_transitions() {
         match document_transition {
             DocumentTransition::Create(document_create_transition) => {
-                let document = document_create_transition.to_document(state_transition.owner_id.to_buffer())?;
+                let document = document_create_transition
+                    .to_document(state_transition.owner_id.to_buffer())?;
                 //todo: eventually we should use Cow instead
                 state_repository
                     .create_document(&document, state_transition.get_execution_context())
@@ -93,7 +96,6 @@ pub async fn apply_documents_batch_transition(
                         .update_document(document, state_transition.get_execution_context())
                         .await?;
                 };
-
             }
             DocumentTransition::Delete(document_delete_transition) => {
                 state_repository

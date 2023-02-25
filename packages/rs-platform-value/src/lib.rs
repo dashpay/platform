@@ -14,9 +14,9 @@ mod integer;
 pub mod system_bytes;
 pub mod value_map;
 
-use serde::{Deserialize, Serialize};
 pub use error::Error;
 pub use integer::Integer;
+use serde::{Deserialize, Serialize};
 
 pub type ValueMap = Vec<(Value, Value)>;
 pub type Hash256 = [u8; 32];

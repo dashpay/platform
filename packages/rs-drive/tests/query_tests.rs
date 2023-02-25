@@ -556,7 +556,7 @@ pub fn setup_dpns_test_with_data(path: &str) -> (Drive, Contract) {
                 .expect("expected to serialize to cbor");
 
         let domain = Document::from_cbor(&domain_cbor, None, None)
-                .expect("expected to deserialize the document");
+            .expect("expected to deserialize the document");
 
         let document_type = contract
             .document_type_for_name("domain")

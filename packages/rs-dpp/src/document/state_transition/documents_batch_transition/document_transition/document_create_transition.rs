@@ -1,17 +1,17 @@
-use std::convert::TryInto;
 use itertools::Itertools;
+use platform_value::Value;
 use serde::{Deserialize, Serialize};
 use serde_json::Value as JsonValue;
-use platform_value::Value;
+use std::convert::TryInto;
 
-use crate::{
-    data_contract::DataContract, document::document_transition::Action, errors::ProtocolError,
-    util::json_value::JsonValueExt, util::json_value::ReplaceWith,
-};
 use crate::document::{Document, DocumentsBatchTransition};
 use crate::identity::TimestampMillis;
 use crate::prelude::Revision;
 use crate::util::serializer::value_to_cbor;
+use crate::{
+    data_contract::DataContract, document::document_transition::Action, errors::ProtocolError,
+    util::json_value::JsonValueExt, util::json_value::ReplaceWith,
+};
 
 use super::INITIAL_REVISION;
 use super::{
@@ -57,15 +57,16 @@ impl DocumentCreateTransition {
         Ok(())
     }
 
-    pub(crate) fn to_document(
-        &self,
-        owner_id: [u8;32],
-    ) -> Result<Document, ProtocolError> {
-        let properties = self.data.as_ref().map(|json_value| {
-            let value : Value = json_value.clone().into();
-            value.into_btree_map().map_err(ProtocolError::ValueError)
-        })
-            .transpose()?.unwrap_or_default();
+    pub(crate) fn to_document(&self, owner_id: [u8; 32]) -> Result<Document, ProtocolError> {
+        let properties = self
+            .data
+            .as_ref()
+            .map(|json_value| {
+                let value: Value = json_value.clone().into();
+                value.into_btree_map().map_err(ProtocolError::ValueError)
+            })
+            .transpose()?
+            .unwrap_or_default();
         Ok(Document {
             id: self.base.id.to_buffer(),
             owner_id,
@@ -76,19 +77,19 @@ impl DocumentCreateTransition {
         })
     }
 
-
-    pub(crate) fn into_document(
-        self,
-        owner_id: [u8;32],
-    ) -> Result<Document, ProtocolError> {
+    pub(crate) fn into_document(self, owner_id: [u8; 32]) -> Result<Document, ProtocolError> {
         let id = self.base.id.to_buffer();
         let revision = self.get_revision();
         let created_at = self.created_at;
         let updated_at = self.updated_at;
-        let properties = self.data.map(|json_value| {
-            let value : Value = json_value.into();
-            value.into_btree_map().map_err(ProtocolError::ValueError)
-        }).transpose()?.unwrap_or_default();
+        let properties = self
+            .data
+            .map(|json_value| {
+                let value: Value = json_value.into();
+                value.into_btree_map().map_err(ProtocolError::ValueError)
+            })
+            .transpose()?
+            .unwrap_or_default();
         Ok(Document {
             id,
             owner_id,

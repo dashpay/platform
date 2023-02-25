@@ -78,7 +78,7 @@ fn test_drive_10_serialization(c: &mut Criterion) {
             || document_type.random_documents(10, Some(3333)),
             |documents| {
                 documents.iter().for_each(|document| {
-                    document.to_cbor();
+                    document.to_cbor().expect("expected to encode to cbor");
                 })
             },
             BatchSize::LargeInput,
@@ -116,7 +116,12 @@ fn test_drive_10_deserialization(c: &mut Criterion) {
         document_type
             .random_documents(10, Some(3333))
             .iter()
-            .map(|a| (a.serialize(document_type).unwrap(), a.to_cbor()))
+            .map(|a| {
+                (
+                    a.serialize(document_type).unwrap(),
+                    a.to_cbor().expect("expected to encode to cbor"),
+                )
+            })
             .unzip();
 
     let mut group = c.benchmark_group("Deserialization");

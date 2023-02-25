@@ -33,17 +33,20 @@
 //!
 
 use chrono::{DateTime, NaiveDateTime, Utc};
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, HashSet};
 use std::convert::{TryFrom, TryInto};
 use std::fmt;
 use std::io::{BufReader, Read};
+use std::iter::FromIterator;
 
 use ciborium::value::Value as CborValue;
 use integer_encoding::VarIntWriter;
+use itertools::Itertools;
+use serde_json::Value as JsonValue;
 
-use crate::data_contract::{DataContract, DriveContractExt};
-use serde::{Deserialize, Serialize};
+use crate::data_contract::{DataContract, DriveContractExt, IDENTIFIER_FIELDS};
 use platform_value::Value;
+use serde::{Deserialize, Serialize};
 
 use crate::data_contract::document_type::{encode_unsigned_integer, DocumentType};
 use crate::data_contract::errors::{DataContractError, StructureError};
@@ -52,10 +55,14 @@ use crate::data_contract::extra::common::{
     reduced_value_string_representation,
 };
 use crate::document::errors::DocumentError;
+use crate::identifier::Identifier;
 use crate::identity::TimestampMillis;
 use crate::prelude::Revision;
 use crate::util::deserializer;
 use crate::util::deserializer::SplitProtocolVersionOutcome;
+use crate::util::hash::hash;
+use crate::util::json_value::JsonValueExt;
+use crate::util::json_value::ReplaceWith;
 use crate::ProtocolError;
 
 /// The property names of a document
@@ -69,7 +76,7 @@ pub mod property_names {
 }
 
 /// Documents contain the data that goes into data contracts.
-#[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Default)]
 pub struct Document {
     //todo: add an optional version
     /// The unique document ID.
@@ -198,7 +205,6 @@ impl Document {
         self.properties.get(path)
     }
 
-
     pub fn set_u8(&mut self, property_name: &str, value: u8) {
         self.properties
             .insert(property_name.to_string(), Value::U8(value));
@@ -214,10 +220,24 @@ impl Document {
             .insert(property_name.to_string(), Value::Bytes(value));
     }
 
-    pub fn increment_revision(&mut self) -> Result<(), ProtocolError> {
+    /// The document is only unique within the contract and document type
+    /// Hence we must include contract and document type information to get uniqueness
+    pub fn hash(
+        &self,
+        contract: &DataContract,
+        document_type: &DocumentType,
+    ) -> Result<Vec<u8>, ProtocolError> {
+        let mut buf = contract.id.to_buffer_vec();
+        buf.extend(document_type.name.as_bytes());
+        buf.extend(self.serialize(document_type)?);
+        Ok(hash(buf))
+    }
 
+    pub fn increment_revision(&mut self) -> Result<(), ProtocolError> {
         let Some(revision) = self.revision else {
-            return Err(ProtocolError::Document(Box::new(DocumentError::DocumentNoRevisionError)))
+            return Err(ProtocolError::Document(Box::new(DocumentError::DocumentNoRevisionError {
+                document: Box::new(self.clone()),
+            })))
         };
 
         let new_revision = revision
@@ -227,6 +247,89 @@ impl Document {
         self.revision = Some(new_revision);
 
         Ok(())
+    }
+
+    pub fn get_identifiers_and_binary_paths<'a>(
+        &'a self,
+        data_contract: &'a DataContract,
+        document_type_name: &'a str,
+    ) -> Result<(HashSet<&'a str>, HashSet<&'a str>), ProtocolError> {
+        let (mut identifiers_paths, binary_paths) =
+            data_contract.get_identifiers_and_binary_paths(document_type_name)?;
+
+        identifiers_paths.extend(IDENTIFIER_FIELDS);
+        Ok((identifiers_paths, binary_paths))
+    }
+
+    pub fn to_json(
+        &self,
+        data_contract: &DataContract,
+        document_type_name: &str,
+    ) -> Result<JsonValue, ProtocolError> {
+        let mut value = serde_json::to_value(self)?;
+
+        let (identifier_paths, binary_paths) =
+            self.get_identifiers_and_binary_paths(data_contract, document_type_name)?;
+
+        value.replace_identifier_paths(identifier_paths, ReplaceWith::Base58)?;
+        value.replace_binary_paths(binary_paths, ReplaceWith::Base64)?;
+
+        Ok(value)
+    }
+
+    // The skipIdentifierConversion option is removed as it doesn't make sense in the case of
+    // of Rust. Rust doesn't distinguish between `Buffer` and `Identifier`
+    pub fn to_object(
+        &self,
+        data_contract: &DataContract,
+        document_type_name: &str,
+    ) -> Result<JsonValue, ProtocolError> {
+        let mut json_object = serde_json::to_value(self)?;
+
+        let (identifier_paths, binary_paths) =
+            self.get_identifiers_and_binary_paths(data_contract, document_type_name)?;
+        let _ = json_object.replace_identifier_paths(identifier_paths, ReplaceWith::Bytes);
+        let _ = json_object.replace_binary_paths(binary_paths, ReplaceWith::Bytes);
+
+        Ok(json_object)
+    }
+
+    pub fn from_raw_json_document(raw_document: JsonValue) -> Result<Self, ProtocolError> {
+        Self::from_json_value::<Vec<u8>>(raw_document)
+    }
+
+    fn from_json_value<S>(mut document_value: JsonValue) -> Result<Self, ProtocolError>
+    where
+        for<'de> S: Deserialize<'de> + TryInto<Identifier, Error = ProtocolError>,
+    {
+        let mut document = Self {
+            ..Default::default()
+        };
+
+        if let Ok(value) = document_value.remove(property_names::ID) {
+            let data: S = serde_json::from_value(value)?;
+            document.id = data.try_into()?.buffer;
+        }
+        if let Ok(value) = document_value.remove(property_names::OWNER_ID) {
+            let data: S = serde_json::from_value(value)?;
+            document.owner_id = data.try_into()?.buffer;
+        }
+        if let Ok(value) = document_value.remove(property_names::REVISION) {
+            document.revision = serde_json::from_value(value)?
+        }
+        if let Ok(value) = document_value.remove(property_names::CREATED_AT) {
+            document.created_at = serde_json::from_value(value)?
+        }
+        if let Ok(value) = document_value.remove(property_names::UPDATED_AT) {
+            document.updated_at = serde_json::from_value(value)?
+        }
+
+        let platform_value: Value = document_value.into();
+
+        document.properties = platform_value
+            .into_btree_map()
+            .map_err(ProtocolError::ValueError)?;
+        Ok(document)
     }
 }
 
@@ -276,7 +379,7 @@ mod tests {
             .expect("expected to get profile document type");
         let document = document_type.random_document(Some(3333));
 
-        let document_cbor = document.to_cbor();
+        let document_cbor = document.to_cbor().expect("expected to encode to cbor");
 
         let serialized_document = document
             .serialize(document_type)
@@ -309,7 +412,7 @@ mod tests {
             .expect("expected to get profile document type");
         let document = document_type.random_document(Some(3333));
 
-        let document_cbor = document.to_cbor();
+        let document_cbor = document.to_cbor().expect("expected to encode to cbor");
 
         let recovered_document = Document::from_cbor(document_cbor.as_slice(), None, None)
             .expect("expected to get document");

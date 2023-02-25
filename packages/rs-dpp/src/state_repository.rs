@@ -6,12 +6,12 @@ use mockall::{automock, predicate::*};
 use serde_json::Value as JsonValue;
 use std::convert::{Infallible, TryInto};
 
+use crate::document::Document;
 use crate::identity::KeyID;
 use crate::{
     prelude::*,
     state_transition::state_transition_execution_context::StateTransitionExecutionContext,
 };
-use crate::document::Document;
 
 impl From<Infallible> for ProtocolError {
     fn from(_: Infallible) -> Self {

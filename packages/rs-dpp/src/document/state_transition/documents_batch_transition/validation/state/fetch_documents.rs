@@ -55,11 +55,10 @@ pub async fn fetch_documents(
         fetch_documents_futures.push(documents);
     }
 
-    let results: Result<Vec<Vec<Document>>, anyhow::Error> =
-        join_all(fetch_documents_futures)
-            .await
-            .into_iter()
-            .collect();
+    let results: Result<Vec<Vec<Document>>, anyhow::Error> = join_all(fetch_documents_futures)
+        .await
+        .into_iter()
+        .collect();
 
     let documents = results?.into_iter().flatten().collect();
     Ok(documents)

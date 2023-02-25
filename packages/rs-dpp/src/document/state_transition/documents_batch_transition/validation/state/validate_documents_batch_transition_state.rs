@@ -256,8 +256,9 @@ fn check_revision(
     };
     let Some(previous_revision) =  fetched_document.revision else {
         result.add_error(ConsensusError::StateError(Box::new(
-            StateError::InvalidDocumentNoPreviousRevisionError {
+            StateError::InvalidDocumentRevisionError {
                 document_id: document_transition.base().id,
+                current_revision: None,
             },
         )));
         return result;
@@ -267,7 +268,7 @@ fn check_revision(
         result.add_error(ConsensusError::StateError(Box::new(
             StateError::InvalidDocumentRevisionError {
                 document_id: document_transition.base().id,
-                current_revision: previous_revision,
+                current_revision: Some(previous_revision),
             },
         )))
     }

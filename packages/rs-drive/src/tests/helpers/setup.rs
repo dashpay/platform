@@ -40,10 +40,10 @@ use crate::fee_pools::epochs::Epoch;
 use crate::drive::object_size_info::DocumentInfo::DocumentRefWithoutSerialization;
 use crate::drive::object_size_info::{DocumentAndContractInfo, OwnedDocumentInfo};
 use dpp::data_contract::document_type::DocumentType;
-use grovedb::TransactionArg;
-use tempfile::TempDir;
 use dpp::data_contract::DataContract;
 use dpp::document::Document;
+use grovedb::TransactionArg;
+use tempfile::TempDir;
 
 /// Struct with options regarding setting up fee pools.
 pub struct SetupFeePoolsOptions {

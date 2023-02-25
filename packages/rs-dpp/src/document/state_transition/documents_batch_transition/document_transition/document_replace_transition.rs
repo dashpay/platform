@@ -1,15 +1,15 @@
+use platform_value::Value;
 use serde::{Deserialize, Serialize};
 use serde_json::Value as JsonValue;
-use platform_value::Value;
 
+use crate::document::Document;
+use crate::identity::TimestampMillis;
+use crate::prelude::Revision;
 use crate::{
     data_contract::DataContract,
     errors::ProtocolError,
     util::json_value::{JsonValueExt, ReplaceWith},
 };
-use crate::document::Document;
-use crate::identity::TimestampMillis;
-use crate::prelude::Revision;
 
 use super::{
     document_base_transition, document_base_transition::DocumentBaseTransition,
@@ -33,16 +33,19 @@ pub struct DocumentReplaceTransition {
 }
 
 impl DocumentReplaceTransition {
-    pub(crate) fn to_document_for_dry_run(
-        &self,
-    ) -> Result<Document, ProtocolError> {
-        let properties = self.data.as_ref().map(|json_value| {
-            let value : Value = json_value.clone().into();
-            value.into_btree_map().map_err(ProtocolError::ValueError)
-        }).transpose()?.unwrap_or_default();
+    pub(crate) fn to_document_for_dry_run(&self) -> Result<Document, ProtocolError> {
+        let properties = self
+            .data
+            .as_ref()
+            .map(|json_value| {
+                let value: Value = json_value.clone().into();
+                value.into_btree_map().map_err(ProtocolError::ValueError)
+            })
+            .transpose()?
+            .unwrap_or_default();
         Ok(Document {
             id: self.base.id.to_buffer(),
-            owner_id: [0;32], //0s are fine here
+            owner_id: [0; 32], //0s are fine here
             properties,
             created_at: self.updated_at, // we can use the same time, as it can't be worse
             updated_at: self.updated_at,
@@ -50,28 +53,31 @@ impl DocumentReplaceTransition {
         })
     }
 
-    pub(crate) fn replace_document(
-        &self,
-        document: &mut Document,
-    ) -> Result<(), ProtocolError> {
-        let properties = self.data.as_ref().map(|json_value| {
-            let value : Value = json_value.clone().into();
-            value.into_btree_map().map_err(ProtocolError::ValueError)
-        }).transpose()?.unwrap_or_default();
+    pub(crate) fn replace_document(&self, document: &mut Document) -> Result<(), ProtocolError> {
+        let properties = self
+            .data
+            .as_ref()
+            .map(|json_value| {
+                let value: Value = json_value.clone().into();
+                value.into_btree_map().map_err(ProtocolError::ValueError)
+            })
+            .transpose()?
+            .unwrap_or_default();
         document.revision = Some(self.revision);
         document.updated_at = self.updated_at;
         document.properties = properties;
         Ok(())
     }
 
-    pub(crate) fn patch_document(
-        self,
-        document: &mut Document,
-    ) -> Result<(), ProtocolError> {
-        let properties = self.data.map(|json_value| {
-            let value : Value = json_value.into();
-            value.into_btree_map().map_err(ProtocolError::ValueError)
-        }).transpose()?.unwrap_or_default();
+    pub(crate) fn patch_document(self, document: &mut Document) -> Result<(), ProtocolError> {
+        let properties = self
+            .data
+            .map(|json_value| {
+                let value: Value = json_value.into();
+                value.into_btree_map().map_err(ProtocolError::ValueError)
+            })
+            .transpose()?
+            .unwrap_or_default();
         document.revision = Some(self.revision);
         document.updated_at = self.updated_at;
         document.properties.extend(properties);

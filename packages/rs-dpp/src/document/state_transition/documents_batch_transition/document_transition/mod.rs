@@ -15,11 +15,11 @@ pub mod document_delete_transition;
 pub mod document_in_state_transition;
 pub mod document_replace_transition;
 
+use crate::identity::TimestampMillis;
 pub use document_base_transition::{Action, DocumentTransitionObjectLike};
 pub use document_create_transition::DocumentCreateTransition;
 pub use document_delete_transition::DocumentDeleteTransition;
 pub use document_replace_transition::DocumentReplaceTransition;
-use crate::identity::TimestampMillis;
 
 /// the initial revision of newly created document
 pub const INITIAL_REVISION: u64 = 1;

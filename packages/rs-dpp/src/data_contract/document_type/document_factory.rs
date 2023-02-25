@@ -1,14 +1,14 @@
-use std::collections::BTreeMap;
-use chrono::Utc;
-use rand::rngs::StdRng;
-use platform_value::Value;
-use crate::data_contract::document_type::DocumentType;
 use crate::data_contract::document_type::property_names::{CREATED_AT, UPDATED_AT};
-use crate::document::Document;
+use crate::data_contract::document_type::DocumentType;
 use crate::document::document_transition::INITIAL_REVISION;
+use crate::document::Document;
 use crate::identifier::Identifier;
 use crate::prelude::TimestampMillis;
 use crate::ProtocolError;
+use chrono::Utc;
+use platform_value::Value;
+use rand::rngs::StdRng;
+use std::collections::BTreeMap;
 
 impl DocumentType {
     /// Creates a document at the current time based on document type information

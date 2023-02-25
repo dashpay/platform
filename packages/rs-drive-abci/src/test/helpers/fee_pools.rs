@@ -88,7 +88,7 @@ fn create_test_mn_share_document(
 
     let storage_flags = Some(Cow::Owned(StorageFlags::SingleEpoch(0)));
 
-    let document_cbor = document.to_cbor();
+    let document_cbor = document.to_cbor().expect("expected to encode to cbor");
 
     drive
         .add_document_for_contract(

@@ -1,6 +1,5 @@
+use crate::DocumentInStateTransitionWasm;
 use thiserror::Error;
-
-use crate::DocumentWasm;
 
 use super::*;
 
@@ -8,18 +7,18 @@ use super::*;
 #[derive(Error, Debug)]
 #[error("Invalid Document Initial revision '{}'", document.get_revision())]
 pub struct InvalidInitialRevisionError {
-    document: DocumentWasm,
+    document: DocumentInStateTransitionWasm,
 }
 
 #[wasm_bindgen]
 impl InvalidInitialRevisionError {
     #[wasm_bindgen(constructor)]
-    pub fn new(document: DocumentWasm) -> InvalidInitialRevisionError {
+    pub fn new(document: DocumentInStateTransitionWasm) -> InvalidInitialRevisionError {
         Self { document }
     }
 
     #[wasm_bindgen(js_name=getDocument)]
-    pub fn get_document_transition(&self) -> DocumentWasm {
+    pub fn get_document_transition(&self) -> DocumentInStateTransitionWasm {
         self.document.clone()
     }
 }

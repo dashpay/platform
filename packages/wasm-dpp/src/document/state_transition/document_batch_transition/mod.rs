@@ -23,7 +23,7 @@ use crate::{
     identifier::IdentifierWrapper,
     lodash::lodash_set,
     utils::{ToSerdeJSONExt, WithJsError},
-    DocumentWasm, IdentityPublicKeyWasm,
+    DocumentInStateTransitionWasm, IdentityPublicKeyWasm,
 };
 pub mod document_transition;
 
@@ -48,17 +48,17 @@ impl DocumentsContainer {
     }
 
     #[wasm_bindgen(js_name=pushDocumentCreate)]
-    pub fn push_document_create(&mut self, d: DocumentWasm) {
+    pub fn push_document_create(&mut self, d: DocumentInStateTransitionWasm) {
         self.create.push(d.0);
     }
 
     #[wasm_bindgen(js_name=pushDocumentReplace)]
-    pub fn push_document_replace(&mut self, d: DocumentWasm) {
+    pub fn push_document_replace(&mut self, d: DocumentInStateTransitionWasm) {
         self.replace.push(d.0);
     }
 
     #[wasm_bindgen(js_name=pushDocumentDelete)]
-    pub fn push_document_delete(&mut self, d: DocumentWasm) {
+    pub fn push_document_delete(&mut self, d: DocumentInStateTransitionWasm) {
         self.delete.push(d.0);
     }
 }

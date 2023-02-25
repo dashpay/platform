@@ -1,9 +1,9 @@
 pub mod array_field;
+pub mod document_factory;
 pub mod document_field;
 pub mod document_type;
 pub mod index;
 pub mod random_document;
-pub mod document_factory;
 
 use super::errors::DataContractError;
 

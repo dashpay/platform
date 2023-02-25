@@ -1,6 +1,6 @@
-use std::convert::{TryFrom, TryInto};
-use rand::Rng;
 use rand::rngs::StdRng;
+use rand::Rng;
+use std::convert::{TryFrom, TryInto};
 
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use serde_json::Value as JsonValue;
@@ -35,11 +35,8 @@ impl Identifier {
         Identifier { buffer }
     }
 
-    pub fn random(rng: &mut StdRng) -> Identifier
-    {
-        Identifier {
-            buffer: rng.gen(),
-        }
+    pub fn random(rng: &mut StdRng) -> Identifier {
+        Identifier { buffer: rng.gen() }
     }
 
     pub fn as_bytes(&self) -> &[u8; 32] {

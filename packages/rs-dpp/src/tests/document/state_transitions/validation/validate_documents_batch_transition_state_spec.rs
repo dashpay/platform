@@ -247,7 +247,7 @@ async fn should_return_invalid_result_if_document_transition_with_action_replace
         state_error,
         StateError::InvalidDocumentRevisionError { document_id, current_revision }  if  {
             document_id == &transition_id &&
-            current_revision == &1
+            current_revision == &Some(1)
         }
     ));
 }

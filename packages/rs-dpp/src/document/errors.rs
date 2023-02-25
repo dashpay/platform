@@ -4,7 +4,7 @@ use thiserror::Error;
 use crate::errors::consensus::ConsensusError;
 
 use super::document_transition::DocumentTransition;
-use crate::document::DocumentInStateTransition;
+use crate::document::{Document, DocumentInStateTransition};
 
 #[derive(Error, Debug)]
 pub enum DocumentError {
@@ -38,7 +38,7 @@ pub enum DocumentError {
     },
 
     #[error("No previous revision error")]
-    DocumentNoRevisionError,
+    DocumentNoRevisionError { document: Box<Document> },
 
     #[error("No documents were supplied to state transition")]
     NoDocumentsSuppliedError,

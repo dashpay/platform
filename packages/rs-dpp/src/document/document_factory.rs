@@ -1,17 +1,19 @@
-use std::collections::BTreeMap;
 use anyhow::Context;
 use chrono::Utc;
 use ciborium::cbor;
 use itertools::Itertools;
+use platform_value::Value;
 use rand::rngs::StdRng;
 use rand::{Rng, SeedableRng};
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value as JsonValue};
-use platform_value::Value;
+use std::collections::BTreeMap;
 
+use crate::data_contract::document_type::DocumentType;
 use crate::document::document_transition::document_in_state_transition::{
     property_names, DocumentInStateTransition,
 };
+use crate::document::Document;
 use crate::{
     data_contract::{errors::DataContractError, DataContract},
     decode_protocol_entity_factory::DecodeProtocolEntity,
@@ -21,8 +23,6 @@ use crate::{
     util::{json_schema::JsonSchemaExt, json_value::JsonValueExt},
     ProtocolError,
 };
-use crate::data_contract::document_type::DocumentType;
-use crate::document::Document;
 
 use super::{
     document_transition::{self, Action},
@@ -100,7 +100,7 @@ where
             protocol_version,
             document_validator: validate_document,
             data_contract_fetcher_and_validator,
-            rng
+            rng,
         }
     }
 

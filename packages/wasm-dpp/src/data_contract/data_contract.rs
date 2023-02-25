@@ -18,7 +18,7 @@ use crate::{buffer::Buffer, identifier::IdentifierWrapper};
 
 #[wasm_bindgen(js_name=DataContract)]
 #[derive(Debug, Clone)]
-pub struct DataContractWasm(DataContract);
+pub struct DataContractWasm(pub(crate) DataContract);
 
 impl std::convert::From<DataContract> for DataContractWasm {
     fn from(v: DataContract) -> Self {

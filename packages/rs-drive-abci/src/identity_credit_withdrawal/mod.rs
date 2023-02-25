@@ -9,6 +9,8 @@ use dashcore::{
     hashes::Hash,
     QuorumHash, Script, TxOut,
 };
+use dpp::document::Document;
+use dpp::platform_value::btreemap_extensions::BTreeValueMapHelper;
 use drive::dpp::contracts::withdrawals_contract;
 use drive::dpp::data_contract::DriveContractExt;
 use drive::dpp::identifier::Identifier;
@@ -21,8 +23,6 @@ use drive::{
     query::TransactionArg,
 };
 use serde_json::Value as JsonValue;
-use dpp::document::Document;
-use dpp::platform_value::btreemap_extensions::BTreeValueMapHelper;
 
 use crate::{
     error::{execution::ExecutionError, Error},
@@ -81,7 +81,8 @@ impl Platform {
         let documents_to_update: Vec<Document> = broadcasted_withdrawal_documents
             .into_iter()
             .map(|mut document| {
-                let transaction_sign_height: u32 = document.properties
+                let transaction_sign_height: u32 = document
+                    .properties
                     .get_integer(withdrawals_contract::property_names::TRANSACTION_SIGN_HEIGHT)
                     .map_err(|_| {
                         Error::Execution(ExecutionError::CorruptedCodeExecution(
@@ -89,7 +90,8 @@ impl Platform {
                         ))
                     })?;
 
-                let transaction_id_bytes = document.properties
+                let transaction_id_bytes = document
+                    .properties
                     .get_bytes(withdrawals_contract::property_names::TRANSACTION_ID)
                     .map_err(|_| {
                         Error::Execution(ExecutionError::CorruptedCodeExecution(
@@ -97,7 +99,8 @@ impl Platform {
                         ))
                     })?;
 
-                let transaction_index = document.properties
+                let transaction_index = document
+                    .properties
                     .get_integer(withdrawals_contract::property_names::TRANSACTION_INDEX)
                     .map_err(|_| {
                         Error::Execution(ExecutionError::CorruptedCodeExecution(
@@ -463,7 +466,8 @@ impl Platform {
             )?;
 
         for (i, document) in documents.iter().enumerate() {
-            let output_script_bytes = document.properties
+            let output_script_bytes = document
+                .properties
                 .get_bytes(withdrawals_contract::property_names::OUTPUT_SCRIPT)
                 .map_err(|_| {
                     Error::Execution(ExecutionError::CorruptedCodeExecution(
@@ -471,7 +475,8 @@ impl Platform {
                     ))
                 })?;
 
-            let amount = document.properties
+            let amount = document
+                .properties
                 .get_integer(withdrawals_contract::property_names::AMOUNT)
                 .map_err(|_| {
                     Error::Execution(ExecutionError::CorruptedCodeExecution(
@@ -479,7 +484,8 @@ impl Platform {
                     ))
                 })?;
 
-            let core_fee_per_byte: u32 = document.properties
+            let core_fee_per_byte: u32 = document
+                .properties
                 .get_integer(withdrawals_contract::property_names::CORE_FEE_PER_BYTE)
                 .map_err(|_| {
                     Error::Execution(ExecutionError::CorruptedCodeExecution(
@@ -742,6 +748,7 @@ mod tests {
 
         use dpp::data_contract::DriveContractExt;
         use dpp::identity::state_transition::identity_credit_withdrawal_transition::Pooling;
+        use dpp::platform_value::btreemap_extensions::BTreeValueMapHelper;
         use dpp::prelude::Identifier;
         use dpp::system_data_contracts::{load_system_data_contract, SystemDataContract};
         use drive::dpp::contracts::withdrawals_contract;
@@ -777,7 +784,8 @@ mod tests {
                     "transactionIndex": 1,
                 }),
                 None,
-            ).expect("expected withdrawal document");
+            )
+            .expect("expected withdrawal document");
 
             let document_type = data_contract
                 .document_type_for_name(withdrawals_contract::document_types::WITHDRAWAL)
@@ -803,7 +811,8 @@ mod tests {
                     "transactionIndex": 2,
                 }),
                 None,
-            ).expect("expected withdrawal document");
+            )
+            .expect("expected withdrawal document");
 
             setup_document(
                 &platform.drive,
@@ -850,9 +859,10 @@ mod tests {
             ];
 
             for document in updated_documents {
-                assert_eq!(document.revision, 2);
+                assert_eq!(document.revision, Some(2));
 
                 let tx_id: Vec<u8> = document
+                    .properties
                     .get_bytes("transactionId")
                     .expect("to get transactionId");
 
@@ -931,17 +941,14 @@ mod tests {
     mod build_withdrawal_transactions_from_documents {
         use crate::test::helpers::setup::setup_platform_with_initial_state_structure;
         use dpp::data_contract::DriveContractExt;
+        use dpp::document::Document;
+        use dpp::identity::state_transition::identity_credit_withdrawal_transition::Pooling;
         use dpp::prelude::Identifier;
         use dpp::system_data_contracts::{load_system_data_contract, SystemDataContract};
-        use dpp::{
-            document::document_stub::Document,
-            identity::state_transition::identity_credit_withdrawal_transition::Pooling,
-        };
         use drive::drive::block_info::BlockInfo;
         use drive::drive::identity::withdrawals::WithdrawalTransactionIdAndBytes;
         use drive::tests::helpers::setup::setup_system_data_contract;
         use itertools::Itertools;
-        use dpp::document::Document;
 
         use super::*;
 
@@ -970,7 +977,8 @@ mod tests {
                     "transactionIndex": 1,
                 }),
                 None,
-            ).expect("expected withdrawal document");
+            )
+            .expect("expected withdrawal document");
 
             let document_type = data_contract
                 .document_type_for_name(withdrawals_contract::document_types::WITHDRAWAL)
@@ -996,7 +1004,8 @@ mod tests {
                     "transactionIndex": 2,
                 }),
                 None,
-            ).expect("expected withdrawal document");
+            )
+            .expect("expected withdrawal document");
 
             setup_document(
                 &platform.drive,
@@ -1008,13 +1017,13 @@ mod tests {
 
             let documents = vec![
                 Document::from_cbor(
-                    &document_1.to_buffer().expect("to convert document to cbor"),
+                    &document_1.to_cbor().expect("to convert document to cbor"),
                     None,
                     None,
                 )
                 .expect("to create document from cbor"),
                 Document::from_cbor(
-                    &document_2.to_buffer().expect("to convert document to cbor"),
+                    &document_2.to_cbor().expect("to convert document to cbor"),
                     None,
                     None,
                 )

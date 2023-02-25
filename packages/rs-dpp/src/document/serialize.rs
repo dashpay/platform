@@ -2,9 +2,13 @@ use crate::data_contract::document_type::document_type::PROTOCOL_VERSION;
 use crate::data_contract::document_type::DocumentType;
 use crate::data_contract::errors::{DataContractError, StructureError};
 use crate::data_contract::extra::common::bytes_for_system_value_from_tree_map;
+use crate::document::document::property_names;
 use crate::document::document::property_names::{CREATED_AT, UPDATED_AT};
+use crate::document::document_transition::INITIAL_REVISION;
 use crate::document::Document;
 use crate::document::DocumentInStateTransition;
+use crate::identity::TimestampMillis;
+use crate::prelude::Revision;
 use crate::util::cbor_value::CborBTreeMapHelper;
 use crate::util::deserializer;
 use crate::util::deserializer::SplitProtocolVersionOutcome;
@@ -13,17 +17,12 @@ use bincode::Options;
 use byteorder::{BigEndian, ReadBytesExt};
 use ciborium::Value as CborValue;
 use integer_encoding::VarIntWriter;
+use platform_value::btreemap_extensions::BTreeValueMapHelper;
+use platform_value::Value;
+use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 use std::convert::{TryFrom, TryInto};
 use std::io::{BufReader, Read};
-use platform_value::btreemap_extensions::BTreeValueMapHelper;
-use platform_value::Value;
-use crate::document::document::property_names;
-use crate::document::document_transition::INITIAL_REVISION;
-use crate::identity::TimestampMillis;
-use crate::prelude::Revision;
-use serde::{Deserialize, Serialize};
-
 
 //todo: delete in later PR
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
@@ -58,7 +57,9 @@ impl TryFrom<Document> for DocumentForCbor {
             id,
             properties,
             owner_id,
-            revision, created_at, updated_at,
+            revision,
+            created_at,
+            updated_at,
         } = value;
         Ok(DocumentForCbor {
             id,
@@ -360,8 +361,7 @@ impl Document {
             Some(document_id) => document_id,
         };
 
-        let revision = document
-            .remove_optional_integer(property_names::REVISION)?;
+        let revision = document.remove_optional_integer(property_names::REVISION)?;
 
         let created_at = document.remove_optional_integer(property_names::CREATED_AT)?;
         let updated_at = document.remove_optional_integer(property_names::UPDATED_AT)?;
@@ -378,14 +378,15 @@ impl Document {
     }
 
     /// Serializes the Document to CBOR.
-    pub fn to_cbor(&self) -> Vec<u8> {
+    pub fn to_cbor(&self) -> Result<Vec<u8>, ProtocolError> {
         let mut buffer: Vec<u8> = Vec::new();
-        buffer
-            .write_varint(PROTOCOL_VERSION)
-            .expect("writing protocol version caused error");
-        let cbor_document = DocumentForCbor::try_from(self.clone()).unwrap();
-        ciborium::ser::into_writer(&cbor_document, &mut buffer)
-            .expect("unable to serialize into cbor");
-        buffer
+        buffer.write_varint(PROTOCOL_VERSION).map_err(|_| {
+            ProtocolError::EncodingError("error writing protocol version".to_string())
+        })?;
+        let cbor_document = DocumentForCbor::try_from(self.clone())?;
+        ciborium::ser::into_writer(&cbor_document, &mut buffer).map_err(|_| {
+            ProtocolError::EncodingError("unable to serialize into cbor".to_string())
+        })?;
+        Ok(buffer)
     }
 }

@@ -1186,7 +1186,10 @@ mod tests {
                     owned_document_info: OwnedDocumentInfo {
                         document_info: DocumentInfo::DocumentRefAndSerialization((
                             &document,
-                            document.to_cbor().as_slice(),
+                            document
+                                .to_cbor()
+                                .expect("expected to encode to cbor")
+                                .as_slice(),
                             storage_flags,
                         )),
                         owner_id: Some(random_owner_id),
@@ -1225,7 +1228,10 @@ mod tests {
                     owned_document_info: OwnedDocumentInfo {
                         document_info: DocumentInfo::DocumentRefAndSerialization((
                             &document,
-                            document.to_cbor().as_slice(),
+                            document
+                                .to_cbor()
+                                .expect("expected to encode to cbor")
+                                .as_slice(),
                             storage_flags,
                         )),
                         owner_id: Some(random_owner_id),

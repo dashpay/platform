@@ -39,6 +39,14 @@ impl std::convert::From<identifier::Identifier> for IdentifierWrapper {
     }
 }
 
+impl std::convert::From<[u8; 32]> for IdentifierWrapper {
+    fn from(s: [u8; 32]) -> Self {
+        IdentifierWrapper {
+            wrapped: Identifier::new(s),
+        }
+    }
+}
+
 impl std::convert::From<IdentifierWrapper> for Identifier {
     fn from(s: IdentifierWrapper) -> Self {
         s.wrapped

@@ -1,14 +1,12 @@
 use std::collections::BTreeMap;
 
 use dpp::data_contract::document_type::random_document::CreateRandomDocument;
+use dpp::document::Document;
 use dpp::platform_value::Value;
-use dpp::{
-    contracts::withdrawals_contract, data_contract::DriveContractExt,
-};
+use dpp::{contracts::withdrawals_contract, data_contract::DriveContractExt};
 use grovedb::TransactionArg;
 use indexmap::IndexMap;
 use lazy_static::__Deref;
-use dpp::document::Document;
 
 use crate::{
     drive::{query::QueryDocumentsOutcome, Drive},
@@ -238,7 +236,8 @@ mod tests {
                     "transactionIndex": 1,
                 }),
                 None,
-            ).expect("expected withdrawal document");
+            )
+            .expect("expected withdrawal document");
 
             let document_type = data_contract
                 .document_type_for_name(withdrawals_contract::document_types::WITHDRAWAL)
@@ -264,7 +263,8 @@ mod tests {
                     "transactionIndex": 2,
                 }),
                 None,
-            ).expect("expected withdrawal document");
+            )
+            .expect("expected withdrawal document");
 
             setup_document(
                 &drive,
@@ -327,7 +327,8 @@ mod tests {
                     "transactionId": (0..32).collect::<Vec<u8>>(),
                 }),
                 None,
-            ).expect("expected to get withdrawal document");
+            )
+            .expect("expected to get withdrawal document");
 
             let document_type = data_contract
                 .document_type_for_name(withdrawals_contract::document_types::WITHDRAWAL)

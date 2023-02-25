@@ -1,6 +1,7 @@
 use serde::Serialize;
 use wasm_bindgen::prelude::*;
 
+use crate::document::errors::document_no_revision_error::DocumentNoRevisionError;
 pub use document_already_exists_error::*;
 pub use document_not_provided_error::*;
 use dpp::document::errors::DocumentError;
@@ -15,6 +16,7 @@ use crate::errors::consensus_error::from_consensus_error;
 use crate::utils::*;
 
 mod document_already_exists_error;
+mod document_no_revision_error;
 mod document_not_provided_error;
 mod invalid_action_name_error;
 mod invalid_document_action_error;
@@ -55,5 +57,8 @@ pub fn from_document_to_js_error(e: DocumentError) -> JsValue {
             MismatchOwnerIdsError::from_documents(documents).into()
         }
         DocumentError::NoDocumentsSuppliedError => NoDocumentsSuppliedError::new().into(),
+        DocumentError::DocumentNoRevisionError { document } => {
+            DocumentNoRevisionError::new((*document).into()).into()
+        }
     }
 }

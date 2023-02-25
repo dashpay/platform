@@ -1,6 +1,7 @@
 use crate::data_contract::DataContract;
 use crate::identifier::Identifier;
 use crate::metadata::Metadata;
+use crate::prelude::{Revision, TimestampMillis};
 use crate::util::cbor_value::{CborCanonicalMap, FieldType};
 use crate::util::deserializer::SplitProtocolVersionOutcome;
 use crate::util::hash::hash;
@@ -13,8 +14,8 @@ use integer_encoding::VarInt;
 use itertools::Itertools;
 use serde::{Deserialize, Serialize};
 use serde_json::Value as JsonValue;
+use std::collections::HashSet;
 use std::convert::TryInto;
-use crate::prelude::{Revision, TimestampMillis};
 
 pub mod property_names {
     pub const PROTOCOL_VERSION: &str = "$protocolVersion";
@@ -251,19 +252,14 @@ impl DocumentInStateTransition {
 
     pub fn get_identifiers_and_binary_paths(
         &self,
-    ) -> Result<(Vec<&str>, Vec<&str>), ProtocolError> {
-        let (identifiers_paths, binary_paths) = self
+    ) -> Result<(HashSet<&str>, HashSet<&str>), ProtocolError> {
+        let (mut identifiers_paths, binary_paths) = self
             .data_contract
             .get_identifiers_and_binary_paths(&self.document_type)?;
 
-        Ok((
-            identifiers_paths
-                .into_iter()
-                .chain(IDENTIFIER_FIELDS)
-                .unique()
-                .collect(),
-            binary_paths,
-        ))
+        identifiers_paths.extend(IDENTIFIER_FIELDS);
+
+        Ok((identifiers_paths, binary_paths))
     }
 }
 
