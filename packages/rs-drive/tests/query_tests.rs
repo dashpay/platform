@@ -38,7 +38,6 @@ use std::io::{self, BufRead};
 use std::option::Option::None;
 use std::sync::Arc;
 
-use dpp::data_contract::extra::common::cbor_inner_bytes_value;
 use dpp::data_contract::{DataContractFactory, DriveContractExt};
 use rand::seq::SliceRandom;
 use rand::{Rng, SeedableRng};
@@ -62,6 +61,7 @@ use drive::tests::helpers::setup::setup_drive;
 
 use dpp::data_contract::validation::data_contract_validator::DataContractValidator;
 use dpp::document::Document;
+use dpp::platform_value::Value;
 
 use dpp::prelude::DataContract;
 use dpp::util::serializer;
@@ -547,47 +547,43 @@ pub fn setup_dpns_test_with_data(path: &str) -> (Drive, Contract) {
 
     let file = File::open(path).expect("should read domains from file");
 
-    for line in io::BufReader::new(file).lines() {
-        if let Ok(domain_json) = line {
-            let domain_json: serde_json::Value =
-                serde_json::from_str(&domain_json).expect("should parse json");
+    for domain_json in io::BufReader::new(file).lines().flatten() {
+        let domain_json: serde_json::Value =
+            serde_json::from_str(&domain_json).expect("should parse json");
 
-            let domain_cbor = serializer::value_to_cbor(
-                domain_json,
-                Some(drive::drive::defaults::PROTOCOL_VERSION),
-            )
-            .expect("expected to serialize to cbor");
+        let domain_cbor =
+            serializer::value_to_cbor(domain_json, Some(drive::drive::defaults::PROTOCOL_VERSION))
+                .expect("expected to serialize to cbor");
 
-            let domain = Document::from_cbor(&domain_cbor, None, None)
+        let domain = Document::from_cbor(&domain_cbor, None, None)
                 .expect("expected to deserialize the document");
 
-            let document_type = contract
-                .document_type_for_name("domain")
-                .expect("expected to get document type");
+        let document_type = contract
+            .document_type_for_name("domain")
+            .expect("expected to get document type");
 
-            let storage_flags = Some(Cow::Owned(StorageFlags::SingleEpoch(0)));
+        let storage_flags = Some(Cow::Owned(StorageFlags::SingleEpoch(0)));
 
-            drive
-                .add_document_for_contract(
-                    DocumentAndContractInfo {
-                        owned_document_info: OwnedDocumentInfo {
-                            document_info: DocumentRefAndSerialization((
-                                &domain,
-                                &domain_cbor,
-                                storage_flags,
-                            )),
-                            owner_id: None,
-                        },
-                        contract: &contract,
-                        document_type,
+        drive
+            .add_document_for_contract(
+                DocumentAndContractInfo {
+                    owned_document_info: OwnedDocumentInfo {
+                        document_info: DocumentRefAndSerialization((
+                            &domain,
+                            &domain_cbor,
+                            storage_flags,
+                        )),
+                        owner_id: None,
                     },
-                    false,
-                    BlockInfo::genesis(),
-                    true,
-                    Some(&db_transaction),
-                )
-                .expect("expected to insert a document successfully");
-        }
+                    contract: &contract,
+                    document_type,
+                },
+                false,
+                BlockInfo::genesis(),
+                true,
+                Some(&db_transaction),
+            )
+            .expect("expected to insert a document successfully");
     }
     drive
         .grove
@@ -1503,8 +1499,7 @@ fn test_family_basic_queries() {
                 .properties
                 .get("age")
                 .expect("we should be able to get the age");
-            let age_integer = age_value.as_integer().expect("age should be an integer");
-            let age: u8 = age_integer.try_into().expect("expected u8 value");
+            let age: u8 = age_value.to_integer().expect("expected u8 value");
             (name, age)
         })
         .collect();
@@ -2837,7 +2832,7 @@ fn test_dpns_query() {
                 .expect("we should be able to get the records");
             let map_records_value = records_value.as_map().expect("this should be a map");
             let record_dash_unique_identity_id =
-                cbor_inner_bytes_value(map_records_value, "dashUniqueIdentityId")
+                Value::inner_bytes_value(map_records_value, "dashUniqueIdentityId")
                     .unwrap()
                     .expect("there should be a dashUniqueIdentityId");
             base64::encode(record_dash_unique_identity_id)

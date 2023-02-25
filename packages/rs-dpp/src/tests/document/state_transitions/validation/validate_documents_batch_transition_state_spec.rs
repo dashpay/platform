@@ -25,6 +25,7 @@ use crate::{
     }, validation::ValidationResult,
 };
 use crate::document::DocumentInStateTransition;
+use crate::identity::TimestampMillis;
 
 struct TestData {
     owner_id: Identifier,
@@ -101,7 +102,7 @@ fn get_state_error(result: &ValidationResult<()>, error_number: usize) -> &State
     }
 }
 
-fn set_updated_at(dt: &mut DocumentTransition, ts: Option<i64>) {
+fn set_updated_at(dt: &mut DocumentTransition, ts: Option<TimestampMillis>) {
     match dt {
         DocumentTransition::Create(ref mut t) => t.updated_at = ts,
         DocumentTransition::Replace(ref mut t) => t.updated_at = ts,
@@ -109,7 +110,7 @@ fn set_updated_at(dt: &mut DocumentTransition, ts: Option<i64>) {
     }
 }
 
-fn set_created_at(dt: &mut DocumentTransition, ts: Option<i64>) {
+fn set_created_at(dt: &mut DocumentTransition, ts: Option<TimestampMillis>) {
     match dt {
         DocumentTransition::Create(ref mut t) => t.created_at = ts,
         DocumentTransition::Replace(ref mut _t) => {}
@@ -356,7 +357,7 @@ async fn should_return_invalid_result_if_timestamps_mismatch() {
     )
     .expect("documents batch state transition should be created");
 
-    let now_ts = Utc::now().timestamp_millis();
+    let now_ts = Utc::now().timestamp_millis() as u64;
     state_transition
         .transitions
         .iter_mut()
@@ -408,7 +409,7 @@ async fn should_return_invalid_result_if_crated_at_has_violated_time_window() {
     .expect("documents batch state transition should be created");
 
     let now_ts_minus_6_mins =
-        Utc::now().timestamp_millis() - Duration::from_secs(60 * 6).as_millis() as i64;
+        Utc::now().timestamp_millis() as u64 - Duration::from_secs(60 * 6).as_millis() as u64;
     state_transition
         .transitions
         .iter_mut()
@@ -461,7 +462,7 @@ async fn should_not_validate_time_in_block_window_on_dry_run() {
 
     state_transition.get_execution_context().enable_dry_run();
     let now_ts_minus_6_mins =
-        Utc::now().timestamp_millis() - Duration::from_secs(60 * 6).as_millis() as i64;
+        Utc::now().timestamp_millis() as u64 - Duration::from_secs(60 * 6).as_millis() as u64;
     state_transition
         .transitions
         .iter_mut()
@@ -506,7 +507,7 @@ async fn should_return_invalid_result_if_updated_at_has_violated_time_window() {
     .expect("documents batch state transition should be created");
 
     let now_ts_minus_6_mins =
-        Utc::now().timestamp_millis() - Duration::from_secs(60 * 6).as_millis() as i64;
+        Utc::now().timestamp_millis() as u64 - Duration::from_secs(60 * 6).as_millis() as u64;
     state_transition.transitions.iter_mut().for_each(|t| {
         set_updated_at(t, Some(now_ts_minus_6_mins));
         set_created_at(t, None);

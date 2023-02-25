@@ -5,7 +5,7 @@ use futures::future::join_all;
 use itertools::Itertools;
 use serde::{Deserialize, Serialize};
 
-use crate::document::DocumentInStateTransition;
+use crate::document::{Document, DocumentInStateTransition};
 use crate::{
     block_time_window::validate_time_in_block_time_window::validate_time_in_block_time_window,
     consensus::ConsensusError,
@@ -160,7 +160,7 @@ pub async fn validate_document_transitions(
 
 fn validate_transition(
     transition: &DocumentTransition,
-    fetched_documents: &[DocumentInStateTransition],
+    fetched_documents: &[Document],
     last_header_block_time_millis: u64,
     owner_id: &Identifier,
 ) -> ValidationResult<()> {
@@ -215,7 +215,7 @@ fn validate_transition(
 
 fn check_ownership(
     document_transition: &DocumentTransition,
-    fetched_documents: &[DocumentInStateTransition],
+    fetched_documents: &[Document],
     owner_id: &Identifier,
 ) -> ValidationResult<()> {
     let mut result = ValidationResult::default();
@@ -231,7 +231,7 @@ fn check_ownership(
             StateError::DocumentOwnerIdMismatchError {
                 document_id: document_transition.base().id,
                 document_owner_id: owner_id.to_owned(),
-                existing_document_owner_id: fetched_document.owner_id,
+                existing_document_owner_id: fetched_document.owner_id.into(),
             },
         )));
     }
@@ -240,7 +240,7 @@ fn check_ownership(
 
 fn check_revision(
     document_transition: &DocumentTransition,
-    fetched_documents: &[DocumentInStateTransition],
+    fetched_documents: &[Document],
 ) -> ValidationResult<()> {
     let mut result = ValidationResult::default();
     let fetched_document = match fetched_documents
@@ -254,12 +254,20 @@ fn check_revision(
         Some(d) => d.revision,
         None => return result,
     };
-    let expected_revision = fetched_document.revision + 1;
+    let Some(previous_revision) =  fetched_document.revision else {
+        result.add_error(ConsensusError::StateError(Box::new(
+            StateError::InvalidDocumentNoPreviousRevisionError {
+                document_id: document_transition.base().id,
+            },
+        )));
+        return result;
+    };
+    let expected_revision = previous_revision + 1;
     if revision != expected_revision {
         result.add_error(ConsensusError::StateError(Box::new(
             StateError::InvalidDocumentRevisionError {
                 document_id: document_transition.base().id,
-                current_revision: fetched_document.revision as Revision,
+                current_revision: previous_revision,
             },
         )))
     }
@@ -268,7 +276,7 @@ fn check_revision(
 
 fn check_if_document_is_already_present(
     document_transition: &DocumentTransition,
-    fetched_documents: &[DocumentInStateTransition],
+    fetched_documents: &[Document],
 ) -> ValidationResult<()> {
     let mut result = ValidationResult::default();
     let maybe_fetched_document = fetched_documents
@@ -287,7 +295,7 @@ fn check_if_document_is_already_present(
 
 fn check_if_document_can_be_found(
     document_transition: &DocumentTransition,
-    fetched_documents: &[DocumentInStateTransition],
+    fetched_documents: &[Document],
 ) -> ValidationResult<()> {
     let mut result = ValidationResult::default();
     let maybe_fetched_document = fetched_documents

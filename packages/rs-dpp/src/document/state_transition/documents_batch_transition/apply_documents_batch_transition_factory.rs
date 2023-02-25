@@ -1,4 +1,5 @@
 use std::collections::HashMap;
+use std::convert::TryInto;
 
 use dashcore::{consensus, BlockHeader};
 use serde_json::Value;
@@ -8,6 +9,7 @@ use crate::{
     document::errors::DocumentError, prelude::Identifier, state_repository::StateRepositoryLike,
     state_transition::StateTransitionLike, ProtocolError,
 };
+use crate::prelude::TimestampMillis;
 
 use super::{
     document_transition::{
@@ -59,54 +61,46 @@ pub async fn apply_documents_batch_transition(
     )
     .await?;
 
-    let fetched_documents_by_id: HashMap<&Identifier, &DocumentInStateTransition> =
-        fetched_documents.iter().map(|dt| (&dt.id, dt)).collect();
+    let mut fetched_documents_by_id: HashMap<Identifier, Document> =
+        fetched_documents.into_iter().map(|dt| (dt.id.into(), dt)).collect();
 
-    // since groveDB doesn't support parallel inserts, wee need to make them sequential
+    // since groveDB doesn't support parallel inserts, we need to make them sequential
 
     for document_transition in state_transition.get_transitions() {
         match document_transition {
-            DocumentTransition::Create(dt) => {
-                let new_document = document_from_transition_create(dt, state_transition);
+            DocumentTransition::Create(document_create_transition) => {
+                let document = document_create_transition.to_document(state_transition.owner_id.to_buffer())?;
+                //todo: eventually we should use Cow instead
                 state_repository
-                    .create_document(&new_document, state_transition.get_execution_context())
+                    .create_document(&document, state_transition.get_execution_context())
                     .await?;
             }
-            DocumentTransition::Replace(dt) => {
-                let document = if state_transition.execution_context.is_dry_run() {
-                    let block_header_bytes = state_repository
-                        .fetch_latest_platform_block_header()
+            DocumentTransition::Replace(document_replace_transition) => {
+                if state_transition.execution_context.is_dry_run() {
+                    let document = document_replace_transition.to_document_for_dry_run()?;
+                    state_repository
+                        .update_document(&document, state_transition.get_execution_context())
                         .await?;
-
-                    let block_header: BlockHeader = consensus::deserialize(&block_header_bytes)
-                        .map_err(|e| ProtocolError::Generic(e.to_string()))?;
-
-                    let timestamp_millis = (block_header.time * 1000) as i64;
-                    document_from_transition_replace(dt, state_transition, timestamp_millis)
                 } else {
                     let mut document = fetched_documents_by_id
-                        .get(&dt.base.id)
+                        .get_mut(&document_replace_transition.base.id)
                         .ok_or(DocumentError::DocumentNotProvidedError {
                             document_transition: document_transition.clone(),
-                        })?
-                        .to_owned()
-                        .clone();
+                        })?;
 
-                    document.revision = dt.revision;
-                    document.data = dt.data.as_ref().unwrap_or(&Value::Null).clone();
-                    document.updated_at = dt.updated_at;
-                    document
+                    document_replace_transition.replace_document(&mut document);
+                    state_repository
+                        .update_document(document, state_transition.get_execution_context())
+                        .await?;
                 };
-                state_repository
-                    .update_document(&document, state_transition.get_execution_context())
-                    .await?;
+
             }
-            DocumentTransition::Delete(dt) => {
+            DocumentTransition::Delete(document_delete_transition) => {
                 state_repository
                     .remove_document(
-                        &dt.base.data_contract,
-                        &dt.base.document_type,
-                        &dt.base.id,
+                        &document_delete_transition.base.data_contract,
+                        &document_delete_transition.base.document_type,
+                        &document_delete_transition.base.id,
                         state_transition.get_execution_context(),
                     )
                     .await?;
@@ -119,9 +113,9 @@ pub async fn apply_documents_batch_transition(
 fn document_from_transition_replace(
     document_replace_transition: &DocumentReplaceTransition,
     state_transition: &DocumentsBatchTransition,
-    created_at: i64,
+    created_at: TimestampMillis,
 ) -> DocumentInStateTransition {
-    // TODO cloning is costly. Probably the [`Document`] should have properties of type `Cov<'a, K>`
+    // TODO cloning is costly. Probably the [`Document`] should have properties of type `Cow<'a, K>`
     DocumentInStateTransition {
         protocol_version: state_transition.protocol_version,
         id: document_replace_transition.base.id,

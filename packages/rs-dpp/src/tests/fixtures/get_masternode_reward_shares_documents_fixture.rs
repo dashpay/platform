@@ -31,11 +31,12 @@ pub fn get_masternode_reward_shares_documents_fixture(
         LATEST_VERSION,
         document_validator,
         DataContractFetcherAndValidator::new(Arc::new(MockStateRepositoryLike::new())),
+        None,
     );
 
     (
         vec![factory
-            .create(
+            .create_document_for_state_transition(
                 data_contract.clone(),
                 owner_id,
                 String::from("rewardShare"),

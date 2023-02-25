@@ -1,13 +1,14 @@
 use std::collections::BTreeMap;
 
 use dpp::data_contract::document_type::random_document::CreateRandomDocument;
+use dpp::platform_value::Value;
 use dpp::{
     contracts::withdrawals_contract, data_contract::DriveContractExt,
-    document::document_stub::DocumentStub,
 };
 use grovedb::TransactionArg;
 use indexmap::IndexMap;
 use lazy_static::__Deref;
+use dpp::document::Document;
 
 use crate::{
     drive::{query::QueryDocumentsOutcome, Drive},
@@ -21,7 +22,7 @@ impl Drive {
         &self,
         status: u8,
         transaction: TransactionArg,
-    ) -> Result<Vec<DocumentStub>, Error> {
+    ) -> Result<Vec<Document>, Error> {
         let data_contract_id = withdrawals_contract::CONTRACT_ID.deref();
 
         let contract_fetch_info = self
@@ -45,7 +46,7 @@ impl Drive {
             WhereClause {
                 field: withdrawals_contract::property_names::STATUS.to_string(),
                 operator: crate::query::WhereOperator::Equal,
-                value: ciborium::Value::Integer(status.into()),
+                value: Value::U8(status),
             },
         );
 
@@ -94,7 +95,7 @@ impl Drive {
                         )))
                     })
             })
-            .collect::<Result<Vec<DocumentStub>, Error>>()?;
+            .collect::<Result<Vec<Document>, Error>>()?;
 
         Ok(documents)
     }
@@ -104,7 +105,7 @@ impl Drive {
         &self,
         original_transaction_id: &[u8],
         transaction: TransactionArg,
-    ) -> Result<DocumentStub, Error> {
+    ) -> Result<Document, Error> {
         let data_contract_id = withdrawals_contract::CONTRACT_ID.deref();
 
         let contract_fetch_info = self
@@ -127,7 +128,7 @@ impl Drive {
             WhereClause {
                 field: withdrawals_contract::property_names::TRANSACTION_ID.to_string(),
                 operator: crate::query::WhereOperator::Equal,
-                value: ciborium::Value::Bytes(original_transaction_id.to_vec()),
+                value: Value::Bytes(original_transaction_id.to_vec()),
             },
         );
 
@@ -136,9 +137,7 @@ impl Drive {
             WhereClause {
                 field: withdrawals_contract::property_names::STATUS.to_string(),
                 operator: crate::query::WhereOperator::Equal,
-                value: ciborium::Value::Integer(
-                    (withdrawals_contract::WithdrawalStatus::POOLED as u8).into(),
-                ),
+                value: Value::U8(withdrawals_contract::WithdrawalStatus::POOLED as u8),
             },
         );
 
@@ -169,13 +168,13 @@ impl Drive {
         let documents = items
             .iter()
             .map(|document_cbor| {
-                DocumentStub::from_bytes(document_cbor, document_type).map_err(|_| {
+                Document::from_bytes(document_cbor, document_type).map_err(|_| {
                     Error::Drive(DriveError::CorruptedDriveState(
                         "can't create document from bytes".to_string(),
                     ))
                 })
             })
-            .collect::<Result<Vec<DocumentStub>, Error>>()?;
+            .collect::<Result<Vec<Document>, Error>>()?;
 
         let document = documents
             .get(0)
@@ -238,7 +237,8 @@ mod tests {
                     "status": withdrawals_contract::WithdrawalStatus::QUEUED,
                     "transactionIndex": 1,
                 }),
-            );
+                None,
+            ).expect("expected withdrawal document");
 
             let document_type = data_contract
                 .document_type_for_name(withdrawals_contract::document_types::WITHDRAWAL)
@@ -263,7 +263,8 @@ mod tests {
                     "status": withdrawals_contract::WithdrawalStatus::POOLED,
                     "transactionIndex": 2,
                 }),
-            );
+                None,
+            ).expect("expected withdrawal document");
 
             setup_document(
                 &drive,
@@ -325,7 +326,8 @@ mod tests {
                     "transactionIndex": 1,
                     "transactionId": (0..32).collect::<Vec<u8>>(),
                 }),
-            );
+                None,
+            ).expect("expected to get withdrawal document");
 
             let document_type = data_contract
                 .document_type_for_name(withdrawals_contract::document_types::WITHDRAWAL)

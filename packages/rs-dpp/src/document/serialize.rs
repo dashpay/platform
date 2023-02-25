@@ -11,11 +11,66 @@ use crate::util::deserializer::SplitProtocolVersionOutcome;
 use crate::ProtocolError;
 use bincode::Options;
 use byteorder::{BigEndian, ReadBytesExt};
-use ciborium::Value;
+use ciborium::Value as CborValue;
 use integer_encoding::VarIntWriter;
 use std::collections::BTreeMap;
 use std::convert::{TryFrom, TryInto};
 use std::io::{BufReader, Read};
+use platform_value::btreemap_extensions::BTreeValueMapHelper;
+use platform_value::Value;
+use crate::document::document::property_names;
+use crate::document::document_transition::INITIAL_REVISION;
+use crate::identity::TimestampMillis;
+use crate::prelude::Revision;
+use serde::{Deserialize, Serialize};
+
+
+//todo: delete in later PR
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
+pub struct DocumentForCbor {
+    /// The unique document ID.
+    #[serde(rename = "$id")]
+    pub id: [u8; 32],
+
+    /// The document's properties (data).
+    #[serde(flatten)]
+    pub properties: BTreeMap<String, CborValue>,
+
+    /// The ID of the document's owner.
+    #[serde(rename = "$ownerId")]
+    pub owner_id: [u8; 32],
+
+    /// The document revision.
+    #[serde(rename = "$revision")]
+    pub revision: Option<Revision>,
+
+    #[serde(rename = "$createdAt")]
+    pub created_at: Option<TimestampMillis>,
+    #[serde(rename = "$updatedAt")]
+    pub updated_at: Option<TimestampMillis>,
+}
+
+impl TryFrom<Document> for DocumentForCbor {
+    type Error = ProtocolError;
+
+    fn try_from(value: Document) -> Result<Self, Self::Error> {
+        let Document {
+            id,
+            properties,
+            owner_id,
+            revision, created_at, updated_at,
+        } = value;
+        Ok(DocumentForCbor {
+            id,
+            properties: Value::convert_to_cbor_map(properties)
+                .map_err(ProtocolError::ValueError)?,
+            owner_id,
+            revision,
+            created_at,
+            updated_at,
+        })
+    }
+}
 
 impl Document {
     /// Serializes the document.
@@ -177,8 +232,8 @@ impl Document {
         })?;
 
         // if the document type is mutable then we should deserialize the revision
-        let revision = if document_type.documents_mutable {
-            let revision = buf.read_u32::<BigEndian>().map_err(|_| {
+        let revision: Option<Revision> = if document_type.documents_mutable {
+            let revision = buf.read_u64::<BigEndian>().map_err(|_| {
                 ProtocolError::DecodingError(
                     "error reading revision from serialized document for revision".to_string(),
                 )
@@ -282,59 +337,34 @@ impl Document {
 
         // first we need to deserialize the document and contract indices
         // we would need dedicated deserialization functions based on the document type
-        let mut document: BTreeMap<String, Value> = ciborium::de::from_reader(read_document_cbor)
-            .map_err(|_| {
-            ProtocolError::StructureError(StructureError::InvalidCBOR(
-                "unable to decode contract for document call",
-            ))
-        })?;
+        let document_cbor: BTreeMap<String, CborValue> =
+            ciborium::de::from_reader(read_document_cbor).map_err(|_| {
+                ProtocolError::StructureError(StructureError::InvalidCBOR(
+                    "unable to decode document for document call",
+                ))
+            })?;
 
-        let owner_id: [u8; 32] = match owner_id {
-            None => {
-                let owner_id: Vec<u8> =
-                    bytes_for_system_value_from_tree_map(&document, "$ownerId")?.ok_or({
-                        ProtocolError::DataContractError(DataContractError::DocumentOwnerIdMissing(
-                            "unable to get document $ownerId",
-                        ))
-                    })?;
-                document.remove("$ownerId");
-                if owner_id.len() != 32 {
-                    return Err(ProtocolError::DataContractError(
-                        DataContractError::FieldRequirementUnmet("invalid owner id"),
-                    ));
-                }
-                owner_id.as_slice().try_into()
-            }
-            Some(owner_id) => Ok(owner_id),
-        }
-        .expect("conversion to 32bytes shouldn't fail");
+        let mut document: BTreeMap<String, Value> = Value::convert_from_cbor_map(document_cbor);
 
-        let id: [u8; 32] = match document_id {
-            None => {
-                let document_id: Vec<u8> = bytes_for_system_value_from_tree_map(&document, "$id")?
-                    .ok_or({
-                        ProtocolError::DataContractError(DataContractError::DocumentIdMissing(
-                            "unable to get document $id",
-                        ))
-                    })?;
-                document.remove("$id");
-                if document_id.len() != 32 {
-                    return Err(ProtocolError::DataContractError(
-                        DataContractError::FieldRequirementUnmet("invalid document id"),
-                    ));
-                }
-                document_id.as_slice().try_into()
-            }
-            Some(document_id) => {
-                // we need to start by verifying that the document_id is a 256 bit number (32 bytes)
-                Ok(document_id)
-            }
-        }
-        .expect("document_id must be 32 bytes");
+        let owner_id = match owner_id {
+            None => document
+                .remove_system_hash256_bytes(property_names::OWNER_ID)
+                .map_err(ProtocolError::ValueError)?,
+            Some(owner_id) => owner_id,
+        };
 
-        let revision = document.remove_optional_integer("$revision")?;
-        let created_at = document.remove_optional_integer("$createdAt")?;
-        let updated_at = document.remove_optional_integer("$updatedAt")?;
+        let id = match document_id {
+            None => document
+                .remove_system_hash256_bytes(property_names::ID)
+                .map_err(ProtocolError::ValueError)?,
+            Some(document_id) => document_id,
+        };
+
+        let revision = document
+            .remove_optional_integer(property_names::REVISION)?;
+
+        let created_at = document.remove_optional_integer(property_names::CREATED_AT)?;
+        let updated_at = document.remove_optional_integer(property_names::UPDATED_AT)?;
 
         // dev-note: properties is everything other than the id and owner id
         Ok(Document {
@@ -353,7 +383,9 @@ impl Document {
         buffer
             .write_varint(PROTOCOL_VERSION)
             .expect("writing protocol version caused error");
-        ciborium::ser::into_writer(&self, &mut buffer).expect("unable to serialize into cbor");
+        let cbor_document = DocumentForCbor::try_from(self.clone()).unwrap();
+        ciborium::ser::into_writer(&cbor_document, &mut buffer)
+            .expect("unable to serialize into cbor");
         buffer
     }
 }

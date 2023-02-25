@@ -19,16 +19,17 @@ pub use document_base_transition::{Action, DocumentTransitionObjectLike};
 pub use document_create_transition::DocumentCreateTransition;
 pub use document_delete_transition::DocumentDeleteTransition;
 pub use document_replace_transition::DocumentReplaceTransition;
+use crate::identity::TimestampMillis;
 
 /// the initial revision of newly created document
-pub const INITIAL_REVISION: u32 = 1;
+pub const INITIAL_REVISION: u64 = 1;
 pub const PROPERTY_ACTION: &str = "$action";
 
 pub trait DocumentTransitionExt {
     /// returns the creation timestamp (in milliseconds) if it exists for given type of document transition
-    fn get_created_at(&self) -> Option<i64>;
+    fn get_created_at(&self) -> Option<TimestampMillis>;
     /// returns the update timestamp  (in milliseconds) if it exists for given type of document transition
-    fn get_updated_at(&self) -> Option<i64>;
+    fn get_updated_at(&self) -> Option<TimestampMillis>;
     /// returns the value of dynamic property. The dynamic property is a property that is not specified in protocol
     /// the `path` supports dot-syntax: i.e: property.internal_property
     fn get_dynamic_property(&self, path: &str) -> Option<&Value>;
@@ -195,7 +196,7 @@ impl DocumentTransitionExt for DocumentTransition {
         &self.base().data_contract_id
     }
 
-    fn get_updated_at(&self) -> Option<i64> {
+    fn get_updated_at(&self) -> Option<TimestampMillis> {
         match self {
             DocumentTransition::Create(t) => t.updated_at,
             DocumentTransition::Replace(t) => t.updated_at,
@@ -203,7 +204,7 @@ impl DocumentTransitionExt for DocumentTransition {
         }
     }
 
-    fn get_created_at(&self) -> Option<i64> {
+    fn get_created_at(&self) -> Option<TimestampMillis> {
         match self {
             DocumentTransition::Create(t) => t.created_at,
             DocumentTransition::Replace(_) => None,

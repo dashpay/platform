@@ -40,6 +40,7 @@ pub fn get_dpns_parent_document_fixture(
         LATEST_VERSION,
         get_document_validator_fixture(),
         DataContractFetcherAndValidator::new(Arc::new(MockStateRepositoryLike::new())),
+        None,
     );
     let data_contract = get_dpns_data_contract_fixture(Some(options.owner_id));
     let mut pre_order_salt = [0u8; 32];
@@ -59,7 +60,7 @@ pub fn get_dpns_parent_document_fixture(
     });
 
     document_factory
-        .create(
+        .create_document_for_state_transition(
             data_contract,
             options.owner_id,
             String::from("domain"),

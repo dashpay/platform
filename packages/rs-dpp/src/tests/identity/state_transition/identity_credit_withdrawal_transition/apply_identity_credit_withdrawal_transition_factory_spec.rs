@@ -1,5 +1,6 @@
 #[cfg(test)]
 mod apply_identity_credit_withdrawal_transition_factory {
+    use std::collections::BTreeMap;
     use dashcore::{consensus, BlockHeader};
     use serde_json::json;
 
@@ -15,6 +16,8 @@ mod apply_identity_credit_withdrawal_transition_factory {
     };
     use mockall::predicate::{always, eq};
     use std::default::Default;
+    use platform_value::Value;
+    use crate::contracts::withdrawals_contract::property_names::{AMOUNT, CORE_FEE_PER_BYTE, OUTPUT_SCRIPT, POOLING, STATUS};
 
     #[tokio::test]
     async fn should_fail_if_data_contract_was_not_found() {
@@ -83,17 +86,16 @@ mod apply_identity_credit_withdrawal_transition_factory {
             .expect_create_document()
             .times(1)
             .withf(move |doc, _| {
-                let created_at_match = doc.created_at == Some(block_time_seconds as i64 * 1000);
-                let updated_at_match = doc.created_at == Some(block_time_seconds as i64 * 1000);
+                let created_at_match = doc.created_at == Some(block_time_seconds as u64 * 1000);
+                let updated_at_match = doc.created_at == Some(block_time_seconds as u64 * 1000);
 
-                let document_data_match = doc.data
-                    == json!({
-                        "amount": 10,
-                        "coreFeePerByte": 0,
-                        "pooling": Pooling::Never,
-                        "outputScript": [],
-                        "status": withdrawals_contract::WithdrawalStatus::QUEUED,
-                    });
+                let document_expected_properties = BTreeMap::from([(AMOUNT.to_string(),Value::U64(10)),
+                    (CORE_FEE_PER_BYTE.to_string(), Value::U64(0)),
+                    (POOLING.to_string(), Value::U8(Pooling::Never as u8)),
+                    (OUTPUT_SCRIPT.to_string(), Value::Bytes(vec![])),
+                    (STATUS.to_string(), Value::U8(withdrawals_contract::WithdrawalStatus::QUEUED as u8))]);
+
+                let document_data_match = doc.properties == document_expected_properties;
 
                 created_at_match && updated_at_match && document_data_match
             })

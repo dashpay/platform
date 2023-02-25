@@ -62,3 +62,4 @@ pub mod prelude {
 }
 
 pub use jsonschema;
+pub use platform_value;

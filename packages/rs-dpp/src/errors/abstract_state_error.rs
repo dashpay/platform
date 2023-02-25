@@ -47,6 +47,13 @@ pub enum StateError {
         current_revision: Revision,
     },
 
+    #[error(
+    "Document {document_id} had no previous revision but was trying to be updated"
+    )]
+    InvalidDocumentNoPreviousRevisionError {
+        document_id: Identifier,
+    },
+
     #[error("Data Contract {data_contract_id} is already present")]
     DataContractAlreadyPresentError { data_contract_id: Identifier },
 

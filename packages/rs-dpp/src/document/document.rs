@@ -38,11 +38,12 @@ use std::convert::{TryFrom, TryInto};
 use std::fmt;
 use std::io::{BufReader, Read};
 
-use ciborium::value::Value;
+use ciborium::value::Value as CborValue;
 use integer_encoding::VarIntWriter;
 
 use crate::data_contract::{DataContract, DriveContractExt};
 use serde::{Deserialize, Serialize};
+use platform_value::Value;
 
 use crate::data_contract::document_type::{encode_unsigned_integer, DocumentType};
 use crate::data_contract::errors::{DataContractError, StructureError};
@@ -50,7 +51,9 @@ use crate::data_contract::extra::common::{
     bytes_for_system_value_from_tree_map, get_key_from_cbor_map,
     reduced_value_string_representation,
 };
+use crate::document::errors::DocumentError;
 use crate::identity::TimestampMillis;
+use crate::prelude::Revision;
 use crate::util::deserializer;
 use crate::util::deserializer::SplitProtocolVersionOutcome;
 use crate::ProtocolError;
@@ -71,16 +74,18 @@ pub struct Document {
     //todo: add an optional version
     /// The unique document ID.
     #[serde(rename = "$id")]
+    //todo: change to identifier once identifier serialized to bytes
     pub id: [u8; 32],
     /// The ID of the document's owner.
     #[serde(rename = "$ownerId")]
+    //todo: change to identifier once identifier serialized to bytes
     pub owner_id: [u8; 32],
     /// The document's properties (data).
     #[serde(flatten)]
     pub properties: BTreeMap<String, Value>,
     /// The document revision.
     #[serde(rename = "$revision")]
-    pub revision: Option<u32>,
+    pub revision: Option<Revision>,
     #[serde(rename = "$createdAt")]
     pub created_at: Option<TimestampMillis>,
     #[serde(rename = "$updatedAt")]
@@ -145,7 +150,7 @@ impl Document {
                         ))
                     })?;
                     // given a map of values and a key, get the corresponding value
-                    match get_key_from_cbor_map(map_values, key) {
+                    match Value::get_from_map(map_values, key) {
                         None => Ok(None),
                         Some(value) => get_value_at_path(value, rest_key_paths),
                     }
@@ -192,6 +197,37 @@ impl Document {
     pub fn get(&self, path: &str) -> Option<&Value> {
         self.properties.get(path)
     }
+
+
+    pub fn set_u8(&mut self, property_name: &str, value: u8) {
+        self.properties
+            .insert(property_name.to_string(), Value::U8(value));
+    }
+
+    pub fn set_i64(&mut self, property_name: &str, value: i64) {
+        self.properties
+            .insert(property_name.to_string(), Value::I64(value));
+    }
+
+    pub fn set_bytes(&mut self, property_name: &str, value: Vec<u8>) {
+        self.properties
+            .insert(property_name.to_string(), Value::Bytes(value));
+    }
+
+    pub fn increment_revision(&mut self) -> Result<(), ProtocolError> {
+
+        let Some(revision) = self.revision else {
+            return Err(ProtocolError::Document(Box::new(DocumentError::DocumentNoRevisionError)))
+        };
+
+        let new_revision = revision
+            .checked_add(1)
+            .ok_or(ProtocolError::Overflow("overflow when adding 1"))?;
+
+        self.revision = Some(new_revision);
+
+        Ok(())
+    }
 }
 
 impl fmt::Display for Document {
@@ -213,7 +249,7 @@ impl fmt::Display for Document {
             write!(f, "no properties")?;
         } else {
             for (key, value) in self.properties.iter() {
-                write!(f, "{}:{} ", key, reduced_value_string_representation(value))?
+                write!(f, "{}:{} ", key, value.to_string())?
             }
         }
         Ok(())

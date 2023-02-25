@@ -1,8 +1,13 @@
+use std::collections::BTreeMap;
 use anyhow::Context;
 use chrono::Utc;
+use ciborium::cbor;
 use itertools::Itertools;
+use rand::rngs::StdRng;
+use rand::{Rng, SeedableRng};
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value as JsonValue};
+use platform_value::Value;
 
 use crate::document::document_transition::document_in_state_transition::{
     property_names, DocumentInStateTransition,
@@ -16,6 +21,8 @@ use crate::{
     util::{json_schema::JsonSchemaExt, json_value::JsonValueExt},
     ProtocolError,
 };
+use crate::data_contract::document_type::DocumentType;
+use crate::document::Document;
 
 use super::{
     document_transition::{self, Action},
@@ -63,6 +70,7 @@ pub struct DocumentFactory<ST> {
     protocol_version: u32,
     document_validator: DocumentValidator,
     data_contract_fetcher_and_validator: DataContractFetcherAndValidator<ST>,
+    rng: StdRng,
 }
 
 #[derive(Debug, Copy, Clone, Serialize, Deserialize, Default)]
@@ -82,15 +90,21 @@ where
         protocol_version: u32,
         validate_document: DocumentValidator,
         data_contract_fetcher_and_validator: DataContractFetcherAndValidator<ST>,
+        seed: Option<u64>,
     ) -> Self {
+        let rng = match seed {
+            None => StdRng::from_entropy(),
+            Some(seed_value) => StdRng::seed_from_u64(seed_value),
+        };
         DocumentFactory {
             protocol_version,
             document_validator: validate_document,
             data_contract_fetcher_and_validator,
+            rng
         }
     }
 
-    pub fn create(
+    pub fn create_document_for_state_transition(
         &self,
         data_contract: DataContract,
         owner_id: Identifier,
@@ -404,6 +418,7 @@ mod test {
             1,
             get_document_validator_fixture(),
             DataContractFetcherAndValidator::new(Arc::new(MockStateRepositoryLike::new())),
+            None,
         );
         let name = "Cutie";
         let contract_id = Identifier::from_string(
@@ -420,7 +435,7 @@ mod test {
         data_contract.id = contract_id;
 
         let document = factory
-            .create(
+            .create_document_for_state_transition(
                 data_contract,
                 owner_id,
                 document_type.to_string(),
@@ -445,6 +460,7 @@ mod test {
             1,
             get_document_validator_fixture(),
             DataContractFetcherAndValidator::new(Arc::new(MockStateRepositoryLike::new())),
+            None,
         );
 
         let result = factory.create_state_transition(vec![]);
@@ -460,6 +476,7 @@ mod test {
             1,
             get_document_validator_fixture(),
             DataContractFetcherAndValidator::new(Arc::new(MockStateRepositoryLike::new())),
+            None,
         );
         documents[0].owner_id = generate_random_identifier_struct();
 
@@ -477,6 +494,7 @@ mod test {
             1,
             get_document_validator_fixture(),
             DataContractFetcherAndValidator::new(Arc::new(MockStateRepositoryLike::new())),
+            None,
         );
         let result = factory.create_state_transition(vec![(Action::Create, documents)]);
         assert_error_contains!(result, "Invalid Document initial revision '3'")
@@ -490,6 +508,7 @@ mod test {
             1,
             get_document_validator_fixture(),
             DataContractFetcherAndValidator::new(Arc::new(MockStateRepositoryLike::new())),
+            None,
         );
 
         let new_document = documents[0].clone();

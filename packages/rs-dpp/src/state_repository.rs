@@ -201,6 +201,7 @@ pub trait StateRepositoryLike: Sync {
     async fn mark_asset_lock_transaction_out_point_as_used(
         &self,
         out_point_buffer: &[u8],
+        execution_context: &StateTransitionExecutionContext,
     ) -> AnyResult<()>;
 
     /// Fetch Simplified Masternode List Store
@@ -214,4 +215,7 @@ pub trait StateRepositoryLike: Sync {
 
     // Get latest (in a queue) withdrawal transaction index
     async fn fetch_latest_platform_core_chain_locked_height(&self) -> AnyResult<Option<u32>>;
+
+    // Get latest platform block height
+    async fn fetch_latest_platform_block_height(&self) -> AnyResult<u64>;
 }

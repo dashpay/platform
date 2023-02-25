@@ -364,11 +364,11 @@ impl Drive {
         let old_document_info = if let Some(old_document_element) = old_document_element {
             if let Element::Item(old_serialized_document, element_flags) = old_document_element {
                 let document_result =
-                    DocumentStub::from_cbor(old_serialized_document.as_slice(), None, owner_id);
+                    Document::from_cbor(old_serialized_document.as_slice(), None, owner_id);
                 let document = match document_result {
                     Ok(document_result) => Ok(document_result),
                     Err(_) => {
-                        DocumentStub::from_bytes(old_serialized_document.as_slice(), document_type)
+                        Document::from_bytes(old_serialized_document.as_slice(), document_type)
                     }
                 }?;
                 let storage_flags = StorageFlags::map_some_element_flags_ref(&element_flags)?;
@@ -637,7 +637,7 @@ impl Drive {
     /// Add update multiple documents operations
     pub fn add_update_multiple_documents_operations<'a>(
         &self,
-        documents: &'a [DocumentStub],
+        documents: &'a [Document],
         data_contract: &'a DataContract,
         document_type: &'a DocumentType,
         drive_operation_types: &mut Vec<DriveOperationType<'a>>,
@@ -2412,6 +2412,7 @@ mod tests {
             1,
             document_validator,
             DataContractFetcherAndValidator::new(Arc::new(MockStateRepositoryLike::new())),
+            None,
         );
 
         // Create a document
@@ -2419,7 +2420,7 @@ mod tests {
         let document_type = "niceDocument".to_string();
 
         let mut document = document_factory
-            .create(
+            .create_document_for_state_transition(
                 contract.clone(),
                 owner_id,
                 document_type.clone(),

@@ -320,7 +320,8 @@ mod tests {
                         "transactionSignHeight": 93,
                         "transactionId": tx_id,
                     }),
-                );
+                    None,
+                ).expect("expected withdrawal document");
 
                 let document_type = data_contract
                     .document_type_for_name(withdrawals_contract::document_types::WITHDRAWAL)

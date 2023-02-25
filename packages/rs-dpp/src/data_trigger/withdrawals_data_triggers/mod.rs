@@ -10,7 +10,7 @@ use crate::get_from_transition;
 use crate::prelude::DocumentTransition;
 use crate::prelude::Identifier;
 use crate::state_repository::StateRepositoryLike;
-use crate::util::cbor_value::CborBTreeMapHelper;
+use platform_value::btreemap_extensions::BTreeValueMapHelper;
 
 pub async fn delete_withdrawal_data_trigger<'a, SR>(
     document_transition: &DocumentTransition,
@@ -141,7 +141,8 @@ mod tests {
                 "transactionSignHeight": 93,
                 "transactionId": vec![1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1],
             }),
-        );
+            None,
+        ).expect("expected withdrawal document");
 
         state_repository
             .expect_fetch_documents::<Document>()

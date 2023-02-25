@@ -14,6 +14,7 @@ use itertools::Itertools;
 use serde::{Deserialize, Serialize};
 use serde_json::Value as JsonValue;
 use std::convert::TryInto;
+use crate::prelude::{Revision, TimestampMillis};
 
 pub mod property_names {
     pub const PROTOCOL_VERSION: &str = "$protocolVersion";
@@ -42,16 +43,15 @@ pub struct DocumentInStateTransition {
     #[serde(rename = "$type")]
     pub document_type: String,
     #[serde(rename = "$revision")]
-    pub revision: u32,
+    pub revision: Revision,
     #[serde(rename = "$dataContractId")]
     pub data_contract_id: Identifier,
     #[serde(rename = "$ownerId")]
     pub owner_id: Identifier,
     #[serde(rename = "$createdAt", skip_serializing_if = "Option::is_none")]
-    // TODO: Must be TimestampMillis
-    pub created_at: Option<i64>,
+    pub created_at: Option<TimestampMillis>,
     #[serde(rename = "$updatedAt", skip_serializing_if = "Option::is_none")]
-    pub updated_at: Option<i64>,
+    pub updated_at: Option<TimestampMillis>,
     // the serde_json::Value preserves the order (see .toml file)
     #[serde(flatten)]
     pub data: JsonValue,

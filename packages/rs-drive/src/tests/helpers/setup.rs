@@ -40,10 +40,10 @@ use crate::fee_pools::epochs::Epoch;
 use crate::drive::object_size_info::DocumentInfo::DocumentRefWithoutSerialization;
 use crate::drive::object_size_info::{DocumentAndContractInfo, OwnedDocumentInfo};
 use dpp::data_contract::document_type::DocumentType;
-use dpp::document::document_stub::DocumentStub;
-use dpp::prelude::{DataContract, Document};
 use grovedb::TransactionArg;
 use tempfile::TempDir;
+use dpp::data_contract::DataContract;
+use dpp::document::Document;
 
 /// Struct with options regarding setting up fee pools.
 pub struct SetupFeePoolsOptions {
@@ -111,17 +111,11 @@ pub fn setup_document(
     document_type: &DocumentType,
     transaction: TransactionArg,
 ) {
-    //todo: remove this hack
-    let serialized_document = document
-        .to_buffer()
-        .expect("expected to serialize to buffer");
-    let document_stub = DocumentStub::from_cbor(&serialized_document, None, None)
-        .expect("expected to convert to document stub");
     drive
         .add_document_for_contract(
             DocumentAndContractInfo {
                 owned_document_info: OwnedDocumentInfo {
-                    document_info: DocumentRefWithoutSerialization((&document_stub, None)),
+                    document_info: DocumentRefWithoutSerialization((&document, None)),
                     owner_id: None,
                 },
                 contract: data_contract,

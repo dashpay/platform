@@ -1,6 +1,8 @@
+use std::convert::TryInto;
 use itertools::Itertools;
 use serde::{Deserialize, Serialize};
 use serde_json::Value as JsonValue;
+use platform_value::Value;
 
 use crate::{
     data_contract::DataContract, document::document_transition::Action, errors::ProtocolError,
@@ -8,6 +10,7 @@ use crate::{
 };
 use crate::document::{Document, DocumentsBatchTransition};
 use crate::identity::TimestampMillis;
+use crate::prelude::Revision;
 use crate::util::serializer::value_to_cbor;
 
 use super::INITIAL_REVISION;
@@ -42,8 +45,9 @@ pub struct DocumentCreateTransition {
 }
 
 impl DocumentCreateTransition {
-    pub fn get_revision(&self) -> u32 {
-        INITIAL_REVISION
+    pub fn get_revision(&self) -> Option<Revision> {
+        //todo: fix this
+        Some(INITIAL_REVISION)
     }
 
     pub fn bytes_to_strings(
@@ -53,27 +57,46 @@ impl DocumentCreateTransition {
         Ok(())
     }
 
+    pub(crate) fn to_document(
+        &self,
+        owner_id: [u8;32],
+    ) -> Result<Document, ProtocolError> {
+        let properties = self.data.as_ref().map(|json_value| {
+            let value : Value = json_value.clone().into();
+            value.into_btree_map().map_err(ProtocolError::ValueError)
+        })
+            .transpose()?.unwrap_or_default();
+        Ok(Document {
+            id: self.base.id.to_buffer(),
+            owner_id,
+            properties,
+            created_at: self.created_at.clone(),
+            updated_at: self.updated_at.clone(),
+            revision: self.get_revision(),
+        })
+    }
 
-    fn into_document(
+
+    pub(crate) fn into_document(
         self,
         owner_id: [u8;32],
-    ) -> Document {
-        let properties = self.data.map(|value| value_to_cbor(a));
-        Document {
-            id: document_create_transition.base.id,
+    ) -> Result<Document, ProtocolError> {
+        let id = self.base.id.to_buffer();
+        let revision = self.get_revision();
+        let created_at = self.created_at;
+        let updated_at = self.updated_at;
+        let properties = self.data.map(|json_value| {
+            let value : Value = json_value.into();
+            value.into_btree_map().map_err(ProtocolError::ValueError)
+        }).transpose()?.unwrap_or_default();
+        Ok(Document {
+            id,
             owner_id,
-            properties:
-            data_contract_id: document_create_transition.base.data_contract_id,
-
-            data: document_create_transition
-                .data
-                .as_ref()
-                .unwrap_or(&serde_json::Value::Null)
-                .clone(),
-            created_at: self.created_at,
-            updated_at: self.updated_at,
-            revision: document_create_transition.get_revision(),
-        }
+            properties,
+            created_at,
+            updated_at,
+            revision,
+        })
     }
 }
 

@@ -70,6 +70,7 @@ impl DocumentFactoryWASM {
             DataContractFetcherAndValidator::new(Arc::new(
                 ExternalStateRepositoryLikeWrapper::new(state_repository),
             )),
+            None,
         );
 
         DocumentFactoryWASM(factory)
@@ -87,7 +88,7 @@ impl DocumentFactoryWASM {
         let dynamic_data = data.with_serde_to_json_value()?;
         let document = self
             .0
-            .create(
+            .create_document_for_state_transition(
                 data_contract.into(),
                 owner_id,
                 document_type.to_string(),

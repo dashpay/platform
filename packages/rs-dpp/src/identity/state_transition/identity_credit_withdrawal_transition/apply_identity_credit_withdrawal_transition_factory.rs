@@ -102,10 +102,10 @@ where
         // TODO: use DocumentFactory once it is complete
         let withdrawal_document = Document {
             id: document_id.buffer,
-            revision: 0,
-            owner_id: state_transition.identity_id,
+            revision: None,
+            owner_id: state_transition.identity_id.buffer,
             created_at: Some(document_created_at_millis),
-            updated_at: Some(document_created_at_millis), ,
+            updated_at: Some(document_created_at_millis),
             properties: Default::default(),
         };
 

@@ -682,7 +682,7 @@ impl<'a> DocumentInfo<'a> {
     /// Gets the borrowed document
     pub fn get_borrowed_document_and_storage_flags(
         &self,
-    ) -> Option<(&DocumentStub, Option<&StorageFlags>)> {
+    ) -> Option<(&Document, Option<&StorageFlags>)> {
         match self {
             DocumentInfo::DocumentRefAndSerialization((document, _, storage_flags))
             | DocumentInfo::DocumentRefWithoutSerialization((document, storage_flags)) => {

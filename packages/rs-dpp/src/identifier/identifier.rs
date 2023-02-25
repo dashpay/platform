@@ -1,4 +1,6 @@
 use std::convert::{TryFrom, TryInto};
+use rand::Rng;
+use rand::rngs::StdRng;
 
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use serde_json::Value as JsonValue;
@@ -33,8 +35,19 @@ impl Identifier {
         Identifier { buffer }
     }
 
+    pub fn random(rng: &mut StdRng) -> Identifier
+    {
+        Identifier {
+            buffer: rng.gen(),
+        }
+    }
+
     pub fn as_bytes(&self) -> &[u8; 32] {
         &self.buffer
+    }
+
+    pub fn as_slice(&self) -> &[u8] {
+        self.buffer.as_slice()
     }
 
     pub fn from_string(
@@ -148,5 +161,17 @@ impl<'de> Deserialize<'de> for Identifier {
 impl std::fmt::Display for Identifier {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "{}", self.to_string(Encoding::Base58))
+    }
+}
+
+impl PartialEq<[u8; 32]> for Identifier {
+    fn eq(&self, other: &[u8; 32]) -> bool {
+        &self.buffer == other
+    }
+}
+
+impl PartialEq<Identifier> for [u8; 32] {
+    fn eq(&self, other: &Identifier) -> bool {
+        self == &other.buffer
     }
 }

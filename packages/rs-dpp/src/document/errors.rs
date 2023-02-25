@@ -37,6 +37,9 @@ pub enum DocumentError {
         documents: Vec<DocumentInStateTransition>,
     },
 
+    #[error("No previous revision error")]
+    DocumentNoRevisionError,
+
     #[error("No documents were supplied to state transition")]
     NoDocumentsSuppliedError,
 }

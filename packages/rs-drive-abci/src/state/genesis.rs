@@ -30,7 +30,9 @@ use crate::abci::messages::SystemIdentityPublicKeys;
 use crate::error::execution::ExecutionError;
 use crate::error::Error;
 use crate::platform::Platform;
-use ciborium::{cbor, Value};
+use ciborium::{cbor, Value as CborValue};
+use dpp::platform_value::Value;
+use dpp::ProtocolError;
 use drive::contract::DataContract;
 use drive::dpp::data_contract::DriveContractExt;
 use drive::dpp::document::Document;
@@ -192,10 +194,10 @@ impl Platform {
         ))
     }
 
-    fn register_dpns_top_level_domain_operations<'a, 'b>(
+    fn register_dpns_top_level_domain_operations<'a>(
         &self,
         contract: &'a DataContract,
-        operations: &'b mut Vec<DriveOperationType<'a>>,
+        operations: &mut Vec<DriveOperationType<'a>>,
     ) -> Result<(), Error> {
         let domain = "dash";
 
@@ -230,13 +232,13 @@ impl Platform {
             entropy: [0; 32],
         };
 
-        let document_stub_properties_cbor = cbor!({
+        let document_stub_properties_value: Value = cbor!({
             "label" => domain,
             "normalizedLabel" => domain,
             "normalizedParentDomainName" => "",
-            "preorderSalt" => Value::Bytes(DPNS_DASH_TLD_PREORDER_SALT.to_vec()),
+            "preorderSalt" => CborValue::Bytes(DPNS_DASH_TLD_PREORDER_SALT.to_vec()),
             "records" => {
-                "dashAliasIdentityId" => Value::Bytes(contract.owner_id.to_buffer_vec()),
+                "dashAliasIdentityId" => CborValue::Bytes(contract.owner_id.to_buffer_vec()),
             },
         })
         .map_err(|_| {
@@ -244,25 +246,12 @@ impl Platform {
             Error::Execution(ExecutionError::CorruptedCodeExecution(
                 "can't create cbor for dpns tld",
             ))
-        })?;
+        })?
+        .into();
 
-        let document_stub_properties = document_stub_properties_cbor
-            .as_map()
-            .ok_or(Error::Execution(ExecutionError::CorruptedCodeExecution(
-                "can't convert properties to map",
-            )))?
-            .iter()
-            .map(|(key, value)| {
-                let key_string = key
-                    .as_text()
-                    .ok_or(Error::Execution(ExecutionError::CorruptedCodeExecution(
-                        "can't convert properties to map",
-                    )))?
-                    .to_string();
-
-                Ok((key_string, value.to_owned()))
-            })
-            .collect::<Result<_, Error>>()?;
+        let document_stub_properties = document_stub_properties_value
+            .into_btree_map()
+            .map_err(|e| Error::Protocol(ProtocolError::ValueError(e)))?;
 
         let document_cbor = document.to_buffer()?;
 

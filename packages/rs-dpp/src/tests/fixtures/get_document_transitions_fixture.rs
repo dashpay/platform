@@ -19,6 +19,7 @@ pub fn get_document_transitions_fixture(
         LATEST_VERSION,
         get_document_validator_fixture(),
         DataContractFetcherAndValidator::new(Arc::new(MockStateRepositoryLike::new())),
+        None,
     );
 
     let mut documents_collected: HashMap<Action, Vec<DocumentInStateTransition>> =
