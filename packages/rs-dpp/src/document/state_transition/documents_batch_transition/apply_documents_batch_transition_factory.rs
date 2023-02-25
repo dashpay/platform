@@ -85,13 +85,13 @@ pub async fn apply_documents_batch_transition(
                         .update_document(&document, state_transition.get_execution_context())
                         .await?;
                 } else {
-                    let mut document = fetched_documents_by_id
+                    let document = fetched_documents_by_id
                         .get_mut(&document_replace_transition.base.id)
                         .ok_or(DocumentError::DocumentNotProvidedError {
                             document_transition: document_transition.clone(),
                         })?;
 
-                    document_replace_transition.replace_document(&mut document);
+                    document_replace_transition.replace_document(document);
                     state_repository
                         .update_document(document, state_transition.get_execution_context())
                         .await?;

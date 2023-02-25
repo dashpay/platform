@@ -3,7 +3,6 @@ use std::sync::Arc;
 use dpp::document::document_transition::document_in_state_transition;
 use dpp::{
     document::{
-        self,
         document_factory::{DocumentFactory, FactoryOptions},
         document_transition::Action,
         fetch_and_validate_data_contract::DataContractFetcherAndValidator,

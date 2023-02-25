@@ -1,20 +1,20 @@
-use dpp::dashcore::anyhow::Context;
+
 use dpp::prelude::{Identifier, Revision};
 use dpp::util::json_schema::JsonSchemaExt;
 use dpp::util::json_value::{JsonValueExt, ReplaceWith};
-use dpp::util::string_encoding::Encoding;
+
 use serde::{Deserialize, Serialize};
 use std::convert::TryInto;
 use wasm_bindgen::prelude::*;
 
 use crate::buffer::Buffer;
-use crate::errors::RustConversionError;
+
 use crate::identifier::IdentifierWrapper;
 use crate::lodash::lodash_set;
 use crate::utils::WithJsError;
-use crate::utils::{with_serde_to_json_value, with_serde_to_platform_value, ToSerdeJSONExt};
+use crate::utils::{with_serde_to_json_value, ToSerdeJSONExt};
 use crate::with_js_error;
-use crate::{DataContractWasm, MetadataWasm};
+use crate::{DataContractWasm};
 
 pub mod errors;
 pub use state_transition::*;
@@ -25,13 +25,13 @@ mod validator;
 
 pub use document_batch_transition::{DocumentsBatchTransitionWASM, DocumentsContainer};
 pub use document_in_state_transition::DocumentInStateTransitionWasm;
-use dpp::data_contract::{DataContract, DriveContractExt};
+use dpp::data_contract::{DriveContractExt};
 use dpp::document::{
     document_in_state_transition_property_names, Document,
     DOCUMENT_IN_STATE_TRANSITION_IDENTIFIER_FIELDS,
 };
 use dpp::identity::TimestampMillis;
-use dpp::platform_value::Value;
+
 use dpp::ProtocolError;
 pub use factory::DocumentFactoryWASM;
 use serde_json::Value as JsonValue;
@@ -135,7 +135,8 @@ impl DocumentWasm {
     #[wasm_bindgen(js_name=set)]
     pub fn set(&mut self, path: String, js_value_to_set: JsValue) -> Result<(), JsValue> {
         let value = js_value_to_set.with_serde_to_platform_value()?;
-        Ok(self.0.set(&path, value))
+        self.0.set(&path, value);
+        Ok(())
     }
 
     #[wasm_bindgen(js_name=get)]

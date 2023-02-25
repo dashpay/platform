@@ -71,8 +71,8 @@ impl DocumentCreateTransition {
             id: self.base.id.to_buffer(),
             owner_id,
             properties,
-            created_at: self.created_at.clone(),
-            updated_at: self.updated_at.clone(),
+            created_at: self.created_at,
+            updated_at: self.updated_at,
             revision: self.get_revision(),
         })
     }

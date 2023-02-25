@@ -178,7 +178,7 @@ where
             + TryFrom<i8>,
     {
         self.get(key)
-            .map(|v| {
+            .and_then(|v| {
                 let borrowed = v.borrow();
                 if borrowed.is_null() {
                     None
@@ -186,7 +186,6 @@ where
                     Some(v.borrow().to_integer())
                 }
             })
-            .flatten()
             .transpose()
     }
 
@@ -221,7 +220,7 @@ where
             + TryFrom<i8>,
     {
         self.remove(key)
-            .map(|v| {
+            .and_then(|v| {
                 let borrowed = v.borrow();
                 if borrowed.is_null() {
                     None
@@ -229,7 +228,6 @@ where
                     Some(v.borrow().to_integer())
                 }
             })
-            .flatten()
             .transpose()
     }
 
@@ -253,7 +251,7 @@ where
 
     fn get_optional_bool(&self, key: &str) -> Result<Option<bool>, Error> {
         self.get(key)
-            .map(|v| {
+            .and_then(|v| {
                 let borrowed = v.borrow();
                 if borrowed.is_null() {
                     None
@@ -261,7 +259,6 @@ where
                     Some(v.borrow().to_bool())
                 }
             })
-            .flatten()
             .transpose()
     }
 
@@ -474,7 +471,7 @@ where
 
     fn remove_optional_float(&mut self, key: &str) -> Result<Option<f64>, Error> {
         self.remove(key)
-            .map(|v| {
+            .and_then(|v| {
                 let borrowed = v.borrow();
                 if borrowed.is_null() {
                     None
@@ -482,7 +479,6 @@ where
                     Some(v.borrow().to_float())
                 }
             })
-            .flatten()
             .transpose()
     }
 
@@ -493,7 +489,7 @@ where
 
     fn get_optional_float(&self, key: &str) -> Result<Option<f64>, Error> {
         self.get(key)
-            .map(|v| {
+            .and_then(|v| {
                 let borrowed = v.borrow();
                 if borrowed.is_null() {
                     None
@@ -501,7 +497,6 @@ where
                     Some(v.borrow().to_float())
                 }
             })
-            .flatten()
             .transpose()
     }
 

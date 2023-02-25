@@ -337,7 +337,7 @@ fn check_created_inside_time_window(
     let created_at = match document_transition.get_created_at() {
         Some(t) => t,
         None => return result,
-    } as u64;
+    };
 
     let window_validation = validate_time_in_block_time_window(last_block_ts_millis, created_at);
     if !window_validation.is_valid() {
@@ -362,7 +362,7 @@ fn check_updated_inside_time_window(
     let updated_at = match document_transition.get_updated_at() {
         Some(t) => t,
         None => return result,
-    } as u64;
+    };
 
     let window_validation = validate_time_in_block_time_window(last_block_ts_millis, updated_at);
     if !window_validation.is_valid() {

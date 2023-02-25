@@ -24,7 +24,7 @@ use js_sys::Uint8Array;
 use js_sys::{Array, Number};
 use wasm_bindgen::__rt::Ref;
 
-use dpp::document::{Document, DocumentInStateTransition};
+use dpp::document::{Document};
 use wasm_bindgen::prelude::*;
 
 use crate::buffer::Buffer;

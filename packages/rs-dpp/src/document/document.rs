@@ -350,7 +350,7 @@ impl fmt::Display for Document {
             write!(f, "no properties")?;
         } else {
             for (key, value) in self.properties.iter() {
-                write!(f, "{}:{} ", key, value.to_string())?
+                write!(f, "{}:{} ", key, value)?
             }
         }
         Ok(())

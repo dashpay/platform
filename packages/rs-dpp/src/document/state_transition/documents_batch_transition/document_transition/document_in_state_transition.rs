@@ -271,7 +271,7 @@ mod test {
     use crate::document::document_transition::document_in_state_transition::{
         DocumentInStateTransition, IDENTIFIER_FIELDS,
     };
-    use crate::document::*;
+    
     use crate::tests::utils::*;
     use crate::util::string_encoding::Encoding;
     use pretty_assertions::assert_eq;

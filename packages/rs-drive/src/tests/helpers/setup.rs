@@ -115,7 +115,7 @@ pub fn setup_document(
         .add_document_for_contract(
             DocumentAndContractInfo {
                 owned_document_info: OwnedDocumentInfo {
-                    document_info: DocumentRefWithoutSerialization((&document, None)),
+                    document_info: DocumentRefWithoutSerialization((document, None)),
                     owner_id: None,
                 },
                 contract: data_contract,

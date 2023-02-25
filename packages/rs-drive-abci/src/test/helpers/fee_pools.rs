@@ -77,7 +77,7 @@ fn create_test_mn_share_document(
         id,
         properties,
         owner_id: identity_id,
-        revision: Some(INITIAL_REVISION as u64),
+        revision: Some(INITIAL_REVISION),
         created_at: None,
         updated_at: None,
     };
