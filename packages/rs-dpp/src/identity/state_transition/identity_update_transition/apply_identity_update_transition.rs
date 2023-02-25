@@ -1,7 +1,6 @@
 use anyhow::anyhow;
 use std::sync::Arc;
 
-use crate::consensus::signature::{IdentityNotFoundError, SignatureError};
 use crate::identity::IdentityPublicKey;
 use crate::{
     state_repository::StateRepositoryLike, state_transition::StateTransitionLike, ProtocolError,

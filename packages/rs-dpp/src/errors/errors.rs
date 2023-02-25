@@ -4,15 +4,15 @@ use thiserror::Error;
 use crate::consensus::signature::InvalidSignaturePublicKeySecurityLevelError;
 use crate::consensus::ConsensusError;
 use crate::data_contract::errors::*;
-use crate::data_contract::state_transition::errors::{InvalidStateTransitionTypeError, MissingDataContractIdError};
+use crate::data_contract::state_transition::errors::{MissingDataContractIdError};
 use crate::data_contract::state_transition::errors::PublicKeyIsDisabledError;
 use crate::document::errors::*;
-use crate::identity::{Purpose, SecurityLevel};
 use crate::state_transition::errors::{
     InvalidIdentityPublicKeyTypeError, InvalidSignaturePublicKeyError, PublicKeyMismatchError,
     PublicKeySecurityLevelNotMetError, StateTransitionIsNotSignedError, WrongPublicKeyPurposeError,
 };
 use crate::{CompatibleProtocolVersionIsNotDefinedError, NonConsensusError, SerdeParsingError};
+use crate::consensus::basic::state_transition::InvalidStateTransitionTypeError;
 
 #[derive(Error, Debug)]
 pub enum ProtocolError {

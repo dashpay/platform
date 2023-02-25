@@ -112,7 +112,7 @@ impl ErrorWithCode for BasicError {
 
             Self::DuplicateDocumentTransitionsWithIdsError { .. } => 1019,
             Self::DuplicateDocumentTransitionsWithIndicesError { .. } => 1020,
-            Self::MissingDataContractIdError => 1025,
+            Self::MissingDataContractIdError { .. } => 1025,
             Self::InvalidIdentifierError { .. } => 1006,
 
             // Data contract

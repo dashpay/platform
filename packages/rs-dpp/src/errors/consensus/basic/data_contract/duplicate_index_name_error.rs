@@ -1,4 +1,5 @@
 use thiserror::Error;
+use crate::consensus::basic::{BasicError};
 
 use crate::consensus::ConsensusError;
 
@@ -28,6 +29,6 @@ impl DuplicateIndexNameError {
 
 impl From<DuplicateIndexNameError> for ConsensusError {
     fn from(err: DuplicateIndexNameError) -> Self {
-        Self::DuplicateIndexNameError(err)
+        Self::BasicError(Box::new(BasicError::DuplicateIndexNameError(err)))
     }
 }

@@ -1,4 +1,5 @@
 use thiserror::Error;
+use crate::consensus::basic::BasicError;
 
 use crate::consensus::ConsensusError;
 
@@ -28,6 +29,6 @@ impl DataContractImmutablePropertiesUpdateError {
 
 impl From<DataContractImmutablePropertiesUpdateError> for ConsensusError {
     fn from(err: DataContractImmutablePropertiesUpdateError) -> Self {
-        Self::DataContractImmutablePropertiesUpdateError(err)
+        Self::BasicError(Box::new(BasicError::DataContractImmutablePropertiesUpdateError(err)))
     }
 }

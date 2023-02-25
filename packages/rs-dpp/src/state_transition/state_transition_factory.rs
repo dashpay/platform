@@ -114,11 +114,11 @@ async fn fetch_data_contracts_for_document_transition(
 pub fn try_get_transition_type(
     raw_state_transition: &JsonValue,
 ) -> Result<StateTransitionType, ProtocolError> {
-    let transition_number = raw_state_transition
+    let transition_type = raw_state_transition
         .get_u64("type")
         .map_err(|_| missing_state_transition_error())?;
-    StateTransitionType::try_from(transition_number as u8)
-        .map_err(|_| ProtocolError::InvalidStateTransitionTypeError)
+    StateTransitionType::try_from(transition_type as u8)
+        .map_err(|_| ProtocolError::InvalidStateTransitionTypeError(InvalidStateTransitionTypeError::new(transition_type as u8)))
 }
 
 fn missing_state_transition_error() -> ProtocolError {

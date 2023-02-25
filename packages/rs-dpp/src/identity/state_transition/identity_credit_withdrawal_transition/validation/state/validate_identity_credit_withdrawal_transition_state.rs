@@ -3,9 +3,9 @@ use std::sync::Arc;
 
 use anyhow::Result;
 
-use crate::consensus::signature::{IdentityNotFoundError, SignatureError};
+use crate::consensus::signature::{IdentityNotFoundError};
 use crate::{
-    consensus::basic::{identity::IdentityInsufficientBalanceError, BasicError},
+    consensus::basic::{identity::IdentityInsufficientBalanceError},
     identity::state_transition::identity_credit_withdrawal_transition::IdentityCreditWithdrawalTransition,
     state_repository::StateRepositoryLike,
     state_transition::StateTransitionLike,

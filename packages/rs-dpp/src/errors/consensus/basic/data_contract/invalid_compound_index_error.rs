@@ -1,4 +1,5 @@
 use thiserror::Error;
+use crate::consensus::basic::{BasicError, IndexError};
 
 use crate::consensus::ConsensusError;
 use crate::data_contract::document_type::Index;
@@ -28,6 +29,6 @@ impl InvalidCompoundIndexError {
 
 impl From<InvalidCompoundIndexError> for ConsensusError {
     fn from(err: InvalidCompoundIndexError) -> Self {
-        Self::InvalidCompoundIndexError(err)
+        Self::BasicError(Box::new(BasicError::IndexError(IndexError::InvalidCompoundIndexError(err))))
     }
 }

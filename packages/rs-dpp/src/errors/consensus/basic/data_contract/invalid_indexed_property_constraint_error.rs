@@ -1,4 +1,5 @@
 use thiserror::Error;
+use crate::consensus::basic::{BasicError, IndexError};
 
 use crate::consensus::ConsensusError;
 use crate::data_contract::document_type::Index;
@@ -49,6 +50,6 @@ impl InvalidIndexedPropertyConstraintError {
 
 impl From<InvalidIndexedPropertyConstraintError> for ConsensusError {
     fn from(err: InvalidIndexedPropertyConstraintError) -> Self {
-        Self::InvalidIndexedPropertyConstraintError(err)
+        Self::BasicError(Box::new(BasicError::IndexError(IndexError::InvalidIndexedPropertyConstraintError(err))))
     }
 }

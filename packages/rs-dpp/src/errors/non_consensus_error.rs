@@ -10,15 +10,15 @@ pub enum NonConsensusError {
     SerdeParsingError(SerdeParsingError),
     #[error(transparent)]
     CompatibleProtocolVersionIsNotDefinedError(CompatibleProtocolVersionIsNotDefinedError),
-    #[error(transparent)]
+    #[error("SerdeJsonError: {0}")]
     SerdeJsonError(String),
     #[error(transparent)]
     InvalidVectorSizeError(InvalidVectorSizeError),
-    #[error(transparent)]
+    #[error("StateRepositoryFetchError: {0}")]
     StateRepositoryFetchError(String),
-    #[error(transparent)]
+    #[error("IdentifierCreateError: {0}")]
     IdentifierCreateError(String),
-    #[error(transparent)]
+    #[error("IdentityPublicKeyCreateError: {0}")]
     IdentityPublicKeyCreateError(String),
 
     /// When dynamic `Value` is validated it requires some specific properties to properly work

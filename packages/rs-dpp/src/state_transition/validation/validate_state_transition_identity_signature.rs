@@ -5,7 +5,7 @@ use lazy_static::lazy_static;
 
 use crate::consensus::signature::{
     IdentityNotFoundError, InvalidIdentityPublicKeyTypeError,
-    InvalidSignaturePublicKeySecurityLevelError, MissingPublicKeyError, PublicKeyIsDisabledError,
+    MissingPublicKeyError, PublicKeyIsDisabledError,
     PublicKeySecurityLevelNotMetError,
 };
 use crate::{
@@ -113,42 +113,28 @@ fn convert_to_consensus_signature_error(
     error: ProtocolError,
 ) -> Result<ConsensusError, ProtocolError> {
     match error {
-        ProtocolError::InvalidSignaturePublicKeySecurityLevelError(
-            InvalidSignaturePublicKeySecurityLevelError::new(
-                public_key_security_level,
-                required_security_level,
-            ),
-        ) => Ok(ConsensusError::SignatureError(
+        ProtocolError::InvalidSignaturePublicKeySecurityLevelError(err) => Ok(ConsensusError::SignatureError(
             SignatureError::InvalidSignaturePublicKeySecurityLevelError(
-                InvalidSignaturePublicKeySecurityLevelError::new(
-                    public_key_security_level,
-                    required_security_level,
-                ),
+                err,
             ),
         )),
         ProtocolError::PublicKeySecurityLevelNotMetError(
-            PublicKeySecurityLevelNotMetError::new(
-                public_key_security_level,
-                required_security_level,
-            ),
+            err,
         ) => Ok(ConsensusError::SignatureError(
             SignatureError::PublicKeySecurityLevelNotMetError(
-                PublicKeySecurityLevelNotMetError::new(
-                    public_key_security_level,
-                    required_security_level,
-                ),
+                PublicKeySecurityLevelNotMetError::new(err.public_key_security_level(), err.required_security_level()),
             ),
         )),
-        ProtocolError::PublicKeyIsDisabledError(PublicKeyIsDisabledError::new(public_key)) => Ok(
+        ProtocolError::PublicKeyIsDisabledError(err) => Ok(
             ConsensusError::SignatureError(SignatureError::PublicKeyIsDisabledError(
-                PublicKeyIsDisabledError::new(public_key.get_id()),
+                PublicKeyIsDisabledError::new(err.public_key().id)
             )),
         ),
         ProtocolError::InvalidIdentityPublicKeyTypeError(
-            InvalidIdentityPublicKeyTypeError::new(public_key_type),
+            err,
         ) => Ok(ConsensusError::SignatureError(
             SignatureError::InvalidIdentityPublicKeyTypeError(
-                InvalidIdentityPublicKeyTypeError::new(public_key_type),
+                InvalidIdentityPublicKeyTypeError::new(err.public_key_type()),
             ),
         )),
         ProtocolError::Error(_) => Err(error),

@@ -1,4 +1,5 @@
 use thiserror::Error;
+use crate::consensus::basic::{BasicError, IndexError};
 
 use crate::consensus::ConsensusError;
 use crate::data_contract::document_type::Index;
@@ -29,6 +30,6 @@ impl DuplicateIndexError {
 
 impl From<DuplicateIndexError> for ConsensusError {
     fn from(err: DuplicateIndexError) -> Self {
-        Self::DuplicateIndexError(err)
+        Self::BasicError(Box::new(BasicError::IndexError(IndexError::DuplicateIndexError(err))))
     }
 }

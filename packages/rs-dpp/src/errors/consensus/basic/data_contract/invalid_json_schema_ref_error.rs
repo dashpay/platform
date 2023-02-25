@@ -1,4 +1,5 @@
 use thiserror::Error;
+use crate::consensus::basic::BasicError;
 
 use crate::consensus::ConsensusError;
 
@@ -20,6 +21,6 @@ impl InvalidJsonSchemaRefError {
 
 impl From<InvalidJsonSchemaRefError> for ConsensusError {
     fn from(err: InvalidJsonSchemaRefError) -> Self {
-        Self::InvalidJsonSchemaRefError(err)
+        Self::BasicError(Box::new(BasicError::InvalidJsonSchemaRefError(err)))
     }
 }

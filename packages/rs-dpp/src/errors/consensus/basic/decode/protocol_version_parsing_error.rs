@@ -5,7 +5,7 @@ use crate::consensus::ConsensusError;
 #[derive(Error, Debug)]
 #[error("Can't read protocol version from serialized object: {parsing_error}")]
 pub struct ProtocolVersionParsingError {
-    parsing_error: anyhow::Error,
+    pub parsing_error: anyhow::Error,
 }
 
 impl ProtocolVersionParsingError {

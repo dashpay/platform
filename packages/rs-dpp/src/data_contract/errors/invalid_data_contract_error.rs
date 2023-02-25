@@ -7,7 +7,7 @@ use crate::ProtocolError;
 #[derive(Error, Debug)]
 #[error("Invalid Data Contract: {errors:?}")]
 pub struct InvalidDataContractError {
-    errors: Vec<ConsensusError>,
+    pub errors: Vec<ConsensusError>,
     raw_data_contract: JsonValue,
 }
 
@@ -19,8 +19,8 @@ impl InvalidDataContractError {
         }
     }
 
-    pub fn errors(&self) -> Vec<ConsensusError> {
-        self.errors.clone()
+    pub fn errors(&self) -> &[ConsensusError] {
+        &self.errors
     }
     pub fn raw_data_contract(&self) -> JsonValue {
         self.raw_data_contract.clone()

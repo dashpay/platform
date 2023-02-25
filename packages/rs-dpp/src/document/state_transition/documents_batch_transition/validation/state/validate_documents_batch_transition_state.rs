@@ -261,7 +261,7 @@ fn check_revision(
         result.add_error(ConsensusError::StateError(Box::new(
             StateError::InvalidDocumentRevisionError {
                 document_id: document_transition.base().id.clone(),
-                current_revision: fetched_document.revision,
+                current_revision: fetched_document.revision as Revision,
             },
         )))
     }
