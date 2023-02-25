@@ -395,6 +395,7 @@ where
 mod test {
     use std::sync::Arc;
 
+    use crate::tests::fixtures::get_documents_in_state_transitions_fixture;
     use crate::{
         assert_error_contains,
         state_repository::MockStateRepositoryLike,
@@ -470,7 +471,7 @@ mod test {
     #[test]
     fn create_transition_mismatch_user_id() {
         let data_contract = get_data_contract_fixture(None);
-        let mut documents = get_documents_fixture(data_contract).unwrap();
+        let mut documents = get_documents_in_state_transitions_fixture(data_contract).unwrap();
 
         let factory = DocumentFactory::new(
             1,
@@ -487,7 +488,7 @@ mod test {
     #[test]
     fn create_transition_invalid_initial_revision() {
         let data_contract = get_data_contract_fixture(None);
-        let mut documents = get_documents_fixture(data_contract).unwrap();
+        let mut documents = get_documents_in_state_transitions_fixture(data_contract).unwrap();
         documents[0].revision = 3;
 
         let factory = DocumentFactory::new(
@@ -503,7 +504,7 @@ mod test {
     #[test]
     fn create_transitions_with_passed_documents() {
         let data_contract = get_data_contract_fixture(None);
-        let documents = get_documents_fixture(data_contract).unwrap();
+        let documents = get_documents_in_state_transitions_fixture(data_contract).unwrap();
         let factory = DocumentFactory::new(
             1,
             get_document_validator_fixture(),

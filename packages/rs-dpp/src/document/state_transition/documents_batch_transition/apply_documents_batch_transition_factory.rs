@@ -147,7 +147,8 @@ mod test {
     use dashcore::consensus;
     use serde_json::{json, Value};
 
-    use crate::document::DocumentInStateTransition;
+    use crate::document::{Document, DocumentInStateTransition};
+    use crate::tests::fixtures::get_documents_in_state_transitions_fixture;
     use crate::tests::utils::new_block_header;
     use crate::{
         document::{
@@ -172,7 +173,7 @@ mod test {
 
         let owner_id = generate_random_identifier_struct();
         let data_contract = get_data_contract_fixture(None);
-        let documents = get_documents_fixture(data_contract.clone()).unwrap();
+        let documents = get_documents_in_state_transitions_fixture(data_contract.clone()).unwrap();
         let documents_transitions = get_document_transitions_fixture([
             (Action::Replace, documents),
             (Action::Create, vec![]),
@@ -193,7 +194,7 @@ mod test {
 
         state_transition.get_execution_context().enable_dry_run();
         state_repository
-            .expect_fetch_documents::<DocumentInStateTransition>()
+            .expect_fetch_documents::<Document>()
             .returning(|_, _, _, _| Ok(vec![]));
         state_repository
             .expect_update_document()

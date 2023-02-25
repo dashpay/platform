@@ -2,7 +2,7 @@ use futures::future::join_all;
 use itertools::Itertools;
 use serde_json::{json, Value as JsonValue};
 
-use crate::document::DocumentInStateTransition;
+use crate::document::{Document, DocumentInStateTransition};
 use crate::{
     document::document_transition::{Action, DocumentTransition, DocumentTransitionExt},
     prelude::{DataContract, Identifier},
@@ -52,7 +52,7 @@ where
             .filter(|query| !query.where_query.is_empty())
             .map(|query| {
                 (
-                    state_repository.fetch_documents::<DocumentInStateTransition>(
+                    state_repository.fetch_documents::<Document>(
                         &data_contract.id,
                         query.document_type,
                         json!( { "where": query.where_query}),
@@ -138,7 +138,7 @@ fn build_query_for_index_definition(
 
 fn validate_uniqueness<'a>(
     futures_meta: Vec<(&'a Index, &'a DocumentTransition)>,
-    results: Vec<Result<Vec<DocumentInStateTransition>, anyhow::Error>>,
+    results: Vec<Result<Vec<Document>, anyhow::Error>>,
 ) -> Result<ValidationResult<()>, ProtocolError> {
     let mut validation_result = ValidationResult::default();
     for (i, result) in results.into_iter().enumerate() {

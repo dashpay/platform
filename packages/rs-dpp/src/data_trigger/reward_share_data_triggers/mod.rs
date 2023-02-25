@@ -1,7 +1,8 @@
 use anyhow::{anyhow, bail};
+use platform_value::btreemap_extensions::BTreeValueMapHelper;
 use serde_json::json;
 
-use crate::document::DocumentInStateTransition;
+use crate::document::{Document, DocumentInStateTransition};
 use crate::{
     data_trigger::create_error,
     document::document_transition::DocumentTransition,
@@ -88,7 +89,7 @@ where
         result.add_error(err.into())
     }
 
-    let documents: Vec<DocumentInStateTransition> = context
+    let documents: Vec<Document> = context
         .state_repository
         .fetch_documents(
             &context.data_contract.id,
@@ -119,7 +120,7 @@ where
 
     let mut total_percent: u64 = percentage;
     for d in documents.iter() {
-        total_percent += d.data.get_u64(PROPERTY_PERCENTAGE)?;
+        total_percent += d.properties.get_integer::<u64>(PROPERTY_PERCENTAGE)?;
     }
 
     if total_percent > MAX_PERCENTAGE {
@@ -139,8 +140,9 @@ mod test {
     use super::*;
     use itertools::Itertools;
     use serde_json::json;
+    use std::convert::TryInto;
 
-    use crate::document::DocumentInStateTransition;
+    use crate::document::{Document, DocumentInStateTransition};
     use crate::identity::Identity;
     use crate::{
         data_contract::DataContract,
@@ -156,14 +158,14 @@ mod test {
             },
             utils::generate_random_identifier_struct,
         },
-        DataTriggerError, StateError,
+        DataTriggerError, ProtocolError, StateError,
     };
 
     struct TestData {
         top_level_identifier: Identifier,
         data_contract: DataContract,
         sml_store: SMLStore,
-        documents: Vec<DocumentInStateTransition>,
+        documents_in_state_transitions: Vec<DocumentInStateTransition>,
         document_transition: DocumentTransition,
         identity: Identity,
     }
@@ -207,7 +209,7 @@ mod test {
             get_document_transitions_fixture([(Action::Create, vec![documents[0].clone()])]);
 
         TestData {
-            documents,
+            documents_in_state_transitions: documents,
             data_contract,
             top_level_identifier,
             sml_store,
@@ -237,12 +239,19 @@ mod test {
     async fn should_return_an_error_if_percentage_greater_than_1000() {
         let TestData {
             mut document_transition,
-            documents,
+            documents_in_state_transitions,
             sml_store,
             data_contract,
             top_level_identifier,
             ..
         } = setup_test();
+
+        let documents = documents_in_state_transitions
+            .clone()
+            .into_iter()
+            .map(|dt| dt.try_into())
+            .collect::<Result<Vec<Document>, ProtocolError>>()
+            .expect("expected to convert to documents");
 
         let mut state_repository_mock = MockStateRepositoryLike::new();
         state_repository_mock
@@ -295,7 +304,7 @@ mod test {
             .expect_fetch_identity()
             .returning(move |_, _| Ok(None));
         state_repository_mock
-            .expect_fetch_documents::<DocumentInStateTransition>()
+            .expect_fetch_documents::<Document>()
             .returning(move |_, _, _, _| Ok(vec![]));
 
         let execution_context = StateTransitionExecutionContext::default();
@@ -343,7 +352,7 @@ mod test {
             .expect_fetch_identity()
             .returning(move |_, _| Ok(None));
         state_repository_mock
-            .expect_fetch_documents::<DocumentInStateTransition>()
+            .expect_fetch_documents::<Document>()
             .returning(move |_, _, _, _| Ok(vec![]));
 
         let execution_context = StateTransitionExecutionContext::default();
@@ -383,7 +392,7 @@ mod test {
             .expect_fetch_identity()
             .returning(move |_, _| Ok(Some(identity.clone())));
         state_repository_mock
-            .expect_fetch_documents::<DocumentInStateTransition>()
+            .expect_fetch_documents::<Document>()
             .returning(move |_, _, _, _| Ok(vec![]));
 
         let execution_context = StateTransitionExecutionContext::default();
@@ -418,11 +427,9 @@ mod test {
         state_repository_mock
             .expect_fetch_identity()
             .returning(move |_, _| Ok(Some(identity.clone())));
-        let documents_to_return: Vec<DocumentInStateTransition> = (0..16)
-            .map(|_| DocumentInStateTransition::default())
-            .collect();
+        let documents_to_return: Vec<Document> = (0..16).map(|_| Document::default()).collect();
         state_repository_mock
-            .expect_fetch_documents::<DocumentInStateTransition>()
+            .expect_fetch_documents::<Document>()
             .return_once(move |_, _, _, _| Ok(documents_to_return));
 
         let execution_context = StateTransitionExecutionContext::default();
@@ -458,7 +465,7 @@ mod test {
             .expect_fetch_identity()
             .returning(move |_, _| Ok(None));
         state_repository_mock
-            .expect_fetch_documents::<DocumentInStateTransition>()
+            .expect_fetch_documents::<Document>()
             .returning(move |_, _, _, _| Ok(vec![]));
 
         let execution_context = StateTransitionExecutionContext::default();

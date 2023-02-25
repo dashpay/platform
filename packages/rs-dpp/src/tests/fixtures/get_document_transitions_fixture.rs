@@ -8,6 +8,7 @@ use crate::document::{
     document_transition::{Action, DocumentTransition},
 };
 use crate::state_repository::MockStateRepositoryLike;
+use crate::tests::fixtures::get_documents_in_state_transitions_fixture;
 use crate::version::LATEST_VERSION;
 
 use super::{get_data_contract_fixture, get_document_validator_fixture, get_documents_fixture};
@@ -26,7 +27,9 @@ pub fn get_document_transitions_fixture(
         documents.into_iter().collect();
     let create_documents = documents_collected
         .remove(&Action::Create)
-        .unwrap_or_else(|| get_documents_fixture(get_data_contract_fixture(None)).unwrap());
+        .unwrap_or_else(|| {
+            get_documents_in_state_transitions_fixture(get_data_contract_fixture(None)).unwrap()
+        });
     let replace_documents = documents_collected
         .remove(&Action::Replace)
         .unwrap_or_default();

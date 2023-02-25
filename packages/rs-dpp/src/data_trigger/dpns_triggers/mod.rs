@@ -2,7 +2,7 @@ use anyhow::Context;
 use anyhow::{anyhow, bail};
 use serde_json::{json, Value as JsonValue};
 
-use crate::document::DocumentInStateTransition;
+use crate::document::{Document, DocumentInStateTransition};
 use crate::util::hash::hash;
 use crate::util::string_encoding::Encoding;
 use crate::{
@@ -191,7 +191,7 @@ where
 
     let salted_domain_hash = hash(salted_domain_buffer);
 
-    let preorder_documents: Vec<DocumentInStateTransition> = context
+    let preorder_documents: Vec<Document> = context
         .state_repository
         .fetch_documents(
             &context.data_contract.id,
@@ -222,7 +222,7 @@ where
 
 #[cfg(test)]
 mod test {
-    use crate::document::DocumentInStateTransition;
+    use crate::document::{Document, DocumentInStateTransition};
     use crate::{
         data_trigger::DataTriggerExecutionContext,
         document::document_transition::Action,
@@ -253,7 +253,7 @@ mod test {
         let first_transition = transitions.get(0).expect("transition should be present");
 
         state_repository
-            .expect_fetch_documents::<DocumentInStateTransition>()
+            .expect_fetch_documents::<Document>()
             .returning(|_, _, _, _| Ok(vec![]));
         transition_execution_context.enable_dry_run();
 

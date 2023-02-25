@@ -106,6 +106,7 @@ mod test {
     use serde_json::Value as JsonValue;
     use test_case::test_case;
 
+    use crate::tests::fixtures::get_documents_in_state_transitions_fixture;
     use crate::{
         codes::ErrorWithCode,
         consensus::{basic::JsonSchemaError, ConsensusError},
@@ -126,7 +127,7 @@ mod test {
 
     fn get_test_data() -> TestData {
         let data_contract = get_data_contract_fixture(None);
-        let documents = get_documents_fixture(data_contract.clone()).unwrap();
+        let documents = get_documents_in_state_transitions_fixture(data_contract.clone()).unwrap();
         let raw_document = documents
             .iter()
             .map(|d| d.to_object())
@@ -472,7 +473,7 @@ mod test {
             ..
         } = get_test_data();
 
-        let documents = get_documents_fixture(data_contract.clone()).unwrap();
+        let documents = get_documents_in_state_transitions_fixture(data_contract.clone()).unwrap();
         let document = documents.get(8).unwrap();
 
         let data = [0u8; 32];

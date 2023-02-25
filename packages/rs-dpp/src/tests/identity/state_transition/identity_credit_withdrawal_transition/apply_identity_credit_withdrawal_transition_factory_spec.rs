@@ -87,13 +87,13 @@ mod apply_identity_credit_withdrawal_transition_factory {
         state_repository
             .expect_create_document()
             .times(1)
-            .withf(move |doc, _| {
+            .withf(move |doc: &Document, _| {
                 let created_at_match = doc.created_at == Some(block_time_seconds as u64 * 1000);
-                let updated_at_match = doc.created_at == Some(block_time_seconds as u64 * 1000);
+                let updated_at_match = doc.updated_at == Some(block_time_seconds as u64 * 1000);
 
                 let document_expected_properties = BTreeMap::from([
                     (AMOUNT.to_string(), Value::U64(10)),
-                    (CORE_FEE_PER_BYTE.to_string(), Value::U64(0)),
+                    (CORE_FEE_PER_BYTE.to_string(), Value::U32(0)),
                     (POOLING.to_string(), Value::U8(Pooling::Never as u8)),
                     (OUTPUT_SCRIPT.to_string(), Value::Bytes(vec![])),
                     (

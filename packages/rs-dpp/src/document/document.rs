@@ -55,6 +55,7 @@ use crate::data_contract::extra::common::{
     reduced_value_string_representation,
 };
 use crate::document::errors::DocumentError;
+use crate::document::DocumentInStateTransition;
 use crate::identifier::Identifier;
 use crate::identity::TimestampMillis;
 use crate::prelude::Revision;
@@ -356,6 +357,31 @@ impl fmt::Display for Document {
             }
         }
         Ok(())
+    }
+}
+
+impl TryFrom<DocumentInStateTransition> for Document {
+    type Error = ProtocolError;
+
+    fn try_from(value: DocumentInStateTransition) -> Result<Self, Self::Error> {
+        let DocumentInStateTransition {
+            id,
+            revision,
+            owner_id,
+            created_at,
+            updated_at,
+            data,
+            ..
+        } = value;
+        let value: Value = data.into();
+        Ok(Document {
+            id: id.buffer,
+            owner_id: owner_id.buffer,
+            properties: value.into_btree_map()?,
+            revision: Some(revision),
+            created_at,
+            updated_at,
+        })
     }
 }
 

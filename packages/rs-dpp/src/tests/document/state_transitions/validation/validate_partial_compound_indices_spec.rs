@@ -14,6 +14,7 @@ use crate::{
     validation::ValidationResult,
 };
 use crate::document::DocumentInStateTransition;
+use crate::tests::fixtures::get_documents_in_state_transitions_fixture;
 
 struct TestData {
     data_contract: DataContract,
@@ -22,8 +23,8 @@ struct TestData {
 
 fn setup_test() -> TestData {
     let data_contract = get_data_contract_fixture(None);
-    let documents =
-        get_documents_fixture(data_contract.clone()).expect("documents should be created");
+    let documents = get_documents_in_state_transitions_fixture(data_contract.clone())
+        .expect("documents should be created");
 
     TestData {
         data_contract,
