@@ -271,12 +271,12 @@ mod test {
     use crate::document::document_transition::document_in_state_transition::{
         DocumentInStateTransition, IDENTIFIER_FIELDS,
     };
-    
+
+    use crate::data_contract::DataContract;
+    use crate::identifier::Identifier;
     use crate::tests::utils::*;
     use crate::util::string_encoding::Encoding;
     use pretty_assertions::assert_eq;
-    use crate::data_contract::DataContract;
-    use crate::identifier::Identifier;
 
     fn init() {
         let _ = env_logger::builder()

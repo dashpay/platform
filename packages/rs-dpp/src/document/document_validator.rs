@@ -111,7 +111,7 @@ mod test {
         codes::ErrorWithCode,
         consensus::{basic::JsonSchemaError, ConsensusError},
         data_contract::DataContract,
-        tests::fixtures::{get_data_contract_fixture},
+        tests::fixtures::get_data_contract_fixture,
         util::json_value::JsonValueExt,
         validation::ValidationResult,
         version::{ProtocolVersionValidator, COMPATIBILITY_MAP, LATEST_VERSION},

@@ -1,7 +1,7 @@
+pub use document::{property_names, IDENTIFIER_FIELDS};
 pub use state_transition::documents_batch_transition::document_transition;
 pub use state_transition::documents_batch_transition::validation;
 pub use state_transition::documents_batch_transition::DocumentsBatchTransition;
-pub use document::{property_names, IDENTIFIER_FIELDS};
 
 mod document;
 pub mod document_factory;

@@ -1,4 +1,4 @@
-use anyhow::{bail};
+use anyhow::bail;
 use serde_json::json;
 
 use crate::contracts::withdrawals_contract;

@@ -3,7 +3,6 @@ use std::sync::Arc;
 use data_contracts::SystemDataContract;
 use serde_json::json;
 
-
 use crate::document::DocumentInStateTransition;
 use crate::system_data_contracts::load_system_data_contract;
 use crate::{

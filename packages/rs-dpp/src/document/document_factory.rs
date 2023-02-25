@@ -4,11 +4,9 @@ use chrono::Utc;
 use itertools::Itertools;
 
 use rand::rngs::StdRng;
-use rand::{SeedableRng};
+use rand::SeedableRng;
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value as JsonValue};
-
-
 
 use crate::document::document_transition::document_in_state_transition::{
     property_names, DocumentInStateTransition,
@@ -400,9 +398,7 @@ mod test {
         assert_error_contains,
         state_repository::MockStateRepositoryLike,
         tests::{
-            fixtures::{
-                get_data_contract_fixture, get_document_validator_fixture,
-            },
+            fixtures::{get_data_contract_fixture, get_document_validator_fixture},
             utils::generate_random_identifier_struct,
         },
         util::string_encoding::Encoding,

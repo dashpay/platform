@@ -2,7 +2,7 @@ use futures::future::join_all;
 use itertools::Itertools;
 use serde_json::{json, Value as JsonValue};
 
-use crate::document::{Document};
+use crate::document::Document;
 use crate::{
     document::document_transition::{Action, DocumentTransition, DocumentTransitionExt},
     prelude::{DataContract, Identifier},

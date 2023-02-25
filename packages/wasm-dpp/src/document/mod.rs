@@ -1,10 +1,9 @@
-
 use dpp::prelude::{Identifier, Revision};
 use dpp::util::json_schema::JsonSchemaExt;
 use dpp::util::json_value::{JsonValueExt, ReplaceWith};
 
 use serde::{Deserialize, Serialize};
-use std::convert::{TryInto};
+use std::convert::TryInto;
 use wasm_bindgen::prelude::*;
 
 use crate::buffer::Buffer;
@@ -14,7 +13,7 @@ use crate::lodash::lodash_set;
 use crate::utils::WithJsError;
 use crate::utils::{with_serde_to_json_value, ToSerdeJSONExt};
 use crate::with_js_error;
-use crate::{DataContractWasm};
+use crate::DataContractWasm;
 
 pub mod errors;
 pub use state_transition::*;
@@ -26,7 +25,7 @@ mod validator;
 
 pub use document_batch_transition::{DocumentsBatchTransitionWASM, DocumentsContainer};
 pub use document_in_state_transition::DocumentInStateTransitionWasm;
-use dpp::data_contract::{DriveContractExt};
+use dpp::data_contract::DriveContractExt;
 use dpp::document::{
     document_in_state_transition_property_names, Document,
     DOCUMENT_IN_STATE_TRANSITION_IDENTIFIER_FIELDS,

@@ -1,7 +1,7 @@
 #[cfg(test)]
 mod apply_identity_credit_withdrawal_transition_factory {
     use dashcore::{consensus, BlockHeader};
-    
+
     use std::collections::BTreeMap;
 
     use crate::contracts::withdrawals_contract::property_names::{

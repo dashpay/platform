@@ -21,7 +21,7 @@ use platform_value::btreemap_extensions::BTreeValueMapHelper;
 use platform_value::Value;
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
-use std::convert::{TryFrom};
+use std::convert::TryFrom;
 use std::io::{BufReader, Read};
 
 //todo: delete in later PR

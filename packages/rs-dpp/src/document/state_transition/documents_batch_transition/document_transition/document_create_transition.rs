@@ -3,8 +3,7 @@ use platform_value::Value;
 use serde::{Deserialize, Serialize};
 use serde_json::Value as JsonValue;
 
-
-use crate::document::{Document};
+use crate::document::Document;
 use crate::identity::TimestampMillis;
 use crate::prelude::Revision;
 

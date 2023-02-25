@@ -234,7 +234,9 @@ impl Identity {
         identity_json.replace_identifier_paths(IDENTIFIER_FIELDS_RAW_OBJECT, ReplaceWith::Bytes)?;
 
         let pk_values = self
-            .public_keys.values().map(|pk| pk.to_raw_json_object())
+            .public_keys
+            .values()
+            .map(|pk| pk.to_raw_json_object())
             .collect::<Result<Vec<JsonValue>, SerdeParsingError>>()?;
 
         identity_json.insert(

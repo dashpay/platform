@@ -1,5 +1,7 @@
 use std::convert;
 
+use dpp::identity::TimestampMillis;
+use dpp::prelude::Revision;
 use dpp::{
     document::document_transition::{
         self, document_create_transition, DocumentCreateTransition, DocumentTransitionObjectLike,
@@ -12,8 +14,6 @@ use dpp::{
 };
 use serde::Serialize;
 use wasm_bindgen::prelude::*;
-use dpp::identity::TimestampMillis;
-use dpp::prelude::Revision;
 
 use crate::{
     buffer::Buffer,
@@ -89,7 +89,7 @@ impl DocumentCreateTransitionWasm {
     // AbstractDocumentTransitionMethods
     #[wasm_bindgen(js_name=getId)]
     pub fn id(&self) -> IdentifierWrapper {
-        self.inner.base.id.clone().into()
+        self.inner.base.id.into()
     }
 
     #[wasm_bindgen(js_name=getType)]

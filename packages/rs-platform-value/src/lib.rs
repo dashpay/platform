@@ -94,19 +94,19 @@ impl Value {
     /// assert!(value.is_integer());
     /// ```
     pub fn is_integer(&self) -> bool {
-        match self {
+        matches!(
+            self,
             Value::U128(_)
-            | Value::I128(_)
-            | Value::U64(_)
-            | Value::I64(_)
-            | Value::U32(_)
-            | Value::I32(_)
-            | Value::U16(_)
-            | Value::I16(_)
-            | Value::U8(_)
-            | Value::I8(_) => true,
-            _ => false,
-        }
+                | Value::I128(_)
+                | Value::U64(_)
+                | Value::I64(_)
+                | Value::U32(_)
+                | Value::I32(_)
+                | Value::U16(_)
+                | Value::I16(_)
+                | Value::U8(_)
+                | Value::I8(_)
+        )
     }
 
     /// If the `Value` is a `Integer`, returns a reference to the associated `Integer` data.

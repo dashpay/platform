@@ -2,7 +2,7 @@ use anyhow::{anyhow, bail};
 use platform_value::btreemap_extensions::BTreeValueMapHelper;
 use serde_json::json;
 
-use crate::document::{Document};
+use crate::document::Document;
 use crate::{
     data_trigger::create_error,
     document::document_transition::DocumentTransition,

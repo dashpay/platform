@@ -2,7 +2,7 @@ use crate::errors::consensus::basic::{
     IncompatibleProtocolVersionErrorWasm, InvalidIdentifierErrorWasm, JsonSchemaErrorWasm,
     UnsupportedProtocolVersionErrorWasm,
 };
-use dpp::consensus::{ConsensusError as DPPConsensusError};
+use dpp::consensus::ConsensusError as DPPConsensusError;
 use std::ops::Deref;
 
 use crate::errors::consensus::basic::identity::{

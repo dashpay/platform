@@ -222,7 +222,7 @@ where
 
 #[cfg(test)]
 mod test {
-    use crate::document::{Document};
+    use crate::document::Document;
     use crate::{
         data_trigger::DataTriggerExecutionContext,
         document::document_transition::Action,
