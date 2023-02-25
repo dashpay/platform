@@ -4,7 +4,7 @@ use dpp::util::json_schema::JsonSchemaExt;
 use dpp::util::json_value::{JsonValueExt, ReplaceWith};
 
 use serde::{Deserialize, Serialize};
-use std::convert::{self, TryInto};
+use std::convert::{TryInto};
 use wasm_bindgen::prelude::*;
 
 use crate::buffer::Buffer;

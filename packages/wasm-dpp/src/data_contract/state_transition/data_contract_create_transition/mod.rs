@@ -6,7 +6,7 @@ use std::collections::HashMap;
 pub use apply::*;
 pub use validation::*;
 
-use dpp::identity::KeyID;
+
 use dpp::{
     data_contract::state_transition::DataContractCreateTransition,
     state_transition::{

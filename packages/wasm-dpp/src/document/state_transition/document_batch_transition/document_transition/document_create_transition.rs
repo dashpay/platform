@@ -17,7 +17,6 @@ use dpp::prelude::Revision;
 
 use crate::{
     buffer::Buffer,
-    document,
     document_batch_transition::document_transition::to_object,
     identifier::IdentifierWrapper,
     lodash::lodash_set,

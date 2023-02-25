@@ -16,7 +16,6 @@ use crate::{
     util::json_value::JsonValueExt,
     validation::{
         DataValidator, DataValidatorWithContext, JsonSchemaValidator, SimpleValidationResult,
-        ValidationResult,
     },
     version::ProtocolVersionValidator,
     ProtocolError,
