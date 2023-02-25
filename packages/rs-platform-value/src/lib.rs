@@ -597,6 +597,25 @@ impl Value {
         }
     }
 
+    /// If the `Value` is a `Bool`, returns a the associated `bool` data as `Ok`.
+    /// Returns `Err(Error::Structure("reason"))` otherwise.
+    ///
+    /// ```
+    /// # use platform_value::{Error, Value};
+    /// #
+    /// let value = Value::Bool(false);
+    /// assert_eq!(value.to_bool(), Ok(false));
+    ///
+    /// let value = Value::Float(17.);
+    /// assert_eq!(value.to_bool(), Err(Error::StructureError("value is not a bool".to_string())));
+    /// ```
+    pub fn to_bool(&self) -> Result<bool, Error> {
+        match self {
+            Value::Bool(b) => Ok(*b),
+            _other => Err(Error::StructureError("value is not a bool".to_string())),
+        }
+    }
+
     /// Returns true if the `Value` is a `Null`. Returns false otherwise.
     ///
     /// ```

@@ -177,7 +177,17 @@ where
             + TryFrom<u8>
             + TryFrom<i8>,
     {
-        self.get(key).map(|v| v.borrow().to_integer()).transpose()
+        self.get(key)
+            .map(|v| {
+                let borrowed = v.borrow();
+                if borrowed.is_null() {
+                    None
+                } else {
+                    Some(v.borrow().to_integer())
+                }
+            })
+            .flatten()
+            .transpose()
     }
 
     fn get_integer<T>(&self, key: &str) -> Result<T, Error>
@@ -211,7 +221,15 @@ where
             + TryFrom<i8>,
     {
         self.remove(key)
-            .map(|v| v.borrow().to_integer())
+            .map(|v| {
+                let borrowed = v.borrow();
+                if borrowed.is_null() {
+                    None
+                } else {
+                    Some(v.borrow().to_integer())
+                }
+            })
+            .flatten()
             .transpose()
     }
 
@@ -236,10 +254,14 @@ where
     fn get_optional_bool(&self, key: &str) -> Result<Option<bool>, Error> {
         self.get(key)
             .map(|v| {
-                v.borrow()
-                    .as_bool()
-                    .ok_or_else(|| Error::StructureError(format!("{key} must be a bool")))
+                let borrowed = v.borrow();
+                if borrowed.is_null() {
+                    None
+                } else {
+                    Some(v.borrow().to_bool())
+                }
             })
+            .flatten()
             .transpose()
     }
 
@@ -451,7 +473,17 @@ where
     }
 
     fn remove_optional_float(&mut self, key: &str) -> Result<Option<f64>, Error> {
-        self.remove(key).map(|v| v.borrow().to_float()).transpose()
+        self.remove(key)
+            .map(|v| {
+                let borrowed = v.borrow();
+                if borrowed.is_null() {
+                    None
+                } else {
+                    Some(v.borrow().to_float())
+                }
+            })
+            .flatten()
+            .transpose()
     }
 
     fn remove_float(&mut self, key: &str) -> Result<f64, Error> {
@@ -460,7 +492,17 @@ where
     }
 
     fn get_optional_float(&self, key: &str) -> Result<Option<f64>, Error> {
-        self.get(key).map(|v| v.borrow().to_float()).transpose()
+        self.get(key)
+            .map(|v| {
+                let borrowed = v.borrow();
+                if borrowed.is_null() {
+                    None
+                } else {
+                    Some(v.borrow().to_float())
+                }
+            })
+            .flatten()
+            .transpose()
     }
 
     fn get_float(&self, key: &str) -> Result<f64, Error> {

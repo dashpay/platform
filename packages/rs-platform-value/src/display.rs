@@ -26,7 +26,7 @@ impl Value {
             Value::Bool(b) => {
                 format!("{}", b)
             }
-            Value::Null => "None".to_string(),
+            Value::Null => "Null".to_string(),
             Value::Tag(_, _) => "Tag".to_string(),
             Value::Array(value) => {
                 let inner_values = value
