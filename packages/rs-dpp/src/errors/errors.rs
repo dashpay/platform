@@ -13,6 +13,7 @@ use crate::state_transition::errors::{
 };
 use crate::{CompatibleProtocolVersionIsNotDefinedError, NonConsensusError, SerdeParsingError};
 use crate::consensus::basic::state_transition::InvalidStateTransitionTypeError;
+use platform_value::Error as ValueError;
 
 #[derive(Error, Debug)]
 pub enum ProtocolError {
@@ -115,6 +116,10 @@ pub enum ProtocolError {
     /// Error
     #[error("missing key: {0}")]
     DocumentKeyMissing(String),
+
+    /// Value error
+    #[error("value error: {0}")]
+    ValueError(#[from] ValueError),
 
     #[error("Invalid Identity: {errors:?}")]
     InvalidIdentityError {

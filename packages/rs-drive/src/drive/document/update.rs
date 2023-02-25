@@ -668,6 +668,7 @@ impl Drive {
     }
 }
 
+#[cfg(feature = "full")]
 #[cfg(test)]
 mod tests {
     use dpp::document::fetch_and_validate_data_contract::DataContractFetcherAndValidator;

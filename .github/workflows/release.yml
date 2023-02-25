@@ -838,7 +838,7 @@ jobs:
           CARGO_BUILD_PROFILE: release
 
       - name: Create package
-        run: "${GITHUB_WORKSPACE}/scripts/pack_dashmate.sh" ${{ matrix.package_type }}
+        run: "${GITHUB_WORKSPACE}/scripts/pack_dashmate.sh ${{ matrix.package_type }}"
 
       - name: Upload artifacts to action summary
         uses: actions/upload-artifact@v3

@@ -171,6 +171,7 @@ extern "C" {
     pub async fn mark_asset_lock_transaction_out_point_as_used(
         this: &ExternalStateRepositoryLike,
         out_point_buffer: Buffer,
+        execution_context: StateTransitionExecutionContextWasm,
     ) -> Result<(), JsValue>;
 
     #[wasm_bindgen(catch, structural, method, js_name=fetchLatestPlatformBlockHeader)]
@@ -240,7 +241,7 @@ impl StateRepositoryLike for ExternalStateRepositoryLikeWrapper {
             .await
             .map_err(from_js_error)?;
 
-        if maybe_data_contract.is_undefined() {
+        if maybe_data_contract.is_undefined() || maybe_data_contract.is_null() {
             return Ok(None);
         }
 
@@ -587,9 +588,13 @@ impl StateRepositoryLike for ExternalStateRepositoryLikeWrapper {
     async fn mark_asset_lock_transaction_out_point_as_used(
         &self,
         out_point_buffer: &[u8],
+        execution_context: &StateTransitionExecutionContext,
     ) -> Result<()> {
         self.0
-            .mark_asset_lock_transaction_out_point_as_used(Buffer::from_bytes(out_point_buffer))
+            .mark_asset_lock_transaction_out_point_as_used(
+                Buffer::from_bytes(out_point_buffer),
+                execution_context.clone().into(),
+            )
             .await
             .map_err(from_js_error)
     }
