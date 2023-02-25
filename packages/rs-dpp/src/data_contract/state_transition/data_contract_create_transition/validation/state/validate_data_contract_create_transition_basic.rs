@@ -22,6 +22,7 @@ use crate::{
     version::ProtocolVersionValidator,
     ProtocolError,
 };
+use crate::consensus::basic::decode::ProtocolVersionParsingError;
 
 lazy_static! {
     static ref DATA_CONTRACT_CREATE_SCHEMA: Value = serde_json::from_str(include_str!(
@@ -88,7 +89,7 @@ fn validate_data_contract_create_transition_basic(
         Ok(v) => v,
         Err(parsing_error) => {
             return Ok(SimpleValidationResult::new(Some(vec![
-                ConsensusError::ProtocolVersionParsingError { parsing_error },
+                ConsensusError::ProtocolVersionParsingError(ProtocolVersionParsingError::new(parsing_error)),
             ])))
         }
     };
