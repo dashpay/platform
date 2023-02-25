@@ -31,23 +31,40 @@
 //! Functions include inserting verifying balances between various trees.
 //!
 
+#[cfg(feature = "full")]
 use crate::drive::grove_operations::DirectQueryType;
+#[cfg(feature = "full")]
 use crate::drive::system::{misc_path, misc_path_vec};
-use crate::drive::{Drive, RootTree};
+#[cfg(feature = "full")]
+use crate::drive::Drive;
+#[cfg(any(feature = "full", feature = "verify"))]
+use crate::drive::RootTree;
+#[cfg(feature = "full")]
 use crate::error::drive::DriveError;
+#[cfg(feature = "full")]
 use crate::error::Error;
+#[cfg(feature = "full")]
 use crate::fee::credits::{Creditable, Credits, SignedCredits, MAX_CREDITS};
+#[cfg(feature = "full")]
 use crate::fee::op::DriveOperation;
+#[cfg(feature = "full")]
 use crate::fee::op::DriveOperation::GroveOperation;
+#[cfg(feature = "full")]
 use grovedb::batch::{GroveDbOp, KeyInfoPath};
+#[cfg(feature = "full")]
 use grovedb::Element::Item;
+#[cfg(feature = "full")]
 use grovedb::{EstimatedLayerInformation, TransactionArg};
+#[cfg(feature = "full")]
 use integer_encoding::VarInt;
+#[cfg(feature = "full")]
 use std::collections::HashMap;
 
 /// Storage fee pool key
+#[cfg(feature = "full")]
 pub const TOTAL_SYSTEM_CREDITS_STORAGE_KEY: &[u8; 1] = b"D";
 
+#[cfg(feature = "full")]
 pub(crate) fn total_credits_path() -> [&'static [u8]; 2] {
     [
         Into::<&[u8; 1]>::into(RootTree::Misc),
@@ -55,16 +72,19 @@ pub(crate) fn total_credits_path() -> [&'static [u8]; 2] {
     ]
 }
 
+#[cfg(any(feature = "full", feature = "verify"))]
 pub(crate) fn balance_path() -> [&'static [u8]; 1] {
     [Into::<&[u8; 1]>::into(RootTree::Balances)]
 }
 
+#[cfg(any(feature = "full", feature = "verify"))]
 pub(crate) fn balance_path_vec() -> Vec<Vec<u8>> {
     vec![Into::<&[u8; 1]>::into(RootTree::Balances).to_vec()]
 }
 
-#[derive(Copy, Clone, Debug)]
 /// The outcome of verifying credits
+#[cfg(feature = "full")]
+#[derive(Copy, Clone, Debug)]
 pub struct TotalCreditsBalance {
     /// all the credits in platform
     pub total_credits_in_platform: Credits,
@@ -74,6 +94,7 @@ pub struct TotalCreditsBalance {
     pub total_identity_balances: SignedCredits,
 }
 
+#[cfg(feature = "full")]
 impl TotalCreditsBalance {
     /// Is the outcome okay? basically do the values match up
     /// Errors in case of overflow
@@ -130,6 +151,7 @@ impl TotalCreditsBalance {
     }
 }
 
+#[cfg(feature = "full")]
 impl Drive {
     /// We add to the total platform system credits when:
     /// - we create an identity
@@ -300,6 +322,7 @@ impl Drive {
     }
 }
 
+#[cfg(feature = "full")]
 #[cfg(test)]
 mod tests {
     use crate::drive::Drive;

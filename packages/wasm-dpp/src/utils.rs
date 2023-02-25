@@ -7,8 +7,7 @@ use dpp::platform_value::Value;
 use js_sys::Function;
 use serde::de::DeserializeOwned;
 use serde_json::Value as JsonValue;
-use wasm_bindgen::convert::RefFromWasmAbi;
-use wasm_bindgen::prelude::*;
+use wasm_bindgen::{convert::RefFromWasmAbi, prelude::*};
 
 use crate::errors::{from_dpp_err, RustConversionError};
 

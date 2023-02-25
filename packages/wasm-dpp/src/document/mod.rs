@@ -4,7 +4,7 @@ use dpp::util::json_schema::JsonSchemaExt;
 use dpp::util::json_value::{JsonValueExt, ReplaceWith};
 
 use serde::{Deserialize, Serialize};
-use std::convert::TryInto;
+use std::convert::{self, TryInto};
 use wasm_bindgen::prelude::*;
 
 use crate::buffer::Buffer;
@@ -20,6 +20,7 @@ pub mod errors;
 pub use state_transition::*;
 mod document_in_state_transition;
 mod factory;
+pub mod fetch_and_validate_data_contract;
 pub mod state_transition;
 mod validator;
 
@@ -37,16 +38,17 @@ pub use factory::DocumentFactoryWASM;
 use serde_json::Value as JsonValue;
 pub use validator::DocumentValidatorWasm;
 
+#[derive(Serialize, Deserialize, Debug, Clone, Copy, Default)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct ConversionOptions {
+    #[serde(default)]
+    pub skip_identifiers_conversion: bool,
+}
+
 pub(super) enum BinaryType {
     Identifier,
     Buffer,
     None,
-}
-
-#[derive(Serialize, Deserialize, Debug, Clone, Copy, Default)]
-#[serde(rename_all = "camelCase")]
-pub struct ConversionOptions {
-    skip_identifiers_conversion: bool,
 }
 
 #[wasm_bindgen(js_name=Document)]
@@ -119,13 +121,13 @@ impl DocumentWasm {
         self.0.revision
     }
 
-    #[wasm_bindgen(js_name=setData)]
+    #[wasm_bindgen(js_name=setProperties)]
     pub fn set_properties(&mut self, d: JsValue) -> Result<(), JsValue> {
         self.0.properties = with_js_error!(serde_wasm_bindgen::from_value(d))?;
         Ok(())
     }
 
-    #[wasm_bindgen(js_name=getData)]
+    #[wasm_bindgen(js_name=getProperties)]
     pub fn get_properties(&mut self) -> Result<JsValue, JsValue> {
         let serializer = serde_wasm_bindgen::Serializer::json_compatible();
 

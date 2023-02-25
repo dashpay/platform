@@ -769,6 +769,7 @@ impl Drive {
     }
 }
 
+#[cfg(feature = "full")]
 #[cfg(test)]
 mod tests {
     use dpp::data_contract::extra::common::json_document_to_cbor;

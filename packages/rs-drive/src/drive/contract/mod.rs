@@ -32,54 +32,89 @@
 //! This module defines functions pertinent to Contracts stored in Drive.
 //!
 
+#[cfg(feature = "full")]
 mod estimation_costs;
 /// Various paths for contract operations
+#[cfg(feature = "full")]
 pub(crate) mod paths;
 
+#[cfg(feature = "full")]
 use std::borrow::Cow;
+#[cfg(feature = "full")]
 use std::collections::{HashMap, HashSet};
+#[cfg(feature = "full")]
 use std::sync::Arc;
 
+#[cfg(feature = "full")]
 use crate::common::encode::encode_u64;
-use costs::{cost_return_on_error_no_add, CostContext, CostResult, CostsExt, OperationCost};
+#[cfg(any(feature = "full", feature = "verify"))]
+use costs::OperationCost;
+#[cfg(feature = "full")]
+use costs::{cost_return_on_error_no_add, CostContext, CostResult, CostsExt};
 
+#[cfg(feature = "full")]
 use grovedb::batch::key_info::KeyInfo;
+#[cfg(feature = "full")]
 use grovedb::batch::KeyInfoPath;
+#[cfg(feature = "full")]
 use grovedb::reference_path::ReferencePathType::SiblingReference;
 
+#[cfg(feature = "full")]
 use dpp::data_contract::DriveContractExt;
+#[cfg(feature = "full")]
 use grovedb::{Element, EstimatedLayerInformation, TransactionArg};
 
+#[cfg(any(feature = "full", feature = "verify"))]
 use crate::contract::Contract;
+#[cfg(feature = "full")]
 use crate::drive::batch::GroveDbOpBatch;
+#[cfg(feature = "full")]
 use crate::drive::block_info::BlockInfo;
+#[cfg(feature = "full")]
 use crate::drive::defaults::CONTRACT_MAX_SERIALIZED_SIZE;
 
+#[cfg(any(feature = "full", feature = "verify"))]
 use crate::drive::flags::StorageFlags;
+#[cfg(feature = "full")]
 use crate::drive::object_size_info::DriveKeyInfo::{Key, KeyRef};
 
+#[cfg(feature = "full")]
 use crate::drive::contract::paths::contract_root_path;
+#[cfg(feature = "full")]
 use crate::drive::grove_operations::QueryTarget::QueryTargetValue;
+#[cfg(feature = "full")]
 use crate::drive::grove_operations::{BatchInsertTreeApplyType, DirectQueryType};
+#[cfg(feature = "full")]
 use crate::drive::object_size_info::PathKeyElementInfo::{
     PathFixedSizeKeyRefElement, PathKeyElementSize,
 };
+#[cfg(feature = "full")]
 use crate::drive::object_size_info::PathKeyInfo::PathFixedSizeKeyRef;
+#[cfg(feature = "full")]
 use crate::drive::{contract_documents_path, Drive, RootTree};
+#[cfg(feature = "full")]
 use crate::error::drive::DriveError;
+#[cfg(feature = "full")]
 use crate::error::Error;
+#[cfg(feature = "full")]
 use crate::fee::calculate_fee;
+#[cfg(feature = "full")]
 use crate::fee::op::DriveOperation;
+#[cfg(feature = "full")]
 use crate::fee::op::DriveOperation::{CalculatedCostOperation, PreCalculatedFeeResult};
+#[cfg(any(feature = "full", feature = "verify"))]
 use crate::fee::result::FeeResult;
+#[cfg(feature = "full")]
 use crate::fee_pools::epochs::Epoch;
 
+#[cfg(feature = "full")]
 /// Adds operations to the op batch relevant to initializing the contract's structure.
 /// Namely it inserts an empty tree at the contract's root path.
 pub fn add_init_contracts_structure_operations(batch: &mut GroveDbOpBatch) {
     batch.add_insert_empty_tree(vec![], vec![RootTree::ContractDocuments as u8]);
 }
 
+#[cfg(any(feature = "full", feature = "verify"))]
 /// Contract and fetch information
 #[derive(Default, PartialEq, Debug, Clone)]
 pub struct ContractFetchInfo {
@@ -95,6 +130,7 @@ pub struct ContractFetchInfo {
     pub fee: Option<FeeResult>,
 }
 
+#[cfg(feature = "full")]
 impl Drive {
     /// Adds a contract to storage.
     fn add_contract_to_storage(
@@ -1021,6 +1057,7 @@ impl Drive {
     }
 }
 
+#[cfg(feature = "full")]
 #[cfg(test)]
 mod tests {
     use crate::contract::CreateRandomDocument;

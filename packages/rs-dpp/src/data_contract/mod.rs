@@ -27,7 +27,7 @@ pub(self) mod property_names {
     pub const SCHEMA: &str = "$schema";
     pub const DOCUMENTS: &str = "documents";
     pub const DEFINITIONS: &str = "$defs";
-    pub const ENTROPY: &str = "entropy";
+    pub const ENTROPY: &str = "entropy"; // not a data contract field actually but at some point it can be there for some time
 }
 
 pub use data_contract_facade::DataContractFacade;

@@ -1126,6 +1126,7 @@ impl<'a> WhereClause {
     }
 }
 
+#[cfg(feature = "full")]
 #[cfg(test)]
 mod tests {
     use crate::query::conditions::WhereClause;

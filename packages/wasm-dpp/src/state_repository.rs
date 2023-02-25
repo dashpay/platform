@@ -241,7 +241,7 @@ impl StateRepositoryLike for ExternalStateRepositoryLikeWrapper {
             .await
             .map_err(from_js_error)?;
 
-        if maybe_data_contract.is_undefined() {
+        if maybe_data_contract.is_undefined() || maybe_data_contract.is_null() {
             return Ok(None);
         }
 

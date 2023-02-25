@@ -30,46 +30,81 @@
 //! Query Tests
 //!
 
+#[cfg(feature = "full")]
 use grovedb::TransactionArg;
+#[cfg(feature = "full")]
 use std::borrow::Cow;
+#[cfg(feature = "full")]
 use std::collections::HashMap;
+#[cfg(feature = "full")]
 use std::fs::File;
+#[cfg(feature = "full")]
 use std::io::{self, BufRead};
+#[cfg(feature = "full")]
 use std::option::Option::None;
+#[cfg(feature = "full")]
 use std::sync::Arc;
 
+#[cfg(feature = "full")]
 use dpp::data_contract::{DataContractFactory, DriveContractExt};
+#[cfg(feature = "full")]
 use rand::seq::SliceRandom;
+#[cfg(feature = "full")]
 use rand::{Rng, SeedableRng};
+#[cfg(feature = "full")]
 use serde::{Deserialize, Serialize};
+#[cfg(feature = "full")]
 use serde_json::json;
+#[cfg(feature = "full")]
 use tempfile::TempDir;
 
+#[cfg(feature = "full")]
 use drive::common;
+#[cfg(feature = "full")]
 use drive::common::setup_contract;
+#[cfg(feature = "full")]
 use drive::drive::batch::GroveDbOpBatch;
+#[cfg(feature = "full")]
 use drive::drive::config::DriveConfig;
+#[cfg(feature = "full")]
 use drive::drive::contract::add_init_contracts_structure_operations;
+#[cfg(feature = "full")]
 use drive::drive::flags::StorageFlags;
+#[cfg(feature = "full")]
 use drive::drive::object_size_info::DocumentInfo::DocumentRefAndSerialization;
+#[cfg(feature = "full")]
 use drive::drive::object_size_info::{DocumentAndContractInfo, OwnedDocumentInfo};
+#[cfg(feature = "full")]
 use drive::drive::Drive;
+#[cfg(feature = "full")]
 use drive::error::{query::QueryError, Error};
+#[cfg(feature = "full")]
 use drive::query::DriveQuery;
+#[cfg(feature = "full")]
 #[cfg(test)]
 use drive::tests::helpers::setup::setup_drive;
 
+#[cfg(feature = "full")]
 use dpp::data_contract::validation::data_contract_validator::DataContractValidator;
+#[cfg(feature = "full")]
 use dpp::document::Document;
+#[cfg(feature = "full")]
 use dpp::platform_value::Value;
 
+#[cfg(feature = "full")]
 use dpp::prelude::DataContract;
+#[cfg(feature = "full")]
 use dpp::util::serializer;
+#[cfg(feature = "full")]
 use dpp::version::{ProtocolVersionValidator, COMPATIBILITY_MAP, LATEST_VERSION};
+#[cfg(feature = "full")]
 use drive::contract::Contract;
+#[cfg(feature = "full")]
 use drive::drive::block_info::BlockInfo;
+#[cfg(feature = "full")]
 use drive::drive::query::QueryDocumentsOutcome;
 
+#[cfg(feature = "full")]
 #[derive(Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct Person {
@@ -83,6 +118,7 @@ struct Person {
     age: u8,
 }
 
+#[cfg(feature = "full")]
 impl Person {
     fn random_people(count: u32, seed: u64) -> Vec<Self> {
         let first_names =
@@ -109,6 +145,7 @@ impl Person {
     }
 }
 
+#[cfg(feature = "full")]
 #[derive(Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct PersonWithOptionalValues {
@@ -122,6 +159,7 @@ struct PersonWithOptionalValues {
     age: u8,
 }
 
+#[cfg(feature = "full")]
 impl PersonWithOptionalValues {
     fn random_people(count: u32, seed: u64) -> Vec<Self> {
         let first_names =
@@ -161,6 +199,7 @@ impl PersonWithOptionalValues {
     }
 }
 
+#[cfg(feature = "full")]
 /// Inserts the test "family" contract and adds `count` documents containing randomly named people to it.
 pub fn setup_family_tests(count: u32, with_batching: bool, seed: u64) -> (Drive, Contract) {
     let drive_config = if with_batching {
@@ -235,6 +274,7 @@ pub fn setup_family_tests(count: u32, with_batching: bool, seed: u64) -> (Drive,
     (drive, contract)
 }
 
+#[cfg(feature = "full")]
 /// Same as `setup_family_tests` but with null values in the documents.
 pub fn setup_family_tests_with_nulls(
     count: u32,
@@ -312,6 +352,7 @@ pub fn setup_family_tests_with_nulls(
     (drive, contract)
 }
 
+#[cfg(feature = "full")]
 /// Inserts the test "family" contract and adds `count` documents containing randomly named people to it.
 pub fn setup_family_tests_only_first_name_index(
     count: u32,
@@ -390,12 +431,14 @@ pub fn setup_family_tests_only_first_name_index(
     (drive, contract)
 }
 
+#[cfg(feature = "full")]
 #[derive(Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct Records {
     dash_unique_identity_id: Vec<u8>,
 }
 
+#[cfg(feature = "full")]
 /// DPNS domain info
 // In the real dpns, label is required. We make it optional here for a test.
 #[derive(Serialize, Deserialize)]
@@ -413,6 +456,7 @@ struct Domain {
     subdomain_rules: bool,
 }
 
+#[cfg(feature = "full")]
 impl Domain {
     /// Creates `count` random names as domain names for the given parent domain
     fn random_domains_in_parent(
@@ -445,6 +489,7 @@ impl Domain {
     }
 }
 
+#[cfg(feature = "full")]
 /// Adds `count` random domain names to the given contract
 pub fn add_domains_to_contract(
     drive: &Drive,
@@ -490,6 +535,7 @@ pub fn add_domains_to_contract(
     }
 }
 
+#[cfg(feature = "full")]
 /// Sets up and inserts random domain name data to the DPNS contract to test queries on.
 pub fn setup_dpns_tests_with_batches(count: u32, seed: u64) -> (Drive, Contract) {
     let drive = setup_drive(Some(DriveConfig::default_with_batches()));
@@ -523,6 +569,7 @@ pub fn setup_dpns_tests_with_batches(count: u32, seed: u64) -> (Drive, Contract)
     (drive, contract)
 }
 
+#[cfg(feature = "full")]
 /// Sets up the DPNS contract and inserts data from the given path to test queries on.
 pub fn setup_dpns_test_with_data(path: &str) -> (Drive, Contract) {
     let drive = setup_drive(None);
@@ -594,6 +641,7 @@ pub fn setup_dpns_test_with_data(path: &str) -> (Drive, Contract) {
     (drive, contract)
 }
 
+#[cfg(feature = "full")]
 #[test]
 #[ignore]
 fn test_query_many() {
@@ -642,6 +690,7 @@ fn test_query_many() {
         .expect("transaction should be committed");
 }
 
+#[cfg(feature = "full")]
 #[test]
 fn test_reference_proof_single_index() {
     let (drive, contract) = setup_family_tests_only_first_name_index(1, true, 73509);
@@ -683,6 +732,7 @@ fn test_reference_proof_single_index() {
     assert_eq!(results, proof_results);
 }
 
+#[cfg(feature = "full")]
 #[test]
 fn test_non_existence_reference_proof_single_index() {
     let (drive, contract) = setup_family_tests_only_first_name_index(0, true, 73509);
@@ -724,6 +774,7 @@ fn test_non_existence_reference_proof_single_index() {
     assert_eq!(results, proof_results);
 }
 
+#[cfg(feature = "full")]
 #[test]
 fn test_family_basic_queries() {
     let (drive, contract) = setup_family_tests(10, true, 73509);
@@ -2003,6 +2054,7 @@ fn test_family_basic_queries() {
     );
 }
 
+#[cfg(feature = "full")]
 #[test]
 fn test_family_starts_at_queries() {
     let (drive, contract) = setup_family_tests(10, true, 73509);
@@ -2247,6 +2299,7 @@ fn test_family_starts_at_queries() {
     assert_eq!(results, proof_results);
 }
 
+#[cfg(feature = "full")]
 #[test]
 fn test_family_sql_query() {
     // These helpers confirm that sql statements produce the same drive query
@@ -2390,6 +2443,7 @@ fn test_family_sql_query() {
     assert_eq!(query1, query2);
 }
 
+#[cfg(feature = "full")]
 #[test]
 fn test_family_with_nulls_query() {
     let (drive, contract) = setup_family_tests_with_nulls(10, true, 30004);
@@ -2505,6 +2559,7 @@ fn test_family_with_nulls_query() {
         .expect("unable to commit transaction");
 }
 
+#[cfg(feature = "full")]
 #[test]
 fn test_query_with_cached_contract() {
     let (drive, contract) = setup_family_tests(10, true, 73509);
@@ -2564,6 +2619,7 @@ fn test_query_with_cached_contract() {
     assert_eq!(Arc::strong_count(&contract_ref), 2);
 }
 
+#[cfg(feature = "full")]
 #[test]
 fn test_dpns_query() {
     let (drive, contract) = setup_dpns_tests_with_batches(10, 11456);
@@ -2971,6 +3027,7 @@ fn test_dpns_query() {
     assert_eq!(results, proof_results);
 }
 
+#[cfg(feature = "full")]
 #[test]
 fn test_dpns_insertion_no_aliases() {
     // using ascending order with rangeTo operators
@@ -3023,6 +3080,7 @@ fn test_dpns_insertion_no_aliases() {
     assert_eq!(result.0, proof_results);
 }
 
+#[cfg(feature = "full")]
 #[test]
 fn test_dpns_insertion_with_aliases() {
     // using ascending order with rangeTo operators
@@ -3075,6 +3133,7 @@ fn test_dpns_insertion_with_aliases() {
     assert_eq!(result.0, proof_results);
 }
 
+#[cfg(feature = "full")]
 #[test]
 fn test_dpns_query_start_at() {
     // The point of this test is to test the situation where we have a start at a certain value for the DPNS query.
@@ -3162,6 +3221,7 @@ fn test_dpns_query_start_at() {
     assert_eq!(results, proof_results);
 }
 
+#[cfg(feature = "full")]
 #[test]
 fn test_dpns_query_start_after() {
     // The point of this test is to test the situation where we have a start at a certain value for the DPNS query.
@@ -3249,6 +3309,7 @@ fn test_dpns_query_start_after() {
     assert_eq!(results, proof_results);
 }
 
+#[cfg(feature = "full")]
 #[test]
 fn test_dpns_query_start_at_desc() {
     // The point of this test is to test the situation where we have a start at a certain value for the DPNS query.
@@ -3336,6 +3397,7 @@ fn test_dpns_query_start_at_desc() {
     assert_eq!(results, proof_results);
 }
 
+#[cfg(feature = "full")]
 #[test]
 fn test_dpns_query_start_after_desc() {
     // The point of this test is to test the situation where we have a start at a certain value for the DPNS query.
@@ -3423,6 +3485,7 @@ fn test_dpns_query_start_after_desc() {
     assert_eq!(results, proof_results);
 }
 
+#[cfg(feature = "full")]
 #[test]
 fn test_dpns_query_start_at_with_null_id() {
     // The point of this test is to test the situation where we have a start at inside an index with a null value
@@ -3622,6 +3685,7 @@ fn test_dpns_query_start_at_with_null_id() {
     assert_eq!(results, proof_results);
 }
 
+#[cfg(feature = "full")]
 #[test]
 fn test_dpns_query_start_after_with_null_id() {
     // The point of this test is to test the situation where we have a start at inside an index with a null value
@@ -3824,6 +3888,7 @@ fn test_dpns_query_start_after_with_null_id() {
     assert_eq!(results, proof_results);
 }
 
+#[cfg(feature = "full")]
 #[test]
 fn test_dpns_query_start_after_with_null_id_desc() {
     // The point of this test is to test the situation where we have a start at inside an index with a null value
@@ -4127,6 +4192,7 @@ fn test_dpns_query_start_after_with_null_id_desc() {
     assert_eq!(results, proof_results);
 }
 
+#[cfg(feature = "full")]
 #[test]
 fn test_query_a_b_c_d_e_contract() {
     let tmp_dir = TempDir::new().unwrap();
@@ -4248,6 +4314,7 @@ fn test_query_a_b_c_d_e_contract() {
         .expect("should perform query");
 }
 
+#[cfg(feature = "full")]
 #[test]
 #[ignore]
 fn pwd() {

@@ -199,6 +199,7 @@ fn unique_event_id() -> [u8; 32] {
 }
 
 /// Tests module
+#[cfg(feature = "full")]
 #[cfg(test)]
 pub(crate) mod tests {
     use std::option::Option::None;

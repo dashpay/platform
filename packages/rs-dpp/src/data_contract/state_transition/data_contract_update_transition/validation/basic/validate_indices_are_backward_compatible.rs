@@ -75,7 +75,7 @@ pub fn validate_indices_are_backward_compatible<'a>(
             &existing_schema_indices,
             &name_new_index_map,
             existing_schema,
-        );
+        )?;
         if let Some(index) = maybe_wrongly_updated_index {
             result.add_error(BasicError::DataContractInvalidIndexDefinitionUpdateError {
                 document_type: document_type.to_owned(),
@@ -211,7 +211,7 @@ fn get_wrongly_updated_non_unique_index<'a>(
     existing_schema_indices: &'a [Index],
     new_indices: &'a BTreeMap<IndexName, Index>,
     existing_schema: &'a JsonSchema,
-) -> Option<&'a Index> {
+) -> Result<Option<&'a Index>, ProtocolError> {
     // Checking every existing non-unique index, and it's respective new index
     // if they are changed per spec
     for index_definition in existing_schema_indices.iter().filter(|i| !i.unique) {
@@ -223,20 +223,39 @@ fn get_wrongly_updated_non_unique_index<'a>(
             if new_index_definition.properties[0..index_properties_len]
                 != index_definition.properties
             {
-                return Some(index_definition);
+                return Ok(Some(index_definition));
             }
 
             // Check if the rest of new indexes are defined in the existing schema
             for property in
                 new_index_definition.properties[index_definition.properties.len()..].iter()
             {
-                if existing_schema.get_value(&property.name).is_ok() {
-                    return Some(index_definition);
+                if let Ok(indices) = existing_schema.get_value("indices") {
+                    let indices_array = indices.as_array().ok_or_else(|| {
+                        ProtocolError::ParsingError(
+                            "Error parsing schema: indices is not an array".to_string(),
+                        )
+                    })?;
+
+                    for index in indices_array {
+                        let properties_value = index.get_value("properties")?;
+                        let properties_array = properties_value.as_array().ok_or_else(|| {
+                            ProtocolError::ParsingError(
+                                "Error parsing schema: properties is not an array".to_string(),
+                            )
+                        })?;
+
+                        for property_to_check in properties_array {
+                            if property_to_check.get_value(&property.name).is_ok() {
+                                return Ok(Some(index_definition));
+                            }
+                        }
+                    }
                 }
             }
         }
     }
-    None
+    Ok(None)
 }
 
 #[cfg(test)]
