@@ -44,7 +44,7 @@ use std::fmt;
 use itertools::Itertools;
 use serde_json::Value as JsonValue;
 
-use crate::data_contract::{DataContract, DriveContractExt, IDENTIFIER_FIELDS};
+use crate::data_contract::{DataContract, DriveContractExt};
 use platform_value::Value;
 use serde::{Deserialize, Serialize};
 
@@ -72,6 +72,11 @@ pub mod property_names {
     pub const CREATED_AT: &str = "$createdAt";
     pub const UPDATED_AT: &str = "$updatedAt";
 }
+
+pub const IDENTIFIER_FIELDS: [&str; 2] = [
+    property_names::ID,
+    property_names::OWNER_ID,
+];
 
 /// Documents contain the data that goes into data contracts.
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Default)]

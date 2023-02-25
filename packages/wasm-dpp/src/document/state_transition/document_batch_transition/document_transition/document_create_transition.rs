@@ -12,6 +12,8 @@ use dpp::{
 };
 use serde::Serialize;
 use wasm_bindgen::prelude::*;
+use dpp::identity::TimestampMillis;
+use dpp::prelude::Revision;
 
 use crate::{
     buffer::Buffer,
@@ -45,7 +47,7 @@ impl DocumentCreateTransitionWasm {
         let data_contract: DataContract = data_contract.clone().into();
         let mut value = raw_object.with_serde_to_json_value()?;
         let document_type = value
-            .get_string(document::property_names::DOCUMENT_TYPE)
+            .get_string(dpp::document::property_names::DOCUMENT_TYPE)
             .with_js_error()?;
 
         let (identifier_paths, _) = data_contract
@@ -71,17 +73,17 @@ impl DocumentCreateTransitionWasm {
     }
 
     #[wasm_bindgen(js_name=getCreatedAt)]
-    pub fn created_at(&self) -> Option<i64> {
+    pub fn created_at(&self) -> Option<TimestampMillis> {
         self.inner.created_at
     }
 
     #[wasm_bindgen(js_name=getUpdatedAt)]
-    pub fn updated_at(&self) -> Option<i64> {
+    pub fn updated_at(&self) -> Option<TimestampMillis> {
         self.inner.updated_at
     }
 
     #[wasm_bindgen(js_name=getRevision)]
-    pub fn revision(&self) -> u32 {
+    pub fn revision(&self) -> Revision {
         document_transition::INITIAL_REVISION
     }
 

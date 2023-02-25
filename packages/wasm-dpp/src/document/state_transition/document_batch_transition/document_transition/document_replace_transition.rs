@@ -16,6 +16,8 @@ use dpp::{
 };
 use serde::Serialize;
 use wasm_bindgen::prelude::*;
+use dpp::identity::TimestampMillis;
+use dpp::prelude::Revision;
 
 use crate::{
     buffer::Buffer,
@@ -73,12 +75,12 @@ impl DocumentReplaceTransitionWasm {
     }
 
     #[wasm_bindgen(js_name=getRevision)]
-    pub fn revision(&self) -> u32 {
+    pub fn revision(&self) -> Revision {
         self.inner.revision
     }
 
     #[wasm_bindgen(js_name=getUpdatedAt)]
-    pub fn updated_at(&self) -> Option<i64> {
+    pub fn updated_at(&self) -> Option<TimestampMillis> {
         self.inner.updated_at
     }
 
