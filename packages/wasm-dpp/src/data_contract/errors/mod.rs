@@ -19,11 +19,13 @@ pub fn from_data_contract_to_js_error(e: DataContractError) -> JsValue {
                 .expect("statically known structure should be a valid JSON"),
         )
         .into(),
-        DataContractError::InvalidDocumentTypeError(err) => invalid_document_type::InvalidDocumentTypeInDataContractError::new(
-            err.document_type(),
-            err.data_contract_id().into(),
-        )
-        .into(),
+        DataContractError::InvalidDocumentTypeError(err) => {
+            invalid_document_type::InvalidDocumentTypeInDataContractError::new(
+                err.document_type(),
+                err.data_contract_id().into(),
+            )
+            .into()
+        }
         _ => todo!(),
     }
 }

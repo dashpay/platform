@@ -3,14 +3,12 @@ use std::sync::Arc;
 
 use anyhow::Result;
 
-use crate::consensus::signature::{IdentityNotFoundError};
+use crate::consensus::signature::IdentityNotFoundError;
 use crate::{
-    consensus::basic::{identity::IdentityInsufficientBalanceError},
+    consensus::basic::identity::IdentityInsufficientBalanceError,
     identity::state_transition::identity_credit_withdrawal_transition::IdentityCreditWithdrawalTransition,
-    state_repository::StateRepositoryLike,
-    state_transition::StateTransitionLike,
-    validation::ValidationResult,
-    NonConsensusError, StateError,
+    state_repository::StateRepositoryLike, state_transition::StateTransitionLike,
+    validation::ValidationResult, NonConsensusError, StateError,
 };
 
 pub struct IdentityCreditWithdrawalTransitionValidator<SR>

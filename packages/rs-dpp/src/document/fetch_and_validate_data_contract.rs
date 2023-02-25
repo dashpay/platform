@@ -3,6 +3,7 @@ use std::{convert::TryInto, sync::Arc};
 use serde_json::Value;
 
 use crate::consensus::basic::invalid_identifier_error::InvalidIdentifierError;
+use crate::data_contract::state_transition::errors::MissingDataContractIdError;
 use crate::{
     consensus::{basic::BasicError, ConsensusError},
     data_contract::DataContract,
@@ -13,7 +14,6 @@ use crate::{
     validation::ValidationResult,
     ProtocolError,
 };
-use crate::data_contract::state_transition::errors::MissingDataContractIdError;
 
 use super::property_names;
 
@@ -51,7 +51,9 @@ pub async fn fetch_and_validate_data_contract(
         id_bytes
     } else {
         validation_result.add_error(ConsensusError::BasicError(Box::new(
-            BasicError::MissingDataContractIdError(MissingDataContractIdError::new(raw_document.clone())),
+            BasicError::MissingDataContractIdError(MissingDataContractIdError::new(
+                raw_document.clone(),
+            )),
         )));
         return Ok(validation_result);
     };

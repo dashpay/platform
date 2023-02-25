@@ -1,5 +1,5 @@
-use thiserror::Error;
 use crate::consensus::basic::BasicError;
+use thiserror::Error;
 
 use crate::consensus::ConsensusError;
 
@@ -29,6 +29,8 @@ impl DataContractUniqueIndicesChangedError {
 
 impl From<DataContractUniqueIndicesChangedError> for ConsensusError {
     fn from(err: DataContractUniqueIndicesChangedError) -> Self {
-        Self::BasicError(Box::new(BasicError::DataContractUniqueIndicesChangedError(err)))
+        Self::BasicError(Box::new(BasicError::DataContractUniqueIndicesChangedError(
+            err,
+        )))
     }
 }

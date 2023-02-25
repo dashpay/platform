@@ -178,13 +178,10 @@ pub fn from_consensus_error_ref(e: &DPPConsensusError) -> JsValue {
             )
             .into()
         }
-        DPPConsensusError::IncompatibleRe2PatternError(err) => IncompatibleRe2PatternErrorWasm::new(
-            err.pattern(),
-            err.path(),
-            err.message(),
-            code,
-        )
-        .into(),
+        DPPConsensusError::IncompatibleRe2PatternError(err) => {
+            IncompatibleRe2PatternErrorWasm::new(err.pattern(), err.path(), err.message(), code)
+                .into()
+        }
         DPPConsensusError::FeeError(e) => match e {
             dpp::consensus::fee::FeeError::BalanceIsNotEnoughError { balance, fee } => {
                 BalanceIsNotEnoughErrorWasm::new(*balance, *fee, code).into()
@@ -451,7 +448,9 @@ fn from_basic_error(basic_error: &BasicError) -> JsValue {
         BasicError::DuplicateDocumentTransitionsWithIdsError(err) => {
             DuplicateDocumentTransitionsWithIdsErrorWasm::new(err.references(), code).into()
         }
-        BasicError::MissingDataContractIdError(err) => MissingDataContractIdErrorWasm::new(err.raw_document_transition(), code).into(),
+        BasicError::MissingDataContractIdError(err) => {
+            MissingDataContractIdErrorWasm::new(err.raw_document_transition(), code).into()
+        }
         BasicError::InvalidIdentifierError(err) => {
             InvalidIdentifierErrorWasm::new(err.identifier_name(), err.error(), code).into()
         }
@@ -537,25 +536,31 @@ fn from_signature_error(signature_error: &SignatureError) -> JsValue {
         SignatureError::IdentityNotFoundError(err) => {
             IdentityNotFoundErrorWasm::new(err.identity_id(), code).into()
         }
-        SignatureError::InvalidSignaturePublicKeySecurityLevelError(err) => InvalidSignaturePublicKeySecurityLevelErrorWasm::new(
-            err.public_key_security_level(),
-            err.required_key_security_level(),
-            code,
-        )
-        .into(),
+        SignatureError::InvalidSignaturePublicKeySecurityLevelError(err) => {
+            InvalidSignaturePublicKeySecurityLevelErrorWasm::new(
+                err.public_key_security_level(),
+                err.required_key_security_level(),
+                code,
+            )
+            .into()
+        }
         SignatureError::PublicKeyIsDisabledError(err) => {
             PublicKeyIsDisabledErrorWasm::new(err.public_key_id(), code).into()
         }
-        SignatureError::PublicKeySecurityLevelNotMetError(err) => PublicKeySecurityLevelNotMetErrorWasm::new(
-            err.public_key_security_level(),
-            err.required_security_level(),
+        SignatureError::PublicKeySecurityLevelNotMetError(err) => {
+            PublicKeySecurityLevelNotMetErrorWasm::new(
+                err.public_key_security_level(),
+                err.required_security_level(),
+                code,
+            )
+            .into()
+        }
+        SignatureError::WrongPublicKeyPurposeError(err) => WrongPublicKeyPurposeErrorWasm::new(
+            err.public_key_purpose(),
+            err.key_purpose_requirement(),
             code,
         )
         .into(),
-        SignatureError::WrongPublicKeyPurposeError(err) => {
-            WrongPublicKeyPurposeErrorWasm::new(err.public_key_purpose(), err.key_purpose_requirement(), code)
-                .into()
-        }
     }
 }
 

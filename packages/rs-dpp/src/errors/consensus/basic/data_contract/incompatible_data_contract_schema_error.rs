@@ -1,5 +1,5 @@
-use thiserror::Error;
 use crate::consensus::basic::BasicError;
+use thiserror::Error;
 
 use crate::consensus::ConsensusError;
 use crate::document::document_transition::document_base_transition::JsonValue;
@@ -52,6 +52,8 @@ impl IncompatibleDataContractSchemaError {
 
 impl From<IncompatibleDataContractSchemaError> for ConsensusError {
     fn from(err: IncompatibleDataContractSchemaError) -> Self {
-        Self::BasicError(Box::new(BasicError::IncompatibleDataContractSchemaError(err)))
+        Self::BasicError(Box::new(BasicError::IncompatibleDataContractSchemaError(
+            err,
+        )))
     }
 }

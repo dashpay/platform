@@ -1,5 +1,5 @@
-use thiserror::Error;
 use crate::consensus::basic::BasicError;
+use thiserror::Error;
 
 use crate::consensus::ConsensusError;
 
@@ -29,6 +29,8 @@ impl DataContractInvalidIndexDefinitionUpdateError {
 
 impl From<DataContractInvalidIndexDefinitionUpdateError> for ConsensusError {
     fn from(err: DataContractInvalidIndexDefinitionUpdateError) -> Self {
-        Self::BasicError(Box::new(BasicError::DataContractInvalidIndexDefinitionUpdateError(err)))
+        Self::BasicError(Box::new(
+            BasicError::DataContractInvalidIndexDefinitionUpdateError(err),
+        ))
     }
 }

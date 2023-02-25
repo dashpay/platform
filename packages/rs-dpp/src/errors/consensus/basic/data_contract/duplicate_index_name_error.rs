@@ -1,5 +1,5 @@
+use crate::consensus::basic::BasicError;
 use thiserror::Error;
-use crate::consensus::basic::{BasicError};
 
 use crate::consensus::ConsensusError;
 

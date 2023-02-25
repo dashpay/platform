@@ -1,6 +1,7 @@
 use anyhow::anyhow;
 use std::convert::{TryFrom, TryInto};
 
+use crate::consensus::basic::state_transition::InvalidStateTransitionTypeError;
 use crate::data_contract::errors::DataContractNotPresentError;
 use crate::data_contract::state_transition::errors::MissingDataContractIdError;
 use crate::{
@@ -21,7 +22,6 @@ use crate::{
     ProtocolError,
 };
 use serde_json::Value as JsonValue;
-use crate::consensus::basic::state_transition::InvalidStateTransitionTypeError;
 
 use super::{
     state_transition_execution_context::StateTransitionExecutionContext, StateTransition,
@@ -75,7 +75,9 @@ pub async fn create_state_transition(
             Ok(StateTransition::DocumentsBatch(documents_batch_transition))
         }
         // TODO!! add basic validation
-        StateTransitionType::IdentityUpdate => Err(ProtocolError::InvalidStateTransitionTypeError(InvalidStateTransitionTypeError::new(transition_type as u8))),
+        StateTransitionType::IdentityUpdate => Err(ProtocolError::InvalidStateTransitionTypeError(
+            InvalidStateTransitionTypeError::new(transition_type as u8),
+        )),
     }
 }
 
@@ -117,8 +119,11 @@ pub fn try_get_transition_type(
     let transition_type = raw_state_transition
         .get_u64("type")
         .map_err(|_| missing_state_transition_error())?;
-    StateTransitionType::try_from(transition_type as u8)
-        .map_err(|_| ProtocolError::InvalidStateTransitionTypeError(InvalidStateTransitionTypeError::new(transition_type as u8)))
+    StateTransitionType::try_from(transition_type as u8).map_err(|_| {
+        ProtocolError::InvalidStateTransitionTypeError(InvalidStateTransitionTypeError::new(
+            transition_type as u8,
+        ))
+    })
 }
 
 fn missing_state_transition_error() -> ProtocolError {
