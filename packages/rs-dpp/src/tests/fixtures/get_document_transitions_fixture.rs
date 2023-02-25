@@ -11,7 +11,7 @@ use crate::state_repository::MockStateRepositoryLike;
 use crate::tests::fixtures::get_documents_in_state_transitions_fixture;
 use crate::version::LATEST_VERSION;
 
-use super::{get_data_contract_fixture, get_document_validator_fixture, get_documents_fixture};
+use super::{get_data_contract_fixture, get_document_validator_fixture};
 
 pub fn get_document_transitions_fixture(
     documents: impl IntoIterator<Item = (Action, Vec<DocumentInStateTransition>)>,

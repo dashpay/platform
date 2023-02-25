@@ -100,7 +100,7 @@ impl CreateRandomDocument for DocumentType {
         let owner_id = rng.gen::<[u8; 32]>();
         let mut created_at = None;
         let mut updated_at = None;
-        let mut properties = self
+        let properties = self
             .properties
             .iter()
             .filter_map(|(key, document_field)| {

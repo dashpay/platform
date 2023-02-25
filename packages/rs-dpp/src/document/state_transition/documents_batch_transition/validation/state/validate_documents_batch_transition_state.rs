@@ -5,7 +5,7 @@ use futures::future::join_all;
 use itertools::Itertools;
 use serde::{Deserialize, Serialize};
 
-use crate::document::{Document, DocumentInStateTransition};
+use crate::document::{Document};
 use crate::{
     block_time_window::validate_time_in_block_time_window::validate_time_in_block_time_window,
     consensus::ConsensusError,
@@ -14,7 +14,7 @@ use crate::{
         document_transition::{Action, DocumentTransition, DocumentTransitionExt},
         DocumentsBatchTransition,
     },
-    prelude::{Identifier, Revision, TimestampMillis},
+    prelude::{Identifier, TimestampMillis},
     state_repository::StateRepositoryLike,
     state_transition::{
         state_transition_execution_context::StateTransitionExecutionContext,

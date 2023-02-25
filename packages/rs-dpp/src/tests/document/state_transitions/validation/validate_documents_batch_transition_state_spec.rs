@@ -20,7 +20,7 @@ use crate::{
     StateError,
     tests::{
         fixtures::{
-            get_data_contract_fixture, get_document_transitions_fixture, get_documents_fixture,
+            get_data_contract_fixture, get_document_transitions_fixture,
         },
         utils::{generate_random_identifier_struct, new_block_header},
     }, validation::ValidationResult,
@@ -201,7 +201,7 @@ async fn should_return_invalid_result_if_document_transition_with_action_replace
     let TestData {
         data_contract,
         owner_id,
-        mut documents_in_state_transitions,
+        documents_in_state_transitions,
         mut state_repository_mock,
         ..
     } = setup_test();

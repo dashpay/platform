@@ -8,7 +8,7 @@ use crate::{
         state_transition::documents_batch_transition::validation::basic::validate_partial_compound_indices::*,
     },
     tests::fixtures::{
-        get_data_contract_fixture, get_document_transitions_fixture, get_documents_fixture,
+        get_data_contract_fixture, get_document_transitions_fixture,
     },
     util::json_value::JsonValueExt,
     validation::ValidationResult,

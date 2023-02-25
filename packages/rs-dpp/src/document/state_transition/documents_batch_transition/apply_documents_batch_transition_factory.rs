@@ -1,8 +1,8 @@
 use std::collections::HashMap;
-use std::convert::TryInto;
 
-use dashcore::{consensus, BlockHeader};
-use serde_json::Value;
+
+
+
 
 use crate::document::{Document, DocumentInStateTransition};
 use crate::prelude::TimestampMillis;
@@ -13,7 +13,7 @@ use crate::{
 
 use super::{
     document_transition::{
-        Action, DocumentCreateTransition, DocumentReplaceTransition, DocumentTransition,
+        Action, DocumentReplaceTransition, DocumentTransition,
     },
     validation::state::fetch_documents::fetch_documents,
     DocumentsBatchTransition,
@@ -147,7 +147,7 @@ mod test {
     use dashcore::consensus;
     use serde_json::{json, Value};
 
-    use crate::document::{Document, DocumentInStateTransition};
+    use crate::document::{Document};
     use crate::tests::fixtures::get_documents_in_state_transitions_fixture;
     use crate::tests::utils::new_block_header;
     use crate::{
@@ -159,7 +159,7 @@ mod test {
         state_transition::StateTransitionLike,
         tests::{
             fixtures::{
-                get_data_contract_fixture, get_document_transitions_fixture, get_documents_fixture,
+                get_data_contract_fixture, get_document_transitions_fixture,
             },
             utils::generate_random_identifier_struct,
         },

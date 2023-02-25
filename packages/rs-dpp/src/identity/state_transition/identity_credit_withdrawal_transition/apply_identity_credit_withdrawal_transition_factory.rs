@@ -49,7 +49,7 @@ where
             .transpose()
             .map_err(Into::into)?;
 
-        let withdrawals_data_contract = maybe_withdrawals_data_contract
+        let _withdrawals_data_contract = maybe_withdrawals_data_contract
             .ok_or_else(|| anyhow!("Withdrawals data contract not found"))?;
 
         let latest_platform_block_header_bytes: Vec<u8> = self

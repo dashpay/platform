@@ -3,7 +3,7 @@ use std::collections::hash_map::{Entry, HashMap};
 use futures::future::join_all;
 use serde_json::json;
 
-use crate::document::{Document, DocumentInStateTransition};
+use crate::document::{Document};
 use crate::{
     document::document_transition::DocumentTransition, get_from_transition,
     state_repository::StateRepositoryLike,

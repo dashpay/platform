@@ -1,19 +1,19 @@
 use anyhow::Context;
 use chrono::Utc;
-use ciborium::cbor;
+
 use itertools::Itertools;
-use platform_value::Value;
+
 use rand::rngs::StdRng;
-use rand::{Rng, SeedableRng};
+use rand::{SeedableRng};
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value as JsonValue};
-use std::collections::BTreeMap;
 
-use crate::data_contract::document_type::DocumentType;
+
+
 use crate::document::document_transition::document_in_state_transition::{
     property_names, DocumentInStateTransition,
 };
-use crate::document::Document;
+
 use crate::{
     data_contract::{errors::DataContractError, DataContract},
     decode_protocol_entity_factory::DecodeProtocolEntity,
@@ -401,7 +401,7 @@ mod test {
         state_repository::MockStateRepositoryLike,
         tests::{
             fixtures::{
-                get_data_contract_fixture, get_document_validator_fixture, get_documents_fixture,
+                get_data_contract_fixture, get_document_validator_fixture,
             },
             utils::generate_random_identifier_struct,
         },

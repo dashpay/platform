@@ -1,19 +1,19 @@
 use crate::data_contract::document_type::document_type::PROTOCOL_VERSION;
 use crate::data_contract::document_type::DocumentType;
 use crate::data_contract::errors::{DataContractError, StructureError};
-use crate::data_contract::extra::common::bytes_for_system_value_from_tree_map;
+
 use crate::document::document::property_names;
 use crate::document::document::property_names::{CREATED_AT, UPDATED_AT};
-use crate::document::document_transition::INITIAL_REVISION;
+
 use crate::document::Document;
-use crate::document::DocumentInStateTransition;
+
 use crate::identity::TimestampMillis;
 use crate::prelude::Revision;
 use crate::util::cbor_value::CborBTreeMapHelper;
 use crate::util::deserializer;
 use crate::util::deserializer::SplitProtocolVersionOutcome;
 use crate::ProtocolError;
-use bincode::Options;
+
 use byteorder::{BigEndian, ReadBytesExt};
 use ciborium::Value as CborValue;
 use integer_encoding::VarIntWriter;
@@ -21,7 +21,7 @@ use platform_value::btreemap_extensions::BTreeValueMapHelper;
 use platform_value::Value;
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
-use std::convert::{TryFrom, TryInto};
+use std::convert::{TryFrom};
 use std::io::{BufReader, Read};
 
 //todo: delete in later PR
@@ -245,7 +245,7 @@ impl Document {
         };
         let mut created_at = None;
         let mut updated_at = None;
-        let mut properties = document_type
+        let properties = document_type
             .properties
             .iter()
             .filter_map(|(key, field)| {

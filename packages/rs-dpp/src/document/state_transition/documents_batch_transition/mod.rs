@@ -425,7 +425,7 @@ mod test {
         state_repository::MockStateRepositoryLike,
         tests::fixtures::{
             get_data_contract_fixture, get_document_transitions_fixture,
-            get_document_validator_fixture, get_documents_fixture,
+            get_document_validator_fixture,
         },
     };
 

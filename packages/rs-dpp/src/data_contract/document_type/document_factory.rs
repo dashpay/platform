@@ -7,7 +7,7 @@ use crate::prelude::TimestampMillis;
 use crate::ProtocolError;
 use chrono::Utc;
 use platform_value::Value;
-use rand::rngs::StdRng;
+
 use std::collections::BTreeMap;
 
 impl DocumentType {

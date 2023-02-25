@@ -11,7 +11,7 @@ use crate::util::{cbor_value, deserializer};
 use crate::ProtocolError;
 use ciborium::Value as CborValue;
 use integer_encoding::VarInt;
-use itertools::Itertools;
+
 use serde::{Deserialize, Serialize};
 use serde_json::Value as JsonValue;
 use std::collections::HashSet;
@@ -275,6 +275,8 @@ mod test {
     use crate::tests::utils::*;
     use crate::util::string_encoding::Encoding;
     use pretty_assertions::assert_eq;
+    use crate::data_contract::DataContract;
+    use crate::identifier::Identifier;
 
     fn init() {
         let _ = env_logger::builder()

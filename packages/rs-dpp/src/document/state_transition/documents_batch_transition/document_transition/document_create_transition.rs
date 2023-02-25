@@ -2,12 +2,12 @@ use itertools::Itertools;
 use platform_value::Value;
 use serde::{Deserialize, Serialize};
 use serde_json::Value as JsonValue;
-use std::convert::TryInto;
 
-use crate::document::{Document, DocumentsBatchTransition};
+
+use crate::document::{Document};
 use crate::identity::TimestampMillis;
 use crate::prelude::Revision;
-use crate::util::serializer::value_to_cbor;
+
 use crate::{
     data_contract::DataContract, document::document_transition::Action, errors::ProtocolError,
     util::json_value::JsonValueExt, util::json_value::ReplaceWith,

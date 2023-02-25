@@ -8,7 +8,7 @@ use crate::{consensus::ConsensusError, data_contract::DataContract, document::{
     state_transition::documents_batch_transition::validation::state::validate_documents_uniqueness_by_indices::*,
 }, prelude::Identifier, ProtocolError, state_repository::MockStateRepositoryLike, state_transition::state_transition_execution_context::StateTransitionExecutionContext, StateError, tests::{
     fixtures::{
-        get_data_contract_fixture, get_document_transitions_fixture, get_documents_fixture,
+        get_data_contract_fixture, get_document_transitions_fixture,
     },
     utils::generate_random_identifier_struct,
 }, util::string_encoding::Encoding, validation::ValidationResult};

@@ -10,7 +10,6 @@ use crate::contracts::withdrawals_contract::document_types;
 use crate::data_contract::DriveContractExt;
 use crate::document::Document;
 use crate::{
-    contracts::withdrawals_contract,
     document::{
         document_factory::DocumentFactory,
         fetch_and_validate_data_contract::DataContractFetcherAndValidator,

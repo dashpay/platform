@@ -36,11 +36,11 @@ use chrono::{DateTime, NaiveDateTime, Utc};
 use std::collections::{BTreeMap, HashSet};
 use std::convert::{TryFrom, TryInto};
 use std::fmt;
-use std::io::{BufReader, Read};
-use std::iter::FromIterator;
 
-use ciborium::value::Value as CborValue;
-use integer_encoding::VarIntWriter;
+
+
+
+
 use itertools::Itertools;
 use serde_json::Value as JsonValue;
 
@@ -49,18 +49,15 @@ use platform_value::Value;
 use serde::{Deserialize, Serialize};
 
 use crate::data_contract::document_type::{encode_unsigned_integer, DocumentType};
-use crate::data_contract::errors::{DataContractError, StructureError};
-use crate::data_contract::extra::common::{
-    bytes_for_system_value_from_tree_map, get_key_from_cbor_map,
-    reduced_value_string_representation,
-};
+use crate::data_contract::errors::{DataContractError};
+
 use crate::document::errors::DocumentError;
 use crate::document::DocumentInStateTransition;
 use crate::identifier::Identifier;
 use crate::identity::TimestampMillis;
 use crate::prelude::Revision;
-use crate::util::deserializer;
-use crate::util::deserializer::SplitProtocolVersionOutcome;
+
+
 use crate::util::hash::hash;
 use crate::util::json_value::JsonValueExt;
 use crate::util::json_value::ReplaceWith;
