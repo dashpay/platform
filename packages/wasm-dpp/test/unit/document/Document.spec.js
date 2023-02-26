@@ -152,7 +152,7 @@ describe('Document', () => {
         ...data,
       };
 
-      document = new Document(rawDocument, dataContract);
+      document = new DocumentInStateTranstion(rawDocument, dataContract);
 
       expect(document.getDataContractId().toBuffer())
         .to.deep.equal(rawDocument.$dataContractId.toBuffer());

@@ -59,7 +59,7 @@ fn setup_test(action: Action) -> TestData {
         json!({
             "protocolVersion":  LATEST_VERSION,
             "ownerId" : owner_id.as_bytes(),
-            "contractId" : data_contract.id().as_bytes(),
+            "contractId" : data_contract.id.as_bytes(),
             "transitions" : raw_transitions,
             "signature": signature,
             "signaturePublicKeyId": 0,

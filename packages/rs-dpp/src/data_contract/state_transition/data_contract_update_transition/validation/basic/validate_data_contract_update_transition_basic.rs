@@ -168,7 +168,7 @@ where
             .as_object()
             .ok_or_else(|| anyhow!("the 'documents' property is not an array"))?;
         let result = validate_indices_are_backward_compatible(
-            existing_data_contract.documents(),
+            &existing_data_contract.documents,
             new_documents,
         )?;
         if !result.is_valid() {
@@ -176,7 +176,7 @@ where
         }
 
         // Schema should be backward compatible
-        let old_schema = existing_data_contract.documents();
+        let old_schema = &existing_data_contract.documents;
         let new_schema = raw_data_contract.get_value("documents")?;
 
         for (document_type, document_schema) in old_schema.iter() {

@@ -216,7 +216,7 @@ fn validate_raw_transitions<'a>(
                 if !data_contract.is_document_defined(document_type) {
                     result.add_error(BasicError::InvalidDocumentTypeError {
                         document_type: document_type.to_string(),
-                        data_contract_id: *data_contract.id(),
+                        data_contract_id: data_contract.id,
                     });
                     return Ok(result);
                 }
@@ -266,7 +266,7 @@ fn validate_raw_transitions<'a>(
                     let entropy = raw_document_transition.get_bytes("$entropy")?;
                     // validate the id  generation
                     let generated_document_id =
-                        generate_document_id(data_contract.id(), owner_id, document_type, &entropy);
+                        generate_document_id(&data_contract.id, owner_id, document_type, &entropy);
 
                     if generated_document_id != document_id {
                         result.add_error(BasicError::InvalidDocumentTransitionIdError {

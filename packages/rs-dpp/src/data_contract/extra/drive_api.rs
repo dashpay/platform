@@ -144,7 +144,7 @@ impl DriveContractExt for DataContract {
     /// `to_cbor` overloads the original method from [`DataContract`] and adds the properties
     /// from [`super::Mutability`].
     fn to_cbor(&self) -> Result<Vec<u8>, ProtocolError> {
-        let mut buf = self.protocol_version().encode_var_vec();
+        let mut buf = self.protocol_version.encode_var_vec();
 
         let mut contract_cbor_map = self.to_cbor_canonical_map()?;
 
@@ -294,16 +294,16 @@ mod test {
         let data_contract =
             DataContract::from_cbor(cbor_bytes).expect("contract should be deserialized");
 
-        assert_eq!(1, data_contract.protocol_version());
-        assert_eq!(expect_id, data_contract.id().as_bytes());
-        assert_eq!(expect_owner_id, data_contract.owner_id().as_bytes());
+        assert_eq!(1, data_contract.protocol_version);
+        assert_eq!(expect_id, data_contract.id.as_bytes());
+        assert_eq!(expect_owner_id, data_contract.owner_id.as_bytes());
 
-        assert_eq!(7, data_contract.documents().len());
-        assert_eq!(7, data_contract.document_types().len());
-        assert_eq!(1, data_contract.version());
+        assert_eq!(7, data_contract.documents.len());
+        assert_eq!(7, data_contract.document_types.len());
+        assert_eq!(1, data_contract.version);
         assert_eq!(
             "https://schema.dash.org/dpp-0-4-0/meta/data-contract",
-            data_contract.schema()
+            data_contract.schema
         );
 
         for expect in expected_documents() {

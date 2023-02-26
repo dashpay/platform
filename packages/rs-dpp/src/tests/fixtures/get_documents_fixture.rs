@@ -33,7 +33,7 @@ pub fn get_documents_fixture_with_owner_id_from_contract(
         data_contract_fetcher_and_validator,
         None,
     );
-    let owner_id = *data_contract.owner_id();
+    let owner_id = data_contract.owner_id.clone();
 
     get_documents_in_state_transitions(factory, data_contract, owner_id)
 }

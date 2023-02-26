@@ -84,12 +84,12 @@ mod test {
         let transition_execution_context = StateTransitionExecutionContext::default();
         let state_repository = MockStateRepositoryLike::new();
         let data_contract = get_data_contract_fixture(None);
-        let owner_id = data_contract.owner_id().to_owned();
+        let owner_id = &data_contract.owner_id;
 
         let document_transition = DocumentTransition::Create(Default::default());
         let data_trigger_context = DataTriggerExecutionContext {
             data_contract: &data_contract,
-            owner_id: &owner_id,
+            owner_id,
             state_repository: &state_repository,
             state_transition_execution_context: &transition_execution_context,
         };

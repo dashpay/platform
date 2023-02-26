@@ -50,8 +50,8 @@ fn setup_test() -> TestData {
         }))
         .expect("the non-unique index should be added to the document");
     new_data_contract.set_document_schema(String::from("indexedDocument"), indexed_document);
-    let old_documents_schema = old_data_contract.documents().to_owned();
-    let new_documents_schema = new_data_contract.documents().to_owned();
+    let old_documents_schema = old_data_contract.documents.to_owned();
+    let new_documents_schema = new_data_contract.documents.to_owned();
 
     TestData {
         old_data_contract,
