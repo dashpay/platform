@@ -610,7 +610,7 @@ impl StateRepositoryLike for ExternalStateRepositoryLikeWrapper {
         Ok(Some(height as u32))
     }
 
-    async fn fetch_latest_platform_block_height(&self) -> Result<u64> {
+    async fn fetch_latest_platform_block_height(&self) -> anyhow::Result<u64> {
         let height = self
             .0
             .fetch_latest_platform_block_height()
@@ -663,6 +663,7 @@ impl StateRepositoryLike for ExternalStateRepositoryLikeWrapper {
     async fn mark_asset_lock_transaction_out_point_as_used(
         &self,
         out_point_buffer: &[u8],
+        execution_context: &StateTransitionExecutionContext,
     ) -> anyhow::Result<()> {
         self.0
             .mark_asset_lock_transaction_out_point_as_used(

@@ -38,6 +38,12 @@ impl From<DocumentReplaceTransition> for DocumentReplaceTransitionWasm {
     }
 }
 
+impl From<DocumentReplaceTransitionWasm> for DocumentReplaceTransition {
+    fn from(v: DocumentReplaceTransitionWasm) -> Self {
+        v.inner
+    }
+}
+
 #[wasm_bindgen(js_class=DocumentReplaceTransition)]
 impl DocumentReplaceTransitionWasm {
     #[wasm_bindgen(constructor)]
@@ -92,7 +98,7 @@ impl DocumentReplaceTransitionWasm {
             .with_js_error()?;
 
         to_object(
-            &self.inner,
+            self.inner.to_object().with_js_error()?,
             options,
             identifiers_paths
                 .into_iter()
