@@ -107,24 +107,6 @@ describe('findDuplicatesByIndices', () => {
     }).map((t) => t.toObject());
   });
 
-  it('should return duplicate documents if they are present', () => {
-    const [, , , , leon] = documents;
-
-    leon.set('lastName', 'Birkin');
-
-    documentTransitions = getDocumentTransitionsFixture({
-      create: documents,
-    }).map((t) => t.toObject());
-
-    const duplicates = findDuplicateDocumentsByIndicesJs(documentTransitions, contractJs);
-    expect(duplicates).to.have.deep.members(
-      [
-        documentTransitions[3],
-        documentTransitions[4],
-      ],
-    );
-  });
-
   it('should return duplicate documents if they are present - Rust', () => {
     const [, , , , leon] = documents;
 
@@ -143,12 +125,6 @@ describe('findDuplicatesByIndices', () => {
         documentTransitions[4],
       ],
     );
-  });
-
-  it('should return an empty array of there are no duplicates', () => {
-    const duplicates = findDuplicateDocumentsByIndicesJs(documentTransitions, contractJs);
-
-    expect(duplicates.length).to.equal(0);
   });
 
   it('should return an empty array of there are no duplicates - Rust', () => {

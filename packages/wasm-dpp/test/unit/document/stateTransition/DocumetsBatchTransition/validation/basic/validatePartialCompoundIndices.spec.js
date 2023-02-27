@@ -35,35 +35,6 @@ describe('validatePartialCompoundIndices', () => {
     ownerIdJs = dataContractJs.getOwnerId();
   });
 
-  it('should return invalid result if compound index contains not all fields', () => {
-    const document = getDocumentsFixture(dataContractJs)[9];
-    document.set('lastName', undefined);
-
-    documentsJs = [document];
-    rawDocumentTransitions = getDocumentTransitionsFixture({
-      create: documentsJs,
-    }).map((documentTransition) => documentTransition.toObject());
-
-    const result = validatePartialCompoundIndicesJs(
-      ownerIdJs, rawDocumentTransitions, dataContractJs,
-    );
-
-    expectValidationError(result, InconsistentCompoundIndexDataErrorJs);
-
-    const [error] = result.getErrors();
-
-    expect(error.getCode()).to.equal(1021);
-
-    const { optionalUniqueIndexedDocument } = dataContractJs.getDocuments();
-
-    expect(error.getIndexedProperties()).to.deep.equal(
-      optionalUniqueIndexedDocument.indices[1].properties.map(
-        (i) => Object.keys(i)[0],
-      ),
-    );
-
-    expect(error.getDocumentType()).to.equal('optionalUniqueIndexedDocument');
-  });
 
   it('should return invalid result if compound index contains not all fields - Rust', () => {
     const documentJs = getDocumentsFixture(dataContractJs)[9];
@@ -91,24 +62,6 @@ describe('validatePartialCompoundIndices', () => {
     expect(error.getDocumentType()).to.equal('optionalUniqueIndexedDocument');
   });
 
-  it('should return valid result if compound index contains no fields', () => {
-    const document = getDocumentsFixture(dataContractJs)[8];
-    document.setData({});
-
-    documentsJs = [document];
-
-    rawDocumentTransitions = getDocumentTransitionsFixture({
-      create: documentsJs,
-    }).map((documentTransition) => documentTransition.toObject());
-
-    const result = validatePartialCompoundIndicesJs(
-      ownerIdJs, rawDocumentTransitions, dataContractJs,
-    );
-
-    expect(result).to.be.an.instanceOf(ValidationResultJs);
-    expect(result.isValid()).to.be.true();
-  });
-
   it('should return valid result if compound index contains no fields - Rust', () => {
     const document = getDocumentsFixture(dataContractJs)[8];
     document.setData({});
@@ -122,20 +75,6 @@ describe('validatePartialCompoundIndices', () => {
     const result = validatePartialCompoundIndices(rawDocumentTransitions, dataContract);
 
     expect(result).to.be.an.instanceOf(ValidationResult);
-    expect(result.isValid()).to.be.true();
-  });
-
-  it('should return valid result if compound index contains all fields', () => {
-    documentsJs = [getDocumentsFixture(dataContractJs)[8]];
-    rawDocumentTransitions = getDocumentTransitionsFixture({
-      create: documentsJs,
-    }).map((documentTransition) => documentTransition.toObject());
-
-    const result = validatePartialCompoundIndicesJs(
-      ownerIdJs, rawDocumentTransitions, dataContractJs,
-    );
-
-    expect(result).to.be.an.instanceOf(ValidationResultJs);
     expect(result.isValid()).to.be.true();
   });
 
