@@ -19,7 +19,7 @@ use crate::{
     errors::{from_dpp_err, from_dpp_init_error},
     identity_facade::FromObjectOptions,
     state_repository::{ExternalStateRepositoryLike, ExternalStateRepositoryLikeWrapper},
-    utils, with_js_error, StateTransitionWasm,
+    utils, with_js_error, StateTransitionWasm, state_transition::errors::invalid_state_transition_error::InvalidStateTransitionError,
 };
 
 #[wasm_bindgen(js_name = StateTransitionFactory)]
@@ -147,7 +147,7 @@ impl StateTransitionFactoryWasm {
                 StateTransitionError::InvalidStateTransitionError {
                     errors,
                     raw_state_transition,
-                } => Err(InvalidStateTransitionError::new(errors, state_transition_object).into()),
+                } => Err(InvalidStateTransitionError::new(errors, raw_state_transition).into()),
             },
             Err(other) => Err(from_dpp_err(other)),
         }
@@ -181,7 +181,7 @@ impl StateTransitionFactoryWasm {
                 StateTransitionError::InvalidStateTransitionError {
                     errors,
                     raw_state_transition,
-                } => Err(InvalidStateTransitionError::new(errors, state_transition_object).into()),
+                } => Err(InvalidStateTransitionError::new(errors, raw_state_transition).into()),
             },
             Err(other) => Err(from_dpp_err(other)),
         }

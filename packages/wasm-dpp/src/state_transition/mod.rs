@@ -11,6 +11,7 @@ use wasm_bindgen::prelude::*;
 
 use crate::{buffer::Buffer, errors::from_dpp_err, identifier::IdentifierWrapper};
 
+pub mod errors;
 pub mod state_transition_factory;
 
 #[wasm_bindgen(js_name=StateTransitionExecutionContext)]
