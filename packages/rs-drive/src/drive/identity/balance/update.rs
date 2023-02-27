@@ -7,7 +7,7 @@ use crate::error::identity::IdentityError;
 use crate::error::Error;
 use crate::fee::calculate_fee;
 use crate::fee::credits::{Credits, MAX_CREDITS};
-use crate::fee::op::DriveOperation;
+use crate::fee::op::LowLevelDriveOperation;
 use crate::fee::result::{BalanceChange, BalanceChangeForIdentity, FeeResult};
 use grovedb::batch::KeyInfoPath;
 use grovedb::{Element, EstimatedLayerInformation, TransactionArg};
@@ -36,7 +36,7 @@ impl Drive {
         &self,
         identity_id: [u8; 32],
         balance: Credits,
-    ) -> Result<DriveOperation, Error> {
+    ) -> Result<LowLevelDriveOperation, Error> {
         // while i64::MAX could potentially work, best to avoid it.
         if balance >= MAX_CREDITS {
             return Err(Error::Identity(IdentityError::CriticalBalanceOverflow(
@@ -46,7 +46,7 @@ impl Drive {
 
         let balance_path = balance_path_vec();
 
-        Ok(DriveOperation::insert_for_known_path_key_element(
+        Ok(LowLevelDriveOperation::insert_for_known_path_key_element(
             balance_path,
             identity_id.to_vec(),
             Element::new_sum_item(balance as i64),
@@ -56,10 +56,10 @@ impl Drive {
     pub(in crate::drive::identity) fn initialize_negative_identity_balance_operation(
         &self,
         identity_id: [u8; 32],
-    ) -> DriveOperation {
+    ) -> LowLevelDriveOperation {
         let identity_path = identity_path_vec(identity_id.as_slice());
 
-        DriveOperation::insert_for_known_path_key_element(
+        LowLevelDriveOperation::insert_for_known_path_key_element(
             identity_path,
             vec![IdentityRootStructure::IdentityTreeNegativeCredit as u8],
             Element::new_item(0u64.to_be_bytes().to_vec()),
@@ -70,7 +70,7 @@ impl Drive {
         &self,
         identity_id: [u8; 32],
         balance: Credits,
-    ) -> Result<DriveOperation, Error> {
+    ) -> Result<LowLevelDriveOperation, Error> {
         // while i64::MAX could potentially work, best to avoid it.
         if balance >= MAX_CREDITS {
             return Err(Error::Identity(IdentityError::CriticalBalanceOverflow(
@@ -80,7 +80,7 @@ impl Drive {
 
         let balance_path = balance_path_vec();
 
-        Ok(DriveOperation::replace_for_known_path_key_element(
+        Ok(LowLevelDriveOperation::replace_for_known_path_key_element(
             balance_path,
             identity_id.to_vec(),
             Element::new_sum_item(balance as i64),
@@ -92,13 +92,13 @@ impl Drive {
         &self,
         identity_id: [u8; 32],
         negative_credit: Credits,
-    ) -> DriveOperation {
+    ) -> LowLevelDriveOperation {
         let identity_path = identity_path_vec(identity_id.as_slice());
 
         // The value needs to be replaced without changing storage fees so we use bytes instead of varint
         let new_negative_credit_bytes = negative_credit.to_be_bytes().to_vec();
 
-        DriveOperation::replace_for_known_path_key_element(
+        LowLevelDriveOperation::replace_for_known_path_key_element(
             identity_path,
             vec![IdentityRootStructure::IdentityTreeNegativeCredit as u8],
             Element::new_item(new_negative_credit_bytes),
@@ -127,8 +127,8 @@ impl Drive {
             transaction,
         )?;
 
-        let mut drive_operations: Vec<DriveOperation> = vec![];
-        self.apply_batch_drive_operations(
+        let mut drive_operations: Vec<LowLevelDriveOperation> = vec![];
+        self.apply_batch_low_level_drive_operations(
             estimated_costs_only_with_layer_info,
             transaction,
             batch_operations,
@@ -147,7 +147,7 @@ impl Drive {
         added_balance: Credits,
         apply: bool,
         transaction: TransactionArg,
-        drive_operations: &mut Vec<DriveOperation>,
+        drive_operations: &mut Vec<LowLevelDriveOperation>,
     ) -> Result<AddToPreviousBalanceOutcome, Error> {
         if previous_balance == 0 {
             // Deduct debt from added amount if exists
@@ -210,7 +210,7 @@ impl Drive {
             HashMap<KeyInfoPath, EstimatedLayerInformation>,
         >,
         transaction: TransactionArg,
-    ) -> Result<Vec<DriveOperation>, Error> {
+    ) -> Result<Vec<LowLevelDriveOperation>, Error> {
         let mut drive_operations = vec![];
         if let Some(estimated_costs_only_with_layer_info) = estimated_costs_only_with_layer_info {
             Self::add_estimation_costs_for_balances(estimated_costs_only_with_layer_info);
@@ -266,9 +266,9 @@ impl Drive {
         let (batch_operations, actual_fee_paid) =
             self.apply_balance_change_from_fee_to_identity_operations(balance_change, transaction)?;
 
-        let mut drive_operations: Vec<DriveOperation> = vec![];
+        let mut drive_operations: Vec<LowLevelDriveOperation> = vec![];
 
-        self.apply_batch_drive_operations(
+        self.apply_batch_low_level_drive_operations(
             None,
             transaction,
             batch_operations,
@@ -286,7 +286,7 @@ impl Drive {
         &self,
         balance_change: BalanceChangeForIdentity,
         transaction: TransactionArg,
-    ) -> Result<(Vec<DriveOperation>, FeeResult), Error> {
+    ) -> Result<(Vec<LowLevelDriveOperation>, FeeResult), Error> {
         let mut drive_operations = vec![];
 
         if matches!(balance_change.change(), BalanceChange::NoBalanceChange) {
@@ -400,8 +400,8 @@ impl Drive {
             transaction,
         )?;
 
-        let mut drive_operations: Vec<DriveOperation> = vec![];
-        self.apply_batch_drive_operations(
+        let mut drive_operations: Vec<LowLevelDriveOperation> = vec![];
+        self.apply_batch_low_level_drive_operations(
             estimated_costs_only_with_layer_info,
             transaction,
             batch_operations,
@@ -425,7 +425,7 @@ impl Drive {
             HashMap<KeyInfoPath, EstimatedLayerInformation>,
         >,
         transaction: TransactionArg,
-    ) -> Result<Vec<DriveOperation>, Error> {
+    ) -> Result<Vec<LowLevelDriveOperation>, Error> {
         let mut drive_operations = vec![];
         if let Some(estimated_costs_only_with_layer_info) = estimated_costs_only_with_layer_info {
             Self::add_estimation_costs_for_balances(estimated_costs_only_with_layer_info);
@@ -560,7 +560,7 @@ mod tests {
 
             let mut drive_operations: Vec<DriveOperation> = vec![];
             drive
-                .apply_batch_drive_operations(None, None, batch, &mut drive_operations)
+                .apply_batch_low_level_drive_operations(None, None, batch, &mut drive_operations)
                 .expect("should apply batch");
 
             let block_info = BlockInfo::default();
@@ -623,7 +623,7 @@ mod tests {
 
             let mut drive_operations: Vec<DriveOperation> = vec![];
             drive
-                .apply_batch_drive_operations(None, None, batch, &mut drive_operations)
+                .apply_batch_low_level_drive_operations(None, None, batch, &mut drive_operations)
                 .expect("should apply batch");
 
             let block_info = BlockInfo::default();
@@ -925,7 +925,7 @@ mod tests {
 
             let mut drive_operations: Vec<DriveOperation> = vec![];
             drive
-                .apply_batch_drive_operations(None, None, batch, &mut drive_operations)
+                .apply_batch_low_level_drive_operations(None, None, batch, &mut drive_operations)
                 .expect("should apply batch");
 
             let credits_per_epoch: CreditsPerEpoch =
@@ -986,7 +986,7 @@ mod tests {
 
             let mut drive_operations: Vec<DriveOperation> = vec![];
             drive
-                .apply_batch_drive_operations(None, None, batch, &mut drive_operations)
+                .apply_batch_low_level_drive_operations(None, None, batch, &mut drive_operations)
                 .expect("should apply batch");
 
             let credits_per_epoch: CreditsPerEpoch =

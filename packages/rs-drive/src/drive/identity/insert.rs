@@ -6,7 +6,7 @@ use crate::drive::{identity_tree_path, Drive};
 use crate::error::identity::IdentityError;
 use crate::error::Error;
 use crate::fee::calculate_fee;
-use crate::fee::op::DriveOperation;
+use crate::fee::op::LowLevelDriveOperation;
 use crate::fee::result::FeeResult;
 use dpp::identity::Identity;
 use grovedb::batch::KeyInfoPath;
@@ -35,7 +35,7 @@ impl Drive {
         apply: bool,
         transaction: TransactionArg,
     ) -> Result<FeeResult, Error> {
-        let mut drive_operations: Vec<DriveOperation> = vec![];
+        let mut drive_operations: Vec<LowLevelDriveOperation> = vec![];
         self.add_new_identity_add_to_operations(
             identity,
             block_info,
@@ -54,9 +54,9 @@ impl Drive {
         identity: Identity,
         block_info: &BlockInfo,
         apply: bool,
-        previous_batch_operations: &mut Option<&mut Vec<DriveOperation>>,
+        previous_batch_operations: &mut Option<&mut Vec<LowLevelDriveOperation>>,
         transaction: TransactionArg,
-        drive_operations: &mut Vec<DriveOperation>,
+        drive_operations: &mut Vec<LowLevelDriveOperation>,
     ) -> Result<(), Error> {
         let mut estimated_costs_only_with_layer_info = if apply {
             None::<HashMap<KeyInfoPath, EstimatedLayerInformation>>
@@ -72,7 +72,7 @@ impl Drive {
             transaction,
         )?;
 
-        self.apply_batch_drive_operations(
+        self.apply_batch_low_level_drive_operations(
             estimated_costs_only_with_layer_info,
             transaction,
             batch_operations,
@@ -85,13 +85,13 @@ impl Drive {
         &self,
         identity: Identity,
         block_info: &BlockInfo,
-        previous_batch_operations: &mut Option<&mut Vec<DriveOperation>>,
+        previous_batch_operations: &mut Option<&mut Vec<LowLevelDriveOperation>>,
         estimated_costs_only_with_layer_info: &mut Option<
             HashMap<KeyInfoPath, EstimatedLayerInformation>,
         >,
         transaction: TransactionArg,
-    ) -> Result<Vec<DriveOperation>, Error> {
-        let mut batch_operations: Vec<DriveOperation> = vec![];
+    ) -> Result<Vec<LowLevelDriveOperation>, Error> {
+        let mut batch_operations: Vec<LowLevelDriveOperation> = vec![];
 
         // There is no reason to store the owner id as we always know the owner id of identity information.
         let storage_flags = StorageFlags::new_single_epoch(block_info.epoch.index, None);

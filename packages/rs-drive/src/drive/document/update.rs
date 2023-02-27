@@ -46,7 +46,7 @@ use crate::contract::Contract;
 use crate::drive::batch::drive_op_batch::{
     DocumentOperation, DocumentOperationsForContractDocumentType, UpdateOperationInfo,
 };
-use crate::drive::batch::{DocumentOperationType, DriveOperationType};
+use crate::drive::batch::{DocumentOperationType, DriveOperation};
 use crate::drive::defaults::CONTRACT_DOCUMENTS_PATH_HEIGHT;
 use crate::drive::document::{
     contract_document_type_path,
@@ -67,7 +67,7 @@ use crate::drive::Drive;
 use crate::error::drive::DriveError;
 use crate::error::Error;
 use crate::fee::calculate_fee;
-use crate::fee::op::DriveOperation;
+use crate::fee::op::LowLevelDriveOperation;
 
 use crate::drive::block_info::BlockInfo;
 use crate::drive::object_size_info::DriveKeyInfo::{Key, KeyRef, KeySize};
@@ -122,7 +122,7 @@ impl Drive {
         storage_flags: Option<Cow<StorageFlags>>,
         transaction: TransactionArg,
     ) -> Result<FeeResult, Error> {
-        let mut drive_operations: Vec<DriveOperation> = vec![];
+        let mut drive_operations: Vec<LowLevelDriveOperation> = vec![];
         let estimated_costs_only_with_layer_info = if apply {
             None::<HashMap<KeyInfoPath, EstimatedLayerInformation>>
         } else {
@@ -207,7 +207,7 @@ impl Drive {
         storage_flags: Option<Cow<StorageFlags>>,
         transaction: TransactionArg,
     ) -> Result<FeeResult, Error> {
-        let mut drive_operations: Vec<DriveOperation> = vec![];
+        let mut drive_operations: Vec<LowLevelDriveOperation> = vec![];
         let estimated_costs_only_with_layer_info = if apply {
             None::<HashMap<KeyInfoPath, EstimatedLayerInformation>>
         } else {
@@ -246,7 +246,7 @@ impl Drive {
             HashMap<KeyInfoPath, EstimatedLayerInformation>,
         >,
         transaction: TransactionArg,
-        drive_operations: &mut Vec<DriveOperation>,
+        drive_operations: &mut Vec<LowLevelDriveOperation>,
     ) -> Result<(), Error> {
         let batch_operations = self.update_document_for_contract_operations(
             document_and_contract_info,
@@ -255,7 +255,7 @@ impl Drive {
             &mut estimated_costs_only_with_layer_info,
             transaction,
         )?;
-        self.apply_batch_drive_operations(
+        self.apply_batch_low_level_drive_operations(
             estimated_costs_only_with_layer_info,
             transaction,
             batch_operations,
@@ -268,13 +268,13 @@ impl Drive {
         &self,
         document_and_contract_info: DocumentAndContractInfo,
         block_info: &BlockInfo,
-        previous_batch_operations: &mut Option<&mut Vec<DriveOperation>>,
+        previous_batch_operations: &mut Option<&mut Vec<LowLevelDriveOperation>>,
         estimated_costs_only_with_layer_info: &mut Option<
             HashMap<KeyInfoPath, EstimatedLayerInformation>,
         >,
         transaction: TransactionArg,
-    ) -> Result<Vec<DriveOperation>, Error> {
-        let mut batch_operations: Vec<DriveOperation> = vec![];
+    ) -> Result<Vec<LowLevelDriveOperation>, Error> {
+        let mut batch_operations: Vec<LowLevelDriveOperation> = vec![];
         if !document_and_contract_info.document_type.documents_mutable {
             return Err(Error::Drive(DriveError::UpdatingReadOnlyImmutableDocument(
                 "documents for this contract are not mutable",
@@ -640,7 +640,7 @@ impl Drive {
         documents: &'a [DocumentStub],
         data_contract: &'a DataContract,
         document_type: &'a DocumentType,
-        drive_operation_types: &mut Vec<DriveOperationType<'a>>,
+        drive_operation_types: &mut Vec<DriveOperation<'a>>,
     ) {
         let operations: Vec<DocumentOperation> = documents
             .iter()
@@ -655,7 +655,7 @@ impl Drive {
             .collect();
 
         if !operations.is_empty() {
-            drive_operation_types.push(DriveOperationType::DocumentOperation(
+            drive_operation_types.push(DriveOperation::DocumentOperation(
                 DocumentOperationType::MultipleDocumentOperationsForSameContractDocumentType {
                     document_operations: DocumentOperationsForContractDocumentType {
                         operations,

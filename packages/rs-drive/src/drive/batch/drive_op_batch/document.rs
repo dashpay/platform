@@ -1,4 +1,4 @@
-use crate::drive::batch::drive_op_batch::DriveOperationConverter;
+use crate::drive::batch::drive_op_batch::DriveLowLevelOperationConverter;
 use crate::drive::block_info::BlockInfo;
 use crate::drive::flags::StorageFlags;
 use crate::drive::object_size_info::DocumentInfo::{
@@ -7,7 +7,7 @@ use crate::drive::object_size_info::DocumentInfo::{
 use crate::drive::object_size_info::{DocumentAndContractInfo, OwnedDocumentInfo};
 use crate::drive::Drive;
 use crate::error::Error;
-use crate::fee::op::DriveOperation;
+use crate::fee::op::LowLevelDriveOperation;
 use dpp::data_contract::document_type::DocumentType;
 use dpp::data_contract::{DataContract as Contract, DriveContractExt};
 use dpp::document::document_stub::DocumentStub;
@@ -163,8 +163,8 @@ pub enum DocumentOperationType<'a> {
     },
 }
 
-impl DriveOperationConverter for DocumentOperationType<'_> {
-    fn to_drive_operations(
+impl DriveLowLevelOperationConverter for DocumentOperationType<'_> {
+    fn to_low_level_drive_operations(
         self,
         drive: &Drive,
         estimated_costs_only_with_layer_info: &mut Option<
@@ -172,7 +172,7 @@ impl DriveOperationConverter for DocumentOperationType<'_> {
         >,
         block_info: &BlockInfo,
         transaction: TransactionArg,
-    ) -> Result<Vec<DriveOperation>, Error> {
+    ) -> Result<Vec<LowLevelDriveOperation>, Error> {
         match self {
             DocumentOperationType::AddSerializedDocumentForSerializedContract {
                 serialized_document,

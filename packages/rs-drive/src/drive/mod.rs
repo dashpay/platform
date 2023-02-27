@@ -57,9 +57,9 @@ use crate::drive::config::DriveConfig;
 #[cfg(feature = "full")]
 use crate::error::Error;
 #[cfg(feature = "full")]
-use crate::fee::op::DriveOperation;
+use crate::fee::op::LowLevelDriveOperation;
 #[cfg(feature = "full")]
-use crate::fee::op::DriveOperation::GroveOperation;
+use crate::fee::op::LowLevelDriveOperation::GroveOperation;
 
 #[cfg(any(feature = "full", feature = "verify"))]
 pub mod balances;
@@ -339,16 +339,17 @@ impl Drive {
     }
 
     /// Applies a batch of Drive operations to groveDB.
-    fn apply_batch_drive_operations(
+    fn apply_batch_low_level_drive_operations(
         &self,
         estimated_costs_only_with_layer_info: Option<
             HashMap<KeyInfoPath, EstimatedLayerInformation>,
         >,
         transaction: TransactionArg,
-        batch_operations: Vec<DriveOperation>,
-        drive_operations: &mut Vec<DriveOperation>,
+        batch_operations: Vec<LowLevelDriveOperation>,
+        drive_operations: &mut Vec<LowLevelDriveOperation>,
     ) -> Result<(), Error> {
-        let grove_db_operations = DriveOperation::grovedb_operations_batch(&batch_operations);
+        let grove_db_operations =
+            LowLevelDriveOperation::grovedb_operations_batch(&batch_operations);
         self.apply_batch_grovedb_operations(
             estimated_costs_only_with_layer_info,
             transaction,
@@ -370,7 +371,7 @@ impl Drive {
         >,
         transaction: TransactionArg,
         batch_operations: GroveDbOpBatch,
-        drive_operations: &mut Vec<DriveOperation>,
+        drive_operations: &mut Vec<LowLevelDriveOperation>,
     ) -> Result<(), Error> {
         if let Some(estimated_layer_info) = estimated_costs_only_with_layer_info {
             // Leave this for future debugging

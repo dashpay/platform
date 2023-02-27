@@ -38,7 +38,7 @@ use crate::drive::block_info::BlockInfo;
 use crate::drive::Drive;
 use crate::error::Error;
 use crate::fee::calculate_fee;
-use crate::fee::op::DriveOperation;
+use crate::fee::op::LowLevelDriveOperation;
 use crate::fee::result::FeeResult;
 
 pub use contract::ContractOperationType;
@@ -54,12 +54,12 @@ use grovedb::{EstimatedLayerInformation, TransactionArg};
 
 use grovedb::batch::{GroveDbOp, KeyInfoPath};
 use itertools::Itertools;
-use std::collections::HashMap;
+use std::collections::{BTreeMap, HashMap};
 
 /// A converter that will get Drive Operations from High Level Operations
-pub trait DriveOperationConverter {
+pub trait DriveLowLevelOperationConverter {
     /// This will get a list of atomic drive operations from a high level operations
-    fn to_drive_operations(
+    fn to_low_level_drive_operations(
         self,
         drive: &Drive,
         estimated_costs_only_with_layer_info: &mut Option<
@@ -67,12 +67,18 @@ pub trait DriveOperationConverter {
         >,
         block_info: &BlockInfo,
         transaction: TransactionArg,
-    ) -> Result<Vec<DriveOperation>, Error>;
+    ) -> Result<Vec<LowLevelDriveOperation>, Error>;
+}
+
+/// The drive operation context keeps track of changes that might affect other operations
+/// Notably Identity balance changes are kept track of
+pub struct DriveOperationContext {
+    identity_balance_changes : BTreeMap<[u8;32], i64>
 }
 
 /// All types of Drive Operations
 #[derive(Clone, Debug)]
-pub enum DriveOperationType<'a> {
+pub enum DriveOperation<'a> {
     /// A contract operation
     ContractOperation(ContractOperationType<'a>),
     /// A document operation
@@ -85,8 +91,8 @@ pub enum DriveOperationType<'a> {
     SystemOperation(SystemOperationType),
 }
 
-impl DriveOperationConverter for DriveOperationType<'_> {
-    fn to_drive_operations(
+impl DriveLowLevelOperationConverter for DriveOperation<'_> {
+    fn to_low_level_drive_operations(
         self,
         drive: &Drive,
         estimated_costs_only_with_layer_info: &mut Option<
@@ -94,42 +100,39 @@ impl DriveOperationConverter for DriveOperationType<'_> {
         >,
         block_info: &BlockInfo,
         transaction: TransactionArg,
-    ) -> Result<Vec<DriveOperation>, Error> {
+    ) -> Result<Vec<LowLevelDriveOperation>, Error> {
         match self {
-            DriveOperationType::ContractOperation(contract_operation_type) => {
-                contract_operation_type.to_drive_operations(
+            DriveOperation::ContractOperation(contract_operation_type) => contract_operation_type
+                .to_low_level_drive_operations(
+                    drive,
+                    estimated_costs_only_with_layer_info,
+                    block_info,
+                    transaction,
+                ),
+            DriveOperation::DocumentOperation(document_operation_type) => document_operation_type
+                .to_low_level_drive_operations(
+                    drive,
+                    estimated_costs_only_with_layer_info,
+                    block_info,
+                    transaction,
+                ),
+            DriveOperation::WithdrawalOperation(withdrawal_operation_type) => {
+                withdrawal_operation_type.to_low_level_drive_operations(
                     drive,
                     estimated_costs_only_with_layer_info,
                     block_info,
                     transaction,
                 )
             }
-            DriveOperationType::DocumentOperation(document_operation_type) => {
-                document_operation_type.to_drive_operations(
+            DriveOperation::IdentityOperation(identity_operation_type) => identity_operation_type
+                .to_low_level_drive_operations(
                     drive,
                     estimated_costs_only_with_layer_info,
                     block_info,
                     transaction,
-                )
-            }
-            DriveOperationType::WithdrawalOperation(withdrawal_operation_type) => {
-                withdrawal_operation_type.to_drive_operations(
-                    drive,
-                    estimated_costs_only_with_layer_info,
-                    block_info,
-                    transaction,
-                )
-            }
-            DriveOperationType::IdentityOperation(identity_operation_type) => {
-                identity_operation_type.to_drive_operations(
-                    drive,
-                    estimated_costs_only_with_layer_info,
-                    block_info,
-                    transaction,
-                )
-            }
-            DriveOperationType::SystemOperation(system_operation_type) => system_operation_type
-                .to_drive_operations(
+                ),
+            DriveOperation::SystemOperation(system_operation_type) => system_operation_type
+                .to_low_level_drive_operations(
                     drive,
                     estimated_costs_only_with_layer_info,
                     block_info,
@@ -143,16 +146,20 @@ impl Drive {
     /// Converts drive operations to grove operations
     pub fn convert_drive_operations_to_grove_operations(
         &self,
-        drive_batch_operations: Vec<DriveOperationType>,
+        drive_batch_operations: Vec<DriveOperation>,
         block_info: &BlockInfo,
         transaction: TransactionArg,
     ) -> Result<GroveDbOpBatch, Error> {
         let ops = drive_batch_operations
             .into_iter()
             .map(|drive_op| {
-                let inner_drive_operations =
-                    drive_op.to_drive_operations(self, &mut None, block_info, transaction)?;
-                Ok(DriveOperation::grovedb_operations_consume(
+                let inner_drive_operations = drive_op.to_low_level_drive_operations(
+                    self,
+                    &mut None,
+                    block_info,
+                    transaction,
+                )?;
+                Ok(LowLevelDriveOperation::grovedb_operations_consume(
                     inner_drive_operations,
                 ))
             })
@@ -163,7 +170,7 @@ impl Drive {
     /// We can apply multiple operations at once
     pub fn apply_drive_operations(
         &self,
-        operations: Vec<DriveOperationType>,
+        operations: Vec<DriveOperation>,
         apply: bool,
         block_info: &BlockInfo,
         transaction: TransactionArg,
@@ -171,14 +178,14 @@ impl Drive {
         if operations.is_empty() {
             return Ok(FeeResult::default());
         }
-        let mut drive_operations = vec![];
+        let mut low_level_operations = vec![];
         let mut estimated_costs_only_with_layer_info = if apply {
             None::<HashMap<KeyInfoPath, EstimatedLayerInformation>>
         } else {
             Some(HashMap::new())
         };
         for drive_op in operations {
-            drive_operations.append(&mut drive_op.to_drive_operations(
+            low_level_operations.append(&mut drive_op.to_low_level_drive_operations(
                 self,
                 &mut estimated_costs_only_with_layer_info,
                 block_info,
@@ -186,10 +193,10 @@ impl Drive {
             )?);
         }
         let mut cost_operations = vec![];
-        self.apply_batch_drive_operations(
+        self.apply_batch_low_level_drive_operations(
             estimated_costs_only_with_layer_info,
             transaction,
-            drive_operations,
+            low_level_operations,
             &mut cost_operations,
         )?;
         calculate_fee(None, Some(cost_operations), &block_info.epoch)
@@ -225,7 +232,7 @@ mod tests {
     use crate::drive::batch::drive_op_batch::document::{
         DocumentOperationsForContractDocumentType, UpdateOperationInfo,
     };
-    use crate::drive::batch::DriveOperationType::{ContractOperation, DocumentOperation};
+    use crate::drive::batch::DriveOperation::{ContractOperation, DocumentOperation};
     use crate::drive::config::DriveConfig;
     use crate::drive::contract::paths::contract_root_path;
     use crate::drive::flags::StorageFlags;

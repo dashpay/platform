@@ -14,10 +14,10 @@ use crate::drive::object_size_info::PathKeyElementInfo;
 use crate::{
     drive::{block_info::BlockInfo, Drive},
     error::Error,
-    fee::op::DriveOperation,
+    fee::op::LowLevelDriveOperation,
 };
 
-use super::DriveOperationConverter;
+use super::DriveLowLevelOperationConverter;
 
 /// Operations for Withdrawals
 #[derive(Clone, Debug)]
@@ -49,8 +49,8 @@ pub enum WithdrawalOperationType<'a> {
     },
 }
 
-impl DriveOperationConverter for WithdrawalOperationType<'_> {
-    fn to_drive_operations(
+impl DriveLowLevelOperationConverter for WithdrawalOperationType<'_> {
+    fn to_low_level_drive_operations(
         self,
         drive: &Drive,
         _estimated_costs_only_with_layer_info: &mut Option<
@@ -58,7 +58,7 @@ impl DriveOperationConverter for WithdrawalOperationType<'_> {
         >,
         _block_info: &BlockInfo,
         transaction: TransactionArg,
-    ) -> Result<Vec<DriveOperation>, Error> {
+    ) -> Result<Vec<LowLevelDriveOperation>, Error> {
         match self {
             WithdrawalOperationType::InsertExpiredIndex { index } => {
                 let mut drive_operations = vec![];

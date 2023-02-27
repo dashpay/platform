@@ -4,7 +4,7 @@ use crate::drive::Drive;
 use crate::error::drive::DriveError;
 use crate::error::Error;
 use crate::fee::calculate_fee;
-use crate::fee::op::DriveOperation;
+use crate::fee::op::LowLevelDriveOperation;
 use crate::fee::result::FeeResult;
 use crate::fee_pools::epochs::Epoch;
 use dpp::identifier::Identifier;
@@ -22,7 +22,7 @@ impl Drive {
         epoch: &Epoch,
         transaction: TransactionArg,
     ) -> Result<(Option<Identity>, FeeResult), Error> {
-        let mut drive_operations: Vec<DriveOperation> = vec![];
+        let mut drive_operations: Vec<LowLevelDriveOperation> = vec![];
         let maybe_identity =
             self.fetch_full_identity_operations(identity_id, transaction, &mut drive_operations)?;
         let fee = calculate_fee(None, Some(drive_operations), epoch)?;
@@ -107,7 +107,7 @@ impl Drive {
         identity_id: [u8; 32],
         transaction: TransactionArg,
     ) -> Result<Option<Identity>, Error> {
-        let mut drive_operations: Vec<DriveOperation> = vec![];
+        let mut drive_operations: Vec<LowLevelDriveOperation> = vec![];
         self.fetch_full_identity_operations(identity_id, transaction, &mut drive_operations)
     }
 
@@ -116,7 +116,7 @@ impl Drive {
         &self,
         identity_id: [u8; 32],
         transaction: TransactionArg,
-        drive_operations: &mut Vec<DriveOperation>,
+        drive_operations: &mut Vec<LowLevelDriveOperation>,
     ) -> Result<Option<Identity>, Error> {
         // let's start by getting the balance
         let balance = self.fetch_identity_balance_operations(

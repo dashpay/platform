@@ -56,8 +56,8 @@ use crate::drive::object_size_info::{DriveKeyInfo, PathKeyElementInfo, PathKeyIn
 use crate::drive::Drive;
 use crate::error::drive::DriveError;
 use crate::error::Error;
-use crate::fee::op::DriveOperation;
-use crate::fee::op::DriveOperation::{CalculatedCostOperation, GroveOperation};
+use crate::fee::op::LowLevelDriveOperation;
+use crate::fee::op::LowLevelDriveOperation::{CalculatedCostOperation, GroveOperation};
 use grovedb::operations::delete::{DeleteOptions, DeleteUpTreeOptions};
 use grovedb::operations::insert::InsertOptions;
 use grovedb::query_result_type::{
@@ -73,7 +73,7 @@ use storage::rocksdb_storage::RocksDbStorage;
 /// and returns the operation's return value.
 fn push_drive_operation_result<T>(
     cost_context: CostContext<Result<T, GroveError>>,
-    drive_operations: &mut Vec<DriveOperation>,
+    drive_operations: &mut Vec<LowLevelDriveOperation>,
 ) -> Result<T, Error> {
     let CostContext { value, cost } = cost_context;
     drive_operations.push(CalculatedCostOperation(cost));
@@ -84,7 +84,7 @@ fn push_drive_operation_result<T>(
 /// if `drive_operations` is given. Returns the operation's return value.
 fn push_drive_operation_result_optional<T>(
     cost_context: CostContext<Result<T, GroveError>>,
-    drive_operations: Option<&mut Vec<DriveOperation>>,
+    drive_operations: Option<&mut Vec<LowLevelDriveOperation>>,
 ) -> Result<T, Error> {
     let CostContext { value, cost } = cost_context;
     if let Some(drive_operations) = drive_operations {
@@ -247,7 +247,7 @@ impl Drive {
         element: Element,
         transaction: TransactionArg,
         options: Option<InsertOptions>,
-        drive_operations: &mut Vec<DriveOperation>,
+        drive_operations: &mut Vec<LowLevelDriveOperation>,
     ) -> Result<(), Error>
     where
         P: IntoIterator<Item = &'p [u8]>,
@@ -264,7 +264,7 @@ impl Drive {
         key: &'p [u8],
         transaction: TransactionArg,
         options: Option<InsertOptions>,
-        drive_operations: &mut Vec<DriveOperation>,
+        drive_operations: &mut Vec<LowLevelDriveOperation>,
     ) -> Result<(), Error>
     where
         P: IntoIterator<Item = &'p [u8]>,
@@ -283,7 +283,7 @@ impl Drive {
         key: &'p [u8],
         transaction: TransactionArg,
         options: Option<InsertOptions>,
-        drive_operations: &mut Vec<DriveOperation>,
+        drive_operations: &mut Vec<LowLevelDriveOperation>,
     ) -> Result<(), Error>
     where
         P: IntoIterator<Item = &'p [u8]>,
@@ -303,7 +303,7 @@ impl Drive {
         key: &'p [u8],
         element: Element,
         transaction: TransactionArg,
-        drive_operations: Option<&mut Vec<DriveOperation>>,
+        drive_operations: Option<&mut Vec<LowLevelDriveOperation>>,
     ) -> Result<bool, Error>
     where
         P: IntoIterator<Item = &'p [u8]>,
@@ -321,7 +321,7 @@ impl Drive {
         path: P,
         key: &'p [u8],
         transaction: TransactionArg,
-        drive_operations: &mut Vec<DriveOperation>,
+        drive_operations: &mut Vec<LowLevelDriveOperation>,
     ) -> Result<(), Error>
     where
         P: IntoIterator<Item = &'p [u8]>,
@@ -345,7 +345,7 @@ impl Drive {
         key: &'p [u8],
         direct_query_type: DirectQueryType,
         transaction: TransactionArg,
-        drive_operations: &mut Vec<DriveOperation>,
+        drive_operations: &mut Vec<LowLevelDriveOperation>,
     ) -> Result<Option<Element>, Error>
     where
         P: IntoIterator<Item = &'p [u8]>,
@@ -398,7 +398,7 @@ impl Drive {
         key: &'p [u8],
         direct_query_type: DirectQueryType,
         transaction: TransactionArg,
-        drive_operations: &mut Vec<DriveOperation>,
+        drive_operations: &mut Vec<LowLevelDriveOperation>,
     ) -> Result<Option<Element>, Error>
     where
         P: IntoIterator<Item = &'p [u8]>,
@@ -451,7 +451,7 @@ impl Drive {
         key: &'p [u8],
         direct_query_type: DirectQueryType,
         transaction: TransactionArg,
-        drive_operations: &mut Vec<DriveOperation>,
+        drive_operations: &mut Vec<LowLevelDriveOperation>,
     ) -> Result<Option<u64>, Error>
     where
         P: IntoIterator<Item = &'p [u8]>,
@@ -487,7 +487,7 @@ impl Drive {
         key: &'p [u8],
         query_type: QueryType,
         transaction: TransactionArg,
-        drive_operations: &mut Vec<DriveOperation>,
+        drive_operations: &mut Vec<LowLevelDriveOperation>,
     ) -> Result<Option<Element>, Error>
     where
         P: IntoIterator<Item = &'p [u8]>,
@@ -540,7 +540,7 @@ impl Drive {
         &self,
         path_query: &PathQuery,
         transaction: TransactionArg,
-        drive_operations: &mut Vec<DriveOperation>,
+        drive_operations: &mut Vec<LowLevelDriveOperation>,
     ) -> Result<(Vec<Vec<u8>>, u16), Error> {
         let CostContext { value, cost } =
             self.grove
@@ -556,7 +556,7 @@ impl Drive {
         path_query: &PathQuery,
         transaction: TransactionArg,
         result_type: QueryResultType,
-        drive_operations: &mut Vec<DriveOperation>,
+        drive_operations: &mut Vec<LowLevelDriveOperation>,
     ) -> Result<(QueryResultElements, u16), Error> {
         let CostContext { value, cost } =
             self.grove
@@ -571,7 +571,7 @@ impl Drive {
         &self,
         path_query: &PathQuery,
         transaction: TransactionArg,
-        drive_operations: &mut Vec<DriveOperation>,
+        drive_operations: &mut Vec<LowLevelDriveOperation>,
     ) -> Result<Vec<PathKeyOptionalElementTrio>, Error> {
         let CostContext { value, cost } =
             self.grove
@@ -586,7 +586,7 @@ impl Drive {
         &self,
         path_query: &PathQuery,
         transaction: TransactionArg,
-        drive_operations: &mut Vec<DriveOperation>,
+        drive_operations: &mut Vec<LowLevelDriveOperation>,
     ) -> Result<Vec<PathKeyOptionalElementTrio>, Error> {
         let CostContext { value, cost } =
             self.grove
@@ -602,7 +602,7 @@ impl Drive {
         path_query: &PathQuery,
         transaction: TransactionArg,
         result_type: QueryResultType,
-        drive_operations: &mut Vec<DriveOperation>,
+        drive_operations: &mut Vec<LowLevelDriveOperation>,
     ) -> Result<(QueryResultElements, u16), Error> {
         let CostContext { value, cost } =
             self.grove
@@ -620,7 +620,7 @@ impl Drive {
         path_query: &PathQuery,
         verbose: bool,
         transaction: TransactionArg,
-        drive_operations: &mut Vec<DriveOperation>,
+        drive_operations: &mut Vec<LowLevelDriveOperation>,
     ) -> Result<Vec<u8>, Error> {
         let CostContext { value, cost } =
             self.grove
@@ -637,7 +637,7 @@ impl Drive {
         key: &'p [u8],
         query_type: DirectQueryType,
         transaction: TransactionArg,
-        drive_operations: &mut Vec<DriveOperation>,
+        drive_operations: &mut Vec<LowLevelDriveOperation>,
     ) -> Result<i64, Error>
     where
         P: IntoIterator<Item = &'p [u8]>,
@@ -691,7 +691,7 @@ impl Drive {
         key: &'p [u8],
         query_type: DirectQueryType,
         transaction: TransactionArg,
-        drive_operations: &mut Vec<DriveOperation>,
+        drive_operations: &mut Vec<LowLevelDriveOperation>,
     ) -> Result<bool, Error>
     where
         P: IntoIterator<Item = &'p [u8]>,
@@ -753,7 +753,7 @@ impl Drive {
         path: P,
         key_info: DriveKeyInfo<'c>,
         storage_flags: Option<&StorageFlags>,
-        drive_operations: &mut Vec<DriveOperation>,
+        drive_operations: &mut Vec<LowLevelDriveOperation>,
     ) -> Result<(), Error>
     where
         P: IntoIterator<Item = &'c [u8]>,
@@ -762,7 +762,7 @@ impl Drive {
         match key_info {
             KeyRef(key) => {
                 let path_items: Vec<Vec<u8>> = path.into_iter().map(Vec::from).collect();
-                drive_operations.push(DriveOperation::for_known_path_key_empty_tree(
+                drive_operations.push(LowLevelDriveOperation::for_known_path_key_empty_tree(
                     path_items,
                     key.to_vec(),
                     storage_flags,
@@ -770,7 +770,7 @@ impl Drive {
                 Ok(())
             }
             KeySize(key) => {
-                drive_operations.push(DriveOperation::for_estimated_path_key_empty_tree(
+                drive_operations.push(LowLevelDriveOperation::for_estimated_path_key_empty_tree(
                     KeyInfoPath::from_known_path(path),
                     key,
                     storage_flags,
@@ -779,7 +779,7 @@ impl Drive {
             }
             Key(key) => {
                 let path_items: Vec<Vec<u8>> = path.into_iter().map(Vec::from).collect();
-                drive_operations.push(DriveOperation::for_known_path_key_empty_tree(
+                drive_operations.push(LowLevelDriveOperation::for_known_path_key_empty_tree(
                     path_items,
                     key,
                     storage_flags,
@@ -797,14 +797,14 @@ impl Drive {
         storage_flags: Option<&StorageFlags>,
         apply_type: BatchInsertTreeApplyType,
         transaction: TransactionArg,
-        check_existing_operations: &mut Option<&mut Vec<DriveOperation>>,
-        drive_operations: &mut Vec<DriveOperation>,
+        check_existing_operations: &mut Option<&mut Vec<LowLevelDriveOperation>>,
+        drive_operations: &mut Vec<LowLevelDriveOperation>,
     ) -> Result<bool, Error> {
         //todo: clean up the duplication
         match path_key_info {
             PathKeyRef((path, key)) => {
                 let path_iter: Vec<&[u8]> = path.iter().map(|x| x.as_slice()).collect();
-                let drive_operation = DriveOperation::for_known_path_key_empty_tree(
+                let drive_operation = LowLevelDriveOperation::for_known_path_key_empty_tree(
                     path.clone(),
                     key.to_vec(),
                     storage_flags,
@@ -870,7 +870,7 @@ impl Drive {
             )),
             PathKey((path, key)) => {
                 let path_iter: Vec<&[u8]> = path.iter().map(|x| x.as_slice()).collect();
-                let drive_operation = DriveOperation::for_known_path_key_empty_tree(
+                let drive_operation = LowLevelDriveOperation::for_known_path_key_empty_tree(
                     path.clone(),
                     key.to_vec(),
                     storage_flags,
@@ -933,7 +933,7 @@ impl Drive {
             }
             PathFixedSizeKey((path, key)) => {
                 let path_items: Vec<Vec<u8>> = path.into_iter().map(Vec::from).collect();
-                let drive_operation = DriveOperation::for_known_path_key_empty_tree(
+                let drive_operation = LowLevelDriveOperation::for_known_path_key_empty_tree(
                     path_items,
                     key.to_vec(),
                     storage_flags,
@@ -996,7 +996,7 @@ impl Drive {
             }
             PathFixedSizeKeyRef((path, key)) => {
                 let path_items: Vec<Vec<u8>> = path.into_iter().map(Vec::from).collect();
-                let drive_operation = DriveOperation::for_known_path_key_empty_tree(
+                let drive_operation = LowLevelDriveOperation::for_known_path_key_empty_tree(
                     path_items,
                     key.to_vec(),
                     storage_flags,
@@ -1070,12 +1070,12 @@ impl Drive {
         storage_flags: Option<&StorageFlags>,
         apply_type: BatchInsertTreeApplyType,
         transaction: TransactionArg,
-        drive_operations: &mut Vec<DriveOperation>,
+        drive_operations: &mut Vec<LowLevelDriveOperation>,
     ) -> Result<bool, Error> {
         match path_key_info {
             PathKeyRef((path, key)) => {
                 let path_iter: Vec<&[u8]> = path.iter().map(|x| x.as_slice()).collect();
-                let drive_operation = DriveOperation::for_known_path_key_empty_tree(
+                let drive_operation = LowLevelDriveOperation::for_known_path_key_empty_tree(
                     path.clone(),
                     key.to_vec(),
                     storage_flags,
@@ -1101,7 +1101,7 @@ impl Drive {
                 DriveError::NotSupportedPrivate("document sizes in batch operations not supported"),
             )),
             PathKey((path, key)) => {
-                let drive_operation = DriveOperation::for_known_path_key_empty_tree(
+                let drive_operation = LowLevelDriveOperation::for_known_path_key_empty_tree(
                     path.clone(),
                     key.clone(),
                     storage_flags,
@@ -1126,7 +1126,7 @@ impl Drive {
             }
             PathFixedSizeKey((path, key)) => {
                 let path_items: Vec<Vec<u8>> = path.into_iter().map(Vec::from).collect();
-                let drive_operation = DriveOperation::for_known_path_key_empty_tree(
+                let drive_operation = LowLevelDriveOperation::for_known_path_key_empty_tree(
                     path_items,
                     key.to_vec(),
                     storage_flags,
@@ -1150,7 +1150,7 @@ impl Drive {
             }
             PathFixedSizeKeyRef((path, key)) => {
                 let path_items: Vec<Vec<u8>> = path.into_iter().map(Vec::from).collect();
-                let drive_operation = DriveOperation::for_known_path_key_empty_tree(
+                let drive_operation = LowLevelDriveOperation::for_known_path_key_empty_tree(
                     path_items,
                     key.to_vec(),
                     storage_flags,
@@ -1179,11 +1179,11 @@ impl Drive {
     pub(crate) fn batch_insert<const N: usize>(
         &self,
         path_key_element_info: PathKeyElementInfo<N>,
-        drive_operations: &mut Vec<DriveOperation>,
+        drive_operations: &mut Vec<LowLevelDriveOperation>,
     ) -> Result<(), Error> {
         match path_key_element_info {
             PathKeyRefElement((path, key, element)) => {
-                drive_operations.push(DriveOperation::insert_for_known_path_key_element(
+                drive_operations.push(LowLevelDriveOperation::insert_for_known_path_key_element(
                     path,
                     key.to_vec(),
                     element,
@@ -1191,17 +1191,19 @@ impl Drive {
                 Ok(())
             }
             PathKeyElement((path, key, element)) => {
-                drive_operations.push(DriveOperation::insert_for_known_path_key_element(
+                drive_operations.push(LowLevelDriveOperation::insert_for_known_path_key_element(
                     path, key, element,
                 ));
                 Ok(())
             }
             PathKeyElementSize((key_info_path, key_info, element)) => {
-                drive_operations.push(DriveOperation::insert_for_estimated_path_key_element(
-                    key_info_path,
-                    key_info,
-                    element,
-                ));
+                drive_operations.push(
+                    LowLevelDriveOperation::insert_for_estimated_path_key_element(
+                        key_info_path,
+                        key_info,
+                        element,
+                    ),
+                );
                 Ok(())
             }
             PathKeyUnknownElementSize(_) => Err(Error::Drive(DriveError::NotSupportedPrivate(
@@ -1209,7 +1211,7 @@ impl Drive {
             ))),
             PathFixedSizeKeyRefElement((path, key, element)) => {
                 let path_items: Vec<Vec<u8>> = path.into_iter().map(Vec::from).collect();
-                drive_operations.push(DriveOperation::insert_for_known_path_key_element(
+                drive_operations.push(LowLevelDriveOperation::insert_for_known_path_key_element(
                     path_items,
                     key.to_vec(),
                     element,
@@ -1226,7 +1228,7 @@ impl Drive {
         path_key_element_info: PathKeyElementInfo<N>,
         apply_type: BatchInsertApplyType,
         transaction: TransactionArg,
-        drive_operations: &mut Vec<DriveOperation>,
+        drive_operations: &mut Vec<LowLevelDriveOperation>,
     ) -> Result<bool, Error> {
         match path_key_element_info {
             PathKeyRefElement((path, key, element)) => {
@@ -1239,11 +1241,13 @@ impl Drive {
                     drive_operations,
                 )?;
                 if !has_raw {
-                    drive_operations.push(DriveOperation::insert_for_known_path_key_element(
-                        path,
-                        key.to_vec(),
-                        element,
-                    ));
+                    drive_operations.push(
+                        LowLevelDriveOperation::insert_for_known_path_key_element(
+                            path,
+                            key.to_vec(),
+                            element,
+                        ),
+                    );
                 }
                 Ok(!has_raw)
             }
@@ -1257,9 +1261,11 @@ impl Drive {
                     drive_operations,
                 )?;
                 if !has_raw {
-                    drive_operations.push(DriveOperation::insert_for_known_path_key_element(
-                        path, key, element,
-                    ));
+                    drive_operations.push(
+                        LowLevelDriveOperation::insert_for_known_path_key_element(
+                            path, key, element,
+                        ),
+                    );
                 }
                 Ok(!has_raw)
             }
@@ -1273,11 +1279,13 @@ impl Drive {
                 )?;
                 if !has_raw {
                     let path_items: Vec<Vec<u8>> = path.into_iter().map(Vec::from).collect();
-                    drive_operations.push(DriveOperation::insert_for_known_path_key_element(
-                        path_items,
-                        key.to_vec(),
-                        element,
-                    ));
+                    drive_operations.push(
+                        LowLevelDriveOperation::insert_for_known_path_key_element(
+                            path_items,
+                            key.to_vec(),
+                            element,
+                        ),
+                    );
                 }
                 Ok(!has_raw)
             }
@@ -1296,7 +1304,7 @@ impl Drive {
                             ),
                         ));
                         drive_operations.push(
-                            DriveOperation::insert_for_estimated_path_key_element(
+                            LowLevelDriveOperation::insert_for_estimated_path_key_element(
                                 key_info_path,
                                 key_info,
                                 element,
@@ -1324,7 +1332,7 @@ impl Drive {
         path_key_element_info: PathKeyElementInfo<N>,
         apply_type: BatchInsertApplyType,
         transaction: TransactionArg,
-        drive_operations: &mut Vec<DriveOperation>,
+        drive_operations: &mut Vec<LowLevelDriveOperation>,
     ) -> Result<(bool, Option<Element>), Error> {
         match path_key_element_info {
             PathKeyRefElement((path, key, element)) => {
@@ -1341,11 +1349,13 @@ impl Drive {
                     Some(previous_element) => previous_element != &element,
                 };
                 if needs_insert {
-                    drive_operations.push(DriveOperation::insert_for_known_path_key_element(
-                        path,
-                        key.to_vec(),
-                        element,
-                    ));
+                    drive_operations.push(
+                        LowLevelDriveOperation::insert_for_known_path_key_element(
+                            path,
+                            key.to_vec(),
+                            element,
+                        ),
+                    );
                 }
                 Ok((needs_insert, previous_element))
             }
@@ -1363,9 +1373,11 @@ impl Drive {
                     Some(previous_element) => previous_element != &element,
                 };
                 if needs_insert {
-                    drive_operations.push(DriveOperation::insert_for_known_path_key_element(
-                        path, key, element,
-                    ));
+                    drive_operations.push(
+                        LowLevelDriveOperation::insert_for_known_path_key_element(
+                            path, key, element,
+                        ),
+                    );
                 }
                 Ok((needs_insert, previous_element))
             }
@@ -1383,11 +1395,13 @@ impl Drive {
                 };
                 if needs_insert {
                     let path_items: Vec<Vec<u8>> = path.into_iter().map(Vec::from).collect();
-                    drive_operations.push(DriveOperation::insert_for_known_path_key_element(
-                        path_items,
-                        key.to_vec(),
-                        element,
-                    ));
+                    drive_operations.push(
+                        LowLevelDriveOperation::insert_for_known_path_key_element(
+                            path_items,
+                            key.to_vec(),
+                            element,
+                        ),
+                    );
                 }
                 Ok((needs_insert, previous_element))
             }
@@ -1406,7 +1420,7 @@ impl Drive {
                             ),
                         ));
                         drive_operations.push(
-                            DriveOperation::insert_for_estimated_path_key_element(
+                            LowLevelDriveOperation::insert_for_estimated_path_key_element(
                                 key_info_path,
                                 key_info,
                                 element,
@@ -1434,13 +1448,14 @@ impl Drive {
         key: &'c [u8],
         apply_type: BatchDeleteApplyType,
         transaction: TransactionArg,
-        drive_operations: &mut Vec<DriveOperation>,
+        drive_operations: &mut Vec<LowLevelDriveOperation>,
     ) -> Result<(), Error>
     where
         P: IntoIterator<Item = &'c [u8]>,
         <P as IntoIterator>::IntoIter: ExactSizeIterator + DoubleEndedIterator + Clone,
     {
-        let current_batch_operations = DriveOperation::grovedb_operations_batch(drive_operations);
+        let current_batch_operations =
+            LowLevelDriveOperation::grovedb_operations_batch(drive_operations);
         let options = DeleteOptions {
             allow_deleting_non_empty_trees: false,
             deleting_non_empty_trees_returns_error: true,
@@ -1477,7 +1492,7 @@ impl Drive {
             push_drive_operation_result(delete_operation, drive_operations)?
         {
             // we also add the actual delete operation
-            drive_operations.push(DriveOperation::GroveOperation(delete_operation))
+            drive_operations.push(LowLevelDriveOperation::GroveOperation(delete_operation))
         }
 
         Ok(())
@@ -1491,17 +1506,17 @@ impl Drive {
         stop_path_height: Option<u16>,
         apply_type: BatchDeleteUpTreeApplyType,
         transaction: TransactionArg,
-        check_existing_operations: &Option<&mut Vec<DriveOperation>>,
-        drive_operations: &mut Vec<DriveOperation>,
+        check_existing_operations: &Option<&mut Vec<LowLevelDriveOperation>>,
+        drive_operations: &mut Vec<LowLevelDriveOperation>,
     ) -> Result<(), Error> {
         //these are the operations in the current operations (eg, delete/add)
         let mut current_batch_operations =
-            DriveOperation::grovedb_operations_batch(drive_operations);
+            LowLevelDriveOperation::grovedb_operations_batch(drive_operations);
 
         //These are the operations in the same batch, but in a different operation
         if let Some(existing_operations) = check_existing_operations {
             let mut other_batch_operations =
-                DriveOperation::grovedb_operations_batch(existing_operations);
+                LowLevelDriveOperation::grovedb_operations_batch(existing_operations);
             current_batch_operations.append(&mut other_batch_operations);
         }
         let cost_context = match apply_type {
@@ -1539,7 +1554,7 @@ impl Drive {
         let delete_operations = push_drive_operation_result(cost_context, drive_operations)?;
         delete_operations
             .into_iter()
-            .for_each(|op| drive_operations.push(DriveOperation::GroveOperation(op)));
+            .for_each(|op| drive_operations.push(LowLevelDriveOperation::GroveOperation(op)));
 
         Ok(())
     }
@@ -1577,7 +1592,7 @@ impl Drive {
         ops: GroveDbOpBatch,
         validate: bool,
         transaction: TransactionArg,
-        drive_operations: &mut Vec<DriveOperation>,
+        drive_operations: &mut Vec<LowLevelDriveOperation>,
     ) -> Result<(), Error> {
         if ops.is_empty() {
             return Err(Error::Drive(DriveError::BatchIsEmpty()));
@@ -1714,7 +1729,7 @@ impl Drive {
         ops: GroveDbOpBatch,
         estimated_layer_info: HashMap<KeyInfoPath, EstimatedLayerInformation>,
         validate: bool,
-        drive_operations: &mut Vec<DriveOperation>,
+        drive_operations: &mut Vec<LowLevelDriveOperation>,
     ) -> Result<(), Error> {
         let cost_context = GroveDb::estimated_case_operations_for_batch(
             AverageCaseCostsType(estimated_layer_info),

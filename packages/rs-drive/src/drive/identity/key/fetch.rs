@@ -22,7 +22,7 @@ use crate::fee::credits::Credits;
 #[cfg(feature = "full")]
 use crate::fee::default_costs::KnownCostItem::FetchSingleIdentityKeyProcessingCost;
 #[cfg(feature = "full")]
-use crate::fee::op::DriveOperation;
+use crate::fee::op::LowLevelDriveOperation;
 #[cfg(feature = "full")]
 use crate::fee_pools::epochs::Epoch;
 #[cfg(any(feature = "full", feature = "verify"))]
@@ -458,7 +458,7 @@ impl Drive {
         identity_id: [u8; 32],
         transaction: TransactionArg,
     ) -> Result<BTreeMap<KeyID, IdentityPublicKey>, Error> {
-        let mut drive_operations: Vec<DriveOperation> = vec![];
+        let mut drive_operations: Vec<LowLevelDriveOperation> = vec![];
         self.fetch_all_current_identity_keys_operations(
             identity_id,
             transaction,
@@ -471,7 +471,7 @@ impl Drive {
         &self,
         identity_id: [u8; 32],
         transaction: TransactionArg,
-        drive_operations: &mut Vec<DriveOperation>,
+        drive_operations: &mut Vec<LowLevelDriveOperation>,
     ) -> Result<BTreeMap<KeyID, IdentityPublicKey>, Error> {
         let key_request = IdentityKeysRequest::new_all_current_keys_query(identity_id);
         self.fetch_identity_keys_operations::<KeyIDIdentityPublicKeyPairBTreeMap>(
@@ -487,7 +487,7 @@ impl Drive {
         identity_id: [u8; 32],
         transaction: TransactionArg,
     ) -> Result<BTreeMap<KeyID, IdentityPublicKey>, Error> {
-        let mut drive_operations: Vec<DriveOperation> = vec![];
+        let mut drive_operations: Vec<LowLevelDriveOperation> = vec![];
         self.fetch_all_identity_keys_operations(identity_id, transaction, &mut drive_operations)
     }
 
@@ -496,7 +496,7 @@ impl Drive {
         &self,
         identity_id: [u8; 32],
         transaction: TransactionArg,
-        drive_operations: &mut Vec<DriveOperation>,
+        drive_operations: &mut Vec<LowLevelDriveOperation>,
     ) -> Result<BTreeMap<KeyID, IdentityPublicKey>, Error> {
         let key_request = IdentityKeysRequest::new_all_keys_query(&identity_id);
         self.fetch_identity_keys_operations(key_request, transaction, drive_operations)
@@ -508,7 +508,7 @@ impl Drive {
         key_request: IdentityKeysRequest,
         transaction: TransactionArg,
     ) -> Result<T, Error> {
-        let mut drive_operations: Vec<DriveOperation> = vec![];
+        let mut drive_operations: Vec<LowLevelDriveOperation> = vec![];
         self.fetch_identity_keys_operations(key_request, transaction, &mut drive_operations)
     }
 
@@ -517,7 +517,7 @@ impl Drive {
         &self,
         key_request: IdentityKeysRequest,
         transaction: TransactionArg,
-        drive_operations: &mut Vec<DriveOperation>,
+        drive_operations: &mut Vec<LowLevelDriveOperation>,
     ) -> Result<T, Error> {
         match &key_request.request_type {
             AllKeys => {

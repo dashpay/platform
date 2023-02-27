@@ -21,7 +21,7 @@ use crate::fee::calculate_fee;
 #[cfg(feature = "full")]
 use crate::fee::credits::{Creditable, Credits, SignedCredits};
 #[cfg(feature = "full")]
-use crate::fee::op::DriveOperation;
+use crate::fee::op::LowLevelDriveOperation;
 #[cfg(feature = "full")]
 use crate::fee::result::FeeResult;
 #[cfg(feature = "full")]
@@ -40,7 +40,7 @@ impl Drive {
         identity_id: [u8; 32],
         transaction: TransactionArg,
     ) -> Result<Option<Credits>, Error> {
-        let mut drive_operations: Vec<DriveOperation> = vec![];
+        let mut drive_operations: Vec<LowLevelDriveOperation> = vec![];
         self.fetch_identity_balance_operations(
             identity_id,
             true,
@@ -59,7 +59,7 @@ impl Drive {
         apply: bool,
         transaction: TransactionArg,
     ) -> Result<(Option<Credits>, FeeResult), Error> {
-        let mut drive_operations: Vec<DriveOperation> = vec![];
+        let mut drive_operations: Vec<LowLevelDriveOperation> = vec![];
         let value = self.fetch_identity_balance_operations(
             identity_id,
             apply,
@@ -78,7 +78,7 @@ impl Drive {
         identity_id: [u8; 32],
         transaction: TransactionArg,
     ) -> Result<Option<SignedCredits>, Error> {
-        let mut drive_operations: Vec<DriveOperation> = vec![];
+        let mut drive_operations: Vec<LowLevelDriveOperation> = vec![];
         self.fetch_identity_balance_include_debt_operations(
             identity_id,
             true,
@@ -97,7 +97,7 @@ impl Drive {
         apply: bool,
         transaction: TransactionArg,
     ) -> Result<(Option<SignedCredits>, FeeResult), Error> {
-        let mut drive_operations: Vec<DriveOperation> = vec![];
+        let mut drive_operations: Vec<LowLevelDriveOperation> = vec![];
         let value = self.fetch_identity_balance_include_debt_operations(
             identity_id,
             apply,
@@ -116,7 +116,7 @@ impl Drive {
         identity_id: [u8; 32],
         apply: bool,
         transaction: TransactionArg,
-        drive_operations: &mut Vec<DriveOperation>,
+        drive_operations: &mut Vec<LowLevelDriveOperation>,
     ) -> Result<Option<SignedCredits>, Error> {
         Ok(self
             .fetch_identity_balance_operations(identity_id, apply, transaction, drive_operations)?
@@ -150,7 +150,7 @@ impl Drive {
         identity_id: [u8; 32],
         apply: bool,
         transaction: TransactionArg,
-        drive_operations: &mut Vec<DriveOperation>,
+        drive_operations: &mut Vec<LowLevelDriveOperation>,
     ) -> Result<Option<Credits>, Error> {
         let direct_query_type = if apply {
             DirectQueryType::StatefulDirectQuery
@@ -223,7 +223,7 @@ impl Drive {
         identity_id: [u8; 32],
         apply: bool,
         transaction: TransactionArg,
-        drive_operations: &mut Vec<DriveOperation>,
+        drive_operations: &mut Vec<LowLevelDriveOperation>,
     ) -> Result<Option<Credits>, Error> {
         let direct_query_type = if apply {
             DirectQueryType::StatefulDirectQuery

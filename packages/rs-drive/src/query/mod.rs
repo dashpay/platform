@@ -93,7 +93,7 @@ use crate::error::Error;
 #[cfg(feature = "full")]
 use crate::fee::calculate_fee;
 #[cfg(feature = "full")]
-use crate::fee::op::DriveOperation;
+use crate::fee::op::LowLevelDriveOperation;
 
 #[cfg(feature = "full")]
 use crate::drive::contract::paths::ContractPaths;
@@ -561,7 +561,7 @@ impl<'a> DriveQuery<'a> {
         &self,
         drive: &Drive,
         transaction: TransactionArg,
-        drive_operations: &mut Vec<DriveOperation>,
+        drive_operations: &mut Vec<LowLevelDriveOperation>,
     ) -> Result<PathQuery, Error> {
         // First we should get the overall document_type_path
         let document_type_path = self
@@ -1292,7 +1292,7 @@ impl<'a> DriveQuery<'a> {
         self,
         drive: &Drive,
         transaction: TransactionArg,
-        drive_operations: &mut Vec<DriveOperation>,
+        drive_operations: &mut Vec<LowLevelDriveOperation>,
     ) -> Result<Vec<u8>, Error> {
         let path_query =
             self.construct_path_query_operations(drive, transaction, drive_operations)?;
@@ -1328,7 +1328,7 @@ impl<'a> DriveQuery<'a> {
         self,
         drive: &Drive,
         transaction: TransactionArg,
-        drive_operations: &mut Vec<DriveOperation>,
+        drive_operations: &mut Vec<LowLevelDriveOperation>,
     ) -> Result<([u8; 32], Vec<Vec<u8>>), Error> {
         let path_query =
             self.construct_path_query_operations(drive, transaction, drive_operations)?;
@@ -1386,7 +1386,7 @@ impl<'a> DriveQuery<'a> {
         &self,
         drive: &Drive,
         transaction: TransactionArg,
-        drive_operations: &mut Vec<DriveOperation>,
+        drive_operations: &mut Vec<LowLevelDriveOperation>,
     ) -> Result<(Vec<Vec<u8>>, u16), Error> {
         let path_query =
             self.construct_path_query_operations(drive, transaction, drive_operations)?;
@@ -1415,7 +1415,7 @@ impl<'a> DriveQuery<'a> {
         drive: &Drive,
         result_type: QueryResultType,
         transaction: TransactionArg,
-        drive_operations: &mut Vec<DriveOperation>,
+        drive_operations: &mut Vec<LowLevelDriveOperation>,
     ) -> Result<(QueryResultElements, u16), Error> {
         let path_query =
             self.construct_path_query_operations(drive, transaction, drive_operations)?;
