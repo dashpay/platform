@@ -72,7 +72,7 @@ impl IdentityFactoryWasm {
         };
 
         let identity_json = utils::stringify(&identity_object)?;
-        let raw_identity: Value =
+        let raw_identity: value =
             serde_json::from_str(&identity_json).map_err(|e| e.to_string())?;
 
         let result = self
