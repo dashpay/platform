@@ -1,4 +1,4 @@
-use std::convert::TryInto;
+use std::convert::{TryInto, TryFrom};
 
 use anyhow::anyhow;
 use anyhow::Context;
@@ -7,7 +7,7 @@ use lazy_static::lazy_static;
 use serde_json::{json, Value as JsonValue};
 use std::sync::Arc;
 
-use crate::state_transition::state_transition_execution_context::StateTransitionExecutionContext;
+use crate::{consensus::ConsensusError, state_transition::state_transition_execution_context::StateTransitionExecutionContext};
 use crate::{
     consensus::basic::BasicError,
     data_contract::{
@@ -73,9 +73,18 @@ where
             return Ok(result);
         }
 
-        let protocol_version = raw_state_transition
+        let protocol_version = match raw_state_transition
             .get_u64(property_names::PROTOCOL_VERSION)
-            .with_context(|| "invalid protocol version")? as u32;
+            .and_then(|x| u32::try_from(x).map_err(Into::into))
+        {
+            Ok(v) => v,
+            Err(parsing_error) => {
+                return Ok(SimpleValidationResult::new(Some(vec![
+                    ConsensusError::ProtocolVersionParsingError { parsing_error },
+                ])))
+            }
+        };
+
         let result = self.protocol_version_validator.validate(protocol_version)?;
         if !result.is_valid() {
             return Ok(result);

@@ -41,6 +41,7 @@ describe('validateDataContractUpdateTransitionBasicFactory', () => {
   let validateDataContractUpdateTransitionBasic;
   let ValidationResult;
   let StateTransitionExecutionContext;
+  let ProtocolVersionParsingError;
   
   let validateStateTransition;
   let validateDataContractMock;
@@ -60,6 +61,7 @@ describe('validateDataContractUpdateTransitionBasicFactory', () => {
       validateDataContractUpdateTransitionBasic,
       ValidationResult,
       StateTransitionExecutionContext,
+      ProtocolVersionParsingError,
     } = await loadWasmDpp());
   });
 
@@ -81,13 +83,13 @@ describe('validateDataContractUpdateTransitionBasicFactory', () => {
 
     rawStateTransition = stateTransition.toObject();
 
-    const RE2 = await getRE2Class();
-    const ajv = createAjv(RE2);
+    // const RE2 = await getRE2Class();
+    // const ajv = createAjv(RE2);
 
-    const jsonSchemaValidator = new JsonSchemaValidator(ajv);
+    // const jsonSchemaValidator = new JsonSchemaValidator(ajv);
 
-    validateIndicesAreNotChangedMock = this.sinonSandbox.stub();
-    validateIndicesAreNotChangedMock.returns(new ValidationResult());
+    // validateIndicesAreNotChangedMock = this.sinonSandbox.stub();
+    // validateIndicesAreNotChangedMock.returns(new ValidationResult());
 
     stateRepositoryMock = createStateRepositoryMock(this.sinonSandbox);
     stateRepositoryMock.fetchDataContract.resolves(dataContract);
@@ -116,7 +118,7 @@ describe('validateDataContractUpdateTransitionBasicFactory', () => {
         executionContext,
       );
 
-      expectJsonSchemaError(result);
+      await expectJsonSchemaError(result);
 
       const [error] = result.getErrors();
 
@@ -125,47 +127,47 @@ describe('validateDataContractUpdateTransitionBasicFactory', () => {
       expect(error.getParams().missingProperty).to.equal('protocolVersion');
     });
 
-    // it('should be an integer', async () => {
-    //   rawStateTransition.protocolVersion = '1';
+    it('should be an integer', async () => {
+      rawStateTransition.protocolVersion = '1';
 
-    //   const result = await validateDataContractUpdateTransitionBasic(
-    //     rawStateTransition,
-    //     executionContext,
-    //   );
+      const result = await validateStateTransition(
+        rawStateTransition,
+        executionContext,
+      );
 
-    //   expectJsonSchemaError(result);
+      await expectJsonSchemaError(result);
 
-    //   const [error] = result.getErrors();
+      const [error] = result.getErrors();
 
-    //   expect(error.getInstancePath()).to.equal('/protocolVersion');
-    //   expect(error.getKeyword()).to.equal('type');
-    // });
+      expect(error.getInstancePath()).to.equal('/protocolVersion');
+      expect(error.getKeyword()).to.equal('type');
+    });
 
-    // it('should be valid', async () => {
-    //   rawStateTransition.protocolVersion = -1;
+    it('should be valid', async () => {
+      rawStateTransition.protocolVersion = -1;
 
-    //   const protocolVersionError = new SomeConsensusError('test');
-    //   const protocolVersionResult = new ValidationResult([
-    //     protocolVersionError,
-    //   ]);
+      // const protocolVersionError = new SomeConsensusError('test');
+      // const protocolVersionResult = new ValidationResult([
+      //   protocolVersionError,
+      // ]);
 
-    //   validateProtocolVersionMock.returns(protocolVersionResult);
+      // validateProtocolVersionMock.returns(protocolVersionResult);
 
-    //   const result = await validateDataContractUpdateTransitionBasic(
-    //     rawStateTransition,
-    //     executionContext,
-    //   );
+      const result = await validateStateTransition(
+        rawStateTransition,
+        executionContext,
+      );
 
-    //   expectValidationError(result, SomeConsensusError);
+      await expectValidationError(result);
 
-    //   const [error] = result.getErrors();
+      const [error] = result.getErrors();
 
-    //   expect(error).to.equal(protocolVersionError);
+      expect(error).to.be.an.instanceOf(ProtocolVersionParsingError);
 
-    //   expect(validateProtocolVersionMock).to.be.calledOnceWith(
-    //     rawStateTransition.protocolVersion,
-    //   );
-    // });
+      // expect(validateProtocolVersionMock).to.be.calledOnceWith(
+      //   rawStateTransition.protocolVersion,
+      // );
+    });
   });
 
   // describe('type', () => {
