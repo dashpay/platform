@@ -170,47 +170,47 @@ describe('validateDataContractUpdateTransitionBasicFactory', () => {
     });
   });
 
-  // describe('type', () => {
-  //   it('should be present', async () => {
-  //     delete rawStateTransition.type;
+  describe('type', () => {
+    it('should be present', async () => {
+      delete rawStateTransition.type;
 
-  //     const result = await validateDataContractUpdateTransitionBasic(
-  //       rawStateTransition,
-  //       executionContext,
-  //     );
+      const result = await validateStateTransition(
+        rawStateTransition,
+        executionContext,
+      );
 
-  //     expectJsonSchemaError(result);
+      await expectJsonSchemaError(result);
 
-  //     const [error] = result.getErrors();
+      const [error] = result.getErrors();
 
-  //     expect(error.getInstancePath()).to.equal('');
-  //     expect(error.getKeyword()).to.equal('required');
-  //     expect(error.getParams().missingProperty).to.equal('type');
-  //   });
+      expect(error.getInstancePath()).to.equal('');
+      expect(error.getKeyword()).to.equal('required');
+      expect(error.getParams().missingProperty).to.equal('type');
+    });
 
-  //   it('should be equal to 4', async () => {
-  //     rawStateTransition.type = 666;
+    it('should be equal to 4', async () => {
+      rawStateTransition.type = 666;
 
-  //     const result = await validateDataContractUpdateTransitionBasic(
-  //       rawStateTransition,
-  //       executionContext,
-  //     );
+      const result = await validateStateTransition(
+        rawStateTransition,
+        executionContext,
+      );
 
-  //     expectJsonSchemaError(result);
+      await expectJsonSchemaError(result);
 
-  //     const [error] = result.getErrors();
+      const [error] = result.getErrors();
 
-  //     expect(error.getInstancePath()).to.equal('/type');
-  //     expect(error.getKeyword()).to.equal('const');
-  //     expect(error.getParams().allowedValue).to.equal(4);
-  //   });
-  // });
+      expect(error.getInstancePath()).to.equal('/type');
+      expect(error.getKeyword()).to.equal('const');
+      expect(error.getParams().allowedValue).to.equal(4);
+    });
+  });
 
   // describe('dataContract', () => {
   //   it('should be present', async () => {
   //     delete rawStateTransition.dataContract;
 
-  //     const result = await validateDataContractUpdateTransitionBasic(
+  //     const result = await validateStateTransition(
   //       rawStateTransition,
   //       executionContext,
   //     );
@@ -227,7 +227,7 @@ describe('validateDataContractUpdateTransitionBasicFactory', () => {
   //   it('should have no existing documents removed', async () => {
   //     rawStateTransition.dataContract.documents.indexedDocument = undefined;
 
-  //     const result = await validateDataContractUpdateTransitionBasic(
+  //     const result = await validateStateTransition(
   //       rawStateTransition,
   //       executionContext,
   //     );
@@ -248,7 +248,7 @@ describe('validateDataContractUpdateTransitionBasicFactory', () => {
   //       minimum: 0,
   //     };
 
-  //     const result = await validateDataContractUpdateTransitionBasic(
+  //     const result = await validateStateTransition(
   //       rawStateTransition,
   //       executionContext,
   //     );
@@ -259,7 +259,7 @@ describe('validateDataContractUpdateTransitionBasicFactory', () => {
   //   it('should have existing documents schema backward compatible', async () => {
   //     rawStateTransition.dataContract.documents.indexedDocument.properties.firstName = undefined;
 
-  //     const result = await validateDataContractUpdateTransitionBasic(
+  //     const result = await validateStateTransition(
   //       rawStateTransition,
   //       executionContext,
   //     );
@@ -284,7 +284,7 @@ describe('validateDataContractUpdateTransitionBasicFactory', () => {
   //       required: ['name'],
   //     };
 
-  //     const result = await validateDataContractUpdateTransitionBasic(
+  //     const result = await validateStateTransition(
   //       rawStateTransition,
   //       executionContext,
   //     );
@@ -295,7 +295,7 @@ describe('validateDataContractUpdateTransitionBasicFactory', () => {
   //   it('should not have root immutable properties changed', async () => {
   //     rawStateTransition.dataContract.$schema = undefined;
 
-  //     const result = await validateDataContractUpdateTransitionBasic(
+  //     const result = await validateStateTransition(
   //       rawStateTransition,
   //       executionContext,
   //     );
@@ -317,7 +317,7 @@ describe('validateDataContractUpdateTransitionBasicFactory', () => {
 
   //     validateDataContractMock.returns(dataContractResult);
 
-  //     const result = await validateDataContractUpdateTransitionBasic(
+  //     const result = await validateStateTransition(
   //       rawStateTransition,
   //       executionContext,
   //     );
@@ -336,7 +336,7 @@ describe('validateDataContractUpdateTransitionBasicFactory', () => {
   //   it('should be present', async () => {
   //     delete rawStateTransition.signature;
 
-  //     const result = await validateDataContractUpdateTransitionBasic(
+  //     const result = await validateStateTransition(
   //       rawStateTransition,
   //       executionContext,
   //     );
@@ -353,7 +353,7 @@ describe('validateDataContractUpdateTransitionBasicFactory', () => {
   //   it('should be a byte array', async () => {
   //     rawStateTransition.signature = new Array(65).fill('string');
 
-  //     const result = await validateDataContractUpdateTransitionBasic(
+  //     const result = await validateStateTransition(
   //       rawStateTransition,
   //       executionContext,
   //     );
@@ -371,7 +371,7 @@ describe('validateDataContractUpdateTransitionBasicFactory', () => {
   //   it('should be not less than 65 bytes', async () => {
   //     rawStateTransition.signature = Buffer.alloc(64);
 
-  //     const result = await validateDataContractUpdateTransitionBasic(
+  //     const result = await validateStateTransition(
   //       rawStateTransition,
   //       executionContext,
   //     );
@@ -388,7 +388,7 @@ describe('validateDataContractUpdateTransitionBasicFactory', () => {
   //   it('should be not longer than 96 bytes', async () => {
   //     rawStateTransition.signature = Buffer.alloc(97);
 
-  //     const result = await validateDataContractUpdateTransitionBasic(
+  //     const result = await validateStateTransition(
   //       rawStateTransition,
   //       executionContext,
   //     );
@@ -407,7 +407,7 @@ describe('validateDataContractUpdateTransitionBasicFactory', () => {
   //   it('should be an integer', async () => {
   //     rawStateTransition.signaturePublicKeyId = 1.4;
 
-  //     const result = await validateDataContractUpdateTransitionBasic(
+  //     const result = await validateStateTransition(
   //       rawStateTransition,
   //       executionContext,
   //     );
@@ -423,7 +423,7 @@ describe('validateDataContractUpdateTransitionBasicFactory', () => {
   //   it('should not be < 0', async () => {
   //     rawStateTransition.signaturePublicKeyId = -1;
 
-  //     const result = await validateDataContractUpdateTransitionBasic(
+  //     const result = await validateStateTransition(
   //       rawStateTransition,
   //       executionContext,
   //     );
@@ -438,7 +438,7 @@ describe('validateDataContractUpdateTransitionBasicFactory', () => {
   // });
 
   // it('should return valid result', async () => {
-  //   const result = await validateDataContractUpdateTransitionBasic(
+  //   const result = await validateStateTransition(
   //     rawStateTransition,
   //     executionContext,
   //   );
@@ -454,7 +454,7 @@ describe('validateDataContractUpdateTransitionBasicFactory', () => {
 
   //   executionContext.enableDryRun();
 
-  //   const result = await validateDataContractUpdateTransitionBasic(
+  //   const result = await validateStateTransition(
   //     rawStateTransition,
   //     executionContext,
   //   );
