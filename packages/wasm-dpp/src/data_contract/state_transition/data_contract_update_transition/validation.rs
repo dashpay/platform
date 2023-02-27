@@ -70,10 +70,12 @@ pub async fn validate_data_contract_update_transition_basic(
             Arc::new(ProtocolVersionValidator::default()),
         )?;
 
-    let validation_result = validator.validate(
-        &serde_json::to_value(&parameters)?,
-        &execution_context.into(),
-    ).await?;
+    let validation_result = validator
+        .validate(
+            &serde_json::to_value(&parameters)?,
+            &execution_context.into(),
+        )
+        .await?;
 
     Ok(validation_result.map(|_| JsValue::undefined()).into())
 }

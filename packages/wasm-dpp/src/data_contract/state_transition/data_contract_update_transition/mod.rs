@@ -1,6 +1,8 @@
 mod apply;
 mod validation;
 
+use std::collections::HashMap;
+
 pub use apply::*;
 pub use validation::*;
 
@@ -14,7 +16,12 @@ use dpp::{
 use serde::{Deserialize, Serialize};
 use wasm_bindgen::prelude::*;
 
-use crate::{DataContractParameters, DataContractWasm, StateTransitionExecutionContextWasm, buffer::Buffer, errors::{from_dpp_err, protocol_error::from_protocol_error}, identifier::IdentifierWrapper, with_js_error};
+use crate::{
+    buffer::Buffer,
+    errors::{from_dpp_err, protocol_error::from_protocol_error},
+    identifier::IdentifierWrapper,
+    with_js_error, DataContractParameters, DataContractWasm, StateTransitionExecutionContextWasm,
+};
 
 #[derive(Clone)]
 #[wasm_bindgen(js_name=DataContractUpdateTransition)]
@@ -35,15 +42,14 @@ impl From<DataContractUpdateTransitionWasm> for DataContractUpdateTransition {
 #[derive(Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct DataContractUpdateTransitionParameters {
-    protocol_version: u32,
     #[serde(skip_serializing_if = "Option::is_none", default)]
     data_contract: Option<DataContractParameters>,
     #[serde(skip_serializing_if = "Option::is_none", default)]
     entropy: Option<Vec<u8>>,
     #[serde(skip_serializing_if = "Option::is_none", default)]
-    signature_public_key_id: Option<KeyID>,
-    #[serde(skip_serializing_if = "Option::is_none", default)]
     signature: Option<Vec<u8>>,
+    #[serde(flatten)]
+    extra: HashMap<String, serde_json::Value>,
 }
 
 #[wasm_bindgen(js_class=DataContractUpdateTransition)]

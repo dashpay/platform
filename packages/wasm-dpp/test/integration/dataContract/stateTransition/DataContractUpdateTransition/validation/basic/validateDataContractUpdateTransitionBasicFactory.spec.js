@@ -31,7 +31,7 @@ const DataContractImmutablePropertiesUpdateError = require('@dashevo/dpp/lib/err
 const IncompatibleDataContractSchemaError = require('@dashevo/dpp/lib/errors/consensus/basic/dataContract/IncompatibleDataContractSchemaError');
 // const StateTransitionExecutionContext = require('@dashevo/dpp/lib/stateTransition/StateTransitionExecutionContext');
 
-// const { expectJsonSchemaError, expectValidationError } = require('../../../../../../../lib/test/expect/expectError');
+const { expectJsonSchemaError, expectValidationError } = require('../../../../../../../lib/test/expect/expectError');
 
 const { default: loadWasmDpp } = require('../../../../../../../dist');
 
@@ -57,7 +57,7 @@ describe('validateDataContractUpdateTransitionBasicFactory', () => {
   before(async () => {
     ({
       DataContractUpdateTransition,
-      validateDataContractCreateTransitionBasic,
+      validateDataContractUpdateTransitionBasic,
       ValidationResult,
       StateTransitionExecutionContext,
     } = await loadWasmDpp());
@@ -111,7 +111,7 @@ describe('validateDataContractUpdateTransitionBasicFactory', () => {
     it('should be present', async () => {
       delete rawStateTransition.protocolVersion;
 
-      const result = await validateDataContractUpdateTransitionBasic(
+      const result = await validateStateTransition(
         rawStateTransition,
         executionContext,
       );
