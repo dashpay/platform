@@ -206,236 +206,219 @@ describe('validateDataContractUpdateTransitionBasicFactory', () => {
     });
   });
 
-  // describe('dataContract', () => {
-  //   it('should be present', async () => {
-  //     delete rawStateTransition.dataContract;
+  describe('dataContract', () => {
+    it('should be present', async () => {
+      delete rawStateTransition.dataContract;
 
-  //     const result = await validateStateTransition(
-  //       rawStateTransition,
-  //       executionContext,
-  //     );
+      const result = await validateStateTransition(
+        rawStateTransition,
+        executionContext,
+      );
 
-  //     expectJsonSchemaError(result);
+      await expectJsonSchemaError(result);
 
-  //     const [error] = result.getErrors();
+      const [error] = result.getErrors();
 
-  //     expect(error.getInstancePath()).to.equal('');
-  //     expect(error.getKeyword()).to.equal('required');
-  //     expect(error.getParams().missingProperty).to.equal('dataContract');
-  //   });
+      expect(error.getInstancePath()).to.equal('');
+      expect(error.getKeyword()).to.equal('required');
+      expect(error.getParams().missingProperty).to.equal('dataContract');
+    });
 
   //   it('should have no existing documents removed', async () => {
-  //     rawStateTransition.dataContract.documents.indexedDocument = undefined;
+//       delete rawStateTransition.dataContract.documents.indexedDocument;
 
-  //     const result = await validateStateTransition(
-  //       rawStateTransition,
-  //       executionContext,
-  //     );
+//       const result = await validateStateTransition(
+//         rawStateTransition,
+//         executionContext,
+//       );
 
-  //     expectValidationError(result);
+// //      await expectValidationError(result);
 
-  //     const [error] = result.getErrors();
+//       const [error] = result.getErrors();
+// //      console.log(error.getCode(), error.getInstancePath(), error.getKeyword(), error.getParams());
 
-  //     expect(error).to.be.an.instanceOf(IncompatibleDataContractSchemaError);
-  //     expect(error.getOperation()).to.equal('remove');
-  //     expect(error.getFieldPath()).to.equal('/additionalProperties');
-  //     expect(error.getNewSchema()).to.equal(undefined);
-  //   });
+// //      expect(error).to.be.an.instanceOf(IncompatibleDataContractSchemaError);
+//       expect(error.getOperation()).to.equal('remove');
+//       expect(error.getFieldPath()).to.equal('/additionalProperties');
+//       expect(error.getNewSchema()).to.equal(undefined);
+//     });
 
-  //   it('should allow making backward compatible changes to existing documents', async () => {
-  //     rawStateTransition.dataContract.documents.indexedDocument.properties.newProp = {
-  //       type: 'integer',
-  //       minimum: 0,
-  //     };
+    // it('should allow making backward compatible changes to existing documents', async () => {
+    //   rawStateTransition.dataContract.documents.indexedDocument.properties.newProp = {
+    //     type: 'integer',
+    //     minimum: 0,
+    //   };
 
-  //     const result = await validateStateTransition(
-  //       rawStateTransition,
-  //       executionContext,
-  //     );
+    //   const result = await validateStateTransition(
+    //     rawStateTransition,
+    //     executionContext,
+    //   );
 
-  //     expect(result.isValid()).to.be.true();
-  //   });
+    //   expect(result.isValid()).to.be.true();
+    // });
 
-  //   it('should have existing documents schema backward compatible', async () => {
-  //     rawStateTransition.dataContract.documents.indexedDocument.properties.firstName = undefined;
+    // it('should have existing documents schema backward compatible', async () => {
+    //   rawStateTransition.dataContract.documents.indexedDocument.properties.firstName = undefined;
 
-  //     const result = await validateStateTransition(
-  //       rawStateTransition,
-  //       executionContext,
-  //     );
+    //   const result = await validateStateTransition(
+    //     rawStateTransition,
+    //     executionContext,
+    //   );
 
-  //     expectValidationError(result);
+    //   expectValidationError(result);
 
-  //     const [error] = result.getErrors();
+    //   const [error] = result.getErrors();
 
-  //     expect(error).to.be.an.instanceOf(IncompatibleDataContractSchemaError);
-  //     expect(error.getOperation()).to.equal('remove');
-  //     expect(error.getFieldPath()).to.equal('/properties/firstName');
-  //   });
+    //   expect(error).to.be.an.instanceOf(IncompatibleDataContractSchemaError);
+    //   expect(error.getOperation()).to.equal('remove');
+    //   expect(error.getFieldPath()).to.equal('/properties/firstName');
+    // });
 
-  //   it('should allow defining new document', async () => {
-  //     rawStateTransition.dataContract.documents.myNewAwesomeDoc = {
-  //       type: 'object',
-  //       properties: {
-  //         name: {
-  //           type: 'string',
-  //         },
-  //       },
-  //       required: ['name'],
-  //     };
+    // it('should allow defining new document', async () => {
+    //   rawStateTransition.dataContract.documents.myNewAwesomeDoc = {
+    //     type: 'object',
+    //     properties: {
+    //       name: {
+    //         type: 'string',
+    //       },
+    //     },
+    //     required: ['name'],
+    //   };
 
-  //     const result = await validateStateTransition(
-  //       rawStateTransition,
-  //       executionContext,
-  //     );
+    //   const result = await validateStateTransition(
+    //     rawStateTransition,
+    //     executionContext,
+    //   );
 
-  //     expect(result.isValid()).to.be.true();
-  //   });
+    //   expect(result.isValid()).to.be.true();
+    // });
 
-  //   it('should not have root immutable properties changed', async () => {
-  //     rawStateTransition.dataContract.$schema = undefined;
+    // it('should not have root immutable properties changed', async () => {
+    //   rawStateTransition.dataContract.$schema = undefined;
 
-  //     const result = await validateStateTransition(
-  //       rawStateTransition,
-  //       executionContext,
-  //     );
+    //   const result = await validateStateTransition(
+    //     rawStateTransition,
+    //     executionContext,
+    //   );
 
-  //     expectValidationError(result);
+    //   expectValidationError(result);
 
-  //     const [error] = result.getErrors();
+    //   const [error] = result.getErrors();
 
-  //     expect(error).to.be.an.instanceOf(DataContractImmutablePropertiesUpdateError);
-  //     expect(error.getOperation()).to.equal('remove');
-  //     expect(error.getFieldPath()).to.equal('/$schema');
-  //   });
+    //   expect(error).to.be.an.instanceOf(DataContractImmutablePropertiesUpdateError);
+    //   expect(error.getOperation()).to.equal('remove');
+    //   expect(error.getFieldPath()).to.equal('/$schema');
+    // });
 
-  //   it('should be valid', async () => {
-  //     const dataContractError = new SomeConsensusError('test');
-  //     const dataContractResult = new ValidationResult([
-  //       dataContractError,
-  //     ]);
+    // it('should be valid', async () => {
+    //   // const dataContractError = new SomeConsensusError('test');
+    //   // const dataContractResult = new ValidationResult([
+    //   //   dataContractError,
+    //   // ]);
 
-  //     validateDataContractMock.returns(dataContractResult);
+    //   // validateDataContractMock.returns(dataContractResult);
 
-  //     const result = await validateStateTransition(
-  //       rawStateTransition,
-  //       executionContext,
-  //     );
+    //   const result = await validateStateTransition(
+    //     rawStateTransition,
+    //     executionContext,
+    //   );
 
-  //     expectValidationError(result);
+    //   await expectValidationError(result);
 
-  //     const [error] = result.getErrors();
+    //   const [error] = result.getErrors();
 
-  //     expect(error).to.equal(dataContractError);
+    //   // expect(error).to.equal(dataContractError);
 
-  //     expect(validateDataContractMock.getCall(0).args).to.have.deep.members([rawDataContract]);
-  //   });
-  // });
+    //   // expect(validateDataContractMock.getCall(0).args).to.have.deep.members([rawDataContract]);
+    // });
+  });
 
-  // describe('signature', () => {
-  //   it('should be present', async () => {
-  //     delete rawStateTransition.signature;
+  describe('signature', () => {
+    it('should be present', async () => {
+      delete rawStateTransition.signature;
 
-  //     const result = await validateStateTransition(
-  //       rawStateTransition,
-  //       executionContext,
-  //     );
+      const result = await validateStateTransition(
+        rawStateTransition,
+        executionContext,
+      );
 
-  //     expectJsonSchemaError(result);
+      await expectJsonSchemaError(result);
 
-  //     const [error] = result.getErrors();
+      const [error] = result.getErrors();
 
-  //     expect(error.getInstancePath()).to.equal('');
-  //     expect(error.getKeyword()).to.equal('required');
-  //     expect(error.getParams().missingProperty).to.equal('signature');
-  //   });
+      expect(error.getInstancePath()).to.equal('');
+      expect(error.getKeyword()).to.equal('required');
+      expect(error.getParams().missingProperty).to.equal('signature');
+    });
 
-  //   it('should be a byte array', async () => {
-  //     rawStateTransition.signature = new Array(65).fill('string');
+    it('should be not less than 65 bytes', async () => {
+      rawStateTransition.signature = Buffer.alloc(64);
 
-  //     const result = await validateStateTransition(
-  //       rawStateTransition,
-  //       executionContext,
-  //     );
+      const result = await validateStateTransition(
+        rawStateTransition,
+        executionContext,
+      );
 
-  //     expectJsonSchemaError(result, 2);
+      await expectJsonSchemaError(result);
 
-  //     const [error, byteArrayError] = result.getErrors();
+      const [error] = result.getErrors();
 
-  //     expect(error.getInstancePath()).to.equal('/signature/0');
-  //     expect(error.getKeyword()).to.equal('type');
+      expect(error.getInstancePath()).to.equal('/signature');
+      expect(error.getKeyword()).to.equal('minItems');
+      expect(error.getParams().minItems).to.equal(65);
+    });
 
-  //     expect(byteArrayError.getKeyword()).to.equal('byteArray');
-  //   });
+    it('should be not longer than 96 bytes', async () => {
+      rawStateTransition.signature = Buffer.alloc(97);
 
-  //   it('should be not less than 65 bytes', async () => {
-  //     rawStateTransition.signature = Buffer.alloc(64);
+      const result = await validateStateTransition(
+        rawStateTransition,
+        executionContext,
+      );
 
-  //     const result = await validateStateTransition(
-  //       rawStateTransition,
-  //       executionContext,
-  //     );
+      await expectJsonSchemaError(result);
 
-  //     expectJsonSchemaError(result);
+      const [error] = result.getErrors();
 
-  //     const [error] = result.getErrors();
+      expect(error.getInstancePath()).to.equal('/signature');
+      expect(error.getKeyword()).to.equal('maxItems');
+      expect(error.getParams().maxItems).to.equal(96);
+    });
+  });
 
-  //     expect(error.getInstancePath()).to.equal('/signature');
-  //     expect(error.getKeyword()).to.equal('minItems');
-  //     expect(error.getParams().limit).to.equal(65);
-  //   });
+  describe('signaturePublicKeyId', () => {
+    it('should be an integer', async () => {
+      rawStateTransition.signaturePublicKeyId = 1.4;
 
-  //   it('should be not longer than 96 bytes', async () => {
-  //     rawStateTransition.signature = Buffer.alloc(97);
+      const result = await validateStateTransition(
+        rawStateTransition,
+        executionContext,
+      );
 
-  //     const result = await validateStateTransition(
-  //       rawStateTransition,
-  //       executionContext,
-  //     );
+      await expectJsonSchemaError(result, 1);
 
-  //     expectJsonSchemaError(result);
+      const [error] = result.getErrors();
 
-  //     const [error] = result.getErrors();
+      expect(error.getInstancePath()).to.equal('/signaturePublicKeyId');
+      expect(error.getKeyword()).to.equal('type');
+    });
 
-  //     expect(error.getInstancePath()).to.equal('/signature');
-  //     expect(error.getKeyword()).to.equal('maxItems');
-  //     expect(error.getParams().limit).to.equal(96);
-  //   });
-  // });
+    it('should not be < 0', async () => {
+      rawStateTransition.signaturePublicKeyId = -1;
 
-  // describe('signaturePublicKeyId', () => {
-  //   it('should be an integer', async () => {
-  //     rawStateTransition.signaturePublicKeyId = 1.4;
+      const result = await validateStateTransition(
+        rawStateTransition,
+        executionContext,
+      );
 
-  //     const result = await validateStateTransition(
-  //       rawStateTransition,
-  //       executionContext,
-  //     );
+      await expectJsonSchemaError(result, 1);
 
-  //     expectJsonSchemaError(result, 1);
+      const [error] = result.getErrors();
 
-  //     const [error] = result.getErrors();
-
-  //     expect(error.instancePath).to.equal('/signaturePublicKeyId');
-  //     expect(error.getKeyword()).to.equal('type');
-  //   });
-
-  //   it('should not be < 0', async () => {
-  //     rawStateTransition.signaturePublicKeyId = -1;
-
-  //     const result = await validateStateTransition(
-  //       rawStateTransition,
-  //       executionContext,
-  //     );
-
-  //     expectJsonSchemaError(result, 1);
-
-  //     const [error] = result.getErrors();
-
-  //     expect(error.instancePath).to.equal('/signaturePublicKeyId');
-  //     expect(error.getKeyword()).to.equal('minimum');
-  //   });
-  // });
+      expect(error.getInstancePath()).to.equal('/signaturePublicKeyId');
+      expect(error.getKeyword()).to.equal('minimum');
+    });
+  });
 
   // it('should return valid result', async () => {
   //   const result = await validateStateTransition(
@@ -446,22 +429,22 @@ describe('validateDataContractUpdateTransitionBasicFactory', () => {
   //   expect(result).to.be.an.instanceOf(ValidationResult);
   //   expect(result.isValid()).to.be.true();
 
-  //   expect(validateDataContractMock).to.be.calledOnceWith(rawDataContract);
+  //   // expect(validateDataContractMock).to.be.calledOnceWith(rawDataContract);
   // });
 
-  // it('should not check Data Contract on dry run', async () => {
-  //   stateRepositoryMock.fetchDataContract.resolves(null);
+  it('should not check Data Contract on dry run', async () => {
+    stateRepositoryMock.fetchDataContract.resolves(null);
 
-  //   executionContext.enableDryRun();
+    executionContext.enableDryRun();
 
-  //   const result = await validateStateTransition(
-  //     rawStateTransition,
-  //     executionContext,
-  //   );
+    const result = await validateStateTransition(
+      rawStateTransition,
+      executionContext,
+    );
 
-  //   executionContext.disableDryRun();
+    executionContext.disableDryRun();
 
-  //   expect(result).to.be.an.instanceOf(ValidationResult);
-  //   expect(result.isValid()).to.be.true();
-  // });
+    expect(result).to.be.an.instanceOf(ValidationResult);
+    expect(result.isValid()).to.be.true();
+  });
 });
