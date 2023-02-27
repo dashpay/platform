@@ -14,7 +14,6 @@ use dpp::{
 };
 use js_sys::{Array, Reflect};
 use serde::{Deserialize, Serialize};
-use serde_json::Value;
 use wasm_bindgen::prelude::*;
 
 use crate::{
@@ -30,7 +29,7 @@ pub mod apply_document_batch_transition;
 pub mod document_transition;
 pub mod validation;
 
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 #[wasm_bindgen(js_name = DocumentsBatchTransition)]
 pub struct DocumentsBatchTransitionWASM(DocumentsBatchTransition);
 
@@ -50,6 +49,12 @@ pub struct ToObjectOptions {
     skip_signature: bool,
     #[serde(default)]
     skip_identifiers_conversion: bool,
+}
+
+impl From<DocumentsBatchTransitionWASM> for DocumentsBatchTransition {
+    fn from(val: DocumentsBatchTransitionWASM) -> Self {
+        val.0
+    }
 }
 
 #[wasm_bindgen(js_class=DocumentsContainer)]

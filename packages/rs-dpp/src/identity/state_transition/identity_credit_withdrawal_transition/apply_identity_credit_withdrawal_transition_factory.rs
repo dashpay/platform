@@ -1,19 +1,21 @@
 use anyhow::{anyhow, Result};
-use dashcore::{
-    blockdata::transaction::special_transaction::asset_unlock::unqualified_asset_unlock::{
-        AssetUnlockBasePayload, AssetUnlockBaseTransactionInfo,
-    },
-    consensus::Encodable,
-    Script, TxOut,
-};
+use dashcore::{consensus, BlockHeader};
 use lazy_static::__Deref;
+use std::convert::TryInto;
+
+use serde_json::json;
 
 use crate::{
-    identity::convert_credits_to_satoshi, state_repository::StateRepositoryLike,
-    state_transition::StateTransitionLike,
+    contracts::withdrawals_contract, data_contract::DataContract, document::generate_document_id,
+    document::Document, identity::state_transition::identity_credit_withdrawal_transition::Pooling,
+    state_repository::StateRepositoryLike, state_transition::StateTransitionLike,
+    util::entropy_generator::generate,
 };
 
 use super::IdentityCreditWithdrawalTransition;
+
+const PLATFORM_BLOCK_HEADER_TIME_PROPERTY: &str = "time";
+const PLATFORM_BLOCK_HEADER_TIME_SECONDS_PROPERTY: &str = "seconds";
 
 pub struct ApplyIdentityCreditWithdrawalTransition<SR>
 where
@@ -34,37 +36,90 @@ where
         &self,
         state_transition: &IdentityCreditWithdrawalTransition,
     ) -> Result<()> {
-        let latest_withdrawal_index = self
+        let data_contract_id = withdrawals_contract::CONTRACT_ID.deref();
+
+        let maybe_withdrawals_data_contract: Option<DataContract> = self
             .state_repository
-            .fetch_latest_withdrawal_transaction_index()
+            .fetch_data_contract(data_contract_id, state_transition.get_execution_context())
+            .await?
+            .map(TryInto::try_into)
+            .transpose()
+            .map_err(Into::into)?;
+
+        let withdrawals_data_contract = maybe_withdrawals_data_contract
+            .ok_or_else(|| anyhow!("Withdrawals data contract not found"))?;
+
+        let latest_platform_block_header_bytes: Vec<u8> = self
+            .state_repository
+            .fetch_latest_platform_block_header()
             .await?;
 
-        let output_script: Script = state_transition.output_script.deref().clone();
+        let latest_platform_block_header: BlockHeader =
+            consensus::deserialize(&latest_platform_block_header_bytes)?;
 
-        let tx_out = TxOut {
-            value: convert_credits_to_satoshi(state_transition.amount),
-            script_pubkey: output_script,
+        let document_type = String::from(withdrawals_contract::document_types::WITHDRAWAL);
+        let document_created_at_millis: i64 = latest_platform_block_header.time as i64 * 1000i64;
+
+        let document_data = json!({
+            withdrawals_contract::property_names::AMOUNT: state_transition.amount,
+            withdrawals_contract::property_names::CORE_FEE_PER_BYTE: state_transition.core_fee_per_byte,
+            withdrawals_contract::property_names::POOLING: Pooling::Never,
+            withdrawals_contract::property_names::OUTPUT_SCRIPT: state_transition.output_script.as_bytes(),
+            withdrawals_contract::property_names::STATUS: withdrawals_contract::WithdrawalStatus::QUEUED,
+        });
+
+        let mut document_id;
+
+        loop {
+            let document_entropy = generate()?;
+
+            document_id = generate_document_id::generate_document_id(
+                data_contract_id,
+                &state_transition.identity_id,
+                &document_type,
+                &document_entropy,
+            );
+
+            let documents: Vec<Document> = self
+                .state_repository
+                .fetch_documents(
+                    withdrawals_contract::CONTRACT_ID.deref(),
+                    withdrawals_contract::document_types::WITHDRAWAL,
+                    json!({
+                        "where": [
+                            ["$id", "==", document_id],
+                        ],
+                    }),
+                    &state_transition.execution_context,
+                )
+                .await?;
+
+            if documents.is_empty() {
+                break;
+            }
+        }
+
+        // TODO: use DocumentFactory once it is complete
+        let withdrawal_document = Document {
+            protocol_version: state_transition.protocol_version,
+            id: document_id,
+            document_type,
+            revision: 0,
+            data_contract_id: *data_contract_id,
+            owner_id: state_transition.identity_id,
+            created_at: Some(document_created_at_millis),
+            updated_at: Some(document_created_at_millis),
+            data: document_data,
+            data_contract: withdrawals_data_contract,
+            metadata: None,
+            entropy: [0; 32],
         };
-
-        let withdrawal_transaction = AssetUnlockBaseTransactionInfo {
-            version: 1,
-            lock_time: 0,
-            output: vec![tx_out],
-            base_payload: AssetUnlockBasePayload {
-                version: 1,
-                index: latest_withdrawal_index + 1,
-                fee: state_transition.core_fee,
-            },
-        };
-
-        let mut transaction_buffer: Vec<u8> = vec![];
-
-        withdrawal_transaction
-            .consensus_encode(&mut transaction_buffer)
-            .map_err(|e| anyhow!(e))?;
 
         self.state_repository
-            .enqueue_withdrawal_transaction(latest_withdrawal_index, transaction_buffer)
+            .create_document(
+                &withdrawal_document,
+                state_transition.get_execution_context(),
+            )
             .await?;
 
         // TODO: we need to be able to batch state repository operations

@@ -130,14 +130,15 @@ fn should_return_invalid_result_if_non_unique_index_update_failed_due_to_changed
 }
 
 #[test]
-fn should_return_invalid_result_if_non_unique_index_update_failed_due_old_properties_used() {
+fn should_return_invalid_result_if_already_indexed_properties_are_added_to_existing_index() {
     let TestData {
         old_documents_schema,
         mut new_documents_schema,
         ..
     } = setup_test();
-    new_documents_schema.get_mut("indexedDocument").unwrap()["indices"][2]["properties"][0] =
-        json!({ "firstName": "asc" });
+    new_documents_schema.get_mut("indexedDocument").unwrap()["indices"][2]["properties"]
+        .push(json!({ "firstName": "asc" }))
+        .expect("the new index property should be added");
 
     let result = validate_indices_are_backward_compatible(
         old_documents_schema.iter(),

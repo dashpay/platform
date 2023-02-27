@@ -19,6 +19,7 @@ use crate::{
     DataContractParameters, DataContractWasm, StateTransitionExecutionContextWasm,
 };
 
+#[derive(Clone)]
 #[wasm_bindgen(js_name=DataContractUpdateTransition)]
 pub struct DataContractUpdateTransitionWasm(DataContractUpdateTransition);
 

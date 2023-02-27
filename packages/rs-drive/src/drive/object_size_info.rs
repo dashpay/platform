@@ -679,6 +679,23 @@ impl<'a> DocumentInfo<'a> {
         }
     }
 
+    /// Gets the borrowed document
+    pub fn get_borrowed_document_and_storage_flags(
+        &self,
+    ) -> Option<(&DocumentStub, Option<&StorageFlags>)> {
+        match self {
+            DocumentInfo::DocumentRefAndSerialization((document, _, storage_flags))
+            | DocumentInfo::DocumentRefWithoutSerialization((document, storage_flags)) => {
+                Some((document, storage_flags.as_ref().map(|flags| flags.as_ref())))
+            }
+            DocumentInfo::DocumentWithoutSerialization((document, storage_flags))
+            | DocumentInfo::DocumentAndSerialization((document, _, storage_flags)) => {
+                Some((document, storage_flags.as_ref().map(|flags| flags.as_ref())))
+            }
+            DocumentInfo::DocumentEstimatedAverageSize(_) => None,
+        }
+    }
+
     /// Gets storage flags
     pub fn get_storage_flags_ref(&self) -> Option<&StorageFlags> {
         match self {

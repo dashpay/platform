@@ -16,7 +16,11 @@ use wasm_bindgen::prelude::*;
 use crate::{
     buffer::Buffer,
     document,
+<<<<<<< HEAD
     document_batch_transition::document_transition::convert_to_object,
+=======
+    document_batch_transition::document_transition::to_object,
+>>>>>>> v0.24-dev
     identifier::IdentifierWrapper,
     lodash::lodash_set,
     utils::{ToSerdeJSONExt, WithJsError},
@@ -114,10 +118,10 @@ impl DocumentCreateTransitionWasm {
 
     #[wasm_bindgen(js_name=getDataContractId)]
     pub fn data_contract_id(&self) -> IdentifierWrapper {
-        self.inner.base.data_contract.id.clone().into()
+        self.inner.base.data_contract.id.into()
     }
 
-    #[wasm_bindgen(js_name=get)]
+    #[wasm_bindgen]
     pub fn get(&self, path: String) -> Result<JsValue, JsValue> {
         let document_data = if let Some(ref data) = self.inner.data {
             data
@@ -140,7 +144,7 @@ impl DocumentCreateTransitionWasm {
             BinaryType::Identifier => {
                 let bytes: Vec<u8> = serde_json::from_value(value).unwrap();
                 let id = <IdentifierWrapper as convert::From<Identifier>>::from(
-                    Identifier::from_bytes(&bytes).unwrap(),
+                    Identifier::from_bytes(&bytes).with_js_error()?,
                 );
                 return Ok(id.into());
             }
@@ -199,8 +203,13 @@ impl DocumentCreateTransitionWasm {
             .get_identifiers_and_binary_paths(&self.inner.base.document_type)
             .with_js_error()?;
 
+<<<<<<< HEAD
         convert_to_object(
             self.inner.to_object().with_js_error()?,
+=======
+        to_object(
+            &self.inner,
+>>>>>>> v0.24-dev
             options,
             identifiers_paths
                 .into_iter()

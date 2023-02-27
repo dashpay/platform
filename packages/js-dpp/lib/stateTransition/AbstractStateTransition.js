@@ -186,9 +186,16 @@ class AbstractStateTransition {
       }
       case IdentityPublicKey.TYPES.BLS12_381: {
         const privateKeyModel = await blsPrivateKeyFactory(privateKey);
-        const blsSignature = privateKeyModel.sign(new Uint8Array(data)).serialize();
+        const { BasicSchemeMPL } = await BlsSignatures.getInstance();
 
-        this.setSignature(Buffer.from(blsSignature));
+        const blsSignature = BasicSchemeMPL.sign(privateKeyModel, new Uint8Array(data));
+
+        const blsSignatureBuffer = Buffer.from(blsSignature.serialize());
+
+        privateKeyModel.delete();
+        blsSignature.delete();
+
+        this.setSignature(blsSignatureBuffer);
         break;
       }
       default:
@@ -284,11 +291,25 @@ class AbstractStateTransition {
 
     const publicKeyModel = await blsPublicKeyFactory(publicKey);
 
-    const { Signature: BlsSignature, AggregationInfo } = await BlsSignatures.getInstance();
-    const aggregationInfo = AggregationInfo.fromMsg(publicKeyModel, new Uint8Array(data));
-    const blsSignature = BlsSignature.fromBytesAndAggregationInfo(signature, aggregationInfo);
+    const { G2Element, BasicSchemeMPL } = await BlsSignatures.getInstance();
 
-    return blsSignature.verify();
+    let blsSignature;
+    let result;
+
+    try {
+      blsSignature = G2Element.fromBytes(Uint8Array.from(signature));
+
+      result = BasicSchemeMPL.verify(publicKeyModel, new Uint8Array(data), blsSignature);
+      // eslint-disable-next-line no-useless-catch
+    } catch (e) {
+      throw e;
+    } finally {
+      if (blsSignature) {
+        blsSignature.delete();
+      }
+    }
+
+    return result;
   }
 
   /**

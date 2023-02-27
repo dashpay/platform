@@ -44,6 +44,7 @@ function processProposalFactory(
       proposerProTxHash,
       proposedAppVersion,
       round,
+      quorumHash,
     } = request;
 
     contextLogger.info(`Processing a block proposal for height #${height} round #${round}`);
@@ -58,6 +59,7 @@ function processProposalFactory(
         proposerProTxHash: Buffer.from(proposerProTxHash),
         proposedAppVersion,
         round,
+        quorumHash,
       },
       contextLogger,
     );
@@ -66,7 +68,7 @@ function processProposalFactory(
     const blockFees = {
       storageFee: 0,
       processingFee: 0,
-      refundsPerEpoch: { },
+      refundsPerEpoch: {},
     };
 
     let validTxCount = 0;

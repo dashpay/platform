@@ -317,6 +317,7 @@ where
     Ok(distribution_leftover_credits)
 }
 
+#[cfg(feature = "full")]
 #[cfg(test)]
 mod tests {
     use super::*;

@@ -260,6 +260,11 @@ impl Document {
         self.data = data;
     }
 
+    /// Increment document's revision
+    pub fn increment_revision(&mut self) {
+        self.revision += 1;
+    }
+
     /// Get entropy
     pub fn get_entropy(&self) -> &[u8] {
         &self.entropy

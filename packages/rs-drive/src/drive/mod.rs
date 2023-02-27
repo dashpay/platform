@@ -27,62 +27,106 @@
 // DEALINGS IN THE SOFTWARE.
 //
 
+#[cfg(any(feature = "full", feature = "verify"))]
 use std::cell::RefCell;
+#[cfg(feature = "full")]
 use std::collections::HashMap;
+#[cfg(feature = "full")]
 use std::path::Path;
 
+#[cfg(feature = "full")]
 use dpp::data_contract::DriveContractExt;
+#[cfg(feature = "full")]
 use grovedb::batch::KeyInfoPath;
-use grovedb::{EstimatedLayerInformation, GroveDb, Transaction, TransactionArg};
+#[cfg(any(feature = "full", feature = "verify"))]
+use grovedb::GroveDb;
+#[cfg(feature = "full")]
+use grovedb::{EstimatedLayerInformation, Transaction, TransactionArg};
 
+#[cfg(feature = "full")]
 use object_size_info::DocumentAndContractInfo;
+#[cfg(feature = "full")]
 use object_size_info::DocumentInfo::DocumentEstimatedAverageSize;
 
+#[cfg(feature = "full")]
 use crate::contract::Contract;
+#[cfg(feature = "full")]
 use crate::drive::batch::GroveDbOpBatch;
+#[cfg(any(feature = "full", feature = "verify"))]
 use crate::drive::config::DriveConfig;
+#[cfg(feature = "full")]
 use crate::error::Error;
+#[cfg(feature = "full")]
 use crate::fee::op::DriveOperation;
+#[cfg(feature = "full")]
 use crate::fee::op::DriveOperation::GroveOperation;
 
+#[cfg(any(feature = "full", feature = "verify"))]
 pub mod balances;
 /// Batch module
+#[cfg(feature = "full")]
 pub mod batch;
 /// Block info module
+#[cfg(feature = "full")]
 pub mod block_info;
 /// Drive Cache
+#[cfg(any(feature = "full", feature = "verify"))]
 pub mod cache;
+#[cfg(any(feature = "full", feature = "verify"))]
 pub mod config;
 /// Contract module
+#[cfg(any(feature = "full", feature = "verify"))]
 pub mod contract;
+#[cfg(any(feature = "full", feature = "verify"))]
 pub mod defaults;
 /// Document module
+#[cfg(feature = "full")]
 pub mod document;
+#[cfg(feature = "full")]
 mod estimation_costs;
 /// Fee pools module
+#[cfg(feature = "full")]
 pub mod fee_pools;
+#[cfg(any(feature = "full", feature = "verify"))]
 pub mod flags;
 /// Genesis time module
+#[cfg(feature = "full")]
 pub mod genesis_time;
+#[cfg(feature = "full")]
 pub(crate) mod grove_operations;
 /// Identity module
+#[cfg(any(feature = "full", feature = "verify"))]
 pub mod identity;
+#[cfg(feature = "full")]
 pub mod initialization;
+#[cfg(feature = "full")]
 pub mod object_size_info;
+#[cfg(feature = "full")]
 mod protocol_upgrade;
+#[cfg(feature = "full")]
 pub mod query;
+#[cfg(feature = "full")]
 mod system;
 #[cfg(test)]
 mod test_utils;
+#[cfg(any(feature = "full", feature = "verify"))]
 mod verify;
 
+#[cfg(feature = "full")]
 use crate::drive::block_info::BlockInfo;
-use crate::drive::cache::{DataContractCache, DriveCache};
+#[cfg(feature = "full")]
+use crate::drive::cache::DataContractCache;
+#[cfg(any(feature = "full", feature = "verify"))]
+use crate::drive::cache::DriveCache;
+#[cfg(feature = "full")]
 use crate::drive::object_size_info::OwnedDocumentInfo;
+#[cfg(feature = "full")]
 use crate::fee::result::FeeResult;
+#[cfg(feature = "full")]
 use crate::fee_pools::epochs::Epoch;
 
 /// Drive struct
+#[cfg(any(feature = "full", feature = "verify"))]
 pub struct Drive {
     /// GroveDB
     pub grove: GroveDb,
@@ -106,6 +150,7 @@ pub struct Drive {
 //     NUPKH->I 8 UPKH->I 24        SpentAssetLockTransactions 72        Versions 120
 
 /// Keys for the root tree.
+#[cfg(any(feature = "full", feature = "verify"))]
 #[repr(u8)]
 pub enum RootTree {
     // Input data errors
@@ -134,20 +179,24 @@ pub enum RootTree {
 }
 
 /// Storage cost
+#[cfg(feature = "full")]
 pub const STORAGE_COST: i32 = 50;
 
+#[cfg(any(feature = "full", feature = "verify"))]
 impl From<RootTree> for u8 {
     fn from(root_tree: RootTree) -> Self {
         root_tree as u8
     }
 }
 
+#[cfg(any(feature = "full", feature = "verify"))]
 impl From<RootTree> for [u8; 1] {
     fn from(root_tree: RootTree) -> Self {
         [root_tree as u8]
     }
 }
 
+#[cfg(any(feature = "full", feature = "verify"))]
 impl From<RootTree> for &'static [u8; 1] {
     fn from(root_tree: RootTree) -> Self {
         match root_tree {
@@ -167,11 +216,13 @@ impl From<RootTree> for &'static [u8; 1] {
 }
 
 /// Returns the path to the identities
+#[cfg(feature = "full")]
 pub(crate) fn identity_tree_path() -> [&'static [u8]; 1] {
     [Into::<&[u8; 1]>::into(RootTree::Identities)]
 }
 
 /// Returns the path to the key hashes.
+#[cfg(feature = "full")]
 pub(crate) fn unique_key_hashes_tree_path() -> [&'static [u8]; 1] {
     [Into::<&[u8; 1]>::into(
         RootTree::UniquePublicKeyHashesToIdentities,
@@ -179,11 +230,13 @@ pub(crate) fn unique_key_hashes_tree_path() -> [&'static [u8]; 1] {
 }
 
 /// Returns the path to the key hashes.
+#[cfg(any(feature = "full", feature = "verify"))]
 pub(crate) fn unique_key_hashes_tree_path_vec() -> Vec<Vec<u8>> {
     vec![vec![RootTree::UniquePublicKeyHashesToIdentities as u8]]
 }
 
 /// Returns the path to the masternode key hashes.
+#[cfg(feature = "full")]
 pub(crate) fn non_unique_key_hashes_tree_path() -> [&'static [u8]; 1] {
     [Into::<&[u8; 1]>::into(
         RootTree::NonUniquePublicKeyKeyHashesToIdentities,
@@ -191,6 +244,7 @@ pub(crate) fn non_unique_key_hashes_tree_path() -> [&'static [u8]; 1] {
 }
 
 /// Returns the path to the masternode key hashes.
+#[cfg(feature = "full")]
 pub(crate) fn non_unique_key_hashes_tree_path_vec() -> Vec<Vec<u8>> {
     vec![vec![
         RootTree::NonUniquePublicKeyKeyHashesToIdentities as u8,
@@ -198,6 +252,7 @@ pub(crate) fn non_unique_key_hashes_tree_path_vec() -> Vec<Vec<u8>> {
 }
 
 /// Returns the path to the masternode key hashes sub tree.
+#[cfg(feature = "full")]
 pub(crate) fn non_unique_key_hashes_sub_tree_path(public_key_hash: &[u8]) -> [&[u8]; 2] {
     [
         Into::<&[u8; 1]>::into(RootTree::NonUniquePublicKeyKeyHashesToIdentities),
@@ -206,6 +261,7 @@ pub(crate) fn non_unique_key_hashes_sub_tree_path(public_key_hash: &[u8]) -> [&[
 }
 
 /// Returns the path to the masternode key hashes sub tree.
+#[cfg(feature = "full")]
 pub(crate) fn non_unique_key_hashes_sub_tree_path_vec(public_key_hash: [u8; 20]) -> Vec<Vec<u8>> {
     vec![
         vec![RootTree::NonUniquePublicKeyKeyHashesToIdentities as u8],
@@ -214,6 +270,7 @@ pub(crate) fn non_unique_key_hashes_sub_tree_path_vec(public_key_hash: [u8; 20])
 }
 
 /// Returns the path to a contract's document types.
+#[cfg(feature = "full")]
 fn contract_documents_path(contract_id: &[u8]) -> [&[u8]; 3] {
     [
         Into::<&[u8; 1]>::into(RootTree::ContractDocuments),
@@ -222,6 +279,7 @@ fn contract_documents_path(contract_id: &[u8]) -> [&[u8]; 3] {
     ]
 }
 
+#[cfg(feature = "full")]
 impl Drive {
     /// Opens a path in groveDB.
     pub fn open<P: AsRef<Path>>(path: P, config: Option<DriveConfig>) -> Result<Self, Error> {

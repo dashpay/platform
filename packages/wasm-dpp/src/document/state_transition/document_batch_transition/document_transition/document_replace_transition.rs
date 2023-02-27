@@ -19,7 +19,7 @@ use wasm_bindgen::prelude::*;
 
 use crate::{
     buffer::Buffer,
-    document_batch_transition::document_transition::convert_to_object,
+    document_batch_transition::document_transition::to_object,
     identifier::IdentifierWrapper,
     lodash::lodash_set,
     utils::{ToSerdeJSONExt, WithJsError},
@@ -35,12 +35,6 @@ pub struct DocumentReplaceTransitionWasm {
 impl From<DocumentReplaceTransition> for DocumentReplaceTransitionWasm {
     fn from(v: DocumentReplaceTransition) -> Self {
         Self { inner: v }
-    }
-}
-
-impl From<DocumentReplaceTransitionWasm> for DocumentReplaceTransition {
-    fn from(v: DocumentReplaceTransitionWasm) -> Self {
-        v.inner
     }
 }
 
@@ -97,8 +91,8 @@ impl DocumentReplaceTransitionWasm {
             .get_identifiers_and_binary_paths(&self.inner.base.document_type)
             .with_js_error()?;
 
-        convert_to_object(
-            self.inner.to_object().with_js_error()?,
+        to_object(
+            &self.inner,
             options,
             identifiers_paths
                 .into_iter()

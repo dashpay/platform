@@ -177,11 +177,12 @@ impl Drive {
     }
 }
 
+#[cfg(feature = "full")]
 #[cfg(test)]
 mod tests {
     use super::*;
 
-    use crate::common::helpers::setup::setup_drive_with_initial_state_structure;
+    use crate::tests::helpers::setup::setup_drive_with_initial_state_structure;
 
     mod add_update_epoch_storage_fee_pools_operations {
         use super::*;
