@@ -106,13 +106,15 @@ impl DocumentInStateTransitionWasm {
     }
 
     #[wasm_bindgen(js_name=setRevision)]
-    pub fn set_revision(&mut self, rev: Revision) {
-        self.0.revision = rev
+    pub fn set_revision(&mut self, rev: u32) {
+        // TODO: js feeds Number (u32). Is casting revision to u64 safe?
+        self.0.revision = rev as Revision;
     }
 
     #[wasm_bindgen(js_name=getRevision)]
-    pub fn get_revision(&self) -> Revision {
-        self.0.revision
+    pub fn get_revision(&self) -> u32 {
+        // TODO: js expects Number (u32). Is casting revision to u32 safe?
+        self.0.revision as u32
     }
 
     #[wasm_bindgen(js_name=setEntropy)]

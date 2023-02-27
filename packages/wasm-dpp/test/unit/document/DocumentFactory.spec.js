@@ -29,7 +29,7 @@ const { default: loadWasmDpp } = require('../../../dist');
 let Identifier;
 let DocumentFactory;
 let DataContract;
-let Document;
+let DocumentInStateTransition;
 let DocumentValidator;
 let ProtocolVersionValidator;
 
@@ -66,7 +66,7 @@ describe('DocumentFactory', () => {
   beforeEach(async () => {
     ({
       Identifier, ProtocolVersionValidator, DocumentValidator, DocumentFactory,
-      DataContract, Document,
+      DataContract, DocumentInStateTransition,
       // Errors:
       InvalidDocumentTypeInDataContractError,
       InvalidDocumentError,
@@ -90,7 +90,7 @@ describe('DocumentFactory', () => {
 
     documentsJs = getDocumentsFixture(dataContractJs);
     documents = documentsJs.map((d) => {
-      const doc = new Document(d.toObject(), dataContract);
+      const doc = new DocumentInStateTransition(d.toObject(), dataContract);
       doc.setEntropy(d.entropy);
       return doc;
     });
@@ -166,7 +166,7 @@ describe('DocumentFactory', () => {
         { name },
       );
 
-      expect(newDocument).to.be.an.instanceOf(Document);
+      expect(newDocument).to.be.an.instanceOf(DocumentInStateTransition);
       expect(newDocumentJs).to.be.an.instanceOf(DocumentJs);
 
       expect(newDocumentJs.getType()).to.equal(newRawDocument.$type);
@@ -277,7 +277,7 @@ describe('DocumentFactory', () => {
     it('should return new Data Contract with data from passed object - Rust', async () => {
       const result = await factory.createFromObject(rawDocument);
 
-      expect(result).to.be.an.instanceOf(Document);
+      expect(result).to.be.an.instanceOf(DocumentInStateTransition);
       expect(result.toJSON()).to.deep.equal(document.toJSON());
 
       expect(stateRepositoryMock.fetchDataContract).to.have.been.calledOnce();
@@ -305,7 +305,7 @@ describe('DocumentFactory', () => {
     it('should return new Document without validation if "skipValidation" option is passed - Rust', async () => {
       delete rawDocument.lastName;
       const result = await factory.createFromObject(rawDocument, { skipValidation: true });
-      expect(result).to.be.an.instanceOf(Document);
+      expect(result).to.be.an.instanceOf(DocumentInStateTransition);
 
       expect(result.toObject()).to.deep.equal(rawDocument);
       expect(stateRepositoryMock.fetchDataContract).to.have.been.calledOnce();
@@ -589,7 +589,7 @@ describe('DocumentFactory', () => {
 
     it('should create DocumentsBatchTransition with passed documents - Rust', async () => {
       const [newDocumentJs] = getDocumentsFixture(dataContractJs);
-      const newDocument = new Document(newDocumentJs.toObject(), dataContract);
+      const newDocument = new DocumentInStateTransition(newDocumentJs.toObject(), dataContract);
 
       const stateTransitionJs = factoryJs.createStateTransition({
         create: documentsJs,
