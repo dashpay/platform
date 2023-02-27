@@ -529,7 +529,7 @@ impl Drive {
                 transaction,
                 &mut drive_operations,
             )?
-            .ok_or(Error::Document(DocumentError::ContractNotFound()))?;
+            .ok_or(Error::Document(DocumentError::ContractNotFound))?;
 
         let contract = &contract_fetch_info.contract;
 

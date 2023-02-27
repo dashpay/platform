@@ -74,7 +74,9 @@ use crate::error::fee::FeeError;
 use crate::error::Error;
 use crate::fee::calculate_fee;
 use crate::fee::op::LowLevelDriveOperation;
+use crate::fee::op::LowLevelDriveOperation::PreCalculatedFeeResult;
 use crate::fee::result::FeeResult;
+use crate::fee_pools::epochs::Epoch;
 
 impl Drive {
     /// Deletes a document and returns the associated fee.
@@ -157,7 +159,7 @@ impl Drive {
                 transaction,
                 &mut drive_operations,
             )?
-            .ok_or(Error::Document(DocumentError::ContractNotFound()))?;
+            .ok_or(Error::Document(DocumentError::ContractNotFound))?;
 
         let contract = &contract_fetch_info.contract;
 
@@ -625,6 +627,38 @@ impl Drive {
             )?;
         }
         Ok(())
+    }
+
+    /// Prepares the operations for deleting a document.
+    pub(crate) fn delete_document_for_contract_id_with_named_type_operations(
+        &self,
+        document_id: [u8; 32],
+        contract_id: [u8; 32],
+        document_type_name: &str,
+        owner_id: Option<[u8; 32]>,
+        epoch: &Epoch,
+        previous_batch_operations: Option<&mut Vec<LowLevelDriveOperation>>,
+        estimated_costs_only_with_layer_info: &mut Option<
+            HashMap<KeyInfoPath, EstimatedLayerInformation>,
+        >,
+        transaction: TransactionArg,
+    ) -> Result<Vec<LowLevelDriveOperation>, Error> {
+        let mut operations = vec![];
+        let Some(contract_fetch_info) = self.get_contract_with_fetch_info_and_add_to_operations(contract_id, Some(epoch), transaction, &mut operations)? else {
+            return Err(Error::Document(DocumentError::ContractNotFound))
+        };
+
+        let contract = &contract_fetch_info.contract;
+        let document_type = contract.document_type_for_name(document_type_name)?;
+        self.delete_document_for_contract_operations(
+            document_id,
+            contract,
+            document_type,
+            owner_id,
+            previous_batch_operations,
+            estimated_costs_only_with_layer_info,
+            transaction,
+        )
     }
 
     /// Prepares the operations for deleting a document.

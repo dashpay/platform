@@ -33,6 +33,12 @@
 //!
 
 mod data_contract_create_transition;
+mod data_contract_update_transition;
+mod identity_create_transition;
+mod identity_update_transition;
+mod identity_top_up_transition;
+mod identity_credit_withdrawal_transition;
+mod document;
 
 use crate::drive::batch::DriveOperation;
 use crate::error::Error;

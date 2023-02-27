@@ -1,13 +1,13 @@
 use std::borrow::Cow;
-use dpp::data_contract::state_transition::DataContractCreateTransition;
+use dpp::data_contract::state_transition::DataContractUpdateTransition;
 use crate::drive::batch::{ContractOperationType, DriveOperation};
 use crate::drive::batch::DriveOperation::ContractOperation;
 use crate::drive::batch::transitions::DriveHighLevelOperationConverter;
 use crate::error::Error;
 
-impl DriveHighLevelOperationConverter for DataContractCreateTransition {
+impl DriveHighLevelOperationConverter for DataContractUpdateTransition {
     fn to_high_level_drive_operations(&self) -> Result<Vec<DriveOperation>, Error> {
-        let DataContractCreateTransition {
+        let DataContractUpdateTransition {
             data_contract, ..
         } = self;
         let mut drive_operations = vec![];

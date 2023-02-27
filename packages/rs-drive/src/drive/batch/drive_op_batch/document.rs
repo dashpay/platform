@@ -87,6 +87,17 @@ pub enum DocumentOperationType<'a> {
         document_operations: DocumentOperationsForContractDocumentType<'a>,
     },
     /// Deletes a document and returns the associated fee.
+    DeleteDocumentOfNamedTypeForContractId {
+        /// The document id
+        document_id: [u8; 32],
+        /// The contract id
+        contract_id: [u8; 32],
+        /// The name of the document type
+        document_type_name: &'a str,
+        /// The owner id, if none is specified will try to recover from serialized document
+        owner_id: Option<[u8; 32]>,
+    },
+    /// Deletes a document and returns the associated fee.
     DeleteDocumentOfNamedTypeForContract {
         /// The document id
         document_id: [u8; 32],
@@ -262,6 +273,21 @@ impl DriveLowLevelOperationConverter for DocumentOperationType<'_> {
                 contract.borrow(),
                 document_type,
                 owner_id,
+                None,
+                estimated_costs_only_with_layer_info,
+                transaction,
+            ),
+            DocumentOperationType::DeleteDocumentOfNamedTypeForContractId {
+                document_id,
+                contract_id,
+                document_type_name,
+                owner_id,
+            } => drive.delete_document_for_contract_id_with_named_type_operations(
+                document_id,
+                contract_id,
+                document_type_name,
+                owner_id,
+                &block_info.epoch,
                 None,
                 estimated_costs_only_with_layer_info,
                 transaction,
