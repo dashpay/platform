@@ -284,24 +284,28 @@ describe('validateDataContractUpdateTransitionBasicFactory', () => {
     //   expect(error.getFieldPath()).to.equal('/properties/firstName');
     // });
 
-    // it('should allow defining new document', async () => {
-    //   rawStateTransition.dataContract.documents.myNewAwesomeDoc = {
-    //     type: 'object',
-    //     properties: {
-    //       name: {
-    //         type: 'string',
-    //       },
-    //     },
-    //     required: ['name'],
-    //   };
+    it('should allow defining new document', async () => {
+      rawStateTransition.dataContract.documents.myNewAwesomeDoc = {
+        type: 'object',
+        properties: {
+          name: {
+            type: 'string',
+          },
+        },
+        required: ['name'],
+        additionalProperties: false,
+      };
 
-    //   const result = await validateStateTransition(
-    //     rawStateTransition,
-    //     executionContext,
-    //   );
+      const result = await validateStateTransition(
+        rawStateTransition,
+        executionContext,
+      );
 
-    //   expect(result.isValid()).to.be.true();
-    // });
+      // const [error] = result.getErrors();
+      // console.log(error.getCode(), error.getInstancePath(), error.getKeyword(), error.getParams());
+
+      expect(result.isValid()).to.be.true();
+    });
 
     it('should not have root immutable properties changed', async () => {
       rawStateTransition.dataContract.ownerId = Buffer.alloc(32);
