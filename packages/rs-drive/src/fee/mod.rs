@@ -29,24 +29,37 @@
 
 // TODO: Should be moved to DPP when integration is done
 
+#[cfg(feature = "full")]
 use enum_map::EnumMap;
 
+#[cfg(feature = "full")]
 use crate::error::fee::FeeError;
+#[cfg(feature = "full")]
 use crate::error::Error;
+#[cfg(feature = "full")]
 use crate::fee::op::{BaseOp, DriveOperation};
+#[cfg(feature = "full")]
 use crate::fee::result::FeeResult;
+#[cfg(feature = "full")]
 use crate::fee_pools::epochs::Epoch;
 
+#[cfg(any(feature = "full", feature = "verify"))]
 pub mod credits;
+#[cfg(feature = "full")]
 pub mod default_costs;
+#[cfg(any(feature = "full", feature = "verify"))]
 pub mod epoch;
+#[cfg(feature = "full")]
 pub mod op;
+#[cfg(any(feature = "full", feature = "verify"))]
 pub mod result;
 
 /// Default original fee multiplier
+#[cfg(feature = "full")]
 pub const DEFAULT_ORIGINAL_FEE_MULTIPLIER: f64 = 2.0;
 
 /// Calculates fees for the given operations. Returns the storage and processing costs.
+#[cfg(feature = "full")]
 pub fn calculate_fee(
     base_operations: Option<EnumMap<BaseOp, u64>>,
     drive_operations: Option<Vec<DriveOperation>>,
@@ -75,6 +88,7 @@ pub fn calculate_fee(
     Ok(aggregate_fee_result)
 }
 
+#[cfg(feature = "full")]
 pub(crate) fn get_overflow_error(str: &'static str) -> Error {
     Error::Fee(FeeError::Overflow(str))
 }

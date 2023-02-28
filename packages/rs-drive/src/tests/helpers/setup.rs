@@ -32,8 +32,17 @@
 //! Defines helper functions pertinent to setting up Drive.
 //!
 
+use crate::drive::block_info::BlockInfo;
 use crate::drive::config::DriveConfig;
 use crate::drive::Drive;
+use crate::fee_pools::epochs::Epoch;
+
+use crate::drive::object_size_info::DocumentInfo::DocumentRefWithoutSerialization;
+use crate::drive::object_size_info::{DocumentAndContractInfo, OwnedDocumentInfo};
+use dpp::data_contract::document_type::DocumentType;
+use dpp::document::document_stub::DocumentStub;
+use dpp::prelude::{DataContract, Document};
+use grovedb::TransactionArg;
 use tempfile::TempDir;
 
 /// Struct with options regarding setting up fee pools.
@@ -70,4 +79,62 @@ pub fn setup_drive_with_initial_state_structure() -> Drive {
         .expect("should create root tree successfully");
 
     drive
+}
+
+/// A function to setup system data contract
+pub fn setup_system_data_contract(
+    drive: &Drive,
+    data_contract: &DataContract,
+    transaction: TransactionArg,
+) {
+    drive
+        .apply_contract_cbor(
+            data_contract.to_cbor().unwrap(),
+            Some(data_contract.id.to_buffer()),
+            BlockInfo {
+                time_ms: 1,
+                height: 1,
+                epoch: Epoch::new(1),
+            },
+            true,
+            None,
+            transaction,
+        )
+        .unwrap();
+}
+
+/// Setup document for a contract
+pub fn setup_document(
+    drive: &Drive,
+    document: &Document,
+    data_contract: &DataContract,
+    document_type: &DocumentType,
+    transaction: TransactionArg,
+) {
+    //todo: remove this hack
+    let serialized_document = document
+        .to_buffer()
+        .expect("expected to serialize to buffer");
+    let document_stub = DocumentStub::from_cbor(&serialized_document, None, None)
+        .expect("expected to convert to document stub");
+    drive
+        .add_document_for_contract(
+            DocumentAndContractInfo {
+                owned_document_info: OwnedDocumentInfo {
+                    document_info: DocumentRefWithoutSerialization((&document_stub, None)),
+                    owner_id: None,
+                },
+                contract: data_contract,
+                document_type,
+            },
+            false,
+            BlockInfo {
+                time_ms: 1,
+                height: 1,
+                epoch: Epoch::new(1),
+            },
+            true,
+            transaction,
+        )
+        .unwrap();
 }

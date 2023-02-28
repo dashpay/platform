@@ -44,6 +44,8 @@ pub trait JsonValueExt {
     fn get_string(&self, property_name: &str) -> Result<&str, anyhow::Error>;
     fn get_i64(&self, property_name: &str) -> Result<i64, anyhow::Error>;
     fn get_f64(&self, property_name: &str) -> Result<f64, anyhow::Error>;
+    fn get_u8(&self, property_name: &str) -> Result<u8, anyhow::Error>;
+    fn get_u32(&self, property_name: &str) -> Result<u32, anyhow::Error>;
     fn get_u64(&self, property_name: &str) -> Result<u64, anyhow::Error>;
     fn get_bytes(&self, property_name: &str) -> Result<Vec<u8>, anyhow::Error>;
     /// returns the the mutable JsonValue from provided path. The path is dot-separated string. i.e `properties.id`
@@ -166,6 +168,52 @@ impl JsonValueExt for JsonValue {
         }
         bail!(
             "getting property '{}' failed: {:?} isn't a String",
+            property_name,
+            property_value
+        );
+    }
+
+    fn get_u8(&self, property_name: &str) -> Result<u8, anyhow::Error> {
+        let property_value = self.get(property_name).ok_or_else(|| {
+            anyhow!(
+                "the property '{}' doesn't exist in '{:?}'",
+                property_name,
+                self
+            )
+        })?;
+
+        if let JsonValue::Number(s) = property_value {
+            return s
+                .as_u64()
+                .ok_or_else(|| anyhow!("unable convert {} to u64", s))?
+                .try_into()
+                .map_err(|e| anyhow!("unable convert {} to u8: {}", s, e));
+        }
+        bail!(
+            "getting property '{}' failed: {:?} isn't a number",
+            property_name,
+            property_value
+        );
+    }
+
+    fn get_u32(&self, property_name: &str) -> Result<u32, anyhow::Error> {
+        let property_value = self.get(property_name).ok_or_else(|| {
+            anyhow!(
+                "the property '{}' doesn't exist in '{:?}'",
+                property_name,
+                self
+            )
+        })?;
+
+        if let JsonValue::Number(s) = property_value {
+            return s
+                .as_u64()
+                .ok_or_else(|| anyhow!("unable convert {} to u64", s))?
+                .try_into()
+                .map_err(|e| anyhow!("unable convert {} to u32: {}", s, e));
+        }
+        bail!(
+            "getting property '{}' failed: {:?} isn't a number",
             property_name,
             property_value
         );

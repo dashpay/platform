@@ -1,21 +1,23 @@
 use std::sync::Arc;
 
+use dpp::identity::IdentityFacade;
 use wasm_bindgen::prelude::*;
 
 use crate::bls_adapter::{BlsAdapter, JsBlsAdapter};
 use crate::document_facade::DocumentFacadeWasm;
 use crate::fetch_and_validate_data_contract::DataContractFetcherAndValidatorWasm;
+use crate::identity_facade::IdentityFacadeWasm;
 use crate::state_repository::{ExternalStateRepositoryLike, ExternalStateRepositoryLikeWrapper};
 use crate::version::ProtocolVersionValidatorWasm;
 use crate::DataContractFacadeWasm;
 use crate::{DocumentFactoryWASM, DocumentValidatorWasm};
 use dpp::identity::validation::PublicKeysValidator;
-use dpp::identity::IdentityFacade;
+
 use dpp::version::{ProtocolVersionValidator, LATEST_VERSION};
 
 #[wasm_bindgen(js_name=DashPlatformProtocol)]
 pub struct DashPlatformProtocol {
-    _identity: IdentityFacade<BlsAdapter>,
+    identity: IdentityFacade<BlsAdapter>,
     document: DocumentFacadeWasm,
     data_contract: DataContractFacadeWasm,
 }
@@ -67,8 +69,8 @@ impl DashPlatformProtocol {
             DataContractFacadeWasm::new(protocol_version, protocol_version_validator_arc);
 
         Self {
-            _identity: identity_facade,
             document: document_facade,
+            identity: identity_facade,
             data_contract: data_contract_facade,
         }
     }
@@ -81,5 +83,10 @@ impl DashPlatformProtocol {
     #[wasm_bindgen(getter=document)]
     pub fn get_document(&self) -> DocumentFacadeWasm {
         self.document.clone()
+    }
+
+    #[wasm_bindgen(getter = identity)]
+    pub fn identity(&self) -> IdentityFacadeWasm {
+        self.identity.clone()
     }
 }

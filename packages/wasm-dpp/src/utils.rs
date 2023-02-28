@@ -12,7 +12,10 @@ use serde::de::DeserializeOwned;
 use serde_json::Value;
 use wasm_bindgen::{convert::RefFromWasmAbi, prelude::*};
 
-use crate::errors::{from_dpp_err, RustConversionError};
+use crate::{
+    bail_js,
+    errors::{from_dpp_err, RustConversionError},
+};
 
 pub trait ToSerdeJSONExt {
     fn with_serde_to_json_value(&self) -> Result<Value, JsValue>;

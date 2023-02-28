@@ -6,7 +6,7 @@ use crate::identity::validation::TPublicKeysValidator;
 use crate::validation::ValidationResult;
 use crate::NonConsensusError;
 
-#[cfg(test)]
+#[cfg(feature = "fixtures-and-mocks")]
 pub struct PublicKeysValidatorMock {
     returns: Mutex<Result<ValidationResult<()>, NonConsensusError>>,
     returns_fn:

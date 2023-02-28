@@ -10,7 +10,7 @@ use dpp::{
         StateTransitionConvert, StateTransitionIdentitySigned, StateTransitionLike,
         StateTransitionType,
     },
-    util::json_value::JsonValueExt,
+    util::json_value::{JsonValueExt, ReplaceWith},
 };
 use js_sys::{Array, Reflect};
 use serde::{Deserialize, Serialize};
@@ -32,7 +32,7 @@ pub mod apply_document_batch_transition;
 pub mod document_transition;
 pub mod validation;
 
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 #[wasm_bindgen(js_name = DocumentsBatchTransition)]
 pub struct DocumentsBatchTransitionWASM(DocumentsBatchTransition);
 

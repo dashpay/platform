@@ -40,6 +40,9 @@ pub mod state;
 /// Platform constants
 pub mod constants;
 
+/// Anything related to 3rd party RPC
+pub mod rpc;
+
 // TODO We should compile it only for tests
 /// Test helpers and fixtures
 pub mod test;

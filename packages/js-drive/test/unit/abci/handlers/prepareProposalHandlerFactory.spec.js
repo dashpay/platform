@@ -34,6 +34,7 @@ describe('prepareProposalHandlerFactory', () => {
   let round;
   let executionTimerMock;
   let createContextLoggerMock;
+  let quorumHash;
 
   beforeEach(function beforeEach() {
     round = 1;
@@ -127,6 +128,8 @@ describe('prepareProposalHandlerFactory', () => {
 
     const localLastCommit = {};
 
+    quorumHash = Buffer.alloc(32, 0);
+
     request = {
       height,
       maxTxBytes,
@@ -138,6 +141,7 @@ describe('prepareProposalHandlerFactory', () => {
       proposerProTxHash,
       proposedAppVersion,
       round,
+      quorumHash,
     };
   });
 
@@ -169,6 +173,7 @@ describe('prepareProposalHandlerFactory', () => {
         proposerProTxHash: Buffer.from(request.proposerProTxHash),
         proposedAppVersion: request.proposedAppVersion,
         round,
+        quorumHash,
       },
       loggerMock,
     );

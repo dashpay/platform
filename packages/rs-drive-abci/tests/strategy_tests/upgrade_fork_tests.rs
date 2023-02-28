@@ -25,10 +25,10 @@ mod tests {
             }),
         };
         let config = PlatformConfig {
-            drive_config: Default::default(),
             verify_sum_trees: true,
             quorum_size: 100,
             validator_set_quorum_rotation_block_count: 125,
+            ..Default::default()
         };
         let twenty_minutes_in_ms = 1000 * 60 * 20;
         let ChainExecutionOutcome {
@@ -151,13 +151,7 @@ mod tests {
             .unwrap()
             .height
             + 1;
-        let ChainExecutionOutcome {
-            platform,
-            proposers,
-            current_proposers,
-            end_time_ms,
-            ..
-        } = continue_chain_for_strategy(
+        let ChainExecutionOutcome { platform, .. } = continue_chain_for_strategy(
             platform,
             ChainExecutionParameters {
                 block_start,
@@ -165,11 +159,11 @@ mod tests {
                 block_spacing_ms: hour_in_ms,
                 proposers,
                 current_proposers,
-                current_proposer_versions: Some(current_proposer_versions.clone()),
+                current_proposer_versions: Some(current_proposer_versions),
                 current_time_ms: end_time_ms,
             },
-            strategy.clone(),
-            config.clone(),
+            strategy,
+            config,
             StrategyRandomness::SeedEntropy(18),
         );
         {
@@ -219,10 +213,10 @@ mod tests {
             }),
         };
         let config = PlatformConfig {
-            drive_config: Default::default(),
             verify_sum_trees: true,
             quorum_size: 40,
             validator_set_quorum_rotation_block_count: 50,
+            ..Default::default()
         };
         let hour_in_ms = 1000 * 60 * 60;
         let ChainExecutionOutcome {
@@ -235,7 +229,7 @@ mod tests {
         } = run_chain_for_strategy(2000, hour_in_ms, strategy.clone(), config.clone(), 15);
         {
             let drive_cache = platform.drive.cache.borrow_mut();
-            let counter = drive_cache
+            let _counter = drive_cache
                 .protocol_versions_counter
                 .as_ref()
                 .expect("expected a version counter");
@@ -339,7 +333,7 @@ mod tests {
                 block_spacing_ms: hour_in_ms,
                 proposers,
                 current_proposers,
-                current_proposer_versions: Some(current_proposer_versions.clone()),
+                current_proposer_versions: Some(current_proposer_versions),
                 current_time_ms: end_time_ms,
             },
             strategy,
@@ -348,7 +342,7 @@ mod tests {
         );
         {
             let drive_cache = platform.drive.cache.borrow_mut();
-            let counter = drive_cache
+            let _counter = drive_cache
                 .protocol_versions_counter
                 .as_ref()
                 .expect("expected a version counter");
@@ -391,10 +385,10 @@ mod tests {
             }),
         };
         let config = PlatformConfig {
-            drive_config: Default::default(),
             verify_sum_trees: true,
             quorum_size: 50,
             validator_set_quorum_rotation_block_count: 60,
+            ..Default::default()
         };
         let hour_in_ms = 1000 * 60 * 60;
         let ChainExecutionOutcome {
@@ -407,7 +401,7 @@ mod tests {
         } = run_chain_for_strategy(2000, hour_in_ms, strategy.clone(), config.clone(), 15);
         {
             let drive_cache = platform.drive.cache.borrow_mut();
-            let counter = drive_cache
+            let _counter = drive_cache
                 .protocol_versions_counter
                 .as_ref()
                 .expect("expected a version counter");
@@ -456,10 +450,10 @@ mod tests {
                 block_spacing_ms: hour_in_ms,
                 proposers,
                 current_proposers,
-                current_proposer_versions: Some(current_proposer_versions.clone()),
+                current_proposer_versions: Some(current_proposer_versions),
                 current_time_ms: end_time_ms,
             },
-            strategy.clone(),
+            strategy,
             config.clone(),
             StrategyRandomness::SeedEntropy(99),
         );
@@ -585,7 +579,7 @@ mod tests {
                 block_spacing_ms: hour_in_ms * 4, //let's try to move to next epoch
                 proposers,
                 current_proposers,
-                current_proposer_versions: Some(current_proposer_versions.clone()),
+                current_proposer_versions: Some(current_proposer_versions),
                 current_time_ms: end_time_ms,
             },
             strategy,
@@ -638,20 +632,20 @@ mod tests {
             }),
         };
         let config = PlatformConfig {
-            drive_config: Default::default(),
             verify_sum_trees: true,
             quorum_size: 50,
             validator_set_quorum_rotation_block_count: 60,
+            ..Default::default()
         };
         let hour_in_ms = 1000 * 60 * 60;
         let ChainExecutionOutcome {
             platform,
             proposers,
             current_proposers,
-            current_proposer_versions,
+
             end_time_ms,
             ..
-        } = run_chain_for_strategy(1400, hour_in_ms, strategy.clone(), config.clone(), 15);
+        } = run_chain_for_strategy(1400, hour_in_ms, strategy, config.clone(), 15);
         {
             let drive_cache = platform.drive.cache.borrow_mut();
             let counter = drive_cache
@@ -710,13 +704,7 @@ mod tests {
             .unwrap()
             .height
             + 1;
-        let ChainExecutionOutcome {
-            platform,
-            proposers,
-            current_proposers,
-            end_time_ms,
-            ..
-        } = continue_chain_for_strategy(
+        let ChainExecutionOutcome { platform, .. } = continue_chain_for_strategy(
             platform,
             ChainExecutionParameters {
                 block_start,
@@ -727,8 +715,8 @@ mod tests {
                 current_proposer_versions: None,
                 current_time_ms: end_time_ms,
             },
-            strategy.clone(),
-            config.clone(),
+            strategy,
+            config,
             StrategyRandomness::SeedEntropy(7),
         );
         {
