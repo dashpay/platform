@@ -1,8 +1,9 @@
 use dpp::dashcore::anyhow::Context;
-use dpp::prelude::Identifier;
+use dpp::prelude::{Identifier, Revision};
 use dpp::util::json_schema::JsonSchemaExt;
 use dpp::util::json_value::{JsonValueExt, ReplaceWith};
 use dpp::util::string_encoding::Encoding;
+use js_sys::Number;
 use serde::{Deserialize, Serialize};
 use std::convert::{self, TryInto};
 use wasm_bindgen::prelude::*;

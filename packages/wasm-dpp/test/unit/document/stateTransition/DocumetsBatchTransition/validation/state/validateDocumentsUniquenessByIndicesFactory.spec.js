@@ -1,16 +1,8 @@
-const verifyDocumentsUniquenessByIndicesFactory = require('@dashevo/dpp/lib/document/stateTransition/DocumentsBatchTransition/validation/state/validateDocumentsUniquenessByIndicesFactory');
-
 const getDocumentsFixture = require('@dashevo/dpp/lib/test/fixtures/getDocumentsFixture');
 const getContractFixture = require('@dashevo/dpp/lib/test/fixtures/getDataContractFixture');
 const getDocumentTransitionsFixture = require('@dashevo/dpp/lib/test/fixtures/getDocumentTransitionsFixture');
 
-const { expectValidationError: expectValidationErrorJs } = require('@dashevo/dpp/lib/test/expect/expectError');
 const createStateRepositoryMock = require('@dashevo/dpp/lib/test/mocks/createStateRepositoryMock');
-
-const ValidationResultJs = require('@dashevo/dpp/lib/validation/ValidationResult');
-
-const DuplicateUniqueIndexErrorJs = require('@dashevo/dpp/lib/errors/consensus/state/document/DuplicateUniqueIndexError');
-const StateTransitionExecutionContextJs = require('@dashevo/dpp/lib/stateTransition/StateTransitionExecutionContext');
 
 const sinon = require('sinon');
 const { expectValidationError } = require('../../../../../../../lib/test/expect/expectError');
@@ -29,7 +21,6 @@ let StateTransitionExecutionContext;
 describe('validateDocumentsUniquenessByIndices', () => {
   let stateRepositoryMockJs;
   let stateRepositoryMock;
-  let validateDocumentsUniquenessByIndicesJs;
   let documentsJs;
   let documentTransitionsJs;
   let documentTransitions;
@@ -37,7 +28,6 @@ describe('validateDocumentsUniquenessByIndices', () => {
   let dataContract;
   let ownerIdJs;
   let ownerId;
-  let executionContextJs;
   let executionContext;
 
   beforeEach(async function beforeEach() {
@@ -80,11 +70,6 @@ describe('validateDocumentsUniquenessByIndices', () => {
     stateRepositoryMockJs.fetchDocuments.resolves([]);
 
     executionContext = new StateTransitionExecutionContext();
-    executionContextJs = new StateTransitionExecutionContextJs();
-
-    validateDocumentsUniquenessByIndicesJs = verifyDocumentsUniquenessByIndicesFactory(
-      stateRepositoryMockJs,
-    );
   });
 
   it('should return valid result if Documents have no unique indices - Rust', async () => {

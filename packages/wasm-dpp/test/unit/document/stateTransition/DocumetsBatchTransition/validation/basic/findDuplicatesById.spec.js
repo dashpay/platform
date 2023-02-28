@@ -1,5 +1,3 @@
-const findDuplicateDocumentsJs = require('@dashevo/dpp/lib/document/stateTransition/DocumentsBatchTransition/validation/basic/findDuplicatesById');
-
 const getDocumentTransitionsFixture = require('@dashevo/dpp/lib/test/fixtures/getDocumentTransitionsFixture');
 const { default: loadWasmDpp } = require('../../../../../../../dist');
 

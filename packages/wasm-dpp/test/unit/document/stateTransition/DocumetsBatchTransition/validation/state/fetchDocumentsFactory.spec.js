@@ -1,12 +1,9 @@
 const getDocumentsFixture = require('@dashevo/dpp/lib/test/fixtures/getDocumentsFixture');
 const getDocumentTransitionsFixture = require('@dashevo/dpp/lib/test/fixtures/getDocumentTransitionsFixture');
 
-const fetchDocumentsFactory = require('@dashevo/dpp/lib/document/stateTransition/DocumentsBatchTransition/validation/state/fetchDocumentsFactory');
-
 const createStateRepositoryMock = require('@dashevo/dpp/lib/test/mocks/createStateRepositoryMock');
 
 const generateRandomIdentifierJs = require('@dashevo/dpp/lib/test/utils/generateRandomIdentifier');
-const StateTransitionExecutionContextJs = require('@dashevo/dpp/lib/stateTransition/StateTransitionExecutionContext');
 
 const sinon = require('sinon');
 const { default: loadWasmDpp } = require('../../../../../../../dist');
@@ -20,14 +17,11 @@ let DocumentCreateTransition;
 let StateTransitionExecutionContext;
 
 describe('fetchDocumentsFactory', () => {
-  let fetchDocumentsJs;
-  let stateRepositoryMockJs;
   let stateRepositoryMock;
   let documentTransitionsJs;
   let documentTransitions;
   let documentsJs;
   let documents;
-  let executionContextJs;
   let executionContext;
 
   beforeEach(async function beforeEach() {
@@ -42,12 +36,8 @@ describe('fetchDocumentsFactory', () => {
     } = await loadWasmDpp());
 
     stateRepositoryMock = createStateRepositoryMock(this.sinonSandbox);
-    stateRepositoryMockJs = createStateRepositoryMock(this.sinonSandbox);
-
-    fetchDocumentsJs = fetchDocumentsFactory(stateRepositoryMockJs);
 
     executionContext = new StateTransitionExecutionContext();
-    executionContextJs = new StateTransitionExecutionContextJs();
 
     documentsJs = getDocumentsFixture().slice(0, 5);
     const dataContractBuffer = documentsJs[0].dataContract.toBuffer();

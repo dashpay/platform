@@ -17,7 +17,6 @@ const createStateRepositoryMock = require('@dashevo/dpp/lib/test/mocks/createSta
 
 const protocolVersion = require('@dashevo/dpp/lib/version/protocolVersion');
 const StateTransitionExecutionContextJs = require('@dashevo/dpp/lib/stateTransition/StateTransitionExecutionContext');
-const DocumentNotProvidedErrorJs = require('@dashevo/dpp/lib/document/errors/DocumentNotProvidedError');
 
 const { default: loadWasmDpp } = require('../../../../../dist');
 

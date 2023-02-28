@@ -1,10 +1,5 @@
-const validateDocumentsBatchTransitionStateFactory = require('@dashevo/dpp/lib/document/stateTransition/DocumentsBatchTransition/validation/state/validateDocumentsBatchTransitionStateFactory');
-
 const DocumentJs = require('@dashevo/dpp/lib/document/Document');
 const DocumentsBatchTransitionJs = require('@dashevo/dpp/lib/document/stateTransition/DocumentsBatchTransition/DocumentsBatchTransition');
-
-const DataTriggerExecutionContext = require('@dashevo/dpp/lib/dataTrigger/DataTriggerExecutionContext');
-const DataTriggerExecutionError = require('@dashevo/dpp/lib/errors/consensus/state/dataContract/dataTrigger/DataTriggerExecutionError');
 const DataTriggerExecutionResult = require('@dashevo/dpp/lib/dataTrigger/DataTriggerExecutionResult');
 
 const getDataContractFixture = require('@dashevo/dpp/lib/test/fixtures/getDataContractFixture');
@@ -13,21 +8,7 @@ const getDocumentTransitionsFixture = require('@dashevo/dpp/lib/test/fixtures/ge
 const createStateRepositoryMock = require('@dashevo/dpp/lib/test/mocks/createStateRepositoryMock');
 
 const ValidationResultJs = require('@dashevo/dpp/lib/validation/ValidationResult');
-
-const { expectValidationError } = require('@dashevo/dpp/lib/test/expect/expectError');
-
-const DataContractNotPresentErrorJs = require('@dashevo/dpp/lib/errors/DataContractNotPresentError');
-
-const DocumentAlreadyPresentErrorJs = require('@dashevo/dpp/lib/errors/consensus/state/document/DocumentAlreadyPresentError');
-const DocumentNotFoundErrorJs = require('@dashevo/dpp/lib/errors/consensus/state/document/DocumentNotFoundError');
-const InvalidDocumentRevisionErrorJs = require('@dashevo/dpp/lib/errors/consensus/state/document/InvalidDocumentRevisionError');
-const InvalidDocumentActionErrorJs = require('@dashevo/dpp/lib/document/errors/InvalidDocumentActionError');
-const DocumentOwnerIdMismatchErrorJs = require('@dashevo/dpp/lib/errors/consensus/state/document/DocumentOwnerIdMismatchError');
-const DocumentTimestampsMismatchErrorJs = require('@dashevo/dpp/lib/errors/consensus/state/document/DocumentTimestampsMismatchError');
-const DocumentTimestampWindowViolationErrorJs = require('@dashevo/dpp/lib/errors/consensus/state/document/DocumentTimestampWindowViolationError');
-
 const generateRandomIdentifier = require('@dashevo/dpp/lib/test/utils/generateRandomIdentifier');
-const SomeConsensusError = require('@dashevo/dpp/lib/test/mocks/SomeConsensusError');
 const StateTransitionExecutionContextJs = require('@dashevo/dpp/lib/stateTransition/StateTransitionExecutionContext');
 const { default: loadWasmDpp } = require('../../../../../../../dist');
 
@@ -47,8 +28,6 @@ let DocumentTimestampsMismatchError;
 let DocumentTimestampWindowViolationError;
 
 describe('validateDocumentsBatchTransitionStateFactory', () => {
-  let validateDocumentsBatchTransitionStateJs;
-  let fetchDocumentsMock;
   let stateTransitionJs;
   let stateTransition;
   let documentsJs;
@@ -126,20 +105,12 @@ describe('validateDocumentsBatchTransitionStateFactory', () => {
     stateRepositoryMockJs.fetchLatestPlatformBlockTime.resolves(blockTime);
     stateRepositoryMock.fetchLatestPlatformBlockTime.resolves(blockTime);
 
-    fetchDocumentsMock = this.sinonSandbox.stub().resolves([]);
     stateRepositoryMock.fetchDocuments.resolves([]);
 
     executeDataTriggersMock = this.sinonSandbox.stub();
     validateDocumentsUniquenessByIndicesMock = this.sinonSandbox.stub();
 
     validateDocumentsUniquenessByIndicesMock.resolves(new ValidationResultJs());
-
-    validateDocumentsBatchTransitionStateJs = validateDocumentsBatchTransitionStateFactory(
-      stateRepositoryMockJs,
-      fetchDocumentsMock,
-      validateDocumentsUniquenessByIndicesMock,
-      executeDataTriggersMock,
-    );
 
     fakeTime = this.sinonSandbox.useFakeTimers(new Date());
   });
@@ -165,7 +136,6 @@ describe('validateDocumentsBatchTransitionStateFactory', () => {
       expect(fetchDataContractId.toBuffer()).to.deep.equal(dataContract.getId().toBuffer());
     }
   });
-
 
   it('should return invalid result if document transition with action "create" is already present  - Rust', async () => {
     stateRepositoryMock.fetchDocuments.resolves([documents[0]]);
@@ -274,7 +244,7 @@ describe('validateDocumentsBatchTransitionStateFactory', () => {
     expect(error.getCode()).to.equal(4010);
 
     expect(error.getDocumentId()).to.deep.equal(documentTransitionsJs[0].getId().toBuffer());
-    expect(error.getCurrentRevision()).to.deep.equal(BigInt(documents[0].getRevision()));
+    expect(Number(error.getCurrentRevision())).to.deep.equal(documents[0].getRevision());
 
     expect(stateRepositoryMock.fetchDataContract).to.have.been.calledOnce();
     const [fetchDataContractId] = stateRepositoryMock.fetchDataContract.getCall(0).args;

@@ -1,7 +1,5 @@
 const DocumentJs = require('@dashevo/dpp/lib/document/Document');
 
-const findDuplicateDocumentsByIndicesJs = require('@dashevo/dpp/lib/document/stateTransition/DocumentsBatchTransition/validation/basic/findDuplicatesByIndices');
-
 const getDataContractFixture = require('@dashevo/dpp/lib/test/fixtures/getDataContractFixture');
 const getDocumentsFixture = require('@dashevo/dpp/lib/test/fixtures/getDocumentsFixture');
 const getDocumentTransitionsFixture = require('@dashevo/dpp/lib/test/fixtures/getDocumentTransitionsFixture');

@@ -1,5 +1,3 @@
-const { BlockHeader } = require('@dashevo/dashcore-lib');
-
 const identitySchema = require('@dashevo/dpp/schema/identity/identity.json');
 const createStateRepositoryMock = require('@dashevo/dpp/lib/test/mocks/createStateRepositoryMock');
 const getIdentityUpdateTransitionFixture = require('@dashevo/dpp/lib/test/fixtures/getIdentityUpdateTransitionFixture');

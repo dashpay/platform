@@ -1,12 +1,7 @@
-const validatePartialCompoundIndicesJs = require('@dashevo/dpp/lib/document/stateTransition/DocumentsBatchTransition/validation/basic/validatePartialCompoundIndices');
-const InconsistentCompoundIndexDataErrorJs = require('@dashevo/dpp/lib/errors/consensus/basic/document/InconsistentCompoundIndexDataError');
-
 const getDocumentsFixture = require('@dashevo/dpp/lib/test/fixtures/getDocumentsFixture');
 const getContractFixture = require('@dashevo/dpp/lib/test/fixtures/getDataContractFixture');
 const getDocumentTransitionsFixture = require('@dashevo/dpp/lib/test/fixtures/getDocumentTransitionsFixture');
 
-const ValidationResultJs = require('@dashevo/dpp/lib/validation/ValidationResult');
-const { expectValidationError } = require('@dashevo/dpp/lib/test/expect/expectError');
 const { default: loadWasmDpp } = require('../../../../../../../dist');
 
 let DataContract;
@@ -19,7 +14,6 @@ describe('validatePartialCompoundIndices', () => {
   let rawDocumentTransitions;
   let dataContractJs;
   let dataContract;
-  let ownerIdJs;
 
   beforeEach(async () => {
     ({
@@ -32,9 +26,7 @@ describe('validatePartialCompoundIndices', () => {
 
     dataContractJs = getContractFixture();
     dataContract = DataContract.fromBuffer(dataContractJs.toBuffer());
-    ownerIdJs = dataContractJs.getOwnerId();
   });
-
 
   it('should return invalid result if compound index contains not all fields - Rust', () => {
     const documentJs = getDocumentsFixture(dataContractJs)[9];
