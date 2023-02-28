@@ -1,11 +1,40 @@
 # syntax = docker/dockerfile:1.3
+
+# Build wasm-dpp
+FROM rust as builder
+
+RUN apt-get update && apt-get install -y clang
+
+#ARG CARGO_BUILD_PROFILE=debug
+#ENV CARGO_BUILD_PROFILE ${CARGO_BUILD_PROFILE}
+
+WORKDIR /platform
+
+COPY .cargo /platform/.cargo
+COPY Cargo.lock rust-toolchain.toml ./
+COPY packages/dapi/Cargo.toml.template ./Cargo.toml
+
+COPY packages/withdrawals-contract packages/withdrawals-contract
+COPY packages/masternode-reward-shares-contract packages/masternode-reward-shares-contract
+COPY packages/dashpay-contract packages/dashpay-contract
+COPY packages/feature-flags-contract packages/feature-flags-contract
+COPY packages/dpns-contract packages/dpns-contract
+COPY packages/data-contracts packages/data-contracts
+COPY packages/rs-dpp packages/rs-dpp
+COPY packages/wasm-dpp packages/wasm-dpp
+
+RUN --mount=type=cache,target=target \
+    --mount=type=cache,target=$CARGO_HOME/git \
+    --mount=type=cache,target=$CARGO_HOME/registry \
+    rustup target add wasm32-unknown-unknown
+
+RUN cd packages/wasm-dpp && ./scripts/build.sh
+
+# Build for DAPI
 FROM node:16-alpine3.16 as builder
 
 ARG NODE_ENV=production
 ENV NODE_ENV ${NODE_ENV}
-
-ARG CARGO_BUILD_PROFILE=debug
-ENV CARGO_BUILD_PROFILE ${CARGO_BUILD_PROFILE}
 
 RUN apk update && \
     apk --no-cache upgrade && \
@@ -13,32 +42,7 @@ RUN apk update && \
                        openssh-client \
                        python3 \
                        alpine-sdk \
-                       zeromq-dev \
-                       bash
-
-# Install Rust
-ENV RUSTUP_HOME=/usr/local/rustup \
-    CARGO_HOME=/usr/local/cargo \
-    PATH=/usr/local/cargo/bin:$PATH \
-    RUST_VERSION=stable
-
-RUN set -eux; \
-    apkArch="$(apk --print-arch)"; \
-    case "$apkArch" in \
-        x86_64) rustArch='x86_64-unknown-linux-musl'; rustupSha256='bdf022eb7cba403d0285bb62cbc47211f610caec24589a72af70e1e900663be9' ;; \
-        aarch64) rustArch='aarch64-unknown-linux-musl'; rustupSha256='89ce657fe41e83186f5a6cdca4e0fd40edab4fd41b0f9161ac6241d49fbdbbbe' ;; \
-        *) echo >&2 "unsupported architecture: $apkArch"; exit 1 ;; \
-    esac; \
-    url="https://static.rust-lang.org/rustup/archive/1.24.3/${rustArch}/rustup-init"; \
-    wget "$url"; \
-    echo "${rustupSha256} *rustup-init" | sha256sum -c -; \
-    chmod +x rustup-init; \
-    ./rustup-init -y --no-modify-path --profile minimal --default-toolchain $RUST_VERSION --default-host ${rustArch}; \
-    rm rustup-init; \
-    chmod -R a+w $RUSTUP_HOME $CARGO_HOME; \
-    rustup --version; \
-    cargo --version; \
-    rustc --version;
+                       zeromq-dev
 
 # Enable corepack https://github.com/nodejs/corepack
 RUN corepack enable
@@ -47,28 +51,21 @@ WORKDIR /platform
 
 # Copy yarn files
 COPY .yarn ./.yarn
-COPY .cargo /platform/.cargo
-COPY package.json yarn.lock .yarnrc.yml .pnp.* Cargo.toml Cargo.lock rust-toolchain.toml ./
+COPY package.json yarn.lock .yarnrc.yml .pnp.* ./
 
 # Copy only necessary packages from monorepo
 COPY packages/dapi packages/dapi
 COPY packages/dapi-grpc packages/dapi-grpc
 COPY packages/js-dpp packages/js-dpp
-COPY packages/wasm-dpp packages/wasm-dpp
 COPY packages/js-grpc-common packages/js-grpc-common
 COPY packages/feature-flags-contract packages/feature-flags-contract
 COPY packages/masternode-reward-shares-contract packages/masternode-reward-shares-contract
 COPY packages/dpns-contract packages/dpns-contract
 COPY packages/dashpay-contract packages/dashpay-contract
+COPY --from=0 /platform/packages/wasm-dpp packages/wasm-dpp
 
 # Print build output
 RUN yarn config set enableInlineBuilds true
-
-# Build wasm-dpp binding
-RUN --mount=type=cache,target=target \
-    --mount=type=cache,target=$CARGO_HOME/git \
-    --mount=type=cache,target=$CARGO_HOME/registry \
-    yarn workspace @dashevo/wasm-dpp build
 
 # Install DAPI-specific dependencies using previous
 # node_modules directory to reuse built binaries
@@ -77,6 +74,9 @@ RUN --mount=type=cache,target=/tmp/unplugged \
     yarn workspaces focus --production @dashevo/dapi && \
     cp -R /platform/.yarn/unplugged /tmp/
 
+
+RUN --mount=type=cache,target=target \
+    yarn workspace @dashevo/wasm-dpp webpack
 
 FROM node:16-alpine3.16
 
