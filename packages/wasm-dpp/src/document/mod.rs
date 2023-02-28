@@ -17,19 +17,19 @@ use crate::DataContractWasm;
 
 pub mod errors;
 pub use state_transition::*;
-mod document_in_state_transition;
+mod extended_document;
 mod factory;
 pub mod fetch_and_validate_data_contract;
 pub mod state_transition;
 mod validator;
 
 pub use document_batch_transition::{DocumentsBatchTransitionWASM, DocumentsContainer};
-pub use document_in_state_transition::DocumentInStateTransitionWasm;
 use dpp::data_contract::DriveContractExt;
 use dpp::document::{
     extended_document_property_names, Document, EXTENDED_DOCUMENT_IDENTIFIER_FIELDS,
 };
 use dpp::identity::TimestampMillis;
+pub use extended_document::ExtendedDocumentWasm;
 
 use dpp::ProtocolError;
 pub use factory::DocumentFactoryWASM;

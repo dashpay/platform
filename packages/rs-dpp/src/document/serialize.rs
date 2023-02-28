@@ -338,37 +338,46 @@ impl Document {
 
         // first we need to deserialize the document and contract indices
         // we would need dedicated deserialization functions based on the document type
-        let document_cbor: BTreeMap<String, CborValue> =
+        let document_cbor_map: BTreeMap<String, CborValue> =
             ciborium::de::from_reader(read_document_cbor).map_err(|_| {
                 ProtocolError::StructureError(StructureError::InvalidCBOR(
                     "unable to decode document for document call",
                 ))
             })?;
+        let document_map: BTreeMap<String, Value> = Value::convert_from_cbor_map(document_cbor_map);
 
-        let mut document: BTreeMap<String, Value> = Value::convert_from_cbor_map(document_cbor);
+        Self::from_map(document_map, document_id, owner_id)
+    }
 
+    /// Reads a CBOR-serialized document and creates a Document from it.
+    /// If Document and Owner IDs are provided, they are used, otherwise they are created.
+    pub fn from_map(
+        mut document_map: BTreeMap<String, Value>,
+        document_id: Option<[u8; 32]>,
+        owner_id: Option<[u8; 32]>,
+    ) -> Result<Self, ProtocolError> {
         let owner_id = match owner_id {
-            None => document
+            None => document_map
                 .remove_system_hash256_bytes(property_names::OWNER_ID)
                 .map_err(ProtocolError::ValueError)?,
             Some(owner_id) => owner_id,
         };
 
         let id = match document_id {
-            None => document
+            None => document_map
                 .remove_system_hash256_bytes(property_names::ID)
                 .map_err(ProtocolError::ValueError)?,
             Some(document_id) => document_id,
         };
 
-        let revision = document.remove_optional_integer(property_names::REVISION)?;
+        let revision = document_map.remove_optional_integer(property_names::REVISION)?;
 
-        let created_at = document.remove_optional_integer(property_names::CREATED_AT)?;
-        let updated_at = document.remove_optional_integer(property_names::UPDATED_AT)?;
+        let created_at = document_map.remove_optional_integer(property_names::CREATED_AT)?;
+        let updated_at = document_map.remove_optional_integer(property_names::UPDATED_AT)?;
 
         // dev-note: properties is everything other than the id and owner id
         Ok(Document {
-            properties: document,
+            properties: document_map,
             owner_id,
             id,
             revision,

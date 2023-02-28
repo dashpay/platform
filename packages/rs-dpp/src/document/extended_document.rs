@@ -14,7 +14,9 @@ use integer_encoding::VarInt;
 
 use crate::data_contract::document_type::DocumentType;
 use crate::document::Document;
+use platform_value::btreemap_extensions::BTreeValueMapHelper;
 use platform_value::btreemap_path_extensions::BTreeValueMapPathHelper;
+use platform_value::btreemap_path_insertion_extensions::BTreeValueMapInsertionPathHelper;
 use platform_value::Value;
 use serde::{Deserialize, Serialize};
 use serde_json::Value as JsonValue;
@@ -64,22 +66,21 @@ impl ExtendedDocument {
         json_document: JsonValue,
         data_contract: DataContract,
     ) -> Result<Self, ProtocolError> {
-        let mut document = Self::from_value::<String>(json_document, data_contract)?;
-        let mut document_data = document.data.take();
+        let mut document = Self::from_json_value::<String>(json_document, data_contract)?;
+        // let mut properties = document.properties_as_mut();
 
         // replace only the dynamic data
-        let (identifier_paths, binary_paths) = document.get_identifiers_and_binary_paths()?;
-        document_data.replace_binary_paths(binary_paths, ReplaceWith::Base64)?;
-        document_data.replace_identifier_paths(identifier_paths, ReplaceWith::Base58)?;
-
-        document.data = document_data;
+        //todo: not sure if this is needed anymore
+        // let (identifier_paths, binary_paths) = document.get_identifiers_and_binary_paths()?;
+        // properties.replace_binary_paths(binary_paths, ReplaceWith::Base64)?;
+        // properties.replace_identifier_paths(identifier_paths, ReplaceWith::Base58)?;
         Ok(document)
     }
 
     fn properties_as_json_data(&self) -> Result<JsonValue, ProtocolError> {
         self.document
             .properties
-            .try_into()
+            .to_json_value()
             .map_err(ProtocolError::ValueError)
     }
 
@@ -134,10 +135,10 @@ impl ExtendedDocument {
         raw_document: JsonValue,
         data_contract: DataContract,
     ) -> Result<Self, ProtocolError> {
-        Self::from_value::<Vec<u8>>(raw_document, data_contract)
+        Self::from_json_value::<Vec<u8>>(raw_document, data_contract)
     }
 
-    fn from_value<S>(
+    fn from_json_value<S>(
         mut document_value: JsonValue,
         data_contract: DataContract,
     ) -> Result<Self, ProtocolError>
@@ -160,7 +161,7 @@ impl ExtendedDocument {
             let data: S = serde_json::from_value(value)?;
             extended_document.data_contract_id = data.try_into()?
         }
-        extended_document.document = Document::from_json_value(document_value)?;
+        extended_document.document = Document::from_json_value::<S>(document_value)?;
         Ok(extended_document)
     }
 
@@ -184,17 +185,30 @@ impl ExtendedDocument {
             ..
         } = deserializer::split_protocol_version(cbor_bytes.as_ref())?;
 
-        let cbor_value: CborValue = ciborium::de::from_reader(document_cbor_bytes)
-            .map_err(|e| ProtocolError::EncodingError(format!("{}", e)))?;
+        let document_cbor_map: BTreeMap<String, CborValue> =
+            ciborium::de::from_reader(document_cbor_bytes)
+                .map_err(|e| ProtocolError::EncodingError(format!("{}", e)))?;
 
-        let mut json_value = cbor_value::cbor_value_to_json_value(&cbor_value)?;
+        let mut document_map: BTreeMap<String, Value> =
+            Value::convert_from_cbor_map(document_cbor_map);
 
-        json_value.add_protocol_version(property_names::PROTOCOL_VERSION, protocol_version)?;
-        json_value.replace_identifier_paths(IDENTIFIER_FIELDS, ReplaceWith::Base58)?;
+        let data_contract_id = Identifier::new(
+            document_map
+                .remove_system_hash256_bytes(property_names::DATA_CONTRACT_ID)
+                .map_err(ProtocolError::ValueError)?,
+        );
 
-        let document: Self = serde_json::from_value(json_value)?;
+        let document_type_name = document_map.remove_string(property_names::DOCUMENT_TYPE)?;
 
-        Ok(document)
+        let document = Document::from_map(document_map, None, None)?;
+
+        Ok(ExtendedDocument {
+            protocol_version,
+            document_type_name,
+            data_contract_id,
+            document,
+            ..Default::default()
+        })
     }
 
     // The skipIdentifierConversion option is removed as it doesn't make sense in the case of
@@ -254,7 +268,7 @@ impl ExtendedDocument {
     /// The path supports syntax from `lodash` JS lib. Example: "root.people[0].name".
     /// If parents are not present they will be automatically created
     pub fn set(&mut self, path: &str, value: Value) -> Result<(), ProtocolError> {
-        Ok(self.document.properties.insert_with_path(path, value)?)
+        Ok(self.document.properties.insert_at_path(path, value)?)
     }
 
     /// Retrieves field specified by path
@@ -283,7 +297,7 @@ impl ExtendedDocument {
 #[cfg(test)]
 mod test {
     use anyhow::Result;
-    use serde_json::{json, Value};
+    use serde_json::{json, Value as JsonValue};
 
     use crate::document::extended_document::{ExtendedDocument, IDENTIFIER_FIELDS};
 
@@ -293,6 +307,8 @@ mod test {
     use crate::tests::utils::*;
     use crate::util::string_encoding::Encoding;
     use platform_value::btreemap_extensions::BTreeValueMapHelper;
+    use platform_value::btreemap_path_extensions::BTreeValueMapPathHelper;
+    use platform_value::Value;
     use pretty_assertions::assert_eq;
 
     fn init() {
@@ -353,14 +369,23 @@ mod test {
             .to_buffer()
         );
 
-        assert_eq!(doc.data["label"], Value::String("user-9999".to_string()));
         assert_eq!(
-            doc.data["records"]["dashUniqueIdentityId"],
-            Value::String("HBNMY5QWuBVKNFLhgBTC1VmpEnscrmqKPMXpnYSHwhfn".to_string())
+            doc.properties()
+                .get("label")
+                .expect("expected to get label"),
+            &Value::Text("user-9999".to_string())
         );
         assert_eq!(
-            doc.data["subdomainRules"]["allowSubdomains"],
-            Value::Bool(false)
+            doc.properties()
+                .get_at_path("records.dashUniqueIdentityId")
+                .expect("expected to get value"),
+            &Value::Text("HBNMY5QWuBVKNFLhgBTC1VmpEnscrmqKPMXpnYSHwhfn".to_string())
+        );
+        assert_eq!(
+            doc.properties()
+                .get_at_path("subdomainRules.allowSubdomains")
+                .expect("expected to get value"),
+            &Value::Bool(false)
         );
         Ok(())
     }
@@ -489,23 +514,23 @@ mod test {
 
         assert_eq!(
             json_document["$id"],
-            Value::String(bs58::encode(&id).into_string())
+            JsonValue::String(bs58::encode(&id).into_string())
         );
         assert_eq!(
             json_document["$ownerId"],
-            Value::String(bs58::encode(&owner_id).into_string())
+            JsonValue::String(bs58::encode(&owner_id).into_string())
         );
         assert_eq!(
             json_document["$dataContractId"],
-            Value::String(bs58::encode(&data_contract_id).into_string())
+            JsonValue::String(bs58::encode(&data_contract_id).into_string())
         );
         assert_eq!(
             json_document["alphaBinary"],
-            Value::String(base64::encode(&alpha_value))
+            JsonValue::String(base64::encode(&alpha_value))
         );
         assert_eq!(
             json_document["alphaIdentifier"],
-            Value::String(bs58::encode(&alpha_value).into_string())
+            JsonValue::String(bs58::encode(&alpha_value).into_string())
         );
     }
 

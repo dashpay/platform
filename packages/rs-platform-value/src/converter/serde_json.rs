@@ -93,6 +93,9 @@ impl TryInto<JsonValue> for Value {
 
 pub trait BTreeValueJsonConverter {
     fn into_json_value(self) -> Result<JsonValue, Error>;
+    fn from_json_value(value: JsonValue) -> Result<Self, Error>
+    where
+        Self: Sized;
 }
 
 impl BTreeValueJsonConverter for BTreeMap<String, Value> {
@@ -102,5 +105,10 @@ impl BTreeValueJsonConverter for BTreeMap<String, Value> {
                 .map(|(key, value)| Ok((key, value.try_into()?)))
                 .collect::<Result<Map<String, JsonValue>, Error>>()?,
         ))
+    }
+
+    fn from_json_value(value: JsonValue) -> Result<Self, Error> {
+        let platform_value: Value = value.into();
+        platform_value.into_btree_map()
     }
 }

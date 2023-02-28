@@ -31,6 +31,7 @@ use crate::error::execution::ExecutionError;
 use crate::error::Error;
 use crate::platform::Platform;
 use ciborium::{cbor, Value as CborValue};
+use dpp::platform_value::converter::serde_json::BTreeValueJsonConverter;
 use dpp::platform_value::Value;
 use dpp::ProtocolError;
 use drive::contract::DataContract;
@@ -206,16 +207,7 @@ impl Platform {
 
         // TODO: Add created and updated at to DPNS contract
 
-        let document = ExtendedDocument {
-            protocol_version: PROTOCOL_VERSION,
-            id: Identifier::new(DPNS_DASH_TLD_DOCUMENT_ID),
-            document_type_name: "domain".to_string(),
-            revision: 0,
-            data_contract_id: contract.id,
-            owner_id: contract.owner_id,
-            created_at: None,
-            updated_at: None,
-            data: json!({
+        let properties_json = json!({
                 "label": domain,
                 "normalizedLabel": domain,
                 "normalizedParentDomainName": "",
@@ -226,10 +218,24 @@ impl Platform {
                 "subdomainRules": {
                     "allowSubdomains": true,
                 }
-            }),
+        });
+
+        let document = ExtendedDocument {
+            protocol_version: PROTOCOL_VERSION,
+            document_type_name: "domain".to_string(),
+            data_contract_id: contract.id,
             data_contract: contract.clone(),
             metadata: None,
             entropy: [0; 32],
+            document: Document {
+                id: DPNS_DASH_TLD_DOCUMENT_ID,
+                revision: None,
+                owner_id: contract.owner_id.to_buffer(),
+                created_at: None,
+                updated_at: None,
+                properties: BTreeMap::from_json_value(properties_json)
+                    .map_err(ProtocolError::ValueError)?,
+            },
         };
 
         let document_stub_properties_value: Value = cbor!({

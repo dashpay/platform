@@ -1,3 +1,4 @@
+use platform_value::Value;
 use std::collections::HashMap;
 
 use crate::document::{Document, ExtendedDocument};
@@ -110,9 +111,15 @@ fn document_from_transition_replace(
     document_replace_transition: &DocumentReplaceTransition,
     state_transition: &DocumentsBatchTransition,
     created_at: TimestampMillis,
-) -> ExtendedDocument {
+) -> Result<ExtendedDocument, ProtocolError> {
     // TODO cloning is costly. Probably the [`Document`] should have properties of type `Cow<'a, K>`
-    ExtendedDocument {
+    let property_value: Value = document_replace_transition
+        .data
+        .as_ref()
+        .unwrap_or(&serde_json::Value::Null)
+        .clone()
+        .into();
+    Ok(ExtendedDocument {
         protocol_version: state_transition.protocol_version,
         document_type_name: document_replace_transition.base.document_type.clone(),
         data_contract_id: document_replace_transition.base.data_contract_id,
@@ -126,17 +133,14 @@ fn document_from_transition_replace(
         document: Document {
             id: document_replace_transition.base.id.buffer,
             owner_id: state_transition.owner_id.buffer,
-            properties: document_replace_transition
-                .data
-                .as_ref()
-                .unwrap_or(&serde_json::Value::Null)
-                .clone()
-                .into(),
+            properties: property_value
+                .into_btree_map()
+                .map_err(ProtocolError::ValueError)?,
             revision: Some(document_replace_transition.revision),
             created_at: Some(created_at),
             updated_at: document_replace_transition.updated_at,
         },
-    }
+    })
 }
 
 #[cfg(test)]

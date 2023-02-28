@@ -1,4 +1,4 @@
-use crate::DocumentInStateTransitionWasm;
+use crate::ExtendedDocumentWasm;
 use dpp::document::ExtendedDocument;
 use itertools::Itertools;
 use thiserror::Error;
@@ -9,7 +9,7 @@ use super::*;
 #[derive(Error, Debug)]
 #[error("Documents have mixed owner ids")]
 pub struct MismatchOwnerIdsError {
-    documents: Vec<DocumentInStateTransitionWasm>,
+    documents: Vec<ExtendedDocumentWasm>,
 }
 
 #[wasm_bindgen]
@@ -32,7 +32,7 @@ impl MismatchOwnerIdsError {
         Self {
             documents: documents
                 .into_iter()
-                .map(DocumentInStateTransitionWasm::from)
+                .map(ExtendedDocumentWasm::from)
                 .collect_vec(),
         }
     }

@@ -1,11 +1,14 @@
 use dpp::dashcore::anyhow::Context;
+use dpp::document::document_transition::document_base_transition::JsonValue;
 use dpp::document::{
     extended_document_property_names, ExtendedDocument, EXTENDED_DOCUMENT_IDENTIFIER_FIELDS,
 };
+use dpp::platform_value::Value;
 use dpp::prelude::{Identifier, Revision};
 use dpp::util::json_schema::JsonSchemaExt;
 use dpp::util::json_value::{JsonValueExt, ReplaceWith};
 use dpp::util::string_encoding::Encoding;
+use dpp::ProtocolError;
 use serde::{Deserialize, Serialize};
 use std::convert::TryInto;
 use wasm_bindgen::prelude::*;
@@ -22,15 +25,15 @@ use crate::{DataContractWasm, MetadataWasm};
 
 #[wasm_bindgen(js_name=DocumentInStateTransition)]
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct DocumentInStateTransitionWasm(pub(crate) ExtendedDocument);
+pub struct ExtendedDocumentWasm(pub(crate) ExtendedDocument);
 
 #[wasm_bindgen(js_class=DocumentInStateTransition)]
-impl DocumentInStateTransitionWasm {
+impl ExtendedDocumentWasm {
     #[wasm_bindgen(constructor)]
     pub fn new(
         js_raw_document: JsValue,
         js_data_contract: &DataContractWasm,
-    ) -> Result<DocumentInStateTransitionWasm, JsValue> {
+    ) -> Result<ExtendedDocumentWasm, JsValue> {
         let mut raw_document = with_serde_to_json_value(&js_raw_document)?;
 
         let document_type = raw_document
@@ -160,9 +163,9 @@ impl DocumentInStateTransitionWasm {
                 return self.0.set(&path, new_value).with_js_error();
             } else if property_path.starts_with(&path) {
                 let (_, suffix) = property_path.split_at(path.len() + 1);
-                let mut value = js_value_to_set.with_serde_to_json_value()?;
+                let mut value: Value = js_value_to_set.with_serde_to_json_value()?.into();
 
-                if value.get_value(suffix).is_ok() {
+                if value(suffix).is_ok() {
                     let id_string = value
                         .remove_path_into::<String>(suffix)
                         .with_context(|| format!("unable convert `{path}` into string"))
@@ -179,7 +182,7 @@ impl DocumentInStateTransitionWasm {
             }
         }
 
-        let value = js_value_to_set.with_serde_to_json_value()?;
+        let value: Value = js_value_to_set.with_serde_to_json_value()?.into();
         self.0.set(&path, value).with_js_error()
     }
 
@@ -190,21 +193,24 @@ impl DocumentInStateTransitionWasm {
         if let Some(value) = self.0.get(&path) {
             match binary_type {
                 BinaryType::Identifier => {
-                    if let Ok(bytes) = serde_json::from_value::<Vec<u8>>(value.to_owned()) {
+                    if let Ok(bytes) = value.to_system_bytes() {
                         let id: IdentifierWrapper = Identifier::from_bytes(&bytes).unwrap().into();
 
                         return id.into();
                     }
                 }
                 BinaryType::Buffer => {
-                    if let Ok(bytes) = serde_json::from_value::<Vec<u8>>(value.to_owned()) {
+                    if let Ok(bytes) = value.to_system_bytes() {
                         return Buffer::from_bytes(&bytes).into();
                     }
                 }
                 BinaryType::None => {
                     let serializer = serde_wasm_bindgen::Serializer::json_compatible();
-                    if let Ok(js_value) = value.serialize(&serializer) {
-                        return js_value;
+                    let json_value: Option<JsonValue> = value.clone().try_into().ok();
+                    if let Some(json_value) = json_value {
+                        if let Ok(js_value) = json_value.serialize(&serializer) {
+                            return js_value;
+                        }
                     }
                 }
             }
@@ -215,22 +221,22 @@ impl DocumentInStateTransitionWasm {
 
     #[wasm_bindgen(js_name=setCreatedAt)]
     pub fn set_created_at(&mut self, ts: f64) {
-        self.0.created_at = Some(ts as u64);
+        self.0.document.created_at = Some(ts as u64);
     }
 
     #[wasm_bindgen(js_name=setUpdatedAt)]
     pub fn set_updated_at(&mut self, ts: f64) {
-        self.0.updated_at = Some(ts as u64);
+        self.0.document.updated_at = Some(ts as u64);
     }
 
     #[wasm_bindgen(js_name=getCreatedAt)]
     pub fn get_created_at(&self) -> Option<f64> {
-        self.0.created_at.map(|v| v as f64)
+        self.0.document.created_at.map(|v| v as f64)
     }
 
     #[wasm_bindgen(js_name=getUpdatedAt)]
     pub fn get_updated_at(&self) -> Option<f64> {
-        self.0.updated_at.map(|v| v as f64)
+        self.0.document.updated_at.map(|v| v as f64)
     }
 
     #[wasm_bindgen(js_name=getMetadata)]
@@ -311,7 +317,7 @@ impl DocumentInStateTransitionWasm {
     }
 }
 
-impl DocumentInStateTransitionWasm {
+impl ExtendedDocumentWasm {
     fn get_binary_type_of_path(&self, path: &String) -> BinaryType {
         let maybe_binary_properties = self
             .0
@@ -330,8 +336,8 @@ impl DocumentInStateTransitionWasm {
     }
 }
 
-impl From<ExtendedDocument> for DocumentInStateTransitionWasm {
+impl From<ExtendedDocument> for ExtendedDocumentWasm {
     fn from(d: ExtendedDocument) -> Self {
-        DocumentInStateTransitionWasm(d)
+        ExtendedDocumentWasm(d)
     }
 }

@@ -76,7 +76,7 @@ fn should_return_valid_result_if_compound_index_contains_nof_fields() {
         mut documents,
     } = setup_test();
     let mut document = documents.remove(8);
-    document.properties_as_mut() = *BTreeMap::new();
+    document.properties_as_mut().clear();
 
     let documents_for_transition = vec![document];
     let raw_document_transitions: Vec<JsonValue> =

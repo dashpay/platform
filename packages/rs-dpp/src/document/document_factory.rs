@@ -183,8 +183,11 @@ where
             return Err(DocumentError::NoDocumentsSuppliedError.into());
         }
 
-        let is_the_same =
-            Self::is_ownership_the_same(flattened_documents_iter.clone().map(|d| &d.owner_id()));
+        let is_the_same = Self::is_ownership_the_same(
+            flattened_documents_iter
+                .clone()
+                .map(|extended_document| &extended_document.document.owner_id),
+        );
         if !is_the_same {
             return Err(DocumentError::MismatchOwnerIdsError {
                 documents: documents.into_iter().flat_map(|(_, v)| v).collect(),
@@ -397,7 +400,7 @@ where
         data.into_iter().next().is_none()
     }
 
-    fn is_ownership_the_same<'a>(ids: impl IntoIterator<Item = &'a Identifier>) -> bool {
+    fn is_ownership_the_same<'a>(ids: impl IntoIterator<Item = &'a [u8; 32]>) -> bool {
         ids.into_iter().all_equal()
     }
 }

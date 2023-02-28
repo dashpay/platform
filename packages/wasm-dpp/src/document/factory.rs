@@ -15,8 +15,7 @@ use crate::{
     identifier::identifier_from_js_value,
     state_repository::{ExternalStateRepositoryLike, ExternalStateRepositoryLikeWrapper},
     utils::{ToSerdeJSONExt, WithJsError},
-    DataContractWasm, DocumentInStateTransitionWasm, DocumentsBatchTransitionWASM,
-    DocumentsContainer,
+    DataContractWasm, DocumentsBatchTransitionWASM, DocumentsContainer, ExtendedDocumentWasm,
 };
 
 use super::validator::DocumentValidatorWasm;
@@ -24,9 +23,9 @@ use super::validator::DocumentValidatorWasm;
 #[wasm_bindgen(js_name=DocumentTransitions)]
 #[derive(Debug, Default)]
 pub struct DocumentTransitions {
-    create: Vec<DocumentInStateTransitionWasm>,
-    replace: Vec<DocumentInStateTransitionWasm>,
-    delete: Vec<DocumentInStateTransitionWasm>,
+    create: Vec<ExtendedDocumentWasm>,
+    replace: Vec<ExtendedDocumentWasm>,
+    delete: Vec<ExtendedDocumentWasm>,
 }
 
 #[wasm_bindgen(js_class=DocumentTransitions)]
@@ -37,17 +36,17 @@ impl DocumentTransitions {
     }
 
     #[wasm_bindgen(js_name = "addTransitionCreate")]
-    pub fn add_transition_create(&mut self, transition: DocumentInStateTransitionWasm) {
+    pub fn add_transition_create(&mut self, transition: ExtendedDocumentWasm) {
         self.create.push(transition)
     }
 
     #[wasm_bindgen(js_name = "addTransitionReplace")]
-    pub fn add_transition_replace(&mut self, transition: DocumentInStateTransitionWasm) {
+    pub fn add_transition_replace(&mut self, transition: ExtendedDocumentWasm) {
         self.replace.push(transition)
     }
 
     #[wasm_bindgen(js_name = "addTransitionDelete")]
-    pub fn add_transition_delete(&mut self, transition: DocumentInStateTransitionWasm) {
+    pub fn add_transition_delete(&mut self, transition: ExtendedDocumentWasm) {
         self.delete.push(transition)
     }
 }
@@ -83,7 +82,7 @@ impl DocumentFactoryWASM {
         js_owner_id: &JsValue,
         document_type: &str,
         data: &JsValue,
-    ) -> Result<DocumentInStateTransitionWasm, JsValue> {
+    ) -> Result<ExtendedDocumentWasm, JsValue> {
         let owner_id = identifier_from_js_value(js_owner_id)?;
         let dynamic_data = data.with_serde_to_json_value()?;
         let document = self
@@ -126,7 +125,7 @@ impl DocumentFactoryWASM {
         &self,
         raw_document_js: JsValue,
         options: JsValue,
-    ) -> Result<DocumentInStateTransitionWasm, JsValue> {
+    ) -> Result<ExtendedDocumentWasm, JsValue> {
         let mut raw_document = raw_document_js.with_serde_to_json_value()?;
         let options: FactoryOptions = if !options.is_undefined() && options.is_object() {
             let raw_options = options.with_serde_to_json_value()?;
@@ -169,7 +168,7 @@ impl DocumentFactoryWASM {
         &self,
         buffer: Vec<u8>,
         options: &JsValue,
-    ) -> Result<DocumentInStateTransitionWasm, JsValue> {
+    ) -> Result<ExtendedDocumentWasm, JsValue> {
         let options: FactoryOptions = if !options.is_undefined() && options.is_object() {
             let raw_options = options.with_serde_to_json_value()?;
             serde_json::from_value(raw_options).with_js_error()?
