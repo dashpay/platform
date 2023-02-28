@@ -59,7 +59,7 @@ pub fn validate_indices_are_backward_compatible(
 pub async fn validate_data_contract_update_transition_basic(
     state_repository: ExternalStateRepositoryLike,
     raw_parameters: JsValue,
-    execution_context: StateTransitionExecutionContextWasm,
+    execution_context: &StateTransitionExecutionContextWasm,
 ) -> Result<ValidationResultWasm, JsError> {
     let parameters: DataContractUpdateTransitionParameters =
         serde_wasm_bindgen::from_value(raw_parameters)?;

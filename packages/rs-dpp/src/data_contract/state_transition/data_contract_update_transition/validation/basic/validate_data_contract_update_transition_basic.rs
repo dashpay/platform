@@ -1,4 +1,4 @@
-use std::convert::{TryInto, TryFrom};
+use std::convert::{TryFrom, TryInto};
 
 use anyhow::anyhow;
 use anyhow::Context;
@@ -7,7 +7,6 @@ use lazy_static::lazy_static;
 use serde_json::{json, Value as JsonValue};
 use std::sync::Arc;
 
-use crate::{consensus::ConsensusError, state_transition::state_transition_execution_context::StateTransitionExecutionContext};
 use crate::{
     consensus::basic::BasicError,
     data_contract::{
@@ -20,6 +19,10 @@ use crate::{
     validation::{JsonSchemaValidator, SimpleValidationResult},
     version::ProtocolVersionValidator,
     DashPlatformProtocolInitError, ProtocolError,
+};
+use crate::{
+    consensus::ConsensusError,
+    state_transition::state_transition_execution_context::StateTransitionExecutionContext,
 };
 
 use super::schema_compatibility_validator::validate_schema_compatibility;
