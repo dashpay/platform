@@ -32,13 +32,9 @@
 //! This module defines general, commonly used functions in Drive.
 //!
 
-mod data_contract_create_transition;
-mod data_contract_update_transition;
-mod identity_create_transition;
-mod identity_update_transition;
-mod identity_top_up_transition;
-mod identity_credit_withdrawal_transition;
 mod document;
+mod identity;
+mod contract;
 
 use crate::drive::batch::DriveOperation;
 use crate::error::Error;
