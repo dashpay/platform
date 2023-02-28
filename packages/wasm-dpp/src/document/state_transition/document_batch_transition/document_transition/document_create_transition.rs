@@ -35,6 +35,12 @@ impl From<DocumentCreateTransition> for DocumentCreateTransitionWasm {
     }
 }
 
+impl From<DocumentCreateTransitionWasm> for DocumentCreateTransition {
+    fn from(v: DocumentCreateTransitionWasm) -> Self {
+        v.inner
+    }
+}
+
 #[wasm_bindgen(js_class=DocumentCreateTransition)]
 impl DocumentCreateTransitionWasm {
     #[wasm_bindgen(constructor)]
@@ -194,7 +200,7 @@ impl DocumentCreateTransitionWasm {
             .with_js_error()?;
 
         to_object(
-            &self.inner,
+            self.inner.to_object().with_js_error()?,
             options,
             identifiers_paths
                 .into_iter()

@@ -1,5 +1,5 @@
 use dpp::dashcore::anyhow::Context;
-use dpp::prelude::Identifier;
+use dpp::prelude::{Identifier, Revision};
 use dpp::util::json_schema::JsonSchemaExt;
 use dpp::util::json_value::{JsonValueExt, ReplaceWith};
 use dpp::util::string_encoding::Encoding;
@@ -11,9 +11,9 @@ use dpp::document::{property_names, Document, IDENTIFIER_FIELDS};
 
 use crate::buffer::Buffer;
 use crate::errors::RustConversionError;
-use crate::identifier::IdentifierWrapper;
+use crate::identifier::{identifier_from_js_value, IdentifierWrapper};
 use crate::lodash::lodash_set;
-use crate::utils::WithJsError;
+use crate::utils::{try_to_u64, WithJsError};
 use crate::utils::{with_serde_to_json_value, ToSerdeJSONExt};
 use crate::with_js_error;
 use crate::{DataContractWasm, MetadataWasm};
@@ -107,6 +107,13 @@ impl DocumentWasm {
         self.0.data_contract_id.into()
     }
 
+    #[wasm_bindgen(js_name=setDataContractId)]
+    pub fn set_data_contract_id(&mut self, js_data_contract_id: &JsValue) -> Result<(), JsValue> {
+        let data_contract_id = identifier_from_js_value(js_data_contract_id)?;
+        self.0.data_contract_id = data_contract_id;
+        Ok(())
+    }
+
     #[wasm_bindgen(js_name=getDataContract)]
     pub fn get_data_contract(&self) -> DataContractWasm {
         self.0.data_contract.clone().into()
@@ -190,11 +197,16 @@ impl DocumentWasm {
 
     #[wasm_bindgen(js_name=set)]
     pub fn set(&mut self, path: String, js_value_to_set: JsValue) -> Result<(), JsValue> {
+        let mut value_to_set = if js_value_to_set.is_null() || js_value_to_set.is_undefined() {
+            serde_json::Value::Null
+        } else {
+            js_value_to_set.with_serde_to_json_value()?
+        };
+
         let (identifier_paths, _) = self.0.get_identifiers_and_binary_paths().with_js_error()?;
         for property_path in identifier_paths {
             if property_path == path {
-                let id_value = js_value_to_set.with_serde_to_json_value()?;
-                let id_string = id_value
+                let id_string = value_to_set
                     .as_str()
                     .context("the value must be a string")
                     .with_js_error()?;
@@ -204,10 +216,9 @@ impl DocumentWasm {
                 return self.0.set(&path, new_value).with_js_error();
             } else if property_path.starts_with(&path) {
                 let (_, suffix) = property_path.split_at(path.len() + 1);
-                let mut value = js_value_to_set.with_serde_to_json_value()?;
 
-                if value.get_value(suffix).is_ok() {
-                    let id_string = value
+                if value_to_set.get_value(suffix).is_ok() {
+                    let id_string = value_to_set
                         .remove_path_into::<String>(suffix)
                         .with_context(|| format!("unable convert `{path}` into string"))
                         .map_err(|e| format!("{e:#}"))?;
@@ -216,15 +227,16 @@ impl DocumentWasm {
                             .with_js_error()?
                             .into();
                     let new_value = serde_json::to_value(id.inner().as_bytes()).with_js_error()?;
-                    value.insert_with_path(suffix, new_value).with_js_error()?;
+                    value_to_set
+                        .insert_with_path(suffix, new_value)
+                        .with_js_error()?;
 
-                    return self.0.set(&path, value).with_js_error();
+                    return self.0.set(&path, value_to_set).with_js_error();
                 }
             }
         }
 
-        let value = js_value_to_set.with_serde_to_json_value()?;
-        self.0.set(&path, value).with_js_error()
+        self.0.set(&path, value_to_set).with_js_error()
     }
 
     #[wasm_bindgen(js_name=get)]
@@ -258,13 +270,21 @@ impl DocumentWasm {
     }
 
     #[wasm_bindgen(js_name=setCreatedAt)]
-    pub fn set_created_at(&mut self, ts: f64) {
+    pub fn set_created_at(&mut self, number: JsValue) -> Result<(), JsValue> {
+        let ts = try_to_u64(number)
+            .context("setting createdAt in Document")
+            .with_js_error()?;
         self.0.created_at = Some(ts as i64);
+        Ok(())
     }
 
     #[wasm_bindgen(js_name=setUpdatedAt)]
-    pub fn set_updated_at(&mut self, ts: f64) {
+    pub fn set_updated_at(&mut self, number: JsValue) -> Result<(), JsValue> {
+        let ts = try_to_u64(number)
+            .context("setting updatedAt in Document")
+            .with_js_error()?;
         self.0.updated_at = Some(ts as i64);
+        Ok(())
     }
 
     #[wasm_bindgen(js_name=getCreatedAt)]
@@ -347,7 +367,7 @@ impl DocumentWasm {
     }
 
     #[wasm_bindgen(js_name=clone)]
-    pub fn deep_clone(&self) -> Self {
+    pub fn deep_clone(&self) -> DocumentWasm {
         self.clone()
     }
 }
@@ -374,5 +394,11 @@ impl DocumentWasm {
 impl From<Document> for DocumentWasm {
     fn from(d: Document) -> Self {
         DocumentWasm(d)
+    }
+}
+
+impl From<DocumentWasm> for Document {
+    fn from(d: DocumentWasm) -> Self {
+        d.0
     }
 }
