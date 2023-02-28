@@ -48,7 +48,7 @@ use crate::data_contract::document_type::{encode_unsigned_integer, DocumentType}
 use crate::data_contract::errors::DataContractError;
 
 use crate::document::errors::DocumentError;
-use crate::document::DocumentInStateTransition;
+use crate::document::ExtendedDocument;
 use crate::identifier::Identifier;
 use crate::identity::TimestampMillis;
 use crate::prelude::Revision;
@@ -354,11 +354,11 @@ impl fmt::Display for Document {
     }
 }
 
-impl TryFrom<DocumentInStateTransition> for Document {
+impl TryFrom<ExtendedDocument> for Document {
     type Error = ProtocolError;
 
-    fn try_from(value: DocumentInStateTransition) -> Result<Self, Self::Error> {
-        let DocumentInStateTransition {
+    fn try_from(value: ExtendedDocument) -> Result<Self, Self::Error> {
+        let ExtendedDocument {
             id,
             revision,
             owner_id,

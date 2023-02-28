@@ -36,7 +36,7 @@ pub const IDENTIFIER_FIELDS: [&str; 3] = [
 
 /// The document object represents the data provided by the platform in response to a query.
 #[derive(Serialize, Deserialize, Debug, Clone, Default)]
-pub struct DocumentInStateTransition {
+pub struct ExtendedDocument {
     #[serde(rename = "$protocolVersion")]
     pub protocol_version: u32,
     #[serde(rename = "$id")]
@@ -64,7 +64,7 @@ pub struct DocumentInStateTransition {
     pub entropy: [u8; 32],
 }
 
-impl DocumentInStateTransition {
+impl ExtendedDocument {
     /// Creates a Document from the json form. Json format contains strings instead of
     /// arrays of u8 (bytes)
     pub fn from_json_document(
@@ -268,9 +268,7 @@ mod test {
     use anyhow::Result;
     use serde_json::{json, Value};
 
-    use crate::document::document_transition::document_in_state_transition::{
-        DocumentInStateTransition, IDENTIFIER_FIELDS,
-    };
+    use crate::document::extended_document::{ExtendedDocument, IDENTIFIER_FIELDS};
 
     use crate::data_contract::DataContract;
     use crate::identifier::Identifier;
@@ -314,7 +312,7 @@ mod test {
     fn test_document_deserialize() -> Result<()> {
         init();
         let document_json = get_data_from_file("src/tests/payloads/document_dpns.json")?;
-        let doc = serde_json::from_str::<DocumentInStateTransition>(&document_json)?;
+        let doc = serde_json::from_str::<ExtendedDocument>(&document_json)?;
         assert_eq!(doc.document_type, "domain");
         assert_eq!(doc.protocol_version, 0);
         assert_eq!(
@@ -354,7 +352,7 @@ mod test {
         let init_doc = new_example_document();
         let buffer_document = init_doc.to_buffer().expect("no errors");
 
-        let doc = DocumentInStateTransition::from_buffer(buffer_document)
+        let doc = ExtendedDocument::from_buffer(buffer_document)
             .expect("document should be created from buffer");
 
         assert_eq!(init_doc.created_at, doc.created_at);
@@ -368,7 +366,7 @@ mod test {
     fn test_to_object() {
         init();
         let document_json = get_data_from_file("src/tests/payloads/document_dpns.json").unwrap();
-        let document = serde_json::from_str::<DocumentInStateTransition>(&document_json).unwrap();
+        let document = serde_json::from_str::<ExtendedDocument>(&document_json).unwrap();
         let document_object = document.to_object().unwrap();
 
         for property in IDENTIFIER_FIELDS {
@@ -386,7 +384,7 @@ mod test {
         init();
 
         let document_json = get_data_from_file("src/tests/payloads/document_dpns.json")?;
-        let document = serde_json::from_str::<DocumentInStateTransition>(&document_json)?;
+        let document = serde_json::from_str::<ExtendedDocument>(&document_json)?;
 
         serde_json::to_string(&document)?;
         Ok(())
@@ -397,7 +395,7 @@ mod test {
         init();
 
         let document_json = get_data_from_file("src/tests/payloads/document_dpns.json")?;
-        serde_json::from_str::<DocumentInStateTransition>(&document_json)?;
+        serde_json::from_str::<ExtendedDocument>(&document_json)?;
         Ok(())
     }
 
@@ -405,7 +403,7 @@ mod test {
     fn deserialize_js_cpp_cbor() -> Result<()> {
         let document_cbor = document_cbor_bytes();
 
-        let document = DocumentInStateTransition::from_buffer(document_cbor)?;
+        let document = ExtendedDocument::from_buffer(document_cbor)?;
 
         assert_eq!(document.protocol_version, 1);
         assert_eq!(
@@ -440,7 +438,7 @@ mod test {
     #[test]
     fn to_buffer_serialize_to_the_same_format_as_js_dpp() -> Result<()> {
         let document_cbor = document_cbor_bytes();
-        let document = DocumentInStateTransition::from_buffer(&document_cbor)?;
+        let document = ExtendedDocument::from_buffer(&document_cbor)?;
 
         let buffer = document.to_buffer()?;
 
@@ -467,8 +465,7 @@ mod test {
             "alphaIdentifier" : alpha_value,
         });
 
-        let document =
-            DocumentInStateTransition::from_raw_document(raw_document, data_contract).unwrap();
+        let document = ExtendedDocument::from_raw_document(raw_document, data_contract).unwrap();
         let json_document = document.to_json().expect("no errors");
 
         assert_eq!(
@@ -497,8 +494,8 @@ mod test {
         hex::decode("01a7632469645820715d3d65756024a2de0ab1b2bb1e83b5ef297bf0c6fa616aad5c887e4f10def9646e616d656543757469656524747970656c6e696365446f63756d656e7468246f776e657249645820b6bf374d302fbe2b511b43e23d033f965e2e33a024c7419db07533d4ba7d708e69247265766973696f6e016a246372656174656441741b00000181b40fa1fb6f2464617461436f6e7472616374496458207abc5f9ab4bcd0612ed6cacec204dd6d7411a56127d4248af1eadacb93525da2").unwrap()
     }
 
-    fn new_example_document() -> DocumentInStateTransition {
-        DocumentInStateTransition {
+    fn new_example_document() -> ExtendedDocument {
+        ExtendedDocument {
             id: Identifier::from_bytes(&generate_random_identifier()).unwrap(),
             owner_id: Identifier::from_bytes(&generate_random_identifier()).unwrap(),
             data_contract_id: Identifier::from_bytes(&generate_random_identifier()).unwrap(),

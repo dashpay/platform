@@ -25,14 +25,14 @@ use crate::{
         utils::{generate_random_identifier_struct, new_block_header},
     }, validation::ValidationResult,
 };
-use crate::document::{Document, DocumentInStateTransition};
+use crate::document::{Document, ExtendedDocument};
 use crate::identity::TimestampMillis;
 use crate::tests::fixtures::get_documents_in_state_transitions_fixture;
 
 struct TestData {
     owner_id: Identifier,
     data_contract: DataContract,
-    documents_in_state_transitions: Vec<DocumentInStateTransition>,
+    documents_in_state_transitions: Vec<ExtendedDocument>,
     document_transitions: Vec<DocumentTransition>,
     state_transition: DocumentsBatchTransition,
     state_repository_mock: MockStateRepositoryLike,
@@ -213,7 +213,7 @@ async fn should_return_invalid_result_if_document_transition_with_action_replace
         .collect::<Result<Vec<Document>, ProtocolError>>()
         .expect("expected to convert to documents");
 
-    let mut replace_document = DocumentInStateTransition::from_raw_document(
+    let mut replace_document = ExtendedDocument::from_raw_document(
         documents_in_state_transitions[0].to_object().unwrap(),
         data_contract.clone(),
     )
@@ -272,7 +272,7 @@ async fn should_return_invalid_result_if_document_transition_with_action_replace
         mut state_repository_mock,
         ..
     } = setup_test();
-    let mut replace_document = DocumentInStateTransition::from_raw_document(
+    let mut replace_document = ExtendedDocument::from_raw_document(
         documents[0].to_object().unwrap(),
         data_contract.clone(),
     )

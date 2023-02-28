@@ -12,7 +12,6 @@ use document_base_transition::DocumentBaseTransition;
 pub mod document_base_transition;
 pub mod document_create_transition;
 pub mod document_delete_transition;
-pub mod document_in_state_transition;
 pub mod document_replace_transition;
 
 use crate::identity::TimestampMillis;

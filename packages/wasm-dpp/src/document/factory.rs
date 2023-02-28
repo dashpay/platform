@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use dpp::document::document_transition::document_in_state_transition;
+use dpp::document::document_transition::extended_document;
 use dpp::{
     document::{
         document_factory::{DocumentFactory, FactoryOptions},
@@ -139,10 +139,7 @@ impl DocumentFactoryWASM {
         // When `Identifier` crosses the WASM boundary, it becomes a String. From perspective of JS
         // `Identifier` and `Buffer` are used interchangeably, so we we can expect the replacing may fail when `Buffer` is provided
         let _ = raw_document
-            .replace_identifier_paths(
-                document_in_state_transition::IDENTIFIER_FIELDS,
-                ReplaceWith::Bytes,
-            )
+            .replace_identifier_paths(extended_document::IDENTIFIER_FIELDS, ReplaceWith::Bytes)
             .with_js_error();
 
         let mut document = self

@@ -12,14 +12,14 @@ use crate::{consensus::ConsensusError, data_contract::DataContract, document::{
     },
     utils::generate_random_identifier_struct,
 }, util::string_encoding::Encoding, validation::ValidationResult};
-use crate::document::{Document, DocumentInStateTransition};
+use crate::document::{Document, ExtendedDocument};
 use crate::tests::fixtures::get_documents_in_state_transitions_fixture;
 
 struct TestData {
     owner_id: Identifier,
     data_contract: DataContract,
     documents: Vec<Document>,
-    documents_in_state_transitions: Vec<DocumentInStateTransition>,
+    documents_in_state_transitions: Vec<ExtendedDocument>,
     document_transitions: Vec<DocumentTransition>,
 }
 

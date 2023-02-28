@@ -1,4 +1,4 @@
-use dpp::document::DocumentInStateTransition;
+use dpp::document::ExtendedDocument;
 use dpp::identity::KeyID;
 use dpp::{
     document::{
@@ -35,9 +35,9 @@ pub struct DocumentsBatchTransitionWASM(DocumentsBatchTransition);
 #[derive(Debug, Default)]
 #[wasm_bindgen(js_name=DocumentsContainer)]
 pub struct DocumentsContainer {
-    create: Vec<DocumentInStateTransition>,
-    replace: Vec<DocumentInStateTransition>,
-    delete: Vec<DocumentInStateTransition>,
+    create: Vec<ExtendedDocument>,
+    replace: Vec<ExtendedDocument>,
+    delete: Vec<ExtendedDocument>,
 }
 
 #[derive(Debug, Serialize, Deserialize, Default, Clone, Copy)]
@@ -79,15 +79,15 @@ impl DocumentsContainer {
 }
 
 impl DocumentsContainer {
-    pub fn take_documents_create(&mut self) -> Vec<DocumentInStateTransition> {
+    pub fn take_documents_create(&mut self) -> Vec<ExtendedDocument> {
         std::mem::take(&mut self.create)
     }
 
-    pub fn take_documents_replace(&mut self) -> Vec<DocumentInStateTransition> {
+    pub fn take_documents_replace(&mut self) -> Vec<ExtendedDocument> {
         std::mem::take(&mut self.replace)
     }
 
-    pub fn take_documents_delete(&mut self) -> Vec<DocumentInStateTransition> {
+    pub fn take_documents_delete(&mut self) -> Vec<ExtendedDocument> {
         std::mem::take(&mut self.delete)
     }
 }

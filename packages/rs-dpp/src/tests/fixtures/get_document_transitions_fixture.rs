@@ -2,7 +2,7 @@ use std::collections::HashMap;
 use std::sync::Arc;
 
 use crate::document::fetch_and_validate_data_contract::DataContractFetcherAndValidator;
-use crate::document::DocumentInStateTransition;
+use crate::document::ExtendedDocument;
 use crate::document::{
     document_factory::DocumentFactory,
     document_transition::{Action, DocumentTransition},
@@ -14,7 +14,7 @@ use crate::version::LATEST_VERSION;
 use super::{get_data_contract_fixture, get_document_validator_fixture};
 
 pub fn get_document_transitions_fixture(
-    documents: impl IntoIterator<Item = (Action, Vec<DocumentInStateTransition>)>,
+    documents: impl IntoIterator<Item = (Action, Vec<ExtendedDocument>)>,
 ) -> Vec<DocumentTransition> {
     let document_factory = DocumentFactory::new(
         LATEST_VERSION,
@@ -23,7 +23,7 @@ pub fn get_document_transitions_fixture(
         None,
     );
 
-    let mut documents_collected: HashMap<Action, Vec<DocumentInStateTransition>> =
+    let mut documents_collected: HashMap<Action, Vec<ExtendedDocument>> =
         documents.into_iter().collect();
     let create_documents = documents_collected
         .remove(&Action::Create)

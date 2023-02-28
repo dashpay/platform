@@ -36,7 +36,7 @@ use dpp::ProtocolError;
 use drive::contract::DataContract;
 use drive::dpp::data_contract::DriveContractExt;
 use drive::dpp::document::Document;
-use drive::dpp::document::DocumentInStateTransition;
+use drive::dpp::document::ExtendedDocument;
 use drive::dpp::identity::{
     Identity, IdentityPublicKey, KeyType, Purpose, SecurityLevel, TimestampMillis,
 };
@@ -206,7 +206,7 @@ impl Platform {
 
         // TODO: Add created and updated at to DPNS contract
 
-        let document = DocumentInStateTransition {
+        let document = ExtendedDocument {
             protocol_version: PROTOCOL_VERSION,
             id: Identifier::new(DPNS_DASH_TLD_DOCUMENT_ID),
             document_type: "domain".to_string(),

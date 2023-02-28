@@ -13,12 +13,12 @@ use crate::{
     util::json_value::JsonValueExt,
     validation::ValidationResult,
 };
-use crate::document::DocumentInStateTransition;
+use crate::document::ExtendedDocument;
 use crate::tests::fixtures::get_documents_in_state_transitions_fixture;
 
 struct TestData {
     data_contract: DataContract,
-    documents: Vec<DocumentInStateTransition>,
+    documents: Vec<ExtendedDocument>,
 }
 
 fn setup_test() -> TestData {

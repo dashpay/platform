@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 
-use crate::document::{Document, DocumentInStateTransition};
+use crate::document::{Document, ExtendedDocument};
 use crate::prelude::TimestampMillis;
 use crate::{
     document::errors::DocumentError, prelude::Identifier, state_repository::StateRepositoryLike,
@@ -110,9 +110,9 @@ fn document_from_transition_replace(
     document_replace_transition: &DocumentReplaceTransition,
     state_transition: &DocumentsBatchTransition,
     created_at: TimestampMillis,
-) -> DocumentInStateTransition {
+) -> ExtendedDocument {
     // TODO cloning is costly. Probably the [`Document`] should have properties of type `Cow<'a, K>`
-    DocumentInStateTransition {
+    ExtendedDocument {
         protocol_version: state_transition.protocol_version,
         id: document_replace_transition.base.id,
         document_type: document_replace_transition.base.document_type.clone(),

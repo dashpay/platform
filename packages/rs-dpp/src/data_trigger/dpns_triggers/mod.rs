@@ -2,7 +2,7 @@ use anyhow::Context;
 use anyhow::{anyhow, bail};
 use serde_json::{json, Value as JsonValue};
 
-use crate::document::{Document, DocumentInStateTransition};
+use crate::document::{Document, ExtendedDocument};
 use crate::util::hash::hash;
 use crate::util::string_encoding::Encoding;
 use crate::{
@@ -132,7 +132,7 @@ where
         let parent_domain_label = parent_domain_segments.next().unwrap().to_string();
         let grand_parent_domain_name = parent_domain_segments.collect::<Vec<&str>>().join(".");
 
-        let documents: Vec<DocumentInStateTransition> = context
+        let documents: Vec<ExtendedDocument> = context
             .state_repository
             .fetch_documents(
                 &context.data_contract.id,

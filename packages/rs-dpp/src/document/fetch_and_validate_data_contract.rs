@@ -13,7 +13,7 @@ use crate::{
     ProtocolError,
 };
 
-use crate::document::document_transition::document_in_state_transition::property_names;
+use crate::document::extended_document::property_names;
 
 pub struct DataContractFetcherAndValidator<ST> {
     state_repository: Arc<ST>,

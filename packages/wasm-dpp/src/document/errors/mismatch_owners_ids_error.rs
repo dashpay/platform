@@ -1,5 +1,5 @@
 use crate::DocumentInStateTransitionWasm;
-use dpp::document::DocumentInStateTransition;
+use dpp::document::ExtendedDocument;
 use itertools::Itertools;
 use thiserror::Error;
 
@@ -28,7 +28,7 @@ impl MismatchOwnerIdsError {
 }
 
 impl MismatchOwnerIdsError {
-    pub fn from_documents(documents: Vec<DocumentInStateTransition>) -> MismatchOwnerIdsError {
+    pub fn from_documents(documents: Vec<ExtendedDocument>) -> MismatchOwnerIdsError {
         Self {
             documents: documents
                 .into_iter()

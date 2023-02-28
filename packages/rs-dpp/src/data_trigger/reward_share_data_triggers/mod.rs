@@ -142,7 +142,7 @@ mod test {
     use serde_json::json;
     use std::convert::TryInto;
 
-    use crate::document::{Document, DocumentInStateTransition};
+    use crate::document::{Document, ExtendedDocument};
     use crate::identity::Identity;
     use crate::{
         data_contract::DataContract,
@@ -165,7 +165,7 @@ mod test {
         top_level_identifier: Identifier,
         data_contract: DataContract,
         sml_store: SMLStore,
-        documents_in_state_transitions: Vec<DocumentInStateTransition>,
+        documents_in_state_transitions: Vec<ExtendedDocument>,
         document_transition: DocumentTransition,
         identity: Identity,
     }

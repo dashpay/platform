@@ -3,7 +3,7 @@ use std::sync::Arc;
 use getrandom::getrandom;
 use serde_json::json;
 
-use crate::document::DocumentInStateTransition;
+use crate::document::ExtendedDocument;
 use crate::{
     document::{
         document_factory::DocumentFactory,
@@ -33,9 +33,7 @@ impl Default for ParentDocumentOptions {
     }
 }
 
-pub fn get_dpns_parent_document_fixture(
-    options: ParentDocumentOptions,
-) -> DocumentInStateTransition {
+pub fn get_dpns_parent_document_fixture(options: ParentDocumentOptions) -> ExtendedDocument {
     let document_factory = DocumentFactory::new(
         LATEST_VERSION,
         get_document_validator_fixture(),

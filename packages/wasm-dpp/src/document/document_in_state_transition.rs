@@ -1,6 +1,6 @@
 use dpp::dashcore::anyhow::Context;
 use dpp::document::{
-    document_in_state_transition_property_names, DocumentInStateTransition,
+    document_in_state_transition_property_names, ExtendedDocument,
     DOCUMENT_IN_STATE_TRANSITION_IDENTIFIER_FIELDS,
 };
 use dpp::prelude::{Identifier, Revision};
@@ -23,7 +23,7 @@ use crate::{DataContractWasm, MetadataWasm};
 
 #[wasm_bindgen(js_name=DocumentInStateTransition)]
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct DocumentInStateTransitionWasm(pub(crate) DocumentInStateTransition);
+pub struct DocumentInStateTransitionWasm(pub(crate) ExtendedDocument);
 
 #[wasm_bindgen(js_class=DocumentInStateTransition)]
 impl DocumentInStateTransitionWasm {
@@ -56,11 +56,9 @@ impl DocumentInStateTransitionWasm {
             .with_js_error();
         // The binary paths are not being converted, because they always should be a `Buffer`. `Buffer` is always an Array
 
-        let document = DocumentInStateTransition::from_raw_document(
-            raw_document,
-            js_data_contract.to_owned().into(),
-        )
-        .with_js_error()?;
+        let document =
+            ExtendedDocument::from_raw_document(raw_document, js_data_contract.to_owned().into())
+                .with_js_error()?;
 
         Ok(document.into())
     }
@@ -333,8 +331,8 @@ impl DocumentInStateTransitionWasm {
     }
 }
 
-impl From<DocumentInStateTransition> for DocumentInStateTransitionWasm {
-    fn from(d: DocumentInStateTransition) -> Self {
+impl From<ExtendedDocument> for DocumentInStateTransitionWasm {
+    fn from(d: ExtendedDocument) -> Self {
         DocumentInStateTransitionWasm(d)
     }
 }

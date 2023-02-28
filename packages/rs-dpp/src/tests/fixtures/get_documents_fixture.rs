@@ -24,7 +24,7 @@ use super::get_document_validator_fixture;
 
 pub fn get_documents_fixture_with_owner_id_from_contract(
     data_contract: DataContract,
-) -> Result<Vec<DocumentInStateTransition>, ProtocolError> {
+) -> Result<Vec<ExtendedDocument>, ProtocolError> {
     let data_contract_fetcher_and_validator =
         DataContractFetcherAndValidator::new(Arc::new(MockStateRepositoryLike::new()));
     let factory = DocumentFactory::new(
@@ -47,7 +47,7 @@ pub fn get_documents_fixture(data_contract: DataContract) -> Result<Vec<Document
 
 pub fn get_documents_in_state_transitions_fixture(
     data_contract: DataContract,
-) -> Result<Vec<DocumentInStateTransition>, ProtocolError> {
+) -> Result<Vec<ExtendedDocument>, ProtocolError> {
     let data_contract_fetcher_and_validator =
         DataContractFetcherAndValidator::new(Arc::new(MockStateRepositoryLike::new()));
     let factory = DocumentFactory::new(
@@ -65,7 +65,7 @@ fn get_documents_in_state_transitions<ST: StateRepositoryLike>(
     factory: DocumentFactory<ST>,
     data_contract: DataContract,
     owner_id: Identifier,
-) -> Result<Vec<DocumentInStateTransition>, ProtocolError> {
+) -> Result<Vec<ExtendedDocument>, ProtocolError> {
     let documents = vec![
         factory.create_document_for_state_transition(
             data_contract.clone(),
