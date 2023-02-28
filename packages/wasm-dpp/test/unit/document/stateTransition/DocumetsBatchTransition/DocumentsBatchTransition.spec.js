@@ -9,7 +9,7 @@ const newDocumentsContainer = require('../../../../../lib/test/utils/newDocument
 
 let DocumentFactory;
 let DataContract;
-let Document;
+let DocumentInStateTransition;
 let DocumentValidator;
 let ProtocolVersionValidator;
 
@@ -25,7 +25,7 @@ describe('DocumentsBatchTransition', () => {
   beforeEach(async () => {
     ({
       ProtocolVersionValidator, DocumentValidator, DocumentFactory, DataContract,
-      Document,
+      DocumentInStateTransition,
     } = await loadWasmDpp());
   });
 
@@ -35,7 +35,7 @@ describe('DocumentsBatchTransition', () => {
 
     documentsJs = getDocumentsFixture(dataContractJs);
     documents = documentsJs.map((d) => {
-      const doc = new Document(d.toObject(), dataContract);
+      const doc = new DocumentInStateTransition(d.toObject(), dataContract);
       doc.setEntropy(d.entropy);
       return doc;
     });
