@@ -151,7 +151,7 @@ mod test {
 
         let state_transition_data = json!( {
                     "protocolVersion" :  PROTOCOL_VERSION,
-                    "entropy": data_contract.entropy(),
+                    "entropy": data_contract.entropy,
                     "dataContract": data_contract.to_object(false).unwrap(),
                 }
         );
@@ -195,7 +195,7 @@ mod test {
 
         let state_transition_data = json!( {
                     "protocolVersion" :  PROTOCOL_VERSION,
-                    "ownerId": data_contract.owner_id().as_bytes(),
+                    "ownerId": data_contract.owner_id.as_bytes(),
                     "transitions": raw_document_transitions,
                 }
         );

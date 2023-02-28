@@ -260,7 +260,7 @@ mod test {
             get_documents_fixture_with_owner_id_from_contract(data_contract.clone()).unwrap();
         let transitions = get_document_transitions_fixture([(Action::Create, documents)]);
         let documents_batch_transition = DocumentsBatchTransition {
-            owner_id: data_contract.owner_id().clone(),
+            owner_id: data_contract.owner_id.clone(),
             transitions,
             execution_context: execution_context_with_cost(40, 5),
             ..Default::default()
@@ -296,7 +296,7 @@ mod test {
             get_documents_fixture_with_owner_id_from_contract(data_contract.clone()).unwrap();
         let transitions = get_document_transitions_fixture([(Action::Create, documents)]);
         let documents_batch_transition = DocumentsBatchTransition {
-            owner_id: data_contract.owner_id().clone(),
+            owner_id: data_contract.owner_id.clone(),
             transitions,
             execution_context: execution_context_with_cost(40, 5),
             ..Default::default()
@@ -328,7 +328,7 @@ mod test {
         execution_context.enable_dry_run();
 
         let documents_batch_transition = DocumentsBatchTransition {
-            owner_id: data_contract.owner_id().clone(),
+            owner_id: data_contract.owner_id.clone(),
             transitions,
             execution_context,
             ..Default::default()
