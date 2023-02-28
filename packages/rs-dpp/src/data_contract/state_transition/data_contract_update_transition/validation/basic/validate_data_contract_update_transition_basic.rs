@@ -180,19 +180,6 @@ where
             return Ok(validation_result);
         }
 
-        // check indices are not changes
-        let new_documents = raw_data_contract
-            .get_value("documents")?
-            .as_object()
-            .ok_or_else(|| anyhow!("the 'documents' property is not an array"))?;
-        let result = validate_indices_are_backward_compatible(
-            existing_data_contract.documents(),
-            new_documents,
-        )?;
-        if !result.is_valid() {
-            return Ok(result);
-        }
-
         // Schema should be backward compatible
         let old_schema = existing_data_contract.documents();
         let new_schema = raw_data_contract.get_value("documents")?;
@@ -217,6 +204,23 @@ where
                     return Err(ProtocolError::ParsingError(e.to_string()))
                 }
             }
+        }
+
+        if !validation_result.is_valid() {
+            return Ok(validation_result);
+        }
+
+        // check indices are not changed
+        let new_documents = raw_data_contract
+            .get_value("documents")?
+            .as_object()
+            .ok_or_else(|| anyhow!("the 'documents' property is not an array"))?;
+        let result = validate_indices_are_backward_compatible(
+            existing_data_contract.documents(),
+            new_documents,
+        )?;
+        if !result.is_valid() {
+            return Ok(result);
         }
 
         Ok(validation_result)

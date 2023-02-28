@@ -45,6 +45,7 @@ describe('validateDataContractUpdateTransitionBasicFactory', () => {
   let DataContractValidator;
   let DataContractFactory;
   let DataContractImmutablePropertiesUpdateError;
+  let IncompatibleDataContractSchemaError;
   
   let validateStateTransition;
   let validateDataContractMock;
@@ -68,6 +69,7 @@ describe('validateDataContractUpdateTransitionBasicFactory', () => {
       DataContractValidator,
       DataContractFactory,
       DataContractImmutablePropertiesUpdateError,
+      IncompatibleDataContractSchemaError,
     } = await loadWasmDpp());
   });
 
@@ -234,55 +236,54 @@ describe('validateDataContractUpdateTransitionBasicFactory', () => {
       expect(error.getParams().missingProperty).to.equal('dataContract');
     });
 
-  //   it('should have no existing documents removed', async () => {
-//       delete rawStateTransition.dataContract.documents.indexedDocument;
+    it('should have no existing documents removed', async () => {
+      delete rawStateTransition.dataContract.documents.indexedDocument;
 
-//       const result = await validateStateTransition(
-//         rawStateTransition,
-//         executionContext,
-//       );
+      const result = await validateStateTransition(
+        rawStateTransition,
+        executionContext,
+      );
 
-// //      await expectValidationError(result);
+//      await expectValidationError(result);
 
-//       const [error] = result.getErrors();
-// //      console.log(error.getCode(), error.getInstancePath(), error.getKeyword(), error.getParams());
+      const [error] = result.getErrors();
+//      console.log(error.getCode(), error.getInstancePath(), error.getKeyword(), error.getParams());
 
-// //      expect(error).to.be.an.instanceOf(IncompatibleDataContractSchemaError);
-//       expect(error.getOperation()).to.equal('remove');
-//       expect(error.getFieldPath()).to.equal('/additionalProperties');
-//       expect(error.getNewSchema()).to.equal(undefined);
-//     });
+      expect(error).to.be.an.instanceOf(IncompatibleDataContractSchemaError);
+      expect(error.getOperation()).to.equal('remove');
+      expect(error.getFieldPath()).to.equal('/additionalProperties');
+    });
 
-    // it('should allow making backward compatible changes to existing documents', async () => {
-    //   rawStateTransition.dataContract.documents.indexedDocument.properties.newProp = {
-    //     type: 'integer',
-    //     minimum: 0,
-    //   };
+    it('should allow making backward compatible changes to existing documents', async () => {
+      rawStateTransition.dataContract.documents.indexedDocument.properties.newProp = {
+        type: 'integer',
+        minimum: 0,
+      };
 
-    //   const result = await validateStateTransition(
-    //     rawStateTransition,
-    //     executionContext,
-    //   );
+      const result = await validateStateTransition(
+        rawStateTransition,
+        executionContext,
+      );
 
-    //   expect(result.isValid()).to.be.true();
-    // });
+      expect(result.isValid()).to.be.true();
+    });
 
-    // it('should have existing documents schema backward compatible', async () => {
-    //   rawStateTransition.dataContract.documents.indexedDocument.properties.firstName = undefined;
+    it('should have existing documents schema backward compatible', async () => {
+      rawStateTransition.dataContract.documents.indexedDocument.properties.firstName.maxLength = 4;
 
-    //   const result = await validateStateTransition(
-    //     rawStateTransition,
-    //     executionContext,
-    //   );
+      const result = await validateStateTransition(
+        rawStateTransition,
+        executionContext,
+      );
 
-    //   expectValidationError(result);
+      expectValidationError(result);
 
-    //   const [error] = result.getErrors();
+      const [error] = result.getErrors();
 
-    //   expect(error).to.be.an.instanceOf(IncompatibleDataContractSchemaError);
-    //   expect(error.getOperation()).to.equal('remove');
-    //   expect(error.getFieldPath()).to.equal('/properties/firstName');
-    // });
+      expect(error).to.be.an.instanceOf(IncompatibleDataContractSchemaError);
+      expect(error.getOperation()).to.equal('replace');
+      expect(error.getFieldPath()).to.equal('/properties/firstName/maxLength');
+    });
 
     it('should allow defining new document', async () => {
       rawStateTransition.dataContract.documents.myNewAwesomeDoc = {
