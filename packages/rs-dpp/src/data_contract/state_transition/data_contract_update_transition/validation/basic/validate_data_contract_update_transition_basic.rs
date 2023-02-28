@@ -135,7 +135,10 @@ where
         let raw_existing_data_contract = existing_data_contract.to_object(false)?;
 
         let mut old_base_data_contract = raw_existing_data_contract;
-        old_base_data_contract.remove(contract_property_names::DEFINITIONS)?;
+
+        old_base_data_contract
+            .remove(contract_property_names::DEFINITIONS)
+            .ok();
         old_base_data_contract.remove(contract_property_names::DOCUMENTS)?;
         old_base_data_contract.remove(contract_property_names::VERSION)?;
 
@@ -148,7 +151,9 @@ where
         )?;
 
         let mut new_base_data_contract = raw_data_contract.clone();
-        new_base_data_contract.remove(contract_property_names::DEFINITIONS)?;
+        new_base_data_contract
+            .remove(contract_property_names::DEFINITIONS)
+            .ok();
         new_base_data_contract.remove(contract_property_names::DOCUMENTS)?;
         new_base_data_contract.remove(contract_property_names::VERSION)?;
 

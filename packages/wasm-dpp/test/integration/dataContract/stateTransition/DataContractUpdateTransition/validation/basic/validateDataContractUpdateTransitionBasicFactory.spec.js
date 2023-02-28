@@ -42,6 +42,8 @@ describe('validateDataContractUpdateTransitionBasicFactory', () => {
   let ValidationResult;
   let StateTransitionExecutionContext;
   let ProtocolVersionParsingError;
+  let DataContractValidator;
+  let DataContractFactory;
   
   let validateStateTransition;
   let validateDataContractMock;
@@ -62,12 +64,14 @@ describe('validateDataContractUpdateTransitionBasicFactory', () => {
       ValidationResult,
       StateTransitionExecutionContext,
       ProtocolVersionParsingError,
+      DataContractValidator,
+      DataContractFactory,
     } = await loadWasmDpp());
   });
 
   beforeEach(async function beforeEach() {
-    validateDataContractMock = this.sinonSandbox.stub().returns(new ValidationResult());
-    validateProtocolVersionMock = this.sinonSandbox.stub().returns(new ValidationResult());
+    // validateDataContractMock = this.sinonSandbox.stub().returns(new ValidationResult());
+    // validateProtocolVersionMock = this.sinonSandbox.stub().returns(new ValidationResult());
 
     dataContract = getDataContractFixture();
 
@@ -91,8 +95,12 @@ describe('validateDataContractUpdateTransitionBasicFactory', () => {
     // validateIndicesAreNotChangedMock = this.sinonSandbox.stub();
     // validateIndicesAreNotChangedMock.returns(new ValidationResult());
 
+    const validator = new DataContractValidator();
+    const dataContractFactory = new DataContractFactory(protocolVersion.latestVersion, validator);
+    const wasmDataContract = await dataContractFactory.createFromBuffer(dataContract.toBuffer());
+
     stateRepositoryMock = createStateRepositoryMock(this.sinonSandbox);
-    stateRepositoryMock.fetchDataContract.resolves(dataContract);
+    stateRepositoryMock.fetchDataContract.resolves(wasmDataContract);
 
     executionContext = new StateTransitionExecutionContext();
 
@@ -420,17 +428,17 @@ describe('validateDataContractUpdateTransitionBasicFactory', () => {
     });
   });
 
-  // it('should return valid result', async () => {
-  //   const result = await validateStateTransition(
-  //     rawStateTransition,
-  //     executionContext,
-  //   );
+  it('should return valid result', async () => {
+    const result = await validateStateTransition(
+      rawStateTransition,
+      executionContext,
+    );
 
-  //   expect(result).to.be.an.instanceOf(ValidationResult);
-  //   expect(result.isValid()).to.be.true();
+    expect(result).to.be.an.instanceOf(ValidationResult);
+    expect(result.isValid()).to.be.true();
 
-  //   // expect(validateDataContractMock).to.be.calledOnceWith(rawDataContract);
-  // });
+    // expect(validateDataContractMock).to.be.calledOnceWith(rawDataContract);
+  });
 
   it('should not check Data Contract on dry run', async () => {
     stateRepositoryMock.fetchDataContract.resolves(null);
