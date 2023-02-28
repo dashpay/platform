@@ -158,11 +158,11 @@ impl StateTransitionWasm {
                 todo!("set up BLS")))
     }
 
-    #[wasm_bindgen(js_name = getModifiedDataIds)]
-    pub fn get_modified_data_ids(&self) -> Vec<IdentifierWrapper> {
-        // TODO: implement!
-        vec![];
-    }
+    // #[wasm_bindgen(js_name = getModifiedDataIds)]
+    // pub fn get_modified_data_ids(&self) -> Vec<IdentifierWrapper> {
+    //     // TODO: implement!
+    //     vec![];
+    // }
 
     #[wasm_bindgen(js_name = isDocumentStateTransition)]
     pub fn is_document_state_transition(&self) -> bool {
