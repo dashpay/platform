@@ -19,7 +19,8 @@ use crate::{
     errors::{from_dpp_err, from_dpp_init_error},
     identity_facade::FromObjectOptions,
     state_repository::{ExternalStateRepositoryLike, ExternalStateRepositoryLikeWrapper},
-    utils, with_js_error, StateTransitionWasm, state_transition::errors::invalid_state_transition_error::InvalidStateTransitionError,
+    state_transition::errors::invalid_state_transition_error::InvalidStateTransitionError,
+    utils, with_js_error, StateTransitionWasm,
 };
 
 #[wasm_bindgen(js_name = StateTransitionFactory)]

@@ -7,9 +7,10 @@ use dpp::{
         StateTransitionConvert, StateTransitionIdentitySigned, StateTransitionLike,
     },
 };
+use serde::Deserialize;
 use wasm_bindgen::prelude::*;
 
-use crate::{buffer::Buffer, errors::from_dpp_err, identifier::IdentifierWrapper};
+use crate::{buffer::Buffer, errors::from_dpp_err, identifier::IdentifierWrapper, with_js_error};
 
 pub mod errors;
 pub mod state_transition_factory;
@@ -85,6 +86,13 @@ macro_rules! either_st {
     };
 }
 
+#[derive(Deserialize, Default)]
+#[serde(rename_all = "camelCase")]
+struct AbstractStateTransitionOptions {
+    skip_signature: Option<bool>,
+    skip_identifiers_conversion: Option<bool>,
+}
+
 #[wasm_bindgen(js_name = AbstractStateTransition)]
 pub struct StateTransitionWasm(StateTransition);
 
@@ -112,8 +120,13 @@ impl StateTransitionWasm {
 
     #[wasm_bindgen(js_name = toObject)]
     pub fn to_object(&self, options: JsValue) -> Result<JsValue, JsValue> {
-        // TODO: construct options
-        either_st!(&self.0, st => st.to_object(false).map_err(from_dpp_err))
+        let options: AbstractStateTransitionOptions = if options.is_object() {
+            with_js_error!(serde_wasm_bindgen::from_value(options))?
+        } else {
+            Default::default()
+        };
+
+        either_st!(&self.0, st => st.to_object(options.skip_signature.unwrap_or_default()).map_err(from_dpp_err))
     }
 
     #[wasm_bindgen(js_name = getOwnerId)]
