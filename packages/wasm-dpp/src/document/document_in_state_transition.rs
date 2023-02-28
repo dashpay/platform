@@ -1,7 +1,6 @@
 use dpp::dashcore::anyhow::Context;
 use dpp::document::{
-    document_in_state_transition_property_names, ExtendedDocument,
-    DOCUMENT_IN_STATE_TRANSITION_IDENTIFIER_FIELDS,
+    extended_document_property_names, ExtendedDocument, EXTENDED_DOCUMENT_IDENTIFIER_FIELDS,
 };
 use dpp::prelude::{Identifier, Revision};
 use dpp::util::json_schema::JsonSchemaExt;
@@ -35,7 +34,7 @@ impl DocumentInStateTransitionWasm {
         let mut raw_document = with_serde_to_json_value(&js_raw_document)?;
 
         let document_type = raw_document
-            .get_string(document_in_state_transition_property_names::DOCUMENT_TYPE)
+            .get_string(extended_document_property_names::DOCUMENT_TYPE)
             .with_js_error()?;
 
         let (identifier_paths, _) = js_data_contract
@@ -50,7 +49,7 @@ impl DocumentInStateTransitionWasm {
             .replace_identifier_paths(
                 identifier_paths
                     .into_iter()
-                    .chain(DOCUMENT_IN_STATE_TRANSITION_IDENTIFIER_FIELDS),
+                    .chain(EXTENDED_DOCUMENT_IDENTIFIER_FIELDS),
                 ReplaceWith::Bytes,
             )
             .with_js_error();
@@ -80,7 +79,7 @@ impl DocumentInStateTransitionWasm {
 
     #[wasm_bindgen(js_name=getType)]
     pub fn get_type(&self) -> String {
-        self.0.document_type.clone()
+        self.0.document_type_name.clone()
     }
 
     #[wasm_bindgen(js_name=getDataContractId)]
@@ -262,7 +261,7 @@ impl DocumentInStateTransitionWasm {
 
         for path in identifiers_paths
             .into_iter()
-            .chain(DOCUMENT_IN_STATE_TRANSITION_IDENTIFIER_FIELDS)
+            .chain(EXTENDED_DOCUMENT_IDENTIFIER_FIELDS)
         {
             if let Ok(bytes) = value.remove_path_into::<Vec<u8>>(path) {
                 if !options.skip_identifiers_conversion {
@@ -317,7 +316,7 @@ impl DocumentInStateTransitionWasm {
         let maybe_binary_properties = self
             .0
             .data_contract
-            .get_binary_properties(&self.0.document_type);
+            .get_binary_properties(&self.0.document_type_name);
 
         if let Ok(binary_properties) = maybe_binary_properties {
             if let Some(data) = binary_properties.get(path) {

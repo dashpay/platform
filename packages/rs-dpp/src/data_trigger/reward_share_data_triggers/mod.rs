@@ -165,7 +165,7 @@ mod test {
         top_level_identifier: Identifier,
         data_contract: DataContract,
         sml_store: SMLStore,
-        documents_in_state_transitions: Vec<ExtendedDocument>,
+        extended_documents: Vec<ExtendedDocument>,
         document_transition: DocumentTransition,
         identity: Identity,
     }
@@ -209,7 +209,7 @@ mod test {
             get_document_transitions_fixture([(Action::Create, vec![documents[0].clone()])]);
 
         TestData {
-            documents_in_state_transitions: documents,
+            extended_documents: documents,
             data_contract,
             top_level_identifier,
             sml_store,
@@ -239,19 +239,18 @@ mod test {
     async fn should_return_an_error_if_percentage_greater_than_1000() {
         let TestData {
             mut document_transition,
-            documents_in_state_transitions,
+            extended_documents,
             sml_store,
             data_contract,
             top_level_identifier,
             ..
         } = setup_test();
 
-        let documents = documents_in_state_transitions
+        let documents: Vec<Document> = extended_documents
             .clone()
             .into_iter()
-            .map(|dt| dt.try_into())
-            .collect::<Result<Vec<Document>, ProtocolError>>()
-            .expect("expected to convert to documents");
+            .map(|dt| dt.document)
+            .collect();
 
         let mut state_repository_mock = MockStateRepositoryLike::new();
         state_repository_mock

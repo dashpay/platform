@@ -27,12 +27,12 @@ use crate::{
 };
 use crate::document::{Document, ExtendedDocument};
 use crate::identity::TimestampMillis;
-use crate::tests::fixtures::get_documents_in_state_transitions_fixture;
+use crate::tests::fixtures::get_extended_documents_fixture;
 
 struct TestData {
     owner_id: Identifier,
     data_contract: DataContract,
-    documents_in_state_transitions: Vec<ExtendedDocument>,
+    extended_documents: Vec<ExtendedDocument>,
     document_transitions: Vec<DocumentTransition>,
     state_transition: DocumentsBatchTransition,
     state_repository_mock: MockStateRepositoryLike,
@@ -48,7 +48,7 @@ fn setup_test() -> TestData {
     init();
     let owner_id = generate_random_identifier_struct();
     let data_contract = get_data_contract_fixture(Some(owner_id));
-    let documents = get_documents_in_state_transitions_fixture(data_contract.clone()).unwrap();
+    let documents = get_extended_documents_fixture(data_contract.clone()).unwrap();
 
     let document_transitions =
         get_document_transitions_fixture([(Action::Create, documents.clone())]);
@@ -84,7 +84,7 @@ fn setup_test() -> TestData {
         owner_id,
         data_contract,
         document_transitions,
-        documents_in_state_transitions: documents,
+        extended_documents: documents,
         state_transition,
         state_repository_mock,
     }
@@ -154,7 +154,7 @@ async fn should_return_invalid_result_if_document_transition_with_action_delete_
     let TestData {
         data_contract,
         owner_id,
-        documents_in_state_transitions: documents,
+        extended_documents: documents,
         mut state_repository_mock,
         ..
     } = setup_test();
@@ -201,20 +201,19 @@ async fn should_return_invalid_result_if_document_transition_with_action_replace
     let TestData {
         data_contract,
         owner_id,
-        documents_in_state_transitions,
+        extended_documents,
         mut state_repository_mock,
         ..
     } = setup_test();
 
-    let mut documents = documents_in_state_transitions
+    let mut documents = extended_documents
         .clone()
         .into_iter()
-        .map(|dt| dt.try_into())
-        .collect::<Result<Vec<Document>, ProtocolError>>()
-        .expect("expected to convert to documents");
+        .map(|extended_document| extended_document.document)
+        .collect::<Vec<Document>>();
 
     let mut replace_document = ExtendedDocument::from_raw_document(
-        documents_in_state_transitions[0].to_object().unwrap(),
+        extended_documents[0].to_object().unwrap(),
         data_contract.clone(),
     )
     .expect("document should be created");
@@ -268,7 +267,7 @@ async fn should_return_invalid_result_if_document_transition_with_action_replace
     let TestData {
         data_contract,
         owner_id,
-        documents_in_state_transitions: documents,
+        extended_documents: documents,
         mut state_repository_mock,
         ..
     } = setup_test();
@@ -343,7 +342,7 @@ async fn should_return_invalid_result_if_timestamps_mismatch() {
     let TestData {
         data_contract,
         owner_id,
-        documents_in_state_transitions: documents,
+        extended_documents: documents,
         mut state_repository_mock,
         ..
     } = setup_test();
@@ -394,7 +393,7 @@ async fn should_return_invalid_result_if_crated_at_has_violated_time_window() {
     let TestData {
         data_contract,
         owner_id,
-        documents_in_state_transitions: documents,
+        extended_documents: documents,
         mut state_repository_mock,
         ..
     } = setup_test();
@@ -447,7 +446,7 @@ async fn should_not_validate_time_in_block_window_on_dry_run() {
     let TestData {
         data_contract,
         owner_id,
-        documents_in_state_transitions: documents,
+        extended_documents: documents,
         mut state_repository_mock,
         ..
     } = setup_test();
@@ -492,7 +491,7 @@ async fn should_return_invalid_result_if_updated_at_has_violated_time_window() {
     let TestData {
         data_contract,
         owner_id,
-        documents_in_state_transitions: documents,
+        extended_documents: documents,
         mut state_repository_mock,
         ..
     } = setup_test();
@@ -545,7 +544,7 @@ async fn should_return_valid_result_if_document_transitions_are_valid() {
     let TestData {
         data_contract,
         owner_id,
-        documents_in_state_transitions: documents,
+        extended_documents: documents,
         mut state_repository_mock,
         ..
     } = setup_test();

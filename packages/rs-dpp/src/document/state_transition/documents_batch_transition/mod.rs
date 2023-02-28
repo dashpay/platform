@@ -416,7 +416,7 @@ mod test {
 
     use serde_json::json;
 
-    use crate::tests::fixtures::get_documents_in_state_transitions_fixture;
+    use crate::tests::fixtures::get_extended_documents_fixture;
     use crate::{
         document::{
             document_factory::DocumentFactory,
@@ -456,7 +456,7 @@ mod test {
         // 0 is niceDocument,
         // 1 and 2 are pretty documents,
         // 3 and 4 are indexed documents that do not have security level specified
-        let documents = get_documents_in_state_transitions_fixture(data_contract).unwrap();
+        let documents = get_extended_documents_fixture(data_contract).unwrap();
         let medium_security_document = documents.get(0).unwrap();
         let master_security_document = documents.get(1).unwrap();
         let no_security_level_document = documents.get(3).unwrap();
@@ -527,7 +527,7 @@ mod test {
         let mut data_contract = get_data_contract_fixture(Some(owner_id));
         data_contract.id = data_contract_id;
 
-        let documents = get_documents_in_state_transitions_fixture(data_contract.clone()).unwrap();
+        let documents = get_extended_documents_fixture(data_contract.clone()).unwrap();
         let mut document = documents.first().unwrap().to_owned();
         document.entropy = entropy_bytes;
 

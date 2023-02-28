@@ -55,8 +55,20 @@ pub trait StateRepositoryLike: Sync {
     ) -> AnyResult<()>;
 
     /// Fetch Documents by Data Contract Id and type
-    /// By default, the method should return data as bytes (`Vec<u8>`), but the deserialization to [`ExtendedDocument`] should be also possible
+    /// By default, the method should return data as bytes (`Vec<u8>`), but the deserialization to [`Document`] should be also possible
     async fn fetch_documents<T>(
+        &self,
+        contract_id: &Identifier,
+        data_contract_type: &str,
+        where_query: JsonValue,
+        execution_context: &StateTransitionExecutionContext,
+    ) -> AnyResult<Vec<T>>
+    where
+        T: for<'de> serde::de::Deserialize<'de> + 'static;
+
+    /// Fetch Documents by Data Contract Id and type
+    /// By default, the method should return data as bytes (`Vec<u8>`), but the deserialization to [`ExtendedDocument`] should be also possible
+    async fn fetch_extended_documents<T>(
         &self,
         contract_id: &Identifier,
         data_contract_type: &str,

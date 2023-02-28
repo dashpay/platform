@@ -184,7 +184,7 @@ where
         }
 
         let is_the_same =
-            Self::is_ownership_the_same(flattened_documents_iter.clone().map(|d| &d.owner_id));
+            Self::is_ownership_the_same(flattened_documents_iter.clone().map(|d| &d.owner_id()));
         if !is_the_same {
             return Err(DocumentError::MismatchOwnerIdsError {
                 documents: documents.into_iter().flat_map(|(_, v)| v).collect(),
@@ -196,7 +196,7 @@ where
             .clone()
             .next()
             .unwrap()
-            .owner_id
+            .owner_id()
             .to_owned();
         for (action, documents) in documents {
             data_contracts.extend(documents.iter().map(|d| d.data_contract.clone()));
@@ -303,11 +303,18 @@ where
     ) -> Result<Vec<JsonValue>, ProtocolError> {
         let mut raw_transitions = vec![];
         for document in documents {
-            if document.revision != document_transition::INITIAL_REVISION {
-                return Err(DocumentError::InvalidInitialRevisionError {
-                    document: Box::new(document),
+            if document.needs_revision() {
+                let Some(revision) = document.revision() else {
+                    return Err(DocumentError::RevisionAbsentError {
+                        document: Box::new(document),
+                    }.into());
+                };
+                if revision != &document_transition::INITIAL_REVISION {
+                    return Err(DocumentError::InvalidInitialRevisionError {
+                        document: Box::new(document),
+                    }
+                    .into());
                 }
-                .into());
             }
             let mut raw_document = document.to_object()?;
 
@@ -335,7 +342,17 @@ where
     ) -> Result<Vec<JsonValue>, ProtocolError> {
         let mut raw_transitions = vec![];
         for document in documents {
-            let document_revision = document.revision;
+            if !document.can_be_modified() {
+                return Err(DocumentError::TryingToReplaceImmutableDocument {
+                    document: Box::new(document),
+                }
+                .into());
+            }
+            let Some(document_revision) = document.revision() else {
+                return Err(DocumentError::RevisionAbsentError {
+                    document: Box::new(document),
+                }.into());
+            };
             let mut raw_document = document.to_object()?;
 
             if let Some(map) = raw_document.as_object_mut() {
@@ -369,8 +386,8 @@ where
             .map(|document| {
                 json!({
                 PROPERTY_ACTION: Action::Delete,
-                PROPERTY_ID: document.id.buffer,
-                PROPERTY_TYPE: document.document_type,
+                PROPERTY_ID: document.id().buffer,
+                PROPERTY_TYPE: document.document_type_name,
                 PROPERTY_DATA_CONTRACT_ID: document.data_contract_id.buffer})
             })
             .collect())
@@ -389,7 +406,7 @@ where
 mod test {
     use std::sync::Arc;
 
-    use crate::tests::fixtures::get_documents_in_state_transitions_fixture;
+    use crate::tests::fixtures::get_extended_documents_fixture;
     use crate::{
         assert_error_contains,
         state_repository::MockStateRepositoryLike,
@@ -435,16 +452,19 @@ mod test {
                 json!({ "name": name }),
             )
             .expect("document creation shouldn't fail");
-        assert_eq!(document_type, document.document_type);
+        assert_eq!(document_type, document.document_type_name);
         assert_eq!(
             name,
             document.get("name").expect("property 'name' should exist")
         );
         assert_eq!(contract_id, document.data_contract_id);
-        assert_eq!(owner_id, document.owner_id);
-        assert_eq!(document_transition::INITIAL_REVISION, document.revision);
-        assert!(!document.id.to_string(Encoding::Base58).is_empty());
-        assert!(document.created_at.is_some());
+        assert_eq!(owner_id, document.owner_id());
+        assert_eq!(
+            document_transition::INITIAL_REVISION,
+            *document.revision().unwrap()
+        );
+        assert!(!document.id().to_string(Encoding::Base58).is_empty());
+        assert!(document.created_at().is_some());
     }
 
     #[test]
@@ -463,7 +483,7 @@ mod test {
     #[test]
     fn create_transition_mismatch_user_id() {
         let data_contract = get_data_contract_fixture(None);
-        let mut documents = get_documents_in_state_transitions_fixture(data_contract).unwrap();
+        let mut documents = get_extended_documents_fixture(data_contract).unwrap();
 
         let factory = DocumentFactory::new(
             1,
@@ -471,7 +491,7 @@ mod test {
             DataContractFetcherAndValidator::new(Arc::new(MockStateRepositoryLike::new())),
             None,
         );
-        documents[0].owner_id = generate_random_identifier_struct();
+        documents[0].document.owner_id = generate_random_identifier_struct().buffer;
 
         let result = factory.create_state_transition(vec![(Action::Create, documents)]);
         assert_error_contains!(result, "Documents have mixed owner ids")
@@ -480,8 +500,8 @@ mod test {
     #[test]
     fn create_transition_invalid_initial_revision() {
         let data_contract = get_data_contract_fixture(None);
-        let mut documents = get_documents_in_state_transitions_fixture(data_contract).unwrap();
-        documents[0].revision = 3;
+        let mut documents = get_extended_documents_fixture(data_contract).unwrap();
+        documents[0].document.revision = Some(3);
 
         let factory = DocumentFactory::new(
             1,
@@ -496,7 +516,7 @@ mod test {
     #[test]
     fn create_transitions_with_passed_documents() {
         let data_contract = get_data_contract_fixture(None);
-        let documents = get_documents_in_state_transitions_fixture(data_contract).unwrap();
+        let documents = get_extended_documents_fixture(data_contract).unwrap();
         let factory = DocumentFactory::new(
             1,
             get_document_validator_fixture(),

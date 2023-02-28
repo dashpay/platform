@@ -209,7 +209,7 @@ impl Platform {
         let document = ExtendedDocument {
             protocol_version: PROTOCOL_VERSION,
             id: Identifier::new(DPNS_DASH_TLD_DOCUMENT_ID),
-            document_type: "domain".to_string(),
+            document_type_name: "domain".to_string(),
             revision: 0,
             data_contract_id: contract.id,
             owner_id: contract.owner_id,

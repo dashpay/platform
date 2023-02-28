@@ -27,8 +27,7 @@ pub use document_batch_transition::{DocumentsBatchTransitionWASM, DocumentsConta
 pub use document_in_state_transition::DocumentInStateTransitionWasm;
 use dpp::data_contract::DriveContractExt;
 use dpp::document::{
-    document_in_state_transition_property_names, Document,
-    DOCUMENT_IN_STATE_TRANSITION_IDENTIFIER_FIELDS,
+    extended_document_property_names, Document, EXTENDED_DOCUMENT_IDENTIFIER_FIELDS,
 };
 use dpp::identity::TimestampMillis;
 
@@ -64,7 +63,7 @@ impl DocumentWasm {
         let mut raw_document = with_serde_to_json_value(&js_raw_document)?;
 
         let document_type = raw_document
-            .get_string(document_in_state_transition_property_names::DOCUMENT_TYPE)
+            .get_string(extended_document_property_names::DOCUMENT_TYPE)
             .with_js_error()?;
 
         let (identifier_paths, _) = js_data_contract
@@ -79,7 +78,7 @@ impl DocumentWasm {
             .replace_identifier_paths(
                 identifier_paths
                     .into_iter()
-                    .chain(DOCUMENT_IN_STATE_TRANSITION_IDENTIFIER_FIELDS),
+                    .chain(EXTENDED_DOCUMENT_IDENTIFIER_FIELDS),
                 ReplaceWith::Bytes,
             )
             .with_js_error();

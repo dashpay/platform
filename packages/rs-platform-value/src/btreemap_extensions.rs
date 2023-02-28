@@ -1,4 +1,4 @@
-use serde_json::Value as JsonValue;
+use serde_json::{Map, Value as JsonValue};
 use std::borrow::Borrow;
 use std::convert::TryFrom;
 use std::iter::FromIterator;
@@ -115,6 +115,7 @@ pub trait BTreeValueMapHelper {
     fn remove_system_bytes(&mut self, key: &str) -> Result<Vec<u8>, Error>;
     fn get_optional_bytes(&self, key: &str) -> Result<Option<Vec<u8>>, Error>;
     fn get_bytes(&self, key: &str) -> Result<Vec<u8>, Error>;
+    fn to_json_value(&self) -> Result<JsonValue, Error>;
 }
 
 impl<V> BTreeValueMapHelper for BTreeMap<String, V>
@@ -503,5 +504,13 @@ where
     fn get_float(&self, key: &str) -> Result<f64, Error> {
         self.get_optional_float(key)?
             .ok_or_else(|| Error::StructureError(format!("unable to get float property {key}")))
+    }
+
+    fn to_json_value(&self) -> Result<JsonValue, Error> {
+        Ok(JsonValue::Object(
+            self.iter()
+                .map(|(key, value)| Ok((key.to_string(), value.borrow().clone().try_into()?)))
+                .collect::<Result<Map<String, JsonValue>, Error>>()?,
+        ))
     }
 }

@@ -1,10 +1,10 @@
 use std::sync::Arc;
 
-use dpp::document::document_transition::extended_document;
 use dpp::{
     document::{
         document_factory::{DocumentFactory, FactoryOptions},
         document_transition::Action,
+        extended_document,
         fetch_and_validate_data_contract::DataContractFetcherAndValidator,
     },
     util::json_value::{JsonValueExt, ReplaceWith},

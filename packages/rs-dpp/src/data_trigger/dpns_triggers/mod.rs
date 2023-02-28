@@ -1,5 +1,6 @@
 use anyhow::Context;
 use anyhow::{anyhow, bail};
+use platform_value::btreemap_extensions::BTreeValueMapHelper;
 use serde_json::{json, Value as JsonValue};
 
 use crate::document::{Document, ExtendedDocument};
@@ -132,7 +133,7 @@ where
         let parent_domain_label = parent_domain_segments.next().unwrap().to_string();
         let grand_parent_domain_name = parent_domain_segments.collect::<Vec<&str>>().join(".");
 
-        let documents: Vec<ExtendedDocument> = context
+        let documents: Vec<Document> = context
             .state_repository
             .fetch_documents(
                 &context.data_contract.id,
@@ -169,10 +170,8 @@ where
             }
 
             if (!parent_domain
-                .data
-                .get_value(PROPERTY_ALLOW_SUBDOMAINS)?
-                .as_bool()
-                .unwrap())
+                .properties
+                .get_bool(PROPERTY_ALLOW_SUBDOMAINS)?)
                 && context.owner_id != &parent_domain.owner_id
             {
                 let err = create_error(

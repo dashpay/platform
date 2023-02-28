@@ -27,8 +27,14 @@ pub enum DocumentError {
         errors: Vec<ConsensusError>,
         raw_document: Value,
     },
-    #[error("Invalid Document initial revision '{}'", document.revision)]
+    #[error("Invalid Document initial revision '{}'", document.revision().map(|r| *r).unwrap_or_default())]
     InvalidInitialRevisionError { document: Box<ExtendedDocument> },
+
+    #[error("Revision absent on mutable document")]
+    RevisionAbsentError { document: Box<ExtendedDocument> },
+
+    #[error("Trying To Replace Immutable Document")]
+    TryingToReplaceImmutableDocument { document: Box<ExtendedDocument> },
 
     #[error("Documents have mixed owner ids")]
     MismatchOwnerIdsError { documents: Vec<ExtendedDocument> },

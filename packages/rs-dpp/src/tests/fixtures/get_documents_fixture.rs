@@ -35,17 +35,17 @@ pub fn get_documents_fixture_with_owner_id_from_contract(
     );
     let owner_id = data_contract.owner_id.clone();
 
-    get_documents_in_state_transitions(factory, data_contract, owner_id)
+    get_extended_documents(factory, data_contract, owner_id)
 }
 
 pub fn get_documents_fixture(data_contract: DataContract) -> Result<Vec<Document>, ProtocolError> {
-    get_documents_in_state_transitions_fixture(data_contract)?
+    get_extended_documents_fixture(data_contract)?
         .into_iter()
-        .map(|dt| dt.try_into())
+        .map(|extended_document| extended_document.document)
         .collect()
 }
 
-pub fn get_documents_in_state_transitions_fixture(
+pub fn get_extended_documents_fixture(
     data_contract: DataContract,
 ) -> Result<Vec<ExtendedDocument>, ProtocolError> {
     let data_contract_fetcher_and_validator =
@@ -58,10 +58,10 @@ pub fn get_documents_in_state_transitions_fixture(
     );
     let owner_id = gen_owner_id();
 
-    get_documents_in_state_transitions(factory, data_contract, owner_id)
+    get_extended_documents(factory, data_contract, owner_id)
 }
 
-fn get_documents_in_state_transitions<ST: StateRepositoryLike>(
+fn get_extended_documents<ST: StateRepositoryLike>(
     factory: DocumentFactory<ST>,
     data_contract: DataContract,
     owner_id: Identifier,

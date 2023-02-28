@@ -1,4 +1,4 @@
-use crate::data_contract::DataContract;
+use crate::data_contract::{DataContract, DriveContractExt};
 use crate::identifier::Identifier;
 use crate::metadata::Metadata;
 use crate::prelude::{Revision, TimestampMillis};
@@ -12,9 +12,12 @@ use crate::ProtocolError;
 use ciborium::Value as CborValue;
 use integer_encoding::VarInt;
 
+use crate::data_contract::document_type::DocumentType;
+use crate::document::Document;
+use platform_value::Value;
 use serde::{Deserialize, Serialize};
 use serde_json::Value as JsonValue;
-use std::collections::HashSet;
+use std::collections::{BTreeMap, HashSet};
 use std::convert::TryInto;
 
 pub mod property_names {
@@ -39,23 +42,12 @@ pub const IDENTIFIER_FIELDS: [&str; 3] = [
 pub struct ExtendedDocument {
     #[serde(rename = "$protocolVersion")]
     pub protocol_version: u32,
-    #[serde(rename = "$id")]
-    pub id: Identifier,
     #[serde(rename = "$type")]
-    pub document_type: String,
-    #[serde(rename = "$revision")]
-    pub revision: Revision,
+    pub document_type_name: String,
     #[serde(rename = "$dataContractId")]
     pub data_contract_id: Identifier,
-    #[serde(rename = "$ownerId")]
-    pub owner_id: Identifier,
-    #[serde(rename = "$createdAt", skip_serializing_if = "Option::is_none")]
-    pub created_at: Option<TimestampMillis>,
-    #[serde(rename = "$updatedAt", skip_serializing_if = "Option::is_none")]
-    pub updated_at: Option<TimestampMillis>,
-    // the serde_json::Value preserves the order (see .toml file)
     #[serde(flatten)]
-    pub data: JsonValue,
+    pub document: Document,
     #[serde(skip)]
     pub data_contract: DataContract,
     #[serde(skip)]
@@ -83,6 +75,60 @@ impl ExtendedDocument {
         Ok(document)
     }
 
+    fn properties_as_json_data(&self) -> Result<JsonValue, ProtocolError> {
+        self.document
+            .properties
+            .try_into()
+            .map_err(ProtocolError::ValueError)
+    }
+
+    pub fn get_optional_value(&self, key: &str) -> Option<&Value> {
+        self.document.properties.get(key)
+    }
+
+    pub fn properties(&self) -> &BTreeMap<String, Value> {
+        &self.document.properties
+    }
+
+    pub fn properties_as_mut(&mut self) -> &mut BTreeMap<String, Value> {
+        &mut self.document.properties
+    }
+
+    pub fn id(&self) -> Identifier {
+        Identifier::new(self.document.id)
+    }
+
+    pub fn owner_id(&self) -> Identifier {
+        Identifier::new(self.document.owner_id)
+    }
+
+    pub fn document_type(&self) -> &DocumentType {
+        // We can unwrap because the Document can not be created without a valid Document Type
+        self.data_contract
+            .document_type_for_name(self.document_type_name.as_str())
+            .unwrap()
+    }
+
+    pub fn can_be_modified(&self) -> bool {
+        self.document_type().documents_mutable
+    }
+
+    pub fn needs_revision(&self) -> bool {
+        self.document_type().documents_mutable
+    }
+
+    pub fn revision(&self) -> Option<&Revision> {
+        self.document.revision.as_ref()
+    }
+
+    pub fn created_at(&self) -> Option<&TimestampMillis> {
+        self.document.created_at.as_ref()
+    }
+
+    pub fn updated_at(&self) -> Option<&TimestampMillis> {
+        self.document.updated_at.as_ref()
+    }
+
     pub fn from_raw_document(
         raw_document: JsonValue,
         data_contract: DataContract,
@@ -97,41 +143,24 @@ impl ExtendedDocument {
     where
         for<'de> S: Deserialize<'de> + TryInto<Identifier, Error = ProtocolError>,
     {
-        let mut document = Self {
+        let mut extended_document = Self {
             data_contract,
             ..Default::default()
         };
 
         if let Ok(value) = document_value.remove(property_names::PROTOCOL_VERSION) {
-            document.protocol_version = serde_json::from_value(value)?
+            extended_document.protocol_version = serde_json::from_value(value)?
         }
-        if let Ok(value) = document_value.remove(property_names::ID) {
-            let data: S = serde_json::from_value(value)?;
-            document.id = data.try_into()?;
-        }
+
         if let Ok(value) = document_value.remove(property_names::DOCUMENT_TYPE) {
-            document.document_type = serde_json::from_value(value)?
+            extended_document.document_type_name = serde_json::from_value(value)?
         }
         if let Ok(value) = document_value.remove(property_names::DATA_CONTRACT_ID) {
             let data: S = serde_json::from_value(value)?;
-            document.data_contract_id = data.try_into()?
+            extended_document.data_contract_id = data.try_into()?
         }
-        if let Ok(value) = document_value.remove(property_names::OWNER_ID) {
-            let data: S = serde_json::from_value(value)?;
-            document.owner_id = data.try_into()?
-        }
-        if let Ok(value) = document_value.remove(property_names::REVISION) {
-            document.revision = serde_json::from_value(value)?
-        }
-        if let Ok(value) = document_value.remove(property_names::CREATED_AT) {
-            document.created_at = serde_json::from_value(value)?
-        }
-        if let Ok(value) = document_value.remove(property_names::UPDATED_AT) {
-            document.updated_at = serde_json::from_value(value)?
-        }
-
-        document.data = document_value;
-        Ok(document)
+        extended_document.document = Document::from_json_value(document_value)?;
+        Ok(extended_document)
     }
 
     pub fn to_json(&self) -> Result<JsonValue, ProtocolError> {
@@ -139,7 +168,7 @@ impl ExtendedDocument {
 
         let (identifier_paths, binary_paths) = self
             .data_contract
-            .get_identifiers_and_binary_paths(&self.document_type)?;
+            .get_identifiers_and_binary_paths(&self.document_type_name)?;
 
         value.replace_identifier_paths(identifier_paths, ReplaceWith::Base58)?;
         value.replace_binary_paths(binary_paths, ReplaceWith::Base64)?;
@@ -189,13 +218,13 @@ impl ExtendedDocument {
 
         canonical_map.remove(property_names::PROTOCOL_VERSION);
 
-        if self.updated_at.is_none() {
+        if self.updated_at().is_none() {
             canonical_map.remove(property_names::UPDATED_AT);
         }
 
         let (identifier_paths, binary_paths) = self
             .data_contract
-            .get_identifiers_and_binary_paths(&self.document_type)?;
+            .get_identifiers_and_binary_paths(&self.document_type_name)?;
 
         // The static (part of structure) identifiers are being serialized to the String(base58)
         canonical_map.replace_values(IDENTIFIER_FIELDS, ReplaceWith::Bytes);
@@ -235,11 +264,6 @@ impl ExtendedDocument {
         }
     }
 
-    /// Get the Document's data
-    pub fn get_data(&self) -> &JsonValue {
-        &self.data
-    }
-
     /// Set the Document's data
     pub fn set_data(&mut self, data: JsonValue) {
         self.data = data;
@@ -255,7 +279,7 @@ impl ExtendedDocument {
     ) -> Result<(HashSet<&str>, HashSet<&str>), ProtocolError> {
         let (mut identifiers_paths, binary_paths) = self
             .data_contract
-            .get_identifiers_and_binary_paths(&self.document_type)?;
+            .get_identifiers_and_binary_paths(&self.document_type_name)?;
 
         identifiers_paths.extend(IDENTIFIER_FIELDS);
 
@@ -271,9 +295,11 @@ mod test {
     use crate::document::extended_document::{ExtendedDocument, IDENTIFIER_FIELDS};
 
     use crate::data_contract::DataContract;
+    use crate::document::Document;
     use crate::identifier::Identifier;
     use crate::tests::utils::*;
     use crate::util::string_encoding::Encoding;
+    use platform_value::btreemap_extensions::BTreeValueMapHelper;
     use pretty_assertions::assert_eq;
 
     fn init() {
@@ -313,10 +339,10 @@ mod test {
         init();
         let document_json = get_data_from_file("src/tests/payloads/document_dpns.json")?;
         let doc = serde_json::from_str::<ExtendedDocument>(&document_json)?;
-        assert_eq!(doc.document_type, "domain");
+        assert_eq!(doc.document_type_name, "domain");
         assert_eq!(doc.protocol_version, 0);
         assert_eq!(
-            doc.id.to_buffer(),
+            doc.id().to_buffer(),
             Identifier::from_string(
                 "4veLBZPHDkaCPF9LfZ8fX3JZiS5q5iUVGhdBbaa9ga5E",
                 Encoding::Base58
@@ -355,11 +381,11 @@ mod test {
         let doc = ExtendedDocument::from_buffer(buffer_document)
             .expect("document should be created from buffer");
 
-        assert_eq!(init_doc.created_at, doc.created_at);
-        assert_eq!(init_doc.updated_at, doc.updated_at);
-        assert_eq!(init_doc.id, doc.id);
+        assert_eq!(init_doc.created_at(), doc.created_at());
+        assert_eq!(init_doc.updated_at(), doc.updated_at());
+        assert_eq!(init_doc.id(), doc.id());
         assert_eq!(init_doc.data_contract_id, doc.data_contract_id);
-        assert_eq!(init_doc.owner_id, doc.owner_id);
+        assert_eq!(init_doc.owner_id(), doc.owner_id());
     }
 
     #[test]
@@ -407,13 +433,13 @@ mod test {
 
         assert_eq!(document.protocol_version, 1);
         assert_eq!(
-            document.id.to_buffer().to_vec(),
+            document.id().to_buffer().to_vec(),
             vec![
                 113, 93, 61, 101, 117, 96, 36, 162, 222, 10, 177, 178, 187, 30, 131, 181, 239, 41,
                 123, 240, 198, 250, 97, 106, 173, 92, 136, 126, 79, 16, 222, 249
             ]
         );
-        assert_eq!(&document.document_type, "niceDocument");
+        assert_eq!(&document.document_type_name, "niceDocument");
         assert_eq!(
             document.data_contract_id.to_buffer().to_vec(),
             vec![
@@ -422,15 +448,15 @@ mod test {
             ]
         );
         assert_eq!(
-            document.owner_id.to_buffer().to_vec(),
+            document.owner_id().to_buffer().to_vec(),
             vec![
                 182, 191, 55, 77, 48, 47, 190, 43, 81, 27, 67, 226, 61, 3, 63, 150, 94, 46, 51,
                 160, 36, 199, 65, 157, 176, 117, 51, 212, 186, 125, 112, 142
             ]
         );
-        assert_eq!(document.revision, 1);
-        assert_eq!(document.created_at.unwrap(), 1656583332347);
-        assert_eq!(document.data.get("name").unwrap(), "Cutie");
+        assert_eq!(document.revision(), Some(&1));
+        assert_eq!(document.created_at().unwrap(), 1656583332347);
+        assert_eq!(document.properties().get_string("name").unwrap(), "Cutie");
 
         Ok(())
     }
@@ -496,11 +522,14 @@ mod test {
 
     fn new_example_document() -> ExtendedDocument {
         ExtendedDocument {
-            id: Identifier::from_bytes(&generate_random_identifier()).unwrap(),
-            owner_id: Identifier::from_bytes(&generate_random_identifier()).unwrap(),
+            document: Document {
+                id: generate_random_identifier(),
+                owner_id: generate_random_identifier(),
+                created_at: Some(1648013404492),
+                updated_at: Some(1648013404492),
+                ..Default::default()
+            },
             data_contract_id: Identifier::from_bytes(&generate_random_identifier()).unwrap(),
-            created_at: Some(1648013404492),
-            updated_at: Some(1648013404492),
             ..Default::default()
         }
     }

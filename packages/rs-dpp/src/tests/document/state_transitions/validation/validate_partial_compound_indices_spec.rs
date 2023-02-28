@@ -1,4 +1,5 @@
 use serde_json::{json, Value as JsonValue};
+use std::collections::BTreeMap;
 
 use crate::{
     consensus::{basic::BasicError, ConsensusError},
@@ -14,7 +15,7 @@ use crate::{
     validation::ValidationResult,
 };
 use crate::document::ExtendedDocument;
-use crate::tests::fixtures::get_documents_in_state_transitions_fixture;
+use crate::tests::fixtures::get_extended_documents_fixture;
 
 struct TestData {
     data_contract: DataContract,
@@ -23,8 +24,8 @@ struct TestData {
 
 fn setup_test() -> TestData {
     let data_contract = get_data_contract_fixture(None);
-    let documents = get_documents_in_state_transitions_fixture(data_contract.clone())
-        .expect("documents should be created");
+    let documents =
+        get_extended_documents_fixture(data_contract.clone()).expect("documents should be created");
 
     TestData {
         data_contract,
@@ -40,7 +41,7 @@ fn should_return_invalid_result_if_compound_index_contains_not_all_fields() {
     } = setup_test();
     let mut document = documents.remove(9);
     document
-        .data
+        .properties_as_mut()
         .remove("lastName")
         .expect("lastName property should exist and be removed");
 
@@ -75,7 +76,7 @@ fn should_return_valid_result_if_compound_index_contains_nof_fields() {
         mut documents,
     } = setup_test();
     let mut document = documents.remove(8);
-    document.data = json!({});
+    document.properties_as_mut() = *BTreeMap::new();
 
     let documents_for_transition = vec![document];
     let raw_document_transitions: Vec<JsonValue> =

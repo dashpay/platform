@@ -114,18 +114,8 @@ fn document_from_transition_replace(
     // TODO cloning is costly. Probably the [`Document`] should have properties of type `Cow<'a, K>`
     ExtendedDocument {
         protocol_version: state_transition.protocol_version,
-        id: document_replace_transition.base.id,
-        document_type: document_replace_transition.base.document_type.clone(),
+        document_type_name: document_replace_transition.base.document_type.clone(),
         data_contract_id: document_replace_transition.base.data_contract_id,
-        owner_id: state_transition.owner_id,
-        data: document_replace_transition
-            .data
-            .as_ref()
-            .unwrap_or(&serde_json::Value::Null)
-            .clone(),
-        updated_at: document_replace_transition.updated_at,
-        revision: document_replace_transition.revision,
-        created_at: Some(created_at),
         metadata: None,
 
         //? In the JS implementation the `data_contract` and `entropy` properties are completely omitted, what suggest we should make
@@ -133,6 +123,19 @@ fn document_from_transition_replace(
         //? Also, the `getEntropy()` in JS API always returns `Buffer`
         data_contract: Default::default(),
         entropy: Default::default(),
+        document: Document {
+            id: document_replace_transition.base.id.buffer,
+            owner_id: state_transition.owner_id.buffer,
+            properties: document_replace_transition
+                .data
+                .as_ref()
+                .unwrap_or(&serde_json::Value::Null)
+                .clone()
+                .into(),
+            revision: Some(document_replace_transition.revision),
+            created_at: Some(created_at),
+            updated_at: document_replace_transition.updated_at,
+        },
     }
 }
 
@@ -142,7 +145,7 @@ mod test {
     use serde_json::{json, Value};
 
     use crate::document::Document;
-    use crate::tests::fixtures::get_documents_in_state_transitions_fixture;
+    use crate::tests::fixtures::get_extended_documents_fixture;
     use crate::tests::utils::new_block_header;
     use crate::{
         document::{
@@ -165,7 +168,7 @@ mod test {
 
         let owner_id = generate_random_identifier_struct();
         let data_contract = get_data_contract_fixture(None);
-        let documents = get_documents_in_state_transitions_fixture(data_contract.clone()).unwrap();
+        let documents = get_extended_documents_fixture(data_contract.clone()).unwrap();
         let documents_transitions = get_document_transitions_fixture([
             (Action::Replace, documents),
             (Action::Create, vec![]),

@@ -293,7 +293,7 @@ impl Document {
         Self::from_json_value::<Vec<u8>>(raw_document)
     }
 
-    fn from_json_value<S>(mut document_value: JsonValue) -> Result<Self, ProtocolError>
+    pub fn from_json_value<S>(mut document_value: JsonValue) -> Result<Self, ProtocolError>
     where
         for<'de> S: Deserialize<'de> + TryInto<Identifier, Error = ProtocolError>,
     {
@@ -351,31 +351,6 @@ impl fmt::Display for Document {
             }
         }
         Ok(())
-    }
-}
-
-impl TryFrom<ExtendedDocument> for Document {
-    type Error = ProtocolError;
-
-    fn try_from(value: ExtendedDocument) -> Result<Self, Self::Error> {
-        let ExtendedDocument {
-            id,
-            revision,
-            owner_id,
-            created_at,
-            updated_at,
-            data,
-            ..
-        } = value;
-        let value: Value = data.into();
-        Ok(Document {
-            id: id.buffer,
-            owner_id: owner_id.buffer,
-            properties: value.into_btree_map()?,
-            revision: Some(revision),
-            created_at,
-            updated_at,
-        })
     }
 }
 

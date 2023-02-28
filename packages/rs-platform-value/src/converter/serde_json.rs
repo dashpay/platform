@@ -1,5 +1,6 @@
 use crate::{Error, Value};
 use serde_json::{Map, Number, Value as JsonValue};
+use std::collections::BTreeMap;
 
 impl Value {
     pub fn convert_from_serde_json_map<I, R>(map: I) -> R
@@ -87,5 +88,19 @@ impl TryInto<JsonValue> for Value {
                     .collect::<Result<Map<String, JsonValue>, Error>>()?,
             ),
         })
+    }
+}
+
+pub trait BTreeValueJsonConverter {
+    fn into_json_value(self) -> Result<JsonValue, Error>;
+}
+
+impl BTreeValueJsonConverter for BTreeMap<String, Value> {
+    fn into_json_value(self) -> Result<JsonValue, Error> {
+        Ok(JsonValue::Object(
+            self.into_iter()
+                .map(|(key, value)| Ok((key, value.try_into()?)))
+                .collect::<Result<Map<String, JsonValue>, Error>>()?,
+        ))
     }
 }
