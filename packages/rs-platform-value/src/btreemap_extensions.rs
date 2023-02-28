@@ -4,7 +4,7 @@ use std::convert::TryFrom;
 use std::iter::FromIterator;
 use std::{collections::BTreeMap, convert::TryInto};
 
-use crate::{Error, Value};
+use crate::{Error, Value, ValueMap};
 
 pub trait BTreeValueMapHelper {
     fn get_optional_identifier(&self, key: &str) -> Result<Option<[u8; 32]>, Error>;
@@ -322,10 +322,7 @@ where
         })
     }
 
-    fn get_optional_inner_borrowed_map(
-        &self,
-        key: &str,
-    ) -> Result<Option<&Vec<(Value, Value)>>, Error> {
+    fn get_optional_inner_borrowed_map(&self, key: &str) -> Result<Option<&ValueMap>, Error> {
         self.get(key)
             .map(|v| {
                 v.borrow()

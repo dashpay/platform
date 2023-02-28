@@ -1,5 +1,44 @@
-use crate::{Error, Value, ValueMap};
+use crate::{Error, Value};
 use std::collections::BTreeMap;
+
+pub type ValueMap = Vec<(Value, Value)>;
+
+pub trait ValueMapHelper {
+    fn get_key(&self, key: &str) -> Option<&Value>;
+    fn remove_key(&mut self, key: &str) -> Option<Value>;
+}
+
+impl ValueMapHelper for ValueMap {
+    fn get_key(&self, search_key: &str) -> Option<&Value> {
+        self.iter().find_map(|(key, value)| {
+            if let Value::Text(text) = key {
+                if text == search_key {
+                    Some(value)
+                } else {
+                    None
+                }
+            } else {
+                None
+            }
+        })
+    }
+
+    fn remove_key(&mut self, search_key: &str) -> Option<Value> {
+        self.iter()
+            .position(|(key, _)| {
+                if let Value::Text(text) = key {
+                    if text == search_key {
+                        true
+                    } else {
+                        false
+                    }
+                } else {
+                    false
+                }
+            })
+            .map(|pos| self.remove(pos).1)
+    }
+}
 
 impl Value {
     /// If the `Value` is a `Map`, returns a the associated `BTreeMap<String, Value>` data as `Ok`.

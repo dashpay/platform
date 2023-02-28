@@ -6,6 +6,7 @@
 //!
 //!
 pub mod btreemap_extensions;
+pub mod btreemap_path_extensions;
 pub mod converter;
 pub mod display;
 mod error;
@@ -14,11 +15,11 @@ mod integer;
 pub mod system_bytes;
 pub mod value_map;
 
+use crate::value_map::ValueMap;
 pub use error::Error;
 pub use integer::Integer;
 use serde::{Deserialize, Serialize};
 
-pub type ValueMap = Vec<(Value, Value)>;
 pub type Hash256 = [u8; 32];
 
 /// A representation of a dynamic value that can handled dynamically
