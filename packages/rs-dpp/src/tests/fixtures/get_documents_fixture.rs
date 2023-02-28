@@ -39,10 +39,10 @@ pub fn get_documents_fixture_with_owner_id_from_contract(
 }
 
 pub fn get_documents_fixture(data_contract: DataContract) -> Result<Vec<Document>, ProtocolError> {
-    get_extended_documents_fixture(data_contract)?
+    Ok(get_extended_documents_fixture(data_contract)?
         .into_iter()
         .map(|extended_document| extended_document.document)
-        .collect()
+        .collect())
 }
 
 pub fn get_extended_documents_fixture(

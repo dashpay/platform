@@ -404,6 +404,7 @@ where
 
 #[cfg(test)]
 mod test {
+    use platform_value::btreemap_extensions::BTreeValueMapHelper;
     use std::sync::Arc;
 
     use crate::tests::fixtures::get_extended_documents_fixture;
@@ -455,7 +456,10 @@ mod test {
         assert_eq!(document_type, document.document_type_name);
         assert_eq!(
             name,
-            document.get("name").expect("property 'name' should exist")
+            document
+                .properties()
+                .get_str("name")
+                .expect("property 'name' should exist")
         );
         assert_eq!(contract_id, document.data_contract_id);
         assert_eq!(owner_id, document.owner_id());

@@ -14,6 +14,7 @@ use integer_encoding::VarInt;
 
 use crate::data_contract::document_type::DocumentType;
 use crate::document::Document;
+use platform_value::btreemap_path_extensions::BTreeValueMapPathHelper;
 use platform_value::Value;
 use serde::{Deserialize, Serialize};
 use serde_json::Value as JsonValue;
@@ -252,21 +253,13 @@ impl ExtendedDocument {
     /// Set the value under given path.
     /// The path supports syntax from `lodash` JS lib. Example: "root.people[0].name".
     /// If parents are not present they will be automatically created
-    pub fn set(&mut self, path: &str, value: JsonValue) -> Result<(), ProtocolError> {
-        Ok(self.data.insert_with_path(path, value)?)
+    pub fn set(&mut self, path: &str, value: Value) -> Result<(), ProtocolError> {
+        Ok(self.document.properties.insert_with_path(path, value)?)
     }
 
     /// Retrieves field specified by path
-    pub fn get(&self, path: &str) -> Option<&JsonValue> {
-        match self.data.get_value(path) {
-            Ok(v) => Some(v),
-            Err(_) => None,
-        }
-    }
-
-    /// Set the Document's data
-    pub fn set_data(&mut self, data: JsonValue) {
-        self.data = data;
+    pub fn get(&self, path: &str) -> Option<&Value> {
+        self.properties().get_optional_at_path(path).ok().flatten()
     }
 
     /// Get entropy
@@ -455,7 +448,7 @@ mod test {
             ]
         );
         assert_eq!(document.revision(), Some(&1));
-        assert_eq!(document.created_at().unwrap(), 1656583332347);
+        assert_eq!(document.created_at().unwrap(), &1656583332347);
         assert_eq!(document.properties().get_string("name").unwrap(), "Cutie");
 
         Ok(())

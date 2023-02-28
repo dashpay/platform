@@ -217,9 +217,9 @@ async fn should_return_invalid_result_if_document_transition_with_action_replace
         data_contract.clone(),
     )
     .expect("document should be created");
-    replace_document.revision = 3;
+    replace_document.document.revision = Some(3);
 
-    documents[0].created_at = replace_document.created_at;
+    documents[0].created_at = replace_document.created_at().copied();
 
     let document_transitions = get_document_transitions_fixture([
         (Action::Create, vec![]),
@@ -276,7 +276,7 @@ async fn should_return_invalid_result_if_document_transition_with_action_replace
         data_contract.clone(),
     )
     .expect("document should be created");
-    replace_document.revision = 1;
+    replace_document.document.revision = Some(1);
 
     let mut fetched_document = Document::from_raw_json_document(documents[0].to_object().unwrap())
         .expect("document should be created");

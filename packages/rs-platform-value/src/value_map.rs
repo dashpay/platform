@@ -5,6 +5,8 @@ pub type ValueMap = Vec<(Value, Value)>;
 
 pub trait ValueMapHelper {
     fn get_key(&self, key: &str) -> Option<&Value>;
+    fn get_key_mut(&mut self, key: &str) -> Option<&mut Value>;
+    fn get_key_mut_or_insert(&mut self, key: &str, value: Value) -> &mut Value;
     fn remove_key(&mut self, key: &str) -> Option<Value>;
 }
 
@@ -21,6 +23,45 @@ impl ValueMapHelper for ValueMap {
                 None
             }
         })
+    }
+
+    fn get_key_mut(&mut self, search_key: &str) -> Option<&mut Value> {
+        self.iter_mut().find_map(|(key, value)| {
+            if let Value::Text(text) = key {
+                if text == search_key {
+                    Some(value)
+                } else {
+                    None
+                }
+            } else {
+                None
+            }
+        })
+    }
+
+    fn get_key_mut_or_insert(&mut self, search_key: &str, value: Value) -> &mut Value {
+        let found = self.iter().position(|(key, _)| {
+            if let Value::Text(text) = key {
+                if text == search_key {
+                    true
+                } else {
+                    false
+                }
+            } else {
+                false
+            }
+        });
+        match found {
+            None => {
+                self.push((Value::Text(search_key.to_string()), value));
+                let (_, value) = self.last_mut().unwrap();
+                value
+            }
+            Some(pos) => {
+                let (_, value) = self.get_mut(pos).unwrap();
+                value
+            }
+        }
     }
 
     fn remove_key(&mut self, search_key: &str) -> Option<Value> {

@@ -7,6 +7,7 @@
 //!
 pub mod btreemap_extensions;
 pub mod btreemap_path_extensions;
+pub mod btreemap_path_insertion_extensions;
 pub mod converter;
 pub mod display;
 mod error;
@@ -924,6 +925,30 @@ impl Value {
     /// assert_eq!(value.to_map_ref(), Err(Error::StructureError("value is not a map".to_string())))
     /// ```
     pub fn to_map_ref(&self) -> Result<&ValueMap, Error> {
+        match self {
+            Value::Map(map) => Ok(map),
+            _other => Err(Error::StructureError("value is not a map".to_string())),
+        }
+    }
+
+    /// If the `Value` is a `Map`, returns the associated ValueMap ref which is a `&Vec<(Value, Value)>`
+    /// data as `Ok`.
+    /// Returns `Err(Error::Structure("reason"))` otherwise.
+    ///
+    /// ```
+    /// # use platform_value::{Error, Value};
+    /// #
+    /// let mut value = Value::Map(
+    ///     vec![
+    ///         (Value::Text(String::from("key")), Value::Float(18.)),
+    ///     ]
+    /// );
+    /// assert_eq!(value.as_map_mut_ref(), Ok(&mut vec![(Value::Text(String::from("key")), Value::Float(18.))]));
+    ///
+    /// let mut value = Value::Bool(true);
+    /// assert_eq!(value.as_map_mut_ref(), Err(Error::StructureError("value is not a map".to_string())))
+    /// ```
+    pub fn as_map_mut_ref(&mut self) -> Result<&mut ValueMap, Error> {
         match self {
             Value::Map(map) => Ok(map),
             _other => Err(Error::StructureError("value is not a map".to_string())),
