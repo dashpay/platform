@@ -170,7 +170,8 @@ where
 
         for diff in base_data_contract_diff.0.iter() {
             let (operation, property_name) = get_operation_and_property_name(diff);
-            validation_result.add_error(BasicError::DataContractImmutablePropertiesUpdateError {
+            validation_result.add_error(BasicError::
+                                        DataContractImmutablePropertiesUpdateError {
                 operation: operation.to_owned(),
                 field_path: property_name.to_owned(),
             })

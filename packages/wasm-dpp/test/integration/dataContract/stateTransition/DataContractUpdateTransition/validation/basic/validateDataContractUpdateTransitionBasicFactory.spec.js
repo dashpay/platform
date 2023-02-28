@@ -1,19 +1,19 @@
-const lodashClone = require('lodash/cloneDeep');
+// const lodashClone = require('lodash/cloneDeep');
 
-const jsonPatch = require('fast-json-patch');
-const jsonSchemaDiffValidator = require('json-schema-diff-validator');
+// const jsonPatch = require('fast-json-patch');
+// const jsonSchemaDiffValidator = require('json-schema-diff-validator');
 
-const { getRE2Class } = require('@dashevo/wasm-re2');
+// const { getRE2Class } = require('@dashevo/wasm-re2');
 
-const createAjv = require('@dashevo/dpp/lib/ajv/createAjv');
+// const createAjv = require('@dashevo/dpp/lib/ajv/createAjv');
 
-const JsonSchemaValidator = require('@dashevo/dpp/lib/validation/JsonSchemaValidator');
+// const JsonSchemaValidator = require('@dashevo/dpp/lib/validation/JsonSchemaValidator');
 
 const protocolVersion = require('@dashevo/dpp/lib/version/protocolVersion');
 
 const createStateRepositoryMock = require('@dashevo/dpp/lib/test/mocks/createStateRepositoryMock');
 
-const validateDataContractUpdateTransitionBasicFactory = require('@dashevo/dpp/lib/dataContract/stateTransition/DataContractUpdateTransition/validation/basic/validateDataContractUpdateTransitionBasicFactory');
+// const validateDataContractUpdateTransitionBasicFactory = require('@dashevo/dpp/lib/dataContract/stateTransition/DataContractUpdateTransition/validation/basic/validateDataContractUpdateTransitionBasicFactory');
 
 // const DataContractUpdateTransition = require('@dashevo/dpp/lib/dataContract/stateTransition/DataContractUpdateTransition/DataContractUpdateTransition');
 
@@ -26,10 +26,10 @@ const getDataContractFixture = require('@dashevo/dpp/lib/test/fixtures/getDataCo
 
 // const ValidationResult = require('@dashevo/dpp/lib/validation/ValidationResult');
 
-const SomeConsensusError = require('@dashevo/dpp/lib/test/mocks/SomeConsensusError');
-const DataContractImmutablePropertiesUpdateError = require('@dashevo/dpp/lib/errors/consensus/basic/dataContract/DataContractImmutablePropertiesUpdateError');
-const IncompatibleDataContractSchemaError = require('@dashevo/dpp/lib/errors/consensus/basic/dataContract/IncompatibleDataContractSchemaError');
-// const StateTransitionExecutionContext = require('@dashevo/dpp/lib/stateTransition/StateTransitionExecutionContext');
+// const SomeConsensusError = require('@dashevo/dpp/lib/test/mocks/SomeConsensusError');
+// const DataContractImmutablePropertiesUpdateError = require('@dashevo/dpp/lib/errors/consensus/basic/dataContract/DataContractImmutablePropertiesUpdateError');
+// const IncompatibleDataContractSchemaError = require('@dashevo/dpp/lib/errors/consensus/basic/dataContract/IncompatibleDataContractSchemaError');
+// // const StateTransitionExecutionContext = require('@dashevo/dpp/lib/stateTransition/StateTransitionExecutionContext');
 
 const { expectJsonSchemaError, expectValidationError } = require('../../../../../../../lib/test/expect/expectError');
 
@@ -44,6 +44,7 @@ describe('validateDataContractUpdateTransitionBasicFactory', () => {
   let ProtocolVersionParsingError;
   let DataContractValidator;
   let DataContractFactory;
+  let DataContractImmutablePropertiesUpdateError;
   
   let validateStateTransition;
   let validateDataContractMock;
@@ -66,6 +67,7 @@ describe('validateDataContractUpdateTransitionBasicFactory', () => {
       ProtocolVersionParsingError,
       DataContractValidator,
       DataContractFactory,
+      DataContractImmutablePropertiesUpdateError,
     } = await loadWasmDpp());
   });
 
@@ -75,7 +77,7 @@ describe('validateDataContractUpdateTransitionBasicFactory', () => {
 
     dataContract = getDataContractFixture();
 
-    rawDataContract = lodashClone(dataContract.toObject());
+    rawDataContract = dataContract.toObject();
     rawDataContract.version += 1;
 
     stateTransition = new DataContractUpdateTransition({
@@ -301,44 +303,46 @@ describe('validateDataContractUpdateTransitionBasicFactory', () => {
     //   expect(result.isValid()).to.be.true();
     // });
 
-    // it('should not have root immutable properties changed', async () => {
-    //   rawStateTransition.dataContract.$schema = undefined;
+    it('should not have root immutable properties changed', async () => {
+      rawStateTransition.dataContract.ownerId = Buffer.alloc(32);
 
-    //   const result = await validateStateTransition(
-    //     rawStateTransition,
-    //     executionContext,
-    //   );
+      const result = await validateStateTransition(
+        rawStateTransition,
+        executionContext,
+      );
 
-    //   expectValidationError(result);
+      expectValidationError(result);
 
-    //   const [error] = result.getErrors();
+      const [error] = result.getErrors();
 
-    //   expect(error).to.be.an.instanceOf(DataContractImmutablePropertiesUpdateError);
-    //   expect(error.getOperation()).to.equal('remove');
-    //   expect(error.getFieldPath()).to.equal('/$schema');
-    // });
+      expect(error).to.be.an.instanceOf(DataContractImmutablePropertiesUpdateError);
+      expect(error.getOperation()).to.equal('replace');
+      expect(error.getFieldPath()).to.equal('/ownerId');
+    });
 
-    // it('should be valid', async () => {
-    //   // const dataContractError = new SomeConsensusError('test');
-    //   // const dataContractResult = new ValidationResult([
-    //   //   dataContractError,
-    //   // ]);
+    it('should be valid', async () => {
+      // const dataContractError = new SomeConsensusError('test');
+      // const dataContractResult = new ValidationResult([
+      //   dataContractError,
+      // ]);
 
-    //   // validateDataContractMock.returns(dataContractResult);
+      // validateDataContractMock.returns(dataContractResult);
 
-    //   const result = await validateStateTransition(
-    //     rawStateTransition,
-    //     executionContext,
-    //   );
+      const result = await validateStateTransition(
+        rawStateTransition,
+        executionContext,
+      );
 
-    //   await expectValidationError(result);
+      expect(result.isValid()).to.be.true();
 
-    //   const [error] = result.getErrors();
+      // await expectValidationError(result);
 
-    //   // expect(error).to.equal(dataContractError);
+      // const [error] = result.getErrors();
 
-    //   // expect(validateDataContractMock.getCall(0).args).to.have.deep.members([rawDataContract]);
-    // });
+      // expect(error).to.equal(dataContractError);
+
+      // expect(validateDataContractMock.getCall(0).args).to.have.deep.members([rawDataContract]);
+    });
   });
 
   describe('signature', () => {
