@@ -5,13 +5,11 @@ FROM rust as builder
 
 RUN apt-get update && apt-get install -y clang
 
-#ARG CARGO_BUILD_PROFILE=debug
-#ENV CARGO_BUILD_PROFILE ${CARGO_BUILD_PROFILE}
-
 WORKDIR /platform
 
 COPY .cargo /platform/.cargo
 COPY Cargo.lock rust-toolchain.toml ./
+# Use Cargo.toml.template instead of Cargo.toml from project root to avoid copying unnecessary Rust packages
 COPY packages/dapi/Cargo.toml.template ./Cargo.toml
 
 COPY packages/withdrawals-contract packages/withdrawals-contract
@@ -28,6 +26,7 @@ RUN --mount=type=cache,target=target \
     --mount=type=cache,target=$CARGO_HOME/registry \
     rustup target add wasm32-unknown-unknown
 
+# Build Rust part of wasm-dpp
 RUN cd packages/wasm-dpp && ./scripts/build.sh
 
 # Build for DAPI
@@ -71,12 +70,11 @@ RUN yarn config set enableInlineBuilds true
 # node_modules directory to reuse built binaries
 RUN --mount=type=cache,target=/tmp/unplugged \
     cp -R /tmp/unplugged /platform/.yarn/ && \
+    yarn workspaces focus @dashevo/wasm-dpp && \
+    yarn workspace @dashevo/wasm-dpp webpack && \
     yarn workspaces focus --production @dashevo/dapi && \
     cp -R /platform/.yarn/unplugged /tmp/
 
-
-RUN --mount=type=cache,target=target \
-    yarn workspace @dashevo/wasm-dpp webpack
 
 FROM node:16-alpine3.16
 
