@@ -28,7 +28,7 @@ where
         self.state_repository
             .store_data_contract(
                 state_transition.data_contract.clone(),
-                state_transition.get_execution_context(),
+                Some(state_transition.get_execution_context()),
             )
             .await
     }

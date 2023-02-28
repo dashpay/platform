@@ -52,13 +52,16 @@ where
             .add_to_identity_balance(
                 identity_id,
                 credits_amount,
-                state_transition.get_execution_context(),
+                Some(state_transition.get_execution_context()),
             )
             .await?;
 
         let balance = self
             .state_repository
-            .fetch_identity_balance_with_debt(identity_id, state_transition.get_execution_context())
+            .fetch_identity_balance_with_debt(
+                identity_id,
+                Some(state_transition.get_execution_context()),
+            )
             .await?
             .ok_or_else(|| anyhow!("balance must be persisted"))?;
 
@@ -69,7 +72,10 @@ where
         }
 
         self.state_repository
-            .add_to_system_credits(credits_amount, state_transition.get_execution_context())
+            .add_to_system_credits(
+                credits_amount,
+                Some(state_transition.get_execution_context()),
+            )
             .await?;
 
         self.state_repository

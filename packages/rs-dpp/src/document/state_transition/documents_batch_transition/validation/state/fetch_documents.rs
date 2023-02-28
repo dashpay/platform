@@ -55,7 +55,7 @@ pub async fn fetch_documents(
             get_from_transition!(dts[0], data_contract_id),
             get_from_transition!(dts[0], document_type),
             options,
-            execution_context,
+            Some(execution_context),
         );
 
         fetch_documents_futures.push(future);

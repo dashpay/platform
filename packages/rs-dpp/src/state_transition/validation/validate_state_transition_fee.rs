@@ -68,7 +68,7 @@ where
                 let identity_id = st.get_owner_id();
                 let identity = self
                     .state_repository
-                    .fetch_identity(identity_id, st.get_execution_context())
+                    .fetch_identity(identity_id, Some(st.get_execution_context()))
                     .await?
                     .map(TryInto::try_into)
                     .transpose()
@@ -134,7 +134,7 @@ where
         let identity_id = st.get_owner_id();
         let identity = self
             .state_repository
-            .fetch_identity(identity_id, st.get_execution_context())
+            .fetch_identity(identity_id, Some(st.get_execution_context()))
             .await?
             .map(TryInto::try_into)
             .transpose()

@@ -147,7 +147,7 @@ where
                         ["normalizedLabel", "==", parent_domain_label]
                     ]
                 }),
-                context.state_transition_execution_context,
+                Some(context.state_transition_execution_context),
             )
             .await?;
         let documents: Vec<Document> = documents_data
@@ -209,7 +209,7 @@ where
                 //? should this be a base64 encoded
                 "where" : [["saltedDomainHash", "==", salted_domain_hash]]
             }),
-            context.state_transition_execution_context,
+            Some(context.state_transition_execution_context),
         )
         .await?;
     let preorder_documents: Vec<Document> = preorder_documents_data

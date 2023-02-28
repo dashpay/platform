@@ -70,7 +70,10 @@ pub async fn apply_documents_batch_transition(
             DocumentTransition::Create(dt) => {
                 let new_document = document_from_transition_create(dt, state_transition);
                 state_repository
-                    .create_document(&new_document, state_transition.get_execution_context())
+                    .create_document(
+                        &new_document,
+                        Some(state_transition.get_execution_context()),
+                    )
                     .await?;
             }
             DocumentTransition::Replace(dt) => {
@@ -93,7 +96,7 @@ pub async fn apply_documents_batch_transition(
                     document
                 };
                 state_repository
-                    .update_document(&document, state_transition.get_execution_context())
+                    .update_document(&document, Some(state_transition.get_execution_context()))
                     .await?;
             }
             DocumentTransition::Delete(dt) => {
@@ -102,7 +105,7 @@ pub async fn apply_documents_batch_transition(
                         &dt.base.data_contract,
                         &dt.base.document_type,
                         &dt.base.id,
-                        state_transition.get_execution_context(),
+                        Some(state_transition.get_execution_context()),
                     )
                     .await?;
             }

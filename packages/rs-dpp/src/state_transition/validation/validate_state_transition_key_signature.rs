@@ -75,7 +75,7 @@ pub async fn validate_state_transition_key_signature<SR: StateRepositoryLike>(
 
         // Target identity must exist
         let identity = state_repository
-            .fetch_identity(target_identity_id, &tmp_execution_context)
+            .fetch_identity(target_identity_id, Some(&tmp_execution_context))
             .await?;
 
         // Collect operations back from temporary context

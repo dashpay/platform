@@ -78,7 +78,7 @@ where
         .state_repository
         .fetch_identity(
             &pay_to_identifier,
-            context.state_transition_execution_context,
+            Some(context.state_transition_execution_context),
         )
         .await?;
 
@@ -99,7 +99,7 @@ where
             json!({
                 "where" : [ [ "$owner_id", "==", owner_id ]]
             }),
-            context.state_transition_execution_context,
+            Some(context.state_transition_execution_context),
         )
         .await?;
     let documents: Vec<Document> = documents_data

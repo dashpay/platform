@@ -72,14 +72,14 @@ where
             .remove_from_identity_balance(
                 &state_transition.identity_id,
                 state_transition.amount,
-                state_transition.get_execution_context(),
+                Some(state_transition.get_execution_context()),
             )
             .await?;
 
         self.state_repository
             .remove_from_system_credits(
                 state_transition.amount,
-                state_transition.get_execution_context(),
+                Some(state_transition.get_execution_context()),
             )
             .await
     }

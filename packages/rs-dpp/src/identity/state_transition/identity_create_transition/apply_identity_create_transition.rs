@@ -61,11 +61,14 @@ where
         };
 
         self.state_repository
-            .create_identity(&identity, state_transition.get_execution_context())
+            .create_identity(&identity, Some(state_transition.get_execution_context()))
             .await?;
 
         self.state_repository
-            .add_to_system_credits(credits_amount, state_transition.get_execution_context())
+            .add_to_system_credits(
+                credits_amount,
+                Some(state_transition.get_execution_context()),
+            )
             .await?;
 
         let out_point = state_transition

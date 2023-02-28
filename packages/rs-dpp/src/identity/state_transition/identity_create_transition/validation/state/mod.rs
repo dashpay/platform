@@ -21,7 +21,7 @@ pub async fn validate_identity_create_transition_state(
 
     let identity_id = state_transition.get_identity_id();
     let maybe_identity = state_repository
-        .fetch_identity(identity_id, state_transition.get_execution_context())
+        .fetch_identity(identity_id, Some(state_transition.get_execution_context()))
         .await?
         .map(TryInto::try_into)
         .transpose()

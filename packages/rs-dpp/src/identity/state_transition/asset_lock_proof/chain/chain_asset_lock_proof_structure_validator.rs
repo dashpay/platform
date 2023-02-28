@@ -113,7 +113,7 @@ where
 
         let transaction_fetch_result = self
             .state_repository
-            .fetch_transaction(&transaction_hash_string, execution_context)
+            .fetch_transaction(&transaction_hash_string, Some(execution_context))
             .await
             .map_err(|e| NonConsensusError::StateRepositoryFetchError(e.to_string()))?;
 
