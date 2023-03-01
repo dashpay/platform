@@ -1,4 +1,3 @@
-const IdentifierJs = require('@dashevo/dpp/lib/identifier/Identifier');
 const MetadataJs = require('@dashevo/dpp/lib/Metadata');
 
 const getDataContractFixture = require('@dashevo/dpp/lib/test/fixtures/getDataContractFixture');
@@ -12,11 +11,8 @@ let Metadata;
 let Identifier;
 
 describe('Document', () => {
-  let documentJs;
   let document;
-  let dataContractJs;
   let dataContract;
-  let metadataFixtureJs;
   let metadataFixture;
 
   beforeEach(async () => {
@@ -27,13 +23,13 @@ describe('Document', () => {
       Identifier,
     } = await loadWasmDpp());
 
-    dataContractJs = getDataContractFixture();
+    const dataContractJs = getDataContractFixture();
     dataContract = new DataContract(dataContractJs.toObject());
 
-    [documentJs] = getDocumentsFixture(dataContractJs).slice(8);
+    const [documentJs] = getDocumentsFixture(dataContractJs).slice(8);
     document = new Document(documentJs.toObject(), dataContract);
 
-    metadataFixtureJs = new MetadataJs({
+    const metadataFixtureJs = new MetadataJs({
       blockHeight: 42,
       coreChainLockedHeight: 0,
       timeMs: new Date().getTime(),
