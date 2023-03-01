@@ -175,10 +175,13 @@ mod test {
         match consensus_error {
             ConsensusError::IncompatibleRe2PatternError(err) => {
                 assert_eq!(err.path(), "/properties/bar".to_string());
-                assert_eq!(err.pattern(), "^((?!-|_)[a-zA-Z0-9-_]{0,62}[a-zA-Z0-9])$".to_string());
+                assert_eq!(
+                    err.pattern(),
+                    "^((?!-|_)[a-zA-Z0-9-_]{0,62}[a-zA-Z0-9])$".to_string()
+                );
                 assert_eq!(consensus_error.code(), 1009);
             }
-            _ => panic!("Expected error to be IncompatibleRe2PatternError")
+            _ => panic!("Expected error to be IncompatibleRe2PatternError"),
         }
     }
 
@@ -197,14 +200,19 @@ mod test {
         let result = validate(&schema, &[pattern_is_valid_regex_validator]);
         let consensus_error = result.errors.get(0).expect("the error should be returned");
 
-
         match consensus_error {
             ConsensusError::IncompatibleRe2PatternError(err) => {
-                assert_eq!(err.path(), "/properties/arrayOfObject/items/properties/simple".to_string());
-                assert_eq!(err.pattern(), "^((?!-|_)[a-zA-Z0-9-_]{0,62}[a-zA-Z0-9])$".to_string());
+                assert_eq!(
+                    err.path(),
+                    "/properties/arrayOfObject/items/properties/simple".to_string()
+                );
+                assert_eq!(
+                    err.pattern(),
+                    "^((?!-|_)[a-zA-Z0-9-_]{0,62}[a-zA-Z0-9])$".to_string()
+                );
                 assert_eq!(consensus_error.code(), 1009);
             }
-            _ => panic!("Expected error to be IncompatibleRe2PatternError")
+            _ => panic!("Expected error to be IncompatibleRe2PatternError"),
         }
     }
 
@@ -219,11 +227,17 @@ mod test {
 
         match consensus_error {
             ConsensusError::IncompatibleRe2PatternError(err) => {
-                assert_eq!(err.path(), "/properties/arrayOfObjects/items/[0]/properties/simple".to_string());
-                assert_eq!(err.pattern(), "^((?!-|_)[a-zA-Z0-9-_]{0,62}[a-zA-Z0-9])$".to_string());
+                assert_eq!(
+                    err.path(),
+                    "/properties/arrayOfObjects/items/[0]/properties/simple".to_string()
+                );
+                assert_eq!(
+                    err.pattern(),
+                    "^((?!-|_)[a-zA-Z0-9-_]{0,62}[a-zA-Z0-9])$".to_string()
+                );
                 assert_eq!(consensus_error.code(), 1009);
             }
-            _ => panic!("Expected error to be IncompatibleRe2PatternError")
+            _ => panic!("Expected error to be IncompatibleRe2PatternError"),
         }
     }
 

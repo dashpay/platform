@@ -468,9 +468,7 @@ mod test {
             .sign(&keys.identity_public_key, &keys.ec_private, &bls)
             .unwrap_err();
         match sign_error {
-            ProtocolError::PublicKeySecurityLevelNotMetError(
-                err
-            ) => {
+            ProtocolError::PublicKeySecurityLevelNotMetError(err) => {
                 assert_eq!(SecurityLevel::MEDIUM, err.public_key_security_level());
                 assert_eq!(SecurityLevel::HIGH, err.required_security_level());
             }
@@ -601,8 +599,11 @@ mod test {
             ProtocolError::InvalidSignaturePublicKeySecurityLevelError(err) => {
                 assert_eq!(err.public_key_security_level(), SecurityLevel::MASTER);
                 assert_eq!(err.required_key_security_level(), SecurityLevel::HIGH);
-            },
-            error => panic!("expected InvalidSignaturePublicKeySecurityLevelError, got {}", error)
+            }
+            error => panic!(
+                "expected InvalidSignaturePublicKeySecurityLevelError, got {}",
+                error
+            ),
         }
     }
 }

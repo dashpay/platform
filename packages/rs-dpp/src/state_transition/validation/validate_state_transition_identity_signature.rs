@@ -3,7 +3,10 @@ use std::{collections::HashSet, convert::TryInto};
 use anyhow::Context;
 use lazy_static::lazy_static;
 
-use crate::consensus::signature::{IdentityNotFoundError, InvalidIdentityPublicKeyTypeError, MissingPublicKeyError, PublicKeyIsDisabledError, PublicKeySecurityLevelNotMetError};
+use crate::consensus::signature::{
+    IdentityNotFoundError, InvalidIdentityPublicKeyTypeError, MissingPublicKeyError,
+    PublicKeyIsDisabledError, PublicKeySecurityLevelNotMetError,
+};
 use crate::{
     consensus::{signature::SignatureError, ConsensusError},
     identity::KeyType,
@@ -142,6 +145,7 @@ fn convert_to_consensus_signature_error(
 #[cfg(test)]
 mod test {
     use super::*;
+    use crate::consensus::signature::InvalidSignaturePublicKeySecurityLevelError;
     use crate::state_transition::errors::{PublicKeyMismatchError, WrongPublicKeyPurposeError};
     use crate::{
         document::DocumentsBatchTransition,
@@ -159,7 +163,6 @@ mod test {
         NativeBlsModule,
     };
     use serde::{Deserialize, Serialize};
-    use crate::consensus::signature::InvalidSignaturePublicKeySecurityLevelError;
 
     #[derive(Debug, Clone, Serialize, Deserialize)]
     #[serde(rename_all = "camelCase")]
@@ -346,8 +349,8 @@ mod test {
         match signature_error {
             SignatureError::IdentityNotFoundError(err) => {
                 assert_eq!(err.identity_id(), identity.get_id().clone())
-            },
-            error => panic!("expected IdentityNotFoundError, got {}", error)
+            }
+            error => panic!("expected IdentityNotFoundError, got {}", error),
         }
     }
 
@@ -379,8 +382,8 @@ mod test {
         match signature_error {
             SignatureError::MissingPublicKeyError(err) => {
                 assert_eq!(err.public_key_id(), 12332)
-            },
-            error => panic!("expected MissingPublicKeyError, got {}", error)
+            }
+            error => panic!("expected MissingPublicKeyError, got {}", error),
         }
     }
 

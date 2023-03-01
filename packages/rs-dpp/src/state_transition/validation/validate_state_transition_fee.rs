@@ -399,7 +399,7 @@ mod test {
             ProtocolError::InvalidStateTransitionTypeError(err) => {
                 assert_eq!(err.transition_type(), 6);
             }
-            _ => panic!("expected InvalidStateTransitionTypeError, got {}", result)
+            _ => panic!("expected InvalidStateTransitionTypeError, got {}", result),
         }
     }
 }

@@ -33,8 +33,8 @@ mod validate_identity_credit_withdrawal_transition_state_factory {
     use anyhow::Error;
 
     use crate::assert_consensus_errors;
-    use crate::consensus::ConsensusError;
     use crate::consensus::signature::SignatureError;
+    use crate::consensus::ConsensusError;
     use crate::prelude::{Identifier, Identity};
 
     use super::*;
@@ -63,15 +63,13 @@ mod validate_identity_credit_withdrawal_transition_state_factory {
         assert_eq!(error.code(), 2000);
 
         match error {
-            ConsensusError::SignatureError(err) => {
-                match err {
-                    SignatureError::IdentityNotFoundError(e) => {
-                        assert_eq!(e.identity_id(), Identifier::default());
-                    },
-                    e => panic!("expected IdentityNotFoundError, got {}", e)
+            ConsensusError::SignatureError(err) => match err {
+                SignatureError::IdentityNotFoundError(e) => {
+                    assert_eq!(e.identity_id(), Identifier::default());
                 }
+                e => panic!("expected IdentityNotFoundError, got {}", e),
             },
-            e => panic!("expected IdentityNotFoundError, got {:?}", e)
+            e => panic!("expected IdentityNotFoundError, got {:?}", e),
         }
     }
 

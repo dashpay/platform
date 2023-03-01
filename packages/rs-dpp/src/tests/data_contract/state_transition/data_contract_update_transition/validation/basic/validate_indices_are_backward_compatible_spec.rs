@@ -101,8 +101,11 @@ fn should_return_invalid_result_if_some_of_unique_indices_have_changed() {
         BasicError::DataContractUniqueIndicesChangedError(err) => {
             assert_eq!(err.document_type(), "indexedDocument".to_string());
             assert_eq!(err.index_name(), "index1".to_string());
-        },
-        _ => panic!("Expected DataContractUniqueIndicesChangedError, got {}", basic_error)
+        }
+        _ => panic!(
+            "Expected DataContractUniqueIndicesChangedError, got {}",
+            basic_error
+        ),
     }
 }
 
@@ -132,8 +135,11 @@ fn should_return_invalid_result_if_non_unique_index_update_failed_due_to_changed
         BasicError::DataContractInvalidIndexDefinitionUpdateError(err) => {
             assert_eq!(err.document_type(), "indexedDocument".to_string());
             assert_eq!(err.index_name(), "index3".to_string());
-        },
-        _ => panic!("Expected DataContractInvalidIndexDefinitionUpdateError, got {}", basic_error)
+        }
+        _ => panic!(
+            "Expected DataContractInvalidIndexDefinitionUpdateError, got {}",
+            basic_error
+        ),
     }
 }
 
@@ -163,8 +169,11 @@ fn should_return_invalid_result_if_already_indexed_properties_are_added_to_exist
         BasicError::DataContractInvalidIndexDefinitionUpdateError(err) => {
             assert_eq!(err.document_type(), "indexedDocument".to_string());
             assert_eq!(err.index_name(), "index3".to_string());
-        },
-        _ => panic!("Expected DataContractInvalidIndexDefinitionUpdateError, got {}", basic_error)
+        }
+        _ => panic!(
+            "Expected DataContractInvalidIndexDefinitionUpdateError, got {}",
+            basic_error
+        ),
     }
 }
 
@@ -204,8 +213,11 @@ fn should_return_invalid_result_if_one_of_new_indices_contains_old_properties_in
         BasicError::DataContractInvalidIndexDefinitionUpdateError(err) => {
             assert_eq!(err.document_type(), "indexedDocument".to_string());
             assert_eq!(err.index_name(), "index_other".to_string());
-        },
-        _ => panic!("Expected DataContractInvalidIndexDefinitionUpdateError, got {}", basic_error)
+        }
+        _ => panic!(
+            "Expected DataContractInvalidIndexDefinitionUpdateError, got {}",
+            basic_error
+        ),
     }
 }
 
@@ -242,8 +254,11 @@ fn should_return_invalid_result_if_one_of_new_indices_is_unique() {
         BasicError::DataContractHaveNewUniqueIndexError(err) => {
             assert_eq!(err.document_type(), "indexedDocument".to_string());
             assert_eq!(err.index_name(), "index_other".to_string());
-        },
-        _ => panic!("Expected DataContractHaveNewUniqueIndexError, got {}", basic_error)
+        }
+        _ => panic!(
+            "Expected DataContractHaveNewUniqueIndexError, got {}",
+            basic_error
+        ),
     }
 }
 
@@ -308,7 +323,10 @@ fn should_return_invalid_result_if_non_unique_index_added_for_non_indexed_proper
         BasicError::DataContractInvalidIndexDefinitionUpdateError(err) => {
             assert_eq!(err.document_type(), "indexedDocument".to_string());
             assert_eq!(err.index_name(), "index1337".to_string());
-        },
-        _ => panic!("Expected DataContractInvalidIndexDefinitionUpdateError, got {}", basic_error)
+        }
+        _ => panic!(
+            "Expected DataContractInvalidIndexDefinitionUpdateError, got {}",
+            basic_error
+        ),
     }
 }

@@ -196,8 +196,11 @@ mod test {
         match basic_error {
             BasicError::InvalidStateTransitionTypeError(err) => {
                 assert_eq!(err.transition_type(), 123)
-            },
-            _ => panic!("Expected InvalidStateTransitionTypeError, got {}", basic_error)
+            }
+            _ => panic!(
+                "Expected InvalidStateTransitionTypeError, got {}",
+                basic_error
+            ),
         }
     }
 
@@ -226,8 +229,11 @@ mod test {
         match basic_error {
             BasicError::InvalidStateTransitionTypeError(err) => {
                 assert_eq!(err.transition_type(), 123)
-            },
-            _ => panic!("Expected InvalidStateTransitionTypeError, got {}", basic_error)
+            }
+            _ => panic!(
+                "Expected InvalidStateTransitionTypeError, got {}",
+                basic_error
+            ),
         }
     }
 
@@ -264,8 +270,11 @@ mod test {
             BasicError::StateTransitionMaxSizeExceededError(err) => {
                 assert_eq!(err.actual_size_kbytes(), 53);
                 assert_eq!(err.max_size_kbytes(), 16);
-            },
-            _ => panic!("Expected StateTransitionMaxSizeExceededError, got {}", basic_error)
+            }
+            _ => panic!(
+                "Expected StateTransitionMaxSizeExceededError, got {}",
+                basic_error
+            ),
         }
     }
 

@@ -244,14 +244,14 @@ mod test {
             ProtocolError::InvalidStateTransitionTypeError(err) => {
                 assert_eq!(err.transition_type(), 154);
             }
-            _ => panic!("expected InvalidStateTransitionTypeError, got {}", err)
+            _ => panic!("expected InvalidStateTransitionTypeError, got {}", err),
         }
     }
 
     pub fn get_protocol_error<T>(result: Result<T, ProtocolError>) -> ProtocolError {
         match result {
             Ok(_) => panic!("expected to get ProtocolError, got valid result"),
-            Err(e) => e
+            Err(e) => e,
         }
     }
 }

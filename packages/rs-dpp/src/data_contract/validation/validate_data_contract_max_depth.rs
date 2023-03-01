@@ -134,7 +134,10 @@ mod test {
         let result = calc_max_depth(&schema);
 
         let err = get_ref_error(result);
-        assert_eq!(err.ref_error(), "the ref '#/$defs/object' contains cycles".to_string());
+        assert_eq!(
+            err.ref_error(),
+            "the ref '#/$defs/object' contains cycles".to_string()
+        );
     }
 
     #[test]
@@ -219,7 +222,11 @@ mod test {
         let result = calc_max_depth(&schema);
 
         let err = get_ref_error(result);
-        assert_eq!(err.ref_error(), "invalid ref 'https://json-schema.org/some': only local references are allowed".to_string());
+        assert_eq!(
+            err.ref_error(),
+            "invalid ref 'https://json-schema.org/some': only local references are allowed"
+                .to_string()
+        );
 
         // assert!(matches!(
         //     result,
@@ -249,7 +256,10 @@ mod test {
         let result = calc_max_depth(&schema);
 
         let err = get_ref_error(result);
-        assert_eq!(err.ref_error(), "invalid ref '': only local references are allowed".to_string());
+        assert_eq!(
+            err.ref_error(),
+            "invalid ref '': only local references are allowed".to_string()
+        );
     }
 
     #[test]
@@ -297,14 +307,10 @@ mod test {
     pub fn get_ref_error<T>(result: Result<T, BasicError>) -> InvalidJsonSchemaRefError {
         match result {
             Ok(_) => panic!("expected to have validation error"),
-            Err(e) => {
-                match e {
-                    BasicError::InvalidJsonSchemaRefError(err) => {
-                        err
-                    },
-                    _ => panic!("expected error to be a InvalidJsonSchemaRefError")
-                }
-            }
+            Err(e) => match e {
+                BasicError::InvalidJsonSchemaRefError(err) => err,
+                _ => panic!("expected error to be a InvalidJsonSchemaRefError"),
+            },
         }
     }
 }

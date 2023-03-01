@@ -142,8 +142,8 @@ async fn should_throw_error_if_data_contract_was_not_found() {
     match error {
         ProtocolError::DataContractNotPresentError(err) => {
             assert_eq!(err.data_contract_id(), data_contract.id);
-        },
-        _ => panic!("Expected DataContractNotPresentError, got {}", error)
+        }
+        _ => panic!("Expected DataContractNotPresentError, got {}", error),
     }
 }
 

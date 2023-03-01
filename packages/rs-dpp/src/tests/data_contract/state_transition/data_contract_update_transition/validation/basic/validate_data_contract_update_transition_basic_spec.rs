@@ -360,8 +360,11 @@ async fn should_have_existing_documents_schema_backward_compatible() {
         BasicError::IncompatibleDataContractSchemaError(err) => {
             assert_eq!(err.operation(), "add".to_string());
             assert_eq!(err.field_path(), "/required/1".to_string());
-        },
-        _ => panic!("Expected IncompatibleDataContractSchemaError, got {}", basic_error)
+        }
+        _ => panic!(
+            "Expected IncompatibleDataContractSchemaError, got {}",
+            basic_error
+        ),
     }
 }
 
