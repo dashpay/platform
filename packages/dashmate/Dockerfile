@@ -27,7 +27,6 @@ COPY packages/dashmate packages/dashmate
 COPY packages/dashpay-contract packages/dashpay-contract
 COPY packages/dpns-contract packages/dpns-contract
 COPY packages/js-dpp packages/js-dpp
-COPY packages/wasm-dpp packages/wasm-dpp
 COPY packages/feature-flags-contract packages/feature-flags-contract
 COPY packages/masternode-reward-shares-contract packages/masternode-reward-shares-contract
 COPY packages/wallet-lib packages/wallet-lib
