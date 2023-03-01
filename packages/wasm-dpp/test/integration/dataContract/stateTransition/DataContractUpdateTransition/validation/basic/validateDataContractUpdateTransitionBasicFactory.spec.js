@@ -282,6 +282,23 @@ describe('validateDataContractUpdateTransitionBasicFactory', () => {
       expect(error.getParams().missingProperty).to.equal('signature');
     });
 
+    it('should be a byte array', async () => {
+      rawStateTransition.signature = new Array(65).fill('string');
+
+      // Because of how byte arrays are handled in input arguments it fails way before
+      // any of validators come in so we cannot provide any sensible error, but at
+      // least it won't work with bad type, so we're safe.
+      try {
+        await validateStateTransition(
+          rawStateTransition,
+          executionContext,
+        );
+        expect.fail('wasm bindgen error must be thrown');
+      } catch (error) {
+        expect(error.message).to.contain('invalid type: string "string", expected u8');
+      }
+    });
+
     it('should be not less than 65 bytes', async () => {
       rawStateTransition.signature = Buffer.alloc(64);
 
