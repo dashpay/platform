@@ -4,7 +4,7 @@ use dpp::document::{
     extended_document_property_names, ExtendedDocument, EXTENDED_DOCUMENT_IDENTIFIER_FIELDS,
 };
 use dpp::platform_value::btreemap_path_extensions::BTreeValueMapPathHelper;
-use dpp::platform_value::Value;
+use dpp::platform_value::{ReplacementType, Value};
 use dpp::prelude::{Identifier, Revision};
 use dpp::util::json_schema::JsonSchemaExt;
 use dpp::util::json_value::{JsonValueExt, ReplaceWith};
@@ -155,40 +155,29 @@ impl ExtendedDocumentWasm {
     #[wasm_bindgen(js_name=set)]
     pub fn set(&mut self, path: String, js_value_to_set: JsValue) -> Result<(), JsValue> {
         let (identifier_paths, _) = self.0.get_identifiers_and_binary_paths().with_js_error()?;
-        for property_path in identifier_paths {
-            if property_path == path {
-                let id_value = js_value_to_set.with_serde_to_json_value()?;
-                let id_string = id_value
-                    .as_str()
-                    .context("the value must be a string")
-                    .with_js_error()?;
-                let id = Identifier::from_string(id_string, Encoding::Base58).with_js_error()?;
-                let new_value = serde_json::to_value(id.as_bytes()).with_js_error()?;
-                let mut value: Value = new_value.into();
-
-                return self.0.set(&path, value).with_js_error();
-            } else if property_path.starts_with(&path) {
-                let (_, suffix) = property_path.split_at(path.len() + 1);
-                let mut value: Value = js_value_to_set.with_serde_to_json_value()?.into();
-                let map = value.to_btree_ref_map()?;
-                if map.get_at_path(suffix).is_ok() {
-                    let id_string = value
-                        .remove_path_into::<String>(suffix)
-                        .with_context(|| format!("unable convert `{path}` into string"))
-                        .map_err(|e| format!("{e:#}"))?;
-                    let id: IdentifierWrapper =
-                        Identifier::from_string(&id_string, Encoding::Base58)
-                            .with_js_error()?
-                            .into();
-                    let new_value = serde_json::to_value(id.inner().as_bytes()).with_js_error()?;
-                    value.insert_with_path(suffix, new_value).with_js_error()?;
-
-                    return self.0.set(&path, value).with_js_error();
-                }
-            }
+        let mut value: Value = js_value_to_set.with_serde_to_json_value()?.into();
+        if identifier_paths.contains(path.as_str()) {
+            let identifier_value = ReplacementType::Bytes
+                .replace_consume_value(value)
+                .map_err(ProtocolError::ValueError)
+                .with_js_error()?;
+            return self.0.set(&path, identifier_value).with_js_error();
+        } else {
+            identifier_paths
+                .into_iter()
+                .try_for_each(|identifier_path| {
+                    if identifier_path.starts_with(path.as_str()) {
+                        let (_, suffix) = identifier_path.split_at(path.len() + 1);
+                        value
+                            .replace_at_path(suffix, ReplacementType::Bytes)
+                            .map_err(ProtocolError::ValueError)
+                            .map(|_| ())
+                            .with_js_error()
+                    } else {
+                        Ok(())
+                    }
+                })?;
         }
-
-        let value: Value = js_value_to_set.with_serde_to_json_value()?.into();
         self.0.set(&path, value).with_js_error()
     }
 

@@ -22,6 +22,7 @@ use dpp::{
 };
 use js_sys::Uint8Array;
 use js_sys::{Array, Number};
+use serde_json::Value;
 use wasm_bindgen::__rt::Ref;
 
 use dpp::document::Document;
@@ -267,6 +268,19 @@ impl StateRepositoryLike for ExternalStateRepositoryLikeWrapper {
     }
 
     async fn fetch_documents<T>(
+        &self,
+        _contract_id: &Identifier,
+        _data_contract_type: &str,
+        _where_query: serde_json::Value,
+        _execution_context: &StateTransitionExecutionContext,
+    ) -> Result<Vec<T>>
+    where
+        T: for<'de> serde::de::Deserialize<'de> + 'static,
+    {
+        todo!()
+    }
+
+    async fn fetch_extended_documents<T>(
         &self,
         _contract_id: &Identifier,
         _data_contract_type: &str,

@@ -18,6 +18,11 @@ impl ReplacementType {
             ReplacementType::TextBase64 => Value::Text(base64::encode(bytes)),
         }
     }
+
+    pub fn replace_consume_value(&self, value: Value) -> Result<Value, Error> {
+        let bytes = value.into_system_bytes()?;
+        Ok(self.replace_for_bytes(bytes))
+    }
 }
 
 pub trait BTreeValueMapInsertionPathHelper {
@@ -26,11 +31,11 @@ pub trait BTreeValueMapInsertionPathHelper {
         path: &str,
         replacement_type: ReplacementType,
     ) -> Result<bool, Error>;
-    fn replace_at_paths<'a, I: IntoIterator<Item = &'a str>>(
+    fn replace_at_paths<I: IntoIterator<Item = String>>(
         &mut self,
         paths: I,
         replacement_type: ReplacementType,
-    ) -> Result<HashMap<&'a str, bool>, Error>;
+    ) -> Result<HashMap<String, bool>, Error>;
 }
 
 impl BTreeValueMapInsertionPathHelper for BTreeMap<String, Value> {
@@ -62,15 +67,15 @@ impl BTreeValueMapInsertionPathHelper for BTreeMap<String, Value> {
         Ok(false)
     }
 
-    fn replace_at_paths<'a, I: IntoIterator<Item = &'a str>>(
+    fn replace_at_paths<I: IntoIterator<Item = String>>(
         &mut self,
         paths: I,
         replacement_type: ReplacementType,
-    ) -> Result<HashMap<&'a str, bool>, Error> {
+    ) -> Result<HashMap<String, bool>, Error> {
         paths
             .into_iter()
             .map(|path| {
-                let success = self.replace_at_path(path, replacement_type)?;
+                let success = self.replace_at_path(path.as_str(), replacement_type)?;
                 Ok((path, success))
             })
             .collect()

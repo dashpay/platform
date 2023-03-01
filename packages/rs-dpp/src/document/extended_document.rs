@@ -292,6 +292,18 @@ impl ExtendedDocument {
 
         Ok((identifiers_paths, binary_paths))
     }
+
+    pub fn get_identifiers_and_binary_paths_owned(
+        &self,
+    ) -> Result<(HashSet<String>, HashSet<String>), ProtocolError> {
+        let (mut identifiers_paths, binary_paths) = self
+            .data_contract
+            .get_identifiers_and_binary_paths_owned(&self.document_type_name)?;
+
+        identifiers_paths.extend(IDENTIFIER_FIELDS.map(|str| str.to_string()));
+
+        Ok((identifiers_paths, binary_paths))
+    }
 }
 
 #[cfg(test)]

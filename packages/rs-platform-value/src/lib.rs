@@ -6,7 +6,7 @@
 //!
 //!
 pub mod btreemap_extensions;
-mod btreemap_field_replacement;
+pub mod btreemap_field_replacement;
 pub mod btreemap_path_extensions;
 pub mod btreemap_path_insertion_extensions;
 pub mod converter;
@@ -17,10 +17,11 @@ mod integer;
 pub mod system_bytes;
 pub mod value_map;
 
-use crate::value_map::ValueMap;
+use crate::value_map::{ValueMap, ValueMapHelper};
 pub use error::Error;
 pub use integer::Integer;
 use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
 
 pub type Hash256 = [u8; 32];
 pub use btreemap_field_replacement::ReplacementType;
@@ -955,6 +956,42 @@ impl Value {
             Value::Map(map) => Ok(map),
             _other => Err(Error::StructureError("value is not a map".to_string())),
         }
+    }
+
+    pub fn replace_at_path(
+        &mut self,
+        path: &str,
+        replacement_type: ReplacementType,
+    ) -> Result<bool, Error> {
+        let mut split = path.split(".").peekable();
+        let mut current_value = self;
+        while let Some(path_component) = split.next() {
+            let map = current_value.as_map_mut_ref()?;
+            let Some(mut new_value) = map.get_key_mut(path_component) else {
+                return Ok(false);
+            };
+            current_value = new_value;
+            if split.peek().is_none() {
+                let bytes = current_value.to_system_bytes()?;
+                new_value = &mut replacement_type.replace_for_bytes(bytes);
+                return Ok(true);
+            }
+        }
+        Ok(false)
+    }
+
+    pub fn replace_at_paths<'a, I: IntoIterator<Item = &'a str>>(
+        &mut self,
+        paths: I,
+        replacement_type: ReplacementType,
+    ) -> Result<HashMap<&'a str, bool>, Error> {
+        paths
+            .into_iter()
+            .map(|path| {
+                let success = self.replace_at_path(path, replacement_type)?;
+                Ok((path, success))
+            })
+            .collect()
     }
 }
 

@@ -2,6 +2,8 @@ use serde::Serialize;
 use wasm_bindgen::prelude::*;
 
 use crate::document::errors::document_no_revision_error::DocumentNoRevisionError;
+use crate::document::errors::revision_absent_error::RevisionAbsentError;
+use crate::document::errors::trying_to_replace_immutable_document_error::TryingToReplaceImmutableDocumentError;
 pub use document_already_exists_error::*;
 pub use document_not_provided_error::*;
 use dpp::document::errors::DocumentError;
@@ -24,6 +26,8 @@ mod invalid_document_error;
 mod invalid_initial_revision_error;
 mod mismatch_owners_ids_error;
 mod no_documents_supplied_error;
+mod revision_absent_error;
+mod trying_to_replace_immutable_document_error;
 
 pub fn from_document_to_js_error(e: DocumentError) -> JsValue {
     match e {
@@ -59,6 +63,12 @@ pub fn from_document_to_js_error(e: DocumentError) -> JsValue {
         DocumentError::NoDocumentsSuppliedError => NoDocumentsSuppliedError::new().into(),
         DocumentError::DocumentNoRevisionError { document } => {
             DocumentNoRevisionError::new((*document).into()).into()
+        }
+        DocumentError::RevisionAbsentError { document } => {
+            RevisionAbsentError::new((*document).into()).into()
+        }
+        DocumentError::TryingToReplaceImmutableDocument { document } => {
+            TryingToReplaceImmutableDocumentError::new((*document).into()).into()
         }
     }
 }

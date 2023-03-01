@@ -1,5 +1,7 @@
+use std::collections::HashSet;
 use std::sync::Arc;
 
+use dpp::platform_value::btreemap_field_replacement::BTreeValueMapInsertionPathHelper;
 use dpp::platform_value::ReplacementType;
 use dpp::{
     document::{
@@ -148,12 +150,11 @@ impl DocumentFactoryWASM {
             .create_from_object(raw_document, options)
             .await
             .with_js_error()?;
-
+        let (identifier_paths, binary_paths) = document
+            .get_identifiers_and_binary_paths_owned()
+            .with_js_error()?;
         // When data contract is available, replace remaining dynamic paths
         let mut document_data = document.properties_as_mut();
-        let (identifier_paths, binary_paths) = document
-            .get_identifiers_and_binary_paths()
-            .with_js_error()?;
         document_data
             .replace_at_paths(identifier_paths, ReplacementType::Bytes)
             .map_err(ProtocolError::ValueError)
