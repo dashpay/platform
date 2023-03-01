@@ -1346,13 +1346,14 @@ mod documents {
             .expect("the error in result should exist");
 
         assert_eq!(1009, pattern_error.get_code());
-        assert!(
-            matches!(pattern_error, ConsensusError::IncompatibleRe2PatternError { path, pattern, .. }
-            if  {
-                path == "/documents/indexedDocument/properties/something" &&
-                pattern == "^((?!-|_)[a-zA-Z0-9-_]{0,62}[a-zA-Z0-9])$"
-            })
-        );
+
+        match pattern_error {
+            ConsensusError::IncompatibleRe2PatternError(err) => {
+                assert_eq!(err.path(),"/documents/indexedDocument/properties/something".to_string());
+                assert_eq!(err.pattern(),"^((?!-|_)[a-zA-Z0-9-_]{0,62}[a-zA-Z0-9])$".to_string());
+            },
+            _ => panic!("Expected IncompatibleRe2PatternError, got {:?}", pattern_error)
+        }
     }
 }
 
@@ -1600,10 +1601,12 @@ mod indices {
             .expect("the validation error should be returned");
         let index_error = get_index_error(validation_error);
 
-        assert_eq!(1008, index_error.get_code());
-        assert!(
-            matches!(index_error, IndexError::DuplicateIndexError { document_type, .. } if document_type == "indexedDocument")
-        );
+        match index_error {
+            IndexError::DuplicateIndexError(err) => {
+                assert_eq!(err.document_type(), "indexedDocument".to_string());
+            },
+            _ => panic!("Expected DuplicateIndexError, got {}", index_error)
+        }
     }
 
     #[test]
@@ -1635,13 +1638,13 @@ mod indices {
         let basic_error = get_basic_error(validation_error);
 
         assert_eq!(1048, basic_error.get_code());
-        assert!(
-            matches!(basic_error, BasicError::DuplicateIndexNameError { document_type, duplicate_index_name }
-            if  {
-                document_type == "indexedDocument" &&
-                duplicate_index_name == "index1"
-            })
-        );
+        match basic_error {
+            BasicError::DuplicateIndexNameError(err) => {
+                assert_eq!(err.document_type(), "indexedDocument".to_string());
+                assert_eq!(err.duplicate_index_name(), "index1".to_string())
+            },
+            _ => panic!("Expected DuplicateIndexNameError, got {}", basic_error)
+        }
     }
 
     #[test]
@@ -1956,13 +1959,14 @@ mod indices {
         let index_error = get_index_error(error);
 
         assert_eq!(1017, index_error.get_code());
-        assert!(
-            matches!(index_error, IndexError::UniqueIndicesLimitReachedError { document_type, index_limit }
-            if  {
-                document_type == "indexedDocument" &&
-                index_limit == &3
-            })
-        );
+        match index_error {
+            IndexError::UniqueIndicesLimitReachedError(err) => {
+                assert_eq!(err.document_type(), "indexedDocument".to_string());
+                assert_eq!(err.index_limit(), 3);
+                // assert_eq!(err.property_type(), "array".to_string());
+            },
+            _ => panic!("Expected UniqueIndicesLimitReachedError, got {}", index_error)
+        }
     }
 
     #[test]
@@ -1994,13 +1998,13 @@ mod indices {
         let index_error = get_index_error(error);
 
         assert_eq!(1015, index_error.get_code());
-        assert!(
-            matches!(index_error, IndexError::SystemPropertyIndexAlreadyPresentError { document_type, property_name, .. }
-            if  {
-                document_type == "indexedDocument" &&
-                property_name == "$id"
-            })
-        );
+        match index_error {
+            IndexError::SystemPropertyIndexAlreadyPresentError(err) => {
+                assert_eq!(err.document_type(), "indexedDocument".to_string());
+                assert_eq!(err.property_name(), "$id".to_string());
+            },
+            _ => panic!("Expected SystemPropertyIndexAlreadyPresentError, got {}", index_error)
+        }
     }
 
     #[test]
@@ -2026,13 +2030,13 @@ mod indices {
         let index_error = get_index_error(error);
 
         assert_eq!(1016, index_error.get_code());
-        assert!(
-            matches!(index_error, IndexError::UndefinedIndexPropertyError { document_type, property_name, .. }
-            if  {
-                document_type == "indexedDocument" &&
-                property_name == "missingProperty"
-            })
-        );
+        match index_error {
+            IndexError::UndefinedIndexPropertyError(err) => {
+                assert_eq!(err.document_type(), "indexedDocument".to_string());
+                assert_eq!(err.property_name(), "missingProperty".to_string());
+            },
+            _ => panic!("Expected UndefinedIndexPropertyError, got {}", index_error)
+        }
     }
 
     #[test]
@@ -2073,14 +2077,14 @@ mod indices {
         let index_error = get_index_error(error);
 
         assert_eq!(1013, index_error.get_code());
-        assert!(
-            matches!(index_error, IndexError::InvalidIndexPropertyTypeError { document_type, property_name, property_type, ..}
-            if  {
-                document_type == "indexedDocument" &&
-                property_name == "objectProperty" &&
-                property_type == "object"
-            })
-        );
+        match index_error {
+            IndexError::InvalidIndexPropertyTypeError(err) => {
+                assert_eq!(err.document_type(), "indexedDocument".to_string());
+                assert_eq!(err.property_name(), "objectProperty".to_string());
+                assert_eq!(err.property_type(), "object".to_string());
+            },
+            _ => panic!("Expected InvalidIndexPropertyTypeError, got {}", index_error)
+        }
     }
 
     #[test]
@@ -2125,14 +2129,14 @@ mod indices {
         let index_error = get_index_error(error);
 
         assert_eq!(1013, index_error.get_code());
-        assert!(
-            matches!(index_error, IndexError::InvalidIndexPropertyTypeError { document_type, property_name, property_type, ..}
-            if  {
-                document_type == "indexedArray" &&
-                property_name == "mentions" &&
-                property_type == "array"
-            })
-        );
+        match index_error {
+            IndexError::InvalidIndexPropertyTypeError(err) => {
+                assert_eq!(err.document_type(), "indexedArray".to_string());
+                assert_eq!(err.property_name(), "mentions".to_string());
+                assert_eq!(err.property_type(), "array".to_string());
+            },
+            _ => panic!("Expected InvalidIndexPropertyTypeError, got {}", index_error)
+        }
     }
 
     // This section is originally commented out
@@ -2332,14 +2336,14 @@ mod indices {
         let index_error = get_index_error(error);
 
         assert_eq!(1013, index_error.get_code());
-        assert!(
-            matches!(index_error, IndexError::InvalidIndexPropertyTypeError { document_type, property_name, property_type, ..}
-            if  {
-                document_type == "indexedDocument" &&
-                property_name == "arrayProperty" &&
-                property_type == "array"
-            })
-        );
+        match index_error {
+            IndexError::InvalidIndexPropertyTypeError(err) => {
+                assert_eq!(err.document_type(), "indexedDocument".to_string());
+                assert_eq!(err.property_name(), "arrayProperty");
+                assert_eq!(err.property_type(), "array".to_string());
+            },
+            _ => panic!("Expected InvalidIndexPropertyTypeError, got {}", index_error)
+        }
     }
 
     #[test]
@@ -2364,12 +2368,12 @@ mod indices {
         let index_error = get_index_error(error);
 
         assert_eq!(1010, index_error.get_code());
-        assert!(
-            matches!(index_error, IndexError::InvalidCompoundIndexError { document_type, ..}
-            if  {
-                document_type == "optionalUniqueIndexedDocument"
-            })
-        );
+        match index_error {
+            IndexError::InvalidCompoundIndexError(err) => {
+                assert_eq!(err.document_type(), "optionalUniqueIndexedDocument".to_string());
+            },
+            _ => panic!("Expected InvalidCompoundIndexError, got {}", index_error)
+        }
     }
 
     #[test]
@@ -2457,12 +2461,12 @@ mod indices {
 
             let index_error = get_index_error(&result.errors()[0]);
             assert_eq!(1016, index_error.get_code());
-            assert!(
-                matches!(index_error, IndexError::UndefinedIndexPropertyError { property_name, ..}
-                if  {
-                    property_name == invalid_name
-                })
-            );
+            match index_error {
+                IndexError::UndefinedIndexPropertyError(err) => {
+                    assert_eq!(err.property_name(), invalid_name.to_string());
+                },
+                _ => panic!("Expected UndefinedIndexPropertyError, got {}", index_error)
+            }
         }
     }
 
@@ -2738,12 +2742,12 @@ fn should_return_invalid_result_with_circular_ref_pointer() {
     let basic_error = get_basic_error(validation_error);
 
     assert_eq!(1014, validation_error.get_code());
-    assert!(
-        matches!(basic_error, BasicError::InvalidJsonSchemaRefError { ref_error}
-        if  {
-            ref_error == "the ref '#/$defs/object' contains cycles"
-        })
-    );
+    match basic_error {
+        BasicError::InvalidJsonSchemaRefError(err) => {
+            assert_eq!(err.ref_error(), "the ref '#/$defs/object' contains cycles".to_string());
+        },
+        _ => panic!("Expected InvalidJsonSchemaRefError, got {}", basic_error)
+    }
 }
 
 #[test]
@@ -2769,14 +2773,14 @@ fn should_return_invalid_result_if_indexed_string_property_missing_max_length_co
     let index_error = get_index_error(validation_error);
 
     assert_eq!(1012, index_error.get_code());
-    assert!(
-        matches!(index_error, IndexError::InvalidIndexedPropertyConstraintError { property_name, constraint_name, reason, ..}
-        if  {
-            property_name == "firstName" &&
-            constraint_name == "maxLength" &&
-            reason == "should be less or equal than 63"
-        })
-    );
+    match index_error {
+        IndexError::InvalidIndexedPropertyConstraintError(err) => {
+            assert_eq!(err.property_name(), "firstName".to_string());
+            assert_eq!(err.constraint_name(), "maxLength".to_string());
+            assert_eq!(err.reason(), "should be less or equal than 63".to_string());
+        },
+        _ => panic!("Expected InvalidIndexedPropertyConstraintError, got {}", index_error)
+    }
 }
 
 mod indexed_array {
@@ -2870,14 +2874,14 @@ mod indexed_array {
         let index_error = get_index_error(validation_error);
 
         assert_eq!(1012, index_error.get_code());
-        assert!(
-            matches!(index_error, IndexError::InvalidIndexedPropertyConstraintError { property_name, constraint_name, reason, ..}
-            if  {
-                property_name == "byteArrayField" &&
-                constraint_name == "maxItems" &&
-                reason == "should be less or equal 255"
-            })
-        );
+        match index_error {
+            IndexError::InvalidIndexedPropertyConstraintError(err) => {
+                assert_eq!(err.property_name(), "byteArrayField".to_string());
+                assert_eq!(err.constraint_name(), "maxItems".to_string());
+                assert_eq!(err.reason(), "should be less or equal 255".to_string());
+            },
+            _ => panic!("Expected InvalidIndexedPropertyConstraintError, got {}", index_error)
+        }
     }
 
     #[test]
@@ -2901,14 +2905,14 @@ mod indexed_array {
         let index_error = get_index_error(validation_error);
 
         assert_eq!(1012, index_error.get_code());
-        assert!(
-            matches!(index_error, IndexError::InvalidIndexedPropertyConstraintError { property_name, constraint_name, reason, ..}
-            if  {
-                property_name == "byteArrayField" &&
-                constraint_name == "maxItems" &&
-                reason == "should be less or equal 255"
-            })
-        );
+        match index_error {
+            IndexError::InvalidIndexedPropertyConstraintError(err) => {
+                assert_eq!(err.property_name(), "byteArrayField".to_string());
+                assert_eq!(err.constraint_name(), "maxItems".to_string());
+                assert_eq!(err.reason(), "should be less or equal 255".to_string());
+            },
+            _ => panic!("Expected InvalidIndexedPropertyConstraintError, got {}", index_error)
+        }
     }
 }
 

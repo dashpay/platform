@@ -355,13 +355,14 @@ async fn should_have_existing_documents_schema_backward_compatible() {
         .expect("validation result should be returned");
 
     let basic_error = get_basic_error_from_result(&result, 0);
-    assert!(matches!(
-        basic_error,
-        BasicError::IncompatibleDataContractSchemaError {  operation, field_path, ..}  if {
-            operation == "add" &&
-            field_path == "/required/1"
-        }
-    ));
+
+    match basic_error {
+        BasicError::IncompatibleDataContractSchemaError(err) => {
+            assert_eq!(err.operation(), "add".to_string());
+            assert_eq!(err.field_path(), "/required/1".to_string());
+        },
+        _ => panic!("Expected IncompatibleDataContractSchemaError, got {}", basic_error)
+    }
 }
 
 #[tokio::test]

@@ -238,9 +238,20 @@ mod test {
         });
 
         let result = create_state_transition(&state_repostiory_mock, raw_state_transition).await;
-        assert!(matches!(
-            result,
-            Err(ProtocolError::InvalidStateTransitionTypeError)
-        ));
+        let err = get_protocol_error(result);
+
+        match err {
+            ProtocolError::InvalidStateTransitionTypeError(err) => {
+                assert_eq!(err.transition_type(), 154);
+            }
+            _ => panic!("expected InvalidStateTransitionTypeError, got {}", err)
+        }
+    }
+
+    pub fn get_protocol_error<T>(result: Result<T, ProtocolError>) -> ProtocolError {
+        match result {
+            Ok(_) => panic!("expected to get ProtocolError, got valid result"),
+            Err(e) => e
+        }
     }
 }

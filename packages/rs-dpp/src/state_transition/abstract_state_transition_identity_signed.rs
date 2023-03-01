@@ -469,10 +469,10 @@ mod test {
             .unwrap_err();
         match sign_error {
             ProtocolError::PublicKeySecurityLevelNotMetError(
-                PublicKeySecurityLevelNotMetError::new(sec_level, req_sec_level),
+                err
             ) => {
-                assert_eq!(SecurityLevel::MEDIUM, sec_level);
-                assert_eq!(SecurityLevel::HIGH, req_sec_level);
+                assert_eq!(SecurityLevel::MEDIUM, err.public_key_security_level());
+                assert_eq!(SecurityLevel::HIGH, err.required_security_level());
             }
             error => {
                 panic!("invalid error type: {}", error)
@@ -491,12 +491,9 @@ mod test {
             .sign(&keys.identity_public_key, &keys.ec_private, &bls)
             .unwrap_err();
         match sign_error {
-            ProtocolError::WrongPublicKeyPurposeError(WrongPublicKeyPurposeError::new(
-                purpose,
-                req_purpose,
-            )) => {
-                assert_eq!(Purpose::ENCRYPTION, purpose);
-                assert_eq!(Purpose::AUTHENTICATION, req_purpose);
+            ProtocolError::WrongPublicKeyPurposeError(err) => {
+                assert_eq!(Purpose::ENCRYPTION, err.public_key_purpose());
+                assert_eq!(Purpose::AUTHENTICATION, err.key_purpose_requirement());
             }
             error => {
                 panic!("invalid error type: {}", error)
@@ -600,15 +597,12 @@ mod test {
             .sign(&keys.identity_public_key, &keys.bls_private, &bls)
             .expect_err("the protocol error should be returned");
 
-        assert!(matches!(
-            result,
-            ProtocolError::InvalidSignaturePublicKeySecurityLevelError(
-                InvalidSignaturePublicKeySecurityLevelError {
-                    public_key_security_level,
-                    required_key_security_level
-                })
-            if public_key_security_level == SecurityLevel::MASTER &&
-                required_key_security_level == SecurityLevel::HIGH
-        ))
+        match result {
+            ProtocolError::InvalidSignaturePublicKeySecurityLevelError(err) => {
+                assert_eq!(err.public_key_security_level(), SecurityLevel::MASTER);
+                assert_eq!(err.required_key_security_level(), SecurityLevel::HIGH);
+            },
+            error => panic!("expected InvalidSignaturePublicKeySecurityLevelError, got {}", error)
+        }
     }
 }

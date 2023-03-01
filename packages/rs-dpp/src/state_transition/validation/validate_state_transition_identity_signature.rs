@@ -3,10 +3,7 @@ use std::{collections::HashSet, convert::TryInto};
 use anyhow::Context;
 use lazy_static::lazy_static;
 
-use crate::consensus::signature::{
-    IdentityNotFoundError, InvalidIdentityPublicKeyTypeError, MissingPublicKeyError,
-    PublicKeyIsDisabledError, PublicKeySecurityLevelNotMetError,
-};
+use crate::consensus::signature::{IdentityNotFoundError, InvalidIdentityPublicKeyTypeError, MissingPublicKeyError, PublicKeyIsDisabledError, PublicKeySecurityLevelNotMetError};
 use crate::{
     consensus::{signature::SignatureError, ConsensusError},
     identity::KeyType,
@@ -145,7 +142,7 @@ fn convert_to_consensus_signature_error(
 #[cfg(test)]
 mod test {
     use super::*;
-    use crate::state_transition::errors::WrongPublicKeyPurposeError;
+    use crate::state_transition::errors::{PublicKeyMismatchError, WrongPublicKeyPurposeError};
     use crate::{
         document::DocumentsBatchTransition,
         identity::{KeyID, Purpose, SecurityLevel},
@@ -162,6 +159,7 @@ mod test {
         NativeBlsModule,
     };
     use serde::{Deserialize, Serialize};
+    use crate::consensus::signature::InvalidSignaturePublicKeySecurityLevelError;
 
     #[derive(Debug, Clone, Serialize, Deserialize)]
     #[serde(rename_all = "camelCase")]
@@ -249,7 +247,7 @@ mod test {
                     }
                     2 => {
                         return Err(ProtocolError::PublicKeySecurityLevelNotMetError(
-                            PublicKeySecurityLevelNotMetError::new(
+                            crate::state_transition::errors::PublicKeySecurityLevelNotMetError::new(
                                 SecurityLevel::CRITICAL,
                                 SecurityLevel::HIGH,
                             ),
@@ -257,7 +255,7 @@ mod test {
                     }
                     3 => {
                         return Err(ProtocolError::PublicKeyIsDisabledError(
-                            PublicKeyIsDisabledError::new(public_key.clone()),
+                            crate::data_contract::state_transition::errors::PublicKeyIsDisabledError::new(public_key.clone()),
                         ))
                     }
                     4 => {
@@ -345,11 +343,12 @@ mod test {
         .expect("the validation result should be returned");
         let signature_error = get_signature_error_from_result(&result, 0);
 
-        assert!(
-            matches!(signature_error, SignatureError::IdentityNotFoundError(IdentityNotFoundError::new(identity_id))  if {
-             identity_id == identity.get_id()
-            })
-        );
+        match signature_error {
+            SignatureError::IdentityNotFoundError(err) => {
+                assert_eq!(err.identity_id(), identity.get_id().clone())
+            },
+            error => panic!("expected IdentityNotFoundError, got {}", error)
+        }
     }
 
     #[tokio::test]
@@ -377,11 +376,12 @@ mod test {
         .expect("the validation result should be returned");
         let signature_error = get_signature_error_from_result(&result, 0);
 
-        assert!(
-            matches!(signature_error, SignatureError::MissingPublicKeyError(MissingPublicKeyError::new(public_key_id)) if {
-                 *public_key_id == 12332
-            })
-        );
+        match signature_error {
+            SignatureError::MissingPublicKeyError(err) => {
+                assert_eq!(err.public_key_id(), 12332)
+            },
+            error => panic!("expected MissingPublicKeyError, got {}", error)
+        }
     }
 
     #[tokio::test]

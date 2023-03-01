@@ -394,9 +394,12 @@ mod test {
             .validate(&transition.into())
             .await
             .expect_err("error should be returned");
-        assert!(matches!(
-            result,
-            ProtocolError::InvalidStateTransitionTypeError
-        ))
+
+        match result {
+            ProtocolError::InvalidStateTransitionTypeError(err) => {
+                assert_eq!(err.transition_type(), 6);
+            }
+            _ => panic!("expected InvalidStateTransitionTypeError, got {}", result)
+        }
     }
 }
