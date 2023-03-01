@@ -589,7 +589,6 @@ describe('DocumentFactory', () => {
       const [newDocumentJs] = getDocumentsFixture(dataContractJs);
       const newDocument = new Document(newDocumentJs.toObject(), dataContract);
 
-
       const stateTransition = factory.createStateTransition({
         create: documents,
         replace: [newDocument],
