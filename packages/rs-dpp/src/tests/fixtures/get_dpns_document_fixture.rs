@@ -62,7 +62,7 @@ pub fn get_dpns_parent_document_fixture(options: ParentDocumentOptions) -> Exten
             data_contract,
             options.owner_id,
             String::from("domain"),
-            data,
+            data.into(),
         )
         .expect("DPNS document should be created")
 }

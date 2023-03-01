@@ -1,5 +1,6 @@
 use anyhow::{anyhow, bail};
 use platform_value::btreemap_extensions::BTreeValueMapHelper;
+use platform_value::Value;
 use serde_json::json;
 
 use crate::document::Document;
@@ -32,22 +33,29 @@ where
     let is_dry_run = context.state_transition_execution_context.is_dry_run();
     let owner_id = context.owner_id.to_string(Encoding::Base58);
 
-    let dt_create = match document_transition {
-        DocumentTransition::Create(d) => d,
+    let document_create_transition = match document_transition {
+        DocumentTransition::Create(document_create_transition) => document_create_transition,
         _ => bail!(
             "the Document Transition {} isn't 'CREATE'",
             get_from_transition!(document_transition, id)
         ),
     };
-    let data = dt_create.data.as_ref().ok_or_else(|| {
-        anyhow!(
-            "data isn't defined in Data Transition '{}'",
-            dt_create.base.id
-        )
-    })?;
+    let data: Value = document_create_transition
+        .data
+        .as_ref()
+        .ok_or_else(|| {
+            anyhow!(
+                "data isn't defined in Data Transition '{}'",
+                document_create_transition.base.id
+            )
+        })?
+        .clone()
+        .into();
 
-    let pay_to_id_bytes = data.get_bytes(PROPERTY_PAY_TO_ID)?;
-    let percentage = data.get_u64(PROPERTY_PERCENTAGE)?;
+    let properties = data.into_btree_map()?;
+
+    let pay_to_id_bytes = properties.get_bytes(PROPERTY_PAY_TO_ID)?;
+    let percentage = properties.get_integer(PROPERTY_PERCENTAGE)?;
 
     if !is_dry_run {
         // Do not allow creating document if ownerId is not in SML
@@ -63,7 +71,7 @@ where
         if !owner_id_in_sml {
             let err = create_error(
                 context,
-                dt_create,
+                document_create_transition,
                 "Only masternode identities can share rewards".to_string(),
             );
             result.add_error(err.into());
@@ -83,7 +91,7 @@ where
     if !is_dry_run && maybe_identity.is_none() {
         let err = create_error(
             context,
-            dt_create,
+            document_create_transition,
             format!("Identity '{}' doesn't exist", pay_to_identifier),
         );
         result.add_error(err.into())
@@ -93,7 +101,7 @@ where
         .state_repository
         .fetch_documents(
             &context.data_contract.id,
-            &dt_create.base.document_type,
+            &document_create_transition.base.document_type,
             json!({
                 "where" : [ [ "$owner_id", "==", owner_id ]]
             }),
@@ -108,7 +116,7 @@ where
     if documents.len() >= MAX_DOCUMENTS {
         let err = create_error(
             context,
-            dt_create,
+            document_create_transition,
             format!(
                 "Reward shares cannot contain more than {} identities",
                 MAX_DOCUMENTS
@@ -126,7 +134,7 @@ where
     if total_percent > MAX_PERCENTAGE {
         let err = create_error(
             context,
-            dt_create,
+            document_create_transition,
             format!("Percentage can not be more than {}", MAX_PERCENTAGE),
         );
         result.add_error(err.into());

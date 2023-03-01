@@ -41,8 +41,8 @@ pub fn get_masternode_reward_shares_documents_fixture() -> (Vec<ExtendedDocument
                 json!({
                     "payToId": pay_to_id.as_bytes(),
                     "percentage" : 500,
-
-                }),
+                })
+                .into(),
             )
             .expect("document for masternode reward shares contract should be created")],
         data_contract,

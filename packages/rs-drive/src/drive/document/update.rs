@@ -2426,7 +2426,7 @@ mod tests {
                 contract.clone(),
                 owner_id,
                 document_type.clone(),
-                json!({ "name": "Ivan" }),
+                json!({ "name": "Ivan" }).into(),
             )
             .expect("should create a document");
 

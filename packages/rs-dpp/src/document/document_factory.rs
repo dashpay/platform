@@ -1,8 +1,10 @@
 use anyhow::Context;
 use chrono::Utc;
+use std::collections::BTreeMap;
 
 use itertools::Itertools;
 
+use platform_value::Value;
 use rand::rngs::StdRng;
 use rand::SeedableRng;
 use serde::{Deserialize, Serialize};
@@ -10,6 +12,10 @@ use serde_json::{json, Value as JsonValue};
 
 use crate::document::extended_document::{property_names, ExtendedDocument};
 
+use crate::data_contract::DriveContractExt;
+use crate::document::document_transition::INITIAL_REVISION;
+use crate::document::{extended_document, Document};
+use crate::identity::TimestampMillis;
 use crate::{
     data_contract::{errors::DataContractError, DataContract},
     decode_protocol_entity_factory::DecodeProtocolEntity,
@@ -104,12 +110,12 @@ where
         &self,
         data_contract: DataContract,
         owner_id: Identifier,
-        document_type: String,
-        data: JsonValue,
+        document_type_name: String,
+        data: Value,
     ) -> Result<ExtendedDocument, ProtocolError> {
-        if !data_contract.is_document_defined(&document_type) {
+        if !data_contract.is_document_defined(&document_type_name) {
             return Err(DataContractError::InvalidDocumentTypeError {
-                doc_type: document_type,
+                doc_type: document_type_name,
                 data_contract,
             }
             .into());
@@ -117,57 +123,68 @@ where
 
         let document_entropy = entropy_generator::generate()?; // TODO use EntropyGenerator
 
-        let document_required_fields = data_contract
-            .get_document_schema(&document_type)?
-            .get_schema_required_fields()?;
-
         let document_id = generate_document_id(
             &data_contract.id,
             &owner_id,
-            &document_type,
+            &document_type_name,
             &document_entropy,
         );
 
-        let mut raw_document = json!({
-            PROPERTY_DOCUMENT_PROTOCOL_VERSION: self.protocol_version,
-            PROPERTY_ID: document_id.to_buffer(),
-            PROPERTY_DOCUMENT_TYPE: document_type,
-            PROPERTY_DATA_CONTRACT_ID: data_contract.id.to_buffer(),
-            PROPERTY_DOCUMENT_OWNER_ID: owner_id.to_buffer(),
-            PROPERTY_REVISION: document_transition::INITIAL_REVISION,
-        });
+        let document_type = data_contract.document_type_for_name(document_type_name.as_str())?;
+        let revision = if document_type.documents_mutable {
+            Some(INITIAL_REVISION)
+        } else {
+            None
+        };
 
-        if let JsonValue::Object(ref mut raw_document_map) = raw_document {
-            if let JsonValue::Object(data_map) = data {
-                raw_document_map.extend(data_map)
-            }
-        }
+        let contains_created_at = document_type.required_fields.contains(PROPERTY_CREATED_AT);
+        let contains_updated_at = document_type.required_fields.contains(PROPERTY_UPDATED_AT);
 
-        let creation_time = Utc::now().timestamp_millis();
-        if document_required_fields.contains(&PROPERTY_CREATED_AT) {
-            raw_document.insert(PROPERTY_CREATED_AT.to_string(), json!(Some(creation_time)))?;
-        }
+        let (created_at, updated_at) = if contains_created_at || contains_updated_at {
+            //we want only one call to get current time
+            let now = Utc::now().timestamp_millis() as TimestampMillis;
+            let created_at = if contains_created_at { Some(now) } else { None };
 
-        if document_required_fields.contains(&PROPERTY_UPDATED_AT) {
-            raw_document.insert(PROPERTY_UPDATED_AT.to_string(), json!(Some(creation_time)))?;
-        }
+            let updated_at = if contains_updated_at { Some(now) } else { None };
+            (created_at, updated_at)
+        } else {
+            (None, None)
+        };
 
+        let mut extended_document = ExtendedDocument {
+            protocol_version: self.protocol_version,
+            document_type_name,
+            data_contract_id: data_contract.id.clone(),
+            document: Document {
+                id: document_id.to_buffer(),
+                owner_id: owner_id.to_buffer(),
+                properties: data.into_btree_map().map_err(ProtocolError::ValueError)?,
+                revision,
+                created_at,
+                updated_at,
+            },
+            data_contract: DataContract::default(),
+            metadata: None,
+            entropy: document_entropy,
+        };
+
+        let json_value = extended_document.to_json()?;
         let validation_result = self
             .document_validator
-            .validate(&raw_document, &data_contract)?;
+            .validate(&json_value, &data_contract)?;
+
+        extended_document.data_contract = data_contract;
+
         if !validation_result.is_valid() {
             return Err(ProtocolError::Document(Box::new(
                 DocumentError::InvalidDocumentError {
                     errors: validation_result.errors,
-                    raw_document,
+                    raw_document: json_value,
                 },
             )));
         }
 
-        let mut document = ExtendedDocument::from_raw_document(raw_document, data_contract)?;
-        document.entropy = document_entropy;
-
-        Ok(document)
+        Ok(extended_document)
     }
 
     pub fn create_state_transition(
@@ -453,7 +470,7 @@ mod test {
                 data_contract,
                 owner_id,
                 document_type.to_string(),
-                json!({ "name": name }),
+                json!({ "name": name }).into(),
             )
             .expect("document creation shouldn't fail");
         assert_eq!(document_type, document.document_type_name);
