@@ -1,5 +1,6 @@
 use std::sync::Arc;
 
+use dpp::platform_value::ReplacementType;
 use dpp::{
     document::{
         document_factory::{DocumentFactory, FactoryOptions},
@@ -8,6 +9,7 @@ use dpp::{
         fetch_and_validate_data_contract::DataContractFetcherAndValidator,
     },
     util::json_value::{JsonValueExt, ReplaceWith},
+    ProtocolError,
 };
 use wasm_bindgen::prelude::*;
 
@@ -148,17 +150,18 @@ impl DocumentFactoryWASM {
             .with_js_error()?;
 
         // When data contract is available, replace remaining dynamic paths
-        let mut document_data = document.data.take();
+        let mut document_data = document.properties_as_mut();
         let (identifier_paths, binary_paths) = document
             .get_identifiers_and_binary_paths()
             .with_js_error()?;
         document_data
-            .replace_identifier_paths(identifier_paths, ReplaceWith::Bytes)
+            .replace_at_paths(identifier_paths, ReplacementType::Bytes)
+            .map_err(ProtocolError::ValueError)
             .with_js_error()?;
         document_data
-            .replace_binary_paths(binary_paths, ReplaceWith::Bytes)
+            .replace_at_paths(binary_paths, ReplacementType::Bytes)
+            .map_err(ProtocolError::ValueError)
             .with_js_error()?;
-        document.data = document_data;
 
         Ok(document.into())
     }

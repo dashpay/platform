@@ -6,6 +6,7 @@
 //!
 //!
 pub mod btreemap_extensions;
+mod btreemap_field_replacement;
 pub mod btreemap_path_extensions;
 pub mod btreemap_path_insertion_extensions;
 pub mod converter;
@@ -22,6 +23,7 @@ pub use integer::Integer;
 use serde::{Deserialize, Serialize};
 
 pub type Hash256 = [u8; 32];
+pub use btreemap_field_replacement::ReplacementType;
 
 /// A representation of a dynamic value that can handled dynamically
 #[non_exhaustive]

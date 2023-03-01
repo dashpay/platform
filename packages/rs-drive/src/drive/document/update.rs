@@ -684,12 +684,13 @@ mod tests {
     use dpp::document::document_factory::DocumentFactory;
     use dpp::document::document_validator::DocumentValidator;
 
+    use dpp::platform_value::Value;
     use dpp::prelude::DataContract;
     use dpp::util::serializer;
     use dpp::version::{ProtocolVersionValidator, COMPATIBILITY_MAP, LATEST_VERSION};
     use rand::Rng;
     use serde::{Deserialize, Serialize};
-    use serde_json::{json, Value};
+    use serde_json::{json, Value as JsonValue};
     use tempfile::TempDir;
 
     use super::*;
@@ -2455,7 +2456,7 @@ mod tests {
         // Update the document in a second
 
         document
-            .set("name", Value::String("Ivaaaaaaaaaan!".to_string()))
+            .set("name", Value::Text("Ivaaaaaaaaaan!".to_string()))
             .expect("should change name");
 
         let document_cbor = document.to_buffer().expect("should encode to buffer");

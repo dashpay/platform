@@ -3,6 +3,7 @@ use dpp::document::document_transition::document_base_transition::JsonValue;
 use dpp::document::{
     extended_document_property_names, ExtendedDocument, EXTENDED_DOCUMENT_IDENTIFIER_FIELDS,
 };
+use dpp::platform_value::btreemap_path_extensions::BTreeValueMapPathHelper;
 use dpp::platform_value::Value;
 use dpp::prelude::{Identifier, Revision};
 use dpp::util::json_schema::JsonSchemaExt;
@@ -72,12 +73,12 @@ impl ExtendedDocumentWasm {
 
     #[wasm_bindgen(js_name=getId)]
     pub fn get_id(&self) -> IdentifierWrapper {
-        self.0.id.into()
+        self.0.document.id.into()
     }
 
     #[wasm_bindgen(js_name=setId)]
     pub fn set_id(&mut self, js_id: IdentifierWrapper) {
-        self.0.id = js_id.inner();
+        self.0.document.id = js_id.inner().buffer;
     }
 
     #[wasm_bindgen(js_name=getType)]
@@ -97,24 +98,24 @@ impl ExtendedDocumentWasm {
 
     #[wasm_bindgen(js_name=setOwnerId)]
     pub fn set_owner_id(&mut self, owner_id: IdentifierWrapper) {
-        self.0.owner_id = owner_id.inner();
+        self.0.document.owner_id = owner_id.inner().buffer;
     }
 
     #[wasm_bindgen(js_name=getOwnerId)]
     pub fn get_owner_id(&self) -> IdentifierWrapper {
-        self.0.owner_id.into()
+        self.0.document.owner_id.into()
     }
 
     #[wasm_bindgen(js_name=setRevision)]
-    pub fn set_revision(&mut self, rev: u32) {
+    pub fn set_revision(&mut self, rev: Option<u32>) {
         // TODO: js feeds Number (u32). Is casting revision to u64 safe?
-        self.0.revision = rev as Revision;
+        self.0.document.revision = rev.map(|r| r as Revision);
     }
 
     #[wasm_bindgen(js_name=getRevision)]
-    pub fn get_revision(&self) -> u32 {
+    pub fn get_revision(&self) -> Option<u32> {
         // TODO: js expects Number (u32). Is casting revision to u32 safe?
-        self.0.revision as u32
+        self.0.document.revision.map(|r| r as u32)
     }
 
     #[wasm_bindgen(js_name=setEntropy)]
@@ -136,7 +137,7 @@ impl ExtendedDocumentWasm {
 
     #[wasm_bindgen(js_name=setData)]
     pub fn set_data(&mut self, d: JsValue) -> Result<(), JsValue> {
-        self.0.data = with_js_error!(serde_wasm_bindgen::from_value(d))?;
+        self.0.document.properties = with_js_error!(serde_wasm_bindgen::from_value(d))?;
         Ok(())
     }
 
@@ -144,7 +145,11 @@ impl ExtendedDocumentWasm {
     pub fn get_data(&mut self) -> Result<JsValue, JsValue> {
         let serializer = serde_wasm_bindgen::Serializer::json_compatible();
 
-        Ok(with_js_error!(self.0.data.serialize(&serializer))?)
+        Ok(with_js_error!(self
+            .0
+            .document
+            .properties
+            .serialize(&serializer))?)
     }
 
     #[wasm_bindgen(js_name=set)]
@@ -159,13 +164,14 @@ impl ExtendedDocumentWasm {
                     .with_js_error()?;
                 let id = Identifier::from_string(id_string, Encoding::Base58).with_js_error()?;
                 let new_value = serde_json::to_value(id.as_bytes()).with_js_error()?;
+                let mut value: Value = new_value.into();
 
-                return self.0.set(&path, new_value).with_js_error();
+                return self.0.set(&path, value).with_js_error();
             } else if property_path.starts_with(&path) {
                 let (_, suffix) = property_path.split_at(path.len() + 1);
                 let mut value: Value = js_value_to_set.with_serde_to_json_value()?.into();
-
-                if value(suffix).is_ok() {
+                let map = value.to_btree_ref_map()?;
+                if map.get_at_path(suffix).is_ok() {
                     let id_string = value
                         .remove_path_into::<String>(suffix)
                         .with_context(|| format!("unable convert `{path}` into string"))
