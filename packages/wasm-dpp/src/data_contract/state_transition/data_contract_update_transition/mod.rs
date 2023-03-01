@@ -1,6 +1,8 @@
 mod apply;
 mod validation;
 
+use std::collections::HashMap;
+
 pub use apply::*;
 pub use validation::*;
 
@@ -15,8 +17,10 @@ use serde::{Deserialize, Serialize};
 use wasm_bindgen::prelude::*;
 
 use crate::{
-    buffer::Buffer, errors::from_dpp_err, identifier::IdentifierWrapper, with_js_error,
-    DataContractParameters, DataContractWasm, StateTransitionExecutionContextWasm,
+    buffer::Buffer,
+    errors::{from_dpp_err, protocol_error::from_protocol_error},
+    identifier::IdentifierWrapper,
+    with_js_error, DataContractParameters, DataContractWasm, StateTransitionExecutionContextWasm,
 };
 
 #[derive(Clone)]
@@ -38,15 +42,14 @@ impl From<DataContractUpdateTransitionWasm> for DataContractUpdateTransition {
 #[derive(Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct DataContractUpdateTransitionParameters {
-    protocol_version: u32,
     #[serde(skip_serializing_if = "Option::is_none", default)]
     data_contract: Option<DataContractParameters>,
     #[serde(skip_serializing_if = "Option::is_none", default)]
     entropy: Option<Vec<u8>>,
     #[serde(skip_serializing_if = "Option::is_none", default)]
-    signature_public_key_id: Option<KeyID>,
-    #[serde(skip_serializing_if = "Option::is_none", default)]
     signature: Option<Vec<u8>>,
+    #[serde(flatten)]
+    extra: HashMap<String, serde_json::Value>,
 }
 
 #[wasm_bindgen(js_class=DataContractUpdateTransition)]
@@ -143,5 +146,16 @@ impl DataContractUpdateTransitionWasm {
             .hash(skip_signature.unwrap_or(false))
             .map_err(from_dpp_err)?;
         Ok(Buffer::from_bytes(&bytes))
+    }
+
+    #[wasm_bindgen(js_name=toObject)]
+    pub fn to_object(&self, skip_signature: Option<bool>) -> Result<JsValue, JsValue> {
+        let serde_object = self
+            .0
+            .to_object(skip_signature.unwrap_or(false))
+            .map_err(from_protocol_error)?;
+        serde_object
+            .serialize(&serde_wasm_bindgen::Serializer::json_compatible())
+            .map_err(|e| e.into())
     }
 }
