@@ -92,20 +92,6 @@ describe('DocumentFacade', () => {
   });
 
   describe('createFromObject', () => {
-    it('should throw MissingOption if stateRepository is not set', async () => {
-      dppJs = new DashPlatformProtocolJs();
-      await dppJs.initialize();
-
-      try {
-        await dppJs.document.createFromObject(documentJs.toObject());
-
-        expect.fail('MissingOption should be thrown');
-      } catch (e) {
-        expect(e).to.be.an.instanceOf(MissingOptionErrorJs);
-        expect(e.getOptionName()).to.equal('stateRepository');
-      }
-    });
-
     it('should throw MissingOption if stateRepository is not set - Rust', async () => {
       // not applicable
     });
@@ -120,20 +106,6 @@ describe('DocumentFacade', () => {
   });
 
   describe('createFromBuffer', () => {
-    it('should throw MissingOption if stateRepository is not set', async () => {
-      dppJs = new DashPlatformProtocolJs();
-      await dppJs.initialize();
-
-      try {
-        await dppJs.document.createFromBuffer(documentJs.toObject());
-
-        expect.fail('MissingOption should be thrown');
-      } catch (e) {
-        expect(e).to.be.an.instanceOf(MissingOptionErrorJs);
-        expect(e.getOptionName()).to.equal('stateRepository');
-      }
-    });
-
     it('should throw MissingOption if stateRepository is not set - Rust', async () => {
       // not applicable
     });
@@ -162,20 +134,6 @@ describe('DocumentFacade', () => {
   });
 
   describe('validate', () => {
-    it('should throw MissingOption if stateRepository is not set', async () => {
-      dppJs = new DashPlatformProtocolJs();
-      await dppJs.initialize();
-
-      try {
-        await dppJs.document.validate(documentJs);
-
-        expect.fail('MissingOption should be thrown');
-      } catch (e) {
-        expect(e).to.be.an.instanceOf(MissingOptionErrorJs);
-        expect(e.getOptionName()).to.equal('stateRepository');
-      }
-    });
-
     it('should throw MissingOption if stateRepository is not set - Rust', async () => {
       // not applicable
     });
@@ -187,7 +145,7 @@ describe('DocumentFacade', () => {
       expect(result.isValid()).to.be.true();
     });
 
-    it('should return invalid result if Data Contract is invalid', async () => {
+    it('should return invalid result if Data Contract is invalid - Rust', async () => {
       stateRepositoryMock.fetchDataContract.resolves(null);
 
       const result = await dpp.document.validate(document);

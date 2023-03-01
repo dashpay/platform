@@ -52,20 +52,6 @@ describe('Document', () => {
   });
 
   describe('#toJSON', () => {
-    it('should return json document', () => {
-      const result = documentJs.toJSON();
-
-      expect(result).to.deep.equal({
-        $protocolVersion: documentJs.getProtocolVersion(),
-        $dataContractId: dataContractJs.getId().toString(),
-        $id: documentJs.getId().toString(),
-        $ownerId: getDocumentsFixture.ownerId.toString(),
-        $revision: 1,
-        $type: 'withByteArrays',
-        byteArrayField: documentJs.get('byteArrayField').toString('base64'),
-        identifierField: documentJs.get('identifierField').toString(),
-      });
-    });
     it('should return json document - Rust', () => {
       const result = document.toJSON();
 
@@ -83,21 +69,6 @@ describe('Document', () => {
   });
 
   describe('#toObject', () => {
-    it('should return raw document', () => {
-      const result = documentJs.toObject();
-
-      expect(result).to.deep.equal({
-        $protocolVersion: documentJs.getProtocolVersion(),
-        $dataContractId: dataContractJs.getId(),
-        $id: documentJs.getId(),
-        $ownerId: getDocumentsFixture.ownerId,
-        $revision: 1,
-        $type: 'withByteArrays',
-        byteArrayField: documentJs.get('byteArrayField'),
-        identifierField: documentJs.get('identifierField'),
-      });
-    });
-
     it('should return raw document - Rust', () => {
       const result = document.toObject();
 
@@ -111,26 +82,6 @@ describe('Document', () => {
         byteArrayField: document.get('byteArrayField'),
         identifierField: document.get('identifierField').toBuffer(),
       });
-    });
-
-    it('should return raw document with Identifiers', () => {
-      const result = documentJs.toObject({ skipIdentifiersConversion: true });
-
-      expect(result).to.deep.equal({
-        $protocolVersion: documentJs.getProtocolVersion(),
-        $dataContractId: dataContractJs.getId(),
-        $id: documentJs.getId(),
-        $ownerId: getDocumentsFixture.ownerId,
-        $revision: 1,
-        $type: 'withByteArrays',
-        byteArrayField: documentJs.get('byteArrayField'),
-        identifierField: documentJs.get('identifierField'),
-      });
-
-      expect(result.$dataContractId).to.be.an.instanceOf(IdentifierJs);
-      expect(result.$id).to.be.an.instanceOf(IdentifierJs);
-      expect(result.$ownerId).to.be.an.instanceOf(IdentifierJs);
-      expect(result.identifierField).to.be.an.instanceOf(IdentifierJs);
     });
 
     it('should return raw document with Identifiers - Rust', () => {
@@ -153,14 +104,6 @@ describe('Document', () => {
   });
 
   describe('#setMetadata', () => {
-    it('should set metadata', () => {
-      const otherMetadata = new MetadataJs(43, 1);
-
-      documentJs.setMetadata(otherMetadata);
-
-      expect(documentJs.metadata).to.deep.equal(otherMetadata);
-    });
-
     it('should set metadata - Rust', () => {
       const otherMetadata = new Metadata(43, 1);
       document.setMetadata(otherMetadata);
@@ -170,10 +113,6 @@ describe('Document', () => {
   });
 
   describe('#getMetadata', () => {
-    it('should get metadata', () => {
-      expect(documentJs.getMetadata()).to.deep.equal(metadataFixtureJs);
-    });
-
     it('should get metadata - Rust', () => {
       expect(document.getMetadata().toObject()).to.deep.equal(metadataFixture.toObject());
     });

@@ -262,7 +262,7 @@ describe('validateDocumentFactory', () => {
       });
 
       it('should throw an error if getDocumentSchemaRef throws error - Rust', () => {
-        // the tess is impossible to trigger with the new wasm document validator
+        // the test is impossible to trigger with the new wasm document validator
       });
     });
 
