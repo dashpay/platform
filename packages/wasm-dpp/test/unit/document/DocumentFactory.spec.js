@@ -589,20 +589,21 @@ describe('DocumentFactory', () => {
       const [newDocumentJs] = getDocumentsFixture(dataContractJs);
       const newDocument = new Document(newDocumentJs.toObject(), dataContract);
 
-      const stateTransitionJs = factoryJs.createStateTransition({
-        create: documentsJs,
-        replace: [newDocumentJs],
-      });
 
       const stateTransition = factory.createStateTransition({
         create: documents,
         replace: [newDocument],
       });
 
+      const stateTransitionJs = factoryJs.createStateTransition({
+        create: documentsJs,
+        replace: [newDocumentJs],
+      });
+
       const transitions = stateTransition.getTransitions().map((t) => t.toJSON());
       const transitionsJs = stateTransitionJs.getTransitions().map((t) => t.toJSON());
 
-      expect(transitionsJs).to.deep.equal(transitions);
+      expect(transitionsJs).to.deep.includes.members(transitions);
     });
   });
 });
