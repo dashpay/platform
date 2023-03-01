@@ -87,6 +87,9 @@ impl TryInto<JsonValue> for Value {
                     })
                     .collect::<Result<Map<String, JsonValue>, Error>>()?,
             ),
+            Value::Identifier(bytes) => {
+                JsonValue::String(bs58::encode(bytes.as_slice()).into_string())
+            }
         })
     }
 }

@@ -60,11 +60,13 @@ pub enum Value {
     /// A i8 integer
     I8(i8),
 
-    // Todo: add this in
-    // /// A 256 bit hash
-    // Hash256(Hash256),
     /// Bytes
     Bytes(Vec<u8>),
+
+    /// Identifier
+    /// The identifier is very similar to bytes, however it is serialized to Base58 when converted
+    /// to a JSON Value
+    Identifier(Hash256),
 
     /// A float
     Float(f64),
@@ -1022,6 +1024,8 @@ implfrom! {
 
     Bytes(Vec<u8>),
     Bytes(&[u8]),
+
+    Identifier(Hash256),
 
     Float(f64),
     Float(f32),

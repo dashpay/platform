@@ -17,6 +17,9 @@ impl Value {
     /// let value = Value::Array(vec![Value::U8(104), Value::U8(101), Value::U8(108)]);
     /// assert_eq!(value.into_system_bytes(), Ok(vec![104, 101, 108]));
     ///
+    /// let value = Value::Identifier([5u8;32]);
+    /// assert_eq!(value.into_system_bytes(), Ok(vec![5, 5, 5,5,5,5,5,5,5, 5, 5,5,5,5,5,5,5, 5, 5,5,5,5,5,5,5, 5, 5,5,5,5,5,5]));
+    ///
     /// let value = Value::Bool(true);
     /// assert_eq!(value.into_system_bytes(), Err(Error::StructureError("value are not bytes, a string, or an array of values representing bytes".to_string())));
     /// ```
@@ -35,6 +38,7 @@ impl Value {
                 })
                 .collect::<Result<Vec<u8>, Error>>(),
             Value::Bytes(vec) => Ok(vec),
+            Value::Identifier(identifier) => Ok(Vec::from(identifier)),
             _other => Err(Error::StructureError(
                 "value are not bytes, a string, or an array of values representing bytes"
                     .to_string(),
@@ -58,6 +62,9 @@ impl Value {
     /// let value = Value::Array(vec![Value::U8(104), Value::U8(101), Value::U8(108)]);
     /// assert_eq!(value.to_system_bytes(), Ok(vec![104, 101, 108]));
     ///
+    /// let value = Value::Identifier([5u8;32]);
+    /// assert_eq!(value.to_system_bytes(), Ok(vec![5, 5, 5,5,5,5,5,5,5, 5, 5,5,5,5,5,5,5, 5, 5,5,5,5,5,5,5, 5, 5,5,5,5,5,5]));
+    ///
     /// let value = Value::Bool(true);
     /// assert_eq!(value.to_system_bytes(), Err(Error::StructureError("value are not bytes, a string, or an array of values representing bytes".to_string())));
     /// ```
@@ -76,6 +83,7 @@ impl Value {
                 })
                 .collect::<Result<Vec<u8>, Error>>(),
             Value::Bytes(vec) => Ok(vec.clone()),
+            Value::Identifier(identifier) => Ok(Vec::from(identifier.as_slice())),
             _other => Err(Error::StructureError(
                 "value are not bytes, a string, or an array of values representing bytes"
                     .to_string(),
@@ -105,6 +113,9 @@ impl Value {
     /// let value = Value::Array(vec![Value::U8(104), Value::U8(101), Value::U8(108),Value::U8(104), Value::U8(101), Value::U8(108),Value::U8(104), Value::U8(101), Value::U8(108),Value::U8(104), Value::U8(101), Value::U8(108),Value::U8(104), Value::U8(101), Value::U8(108),Value::U8(104), Value::U8(101), Value::U8(108),Value::U8(104), Value::U8(101), Value::U8(108),Value::U8(104), Value::U8(101), Value::U8(108),Value::U8(104), Value::U8(101), Value::U8(108),Value::U8(104), Value::U8(101), Value::U8(108),Value::U8(104), Value::U8(101)]);
     /// assert_eq!(value.into_system_hash256(), Ok([104, 101, 108, 104, 101, 108, 104, 101, 108, 104, 101, 108, 104, 101, 108, 104, 101, 108, 104, 101, 108, 104, 101, 108, 104, 101, 108, 104, 101, 108, 104, 101]));
     ///
+    /// let value = Value::Identifier([5u8;32]);
+    /// assert_eq!(value.into_system_hash256(), Ok([5, 5, 5,5,5,5,5,5,5, 5, 5,5,5,5,5,5,5, 5, 5,5,5,5,5,5,5, 5, 5,5,5,5,5,5]));
+    ///
     /// let value = Value::Bool(true);
     /// assert_eq!(value.into_system_hash256(), Err(Error::StructureError("value are not bytes, a string, or an array of values representing bytes".to_string())));
     /// ```
@@ -133,6 +144,7 @@ impl Value {
                 vec.try_into()
                     .map_err(|_| Error::StructureError("value was bytes, but was not 32 bytes long".to_string()))
             },
+            Value::Identifier(identifier) => Ok(identifier),
             _other => Err(Error::StructureError("value are not bytes, a string, or an array of values representing bytes".to_string())),
         }
     }
@@ -159,6 +171,9 @@ impl Value {
     /// let value = Value::Array(vec![Value::U8(104), Value::U8(101), Value::U8(108),Value::U8(104), Value::U8(101), Value::U8(108),Value::U8(104), Value::U8(101), Value::U8(108),Value::U8(104), Value::U8(101), Value::U8(108),Value::U8(104), Value::U8(101), Value::U8(108),Value::U8(104), Value::U8(101), Value::U8(108),Value::U8(104), Value::U8(101), Value::U8(108),Value::U8(104), Value::U8(101), Value::U8(108),Value::U8(104), Value::U8(101), Value::U8(108),Value::U8(104), Value::U8(101), Value::U8(108),Value::U8(104), Value::U8(101)]);
     /// assert_eq!(value.to_system_hash256(), Ok([104, 101, 108, 104, 101, 108, 104, 101, 108, 104, 101, 108, 104, 101, 108, 104, 101, 108, 104, 101, 108, 104, 101, 108, 104, 101, 108, 104, 101, 108, 104, 101]));
     ///
+    /// let value = Value::Identifier([5u8;32]);
+    /// assert_eq!(value.to_system_hash256(), Ok([5, 5, 5,5,5,5,5,5,5, 5, 5,5,5,5,5,5,5, 5, 5,5,5,5,5,5,5, 5, 5,5,5,5,5,5]));
+    ///
     /// let value = Value::Bool(true);
     /// assert_eq!(value.to_system_hash256(), Err(Error::StructureError("value are not bytes, a string, or an array of values representing bytes".to_string())));
     /// ```
@@ -182,6 +197,7 @@ impl Value {
                 vec.clone().try_into()
                     .map_err(|_| Error::StructureError("value was bytes, but was not 32 bytes long".to_string()))
             },
+            Value::Identifier(identifier) => Ok(identifier.to_owned()),
             _other => Err(Error::StructureError("value are not bytes, a string, or an array of values representing bytes".to_string())),
         }
     }
