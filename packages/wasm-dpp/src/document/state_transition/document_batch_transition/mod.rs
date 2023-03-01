@@ -365,3 +365,9 @@ impl From<DocumentsBatchTransition> for DocumentsBatchTransitionWASM {
         DocumentsBatchTransitionWASM(t)
     }
 }
+
+impl From<DocumentsBatchTransitionWASM> for DocumentsBatchTransition {
+    fn from(t: DocumentsBatchTransitionWASM) -> Self {
+        t.0
+    }
+}

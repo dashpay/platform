@@ -172,6 +172,11 @@ extern "C" {
         this: &ExternalStateRepositoryLike,
     ) -> Result<JsValue, JsValue>;
 
+    #[wasm_bindgen(catch, structural, method, js_name=fetchLatestPlatformBlockHeight)]
+    pub async fn fetch_latest_platform_block_height(
+        this: &ExternalStateRepositoryLike,
+    ) -> Result<JsValue, JsValue>;
+
     #[wasm_bindgen(catch, structural, method, js_name=fetchTransaction)]
     pub async fn fetch_transaction(
         this: &ExternalStateRepositoryLike,
@@ -586,6 +591,19 @@ impl StateRepositoryLike for ExternalStateRepositoryLikeWrapper {
         Ok(Uint8Array::new(&value).to_vec())
     }
 
+    async fn fetch_latest_platform_block_height(&self) -> anyhow::Result<u64> {
+        let height = self
+            .0
+            .fetch_latest_platform_block_height()
+            .await
+            .map_err(from_js_error)?;
+
+        let height = height
+            .as_f64()
+            .ok_or_else(|| anyhow!("Value is not a number"))?;
+        Ok(height as u64)
+    }
+
     async fn fetch_latest_platform_core_chain_locked_height(&self) -> anyhow::Result<Option<u32>> {
         let maybe_height = self
             .0
@@ -643,6 +661,7 @@ impl StateRepositoryLike for ExternalStateRepositoryLikeWrapper {
     async fn mark_asset_lock_transaction_out_point_as_used(
         &self,
         out_point_buffer: &[u8],
+        execution_context: &StateTransitionExecutionContext,
     ) -> anyhow::Result<()> {
         self.0
             .mark_asset_lock_transaction_out_point_as_used(Buffer::from_bytes(out_point_buffer))

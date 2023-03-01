@@ -203,7 +203,6 @@ describe('validateDocumentsBatchTransitionStateFactory', () => {
 
     expect(result).is.instanceOf(ValidationResult);
 
-    expectValidationError(result, DocumentNotFoundErrorJs);
     const [error] = result.getErrors();
     expect(error).is.instanceOf(DocumentNotFoundError);
     expect(error.getCode()).to.equal(4005);
@@ -473,7 +472,7 @@ describe('validateDocumentsBatchTransitionStateFactory', () => {
           stateRepositoryMock, stateTransition,
         );
 
-        expect(result).to.be.an.instanceOf(ValidationResultJs);
+        expect(result).to.be.an.instanceOf(ValidationResult);
         expect(result.isValid()).to.be.true();
       });
 

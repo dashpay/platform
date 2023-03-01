@@ -28,7 +28,6 @@ describe('validateDocumentsUniquenessByIndices', () => {
   let dataContract;
   let ownerIdJs;
   let ownerId;
-  let executionContextJs;
   let executionContext;
 
   beforeEach(async function beforeEach() {
@@ -102,7 +101,7 @@ describe('validateDocumentsUniquenessByIndices', () => {
     const [, , , william] = documentsJs;
     const williamDocument = new Document(william.toObject(), dataContract);
 
-    stateRepositoryMockJs.fetchDocuments
+    stateRepositoryMock.fetchDocuments
       .withArgs(
         dataContract.getId().toBuffer(),
         williamDocument.getType(),
@@ -114,34 +113,6 @@ describe('validateDocumentsUniquenessByIndices', () => {
         },
       )
       .resolves([williamDocument]);
-
-    stateRepositoryMockJs.fetchDocuments
-      .withArgs(
-        dataContractJs.getId().toBuffer(),
-        william.getType(),
-        {
-          where: [
-            ['$ownerId', '==', ownerIdJs],
-            ['lastName', '==', william.get('lastName')],
-          ],
-        },
-      )
-      .resolves([william]);
-
-    const result = await validateDocumentsUniquenessByIndicesJs(
-      ownerIdJs,
-      documentTransitionsJs,
-      dataContractJs,
-      executionContextJs,
-    );
-
-    expect(result).to.be.an.instanceOf(ValidationResultJs);
-    expect(result.isValid()).to.be.true();
-  });
-
-  it('should return valid result if Document has unique indices and there are no duplicates - Rust', async () => {
-    const [, , , william] = documentsJs;
-    const williamDocument = new Document(william.toObject(), dataContract);
 
     stateRepositoryMock.fetchDocuments
       .withArgs(
@@ -301,42 +272,6 @@ describe('validateDocumentsUniquenessByIndices', () => {
     );
 
     expect(result).to.be.an.instanceOf(ValidationResult);
-    expect(result.isValid()).to.be.true();
-  });
-
-  it('should return valid result if Document being created and has createdAt and updatedAt indices - Rust', async () => {
-    const [, , , , , , uniqueDatesDocumentJs] = documentsJs;
-    const uniqueDatesDocument = new Document(
-      uniqueDatesDocumentJs.toObject(), dataContract.clone(),
-    );
-    const uniqueDatesDocumentTransitions = getDocumentTransitionsFixture({
-      create: [uniqueDatesDocumentJs],
-    }).map(
-      (t) => DocumentTransition.fromTransitionCreate(
-        new DocumentCreateTransition(t.toObject(), dataContract.clone()),
-      ),
-    );
-
-    stateRepositoryMock.fetchDocuments
-      .withArgs(
-        sinon.match.instanceOf(Identifier),
-        uniqueDatesDocumentJs.getType(),
-        {
-          where: [
-            ['$createdAt', '==', uniqueDatesDocument.getCreatedAt()],
-            ['$updatedAt', '==', uniqueDatesDocument.getUpdatedAt()],
-          ],
-        },
-      )
-      .resolves([uniqueDatesDocument]);
-
-    const result = await validateDocumentsUniquenessByIndicesJs(
-      ownerIdJs,
-      uniqueDatesDocumentTransitions,
-      dataContractJs,
-      executionContextJs,
-    );
-
     expect(result.isValid()).to.be.true();
   });
 

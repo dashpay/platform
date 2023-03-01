@@ -1,4 +1,4 @@
-use dpp::document::document_validator::DocumentValidator;
+use dpp::{document::document_validator::DocumentValidator, version::ProtocolVersionValidator};
 use std::sync::Arc;
 use wasm_bindgen::prelude::*;
 
@@ -30,6 +30,12 @@ impl DocumentValidatorWasm {
             .with_js_error()?;
 
         Ok(validation_result.map(|_| JsValue::undefined()).into())
+    }
+}
+
+impl DocumentValidatorWasm {
+    pub(crate) fn new_with_arc(protocol_validator: Arc<ProtocolVersionValidator>) -> Self {
+        DocumentValidatorWasm(DocumentValidator::new(protocol_validator.clone()))
     }
 }
 
