@@ -48,9 +48,11 @@ impl StateTransitionFactoryWasm {
         let state_repository_wrapper = ExternalStateRepositoryLikeWrapper::new(state_repository);
         let protocol_version_validator = Arc::new(ProtocolVersionValidator::default());
 
+        let adapter = BlsAdapter(bls_adapter);
+
         let pk_validator =
-            Arc::new(PublicKeysValidator::new(bls_adapter.into()).map_err(from_dpp_init_error)?);
-        let pk_sig_validator = Arc::new(PublicKeysSignaturesValidator::new(bls_adapter.into()));
+            Arc::new(PublicKeysValidator::new(adapter).map_err(from_dpp_init_error)?);
+        let pk_sig_validator = Arc::new(PublicKeysSignaturesValidator::new(adapter));
 
         let asset_lock_tx_validator = Arc::new(AssetLockTransactionValidator::new(
             state_repository_wrapper.into(),
@@ -86,18 +88,18 @@ impl StateTransitionFactoryWasm {
                         pk_validator,
                         pk_validator,
                         asset_lock_validator,
-                        bls_adapter.into(),
+                        adapter,
                         pk_sig_validator,
                     )
                     .map_err(from_dpp_init_error)?,
                     ValidateIdentityUpdateTransitionBasic::new(
-                        protocol_version_validator,
+                        protocol_version_validator.deref().clone(),
                         pk_validator,
                         pk_sig_validator,
                     )
                     .map_err(from_dpp_err)?,
                     IdentityTopUpTransitionBasicValidator::new(
-                        protocol_version_validator,
+                        protocol_version_validator.deref().clone(),
                         asset_lock_validator,
                     )
                     .map_err(from_dpp_init_error)?,
@@ -148,7 +150,11 @@ impl StateTransitionFactoryWasm {
                 StateTransitionError::InvalidStateTransitionError {
                     errors,
                     raw_state_transition,
-                } => Err(InvalidStateTransitionError::new(errors, raw_state_transition).into()),
+                } => Err(InvalidStateTransitionError::new(
+                    errors,
+                    serde_wasm_bindgen::to_value(&raw_state_transition)?,
+                )
+                .into()),
             },
             Err(other) => Err(from_dpp_err(other)),
         }
@@ -182,7 +188,11 @@ impl StateTransitionFactoryWasm {
                 StateTransitionError::InvalidStateTransitionError {
                     errors,
                     raw_state_transition,
-                } => Err(InvalidStateTransitionError::new(errors, raw_state_transition).into()),
+                } => Err(InvalidStateTransitionError::new(
+                    errors,
+                    serde_wasm_bindgen::to_value(&raw_state_transition)?,
+                )
+                .into()),
             },
             Err(other) => Err(from_dpp_err(other)),
         }

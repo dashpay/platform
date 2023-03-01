@@ -155,6 +155,10 @@ impl StateTransitionLike for StateTransition {
     fn set_execution_context(&mut self, execution_context: StateTransitionExecutionContext) {
         call_method!(self, set_execution_context, execution_context)
     }
+
+    fn get_modified_data_ids(&self) -> Vec<crate::prelude::Identifier> {
+        call_method!(self, get_modified_data_ids)
+    }
 }
 
 impl From<DataContractCreateTransition> for StateTransition {

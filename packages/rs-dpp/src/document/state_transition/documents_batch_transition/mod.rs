@@ -191,11 +191,6 @@ impl DocumentsBatchTransition {
     pub fn get_transitions(&self) -> &Vec<DocumentTransition> {
         &self.transitions
     }
-
-    // TODO to decide if this should be a lazy iterator or a vector
-    pub fn get_modified_data_ids(&self) -> impl Iterator<Item = &Identifier> {
-        self.transitions.iter().map(|t| &t.base().id)
-    }
 }
 
 impl StateTransitionIdentitySigned for DocumentsBatchTransition {
@@ -368,6 +363,10 @@ impl StateTransitionConvert for DocumentsBatchTransition {
 }
 
 impl StateTransitionLike for DocumentsBatchTransition {
+    fn get_modified_data_ids(&self) -> Vec<Identifier> {
+        self.transitions.iter().map(|t| t.base().id).collect()
+    }
+
     fn get_protocol_version(&self) -> u32 {
         self.protocol_version
     }

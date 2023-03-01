@@ -112,7 +112,7 @@ impl DataContractCreateTransitionWasm {
         self.0
             .get_modified_data_ids()
             .into_iter()
-            .map(|identifier| Into::<IdentifierWrapper>::into(*identifier).into())
+            .map(|identifier| Into::<IdentifierWrapper>::into(identifier).into())
             .collect()
     }
 

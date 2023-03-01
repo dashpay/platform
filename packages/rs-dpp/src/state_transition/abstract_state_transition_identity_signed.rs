@@ -249,6 +249,10 @@ mod test {
         fn set_execution_context(&mut self, execution_context: StateTransitionExecutionContext) {
             self.execution_context = execution_context
         }
+
+        fn get_modified_data_ids(&self) -> Vec<Identifier> {
+            vec![]
+        }
     }
 
     impl StateTransitionIdentitySigned for ExampleStateTransition {
