@@ -1,8 +1,9 @@
-use std::{any, convert::TryInto};
+use std::convert::TryInto;
 
 use anyhow::{anyhow, bail};
 use dpp::{
     dashcore::{anyhow, anyhow::Context},
+    util::json_value::{JsonValueExt, ReplaceWith},
     ProtocolError,
 };
 
@@ -197,6 +198,13 @@ pub fn get_bool_from_options(
     }
 }
 
+pub fn get_class_name(value: &JsValue) -> String {
+    js_sys::Object::get_prototype_of(value)
+        .constructor()
+        .name()
+        .into()
+}
+
 pub fn try_to_u64(value: JsValue) -> Result<u64, anyhow::Error> {
     let result = if value.is_bigint() {
         js_sys::BigInt::new(&value)
@@ -231,4 +239,16 @@ pub fn convert_number_to_u64(js_number: js_sys::Number) -> Result<u64, anyhow::E
         return Ok(float_number as u64);
     }
     bail!("the value is not a number")
+}
+
+pub(crate) fn replace_identifiers_with_bytes_without_failing<'a>(
+    value: &mut Value,
+    paths: impl IntoIterator<Item = &'a str>,
+) {
+    // Errors are ignored. When `Buffer` crosses the WASM boundary it becomes an Array.
+    // When `Identifier` crosses the WASM boundary it becomes a String. From perspective of JS
+    // `Identifier` and `Buffer` are used interchangeably, so we we can expect the replacing may fail when `Buffer` is provided
+    let _ = value
+        .replace_identifier_paths(paths, ReplaceWith::Bytes)
+        .with_js_error();
 }

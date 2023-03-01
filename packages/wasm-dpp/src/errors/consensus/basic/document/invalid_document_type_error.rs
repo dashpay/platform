@@ -22,7 +22,7 @@ impl InvalidDocumentTypeErrorWasm {
 
 #[wasm_bindgen(js_class=InvalidDocumentTypeError)]
 impl InvalidDocumentTypeErrorWasm {
-    #[wasm_bindgen(js_name=getDocumentType)]
+    #[wasm_bindgen(js_name=getType)]
     pub fn get_document_type(&self) -> String {
         self.document_type.clone()
     }

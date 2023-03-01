@@ -1,9 +1,10 @@
 use dpp::dashcore::anyhow::Context;
-use dpp::prelude::{Identifier, Revision};
+use dpp::prelude::{DataContract, Identifier};
 use dpp::util::json_schema::JsonSchemaExt;
 use dpp::util::json_value::{JsonValueExt, ReplaceWith};
 use dpp::util::string_encoding::Encoding;
 use serde::{Deserialize, Serialize};
+use serde_json::Value;
 use std::convert::{self, TryInto};
 use wasm_bindgen::prelude::*;
 
@@ -13,19 +14,20 @@ use crate::buffer::Buffer;
 use crate::errors::RustConversionError;
 use crate::identifier::{identifier_from_js_value, IdentifierWrapper};
 use crate::lodash::lodash_set;
+use crate::utils::{replace_identifiers_with_bytes_without_failing, ToSerdeJSONExt};
 use crate::utils::{try_to_u64, WithJsError};
-use crate::utils::{with_serde_to_json_value, ToSerdeJSONExt};
 use crate::with_js_error;
 use crate::{DataContractWasm, MetadataWasm};
 
 pub mod errors;
 pub use state_transition::*;
+pub mod document_facade;
 mod factory;
 pub mod fetch_and_validate_data_contract;
 pub mod state_transition;
 mod validator;
 
-pub use document_batch_transition::{DocumentsBatchTransitionWASM, DocumentsContainer};
+pub use document_batch_transition::DocumentsBatchTransitionWASM;
 pub use factory::DocumentFactoryWASM;
 pub use validator::DocumentValidatorWasm;
 
@@ -53,27 +55,7 @@ impl DocumentWasm {
         js_raw_document: JsValue,
         js_data_contract: &DataContractWasm,
     ) -> Result<DocumentWasm, JsValue> {
-        let mut raw_document = with_serde_to_json_value(&js_raw_document)?;
-
-        let document_type = raw_document
-            .get_string(property_names::DOCUMENT_TYPE)
-            .with_js_error()?;
-
-        let (identifier_paths, _) = js_data_contract
-            .inner()
-            .get_identifiers_and_binary_paths(document_type)
-            .with_js_error()?;
-
-        // Errors are ignored. When `Buffer` crosses the WASM boundary it becomes an Array.
-        // When `Identifier` crosses the WASM boundary it becomes a String. From perspective of JS
-        // `Identifier` and `Buffer` are used interchangeably, so we we can expect the replacing may fail when `Buffer` is provided
-        let _ = raw_document
-            .replace_identifier_paths(
-                identifier_paths.into_iter().chain(IDENTIFIER_FIELDS),
-                ReplaceWith::Bytes,
-            )
-            .with_js_error();
-        // The binary paths are not being converted, because they always should be a `Buffer`. `Buffer` is always an Array
+        let raw_document = raw_document_from_js_value(&js_raw_document, js_data_contract.inner())?;
 
         let document =
             Document::from_raw_document(raw_document, js_data_contract.to_owned().into())
@@ -157,9 +139,9 @@ impl DocumentWasm {
     }
 
     #[wasm_bindgen(js_name=setData)]
-    pub fn set_data(&mut self, d: JsValue) -> Result<(), JsValue> {
-        self.0.data = with_js_error!(serde_wasm_bindgen::from_value(d))?;
-        Ok(())
+    pub fn set_data(&mut self, document_data: JsValue) -> Result<(), JsValue> {
+        self.0.data = document_data.with_serde_to_json_value()?;
+        document_data_to_bytes(&mut self.0)
     }
 
     #[wasm_bindgen(js_name=getData)]
@@ -303,9 +285,8 @@ impl DocumentWasm {
     }
 
     #[wasm_bindgen(js_name=setMetadata)]
-    pub fn set_metadata(mut self, metadata: MetadataWasm) -> Self {
+    pub fn set_metadata(&mut self, metadata: &MetadataWasm) {
         self.0.metadata = Some(metadata.into());
-        self
     }
 
     #[wasm_bindgen(js_name=toObject)]
@@ -391,6 +372,46 @@ impl DocumentWasm {
     }
 }
 
+/// document's dynamic data, regardless they are identifiers or binary, they should
+/// be stored as arrays of int
+pub(crate) fn document_data_to_bytes(document: &mut Document) -> Result<(), JsValue> {
+    let mut document_data = document.data.take();
+    let (identifier_paths, binary_paths) = document
+        .get_identifiers_and_binary_paths()
+        .with_js_error()?;
+    document_data
+        .replace_identifier_paths(identifier_paths, ReplaceWith::Bytes)
+        .with_js_error()?;
+    document_data
+        .replace_binary_paths(binary_paths, ReplaceWith::Bytes)
+        .with_js_error()?;
+    document.set_data(document_data);
+    Ok(())
+}
+
+pub(crate) fn raw_document_from_js_value(
+    js_raw_document: &JsValue,
+    data_contract: &DataContract,
+) -> Result<Value, JsValue> {
+    let mut raw_document = js_raw_document.with_serde_to_json_value()?;
+
+    let document_type = raw_document
+        .get_string(property_names::DOCUMENT_TYPE)
+        .with_js_error()?;
+
+    let (identifier_paths, _) = data_contract
+        .get_identifiers_and_binary_paths(document_type)
+        .with_js_error()?;
+
+    replace_identifiers_with_bytes_without_failing(
+        &mut raw_document,
+        identifier_paths.into_iter().chain(IDENTIFIER_FIELDS),
+    );
+
+    // The binary paths are not being converted, because they always should be a `Buffer`. `Buffer` is always an Array
+    Ok(raw_document)
+}
+
 impl From<Document> for DocumentWasm {
     fn from(d: Document) -> Self {
         DocumentWasm(d)
@@ -400,5 +421,11 @@ impl From<Document> for DocumentWasm {
 impl From<DocumentWasm> for Document {
     fn from(d: DocumentWasm) -> Self {
         d.0
+    }
+}
+
+impl From<&DocumentWasm> for Document {
+    fn from(d: &DocumentWasm) -> Self {
+        d.0.clone()
     }
 }

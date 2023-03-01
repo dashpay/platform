@@ -225,6 +225,7 @@ pub trait StateRepositoryLike: Sync {
 
     // Fetch latest platform block time
     async fn fetch_latest_platform_block_time(&self) -> AnyResult<u64>;
+
     // Get latest platform block height
     async fn fetch_latest_platform_block_height(&self) -> AnyResult<u64>;
 }

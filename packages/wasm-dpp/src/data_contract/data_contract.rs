@@ -26,6 +26,12 @@ impl std::convert::From<DataContract> for DataContractWasm {
     }
 }
 
+impl std::convert::From<&DataContractWasm> for DataContract {
+    fn from(v: &DataContractWasm) -> Self {
+        v.0.clone()
+    }
+}
+
 impl std::convert::Into<DataContract> for DataContractWasm {
     fn into(self) -> DataContract {
         self.0

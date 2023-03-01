@@ -5,7 +5,7 @@ use dpp::{
         state_transition::documents_batch_transition::{self, property_names},
         DocumentsBatchTransition,
     },
-    prelude::{DataContract, Document, DocumentTransition, Identifier},
+    prelude::{DataContract, DocumentTransition, Identifier},
     state_transition::{
         StateTransitionConvert, StateTransitionIdentitySigned, StateTransitionLike,
         StateTransitionType,
@@ -23,8 +23,10 @@ use crate::{
     document_batch_transition::document_transition::DocumentTransitionWasm,
     identifier::IdentifierWrapper,
     lodash::lodash_set,
-    utils::{IntoWasm, ToSerdeJSONExt, WithJsError},
-    DocumentWasm, IdentityPublicKeyWasm, StateTransitionExecutionContextWasm,
+    utils::{
+        replace_identifiers_with_bytes_without_failing, IntoWasm, ToSerdeJSONExt, WithJsError,
+    },
+    IdentityPublicKeyWasm, StateTransitionExecutionContextWasm,
 };
 pub mod apply_document_batch_transition;
 pub mod document_transition;
@@ -34,15 +36,6 @@ pub mod validation;
 #[wasm_bindgen(js_name = DocumentsBatchTransition)]
 pub struct DocumentsBatchTransitionWASM(DocumentsBatchTransition);
 
-/// Collections of Documents split by actions
-#[derive(Debug, Default)]
-#[wasm_bindgen(js_name=DocumentsContainer)]
-pub struct DocumentsContainer {
-    create: Vec<Document>,
-    replace: Vec<Document>,
-    delete: Vec<Document>,
-}
-
 #[derive(Debug, Serialize, Deserialize, Default, Clone, Copy)]
 #[serde(rename_all = "camelCase")]
 pub struct ToObjectOptions {
@@ -50,49 +43,6 @@ pub struct ToObjectOptions {
     skip_signature: bool,
     #[serde(default)]
     skip_identifiers_conversion: bool,
-}
-
-impl From<DocumentsBatchTransitionWASM> for DocumentsBatchTransition {
-    fn from(val: DocumentsBatchTransitionWASM) -> Self {
-        val.0
-    }
-}
-
-#[wasm_bindgen(js_class=DocumentsContainer)]
-impl DocumentsContainer {
-    #[wasm_bindgen(constructor)]
-    pub fn new() -> Self {
-        Default::default()
-    }
-
-    #[wasm_bindgen(js_name=pushDocumentCreate)]
-    pub fn push_document_create(&mut self, d: DocumentWasm) {
-        self.create.push(d.0);
-    }
-
-    #[wasm_bindgen(js_name=pushDocumentReplace)]
-    pub fn push_document_replace(&mut self, d: DocumentWasm) {
-        self.replace.push(d.0);
-    }
-
-    #[wasm_bindgen(js_name=pushDocumentDelete)]
-    pub fn push_document_delete(&mut self, d: DocumentWasm) {
-        self.delete.push(d.0);
-    }
-}
-
-impl DocumentsContainer {
-    pub fn take_documents_create(&mut self) -> Vec<Document> {
-        std::mem::take(&mut self.create)
-    }
-
-    pub fn take_documents_replace(&mut self) -> Vec<Document> {
-        std::mem::take(&mut self.replace)
-    }
-
-    pub fn take_documents_delete(&mut self) -> Vec<Document> {
-        std::mem::take(&mut self.delete)
-    }
 }
 
 #[wasm_bindgen(js_class=DocumentsBatchTransition)]
@@ -112,19 +62,18 @@ impl DocumentsBatchTransitionWASM {
         }
 
         let mut batch_transition_value = js_raw_transition.with_serde_to_json_value()?;
-
-        // Allow to fail as, the identifier could be type of `Identifier` of `Buffer`
-        let _ = batch_transition_value.replace_identifier_paths(
+        replace_identifiers_with_bytes_without_failing(
+            &mut batch_transition_value,
             DocumentsBatchTransition::identifiers_property_paths(),
-            ReplaceWith::Bytes,
         );
+
         if let Some(Value::Array(ref mut transitions)) =
             batch_transition_value.get_mut(documents_batch_transition::property_names::TRANSITIONS)
         {
             for t in transitions {
-                let _ = t.replace_identifier_paths(
+                replace_identifiers_with_bytes_without_failing(
+                    t,
                     document_base_transition::IDENTIFIER_FIELDS,
-                    ReplaceWith::Bytes,
                 );
             }
         }
@@ -414,5 +363,11 @@ impl DocumentsBatchTransitionWASM {
 impl From<DocumentsBatchTransition> for DocumentsBatchTransitionWASM {
     fn from(t: DocumentsBatchTransition) -> Self {
         DocumentsBatchTransitionWASM(t)
+    }
+}
+
+impl From<DocumentsBatchTransitionWASM> for DocumentsBatchTransition {
+    fn from(t: DocumentsBatchTransitionWASM) -> Self {
+        t.0
     }
 }

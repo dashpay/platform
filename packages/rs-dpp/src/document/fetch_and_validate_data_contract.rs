@@ -19,6 +19,14 @@ pub struct DataContractFetcherAndValidator<ST> {
     state_repository: Arc<ST>,
 }
 
+impl<ST> Clone for DataContractFetcherAndValidator<ST> {
+    fn clone(&self) -> Self {
+        Self {
+            state_repository: self.state_repository.clone(),
+        }
+    }
+}
+
 impl<ST> DataContractFetcherAndValidator<ST>
 where
     ST: StateRepositoryLike,

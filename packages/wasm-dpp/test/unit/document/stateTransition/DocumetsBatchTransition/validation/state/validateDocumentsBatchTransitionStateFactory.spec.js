@@ -311,6 +311,11 @@ describe('validateDocumentsBatchTransitionStateFactory', () => {
     // having DataTrigger execution mocked
   });
 
+  it('should return invalid result if data triggers execution failed', async () => {
+    // Omitted as it seems impossible to generate such a state without
+    // having DataTrigger execution mocked
+  });
+
   describe('Timestamps', () => {
     let timeWindowStart;
     let timeWindowEnd;
@@ -585,6 +590,43 @@ describe('validateDocumentsBatchTransitionStateFactory', () => {
         expect(result.isValid()).to.be.true();
       });
     });
+  });
+
+  it('should return valid result if document transitions are valid - Rust', async () => {
+    const fetchedDocuments = [
+      new Document(documentsJs[1].toObject(), dataContract),
+      new Document(documentsJs[2].toObject(), dataContract),
+    ];
+
+    stateRepositoryMock.fetchDocuments.resolves(fetchedDocuments);
+
+    documentsJs[1].setRevision(1);
+    documentsJs[2].setRevision(1);
+
+    documentTransitionsJs = getDocumentTransitionsFixture({
+      create: [],
+      replace: [documentsJs[1]],
+      delete: [documentsJs[2]],
+    });
+
+    stateTransition = new DocumentsBatchTransition({
+      ownerId: ownerIdJs,
+      contractId: dataContractJs.getId(),
+      transitions: documentTransitionsJs.map((t) => t.toObject()),
+    }, [dataContract]);
+
+    const result = await validateDocumentsBatchTransitionState(
+      stateRepositoryMock, stateTransition,
+    );
+
+    expect(result).to.be.an.instanceOf(ValidationResult);
+    expect(result.isValid()).to.be.true();
+
+    expect(stateRepositoryMock.fetchDataContract).to.have.been.calledOnce();
+    const [fetchDataContractId] = stateRepositoryMock.fetchDataContract.getCall(0).args;
+    expect(fetchDataContractId.toBuffer()).to.deep.equal(dataContract.getId().toBuffer());
+
+    expect(stateRepositoryMock.fetchDocuments).to.have.been.calledOnce();
   });
 
   it('should return valid result if document transitions are valid - Rust', async () => {
