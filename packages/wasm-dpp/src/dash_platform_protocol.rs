@@ -45,25 +45,8 @@ impl DashPlatformProtocol {
             wrapped_state_repository,
         );
 
-        // initialization of Document
-        let document_validator = DocumentValidatorWasm::new(protocol_version_validator_wasm);
-        let document_factory = DocumentFactoryWASM::new_with_state_repository_wrapper(
-            protocol_version,
-            document_validator.clone(),
-            wrapped_state_repository.clone(),
-        );
-        let data_contract_fetcher_and_validator =
-            DataContractFetcherAndValidatorWasm::new_with_state_repository_wrapper(
-                wrapped_state_repository,
-            );
-        let document_facade = DocumentFacadeWasm::new_with_arc(
-            Arc::new(document_validator),
-            Arc::new(document_factory),
-            Arc::new(data_contract_fetcher_and_validator),
-        );
-
         let data_contract_facade =
-            DataContractFacadeWasm::new(protocol_version, protocol_version_validator_arc);
+            DataContractFacadeWasm::new(protocol_version, protocol_version_validator);
 
         Self {
             document: document_facade,

@@ -14,7 +14,6 @@ let DocumentFactory;
 
 describe('DocumentBatchTransition', () => {
   let stateTransitionFixture;
-  let dataContractFixtureJs;
   let dataContractFixture;
   let documentsFixture;
   let documentFactory;
@@ -31,7 +30,7 @@ describe('DocumentBatchTransition', () => {
       DocumentFactory,
       DocumentValidator,
     } = await loadWasmDpp());
-    dataContractFixtureJs = getDataContractFixture();
+    const dataContractFixtureJs = getDataContractFixture();
 
     dataContractFixtureJs.documents.niceDocument
       .signatureSecurityLevelRequirement = IdentityPublicKey.SECURITY_LEVELS.MEDIUM;

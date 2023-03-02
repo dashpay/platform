@@ -43,6 +43,7 @@ impl From<DataTriggerKind> for &str {
             DataTriggerKind::DataTriggerRewardShare => "dataTriggerRewardShare",
             DataTriggerKind::DataTriggerCreateDomain => "dataTriggerCreateDomain",
             DataTriggerKind::CreateDataContractRequest => "createDataContractRequest",
+            DataTriggerKind::DeleteWithdrawal => "deleteWithdrawal",
         }
     }
 }
