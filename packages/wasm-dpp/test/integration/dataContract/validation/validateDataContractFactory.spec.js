@@ -883,8 +883,7 @@ describe('validateDataContractFactory', () => {
         expect(error.getParams().allowedValue).to.equal(false);
       });
 
-      // TODO: jsonschema-rs unevaluatedProperties
-      it.skip('should return invalid result if "default" keyword is used', async () => {
+      it('should return invalid result if "default" keyword is used', async () => {
         const rawDataContract = dataContract.toObject();
         rawDataContract.documents.indexedDocument.properties.firstName.default = '1';
 
@@ -894,8 +893,8 @@ describe('validateDataContractFactory', () => {
 
         const [error] = result.getErrors();
 
-        expect(error.getInstancePath()).to.equal('/documents/indexedDocument/properties/firstName');
-        expect(error.getKeyword()).to.equal('unevaluatedProperties');
+        expect(error.getInstancePath()).to.equal('/documents/indexedDocument/properties/firstName/default');
+        expect(error.getKeyword()).to.equal('falseSchema');
       });
 
       it('should return invalid result if remote `$ref` is used', async () => {
@@ -914,8 +913,7 @@ describe('validateDataContractFactory', () => {
         expect(error.getKeyword()).to.equal('pattern');
       });
 
-      // TODO: jsonschema-rs unevaluatedProperties
-      it.skip('should not have `propertyNames`', async () => {
+      it('should not have `propertyNames`', async () => {
         const rawDataContract = dataContract.toObject();
         rawDataContract.documents.indexedDocument = {
           type: 'object',
@@ -936,9 +934,8 @@ describe('validateDataContractFactory', () => {
 
         const [error] = result.getErrors();
 
-        expect(error.getInstancePath()).to.equal('/documents/indexedDocument');
-        expect(error.getKeyword()).to.equal('unevaluatedProperties');
-        expect(error.getParams().unevaluatedProperty).to.equal('propertyNames');
+        expect(error.getInstancePath()).to.equal('/documents/indexedDocument/propertyNames');
+        expect(error.getKeyword()).to.equal('falseSchema');
       });
 
       it('should have `maxItems` if `uniqueItems` is used', async () => {

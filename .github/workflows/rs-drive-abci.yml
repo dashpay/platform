@@ -16,6 +16,7 @@ on:
       - packages/rs-dpp/**
       - packages/rs-drive/**
       - packages/rs-drive-abci/**
+      - packages/rs-platform-value/**
   schedule:
     - cron: '30 4 * * *'
 

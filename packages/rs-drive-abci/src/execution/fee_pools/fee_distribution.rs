@@ -299,14 +299,10 @@ impl Platform {
                     .ok_or(Error::Execution(ExecutionError::DriveMissingData(
                         "percentage property is missing",
                     )))?
-                    .as_integer()
-                    .ok_or(Error::Execution(ExecutionError::DriveIncoherence(
-                        "percentage property type is not integer",
-                    )))?
-                    .try_into()
+                    .to_integer()
                     .map_err(|_| {
-                        Error::Execution(ExecutionError::Overflow(
-                            "percentage property cannot be converted to i64",
+                        Error::Execution(ExecutionError::DriveIncoherence(
+                            "percentage property type is not integer",
                         ))
                     })?;
 
@@ -1191,6 +1187,7 @@ mod tests {
     mod add_epoch_pool_to_proposers_payout_operations {
         use super::*;
         use crate::test::helpers::fee_pools::create_test_masternode_share_identities_and_documents;
+        use dpp::platform_value::btreemap_extensions::BTreeValueMapHelper;
         use rust_decimal::Decimal;
         use rust_decimal_macros::dec;
 
@@ -1293,12 +1290,8 @@ mod tests {
             let shares_percentage_with_precision: u64 = share_identities_and_documents[0]
                 .1
                 .properties
-                .get("percentage")
-                .expect("should have percentage field")
-                .as_integer()
-                .expect("percentage should an integer")
-                .try_into()
-                .expect("percentage should be u64");
+                .get_integer("percentage")
+                .expect("should have percentage field");
 
             let shares_percentage = Decimal::from(shares_percentage_with_precision) / dec!(10000);
 

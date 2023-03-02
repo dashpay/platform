@@ -34,7 +34,6 @@ const {
   driveRemoveFromIdentityBalance,
   driveApplyFeesToIdentityBalance,
   driveFetchLatestWithdrawalTransactionIndex,
-  driveEnqueueWithdrawalTransaction,
   abciInitChain,
   abciBlockBegin,
   abciBlockEnd,
@@ -69,9 +68,6 @@ const driveQueryDocumentsAsync = appendStackAsync(promisify(driveQueryDocuments)
 const driveProveDocumentsQueryAsync = appendStackAsync(promisify(driveProveDocumentsQuery));
 const driveFetchLatestWithdrawalTransactionIndexAsync = appendStackAsync(
   promisify(driveFetchLatestWithdrawalTransactionIndex),
-);
-const driveEnqueueWithdrawalTransactionAsync = appendStackAsync(
-  promisify(driveEnqueueWithdrawalTransaction),
 );
 const driveInsertIdentityAsync = appendStackAsync(promisify(driveInsertIdentity));
 const driveFetchIdentityAsync = appendStackAsync(promisify(driveFetchIdentity));
@@ -736,31 +732,17 @@ class Drive {
   /**
    * Fetch the latest index of the withdrawal transaction in a queue
    *
+   * @param {RawBlockInfo} blockInfo
    * @param {boolean} [useTransaction=false]
+   * @param {boolean} [dryRun=false]
    *
    * @returns {Promise<number>}
    */
-  async fetchLatestWithdrawalTransactionIndex(useTransaction = false) {
+  async fetchLatestWithdrawalTransactionIndex(blockInfo, useTransaction = false, dryRun = false) {
     return driveFetchLatestWithdrawalTransactionIndexAsync.call(
       this.drive,
-      useTransaction,
-    );
-  }
-
-  /**
-   * Enqueue withdrawal transaction into the queue
-   *
-   * @param {number} index
-   * @param {Buffer} transactionBytes
-   * @param {boolean} [useTransaction=false]
-   *
-   * @returns {Promise<void>}
-   */
-  async enqueueWithdrawalTransaction(index, transactionBytes, useTransaction = false) {
-    return driveEnqueueWithdrawalTransactionAsync.call(
-      this.drive,
-      index,
-      transactionBytes,
+      blockInfo,
+      !dryRun,
       useTransaction,
     );
   }
@@ -908,6 +890,8 @@ Drive.FeeResult = FeeResult;
  * @property {number} [previousBlockTimeMs] - timestamp in milliseconds
  * @property {Buffer} proposerProTxHash
  * @property {Buffer} validatorSetQuorumHash
+ * @property {number} lastSyncedCoreHeight
+ * @property {number} coreChainLockedHeight,
  * @property {number} proposedAppVersion
  * @property {number} totalHpmns
  */

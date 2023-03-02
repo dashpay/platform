@@ -54,6 +54,7 @@ function prepareProposalHandlerFactory(
       proposerProTxHash,
       proposedAppVersion,
       round,
+      quorumHash,
     } = request;
 
     const contextLogger = createContextLogger(logger, {
@@ -80,6 +81,7 @@ function prepareProposalHandlerFactory(
         proposerProTxHash: Buffer.from(proposerProTxHash),
         proposedAppVersion,
         round,
+        quorumHash,
       },
       contextLogger,
     );
@@ -91,7 +93,7 @@ function prepareProposalHandlerFactory(
     const blockFees = {
       storageFee: 0,
       processingFee: 0,
-      refundsPerEpoch: { },
+      refundsPerEpoch: {},
     };
 
     let validTxCount = 0;

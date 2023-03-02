@@ -21,6 +21,7 @@ use crate::util::hash::hash;
 use crate::util::json_value::{JsonValueExt, ReplaceWith};
 use crate::util::{cbor_value, deserializer};
 
+pub mod document_facade;
 pub mod document_factory;
 pub mod document_stub;
 pub mod document_validator;
@@ -258,6 +259,11 @@ impl Document {
     /// Set the Document's data
     pub fn set_data(&mut self, data: JsonValue) {
         self.data = data;
+    }
+
+    /// Increment document's revision
+    pub fn increment_revision(&mut self) {
+        self.revision += 1;
     }
 
     /// Get entropy

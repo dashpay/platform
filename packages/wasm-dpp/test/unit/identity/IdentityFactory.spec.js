@@ -1,52 +1,58 @@
-const { PublicKey } = require('@dashevo/dashcore-lib');
-const Identity = require('@dashevo/dpp/lib/identity/Identity');
-const IdentityCreateTransition = require('@dashevo/dpp/lib/identity/stateTransition/IdentityCreateTransition/IdentityCreateTransition');
-const IdentityTopUpTransition = require('@dashevo/dpp/lib/identity/stateTransition/IdentityTopUpTransition/IdentityTopUpTransition');
-
 const getIdentityFixture = require('@dashevo/dpp/lib/test/fixtures/getIdentityFixture');
-
-const ValidationResult = require('@dashevo/dpp/lib/validation/ValidationResult');
-const SerializedObjectParsingError = require('@dashevo/dpp/lib/errors/consensus/basic/decode/SerializedObjectParsingError');
-
-const InvalidIdentityError = require(
-  '@dashevo/dpp/lib/identity/errors/InvalidIdentityError',
-);
 const getInstantAssetLockProofFixture = require('@dashevo/dpp/lib/test/fixtures/getInstantAssetLockProofFixture');
-const InstantAssetLockProof = require('@dashevo/dpp/lib/identity/stateTransition/assetLockProof/instant/InstantAssetLockProof');
 const getChainAssetLockProofFixture = require('@dashevo/dpp/lib/test/fixtures/getChainAssetLockProofFixture');
-const createDPPMock = require('@dashevo/dpp/lib/test/mocks/createDPPMock');
-const SomeConsensusError = require('@dashevo/dpp/lib/test/mocks/SomeConsensusError');
-const IdentityFactory = require('@dashevo/dpp/lib/identity/IdentityFactory');
-const IdentityUpdateTransition = require('@dashevo/dpp/lib/identity/stateTransition/IdentityUpdateTransition/IdentityUpdateTransition');
 const IdentityPublicKey = require('@dashevo/dpp/lib/identity/IdentityPublicKey');
+const { default: loadWasmDpp } = require('../../../dist');
+const getBlsAdapterMock = require('../../../lib/test/mocks/getBlsAdapterMock');
 
 describe('IdentityFactory', () => {
   let factory;
-  let validateIdentityMock;
-  let decodeProtocolEntityMock;
   let identity;
   let instantAssetLockProof;
   let chainAssetLockProof;
-  let dppMock;
   let fakeTime;
 
-  beforeEach(function beforeEach() {
-    validateIdentityMock = this.sinonSandbox.stub();
-    decodeProtocolEntityMock = this.sinonSandbox.stub();
+  let Identity;
+  let IdentityFactory;
+  let IdentityValidator;
+  let InstantAssetLockProof;
+  let IdentityCreateTransition;
+  let IdentityTopUpTransition;
+  let IdentityUpdateTransition;
+  let IdentityPublicKeyCreateTransition;
+  let InvalidIdentityError;
+  let SerializedObjectParsingError;
+  let UnsupportedProtocolVersionError;
+  let ChainAssetLockProof;
 
-    instantAssetLockProof = getInstantAssetLockProofFixture();
-    chainAssetLockProof = getChainAssetLockProofFixture();
+  before(async () => {
+    ({
+      Identity, IdentityFactory, IdentityValidator,
+      InstantAssetLockProof, ChainAssetLockProof, IdentityUpdateTransition,
+      IdentityCreateTransition, IdentityTopUpTransition, IdentityPublicKeyCreateTransition,
+      InvalidIdentityError, UnsupportedProtocolVersionError, SerializedObjectParsingError,
+    } = await loadWasmDpp());
+  });
 
-    dppMock = createDPPMock();
+  beforeEach(async function () {
+    const instantAssetLockProofJS = getInstantAssetLockProofFixture();
+    const chainAssetLockProofJS = getChainAssetLockProofFixture();
+    instantAssetLockProof = new InstantAssetLockProof(instantAssetLockProofJS.toObject());
+    chainAssetLockProof = new ChainAssetLockProof(chainAssetLockProofJS.toObject());
+
+    const blsAdapter = await getBlsAdapterMock();
+
+    const identityValidator = new IdentityValidator(blsAdapter);
 
     factory = new IdentityFactory(
-      dppMock,
-      validateIdentityMock,
-      decodeProtocolEntityMock,
+      1,
+      identityValidator,
     );
 
-    identity = getIdentityFixture();
-    identity.id = instantAssetLockProof.createIdentifier();
+    const identityObject = getIdentityFixture().toObject();
+    identityObject.id = instantAssetLockProof.createIdentifier();
+
+    identity = new Identity(identityObject);
     identity.setAssetLockProof(instantAssetLockProof);
     identity.setBalance(0);
 
@@ -57,19 +63,12 @@ describe('IdentityFactory', () => {
     fakeTime.reset();
   });
 
-  describe('#constructor', () => {
-    it('should set validator', () => {
-      expect(factory.validateIdentity).to.equal(validateIdentityMock);
-    });
-  });
-
   describe('#create', () => {
     it('should create Identity from asset lock transaction, output index, proof and public keys', () => {
       const publicKeys = identity
         .getPublicKeys()
         .map((identityPublicKey) => ({
           ...identityPublicKey.toObject(),
-          key: new PublicKey(identityPublicKey.getData()),
           readonly: true,
         }));
 
@@ -85,30 +84,28 @@ describe('IdentityFactory', () => {
 
   describe('#createFromObject', () => {
     it('should skip validation if options is set', () => {
-      factory.createFromObject({}, { skipValidation: true });
-
-      expect(validateIdentityMock).to.have.not.been.called();
+      const identityObject = identity.toObject();
+      identityObject.protocolVersion = 100;
+      const result = factory.createFromObject(identityObject, { skipValidation: true });
+      expect(result).to.exist();
     });
 
     it('should throw an error if validation have failed', () => {
-      const errors = [new SomeConsensusError('error')];
-
-      validateIdentityMock.returns(new ValidationResult(errors));
+      const identityObject = identity.toObject();
+      identityObject.protocolVersion = 3;
 
       try {
-        factory.createFromObject(identity.toObject());
+        factory.createFromObject(identityObject);
 
         expect.fail('error was not thrown');
       } catch (e) {
         expect(e).to.be.an.instanceOf(InvalidIdentityError);
-        expect(e.getErrors()).to.have.deep.members(errors);
-        expect(e.getRawIdentity()).to.deep.equal(identity.toObject());
+        expect(e.getErrors()[0]).to.be.instanceOf(UnsupportedProtocolVersionError);
+        expect(e.getRawIdentity()).to.deep.equal(identityObject);
       }
     });
 
     it('should create an identity if validation passed', () => {
-      validateIdentityMock.returns(new ValidationResult());
-
       const result = factory.createFromObject(identity.toObject());
 
       expect(result).to.be.an.instanceOf(Identity);
@@ -120,42 +117,20 @@ describe('IdentityFactory', () => {
     let serializedIdentity;
     let rawIdentity;
 
-    beforeEach(function beforeEach() {
-      this.sinonSandbox.stub(factory, 'createFromObject');
-
+    beforeEach(() => {
       serializedIdentity = identity.toBuffer();
       rawIdentity = identity.toObject();
     });
 
-    afterEach(() => {
-      factory.createFromObject.restore();
-    });
-
     it('should return new Identity from serialized one', () => {
-      decodeProtocolEntityMock.returns([rawIdentity.protocolVersion, rawIdentity]);
-
-      factory.createFromObject.returns(identity);
-
       const result = factory.createFromBuffer(serializedIdentity);
-
-      expect(result).to.equal(identity);
-
-      expect(factory.createFromObject).to.have.been.calledOnceWith(rawIdentity);
-
-      expect(decodeProtocolEntityMock).to.have.been.calledOnceWithExactly(
-        serializedIdentity,
-      );
+      expect(result.toObject()).to.deep.equal(rawIdentity);
     });
 
     it('should throw InvalidIdentityError if the decoding fails with consensus error', () => {
-      const parsingError = new SerializedObjectParsingError(
-        serializedIdentity,
-        new Error(),
-      );
-
-      decodeProtocolEntityMock.throws(parsingError);
-
       try {
+        // Mess up protocol version
+        serializedIdentity[0] = 3;
         factory.createFromBuffer(serializedIdentity);
 
         expect.fail('should throw InvalidIdentityError');
@@ -163,21 +138,18 @@ describe('IdentityFactory', () => {
         expect(e).to.be.an.instanceOf(InvalidIdentityError);
 
         const [innerError] = e.getErrors();
-        expect(innerError).to.equal(parsingError);
+        expect(innerError).to.be.instanceOf(UnsupportedProtocolVersionError);
       }
     });
 
     it('should throw an error if decoding fails with any other error', () => {
-      const parsingError = new Error('Something failed during parsing');
-
-      decodeProtocolEntityMock.throws(parsingError);
-
       try {
+        serializedIdentity = serializedIdentity.slice(4);
         factory.createFromBuffer(serializedIdentity);
 
         expect.fail('should throw an error');
       } catch (e) {
-        expect(e).to.equal(parsingError);
+        expect(e).to.be.instanceOf(SerializedObjectParsingError);
       }
     });
   });
@@ -204,7 +176,15 @@ describe('IdentityFactory', () => {
       const stateTransition = factory.createIdentityCreateTransition(identity);
 
       expect(stateTransition).to.be.instanceOf(IdentityCreateTransition);
-      expect(stateTransition.getPublicKeys()).to.deep.equal(identity.getPublicKeys());
+      const keysToExpect = stateTransition.getPublicKeys()
+        .map((key) => {
+          const keyObject = key.toObject();
+          delete keyObject.signature;
+          return keyObject;
+        });
+
+      expect(keysToExpect)
+        .to.deep.equal(identity.getPublicKeys().map((key) => key.toObject()));
       expect(stateTransition.getAssetLockProof().toObject())
         .to.deep.equal(instantAssetLockProof.toObject());
     });
@@ -212,15 +192,25 @@ describe('IdentityFactory', () => {
 
   describe('createChainAssetLockProof', () => {
     it('should create IdentityCreateTransition from Identity model', () => {
-      identity = getIdentityFixture();
-      identity.id = chainAssetLockProof.createIdentifier();
+      const identityObject = getIdentityFixture().toObject();
+      identityObject.id = chainAssetLockProof.createIdentifier();
+      identity = new Identity(identityObject);
       identity.setAssetLockProof(chainAssetLockProof);
       identity.setBalance(0);
 
       const stateTransition = factory.createIdentityCreateTransition(identity);
 
       expect(stateTransition).to.be.instanceOf(IdentityCreateTransition);
-      expect(stateTransition.getPublicKeys()).deep.to.equal(identity.getPublicKeys());
+      const keysToExpect = stateTransition.getPublicKeys()
+        .map((key) => {
+          const keyObject = key.toObject();
+          delete keyObject.signature;
+          return keyObject;
+        });
+
+      expect(keysToExpect)
+        .to.deep.equal(identity.getPublicKeys().map((key) => key.toObject()));
+
       expect(stateTransition.getAssetLockProof().toObject())
         .to.deep.equal(chainAssetLockProof.toObject());
     });
@@ -235,7 +225,7 @@ describe('IdentityFactory', () => {
         );
 
       expect(stateTransition).to.be.instanceOf(IdentityTopUpTransition);
-      expect(stateTransition.getIdentityId()).to.deep.equal(identity.getId());
+      expect(stateTransition.getIdentityId().toBuffer()).to.deep.equal(identity.getId().toBuffer());
       expect(stateTransition.getAssetLockProof().toObject())
         .to.deep.equal(instantAssetLockProof.toObject());
     });
@@ -245,13 +235,14 @@ describe('IdentityFactory', () => {
     it('should create IdentityUpdateTransition', () => {
       const revision = 1;
       const disablePublicKeys = [identity.getPublicKeyById(0)];
-      const addPublicKeys = [new IdentityPublicKey({
+      const addPublicKeys = [new IdentityPublicKeyCreateTransition({
         id: 0,
         type: IdentityPublicKey.TYPES.ECDSA_SECP256K1,
         data: Buffer.from('AuryIuMtRrl/VviQuyLD1l4nmxi9ogPzC9LT7tdpo0di', 'base64'),
         purpose: IdentityPublicKey.PURPOSES.AUTHENTICATION,
         securityLevel: IdentityPublicKey.SECURITY_LEVELS.MASTER,
         readOnly: false,
+        signature: Buffer.alloc(0),
       })];
 
       const stateTransition = factory
@@ -264,9 +255,10 @@ describe('IdentityFactory', () => {
         );
 
       expect(stateTransition).to.be.instanceOf(IdentityUpdateTransition);
-      expect(stateTransition.getIdentityId()).to.deep.equal(identity.getId());
+      expect(stateTransition.getIdentityId().toBuffer()).to.deep.equal(identity.getId().toBuffer());
       expect(stateTransition.getRevision()).to.deep.equal(revision);
-      expect(stateTransition.getPublicKeysToAdd()).to.deep.equal(addPublicKeys);
+      expect(stateTransition.getPublicKeysToAdd().map((key) => key.toObject()))
+        .to.deep.equal(addPublicKeys.map((key) => key.toObject()));
       expect(stateTransition.getPublicKeyIdsToDisable()).to.deep.equal([0]);
       expect(stateTransition.getPublicKeysDisabledAt()).to.deep.equal(new Date());
     });

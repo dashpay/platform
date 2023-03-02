@@ -31,24 +31,30 @@ mod contract;
 mod document;
 mod identity;
 mod system;
+mod withdrawals;
 
 use crate::drive::batch::GroveDbOpBatch;
 use crate::drive::block_info::BlockInfo;
-
 use crate::drive::Drive;
 use crate::error::Error;
 use crate::fee::calculate_fee;
 use crate::fee::op::DriveOperation;
 use crate::fee::result::FeeResult;
+
 pub use contract::ContractOperationType;
+pub use document::DocumentOperation;
 pub use document::DocumentOperationType;
+pub use document::DocumentOperationsForContractDocumentType;
+pub use document::UpdateOperationInfo;
+pub use identity::IdentityOperationType;
+pub use system::SystemOperationType;
+pub use withdrawals::WithdrawalOperationType;
+
+use grovedb::{EstimatedLayerInformation, TransactionArg};
 
 use grovedb::batch::{GroveDbOp, KeyInfoPath};
-use grovedb::{EstimatedLayerInformation, TransactionArg};
-pub use identity::IdentityOperationType;
 use itertools::Itertools;
 use std::collections::HashMap;
-pub use system::SystemOperationType;
 
 /// A converter that will get Drive Operations from High Level Operations
 pub trait DriveOperationConverter {
@@ -71,6 +77,8 @@ pub enum DriveOperationType<'a> {
     ContractOperation(ContractOperationType<'a>),
     /// A document operation
     DocumentOperation(DocumentOperationType<'a>),
+    /// Withdrawal operation
+    WithdrawalOperation(WithdrawalOperationType<'a>),
     /// An identity operation
     IdentityOperation(IdentityOperationType),
     /// A system operation
@@ -98,6 +106,14 @@ impl DriveOperationConverter for DriveOperationType<'_> {
             }
             DriveOperationType::DocumentOperation(document_operation_type) => {
                 document_operation_type.to_drive_operations(
+                    drive,
+                    estimated_costs_only_with_layer_info,
+                    block_info,
+                    transaction,
+                )
+            }
+            DriveOperationType::WithdrawalOperation(withdrawal_operation_type) => {
+                withdrawal_operation_type.to_drive_operations(
                     drive,
                     estimated_costs_only_with_layer_info,
                     block_info,
@@ -152,6 +168,9 @@ impl Drive {
         block_info: &BlockInfo,
         transaction: TransactionArg,
     ) -> Result<FeeResult, Error> {
+        if operations.is_empty() {
+            return Ok(FeeResult::default());
+        }
         let mut drive_operations = vec![];
         let mut estimated_costs_only_with_layer_info = if apply {
             None::<HashMap<KeyInfoPath, EstimatedLayerInformation>>
@@ -177,6 +196,7 @@ impl Drive {
     }
 }
 
+#[cfg(feature = "full")]
 #[cfg(test)]
 mod tests {
     use grovedb::Element;

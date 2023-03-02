@@ -1,6 +1,11 @@
 use dpp::state_transition::state_transition_execution_context::StateTransitionExecutionContext;
 use wasm_bindgen::prelude::*;
 
+pub mod validation;
+pub use validation::*;
+
+pub(crate) mod conversion;
+
 #[wasm_bindgen(js_name=StateTransitionExecutionContext)]
 pub struct StateTransitionExecutionContextWasm(StateTransitionExecutionContext);
 

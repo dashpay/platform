@@ -1,3 +1,4 @@
+#[cfg(feature = "full")]
 #[cfg(test)]
 mod tests {
     use dpp::data_contract::document_type::{DocumentType, Index, IndexProperty};

@@ -109,7 +109,7 @@ mod validate_identity_credit_withdrawal_transition_state_factory {
             .await;
 
         match result {
-            Ok(_) => assert!(false, "should not return Ok result"),
+            Ok(_) => panic!("should not return Ok result"),
             Err(e) => assert_eq!(e.to_string(), "Some error"),
         }
     }
@@ -130,13 +130,15 @@ mod validate_identity_credit_withdrawal_transition_state_factory {
                 anyhow::Ok(Some(identity))
             });
 
-        let (state_transition, validator) = setup_test(state_repository, Some(5));
+        let (mut state_transition, validator) = setup_test(state_repository, Some(5));
+
+        state_transition.revision = 1;
 
         let result = validator
             .validate_identity_credit_withdrawal_transition_state(&state_transition)
             .await
             .unwrap();
 
-        assert_eq!(result.is_valid(), true);
+        assert!(result.is_valid());
     }
 }

@@ -108,7 +108,7 @@ describe('SimplifiedMasternodeListProvider', () => {
 
       expect(jsonTransportMock.request).to.be.callCount(4);
 
-      expect(secondSML.mnList).to.have.lengthOf(122);
+      expect(secondSML.mnList).to.have.lengthOf(3);
       expect(jsonTransportMock.request).to.be.callCount(4);
 
       expect(jsonTransportMock.request.getCall(2).args).to.deep.equal([

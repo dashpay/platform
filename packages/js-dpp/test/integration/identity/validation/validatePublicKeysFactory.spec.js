@@ -366,7 +366,7 @@ describe('validatePublicKeysFactory', () => {
       purpose: 0,
       securityLevel: 0,
       readOnly: true,
-      data: Buffer.from('01fac99ca2c8f39c286717c213e190aba4b7af76db320ec43f479b7d9a2012313a0ae59ca576edf801444bc694686694', 'hex'),
+      data: Buffer.from('a504a07c4a4805b1631e092cb7e9b0bc101e40d89854502195de2e651dc32bfcc3117029c5eb29ab285df8917a7cda75', 'hex'),
     }];
 
     const result = validatePublicKeys(rawPublicKeys);

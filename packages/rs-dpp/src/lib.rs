@@ -12,7 +12,7 @@ pub use convertible::Convertible;
 pub use dash_platform_protocol::DashPlatformProtocol;
 pub use errors::*;
 
-mod contracts;
+pub mod contracts;
 pub mod data_contract;
 
 mod convertible;
@@ -38,10 +38,11 @@ pub mod block_time_window;
 pub mod mocks;
 
 mod bls;
-pub mod system_data_contracts;
-#[cfg(test)]
-mod tests;
 
+#[cfg(feature = "fixtures-and-mocks")]
+pub mod tests;
+
+pub mod system_data_contracts;
 pub use bls::*;
 
 pub mod prelude {
@@ -61,3 +62,4 @@ pub mod prelude {
 }
 
 pub use jsonschema;
+pub use platform_value;
