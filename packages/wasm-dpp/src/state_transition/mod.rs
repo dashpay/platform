@@ -2,6 +2,7 @@ use dpp::state_transition::state_transition_execution_context::StateTransitionEx
 use wasm_bindgen::prelude::*;
 
 use crate::utils::Inner;
+mod conversion;
 mod validation;
 
 #[wasm_bindgen(js_name=StateTransitionExecutionContext)]
