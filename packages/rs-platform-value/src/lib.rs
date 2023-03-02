@@ -29,6 +29,7 @@ pub use btreemap_field_replacement::ReplacementType;
 /// A representation of a dynamic value that can handled dynamically
 #[non_exhaustive]
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq, PartialOrd)]
+#[serde(untagged)]
 pub enum Value {
     /// A u128 integer
     U128(u128),
