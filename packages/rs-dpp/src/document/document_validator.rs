@@ -4,6 +4,7 @@ use anyhow::anyhow;
 use lazy_static::lazy_static;
 use serde_json::Value as JsonValue;
 
+use crate::data_contract::document_type::DocumentType;
 use crate::{
     consensus::basic::BasicError,
     data_contract::{
@@ -24,6 +25,11 @@ lazy_static! {
         serde_json::from_str(include_str!("../../schema/document/documentBase.json")).unwrap();
 }
 
+lazy_static! {
+    static ref EXTENDED_DOCUMENT_SCHEMA: JsonValue =
+        serde_json::from_str(include_str!("../../schema/document/documentExtended.json")).unwrap();
+}
+
 pub struct DocumentValidator {
     protocol_version_validator: Arc<ProtocolVersionValidator>,
 }
@@ -36,6 +42,44 @@ impl DocumentValidator {
     }
 
     pub fn validate(
+        &self,
+        raw_document: &JsonValue,
+        data_contract: &DataContract,
+        document_type: &DocumentType,
+    ) -> Result<ValidationResult<()>, ProtocolError> {
+        let mut result = ValidationResult::default();
+        let enriched_data_contract = enrich_data_contract_with_base_schema(
+            data_contract,
+            &BASE_DOCUMENT_SCHEMA,
+            PREFIX_BYTE_0,
+            &[],
+        )?;
+
+        //todo: maybe we should validate on the document type instead as it already has all the
+        //information needed
+        let document_schema = enriched_data_contract
+            .get_document_schema(document_type.name.as_str())?
+            .to_owned();
+
+        let json_schema_validator = if let Some(defs) = &data_contract.defs {
+            JsonSchemaValidator::new_with_definitions(document_schema, defs.iter())
+        } else {
+            JsonSchemaValidator::new(document_schema)
+        }
+        .map_err(|e| anyhow!("unable to process the contract: {}", e))?;
+
+        let json_schema_validation_result = json_schema_validator.validate(raw_document)?;
+        result.merge(json_schema_validation_result);
+
+        if !result.is_valid() {
+            return Ok(result);
+        }
+        //todo: validate the version
+
+        Ok(result)
+    }
+
+    pub fn validate_extended(
         &self,
         raw_document: &JsonValue,
         data_contract: &DataContract,
@@ -65,7 +109,7 @@ impl DocumentValidator {
 
         let enriched_data_contract = enrich_data_contract_with_base_schema(
             data_contract,
-            &BASE_DOCUMENT_SCHEMA,
+            &EXTENDED_DOCUMENT_SCHEMA,
             PREFIX_BYTE_0,
             &[],
         )?;
@@ -165,7 +209,7 @@ mod test {
             .unwrap_or_else(|_| panic!("the {} should exist and be removed", property_name));
 
         let result = document_validator
-            .validate(&raw_document, &data_contract)
+            .validate_extended(&raw_document, &data_contract)
             .expect("the validator should return the validation result");
         let schema_error = get_first_schema_error(&result);
 
@@ -192,7 +236,7 @@ mod test {
             .unwrap();
 
         let result = document_validator
-            .validate(&raw_document, &data_contract)
+            .validate_extended(&raw_document, &data_contract)
             .expect("the validator should return the validation result");
         let schema_error = get_first_schema_error(&result);
 
@@ -229,7 +273,7 @@ mod test {
             .unwrap();
 
         let result = document_validator
-            .validate(&raw_document, &data_contract)
+            .validate_extended(&raw_document, &data_contract)
             .expect("the validator should return the validation result");
         let schema_error = get_first_schema_error(&result);
 
@@ -267,7 +311,7 @@ mod test {
             .unwrap();
 
         let result = document_validator
-            .validate(&raw_document, &data_contract)
+            .validate_extended(&raw_document, &data_contract)
             .expect("the validator should return the validation result");
         let schema_error = get_first_schema_error(&result);
 
@@ -298,7 +342,7 @@ mod test {
             .unwrap();
 
         let result = document_validator
-            .validate(&raw_document, &data_contract)
+            .validate_extended(&raw_document, &data_contract)
             .expect("the validator should return the validation result");
         let schema_error = get_first_schema_error(&result);
 
@@ -328,7 +372,7 @@ mod test {
             .expect("the '$type' should exist and be removed");
 
         let result = document_validator
-            .validate(&raw_document, &data_contract)
+            .validate_extended(&raw_document, &data_contract)
             .expect("the validator should return the validation result");
         let validation_error = result.errors.get(0).expect("should return an error");
         assert!(
@@ -349,7 +393,7 @@ mod test {
             .unwrap();
 
         let result = document_validator
-            .validate(&raw_document, &data_contract)
+            .validate_extended(&raw_document, &data_contract)
             .expect("the validator should return the validation result");
         let validation_error = result.errors.get(0).expect("the error should exist");
         assert_eq!(1024, validation_error.get_code());
@@ -368,7 +412,7 @@ mod test {
             .unwrap();
 
         let result = document_validator
-            .validate(&raw_document, &data_contract)
+            .validate_extended(&raw_document, &data_contract)
             .expect("the validator should return the validation result");
         let schema_error = get_first_schema_error(&result);
 
@@ -394,7 +438,7 @@ mod test {
             .unwrap();
 
         let result = document_validator
-            .validate(&raw_document, &data_contract)
+            .validate_extended(&raw_document, &data_contract)
             .expect("the validator should return the validation result");
         let schema_error = get_first_schema_error(&result);
 
@@ -421,7 +465,7 @@ mod test {
 
         raw_document.insert(String::from("name"), json!(1)).unwrap();
         let result = document_validator
-            .validate(&raw_document, &data_contract)
+            .validate_extended(&raw_document, &data_contract)
             .expect("the validator should return the validation result");
         let schema_error = get_first_schema_error(&result);
 
@@ -450,7 +494,7 @@ mod test {
             .unwrap();
 
         let result = document_validator
-            .validate(&raw_document, &data_contract)
+            .validate_extended(&raw_document, &data_contract)
             .expect("the validator should return the validation result");
         let schema_error = get_first_schema_error(&result);
 
@@ -483,7 +527,7 @@ mod test {
             .unwrap();
 
         let result = document_validator
-            .validate(&raw_document, &data_contract)
+            .validate_extended(&raw_document, &data_contract)
             .expect("the validator should return the validation result");
         let schema_error = get_first_schema_error(&result);
 
@@ -507,7 +551,7 @@ mod test {
         } = get_test_data();
 
         let result = document_validator
-            .validate(&raw_document, &data_contract)
+            .validate_extended(&raw_document, &data_contract)
             .expect("the validator should return the validation result");
 
         assert!(result.is_valid())

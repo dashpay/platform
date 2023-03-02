@@ -30,7 +30,27 @@ impl From<JsonValue> for Value {
                 unreachable!("this shouldn't be reachable")
             }
             JsonValue::String(string) => Self::Text(string),
-            JsonValue::Array(array) => Self::Array(array.into_iter().map(|v| v.into()).collect()),
+            JsonValue::Array(array) => {
+                let u8_max = u8::MAX as u64;
+                if !array.is_empty()
+                    && array.iter().all(|v| {
+                        let Some(int) = v.as_u64() else {
+                        return false;
+                    };
+                        int.le(&u8_max)
+                    })
+                {
+                    //this is an array of bytes
+                    Self::Bytes(
+                        array
+                            .into_iter()
+                            .map(|v| v.as_u64().unwrap() as u8)
+                            .collect(),
+                    )
+                } else {
+                    Self::Array(array.into_iter().map(|v| v.into()).collect())
+                }
+            }
             JsonValue::Object(map) => {
                 Self::Map(map.into_iter().map(|(k, v)| (k.into(), v.into())).collect())
             }

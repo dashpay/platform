@@ -151,29 +151,31 @@ where
             (None, None)
         };
 
+        let document = Document {
+            id: document_id.to_buffer(),
+            owner_id: owner_id.to_buffer(),
+            properties: data.into_btree_map().map_err(ProtocolError::ValueError)?,
+            revision,
+            created_at,
+            updated_at,
+        };
+
+        let mut json_value = document.to_json()?;
+        let validation_result =
+            self.document_validator
+                .validate(&json_value, &data_contract, document_type)?;
+
+        Document::replace_fields(&mut json_value, &data_contract, document_type.name.as_str())?;
+
         let mut extended_document = ExtendedDocument {
             protocol_version: self.protocol_version,
             document_type_name,
             data_contract_id: data_contract.id.clone(),
-            document: Document {
-                id: document_id.to_buffer(),
-                owner_id: owner_id.to_buffer(),
-                properties: data.into_btree_map().map_err(ProtocolError::ValueError)?,
-                revision,
-                created_at,
-                updated_at,
-            },
-            data_contract: DataContract::default(),
+            document,
+            data_contract,
             metadata: None,
             entropy: document_entropy,
         };
-
-        let json_value = extended_document.to_json()?;
-        let validation_result = self
-            .document_validator
-            .validate(&json_value, &data_contract)?;
-
-        extended_document.data_contract = data_contract;
 
         if !validation_result.is_valid() {
             return Err(ProtocolError::Document(Box::new(
@@ -273,13 +275,13 @@ where
         options: FactoryOptions,
     ) -> Result<ExtendedDocument, ProtocolError> {
         let data_contract = self
-            .validate_data_contract_for_document(&raw_document, options)
+            .validate_data_contract_for_extended_document(&raw_document, options)
             .await?;
 
         ExtendedDocument::from_raw_document(raw_document, data_contract)
     }
 
-    async fn validate_data_contract_for_document(
+    async fn validate_data_contract_for_extended_document(
         &self,
         raw_document: &JsonValue,
         options: FactoryOptions,
@@ -304,7 +306,7 @@ where
         if !options.skip_validation {
             let result = self
                 .document_validator
-                .validate(raw_document, &data_contract)?;
+                .validate_extended(raw_document, &data_contract)?;
             if !result.is_valid() {
                 return Err(ProtocolError::Document(Box::new(
                     DocumentError::InvalidDocumentError {

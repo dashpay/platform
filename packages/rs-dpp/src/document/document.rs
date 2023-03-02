@@ -38,7 +38,7 @@ use std::convert::{TryFrom, TryInto};
 use std::fmt;
 
 use itertools::Itertools;
-use serde_json::Value as JsonValue;
+use serde_json::{json, Value as JsonValue};
 
 use crate::data_contract::{DataContract, DriveContractExt};
 use platform_value::Value;
@@ -245,7 +245,6 @@ impl Document {
     }
 
     pub fn get_identifiers_and_binary_paths<'a>(
-        &'a self,
         data_contract: &'a DataContract,
         document_type_name: &'a str,
     ) -> Result<(HashSet<&'a str>, HashSet<&'a str>), ProtocolError> {
@@ -256,20 +255,56 @@ impl Document {
         Ok((identifiers_paths, binary_paths))
     }
 
-    pub fn to_json(
-        &self,
+    pub fn to_json(&self) -> Result<JsonValue, ProtocolError> {
+        let mut value = json!({
+            property_names::ID: self.id,
+            property_names::OWNER_ID: self.owner_id,
+        });
+        let value_mut = value.as_object_mut().unwrap();
+        if let Some(created_at) = self.created_at {
+            value_mut.insert(
+                property_names::CREATED_AT.to_string(),
+                JsonValue::Number(created_at.into()),
+            );
+        }
+        if let Some(updated_at) = self.updated_at {
+            value_mut.insert(
+                property_names::UPDATED_AT.to_string(),
+                JsonValue::Number(updated_at.into()),
+            );
+        }
+        if let Some(revision) = self.revision {
+            value_mut.insert(
+                property_names::REVISION.to_string(),
+                JsonValue::Number(revision.into()),
+            );
+        }
+
+        self.properties
+            .iter()
+            .try_for_each(|(key, property_value)| {
+                let serde_value: JsonValue = property_value
+                    .clone()
+                    .try_into()
+                    .map_err(ProtocolError::ValueError)?;
+                value_mut.insert(key.to_string(), serde_value);
+                Ok::<(), ProtocolError>(())
+            })?;
+
+        Ok(value)
+    }
+
+    pub fn replace_fields(
+        value: &mut JsonValue,
         data_contract: &DataContract,
         document_type_name: &str,
-    ) -> Result<JsonValue, ProtocolError> {
-        let mut value = serde_json::to_value(self)?;
-
+    ) -> Result<(), ProtocolError> {
         let (identifier_paths, binary_paths) =
-            self.get_identifiers_and_binary_paths(data_contract, document_type_name)?;
+            Self::get_identifiers_and_binary_paths(data_contract, document_type_name)?;
 
         value.replace_identifier_paths(identifier_paths, ReplaceWith::Base58)?;
         value.replace_binary_paths(binary_paths, ReplaceWith::Base64)?;
-
-        Ok(value)
+        Ok(())
     }
 
     // The skipIdentifierConversion option is removed as it doesn't make sense in the case of
@@ -282,7 +317,7 @@ impl Document {
         let mut json_object = serde_json::to_value(self)?;
 
         let (identifier_paths, binary_paths) =
-            self.get_identifiers_and_binary_paths(data_contract, document_type_name)?;
+            Self::get_identifiers_and_binary_paths(data_contract, document_type_name)?;
         let _ = json_object.replace_identifier_paths(identifier_paths, ReplaceWith::Bytes);
         let _ = json_object.replace_binary_paths(binary_paths, ReplaceWith::Bytes);
 

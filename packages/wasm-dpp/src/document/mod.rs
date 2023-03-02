@@ -217,10 +217,9 @@ impl DocumentWasm {
             .to_object(&data_contract.0, document_type_name)
             .with_js_error()?;
 
-        let (identifiers_paths, binary_paths) = self
-            .0
-            .get_identifiers_and_binary_paths(&data_contract.0, document_type_name)
-            .with_js_error()?;
+        let (identifiers_paths, binary_paths) =
+            Document::get_identifiers_and_binary_paths(&data_contract.0, document_type_name)
+                .with_js_error()?;
         let serializer = serde_wasm_bindgen::Serializer::json_compatible();
         let js_value = value.serialize(&serializer)?;
 

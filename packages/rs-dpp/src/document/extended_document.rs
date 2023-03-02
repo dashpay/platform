@@ -19,7 +19,7 @@ use platform_value::btreemap_path_extensions::BTreeValueMapPathHelper;
 use platform_value::btreemap_path_insertion_extensions::BTreeValueMapInsertionPathHelper;
 use platform_value::Value;
 use serde::{Deserialize, Serialize};
-use serde_json::Value as JsonValue;
+use serde_json::{json, Value as JsonValue};
 use std::collections::{BTreeMap, HashSet};
 use std::convert::TryInto;
 
@@ -166,7 +166,20 @@ impl ExtendedDocument {
     }
 
     pub fn to_json(&self) -> Result<JsonValue, ProtocolError> {
-        let mut value = serde_json::to_value(self)?;
+        let mut value = self.document.to_json()?;
+        let value_mut = value.as_object_mut().unwrap();
+        value_mut.insert(
+            property_names::PROTOCOL_VERSION.to_string(),
+            JsonValue::Number(self.protocol_version.into()),
+        );
+        value_mut.insert(
+            property_names::DOCUMENT_TYPE.to_string(),
+            JsonValue::String(self.document_type_name.clone()),
+        );
+        value_mut.insert(
+            property_names::DATA_CONTRACT_ID.to_string(),
+            json!(self.data_contract.id),
+        );
 
         let (identifier_paths, binary_paths) = self
             .data_contract
@@ -214,7 +227,20 @@ impl ExtendedDocument {
     // The skipIdentifierConversion option is removed as it doesn't make sense in the case of
     // of Rust. Rust doesn't distinguish between `Buffer` and `Identifier`
     pub fn to_object(&self) -> Result<JsonValue, ProtocolError> {
-        let mut json_object = serde_json::to_value(self)?;
+        let mut json_object = self.document.to_json()?;
+        let value_mut = json_object.as_object_mut().unwrap();
+        value_mut.insert(
+            property_names::PROTOCOL_VERSION.to_string(),
+            JsonValue::Number(self.protocol_version.into()),
+        );
+        value_mut.insert(
+            property_names::DOCUMENT_TYPE.to_string(),
+            JsonValue::String(self.document_type_name.clone()),
+        );
+        value_mut.insert(
+            property_names::DATA_CONTRACT_ID.to_string(),
+            json!(self.data_contract.id),
+        );
 
         let (identifier_paths, binary_paths) = self.get_identifiers_and_binary_paths()?;
         let _ = json_object.replace_identifier_paths(identifier_paths, ReplaceWith::Bytes);

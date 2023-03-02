@@ -40,6 +40,7 @@ where
             get_from_transition!(document_transition, id)
         ),
     };
+    dbg!(&document_create_transition.data);
     let data: Value = document_create_transition
         .data
         .as_ref()
@@ -53,8 +54,7 @@ where
         .into();
 
     let properties = data.into_btree_map()?;
-
-    let pay_to_id_bytes = properties.get_bytes(PROPERTY_PAY_TO_ID)?;
+    let pay_to_id = properties.get_system_hash256_bytes(PROPERTY_PAY_TO_ID)?;
     let percentage = properties.get_integer(PROPERTY_PERCENTAGE)?;
 
     if !is_dry_run {
@@ -79,7 +79,7 @@ where
     }
 
     // payToId identity exists
-    let pay_to_identifier = Identifier::from_bytes(&pay_to_id_bytes)?;
+    let pay_to_identifier = Identifier::from(pay_to_id);
     let maybe_identity = context
         .state_repository
         .fetch_identity(
@@ -215,7 +215,7 @@ mod test {
         };
         let document_transitions =
             get_document_transitions_fixture([(Action::Create, vec![documents[0].clone()])]);
-
+        dbg!(&document_transitions);
         TestData {
             extended_documents: documents,
             data_contract,
