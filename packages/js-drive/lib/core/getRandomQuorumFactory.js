@@ -9,7 +9,7 @@ const MIN_QUORUM_VALID_MEMBERS = 90;
 const LLMQ_TYPE_TO_NAME = Object
   .fromEntries(Object
     .entries(LLMQ_TYPES)
-    .map(([key, value]) => [value, key.toLowerCase()]));
+    .map(([key, value]) => [value, key.toLowerCase().replace('type_', '')]));
 
 /**
  * Calculates scores for validator quorum selection
