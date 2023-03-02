@@ -11,7 +11,7 @@ use crate::{
         document_transition::{Action, DocumentTransition, DocumentTransitionExt},
         Document, DocumentsBatchTransition,
     },
-    prelude::{Identifier, TimestampMillis},
+    prelude::{Identifier, Revision, TimestampMillis},
     state_repository::StateRepositoryLike,
     state_transition::{
         state_transition_execution_context::StateTransitionExecutionContext,
@@ -244,7 +244,7 @@ fn check_revision(
         result.add_error(ConsensusError::StateError(Box::new(
             StateError::InvalidDocumentRevisionError {
                 document_id: document_transition.base().id,
-                current_revision: fetched_document.revision,
+                current_revision: fetched_document.revision as Revision,
             },
         )))
     }

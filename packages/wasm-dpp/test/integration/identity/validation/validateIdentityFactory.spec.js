@@ -1,52 +1,33 @@
-const { getRE2Class } = require('@dashevo/wasm-re2');
-
-const createAjv = require('@dashevo/dpp/lib/ajv/createAjv');
-
 const getIdentityFixture = require('@dashevo/dpp/lib/test/fixtures/getIdentityFixture');
+const { expectValidationError, expectJsonSchemaError } = require('../../../../lib/test/expect/expectError');
 
-const JsonSchemaValidator = require(
-  '@dashevo/dpp/lib/validation/JsonSchemaValidator',
-);
-
-const { expectValidationError, expectJsonSchemaError } = require(
-  '@dashevo/dpp/lib/test/expect/expectError',
-);
-
-const validateIdentityFactory = require(
-  '@dashevo/dpp/lib/identity/validation/validateIdentityFactory',
-);
-
-const JsonSchemaError = require(
-  '@dashevo/dpp/lib/errors/consensus/basic/JsonSchemaError',
-);
-
-const ValidationResult = require('@dashevo/dpp/lib/validation/ValidationResult');
-const SomeConsensusError = require('@dashevo/dpp/lib/test/mocks/SomeConsensusError');
+const { default: loadWasmDpp } = require('../../../../dist');
+const getBlsAdapterMock = require('../../../../lib/test/mocks/getBlsAdapterMock');
+const generateRandomIdentifierAsync = require('../../../../lib/test/utils/generateRandomIdentifierAsync');
 
 describe('validateIdentityFactory', () => {
   let rawIdentity;
   let validateIdentity;
   let identity;
-  let validatePublicKeysMock;
-  let validateProtocolVersionMock;
 
-  beforeEach(async function beforeEach() {
-    const RE2 = await getRE2Class();
-    const ajv = createAjv(RE2);
+  let IdentityValidator;
+  let Identity;
+  let UnsupportedProtocolVersionError;
 
-    const schemaValidator = new JsonSchemaValidator(ajv);
+  before(async () => {
+    ({ IdentityValidator, Identity, UnsupportedProtocolVersionError } = await loadWasmDpp());
+  });
 
-    validatePublicKeysMock = this.sinonSandbox.stub().returns(new ValidationResult());
+  beforeEach(async () => {
+    const blsAdapter = await getBlsAdapterMock();
 
-    validateProtocolVersionMock = this.sinonSandbox.stub().returns(new ValidationResult());
+    const validator = new IdentityValidator(blsAdapter);
 
-    validateIdentity = validateIdentityFactory(
-      schemaValidator,
-      validatePublicKeysMock,
-      validateProtocolVersionMock,
-    );
+    validateIdentity = (value) => validator.validate(value);
 
-    identity = getIdentityFixture();
+    const identityObjectJS = getIdentityFixture().toObject();
+    identityObjectJS.id = await generateRandomIdentifierAsync();
+    identity = new Identity(identityObjectJS);
 
     rawIdentity = identity.toObject();
   });
@@ -57,7 +38,7 @@ describe('validateIdentityFactory', () => {
 
       const result = validateIdentity(rawIdentity);
 
-      expectJsonSchemaError(result);
+      await expectJsonSchemaError(result);
 
       const [error] = result.getErrors();
 
@@ -71,7 +52,7 @@ describe('validateIdentityFactory', () => {
 
       const result = validateIdentity(rawIdentity);
 
-      expectJsonSchemaError(result);
+      await expectJsonSchemaError(result);
 
       const [error] = result.getErrors();
 
@@ -80,91 +61,66 @@ describe('validateIdentityFactory', () => {
     });
 
     it('should be valid', async () => {
-      rawIdentity.protocolVersion = -1;
-
-      const protocolVersionError = new SomeConsensusError('test');
-      const protocolVersionResult = new ValidationResult([
-        protocolVersionError,
-      ]);
-
-      validateProtocolVersionMock.returns(protocolVersionResult);
+      rawIdentity.protocolVersion = 100;
 
       const result = validateIdentity(rawIdentity);
 
-      expectValidationError(result, SomeConsensusError);
-
-      const [error] = result.getErrors();
-
-      expect(error).to.equal(protocolVersionError);
-
-      expect(validateProtocolVersionMock).to.be.calledOnceWith(
-        rawIdentity.protocolVersion,
-      );
+      await expectValidationError(result, UnsupportedProtocolVersionError);
     });
   });
 
   describe('id', () => {
-    it('should be present', () => {
+    it('should be present', async () => {
       rawIdentity.id = undefined;
 
       const result = validateIdentity(rawIdentity);
 
-      expectJsonSchemaError(result);
+      await expectJsonSchemaError(result);
 
       const [error] = result.getErrors();
 
       expect(error.getInstancePath()).to.equal('');
       expect(error.getParams().missingProperty).to.equal('id');
       expect(error.getKeyword()).to.equal('required');
-
-      expect(validatePublicKeysMock).to.not.be.called();
     });
 
-    it('should be a byte array', () => {
+    it('should be a byte array', async () => {
       rawIdentity.id = new Array(32).fill('string');
 
       const result = validateIdentity(rawIdentity);
 
-      expectJsonSchemaError(result, 2);
+      await expectJsonSchemaError(result, 32);
 
-      const [error, byteArrayError] = result.getErrors();
+      const [error] = result.getErrors();
 
       expect(error.getInstancePath()).to.equal('/id/0');
       expect(error.getKeyword()).to.equal('type');
-
-      expect(byteArrayError.getKeyword()).to.equal('byteArray');
-
-      expect(validatePublicKeysMock).to.not.be.called();
     });
 
-    it('should not be less than 32 bytes', () => {
+    it('should not be less than 32 bytes', async () => {
       rawIdentity.id = Buffer.alloc(31);
 
       const result = validateIdentity(rawIdentity);
 
-      expectJsonSchemaError(result);
+      await expectJsonSchemaError(result);
 
       const [error] = result.getErrors();
 
       expect(error.getKeyword()).to.equal('minItems');
       expect(error.getInstancePath()).to.equal('/id');
-
-      expect(validatePublicKeysMock).to.not.be.called();
     });
 
-    it('should not be more than 32 bytes', () => {
+    it('should not be more than 32 bytes', async () => {
       rawIdentity.id = Buffer.alloc(33);
 
       const result = validateIdentity(rawIdentity);
 
-      expectJsonSchemaError(result);
+      await expectJsonSchemaError(result);
 
       const [error] = result.getErrors();
 
       expect(error.getKeyword()).to.equal('maxItems');
       expect(error.getInstancePath()).to.equal('/id');
-
-      expect(validatePublicKeysMock).to.not.be.called();
     });
   });
 
@@ -174,15 +130,13 @@ describe('validateIdentityFactory', () => {
 
       const result = validateIdentity(rawIdentity);
 
-      expectJsonSchemaError(result);
+      await expectJsonSchemaError(result);
 
       const [error] = result.getErrors();
 
       expect(error.getInstancePath()).to.equal('');
       expect(error.getParams().missingProperty).to.equal('balance');
       expect(error.getKeyword()).to.equal('required');
-
-      expect(validatePublicKeysMock).to.not.be.called();
     });
 
     it('should be an integer', async () => {
@@ -190,14 +144,12 @@ describe('validateIdentityFactory', () => {
 
       const result = validateIdentity(rawIdentity);
 
-      expectJsonSchemaError(result);
+      await expectJsonSchemaError(result);
 
       const [error] = result.getErrors();
 
       expect(error.getKeyword()).to.equal('type');
       expect(error.getInstancePath()).to.equal('/balance');
-
-      expect(validatePublicKeysMock).to.not.be.called();
     });
 
     it('should be greater or equal 0', async () => {
@@ -205,14 +157,12 @@ describe('validateIdentityFactory', () => {
 
       let result = validateIdentity(rawIdentity);
 
-      expectJsonSchemaError(result);
+      await expectJsonSchemaError(result);
 
       const [error] = result.getErrors();
 
       expect(error.getKeyword()).to.equal('minimum');
       expect(error.getInstancePath()).to.equal('/balance');
-
-      expect(validatePublicKeysMock).to.not.be.called();
 
       rawIdentity.balance = 0;
 
@@ -223,51 +173,45 @@ describe('validateIdentityFactory', () => {
   });
 
   describe('publicKeys', () => {
-    it('should be present', () => {
+    it('should be present', async () => {
       rawIdentity.publicKeys = undefined;
 
       const result = validateIdentity(rawIdentity);
 
-      expectJsonSchemaError(result);
+      await expectJsonSchemaError(result);
 
       const [error] = result.getErrors();
 
       expect(error.getInstancePath()).to.equal('');
       expect(error.getParams().missingProperty).to.equal('publicKeys');
       expect(error.getKeyword()).to.equal('required');
-
-      expect(validatePublicKeysMock).to.not.be.called();
     });
 
-    it('should be an array', () => {
+    it('should be an array', async () => {
       rawIdentity.publicKeys = 1;
 
       const result = validateIdentity(rawIdentity);
 
-      expectValidationError(result, JsonSchemaError, 1);
+      await expectJsonSchemaError(result);
 
       const [error] = result.getErrors();
 
       expect(error.getCode()).to.equal(1005);
       expect(error.getInstancePath()).to.equal('/publicKeys');
       expect(error.getKeyword()).to.equal('type');
-
-      expect(validatePublicKeysMock).to.not.be.called();
     });
 
-    it('should not be empty', () => {
+    it('should not be empty', async () => {
       rawIdentity.publicKeys = [];
 
       const result = validateIdentity(rawIdentity);
 
-      expectJsonSchemaError(result);
+      await expectJsonSchemaError(result);
 
       const [error] = result.getErrors();
 
       expect(error.getKeyword()).to.equal('minItems');
       expect(error.getInstancePath()).to.equal('/publicKeys');
-
-      expect(validatePublicKeysMock).to.not.be.called();
     });
 
     it('should be unique', async () => {
@@ -275,34 +219,30 @@ describe('validateIdentityFactory', () => {
 
       const result = validateIdentity(rawIdentity);
 
-      expectJsonSchemaError(result);
+      await expectJsonSchemaError(result);
 
       const [error] = result.getErrors();
 
       expect(error.getKeyword()).to.equal('uniqueItems');
       expect(error.getInstancePath()).to.equal('/publicKeys');
-
-      expect(validatePublicKeysMock).to.not.be.called();
     });
 
-    it('should throw an error if publicKeys have more than 100 keys', () => {
+    it('should throw an error if publicKeys have more than 100 keys', async () => {
       const [key] = rawIdentity.publicKeys;
 
       rawIdentity.publicKeys = [];
       for (let i = 0; i < 101; i++) {
-        rawIdentity.publicKeys.push(key);
+        rawIdentity.publicKeys.push({ ...key, id: i });
       }
 
       const result = validateIdentity(rawIdentity);
 
-      expectJsonSchemaError(result);
+      await expectJsonSchemaError(result);
 
       const [error] = result.getErrors();
 
       expect(error.getKeyword()).to.equal('maxItems');
       expect(error.getInstancePath()).to.equal('/publicKeys');
-
-      expect(validatePublicKeysMock).to.not.be.called();
     });
   });
 
@@ -312,15 +252,13 @@ describe('validateIdentityFactory', () => {
 
       const result = validateIdentity(rawIdentity);
 
-      expectJsonSchemaError(result);
+      await expectJsonSchemaError(result);
 
       const [error] = result.getErrors();
 
       expect(error.getInstancePath()).to.equal('');
       expect(error.getParams().missingProperty).to.equal('revision');
       expect(error.getKeyword()).to.equal('required');
-
-      expect(validatePublicKeysMock).to.not.be.called();
     });
 
     it('should be an integer', async () => {
@@ -328,14 +266,12 @@ describe('validateIdentityFactory', () => {
 
       const result = validateIdentity(rawIdentity);
 
-      expectJsonSchemaError(result);
+      await expectJsonSchemaError(result);
 
       const [error] = result.getErrors();
 
       expect(error.getKeyword()).to.equal('type');
       expect(error.getInstancePath()).to.equal('/revision');
-
-      expect(validatePublicKeysMock).to.not.be.called();
     });
 
     it('should be greater or equal 0', async () => {
@@ -343,14 +279,12 @@ describe('validateIdentityFactory', () => {
 
       let result = validateIdentity(rawIdentity);
 
-      expectJsonSchemaError(result);
+      await expectJsonSchemaError(result);
 
       const [error] = result.getErrors();
 
       expect(error.getKeyword()).to.equal('minimum');
       expect(error.getInstancePath()).to.equal('/revision');
-
-      expect(validatePublicKeysMock).to.not.be.called();
 
       rawIdentity.revision = 0;
 
@@ -362,8 +296,6 @@ describe('validateIdentityFactory', () => {
 
   it('should return valid result if a raw identity is valid', () => {
     const result = validateIdentity(rawIdentity);
-
-    expect(validatePublicKeysMock).to.be.calledOnceWithExactly(rawIdentity.publicKeys);
 
     expect(result.isValid()).to.be.true();
   });

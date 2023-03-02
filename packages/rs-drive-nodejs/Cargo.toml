@@ -10,11 +10,14 @@ private = true
 crate-type = ["cdylib"]
 
 [dependencies]
-drive = { path = "../rs-drive" }
-drive-abci = { path = "../rs-drive-abci" }
+drive = { path = "../rs-drive", features = ["fixtures-and-mocks"] }
+drive-abci = { path = "../rs-drive-abci", features = ["fixtures-and-mocks"] }
 num = "0.4.0"
 
 [dependencies.neon]
 version = "0.10.1"
 default-features = false
 features = ["napi-6", "event-queue-api", "try-catch-api"]
+
+[features]
+enable-mocking = []

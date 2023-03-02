@@ -135,6 +135,9 @@ const handleUpdatedScriptPayoutFactory = require('./identity/masternode/handleUp
 
 const getWithdrawPubKeyTypeFromPayoutScriptFactory = require('./identity/masternode/getWithdrawPubKeyTypeFromPayoutScriptFactory');
 const getPublicKeyFromPayoutScript = require('./identity/masternode/getPublicKeyFromPayoutScript');
+const updateWithdrawalTransactionIdAndStatusFactory = require('./identity/withdrawals/updateWithdrawalTransactionIdAndStatusFactory');
+const broadcastWithdrawalTransactionsFactory = require('./abci/handlers/proposal/broadcastWithdrawalTransactionsFactory');
+
 const DocumentRepository = require('./document/DocumentRepository');
 const ExecutionTimer = require('./util/ExecutionTimer');
 const noopLoggerInstance = require('./util/noopLogger');
@@ -475,9 +478,22 @@ function createDIContainer(options) {
       groveDBLatestFile,
       dataContractsGlobalCacheSize,
       dataContractsBlockCacheSize,
+      coreJsonRpcHost,
+      coreJsonRpcPort,
+      coreJsonRpcUsername,
+      coreJsonRpcPassword,
     ) => new RSDrive(groveDBLatestFile, {
-      dataContractsGlobalCacheSize,
-      dataContractsBlockCacheSize,
+      drive: {
+        dataContractsGlobalCacheSize,
+        dataContractsBlockCacheSize,
+      },
+      core: {
+        rpc: {
+          url: `${coreJsonRpcHost}:${coreJsonRpcPort}`,
+          username: coreJsonRpcUsername,
+          password: coreJsonRpcPassword,
+        },
+      },
     }))
       .disposer(async (rsDrive) => {
         // Flush data on disk
@@ -724,6 +740,16 @@ function createDIContainer(options) {
    */
   container.register({
     validatorSet: asClass(ValidatorSet),
+  });
+
+  /**
+   * Register withrawals stuff
+   */
+  container.register({
+    updateWithdrawalTransactionIdAndStatus: asFunction(
+      updateWithdrawalTransactionIdAndStatusFactory,
+    ),
+    broadcastWithdrawalTransactions: asFunction(broadcastWithdrawalTransactionsFactory),
   });
 
   /**

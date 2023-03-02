@@ -158,7 +158,7 @@ impl Drive {
     }
 
     /// Performs and returns the result of the specified query along with skipped items and the cost.
-    pub fn query_documents_from_contract_cbor(
+    pub fn query_raw_documents_from_contract_cbor_using_cbor_encoded_query_with_cost(
         &self,
         query_cbor: &[u8],
         contract_cbor: &[u8],
@@ -214,7 +214,7 @@ impl Drive {
     }
 
     /// Performs and returns the result of the specified query along with skipped items and the cost.
-    pub fn query_documentss_from_contract(
+    pub fn query_documents_from_contract(
         &self,
         contract: &Contract,
         document_type: &DocumentType,
@@ -255,7 +255,7 @@ impl Drive {
 
     /// Performs and returns the result of the specified query along with the fee.
     /// Proof is generated.
-    pub fn query_documents_as_grove_proof(
+    pub fn query_proof_of_documents_using_contract_id_using_cbor_encoded_query_with_cost(
         &self,
         query_cbor: &[u8],
         contract_id: [u8; 32],
@@ -278,7 +278,7 @@ impl Drive {
         let document_type = contract
             .contract
             .document_type_for_name(document_type_name)?;
-        let items = self.query_documents_from_contract_as_grove_proof_internal(
+        let items = self.query_proof_of_documents_using_cbor_encoded_query(
             &contract.contract,
             document_type,
             query_cbor,
@@ -296,38 +296,7 @@ impl Drive {
 
     /// Performs and returns the result of the specified query along with the fee.
     /// Proof is generated.
-    pub fn query_documents_from_contract_cbor_as_grove_proof(
-        &self,
-        contract_cbor: &[u8],
-        document_type_name: String,
-        query_cbor: &[u8],
-        block_info: Option<BlockInfo>,
-        transaction: TransactionArg,
-    ) -> Result<(Vec<u8>, u64), Error> {
-        let mut drive_operations: Vec<DriveOperation> = vec![];
-        let contract = <Contract as DriveContractExt>::from_cbor(contract_cbor, None)?;
-
-        let document_type = contract.document_type_for_name(document_type_name.as_str())?;
-
-        let items = self.query_documents_from_contract_as_grove_proof_internal(
-            &contract,
-            document_type,
-            query_cbor,
-            transaction,
-            &mut drive_operations,
-        )?;
-        let cost = if let Some(block_info) = block_info {
-            let fee_result = calculate_fee(None, Some(drive_operations), &block_info.epoch)?;
-            fee_result.processing_fee
-        } else {
-            0
-        };
-        Ok((items, cost))
-    }
-
-    /// Performs and returns the result of the specified query along with the fee.
-    /// Proof is generated.
-    pub fn query_documents_from_contract_as_grove_proof(
+    pub fn query_proof_of_documents_using_cbor_encoded_query_with_cost(
         &self,
         contract: &Contract,
         document_type: &DocumentType,
@@ -337,7 +306,7 @@ impl Drive {
     ) -> Result<(Vec<u8>, u64), Error> {
         let mut drive_operations: Vec<DriveOperation> = vec![];
 
-        let items = self.query_documents_from_contract_as_grove_proof_internal(
+        let items = self.query_proof_of_documents_using_cbor_encoded_query(
             contract,
             document_type,
             query_cbor,
@@ -355,7 +324,7 @@ impl Drive {
 
     /// Performs and returns the result of the specified internal query.
     /// Proof is generated.
-    pub(crate) fn query_documents_from_contract_as_grove_proof_internal(
+    pub(crate) fn query_proof_of_documents_using_cbor_encoded_query(
         &self,
         contract: &Contract,
         document_type: &DocumentType,
@@ -369,7 +338,7 @@ impl Drive {
     }
 
     /// Performs the specified internal query and returns the root hash, values, and fee.
-    pub fn query_documents_from_contract_as_grove_proof_only_get_elements(
+    pub fn query_proof_of_documents_using_cbor_encoded_query_only_get_elements(
         &self,
         contract: &Contract,
         document_type: &DocumentType,
@@ -380,7 +349,7 @@ impl Drive {
         let mut drive_operations: Vec<DriveOperation> = vec![];
 
         let (root_hash, items) = self
-            .query_documents_from_contract_as_grove_proof_only_get_elements_internal(
+            .query_proof_of_documents_using_cbor_encoded_query_only_get_elements_internal(
                 contract,
                 document_type,
                 query_cbor,
@@ -397,7 +366,7 @@ impl Drive {
     }
 
     /// Performs the specified internal query and returns the root hash and values.
-    pub(crate) fn query_documents_from_contract_as_grove_proof_only_get_elements_internal(
+    pub(crate) fn query_proof_of_documents_using_cbor_encoded_query_only_get_elements_internal(
         &self,
         contract: &Contract,
         document_type: &DocumentType,

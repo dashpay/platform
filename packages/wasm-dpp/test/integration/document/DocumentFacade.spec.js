@@ -1,13 +1,8 @@
 const generateRandomIdentifier = require('@dashevo/dpp/lib/test/utils/generateRandomIdentifier');
-const DashPlatformProtocolJs = require('@dashevo/dpp/lib/DashPlatformProtocol');
-
 const createStateRepositoryMock = require('@dashevo/dpp/lib/test/mocks/createStateRepositoryMock');
-
 const getDataContractFixture = require('@dashevo/dpp/lib/test/fixtures/getDataContractFixture');
 const getDocumentsFixture = require('@dashevo/dpp/lib/test/fixtures/getDocumentsFixture');
 const getDocumentTransitionsFixture = require('@dashevo/dpp/lib/test/fixtures/getDocumentTransitionsFixture');
-
-const MissingOptionErrorJs = require('@dashevo/dpp/lib/errors/MissingOptionError');
 
 const { default: loadWasmDpp } = require('../../../dist');
 const getBlsAdapterMock = require('../../../lib/test/mocks/getBlsAdapterMock');
@@ -21,17 +16,12 @@ let DashPlatformProtocol;
 let DataContractNotPresentError;
 
 describe('DocumentFacade', () => {
-  let dppJs;
   let dpp;
-  let documentJs;
   let document;
-  let documentsJs;
   let documents;
-  let dataContractJs;
+  let documentsJs;
   let dataContract;
-  let ownerIdJs;
   let ownerId;
-  let stateRepositoryMockJs;
   let stateRepositoryMock;
   let blsAdapter;
 
@@ -46,21 +36,13 @@ describe('DocumentFacade', () => {
       DataContractNotPresentError,
     } = await loadWasmDpp());
 
-    ownerIdJs = generateRandomIdentifier();
+    const ownerIdJs = generateRandomIdentifier();
     ownerId = new Identifier(ownerIdJs.toBuffer());
-    dataContractJs = getDataContractFixture(ownerIdJs);
+    const dataContractJs = getDataContractFixture(ownerIdJs);
     dataContract = new DataContract(dataContractJs.toObject());
 
-    stateRepositoryMockJs = createStateRepositoryMock(this.sinonSandbox);
     stateRepositoryMock = createStateRepositoryMock(this.sinonSandbox);
-
-    stateRepositoryMockJs.fetchDataContract.resolves(dataContractJs);
     stateRepositoryMock.fetchDataContract.resolves(dataContract);
-
-    dppJs = new DashPlatformProtocolJs({
-      stateRepository: stateRepositoryMockJs,
-    });
-    await dppJs.initialize();
 
     blsAdapter = await getBlsAdapterMock();
     dpp = new DashPlatformProtocol(blsAdapter, stateRepositoryMock);
@@ -71,7 +53,6 @@ describe('DocumentFacade', () => {
       currentDocument.setEntropy(d.entropy);
       return currentDocument;
     });
-    ([documentJs] = documentsJs);
     ([document] = documents);
   });
 
@@ -92,20 +73,6 @@ describe('DocumentFacade', () => {
   });
 
   describe('createFromObject', () => {
-    it('should throw MissingOption if stateRepository is not set', async () => {
-      dppJs = new DashPlatformProtocolJs();
-      await dppJs.initialize();
-
-      try {
-        await dppJs.document.createFromObject(documentJs.toObject());
-
-        expect.fail('MissingOption should be thrown');
-      } catch (e) {
-        expect(e).to.be.an.instanceOf(MissingOptionErrorJs);
-        expect(e.getOptionName()).to.equal('stateRepository');
-      }
-    });
-
     it('should throw MissingOption if stateRepository is not set - Rust', async () => {
       // not applicable
     });
@@ -120,20 +87,6 @@ describe('DocumentFacade', () => {
   });
 
   describe('createFromBuffer', () => {
-    it('should throw MissingOption if stateRepository is not set', async () => {
-      dppJs = new DashPlatformProtocolJs();
-      await dppJs.initialize();
-
-      try {
-        await dppJs.document.createFromBuffer(documentJs.toObject());
-
-        expect.fail('MissingOption should be thrown');
-      } catch (e) {
-        expect(e).to.be.an.instanceOf(MissingOptionErrorJs);
-        expect(e.getOptionName()).to.equal('stateRepository');
-      }
-    });
-
     it('should throw MissingOption if stateRepository is not set - Rust', async () => {
       // not applicable
     });
@@ -162,20 +115,6 @@ describe('DocumentFacade', () => {
   });
 
   describe('validate', () => {
-    it('should throw MissingOption if stateRepository is not set', async () => {
-      dppJs = new DashPlatformProtocolJs();
-      await dppJs.initialize();
-
-      try {
-        await dppJs.document.validate(documentJs);
-
-        expect.fail('MissingOption should be thrown');
-      } catch (e) {
-        expect(e).to.be.an.instanceOf(MissingOptionErrorJs);
-        expect(e.getOptionName()).to.equal('stateRepository');
-      }
-    });
-
     it('should throw MissingOption if stateRepository is not set - Rust', async () => {
       // not applicable
     });
@@ -187,7 +126,7 @@ describe('DocumentFacade', () => {
       expect(result.isValid()).to.be.true();
     });
 
-    it('should return invalid result if Data Contract is invalid', async () => {
+    it('should return invalid result if Data Contract is invalid - Rust', async () => {
       stateRepositoryMock.fetchDataContract.resolves(null);
 
       const result = await dpp.document.validate(document);

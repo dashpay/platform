@@ -12,6 +12,7 @@ use self::dashpay_data_triggers::create_contact_request_data_trigger;
 use self::dpns_triggers::create_domain_data_trigger;
 use self::feature_flags_data_triggers::create_feature_flag_data_trigger;
 use self::reward_share_data_triggers::create_masternode_reward_shares_data_trigger;
+use self::withdrawals_data_triggers::delete_withdrawal_data_trigger;
 
 mod data_trigger_execution_context;
 
@@ -20,6 +21,7 @@ pub mod dpns_triggers;
 pub mod feature_flags_data_triggers;
 pub mod get_data_triggers_factory;
 pub mod reward_share_data_triggers;
+pub mod withdrawals_data_triggers;
 
 mod data_trigger_execution_result;
 mod reject_data_trigger;
@@ -31,6 +33,7 @@ pub enum DataTriggerKind {
     DataTriggerRewardShare,
     DataTriggerReject,
     CrateFeatureFlag,
+    DeleteWithdrawal,
 }
 impl From<DataTriggerKind> for &str {
     fn from(value: DataTriggerKind) -> Self {
@@ -136,11 +139,14 @@ where
             create_masternode_reward_shares_data_trigger(document_transition, context, identifier)
                 .await
         }
+        DataTriggerKind::DeleteWithdrawal => {
+            delete_withdrawal_data_trigger(document_transition, context, identifier).await
+        }
     }
 }
 
-fn create_error<'a, SR>(
-    context: &DataTriggerExecutionContext<'a, SR>,
+fn create_error<SR>(
+    context: &DataTriggerExecutionContext<SR>,
     dt_create: &DocumentCreateTransition,
     msg: String,
 ) -> DataTriggerError

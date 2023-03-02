@@ -19,8 +19,17 @@ describe('GroveDB', () => {
 
   beforeEach(() => {
     drive = new Drive(TEST_DATA_PATH, {
-      dataContractsGlobalCacheSize: 500,
-      dataContractsBlockCacheSize: 500,
+      drive: {
+        dataContractsGlobalCacheSize: 500,
+        dataContractsBlockCacheSize: 500,
+      },
+      core: {
+        rpc: {
+          url: '127.0.0.1',
+          username: '',
+          password: '',
+        },
+      },
     });
 
     groveDb = drive.getGroveDB();

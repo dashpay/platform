@@ -64,11 +64,12 @@ impl Drive {
     }
 }
 
+#[cfg(feature = "full")]
 #[cfg(test)]
 mod tests {
     use super::*;
 
-    use crate::common::helpers::setup::{setup_drive, setup_drive_with_initial_state_structure};
+    use crate::tests::helpers::setup::{setup_drive, setup_drive_with_initial_state_structure};
 
     mod get_unpaid_epoch_index {
         use super::*;

@@ -282,14 +282,14 @@ mod validate_identity_credit_withdrawal_transition_basic_factory {
         }
     }
 
-    mod core_fee {
+    mod core_fee_per_byte {
         use super::*;
 
         #[tokio::test]
         async fn should_be_present() {
             let (mut raw_state_transition, validator) = setup_test();
 
-            raw_state_transition.remove_key("coreFee");
+            raw_state_transition.remove_key("coreFeePerByte");
 
             let result = validator.validate(&raw_state_transition).await.unwrap();
 
@@ -302,7 +302,7 @@ mod validate_identity_credit_withdrawal_transition_basic_factory {
 
             match error.kind() {
                 ValidationErrorKind::Required { property } => {
-                    assert_eq!(property.to_string(), "\"coreFee\"");
+                    assert_eq!(property.to_string(), "\"coreFeePerByte\"");
                 }
                 _ => panic!("Expected to be missing property"),
             }
@@ -312,7 +312,7 @@ mod validate_identity_credit_withdrawal_transition_basic_factory {
         async fn should_be_integer() {
             let (mut raw_state_transition, validator) = setup_test();
 
-            raw_state_transition.set_key_value("coreFee", "1");
+            raw_state_transition.set_key_value("coreFeePerByte", "1");
 
             let result = validator.validate(&raw_state_transition).await.unwrap();
 
@@ -320,7 +320,7 @@ mod validate_identity_credit_withdrawal_transition_basic_factory {
 
             let error = errors.first().unwrap();
 
-            assert_eq!(error.instance_path().to_string(), "/coreFee");
+            assert_eq!(error.instance_path().to_string(), "/coreFeePerByte");
             assert_eq!(error.keyword().unwrap(), "type");
         }
 
@@ -328,7 +328,7 @@ mod validate_identity_credit_withdrawal_transition_basic_factory {
         pub async fn should_be_not_less_than_1() {
             let (mut raw_state_transition, validator) = setup_test();
 
-            raw_state_transition.set_key_value("coreFee", -1);
+            raw_state_transition.set_key_value("coreFeePerByte", -1);
 
             let result = validator.validate(&raw_state_transition).await.unwrap();
 
@@ -336,15 +336,31 @@ mod validate_identity_credit_withdrawal_transition_basic_factory {
 
             let error = errors.first().unwrap();
 
-            assert_eq!(error.instance_path().to_string(), "/coreFee");
+            assert_eq!(error.instance_path().to_string(), "/coreFeePerByte");
             assert_eq!(error.keyword().unwrap(), "minimum");
+        }
+
+        #[tokio::test]
+        pub async fn should_be_not_more_than_u32_max() {
+            let (mut raw_state_transition, validator) = setup_test();
+
+            raw_state_transition.set_key_value("coreFeePerByte", u32::MAX as u64 + 1u64);
+
+            let result = validator.validate(&raw_state_transition).await.unwrap();
+
+            let errors = assert_consensus_errors!(result, ConsensusError::JsonSchemaError, 1);
+
+            let error = errors.first().unwrap();
+
+            assert_eq!(error.instance_path().to_string(), "/coreFeePerByte");
+            assert_eq!(error.keyword().unwrap(), "maximum");
         }
 
         #[tokio::test]
         pub async fn should_be_in_a_fibonacci_sequence() {
             let (mut raw_state_transition, validator) = setup_test();
 
-            raw_state_transition.set_key_value("coreFee", 6);
+            raw_state_transition.set_key_value("coreFeePerByte", 6);
 
             let result = validator.validate(&raw_state_transition).await.unwrap();
 
@@ -356,7 +372,7 @@ mod validate_identity_credit_withdrawal_transition_basic_factory {
 
             let error = errors.first().unwrap();
 
-            assert_eq!(error.core_fee(), 6);
+            assert_eq!(error.core_fee_per_byte(), 6);
         }
     }
 
@@ -416,6 +432,25 @@ mod validate_identity_credit_withdrawal_transition_basic_factory {
 
             assert_eq!(error.instance_path().to_string(), "/pooling");
             assert_eq!(error.keyword().unwrap(), "enum");
+        }
+
+        #[tokio::test]
+        async fn should_constraint_variant_to_0() {
+            let (mut raw_state_transition, validator) = setup_test();
+
+            raw_state_transition.set_key_value("pooling", 2);
+
+            let result = validator.validate(&raw_state_transition).await.unwrap();
+
+            let errors = assert_consensus_errors!(
+                result,
+                ConsensusError::NotImplementedIdentityCreditWithdrawalTransitionPoolingError,
+                1
+            );
+
+            let error = errors.first().unwrap();
+
+            assert_eq!(error.pooling(), 2);
         }
     }
 
@@ -653,6 +688,6 @@ mod validate_identity_credit_withdrawal_transition_basic_factory {
 
         let result = validator.validate(&raw_state_transition).await.unwrap();
 
-        assert_eq!(result.is_valid(), true);
+        assert!(result.is_valid());
     }
 }

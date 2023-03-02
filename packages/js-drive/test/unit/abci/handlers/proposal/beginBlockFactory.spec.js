@@ -47,6 +47,7 @@ describe('beginBlockFactory', () => {
   let timeMs;
   let epochInfo;
   let time;
+  let lastSyncedCoreHeightRepositoryMock;
   let simplifyMasternodeListMock;
   let validMasternodesListLength;
 
@@ -110,6 +111,12 @@ describe('beginBlockFactory', () => {
       blockBegin: this.sinon.stub().resolves(rsResponseMock),
     };
 
+    lastSyncedCoreHeightRepositoryMock = {
+      fetch: this.sinon.stub().resolves({
+        getValue: () => undefined,
+      }),
+    };
+
     validMasternodesListLength = 400;
 
     simplifyMasternodeListMock = {
@@ -138,6 +145,7 @@ describe('beginBlockFactory', () => {
       synchronizeMasternodeIdentitiesMock,
       rsAbciMock,
       executionTimerMock,
+      lastSyncedCoreHeightRepositoryMock,
       simplifyMasternodeListMock,
     );
 

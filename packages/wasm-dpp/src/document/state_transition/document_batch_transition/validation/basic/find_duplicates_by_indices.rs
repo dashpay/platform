@@ -8,7 +8,7 @@ use serde_json::Value;
 use wasm_bindgen::prelude::*;
 
 use crate::{
-    document_batch_transition::document_transition::convert_to_object,
+    document_batch_transition::document_transition::to_object,
     utils::{replace_identifiers_with_bytes_without_failing, ToSerdeJSONExt, WithJsError},
     DataContractWasm,
 };
@@ -37,7 +37,7 @@ pub fn find_duplicates_by_indices_wasm(
     let duplicates: Vec<JsValue> = result
         .into_iter()
         .map(|v| {
-            convert_to_object(
+            to_object(
                 v.to_owned(),
                 &JsValue::NULL,
                 document_base_transition::IDENTIFIER_FIELDS,

@@ -1,4 +1,6 @@
+mod factory_utils;
 pub mod identity_facade;
+mod identity_factory;
 mod identity_public_key;
 mod validation;
 
@@ -121,9 +123,10 @@ impl IdentityWasm {
     }
 
     #[wasm_bindgen(js_name=setAssetLockProof)]
-    pub fn set_asset_lock_proof(&mut self, lock: JsValue) {
-        self.0
-            .set_asset_lock_proof(serde_wasm_bindgen::from_value(lock).unwrap());
+    pub fn set_asset_lock_proof(&mut self, lock: JsValue) -> Result<(), JsValue> {
+        let asset_lock_proof = create_asset_lock_proof_from_wasm_instance(&lock)?;
+        self.0.set_asset_lock_proof(asset_lock_proof);
+        Ok(())
     }
 
     #[wasm_bindgen(js_name=getAssetLockProof)]
