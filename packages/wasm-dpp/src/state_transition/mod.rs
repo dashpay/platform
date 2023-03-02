@@ -2,10 +2,11 @@ use std::{convert::TryFrom, sync::Arc};
 
 use dpp::{
     identity::KeyType,
+    prelude::Identifier,
     state_transition::{
         state_transition_execution_context::StateTransitionExecutionContext, StateTransition,
         StateTransitionConvert, StateTransitionIdentitySigned, StateTransitionLike,
-    }, prelude::Identifier,
+    },
 };
 use serde::{Deserialize, Serialize};
 use wasm_bindgen::prelude::*;
@@ -120,8 +121,9 @@ impl StateTransitionWasm {
     }
 
     #[wasm_bindgen(js_name = setSignature)]
-    pub fn set_signature(&self, signature: Vec<u8>) {
-        either_st!(&self.inner, st => st.set_signature(signature))
+    pub fn set_signature(&mut self, signature: Vec<u8>) {
+        let inner = &mut self.inner;
+        either_st!(inner, st => st.set_signature(signature))
     }
 
     #[wasm_bindgen(js_name = toObject)]
@@ -135,10 +137,6 @@ impl StateTransitionWasm {
         let serializer = serde_wasm_bindgen::Serializer::json_compatible();
 
         either_st!(&self.inner, st => {
-            let json_value = st
-              .to_object(options.skip_signature.unwrap_or_default())
-              .map_err(from_dpp_err)?;
-
             self.inner.serialize(&serializer).map_err(|e| e.into())
         })
     }
@@ -188,8 +186,9 @@ impl StateTransitionWasm {
     }
 
     #[wasm_bindgen(js_name = signByPrivateKey)]
-    pub fn sign_by_private_key(&self, private_key: Vec<u8>, key_type: u8) -> Result<(), JsValue> {
-        either_st!(&self.inner, st => st
+    pub fn sign_by_private_key(&mut self, private_key: Vec<u8>, key_type: u8) -> Result<(), JsValue> {
+        let inner = &mut self.inner;
+        either_st!(inner, st => st
                 .sign_by_private_key(
                     &private_key,
                     KeyType::try_from(key_type).map_err(|e| e.to_string())?,
@@ -209,7 +208,7 @@ impl StateTransitionWasm {
 
     #[wasm_bindgen(js_name = getModifiedDataIds)]
     pub fn get_modified_data_ids(&self) -> Vec<JsValue> {
-         either_st!(&self.inner, st => st.get_modified_data_ids().into_iter().map(|id| <IdentifierWrapper as std::convert::From<Identifier>>::from(id).into()).collect())
+        either_st!(&self.inner, st => st.get_modified_data_ids().into_iter().map(|id| <IdentifierWrapper as std::convert::From<Identifier>>::from(id).into()).collect())
     }
 
     #[wasm_bindgen(js_name = isDocumentStateTransition)]
@@ -228,8 +227,9 @@ impl StateTransitionWasm {
     }
 
     #[wasm_bindgen(js_name = setExecutionContext)]
-    pub fn set_execution_context(&self, execution_context: StateTransitionExecutionContextWasm) {
-        either_st!(&self.inner, st => st.set_execution_context(execution_context.into()))
+    pub fn set_execution_context(&mut self, execution_context: StateTransitionExecutionContextWasm) {
+        let inner = &mut self.inner;
+        either_st!(inner, st => st.set_execution_context(execution_context.into()))
     }
 
     #[wasm_bindgen(js_name = getExecutionContext)]

@@ -45,71 +45,74 @@ impl StateTransitionFactoryWasm {
         state_repository: ExternalStateRepositoryLike,
         bls_adapter: JsBlsAdapter,
     ) -> Result<StateTransitionFactoryWasm, JsValue> {
-        let state_repository_wrapper = ExternalStateRepositoryLikeWrapper::new(state_repository);
+        let state_repository_wrapper =
+            Arc::new(ExternalStateRepositoryLikeWrapper::new(state_repository));
         let protocol_version_validator = Arc::new(ProtocolVersionValidator::default());
 
         let adapter = BlsAdapter(bls_adapter);
 
         let pk_validator =
-            Arc::new(PublicKeysValidator::new(adapter).map_err(from_dpp_init_error)?);
-        let pk_sig_validator = Arc::new(PublicKeysSignaturesValidator::new(adapter));
+            Arc::new(PublicKeysValidator::new(adapter.clone()).map_err(from_dpp_init_error)?);
+        let pk_sig_validator = Arc::new(PublicKeysSignaturesValidator::new(adapter.clone()));
 
         let asset_lock_tx_validator = Arc::new(AssetLockTransactionValidator::new(
-            state_repository_wrapper.into(),
+            state_repository_wrapper.clone(),
         ));
 
         let asset_lock_validator = Arc::new(AssetLockProofValidator::new(
             InstantAssetLockProofStructureValidator::new(
-                state_repository_wrapper.into(),
-                asset_lock_tx_validator,
+                state_repository_wrapper.clone(),
+                asset_lock_tx_validator.clone(),
             )
             .map_err(from_dpp_init_error)?,
             ChainAssetLockProofStructureValidator::new(
-                state_repository_wrapper.into(),
-                asset_lock_tx_validator,
+                state_repository_wrapper.clone(),
+                asset_lock_tx_validator.clone(),
             )
             .map_err(from_dpp_init_error)?,
         ));
 
         let factory = StateTransitionFactory::new(
-            state_repository_wrapper.into(),
+            state_repository_wrapper.clone(),
             StateTransitionBasicValidator::new(
-                state_repository_wrapper.into(),
+                state_repository_wrapper.clone(),
                 StateTransitionByTypeValidator::new(
-                    DataContractCreateTransitionBasicValidator::new(protocol_version_validator)
-                        .map_err(from_dpp_err)?,
+                    DataContractCreateTransitionBasicValidator::new(
+                        protocol_version_validator.clone(),
+                    )
+                    .map_err(from_dpp_err)?,
                     DataContractUpdateTransitionBasicValidator::new(
-                        state_repository_wrapper.into(),
-                        protocol_version_validator,
+                        state_repository_wrapper.clone(),
+                        protocol_version_validator.clone(),
                     )
                     .map_err(from_dpp_init_error)?,
                     IdentityCreateTransitionBasicValidator::new(
                         protocol_version_validator.deref().clone(),
-                        pk_validator,
-                        pk_validator,
-                        asset_lock_validator,
-                        adapter,
-                        pk_sig_validator,
+                        pk_validator.clone(),
+                        pk_validator.clone(),
+                        asset_lock_validator.clone(),
+                        adapter.clone(),
+                        pk_sig_validator.clone(),
                     )
                     .map_err(from_dpp_init_error)?,
                     ValidateIdentityUpdateTransitionBasic::new(
-                        protocol_version_validator.deref().clone(),
-                        pk_validator,
-                        pk_sig_validator,
+                        ProtocolVersionValidator::default(),
+                        pk_validator.clone(),
+                        pk_sig_validator.clone(),
                     )
                     .map_err(from_dpp_err)?,
                     IdentityTopUpTransitionBasicValidator::new(
-                        protocol_version_validator.deref().clone(),
-                        asset_lock_validator,
+                        ProtocolVersionValidator::default(),
+                        asset_lock_validator.clone(),
                     )
                     .map_err(from_dpp_init_error)?,
                     IdentityCreditWithdrawalTransitionBasicValidator::new(
-                        protocol_version_validator,
+                        protocol_version_validator.clone(),
                     )
                     .map_err(from_dpp_init_error)?,
                     DocumentBatchTransitionBasicValidator::new(
-                        state_repository_wrapper.into(),
-                        protocol_version_validator,
+                        state_repository_wrapper.clone(),
+                        protocol_version_validator.clone(),
                     ),
                 ),
             ),
