@@ -233,7 +233,6 @@ impl ExtendedDocument {
         let document_type_name = document_map.remove_string(property_names::DOCUMENT_TYPE)?;
 
         let document = Document::from_map(document_map, None, None)?;
-
         Ok(ExtendedDocument {
             protocol_version,
             document_type_name,
@@ -271,30 +270,20 @@ impl ExtendedDocument {
     pub fn to_buffer(&self) -> Result<Vec<u8>, ProtocolError> {
         let mut result_buf = self.protocol_version.encode_var_vec();
 
-        let map = CborValue::serialized(&self)
-            .map_err(|e| ProtocolError::EncodingError(e.to_string()))?;
+        let mut cbor_value = self.document.to_cbor_value()?;
+        let value_mut = cbor_value.as_map_mut().unwrap();
 
-        let mut canonical_map: CborCanonicalMap = map.try_into()?;
+        value_mut.push((
+            CborValue::Text(property_names::DOCUMENT_TYPE.to_string()),
+            CborValue::Text(self.document_type_name.clone()),
+        ));
 
-        canonical_map.remove(property_names::PROTOCOL_VERSION);
+        value_mut.push((
+            CborValue::Text(property_names::DATA_CONTRACT_ID.to_string()),
+            CborValue::Bytes(self.data_contract_id.to_buffer_vec()),
+        ));
 
-        if self.updated_at().is_none() {
-            canonical_map.remove(property_names::UPDATED_AT);
-        }
-
-        let (identifier_paths, binary_paths) = self
-            .data_contract
-            .get_identifiers_and_binary_paths(&self.document_type_name)?;
-
-        // The static (part of structure) identifiers are being serialized to the String(base58)
-        canonical_map.replace_values(IDENTIFIER_FIELDS, ReplaceWith::Bytes);
-        // The DYNAMIC identifiers and binary fields are being serialized to the ArrayInt, therefore
-        // they both need to be converted to the the CborValue::Bytes
-        canonical_map.replace_paths(
-            identifier_paths.into_iter().chain(binary_paths),
-            FieldType::ArrayInt,
-            FieldType::Bytes,
-        );
+        let mut canonical_map: CborCanonicalMap = cbor_value.try_into()?;
 
         let mut document_buffer = canonical_map
             .to_bytes()
@@ -543,7 +532,7 @@ mod test {
 
         let buffer = document.to_buffer()?;
 
-        assert_eq!(document_cbor, buffer);
+        assert_eq!(hex::encode(document_cbor), hex::encode(buffer));
         Ok(())
     }
 

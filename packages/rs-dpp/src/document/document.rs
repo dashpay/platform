@@ -38,6 +38,7 @@ use std::convert::{TryFrom, TryInto};
 use std::fmt;
 use std::process::id;
 
+use ciborium::{cbor, Value as CborValue};
 use itertools::Itertools;
 use serde_json::{json, Value as JsonValue};
 
@@ -289,6 +290,50 @@ impl Document {
                     .try_into()
                     .map_err(ProtocolError::ValueError)?;
                 value_mut.insert(key.to_string(), serde_value);
+                Ok::<(), ProtocolError>(())
+            })?;
+
+        Ok(value)
+    }
+
+    pub fn to_cbor_value(&self) -> Result<CborValue, ProtocolError> {
+        let mut value = CborValue::Map(vec![]);
+        let value_mut = value.as_map_mut().unwrap();
+        value_mut.push((
+            CborValue::Text(property_names::ID.to_string()),
+            CborValue::Bytes(self.id.to_vec()),
+        ));
+        value_mut.push((
+            CborValue::Text(property_names::OWNER_ID.to_string()),
+            CborValue::Bytes(self.owner_id.to_vec()),
+        ));
+        if let Some(created_at) = self.created_at {
+            value_mut.push((
+                CborValue::Text(property_names::CREATED_AT.to_string()),
+                CborValue::Integer(created_at.into()),
+            ));
+        }
+        if let Some(updated_at) = self.updated_at {
+            value_mut.push((
+                CborValue::Text(property_names::UPDATED_AT.to_string()),
+                CborValue::Integer(updated_at.into()),
+            ));
+        }
+        if let Some(revision) = self.revision {
+            value_mut.push((
+                CborValue::Text(property_names::REVISION.to_string()),
+                CborValue::Integer(revision.into()),
+            ));
+        }
+
+        self.properties
+            .iter()
+            .try_for_each(|(key, property_value)| {
+                let cbor_value: CborValue = property_value
+                    .clone()
+                    .try_into()
+                    .map_err(ProtocolError::ValueError)?;
+                value_mut.push((CborValue::Text(key.clone()), cbor_value));
                 Ok::<(), ProtocolError>(())
             })?;
 
