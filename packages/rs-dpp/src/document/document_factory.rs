@@ -165,7 +165,7 @@ where
             self.document_validator
                 .validate(&json_value, &data_contract, document_type)?;
 
-        Document::replace_fields(&mut json_value, &data_contract, document_type.name.as_str())?;
+        Document::replace_all_fields(&mut json_value, &data_contract, document_type.name.as_str())?;
 
         let mut extended_document = ExtendedDocument {
             protocol_version: self.protocol_version,

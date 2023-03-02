@@ -36,6 +36,7 @@ use chrono::{DateTime, NaiveDateTime, Utc};
 use std::collections::{BTreeMap, HashSet};
 use std::convert::{TryFrom, TryInto};
 use std::fmt;
+use std::process::id;
 
 use itertools::Itertools;
 use serde_json::{json, Value as JsonValue};
@@ -294,13 +295,71 @@ impl Document {
         Ok(value)
     }
 
-    pub fn replace_fields(
+    pub fn to_pretty_json(
+        &self,
+        data_contract: &DataContract,
+        document_type_name: &str,
+    ) -> Result<JsonValue, ProtocolError> {
+        let mut value = json!({
+            property_names::ID: bs58::encode(self.id).into_string(),
+            property_names::OWNER_ID:  bs58::encode(self.owner_id).into_string(),
+        });
+        let value_mut = value.as_object_mut().unwrap();
+        if let Some(created_at) = self.created_at {
+            value_mut.insert(
+                property_names::CREATED_AT.to_string(),
+                JsonValue::Number(created_at.into()),
+            );
+        }
+        if let Some(updated_at) = self.updated_at {
+            value_mut.insert(
+                property_names::UPDATED_AT.to_string(),
+                JsonValue::Number(updated_at.into()),
+            );
+        }
+        if let Some(revision) = self.revision {
+            value_mut.insert(
+                property_names::REVISION.to_string(),
+                JsonValue::Number(revision.into()),
+            );
+        }
+
+        self.properties
+            .iter()
+            .try_for_each(|(key, property_value)| {
+                let serde_value: JsonValue = property_value
+                    .clone()
+                    .try_into()
+                    .map_err(ProtocolError::ValueError)?;
+                value_mut.insert(key.to_string(), serde_value);
+                Ok::<(), ProtocolError>(())
+            })?;
+
+        Self::replace_property_fields(&mut value, data_contract, document_type_name)?;
+
+        Ok(value)
+    }
+
+    pub fn replace_all_fields(
         value: &mut JsonValue,
         data_contract: &DataContract,
         document_type_name: &str,
     ) -> Result<(), ProtocolError> {
         let (identifier_paths, binary_paths) =
             Self::get_identifiers_and_binary_paths(data_contract, document_type_name)?;
+
+        value.replace_identifier_paths(identifier_paths, ReplaceWith::Base58)?;
+        value.replace_binary_paths(binary_paths, ReplaceWith::Base64)?;
+        Ok(())
+    }
+
+    pub fn replace_property_fields(
+        value: &mut JsonValue,
+        data_contract: &DataContract,
+        document_type_name: &str,
+    ) -> Result<(), ProtocolError> {
+        let (identifier_paths, binary_paths) =
+            data_contract.get_identifiers_and_binary_paths(document_type_name)?;
 
         value.replace_identifier_paths(identifier_paths, ReplaceWith::Base58)?;
         value.replace_binary_paths(binary_paths, ReplaceWith::Base64)?;

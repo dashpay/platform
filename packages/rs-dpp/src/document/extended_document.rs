@@ -131,6 +131,13 @@ impl ExtendedDocument {
         self.document.updated_at.as_ref()
     }
 
+    pub fn from_json_string(string: &str) -> Result<Self, ProtocolError> {
+        let json_value: JsonValue = serde_json::from_str(string).map_err(|_| {
+            ProtocolError::StringDecodeError("error decoding from json string".to_string())
+        })?;
+        Self::from_json_document(json_value, DataContract::new())
+    }
+
     pub fn from_raw_document(
         raw_document: JsonValue,
         data_contract: DataContract,
@@ -180,14 +187,26 @@ impl ExtendedDocument {
             property_names::DATA_CONTRACT_ID.to_string(),
             json!(self.data_contract.id),
         );
+        Ok(value)
+    }
 
-        let (identifier_paths, binary_paths) = self
-            .data_contract
-            .get_identifiers_and_binary_paths(&self.document_type_name)?;
-
-        value.replace_identifier_paths(identifier_paths, ReplaceWith::Base58)?;
-        value.replace_binary_paths(binary_paths, ReplaceWith::Base64)?;
-
+    pub fn to_pretty_json(&self) -> Result<JsonValue, ProtocolError> {
+        let mut value = self
+            .document
+            .to_pretty_json(&self.data_contract, &self.document_type_name)?;
+        let value_mut = value.as_object_mut().unwrap();
+        value_mut.insert(
+            property_names::PROTOCOL_VERSION.to_string(),
+            JsonValue::Number(self.protocol_version.into()),
+        );
+        value_mut.insert(
+            property_names::DOCUMENT_TYPE.to_string(),
+            JsonValue::String(self.document_type_name.clone()),
+        );
+        value_mut.insert(
+            property_names::DATA_CONTRACT_ID.to_string(),
+            JsonValue::String(bs58::encode(self.data_contract_id.to_buffer()).into_string()),
+        );
         Ok(value)
     }
 
@@ -385,7 +404,7 @@ mod test {
     fn test_document_deserialize() -> Result<()> {
         init();
         let document_json = get_data_from_file("src/tests/payloads/document_dpns.json")?;
-        let doc = serde_json::from_str::<ExtendedDocument>(&document_json)?;
+        let doc = ExtendedDocument::from_json_string(&document_json)?;
         assert_eq!(doc.document_type_name, "domain");
         assert_eq!(doc.protocol_version, 0);
         assert_eq!(
@@ -448,7 +467,7 @@ mod test {
     fn test_to_object() {
         init();
         let document_json = get_data_from_file("src/tests/payloads/document_dpns.json").unwrap();
-        let document = serde_json::from_str::<ExtendedDocument>(&document_json).unwrap();
+        let document = ExtendedDocument::from_json_string(&document_json).unwrap();
         let document_object = document.to_object().unwrap();
 
         for property in IDENTIFIER_FIELDS {
@@ -466,7 +485,7 @@ mod test {
         init();
 
         let document_json = get_data_from_file("src/tests/payloads/document_dpns.json")?;
-        let document = serde_json::from_str::<ExtendedDocument>(&document_json)?;
+        let document = ExtendedDocument::from_json_string(&document_json)?;
 
         serde_json::to_string(&document)?;
         Ok(())
@@ -477,7 +496,7 @@ mod test {
         init();
 
         let document_json = get_data_from_file("src/tests/payloads/document_dpns.json")?;
-        serde_json::from_str::<ExtendedDocument>(&document_json)?;
+        ExtendedDocument::from_json_string(&document_json)?;
         Ok(())
     }
 
@@ -548,7 +567,7 @@ mod test {
         });
 
         let document = ExtendedDocument::from_raw_document(raw_document, data_contract).unwrap();
-        let json_document = document.to_json().expect("no errors");
+        let json_document = document.to_pretty_json().expect("no errors");
 
         assert_eq!(
             json_document["$id"],
