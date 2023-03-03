@@ -39,7 +39,6 @@ use std::fmt;
 
 
 use ciborium::{Value as CborValue};
-use itertools::Itertools;
 use serde_json::{json, Value as JsonValue};
 
 use crate::data_contract::{DataContract, DriveContractExt};
