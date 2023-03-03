@@ -17,11 +17,10 @@ use dpp::{
         FetchTransactionResponse as FetchTransactionResponseDPP, StateRepositoryLike,
     },
     state_transition::state_transition_execution_context::StateTransitionExecutionContext,
-    ProtocolError,
 };
 use js_sys::Uint8Array;
 use js_sys::{Array, Number};
-use serde_json::Value;
+
 use wasm_bindgen::__rt::Ref;
 
 use dpp::document::Document;

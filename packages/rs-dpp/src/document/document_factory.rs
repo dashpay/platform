@@ -1,6 +1,6 @@
 use anyhow::Context;
 use chrono::Utc;
-use std::collections::BTreeMap;
+
 
 use itertools::Itertools;
 
@@ -14,7 +14,7 @@ use crate::document::extended_document::{property_names, ExtendedDocument};
 
 use crate::data_contract::DriveContractExt;
 use crate::document::document_transition::INITIAL_REVISION;
-use crate::document::{extended_document, Document};
+use crate::document::{Document};
 use crate::identity::TimestampMillis;
 use crate::{
     data_contract::{errors::DataContractError, DataContract},
@@ -22,7 +22,7 @@ use crate::{
     prelude::Identifier,
     state_repository::StateRepositoryLike,
     util::entropy_generator,
-    util::{json_schema::JsonSchemaExt, json_value::JsonValueExt},
+    util::{json_value::JsonValueExt},
     ProtocolError,
 };
 
@@ -167,7 +167,7 @@ where
 
         Document::replace_all_fields(&mut json_value, &data_contract, document_type.name.as_str())?;
 
-        let mut extended_document = ExtendedDocument {
+        let extended_document = ExtendedDocument {
             protocol_version: self.protocol_version,
             document_type_name,
             data_contract_id: data_contract.id.clone(),

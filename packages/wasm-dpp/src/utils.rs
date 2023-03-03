@@ -14,7 +14,6 @@ use serde_json::Value as JsonValue;
 use wasm_bindgen::{convert::RefFromWasmAbi, prelude::*};
 
 use crate::{
-    bail_js,
     errors::{from_dpp_err, RustConversionError},
 };
 

@@ -5,7 +5,7 @@ use anyhow::{anyhow, bail};
 use platform_value::btreemap_extensions::BTreeValueMapHelper;
 use serde_json::{json, Value as JsonValue};
 
-use crate::document::{Document, ExtendedDocument};
+use crate::document::{Document};
 use crate::util::hash::hash;
 use crate::util::string_encoding::Encoding;
 use crate::ProtocolError;

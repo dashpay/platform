@@ -1,11 +1,11 @@
-use serde_json::{Map, Value as JsonValue};
+use serde_json::{Value as JsonValue};
 use std::borrow::Borrow;
 use std::convert::TryFrom;
 use std::iter::FromIterator;
-use std::path::Path;
+
 use std::{collections::BTreeMap, convert::TryInto};
 
-use crate::btreemap_extensions::BTreeValueMapHelper;
+
 use crate::value_map::ValueMapHelper;
 use crate::{Error, Value};
 

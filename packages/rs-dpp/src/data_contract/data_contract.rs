@@ -2,8 +2,8 @@ use std::collections::{BTreeMap, HashSet};
 use std::convert::TryFrom;
 
 use anyhow::anyhow;
-use ciborium::value::Value as CborValue;
-use integer_encoding::VarInt;
+
+
 use itertools::{Either, Itertools};
 use platform_value::btreemap_extensions::BTreeValueMapHelper;
 use platform_value::Value;
@@ -18,9 +18,9 @@ use crate::data_contract::contract_config::{
 };
 
 use crate::data_contract::get_binary_properties_from_schema::get_binary_properties;
-use crate::util::cbor_value::{CborBTreeMapHelper, CborCanonicalMap};
-use crate::util::deserializer;
-use crate::util::deserializer::SplitProtocolVersionOutcome;
+use crate::util::cbor_value::{CborBTreeMapHelper};
+
+
 use crate::util::json_value::{JsonValueExt, ReplaceWith};
 use crate::util::string_encoding::Encoding;
 use crate::{
@@ -454,6 +454,7 @@ pub fn get_definitions(
 #[cfg(test)]
 mod test {
     use anyhow::Result;
+    use integer_encoding::VarInt;
 
     use crate::{
         assert_error_contains,

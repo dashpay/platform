@@ -1,14 +1,14 @@
-use dpp::dashcore::anyhow::Context;
+
 use dpp::document::document_transition::document_base_transition::JsonValue;
 use dpp::document::{
     extended_document_property_names, ExtendedDocument, EXTENDED_DOCUMENT_IDENTIFIER_FIELDS,
 };
-use dpp::platform_value::btreemap_path_extensions::BTreeValueMapPathHelper;
+
 use dpp::platform_value::{ReplacementType, Value};
 use dpp::prelude::{Identifier, Revision};
 use dpp::util::json_schema::JsonSchemaExt;
 use dpp::util::json_value::{JsonValueExt, ReplaceWith};
-use dpp::util::string_encoding::Encoding;
+
 use dpp::ProtocolError;
 use serde::{Deserialize, Serialize};
 use std::convert::TryInto;

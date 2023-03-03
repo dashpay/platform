@@ -1,5 +1,5 @@
-use crate::btreemap_path_extensions::BTreeValueMapPathHelper;
-use crate::value_map::{ValueMap, ValueMapHelper};
+
+use crate::value_map::{ValueMapHelper};
 use crate::{Error, Value};
 use std::collections::{BTreeMap, HashMap};
 

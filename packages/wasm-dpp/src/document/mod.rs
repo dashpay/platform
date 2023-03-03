@@ -1,18 +1,18 @@
 use dpp::dashcore::anyhow::Context;
-use dpp::prelude::{DataContract, Identifier, Revision};
+use dpp::prelude::{DataContract, Identifier};
 use dpp::util::json_schema::JsonSchemaExt;
 use dpp::util::json_value::{JsonValueExt, ReplaceWith};
 
 use anyhow::anyhow;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
-use std::convert::{self, TryInto};
+use std::convert::{TryInto};
 use wasm_bindgen::prelude::*;
 
 use crate::buffer::Buffer;
 
-use crate::errors::RustConversionError;
-use crate::identifier::{identifier_from_js_value, IdentifierWrapper};
+
+use crate::identifier::{IdentifierWrapper};
 use crate::lodash::lodash_set;
 use crate::utils::{
     replace_identifiers_with_bytes_without_failing, with_serde_to_json_value, ToSerdeJSONExt,
@@ -33,13 +33,13 @@ mod validator;
 pub use document_batch_transition::DocumentsBatchTransitionWASM;
 use dpp::data_contract::DriveContractExt;
 use dpp::document::{
-    extended_document_property_names, Document, EXTENDED_DOCUMENT_IDENTIFIER_FIELDS,
+    Document, EXTENDED_DOCUMENT_IDENTIFIER_FIELDS,
     IDENTIFIER_FIELDS,
 };
-use dpp::identity::TimestampMillis;
+
 pub use extended_document::ExtendedDocumentWasm;
 
-use dpp::data_contract::document_type::DocumentType;
+
 use dpp::document::extended_document::property_names;
 use dpp::platform_value::btreemap_field_replacement::BTreeValueMapInsertionPathHelper;
 use dpp::platform_value::ReplacementType;

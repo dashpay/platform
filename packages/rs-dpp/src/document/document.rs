@@ -34,11 +34,11 @@
 
 use chrono::{DateTime, NaiveDateTime, Utc};
 use std::collections::{BTreeMap, HashSet};
-use std::convert::{TryFrom, TryInto};
+use std::convert::{TryInto};
 use std::fmt;
-use std::process::id;
 
-use ciborium::{cbor, Value as CborValue};
+
+use ciborium::{Value as CborValue};
 use itertools::Itertools;
 use serde_json::{json, Value as JsonValue};
 
@@ -50,7 +50,7 @@ use crate::data_contract::document_type::{encode_unsigned_integer, DocumentType}
 use crate::data_contract::errors::DataContractError;
 
 use crate::document::errors::DocumentError;
-use crate::document::ExtendedDocument;
+
 use crate::identifier::Identifier;
 use crate::identity::TimestampMillis;
 use crate::prelude::Revision;

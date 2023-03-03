@@ -2,12 +2,12 @@ use crate::data_contract::{DataContract, DriveContractExt};
 use crate::identifier::Identifier;
 use crate::metadata::Metadata;
 use crate::prelude::{Revision, TimestampMillis};
-use crate::util::cbor_value::{CborCanonicalMap, FieldType};
+use crate::util::cbor_value::{CborCanonicalMap};
 use crate::util::deserializer::SplitProtocolVersionOutcome;
 use crate::util::hash::hash;
 use crate::util::json_value::JsonValueExt;
 use crate::util::json_value::ReplaceWith;
-use crate::util::{cbor_value, deserializer};
+use crate::util::{deserializer};
 use crate::ProtocolError;
 use ciborium::Value as CborValue;
 use integer_encoding::VarInt;
@@ -66,7 +66,7 @@ impl ExtendedDocument {
         json_document: JsonValue,
         data_contract: DataContract,
     ) -> Result<Self, ProtocolError> {
-        let mut document = Self::from_json_value::<String>(json_document, data_contract)?;
+        let document = Self::from_json_value::<String>(json_document, data_contract)?;
         // let mut properties = document.properties_as_mut();
 
         // replace only the dynamic data
@@ -283,7 +283,7 @@ impl ExtendedDocument {
             CborValue::Bytes(self.data_contract_id.to_buffer_vec()),
         ));
 
-        let mut canonical_map: CborCanonicalMap = cbor_value.try_into()?;
+        let canonical_map: CborCanonicalMap = cbor_value.try_into()?;
 
         let mut document_buffer = canonical_map
             .to_bytes()

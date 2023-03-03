@@ -690,7 +690,7 @@ mod tests {
     use dpp::version::{ProtocolVersionValidator, COMPATIBILITY_MAP, LATEST_VERSION};
     use rand::Rng;
     use serde::{Deserialize, Serialize};
-    use serde_json::{json, Value as JsonValue};
+    use serde_json::{json};
     use tempfile::TempDir;
 
     use super::*;

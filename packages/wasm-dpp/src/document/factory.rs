@@ -1,8 +1,8 @@
 use anyhow::anyhow;
-use std::collections::{HashMap, HashSet};
+use std::collections::{HashMap};
 use std::sync::Arc;
 
-use dpp::document::Document;
+
 use dpp::platform_value::btreemap_field_replacement::BTreeValueMapInsertionPathHelper;
 use dpp::platform_value::ReplacementType;
 use dpp::{
@@ -21,11 +21,10 @@ use dpp::prelude::ExtendedDocument;
 use std::convert::TryFrom;
 
 use crate::{
-    document::document_data_to_bytes,
     identifier::identifier_from_js_value,
     state_repository::{ExternalStateRepositoryLike, ExternalStateRepositoryLikeWrapper},
     utils::{ToSerdeJSONExt, WithJsError},
-    DataContractWasm, DocumentWasm, DocumentsBatchTransitionWASM, ExtendedDocumentWasm,
+    DataContractWasm, DocumentsBatchTransitionWASM, ExtendedDocumentWasm,
 };
 
 use super::validator::DocumentValidatorWasm;
@@ -168,7 +167,7 @@ impl DocumentFactoryWASM {
             .get_identifiers_and_binary_paths_owned()
             .with_js_error()?;
         // When data contract is available, replace remaining dynamic paths
-        let mut document_data = document.properties_as_mut();
+        let document_data = document.properties_as_mut();
         document_data
             .replace_at_paths(identifier_paths, ReplacementType::Bytes)
             .map_err(ProtocolError::ValueError)
