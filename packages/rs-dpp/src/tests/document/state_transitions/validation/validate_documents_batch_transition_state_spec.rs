@@ -1,4 +1,4 @@
-use std::convert::TryInto;
+
 use std::time::Duration;
 
 use chrono::Utc;
@@ -21,7 +21,7 @@ use crate::{
         fixtures::{
             get_data_contract_fixture, get_document_transitions_fixture,
         },
-        utils::{generate_random_identifier_struct, new_block_header},
+        utils::{generate_random_identifier_struct},
     }, validation::ValidationResult,
 };
 use crate::document::{Document, ExtendedDocument};

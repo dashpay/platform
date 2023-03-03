@@ -41,7 +41,7 @@ use drive::dpp::document::ExtendedDocument;
 use drive::dpp::identity::{
     Identity, IdentityPublicKey, KeyType, Purpose, SecurityLevel, TimestampMillis,
 };
-use drive::dpp::prelude::Identifier;
+
 use drive::dpp::system_data_contracts::{load_system_data_contract, SystemDataContract};
 use drive::dpp::util::string_encoding::{encode, Encoding};
 use drive::drive::batch::{

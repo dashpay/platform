@@ -154,7 +154,7 @@ mod test {
     use super::*;
     use itertools::Itertools;
     use serde_json::json;
-    use std::convert::TryInto;
+    
 
     use crate::document::{Document, ExtendedDocument};
     use crate::identity::Identity;
@@ -172,7 +172,7 @@ mod test {
             },
             utils::generate_random_identifier_struct,
         },
-        DataTriggerError, ProtocolError, StateError,
+        DataTriggerError, StateError,
     };
 
     struct TestData {

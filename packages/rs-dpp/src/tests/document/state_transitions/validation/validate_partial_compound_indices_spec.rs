@@ -1,5 +1,5 @@
-use serde_json::{json, Value as JsonValue};
-use std::collections::BTreeMap;
+use serde_json::{Value as JsonValue};
+
 
 use crate::{
     consensus::{basic::BasicError, ConsensusError},
