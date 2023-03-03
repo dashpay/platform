@@ -5,7 +5,6 @@ use dpp::util::json_value::{JsonValueExt, ReplaceWith};
 
 use anyhow::anyhow;
 use serde::{Deserialize, Serialize};
-use serde_json::Value;
 use std::convert::TryInto;
 use wasm_bindgen::prelude::*;
 
@@ -38,6 +37,7 @@ pub use extended_document::ExtendedDocumentWasm;
 use dpp::document::extended_document::property_names;
 use dpp::platform_value::btreemap_field_replacement::BTreeValueMapInsertionPathHelper;
 use dpp::platform_value::ReplacementType;
+use dpp::platform_value::Value;
 use dpp::ProtocolError;
 pub use factory::DocumentFactoryWASM;
 use serde_json::Value as JsonValue;
@@ -68,7 +68,7 @@ impl DocumentWasm {
         js_data_contract: &DataContractWasm,
         js_document_type_name: JsValue,
     ) -> Result<DocumentWasm, JsValue> {
-        let mut raw_document = with_serde_to_json_value(&js_raw_document)?;
+        let mut raw_document: Value = with_serde_to_json_value(&js_raw_document)?.into();
 
         let document_type_name = js_document_type_name
             .as_string()
@@ -81,17 +81,18 @@ impl DocumentWasm {
             .with_js_error()?;
 
         // TODO: figure out a better way to replace identifiers
-        let _ = raw_document
-            .replace_identifier_paths(
+        raw_document
+            .replace_at_paths(
                 identifier_paths
                     .into_iter()
                     .chain(EXTENDED_DOCUMENT_IDENTIFIER_FIELDS),
-                ReplaceWith::Bytes,
-            );
-            // .with_js_error()?;
+                ReplacementType::Bytes,
+            )
+            .map_err(ProtocolError::ValueError)
+            .with_js_error()?;
         // The binary paths are not being converted, because they always should be a `Buffer`. `Buffer` is always an Array
 
-        let document = Document::from_raw_json_document(raw_document).with_js_error()?;
+        let document = Document::from_platform_value(raw_document).with_js_error()?;
 
         Ok(document.into())
     }
@@ -347,7 +348,7 @@ pub(crate) fn document_data_to_bytes(
 pub(crate) fn raw_document_from_js_value(
     js_raw_document: &JsValue,
     data_contract: &DataContract,
-) -> Result<Value, JsValue> {
+) -> Result<JsonValue, JsValue> {
     let mut raw_document = js_raw_document.with_serde_to_json_value()?;
 
     let document_type = raw_document
