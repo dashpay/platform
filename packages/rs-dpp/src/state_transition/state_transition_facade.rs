@@ -1,6 +1,7 @@
 use std::ops::Deref;
 use std::rc::Rc;
 use std::sync::Arc;
+use serde_json::Value;
 use crate::{BlsModule, ProtocolError};
 use crate::data_contract::state_transition::data_contract_create_transition::validation::state::validate_data_contract_create_transition_basic::DataContractCreateTransitionBasicValidator;
 use crate::data_contract::state_transition::data_contract_update_transition::validation::basic::DataContractUpdateTransitionBasicValidator;
@@ -14,8 +15,10 @@ use crate::identity::state_transition::validate_public_key_signatures::PublicKey
 use crate::identity::validation::PublicKeysValidator;
 use crate::state_repository::StateRepositoryLike;
 use crate::state_transition::{StateTransition, StateTransitionFactory};
+use crate::state_transition::state_transition_execution_context::StateTransitionExecutionContext;
 use crate::state_transition::validation::validate_state_transition_basic::StateTransitionBasicValidator;
 use crate::state_transition::validation::validate_state_transition_by_type::StateTransitionByTypeValidator;
+use crate::validation::{AsyncDataValidatorWithContext, SimpleValidationResult};
 use crate::version::ProtocolVersionValidator;
 
 #[derive(Clone)]
@@ -131,7 +134,13 @@ where
         })
     }
 
-    pub fn validate_basic(&self, state_transition: &StateTransition) {
-        // self.state_transition_validator.validate(state_transition)
+    pub async fn validate_basic(
+        &self,
+        state_transition: &Value,
+        execution_context: &StateTransitionExecutionContext,
+    ) -> Result<SimpleValidationResult, ProtocolError> {
+        self.basic_validator
+            .validate(state_transition, execution_context)
+            .await
     }
 }

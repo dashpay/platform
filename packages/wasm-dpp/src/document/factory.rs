@@ -96,7 +96,7 @@ impl DocumentFactoryWASM {
     #[wasm_bindgen(js_name=create)]
     pub fn create(
         &self,
-        data_contract: DataContractWasm,
+        data_contract: &DataContractWasm,
         js_owner_id: &JsValue,
         document_type: &str,
         data: &JsValue,
@@ -106,7 +106,7 @@ impl DocumentFactoryWASM {
         let document = self
             .0
             .create(
-                data_contract.into(),
+                data_contract.to_owned().into(),
                 owner_id,
                 document_type.to_string(),
                 dynamic_data,

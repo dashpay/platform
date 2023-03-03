@@ -244,7 +244,11 @@ impl DocumentsBatchTransitionWASM {
         bls: JsBlsAdapter,
     ) -> Result<(), JsValue> {
         self.0
-            .sign(identity_public_key.inner(), private_key, &BlsAdapter(bls))
+            .sign(
+                &identity_public_key.to_owned().into(),
+                private_key,
+                &BlsAdapter(bls),
+            )
             .with_js_error()
     }
 

@@ -50,7 +50,7 @@ impl DocumentFacadeWasm {
     #[wasm_bindgen(js_name=create)]
     pub fn create(
         &self,
-        data_contract: DataContractWasm,
+        data_contract: &DataContractWasm,
         js_owner_id: &JsValue,
         document_type: &str,
         data: &JsValue,

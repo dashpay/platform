@@ -38,7 +38,7 @@ impl DashPlatformProtocol {
         bls_adapter: JsBlsAdapter,
         state_repository: ExternalStateRepositoryLike,
     ) -> Result<DashPlatformProtocol, JsValue> {
-        // TODO: wrap around rs-dpp/dash_platform_protocol?
+        // TODO: wrap whole thing around rs-dpp/dash_platform_protocol?
         let options: DPPOptions = with_js_error!(serde_wasm_bindgen::from_value(options))?;
         let wrapped_state_repository =
             ExternalStateRepositoryLikeWrapper::new(state_repository.clone());
