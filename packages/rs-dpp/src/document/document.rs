@@ -41,6 +41,7 @@ use ciborium::Value as CborValue;
 use serde_json::{json, Value as JsonValue};
 
 use crate::data_contract::{DataContract, DriveContractExt};
+use platform_value::btreemap_extensions::BTreeValueMapHelper;
 use platform_value::Value;
 use serde::{Deserialize, Serialize};
 
@@ -460,6 +461,24 @@ impl Document {
         document.properties = platform_value
             .into_btree_map()
             .map_err(ProtocolError::ValueError)?;
+        Ok(document)
+    }
+
+    pub fn from_platform_value(document_value: Value) -> Result<Self, ProtocolError> {
+        let mut properties = document_value
+            .into_btree_map()
+            .map_err(ProtocolError::ValueError)?;
+        let mut document = Self {
+            ..Default::default()
+        };
+
+        document.id = properties.remove_system_hash256_bytes(property_names::ID)?;
+        document.owner_id = properties.remove_system_hash256_bytes(property_names::OWNER_ID)?;
+        document.revision = properties.remove_optional_integer(property_names::REVISION)?;
+        document.created_at = properties.remove_optional_integer(property_names::CREATED_AT)?;
+        document.updated_at = properties.remove_optional_integer(property_names::UPDATED_AT)?;
+
+        document.properties = properties;
         Ok(document)
     }
 }

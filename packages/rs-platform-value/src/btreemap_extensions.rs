@@ -116,6 +116,8 @@ pub trait BTreeValueMapHelper {
     fn get_optional_bytes(&self, key: &str) -> Result<Option<Vec<u8>>, Error>;
     fn get_bytes(&self, key: &str) -> Result<Vec<u8>, Error>;
     fn to_json_value(&self) -> Result<JsonValue, Error>;
+    fn remove_optional_bool(&mut self, key: &str) -> Result<Option<bool>, Error>;
+    fn remove_bool(&mut self, key: &str) -> Result<bool, Error>;
 }
 
 impl<V> BTreeValueMapHelper for BTreeMap<String, V>
@@ -482,6 +484,24 @@ where
 
     fn remove_float(&mut self, key: &str) -> Result<f64, Error> {
         self.remove_optional_float(key)?
+            .ok_or_else(|| Error::StructureError(format!("unable to remove float property {key}")))
+    }
+
+    fn remove_optional_bool(&mut self, key: &str) -> Result<Option<bool>, Error> {
+        self.remove(key)
+            .and_then(|v| {
+                let borrowed = v.borrow();
+                if borrowed.is_null() {
+                    None
+                } else {
+                    Some(v.borrow().to_bool())
+                }
+            })
+            .transpose()
+    }
+
+    fn remove_bool(&mut self, key: &str) -> Result<bool, Error> {
+        self.remove_optional_bool(key)?
             .ok_or_else(|| Error::StructureError(format!("unable to remove float property {key}")))
     }
 
