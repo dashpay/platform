@@ -11,7 +11,6 @@ use crate::{with_js_error, DataContractFacadeWasm};
 use crate::{DocumentFactoryWASM, DocumentValidatorWasm};
 use dpp::identity::validation::PublicKeysValidator;
 
-use crate::state_repository::{ExternalStateRepositoryLike, ExternalStateRepositoryLikeWrapper};
 use crate::state_transition_facade::StateTransitionFacadeWasm;
 use dpp::version::{ProtocolVersionValidator, COMPATIBILITY_MAP, LATEST_VERSION};
 
@@ -41,7 +40,8 @@ impl DashPlatformProtocol {
     ) -> Result<DashPlatformProtocol, JsValue> {
         // TODO: wrap around rs-dpp/dash_platform_protocol?
         let options: DPPOptions = with_js_error!(serde_wasm_bindgen::from_value(options))?;
-        let wrapped_state_repository = ExternalStateRepositoryLikeWrapper::new(state_repository);
+        let wrapped_state_repository =
+            ExternalStateRepositoryLikeWrapper::new(state_repository.clone());
         let bls = BlsAdapter(bls_adapter.clone());
 
         let protocol_version = options.current_protocol_version.unwrap_or(LATEST_VERSION);
