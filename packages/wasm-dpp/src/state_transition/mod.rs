@@ -19,6 +19,11 @@ use crate::{
 pub mod errors;
 pub mod state_transition_factory;
 
+pub mod validation;
+pub use validation::*;
+
+pub(crate) mod conversion;
+
 #[wasm_bindgen(js_name=StateTransitionExecutionContext)]
 pub struct StateTransitionExecutionContextWasm(StateTransitionExecutionContext);
 
@@ -186,7 +191,11 @@ impl StateTransitionWasm {
     }
 
     #[wasm_bindgen(js_name = signByPrivateKey)]
-    pub fn sign_by_private_key(&mut self, private_key: Vec<u8>, key_type: u8) -> Result<(), JsValue> {
+    pub fn sign_by_private_key(
+        &mut self,
+        private_key: Vec<u8>,
+        key_type: u8,
+    ) -> Result<(), JsValue> {
         let inner = &mut self.inner;
         either_st!(inner, st => st
                 .sign_by_private_key(
@@ -227,7 +236,10 @@ impl StateTransitionWasm {
     }
 
     #[wasm_bindgen(js_name = setExecutionContext)]
-    pub fn set_execution_context(&mut self, execution_context: StateTransitionExecutionContextWasm) {
+    pub fn set_execution_context(
+        &mut self,
+        execution_context: StateTransitionExecutionContextWasm,
+    ) {
         let inner = &mut self.inner;
         either_st!(inner, st => st.set_execution_context(execution_context.into()))
     }

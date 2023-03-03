@@ -40,15 +40,14 @@ where
         )
     })?;
 
-    let core_chain_locked_height = context
+    let block_height = context
         .state_repository
-        .fetch_latest_platform_core_chain_locked_height()
-        .await?
-        .unwrap_or_default() as i64;
+        .fetch_latest_platform_block_height()
+        .await? as i64;
 
     let enable_at_height = data.get_i64(PROPERTY_ENABLE_AT_HEIGHT)?;
 
-    if enable_at_height < core_chain_locked_height {
+    if enable_at_height < block_height {
         let err = create_error(
             context,
             dt_create,

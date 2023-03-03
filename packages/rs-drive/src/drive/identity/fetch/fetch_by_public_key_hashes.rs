@@ -276,6 +276,7 @@ impl Drive {
     }
 }
 
+#[cfg(feature = "full")]
 #[cfg(test)]
 mod tests {
     use crate::drive::block_info::BlockInfo;

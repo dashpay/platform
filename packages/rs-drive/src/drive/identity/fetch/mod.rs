@@ -1,29 +1,52 @@
+#[cfg(any(feature = "full", feature = "verify"))]
 use crate::drive::identity::identity_path_vec;
+#[cfg(any(feature = "full", feature = "verify"))]
 use crate::drive::identity::IdentityRootStructure::IdentityTreeRevision;
 
-use crate::drive::{Drive, RootTree};
+#[cfg(any(feature = "full", feature = "verify"))]
+use crate::drive::Drive;
+#[cfg(feature = "full")]
+use crate::drive::RootTree;
+#[cfg(feature = "full")]
 use crate::error::drive::DriveError;
 
+#[cfg(feature = "full")]
 use crate::error::Error;
 
-use crate::query::{Query, QueryItem};
+#[cfg(any(feature = "full", feature = "verify"))]
+use crate::query::Query;
+#[cfg(feature = "full")]
+use crate::query::QueryItem;
 
+#[cfg(feature = "full")]
 use grovedb::query_result_type::QueryResultType::{
     QueryElementResultType, QueryKeyElementPairResultType,
 };
+#[cfg(feature = "full")]
 use grovedb::Element::SumItem;
-use grovedb::{PathQuery, SizedQuery, TransactionArg};
+#[cfg(feature = "full")]
+use grovedb::TransactionArg;
+#[cfg(any(feature = "full", feature = "verify"))]
+use grovedb::{PathQuery, SizedQuery};
 
+#[cfg(feature = "full")]
 use std::collections::BTreeMap;
 
+#[cfg(feature = "full")]
 mod fetch_by_public_key_hashes;
+#[cfg(feature = "full")]
 mod full_identity;
+#[cfg(feature = "full")]
 mod partial_identity;
+#[cfg(feature = "full")]
 mod prove;
+#[cfg(any(feature = "full", feature = "verify"))]
 mod queries;
+#[cfg(feature = "full")]
 mod revision;
 
 impl Drive {
+    #[cfg(any(feature = "full", feature = "verify"))]
     /// The query for the identity revision
     pub fn identity_revision_query(identity_id: &[u8; 32]) -> PathQuery {
         let identity_path = identity_path_vec(identity_id.as_slice());
@@ -39,6 +62,7 @@ impl Drive {
         }
     }
 
+    #[cfg(feature = "full")]
     /// Given a vector of identities, fetches the identities from storage.
     pub fn verify_all_identities_exist(
         &self,
@@ -66,6 +90,7 @@ impl Drive {
         Ok(result_items.len() == ids.len())
     }
 
+    #[cfg(feature = "full")]
     /// Given a vector of identities, fetches the identities from storage.
     pub fn fetch_identities_balances(
         &self,

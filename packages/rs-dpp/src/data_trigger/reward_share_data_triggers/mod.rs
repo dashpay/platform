@@ -1,4 +1,7 @@
+use std::convert::TryInto;
+
 use anyhow::{anyhow, bail};
+use itertools::Itertools;
 use serde_json::json;
 
 use crate::{
@@ -9,6 +12,7 @@ use crate::{
     prelude::Identifier,
     state_repository::StateRepositoryLike,
     util::{json_value::JsonValueExt, string_encoding::Encoding},
+    ProtocolError,
 };
 
 use super::{DataTriggerExecutionContext, DataTriggerExecutionResult};
@@ -87,7 +91,7 @@ where
         result.add_error(err.into())
     }
 
-    let documents: Vec<Document> = context
+    let documents_data = context
         .state_repository
         .fetch_documents(
             &context.data_contract.id,
@@ -98,6 +102,10 @@ where
             context.state_transition_execution_context,
         )
         .await?;
+    let documents: Vec<Document> = documents_data
+        .into_iter()
+        .map(|d| d.try_into().map_err(Into::<ProtocolError>::into))
+        .try_collect()?;
 
     if is_dry_run {
         return Ok(result);
@@ -296,7 +304,7 @@ mod test {
             .expect_fetch_identity()
             .returning(move |_, _| Ok(None));
         state_repository_mock
-            .expect_fetch_documents::<Document>()
+            .expect_fetch_documents()
             .returning(move |_, _, _, _| Ok(vec![]));
 
         let execution_context = StateTransitionExecutionContext::default();
@@ -344,7 +352,7 @@ mod test {
             .expect_fetch_identity()
             .returning(move |_, _| Ok(None));
         state_repository_mock
-            .expect_fetch_documents::<Document>()
+            .expect_fetch_documents()
             .returning(move |_, _, _, _| Ok(vec![]));
 
         let execution_context = StateTransitionExecutionContext::default();
@@ -384,7 +392,7 @@ mod test {
             .expect_fetch_identity()
             .returning(move |_, _| Ok(Some(identity.clone())));
         state_repository_mock
-            .expect_fetch_documents::<Document>()
+            .expect_fetch_documents()
             .returning(move |_, _, _, _| Ok(vec![]));
 
         let execution_context = StateTransitionExecutionContext::default();
@@ -421,7 +429,7 @@ mod test {
             .returning(move |_, _| Ok(Some(identity.clone())));
         let documents_to_return: Vec<Document> = (0..16).map(|_| Document::default()).collect();
         state_repository_mock
-            .expect_fetch_documents::<Document>()
+            .expect_fetch_documents()
             .return_once(move |_, _, _, _| Ok(documents_to_return));
 
         let execution_context = StateTransitionExecutionContext::default();
@@ -457,7 +465,7 @@ mod test {
             .expect_fetch_identity()
             .returning(move |_, _| Ok(None));
         state_repository_mock
-            .expect_fetch_documents::<Document>()
+            .expect_fetch_documents()
             .returning(move |_, _, _, _| Ok(vec![]));
 
         let execution_context = StateTransitionExecutionContext::default();

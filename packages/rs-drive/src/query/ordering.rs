@@ -30,7 +30,7 @@
 //! Query Ordering
 //!
 
-use ciborium::value::Value;
+use dpp::platform_value::Value;
 use grovedb::Error;
 
 /// Order clause struct
