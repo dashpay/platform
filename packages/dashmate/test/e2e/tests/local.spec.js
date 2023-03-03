@@ -28,7 +28,7 @@ describe('Local dashmate', function main() {
     });
 
     it('Setup local group nodes', async () => {
-      // await dashmate.setupLocal(nodes = 3);
+      await dashmate.setupLocal(nodes = 3);
 
       await isGroupServicesRunning(false, container);
 
@@ -94,7 +94,7 @@ describe('Local dashmate', function main() {
       await isGroupServicesRunning(false, container);
 
       const status = await dashmate.getGroupStatus('status');
-      expect(status).to.be.empty();
+      expect(status).to.be.equal('');
     });
 
     it('Start again local group nodes', async () => {
@@ -122,7 +122,7 @@ describe('Local dashmate', function main() {
       }
     });
 
-    it.only('Reset local group nodes', async () => {
+    it('Reset local group nodes', async () => {
       const status = await dashmate.getGroupStatus('status');
 
       await dashmate.stop(localNetwork);
@@ -133,7 +133,7 @@ describe('Local dashmate', function main() {
 
       if (await isConfigExist(localNetwork)) {
         const resetConfig = await getConfig(localNetwork);
-        expect(isEqual(resetConfig, localConfig)).to.equal(false, 'Local config is the same after restart.');
+        expect(isEqual(resetConfig, localConfig)).to.equal(false, 'Local config is not the same after restart.');
       } else {
         throw new Error('There is no local config after restart.');
       }

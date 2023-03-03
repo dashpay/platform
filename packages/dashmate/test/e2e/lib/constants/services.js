@@ -1,4 +1,5 @@
 const services = {
+  dashmate_helper: 'Dashmate Helper',
   dapi_envoy: 'DAPI Envoy',
   dapi_api: 'DAPI API',
   drive_tenderdash: 'Drive Tenderdash',

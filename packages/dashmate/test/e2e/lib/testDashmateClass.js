@@ -124,7 +124,7 @@ class TestDashmateClass {
    * @return {Promise<string>}
    */
   async getGroupStatus(scope) {
-    const res = await execute(`yarn dashmate group ${scope} --format=json`);
+    const res = await execute(`yarn dashmate group ${scope}`);
 
     if (res.status !== undefined) {
       throw new Error(`${res.stderr} with exit code: ${res.status}`);
