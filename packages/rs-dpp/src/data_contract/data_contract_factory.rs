@@ -100,7 +100,9 @@ impl DataContractFactory {
 
         let cbor = value_to_cbor(JsonValue::Object(root_map), Some(1))?;
 
-        DataContract::from_cbor(cbor)
+        let mut data_contract = DataContract::from_cbor(cbor)?;
+        data_contract.set_entropy(entropy);
+        Ok(data_contract)
     }
 
     /// Create Data Contract from plain object
