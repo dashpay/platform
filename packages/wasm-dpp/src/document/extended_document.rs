@@ -336,3 +336,15 @@ impl From<ExtendedDocument> for ExtendedDocumentWasm {
         ExtendedDocumentWasm(d)
     }
 }
+
+impl From<ExtendedDocumentWasm> for ExtendedDocument {
+    fn from(d: ExtendedDocumentWasm) -> Self {
+        d.0
+    }
+}
+
+impl From<&ExtendedDocumentWasm> for ExtendedDocument {
+    fn from(d: &ExtendedDocumentWasm) -> Self {
+        d.0.clone()
+    }
+}

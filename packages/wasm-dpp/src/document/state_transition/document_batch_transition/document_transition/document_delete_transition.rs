@@ -21,6 +21,12 @@ impl From<DocumentDeleteTransition> for DocumentDeleteTransitionWasm {
     }
 }
 
+impl From<DocumentDeleteTransitionWasm> for DocumentDeleteTransition {
+    fn from(v: DocumentDeleteTransitionWasm) -> Self {
+        v.inner
+    }
+}
+
 #[wasm_bindgen(js_class=DocumentDeleteTransition)]
 impl DocumentDeleteTransitionWasm {
     #[wasm_bindgen(js_name=getAction)]
@@ -31,7 +37,7 @@ impl DocumentDeleteTransitionWasm {
     #[wasm_bindgen(js_name=toObject)]
     pub fn to_object(&self, options: &JsValue) -> Result<JsValue, JsValue> {
         to_object(
-            &self.inner,
+            self.inner.to_object().with_js_error()?,
             options,
             document_delete_transition::IDENTIFIER_FIELDS,
             [],

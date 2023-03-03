@@ -1,4 +1,4 @@
-use std::convert::TryInto;
+use std::convert::{TryFrom, TryInto};
 
 use anyhow::anyhow;
 use anyhow::Context;
@@ -7,7 +7,6 @@ use lazy_static::lazy_static;
 use serde_json::{json, Value as JsonValue};
 use std::sync::Arc;
 
-use crate::state_transition::state_transition_execution_context::StateTransitionExecutionContext;
 use crate::{
     consensus::basic::BasicError,
     data_contract::{
@@ -20,6 +19,10 @@ use crate::{
     validation::{JsonSchemaValidator, SimpleValidationResult},
     version::ProtocolVersionValidator,
     DashPlatformProtocolInitError, ProtocolError,
+};
+use crate::{
+    consensus::ConsensusError,
+    state_transition::state_transition_execution_context::StateTransitionExecutionContext,
 };
 
 use super::schema_compatibility_validator::validate_schema_compatibility;
@@ -73,9 +76,18 @@ where
             return Ok(result);
         }
 
-        let protocol_version = raw_state_transition
+        let protocol_version = match raw_state_transition
             .get_u64(property_names::PROTOCOL_VERSION)
-            .with_context(|| "invalid protocol version")? as u32;
+            .and_then(|x| u32::try_from(x).map_err(Into::into))
+        {
+            Ok(v) => v,
+            Err(parsing_error) => {
+                return Ok(SimpleValidationResult::new(Some(vec![
+                    ConsensusError::ProtocolVersionParsingError { parsing_error },
+                ])))
+            }
+        };
+
         let result = self.protocol_version_validator.validate(protocol_version)?;
         if !result.is_valid() {
             return Ok(result);
@@ -123,7 +135,10 @@ where
         let raw_existing_data_contract = existing_data_contract.to_object(false)?;
 
         let mut old_base_data_contract = raw_existing_data_contract;
-        old_base_data_contract.remove(contract_property_names::DEFINITIONS)?;
+
+        old_base_data_contract
+            .remove(contract_property_names::DEFINITIONS)
+            .ok();
         old_base_data_contract.remove(contract_property_names::DOCUMENTS)?;
         old_base_data_contract.remove(contract_property_names::VERSION)?;
 
@@ -136,7 +151,9 @@ where
         )?;
 
         let mut new_base_data_contract = raw_data_contract.clone();
-        new_base_data_contract.remove(contract_property_names::DEFINITIONS)?;
+        new_base_data_contract
+            .remove(contract_property_names::DEFINITIONS)
+            .ok();
         new_base_data_contract.remove(contract_property_names::DOCUMENTS)?;
         new_base_data_contract.remove(contract_property_names::VERSION)?;
 
@@ -160,19 +177,6 @@ where
         }
         if !validation_result.is_valid() {
             return Ok(validation_result);
-        }
-
-        // check indices are not changes
-        let new_documents = raw_data_contract
-            .get_value("documents")?
-            .as_object()
-            .ok_or_else(|| anyhow!("the 'documents' property is not an array"))?;
-        let result = validate_indices_are_backward_compatible(
-            &existing_data_contract.documents,
-            new_documents,
-        )?;
-        if !result.is_valid() {
-            return Ok(result);
         }
 
         // Schema should be backward compatible
@@ -199,6 +203,23 @@ where
                     return Err(ProtocolError::ParsingError(e.to_string()))
                 }
             }
+        }
+
+        if !validation_result.is_valid() {
+            return Ok(validation_result);
+        }
+
+        // check indices are not changed
+        let new_documents = raw_data_contract
+            .get_value("documents")?
+            .as_object()
+            .ok_or_else(|| anyhow!("the 'documents' property is not an array"))?;
+        let result = validate_indices_are_backward_compatible(
+            existing_data_contract.documents.iter(),
+            new_documents,
+        )?;
+        if !result.is_valid() {
+            return Ok(result);
         }
 
         Ok(validation_result)

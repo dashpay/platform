@@ -2,7 +2,6 @@ use std::convert::TryInto;
 use std::time::Duration;
 
 use chrono::Utc;
-use dashcore::consensus;
 use serde_json::{json, Value as JsonValue};
 
 use crate::{
@@ -73,12 +72,8 @@ fn setup_test() -> TestData {
         .returning(move |_, _| Ok(Some(data_contract_to_return.clone())));
 
     state_repository_mock
-        .expect_fetch_latest_platform_block_header()
-        .returning(|| {
-            Ok(consensus::serialize(&new_block_header(Some(
-                Utc::now().timestamp() as u32,
-            ))))
-        });
+        .expect_fetch_latest_platform_block_time()
+        .returning(|| Ok(Utc::now().timestamp_millis() as u64));
 
     TestData {
         owner_id,
@@ -179,7 +174,7 @@ async fn should_return_invalid_result_if_document_transition_with_action_delete_
     .expect("documents batch state transition should be created");
 
     state_repository_mock
-        .expect_fetch_documents::<Document>()
+        .expect_fetch_documents()
         .returning(move |_, _, _, _| Ok(vec![]));
 
     let validation_result =
@@ -370,7 +365,7 @@ async fn should_return_invalid_result_if_timestamps_mismatch() {
         .for_each(|t| set_updated_at(t, Some(now_ts)));
 
     state_repository_mock
-        .expect_fetch_documents::<Document>()
+        .expect_fetch_documents()
         .returning(move |_, _, _, _| Ok(vec![]));
 
     let validation_result =
@@ -422,7 +417,7 @@ async fn should_return_invalid_result_if_crated_at_has_violated_time_window() {
         .for_each(|t| set_created_at(t, Some(now_ts_minus_6_mins)));
 
     state_repository_mock
-        .expect_fetch_documents::<Document>()
+        .expect_fetch_documents()
         .returning(move |_, _, _, _| Ok(vec![]));
 
     let validation_result =
@@ -475,7 +470,7 @@ async fn should_not_validate_time_in_block_window_on_dry_run() {
         .for_each(|t| set_created_at(t, Some(now_ts_minus_6_mins)));
 
     state_repository_mock
-        .expect_fetch_documents::<Document>()
+        .expect_fetch_documents()
         .returning(move |_, _, _, _| Ok(vec![]));
 
     let result =
@@ -520,7 +515,7 @@ async fn should_return_invalid_result_if_updated_at_has_violated_time_window() {
     });
 
     state_repository_mock
-        .expect_fetch_documents::<Document>()
+        .expect_fetch_documents()
         .returning(move |_, _, _, _| Ok(vec![]));
 
     let validation_result =
@@ -558,7 +553,7 @@ async fn should_return_valid_result_if_document_transitions_are_valid() {
     fetched_document_2.owner_id = owner_id.to_buffer();
 
     state_repository_mock
-        .expect_fetch_documents::<Document>()
+        .expect_fetch_documents()
         .returning(move |_, _, _, _| {
             Ok(vec![fetched_document_1.clone(), fetched_document_2.clone()])
         });
@@ -584,5 +579,6 @@ async fn should_return_valid_result_if_document_transitions_are_valid() {
         validate_document_batch_transition_state(&state_repository_mock, &state_transition)
             .await
             .expect("validation result should be returned");
+    println!("result is {:#?}", validation_result);
     assert!(validation_result.is_valid());
 }

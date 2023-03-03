@@ -2,18 +2,20 @@ use dpp::document::ExtendedDocument;
 use dpp::identity::KeyID;
 use dpp::{
     document::{
-        state_transition::documents_batch_transition::property_names, DocumentsBatchTransition,
+        document_transition::document_base_transition,
+        state_transition::documents_batch_transition::{self, property_names},
+        DocumentsBatchTransition,
     },
-    prelude::{DataContract, Identifier},
+    prelude::{DataContract, DocumentTransition, Identifier},
     state_transition::{
-        state_transition_execution_context::StateTransitionExecutionContext,
         StateTransitionConvert, StateTransitionIdentitySigned, StateTransitionLike,
         StateTransitionType,
     },
-    util::json_value::JsonValueExt,
+    util::json_value::{JsonValueExt, ReplaceWith},
 };
 use js_sys::{Array, Reflect};
 use serde::{Deserialize, Serialize};
+use serde_json::Value;
 use wasm_bindgen::prelude::*;
 
 use crate::{
@@ -22,23 +24,18 @@ use crate::{
     document_batch_transition::document_transition::DocumentTransitionWasm,
     identifier::IdentifierWrapper,
     lodash::lodash_set,
-    utils::{ToSerdeJSONExt, WithJsError},
-    ExtendedDocumentWasm, IdentityPublicKeyWasm,
+    utils::{
+        replace_identifiers_with_bytes_without_failing, IntoWasm, ToSerdeJSONExt, WithJsError,
+    },
+    ExtendedDocumentWasm, IdentityPublicKeyWasm, StateTransitionExecutionContextWasm,
 };
+pub mod apply_document_batch_transition;
 pub mod document_transition;
+pub mod validation;
 
 #[derive(Clone, Debug)]
 #[wasm_bindgen(js_name = DocumentsBatchTransition)]
 pub struct DocumentsBatchTransitionWASM(DocumentsBatchTransition);
-
-/// Collections of Documents split by actions
-#[derive(Debug, Default)]
-#[wasm_bindgen(js_name=DocumentsContainer)]
-pub struct DocumentsContainer {
-    create: Vec<ExtendedDocument>,
-    replace: Vec<ExtendedDocument>,
-    delete: Vec<ExtendedDocument>,
-}
 
 #[derive(Debug, Serialize, Deserialize, Default, Clone, Copy)]
 #[serde(rename_all = "camelCase")]
@@ -47,49 +44,6 @@ pub struct ToObjectOptions {
     skip_signature: bool,
     #[serde(default)]
     skip_identifiers_conversion: bool,
-}
-
-impl From<DocumentsBatchTransitionWASM> for DocumentsBatchTransition {
-    fn from(val: DocumentsBatchTransitionWASM) -> Self {
-        val.0
-    }
-}
-
-#[wasm_bindgen(js_class=DocumentsContainer)]
-impl DocumentsContainer {
-    #[wasm_bindgen(constructor)]
-    pub fn new() -> Self {
-        Default::default()
-    }
-
-    #[wasm_bindgen(js_name=pushDocumentCreate)]
-    pub fn push_document_create(&mut self, d: ExtendedDocumentWasm) {
-        self.create.push(d.0);
-    }
-
-    #[wasm_bindgen(js_name=pushDocumentReplace)]
-    pub fn push_document_replace(&mut self, d: ExtendedDocumentWasm) {
-        self.replace.push(d.0);
-    }
-
-    #[wasm_bindgen(js_name=pushDocumentDelete)]
-    pub fn push_document_delete(&mut self, d: ExtendedDocumentWasm) {
-        self.delete.push(d.0);
-    }
-}
-
-impl DocumentsContainer {
-    pub fn take_documents_create(&mut self) -> Vec<ExtendedDocument> {
-        std::mem::take(&mut self.create)
-    }
-
-    pub fn take_documents_replace(&mut self) -> Vec<ExtendedDocument> {
-        std::mem::take(&mut self.replace)
-    }
-
-    pub fn take_documents_delete(&mut self) -> Vec<ExtendedDocument> {
-        std::mem::take(&mut self.delete)
-    }
 }
 
 #[wasm_bindgen(js_class=DocumentsBatchTransition)]
@@ -108,11 +62,26 @@ impl DocumentsBatchTransitionWASM {
             data_contracts.push(data_contract);
         }
 
-        let documents_batch_transition = DocumentsBatchTransition::from_json_object(
-            js_raw_transition.with_serde_to_json_value()?,
-            data_contracts,
-        )
-        .with_js_error()?;
+        let mut batch_transition_value = js_raw_transition.with_serde_to_json_value()?;
+        replace_identifiers_with_bytes_without_failing(
+            &mut batch_transition_value,
+            DocumentsBatchTransition::identifiers_property_paths(),
+        );
+
+        if let Some(Value::Array(ref mut transitions)) =
+            batch_transition_value.get_mut(documents_batch_transition::property_names::TRANSITIONS)
+        {
+            for t in transitions {
+                replace_identifiers_with_bytes_without_failing(
+                    t,
+                    document_base_transition::IDENTIFIER_FIELDS,
+                );
+            }
+        }
+
+        let documents_batch_transition =
+            DocumentsBatchTransition::from_raw_object(batch_transition_value, data_contracts)
+                .with_js_error()?;
 
         Ok(documents_batch_transition.into())
     }
@@ -138,6 +107,21 @@ impl DocumentsBatchTransitionWASM {
         }
 
         array
+    }
+
+    #[wasm_bindgen(js_name=setTransitions)]
+    pub fn set_transitions(&mut self, js_transitions: Array) -> Result<(), JsValue> {
+        let mut transitions = vec![];
+        for js_transition in js_transitions.iter() {
+            let transition: DocumentTransition = js_transition
+                .to_wasm::<DocumentTransitionWasm>("DocumentTransition")?
+                .to_owned()
+                .into();
+            transitions.push(transition)
+        }
+
+        self.0.transitions = transitions;
+        Ok(())
     }
 
     #[wasm_bindgen(js_name=toJSON)]
@@ -341,13 +325,13 @@ impl DocumentsBatchTransitionWASM {
     }
 
     #[wasm_bindgen(js_name=setExecutionContext)]
-    pub fn set_execution_context(&mut self, context: StateExecutionContext) {
-        self.0.set_execution_context(context.into_inner());
+    pub fn set_execution_context(&mut self, context: StateTransitionExecutionContextWasm) {
+        self.0.set_execution_context(context.into())
     }
 
     #[wasm_bindgen(js_name=getExecutionContext)]
-    pub fn get_execution_context(&mut self) -> StateExecutionContext {
-        StateExecutionContext(self.0.get_execution_context().to_owned())
+    pub fn get_execution_context(&mut self) -> StateTransitionExecutionContextWasm {
+        self.0.get_execution_context().clone().into()
     }
 
     #[wasm_bindgen(js_name=toBuffer)]
@@ -377,25 +361,14 @@ impl DocumentsBatchTransitionWASM {
     }
 }
 
-#[wasm_bindgen(js_name=StateExecutionContext)]
-pub struct StateExecutionContext(StateTransitionExecutionContext);
-
-impl StateExecutionContext {
-    pub fn into_inner(self) -> StateTransitionExecutionContext {
-        self.0
-    }
-
-    pub fn inner(&self) -> &StateTransitionExecutionContext {
-        &self.0
-    }
-
-    pub fn inner_mut(&mut self) -> &mut StateTransitionExecutionContext {
-        &mut self.0
-    }
-}
-
 impl From<DocumentsBatchTransition> for DocumentsBatchTransitionWASM {
     fn from(t: DocumentsBatchTransition) -> Self {
         DocumentsBatchTransitionWASM(t)
+    }
+}
+
+impl From<DocumentsBatchTransitionWASM> for DocumentsBatchTransition {
+    fn from(t: DocumentsBatchTransitionWASM) -> Self {
+        t.0
     }
 }

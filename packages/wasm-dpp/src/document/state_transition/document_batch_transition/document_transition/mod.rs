@@ -2,31 +2,36 @@ mod document_create_transition;
 mod document_delete_transition;
 mod document_replace_transition;
 
+use anyhow::Context;
 pub use document_create_transition::*;
 pub use document_delete_transition::*;
 pub use document_replace_transition::*;
 
 use dpp::{
-    document::document_transition::{DocumentTransitionExt, DocumentTransitionObjectLike},
+    document::document_transition::{
+        DocumentCreateTransition, DocumentDeleteTransition, DocumentReplaceTransition,
+        DocumentTransitionExt, DocumentTransitionObjectLike,
+    },
     prelude::{DocumentTransition, Identifier},
     util::{json_schema::JsonSchemaExt, json_value::JsonValueExt},
 };
 use serde::Serialize;
+use serde_json::Value;
 use wasm_bindgen::prelude::*;
 
 use crate::{
     buffer::Buffer,
-    identifier::IdentifierWrapper,
+    identifier::{identifier_from_js_value, IdentifierWrapper},
     lodash::lodash_set,
-    utils::{ToSerdeJSONExt, WithJsError},
+    utils::{try_to_u64, ToSerdeJSONExt, WithJsError},
     with_js_error, BinaryType, ConversionOptions, DataContractWasm,
 };
 
-#[wasm_bindgen]
+#[wasm_bindgen(js_name=DocumentTransition)]
 #[derive(Debug, Clone)]
 pub struct DocumentTransitionWasm(DocumentTransition);
 
-#[wasm_bindgen(js_class=DocumentTransitionWasm)]
+#[wasm_bindgen(js_class=DocumentTransition)]
 impl DocumentTransitionWasm {
     #[wasm_bindgen(js_name=getId)]
     pub fn get_id(&self) -> IdentifierWrapper {
@@ -51,6 +56,88 @@ impl DocumentTransitionWasm {
     #[wasm_bindgen(js_name=getDataContractId)]
     pub fn get_data_contract_id(&self) -> IdentifierWrapper {
         self.0.get_data_contract_id().to_owned().into()
+    }
+
+    #[wasm_bindgen(js_name=setDataContractId)]
+    pub fn set_data_contract_id(&mut self, js_data_contract_id: &JsValue) -> Result<(), JsValue> {
+        let identifier = identifier_from_js_value(js_data_contract_id)?;
+        self.0.set_data_contract_id(identifier);
+        Ok(())
+    }
+
+    #[wasm_bindgen(js_name=getRevision)]
+    pub fn get_revision(&self) -> JsValue {
+        if let Some(revision) = self.0.get_revision() {
+            (revision as f64).into()
+        } else {
+            JsValue::NULL
+        }
+    }
+
+    #[wasm_bindgen(js_name=getCreatedAt)]
+    pub fn get_created_at(&self) -> JsValue {
+        if let Some(created_at) = self.0.get_created_at() {
+            (created_at as f64).into()
+        } else {
+            JsValue::NULL
+        }
+    }
+    #[wasm_bindgen(js_name=getUpdatedAt)]
+    pub fn get_updated_at(&self) -> JsValue {
+        if let Some(updated_at) = self.0.get_updated_at() {
+            (updated_at as f64).into()
+        } else {
+            JsValue::NULL
+        }
+    }
+
+    #[wasm_bindgen(js_name=setUpdatedAt)]
+    pub fn set_updated_at(&mut self, js_timestamp_millis: JsValue) -> Result<(), JsValue> {
+        if js_timestamp_millis.is_undefined() || js_timestamp_millis.is_null() {
+            self.0.set_updated_at(None);
+            return Ok(());
+        }
+        let timestamp_millis = try_to_u64(js_timestamp_millis)
+            .context("setting updatedAt in DocumentsBatchTransition")
+            .with_js_error()?;
+        self.0.set_updated_at(Some(timestamp_millis));
+
+        Ok(())
+    }
+
+    #[wasm_bindgen(js_name=setCreatedAt)]
+    pub fn set_created_at(&mut self, js_timestamp_millis: JsValue) -> Result<(), JsValue> {
+        if js_timestamp_millis.is_undefined() || js_timestamp_millis.is_null() {
+            self.0.set_created_at(None);
+            return Ok(());
+        }
+        let timestamp_millis = try_to_u64(js_timestamp_millis)
+            .context("setting createdAt in DocumentsBatchTransition")
+            .with_js_error()?;
+        self.0.set_created_at(Some(timestamp_millis));
+
+        Ok(())
+    }
+
+    #[wasm_bindgen(js_name=getData)]
+    pub fn get_data(&self) -> Result<JsValue, JsValue> {
+        if let Some(data) = self.0.get_data() {
+            let (identifier_paths, binary_paths) = self
+                .0
+                .get_data_contract()
+                .get_identifiers_and_binary_paths(self.0.get_document_type())
+                .with_js_error()?;
+
+            let js_value = to_object(
+                data.to_owned(),
+                &JsValue::NULL,
+                identifier_paths,
+                binary_paths,
+            )?;
+            Ok(js_value)
+        } else {
+            Ok(JsValue::NULL)
+        }
     }
 
     #[wasm_bindgen(js_name=get)]
@@ -83,7 +170,7 @@ impl DocumentTransitionWasm {
         JsValue::undefined()
     }
 
-    #[wasm_bindgen(js_name=getObject)]
+    #[wasm_bindgen(js_name=toObject)]
     pub fn to_object(&self, options: &JsValue) -> Result<JsValue, JsValue> {
         match self.0 {
             DocumentTransition::Create(ref t) => {
@@ -102,6 +189,36 @@ impl DocumentTransitionWasm {
     pub fn to_json(&self) -> Result<JsValue, JsValue> {
         let json_value = self.0.to_json().with_js_error()?;
         with_js_error!(json_value.serialize(&serde_wasm_bindgen::Serializer::json_compatible()))
+    }
+
+    #[wasm_bindgen(js_name=fromTransitionCreate)]
+    pub fn from_transition_create(
+        js_create_transition: DocumentCreateTransitionWasm,
+    ) -> DocumentTransitionWasm {
+        let transition_create: DocumentCreateTransition = js_create_transition.into();
+        let document_transition = DocumentTransition::Create(transition_create);
+
+        document_transition.into()
+    }
+
+    #[wasm_bindgen(js_name=fromTransitionReplace)]
+    pub fn from_transition_replace(
+        js_replace_transition: DocumentReplaceTransitionWasm,
+    ) -> DocumentTransitionWasm {
+        let transition_replace: DocumentReplaceTransition = js_replace_transition.into();
+        let document_transition = DocumentTransition::Replace(transition_replace);
+
+        document_transition.into()
+    }
+
+    #[wasm_bindgen(js_name=fromTransitionDelete)]
+    pub fn from_transition_delete(
+        js_delete_transition: DocumentDeleteTransitionWasm,
+    ) -> DocumentTransitionWasm {
+        let transition_delete: DocumentDeleteTransition = js_delete_transition.into();
+        let document_transition = DocumentTransition::Delete(transition_delete);
+
+        document_transition.into()
     }
 }
 
@@ -130,6 +247,12 @@ impl From<DocumentTransition> for DocumentTransitionWasm {
     }
 }
 
+impl From<DocumentTransitionWasm> for DocumentTransition {
+    fn from(v: DocumentTransitionWasm) -> Self {
+        v.0
+    }
+}
+
 pub fn from_document_transition_to_js_value(document_transition: DocumentTransition) -> JsValue {
     match document_transition {
         DocumentTransition::Create(create_transition) => {
@@ -145,11 +268,12 @@ pub fn from_document_transition_to_js_value(document_transition: DocumentTransit
 }
 
 pub(crate) fn to_object<'a>(
-    data: &impl DocumentTransitionObjectLike,
+    value: Value,
     options: &JsValue,
     identifiers_paths: impl IntoIterator<Item = &'a str>,
     binary_paths: impl IntoIterator<Item = &'a str>,
 ) -> Result<JsValue, JsValue> {
+    let mut value = value;
     let options: ConversionOptions = if options.is_object() {
         let raw_options = options.with_serde_to_json_value()?;
         serde_json::from_value(raw_options).with_js_error()?
@@ -157,7 +281,6 @@ pub(crate) fn to_object<'a>(
         Default::default()
     };
 
-    let mut value = data.to_object().with_js_error()?;
     let serializer = serde_wasm_bindgen::Serializer::json_compatible();
     let js_value = value.serialize(&serializer)?;
 

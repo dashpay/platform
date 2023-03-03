@@ -1,10 +1,11 @@
+use std::convert::{Infallible, TryInto};
+
 use anyhow::Result as AnyResult;
 use async_trait::async_trait;
 use dashcore::InstantLock;
 #[cfg(feature = "fixtures-and-mocks")]
 use mockall::{automock, predicate::*};
 use serde_json::Value as JsonValue;
-use std::convert::{Infallible, TryInto};
 
 use crate::document::Document;
 use crate::identity::KeyID;
@@ -31,11 +32,15 @@ pub struct FetchTransactionResponse {
     type FetchDataContract=DataContract;
     type FetchIdentity=Identity;
     type FetchTransaction=FetchTransactionResponse;
+    type FetchDocument=Document;
+    type FetchExtendedDocument=ExtendedDocument;
 ))]
 #[async_trait(?Send)]
 pub trait StateRepositoryLike: Sync {
     type ConversionError: Into<ProtocolError>;
     type FetchDataContract: TryInto<DataContract, Error = Self::ConversionError>;
+    type FetchDocument: TryInto<Document, Error = Self::ConversionError>;
+    type FetchExtendedDocument: TryInto<ExtendedDocument, Error = Self::ConversionError>;
     type FetchIdentity: TryInto<Identity, Error = Self::ConversionError>;
     type FetchTransaction: TryInto<FetchTransactionResponse, Error = Self::ConversionError>;
 
@@ -56,27 +61,23 @@ pub trait StateRepositoryLike: Sync {
 
     /// Fetch Documents by Data Contract Id and type
     /// By default, the method should return data as bytes (`Vec<u8>`), but the deserialization to [`Document`] should be also possible
-    async fn fetch_documents<T>(
+    async fn fetch_documents(
         &self,
         contract_id: &Identifier,
         data_contract_type: &str,
         where_query: JsonValue,
         execution_context: &StateTransitionExecutionContext,
-    ) -> AnyResult<Vec<T>>
-    where
-        T: for<'de> serde::de::Deserialize<'de> + 'static;
+    ) -> AnyResult<Vec<Self::FetchDocument>>;
 
     /// Fetch Documents by Data Contract Id and type
     /// By default, the method should return data as bytes (`Vec<u8>`), but the deserialization to [`ExtendedDocument`] should be also possible
-    async fn fetch_extended_documents<T>(
+    async fn fetch_extended_documents(
         &self,
         contract_id: &Identifier,
         data_contract_type: &str,
         where_query: JsonValue,
         execution_context: &StateTransitionExecutionContext,
-    ) -> AnyResult<Vec<T>>
-    where
-        T: for<'de> serde::de::Deserialize<'de> + 'static;
+    ) -> AnyResult<Vec<Self::FetchExtendedDocument>>;
 
     /// Create Document
     async fn create_document(
@@ -227,6 +228,16 @@ pub trait StateRepositoryLike: Sync {
 
     // Get latest (in a queue) withdrawal transaction index
     async fn fetch_latest_platform_core_chain_locked_height(&self) -> AnyResult<Option<u32>>;
+
+    // Enqueue withdrawal transaction
+    async fn enqueue_withdrawal_transaction(
+        &self,
+        index: u64,
+        transaction_bytes: Vec<u8>,
+    ) -> AnyResult<()>;
+
+    // Fetch latest platform block time
+    async fn fetch_latest_platform_block_time(&self) -> AnyResult<u64>;
 
     // Get latest platform block height
     async fn fetch_latest_platform_block_height(&self) -> AnyResult<u64>;

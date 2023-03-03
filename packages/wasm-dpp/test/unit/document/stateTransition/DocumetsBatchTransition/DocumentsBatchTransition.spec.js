@@ -5,7 +5,6 @@ const createDPPMock = require('@dashevo/dpp/lib/test/mocks/createDPPMock');
 const protocolVersion = require('@dashevo/dpp/lib/version/protocolVersion');
 const DocumentFactoryJs = require('@dashevo/dpp/lib/document/DocumentFactory');
 const { default: loadWasmDpp } = require('../../../../../dist');
-const newDocumentsContainer = require('../../../../../lib/test/utils/newDocumentsContainer');
 
 let DocumentFactory;
 let DataContract;
@@ -49,9 +48,9 @@ describe('DocumentsBatchTransition', () => {
       create: documentsJs,
     });
 
-    stateTransition = factory.createStateTransition(await newDocumentsContainer({
+    stateTransition = factory.createStateTransition({
       create: documents,
-    }));
+    });
   });
 
   describe('#getProtocolVersion', () => {

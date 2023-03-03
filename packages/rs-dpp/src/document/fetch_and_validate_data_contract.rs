@@ -19,6 +19,14 @@ pub struct DataContractFetcherAndValidator<ST> {
     state_repository: Arc<ST>,
 }
 
+impl<ST> Clone for DataContractFetcherAndValidator<ST> {
+    fn clone(&self) -> Self {
+        Self {
+            state_repository: self.state_repository.clone(),
+        }
+    }
+}
+
 impl<ST> DataContractFetcherAndValidator<ST>
 where
     ST: StateRepositoryLike,
@@ -27,32 +35,38 @@ where
         Self { state_repository }
     }
 
-    pub async fn validate(
+    pub async fn validate_extended(
         &self,
-        raw_document: &Value,
+        raw_extended_document: &Value,
     ) -> Result<ValidationResult<DataContract>, ProtocolError> {
         // TODO - stateTransitionExecutionContext shouldn't be created because it should be optional for
         // TODO all StateRepository queries
         let ctx = StateTransitionExecutionContext::default();
-        fetch_and_validate_data_contract(self.state_repository.as_ref(), raw_document, &ctx).await
+        fetch_and_validate_data_contract(
+            self.state_repository.as_ref(),
+            raw_extended_document,
+            &ctx,
+        )
+        .await
     }
 }
 
 pub async fn fetch_and_validate_data_contract(
     state_repository: &impl StateRepositoryLike,
-    raw_document: &Value,
+    raw_extended_document: &Value,
     execution_context: &StateTransitionExecutionContext,
 ) -> Result<ValidationResult<DataContract>, ProtocolError> {
     let mut validation_result = ValidationResult::<DataContract>::default();
 
-    let id_bytes = if let Ok(id_bytes) = raw_document.get_bytes(property_names::DATA_CONTRACT_ID) {
-        id_bytes
-    } else {
-        validation_result.add_error(ConsensusError::BasicError(Box::new(
-            BasicError::MissingDataContractIdError,
-        )));
-        return Ok(validation_result);
-    };
+    let id_bytes =
+        if let Ok(id_bytes) = raw_extended_document.get_bytes(property_names::DATA_CONTRACT_ID) {
+            id_bytes
+        } else {
+            validation_result.add_error(ConsensusError::BasicError(Box::new(
+                BasicError::MissingDataContractIdError,
+            )));
+            return Ok(validation_result);
+        };
 
     let data_contract_id = match Identifier::from_bytes(&id_bytes) {
         Ok(id) => id,

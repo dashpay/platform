@@ -85,8 +85,7 @@ pub async fn apply_documents_batch_transition(
                         .ok_or(DocumentError::DocumentNotProvidedError {
                             document_transition: document_transition.clone(),
                         })?;
-
-                    document_replace_transition.replace_document(document);
+                    document_replace_transition.replace_document(document)?;
                     state_repository
                         .update_document(document, state_transition.get_execution_context())
                         .await?;
@@ -145,7 +144,6 @@ fn document_from_transition_replace(
 
 #[cfg(test)]
 mod test {
-    use dashcore::consensus;
     use serde_json::{json, Value};
 
     use crate::document::Document;
@@ -193,14 +191,14 @@ mod test {
 
         state_transition.get_execution_context().enable_dry_run();
         state_repository
-            .expect_fetch_documents::<Document>()
+            .expect_fetch_documents()
             .returning(|_, _, _, _| Ok(vec![]));
         state_repository
             .expect_update_document()
             .returning(|_, _| Ok(()));
         state_repository
-            .expect_fetch_latest_platform_block_header()
-            .returning(|| Ok(consensus::serialize(&new_block_header(None))));
+            .expect_fetch_latest_platform_block_time()
+            .returning(|| Ok(0));
 
         let result = apply_documents_batch_transition(&state_repository, &state_transition).await;
         assert!(result.is_ok());

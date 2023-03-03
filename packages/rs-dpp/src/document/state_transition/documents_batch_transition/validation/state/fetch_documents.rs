@@ -1,6 +1,10 @@
-use std::collections::hash_map::{Entry, HashMap};
+use std::{
+    collections::hash_map::{Entry, HashMap},
+    convert::TryInto,
+};
 
 use futures::future::join_all;
+use itertools::Itertools;
 use serde_json::json;
 
 use crate::document::Document;
@@ -8,7 +12,7 @@ use crate::{
     document::document_transition::DocumentTransition, get_from_transition,
     state_repository::StateRepositoryLike,
     state_transition::state_transition_execution_context::StateTransitionExecutionContext,
-    util::string_encoding::Encoding,
+    util::string_encoding::Encoding, ProtocolError,
 };
 
 pub async fn fetch_documents(
@@ -46,22 +50,26 @@ pub async fn fetch_documents(
             "orderBy" : [[ "$id", "asc"]],
         });
 
-        let documents = state_repository.fetch_documents(
+        let future = state_repository.fetch_documents(
             get_from_transition!(dts[0], data_contract_id),
             get_from_transition!(dts[0], document_type),
             options,
             execution_context,
         );
-        fetch_documents_futures.push(documents);
+
+        fetch_documents_futures.push(future);
+    }
+    let results = join_all(fetch_documents_futures).await;
+
+    let mut documents = vec![];
+    for result in results.into_iter() {
+        let result = result?;
+        let documents_from_fetch: Vec<Document> = result
+            .into_iter()
+            .map(|d| d.try_into().map_err(Into::<ProtocolError>::into))
+            .try_collect()?;
+        documents.extend(documents_from_fetch)
     }
 
-    let results: Result<Vec<Vec<Document>>, anyhow::Error> = join_all(fetch_documents_futures)
-        .await
-        .into_iter()
-        .collect();
-
-    let documents = results?.into_iter().flatten().collect();
     Ok(documents)
 }
-
-//  TODO spec for fetchDocumentsFactory

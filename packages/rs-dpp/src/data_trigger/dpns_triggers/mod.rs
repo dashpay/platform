@@ -1,3 +1,5 @@
+use std::convert::TryInto;
+
 use anyhow::Context;
 use anyhow::{anyhow, bail};
 use platform_value::btreemap_extensions::BTreeValueMapHelper;
@@ -6,6 +8,7 @@ use serde_json::{json, Value as JsonValue};
 use crate::document::{Document, ExtendedDocument};
 use crate::util::hash::hash;
 use crate::util::string_encoding::Encoding;
+use crate::ProtocolError;
 use crate::{
     document::document_transition::DocumentTransition, get_from_transition, prelude::Identifier,
     state_repository::StateRepositoryLike, util::json_value::JsonValueExt,
@@ -133,7 +136,7 @@ where
         let parent_domain_label = parent_domain_segments.next().unwrap().to_string();
         let grand_parent_domain_name = parent_domain_segments.collect::<Vec<&str>>().join(".");
 
-        let documents: Vec<Document> = context
+        let documents_data = context
             .state_repository
             .fetch_documents(
                 &context.data_contract.id,
@@ -147,6 +150,10 @@ where
                 context.state_transition_execution_context,
             )
             .await?;
+        let documents: Vec<Document> = documents_data
+            .into_iter()
+            .map(|d| d.try_into().map_err(Into::<ProtocolError>::into))
+            .collect::<Result<Vec<Document>, ProtocolError>>()?;
 
         if !is_dry_run {
             if documents.is_empty() {
@@ -190,7 +197,7 @@ where
 
     let salted_domain_hash = hash(salted_domain_buffer);
 
-    let preorder_documents: Vec<Document> = context
+    let preorder_documents_data = context
         .state_repository
         .fetch_documents(
             &context.data_contract.id,
@@ -202,6 +209,10 @@ where
             context.state_transition_execution_context,
         )
         .await?;
+    let preorder_documents: Vec<Document> = preorder_documents_data
+        .into_iter()
+        .map(|d| d.try_into().map_err(Into::<ProtocolError>::into))
+        .collect::<Result<Vec<Document>, ProtocolError>>()?;
 
     if is_dry_run {
         return Ok(result);
@@ -252,7 +263,7 @@ mod test {
         let first_transition = transitions.get(0).expect("transition should be present");
 
         state_repository
-            .expect_fetch_documents::<Document>()
+            .expect_fetch_documents()
             .returning(|_, _, _, _| Ok(vec![]));
         transition_execution_context.enable_dry_run();
 

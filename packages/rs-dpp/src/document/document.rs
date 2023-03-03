@@ -63,7 +63,6 @@ use crate::ProtocolError;
 /// The property names of a document
 pub mod property_names {
     pub const ID: &str = "$id";
-    pub const DOCUMENT_TYPE: &str = "$type";
     pub const REVISION: &str = "$revision";
     pub const OWNER_ID: &str = "$ownerId";
     pub const CREATED_AT: &str = "$createdAt";

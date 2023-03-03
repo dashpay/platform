@@ -98,7 +98,7 @@ where
                 &document_entropy,
             );
 
-            let documents: Vec<Document> = self
+            let documents = self
                 .state_repository
                 .fetch_documents(
                     withdrawals_contract::CONTRACT_ID.deref(),

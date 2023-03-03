@@ -60,7 +60,7 @@ mod apply_identity_credit_withdrawal_transition_factory {
         let mut state_repository = MockStateRepositoryLike::default();
 
         state_repository
-            .expect_fetch_documents::<Document>()
+            .expect_fetch_documents()
             .returning(|_, _, _, _| anyhow::Ok(vec![]));
 
         state_repository

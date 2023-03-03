@@ -4,6 +4,8 @@ pub use state_transition::documents_batch_transition::validation;
 pub use state_transition::documents_batch_transition::DocumentsBatchTransition;
 
 mod document;
+
+pub mod document_facade;
 pub mod document_factory;
 pub mod document_validator;
 pub mod errors;

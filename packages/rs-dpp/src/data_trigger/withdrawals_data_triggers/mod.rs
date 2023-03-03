@@ -1,5 +1,6 @@
 use anyhow::bail;
 use serde_json::json;
+use std::convert::TryInto;
 
 use crate::contracts::withdrawals_contract;
 use crate::data_trigger::DataTriggerError;
@@ -10,6 +11,7 @@ use crate::get_from_transition;
 use crate::prelude::DocumentTransition;
 use crate::prelude::Identifier;
 use crate::state_repository::StateRepositoryLike;
+use crate::ProtocolError;
 use platform_value::btreemap_extensions::BTreeValueMapHelper;
 
 pub async fn delete_withdrawal_data_trigger<'a, SR>(
@@ -29,7 +31,7 @@ where
         );
     };
 
-    let withdrawals: Vec<Document> = context
+    let withdrawals_not_converted = context
         .state_repository
         .fetch_documents(
             &context.data_contract.id,
@@ -42,6 +44,11 @@ where
             context.state_transition_execution_context,
         )
         .await?;
+
+    let withdrawals: Vec<Document> = withdrawals_not_converted
+        .into_iter()
+        .map(|d| d.try_into().map_err(Into::<ProtocolError>::into))
+        .collect::<Result<Vec<Document>, ProtocolError>>()?;
 
     let Some(withdrawal) = withdrawals.get(0) else {
         let err = DataTriggerError::DataTriggerConditionError {
@@ -96,7 +103,7 @@ mod tests {
         let owner_id = &data_contract.owner_id;
 
         state_repository
-            .expect_fetch_documents::<Document>()
+            .expect_fetch_documents()
             .returning(|_, _, _, _| Ok(vec![]));
 
         let document_transition = DocumentTransition::Delete(Default::default());
@@ -145,7 +152,7 @@ mod tests {
         ).expect("expected withdrawal document");
 
         state_repository
-            .expect_fetch_documents::<Document>()
+            .expect_fetch_documents()
             .return_once(move |_, _, _, _| Ok(vec![document]));
 
         let document_transition = DocumentTransition::Delete(Default::default());

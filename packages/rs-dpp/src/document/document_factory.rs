@@ -288,7 +288,7 @@ where
     ) -> Result<DataContract, ProtocolError> {
         let mut result = self
             .data_contract_fetcher_and_validator
-            .validate(raw_document)
+            .validate_extended(raw_document)
             .await?;
 
         if !result.is_valid() {
