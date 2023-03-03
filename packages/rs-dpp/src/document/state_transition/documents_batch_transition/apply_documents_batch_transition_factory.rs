@@ -10,7 +10,7 @@ use crate::{
 
 use super::{
     document_transition::{Action, DocumentReplaceTransition, DocumentTransition},
-    validation::state::fetch_documents::fetch_documents,
+    validation::state::fetch_documents::fetch_extended_documents,
     DocumentsBatchTransition,
 };
 
@@ -49,16 +49,16 @@ pub async fn apply_documents_batch_transition(
         .iter()
         .filter(|dt| dt.base().action == Action::Replace);
 
-    let fetched_documents = fetch_documents(
+    let fetched_documents = fetch_extended_documents(
         state_repository,
         replace_transitions,
         &state_transition.execution_context,
     )
     .await?;
 
-    let mut fetched_documents_by_id: HashMap<Identifier, Document> = fetched_documents
+    let mut fetched_documents_by_id: HashMap<Identifier, ExtendedDocument> = fetched_documents
         .into_iter()
-        .map(|dt| (dt.id.into(), dt))
+        .map(|dt| (dt.id(), dt))
         .collect();
 
     // since groveDB doesn't support parallel inserts, we need to make them sequential
@@ -85,7 +85,7 @@ pub async fn apply_documents_batch_transition(
                         .ok_or(DocumentError::DocumentNotProvidedError {
                             document_transition: document_transition.clone(),
                         })?;
-                    document_replace_transition.replace_document(document)?;
+                    document_replace_transition.replace_extended_document(document)?;
                     state_repository
                         .update_document(document, state_transition.get_execution_context())
                         .await?;

@@ -15,6 +15,7 @@ let fetchDocuments;
 let DocumentTransition;
 let DocumentCreateTransition;
 let StateTransitionExecutionContext;
+let ExtendedDocument;
 
 describe('fetchDocumentsFactory', () => {
   let stateRepositoryMock;
@@ -43,9 +44,15 @@ describe('fetchDocumentsFactory', () => {
     const dataContractBuffer = documentsJs[0].dataContract.toBuffer();
     const dataContract = DataContract.fromBuffer(dataContractBuffer);
 
-    documents = documentsJs.map((document) => new Document(
-      document.toObject(), dataContract.clone(),
-    ));
+    documents = documentsJs.map((document) => {
+      console.log(1);
+      document.toObject();
+      console.log(2);
+
+      return new Document(
+        document.toObject(), dataContract.clone(), document.getType(),
+      );
+    });
     documentTransitionsJs = getDocumentTransitionsFixture({
       create: documentsJs,
     });

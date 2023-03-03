@@ -26,7 +26,7 @@ pub async fn fetch_documents_wasm(
     }
     let execution_context: StateTransitionExecutionContext = js_execution_context.into();
 
-    let documents = fetch_documents::fetch_documents(
+    let documents = fetch_documents::fetch_extended_documents(
         &wrapped_state_repository,
         document_transitions,
         &execution_context,

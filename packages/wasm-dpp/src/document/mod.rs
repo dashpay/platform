@@ -80,14 +80,15 @@ impl DocumentWasm {
             .get_identifiers_and_binary_paths(document_type_name.as_str())
             .with_js_error()?;
 
-        raw_document
+        // TODO: figure out a better way to replace identifiers
+        let _ = raw_document
             .replace_identifier_paths(
                 identifier_paths
                     .into_iter()
                     .chain(EXTENDED_DOCUMENT_IDENTIFIER_FIELDS),
                 ReplaceWith::Bytes,
-            )
-            .with_js_error()?;
+            );
+            // .with_js_error()?;
         // The binary paths are not being converted, because they always should be a `Buffer`. `Buffer` is always an Array
 
         let document = Document::from_raw_json_document(raw_document).with_js_error()?;

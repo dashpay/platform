@@ -13,7 +13,7 @@ use crate::{
     mocks::SMLStore,
     prelude::Identifier,
     state_repository::StateRepositoryLike,
-    util::{json_value::JsonValueExt, string_encoding::Encoding},
+    util::{string_encoding::Encoding},
     ProtocolError,
 };
 

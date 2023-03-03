@@ -121,6 +121,6 @@ impl DocumentFacadeWasm {
             .to_wasm::<DataContractWasm>("DataContract")?;
 
         self.validator
-            .validate_extended(&js_raw_document, &data_contract)
+            .validate(&js_raw_document, &data_contract)
     }
 }

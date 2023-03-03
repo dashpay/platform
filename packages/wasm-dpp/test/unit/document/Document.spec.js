@@ -15,9 +15,9 @@ const { default: loadWasmDpp } = require('../../../dist');
 let DataContractFactory;
 let DataContractValidator;
 let Identifier;
-let DocumentInStateTransition;
+let ExtendedDocument;
 
-// TODO: should be renamed to DocumentInStateTransition?
+// TODO: should be renamed to ExtendedDocument?
 describe('Document', () => {
   let rawDocument;
   let document;
@@ -30,7 +30,7 @@ describe('Document', () => {
   // eslint-disable-next-line prefer-arrow-callback
   beforeEach(async function beforeEach() {
     ({
-      Identifier, DataContractFactory, DataContractValidator, DocumentInStateTransition,
+      Identifier, DataContractFactory, DataContractValidator, ExtendedDocument,
     } = await loadWasmDpp());
 
     const now = new Date().getTime();
@@ -101,7 +101,7 @@ describe('Document', () => {
       $updatedAt: now,
     };
 
-    document = new DocumentInStateTransition(rawDocument, dataContract);
+    document = new ExtendedDocument(rawDocument, dataContract);
     rawDocumentJs = lodash.cloneDeepWith(rawDocument);
     rawDocumentJs.$id = jsId;
     rawDocumentJs.$ownerId = jsOwnerId;
@@ -123,7 +123,7 @@ describe('Document', () => {
         ...data,
       };
 
-      document = new DocumentInStateTransition(rawDocument, dataContract);
+      document = new ExtendedDocument(rawDocument, dataContract);
       expect(document.getId().toBuffer()).to.deep.equal(rawDocument.$id.toBuffer());
     });
 
@@ -153,7 +153,7 @@ describe('Document', () => {
         ...data,
       };
 
-      document = new DocumentInStateTransition(rawDocument, dataContract);
+      document = new ExtendedDocument(rawDocument, dataContract);
 
       expect(document.getDataContractId().toBuffer())
         .to.deep.equal(rawDocument.$dataContractId.toBuffer());
@@ -170,7 +170,7 @@ describe('Document', () => {
         ...data,
       };
 
-      document = new DocumentInStateTransition(rawDocument, dataContract);
+      document = new ExtendedDocument(rawDocument, dataContract);
 
       expect(document.getOwnerId().toBuffer()).to.deep.equal(rawDocument.$ownerId.toBuffer());
     });
@@ -185,7 +185,7 @@ describe('Document', () => {
         ...data,
       };
 
-      document = new DocumentInStateTransition(rawDocument, dataContract);
+      document = new ExtendedDocument(rawDocument, dataContract);
       expect(document.get('action')).to.equal(undefined);
     });
 
@@ -200,7 +200,7 @@ describe('Document', () => {
         ...data,
       };
 
-      document = new DocumentInStateTransition(rawDocument, dataContract);
+      document = new ExtendedDocument(rawDocument, dataContract);
 
       expect(document.getRevision()).to.equal(rawDocument.$revision);
     });
@@ -218,7 +218,7 @@ describe('Document', () => {
         ...data,
       };
 
-      document = new DocumentInStateTransition(rawDocument, dataContract);
+      document = new ExtendedDocument(rawDocument, dataContract);
 
       expect(document.getCreatedAt()).to.equal(rawDocument.$createdAt);
     });
@@ -236,7 +236,7 @@ describe('Document', () => {
         ...data,
       };
 
-      document = new DocumentInStateTransition(rawDocument, dataContract);
+      document = new ExtendedDocument(rawDocument, dataContract);
 
       expect(document.getUpdatedAt()).to.equal(rawDocument.$updatedAt);
     });

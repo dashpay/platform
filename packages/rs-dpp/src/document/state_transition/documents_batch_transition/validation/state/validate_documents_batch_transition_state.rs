@@ -3,7 +3,7 @@ use std::convert::TryInto;
 use futures::future::join_all;
 use itertools::Itertools;
 
-use crate::document::Document;
+use crate::document::{ExtendedDocument};
 use crate::{
     block_time_window::validate_time_in_block_time_window::validate_time_in_block_time_window,
     consensus::ConsensusError,
@@ -23,7 +23,7 @@ use crate::{
 };
 
 use super::{
-    execute_data_triggers::execute_data_triggers, fetch_documents::fetch_documents,
+    execute_data_triggers::execute_data_triggers, fetch_documents::fetch_extended_documents,
     validate_documents_uniqueness_by_indices::validate_documents_uniqueness_by_indices,
 };
 
@@ -85,7 +85,7 @@ pub async fn validate_document_transitions(
     execution_context.add_operations(tmp_execution_context.get_operations());
 
     let fetched_documents =
-        fetch_documents(state_repository, &transitions, execution_context).await?;
+        fetch_extended_documents(state_repository, &transitions, execution_context).await?;
 
     // Calculate time window for timestamp
     let last_header_time_millis = state_repository.fetch_latest_platform_block_time().await?;
@@ -146,7 +146,7 @@ pub async fn validate_document_transitions(
 
 fn validate_transition(
     transition: &DocumentTransition,
-    fetched_documents: &[Document],
+    fetched_documents: &[ExtendedDocument],
     last_header_block_time_millis: u64,
     owner_id: &Identifier,
 ) -> ValidationResult<()> {
@@ -201,23 +201,23 @@ fn validate_transition(
 
 fn check_ownership(
     document_transition: &DocumentTransition,
-    fetched_documents: &[Document],
+    fetched_documents: &[ExtendedDocument],
     owner_id: &Identifier,
 ) -> ValidationResult<()> {
     let mut result = ValidationResult::default();
     let fetched_document = match fetched_documents
         .iter()
-        .find(|d| d.id == document_transition.base().id)
+        .find(|d| d.id() == document_transition.base().id)
     {
         Some(d) => d,
         None => return result,
     };
-    if &fetched_document.owner_id != owner_id {
+    if &fetched_document.owner_id() != owner_id {
         result.add_error(ConsensusError::StateError(Box::new(
             StateError::DocumentOwnerIdMismatchError {
                 document_id: document_transition.base().id,
                 document_owner_id: owner_id.to_owned(),
-                existing_document_owner_id: fetched_document.owner_id.into(),
+                existing_document_owner_id: fetched_document.owner_id().into(),
             },
         )));
     }
@@ -226,12 +226,12 @@ fn check_ownership(
 
 fn check_revision(
     document_transition: &DocumentTransition,
-    fetched_documents: &[Document],
+    fetched_documents: &[ExtendedDocument],
 ) -> ValidationResult<()> {
     let mut result = ValidationResult::default();
     let fetched_document = match fetched_documents
         .iter()
-        .find(|d| d.id == document_transition.base().id)
+        .find(|d| d.id() == document_transition.base().id)
     {
         Some(d) => d,
         None => return result,
@@ -240,7 +240,7 @@ fn check_revision(
         Some(d) => d.revision,
         None => return result,
     };
-    let Some(previous_revision) =  fetched_document.revision else {
+    let Some(previous_revision) =  fetched_document.revision() else {
         result.add_error(ConsensusError::StateError(Box::new(
             StateError::InvalidDocumentRevisionError {
                 document_id: document_transition.base().id,
@@ -254,7 +254,7 @@ fn check_revision(
         result.add_error(ConsensusError::StateError(Box::new(
             StateError::InvalidDocumentRevisionError {
                 document_id: document_transition.base().id,
-                current_revision: Some(previous_revision),
+                current_revision: Some(*previous_revision),
             },
         )))
     }
@@ -263,12 +263,12 @@ fn check_revision(
 
 fn check_if_document_is_already_present(
     document_transition: &DocumentTransition,
-    fetched_documents: &[Document],
+    fetched_documents: &[ExtendedDocument],
 ) -> ValidationResult<()> {
     let mut result = ValidationResult::default();
     let maybe_fetched_document = fetched_documents
         .iter()
-        .find(|d| d.id == document_transition.base().id);
+        .find(|d| d.id() == document_transition.base().id);
 
     if maybe_fetched_document.is_some() {
         result.add_error(ConsensusError::StateError(Box::new(
@@ -282,12 +282,12 @@ fn check_if_document_is_already_present(
 
 fn check_if_document_can_be_found(
     document_transition: &DocumentTransition,
-    fetched_documents: &[Document],
+    fetched_documents: &[ExtendedDocument],
 ) -> ValidationResult<()> {
     let mut result = ValidationResult::default();
     let maybe_fetched_document = fetched_documents
         .iter()
-        .find(|d| d.id == document_transition.base().id);
+        .find(|d| d.id() == document_transition.base().id);
 
     if maybe_fetched_document.is_none() {
         result.add_error(ConsensusError::StateError(Box::new(

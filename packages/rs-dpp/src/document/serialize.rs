@@ -9,7 +9,6 @@ use crate::document::Document;
 
 use crate::identity::TimestampMillis;
 use crate::prelude::Revision;
-use crate::util::cbor_value::CborBTreeMapHelper;
 use crate::util::deserializer;
 use crate::util::deserializer::SplitProtocolVersionOutcome;
 use crate::ProtocolError;

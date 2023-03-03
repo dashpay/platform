@@ -8,7 +8,7 @@ const { default: loadWasmDpp } = require('../../../../../dist');
 
 let DocumentFactory;
 let DataContract;
-let DocumentInStateTransition;
+let ExtendedDocument;
 let DocumentValidator;
 let ProtocolVersionValidator;
 
@@ -24,7 +24,7 @@ describe('DocumentsBatchTransition', () => {
   beforeEach(async () => {
     ({
       ProtocolVersionValidator, DocumentValidator, DocumentFactory, DataContract,
-      DocumentInStateTransition,
+      ExtendedDocument,
     } = await loadWasmDpp());
   });
 
@@ -34,7 +34,7 @@ describe('DocumentsBatchTransition', () => {
 
     documentsJs = getDocumentsFixture(dataContractJs);
     documents = documentsJs.map((d) => {
-      const doc = new DocumentInStateTransition(d.toObject(), dataContract);
+      const doc = new ExtendedDocument(d.toObject(), dataContract);
       doc.setEntropy(d.entropy);
       return doc;
     });

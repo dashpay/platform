@@ -16,18 +16,18 @@ use wasm_bindgen::prelude::*;
 use crate::buffer::Buffer;
 use crate::document::BinaryType;
 use crate::errors::RustConversionError;
-use crate::identifier::IdentifierWrapper;
+use crate::identifier::{identifier_from_js_value, IdentifierWrapper};
 use crate::lodash::lodash_set;
 use crate::utils::WithJsError;
 use crate::utils::{with_serde_to_json_value, ToSerdeJSONExt};
 use crate::{with_js_error, ConversionOptions};
 use crate::{DataContractWasm, MetadataWasm};
 
-#[wasm_bindgen(js_name=DocumentInStateTransition)]
+#[wasm_bindgen(js_name=ExtendedDocument)]
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ExtendedDocumentWasm(pub(crate) ExtendedDocument);
 
-#[wasm_bindgen(js_class=DocumentInStateTransition)]
+#[wasm_bindgen(js_class=ExtendedDocument)]
 impl ExtendedDocumentWasm {
     #[wasm_bindgen(constructor)]
     pub fn new(
@@ -93,6 +93,13 @@ impl ExtendedDocumentWasm {
     #[wasm_bindgen(js_name=getDataContract)]
     pub fn get_data_contract(&self) -> DataContractWasm {
         self.0.data_contract.clone().into()
+    }
+
+    #[wasm_bindgen(js_name=setDataContractId)]
+    pub fn set_data_contract_id(&mut self, js_data_contract_id: &JsValue) -> Result<(), JsValue> {
+        let identifier = identifier_from_js_value(js_data_contract_id)?;
+        self.0.data_contract_id = identifier;
+        Ok(())
     }
 
     #[wasm_bindgen(js_name=setOwnerId)]

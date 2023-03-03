@@ -18,7 +18,8 @@ impl DocumentValidatorWasm {
         DocumentValidatorWasm(DocumentValidator::new(Arc::new(protocol_validator.into())))
     }
 
-    pub fn validate_extended(
+    #[wasm_bindgen]
+    pub fn validate(
         &self,
         js_raw_document: &JsValue,
         js_data_contract: &DataContractWasm,

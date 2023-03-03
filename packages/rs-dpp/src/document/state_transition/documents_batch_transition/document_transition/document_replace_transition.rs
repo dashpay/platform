@@ -4,7 +4,7 @@ use serde_json::Value as JsonValue;
 
 use crate::document::Document;
 use crate::identity::TimestampMillis;
-use crate::prelude::Revision;
+use crate::prelude::{ExtendedDocument, Revision};
 use crate::{
     data_contract::DataContract,
     errors::ProtocolError,
@@ -69,6 +69,22 @@ impl DocumentReplaceTransition {
         Ok(())
     }
 
+    pub(crate) fn replace_extended_document(&self, document: &mut ExtendedDocument) -> Result<(), ProtocolError> {
+        let properties = self
+            .data
+            .as_ref()
+            .map(|json_value| {
+                let value: Value = json_value.clone().into();
+                value.into_btree_map().map_err(ProtocolError::ValueError)
+            })
+            .transpose()?
+            .unwrap_or_default();
+        document.document.revision = Some(self.revision);
+        document.document.updated_at = self.updated_at;
+        document.document.properties = properties;
+        Ok(())
+    }
+
     pub(crate) fn patch_document(self, document: &mut Document) -> Result<(), ProtocolError> {
         let properties = self
             .data
@@ -81,6 +97,21 @@ impl DocumentReplaceTransition {
         document.revision = Some(self.revision);
         document.updated_at = self.updated_at;
         document.properties.extend(properties);
+        Ok(())
+    }
+
+    pub(crate) fn patch_extended_document(self, document: &mut ExtendedDocument) -> Result<(), ProtocolError> {
+        let properties = self
+            .data
+            .map(|json_value| {
+                let value: Value = json_value.into();
+                value.into_btree_map().map_err(ProtocolError::ValueError)
+            })
+            .transpose()?
+            .unwrap_or_default();
+        document.document.revision = Some(self.revision);
+        document.document.updated_at = self.updated_at;
+        document.document.properties.extend(properties);
         Ok(())
     }
 }

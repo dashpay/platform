@@ -17,7 +17,6 @@ use crate::data_contract::contract_config::{
 };
 
 use crate::data_contract::get_binary_properties_from_schema::get_binary_properties;
-use crate::util::cbor_value::CborBTreeMapHelper;
 
 use crate::util::json_value::{JsonValueExt, ReplaceWith};
 use crate::util::string_encoding::Encoding;
