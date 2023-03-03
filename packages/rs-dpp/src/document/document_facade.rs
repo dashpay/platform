@@ -13,7 +13,8 @@ use super::{
     document_factory::{DocumentFactory, FactoryOptions},
     document_transition::Action,
     document_validator::DocumentValidator,
-    fetch_and_validate_data_contract::DataContractFetcherAndValidator, DocumentsBatchTransition,
+    fetch_and_validate_data_contract::DataContractFetcherAndValidator,
+    DocumentsBatchTransition,
 };
 
 pub struct DocumentFacade<SR> {

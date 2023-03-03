@@ -966,7 +966,7 @@ impl Value {
         path: &str,
         replacement_type: ReplacementType,
     ) -> Result<bool, Error> {
-        let mut split = path.split(".").peekable();
+        let mut split = path.split('.').peekable();
         let mut current_value = self;
         while let Some(path_component) = split.next() {
             let map = current_value.as_map_mut_ref()?;

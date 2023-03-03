@@ -5,7 +5,7 @@ use anyhow::{anyhow, bail};
 use platform_value::btreemap_extensions::BTreeValueMapHelper;
 use serde_json::{json, Value as JsonValue};
 
-use crate::document::{Document};
+use crate::document::Document;
 use crate::util::hash::hash;
 use crate::util::string_encoding::Encoding;
 use crate::ProtocolError;
@@ -232,7 +232,7 @@ where
 
 #[cfg(test)]
 mod test {
-    
+
     use crate::{
         data_trigger::DataTriggerExecutionContext,
         document::document_transition::Action,

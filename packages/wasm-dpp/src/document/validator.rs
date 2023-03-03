@@ -35,7 +35,7 @@ impl DocumentValidatorWasm {
 
 impl DocumentValidatorWasm {
     pub(crate) fn new_with_arc(protocol_validator: Arc<ProtocolVersionValidator>) -> Self {
-        DocumentValidatorWasm(DocumentValidator::new(protocol_validator.clone()))
+        DocumentValidatorWasm(DocumentValidator::new(protocol_validator))
     }
 }
 

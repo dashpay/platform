@@ -1,4 +1,3 @@
-
 use dpp::identity::KeyID;
 use dpp::{
     document::{
@@ -11,7 +10,7 @@ use dpp::{
         StateTransitionConvert, StateTransitionIdentitySigned, StateTransitionLike,
         StateTransitionType,
     },
-    util::json_value::{JsonValueExt},
+    util::json_value::JsonValueExt,
 };
 use js_sys::{Array, Reflect};
 use serde::{Deserialize, Serialize};
@@ -26,7 +25,8 @@ use crate::{
     lodash::lodash_set,
     utils::{
         replace_identifiers_with_bytes_without_failing, IntoWasm, ToSerdeJSONExt, WithJsError,
-    }, IdentityPublicKeyWasm, StateTransitionExecutionContextWasm,
+    },
+    IdentityPublicKeyWasm, StateTransitionExecutionContextWasm,
 };
 pub mod apply_document_batch_transition;
 pub mod document_transition;

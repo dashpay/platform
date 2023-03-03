@@ -133,7 +133,7 @@ mod tests {
         let data_contract =
             load_system_data_contract(data_contracts::SystemDataContract::Withdrawals)
                 .expect("to load system data contract");
-        let owner_id = data_contract.owner_id.clone();
+        let owner_id = data_contract.owner_id;
 
         let document = get_withdrawal_document_fixture(
             &data_contract,

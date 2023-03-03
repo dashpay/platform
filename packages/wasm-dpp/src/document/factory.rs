@@ -1,7 +1,6 @@
 use anyhow::anyhow;
-use std::collections::{HashMap};
+use std::collections::HashMap;
 use std::sync::Arc;
-
 
 use dpp::platform_value::btreemap_field_replacement::BTreeValueMapInsertionPathHelper;
 use dpp::platform_value::ReplacementType;

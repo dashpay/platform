@@ -6,8 +6,8 @@ use crate::{
     fetch_and_validate_data_contract::DataContractFetcherAndValidatorWasm,
     utils::{get_class_name, IntoWasm},
     validation::ValidationResultWasm,
-    DataContractWasm, DocumentFactoryWASM, DocumentValidatorWasm,
-    DocumentsBatchTransitionWASM, ExtendedDocumentWasm,
+    DataContractWasm, DocumentFactoryWASM, DocumentValidatorWasm, DocumentsBatchTransitionWASM,
+    ExtendedDocumentWasm,
 };
 
 #[derive(Clone)]

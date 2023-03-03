@@ -146,7 +146,7 @@ async fn protocol_version_should_be_valid() {
         .expect("validation result should be returned");
 
     assert!(matches!(
-        result.errors.iter().next(),
+        result.errors.first(),
         Some(ConsensusError::ProtocolVersionParsingError { .. })
     ));
 }

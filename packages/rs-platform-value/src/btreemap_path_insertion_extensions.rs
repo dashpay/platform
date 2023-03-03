@@ -8,7 +8,7 @@ pub trait BTreeValueMapInsertionPathHelper {
 
 impl BTreeValueMapInsertionPathHelper for BTreeMap<String, Value> {
     fn insert_at_path(&mut self, path: &str, value: Value) -> Result<(), Error> {
-        let mut split = path.split(".").peekable();
+        let mut split = path.split('.').peekable();
         let first = split.next();
         let Some(first_path_component) = first else {
             return Err(Error::PathError("path was empty".to_string()));

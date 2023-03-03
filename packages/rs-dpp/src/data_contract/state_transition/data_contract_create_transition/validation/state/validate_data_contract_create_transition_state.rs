@@ -89,7 +89,7 @@ mod test {
         let mut state_repository_mock = MockStateRepositoryLike::new();
         let data_contract = get_data_contract_fixture(None);
         let state_transition = &DataContractCreateTransition {
-            entropy: data_contract.entropy.clone(),
+            entropy: data_contract.entropy,
             data_contract,
             ..Default::default()
         };

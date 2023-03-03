@@ -1,5 +1,4 @@
-
-use crate::value_map::{ValueMapHelper};
+use crate::value_map::ValueMapHelper;
 use crate::{Error, Value};
 use std::collections::{BTreeMap, HashMap};
 
@@ -44,7 +43,7 @@ impl BTreeValueMapInsertionPathHelper for BTreeMap<String, Value> {
         path: &str,
         replacement_type: ReplacementType,
     ) -> Result<bool, Error> {
-        let mut split = path.split(".").peekable();
+        let mut split = path.split('.').peekable();
         let first = split.next();
         let Some(first_path_component) = first else {
             return Err(Error::PathError("path was empty".to_string()));

@@ -146,9 +146,8 @@ fn document_from_transition_replace(
 mod test {
     use serde_json::{json, Value};
 
-    
     use crate::tests::fixtures::get_extended_documents_fixture;
-    
+
     use crate::{
         document::{
             document_transition::{Action, DocumentTransitionObjectLike},

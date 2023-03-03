@@ -2,7 +2,6 @@ use futures::StreamExt;
 use mockall::predicate;
 use serde_json::json;
 
-
 use crate::{consensus::ConsensusError, data_contract::DataContract, document::{
     document_transition::{Action, DocumentTransition},
     state_transition::documents_batch_transition::validation::state::validate_documents_uniqueness_by_indices::*,

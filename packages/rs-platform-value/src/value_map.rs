@@ -1,5 +1,5 @@
 use crate::{Error, Value};
-use std::collections::{BTreeMap};
+use std::collections::BTreeMap;
 
 pub type ValueMap = Vec<(Value, Value)>;
 
@@ -42,11 +42,7 @@ impl ValueMapHelper for ValueMap {
     fn get_key_mut_or_insert(&mut self, search_key: &str, value: Value) -> &mut Value {
         let found = self.iter().position(|(key, _)| {
             if let Value::Text(text) = key {
-                if text == search_key {
-                    true
-                } else {
-                    false
-                }
+                text == search_key
             } else {
                 false
             }
@@ -68,11 +64,7 @@ impl ValueMapHelper for ValueMap {
         self.iter()
             .position(|(key, _)| {
                 if let Value::Text(text) = key {
-                    if text == search_key {
-                        true
-                    } else {
-                        false
-                    }
+                    text == search_key
                 } else {
                     false
                 }

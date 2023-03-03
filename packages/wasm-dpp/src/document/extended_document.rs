@@ -1,4 +1,3 @@
-
 use dpp::document::document_transition::document_base_transition::JsonValue;
 use dpp::document::{
     extended_document_property_names, ExtendedDocument, EXTENDED_DOCUMENT_IDENTIFIER_FIELDS,

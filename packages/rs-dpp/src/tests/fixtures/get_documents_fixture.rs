@@ -33,7 +33,7 @@ pub fn get_documents_fixture_with_owner_id_from_contract(
         data_contract_fetcher_and_validator,
         None,
     );
-    let owner_id = data_contract.owner_id.clone();
+    let owner_id = data_contract.owner_id;
 
     get_extended_documents(factory, data_contract, owner_id)
 }

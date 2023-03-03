@@ -27,7 +27,7 @@ pub enum DocumentError {
         errors: Vec<ConsensusError>,
         raw_document: Value,
     },
-    #[error("Invalid Document initial revision '{}'", document.revision().map(|r| *r).unwrap_or_default())]
+    #[error("Invalid Document initial revision '{}'", document.revision().copied().unwrap_or_default())]
     InvalidInitialRevisionError { document: Box<ExtendedDocument> },
 
     #[error("Revision absent on mutable document")]

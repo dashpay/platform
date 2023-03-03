@@ -1,10 +1,9 @@
-use serde_json::{Value as JsonValue};
+use serde_json::Value as JsonValue;
 use std::borrow::Borrow;
 use std::convert::TryFrom;
 use std::iter::FromIterator;
 
 use std::{collections::BTreeMap, convert::TryInto};
-
 
 use crate::value_map::ValueMapHelper;
 use crate::{Error, Value};
@@ -136,7 +135,7 @@ where
     V: Borrow<Value>,
 {
     fn get_at_path(&self, path: &str) -> Result<&Value, Error> {
-        let mut split = path.split(".");
+        let mut split = path.split('.');
         let first = split.next();
         let Some(first_path_component) = first else {
             return Err(Error::PathError("path was empty".to_string()));
@@ -149,7 +148,7 @@ where
                 ))
             })?
             .borrow();
-        while let Some(path_component) = split.next() {
+        for path_component in split {
             let map = current_value.to_map_ref()?;
             current_value = map.get_key(path_component).ok_or_else(|| {
                 Error::StructureError(format!("unable to get property {path_component} in {path}"))
@@ -159,7 +158,7 @@ where
     }
 
     fn get_optional_at_path(&self, path: &str) -> Result<Option<&Value>, Error> {
-        let mut split = path.split(".");
+        let mut split = path.split('.');
         let first = split.next();
         let Some(first_path_component) = first else {
             return Err(Error::PathError("path was empty".to_string()));
@@ -167,7 +166,7 @@ where
         let Some(mut current_value) = self.get(first_path_component).map(|v| v.borrow()) else {
             return Ok(None);
         };
-        while let Some(path_component) = split.next() {
+        for path_component in split {
             let map = current_value.to_map_ref()?;
             let Some(new_value) = map.get_key(path_component) else {
                 return Ok(None);

@@ -34,11 +34,10 @@
 
 use chrono::{DateTime, NaiveDateTime, Utc};
 use std::collections::{BTreeMap, HashSet};
-use std::convert::{TryInto};
+use std::convert::TryInto;
 use std::fmt;
 
-
-use ciborium::{Value as CborValue};
+use ciborium::Value as CborValue;
 use serde_json::{json, Value as JsonValue};
 
 use crate::data_contract::{DataContract, DriveContractExt};

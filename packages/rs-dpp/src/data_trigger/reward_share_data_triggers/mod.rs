@@ -154,7 +154,6 @@ mod test {
     use super::*;
     use itertools::Itertools;
     use serde_json::json;
-    
 
     use crate::document::{Document, ExtendedDocument};
     use crate::identity::Identity;
