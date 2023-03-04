@@ -1,5 +1,5 @@
 use crate::errors::consensus_error::from_consensus_error_ref;
-use dpp::validation::ValidationResult;
+use dpp::{consensus::ConsensusError, validation::ValidationResult};
 use js_sys::JsString;
 use wasm_bindgen::prelude::*;
 
@@ -55,5 +55,11 @@ impl ValidationResultWasm {
         } else {
             JsValue::undefined()
         }
+    }
+}
+
+impl ValidationResultWasm {
+    pub fn add_error(&mut self, error: impl Into<ConsensusError>) {
+        self.0.add_error(error)
     }
 }

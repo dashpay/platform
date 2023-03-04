@@ -1,5 +1,4 @@
 use anyhow::anyhow;
-use dashcore::{consensus, BlockHeader};
 use serde_json::Value;
 use std::convert::TryInto;
 use std::sync::Arc;
@@ -102,16 +101,12 @@ where
         }
 
         if !state_transition.get_public_key_ids_to_disable().is_empty() {
-            let block_header_bytes = self
+            let last_block_header_time = self
                 .state_repository
-                .fetch_latest_platform_block_header()
+                .fetch_latest_platform_block_time()
                 .await
                 .map_err(|e| NonConsensusError::StateRepositoryFetchError(e.to_string()))?;
 
-            let block_header: BlockHeader = consensus::deserialize(&block_header_bytes)
-                .map_err(|e| NonConsensusError::from(anyhow!(e.to_string())))?;
-
-            let last_block_header_time = block_header.time as u64 * 1000;
             let disabled_at_ms = state_transition.get_public_keys_disabled_at().ok_or(
                 NonConsensusError::RequiredPropertyError {
                     property_name: property_names::PUBLIC_KEYS_DISABLED_AT.to_owned(),

@@ -28,6 +28,10 @@ pub trait DocumentTransitionExt {
     fn get_created_at(&self) -> Option<i64>;
     /// returns the update timestamp  (in milliseconds) if it exists for given type of document transition
     fn get_updated_at(&self) -> Option<i64>;
+    /// set the created_at (in milliseconds) if it exists
+    fn set_created_at(&mut self, timestamp_millis: Option<i64>);
+    /// set the updated_at (in milliseconds) if it exists
+    fn set_updated_at(&mut self, timestamp_millis: Option<i64>);
     /// returns the value of dynamic property. The dynamic property is a property that is not specified in protocol
     /// the `path` supports dot-syntax: i.e: property.internal_property
     fn get_dynamic_property(&self, path: &str) -> Option<&Value>;
@@ -41,9 +45,15 @@ pub trait DocumentTransitionExt {
     fn get_data_contract(&self) -> &DataContract;
     /// get the data contract id
     fn get_data_contract_id(&self) -> &Identifier;
+    /// get the data of the transition if exits
+    fn get_data(&self) -> Option<&Value>;
+    /// get the revision of transition if exits
+    fn get_revision(&self) -> Option<u32>;
     #[cfg(test)]
     /// Inserts the dynamic property into the document
     fn insert_dynamic_property(&mut self, property_name: String, value: Value);
+    /// set data contract's ID
+    fn set_data_contract_id(&mut self, id: Identifier);
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -202,11 +212,27 @@ impl DocumentTransitionExt for DocumentTransition {
         }
     }
 
+    fn set_updated_at(&mut self, timestamp_millis: Option<i64>) {
+        match self {
+            DocumentTransition::Create(ref mut t) => t.updated_at = timestamp_millis,
+            DocumentTransition::Replace(ref mut t) => t.updated_at = timestamp_millis,
+            DocumentTransition::Delete(_) => {}
+        }
+    }
+
     fn get_created_at(&self) -> Option<i64> {
         match self {
             DocumentTransition::Create(t) => t.created_at,
             DocumentTransition::Replace(_) => None,
             DocumentTransition::Delete(_) => None,
+        }
+    }
+
+    fn set_created_at(&mut self, timestamp_millis: Option<i64>) {
+        match self {
+            DocumentTransition::Create(ref mut t) => t.created_at = timestamp_millis,
+            DocumentTransition::Replace(_) => {}
+            DocumentTransition::Delete(_) => {}
         }
     }
 
@@ -230,6 +256,22 @@ impl DocumentTransitionExt for DocumentTransition {
         }
     }
 
+    fn get_data(&self) -> Option<&Value> {
+        match self {
+            DocumentTransition::Create(t) => t.data.as_ref(),
+            DocumentTransition::Replace(t) => t.data.as_ref(),
+            DocumentTransition::Delete(_) => None,
+        }
+    }
+
+    fn get_revision(&self) -> Option<u32> {
+        match self {
+            DocumentTransition::Create(t) => Some(t.get_revision()),
+            DocumentTransition::Replace(t) => Some(t.get_revision()),
+            DocumentTransition::Delete(_) => None,
+        }
+    }
+
     #[cfg(test)]
     fn insert_dynamic_property(&mut self, property_name: String, value: Value) {
         match self {
@@ -244,6 +286,20 @@ impl DocumentTransitionExt for DocumentTransition {
                 }
             }
             DocumentTransition::Delete(_) => {}
+        }
+    }
+
+    fn set_data_contract_id(&mut self, id: Identifier) {
+        match self {
+            DocumentTransition::Create(ref mut t) => {
+                t.base.data_contract_id = id;
+            }
+            DocumentTransition::Replace(ref mut t) => {
+                t.base.data_contract_id = id;
+            }
+            DocumentTransition::Delete(ref mut t) => {
+                t.base.data_contract_id = id;
+            }
         }
     }
 }
