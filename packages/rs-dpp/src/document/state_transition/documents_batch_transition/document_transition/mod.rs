@@ -24,6 +24,12 @@ pub use document_create_transition::DocumentCreateTransition;
 pub use document_delete_transition::DocumentDeleteTransition;
 pub use document_replace_transition::DocumentReplaceTransition;
 
+
+pub use document_base_transition_action::DocumentBaseTransitionAction;
+pub use document_create_transition_action::DocumentCreateTransitionAction;
+pub use document_delete_transition_action::DocumentDeleteTransitionAction;
+pub use document_replace_transition_action::DocumentReplaceTransitionAction;
+
 pub use action::{DocumentTransitionAction, DOCUMENT_TRANSITION_ACTION_VERSION};
 use crate::identity::TimestampMillis;
 

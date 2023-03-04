@@ -33,6 +33,8 @@ pub mod document_transition;
 pub mod validation;
 mod action;
 
+pub use action::{DocumentsBatchTransitionAction, DOCUMENTS_BATCH_TRANSITION_ACTION_VERSION};
+
 pub mod property_names {
     pub const DATA_CONTRACT_ID: &str = "$dataContractId";
     pub const TRANSITIONS: &str = "transitions";
