@@ -370,7 +370,7 @@ impl StateRepositoryLike for ExternalStateRepositoryLikeWrapper {
         let mut documents: Vec<ExtendedDocumentWasm> = vec![];
         for js_document in js_documents_array.iter() {
             let document = js_document
-                .to_wasm::<ExtendedDocumentWasm>("Document")
+                .to_wasm::<ExtendedDocumentWasm>("ExtendedDocument")
                 .map_err(|e| anyhow!("{e:#?}"))?;
             documents.push(document.to_owned());
         }

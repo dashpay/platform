@@ -23,7 +23,7 @@ use crate::{
 };
 
 use super::{
-    execute_data_triggers::execute_data_triggers, fetch_documents::fetch_extended_documents,
+    execute_data_triggers::execute_data_triggers, fetch_extended_documents::fetch_extended_documents,
     validate_documents_uniqueness_by_indices::validate_documents_uniqueness_by_indices,
 };
 

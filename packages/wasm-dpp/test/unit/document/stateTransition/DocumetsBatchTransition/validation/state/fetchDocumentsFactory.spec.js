@@ -11,7 +11,7 @@ const { default: loadWasmDpp } = require('../../../../../../../dist');
 let Identifier;
 let DataContract;
 let Document;
-let fetchDocuments;
+let fetchExtendedDocuments;
 let DocumentTransition;
 let DocumentCreateTransition;
 let StateTransitionExecutionContext;
@@ -33,7 +33,8 @@ describe('fetchDocumentsFactory', () => {
       DocumentTransition,
       DocumentCreateTransition,
       StateTransitionExecutionContext,
-      fetchDocuments,
+      fetchExtendedDocuments,
+      ExtendedDocument,
     } = await loadWasmDpp());
 
     stateRepositoryMock = createStateRepositoryMock(this.sinonSandbox);
@@ -45,12 +46,10 @@ describe('fetchDocumentsFactory', () => {
     const dataContract = DataContract.fromBuffer(dataContractBuffer);
 
     documents = documentsJs.map((document) => {
-      console.log(1);
       document.toObject();
-      console.log(2);
 
-      return new Document(
-        document.toObject(), dataContract.clone(), document.getType(),
+      return new ExtendedDocument(
+        document.toObject(), dataContract.clone(), // document.getType(),
       );
     });
     documentTransitionsJs = getDocumentTransitionsFixture({
@@ -71,27 +70,27 @@ describe('fetchDocumentsFactory', () => {
     documentTransitions[0].setDataContractId(firstDocumentDataContractId);
     documents[0].setDataContractId(firstDocumentDataContractId);
 
-    stateRepositoryMock.fetchDocuments.withArgs(
+    stateRepositoryMock.fetchExtendedDocuments.withArgs(
       sinon.match.instanceOf(Identifier),
       documentTransitions[0].getType(),
     ).resolves([documents[0]]);
 
-    stateRepositoryMock.fetchDocuments.withArgs(
+    stateRepositoryMock.fetchExtendedDocuments.withArgs(
       sinon.match.instanceOf(Identifier),
       documentTransitions[1].getType(),
     ).resolves([documents[1], documents[2]]);
 
-    stateRepositoryMock.fetchDocuments.withArgs(
+    stateRepositoryMock.fetchExtendedDocuments.withArgs(
       sinon.match.instanceOf(Identifier),
       documentTransitionsJs[3].getType(),
     ).resolves([documents[3], documents[4]]);
 
-    await fetchDocuments(
+    await fetchExtendedDocuments(
       stateRepositoryMock,
       documentTransitions,
       executionContext,
     );
 
-    expect(stateRepositoryMock.fetchDocuments).to.have.been.calledThrice();
+    expect(stateRepositoryMock.fetchExtendedDocuments).to.have.been.calledThrice();
   });
 });

@@ -10,7 +10,7 @@ use crate::{
 
 use super::{
     document_transition::{Action, DocumentReplaceTransition, DocumentTransition},
-    validation::state::fetch_documents::fetch_extended_documents,
+    validation::state::fetch_extended_documents::fetch_extended_documents,
     DocumentsBatchTransition,
 };
 
@@ -87,7 +87,7 @@ pub async fn apply_documents_batch_transition(
                         })?;
                     document_replace_transition.replace_extended_document(document)?;
                     state_repository
-                        .update_document(document, state_transition.get_execution_context())
+                        .update_document(&document.document, state_transition.get_execution_context())
                         .await?;
                 };
             }
