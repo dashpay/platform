@@ -1,6 +1,7 @@
 use crate::data_contract::DataContract;
 use crate::document::document_transition::document_base_transition::DocumentBaseTransition;
 use crate::identifier::Identifier;
+use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 #[serde(rename_all = "camelCase")]
@@ -20,12 +21,36 @@ pub struct DocumentBaseTransitionAction {
 
 impl From<DocumentBaseTransition> for DocumentBaseTransitionAction {
     fn from(value: DocumentBaseTransition) -> Self {
-        let DocumentBaseTransition { id, document_type, data_contract_id, data_contract, .. } = value;
+        let DocumentBaseTransition {
+            id,
+            document_type,
+            data_contract_id,
+            data_contract,
+            ..
+        } = value;
         DocumentBaseTransitionAction {
             id,
             document_type,
             data_contract_id,
             data_contract,
+        }
+    }
+}
+
+impl From<&DocumentBaseTransition> for DocumentBaseTransitionAction {
+    fn from(value: &DocumentBaseTransition) -> Self {
+        let DocumentBaseTransition {
+            id,
+            document_type,
+            data_contract_id,
+            data_contract,
+            ..
+        } = value;
+        DocumentBaseTransitionAction {
+            id: *id,
+            document_type: document_type.clone(),
+            data_contract_id: *data_contract_id,
+            data_contract: data_contract.clone(),
         }
     }
 }

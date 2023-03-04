@@ -1,12 +1,12 @@
 use serde::{Deserialize, Serialize};
 use serde_json::Value as JsonValue;
 
+use crate::identity::TimestampMillis;
 use crate::{
     data_contract::DataContract,
     errors::ProtocolError,
     util::json_value::{JsonValueExt, ReplaceWith},
 };
-use crate::identity::TimestampMillis;
 
 use super::{
     document_base_transition, document_base_transition::DocumentBaseTransition,

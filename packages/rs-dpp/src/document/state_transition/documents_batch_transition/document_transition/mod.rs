@@ -9,14 +9,14 @@ use crate::{
 };
 use document_base_transition::DocumentBaseTransition;
 
-pub mod document_base_transition;
-pub mod document_create_transition;
-pub mod document_delete_transition;
-pub mod document_replace_transition;
 mod action;
-mod document_create_transition_action;
+pub mod document_base_transition;
 mod document_base_transition_action;
+pub mod document_create_transition;
+mod document_create_transition_action;
+pub mod document_delete_transition;
 mod document_delete_transition_action;
+pub mod document_replace_transition;
 mod document_replace_transition_action;
 
 pub use document_base_transition::{Action, DocumentTransitionObjectLike};
@@ -24,14 +24,13 @@ pub use document_create_transition::DocumentCreateTransition;
 pub use document_delete_transition::DocumentDeleteTransition;
 pub use document_replace_transition::DocumentReplaceTransition;
 
-
 pub use document_base_transition_action::DocumentBaseTransitionAction;
 pub use document_create_transition_action::DocumentCreateTransitionAction;
 pub use document_delete_transition_action::DocumentDeleteTransitionAction;
 pub use document_replace_transition_action::DocumentReplaceTransitionAction;
 
-pub use action::{DocumentTransitionAction, DOCUMENT_TRANSITION_ACTION_VERSION};
 use crate::identity::TimestampMillis;
+pub use action::{DocumentTransitionAction, DOCUMENT_TRANSITION_ACTION_VERSION};
 
 /// the initial revision of newly created document
 pub const INITIAL_REVISION: u32 = 1;

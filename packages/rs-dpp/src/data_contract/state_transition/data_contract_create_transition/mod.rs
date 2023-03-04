@@ -19,10 +19,12 @@ use crate::{
 
 use super::property_names::*;
 
+mod action;
 pub mod apply_data_contract_create_transition_factory;
 pub mod validation;
-mod action;
-pub use action::{DataContractCreateTransitionAction, DATA_CONTRACT_CREATE_TRANSITION_ACTION_VERSION };
+pub use action::{
+    DataContractCreateTransitionAction, DATA_CONTRACT_CREATE_TRANSITION_ACTION_VERSION,
+};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]

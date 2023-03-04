@@ -2,11 +2,11 @@ use itertools::Itertools;
 use serde::{Deserialize, Serialize};
 use serde_json::Value as JsonValue;
 
+use crate::identity::TimestampMillis;
 use crate::{
     data_contract::DataContract, document::document_transition::Action, errors::ProtocolError,
     util::json_value::JsonValueExt, util::json_value::ReplaceWith,
 };
-use crate::identity::TimestampMillis;
 
 use super::INITIAL_REVISION;
 use super::{

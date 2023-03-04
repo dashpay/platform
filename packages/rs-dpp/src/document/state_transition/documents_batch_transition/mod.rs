@@ -28,10 +28,10 @@ use self::document_transition::{
     document_base_transition, document_create_transition, DocumentTransitionExt,
 };
 
+mod action;
 pub mod apply_documents_batch_transition_factory;
 pub mod document_transition;
 pub mod validation;
-mod action;
 
 pub use action::{DocumentsBatchTransitionAction, DOCUMENTS_BATCH_TRANSITION_ACTION_VERSION};
 

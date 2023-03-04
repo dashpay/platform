@@ -24,9 +24,10 @@ use super::properties::{
     PROPERTY_SIGNATURE_PUBLIC_KEY_ID,
 };
 
+mod action;
 pub mod apply_identity_credit_withdrawal_transition_factory;
 pub mod validation;
-mod action;
+pub use action::{IdentityCreditWithdrawalTransitionAction, IDENTITY_CREDIT_WITHDRAWAL_TRANSITION_VERSION};
 
 #[repr(u8)]
 #[derive(Serialize_repr, Deserialize_repr, PartialEq, Eq, Clone, Copy, Debug)]

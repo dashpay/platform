@@ -11,14 +11,19 @@ use crate::error::Error;
 impl DriveHighLevelOperationConverter for IdentityUpdateTransitionAction {
     fn to_high_level_drive_operations(self) -> Result<Vec<DriveOperation>, Error> {
         let IdentityUpdateTransitionAction {
-            version, add_public_keys, disable_public_keys, public_keys_disabled_at, identity_id
+            add_public_keys, disable_public_keys, public_keys_disabled_at, identity_id, ..
         } = self;
 
 
         let mut drive_operations = vec![];
-        add_public_keys.iter().for_each()
-        /// We must create the contract
-        drive_operations.push(IdentityOperation(IdentityOperationType::AddToIdentityBalance { identity_id: identity_id.to_buffer(), added_balance: 0 });
+        if !add_public_keys.is_empty() {
+            drive_operations.push(IdentityOperation(IdentityOperationType::AddNewKeysToIdentity { identity_id: identity_id.to_buffer(), keys_to_add: add_public_keys});
+        }
+        if let Some(public_keys_disabled_at) = public_keys_disabled_at {
+            if !disable_public_keys.is_empty() {
+                drive_operations.push(IdentityOperation(IdentityOperationType::DisableIdentityKeys { identity_id: identity_id.to_buffer(), keys_ids: disable_public_keys, disable_at: public_keys_disabled_at }));
+            }
+        }
 
         Ok(drive_operations)
     }

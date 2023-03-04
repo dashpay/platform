@@ -1,7 +1,8 @@
-use platform_value::Value;
 use crate::document::document_transition::document_base_transition_action::DocumentBaseTransitionAction;
 use crate::document::document_transition::DocumentReplaceTransition;
 use crate::identity::TimestampMillis;
+use platform_value::Value;
+use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -18,12 +19,36 @@ pub struct DocumentReplaceTransitionAction {
 
 impl From<DocumentReplaceTransition> for DocumentReplaceTransitionAction {
     fn from(value: DocumentReplaceTransition) -> Self {
-        let DocumentReplaceTransition { base, updated_at, data , ..} = value;
+        let DocumentReplaceTransition {
+            base,
+            revision,
+            updated_at,
+            data,
+            ..
+        } = value;
         DocumentReplaceTransitionAction {
             base: base.into(),
             revision,
             updated_at,
             data: data.map(|value| value.into()),
+        }
+    }
+}
+
+impl From<&DocumentReplaceTransition> for DocumentReplaceTransitionAction {
+    fn from(value: &DocumentReplaceTransition) -> Self {
+        let DocumentReplaceTransition {
+            base,
+            revision,
+            updated_at,
+            data,
+            ..
+        } = value;
+        DocumentReplaceTransitionAction {
+            base: base.into(),
+            revision: *revision,
+            updated_at: updated_at.clone(),
+            data: data.clone().map(|value| value.into()),
         }
     }
 }

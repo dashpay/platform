@@ -1,7 +1,6 @@
-use serde::{Deserialize, Serialize};
 use crate::identifier::Identifier;
 use crate::identity::state_transition::identity_topup_transition::IdentityTopUpTransition;
-use crate::identity::state_transition::identity_public_key_transitions::IdentityPublicKeyTopUpTransition;
+use serde::{Deserialize, Serialize};
 
 pub const IDENTITY_TOP_UP_TRANSITION_ACTION_VERSION: u32 = 0;
 
@@ -14,14 +13,21 @@ pub struct IdentityTopUpTransitionAction {
 }
 
 impl IdentityTopUpTransitionAction {
-    fn from(value: IdentityTopUpTransition, top_up_balance_amount: u64) -> Self {
-        let IdentityTopUpTransition {
-            identity_id, ..
-        } = value;
+    pub fn from(value: IdentityTopUpTransition, top_up_balance_amount: u64) -> Self {
+        let IdentityTopUpTransition { identity_id, .. } = value;
         IdentityTopUpTransitionAction {
             version: IDENTITY_TOP_UP_TRANSITION_ACTION_VERSION,
             top_up_balance_amount,
             identity_id,
+        }
+    }
+
+    pub fn from_borrowed(value: &IdentityTopUpTransition, top_up_balance_amount: u64) -> Self {
+        let IdentityTopUpTransition { identity_id, .. } = value;
+        IdentityTopUpTransitionAction {
+            version: IDENTITY_TOP_UP_TRANSITION_ACTION_VERSION,
+            top_up_balance_amount,
+            identity_id: *identity_id,
         }
     }
 }

@@ -1,8 +1,8 @@
-use serde::{Deserialize, Serialize};
 use crate::identifier::Identifier;
-use crate::identity::IdentityPublicKey;
 use crate::identity::state_transition::identity_create_transition::IdentityCreateTransition;
 use crate::identity::state_transition::identity_public_key_transitions::IdentityPublicKeyCreateTransition;
+use crate::identity::IdentityPublicKey;
+use serde::{Deserialize, Serialize};
 
 pub const IDENTITY_CREATE_TRANSITION_ACTION_VERSION: u32 = 0;
 
@@ -16,15 +16,37 @@ pub struct IdentityCreateTransitionAction {
 }
 
 impl IdentityCreateTransitionAction {
-    fn from(value: IdentityCreateTransition, initial_balance_amount: u64) -> Self {
+    pub fn from(value: IdentityCreateTransition, initial_balance_amount: u64) -> Self {
         let IdentityCreateTransition {
-            public_keys, identity_id, ..
+            public_keys,
+            identity_id,
+            ..
         } = value;
         IdentityCreateTransitionAction {
             version: IDENTITY_CREATE_TRANSITION_ACTION_VERSION,
-            public_keys: public_keys.into_iter().map(IdentityPublicKeyCreateTransition::to_identity_public_key).collect(),
+            public_keys: public_keys
+                .into_iter()
+                .map(IdentityPublicKeyCreateTransition::to_identity_public_key)
+                .collect(),
             initial_balance_amount,
             identity_id,
+        }
+    }
+
+    pub fn from_borrowed(value: &IdentityCreateTransition, initial_balance_amount: u64) -> Self {
+        let IdentityCreateTransition {
+            public_keys,
+            identity_id,
+            ..
+        } = value;
+        IdentityCreateTransitionAction {
+            version: IDENTITY_CREATE_TRANSITION_ACTION_VERSION,
+            public_keys: public_keys
+                .iter()
+                .map(|key| key.clone().to_identity_public_key())
+                .collect(),
+            initial_balance_amount,
+            identity_id: *identity_id,
         }
     }
 }

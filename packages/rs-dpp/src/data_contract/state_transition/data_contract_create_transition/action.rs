@@ -1,5 +1,5 @@
-use crate::data_contract::DataContract;
 use crate::data_contract::state_transition::DataContractCreateTransition;
+use crate::data_contract::DataContract;
 use serde::{Deserialize, Serialize};
 
 pub const DATA_CONTRACT_CREATE_TRANSITION_ACTION_VERSION: u32 = 0;
@@ -16,6 +16,15 @@ impl From<DataContractCreateTransition> for DataContractCreateTransitionAction {
         DataContractCreateTransitionAction {
             version: DATA_CONTRACT_CREATE_TRANSITION_ACTION_VERSION,
             data_contract: value.data_contract,
+        }
+    }
+}
+
+impl From<&DataContractCreateTransition> for DataContractCreateTransitionAction {
+    fn from(value: &DataContractCreateTransition) -> Self {
+        DataContractCreateTransitionAction {
+            version: DATA_CONTRACT_CREATE_TRANSITION_ACTION_VERSION,
+            data_contract: value.data_contract.clone(),
         }
     }
 }
