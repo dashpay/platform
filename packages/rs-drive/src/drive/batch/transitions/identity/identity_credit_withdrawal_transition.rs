@@ -20,7 +20,7 @@ impl DriveHighLevelOperationConverter for IdentityCreditWithdrawalTransition {
 
         let data_contract_id = withdrawals_contract::CONTRACT_ID.deref();
 
-        let data_contract = todo!("get the data contract");
+        let data_contract = self.;
 
         let document_type = data_contract.document_type_for_name(document_type)?;
 

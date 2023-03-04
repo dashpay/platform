@@ -6,6 +6,7 @@ use crate::{
     errors::ProtocolError,
     util::json_value::{JsonValueExt, ReplaceWith},
 };
+use crate::identity::TimestampMillis;
 
 use super::{
     document_base_transition, document_base_transition::DocumentBaseTransition,
@@ -23,7 +24,7 @@ pub struct DocumentReplaceTransition {
     #[serde(rename = "$revision")]
     pub revision: u32,
     #[serde(skip_serializing_if = "Option::is_none", rename = "$updatedAt")]
-    pub updated_at: Option<i64>,
+    pub updated_at: Option<TimestampMillis>,
     #[serde(flatten, skip_serializing_if = "Option::is_none")]
     pub data: Option<JsonValue>,
 }

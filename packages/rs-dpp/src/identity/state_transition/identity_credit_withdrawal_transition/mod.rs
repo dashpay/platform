@@ -26,6 +26,7 @@ use super::properties::{
 
 pub mod apply_identity_credit_withdrawal_transition_factory;
 pub mod validation;
+mod action;
 
 #[repr(u8)]
 #[derive(Serialize_repr, Deserialize_repr, PartialEq, Eq, Clone, Copy, Debug)]

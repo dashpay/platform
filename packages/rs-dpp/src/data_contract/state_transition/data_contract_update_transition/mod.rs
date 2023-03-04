@@ -18,6 +18,8 @@ use super::property_names::*;
 
 pub mod apply_data_contract_update_transition_factory;
 pub mod validation;
+mod action;
+pub use action::{DataContractUpdateTransitionAction, DATA_CONTRACT_UPDATE_TRANSITION_ACTION_VERSION };
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]

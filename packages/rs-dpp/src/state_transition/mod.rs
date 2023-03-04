@@ -30,6 +30,7 @@ pub mod fee;
 pub mod state_transition_execution_context;
 
 mod example;
+mod state_transition_action;
 macro_rules! call_method {
     ($state_transition:expr, $method:ident, $args:tt ) => {
         match $state_transition {

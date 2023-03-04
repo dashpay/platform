@@ -6,6 +6,7 @@ use crate::{
     data_contract::DataContract, document::document_transition::Action, errors::ProtocolError,
     util::json_value::JsonValueExt, util::json_value::ReplaceWith,
 };
+use crate::identity::TimestampMillis;
 
 use super::INITIAL_REVISION;
 use super::{
@@ -30,9 +31,9 @@ pub struct DocumentCreateTransition {
     pub entropy: [u8; 32],
 
     #[serde(rename = "$createdAt", skip_serializing_if = "Option::is_none")]
-    pub created_at: Option<i64>,
+    pub created_at: Option<TimestampMillis>,
     #[serde(rename = "$updatedAt", skip_serializing_if = "Option::is_none")]
-    pub updated_at: Option<i64>,
+    pub updated_at: Option<TimestampMillis>,
 
     #[serde(flatten, skip_serializing_if = "Option::is_none")]
     pub data: Option<serde_json::Value>,

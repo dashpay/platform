@@ -13,11 +13,19 @@ pub mod document_base_transition;
 pub mod document_create_transition;
 pub mod document_delete_transition;
 pub mod document_replace_transition;
+mod action;
+mod document_create_transition_action;
+mod document_base_transition_action;
+mod document_delete_transition_action;
+mod document_replace_transition_action;
 
 pub use document_base_transition::{Action, DocumentTransitionObjectLike};
 pub use document_create_transition::DocumentCreateTransition;
 pub use document_delete_transition::DocumentDeleteTransition;
 pub use document_replace_transition::DocumentReplaceTransition;
+
+pub use action::{DocumentTransitionAction, DOCUMENT_TRANSITION_ACTION_VERSION};
+use crate::identity::TimestampMillis;
 
 /// the initial revision of newly created document
 pub const INITIAL_REVISION: u32 = 1;
@@ -204,7 +212,7 @@ impl DocumentTransitionExt for DocumentTransition {
         &self.base().data_contract_id
     }
 
-    fn get_updated_at(&self) -> Option<i64> {
+    fn get_updated_at(&self) -> Option<TimestampMillis> {
         match self {
             DocumentTransition::Create(t) => t.updated_at,
             DocumentTransition::Replace(t) => t.updated_at,
@@ -212,7 +220,7 @@ impl DocumentTransitionExt for DocumentTransition {
         }
     }
 
-    fn set_updated_at(&mut self, timestamp_millis: Option<i64>) {
+    fn set_updated_at(&mut self, timestamp_millis: Option<TimestampMillis>) {
         match self {
             DocumentTransition::Create(ref mut t) => t.updated_at = timestamp_millis,
             DocumentTransition::Replace(ref mut t) => t.updated_at = timestamp_millis,
@@ -220,7 +228,7 @@ impl DocumentTransitionExt for DocumentTransition {
         }
     }
 
-    fn get_created_at(&self) -> Option<i64> {
+    fn get_created_at(&self) -> Option<TimestampMillis> {
         match self {
             DocumentTransition::Create(t) => t.created_at,
             DocumentTransition::Replace(_) => None,
@@ -228,7 +236,7 @@ impl DocumentTransitionExt for DocumentTransition {
         }
     }
 
-    fn set_created_at(&mut self, timestamp_millis: Option<i64>) {
+    fn set_created_at(&mut self, timestamp_millis: Option<TimestampMillis>) {
         match self {
             DocumentTransition::Create(ref mut t) => t.created_at = timestamp_millis,
             DocumentTransition::Replace(_) => {}

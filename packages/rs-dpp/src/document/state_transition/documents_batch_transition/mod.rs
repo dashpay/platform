@@ -31,6 +31,7 @@ use self::document_transition::{
 pub mod apply_documents_batch_transition_factory;
 pub mod document_transition;
 pub mod validation;
+mod action;
 
 pub mod property_names {
     pub const DATA_CONTRACT_ID: &str = "$dataContractId";
