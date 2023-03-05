@@ -4,23 +4,29 @@ use std::collections::{BTreeMap, HashMap};
 
 #[derive(Debug, Clone, Copy)]
 pub enum ReplacementType {
+    Identifier,
     Bytes,
     TextBase58,
     TextBase64,
 }
 
 impl ReplacementType {
-    pub fn replace_for_bytes(&self, bytes: Vec<u8>) -> Value {
+    pub fn replace_for_bytes(&self, bytes: Vec<u8>) -> Result<Value, Error> {
         match self {
-            ReplacementType::Bytes => Value::Bytes(bytes),
-            ReplacementType::TextBase58 => Value::Text(bs58::encode(bytes).into_string()),
-            ReplacementType::TextBase64 => Value::Text(base64::encode(bytes)),
+            ReplacementType::Identifier => Ok(Value::Identifier(
+                bytes
+                    .try_into()
+                    .map_err(|_| Error::ByteLengthNot32BytesError)?,
+            )),
+            ReplacementType::Bytes => Ok(Value::Bytes(bytes)),
+            ReplacementType::TextBase58 => Ok(Value::Text(bs58::encode(bytes).into_string())),
+            ReplacementType::TextBase64 => Ok(Value::Text(base64::encode(bytes))),
         }
     }
 
     pub fn replace_consume_value(&self, value: Value) -> Result<Value, Error> {
         let bytes = value.into_system_bytes()?;
-        Ok(self.replace_for_bytes(bytes))
+        self.replace_for_bytes(bytes)
     }
 }
 
@@ -59,7 +65,7 @@ impl BTreeValueMapInsertionPathHelper for BTreeMap<String, Value> {
             current_value = new_value;
             if split.peek().is_none() {
                 let bytes = current_value.to_system_bytes()?;
-                new_value = &mut replacement_type.replace_for_bytes(bytes);
+                new_value = &mut replacement_type.replace_for_bytes(bytes)?;
                 return Ok(true);
             }
         }

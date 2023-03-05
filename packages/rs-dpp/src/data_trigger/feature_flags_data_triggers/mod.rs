@@ -1,9 +1,10 @@
 use anyhow::{anyhow, bail, Context};
+use platform_value::btreemap_extensions::BTreeValueMapHelper;
 
 use crate::{
     data_trigger::create_error, document::document_transition::DocumentTransition,
     get_from_transition, prelude::Identifier, state_repository::StateRepositoryLike,
-    util::json_value::JsonValueExt,
+    util::json_value::JsonValueExt, ProtocolError,
 };
 
 use super::{DataTriggerExecutionContext, DataTriggerExecutionResult};
@@ -43,9 +44,14 @@ where
     let block_height = context
         .state_repository
         .fetch_latest_platform_block_height()
-        .await? as i64;
+        .await? as u64;
 
-    let enable_at_height = data.get_i64(PROPERTY_ENABLE_AT_HEIGHT)?;
+    let enable_at_height: u64 = data.get_integer(PROPERTY_ENABLE_AT_HEIGHT).map_err(|_| {
+        anyhow!(
+            "property missing for create_feature_flag_data_trigger '{}'",
+            PROPERTY_ENABLE_AT_HEIGHT
+        )
+    })?;
 
     if enable_at_height < block_height {
         let err = create_error(

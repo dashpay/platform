@@ -79,12 +79,7 @@ impl TryInto<JsonValue> for Value {
             Value::I16(i) => JsonValue::Number(i.into()),
             Value::U8(i) => JsonValue::Number(i.into()),
             Value::I8(i) => JsonValue::Number(i.into()),
-            Value::Bytes(bytes) => JsonValue::Array(
-                bytes
-                    .into_iter()
-                    .map(|byte| JsonValue::Number(byte.into()))
-                    .collect(),
-            ),
+            Value::Bytes(bytes) => JsonValue::String(base64::encode(bytes.as_slice())),
             Value::Float(float) => JsonValue::Number(Number::from_f64(float).unwrap_or(0.into())),
             Value::Text(string) => JsonValue::String(string),
             Value::Bool(value) => JsonValue::Bool(value),
@@ -116,6 +111,7 @@ impl TryInto<JsonValue> for Value {
 
 pub trait BTreeValueJsonConverter {
     fn into_json_value(self) -> Result<JsonValue, Error>;
+    fn to_json_value(&self) -> Result<JsonValue, Error>;
     fn from_json_value(value: JsonValue) -> Result<Self, Error>
     where
         Self: Sized;
@@ -130,8 +126,30 @@ impl BTreeValueJsonConverter for BTreeMap<String, Value> {
         ))
     }
 
+    fn to_json_value(&self) -> Result<JsonValue, Error> {
+        Ok(JsonValue::Object(
+            self.into_iter()
+                .map(|(key, value)| Ok((key.clone(), value.clone().try_into()?)))
+                .collect::<Result<Map<String, JsonValue>, Error>>()?,
+        ))
+    }
+
     fn from_json_value(value: JsonValue) -> Result<Self, Error> {
         let platform_value: Value = value.into();
         platform_value.into_btree_map()
+    }
+}
+
+pub trait BTreeValueRefJsonConverter {
+    fn to_json_value(self) -> Result<JsonValue, Error>;
+}
+
+impl BTreeValueRefJsonConverter for BTreeMap<String, &Value> {
+    fn to_json_value(self) -> Result<JsonValue, Error> {
+        Ok(JsonValue::Object(
+            self.into_iter()
+                .map(|(key, value)| Ok((key, value.clone().try_into()?)))
+                .collect::<Result<Map<String, JsonValue>, Error>>()?,
+        ))
     }
 }

@@ -38,7 +38,7 @@ use std::convert::TryInto;
 use std::fmt;
 
 use ciborium::Value as CborValue;
-use serde_json::{json, Value as JsonValue};
+use serde_json::{json, Map, Value as JsonValue};
 
 use crate::data_contract::{DataContract, DriveContractExt};
 use platform_value::btreemap_extensions::BTreeValueMapHelper;
@@ -255,7 +255,7 @@ impl Document {
         Ok((identifiers_paths, binary_paths))
     }
 
-    pub fn to_json(&self) -> Result<JsonValue, ProtocolError> {
+    pub fn to_json_with_identifiers_using_bytes(&self) -> Result<JsonValue, ProtocolError> {
         let mut value = json!({
             property_names::ID: self.id,
             property_names::OWNER_ID: self.owner_id,
@@ -283,10 +283,27 @@ impl Document {
         self.properties
             .iter()
             .try_for_each(|(key, property_value)| {
-                let serde_value: JsonValue = property_value
-                    .clone()
-                    .try_into()
-                    .map_err(ProtocolError::ValueError)?;
+                let serde_value: JsonValue = match property_value {
+                    Value::Identifier(bytes) => {
+                        // In order to be able to validate using JSON schema it needs to be in byte form
+                        JsonValue::Array(
+                            bytes
+                                .into_iter()
+                                .map(|a| JsonValue::Number((*a).into()))
+                                .collect(),
+                        )
+                    }
+                    Value::Bytes(bytes) => JsonValue::Array(
+                        bytes
+                            .into_iter()
+                            .map(|byte| JsonValue::Number((*byte).into()))
+                            .collect(),
+                    ),
+                    _ => property_value
+                        .clone()
+                        .try_into()
+                        .map_err(ProtocolError::ValueError)?,
+                };
                 value_mut.insert(key.to_string(), serde_value);
                 Ok::<(), ProtocolError>(())
             })?;
@@ -338,11 +355,7 @@ impl Document {
         Ok(value)
     }
 
-    pub fn to_pretty_json(
-        &self,
-        data_contract: &DataContract,
-        document_type_name: &str,
-    ) -> Result<JsonValue, ProtocolError> {
+    pub fn to_json(&self) -> Result<JsonValue, ProtocolError> {
         let mut value = json!({
             property_names::ID: bs58::encode(self.id).into_string(),
             property_names::OWNER_ID:  bs58::encode(self.owner_id).into_string(),
@@ -377,8 +390,6 @@ impl Document {
                 value_mut.insert(key.to_string(), serde_value);
                 Ok::<(), ProtocolError>(())
             })?;
-
-        Self::replace_property_fields(&mut value, data_contract, document_type_name)?;
 
         Ok(value)
     }
@@ -472,8 +483,8 @@ impl Document {
             ..Default::default()
         };
 
-        document.id = properties.remove_system_hash256_bytes(property_names::ID)?;
-        document.owner_id = properties.remove_system_hash256_bytes(property_names::OWNER_ID)?;
+        document.id = properties.remove_hash256_bytes(property_names::ID)?;
+        document.owner_id = properties.remove_hash256_bytes(property_names::OWNER_ID)?;
         document.revision = properties.remove_optional_integer(property_names::REVISION)?;
         document.created_at = properties.remove_optional_integer(property_names::CREATED_AT)?;
         document.updated_at = properties.remove_optional_integer(property_names::UPDATED_AT)?;

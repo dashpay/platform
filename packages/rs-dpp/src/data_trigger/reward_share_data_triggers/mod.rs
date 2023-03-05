@@ -38,20 +38,14 @@ where
             get_from_transition!(document_transition, id)
         ),
     };
-    let data: Value = document_create_transition
-        .data
-        .as_ref()
-        .ok_or_else(|| {
-            anyhow!(
-                "data isn't defined in Data Transition '{}'",
-                document_create_transition.base.id
-            )
-        })?
-        .clone()
-        .into();
+    let properties = document_create_transition.data.as_ref().ok_or_else(|| {
+        anyhow!(
+            "data isn't defined in Data Transition '{}'",
+            document_create_transition.base.id
+        )
+    })?;
 
-    let properties = data.into_btree_map()?;
-    let pay_to_id = properties.get_system_hash256_bytes(PROPERTY_PAY_TO_ID)?;
+    let pay_to_id = properties.get_hash256_bytes(PROPERTY_PAY_TO_ID)?;
     let percentage = properties.get_integer(PROPERTY_PERCENTAGE)?;
 
     if !is_dry_run {
@@ -215,7 +209,6 @@ mod test {
         };
         let document_transitions =
             get_document_transitions_fixture([(Action::Create, vec![documents[0].clone()])]);
-        dbg!(&document_transitions);
         TestData {
             extended_documents: documents,
             data_contract,
@@ -272,7 +265,7 @@ mod test {
             .returning(move |_, _, _, _| Ok(documents.clone()));
 
         // documentsFixture contains percentage = 500
-        document_transition.insert_dynamic_property(String::from("percentage"), json!(9501));
+        document_transition.insert_dynamic_property(String::from("percentage"), Value::U64(9501));
 
         let execution_context = StateTransitionExecutionContext::default();
         let context = DataTriggerExecutionContext {
@@ -326,15 +319,12 @@ mod test {
                 .await;
 
         let error = get_data_trigger_error(&result, 0);
-        let pay_to_id_bytes: Vec<u8> = document_transition
+        let pay_to_id_bytes = document_transition
             .get_dynamic_property(PROPERTY_PAY_TO_ID)
             .expect("payToId should exist")
-            .as_array()
-            .unwrap()
-            .iter()
-            .map(|v| v.as_u64().unwrap() as u8)
-            .collect_vec();
-        let pay_to_id = Identifier::from_bytes(&pay_to_id_bytes).unwrap();
+            .to_hash256()
+            .expect("expected to be able to get a hash");
+        let pay_to_id = Identifier::from(pay_to_id_bytes);
 
         assert_eq!(
             format!("Identity '{}' doesn't exist", pay_to_id),

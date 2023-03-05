@@ -1,6 +1,10 @@
 use std::convert;
 
+use dpp::document::document_transition::document_base_transition::JsonValue;
 use dpp::identity::TimestampMillis;
+use dpp::platform_value::btreemap_extensions::BTreeValueMapHelper;
+use dpp::platform_value::btreemap_path_extensions::BTreeValueMapPathHelper;
+use dpp::platform_value::converter::serde_json::BTreeValueJsonConverter;
 use dpp::prelude::Revision;
 use dpp::{
     document::document_transition::{
@@ -8,6 +12,7 @@ use dpp::{
     },
     prelude::{DataContract, Identifier},
     util::{json_schema::JsonSchemaExt, json_value::JsonValueExt},
+    ProtocolError,
 };
 use serde::Serialize;
 use wasm_bindgen::prelude::*;
@@ -122,22 +127,27 @@ impl DocumentCreateTransitionWasm {
             return Ok(JsValue::undefined());
         };
 
-        let mut value = if let Ok(value) = document_data.get_value(&path) {
-            value.to_owned()
+        let mut value = if let Ok(value) = document_data.get_at_path(&path) {
+            value.clone()
         } else {
             return Ok(JsValue::undefined());
         };
 
         match self.get_binary_type_of_path(&path) {
             BinaryType::Buffer => {
-                let bytes: Vec<u8> = serde_json::from_value(value).unwrap();
-                let buffer = Buffer::from_bytes(&bytes);
+                let buffer = value
+                    .to_bytes()
+                    .map_err(ProtocolError::ValueError)
+                    .with_js_error()?;
                 return Ok(buffer.into());
             }
             BinaryType::Identifier => {
-                let bytes: Vec<u8> = serde_json::from_value(value).unwrap();
+                let buffer = value
+                    .to_hash256()
+                    .map_err(ProtocolError::ValueError)
+                    .with_js_error()?;
                 let id = <IdentifierWrapper as convert::From<Identifier>>::from(
-                    Identifier::from_bytes(&bytes).with_js_error()?,
+                    Identifier::from(buffer).with_js_error()?,
                 );
                 return Ok(id.into());
             }
@@ -146,8 +156,8 @@ impl DocumentCreateTransitionWasm {
                 // or may not captain it at all
             }
         }
-
-        let js_value = value.serialize(&serde_wasm_bindgen::Serializer::json_compatible())?;
+        let json_value: JsonValue = value.into();
+        let js_value = json_value.serialize(&serde_wasm_bindgen::Serializer::json_compatible())?;
         let (identifier_paths, binary_paths) = self
             .inner
             .base
@@ -182,7 +192,6 @@ impl DocumentCreateTransitionWasm {
                 }
             }
         }
-
         Ok(js_value)
     }
 
@@ -219,37 +228,15 @@ impl DocumentCreateTransitionWasm {
     // AbstractDataDocumentTransition
     #[wasm_bindgen(js_name=getData)]
     pub fn get_data(&self) -> Result<JsValue, JsValue> {
-        let data = if let Some(ref data) = self.inner.data {
-            data
+        let json_data = if let Some(ref data) = self.inner.data {
+            data.to_json_value()
+                .map_err(ProtocolError::ValueError)
+                .with_js_error()?
         } else {
             return Ok(JsValue::undefined());
         };
 
-        let js_value = data.serialize(&serde_wasm_bindgen::Serializer::json_compatible())?;
-        let (identifier_paths, binary_paths) = self
-            .inner
-            .base
-            .data_contract
-            .get_identifiers_and_binary_paths(&self.inner.base.document_type)
-            .with_js_error()?;
-
-        for path in identifier_paths {
-            if let Ok(value) = data.get_value(path) {
-                let bytes: Vec<u8> = serde_json::from_value(value.to_owned()).with_js_error()?;
-                let id = <IdentifierWrapper as convert::From<Identifier>>::from(
-                    Identifier::from_bytes(&bytes).unwrap(),
-                );
-                lodash_set(&js_value, path, id.into());
-            }
-        }
-        for path in binary_paths {
-            if let Ok(value) = data.get_value(path) {
-                let bytes: Vec<u8> = serde_json::from_value(value.to_owned()).with_js_error()?;
-                let buffer = Buffer::from_bytes(&bytes);
-                lodash_set(&js_value, path, buffer.into());
-            }
-        }
-
+        let js_value = json_data.serialize(&serde_wasm_bindgen::Serializer::json_compatible())?;
         Ok(js_value)
     }
 }

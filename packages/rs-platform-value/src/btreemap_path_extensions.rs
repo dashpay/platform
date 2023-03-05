@@ -178,7 +178,7 @@ where
 
     fn get_optional_identifier_at_path(&self, path: &str) -> Result<Option<[u8; 32]>, Error> {
         self.get_optional_at_path(path)?
-            .map(|v| v.borrow().to_system_hash256())
+            .map(|v| v.borrow().to_hash256())
             .transpose()
     }
 
@@ -466,7 +466,7 @@ where
         path: &str,
     ) -> Result<Option<[u8; 32]>, Error> {
         self.get_optional_at_path(path)?
-            .map(|v| v.borrow().to_system_hash256())
+            .map(|v| v.borrow().to_hash256())
             .transpose()
     }
 
@@ -507,7 +507,7 @@ where
         path: &str,
     ) -> Result<Option<[u8; 32]>, Error> {
         self.remove(path)
-            .map(|v| v.borrow().to_system_hash256())
+            .map(|v| v.borrow().to_hash256())
             .transpose()
     }
 

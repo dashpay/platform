@@ -1,6 +1,8 @@
+use platform_value::btreemap_extensions::BTreeValueMapHelper;
 use platform_value::Value;
 use serde::{Deserialize, Serialize};
 use serde_json::Value as JsonValue;
+use std::collections::BTreeMap;
 
 use crate::document::Document;
 use crate::identity::TimestampMillis;
@@ -12,9 +14,14 @@ use crate::{
 };
 
 use super::{
-    document_base_transition, document_base_transition::DocumentBaseTransition,
-    merge_serde_json_values, Action, DocumentTransitionObjectLike,
+    document_base_transition, document_base_transition::DocumentBaseTransition, Action,
+    DocumentTransitionObjectLike,
 };
+
+pub(self) mod property_names {
+    pub const REVISION: &str = "$revision";
+    pub const UPDATED_AT: &str = "$updatedAt";
+}
 
 /// Identifier fields in [`DocumentReplaceTransition`]
 pub use super::document_base_transition::IDENTIFIER_FIELDS;
@@ -29,7 +36,7 @@ pub struct DocumentReplaceTransition {
     #[serde(skip_serializing_if = "Option::is_none", rename = "$updatedAt")]
     pub updated_at: Option<TimestampMillis>,
     #[serde(flatten, skip_serializing_if = "Option::is_none")]
-    pub data: Option<JsonValue>,
+    pub data: Option<BTreeMap<String, Value>>,
 }
 
 impl DocumentReplaceTransition {
@@ -145,28 +152,54 @@ impl DocumentTransitionObjectLike for DocumentReplaceTransition {
     }
 
     fn from_raw_object(
-        mut raw_transition: JsonValue,
+        mut raw_transition: Value,
         data_contract: DataContract,
     ) -> Result<DocumentReplaceTransition, ProtocolError> {
-        // Only static identifiers are replaced, as the dynamic ones are stored as Arrays
-        raw_transition.replace_identifier_paths(
-            document_base_transition::IDENTIFIER_FIELDS,
-            ReplaceWith::Base58,
-        )?;
-
-        let mut document: DocumentReplaceTransition = serde_json::from_value(raw_transition)?;
-        document.base.action = Action::Replace;
-        document.base.data_contract = data_contract;
-
-        Ok(document)
+        let map = raw_transition
+            .into_btree_map()
+            .map_err(ProtocolError::ValueError)?;
+        Self::from_value_map(map, data_contract)
     }
 
-    fn to_object(&self) -> Result<JsonValue, ProtocolError> {
-        let transition_base_value = self.base.to_object()?;
-        let mut transition_create_value = serde_json::to_value(self)?;
+    fn from_value_map(
+        mut map: BTreeMap<String, Value>,
+        data_contract: DataContract,
+    ) -> Result<Self, ProtocolError>
+    where
+        Self: Sized,
+    {
+        Ok(DocumentReplaceTransition {
+            base: DocumentBaseTransition::from_value_map_consume(&mut map, data_contract)?,
+            revision: map
+                .remove_integer(property_names::REVISION)
+                .map_err(ProtocolError::ValueError)?,
+            updated_at: map
+                .remove_optional_integer(property_names::UPDATED_AT)
+                .map_err(ProtocolError::ValueError)?,
+            data: Some(map),
+        })
+    }
 
-        merge_serde_json_values(&mut transition_create_value, transition_base_value)?;
-        Ok(transition_create_value)
+    fn to_object(&self) -> Result<Value, ProtocolError> {
+        Ok(self.to_value_map()?.into())
+    }
+
+    fn to_value_map(&self) -> Result<BTreeMap<String, Value>, ProtocolError> {
+        let mut transition_base_map = self.base.to_value_map()?;
+        transition_base_map.insert(
+            property_names::REVISION.to_string(),
+            Value::U64(self.revision),
+        );
+        if let Some(updated_at) = self.updated_at {
+            transition_base_map.insert(
+                property_names::UPDATED_AT.to_string(),
+                Value::U64(updated_at),
+            );
+        }
+        if let Some(properties) = self.data.clone() {
+            transition_base_map.extend(properties)
+        }
+        Ok(transition_base_map)
     }
 
     fn to_json(&self) -> Result<JsonValue, ProtocolError> {
@@ -212,7 +245,7 @@ mod test {
         assert_eq!(cdt.base.document_type, "note");
         assert_eq!(cdt.revision, 1);
         assert_eq!(
-            cdt.data.as_ref().unwrap()["message"],
+            cdt.data.as_ref().unwrap().get_str("message").unwrap(),
             "example_message_replace"
         );
 

@@ -17,6 +17,7 @@ use crate::document::Document;
 use platform_value::btreemap_extensions::BTreeValueMapHelper;
 use platform_value::btreemap_path_extensions::BTreeValueMapPathHelper;
 use platform_value::btreemap_path_insertion_extensions::BTreeValueMapInsertionPathHelper;
+use platform_value::converter::serde_json::BTreeValueJsonConverter;
 use platform_value::Value;
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value as JsonValue};
@@ -191,9 +192,7 @@ impl ExtendedDocument {
     }
 
     pub fn to_pretty_json(&self) -> Result<JsonValue, ProtocolError> {
-        let mut value = self
-            .document
-            .to_pretty_json(&self.data_contract, &self.document_type_name)?;
+        let mut value = self.document.to_json()?;
         let value_mut = value.as_object_mut().unwrap();
         value_mut.insert(
             property_names::PROTOCOL_VERSION.to_string(),
@@ -226,7 +225,7 @@ impl ExtendedDocument {
 
         let data_contract_id = Identifier::new(
             document_map
-                .remove_system_hash256_bytes(property_names::DATA_CONTRACT_ID)
+                .remove_hash256_bytes(property_names::DATA_CONTRACT_ID)
                 .map_err(ProtocolError::ValueError)?,
         );
 

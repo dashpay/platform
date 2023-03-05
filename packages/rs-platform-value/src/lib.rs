@@ -21,7 +21,7 @@ use crate::value_map::{ValueMap, ValueMapHelper};
 pub use error::Error;
 pub use integer::Integer;
 use serde::{Deserialize, Serialize};
-use std::collections::HashMap;
+use std::collections::{BTreeMap, HashMap};
 
 pub type Hash256 = [u8; 32];
 pub use btreemap_field_replacement::ReplacementType;
@@ -976,7 +976,7 @@ impl Value {
             current_value = new_value;
             if split.peek().is_none() {
                 let bytes = current_value.to_system_bytes()?;
-                new_value = &mut replacement_type.replace_for_bytes(bytes);
+                new_value = &mut replacement_type.replace_for_bytes(bytes)?;
                 return Ok(true);
             }
         }
@@ -1041,6 +1041,17 @@ implfrom! {
 
     Map(&[(Value, Value)]),
     Map(Vec<(Value, Value)>),
+}
+
+impl From<BTreeMap<String, Value>> for Value {
+    fn from(value: BTreeMap<String, Value>) -> Self {
+        Value::Map(
+            value
+                .into_iter()
+                .map(|(key, value)| (Value::Text(key), value))
+                .collect(),
+        )
+    }
 }
 
 impl From<char> for Value {

@@ -1,3 +1,4 @@
+use platform_value::btreemap_extensions::BTreeValueMapHelper;
 use serde_json::Value;
 use std::collections::{hash_map::Entry, HashMap};
 
@@ -98,16 +99,18 @@ fn get_data_property(document_transition: &DocumentTransition, property_name: &s
         DocumentTransition::Create(dt_create) => match &dt_create.data {
             None => String::from(""),
             Some(data) => data
-                .get(property_name)
-                .unwrap_or(&Value::String(String::from("")))
-                .to_string(),
+                .get_optional_string(property_name)
+                .ok()
+                .flatten()
+                .unwrap_or(String::from("")),
         },
         DocumentTransition::Replace(dt_replace) => match &dt_replace.data {
             None => String::from(""),
             Some(data) => data
-                .get(property_name)
-                .unwrap_or(&Value::String(String::from("")))
-                .to_string(),
+                .get_optional_string(property_name)
+                .ok()
+                .flatten()
+                .unwrap_or(String::from("")),
         },
     }
 }

@@ -4,6 +4,8 @@ use std::convert::TryInto;
 use anyhow::{anyhow, Context};
 use ciborium::value::Value as CborValue;
 use integer_encoding::VarInt;
+use platform_value::btreemap_extensions::BTreeValueMapHelper;
+use platform_value::Value;
 use serde::{Deserialize, Serialize};
 use serde_json::Value as JsonValue;
 
@@ -145,33 +147,43 @@ impl DocumentsBatchTransition {
 
     /// creates the instance of [`DocumentsBatchTransition`] from raw object
     pub fn from_raw_object(
-        mut raw_object: JsonValue,
+        raw_object: Value,
         data_contracts: Vec<DataContract>,
     ) -> Result<Self, ProtocolError> {
+        let mut map = raw_object
+            .into_btree_map()
+            .map_err(ProtocolError::ValueError)?;
         let mut batch_transitions = DocumentsBatchTransition {
-            protocol_version: raw_object
-                .get_u64(property_names::PROTOCOL_VERSION)
+            protocol_version: map
+                .get_integer(property_names::PROTOCOL_VERSION)
                 // js-dpp allows `protocolVersion` to be undefined
                 .unwrap_or(LATEST_VERSION as u64) as u32,
-            signature: raw_object.get_bytes(property_names::SIGNATURE).ok(),
-            signature_public_key_id: raw_object
-                .get_u64(property_names::SIGNATURE_PUBLIC_KEY_ID)
-                .ok()
-                .map(|v| v as KeyID),
-            owner_id: Identifier::from_bytes(&raw_object.get_bytes(property_names::OWNER_ID)?)?,
+            signature: map
+                .get_optional_bytes(property_names::SIGNATURE)
+                .map_err(ProtocolError::ValueError)?,
+            signature_public_key_id: map
+                .get_optional_integer(property_names::SIGNATURE_PUBLIC_KEY_ID)
+                .map_err(ProtocolError::ValueError)?,
+            owner_id: Identifier::from(
+                map.get_hash256_bytes(property_names::OWNER_ID)
+                    .map_err(ProtocolError::ValueError)?,
+            ),
             ..Default::default()
         };
 
         let mut document_transitions: Vec<DocumentTransition> = vec![];
-        let maybe_transitions = raw_object.remove(property_names::TRANSITIONS);
-        if let Ok(JsonValue::Array(raw_transitions)) = maybe_transitions {
+        let maybe_transitions = map.remove(property_names::TRANSITIONS);
+        if let Some(Value::Array(raw_transitions)) = maybe_transitions {
             let data_contracts_map: HashMap<Vec<u8>, DataContract> = data_contracts
                 .into_iter()
                 .map(|dc| (dc.id.as_bytes().to_vec(), dc))
                 .collect();
 
             for raw_transition in raw_transitions {
-                let id = raw_transition.get_bytes(property_names::DATA_CONTRACT_ID)?;
+                let mut raw_transition_map = raw_object
+                    .into_btree_map()
+                    .map_err(ProtocolError::ValueError)?;
+                let id = raw_transition_map.get_bytes(property_names::DATA_CONTRACT_ID)?;
                 let data_contract = data_contracts_map.get(&id).ok_or_else(|| {
                     anyhow!(
                         "Data Contract doesn't exists for Transition: {:?}",
@@ -179,7 +191,7 @@ impl DocumentsBatchTransition {
                     )
                 })?;
                 let document_transition =
-                    DocumentTransition::from_raw_object(raw_transition, data_contract.clone())?;
+                    DocumentTransition::from_value_map(raw_transition_map, data_contract.clone())?;
                 document_transitions.push(document_transition);
             }
         }

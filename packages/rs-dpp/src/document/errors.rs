@@ -16,6 +16,8 @@ pub enum DocumentError {
     DocumentNotProvidedError {
         document_transition: DocumentTransition,
     },
+    #[error("Invalid Document action number {0}")]
+    InvalidActionError(u8),
     #[error("Invalid Document action submitted")]
     InvalidActionNameError { actions: Vec<String> },
     #[error("Invalid Document action '{}'", document_transition.base().action)]

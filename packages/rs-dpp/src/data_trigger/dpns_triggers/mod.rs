@@ -51,20 +51,29 @@ where
     })?;
 
     let top_level_identity = top_level_identity.context("top level identity isn't provided")?;
-    let owner_id = context.owner_id.to_string(Encoding::Base58);
-    let label = data.get_string(PROPERTY_LABEL)?;
-    let normalized_label = data.get_string(PROPERTY_NORMALIZED_LABEL)?;
-    let normalized_parent_domain_name = data.get_string(PROPERTY_NORMALIZED_PARENT_DOMAIN_NAME)?;
+    let owner_id = context.owner_id;
+    let label = data
+        .get_string(PROPERTY_LABEL)
+        .map_err(ProtocolError::ValueError)?;
+    let normalized_label = data
+        .get_str(PROPERTY_NORMALIZED_LABEL)
+        .map_err(ProtocolError::ValueError)?;
+    let normalized_parent_domain_name = data
+        .get_string(PROPERTY_NORMALIZED_PARENT_DOMAIN_NAME)
+        .map_err(ProtocolError::ValueError)?;
 
-    let preorder_salt = data.get_bytes(PROPERTY_PREORDER_SALT)?;
+    let preorder_salt = data
+        .get_hash256_bytes(PROPERTY_PREORDER_SALT)
+        .map_err(ProtocolError::ValueError)?;
     let records = data
         .get(PROPERTY_RECORDS)
-        .ok_or_else(|| anyhow!("property '{}' doesn't exist", PROPERTY_RECORDS))?;
+        .ok_or_else(|| anyhow!("property '{}' doesn't exist", PROPERTY_RECORDS))?
+        .to_btree_ref_map()
+        .map_err(ProtocolError::ValueError)?;
 
     let rule_allow_subdomains = data
-        .get_value(PROPERTY_ALLOW_SUBDOMAINS)?
-        .as_bool()
-        .ok_or_else(|| anyhow!("property '{}' isn't a bool", PROPERTY_ALLOW_SUBDOMAINS))?;
+        .get_bool(PROPERTY_ALLOW_SUBDOMAINS)
+        .map_err(ProtocolError::ValueError)?;
 
     let mut result = DataTriggerExecutionResult::default();
     let full_domain_name = normalized_label;
@@ -92,28 +101,38 @@ where
             result.add_error(err.into());
         }
 
-        if let Some(JsonValue::String(ref id)) = records.get(PROPERTY_DASH_UNIQUE_IDENTITY_ID) {
-            if id != &owner_id {
+        if let Some(id) = records
+            .get_optional_identifier(PROPERTY_DASH_UNIQUE_IDENTITY_ID)
+            .map_err(ProtocolError::ValueError)?
+        {
+            if id != owner_id.buffer {
                 let err = create_error(
                     context,
                     dt_create,
                     format!(
                         "ownerId {} doesn't match {} {}",
-                        owner_id, PROPERTY_DASH_UNIQUE_IDENTITY_ID, id
+                        owner_id,
+                        PROPERTY_DASH_UNIQUE_IDENTITY_ID,
+                        Identifier::new(id)
                     ),
                 );
                 result.add_error(err.into())
             }
         }
 
-        if let Some(JsonValue::String(ref id)) = records.get(PROPERTY_DASH_ALIAS_IDENTITY_ID) {
-            if id != &owner_id {
+        if let Some(id) = records
+            .get_optional_identifier(PROPERTY_DASH_ALIAS_IDENTITY_ID)
+            .map_err(ProtocolError::ValueError)?
+        {
+            if id != owner_id.buffer {
                 let err = create_error(
                     context,
                     dt_create,
                     format!(
                         "ownerId {} doesn't match {} {}",
-                        owner_id, PROPERTY_DASH_ALIAS_IDENTITY_ID, id
+                        owner_id,
+                        PROPERTY_DASH_ALIAS_IDENTITY_ID,
+                        Identifier::new(id)
                     ),
                 );
                 result.add_error(err.into());

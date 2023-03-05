@@ -1,5 +1,5 @@
 use platform_value::Value;
-use std::collections::HashMap;
+use std::collections::{BTreeMap, HashMap};
 
 use crate::document::{Document, ExtendedDocument};
 use crate::prelude::TimestampMillis;
@@ -115,12 +115,6 @@ fn document_from_transition_replace(
     created_at: TimestampMillis,
 ) -> Result<ExtendedDocument, ProtocolError> {
     // TODO cloning is costly. Probably the [`Document`] should have properties of type `Cow<'a, K>`
-    let property_value: Value = document_replace_transition
-        .data
-        .as_ref()
-        .unwrap_or(&serde_json::Value::Null)
-        .clone()
-        .into();
     Ok(ExtendedDocument {
         protocol_version: state_transition.protocol_version,
         document_type_name: document_replace_transition.base.document_type.clone(),
@@ -135,9 +129,7 @@ fn document_from_transition_replace(
         document: Document {
             id: document_replace_transition.base.id.buffer,
             owner_id: state_transition.owner_id.buffer,
-            properties: property_value
-                .into_btree_map()
-                .map_err(ProtocolError::ValueError)?,
+            properties: document_replace_transition.data.clone().unwrap_or_default(),
             revision: Some(document_replace_transition.revision),
             created_at: Some(created_at),
             updated_at: document_replace_transition.updated_at,
@@ -147,7 +139,9 @@ fn document_from_transition_replace(
 
 #[cfg(test)]
 mod test {
-    use serde_json::{json, Value};
+    use platform_value::Value;
+    use serde_json::{json, Value as JsonValue};
+    use std::convert::TryInto;
 
     use crate::tests::fixtures::get_extended_documents_fixture;
 
@@ -177,9 +171,9 @@ mod test {
             (Action::Replace, documents),
             (Action::Create, vec![]),
         ]);
-        let raw_document_transitions: Vec<Value> = documents_transitions
+        let raw_document_transitions: Vec<JsonValue> = documents_transitions
             .iter()
-            .map(|dt| dt.to_object().unwrap())
+            .map(|dt| dt.to_object().unwrap().try_into().unwrap())
             .collect();
         let owner_id_bytes = owner_id.to_buffer();
         let state_transition = DocumentsBatchTransition::from_raw_object(

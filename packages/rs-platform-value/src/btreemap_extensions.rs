@@ -75,7 +75,7 @@ pub trait BTreeValueMapHelper {
         key: &str,
     ) -> Result<I, Error>;
     fn get_optional_system_hash256_bytes(&self, key: &str) -> Result<Option<[u8; 32]>, Error>;
-    fn get_system_hash256_bytes(&self, key: &str) -> Result<[u8; 32], Error>;
+    fn get_hash256_bytes(&self, key: &str) -> Result<[u8; 32], Error>;
     fn get_optional_system_bytes(&self, key: &str) -> Result<Option<Vec<u8>>, Error>;
     fn get_system_bytes(&self, key: &str) -> Result<Vec<u8>, Error>;
     fn remove_optional_string(&mut self, key: &str) -> Result<Option<String>, Error>;
@@ -106,16 +106,12 @@ pub trait BTreeValueMapHelper {
             + TryFrom<i16>
             + TryFrom<u8>
             + TryFrom<i8>;
-    fn remove_optional_system_hash256_bytes(
-        &mut self,
-        key: &str,
-    ) -> Result<Option<[u8; 32]>, Error>;
-    fn remove_system_hash256_bytes(&mut self, key: &str) -> Result<[u8; 32], Error>;
-    fn remove_optional_system_bytes(&mut self, key: &str) -> Result<Option<Vec<u8>>, Error>;
-    fn remove_system_bytes(&mut self, key: &str) -> Result<Vec<u8>, Error>;
+    fn remove_optional_hash256_bytes(&mut self, key: &str) -> Result<Option<[u8; 32]>, Error>;
+    fn remove_hash256_bytes(&mut self, key: &str) -> Result<[u8; 32], Error>;
+    fn remove_optional_bytes(&mut self, key: &str) -> Result<Option<Vec<u8>>, Error>;
+    fn remove_bytes(&mut self, key: &str) -> Result<Vec<u8>, Error>;
     fn get_optional_bytes(&self, key: &str) -> Result<Option<Vec<u8>>, Error>;
     fn get_bytes(&self, key: &str) -> Result<Vec<u8>, Error>;
-    fn to_json_value(&self) -> Result<JsonValue, Error>;
     fn remove_optional_bool(&mut self, key: &str) -> Result<Option<bool>, Error>;
     fn remove_bool(&mut self, key: &str) -> Result<bool, Error>;
 }
@@ -125,9 +121,7 @@ where
     V: Borrow<Value>,
 {
     fn get_optional_identifier(&self, key: &str) -> Result<Option<[u8; 32]>, Error> {
-        self.get(key)
-            .map(|v| v.borrow().to_system_hash256())
-            .transpose()
+        self.get(key).map(|v| v.borrow().to_hash256()).transpose()
     }
 
     fn get_identifier(&self, key: &str) -> Result<[u8; 32], Error> {
@@ -399,12 +393,10 @@ where
     }
 
     fn get_optional_system_hash256_bytes(&self, key: &str) -> Result<Option<[u8; 32]>, Error> {
-        self.get(key)
-            .map(|v| v.borrow().to_system_hash256())
-            .transpose()
+        self.get(key).map(|v| v.borrow().to_hash256()).transpose()
     }
 
-    fn get_system_hash256_bytes(&self, key: &str) -> Result<[u8; 32], Error> {
+    fn get_hash256_bytes(&self, key: &str) -> Result<[u8; 32], Error> {
         self.get_optional_system_hash256_bytes(key)?.ok_or_else(|| {
             Error::StructureError(format!("unable to get system hash256 property {key}"))
         })
@@ -432,30 +424,26 @@ where
         })
     }
 
-    fn remove_optional_system_hash256_bytes(
-        &mut self,
-        key: &str,
-    ) -> Result<Option<[u8; 32]>, Error> {
+    fn remove_optional_hash256_bytes(&mut self, key: &str) -> Result<Option<[u8; 32]>, Error> {
         self.remove(key)
-            .map(|v| v.borrow().to_system_hash256())
+            .map(|v| v.borrow().to_hash256())
             .transpose()
     }
 
-    fn remove_system_hash256_bytes(&mut self, key: &str) -> Result<[u8; 32], Error> {
-        self.remove_optional_system_hash256_bytes(key)?
-            .ok_or_else(|| {
-                Error::StructureError(format!("unable to remove system hash256 property {key}"))
-            })
+    fn remove_hash256_bytes(&mut self, key: &str) -> Result<[u8; 32], Error> {
+        self.remove_optional_hash256_bytes(key)?.ok_or_else(|| {
+            Error::StructureError(format!("unable to remove system hash256 property {key}"))
+        })
     }
 
-    fn remove_optional_system_bytes(&mut self, key: &str) -> Result<Option<Vec<u8>>, Error> {
+    fn remove_optional_bytes(&mut self, key: &str) -> Result<Option<Vec<u8>>, Error> {
         self.remove(key)
             .map(|v| v.borrow().to_system_bytes())
             .transpose()
     }
 
-    fn remove_system_bytes(&mut self, key: &str) -> Result<Vec<u8>, Error> {
-        self.remove_optional_system_bytes(key)?.ok_or_else(|| {
+    fn remove_bytes(&mut self, key: &str) -> Result<Vec<u8>, Error> {
+        self.remove_optional_bytes(key)?.ok_or_else(|| {
             Error::StructureError(format!("unable to remove system bytes property {key}"))
         })
     }
@@ -521,13 +509,5 @@ where
     fn get_float(&self, key: &str) -> Result<f64, Error> {
         self.get_optional_float(key)?
             .ok_or_else(|| Error::StructureError(format!("unable to get float property {key}")))
-    }
-
-    fn to_json_value(&self) -> Result<JsonValue, Error> {
-        Ok(JsonValue::Object(
-            self.iter()
-                .map(|(key, value)| Ok((key.to_string(), value.borrow().clone().try_into()?)))
-                .collect::<Result<Map<String, JsonValue>, Error>>()?,
-        ))
     }
 }

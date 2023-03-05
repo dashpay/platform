@@ -357,14 +357,14 @@ impl Document {
     ) -> Result<Self, ProtocolError> {
         let owner_id = match owner_id {
             None => document_map
-                .remove_system_hash256_bytes(property_names::OWNER_ID)
+                .remove_hash256_bytes(property_names::OWNER_ID)
                 .map_err(ProtocolError::ValueError)?,
             Some(owner_id) => owner_id,
         };
 
         let id = match document_id {
             None => document_map
-                .remove_system_hash256_bytes(property_names::ID)
+                .remove_hash256_bytes(property_names::ID)
                 .map_err(ProtocolError::ValueError)?,
             Some(document_id) => document_id,
         };

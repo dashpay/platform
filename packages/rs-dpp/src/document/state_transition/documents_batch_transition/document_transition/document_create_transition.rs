@@ -1,7 +1,11 @@
 use itertools::Itertools;
-use platform_value::Value;
+use platform_value::btreemap_extensions::BTreeValueMapHelper;
+use platform_value::btreemap_field_replacement::BTreeValueMapInsertionPathHelper;
+use platform_value::{ReplacementType, Value};
 use serde::{Deserialize, Serialize};
 use serde_json::Value as JsonValue;
+use std::collections::BTreeMap;
+use std::string::ToString;
 
 use crate::document::Document;
 use crate::identity::TimestampMillis;
@@ -15,11 +19,18 @@ use crate::{
 use super::INITIAL_REVISION;
 use super::{
     document_base_transition, document_base_transition::DocumentBaseTransition,
-    merge_serde_json_values, DocumentTransitionObjectLike,
+    DocumentTransitionObjectLike,
 };
+
+pub(self) mod property_names {
+    pub const ENTROPY: &str = "$entropy";
+    pub const CREATED_AT: &str = "$createdAt";
+    pub const UPDATED_AT: &str = "$updatedAt";
+}
 
 /// The Binary fields in [`DocumentCreateTransition`]
 pub const BINARY_FIELDS: [&str; 1] = ["$entropy"];
+pub const BINARY_FIELDS_OWNED: [String; 1] = ["$entropy".to_string()];
 /// The Identifier fields in [`DocumentCreateTransition`]
 pub use super::document_base_transition::IDENTIFIER_FIELDS;
 
@@ -40,7 +51,7 @@ pub struct DocumentCreateTransition {
     pub updated_at: Option<TimestampMillis>,
 
     #[serde(flatten, skip_serializing_if = "Option::is_none")]
-    pub data: Option<serde_json::Value>,
+    pub data: Option<BTreeMap<String, Value>>,
 }
 
 impl DocumentCreateTransition {
@@ -57,15 +68,7 @@ impl DocumentCreateTransition {
     }
 
     pub(crate) fn to_document(&self, owner_id: [u8; 32]) -> Result<Document, ProtocolError> {
-        let properties = self
-            .data
-            .as_ref()
-            .map(|json_value| {
-                let value: Value = json_value.clone().into();
-                value.into_btree_map().map_err(ProtocolError::ValueError)
-            })
-            .transpose()?
-            .unwrap_or_default();
+        let properties = self.data.clone().unwrap_or_default();
         Ok(Document {
             id: self.base.id.to_buffer(),
             owner_id,
@@ -81,14 +84,7 @@ impl DocumentCreateTransition {
         let revision = self.get_revision();
         let created_at = self.created_at;
         let updated_at = self.updated_at;
-        let properties = self
-            .data
-            .map(|json_value| {
-                let value: Value = json_value.into();
-                value.into_btree_map().map_err(ProtocolError::ValueError)
-            })
-            .transpose()?
-            .unwrap_or_default();
+        let properties = self.data.unwrap_or_default();
         Ok(Document {
             id,
             owner_id,
@@ -102,51 +98,83 @@ impl DocumentCreateTransition {
 
 impl DocumentTransitionObjectLike for DocumentCreateTransition {
     fn from_json_object(
-        mut json_value: JsonValue,
+        json_value: JsonValue,
         data_contract: DataContract,
     ) -> Result<Self, ProtocolError> {
-        let document_type = json_value.get_string("$type")?;
+        let value: Value = json_value.into();
+        let mut map = value.into_btree_map().map_err(ProtocolError::ValueError)?;
+
+        let document_type = map.get_str("$type")?;
 
         let (identifiers_paths, binary_paths) =
-            data_contract.get_identifiers_and_binary_paths(document_type)?;
+            data_contract.get_identifiers_and_binary_paths_owned(document_type)?;
 
-        json_value.replace_binary_paths(
-            binary_paths.into_iter().chain(BINARY_FIELDS),
-            ReplaceWith::Bytes,
+        map.replace_at_paths(
+            binary_paths.into_iter().chain(BINARY_FIELDS_OWNED),
+            ReplacementType::Bytes,
         )?;
-        // Only dynamic identifiers are being replaced with bytes. Static are Strings
-        json_value.replace_identifier_paths(identifiers_paths, ReplaceWith::Bytes)?;
-        let mut document: DocumentCreateTransition = serde_json::from_value(json_value)?;
 
-        document.base.action = Action::Create;
-        document.base.data_contract = data_contract;
+        map.replace_at_paths(identifiers_paths.into_iter(), ReplacementType::Identifier)?;
+        let document = Self::from_value_map(map, data_contract)?;
 
         Ok(document)
     }
 
     fn from_raw_object(
-        mut raw_transition: JsonValue,
+        mut raw_transition: Value,
         data_contract: DataContract,
     ) -> Result<DocumentCreateTransition, ProtocolError> {
-        // Only static identifiers are replaced, as the dynamic ones are stored as Arrays
-        raw_transition.replace_identifier_paths(
-            document_base_transition::IDENTIFIER_FIELDS,
-            ReplaceWith::Base58,
-        )?;
-
-        let mut document: DocumentCreateTransition = serde_json::from_value(raw_transition)?;
-        document.base.action = Action::Create;
-        document.base.data_contract = data_contract;
-
-        Ok(document)
+        let map = raw_transition
+            .into_btree_map()
+            .map_err(ProtocolError::ValueError)?;
+        Self::from_value_map(map, data_contract)
     }
 
-    fn to_object(&self) -> Result<JsonValue, ProtocolError> {
-        let transition_base_value = self.base.to_object()?;
-        let mut transition_create_value = serde_json::to_value(self)?;
+    fn from_value_map(
+        mut map: BTreeMap<String, Value>,
+        data_contract: DataContract,
+    ) -> Result<DocumentCreateTransition, ProtocolError> {
+        Ok(DocumentCreateTransition {
+            base: DocumentBaseTransition::from_value_map_consume(&mut map, data_contract)?,
+            entropy: map
+                .remove_hash256_bytes(property_names::ENTROPY)
+                .map_err(ProtocolError::ValueError)?,
+            created_at: map
+                .remove_optional_integer(property_names::CREATED_AT)
+                .map_err(ProtocolError::ValueError)?,
+            updated_at: map
+                .remove_optional_integer(property_names::UPDATED_AT)
+                .map_err(ProtocolError::ValueError)?,
+            data: Some(map),
+        })
+    }
 
-        merge_serde_json_values(&mut transition_create_value, transition_base_value)?;
-        Ok(transition_create_value)
+    fn to_object(&self) -> Result<Value, ProtocolError> {
+        Ok(self.to_value_map()?.into())
+    }
+
+    fn to_value_map(&self) -> Result<BTreeMap<String, Value>, ProtocolError> {
+        let mut transition_base_map = self.base.to_value_map()?;
+        transition_base_map.insert(
+            property_names::ENTROPY.to_string(),
+            Value::Bytes(self.entropy.to_vec()),
+        );
+        if let Some(created_at) = self.created_at {
+            transition_base_map.insert(
+                property_names::CREATED_AT.to_string(),
+                Value::U64(created_at),
+            );
+        }
+        if let Some(updated_at) = self.updated_at {
+            transition_base_map.insert(
+                property_names::UPDATED_AT.to_string(),
+                Value::U64(updated_at),
+            );
+        }
+        if let Some(properties) = self.data.clone() {
+            transition_base_map.extend(properties)
+        }
+        Ok(transition_base_map)
     }
 
     fn to_json(&self) -> Result<JsonValue, ProtocolError> {
@@ -225,7 +253,7 @@ mod test {
         });
 
         let transition: DocumentCreateTransition =
-            DocumentCreateTransition::from_raw_object(raw_document, data_contract).unwrap();
+            DocumentCreateTransition::from_json_object(raw_document, data_contract).unwrap();
 
         let json_transition = transition.to_json().expect("no errors");
         assert_eq!(
@@ -271,9 +299,13 @@ mod test {
         });
 
         let document: DocumentCreateTransition =
-            DocumentCreateTransition::from_raw_object(raw_document, data_contract).unwrap();
+            DocumentCreateTransition::from_json_object(raw_document, data_contract).unwrap();
 
-        let object_transition = document.to_object().expect("no errors");
+        let object_transition = document
+            .to_object()
+            .expect("no errors")
+            .into_btree_map()
+            .unwrap();
         assert_eq!(object_transition.get_bytes("$id").unwrap(), id);
         assert_eq!(
             object_transition.get_bytes("$dataContractId").unwrap(),

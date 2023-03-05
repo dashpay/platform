@@ -1,14 +1,14 @@
 use anyhow::{anyhow, bail};
+use platform_value::btreemap_extensions::BTreeValueMapHelper;
 
 use crate::{
     document::document_transition::DocumentTransition, errors::DataTriggerError,
-    get_from_transition, prelude::Identifier, state_repository::StateRepositoryLike,
-    util::json_value::JsonValueExt,
+    get_from_transition, prelude::Identifier, state_repository::StateRepositoryLike, ProtocolError,
 };
 
 use super::{DataTriggerExecutionContext, DataTriggerExecutionResult};
 
-const BLOCKS_SIZE_WINDOW: i64 = 8;
+const BLOCKS_SIZE_WINDOW: u64 = 8;
 const PROPERTY_CORE_HEIGHT_CREATED_AT: &str = "coreHeightCreatedAt";
 const PROPERTY_CORE_CHAIN_LOCKED_HEIGHT: &str = "coreChainLockedHeight";
 
@@ -38,16 +38,18 @@ where
         )
     })?;
 
-    let core_height_created_at = data.get_i64(PROPERTY_CORE_HEIGHT_CREATED_AT)?;
+    let core_height_created_at: u64 = data
+        .get_integer(PROPERTY_CORE_HEIGHT_CREATED_AT)
+        .map_err(ProtocolError::ValueError)?;
 
     let core_chain_locked_height = context
         .state_repository
         .fetch_latest_platform_core_chain_locked_height()
         .await?
-        .unwrap_or_default() as i64;
+        .unwrap_or_default() as u64;
 
-    let height_window_start = core_chain_locked_height - BLOCKS_SIZE_WINDOW;
-    let height_window_end = core_chain_locked_height + BLOCKS_SIZE_WINDOW;
+    let height_window_start = core_chain_locked_height.saturating_sub(BLOCKS_SIZE_WINDOW);
+    let height_window_end = core_chain_locked_height.saturating_add(BLOCKS_SIZE_WINDOW);
 
     let mut result = DataTriggerExecutionResult::default();
 

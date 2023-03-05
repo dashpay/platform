@@ -159,7 +159,7 @@ where
             updated_at,
         };
 
-        let mut json_value = document.to_json()?;
+        let mut json_value = document.to_json_with_identifiers_using_bytes()?;
         let validation_result =
             self.document_validator
                 .validate(&json_value, &data_contract, document_type)?;

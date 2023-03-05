@@ -13,4 +13,7 @@ pub enum Error {
 
     #[error("integer out of bounds")]
     IntegerSizeError,
+
+    #[error("byte length not 32 bytes error")]
+    ByteLengthNot32BytesError,
 }
