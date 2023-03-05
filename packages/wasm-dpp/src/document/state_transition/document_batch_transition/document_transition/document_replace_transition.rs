@@ -2,19 +2,17 @@ use std::convert;
 
 use dpp::identity::TimestampMillis;
 use dpp::prelude::Revision;
-use dpp::{
-    document::{
-        self,
-        document_transition::{
-            document_create_transition, document_replace_transition, DocumentReplaceTransition,
-            DocumentTransitionObjectLike,
-        },
+use dpp::{document::{
+    self,
+    document_transition::{
+        document_create_transition, document_replace_transition, DocumentReplaceTransition,
+        DocumentTransitionObjectLike,
     },
-    prelude::{DataContract, Identifier},
-    util::{json_schema::JsonSchemaExt, json_value::JsonValueExt},
-};
+}, prelude::{DataContract, Identifier}, ProtocolError, util::{json_schema::JsonSchemaExt, json_value::JsonValueExt}};
 use serde::Serialize;
 use wasm_bindgen::prelude::*;
+use dpp::platform_value::btreemap_extensions::BTreeValueMapHelper;
+use dpp::platform_value::btreemap_path_extensions::BTreeValueMapPathHelper;
 
 use crate::{
     buffer::Buffer,
@@ -131,20 +129,16 @@ impl DocumentReplaceTransitionWasm {
             .with_js_error()?;
 
         for path in identifier_paths {
-            if let Ok(value) = data.get_value(path) {
-                let bytes: Vec<u8> = serde_json::from_value(value.to_owned()).with_js_error()?;
-                let id = <IdentifierWrapper as convert::From<Identifier>>::from(
-                    Identifier::from_bytes(&bytes).unwrap(),
-                );
-                lodash_set(&js_value, path, id.into());
-            }
+            let bytes = data.get_identifier_bytes_at_path(path).map_err(ProtocolError::ValueError).with_js_error()?;
+            let id = <IdentifierWrapper as convert::From<Identifier>>::from(
+                Identifier::from_bytes(&bytes).unwrap(),
+            );
+            lodash_set(&js_value, path, id.into());
         }
         for path in binary_paths {
-            if let Ok(value) = data.get_value(path) {
-                let bytes: Vec<u8> = serde_json::from_value(value.to_owned()).with_js_error()?;
-                let buffer = Buffer::from_bytes(&bytes);
-                lodash_set(&js_value, path, buffer.into());
-            }
+            let bytes = data.get_binary_bytes_at_path(path).map_err(ProtocolError::ValueError).with_js_error()?;
+            let buffer = Buffer::from_bytes(&bytes);
+            lodash_set(&js_value, path, buffer.into());
         }
 
         Ok(js_value)

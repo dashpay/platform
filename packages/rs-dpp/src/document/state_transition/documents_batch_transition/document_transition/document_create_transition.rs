@@ -303,10 +303,10 @@ mod test {
             .expect("no errors")
             .into_btree_map()
             .unwrap();
-        assert_eq!(object_transition.get_system_bytes("$id").unwrap(), id);
+        assert_eq!(object_transition.get_identifier_bytes("$id").unwrap(), id);
         assert_eq!(
             object_transition
-                .get_system_bytes("$dataContractId")
+                .get_identifier_bytes("$dataContractId")
                 .unwrap(),
             data_contract_id
         );
@@ -316,7 +316,7 @@ mod test {
         );
         assert_eq!(
             object_transition
-                .get_system_bytes("alphaIdentifier")
+                .get_identifier_bytes("alphaIdentifier")
                 .unwrap(),
             alpha_value
         );

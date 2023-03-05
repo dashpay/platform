@@ -194,14 +194,14 @@ impl ExtendedDocumentWasm {
         if let Some(value) = self.0.get(&path) {
             match binary_type {
                 BinaryType::Identifier => {
-                    if let Ok(bytes) = value.to_system_bytes() {
+                    if let Ok(bytes) = value.to_identifier_bytes() {
                         let id: IdentifierWrapper = Identifier::from_bytes(&bytes).unwrap().into();
 
                         return id.into();
                     }
                 }
                 BinaryType::Buffer => {
-                    if let Ok(bytes) = value.to_system_bytes() {
+                    if let Ok(bytes) = value.to_identifier_bytes() {
                         return Buffer::from_bytes(&bytes).into();
                     }
                 }

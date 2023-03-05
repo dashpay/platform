@@ -16,8 +16,9 @@ use dpp::{
     util::{json_schema::JsonSchemaExt, json_value::JsonValueExt},
 };
 use serde::Serialize;
-use serde_json::Value;
+use serde_json::Value as JsonValue;
 use wasm_bindgen::prelude::*;
+use dpp::platform_value::Value;
 
 use crate::{
     buffer::Buffer,
@@ -129,7 +130,7 @@ impl DocumentTransitionWasm {
                 .with_js_error()?;
 
             let js_value = to_object(
-                data.to_owned(),
+                data.clone().into(),
                 &JsValue::NULL,
                 identifier_paths,
                 binary_paths,
@@ -147,14 +148,14 @@ impl DocumentTransitionWasm {
         if let Some(value) = self.0.get_dynamic_property(path) {
             match binary_type {
                 BinaryType::Identifier => {
-                    if let Ok(bytes) = serde_json::from_value::<Vec<u8>>(value.to_owned()) {
+                    if let Ok(bytes) = serde_json::from_value::<Vec<u8>>(value.to_owned().into()) {
                         let id: IdentifierWrapper = Identifier::from_bytes(&bytes).unwrap().into();
 
                         return id.into();
                     }
                 }
                 BinaryType::Buffer => {
-                    if let Ok(bytes) = serde_json::from_value::<Vec<u8>>(value.to_owned()) {
+                    if let Ok(bytes) = serde_json::from_value::<Vec<u8>>(value.to_owned().into()) {
                         return Buffer::from_bytes(&bytes).into();
                     }
                 }
@@ -273,7 +274,7 @@ pub(crate) fn to_object<'a>(
     identifiers_paths: impl IntoIterator<Item = &'a str>,
     binary_paths: impl IntoIterator<Item = &'a str>,
 ) -> Result<JsValue, JsValue> {
-    let mut value = value;
+    let mut value : JsonValue = value.into();
     let options: ConversionOptions = if options.is_object() {
         let raw_options = options.with_serde_to_json_value()?;
         serde_json::from_value(raw_options).with_js_error()?

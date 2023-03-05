@@ -38,7 +38,7 @@ pub fn find_duplicates_by_indices_wasm(
         .into_iter()
         .map(|v| {
             to_object(
-                v.to_owned(),
+                v.to_owned().into(),
                 &JsValue::NULL,
                 document_base_transition::IDENTIFIER_FIELDS,
                 document_create_transition::BINARY_FIELDS,

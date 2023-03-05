@@ -38,7 +38,7 @@ impl ReplacementType {
     }
 
     pub fn replace_consume_value(&self, value: Value) -> Result<Value, Error> {
-        let bytes = value.into_system_bytes()?;
+        let bytes = value.into_identifier_bytes()?;
         self.replace_for_bytes(bytes)
     }
 }
@@ -76,7 +76,7 @@ impl BTreeValueMapReplacementPathHelper for BTreeMap<String, Value> {
                     *current_value = replacement_type.replace_for_bytes_32(*bytes)?;
                 }
                 _ => {
-                    let bytes = current_value.to_system_bytes()?;
+                    let bytes = current_value.to_identifier_bytes()?;
                     *current_value = replacement_type.replace_for_bytes(bytes)?;
                 }
             }
@@ -93,7 +93,7 @@ impl BTreeValueMapReplacementPathHelper for BTreeMap<String, Value> {
                             *current_value = replacement_type.replace_for_bytes_32(*bytes)?;
                         }
                         _ => {
-                            let bytes = current_value.to_system_bytes()?;
+                            let bytes = current_value.to_identifier_bytes()?;
                             *current_value = replacement_type.replace_for_bytes(bytes)?;
                         }
                     }

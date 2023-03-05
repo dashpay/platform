@@ -981,7 +981,7 @@ impl Value {
             };
             current_value = new_value;
             if split.peek().is_none() {
-                let bytes = current_value.to_system_bytes()?;
+                let bytes = current_value.to_identifier_bytes()?;
                 new_value = &mut replacement_type.replace_for_bytes(bytes)?;
                 return Ok(true);
             }

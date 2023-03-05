@@ -86,8 +86,8 @@ pub trait BTreeValueMapPathHelper {
         path: &str,
     ) -> Result<Option<[u8; 32]>, Error>;
     fn get_hash256_bytes_at_path(&self, path: &str) -> Result<[u8; 32], Error>;
-    fn get_optional_system_bytes_at_path(&self, path: &str) -> Result<Option<Vec<u8>>, Error>;
-    fn get_system_bytes_at_path(&self, path: &str) -> Result<Vec<u8>, Error>;
+    fn get_optional_identifier_bytes_at_path(&self, path: &str) -> Result<Option<Vec<u8>>, Error>;
+    fn get_identifier_bytes_at_path(&self, path: &str) -> Result<Vec<u8>, Error>;
     fn remove_optional_string_at_path(&mut self, path: &str) -> Result<Option<String>, Error>;
     fn remove_string_at_path(&mut self, path: &str) -> Result<String, Error>;
     fn remove_optional_float_at_path(&mut self, path: &str) -> Result<Option<f64>, Error>;
@@ -116,18 +116,20 @@ pub trait BTreeValueMapPathHelper {
             + TryFrom<i16>
             + TryFrom<u8>
             + TryFrom<i8>;
-    fn remove_optional_system_hash256_bytes_at_path(
+    fn remove_optional_hash256_bytes_at_path(
         &mut self,
         path: &str,
     ) -> Result<Option<[u8; 32]>, Error>;
-    fn remove_system_hash256_bytes_at_path(&mut self, path: &str) -> Result<[u8; 32], Error>;
-    fn remove_optional_system_bytes_at_path(
+    fn remove_hash256_bytes_at_path(&mut self, path: &str) -> Result<[u8; 32], Error>;
+    fn remove_optional_identifier_bytes_at_path(
         &mut self,
         path: &str,
     ) -> Result<Option<Vec<u8>>, Error>;
-    fn remove_system_bytes_at_path(&mut self, path: &str) -> Result<Vec<u8>, Error>;
+    fn remove_identifier_bytes_at_path(&mut self, path: &str) -> Result<Vec<u8>, Error>;
     fn get_optional_bytes_at_path(&self, path: &str) -> Result<Option<Vec<u8>>, Error>;
     fn get_bytes_at_path(&self, path: &str) -> Result<Vec<u8>, Error>;
+    fn get_optional_binary_bytes_at_path(&self, path: &str) -> Result<Option<Vec<u8>>, Error>;
+    fn get_binary_bytes_at_path(&self, path: &str) -> Result<Vec<u8>, Error>;
 }
 
 impl<V> BTreeValueMapPathHelper for BTreeMap<String, V>
@@ -489,20 +491,33 @@ where
         })
     }
 
-    fn get_optional_system_bytes_at_path(&self, path: &str) -> Result<Option<Vec<u8>>, Error> {
+    fn get_optional_identifier_bytes_at_path(&self, path: &str) -> Result<Option<Vec<u8>>, Error> {
         self.get_optional_at_path(path)?
-            .map(|v| v.borrow().to_system_bytes())
+            .map(|v| v.borrow().to_identifier_bytes())
             .transpose()
     }
 
-    fn get_system_bytes_at_path(&self, path: &str) -> Result<Vec<u8>, Error> {
-        self.get_optional_system_bytes_at_path(path)?
+    fn get_identifier_bytes_at_path(&self, path: &str) -> Result<Vec<u8>, Error> {
+        self.get_optional_identifier_bytes_at_path(path)?
             .ok_or_else(|| {
                 Error::StructureError(format!("unable to get system bytes property {path}"))
             })
     }
 
-    fn remove_optional_system_hash256_bytes_at_path(
+    fn get_optional_binary_bytes_at_path(&self, path: &str) -> Result<Option<Vec<u8>>, Error> {
+        self.get_optional_at_path(path)?
+            .map(|v| v.borrow().to_binary_bytes())
+            .transpose()
+    }
+
+    fn get_binary_bytes_at_path(&self, path: &str) -> Result<Vec<u8>, Error> {
+        self.get_optional_binary_bytes_at_path(path)?
+            .ok_or_else(|| {
+                Error::StructureError(format!("unable to get system bytes property {path}"))
+            })
+    }
+
+    fn remove_optional_hash256_bytes_at_path(
         &mut self,
         path: &str,
     ) -> Result<Option<[u8; 32]>, Error> {
@@ -511,24 +526,24 @@ where
             .transpose()
     }
 
-    fn remove_system_hash256_bytes_at_path(&mut self, path: &str) -> Result<[u8; 32], Error> {
-        self.remove_optional_system_hash256_bytes_at_path(path)?
+    fn remove_hash256_bytes_at_path(&mut self, path: &str) -> Result<[u8; 32], Error> {
+        self.remove_optional_hash256_bytes_at_path(path)?
             .ok_or_else(|| {
                 Error::StructureError(format!("unable to remove system hash256 property {path}"))
             })
     }
 
-    fn remove_optional_system_bytes_at_path(
+    fn remove_optional_identifier_bytes_at_path(
         &mut self,
         path: &str,
     ) -> Result<Option<Vec<u8>>, Error> {
         self.remove(path)
-            .map(|v| v.borrow().to_system_bytes())
+            .map(|v| v.borrow().to_identifier_bytes())
             .transpose()
     }
 
-    fn remove_system_bytes_at_path(&mut self, path: &str) -> Result<Vec<u8>, Error> {
-        self.remove_optional_system_bytes_at_path(path)?
+    fn remove_identifier_bytes_at_path(&mut self, path: &str) -> Result<Vec<u8>, Error> {
+        self.remove_optional_identifier_bytes_at_path(path)?
             .ok_or_else(|| {
                 Error::StructureError(format!("unable to remove system bytes property {path}"))
             })

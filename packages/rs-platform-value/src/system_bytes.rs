@@ -9,21 +9,21 @@ impl Value {
     /// # use platform_value::{Error, Value};
     /// #
     /// let value = Value::Bytes(vec![104, 101, 108, 108, 111]);
-    /// assert_eq!(value.into_system_bytes(), Ok(vec![104, 101, 108, 108, 111]));    ///
+    /// assert_eq!(value.into_identifier_bytes(), Ok(vec![104, 101, 108, 108, 111]));    ///
     ///
     /// let value = Value::Text("a811".to_string());
-    /// assert_eq!(value.into_system_bytes(), Ok(vec![98, 155, 36]));
+    /// assert_eq!(value.into_identifier_bytes(), Ok(vec![98, 155, 36]));
     ///
     /// let value = Value::Array(vec![Value::U8(104), Value::U8(101), Value::U8(108)]);
-    /// assert_eq!(value.into_system_bytes(), Ok(vec![104, 101, 108]));
+    /// assert_eq!(value.into_identifier_bytes(), Ok(vec![104, 101, 108]));
     ///
     /// let value = Value::Identifier([5u8;32]);
-    /// assert_eq!(value.into_system_bytes(), Ok(vec![5, 5, 5,5,5,5,5,5,5, 5, 5,5,5,5,5,5,5, 5, 5,5,5,5,5,5,5, 5, 5,5,5,5,5,5]));
+    /// assert_eq!(value.into_identifier_bytes(), Ok(vec![5, 5, 5,5,5,5,5,5,5, 5, 5,5,5,5,5,5,5, 5, 5,5,5,5,5,5,5, 5, 5,5,5,5,5,5]));
     ///
     /// let value = Value::Bool(true);
-    /// assert_eq!(value.into_system_bytes(), Err(Error::StructureError("value are not bytes, a string, or an array of values representing bytes".to_string())));
+    /// assert_eq!(value.into_identifier_bytes(), Err(Error::StructureError("value are not bytes, a string, or an array of values representing bytes".to_string())));
     /// ```
-    pub fn into_system_bytes(self) -> Result<Vec<u8>, Error> {
+    pub fn into_identifier_bytes(self) -> Result<Vec<u8>, Error> {
         match self {
             Value::Text(text) => bs58::decode(text).into_vec().map_err(|_| {
                 Error::StructureError(
@@ -55,25 +55,117 @@ impl Value {
     /// # use platform_value::{Error, Value};
     /// #
     /// let value = Value::Bytes(vec![104, 101, 108, 108, 111]);
-    /// assert_eq!(value.to_system_bytes(), Ok(vec![104, 101, 108, 108, 111]));    ///
+    /// assert_eq!(value.to_identifier_bytes(), Ok(vec![104, 101, 108, 108, 111]));    ///
     ///
     /// let value = Value::Text("a811".to_string());
-    /// assert_eq!(value.to_system_bytes(), Ok(vec![98, 155, 36]));
+    /// assert_eq!(value.to_identifier_bytes(), Ok(vec![98, 155, 36]));
     ///
     /// let value = Value::Array(vec![Value::U8(104), Value::U8(101), Value::U8(108)]);
-    /// assert_eq!(value.to_system_bytes(), Ok(vec![104, 101, 108]));
+    /// assert_eq!(value.to_identifier_bytes(), Ok(vec![104, 101, 108]));
     ///
     /// let value = Value::Identifier([5u8;32]);
-    /// assert_eq!(value.to_system_bytes(), Ok(vec![5, 5, 5,5,5,5,5,5,5, 5, 5,5,5,5,5,5,5, 5, 5,5,5,5,5,5,5, 5, 5,5,5,5,5,5]));
+    /// assert_eq!(value.to_identifier_bytes(), Ok(vec![5, 5, 5,5,5,5,5,5,5, 5, 5,5,5,5,5,5,5, 5, 5,5,5,5,5,5,5, 5, 5,5,5,5,5,5]));
     ///
     /// let value = Value::Bool(true);
-    /// assert_eq!(value.to_system_bytes(), Err(Error::StructureError("value are not bytes, a string, or an array of values representing bytes".to_string())));
+    /// assert_eq!(value.to_identifier_bytes(), Err(Error::StructureError("value are not bytes, a string, or an array of values representing bytes".to_string())));
     /// ```
-    pub fn to_system_bytes(&self) -> Result<Vec<u8>, Error> {
+    pub fn to_identifier_bytes(&self) -> Result<Vec<u8>, Error> {
         match self {
             Value::Text(text) => bs58::decode(text).into_vec().map_err(|_| {
                 Error::StructureError(
                     "value was a string, but could not be decoded from base 58".to_string(),
+                )
+            }),
+            Value::Array(array) => array
+                .iter()
+                .map(|byte| match byte {
+                    Value::U8(value_as_u8) => Ok(*value_as_u8),
+                    _ => Err(Error::StructureError("not an array of bytes".to_string())),
+                })
+                .collect::<Result<Vec<u8>, Error>>(),
+            Value::Bytes(vec) => Ok(vec.clone()),
+            Value::Bytes32(vec) => Ok(vec.to_vec()),
+            Value::Identifier(identifier) => Ok(Vec::from(identifier.as_slice())),
+            _other => Err(Error::StructureError(
+                "value are not bytes, a string, or an array of values representing bytes"
+                    .to_string(),
+            )),
+        }
+    }
+
+    /// If the `Value` is a `Bytes`, a `Text` using base 64 or Vector of `U8`, returns the
+    /// associated `Vec<u8>` data as `Ok`.
+    /// Returns `Err(Error::Structure("reason"))` otherwise.
+    ///
+    /// ```
+    /// # use platform_value::{Error, Value};
+    /// #
+    /// let value = Value::Bytes(vec![104, 101, 108, 108, 111]);
+    /// assert_eq!(value.into_binary_bytes(), Ok(vec![104, 101, 108, 108, 111]));    ///
+    ///
+    /// let value = Value::Text("a811".to_string());
+    /// assert_eq!(value.into_binary_bytes(), Ok(vec![107, 205, 117]));
+    ///
+    /// let value = Value::Array(vec![Value::U8(104), Value::U8(101), Value::U8(108)]);
+    /// assert_eq!(value.into_binary_bytes(), Ok(vec![104, 101, 108]));
+    ///
+    /// let value = Value::Identifier([5u8;32]);
+    /// assert_eq!(value.into_binary_bytes(), Ok(vec![5, 5, 5,5,5,5,5,5,5, 5, 5,5,5,5,5,5,5, 5, 5,5,5,5,5,5,5, 5, 5,5,5,5,5,5]));
+    ///
+    /// let value = Value::Bool(true);
+    /// assert_eq!(value.into_binary_bytes(), Err(Error::StructureError("value are not bytes, a string, or an array of values representing bytes".to_string())));
+    /// ```
+    pub fn into_binary_bytes(self) -> Result<Vec<u8>, Error> {
+        match self {
+            Value::Text(text) => base64::decode(text).map_err(|_| {
+                Error::StructureError(
+                    "value was a string, but could not be decoded from base 64".to_string(),
+                )
+            }),
+            Value::Array(array) => array
+                .into_iter()
+                .map(|byte| match byte {
+                    Value::U8(value_as_u8) => Ok(value_as_u8),
+                    _ => Err(Error::StructureError("not an array of bytes".to_string())),
+                })
+                .collect::<Result<Vec<u8>, Error>>(),
+            Value::Bytes(vec) => Ok(vec),
+            Value::Bytes32(bytes) => Ok(bytes.into()),
+            Value::Identifier(identifier) => Ok(Vec::from(identifier)),
+            _other => Err(Error::StructureError(
+                "value are not bytes, a string, or an array of values representing bytes"
+                    .to_string(),
+            )),
+        }
+    }
+
+    /// If the `Value` is a ref to a `Bytes`, a `Text` using base 58 or Vector of `U8`, returns the
+    /// associated `Vec<u8>` data as `Ok`.
+    /// Returns `Err(Error::Structure("reason"))` otherwise.
+    ///
+    /// ```
+    /// # use platform_value::{Error, Value};
+    /// #
+    /// let value = Value::Bytes(vec![104, 101, 108, 108, 111]);
+    /// assert_eq!(value.to_binary_bytes(), Ok(vec![104, 101, 108, 108, 111]));    ///
+    ///
+    /// let value = Value::Text("a811".to_string());
+    /// assert_eq!(value.to_binary_bytes(), Ok(vec![107, 205, 117]));
+    ///
+    /// let value = Value::Array(vec![Value::U8(104), Value::U8(101), Value::U8(108)]);
+    /// assert_eq!(value.to_binary_bytes(), Ok(vec![104, 101, 108]));
+    ///
+    /// let value = Value::Identifier([5u8;32]);
+    /// assert_eq!(value.to_binary_bytes(), Ok(vec![5, 5, 5,5,5,5,5,5,5, 5, 5,5,5,5,5,5,5, 5, 5,5,5,5,5,5,5, 5, 5,5,5,5,5,5]));
+    ///
+    /// let value = Value::Bool(true);
+    /// assert_eq!(value.to_binary_bytes(), Err(Error::StructureError("value are not bytes, a string, or an array of values representing bytes".to_string())));
+    /// ```
+    pub fn to_binary_bytes(&self) -> Result<Vec<u8>, Error> {
+        match self {
+            Value::Text(text) => base64::decode(text).map_err(|_| {
+                Error::StructureError(
+                    "value was a string, but could not be decoded from base 64".to_string(),
                 )
             }),
             Value::Array(array) => array

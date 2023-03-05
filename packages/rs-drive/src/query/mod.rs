@@ -387,7 +387,7 @@ impl<'a> DriveQuery<'a> {
 
         let start_at: Option<Vec<u8>> = start_option
             .map(|v| {
-                v.into_system_bytes()
+                v.into_identifier_bytes()
                     .map_err(|e| Error::Protocol(ProtocolError::ValueError(e)))
             })
             .transpose()?;

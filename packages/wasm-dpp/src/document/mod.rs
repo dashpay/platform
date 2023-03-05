@@ -35,7 +35,7 @@ use dpp::document::{Document, EXTENDED_DOCUMENT_IDENTIFIER_FIELDS, IDENTIFIER_FI
 pub use extended_document::ExtendedDocumentWasm;
 
 use dpp::document::extended_document::property_names;
-use dpp::platform_value::btreemap_field_replacement::BTreeValueMapInsertionPathHelper;
+use dpp::platform_value::btreemap_field_replacement::BTreeValueMapReplacementPathHelper;
 use dpp::platform_value::ReplacementType;
 use dpp::platform_value::Value;
 use dpp::ProtocolError;

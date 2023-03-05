@@ -76,8 +76,8 @@ pub trait BTreeValueMapHelper {
     ) -> Result<I, Error>;
     fn get_optional_system_hash256_bytes(&self, key: &str) -> Result<Option<[u8; 32]>, Error>;
     fn get_hash256_bytes(&self, key: &str) -> Result<[u8; 32], Error>;
-    fn get_optional_system_bytes(&self, key: &str) -> Result<Option<Vec<u8>>, Error>;
-    fn get_system_bytes(&self, key: &str) -> Result<Vec<u8>, Error>;
+    fn get_optional_identifier_bytes(&self, key: &str) -> Result<Option<Vec<u8>>, Error>;
+    fn get_identifier_bytes(&self, key: &str) -> Result<Vec<u8>, Error>;
     fn remove_optional_string(&mut self, key: &str) -> Result<Option<String>, Error>;
     fn remove_string(&mut self, key: &str) -> Result<String, Error>;
     fn remove_optional_float(&mut self, key: &str) -> Result<Option<f64>, Error>;
@@ -114,6 +114,8 @@ pub trait BTreeValueMapHelper {
     fn get_bytes(&self, key: &str) -> Result<Vec<u8>, Error>;
     fn remove_optional_bool(&mut self, key: &str) -> Result<Option<bool>, Error>;
     fn remove_bool(&mut self, key: &str) -> Result<bool, Error>;
+    fn get_optional_binary_bytes(&self, key: &str) -> Result<Option<Vec<u8>>, Error>;
+    fn get_binary_bytes(&self, key: &str) -> Result<Vec<u8>, Error>;
 }
 
 impl<V> BTreeValueMapHelper for BTreeMap<String, V>
@@ -412,14 +414,26 @@ where
         })
     }
 
-    fn get_optional_system_bytes(&self, key: &str) -> Result<Option<Vec<u8>>, Error> {
+    fn get_optional_identifier_bytes(&self, key: &str) -> Result<Option<Vec<u8>>, Error> {
         self.get(key)
-            .map(|v| v.borrow().to_system_bytes())
+            .map(|v| v.borrow().to_identifier_bytes())
             .transpose()
     }
 
-    fn get_system_bytes(&self, key: &str) -> Result<Vec<u8>, Error> {
-        self.get_optional_system_bytes(key)?.ok_or_else(|| {
+    fn get_identifier_bytes(&self, key: &str) -> Result<Vec<u8>, Error> {
+        self.get_optional_identifier_bytes(key)?.ok_or_else(|| {
+            Error::StructureError(format!("unable to get system bytes property {key}"))
+        })
+    }
+
+    fn get_optional_binary_bytes(&self, key: &str) -> Result<Option<Vec<u8>>, Error> {
+        self.get(key)
+            .map(|v| v.borrow().to_binary_bytes())
+            .transpose()
+    }
+
+    fn get_binary_bytes(&self, key: &str) -> Result<Vec<u8>, Error> {
+        self.get_optional_binary_bytes(key)?.ok_or_else(|| {
             Error::StructureError(format!("unable to get system bytes property {key}"))
         })
     }
@@ -438,7 +452,7 @@ where
 
     fn remove_optional_bytes(&mut self, key: &str) -> Result<Option<Vec<u8>>, Error> {
         self.remove(key)
-            .map(|v| v.borrow().to_system_bytes())
+            .map(|v| v.borrow().to_identifier_bytes())
             .transpose()
     }
 
