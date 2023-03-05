@@ -5,12 +5,15 @@ use anyhow::{anyhow, Context};
 use ciborium::value::Value as CborValue;
 use integer_encoding::VarInt;
 use platform_value::btreemap_extensions::BTreeValueMapHelper;
+use platform_value::btreemap_field_replacement::BTreeValueMapReplacementPathHelper;
 use platform_value::btreemap_path_extensions::BTreeValueMapPathHelper;
-use platform_value::Value;
+use platform_value::{ReplacementType, Value};
 use serde::{Deserialize, Serialize};
 use serde_json::Value as JsonValue;
 
 use crate::data_contract::DataContract;
+use crate::document::document_transition::document_base_transition::IDENTIFIER_FIELDS;
+use crate::document::document_transition::document_create_transition::BINARY_FIELDS;
 use crate::document::document_transition::DocumentTransitionObjectLike;
 use crate::prelude::{DocumentTransition, Identifier};
 use crate::state_transition::state_transition_execution_context::StateTransitionExecutionContext;
@@ -38,6 +41,7 @@ pub mod validation;
 pub mod property_names {
     pub const TRANSITION_TYPE: &str = "type";
     pub const DATA_CONTRACT_ID: &str = "$dataContractId";
+    pub const DOCUMENT_TYPE: &str = "$type";
     pub const TRANSITIONS: &str = "transitions";
     pub const OWNER_ID: &str = "ownerId";
     pub const SIGNATURE_PUBLIC_KEY_ID: &str = "signaturePublicKeyId";
@@ -193,8 +197,10 @@ impl DocumentsBatchTransition {
                 let mut raw_transition_map = raw_transition
                     .into_btree_map()
                     .map_err(ProtocolError::ValueError)?;
+                dbg!(&raw_transition_map);
                 let data_contract_id =
                     raw_transition_map.get_hash256_bytes(property_names::DATA_CONTRACT_ID)?;
+                let document_type = raw_transition_map.get_str(property_names::DOCUMENT_TYPE)?;
                 let data_contract = data_contracts_map
                     .get(data_contract_id.as_slice())
                     .ok_or_else(|| {
@@ -203,6 +209,28 @@ impl DocumentsBatchTransition {
                             raw_transition_map
                         )
                     })?;
+
+                //Because we don't know how the json came in we need to sanitize it
+                let (identifiers, binary_paths) =
+                    data_contract.get_identifiers_and_binary_paths_owned(document_type)?;
+
+                raw_transition_map
+                    .replace_at_paths(
+                        identifiers
+                            .into_iter()
+                            .chain(IDENTIFIER_FIELDS.iter().map(|a| a.to_string())),
+                        ReplacementType::Identifier,
+                    )
+                    .map_err(ProtocolError::ValueError)?;
+                raw_transition_map
+                    .replace_at_paths(
+                        binary_paths
+                            .into_iter()
+                            .chain(BINARY_FIELDS.iter().map(|a| a.to_string())),
+                        ReplacementType::Bytes,
+                    )
+                    .map_err(ProtocolError::ValueError)?;
+
                 let document_transition =
                     DocumentTransition::from_value_map(raw_transition_map, data_contract.clone())?;
                 document_transitions.push(document_transition);
