@@ -178,7 +178,7 @@ async fn should_return_invalid_result_if_document_transition_with_action_delete_
             .expect("documents batch state transition should be created");
 
     state_repository_mock
-        .expect_fetch_documents()
+        .expect_fetch_extended_documents()
         .returning(move |_, _, _, _| Ok(vec![]));
 
     let validation_result =
@@ -393,7 +393,7 @@ async fn should_return_invalid_result_if_timestamps_mismatch() {
         .for_each(|t| set_updated_at(t, Some(now_ts)));
 
     state_repository_mock
-        .expect_fetch_documents()
+        .expect_fetch_extended_documents()
         .returning(move |_, _, _, _| Ok(vec![]));
 
     let validation_result =
@@ -453,7 +453,7 @@ async fn should_return_invalid_result_if_crated_at_has_violated_time_window() {
         .for_each(|t| set_created_at(t, Some(now_ts_minus_6_mins)));
 
     state_repository_mock
-        .expect_fetch_documents()
+        .expect_fetch_extended_documents()
         .returning(move |_, _, _, _| Ok(vec![]));
 
     let validation_result =
@@ -514,7 +514,7 @@ async fn should_not_validate_time_in_block_window_on_dry_run() {
         .for_each(|t| set_created_at(t, Some(now_ts_minus_6_mins)));
 
     state_repository_mock
-        .expect_fetch_documents()
+        .expect_fetch_extended_documents()
         .returning(move |_, _, _, _| Ok(vec![]));
 
     let result =
@@ -567,7 +567,7 @@ async fn should_return_invalid_result_if_updated_at_has_violated_time_window() {
     });
 
     state_repository_mock
-        .expect_fetch_documents()
+        .expect_fetch_extended_documents()
         .returning(move |_, _, _, _| Ok(vec![]));
 
     let validation_result =

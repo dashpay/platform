@@ -43,7 +43,7 @@ pub fn get_document_transitions_fixture(
             (Action::Replace, replace_documents),
             (Action::Delete, delete_documents),
         ])
-        .expect("the transitions should be crated")
+        .expect("the transitions should be created")
         .get_transitions()
         .to_owned()
 }
