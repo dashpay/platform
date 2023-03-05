@@ -219,11 +219,16 @@ mod test {
         .await
         .expect("the state transition should be created");
 
-        assert!(
-            matches!(result, StateTransition::DocumentsBatch(transition) if  {
-                transition.get_transitions().iter().map(|t| t.to_object().unwrap()).collect::<Vec<Value>>() == raw_document_transitions
-            })
-        )
+        assert!(matches!(result, StateTransition::DocumentsBatch(_)));
+
+        let StateTransition::DocumentsBatch(transition) = result else {
+            panic!("must be a DocumentsBatch transition")
+        };
+        let values = transition.get_transitions().iter().map(|t| t.to_object().unwrap()).collect::<Vec<Value>>();
+
+        assert_eq!(
+            values,raw_document_transitions
+        );
     }
 
     #[tokio::test]
