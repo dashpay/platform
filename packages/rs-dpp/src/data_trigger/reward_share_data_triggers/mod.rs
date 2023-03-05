@@ -7,14 +7,9 @@ use serde_json::json;
 
 use crate::document::Document;
 use crate::{
-    data_trigger::create_error,
-    document::document_transition::DocumentTransition,
-    get_from_transition,
-    mocks::SMLStore,
-    prelude::Identifier,
-    state_repository::StateRepositoryLike,
-    util::{string_encoding::Encoding},
-    ProtocolError,
+    data_trigger::create_error, document::document_transition::DocumentTransition,
+    get_from_transition, mocks::SMLStore, prelude::Identifier,
+    state_repository::StateRepositoryLike, util::string_encoding::Encoding, ProtocolError,
 };
 
 use super::{DataTriggerExecutionContext, DataTriggerExecutionResult};

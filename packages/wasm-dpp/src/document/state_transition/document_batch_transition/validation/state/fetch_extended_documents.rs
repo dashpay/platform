@@ -5,7 +5,12 @@ use dpp::{
 use js_sys::Array;
 use wasm_bindgen::prelude::*;
 
-use crate::{document_batch_transition::document_transition::DocumentTransitionWasm, state_repository::{ExternalStateRepositoryLike, ExternalStateRepositoryLikeWrapper}, utils::{IntoWasm, WithJsError}, DocumentWasm, StateTransitionExecutionContextWasm, ExtendedDocumentWasm};
+use crate::{
+    document_batch_transition::document_transition::DocumentTransitionWasm,
+    state_repository::{ExternalStateRepositoryLike, ExternalStateRepositoryLikeWrapper},
+    utils::{IntoWasm, WithJsError},
+    DocumentWasm, ExtendedDocumentWasm, StateTransitionExecutionContextWasm,
+};
 
 #[wasm_bindgen(js_name = fetchExtendedDocuments)]
 pub async fn fetch_extended_documents_wasm(

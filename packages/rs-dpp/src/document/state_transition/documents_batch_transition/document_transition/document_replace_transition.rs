@@ -69,7 +69,10 @@ impl DocumentReplaceTransition {
         Ok(())
     }
 
-    pub(crate) fn replace_extended_document(&self, document: &mut ExtendedDocument) -> Result<(), ProtocolError> {
+    pub(crate) fn replace_extended_document(
+        &self,
+        document: &mut ExtendedDocument,
+    ) -> Result<(), ProtocolError> {
         let properties = self
             .data
             .as_ref()
@@ -100,7 +103,10 @@ impl DocumentReplaceTransition {
         Ok(())
     }
 
-    pub(crate) fn patch_extended_document(self, document: &mut ExtendedDocument) -> Result<(), ProtocolError> {
+    pub(crate) fn patch_extended_document(
+        self,
+        document: &mut ExtendedDocument,
+    ) -> Result<(), ProtocolError> {
         let properties = self
             .data
             .map(|json_value| {
