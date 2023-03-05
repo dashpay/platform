@@ -3,6 +3,7 @@ use std::convert::TryInto;
 use anyhow::Context;
 use anyhow::{anyhow, bail};
 use platform_value::btreemap_extensions::BTreeValueMapHelper;
+use platform_value::btreemap_path_extensions::BTreeValueMapPathHelper;
 use serde_json::{json, Value as JsonValue};
 
 use crate::document::Document;
@@ -72,7 +73,7 @@ where
         .map_err(ProtocolError::ValueError)?;
 
     let rule_allow_subdomains = data
-        .get_bool(PROPERTY_ALLOW_SUBDOMAINS)
+        .get_bool_at_path(PROPERTY_ALLOW_SUBDOMAINS)
         .map_err(ProtocolError::ValueError)?;
 
     let mut result = DataTriggerExecutionResult::default();

@@ -283,27 +283,7 @@ impl Document {
         self.properties
             .iter()
             .try_for_each(|(key, property_value)| {
-                let serde_value: JsonValue = match property_value {
-                    Value::Identifier(bytes) => {
-                        // In order to be able to validate using JSON schema it needs to be in byte form
-                        JsonValue::Array(
-                            bytes
-                                .into_iter()
-                                .map(|a| JsonValue::Number((*a).into()))
-                                .collect(),
-                        )
-                    }
-                    Value::Bytes(bytes) => JsonValue::Array(
-                        bytes
-                            .into_iter()
-                            .map(|byte| JsonValue::Number((*byte).into()))
-                            .collect(),
-                    ),
-                    _ => property_value
-                        .clone()
-                        .try_into()
-                        .map_err(ProtocolError::ValueError)?,
-                };
+                let serde_value: JsonValue = property_value.try_to_validating_json()?;
                 value_mut.insert(key.to_string(), serde_value);
                 Ok::<(), ProtocolError>(())
             })?;

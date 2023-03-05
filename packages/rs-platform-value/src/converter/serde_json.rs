@@ -12,6 +12,122 @@ impl Value {
             .map(|(key, serde_json_value)| (key, serde_json_value.into()))
             .collect()
     }
+
+    pub fn try_into_validating_json(self) -> Result<JsonValue, Error> {
+        Ok(match self {
+            Value::U128(i) => JsonValue::Number((i as u64).into()),
+            Value::I128(i) => JsonValue::Number((i as i64).into()),
+            Value::U64(i) => JsonValue::Number(i.into()),
+            Value::I64(i) => JsonValue::Number(i.into()),
+            Value::U32(i) => JsonValue::Number(i.into()),
+            Value::I32(i) => JsonValue::Number(i.into()),
+            Value::U16(i) => JsonValue::Number(i.into()),
+            Value::I16(i) => JsonValue::Number(i.into()),
+            Value::U8(i) => JsonValue::Number(i.into()),
+            Value::I8(i) => JsonValue::Number(i.into()),
+            Value::Float(float) => JsonValue::Number(Number::from_f64(float).unwrap_or(0.into())),
+            Value::Text(string) => JsonValue::String(string),
+            Value::Bool(value) => JsonValue::Bool(value),
+            Value::Null => JsonValue::Null,
+            //todo support tags
+            Value::Tag(_, _) => {
+                return Err(Error::Unsupported("tags not yet supported".to_string()));
+            }
+            Value::Array(array) => JsonValue::Array(
+                array
+                    .into_iter()
+                    .map(|value| value.try_into_validating_json())
+                    .collect::<Result<Vec<JsonValue>, Error>>()?,
+            ),
+            Value::Map(map) => JsonValue::Object(
+                map.into_iter()
+                    .map(|(k, v)| {
+                        let string = k.into_text()?;
+                        Ok((string, v.try_into_validating_json()?))
+                    })
+                    .collect::<Result<Map<String, JsonValue>, Error>>()?,
+            ),
+            Value::Identifier(bytes) => {
+                // In order to be able to validate using JSON schema it needs to be in byte form
+                JsonValue::Array(
+                    bytes
+                        .into_iter()
+                        .map(|a| JsonValue::Number(a.into()))
+                        .collect(),
+                )
+            }
+            Value::Bytes(bytes) => JsonValue::Array(
+                bytes
+                    .into_iter()
+                    .map(|byte| JsonValue::Number(byte.into()))
+                    .collect(),
+            ),
+            Value::Bytes32(bytes) => JsonValue::Array(
+                bytes
+                    .into_iter()
+                    .map(|byte| JsonValue::Number(byte.into()))
+                    .collect(),
+            ),
+        })
+    }
+
+    pub fn try_to_validating_json(&self) -> Result<JsonValue, Error> {
+        Ok(match self {
+            Value::U128(i) => JsonValue::Number(((*i) as u64).into()),
+            Value::I128(i) => JsonValue::Number(((*i) as i64).into()),
+            Value::U64(i) => JsonValue::Number((*i).into()),
+            Value::I64(i) => JsonValue::Number((*i).into()),
+            Value::U32(i) => JsonValue::Number((*i).into()),
+            Value::I32(i) => JsonValue::Number((*i).into()),
+            Value::U16(i) => JsonValue::Number((*i).into()),
+            Value::I16(i) => JsonValue::Number((*i).into()),
+            Value::U8(i) => JsonValue::Number((*i).into()),
+            Value::I8(i) => JsonValue::Number((*i).into()),
+            Value::Float(float) => JsonValue::Number(Number::from_f64(*float).unwrap_or(0.into())),
+            Value::Text(string) => JsonValue::String(string.clone()),
+            Value::Bool(value) => JsonValue::Bool(*value),
+            Value::Null => JsonValue::Null,
+            //todo support tags
+            Value::Tag(_, _) => {
+                return Err(Error::Unsupported("tags not yet supported".to_string()));
+            }
+            Value::Array(array) => JsonValue::Array(
+                array
+                    .into_iter()
+                    .map(|value| value.try_to_validating_json())
+                    .collect::<Result<Vec<JsonValue>, Error>>()?,
+            ),
+            Value::Map(map) => JsonValue::Object(
+                map.into_iter()
+                    .map(|(k, v)| {
+                        let string = k.to_text()?;
+                        Ok((string, v.try_to_validating_json()?))
+                    })
+                    .collect::<Result<Map<String, JsonValue>, Error>>()?,
+            ),
+            Value::Identifier(bytes) => {
+                // In order to be able to validate using JSON schema it needs to be in byte form
+                JsonValue::Array(
+                    bytes
+                        .into_iter()
+                        .map(|a| JsonValue::Number((*a).into()))
+                        .collect(),
+                )
+            }
+            Value::Bytes(bytes) => JsonValue::Array(
+                bytes
+                    .into_iter()
+                    .map(|byte| JsonValue::Number((*byte).into()))
+                    .collect(),
+            ),
+            Value::Bytes32(bytes) => JsonValue::Array(
+                bytes
+                    .into_iter()
+                    .map(|byte| JsonValue::Number((*byte).into()))
+                    .collect(),
+            ),
+        })
+    }
 }
 
 impl From<JsonValue> for Value {
@@ -80,6 +196,7 @@ impl TryInto<JsonValue> for Value {
             Value::U8(i) => JsonValue::Number(i.into()),
             Value::I8(i) => JsonValue::Number(i.into()),
             Value::Bytes(bytes) => JsonValue::String(base64::encode(bytes.as_slice())),
+            Value::Bytes32(bytes) => JsonValue::String(base64::encode(bytes.as_slice())),
             Value::Float(float) => JsonValue::Number(Number::from_f64(float).unwrap_or(0.into())),
             Value::Text(string) => JsonValue::String(string),
             Value::Bool(value) => JsonValue::Bool(value),

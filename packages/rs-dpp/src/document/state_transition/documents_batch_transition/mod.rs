@@ -5,6 +5,7 @@ use anyhow::{anyhow, Context};
 use ciborium::value::Value as CborValue;
 use integer_encoding::VarInt;
 use platform_value::btreemap_extensions::BTreeValueMapHelper;
+use platform_value::btreemap_path_extensions::BTreeValueMapPathHelper;
 use platform_value::Value;
 use serde::{Deserialize, Serialize};
 use serde_json::Value as JsonValue;
@@ -192,13 +193,16 @@ impl DocumentsBatchTransition {
                 let mut raw_transition_map = raw_transition
                     .into_btree_map()
                     .map_err(ProtocolError::ValueError)?;
-                let id = raw_transition_map.get_bytes(property_names::DATA_CONTRACT_ID)?;
-                let data_contract = data_contracts_map.get(&id).ok_or_else(|| {
-                    anyhow!(
-                        "Data Contract doesn't exists for Transition: {:?}",
-                        raw_transition_map
-                    )
-                })?;
+                let data_contract_id =
+                    raw_transition_map.get_hash256_bytes(property_names::DATA_CONTRACT_ID)?;
+                let data_contract = data_contracts_map
+                    .get(data_contract_id.as_slice())
+                    .ok_or_else(|| {
+                        anyhow!(
+                            "Data Contract doesn't exists for Transition: {:?}",
+                            raw_transition_map
+                        )
+                    })?;
                 let document_transition =
                     DocumentTransition::from_value_map(raw_transition_map, data_contract.clone())?;
                 document_transitions.push(document_transition);

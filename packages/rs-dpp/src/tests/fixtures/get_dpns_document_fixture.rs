@@ -1,6 +1,8 @@
+use std::collections::BTreeMap;
 use std::sync::Arc;
 
 use getrandom::getrandom;
+use platform_value::Value;
 use serde_json::json;
 
 use crate::document::ExtendedDocument;
@@ -44,25 +46,38 @@ pub fn get_dpns_parent_document_fixture(options: ParentDocumentOptions) -> Exten
     let mut pre_order_salt = [0u8; 32];
     let _ = getrandom(&mut pre_order_salt);
 
-    let data = json!({
-        "label" : options.label,
-        "normalizedLabel" : options.normalized_label,
-        "normalizedParentDomainName" : "",
-        "preorderSalt" : pre_order_salt,
-        "records"  : {
-            "dashUniqueIdentityId" : options.owner_id.as_bytes(),
-        },
-        "subdomainRules" : {
-            "allowSubdomains" : true
-        }
-    });
+    let mut map = BTreeMap::new();
+    map.insert("label".to_string(), Value::Text(options.label));
+    map.insert(
+        "normalizedLabel".to_string(),
+        Value::Text(options.normalized_label),
+    );
+    map.insert(
+        "normalizedParentDomainName".to_string(),
+        Value::Text(String::new()),
+    );
+    map.insert("preorderSalt".to_string(), Value::Bytes32(pre_order_salt));
+    map.insert(
+        "records".to_string(),
+        Value::Map(vec![(
+            Value::Text("dashUniqueIdentityId".to_string()),
+            Value::Identifier(options.owner_id.buffer),
+        )]),
+    );
+    map.insert(
+        "subdomainRules".to_string(),
+        Value::Map(vec![(
+            Value::Text("allowSubdomains".to_string()),
+            Value::Bool(true),
+        )]),
+    );
 
     document_factory
         .create_document_for_state_transition(
             data_contract,
             options.owner_id,
             String::from("domain"),
-            data.into(),
+            map.into(),
         )
         .expect("DPNS document should be created")
 }

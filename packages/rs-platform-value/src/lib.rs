@@ -64,6 +64,9 @@ pub enum Value {
     /// Bytes
     Bytes(Vec<u8>),
 
+    /// Bytes 32
+    Bytes32([u8;32]),
+
     /// Identifier
     /// The identifier is very similar to bytes, however it is serialized to Base58 when converted
     /// to a JSON Value
@@ -304,6 +307,7 @@ impl Value {
     pub fn into_bytes(self) -> Result<Vec<u8>, Error> {
         match self {
             Value::Bytes(vec) => Ok(vec),
+            Value::Bytes32(vec) => Ok(vec.to_vec()),
             _other => Err(Error::StructureError("value are not bytes".to_string())),
         }
     }
@@ -323,6 +327,7 @@ impl Value {
     pub fn to_bytes(&self) -> Result<Vec<u8>, Error> {
         match self {
             Value::Bytes(vec) => Ok(vec.clone()),
+            Value::Bytes32(vec) => Ok(vec.to_vec()),
             other => Err(Error::StructureError(format!(
                 "ref value are not bytes found {} instead",
                 other
@@ -345,6 +350,7 @@ impl Value {
     pub fn as_bytes_slice(&self) -> Result<&[u8], Error> {
         match self {
             Value::Bytes(vec) => Ok(vec),
+            Value::Bytes32(vec) => Ok(vec.as_slice()),
             _other => Err(Error::StructureError(
                 "ref value are not bytes slice".to_string(),
             )),
@@ -1025,8 +1031,7 @@ implfrom! {
 
     Bytes(Vec<u8>),
     Bytes(&[u8]),
-
-    Identifier(Hash256),
+    Bytes32([u8;32]),
 
     Float(f64),
     Float(f32),

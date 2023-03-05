@@ -47,6 +47,10 @@ impl Value {
             Value::I16(i) => format!("(i16){}", i),
             Value::U8(i) => format!("(u8){}", i),
             Value::I8(i) => format!("(i8){}", i),
+            Value::Bytes32(bytes32) => format!(
+                "bytes32 {}",
+                base64::encode(bytes32.as_slice())
+            ),
             Value::Identifier(identifier) => format!(
                 "identifier {}",
                 bs58::encode(identifier.as_slice()).into_string()

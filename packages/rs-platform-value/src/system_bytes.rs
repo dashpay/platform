@@ -38,6 +38,7 @@ impl Value {
                 })
                 .collect::<Result<Vec<u8>, Error>>(),
             Value::Bytes(vec) => Ok(vec),
+            Value::Bytes32(bytes) => Ok(bytes.into()),
             Value::Identifier(identifier) => Ok(Vec::from(identifier)),
             _other => Err(Error::StructureError(
                 "value are not bytes, a string, or an array of values representing bytes"
@@ -83,6 +84,7 @@ impl Value {
                 })
                 .collect::<Result<Vec<u8>, Error>>(),
             Value::Bytes(vec) => Ok(vec.clone()),
+            Value::Bytes32(vec) => Ok(vec.to_vec()),
             Value::Identifier(identifier) => Ok(Vec::from(identifier.as_slice())),
             _other => Err(Error::StructureError(
                 "value are not bytes, a string, or an array of values representing bytes"
@@ -144,6 +146,7 @@ impl Value {
                 vec.try_into()
                     .map_err(|_| Error::StructureError("value was bytes, but was not 32 bytes long".to_string()))
             },
+            Value::Bytes32(bytes) => Ok(bytes),
             Value::Identifier(identifier) => Ok(identifier),
             _other => Err(Error::StructureError("value are not bytes, a string, or an array of values representing bytes".to_string())),
         }
@@ -193,6 +196,7 @@ impl Value {
                     .try_into()
                     .map_err(|_| Error::StructureError("value was an array of bytes, but was not 32 bytes long".to_string()))?)
             },
+            Value::Bytes32(bytes) => Ok(*bytes),
             Value::Bytes(vec) => {
                 vec.clone().try_into()
                     .map_err(|_| Error::StructureError("value was bytes, but was not 32 bytes long".to_string()))
