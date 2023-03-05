@@ -30,7 +30,6 @@ pub(self) mod property_names {
 
 /// The Binary fields in [`DocumentCreateTransition`]
 pub const BINARY_FIELDS: [&str; 1] = ["$entropy"];
-pub const BINARY_FIELDS_OWNED: [String; 1] = ["$entropy".to_string()];
 /// The Identifier fields in [`DocumentCreateTransition`]
 pub use super::document_base_transition::IDENTIFIER_FIELDS;
 
@@ -110,7 +109,9 @@ impl DocumentTransitionObjectLike for DocumentCreateTransition {
             data_contract.get_identifiers_and_binary_paths_owned(document_type)?;
 
         map.replace_at_paths(
-            binary_paths.into_iter().chain(BINARY_FIELDS_OWNED),
+            binary_paths
+                .into_iter()
+                .chain(BINARY_FIELDS.iter().map(|a| a.to_string())),
             ReplacementType::Bytes,
         )?;
 

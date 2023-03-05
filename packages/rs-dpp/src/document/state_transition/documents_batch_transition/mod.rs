@@ -35,6 +35,7 @@ pub mod document_transition;
 pub mod validation;
 
 pub mod property_names {
+    pub const TRANSITION_TYPE: &str = "type";
     pub const DATA_CONTRACT_ID: &str = "$dataContractId";
     pub const TRANSITIONS: &str = "transitions";
     pub const OWNER_ID: &str = "ownerId";
@@ -195,7 +196,7 @@ impl DocumentsBatchTransition {
                 let data_contract = data_contracts_map.get(&id).ok_or_else(|| {
                     anyhow!(
                         "Data Contract doesn't exists for Transition: {:?}",
-                        raw_transition
+                        raw_transition_map
                     )
                 })?;
                 let document_transition =
@@ -258,6 +259,53 @@ impl StateTransitionIdentitySigned for DocumentsBatchTransition {
     }
 }
 
+impl DocumentsBatchTransition {
+    fn to_value(&self, skip_signature: bool) -> Result<Value, ProtocolError> {
+        Ok(self.to_value_map(skip_signature)?.into())
+    }
+
+    fn to_value_map(&self, skip_signature: bool) -> Result<BTreeMap<String, Value>, ProtocolError> {
+        let mut map = BTreeMap::new();
+        map.insert(
+            property_names::PROTOCOL_VERSION.to_string(),
+            Value::U32(self.protocol_version),
+        );
+        map.insert(
+            property_names::TRANSITION_TYPE.to_string(),
+            Value::U8(self.transition_type as u8),
+        );
+        map.insert(
+            property_names::OWNER_ID.to_string(),
+            Value::Identifier(self.owner_id.buffer),
+        );
+
+        if !skip_signature {
+            if let Some(signature) = self.signature.as_ref() {
+                map.insert(
+                    property_names::SIGNATURE.to_string(),
+                    Value::Bytes(signature.clone()),
+                );
+            }
+            if let Some(signature_key_id) = self.signature_public_key_id {
+                map.insert(
+                    property_names::SIGNATURE.to_string(),
+                    Value::U32(signature_key_id),
+                );
+            }
+        }
+        let mut transitions = vec![];
+        for transition in self.transitions.iter() {
+            transitions.push(transition.to_object()?)
+        }
+        map.insert(
+            property_names::TRANSITIONS.to_string(),
+            Value::Array(transitions),
+        );
+
+        Ok(map)
+    }
+}
+
 impl StateTransitionConvert for DocumentsBatchTransition {
     fn binary_property_paths() -> Vec<&'static str> {
         vec![property_names::SIGNATURE]
@@ -308,7 +356,7 @@ impl StateTransitionConvert for DocumentsBatchTransition {
         }
         let mut transitions = vec![];
         for transition in self.transitions.iter() {
-            transitions.push(transition.to_object()?)
+            transitions.push(transition.to_object()?.try_into().unwrap())
         }
         json_object.insert(
             String::from(property_names::TRANSITIONS),

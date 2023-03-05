@@ -126,7 +126,9 @@ fn missing_state_transition_error() -> ProtocolError {
 #[cfg(test)]
 mod test {
     use dashcore::network::constants::PROTOCOL_VERSION;
+    use platform_value::Value;
     use serde_json::{json, Value as JsonValue};
+    use std::collections::BTreeMap;
 
     use crate::{
         data_contract::state_transition::DataContractCreateTransition,
@@ -185,7 +187,7 @@ mod test {
         let document_transitions =
             get_document_transitions_fixture(vec![(Action::Create, documents)]);
 
-        let raw_document_transitions: Vec<JsonValue> = document_transitions
+        let raw_document_transitions: Vec<Value> = document_transitions
             .iter()
             .map(|t| t.to_object().unwrap())
             .collect();
@@ -196,15 +198,19 @@ mod test {
             .expect_fetch_data_contract()
             .returning(move |_, _| Ok(Some(data_contract_to_return.clone())));
 
-        let state_transition_data = json!( {
-                    "protocolVersion" :  PROTOCOL_VERSION,
-                    "ownerId": data_contract.owner_id.as_bytes(),
-                    "transitions": raw_document_transitions,
-                }
+        let mut map = BTreeMap::new();
+        map.insert("protocolVersion".to_string(), Value::U32(PROTOCOL_VERSION));
+        map.insert(
+            "ownerId".to_string(),
+            Value::Identifier(data_contract.owner_id.buffer),
         );
+        map.insert(
+            "transitions".to_string(),
+            Value::Array(raw_document_transitions.clone()),
+        );
+
         let documents_batch_state_transition =
-            DocumentsBatchTransition::from_raw_object(state_transition_data, vec![data_contract])
-                .unwrap();
+            DocumentsBatchTransition::from_value_map(map, vec![data_contract]).unwrap();
 
         let result = create_state_transition(
             &state_repostiory_mock,
@@ -215,7 +221,7 @@ mod test {
 
         assert!(
             matches!(result, StateTransition::DocumentsBatch(transition) if  {
-                transition.get_transitions().iter().map(|t| t.to_object().unwrap()).collect::<Vec<JsonValue>>() == raw_document_transitions
+                transition.get_transitions().iter().map(|t| t.to_object().unwrap()).collect::<Vec<Value>>() == raw_document_transitions
             })
         )
     }

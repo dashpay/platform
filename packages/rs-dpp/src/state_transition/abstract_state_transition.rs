@@ -1,9 +1,13 @@
+use std::collections::BTreeMap;
 use std::fmt::Debug;
+use std::vec;
 
 use dashcore::signer;
+use platform_value::Value;
 use serde::Serialize;
 use serde_json::Value as JsonValue;
 
+use crate::document::state_transition::documents_batch_transition::property_names;
 use crate::{
     identity::KeyType,
     prelude::ProtocolError,

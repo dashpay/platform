@@ -1,3 +1,4 @@
+use std::collections::BTreeMap;
 use crate::{
     data_contract::{DataContract},
     document::{
@@ -23,6 +24,7 @@ use crate::{
 };
 
 use jsonschema::error::ValidationErrorKind;
+use platform_value::Value;
 use serde_json::{json, Value as JsonValue};
 use test_case::test_case;
 
@@ -52,21 +54,23 @@ fn setup_test(action: Action) -> TestData {
     };
 
     let owner_id = data_contract.owner_id;
-    let raw_transitions: Vec<JsonValue> =
-        transitions.iter().map(|d| d.to_object().unwrap()).collect();
+    let raw_transitions: Vec<Value> = transitions.iter().map(|d| d.to_object().unwrap()).collect();
     let signature = [0_u8; 65].to_vec();
-    let state_transition = DocumentsBatchTransition::from_raw_object(
-        json!({
-            "protocolVersion":  LATEST_VERSION,
-            "ownerId" : owner_id.as_bytes(),
-            "contractId" : data_contract.id.as_bytes(),
-            "transitions" : raw_transitions,
-            "signature": signature,
-            "signaturePublicKeyId": 0,
-        }),
-        vec![data_contract.clone()],
-    )
-    .expect("crating state transition shouldn't fail");
+    let mut map = BTreeMap::new();
+    map.insert("protocolVersion".to_string(), Value::U32(LATEST_VERSION));
+    map.insert("ownerId".to_string(), Value::Identifier(owner_id.buffer));
+    map.insert(
+        "contractId".to_string(),
+        Value::Identifier(data_contract.id.buffer),
+    );
+    map.insert("signature".to_string(), Value::Bytes(signature));
+    map.insert("signaturePublicKeyId".to_string(), Value::U32(0));
+
+    map.insert("transitions".to_string(), Value::Array(raw_transitions));
+
+    let state_transition =
+        DocumentsBatchTransition::from_value_map(map, vec![data_contract.clone()])
+            .expect("crating state transition shouldn't fail");
 
     let raw_state_transition = state_transition
         .to_object(false)
