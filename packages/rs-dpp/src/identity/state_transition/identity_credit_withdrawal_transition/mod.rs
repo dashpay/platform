@@ -27,7 +27,9 @@ use super::properties::{
 mod action;
 pub mod apply_identity_credit_withdrawal_transition_factory;
 pub mod validation;
-pub use action::{IdentityCreditWithdrawalTransitionAction, IDENTITY_CREDIT_WITHDRAWAL_TRANSITION_VERSION};
+pub use action::{
+    IdentityCreditWithdrawalTransitionAction, IDENTITY_CREDIT_WITHDRAWAL_TRANSITION_VERSION,
+};
 
 #[repr(u8)]
 #[derive(Serialize_repr, Deserialize_repr, PartialEq, Eq, Clone, Copy, Debug)]

@@ -4,7 +4,7 @@ use dpp::contracts::withdrawals_contract;
 use dpp::dashcore::{BlockHeader, consensus};
 use dpp::document::document_stub::DocumentStub;
 use dpp::document::generate_document_id;
-use dpp::identity::state_transition::identity_credit_withdrawal_transition::{IdentityCreditWithdrawalTransition, Pooling};
+use dpp::identity::state_transition::identity_credit_withdrawal_transition::{IdentityCreditWithdrawalTransition, IdentityCreditWithdrawalTransitionAction, Pooling};
 use dpp::util::entropy_generator::generate;
 use crate::drive::batch::{DocumentOperationType, DriveOperation, IdentityOperationType};
 use crate::drive::batch::DriveOperation::{DocumentOperation, IdentityOperation, WithdrawalOperation};
@@ -12,10 +12,10 @@ use crate::drive::batch::transitions::DriveHighLevelOperationConverter;
 use crate::drive::object_size_info::{DocumentAndContractInfo, OwnedDocumentInfo, DocumentInfo};
 use crate::error::Error;
 
-impl DriveHighLevelOperationConverter for IdentityCreditWithdrawalTransition {
-    fn to_high_level_drive_operations(&self) -> Result<Vec<DriveOperation>, Error> {
-        let IdentityCreditWithdrawalTransition {
-            protocol_version, transition_type, identity_id, amount, core_fee_per_byte, pooling, output_script, revision, signature_public_key_id, signature, execution_context
+impl DriveHighLevelOperationConverter for IdentityCreditWithdrawalTransitionAction {
+    fn to_high_level_drive_operations(self) -> Result<Vec<DriveOperation>, Error> {
+        let IdentityCreditWithdrawalTransitionAction {
+            version, identity_id, amount, core_fee_per_byte, pooling, output_script, revision
         } = self;
 
         let data_contract_id = withdrawals_contract::CONTRACT_ID.deref();
