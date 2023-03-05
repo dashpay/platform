@@ -224,11 +224,13 @@ mod test {
         let StateTransition::DocumentsBatch(transition) = result else {
             panic!("must be a DocumentsBatch transition")
         };
-        let values = transition.get_transitions().iter().map(|t| t.to_object().unwrap()).collect::<Vec<Value>>();
+        let values = transition
+            .get_transitions()
+            .iter()
+            .map(|t| t.to_object().unwrap())
+            .collect::<Vec<Value>>();
 
-        assert_eq!(
-            values,raw_document_transitions
-        );
+        assert_eq!(values, raw_document_transitions);
     }
 
     #[tokio::test]
