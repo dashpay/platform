@@ -360,7 +360,7 @@ impl StateTransitionConvert for DocumentsBatchTransition {
         }
         let mut transitions = vec![];
         for transition in self.transitions.iter() {
-            transitions.push(transition.to_object()?.try_into().unwrap())
+            transitions.push(transition.to_object()?.try_into_validating_json().unwrap())
         }
         json_object.insert(
             String::from(property_names::TRANSITIONS),
