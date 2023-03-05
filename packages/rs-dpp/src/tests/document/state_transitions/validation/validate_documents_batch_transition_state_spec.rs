@@ -1,6 +1,8 @@
+use std::collections::BTreeMap;
 use std::time::Duration;
 
 use chrono::Utc;
+use platform_value::Value;
 use serde_json::{json, Value as JsonValue};
 
 use crate::{
@@ -50,19 +52,20 @@ fn setup_test() -> TestData {
 
     let document_transitions =
         get_document_transitions_fixture([(Action::Create, documents.clone())]);
-    let raw_document_transitions: Vec<JsonValue> = document_transitions
+    let raw_document_transitions: Vec<Value> = document_transitions
         .iter()
         .map(|dt| dt.to_object().unwrap())
         .collect();
     let owner_id_bytes = owner_id.to_buffer();
-    let state_transition = DocumentsBatchTransition::from_raw_object(
-        json!({
-            "ownerId" : owner_id_bytes,
-            "transitions" : raw_document_transitions,
-        }),
-        vec![data_contract.clone()],
-    )
-    .expect("documents batch state transition should be created");
+    let mut map = BTreeMap::new();
+    map.insert("ownerId".to_string(), Value::Identifier(owner_id_bytes));
+    map.insert(
+        "transitions".to_string(),
+        Value::Array(raw_document_transitions),
+    );
+    let state_transition =
+        DocumentsBatchTransition::from_value_map(map, vec![data_contract.clone()])
+            .expect("documents batch state transition should be created");
 
     let mut state_repository_mock = MockStateRepositoryLike::default();
     let data_contract_to_return = data_contract.clone();
@@ -159,18 +162,20 @@ async fn should_return_invalid_result_if_document_transition_with_action_delete_
     let transition_id = document_transitions[0].base().id;
 
     let owner_id_bytes = owner_id.to_buffer();
-    let raw_document_transitions: Vec<JsonValue> = document_transitions
+    let raw_document_transitions: Vec<Value> = document_transitions
         .into_iter()
         .map(|dt| dt.to_object().unwrap())
         .collect();
 
-    let state_transition = DocumentsBatchTransition::from_raw_object(
-        json!({
-            "ownerId" : owner_id_bytes,
-            "transitions": raw_document_transitions}),
-        vec![data_contract.clone()],
-    )
-    .expect("documents batch state transition should be created");
+    let mut map = BTreeMap::new();
+    map.insert("ownerId".to_string(), Value::Identifier(owner_id_bytes));
+    map.insert(
+        "transitions".to_string(),
+        Value::Array(raw_document_transitions),
+    );
+    let state_transition =
+        DocumentsBatchTransition::from_value_map(map, vec![data_contract.clone()])
+            .expect("documents batch state transition should be created");
 
     state_repository_mock
         .expect_fetch_documents()
@@ -221,19 +226,27 @@ async fn should_return_invalid_result_if_document_transition_with_action_replace
     ]);
     let transition_id = document_transitions[0].base().id;
 
-    let raw_document_transitions: Vec<JsonValue> = document_transitions
+    let raw_document_transitions: Vec<Value> = document_transitions
         .into_iter()
         .map(|dt| dt.to_object().unwrap())
         .collect();
 
-    let state_transition = DocumentsBatchTransition::from_raw_object(
-        json!({
-            "ownerId" : owner_id.to_buffer(),
-            "contractId" : data_contract.id.to_buffer(),
-            "transitions": raw_document_transitions}),
-        vec![data_contract.clone()],
-    )
-    .expect("documents batch state transition should be created");
+    let mut map = BTreeMap::new();
+    map.insert(
+        "ownerId".to_string(),
+        Value::Identifier(owner_id.to_buffer()),
+    );
+    map.insert(
+        "contractId".to_string(),
+        Value::Identifier(data_contract.id.to_buffer()),
+    );
+    map.insert(
+        "transitions".to_string(),
+        Value::Array(raw_document_transitions),
+    );
+    let state_transition =
+        DocumentsBatchTransition::from_value_map(map, vec![data_contract.clone()])
+            .expect("documents batch state transition should be created");
 
     state_repository_mock
         .expect_fetch_documents()
@@ -283,19 +296,27 @@ async fn should_return_invalid_result_if_document_transition_with_action_replace
     ]);
     let transition_id = document_transitions[0].base().id;
 
-    let raw_document_transitions: Vec<JsonValue> = document_transitions
+    let raw_document_transitions: Vec<Value> = document_transitions
         .into_iter()
         .map(|dt| dt.to_object().unwrap())
         .collect();
 
-    let state_transition = DocumentsBatchTransition::from_raw_object(
-        json!({
-            "ownerId" : owner_id.to_buffer(),
-            "contractId" : data_contract.id.to_buffer(),
-            "transitions": raw_document_transitions}),
-        vec![data_contract.clone()],
-    )
-    .expect("documents batch state transition should be created");
+    let mut map = BTreeMap::new();
+    map.insert(
+        "ownerId".to_string(),
+        Value::Identifier(owner_id.to_buffer()),
+    );
+    map.insert(
+        "contractId".to_string(),
+        Value::Identifier(data_contract.id.to_buffer()),
+    );
+    map.insert(
+        "transitions".to_string(),
+        Value::Array(raw_document_transitions),
+    );
+    let state_transition =
+        DocumentsBatchTransition::from_value_map(map, vec![data_contract.clone()])
+            .expect("documents batch state transition should be created");
 
     state_repository_mock
         .expect_fetch_documents()
@@ -344,18 +365,26 @@ async fn should_return_invalid_result_if_timestamps_mismatch() {
     let document_transitions =
         get_document_transitions_fixture([(Action::Create, vec![documents[0].clone()])]);
     let transition_id = document_transitions[0].base().id;
-    let raw_document_transitions: Vec<JsonValue> = document_transitions
+    let raw_document_transitions: Vec<Value> = document_transitions
         .into_iter()
         .map(|dt| dt.to_object().unwrap())
         .collect();
-    let mut state_transition = DocumentsBatchTransition::from_raw_object(
-        json!({
-            "ownerId" : owner_id.to_buffer(),
-            "contractId" : data_contract.id.to_buffer(),
-            "transitions": raw_document_transitions}),
-        vec![data_contract.clone()],
-    )
-    .expect("documents batch state transition should be created");
+    let mut map = BTreeMap::new();
+    map.insert(
+        "ownerId".to_string(),
+        Value::Identifier(owner_id.to_buffer()),
+    );
+    map.insert(
+        "contractId".to_string(),
+        Value::Identifier(data_contract.id.to_buffer()),
+    );
+    map.insert(
+        "transitions".to_string(),
+        Value::Array(raw_document_transitions),
+    );
+    let mut state_transition =
+        DocumentsBatchTransition::from_value_map(map, vec![data_contract.clone()])
+            .expect("documents batch state transition should be created");
 
     let now_ts = Utc::now().timestamp_millis() as u64;
     state_transition
@@ -395,18 +424,26 @@ async fn should_return_invalid_result_if_crated_at_has_violated_time_window() {
     let document_transitions =
         get_document_transitions_fixture([(Action::Create, vec![documents[0].clone()])]);
     let transition_id = document_transitions[0].base().id;
-    let raw_document_transitions: Vec<JsonValue> = document_transitions
+    let raw_document_transitions: Vec<Value> = document_transitions
         .into_iter()
         .map(|dt| dt.to_object().unwrap())
         .collect();
-    let mut state_transition = DocumentsBatchTransition::from_raw_object(
-        json!({
-            "ownerId" : owner_id.to_buffer(),
-            "contractId" : data_contract.id.to_buffer(),
-            "transitions": raw_document_transitions}),
-        vec![data_contract.clone()],
-    )
-    .expect("documents batch state transition should be created");
+    let mut map = BTreeMap::new();
+    map.insert(
+        "ownerId".to_string(),
+        Value::Identifier(owner_id.to_buffer()),
+    );
+    map.insert(
+        "contractId".to_string(),
+        Value::Identifier(data_contract.id.to_buffer()),
+    );
+    map.insert(
+        "transitions".to_string(),
+        Value::Array(raw_document_transitions),
+    );
+    let mut state_transition =
+        DocumentsBatchTransition::from_value_map(map, vec![data_contract.clone()])
+            .expect("documents batch state transition should be created");
 
     let now_ts_minus_6_mins =
         Utc::now().timestamp_millis() as u64 - Duration::from_secs(60 * 6).as_millis() as u64;
@@ -447,18 +484,26 @@ async fn should_not_validate_time_in_block_window_on_dry_run() {
 
     let document_transitions =
         get_document_transitions_fixture([(Action::Create, vec![documents[0].clone()])]);
-    let raw_document_transitions: Vec<JsonValue> = document_transitions
+    let raw_document_transitions: Vec<Value> = document_transitions
         .into_iter()
         .map(|dt| dt.to_object().unwrap())
         .collect();
-    let mut state_transition = DocumentsBatchTransition::from_raw_object(
-        json!({
-            "ownerId" : owner_id.to_buffer(),
-            "contractId" : data_contract.id.to_buffer(),
-            "transitions": raw_document_transitions}),
-        vec![data_contract.clone()],
-    )
-    .expect("documents batch state transition should be created");
+    let mut map = BTreeMap::new();
+    map.insert(
+        "ownerId".to_string(),
+        Value::Identifier(owner_id.to_buffer()),
+    );
+    map.insert(
+        "contractId".to_string(),
+        Value::Identifier(data_contract.id.to_buffer()),
+    );
+    map.insert(
+        "transitions".to_string(),
+        Value::Array(raw_document_transitions),
+    );
+    let mut state_transition =
+        DocumentsBatchTransition::from_value_map(map, vec![data_contract.clone()])
+            .expect("documents batch state transition should be created");
 
     state_transition.get_execution_context().enable_dry_run();
     let now_ts_minus_6_mins =
@@ -493,18 +538,26 @@ async fn should_return_invalid_result_if_updated_at_has_violated_time_window() {
     let document_transitions =
         get_document_transitions_fixture([(Action::Create, vec![documents[1].clone()])]);
     let transition_id = document_transitions[0].base().id;
-    let raw_document_transitions: Vec<JsonValue> = document_transitions
+    let raw_document_transitions: Vec<Value> = document_transitions
         .into_iter()
         .map(|dt| dt.to_object().unwrap())
         .collect();
-    let mut state_transition = DocumentsBatchTransition::from_raw_object(
-        json!({
-            "ownerId" : owner_id.to_buffer(),
-            "contractId" : data_contract.id.to_buffer(),
-            "transitions": raw_document_transitions}),
-        vec![data_contract.clone()],
-    )
-    .expect("documents batch state transition should be created");
+    let mut map = BTreeMap::new();
+    map.insert(
+        "ownerId".to_string(),
+        Value::Identifier(owner_id.to_buffer()),
+    );
+    map.insert(
+        "contractId".to_string(),
+        Value::Identifier(data_contract.id.to_buffer()),
+    );
+    map.insert(
+        "transitions".to_string(),
+        Value::Array(raw_document_transitions),
+    );
+    let mut state_transition =
+        DocumentsBatchTransition::from_value_map(map, vec![data_contract.clone()])
+            .expect("documents batch state transition should be created");
 
     let now_ts_minus_6_mins =
         Utc::now().timestamp_millis() as u64 - Duration::from_secs(60 * 6).as_millis() as u64;
@@ -561,18 +614,26 @@ async fn should_return_valid_result_if_document_transitions_are_valid() {
         (Action::Replace, vec![documents[1].clone()]),
         (Action::Delete, vec![documents[2].clone()]),
     ]);
-    let raw_document_transitions: Vec<JsonValue> = document_transitions
+    let raw_document_transitions: Vec<Value> = document_transitions
         .into_iter()
         .map(|dt| dt.to_object().unwrap())
         .collect();
-    let state_transition = DocumentsBatchTransition::from_raw_object(
-        json!({
-            "ownerId" : owner_id.to_buffer(),
-            "contractId" : data_contract.id.to_buffer(),
-            "transitions": raw_document_transitions}),
-        vec![data_contract.clone()],
-    )
-    .expect("documents batch state transition should be created");
+    let mut map = BTreeMap::new();
+    map.insert(
+        "ownerId".to_string(),
+        Value::Identifier(owner_id.to_buffer()),
+    );
+    map.insert(
+        "contractId".to_string(),
+        Value::Identifier(data_contract.id.to_buffer()),
+    );
+    map.insert(
+        "transitions".to_string(),
+        Value::Array(raw_document_transitions),
+    );
+    let state_transition =
+        DocumentsBatchTransition::from_value_map(map, vec![data_contract.clone()])
+            .expect("documents batch state transition should be created");
 
     let validation_result =
         validate_document_batch_transition_state(&state_repository_mock, &state_transition)

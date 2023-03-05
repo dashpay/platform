@@ -558,14 +558,18 @@ mod test {
             t.base.id = transition_id;
         }
 
-        let state_transition = DocumentsBatchTransition::from_raw_object(
-            json!({
-                "ownerId" : owner_id.as_bytes(),
-                "transitions" : [transition.to_object().unwrap()],
-            }),
-            vec![data_contract],
-        )
-        .expect("transition should be created");
+        let mut map = BTreeMap::new();
+        map.insert(
+            "ownerId".to_string(),
+            Value::Identifier(owner_id.to_buffer()),
+        );
+        map.insert(
+            "transitions".to_string(),
+            Value::Array(vec![transition.to_object().unwrap()]),
+        );
+
+        let state_transition = DocumentsBatchTransition::from_value_map(map, vec![data_contract])
+            .expect("transition should be created");
 
         let bytes = state_transition.to_buffer(false).unwrap();
 
