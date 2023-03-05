@@ -189,7 +189,7 @@ mod test {
 
         state_transition.get_execution_context().enable_dry_run();
         state_repository
-            .expect_fetch_documents()
+            .expect_fetch_extended_documents()
             .returning(|_, _, _, _| Ok(vec![]));
         state_repository
             .expect_update_document()

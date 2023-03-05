@@ -58,7 +58,7 @@ impl TryFrom<u8> for Action {
         match value {
             0 => Ok(Create),
             1 => Ok(Replace),
-            2 => Ok(Delete),
+            3 => Ok(Delete),
             other => Err(ProtocolError::Document(Box::new(
                 DocumentError::InvalidActionError(other),
             ))),

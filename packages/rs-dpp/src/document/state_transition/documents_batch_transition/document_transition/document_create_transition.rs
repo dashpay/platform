@@ -1,10 +1,11 @@
 use itertools::Itertools;
 use platform_value::btreemap_extensions::BTreeValueMapHelper;
-use platform_value::btreemap_field_replacement::BTreeValueMapInsertionPathHelper;
+use platform_value::btreemap_field_replacement::BTreeValueMapReplacementPathHelper;
 use platform_value::{ReplacementType, Value};
 use serde::{Deserialize, Serialize};
 use serde_json::Value as JsonValue;
 use std::collections::BTreeMap;
+use std::convert::TryInto;
 use std::string::ToString;
 
 use crate::document::Document;
@@ -115,7 +116,12 @@ impl DocumentTransitionObjectLike for DocumentCreateTransition {
             ReplacementType::Bytes,
         )?;
 
-        map.replace_at_paths(identifiers_paths.into_iter(), ReplacementType::Identifier)?;
+        map.replace_at_paths(
+            identifiers_paths
+                .into_iter()
+                .chain(IDENTIFIER_FIELDS.iter().map(|a| a.to_string())),
+            ReplacementType::Identifier,
+        )?;
         let document = Self::from_value_map(map, data_contract)?;
 
         Ok(document)
@@ -179,19 +185,9 @@ impl DocumentTransitionObjectLike for DocumentCreateTransition {
     }
 
     fn to_json(&self) -> Result<JsonValue, ProtocolError> {
-        let mut value = serde_json::to_value(self)?;
-        let (identifier_paths, binary_paths) = self
-            .base
-            .data_contract
-            .get_identifiers_and_binary_paths(&self.base.document_type)?;
-
-        value.replace_identifier_paths(identifier_paths, ReplaceWith::Base58)?;
-        value.replace_binary_paths(
-            binary_paths.into_iter().chain(BINARY_FIELDS).unique(),
-            ReplaceWith::Base64,
-        )?;
-
-        Ok(value)
+        self.to_object()?
+            .try_into()
+            .map_err(ProtocolError::ValueError)
     }
 }
 
@@ -307,9 +303,11 @@ mod test {
             .expect("no errors")
             .into_btree_map()
             .unwrap();
-        assert_eq!(object_transition.get_bytes("$id").unwrap(), id);
+        assert_eq!(object_transition.get_system_bytes("$id").unwrap(), id);
         assert_eq!(
-            object_transition.get_bytes("$dataContractId").unwrap(),
+            object_transition
+                .get_system_bytes("$dataContractId")
+                .unwrap(),
             data_contract_id
         );
         assert_eq!(
@@ -317,7 +315,9 @@ mod test {
             alpha_value
         );
         assert_eq!(
-            object_transition.get_bytes("alphaIdentifier").unwrap(),
+            object_transition
+                .get_system_bytes("alphaIdentifier")
+                .unwrap(),
             alpha_value
         );
     }

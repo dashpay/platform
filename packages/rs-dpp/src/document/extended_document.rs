@@ -15,10 +15,11 @@ use integer_encoding::VarInt;
 use crate::data_contract::document_type::DocumentType;
 use crate::document::Document;
 use platform_value::btreemap_extensions::BTreeValueMapHelper;
+use platform_value::btreemap_field_replacement::BTreeValueMapReplacementPathHelper;
 use platform_value::btreemap_path_extensions::BTreeValueMapPathHelper;
 use platform_value::btreemap_path_insertion_extensions::BTreeValueMapInsertionPathHelper;
 use platform_value::converter::serde_json::BTreeValueJsonConverter;
-use platform_value::Value;
+use platform_value::{ReplacementType, Value};
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value as JsonValue};
 use std::collections::{BTreeMap, HashSet};
@@ -153,8 +154,22 @@ impl ExtendedDocument {
     where
         for<'de> S: Deserialize<'de> + TryInto<Identifier, Error = ProtocolError>,
     {
+        let document_type_name: String =
+            if let Ok(document_type_name) = document_value.remove(property_names::DOCUMENT_TYPE) {
+                serde_json::from_value(document_type_name)?
+            } else {
+                return Err(ProtocolError::DecodingError(
+                    "no document type in json value".to_string(),
+                ));
+            };
+
+        //Because we don't know how the json came in we need to sanitize it
+        let (identifiers, binary_paths) =
+            data_contract.get_identifiers_and_binary_paths_owned(document_type_name.as_str())?;
+
         let mut extended_document = Self {
             data_contract,
+            document_type_name,
             ..Default::default()
         };
 
@@ -162,14 +177,20 @@ impl ExtendedDocument {
             extended_document.protocol_version = serde_json::from_value(value)?
         }
 
-        if let Ok(value) = document_value.remove(property_names::DOCUMENT_TYPE) {
-            extended_document.document_type_name = serde_json::from_value(value)?
-        }
         if let Ok(value) = document_value.remove(property_names::DATA_CONTRACT_ID) {
             let data: S = serde_json::from_value(value)?;
             extended_document.data_contract_id = data.try_into()?
         }
         extended_document.document = Document::from_json_value::<S>(document_value)?;
+
+        extended_document
+            .document
+            .properties
+            .replace_at_paths(identifiers, ReplacementType::Identifier)?;
+        extended_document
+            .document
+            .properties
+            .replace_at_paths(binary_paths, ReplacementType::Bytes)?;
         Ok(extended_document)
     }
 

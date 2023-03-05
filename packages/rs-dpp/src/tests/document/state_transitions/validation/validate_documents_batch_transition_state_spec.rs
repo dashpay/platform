@@ -1,4 +1,5 @@
 use std::collections::BTreeMap;
+use std::convert::TryInto;
 use std::time::Duration;
 
 use chrono::Utc;
@@ -249,8 +250,8 @@ async fn should_return_invalid_result_if_document_transition_with_action_replace
             .expect("documents batch state transition should be created");
 
     state_repository_mock
-        .expect_fetch_documents()
-        .returning(move |_, _, _, _| Ok(vec![documents[0].clone()]));
+        .expect_fetch_extended_documents()
+        .returning(move |_, _, _, _| Ok(vec![extended_documents[0].clone()]));
 
     let validation_result =
         validate_document_batch_transition_state(&state_repository_mock, &state_transition)
@@ -274,21 +275,32 @@ async fn should_return_invalid_result_if_document_transition_with_action_replace
     let TestData {
         data_contract,
         owner_id,
-        extended_documents: documents,
+        extended_documents,
         mut state_repository_mock,
         ..
     } = setup_test();
     let mut replace_document = ExtendedDocument::from_raw_document(
-        documents[0].to_object().unwrap(),
+        extended_documents[0]
+            .to_object()
+            .unwrap()
+            .try_into()
+            .unwrap(),
         data_contract.clone(),
     )
     .expect("document should be created");
     replace_document.document.revision = Some(1);
 
-    let mut fetched_document = Document::from_raw_json_document(documents[0].to_object().unwrap())
-        .expect("document should be created");
+    let mut fetched_document = ExtendedDocument::from_raw_document(
+        extended_documents[0]
+            .to_object()
+            .unwrap()
+            .try_into()
+            .unwrap(),
+        data_contract.clone(),
+    )
+    .expect("document should be created");
     let another_owner_id = generate_random_identifier_struct();
-    fetched_document.owner_id = another_owner_id.buffer;
+    fetched_document.document.owner_id = another_owner_id.buffer;
 
     let document_transitions = get_document_transitions_fixture([
         (Action::Create, vec![]),
@@ -319,7 +331,7 @@ async fn should_return_invalid_result_if_document_transition_with_action_replace
             .expect("documents batch state transition should be created");
 
     state_repository_mock
-        .expect_fetch_documents()
+        .expect_fetch_extended_documents()
         .returning(move |_, _, _, _| Ok(vec![fetched_document.clone()]));
 
     let validation_result =
@@ -591,28 +603,26 @@ async fn should_return_valid_result_if_document_transitions_are_valid() {
     let TestData {
         data_contract,
         owner_id,
-        extended_documents: documents,
+        extended_documents,
         mut state_repository_mock,
         ..
     } = setup_test();
-    let mut fetched_document_1 =
-        Document::from_raw_json_document(documents[1].to_object().unwrap()).unwrap();
-    let mut fetched_document_2 =
-        Document::from_raw_json_document(documents[2].to_object().unwrap()).unwrap();
-    fetched_document_1.revision = Some(1);
-    fetched_document_2.revision = Some(1);
-    fetched_document_1.owner_id = owner_id.to_buffer();
-    fetched_document_2.owner_id = owner_id.to_buffer();
+    let mut fetched_document_1 = extended_documents[1].clone();
+    let mut fetched_document_2 = extended_documents[2].clone();
+    fetched_document_1.document.revision = Some(1);
+    fetched_document_2.document.revision = Some(1);
+    fetched_document_1.document.owner_id = owner_id.to_buffer();
+    fetched_document_2.document.owner_id = owner_id.to_buffer();
 
     state_repository_mock
-        .expect_fetch_documents()
+        .expect_fetch_extended_documents()
         .returning(move |_, _, _, _| {
             Ok(vec![fetched_document_1.clone(), fetched_document_2.clone()])
         });
     let document_transitions = get_document_transitions_fixture([
         (Action::Create, vec![]),
-        (Action::Replace, vec![documents[1].clone()]),
-        (Action::Delete, vec![documents[2].clone()]),
+        (Action::Replace, vec![extended_documents[1].clone()]),
+        (Action::Delete, vec![extended_documents[2].clone()]),
     ]);
     let raw_document_transitions: Vec<Value> = document_transitions
         .into_iter()

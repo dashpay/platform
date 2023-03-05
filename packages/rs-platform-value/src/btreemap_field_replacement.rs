@@ -24,13 +24,26 @@ impl ReplacementType {
         }
     }
 
+    pub fn replace_for_bytes_32(&self, bytes: [u8;32]) -> Result<Value, Error> {
+        match self {
+            ReplacementType::Identifier => Ok(Value::Identifier(
+                bytes
+                    .try_into()
+                    .map_err(|_| Error::ByteLengthNot32BytesError)?,
+            )),
+            ReplacementType::Bytes => Ok(Value::Bytes32(bytes)),
+            ReplacementType::TextBase58 => Ok(Value::Text(bs58::encode(bytes).into_string())),
+            ReplacementType::TextBase64 => Ok(Value::Text(base64::encode(bytes))),
+        }
+    }
+
     pub fn replace_consume_value(&self, value: Value) -> Result<Value, Error> {
         let bytes = value.into_system_bytes()?;
         self.replace_for_bytes(bytes)
     }
 }
 
-pub trait BTreeValueMapInsertionPathHelper {
+pub trait BTreeValueMapReplacementPathHelper {
     fn replace_at_path(
         &mut self,
         path: &str,
@@ -43,7 +56,7 @@ pub trait BTreeValueMapInsertionPathHelper {
     ) -> Result<HashMap<String, bool>, Error>;
 }
 
-impl BTreeValueMapInsertionPathHelper for BTreeMap<String, Value> {
+impl BTreeValueMapReplacementPathHelper for BTreeMap<String, Value> {
     fn replace_at_path(
         &mut self,
         path: &str,
@@ -57,16 +70,35 @@ impl BTreeValueMapInsertionPathHelper for BTreeMap<String, Value> {
         let Some(mut current_value) = self.get_mut(first_path_component) else {
             return Ok(false);
         };
-        while let Some(path_component) = split.next() {
-            let map = current_value.as_map_mut_ref()?;
-            let Some(mut new_value) = map.get_key_mut(path_component) else {
-                return Ok(false);
-            };
-            current_value = new_value;
-            if split.peek().is_none() {
-                let bytes = current_value.to_system_bytes()?;
-                new_value = &mut replacement_type.replace_for_bytes(bytes)?;
-                return Ok(true);
+        if split.peek().is_none() {
+            match current_value {
+                Value::Bytes32(bytes) => {
+                    *current_value = replacement_type.replace_for_bytes_32(*bytes)?;
+                }
+                _ => {
+                    let bytes = current_value.to_system_bytes()?;
+                    *current_value = replacement_type.replace_for_bytes(bytes)?;
+                }
+            }
+        } else {
+            while let Some(path_component) = split.next() {
+                let map = current_value.as_map_mut_ref()?;
+                let Some(mut new_value) = map.get_key_mut(path_component) else {
+                    return Ok(false);
+                };
+                current_value = new_value;
+                if split.peek().is_none() {
+                    match current_value {
+                        Value::Bytes32(bytes) => {
+                            *current_value = replacement_type.replace_for_bytes_32(*bytes)?;
+                        }
+                        _ => {
+                            let bytes = current_value.to_system_bytes()?;
+                            *current_value = replacement_type.replace_for_bytes(bytes)?;
+                        }
+                    }
+                    return Ok(true);
+                }
             }
         }
         Ok(false)
