@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::collections::{BTreeMap, HashMap};
 use std::convert::TryInto;
 
 use anyhow::{anyhow, Context};
@@ -150,9 +150,17 @@ impl DocumentsBatchTransition {
         raw_object: Value,
         data_contracts: Vec<DataContract>,
     ) -> Result<Self, ProtocolError> {
-        let mut map = raw_object
+        let map = raw_object
             .into_btree_map()
             .map_err(ProtocolError::ValueError)?;
+        Self::from_value_map(map, data_contracts)
+    }
+
+    /// creates the instance of [`DocumentsBatchTransition`] from a value map
+    pub fn from_value_map(
+        mut map: BTreeMap<String, Value>,
+        data_contracts: Vec<DataContract>,
+    ) -> Result<Self, ProtocolError> {
         let mut batch_transitions = DocumentsBatchTransition {
             protocol_version: map
                 .get_integer(property_names::PROTOCOL_VERSION)
@@ -180,7 +188,7 @@ impl DocumentsBatchTransition {
                 .collect();
 
             for raw_transition in raw_transitions {
-                let mut raw_transition_map = raw_object
+                let mut raw_transition_map = raw_transition
                     .into_btree_map()
                     .map_err(ProtocolError::ValueError)?;
                 let id = raw_transition_map.get_bytes(property_names::DATA_CONTRACT_ID)?;

@@ -311,87 +311,47 @@ impl Document {
         Ok(value)
     }
 
-    pub fn to_cbor_value(&self) -> Result<CborValue, ProtocolError> {
-        let mut value = CborValue::Map(vec![]);
-        let value_mut = value.as_map_mut().unwrap();
-        value_mut.push((
-            CborValue::Text(property_names::ID.to_string()),
-            CborValue::Bytes(self.id.to_vec()),
-        ));
-        value_mut.push((
-            CborValue::Text(property_names::OWNER_ID.to_string()),
-            CborValue::Bytes(self.owner_id.to_vec()),
-        ));
+    pub fn to_map_value(&self) -> Result<BTreeMap<String, Value>, ProtocolError> {
+        let mut map: BTreeMap<String, Value> = BTreeMap::new();
+        map.insert(property_names::ID.to_string(), Value::Identifier(self.id));
+        map.insert(
+            property_names::OWNER_ID.to_string(),
+            Value::Identifier(self.owner_id),
+        );
+
         if let Some(created_at) = self.created_at {
-            value_mut.push((
-                CborValue::Text(property_names::CREATED_AT.to_string()),
-                CborValue::Integer(created_at.into()),
-            ));
+            map.insert(
+                property_names::CREATED_AT.to_string(),
+                Value::U64(created_at),
+            );
         }
         if let Some(updated_at) = self.updated_at {
-            value_mut.push((
-                CborValue::Text(property_names::UPDATED_AT.to_string()),
-                CborValue::Integer(updated_at.into()),
-            ));
+            map.insert(
+                property_names::UPDATED_AT.to_string(),
+                Value::U64(updated_at),
+            );
         }
         if let Some(revision) = self.revision {
-            value_mut.push((
-                CborValue::Text(property_names::REVISION.to_string()),
-                CborValue::Integer(revision.into()),
-            ));
+            map.insert(property_names::REVISION.to_string(), Value::U64(revision));
         }
 
-        self.properties
-            .iter()
-            .try_for_each(|(key, property_value)| {
-                let cbor_value: CborValue = property_value
-                    .clone()
-                    .try_into()
-                    .map_err(ProtocolError::ValueError)?;
-                value_mut.push((CborValue::Text(key.clone()), cbor_value));
-                Ok::<(), ProtocolError>(())
-            })?;
+        map.extend(self.properties.clone());
 
-        Ok(value)
+        Ok(map)
+    }
+
+    pub fn to_value(&self) -> Result<Value, ProtocolError> {
+        Ok(self.to_map_value()?.into())
+    }
+
+    pub fn to_cbor_value(&self) -> Result<CborValue, ProtocolError> {
+        self.to_value()
+            .map(|v| v.try_into().map_err(ProtocolError::ValueError))?
     }
 
     pub fn to_json(&self) -> Result<JsonValue, ProtocolError> {
-        let mut value = json!({
-            property_names::ID: bs58::encode(self.id).into_string(),
-            property_names::OWNER_ID:  bs58::encode(self.owner_id).into_string(),
-        });
-        let value_mut = value.as_object_mut().unwrap();
-        if let Some(created_at) = self.created_at {
-            value_mut.insert(
-                property_names::CREATED_AT.to_string(),
-                JsonValue::Number(created_at.into()),
-            );
-        }
-        if let Some(updated_at) = self.updated_at {
-            value_mut.insert(
-                property_names::UPDATED_AT.to_string(),
-                JsonValue::Number(updated_at.into()),
-            );
-        }
-        if let Some(revision) = self.revision {
-            value_mut.insert(
-                property_names::REVISION.to_string(),
-                JsonValue::Number(revision.into()),
-            );
-        }
-
-        self.properties
-            .iter()
-            .try_for_each(|(key, property_value)| {
-                let serde_value: JsonValue = property_value
-                    .clone()
-                    .try_into()
-                    .map_err(ProtocolError::ValueError)?;
-                value_mut.insert(key.to_string(), serde_value);
-                Ok::<(), ProtocolError>(())
-            })?;
-
-        Ok(value)
+        self.to_value()
+            .map(|v| v.try_into().map_err(ProtocolError::ValueError))?
     }
 
     pub fn replace_all_fields(

@@ -25,6 +25,7 @@ use super::{
     StateTransitionType,
 };
 
+//todo: change from JsonValue to Platform Value
 pub async fn create_state_transition(
     state_repository: &impl StateRepositoryLike,
     raw_state_transition: JsonValue,
@@ -67,8 +68,10 @@ pub async fn create_state_transition(
                 &execution_context,
             )
             .await?;
-            let documents_batch_transition =
-                DocumentsBatchTransition::from_raw_object(raw_state_transition, data_contracts)?;
+            let documents_batch_transition = DocumentsBatchTransition::from_raw_object(
+                raw_state_transition.into(),
+                data_contracts,
+            )?;
             Ok(StateTransition::DocumentsBatch(documents_batch_transition))
         }
         // TODO!! add basic validation

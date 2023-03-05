@@ -241,6 +241,27 @@ impl ExtendedDocument {
         })
     }
 
+    pub fn to_map_value(&self) -> Result<BTreeMap<String, Value>, ProtocolError> {
+        let mut object = self.document.to_map_value()?;
+        object.insert(
+            property_names::PROTOCOL_VERSION.to_string(),
+            Value::U32(self.protocol_version),
+        );
+        object.insert(
+            property_names::DOCUMENT_TYPE.to_string(),
+            Value::Text(self.document_type_name.clone()),
+        );
+        object.insert(
+            property_names::DATA_CONTRACT_ID.to_string(),
+            Value::Identifier(self.data_contract_id.to_buffer()),
+        );
+        Ok(object)
+    }
+
+    pub fn to_value(&self) -> Result<Value, ProtocolError> {
+        Ok(self.to_map_value()?.into())
+    }
+
     // The skipIdentifierConversion option is removed as it doesn't make sense in the case of
     // of Rust. Rust doesn't distinguish between `Buffer` and `Identifier`
     pub fn to_object(&self) -> Result<JsonValue, ProtocolError> {

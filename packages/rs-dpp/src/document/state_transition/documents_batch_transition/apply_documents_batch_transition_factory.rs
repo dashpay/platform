@@ -141,6 +141,7 @@ fn document_from_transition_replace(
 mod test {
     use platform_value::Value;
     use serde_json::{json, Value as JsonValue};
+    use std::collections::BTreeMap;
     use std::convert::TryInto;
 
     use crate::tests::fixtures::get_extended_documents_fixture;
@@ -171,19 +172,20 @@ mod test {
             (Action::Replace, documents),
             (Action::Create, vec![]),
         ]);
-        let raw_document_transitions: Vec<JsonValue> = documents_transitions
+        let raw_document_transitions: Vec<Value> = documents_transitions
             .iter()
-            .map(|dt| dt.to_object().unwrap().try_into().unwrap())
-            .collect();
+            .map(|dt| dt.to_value_map().unwrap().into())
+            .collect::<Vec<Value>>();
         let owner_id_bytes = owner_id.to_buffer();
-        let state_transition = DocumentsBatchTransition::from_raw_object(
-            json!({
-                "ownerId" : owner_id_bytes,
-                "transitions" : raw_document_transitions,
-            }),
-            vec![data_contract.clone()],
-        )
-        .expect("documents batch state transition should be created");
+        let mut map = BTreeMap::new();
+        map.insert("ownerId".to_string(), Value::Identifier(owner_id_bytes));
+        map.insert(
+            "transitions".to_string(),
+            Value::Array(raw_document_transitions),
+        );
+        let state_transition =
+            DocumentsBatchTransition::from_value_map(map, vec![data_contract.clone()])
+                .expect("documents batch state transition should be created");
 
         state_transition.get_execution_context().enable_dry_run();
         state_repository

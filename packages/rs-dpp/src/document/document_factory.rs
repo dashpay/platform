@@ -1,5 +1,6 @@
 use anyhow::Context;
 use chrono::Utc;
+use std::collections::BTreeMap;
 
 use itertools::Itertools;
 
@@ -192,7 +193,7 @@ where
         &self,
         documents_iter: impl IntoIterator<Item = (Action, Vec<ExtendedDocument>)>,
     ) -> Result<DocumentsBatchTransition, ProtocolError> {
-        let mut raw_documents_transitions: Vec<JsonValue> = vec![];
+        let mut raw_documents_transitions: Vec<Value> = vec![];
         let mut data_contracts: Vec<DataContract> = vec![];
         let documents: Vec<(Action, Vec<ExtendedDocument>)> = documents_iter.into_iter().collect();
         let flattened_documents_iter = documents.iter().flat_map(|(_, v)| v);
@@ -235,13 +236,22 @@ where
             return Err(DocumentError::NoDocumentsSuppliedError.into());
         }
 
-        let raw_batch_transition = json!({
-            PROPERTY_PROTOCOL_VERSION: self.protocol_version,
-            PROPERTY_OWNER_ID : owner_id.to_buffer(),
-            PROPERTY_TRANSITIONS: raw_documents_transitions,
-        });
+        let raw_batch_transition = BTreeMap::from([
+            (
+                PROPERTY_PROTOCOL_VERSION.to_string(),
+                Value::U32(self.protocol_version),
+            ),
+            (
+                PROPERTY_OWNER_ID.to_string(),
+                Value::Identifier(owner_id.buffer),
+            ),
+            (
+                PROPERTY_TRANSITIONS.to_string(),
+                Value::Array(raw_documents_transitions),
+            ),
+        ]);
 
-        DocumentsBatchTransition::from_raw_object(raw_batch_transition, data_contracts)
+        DocumentsBatchTransition::from_value_map(raw_batch_transition, data_contracts)
     }
 
     pub async fn create_from_buffer(
@@ -321,7 +331,7 @@ where
 
     fn raw_document_create_transitions(
         documents: Vec<ExtendedDocument>,
-    ) -> Result<Vec<JsonValue>, ProtocolError> {
+    ) -> Result<Vec<Value>, ProtocolError> {
         let mut raw_transitions = vec![];
         for document in documents {
             if document.needs_revision() {
@@ -337,22 +347,17 @@ where
                     .into());
                 }
             }
-            let mut raw_document = document.to_object()?;
+            let mut map = document.to_map_value()?;
 
-            if let Some(map) = raw_document.as_object_mut() {
-                map.retain(|key, _| {
-                    !key.starts_with('$') || DOCUMENT_CREATE_KEYS_TO_STAY.contains(&key.as_str())
-                });
-                map.insert(
-                    PROPERTY_ACTION.to_string(),
-                    serde_json::to_value(Action::Create)?,
-                );
-                map.insert(
-                    PROPERTY_ENTROPY.to_string(),
-                    serde_json::to_value(document.entropy)?,
-                );
-            }
-            raw_transitions.push(raw_document);
+            map.retain(|key, _| {
+                !key.starts_with('$') || DOCUMENT_CREATE_KEYS_TO_STAY.contains(&key.as_str())
+            });
+            map.insert(PROPERTY_ACTION.to_string(), Value::U8(Action::Create as u8));
+            map.insert(
+                PROPERTY_ENTROPY.to_string(),
+                Value::Bytes(document.entropy.to_vec()),
+            );
+            raw_transitions.push(map.into());
         }
 
         Ok(raw_transitions)
@@ -360,7 +365,7 @@ where
 
     fn raw_document_replace_transitions(
         documents: Vec<ExtendedDocument>,
-    ) -> Result<Vec<JsonValue>, ProtocolError> {
+    ) -> Result<Vec<Value>, ProtocolError> {
         let mut raw_transitions = vec![];
         for document in documents {
             if !document.can_be_modified() {
@@ -374,42 +379,55 @@ where
                     document: Box::new(document),
                 }.into());
             };
-            let mut raw_document = document.to_object()?;
+            let mut map = document.to_map_value()?;
 
-            if let Some(map) = raw_document.as_object_mut() {
-                map.retain(|key, _| {
-                    !key.starts_with('$') || DOCUMENT_REPLACE_KEYS_TO_STAY.contains(&key.as_str())
-                });
+            map.retain(|key, _| {
+                !key.starts_with('$') || DOCUMENT_REPLACE_KEYS_TO_STAY.contains(&key.as_str())
+            });
+            map.insert(
+                PROPERTY_ACTION.to_string(),
+                Value::U8(Action::Replace as u8),
+            );
+            let new_revision = document_revision + 1;
+            map.insert(PROPERTY_REVISION.to_string(), Value::U64(new_revision));
+
+            // If document have an originally set `updatedAt`
+            // we should update it then
+            if let Some(updated_at) = map.get_mut(PROPERTY_UPDATED_AT) {
+                *updated_at = Value::U64(Utc::now().timestamp_millis() as TimestampMillis);
+            } else {
                 map.insert(
-                    PROPERTY_ACTION.to_string(),
-                    serde_json::to_value(Action::Replace)?,
+                    PROPERTY_UPDATED_AT.to_string(),
+                    Value::U64(Utc::now().timestamp_millis() as TimestampMillis),
                 );
-                let new_revision = document_revision + 1;
-                map.insert(PROPERTY_REVISION.to_string(), json!(new_revision));
-
-                // If document have an originally set `updatedAt`
-                // we should update it then
-                if let Some(update_at) = map.get_mut(PROPERTY_UPDATED_AT) {
-                    *update_at = json!(Utc::now().timestamp_millis())
-                }
             }
 
-            raw_transitions.push(raw_document);
+            raw_transitions.push(map.into());
         }
         Ok(raw_transitions)
     }
 
     fn raw_document_delete_transitions(
         documents: Vec<ExtendedDocument>,
-    ) -> Result<Vec<JsonValue>, ProtocolError> {
+    ) -> Result<Vec<Value>, ProtocolError> {
         Ok(documents
             .into_iter()
             .map(|document| {
-                json!({
-                PROPERTY_ACTION: Action::Delete,
-                PROPERTY_ID: document.id().buffer,
-                PROPERTY_TYPE: document.document_type_name,
-                PROPERTY_DATA_CONTRACT_ID: document.data_contract_id.buffer})
+                let mut map: BTreeMap<String, Value> = BTreeMap::new();
+                map.insert(PROPERTY_ACTION.to_string(), Value::U8(Action::Delete as u8));
+                map.insert(
+                    PROPERTY_ID.to_string(),
+                    Value::Identifier(document.document.id),
+                );
+                map.insert(
+                    PROPERTY_TYPE.to_string(),
+                    Value::Text(document.document_type_name),
+                );
+                map.insert(
+                    PROPERTY_DATA_CONTRACT_ID.to_string(),
+                    Value::Identifier(document.data_contract_id.buffer),
+                );
+                map.into()
             })
             .collect())
     }
