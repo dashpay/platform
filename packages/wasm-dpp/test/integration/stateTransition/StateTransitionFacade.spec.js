@@ -18,11 +18,13 @@ const createStateRepositoryMock = require('@dashevo/dpp/lib/test/mocks/createSta
 const MissingOptionError = require('@dashevo/dpp/lib/errors/MissingOptionError');
 const createDPPMock = require('@dashevo/dpp/lib/test/mocks/createDPPMock');
 const SomeConsensusError = require('@dashevo/dpp/lib/test/mocks/SomeConsensusError');
+const getIdentityFixture = require('@dashevo/dpp/lib/test/fixtures/getIdentityFixture');
 const getDocumentsFixture = require('../../../lib/test/fixtures/getDocumentsFixture');
 const getDataContractFixture = require('../../../lib/test/fixtures/getDataContractFixture');
 
 const { default: loadWasmDpp } = require('../../../dist');
 const getBlsAdapterMock = require('../../../lib/test/mocks/getBlsAdapterMock');
+const generateRandomIdentifierAsync = require('../../../lib/test/utils/generateRandomIdentifierAsync');
 
 describe('StateTransitionFacade', () => {
   let dpp;
@@ -36,23 +38,27 @@ describe('StateTransitionFacade', () => {
   let DataContractFactory;
   let DataContractValidator;
   let DataContract;
+  let Identity;
   let ValidationResult;
   let IdentityPublicKey;
   let DocumentFactory;
   let DocumentValidator;
   let ProtocolVersionValidator;
+  let IdentityCreateTransition;
 
   before(async () => {
     ({
       DashPlatformProtocol,
       ValidationResult,
       DataContract,
+      Identity,
       DataContractValidator,
       DataContractFactory,
       IdentityPublicKey,
       DocumentFactory,
       DocumentValidator,
       ProtocolVersionValidator,
+      IdentityCreateTransition,
     } = await loadWasmDpp());
   });
 
@@ -80,26 +86,23 @@ describe('StateTransitionFacade', () => {
     dataContractCreateTransition = await dataContractFactory.createDataContractCreateTransition(
       dataContract,
     );
-
-    await dataContractCreateTransition.sign(identityPublicKey, privateKey);
+    await dataContractCreateTransition.sign(
+      identityPublicKey,
+      privateKey,
+    );
 
     const documentValidator = new DocumentValidator(new ProtocolVersionValidator());
     const documentFactory = new DocumentFactory(1, documentValidator, stateRepositoryMock);
 
-    const docs = await getDocumentsFixture(dataContract);
     documentsBatchTransition = documentFactory.createStateTransition({
       create: await getDocumentsFixture(dataContract),
     });
     await documentsBatchTransition.sign(identityPublicKey, privateKey);
 
-    const getPublicKeyById = this.sinonSandbox.stub().returns(identityPublicKey);
-    const getBalance = this.sinonSandbox.stub().returns(10000);
-
-    const identity = {
-      getPublicKeyById,
-      type: 2,
-      getBalance,
-    };
+    const identityObjectJS = getIdentityFixture().toObject();
+    identityObjectJS.id = await generateRandomIdentifierAsync();
+    const identity = new Identity(identityObjectJS);
+    identity.setPublicKeys([identityPublicKey]);
 
     const blockTime = Date.now();
 
@@ -316,25 +319,7 @@ describe('StateTransitionFacade', () => {
     });
   });
 
-  describe.only('validateBasic', () => {
-    // TODO: can we remove it because stateRepository is mandatory argument
-    //  in wasm-dpp DashPlatformProtocol constructor?
-    it.skip('should throw MissingOption if stateRepository is not set', async () => {
-      dpp = new DashPlatformProtocol();
-      await dpp.initialize();
-
-      try {
-        await dpp.stateTransition.validateBasic(
-          dataContractCreateTransition.toObject(),
-        );
-
-        expect.fail('MissingOption should be thrown');
-      } catch (e) {
-        expect(e).to.be.an.instanceOf(MissingOptionError);
-        expect(e.getOptionName()).to.equal('stateRepository');
-      }
-    });
-
+  describe('validateBasic', () => {
     it('should validate State Transition', async () => {
       const result = await dpp.stateTransition.validateBasic(
         dataContractCreateTransition.toObject(),
@@ -345,23 +330,7 @@ describe('StateTransitionFacade', () => {
     });
   });
 
-  describe('validateSignature', () => {
-    it('should throw MissingOption if stateRepository is not set', async () => {
-      dpp = new DashPlatformProtocol();
-      await dpp.initialize();
-
-      try {
-        await dpp.stateTransition.validateSignature(
-          dataContractCreateTransition,
-        );
-
-        expect.fail('MissingOption should be thrown');
-      } catch (e) {
-        expect(e).to.be.an.instanceOf(MissingOptionError);
-        expect(e.getOptionName()).to.equal('stateRepository');
-      }
-    });
-
+  describe.only('validateSignature', () => {
     it('should validate identity signed State Transition', async () => {
       const result = await dpp.stateTransition.validateSignature(
         dataContractCreateTransition,
@@ -376,10 +345,13 @@ describe('StateTransitionFacade', () => {
         'af432c476f65211f45f48f1d42c9c0b497e56696aa1736b40544ef1a496af837',
       );
 
-      const identityCreateTransition = getIdentityCreateTransitionFixture(oneTimePrivateKey);
+      const identityCreateTransitionJS = getIdentityCreateTransitionFixture(oneTimePrivateKey);
+      const identityCreateTransition = new IdentityCreateTransition(
+        identityCreateTransitionJS.toObject(),
+      );
 
       await identityCreateTransition.signByPrivateKey(
-        oneTimePrivateKey,
+        oneTimePrivateKey.toBuffer(),
         IdentityPublicKey.TYPES.ECDSA_SECP256K1,
       );
 

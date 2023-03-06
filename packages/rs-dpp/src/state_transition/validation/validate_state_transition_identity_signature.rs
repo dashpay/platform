@@ -1,3 +1,4 @@
+use std::sync::Arc;
 use std::{collections::HashSet, convert::TryInto};
 
 use anyhow::Context;
@@ -31,7 +32,7 @@ lazy_static! {
 }
 
 pub async fn validate_state_transition_identity_signature(
-    state_repository: &impl StateRepositoryLike,
+    state_repository: Arc<impl StateRepositoryLike>,
     state_transition: &mut impl StateTransitionIdentitySigned,
     bls: &impl BlsModule,
 ) -> Result<ValidationResult<()>, ProtocolError> {

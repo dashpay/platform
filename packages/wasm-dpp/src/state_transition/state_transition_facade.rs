@@ -65,4 +65,25 @@ impl StateTransitionFacadeWasm {
 
         Ok(validation_result.map(|_| JsValue::undefined()).into())
     }
+
+    #[wasm_bindgen(js_name = validateSignature)]
+    pub async fn validate_signature(
+        &self,
+        raw_state_transition: JsValue,
+    ) -> Result<ValidationResultWasm, JsValue> {
+        let state_transition =
+            super::super::conversion::create_state_transition_from_wasm_instance(
+                &raw_state_transition,
+            )?;
+
+        let validation_result = self
+            .0
+            .validate_signature(state_transition)
+            .await
+            .map_err(from_dpp_err)?;
+
+        web_sys::console::log_1(&"Validated st".into());
+
+        Ok(validation_result.map(|_| JsValue::undefined()).into())
+    }
 }
