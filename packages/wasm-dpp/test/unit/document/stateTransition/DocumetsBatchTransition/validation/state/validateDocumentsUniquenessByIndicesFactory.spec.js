@@ -104,7 +104,7 @@ describe('validateDocumentsUniquenessByIndices', () => {
     stateRepositoryMock.fetchDocuments
       .withArgs(
         dataContract.getId().toBuffer(),
-          william.getType(),
+        william.getType(),
         {
           where: [
             ['$ownerId', '==', ownerIdJs],
