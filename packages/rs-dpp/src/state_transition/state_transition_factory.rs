@@ -127,7 +127,7 @@ fn missing_state_transition_error() -> ProtocolError {
 mod test {
     use dashcore::network::constants::PROTOCOL_VERSION;
     use platform_value::Value;
-    use serde_json::{json, Value as JsonValue};
+    use serde_json::{json};
     use std::collections::BTreeMap;
 
     use crate::{

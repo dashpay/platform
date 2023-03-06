@@ -25,7 +25,7 @@ use crate::{
     document_batch_transition::document_transition::to_object,
     identifier::IdentifierWrapper,
     lodash::lodash_set,
-    utils::{replace_identifiers_with_bytes_without_failing, ToSerdeJSONExt, WithJsError},
+    utils::{ToSerdeJSONExt, WithJsError},
     BinaryType, DataContractWasm,
 };
 
@@ -127,7 +127,7 @@ impl DocumentCreateTransitionWasm {
             return Ok(JsValue::undefined());
         };
 
-        let mut value = if let Ok(value) = document_data.get_at_path(&path) {
+        let value = if let Ok(value) = document_data.get_at_path(&path) {
             value.clone()
         } else {
             return Ok(JsValue::undefined());

@@ -140,9 +140,9 @@ fn document_from_transition_replace(
 #[cfg(test)]
 mod test {
     use platform_value::Value;
-    use serde_json::{json, Value as JsonValue};
+    
     use std::collections::BTreeMap;
-    use std::convert::TryInto;
+    
 
     use crate::tests::fixtures::get_extended_documents_fixture;
 

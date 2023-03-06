@@ -141,8 +141,8 @@ where
 #[cfg(test)]
 mod test {
     use super::*;
-    use itertools::Itertools;
-    use serde_json::json;
+    
+    
     use platform_value::Value;
 
     use crate::document::{Document, ExtendedDocument};

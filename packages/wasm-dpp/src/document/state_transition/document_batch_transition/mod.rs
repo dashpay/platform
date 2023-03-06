@@ -1,8 +1,8 @@
-use std::collections::BTreeMap;
+
 use dpp::identity::KeyID;
 use dpp::{document::{
     document_transition::document_base_transition,
-    state_transition::documents_batch_transition::{self, property_names},
+    state_transition::documents_batch_transition::{property_names},
     DocumentsBatchTransition,
 }, prelude::{DataContract, DocumentTransition, Identifier}, ProtocolError, state_transition::{
     StateTransitionConvert, StateTransitionIdentitySigned, StateTransitionLike,
@@ -10,7 +10,7 @@ use dpp::{document::{
 }, util::json_value::JsonValueExt};
 use js_sys::{Array, Reflect};
 use serde::{Deserialize, Serialize};
-use serde_json::Value;
+
 use wasm_bindgen::prelude::*;
 use dpp::platform_value::btreemap_extensions::BTreeValueMapHelper;
 use dpp::platform_value::btreemap_field_replacement::BTreeValueMapReplacementPathHelper;
@@ -23,7 +23,7 @@ use crate::{
     identifier::IdentifierWrapper,
     lodash::lodash_set,
     utils::{
-        replace_identifiers_with_bytes_without_failing, IntoWasm, ToSerdeJSONExt, WithJsError,
+        IntoWasm, ToSerdeJSONExt, WithJsError,
     },
     IdentityPublicKeyWasm, StateTransitionExecutionContextWasm,
 };

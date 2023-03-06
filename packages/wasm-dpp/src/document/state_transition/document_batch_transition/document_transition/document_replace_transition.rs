@@ -4,9 +4,8 @@ use std::convert::TryInto;
 use dpp::identity::TimestampMillis;
 use dpp::prelude::Revision;
 use dpp::{document::{
-    self,
     document_transition::{
-        document_create_transition, document_replace_transition, DocumentReplaceTransition,
+        document_replace_transition, DocumentReplaceTransition,
         DocumentTransitionObjectLike,
     },
 }, prelude::{DataContract, Identifier}, ProtocolError, util::{json_schema::JsonSchemaExt, json_value::JsonValueExt}};
@@ -23,7 +22,7 @@ use crate::{
     document_batch_transition::document_transition::to_object,
     identifier::IdentifierWrapper,
     lodash::lodash_set,
-    utils::{replace_identifiers_with_bytes_without_failing, ToSerdeJSONExt, WithJsError},
+    utils::{ToSerdeJSONExt, WithJsError},
     BinaryType, DataContractWasm,
 };
 
@@ -174,7 +173,7 @@ impl DocumentReplaceTransitionWasm {
             return Ok(JsValue::undefined());
         };
 
-        let mut value = if let Ok(value) = document_data.get_at_path(&path) {
+        let value = if let Ok(value) = document_data.get_at_path(&path) {
             value.to_owned()
         } else {
             return Ok(JsValue::undefined());
