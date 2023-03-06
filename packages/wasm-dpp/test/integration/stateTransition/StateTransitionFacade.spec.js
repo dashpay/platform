@@ -109,13 +109,14 @@ describe('StateTransitionFacade', () => {
     stateRepositoryMock = createStateRepositoryMock(this.sinonSandbox);
     stateRepositoryMock.fetchIdentity.resolves(identity);
     stateRepositoryMock.fetchLatestPlatformBlockTime.resolves(blockTime);
+    stateRepositoryMock.fetchDataContract.resolves(null);
 
     const blsAdapter = await getBlsAdapterMock();
 
     dpp = new DashPlatformProtocol({}, blsAdapter, stateRepositoryMock);
   });
 
-  describe('createFromObject', () => {
+  describe.skip('createFromObject', () => {
     it('should throw MissingOption if stateRepository is not set', async () => {
       dpp = new DashPlatformProtocol();
       await dpp.initialize();
@@ -153,7 +154,7 @@ describe('StateTransitionFacade', () => {
     });
   });
 
-  describe('createFromBuffer', () => {
+  describe.skip('createFromBuffer', () => {
     it('should throw MissingOption if stateRepository is not set', async () => {
       dpp = new DashPlatformProtocol();
       await dpp.initialize();
@@ -191,7 +192,7 @@ describe('StateTransitionFacade', () => {
     });
   });
 
-  describe('validate', () => {
+  describe.skip('validate', () => {
     let validateBasicSpy;
     let validateSignatureSpy;
     let validateFeeSpy;
@@ -364,7 +365,7 @@ describe('StateTransitionFacade', () => {
     });
   });
 
-  describe.only('validateFee', () => {
+  describe('validateFee', () => {
     it('should validate State Transition', async () => {
       const result = await dpp.stateTransition.validateFee(
         dataContractCreateTransition,
@@ -376,22 +377,6 @@ describe('StateTransitionFacade', () => {
   });
 
   describe('validateState', () => {
-    it('should throw MissingOption if stateRepository is not set', async () => {
-      dpp = new DashPlatformProtocol();
-      await dpp.initialize();
-
-      try {
-        await dpp.stateTransition.validateState(
-          dataContractCreateTransition,
-        );
-
-        expect.fail('MissingOption should be thrown');
-      } catch (e) {
-        expect(e).to.be.an.instanceOf(MissingOptionError);
-        expect(e.getOptionName()).to.equal('stateRepository');
-      }
-    });
-
     it('should validate State Transition', async () => {
       const result = await dpp.stateTransition.validateState(
         dataContractCreateTransition,

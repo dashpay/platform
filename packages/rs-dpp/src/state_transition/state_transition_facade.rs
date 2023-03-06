@@ -23,18 +23,20 @@ use crate::state_transition::validation::validate_state_transition_by_type::Stat
 use crate::state_transition::validation::validate_state_transition_fee::StateTransitionFeeValidator;
 use crate::state_transition::validation::validate_state_transition_identity_signature::validate_state_transition_identity_signature;
 use crate::state_transition::validation::validate_state_transition_key_signature::StateTransitionKeySignatureValidator;
+use crate::state_transition::validation::validate_state_transition_state::StateTransitionStateValidator;
 use crate::validation::{AsyncDataValidator, AsyncDataValidatorWithContext, SimpleValidationResult};
 use crate::version::ProtocolVersionValidator;
 
 #[derive(Clone)]
 pub struct StateTransitionFacade<SR, BLS>
 where
-    SR: StateRepositoryLike,
+    SR: StateRepositoryLike + Clone,
     BLS: BlsModule + Clone,
 {
     state_repository: Arc<SR>,
     basic_validator:
         Arc<StateTransitionBasicValidator<SR, StateTransitionByTypeValidator<SR, BLS>>>,
+    state_validator: Arc<StateTransitionStateValidator<SR>>,
     key_signature_validator: Arc<StateTransitionKeySignatureValidator<SR>>,
     fee_validator: Arc<StateTransitionFeeValidator<SR>>,
     bls: BLS, // factory: StateTransitionFactory,
@@ -43,11 +45,14 @@ where
 
 impl<SR, BLS> StateTransitionFacade<SR, BLS>
 where
-    SR: StateRepositoryLike,
+    SR: StateRepositoryLike + Clone,
     BLS: BlsModule + Clone,
 {
-    pub fn new(state_repository: Arc<SR>, adapter: BLS) -> Result<Self, ProtocolError> {
+    pub fn new(state_repository: SR, adapter: BLS) -> Result<Self, ProtocolError> {
+        let wrapped_state_repository = Arc::new(state_repository.clone());
+
         let state_transition_basic_validator;
+        let state_transition_state_validator;
         let state_transition_key_signature_validator;
         let state_transition_fee_validator;
 
@@ -60,12 +65,13 @@ where
                 })?);
             let pk_sig_validator = Arc::new(PublicKeysSignaturesValidator::new(adapter.clone()));
 
-            let asset_lock_tx_validator =
-                Arc::new(AssetLockTransactionValidator::new(state_repository.clone()));
+            let asset_lock_tx_validator = Arc::new(AssetLockTransactionValidator::new(
+                wrapped_state_repository.clone(),
+            ));
 
             let asset_lock_validator = Arc::new(AssetLockProofValidator::new(
                 InstantAssetLockProofStructureValidator::new(
-                    state_repository.clone(),
+                    wrapped_state_repository.clone(),
                     asset_lock_tx_validator.clone(),
                 )
                 .map_err(|_| {
@@ -74,7 +80,7 @@ where
                     ))
                 })?,
                 ChainAssetLockProofStructureValidator::new(
-                    state_repository.clone(),
+                    wrapped_state_repository.clone(),
                     asset_lock_tx_validator.clone(),
                 )
                 .map_err(|_| {
@@ -85,13 +91,13 @@ where
             ));
 
             state_transition_basic_validator = StateTransitionBasicValidator::new(
-                state_repository.clone(),
+                wrapped_state_repository.clone(),
                 StateTransitionByTypeValidator::new(
                     DataContractCreateTransitionBasicValidator::new(
                         protocol_version_validator.clone(),
                     )?,
                     DataContractUpdateTransitionBasicValidator::new(
-                        state_repository.clone(),
+                        wrapped_state_repository.clone(),
                         protocol_version_validator.clone(),
                     )
                     .map_err(|_| {
@@ -135,7 +141,7 @@ where
                         ))
                     })?,
                     DocumentBatchTransitionBasicValidator::new(
-                        state_repository.clone(),
+                        wrapped_state_repository.clone(),
                         protocol_version_validator.clone(),
                     ),
                 ),
@@ -144,26 +150,31 @@ where
 
         {
             let asset_lock_transaction_output_fetcher =
-                AssetLockTransactionOutputFetcher::new(state_repository.clone());
+                AssetLockTransactionOutputFetcher::new(wrapped_state_repository.clone());
 
             let asset_public_key_hash_fetcher = AssetLockPublicKeyHashFetcher::new(
-                state_repository.clone(),
+                wrapped_state_repository.clone(),
                 asset_lock_transaction_output_fetcher,
             );
 
             state_transition_key_signature_validator = StateTransitionKeySignatureValidator::new(
-                state_repository.clone(),
+                wrapped_state_repository.clone(),
                 asset_public_key_hash_fetcher,
             );
         }
 
-        state_transition_fee_validator = StateTransitionFeeValidator::new(state_repository.clone());
+        state_transition_fee_validator =
+            StateTransitionFeeValidator::new(wrapped_state_repository.clone());
+
+        state_transition_state_validator =
+            StateTransitionStateValidator::new(state_repository.clone());
 
         Ok(Self {
-            state_repository,
+            state_repository: wrapped_state_repository,
             basic_validator: Arc::new(state_transition_basic_validator),
             key_signature_validator: Arc::new(state_transition_key_signature_validator),
             fee_validator: Arc::new(state_transition_fee_validator),
+            state_validator: Arc::new(state_transition_state_validator),
             bls: adapter,
         })
     }
@@ -238,4 +249,13 @@ where
     ) -> Result<SimpleValidationResult, ProtocolError> {
         self.fee_validator.validate(state_transition).await
     }
+
+    pub async fn validate_state(
+        &self,
+        state_transition: &StateTransition,
+    ) -> Result<SimpleValidationResult, ProtocolError> {
+        self.state_validator.validate(state_transition).await
+    }
+
+    // pub async fn validate() -> Result<SimpleValidationResult, ProtocolError> {}
 }

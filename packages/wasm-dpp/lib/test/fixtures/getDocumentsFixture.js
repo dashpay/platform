@@ -34,8 +34,14 @@ module.exports = async function getDocumentsFixture(
     factory.create(dataContract, ownerId, 'noTimeDocument', { name: 'ImOutOfTime' }),
     factory.create(dataContract, ownerId, 'uniqueDates', { firstName: 'John' }),
     factory.create(dataContract, ownerId, 'indexedDocument', { firstName: 'Bill', lastName: 'Gates' }),
-    // TODO: something strange is happening in case byte field is anything but "byteArrayField"
-    // factory.create(dataContract, ownerId, 'withByteArrays', { byteArrayField: crypto.randomBytes(10), identifierFields: await generateRandomIdentifierAsync() }),
+    // TODO: something strange is happening in case byte field's
+    //  name is anything but "byteArrayField".
+    //  adding "identifierFields" crashes factory.create
+    // factory.create(dataContract, ownerId, 'withByteArrays',
+    // {
+    //  byteArrayField: crypto.randomBytes(10),
+    //  identifierFields: await generateRandomIdentifierAsync() }
+    // ),
     factory.create(dataContract, ownerId, 'optionalUniqueIndexedDocument', { firstName: 'Jacques-Yves', lastName: 'Cousteau' }),
   ];
 };

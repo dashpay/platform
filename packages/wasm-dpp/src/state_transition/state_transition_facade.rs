@@ -21,8 +21,7 @@ impl StateTransitionFacadeWasm {
         state_repository: ExternalStateRepositoryLike,
         bls_adapter: JsBlsAdapter,
     ) -> Result<StateTransitionFacadeWasm, JsValue> {
-        let state_repository_wrapper =
-            Arc::new(ExternalStateRepositoryLikeWrapper::new(state_repository));
+        let state_repository_wrapper = ExternalStateRepositoryLikeWrapper::new(state_repository);
 
         let adapter = BlsAdapter(bls_adapter);
 
@@ -82,8 +81,6 @@ impl StateTransitionFacadeWasm {
             .await
             .map_err(from_dpp_err)?;
 
-        web_sys::console::log_1(&"Validated st".into());
-
         Ok(validation_result.map(|_| JsValue::undefined()).into())
     }
 
@@ -100,6 +97,25 @@ impl StateTransitionFacadeWasm {
         let validation_result = self
             .0
             .validate_fee(&state_transition)
+            .await
+            .map_err(from_dpp_err)?;
+
+        Ok(validation_result.map(|_| JsValue::undefined()).into())
+    }
+
+    #[wasm_bindgen(js_name = validateState)]
+    pub async fn validate_state(
+        &self,
+        raw_state_transition: JsValue,
+    ) -> Result<ValidationResultWasm, JsValue> {
+        let state_transition =
+            super::super::conversion::create_state_transition_from_wasm_instance(
+                &raw_state_transition,
+            )?;
+
+        let validation_result = self
+            .0
+            .validate_state(&state_transition)
             .await
             .map_err(from_dpp_err)?;
 
