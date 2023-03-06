@@ -1,9 +1,10 @@
 use platform_value::btreemap_extensions::BTreeValueMapHelper;
+use platform_value::btreemap_field_replacement::BTreeValueMapReplacementPathHelper;
 use platform_value::{ReplacementType, Value};
 use serde::{Deserialize, Serialize};
 use serde_json::Value as JsonValue;
 use std::collections::BTreeMap;
-use platform_value::btreemap_field_replacement::BTreeValueMapReplacementPathHelper;
+use std::convert::TryInto;
 
 use crate::data_contract::document_type::document_type::PROTOCOL_VERSION;
 use crate::document::Document;
@@ -42,15 +43,7 @@ pub struct DocumentReplaceTransition {
 
 impl DocumentReplaceTransition {
     pub(crate) fn to_document_for_dry_run(&self) -> Result<Document, ProtocolError> {
-        let properties = self
-            .data
-            .as_ref()
-            .map(|json_value| {
-                let value: Value = json_value.clone().into();
-                value.into_btree_map().map_err(ProtocolError::ValueError)
-            })
-            .transpose()?
-            .unwrap_or_default();
+        let properties = self.data.clone().unwrap_or_default();
         Ok(Document {
             id: self.base.id.to_buffer(),
             owner_id: [0; 32], //0s are fine here
@@ -76,15 +69,7 @@ impl DocumentReplaceTransition {
     }
 
     pub(crate) fn replace_document(&self, document: &mut Document) -> Result<(), ProtocolError> {
-        let properties = self
-            .data
-            .as_ref()
-            .map(|json_value| {
-                let value: Value = json_value.clone().into();
-                value.into_btree_map().map_err(ProtocolError::ValueError)
-            })
-            .transpose()?
-            .unwrap_or_default();
+        let properties = self.data.clone().unwrap_or_default();
         document.revision = Some(self.revision);
         document.updated_at = self.updated_at;
         document.properties = properties;
@@ -95,15 +80,7 @@ impl DocumentReplaceTransition {
         &self,
         document: &mut ExtendedDocument,
     ) -> Result<(), ProtocolError> {
-        let properties = self
-            .data
-            .as_ref()
-            .map(|json_value| {
-                let value: Value = json_value.clone().into();
-                value.into_btree_map().map_err(ProtocolError::ValueError)
-            })
-            .transpose()?
-            .unwrap_or_default();
+        let properties = self.data.clone().unwrap_or_default();
         document.document.revision = Some(self.revision);
         document.document.updated_at = self.updated_at;
         document.document.properties = properties;
@@ -111,14 +88,7 @@ impl DocumentReplaceTransition {
     }
 
     pub(crate) fn patch_document(self, document: &mut Document) -> Result<(), ProtocolError> {
-        let properties = self
-            .data
-            .map(|json_value| {
-                let value: Value = json_value.into();
-                value.into_btree_map().map_err(ProtocolError::ValueError)
-            })
-            .transpose()?
-            .unwrap_or_default();
+        let properties = self.data.clone().unwrap_or_default();
         document.revision = Some(self.revision);
         document.updated_at = self.updated_at;
         document.properties.extend(properties);
@@ -129,14 +99,7 @@ impl DocumentReplaceTransition {
         self,
         document: &mut ExtendedDocument,
     ) -> Result<(), ProtocolError> {
-        let properties = self
-            .data
-            .map(|json_value| {
-                let value: Value = json_value.into();
-                value.into_btree_map().map_err(ProtocolError::ValueError)
-            })
-            .transpose()?
-            .unwrap_or_default();
+        let properties = self.data.clone().unwrap_or_default();
         document.document.revision = Some(self.revision);
         document.document.updated_at = self.updated_at;
         document.document.properties.extend(properties);
@@ -157,11 +120,7 @@ impl DocumentTransitionObjectLike for DocumentReplaceTransition {
         let (identifiers_paths, binary_paths) =
             data_contract.get_identifiers_and_binary_paths_owned(document_type)?;
 
-        map.replace_at_paths(
-            binary_paths
-                .into_iter(),
-            ReplacementType::Bytes,
-        )?;
+        map.replace_at_paths(binary_paths.into_iter(), ReplacementType::Bytes)?;
 
         map.replace_at_paths(
             identifiers_paths
@@ -226,16 +185,9 @@ impl DocumentTransitionObjectLike for DocumentReplaceTransition {
     }
 
     fn to_json(&self) -> Result<JsonValue, ProtocolError> {
-        let mut value = serde_json::to_value(self)?;
-        let (identifier_paths, binary_paths) = self
-            .base
-            .data_contract
-            .get_identifiers_and_binary_paths(&self.base.document_type_name)?;
-
-        value.replace_binary_paths(identifier_paths, ReplaceWith::Base58)?;
-        value.replace_binary_paths(binary_paths, ReplaceWith::Base64)?;
-
-        Ok(value)
+        self.to_object()?
+            .try_into()
+            .map_err(ProtocolError::ValueError)
     }
 }
 
@@ -253,11 +205,11 @@ mod test {
     fn test_deserialize_serialize_to_json() {
         init();
         let transition_json = r#"{
+                    "$action": 1,
+                    "$dataContractId": "5wpZAEWndYcTeuwZpkmSa8s49cHXU5q2DhdibesxFSu8",
 					"$id": "6oCKUeLVgjr7VZCyn1LdGbrepqKLmoabaff5WQqyTKYP",
-					"$type": "note",
-					"$action": 1,
-					"$dataContractId": "5wpZAEWndYcTeuwZpkmSa8s49cHXU5q2DhdibesxFSu8",
 					"$revision" : 1,
+					"$type": "note",
 					"message": "example_message_replace"
 				}"#;
 

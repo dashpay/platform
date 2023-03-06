@@ -11,7 +11,6 @@ use crate::{
     tests::fixtures::{
         get_data_contract_fixture, get_document_transitions_fixture,
     },
-    util::json_value::JsonValueExt,
     validation::ValidationResult,
 };
 use crate::document::ExtendedDocument;
