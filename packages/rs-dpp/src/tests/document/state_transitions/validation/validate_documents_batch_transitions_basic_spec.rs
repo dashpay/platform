@@ -959,6 +959,5 @@ async fn should_not_validate_document_transitions_on_dry_run() {
     )
     .await
     .expect("validation result should be returned");
-    dbg!(&result);
     assert!(result.is_valid());
 }

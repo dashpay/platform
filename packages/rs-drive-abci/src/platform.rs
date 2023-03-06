@@ -84,7 +84,6 @@ impl Platform {
                 config.core.rpc.password.clone(),
             )
             .map_err(|e| {
-                dbg!(e);
                 Error::Execution(ExecutionError::CorruptedCodeExecution(
                     "Could not setup Dash Core RPC client",
                 ))
