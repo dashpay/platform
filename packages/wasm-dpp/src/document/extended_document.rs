@@ -246,9 +246,8 @@ impl ExtendedDocumentWasm {
     }
 
     #[wasm_bindgen(js_name=setMetadata)]
-    pub fn set_metadata(mut self, metadata: MetadataWasm) -> Self {
-        self.0.metadata = Some(metadata.into());
-        self
+    pub fn set_metadata(&mut self, metadata: &MetadataWasm) {
+        self.0.metadata = Some(metadata.clone().into());
     }
 
     #[wasm_bindgen(js_name=toObject)]
