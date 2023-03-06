@@ -149,32 +149,23 @@ impl DocumentWasm {
     }
 
     #[wasm_bindgen(js_name=get)]
-    pub fn get(
-        &mut self,
-        path: String,
-        data_contract: DataContractWasm,
-        document_type_name: String,
-    ) -> Result<JsValue, JsValue> {
-        let binary_type = self.get_binary_type_of_path(&path, data_contract, document_type_name);
-
+    pub fn get(&mut self, path: String) -> Result<JsValue, JsValue> {
         if let Some(value) = self.0.get(&path) {
-            let json_value_result: Result<JsonValue, ProtocolError> =
-                value.clone().try_into().map_err(ProtocolError::ValueError);
-            let json_value = json_value_result.with_js_error()?;
-            match binary_type {
-                BinaryType::Identifier => {
-                    if let Ok(bytes) = serde_json::from_value::<Vec<u8>>(json_value) {
-                        let id: IdentifierWrapper = Identifier::from_bytes(&bytes).unwrap().into();
-
-                        return Ok(id.into());
-                    }
+            match value {
+                Value::Bytes(bytes) => {
+                    return Ok(Buffer::from_bytes(bytes.as_slice()).into());
                 }
-                BinaryType::Buffer => {
-                    if let Ok(bytes) = serde_json::from_value::<Vec<u8>>(json_value) {
-                        return Ok(Buffer::from_bytes(&bytes).into());
-                    }
+                Value::Bytes32(bytes) => {
+                    return Ok(Buffer::from_bytes(bytes.as_slice()).into());
                 }
-                BinaryType::None => {
+                Value::Identifier(identifier) => {
+                    let id: IdentifierWrapper = Identifier::from(*identifier).into();
+                    return Ok(id.into());
+                }
+                _ => {
+                    let json_value_result: Result<JsonValue, ProtocolError> =
+                        value.clone().try_into().map_err(ProtocolError::ValueError);
+                    let json_value = json_value_result.with_js_error()?;
                     let serializer = serde_wasm_bindgen::Serializer::json_compatible();
                     if let Ok(js_value) = json_value.serialize(&serializer) {
                         return Ok(js_value);
