@@ -3,13 +3,14 @@ use dpp::document::{
     validation::basic::find_duplicates_by_indices::find_duplicates_by_indices,
 };
 use dpp::platform_value::{ReplacementType, Value};
+use dpp::ProtocolError;
 use itertools::Itertools;
 use js_sys::Array;
 use wasm_bindgen::prelude::*;
 
 use crate::{
     document_batch_transition::document_transition::to_object,
-    utils::{replace_identifiers_with_bytes_without_failing, ToSerdeJSONExt, WithJsError},
+    utils::{ToSerdeJSONExt, WithJsError},
     DataContractWasm,
 };
 
@@ -22,10 +23,13 @@ pub fn find_duplicates_by_indices_wasm(
         .iter()
         .map(|transition| {
             let mut value = transition.with_serde_to_platform_value()?;
-            value.replace_at_paths(
-                document_base_transition::IDENTIFIER_FIELDS,
-                ReplacementType::Identifier,
-            );
+            value
+                .replace_at_paths(
+                    document_base_transition::IDENTIFIER_FIELDS,
+                    ReplacementType::Identifier,
+                )
+                .map_err(ProtocolError::ValueError)
+                .with_js_error()?;
             Ok(value)
         })
         .collect::<Result<Vec<Value>, JsValue>>()?;

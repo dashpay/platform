@@ -10,15 +10,9 @@ use crate::data_contract::document_type::document_type::PROTOCOL_VERSION;
 use crate::document::Document;
 use crate::identity::TimestampMillis;
 use crate::prelude::{ExtendedDocument, Revision};
-use crate::{
-    data_contract::DataContract,
-    errors::ProtocolError,
-    util::json_value::{JsonValueExt, ReplaceWith},
-};
+use crate::{data_contract::DataContract, errors::ProtocolError, util::json_value::JsonValueExt};
 
-use super::{
-    document_base_transition::DocumentBaseTransition, Action, DocumentTransitionObjectLike,
-};
+use super::{document_base_transition::DocumentBaseTransition, DocumentTransitionObjectLike};
 
 pub(self) mod property_names {
     pub const REVISION: &str = "$revision";
@@ -109,7 +103,7 @@ impl DocumentReplaceTransition {
 
 impl DocumentTransitionObjectLike for DocumentReplaceTransition {
     fn from_json_object(
-        mut json_value: JsonValue,
+        json_value: JsonValue,
         data_contract: DataContract,
     ) -> Result<Self, ProtocolError> {
         let value: Value = json_value.into();
@@ -194,6 +188,7 @@ impl DocumentTransitionObjectLike for DocumentReplaceTransition {
 #[cfg(test)]
 mod test {
     use super::*;
+    use crate::document::document_transition::Action;
 
     fn init() {
         let _ = env_logger::builder()

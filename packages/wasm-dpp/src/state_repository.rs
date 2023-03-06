@@ -23,7 +23,7 @@ use js_sys::{Array, Number};
 
 use wasm_bindgen::__rt::Ref;
 
-use dpp::document::{Document, ExtendedDocument};
+use dpp::document::ExtendedDocument;
 use wasm_bindgen::prelude::*;
 
 use crate::buffer::Buffer;

@@ -8,10 +8,7 @@ use crate::data_contract::DriveContractExt;
 use crate::{
     document::document_transition::DocumentTransition,
     prelude::DataContract,
-    util::{
-        json_schema::{Index, JsonSchemaExt},
-        json_value::JsonValueExt,
-    },
+    util::{json_schema::Index, json_value::JsonValueExt},
     ProtocolError,
 };
 

@@ -4,7 +4,6 @@ use std::collections::BTreeMap;
 use platform_value::btreemap_extensions::BTreeValueMapHelper;
 use platform_value::btreemap_path_extensions::BTreeValueMapPathHelper;
 use platform_value::Value;
-use serde_json::Value as JsonValue;
 
 use crate::{
     consensus::basic::BasicError,

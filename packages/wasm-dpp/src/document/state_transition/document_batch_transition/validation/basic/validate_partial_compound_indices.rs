@@ -3,13 +3,14 @@ use dpp::document::{
     validation::basic::validate_partial_compound_indices::validate_partial_compound_indices,
 };
 use dpp::platform_value::{ReplacementType, Value};
-use itertools::Itertools;
+
 use js_sys::Array;
-use std::collections::BTreeMap;
+
+use dpp::ProtocolError;
 use wasm_bindgen::prelude::*;
 
 use crate::{
-    utils::{replace_identifiers_with_bytes_without_failing, ToSerdeJSONExt, WithJsError},
+    utils::{ToSerdeJSONExt, WithJsError},
     validation::ValidationResultWasm,
     DataContractWasm,
 };
@@ -23,10 +24,13 @@ pub fn validate_partial_compound_indices_wasm(
         .iter()
         .map(|transition| {
             let mut value = transition.with_serde_to_platform_value()?;
-            value.replace_at_paths(
-                document_base_transition::IDENTIFIER_FIELDS,
-                ReplacementType::Identifier,
-            );
+            value
+                .replace_at_paths(
+                    document_base_transition::IDENTIFIER_FIELDS,
+                    ReplacementType::Identifier,
+                )
+                .map_err(ProtocolError::ValueError)
+                .with_js_error()?;
             Ok(value)
         })
         .collect::<Result<Vec<Value>, JsValue>>()?;

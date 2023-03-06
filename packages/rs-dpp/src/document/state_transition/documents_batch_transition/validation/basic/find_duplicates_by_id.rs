@@ -1,10 +1,8 @@
-use crate::ProtocolError;
 use anyhow::Context;
-use platform_value::btreemap_extensions::BTreeValueMapHelper;
+
 use platform_value::Value;
 use std::collections::btree_map::Entry;
 use std::collections::BTreeMap;
-use std::convert::TryInto;
 
 #[derive(Hash, Eq, PartialEq, Ord, PartialOrd)]
 struct IdFingerprint<'a> {
