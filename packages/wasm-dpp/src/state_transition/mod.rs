@@ -133,7 +133,7 @@ impl StateTransitionWasm {
 
     #[wasm_bindgen(js_name = toObject)]
     pub fn to_object(&self, options: JsValue) -> Result<JsValue, JsValue> {
-        let options: AbstractStateTransitionOptions = if options.is_object() {
+        let _options: AbstractStateTransitionOptions = if options.is_object() {
             with_js_error!(serde_wasm_bindgen::from_value(options))?
         } else {
             Default::default()
@@ -141,7 +141,7 @@ impl StateTransitionWasm {
 
         let serializer = serde_wasm_bindgen::Serializer::json_compatible();
 
-        either_st!(&self.inner, st => {
+        either_st!(&self.inner, _ => {
             self.inner.serialize(&serializer).map_err(|e| e.into())
         })
     }
