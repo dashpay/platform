@@ -205,6 +205,36 @@ impl Document {
             .insert(property_name.to_string(), Value::U8(value));
     }
 
+    pub fn set_i8(&mut self, property_name: &str, value: i8) {
+        self.properties
+            .insert(property_name.to_string(), Value::I8(value));
+    }
+
+    pub fn set_u16(&mut self, property_name: &str, value: u16) {
+        self.properties
+            .insert(property_name.to_string(), Value::U16(value));
+    }
+
+    pub fn set_i16(&mut self, property_name: &str, value: i16) {
+        self.properties
+            .insert(property_name.to_string(), Value::I16(value));
+    }
+
+    pub fn set_u32(&mut self, property_name: &str, value: u32) {
+        self.properties
+            .insert(property_name.to_string(), Value::U32(value));
+    }
+
+    pub fn set_i32(&mut self, property_name: &str, value: i32) {
+        self.properties
+            .insert(property_name.to_string(), Value::I32(value));
+    }
+
+    pub fn set_u64(&mut self, property_name: &str, value: u64) {
+        self.properties
+            .insert(property_name.to_string(), Value::U64(value));
+    }
+
     pub fn set_i64(&mut self, property_name: &str, value: i64) {
         self.properties
             .insert(property_name.to_string(), Value::I64(value));

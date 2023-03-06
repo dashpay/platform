@@ -126,13 +126,9 @@ impl Platform {
 
                 document.set_u8(withdrawals_contract::property_names::STATUS, status.into());
 
-                document.set_i64(
+                document.set_u64(
                     withdrawals_contract::property_names::UPDATED_AT,
-                    block_info.time_ms.try_into().map_err(|_| {
-                        Error::Execution(ExecutionError::CorruptedCodeExecution(
-                            "Can't convert u64 block time to i64 updated_at",
-                        ))
-                    })?,
+                    block_info.time_ms,
                 );
 
                 document.increment_revision().map_err(Error::Protocol)?;

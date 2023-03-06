@@ -197,7 +197,6 @@ impl DocumentsBatchTransition {
                 let mut raw_transition_map = raw_transition
                     .into_btree_map()
                     .map_err(ProtocolError::ValueError)?;
-                dbg!(&raw_transition_map);
                 let data_contract_id =
                     raw_transition_map.get_hash256_bytes(property_names::DATA_CONTRACT_ID)?;
                 let document_type = raw_transition_map.get_str(property_names::DOCUMENT_TYPE)?;
