@@ -42,6 +42,7 @@ use serde_json::{json, Value as JsonValue};
 
 use crate::data_contract::{DataContract, DriveContractExt};
 use platform_value::btreemap_extensions::BTreeValueMapHelper;
+use platform_value::btreemap_path_extensions::BTreeValueMapPathHelper;
 use platform_value::Value;
 use serde::{Deserialize, Serialize};
 
@@ -197,7 +198,8 @@ impl Document {
 
     /// Retrieves field specified by path
     pub fn get(&self, path: &str) -> Option<&Value> {
-        self.properties.get(path)
+        // this can only error if path is empty, to which we just return None
+        self.properties.get_optional_at_path(path).ok().flatten()
     }
 
     pub fn set_u8(&mut self, property_name: &str, value: u8) {
