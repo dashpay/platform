@@ -63,6 +63,7 @@ where
                     (query.index_definition, query.document_transition),
                 )
             });
+
         let (futures, futures_meta) = unzip_iter_and_collect(queries);
         let results = join_all(futures).await;
 
