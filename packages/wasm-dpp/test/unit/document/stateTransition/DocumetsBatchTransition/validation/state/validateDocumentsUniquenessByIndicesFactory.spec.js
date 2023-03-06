@@ -192,7 +192,7 @@ describe('validateDocumentsUniquenessByIndices', () => {
     stateRepositoryMock.fetchDocuments
       .withArgs(
         sinon.match.instanceOf(Identifier),
-        leon.getType(),
+        leonType,
         {
           where: [
             ['$ownerId', '==', ownerId.toJSON()],
