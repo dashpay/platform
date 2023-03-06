@@ -24,7 +24,7 @@ pub fn find_duplicates_by_id_wasm(js_raw_transitions: Array) -> Result<Vec<JsVal
             );
             let value: Value = map.into();
             value
-                .try_into()
+                .try_into_validating_json()
                 .map_err(ProtocolError::ValueError)
                 .with_js_error()
         })
