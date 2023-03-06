@@ -30,36 +30,61 @@
 //! Query Tests History
 //!
 
+#[cfg(feature = "full")]
 use std::borrow::Cow;
+#[cfg(feature = "full")]
 use std::collections::{BTreeMap, HashMap};
+#[cfg(feature = "full")]
 use std::fmt::{Debug, Formatter};
+#[cfg(feature = "full")]
 use std::option::Option::None;
 
+#[cfg(feature = "full")]
 use dpp::data_contract::DriveContractExt;
+#[cfg(feature = "full")]
 use dpp::document::document_stub::DocumentStub;
+#[cfg(feature = "full")]
 use dpp::util::serializer;
+#[cfg(feature = "full")]
 use rand::seq::SliceRandom;
+#[cfg(feature = "full")]
 use rand::{Rng, SeedableRng};
+#[cfg(feature = "full")]
 use serde::{Deserialize, Serialize};
+#[cfg(feature = "full")]
 use serde_json::json;
 
+#[cfg(feature = "full")]
 use drive::common;
 
+#[cfg(feature = "full")]
 use drive::tests::helpers::setup::setup_drive;
 
+#[cfg(feature = "full")]
 use drive::contract::Contract;
+#[cfg(feature = "full")]
 use drive::drive::batch::GroveDbOpBatch;
+#[cfg(feature = "full")]
 use drive::drive::config::DriveConfig;
+#[cfg(feature = "full")]
 use drive::drive::contract::add_init_contracts_structure_operations;
+#[cfg(feature = "full")]
 use drive::drive::flags::StorageFlags;
+#[cfg(feature = "full")]
 use drive::drive::object_size_info::DocumentInfo::DocumentRefAndSerialization;
+#[cfg(feature = "full")]
 use drive::drive::object_size_info::{DocumentAndContractInfo, OwnedDocumentInfo};
+#[cfg(feature = "full")]
 use drive::drive::Drive;
+#[cfg(feature = "full")]
 use drive::error::{query::QueryError, Error};
+#[cfg(feature = "full")]
 use drive::query::DriveQuery;
 
+#[cfg(feature = "full")]
 use drive::drive::block_info::BlockInfo;
 
+#[cfg(feature = "full")]
 #[derive(Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct Person {
@@ -74,6 +99,7 @@ struct Person {
     age: u8,
 }
 
+#[cfg(feature = "full")]
 impl Debug for Person {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("Person")
@@ -88,6 +114,7 @@ impl Debug for Person {
     }
 }
 
+#[cfg(feature = "full")]
 impl Person {
     fn random_people_for_block_times(
         count: usize,
@@ -152,6 +179,7 @@ impl Person {
     }
 }
 
+#[cfg(feature = "full")]
 /// Sets up the `family-contract-with-history` contract to test queries on.
 pub fn setup(
     count: usize,
@@ -244,12 +272,14 @@ pub fn setup(
     (drive, contract)
 }
 
+#[cfg(feature = "full")]
 #[test]
 fn test_setup() {
     let range_inserts = vec![0, 2];
     setup(10, Some(range_inserts), true, 73509);
 }
 
+#[cfg(feature = "full")]
 #[test]
 fn test_query_historical() {
     let (drive, contract) = setup(10, None, true, 73509);
@@ -865,9 +895,7 @@ fn test_query_historical() {
                 .get("age")
                 .expect("we should be able to get the age");
             let age: u64 = age_value
-                .as_integer()
-                .expect("the age should be an integer")
-                .try_into()
+                .to_integer()
                 .expect("the age should be put in an u64");
             age
         })
@@ -1004,8 +1032,7 @@ fn test_query_historical() {
                 .properties
                 .get("age")
                 .expect("we should be able to get the age");
-            let age_integer = age_value.as_integer().expect("age should be an integer");
-            let age: u8 = age_integer.try_into().expect("expected u8 value");
+            let age: u8 = age_value.to_integer().expect("age should be an integer");
             (name, age)
         })
         .collect();

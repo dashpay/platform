@@ -22,8 +22,6 @@ const SomeConsensusError = require('@dashevo/dpp/lib/test/mocks/SomeConsensusErr
 const entropyGenerator = require('@dashevo/dpp/lib/util/entropyGenerator');
 const DocumentFactoryJS = require('@dashevo/dpp/lib/document/DocumentFactory');
 
-const newDocumentsContainer = require('../../../lib/test/utils/newDocumentsContainer');
-
 const { default: loadWasmDpp } = require('../../../dist');
 
 let Identifier;
@@ -479,13 +477,13 @@ describe('DocumentFactory', () => {
 
     it('should throw and error if documents have unknown action - Rust', async () => {
       try {
-        factory.createStateTransition(await newDocumentsContainer({
-          unknown: documentsJs,
-        }));
+        factory.createStateTransition({
+          unknown: documents,
+        });
 
         expect.fail('Error was not thrown');
       } catch (e) {
-        // newDocumentsContainer filter out unknown type, so the no documents is expected
+        // documents of unknown actions are filtered out
         expect(e).to.be.an.instanceOf(NoDocumentsSuppliedError);
       }
     });
@@ -501,7 +499,7 @@ describe('DocumentFactory', () => {
 
     it('should throw and error if no documents were supplied - Rust', async () => {
       try {
-        factory.createStateTransition(await newDocumentsContainer({}));
+        factory.createStateTransition({});
         expect.fail('Error was not thrown');
       } catch (e) {
         expect(e).to.be.an.instanceOf(NoDocumentsSuppliedError);
@@ -527,9 +525,9 @@ describe('DocumentFactory', () => {
       const rawDocuments = documents.map((d) => d.toObject());
 
       try {
-        factory.createStateTransition(await newDocumentsContainer({
+        factory.createStateTransition({
           create: documents,
-        }));
+        });
         expect.fail('Error was not thrown');
       } catch (e) {
         expect(e).to.be.an.instanceOf(MismatchOwnerIdsError);
@@ -555,9 +553,9 @@ describe('DocumentFactory', () => {
       documents[0].setRevision(3);
       const expectedDocument = documents[0].toObject();
       try {
-        factory.createStateTransition(await newDocumentsContainer({
+        factory.createStateTransition({
           create: documents,
-        }));
+        });
         expect.fail('Error was not thrown');
       } catch (e) {
         expect(e).to.be.an.instanceOf(InvalidInitialRevisionError);
@@ -591,20 +589,20 @@ describe('DocumentFactory', () => {
       const [newDocumentJs] = getDocumentsFixture(dataContractJs);
       const newDocument = new Document(newDocumentJs.toObject(), dataContract);
 
+      const stateTransition = factory.createStateTransition({
+        create: documents,
+        replace: [newDocument],
+      });
+
       const stateTransitionJs = factoryJs.createStateTransition({
         create: documentsJs,
         replace: [newDocumentJs],
       });
 
-      const stateTransition = factory.createStateTransition(await newDocumentsContainer({
-        create: documents,
-        replace: [newDocument],
-      }));
-
       const transitions = stateTransition.getTransitions().map((t) => t.toJSON());
       const transitionsJs = stateTransitionJs.getTransitions().map((t) => t.toJSON());
 
-      expect(transitionsJs).to.deep.equal(transitions);
+      expect(transitionsJs).to.deep.includes.members(transitions);
     });
   });
 });

@@ -1,19 +1,38 @@
-use crate::drive::balances::{balance_path, balance_path_vec};
+#[cfg(feature = "full")]
+use crate::drive::balances::balance_path;
+#[cfg(any(feature = "full", feature = "verify"))]
+use crate::drive::balances::balance_path_vec;
+#[cfg(feature = "full")]
 use crate::drive::block_info::BlockInfo;
+#[cfg(feature = "full")]
 use crate::drive::grove_operations::DirectQueryType;
+#[cfg(feature = "full")]
 use crate::drive::grove_operations::QueryTarget::QueryTargetValue;
+#[cfg(feature = "full")]
 use crate::drive::identity::{identity_path, IdentityRootStructure};
+#[cfg(any(feature = "full", feature = "verify"))]
 use crate::drive::Drive;
+#[cfg(feature = "full")]
 use crate::error::drive::DriveError;
+#[cfg(feature = "full")]
 use crate::error::Error;
+#[cfg(feature = "full")]
 use crate::fee::calculate_fee;
+#[cfg(feature = "full")]
 use crate::fee::credits::{Creditable, Credits, SignedCredits};
+#[cfg(feature = "full")]
 use crate::fee::op::DriveOperation;
+#[cfg(feature = "full")]
 use crate::fee::result::FeeResult;
+#[cfg(feature = "full")]
 use grovedb::Element::{Item, SumItem};
-use grovedb::{PathQuery, Query, SizedQuery, TransactionArg};
+#[cfg(feature = "full")]
+use grovedb::TransactionArg;
+#[cfg(any(feature = "full", feature = "verify"))]
+use grovedb::{PathQuery, Query, SizedQuery};
 
 impl Drive {
+    #[cfg(feature = "full")]
     /// Fetches the Identity's balance from the backing store
     /// Passing apply as false get the estimated cost instead
     pub fn fetch_identity_balance(
@@ -30,6 +49,7 @@ impl Drive {
         )
     }
 
+    #[cfg(feature = "full")]
     /// Fetches the Identity's balance from the backing store
     /// Passing apply as false get the estimated cost instead
     pub fn fetch_identity_balance_with_costs(
@@ -50,6 +70,7 @@ impl Drive {
         Ok((value, fees))
     }
 
+    #[cfg(feature = "full")]
     /// Fetches the Identity's balance from the backing store
     /// If the balance is 0, then also provide debt
     pub fn fetch_identity_balance_include_debt(
@@ -66,6 +87,7 @@ impl Drive {
         )
     }
 
+    #[cfg(feature = "full")]
     /// Fetches the Identity's balance from the backing store
     /// If the balance is 0, then also provide debt
     pub fn fetch_identity_balance_include_debt_with_costs(
@@ -86,6 +108,7 @@ impl Drive {
         Ok((value, fees))
     }
 
+    #[cfg(feature = "full")]
     /// Fetches the Identity's balance from the backing store
     /// If the balance is 0, then also provide debt
     pub(crate) fn fetch_identity_balance_include_debt_operations(
@@ -121,6 +144,7 @@ impl Drive {
             .flatten())
     }
 
+    #[cfg(feature = "full")]
     pub(crate) fn fetch_identity_negative_balance_operations(
         &self,
         identity_id: [u8; 32],
@@ -175,6 +199,7 @@ impl Drive {
         }
     }
 
+    #[cfg(any(feature = "full", feature = "verify"))]
     /// The query for the identity balance
     pub fn identity_balance_query(identity_id: &[u8; 32]) -> PathQuery {
         let balance_path = balance_path_vec();
@@ -190,6 +215,7 @@ impl Drive {
         }
     }
 
+    #[cfg(feature = "full")]
     /// Creates the operations to get Identity's balance from the backing store
     /// This gets operations based on apply flag (stateful vs stateless)
     pub(crate) fn fetch_identity_balance_operations(

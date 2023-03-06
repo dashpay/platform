@@ -54,8 +54,8 @@ fn build_binary_properties_map(
     }
 }
 
-fn visit_array<'a>(
-    array: &'a [JsonValue],
+fn visit_array(
+    array: &[JsonValue],
     property_path: Option<&String>,
     binary_paths: &mut BTreeMap<String, JsonValue>,
 ) {
@@ -69,8 +69,8 @@ fn visit_array<'a>(
     }
 }
 
-fn visit_map<'a>(
-    map: &'a Map<String, JsonValue>,
+fn visit_map(
+    map: &Map<String, JsonValue>,
     property_path: Option<&String>,
     binary_paths: &mut BTreeMap<String, JsonValue>,
 ) {

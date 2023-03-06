@@ -30,29 +30,49 @@
 //! Deterministic Root Hash Tests
 //!
 
+#[cfg(feature = "full")]
 use std::borrow::Cow;
+#[cfg(feature = "full")]
 use std::option::Option::None;
 
+#[cfg(feature = "full")]
 use dpp::data_contract::DriveContractExt;
+#[cfg(feature = "full")]
 use dpp::document::document_stub::DocumentStub;
+#[cfg(feature = "full")]
 use dpp::util::serializer;
+#[cfg(feature = "full")]
 use drive::common;
+#[cfg(feature = "full")]
 use drive::common::setup_contract;
+#[cfg(feature = "full")]
 use drive::contract::Contract;
+#[cfg(feature = "full")]
 use grovedb::{Element, Transaction, TransactionArg};
+#[cfg(feature = "full")]
 use rand::seq::SliceRandom;
+#[cfg(feature = "full")]
 use rand::{Rng, SeedableRng};
+#[cfg(feature = "full")]
 use serde::{Deserialize, Serialize};
+#[cfg(feature = "full")]
 use tempfile::TempDir;
 
+#[cfg(feature = "full")]
 use drive::drive::config::DriveConfig;
+#[cfg(feature = "full")]
 use drive::drive::flags::StorageFlags;
+#[cfg(feature = "full")]
 use drive::drive::object_size_info::DocumentInfo::DocumentRefAndSerialization;
+#[cfg(feature = "full")]
 use drive::drive::object_size_info::{DocumentAndContractInfo, OwnedDocumentInfo};
+#[cfg(feature = "full")]
 use drive::drive::{Drive, RootTree};
 
+#[cfg(feature = "full")]
 use drive::drive::block_info::BlockInfo;
 
+#[cfg(feature = "full")]
 /// Contains the unique ID for a Dash identity.
 #[derive(Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -60,6 +80,7 @@ struct Records {
     dash_unique_identity_id: Vec<u8>,
 }
 
+#[cfg(feature = "full")]
 /// Info about a DPNS name.
 // In the real dpns label is required, we make it optional here for a test
 #[derive(Serialize, Deserialize)]
@@ -77,6 +98,7 @@ struct Domain {
     subdomain_rules: bool,
 }
 
+#[cfg(feature = "full")]
 impl Domain {
     /// Creates domains with random data for a given normalized parent domain name.
     fn random_domains_in_parent(
@@ -109,6 +131,7 @@ impl Domain {
     }
 }
 
+#[cfg(feature = "full")]
 /// Creates and adds to a contract domains with random data.
 pub fn add_domains_to_contract(
     drive: &Drive,
@@ -154,6 +177,7 @@ pub fn add_domains_to_contract(
     }
 }
 
+#[cfg(feature = "full")]
 /// Tests that the root hash is being calculated correctly after inserting empty subtrees into
 /// the root tree and the DPNS contract.
 fn test_root_hash_with_batches(drive: &Drive, db_transaction: &Transaction) {
@@ -428,6 +452,7 @@ fn test_root_hash_with_batches(drive: &Drive, db_transaction: &Transaction) {
     assert_eq!(hex::encode(app_hash), expected_app_hash);
 }
 
+#[cfg(feature = "full")]
 /// Runs `test_root_hash_with_batches` 10 times.
 #[test]
 fn test_deterministic_root_hash_with_batches() {
@@ -447,6 +472,7 @@ fn test_deterministic_root_hash_with_batches() {
     }
 }
 
+#[cfg(feature = "full")]
 /// Tests that the root hashes are the same between a Drive with and without batches.
 /// Employs the empty root tree with the DPNS contract.
 #[ignore]
@@ -502,6 +528,7 @@ fn test_root_hash_matches_with_batching_just_contract() {
     assert_eq!(root_hash_with_batches, root_hash_without_batches);
 }
 
+#[cfg(feature = "full")]
 /// Tests that the root hashes are the same between a Drive with and without batches.
 /// Employs the empty root tree with the DPNS contract and one document.
 #[ignore]

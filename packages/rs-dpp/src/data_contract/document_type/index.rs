@@ -1,7 +1,8 @@
 use crate::data_contract::errors::{DataContractError, StructureError};
 use crate::ProtocolError;
 use anyhow::bail;
-use ciborium::value::Value as CborValue;
+
+use platform_value::Value;
 use rand::distributions::{Alphanumeric, DistString};
 use serde::{Deserialize, Serialize};
 use std::{collections::BTreeMap, convert::TryFrom};
@@ -163,10 +164,10 @@ impl Index {
     }
 }
 
-impl TryFrom<&[(CborValue, CborValue)]> for Index {
+impl TryFrom<&[(Value, Value)]> for Index {
     type Error = ProtocolError;
 
-    fn try_from(index_type_value_map: &[(CborValue, CborValue)]) -> Result<Self, Self::Error> {
+    fn try_from(index_type_value_map: &[(Value, Value)]) -> Result<Self, Self::Error> {
         // Decouple the map
         // It contains properties and a unique key
         // If the unique key is absent, then unique is false
@@ -178,9 +179,7 @@ impl TryFrom<&[(CborValue, CborValue)]> for Index {
         let mut index_properties: Vec<IndexProperty> = Vec::new();
 
         for (key_value, value_value) in index_type_value_map {
-            let key = key_value.as_text().ok_or(ProtocolError::DataContractError(
-                DataContractError::KeyWrongType("key should be of type text"),
-            ))?;
+            let key = key_value.as_str().map_err(ProtocolError::ValueError)?;
 
             match key {
                 "name" => {
@@ -216,7 +215,7 @@ impl TryFrom<&[(CborValue, CborValue)]> for Index {
                             )),
                         )?;
 
-                        let index_property = IndexProperty::from_cbor_value(property_map)?;
+                        let index_property = IndexProperty::from_platform_value(property_map)?;
                         index_properties.push(index_property);
                     }
                 }
@@ -237,8 +236,8 @@ impl TryFrom<&[(CborValue, CborValue)]> for Index {
 }
 
 impl IndexProperty {
-    pub fn from_cbor_value(
-        index_property_map: &[(CborValue, CborValue)],
+    pub fn from_platform_value(
+        index_property_map: &[(Value, Value)],
     ) -> Result<Self, ProtocolError> {
         let property = &index_property_map[0];
 
