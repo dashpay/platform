@@ -999,15 +999,16 @@ impl Value {
         let mut current_value = self;
         while let Some(path_component) = split.next() {
             let map = current_value.as_map_mut_ref()?;
-            let Some(mut new_value) = map.get_key_mut(path_component) else {
+            let Some(new_value) = map.get_key_mut(path_component) else {
                 return Ok(false);
             };
-            current_value = new_value;
+
             if split.peek().is_none() {
-                let bytes = current_value.to_identifier_bytes()?;
-                new_value = &mut replacement_type.replace_for_bytes(bytes)?;
+                let bytes = new_value.to_identifier_bytes()?;
+                *new_value = replacement_type.replace_for_bytes(bytes)?;
                 return Ok(true);
             }
+            current_value = new_value;
         }
         Ok(false)
     }

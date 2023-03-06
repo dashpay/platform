@@ -2,7 +2,7 @@ use std::collections::BTreeMap;
 use std::convert::{TryFrom, TryInto};
 
 use anyhow::bail;
-use num_enum::{IntoPrimitive, TryFromPrimitive};
+use num_enum::{IntoPrimitive};
 use platform_value::btreemap_extensions::BTreeValueMapHelper;
 use platform_value::Value;
 use serde::{Deserialize, Serialize};
@@ -10,13 +10,13 @@ pub use serde_json::Value as JsonValue;
 use serde_repr::*;
 
 use crate::document::document_transition::Action::{Create, Delete, Replace};
-use crate::document::document_transition::DocumentCreateTransition;
+
 use crate::document::errors::DocumentError;
 use crate::{
     data_contract::DataContract,
     errors::ProtocolError,
     identifier::Identifier,
-    util::json_value::{JsonValueExt, ReplaceWith},
+    util::json_value::{JsonValueExt},
 };
 
 pub(self) mod property_names {
@@ -144,7 +144,7 @@ impl DocumentTransitionObjectLike for DocumentBaseTransition {
     }
 
     fn from_raw_object(
-        mut raw_transition: Value,
+        raw_transition: Value,
         data_contract: DataContract,
     ) -> Result<DocumentBaseTransition, ProtocolError> {
         let map = raw_transition

@@ -4,7 +4,6 @@ use platform_value::btreemap_extensions::BTreeValueMapHelper;
 use crate::{
     data_trigger::create_error, document::document_transition::DocumentTransition,
     get_from_transition, prelude::Identifier, state_repository::StateRepositoryLike,
-    util::json_value::JsonValueExt, ProtocolError,
 };
 
 use super::{DataTriggerExecutionContext, DataTriggerExecutionResult};

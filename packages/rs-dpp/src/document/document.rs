@@ -38,7 +38,7 @@ use std::convert::TryInto;
 use std::fmt;
 
 use ciborium::Value as CborValue;
-use serde_json::{json, Map, Value as JsonValue};
+use serde_json::{json, Value as JsonValue};
 
 use crate::data_contract::{DataContract, DriveContractExt};
 use platform_value::btreemap_extensions::BTreeValueMapHelper;

@@ -14,7 +14,7 @@ use crate::{
 };
 
 use super::{
-    document_base_transition, document_base_transition::DocumentBaseTransition, Action,
+    document_base_transition::DocumentBaseTransition, Action,
     DocumentTransitionObjectLike,
 };
 
@@ -152,7 +152,7 @@ impl DocumentTransitionObjectLike for DocumentReplaceTransition {
     }
 
     fn from_raw_object(
-        mut raw_transition: Value,
+        raw_transition: Value,
         data_contract: DataContract,
     ) -> Result<DocumentReplaceTransition, ProtocolError> {
         let map = raw_transition

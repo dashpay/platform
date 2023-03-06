@@ -4,11 +4,11 @@ use anyhow::Context;
 use anyhow::{anyhow, bail};
 use platform_value::btreemap_extensions::BTreeValueMapHelper;
 use platform_value::btreemap_path_extensions::BTreeValueMapPathHelper;
-use serde_json::{json, Value as JsonValue};
+use serde_json::{json};
 
 use crate::document::Document;
 use crate::util::hash::hash;
-use crate::util::string_encoding::Encoding;
+
 use crate::ProtocolError;
 use crate::{
     document::document_transition::DocumentTransition, get_from_transition, prelude::Identifier,

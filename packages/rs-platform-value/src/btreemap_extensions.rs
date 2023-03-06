@@ -1,5 +1,5 @@
-use serde_json::{Map, Value as JsonValue};
-use std::borrow::{Borrow, BorrowMut};
+use serde_json::{Value as JsonValue};
+use std::borrow::{Borrow};
 use std::convert::TryFrom;
 use std::iter::FromIterator;
 use std::{collections::BTreeMap, convert::TryInto};

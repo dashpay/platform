@@ -1,7 +1,7 @@
 use crate::value_map::ValueMapHelper;
 use crate::{Error, Value};
-use std::collections::{BTreeMap, HashMap};
-use std::io::Split;
+use std::collections::{BTreeMap};
+
 use std::iter::Peekable;
 use std::vec::IntoIter;
 
@@ -64,7 +64,7 @@ fn replace_down(mut current_values: Vec<&mut Value>, mut split: Peekable<IntoIte
         let next_values = current_values.iter_mut().map(|current_value| {
             if current_value.is_map() {
                 let map = current_value.as_map_mut_ref()?;
-                let Some(mut new_value) = map.get_key_mut(path_component) else {
+                let Some(new_value) = map.get_key_mut(path_component) else {
                     return Ok(None);
                 };
                 if split.peek().is_none() {
@@ -106,7 +106,7 @@ impl BTreeValueMapReplacementPathHelper for BTreeMap<String, Value> {
         let Some(first_path_component) = first else {
             return Err(Error::PathError("path was empty".to_string()));
         };
-        let Some(mut current_value) = self.get_mut(first_path_component.clone()) else {
+        let Some(current_value) = self.get_mut(first_path_component.clone()) else {
             return Ok(());
         };
         if split.len() == 1 {
@@ -122,7 +122,7 @@ impl BTreeValueMapReplacementPathHelper for BTreeMap<String, Value> {
             Ok(())
         } else {
             split.remove(0);
-            let mut current_values = vec![current_value];
+            let current_values = vec![current_value];
             //todo: make this non recursive
             replace_down(current_values, split.into_iter().peekable(), replacement_type)
         }

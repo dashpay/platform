@@ -2,7 +2,7 @@ use std::convert::TryInto;
 
 use anyhow::{anyhow, bail};
 use platform_value::btreemap_extensions::BTreeValueMapHelper;
-use platform_value::Value;
+
 use serde_json::json;
 
 use crate::document::Document;
@@ -143,6 +143,7 @@ mod test {
     use super::*;
     use itertools::Itertools;
     use serde_json::json;
+    use platform_value::Value;
 
     use crate::document::{Document, ExtendedDocument};
     use crate::identity::Identity;

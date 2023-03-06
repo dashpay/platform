@@ -1,7 +1,7 @@
 use std::collections::BTreeMap;
 use std::convert::{TryFrom, TryInto};
 
-use anyhow::{bail, Context};
+use anyhow::{Context};
 use serde::{Deserialize, Serialize};
 use serde_json::Value as JsonValue;
 

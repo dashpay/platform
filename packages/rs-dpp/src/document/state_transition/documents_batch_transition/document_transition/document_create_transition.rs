@@ -1,4 +1,4 @@
-use itertools::Itertools;
+
 use platform_value::btreemap_extensions::BTreeValueMapHelper;
 use platform_value::btreemap_field_replacement::BTreeValueMapReplacementPathHelper;
 use platform_value::{ReplacementType, Value};
@@ -13,13 +13,13 @@ use crate::identity::TimestampMillis;
 use crate::prelude::Revision;
 
 use crate::{
-    data_contract::DataContract, document::document_transition::Action, errors::ProtocolError,
+    data_contract::DataContract, errors::ProtocolError,
     util::json_value::JsonValueExt, util::json_value::ReplaceWith,
 };
 
 use super::INITIAL_REVISION;
 use super::{
-    document_base_transition, document_base_transition::DocumentBaseTransition,
+    document_base_transition::DocumentBaseTransition,
     DocumentTransitionObjectLike,
 };
 
@@ -128,7 +128,7 @@ impl DocumentTransitionObjectLike for DocumentCreateTransition {
     }
 
     fn from_raw_object(
-        mut raw_transition: Value,
+        raw_transition: Value,
         data_contract: DataContract,
     ) -> Result<DocumentCreateTransition, ProtocolError> {
         let map = raw_transition

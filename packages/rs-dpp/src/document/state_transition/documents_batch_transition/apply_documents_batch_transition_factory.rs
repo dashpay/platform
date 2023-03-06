@@ -1,5 +1,5 @@
-use platform_value::Value;
-use std::collections::{BTreeMap, HashMap};
+
+use std::collections::{HashMap};
 
 use crate::document::{Document, ExtendedDocument};
 use crate::prelude::TimestampMillis;
