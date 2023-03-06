@@ -1,5 +1,5 @@
-use serde_json::{Value as JsonValue};
-use std::borrow::{Borrow};
+use serde_json::Value as JsonValue;
+use std::borrow::Borrow;
 use std::convert::TryFrom;
 use std::iter::FromIterator;
 use std::{collections::BTreeMap, convert::TryInto};
@@ -49,7 +49,11 @@ pub trait BTreeValueMapHelper {
         &'a self,
         key: &str,
     ) -> Result<I, Error>;
-    fn get_optional_inner_map_in_array<'a, M: FromIterator<(String, &'a Value)>, I: FromIterator<M>>(
+    fn get_optional_inner_map_in_array<
+        'a,
+        M: FromIterator<(String, &'a Value)>,
+        I: FromIterator<M>,
+    >(
         &'a self,
         key: &str,
     ) -> Result<Option<I>, Error>;
@@ -297,7 +301,11 @@ where
         })
     }
 
-    fn get_optional_inner_map_in_array<'a, M: FromIterator<(String, &'a Value)>, I: FromIterator<M>>(
+    fn get_optional_inner_map_in_array<
+        'a,
+        M: FromIterator<(String, &'a Value)>,
+        I: FromIterator<M>,
+    >(
         &'a self,
         key: &str,
     ) -> Result<Option<I>, Error> {
@@ -305,7 +313,11 @@ where
             .map(|v| {
                 v.borrow()
                     .as_array()
-                    .map(|vec| vec.iter().map(|v| v.to_ref_map::<M>()).collect::<Result<I, Error>>())
+                    .map(|vec| {
+                        vec.iter()
+                            .map(|v| v.to_ref_map::<M>())
+                            .collect::<Result<I, Error>>()
+                    })
                     .ok_or_else(|| Error::StructureError(format!("{key} must be a an array")))
             })
             .transpose()?
@@ -320,8 +332,6 @@ where
             Error::StructureError(format!("unable to get inner value array property {key}"))
         })
     }
-
-
 
     fn get_optional_inner_string_array<I: FromIterator<String>>(
         &self,

@@ -2,7 +2,7 @@ use std::collections::BTreeMap;
 use std::convert::{TryFrom, TryInto};
 
 use anyhow::bail;
-use num_enum::{IntoPrimitive};
+use num_enum::IntoPrimitive;
 use platform_value::btreemap_extensions::BTreeValueMapHelper;
 use platform_value::Value;
 use serde::{Deserialize, Serialize};
@@ -13,10 +13,8 @@ use crate::document::document_transition::Action::{Create, Delete, Replace};
 
 use crate::document::errors::DocumentError;
 use crate::{
-    data_contract::DataContract,
-    errors::ProtocolError,
-    identifier::Identifier,
-    util::json_value::{JsonValueExt},
+    data_contract::DataContract, errors::ProtocolError, identifier::Identifier,
+    util::json_value::JsonValueExt,
 };
 
 pub(self) mod property_names {

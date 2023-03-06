@@ -7,6 +7,7 @@
 //!
 pub mod btreemap_extensions;
 pub mod btreemap_field_replacement;
+mod btreemap_mut_value_extensions;
 pub mod btreemap_path_extensions;
 pub mod btreemap_path_insertion_extensions;
 pub mod converter;
@@ -16,7 +17,6 @@ pub mod inner_value;
 mod integer;
 pub mod system_bytes;
 pub mod value_map;
-mod btreemap_mut_value_extensions;
 
 use crate::value_map::{ValueMap, ValueMapHelper};
 pub use error::Error;
@@ -66,7 +66,7 @@ pub enum Value {
     Bytes(Vec<u8>),
 
     /// Bytes 32
-    Bytes32([u8;32]),
+    Bytes32([u8; 32]),
 
     /// Identifier
     /// The identifier is very similar to bytes, however it is serialized to Base58 when converted
@@ -799,7 +799,8 @@ impl Value {
     /// assert_eq!(value, Value::Array(vec![]));
     /// ```
     pub fn to_array_mut(&mut self) -> Result<&mut Vec<Value>, Error> {
-        self.as_array_mut().ok_or(Error::StructureError("value is not an array".to_string()))
+        self.as_array_mut()
+            .ok_or(Error::StructureError("value is not an array".to_string()))
     }
 
     /// If the `Value` is a `Array`, returns a the associated `Vec<Value>` data as `Ok`.

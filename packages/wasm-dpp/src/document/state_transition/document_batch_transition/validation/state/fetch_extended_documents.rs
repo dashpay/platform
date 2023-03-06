@@ -8,7 +8,8 @@ use wasm_bindgen::prelude::*;
 use crate::{
     document_batch_transition::document_transition::DocumentTransitionWasm,
     state_repository::{ExternalStateRepositoryLike, ExternalStateRepositoryLikeWrapper},
-    utils::{IntoWasm, WithJsError}, ExtendedDocumentWasm, StateTransitionExecutionContextWasm,
+    utils::{IntoWasm, WithJsError},
+    ExtendedDocumentWasm, StateTransitionExecutionContextWasm,
 };
 
 #[wasm_bindgen(js_name = fetchExtendedDocuments)]

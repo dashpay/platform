@@ -43,7 +43,10 @@ impl ToSerdeJSONExt for JsValue {
     /// Converts the `JsValue` into `platform::Value`. It's an expensive conversion,
     /// as `JsValue` must be stringified first
     fn with_serde_to_platform_value_map(&self) -> Result<BTreeMap<String, Value>, JsValue> {
-        self.with_serde_to_platform_value()?.into_btree_map().map_err(ProtocolError::ValueError).with_js_error()
+        self.with_serde_to_platform_value()?
+            .into_btree_map()
+            .map_err(ProtocolError::ValueError)
+            .with_js_error()
     }
 
     /// converts the `JsValue` into any type that is supported by serde. It's an expensive conversion

@@ -1,5 +1,4 @@
-
-use std::collections::{HashMap};
+use std::collections::HashMap;
 
 use crate::document::{Document, ExtendedDocument};
 use crate::prelude::TimestampMillis;
@@ -140,9 +139,8 @@ fn document_from_transition_replace(
 #[cfg(test)]
 mod test {
     use platform_value::Value;
-    
+
     use std::collections::BTreeMap;
-    
 
     use crate::tests::fixtures::get_extended_documents_fixture;
 

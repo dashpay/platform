@@ -218,7 +218,7 @@ fn check_ownership(
             StateError::DocumentOwnerIdMismatchError {
                 document_id: document_transition.base().id,
                 document_owner_id: owner_id.to_owned(),
-                existing_document_owner_id: fetched_document.owner_id().into(),
+                existing_document_owner_id: fetched_document.owner_id(),
             },
         )));
     }

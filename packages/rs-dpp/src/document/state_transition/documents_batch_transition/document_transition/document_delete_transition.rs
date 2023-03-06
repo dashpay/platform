@@ -30,7 +30,7 @@ impl DocumentTransitionObjectLike for DocumentDeleteTransition {
         raw_transition: Value,
         data_contract: DataContract,
     ) -> Result<Self, ProtocolError> {
-        let base = DocumentBaseTransition::from_raw_object(raw_transition.into(), data_contract)?;
+        let base = DocumentBaseTransition::from_raw_object(raw_transition, data_contract)?;
 
         Ok(DocumentDeleteTransition { base })
     }

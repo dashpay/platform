@@ -5,7 +5,6 @@ use std::time::Duration;
 use chrono::Utc;
 use platform_value::Value;
 
-
 use crate::{
     codes::ErrorWithCode,
     consensus::ConsensusError,

@@ -1,20 +1,24 @@
-
 use dpp::identity::KeyID;
-use dpp::{document::{
-    document_transition::document_base_transition,
-    state_transition::documents_batch_transition::{property_names},
-    DocumentsBatchTransition,
-}, prelude::{DataContract, DocumentTransition, Identifier}, ProtocolError, state_transition::{
-    StateTransitionConvert, StateTransitionIdentitySigned, StateTransitionLike,
-    StateTransitionType,
-}, util::json_value::JsonValueExt};
+use dpp::{
+    document::{
+        document_transition::document_base_transition,
+        state_transition::documents_batch_transition::property_names, DocumentsBatchTransition,
+    },
+    prelude::{DataContract, DocumentTransition, Identifier},
+    state_transition::{
+        StateTransitionConvert, StateTransitionIdentitySigned, StateTransitionLike,
+        StateTransitionType,
+    },
+    util::json_value::JsonValueExt,
+    ProtocolError,
+};
 use js_sys::{Array, Reflect};
 use serde::{Deserialize, Serialize};
 
-use wasm_bindgen::prelude::*;
 use dpp::platform_value::btreemap_extensions::BTreeValueMapHelper;
 use dpp::platform_value::btreemap_field_replacement::BTreeValueMapReplacementPathHelper;
 use dpp::platform_value::ReplacementType;
+use wasm_bindgen::prelude::*;
 
 use crate::{
     bls_adapter::{BlsAdapter, JsBlsAdapter},
@@ -22,9 +26,7 @@ use crate::{
     document_batch_transition::document_transition::DocumentTransitionWasm,
     identifier::IdentifierWrapper,
     lodash::lodash_set,
-    utils::{
-        IntoWasm, ToSerdeJSONExt, WithJsError,
-    },
+    utils::{IntoWasm, ToSerdeJSONExt, WithJsError},
     IdentityPublicKeyWasm, StateTransitionExecutionContextWasm,
 };
 pub mod apply_document_batch_transition;
@@ -61,9 +63,19 @@ impl DocumentsBatchTransitionWASM {
         }
 
         let mut batch_transition_value = js_raw_transition.with_serde_to_platform_value_map()?;
-        let base_identifier_fields  = document_base_transition::IDENTIFIER_FIELDS.iter().map(|field| format!("{}.{}", property_names::TRANSITIONS, field));
-        batch_transition_value.replace_at_paths(DocumentsBatchTransition::identifiers_property_paths().into_iter().map(|field| field.to_string()).chain(base_identifier_fields),
-        ReplacementType::Identifier).map_err(ProtocolError::ValueError).with_js_error()?;
+        let base_identifier_fields = document_base_transition::IDENTIFIER_FIELDS
+            .iter()
+            .map(|field| format!("{}.{}", property_names::TRANSITIONS, field));
+        batch_transition_value
+            .replace_at_paths(
+                DocumentsBatchTransition::identifiers_property_paths()
+                    .into_iter()
+                    .map(|field| field.to_string())
+                    .chain(base_identifier_fields),
+                ReplacementType::Identifier,
+            )
+            .map_err(ProtocolError::ValueError)
+            .with_js_error()?;
 
         let documents_batch_transition =
             DocumentsBatchTransition::from_value_map(batch_transition_value, data_contracts)

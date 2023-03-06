@@ -14,8 +14,7 @@ use crate::{
 };
 
 use super::{
-    document_base_transition::DocumentBaseTransition, Action,
-    DocumentTransitionObjectLike,
+    document_base_transition::DocumentBaseTransition, Action, DocumentTransitionObjectLike,
 };
 
 pub(self) mod property_names {

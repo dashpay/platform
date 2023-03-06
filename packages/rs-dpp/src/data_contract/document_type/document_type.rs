@@ -141,7 +141,9 @@ impl DocumentType {
     ) -> Result<Vec<u8>, ProtocolError> {
         match key {
             "$ownerId" | "$id" => {
-                let bytes = value.to_identifier_bytes().map_err(ProtocolError::ValueError)?;
+                let bytes = value
+                    .to_identifier_bytes()
+                    .map_err(ProtocolError::ValueError)?;
                 if bytes.len() != DEFAULT_HASH_SIZE {
                     Err(ProtocolError::DataContractError(
                         DataContractError::FieldRequirementUnmet(

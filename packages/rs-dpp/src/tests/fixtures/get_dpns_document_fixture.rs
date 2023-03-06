@@ -4,7 +4,6 @@ use std::sync::Arc;
 use getrandom::getrandom;
 use platform_value::Value;
 
-
 use crate::document::ExtendedDocument;
 use crate::{
     document::{

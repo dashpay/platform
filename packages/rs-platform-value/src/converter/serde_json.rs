@@ -93,12 +93,12 @@ impl Value {
             }
             Value::Array(array) => JsonValue::Array(
                 array
-                    .into_iter()
+                    .iter()
                     .map(|value| value.try_to_validating_json())
                     .collect::<Result<Vec<JsonValue>, Error>>()?,
             ),
             Value::Map(map) => JsonValue::Object(
-                map.into_iter()
+                map.iter()
                     .map(|(k, v)| {
                         let string = k.to_text()?;
                         Ok((string, v.try_to_validating_json()?))
@@ -109,20 +109,20 @@ impl Value {
                 // In order to be able to validate using JSON schema it needs to be in byte form
                 JsonValue::Array(
                     bytes
-                        .into_iter()
+                        .iter()
                         .map(|a| JsonValue::Number((*a).into()))
                         .collect(),
                 )
             }
             Value::Bytes(bytes) => JsonValue::Array(
                 bytes
-                    .into_iter()
+                    .iter()
                     .map(|byte| JsonValue::Number((*byte).into()))
                     .collect(),
             ),
             Value::Bytes32(bytes) => JsonValue::Array(
                 bytes
-                    .into_iter()
+                    .iter()
                     .map(|byte| JsonValue::Number((*byte).into()))
                     .collect(),
             ),
@@ -245,7 +245,7 @@ impl BTreeValueJsonConverter for BTreeMap<String, Value> {
 
     fn to_json_value(&self) -> Result<JsonValue, Error> {
         Ok(JsonValue::Object(
-            self.into_iter()
+            self.iter()
                 .map(|(key, value)| Ok((key.clone(), value.clone().try_into()?)))
                 .collect::<Result<Map<String, JsonValue>, Error>>()?,
         ))

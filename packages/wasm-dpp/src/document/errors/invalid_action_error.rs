@@ -14,8 +14,6 @@ pub struct InvalidActionError {
 impl InvalidActionError {
     #[wasm_bindgen(constructor)]
     pub fn new(action: JsValue) -> InvalidActionError {
-        Self {
-            action,
-        }
+        Self { action }
     }
 }

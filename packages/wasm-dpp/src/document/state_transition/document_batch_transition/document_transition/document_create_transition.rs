@@ -4,8 +4,10 @@ use std::convert::TryInto;
 use dpp::document::document_transition::document_base_transition::JsonValue;
 use dpp::identity::TimestampMillis;
 use dpp::platform_value::btreemap_extensions::BTreeValueMapHelper;
+use dpp::platform_value::btreemap_field_replacement::BTreeValueMapReplacementPathHelper;
 use dpp::platform_value::btreemap_path_extensions::BTreeValueMapPathHelper;
 use dpp::platform_value::converter::serde_json::BTreeValueJsonConverter;
+use dpp::platform_value::ReplacementType;
 use dpp::prelude::Revision;
 use dpp::{
     document::document_transition::{
@@ -17,8 +19,6 @@ use dpp::{
 };
 use serde::Serialize;
 use wasm_bindgen::prelude::*;
-use dpp::platform_value::btreemap_field_replacement::BTreeValueMapReplacementPathHelper;
-use dpp::platform_value::ReplacementType;
 
 use crate::{
     buffer::Buffer,
@@ -64,7 +64,9 @@ impl DocumentCreateTransitionWasm {
         let (identifier_paths, _) = data_contract
             .get_identifiers_and_binary_paths_owned(document_type.as_str())
             .with_js_error()?;
-        value.replace_at_paths(identifier_paths, ReplacementType::Identifier).map_err(ProtocolError::ValueError)
+        value
+            .replace_at_paths(identifier_paths, ReplacementType::Identifier)
+            .map_err(ProtocolError::ValueError)
             .with_js_error()?;
         let transition =
             DocumentCreateTransition::from_value_map(value, data_contract).with_js_error()?;
@@ -147,9 +149,9 @@ impl DocumentCreateTransitionWasm {
                     .to_hash256()
                     .map_err(ProtocolError::ValueError)
                     .with_js_error()?;
-                let id = <IdentifierWrapper as convert::From<Identifier>>::from(
-                    Identifier::from(buffer)
-                );
+                let id = <IdentifierWrapper as convert::From<Identifier>>::from(Identifier::from(
+                    buffer,
+                ));
                 return Ok(id.into());
             }
             BinaryType::None => {
@@ -158,8 +160,15 @@ impl DocumentCreateTransitionWasm {
             }
         }
 
-        let json_value: JsonValue = value.clone().try_into().map_err(ProtocolError::ValueError).with_js_error()?;
-        let map = value.to_btree_ref_map().map_err(ProtocolError::ValueError).with_js_error()?;
+        let json_value: JsonValue = value
+            .clone()
+            .try_into()
+            .map_err(ProtocolError::ValueError)
+            .with_js_error()?;
+        let map = value
+            .to_btree_ref_map()
+            .map_err(ProtocolError::ValueError)
+            .with_js_error()?;
         let js_value = json_value.serialize(&serde_wasm_bindgen::Serializer::json_compatible())?;
         let (identifier_paths, binary_paths) = self
             .inner
@@ -172,7 +181,11 @@ impl DocumentCreateTransitionWasm {
             if property_path.starts_with(&path) {
                 let (_, suffix) = property_path.split_at(path.len() + 1);
 
-                if let Some(bytes) = map.get_optional_bytes_at_path(suffix).map_err(ProtocolError::ValueError).with_js_error()? {
+                if let Some(bytes) = map
+                    .get_optional_bytes_at_path(suffix)
+                    .map_err(ProtocolError::ValueError)
+                    .with_js_error()?
+                {
                     let id = <IdentifierWrapper as convert::From<Identifier>>::from(
                         Identifier::from_bytes(&bytes).unwrap(),
                     );
@@ -185,7 +198,11 @@ impl DocumentCreateTransitionWasm {
             if property_path.starts_with(&path) {
                 let (_, suffix) = property_path.split_at(path.len() + 1);
 
-                if let Some(bytes) = map.get_optional_bytes_at_path(suffix).map_err(ProtocolError::ValueError).with_js_error()? {
+                if let Some(bytes) = map
+                    .get_optional_bytes_at_path(suffix)
+                    .map_err(ProtocolError::ValueError)
+                    .with_js_error()?
+                {
                     let buffer = Buffer::from_bytes(&bytes);
                     lodash_set(&js_value, suffix, buffer.into());
                 }

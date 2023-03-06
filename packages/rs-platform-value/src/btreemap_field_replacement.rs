@@ -1,6 +1,6 @@
 use crate::value_map::ValueMapHelper;
 use crate::{Error, Value};
-use std::collections::{BTreeMap};
+use std::collections::BTreeMap;
 
 use std::iter::Peekable;
 use std::vec::IntoIter;
@@ -27,7 +27,7 @@ impl ReplacementType {
         }
     }
 
-    pub fn replace_for_bytes_32(&self, bytes: [u8;32]) -> Result<Value, Error> {
+    pub fn replace_for_bytes_32(&self, bytes: [u8; 32]) -> Result<Value, Error> {
         match self {
             ReplacementType::Identifier => Ok(Value::Identifier(
                 bytes
@@ -59,36 +59,47 @@ pub trait BTreeValueMapReplacementPathHelper {
     ) -> Result<(), Error>;
 }
 
-fn replace_down(mut current_values: Vec<&mut Value>, mut split: Peekable<IntoIter<&str>>, replacement_type: ReplacementType) -> Result<(), Error> {
+fn replace_down(
+    mut current_values: Vec<&mut Value>,
+    mut split: Peekable<IntoIter<&str>>,
+    replacement_type: ReplacementType,
+) -> Result<(), Error> {
     if let Some(path_component) = split.next() {
-        let next_values = current_values.iter_mut().map(|current_value| {
-            if current_value.is_map() {
-                let map = current_value.as_map_mut_ref()?;
-                let Some(new_value) = map.get_key_mut(path_component) else {
+        let next_values = current_values
+            .iter_mut()
+            .map(|current_value| {
+                if current_value.is_map() {
+                    let map = current_value.as_map_mut_ref()?;
+                    let Some(new_value) = map.get_key_mut(path_component) else {
                     return Ok(None);
                 };
-                if split.peek().is_none() {
-                    match new_value {
-                        Value::Bytes32(bytes) => {
-                            *new_value = replacement_type.replace_for_bytes_32(*bytes)?;
+                    if split.peek().is_none() {
+                        match new_value {
+                            Value::Bytes32(bytes) => {
+                                *new_value = replacement_type.replace_for_bytes_32(*bytes)?;
+                            }
+                            _ => {
+                                let bytes = new_value.to_identifier_bytes()?;
+                                *new_value = replacement_type.replace_for_bytes(bytes)?;
+                            }
                         }
-                        _ => {
-                            let bytes = new_value.to_identifier_bytes()?;
-                            *new_value = replacement_type.replace_for_bytes(bytes)?;
-                        }
+                        Ok(None)
+                    } else {
+                        Ok(Some(vec![new_value]))
                     }
-                    Ok(None)
+                } else if current_value.is_array() {
+                    // if it's an array we apply to all members
+                    let array = current_value.to_array_mut()?.iter_mut().collect();
+                    Ok(Some(array))
                 } else {
-                    Ok(Some(vec![new_value]))
+                    Err(Error::PathError("path was not an array or map".to_string()))
                 }
-            } else if current_value.is_array() {
-                // if it's an array we apply to all members
-                let array = current_value.to_array_mut()?.iter_mut().collect();
-                Ok(Some(array))
-            } else {
-                Err(Error::PathError("path was not an array or map".to_string()))
-            }
-        }).collect::<Result<Vec<_>, Error>>()?.into_iter().filter_map(|v| v).flatten().collect();
+            })
+            .collect::<Result<Vec<_>, Error>>()?
+            .into_iter()
+            .flatten()
+            .flatten()
+            .collect();
         replace_down(next_values, split, replacement_type)
     } else {
         Ok(())
@@ -124,7 +135,11 @@ impl BTreeValueMapReplacementPathHelper for BTreeMap<String, Value> {
             split.remove(0);
             let current_values = vec![current_value];
             //todo: make this non recursive
-            replace_down(current_values, split.into_iter().peekable(), replacement_type)
+            replace_down(
+                current_values,
+                split.into_iter().peekable(),
+                replacement_type,
+            )
         }
     }
 
@@ -135,8 +150,6 @@ impl BTreeValueMapReplacementPathHelper for BTreeMap<String, Value> {
     ) -> Result<(), Error> {
         paths
             .into_iter()
-            .try_for_each(|path| {
-                self.replace_at_path(path.as_str(), replacement_type)
-            })
+            .try_for_each(|path| self.replace_at_path(path.as_str(), replacement_type))
     }
 }

@@ -2,6 +2,7 @@ use serde::Serialize;
 use wasm_bindgen::prelude::*;
 
 use crate::document::errors::document_no_revision_error::DocumentNoRevisionError;
+use crate::document::errors::invalid_action_error::InvalidActionError;
 use crate::document::errors::revision_absent_error::RevisionAbsentError;
 use crate::document::errors::trying_to_replace_immutable_document_error::TryingToReplaceImmutableDocumentError;
 pub use document_already_exists_error::*;
@@ -13,7 +14,6 @@ pub use invalid_document_error::*;
 pub use invalid_initial_revision_error::*;
 pub use mismatch_owners_ids_error::*;
 pub use no_documents_supplied_error::*;
-use crate::document::errors::invalid_action_error::InvalidActionError;
 
 use crate::errors::consensus_error::from_consensus_error;
 use crate::utils::*;
@@ -21,6 +21,7 @@ use crate::utils::*;
 mod document_already_exists_error;
 mod document_no_revision_error;
 mod document_not_provided_error;
+mod invalid_action_error;
 mod invalid_action_name_error;
 mod invalid_document_action_error;
 mod invalid_document_error;
@@ -29,7 +30,6 @@ mod mismatch_owners_ids_error;
 mod no_documents_supplied_error;
 mod revision_absent_error;
 mod trying_to_replace_immutable_document_error;
-mod invalid_action_error;
 
 pub fn from_document_to_js_error(e: DocumentError) -> JsValue {
     match e {
@@ -72,8 +72,6 @@ pub fn from_document_to_js_error(e: DocumentError) -> JsValue {
         DocumentError::TryingToReplaceImmutableDocument { document } => {
             TryingToReplaceImmutableDocumentError::new((*document).into()).into()
         }
-        DocumentError::InvalidActionError(action) => {
-            InvalidActionError::new(action.into()).into()
-        }
+        DocumentError::InvalidActionError(action) => InvalidActionError::new(action.into()).into(),
     }
 }

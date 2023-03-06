@@ -158,7 +158,9 @@ impl Value {
     /// let mut value = Value::Bool(true);
     /// assert_eq!(value.to_ref_map_mut::<Vec<(_,_)>>(), Err(Error::StructureError("value is not a map".to_string())))
     /// ```
-    pub fn to_ref_map_mut<'a, I: FromIterator<(String, &'a mut Value)>>(&'a mut self) -> Result<I, Error> {
+    pub fn to_ref_map_mut<'a, I: FromIterator<(String, &'a mut Value)>>(
+        &'a mut self,
+    ) -> Result<I, Error> {
         Self::map_mut_ref_into_map(self.as_map_mut_ref()?)
     }
 
@@ -193,7 +195,9 @@ impl Value {
     /// Takes a ref to a ValueMap which is a `&Vec<(Value, Value)>`
     /// Returns a BTreeMap<String, &Value> as long as each Key is a String
     /// Returns `Err(Error::Structure("reason"))` otherwise.
-    pub fn map_ref_into_map<'a, I: FromIterator<(String, &'a Value)>>(map: &'a ValueMap) -> Result<I, Error> {
+    pub fn map_ref_into_map<'a, I: FromIterator<(String, &'a Value)>>(
+        map: &'a ValueMap,
+    ) -> Result<I, Error> {
         map.iter()
             .map(|(key, value)| {
                 let key = key
@@ -207,7 +211,9 @@ impl Value {
     /// Takes a ref to a ValueMap which is a `&Vec<(Value, Value)>`
     /// Returns a BTreeMap<String, &Value> as long as each Key is a String
     /// Returns `Err(Error::Structure("reason"))` otherwise.
-    pub fn map_mut_ref_into_map<'a, I: FromIterator<(String, &'a mut Value)>>(map: &'a mut ValueMap) -> Result<I, Error> {
+    pub fn map_mut_ref_into_map<'a, I: FromIterator<(String, &'a mut Value)>>(
+        map: &'a mut ValueMap,
+    ) -> Result<I, Error> {
         map.iter_mut()
             .map(|(key, value)| {
                 let key = key

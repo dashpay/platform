@@ -141,8 +141,7 @@ where
 #[cfg(test)]
 mod test {
     use super::*;
-    
-    
+
     use platform_value::Value;
 
     use crate::document::{Document, ExtendedDocument};

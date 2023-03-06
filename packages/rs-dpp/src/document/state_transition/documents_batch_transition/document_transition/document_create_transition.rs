@@ -1,4 +1,3 @@
-
 use platform_value::btreemap_extensions::BTreeValueMapHelper;
 use platform_value::btreemap_field_replacement::BTreeValueMapReplacementPathHelper;
 use platform_value::{ReplacementType, Value};
@@ -13,15 +12,12 @@ use crate::identity::TimestampMillis;
 use crate::prelude::Revision;
 
 use crate::{
-    data_contract::DataContract, errors::ProtocolError,
-    util::json_value::JsonValueExt, util::json_value::ReplaceWith,
+    data_contract::DataContract, errors::ProtocolError, util::json_value::JsonValueExt,
+    util::json_value::ReplaceWith,
 };
 
 use super::INITIAL_REVISION;
-use super::{
-    document_base_transition::DocumentBaseTransition,
-    DocumentTransitionObjectLike,
-};
+use super::{document_base_transition::DocumentBaseTransition, DocumentTransitionObjectLike};
 
 pub(self) mod property_names {
     pub const ENTROPY: &str = "$entropy";

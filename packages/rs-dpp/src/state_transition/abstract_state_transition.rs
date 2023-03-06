@@ -1,12 +1,9 @@
-
 use std::fmt::Debug;
-
 
 use dashcore::signer;
 
 use serde::Serialize;
 use serde_json::Value as JsonValue;
-
 
 use crate::{
     identity::KeyType,
