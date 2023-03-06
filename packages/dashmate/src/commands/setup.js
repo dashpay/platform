@@ -11,7 +11,6 @@ const {
   PRESETS,
   NODE_TYPES,
   NODE_TYPE_MASTERNODE,
-  MASTERNODE_DASH_AMOUNT,
   SSL_PROVIDERS,
 } = require('../constants');
 
@@ -141,7 +140,7 @@ SetupCommand.flags = {
   'debug-logs': Flags.boolean({ char: 'd', description: 'enable debug logs', allowNo: true }),
   'external-ip': Flags.string({ char: 'i', description: 'external ip' }),
   'operator-bls-private-key': Flags.string({ char: 'k', description: 'operator bls private key' }),
-  'funding-private-key': Flags.string({ char: 'p', description: `private key with more than ${MASTERNODE_DASH_AMOUNT} dash for funding collateral` }),
+  'funding-private-key': Flags.string({ char: 'p', description: 'private key with enough dash for masternode collateral' }),
   'node-count': Flags.integer({ description: 'number of nodes to setup' }),
   'miner-interval': Flags.string({ char: 'm', description: 'interval between blocks' }),
   'ssl-provider': Flags.string({ char: 's', description: '', options: SSL_PROVIDERS.filter((item) => item !== 'selfSigned') }),

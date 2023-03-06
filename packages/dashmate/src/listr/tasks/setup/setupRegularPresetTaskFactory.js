@@ -17,7 +17,6 @@ const {
 /**
  * @param {ConfigFile} configFile
  * @param {generateBlsKeys} generateBlsKeys
- * @param {tenderdashInitTask} tenderdashInitTask
  * @param {registerMasternodeTask} registerMasternodeTask
  * @param {renderServiceTemplates} renderServiceTemplates
  * @param {writeServiceConfigs} writeServiceConfigs
@@ -28,7 +27,6 @@ const {
 function setupRegularPresetTaskFactory(
   configFile,
   generateBlsKeys,
-  tenderdashInitTask,
   registerMasternodeTask,
   renderServiceTemplates,
   writeServiceConfigs,
@@ -242,11 +240,6 @@ function setupRegularPresetTaskFactory(
 
           return saveCertificateTask(ctx.config);
         },
-      },
-      {
-        title: 'Initialize Tenderdash',
-        enabled: (ctx) => ctx.preset !== PRESET_MAINNET,
-        task: (ctx) => tenderdashInitTask(ctx.config),
       },
     ]);
   }

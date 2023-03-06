@@ -24,7 +24,7 @@ module.exports = lodashMerge({}, baseConfig, {
     drive: {
       abci: {
         validatorSet: {
-          llmqType: 100,
+          llmqType: 106,
         },
       },
     },
