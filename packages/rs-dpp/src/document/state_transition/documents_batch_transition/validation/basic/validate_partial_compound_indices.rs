@@ -2,6 +2,7 @@ use std::borrow::Borrow;
 use std::collections::BTreeMap;
 
 use platform_value::btreemap_extensions::BTreeValueMapHelper;
+use platform_value::btreemap_path_extensions::BTreeValueMapPathHelper;
 use platform_value::Value;
 use serde_json::Value as JsonValue;
 
@@ -86,11 +87,22 @@ where
             continue;
         }
         //todo: this seems weird
-        if property.as_ref().starts_with('$') && map.get(property_name).is_some() {
+        if property.as_ref().starts_with('$')
+            && map
+                .get_optional_at_path(property_name)
+                .ok()
+                .flatten()
+                .is_some()
+        {
             defined_property_counter += 1;
             continue;
         }
-        if map.get(property_name).is_some() {
+        if map
+            .get_optional_at_path(property_name)
+            .ok()
+            .flatten()
+            .is_some()
+        {
             defined_property_counter += 1
         }
     }
