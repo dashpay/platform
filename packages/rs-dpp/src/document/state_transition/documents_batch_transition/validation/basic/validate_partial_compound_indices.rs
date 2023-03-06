@@ -7,10 +7,7 @@ use platform_value::Value;
 use crate::{
     consensus::basic::BasicError,
     data_contract::DataContract,
-    util::{
-        json_schema::{Index, JsonSchemaExt},
-        json_value::JsonValueExt,
-    },
+    util::json_schema::{Index, JsonSchemaExt},
     validation::ValidationResult,
     ProtocolError,
 };

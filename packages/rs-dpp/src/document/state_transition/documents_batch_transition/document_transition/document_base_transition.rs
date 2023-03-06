@@ -198,8 +198,9 @@ impl DocumentTransitionObjectLike for DocumentBaseTransition {
     }
 
     fn to_json(&self) -> Result<JsonValue, ProtocolError> {
-        let value = serde_json::to_value(self)?;
-        Ok(value)
+        self.to_object()?
+            .try_into()
+            .map_err(ProtocolError::ValueError)
     }
 }
 
