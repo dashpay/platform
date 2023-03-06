@@ -389,17 +389,6 @@ where
             let new_revision = document_revision + 1;
             map.insert(PROPERTY_REVISION.to_string(), Value::U64(new_revision));
 
-            // If document have an originally set `updatedAt`
-            // we should update it then
-            if let Some(updated_at) = map.get_mut(PROPERTY_UPDATED_AT) {
-                *updated_at = Value::U64(Utc::now().timestamp_millis() as TimestampMillis);
-            } else {
-                map.insert(
-                    PROPERTY_UPDATED_AT.to_string(),
-                    Value::U64(Utc::now().timestamp_millis() as TimestampMillis),
-                );
-            }
-
             raw_transitions.push(map.into());
         }
         Ok(raw_transitions)

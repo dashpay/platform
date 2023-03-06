@@ -90,7 +90,6 @@ pub async fn validate_documents_batch_transition_basic(
         HashMap::new();
 
     for raw_document_transition in raw_document_transitions {
-        dbg!(raw_document_transition);
         let data_contract_id_bytes = match raw_document_transition.get_bytes("$dataContractId") {
             Err(_) => {
                 result.add_error(BasicError::MissingDataContractIdError);
