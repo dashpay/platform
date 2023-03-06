@@ -1,4 +1,5 @@
 use std::convert;
+use std::convert::TryInto;
 
 use dpp::identity::TimestampMillis;
 use dpp::prelude::Revision;
@@ -11,8 +12,11 @@ use dpp::{document::{
 }, prelude::{DataContract, Identifier}, ProtocolError, util::{json_schema::JsonSchemaExt, json_value::JsonValueExt}};
 use serde::Serialize;
 use wasm_bindgen::prelude::*;
+use dpp::document::document_transition::document_base_transition::JsonValue;
 use dpp::platform_value::btreemap_extensions::BTreeValueMapHelper;
+use dpp::platform_value::btreemap_field_replacement::BTreeValueMapReplacementPathHelper;
 use dpp::platform_value::btreemap_path_extensions::BTreeValueMapPathHelper;
+use dpp::platform_value::ReplacementType;
 
 use crate::{
     buffer::Buffer,
@@ -49,22 +53,19 @@ impl DocumentReplaceTransitionWasm {
         data_contract: &DataContractWasm,
     ) -> Result<DocumentReplaceTransitionWasm, JsValue> {
         let data_contract: DataContract = data_contract.clone().into();
-        let mut value = raw_object.with_serde_to_json_value()?;
+        let mut value = raw_object.with_serde_to_platform_value_map()?;
         let document_type = value
-            .get_string(document::extended_document::property_names::DOCUMENT_TYPE)
+            .get_string(dpp::document::extended_document::property_names::DOCUMENT_TYPE)
+            .map_err(ProtocolError::ValueError)
             .with_js_error()?;
 
         let (identifier_paths, _) = data_contract
-            .get_identifiers_and_binary_paths(document_type)
+            .get_identifiers_and_binary_paths_owned(document_type.as_str())
             .with_js_error()?;
-        replace_identifiers_with_bytes_without_failing(
-            &mut value,
-            identifier_paths
-                .into_iter()
-                .chain(document_create_transition::BINARY_FIELDS),
-        );
+        value.replace_at_paths(identifier_paths, ReplacementType::Identifier).map_err(ProtocolError::ValueError)
+            .with_js_error()?;
         let transition =
-            DocumentReplaceTransition::from_raw_object(value, data_contract).with_js_error()?;
+            DocumentReplaceTransition::from_value_map(value, data_contract).with_js_error()?;
 
         Ok(transition.into())
     }
@@ -173,7 +174,7 @@ impl DocumentReplaceTransitionWasm {
             return Ok(JsValue::undefined());
         };
 
-        let mut value = if let Ok(value) = document_data.get_value(&path) {
+        let mut value = if let Ok(value) = document_data.get_at_path(&path) {
             value.to_owned()
         } else {
             return Ok(JsValue::undefined());
@@ -181,12 +182,12 @@ impl DocumentReplaceTransitionWasm {
 
         match self.get_binary_type_of_path(&path) {
             BinaryType::Buffer => {
-                let bytes: Vec<u8> = serde_json::from_value(value).unwrap();
+                let bytes: Vec<u8> = serde_json::from_value(value.try_into().map_err(ProtocolError::ValueError).with_js_error()?).unwrap();
                 let buffer = Buffer::from_bytes(&bytes);
                 return Ok(buffer.into());
             }
             BinaryType::Identifier => {
-                let bytes: Vec<u8> = serde_json::from_value(value).unwrap();
+                let bytes: Vec<u8> = serde_json::from_value(value.try_into().map_err(ProtocolError::ValueError).with_js_error()?).unwrap();
                 let id = <IdentifierWrapper as convert::From<Identifier>>::from(
                     Identifier::from_bytes(&bytes).unwrap(),
                 );
@@ -198,7 +199,10 @@ impl DocumentReplaceTransitionWasm {
             }
         }
 
-        let js_value = value.serialize(&serde_wasm_bindgen::Serializer::json_compatible())?;
+
+        let json_value: JsonValue = value.clone().try_into().map_err(ProtocolError::ValueError).with_js_error()?;
+        let map = value.to_btree_ref_map().map_err(ProtocolError::ValueError).with_js_error()?;
+        let js_value = json_value.serialize(&serde_wasm_bindgen::Serializer::json_compatible())?;
         let (identifier_paths, binary_paths) = self
             .inner
             .base
@@ -210,9 +214,7 @@ impl DocumentReplaceTransitionWasm {
             if property_path.starts_with(&path) {
                 let (_, suffix) = property_path.split_at(path.len() + 1);
 
-                if value.get_value(suffix).is_ok() {
-                    // unwrap allowed because the line above
-                    let bytes = value.remove_path_into::<Vec<u8>>(suffix).unwrap();
+                if let Some(bytes) = map.get_optional_bytes_at_path(suffix).map_err(ProtocolError::ValueError).with_js_error()? {
                     let id = <IdentifierWrapper as convert::From<Identifier>>::from(
                         Identifier::from_bytes(&bytes).unwrap(),
                     );
@@ -225,9 +227,7 @@ impl DocumentReplaceTransitionWasm {
             if property_path.starts_with(&path) {
                 let (_, suffix) = property_path.split_at(path.len() + 1);
 
-                if value.get_value(suffix).is_ok() {
-                    // unwrap allowed because the line above
-                    let bytes = value.remove_path_into::<Vec<u8>>(suffix).unwrap();
+                if let Some(bytes) = map.get_optional_bytes_at_path(suffix).map_err(ProtocolError::ValueError).with_js_error()? {
                     let buffer = Buffer::from_bytes(&bytes);
                     lodash_set(&js_value, suffix, buffer.into());
                 }

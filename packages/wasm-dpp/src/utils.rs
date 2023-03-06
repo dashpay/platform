@@ -1,3 +1,4 @@
+use std::collections::BTreeMap;
 use std::convert::TryInto;
 
 use anyhow::{anyhow, bail};
@@ -18,6 +19,9 @@ use crate::errors::{from_dpp_err, RustConversionError};
 pub trait ToSerdeJSONExt {
     fn with_serde_to_json_value(&self) -> Result<JsonValue, JsValue>;
     fn with_serde_to_platform_value(&self) -> Result<Value, JsValue>;
+    /// Converts the `JsValue` into `platform::Value`. It's an expensive conversion,
+    /// as `JsValue` must be stringified first
+    fn with_serde_to_platform_value_map(&self) -> Result<BTreeMap<String, Value>, JsValue>;
     fn with_serde_into<D: DeserializeOwned>(&self) -> Result<D, JsValue>
     where
         D: for<'de> serde::de::Deserialize<'de> + 'static;
@@ -34,6 +38,12 @@ impl ToSerdeJSONExt for JsValue {
     /// as `JsValue` must be stringified first
     fn with_serde_to_platform_value(&self) -> Result<Value, JsValue> {
         with_serde_to_platform_value(self)
+    }
+
+    /// Converts the `JsValue` into `platform::Value`. It's an expensive conversion,
+    /// as `JsValue` must be stringified first
+    fn with_serde_to_platform_value_map(&self) -> Result<BTreeMap<String, Value>, JsValue> {
+        self.with_serde_to_platform_value()?.into_btree_map().map_err(ProtocolError::ValueError).with_js_error()
     }
 
     /// converts the `JsValue` into any type that is supported by serde. It's an expensive conversion

@@ -13,6 +13,7 @@ pub use invalid_document_error::*;
 pub use invalid_initial_revision_error::*;
 pub use mismatch_owners_ids_error::*;
 pub use no_documents_supplied_error::*;
+use crate::document::errors::invalid_action_error::InvalidActionError;
 
 use crate::errors::consensus_error::from_consensus_error;
 use crate::utils::*;
@@ -28,6 +29,7 @@ mod mismatch_owners_ids_error;
 mod no_documents_supplied_error;
 mod revision_absent_error;
 mod trying_to_replace_immutable_document_error;
+mod invalid_action_error;
 
 pub fn from_document_to_js_error(e: DocumentError) -> JsValue {
     match e {
@@ -69,6 +71,9 @@ pub fn from_document_to_js_error(e: DocumentError) -> JsValue {
         }
         DocumentError::TryingToReplaceImmutableDocument { document } => {
             TryingToReplaceImmutableDocumentError::new((*document).into()).into()
+        }
+        DocumentError::InvalidActionError(action) => {
+            InvalidActionError::new(action.into()).into()
         }
     }
 }

@@ -28,7 +28,7 @@ pub fn find_duplicates_by_id_wasm(js_raw_transitions: Array) -> Result<Vec<JsVal
         .into_iter()
         .map(|raw| {
             to_object(
-                raw,
+                raw.into(),
                 &JsValue::null(),
                 document_base_transition::IDENTIFIER_FIELDS,
                 document_create_transition::BINARY_FIELDS,

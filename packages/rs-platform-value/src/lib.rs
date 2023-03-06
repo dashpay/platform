@@ -16,6 +16,7 @@ pub mod inner_value;
 mod integer;
 pub mod system_bytes;
 pub mod value_map;
+mod btreemap_mut_value_extensions;
 
 use crate::value_map::{ValueMap, ValueMapHelper};
 pub use error::Error;
@@ -308,6 +309,7 @@ impl Value {
         match self {
             Value::Bytes(vec) => Ok(vec),
             Value::Bytes32(vec) => Ok(vec.to_vec()),
+            Value::Identifier(vec) => Ok(vec.to_vec()),
             _other => Err(Error::StructureError("value are not bytes".to_string())),
         }
     }
@@ -328,6 +330,7 @@ impl Value {
         match self {
             Value::Bytes(vec) => Ok(vec.clone()),
             Value::Bytes32(vec) => Ok(vec.to_vec()),
+            Value::Identifier(vec) => Ok(vec.to_vec()),
             other => Err(Error::StructureError(format!(
                 "ref value are not bytes found {} instead",
                 other
@@ -777,6 +780,26 @@ impl Value {
             Value::Array(ref mut list) => Some(list),
             _ => None,
         }
+    }
+
+    /// If the `Value` is an Array, returns a mutable reference to the associated vector.
+    /// Returns None otherwise.
+    ///
+    /// ```
+    /// # use platform_value::Value;
+    /// #
+    /// let mut value = Value::Array(
+    ///     vec![
+    ///         Value::Text(String::from("foo")),
+    ///         Value::Text(String::from("bar"))
+    ///     ]
+    /// );
+    ///
+    /// value.to_array_mut().unwrap().clear();
+    /// assert_eq!(value, Value::Array(vec![]));
+    /// ```
+    pub fn to_array_mut(&mut self) -> Result<&mut Vec<Value>, Error> {
+        self.as_array_mut().ok_or(Error::StructureError("value is not an array".to_string()))
     }
 
     /// If the `Value` is a `Array`, returns a the associated `Vec<Value>` data as `Ok`.

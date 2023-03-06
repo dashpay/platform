@@ -2,19 +2,16 @@ mod document_create_transition;
 mod document_delete_transition;
 mod document_replace_transition;
 
+use std::convert::TryInto;
 use anyhow::Context;
 pub use document_create_transition::*;
 pub use document_delete_transition::*;
 pub use document_replace_transition::*;
 
-use dpp::{
-    document::document_transition::{
-        DocumentCreateTransition, DocumentDeleteTransition, DocumentReplaceTransition,
-        DocumentTransitionExt, DocumentTransitionObjectLike,
-    },
-    prelude::{DocumentTransition, Identifier},
-    util::{json_schema::JsonSchemaExt, json_value::JsonValueExt},
-};
+use dpp::{document::document_transition::{
+    DocumentCreateTransition, DocumentDeleteTransition, DocumentReplaceTransition,
+    DocumentTransitionExt, DocumentTransitionObjectLike,
+}, prelude::{DocumentTransition, Identifier}, ProtocolError, util::{json_schema::JsonSchemaExt, json_value::JsonValueExt}};
 use serde::Serialize;
 use serde_json::Value as JsonValue;
 use wasm_bindgen::prelude::*;
@@ -148,14 +145,13 @@ impl DocumentTransitionWasm {
         if let Some(value) = self.0.get_dynamic_property(path) {
             match binary_type {
                 BinaryType::Identifier => {
-                    if let Ok(bytes) = serde_json::from_value::<Vec<u8>>(value.to_owned().into()) {
+                    if let Ok( bytes) = value.to_identifier_bytes() {
                         let id: IdentifierWrapper = Identifier::from_bytes(&bytes).unwrap().into();
-
                         return id.into();
                     }
                 }
                 BinaryType::Buffer => {
-                    if let Ok(bytes) = serde_json::from_value::<Vec<u8>>(value.to_owned().into()) {
+                    if let Ok( bytes) = value.to_binary_bytes() {
                         return Buffer::from_bytes(&bytes).into();
                     }
                 }
@@ -274,7 +270,7 @@ pub(crate) fn to_object<'a>(
     identifiers_paths: impl IntoIterator<Item = &'a str>,
     binary_paths: impl IntoIterator<Item = &'a str>,
 ) -> Result<JsValue, JsValue> {
-    let mut value : JsonValue = value.into();
+    let mut value : JsonValue = value.try_into().map_err(ProtocolError::ValueError).with_js_error()?;
     let options: ConversionOptions = if options.is_object() {
         let raw_options = options.with_serde_to_json_value()?;
         serde_json::from_value(raw_options).with_js_error()?
