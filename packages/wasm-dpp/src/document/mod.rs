@@ -294,7 +294,7 @@ impl DocumentWasm {
     fn get_binary_type_of_path(
         &self,
         path: &String,
-        data_contract: DataContractWasm,
+        data_contract: &DataContractWasm,
         document_type_name: String,
     ) -> BinaryType {
         let maybe_binary_properties = data_contract
