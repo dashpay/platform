@@ -12,6 +12,7 @@ use crate::ProtocolError;
 use ciborium::Value as CborValue;
 use integer_encoding::VarInt;
 
+use crate::data_contract::document_type::document_type::PROTOCOL_VERSION;
 use crate::data_contract::document_type::DocumentType;
 use crate::document::Document;
 use platform_value::btreemap_extensions::BTreeValueMapHelper;
@@ -146,6 +147,48 @@ impl ExtendedDocument {
         data_contract: DataContract,
     ) -> Result<Self, ProtocolError> {
         Self::from_json_value::<Vec<u8>>(raw_document, data_contract)
+    }
+
+    pub fn from_platform_value(
+        mut document_value: Value,
+        data_contract: DataContract,
+    ) -> Result<Self, ProtocolError> {
+        let mut properties = document_value
+            .into_btree_map()
+            .map_err(ProtocolError::ValueError)?;
+        let document_type_name = properties
+            .remove_string(property_names::DOCUMENT_TYPE)
+            .map_err(ProtocolError::ValueError)?;
+
+        //Because we don't know how the json came in we need to sanitize it
+        let (identifiers, binary_paths) =
+            data_contract.get_identifiers_and_binary_paths_owned(document_type_name.as_str())?;
+
+        let mut extended_document = Self {
+            data_contract,
+            document_type_name,
+            ..Default::default()
+        };
+
+        extended_document.protocol_version = properties
+            .remove_integer(property_names::PROTOCOL_VERSION)
+            .map_err(ProtocolError::ValueError)?;
+        extended_document.data_contract_id = Identifier::new(
+            properties
+                .remove_optional_hash256_bytes(property_names::DATA_CONTRACT_ID)?
+                .unwrap_or(extended_document.data_contract.id.buffer),
+        );
+        extended_document.document = Document::from_map(properties, None, None)?;
+
+        extended_document
+            .document
+            .properties
+            .replace_at_paths(identifiers, ReplacementType::Identifier)?;
+        extended_document
+            .document
+            .properties
+            .replace_at_paths(binary_paths, ReplacementType::Bytes)?;
+        Ok(extended_document)
     }
 
     fn from_json_value<S>(

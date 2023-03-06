@@ -14,7 +14,7 @@ use dpp::{
         self, document_create_transition, DocumentCreateTransition, DocumentTransitionObjectLike,
     },
     prelude::{DataContract, Identifier},
-    util::{json_schema::JsonSchemaExt},
+    util::json_schema::JsonSchemaExt,
     ProtocolError,
 };
 use serde::Serialize;

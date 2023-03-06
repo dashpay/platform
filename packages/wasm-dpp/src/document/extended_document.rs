@@ -18,8 +18,8 @@ use crate::document::BinaryType;
 use crate::errors::RustConversionError;
 use crate::identifier::{identifier_from_js_value, IdentifierWrapper};
 use crate::lodash::lodash_set;
-use crate::utils::WithJsError;
 use crate::utils::{with_serde_to_json_value, ToSerdeJSONExt};
+use crate::utils::{with_serde_to_platform_value, WithJsError};
 use crate::{with_js_error, ConversionOptions};
 use crate::{DataContractWasm, MetadataWasm};
 
@@ -34,32 +34,32 @@ impl ExtendedDocumentWasm {
         js_raw_document: JsValue,
         js_data_contract: &DataContractWasm,
     ) -> Result<ExtendedDocumentWasm, JsValue> {
-        let mut raw_document = with_serde_to_json_value(&js_raw_document)?;
+        let mut raw_document = with_serde_to_platform_value(&js_raw_document)?;
 
-        let document_type = raw_document
-            .get_string(extended_document_property_names::DOCUMENT_TYPE)
-            .with_js_error()?;
-
-        let (identifier_paths, _) = js_data_contract
-            .inner()
-            .get_identifiers_and_binary_paths(document_type)
-            .with_js_error()?;
-
-        // Errors are ignored. When `Buffer` crosses the WASM boundary it becomes an Array.
-        // When `Identifier` crosses the WASM boundary it becomes a String. From perspective of JS
-        // `Identifier` and `Buffer` are used interchangeably, so we we can expect the replacing may fail when `Buffer` is provided
-        let _ = raw_document
-            .replace_identifier_paths(
-                identifier_paths
-                    .into_iter()
-                    .chain(EXTENDED_DOCUMENT_IDENTIFIER_FIELDS),
-                ReplaceWith::Bytes,
-            )
-            .with_js_error();
-        // The binary paths are not being converted, because they always should be a `Buffer`. `Buffer` is always an Array
+        // let document_type = raw_document
+        //     .get_string(extended_document_property_names::DOCUMENT_TYPE).map_err(ProtocolError::ValueError)
+        //     .with_js_error()?;
+        //
+        // let (identifier_paths, _) = js_data_contract
+        //     .inner()
+        //     .get_identifiers_and_binary_paths(document_type)
+        //     .with_js_error()?;
+        //
+        // // Errors are ignored. When `Buffer` crosses the WASM boundary it becomes an Array.
+        // // When `Identifier` crosses the WASM boundary it becomes a String. From perspective of JS
+        // // `Identifier` and `Buffer` are used interchangeably, so we we can expect the replacing may fail when `Buffer` is provided
+        // let _ = raw_document
+        //     .replace_at_paths(
+        //         identifier_paths
+        //             .into_iter()
+        //             .chain(EXTENDED_DOCUMENT_IDENTIFIER_FIELDS),
+        //         ReplacementType::Identifier,
+        //     ).map_err(ProtocolError::ValueError)
+        //     .with_js_error()?;
+        // // The binary paths are not being converted, because they always should be a `Buffer`. `Buffer` is always an Array
 
         let document =
-            ExtendedDocument::from_raw_document(raw_document, js_data_contract.to_owned().into())
+            ExtendedDocument::from_platform_value(raw_document, js_data_contract.to_owned().into())
                 .with_js_error()?;
 
         Ok(document.into())
