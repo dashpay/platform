@@ -152,7 +152,7 @@ impl DocumentWasm {
     pub fn get(
         &mut self,
         path: String,
-        data_contract: DataContractWasm,
+        data_contract: &DataContractWasm,
         document_type_name: String,
     ) -> Result<JsValue, JsValue> {
         let binary_type = self.get_binary_type_of_path(&path, data_contract, document_type_name);
@@ -303,7 +303,7 @@ impl DocumentWasm {
     fn get_binary_type_of_path(
         &self,
         path: &String,
-        data_contract: DataContractWasm,
+        data_contract: &DataContractWasm,
         document_type_name: String,
     ) -> BinaryType {
         let maybe_binary_properties = data_contract
