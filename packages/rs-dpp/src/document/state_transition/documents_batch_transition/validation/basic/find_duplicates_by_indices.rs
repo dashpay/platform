@@ -1,8 +1,10 @@
 use platform_value::btreemap_extensions::BTreeValueMapHelper;
+use platform_value::value_map::ValueMap;
 use platform_value::Value;
 use std::collections::btree_map::Entry;
 use std::collections::BTreeMap;
 
+use crate::data_contract::DriveContractExt;
 use crate::{
     document::document_transition::DocumentTransition,
     prelude::DataContract,
@@ -28,25 +30,26 @@ macro_rules! get_from_transition {
 /// Finds duplicates of indices in Document Transitions.
 pub fn find_duplicates_by_indices<'a>(
     document_raw_transitions: impl IntoIterator<Item = &'a Value>,
-    data_contract: &DataContract,
+    data_contract: &'a DataContract,
 ) -> Result<Vec<&'a Value>, ProtocolError> {
     #[derive(Debug)]
     struct Group<'a> {
         transitions: Vec<&'a Value>,
-        indices: Vec<Index>,
+        indices: &'a [Index],
     }
     let mut groups: BTreeMap<&'a str, Group> = BTreeMap::new();
 
     for dt in document_raw_transitions.into_iter() {
-        let document_type = dt.get_string("$type")?;
-        match groups.entry(document_type) {
+        let document_type_name = dt.get_string("$type")?;
+        let document_type = data_contract.document_type_for_name(document_type_name)?;
+        match groups.entry(document_type_name) {
             Entry::Occupied(mut o) => {
                 o.get_mut().transitions.push(dt);
             }
             Entry::Vacant(v) => {
                 v.insert(Group {
                     transitions: vec![dt],
-                    indices: get_unique_indices(document_type, data_contract),
+                    indices: document_type.indices.as_slice(),
                 });
             }
         };
@@ -60,18 +63,19 @@ pub fn find_duplicates_by_indices<'a>(
         // Filter out group with only one object
         .filter(|(_, group)| group.transitions.len() > 1)
     {
-        for transition in group.transitions.iter() {
-            let transition_id = transition.get_hash256("$id").unwrap();
-
+        for (i, value1) in group.transitions.iter().enumerate() {
+            let object1 = value1.to_map().map_err(ProtocolError::ValueError)?;
             let mut found_duplicates: Vec<&'a Value> = vec![];
-            for transition_to_check in group
+            for value2 in group
                 .transitions
+                .split_at(i + 1)
+                .1 // we get the second part
                 .iter()
-                // Exclude current transition from search
-                .filter(|t| t.get_hash256("$id").unwrap() != transition_id)
             {
-                if is_duplicate_by_indices(transition, transition_to_check, &group.indices) {
-                    found_duplicates.push(transition_to_check)
+                let object2 = value2.to_map().map_err(ProtocolError::ValueError)?;
+                if is_duplicate_by_indices(object1, object2, group.indices) {
+                    found_duplicates.push(value1);
+                    found_duplicates.push(value2);
                 }
             }
             found_group_duplicates.extend(found_duplicates);
@@ -79,19 +83,6 @@ pub fn find_duplicates_by_indices<'a>(
     }
 
     Ok(found_group_duplicates)
-}
-
-fn get_unique_indices(document_type: &str, data_contract: &DataContract) -> Vec<Index> {
-    let indices = data_contract
-        .get_document_schema(document_type)
-        .unwrap()
-        .get_indices::<Vec<_>>();
-    indices
-        // TODO should we panic or we should return and error or empty vector
-        .expect("error while getting indices from json schema")
-        .into_iter()
-        .filter(|i| i.unique)
-        .collect()
 }
 
 fn get_data_property(document_transition: &DocumentTransition, property_name: &str) -> String {
@@ -116,41 +107,20 @@ fn get_data_property(document_transition: &DocumentTransition, property_name: &s
     }
 }
 
-fn is_duplicate_by_indices(
-    original_transition: &Value,
-    transition_to_check: &Value,
-    type_indices: &Vec<Index>,
-) -> bool {
-    let mut accumulator = false;
-    for definition in type_indices {
-        let mut original_hash = String::new();
-        let mut hash_to_check = String::new();
-        for property in &definition.properties {
-            original_hash.push_str(&format!(
-                "{}:{}",
-                property.name,
-                original_transition
-                    .get_hash256_as_bs58_string(&property.name)
-                    .unwrap_or_default()
-            ));
-            hash_to_check.push_str(&format!(
-                "{}:{}",
-                property.name,
-                transition_to_check
-                    .get_string(&property.name)
-                    .unwrap_or_default()
-            ));
-        }
-        accumulator = accumulator || (original_hash == hash_to_check);
-    }
-    accumulator
+fn is_duplicate_by_indices(object1: &ValueMap, object2: &ValueMap, type_indices: &[Index]) -> bool {
+    type_indices
+        .iter()
+        .any(|index| index.objects_are_conflicting(object1, object2))
 }
 
 #[cfg(test)]
 mod test {
     use platform_value::Value;
     use serde_json::json;
+    use std::collections::BTreeMap;
+    use std::convert::TryInto;
 
+    use crate::data_contract::document_type::DocumentType;
     use crate::{prelude::*, util::string_encoding::Encoding};
 
     use super::find_duplicates_by_indices;
@@ -185,6 +155,131 @@ mod test {
     }
 
     #[test]
+    fn test_non_required_field_not_being_present_doesnt_find_index_duplicate() {
+        let document_def = json!(                {
+                            "indices": [
+                              {
+                                "name": "ownerIdLastName",
+                                "properties": [
+                                  {"$ownerId": "asc"},
+                                  {"lastName": "asc"},
+                                ],
+                                "unique": true,
+                              },
+                            ],
+                            "properties": {
+                              "firstName": {
+                                "type": "string",
+                              },
+                              "lastName": {
+                                "type": "string",
+                              },
+                            },
+                            "required": ["lastName"],
+                            "additionalProperties": false,
+                          }
+        );
+
+        let document_def_value: Value = document_def.clone().into();
+
+        let document_type = DocumentType::from_platform_value(
+            "indexedDocument",
+            document_def_value.to_map().expect("expected a map"),
+            &BTreeMap::new(),
+            false,
+            false,
+        )
+        .expect("expected a document type");
+
+        let mut data_contract = DataContract::default();
+        data_contract
+            .document_types
+            .insert("indexedDocument".to_string(), document_type);
+        data_contract.set_document_schema("indexedDocument".to_string(), document_def.clone());
+        data_contract.set_document_schema("singleDocument".to_string(), document_def);
+
+        let id_1 = Identifier::from_string(
+            "AoqSTh5Bg6Fo26NaCRVoPP1FiDQ1ycihLkjQ75MYJziV",
+            Encoding::Base58,
+        )
+        .unwrap();
+        let document_raw_transition_1: Value = BTreeMap::from([
+            ("$id".to_string(), Value::Identifier(id_1.buffer)),
+            (
+                "$type".to_string(),
+                Value::Text("indexedDocument".to_string()),
+            ),
+            ("$action".to_string(), Value::U8(0)),
+            (
+                "$dataContractId".to_string(),
+                Value::Identifier(
+                    bs58::decode("F719NPkos8a2VqxSPv4co4F8owh9qBbYEMJ1gzyLANtg")
+                        .into_vec()
+                        .unwrap()
+                        .try_into()
+                        .unwrap(),
+                ),
+            ),
+            ("name".to_string(), Value::Text("Leon".to_string())),
+            ("lastName".to_string(), Value::Text("Birkin".to_string())),
+            (
+                "$entropy".to_string(),
+                Value::Bytes32(
+                    base64::decode("hxlmtQ34oR/lkql7AUQ13P5kS8OaX2BheksnPBIpxLc=")
+                        .unwrap()
+                        .try_into()
+                        .unwrap(),
+                ),
+            ),
+        ])
+        .into();
+
+        let id_2 = Identifier::from_string(
+            "3GDfArJJdHMviaRd5ta4F2EB7LN9RgbMKLAfjAxZEaUG",
+            Encoding::Base58,
+        )
+        .unwrap();
+
+        let document_create_transition_2: Value = BTreeMap::from([
+            ("$id".to_string(), Value::Identifier(id_2.buffer)),
+            (
+                "$type".to_string(),
+                Value::Text("indexedDocument".to_string()),
+            ),
+            ("$action".to_string(), Value::U8(0)),
+            (
+                "$dataContractId".to_string(),
+                Value::Identifier(
+                    bs58::decode("F719NPkos8a2VqxSPv4co4F8owh9qBbYEMJ1gzyLANtg")
+                        .into_vec()
+                        .unwrap()
+                        .try_into()
+                        .unwrap(),
+                ),
+            ),
+            ("name".to_string(), Value::Text("William".to_string())),
+            ("lastName".to_string(), Value::Text("Birkin".to_string())),
+            (
+                "$entropy".to_string(),
+                Value::Bytes32(
+                    base64::decode("hxlmtQ34oR/lkql7AUQ13P5kS8OaX2BheksnPBIpxLc=")
+                        .unwrap()
+                        .try_into()
+                        .unwrap(),
+                ),
+            ),
+        ])
+        .into();
+
+        let duplicates = find_duplicates_by_indices(
+            [&document_raw_transition_1, &document_create_transition_2],
+            &data_contract,
+        )
+        .expect("the error shouldn't be returned");
+        assert_eq!(duplicates.len(), 0);
+    }
+
+    #[test]
     fn test_find_duplicates_by_indices() {
         let document_def = json!(                {
                             "indices": [
@@ -210,7 +305,21 @@ mod test {
                           }
         );
 
+        let document_def_value: Value = document_def.clone().into();
+
+        let document_type = DocumentType::from_platform_value(
+            "indexedDocument",
+            document_def_value.to_map().expect("expected a map"),
+            &BTreeMap::new(),
+            false,
+            false,
+        )
+        .expect("expected a document type");
+
         let mut data_contract = DataContract::default();
+        data_contract
+            .document_types
+            .insert("indexedDocument".to_string(), document_type);
         data_contract.set_document_schema("indexedDocument".to_string(), document_def.clone());
         data_contract.set_document_schema("singleDocument".to_string(), document_def);
 
@@ -219,17 +328,36 @@ mod test {
             Encoding::Base58,
         )
         .unwrap();
-        let document_raw_transition_1: Value = json!(
-            {
-                "$id": id_1.as_bytes(),
-                "$type": "indexedDocument",
-                "$action": 0,
-                "$dataContractId": "F719NPkos8a2VqxSPv4co4F8owh9qBbYEMJ1gzyLANtg",
-                "name": "Leon",
-                "lastName": "Birkin",
-                "$entropy": "hxlmtQ34oR/lkql7AUQ13P5kS8OaX2BheksnPBIpxLc=",
-              }
-        )
+        let document_raw_transition_1: Value = BTreeMap::from([
+            ("$ownerId".to_string(), Value::Identifier(id_1.buffer)),
+            ("$id".to_string(), Value::Identifier(id_1.buffer)),
+            (
+                "$type".to_string(),
+                Value::Text("indexedDocument".to_string()),
+            ),
+            ("$action".to_string(), Value::U8(0)),
+            (
+                "$dataContractId".to_string(),
+                Value::Identifier(
+                    bs58::decode("F719NPkos8a2VqxSPv4co4F8owh9qBbYEMJ1gzyLANtg")
+                        .into_vec()
+                        .unwrap()
+                        .try_into()
+                        .unwrap(),
+                ),
+            ),
+            ("name".to_string(), Value::Text("Leon".to_string())),
+            ("lastName".to_string(), Value::Text("Birkin".to_string())),
+            (
+                "$entropy".to_string(),
+                Value::Bytes32(
+                    base64::decode("hxlmtQ34oR/lkql7AUQ13P5kS8OaX2BheksnPBIpxLc=")
+                        .unwrap()
+                        .try_into()
+                        .unwrap(),
+                ),
+            ),
+        ])
         .into();
 
         let id_2 = Identifier::from_string(
@@ -237,18 +365,39 @@ mod test {
             Encoding::Base58,
         )
         .unwrap();
-        let document_create_transition_2: Value = json!(
-            {
-                "$id": id_2.as_bytes(),
-                "$type": "indexedDocument",
-                "$action": 0,
-                "$dataContractId": "F719NPkos8a2VqxSPv4co4F8owh9qBbYEMJ1gzyLANtg",
-                "name": "William",
-                "lastName": "Birkin",
-                "$entropy": "hxlmtQ34oR/lkql7AUQ13P5kS8OaX2BheksnPBIpxLc=",
-              }
-        )
+
+        let document_create_transition_2: Value = BTreeMap::from([
+            ("$ownerId".to_string(), Value::Identifier(id_1.buffer)),
+            ("$id".to_string(), Value::Identifier(id_2.buffer)),
+            (
+                "$type".to_string(),
+                Value::Text("indexedDocument".to_string()),
+            ),
+            ("$action".to_string(), Value::U8(0)),
+            (
+                "$dataContractId".to_string(),
+                Value::Identifier(
+                    bs58::decode("F719NPkos8a2VqxSPv4co4F8owh9qBbYEMJ1gzyLANtg")
+                        .into_vec()
+                        .unwrap()
+                        .try_into()
+                        .unwrap(),
+                ),
+            ),
+            ("name".to_string(), Value::Text("William".to_string())),
+            ("lastName".to_string(), Value::Text("Birkin".to_string())),
+            (
+                "$entropy".to_string(),
+                Value::Bytes32(
+                    base64::decode("hxlmtQ34oR/lkql7AUQ13P5kS8OaX2BheksnPBIpxLc=")
+                        .unwrap()
+                        .try_into()
+                        .unwrap(),
+                ),
+            ),
+        ])
         .into();
+
         let duplicates = find_duplicates_by_indices(
             [&document_raw_transition_1, &document_create_transition_2],
             &data_contract,
