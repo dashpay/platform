@@ -1,6 +1,7 @@
 use platform_value::btreemap_extensions::BTreeValueMapHelper;
-use serde_json::Value;
-use std::collections::{hash_map::Entry, HashMap};
+use platform_value::Value;
+use std::collections::btree_map::Entry;
+use std::collections::BTreeMap;
 
 use crate::{
     document::document_transition::DocumentTransition,
@@ -34,7 +35,7 @@ pub fn find_duplicates_by_indices<'a>(
         transitions: Vec<&'a Value>,
         indices: Vec<Index>,
     }
-    let mut groups: HashMap<&'a str, Group> = HashMap::new();
+    let mut groups: BTreeMap<&'a str, Group> = BTreeMap::new();
 
     for dt in document_raw_transitions.into_iter() {
         let document_type = dt.get_string("$type")?;
@@ -60,14 +61,14 @@ pub fn find_duplicates_by_indices<'a>(
         .filter(|(_, group)| group.transitions.len() > 1)
     {
         for transition in group.transitions.iter() {
-            let transition_id = transition.get("$id").unwrap();
+            let transition_id = transition.get_hash256("$id").unwrap();
 
             let mut found_duplicates: Vec<&'a Value> = vec![];
             for transition_to_check in group
                 .transitions
                 .iter()
                 // Exclude current transition from search
-                .filter(|t| t.get("$id").unwrap() != transition_id)
+                .filter(|t| t.get_hash256("$id").unwrap() != transition_id)
             {
                 if is_duplicate_by_indices(transition, transition_to_check, &group.indices) {
                     found_duplicates.push(transition_to_check)
@@ -129,15 +130,15 @@ fn is_duplicate_by_indices(
                 "{}:{}",
                 property.name,
                 original_transition
-                    .get(&property.name)
-                    .unwrap_or(&Value::Null)
+                    .get_hash256_as_bs58_string(&property.name)
+                    .unwrap_or_default()
             ));
             hash_to_check.push_str(&format!(
                 "{}:{}",
                 property.name,
                 transition_to_check
-                    .get(&property.name)
-                    .unwrap_or(&Value::Null)
+                    .get_string(&property.name)
+                    .unwrap_or_default()
             ));
         }
         accumulator = accumulator || (original_hash == hash_to_check);
@@ -147,6 +148,7 @@ fn is_duplicate_by_indices(
 
 #[cfg(test)]
 mod test {
+    use platform_value::Value;
     use serde_json::json;
 
     use crate::{prelude::*, util::string_encoding::Encoding};
@@ -217,7 +219,7 @@ mod test {
             Encoding::Base58,
         )
         .unwrap();
-        let document_raw_transition_1 = json!(
+        let document_raw_transition_1: Value = json!(
             {
                 "$id": id_1.as_bytes(),
                 "$type": "indexedDocument",
@@ -227,14 +229,15 @@ mod test {
                 "lastName": "Birkin",
                 "$entropy": "hxlmtQ34oR/lkql7AUQ13P5kS8OaX2BheksnPBIpxLc=",
               }
-        );
+        )
+        .into();
 
         let id_2 = Identifier::from_string(
             "3GDfArJJdHMviaRd5ta4F2EB7LN9RgbMKLAfjAxZEaUG",
             Encoding::Base58,
         )
         .unwrap();
-        let document_create_transition_2 = json!(
+        let document_create_transition_2: Value = json!(
             {
                 "$id": id_2.as_bytes(),
                 "$type": "indexedDocument",
@@ -244,12 +247,13 @@ mod test {
                 "lastName": "Birkin",
                 "$entropy": "hxlmtQ34oR/lkql7AUQ13P5kS8OaX2BheksnPBIpxLc=",
               }
-        );
+        )
+        .into();
         let duplicates = find_duplicates_by_indices(
             [&document_raw_transition_1, &document_create_transition_2],
             &data_contract,
         )
         .expect("the error shouldn't be returned");
-        assert!(duplicates.len() == 2);
+        assert_eq!(duplicates.len(), 2);
     }
 }

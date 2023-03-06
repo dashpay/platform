@@ -2,9 +2,9 @@ use dpp::document::{
     document_transition::{document_base_transition, document_create_transition},
     validation::basic::find_duplicates_by_indices::find_duplicates_by_indices,
 };
+use dpp::platform_value::{ReplacementType, Value};
 use itertools::Itertools;
 use js_sys::Array;
-use serde_json::Value;
 use wasm_bindgen::prelude::*;
 
 use crate::{
@@ -20,16 +20,15 @@ pub fn find_duplicates_by_indices_wasm(
 ) -> Result<Vec<JsValue>, JsValue> {
     let raw_transitions: Vec<Value> = js_raw_transitions
         .iter()
-        .map(|t| {
-            t.with_serde_to_json_value().map(|mut v| {
-                replace_identifiers_with_bytes_without_failing(
-                    &mut v,
-                    document_base_transition::IDENTIFIER_FIELDS,
-                );
-                v
-            })
+        .map(|transition| {
+            let mut value = transition.with_serde_to_platform_value()?;
+            value.replace_at_paths(
+                document_base_transition::IDENTIFIER_FIELDS,
+                ReplacementType::Identifier,
+            );
+            Ok(value)
         })
-        .try_collect()?;
+        .collect::<Result<Vec<Value>, JsValue>>()?;
 
     let result =
         find_duplicates_by_indices(&raw_transitions, data_contract.inner()).with_js_error()?;

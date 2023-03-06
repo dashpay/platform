@@ -183,16 +183,18 @@ impl DocumentType {
 
         // Do documents of this type keep history? (Overrides contract value)
         let documents_keep_history: bool =
-            Value::inner_bool_value(document_type_value_map, "documentsKeepHistory")
+            Value::inner_optional_bool_value(document_type_value_map, "documentsKeepHistory")
                 .unwrap_or(default_keeps_history);
 
         // Are documents of this type mutable? (Overrides contract value)
         let documents_mutable: bool =
-            Value::inner_bool_value(document_type_value_map, "documentsMutable")
+            Value::inner_optional_bool_value(document_type_value_map, "documentsMutable")
                 .unwrap_or(default_mutability);
 
-        let index_values =
-            Value::inner_array_slice_value(document_type_value_map, property_names::INDICES)?;
+        let index_values = Value::inner_optional_array_slice_value(
+            document_type_value_map,
+            property_names::INDICES,
+        )?;
         let indices: Vec<Index> = index_values
             .map(|index_values| {
                 index_values
@@ -215,17 +217,18 @@ impl DocumentType {
 
         // Extract the properties
         let property_values =
-            Value::inner_btree_map(document_type_value_map, property_names::PROPERTIES)?.ok_or(
-                {
-                    ProtocolError::DataContractError(DataContractError::InvalidContractStructure(
-                        "unable to get document properties from the contract",
-                    ))
-                },
-            )?;
+            Value::inner_optional_btree_map(document_type_value_map, property_names::PROPERTIES)?
+                .ok_or({
+                ProtocolError::DataContractError(DataContractError::InvalidContractStructure(
+                    "unable to get document properties from the contract",
+                ))
+            })?;
 
-        let mut required_fields =
-            Value::inner_array_of_strings(document_type_value_map, property_names::REQUIRED)
-                .unwrap_or_default();
+        let mut required_fields = Value::inner_optional_array_of_strings(
+            document_type_value_map,
+            property_names::REQUIRED,
+        )
+        .unwrap_or_default();
 
         // Based on the property name, determine the type
         for (property_key, property_value) in property_values {

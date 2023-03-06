@@ -1,3 +1,4 @@
+use platform_value::Value;
 use serde_json::Value as JsonValue;
 use std::convert::TryInto;
 
@@ -45,14 +46,12 @@ fn should_return_invalid_result_if_compound_index_contains_not_all_fields() {
         .expect("lastName property should exist and be removed");
 
     let documents_for_transition = vec![document];
-    let raw_document_transitions: Vec<JsonValue> =
+    let raw_document_transitions: Vec<Value> =
         get_document_transitions_fixture([(Action::Create, documents_for_transition)])
             .into_iter()
             .map(|dt| {
                 dt.to_object()
                     .expect("the transition should be converted to object")
-                    .try_into()
-                    .expect("expected json values")
             })
             .collect();
     let result = validate_partial_compound_indices(raw_document_transitions.iter(), &data_contract)
@@ -80,14 +79,12 @@ fn should_return_valid_result_if_compound_index_contains_nof_fields() {
     document.properties_as_mut().clear();
 
     let documents_for_transition = vec![document];
-    let raw_document_transitions: Vec<JsonValue> =
+    let raw_document_transitions: Vec<Value> =
         get_document_transitions_fixture([(Action::Create, documents_for_transition)])
             .into_iter()
             .map(|dt| {
                 dt.to_object()
                     .expect("the transition should be converted to object")
-                    .try_into()
-                    .expect("expected to get json values")
             })
             .collect();
     let result = validate_partial_compound_indices(raw_document_transitions.iter(), &data_contract)
@@ -103,14 +100,12 @@ fn should_return_valid_result_if_compound_index_contains_all_fields() {
     } = setup_test();
     let document = documents.remove(8);
     let documents_for_transition = vec![document];
-    let raw_document_transitions: Vec<JsonValue> =
+    let raw_document_transitions: Vec<Value> =
         get_document_transitions_fixture([(Action::Create, documents_for_transition)])
             .into_iter()
             .map(|dt| {
                 dt.to_object()
                     .expect("the transition should be converted to object")
-                    .try_into()
-                    .expect("expected json values")
             })
             .collect();
     let result = validate_partial_compound_indices(raw_document_transitions.iter(), &data_contract)

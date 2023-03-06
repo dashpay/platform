@@ -1,3 +1,4 @@
+use std::borrow::Borrow;
 use std::{
     collections::{hash_map::Entry, HashMap},
     convert::{TryFrom, TryInto},
@@ -23,6 +24,7 @@ use crate::{
 };
 use anyhow::anyhow;
 use lazy_static::lazy_static;
+use platform_value::Value;
 use serde_json::Value as JsonValue;
 
 use super::{
@@ -196,6 +198,7 @@ fn get_enriched_contracts_by_action(
     Ok(enriched_contracts_by_action)
 }
 
+//todo: switch to platform Value
 fn validate_raw_transitions<'a>(
     data_contract: &DataContract,
     raw_document_transitions: impl IntoIterator<Item = &'a JsonValue>,
@@ -289,37 +292,49 @@ fn validate_raw_transitions<'a>(
         }
     }
 
-    let raw_document_transitions_iter = raw_document_transitions.into_iter();
-
-    let duplicate_transitions = find_duplicates_by_id(raw_document_transitions_iter.clone())?;
+    let raw_document_transitions_as_value: Vec<Value> = raw_document_transitions
+        .into_iter()
+        .map(|v| v.clone().into())
+        .collect();
+    let raw_document_transitions_as_value_iter = raw_document_transitions_as_value.iter();
+    let duplicate_transitions =
+        find_duplicates_by_id(raw_document_transitions_as_value_iter.clone())?;
     if !duplicate_transitions.is_empty() {
-        let references: Vec<(String, Vec<u8>)> = duplicate_transitions
+        let references: Vec<(String, [u8; 32])> = duplicate_transitions
             .iter()
-            .map(|t| {
-                let doc_type = t.get_string("$type")?.to_string();
-                let id = t.get_bytes("$id")?;
-                Ok((doc_type, id))
+            .map(|transition_value| {
+                let map = transition_value
+                    .to_map()
+                    .map_err(ProtocolError::ValueError)?;
+                let doc_type = Value::inner_text_value(map, "$type")?;
+                let id = Value::inner_hash256_value(map, "$id")?;
+                Ok((doc_type.to_string(), id))
             })
-            .collect::<Result<Vec<(String, Vec<u8>)>, anyhow::Error>>()?;
+            .collect::<Result<Vec<(String, [u8; 32])>, ProtocolError>>()?;
         result.add_error(BasicError::DuplicateDocumentTransitionsWithIdsError { references });
     }
 
-    let duplicate_transitions_by_indices =
-        find_duplicates_by_indices(raw_document_transitions_iter.clone(), data_contract)?;
+    let duplicate_transitions_by_indices = find_duplicates_by_indices(
+        raw_document_transitions_as_value_iter.clone(),
+        data_contract,
+    )?;
     if !duplicate_transitions_by_indices.is_empty() {
-        let references: Vec<(String, Vec<u8>)> = duplicate_transitions_by_indices
+        let references: Vec<(String, [u8; 32])> = duplicate_transitions_by_indices
             .iter()
-            .map(|t| {
-                let doc_type = t.get_string("$type")?.to_string();
-                let id = t.get_bytes("$id")?;
-                Ok((doc_type, id))
+            .map(|transition_value| {
+                let map = transition_value
+                    .to_map()
+                    .map_err(ProtocolError::ValueError)?;
+                let doc_type = Value::inner_text_value(map, "$type")?;
+                let id = Value::inner_hash256_value(map, "$id")?;
+                Ok((doc_type.to_string(), id))
             })
-            .collect::<Result<Vec<(String, Vec<u8>)>, anyhow::Error>>()?;
+            .collect::<Result<Vec<(String, [u8; 32])>, ProtocolError>>()?;
         result.add_error(BasicError::DuplicateDocumentTransitionsWithIndicesError { references });
     }
 
     let validation_result = validate_partial_compound_indices(
-        raw_document_transitions_iter
+        raw_document_transitions_as_value_iter
             .clone()
             .filter(|t| action_is_not_delete(t.get_string("$action").unwrap_or_default())),
         data_contract,

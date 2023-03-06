@@ -153,7 +153,7 @@ impl Document {
                         ))
                     })?;
                     // given a map of values and a key, get the corresponding value
-                    match Value::get_from_map(map_values, key) {
+                    match Value::get_optional_from_map(map_values, key) {
                         None => Ok(None),
                         Some(value) => get_value_at_path(value, rest_key_paths),
                     }

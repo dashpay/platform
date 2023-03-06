@@ -70,13 +70,13 @@ pub enum BasicError {
     },
 
     #[error("Document transitions with duplicate IDs {:?}", references)]
-    DuplicateDocumentTransitionsWithIdsError { references: Vec<(String, Vec<u8>)> },
+    DuplicateDocumentTransitionsWithIdsError { references: Vec<(String, [u8; 32])> },
 
     #[error(
         "Document transitions with duplicate unique properties: {:?}",
         references
     )]
-    DuplicateDocumentTransitionsWithIndicesError { references: Vec<(String, Vec<u8>)> },
+    DuplicateDocumentTransitionsWithIndicesError { references: Vec<(String, [u8; 32])> },
 
     #[error("$dataContractId is not present")]
     MissingDataContractIdError,

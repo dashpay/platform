@@ -1,37 +1,47 @@
+use crate::ProtocolError;
 use anyhow::Context;
-use serde_json::Value as JsonValue;
-use std::collections::{hash_map::Entry, HashMap};
+use platform_value::btreemap_extensions::BTreeValueMapHelper;
+use platform_value::Value;
+use std::collections::btree_map::Entry;
+use std::collections::BTreeMap;
+use std::convert::TryInto;
+
+#[derive(Hash, Eq, PartialEq, Ord, PartialOrd)]
+struct IdFingerprint<'a> {
+    document_type: &'a str,
+    id: [u8; 32],
+}
 
 /// Find the duplicates in the collection of Document Transitions
 pub fn find_duplicates_by_id<'a>(
-    document_transitions: impl IntoIterator<Item = &'a JsonValue>,
-) -> Result<Vec<JsonValue>, anyhow::Error> {
-    let mut fingerprints: HashMap<String, JsonValue> = HashMap::new();
-    let mut duplicates: Vec<JsonValue> = vec![];
+    document_transitions: impl IntoIterator<Item = &'a Value>,
+) -> Result<Vec<&'a Value>, anyhow::Error> {
+    let mut fingerprints: BTreeMap<IdFingerprint, &'a Value> = BTreeMap::new();
+    let mut duplicates: Vec<&'a Value> = vec![];
 
     for transition in document_transitions {
         let fingerprint = create_fingerprint(transition)
-            .context("Can't create fingerprint from a document transition")?;
+            .context("can't create fingerprint from a document transition")?;
 
-        match fingerprints.entry(fingerprint.clone()) {
+        match fingerprints.entry(fingerprint) {
             Entry::Occupied(val) => {
-                duplicates.push(val.get().clone());
-                duplicates.push(transition.clone());
+                duplicates.push(val.get());
+                duplicates.push(transition);
             }
             Entry::Vacant(v) => {
-                v.insert(transition.clone());
+                v.insert(transition);
             }
         }
     }
     Ok(duplicates)
 }
 
-fn create_fingerprint(document_transition: &JsonValue) -> Option<String> {
-    Some(format!(
-        "{}:{}",
-        document_transition.as_object()?.get("$type")?,
-        document_transition.as_object()?.get("$id")?,
-    ))
+fn create_fingerprint(document_transition: &Value) -> Result<IdFingerprint, anyhow::Error> {
+    let map = document_transition.to_map().context("should be a map")?;
+    Ok(IdFingerprint {
+        document_type: Value::inner_text_value(map, "$type")?,
+        id: Value::inner_hash256_value(map, "$id")?,
+    })
 }
 
 #[cfg(test)]
@@ -62,10 +72,10 @@ mod test {
         dt_delete.base.id = generate_random_identifier_struct();
         dt_delete.base.document_type_name = String::from("c");
 
-        let create_json = dt_create.to_json().unwrap();
-        let dt_create_duplicate_json = dt_create_duplicate.to_json().unwrap();
-        let dt_replace_json = dt_replace.to_json().unwrap();
-        let dt_delete_json = dt_delete.to_json().unwrap();
+        let create_json = dt_create.to_object().unwrap();
+        let dt_create_duplicate_json = dt_create_duplicate.to_object().unwrap();
+        let dt_replace_json = dt_replace.to_object().unwrap();
+        let dt_delete_json = dt_delete.to_object().unwrap();
 
         let input = vec![
             create_json,
