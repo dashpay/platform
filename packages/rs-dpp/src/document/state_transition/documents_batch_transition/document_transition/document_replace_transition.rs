@@ -1,8 +1,9 @@
 use platform_value::btreemap_extensions::BTreeValueMapHelper;
-use platform_value::Value;
+use platform_value::{ReplacementType, Value};
 use serde::{Deserialize, Serialize};
 use serde_json::Value as JsonValue;
 use std::collections::BTreeMap;
+use platform_value::btreemap_field_replacement::BTreeValueMapReplacementPathHelper;
 
 use crate::data_contract::document_type::document_type::PROTOCOL_VERSION;
 use crate::document::Document;
@@ -148,19 +149,27 @@ impl DocumentTransitionObjectLike for DocumentReplaceTransition {
         mut json_value: JsonValue,
         data_contract: DataContract,
     ) -> Result<Self, ProtocolError> {
-        let document_type = json_value.get_string("$type")?;
+        let value: Value = json_value.into();
+        let mut map = value.into_btree_map().map_err(ProtocolError::ValueError)?;
+
+        let document_type = map.get_str("$type")?;
 
         let (identifiers_paths, binary_paths) =
-            data_contract.get_identifiers_and_binary_paths(document_type)?;
+            data_contract.get_identifiers_and_binary_paths_owned(document_type)?;
 
-        // Only dynamic binary paths are replaced with Bytes (no static ones)
-        json_value.replace_binary_paths(binary_paths.into_iter(), ReplaceWith::Bytes)?;
-        // Only dynamic identifiers are replaced with Bytes
-        json_value.replace_identifier_paths(identifiers_paths, ReplaceWith::Bytes)?;
-        let mut document: DocumentReplaceTransition = serde_json::from_value(json_value)?;
+        map.replace_at_paths(
+            binary_paths
+                .into_iter(),
+            ReplacementType::Bytes,
+        )?;
 
-        document.base.action = Action::Replace;
-        document.base.data_contract = data_contract;
+        map.replace_at_paths(
+            identifiers_paths
+                .into_iter()
+                .chain(IDENTIFIER_FIELDS.iter().map(|a| a.to_string())),
+            ReplacementType::Identifier,
+        )?;
+        let document = Self::from_value_map(map, data_contract)?;
 
         Ok(document)
     }
