@@ -402,4 +402,128 @@ mod test {
         .expect("the error shouldn't be returned");
         assert_eq!(duplicates.len(), 2);
     }
+
+    #[test]
+    fn test_find_duplicates_by_single_value_indices() {
+        let document_def = json!(                {
+                            "indices": [
+                              {
+                                "name": "lastName",
+                                "properties": [
+                                  {"lastName": "asc"},
+                                ],
+                                "unique": true,
+                              },
+                            ],
+                            "properties": {
+                              "firstName": {
+                                "type": "string",
+                              },
+                              "lastName": {
+                                "type": "string",
+                              },
+                            },
+                            "required": ["lastName"],
+                            "additionalProperties": false,
+                          }
+        );
+
+        let document_def_value: Value = document_def.clone().into();
+
+        let document_type = DocumentType::from_platform_value(
+            "indexedDocument",
+            document_def_value.to_map().expect("expected a map"),
+            &BTreeMap::new(),
+            false,
+            false,
+        )
+        .expect("expected a document type");
+
+        let mut data_contract = DataContract::default();
+        data_contract
+            .document_types
+            .insert("indexedDocument".to_string(), document_type);
+        data_contract.set_document_schema("indexedDocument".to_string(), document_def.clone());
+        data_contract.set_document_schema("singleDocument".to_string(), document_def);
+
+        let id_1 = Identifier::from_string(
+            "AoqSTh5Bg6Fo26NaCRVoPP1FiDQ1ycihLkjQ75MYJziV",
+            Encoding::Base58,
+        )
+        .unwrap();
+        let document_raw_transition_1: Value = BTreeMap::from([
+            ("$id".to_string(), Value::Identifier(id_1.buffer)),
+            (
+                "$type".to_string(),
+                Value::Text("indexedDocument".to_string()),
+            ),
+            ("$action".to_string(), Value::U8(0)),
+            (
+                "$dataContractId".to_string(),
+                Value::Identifier(
+                    bs58::decode("F719NPkos8a2VqxSPv4co4F8owh9qBbYEMJ1gzyLANtg")
+                        .into_vec()
+                        .unwrap()
+                        .try_into()
+                        .unwrap(),
+                ),
+            ),
+            ("name".to_string(), Value::Text("Leon".to_string())),
+            ("lastName".to_string(), Value::Text("Birkin".to_string())),
+            (
+                "$entropy".to_string(),
+                Value::Bytes32(
+                    base64::decode("hxlmtQ34oR/lkql7AUQ13P5kS8OaX2BheksnPBIpxLc=")
+                        .unwrap()
+                        .try_into()
+                        .unwrap(),
+                ),
+            ),
+        ])
+        .into();
+
+        let id_2 = Identifier::from_string(
+            "3GDfArJJdHMviaRd5ta4F2EB7LN9RgbMKLAfjAxZEaUG",
+            Encoding::Base58,
+        )
+        .unwrap();
+
+        let document_create_transition_2: Value = BTreeMap::from([
+            ("$id".to_string(), Value::Identifier(id_2.buffer)),
+            (
+                "$type".to_string(),
+                Value::Text("indexedDocument".to_string()),
+            ),
+            ("$action".to_string(), Value::U8(0)),
+            (
+                "$dataContractId".to_string(),
+                Value::Identifier(
+                    bs58::decode("F719NPkos8a2VqxSPv4co4F8owh9qBbYEMJ1gzyLANtg")
+                        .into_vec()
+                        .unwrap()
+                        .try_into()
+                        .unwrap(),
+                ),
+            ),
+            ("name".to_string(), Value::Text("William".to_string())),
+            ("lastName".to_string(), Value::Text("Birkin".to_string())),
+            (
+                "$entropy".to_string(),
+                Value::Bytes32(
+                    base64::decode("hxlmtQ34oR/lkql7AUQ13P5kS8OaX2BheksnPBIpxLc=")
+                        .unwrap()
+                        .try_into()
+                        .unwrap(),
+                ),
+            ),
+        ])
+        .into();
+
+        let duplicates = find_duplicates_by_indices(
+            [&document_raw_transition_1, &document_create_transition_2],
+            &data_contract,
+        )
+        .expect("the error shouldn't be returned");
+        assert_eq!(duplicates.len(), 2);
+    }
 }

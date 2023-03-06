@@ -25,9 +25,8 @@ describe('findDuplicatesByIndices', () => {
     contractJs.setDocumentSchema('nonUniqueIndexDocument', {
       indices: [
         {
-          name: 'ownerIdLastName',
+          name: 'lastName',
           properties: [
-            { $ownerId: 'asc' },
             { lastName: 'asc' },
           ],
           unique: false,
