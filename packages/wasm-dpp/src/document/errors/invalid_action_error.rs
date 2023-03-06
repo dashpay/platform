@@ -10,7 +10,7 @@ pub struct InvalidActionError {
     action: JsValue,
 }
 
-#[wasm_bindgen(js_class=InvalidDocumentError)]
+#[wasm_bindgen(js_class=InvalidActiontError)]
 impl InvalidActionError {
     #[wasm_bindgen(constructor)]
     pub fn new(action: JsValue) -> InvalidActionError {
