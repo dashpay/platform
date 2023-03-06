@@ -196,6 +196,7 @@ impl Drive {
     }
 }
 
+#[cfg(feature = "full")]
 #[cfg(test)]
 mod tests {
     use grovedb::Element;

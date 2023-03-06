@@ -1,21 +1,28 @@
-const Document = require('@dashevo/dpp/lib/document/Document');
-
-const findDuplicateDocumentsByIndices = require('@dashevo/dpp/lib/document/stateTransition/DocumentsBatchTransition/validation/basic/findDuplicatesByIndices');
+const DocumentJs = require('@dashevo/dpp/lib/document/Document');
 
 const getDataContractFixture = require('@dashevo/dpp/lib/test/fixtures/getDataContractFixture');
 const getDocumentsFixture = require('@dashevo/dpp/lib/test/fixtures/getDocumentsFixture');
 const getDocumentTransitionsFixture = require('@dashevo/dpp/lib/test/fixtures/getDocumentTransitionsFixture');
 
 const { generate: generateEntropy } = require('@dashevo/dpp/lib/util/entropyGenerator');
+const { default: loadWasmDpp } = require('../../../../../../../dist');
+
+let DataContract;
+let findDuplicatesByIndices;
 
 describe('findDuplicatesByIndices', () => {
   let documents;
+  let contractJs;
   let contract;
   let documentTransitions;
 
-  beforeEach(() => {
-    contract = getDataContractFixture();
-    contract.setDocumentSchema('nonUniqueIndexDocument', {
+  beforeEach(async () => {
+    ({
+      DataContract,
+      findDuplicatesByIndices,
+    } = await loadWasmDpp());
+    contractJs = getDataContractFixture();
+    contractJs.setDocumentSchema('nonUniqueIndexDocument', {
       indices: [
         {
           name: 'ownerIdLastName',
@@ -38,7 +45,7 @@ describe('findDuplicatesByIndices', () => {
       additionalProperties: false,
     });
 
-    contract.setDocumentSchema('singleDocument', {
+    contractJs.setDocumentSchema('singleDocument', {
       indices: [
         {
           name: 'ownerIdLastName',
@@ -61,31 +68,33 @@ describe('findDuplicatesByIndices', () => {
       additionalProperties: false,
     });
 
-    documents = getDocumentsFixture(contract);
+    contract = DataContract.fromBuffer(contractJs.toBuffer());
+
+    documents = getDocumentsFixture(contractJs);
     documents.forEach((doc) => {
       // eslint-disable-next-line no-param-reassign
-      doc.dataContract = contract;
+      doc.dataContract = contractJs;
       // eslint-disable-next-line no-param-reassign
-      doc.dataContractId = contract.getId();
+      doc.dataContractId = contractJs.getId();
     });
 
     const [, , , william] = documents;
 
-    let document = new Document({
+    let document = new DocumentJs({
       ...william.toObject(),
       $type: 'nonUniqueIndexDocument',
       $entropy: generateEntropy(),
-    }, contract);
+    }, contractJs);
 
     document.setEntropy(generateEntropy());
 
     documents.push(document);
 
-    document = new Document({
+    document = new DocumentJs({
       ...william.toObject(),
       $type: 'singleDocument',
       $entropy: generateEntropy(),
-    }, contract);
+    }, contractJs);
 
     document.setEntropy(generateEntropy());
 
@@ -96,7 +105,7 @@ describe('findDuplicatesByIndices', () => {
     }).map((t) => t.toObject());
   });
 
-  it('should return duplicate documents if they are present', () => {
+  it('should return duplicate documents if they are present - Rust', () => {
     const [, , , , leon] = documents;
 
     leon.set('lastName', 'Birkin');
@@ -105,7 +114,9 @@ describe('findDuplicatesByIndices', () => {
       create: documents,
     }).map((t) => t.toObject());
 
-    const duplicates = findDuplicateDocumentsByIndices(documentTransitions, contract);
+    const duplicates = findDuplicatesByIndices(documentTransitions, contract);
+
+    expect(duplicates.length).to.equal(2);
     expect(duplicates).to.have.deep.members(
       [
         documentTransitions[3],
@@ -114,8 +125,8 @@ describe('findDuplicatesByIndices', () => {
     );
   });
 
-  it('should return an empty array of there are no duplicates', () => {
-    const duplicates = findDuplicateDocumentsByIndices(documentTransitions, contract);
+  it('should return an empty array of there are no duplicates - Rust', () => {
+    const duplicates = findDuplicatesByIndices(documentTransitions, contract);
 
     expect(duplicates.length).to.equal(0);
   });

@@ -75,10 +75,10 @@ describe('applyIdentityTopUpTransitionFactory', () => {
 
     const outPoint = stateTransition.getAssetLockProof().getOutPoint();
 
-    // TODO: It should pass execution context as well
     expect(stateRepositoryMock.markAssetLockTransactionOutPointAsUsed).to.have.been
       .calledOnceWithExactly(
         match((arg) => Buffer.from(arg).equals(outPoint)),
+        match.instanceOf(StateTransitionExecutionContext),
       );
   });
 
@@ -106,10 +106,10 @@ describe('applyIdentityTopUpTransitionFactory', () => {
 
     const outPoint = stateTransition.getAssetLockProof().getOutPoint();
 
-    // TODO: It should pass execution context as well
     expect(stateRepositoryMock.markAssetLockTransactionOutPointAsUsed).to.have.been
       .calledOnceWithExactly(
         match((arg) => Buffer.from(arg).equals(outPoint)),
+        match.instanceOf(StateTransitionExecutionContext),
       );
   });
 
@@ -134,10 +134,10 @@ describe('applyIdentityTopUpTransitionFactory', () => {
 
     const outPoint = stateTransition.getAssetLockProof().getOutPoint();
 
-    // TODO: It should pass execution context as well
     expect(stateRepositoryMock.markAssetLockTransactionOutPointAsUsed).to.have.been
       .calledOnceWithExactly(
         match((arg) => Buffer.from(arg).equals(outPoint)),
+        match.instanceOf(StateTransitionExecutionContext),
       );
   });
 });

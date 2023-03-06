@@ -15,6 +15,7 @@ module.exports = {
     // as webpack names global object "self" for some reason
     globalObject: 'this',
   },
+  mode: 'production',
   optimization: {
     minimize: true,
     minimizer: [new TerserPlugin({
@@ -23,7 +24,6 @@ module.exports = {
       },
     })],
   },
-  mode: 'production',
   module: {
     rules: [
       {

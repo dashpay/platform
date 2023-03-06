@@ -14,6 +14,13 @@ impl std::convert::From<Metadata> for MetadataWasm {
         MetadataWasm(v)
     }
 }
+
+impl std::convert::From<&MetadataWasm> for Metadata {
+    fn from(v: &MetadataWasm) -> Self {
+        v.0.clone()
+    }
+}
+
 impl std::convert::Into<Metadata> for MetadataWasm {
     fn into(self) -> Metadata {
         self.0
@@ -31,14 +38,16 @@ impl MetadataWasm {
         let inner = Metadata {
             block_height,
             core_chain_locked_height,
+            ..Default::default()
         };
         inner.into()
     }
 
     #[wasm_bindgen(js_name=from)]
-    pub fn from(object: JsValue) -> Self {
-        let i: Metadata = serde_json::from_str(&object.as_string().unwrap()).unwrap();
-        MetadataWasm(i)
+    pub fn from(object: JsValue) -> Result<MetadataWasm, JsValue> {
+        let metadata: Metadata = serde_wasm_bindgen::from_value(object)?;
+
+        Ok(MetadataWasm(metadata))
     }
 
     #[wasm_bindgen(js_name=toJSON)]

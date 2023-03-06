@@ -9,7 +9,7 @@ license = "MIT"
 [dependencies]
 ciborium = { git="https://github.com/qrayven/ciborium", branch="feat-ser-null-as-undefined"}
 chrono = "0.4.20"
-serde = { version = "1.0.132", features = ["derive"] }
+serde = { version = "1.0.152", features = ["derive"] }
 serde_json = { version="1.0", features=["preserve_order"] }
 drive = { path = "../rs-drive", features = ["fixtures-and-mocks"]}
 thiserror = "1.0.30"

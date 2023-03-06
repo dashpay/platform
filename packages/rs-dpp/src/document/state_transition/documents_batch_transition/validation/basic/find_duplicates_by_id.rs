@@ -12,9 +12,11 @@ pub fn find_duplicates_by_id<'a>(
     for transition in document_transitions {
         let fingerprint = create_fingerprint(transition)
             .context("Can't create fingerprint from a document transition")?;
+
         match fingerprints.entry(fingerprint.clone()) {
             Entry::Occupied(val) => {
                 duplicates.push(val.get().clone());
+                duplicates.push(transition.clone());
             }
             Entry::Vacant(v) => {
                 v.insert(transition.clone());
@@ -73,6 +75,6 @@ mod test {
         ];
 
         let duplicates = find_duplicates_by_id(input.iter()).unwrap();
-        assert_eq!(duplicates.len(), 1);
+        assert_eq!(duplicates.len(), 2);
     }
 }

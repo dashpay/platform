@@ -3,7 +3,7 @@ use std::sync::Arc;
 use test_case::test_case;
 
 use crate::{
-    consensus::basic::BasicError,
+    consensus::{basic::BasicError, ConsensusError},
     data_contract::state_transition::{
         data_contract_update_transition::validation::basic::DataContractUpdateTransitionBasicValidator,
         property_names, DataContractUpdateTransition,
@@ -143,8 +143,12 @@ async fn protocol_version_should_be_valid() {
     let result = validator
         .validate(&raw_state_transition, &Default::default())
         .await
-        .expect_err("err should be returned");
-    assert_eq!("invalid protocol version", result.to_string())
+        .expect("validation result should be returned");
+
+    assert!(matches!(
+        result.errors.iter().next(),
+        Some(ConsensusError::ProtocolVersionParsingError { .. })
+    ));
 }
 
 #[tokio::test]
