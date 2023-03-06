@@ -330,7 +330,7 @@ describe('StateTransitionFacade', () => {
     });
   });
 
-  describe.only('validateSignature', () => {
+  describe('validateSignature', () => {
     it('should validate identity signed State Transition', async () => {
       const result = await dpp.stateTransition.validateSignature(
         dataContractCreateTransition,
@@ -364,23 +364,7 @@ describe('StateTransitionFacade', () => {
     });
   });
 
-  describe('validateFee', () => {
-    it('should throw MissingOption if stateRepository is not set', async () => {
-      dpp = new DashPlatformProtocol();
-      await dpp.initialize();
-
-      try {
-        await dpp.stateTransition.validateFee(
-          dataContractCreateTransition,
-        );
-
-        expect.fail('MissingOption should be thrown');
-      } catch (e) {
-        expect(e).to.be.an.instanceOf(MissingOptionError);
-        expect(e.getOptionName()).to.equal('stateRepository');
-      }
-    });
-
+  describe.only('validateFee', () => {
     it('should validate State Transition', async () => {
       const result = await dpp.stateTransition.validateFee(
         dataContractCreateTransition,

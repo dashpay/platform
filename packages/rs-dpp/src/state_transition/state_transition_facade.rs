@@ -20,6 +20,7 @@ use crate::state_transition::fee::operations::{DeleteOperation, Operation};
 use crate::state_transition::state_transition_execution_context::StateTransitionExecutionContext;
 use crate::state_transition::validation::validate_state_transition_basic::StateTransitionBasicValidator;
 use crate::state_transition::validation::validate_state_transition_by_type::StateTransitionByTypeValidator;
+use crate::state_transition::validation::validate_state_transition_fee::StateTransitionFeeValidator;
 use crate::state_transition::validation::validate_state_transition_identity_signature::validate_state_transition_identity_signature;
 use crate::state_transition::validation::validate_state_transition_key_signature::StateTransitionKeySignatureValidator;
 use crate::validation::{AsyncDataValidator, AsyncDataValidatorWithContext, SimpleValidationResult};
@@ -35,6 +36,7 @@ where
     basic_validator:
         Arc<StateTransitionBasicValidator<SR, StateTransitionByTypeValidator<SR, BLS>>>,
     key_signature_validator: Arc<StateTransitionKeySignatureValidator<SR>>,
+    fee_validator: Arc<StateTransitionFeeValidator<SR>>,
     bls: BLS, // factory: StateTransitionFactory,
               // state_transition_validator: StateTransitionValidator,
 }
@@ -47,6 +49,7 @@ where
     pub fn new(state_repository: Arc<SR>, adapter: BLS) -> Result<Self, ProtocolError> {
         let state_transition_basic_validator;
         let state_transition_key_signature_validator;
+        let state_transition_fee_validator;
 
         {
             let protocol_version_validator = Arc::new(ProtocolVersionValidator::default());
@@ -154,10 +157,13 @@ where
             );
         }
 
+        state_transition_fee_validator = StateTransitionFeeValidator::new(state_repository.clone());
+
         Ok(Self {
             state_repository,
             basic_validator: Arc::new(state_transition_basic_validator),
             key_signature_validator: Arc::new(state_transition_key_signature_validator),
+            fee_validator: Arc::new(state_transition_fee_validator),
             bls: adapter,
         })
     }
@@ -224,5 +230,12 @@ where
                     .await
             }
         };
+    }
+
+    pub async fn validate_fee(
+        &self,
+        state_transition: &StateTransition,
+    ) -> Result<SimpleValidationResult, ProtocolError> {
+        self.fee_validator.validate(state_transition).await
     }
 }
