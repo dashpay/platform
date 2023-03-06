@@ -1,6 +1,5 @@
 use dpp::document::document_transition::{document_base_transition, document_create_transition};
 use dpp::document::validation::basic::find_duplicates_by_id::find_duplicates_by_id;
-use dpp::platform_value::btreemap_field_replacement::BTreeValueMapReplacementPathHelper;
 use dpp::platform_value::{ReplacementType, Value};
 
 use itertools::Itertools;

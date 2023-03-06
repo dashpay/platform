@@ -276,7 +276,7 @@ pub(crate) fn to_object<'a>(
     binary_paths: impl IntoIterator<Item = &'a str>,
 ) -> Result<JsValue, JsValue> {
     let mut value: JsonValue = value
-        .try_into()
+        .try_into_validating_json()
         .map_err(ProtocolError::ValueError)
         .with_js_error()?;
     let options: ConversionOptions = if options.is_object() {

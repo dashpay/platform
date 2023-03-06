@@ -13,7 +13,7 @@ use dpp::{
         document_replace_transition, DocumentReplaceTransition, DocumentTransitionObjectLike,
     },
     prelude::{DataContract, Identifier},
-    util::{json_schema::JsonSchemaExt, json_value::JsonValueExt},
+    util::{json_schema::JsonSchemaExt},
     ProtocolError,
 };
 use serde::Serialize;

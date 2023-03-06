@@ -1,7 +1,6 @@
 use std::borrow::Borrow;
 use std::collections::BTreeMap;
 
-use platform_value::btreemap_extensions::BTreeValueMapHelper;
 use platform_value::btreemap_path_extensions::BTreeValueMapPathHelper;
 use platform_value::Value;
 
