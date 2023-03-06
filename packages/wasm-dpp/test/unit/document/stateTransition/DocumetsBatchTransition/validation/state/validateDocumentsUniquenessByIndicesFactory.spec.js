@@ -9,7 +9,7 @@ const { expectValidationError } = require('../../../../../../../lib/test/expect/
 const { default: loadWasmDpp } = require('../../../../../../../dist');
 
 let DataContract;
-let Document;
+let ExtendedDocument;
 let ValidationResult;
 let DuplicateUniqueIndexError;
 let validateDocumentsUniquenessByIndices;
@@ -32,7 +32,7 @@ describe('validateDocumentsUniquenessByIndices', () => {
 
   beforeEach(async function beforeEach() {
     ({
-      Document,
+      ExtendedDocument,
       DataContract,
       Identifier,
       DocumentCreateTransition,
@@ -64,10 +64,10 @@ describe('validateDocumentsUniquenessByIndices', () => {
     );
 
     stateRepositoryMock = createStateRepositoryMock(this.sinonSandbox);
-    stateRepositoryMock.fetchDocuments.resolves([]);
+    stateRepositoryMock.fetchExtendedDocuments.resolves([]);
 
     stateRepositoryMockJs = createStateRepositoryMock(this.sinonSandbox);
-    stateRepositoryMockJs.fetchDocuments.resolves([]);
+    stateRepositoryMockJs.fetchExtendedDocuments.resolves([]);
 
     executionContext = new StateTransitionExecutionContext();
   });
@@ -94,14 +94,14 @@ describe('validateDocumentsUniquenessByIndices', () => {
 
     expect(result).to.be.an.instanceOf(ValidationResult);
     expect(result.isValid()).to.be.true();
-    expect(stateRepositoryMock.fetchDocuments).to.have.not.been.called();
+    expect(stateRepositoryMock.fetchExtendedDocuments).to.have.not.been.called();
   });
 
   it('should return valid result if Document has unique indices and there are no duplicates - Rust', async () => {
     const [, , , william] = documentsJs;
-    const williamDocument = new Document(william.toObject(), dataContract);
+    const williamDocument = new ExtendedDocument(william.toObject(), dataContract);
 
-    stateRepositoryMock.fetchDocuments
+    stateRepositoryMock.fetchExtendedDocuments
       .withArgs(
         dataContract.getId().toBuffer(),
         williamDocument.getType(),
@@ -114,7 +114,7 @@ describe('validateDocumentsUniquenessByIndices', () => {
       )
       .resolves([williamDocument]);
 
-    stateRepositoryMock.fetchDocuments
+    stateRepositoryMock.fetchExtendedDocuments
       .withArgs(
         dataContractJs.getId().toBuffer(),
         william.getType(),
@@ -142,12 +142,12 @@ describe('validateDocumentsUniquenessByIndices', () => {
   it('should return invalid result if Document has unique indices and there are duplicates - Rust', async () => {
     let [, , , william, leon] = documentsJs;
 
-    william = new Document(william.toObject(), dataContract.clone());
-    leon = new Document(leon.toObject(), dataContract.clone());
+    william = new ExtendedDocument(william.toObject(), dataContract.clone());
+    leon = new ExtendedDocument(leon.toObject(), dataContract.clone());
 
     const indicesDefinition = dataContractJs.getDocumentSchema(william.getType()).indices;
 
-    stateRepositoryMock.fetchDocuments
+    stateRepositoryMock.fetchExtendedDocuments
       .withArgs(
         sinon.match.instanceOf(Identifier),
         william.getType(),
@@ -160,7 +160,7 @@ describe('validateDocumentsUniquenessByIndices', () => {
       )
       .resolves([leon]);
 
-    stateRepositoryMock.fetchDocuments
+    stateRepositoryMock.fetchExtendedDocuments
       .withArgs(
         sinon.match.instanceOf(Identifier),
         william.getType(),
@@ -173,7 +173,7 @@ describe('validateDocumentsUniquenessByIndices', () => {
       )
       .resolves([leon]);
 
-    stateRepositoryMock.fetchDocuments
+    stateRepositoryMock.fetchExtendedDocuments
       .withArgs(
         sinon.match.instanceOf(Identifier),
         leon.getType(),
@@ -186,7 +186,7 @@ describe('validateDocumentsUniquenessByIndices', () => {
       )
       .resolves([william]);
 
-    stateRepositoryMock.fetchDocuments
+    stateRepositoryMock.fetchExtendedDocuments
       .withArgs(
         sinon.match.instanceOf(Identifier),
         leon.getType(),
@@ -229,7 +229,7 @@ describe('validateDocumentsUniquenessByIndices', () => {
 
   it('should return valid result if Document has undefined field from index - Rust', async () => {
     const indexedDocumentJs = documentsJs[7];
-    const indexedDocument = new Document(indexedDocumentJs.toObject(), dataContract.clone());
+    const indexedDocument = new ExtendedDocument(indexedDocumentJs.toObject(), dataContract.clone());
     const indexedDocumentTransitions = getDocumentTransitionsFixture({
       create: [indexedDocumentJs],
     }).map(
@@ -238,7 +238,7 @@ describe('validateDocumentsUniquenessByIndices', () => {
       ),
     );
 
-    stateRepositoryMockJs.fetchDocuments
+    stateRepositoryMockJs.fetchExtendedDocuments
       .withArgs(
         sinon.match.instanceOf(Identifier),
         indexedDocument.getType(),
@@ -251,7 +251,7 @@ describe('validateDocumentsUniquenessByIndices', () => {
       )
       .resolves([indexedDocument]);
 
-    stateRepositoryMockJs.fetchDocuments
+    stateRepositoryMockJs.fetchExtendedDocuments
       .withArgs(
         sinon.match.instanceOf(Identifier),
         indexedDocument.getType(),
@@ -277,7 +277,7 @@ describe('validateDocumentsUniquenessByIndices', () => {
 
   it('should return valid result if Document being created and has createdAt and updatedAt indices - Rust', async () => {
     const [, , , , , , uniqueDatesDocumentJs] = documentsJs;
-    const uniqueDatesDocument = new Document(
+    const uniqueDatesDocument = new ExtendedDocument(
       uniqueDatesDocumentJs.toObject(), dataContract.clone(),
     );
     const uniqueDatesDocumentTransitions = getDocumentTransitionsFixture({
@@ -288,7 +288,7 @@ describe('validateDocumentsUniquenessByIndices', () => {
       ),
     );
 
-    stateRepositoryMock.fetchDocuments
+    stateRepositoryMock.fetchExtendedDocuments
       .withArgs(
         sinon.match.instanceOf(Identifier),
         uniqueDatesDocumentJs.getType(),
@@ -335,6 +335,6 @@ describe('validateDocumentsUniquenessByIndices', () => {
 
     expect(result).to.be.an.instanceOf(ValidationResult);
     expect(result.isValid()).to.be.true();
-    expect(stateRepositoryMock.fetchDocuments).to.have.not.been.called();
+    expect(stateRepositoryMock.fetchExtendedDocuments).to.have.not.been.called();
   });
 });

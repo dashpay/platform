@@ -20,7 +20,7 @@ const StateTransitionExecutionContextJs = require('@dashevo/dpp/lib/stateTransit
 
 const { default: loadWasmDpp } = require('../../../../../dist');
 
-let Document;
+let ExtendedDocument;
 let DocumentsBatchTransition;
 let DataContract;
 let StateTransitionExecutionContext;
@@ -42,7 +42,7 @@ describe('applyDocumentsBatchTransitionFactory', () => {
   let applyDocumentsBatchTransitionJs;
   let stateRepositoryMockJs;
   let stateRepositoryMock;
-  let fetchDocumentsMock;
+  let fetchExtendedDocumentsMock;
   let executionContextJs;
   let executionContext;
   let blockTimeMs;
@@ -50,7 +50,7 @@ describe('applyDocumentsBatchTransitionFactory', () => {
   beforeEach(async function beforeEach() {
     ({
       DataContract,
-      Document,
+      ExtendedDocument,
       DocumentsBatchTransition,
       StateTransitionExecutionContext,
       applyDocumentsBatchTransition,
@@ -63,7 +63,7 @@ describe('applyDocumentsBatchTransitionFactory', () => {
 
     documentsFixtureJs = getDocumentsFixture(dataContractJs);
     documentsFixture = documentsFixtureJs.map((d) => {
-      const doc = new Document(d.toObject(), dataContract);
+      const doc = new ExtendedDocument(d.toObject(), dataContract);
       doc.setEntropy(d.entropy);
       return doc;
     });
@@ -75,7 +75,7 @@ describe('applyDocumentsBatchTransitionFactory', () => {
       lastName: 'NotSoShiny',
     }, dataContractJs);
 
-    replaceDocument = new Document({
+    replaceDocument = new ExtendedDocument({
       ...documentsFixture[1].toObject(),
       lastName: 'NotSoShiny',
     }, dataContract);
@@ -110,8 +110,8 @@ describe('applyDocumentsBatchTransitionFactory', () => {
     stateRepositoryMockJs.fetchDataContract.resolves(dataContractJs);
     stateRepositoryMockJs.fetchLatestPlatformBlockTime.resolves(blockTimeMs);
 
-    fetchDocumentsMock = this.sinonSandbox.stub();
-    fetchDocumentsMock.resolves([
+    fetchExtendedDocumentsMock = this.sinonSandbox.stub();
+    fetchExtendedDocumentsMock.resolves([
       replaceDocumentJs,
     ]);
 
@@ -121,11 +121,11 @@ describe('applyDocumentsBatchTransitionFactory', () => {
     stateRepositoryMock.updateDocument.resolves(null);
     stateRepositoryMock.removeDocument.resolves(null);
     stateRepositoryMock.createDocument.resolves(null);
-    stateRepositoryMock.fetchDocuments.resolves([replaceDocument]);
+    stateRepositoryMock.fetchExtendedDocuments.resolves([replaceDocument]);
 
     applyDocumentsBatchTransitionJs = applyDocumentsBatchTransitionFactory(
       stateRepositoryMockJs,
-      fetchDocumentsMock,
+      fetchExtendedDocumentsMock,
     );
   });
 
@@ -134,7 +134,7 @@ describe('applyDocumentsBatchTransitionFactory', () => {
 
     const replaceDocumentTransition = documentTransitionsJs[1];
 
-    expect(fetchDocumentsMock).to.have.been.calledOnceWithExactly(
+    expect(fetchExtendedDocumentsMock).to.have.been.calledOnceWithExactly(
       [replaceDocumentTransition],
       executionContextJs,
     );
@@ -166,12 +166,12 @@ describe('applyDocumentsBatchTransitionFactory', () => {
     await applyDocumentsBatchTransition(stateRepositoryMock, stateTransition);
     expect(stateRepositoryMock.createDocument).to.have.been.calledOnce();
 
-    const [fetchContractId, fetchDocumentType] = stateRepositoryMock.fetchDocuments.getCall(0).args;
+    const [fetchContractId, fetchDocumentType] = stateRepositoryMock.fetchExtendedDocuments.getCall(0).args;
     expect(fetchContractId.toBuffer()).to.deep.equal(documentTransitionsJs[1].getDataContractId());
     expect(fetchDocumentType).to.equal(documentTransitionsJs[1].getType());
 
     expect(stateRepositoryMock.updateDocument).to.have.been.calledOnce();
-    expect(stateRepositoryMock.fetchDocuments).to.have.been.calledOnce();
+    expect(stateRepositoryMock.fetchExtendedDocuments).to.have.been.calledOnce();
 
     const [createDocument] = stateRepositoryMock.createDocument.getCall(0).args;
     const [updateDocument] = stateRepositoryMock.updateDocument.getCall(0).args;
@@ -197,7 +197,7 @@ describe('applyDocumentsBatchTransitionFactory', () => {
   });
 
   it('should throw an error if document was not provided for a replacement - Rust', async () => {
-    stateRepositoryMock.fetchDocuments.resolves([]);
+    stateRepositoryMock.fetchExtendedDocuments.resolves([]);
 
     const replaceDocumentTransition = documentTransitionsJs[1];
 
@@ -236,7 +236,7 @@ describe('applyDocumentsBatchTransitionFactory', () => {
 
     const [documentTransition] = stateTransition.getTransitions();
 
-    const newDocument = new Document({
+    const newDocument = new ExtendedDocument({
       $protocolVersion: stateTransitionJs.getProtocolVersion(),
       $id: documentTransition.getId(),
       $type: documentTransition.getType(),

@@ -82,7 +82,7 @@ pub trait StateRepositoryLike: Sync {
     /// Create Document
     async fn create_document(
         &self,
-        document: &Document,
+        document: &ExtendedDocument,
         execution_context: &StateTransitionExecutionContext,
     ) -> AnyResult<()>;
 
