@@ -26,7 +26,7 @@ pub async fn fetch_extended_documents(
 
     for dt in collected_transitions.iter() {
         let document_transition = dt.as_ref();
-        let document_type = get_from_transition!(document_transition, document_type);
+        let document_type = get_from_transition!(document_transition, document_type_name);
         let data_contract_id = get_from_transition!(document_transition, data_contract_id);
         let unique_key = format!("{}{}", data_contract_id, document_type);
 
@@ -52,7 +52,7 @@ pub async fn fetch_extended_documents(
 
         let future = state_repository.fetch_extended_documents(
             get_from_transition!(dts[0], data_contract_id),
-            get_from_transition!(dts[0], document_type),
+            get_from_transition!(dts[0], document_type_name),
             options,
             execution_context,
         );

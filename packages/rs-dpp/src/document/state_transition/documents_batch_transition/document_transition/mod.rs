@@ -212,7 +212,7 @@ impl DocumentTransitionExt for DocumentTransition {
     }
 
     fn get_document_type(&self) -> &String {
-        &self.base().document_type
+        &self.base().document_type_name
     }
 
     fn get_action(&self) -> Action {

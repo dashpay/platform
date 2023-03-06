@@ -8,6 +8,8 @@ use platform_value::Value;
 use serde_json::json;
 
 use crate::contracts::withdrawals_contract::property_names;
+use crate::data_contract::document_type::document_type::PROTOCOL_VERSION;
+use crate::document::ExtendedDocument;
 use crate::{
     contracts::withdrawals_contract, data_contract::DataContract, document::generate_document_id,
     document::Document, identity::state_transition::identity_credit_withdrawal_transition::Pooling,
@@ -49,7 +51,7 @@ where
             .transpose()
             .map_err(Into::into)?;
 
-        let _withdrawals_data_contract = maybe_withdrawals_data_contract
+        let withdrawals_data_contract = maybe_withdrawals_data_contract
             .ok_or_else(|| anyhow!("Withdrawals data contract not found"))?;
 
         let latest_platform_block_header_bytes: Vec<u8> = self
@@ -126,9 +128,19 @@ where
             properties: document_properties,
         };
 
+        let extended_withdrawal_document = ExtendedDocument {
+            protocol_version: PROTOCOL_VERSION,
+            document_type_name: document_type,
+            data_contract_id: withdrawals_data_contract.id,
+            document: withdrawal_document,
+            data_contract: withdrawals_data_contract,
+            metadata: None,
+            entropy: [0; 32],
+        };
+
         self.state_repository
             .create_document(
-                &withdrawal_document,
+                &extended_withdrawal_document,
                 state_transition.get_execution_context(),
             )
             .await?;

@@ -94,7 +94,7 @@ impl DocumentReplaceTransitionWasm {
             .inner
             .base
             .data_contract
-            .get_identifiers_and_binary_paths(&self.inner.base.document_type)
+            .get_identifiers_and_binary_paths(&self.inner.base.document_type_name)
             .with_js_error()?;
 
         to_object(
@@ -129,7 +129,7 @@ impl DocumentReplaceTransitionWasm {
             .inner
             .base
             .data_contract
-            .get_identifiers_and_binary_paths(&self.inner.base.document_type)
+            .get_identifiers_and_binary_paths(&self.inner.base.document_type_name)
             .with_js_error()?;
 
         for path in identifier_paths {
@@ -162,7 +162,7 @@ impl DocumentReplaceTransitionWasm {
 
     #[wasm_bindgen(js_name=getType)]
     pub fn document_type(&self) -> String {
-        self.inner.base.document_type.clone()
+        self.inner.base.document_type_name.clone()
     }
 
     #[wasm_bindgen(js_name=getDataContract)]
@@ -234,7 +234,7 @@ impl DocumentReplaceTransitionWasm {
             .inner
             .base
             .data_contract
-            .get_identifiers_and_binary_paths(&self.inner.base.document_type)
+            .get_identifiers_and_binary_paths(&self.inner.base.document_type_name)
             .with_js_error()?;
 
         for property_path in identifier_paths {
@@ -279,7 +279,7 @@ impl DocumentReplaceTransitionWasm {
             .inner
             .base
             .data_contract
-            .get_binary_properties(&self.inner.base.document_type);
+            .get_binary_properties(&self.inner.base.document_type_name);
 
         if let Ok(binary_properties) = maybe_binary_properties {
             if let Some(data) = binary_properties.get(path) {

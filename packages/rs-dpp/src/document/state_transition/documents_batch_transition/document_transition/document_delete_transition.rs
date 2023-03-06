@@ -86,7 +86,7 @@ mod test {
             serde_json::from_str(transition_json).expect("no error");
 
         assert_eq!(cdt.base.action, Action::Delete);
-        assert_eq!(cdt.base.document_type, "note");
+        assert_eq!(cdt.base.document_type_name, "note");
 
         let mut json_no_whitespace = transition_json.to_string();
         json_no_whitespace.retain(|v| !v.is_whitespace());

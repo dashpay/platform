@@ -50,17 +50,17 @@ mod test {
     fn test_duplicates() {
         let mut dt_create = DocumentCreateTransition::default();
         dt_create.base.id = generate_random_identifier_struct();
-        dt_create.base.document_type = String::from("a");
+        dt_create.base.document_type_name = String::from("a");
 
         let dt_create_duplicate = dt_create.clone();
 
         let mut dt_replace = DocumentReplaceTransition::default();
         dt_replace.base.id = generate_random_identifier_struct();
-        dt_replace.base.document_type = String::from("b");
+        dt_replace.base.document_type_name = String::from("b");
 
         let mut dt_delete = DocumentDeleteTransition::default();
         dt_delete.base.id = generate_random_identifier_struct();
-        dt_delete.base.document_type = String::from("c");
+        dt_delete.base.document_type_name = String::from("c");
 
         let create_json = dt_create.to_json().unwrap();
         let dt_create_duplicate_json = dt_create_duplicate.to_json().unwrap();

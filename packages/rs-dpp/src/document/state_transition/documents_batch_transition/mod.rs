@@ -265,7 +265,7 @@ impl StateTransitionIdentitySigned for DocumentsBatchTransition {
         let mut highest_security_level = SecurityLevel::lowest_level();
 
         for transition in self.transitions.iter() {
-            let document_type = &transition.base().document_type;
+            let document_type = &transition.base().document_type_name;
             let data_contract = &transition.base().data_contract;
             let maybe_document_schema = data_contract.get_document_schema(document_type);
 
@@ -421,7 +421,9 @@ impl StateTransitionConvert for DocumentsBatchTransition {
                 let (identifier_properties, binary_properties) = transition
                     .base()
                     .data_contract
-                    .get_identifiers_and_binary_paths(&self.transitions[i].base().document_type)?;
+                    .get_identifiers_and_binary_paths(
+                        &self.transitions[i].base().document_type_name,
+                    )?;
 
                 if transition.get_updated_at().is_none() {
                     cbor_transition.remove("$updatedAt");

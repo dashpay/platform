@@ -41,7 +41,7 @@ where
     for t in document_transitions {
         let transition = t.as_ref();
         let document_schema =
-            data_contract.get_document_schema(&transition.base().document_type)?;
+            data_contract.get_document_schema(&transition.base().document_type_name)?;
         let document_indices = document_schema.get_indices::<Vec<_>>()?;
         if document_indices.is_empty() {
             continue;
@@ -89,7 +89,7 @@ fn generate_document_index_queries<'a>(
         .map(move |index| {
             let where_query = build_query_for_index_definition(index, transition, owner_id);
             QueryDefinition {
-                document_type: &transition.base().document_type,
+                document_type: &transition.base().document_type_name,
                 index_definition: index,
                 document_transition: transition,
                 where_query,

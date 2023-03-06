@@ -7,6 +7,7 @@ mod apply_identity_credit_withdrawal_transition_factory {
     use crate::contracts::withdrawals_contract::property_names::{
         AMOUNT, CORE_FEE_PER_BYTE, OUTPUT_SCRIPT, POOLING, STATUS,
     };
+    use crate::document::ExtendedDocument;
     use crate::{
         contracts::withdrawals_contract,
         document::Document,
@@ -87,9 +88,12 @@ mod apply_identity_credit_withdrawal_transition_factory {
         state_repository
             .expect_create_document()
             .times(1)
-            .withf(move |doc: &Document, _| {
-                let created_at_match = doc.created_at == Some(block_time_seconds as u64 * 1000);
-                let updated_at_match = doc.updated_at == Some(block_time_seconds as u64 * 1000);
+            .withf(move |extended_document: &ExtendedDocument, _| {
+                let document = &extended_document.document;
+                let created_at_match =
+                    document.created_at == Some(block_time_seconds as u64 * 1000);
+                let updated_at_match =
+                    document.updated_at == Some(block_time_seconds as u64 * 1000);
 
                 let document_expected_properties = BTreeMap::from([
                     (AMOUNT.to_string(), Value::U64(10)),
@@ -102,7 +106,7 @@ mod apply_identity_credit_withdrawal_transition_factory {
                     ),
                 ]);
 
-                let document_data_match = doc.properties == document_expected_properties;
+                let document_data_match = document.properties == document_expected_properties;
 
                 created_at_match && updated_at_match && document_data_match
             })

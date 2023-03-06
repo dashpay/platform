@@ -4,6 +4,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value as JsonValue;
 use std::collections::BTreeMap;
 
+use crate::data_contract::document_type::document_type::PROTOCOL_VERSION;
 use crate::document::Document;
 use crate::identity::TimestampMillis;
 use crate::prelude::{ExtendedDocument, Revision};
@@ -56,6 +57,20 @@ impl DocumentReplaceTransition {
             created_at: self.updated_at, // we can use the same time, as it can't be worse
             updated_at: self.updated_at,
             revision: Some(self.revision),
+        })
+    }
+
+    pub(crate) fn to_extended_document_for_dry_run(
+        &self,
+    ) -> Result<ExtendedDocument, ProtocolError> {
+        Ok(ExtendedDocument {
+            protocol_version: PROTOCOL_VERSION,
+            document_type_name: self.base.document_type_name.clone(),
+            data_contract_id: self.base.data_contract_id,
+            document: self.to_document_for_dry_run()?,
+            data_contract: self.base.data_contract.clone(),
+            metadata: None,
+            entropy: [0; 32],
         })
     }
 
@@ -206,7 +221,7 @@ impl DocumentTransitionObjectLike for DocumentReplaceTransition {
         let (identifier_paths, binary_paths) = self
             .base
             .data_contract
-            .get_identifiers_and_binary_paths(&self.base.document_type)?;
+            .get_identifiers_and_binary_paths(&self.base.document_type_name)?;
 
         value.replace_binary_paths(identifier_paths, ReplaceWith::Base58)?;
         value.replace_binary_paths(binary_paths, ReplaceWith::Base64)?;
@@ -241,7 +256,7 @@ mod test {
             serde_json::from_str(transition_json).expect("no error");
 
         assert_eq!(cdt.base.action, Action::Replace);
-        assert_eq!(cdt.base.document_type, "note");
+        assert_eq!(cdt.base.document_type_name, "note");
         assert_eq!(cdt.revision, 1);
         assert_eq!(
             cdt.data.as_ref().unwrap().get_str("message").unwrap(),

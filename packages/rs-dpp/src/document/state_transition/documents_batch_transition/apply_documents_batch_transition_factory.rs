@@ -66,7 +66,7 @@ pub async fn apply_documents_batch_transition(
         match document_transition {
             DocumentTransition::Create(document_create_transition) => {
                 let document = document_create_transition
-                    .to_document(state_transition.owner_id.to_buffer())?;
+                    .to_extended_document(state_transition.owner_id.to_buffer())?;
                 //todo: eventually we should use Cow instead
                 state_repository
                     .create_document(&document, state_transition.get_execution_context())
@@ -74,7 +74,8 @@ pub async fn apply_documents_batch_transition(
             }
             DocumentTransition::Replace(document_replace_transition) => {
                 if state_transition.execution_context.is_dry_run() {
-                    let document = document_replace_transition.to_document_for_dry_run()?;
+                    let document =
+                        document_replace_transition.to_extended_document_for_dry_run()?;
                     state_repository
                         .update_document(&document, state_transition.get_execution_context())
                         .await?;
@@ -86,10 +87,7 @@ pub async fn apply_documents_batch_transition(
                         })?;
                     document_replace_transition.replace_extended_document(document)?;
                     state_repository
-                        .update_document(
-                            &document.document,
-                            state_transition.get_execution_context(),
-                        )
+                        .update_document(&document, state_transition.get_execution_context())
                         .await?;
                 };
             }
@@ -97,7 +95,7 @@ pub async fn apply_documents_batch_transition(
                 state_repository
                     .remove_document(
                         &document_delete_transition.base.data_contract,
-                        &document_delete_transition.base.document_type,
+                        &document_delete_transition.base.document_type_name,
                         &document_delete_transition.base.id,
                         state_transition.get_execution_context(),
                     )
@@ -116,7 +114,7 @@ fn document_from_transition_replace(
     // TODO cloning is costly. Probably the [`Document`] should have properties of type `Cow<'a, K>`
     Ok(ExtendedDocument {
         protocol_version: state_transition.protocol_version,
-        document_type_name: document_replace_transition.base.document_type.clone(),
+        document_type_name: document_replace_transition.base.document_type_name.clone(),
         data_contract_id: document_replace_transition.base.data_contract_id,
         metadata: None,
 

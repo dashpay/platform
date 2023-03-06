@@ -92,7 +92,7 @@ where
         .state_repository
         .fetch_documents(
             &context.data_contract.id,
-            &document_create_transition.base.document_type,
+            &document_create_transition.base.document_type_name,
             json!({
                 "where" : [ [ "$owner_id", "==", owner_id ]]
             }),

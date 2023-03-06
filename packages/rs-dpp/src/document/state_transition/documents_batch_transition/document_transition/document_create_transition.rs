@@ -7,10 +7,11 @@ use std::collections::BTreeMap;
 use std::convert::TryInto;
 use std::string::ToString;
 
-use crate::document::Document;
+use crate::document::{Document, ExtendedDocument};
 use crate::identity::TimestampMillis;
 use crate::prelude::Revision;
 
+use crate::data_contract::document_type::document_type::PROTOCOL_VERSION;
 use crate::{
     data_contract::DataContract, errors::ProtocolError, util::json_value::JsonValueExt,
     util::json_value::ReplaceWith,
@@ -72,6 +73,21 @@ impl DocumentCreateTransition {
             created_at: self.created_at,
             updated_at: self.updated_at,
             revision: self.get_revision(),
+        })
+    }
+
+    pub(crate) fn to_extended_document(
+        &self,
+        owner_id: [u8; 32],
+    ) -> Result<ExtendedDocument, ProtocolError> {
+        Ok(ExtendedDocument {
+            protocol_version: PROTOCOL_VERSION,
+            document_type_name: self.base.document_type_name.clone(),
+            data_contract_id: self.base.data_contract_id,
+            document: self.to_document(owner_id)?,
+            data_contract: self.base.data_contract.clone(),
+            metadata: None,
+            entropy: self.entropy,
         })
     }
 

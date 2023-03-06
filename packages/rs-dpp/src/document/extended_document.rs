@@ -58,6 +58,7 @@ pub struct ExtendedDocument {
     #[serde(skip)]
     pub metadata: Option<Metadata>,
     #[serde(skip)]
+    //todo: make entropy optional
     pub entropy: [u8; 32],
 }
 

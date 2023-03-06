@@ -160,7 +160,7 @@ where
             .state_repository
             .fetch_documents(
                 &context.data_contract.id,
-                &dt_create.base.document_type,
+                &dt_create.base.document_type_name,
                 json!({
                     "where" : [
                         ["normalizedParentDomainName", "==", grand_parent_domain_name],

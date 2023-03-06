@@ -23,7 +23,7 @@ use js_sys::{Array, Number};
 
 use wasm_bindgen::__rt::Ref;
 
-use dpp::document::Document;
+use dpp::document::{Document, ExtendedDocument};
 use wasm_bindgen::prelude::*;
 
 use crate::buffer::Buffer;
@@ -56,14 +56,14 @@ extern "C" {
     #[wasm_bindgen(catch, structural, method, js_name=createDocument)]
     pub async fn create_document(
         this: &ExternalStateRepositoryLike,
-        document: DocumentWasm,
+        document: ExtendedDocumentWasm,
         execution_context: StateTransitionExecutionContextWasm,
     ) -> Result<(), JsValue>;
 
     #[wasm_bindgen(catch, structural, method, js_name=updateDocument)]
     pub async fn update_document(
         this: &ExternalStateRepositoryLike,
-        document: DocumentWasm,
+        document: ExtendedDocumentWasm,
         execution_context: StateTransitionExecutionContextWasm,
     ) -> Result<(), JsValue>;
 
@@ -379,24 +379,24 @@ impl StateRepositoryLike for ExternalStateRepositoryLikeWrapper {
 
     async fn create_document(
         &self,
-        document: &Document,
+        extended_document: &ExtendedDocument,
         execution_context: &StateTransitionExecutionContext,
     ) -> anyhow::Result<()> {
-        let document_wasm: DocumentWasm = document.to_owned().into();
+        let extended_document_wasm: ExtendedDocumentWasm = extended_document.to_owned().into();
         self.0
-            .create_document(document_wasm, execution_context.clone().into())
+            .create_document(extended_document_wasm, execution_context.clone().into())
             .await
             .map_err(from_js_error)
     }
 
     async fn update_document(
         &self,
-        document: &Document,
+        extended_document: &ExtendedDocument,
         execution_context: &StateTransitionExecutionContext,
     ) -> anyhow::Result<()> {
-        let document_wasm: DocumentWasm = document.to_owned().into();
+        let extended_document_wasm: ExtendedDocumentWasm = extended_document.to_owned().into();
         self.0
-            .update_document(document_wasm, execution_context.clone().into())
+            .update_document(extended_document_wasm, execution_context.clone().into())
             .await
             .map_err(from_js_error)
     }

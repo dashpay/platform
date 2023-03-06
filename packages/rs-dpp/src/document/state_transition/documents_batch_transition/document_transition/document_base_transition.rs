@@ -94,7 +94,7 @@ pub struct DocumentBaseTransition {
     pub id: Identifier,
     /// Name of document type found int the data contract associated with the `data_contract_id`
     #[serde(rename = "$type")]
-    pub document_type: String,
+    pub document_type_name: String,
     /// Action the platform should take for the associated document
     #[serde(rename = "$action")]
     pub action: Action,
@@ -116,7 +116,7 @@ impl DocumentBaseTransition {
                 map.remove_hash256_bytes(property_names::ID)
                     .map_err(ProtocolError::ValueError)?,
             ),
-            document_type: map
+            document_type_name: map
                 .remove_string(property_names::DOCUMENT_TYPE)
                 .map_err(ProtocolError::ValueError)?,
             action: map
@@ -160,7 +160,7 @@ impl DocumentTransitionObjectLike for DocumentBaseTransition {
                 map.get_hash256_bytes(property_names::ID)
                     .map_err(ProtocolError::ValueError)?,
             ),
-            document_type: map
+            document_type_name: map
                 .get_string(property_names::DOCUMENT_TYPE)
                 .map_err(ProtocolError::ValueError)?,
             action: map
@@ -192,7 +192,7 @@ impl DocumentTransitionObjectLike for DocumentBaseTransition {
         );
         btree_map.insert(
             property_names::DOCUMENT_TYPE.to_string(),
-            Value::Text(self.document_type.clone()),
+            Value::Text(self.document_type_name.clone()),
         );
         Ok(btree_map)
     }
