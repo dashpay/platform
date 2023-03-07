@@ -76,10 +76,10 @@ mod test {
     fn test_deserialize_serialize_to_json() {
         init();
         let transition_json = r#"{
+                    "$action": 3,
+                    "$dataContractId": "5wpZAEWndYcTeuwZpkmSa8s49cHXU5q2DhdibesxFSu8",
 					"$id": "6oCKUeLVgjr7VZCyn1LdGbrepqKLmoabaff5WQqyTKYP",
-					"$type": "note",
-					"$action": 3,
-					"$dataContractId": "5wpZAEWndYcTeuwZpkmSa8s49cHXU5q2DhdibesxFSu8"
+					"$type": "note"
 				}"#;
 
         let cdt: DocumentDeleteTransition =

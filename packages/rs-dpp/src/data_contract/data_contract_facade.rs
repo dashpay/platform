@@ -7,6 +7,7 @@ use crate::document::document_transition::document_base_transition::JsonValue;
 use crate::prelude::{Identifier, ValidationResult};
 use crate::version::ProtocolVersionValidator;
 use crate::ProtocolError;
+use platform_value::Value;
 use std::sync::Arc;
 
 pub struct DataContractFacade {
@@ -39,7 +40,7 @@ impl DataContractFacade {
     /// Create Data Contract from plain object
     pub async fn create_from_object(
         &self,
-        raw_data_contract: JsonValue,
+        raw_data_contract: Value,
         skip_validation: bool,
     ) -> Result<DataContract, ProtocolError> {
         let res = self

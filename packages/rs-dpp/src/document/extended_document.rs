@@ -114,12 +114,14 @@ impl ExtendedDocument {
             .document_type_for_name(self.document_type_name.as_str())
     }
 
-    pub fn can_be_modified(&self) ->  Result<bool, ProtocolError> {
-        self.document_type().map(|document_type| document_type.documents_mutable)
+    pub fn can_be_modified(&self) -> Result<bool, ProtocolError> {
+        self.document_type()
+            .map(|document_type| document_type.documents_mutable)
     }
 
     pub fn needs_revision(&self) -> Result<bool, ProtocolError> {
-        self.document_type().map(|document_type| document_type.documents_mutable)
+        self.document_type()
+            .map(|document_type| document_type.documents_mutable)
     }
 
     pub fn revision(&self) -> Option<&Revision> {
@@ -328,29 +330,10 @@ impl ExtendedDocument {
         Ok(self.to_map_value()?.into())
     }
 
-    // The skipIdentifierConversion option is removed as it doesn't make sense in the case of
-    // of Rust. Rust doesn't distinguish between `Buffer` and `Identifier`
-    pub fn to_object(&self) -> Result<JsonValue, ProtocolError> {
-        let mut json_object = self.document.to_json()?;
-        let value_mut = json_object.as_object_mut().unwrap();
-        value_mut.insert(
-            property_names::PROTOCOL_VERSION.to_string(),
-            JsonValue::Number(self.protocol_version.into()),
-        );
-        value_mut.insert(
-            property_names::DOCUMENT_TYPE.to_string(),
-            JsonValue::String(self.document_type_name.clone()),
-        );
-        value_mut.insert(
-            property_names::DATA_CONTRACT_ID.to_string(),
-            json!(self.data_contract.id),
-        );
-
-        let (identifier_paths, binary_paths) = self.get_identifiers_and_binary_paths()?;
-        let _ = json_object.replace_identifier_paths(identifier_paths, ReplaceWith::Bytes);
-        let _ = json_object.replace_binary_paths(binary_paths, ReplaceWith::Bytes);
-
-        Ok(json_object)
+    pub fn to_json_object_for_validation(&self) -> Result<JsonValue, ProtocolError> {
+        self.to_value()?
+            .try_into_validating_json()
+            .map_err(ProtocolError::ValueError)
     }
 
     pub fn to_buffer(&self) -> Result<Vec<u8>, ProtocolError> {
@@ -472,7 +455,7 @@ mod test {
                 }
             }
         });
-        DataContract::from_raw_object(data_contract).unwrap()
+        DataContract::from_json_raw_object(data_contract).unwrap()
     }
 
     #[test]
@@ -543,7 +526,7 @@ mod test {
         init();
         let document_json = get_data_from_file("src/tests/payloads/document_dpns.json").unwrap();
         let document = ExtendedDocument::from_json_string(&document_json).unwrap();
-        let document_object = document.to_object().unwrap();
+        let document_object = document.to_json_object_for_validation().unwrap();
 
         for property in IDENTIFIER_FIELDS {
             let id = document_object

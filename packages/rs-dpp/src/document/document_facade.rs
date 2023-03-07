@@ -1,8 +1,8 @@
 use anyhow::anyhow;
+use platform_value::Value;
 use std::sync::Arc;
 
-use serde_json::Value;
-
+use crate::document::document_transition::document_base_transition::JsonValue;
 use crate::document::ExtendedDocument;
 use crate::{
     data_contract::DataContract, prelude::Identifier, state_repository::StateRepositoryLike,
@@ -61,7 +61,7 @@ where
             data_contract,
             owner_id,
             document_type_name,
-            data.into(),
+            data,
         )
     }
 
@@ -96,14 +96,14 @@ where
         &self,
         extended_document: &ExtendedDocument,
     ) -> Result<ValidationResult<DataContract>, ProtocolError> {
-        let raw_extended_document = extended_document.to_object()?;
+        let raw_extended_document = extended_document.to_json_object_for_validation()?;
         self.validate_raw_document(&raw_extended_document).await
     }
 
     /// Creates Documents State Transition
     pub async fn validate_raw_document(
         &self,
-        raw_extended_document: &Value,
+        raw_extended_document: &JsonValue,
     ) -> Result<ValidationResult<DataContract>, ProtocolError> {
         let result = self
             .data_contract_fetcher_and_validator

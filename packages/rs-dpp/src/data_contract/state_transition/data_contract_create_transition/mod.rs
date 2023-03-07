@@ -69,7 +69,7 @@ impl DataContractCreateTransition {
                 .unwrap_or_else(|_| [0u8; 32].to_vec())
                 .try_into()
                 .map_err(|_| anyhow!("entropy isn't 32 bytes long"))?,
-            data_contract: DataContract::from_raw_object(
+            data_contract: DataContract::from_json_raw_object(
                 raw_data_contract_update_transition.remove(DATA_CONTRACT)?,
             )?,
             ..Default::default()

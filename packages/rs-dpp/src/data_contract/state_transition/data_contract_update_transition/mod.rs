@@ -59,7 +59,7 @@ impl DataContractUpdateTransition {
             signature_public_key_id: raw_data_contract_update_transition
                 .get_u64(SIGNATURE_PUBLIC_KEY_ID)
                 .unwrap_or_default() as KeyID,
-            data_contract: DataContract::from_raw_object(
+            data_contract: DataContract::from_json_raw_object(
                 raw_data_contract_update_transition.remove(DATA_CONTRACT)?,
             )?,
             ..Default::default()

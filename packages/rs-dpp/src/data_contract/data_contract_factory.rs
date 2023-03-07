@@ -1,8 +1,10 @@
 use anyhow::anyhow;
+use ciborium::Value as CborValue;
 use serde_json::{json, Map, Number, Value as JsonValue};
 use std::sync::Arc;
 
 use data_contract::state_transition::property_names as st_prop;
+use platform_value::Value;
 
 use crate::data_contract::property_names;
 use crate::util::serializer::value_to_cbor;
@@ -107,20 +109,23 @@ impl DataContractFactory {
     /// Create Data Contract from plain object
     pub async fn create_from_object(
         &self,
-        raw_data_contract: JsonValue,
+        raw_data_contract: Value,
         skip_validation: bool,
     ) -> Result<DataContract, ProtocolError> {
+        let json_value = raw_data_contract
+            .try_into_validating_json()
+            .map_err(ProtocolError::ValueError)?;
         if !skip_validation {
-            let result = self.validate_data_contract.validate(&raw_data_contract)?;
+            let result = self.validate_data_contract.validate(&json_value)?;
 
             if !result.is_valid() {
                 return Err(ProtocolError::InvalidDataContractError {
                     errors: result.errors,
-                    raw_data_contract,
+                    raw_data_contract: json_value,
                 });
             }
         }
-        DataContract::from_raw_object(raw_data_contract)
+        DataContract::from_json_raw_object(json_value)
     }
 
     /// Create Data Contract from buffer
@@ -132,18 +137,7 @@ impl DataContractFactory {
         let (protocol_version, mut raw_data_contract) =
             DecodeProtocolEntity::decode_protocol_entity(buffer)?;
 
-        match raw_data_contract {
-            JsonValue::Object(ref mut m) => m.insert(
-                String::from("protocolVersion"),
-                JsonValue::Number(Number::from(protocol_version)),
-            ),
-            _ => {
-                return Err(ConsensusError::SerializedObjectParsingError {
-                    parsing_error: anyhow!("the '{:?}' is not a map", raw_data_contract),
-                }
-                .into())
-            }
-        };
+        raw_data_contract.set_value("protocolVersion", Value::U32(protocol_version))?;
 
         self.create_from_object(raw_data_contract, skip_validation)
             .await
@@ -246,7 +240,7 @@ mod tests {
         } = get_test_data();
 
         let result = factory
-            .create_from_object(raw_data_contract, true)
+            .create_from_object(raw_data_contract.into(), true)
             .await
             .expect("Data Contract should be created");
 

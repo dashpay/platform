@@ -4,10 +4,11 @@ use std::collections::BTreeMap;
 use std::convert::{TryFrom, TryInto};
 
 pub use serde::{Deserialize, Serialize};
-use serde_json::Value;
+use serde_json::Value as JsonValue;
 use wasm_bindgen::prelude::*;
 
 use dpp::data_contract::{DataContract, SCHEMA_URI};
+use dpp::platform_value::Value;
 use dpp::util::string_encoding::Encoding;
 
 use crate::errors::{from_dpp_err, RustConversionError};
@@ -68,11 +69,15 @@ pub(crate) struct DataContractParameters {
     _extras: serde_json::Value, // Captures excess fields to trigger validation failure later.
 }
 
-pub fn js_value_to_serde_value(raw_parameters: JsValue) -> Result<Value, JsValue> {
+pub fn js_value_to_serde_value(object: JsValue) -> Result<JsonValue, JsValue> {
     let parameters: DataContractParameters =
-        with_js_error!(serde_wasm_bindgen::from_value(raw_parameters))?;
+        with_js_error!(serde_wasm_bindgen::from_value(object))?;
 
     serde_json::to_value(parameters).map_err(|e| e.to_string().into())
+}
+
+pub fn js_value_to_platform_value(raw_parameters: JsValue) -> Result<Value, JsValue> {
+    Ok(js_value_to_serde_value(raw_parameters)?.into())
 }
 
 #[wasm_bindgen(js_class=DataContract)]
@@ -82,7 +87,7 @@ impl DataContractWasm {
         let parameters: DataContractParameters =
             with_js_error!(serde_wasm_bindgen::from_value(raw_parameters))?;
 
-        DataContract::from_raw_object(
+        DataContract::from_json_raw_object(
             serde_json::to_value(parameters).expect("Implements Serialize"),
         )
         .map_err(from_dpp_err)
@@ -140,10 +145,10 @@ impl DataContractWasm {
     }
     #[wasm_bindgen(js_name=setDocuments)]
     pub fn set_documents(&mut self, documents: JsValue) -> Result<(), JsValue> {
-        let json_value: Value = with_js_error!(serde_wasm_bindgen::from_value(documents))?;
+        let json_value: JsonValue = with_js_error!(serde_wasm_bindgen::from_value(documents))?;
 
-        let mut docs: BTreeMap<String, Value> = BTreeMap::new();
-        if let Value::Object(o) = json_value {
+        let mut docs: BTreeMap<String, JsonValue> = BTreeMap::new();
+        if let JsonValue::Object(o) = json_value {
             for (k, v) in o.into_iter() {
                 if !v.is_object() {
                     bail_js!("is not an object")
@@ -174,7 +179,7 @@ impl DataContractWasm {
         doc_type: String,
         schema: JsValue,
     ) -> Result<(), JsValue> {
-        let json_schema: Value = with_js_error!(serde_wasm_bindgen::from_value(schema))?;
+        let json_schema: JsonValue = with_js_error!(serde_wasm_bindgen::from_value(schema))?;
         self.0.set_document_schema(doc_type, json_schema);
         Ok(())
     }
@@ -198,9 +203,9 @@ impl DataContractWasm {
 
     #[wasm_bindgen(js_name=setDefinitions)]
     pub fn set_definitions(&mut self, definitions: JsValue) -> Result<(), JsValue> {
-        let json_value: Value = with_js_error!(serde_wasm_bindgen::from_value(definitions))?;
-        let mut definitions: BTreeMap<String, Value> = BTreeMap::new();
-        if let Value::Object(o) = json_value {
+        let json_value: JsonValue = with_js_error!(serde_wasm_bindgen::from_value(definitions))?;
+        let mut definitions: BTreeMap<String, JsonValue> = BTreeMap::new();
+        if let JsonValue::Object(o) = json_value {
             for (k, v) in o.into_iter() {
                 // v must be a Object
                 if !v.is_object() {
@@ -300,7 +305,7 @@ impl DataContractWasm {
 
     #[wasm_bindgen(js_name=from)]
     pub fn from_js_value(v: JsValue) -> Result<DataContractWasm, JsValue> {
-        let json_contract: Value = with_js_error!(serde_wasm_bindgen::from_value(v))?;
+        let json_contract: JsonValue = with_js_error!(serde_wasm_bindgen::from_value(v))?;
         Ok(DataContract::try_from(json_contract)
             .map_err(from_dpp_err)?
             .into())

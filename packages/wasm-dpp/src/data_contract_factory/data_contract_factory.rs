@@ -14,6 +14,7 @@ use wasm_bindgen::prelude::*;
 use crate::{
     data_contract::errors::InvalidDataContractError,
     errors::{from_dpp_err, protocol_error::from_protocol_error},
+    js_value_to_platform_value,
     validation::ValidationResultWasm,
     with_js_error, DataContractCreateTransitionWasm, DataContractParameters, DataContractWasm,
 };
@@ -130,12 +131,10 @@ impl DataContractFactoryWasm {
         object: JsValue,
         skip_validation: Option<bool>,
     ) -> Result<DataContractWasm, JsValue> {
-        let parameters: DataContractParameters =
-            with_js_error!(serde_wasm_bindgen::from_value(object.clone()))?;
-        let parameters_json = serde_json::to_value(parameters).expect("Implements Serialize");
+        let parameters_value = js_value_to_platform_value(object.clone())?;
         let result = self
             .0
-            .create_from_object(parameters_json, skip_validation.unwrap_or(false))
+            .create_from_object(parameters_value, skip_validation.unwrap_or(false))
             .await;
         match result {
             Ok(data_contract) => Ok(data_contract.into()),

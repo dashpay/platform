@@ -109,12 +109,27 @@ impl DataContract {
         Self::default()
     }
 
-    pub fn from_raw_object(mut raw_object: JsonValue) -> Result<DataContract, ProtocolError> {
+    pub fn from_json_raw_object(mut raw_object: JsonValue) -> Result<DataContract, ProtocolError> {
         // TODO identifier_default_deserializer: default deserializer should be changed to bytes
         // Identifiers fields should be replaced with the string format to deserialize Data Contract
         raw_object.replace_identifier_paths(IDENTIFIER_FIELDS, ReplaceWith::Base58)?;
+        let value: Value = raw_object.clone().into();
+        let data_contract_map = value.into_btree_map().map_err(ProtocolError::ValueError)?;
         let mut data_contract: DataContract = serde_json::from_value(raw_object)?;
         data_contract.generate_binary_properties();
+
+        let mutability = get_contract_configuration_properties(&data_contract_map)
+            .map_err(|e| ProtocolError::ParsingError(e.to_string()))?;
+        let definition_references = get_definitions(&data_contract_map)?;
+        let document_types = get_document_types(
+            &data_contract_map,
+            definition_references,
+            mutability.documents_keep_history_contract_default,
+            mutability.documents_mutable_contract_default,
+        )
+        .map_err(|e| ProtocolError::ParsingError(e.to_string()))?;
+
+        data_contract.document_types = document_types;
 
         Ok(data_contract)
     }
@@ -122,8 +137,23 @@ impl DataContract {
     pub fn from_json_object(mut json_value: JsonValue) -> Result<DataContract, ProtocolError> {
         json_value.replace_binary_paths(BINARY_FIELDS, ReplaceWith::Bytes)?;
 
+        let value: Value = json_value.clone().into();
+        let data_contract_map = value.into_btree_map().map_err(ProtocolError::ValueError)?;
         let mut data_contract: DataContract = serde_json::from_value(json_value)?;
         data_contract.generate_binary_properties();
+
+        let mutability = get_contract_configuration_properties(&data_contract_map)
+            .map_err(|e| ProtocolError::ParsingError(e.to_string()))?;
+        let definition_references = get_definitions(&data_contract_map)?;
+        let document_types = get_document_types(
+            &data_contract_map,
+            definition_references,
+            mutability.documents_keep_history_contract_default,
+            mutability.documents_mutable_contract_default,
+        )
+        .map_err(|e| ProtocolError::ParsingError(e.to_string()))?;
+
+        data_contract.document_types = document_types;
 
         Ok(data_contract)
     }
@@ -393,14 +423,13 @@ pub fn get_document_types(
     documents_keep_history_contract_default: bool,
     documents_mutable_contract_default: bool,
 ) -> Result<BTreeMap<String, DocumentType>, ProtocolError> {
-    let documents_cbor_value =
+    let Some(documents_value) =
         contract
-            .get("documents")
-            .ok_or(ProtocolError::DataContractError(
-                DataContractError::MissingRequiredKey("unable to get documents"),
-            ))?;
+            .get("documents") else {
+        return Ok(BTreeMap::new());
+    };
     let contract_document_types_raw =
-        documents_cbor_value
+        documents_value
             .as_map()
             .ok_or(ProtocolError::DataContractError(
                 DataContractError::InvalidContractStructure("documents must be a map"),
@@ -490,6 +519,10 @@ mod test {
             data_contract_restored.binary_properties
         );
         assert_eq!(data_contract.documents, data_contract_restored.documents);
+        assert_eq!(
+            data_contract.document_types,
+            data_contract_restored.document_types
+        );
     }
 
     #[test]
@@ -518,6 +551,10 @@ mod test {
             data_contract_restored.binary_properties
         );
         assert_eq!(data_contract.documents, data_contract_restored.documents);
+        assert_eq!(
+            data_contract.document_types,
+            data_contract_restored.document_types
+        );
     }
 
     #[test]
@@ -553,6 +590,10 @@ mod test {
             data_contract_restored.binary_properties
         );
         assert_eq!(data_contract.documents, data_contract_restored.documents);
+        assert_eq!(
+            data_contract.document_types,
+            data_contract_restored.document_types
+        );
     }
 
     #[test]

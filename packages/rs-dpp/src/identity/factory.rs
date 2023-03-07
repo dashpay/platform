@@ -16,9 +16,11 @@ use anyhow::anyhow;
 use dashcore::{InstantLock, Transaction};
 use rand::rngs::StdRng;
 use rand::{Rng, SeedableRng};
-use serde_json::{Number, Value};
+use serde_json::{Number, Value as JsonValue};
 use std::collections::BTreeMap;
+use std::convert::TryInto;
 
+use platform_value::Value;
 use std::sync::Arc;
 
 pub const IDENTITY_PROTOCOL_VERSION: u32 = 1;
@@ -119,7 +121,7 @@ where
 
     pub fn create_from_object(
         &self,
-        raw_identity: Value,
+        raw_identity: JsonValue,
         skip_validation: bool,
     ) -> Result<Identity, ProtocolError> {
         if !skip_validation {
@@ -143,21 +145,14 @@ where
     ) -> Result<Identity, ProtocolError> {
         let (protocol_version, mut raw_identity) =
             DecodeProtocolEntity::decode_protocol_entity(buffer)?;
+        raw_identity
+            .set_value("protocolVersion", Value::U32(protocol_version))
+            .map_err(ProtocolError::ValueError)?;
 
-        match raw_identity {
-            Value::Object(ref mut m) => m.insert(
-                String::from("protocolVersion"),
-                Value::Number(Number::from(protocol_version)),
-            ),
-            _ => {
-                return Err(ConsensusError::SerializedObjectParsingError {
-                    parsing_error: anyhow!("the '{:?}' is not a map", raw_identity),
-                }
-                .into())
-            }
-        };
-
-        self.create_from_object(raw_identity, skip_validation)
+        self.create_from_object(
+            raw_identity.try_into().map_err(ProtocolError::ValueError)?,
+            skip_validation,
+        )
     }
 
     pub fn create_instant_lock_proof(
