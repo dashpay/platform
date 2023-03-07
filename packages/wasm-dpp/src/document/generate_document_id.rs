@@ -1,13 +1,7 @@
-use std::convert::TryInto;
-
 use dpp::document::generate_document_id::generate_document_id;
-use js_sys::Array;
 use wasm_bindgen::prelude::*;
 
-use crate::{
-    console_log,
-    identifier::{identifier_from_js_value, IdentifierWrapper},
-};
+use crate::identifier::{identifier_from_js_value, IdentifierWrapper};
 
 #[wasm_bindgen(js_name=generateDocumentId)]
 pub fn generate_document_id_wasm(

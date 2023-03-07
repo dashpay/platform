@@ -23,7 +23,6 @@ pub async fn execute_data_triggers_wasm(
     js_context: DataTriggerExecutionContextWasm,
     js_data_triggers: Array,
 ) -> Result<Array, JsValue> {
-    console_error_panic_hook::set_once();
     let st_wrapper =
         ExternalStateRepositoryLikeWrapper::new_with_arc(js_context.state_repository());
     let context = data_trigger_context_from_wasm(&js_context, &st_wrapper);

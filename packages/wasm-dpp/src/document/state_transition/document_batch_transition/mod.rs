@@ -10,7 +10,7 @@ use dpp::{
         StateTransitionConvert, StateTransitionIdentitySigned, StateTransitionLike,
         StateTransitionType,
     },
-    util::json_value::{JsonValueExt, ReplaceWith},
+    util::json_value::JsonValueExt,
 };
 use js_sys::{Array, Reflect};
 use serde::{Deserialize, Serialize};
