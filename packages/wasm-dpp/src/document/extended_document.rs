@@ -21,11 +21,11 @@ use crate::utils::{with_serde_to_platform_value, ToSerdeJSONExt, WithJsError};
 use crate::{with_js_error, ConversionOptions};
 use crate::{DataContractWasm, MetadataWasm};
 
-#[wasm_bindgen(js_name=ExtendedDocument)]
+#[wasm_bindgen(js_name=Document)]
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ExtendedDocumentWasm(pub(crate) ExtendedDocument);
 
-#[wasm_bindgen(js_class=ExtendedDocument)]
+#[wasm_bindgen(js_class=Document)]
 impl ExtendedDocumentWasm {
     #[wasm_bindgen(constructor)]
     pub fn new(
