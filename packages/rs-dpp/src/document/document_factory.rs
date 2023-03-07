@@ -332,7 +332,7 @@ where
     ) -> Result<Vec<Value>, ProtocolError> {
         let mut raw_transitions = vec![];
         for document in documents {
-            if document.needs_revision() {
+            if document.needs_revision()? {
                 let Some(revision) = document.revision() else {
                     return Err(DocumentError::RevisionAbsentError {
                         document: Box::new(document),
@@ -366,7 +366,7 @@ where
     ) -> Result<Vec<Value>, ProtocolError> {
         let mut raw_transitions = vec![];
         for document in documents {
-            if !document.can_be_modified() {
+            if !document.can_be_modified()? {
                 return Err(DocumentError::TryingToReplaceImmutableDocument {
                     document: Box::new(document),
                 }

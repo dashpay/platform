@@ -108,19 +108,18 @@ impl ExtendedDocument {
         Identifier::new(self.document.owner_id)
     }
 
-    pub fn document_type(&self) -> &DocumentType {
+    pub fn document_type(&self) -> Result<&DocumentType, ProtocolError> {
         // We can unwrap because the Document can not be created without a valid Document Type
         self.data_contract
             .document_type_for_name(self.document_type_name.as_str())
-            .unwrap()
     }
 
-    pub fn can_be_modified(&self) -> bool {
-        self.document_type().documents_mutable
+    pub fn can_be_modified(&self) ->  Result<bool, ProtocolError> {
+        self.document_type().map(|document_type| document_type.documents_mutable)
     }
 
-    pub fn needs_revision(&self) -> bool {
-        self.document_type().documents_mutable
+    pub fn needs_revision(&self) -> Result<bool, ProtocolError> {
+        self.document_type().map(|document_type| document_type.documents_mutable)
     }
 
     pub fn revision(&self) -> Option<&Revision> {
