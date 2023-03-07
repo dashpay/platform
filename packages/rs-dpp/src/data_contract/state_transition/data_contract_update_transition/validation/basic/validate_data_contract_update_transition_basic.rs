@@ -26,8 +26,8 @@ use serde_json::{json, Value as JsonValue};
 use std::sync::Arc;
 use crate::{
     consensus::ConsensusError,
-    state_transition::state_transition_execution_context::StateTransitionExecutionContext,
 };
+use crate::consensus::basic::decode::ProtocolVersionParsingError;
 
 use super::schema_compatibility_validator::validate_schema_compatibility;
 use super::schema_compatibility_validator::DiffVAlidatorError;
@@ -87,7 +87,7 @@ where
             Ok(v) => v,
             Err(parsing_error) => {
                 return Ok(SimpleValidationResult::new(Some(vec![
-                    ConsensusError::ProtocolVersionParsingError { parsing_error },
+                    ConsensusError::ProtocolVersionParsingError(ProtocolVersionParsingError::new(parsing_error)),
                 ])))
             }
         };
