@@ -57,11 +57,11 @@ pub(super) enum BinaryType {
     None,
 }
 
-#[wasm_bindgen(js_name=ReducedDocument)]
+#[wasm_bindgen(js_name=Document)]
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct DocumentWasm(Document);
 
-#[wasm_bindgen(js_class=ReducedDocument)]
+#[wasm_bindgen(js_class=Document)]
 impl DocumentWasm {
     #[wasm_bindgen(constructor)]
     pub fn new(

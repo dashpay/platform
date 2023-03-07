@@ -8,6 +8,7 @@ const { generate: generateEntropy } = require('@dashevo/dpp/lib/util/entropyGene
 const { default: loadWasmDpp } = require('../../../../../../../dist');
 
 let DataContract;
+let Identifier;
 let findDuplicatesByIndices;
 
 describe('findDuplicatesByIndices', () => {
@@ -20,6 +21,7 @@ describe('findDuplicatesByIndices', () => {
     ({
       DataContract,
       findDuplicatesByIndices,
+      Identifier,
     } = await loadWasmDpp());
     contractJs = getDataContractFixture();
     contractJs.setDocumentSchema('nonUniqueIndexDocument', {
@@ -108,12 +110,13 @@ describe('findDuplicatesByIndices', () => {
     const [, , , , leon] = documents;
 
     leon.set('lastName', 'Birkin');
+    const ownerId = Identifier.from(leon.ownerId);
 
     documentTransitions = getDocumentTransitionsFixture({
       create: documents,
     }).map((t) => t.toObject());
 
-    const duplicates = findDuplicatesByIndices(documentTransitions, contract);
+    const duplicates = findDuplicatesByIndices(documentTransitions, contract, ownerId);
 
     expect(duplicates.length).to.equal(2);
     expect(duplicates).to.have.deep.members(
@@ -125,7 +128,9 @@ describe('findDuplicatesByIndices', () => {
   });
 
   it('should return an empty array of there are no duplicates - Rust', () => {
-    const duplicates = findDuplicatesByIndices(documentTransitions, contract);
+    const [, , , , leon] = documents;
+    const ownerId = Identifier.from(leon.ownerId);
+    const duplicates = findDuplicatesByIndices(documentTransitions, contract, ownerId);
 
     expect(duplicates.length).to.equal(0);
   });

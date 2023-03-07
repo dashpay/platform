@@ -1,3 +1,5 @@
+use crate::value_map::{ValueMap, ValueMapHelper};
+use crate::Value::Bool;
 use crate::{Error, Value};
 use std::collections::BTreeMap;
 
@@ -5,6 +7,16 @@ impl Value {
     pub fn get_value<'a>(&'a self, key: &'a str) -> Result<&'a Value, Error> {
         let map = self.to_map()?;
         Self::get_from_map(map, key)
+    }
+
+    pub fn set_value(&mut self, key: &str, value: Value) -> Result<(), Error> {
+        let map = self.as_map_mut_ref()?;
+        Ok(Self::insert_in_map(map, key, value))
+    }
+
+    pub fn remove_value(&mut self, key: &str) -> Result<Option<Value>, Error> {
+        let map = self.as_map_mut_ref()?;
+        Ok(map.remove_key(key))
     }
 
     pub fn get_string<'a>(&'a self, key: &'a str) -> Result<&'a str, Error> {
@@ -166,5 +178,30 @@ impl Value {
             }
         }
         None
+    }
+
+    /// Inserts into a map
+    /// If the element already existed it will replace it
+    pub fn insert_in_map<'a>(
+        map: &'a mut ValueMap,
+        inserting_key: &'a str,
+        inserting_value: Value,
+    ) {
+        let mut found_value = None;
+        for (key, value) in map.iter_mut() {
+            if !key.is_text() {
+                continue;
+            }
+
+            if key.as_text().expect("confirmed as text") == inserting_key {
+                found_value = Some(value);
+                break;
+            }
+        }
+        if let Some(value) = found_value {
+            *value = inserting_value;
+        } else {
+            map.push((Value::Text(inserting_key.to_string()), inserting_value))
+        }
     }
 }

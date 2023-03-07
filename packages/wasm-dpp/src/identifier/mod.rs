@@ -138,7 +138,7 @@ impl IdentifierWrapper {
 }
 
 impl IdentifierWrapper {
-    pub fn inner(self) -> Identifier {
+    pub fn inner(&self) -> Identifier {
         self.wrapped
     }
 }

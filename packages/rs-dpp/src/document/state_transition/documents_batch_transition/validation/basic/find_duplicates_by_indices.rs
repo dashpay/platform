@@ -24,7 +24,7 @@ macro_rules! get_from_transition {
 
 /// Finds duplicates of indices in Document Transitions.
 pub fn find_duplicates_by_indices<'a>(
-    document_raw_transitions: impl IntoIterator<Item = &'a Value>,
+    raw_extended_documents: impl IntoIterator<Item = &'a Value>,
     data_contract: &'a DataContract,
 ) -> Result<Vec<&'a Value>, ProtocolError> {
     #[derive(Debug)]
@@ -34,7 +34,7 @@ pub fn find_duplicates_by_indices<'a>(
     }
     let mut groups: BTreeMap<&'a str, Group> = BTreeMap::new();
 
-    for dt in document_raw_transitions.into_iter() {
+    for dt in raw_extended_documents.into_iter() {
         let document_type_name = dt.get_string("$type")?;
         let document_type = data_contract.document_type_for_name(document_type_name)?;
         match groups.entry(document_type_name) {
