@@ -74,8 +74,8 @@ pub async fn apply_documents_batch_transition(
             }
             DocumentTransition::Replace(document_replace_transition) => {
                 if state_transition.execution_context.is_dry_run() {
-                    let document =
-                        document_replace_transition.to_extended_document_for_dry_run(state_transition.owner_id)?;
+                    let document = document_replace_transition
+                        .to_extended_document_for_dry_run(state_transition.owner_id)?;
                     state_repository
                         .update_document(&document, state_transition.get_execution_context())
                         .await?;

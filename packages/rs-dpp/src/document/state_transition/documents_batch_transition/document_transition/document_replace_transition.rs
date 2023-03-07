@@ -8,10 +8,10 @@ use std::convert::TryInto;
 
 use crate::data_contract::document_type::document_type::PROTOCOL_VERSION;
 use crate::document::Document;
+use crate::identifier::Identifier;
 use crate::identity::TimestampMillis;
 use crate::prelude::{ExtendedDocument, Revision};
 use crate::{data_contract::DataContract, errors::ProtocolError};
-use crate::identifier::Identifier;
 
 use super::{document_base_transition::DocumentBaseTransition, DocumentTransitionObjectLike};
 
@@ -37,7 +37,10 @@ pub struct DocumentReplaceTransition {
 }
 
 impl DocumentReplaceTransition {
-    pub(crate) fn to_document_for_dry_run(&self, owner_id: Identifier) -> Result<Document, ProtocolError> {
+    pub(crate) fn to_document_for_dry_run(
+        &self,
+        owner_id: Identifier,
+    ) -> Result<Document, ProtocolError> {
         let properties = self.data.clone().unwrap_or_default();
         Ok(Document {
             id: self.base.id.to_buffer(),

@@ -218,11 +218,7 @@ impl DocumentType {
         // Extract the properties
         let property_values =
             Value::inner_optional_btree_map(document_type_value_map, property_names::PROPERTIES)?
-                .ok_or({
-                ProtocolError::DataContractError(DataContractError::InvalidContractStructure(
-                    "unable to get document properties from the contract",
-                ))
-            })?;
+                .unwrap_or_default();
 
         let mut required_fields = Value::inner_optional_array_of_strings(
             document_type_value_map,
