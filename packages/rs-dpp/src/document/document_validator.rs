@@ -25,6 +25,7 @@ lazy_static! {
         serde_json::from_str(include_str!("../../schema/document/documentBase.json")).unwrap();
 }
 
+#[derive(Clone)]
 pub struct DocumentValidator {
     protocol_version_validator: Arc<ProtocolVersionValidator>,
 }

@@ -1,3 +1,5 @@
+use std::convert::TryInto;
+
 use anyhow::{anyhow, bail};
 use serde_json::json;
 
@@ -10,6 +12,8 @@ use crate::get_from_transition;
 use crate::prelude::DocumentTransition;
 use crate::prelude::Identifier;
 use crate::state_repository::StateRepositoryLike;
+use crate::ProtocolError;
+use itertools::Itertools;
 
 pub async fn delete_withdrawal_data_trigger<'a, SR>(
     document_transition: &DocumentTransition,
@@ -28,7 +32,7 @@ where
         );
     };
 
-    let withdrawals: Vec<Document> = context
+    let withdrawals_not_converted = context
         .state_repository
         .fetch_documents(
             &context.data_contract.id,
@@ -41,6 +45,11 @@ where
             context.state_transition_execution_context,
         )
         .await?;
+
+    let withdrawals: Vec<Document> = withdrawals_not_converted
+        .into_iter()
+        .map(|d| d.try_into().map_err(Into::<ProtocolError>::into))
+        .try_collect()?;
 
     let Some(withdrawal) = withdrawals.get(0) else {
         let err = DataTriggerError::DataTriggerConditionError {
@@ -99,7 +108,7 @@ mod tests {
         let owner_id = data_contract.owner_id().to_owned();
 
         state_repository
-            .expect_fetch_documents::<Document>()
+            .expect_fetch_documents()
             .returning(|_, _, _, _| Ok(vec![]));
 
         let document_transition = DocumentTransition::Delete(Default::default());
@@ -147,7 +156,7 @@ mod tests {
         );
 
         state_repository
-            .expect_fetch_documents::<Document>()
+            .expect_fetch_documents()
             .return_once(move |_, _, _, _| Ok(vec![document]));
 
         let document_transition = DocumentTransition::Delete(Default::default());

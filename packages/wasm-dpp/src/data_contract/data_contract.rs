@@ -26,6 +26,12 @@ impl std::convert::From<DataContract> for DataContractWasm {
     }
 }
 
+impl std::convert::From<&DataContractWasm> for DataContract {
+    fn from(v: &DataContractWasm) -> Self {
+        v.0.clone()
+    }
+}
+
 impl std::convert::Into<DataContract> for DataContractWasm {
     fn into(self) -> DataContract {
         self.0
@@ -304,6 +310,11 @@ impl DataContractWasm {
     pub fn from_buffer(b: &[u8]) -> Result<DataContractWasm, JsValue> {
         let data_contract = DataContract::from_cbor(b).with_js_error()?;
         Ok(data_contract.into())
+    }
+
+    #[wasm_bindgen(js_name=clone)]
+    pub fn deep_clone(&self) -> Self {
+        self.clone()
     }
 }
 

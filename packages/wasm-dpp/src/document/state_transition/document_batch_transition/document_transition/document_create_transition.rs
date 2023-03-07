@@ -5,10 +5,7 @@ use dpp::{
         self, document_create_transition, DocumentCreateTransition, DocumentTransitionObjectLike,
     },
     prelude::{DataContract, Identifier},
-    util::{
-        json_schema::JsonSchemaExt,
-        json_value::{JsonValueExt, ReplaceWith},
-    },
+    util::{json_schema::JsonSchemaExt, json_value::JsonValueExt},
 };
 use serde::Serialize;
 use wasm_bindgen::prelude::*;
@@ -19,7 +16,7 @@ use crate::{
     document_batch_transition::document_transition::to_object,
     identifier::IdentifierWrapper,
     lodash::lodash_set,
-    utils::{ToSerdeJSONExt, WithJsError},
+    utils::{replace_identifiers_with_bytes_without_failing, ToSerdeJSONExt, WithJsError},
     BinaryType, DataContractWasm,
 };
 
@@ -32,6 +29,12 @@ pub struct DocumentCreateTransitionWasm {
 impl From<DocumentCreateTransition> for DocumentCreateTransitionWasm {
     fn from(v: DocumentCreateTransition) -> Self {
         Self { inner: v }
+    }
+}
+
+impl From<DocumentCreateTransitionWasm> for DocumentCreateTransition {
+    fn from(v: DocumentCreateTransitionWasm) -> Self {
+        v.inner
     }
 }
 
@@ -51,12 +54,11 @@ impl DocumentCreateTransitionWasm {
         let (identifier_paths, _) = data_contract
             .get_identifiers_and_binary_paths(document_type)
             .with_js_error()?;
-        // Allow to fail as it could be a Buffer or Identifier
-        let _ = value.replace_identifier_paths(
+        replace_identifiers_with_bytes_without_failing(
+            &mut value,
             identifier_paths
                 .into_iter()
                 .chain(document_create_transition::IDENTIFIER_FIELDS),
-            ReplaceWith::Bytes,
         );
         let transition =
             DocumentCreateTransition::from_raw_object(value, data_contract).with_js_error()?;
@@ -194,7 +196,7 @@ impl DocumentCreateTransitionWasm {
             .with_js_error()?;
 
         to_object(
-            &self.inner,
+            self.inner.to_object().with_js_error()?,
             options,
             identifiers_paths
                 .into_iter()
