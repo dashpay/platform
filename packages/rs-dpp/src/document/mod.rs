@@ -14,6 +14,7 @@ use crate::data_contract::DataContract;
 use crate::errors::ProtocolError;
 use crate::identifier::Identifier;
 use crate::metadata::Metadata;
+use crate::prelude::ProtocolVersion;
 use crate::util::cbor_value::CborCanonicalMap;
 use crate::util::cbor_value::FieldType;
 use crate::util::deserializer::SplitProtocolVersionOutcome;
@@ -52,7 +53,7 @@ pub const IDENTIFIER_FIELDS: [&str; 3] = [
 #[derive(Serialize, Deserialize, Debug, Clone, Default)]
 pub struct Document {
     #[serde(rename = "$protocolVersion")]
-    pub protocol_version: u32,
+    pub protocol_version: ProtocolVersion,
     #[serde(rename = "$id")]
     pub id: Identifier,
     #[serde(rename = "$type")]

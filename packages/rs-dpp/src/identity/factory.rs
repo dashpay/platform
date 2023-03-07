@@ -11,6 +11,7 @@ use crate::identity::state_transition::identity_update_transition::identity_upda
 use crate::identity::validation::{IdentityValidator, PublicKeysValidator};
 use crate::identity::{Identity, IdentityPublicKey, KeyID, TimestampMillis};
 
+use crate::prelude::ProtocolVersion;
 use crate::{BlsModule, ProtocolError};
 use anyhow::anyhow;
 use dashcore::{InstantLock, Transaction};
@@ -81,7 +82,7 @@ impl Identity {
 
 #[derive(Clone)]
 pub struct IdentityFactory<T: BlsModule> {
-    protocol_version: u32,
+    protocol_version: ProtocolVersion,
     identity_validator: Arc<IdentityValidator<PublicKeysValidator<T>>>,
 }
 
@@ -90,7 +91,7 @@ where
     T: BlsModule,
 {
     pub fn new(
-        protocol_version: u32,
+        protocol_version: ProtocolVersion,
         identity_validator: Arc<IdentityValidator<PublicKeysValidator<T>>>,
     ) -> Self {
         IdentityFactory {

@@ -197,7 +197,7 @@ mod test {
     #[derive(Debug, Clone, Serialize, Deserialize)]
     #[serde(rename_all = "camelCase")]
     struct ExampleStateTransition {
-        pub protocol_version: u32,
+        pub protocol_version: ProtocolVersion,
         pub signature: Vec<u8>,
         pub signature_public_key_id: KeyID,
         pub transition_type: StateTransitionType,
@@ -226,7 +226,7 @@ mod test {
     }
 
     impl StateTransitionLike for ExampleStateTransition {
-        fn get_protocol_version(&self) -> u32 {
+        fn get_protocol_version(&self) -> ProtocolVersion {
             1
         }
         fn get_type(&self) -> StateTransitionType {

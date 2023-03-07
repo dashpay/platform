@@ -9,7 +9,7 @@ use crate::error::Error;
 use crate::error::Error::GroveDB;
 use crate::fee::op::DriveOperation;
 use crate::query::QueryItem;
-use dpp::util::deserializer::ProtocolVersion;
+use dpp::prelude::ProtocolVersion;
 use grovedb::query_result_type::QueryResultType;
 use grovedb::{Element, PathQuery, Query, TransactionArg};
 use integer_encoding::VarInt;

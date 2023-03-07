@@ -1,4 +1,4 @@
-use drive::dpp::util::deserializer::ProtocolVersion;
+use dpp::prelude::ProtocolVersion;
 use drive::drive::block_info::BlockInfo;
 
 mod genesis;

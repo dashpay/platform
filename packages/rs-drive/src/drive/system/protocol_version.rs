@@ -9,7 +9,7 @@ use crate::error::drive::DriveError;
 use crate::error::Error;
 use crate::fee::op::DriveOperation;
 
-use dpp::util::deserializer::ProtocolVersion;
+use dpp::prelude::ProtocolVersion;
 use grovedb::{Element, TransactionArg};
 use integer_encoding::VarInt;
 

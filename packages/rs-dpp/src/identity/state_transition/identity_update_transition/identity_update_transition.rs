@@ -3,6 +3,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value as JsonValue;
 
 use crate::identity::state_transition::identity_public_key_transitions::IdentityPublicKeyCreateTransition;
+use crate::prelude::ProtocolVersion;
 use crate::{
     identity::{KeyID, SecurityLevel},
     prelude::{Identifier, Revision, TimestampMillis},
@@ -31,7 +32,7 @@ pub mod property_names {
 #[derive(Serialize, Deserialize, Debug, Clone)]
 #[serde(rename_all = "camelCase")]
 pub struct IdentityUpdateTransition {
-    pub protocol_version: u32,
+    pub protocol_version: ProtocolVersion,
     #[serde(rename = "type")]
     pub transition_type: StateTransitionType,
 
@@ -183,7 +184,7 @@ impl IdentityUpdateTransition {
         vec![self.get_identity_id()]
     }
 
-    pub fn set_protocol_version(&mut self, protocol_version: u32) {
+    pub fn set_protocol_version(&mut self, protocol_version: ProtocolVersion) {
         self.protocol_version = protocol_version;
     }
 }
@@ -295,7 +296,7 @@ impl StateTransitionConvert for IdentityUpdateTransition {
 }
 
 impl StateTransitionLike for IdentityUpdateTransition {
-    fn get_protocol_version(&self) -> u32 {
+    fn get_protocol_version(&self) -> ProtocolVersion {
         self.protocol_version
     }
 

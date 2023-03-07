@@ -15,6 +15,7 @@ use crate::identity::state_transition::identity_create_transition::IdentityCreat
 use crate::identity::state_transition::identity_credit_withdrawal_transition::IdentityCreditWithdrawalTransition;
 use crate::identity::state_transition::identity_topup_transition::IdentityTopUpTransition;
 use crate::identity::state_transition::identity_update_transition::identity_update_transition::IdentityUpdateTransition;
+use crate::prelude::ProtocolVersion;
 
 mod abstract_state_transition;
 mod abstract_state_transition_identity_signed;
@@ -127,7 +128,7 @@ impl StateTransitionConvert for StateTransition {
 }
 
 impl StateTransitionLike for StateTransition {
-    fn get_protocol_version(&self) -> u32 {
+    fn get_protocol_version(&self) -> ProtocolVersion {
         call_method!(self, get_protocol_version)
     }
     /// returns the type of State Transition

@@ -1,5 +1,7 @@
 use serde::{Deserialize, Serialize};
 
+use crate::prelude::ProtocolVersion;
+
 use super::{
     state_transition_execution_context::StateTransitionExecutionContext, StateTransition,
     StateTransitionConvert, StateTransitionLike, StateTransitionType,
@@ -12,7 +14,7 @@ const PROPERTY_PROTOCOL_VERSION: &str = "protocolVersion";
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct ExampleStateTransition {
-    pub protocol_version: u32,
+    pub protocol_version: ProtocolVersion,
     pub signature: Vec<u8>,
     pub transition_type: StateTransitionType,
     #[serde(skip)]
@@ -26,7 +28,7 @@ impl From<ExampleStateTransition> for StateTransition {
 }
 
 impl StateTransitionLike for ExampleStateTransition {
-    fn get_protocol_version(&self) -> u32 {
+    fn get_protocol_version(&self) -> ProtocolVersion {
         self.protocol_version
     }
 

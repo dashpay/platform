@@ -5,6 +5,7 @@ use std::sync::Arc;
 use data_contract::state_transition::property_names as st_prop;
 
 use crate::data_contract::property_names;
+use crate::prelude::ProtocolVersion;
 use crate::util::serializer::value_to_cbor;
 use crate::{
     data_contract::{self, generate_data_contract_id},
@@ -34,13 +35,16 @@ impl EntropyGenerator for DefaultEntropyGenerator {
 }
 
 pub struct DataContractFactory {
-    protocol_version: u32,
+    protocol_version: ProtocolVersion,
     validate_data_contract: Arc<DataContractValidator>,
     entropy_generator: Box<dyn EntropyGenerator>,
 }
 
 impl DataContractFactory {
-    pub fn new(protocol_version: u32, validate_data_contract: Arc<DataContractValidator>) -> Self {
+    pub fn new(
+        protocol_version: ProtocolVersion,
+        validate_data_contract: Arc<DataContractValidator>,
+    ) -> Self {
         Self {
             protocol_version,
             validate_data_contract,
@@ -49,7 +53,7 @@ impl DataContractFactory {
     }
 
     pub fn new_with_entropy_generator(
-        protocol_version: u32,
+        protocol_version: ProtocolVersion,
         validate_data_contract: Arc<DataContractValidator>,
         entropy_generator: Box<dyn EntropyGenerator>,
     ) -> Self {

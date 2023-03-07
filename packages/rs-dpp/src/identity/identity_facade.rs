@@ -14,6 +14,7 @@ use crate::identity::state_transition::identity_update_transition::identity_upda
 use crate::identity::validation::{IdentityValidator, PublicKeysValidator};
 use crate::identity::{Identity, IdentityPublicKey, KeyID, TimestampMillis};
 
+use crate::prelude::ProtocolVersion;
 use crate::validation::ValidationResult;
 use crate::version::ProtocolVersionValidator;
 use crate::{BlsModule, DashPlatformProtocolInitError, NonConsensusError, ProtocolError};
@@ -29,7 +30,7 @@ where
     T: BlsModule,
 {
     pub fn new(
-        protocol_version: u32,
+        protocol_version: ProtocolVersion,
         protocol_version_validator: Arc<ProtocolVersionValidator>,
         public_keys_validator: Arc<PublicKeysValidator<T>>,
     ) -> Result<Self, DashPlatformProtocolInitError> {

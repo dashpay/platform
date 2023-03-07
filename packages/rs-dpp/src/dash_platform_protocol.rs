@@ -1,3 +1,4 @@
+use crate::prelude::ProtocolVersion;
 use crate::BlsModule;
 use std::sync::Arc;
 
@@ -8,7 +9,7 @@ use crate::version::{ProtocolVersionValidator, COMPATIBILITY_MAP, LATEST_VERSION
 
 pub struct DashPlatformProtocol<SR, BLS: BlsModule> {
     /// Version of protocol
-    pub protocol_version: u32,
+    pub protocol_version: ProtocolVersion,
     /// Public facing facades to interact with the library
     pub identities: IdentityFacade<BLS>,
     /// State Repository provides the access to the stateful validation
@@ -51,5 +52,5 @@ impl<SR, BLS: BlsModule> DashPlatformProtocol<SR, BLS> {
 
 #[derive(Default)]
 pub struct DPPOptions {
-    pub current_protocol_version: Option<u32>,
+    pub current_protocol_version: Option<ProtocolVersion>,
 }

@@ -4,6 +4,7 @@ use serde_json::{Map, Number, Value as JsonValue};
 
 use crate::data_contract::errors::StructureError;
 use crate::data_contract::extra::common::check_protocol_version;
+use crate::prelude::ProtocolVersion;
 use crate::{errors::consensus::ConsensusError, errors::ProtocolError};
 
 pub fn parse_protocol_version(
@@ -18,9 +19,6 @@ pub fn parse_protocol_version(
     );
     Ok(())
 }
-
-/// A protocol version
-pub type ProtocolVersion = u32;
 
 pub fn get_protocol_version(version_bytes: &[u8]) -> Result<ProtocolVersion, ProtocolError> {
     u32::decode_var(version_bytes)

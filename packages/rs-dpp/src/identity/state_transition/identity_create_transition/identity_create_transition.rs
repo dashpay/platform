@@ -7,7 +7,7 @@ use serde_json::Value as JsonValue;
 
 use crate::identity::state_transition::asset_lock_proof::AssetLockProof;
 use crate::identity::state_transition::identity_public_key_transitions::IdentityPublicKeyCreateTransition;
-use crate::prelude::Identifier;
+use crate::prelude::{Identifier, ProtocolVersion};
 use crate::state_transition::state_transition_execution_context::StateTransitionExecutionContext;
 use crate::state_transition::{
     StateTransition, StateTransitionConvert, StateTransitionLike, StateTransitionType,
@@ -38,7 +38,7 @@ pub struct IdentityCreateTransition {
     pub asset_lock_proof: AssetLockProof,
     pub identity_id: Identifier,
     // Generic identity ST fields
-    pub protocol_version: u32,
+    pub protocol_version: ProtocolVersion,
     pub transition_type: StateTransitionType,
     pub signature: Vec<u8>,
     pub execution_context: StateTransitionExecutionContext,
@@ -242,7 +242,7 @@ impl IdentityCreateTransition {
         vec![self.get_identity_id()]
     }
 
-    pub fn set_protocol_version(&mut self, protocol_version: u32) {
+    pub fn set_protocol_version(&mut self, protocol_version: ProtocolVersion) {
         self.protocol_version = protocol_version;
     }
 }
@@ -321,7 +321,7 @@ impl StateTransitionConvert for IdentityCreateTransition {
 }
 
 impl StateTransitionLike for IdentityCreateTransition {
-    fn get_protocol_version(&self) -> u32 {
+    fn get_protocol_version(&self) -> ProtocolVersion {
         self.protocol_version
     }
     /// returns the type of State Transition

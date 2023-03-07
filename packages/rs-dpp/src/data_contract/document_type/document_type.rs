@@ -8,13 +8,14 @@ use super::{
 use crate::data_contract::document_type::{property_names, ArrayFieldType};
 use crate::data_contract::errors::{DataContractError, StructureError};
 
+use crate::prelude::ProtocolVersion;
 use crate::util::cbor_value::CborBTreeMapHelper;
 use crate::ProtocolError;
 use platform_value::btreemap_extensions::BTreeValueMapHelper;
 use platform_value::Value;
 use serde::{Deserialize, Serialize};
 
-pub const PROTOCOL_VERSION: u32 = 1;
+pub const PROTOCOL_VERSION: ProtocolVersion = 1;
 pub const CONTRACT_DOCUMENTS_PATH_HEIGHT: u16 = 4;
 pub const BASE_CONTRACT_ROOT_PATH_SIZE: usize = 33; // 1 + 32
 pub const BASE_CONTRACT_KEEPING_HISTORY_STORAGE_PATH_SIZE: usize = 34; // 1 + 32 + 1

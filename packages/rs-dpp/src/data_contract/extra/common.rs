@@ -1,4 +1,5 @@
 use crate::data_contract::errors::StructureError;
+use crate::prelude::ProtocolVersion;
 use crate::util::cbor_value::cbor_value_into_json_value;
 use crate::util::serializer::value_to_cbor;
 use crate::ProtocolError;
@@ -273,7 +274,7 @@ pub fn json_document_to_value(path: impl AsRef<Path>) -> Result<serde_json::Valu
 /// Reads a JSON file and converts it to CBOR.
 pub fn json_document_to_cbor(
     path: impl AsRef<Path>,
-    protocol_version: Option<u32>,
+    protocol_version: Option<ProtocolVersion>,
 ) -> Result<Vec<u8>, ProtocolError> {
     let json = json_document_to_value(path)?;
     value_to_cbor(json, protocol_version)

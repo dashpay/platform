@@ -9,7 +9,7 @@ use serde_json::Value as JsonValue;
 
 use crate::data_contract::DataContract;
 use crate::document::document_transition::DocumentTransitionObjectLike;
-use crate::prelude::{DocumentTransition, Identifier};
+use crate::prelude::{DocumentTransition, Identifier, ProtocolVersion};
 use crate::state_transition::state_transition_execution_context::StateTransitionExecutionContext;
 use crate::util::cbor_value::{CborCanonicalMap, FieldType, ReplacePaths, ValuesCollection};
 use crate::util::json_value::{JsonValueExt, ReplaceWith};
@@ -48,7 +48,7 @@ const EMPTY_VEC: Vec<u8> = vec![];
 #[derive(Debug, Serialize, Deserialize, Clone)]
 #[serde(rename_all = "camelCase")]
 pub struct DocumentsBatchTransition {
-    pub protocol_version: u32,
+    pub protocol_version: ProtocolVersion,
     #[serde(rename = "type")]
     pub transition_type: StateTransitionType,
     pub owner_id: Identifier,
@@ -368,7 +368,7 @@ impl StateTransitionConvert for DocumentsBatchTransition {
 }
 
 impl StateTransitionLike for DocumentsBatchTransition {
-    fn get_protocol_version(&self) -> u32 {
+    fn get_protocol_version(&self) -> ProtocolVersion {
         self.protocol_version
     }
 

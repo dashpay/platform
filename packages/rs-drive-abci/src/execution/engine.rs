@@ -5,8 +5,8 @@ use crate::abci::messages::{
 use crate::error::execution::ExecutionError;
 use crate::error::Error;
 use crate::platform::Platform;
+use dpp::prelude::ProtocolVersion;
 use drive::dpp::identity::PartialIdentity;
-use drive::dpp::util::deserializer::ProtocolVersion;
 use drive::drive::batch::DriveOperationType;
 use drive::drive::block_info::BlockInfo;
 use drive::error::Error::GroveDB;

@@ -7,7 +7,7 @@ use serde_json::{json, Value as JsonValue};
 use crate::{
     data_contract::{errors::DataContractError, DataContract},
     decode_protocol_entity_factory::DecodeProtocolEntity,
-    prelude::Identifier,
+    prelude::{Identifier, ProtocolVersion},
     state_repository::StateRepositoryLike,
     util::entropy_generator,
     util::{json_schema::JsonSchemaExt, json_value::JsonValueExt},
@@ -57,7 +57,7 @@ const DOCUMENT_REPLACE_KEYS_TO_STAY: [&str; 5] = [
 
 /// Factory for creating documents
 pub struct DocumentFactory<ST> {
-    protocol_version: u32,
+    protocol_version: ProtocolVersion,
     document_validator: DocumentValidator,
     data_contract_fetcher_and_validator: DataContractFetcherAndValidator<ST>,
 }
@@ -76,7 +76,7 @@ where
     ST: StateRepositoryLike,
 {
     pub fn new(
-        protocol_version: u32,
+        protocol_version: ProtocolVersion,
         validate_document: DocumentValidator,
         data_contract_fetcher_and_validator: DataContractFetcherAndValidator<ST>,
     ) -> Self {

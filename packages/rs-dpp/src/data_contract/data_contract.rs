@@ -18,6 +18,7 @@ use crate::data_contract::contract_config::{
 };
 
 use crate::data_contract::get_binary_properties_from_schema::get_binary_properties;
+use crate::prelude::ProtocolVersion;
 use crate::util::cbor_value::{CborBTreeMapHelper, CborCanonicalMap};
 use crate::util::deserializer;
 use crate::util::deserializer::SplitProtocolVersionOutcome;
@@ -79,7 +80,7 @@ impl Convertible for DataContract {
 #[derive(Serialize, Deserialize, Debug, Clone, Default, PartialEq)]
 #[serde(rename_all = "camelCase")]
 pub struct DataContract {
-    pub protocol_version: u32,
+    pub protocol_version: ProtocolVersion,
     #[serde(rename = "$id")]
     pub id: Identifier,
     #[serde(rename = "$schema")]

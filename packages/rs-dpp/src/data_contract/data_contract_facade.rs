@@ -4,7 +4,7 @@ use crate::data_contract::state_transition::{
 use crate::data_contract::validation::data_contract_validator::DataContractValidator;
 use crate::data_contract::{DataContract, DataContractFactory};
 use crate::document::document_transition::document_base_transition::JsonValue;
-use crate::prelude::{Identifier, ValidationResult};
+use crate::prelude::{Identifier, ProtocolVersion, ValidationResult};
 use crate::version::ProtocolVersionValidator;
 use crate::ProtocolError;
 use std::sync::Arc;
@@ -16,7 +16,7 @@ pub struct DataContractFacade {
 
 impl DataContractFacade {
     pub fn new(
-        protocol_version: u32,
+        protocol_version: ProtocolVersion,
         protocol_version_validator: Arc<ProtocolVersionValidator>,
     ) -> Self {
         let validator = Arc::new(DataContractValidator::new(protocol_version_validator));

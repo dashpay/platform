@@ -6,6 +6,7 @@ use lazy_static::lazy_static;
 use crate::{
     consensus::{signature::SignatureError, ConsensusError},
     identity::KeyType,
+    prelude::Identity,
     state_repository::StateRepositoryLike,
     state_transition::{
         fee::operations::{Operation, SignatureVerificationOperation},
@@ -39,7 +40,7 @@ pub async fn validate_state_transition_identity_signature(
     let tmp_execution_context = StateTransitionExecutionContext::default();
 
     // Owner must exist
-    let maybe_identity = state_repository
+    let maybe_identity: Option<Identity> = state_repository
         .fetch_identity(state_transition.get_owner_id(), &tmp_execution_context)
         .await?
         .map(TryInto::try_into)
@@ -149,7 +150,7 @@ mod test {
     use crate::{
         document::DocumentsBatchTransition,
         identity::{KeyID, Purpose, SecurityLevel},
-        prelude::{Identifier, Identity, IdentityPublicKey},
+        prelude::{Identifier, Identity, IdentityPublicKey, ProtocolVersion},
         state_repository::MockStateRepositoryLike,
         state_transition::{
             state_transition_execution_context::StateTransitionExecutionContext, StateTransition,
@@ -165,7 +166,7 @@ mod test {
     #[derive(Debug, Clone, Serialize, Deserialize)]
     #[serde(rename_all = "camelCase")]
     struct ExampleStateTransition {
-        pub protocol_version: u32,
+        pub protocol_version: ProtocolVersion,
         pub signature: Vec<u8>,
         pub signature_public_key_id: KeyID,
         pub transition_type: StateTransitionType,
@@ -196,7 +197,7 @@ mod test {
     }
 
     impl StateTransitionLike for ExampleStateTransition {
-        fn get_protocol_version(&self) -> u32 {
+        fn get_protocol_version(&self) -> ProtocolVersion {
             1
         }
         fn get_type(&self) -> StateTransitionType {

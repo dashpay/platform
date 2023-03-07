@@ -4,9 +4,11 @@ use lazy_static::lazy_static;
 
 pub use protocol_version_validator::ProtocolVersionValidator;
 
+use crate::prelude::ProtocolVersion;
+
 mod protocol_version_validator;
 
-pub const LATEST_VERSION: u32 = 1;
+pub const LATEST_VERSION: ProtocolVersion = 1;
 
 lazy_static! {
     pub static ref COMPATIBILITY_MAP: HashMap<u32, u32> = {

@@ -7,7 +7,7 @@ use serde_json::Value as JsonValue;
 use crate::{
     data_contract::DataContract,
     identity::KeyID,
-    prelude::Identifier,
+    prelude::{Identifier, ProtocolVersion},
     state_transition::{
         state_transition_execution_context::StateTransitionExecutionContext,
         StateTransitionConvert, StateTransitionIdentitySigned, StateTransitionLike,
@@ -25,7 +25,7 @@ pub mod validation;
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct DataContractCreateTransition {
-    pub protocol_version: u32,
+    pub protocol_version: ProtocolVersion,
     #[serde(rename = "type")]
     pub transition_type: StateTransitionType,
     // we want to skip serialization of transitions, as we does it manually in `to_object()`  and `to_json()`
@@ -80,7 +80,7 @@ impl DataContractCreateTransition {
         &self.data_contract
     }
 
-    pub fn get_protocol_version(&self) -> u32 {
+    pub fn get_protocol_version(&self) -> ProtocolVersion {
         self.protocol_version
     }
 
@@ -114,7 +114,7 @@ impl StateTransitionIdentitySigned for DataContractCreateTransition {
 }
 
 impl StateTransitionLike for DataContractCreateTransition {
-    fn get_protocol_version(&self) -> u32 {
+    fn get_protocol_version(&self) -> ProtocolVersion {
         self.protocol_version
     }
     /// returns the type of State Transition

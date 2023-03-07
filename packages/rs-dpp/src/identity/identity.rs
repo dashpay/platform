@@ -7,7 +7,7 @@ use serde_json::{Value as JsonValue, Value};
 
 use crate::identity::identity_public_key;
 use crate::identity::state_transition::asset_lock_proof::AssetLockProof;
-use crate::prelude::Revision;
+use crate::prelude::{ProtocolVersion, Revision};
 use crate::util::cbor_value::{CborBTreeMapHelper, CborCanonicalMap};
 use crate::util::deserializer;
 use crate::util::deserializer::SplitProtocolVersionOutcome;
@@ -33,7 +33,7 @@ pub const IDENTIFIER_FIELDS_RAW_OBJECT: [&str; 1] = [property_names::ID_RAW_OBJE
 #[derive(Default, Debug, Serialize, Deserialize, Clone, Eq, PartialEq)]
 #[serde(rename_all = "camelCase")]
 pub struct Identity {
-    pub protocol_version: u32,
+    pub protocol_version: ProtocolVersion,
     pub id: Identifier,
     #[serde(with = "public_key_serialization")]
     pub public_keys: BTreeMap<KeyID, IdentityPublicKey>,
@@ -88,7 +88,7 @@ mod public_key_serialization {
 
 impl Identity {
     /// Get Identity protocol version
-    pub fn get_protocol_version(&self) -> u32 {
+    pub fn get_protocol_version(&self) -> ProtocolVersion {
         self.protocol_version
     }
 

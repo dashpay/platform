@@ -31,11 +31,11 @@
 //!
 
 use crate::DocumentAction::{DocumentActionDelete, DocumentActionInsert};
+use dpp::prelude::ProtocolVersion;
 use drive::common::helpers::identities::create_test_masternode_identities_with_rng;
 use drive::contract::{Contract, CreateRandomDocument, DocumentType};
 use drive::dpp::document::document_stub::DocumentStub;
 use drive::dpp::identity::{Identity, KeyID, PartialIdentity};
-use drive::dpp::util::deserializer::ProtocolVersion;
 use drive::drive::batch::{
     ContractOperationType, DocumentOperationType, DriveOperationType, IdentityOperationType,
     SystemOperationType,

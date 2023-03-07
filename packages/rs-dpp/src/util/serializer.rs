@@ -1,6 +1,6 @@
 use integer_encoding::VarIntWriter;
 
-use crate::errors::ProtocolError;
+use crate::{errors::ProtocolError, prelude::ProtocolVersion};
 
 // ciborium::value
 
@@ -8,7 +8,7 @@ pub const MAX_ENCODED_KBYTE_LENGTH: usize = 16;
 
 pub fn value_to_cbor(
     value: serde_json::Value,
-    protocol_version: Option<u32>,
+    protocol_version: Option<ProtocolVersion>,
 ) -> Result<Vec<u8>, ProtocolError> {
     let mut buffer: Vec<u8> = Vec::new();
     if let Some(protocol_version) = protocol_version {

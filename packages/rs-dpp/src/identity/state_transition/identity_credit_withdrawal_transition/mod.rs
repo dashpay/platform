@@ -3,6 +3,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value as JsonValue;
 use serde_repr::{Deserialize_repr, Serialize_repr};
 
+use crate::prelude::ProtocolVersion;
 use crate::version::LATEST_VERSION;
 use crate::{
     identity::{core_script::CoreScript, KeyID},
@@ -44,7 +45,7 @@ impl std::default::Default for Pooling {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct IdentityCreditWithdrawalTransition {
-    pub protocol_version: u32,
+    pub protocol_version: ProtocolVersion,
     #[serde(rename = "type")]
     pub transition_type: StateTransitionType,
     pub identity_id: Identifier,
@@ -141,7 +142,7 @@ impl StateTransitionIdentitySigned for IdentityCreditWithdrawalTransition {
 }
 
 impl StateTransitionLike for IdentityCreditWithdrawalTransition {
-    fn get_protocol_version(&self) -> u32 {
+    fn get_protocol_version(&self) -> ProtocolVersion {
         self.protocol_version
     }
 

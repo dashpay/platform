@@ -6,7 +6,7 @@ use serde_json::Value as JsonValue;
 
 use crate::{
     identity::KeyType,
-    prelude::ProtocolError,
+    prelude::{ProtocolError, ProtocolVersion},
     util::{
         hash,
         json_value::{JsonValueExt, ReplaceWith},
@@ -44,7 +44,7 @@ pub trait StateTransitionLike:
     StateTransitionConvert + Clone + Debug + Into<StateTransition>
 {
     /// returns the protocol version
-    fn get_protocol_version(&self) -> u32;
+    fn get_protocol_version(&self) -> ProtocolVersion;
     /// returns the type of State Transition
     fn get_type(&self) -> StateTransitionType;
     /// returns the signature as a byte-array

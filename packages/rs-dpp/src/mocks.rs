@@ -3,6 +3,8 @@
 use anyhow::Result as AnyResult;
 use serde::{Deserialize, Serialize};
 
+use crate::prelude::ProtocolVersion;
+
 #[derive(Debug, Clone)]
 pub struct DashPlatformProtocol<SR> {
     pub state_repository: SR,
@@ -12,7 +14,7 @@ impl<SR> DashPlatformProtocol<SR> {
         DashPlatformProtocol { state_repository }
     }
 
-    pub fn get_protocol_version(&self) -> u32 {
+    pub fn get_protocol_version(&self) -> ProtocolVersion {
         1
     }
 
