@@ -1,6 +1,6 @@
 use thiserror::Error;
 
-#[derive(Error, Eq, PartialEq, Debug)]
+#[derive(Error, Clone, Eq, PartialEq, Debug)]
 pub enum Error {
     #[error("unsupported: {0}")]
     Unsupported(String),

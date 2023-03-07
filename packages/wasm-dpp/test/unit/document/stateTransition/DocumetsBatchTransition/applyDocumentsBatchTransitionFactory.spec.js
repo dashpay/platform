@@ -241,7 +241,7 @@ describe('applyDocumentsBatchTransitionFactory', () => {
       $id: documentTransition.getId(),
       $type: documentTransition.getType(),
       $dataContractId: documentTransition.getDataContractId(),
-      $ownerId: stateTransitionJs.getOwnerId(),
+      $ownerId: ownerId,
       $createdAt: blockTimeMs,
       ...documentTransition.getData(),
     }, documentTransition.getDataContract());

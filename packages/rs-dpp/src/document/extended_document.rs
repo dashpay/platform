@@ -12,6 +12,7 @@ use crate::ProtocolError;
 use ciborium::Value as CborValue;
 use integer_encoding::VarInt;
 
+use crate::data_contract::document_type::document_type::PROTOCOL_VERSION;
 use crate::data_contract::document_type::DocumentType;
 use crate::document::Document;
 use platform_value::btreemap_extensions::BTreeValueMapHelper;
@@ -169,9 +170,11 @@ impl ExtendedDocument {
             ..Default::default()
         };
 
+        // if the protocol version is not set, use the current protocol version
         extended_document.protocol_version = properties
-            .remove_integer(property_names::PROTOCOL_VERSION)
-            .map_err(ProtocolError::ValueError)?;
+            .remove_optional_integer(property_names::PROTOCOL_VERSION)
+            .map_err(ProtocolError::ValueError)?
+            .unwrap_or(PROTOCOL_VERSION);
         extended_document.data_contract_id = Identifier::new(
             properties
                 .remove_optional_hash256_bytes(property_names::DATA_CONTRACT_ID)?
