@@ -10,7 +10,7 @@ use dpp::{
         StateTransitionConvert, StateTransitionIdentitySigned, StateTransitionLike,
         StateTransitionType,
     },
-    util::json_value::{JsonValueExt, ReplaceWith},
+    util::json_value::JsonValueExt,
 };
 use js_sys::{Array, Reflect};
 use serde::{Deserialize, Serialize};
@@ -24,7 +24,8 @@ use crate::{
     identifier::IdentifierWrapper,
     lodash::lodash_set,
     utils::{
-        replace_identifiers_with_bytes_without_failing, IntoWasm, ToSerdeJSONExt, WithJsError,
+        replace_identifiers_with_bytes_without_failing, Inner, IntoWasm, ToSerdeJSONExt,
+        WithJsError,
     },
     IdentityPublicKeyWasm, StateTransitionExecutionContextWasm,
 };
@@ -164,6 +165,7 @@ impl DocumentsBatchTransitionWASM {
         let mut value = self.0.to_object(options.skip_signature).with_js_error()?;
         let serializer = serde_wasm_bindgen::Serializer::json_compatible();
         let js_value = value.serialize(&serializer)?;
+        let is_signature_present = value.get(property_names::SIGNATURE).is_some();
 
         // Transform every transition individually
         let transitions = Array::new();
@@ -198,7 +200,7 @@ impl DocumentsBatchTransitionWASM {
             }
         }
 
-        if value.get(property_names::SIGNATURE).is_none() && !options.skip_signature {
+        if !is_signature_present && !options.skip_signature {
             js_sys::Reflect::set(
                 &js_value,
                 &property_names::SIGNATURE.into(),
@@ -282,7 +284,7 @@ impl DocumentsBatchTransitionWASM {
         self.0.set_signature_public_key_id(key_id)
     }
 
-    #[wasm_bindgen(js_name=getSecurityLevelRequirement)]
+    #[wasm_bindgen(js_name=getKeySecurityLevelRequirement)]
     pub fn get_security_level_requirement(&self) -> u8 {
         self.0.get_security_level_requirement() as u8
     }
