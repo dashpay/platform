@@ -2,25 +2,25 @@ use std::{ops::Deref, sync::Arc};
 
 use serde_json::Value as JsonValue;
 
-use dpp::{
-    state_transition::{
-        validation::{
-            validate_state_transition_basic::StateTransitionBasicValidator,
-            validate_state_transition_by_type::StateTransitionByTypeValidator,
-        },
-        StateTransitionFactory, StateTransitionFactoryOptions, StateTransition, errors::StateTransitionError,
+use dpp::{state_transition::{
+    validation::{
+        validate_state_transition_basic::StateTransitionBasicValidator,
+        validate_state_transition_by_type::StateTransitionByTypeValidator,
     },
-    version::ProtocolVersionValidator, data_contract::state_transition::{data_contract_create_transition::validation::state::validate_data_contract_create_transition_basic::DataContractCreateTransitionBasicValidator, data_contract_update_transition::validation::basic::DataContractUpdateTransitionBasicValidator, self}, identity::{state_transition::{identity_create_transition::validation::basic::IdentityCreateTransitionBasicValidator, validate_public_key_signatures::{PublicKeysSignaturesValidator, TPublicKeysSignaturesValidator}, asset_lock_proof::{AssetLockProofValidator, ChainAssetLockProofStructureValidator, InstantAssetLockProofStructureValidator, AssetLockTransactionValidator}, identity_topup_transition::validation::basic::IdentityTopUpTransitionBasicValidator, identity_credit_withdrawal_transition::validation::basic::validate_identity_credit_withdrawal_transition_basic::IdentityCreditWithdrawalTransitionBasicValidator, identity_update_transition::validate_identity_update_transition_basic::ValidateIdentityUpdateTransitionBasic}, validation::PublicKeysValidator}, document::validation::basic::validate_documents_batch_transition_basic::DocumentBatchTransitionBasicValidator,
-};
+    StateTransitionFactory, StateTransitionFactoryOptions, StateTransition, errors::StateTransitionError,
+}, version::ProtocolVersionValidator, data_contract::state_transition::{data_contract_create_transition::validation::state::validate_data_contract_create_transition_basic::DataContractCreateTransitionBasicValidator, data_contract_update_transition::validation::basic::DataContractUpdateTransitionBasicValidator, self}, identity::{state_transition::{identity_create_transition::validation::basic::IdentityCreateTransitionBasicValidator, validate_public_key_signatures::{PublicKeysSignaturesValidator, TPublicKeysSignaturesValidator}, asset_lock_proof::{AssetLockProofValidator, ChainAssetLockProofStructureValidator, InstantAssetLockProofStructureValidator, AssetLockTransactionValidator}, identity_topup_transition::validation::basic::IdentityTopUpTransitionBasicValidator, identity_credit_withdrawal_transition::validation::basic::validate_identity_credit_withdrawal_transition_basic::IdentityCreditWithdrawalTransitionBasicValidator, identity_update_transition::validate_identity_update_transition_basic::ValidateIdentityUpdateTransitionBasic}, validation::PublicKeysValidator}, document::validation::basic::validate_documents_batch_transition_basic::DocumentBatchTransitionBasicValidator, ProtocolError};
 use wasm_bindgen::{prelude::wasm_bindgen, JsValue};
 
+use crate::utils::ToSerdeJSONExt;
 use crate::{
     bls_adapter::{BlsAdapter, JsBlsAdapter},
     errors::{from_dpp_err, from_dpp_init_error},
     identity_facade::FromObjectOptions,
     state_repository::{ExternalStateRepositoryLike, ExternalStateRepositoryLikeWrapper},
     state_transition::errors::invalid_state_transition_error::InvalidStateTransitionError,
-    utils, with_js_error, StateTransitionWasm,
+    utils, with_js_error, DataContractCreateTransitionWasm, DataContractUpdateTransitionWasm,
+    DocumentsBatchTransitionWASM, IdentityCreateTransitionWasm, IdentityTopUpTransitionWasm,
+    IdentityUpdateTransitionWasm, StateTransitionWasm,
 };
 
 #[wasm_bindgen(js_name = StateTransitionFactory)]
@@ -126,16 +126,14 @@ impl StateTransitionFactoryWasm {
         &self,
         state_transition_object: JsValue,
         options: JsValue,
-    ) -> Result<StateTransitionWasm, JsValue> {
+    ) -> Result<JsValue, JsValue> {
         let options: FromObjectOptions = if options.is_object() {
             with_js_error!(serde_wasm_bindgen::from_value(options))?
         } else {
             Default::default()
         };
 
-        let state_transition_json_string = utils::stringify(&state_transition_object)?;
-        let raw_state_transition: JsonValue =
-            serde_json::from_str(&state_transition_json_string).map_err(|e| e.to_string())?;
+        let raw_state_transition: JsonValue = state_transition_object.with_serde_to_json_value()?;
 
         let result = self
             .0
@@ -147,20 +145,7 @@ impl StateTransitionFactoryWasm {
             )
             .await;
 
-        match result {
-            Ok(state_transition) => Ok(StateTransitionWasm::from(state_transition)),
-            Err(dpp::ProtocolError::StateTransitionError(e)) => match e {
-                StateTransitionError::InvalidStateTransitionError {
-                    errors,
-                    raw_state_transition,
-                } => Err(InvalidStateTransitionError::new(
-                    errors,
-                    serde_wasm_bindgen::to_value(&raw_state_transition)?,
-                )
-                .into()),
-            },
-            Err(other) => Err(from_dpp_err(other)),
-        }
+        Self::state_transition_wasm_from_factory_result(result)
     }
 
     #[wasm_bindgen(js_name=createFromBuffer)]
@@ -168,7 +153,7 @@ impl StateTransitionFactoryWasm {
         &self,
         buffer: Vec<u8>,
         options: JsValue,
-    ) -> Result<StateTransitionWasm, JsValue> {
+    ) -> Result<JsValue, JsValue> {
         let options: FromObjectOptions = if options.is_object() {
             with_js_error!(serde_wasm_bindgen::from_value(options))?
         } else {
@@ -185,8 +170,34 @@ impl StateTransitionFactoryWasm {
             )
             .await;
 
+        Self::state_transition_wasm_from_factory_result(result)
+    }
+
+    fn state_transition_wasm_from_factory_result(
+        result: Result<StateTransition, ProtocolError>,
+    ) -> Result<JsValue, JsValue> {
         match result {
-            Ok(state_transition) => Ok(StateTransitionWasm::from(state_transition)),
+            Ok(state_transition) => match state_transition {
+                StateTransition::DataContractCreate(st) => {
+                    Ok(DataContractCreateTransitionWasm::from(st).into())
+                }
+                StateTransition::DataContractUpdate(st) => {
+                    Ok(DataContractUpdateTransitionWasm::from(st).into())
+                }
+                StateTransition::IdentityCreate(st) => {
+                    Ok(IdentityCreateTransitionWasm::from(st).into())
+                }
+                StateTransition::IdentityUpdate(st) => {
+                    Ok(IdentityUpdateTransitionWasm::from(st).into())
+                }
+                StateTransition::IdentityTopUp(st) => {
+                    Ok(IdentityTopUpTransitionWasm::from(st).into())
+                }
+                StateTransition::DocumentsBatch(st) => {
+                    Ok(DocumentsBatchTransitionWASM::from(st).into())
+                }
+                _ => Err("Unsupported state transition type".into()),
+            },
             Err(dpp::ProtocolError::StateTransitionError(e)) => match e {
                 StateTransitionError::InvalidStateTransitionError {
                     errors,
