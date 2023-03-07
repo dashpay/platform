@@ -15,6 +15,7 @@ use crate::errors::ProtocolError;
 use crate::identifier::Identifier;
 use crate::metadata::Metadata;
 use crate::prelude::ProtocolVersion;
+use crate::prelude::Revision;
 use crate::util::cbor_value::CborCanonicalMap;
 use crate::util::cbor_value::FieldType;
 use crate::util::deserializer::SplitProtocolVersionOutcome;
@@ -60,7 +61,7 @@ pub struct Document {
     /// TODO: Why not &str?
     pub document_type: String,
     #[serde(rename = "$revision")]
-    pub revision: u32,
+    pub revision: Revision,
     #[serde(rename = "$dataContractId")]
     pub data_contract_id: Identifier,
     #[serde(rename = "$ownerId")]

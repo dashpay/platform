@@ -5,7 +5,10 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
 use crate::{
-    data_contract::DataContract, prelude::Identifier, util::json_value::JsonValueExt, ProtocolError,
+    data_contract::DataContract,
+    prelude::{Identifier, Revision},
+    util::json_value::JsonValueExt,
+    ProtocolError,
 };
 use document_base_transition::DocumentBaseTransition;
 
@@ -20,7 +23,7 @@ pub use document_delete_transition::DocumentDeleteTransition;
 pub use document_replace_transition::DocumentReplaceTransition;
 
 /// the initial revision of newly created document
-pub const INITIAL_REVISION: u32 = 1;
+pub const INITIAL_REVISION: Revision = 1;
 pub const PROPERTY_ACTION: &str = "$action";
 
 pub trait DocumentTransitionExt {
@@ -48,7 +51,7 @@ pub trait DocumentTransitionExt {
     /// get the data of the transition if exits
     fn get_data(&self) -> Option<&Value>;
     /// get the revision of transition if exits
-    fn get_revision(&self) -> Option<u32>;
+    fn get_revision(&self) -> Option<Revision>;
     #[cfg(test)]
     /// Inserts the dynamic property into the document
     fn insert_dynamic_property(&mut self, property_name: String, value: Value);
@@ -264,7 +267,7 @@ impl DocumentTransitionExt for DocumentTransition {
         }
     }
 
-    fn get_revision(&self) -> Option<u32> {
+    fn get_revision(&self) -> Option<Revision> {
         match self {
             DocumentTransition::Create(t) => Some(t.get_revision()),
             DocumentTransition::Replace(t) => Some(t.get_revision()),

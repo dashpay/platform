@@ -2,6 +2,7 @@ use itertools::Itertools;
 use serde::{Deserialize, Serialize};
 use serde_json::Value as JsonValue;
 
+use crate::prelude::Revision;
 use crate::{
     data_contract::DataContract, document::document_transition::Action, errors::ProtocolError,
     util::json_value::JsonValueExt, util::json_value::ReplaceWith,
@@ -39,7 +40,7 @@ pub struct DocumentCreateTransition {
 }
 
 impl DocumentCreateTransition {
-    pub fn get_revision(&self) -> u32 {
+    pub fn get_revision(&self) -> Revision {
         INITIAL_REVISION
     }
 
