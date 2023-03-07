@@ -238,7 +238,7 @@ mod test {
                 }
             }
         });
-        DataContract::from_raw_object(data_contract).unwrap()
+        DataContract::from_json_raw_object(data_contract).unwrap()
     }
 
     #[test]

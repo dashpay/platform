@@ -263,7 +263,7 @@ impl ExtendedDocumentWasm {
         } else {
             Default::default()
         };
-        let mut value = self.0.to_object().with_js_error()?;
+        let mut value = self.0.to_json_object_for_validation().with_js_error()?;
 
         let (identifiers_paths, binary_paths) =
             self.0.get_identifiers_and_binary_paths().with_js_error()?;

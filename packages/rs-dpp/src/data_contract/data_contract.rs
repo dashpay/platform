@@ -109,7 +109,7 @@ impl DataContract {
         Self::default()
     }
 
-    pub fn from_raw_object(mut raw_object: JsonValue) -> Result<DataContract, ProtocolError> {
+    pub fn from_json_raw_object(mut raw_object: JsonValue) -> Result<DataContract, ProtocolError> {
         // TODO identifier_default_deserializer: default deserializer should be changed to bytes
         // Identifiers fields should be replaced with the string format to deserialize Data Contract
         raw_object.replace_identifier_paths(IDENTIFIER_FIELDS, ReplaceWith::Base58)?;

@@ -212,7 +212,9 @@ async fn should_return_invalid_result_if_document_transition_with_action_replace
         .collect::<Vec<Document>>();
 
     let mut replace_document = ExtendedDocument::from_raw_document(
-        extended_documents[0].to_object().unwrap(),
+        extended_documents[0]
+            .to_json_object_for_validation()
+            .unwrap(),
         data_contract.clone(),
     )
     .expect("document should be created");
@@ -280,7 +282,7 @@ async fn should_return_invalid_result_if_document_transition_with_action_replace
     } = setup_test();
     let mut replace_document = ExtendedDocument::from_raw_document(
         extended_documents[0]
-            .to_object()
+            .to_json_object_for_validation()
             .unwrap()
             .try_into()
             .unwrap(),
@@ -291,7 +293,7 @@ async fn should_return_invalid_result_if_document_transition_with_action_replace
 
     let mut fetched_document = ExtendedDocument::from_raw_document(
         extended_documents[0]
-            .to_object()
+            .to_json_object_for_validation()
             .unwrap()
             .try_into()
             .unwrap(),

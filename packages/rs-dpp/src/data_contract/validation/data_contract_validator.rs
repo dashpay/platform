@@ -108,7 +108,7 @@ impl DataContractValidator {
             return Ok(result);
         }
 
-        let data_contract = DataContract::from_raw_object(raw_data_contract.clone())?;
+        let data_contract = DataContract::from_json_raw_object(raw_data_contract.clone())?;
         let enriched_data_contract = enrich_data_contract_with_base_schema(
             &data_contract,
             &BASE_DOCUMENT_SCHEMA,

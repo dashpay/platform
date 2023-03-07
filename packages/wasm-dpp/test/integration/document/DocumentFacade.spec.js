@@ -80,7 +80,8 @@ describe('DocumentFacade', () => {
     });
 
     it('should create Document from plain object - Rust', async () => {
-      const result = await dpp.document.createFromObject(document.toObject());
+      const a = document.toObject();
+      const result = await dpp.document.createFromObject(a);
 
       expect(result).to.be.an.instanceOf(ExtendedDocument);
 

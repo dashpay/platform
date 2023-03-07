@@ -269,8 +269,7 @@ where
             }
             Err(err) => Err(err),
             Ok((version, mut raw_document)) => {
-                raw_document
-                    .insert(property_names::PROTOCOL_VERSION.to_string(), json!(version))?;
+                raw_document.set_value(property_names::PROTOCOL_VERSION, Value::U32(version))?;
                 self.create_from_object(raw_document, options).await
             }
         }
@@ -278,14 +277,17 @@ where
 
     pub async fn create_from_object(
         &self,
-        raw_document: JsonValue,
+        raw_document: Value,
         options: FactoryOptions,
     ) -> Result<ExtendedDocument, ProtocolError> {
         let data_contract = self
-            .validate_data_contract_for_extended_document(&raw_document, options)
+            .validate_data_contract_for_extended_document(
+                &raw_document.clone().try_into_validating_json()?,
+                options,
+            )
             .await?;
 
-        ExtendedDocument::from_raw_document(raw_document, data_contract)
+        ExtendedDocument::from_platform_value(raw_document, data_contract)
     }
 
     async fn validate_data_contract_for_extended_document(

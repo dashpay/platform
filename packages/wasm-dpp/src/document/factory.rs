@@ -143,18 +143,19 @@ impl DocumentFactoryWASM {
         raw_document_js: JsValue,
         options: JsValue,
     ) -> Result<ExtendedDocumentWasm, JsValue> {
-        let mut raw_document = raw_document_js.with_serde_to_json_value()?;
+        let mut raw_document = raw_document_js.with_serde_to_platform_value()?;
         let options: FactoryOptions = if !options.is_undefined() && options.is_object() {
             let raw_options = options.with_serde_to_json_value()?;
             serde_json::from_value(raw_options).with_js_error()?
         } else {
             Default::default()
         };
-        // Errors are ignored. When `Buffer` crosses the WASM boundary it becomes an Array.
-        // When `Identifier` crosses the WASM boundary, it becomes a String. From perspective of JS
-        // `Identifier` and `Buffer` are used interchangeably, so we we can expect the replacing may fail when `Buffer` is provided
         raw_document
-            .replace_identifier_paths(extended_document::IDENTIFIER_FIELDS, ReplaceWith::Bytes)
+            .replace_at_paths(
+                extended_document::IDENTIFIER_FIELDS,
+                ReplacementType::Identifier,
+            )
+            .map_err(ProtocolError::ValueError)
             .with_js_error()?;
 
         let mut document = self
