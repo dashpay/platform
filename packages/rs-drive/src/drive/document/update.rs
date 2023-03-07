@@ -2422,7 +2422,7 @@ mod tests {
         let document_type = "niceDocument".to_string();
 
         let mut document = document_factory
-            .create_document_for_state_transition(
+            .create_extended_document_for_state_transition(
                 contract.clone(),
                 owner_id,
                 document_type.clone(),

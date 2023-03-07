@@ -109,10 +109,10 @@ impl DocumentFactoryWASM {
         data: &JsValue,
     ) -> Result<ExtendedDocumentWasm, JsValue> {
         let owner_id = identifier_from_js_value(js_owner_id)?;
-        let dynamic_data = data.with_serde_to_json_value()?;
+        let dynamic_data = data.with_serde_to_platform_value()?;
         let document = self
             .0
-            .create_document_for_state_transition(
+            .create_extended_document_for_state_transition(
                 data_contract.into(),
                 owner_id,
                 document_type.to_string(),

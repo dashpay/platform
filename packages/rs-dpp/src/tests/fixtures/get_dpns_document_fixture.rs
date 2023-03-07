@@ -72,7 +72,7 @@ pub fn get_dpns_parent_document_fixture(options: ParentDocumentOptions) -> Exten
     );
 
     document_factory
-        .create_document_for_state_transition(
+        .create_extended_document_for_state_transition(
             data_contract,
             options.owner_id,
             String::from("domain"),

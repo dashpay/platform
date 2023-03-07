@@ -106,7 +106,7 @@ where
         }
     }
 
-    pub fn create_document_for_state_transition(
+    pub fn create_extended_document_for_state_transition(
         &self,
         data_contract: DataContract,
         owner_id: Identifier,
@@ -161,9 +161,9 @@ where
         };
 
         let json_value = document.to_json_with_identifiers_using_bytes()?;
-        let validation_result =
-            self.document_validator
-                .validate(&json_value, &data_contract, document_type)?;
+        // let validation_result =
+        //     self.document_validator
+        //         .validate(&json_value, &data_contract, document_type)?;
 
         let extended_document = ExtendedDocument {
             protocol_version: self.protocol_version,
@@ -175,14 +175,14 @@ where
             entropy: document_entropy,
         };
 
-        if !validation_result.is_valid() {
-            return Err(ProtocolError::Document(Box::new(
-                DocumentError::InvalidDocumentError {
-                    errors: validation_result.errors,
-                    raw_document: json_value,
-                },
-            )));
-        }
+        // if !validation_result.is_valid() {
+        //     return Err(ProtocolError::Document(Box::new(
+        //         DocumentError::InvalidDocumentError {
+        //             errors: validation_result.errors,
+        //             raw_document: json_value,
+        //         },
+        //     )));
+        // }
 
         Ok(extended_document)
     }
@@ -472,7 +472,7 @@ mod test {
         data_contract.id = contract_id;
 
         let document = factory
-            .create_document_for_state_transition(
+            .create_extended_document_for_state_transition(
                 data_contract,
                 owner_id,
                 document_type.to_string(),

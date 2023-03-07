@@ -36,6 +36,7 @@ pub use extended_document::ExtendedDocumentWasm;
 
 use dpp::document::extended_document::property_names;
 use dpp::platform_value::btreemap_field_replacement::BTreeValueMapReplacementPathHelper;
+use dpp::platform_value::converter::serde_json::BTreeValueJsonConverter;
 use dpp::platform_value::ReplacementType;
 use dpp::platform_value::Value;
 use dpp::ProtocolError;
@@ -129,16 +130,27 @@ impl DocumentWasm {
         self.0.revision.map(|r| r as u32)
     }
 
-    #[wasm_bindgen(js_name=setProperties)]
-    pub fn set_properties(&mut self, d: JsValue) -> Result<(), JsValue> {
-        self.0.properties = with_js_error!(serde_wasm_bindgen::from_value(d))?;
+    #[wasm_bindgen(js_name=setData)]
+    pub fn set_data(&mut self, d: JsValue) -> Result<(), JsValue> {
+        let properties_as_value = d.with_serde_to_platform_value()?;
+        self.0.properties = properties_as_value
+            .into_btree_map()
+            .map_err(ProtocolError::ValueError)
+            .with_js_error()?;
         Ok(())
     }
 
-    #[wasm_bindgen(js_name=getProperties)]
-    pub fn get_properties(&mut self) -> Result<JsValue, JsValue> {
-        let serializer = serde_wasm_bindgen::Serializer::json_compatible();
-        Ok(with_js_error!(self.0.properties.serialize(&serializer))?)
+    #[wasm_bindgen(js_name=getData)]
+    pub fn get_data(&mut self) -> Result<JsValue, JsValue> {
+        let json_value: JsonValue = self
+            .0
+            .properties
+            .to_json_value()
+            .map_err(ProtocolError::ValueError)
+            .with_js_error()?;
+
+        let js_value = json_value.serialize(&serde_wasm_bindgen::Serializer::json_compatible())?;
+        Ok(js_value)
     }
 
     #[wasm_bindgen(js_name=set)]

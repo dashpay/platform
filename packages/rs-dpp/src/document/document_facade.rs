@@ -57,7 +57,7 @@ where
         document_type_name: String,
         data: Value,
     ) -> Result<ExtendedDocument, ProtocolError> {
-        self.factory.create_document_for_state_transition(
+        self.factory.create_extended_document_for_state_transition(
             data_contract,
             owner_id,
             document_type_name,

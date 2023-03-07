@@ -34,7 +34,7 @@ pub fn get_masternode_reward_shares_documents_fixture() -> (Vec<ExtendedDocument
 
     (
         vec![factory
-            .create_document_for_state_transition(
+            .create_extended_document_for_state_transition(
                 data_contract.clone(),
                 owner_id,
                 String::from("rewardShare"),

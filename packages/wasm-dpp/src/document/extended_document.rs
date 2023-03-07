@@ -6,6 +6,7 @@ use dpp::prelude::{Identifier, Revision};
 use dpp::util::json_schema::JsonSchemaExt;
 use dpp::util::json_value::JsonValueExt;
 
+use dpp::platform_value::converter::serde_json::BTreeValueJsonConverter;
 use dpp::ProtocolError;
 use serde::{Deserialize, Serialize};
 use std::convert::TryInto;
@@ -140,19 +141,26 @@ impl ExtendedDocumentWasm {
 
     #[wasm_bindgen(js_name=setData)]
     pub fn set_data(&mut self, d: JsValue) -> Result<(), JsValue> {
-        self.0.document.properties = with_js_error!(serde_wasm_bindgen::from_value(d))?;
+        let properties_as_value = d.with_serde_to_platform_value()?;
+        self.0.document.properties = properties_as_value
+            .into_btree_map()
+            .map_err(ProtocolError::ValueError)
+            .with_js_error()?;
         Ok(())
     }
 
     #[wasm_bindgen(js_name=getData)]
     pub fn get_data(&mut self) -> Result<JsValue, JsValue> {
-        let serializer = serde_wasm_bindgen::Serializer::json_compatible();
-
-        Ok(with_js_error!(self
+        let json_value: JsonValue = self
             .0
             .document
             .properties
-            .serialize(&serializer))?)
+            .to_json_value()
+            .map_err(ProtocolError::ValueError)
+            .with_js_error()?;
+
+        let js_value = json_value.serialize(&serde_wasm_bindgen::Serializer::json_compatible())?;
+        Ok(js_value)
     }
 
     #[wasm_bindgen(js_name=set)]

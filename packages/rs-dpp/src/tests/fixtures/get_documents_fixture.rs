@@ -67,56 +67,56 @@ fn get_extended_documents<ST: StateRepositoryLike>(
     owner_id: Identifier,
 ) -> Result<Vec<ExtendedDocument>, ProtocolError> {
     let documents = vec![
-        factory.create_document_for_state_transition(
+        factory.create_extended_document_for_state_transition(
             data_contract.clone(),
             owner_id,
             "niceDocument".to_string(),
             json!({ "name": "Cutie" }).into(),
         )?,
-        factory.create_document_for_state_transition(
+        factory.create_extended_document_for_state_transition(
             data_contract.clone(),
             owner_id,
             "prettyDocument".to_string(),
             json!({ "lastName": "Shiny" }).into(),
         )?,
-        factory.create_document_for_state_transition(
+        factory.create_extended_document_for_state_transition(
             data_contract.clone(),
             owner_id,
             "prettyDocument".to_string(),
             json!({ "lastName": "Sweety" }).into(),
         )?,
-        factory.create_document_for_state_transition(
+        factory.create_extended_document_for_state_transition(
             data_contract.clone(),
             owner_id,
             "indexedDocument".to_string(),
             json!( { "firstName": "William", "lastName": "Birkin" }).into(),
         )?,
-        factory.create_document_for_state_transition(
+        factory.create_extended_document_for_state_transition(
             data_contract.clone(),
             owner_id,
             "indexedDocument".to_string(),
             json!( { "firstName": "Leon", "lastName": "Kennedy" }).into(),
         )?,
-        factory.create_document_for_state_transition(
+        factory.create_extended_document_for_state_transition(
             data_contract.clone(),
             owner_id,
             "noTimeDocument".to_string(),
             json!({ "name": "ImOutOfTime" }).into(),
         )?,
-        factory.create_document_for_state_transition(
+        factory.create_extended_document_for_state_transition(
             data_contract.clone(),
             owner_id,
             "uniqueDates".to_string(),
             json!({ "firstName": "John" }).into(),
         )?,
-        factory.create_document_for_state_transition(
+        factory.create_extended_document_for_state_transition(
             data_contract.clone(),
             owner_id,
             "indexedDocument".to_string(),
             json!( { "firstName": "Bill", "lastName": "Gates" }).into(),
         )?,
-        factory.create_document_for_state_transition(data_contract.clone(), owner_id, "withByteArrays".to_string(), json!( { "byteArrayField": get_random_10_bytes(), "identifierField": gen_owner_id().to_buffer() }).into())?,
-        factory.create_document_for_state_transition(
+        factory.create_extended_document_for_state_transition(data_contract.clone(), owner_id, "withByteArrays".to_string(), json!( { "byteArrayField": get_random_10_bytes(), "identifierField": gen_owner_id().to_buffer() }).into())?,
+        factory.create_extended_document_for_state_transition(
             data_contract,
             owner_id,
             "optionalUniqueIndexedDocument".to_string(),

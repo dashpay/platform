@@ -120,7 +120,11 @@ impl DocumentBaseTransition {
                 .remove_integer::<u8>(property_names::ACTION)
                 .map_err(ProtocolError::ValueError)?
                 .try_into()?,
-            data_contract_id: data_contract.id,
+            data_contract_id: Identifier::new(
+                map.remove_optional_hash256_bytes(property_names::DATA_CONTRACT_ID)
+                    .map_err(ProtocolError::ValueError)?
+                    .unwrap_or(data_contract.id.buffer),
+            ),
             data_contract,
         })
     }
