@@ -11,6 +11,7 @@ use crate::document::Document;
 use crate::identity::TimestampMillis;
 use crate::prelude::{ExtendedDocument, Revision};
 use crate::{data_contract::DataContract, errors::ProtocolError};
+use crate::identifier::Identifier;
 
 use super::{document_base_transition::DocumentBaseTransition, DocumentTransitionObjectLike};
 
@@ -36,11 +37,11 @@ pub struct DocumentReplaceTransition {
 }
 
 impl DocumentReplaceTransition {
-    pub(crate) fn to_document_for_dry_run(&self) -> Result<Document, ProtocolError> {
+    pub(crate) fn to_document_for_dry_run(&self, owner_id: Identifier) -> Result<Document, ProtocolError> {
         let properties = self.data.clone().unwrap_or_default();
         Ok(Document {
             id: self.base.id.to_buffer(),
-            owner_id: [0; 32], //0s are fine here
+            owner_id: owner_id.buffer,
             properties,
             created_at: self.updated_at, // we can use the same time, as it can't be worse
             updated_at: self.updated_at,
@@ -50,12 +51,13 @@ impl DocumentReplaceTransition {
 
     pub(crate) fn to_extended_document_for_dry_run(
         &self,
+        owner_id: Identifier,
     ) -> Result<ExtendedDocument, ProtocolError> {
         Ok(ExtendedDocument {
             protocol_version: PROTOCOL_VERSION,
             document_type_name: self.base.document_type_name.clone(),
             data_contract_id: self.base.data_contract_id,
-            document: self.to_document_for_dry_run()?,
+            document: self.to_document_for_dry_run(owner_id)?,
             data_contract: self.base.data_contract.clone(),
             metadata: None,
             entropy: [0; 32],

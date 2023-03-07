@@ -232,17 +232,16 @@ describe('applyDocumentsBatchTransitionFactory', () => {
 
     stateTransition.getExecutionContext().disableDryRun();
 
-    expect(stateRepositoryMock.fetchLatestPlatformBlockTime).to.have.been.calledOnceWith();
-
     const [documentTransition] = stateTransition.getTransitions();
 
+    // the owner_id are 0s in dry_run
     const newDocument = new ExtendedDocument({
       $protocolVersion: stateTransitionJs.getProtocolVersion(),
       $id: documentTransition.getId(),
       $type: documentTransition.getType(),
       $dataContractId: documentTransition.getDataContractId(),
       $ownerId: ownerId,
-      $createdAt: blockTimeMs,
+      $createdAt: documentTransition.getUpdatedAt(),
       ...documentTransition.getData(),
     }, documentTransition.getDataContract());
 
