@@ -9,7 +9,7 @@ use js_sys::Array;
 use wasm_bindgen::prelude::*;
 
 use crate::identifier::IdentifierWrapper;
-use crate::utils::with_serde_to_platform_value;
+use crate::utils::{Inner, with_serde_to_platform_value};
 use crate::{
     document_batch_transition::document_transition::to_object,
     utils::{ToSerdeJSONExt, WithJsError},

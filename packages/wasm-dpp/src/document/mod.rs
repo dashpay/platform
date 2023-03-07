@@ -12,9 +12,7 @@ use crate::buffer::Buffer;
 
 use crate::identifier::IdentifierWrapper;
 use crate::lodash::lodash_set;
-use crate::utils::{
-    replace_identifiers_with_bytes_without_failing, with_serde_to_json_value, ToSerdeJSONExt,
-};
+use crate::utils::{replace_identifiers_with_bytes_without_failing, Inner, with_serde_to_json_value, ToSerdeJSONExt};
 use crate::utils::{try_to_u64, WithJsError};
 use crate::with_js_error;
 use crate::DataContractWasm;
@@ -25,6 +23,7 @@ pub mod document_facade;
 mod extended_document;
 mod factory;
 pub mod fetch_and_validate_data_contract;
+pub mod generate_document_id;
 pub mod state_transition;
 mod validator;
 
@@ -105,12 +104,12 @@ impl DocumentWasm {
 
     #[wasm_bindgen(js_name=setId)]
     pub fn set_id(&mut self, js_id: IdentifierWrapper) {
-        self.0.id = js_id.inner().to_buffer();
+        self.0.id = js_id.into_inner().buffer;
     }
 
     #[wasm_bindgen(js_name=setOwnerId)]
     pub fn set_owner_id(&mut self, owner_id: IdentifierWrapper) {
-        self.0.owner_id = owner_id.inner().to_buffer();
+        self.0.owner_id = owner_id.into_inner().buffer;
     }
 
     #[wasm_bindgen(js_name=getOwnerId)]

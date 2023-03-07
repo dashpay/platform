@@ -183,6 +183,7 @@ where
                     "Parent domain is not present".to_string(),
                 );
                 result.add_error(err.into());
+                return Ok(result);
             }
             let parent_domain = &documents[0];
 

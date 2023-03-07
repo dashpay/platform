@@ -17,7 +17,7 @@ use crate::document::BinaryType;
 use crate::errors::RustConversionError;
 use crate::identifier::{identifier_from_js_value, IdentifierWrapper};
 use crate::lodash::lodash_set;
-use crate::utils::{with_serde_to_platform_value, ToSerdeJSONExt, WithJsError};
+use crate::utils::{with_serde_to_platform_value, ToSerdeJSONExt, WithJsError, Inner};
 use crate::{with_js_error, ConversionOptions};
 use crate::{DataContractWasm, MetadataWasm};
 
@@ -102,7 +102,7 @@ impl ExtendedDocumentWasm {
 
     #[wasm_bindgen(js_name=setOwnerId)]
     pub fn set_owner_id(&mut self, owner_id: IdentifierWrapper) {
-        self.0.document.owner_id = owner_id.inner().buffer;
+        self.0.document.owner_id = owner_id.into_inner().buffer;
     }
 
     #[wasm_bindgen(js_name=getOwnerId)]

@@ -274,3 +274,13 @@ pub(crate) fn replace_identifiers_with_bytes_without_failing<'a>(
         .replace_identifier_paths(paths, ReplaceWith::Bytes)
         .with_js_error();
 }
+
+// The trait `Inner` provides better flexibility and visibility when you need to switch
+// between WASM structure and original structure.
+pub(crate) trait Inner {
+    type InnerItem;
+
+    fn into_inner(self) -> Self::InnerItem;
+    fn inner(&self) -> &Self::InnerItem;
+    fn inner_mut(&mut self) -> &mut Self::InnerItem;
+}
