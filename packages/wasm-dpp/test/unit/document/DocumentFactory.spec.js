@@ -247,11 +247,12 @@ describe('DocumentFactory', () => {
       validateDocumentMock.returns(validationResult);
 
       try {
-        factory.create(dataContract, ownerId, rawDocumentJs.$type, {});
+        factory.create(dataContract, ownerId, 'ivalidType', {});
 
         expect.fail('InvalidDocumentError should be thrown');
       } catch (e) {
-        expect(e).to.be.an.instanceOf(InvalidDocumentError);
+        console.log(e);
+        expect(e).to.be.an.instanceOf(InvalidDocumentTypeInDataContractError);
       }
     });
   });
