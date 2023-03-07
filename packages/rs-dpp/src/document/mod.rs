@@ -16,6 +16,7 @@ use crate::identifier::Identifier;
 use crate::metadata::Metadata;
 use crate::prelude::ProtocolVersion;
 use crate::prelude::Revision;
+use crate::prelude::TimestampMillis;
 use crate::util::cbor_value::CborCanonicalMap;
 use crate::util::cbor_value::FieldType;
 use crate::util::deserializer::SplitProtocolVersionOutcome;
@@ -67,10 +68,9 @@ pub struct Document {
     #[serde(rename = "$ownerId")]
     pub owner_id: Identifier,
     #[serde(rename = "$createdAt", skip_serializing_if = "Option::is_none")]
-    // TODO: Must be TimestampMillis
-    pub created_at: Option<i64>,
+    pub created_at: Option<TimestampMillis>,
     #[serde(rename = "$updatedAt", skip_serializing_if = "Option::is_none")]
-    pub updated_at: Option<i64>,
+    pub updated_at: Option<TimestampMillis>,
     // the serde_json::Value preserves the order (see .toml file)
     #[serde(flatten)]
     pub data: JsonValue,

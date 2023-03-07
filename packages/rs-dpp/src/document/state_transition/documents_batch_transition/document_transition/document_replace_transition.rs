@@ -4,7 +4,7 @@ use serde_json::Value as JsonValue;
 use crate::{
     data_contract::DataContract,
     errors::ProtocolError,
-    prelude::Revision,
+    prelude::{Revision, TimestampMillis},
     util::json_value::{JsonValueExt, ReplaceWith},
 };
 
@@ -24,7 +24,7 @@ pub struct DocumentReplaceTransition {
     #[serde(rename = "$revision")]
     pub revision: Revision,
     #[serde(skip_serializing_if = "Option::is_none", rename = "$updatedAt")]
-    pub updated_at: Option<i64>,
+    pub updated_at: Option<TimestampMillis>,
     #[serde(flatten, skip_serializing_if = "Option::is_none")]
     pub data: Option<JsonValue>,
 }

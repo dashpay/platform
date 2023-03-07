@@ -18,6 +18,7 @@ use crate::errors::{InvalidVectorSizeError, ProtocolError};
 pub use crate::identity::key_type::KeyType;
 pub use crate::identity::purpose::Purpose;
 pub use crate::identity::security_level::SecurityLevel;
+use crate::prelude::TimestampMillis;
 use crate::util::cbor_value::{CborCanonicalMap, CborMapExtension};
 use crate::util::hash::ripemd160_sha256;
 use crate::util::json_value::{JsonValueExt, ReplaceWith};
@@ -27,7 +28,6 @@ use crate::SerdeParsingError;
 use crate::identity::state_transition::identity_public_key_transitions::IdentityPublicKeyCreateTransition;
 
 pub type KeyID = u32;
-pub type TimestampMillis = u64;
 
 pub const BINARY_DATA_FIELDS: [&str; 1] = ["data"];
 

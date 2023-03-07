@@ -8,8 +8,8 @@ use serde_json::json;
 use crate::{
     contracts::withdrawals_contract, data_contract::DataContract, document::generate_document_id,
     document::Document, identity::state_transition::identity_credit_withdrawal_transition::Pooling,
-    state_repository::StateRepositoryLike, state_transition::StateTransitionLike,
-    util::entropy_generator::generate,
+    prelude::TimestampMillis, state_repository::StateRepositoryLike,
+    state_transition::StateTransitionLike, util::entropy_generator::generate,
 };
 
 use super::IdentityCreditWithdrawalTransition;
@@ -58,7 +58,8 @@ where
             consensus::deserialize(&latest_platform_block_header_bytes)?;
 
         let document_type = String::from(withdrawals_contract::document_types::WITHDRAWAL);
-        let document_created_at_millis: i64 = latest_platform_block_header.time as i64 * 1000i64;
+        let document_created_at_millis =
+            latest_platform_block_header.time as TimestampMillis * 1000;
 
         let document_data = json!({
             withdrawals_contract::property_names::AMOUNT: state_transition.amount,

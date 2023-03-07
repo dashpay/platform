@@ -157,7 +157,7 @@ fn document_from_transition_replace(
             .clone(),
         updated_at: document_replace_transition.updated_at,
         revision: document_replace_transition.revision,
-        created_at: Some(created_at as i64),
+        created_at: Some(created_at),
         metadata: None,
 
         //? In the JS implementation the `data_contract` and `entropy` properties are completely omitted, what suggest we should make
