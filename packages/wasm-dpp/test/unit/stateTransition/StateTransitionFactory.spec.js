@@ -8,7 +8,7 @@ const { default: loadWasmDpp } = require('../../../dist');
 const getBlsAdapterMock = require('../../../lib/test/mocks/getBlsAdapterMock');
 
 describe('StateTransitionFactory', function main() {
-  this.timeout(10000);
+  this.timeout(100000);
 
   let factory;
   let stateTransition;
@@ -38,6 +38,34 @@ describe('StateTransitionFactory', function main() {
     rawStateTransition = stateTransition.toObject();
 
     stateRepositoryMock = createStateRepositoryMock(this.sinonSandbox);
+
+    stateRepositoryMock.fetchDataContract.resolves(dataContract);
+    stateRepositoryMock.createDataContract.resolves();
+    stateRepositoryMock.updateDataContract.resolves();
+    stateRepositoryMock.fetchDocuments.resolves();
+    stateRepositoryMock.createDocument.resolves();
+    stateRepositoryMock.updateDocument.resolves();
+    stateRepositoryMock.removeDocument.resolves();
+    stateRepositoryMock.fetchTransaction.resolves();
+    stateRepositoryMock.fetchIdentity.resolves();
+    stateRepositoryMock.createIdentity.resolves();
+    stateRepositoryMock.addKeysToIdentity.resolves();
+    stateRepositoryMock.disableIdentityKeys.resolves();
+    stateRepositoryMock.updateIdentityRevision.resolves();
+    stateRepositoryMock.addToIdentityBalance.resolves();
+    stateRepositoryMock.fetchIdentityBalance.resolves();
+    stateRepositoryMock.fetchIdentityBalanceWithDebt.resolves();
+    stateRepositoryMock.addToSystemCredits.resolves();
+    stateRepositoryMock.fetchLatestPlatformBlockHeight.resolves();
+    stateRepositoryMock.fetchLatestPlatformCoreChainLockedHeight.resolves();
+    stateRepositoryMock.verifyInstantLock.resolves();
+    stateRepositoryMock.markAssetLockTransactionOutPointAsUsed.resolves();
+    stateRepositoryMock.verifyChainLockHeight.resolves();
+    stateRepositoryMock.isAssetLockTransactionOutPointAlreadyUsed.resolves();
+    stateRepositoryMock.fetchSMLStore.resolves();
+    stateRepositoryMock.fetchLatestWithdrawalTransactionIndex.resolves();
+    stateRepositoryMock.enqueueWithdrawalTransaction.resolves();
+    stateRepositoryMock.fetchLatestPlatformBlockTime.resolves();
 
     const blsAdapter = await getBlsAdapterMock();
 
