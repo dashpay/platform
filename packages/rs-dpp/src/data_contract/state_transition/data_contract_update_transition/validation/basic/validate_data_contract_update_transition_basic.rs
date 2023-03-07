@@ -3,7 +3,9 @@ use std::convert::{TryFrom, TryInto};
 use crate::consensus::basic::data_contract::{
     DataContractImmutablePropertiesUpdateError, IncompatibleDataContractSchemaError,
 };
+use crate::consensus::basic::decode::ProtocolVersionParsingError;
 use crate::consensus::basic::invalid_data_contract_version_error::InvalidDataContractVersionError;
+use crate::consensus::ConsensusError;
 use crate::state_transition::state_transition_execution_context::StateTransitionExecutionContext;
 use crate::{
     consensus::basic::BasicError,
@@ -24,10 +26,6 @@ use json_patch::PatchOperation;
 use lazy_static::lazy_static;
 use serde_json::{json, Value as JsonValue};
 use std::sync::Arc;
-use crate::{
-    consensus::ConsensusError,
-};
-use crate::consensus::basic::decode::ProtocolVersionParsingError;
 
 use super::schema_compatibility_validator::validate_schema_compatibility;
 use super::schema_compatibility_validator::DiffVAlidatorError;
@@ -87,7 +85,9 @@ where
             Ok(v) => v,
             Err(parsing_error) => {
                 return Ok(SimpleValidationResult::new(Some(vec![
-                    ConsensusError::ProtocolVersionParsingError(ProtocolVersionParsingError::new(parsing_error)),
+                    ConsensusError::ProtocolVersionParsingError(ProtocolVersionParsingError::new(
+                        parsing_error,
+                    )),
                 ])))
             }
         };
