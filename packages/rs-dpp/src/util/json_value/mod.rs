@@ -1,4 +1,7 @@
-use std::{collections::BTreeMap, convert::TryInto};
+use std::{
+    collections::BTreeMap,
+    convert::{TryFrom, TryInto},
+};
 
 use anyhow::{anyhow, bail};
 use log::trace;
@@ -408,14 +411,15 @@ impl JsonValueExt for JsonValue {
 
     fn remove_u32(&mut self, property_name: &str) -> Result<u32, anyhow::Error> {
         match self {
-            JsonValue::Object(ref mut m) => match m.remove(property_name) {
-                Some(JsonValue::Number(number)) => Ok(number.as_u64().ok_or_else(|| {
-                    anyhow!("unable to convert '{}' into unsigned integer", number)
-                })? as u32),
-                _ => {
+            JsonValue::Object(ref mut m) => {
+                if let Some(JsonValue::Number(number)) = m.remove(property_name) {
+                    Ok(u32::try_from(number.as_u64().ok_or_else(|| {
+                        anyhow!("unable to convert '{}' into unsigned integer", number)
+                    })?)?)
+                } else {
                     bail!("Unable to find '{}' in '{}'", property_name, self)
                 }
-            },
+            }
             _ => bail!("the Json Value isn't a map: {:?}", self),
         }
     }

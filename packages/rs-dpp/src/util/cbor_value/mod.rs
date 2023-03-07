@@ -1,6 +1,6 @@
-use std::convert::TryInto;
+use std::convert::{TryFrom, TryInto};
 
-use anyhow::anyhow;
+use anyhow::{anyhow, Context};
 use ciborium::value::Value as CborValue;
 use serde_json::{Map, Value as JsonValue};
 
@@ -118,7 +118,9 @@ impl CborMapExtension for &Vec<(CborValue, CborValue)> {
         let key_value = get_key_from_cbor_map(self, key)
             .ok_or_else(|| ProtocolError::DecodingError(String::from(error_message)))?;
         if let CborValue::Integer(integer_value) = key_value {
-            return Ok(i128::from(*integer_value) as u64);
+            return Ok(
+                u64::try_from(i128::from(*integer_value)).context("unable convert i128 to u64")?
+            );
         }
         Err(ProtocolError::DecodingError(String::from(error_message)))
     }

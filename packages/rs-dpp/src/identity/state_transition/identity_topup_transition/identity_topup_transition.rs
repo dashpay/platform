@@ -90,8 +90,8 @@ impl IdentityTopUpTransition {
         raw_object: JsonValue,
     ) -> Result<IdentityTopUpTransition, ProtocolError> {
         let protocol_version = raw_object
-            .get_u64(property_names::PROTOCOL_VERSION)
-            .unwrap_or(LATEST_VERSION as u64) as u32;
+            .get_u32(property_names::PROTOCOL_VERSION)
+            .unwrap_or(LATEST_VERSION);
         let signature = raw_object
             .get_bytes(property_names::SIGNATURE)
             .unwrap_or_default();

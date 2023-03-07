@@ -88,7 +88,7 @@ impl DocumentValidator {
             return Ok(result);
         }
 
-        let protocol_version = raw_document.get_u64(PROPERTY_PROTOCOL_VERSION)? as u32;
+        let protocol_version = raw_document.get_u32(PROPERTY_PROTOCOL_VERSION)?;
         result.merge(self.protocol_version_validator.validate(protocol_version)?);
 
         Ok(result)

@@ -124,7 +124,7 @@ where
             }
         };
 
-        let new_version = raw_data_contract.get_u64(contract_property_names::VERSION)? as u32;
+        let new_version = raw_data_contract.get_u32(contract_property_names::VERSION)?;
         let old_version = existing_data_contract.version;
         if (new_version - old_version) != 1 {
             validation_result.add_error(BasicError::InvalidDataContractVersionError {

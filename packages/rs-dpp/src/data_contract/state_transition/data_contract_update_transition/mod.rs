@@ -52,7 +52,7 @@ impl DataContractUpdateTransition {
         mut raw_data_contract_update_transition: JsonValue,
     ) -> Result<DataContractUpdateTransition, ProtocolError> {
         Ok(DataContractUpdateTransition {
-            protocol_version: raw_data_contract_update_transition.get_u64(PROTOCOL_VERSION)? as u32,
+            protocol_version: raw_data_contract_update_transition.get_u32(PROTOCOL_VERSION)?,
             signature: raw_data_contract_update_transition
                 .remove_into(SIGNATURE)
                 .unwrap_or_default(),
@@ -249,8 +249,8 @@ mod test {
         assert_eq!(
             version::LATEST_VERSION,
             json_object
-                .get_u64(PROTOCOL_VERSION)
-                .expect("the protocol version should be present") as u32
+                .get_u32(PROTOCOL_VERSION)
+                .expect("the protocol version should be present")
         );
 
         assert_eq!(

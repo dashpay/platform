@@ -96,9 +96,9 @@ impl DocumentsBatchTransition {
 
         let mut batch_transitions = DocumentsBatchTransition {
             protocol_version: json_value
-                .get_u64(property_names::PROTOCOL_VERSION)
+                .get_u32(property_names::PROTOCOL_VERSION)
                 // js-dpp allows `protocolVersion` to be undefined
-                .unwrap_or(LATEST_VERSION as u64) as u32,
+                .unwrap_or(LATEST_VERSION),
             signature,
             signature_public_key_id: json_value
                 .get_u64(property_names::SIGNATURE_PUBLIC_KEY_ID)
@@ -150,9 +150,9 @@ impl DocumentsBatchTransition {
     ) -> Result<Self, ProtocolError> {
         let mut batch_transitions = DocumentsBatchTransition {
             protocol_version: raw_object
-                .get_u64(property_names::PROTOCOL_VERSION)
+                .get_u32(property_names::PROTOCOL_VERSION)
                 // js-dpp allows `protocolVersion` to be undefined
-                .unwrap_or(LATEST_VERSION as u64) as u32,
+                .unwrap_or(LATEST_VERSION),
             signature: raw_object.get_bytes(property_names::SIGNATURE).ok(),
             signature_public_key_id: raw_object
                 .get_u64(property_names::SIGNATURE_PUBLIC_KEY_ID)
