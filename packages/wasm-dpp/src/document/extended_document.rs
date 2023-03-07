@@ -1,12 +1,10 @@
 use dpp::document::document_transition::document_base_transition::JsonValue;
-use dpp::document::{
-    extended_document_property_names, ExtendedDocument, EXTENDED_DOCUMENT_IDENTIFIER_FIELDS,
-};
+use dpp::document::{ExtendedDocument, EXTENDED_DOCUMENT_IDENTIFIER_FIELDS};
 
 use dpp::platform_value::{ReplacementType, Value};
 use dpp::prelude::{Identifier, Revision};
 use dpp::util::json_schema::JsonSchemaExt;
-use dpp::util::json_value::{JsonValueExt, ReplaceWith};
+use dpp::util::json_value::JsonValueExt;
 
 use dpp::ProtocolError;
 use serde::{Deserialize, Serialize};
@@ -18,8 +16,7 @@ use crate::document::BinaryType;
 use crate::errors::RustConversionError;
 use crate::identifier::{identifier_from_js_value, IdentifierWrapper};
 use crate::lodash::lodash_set;
-use crate::utils::{with_serde_to_json_value, ToSerdeJSONExt};
-use crate::utils::{with_serde_to_platform_value, WithJsError};
+use crate::utils::{with_serde_to_platform_value, ToSerdeJSONExt, WithJsError};
 use crate::{with_js_error, ConversionOptions};
 use crate::{DataContractWasm, MetadataWasm};
 
@@ -34,7 +31,7 @@ impl ExtendedDocumentWasm {
         js_raw_document: JsValue,
         js_data_contract: &DataContractWasm,
     ) -> Result<ExtendedDocumentWasm, JsValue> {
-        let mut raw_document = with_serde_to_platform_value(&js_raw_document)?;
+        let raw_document = with_serde_to_platform_value(&js_raw_document)?;
 
         // let document_type = raw_document
         //     .get_string(extended_document_property_names::DOCUMENT_TYPE).map_err(ProtocolError::ValueError)

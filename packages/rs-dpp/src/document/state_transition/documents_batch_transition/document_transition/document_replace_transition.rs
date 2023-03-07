@@ -10,7 +10,7 @@ use crate::data_contract::document_type::document_type::PROTOCOL_VERSION;
 use crate::document::Document;
 use crate::identity::TimestampMillis;
 use crate::prelude::{ExtendedDocument, Revision};
-use crate::{data_contract::DataContract, errors::ProtocolError, util::json_value::JsonValueExt};
+use crate::{data_contract::DataContract, errors::ProtocolError};
 
 use super::{document_base_transition::DocumentBaseTransition, DocumentTransitionObjectLike};
 

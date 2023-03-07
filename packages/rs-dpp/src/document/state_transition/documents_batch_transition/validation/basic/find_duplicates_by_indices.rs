@@ -6,10 +6,8 @@ use std::collections::BTreeMap;
 
 use crate::data_contract::DriveContractExt;
 use crate::{
-    document::document_transition::DocumentTransition,
-    prelude::DataContract,
-    util::{json_schema::Index, json_value::JsonValueExt},
-    ProtocolError,
+    document::document_transition::DocumentTransition, prelude::DataContract,
+    util::json_schema::Index, ProtocolError,
 };
 
 #[macro_export]

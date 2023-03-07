@@ -12,7 +12,6 @@ use crate::ProtocolError;
 use ciborium::Value as CborValue;
 use integer_encoding::VarInt;
 
-use crate::data_contract::document_type::document_type::PROTOCOL_VERSION;
 use crate::data_contract::document_type::DocumentType;
 use crate::document::Document;
 use platform_value::btreemap_extensions::BTreeValueMapHelper;

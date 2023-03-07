@@ -12,7 +12,7 @@ use crate::util::hash::hash;
 use crate::ProtocolError;
 use crate::{
     document::document_transition::DocumentTransition, get_from_transition, prelude::Identifier,
-    state_repository::StateRepositoryLike, util::json_value::JsonValueExt,
+    state_repository::StateRepositoryLike,
 };
 
 use super::{create_error, DataTriggerExecutionContext, DataTriggerExecutionResult};

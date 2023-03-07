@@ -12,10 +12,7 @@ use serde_repr::*;
 use crate::document::document_transition::Action::{Create, Delete, Replace};
 
 use crate::document::errors::DocumentError;
-use crate::{
-    data_contract::DataContract, errors::ProtocolError, identifier::Identifier,
-    util::json_value::JsonValueExt,
-};
+use crate::{data_contract::DataContract, errors::ProtocolError, identifier::Identifier};
 
 pub(self) mod property_names {
     pub const ID: &str = "$id";
