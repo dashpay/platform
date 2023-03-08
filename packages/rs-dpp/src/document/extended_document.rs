@@ -7,7 +7,6 @@ use crate::util::deserializer;
 use crate::util::deserializer::SplitProtocolVersionOutcome;
 use crate::util::hash::hash;
 use crate::util::json_value::JsonValueExt;
-use crate::util::json_value::ReplaceWith;
 use crate::ProtocolError;
 use ciborium::Value as CborValue;
 use integer_encoding::VarInt;
@@ -151,7 +150,7 @@ impl ExtendedDocument {
     }
 
     pub fn from_platform_value(
-        mut document_value: Value,
+        document_value: Value,
         data_contract: DataContract,
     ) -> Result<Self, ProtocolError> {
         let mut properties = document_value

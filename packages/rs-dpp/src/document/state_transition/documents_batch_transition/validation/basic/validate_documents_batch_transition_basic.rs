@@ -227,7 +227,7 @@ fn validate_raw_transitions<'a>(
                     result.add_error(BasicError::InvalidDocumentTypeError(
                         InvalidDocumentTypeError::new(
                             document_type.to_string(),
-                            data_contract.id().clone(),
+                            data_contract.id.clone(),
                         ),
                     ));
                     return Ok(result);

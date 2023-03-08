@@ -1,4 +1,4 @@
-use crate::consensus::ConsensusError;
+
 use crate::decode_protocol_entity_factory::DecodeProtocolEntity;
 use crate::identifier::Identifier;
 use crate::identity::identity_public_key::factory::KeyCount;
@@ -12,11 +12,11 @@ use crate::identity::validation::{IdentityValidator, PublicKeysValidator};
 use crate::identity::{Identity, IdentityPublicKey, KeyID, TimestampMillis};
 
 use crate::{BlsModule, ProtocolError};
-use anyhow::anyhow;
+
 use dashcore::{InstantLock, Transaction};
 use rand::rngs::StdRng;
 use rand::{Rng, SeedableRng};
-use serde_json::{Number, Value as JsonValue};
+use serde_json::{Value as JsonValue};
 use std::collections::BTreeMap;
 use std::convert::TryInto;
 

@@ -1,6 +1,6 @@
 
 
-use serde_json::{json, Map, Number, Value as JsonValue};
+use serde_json::{json, Map, Value as JsonValue};
 use std::sync::Arc;
 
 use data_contract::state_transition::property_names as st_prop;
@@ -12,7 +12,7 @@ use crate::util::serializer::value_to_cbor;
 use crate::{
     data_contract::{self, generate_data_contract_id},
     decode_protocol_entity_factory::DecodeProtocolEntity,
-    errors::{consensus::ConsensusError, ProtocolError},
+    errors::ProtocolError,
     prelude::Identifier,
     util::entropy_generator,
 };
@@ -121,7 +121,7 @@ impl DataContractFactory {
 
             if !result.is_valid() {
                 return Err(ProtocolError::InvalidDataContractError(
-                    InvalidDataContractError::new(result.errors, raw_data_contract),
+                    InvalidDataContractError::new(result.errors, json_value),
                 ));
             }
         }

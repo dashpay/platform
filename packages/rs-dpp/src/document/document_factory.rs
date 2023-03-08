@@ -8,7 +8,7 @@ use platform_value::Value;
 use rand::rngs::StdRng;
 use rand::SeedableRng;
 use serde::{Deserialize, Serialize};
-use serde_json::{json, Value as JsonValue};
+use serde_json::{Value as JsonValue};
 
 use crate::consensus::basic::document::InvalidDocumentTypeError;
 use crate::document::extended_document::{property_names, ExtendedDocument};
@@ -23,7 +23,7 @@ use crate::{
     prelude::Identifier,
     state_repository::StateRepositoryLike,
     util::entropy_generator,
-    util::json_value::JsonValueExt,
+
     ProtocolError,
 };
 
@@ -112,7 +112,7 @@ where
         data_contract: DataContract,
         owner_id: Identifier,
         document_type_name: String,
-        data: JsonValue,
+        data: Value,
     ) -> Result<ExtendedDocument, ProtocolError> {
         if !data_contract.is_document_defined(&document_type_name) {
             return Err(DataContractError::InvalidDocumentTypeError(
@@ -160,7 +160,7 @@ where
             updated_at,
         };
 
-        let json_value = document.to_json_with_identifiers_using_bytes()?;
+        // let json_value = document.to_json_with_identifiers_using_bytes()?;
         // let validation_result =
         //     self.document_validator
         //         .validate(&json_value, &data_contract, document_type)?;

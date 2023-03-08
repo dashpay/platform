@@ -2,7 +2,7 @@ use anyhow::anyhow;
 use ciborium::value::Value as CborValue;
 
 use platform_value::Value;
-use serde_json::Value as JsonValue;
+
 
 use crate::util::deserializer;
 use crate::util::deserializer::SplitProtocolVersionOutcome;
