@@ -422,28 +422,26 @@ fn insert_values(
                 );
             }
             "object" => {
-                let properties = inner_properties
-                    .get(property_names::PROPERTIES)
-                    .ok_or(ProtocolError::StructureError(
-                        StructureError::KeyValueMustExist("object must have properties"),
-                    ))?
-                    .as_map()
-                    .ok_or(ProtocolError::StructureError(
-                        StructureError::ValueWrongType("properties must be a map"),
-                    ))?;
+                if let Some(properties_as_value) = inner_properties
+                    .get(property_names::PROPERTIES) {
+                    let properties = properties_as_value.as_map()
+                        .ok_or(ProtocolError::StructureError(
+                            StructureError::ValueWrongType("properties must be a map"),
+                        ))?;
 
-                for (object_property_key, object_property_value) in properties.iter() {
-                    let object_property_string = object_property_key
-                        .as_text()
-                        .ok_or(ProtocolError::StructureError(StructureError::KeyWrongType(
-                            "property key must be a string",
-                        )))?
-                        .to_string();
-                    to_visit.push((
-                        Some(prefixed_property_key.clone()),
-                        object_property_string,
-                        object_property_value,
-                    ));
+                    for (object_property_key, object_property_value) in properties.iter() {
+                        let object_property_string = object_property_key
+                            .as_text()
+                            .ok_or(ProtocolError::StructureError(StructureError::KeyWrongType(
+                                "property key must be a string",
+                            )))?
+                            .to_string();
+                        to_visit.push((
+                            Some(prefixed_property_key.clone()),
+                            object_property_string,
+                            object_property_value,
+                        ));
+                    }
                 }
             }
 
