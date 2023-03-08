@@ -17,7 +17,6 @@ const createStateRepositoryMock = require('@dashevo/dpp/lib/test/mocks/createSta
 
 const protocolVersion = require('@dashevo/dpp/lib/version/protocolVersion');
 const StateTransitionExecutionContextJs = require('@dashevo/dpp/lib/stateTransition/StateTransitionExecutionContext');
-const DocumentNotProvidedErrorJs = require('@dashevo/dpp/lib/document/errors/DocumentNotProvidedError');
 
 const { default: loadWasmDpp } = require('../../../../../dist');
 
@@ -197,20 +196,6 @@ describe('applyDocumentsBatchTransitionFactory', () => {
     expect(deleteDocumentId.toBuffer()).to.deep.equal(documentTransitionsJs[2].getId());
   });
 
-  it('should throw an error if document was not provided for a replacement', async () => {
-    fetchDocumentsMock.resolves([]);
-
-    const replaceDocumentTransition = documentTransitionsJs[1];
-
-    try {
-      await applyDocumentsBatchTransitionJs(stateTransitionJs);
-      expect.fail('Error was not thrown');
-    } catch (e) {
-      expect(e).to.be.an.instanceOf(DocumentNotProvidedErrorJs);
-      expect(e.getDocumentTransition()).to.deep.equal(replaceDocumentTransition);
-    }
-  });
-
   it('should throw an error if document was not provided for a replacement - Rust', async () => {
     stateRepositoryMock.fetchDocuments.resolves([]);
 
@@ -224,48 +209,6 @@ describe('applyDocumentsBatchTransitionFactory', () => {
       expect(e.getDocumentTransition().toObject())
         .to.deep.equal(replaceDocumentTransition.toObject());
     }
-  });
-
-  it('should call `replace` functions on dry run', async () => {
-    documentTransitionsJs = getDocumentTransitionsFixture({
-      create: [],
-      replace: [documentsJs[0]],
-      delete: [],
-    });
-
-    stateTransitionJs = new DocumentsBatchTransitionJs({
-      protocolVersion: protocolVersion.latestVersion,
-      ownerId,
-      transitions: documentTransitionsJs.map((t) => t.toObject()),
-    }, [dataContractJs]);
-
-    stateTransitionJs.getExecutionContext().enableDryRun();
-
-    await applyDocumentsBatchTransitionJs(stateTransitionJs);
-
-    stateTransitionJs.getExecutionContext().disableDryRun();
-
-    expect(stateRepositoryMockJs.fetchLatestPlatformBlockTime).to.have.been.calledOnceWith();
-
-    const [documentTransition] = stateTransitionJs.getTransitions();
-    const newDocument = new DocumentJs({
-      $protocolVersion: stateTransitionJs.getProtocolVersion(),
-      $id: documentTransition.getId(),
-      $type: documentTransition.getType(),
-      $dataContractId: documentTransition.getDataContractId(),
-      $ownerId: stateTransitionJs.getOwnerId(),
-      $createdAt: blockTimeMs,
-      ...documentTransition.getData(),
-    }, documentTransition.getDataContract());
-
-    newDocument.setRevision(documentTransition.getRevision());
-    newDocument.setData(documentTransition.getData());
-    newDocument.setUpdatedAt(documentTransition.getUpdatedAt());
-
-    expect(stateRepositoryMockJs.updateDocument).to.have.been.calledOnceWithExactly(
-      newDocument,
-      executionContextJs,
-    );
   });
 
   it('should call `replace` functions on dry run - Rust', async function test() {

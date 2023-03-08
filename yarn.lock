@@ -1281,9 +1281,9 @@ __metadata:
   languageName: node
   linkType: hard
 
-"@dashevo/abci@github:dashpay/js-abci#0ed8258034f3e7521a110053570f5c5c024eab67":
+"@dashevo/abci@github:dashpay/js-abci#09f72120bc2059144f72eb7a246d632ead3fc3c6":
   version: 0.24.0-dev.1
-  resolution: "@dashevo/abci@https://github.com/dashpay/js-abci.git#commit=0ed8258034f3e7521a110053570f5c5c024eab67"
+  resolution: "@dashevo/abci@https://github.com/dashpay/js-abci.git#commit=09f72120bc2059144f72eb7a246d632ead3fc3c6"
   dependencies:
     "@dashevo/protobufjs": 6.10.5
     bl: ^1.2.3
@@ -1296,7 +1296,7 @@ __metadata:
   version: 0.0.0-use.local
   resolution: "@dashevo/bench-suite@workspace:packages/bench-suite"
   dependencies:
-    "@dashevo/dashcore-lib": ~0.19.44
+    "@dashevo/dashcore-lib": "github:dashevo/dashcore-lib#1179c8be52dcd4f5ded55ef5337790533917f904"
     "@dashevo/dpns-contract": "workspace:*"
     "@dashevo/dpp": "workspace:*"
     "@dashevo/wallet-lib": "workspace:*"
@@ -1313,12 +1313,12 @@ __metadata:
   languageName: unknown
   linkType: soft
 
-"@dashevo/bls@npm:~1.0.0-beta.2":
-  version: 1.0.0-beta.2
-  resolution: "@dashevo/bls@npm:1.0.0-beta.2"
+"@dashevo/bls@npm:~1.2.7":
+  version: 1.2.7
+  resolution: "@dashevo/bls@npm:1.2.7"
   dependencies:
     binascii: 0.0.2
-  checksum: d1c329bedc6a6af3ce34e2e631c9d6aafc6cef014220a170edd3491e69fb9cb026bed37f22c6ddcb6ff9d3c4e00f8b241f2ece1360a281ecfdbc876a1c028923
+  checksum: e2dbf1bbbc7746f5177d06e5b4198c0b980ffb996f4149414d2f2e31f17d22e98cccd2fc2b18649bf8894de5b76cd37749361f6e4e7932eb3fd5eae21c2e14c4
   languageName: node
   linkType: hard
 
@@ -1329,7 +1329,7 @@ __metadata:
     "@babel/core": ^7.15.5
     "@dashevo/dapi-grpc": "workspace:*"
     "@dashevo/dash-spv": "workspace:*"
-    "@dashevo/dashcore-lib": ~0.19.44
+    "@dashevo/dashcore-lib": "github:dashevo/dashcore-lib#1179c8be52dcd4f5ded55ef5337790533917f904"
     "@dashevo/dpp": "workspace:*"
     "@dashevo/grpc-common": "workspace:*"
     assert-browserify: ^2.0.0
@@ -1404,7 +1404,7 @@ __metadata:
   dependencies:
     "@dashevo/dapi-client": "workspace:*"
     "@dashevo/dapi-grpc": "workspace:*"
-    "@dashevo/dashcore-lib": ~0.19.44
+    "@dashevo/dashcore-lib": "github:dashevo/dashcore-lib#1179c8be52dcd4f5ded55ef5337790533917f904"
     "@dashevo/dashd-rpc": ^18.2.0
     "@dashevo/dp-services-ctl": "github:dashevo/js-dp-services-ctl#v0.19-dev"
     "@dashevo/dpp": "workspace:*"
@@ -1451,7 +1451,7 @@ __metadata:
   dependencies:
     "@dashevo/dark-gravity-wave": ^1.1.1
     "@dashevo/dash-util": ^2.0.3
-    "@dashevo/dashcore-lib": ~0.19.44
+    "@dashevo/dashcore-lib": "github:dashevo/dashcore-lib#1179c8be52dcd4f5ded55ef5337790533917f904"
     chai: ^4.3.4
     eslint: ^7.32.0
     eslint-config-airbnb-base: ^14.2.1
@@ -1473,14 +1473,14 @@ __metadata:
   languageName: node
   linkType: hard
 
-"@dashevo/dashcore-lib@npm:~0.19.44":
+"@dashevo/dashcore-lib@github:dashevo/dashcore-lib#1179c8be52dcd4f5ded55ef5337790533917f904":
   version: 0.19.44
-  resolution: "@dashevo/dashcore-lib@npm:0.19.44"
+  resolution: "@dashevo/dashcore-lib@https://github.com/dashevo/dashcore-lib.git#commit=1179c8be52dcd4f5ded55ef5337790533917f904"
   dependencies:
+    "@dashevo/bls": ~1.2.7
     "@dashevo/x11-hash-js": ^1.0.2
     "@types/node": ^12.12.47
     bloom-filter: ^0.2.0
-    bls-signatures: ^0.2.5
     bn.js: ^4.12.0
     bs58: =4.0.1
     elliptic: ^6.5.4
@@ -1488,7 +1488,7 @@ __metadata:
     lodash: ^4.17.20
     ripemd160: ^2.0.2
     unorm: ^1.6.0
-  checksum: 00fb3a109a34aaf1f9730389518329fd6e895798d6c68ba983a317e60e7c505e6055bf3bf78ff4c2faf3e186118580ec27ddc9d7679f4bd4dd1710976ea729bf
+  checksum: 005b524971be3667e35be1eefaaf1323cc0b150b99ebc2f6b2b904f303528ffbb5d675bad81473b723184fc4790551e90eac0e02752d99f1cf6c95e09c0ad3d6
   languageName: node
   linkType: hard
 
@@ -1573,7 +1573,8 @@ __metadata:
     "@apidevtools/json-schema-ref-parser": ^8.0.0
     "@babel/core": ^7.15.5
     "@babel/preset-env": ^7.15.4
-    "@dashevo/dashcore-lib": ~0.19.44
+    "@dashevo/bls": ~1.2.7
+    "@dashevo/dashcore-lib": "github:dashevo/dashcore-lib#1179c8be52dcd4f5ded55ef5337790533917f904"
     "@dashevo/dashpay-contract": "workspace:*"
     "@dashevo/dpns-contract": "workspace:*"
     "@dashevo/feature-flags-contract": "workspace:*"
@@ -1585,7 +1586,6 @@ __metadata:
     assert: ^2.0.0
     babel-loader: ^8.2.2
     bignumber.js: ^9.0.1
-    bls-signatures: ^0.2.5
     bs58: ^4.0.1
     buffer: ^6.0.3
     cbor: ^8.0.0
@@ -1635,9 +1635,9 @@ __metadata:
   version: 0.0.0-use.local
   resolution: "@dashevo/drive@workspace:packages/js-drive"
   dependencies:
-    "@dashevo/abci": "github:dashpay/js-abci#0ed8258034f3e7521a110053570f5c5c024eab67"
+    "@dashevo/abci": "github:dashpay/js-abci#09f72120bc2059144f72eb7a246d632ead3fc3c6"
     "@dashevo/dapi-grpc": "workspace:*"
-    "@dashevo/dashcore-lib": ~0.19.44
+    "@dashevo/dashcore-lib": "github:dashevo/dashcore-lib#1179c8be52dcd4f5ded55ef5337790533917f904"
     "@dashevo/dashd-rpc": ^18.2.0
     "@dashevo/dashpay-contract": "workspace:*"
     "@dashevo/dp-services-ctl": "github:dashevo/js-dp-services-ctl#v0.19-dev"
@@ -1745,12 +1745,40 @@ __metadata:
   languageName: unknown
   linkType: soft
 
+"@dashevo/oclif@npm:^1.0.0":
+  version: 1.0.0
+  resolution: "@dashevo/oclif@npm:1.0.0"
+  dependencies:
+    "@oclif/core": ^1.20.4
+    "@oclif/plugin-help": ^5.1.19
+    "@oclif/plugin-not-found": ^2.3.7
+    "@oclif/plugin-warn-if-update-available": ^2.0.14
+    aws-sdk: ^2.1231.0
+    concurrently: ^7.6.0
+    debug: ^4.3.3
+    find-yarn-workspace-root: ^2.0.0
+    fs-extra: ^8.1
+    github-slugger: ^1.5.0
+    got: ^11
+    lodash: ^4.17.21
+    normalize-package-data: ^3.0.3
+    semver: ^7.3.8
+    tslib: ^2.3.1
+    yeoman-environment: ^3.11.1
+    yeoman-generator: ^5.6.1
+    yosay: ^2.0.2
+  bin:
+    oclif: bin/run
+  checksum: f095f30dcc26aaa7ee8708b08db55ba2c97a12b066b94783ca30e3d19e5c2005734948489ca057d40dfb19450877c2a30d26c0c50f97df534ce293a938d8168e
+  languageName: node
+  linkType: hard
+
 "@dashevo/platform-test-suite@workspace:packages/platform-test-suite":
   version: 0.0.0-use.local
   resolution: "@dashevo/platform-test-suite@workspace:packages/platform-test-suite"
   dependencies:
     "@dashevo/dapi-client": "workspace:*"
-    "@dashevo/dashcore-lib": ~0.19.44
+    "@dashevo/dashcore-lib": "github:dashevo/dashcore-lib#1179c8be52dcd4f5ded55ef5337790533917f904"
     "@dashevo/dpns-contract": "workspace:*"
     "@dashevo/dpp": "workspace:*"
     "@dashevo/feature-flags-contract": "workspace:*"
@@ -1849,8 +1877,9 @@ __metadata:
   version: 0.0.0-use.local
   resolution: "@dashevo/rs-drive@workspace:packages/rs-drive-nodejs"
   dependencies:
-    "@dashevo/dashcore-lib": ~0.19.44
+    "@dashevo/dashcore-lib": "github:dashevo/dashcore-lib#1179c8be52dcd4f5ded55ef5337790533917f904"
     "@dashevo/dpp": "workspace:*"
+    "@dashevo/withdrawals-contract": "workspace:*"
     cargo-cp-artifact: ^0.1.6
     cbor: ^8.0.0
     chai: ^4.3.4
@@ -1872,7 +1901,7 @@ __metadata:
   dependencies:
     "@dashevo/dapi-client": "workspace:*"
     "@dashevo/dash-spv": "workspace:*"
-    "@dashevo/dashcore-lib": ~0.19.44
+    "@dashevo/dashcore-lib": "github:dashevo/dashcore-lib#1179c8be52dcd4f5ded55ef5337790533917f904"
     "@dashevo/dpp": "workspace:*"
     "@dashevo/grpc-common": "workspace:*"
     assert: ^2.0.0
@@ -1925,8 +1954,8 @@ __metadata:
   resolution: "@dashevo/wasm-dpp@workspace:packages/wasm-dpp"
   dependencies:
     "@apidevtools/json-schema-ref-parser": ^8.0.0
-    "@dashevo/bls": ~1.0.0-beta.2
-    "@dashevo/dashcore-lib": ~0.19.44
+    "@dashevo/bls": ~1.2.7
+    "@dashevo/dashcore-lib": "github:dashevo/dashcore-lib#1179c8be52dcd4f5ded55ef5337790533917f904"
     "@dashevo/dpns-contract": "workspace:*"
     "@dashevo/dpp": "workspace:*"
     "@dashevo/wasm-re2": ~1.0.2
@@ -4234,13 +4263,6 @@ __metadata:
   languageName: node
   linkType: hard
 
-"bls-signatures@npm:^0.2.5":
-  version: 0.2.5
-  resolution: "bls-signatures@npm:0.2.5"
-  checksum: 472d697f09b1e7701311271150042b4923f0b1e1cd081ca2e7580242902e23ce0ecd97b3b448ea431114eee6a86081a226d80bd8a2a6aea73f9704da8e0dd668
-  languageName: node
-  linkType: hard
-
 "bluebird@npm:^3.4.7, bluebird@npm:^3.7.2":
   version: 3.7.2
   resolution: "bluebird@npm:3.7.2"
@@ -5561,7 +5583,7 @@ __metadata:
   languageName: node
   linkType: hard
 
-"create-hmac@npm:^1.1.0, create-hmac@npm:^1.1.4, create-hmac@npm:^1.1.7":
+"create-hmac@npm:1.1.7, create-hmac@npm:^1.1.0, create-hmac@npm:^1.1.4, create-hmac@npm:^1.1.7":
   version: 1.1.7
   resolution: "create-hmac@npm:1.1.7"
   dependencies:
@@ -5660,7 +5682,7 @@ __metadata:
   resolution: "dash@workspace:packages/js-dash-sdk"
   dependencies:
     "@dashevo/dapi-client": "workspace:*"
-    "@dashevo/dashcore-lib": ~0.19.44
+    "@dashevo/dashcore-lib": "github:dashevo/dashcore-lib#1179c8be52dcd4f5ded55ef5337790533917f904"
     "@dashevo/dashpay-contract": "workspace:*"
     "@dashevo/dpns-contract": "workspace:*"
     "@dashevo/dpp": "workspace:*"
@@ -5723,7 +5745,8 @@ __metadata:
   version: 0.0.0-use.local
   resolution: "dashmate@workspace:packages/dashmate"
   dependencies:
-    "@dashevo/dashcore-lib": ~0.19.44
+    "@dashevo/bls": ~1.2.7
+    "@dashevo/dashcore-lib": "github:dashevo/dashcore-lib#1179c8be52dcd4f5ded55ef5337790533917f904"
     "@dashevo/dashd-rpc": ^18.2.0
     "@dashevo/dashpay-contract": "workspace:*"
     "@dashevo/docker-compose": ^0.24.1
@@ -5731,6 +5754,7 @@ __metadata:
     "@dashevo/dpp": "workspace:*"
     "@dashevo/feature-flags-contract": "workspace:*"
     "@dashevo/masternode-reward-shares-contract": "workspace:*"
+    "@dashevo/oclif": ^1.0.0
     "@dashevo/wallet-lib": "workspace:*"
     "@dashevo/withdrawals-contract": "workspace:*"
     "@oclif/core": ^1.21.0
@@ -5738,7 +5762,6 @@ __metadata:
     ajv: ^8.6.0
     ajv-formats: ^2.1.1
     awilix: ^4.2.6
-    bls-signatures: ^0.2.5
     chai: ^4.3.4
     chai-as-promised: ^7.1.1
     chalk: ^4.1.0
@@ -5748,6 +5771,7 @@ __metadata:
     dockerode: ^3.2.0
     dot: ^1.1.3
     dotenv: ^8.6.0
+    ed25519-hd-key: ^1.3.0
     enquirer: ^2.3.6
     eslint: ^7.32.0
     eslint-config-airbnb-base: ^14.2.1
@@ -5765,7 +5789,6 @@ __metadata:
     node-fetch: ^2.6.7
     node-forge: ^1.3.1
     node-graceful: ^3.0.1
-    oclif: ^3.4.2
     pretty-bytes: ^5.3.0
     pretty-ms: ^7.0.0
     public-ip: ^4.0.4
@@ -5776,7 +5799,7 @@ __metadata:
     sinon-chai: ^3.7.0
     table: ^5.4.6
   bin:
-    dashmate: bin/dashmate
+    dashmate: ./bin/run
   languageName: unknown
   linkType: soft
 
@@ -6099,12 +6122,12 @@ __metadata:
   languageName: node
   linkType: hard
 
-"dns-packet@npm:^5.2.4":
-  version: 5.3.0
-  resolution: "dns-packet@npm:5.3.0"
+"dns-packet@npm:^5.4.0":
+  version: 5.4.0
+  resolution: "dns-packet@npm:5.4.0"
   dependencies:
     "@leichtgewicht/ip-codec": ^2.0.1
-  checksum: ac93e0f6d43ef5d31250279a173d95f7a946e4affac587b0417ecf13dc0e770a974e28391d86cd4b937bcc082520bfe90186c5c7c778597fe569d605742b8ade
+  checksum: a169963848e8539dfd8a19058562f9e1c15c0f82cbf76fa98942f11c46f3c74e7e7c82e3a8a5182d4c9e6ff19e21be738dbd098a876dde755d3aedd2cc730880
   languageName: node
   linkType: hard
 
@@ -6214,6 +6237,16 @@ __metadata:
   version: 0.1.5
   resolution: "duplexer3@npm:0.1.5"
   checksum: e677cb4c48f031ca728601d6a20bf6aed4c629d69ef9643cb89c67583d673c4ec9317cc6427501f38bd8c368d3a18f173987cc02bd99d8cf8fe3d94259a22a20
+  languageName: node
+  linkType: hard
+
+"ed25519-hd-key@npm:^1.3.0":
+  version: 1.3.0
+  resolution: "ed25519-hd-key@npm:1.3.0"
+  dependencies:
+    create-hmac: 1.1.7
+    tweetnacl: 1.0.3
+  checksum: 65dcf405f948ca592adc1e81d750627ce65887310ba0e1b430a6ae0dcc13e9e67a81cb855252c8d64cc0303da2b84ddad810db3098d24c808a5ae89e79fe58cf
   languageName: node
   linkType: hard
 
@@ -10875,34 +10908,6 @@ fsevents@~2.3.2:
   languageName: node
   linkType: hard
 
-"oclif@npm:^3.4.2":
-  version: 3.4.2
-  resolution: "oclif@npm:3.4.2"
-  dependencies:
-    "@oclif/core": ^1.20.4
-    "@oclif/plugin-help": ^5.1.19
-    "@oclif/plugin-not-found": ^2.3.7
-    "@oclif/plugin-warn-if-update-available": ^2.0.14
-    aws-sdk: ^2.1231.0
-    concurrently: ^7.6.0
-    debug: ^4.3.3
-    find-yarn-workspace-root: ^2.0.0
-    fs-extra: ^8.1
-    github-slugger: ^1.5.0
-    got: ^11
-    lodash: ^4.17.21
-    normalize-package-data: ^3.0.3
-    semver: ^7.3.8
-    tslib: ^2.3.1
-    yeoman-environment: ^3.11.1
-    yeoman-generator: ^5.6.1
-    yosay: ^2.0.2
-  bin:
-    oclif: bin/run
-  checksum: fb2d21f9a53b81f4ad08778c186d6ebe3de0e82d29f42afc9d473ef1839786be26e0a9051f17de15513c68e95c86aa89ccd78684a374c804bda0b36941abac0a
-  languageName: node
-  linkType: hard
-
 "on-finished@npm:~2.3.0":
   version: 2.3.0
   resolution: "on-finished@npm:2.3.0"
@@ -13830,6 +13835,13 @@ fsevents@~2.3.2:
   dependencies:
     safe-buffer: ^5.0.1
   checksum: 05f6510358f8afc62a057b8b692f05d70c1782b70db86d6a1e0d5e28a32389e52fa6e7707b6c5ecccacc031462e4bc35af85ecfe4bbc341767917b7cf6965711
+  languageName: node
+  linkType: hard
+
+"tweetnacl@npm:1.0.3":
+  version: 1.0.3
+  resolution: "tweetnacl@npm:1.0.3"
+  checksum: e4a57cac188f0c53f24c7a33279e223618a2bfb5fea426231991652a13247bea06b081fd745d71291fcae0f4428d29beba1b984b1f1ce6f66b06a6d1ab90645c
   languageName: node
   linkType: hard
 

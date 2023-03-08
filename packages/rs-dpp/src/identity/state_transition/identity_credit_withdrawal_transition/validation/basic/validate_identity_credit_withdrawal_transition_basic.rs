@@ -7,9 +7,14 @@ use crate::{
     consensus::basic::identity::{
         InvalidIdentityCreditWithdrawalTransitionCoreFeeError,
         InvalidIdentityCreditWithdrawalTransitionOutputScriptError,
+        NotImplementedIdentityCreditWithdrawalTransitionPoolingError,
     },
+    contracts::withdrawals_contract,
     identity::core_script::CoreScript,
-    util::{is_fibonacci_number::is_fibonacci_number, protocol_data::get_protocol_version},
+    util::{
+        is_fibonacci_number::is_fibonacci_number, json_value::JsonValueExt,
+        protocol_data::get_protocol_version,
+    },
     validation::{JsonSchemaValidator, ValidationResult},
     version::ProtocolVersionValidator,
     DashPlatformProtocolInitError, NonConsensusError, SerdeParsingError,
@@ -71,29 +76,38 @@ impl IdentityCreditWithdrawalTransitionBasicValidator {
             return Ok(result);
         }
 
-        // validate core_fee is in fibonacci sequence
-        let core_fee = transition_json
-            .get("coreFee")
-            .ok_or_else(|| {
-                SerdeParsingError::new("Expected credit withdrawal transition to have coreFee")
-            })?
-            .as_u64()
-            .ok_or_else(|| SerdeParsingError::new("Expected coreFee to be a uint"))?;
+        // validate pooling is always equals to 0
+        let pooling = transition_json.get_u8(withdrawals_contract::property_names::POOLING)?;
 
-        if !is_fibonacci_number(core_fee) {
-            result.add_error(InvalidIdentityCreditWithdrawalTransitionCoreFeeError::new(
-                core_fee as u32,
-            ));
+        if pooling > 0 {
+            result.add_error(
+                NotImplementedIdentityCreditWithdrawalTransitionPoolingError::new(pooling),
+            );
+
+            return Ok(result);
         }
 
-        if !result.is_valid() {
+        // validate core_fee is in fibonacci sequence
+        let core_fee_per_byte =
+            transition_json.get_u32(withdrawals_contract::property_names::CORE_FEE_PER_BYTE)?;
+
+        if !is_fibonacci_number(core_fee_per_byte) {
+            result.add_error(InvalidIdentityCreditWithdrawalTransitionCoreFeeError::new(
+                core_fee_per_byte,
+            ));
+
             return Ok(result);
         }
 
         // validate output_script types
-        let output_script_value = transition_json.get("outputScript").ok_or_else(|| {
-            SerdeParsingError::new("Expected credit withdrawal transition to have outputScript")
-        })?;
+        let output_script_value = transition_json
+            .get(withdrawals_contract::property_names::OUTPUT_SCRIPT)
+            .ok_or_else(|| {
+                SerdeParsingError::new(format!(
+                    "Expected credit withdrawal transition to have {} property",
+                    withdrawals_contract::property_names::OUTPUT_SCRIPT
+                ))
+            })?;
 
         let output_script_bytes: Vec<u8> = serde_json::from_value(output_script_value.clone())?;
 

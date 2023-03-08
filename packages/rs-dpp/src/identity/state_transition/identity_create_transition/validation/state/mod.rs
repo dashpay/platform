@@ -4,7 +4,6 @@ use crate::state_repository::StateRepositoryLike;
 use crate::state_transition::StateTransitionLike;
 use crate::validation::ValidationResult;
 use crate::NonConsensusError;
-use std::convert::TryInto;
 
 /// Validate that identity exists
 ///
@@ -20,19 +19,16 @@ pub async fn validate_identity_create_transition_state(
     let mut result = ValidationResult::default();
 
     let identity_id = state_transition.get_identity_id();
-    let maybe_identity = state_repository
-        .fetch_identity(identity_id, Some(state_transition.get_execution_context()))
-        .await?
-        .map(TryInto::try_into)
-        .transpose()
-        .map_err(Into::into)
+    let balance = state_repository
+        .fetch_identity_balance(identity_id, Some(state_transition.get_execution_context()))
+        .await
         .map_err(|e| NonConsensusError::StateRepositoryFetchError(e.to_string()))?;
 
     if state_transition.get_execution_context().is_dry_run() {
         return Ok(result);
     }
 
-    if let Some(_identity) = maybe_identity {
+    if balance.is_some() {
         result.add_error(IdentityAlreadyExistsError::new(identity_id.to_buffer()));
     }
 
@@ -43,8 +39,7 @@ pub async fn validate_identity_create_transition_state(
 mod test {
     use crate::{
         identity::state_transition::identity_create_transition::IdentityCreateTransition,
-        prelude::Identity, state_repository::MockStateRepositoryLike,
-        state_transition::StateTransitionLike,
+        state_repository::MockStateRepositoryLike, state_transition::StateTransitionLike,
         tests::fixtures::identity_create_transition_fixture_json,
     };
 
@@ -58,8 +53,8 @@ mod test {
 
         transition.get_execution_context().enable_dry_run();
         state_repository
-            .expect_fetch_identity()
-            .return_once(|_, _| Ok(Some(Identity::default())));
+            .expect_fetch_identity_balance()
+            .return_once(|_, _| Ok(Some(1)));
 
         let result = validate_identity_create_transition_state(&state_repository, transition).await;
         assert!(result.is_ok());

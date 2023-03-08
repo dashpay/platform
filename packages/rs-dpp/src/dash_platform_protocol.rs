@@ -36,7 +36,11 @@ impl<SR, BLS: BlsModule> DashPlatformProtocol<SR, BLS> {
         Ok(Self {
             state_repository,
             protocol_version: current_protocol_version,
-            identities: IdentityFacade::new(protocol_version_validator, public_keys_validator)?,
+            identities: IdentityFacade::new(
+                current_protocol_version,
+                protocol_version_validator,
+                public_keys_validator,
+            )?,
         })
     }
 

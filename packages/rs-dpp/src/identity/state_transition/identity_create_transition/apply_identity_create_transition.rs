@@ -77,7 +77,10 @@ where
             .ok_or_else(|| anyhow!("Out point is missing from asset lock proof"))?;
 
         self.state_repository
-            .mark_asset_lock_transaction_out_point_as_used(&out_point)
+            .mark_asset_lock_transaction_out_point_as_used(
+                &out_point,
+                Some(state_transition.get_execution_context()),
+            )
             .await?;
 
         Ok(())

@@ -31,7 +31,6 @@ impl DataTriggerExecutionResultWasm {
     }
 }
 
-
 impl Inner for DataTriggerExecutionResultWasm {
     type InnerItem = DataTriggerExecutionResult;
 

@@ -66,6 +66,7 @@ COPY packages/rs-dpp packages/rs-dpp
 COPY packages/wasm-dpp packages/wasm-dpp
 COPY packages/rs-drive packages/rs-drive
 COPY packages/rs-drive-abci packages/rs-drive-abci
+COPY packages/rs-platform-value packages/rs-platform-value
 COPY packages/rs-drive-nodejs packages/rs-drive-nodejs
 COPY packages/dapi-grpc packages/dapi-grpc
 COPY packages/js-dpp packages/js-dpp
@@ -106,7 +107,7 @@ WORKDIR /platform
 COPY --from=builder /platform /platform
 
 # Remove Rust sources
-RUN rm -rf packages/rs-drive packages/rs-drive-abci packages/rs-dpp
+RUN rm -rf packages/rs-drive packages/rs-drive-abci packages/rs-dpp packages/rs-platform-value
 
 RUN cp /platform/packages/js-drive/.env.example /platform/packages/js-drive/.env
 

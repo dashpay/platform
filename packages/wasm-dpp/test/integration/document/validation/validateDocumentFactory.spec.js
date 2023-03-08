@@ -1,23 +1,5 @@
-const { getRE2Class } = require('@dashevo/wasm-re2');
-
-const createAjv = require('@dashevo/dpp/lib/ajv/createAjv');
-
-const JsonSchemaValidator = require('@dashevo/dpp/lib/validation/JsonSchemaValidator');
-const ValidationResultJs = require('@dashevo/dpp/lib/validation/ValidationResult');
-
-const DataContractJs = require('@dashevo/dpp/lib/dataContract/DataContract');
-
-const validateDocumentFactoryJs = require('@dashevo/dpp/lib/document/validation/validateDocumentFactory');
-const enrichDataContractWithBaseSchema = require('@dashevo/dpp/lib/dataContract/enrichDataContractWithBaseSchema');
-
 const getDataContractFixture = require('@dashevo/dpp/lib/test/fixtures/getDataContractFixture');
 const getDocumentsFixture = require('@dashevo/dpp/lib/test/fixtures/getDocumentsFixture');
-
-const MissingDocumentTypeErrorJs = require('@dashevo/dpp/lib/errors/consensus/basic/document/MissingDocumentTypeError');
-const SomeConsensusError = require('@dashevo/dpp/lib/test/mocks/SomeConsensusError');
-const {
-  expectValidationError: expectValidationErrorJs,
-} = require('@dashevo/dpp/lib/test/expect/expectError');
 
 const { expectJsonSchemaError, expectValidationError } = require('../../../../lib/test/expect/expectError');
 const { default: loadWasmDpp } = require('../../../../dist');
@@ -28,17 +10,14 @@ let DataContract;
 let InvalidDocumentTypeError;
 
 describe('validateDocumentFactory', () => {
-  let dataContractJs;
   let dataContract;
+  let dataContractJs;
   let rawDocuments;
   let rawDocument;
-  let documentsJs;
-  let validateDocumentJs;
-  let validatorJs;
-  let validateProtocolVersionMock;
   let documentValidator;
   let ValidationResult;
 
+  // eslint-disable-next-line prefer-arrow-callback
   beforeEach(async function beforeEach() {
     ({
       DocumentValidator,
@@ -48,30 +27,13 @@ describe('validateDocumentFactory', () => {
       InvalidDocumentTypeError,
     } = await loadWasmDpp());
 
-    const RE2 = await getRE2Class();
-    const ajv = createAjv(RE2);
-
-    validatorJs = new JsonSchemaValidator(ajv);
-
-    this.sinonSandbox.spy(validatorJs, 'validate');
-
     dataContractJs = getDataContractFixture();
     dataContract = new DataContract(dataContractJs.toObject());
-
-    validateProtocolVersionMock = this.sinonSandbox.stub().returns(new ValidationResultJs());
 
     const protocolValidator = new ProtocolVersionValidator();
     documentValidator = new DocumentValidator(protocolValidator);
 
-    validateDocumentJs = validateDocumentFactoryJs(
-      validatorJs,
-      enrichDataContractWithBaseSchema,
-      validateProtocolVersionMock,
-    );
-
-    documentsJs = getDocumentsFixture(dataContractJs);
-
-    rawDocuments = documentsJs.map((o) => o.toObject());
+    rawDocuments = getDocumentsFixture(dataContractJs).map((o) => o.toObject());
     [rawDocument] = rawDocuments;
   });
 
@@ -101,29 +63,6 @@ describe('validateDocumentFactory', () => {
 
         expect(error.getInstancePath()).to.equal('/$protocolVersion');
         expect(error.getKeyword()).to.equal('type');
-      });
-
-      it('should be valid', async () => {
-        rawDocument.$protocolVersion = -1;
-
-        const protocolVersionError = new SomeConsensusError('test');
-        const protocolVersionResult = new ValidationResultJs([
-          protocolVersionError,
-        ]);
-
-        validateProtocolVersionMock.returns(protocolVersionResult);
-
-        const result = await validateDocumentJs(rawDocument, dataContractJs);
-
-        expectValidationErrorJs(result, SomeConsensusError);
-
-        const [error] = result.getErrors();
-
-        expect(error).to.equal(protocolVersionError);
-
-        expect(validateProtocolVersionMock).to.be.calledOnceWith(
-          rawDocument.$protocolVersion,
-        );
       });
 
       it('should be valid - Rust', async () => {
@@ -202,21 +141,6 @@ describe('validateDocumentFactory', () => {
         }
       });
 
-      it('should be present', () => {
-        delete rawDocument.$type;
-
-        const result = validateDocumentJs(rawDocument, dataContractJs);
-
-        expectValidationErrorJs(
-          result,
-          MissingDocumentTypeErrorJs,
-        );
-
-        const [error] = result.getErrors();
-
-        expect(error.getCode()).to.equal(1028);
-      });
-
       it('should be present - Rust', async () => {
         delete rawDocument.$type;
 
@@ -224,6 +148,7 @@ describe('validateDocumentFactory', () => {
           documentValidator.validate(rawDocument, dataContract);
         } catch (e) {
           // TODO - fix error when conversion errors are enabled
+          // expect(error.getCode()).to.equal(1028);
           expect(e).to.startsWith("the property '$type' doesn't exist");
         }
       });
@@ -244,25 +169,8 @@ describe('validateDocumentFactory', () => {
         expect(error.getType()).to.equal('undefinedDocument');
       });
 
-      it('should throw an error if getDocumentSchemaRef throws error', function it() {
-        const someError = new Error();
-
-        DataContractMock = this.sinonSandbox.stub(DataContractJs.prototype, 'getDocumentSchemaRef').throws(someError);
-
-        let error;
-        try {
-          validateDocumentJs(rawDocument, dataContractJs);
-        } catch (e) {
-          error = e;
-        }
-
-        expect(error).to.equal(someError);
-
-        expect(dataContractJs.getDocumentSchemaRef).to.have.been.calledOnce();
-      });
-
       it('should throw an error if getDocumentSchemaRef throws error - Rust', () => {
-        // the tess is impossible to trigger with the new wasm document validator
+        // the test is impossible to trigger with the new wasm document validator
       });
     });
 

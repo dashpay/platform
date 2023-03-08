@@ -33,9 +33,7 @@ pub fn get_dpns_data_contract_fixture(owner_id: Option<Identifier>) -> DataContr
     // TODO the pattern is invalid as it's a re2
     document_schemas["domain"]["properties"]["normalizedParentDomainName"]["pattern"] = json!(".*");
 
-    let mut data_contract = factory
+    factory
         .create(owner_id, document_schemas, Some(defs))
-        .expect("data in fixture should be correct");
-
-    data_contract
+        .expect("data in fixture should be correct")
 }

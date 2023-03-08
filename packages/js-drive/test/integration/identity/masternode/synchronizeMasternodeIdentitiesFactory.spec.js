@@ -337,7 +337,8 @@ function expectDeterministicAppHashFactory(groveDBStore) {
   return expectDeterministicAppHash;
 }
 
-describe('synchronizeMasternodeIdentitiesFactory', () => {
+describe('synchronizeMasternodeIdentitiesFactory', function main() {
+  this.timeout(10000);
   let container;
   let coreHeight;
   let fetchSimplifiedMNListMock;
@@ -363,7 +364,7 @@ describe('synchronizeMasternodeIdentitiesFactory', () => {
 
   beforeEach(async function beforeEach() {
     coreHeight = 3;
-    firstSyncAppHash = '14d2b6052ff8d3b86f1ea9e2a4c4abfc55aebebc21c33cb2168b0059e67b3a01';
+    firstSyncAppHash = 'c55de453e3ea4481f20225efdc12d671f715f0618cf3084bb32e56e75123bfdd';
     blockInfo = new BlockInfo(10, 0, 1668702100799);
 
     container = await createTestDIContainer();
@@ -382,36 +383,39 @@ describe('synchronizeMasternodeIdentitiesFactory', () => {
 
     smlFixture = [
       new SimplifiedMNListEntry({
-        proRegTxHash: '954112bb018895896cfa3c3d00761a045fc16b22f2170c1fbb029a2936c68f16',
-        confirmedHash: '1de71625dbc973e2377ebd7da4fe6f8a8eb8af8c5a99373e36151a4fbe9947cc',
-        service: '192.168.65.2:20101',
-        pubKeyOperator: '8e4c8c144bd6c62640fe3ae295973d512f83f7f541525a5da3c91e77ec02ff4dcd214e7431b7d2cc28e420ebfeb612ee',
-        votingAddress: 'yfLLjdEynGQBdoPcCDUNAxu6pksYGzXKA4',
+        proRegTxHash: 'a2c9b34ef525271d84f70a0d4d2c107e8a2f81cd4d8256dc7b3911ed253d5611',
+        confirmedHash: '29ff8afb463604ba7d984b483e92dfefa4e80e12de3acae6d75f9b910df9eab6',
+        service: '192.168.65.2:20201',
+        pubKeyOperator: 'a5ad6d8cad7b233210b718a5fc9ec3cea18aeebe38b2e3122deb581e430aa28875fe7336c283871db42808f8d4107745',
+        votingAddress: 'yRXtaRmQ7LCmT5XcgzQdLwPEf31dycBaeY',
         isValid: true,
         payoutAddress: 'yR843jN58m5dubmQjfUmKDDJMJzNatFV9M',
         payoutOperatorAddress: 'yNjsnYM16J5NZPA2P8BKJG3MKfUD7XHAFE',
+        nType: 0,
       }),
       new SimplifiedMNListEntry({
-        proRegTxHash: '9673b21f45b216dce2b4ffb4a85e1471d57aed6bf8e34d961a48296fe9b7f51a',
-        confirmedHash: '25e1884e4251cbf42a0f9f42666443c62d89b3bc1aae73fb1e9d753e0b2732f4',
-        service: '192.168.65.2:20201',
-        pubKeyOperator: '06a9789fab00deae1464ed80bda281fc833f85959b04201645e5fc25635e3e7ecda30d13d328b721af0809fca3bf3b63',
-        votingAddress: 'yVRXh9Tgf9qt9tCbXmeX9FQsEYa526FMxR',
+        proRegTxHash: 'f5ec54aed788c434da2fc535ea6b125ec6fc54e58bc0a00a005d1a8d5e477a90',
+        confirmedHash: '53125505b0e9d11b371cf3e12c92d164296dfa215fde6201d28ea44bed992187',
+        service: '192.168.65.2:20101',
+        pubKeyOperator: '951a3208ba531ea75aedd2dc0a9efc75f2c4d9492f1ee0a989b593bcd9722b1a101774d80a426552a9f91d24eb55af6e',
+        votingAddress: 'yYH1rgZsgvkmT8bSSSw1cKCjyVPnFpTBCw',
         isValid: true,
         payoutAddress: 'ycL7L4mhYoaZdm9TH85svvpfeKtdfo249u',
+        nType: 0,
       }),
     ];
 
     newSmlFixture = [
       new SimplifiedMNListEntry({
-        proRegTxHash: '3b73b21f45b216dce2b4ffb4a85e1471d57aed6bf8e34d961a48296fe9b7f53b',
-        confirmedHash: '3be1884e4251cbf42a0f9f42666443c62d89b3bc1aae73fb1e9d753e0b27323b',
-        service: '192.168.65.3:20201',
-        pubKeyOperator: '3ba9789fab00deae1464ed80bda281fc833f85959b04201645e5fc25635e3e7ecda30d13d328b721af0809fca3bf3b3b',
-        votingAddress: 'yVey9g4fsN3RY3ZjQ7HqiKEH2zEVAG95EN',
+        proRegTxHash: '1c81a5faa2c0e0d96eb59c58a10fcbc87f431bb6cd880d960b43b269e682d2d2',
+        confirmedHash: '03cc2acc135ab51304d3cff42215c7a8041902fa3f19451d5562a03b38143e8f',
+        service: '192.168.65.2:20001',
+        pubKeyOperator: '96f83eedc8a7b87663e591987f051ce341a6fb88989322c64bbbf56d205e4e77d2cb7d839d8b4106a8a1f5d5cf7cfa57',
+        votingAddress: 'ybJfuKs59MJWkPEnS8qNmtvdisHrCy7Njn',
         isValid: true,
         payoutAddress: '7UkJidhNjEPJCQnCTXeaJKbJmL4JuyV66w',
         payoutOperatorAddress: 'yPDBTHAjPwJfZSSQYczccA78XRS2tZ5fZF',
+        nType: 0,
       }),
     ];
 
@@ -453,9 +457,9 @@ describe('synchronizeMasternodeIdentitiesFactory', () => {
       },
     };
 
-    fetchTransactionMock.withArgs('954112bb018895896cfa3c3d00761a045fc16b22f2170c1fbb029a2936c68f16').resolves(transaction1);
-    fetchTransactionMock.withArgs('9673b21f45b216dce2b4ffb4a85e1471d57aed6bf8e34d961a48296fe9b7f51a').resolves(transaction2);
-    fetchTransactionMock.withArgs('3b73b21f45b216dce2b4ffb4a85e1471d57aed6bf8e34d961a48296fe9b7f53b').resolves(transaction3);
+    fetchTransactionMock.withArgs('a2c9b34ef525271d84f70a0d4d2c107e8a2f81cd4d8256dc7b3911ed253d5611').resolves(transaction1);
+    fetchTransactionMock.withArgs('f5ec54aed788c434da2fc535ea6b125ec6fc54e58bc0a00a005d1a8d5e477a90').resolves(transaction2);
+    fetchTransactionMock.withArgs('1c81a5faa2c0e0d96eb59c58a10fcbc87f431bb6cd880d960b43b269e682d2d2').resolves(transaction3);
 
     container.register('fetchTransaction', asValue(fetchTransactionMock));
 
@@ -680,7 +684,7 @@ describe('synchronizeMasternodeIdentitiesFactory', () => {
 
     // Nothing happened
 
-    await expectDeterministicAppHash('d49fe295c56149b456184957c3a7593e144d91a8da56b2cb0e25848d656ceba5');
+    await expectDeterministicAppHash('a789fe73ceea6769634b98ae82dddad5013c4711b2a8353d2150b813fb953cb3');
 
     // Core RPC should be called
 
@@ -716,7 +720,7 @@ describe('synchronizeMasternodeIdentitiesFactory', () => {
     expect(result2.updatedEntities).to.have.lengthOf(0);
     expect(result2.removedEntities).to.have.lengthOf(0);
 
-    await expectDeterministicAppHash('6f88afb152b8062c9efb09a271970d016d0d2f90193ee46163fbb79aaca9e0b2');
+    await expectDeterministicAppHash('b58bc0499156caea9b930ab0e357f56b20bb191bc7ba97a2eb8941d9ba7a8183');
 
     // New masternode identity should be created
 
@@ -800,7 +804,7 @@ describe('synchronizeMasternodeIdentitiesFactory', () => {
     expect(result.updatedEntities).to.have.lengthOf(0);
     expect(result.removedEntities).to.have.lengthOf(1);
 
-    await expectDeterministicAppHash('db3a5c9e29f9bd70c7c80382aaae2d0a0a94d4ce04567d79fe9b7753393fb43e');
+    await expectDeterministicAppHash('ea28d7339efd80984e53bd06b0d3708611f24862f401997e9cd69328af6a54c2');
 
     // Masternode identity should stay
 
@@ -868,7 +872,7 @@ describe('synchronizeMasternodeIdentitiesFactory', () => {
     expect(result.updatedEntities).to.have.lengthOf(0);
     expect(result.removedEntities).to.have.lengthOf(1);
 
-    await expectDeterministicAppHash('db3a5c9e29f9bd70c7c80382aaae2d0a0a94d4ce04567d79fe9b7753393fb43e');
+    await expectDeterministicAppHash('ea28d7339efd80984e53bd06b0d3708611f24862f401997e9cd69328af6a54c2');
 
     const invalidMasternodeIdentifier = Identifier.from(
       Buffer.from(invalidSmlEntry.proRegTxHash, 'hex'),
@@ -902,7 +906,7 @@ describe('synchronizeMasternodeIdentitiesFactory', () => {
     // Mock SML
 
     const changedSmlEntry = smlFixture[0].copy();
-    changedSmlEntry.pubKeyOperator = '3ba9789fab00deae1464ed80bda281fc833f85959b04201645e5fc25635e3e7ecda30d13d328b721af0809fca3bf3b3b';
+    changedSmlEntry.pubKeyOperator = '96f83eedc8a7b87663e591987f051ce341a6fb88989322c64bbbf56d205e4e77d2cb7d839d8b4106a8a1f5d5cf7cfa57';
 
     smlStoreMock.getSMLbyHeight.withArgs(coreHeight + 1).returns(
       { mnList: [smlFixture[1], changedSmlEntry] },
@@ -918,7 +922,7 @@ describe('synchronizeMasternodeIdentitiesFactory', () => {
     expect(result.updatedEntities).to.have.lengthOf(1);
     expect(result.removedEntities).to.have.lengthOf(1);
 
-    await expectDeterministicAppHash('7f720ebd1d7066dde70c32a29bc838efff51cd585d93ef6523f25e4c26c88b6c');
+    await expectDeterministicAppHash('d80a3bbf5e699a0295e4ba734e3729d12bef3001bdd9cdd295673832d05454cf');
 
     // Masternode identity should stay
 
@@ -993,7 +997,7 @@ describe('synchronizeMasternodeIdentitiesFactory', () => {
 
     await synchronizeMasternodeIdentities(coreHeight + 1, blockInfo);
 
-    await expectDeterministicAppHash('863ed36205e6f7e9d8c09601fd7d524d26535ed826eb2a93092721f9eb038d8c');
+    await expectDeterministicAppHash('cfc8c439d00c2afab01594dc699ef71c8b23cff66b0302794d3c6b88c44d687c');
 
     // Masternode identity should contain new public key
 
@@ -1070,12 +1074,12 @@ describe('synchronizeMasternodeIdentitiesFactory', () => {
       },
     };
 
-    fetchTransactionMock.withArgs('954112bb018895896cfa3c3d00761a045fc16b22f2170c1fbb029a2936c68f16').resolves(transaction1);
+    fetchTransactionMock.withArgs('a2c9b34ef525271d84f70a0d4d2c107e8a2f81cd4d8256dc7b3911ed253d5611').resolves(transaction1);
 
     // Initial sync
 
     await synchronizeMasternodeIdentities(coreHeight, blockInfo);
-    await expectDeterministicAppHash('701fa3c4bc5b0ff48db5e274f4a9346bb0ece8fb0ff345c5dfa3d436e6f8729c');
+    await expectDeterministicAppHash('7a5729e3511c5cc98e8452faa6132f0d600e04fef85df0f95f56e59c776de170');
     const votingIdentifier = createVotingIdentifier(smlFixture[0]);
 
     const votingIdentityResult = await identityRepository.fetch(

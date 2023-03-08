@@ -3,7 +3,7 @@ use std::collections::BTreeMap;
 use ciborium::value::Value as CborValue;
 use integer_encoding::VarInt;
 use serde::{Deserialize, Serialize};
-use serde_json::Value as JsonValue;
+use serde_json::{Value as JsonValue, Value};
 
 use crate::identity::identity_public_key;
 use crate::identity::state_transition::asset_lock_proof::AssetLockProof;
@@ -12,12 +12,21 @@ use crate::util::cbor_value::{CborBTreeMapHelper, CborCanonicalMap};
 use crate::util::deserializer;
 use crate::util::deserializer::SplitProtocolVersionOutcome;
 use crate::util::json_value::{JsonValueExt, ReplaceWith};
-use crate::{errors::ProtocolError, identifier::Identifier, metadata::Metadata, util::hash};
+use crate::{
+    errors::ProtocolError, identifier::Identifier, metadata::Metadata, util::hash,
+    SerdeParsingError,
+};
 
 use super::{IdentityPublicKey, KeyID};
 
-pub const IDENTIFIER_FIELDS_JSON: [&str; 1] = ["$id"];
-pub const IDENTIFIER_FIELDS_RAW_OBJECT: [&str; 1] = ["id"];
+mod property_names {
+    pub const PUBLIC_KEYS: &str = "publicKeys";
+    pub const ID_JSON: &str = "$id";
+    pub const ID_RAW_OBJECT: &str = "id";
+}
+
+pub const IDENTIFIER_FIELDS_JSON: [&str; 1] = [property_names::ID_JSON];
+pub const IDENTIFIER_FIELDS_RAW_OBJECT: [&str; 1] = [property_names::ID_RAW_OBJECT];
 
 /// Implement the Identity. Identity is a low-level construct that provides the foundation
 /// for user-facing functionality on the platform
@@ -162,6 +171,17 @@ impl Identity {
         self.revision
     }
 
+    /// Increment revision
+    pub fn increment_revision(&mut self) -> Result<(), ProtocolError> {
+        let result = self.revision.checked_add(1).ok_or(ProtocolError::Generic(
+            "identity revision is at max level".to_string(),
+        ))?;
+
+        self.revision = result;
+
+        Ok(())
+    }
+
     /// Get metadata
     pub fn get_metadata(&self) -> Option<&Metadata> {
         self.metadata.as_ref()
@@ -206,6 +226,25 @@ impl Identity {
         buf.append(&mut identity_cbor);
 
         Ok(buf)
+    }
+
+    pub fn to_object(&self) -> Result<Value, ProtocolError> {
+        let mut identity_json: JsonValue = serde_json::to_value(self)?;
+
+        identity_json.replace_identifier_paths(IDENTIFIER_FIELDS_RAW_OBJECT, ReplaceWith::Bytes)?;
+
+        let pk_values = self
+            .public_keys
+            .iter()
+            .map(|(_, pk)| pk.to_raw_json_object())
+            .collect::<Result<Vec<JsonValue>, SerdeParsingError>>()?;
+
+        identity_json.insert(
+            property_names::PUBLIC_KEYS.to_string(),
+            JsonValue::Array(pk_values),
+        )?;
+
+        Ok(identity_json)
     }
 
     pub fn from_buffer(b: impl AsRef<[u8]>) -> Result<Self, ProtocolError> {

@@ -128,7 +128,7 @@ impl DocumentTransitionWasm {
                 .get_identifiers_and_binary_paths(self.0.get_document_type())
                 .with_js_error()?;
 
-            let js_value = convert_to_object(
+            let js_value = to_object(
                 data.to_owned(),
                 &JsValue::NULL,
                 identifier_paths,
@@ -283,7 +283,7 @@ pub fn from_document_transition_to_js_value(document_transition: DocumentTransit
     }
 }
 
-pub(crate) fn convert_to_object<'a>(
+pub(crate) fn to_object<'a>(
     value: Value,
     options: &JsValue,
     identifiers_paths: impl IntoIterator<Item = &'a str>,

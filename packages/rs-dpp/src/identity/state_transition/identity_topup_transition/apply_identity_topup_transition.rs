@@ -79,7 +79,10 @@ where
             .await?;
 
         self.state_repository
-            .mark_asset_lock_transaction_out_point_as_used(&out_point)
+            .mark_asset_lock_transaction_out_point_as_used(
+                &out_point,
+                Some(state_transition.get_execution_context()),
+            )
             .await?;
 
         Ok(())
@@ -138,7 +141,7 @@ mod test {
 
         state_repository_for_apply
             .expect_mark_asset_lock_transaction_out_point_as_used()
-            .returning(|_| Ok(()));
+            .returning(|_, _| Ok(()));
 
         let apply_identity_topup_transition = ApplyIdentityTopUpTransition::new(
             Arc::new(state_repository_for_apply),
@@ -187,7 +190,7 @@ mod test {
 
         state_repository_for_apply
             .expect_mark_asset_lock_transaction_out_point_as_used()
-            .returning(|_| Ok(()));
+            .returning(|_, _| Ok(()));
 
         let apply_identity_topup_transition = ApplyIdentityTopUpTransition::new(
             Arc::new(state_repository_for_apply),
@@ -236,7 +239,7 @@ mod test {
 
         state_repository_for_apply
             .expect_mark_asset_lock_transaction_out_point_as_used()
-            .returning(|_| Ok(()));
+            .returning(|_, _| Ok(()));
 
         state_transition.get_execution_context().enable_dry_run();
 

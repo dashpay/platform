@@ -5,7 +5,7 @@ use js_sys::Array;
 use serde_json::Value;
 use wasm_bindgen::prelude::*;
 
-use crate::document_batch_transition::document_transition::convert_to_object;
+use crate::document_batch_transition::document_transition::to_object;
 use crate::utils::{replace_identifiers_with_bytes_without_failing, ToSerdeJSONExt, WithJsError};
 
 #[wasm_bindgen(js_name=findDuplicatesById)]
@@ -27,7 +27,7 @@ pub fn find_duplicates_by_id_wasm(js_raw_transitions: Array) -> Result<Vec<JsVal
         .with_js_error()?
         .into_iter()
         .map(|raw| {
-            convert_to_object(
+            to_object(
                 raw,
                 &JsValue::null(),
                 document_base_transition::IDENTIFIER_FIELDS,

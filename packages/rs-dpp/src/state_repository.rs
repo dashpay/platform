@@ -3,7 +3,7 @@ use std::convert::{Infallible, TryInto};
 use anyhow::Result as AnyResult;
 use async_trait::async_trait;
 use dashcore::InstantLock;
-#[cfg(any(test, feature = "mocks"))]
+#[cfg(feature = "fixtures-and-mocks")]
 use mockall::{automock, predicate::*};
 use serde_json::Value as JsonValue;
 
@@ -26,7 +26,7 @@ pub struct FetchTransactionResponse {
 }
 
 // Let StateRepositoryLike mock return DataContracts instead of bytes to simplify things a bit.
-#[cfg_attr(any(test, feature="mocks"), automock(
+#[cfg_attr(any(test, feature="fixtures-and-mocks"), automock(
     type ConversionError=Infallible;
     type FetchDataContract=DataContract;
     type FetchIdentity=Identity;
@@ -198,9 +198,10 @@ pub trait StateRepositoryLike: Sync {
     ) -> AnyResult<bool>;
 
     /// Store AssetLock Transaction outPoint in spent list
-    async fn mark_asset_lock_transaction_out_point_as_used(
+    async fn mark_asset_lock_transaction_out_point_as_used<'a>(
         &self,
         out_point_buffer: &[u8],
+        execution_context: Option<&'a StateTransitionExecutionContext>,
     ) -> AnyResult<()>;
 
     /// Fetch Simplified Masternode List Store
@@ -224,4 +225,7 @@ pub trait StateRepositoryLike: Sync {
 
     // Fetch latest platform block time
     async fn fetch_latest_platform_block_time(&self) -> AnyResult<u64>;
+
+    // Get latest platform block height
+    async fn fetch_latest_platform_block_height(&self) -> AnyResult<u64>;
 }

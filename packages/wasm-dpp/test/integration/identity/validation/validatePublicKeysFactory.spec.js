@@ -11,7 +11,9 @@ const {
 
 const { default: loadWasmDpp } = require('../../../../dist');
 
-describe('validatePublicKeysFactory', () => {
+describe('validatePublicKeysFactory', function main() {
+  this.timeout(10000);
+
   let rawPublicKeys;
   let validatePublicKeys;
   let bls;
@@ -44,9 +46,13 @@ describe('validatePublicKeysFactory', () => {
         let pk;
 
         try {
-          pk = bls.PublicKey.fromBytes(publicKeyBuffer);
+          pk = bls.G1Element.fromBytes(publicKeyBuffer);
         } catch (e) {
           return false;
+        } finally {
+          if (pk) {
+            pk.delete();
+          }
         }
 
         return Boolean(pk);
@@ -363,7 +369,7 @@ describe('validatePublicKeysFactory', () => {
       purpose: 0,
       securityLevel: 0,
       readOnly: true,
-      data: Buffer.from('01fac99ca2c8f39c286717c213e190aba4b7af76db320ec43f479b7d9a2012313a0ae59ca576edf801444bc694686694', 'hex'),
+      data: Buffer.from('928f4cdf8d7e05527f26e43348764832d55f5cca0107097fe9af57383f46da612428f617d810186419344f76a14efe96', 'hex'),
     }];
 
     const result = validatePublicKeys(rawPublicKeys);

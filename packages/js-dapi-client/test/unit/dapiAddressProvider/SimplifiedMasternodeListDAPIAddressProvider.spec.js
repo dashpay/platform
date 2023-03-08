@@ -87,7 +87,7 @@ describe('SimplifiedMasternodeListDAPIAddressProvider', () => {
       });
 
       expect(secondAddress).to.be.instanceOf(DAPIAddress);
-      expect(secondAddress).to.equal(addresses[1]);
+      expect(secondAddress).to.deep.equal(addresses[1]);
       expect(secondAddress.toJSON()).to.deep.equal({
         host: validMasternodeList[1].getIp(),
         port: DAPIAddress.DEFAULT_PORT,
@@ -125,7 +125,7 @@ describe('SimplifiedMasternodeListDAPIAddressProvider', () => {
 
       expect(listDAPIAddressProviderMock.setAddresses.getCall(0).args).to.have.lengthOf(1);
       expect(listDAPIAddressProviderMock.setAddresses.getCall(0).args[0]).to.be.an('array');
-      expect(listDAPIAddressProviderMock.setAddresses.getCall(0).args[0]).to.have.lengthOf(2);
+      expect(listDAPIAddressProviderMock.setAddresses.getCall(0).args[0]).to.have.lengthOf(3);
 
       const [
         secondAddress,
@@ -133,11 +133,11 @@ describe('SimplifiedMasternodeListDAPIAddressProvider', () => {
       ] = listDAPIAddressProviderMock.setAddresses.getCall(0).args[0];
 
       expect(secondAddress).to.be.instanceOf(DAPIAddress);
-      expect(secondAddress).to.equal(addresses[1]);
+      expect(secondAddress).to.equal(addresses[0]);
       expect(secondAddress.toJSON()).to.deep.equal({
-        host: validMasternodeList[1].getIp(),
+        host: validMasternodeList[0].getIp(),
         port: DAPIAddress.DEFAULT_PORT,
-        proRegTxHash: validMasternodeList[1].proRegTxHash,
+        proRegTxHash: validMasternodeList[0].proRegTxHash,
         protocol: DAPIAddress.DEFAULT_PROTOCOL,
         allowSelfSignedCertificate: false,
       });
@@ -145,9 +145,9 @@ describe('SimplifiedMasternodeListDAPIAddressProvider', () => {
       expect(thirdAddress).to.be.instanceOf(DAPIAddress);
       expect(thirdAddress).to.not.equal(addresses[2]);
       expect(thirdAddress.toJSON()).to.deep.equal({
-        host: validMasternodeList[2].getIp(),
+        host: validMasternodeList[1].getIp(),
         port: DAPIAddress.DEFAULT_PORT,
-        proRegTxHash: validMasternodeList[2].proRegTxHash,
+        proRegTxHash: validMasternodeList[1].proRegTxHash,
         protocol: DAPIAddress.DEFAULT_PROTOCOL,
         allowSelfSignedCertificate: false,
       });
