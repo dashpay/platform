@@ -80,10 +80,3 @@ impl StateTransitionExecutionContextWasm {
         self.0.disable_dry_run();
     }
 }
-
-#[derive(Deserialize, Default)]
-#[serde(rename_all = "camelCase")]
-struct AbstractStateTransitionOptions {
-    skip_signature: Option<bool>,
-    skip_identifiers_conversion: Option<bool>,
-}
