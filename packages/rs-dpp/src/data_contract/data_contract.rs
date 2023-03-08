@@ -10,6 +10,7 @@ use platform_value::Value;
 use serde::{Deserialize, Serialize};
 use serde_json::Value as JsonValue;
 
+use crate::consensus::basic::document::InvalidDocumentTypeError;
 use crate::data_contract::contract_config;
 use crate::data_contract::contract_config::{
     ContractConfig, DEFAULT_CONTRACT_CAN_BE_DELETED, DEFAULT_CONTRACT_DOCUMENTS_KEEPS_HISTORY,
@@ -18,7 +19,7 @@ use crate::data_contract::contract_config::{
 };
 
 use crate::data_contract::get_binary_properties_from_schema::get_binary_properties;
-use crate::util::cbor_value::{CborBTreeMapHelper, CborCanonicalMap};
+use crate::util::cbor_value::CborCanonicalMap;
 use crate::util::deserializer;
 use crate::util::deserializer::SplitProtocolVersionOutcome;
 use crate::util::json_value::{JsonValueExt, ReplaceWith};
@@ -319,10 +320,10 @@ impl DataContract {
             .documents
             .get(doc_type)
             .ok_or(ProtocolError::DataContractError(
-                DataContractError::InvalidDocumentTypeError {
-                    doc_type: doc_type.to_owned(),
-                    data_contract: self.clone(),
-                },
+                DataContractError::InvalidDocumentTypeError(InvalidDocumentTypeError::new(
+                    doc_type.to_owned(),
+                    self.id.clone(),
+                )),
             ))?;
         Ok(document)
     }
@@ -330,10 +331,10 @@ impl DataContract {
     pub fn get_document_schema_ref(&self, doc_type: &str) -> Result<String, ProtocolError> {
         if !self.is_document_defined(doc_type) {
             return Err(ProtocolError::DataContractError(
-                DataContractError::InvalidDocumentTypeError {
-                    doc_type: doc_type.to_owned(),
-                    data_contract: self.clone(),
-                },
+                DataContractError::InvalidDocumentTypeError(InvalidDocumentTypeError::new(
+                    doc_type.to_owned(),
+                    self.id.clone(),
+                )),
             ));
         };
 
@@ -354,10 +355,10 @@ impl DataContract {
     ) -> Result<&BTreeMap<String, JsonValue>, ProtocolError> {
         self.get_optional_binary_properties(doc_type)?
             .ok_or(ProtocolError::DataContractError(
-                DataContractError::InvalidDocumentTypeError {
-                    doc_type: doc_type.to_owned(),
-                    data_contract: self.clone(),
-                },
+                DataContractError::InvalidDocumentTypeError(InvalidDocumentTypeError::new(
+                    doc_type.to_owned(),
+                    self.id.clone(),
+                )),
             ))
     }
 

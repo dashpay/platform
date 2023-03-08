@@ -3,6 +3,7 @@ use std::convert::TryInto;
 use anyhow::Result;
 use async_trait::async_trait;
 
+use crate::consensus::basic::invalid_data_contract_version_error::InvalidDataContractVersionError;
 use crate::{
     data_contract::{state_transition::DataContractUpdateTransition, DataContract},
     errors::consensus::basic::BasicError,
@@ -80,10 +81,9 @@ pub async fn validate_data_contract_update_transition_state(
     let new_version = state_transition.data_contract.version;
 
     if new_version < old_version || new_version - old_version != 1 {
-        let err = BasicError::InvalidDataContractVersionError {
-            expected_version: old_version + 1,
-            version: new_version,
-        };
+        let err = BasicError::InvalidDataContractVersionError(
+            InvalidDataContractVersionError::new(old_version + 1, new_version),
+        );
         result.add_error(err);
     }
 
