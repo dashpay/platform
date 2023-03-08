@@ -20,7 +20,7 @@ use crate::{
     state_transition::errors::invalid_state_transition_error::InvalidStateTransitionError,
     utils, with_js_error, DataContractCreateTransitionWasm, DataContractUpdateTransitionWasm,
     DocumentsBatchTransitionWASM, IdentityCreateTransitionWasm, IdentityTopUpTransitionWasm,
-    IdentityUpdateTransitionWasm, StateTransitionWasm,
+    IdentityUpdateTransitionWasm,
 };
 
 #[wasm_bindgen(js_name = StateTransitionFactory)]
