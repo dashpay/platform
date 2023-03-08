@@ -114,7 +114,7 @@ where
         document_type_name: String,
         data: JsonValue,
     ) -> Result<ExtendedDocument, ProtocolError> {
-        if !data_contract.is_document_defined(&document_type) {
+        if !data_contract.is_document_defined(&document_type_name) {
             return Err(DataContractError::InvalidDocumentTypeError(
                 InvalidDocumentTypeError::new(document_type_name, data_contract.id),
             )

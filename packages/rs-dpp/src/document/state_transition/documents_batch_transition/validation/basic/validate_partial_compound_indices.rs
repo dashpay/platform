@@ -53,7 +53,7 @@ where
     {
         let properties = index.properties.iter().map(|property| &property.name);
 
-        if !are_all_properties_defined_or_undefined(properties.clone(), raw_transition) {
+        if !are_all_properties_defined_or_undefined(properties.clone(), raw_transition_map) {
             validation_result.add_error(BasicError::InconsistentCompoundIndexDataError(
                 InconsistentCompoundIndexDataError::new(
                     properties.map(ToOwned::to_owned).collect(),
