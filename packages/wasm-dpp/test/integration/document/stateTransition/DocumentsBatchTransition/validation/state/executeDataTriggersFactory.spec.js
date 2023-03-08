@@ -14,7 +14,7 @@ let DataContract;
 let DocumentTransition;
 let DocumentCreateTransition;
 let DataTriggerExecutionContext;
-let Document;
+let ExtendedDocument;
 let DataTriggerExecutionResult;
 let StateTransitionExecutionContext;
 let getAllDataTriggers;
@@ -38,7 +38,7 @@ describe('executeDataTriggersFactory', () => {
       DocumentTransition,
       DocumentCreateTransition,
       DataTriggerExecutionContext,
-      Document,
+      ExtendedDocument,
       DataTriggerExecutionResult,
       StateTransitionExecutionContext,
       executeDataTriggers,
@@ -51,7 +51,7 @@ describe('executeDataTriggersFactory', () => {
     contractMock = new DataContract(getDpnsContractFixture().toObject());
 
     childDocumentJs = dpnsDocumentFixture.getChildDocumentFixture();
-    childDocument = new Document(childDocumentJs.toObject(),
+    childDocument = new ExtendedDocument(childDocumentJs.toObject(),
       dataContract.clone());
 
     stateRepositoryMock = createStateRepositoryMock(this.sinonSandbox);
