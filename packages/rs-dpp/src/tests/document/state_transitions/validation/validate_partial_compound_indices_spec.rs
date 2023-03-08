@@ -59,12 +59,26 @@ fn should_return_invalid_result_if_compound_index_contains_not_all_fields() {
 
     assert!(!result.is_valid());
     assert_eq!(1021, result.errors[0].code());
-    assert!(
-        matches!(basic_error, BasicError::InconsistentCompoundIndexDataError { index_properties, document_type } if {
-            document_type  == "optionalUniqueIndexedDocument" &&
-            index_properties ==  &vec!["$ownerId".to_string(), "firstName".to_string(), "lastName".to_string()]
-        })
-    )
+    match basic_error {
+        BasicError::InconsistentCompoundIndexDataError(err) => {
+            assert_eq!(
+                err.document_type(),
+                "optionalUniqueIndexedDocument".to_string()
+            );
+            assert_eq!(
+                err.index_properties(),
+                vec![
+                    "$ownerId".to_string(),
+                    "firstName".to_string(),
+                    "lastName".to_string()
+                ]
+            );
+        }
+        _ => panic!(
+            "Expected InconsistentCompoundIndexDataError, got {}",
+            basic_error
+        ),
+    }
 }
 
 #[test]

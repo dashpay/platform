@@ -3,6 +3,9 @@ use std::{convert::TryFrom, sync::Arc};
 use async_trait::async_trait;
 use serde_json::Value as JsonValue;
 
+use crate::consensus::basic::state_transition::{
+    InvalidStateTransitionTypeError, StateTransitionMaxSizeExceededError,
+};
 use crate::{
     consensus::{basic::BasicError, ConsensusError},
     state_repository::StateRepositoryLike,
@@ -249,10 +252,15 @@ mod test {
 
         let basic_error = get_basic_error_from_result(&result, 0);
 
-        assert!(matches!(
-            basic_error,
-            BasicError::InvalidStateTransitionTypeError { transition_type } if { transition_type == &123}
-        ));
+        match basic_error {
+            BasicError::InvalidStateTransitionTypeError(err) => {
+                assert_eq!(err.transition_type(), 123)
+            }
+            _ => panic!(
+                "Expected InvalidStateTransitionTypeError, got {}",
+                basic_error
+            ),
+        }
     }
 
     #[tokio::test]
@@ -282,10 +290,15 @@ mod test {
 
         let basic_error = get_basic_error_from_result(&result, 0);
 
-        assert!(matches!(
-            basic_error,
-            BasicError::InvalidStateTransitionTypeError { transition_type } if { transition_type == &123}
-        ));
+        match basic_error {
+            BasicError::InvalidStateTransitionTypeError(err) => {
+                assert_eq!(err.transition_type(), 123)
+            }
+            _ => panic!(
+                "Expected InvalidStateTransitionTypeError, got {}",
+                basic_error
+            ),
+        }
     }
 
     #[tokio::test]
@@ -321,13 +334,16 @@ mod test {
 
         let basic_error = get_basic_error_from_result(&result, 0);
 
-        assert!(matches!(
-            basic_error,
-            BasicError::StateTransitionMaxSizeExceededError { actual_size_kbytes, max_size_kbytes} if {
-                *actual_size_kbytes == 53 &&
-                *max_size_kbytes == 16
+        match basic_error {
+            BasicError::StateTransitionMaxSizeExceededError(err) => {
+                assert_eq!(err.actual_size_kbytes(), 53);
+                assert_eq!(err.max_size_kbytes(), 16);
             }
-        ));
+            _ => panic!(
+                "Expected StateTransitionMaxSizeExceededError, got {}",
+                basic_error
+            ),
+        }
     }
 
     #[tokio::test]

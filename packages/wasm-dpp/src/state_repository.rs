@@ -230,6 +230,10 @@ impl ExternalStateRepositoryLikeWrapper {
     pub(crate) fn new(state_repository: ExternalStateRepositoryLike) -> Self {
         ExternalStateRepositoryLikeWrapper(Arc::new(state_repository))
     }
+
+    pub(crate) fn new_with_arc(state_repository: Arc<ExternalStateRepositoryLike>) -> Self {
+        ExternalStateRepositoryLikeWrapper(state_repository)
+    }
 }
 
 #[derive(Clone, Serialize, Deserialize)]
