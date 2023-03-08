@@ -89,11 +89,9 @@ describe('StateTransitionFactory', function main() {
     });
   });
 
-  describe.skip('createFromBuffer', () => {
-    let serializedStateTransition;
-
+  describe('createFromBuffer', () => {
     it('should return new State Transition from serialized contract', async () => {
-      const result = await factory.createFromBuffer(serializedStateTransition);
+      const result = await factory.createFromBuffer(stateTransition.toBuffer());
 
       expect(result.toObject()).to.deep.equal(stateTransition.toObject());
     });
