@@ -72,7 +72,7 @@ impl DocumentWasm {
 
         let document_type_name = js_document_type_name
             .as_string()
-            .ok_or(anyhow!("expected a string for the document type"))
+            .ok_or(anyhow!("expected a string for the document type, got {:?}", js_document_type_name))
             .with_js_error()?;
 
         let (identifier_paths, _) = js_data_contract
