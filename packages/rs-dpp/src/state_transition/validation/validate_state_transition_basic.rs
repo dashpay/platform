@@ -72,9 +72,7 @@ where
             result.add_error(
                 ConsensusError::BasicError(
                     Box::new(
-                        BasicError::InvalidStateTransitionTypeError {
-                            transition_type: state_transition_type
-                        }
+                        BasicError::InvalidStateTransitionTypeError(InvalidStateTransitionTypeError::new(state_transition_type))
                     )
                 )
             );
@@ -106,10 +104,9 @@ where
             payload,
         }) = state_transition.to_buffer(false)
         {
-            result.add_error(BasicError::StateTransitionMaxSizeExceededError {
-                actual_size_kbytes: payload.len() / 1024,
-                max_size_kbytes,
-            });
+            result.add_error(BasicError::StateTransitionMaxSizeExceededError(
+                StateTransitionMaxSizeExceededError::new(payload.len() / 1024, max_size_kbytes),
+            ));
         }
 
         Ok(result)

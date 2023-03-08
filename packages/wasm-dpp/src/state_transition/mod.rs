@@ -20,6 +20,7 @@ pub mod errors;
 pub mod state_transition_factory;
 
 pub mod validation;
+use crate::utils::Inner;
 pub use validation::*;
 
 pub(crate) mod conversion;
