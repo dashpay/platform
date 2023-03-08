@@ -1,10 +1,16 @@
 use crate::bls_adapter::{BlsAdapter, JsBlsAdapter};
 use crate::errors::from_dpp_err;
 use crate::state_repository::{ExternalStateRepositoryLike, ExternalStateRepositoryLikeWrapper};
+use crate::state_transition_factory::StateTransitionFactoryWasm;
 use crate::utils::ToSerdeJSONExt;
 use crate::validation::ValidationResultWasm;
+use crate::with_js_error;
 use dpp::state_transition::state_transition_execution_context::StateTransitionExecutionContext;
-use dpp::state_transition::{StateTransitionConvert, StateTransitionFacade, StateTransitionLike};
+use dpp::state_transition::{
+    StateTransitionConvert, StateTransitionFacade, StateTransitionFactory, StateTransitionLike,
+};
+use dpp::version::ProtocolVersionValidator;
+use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::sync::Arc;
 use wasm_bindgen::prelude::*;
@@ -20,20 +26,79 @@ impl StateTransitionFacadeWasm {
     pub fn new(
         state_repository: ExternalStateRepositoryLike,
         bls_adapter: JsBlsAdapter,
+        protocol_version_validator: Arc<ProtocolVersionValidator>,
     ) -> Result<StateTransitionFacadeWasm, JsValue> {
         let state_repository_wrapper = ExternalStateRepositoryLikeWrapper::new(state_repository);
 
         let adapter = BlsAdapter(bls_adapter);
 
-        let state_transition_facade =
-            StateTransitionFacade::new(state_repository_wrapper, adapter).map_err(from_dpp_err)?;
+        let state_transition_facade = StateTransitionFacade::new(
+            state_repository_wrapper,
+            adapter,
+            protocol_version_validator,
+        )
+        .map_err(from_dpp_err)?;
 
         Ok(StateTransitionFacadeWasm(state_transition_facade))
     }
 }
 
+#[derive(Deserialize, Default)]
+#[serde(rename_all = "camelCase")]
+pub struct FromObjectOptions {
+    pub skip_validation: Option<bool>,
+}
+
 #[wasm_bindgen(js_class = StateTransitionFacade)]
 impl StateTransitionFacadeWasm {
+    #[wasm_bindgen(js_name = createFromObject)]
+    pub async fn create_from_object(
+        &self,
+        raw_state_transition: JsValue,
+        options: JsValue,
+    ) -> Result<JsValue, JsValue> {
+        let options: FromObjectOptions = if options.is_object() {
+            with_js_error!(serde_wasm_bindgen::from_value(options))?
+        } else {
+            Default::default()
+        };
+
+        let raw_state_transition = raw_state_transition.with_serde_to_json_value()?;
+
+        let result = self
+            .0
+            .create_from_object(
+                raw_state_transition,
+                options.skip_validation.unwrap_or(false),
+            )
+            .await;
+
+        StateTransitionFactoryWasm::state_transition_wasm_from_factory_result(result)
+    }
+
+    #[wasm_bindgen(js_name = createFromBuffer)]
+    pub async fn create_from_buffer(
+        &self,
+        state_transition_buffer: Vec<u8>,
+        options: JsValue,
+    ) -> Result<JsValue, JsValue> {
+        let options: FromObjectOptions = if options.is_object() {
+            with_js_error!(serde_wasm_bindgen::from_value(options))?
+        } else {
+            Default::default()
+        };
+
+        let result = self
+            .0
+            .create_from_buffer(
+                &state_transition_buffer,
+                options.skip_validation.unwrap_or(false),
+            )
+            .await;
+
+        StateTransitionFactoryWasm::state_transition_wasm_from_factory_result(result)
+    }
+
     #[wasm_bindgen(js_name = validateBasic)]
     pub async fn validate_basic(
         &self,

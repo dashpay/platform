@@ -2,7 +2,7 @@ const { PrivateKey } = require('@dashevo/dashcore-lib');
 
 // const DashPlatformProtocol = require('@dashevo/dpp/lib/DashPlatformProtocol');
 
-const DataContractCreateTransition = require('@dashevo/dpp/lib/dataContract/stateTransition/DataContractCreateTransition/DataContractCreateTransition');
+// const DataContractCreateTransition = require('@dashevo/dpp/lib/dataContract/stateTransition/DataContractCreateTransition/DataContractCreateTransition');
 
 // const ValidationResult = require('@dashevo/dpp/lib/validation/ValidationResult');
 
@@ -37,7 +37,7 @@ describe('StateTransitionFacade', () => {
   let DashPlatformProtocol;
   let DataContractFactory;
   let DataContractValidator;
-  let DataContract;
+  let DataContractCreateTransition;
   let Identity;
   let ValidationResult;
   let IdentityPublicKey;
@@ -50,7 +50,7 @@ describe('StateTransitionFacade', () => {
     ({
       DashPlatformProtocol,
       ValidationResult,
-      DataContract,
+      DataContractCreateTransition,
       Identity,
       DataContractValidator,
       DataContractFactory,
@@ -116,33 +116,7 @@ describe('StateTransitionFacade', () => {
     dpp = new DashPlatformProtocol({}, blsAdapter, stateRepositoryMock);
   });
 
-  describe.skip('createFromObject', () => {
-    it('should throw MissingOption if stateRepository is not set', async () => {
-      dpp = new DashPlatformProtocol();
-      await dpp.initialize();
-
-      try {
-        await dpp.stateTransition.createFromObject(
-          dataContractCreateTransition.toObject(),
-        );
-
-        expect.fail('MissingOption should be thrown');
-      } catch (e) {
-        expect(e).to.be.an.instanceOf(MissingOptionError);
-        expect(e.getOptionName()).to.equal('stateRepository');
-      }
-    });
-
-    it('should skip checking for state repository if skipValidation is set', async () => {
-      dpp = new DashPlatformProtocol();
-      await dpp.initialize();
-
-      await dpp.stateTransition.createFromObject(
-        dataContractCreateTransition.toObject(),
-        { skipValidation: true },
-      );
-    });
-
+  describe('createFromObject', () => {
     it('should create State Transition from plain object', async () => {
       const result = await dpp.stateTransition.createFromObject(
         dataContractCreateTransition.toObject(),
@@ -154,33 +128,7 @@ describe('StateTransitionFacade', () => {
     });
   });
 
-  describe.skip('createFromBuffer', () => {
-    it('should throw MissingOption if stateRepository is not set', async () => {
-      dpp = new DashPlatformProtocol();
-      await dpp.initialize();
-
-      try {
-        await dpp.stateTransition.createFromBuffer(
-          dataContractCreateTransition.toBuffer(),
-        );
-
-        expect.fail('MissingOption should be thrown');
-      } catch (e) {
-        expect(e).to.be.an.instanceOf(MissingOptionError);
-        expect(e.getOptionName()).to.equal('stateRepository');
-      }
-    });
-
-    it('should skip checking for state repository if skipValidation is set', async () => {
-      dpp = new DashPlatformProtocol();
-      await dpp.initialize();
-
-      await dpp.stateTransition.createFromBuffer(
-        dataContractCreateTransition.toBuffer(),
-        { skipValidation: true },
-      );
-    });
-
+  describe('createFromBuffer', () => {
     it('should create State Transition from string', async () => {
       const result = await dpp.stateTransition.createFromBuffer(
         dataContractCreateTransition.toBuffer(),

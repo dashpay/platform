@@ -15,7 +15,7 @@ use crate::identity::state_transition::validate_public_key_signatures::PublicKey
 use crate::identity::validation::PublicKeysValidator;
 use crate::prelude::ValidationResult;
 use crate::state_repository::StateRepositoryLike;
-use crate::state_transition::{StateTransition, StateTransitionFactory, StateTransitionIdentitySigned, StateTransitionLike};
+use crate::state_transition::{StateTransition, StateTransitionFactory, StateTransitionFactoryOptions, StateTransitionIdentitySigned, StateTransitionLike};
 use crate::state_transition::fee::operations::{DeleteOperation, Operation};
 use crate::state_transition::state_transition_execution_context::StateTransitionExecutionContext;
 use crate::state_transition::validation::validate_state_transition_basic::StateTransitionBasicValidator;
@@ -39,8 +39,8 @@ where
     state_validator: Arc<StateTransitionStateValidator<SR>>,
     key_signature_validator: Arc<StateTransitionKeySignatureValidator<SR>>,
     fee_validator: Arc<StateTransitionFeeValidator<SR>>,
-    bls: BLS, // factory: StateTransitionFactory,
-              // state_transition_validator: StateTransitionValidator,
+    bls: BLS,
+    factory: Arc<StateTransitionFactory<SR, BLS>>,
 }
 
 impl<SR, BLS> StateTransitionFacade<SR, BLS>
@@ -48,13 +48,85 @@ where
     SR: StateRepositoryLike + Clone,
     BLS: BlsModule + Clone,
 {
-    pub fn new(state_repository: SR, adapter: BLS) -> Result<Self, ProtocolError> {
+    pub fn new(
+        state_repository: SR,
+        adapter: BLS,
+        protocol_version_validator: Arc<ProtocolVersionValidator>,
+    ) -> Result<Self, ProtocolError> {
         let wrapped_state_repository = Arc::new(state_repository.clone());
 
         let state_transition_basic_validator;
         let state_transition_state_validator;
         let state_transition_key_signature_validator;
         let state_transition_fee_validator;
+        let state_transition_factory;
+
+        {
+            let pk_validator =
+                Arc::new(PublicKeysValidator::new(adapter.clone()).map_err(ProtocolError::from)?);
+            let pk_sig_validator = Arc::new(PublicKeysSignaturesValidator::new(adapter.clone()));
+
+            let asset_lock_tx_validator = Arc::new(AssetLockTransactionValidator::new(
+                wrapped_state_repository.clone(),
+            ));
+
+            let asset_lock_validator = Arc::new(AssetLockProofValidator::new(
+                InstantAssetLockProofStructureValidator::new(
+                    wrapped_state_repository.clone(),
+                    asset_lock_tx_validator.clone(),
+                )
+                .map_err(ProtocolError::from)?,
+                ChainAssetLockProofStructureValidator::new(
+                    wrapped_state_repository.clone(),
+                    asset_lock_tx_validator.clone(),
+                )
+                .map_err(ProtocolError::from)?,
+            ));
+
+            state_transition_factory = StateTransitionFactory::new(
+                wrapped_state_repository.clone(),
+                StateTransitionBasicValidator::new(
+                    wrapped_state_repository.clone(),
+                    StateTransitionByTypeValidator::new(
+                        DataContractCreateTransitionBasicValidator::new(
+                            protocol_version_validator.clone(),
+                        )?,
+                        DataContractUpdateTransitionBasicValidator::new(
+                            wrapped_state_repository.clone(),
+                            protocol_version_validator.clone(),
+                        )
+                        .map_err(ProtocolError::from)?,
+                        IdentityCreateTransitionBasicValidator::new(
+                            protocol_version_validator.deref().clone(),
+                            pk_validator.clone(),
+                            pk_validator.clone(),
+                            asset_lock_validator.clone(),
+                            adapter.clone(),
+                            pk_sig_validator.clone(),
+                        )
+                        .map_err(ProtocolError::from)?,
+                        ValidateIdentityUpdateTransitionBasic::new(
+                            ProtocolVersionValidator::default(),
+                            pk_validator.clone(),
+                            pk_sig_validator.clone(),
+                        )?,
+                        IdentityTopUpTransitionBasicValidator::new(
+                            ProtocolVersionValidator::default(),
+                            asset_lock_validator.clone(),
+                        )
+                        .map_err(ProtocolError::from)?,
+                        IdentityCreditWithdrawalTransitionBasicValidator::new(
+                            protocol_version_validator.clone(),
+                        )
+                        .map_err(ProtocolError::from)?,
+                        DocumentBatchTransitionBasicValidator::new(
+                            wrapped_state_repository.clone(),
+                            protocol_version_validator.clone(),
+                        ),
+                    ),
+                ),
+            );
+        }
 
         {
             let protocol_version_validator = Arc::new(ProtocolVersionValidator::default());
@@ -171,12 +243,39 @@ where
 
         Ok(Self {
             state_repository: wrapped_state_repository,
+            factory: Arc::new(state_transition_factory),
             basic_validator: Arc::new(state_transition_basic_validator),
             key_signature_validator: Arc::new(state_transition_key_signature_validator),
             fee_validator: Arc::new(state_transition_fee_validator),
             state_validator: Arc::new(state_transition_state_validator),
             bls: adapter,
         })
+    }
+
+    pub async fn create_from_object(
+        &self,
+        state_transition: Value,
+        skip_validation: bool,
+    ) -> Result<StateTransition, ProtocolError> {
+        self.factory
+            .create_from_object(
+                state_transition,
+                Some(StateTransitionFactoryOptions { skip_validation }),
+            )
+            .await
+    }
+
+    pub async fn create_from_buffer(
+        &self,
+        buffer: &[u8],
+        skip_validation: bool,
+    ) -> Result<StateTransition, ProtocolError> {
+        self.factory
+            .create_from_buffer(
+                buffer,
+                Some(StateTransitionFactoryOptions { skip_validation }),
+            )
+            .await
     }
 
     pub async fn validate_basic(

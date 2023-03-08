@@ -38,6 +38,47 @@ impl From<StateTransitionFactory<ExternalStateRepositoryLikeWrapper, BlsAdapter>
     }
 }
 
+impl StateTransitionFactoryWasm {
+    pub fn state_transition_wasm_from_factory_result(
+        result: Result<StateTransition, ProtocolError>,
+    ) -> Result<JsValue, JsValue> {
+        match result {
+            Ok(state_transition) => match state_transition {
+                StateTransition::DataContractCreate(st) => {
+                    Ok(DataContractCreateTransitionWasm::from(st).into())
+                }
+                StateTransition::DataContractUpdate(st) => {
+                    Ok(DataContractUpdateTransitionWasm::from(st).into())
+                }
+                StateTransition::IdentityCreate(st) => {
+                    Ok(IdentityCreateTransitionWasm::from(st).into())
+                }
+                StateTransition::IdentityUpdate(st) => {
+                    Ok(IdentityUpdateTransitionWasm::from(st).into())
+                }
+                StateTransition::IdentityTopUp(st) => {
+                    Ok(IdentityTopUpTransitionWasm::from(st).into())
+                }
+                StateTransition::DocumentsBatch(st) => {
+                    Ok(DocumentsBatchTransitionWASM::from(st).into())
+                }
+                _ => Err("Unsupported state transition type".into()),
+            },
+            Err(dpp::ProtocolError::StateTransitionError(e)) => match e {
+                StateTransitionError::InvalidStateTransitionError {
+                    errors,
+                    raw_state_transition,
+                } => Err(InvalidStateTransitionError::new(
+                    errors,
+                    serde_wasm_bindgen::to_value(&raw_state_transition)?,
+                )
+                .into()),
+            },
+            Err(other) => Err(from_dpp_err(other)),
+        }
+    }
+}
+
 #[wasm_bindgen(js_class = StateTransitionFactory)]
 impl StateTransitionFactoryWasm {
     #[wasm_bindgen(constructor)]
@@ -171,44 +212,5 @@ impl StateTransitionFactoryWasm {
             .await;
 
         Self::state_transition_wasm_from_factory_result(result)
-    }
-
-    fn state_transition_wasm_from_factory_result(
-        result: Result<StateTransition, ProtocolError>,
-    ) -> Result<JsValue, JsValue> {
-        match result {
-            Ok(state_transition) => match state_transition {
-                StateTransition::DataContractCreate(st) => {
-                    Ok(DataContractCreateTransitionWasm::from(st).into())
-                }
-                StateTransition::DataContractUpdate(st) => {
-                    Ok(DataContractUpdateTransitionWasm::from(st).into())
-                }
-                StateTransition::IdentityCreate(st) => {
-                    Ok(IdentityCreateTransitionWasm::from(st).into())
-                }
-                StateTransition::IdentityUpdate(st) => {
-                    Ok(IdentityUpdateTransitionWasm::from(st).into())
-                }
-                StateTransition::IdentityTopUp(st) => {
-                    Ok(IdentityTopUpTransitionWasm::from(st).into())
-                }
-                StateTransition::DocumentsBatch(st) => {
-                    Ok(DocumentsBatchTransitionWASM::from(st).into())
-                }
-                _ => Err("Unsupported state transition type".into()),
-            },
-            Err(dpp::ProtocolError::StateTransitionError(e)) => match e {
-                StateTransitionError::InvalidStateTransitionError {
-                    errors,
-                    raw_state_transition,
-                } => Err(InvalidStateTransitionError::new(
-                    errors,
-                    serde_wasm_bindgen::to_value(&raw_state_transition)?,
-                )
-                .into()),
-            },
-            Err(other) => Err(from_dpp_err(other)),
-        }
     }
 }

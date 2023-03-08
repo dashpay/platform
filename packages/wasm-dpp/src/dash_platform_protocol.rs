@@ -62,10 +62,13 @@ impl DashPlatformProtocol {
         );
 
         let data_contract_facade =
-            DataContractFacadeWasm::new(protocol_version, protocol_version_validator);
+            DataContractFacadeWasm::new(protocol_version, protocol_version_validator.clone());
 
-        let state_transition_facade =
-            StateTransitionFacadeWasm::new(state_repository, bls_adapter)?;
+        let state_transition_facade = StateTransitionFacadeWasm::new(
+            state_repository,
+            bls_adapter,
+            protocol_version_validator,
+        )?;
 
         Ok(Self {
             document: document_facade,

@@ -13,7 +13,10 @@ use crate::state_transition::errors::{
     PublicKeySecurityLevelNotMetError, StateTransitionError, StateTransitionIsNotSignedError,
     WrongPublicKeyPurposeError,
 };
-use crate::{CompatibleProtocolVersionIsNotDefinedError, NonConsensusError, SerdeParsingError};
+use crate::{
+    CompatibleProtocolVersionIsNotDefinedError, DashPlatformProtocolInitError, NonConsensusError,
+    SerdeParsingError,
+};
 use platform_value::Error as ValueError;
 
 #[derive(Error, Debug)]
@@ -168,5 +171,11 @@ impl From<DocumentError> for ProtocolError {
 impl From<SerdeParsingError> for ProtocolError {
     fn from(e: SerdeParsingError) -> Self {
         ProtocolError::ParsingError(e.to_string())
+    }
+}
+
+impl From<DashPlatformProtocolInitError> for ProtocolError {
+    fn from(e: DashPlatformProtocolInitError) -> Self {
+        ProtocolError::Generic(e.to_string())
     }
 }
