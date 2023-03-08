@@ -10,6 +10,7 @@ use rand::SeedableRng;
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value as JsonValue};
 
+use crate::consensus::basic::document::InvalidDocumentTypeError;
 use crate::document::extended_document::{property_names, ExtendedDocument};
 
 use crate::data_contract::DriveContractExt;
@@ -111,13 +112,12 @@ where
         data_contract: DataContract,
         owner_id: Identifier,
         document_type_name: String,
-        data: Value,
+        data: JsonValue,
     ) -> Result<ExtendedDocument, ProtocolError> {
-        if !data_contract.is_document_defined(&document_type_name) {
-            return Err(DataContractError::InvalidDocumentTypeError {
-                doc_type: document_type_name,
-                data_contract,
-            }
+        if !data_contract.is_document_defined(&document_type) {
+            return Err(DataContractError::InvalidDocumentTypeError(
+                InvalidDocumentTypeError::new(document_type_name, data_contract.id),
+            )
             .into());
         }
 

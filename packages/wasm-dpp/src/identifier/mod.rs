@@ -28,7 +28,7 @@ extern "C" {
     fn log(a: &str);
 }
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 #[wasm_bindgen(js_name=Identifier, inspectable)]
 pub struct IdentifierWrapper {
     wrapped: identifier::Identifier,

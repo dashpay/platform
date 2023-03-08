@@ -2,6 +2,8 @@ use std::{convert::TryInto, sync::Arc};
 
 use serde_json::Value;
 
+use crate::consensus::basic::invalid_identifier_error::InvalidIdentifierError;
+use crate::data_contract::state_transition::errors::MissingDataContractIdError;
 use crate::{
     consensus::{basic::BasicError, ConsensusError},
     data_contract::DataContract,
@@ -58,15 +60,16 @@ pub async fn fetch_and_validate_data_contract(
 ) -> Result<ValidationResult<DataContract>, ProtocolError> {
     let mut validation_result = ValidationResult::<DataContract>::default();
 
-    let id_bytes =
-        if let Ok(id_bytes) = raw_extended_document.get_bytes(property_names::DATA_CONTRACT_ID) {
-            id_bytes
-        } else {
-            validation_result.add_error(ConsensusError::BasicError(Box::new(
-                BasicError::MissingDataContractIdError,
-            )));
-            return Ok(validation_result);
-        };
+    let id_bytes = if let Ok(id_bytes) = raw_extended_document.get_bytes(property_names::DATA_CONTRACT_ID) {
+        id_bytes
+    } else {
+        validation_result.add_error(ConsensusError::BasicError(Box::new(
+            BasicError::MissingDataContractIdError(MissingDataContractIdError::new(
+                raw_extended_document.clone(),
+            )),
+        )));
+        return Ok(validation_result);
+    };
 
     let data_contract_id = match Identifier::from_bytes(&id_bytes) {
         Ok(id) => id,
@@ -74,10 +77,9 @@ pub async fn fetch_and_validate_data_contract(
         Err(e) => {
             let id_base58 = bs58::encode(id_bytes).into_string();
             let consensus_error =
-                ConsensusError::BasicError(Box::new(BasicError::InvalidIdentifierError {
-                    identifier_name: id_base58,
-                    error: e.to_string(),
-                }));
+                ConsensusError::BasicError(Box::new(BasicError::InvalidIdentifierError(
+                    InvalidIdentifierError::new(id_base58, e.to_string()),
+                )));
             validation_result.add_error(consensus_error);
             return Ok(validation_result);
         }
