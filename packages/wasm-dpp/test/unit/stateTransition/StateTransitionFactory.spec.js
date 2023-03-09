@@ -15,11 +15,11 @@ describe('StateTransitionFactory', function main() {
   let rawStateTransition;
   let stateRepositoryMock;
   let StateTransitionFactory;
+  let DataContractCreateTransition;
 
   before(async () => {
     ({
       DataContractCreateTransition, StateTransitionFactory,
-      UnsupportedProtocolVersionError, SerializedObjectParsingError,
     } = await loadWasmDpp());
   });
 
