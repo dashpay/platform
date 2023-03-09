@@ -6,7 +6,7 @@ use serde_json::Value;
 
 use crate::{
     data_contract::DataContract,
-    prelude::{Identifier, Revision},
+    prelude::{Identifier, Revision, TimestampMillis},
     util::json_value::JsonValueExt,
     ProtocolError,
 };
@@ -28,13 +28,13 @@ pub const PROPERTY_ACTION: &str = "$action";
 
 pub trait DocumentTransitionExt {
     /// returns the creation timestamp (in milliseconds) if it exists for given type of document transition
-    fn get_created_at(&self) -> Option<i64>;
+    fn get_created_at(&self) -> Option<TimestampMillis>;
     /// returns the update timestamp  (in milliseconds) if it exists for given type of document transition
-    fn get_updated_at(&self) -> Option<i64>;
+    fn get_updated_at(&self) -> Option<TimestampMillis>;
     /// set the created_at (in milliseconds) if it exists
-    fn set_created_at(&mut self, timestamp_millis: Option<i64>);
+    fn set_created_at(&mut self, timestamp_millis: Option<TimestampMillis>);
     /// set the updated_at (in milliseconds) if it exists
-    fn set_updated_at(&mut self, timestamp_millis: Option<i64>);
+    fn set_updated_at(&mut self, timestamp_millis: Option<TimestampMillis>);
     /// returns the value of dynamic property. The dynamic property is a property that is not specified in protocol
     /// the `path` supports dot-syntax: i.e: property.internal_property
     fn get_dynamic_property(&self, path: &str) -> Option<&Value>;
@@ -207,7 +207,7 @@ impl DocumentTransitionExt for DocumentTransition {
         &self.base().data_contract_id
     }
 
-    fn get_updated_at(&self) -> Option<i64> {
+    fn get_updated_at(&self) -> Option<TimestampMillis> {
         match self {
             DocumentTransition::Create(t) => t.updated_at,
             DocumentTransition::Replace(t) => t.updated_at,
@@ -215,7 +215,7 @@ impl DocumentTransitionExt for DocumentTransition {
         }
     }
 
-    fn set_updated_at(&mut self, timestamp_millis: Option<i64>) {
+    fn set_updated_at(&mut self, timestamp_millis: Option<TimestampMillis>) {
         match self {
             DocumentTransition::Create(ref mut t) => t.updated_at = timestamp_millis,
             DocumentTransition::Replace(ref mut t) => t.updated_at = timestamp_millis,
@@ -223,7 +223,7 @@ impl DocumentTransitionExt for DocumentTransition {
         }
     }
 
-    fn get_created_at(&self) -> Option<i64> {
+    fn get_created_at(&self) -> Option<TimestampMillis> {
         match self {
             DocumentTransition::Create(t) => t.created_at,
             DocumentTransition::Replace(_) => None,
@@ -231,7 +231,7 @@ impl DocumentTransitionExt for DocumentTransition {
         }
     }
 
-    fn set_created_at(&mut self, timestamp_millis: Option<i64>) {
+    fn set_created_at(&mut self, timestamp_millis: Option<TimestampMillis>) {
         match self {
             DocumentTransition::Create(ref mut t) => t.created_at = timestamp_millis,
             DocumentTransition::Replace(_) => {}

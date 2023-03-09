@@ -4,7 +4,7 @@ use serde_json::Value;
 
 use crate::{
     document::{errors::DocumentError, Document},
-    prelude::Identifier,
+    prelude::{Identifier, TimestampMillis},
     state_repository::StateRepositoryLike,
     state_transition::StateTransitionLike,
     ProtocolError,
@@ -141,7 +141,7 @@ fn document_from_transition_create(
 fn document_from_transition_replace(
     document_replace_transition: &DocumentReplaceTransition,
     state_transition: &DocumentsBatchTransition,
-    created_at: u64,
+    created_at: TimestampMillis,
 ) -> Document {
     // TODO cloning is costly. Probably the [`Document`] should have properties of type `Cov<'a, K>`
     Document {

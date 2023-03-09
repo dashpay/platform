@@ -32,13 +32,12 @@ use crate::error::Error;
 use crate::platform::Platform;
 use ciborium::{cbor, Value as CborValue};
 use dpp::platform_value::Value;
+use dpp::prelude::TimestampMillis;
 use dpp::ProtocolError;
 use drive::contract::DataContract;
 use drive::dpp::data_contract::DriveContractExt;
 use drive::dpp::document::document_stub::DocumentStub;
-use drive::dpp::identity::{
-    Identity, IdentityPublicKey, KeyType, Purpose, SecurityLevel, TimestampMillis,
-};
+use drive::dpp::identity::{Identity, IdentityPublicKey, KeyType, Purpose, SecurityLevel};
 use drive::dpp::prelude::{Document, Identifier};
 use drive::dpp::system_data_contracts::{load_system_data_contract, SystemDataContract};
 use drive::dpp::util::string_encoding::{encode, Encoding};

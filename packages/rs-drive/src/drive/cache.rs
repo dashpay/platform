@@ -1,9 +1,9 @@
 #[cfg(any(feature = "full", feature = "verify"))]
 use crate::drive::contract::ContractFetchInfo;
 #[cfg(any(feature = "full", feature = "verify"))]
-use dpp::identity::TimestampMillis;
-#[cfg(any(feature = "full", feature = "verify"))]
 use dpp::prelude::ProtocolVersion;
+#[cfg(any(feature = "full", feature = "verify"))]
+use dpp::prelude::TimestampMillis;
 #[cfg(any(feature = "full", feature = "verify"))]
 use moka::sync::Cache;
 #[cfg(any(feature = "full", feature = "verify"))]

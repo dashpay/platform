@@ -10,8 +10,8 @@ use std::{option::Option::None, path::Path, sync::mpsc, thread};
 use crate::converter::js_object_to_fee_refunds;
 use crate::fee::result::FeeResultWrapper;
 
-use drive::dpp::identity::{KeyID, TimestampMillis};
-use drive::dpp::prelude::Revision;
+use drive::dpp::identity::KeyID;
+use drive::dpp::prelude::{Revision, TimestampMillis};
 use drive::drive::flags::StorageFlags;
 use drive::drive::query::QueryDocumentsOutcome;
 use drive::error::Error;

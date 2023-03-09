@@ -10,6 +10,7 @@ mod apply_identity_credit_withdrawal_transition_factory {
             apply_identity_credit_withdrawal_transition_factory::ApplyIdentityCreditWithdrawalTransition,
             IdentityCreditWithdrawalTransition, Pooling,
         },
+        prelude::TimestampMillis,
         state_repository::MockStateRepositoryLike,
         tests::fixtures::get_data_contract_fixture,
     };
@@ -45,7 +46,7 @@ mod apply_identity_credit_withdrawal_transition_factory {
 
     #[tokio::test]
     async fn should_create_withdrawal_and_reduce_balance() {
-        let block_time_seconds = 1675709306;
+        let block_time_seconds: TimestampMillis = 1675709306;
 
         let state_transition = IdentityCreditWithdrawalTransition {
             amount: 10,
@@ -68,7 +69,7 @@ mod apply_identity_credit_withdrawal_transition_factory {
             .times(1)
             .returning(move || {
                 let header = BlockHeader {
-                    time: block_time_seconds,
+                    time: block_time_seconds as u32,
                     version: 1,
                     prev_blockhash: Default::default(),
                     merkle_root: Default::default(),
@@ -83,8 +84,8 @@ mod apply_identity_credit_withdrawal_transition_factory {
             .expect_create_document()
             .times(1)
             .withf(move |doc, _| {
-                let created_at_match = doc.created_at == Some(block_time_seconds as i64 * 1000);
-                let updated_at_match = doc.created_at == Some(block_time_seconds as i64 * 1000);
+                let created_at_match = doc.created_at == Some(block_time_seconds * 1000);
+                let updated_at_match = doc.created_at == Some(block_time_seconds * 1000);
 
                 let document_data_match = doc.data
                     == json!({

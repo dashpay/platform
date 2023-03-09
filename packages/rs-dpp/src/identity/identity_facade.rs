@@ -12,9 +12,9 @@ use crate::identity::state_transition::identity_public_key_transitions::Identity
 use crate::identity::state_transition::identity_topup_transition::IdentityTopUpTransition;
 use crate::identity::state_transition::identity_update_transition::identity_update_transition::IdentityUpdateTransition;
 use crate::identity::validation::{IdentityValidator, PublicKeysValidator};
-use crate::identity::{Identity, IdentityPublicKey, KeyID, TimestampMillis};
+use crate::identity::{Identity, IdentityPublicKey, KeyID};
 
-use crate::prelude::ProtocolVersion;
+use crate::prelude::{ProtocolVersion, TimestampMillis};
 use crate::validation::ValidationResult;
 use crate::version::ProtocolVersionValidator;
 use crate::{BlsModule, DashPlatformProtocolInitError, NonConsensusError, ProtocolError};
