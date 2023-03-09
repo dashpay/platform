@@ -9,6 +9,8 @@ const chaiAsPromised = require('chai-as-promised');
 const chaiString = require('chai-string');
 const DashCoreOptions = require('@dashevo/dp-services-ctl/lib/services/dashCore/DashCoreOptions');
 
+const { default: loadWasmDpp } = require('@dashevo/wasm-dpp');
+
 use(sinonChai);
 use(chaiAsPromised);
 use(chaiString);
@@ -63,7 +65,9 @@ DashCoreOptions.setDefaultCustomOptions({
   },
 });
 
-beforeEach(function beforeEach() {
+beforeEach(async function beforeEach() {
+  this.dppWasm = await loadWasmDpp();
+
   if (!this.sinon) {
     this.sinon = sinon.createSandbox();
   } else {
