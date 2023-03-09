@@ -134,11 +134,12 @@ async fn should_throw_error_if_data_contract_was_not_found() {
     .await
     .expect_err("protocol error expected");
 
-    assert!(matches!(
-        error,
-        ProtocolError::DataContractNotPresentError { data_contract_id } if
-        data_contract_id == data_contract.id
-    ));
+    match error {
+        ProtocolError::DataContractNotPresentError(err) => {
+            assert_eq!(err.data_contract_id(), data_contract.id);
+        }
+        _ => panic!("Expected DataContractNotPresentError, got {}", error),
+    }
 }
 
 #[tokio::test]

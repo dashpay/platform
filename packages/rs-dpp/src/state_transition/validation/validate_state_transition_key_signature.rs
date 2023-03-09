@@ -4,6 +4,8 @@ use anyhow::{bail, Context};
 use async_trait::async_trait;
 use dashcore::signer::verify_hash_signature;
 
+use crate::consensus::signature::IdentityNotFoundError;
+use crate::consensus::ConsensusError;
 use crate::{
     consensus::signature::SignatureError,
     identity::{
@@ -82,9 +84,11 @@ pub async fn validate_state_transition_key_signature<SR: StateRepositoryLike>(
         execution_context.add_operations(tmp_execution_context.get_operations());
 
         if balance.is_none() {
-            result.add_error(SignatureError::IdentityNotFoundError {
-                identity_id: *target_identity_id,
-            });
+            result.add_error(ConsensusError::SignatureError(
+                SignatureError::IdentityNotFoundError(IdentityNotFoundError::new(
+                    *target_identity_id,
+                )),
+            ));
             return Ok(result);
         }
     }

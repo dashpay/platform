@@ -62,8 +62,8 @@ class GroupResetCommand extends GroupBaseCommand {
                 config.set('platform.masternodeRewardShares', baseConfig.platform.masternodeRewardShares);
 
                 // TODO: Should stay the same
-                config.set('platform.drive.tenderdash.nodeId', baseConfig.platform.drive.tenderdash.nodeId);
-                config.set('platform.drive.tenderdash.nodeKey', baseConfig.platform.drive.tenderdash.nodeKey);
+                config.set('platform.drive.tenderdash.node.id', baseConfig.platform.drive.tenderdash.node.id);
+                config.set('platform.drive.tenderdash.node.key', baseConfig.platform.drive.tenderdash.node.key);
                 config.set('platform.drive.tenderdash.genesis', baseConfig.platform.drive.tenderdash.genesis);
               }
 

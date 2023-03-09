@@ -3,13 +3,12 @@ use std::sync::Arc;
 
 use anyhow::Result;
 
+use crate::consensus::signature::IdentityNotFoundError;
 use crate::{
-    consensus::basic::{identity::IdentityInsufficientBalanceError, BasicError},
+    consensus::basic::identity::IdentityInsufficientBalanceError,
     identity::state_transition::identity_credit_withdrawal_transition::IdentityCreditWithdrawalTransition,
-    state_repository::StateRepositoryLike,
-    state_transition::StateTransitionLike,
-    validation::ValidationResult,
-    NonConsensusError, StateError,
+    state_repository::StateRepositoryLike, state_transition::StateTransitionLike,
+    validation::ValidationResult, NonConsensusError, StateError,
 };
 
 pub struct IdentityCreditWithdrawalTransitionValidator<SR>
@@ -47,9 +46,7 @@ where
             .map_err(|e| NonConsensusError::StateRepositoryFetchError(e.to_string()))?;
 
         let Some(existing_identity) = maybe_existing_identity else {
-            let err = BasicError::IdentityNotFoundError {
-                identity_id: state_transition.identity_id,
-            };
+            let err = IdentityNotFoundError::new(state_transition.identity_id);
 
             result.add_error(err);
 

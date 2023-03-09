@@ -1,7 +1,7 @@
 use thiserror::Error;
 use wasm_bindgen::prelude::*;
 
-use crate::DataContractWasm;
+use crate::identifier::IdentifierWrapper;
 
 #[wasm_bindgen]
 #[derive(Error, Debug)]
@@ -9,16 +9,16 @@ use crate::DataContractWasm;
 pub struct InvalidDocumentTypeInDataContractError {
     // we have to store it as JsValue as the errors of 'class' Consensus are of different types
     doc_type: String,
-    data_contract: DataContractWasm,
+    data_contract_id: IdentifierWrapper,
 }
 
 #[wasm_bindgen]
 impl InvalidDocumentTypeInDataContractError {
     #[wasm_bindgen(constructor)]
-    pub fn new(doc_type: String, data_contract: DataContractWasm) -> Self {
+    pub fn new(doc_type: String, data_contract_id: IdentifierWrapper) -> Self {
         InvalidDocumentTypeInDataContractError {
             doc_type,
-            data_contract,
+            data_contract_id,
         }
     }
     #[wasm_bindgen(js_name = "getType")]
@@ -27,7 +27,7 @@ impl InvalidDocumentTypeInDataContractError {
     }
 
     #[wasm_bindgen(js_name = "getDataContract")]
-    pub fn get_data_contract(&self) -> DataContractWasm {
-        self.data_contract.clone()
+    pub fn get_data_contract_id(&self) -> IdentifierWrapper {
+        self.data_contract_id.clone()
     }
 }

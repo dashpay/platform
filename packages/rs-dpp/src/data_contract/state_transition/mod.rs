@@ -1,5 +1,6 @@
 pub mod data_contract_create_transition;
 pub mod data_contract_update_transition;
+pub mod errors;
 
 pub(crate) mod property_names {
     pub const SIGNATURE_PUBLIC_KEY_ID: &str = "signaturePublicKeyId";

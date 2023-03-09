@@ -4,6 +4,7 @@ use std::sync::Arc;
 
 use data_contract::state_transition::property_names as st_prop;
 
+use crate::data_contract::errors::InvalidDataContractError;
 use crate::data_contract::property_names;
 use crate::util::serializer::value_to_cbor;
 use crate::{
@@ -112,10 +113,9 @@ impl DataContractFactory {
             let result = self.validate_data_contract.validate(&raw_data_contract)?;
 
             if !result.is_valid() {
-                return Err(ProtocolError::InvalidDataContractError {
-                    errors: result.errors,
-                    raw_data_contract,
-                });
+                return Err(ProtocolError::InvalidDataContractError(
+                    InvalidDataContractError::new(result.errors, raw_data_contract),
+                ));
             }
         }
         DataContract::from_raw_object(raw_data_contract)

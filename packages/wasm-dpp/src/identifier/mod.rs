@@ -9,6 +9,7 @@ use wasm_bindgen::JsCast;
 use crate::bail_js;
 use crate::buffer::Buffer;
 use crate::errors::from_dpp_err;
+use crate::utils::Inner;
 use crate::utils::ToSerdeJSONExt;
 use crate::utils::WithJsError;
 use dpp::identifier;
@@ -27,7 +28,7 @@ extern "C" {
     fn log(a: &str);
 }
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 #[wasm_bindgen(js_name=Identifier, inspectable)]
 pub struct IdentifierWrapper {
     wrapped: identifier::Identifier,
@@ -129,14 +130,28 @@ impl IdentifierWrapper {
     }
 }
 
-impl IdentifierWrapper {
-    pub fn inner(self) -> Identifier {
+impl Inner for IdentifierWrapper {
+    type InnerItem = Identifier;
+
+    fn into_inner(self) -> Identifier {
         self.wrapped
+    }
+
+    fn inner(&self) -> &Identifier {
+        &self.wrapped
+    }
+
+    fn inner_mut(&mut self) -> &mut Identifier {
+        &mut self.wrapped
     }
 }
 
-/// tries to create identifier from
-pub fn identifier_from_js_value(js_value: &JsValue) -> Result<Identifier, JsValue> {
+// Try to extract Identifier from **stringified** identifier.
+// The `js_value` can be a stringified instance of: `Identifier`, `Buffer` or `Array`
+pub(crate) fn identifier_from_js_value(js_value: &JsValue) -> Result<Identifier, JsValue> {
+    if js_value.is_undefined() || js_value.is_null() {
+        bail_js!("the identifier cannot be null or undefined")
+    }
     let value = js_value.with_serde_to_json_value()?;
     match value {
         Value::Array(arr) => {

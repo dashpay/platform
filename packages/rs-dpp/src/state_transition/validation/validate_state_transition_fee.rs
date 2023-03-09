@@ -1,6 +1,9 @@
 use anyhow::Context;
 use std::convert::TryInto;
 
+use crate::consensus::basic::state_transition::InvalidStateTransitionTypeError;
+use crate::data_contract::errors::IdentityNotPresentError;
+use crate::state_transition::StateTransitionType;
 use crate::{
     consensus::fee::FeeError,
     identity::{
@@ -73,7 +76,11 @@ where
                     .map(TryInto::try_into)
                     .transpose()
                     .map_err(Into::into)?
-                    .ok_or(ProtocolError::IdentityNotPresentError { id: *identity_id })?;
+                    .ok_or_else(|| {
+                        ProtocolError::IdentityNotPresentError(IdentityNotPresentError::new(
+                            identity_id.clone(),
+                        ))
+                    })?;
 
                 if execution_context.is_dry_run() {
                     return Ok(result);
@@ -110,7 +117,11 @@ where
                 balance
             }
             StateTransition::IdentityCreditWithdrawal(_) => {
-                return Err(ProtocolError::InvalidStateTransitionTypeError);
+                return Err(ProtocolError::InvalidStateTransitionTypeError(
+                    InvalidStateTransitionTypeError::new(
+                        StateTransitionType::IdentityCreditWithdrawal as u8,
+                    ),
+                ));
             }
         };
 
@@ -139,7 +150,11 @@ where
             .map(TryInto::try_into)
             .transpose()
             .map_err(Into::into)?
-            .ok_or(ProtocolError::IdentityNotPresentError { id: *identity_id })?;
+            .ok_or_else(|| {
+                ProtocolError::IdentityNotPresentError(IdentityNotPresentError::new(
+                    identity_id.clone(),
+                ))
+            })?;
 
         Ok(identity.get_balance())
     }
@@ -379,9 +394,12 @@ mod test {
             .validate(&transition.into())
             .await
             .expect_err("error should be returned");
-        assert!(matches!(
-            result,
-            ProtocolError::InvalidStateTransitionTypeError
-        ))
+
+        match result {
+            ProtocolError::InvalidStateTransitionTypeError(err) => {
+                assert_eq!(err.transition_type(), 6);
+            }
+            _ => panic!("expected InvalidStateTransitionTypeError, got {}", result),
+        }
     }
 }

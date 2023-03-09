@@ -1,13 +1,12 @@
 use std::convert::{TryFrom, TryInto};
 
-use anyhow::anyhow;
-use anyhow::Context;
-use async_trait::async_trait;
-use json_patch::PatchOperation;
-use lazy_static::lazy_static;
-use serde_json::{json, Value as JsonValue};
-use std::sync::Arc;
-
+use crate::consensus::basic::data_contract::{
+    DataContractImmutablePropertiesUpdateError, IncompatibleDataContractSchemaError,
+};
+use crate::consensus::basic::decode::ProtocolVersionParsingError;
+use crate::consensus::basic::invalid_data_contract_version_error::InvalidDataContractVersionError;
+use crate::consensus::ConsensusError;
+use crate::state_transition::state_transition_execution_context::StateTransitionExecutionContext;
 use crate::validation::AsyncDataValidatorWithContext;
 use crate::{
     consensus::basic::BasicError,
@@ -22,10 +21,13 @@ use crate::{
     version::ProtocolVersionValidator,
     DashPlatformProtocolInitError, ProtocolError,
 };
-use crate::{
-    consensus::ConsensusError,
-    state_transition::state_transition_execution_context::StateTransitionExecutionContext,
-};
+use anyhow::anyhow;
+use anyhow::Context;
+use async_trait::async_trait;
+use json_patch::PatchOperation;
+use lazy_static::lazy_static;
+use serde_json::{json, Value as JsonValue};
+use std::sync::Arc;
 
 use super::schema_compatibility_validator::validate_schema_compatibility;
 use super::schema_compatibility_validator::DiffVAlidatorError;
@@ -93,7 +95,9 @@ where
             Ok(v) => v,
             Err(parsing_error) => {
                 return Ok(SimpleValidationResult::new(Some(vec![
-                    ConsensusError::ProtocolVersionParsingError { parsing_error },
+                    ConsensusError::ProtocolVersionParsingError(ProtocolVersionParsingError::new(
+                        parsing_error,
+                    )),
                 ])))
             }
         };
@@ -137,10 +141,9 @@ where
         let new_version = raw_data_contract.get_u64(contract_property_names::VERSION)? as u32;
         let old_version = existing_data_contract.version;
         if (new_version - old_version) != 1 {
-            validation_result.add_error(BasicError::InvalidDataContractVersionError {
-                expected_version: old_version + 1,
-                version: new_version,
-            })
+            validation_result.add_error(BasicError::InvalidDataContractVersionError(
+                InvalidDataContractVersionError::new(old_version + 1, new_version),
+            ))
         }
         let raw_existing_data_contract = existing_data_contract.to_object(false)?;
 
@@ -180,10 +183,12 @@ where
 
         for diff in base_data_contract_diff.0.iter() {
             let (operation, property_name) = get_operation_and_property_name(diff);
-            validation_result.add_error(BasicError::DataContractImmutablePropertiesUpdateError {
-                operation: operation.to_owned(),
-                field_path: property_name.to_owned(),
-            })
+            validation_result.add_error(BasicError::DataContractImmutablePropertiesUpdateError(
+                DataContractImmutablePropertiesUpdateError::new(
+                    operation.to_owned(),
+                    property_name.to_owned(),
+                ),
+            ))
         }
         if !validation_result.is_valid() {
             return Ok(validation_result);
@@ -201,13 +206,15 @@ where
                 Err(DiffVAlidatorError::SchemaCompatibilityError { diffs }) => {
                     let (operation_name, property_name) =
                         get_operation_and_property_name(&diffs[0]);
-                    validation_result.add_error(BasicError::IncompatibleDataContractSchemaError {
-                        data_contract_id: existing_data_contract.id,
-                        operation: operation_name.to_owned(),
-                        field_path: property_name.to_owned(),
-                        old_schema: document_schema.clone(),
-                        new_schema: new_document_schema.clone(),
-                    });
+                    validation_result.add_error(BasicError::IncompatibleDataContractSchemaError(
+                        IncompatibleDataContractSchemaError::new(
+                            existing_data_contract.id.clone(),
+                            operation_name.to_owned(),
+                            property_name.to_owned(),
+                            document_schema.clone(),
+                            new_document_schema.clone(),
+                        ),
+                    ));
                 }
                 Err(DiffVAlidatorError::DataStructureError(e)) => {
                     return Err(ProtocolError::ParsingError(e.to_string()))
