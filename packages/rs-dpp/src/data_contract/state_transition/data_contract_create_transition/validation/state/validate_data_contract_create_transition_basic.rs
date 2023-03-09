@@ -5,6 +5,8 @@ use anyhow::anyhow;
 use lazy_static::lazy_static;
 use serde_json::Value;
 
+use crate::consensus::basic::data_contract::InvalidDataContractIdError;
+use crate::consensus::basic::decode::ProtocolVersionParsingError;
 use crate::{
     consensus::{basic::BasicError, ConsensusError},
     data_contract::{generate_data_contract_id, state_transition::property_names},
@@ -16,7 +18,6 @@ use crate::{
     util::json_value::JsonValueExt,
     validation::{
         DataValidator, DataValidatorWithContext, JsonSchemaValidator, SimpleValidationResult,
-        ValidationResult,
     },
     version::ProtocolVersionValidator,
     ProtocolError,
@@ -87,7 +88,9 @@ fn validate_data_contract_create_transition_basic(
         Ok(v) => v,
         Err(parsing_error) => {
             return Ok(SimpleValidationResult::new(Some(vec![
-                ConsensusError::ProtocolVersionParsingError { parsing_error },
+                ConsensusError::ProtocolVersionParsingError(ProtocolVersionParsingError::new(
+                    parsing_error,
+                )),
             ])))
         }
     };
@@ -113,10 +116,9 @@ fn validate_data_contract_create_transition_basic(
 
     let mut validation_result = SimpleValidationResult::default();
     if generated_id != raw_data_contract_id {
-        validation_result.add_error(BasicError::InvalidDataContractIdError {
-            expected_id: generated_id,
-            invalid_id: raw_data_contract_id,
-        })
+        validation_result.add_error(BasicError::InvalidDataContractIdError(
+            InvalidDataContractIdError::new(generated_id, raw_data_contract_id),
+        ))
     }
 
     Ok(validation_result)
