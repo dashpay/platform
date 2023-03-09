@@ -33,6 +33,7 @@ describe('StateTransitionFacade', () => {
   let stateRepositoryMock;
   let dataContract;
   let identityPublicKey;
+  let identity;
 
   let DashPlatformProtocol;
   let DataContractFactory;
@@ -45,6 +46,10 @@ describe('StateTransitionFacade', () => {
   let DocumentValidator;
   let ProtocolVersionValidator;
   let IdentityCreateTransition;
+  let UnsupportedProtocolVersionError;
+  let InvalidStateTransitionSignatureError;
+  let DataContractAlreadyPresentError;
+  let BalanceIsNotEnoughError;
 
   before(async () => {
     ({
@@ -59,6 +64,10 @@ describe('StateTransitionFacade', () => {
       DocumentValidator,
       ProtocolVersionValidator,
       IdentityCreateTransition,
+      UnsupportedProtocolVersionError,
+      InvalidStateTransitionSignatureError,
+      DataContractAlreadyPresentError,
+      BalanceIsNotEnoughError,
     } = await loadWasmDpp());
   });
 
@@ -101,7 +110,8 @@ describe('StateTransitionFacade', () => {
 
     const identityObjectJS = getIdentityFixture().toObject();
     identityObjectJS.id = await generateRandomIdentifierAsync();
-    const identity = new Identity(identityObjectJS);
+    identityObjectJS.balance = 10000000;
+    identity = new Identity(identityObjectJS);
     identity.setPublicKeys([identityPublicKey]);
 
     const blockTime = Date.now();
@@ -140,95 +150,59 @@ describe('StateTransitionFacade', () => {
     });
   });
 
-  describe.skip('validate', () => {
+  describe('validate', () => {
     let validateBasicSpy;
     let validateSignatureSpy;
     let validateFeeSpy;
     let validateStateSpy;
 
-    beforeEach(function beforeEach() {
-      validateBasicSpy = this.sinonSandbox.spy(
-        dpp.stateTransition,
-        'validateBasic',
-      );
-
-      validateSignatureSpy = this.sinonSandbox.spy(
-        dpp.stateTransition,
-        'validateSignature',
-      );
-
-      validateFeeSpy = this.sinonSandbox.spy(
-        dpp.stateTransition,
-        'validateFee',
-      );
-
-      validateStateSpy = this.sinonSandbox.spy(
-        dpp.stateTransition,
-        'validateState',
-      );
-    });
-
     it('should return invalid result if State Transition structure is invalid', async () => {
       const rawStateTransition = dataContractCreateTransition.toObject();
-      delete rawStateTransition.protocolVersion;
+      rawStateTransition.protocolVersion = 100;
 
       const result = await dpp.stateTransition.validate(rawStateTransition);
 
       expect(result).to.be.an.instanceOf(ValidationResult);
       expect(result.isValid()).to.be.false();
-
-      expect(validateBasicSpy).to.be.calledOnceWithExactly(rawStateTransition);
-      expect(validateSignatureSpy).to.not.be.called();
-      expect(validateFeeSpy).to.not.be.called();
-      expect(validateStateSpy).to.not.be.called();
+      const errors = result.getErrors();
+      expect(errors).to.have.lengthOf(1);
+      expect(errors[0]).to.be.instanceOf(UnsupportedProtocolVersionError);
     });
 
     it('should return invalid result if State Transition signature is invalid', async () => {
-      dataContractCreateTransition.signature = Buffer.alloc(65).fill(1);
+      const rawStateTransition = dataContractCreateTransition.toObject();
+      rawStateTransition.signature = Buffer.alloc(65).fill(1);
 
-      const result = await dpp.stateTransition.validate(dataContractCreateTransition);
+      const result = await dpp.stateTransition.validate(rawStateTransition);
 
       expect(result).to.be.an.instanceOf(ValidationResult);
       expect(result.isValid()).to.be.false();
-
-      expect(validateBasicSpy).to.be.calledOnceWithExactly(dataContractCreateTransition);
-      expect(validateSignatureSpy).to.be.calledOnceWithExactly(dataContractCreateTransition);
-      expect(validateFeeSpy).to.not.be.called();
-      expect(validateStateSpy).to.not.be.called();
+      const errors = result.getErrors();
+      expect(errors).to.have.lengthOf(1);
+      expect(errors[0]).to.be.instanceOf(InvalidStateTransitionSignatureError);
     });
 
     it('should return invalid result if not enough balance to pay fee for State Transition', async () => {
-      const consensusError = new SomeConsensusError('error');
-
-      dpp.stateTransition.validateStateTransitionFee = () => new ValidationResult([consensusError]);
-
+      identity.setBalance(0);
       const result = await dpp.stateTransition.validate(dataContractCreateTransition);
 
       expect(result).to.be.an.instanceOf(ValidationResult);
       expect(result.isValid()).to.be.false();
-
-      expect(validateBasicSpy).to.be.calledOnceWithExactly(dataContractCreateTransition);
-      expect(validateSignatureSpy).to.be.calledOnceWithExactly(dataContractCreateTransition);
-      expect(validateFeeSpy).to.be.calledOnceWithExactly(dataContractCreateTransition);
-      expect(validateStateSpy).to.not.be.called();
+      const errors = result.getErrors();
+      expect(errors).to.have.lengthOf(1);
+      expect(errors[0]).to.be.instanceOf(BalanceIsNotEnoughError);
     });
 
     it('should return invalid result if State Transition is invalid against state', async () => {
-      const consensusError = new SomeConsensusError('error');
-
-      dpp.stateTransition.validateStateTransitionState = () => (
-        new ValidationResult([consensusError])
-      );
+      stateRepositoryMock.fetchDataContract.resolves(dataContract);
 
       const result = await dpp.stateTransition.validate(dataContractCreateTransition);
 
       expect(result).to.be.an.instanceOf(ValidationResult);
       expect(result.isValid()).to.be.false();
-
-      expect(validateBasicSpy).to.be.calledOnceWithExactly(dataContractCreateTransition);
-      expect(validateSignatureSpy).to.be.calledOnceWithExactly(dataContractCreateTransition);
-      expect(validateFeeSpy).to.be.calledOnceWithExactly(dataContractCreateTransition);
-      expect(validateStateSpy).to.be.calledOnceWithExactly(dataContractCreateTransition);
+      const errors = result.getErrors();
+      expect(errors).to.have.lengthOf(1);
+      expect(errors[0]).to.be.instanceOf(DataContractAlreadyPresentError);
     });
 
     it('should validate DataContractCreateTransition', async () => {
@@ -238,33 +212,18 @@ describe('StateTransitionFacade', () => {
 
       expect(result).to.be.an.instanceOf(ValidationResult);
       expect(result.isValid()).to.be.true();
-
-      expect(validateBasicSpy).to.be.calledOnceWithExactly(dataContractCreateTransition);
-      expect(validateSignatureSpy).to.be.calledOnceWithExactly(dataContractCreateTransition);
-      expect(validateFeeSpy).to.be.calledOnceWithExactly(dataContractCreateTransition);
-      expect(validateStateSpy).to.be.calledOnceWithExactly(dataContractCreateTransition);
     });
 
-    it('should validate DocumentsBatchTransition', async function it() {
+    it('should validate DocumentsBatchTransition', async () => {
       stateRepositoryMock.fetchDocuments.resolves([]);
 
       stateRepositoryMock.fetchDataContract.resolves(dataContract);
-      stateRepositoryMock.fetchIdentity.resolves({
-        getPublicKeyById: this.sinonSandbox.stub().returns(identityPublicKey),
-        getBalance: this.sinonSandbox.stub().returns(10000),
-      });
-
       const result = await dpp.stateTransition.validate(
         documentsBatchTransition,
       );
 
       expect(result).to.be.an.instanceOf(ValidationResult);
       expect(result.isValid()).to.be.true();
-
-      expect(validateBasicSpy).to.be.calledOnceWithExactly(documentsBatchTransition);
-      expect(validateSignatureSpy).to.be.calledOnceWithExactly(documentsBatchTransition);
-      expect(validateFeeSpy).to.be.calledOnceWithExactly(documentsBatchTransition);
-      expect(validateStateSpy).to.be.calledOnceWithExactly(documentsBatchTransition);
     });
   });
 

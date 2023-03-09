@@ -278,6 +278,52 @@ where
             .await
     }
 
+    pub async fn validate(
+        &self,
+        state_transition: &StateTransition,
+        // TODO: revisit after https://github.com/dashpay/platform/pull/809 is merged
+        //  we need to pass state_transition_json here because `StateTransition#to_object` output
+        //  does not pass basic validation, and we use other means of producing JSON value for validation
+        state_transition_json: &Value,
+        execution_context: &StateTransitionExecutionContext,
+        options: ValidateOptions,
+    ) -> Result<SimpleValidationResult, ProtocolError> {
+        let mut result = SimpleValidationResult::default();
+
+        if options.basic {
+            result.merge(
+                self.validate_basic(state_transition_json, execution_context)
+                    .await?,
+            );
+        }
+
+        if !result.is_valid() {
+            return Ok(result);
+        }
+
+        if options.signature {
+            result.merge(self.validate_signature(state_transition.clone()).await?);
+        }
+
+        if !result.is_valid() {
+            return Ok(result);
+        }
+
+        if options.fee {
+            result.merge(self.validate_fee(state_transition).await?);
+        }
+
+        if !result.is_valid() {
+            return Ok(result);
+        }
+
+        if options.state {
+            result.merge(self.validate_state(state_transition).await?);
+        }
+
+        Ok(result)
+    }
+
     pub async fn validate_basic(
         &self,
         state_transition: &Value,
@@ -355,6 +401,22 @@ where
     ) -> Result<SimpleValidationResult, ProtocolError> {
         self.state_validator.validate(state_transition).await
     }
+}
 
-    // pub async fn validate() -> Result<SimpleValidationResult, ProtocolError> {}
+pub struct ValidateOptions {
+    pub basic: bool,
+    pub signature: bool,
+    pub fee: bool,
+    pub state: bool,
+}
+
+impl Default for ValidateOptions {
+    fn default() -> Self {
+        Self {
+            basic: true,
+            signature: true,
+            fee: true,
+            state: true,
+        }
+    }
 }

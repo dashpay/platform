@@ -8,6 +8,7 @@ use crate::with_js_error;
 use dpp::state_transition::state_transition_execution_context::StateTransitionExecutionContext;
 use dpp::state_transition::{
     StateTransitionConvert, StateTransitionFacade, StateTransitionFactory, StateTransitionLike,
+    ValidateOptions,
 };
 use dpp::version::ProtocolVersionValidator;
 use serde::{Deserialize, Serialize};
@@ -41,12 +42,6 @@ impl StateTransitionFacadeWasm {
 
         Ok(StateTransitionFacadeWasm(state_transition_facade))
     }
-}
-
-#[derive(Deserialize, Default)]
-#[serde(rename_all = "camelCase")]
-pub struct FromObjectOptions {
-    pub skip_validation: Option<bool>,
 }
 
 #[wasm_bindgen(js_class = StateTransitionFacade)]
@@ -99,6 +94,59 @@ impl StateTransitionFacadeWasm {
         StateTransitionFactoryWasm::state_transition_wasm_from_factory_result(result)
     }
 
+    #[wasm_bindgen]
+    pub async fn validate(
+        &self,
+        raw_state_transition: JsValue,
+        options: JsValue,
+    ) -> Result<ValidationResultWasm, JsValue> {
+        let options: ValidateOptionsWasm = if options.is_object() {
+            with_js_error!(serde_wasm_bindgen::from_value(options))?
+        } else {
+            Default::default()
+        };
+
+        let (state_transition, state_transition_json, execution_context) =
+            if let Ok(state_transition) =
+                super::super::conversion::create_state_transition_from_wasm_instance(
+                    &raw_state_transition,
+                )
+            {
+                let execution_context = state_transition.get_execution_context().to_owned();
+                // TODO: revisit after https://github.com/dashpay/platform/pull/809 is merged
+                //  we use this workaround to produce JSON value for validation because
+                //  state_transition.to_object() returns value that does not pass basic validation
+                let state_transition_json =
+                    super::super::conversion::state_transition_wasm_to_object(
+                        &raw_state_transition,
+                    )?
+                    .with_serde_to_json_value()?;
+                (state_transition, state_transition_json, execution_context)
+            } else {
+                let state_transition_json = raw_state_transition.with_serde_to_json_value()?;
+                let execution_context = StateTransitionExecutionContext::default();
+                let state_transition = self
+                    .0
+                    .create_from_object(state_transition_json.clone(), true)
+                    .await
+                    .map_err(from_dpp_err)?;
+                (state_transition, state_transition_json, execution_context)
+            };
+
+        let validation_result = self
+            .0
+            .validate(
+                &state_transition,
+                &state_transition_json,
+                &execution_context,
+                options.into(),
+            )
+            .await
+            .map_err(from_dpp_err)?;
+
+        Ok(validation_result.map(|_| JsValue::undefined()).into())
+    }
+
     #[wasm_bindgen(js_name = validateBasic)]
     pub async fn validate_basic(
         &self,
@@ -113,6 +161,9 @@ impl StateTransitionFacadeWasm {
             )
         {
             execution_context = state_transition.get_execution_context().to_owned();
+            // TODO: revisit after https://github.com/dashpay/platform/pull/809 is merged
+            //  we use this workaround to produce JSON value for validation because
+            //  state_transition.to_object() returns value that does not pass basic validation
             state_transition_json =
                 super::super::conversion::state_transition_wasm_to_object(&raw_state_transition)?
                     .with_serde_to_json_value()?;
@@ -185,5 +236,31 @@ impl StateTransitionFacadeWasm {
             .map_err(from_dpp_err)?;
 
         Ok(validation_result.map(|_| JsValue::undefined()).into())
+    }
+}
+
+#[derive(Deserialize, Default)]
+#[serde(rename_all = "camelCase")]
+pub struct FromObjectOptions {
+    pub skip_validation: Option<bool>,
+}
+
+#[derive(Deserialize, Default)]
+#[serde(rename_all = "camelCase")]
+pub struct ValidateOptionsWasm {
+    pub basic: Option<bool>,
+    pub signature: Option<bool>,
+    pub fee: Option<bool>,
+    pub state: Option<bool>,
+}
+
+impl From<ValidateOptionsWasm> for ValidateOptions {
+    fn from(options: ValidateOptionsWasm) -> Self {
+        Self {
+            basic: options.basic.unwrap_or(true),
+            signature: options.signature.unwrap_or(true),
+            fee: options.fee.unwrap_or(true),
+            state: options.state.unwrap_or(true),
+        }
     }
 }
