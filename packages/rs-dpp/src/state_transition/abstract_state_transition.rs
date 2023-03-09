@@ -4,6 +4,8 @@ use dashcore::signer;
 use serde::Serialize;
 use serde_json::Value as JsonValue;
 
+use crate::consensus::ConsensusError;
+use crate::errors::consensus::signature::SignatureError;
 use crate::state_transition::errors::{
     InvalidIdentityPublicKeyTypeError, StateTransitionIsNotSignedError,
 };
@@ -118,11 +120,11 @@ pub trait StateTransitionLike:
             ));
         }
         let data_hash = self.hash(true)?;
-        Ok(signer::verify_hash_signature(
-            &data_hash,
-            self.get_signature(),
-            public_key_hash,
-        )?)
+        signer::verify_hash_signature(&data_hash, self.get_signature(), public_key_hash).or(Err(
+            ProtocolError::from(ConsensusError::SignatureError(
+                SignatureError::InvalidStateTransitionSignatureError,
+            )),
+        ))
     }
 
     /// Verifies an ECDSA signature with the public key
@@ -133,11 +135,12 @@ pub trait StateTransitionLike:
             ));
         }
         let data = self.to_buffer(true)?;
-        Ok(signer::verify_data_signature(
-            &data,
-            self.get_signature(),
-            public_key,
-        )?)
+
+        signer::verify_data_signature(&data, self.get_signature(), public_key).or(Err(
+            ProtocolError::from(ConsensusError::SignatureError(
+                SignatureError::InvalidStateTransitionSignatureError,
+            )),
+        ))
     }
 
     /// Verifies a BLS signature with the public key
@@ -156,6 +159,9 @@ pub trait StateTransitionLike:
 
         bls.verify_signature(self.get_signature(), &data, public_key)
             .map(|_| ())
+            .or(Err(ProtocolError::from(ConsensusError::SignatureError(
+                SignatureError::InvalidStateTransitionSignatureError,
+            ))))
     }
 
     /// returns true if state transition is a document state transition
