@@ -78,6 +78,7 @@
     "@dashevo/grpc-common": "workspace:*",
     "@dashevo/masternode-reward-shares-contract": "workspace:*",
     "@dashevo/rs-drive": "workspace:*",
+    "@dashevo/wasm-dpp": "workspace:*",
     "@dashevo/withdrawals-contract": "workspace:*",
     "ajv": "^8.6.0",
     "ajv-keywords": "^5.0.0",
