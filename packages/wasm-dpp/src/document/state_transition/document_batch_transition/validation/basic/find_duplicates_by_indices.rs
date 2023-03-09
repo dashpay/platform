@@ -47,7 +47,7 @@ pub fn find_duplicates_by_indices_wasm(
         .map(|v| {
             let mut value = v.clone();
             value
-                .remove_value("$ownerId")
+                .remove_optional_value("$ownerId")
                 .map_err(ProtocolError::ValueError)
                 .with_js_error()?;
             to_object(

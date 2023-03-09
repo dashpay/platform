@@ -1,8 +1,11 @@
+use std::collections::BTreeMap;
 use std::convert::TryInto;
 
 use anyhow::anyhow;
 use serde::{Deserialize, Serialize};
 use serde_json::Value as JsonValue;
+use platform_value::btreemap_extensions::BTreeValueMapHelper;
+use platform_value::Value;
 
 use crate::{
     data_contract::DataContract,
@@ -54,23 +57,42 @@ impl std::default::Default for DataContractCreateTransition {
 
 impl DataContractCreateTransition {
     pub fn from_raw_object(
-        mut raw_data_contract_update_transition: JsonValue,
+        mut raw_data_contract_update_transition: Value,
     ) -> Result<DataContractCreateTransition, ProtocolError> {
         Ok(DataContractCreateTransition {
-            protocol_version: raw_data_contract_update_transition.get_u64(PROTOCOL_VERSION)? as u32,
+            protocol_version: raw_data_contract_update_transition.get_integer(PROTOCOL_VERSION)?,
             signature: raw_data_contract_update_transition
-                .remove_into(SIGNATURE)
+                .remove_optional_bytes(SIGNATURE).map_err(ProtocolError::ValueError)?
                 .unwrap_or_default(),
             signature_public_key_id: raw_data_contract_update_transition
-                .get_u64(SIGNATURE_PUBLIC_KEY_ID)
-                .unwrap_or_default() as KeyID,
+                .get_optional_integer(SIGNATURE_PUBLIC_KEY_ID).map_err(ProtocolError::ValueError)?
+                .unwrap_or_default(),
             entropy: raw_data_contract_update_transition
-                .get_bytes(ENTROPY)
-                .unwrap_or_else(|_| [0u8; 32].to_vec())
-                .try_into()
-                .map_err(|_| anyhow!("entropy isn't 32 bytes long"))?,
-            data_contract: DataContract::from_json_raw_object(
-                raw_data_contract_update_transition.remove(DATA_CONTRACT)?,
+                .remove_optional_hash256_bytes(ENTROPY).map_err(ProtocolError::ValueError)?
+                .unwrap_or_default(),
+            data_contract: DataContract::from_raw_object(
+                raw_data_contract_update_transition.remove(DATA_CONTRACT).ok_or(ProtocolError::DecodingError("data contract missing on state transition".to_string()))?,
+            )?,
+            ..Default::default()
+        })
+    }
+
+    pub fn from_value_map(
+        mut raw_data_contract_update_transition: BTreeMap<String, Value>,
+    ) -> Result<DataContractCreateTransition, ProtocolError> {
+        Ok(DataContractCreateTransition {
+            protocol_version: raw_data_contract_update_transition.get_integer(PROTOCOL_VERSION).map_err(ProtocolError::ValueError)?,
+            signature: raw_data_contract_update_transition
+                .remove_optional_bytes(SIGNATURE).map_err(ProtocolError::ValueError)?
+                .unwrap_or_default(),
+            signature_public_key_id: raw_data_contract_update_transition
+                .remove_optional_integer(SIGNATURE_PUBLIC_KEY_ID).map_err(ProtocolError::ValueError)?
+                .unwrap_or_default(),
+            entropy: raw_data_contract_update_transition
+                .remove_optional_hash256_bytes(ENTROPY).map_err(ProtocolError::ValueError)?
+                .unwrap_or_default(),
+            data_contract: DataContract::from_raw_object(
+                raw_data_contract_update_transition.remove(DATA_CONTRACT).ok_or(ProtocolError::DecodingError("data contract missing on state transition".to_string()))?,
             )?,
             ..Default::default()
         })
@@ -187,7 +209,7 @@ impl StateTransitionConvert for DataContractCreateTransition {
         }
         json_object.insert(
             String::from(DATA_CONTRACT),
-            self.data_contract.to_object(false)?,
+            self.data_contract.to_json_object(false)?,
         )?;
         Ok(json_object)
     }
@@ -249,10 +271,10 @@ mod test {
         assert_eq!(
             data.state_transition
                 .get_data_contract()
-                .to_object(false)
+                .to_json_object(false)
                 .expect("conversion to object shouldn't fail"),
             data.data_contract
-                .to_object(false)
+                .to_json_object(false)
                 .expect("conversion to object shouldn't fail")
         );
     }

@@ -193,27 +193,27 @@ impl Value {
     /// # use platform_value::{Error, Value};
     /// #
     /// let value = Value::Bytes(vec![104, 101, 108, 108, 111, 32, 12, 50, 104, 101, 108, 108, 111, 32, 12, 50, 104, 101, 108, 108, 111, 32, 12, 50, 104, 101, 108, 108, 111, 32, 12, 50]);
-    /// assert_eq!(value.into_system_hash256(), Ok([104, 101, 108, 108, 111, 32, 12, 50, 104, 101, 108, 108, 111, 32, 12, 50, 104, 101, 108, 108, 111, 32, 12, 50, 104, 101, 108, 108, 111, 32, 12, 50]));    ///
+    /// assert_eq!(value.into_hash256(), Ok([104, 101, 108, 108, 111, 32, 12, 50, 104, 101, 108, 108, 111, 32, 12, 50, 104, 101, 108, 108, 111, 32, 12, 50, 104, 101, 108, 108, 111, 32, 12, 50]));    ///
     ///
     /// let value = Value::Text("6oFRdsUNiAtXscRn52atKYCiF8RBnH9vbUzhtzY3d83e".to_string());
-    /// assert_eq!(value.into_system_hash256(), Ok([86, 35, 118, 67, 167, 43, 101, 109, 72, 97, 35, 99, 0, 254, 108, 154, 254, 154, 190, 40, 237, 25, 58, 246, 111, 19, 44, 215, 141, 140, 156, 117]));
+    /// assert_eq!(value.into_hash256(), Ok([86, 35, 118, 67, 167, 43, 101, 109, 72, 97, 35, 99, 0, 254, 108, 154, 254, 154, 190, 40, 237, 25, 58, 246, 111, 19, 44, 215, 141, 140, 156, 117]));
     ///
     /// let value = Value::Text("a811".to_string());
-    /// assert_eq!(value.into_system_hash256(), Err(Error::StructureError("value was a string, could be decoded from base 58, but was not 32 bytes long".to_string())));
+    /// assert_eq!(value.into_hash256(), Err(Error::StructureError("value was a string, could be decoded from base 58, but was not 32 bytes long".to_string())));
     ///
     /// let value = Value::Text("a811Ii".to_string());
-    /// assert_eq!(value.into_system_hash256(), Err(Error::StructureError("value was a string, but could not be decoded from base 58".to_string())));
+    /// assert_eq!(value.into_hash256(), Err(Error::StructureError("value was a string, but could not be decoded from base 58".to_string())));
     ///
     /// let value = Value::Array(vec![Value::U8(104), Value::U8(101), Value::U8(108),Value::U8(104), Value::U8(101), Value::U8(108),Value::U8(104), Value::U8(101), Value::U8(108),Value::U8(104), Value::U8(101), Value::U8(108),Value::U8(104), Value::U8(101), Value::U8(108),Value::U8(104), Value::U8(101), Value::U8(108),Value::U8(104), Value::U8(101), Value::U8(108),Value::U8(104), Value::U8(101), Value::U8(108),Value::U8(104), Value::U8(101), Value::U8(108),Value::U8(104), Value::U8(101), Value::U8(108),Value::U8(104), Value::U8(101)]);
-    /// assert_eq!(value.into_system_hash256(), Ok([104, 101, 108, 104, 101, 108, 104, 101, 108, 104, 101, 108, 104, 101, 108, 104, 101, 108, 104, 101, 108, 104, 101, 108, 104, 101, 108, 104, 101, 108, 104, 101]));
+    /// assert_eq!(value.into_hash256(), Ok([104, 101, 108, 104, 101, 108, 104, 101, 108, 104, 101, 108, 104, 101, 108, 104, 101, 108, 104, 101, 108, 104, 101, 108, 104, 101, 108, 104, 101, 108, 104, 101]));
     ///
     /// let value = Value::Identifier([5u8;32]);
-    /// assert_eq!(value.into_system_hash256(), Ok([5, 5, 5,5,5,5,5,5,5, 5, 5,5,5,5,5,5,5, 5, 5,5,5,5,5,5,5, 5, 5,5,5,5,5,5]));
+    /// assert_eq!(value.into_hash256(), Ok([5, 5, 5,5,5,5,5,5,5, 5, 5,5,5,5,5,5,5, 5, 5,5,5,5,5,5,5, 5, 5,5,5,5,5,5]));
     ///
     /// let value = Value::Bool(true);
-    /// assert_eq!(value.into_system_hash256(), Err(Error::StructureError("value are not bytes, a string, or an array of values representing bytes".to_string())));
+    /// assert_eq!(value.into_hash256(), Err(Error::StructureError("value are not bytes, a string, or an array of values representing bytes".to_string())));
     /// ```
-    pub fn into_system_hash256(self) -> Result<[u8; 32], Error> {
+    pub fn into_hash256(self) -> Result<[u8; 32], Error> {
         match self {
             Value::Text(text) => {
                 bs58::decode(text).into_vec()

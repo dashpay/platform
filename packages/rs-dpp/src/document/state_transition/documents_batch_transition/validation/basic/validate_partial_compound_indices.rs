@@ -20,7 +20,7 @@ pub fn validate_partial_compound_indices<'a>(
     let mut result = ValidationResult::default();
 
     for transition in raw_document_transitions {
-        let document_type = transition.get_string("$type")?;
+        let document_type = transition.get_str("$type")?;
         let document_schema = data_contract.get_document_schema(document_type)?;
         let indices = document_schema.get_indices::<Vec<_>>().unwrap_or_default();
 

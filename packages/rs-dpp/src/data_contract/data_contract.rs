@@ -1,5 +1,5 @@
 use std::collections::{BTreeMap, HashSet};
-use std::convert::TryFrom;
+use std::convert::{TryFrom, TryInto};
 
 use anyhow::anyhow;
 
@@ -10,7 +10,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value as JsonValue;
 
 use crate::consensus::basic::document::InvalidDocumentTypeError;
-use crate::data_contract::contract_config;
+use crate::data_contract::{contract_config, DriveContractExt};
 use crate::data_contract::contract_config::{
     ContractConfig, DEFAULT_CONTRACT_CAN_BE_DELETED, DEFAULT_CONTRACT_DOCUMENTS_KEEPS_HISTORY,
     DEFAULT_CONTRACT_DOCUMENT_MUTABILITY, DEFAULT_CONTRACT_KEEPS_HISTORY,
@@ -47,7 +47,7 @@ pub const IDENTIFIER_FIELDS: [&str; 2] = [property_names::ID, property_names::OW
 pub const BINARY_FIELDS: [&str; 1] = [property_names::ENTROPY];
 
 impl Convertible for DataContract {
-    fn to_object(&self) -> Result<JsonValue, ProtocolError> {
+    fn to_json_object(&self) -> Result<JsonValue, ProtocolError> {
         let mut json_object = serde_json::to_value(self)?;
         if !json_object.is_object() {
             return Err(anyhow!("the Data Contract isn't a JSON Value Object").into());
@@ -66,7 +66,7 @@ impl Convertible for DataContract {
     fn to_buffer(&self) -> Result<Vec<u8>, ProtocolError> {
         let protocol_version = self.protocol_version;
         // what means skip_identifiers_conversion
-        let mut json_object = self.to_object(true)?;
+        let mut json_object = self.to_json_object(true)?;
 
         if let JsonValue::Object(ref mut o) = json_object {
             o.remove("protocolVersion");
@@ -112,14 +112,8 @@ impl DataContract {
         Self::default()
     }
 
-    pub fn from_json_raw_object(mut raw_object: JsonValue) -> Result<DataContract, ProtocolError> {
-        // TODO identifier_default_deserializer: default deserializer should be changed to bytes
-        // Identifiers fields should be replaced with the string format to deserialize Data Contract
-        raw_object.replace_identifier_paths(IDENTIFIER_FIELDS, ReplaceWith::Base58)?;
-        let value: Value = raw_object.clone().into();
-        let data_contract_map = value.into_btree_map().map_err(ProtocolError::ValueError)?;
-        let mut data_contract: DataContract = serde_json::from_value(raw_object)?;
-        data_contract.generate_binary_properties();
+    pub fn from_raw_object(raw_object: Value) -> Result<DataContract, ProtocolError> {
+        let mut data_contract_map = raw_object.into_btree_map().map_err(ProtocolError::ValueError)?;
 
         let mutability = get_contract_configuration_properties(&data_contract_map)
             .map_err(|e| ProtocolError::ParsingError(e.to_string()))?;
@@ -130,9 +124,35 @@ impl DataContract {
             mutability.documents_keep_history_contract_default,
             mutability.documents_mutable_contract_default,
         )
-        .map_err(|e| ProtocolError::ParsingError(e.to_string()))?;
+            .map_err(|e| ProtocolError::ParsingError(e.to_string()))?;
 
-        data_contract.document_types = document_types;
+        let documents = data_contract_map.remove(property_names::DOCUMENTS).map(|value | value.try_into_validating_btree_map_json()).transpose()?
+            .unwrap_or_default();
+
+        let mutability = get_contract_configuration_properties(&data_contract_map)
+            .map_err(|e| ProtocolError::ParsingError(e.to_string()))?;
+
+        // Defs
+        let defs =
+            data_contract_map.get_optional_inner_str_json_value_map::<BTreeMap<_, _>>("$defs")?;
+
+        let mut data_contract = DataContract {
+            protocol_version: 0,
+            id: Identifier::from(data_contract_map.remove_hash256_bytes(property_names::ID).map_err(ProtocolError::ValueError)?),
+            schema: data_contract_map.remove_string(property_names::SCHEMA).map_err(ProtocolError::ValueError)?,
+            version: data_contract_map.remove_integer(property_names::VERSION).map_err(ProtocolError::ValueError)?,
+            owner_id: Identifier::from(data_contract_map.remove_hash256_bytes(property_names::OWNER_ID).map_err(ProtocolError::ValueError)?),
+            document_types,
+            metadata: None,
+            config: mutability,
+            documents,
+            defs,
+            entropy: data_contract_map.remove_hash256_bytes(property_names::ENTROPY).map_err(ProtocolError::ValueError)?,
+            binary_properties: documents
+                .iter()
+                .map(|(doc_type, schema)| (String::from(doc_type), get_binary_properties(schema)))
+                .collect()
+        };
 
         Ok(data_contract)
     }
@@ -165,7 +185,39 @@ impl DataContract {
         Self::from_cbor(b)
     }
 
-    pub fn to_object(&self, skip_identifiers_conversion: bool) -> Result<JsonValue, ProtocolError> {
+    pub fn to_object(&self) -> Result<Value, ProtocolError> {
+        let mut raw_object = BTreeMap::from([
+                                            (property_names::PROTOCOL_VERSION.to_string(), Value::U32(self.protocol_version)),
+                                            (property_names::ID.to_string(), Value::Identifier(self.id.buffer)),
+                                            (property_names::OWNER_ID.to_string(), Value::Identifier(self.owner_id.buffer)),
+                                            (property_names::SCHEMA.to_string(), Value::Text(self.schema.clone())),
+                                            (property_names::VERSION.to_string(), Value::U32(self.version)),
+                                            (property_names::DOCUMENTS.to_string(), self.documents.into()),
+                                            (property_names::ENTROPY.to_string(), Value::Bytes32(self.entropy))]);
+        if let Some(defs) = &self.defs {
+            raw_object.insert(property_names::DEFINITIONS.to_string(), defs.into())
+        }
+
+        Ok(raw_object.into())
+    }
+
+    pub fn into_object(self) -> Result<Value, ProtocolError> {
+        let mut raw_object = BTreeMap::from([
+            (property_names::PROTOCOL_VERSION.to_string(), Value::U32(self.protocol_version)),
+            (property_names::ID.to_string(), Value::Identifier(self.id.buffer)),
+            (property_names::OWNER_ID.to_string(), Value::Identifier(self.owner_id.buffer)),
+            (property_names::SCHEMA.to_string(), Value::Text(self.schema)),
+            (property_names::VERSION.to_string(), Value::U32(self.version)),
+            (property_names::DOCUMENTS.to_string(), self.documents.into()),
+            (property_names::ENTROPY.to_string(), Value::Bytes32(self.entropy))]);
+        if let Some(defs) = &self.defs {
+            raw_object.insert(property_names::DEFINITIONS.to_string(), defs.into())
+        }
+
+        Ok(raw_object.into())
+    }
+
+    pub fn to_json_object(&self, skip_identifiers_conversion: bool) -> Result<JsonValue, ProtocolError> {
         let mut json_object = serde_json::to_value(self)?;
         if !json_object.is_object() {
             return Err(anyhow!("the Data Contract isn't a JSON Value Object").into());
@@ -202,8 +254,8 @@ impl DataContract {
     }
 
     /// Returns true if document type is defined
-    pub fn is_document_defined(&self, doc_type: &str) -> bool {
-        self.documents.contains_key(doc_type)
+    pub fn is_document_defined(&self, document_type_name: &str) -> bool {
+        self.document_types.get(document_type_name).is_some()
     }
 
     pub fn set_document_schema(&mut self, doc_type: String, schema: JsonSchema) {
@@ -360,6 +412,29 @@ impl TryFrom<JsonValue> for DataContract {
         data_contract.generate_binary_properties();
 
         Ok(data_contract)
+    }
+}
+
+impl TryFrom<Value> for DataContract {
+    type Error = ProtocolError;
+    fn try_from(value: Value) -> Result<Self, Self::Error> {
+        DataContract::from_raw_object(value)
+    }
+}
+
+impl TryInto<Value> for DataContract {
+    type Error = ProtocolError;
+
+    fn try_into(self) -> Result<Value, Self::Error> {
+        self.into_object()
+    }
+}
+
+impl TryInto<Value> for &DataContract {
+    type Error = ProtocolError;
+
+    fn try_into(self) -> Result<Value, Self::Error> {
+        self.to_object()
     }
 }
 
@@ -644,7 +719,7 @@ mod test {
         let string_contract = get_data_from_file("src/tests/payloads/contract_example.json")?;
         let data_contract: DataContract = serde_json::from_str(&string_contract)?;
 
-        let raw_data_contract = data_contract.to_object(false)?;
+        let raw_data_contract = data_contract.to_json_object(false)?;
         for path in IDENTIFIER_FIELDS {
             assert!(raw_data_contract
                 .get(path)

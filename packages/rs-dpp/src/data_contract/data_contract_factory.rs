@@ -1,5 +1,5 @@
-
-
+use std::collections::BTreeMap;
+use std::convert::TryInto;
 use serde_json::{json, Map, Value as JsonValue};
 use std::sync::Arc;
 
@@ -114,7 +114,7 @@ impl DataContractFactory {
         skip_validation: bool,
     ) -> Result<DataContract, ProtocolError> {
         let json_value = raw_data_contract
-            .try_into_validating_json()
+            .try_to_validating_json()
             .map_err(ProtocolError::ValueError)?;
         if !skip_validation {
             let result = self.validate_data_contract.validate(&json_value)?;
@@ -125,7 +125,7 @@ impl DataContractFactory {
                 ));
             }
         }
-        DataContract::from_json_raw_object(json_value)
+        DataContract::from_raw_object(raw_data_contract)
     }
 
     /// Create Data Contract from buffer
@@ -147,21 +147,24 @@ impl DataContractFactory {
         &self,
         data_contract: DataContract,
     ) -> Result<DataContractCreateTransition, ProtocolError> {
-        DataContractCreateTransition::from_raw_object(json!({
-            st_prop::PROTOCOL_VERSION: self.protocol_version,
-            st_prop::DATA_CONTRACT: data_contract.to_object(false)?,
-            st_prop::ENTROPY: data_contract.entropy,
-        }))
+        let raw_object = BTreeMap::from([
+                           (st_prop::PROTOCOL_VERSION.to_string(), Value::U32(self.protocol_version)),
+            (st_prop::DATA_CONTRACT.to_string(), data_contract.try_into()?),
+            (st_prop::ENTROPY.to_string(), Value::Bytes32(data_contract.entropy))
+                           ]);
+        DataContractCreateTransition::from_value_map(raw_object)
     }
 
     pub fn create_data_contract_update_transition(
         &self,
         data_contract: DataContract,
     ) -> Result<DataContractUpdateTransition, ProtocolError> {
-        DataContractUpdateTransition::from_raw_object(json!({
-            st_prop::PROTOCOL_VERSION: self.protocol_version,
-            st_prop::DATA_CONTRACT: data_contract.to_object(false)?,
-        }))
+        let raw_object = BTreeMap::from([
+            (st_prop::PROTOCOL_VERSION.to_string(), Value::U32(self.protocol_version)),
+            (st_prop::DATA_CONTRACT.to_string(), data_contract.try_into()?)
+        ]);
+
+        DataContractUpdateTransition::from_value_map(raw_object)
     }
 }
 
@@ -180,7 +183,7 @@ mod tests {
 
     fn get_test_data() -> TestData {
         let data_contract = get_data_contract_fixture(None);
-        let raw_data_contract = data_contract.to_object(false).unwrap();
+        let raw_data_contract = data_contract.to_json_object(false).unwrap();
         let protocol_version_validator = ProtocolVersionValidator::new(
             LATEST_VERSION,
             LATEST_VERSION,
@@ -295,7 +298,7 @@ mod tests {
         assert_eq!(&data_contract.entropy, result.get_entropy());
         assert_eq!(
             raw_data_contract,
-            result.data_contract.to_object(false).unwrap()
+            result.data_contract.to_json_object(false).unwrap()
         );
     }
 }

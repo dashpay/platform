@@ -3,6 +3,7 @@ use std::sync::Arc;
 use anyhow::anyhow;
 use lazy_static::lazy_static;
 use serde_json::Value as JsonValue;
+use platform_value::Value;
 
 use crate::data_contract::document_type::DocumentType;
 use crate::consensus::basic::document::InvalidDocumentTypeError;
@@ -17,6 +18,7 @@ use crate::{
     version::ProtocolVersionValidator,
     ProtocolError,
 };
+use crate::data_contract::DriveContractExt;
 
 const PROPERTY_PROTOCOL_VERSION: &str = "$protocolVersion";
 const PROPERTY_DOCUMENT_TYPE: &str = "$type";
@@ -83,33 +85,18 @@ impl DocumentValidator {
 
     pub fn validate_extended(
         &self,
-        raw_document: &JsonValue,
+        raw_document: &Value,
         data_contract: &DataContract,
     ) -> Result<ValidationResult<()>, ProtocolError> {
         let mut result = ValidationResult::default();
 
-        let maybe_document_type = raw_document.get(PROPERTY_DOCUMENT_TYPE);
-        if maybe_document_type.is_none() {
+        let Some(document_type_name) = raw_document.get_optional_str(PROPERTY_DOCUMENT_TYPE).map_err(ProtocolError::ValueError)? else {
             result.add_error(BasicError::MissingDocumentTypeError);
             return Ok(result);
-        }
+        };
 
-        let document_type = maybe_document_type.unwrap().as_str().ok_or_else(|| {
-            anyhow!(
-                "the document type '{:?}' cannot be converted into the string",
-                maybe_document_type
-            )
-        })?;
-
-        if !data_contract.is_document_defined(document_type) {
-            result.add_error(BasicError::InvalidDocumentTypeError(
-                InvalidDocumentTypeError::new(
-                    document_type.to_owned(),
-                    data_contract.id.to_owned(),
-                ),
-            ));
-            return Ok(result);
-        }
+        /// check if there is a document type
+        data_contract.document_type_for_name(document_type_name)?;
 
         let enriched_data_contract = enrich_data_contract_with_base_schema(
             data_contract,
@@ -118,7 +105,7 @@ impl DocumentValidator {
             &[],
         )?;
         let document_schema = enriched_data_contract
-            .get_document_schema(document_type)?
+            .get_document_schema(document_type_name)?
             .to_owned();
 
         let json_schema_validator = if let Some(defs) = &data_contract.defs {
@@ -128,14 +115,15 @@ impl DocumentValidator {
         }
         .map_err(|e| anyhow!("unable to process the contract: {}", e))?;
 
-        let json_schema_validation_result = json_schema_validator.validate(raw_document)?;
+        let json_value = raw_document.try_into_validating_json().map_err(ProtocolError::ValueError)?;
+        let json_schema_validation_result = json_schema_validator.validate(&json_value)?;
         result.merge(json_schema_validation_result);
 
         if !result.is_valid() {
             return Ok(result);
         }
 
-        let protocol_version = raw_document.get_u64(PROPERTY_PROTOCOL_VERSION)? as u32;
+        let protocol_version = raw_document.get_integer(PROPERTY_PROTOCOL_VERSION).map_err(ProtocolError::ValueError)?;
         result.merge(self.protocol_version_validator.validate(protocol_version)?);
 
         Ok(result)
@@ -153,6 +141,7 @@ mod test {
     use serde_json::json;
     use serde_json::Value as JsonValue;
     use test_case::test_case;
+    use platform_value::Value;
 
     use crate::tests::fixtures::get_extended_documents_fixture;
     use crate::{
@@ -169,7 +158,7 @@ mod test {
 
     struct TestData {
         data_contract: DataContract,
-        raw_document: JsonValue,
+        raw_document: Value,
         document_validator: DocumentValidator,
     }
 
@@ -178,7 +167,7 @@ mod test {
         let documents = get_extended_documents_fixture(data_contract.clone()).unwrap();
         let raw_document = documents
             .iter()
-            .map(|d| d.to_json_object_for_validation())
+            .map(|d| d.to_value())
             .next()
             .expect("at least one Document should be present")
             .expect("Document should be converted to Object");
@@ -525,9 +514,9 @@ mod test {
         let document = documents.get(8).unwrap();
 
         let data = [0u8; 32];
-        let mut raw_document = document.to_json_object_for_validation().unwrap();
+        let mut raw_document = document.to_value().unwrap();
         raw_document
-            .insert("byteArrayField".to_string(), json!(data))
+            .set_value("byteArrayField", Value::Bytes32(data))
             .unwrap();
 
         let result = document_validator

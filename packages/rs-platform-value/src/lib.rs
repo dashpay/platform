@@ -17,19 +17,24 @@ pub mod inner_value;
 mod integer;
 pub mod system_bytes;
 pub mod value_map;
+mod btreemap_removal_extensions;
+mod btreemap_removal_inner_value_extensions;
+mod ser;
 
 use crate::value_map::{ValueMap, ValueMapHelper};
 pub use error::Error;
 pub use integer::Integer;
 use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, HashMap};
+use serde::de::DeserializeOwned;
 
 pub type Hash256 = [u8; 32];
 pub use btreemap_field_replacement::ReplacementType;
+use crate::ser::Serializer;
 
 /// A representation of a dynamic value that can handled dynamically
 #[non_exhaustive]
-#[derive(Serialize, Deserialize, Clone, Debug, PartialEq, PartialOrd)]
+#[derive(Deserialize, Clone, Debug, PartialEq, PartialOrd)]
 #[serde(untagged)]
 pub enum Value {
     /// A u128 integer
@@ -84,9 +89,6 @@ pub enum Value {
 
     /// Null
     Null,
-
-    /// Tag
-    Tag(u64, Box<Value>),
 
     /// An array
     Array(Vec<Value>),
@@ -646,78 +648,6 @@ impl Value {
         matches!(self, Value::Null)
     }
 
-    /// Returns true if the `Value` is a `Tag`. Returns false otherwise.
-    ///
-    /// ```
-    /// # use platform_value::Value;
-    /// #
-    /// let value = Value::Tag(61, Box::from(Value::Null));
-    ///
-    /// assert!(value.is_tag());
-    /// ```
-    pub fn is_tag(&self) -> bool {
-        self.as_tag().is_some()
-    }
-
-    /// If the `Value` is a `Tag`, returns the associated tag value and a reference to the tag `Value`.
-    /// Returns None otherwise.
-    ///
-    /// ```
-    /// # use platform_value::Value;
-    /// #
-    /// let value = Value::Tag(61, Box::from(Value::Bytes(vec![104, 101, 108, 108, 111])));
-    ///
-    /// let (tag, data) = value.as_tag().unwrap();
-    /// assert_eq!(tag, 61);
-    /// assert_eq!(data, &Value::Bytes(vec![104, 101, 108, 108, 111]));
-    /// ```
-    pub fn as_tag(&self) -> Option<(u64, &Value)> {
-        match self {
-            Value::Tag(tag, data) => Some((*tag, data)),
-            _ => None,
-        }
-    }
-
-    /// If the `Value` is a `Tag`, returns the associated tag value and a mutable reference
-    /// to the tag `Value`. Returns None otherwise.
-    ///
-    /// ```
-    /// # use platform_value::Value;
-    /// #
-    /// let mut value = Value::Tag(61, Box::from(Value::Bytes(vec![104, 101, 108, 108, 111])));
-    ///
-    /// let (tag, mut data) = value.as_tag_mut().unwrap();
-    /// data.as_bytes_mut().unwrap().clear();
-    /// assert_eq!(tag, &61);
-    /// assert_eq!(data, &Value::Bytes(vec![]));
-    /// ```
-    pub fn as_tag_mut(&mut self) -> Option<(&mut u64, &mut Value)> {
-        match self {
-            Value::Tag(tag, data) => Some((tag, data.as_mut())),
-            _ => None,
-        }
-    }
-
-    /// If the `Value` is a `Tag`, returns a the associated pair of `u64` and `Box<value>` data as `Ok`.
-    /// Returns `Err(Error::Structure("reason"))` otherwise.
-    ///
-    /// ```
-    /// # use platform_value::Value;
-    /// # use platform_value::Error;
-    /// #
-    /// let value = Value::Tag(7, Box::new(Value::Float(12.)));
-    /// assert_eq!(value.into_tag(), Ok((7, Box::new(Value::Float(12.)))));
-    ///
-    /// let value = Value::Bool(true);
-    /// assert_eq!(value.into_tag(), Err(Error::StructureError("value is not a tag".to_string())));
-    /// ```
-    pub fn into_tag(self) -> Result<(u64, Box<Value>), Error> {
-        match self {
-            Value::Tag(tag, value) => Ok((tag, value)),
-            _other => Err(Error::StructureError("value is not a tag".to_string())),
-        }
-    }
-
     /// Returns true if the `Value` is an Array. Returns false otherwise.
     ///
     /// ```
@@ -801,6 +731,30 @@ impl Value {
     pub fn to_array_mut(&mut self) -> Result<&mut Vec<Value>, Error> {
         self.as_array_mut()
             .ok_or(Error::StructureError("value is not an array".to_string()))
+    }
+
+    /// If the `Value` is a `Array`, returns a the associated `Vec<Value>` data as `Ok`.
+    /// Returns `Err(Error::Structure("reason"))` otherwise.
+    ///
+    /// ```
+    /// # use platform_value::{Value, Integer, Error};
+    /// #
+    /// let mut value = Value::Array(
+    ///     vec![
+    ///         Value::U64(17),
+    ///         Value::Float(18.),
+    ///     ]
+    /// );
+    /// assert_eq!(value.to_array(), Ok(vec![Value::U64(17), Value::Float(18.)]));
+    ///
+    /// let value = Value::Bool(true);
+    /// assert_eq!(value.to_array(), Err(Error::StructureError("value is not an array".to_string())));
+    /// ```
+    pub fn to_array(&self) -> Result<Vec<Value>, Error> {
+        match self {
+            Value::Array(vec) => Ok(vec.clone()),
+            _other => Err(Error::StructureError("value is not an array".to_string())),
+        }
     }
 
     /// If the `Value` is a `Array`, returns a the associated `Vec<Value>` data as `Ok`.
@@ -1108,6 +1062,17 @@ impl From<BTreeMap<String, Value>> for Value {
     }
 }
 
+impl From<BTreeMap<String, &Value>> for Value {
+    fn from(value: BTreeMap<String, &Value>) -> Self {
+        Value::Map(
+            value
+                .into_iter()
+                .map(|(key, value)| (Value::Text(key), value.clone()))
+                .collect(),
+        )
+    }
+}
+
 impl From<char> for Value {
     #[inline]
     fn from(value: char) -> Self {
@@ -1115,4 +1080,11 @@ impl From<char> for Value {
         v.push(value);
         Value::Text(v)
     }
+}
+
+pub fn to_value<T>(value: T) -> Result<Value, Error>
+    where
+        T: Serialize,
+{
+    value.serialize(Serializer)
 }

@@ -352,6 +352,39 @@ impl Document {
         Ok(map)
     }
 
+    pub fn into_map_value(self) -> Result<BTreeMap<String, Value>, ProtocolError> {
+        let mut map: BTreeMap<String, Value> = BTreeMap::new();
+        map.insert(property_names::ID.to_string(), Value::Identifier(self.id));
+        map.insert(
+            property_names::OWNER_ID.to_string(),
+            Value::Identifier(self.owner_id),
+        );
+
+        if let Some(created_at) = self.created_at {
+            map.insert(
+                property_names::CREATED_AT.to_string(),
+                Value::U64(created_at),
+            );
+        }
+        if let Some(updated_at) = self.updated_at {
+            map.insert(
+                property_names::UPDATED_AT.to_string(),
+                Value::U64(updated_at),
+            );
+        }
+        if let Some(revision) = self.revision {
+            map.insert(property_names::REVISION.to_string(), Value::U64(revision));
+        }
+
+        map.extend(self.properties);
+
+        Ok(map)
+    }
+
+    pub fn into_value(self) -> Result<Value, ProtocolError> {
+        Ok(self.into_map_value()?.into())
+    }
+
     pub fn to_value(&self) -> Result<Value, ProtocolError> {
         Ok(self.to_map_value()?.into())
     }

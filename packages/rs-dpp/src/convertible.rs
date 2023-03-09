@@ -5,7 +5,7 @@ use crate::ProtocolError;
 pub trait Convertible {
     /// Returns the [`serde_json::Value`] instance that preserves the `Vec<u8>` representation
     /// for Identifiers and binary data
-    fn to_object(&self) -> Result<JsonValue, ProtocolError>;
+    fn to_json_object(&self) -> Result<JsonValue, ProtocolError>;
     /// Returns the [`serde_json::Value`] instance that encodes:
     ///  - Identifiers  - with base58
     ///  - Binary data  - with base64

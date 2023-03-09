@@ -81,7 +81,7 @@ pub trait BTreeValueMapPathHelper {
         &self,
         path: &str,
     ) -> Result<I, Error>;
-    fn get_optional_system_hash256_bytes_at_path(
+    fn get_optional_hash256_bytes_at_path(
         &self,
         path: &str,
     ) -> Result<Option<[u8; 32]>, Error>;
@@ -463,7 +463,7 @@ where
             })
     }
 
-    fn get_optional_system_hash256_bytes_at_path(
+    fn get_optional_hash256_bytes_at_path(
         &self,
         path: &str,
     ) -> Result<Option<[u8; 32]>, Error> {
@@ -473,9 +473,9 @@ where
     }
 
     fn get_hash256_bytes_at_path(&self, path: &str) -> Result<[u8; 32], Error> {
-        self.get_optional_system_hash256_bytes_at_path(path)?
+        self.get_optional_hash256_bytes_at_path(path)?
             .ok_or_else(|| {
-                Error::StructureError(format!("unable to get system hash256 property {path}"))
+                Error::StructureError(format!("unable to get hash256 property {path}"))
             })
     }
 

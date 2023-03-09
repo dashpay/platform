@@ -198,7 +198,7 @@ fn get_list_of_public_keys(
     if let Ok(maybe_list) = value.remove(property_names::ADD_PUBLIC_KEYS) {
         if let JsonValue::Array(list) = maybe_list {
             for maybe_public_key in list {
-                identity_public_keys.push(IdentityPublicKeyCreateTransition::from_raw_object(
+                identity_public_keys.push(IdentityPublicKeyCreateTransition::from_raw_json_object(
                     maybe_public_key,
                 )?);
             }

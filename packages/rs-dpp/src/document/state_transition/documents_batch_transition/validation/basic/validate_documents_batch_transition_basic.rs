@@ -2,6 +2,8 @@ use std::{
     collections::{hash_map::Entry, HashMap},
     convert::{TryFrom, TryInto},
 };
+use std::collections::BTreeMap;
+use std::iter::Map;
 
 use crate::consensus::basic::document::{
     DuplicateDocumentTransitionsWithIdsError, DuplicateDocumentTransitionsWithIndicesError,
@@ -32,6 +34,9 @@ use anyhow::anyhow;
 use lazy_static::lazy_static;
 use platform_value::Value;
 use serde_json::Value as JsonValue;
+use platform_value::btreemap_extensions::BTreeValueMapHelper;
+use platform_value::btreemap_path_extensions::BTreeValueMapPathHelper;
+use crate::document::state_transition::documents_batch_transition::property_names;
 
 use super::{
     find_duplicates_by_indices::find_duplicates_by_indices,
@@ -63,7 +68,7 @@ pub trait Validator {
 
 pub async fn validate_documents_batch_transition_basic(
     protocol_version_validator: &ProtocolVersionValidator,
-    raw_state_transition: &JsonValue,
+    raw_state_transition: &Value,
     state_repository: &impl StateRepositoryLike,
     execution_context: &StateTransitionExecutionContext,
 ) -> Result<ValidationResult<()>, ProtocolError> {
@@ -76,47 +81,40 @@ pub async fn validate_documents_batch_transition_basic(
             )
         })?;
 
-    let validation_result = validator.validate(raw_state_transition)?;
+    let raw_state_transition_json = raw_state_transition.clone().try_into_validating_json().map_err(ProtocolError::ValueError)?;
+    let validation_result = validator.validate(&raw_state_transition_json)?;
     result.merge(validation_result);
     if !result.is_valid() {
         return Ok(result);
     }
 
-    let protocol_version = raw_state_transition.get_u64("protocolVersion")? as u32;
+    let state_transition_map = raw_state_transition.to_btree_ref_map().map_err(ProtocolError::ValueError)?;
+
+    let owner_id = Identifier::from(state_transition_map.get_hash256_bytes(property_names::OWNER_ID).map_err(ProtocolError::ValueError)?);
+
+    let protocol_version = state_transition_map.get_integer(property_names::PROTOCOL_VERSION)?;
     let validation_result = protocol_version_validator.validate(protocol_version)?;
     result.merge(validation_result);
     if !result.is_valid() {
         return Ok(result);
     }
 
-    let raw_document_transitions = raw_state_transition
-        .get("transitions")
-        .ok_or_else(|| anyhow!("transitions property doesn't exist"))?
-        .as_array()
-        .ok_or_else(|| anyhow!("transitions property isn't an array"))?;
-    let mut document_transitions_by_contracts: HashMap<Identifier, Vec<&JsonValue>> =
+    let raw_document_transitions : Vec<BTreeMap<String, &Value>>  = state_transition_map
+        .get_inner_map_in_array(property_names::TRANSITIONS).map_err(ProtocolError::ValueError)?;
+    let mut document_transitions_by_contracts: HashMap<Identifier, Vec<BTreeMap<String, &Value>>> =
         HashMap::new();
 
     for raw_document_transition in raw_document_transitions {
-        let data_contract_id_bytes = match raw_document_transition.get_bytes("$dataContractId") {
-            Err(_) => {
-                result.add_error(BasicError::MissingDataContractIdError(
-                    MissingDataContractIdError::new(raw_document_transition.clone()),
+        let data_contract_id_bytes = match raw_document_transition.get_optional_hash256_bytes(property_names::DATA_CONTRACT_ID)? {
+            None => { result.add_error(BasicError::MissingDataContractIdError(
+                    MissingDataContractIdError::new(raw_document_transition.into()),
                 ));
                 continue;
             }
-            Ok(id) => id,
+            Some(id) => { id}
         };
 
-        let identifier = match Identifier::from_bytes(&data_contract_id_bytes) {
-            Ok(identifier) => identifier,
-            Err(e) => {
-                result.add_error(BasicError::InvalidIdentifierError(
-                    InvalidIdentifierError::new(String::from("$dataContractId"), e.to_string()),
-                ));
-                continue;
-            }
-        };
+        let identifier = Identifier::from(data_contract_id_bytes);
 
         match document_transitions_by_contracts.entry(identifier) {
             Entry::Vacant(vacant) => {
@@ -148,8 +146,6 @@ pub async fn validate_documents_batch_transition_basic(
             Some(data_contract) => data_contract,
         };
 
-        let owner_id = Identifier::from_bytes(&raw_state_transition.get_bytes("ownerId")?)?;
-
         let validation_result =
             validate_document_transitions(&data_contract, &owner_id, transitions)?;
         result.merge(validation_result);
@@ -161,7 +157,7 @@ pub async fn validate_documents_batch_transition_basic(
 fn validate_document_transitions<'a>(
     data_contract: &DataContract,
     owner_id: &Identifier,
-    raw_document_transitions: impl IntoIterator<Item = &'a JsonValue>,
+    raw_document_transitions: impl IntoIterator<Item = BTreeMap<String, &'a Value>>,
 ) -> Result<ValidationResult<()>, ProtocolError> {
     let mut result = ValidationResult::default();
     let enriched_contracts_by_action = get_enriched_contracts_by_action(data_contract)?;
@@ -205,46 +201,37 @@ fn get_enriched_contracts_by_action(
     Ok(enriched_contracts_by_action)
 }
 
-//todo: switch to platform Value
 fn validate_raw_transitions<'a>(
     data_contract: &DataContract,
-    raw_document_transitions: impl IntoIterator<Item = &'a JsonValue>,
+    raw_document_transitions: Vec<BTreeMap<String, &'a Value>>,
     enriched_contracts_by_action: &HashMap<Action, DataContract>,
     owner_id: &Identifier,
 ) -> Result<ValidationResult<()>, ProtocolError> {
     let mut result = ValidationResult::default();
-    let raw_document_transitions: Vec<&JsonValue> = raw_document_transitions.into_iter().collect();
+
 
     for raw_document_transition in raw_document_transitions.iter() {
-        let document_type = match raw_document_transition.get_string("$type") {
-            Err(_) => {
+        let Some(document_type) = raw_document_transition.get_optional_str("$type").map_err(ProtocolError::ValueError) else {
                 result.add_error(BasicError::MissingDocumentTransitionTypeError);
                 return Ok(result);
-            }
-
-            Ok(document_type) => {
-                if !data_contract.is_document_defined(document_type) {
-                    result.add_error(BasicError::InvalidDocumentTypeError(
-                        InvalidDocumentTypeError::new(
-                            document_type.to_string(),
-                            data_contract.id.clone(),
-                        ),
-                    ));
-                    return Ok(result);
-                }
-                document_type
-            }
         };
 
-        let document_action = match raw_document_transition.get_u64("$action") {
-            Ok(action) => action,
-            Err(_) => {
-                result.add_error(BasicError::MissingDocumentTransitionActionError);
-                return Ok(result);
-            }
+        if !data_contract.is_document_defined(document_type) {
+            result.add_error(BasicError::InvalidDocumentTypeError(
+                InvalidDocumentTypeError::new(
+                    document_type.to_string(),
+                    data_contract.id.clone(),
+                ),
+            ));
+            return Ok(result);
+        }
+
+        let Some(document_action) = raw_document_transition.get_optional_integer::<u8>("$action") else {
+            result.add_error(BasicError::MissingDocumentTransitionActionError);
+            return Ok(result);
         };
 
-        let action = match Action::try_from(document_action as u8) {
+        let action = match Action::try_from(document_action) {
             Ok(action) => action,
             Err(_) => {
                 result.add_error(BasicError::InvalidDocumentTransitionActionError(
@@ -266,7 +253,7 @@ fn validate_raw_transitions<'a>(
                 }
                 .map_err(|e| anyhow!("unable to compile enriched schema: {}", e))?;
 
-                let schema_result = schema_validator.validate(raw_document_transition)?;
+                let schema_result = schema_validator.validate(raw_document_transition.into())?;
                 if !schema_result.is_valid() {
                     result.merge(schema_result);
                     return Ok(result);
@@ -351,7 +338,7 @@ fn validate_raw_transitions<'a>(
     let validation_result = validate_partial_compound_indices(
         raw_document_transitions_as_value_iter
             .clone()
-            .filter(|t| action_is_not_delete(t.get_string("$action").unwrap_or_default())),
+            .filter(|t| action_is_not_delete(t.get_str("$action").unwrap_or_default())),
         data_contract,
     )?;
     result.merge(validation_result);

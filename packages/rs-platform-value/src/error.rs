@@ -1,3 +1,5 @@
+use std::error;
+use std::fmt::Display;
 use thiserror::Error;
 
 #[derive(Error, Clone, Eq, PartialEq, Debug)]
@@ -14,6 +16,16 @@ pub enum Error {
     #[error("integer out of bounds")]
     IntegerSizeError,
 
+    #[error("key must be a string")]
+    KeyMustBeAString,
+
     #[error("byte length not 32 bytes error")]
     ByteLengthNot32BytesError,
 }
+
+impl serde::ser::Error for Error {
+    fn custom<T>(msg: T) -> Self where T: Display {
+        todo!()
+    }
+}
+

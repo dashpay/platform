@@ -263,7 +263,7 @@ where
             Err(ProtocolError::AbstractConsensusError(err)) => {
                 Err(DocumentError::InvalidDocumentError {
                     errors: vec![*err],
-                    raw_document: JsonValue::Null,
+                    raw_document: Value::Null,
                 }
                 .into())
             }
@@ -282,7 +282,7 @@ where
     ) -> Result<ExtendedDocument, ProtocolError> {
         let data_contract = self
             .validate_data_contract_for_extended_document(
-                &raw_document.clone().try_into_validating_json()?,
+                &raw_document,
                 options,
             )
             .await?;
@@ -292,7 +292,7 @@ where
 
     async fn validate_data_contract_for_extended_document(
         &self,
-        raw_document: &JsonValue,
+        raw_document: &Value,
         options: FactoryOptions,
     ) -> Result<DataContract, ProtocolError> {
         let mut result = self
@@ -434,6 +434,7 @@ where
 mod test {
     use platform_value::btreemap_extensions::BTreeValueMapHelper;
     use std::sync::Arc;
+    use serde_json::json;
 
     use crate::tests::fixtures::get_extended_documents_fixture;
     use crate::{

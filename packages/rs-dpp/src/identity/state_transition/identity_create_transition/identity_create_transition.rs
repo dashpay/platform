@@ -4,6 +4,9 @@ use serde::de::Error as DeError;
 use serde::ser::Error as SerError;
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use serde_json::Value as JsonValue;
+use platform_value::btreemap_extensions::BTreeValueMapHelper;
+use platform_value::btreemap_path_extensions::BTreeValueMapPathHelper;
+use platform_value::Value;
 
 use crate::identity::state_transition::asset_lock_proof::AssetLockProof;
 use crate::identity::state_transition::identity_public_key_transitions::IdentityPublicKeyCreateTransition;
@@ -90,20 +93,15 @@ impl<'de> Deserialize<'de> for IdentityCreateTransition {
 
 /// Main state transition functionality implementation
 impl IdentityCreateTransition {
-    pub fn new(raw_state_transition: serde_json::Value) -> Result<Self, NonConsensusError> {
+    pub fn new(raw_state_transition: Value) -> Result<Self, ProtocolError> {
         let mut state_transition = Self::default();
 
-        let transition_map = raw_state_transition.as_object().ok_or_else(|| {
-            SerdeParsingError::new("Expected raw identity transition to be a map")
-        })?;
-        if let Some(keys_value) = transition_map.get(property_names::PUBLIC_KEYS) {
-            let keys_value_arr = keys_value
-                .as_array()
-                .ok_or_else(|| SerdeParsingError::new("Expected public keys to be an array"))?;
-            let keys = keys_value_arr
-                .iter()
-                .map(|val| serde_json::from_value(val.clone()))
-                .collect::<Result<Vec<IdentityPublicKeyCreateTransition>, serde_json::Error>>()?;
+        let mut transition_map = raw_state_transition.into_btree_map().map_err(ProtocolError::ValueError)?;
+        if let Some(keys_value_array) = transition_map.remove_optional_inner_value_array::<Vec<_>>(property_names::PUBLIC_KEYS).map_err(ProtocolError::ValueError)? {
+            let keys = keys_value_array
+                .into_iter()
+                .map(|val| val.try_into())
+                .collect::<Result<Vec<IdentityPublicKeyCreateTransition>, ProtocolError>>()?;
             state_transition.set_public_keys(keys);
         }
 
@@ -111,9 +109,7 @@ impl IdentityCreateTransition {
             state_transition.set_asset_lock_proof(AssetLockProof::try_from(proof)?)?;
         }
 
-        if let Some(protocol_version) = transition_map.get(property_names::PROTOCOL_VERSION) {
-            state_transition.protocol_version = protocol_version.as_u64().unwrap() as u32;
-        }
+        state_transition.protocol_version = transition_map.get_integer(property_names::PROTOCOL_VERSION)?;
 
         Ok(state_transition)
     }

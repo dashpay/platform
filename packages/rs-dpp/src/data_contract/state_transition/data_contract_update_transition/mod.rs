@@ -1,5 +1,8 @@
+use std::collections::BTreeMap;
 use serde::{Deserialize, Serialize};
 use serde_json::Value as JsonValue;
+use platform_value::btreemap_extensions::BTreeValueMapHelper;
+use platform_value::Value;
 
 use crate::{
     data_contract::DataContract,
@@ -49,18 +52,36 @@ impl std::default::Default for DataContractUpdateTransition {
 
 impl DataContractUpdateTransition {
     pub fn from_raw_object(
-        mut raw_data_contract_update_transition: JsonValue,
+        mut raw_data_contract_update_transition: Value,
     ) -> Result<DataContractUpdateTransition, ProtocolError> {
         Ok(DataContractUpdateTransition {
-            protocol_version: raw_data_contract_update_transition.get_u64(PROTOCOL_VERSION)? as u32,
+            protocol_version: raw_data_contract_update_transition.get_integer(PROTOCOL_VERSION)?,
             signature: raw_data_contract_update_transition
-                .remove_into(SIGNATURE)
+                .remove_optional_bytes(SIGNATURE).map_err(ProtocolError::ValueError)?
                 .unwrap_or_default(),
             signature_public_key_id: raw_data_contract_update_transition
-                .get_u64(SIGNATURE_PUBLIC_KEY_ID)
-                .unwrap_or_default() as KeyID,
-            data_contract: DataContract::from_json_raw_object(
-                raw_data_contract_update_transition.remove(DATA_CONTRACT)?,
+                .get_optional_integer(SIGNATURE_PUBLIC_KEY_ID).map_err(ProtocolError::ValueError)?
+                .unwrap_or_default(),
+            data_contract: DataContract::from_raw_object(
+                raw_data_contract_update_transition.remove(DATA_CONTRACT).ok_or(ProtocolError::DecodingError("data contract missing on state transition".to_string()))?,
+            )?,
+            ..Default::default()
+        })
+    }
+
+    pub fn from_value_map(
+        mut raw_data_contract_update_transition: BTreeMap<String, Value>,
+    ) -> Result<DataContractUpdateTransition, ProtocolError> {
+        Ok(DataContractUpdateTransition {
+            protocol_version: raw_data_contract_update_transition.get_integer(PROTOCOL_VERSION).map_err(ProtocolError::ValueError)?,
+            signature: raw_data_contract_update_transition
+                .remove_optional_bytes(SIGNATURE).map_err(ProtocolError::ValueError)?
+                .unwrap_or_default(),
+            signature_public_key_id: raw_data_contract_update_transition
+                .remove_optional_integer(SIGNATURE_PUBLIC_KEY_ID).map_err(ProtocolError::ValueError)?
+                .unwrap_or_default(),
+            data_contract: DataContract::from_raw_object(
+                raw_data_contract_update_transition.remove(DATA_CONTRACT).ok_or(ProtocolError::DecodingError("data contract missing on state transition".to_string()))?,
             )?,
             ..Default::default()
         })
@@ -169,7 +190,7 @@ impl StateTransitionConvert for DataContractUpdateTransition {
         }
         json_object.insert(
             String::from(DATA_CONTRACT),
-            self.data_contract.to_object(false)?,
+            self.data_contract.to_json_object(false)?,
         )?;
         Ok(json_object)
     }
@@ -177,6 +198,7 @@ impl StateTransitionConvert for DataContractUpdateTransition {
 
 #[cfg(test)]
 mod test {
+    use std::convert::TryInto;
     use integer_encoding::VarInt;
     use serde_json::json;
 
@@ -193,10 +215,13 @@ mod test {
     fn get_test_data() -> TestData {
         let data_contract = get_data_contract_fixture(None);
 
-        let state_transition = DataContractUpdateTransition::from_raw_object(json!({
-                    PROTOCOL_VERSION: version::LATEST_VERSION,
-                    DATA_CONTRACT : data_contract.to_object(false).unwrap(),
-        }))
+        let value_map = BTreeMap::from([
+            (PROTOCOL_VERSION.to_string(), Value::U32(version::LATEST_VERSION)),
+            (DATA_CONTRACT.to_string(), data_contract.try_into().unwrap())
+        ]);
+
+
+        let state_transition = DataContractUpdateTransition::from_value_map(value_map)
         .expect("state transition should be created without errors");
 
         TestData {
@@ -230,10 +255,10 @@ mod test {
         assert_eq!(
             data.state_transition
                 .get_data_contract()
-                .to_object(false)
+                .to_json_object(false)
                 .expect("conversion to object shouldn't fail"),
             data.data_contract
-                .to_object(false)
+                .to_json_object(false)
                 .expect("conversion to object shouldn't fail")
         );
     }

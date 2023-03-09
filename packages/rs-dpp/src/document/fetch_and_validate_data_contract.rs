@@ -1,6 +1,7 @@
 use std::{convert::TryInto, sync::Arc};
 
-use serde_json::Value;
+use serde_json::Value as JsonValue;
+use platform_value::Value;
 
 use crate::consensus::basic::invalid_identifier_error::InvalidIdentifierError;
 use crate::data_contract::state_transition::errors::MissingDataContractIdError;
@@ -60,7 +61,7 @@ pub async fn fetch_and_validate_data_contract(
 ) -> Result<ValidationResult<DataContract>, ProtocolError> {
     let mut validation_result = ValidationResult::<DataContract>::default();
 
-    let id_bytes = if let Ok(id_bytes) = raw_extended_document.get_bytes(property_names::DATA_CONTRACT_ID) {
+    let id_bytes = if let Some(id_bytes) = raw_extended_document.get_optional_hash256(property_names::DATA_CONTRACT_ID).map_err(ProtocolError::ValueError)? {
         id_bytes
     } else {
         validation_result.add_error(ConsensusError::BasicError(Box::new(
@@ -71,19 +72,7 @@ pub async fn fetch_and_validate_data_contract(
         return Ok(validation_result);
     };
 
-    let data_contract_id = match Identifier::from_bytes(&id_bytes) {
-        Ok(id) => id,
-
-        Err(e) => {
-            let id_base58 = bs58::encode(id_bytes).into_string();
-            let consensus_error =
-                ConsensusError::BasicError(Box::new(BasicError::InvalidIdentifierError(
-                    InvalidIdentifierError::new(id_base58, e.to_string()),
-                )));
-            validation_result.add_error(consensus_error);
-            return Ok(validation_result);
-        }
-    };
+    let data_contract_id = Identifier::from(id_bytes);
 
     let maybe_data_contract = state_repository
         .fetch_data_contract(&data_contract_id, execution_context)

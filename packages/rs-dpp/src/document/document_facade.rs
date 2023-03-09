@@ -96,14 +96,14 @@ where
         &self,
         extended_document: &ExtendedDocument,
     ) -> Result<ValidationResult<DataContract>, ProtocolError> {
-        let raw_extended_document = extended_document.to_json_object_for_validation()?;
+        let raw_extended_document = extended_document.to_value()?;
         self.validate_raw_document(&raw_extended_document).await
     }
 
     /// Creates Documents State Transition
     pub async fn validate_raw_document(
         &self,
-        raw_extended_document: &JsonValue,
+        raw_extended_document: &Value,
     ) -> Result<ValidationResult<DataContract>, ProtocolError> {
         let result = self
             .data_contract_fetcher_and_validator

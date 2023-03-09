@@ -17,7 +17,7 @@ pub async fn validate_documents_batch_transition_basic_wasm(
     execution_context: StateTransitionExecutionContextWasm,
 ) -> Result<ValidationResultWasm, JsValue> {
     let wrapped_state_repository = ExternalStateRepositoryLikeWrapper::new(state_repository);
-    let raw_state_transition = js_raw_state_transition.with_serde_to_json_value()?;
+    let raw_state_transition = js_raw_state_transition.with_serde_to_platform_value()?;
 
     let validation_result =
         validate_documents_batch_transition_basic::validate_documents_batch_transition_basic(

@@ -88,7 +88,7 @@ pub fn validate_public_key_signatures<'a, T: BlsModule>(
     let add_public_key_transitions: Vec<IdentityPublicKeyCreateTransition> = raw_public_keys
         .into_iter()
         .map(|k| {
-            IdentityPublicKeyCreateTransition::from_raw_object(k.to_owned())
+            IdentityPublicKeyCreateTransition::from_raw_json_object(k.to_owned())
                 .map_err(|e| NonConsensusError::IdentityPublicKeyCreateError(format!("{:#}", e)))
         })
         .collect::<Result<_, _>>()?;

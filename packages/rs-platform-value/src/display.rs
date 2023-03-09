@@ -27,7 +27,6 @@ impl Value {
                 format!("{}", b)
             }
             Value::Null => "Null".to_string(),
-            Value::Tag(_, _) => "Tag".to_string(),
             Value::Array(value) => {
                 let inner_values = value
                     .iter()

@@ -135,7 +135,7 @@ where
                 InvalidDataContractVersionError::new(old_version + 1, new_version),
             ))
         }
-        let raw_existing_data_contract = existing_data_contract.to_object(false)?;
+        let raw_existing_data_contract = existing_data_contract.to_json_object(false)?;
 
         let mut old_base_data_contract = raw_existing_data_contract;
 

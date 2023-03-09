@@ -325,6 +325,31 @@ impl ExtendedDocument {
         Ok(object)
     }
 
+    pub fn into_map_value(self) -> Result<BTreeMap<String, Value>, ProtocolError> {
+        let ExtendedDocument {
+            protocol_version, document_type_name, data_contract_id, document, ..
+        } = self;
+
+        let mut object = document.into_map_value()?;
+        object.insert(
+            property_names::PROTOCOL_VERSION.to_string(),
+            Value::U32(protocol_version),
+        );
+        object.insert(
+            property_names::DOCUMENT_TYPE.to_string(),
+            Value::Text(document_type_name),
+        );
+        object.insert(
+            property_names::DATA_CONTRACT_ID.to_string(),
+            Value::Identifier(data_contract_id.to_buffer()),
+        );
+        Ok(object)
+    }
+
+    pub fn into_value(self) -> Result<Value, ProtocolError> {
+        Ok(self.into_map_value()?.into())
+    }
+
     pub fn to_value(&self) -> Result<Value, ProtocolError> {
         Ok(self.to_map_value()?.into())
     }
@@ -405,6 +430,22 @@ impl ExtendedDocument {
         identifiers_paths.extend(IDENTIFIER_FIELDS.map(|str| str.to_string()));
 
         Ok((identifiers_paths, binary_paths))
+    }
+}
+
+impl TryInto<Value> for ExtendedDocument {
+    type Error = ProtocolError;
+
+    fn try_into(self) -> Result<Value, Self::Error> {
+        self.into_value()
+    }
+}
+
+impl TryInto<Value> for &ExtendedDocument {
+    type Error = ProtocolError;
+
+    fn try_into(self) -> Result<Value, Self::Error> {
+        self.to_value()
     }
 }
 

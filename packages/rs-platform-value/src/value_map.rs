@@ -7,7 +7,8 @@ pub trait ValueMapHelper {
     fn get_key(&self, key: &str) -> Option<&Value>;
     fn get_key_mut(&mut self, key: &str) -> Option<&mut Value>;
     fn get_key_mut_or_insert(&mut self, key: &str, value: Value) -> &mut Value;
-    fn remove_key(&mut self, key: &str) -> Option<Value>;
+    fn remove_key(&mut self, search_key: &str) -> Result<Value, Error>;
+    fn remove_optional_key(&mut self, key: &str) -> Option<Value>;
 }
 
 impl ValueMapHelper for ValueMap {
@@ -60,7 +61,19 @@ impl ValueMapHelper for ValueMap {
         }
     }
 
-    fn remove_key(&mut self, search_key: &str) -> Option<Value> {
+    fn remove_key(&mut self, search_key: &str) -> Result<Value, Error> {
+        self.iter()
+            .position(|(key, _)| {
+                if let Value::Text(text) = key {
+                    text == search_key
+                } else {
+                    false
+                }
+            })
+            .map(|pos| self.remove(pos).1).ok_or(Error::StructureError(format!("trying to remove a key {} from a ValueMap that was not found", search_key)))
+    }
+
+    fn remove_optional_key(&mut self, search_key: &str) -> Option<Value> {
         self.iter()
             .position(|(key, _)| {
                 if let Value::Text(text) = key {

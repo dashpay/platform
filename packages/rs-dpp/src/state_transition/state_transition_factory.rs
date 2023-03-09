@@ -22,16 +22,16 @@ use crate::{
     ProtocolError,
 };
 use serde_json::Value as JsonValue;
+use platform_value::Value;
 
 use super::{
     state_transition_execution_context::StateTransitionExecutionContext, StateTransition,
     StateTransitionType,
 };
 
-//todo: change from JsonValue to Platform Value
 pub async fn create_state_transition(
     state_repository: &impl StateRepositoryLike,
-    raw_state_transition: JsonValue,
+    raw_state_transition: Value,
 ) -> Result<StateTransition, ProtocolError> {
     let transition_type = try_get_transition_type(&raw_state_transition)?;
     let execution_context = StateTransitionExecutionContext::default();
@@ -86,7 +86,7 @@ pub async fn create_state_transition(
 
 async fn fetch_data_contracts_for_document_transition(
     state_repository: &impl StateRepositoryLike,
-    raw_document_transitions: impl IntoIterator<Item = &JsonValue>,
+    raw_document_transitions: impl IntoIterator<Item = &Value>,
     execution_context: &StateTransitionExecutionContext,
 ) -> Result<Vec<DataContract>, ProtocolError> {
     let mut data_contracts = vec![];
@@ -117,14 +117,14 @@ async fn fetch_data_contracts_for_document_transition(
 }
 
 pub fn try_get_transition_type(
-    raw_state_transition: &JsonValue,
+    raw_state_transition: &Value,
 ) -> Result<StateTransitionType, ProtocolError> {
-    let transition_type = raw_state_transition
-        .get_u64("type")
-        .map_err(|_| missing_state_transition_error())?;
-    StateTransitionType::try_from(transition_type as u8).map_err(|_| {
+    let transition_type : u8 = raw_state_transition
+        .get_optional_integer("type")
+        .map_err(ProtocolError::ValueError)?.ok_or(missing_state_transition_error())?;
+    StateTransitionType::try_from(transition_type).map_err(|_| {
         ProtocolError::InvalidStateTransitionTypeError(InvalidStateTransitionTypeError::new(
-            transition_type as u8,
+            transition_type,
         ))
     })
 }
@@ -186,7 +186,7 @@ mod test {
 
         assert!(
             matches!(result, StateTransition::DataContractCreate(transition) if  {
-                transition.get_data_contract().to_object(false).unwrap() == data_contract.to_object(false).unwrap()
+                transition.get_data_contract().to_json_object(false).unwrap() == data_contract.to_json_object(false).unwrap()
             })
         )
     }
