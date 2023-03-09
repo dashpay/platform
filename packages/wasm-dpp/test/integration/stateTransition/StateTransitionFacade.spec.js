@@ -1,23 +1,9 @@
 const { PrivateKey } = require('@dashevo/dashcore-lib');
 
-// const DashPlatformProtocol = require('@dashevo/dpp/lib/DashPlatformProtocol');
-
-// const DataContractCreateTransition = require('@dashevo/dpp/lib/dataContract/stateTransition/DataContractCreateTransition/DataContractCreateTransition');
-
-// const ValidationResult = require('@dashevo/dpp/lib/validation/ValidationResult');
-
 const getIdentityCreateTransitionFixture = require('@dashevo/dpp/lib/test/fixtures/getIdentityCreateTransitionFixture');
 
 const createStateRepositoryMock = require('@dashevo/dpp/lib/test/mocks/createStateRepositoryMock');
 
-// const DataContractFactory = require('@dashevo/dpp/lib/dataContract/DataContractFactory');
-// const DocumentFactory = require('@dashevo/dpp/lib/document/DocumentFactory');
-
-// const IdentityPublicKey = require('@dashevo/dpp/lib/identity/IdentityPublicKey');
-
-const MissingOptionError = require('@dashevo/dpp/lib/errors/MissingOptionError');
-const createDPPMock = require('@dashevo/dpp/lib/test/mocks/createDPPMock');
-const SomeConsensusError = require('@dashevo/dpp/lib/test/mocks/SomeConsensusError');
 const getIdentityFixture = require('@dashevo/dpp/lib/test/fixtures/getIdentityFixture');
 const getDocumentsFixture = require('../../../lib/test/fixtures/getDocumentsFixture');
 const getDataContractFixture = require('../../../lib/test/fixtures/getDataContractFixture');
@@ -151,11 +137,6 @@ describe('StateTransitionFacade', () => {
   });
 
   describe('validate', () => {
-    let validateBasicSpy;
-    let validateSignatureSpy;
-    let validateFeeSpy;
-    let validateStateSpy;
-
     it('should return invalid result if State Transition structure is invalid', async () => {
       const rawStateTransition = dataContractCreateTransition.toObject();
       rawStateTransition.protocolVersion = 100;

@@ -1,5 +1,5 @@
 use std::ops::Deref;
-use std::rc::Rc;
+
 use std::sync::Arc;
 use serde_json::Value;
 use crate::{BlsModule, ProtocolError};
@@ -13,10 +13,12 @@ use crate::identity::state_transition::identity_topup_transition::validation::ba
 use crate::identity::state_transition::identity_update_transition::validate_identity_update_transition_basic::ValidateIdentityUpdateTransitionBasic;
 use crate::identity::state_transition::validate_public_key_signatures::PublicKeysSignaturesValidator;
 use crate::identity::validation::PublicKeysValidator;
-use crate::prelude::ValidationResult;
+
 use crate::state_repository::StateRepositoryLike;
-use crate::state_transition::{StateTransition, StateTransitionFactory, StateTransitionFactoryOptions, StateTransitionIdentitySigned, StateTransitionLike};
-use crate::state_transition::fee::operations::{DeleteOperation, Operation};
+use crate::state_transition::{
+    StateTransition, StateTransitionFactory, StateTransitionFactoryOptions,
+};
+
 use crate::state_transition::state_transition_execution_context::StateTransitionExecutionContext;
 use crate::state_transition::validation::validate_state_transition_basic::StateTransitionBasicValidator;
 use crate::state_transition::validation::validate_state_transition_by_type::StateTransitionByTypeValidator;
@@ -24,7 +26,9 @@ use crate::state_transition::validation::validate_state_transition_fee::StateTra
 use crate::state_transition::validation::validate_state_transition_identity_signature::validate_state_transition_identity_signature;
 use crate::state_transition::validation::validate_state_transition_key_signature::StateTransitionKeySignatureValidator;
 use crate::state_transition::validation::validate_state_transition_state::StateTransitionStateValidator;
-use crate::validation::{AsyncDataValidator, AsyncDataValidatorWithContext, SimpleValidationResult};
+use crate::validation::{
+    AsyncDataValidator, AsyncDataValidatorWithContext, SimpleValidationResult,
+};
 use crate::version::ProtocolVersionValidator;
 
 #[derive(Clone)]
@@ -78,7 +82,7 @@ where
                 .map_err(ProtocolError::from)?,
                 ChainAssetLockProofStructureValidator::new(
                     wrapped_state_repository.clone(),
-                    asset_lock_tx_validator.clone(),
+                    asset_lock_tx_validator,
                 )
                 .map_err(ProtocolError::from)?,
             ));
@@ -107,12 +111,12 @@ where
                         .map_err(ProtocolError::from)?,
                         ValidateIdentityUpdateTransitionBasic::new(
                             ProtocolVersionValidator::default(),
-                            pk_validator.clone(),
-                            pk_sig_validator.clone(),
+                            pk_validator,
+                            pk_sig_validator,
                         )?,
                         IdentityTopUpTransitionBasicValidator::new(
                             ProtocolVersionValidator::default(),
-                            asset_lock_validator.clone(),
+                            asset_lock_validator,
                         )
                         .map_err(ProtocolError::from)?,
                         IdentityCreditWithdrawalTransitionBasicValidator::new(
@@ -153,7 +157,7 @@ where
                 })?,
                 ChainAssetLockProofStructureValidator::new(
                     wrapped_state_repository.clone(),
-                    asset_lock_tx_validator.clone(),
+                    asset_lock_tx_validator,
                 )
                 .map_err(|_| {
                     ProtocolError::Generic(String::from(
@@ -192,12 +196,12 @@ where
                     })?,
                     ValidateIdentityUpdateTransitionBasic::new(
                         ProtocolVersionValidator::default(),
-                        pk_validator.clone(),
-                        pk_sig_validator.clone(),
+                        pk_validator,
+                        pk_sig_validator,
                     )?,
                     IdentityTopUpTransitionBasicValidator::new(
                         ProtocolVersionValidator::default(),
-                        asset_lock_validator.clone(),
+                        asset_lock_validator,
                     )
                     .map_err(|_| {
                         ProtocolError::Generic(String::from(
@@ -238,8 +242,7 @@ where
         state_transition_fee_validator =
             StateTransitionFeeValidator::new(wrapped_state_repository.clone());
 
-        state_transition_state_validator =
-            StateTransitionStateValidator::new(state_repository.clone());
+        state_transition_state_validator = StateTransitionStateValidator::new(state_repository);
 
         Ok(Self {
             state_repository: wrapped_state_repository,

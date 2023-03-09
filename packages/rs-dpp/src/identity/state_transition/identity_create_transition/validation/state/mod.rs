@@ -5,7 +5,6 @@ use crate::state_transition::StateTransitionLike;
 use crate::validation::{AsyncDataValidator, SimpleValidationResult, ValidationResult};
 use crate::{NonConsensusError, ProtocolError};
 use async_trait::async_trait;
-use std::sync::Arc;
 
 pub struct IdentityCreateTransitionStateValidator<SR>
 where
@@ -27,7 +26,6 @@ where
     ) -> Result<SimpleValidationResult, ProtocolError> {
         validate_identity_create_transition_state(&self.state_repository, data)
             .await
-            .map(|result| result.into())
             .map_err(|err| err.into())
     }
 }

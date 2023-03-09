@@ -47,7 +47,7 @@ where
         let identity_top_up_validator =
             IdentityTopUpTransitionStateValidator::new(state_repository.clone());
         let identity_credit_withdrawal_validator =
-            IdentityCreditWithdrawalTransitionValidator::new(wrapped_state_repository.clone());
+            IdentityCreditWithdrawalTransitionValidator::new(wrapped_state_repository);
         let document_batch_validator =
             DocumentsBatchTransitionStateValidator::new(state_repository.clone());
 

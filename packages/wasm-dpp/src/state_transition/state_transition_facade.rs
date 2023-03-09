@@ -6,13 +6,10 @@ use crate::utils::ToSerdeJSONExt;
 use crate::validation::ValidationResultWasm;
 use crate::with_js_error;
 use dpp::state_transition::state_transition_execution_context::StateTransitionExecutionContext;
-use dpp::state_transition::{
-    StateTransitionConvert, StateTransitionFacade, StateTransitionFactory, StateTransitionLike,
-    ValidateOptions,
-};
+use dpp::state_transition::{StateTransitionFacade, StateTransitionLike, ValidateOptions};
 use dpp::version::ProtocolVersionValidator;
-use serde::{Deserialize, Serialize};
-use serde_json::Value;
+use serde::Deserialize;
+
 use std::sync::Arc;
 use wasm_bindgen::prelude::*;
 use wasm_bindgen::JsValue;

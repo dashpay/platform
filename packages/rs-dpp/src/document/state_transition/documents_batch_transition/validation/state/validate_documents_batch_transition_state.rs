@@ -47,10 +47,7 @@ where
         &self,
         data: &DocumentsBatchTransition,
     ) -> Result<SimpleValidationResult, ProtocolError> {
-        validate_document_batch_transition_state(&self.state_repository, data)
-            .await
-            .map(|result| result.into())
-            .map_err(|err| err.into())
+        validate_document_batch_transition_state(&self.state_repository, data).await
     }
 }
 
