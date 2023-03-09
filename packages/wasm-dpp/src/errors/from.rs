@@ -1,5 +1,5 @@
-use dpp::DashPlatformProtocolInitError;
 use dpp::data_contract::errors::DataContractNotPresentError;
+use dpp::DashPlatformProtocolInitError;
 
 use wasm_bindgen::JsValue;
 
