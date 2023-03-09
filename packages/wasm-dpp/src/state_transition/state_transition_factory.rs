@@ -8,7 +8,7 @@ use dpp::{state_transition::{
         validate_state_transition_by_type::StateTransitionByTypeValidator,
     },
     StateTransitionFactory, StateTransitionFactoryOptions, StateTransition, errors::StateTransitionError,
-}, version::ProtocolVersionValidator, data_contract::state_transition::{data_contract_create_transition::validation::state::validate_data_contract_create_transition_basic::DataContractCreateTransitionBasicValidator, data_contract_update_transition::validation::basic::DataContractUpdateTransitionBasicValidator, self}, identity::{state_transition::{identity_create_transition::validation::basic::IdentityCreateTransitionBasicValidator, validate_public_key_signatures::{PublicKeysSignaturesValidator, TPublicKeysSignaturesValidator}, asset_lock_proof::{AssetLockProofValidator, ChainAssetLockProofStructureValidator, InstantAssetLockProofStructureValidator, AssetLockTransactionValidator}, identity_topup_transition::validation::basic::IdentityTopUpTransitionBasicValidator, identity_credit_withdrawal_transition::validation::basic::validate_identity_credit_withdrawal_transition_basic::IdentityCreditWithdrawalTransitionBasicValidator, identity_update_transition::validate_identity_update_transition_basic::ValidateIdentityUpdateTransitionBasic}, validation::PublicKeysValidator}, document::validation::basic::validate_documents_batch_transition_basic::DocumentBatchTransitionBasicValidator, ProtocolError};
+}, version::ProtocolVersionValidator, data_contract::state_transition::{data_contract_create_transition::validation::state::validate_data_contract_create_transition_basic::DataContractCreateTransitionBasicValidator, data_contract_update_transition::validation::basic::DataContractUpdateTransitionBasicValidator}, identity::{state_transition::{identity_create_transition::validation::basic::IdentityCreateTransitionBasicValidator, validate_public_key_signatures::{PublicKeysSignaturesValidator}, asset_lock_proof::{AssetLockProofValidator, ChainAssetLockProofStructureValidator, InstantAssetLockProofStructureValidator, AssetLockTransactionValidator}, identity_topup_transition::validation::basic::IdentityTopUpTransitionBasicValidator, identity_credit_withdrawal_transition::validation::basic::validate_identity_credit_withdrawal_transition_basic::IdentityCreditWithdrawalTransitionBasicValidator, identity_update_transition::validate_identity_update_transition_basic::ValidateIdentityUpdateTransitionBasic}, validation::PublicKeysValidator}, document::validation::basic::validate_documents_batch_transition_basic::DocumentBatchTransitionBasicValidator, ProtocolError};
 use wasm_bindgen::{prelude::wasm_bindgen, JsValue};
 
 use crate::utils::ToSerdeJSONExt;
@@ -18,7 +18,7 @@ use crate::{
     identity_facade::FromObjectOptions,
     state_repository::{ExternalStateRepositoryLike, ExternalStateRepositoryLikeWrapper},
     state_transition::errors::invalid_state_transition_error::InvalidStateTransitionError,
-    utils, with_js_error, DataContractCreateTransitionWasm, DataContractUpdateTransitionWasm,
+    with_js_error, DataContractCreateTransitionWasm, DataContractUpdateTransitionWasm,
     DocumentsBatchTransitionWASM, IdentityCreateTransitionWasm, IdentityTopUpTransitionWasm,
     IdentityUpdateTransitionWasm,
 };
@@ -67,7 +67,7 @@ impl StateTransitionFactoryWasm {
             .map_err(from_dpp_init_error)?,
             ChainAssetLockProofStructureValidator::new(
                 state_repository_wrapper.clone(),
-                asset_lock_tx_validator.clone(),
+                asset_lock_tx_validator,
             )
             .map_err(from_dpp_init_error)?,
         ));
@@ -91,19 +91,19 @@ impl StateTransitionFactoryWasm {
                         pk_validator.clone(),
                         pk_validator.clone(),
                         asset_lock_validator.clone(),
-                        adapter.clone(),
+                        adapter,
                         pk_sig_validator.clone(),
                     )
                     .map_err(from_dpp_init_error)?,
                     ValidateIdentityUpdateTransitionBasic::new(
                         ProtocolVersionValidator::default(),
-                        pk_validator.clone(),
-                        pk_sig_validator.clone(),
+                        pk_validator,
+                        pk_sig_validator,
                     )
                     .map_err(from_dpp_err)?,
                     IdentityTopUpTransitionBasicValidator::new(
                         ProtocolVersionValidator::default(),
-                        asset_lock_validator.clone(),
+                        asset_lock_validator,
                     )
                     .map_err(from_dpp_init_error)?,
                     IdentityCreditWithdrawalTransitionBasicValidator::new(
@@ -111,7 +111,7 @@ impl StateTransitionFactoryWasm {
                     )
                     .map_err(from_dpp_init_error)?,
                     DocumentBatchTransitionBasicValidator::new(
-                        state_repository_wrapper.clone(),
+                        state_repository_wrapper,
                         protocol_version_validator.clone(),
                     ),
                 ),

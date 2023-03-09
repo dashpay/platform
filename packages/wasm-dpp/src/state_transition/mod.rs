@@ -1,20 +1,6 @@
-use std::{convert::TryFrom, sync::Arc};
+use dpp::state_transition::state_transition_execution_context::StateTransitionExecutionContext;
 
-use dpp::{
-    identity::KeyType,
-    prelude::Identifier,
-    state_transition::{
-        state_transition_execution_context::StateTransitionExecutionContext, StateTransition,
-        StateTransitionConvert, StateTransitionIdentitySigned, StateTransitionLike,
-    },
-};
-use serde::{Deserialize, Serialize};
 use wasm_bindgen::prelude::*;
-
-use crate::{
-    bls_adapter::BlsAdapter, buffer::Buffer, errors::from_dpp_err, identifier::IdentifierWrapper,
-    with_js_error,
-};
 
 pub mod errors;
 pub mod state_transition_factory;

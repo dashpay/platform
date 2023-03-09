@@ -1,4 +1,4 @@
-use dpp::{consensus::ConsensusError, identity::errors};
+use dpp::consensus::ConsensusError;
 use wasm_bindgen::{prelude::wasm_bindgen, JsValue};
 
 use crate::errors::consensus_error::from_consensus_error_ref;
