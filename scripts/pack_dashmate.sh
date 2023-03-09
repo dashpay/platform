@@ -31,7 +31,7 @@ mkdir .yarn
 echo "nodeLinker: node-modules"  > .yarnrc.yml
 yarn install
 yarn oclif manifest
-yarn oclif pack macos
+yarn oclif pack $COMMAND
 cd ..  || exit 1
 rm package.tgz
 cp -R package/dist "$ROOT_PATH/packages/dashmate"
