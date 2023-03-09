@@ -149,7 +149,7 @@ const createContextLoggerFactory = require('./abci/errors/createContextLoggerFac
 const IdentityBalanceStoreRepository = require('./identity/IdentityBalanceStoreRepository');
 
 /**
- *
+ * @param {Object} dppWasm
  * @param {Object} options
  * @param {string} options.ABCI_HOST
  * @param {string} options.ABCI_PORT
@@ -188,7 +188,7 @@ const IdentityBalanceStoreRepository = require('./identity/IdentityBalanceStoreR
  *
  * @return {AwilixContainer}
  */
-function createDIContainer(options) {
+function createDIContainer(dppWasm, options) {
   if (!options.DPNS_MASTER_PUBLIC_KEY) {
     throw new Error('DPNS_MASTER_PUBLIC_KEY must be set');
   }
@@ -441,19 +441,19 @@ function createDIContainer(options) {
       logJsonFileLevel,
       logJsonFileStream,
     ) => [
-      {
-        level: logStdoutLevel,
-        stream: logStdoutStream,
-      },
-      {
-        level: logPrettyFileLevel,
-        stream: logPrettyFileStream,
-      },
-      {
-        level: logJsonFileLevel,
-        stream: logJsonFileStream,
-      },
-    ]),
+        {
+          level: logStdoutLevel,
+          stream: logStdoutStream,
+        },
+        {
+          level: logPrettyFileLevel,
+          stream: logPrettyFileStream,
+        },
+        {
+          level: logJsonFileLevel,
+          stream: logJsonFileStream,
+        },
+      ]),
 
     logger: asFunction(
       (loggerStreams) => pino({
@@ -624,6 +624,10 @@ function createDIContainer(options) {
    * Register DPP
    */
   container.register({
+    dppWasm: asValue(dppWasm),
+
+    DashPlatformProtocol: asFunction((dppWasm) => dppWasm.DashPlatformProtocol),
+
     decodeProtocolEntity: asFunction(decodeProtocolEntityFactory),
 
     calculateOperationFees: asValue(calculateOperationFees),
@@ -720,14 +724,14 @@ function createDIContainer(options) {
       noopLogger,
     ) => unserializeStateTransitionFactory(transactionalDpp, noopLogger)).singleton(),
 
-    dpp: asFunction((stateRepository, dppOptions) => (
+    dpp: asFunction((DashPlatformProtocol, stateRepository, dppOptions) => (
       new DashPlatformProtocol({
         ...dppOptions,
         stateRepository,
       })
     )).singleton(),
 
-    transactionalDpp: asFunction((transactionalStateRepository, dppOptions) => (
+    transactionalDpp: asFunction((DashPlatformProtocol, transactionalStateRepository, dppOptions) => (
       new DashPlatformProtocol({
         ...dppOptions,
         stateRepository: transactionalStateRepository,
