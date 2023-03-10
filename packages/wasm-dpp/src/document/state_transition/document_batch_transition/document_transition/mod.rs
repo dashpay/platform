@@ -100,7 +100,7 @@ impl DocumentTransitionWasm {
         let timestamp_millis = try_to_u64(js_timestamp_millis)
             .context("setting updatedAt in DocumentsBatchTransition")
             .with_js_error()?;
-        self.0.set_updated_at(Some(timestamp_millis as i64));
+        self.0.set_updated_at(Some(timestamp_millis));
 
         Ok(())
     }
@@ -114,7 +114,7 @@ impl DocumentTransitionWasm {
         let timestamp_millis = try_to_u64(js_timestamp_millis)
             .context("setting createdAt in DocumentsBatchTransition")
             .with_js_error()?;
-        self.0.set_created_at(Some(timestamp_millis as i64));
+        self.0.set_created_at(Some(timestamp_millis));
 
         Ok(())
     }

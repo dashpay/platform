@@ -13,7 +13,7 @@ use crate::{
         validation::MockTPublicKeysValidator,
         Purpose, SecurityLevel,
     },
-    prelude::Identity,
+    prelude::{Identity, TimestampMillis},
     state_repository::MockStateRepositoryLike,
     state_transition::StateTransitionLike,
     tests::{
@@ -191,7 +191,7 @@ async fn should_return_invalid_result_if_disabled_at_has_violated_time_window() 
     } = setup_test();
     state_transition.set_public_key_ids_to_disable(vec![1]);
     state_transition.set_public_keys_disabled_at(Some(
-        Utc::now().timestamp_millis() as u64 - (BLOCK_TIME_WINDOW_MILLIS * 2),
+        Utc::now().timestamp_millis() as TimestampMillis - (BLOCK_TIME_WINDOW_MILLIS * 2),
     ));
 
     let validator = IdentityUpdateTransitionStateValidator::new(

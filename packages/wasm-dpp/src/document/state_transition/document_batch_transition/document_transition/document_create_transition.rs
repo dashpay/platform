@@ -4,7 +4,7 @@ use dpp::{
     document::document_transition::{
         self, document_create_transition, DocumentCreateTransition, DocumentTransitionObjectLike,
     },
-    prelude::{DataContract, Identifier},
+    prelude::{DataContract, Identifier, Revision, TimestampMillis},
     util::{json_schema::JsonSchemaExt, json_value::JsonValueExt},
 };
 use serde::Serialize;
@@ -73,17 +73,17 @@ impl DocumentCreateTransitionWasm {
     }
 
     #[wasm_bindgen(js_name=getCreatedAt)]
-    pub fn created_at(&self) -> Option<i64> {
+    pub fn created_at(&self) -> Option<TimestampMillis> {
         self.inner.created_at
     }
 
     #[wasm_bindgen(js_name=getUpdatedAt)]
-    pub fn updated_at(&self) -> Option<i64> {
+    pub fn updated_at(&self) -> Option<TimestampMillis> {
         self.inner.updated_at
     }
 
     #[wasm_bindgen(js_name=getRevision)]
-    pub fn revision(&self) -> u32 {
+    pub fn revision(&self) -> Revision {
         document_transition::INITIAL_REVISION
     }
 

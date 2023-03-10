@@ -8,7 +8,7 @@ use dpp::{
             DocumentTransitionObjectLike,
         },
     },
-    prelude::{DataContract, Identifier},
+    prelude::{DataContract, Identifier, Revision, TimestampMillis},
     util::{json_schema::JsonSchemaExt, json_value::JsonValueExt},
 };
 use serde::Serialize;
@@ -75,12 +75,12 @@ impl DocumentReplaceTransitionWasm {
     }
 
     #[wasm_bindgen(js_name=getRevision)]
-    pub fn revision(&self) -> u32 {
+    pub fn revision(&self) -> Revision {
         self.inner.revision
     }
 
     #[wasm_bindgen(js_name=getUpdatedAt)]
-    pub fn updated_at(&self) -> Option<i64> {
+    pub fn updated_at(&self) -> Option<TimestampMillis> {
         self.inner.updated_at
     }
 

@@ -61,7 +61,7 @@ impl Into<IdentityPublicKeyCreateTransition> for &IdentityPublicKey {
 
 impl IdentityPublicKey {
     /// Set disabledAt
-    pub fn set_disabled_at(&mut self, timestamp_millis: u64) {
+    pub fn set_disabled_at(&mut self, timestamp_millis: TimestampMillis) {
         self.disabled_at = Some(timestamp_millis);
     }
 

@@ -1,5 +1,5 @@
 use dpp::dashcore::anyhow::Context;
-use dpp::prelude::{DataContract, Identifier};
+use dpp::prelude::{DataContract, Identifier, Revision};
 use dpp::util::json_schema::JsonSchemaExt;
 use dpp::util::json_value::{JsonValueExt, ReplaceWith};
 use dpp::util::string_encoding::Encoding;
@@ -111,13 +111,15 @@ impl DocumentWasm {
         self.0.owner_id.into()
     }
 
+    // TODO #overflow
     #[wasm_bindgen(js_name=setRevision)]
-    pub fn set_revision(&mut self, rev: u32) {
+    pub fn set_revision(&mut self, rev: Revision) {
         self.0.revision = rev
     }
 
+    // TODO #overflow
     #[wasm_bindgen(js_name=getRevision)]
-    pub fn get_revision(&self) -> u32 {
+    pub fn get_revision(&self) -> Revision {
         self.0.revision
     }
 
@@ -256,7 +258,7 @@ impl DocumentWasm {
         let ts = try_to_u64(number)
             .context("setting createdAt in Document")
             .with_js_error()?;
-        self.0.created_at = Some(ts as i64);
+        self.0.created_at = Some(ts);
         Ok(())
     }
 
@@ -265,7 +267,7 @@ impl DocumentWasm {
         let ts = try_to_u64(number)
             .context("setting updatedAt in Document")
             .with_js_error()?;
-        self.0.updated_at = Some(ts as i64);
+        self.0.updated_at = Some(ts);
         Ok(())
     }
 

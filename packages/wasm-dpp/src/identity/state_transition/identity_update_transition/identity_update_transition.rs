@@ -18,8 +18,8 @@ use crate::bls_adapter::{BlsAdapter, JsBlsAdapter};
 use crate::errors::from_dpp_err;
 use crate::utils::generic_of_js_val;
 use dpp::identity::state_transition::identity_public_key_transitions::IdentityPublicKeyCreateTransition;
-use dpp::identity::{KeyID, TimestampMillis};
-use dpp::prelude::Revision;
+use dpp::identity::KeyID;
+use dpp::prelude::{Revision, TimestampMillis};
 use dpp::state_transition::StateTransitionIdentitySigned;
 use dpp::{
     identifier::Identifier,

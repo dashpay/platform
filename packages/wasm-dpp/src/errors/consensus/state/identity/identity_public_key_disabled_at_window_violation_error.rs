@@ -1,4 +1,4 @@
-use dpp::identity::TimestampMillis;
+use dpp::prelude::TimestampMillis;
 use wasm_bindgen::prelude::*;
 
 #[wasm_bindgen(js_name=IdentityPublicKeyDisabledAtWindowViolationError)]
