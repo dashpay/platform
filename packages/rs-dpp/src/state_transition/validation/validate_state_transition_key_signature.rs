@@ -218,7 +218,7 @@ mod test {
 
         let private_key = PrivateKey::new(secret_key, Network::Testnet);
         let mut state_transition: StateTransition = IdentityCreateTransition::new(
-            identity_create_transition_fixture_json(Some(private_key)),
+            identity_create_transition_fixture_json(Some(private_key)).into(),
         )
         .unwrap()
         .into();
@@ -255,7 +255,7 @@ mod test {
 
         let private_key = PrivateKey::new(secret_key, Network::Testnet);
         let mut state_transition: StateTransition = IdentityCreateTransition::new(
-            identity_create_transition_fixture_json(Some(private_key)),
+            identity_create_transition_fixture_json(Some(private_key)).into(),
         )
         .unwrap()
         .into();

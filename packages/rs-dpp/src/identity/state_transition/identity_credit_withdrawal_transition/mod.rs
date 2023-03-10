@@ -2,11 +2,13 @@ use anyhow::anyhow;
 use serde::{Deserialize, Serialize};
 use serde_json::Value as JsonValue;
 use serde_repr::{Deserialize_repr, Serialize_repr};
+use platform_value::string_encoding::{self, Encoding};
 
 use crate::version::LATEST_VERSION;
 use crate::{
     identity::{core_script::CoreScript, KeyID},
     prelude::{Identifier, Revision},
+    ProtocolError,
     state_transition::{
         state_transition_execution_context::StateTransitionExecutionContext,
         StateTransitionConvert, StateTransitionIdentitySigned, StateTransitionLike,
@@ -14,9 +16,7 @@ use crate::{
     },
     util::{
         json_value::{JsonValueExt, ReplaceWith},
-        string_encoding::{self, Encoding},
     },
-    ProtocolError,
 };
 
 use super::properties::{

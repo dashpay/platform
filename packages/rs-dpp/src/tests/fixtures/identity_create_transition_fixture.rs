@@ -1,11 +1,12 @@
+use std::convert::TryInto;
 use std::str::FromStr;
 
 use dashcore::PrivateKey;
-use serde_json::{json, Value};
+use platform_value::Value;
 
 use crate::identity::{KeyType, Purpose, SecurityLevel};
 use crate::tests::fixtures::instant_asset_lock_proof_fixture;
-use crate::util::string_encoding::{decode, Encoding};
+use platform_value::string_encoding::{decode, Encoding};
 use crate::version;
 
 //3bufpwQjL5qsvuP4fmCKgXJrKG852DDMYfi9J6XKqPAT
@@ -13,27 +14,22 @@ use crate::version;
 
 pub fn identity_create_transition_fixture_json(
     one_time_private_key: Option<PrivateKey>,
-) -> serde_json::Value {
+) -> Value {
     let asset_lock_proof = instant_asset_lock_proof_fixture(one_time_private_key);
-    let asset_lock_string = serde_json::ser::to_string(&asset_lock_proof).unwrap();
-    let asset_lock_proof_json = Value::from_str(&asset_lock_string).unwrap();
+    let read_only = false;
+    let signature = vec![0_u8; 65];
 
-    json!({
-        "protocolVersion": version::LATEST_VERSION,
-        // TODO: change to a const
-        "type": 2,
-        "assetLockProof": asset_lock_proof_json,
-        "publicKeys": [
-            {
-                "id": 0,
-                "type": KeyType::ECDSA_SECP256K1,
-                "data": decode("AuryIuMtRrl/VviQuyLD1l4nmxi9ogPzC9LT7tdpo0di", Encoding::Base64).unwrap(),
-                "purpose": Purpose::AUTHENTICATION,
-                "securityLevel": SecurityLevel::MASTER,
-                "readOnly": false,
-                "signature": vec![0_u8; 65]
-            },
-        ],
-        "signature": vec![0_u8; 65]
-    })
+    let public_keys =     vec![Value::from([("id", Value::U32(version::LATEST_VERSION)),
+                                       ("type", Value::U8(2)),
+                                       ("data", Value::Bytes(decode("AuryIuMtRrl/VviQuyLD1l4nmxi9ogPzC9LT7tdpo0di", Encoding::Base64).unwrap())),
+                                       ("purpose": Value::U8(Purpose::AUTHENTICATION)),
+        ("securityLevel": Value::U8(SecurityLevel::MASTER)),
+        ("readOnly": Value::Bool(read_only)),
+        ("signature": Value::Bytes(signature))])];
+
+    Value::from([("protocolVersion", Value::U32(version::LATEST_VERSION)),
+                  ("type", Value::U8(2)),
+                  ("assetLockProof", asset_lock_proof.try_into().unwrap()),
+                  ("publicKeys": Value::Array(public_keys)),
+        ("signature": Value::Bytes(signature))])
 }

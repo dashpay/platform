@@ -1,11 +1,12 @@
 use chrono::Utc;
 use serde_json::{json, Value as JsonValue};
+use platform_value::string_encoding::Encoding;
 
 use crate::identity::state_transition::identity_public_key_transitions::IdentityPublicKeyCreateTransition;
 use crate::{
     identity::{
-        state_transition::identity_update_transition::identity_update_transition::IdentityUpdateTransition,
-        KeyType, Purpose, SecurityLevel,
+        KeyType,
+        Purpose, SecurityLevel, state_transition::identity_update_transition::identity_update_transition::IdentityUpdateTransition,
     },
     state_transition::{
         StateTransitionConvert, StateTransitionIdentitySigned, StateTransitionType,
@@ -13,7 +14,6 @@ use crate::{
     tests::{
         fixtures::get_identity_update_transition_fixture, utils::generate_random_identifier_struct,
     },
-    util::string_encoding::Encoding,
 };
 
 struct TestData {

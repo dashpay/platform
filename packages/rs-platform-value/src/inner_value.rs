@@ -126,6 +126,16 @@ impl Value {
         Self::inner_text_value(map, key)
     }
 
+    pub fn get_optional_bytes<'a>(&'a self, key: &'a str) -> Result<Option<Vec<u8>>, Error> {
+        let map = self.to_map()?;
+        Self::inner_optional_bytes_value(map, key)
+    }
+
+    pub fn get_bytes<'a>(&'a self, key: &'a str) -> Result<Vec<u8>, Error> {
+        let map = self.to_map()?;
+        Self::inner_bytes_value(map, key)
+    }
+
     pub fn get_optional_hash256<'a>(&'a self, key: &'a str) -> Result<Option<[u8; 32]>, Error> {
         let map = self.to_map()?;
         Self::inner_optional_hash256_value(map, key)
@@ -266,6 +276,15 @@ impl Value {
         Self::get_optional_from_map(document_type, key)
             .map(|v| v.to_bytes())
             .transpose()
+    }
+
+    /// Retrieves the value of a key from a map if it's a byte array.
+    pub fn inner_bytes_value<'a>(
+        document_type: &'a [(Value, Value)],
+        key: &'a str,
+    ) -> Result<Vec<u8>, Error> {
+        Self::get_from_map(document_type, key)
+            .map(|v| v.to_bytes())?
     }
 
     /// Retrieves the value of a key from a map if it's a byte array.

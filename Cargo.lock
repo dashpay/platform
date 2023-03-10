@@ -2220,6 +2220,7 @@ dependencies = [
  "bs58",
  "ciborium",
  "hex",
+ "rand",
  "serde",
  "serde_json",
  "thiserror",

@@ -6,6 +6,7 @@ use std::convert::{TryFrom, TryInto};
 use serde::{Deserialize, Serialize};
 use serde_json::Value as JsonValue;
 use platform_value::btreemap_extensions::BTreeValueMapHelper;
+use platform_value::btreemap_removal_extensions::BTreeValueRemoveFromMapHelper;
 use platform_value::Value;
 
 use crate::errors::ProtocolError;
@@ -54,9 +55,9 @@ impl IdentityPublicKeyCreateTransition {
     pub fn from_raw_object(mut raw_object: Value) -> Result<Self, ProtocolError> {
         Ok(Self {
             id: raw_object.get_integer("id").map_err(ProtocolError::ValueError)?,
-            purpose: raw_object.get_integer("purpose").map_err(ProtocolError::ValueError)?,
-            security_level: raw_object.get_integer("securityLevel").map_err(ProtocolError::ValueError)?,
-            key_type: raw_object.get_integer("keyType").map_err(ProtocolError::ValueError)?,
+            purpose: raw_object.get_integer::<u8>("purpose").map_err(ProtocolError::ValueError)?.try_into()?,
+            security_level: raw_object.get_integer::<u8>("securityLevel").map_err(ProtocolError::ValueError)?.try_into()?,
+            key_type: raw_object.get_integer::<u8>("keyType").map_err(ProtocolError::ValueError)?.try_into()?,
             data: raw_object.remove_bytes("data").map_err(ProtocolError::ValueError)?,
             read_only: raw_object.get_bool("readOnly").map_err(ProtocolError::ValueError)?,
             signature: raw_object.remove_bytes("signature").map_err(ProtocolError::ValueError)?,
@@ -66,9 +67,9 @@ impl IdentityPublicKeyCreateTransition {
     pub fn from_value_map(mut value_map: BTreeMap<String, Value>) -> Result<Self, ProtocolError> {
         Ok(Self {
             id: value_map.get_integer("id").map_err(ProtocolError::ValueError)?,
-            purpose: value_map.get_integer("purpose").map_err(ProtocolError::ValueError)?,
-            security_level: value_map.get_integer("securityLevel").map_err(ProtocolError::ValueError)?,
-            key_type: value_map.get_integer("keyType").map_err(ProtocolError::ValueError)?,
+            purpose: value_map.get_integer::<u8>("purpose").map_err(ProtocolError::ValueError)?.try_into()?,
+            security_level: value_map.get_integer::<u8>("securityLevel").map_err(ProtocolError::ValueError)?.try_into()?,
+            key_type: value_map.get_integer::<u8>("keyType").map_err(ProtocolError::ValueError)?.try_into()?,
             data: value_map.remove_bytes("data").map_err(ProtocolError::ValueError)?,
             read_only: value_map.get_bool("readOnly").map_err(ProtocolError::ValueError)?,
             signature: value_map.remove_bytes("signature").map_err(ProtocolError::ValueError)?,
@@ -98,10 +99,10 @@ impl IdentityPublicKeyCreateTransition {
         ]);
 
         if !skip_signature && !self.signature.is_empty() {
-            map.insert("signature".to_string(), Value::Bytes(self.signature.clone()))
+            map.insert("signature".to_string(), Value::Bytes(self.signature.clone()));
         }
 
-        Ok(value)
+        Ok(map.into())
     }
 
     /// Return raw data, with all binary fields represented as arrays

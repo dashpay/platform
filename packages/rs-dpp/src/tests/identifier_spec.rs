@@ -1,5 +1,5 @@
 use crate::identifier::Identifier;
-use crate::util::string_encoding::Encoding;
+use platform_value::string_encoding::Encoding;
 
 #[test]
 pub fn from_string() {

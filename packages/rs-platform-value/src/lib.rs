@@ -17,9 +17,11 @@ pub mod inner_value;
 mod integer;
 pub mod system_bytes;
 pub mod value_map;
-mod btreemap_removal_extensions;
+pub mod btreemap_removal_extensions;
 mod btreemap_removal_inner_value_extensions;
 mod ser;
+pub mod identifier;
+pub mod string_encoding;
 
 use crate::value_map::{ValueMap, ValueMapHelper};
 pub use error::Error;
@@ -1057,6 +1059,81 @@ impl From<BTreeMap<String, Value>> for Value {
             value
                 .into_iter()
                 .map(|(key, value)| (Value::Text(key), value))
+                .collect(),
+        )
+    }
+}
+
+impl<const N: usize> From<[(Value, Value); N]> for Value {
+    /// Converts a `[(Value, Value); N]` into a `Value`.
+    ///
+    /// ```
+    /// use platform_value::Value;
+    ///
+    /// let map1 = Value::from([(1, 2), (3, 4)]);
+    /// let map2: Value = [(1, 2), (3, 4)].into();
+    /// assert_eq!(map1, map2);
+    /// ```
+    fn from(mut arr: [(Value, Value); N]) -> Self {
+        if N == 0 {
+            return Value::Map(vec![]);
+        }
+
+        Value::Map(
+            arr
+                .into_iter()
+                .collect(),
+        )
+    }
+}
+
+impl<const N: usize> From<[(String, Value); N]> for Value {
+    /// Converts a `[(String, Value); N]` into a `Value`.
+    ///
+    /// ```
+    /// use platform_value::Value;
+    ///
+    /// let map1 = Value::from([("1".to_string(), 2), ("3".to_string(), 4)]);
+    /// let map2: Value = [("1".to_string(), 2), ("3".to_string(), 4)].into();
+    /// assert_eq!(map1, map2);
+    /// ```
+    fn from(mut arr: [(String, Value); N]) -> Self {
+        if N == 0 {
+            return Value::Map(vec![]);
+        }
+
+        // use stable sort to preserve the insertion order.
+        arr.sort_by(|a, b| a.0.cmp(&b.0));
+        Value::Map(
+            arr
+                .into_iter()
+                .map(|(k,v)| (k.into(), v))
+                .collect(),
+        )
+    }
+}
+
+impl<const N: usize> From<[(&str, Value); N]> for Value {
+    /// Converts a `[($str, Value); N]` into a `Value`.
+    ///
+    /// ```
+    /// use platform_value::Value;
+    ///
+    /// let map1 = Value::from([("1", 2), ("3", 4)]);
+    /// let map2: Value = [("1", 2), ("3", 4)].into();
+    /// assert_eq!(map1, map2);
+    /// ```
+    fn from(mut arr: [(&str, Value); N]) -> Self {
+        if N == 0 {
+            return Value::Map(vec![]);
+        }
+
+        // use stable sort to preserve the insertion order.
+        arr.sort_by(|a, b| a.0.cmp(&b.0));
+        Value::Map(
+            arr
+                .into_iter()
+                .map(|(k,v)| (k.into(), v))
                 .collect(),
         )
     }

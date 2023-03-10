@@ -460,7 +460,7 @@ mod test {
     use crate::document::Document;
     use crate::identifier::Identifier;
     use crate::tests::utils::*;
-    use crate::util::string_encoding::Encoding;
+    use platform_value::string_encoding::Encoding;
     use platform_value::btreemap_extensions::BTreeValueMapHelper;
     use platform_value::btreemap_path_extensions::BTreeValueMapPathHelper;
     use platform_value::Value;

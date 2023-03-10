@@ -1,5 +1,5 @@
 use dpp::prelude::Identifier;
-use dpp::util::string_encoding::Encoding;
+use platform_value::string_encoding::Encoding;
 use itertools::Itertools;
 pub use serde::{Deserialize, Serialize};
 use serde_json::Value;

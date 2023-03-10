@@ -4,6 +4,7 @@ use serde::de::Error as DeError;
 use serde::ser::Error as SerError;
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use serde_json::Value as JsonValue;
+use platform_value::Value;
 
 use crate::identity::state_transition::asset_lock_proof::AssetLockProof;
 use crate::identity::state_transition::identity_create_transition::SerializationOptions;
@@ -13,7 +14,7 @@ use crate::state_transition::{
     StateTransition, StateTransitionConvert, StateTransitionLike, StateTransitionType,
 };
 use crate::util::json_value::JsonValueExt;
-use crate::util::string_encoding::Encoding;
+use platform_value::string_encoding::Encoding;
 use crate::version::LATEST_VERSION;
 use crate::{NonConsensusError, ProtocolError, SerdeParsingError};
 
@@ -74,7 +75,7 @@ impl<'de> Deserialize<'de> for IdentityTopUpTransition {
     where
         D: Deserializer<'de>,
     {
-        let value = serde_json::Value::deserialize(deserializer)?;
+        let value = platform_value::Value::deserialize(deserializer)?;
 
         Self::new(value).map_err(|e| D::Error::custom(e.to_string()))
     }
@@ -82,25 +83,24 @@ impl<'de> Deserialize<'de> for IdentityTopUpTransition {
 
 /// Main state transition functionality implementation
 impl IdentityTopUpTransition {
-    pub fn new(raw_state_transition: serde_json::Value) -> Result<Self, ProtocolError> {
+    pub fn new(raw_state_transition: Value) -> Result<Self, ProtocolError> {
         Self::from_raw_object(raw_state_transition)
     }
 
     pub fn from_raw_object(
-        raw_object: JsonValue,
+        raw_object: Value,
     ) -> Result<IdentityTopUpTransition, ProtocolError> {
         let protocol_version = raw_object
-            .get_u64(property_names::PROTOCOL_VERSION)
-            .unwrap_or(LATEST_VERSION as u64) as u32;
+            .get_optional_integer(property_names::PROTOCOL_VERSION).map_err(ProtocolError::ValueError)?
+            .unwrap_or(LATEST_VERSION);
         let signature = raw_object
-            .get_bytes(property_names::SIGNATURE)
+            .get_optional_bytes(property_names::SIGNATURE).map_err(ProtocolError::ValueError)?
             .unwrap_or_default();
         let identity_id =
-            Identifier::from_bytes(&raw_object.get_bytes(property_names::IDENTITY_ID)?)?;
+            Identifier::from(raw_object.get_hash256(property_names::IDENTITY_ID).map_err(ProtocolError::ValueError)?);
 
         let raw_asset_lock_proof = raw_object
-            .get(property_names::ASSET_LOCK_PROOF)
-            .ok_or_else(|| ProtocolError::Generic("Asset lock proof is missing".to_string()))?;
+            .get_value(property_names::ASSET_LOCK_PROOF).map_err(ProtocolError::ValueError)?;
         let asset_lock_proof = AssetLockProof::try_from(raw_asset_lock_proof)?;
 
         Ok(IdentityTopUpTransition {

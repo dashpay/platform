@@ -12,11 +12,12 @@ use crate::{
 
 use super::{
     json_path::{JsonPath, JsonPathLiteral, JsonPathStep},
-    string_encoding::Encoding,
 };
 
 mod insert_with_path;
 use insert_with_path::*;
+use platform_value::string_encoding::Encoding;
+
 mod remove_path;
 use remove_path::*;
 

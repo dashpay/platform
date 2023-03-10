@@ -60,20 +60,20 @@ impl<'de> Deserialize<'de> for AssetLockProof {
     where
         D: Deserializer<'de>,
     {
-        let value = serde_json::Value::deserialize(deserializer)?;
+        let value = platform_value::Value::deserialize(deserializer)?;
 
         let proof_type_int = value
-            .get_u64("type")
+            .get_integer("type")
             .map_err(|e| D::Error::custom(e.to_string()))?;
         let proof_type = AssetLockProofType::try_from(proof_type_int)
             .map_err(|e| D::Error::custom(e.to_string()))?;
 
         match proof_type {
             AssetLockProofType::Instant => Ok(Self::Instant(
-                serde_json::from_value(value).map_err(|e| D::Error::custom(e.to_string()))?,
+                platform_value::from_value(value).map_err(|e| D::Error::custom(e.to_string()))?,
             )),
             AssetLockProofType::Chain => Ok(Self::Chain(
-                serde_json::from_value(value).map_err(|e| D::Error::custom(e.to_string()))?,
+                platform_value::from_value(value).map_err(|e| D::Error::custom(e.to_string()))?,
             )),
         }
     }
@@ -97,8 +97,8 @@ impl TryFrom<u8> for AssetLockProofType {
 }
 
 impl AssetLockProof {
-    pub fn type_from_raw_value(value: &JsonValue) -> Option<AssetLockProofType> {
-        let proof_type_res = value.get_u64("type");
+    pub fn type_from_raw_value(value: &Value) -> Option<AssetLockProofType> {
+        let proof_type_res = value.get_integer::<u8>("type");
 
         match proof_type_res {
             Ok(proof_type_int) => {

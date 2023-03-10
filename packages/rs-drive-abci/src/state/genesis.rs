@@ -43,7 +43,7 @@ use drive::dpp::identity::{
 };
 
 use drive::dpp::system_data_contracts::{load_system_data_contract, SystemDataContract};
-use drive::dpp::util::string_encoding::{encode, Encoding};
+use platform_value::string_encoding::{encode, Encoding};
 use drive::drive::batch::{
     ContractOperationType, DocumentOperationType, DriveOperationType, IdentityOperationType,
 };

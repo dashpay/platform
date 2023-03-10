@@ -9,8 +9,8 @@ use crate::{
     with_js_error,
 };
 use dpp::identity::state_transition::asset_lock_proof::chain::ChainAssetLockProof;
-use dpp::util::string_encoding;
-use dpp::util::string_encoding::Encoding;
+use platform_value::string_encoding;
+use platform_value::string_encoding::Encoding;
 
 #[wasm_bindgen(js_name=ChainAssetLockProof)]
 #[derive(Clone)]

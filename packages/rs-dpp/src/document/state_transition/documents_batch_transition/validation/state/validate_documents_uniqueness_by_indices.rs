@@ -3,19 +3,19 @@ use std::convert::TryInto;
 use futures::future::join_all;
 use itertools::Itertools;
 use serde_json::{json, Value as JsonValue};
+use platform_value::string_encoding::Encoding;
 
 use crate::document::Document;
 use crate::{
     document::document_transition::{Action, DocumentTransition, DocumentTransitionExt},
     prelude::{DataContract, Identifier},
+    ProtocolError,
     state_repository::StateRepositoryLike,
     state_transition::state_transition_execution_context::StateTransitionExecutionContext,
+    StateError,
     util::{
         json_schema::{Index, JsonSchemaExt},
-        string_encoding::Encoding,
-    },
-    validation::ValidationResult,
-    ProtocolError, StateError,
+    }, validation::ValidationResult,
 };
 
 struct QueryDefinition<'a> {

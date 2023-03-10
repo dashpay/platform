@@ -189,7 +189,7 @@ mod test {
 
     use crate::document::DocumentsBatchTransition;
     use crate::state_transition::state_transition_execution_context::StateTransitionExecutionContext;
-    use crate::util::string_encoding::Encoding;
+    use platform_value::string_encoding::Encoding;
     use crate::{
         assert_error_contains,
         identity::{KeyID, SecurityLevel},

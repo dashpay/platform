@@ -16,6 +16,9 @@ pub enum Error {
     #[error("integer out of bounds")]
     IntegerSizeError,
 
+    #[error("string decoding error {0}")]
+    StringDecodingError(String),
+
     #[error("key must be a string")]
     KeyMustBeAString,
 

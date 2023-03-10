@@ -8,6 +8,7 @@ use platform_value::btreemap_extensions::BTreeValueMapHelper;
 use platform_value::Value;
 use serde::{Deserialize, Serialize};
 use serde_json::Value as JsonValue;
+use platform_value::btreemap_removal_extensions::BTreeValueRemoveFromMapHelper;
 
 use crate::consensus::basic::document::InvalidDocumentTypeError;
 use crate::data_contract::{contract_config, DriveContractExt};
@@ -22,7 +23,7 @@ use crate::data_contract::get_binary_properties_from_schema::get_binary_properti
 
 
 use crate::util::json_value::{JsonValueExt, ReplaceWith};
-use crate::util::string_encoding::Encoding;
+use platform_value::string_encoding::Encoding;
 use crate::{
     errors::ProtocolError,
     identifier::Identifier,
@@ -186,35 +187,37 @@ impl DataContract {
     }
 
     pub fn to_object(&self) -> Result<Value, ProtocolError> {
-        let mut raw_object = BTreeMap::from([
-                                            (property_names::PROTOCOL_VERSION.to_string(), Value::U32(self.protocol_version)),
-                                            (property_names::ID.to_string(), Value::Identifier(self.id.buffer)),
-                                            (property_names::OWNER_ID.to_string(), Value::Identifier(self.owner_id.buffer)),
-                                            (property_names::SCHEMA.to_string(), Value::Text(self.schema.clone())),
-                                            (property_names::VERSION.to_string(), Value::U32(self.version)),
-                                            (property_names::DOCUMENTS.to_string(), self.documents.into()),
-                                            (property_names::ENTROPY.to_string(), Value::Bytes32(self.entropy))]);
-        if let Some(defs) = &self.defs {
-            raw_object.insert(property_names::DEFINITIONS.to_string(), defs.into())
-        }
-
-        Ok(raw_object.into())
+        platform_value::to_value(self).map_err(ProtocolError::ValueError)
+        // let mut raw_object = BTreeMap::from([
+        //                                     (property_names::PROTOCOL_VERSION.to_string(), Value::U32(self.protocol_version)),
+        //                                     (property_names::ID.to_string(), Value::Identifier(self.id.buffer)),
+        //                                     (property_names::OWNER_ID.to_string(), Value::Identifier(self.owner_id.buffer)),
+        //                                     (property_names::SCHEMA.to_string(), Value::Text(self.schema.clone())),
+        //                                     (property_names::VERSION.to_string(), Value::U32(self.version)),
+        //                                     (property_names::DOCUMENTS.to_string(), self.documents.into()),
+        //                                     (property_names::ENTROPY.to_string(), Value::Bytes32(self.entropy))]);
+        // if let Some(defs) = &self.defs {
+        //     raw_object.insert(property_names::DEFINITIONS.to_string(), defs.into())
+        // }
+        //
+        // Ok(raw_object.into())
     }
 
     pub fn into_object(self) -> Result<Value, ProtocolError> {
-        let mut raw_object = BTreeMap::from([
-            (property_names::PROTOCOL_VERSION.to_string(), Value::U32(self.protocol_version)),
-            (property_names::ID.to_string(), Value::Identifier(self.id.buffer)),
-            (property_names::OWNER_ID.to_string(), Value::Identifier(self.owner_id.buffer)),
-            (property_names::SCHEMA.to_string(), Value::Text(self.schema)),
-            (property_names::VERSION.to_string(), Value::U32(self.version)),
-            (property_names::DOCUMENTS.to_string(), self.documents.into()),
-            (property_names::ENTROPY.to_string(), Value::Bytes32(self.entropy))]);
-        if let Some(defs) = &self.defs {
-            raw_object.insert(property_names::DEFINITIONS.to_string(), defs.into())
-        }
-
-        Ok(raw_object.into())
+        platform_value::to_value(self).map_err(ProtocolError::ValueError)
+        // let mut raw_object = BTreeMap::from([
+        //     (property_names::PROTOCOL_VERSION.to_string(), Value::U32(self.protocol_version)),
+        //     (property_names::ID.to_string(), Value::Identifier(self.id.buffer)),
+        //     (property_names::OWNER_ID.to_string(), Value::Identifier(self.owner_id.buffer)),
+        //     (property_names::SCHEMA.to_string(), Value::Text(self.schema)),
+        //     (property_names::VERSION.to_string(), Value::U32(self.version)),
+        //     (property_names::DOCUMENTS.to_string(), self.documents.into()),
+        //     (property_names::ENTROPY.to_string(), Value::Bytes32(self.entropy))]);
+        // if let Some(defs) = &self.defs {
+        //     raw_object.insert(property_names::DEFINITIONS.to_string(), defs.into())
+        // }
+        //
+        // Ok(raw_object.into())
     }
 
     pub fn to_json_object(&self, skip_identifiers_conversion: bool) -> Result<JsonValue, ProtocolError> {

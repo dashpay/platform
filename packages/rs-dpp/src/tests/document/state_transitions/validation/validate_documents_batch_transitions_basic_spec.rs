@@ -31,7 +31,7 @@ use test_case::test_case;
 struct TestData {
     data_contract: DataContract,
     state_transition: DocumentsBatchTransition,
-    raw_state_transition: JsonValue,
+    raw_state_transition: Value,
     protocol_version_validator: ProtocolVersionValidator,
     state_repository_mock: MockStateRepositoryLike,
 }

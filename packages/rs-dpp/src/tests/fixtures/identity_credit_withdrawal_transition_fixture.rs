@@ -1,10 +1,10 @@
 use dashcore::{hashes::hex::FromHex, PubkeyHash, Script};
 use serde_json::{json, Value};
+use platform_value::string_encoding::{encode, Encoding};
 
 use crate::{
     identity::state_transition::identity_credit_withdrawal_transition::Pooling,
     state_transition::StateTransitionType,
-    util::string_encoding::{encode, Encoding},
     version,
 };
 

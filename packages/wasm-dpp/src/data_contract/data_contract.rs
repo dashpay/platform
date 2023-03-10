@@ -9,7 +9,7 @@ use wasm_bindgen::prelude::*;
 
 use dpp::data_contract::{DataContract, SCHEMA_URI};
 use dpp::platform_value::Value;
-use dpp::util::string_encoding::Encoding;
+use platform_value::string_encoding::Encoding;
 
 use crate::errors::{from_dpp_err, RustConversionError};
 use crate::identifier::identifier_from_js_value;

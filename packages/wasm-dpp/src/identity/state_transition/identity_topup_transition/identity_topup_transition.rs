@@ -27,9 +27,9 @@ use dpp::{
         asset_lock_proof::AssetLockProof, identity_topup_transition::IdentityTopUpTransition,
     },
     state_transition::StateTransitionLike,
-    util::string_encoding,
-    util::string_encoding::Encoding,
 };
+use platform_value::string_encoding;
+use platform_value::string_encoding::Encoding;
 
 #[wasm_bindgen(js_name=IdentityTopUpTransition)]
 #[derive(Clone)]

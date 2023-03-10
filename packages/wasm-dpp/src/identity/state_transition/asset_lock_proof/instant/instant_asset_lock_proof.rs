@@ -3,8 +3,6 @@ use dpp::{
         blockdata::{script::Script, transaction::txout::TxOut},
         consensus::encode::serialize,
     },
-    util::string_encoding,
-    util::string_encoding::Encoding,
 };
 
 use serde::{Deserialize, Serialize};
@@ -20,6 +18,8 @@ use crate::{
 use dpp::identity::state_transition::asset_lock_proof::instant::{
     InstantAssetLockProof, RawInstantLock,
 };
+use platform_value::string_encoding;
+use platform_value::string_encoding::Encoding;
 
 #[derive(Serialize, Deserialize)]
 #[serde(remote = "TxOut")]

@@ -6,13 +6,14 @@ use std::{
 use futures::future::join_all;
 use itertools::Itertools;
 use serde_json::json;
+use platform_value::string_encoding::Encoding;
 
 use crate::document::ExtendedDocument;
 use crate::{
     document::document_transition::DocumentTransition, get_from_transition,
+    ProtocolError,
     state_repository::StateRepositoryLike,
     state_transition::state_transition_execution_context::StateTransitionExecutionContext,
-    util::string_encoding::Encoding, ProtocolError,
 };
 
 pub async fn fetch_extended_documents(

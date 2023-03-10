@@ -1,6 +1,7 @@
 use futures::StreamExt;
 use mockall::predicate;
 use serde_json::json;
+use platform_value::string_encoding::Encoding;
 
 use crate::{consensus::ConsensusError, data_contract::DataContract, document::{
     document_transition::{Action, DocumentTransition},
@@ -10,7 +11,7 @@ use crate::{consensus::ConsensusError, data_contract::DataContract, document::{
         get_data_contract_fixture, get_document_transitions_fixture,
     },
     utils::generate_random_identifier_struct,
-}, util::string_encoding::Encoding, validation::ValidationResult};
+}, validation::ValidationResult};
 use crate::document::{Document, ExtendedDocument};
 use crate::tests::fixtures::get_extended_documents_fixture;
 

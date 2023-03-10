@@ -7,7 +7,7 @@ use std::collections::BTreeMap;
 use crate::data_contract::DriveContractExt;
 use crate::{
     document::document_transition::DocumentTransition, prelude::DataContract,
-    util::json_schema::Index, ProtocolError,
+    ProtocolError, util::json_schema::Index,
 };
 
 #[macro_export]
@@ -114,9 +114,10 @@ mod test {
     use serde_json::json;
     use std::collections::BTreeMap;
     use std::convert::TryInto;
+    use platform_value::string_encoding::Encoding;
 
     use crate::data_contract::document_type::DocumentType;
-    use crate::{prelude::*, util::string_encoding::Encoding};
+    use crate::{prelude::*};
 
     use super::find_duplicates_by_indices;
 

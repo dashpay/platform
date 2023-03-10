@@ -1,3 +1,4 @@
+use std::convert::TryInto;
 use anyhow::anyhow;
 use ciborium::value::Value as CborValue;
 
@@ -24,6 +25,6 @@ impl DecodeProtocolEntity {
             }
         })?;
 
-        Ok((protocol_version, cbor_value.into()))
+        Ok((protocol_version, cbor_value.try_into().map_err(ProtocolError::ValueError)?))
     }
 }

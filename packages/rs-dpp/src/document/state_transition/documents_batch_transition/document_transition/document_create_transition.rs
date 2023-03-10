@@ -6,6 +6,7 @@ use serde_json::Value as JsonValue;
 use std::collections::BTreeMap;
 use std::convert::TryInto;
 use std::string::ToString;
+use platform_value::btreemap_removal_extensions::BTreeValueRemoveFromMapHelper;
 
 use crate::document::{Document, ExtendedDocument};
 use crate::identity::TimestampMillis;

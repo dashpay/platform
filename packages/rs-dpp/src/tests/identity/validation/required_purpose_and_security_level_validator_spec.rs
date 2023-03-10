@@ -1,11 +1,11 @@
 use crate::{
     identity::{
-        validation::{RequiredPurposeAndSecurityLevelValidator, TPublicKeysValidator},
-        KeyType, Purpose, SecurityLevel,
+        KeyType,
+        Purpose, SecurityLevel, validation::{RequiredPurposeAndSecurityLevelValidator, TPublicKeysValidator},
     },
-    util::string_encoding::{decode, Encoding},
 };
 use serde_json::json;
+use platform_value::string_encoding::{decode, Encoding};
 
 #[test]
 fn should_return_invalid_result_if_state_transition_does_not_contain_master_key() {

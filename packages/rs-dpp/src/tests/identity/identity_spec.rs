@@ -128,8 +128,8 @@ mod from_buffer {
 mod conversions {
     use crate::prelude::Identity;
     use crate::tests::fixtures::{identity_fixture_json, identity_fixture_raw_object};
-    use crate::util::string_encoding;
-    use crate::util::string_encoding::Encoding;
+    use platform_value::string_encoding;
+    use platform_value::string_encoding::Encoding;
 
     #[test]
     fn from_json() {

@@ -9,8 +9,8 @@ use crate::identifier::IdentifierWrapper;
 
 use crate::{
     buffer::Buffer, errors::RustConversionError,
-    identity::state_transition::identity_public_key_transitions::IdentityPublicKeyCreateTransitionWasm,
-    identity::IdentityPublicKeyWasm, state_transition::StateTransitionExecutionContextWasm,
+    identity::IdentityPublicKeyWasm,
+    identity::state_transition::identity_public_key_transitions::IdentityPublicKeyCreateTransitionWasm, state_transition::StateTransitionExecutionContextWasm,
     with_js_error,
 };
 
@@ -24,8 +24,10 @@ use dpp::state_transition::StateTransitionIdentitySigned;
 use dpp::{
     identifier::Identifier,
     identity::state_transition::identity_update_transition::identity_update_transition::IdentityUpdateTransition,
-    state_transition::StateTransitionLike, util::string_encoding, util::string_encoding::Encoding,
+    state_transition::StateTransitionLike,
 };
+use platform_value::string_encoding;
+use platform_value::string_encoding::Encoding;
 
 #[wasm_bindgen(js_name=IdentityUpdateTransition)]
 #[derive(Clone)]

@@ -2,11 +2,9 @@ use std::ops::Deref;
 
 use dashcore::Script as DashcoreScript;
 use serde::{Deserialize, Serialize};
+use platform_value::string_encoding::{self, Encoding};
 
-use crate::{
-    util::string_encoding::{self, Encoding},
-    ProtocolError,
-};
+use crate::ProtocolError;
 
 #[derive(Clone, Debug, Eq, PartialEq, Default)]
 pub struct CoreScript(DashcoreScript);

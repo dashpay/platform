@@ -4,6 +4,7 @@ use std::convert::{TryFrom, TryInto};
 use anyhow::bail;
 use num_enum::IntoPrimitive;
 use platform_value::btreemap_extensions::BTreeValueMapHelper;
+use platform_value::btreemap_removal_extensions::BTreeValueRemoveFromMapHelper;
 use platform_value::Value;
 use serde::{Deserialize, Serialize};
 pub use serde_json::Value as JsonValue;

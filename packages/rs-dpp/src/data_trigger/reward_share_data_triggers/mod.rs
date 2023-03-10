@@ -4,12 +4,13 @@ use anyhow::{anyhow, bail};
 use platform_value::btreemap_extensions::BTreeValueMapHelper;
 
 use serde_json::json;
+use platform_value::string_encoding::Encoding;
 
 use crate::document::Document;
 use crate::{
     data_trigger::create_error, document::document_transition::DocumentTransition,
     get_from_transition, mocks::SMLStore, prelude::Identifier,
-    state_repository::StateRepositoryLike, util::string_encoding::Encoding, ProtocolError,
+    ProtocolError, state_repository::StateRepositoryLike,
 };
 
 use super::{DataTriggerExecutionContext, DataTriggerExecutionResult};
@@ -149,18 +150,18 @@ mod test {
     use crate::{
         data_contract::DataContract,
         data_trigger::DataTriggerExecutionContext,
+        DataTriggerError,
         document::document_transition::{Action, DocumentTransition, DocumentTransitionExt},
-        mocks::{SMLEntry, SMLStore, SimplifiedMNList},
+        mocks::{SimplifiedMNList, SMLEntry, SMLStore},
         prelude::Identifier,
         state_repository::MockStateRepositoryLike,
         state_transition::state_transition_execution_context::StateTransitionExecutionContext,
-        tests::{
+        StateError, tests::{
             fixtures::{
                 get_document_transitions_fixture, get_masternode_reward_shares_documents_fixture,
             },
             utils::generate_random_identifier_struct,
         },
-        DataTriggerError, StateError,
     };
 
     struct TestData {

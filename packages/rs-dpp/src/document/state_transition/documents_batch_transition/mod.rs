@@ -19,7 +19,7 @@ use crate::prelude::{DocumentTransition, Identifier};
 use crate::state_transition::state_transition_execution_context::StateTransitionExecutionContext;
 use crate::util::cbor_value::{CborCanonicalMap, FieldType, ReplacePaths, ValuesCollection};
 use crate::util::json_value::{JsonValueExt, ReplaceWith};
-use crate::util::string_encoding::Encoding;
+use platform_value::string_encoding::Encoding;
 use crate::version::LATEST_VERSION;
 use crate::ProtocolError;
 use crate::{
@@ -375,10 +375,10 @@ impl StateTransitionConvert for DocumentsBatchTransition {
         Ok(json_value)
     }
 
-    fn to_object(&self, skip_signature: bool) -> Result<JsonValue, ProtocolError> {
-        let mut json_object: JsonValue = serde_json::to_value(self)?;
+    fn to_object(&self, skip_signature: bool) -> Result<Value, ProtocolError> {
+        let mut json_object: Value = platform_value::to_value(self)?;
         json_object
-            .replace_identifier_paths(Self::identifiers_property_paths(), ReplaceWith::Bytes)?;
+            .replace_at_paths(Self::identifiers_property_paths(), ReplacementType::Identifier)?;
 
         if skip_signature {
             for path in Self::signature_property_paths() {

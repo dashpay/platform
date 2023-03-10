@@ -16,7 +16,7 @@ use crate::state_transition::{
     StateTransition, StateTransitionConvert, StateTransitionLike, StateTransitionType,
 };
 use crate::util::json_value::JsonValueExt;
-use crate::util::string_encoding::Encoding;
+use platform_value::string_encoding::Encoding;
 use crate::{NonConsensusError, ProtocolError, SerdeParsingError};
 
 mod property_names {
