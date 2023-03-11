@@ -53,7 +53,7 @@ pub struct DataContractValidator {
 }
 
 impl DataValidator for DataContractValidator {
-    type Item = JsonValue;
+    type Item = Value;
 
     fn validate(
         &self,
@@ -78,7 +78,7 @@ impl DataContractValidator {
 
         trace!("validating against data contract meta validator");
         result.merge(JsonSchemaValidator::validate_data_contract_schema(
-            raw_data_contract.into(),
+            &raw_data_contract.into(),
         ));
         if !result.is_valid() {
             return Ok(result);
@@ -88,9 +88,7 @@ impl DataContractValidator {
         result.merge(
             self.protocol_version_validator.validate(
                 raw_data_contract
-                    .get_u64("protocolVersion")
-                    .map_err(|_| anyhow!("protocolVersion isn't unsigned integer"))?
-                    as u32,
+                    .get_integer("protocolVersion").map_err(ProtocolError::ValueError)?,
             )?,
         );
         if !result.is_valid() {

@@ -216,13 +216,13 @@ fn get_enriched_contracts_by_action(
 
 fn validate_raw_transitions<'a>(
     data_contract: &DataContract,
-    raw_document_transitions: Vec<BTreeMap<String, &'a Value>>,
+    raw_document_transitions: impl IntoIterator<Item = BTreeMap<String, &'a Value>>,
     enriched_contracts_by_action: &HashMap<Action, DataContract>,
     owner_id: &Identifier,
 ) -> Result<ValidationResult<()>, ProtocolError> {
     let mut result = ValidationResult::default();
 
-    for raw_document_transition in raw_document_transitions.iter() {
+    for raw_document_transition in raw_document_transitions {
         let Some(document_type) = raw_document_transition.get_optional_str("$type").map_err(ProtocolError::ValueError) else {
                 result.add_error(BasicError::MissingDocumentTransitionTypeError);
                 return Ok(result);

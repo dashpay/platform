@@ -13,6 +13,7 @@ use crate::utils::Inner;
 use crate::utils::ToSerdeJSONExt;
 use crate::utils::WithJsError;
 use dpp::identifier;
+use dpp::platform_value::string_encoding::Encoding;
 
 #[derive(Serialize, Deserialize, PartialEq, Eq)]
 enum IdentifierSource {

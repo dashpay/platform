@@ -120,7 +120,7 @@ async fn property_should_be_present(property: &str) {
     assert!(matches!(
         schema_error.kind(),
         ValidationErrorKind::Required {
-            property: Value::String(missing_property)
+            property: Value::Text(missing_property)
         } if missing_property == property
     ));
 }
@@ -424,7 +424,7 @@ async fn property_in_document_transition_should_be_present(property: &str) {
     assert!(matches!(
         schema_error.kind(),
         ValidationErrorKind::Required {
-            property: Value::String(missing_property)
+            property: Value::Text(missing_property)
         } if missing_property == property
     ));
 }
@@ -709,7 +709,7 @@ async fn property_in_replace_transition_should_be_present(property: &str) {
     assert!(matches!(
         schema_error.kind(),
         ValidationErrorKind::Required {
-            property: Value::String(missing_property)
+            property: Value::Text(missing_property)
         } if missing_property == property
     ));
 }
@@ -815,7 +815,7 @@ async fn id_should_be_present_in_delete_transition() {
     assert!(matches!(
         schema_error.kind(),
         ValidationErrorKind::Required {
-            property: Value::String(missing_property)
+            property: Value::Text(missing_property)
         } if missing_property == "$id"
     ));
 }

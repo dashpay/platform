@@ -27,14 +27,18 @@ pub fn validate(
                         let new_path = format!("{}/{}", path, key);
                         values_queue.push((current_value, new_path))
                     }
-                    for validator in validators {
-                        validator(&path, key.to_str().map_err(ProtocolError::ValueError)?, value, current_value, &mut result);
+                    if let Some(Value::Text(key)) = key.as_str() {
+                        for validator in validators {
+                            validator(&path, key, value, current_value, &mut result);
+                        }
+                    } else {
+                        result.add_error(ProtocolError::DecodingError("keys of properties must be strings".to_string()));
                     }
                 }
             }
             Value::Array(arr) => {
                 for (i, value) in arr.iter().enumerate() {
-                    if value.is_object() {
+                    if value.is_map() {
                         let new_path = format!("{}/[{}]", path, i);
                         values_queue.push((value, new_path))
                     }
@@ -69,7 +73,7 @@ pub fn pattern_is_valid_regex_validator(
                 IncompatibleRe2PatternError::new(
                     String::new(),
                     path.to_string(),
-                    format!("{} is not a string", string),
+                    format!("{} is not a string", path),
                 ),
             ));
         }
@@ -83,9 +87,10 @@ pub fn byte_array_has_no_items_as_parent_validator(
     value: &Value,
     result: &mut ValidationResult<()>,
 ) {
+
     if key == "byteArray"
         && value.is_bool()
-        && (parent.get("items").is_some() || parent.get("prefixItems").is_some())
+        && (parent.get("items").map_err(ProtocolError::ValueError)?.is_some() || parent.get("prefixItems").map_err(ProtocolError::ValueError)?.is_some())
     {
         result.add_error(BasicError::JsonSchemaCompilationError(format!(
             "invalid path: '{}': byteArray cannot be used with 'items' or 'prefixItems",
@@ -97,6 +102,7 @@ pub fn byte_array_has_no_items_as_parent_validator(
 #[cfg(test)]
 mod test {
     use serde_json::json;
+    use platform_value::platform_value;
 
     use super::*;
 
@@ -200,7 +206,7 @@ mod test {
     fn invalid_result_for_array_of_object() {
         let mut schema = get_document_schema();
         schema["properties"]["arrayOfObject"]["items"]["properties"]["simple"]["pattern"] =
-            json!("^((?!-|_)[a-zA-Z0-9-_]{0,62}[a-zA-Z0-9])$");
+            platform_value!("^((?!-|_)[a-zA-Z0-9-_]{0,62}[a-zA-Z0-9])$");
 
         let result = validate(&schema, &[pattern_is_valid_regex_validator]);
         let consensus_error = result.errors.get(0).expect("the error should be returned");
@@ -225,7 +231,7 @@ mod test {
     fn invalid_result_for_array_of_objects() {
         let mut schema = get_document_schema();
         schema["properties"]["arrayOfObjects"]["items"][0]["properties"]["simple"]["pattern"] =
-            json!("^((?!-|_)[a-zA-Z0-9-_]{0,62}[a-zA-Z0-9])$");
+            platform_value!("^((?!-|_)[a-zA-Z0-9-_]{0,62}[a-zA-Z0-9])$");
 
         let result = validate(&schema, &[pattern_is_valid_regex_validator]);
         let consensus_error = result.errors.get(0).expect("the error should be returned");

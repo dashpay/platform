@@ -13,7 +13,6 @@ use crate::state_transition::state_transition_execution_context::StateTransition
 use crate::state_transition::{
     StateTransition, StateTransitionConvert, StateTransitionLike, StateTransitionType,
 };
-use crate::util::json_value::JsonValueExt;
 use crate::version::LATEST_VERSION;
 use crate::{NonConsensusError, ProtocolError, SerdeParsingError};
 use platform_value::string_encoding::Encoding;
@@ -63,7 +62,7 @@ impl Serialize for IdentityTopUpTransition {
         S: Serializer,
     {
         let raw = self
-            .to_json_object(Default::default())
+            .to_object(Default::default())
             .map_err(|e| S::Error::custom(e.to_string()))?;
 
         raw.serialize(serializer)
@@ -152,52 +151,6 @@ impl IdentityTopUpTransition {
         &self.identity_id
     }
 
-    /// Get raw state transition
-    pub fn to_json_object(
-        &self,
-        options: SerializationOptions,
-    ) -> Result<JsonValue, SerdeParsingError> {
-        let mut json_map = JsonValue::Object(Default::default());
-
-        if !options.skip_signature {
-            let sig = self.signature.iter().map(|num| JsonValue::from(*num));
-            json_map.insert(
-                property_names::SIGNATURE.to_string(),
-                JsonValue::Array(sig.collect()),
-            )?;
-        }
-
-        if !options.skip_identifiers_conversion {
-            let bytes = self
-                .identity_id
-                .buffer
-                .iter()
-                .map(|num| JsonValue::from(*num));
-            json_map.insert(
-                property_names::IDENTITY_ID.to_string(),
-                JsonValue::Array(bytes.collect()),
-            )?;
-        } else {
-            json_map.insert(
-                property_names::IDENTITY_ID.to_string(),
-                JsonValue::String(self.identity_id.to_string(Encoding::Base58)),
-            )?;
-        }
-
-        json_map.insert(
-            property_names::ASSET_LOCK_PROOF.to_string(),
-            self.asset_lock_proof.as_ref().try_into()?,
-        )?;
-
-        // TODO ??
-        json_map.insert(
-            property_names::PROTOCOL_VERSION.to_string(),
-            JsonValue::Number(self.get_protocol_version().into()),
-        )?;
-
-        Ok(json_map)
-    }
-
     pub fn set_protocol_version(&mut self, protocol_version: u32) {
         self.protocol_version = protocol_version;
     }
@@ -219,11 +172,11 @@ impl StateTransitionConvert for IdentityTopUpTransition {
         vec![]
     }
 
-    fn to_object(&self, skip_signature: bool) -> Result<JsonValue, ProtocolError> {
-        let mut json_value: JsonValue = serde_json::to_value(self)?;
+    fn to_object(&self, skip_signature: bool) -> Result<Value, ProtocolError> {
+        let mut json_value: Value = platform_value::to_value(self)?;
 
         if skip_signature {
-            if let JsonValue::Object(ref mut o) = json_value {
+            if let Value::Object(ref mut o) = json_value {
                 for path in Self::signature_property_paths() {
                     o.remove(path);
                 }
@@ -234,24 +187,7 @@ impl StateTransitionConvert for IdentityTopUpTransition {
     }
 
     fn to_json(&self, skip_signature: bool) -> Result<JsonValue, ProtocolError> {
-        let mut json = serde_json::Value::Object(Default::default());
-
-        // TODO: super.toJSON()
-
-        if skip_signature {
-            if let JsonValue::Object(ref mut o) = json {
-                for path in Self::signature_property_paths() {
-                    o.remove(path);
-                }
-            }
-        }
-
-        json.insert(
-            property_names::ASSET_LOCK_PROOF.to_string(),
-            self.asset_lock_proof.as_ref().try_into()?,
-        )?;
-
-        Ok(json)
+        self.to_object(skip_signature).map(|value| value.into())
     }
 }
 

@@ -88,7 +88,7 @@ async fn should_be_present(property: &str) {
     assert!(matches!(
         schema_error.kind(),
         ValidationErrorKind::Required {
-            property: Value::String(missing_property)
+            property: Value::Text(missing_property)
         } if missing_property == property
     ));
 }

@@ -31,7 +31,6 @@ mod property_names {
 #[derive(Debug, Copy, Clone, Default)]
 pub struct SerializationOptions {
     pub skip_signature: bool,
-    pub skip_identifiers_conversion: bool,
 }
 
 #[derive(Debug, Clone)]

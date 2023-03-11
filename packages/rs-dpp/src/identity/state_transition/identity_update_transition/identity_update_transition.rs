@@ -96,17 +96,13 @@ impl IdentityUpdateTransition {
             .map_err(ProtocolError::ValueError)?
             .unwrap_or(LATEST_VERSION);
         let signature = raw_object
-            .get_optional_bytes(property_names::SIGNATURE)
-            .map_err(ProtocolError::ValueError)?
-            .unwrap_or_default();
+            .get_bytes(property_names::SIGNATURE)
+            .map_err(ProtocolError::ValueError)?;
         let signature_public_key_id = raw_object
-            .get_u64(property_names::SIGNATURE_PUBLIC_KEY_ID)
-            .unwrap_or_default() as KeyID;
-        let identity_id = Identifier::from(
-            raw_object
-                .get_hash256(property_names::IDENTITY_ID)
-                .map_err(ProtocolError::ValueError)?,
-        );
+            .get_integer(property_names::SIGNATURE_PUBLIC_KEY_ID).map_err(ProtocolError::ValueError)?;
+        let identity_id = raw_object
+                .get_identifier(property_names::IDENTITY_ID)
+                .map_err(ProtocolError::ValueError)?;
 
         let revision = raw_object
             .get_integer(property_names::REVISION)
@@ -114,8 +110,7 @@ impl IdentityUpdateTransition {
         let add_public_keys = get_list(&mut raw_object, property_names::ADD_PUBLIC_KEYS)?;
         let disable_public_keys = get_list(&mut raw_object, property_names::DISABLE_PUBLIC_KEYS)?;
         let public_keys_disabled_at = raw_object
-            .remove_into::<u64>(property_names::PUBLIC_KEYS_DISABLED_AT)
-            .ok();
+            .remove_optional_integer(property_names::PUBLIC_KEYS_DISABLED_AT).map_err(ProtocolError::ValueError)?;
 
         Ok(IdentityUpdateTransition {
             protocol_version,
