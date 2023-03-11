@@ -3,10 +3,10 @@ use std::convert::TryInto;
 
 use anyhow::anyhow;
 use platform_value::btreemap_extensions::BTreeValueMapHelper;
+use platform_value::btreemap_removal_extensions::BTreeValueRemoveFromMapHelper;
 use platform_value::Value;
 use serde::{Deserialize, Serialize};
 use serde_json::Value as JsonValue;
-use platform_value::btreemap_removal_extensions::BTreeValueRemoveFromMapHelper;
 
 use crate::{
     data_contract::DataContract,
@@ -77,9 +77,11 @@ impl DataContractCreateTransition {
             data_contract: DataContract::from_raw_object(
                 raw_data_contract_update_transition
                     .remove(DATA_CONTRACT)
-                    .map_err(|_| ProtocolError::DecodingError(
-                        "data contract missing on state transition".to_string(),
-                    ))?,
+                    .map_err(|_| {
+                        ProtocolError::DecodingError(
+                            "data contract missing on state transition".to_string(),
+                        )
+                    })?,
             )?,
             ..Default::default()
         })
@@ -250,12 +252,12 @@ mod test {
     fn get_test_data() -> TestData {
         let data_contract = get_data_contract_fixture(None);
 
-        let state_transition = DataContractCreateTransition::from_raw_object(
-            Value::from([(PROTOCOL_VERSION, version::LATEST_VERSION.into()),
-                (ENTROPY, Value::Bytes32(data_contract.entropy)),
-                (DATA_CONTRACT, data_contract.to_object().unwrap()),
-            ])
-        ).expect("state transition should be created without errors");
+        let state_transition = DataContractCreateTransition::from_raw_object(Value::from([
+            (PROTOCOL_VERSION, version::LATEST_VERSION.into()),
+            (ENTROPY, Value::Bytes32(data_contract.entropy)),
+            (DATA_CONTRACT, data_contract.to_object().unwrap()),
+        ]))
+        .expect("state transition should be created without errors");
 
         TestData {
             data_contract,

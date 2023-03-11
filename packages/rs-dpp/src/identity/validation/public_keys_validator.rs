@@ -2,7 +2,6 @@ use std::collections::HashMap;
 
 use dashcore::PublicKey;
 use lazy_static::lazy_static;
-use serde_json::Value;
 
 use crate::errors::consensus::basic::identity::{
     DuplicatedIdentityPublicKeyError, DuplicatedIdentityPublicKeyIdError,
@@ -17,6 +16,7 @@ use crate::{
 use crate::identity::security_level::ALLOWED_SECURITY_LEVELS;
 #[cfg(test)]
 use mockall::{automock, predicate::*};
+use platform_value::Value;
 
 lazy_static! {
     pub static ref PUBLIC_KEY_SCHEMA: serde_json::Value =
@@ -60,7 +60,7 @@ impl<T: BlsModule> TPublicKeysValidator for PublicKeysValidator<T> {
         // Public keys already passed json schema validation at this point
         let mut public_keys = Vec::<IdentityPublicKey>::with_capacity(raw_public_keys.len());
         for raw_public_key in raw_public_keys {
-            let pk: IdentityPublicKey = serde_json::from_value(raw_public_key.clone())?;
+            let pk: IdentityPublicKey = platform_value::from_value(raw_public_key.clone())?;
             public_keys.push(pk);
         }
 
@@ -161,7 +161,7 @@ impl<T: BlsModule> PublicKeysValidator<T> {
         schema: Value,
         bls_validator: T,
     ) -> Result<Self, DashPlatformProtocolInitError> {
-        let public_key_schema_validator = JsonSchemaValidator::new(schema)?;
+        let public_key_schema_validator = JsonSchemaValidator::new(schema.into())?;
 
         let public_keys_validator = Self {
             public_key_schema_validator,
@@ -175,7 +175,7 @@ impl<T: BlsModule> PublicKeysValidator<T> {
         &self,
         public_key: &Value,
     ) -> Result<ValidationResult<()>, NonConsensusError> {
-        self.public_key_schema_validator.validate(public_key)
+        self.public_key_schema_validator.validate(public_key.into())
     }
 }
 

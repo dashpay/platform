@@ -1,7 +1,7 @@
 use super::Value;
+use crate::value_map::{ValueMap, ValueMapHelper};
 use core::fmt::{self, Display};
 use core::ops;
-use crate::value_map::{ValueMap, ValueMapHelper};
 
 /// A type that can be used to index into a `platform_value::Value`.
 ///
@@ -96,9 +96,7 @@ impl Index for str {
             *v = Value::Map(ValueMap::new());
         }
         match v {
-            Value::Map(map) => {
-                map.get_key_mut_or_insert(self, Value::Null)
-            },
+            Value::Map(map) => map.get_key_mut_or_insert(self, Value::Null),
             _ => panic!("cannot access key {:?} in JSON {}", self, Type(v)),
         }
     }
@@ -117,8 +115,8 @@ impl Index for String {
 }
 
 impl<'a, T> Index for &'a T
-    where
-        T: ?Sized + Index,
+where
+    T: ?Sized + Index,
 {
     fn index_into<'v>(&self, v: &'v Value) -> Option<&'v Value> {
         (**self).index_into(v)
@@ -189,8 +187,8 @@ impl<'a> Display for Type<'a> {
 // with Value that is not well served by the existing approaches: concise and
 // careless and sometimes that is exactly what you want.
 impl<I> ops::Index<I> for Value
-    where
-        I: Index,
+where
+    I: Index,
 {
     type Output = Value;
 
@@ -229,8 +227,8 @@ impl<I> ops::Index<I> for Value
 }
 
 impl<I> ops::IndexMut<I> for Value
-    where
-        I: Index,
+where
+    I: Index,
 {
     /// Write into a `serde_json::Value` using the syntax `value[0] = ...` or
     /// `value["k"] = ...`.

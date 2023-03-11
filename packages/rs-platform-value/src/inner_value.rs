@@ -1,8 +1,8 @@
+use crate::identifier::Identifier;
 use crate::value_map::{ValueMap, ValueMapHelper};
 use crate::Value::Bool;
 use crate::{Error, Value};
 use std::collections::BTreeMap;
-use crate::identifier::Identifier;
 
 impl Value {
     pub fn get<'a>(&'a self, key: &'a str) -> Result<Option<&'a Value>, Error> {
@@ -108,13 +108,13 @@ impl Value {
     pub fn remove_array(&mut self, key: &str) -> Result<Vec<Value>, Error> {
         let map = self.as_map_mut_ref()?;
         let value = map.remove_key(key)?;
-        value.to_array()
+        value.to_array_owned()
     }
 
     pub fn remove_optional_array<T>(&mut self, key: &str) -> Result<Option<Vec<Value>>, Error> {
         let map = self.as_map_mut_ref()?;
         map.remove_optional_key(key)
-            .map(|v| v.to_array())
+            .map(|v| v.to_array_owned())
             .transpose()
     }
 
@@ -192,9 +192,13 @@ impl Value {
         Ok(Identifier::new(Self::inner_hash256_value(map, key)?))
     }
 
-    pub fn get_optional_identifier<'a>(&'a self, key: &'a str) -> Result<Option<Identifier>, Error> {
+    pub fn get_optional_identifier<'a>(
+        &'a self,
+        key: &'a str,
+    ) -> Result<Option<Identifier>, Error> {
         let map = self.to_map()?;
-        Ok(Self::inner_optional_hash256_value(map, key)?.map(|identifier| Identifier::new(identifier)))
+        Ok(Self::inner_optional_hash256_value(map, key)?
+            .map(|identifier| Identifier::new(identifier)))
     }
 
     pub fn get_hash256<'a>(&'a self, key: &'a str) -> Result<[u8; 32], Error> {

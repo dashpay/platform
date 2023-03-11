@@ -1,9 +1,9 @@
 use platform_value::btreemap_extensions::BTreeValueMapHelper;
+use platform_value::btreemap_removal_extensions::BTreeValueRemoveFromMapHelper;
 use platform_value::Value;
 use serde::{Deserialize, Serialize};
 use serde_json::Value as JsonValue;
 use std::collections::BTreeMap;
-use platform_value::btreemap_removal_extensions::BTreeValueRemoveFromMapHelper;
 
 use crate::{
     data_contract::DataContract,
@@ -68,9 +68,11 @@ impl DataContractUpdateTransition {
             data_contract: DataContract::from_raw_object(
                 raw_data_contract_update_transition
                     .remove(DATA_CONTRACT)
-                    .map_err(|_| ProtocolError::DecodingError(
-                        "data contract missing on state transition".to_string(),
-                    ))?,
+                    .map_err(|_| {
+                        ProtocolError::DecodingError(
+                            "data contract missing on state transition".to_string(),
+                        )
+                    })?,
             )?,
             ..Default::default()
         })

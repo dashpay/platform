@@ -1,21 +1,17 @@
-use regex::Regex;
 use platform_value::Value;
+use regex::Regex;
 
 use crate::consensus::basic::data_contract::IncompatibleRe2PatternError;
-use crate::{consensus::{basic::BasicError, ConsensusError}, ProtocolError, validation::ValidationResult};
+use crate::{
+    consensus::{basic::BasicError, ConsensusError},
+    validation::ValidationResult,
+    ProtocolError,
+};
 
-pub type SubValidator = fn(
-    path: &str,
-    key: &str,
-    parent: &Value,
-    value: &Value,
-    result: &mut ValidationResult<()>,
-);
+pub type SubValidator =
+    fn(path: &str, key: &str, parent: &Value, value: &Value, result: &mut ValidationResult<()>);
 
-pub fn validate(
-    raw_data_contract: &Value,
-    validators: &[SubValidator],
-) -> ValidationResult<()> {
+pub fn validate(raw_data_contract: &Value, validators: &[SubValidator]) -> ValidationResult<()> {
     let mut result = ValidationResult::default();
     let mut values_queue: Vec<(&Value, String)> = vec![(raw_data_contract, String::from(""))];
 
@@ -23,16 +19,18 @@ pub fn validate(
         match value {
             Value::Map(current_map) => {
                 for (key, current_value) in current_map.iter() {
-                    if current_value.is_object() || current_value.is_array() {
+                    if current_value.is_map() || current_value.is_array() {
                         let new_path = format!("{}/{}", path, key);
                         values_queue.push((current_value, new_path))
                     }
-                    if let Some(Value::Text(key)) = key.as_str() {
+                    if let Some(key) = key.as_str() {
                         for validator in validators {
                             validator(&path, key, value, current_value, &mut result);
                         }
                     } else {
-                        result.add_error(ProtocolError::DecodingError("keys of properties must be strings".to_string()));
+                        result.add_error(ConsensusError::SerializedObjectParsingError(
+                            "keys of properties must be strings".to_string(),
+                        ));
                     }
                 }
             }
@@ -87,10 +85,16 @@ pub fn byte_array_has_no_items_as_parent_validator(
     value: &Value,
     result: &mut ValidationResult<()>,
 ) {
-
     if key == "byteArray"
         && value.is_bool()
-        && (parent.get("items").map_err(ProtocolError::ValueError)?.is_some() || parent.get("prefixItems").map_err(ProtocolError::ValueError)?.is_some())
+        && (parent
+            .get("items")
+            .map_err(ProtocolError::ValueError)?
+            .is_some()
+            || parent
+                .get("prefixItems")
+                .map_err(ProtocolError::ValueError)?
+                .is_some())
     {
         result.add_error(BasicError::JsonSchemaCompilationError(format!(
             "invalid path: '{}': byteArray cannot be used with 'items' or 'prefixItems",
@@ -101,8 +105,8 @@ pub fn byte_array_has_no_items_as_parent_validator(
 
 #[cfg(test)]
 mod test {
-    use serde_json::json;
     use platform_value::platform_value;
+    use serde_json::json;
 
     use super::*;
 
@@ -114,7 +118,7 @@ mod test {
 
     #[test]
     fn should_return_error_if_bytes_array_parent_contains_items_or_prefix_items() {
-        let schema : Value = json!(
+        let schema: Value = json!(
              {
                 "type": "object",
                 "properties": {
@@ -129,7 +133,8 @@ mod test {
                 "required": ["foo"],
                 "additionalProperties": false,
               }
-        ).into();
+        )
+        .into();
         let mut result = validate(&schema, &[byte_array_has_no_items_as_parent_validator]);
         assert_eq!(2, result.errors().len());
         let first_error = get_basic_error(result.errors.pop().unwrap());
@@ -147,7 +152,7 @@ mod test {
 
     #[test]
     fn should_return_valid_result() {
-        let schema : Value = json!(
+        let schema: Value = json!(
              {
                 "type": "object",
                 "properties": {
@@ -160,14 +165,15 @@ mod test {
                 "required": ["foo"],
                 "additionalProperties": false,
               }
-        ).into();
+        )
+        .into();
 
         assert!(validate(&schema, &[pattern_is_valid_regex_validator]).is_valid())
     }
 
     #[test]
     fn should_return_invalid_result() {
-        let schema : Value = json!({
+        let schema: Value = json!({
             "type": "object",
             "properties": {
               "foo": { "type": "integer" },
@@ -179,7 +185,8 @@ mod test {
             "required": ["foo"],
             "additionalProperties": false,
 
-        }).into();
+        })
+        .into();
         let result = validate(&schema, &[pattern_is_valid_regex_validator]);
         let consensus_error = result.errors.get(0).expect("the error should be returned");
 
@@ -329,7 +336,8 @@ mod test {
                     ]
                 }
             }
-        }).into()
+        })
+        .into()
     }
 
     fn get_basic_error(error: ConsensusError) -> BasicError {

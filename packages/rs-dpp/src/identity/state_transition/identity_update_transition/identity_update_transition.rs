@@ -99,10 +99,11 @@ impl IdentityUpdateTransition {
             .get_bytes(property_names::SIGNATURE)
             .map_err(ProtocolError::ValueError)?;
         let signature_public_key_id = raw_object
-            .get_integer(property_names::SIGNATURE_PUBLIC_KEY_ID).map_err(ProtocolError::ValueError)?;
+            .get_integer(property_names::SIGNATURE_PUBLIC_KEY_ID)
+            .map_err(ProtocolError::ValueError)?;
         let identity_id = raw_object
-                .get_identifier(property_names::IDENTITY_ID)
-                .map_err(ProtocolError::ValueError)?;
+            .get_identifier(property_names::IDENTITY_ID)
+            .map_err(ProtocolError::ValueError)?;
 
         let revision = raw_object
             .get_integer(property_names::REVISION)
@@ -110,7 +111,8 @@ impl IdentityUpdateTransition {
         let add_public_keys = get_list(&mut raw_object, property_names::ADD_PUBLIC_KEYS)?;
         let disable_public_keys = get_list(&mut raw_object, property_names::DISABLE_PUBLIC_KEYS)?;
         let public_keys_disabled_at = raw_object
-            .remove_optional_integer(property_names::PUBLIC_KEYS_DISABLED_AT).map_err(ProtocolError::ValueError)?;
+            .remove_optional_integer(property_names::PUBLIC_KEYS_DISABLED_AT)
+            .map_err(ProtocolError::ValueError)?;
 
         Ok(IdentityUpdateTransition {
             protocol_version,

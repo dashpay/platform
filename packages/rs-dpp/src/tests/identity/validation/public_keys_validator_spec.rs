@@ -1,12 +1,11 @@
-use serde_json::{json, Value};
-
 use crate::consensus::ConsensusError;
 use crate::identity::validation::PublicKeysValidator;
 use crate::identity::validation::TPublicKeysValidator;
 use crate::identity::{KeyID, KeyType, Purpose, SecurityLevel};
 use crate::tests::fixtures::get_public_keys_validator;
-use crate::tests::utils::serde_set_ref;
+use crate::tests::utils::platform_value_set_ref;
 use crate::{assert_consensus_errors, NativeBlsModule};
+use platform_value::{platform_value, Value};
 
 fn setup_test() -> (Vec<Value>, PublicKeysValidator<NativeBlsModule>) {
     (
@@ -30,7 +29,7 @@ pub mod id {
     use crate::errors::consensus::ConsensusError;
     use crate::identity::validation::TPublicKeysValidator;
     use crate::tests::identity::validation::public_keys_validator_spec::setup_test;
-    use crate::tests::utils::serde_set_ref;
+    use crate::tests::utils::platform_value_set_ref;
     use crate::tests::utils::SerdeTestExtension;
 
     #[test]
@@ -56,7 +55,11 @@ pub mod id {
     #[test]
     pub fn should_be_a_number() {
         let (mut raw_public_keys, validator) = setup_test();
-        serde_set_ref(raw_public_keys.get_mut(1).unwrap(), "id", "string");
+        raw_public_keys
+            .get_mut(1)
+            .unwrap()
+            .set_value("id", "string".into())
+            .unwrap();
 
         let result = validator.validate_keys(&raw_public_keys).unwrap();
         let errors = assert_consensus_errors!(&result, ConsensusError::JsonSchemaError, 1);
@@ -69,7 +72,7 @@ pub mod id {
     #[test]
     pub fn should_be_an_integer() {
         let (mut raw_public_keys, validator) = setup_test();
-        serde_set_ref(raw_public_keys.get_mut(1).unwrap(), "id", 1.1);
+        platform_value_set_ref(raw_public_keys.get_mut(1).unwrap(), "id", 1.1);
 
         let result = validator.validate_keys(&raw_public_keys).unwrap();
         let errors = assert_consensus_errors!(&result, ConsensusError::JsonSchemaError, 1);
@@ -82,7 +85,7 @@ pub mod id {
     #[test]
     pub fn should_be_greater_or_equal_to_zero() {
         let (mut raw_public_keys, validator) = setup_test();
-        serde_set_ref(raw_public_keys.get_mut(1).unwrap(), "id", -1);
+        platform_value_set_ref(raw_public_keys.get_mut(1).unwrap(), "id", -1);
 
         let result = validator.validate_keys(&raw_public_keys).unwrap();
         let errors = assert_consensus_errors!(&result, ConsensusError::JsonSchemaError, 1);
@@ -98,7 +101,7 @@ pub mod key_type {
     use crate::errors::consensus::ConsensusError;
     use crate::identity::validation::TPublicKeysValidator;
     use crate::tests::identity::validation::public_keys_validator_spec::setup_test;
-    use crate::tests::utils::{serde_remove_ref, serde_set_ref};
+    use crate::tests::utils::{platform_value_set_ref, serde_remove_ref};
 
     #[test]
     pub fn should_be_present() {
@@ -117,7 +120,7 @@ pub mod key_type {
     #[test]
     pub fn should_be_a_number() {
         let (mut raw_public_keys, validator) = setup_test();
-        serde_set_ref(raw_public_keys.get_mut(1).unwrap(), "type", "string");
+        platform_value_set_ref(raw_public_keys.get_mut(1).unwrap(), "type", "string");
 
         let result = validator.validate_keys(&raw_public_keys).unwrap();
         // TODO: in the original code, there was only one error
@@ -136,7 +139,7 @@ pub mod data {
     use crate::errors::consensus::ConsensusError;
     use crate::identity::validation::TPublicKeysValidator;
     use crate::tests::identity::validation::public_keys_validator_spec::setup_test;
-    use crate::tests::utils::{serde_remove_ref, serde_set_ref};
+    use crate::tests::utils::{platform_value_set_ref, serde_remove_ref};
 
     #[test]
     pub fn should_be_present() {
@@ -161,7 +164,7 @@ pub mod data {
     #[test]
     pub fn should_be_a_byte_array() {
         let (mut raw_public_keys, validator) = setup_test();
-        serde_set_ref(
+        platform_value_set_ref(
             raw_public_keys.get_mut(1).unwrap(),
             "data",
             vec!["string"; 33],
@@ -187,12 +190,12 @@ pub mod data {
         use crate::errors::consensus::ConsensusError;
         use crate::identity::validation::TPublicKeysValidator;
         use crate::tests::identity::validation::public_keys_validator_spec::setup_test;
-        use crate::tests::utils::serde_set_ref;
+        use crate::tests::utils::platform_value_set_ref;
 
         #[test]
         pub fn should_be_no_less_than_33_bytes() {
             let (mut raw_public_keys, validator) = setup_test();
-            serde_set_ref(raw_public_keys.get_mut(1).unwrap(), "data", vec![0; 32]);
+            platform_value_set_ref(raw_public_keys.get_mut(1).unwrap(), "data", vec![0; 32]);
 
             let result = validator.validate_keys(&raw_public_keys).unwrap();
             let errors = assert_consensus_errors!(&result, ConsensusError::JsonSchemaError, 1);
@@ -205,7 +208,7 @@ pub mod data {
         #[test]
         pub fn should_be_no_longer_than_33_bytes() {
             let (mut raw_public_keys, validator) = setup_test();
-            serde_set_ref(raw_public_keys.get_mut(1).unwrap(), "data", vec![0; 34]);
+            platform_value_set_ref(raw_public_keys.get_mut(1).unwrap(), "data", vec![0; 34]);
 
             let result = validator.validate_keys(&raw_public_keys).unwrap();
             let errors = assert_consensus_errors!(&result, ConsensusError::JsonSchemaError, 1);
@@ -221,13 +224,13 @@ pub mod data {
         use crate::errors::consensus::ConsensusError;
         use crate::identity::validation::TPublicKeysValidator;
         use crate::tests::identity::validation::public_keys_validator_spec::setup_test;
-        use crate::tests::utils::serde_set_ref;
+        use crate::tests::utils::platform_value_set_ref;
 
         #[test]
         pub fn should_be_no_less_than_48_bytes() {
             let (mut raw_public_keys, validator) = setup_test();
-            serde_set_ref(raw_public_keys.get_mut(1).unwrap(), "data", vec![0; 47]);
-            serde_set_ref(raw_public_keys.get_mut(1).unwrap(), "type", 1);
+            platform_value_set_ref(raw_public_keys.get_mut(1).unwrap(), "data", vec![0; 47]);
+            platform_value_set_ref(raw_public_keys.get_mut(1).unwrap(), "type", 1);
 
             let result = validator.validate_keys(&raw_public_keys).unwrap();
             let errors = assert_consensus_errors!(&result, ConsensusError::JsonSchemaError, 1);
@@ -240,8 +243,8 @@ pub mod data {
         #[test]
         pub fn should_be_no_longer_than_48_bytes() {
             let (mut raw_public_keys, validator) = setup_test();
-            serde_set_ref(raw_public_keys.get_mut(1).unwrap(), "data", vec![0; 49]);
-            serde_set_ref(raw_public_keys.get_mut(1).unwrap(), "type", 1);
+            platform_value_set_ref(raw_public_keys.get_mut(1).unwrap(), "data", vec![0; 49]);
+            platform_value_set_ref(raw_public_keys.get_mut(1).unwrap(), "type", 1);
 
             let result = validator.validate_keys(&raw_public_keys).unwrap();
             let errors = assert_consensus_errors!(&result, ConsensusError::JsonSchemaError, 1);
@@ -257,13 +260,13 @@ pub mod data {
         use crate::errors::consensus::ConsensusError;
         use crate::identity::validation::TPublicKeysValidator;
         use crate::tests::identity::validation::public_keys_validator_spec::setup_test;
-        use crate::tests::utils::serde_set_ref;
+        use crate::tests::utils::platform_value_set_ref;
 
         #[test]
         pub fn should_be_no_less_than_20_bytes() {
             let (mut raw_public_keys, validator) = setup_test();
-            serde_set_ref(raw_public_keys.get_mut(1).unwrap(), "data", vec![0; 19]);
-            serde_set_ref(raw_public_keys.get_mut(1).unwrap(), "type", 3);
+            platform_value_set_ref(raw_public_keys.get_mut(1).unwrap(), "data", vec![0; 19]);
+            platform_value_set_ref(raw_public_keys.get_mut(1).unwrap(), "type", 3);
 
             let result = validator.validate_keys(&raw_public_keys).unwrap();
             let errors = assert_consensus_errors!(&result, ConsensusError::JsonSchemaError, 1);
@@ -276,8 +279,8 @@ pub mod data {
         #[test]
         pub fn should_be_no_longer_than_20_bytes() {
             let (mut raw_public_keys, validator) = setup_test();
-            serde_set_ref(raw_public_keys.get_mut(1).unwrap(), "data", vec![0; 21]);
-            serde_set_ref(raw_public_keys.get_mut(1).unwrap(), "type", 3);
+            platform_value_set_ref(raw_public_keys.get_mut(1).unwrap(), "data", vec![0; 21]);
+            platform_value_set_ref(raw_public_keys.get_mut(1).unwrap(), "type", 3);
 
             let result = validator.validate_keys(&raw_public_keys).unwrap();
             let errors = assert_consensus_errors!(&result, ConsensusError::JsonSchemaError, 1);
@@ -293,13 +296,13 @@ pub mod data {
         use crate::errors::consensus::ConsensusError;
         use crate::identity::validation::TPublicKeysValidator;
         use crate::tests::identity::validation::public_keys_validator_spec::setup_test;
-        use crate::tests::utils::serde_set_ref;
+        use crate::tests::utils::platform_value_set_ref;
 
         #[test]
         pub fn should_be_no_less_than_20_bytes() {
             let (mut raw_public_keys, validator) = setup_test();
-            serde_set_ref(raw_public_keys.get_mut(1).unwrap(), "data", vec![0; 19]);
-            serde_set_ref(raw_public_keys.get_mut(1).unwrap(), "type", 2);
+            platform_value_set_ref(raw_public_keys.get_mut(1).unwrap(), "data", vec![0; 19]);
+            platform_value_set_ref(raw_public_keys.get_mut(1).unwrap(), "type", 2);
 
             let result = validator.validate_keys(&raw_public_keys).unwrap();
             let errors = assert_consensus_errors!(&result, ConsensusError::JsonSchemaError, 1);
@@ -312,8 +315,8 @@ pub mod data {
         #[test]
         pub fn should_be_no_longer_than_20_bytes() {
             let (mut raw_public_keys, validator) = setup_test();
-            serde_set_ref(raw_public_keys.get_mut(1).unwrap(), "data", vec![0; 21]);
-            serde_set_ref(raw_public_keys.get_mut(1).unwrap(), "type", 2);
+            platform_value_set_ref(raw_public_keys.get_mut(1).unwrap(), "data", vec![0; 21]);
+            platform_value_set_ref(raw_public_keys.get_mut(1).unwrap(), "type", 2);
 
             let result = validator.validate_keys(&raw_public_keys).unwrap();
             let errors = assert_consensus_errors!(&result, ConsensusError::JsonSchemaError, 1);
@@ -330,7 +333,7 @@ pub fn should_return_invalid_result_if_there_are_duplicate_key_ids() {
     let (mut raw_public_keys, validator) = setup_test();
     let key0 = raw_public_keys.get(0).unwrap().clone();
     let key1 = raw_public_keys.get_mut(1).unwrap();
-    serde_set_ref(
+    platform_value_set_ref(
         key1,
         "id",
         key0.as_object().unwrap().get("id").unwrap().clone(),
@@ -365,7 +368,7 @@ pub fn should_return_invalid_result_if_there_are_duplicate_keys() {
     let (mut raw_public_keys, validator) = setup_test();
     let key0 = raw_public_keys.get(0).unwrap().clone();
     let key1 = raw_public_keys.get_mut(1).unwrap();
-    serde_set_ref(
+    platform_value_set_ref(
         key1,
         "data",
         key0.as_object().unwrap().get("data").unwrap().clone(),
@@ -398,7 +401,7 @@ pub fn should_return_invalid_result_if_there_are_duplicate_keys() {
 #[test]
 pub fn should_return_invalid_result_if_key_data_is_not_a_valid_der() {
     let (mut raw_public_keys, validator) = setup_test();
-    serde_set_ref(raw_public_keys.get_mut(1).unwrap(), "data", vec![0; 33]);
+    platform_value_set_ref(raw_public_keys.get_mut(1).unwrap(), "data", vec![0; 33]);
 
     let result = validator.validate_keys(&raw_public_keys).unwrap();
     let errors = assert_consensus_errors!(
@@ -425,12 +428,12 @@ pub fn should_return_invalid_result_if_key_data_is_not_a_valid_der() {
 pub fn should_return_invalid_result_if_key_has_an_invalid_combination_of_purpose_and_security_level(
 ) {
     let (mut raw_public_keys, validator) = setup_test();
-    serde_set_ref(
+    platform_value_set_ref(
         raw_public_keys.get_mut(1).unwrap(),
         "purpose",
         Purpose::ENCRYPTION as u64,
     );
-    serde_set_ref(
+    platform_value_set_ref(
         raw_public_keys.get_mut(1).unwrap(),
         "securityLevel",
         SecurityLevel::MASTER as u64,
@@ -518,7 +521,7 @@ pub fn should_pass_valid_ecdsa_hash160_public_key() {
 #[test]
 pub fn should_return_invalid_result_if_bls12_381_public_key_is_invalid() {
     let (_, validator) = setup_test();
-    let raw_public_keys_json = json!([{
+    let raw_public_keys_json = platform_value!([{
         "id": 0,
         "type": KeyType::BLS12_381,
         "purpose": 0,

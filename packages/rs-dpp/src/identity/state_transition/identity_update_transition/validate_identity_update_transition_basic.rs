@@ -1,5 +1,6 @@
 use anyhow::anyhow;
 use lazy_static::lazy_static;
+use platform_value::Value;
 use serde_json::Value as JsonValue;
 use std::sync::Arc;
 
@@ -58,44 +59,39 @@ where
 
     pub fn validate(
         &self,
-        raw_state_transition: &JsonValue,
+        raw_state_transition: &Value,
     ) -> Result<SimpleValidationResult, NonConsensusError> {
-        let result = self.json_schema_validator.validate(raw_state_transition)?;
+        let result = self
+            .json_schema_validator
+            .validate(&raw_state_transition.into())?;
         if !result.is_valid() {
             return Ok(result);
         }
 
         let protocol_version = raw_state_transition
-            .get_u64(property_names::PROTOCOL_VERSION)
-            .map_err(|e| NonConsensusError::SerdeJsonError(e.to_string()))?;
+            .get_integer(property_names::PROTOCOL_VERSION)
+            .map_err(ProtocolError::ValueError)?;
 
-        let result = self
-            .protocol_version_validator
-            .validate(protocol_version as u32)?;
+        let result = self.protocol_version_validator.validate(protocol_version)?;
         if !result.is_valid() {
             return Ok(result);
         }
 
-        let maybe_raw_public_keys = raw_state_transition.get(property_names::ADD_PUBLIC_KEYS);
+        let maybe_raw_public_keys = raw_state_transition
+            .get_optional_value(property_names::ADD_PUBLIC_KEYS)
+            .and_then(|value| value.map(|value| value.to_array_slice()).transpose())
+            .map_err(ProtocolError::ValueError)?;
 
         match maybe_raw_public_keys {
             Some(raw_public_keys) => {
-                let raw_public_keys_list = raw_public_keys.as_array().ok_or_else(|| {
-                    NonConsensusError::SerdeJsonError(format!(
-                        "'{}' property isn't an array",
-                        property_names::ADD_PUBLIC_KEYS
-                    ))
-                })?;
-                let result = self
-                    .public_keys_validator
-                    .validate_keys(raw_public_keys_list)?;
+                let result = self.public_keys_validator.validate_keys(raw_public_keys)?;
                 if !result.is_valid() {
                     return Ok(result);
                 }
 
                 let result = self
                     .public_keys_signatures_validator
-                    .validate_public_key_signatures(raw_state_transition, raw_public_keys_list)?;
+                    .validate_public_key_signatures(raw_state_transition, raw_public_keys)?;
                 if !result.is_valid() {
                     return Ok(result);
                 }

@@ -139,7 +139,7 @@ macro_rules! platform_value_internal {
 
     // Insert the current entry followed by trailing comma.
     (@object $object:ident [$($key:tt)+] ($value:expr) , $($rest:tt)*) => {
-        let _ = $object.insert(($($key)+).into(), $value);
+        let _ = $object.push((($($key)+).into(), $value));
         platform_value_internal!(@object $object () ($($rest)*) ($($rest)*));
     };
 
@@ -150,7 +150,7 @@ macro_rules! platform_value_internal {
 
     // Insert the last entry without trailing comma.
     (@object $object:ident [$($key:tt)+] ($value:expr)) => {
-        let _ = $object.insert(($($key)+).into(), $value);
+        let _ = $object.push((($($key)+).into(), $value));
     };
 
     // Next value is `null`.

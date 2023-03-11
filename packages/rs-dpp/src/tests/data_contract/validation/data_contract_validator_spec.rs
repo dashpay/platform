@@ -2,9 +2,9 @@ use std::sync::Arc;
 
 use jsonschema::error::ValidationErrorKind;
 use log::trace;
+use platform_value::{platform_value, Value};
 use serde_json::{json, Value as JsonValue};
 use test_case::test_case;
-use platform_value::{platform_value, Value};
 
 use crate::{
     codes::ErrorWithCode,
@@ -126,7 +126,9 @@ mod protocol {
             ..
         } = setup_test();
 
-        raw_data_contract.set_value("protocolVersion", "1".into()).expect("expected to set value");
+        raw_data_contract
+            .set_value("protocolVersion", "1".into())
+            .expect("expected to set value");
 
         let result = data_contract_validator
             .validate(&raw_data_contract)
@@ -145,7 +147,9 @@ mod protocol {
             ..
         } = setup_test();
 
-        raw_data_contract.set_value("protocolVersion", Value::I8(-1)).expect("expected to set value");
+        raw_data_contract
+            .set_value("protocolVersion", Value::I8(-1))
+            .expect("expected to set value");
 
         let result = data_contract_validator
             .validate(&raw_data_contract)
@@ -166,7 +170,9 @@ fn defs_should_be_object() {
         ..
     } = setup_test();
 
-    raw_data_contract.set_value("$defs", Value::U32(1)).expect("expected to set value");
+    raw_data_contract
+        .set_value("$defs", Value::U32(1))
+        .expect("expected to set value");
 
     let result = data_contract_validator
         .validate(&raw_data_contract)
@@ -179,8 +185,8 @@ fn defs_should_be_object() {
 }
 
 mod defs {
-    use platform_value::platform_value;
     use super::*;
+    use platform_value::platform_value;
 
     #[test]
     fn defs_should_not_be_empty() {
@@ -189,7 +195,9 @@ mod defs {
             data_contract_validator,
             ..
         } = setup_test();
-        raw_data_contract.set_value("$defs", Value::Map(vec![])).expect("expected to set value");
+        raw_data_contract
+            .set_value("$defs", Value::Map(vec![]))
+            .expect("expected to set value");
 
         let result = data_contract_validator
             .validate(&raw_data_contract)
@@ -208,7 +216,15 @@ mod defs {
             data_contract_validator,
             ..
         } = setup_test();
-        raw_data_contract.set_value("$defs", Value::Map(vec![(Value::Text("$subSchema".to_string()), Value::Map(vec![]))])).expect("expected to set value");
+        raw_data_contract
+            .set_value(
+                "$defs",
+                Value::Map(vec![(
+                    Value::Text("$subSchema".to_string()),
+                    Value::Map(vec![]),
+                )]),
+            )
+            .expect("expected to set value");
 
         let result = data_contract_validator
             .validate(&raw_data_contract)
@@ -254,7 +270,9 @@ mod defs {
         ];
 
         for property_name in valid_names {
-            raw_data_contract.set_value_at_path("$defs", property_name, platform_value!({"type" : "string"})).expect("expected to set value");
+            raw_data_contract
+                .set_value_at_path("$defs", property_name, platform_value!({"type" : "string"}))
+                .expect("expected to set value");
         }
 
         let result = data_contract_validator
@@ -282,7 +300,9 @@ mod defs {
             "ab",
         ];
         for property_name in invalid_names {
-            raw_data_contract.set_value_at_path("$defs", property_name, platform_value!({"type" : "string"})).expect("expected to set value");
+            raw_data_contract
+                .set_value_at_path("$defs", property_name, platform_value!({"type" : "string"}))
+                .expect("expected to set value");
         }
 
         let result = data_contract_validator
@@ -303,7 +323,13 @@ mod defs {
         } = setup_test();
 
         for i in 1..101 {
-            raw_data_contract.set_value_at_path("$defs", format!("def_{}", i).as_str(), platform_value!({"type" : "string"}).into()).expect("expected to set value");
+            raw_data_contract
+                .set_value_at_path(
+                    "$defs",
+                    format!("def_{}", i).as_str(),
+                    platform_value!({"type" : "string"}).into(),
+                )
+                .expect("expected to set value");
         }
 
         let result = data_contract_validator
@@ -327,7 +353,9 @@ mod schema {
             ..
         } = setup_test();
 
-        raw_data_contract.set_value("$schema", Value::U64(1)).expect("expected to set value");
+        raw_data_contract
+            .set_value("$schema", Value::U64(1))
+            .expect("expected to set value");
 
         let result = data_contract_validator
             .validate(&raw_data_contract)
@@ -346,7 +374,9 @@ mod schema {
             ..
         } = setup_test();
 
-        raw_data_contract.set_value("$schema", Value::Text("wrong".to_string())).expect("expected to set value");
+        raw_data_contract
+            .set_value("$schema", Value::Text("wrong".to_string()))
+            .expect("expected to set value");
 
         let result = data_contract_validator
             .validate(&raw_data_contract)
@@ -369,7 +399,9 @@ fn owner_id_should_be_byte_array(property_name: &str) {
     } = setup_test();
 
     let array = ["string"; 32];
-    raw_data_contract.set_value(property_name, platform_value!(array).into()).expect("expected to set value");
+    raw_data_contract
+        .set_value(property_name, platform_value!(array).into())
+        .expect("expected to set value");
 
     let result = data_contract_validator
         .validate(&raw_data_contract)
@@ -399,7 +431,9 @@ fn owner_id_should_be_no_less_32_bytes(property_name: &str) {
     } = setup_test();
 
     let array = [0u8; 31];
-    raw_data_contract.set_value(property_name, platform_value!(array).into()).expect("expected to set value");
+    raw_data_contract
+        .set_value(property_name, platform_value!(array).into())
+        .expect("expected to set value");
 
     let result = data_contract_validator
         .validate(&raw_data_contract)
@@ -424,7 +458,9 @@ fn owner_id_should_be_no_longer_32_bytes(property_name: &str) {
 
     let mut too_long_id = Vec::new();
     too_long_id.resize(33, 0u8);
-    raw_data_contract.set_value(property_name, platform_value!(too_long_id).into()).expect("expected to set value");
+    raw_data_contract
+        .set_value(property_name, platform_value!(too_long_id).into())
+        .expect("expected to set value");
 
     let result = data_contract_validator
         .validate(&raw_data_contract)
@@ -449,7 +485,9 @@ mod documents {
             ..
         } = setup_test();
 
-        raw_data_contract.set_value("documents", platform_value!(1).into()).expect("expected to set value");
+        raw_data_contract
+            .set_value("documents", platform_value!(1).into())
+            .expect("expected to set value");
 
         let result = data_contract_validator
             .validate(&raw_data_contract)
@@ -469,7 +507,9 @@ mod documents {
             ..
         } = setup_test();
 
-        raw_data_contract.set_value("documents", platform_value!({}).into()).expect("expected to set value");
+        raw_data_contract
+            .set_value("documents", platform_value!({}).into())
+            .expect("expected to set value");
         raw_data_contract["documents"] = platform_value!({});
 
         let result = data_contract_validator
@@ -731,8 +771,7 @@ mod documents {
             ..
         } = setup_test();
 
-        raw_data_contract["documents"]["niceDocument"]["properties"]["something"] =
-            platform_value!({"type": "object", "properties": platform_value!({}), "additionalProperties" : false});
+        raw_data_contract["documents"]["niceDocument"]["properties"]["something"] = platform_value!({"type": "object", "properties": platform_value!({}), "additionalProperties" : false});
 
         let valid_names = [
             "validName",
@@ -770,7 +809,8 @@ mod documents {
 
         let invalid_names = ["*(*&^", "$test", ".", ".a"];
         for property_name in invalid_names {
-            raw_data_contract["documents"]["niceDocument"]["properties"][property_name] = platform_value!({})
+            raw_data_contract["documents"]["niceDocument"]["properties"][property_name] =
+                platform_value!({})
         }
 
         let result = data_contract_validator
@@ -862,7 +902,8 @@ mod documents {
             ..
         } = setup_test();
 
-        raw_data_contract["documents"]["niceDocument"]["additionalProperties"] = platform_value!(true);
+        raw_data_contract["documents"]["niceDocument"]["additionalProperties"] =
+            platform_value!(true);
 
         let result = data_contract_validator
             .validate(&raw_data_contract)
@@ -1668,7 +1709,8 @@ mod indices {
             ..
         } = setup_test();
 
-        raw_data_contract["documents"]["indexedDocument"]["indices"] = platform_value!(["something else"]);
+        raw_data_contract["documents"]["indexedDocument"]["indices"] =
+            platform_value!(["something else"]);
         let result = data_contract_validator
             .validate(&raw_data_contract)
             .expect("validation result should be returned");
@@ -1741,7 +1783,8 @@ mod indices {
             ..
         } = setup_test();
 
-        raw_data_contract["documents"]["indexedDocument"]["indices"][0]["properties"] = platform_value!([]);
+        raw_data_contract["documents"]["indexedDocument"]["indices"][0]["properties"] =
+            platform_value!([]);
 
         let result = data_contract_validator
             .validate(&raw_data_contract)
@@ -1818,7 +1861,8 @@ mod indices {
             ..
         } = setup_test();
 
-        raw_data_contract["documents"]["indexedDocument"]["indices"][0]["properties"] = platform_value!([]);
+        raw_data_contract["documents"]["indexedDocument"]["indices"][0]["properties"] =
+            platform_value!([]);
 
         let result = data_contract_validator
             .validate(&raw_data_contract)
@@ -1887,7 +1931,8 @@ mod indices {
             ..
         } = setup_test();
 
-        raw_data_contract["documents"]["indexedDocument"]["indices"][0]["unique"] = platform_value!(12);
+        raw_data_contract["documents"]["indexedDocument"]["indices"][0]["unique"] =
+            platform_value!(12);
 
         let result = data_contract_validator
             .validate(&raw_data_contract)
@@ -2383,8 +2428,9 @@ mod indices {
             ..
         } = setup_test();
 
-        if let Some(Value::Array(arr)) =
-            raw_data_contract.get_optional_mut_value_at_path("documents.optionalUniqueIndexedDocument.required").expect("expected to get optional value at path")
+        if let Some(Value::Array(arr)) = raw_data_contract
+            .get_optional_mut_value_at_path("documents.optionalUniqueIndexedDocument.required")
+            .expect("expected to get optional value at path")
         {
             arr.pop();
         }

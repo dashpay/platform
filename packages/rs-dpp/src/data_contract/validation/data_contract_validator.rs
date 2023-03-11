@@ -4,8 +4,8 @@ use anyhow::anyhow;
 use itertools::Itertools;
 use lazy_static::lazy_static;
 use log::trace;
-use serde_json::Value as JsonValue;
 use platform_value::Value;
+use serde_json::Value as JsonValue;
 
 use crate::consensus::basic::data_contract::{
     DuplicateIndexError, DuplicateIndexNameError, InvalidCompoundIndexError,
@@ -88,7 +88,8 @@ impl DataContractValidator {
         result.merge(
             self.protocol_version_validator.validate(
                 raw_data_contract
-                    .get_integer("protocolVersion").map_err(ProtocolError::ValueError)?,
+                    .get_integer("protocolVersion")
+                    .map_err(ProtocolError::ValueError)?,
             )?,
         );
         if !result.is_valid() {

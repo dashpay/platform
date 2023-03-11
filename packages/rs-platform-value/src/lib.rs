@@ -11,20 +11,20 @@ mod btreemap_mut_value_extensions;
 pub mod btreemap_path_extensions;
 pub mod btreemap_path_insertion_extensions;
 pub mod btreemap_removal_extensions;
-mod btreemap_removal_inner_value_extensions;
+pub mod btreemap_removal_inner_value_extensions;
 pub mod converter;
 pub mod display;
 mod error;
 pub mod identifier;
+mod index;
 pub mod inner_value;
+mod inner_value_at_path;
 mod integer;
+mod macros;
 mod ser;
 pub mod string_encoding;
 pub mod system_bytes;
 pub mod value_map;
-mod inner_value_at_path;
-mod macros;
-mod index;
 
 use crate::value_map::{ValueMap, ValueMapHelper};
 pub use error::Error;
@@ -757,6 +757,30 @@ impl Value {
             .ok_or(Error::StructureError("value is not an array".to_string()))
     }
 
+    /// If the `Value` is a `Array`, returns a the associated `&[Value]` slice as `Ok`.
+    /// Returns `Err(Error::Structure("reason"))` otherwise.
+    ///
+    /// ```
+    /// # use platform_value::{Value, Integer, Error};
+    /// #
+    /// let mut value = Value::Array(
+    ///     vec![
+    ///         Value::U64(17),
+    ///         Value::Float(18.),
+    ///     ]
+    /// );
+    /// assert_eq!(value.to_array_slice(), Ok(vec![Value::U64(17), Value::Float(18.)].as_slice()));
+    ///
+    /// let value = Value::Bool(true);
+    /// assert_eq!(value.to_array_slice(), Err(Error::StructureError("value is not an array".to_string())));
+    /// ```
+    pub fn to_array_slice(&self) -> Result<&[Value], Error> {
+        match self {
+            Value::Array(vec) => Ok(vec.as_slice()),
+            _other => Err(Error::StructureError("value is not an array".to_string())),
+        }
+    }
+
     /// If the `Value` is a `Array`, returns a the associated `Vec<Value>` data as `Ok`.
     /// Returns `Err(Error::Structure("reason"))` otherwise.
     ///
@@ -769,12 +793,12 @@ impl Value {
     ///         Value::Float(18.),
     ///     ]
     /// );
-    /// assert_eq!(value.to_array(), Ok(vec![Value::U64(17), Value::Float(18.)]));
+    /// assert_eq!(value.to_array_owned(), Ok(vec![Value::U64(17), Value::Float(18.)]));
     ///
     /// let value = Value::Bool(true);
-    /// assert_eq!(value.to_array(), Err(Error::StructureError("value is not an array".to_string())));
+    /// assert_eq!(value.to_array_owned(), Err(Error::StructureError("value is not an array".to_string())));
     /// ```
-    pub fn to_array(&self) -> Result<Vec<Value>, Error> {
+    pub fn to_array_owned(&self) -> Result<Vec<Value>, Error> {
         match self {
             Value::Array(vec) => Ok(vec.clone()),
             _other => Err(Error::StructureError("value is not an array".to_string())),

@@ -1,5 +1,5 @@
-use crate::{Error, Value};
 use crate::value_map::ValueMapHelper;
+use crate::{Error, Value};
 
 impl Value {
     pub fn get_value_at_path<'a>(&'a self, path: &'a str) -> Result<&'a Value, Error> {
@@ -14,7 +14,10 @@ impl Value {
         Ok(current_value)
     }
 
-    pub fn get_optional_value_at_path<'a>(&'a self, path: &'a str) -> Result<Option<&'a Value>, Error> {
+    pub fn get_optional_value_at_path<'a>(
+        &'a self,
+        path: &'a str,
+    ) -> Result<Option<&'a Value>, Error> {
         let mut split = path.split('.');
         let mut current_value = self;
         for path_component in split {
@@ -39,7 +42,10 @@ impl Value {
         Ok(current_value)
     }
 
-    pub fn get_optional_mut_value_at_path<'a>(&'a mut self, path: &'a str) -> Result<Option<&'a mut Value>, Error> {
+    pub fn get_optional_mut_value_at_path<'a>(
+        &'a mut self,
+        path: &'a str,
+    ) -> Result<Option<&'a mut Value>, Error> {
         let mut split = path.split('.');
         let mut current_value = self;
         for path_component in split {
@@ -62,7 +68,9 @@ impl Value {
             } else {
                 let map = current_value.to_map_mut()?;
                 current_value = map.get_key_mut(path_component).ok_or_else(|| {
-                    Error::StructureError(format!("unable to get property {path_component} in {path}"))
+                    Error::StructureError(format!(
+                        "unable to get property {path_component} in {path}"
+                    ))
                 })?;
             };
         }

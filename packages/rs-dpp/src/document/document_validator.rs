@@ -229,7 +229,10 @@ mod test {
         } = get_test_data();
 
         raw_document
-            .insert(String::from(property_name), Value::Text("string".to_string()))
+            .insert(
+                String::from(property_name),
+                Value::Text("string".to_string()),
+            )
             .unwrap();
 
         let result = document_validator
@@ -266,7 +269,10 @@ mod test {
 
         let too_short_id = [0u8; 31];
         raw_document
-            .insert(String::from(property_name), Value::Bytes(too_short_id.to_vec()))
+            .insert(
+                String::from(property_name),
+                Value::Bytes(too_short_id.to_vec()),
+            )
             .unwrap();
 
         let result = document_validator
@@ -335,7 +341,10 @@ mod test {
         } = get_test_data();
 
         raw_document
-            .insert(String::from("$protocolVersion"), Value::Text("1".to_string()))
+            .insert(
+                String::from("$protocolVersion"),
+                Value::Text("1".to_string()),
+            )
             .unwrap();
 
         let result = document_validator
@@ -386,7 +395,10 @@ mod test {
         } = get_test_data();
 
         raw_document
-            .insert("$type".to_string(), Value::Text("undefinedDocument".to_string()))
+            .insert(
+                "$type".to_string(),
+                Value::Text("undefinedDocument".to_string()),
+            )
             .unwrap();
 
         let result = document_validator
@@ -460,7 +472,9 @@ mod test {
             data_contract,
         } = get_test_data();
 
-        raw_document.insert(String::from("name"), Value::U64(1)).unwrap();
+        raw_document
+            .insert(String::from("name"), Value::U64(1))
+            .unwrap();
         let result = document_validator
             .validate_extended(&raw_document, &data_contract)
             .expect("the validator should return the validation result");

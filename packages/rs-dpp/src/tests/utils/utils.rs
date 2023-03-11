@@ -1,7 +1,8 @@
 use anyhow::Result;
 use dashcore::{Block, BlockHeader};
 use getrandom::getrandom;
-use serde_json::Value;
+use platform_value::Value;
+use serde_json::Value as JsonValue;
 
 use crate::prelude::Identifier;
 
@@ -48,16 +49,16 @@ where
 }
 
 /// Sets a key value pair in serde_json object, returns the modified object
-pub fn serde_set_ref<T, S>(object: &mut Value, key: T, value: S)
+pub fn platform_value_set_ref<T, S>(object: &mut Value, key: T, value: S)
 where
-    T: Into<String>,
-    S: Into<serde_json::Value>,
-    serde_json::Value: From<S>,
+    T: Into<Value>,
+    S: Into<Value>,
+    Value: From<S>,
 {
     let map = object
-        .as_object_mut()
+        .as_map_mut()
         .expect("Expected value to be an JSON object");
-    map.insert(key.into(), serde_json::Value::from(value));
+    map.push((key.into(), value.into()));
 }
 
 /// Removes a key value pair in serde_json object, returns the modified object

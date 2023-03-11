@@ -17,6 +17,7 @@ use crate::state_transition::{
 };
 use crate::util::json_value::JsonValueExt;
 use crate::{NonConsensusError, ProtocolError, SerdeParsingError};
+use platform_value::btreemap_removal_inner_value_extensions::BTreeValueRemoveInnerValueFromMapHelper;
 use platform_value::string_encoding::Encoding;
 
 mod property_names {

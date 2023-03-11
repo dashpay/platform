@@ -18,13 +18,13 @@ use platform_value::btreemap_extensions::BTreeValueMapHelper;
 use platform_value::btreemap_field_replacement::BTreeValueMapReplacementPathHelper;
 use platform_value::btreemap_path_extensions::BTreeValueMapPathHelper;
 use platform_value::btreemap_path_insertion_extensions::BTreeValueMapInsertionPathHelper;
+use platform_value::btreemap_removal_extensions::BTreeValueRemoveFromMapHelper;
 use platform_value::converter::serde_json::BTreeValueJsonConverter;
 use platform_value::{ReplacementType, Value};
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value as JsonValue};
 use std::collections::{BTreeMap, HashSet};
 use std::convert::TryInto;
-use platform_value::btreemap_removal_extensions::BTreeValueRemoveFromMapHelper;
 
 pub mod property_names {
     pub const PROTOCOL_VERSION: &str = "$protocolVersion";
@@ -456,9 +456,9 @@ impl TryInto<Value> for &ExtendedDocument {
 
 #[cfg(test)]
 mod test {
-    use std::convert::TryInto;
     use anyhow::Result;
     use serde_json::{json, Value as JsonValue};
+    use std::convert::TryInto;
 
     use crate::document::extended_document::{ExtendedDocument, IDENTIFIER_FIELDS};
 
@@ -527,8 +527,8 @@ mod test {
             ("$ownerId", Value::Identifier([0_u8; 32])),
             ("documents", documents),
         ])
-            .try_into()
-            .unwrap()
+        .try_into()
+        .unwrap()
     }
 
     #[test]
