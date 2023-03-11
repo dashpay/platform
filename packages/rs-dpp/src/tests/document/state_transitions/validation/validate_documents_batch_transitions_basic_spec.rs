@@ -19,13 +19,11 @@ use crate::{
             get_schema_error,
         },
     },
-    util::json_value::JsonValueExt,
     version::{ProtocolVersionValidator, LATEST_VERSION},
 };
 
 use jsonschema::error::ValidationErrorKind;
-use platform_value::Value;
-use serde_json::{json, Value as JsonValue};
+use platform_value::{platform_value, Value};
 use test_case::test_case;
 
 struct TestData {
@@ -122,7 +120,7 @@ async fn property_should_be_present(property: &str) {
     assert!(matches!(
         schema_error.kind(),
         ValidationErrorKind::Required {
-            property: JsonValue::String(missing_property)
+            property: Value::String(missing_property)
         } if missing_property == property
     ));
 }
@@ -136,7 +134,7 @@ async fn protocol_version_should_be_integer() {
         ..
     } = setup_test(Action::Create);
 
-    raw_state_transition["protocolVersion"] = json!("1");
+    raw_state_transition["protocolVersion"] = platform_value!("1");
 
     let result = validate_documents_batch_transition_basic(
         &protocol_version_validator,
@@ -161,7 +159,7 @@ async fn protocol_version_should_be_valid() {
         ..
     } = setup_test(Action::Create);
 
-    raw_state_transition["protocolVersion"] = json!("-1");
+    raw_state_transition["protocolVersion"] = platform_value!("-1");
 
     let result = validate_documents_batch_transition_basic(
         &protocol_version_validator,
@@ -186,7 +184,7 @@ async fn type_should_be_equal_1() {
         ..
     } = setup_test(Action::Create);
 
-    raw_state_transition["type"] = json!(666);
+    raw_state_transition["type"] = platform_value!(666);
 
     let result = validate_documents_batch_transition_basic(
         &protocol_version_validator,
@@ -214,7 +212,7 @@ async fn property_in_state_transition_should_be_byte_array(property_name: &str) 
     } = setup_test(Action::Create);
 
     let array = ["string"; 32];
-    raw_state_transition[property_name] = json!(array);
+    raw_state_transition[property_name] = platform_value!(array);
 
     let result = validate_documents_batch_transition_basic(
         &protocol_version_validator,
@@ -248,7 +246,7 @@ async fn owner_id_should_be_no_less_than_32_bytes() {
     } = setup_test(Action::Create);
 
     let array = [0u8; 31];
-    raw_state_transition["ownerId"] = json!(array);
+    raw_state_transition["ownerId"] = platform_value!(array);
 
     let result = validate_documents_batch_transition_basic(
         &protocol_version_validator,
@@ -275,7 +273,7 @@ async fn owner_id_should_be_no_longer_than_32_bytes() {
 
     let mut array = Vec::new();
     array.resize(33, 0u8);
-    raw_state_transition["ownerId"] = json!(array);
+    raw_state_transition["ownerId"] = platform_value!(array);
 
     let result = validate_documents_batch_transition_basic(
         &protocol_version_validator,
@@ -300,7 +298,7 @@ async fn transitions_should_be_an_array() {
         ..
     } = setup_test(Action::Create);
 
-    raw_state_transition["transitions"] = json!("not an array");
+    raw_state_transition["transitions"] = platform_value!("not an array");
 
     let result = validate_documents_batch_transition_basic(
         &protocol_version_validator,
@@ -325,7 +323,7 @@ async fn transitions_should_have_at_least_one_element() {
         ..
     } = setup_test(Action::Create);
 
-    raw_state_transition["transitions"] = json!([]);
+    raw_state_transition["transitions"] = platform_value!([]);
 
     let result = validate_documents_batch_transition_basic(
         &protocol_version_validator,
@@ -352,9 +350,9 @@ async fn transitions_should_have_no_more_than_10_elements() {
 
     let mut elements = vec![];
     for _ in 0..11 {
-        elements.push(json!({}))
+        elements.push(platform_value!({}))
     }
-    raw_state_transition["transitions"] = JsonValue::Array(elements);
+    raw_state_transition["transitions"] = Value::Array(elements);
 
     let result = validate_documents_batch_transition_basic(
         &protocol_version_validator,
@@ -379,8 +377,8 @@ async fn transitions_should_have_an_object_as_elements() {
         ..
     } = setup_test(Action::Create);
 
-    let elements = vec![json!(1)];
-    raw_state_transition["transitions"] = JsonValue::Array(elements);
+    let elements = vec![platform_value!(1)];
+    raw_state_transition["transitions"] = Value::Array(elements);
 
     let result = validate_documents_batch_transition_basic(
         &protocol_version_validator,
@@ -426,7 +424,7 @@ async fn property_in_document_transition_should_be_present(property: &str) {
     assert!(matches!(
         schema_error.kind(),
         ValidationErrorKind::Required {
-            property: JsonValue::String(missing_property)
+            property: Value::String(missing_property)
         } if missing_property == property
     ));
 }
@@ -472,7 +470,7 @@ async fn property_should_be_byte_array(property_name: &str) {
     } = setup_test(Action::Create);
 
     let array = ["string"; 32];
-    raw_state_transition["transitions"][0][property_name] = json!(array);
+    raw_state_transition["transitions"][0][property_name] = platform_value!(array);
 
     let result = validate_documents_batch_transition_basic(
         &protocol_version_validator,
@@ -505,7 +503,7 @@ async fn data_contract_id_should_be_byte_array() {
         ..
     } = setup_test(Action::Create);
 
-    raw_state_transition["transitions"][0]["$dataContractId"] = json!("something");
+    raw_state_transition["transitions"][0]["$dataContractId"] = platform_value!("something");
 
     let result = validate_documents_batch_transition_basic(
         &protocol_version_validator,
@@ -532,7 +530,7 @@ async fn property_should_be_no_less_than_32_bytes(property_name: &str) {
     } = setup_test(Action::Create);
 
     let array = [0u8; 31];
-    raw_state_transition["transitions"][0][property_name] = json!(array);
+    raw_state_transition["transitions"][0][property_name] = platform_value!(array);
 
     let result = validate_documents_batch_transition_basic(
         &protocol_version_validator,
@@ -564,7 +562,7 @@ async fn id_should_be_no_longer_than_32_bytes(property_name: &str) {
 
     let mut array = Vec::new();
     array.resize(33, 0u8);
-    raw_state_transition["transitions"][0][property_name] = json!(array);
+    raw_state_transition["transitions"][0][property_name] = platform_value!(array);
 
     let result = validate_documents_batch_transition_basic(
         &protocol_version_validator,
@@ -621,7 +619,7 @@ async fn type_should_be_defined_in_data_contract() {
         ..
     } = setup_test(Action::Create);
 
-    raw_state_transition["transitions"][0]["$type"] = json!("wrong");
+    raw_state_transition["transitions"][0]["$type"] = platform_value!("wrong");
 
     let result = validate_documents_batch_transition_basic(
         &protocol_version_validator,
@@ -645,7 +643,7 @@ async fn should_throw_invalid_document_transaction_action_error_if_action_is_not
         ..
     } = setup_test(Action::Create);
 
-    raw_state_transition["transitions"][0]["$action"] = json!(4);
+    raw_state_transition["transitions"][0]["$action"] = platform_value!(4);
 
     let result = validate_documents_batch_transition_basic(
         &protocol_version_validator,
@@ -669,7 +667,7 @@ async fn id_should_be_valid_generated_id() {
         ..
     } = setup_test(Action::Create);
 
-    raw_state_transition["transitions"][0]["$id"] = json!(generate_random_identifier());
+    raw_state_transition["transitions"][0]["$id"] = platform_value!(generate_random_identifier());
 
     let result = validate_documents_batch_transition_basic(
         &protocol_version_validator,
@@ -711,7 +709,7 @@ async fn property_in_replace_transition_should_be_present(property: &str) {
     assert!(matches!(
         schema_error.kind(),
         ValidationErrorKind::Required {
-            property: JsonValue::String(missing_property)
+            property: Value::String(missing_property)
         } if missing_property == property
     ));
 }
@@ -725,7 +723,7 @@ async fn revision_should_be_number() {
         ..
     } = setup_test(Action::Replace);
 
-    raw_state_transition["transitions"][0]["$revision"] = json!("1");
+    raw_state_transition["transitions"][0]["$revision"] = platform_value!("1");
 
     let result = validate_documents_batch_transition_basic(
         &protocol_version_validator,
@@ -750,7 +748,7 @@ async fn revision_should_not_be_fractional() {
         ..
     } = setup_test(Action::Replace);
 
-    raw_state_transition["transitions"][0]["$revision"] = json!(1.2);
+    raw_state_transition["transitions"][0]["$revision"] = platform_value!(1.2);
 
     let result = validate_documents_batch_transition_basic(
         &protocol_version_validator,
@@ -775,7 +773,7 @@ async fn revision_should_be_at_least_1() {
         ..
     } = setup_test(Action::Replace);
 
-    raw_state_transition["transitions"][0]["$revision"] = json!(0);
+    raw_state_transition["transitions"][0]["$revision"] = platform_value!(0);
 
     let result = validate_documents_batch_transition_basic(
         &protocol_version_validator,
@@ -817,7 +815,7 @@ async fn id_should_be_present_in_delete_transition() {
     assert!(matches!(
         schema_error.kind(),
         ValidationErrorKind::Required {
-            property: JsonValue::String(missing_property)
+            property: Value::String(missing_property)
         } if missing_property == "$id"
     ));
 }
@@ -844,7 +842,7 @@ async fn signature_should_be_not_less_than_65_bytes() {
     } = setup_test(Action::Create);
 
     let array = [0u8; 64].to_vec();
-    raw_state_transition["signature"] = json!(array);
+    raw_state_transition["signature"] = platform_value!(array);
 
     let result = validate_documents_batch_transition_basic(
         &protocol_version_validator,
@@ -870,7 +868,7 @@ async fn signature_should_be_not_longer_than_96_bytes() {
     } = setup_test(Action::Create);
 
     let array = [0u8; 97].to_vec();
-    raw_state_transition["signature"] = json!(array);
+    raw_state_transition["signature"] = platform_value!(array);
 
     let result = validate_documents_batch_transition_basic(
         &protocol_version_validator,
@@ -895,7 +893,7 @@ async fn signature_public_key_should_be_an_integer() {
         ..
     } = setup_test(Action::Delete);
 
-    raw_state_transition["signaturePublicKeyId"] = json!(1.4);
+    raw_state_transition["signaturePublicKeyId"] = platform_value!(1.4);
 
     let result = validate_documents_batch_transition_basic(
         &protocol_version_validator,

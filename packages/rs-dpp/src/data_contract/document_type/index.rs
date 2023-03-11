@@ -199,7 +199,7 @@ impl TryFrom<&[(Value, Value)]> for Index {
         let mut index_properties: Vec<IndexProperty> = Vec::new();
 
         for (key_value, value_value) in index_type_value_map {
-            let key = key_value.as_str().map_err(ProtocolError::ValueError)?;
+            let key = key_value.to_str().map_err(ProtocolError::ValueError)?;
 
             match key {
                 "name" => {

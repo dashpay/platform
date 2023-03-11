@@ -5,6 +5,7 @@ use itertools::Itertools;
 use lazy_static::lazy_static;
 use log::trace;
 use serde_json::Value as JsonValue;
+use platform_value::Value;
 
 use crate::consensus::basic::data_contract::{
     DuplicateIndexError, DuplicateIndexNameError, InvalidCompoundIndexError,
@@ -71,13 +72,13 @@ impl DataContractValidator {
 
     pub fn validate(
         &self,
-        raw_data_contract: &JsonValue,
+        raw_data_contract: &Value,
     ) -> Result<ValidationResult<()>, ProtocolError> {
         let mut result = ValidationResult::default();
 
         trace!("validating against data contract meta validator");
         result.merge(JsonSchemaValidator::validate_data_contract_schema(
-            raw_data_contract,
+            raw_data_contract.into(),
         ));
         if !result.is_valid() {
             return Ok(result);
@@ -114,7 +115,7 @@ impl DataContractValidator {
             return Ok(result);
         }
 
-        let data_contract = DataContract::from_json_raw_object(raw_data_contract.clone())?;
+        let data_contract = DataContract::from_raw_object(raw_data_contract.clone())?;
         let enriched_data_contract = enrich_data_contract_with_base_schema(
             &data_contract,
             &BASE_DOCUMENT_SCHEMA,

@@ -19,7 +19,12 @@ impl Value {
         Ok(Self::insert_in_map(map, key, value))
     }
 
-    pub fn remove_value(&mut self, key: &str) -> Result<Value, Error> {
+    pub fn insert(&mut self, key: String, value: Value) -> Result<(), Error> {
+        let map = self.as_map_mut_ref()?;
+        Ok(Self::insert_in_map_string_value(map, key, value))
+    }
+
+    pub fn remove(&mut self, key: &str) -> Result<Value, Error> {
         let map = self.as_map_mut_ref()?;
         map.remove_key(key)
     }
@@ -287,7 +292,7 @@ impl Value {
         key: &'a str,
     ) -> Result<Option<&'a str>, Error> {
         Self::get_optional_from_map(document_type, key)
-            .map(|v| v.as_str())
+            .map(|v| v.to_str())
             .transpose()
     }
 
@@ -296,7 +301,7 @@ impl Value {
         document_type: &'a [(Value, Value)],
         key: &'a str,
     ) -> Result<&'a str, Error> {
-        Self::get_from_map(document_type, key).map(|v| v.as_str())?
+        Self::get_from_map(document_type, key).map(|v| v.to_str())?
     }
 
     /// Retrieves the value of a key from a map if it's a hash256.
@@ -404,6 +409,31 @@ impl Value {
             *value = inserting_value;
         } else {
             map.push((Value::Text(inserting_key.to_string()), inserting_value))
+        }
+    }
+
+    /// Inserts into a map
+    /// If the element already existed it will replace it
+    pub fn insert_in_map_string_value(
+        map: &mut ValueMap,
+        inserting_key: String,
+        inserting_value: Value,
+    ) {
+        let mut found_value = None;
+        for (key, value) in map.iter_mut() {
+            if !key.is_text() {
+                continue;
+            }
+
+            if key.as_text().expect("confirmed as text") == inserting_key {
+                found_value = Some(value);
+                break;
+            }
+        }
+        if let Some(value) = found_value {
+            *value = inserting_value;
+        } else {
+            map.push((Value::Text(inserting_key), inserting_value))
         }
     }
 }

@@ -191,14 +191,3 @@ impl TryInto<Value> for &AssetLockProof {
         }
     }
 }
-
-impl TryFrom<&AssetLockProof> for Value {
-    type Error = ProtocolError;
-
-    fn try_from(asset_lock_proof: &AssetLockProof) -> Result<Self, Self::Error> {
-        match asset_lock_proof {
-            AssetLockProof::Instant(instant_proof) => platform_value::to_value(instant_proof),
-            AssetLockProof::Chain(chain_proof) => platform_value::to_value(chain_proof),
-        }
-    }
-}

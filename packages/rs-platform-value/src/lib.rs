@@ -22,6 +22,9 @@ mod ser;
 pub mod string_encoding;
 pub mod system_bytes;
 pub mod value_map;
+mod inner_value_at_path;
+mod macros;
+mod index;
 
 use crate::value_map::{ValueMap, ValueMapHelper};
 pub use error::Error;
@@ -550,6 +553,25 @@ impl Value {
         }
     }
 
+    /// If the `Value` is a `String`, returns a the associated `&str` data as `Ok`.
+    /// Returns `Err(Error::Structure("reason"))` otherwise.
+    ///
+    /// ```
+    /// # use platform_value::{Error, Value};
+    /// #
+    /// let value = Value::Text(String::from("hello"));
+    /// assert_eq!(value.to_str(), Ok("hello"));
+    ///
+    /// let value = Value::Bool(true);
+    /// assert_eq!(value.to_str(), Err(Error::StructureError("value is not a string".to_string())));
+    /// ```
+    pub fn to_str(&self) -> Result<&str, Error> {
+        match self {
+            Value::Text(s) => Ok(s),
+            _other => Err(Error::StructureError("value is not a string".to_string())),
+        }
+    }
+
     /// If the `Value` is a `String`, returns a reference to the associated `String` data as `Ok`.
     /// Returns `Err(Error::Structure("reason"))` otherwise.
     ///
@@ -557,15 +579,15 @@ impl Value {
     /// # use platform_value::{Error, Value};
     /// #
     /// let value = Value::Text(String::from("hello"));
-    /// assert_eq!(value.as_str(), Ok("hello"));
+    /// assert_eq!(value.as_str(), Some("hello"));
     ///
     /// let value = Value::Bool(true);
-    /// assert_eq!(value.as_str(), Err(Error::StructureError("value is not a string".to_string())));
+    /// assert_eq!(value.as_str(), None);
     /// ```
-    pub fn as_str(&self) -> Result<&str, Error> {
+    pub fn as_str(&self) -> Option<&str> {
         match self {
-            Value::Text(s) => Ok(s),
-            _other => Err(Error::StructureError("value is not a string".to_string())),
+            Value::Text(s) => Some(s),
+            _ => None,
         }
     }
 
@@ -872,6 +894,29 @@ impl Value {
         match *self {
             Value::Map(ref mut map) => Some(map),
             _ => None,
+        }
+    }
+
+    /// If the `Value` is a Map, returns a mutable reference to the associated Map Data.
+    /// Returns Err otherwise.
+    ///
+    /// ```
+    /// # use platform_value::Value;
+    /// #
+    /// let mut value = Value::Map(
+    ///     vec![
+    ///         (Value::Text(String::from("foo")), Value::Text(String::from("bar")))
+    ///     ]
+    /// );
+    ///
+    /// value.to_map_mut().unwrap().clear();
+    /// assert_eq!(value, Value::Map(vec![]));
+    /// assert_eq!(value.as_map().unwrap().len(), 0);
+    /// ```
+    pub fn to_map_mut(&mut self) -> Result<&mut Vec<(Value, Value)>, Error> {
+        match *self {
+            Value::Map(ref mut map) => Ok(map),
+            _ => Err(Error::StructureError("value is not a map".to_string())),
         }
     }
 

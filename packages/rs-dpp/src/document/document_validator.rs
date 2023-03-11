@@ -229,7 +229,7 @@ mod test {
         } = get_test_data();
 
         raw_document
-            .insert(String::from(property_name), json!("string"))
+            .insert(String::from(property_name), Value::Text("string".to_string()))
             .unwrap();
 
         let result = document_validator
@@ -266,7 +266,7 @@ mod test {
 
         let too_short_id = [0u8; 31];
         raw_document
-            .insert(String::from(property_name), json!(too_short_id))
+            .insert(String::from(property_name), Value::Bytes(too_short_id.to_vec()))
             .unwrap();
 
         let result = document_validator
@@ -303,7 +303,7 @@ mod test {
         raw_document
             .insert(
                 String::from(property_name),
-                serde_json::to_value(too_long_id).unwrap(),
+                Value::Bytes(too_long_id.to_vec()),
             )
             .unwrap();
 
@@ -335,7 +335,7 @@ mod test {
         } = get_test_data();
 
         raw_document
-            .insert(String::from("$protocolVersion"), json!("1"))
+            .insert(String::from("$protocolVersion"), Value::Text("1".to_string()))
             .unwrap();
 
         let result = document_validator
@@ -386,7 +386,7 @@ mod test {
         } = get_test_data();
 
         raw_document
-            .insert("$type".to_string(), json!("undefinedDocument"))
+            .insert("$type".to_string(), Value::Text("undefinedDocument".to_string()))
             .unwrap();
 
         let result = document_validator
@@ -405,7 +405,7 @@ mod test {
         } = get_test_data();
 
         raw_document
-            .insert(String::from("$revision"), json!("string"))
+            .insert(String::from("$revision"), Value::Text("string".to_string()))
             .unwrap();
 
         let result = document_validator
@@ -431,7 +431,7 @@ mod test {
         } = get_test_data();
 
         raw_document
-            .insert(String::from("$revision"), json!(1.1))
+            .insert(String::from("$revision"), Value::Float(1.1))
             .unwrap();
 
         let result = document_validator
@@ -460,7 +460,7 @@ mod test {
             data_contract,
         } = get_test_data();
 
-        raw_document.insert(String::from("name"), json!(1)).unwrap();
+        raw_document.insert(String::from("name"), Value::U64(1)).unwrap();
         let result = document_validator
             .validate_extended(&raw_document, &data_contract)
             .expect("the validator should return the validation result");
@@ -487,7 +487,7 @@ mod test {
         } = get_test_data();
 
         raw_document
-            .insert(String::from("undefined"), json!(1))
+            .insert(String::from("undefined"), Value::U64(1))
             .unwrap();
 
         let result = document_validator

@@ -183,12 +183,12 @@ impl DocumentType {
 
         // Do documents of this type keep history? (Overrides contract value)
         let documents_keep_history: bool =
-            Value::inner_optional_bool_value(document_type_value_map, "documentsKeepHistory")
+            Value::inner_optional_bool_value(document_type_value_map, "documentsKeepHistory").map_err(ProtocolError::ValueError)?
                 .unwrap_or(default_keeps_history);
 
         // Are documents of this type mutable? (Overrides contract value)
         let documents_mutable: bool =
-            Value::inner_optional_bool_value(document_type_value_map, "documentsMutable")
+            Value::inner_optional_bool_value(document_type_value_map, "documentsMutable").map_err(ProtocolError::ValueError)?
                 .unwrap_or(default_mutability);
 
         let index_values = Value::inner_optional_array_slice_value(

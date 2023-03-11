@@ -24,6 +24,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::{json, Value as JsonValue};
 use std::collections::{BTreeMap, HashSet};
 use std::convert::TryInto;
+use platform_value::btreemap_removal_extensions::BTreeValueRemoveFromMapHelper;
 
 pub mod property_names {
     pub const PROTOCOL_VERSION: &str = "$protocolVersion";
@@ -288,7 +289,7 @@ impl ExtendedDocument {
                 .map_err(|e| ProtocolError::EncodingError(format!("{}", e)))?;
 
         let mut document_map: BTreeMap<String, Value> =
-            Value::convert_from_cbor_map(document_cbor_map);
+            Value::convert_from_cbor_map(document_cbor_map)?;
 
         let data_contract_id = Identifier::new(
             document_map
@@ -455,6 +456,7 @@ impl TryInto<Value> for &ExtendedDocument {
 
 #[cfg(test)]
 mod test {
+    use std::convert::TryInto;
     use anyhow::Result;
     use serde_json::{json, Value as JsonValue};
 
@@ -475,31 +477,58 @@ mod test {
             .filter_level(log::LevelFilter::Debug)
             .try_init();
     }
-
-    fn data_contract_with_dynamic_properties() -> DataContract {
-        let data_contract = json!({
-            "protocolVersion" :0,
-            "$id" : vec![0_u8;32],
-            "$schema" : "schema",
-            "version" : 0,
-            "ownerId" : vec![0_u8;32],
-            "documents" : {
-                "test" : {
-                    "properties" : {
-                        "alphaIdentifier" :  {
-                            "type": "array",
-                            "byteArray": true,
-                            "contentMediaType": "application/x.dash.dpp.identifier",
-                        },
-                        "alphaBinary" :  {
-                            "type": "array",
-                            "byteArray": true,
-                        }
-                    }
-                }
-            }
-        });
-        DataContract::from_json_raw_object(data_contract).unwrap()
+    pub(crate) fn data_contract_with_dynamic_properties() -> DataContract {
+        // The following is equivalent to the data contract
+        // {
+        //     "protocolVersion" :0,
+        //     "$id" : vec![0_u8;32],
+        //     "$schema" : "schema",
+        //     "version" : 0,
+        //     "ownerId" : vec![0_u8;32],
+        //     "documents" : {
+        //         "test" : {
+        //             "properties" : {
+        //                 "alphaIdentifier" :  {
+        //                     "type": "array",
+        //                     "byteArray": true,
+        //                     "contentMediaType": "application/x.dash.dpp.identifier",
+        //                 },
+        //                 "alphaBinary" :  {
+        //                     "type": "array",
+        //                     "byteArray": true,
+        //                 }
+        //             }
+        //         }
+        //     }
+        // }
+        let test_document_properties_alpha_identifier = Value::from([
+            ("type", Value::Text("array".to_string())),
+            ("byteArray", Value::Bool(true)),
+        ]);
+        let test_document_properties_alpha_binary = Value::from([
+            ("type", Value::Text("array".to_string())),
+            ("byteArray", Value::Bool(true)),
+            (
+                "contentMediaType",
+                Value::Text("application/x.dash.dpp.identifier".to_string()),
+            ),
+        ]);
+        let test_document_properties = Value::from([
+            ("alphaIdentifier", test_document_properties_alpha_identifier),
+            ("alphaBinary", test_document_properties_alpha_binary),
+        ]);
+        let test_document = Value::from([("properties", test_document_properties)]);
+        let documents = Value::from([("test", test_document)]);
+        Value::from([
+            ("protocolVersion", Value::U32(1)),
+            ("$id", Value::Identifier([0_u8; 32])),
+            ("$schema", Value::Text("schema".to_string())),
+            ("version", Value::U32(0)),
+            ("$ownerId", Value::Identifier([0_u8; 32])),
+            ("documents", documents),
+        ])
+            .try_into()
+            .unwrap()
     }
 
     #[test]

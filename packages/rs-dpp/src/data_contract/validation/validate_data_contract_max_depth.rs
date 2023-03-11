@@ -1,18 +1,18 @@
 use std::collections::BTreeSet;
 
 use anyhow::bail;
-use serde_json::Value as JsonValue;
+use platform_value::Value;
 
 use crate::consensus::basic::data_contract::InvalidJsonSchemaRefError;
 use crate::{
-    consensus::basic::BasicError, util::json_value::JsonValueExt, validation::ValidationResult,
+    consensus::basic::BasicError, validation::ValidationResult,
 };
 
 const MAX_DEPTH: usize = 500;
 
-pub fn validate_data_contract_max_depth(raw_data_contract: &JsonValue) -> ValidationResult<()> {
+pub fn validate_data_contract_max_depth(data_contract_object: &Value) -> ValidationResult<()> {
     let mut result = ValidationResult::default();
-    let schema_depth = match calc_max_depth(raw_data_contract) {
+    let schema_depth = match calc_max_depth(data_contract_object) {
         Ok(depth) => depth,
         Err(err) => {
             result.add_error(err);
@@ -26,14 +26,14 @@ pub fn validate_data_contract_max_depth(raw_data_contract: &JsonValue) -> Valida
     result
 }
 
-fn calc_max_depth(json_value: &JsonValue) -> Result<usize, BasicError> {
-    let mut values_depth_queue: Vec<(&JsonValue, usize)> = vec![(json_value, 0)];
+fn calc_max_depth(value: &Value) -> Result<usize, BasicError> {
+    let mut values_depth_queue: Vec<(&Value, usize)> = vec![(value, 0)];
     let mut max_depth: usize = 0;
-    let mut visited: BTreeSet<*const JsonValue> = BTreeSet::new();
+    let mut visited: BTreeSet<*const Value> = BTreeSet::new();
 
     while let Some((value, depth)) = values_depth_queue.pop() {
         match value {
-            JsonValue::Object(map) => {
+            Value::Map(map) => {
                 let new_depth = depth + 1;
                 if max_depth < new_depth {
                     max_depth = new_depth
@@ -42,7 +42,7 @@ fn calc_max_depth(json_value: &JsonValue) -> Result<usize, BasicError> {
                     // handling the internal references
                     if property_name == "$ref" {
                         if let Some(uri) = v.as_str() {
-                            let resolved = resolve_uri(json_value, uri).map_err(|e| {
+                            let resolved = resolve_uri(value, uri).map_err(|e| {
                                 BasicError::InvalidJsonSchemaRefError(
                                     InvalidJsonSchemaRefError::new(format!(
                                         "invalid ref '{}': {}",
@@ -51,7 +51,7 @@ fn calc_max_depth(json_value: &JsonValue) -> Result<usize, BasicError> {
                                 )
                             })?;
 
-                            if visited.contains(&(resolved as *const JsonValue)) {
+                            if visited.contains(&(resolved as *const Value)) {
                                 return Err(BasicError::InvalidJsonSchemaRefError(
                                     InvalidJsonSchemaRefError::new(format!(
                                         "the ref '{}' contains cycles",
@@ -60,24 +60,24 @@ fn calc_max_depth(json_value: &JsonValue) -> Result<usize, BasicError> {
                                 ));
                             }
 
-                            visited.insert(resolved as *const JsonValue);
+                            visited.insert(resolved as *const Value);
                             values_depth_queue.push((resolved, new_depth));
                             continue;
                         }
                     }
 
-                    if v.is_object() || v.is_array() {
+                    if v.is_map() || v.is_array() {
                         values_depth_queue.push((v, new_depth))
                     }
                 }
             }
-            JsonValue::Array(array) => {
+            Value::Array(array) => {
                 let new_depth = depth + 1;
                 if max_depth < new_depth {
                     max_depth = new_depth
                 }
                 for v in array {
-                    if v.is_object() || v.is_array() {
+                    if v.is_map() || v.is_array() {
                         values_depth_queue.push((v, new_depth))
                     }
                 }
@@ -89,13 +89,13 @@ fn calc_max_depth(json_value: &JsonValue) -> Result<usize, BasicError> {
     Ok(max_depth)
 }
 
-fn resolve_uri<'a>(json: &'a JsonValue, uri: &str) -> Result<&'a JsonValue, anyhow::Error> {
+fn resolve_uri<'a>(value: &'a Value, uri: &str) -> Result<&'a Value, anyhow::Error> {
     if !uri.starts_with("#/") {
         bail!("only local references are allowed")
     }
 
     let string_path = uri.strip_prefix("#/").unwrap().replace('/', ".");
-    json.get_value(&string_path)
+    value.get_at_path(&string_path)
 }
 
 #[cfg(test)]
@@ -106,7 +106,7 @@ mod test {
 
     #[test]
     fn should_return_error_when_cycle_is_spotted() {
-        let schema = json!(
+        let schema : Value = json!(
              {
                 "$defs" : {
                     "object": {
@@ -130,7 +130,7 @@ mod test {
                 "required": ["foo"],
                 "additionalProperties": false,
               }
-        );
+        ).into();
         let result = calc_max_depth(&schema);
 
         let err = get_ref_error(result);
@@ -142,7 +142,7 @@ mod test {
 
     #[test]
     fn should_calculate_valid_depth_with_included_ref() {
-        let schema = json!(
+        let schema : Value = json!(
              {
                 "$defs" : {
                     "object": {
@@ -165,14 +165,14 @@ mod test {
                 "required": ["foo"],
                 "additionalProperties": false,
               }
-        );
+        ).into();
         let result = calc_max_depth(&schema);
         assert!(matches!(result, Ok(5)));
     }
 
     #[test]
     fn should_return_error_with_non_existing_ref() {
-        let schema = json!(
+        let schema : Value = json!(
              {
                 "type": "object",
                 "properties": {
@@ -188,21 +188,16 @@ mod test {
                 "required": ["foo"],
                 "additionalProperties": false,
               }
-        );
+        ).into();
         let result = calc_max_depth(&schema);
 
         let err = get_ref_error(result);
         assert!(err.ref_error().starts_with("invalid ref '#/$defs/object'"));
-        // println!("the result is {:#?}", result);
-        // assert!(matches!(
-        //     result,
-        //     Err(BasicError::InvalidJsonSchemaRefError { ref_error }) if ref_error.starts_with("invalid ref '#/$defs/object'")
-        // ));
     }
 
     #[test]
     fn should_return_error_with_external_ref() {
-        let schema = json!(
+        let schema : Value = json!(
              {
                 "type": "object",
                 "properties": {
@@ -218,7 +213,7 @@ mod test {
                 "required": ["foo"],
                 "additionalProperties": false,
               }
-        );
+        ).into();
         let result = calc_max_depth(&schema);
 
         let err = get_ref_error(result);
@@ -227,16 +222,11 @@ mod test {
             "invalid ref 'https://json-schema.org/some': only local references are allowed"
                 .to_string()
         );
-
-        // assert!(matches!(
-        //     result,
-        //     Err(BasicError::InvalidJsonSchemaRefError { ref_error }) if ref_error == "invalid ref 'https://json-schema.org/some': only local references are allowed"
-        // ));
     }
 
     #[test]
     fn should_return_error_with_empty_ref() {
-        let schema = json!(
+        let schema : Value = json!(
              {
                 "type": "object",
                 "properties": {
@@ -252,7 +242,7 @@ mod test {
                 "required": ["foo"],
                 "additionalProperties": false,
               }
-        );
+        ).into();
         let result = calc_max_depth(&schema);
 
         let err = get_ref_error(result);
@@ -264,7 +254,7 @@ mod test {
 
     #[test]
     fn should_calculate_valid_depth() {
-        let schema = json!(
+        let schema : Value = json!(
              {
                 "type": "object",
                 "properties": {
@@ -277,19 +267,19 @@ mod test {
                 "required": ["foo"],
                 "additionalProperties": false,
               }
-        );
+        ).into();
         assert!(matches!(calc_max_depth(&schema), Ok(3)));
     }
 
     #[test]
     fn should_calculate_valid_depth_for_empty_json() {
-        let schema = json!({});
+        let schema : Value = json!({}).into();
         assert!(matches!(calc_max_depth(&schema), Ok(1)));
     }
 
     #[test]
     fn should_calculate_valid_depth_for_schema_containing_array() {
-        let schema = json!({
+        let schema : Value = json!({
                 "type": "object",
                 "properties": {
                   "foo": { "type": "integer" },
@@ -300,7 +290,7 @@ mod test {
                 },
                 "required": [ { "alpha": "value_alpha"}, { "bravo" : { "a" :  "b"} }],
 
-        });
+        }).into();
         assert!(matches!(calc_max_depth(&schema), Ok(4)));
     }
 

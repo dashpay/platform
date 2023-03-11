@@ -1,5 +1,6 @@
 use crate::{Error, Value};
 use std::collections::BTreeMap;
+use std::collections::hash_map::Entry;
 
 pub type ValueMap = Vec<(Value, Value)>;
 
