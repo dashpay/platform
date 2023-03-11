@@ -1,9 +1,9 @@
+use std::collections::BTreeMap;
+use std::iter::Map;
 use std::{
     collections::{hash_map::Entry, HashMap},
     convert::{TryFrom, TryInto},
 };
-use std::collections::BTreeMap;
-use std::iter::Map;
 
 use crate::consensus::basic::document::{
     DuplicateDocumentTransitionsWithIdsError, DuplicateDocumentTransitionsWithIndicesError,
@@ -12,6 +12,7 @@ use crate::consensus::basic::document::{
 };
 use crate::consensus::basic::invalid_identifier_error::InvalidIdentifierError;
 use crate::data_contract::state_transition::errors::MissingDataContractIdError;
+use crate::document::state_transition::documents_batch_transition::property_names;
 use crate::document::validation::basic::find_duplicates_by_id::find_duplicates_by_id;
 use crate::{
     consensus::basic::BasicError,
@@ -32,11 +33,10 @@ use crate::{
 };
 use anyhow::anyhow;
 use lazy_static::lazy_static;
-use platform_value::Value;
-use serde_json::Value as JsonValue;
 use platform_value::btreemap_extensions::BTreeValueMapHelper;
 use platform_value::btreemap_path_extensions::BTreeValueMapPathHelper;
-use crate::document::state_transition::documents_batch_transition::property_names;
+use platform_value::Value;
+use serde_json::Value as JsonValue;
 
 use super::{
     find_duplicates_by_indices::find_duplicates_by_indices,
@@ -81,16 +81,25 @@ pub async fn validate_documents_batch_transition_basic(
             )
         })?;
 
-    let raw_state_transition_json = raw_state_transition.clone().try_into_validating_json().map_err(ProtocolError::ValueError)?;
+    let raw_state_transition_json = raw_state_transition
+        .clone()
+        .try_into_validating_json()
+        .map_err(ProtocolError::ValueError)?;
     let validation_result = validator.validate(&raw_state_transition_json)?;
     result.merge(validation_result);
     if !result.is_valid() {
         return Ok(result);
     }
 
-    let state_transition_map = raw_state_transition.to_btree_ref_map().map_err(ProtocolError::ValueError)?;
+    let state_transition_map = raw_state_transition
+        .to_btree_ref_map()
+        .map_err(ProtocolError::ValueError)?;
 
-    let owner_id = Identifier::from(state_transition_map.get_hash256_bytes(property_names::OWNER_ID).map_err(ProtocolError::ValueError)?);
+    let owner_id = Identifier::from(
+        state_transition_map
+            .get_hash256_bytes(property_names::OWNER_ID)
+            .map_err(ProtocolError::ValueError)?,
+    );
 
     let protocol_version = state_transition_map.get_integer(property_names::PROTOCOL_VERSION)?;
     let validation_result = protocol_version_validator.validate(protocol_version)?;
@@ -99,19 +108,23 @@ pub async fn validate_documents_batch_transition_basic(
         return Ok(result);
     }
 
-    let raw_document_transitions : Vec<BTreeMap<String, &Value>>  = state_transition_map
-        .get_inner_map_in_array(property_names::TRANSITIONS).map_err(ProtocolError::ValueError)?;
+    let raw_document_transitions: Vec<BTreeMap<String, &Value>> = state_transition_map
+        .get_inner_map_in_array(property_names::TRANSITIONS)
+        .map_err(ProtocolError::ValueError)?;
     let mut document_transitions_by_contracts: HashMap<Identifier, Vec<BTreeMap<String, &Value>>> =
         HashMap::new();
 
     for raw_document_transition in raw_document_transitions {
-        let data_contract_id_bytes = match raw_document_transition.get_optional_hash256_bytes(property_names::DATA_CONTRACT_ID)? {
-            None => { result.add_error(BasicError::MissingDataContractIdError(
+        let data_contract_id_bytes = match raw_document_transition
+            .get_optional_hash256_bytes(property_names::DATA_CONTRACT_ID)?
+        {
+            None => {
+                result.add_error(BasicError::MissingDataContractIdError(
                     MissingDataContractIdError::new(raw_document_transition.into()),
                 ));
                 continue;
             }
-            Some(id) => { id}
+            Some(id) => id,
         };
 
         let identifier = Identifier::from(data_contract_id_bytes);
@@ -209,7 +222,6 @@ fn validate_raw_transitions<'a>(
 ) -> Result<ValidationResult<()>, ProtocolError> {
     let mut result = ValidationResult::default();
 
-
     for raw_document_transition in raw_document_transitions.iter() {
         let Some(document_type) = raw_document_transition.get_optional_str("$type").map_err(ProtocolError::ValueError) else {
                 result.add_error(BasicError::MissingDocumentTransitionTypeError);
@@ -218,10 +230,7 @@ fn validate_raw_transitions<'a>(
 
         if !data_contract.is_document_defined(document_type) {
             result.add_error(BasicError::InvalidDocumentTypeError(
-                InvalidDocumentTypeError::new(
-                    document_type.to_string(),
-                    data_contract.id.clone(),
-                ),
+                InvalidDocumentTypeError::new(document_type.to_string(), data_contract.id.clone()),
             ));
             return Ok(result);
         }

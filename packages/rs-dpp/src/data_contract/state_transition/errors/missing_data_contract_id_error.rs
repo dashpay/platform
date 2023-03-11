@@ -1,8 +1,8 @@
 use crate::consensus::basic::BasicError;
-use thiserror::Error;
 use platform_value::Value;
+use thiserror::Error;
 
-#[derive(Error, Debug, Clone, PartialEq, Eq)]
+#[derive(Error, Debug, Clone)]
 #[error("$dataContractId is not present")]
 pub struct MissingDataContractIdError {
     raw_document_transition: Value,

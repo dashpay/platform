@@ -1,12 +1,12 @@
 use std::convert::{TryFrom, TryInto};
 
+use platform_value::btreemap_extensions::BTreeValueMapHelper;
+use platform_value::btreemap_path_extensions::BTreeValueMapPathHelper;
+use platform_value::Value;
 use serde::de::Error as DeError;
 use serde::ser::Error as SerError;
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use serde_json::Value as JsonValue;
-use platform_value::btreemap_extensions::BTreeValueMapHelper;
-use platform_value::btreemap_path_extensions::BTreeValueMapPathHelper;
-use platform_value::Value;
 
 use crate::identity::state_transition::asset_lock_proof::AssetLockProof;
 use crate::identity::state_transition::identity_public_key_transitions::IdentityPublicKeyCreateTransition;
@@ -16,8 +16,8 @@ use crate::state_transition::{
     StateTransition, StateTransitionConvert, StateTransitionLike, StateTransitionType,
 };
 use crate::util::json_value::JsonValueExt;
-use platform_value::string_encoding::Encoding;
 use crate::{NonConsensusError, ProtocolError, SerdeParsingError};
+use platform_value::string_encoding::Encoding;
 
 mod property_names {
     pub const PUBLIC_KEYS: &str = "publicKeys";
@@ -96,8 +96,13 @@ impl IdentityCreateTransition {
     pub fn new(raw_state_transition: Value) -> Result<Self, ProtocolError> {
         let mut state_transition = Self::default();
 
-        let mut transition_map = raw_state_transition.into_btree_map().map_err(ProtocolError::ValueError)?;
-        if let Some(keys_value_array) = transition_map.remove_optional_inner_value_array::<Vec<_>>(property_names::PUBLIC_KEYS).map_err(ProtocolError::ValueError)? {
+        let mut transition_map = raw_state_transition
+            .into_btree_map()
+            .map_err(ProtocolError::ValueError)?;
+        if let Some(keys_value_array) = transition_map
+            .remove_optional_inner_value_array::<Vec<_>>(property_names::PUBLIC_KEYS)
+            .map_err(ProtocolError::ValueError)?
+        {
             let keys = keys_value_array
                 .into_iter()
                 .map(|val| val.try_into())
@@ -109,7 +114,8 @@ impl IdentityCreateTransition {
             state_transition.set_asset_lock_proof(AssetLockProof::try_from(proof)?)?;
         }
 
-        state_transition.protocol_version = transition_map.get_integer(property_names::PROTOCOL_VERSION)?;
+        state_transition.protocol_version =
+            transition_map.get_integer(property_names::PROTOCOL_VERSION)?;
 
         Ok(state_transition)
     }

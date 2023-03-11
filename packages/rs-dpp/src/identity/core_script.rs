@@ -1,8 +1,8 @@
 use std::ops::Deref;
 
 use dashcore::Script as DashcoreScript;
-use serde::{Deserialize, Serialize};
 use platform_value::string_encoding::{self, Encoding};
+use serde::{Deserialize, Serialize};
 
 use crate::ProtocolError;
 

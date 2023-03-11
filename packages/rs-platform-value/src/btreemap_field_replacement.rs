@@ -16,11 +16,13 @@ pub enum ReplacementType {
 impl ReplacementType {
     pub fn replace_for_bytes(&self, bytes: Vec<u8>) -> Result<Value, Error> {
         match self {
-            ReplacementType::Identifier => Ok(Value::Identifier(
-                bytes
-                    .try_into()
-                    .map_err(|_| Error::ByteLengthNot32BytesError)?,
-            )),
+            ReplacementType::Identifier => {
+                Ok(Value::Identifier(bytes.try_into().map_err(|_| {
+                    Error::ByteLengthNot32BytesError(String::from(
+                        "Trying to replace into an identifier, but not 32 bytes long",
+                    ))
+                })?))
+            }
             ReplacementType::Bytes => Ok(Value::Bytes(bytes)),
             ReplacementType::TextBase58 => Ok(Value::Text(bs58::encode(bytes).into_string())),
             ReplacementType::TextBase64 => Ok(Value::Text(base64::encode(bytes))),
@@ -29,11 +31,7 @@ impl ReplacementType {
 
     pub fn replace_for_bytes_32(&self, bytes: [u8; 32]) -> Result<Value, Error> {
         match self {
-            ReplacementType::Identifier => Ok(Value::Identifier(
-                bytes
-                    .try_into()
-                    .map_err(|_| Error::ByteLengthNot32BytesError)?,
-            )),
+            ReplacementType::Identifier => Ok(Value::Identifier(bytes)),
             ReplacementType::Bytes => Ok(Value::Bytes32(bytes)),
             ReplacementType::TextBase58 => Ok(Value::Text(bs58::encode(bytes).into_string())),
             ReplacementType::TextBase64 => Ok(Value::Text(base64::encode(bytes))),

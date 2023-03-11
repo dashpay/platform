@@ -1,7 +1,7 @@
 use std::{convert::TryInto, sync::Arc};
 
-use serde_json::Value as JsonValue;
 use platform_value::Value;
+use serde_json::Value as JsonValue;
 
 use crate::consensus::basic::invalid_identifier_error::InvalidIdentifierError;
 use crate::data_contract::state_transition::errors::MissingDataContractIdError;
@@ -61,7 +61,10 @@ pub async fn fetch_and_validate_data_contract(
 ) -> Result<ValidationResult<DataContract>, ProtocolError> {
     let mut validation_result = ValidationResult::<DataContract>::default();
 
-    let id_bytes = if let Some(id_bytes) = raw_extended_document.get_optional_hash256(property_names::DATA_CONTRACT_ID).map_err(ProtocolError::ValueError)? {
+    let id_bytes = if let Some(id_bytes) = raw_extended_document
+        .get_optional_hash256(property_names::DATA_CONTRACT_ID)
+        .map_err(ProtocolError::ValueError)?
+    {
         id_bytes
     } else {
         validation_result.add_error(ConsensusError::BasicError(Box::new(

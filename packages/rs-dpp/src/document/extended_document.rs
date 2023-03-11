@@ -327,7 +327,11 @@ impl ExtendedDocument {
 
     pub fn into_map_value(self) -> Result<BTreeMap<String, Value>, ProtocolError> {
         let ExtendedDocument {
-            protocol_version, document_type_name, data_contract_id, document, ..
+            protocol_version,
+            document_type_name,
+            data_contract_id,
+            document,
+            ..
         } = self;
 
         let mut object = document.into_map_value()?;
@@ -460,9 +464,9 @@ mod test {
     use crate::document::Document;
     use crate::identifier::Identifier;
     use crate::tests::utils::*;
-    use platform_value::string_encoding::Encoding;
     use platform_value::btreemap_extensions::BTreeValueMapHelper;
     use platform_value::btreemap_path_extensions::BTreeValueMapPathHelper;
+    use platform_value::string_encoding::Encoding;
     use platform_value::Value;
     use pretty_assertions::assert_eq;
 

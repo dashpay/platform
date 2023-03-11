@@ -28,7 +28,7 @@ impl DataContract {
             })?;
 
         let data_contract_map: BTreeMap<String, Value> =
-            Value::convert_from_cbor_map(data_contract_cbor_map);
+            Value::convert_from_cbor_map(data_contract_cbor_map)?;
 
         let contract_id: [u8; 32] = data_contract_map.get_identifier(property_names::ID)?;
         let owner_id: [u8; 32] = data_contract_map.get_identifier(property_names::OWNER_ID)?;

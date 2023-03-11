@@ -1,12 +1,12 @@
 use platform_value::btreemap_extensions::BTreeValueMapHelper;
 use platform_value::btreemap_field_replacement::BTreeValueMapReplacementPathHelper;
+use platform_value::btreemap_removal_extensions::BTreeValueRemoveFromMapHelper;
 use platform_value::{ReplacementType, Value};
 use serde::{Deserialize, Serialize};
 use serde_json::Value as JsonValue;
 use std::collections::BTreeMap;
 use std::convert::TryInto;
 use std::string::ToString;
-use platform_value::btreemap_removal_extensions::BTreeValueRemoveFromMapHelper;
 
 use crate::document::{Document, ExtendedDocument};
 use crate::identity::TimestampMillis;
@@ -217,29 +217,57 @@ mod test {
     }
 
     fn data_contract_with_dynamic_properties() -> DataContract {
-        let data_contract = json!({
-            "protocolVersion" :0,
-            "$id" : vec![0_u8;32],
-            "$schema" : "schema",
-            "version" : 0,
-            "ownerId" : vec![0_u8;32],
-            "documents" : {
-                "test" : {
-                    "properties" : {
-                        "alphaIdentifier" :  {
-                            "type": "array",
-                            "byteArray": true,
-                            "contentMediaType": "application/x.dash.dpp.identifier",
-                        },
-                        "alphaBinary" :  {
-                            "type": "array",
-                            "byteArray": true,
-                        }
-                    }
-                }
-            }
-        });
-        DataContract::from_json_raw_object(data_contract).unwrap()
+        // The following is equivalent to the data contract
+        // {
+        //     "protocolVersion" :0,
+        //     "$id" : vec![0_u8;32],
+        //     "$schema" : "schema",
+        //     "version" : 0,
+        //     "ownerId" : vec![0_u8;32],
+        //     "documents" : {
+        //         "test" : {
+        //             "properties" : {
+        //                 "alphaIdentifier" :  {
+        //                     "type": "array",
+        //                     "byteArray": true,
+        //                     "contentMediaType": "application/x.dash.dpp.identifier",
+        //                 },
+        //                 "alphaBinary" :  {
+        //                     "type": "array",
+        //                     "byteArray": true,
+        //                 }
+        //             }
+        //         }
+        //     }
+        // }
+        let test_document_properties_alpha_identifier = Value::from([
+            ("type", Value::Text("array".to_string())),
+            ("byteArray", Value::Bool(true)),
+        ]);
+        let test_document_properties_alpha_binary = Value::from([
+            ("type", Value::Text("array".to_string())),
+            ("byteArray", Value::Bool(true)),
+            (
+                "contentMediaType",
+                Value::Text("application/x.dash.dpp.identifier".to_string()),
+            ),
+        ]);
+        let test_document_properties = Value::from([
+            ("alphaIdentifier", test_document_properties_alpha_identifier),
+            ("alphaBinary", test_document_properties_alpha_binary),
+        ]);
+        let test_document = Value::from([("properties", test_document_properties)]);
+        let documents = Value::from([("test", test_document)]);
+        Value::from([
+            ("protocolVersion", Value::U32(1)),
+            ("$id", Value::Identifier([0_u8; 32])),
+            ("$schema", Value::Text("schema".to_string())),
+            ("version", Value::U32(0)),
+            ("$ownerId", Value::Identifier([0_u8; 32])),
+            ("documents", documents),
+        ])
+        .try_into()
+        .unwrap()
     }
 
     #[test]

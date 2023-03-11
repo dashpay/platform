@@ -1,10 +1,10 @@
 use std::convert::{TryFrom, TryInto};
 
+use platform_value::Value;
 use serde::de::Error as DeError;
 use serde::ser::Error as SerError;
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use serde_json::Value as JsonValue;
-use platform_value::Value;
 
 use crate::identity::state_transition::asset_lock_proof::AssetLockProof;
 use crate::identity::state_transition::identity_create_transition::SerializationOptions;
@@ -14,9 +14,9 @@ use crate::state_transition::{
     StateTransition, StateTransitionConvert, StateTransitionLike, StateTransitionType,
 };
 use crate::util::json_value::JsonValueExt;
-use platform_value::string_encoding::Encoding;
 use crate::version::LATEST_VERSION;
 use crate::{NonConsensusError, ProtocolError, SerdeParsingError};
+use platform_value::string_encoding::Encoding;
 
 mod property_names {
     pub const ASSET_LOCK_PROOF: &str = "assetLockProof";
@@ -87,20 +87,24 @@ impl IdentityTopUpTransition {
         Self::from_raw_object(raw_state_transition)
     }
 
-    pub fn from_raw_object(
-        raw_object: Value,
-    ) -> Result<IdentityTopUpTransition, ProtocolError> {
+    pub fn from_raw_object(raw_object: Value) -> Result<IdentityTopUpTransition, ProtocolError> {
         let protocol_version = raw_object
-            .get_optional_integer(property_names::PROTOCOL_VERSION).map_err(ProtocolError::ValueError)?
+            .get_optional_integer(property_names::PROTOCOL_VERSION)
+            .map_err(ProtocolError::ValueError)?
             .unwrap_or(LATEST_VERSION);
         let signature = raw_object
-            .get_optional_bytes(property_names::SIGNATURE).map_err(ProtocolError::ValueError)?
+            .get_optional_bytes(property_names::SIGNATURE)
+            .map_err(ProtocolError::ValueError)?
             .unwrap_or_default();
-        let identity_id =
-            Identifier::from(raw_object.get_hash256(property_names::IDENTITY_ID).map_err(ProtocolError::ValueError)?);
+        let identity_id = Identifier::from(
+            raw_object
+                .get_hash256(property_names::IDENTITY_ID)
+                .map_err(ProtocolError::ValueError)?,
+        );
 
         let raw_asset_lock_proof = raw_object
-            .get_value(property_names::ASSET_LOCK_PROOF).map_err(ProtocolError::ValueError)?;
+            .get_value(property_names::ASSET_LOCK_PROOF)
+            .map_err(ProtocolError::ValueError)?;
         let asset_lock_proof = AssetLockProof::try_from(raw_asset_lock_proof)?;
 
         Ok(IdentityTopUpTransition {

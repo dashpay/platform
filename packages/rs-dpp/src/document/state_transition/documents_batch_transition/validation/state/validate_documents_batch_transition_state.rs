@@ -3,8 +3,8 @@ use std::convert::TryInto;
 use futures::future::join_all;
 use itertools::Itertools;
 
-use crate::document::ExtendedDocument;
 use crate::data_contract::errors::DataContractNotPresentError;
+use crate::document::ExtendedDocument;
 use crate::{
     block_time_window::validate_time_in_block_time_window::validate_time_in_block_time_window,
     consensus::ConsensusError,

@@ -21,8 +21,8 @@ use crate::{
     util::json_value::JsonValueExt,
     ProtocolError,
 };
-use serde_json::Value as JsonValue;
 use platform_value::Value;
+use serde_json::Value as JsonValue;
 
 use super::{
     state_transition_execution_context::StateTransitionExecutionContext, StateTransition,
@@ -119,9 +119,10 @@ async fn fetch_data_contracts_for_document_transition(
 pub fn try_get_transition_type(
     raw_state_transition: &Value,
 ) -> Result<StateTransitionType, ProtocolError> {
-    let transition_type : u8 = raw_state_transition
+    let transition_type: u8 = raw_state_transition
         .get_optional_integer("type")
-        .map_err(ProtocolError::ValueError)?.ok_or(missing_state_transition_error())?;
+        .map_err(ProtocolError::ValueError)?
+        .ok_or(missing_state_transition_error())?;
     StateTransitionType::try_from(transition_type).map_err(|_| {
         ProtocolError::InvalidStateTransitionTypeError(InvalidStateTransitionTypeError::new(
             transition_type,

@@ -1,6 +1,6 @@
+use crate::Error;
 use base64;
 use bs58;
-use crate::Error;
 
 pub enum Encoding {
     Base58,
@@ -12,8 +12,10 @@ pub fn decode(encoded_value: &str, encoding: Encoding) -> Result<Vec<u8>, Error>
         Encoding::Base58 => Ok(bs58::decode(encoded_value)
             .into_vec()
             .map_err(|e| Error::StringDecodingError(e.to_string()))?),
-        Encoding::Base64 => Ok(base64::decode(encoded_value)
-            .map_err(|e| Error::StringDecodingError(e.to_string()))?),
+        Encoding::Base64 => {
+            Ok(base64::decode(encoded_value)
+                .map_err(|e| Error::StringDecodingError(e.to_string()))?)
+        }
     }
 }
 

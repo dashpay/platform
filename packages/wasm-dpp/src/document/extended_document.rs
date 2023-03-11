@@ -17,7 +17,7 @@ use crate::document::BinaryType;
 use crate::errors::RustConversionError;
 use crate::identifier::{identifier_from_js_value, IdentifierWrapper};
 use crate::lodash::lodash_set;
-use crate::utils::{with_serde_to_platform_value, ToSerdeJSONExt, WithJsError, Inner};
+use crate::utils::{with_serde_to_platform_value, Inner, ToSerdeJSONExt, WithJsError};
 use crate::{with_js_error, ConversionOptions};
 use crate::{DataContractWasm, MetadataWasm};
 

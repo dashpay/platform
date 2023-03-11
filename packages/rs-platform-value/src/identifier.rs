@@ -5,9 +5,8 @@ use std::convert::{TryFrom, TryInto};
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use serde_json::Value as JsonValue;
 
-use crate::errors::ProtocolError;
-use crate::util::string_encoding;
-use crate::util::string_encoding::Encoding;
+use crate::string_encoding::Encoding;
+use crate::{string_encoding, Error};
 
 pub const MEDIA_TYPE: &str = "application/x.dash.dpp.identifier";
 
@@ -47,10 +46,7 @@ impl Identifier {
         self.buffer.as_slice()
     }
 
-    pub fn from_string(
-        encoded_value: &str,
-        encoding: Encoding,
-    ) -> Result<Identifier, ProtocolError> {
+    pub fn from_string(encoded_value: &str, encoding: Encoding) -> Result<Identifier, Error> {
         let vec = string_encoding::decode(encoded_value, encoding)?;
 
         Identifier::from_bytes(&vec)
@@ -59,16 +55,16 @@ impl Identifier {
     pub fn from_string_with_encoding_string(
         encoded_value: &str,
         encoding_string: Option<&str>,
-    ) -> Result<Identifier, ProtocolError> {
+    ) -> Result<Identifier, Error> {
         let encoding = encoding_string_to_encoding(encoding_string);
 
         Identifier::from_string(encoded_value, encoding)
     }
 
     // TODO the constructor "From" shouldn't use the reference to collection
-    pub fn from_bytes(bytes: &[u8]) -> Result<Identifier, ProtocolError> {
+    pub fn from_bytes(bytes: &[u8]) -> Result<Identifier, Error> {
         if bytes.len() != 32 {
-            return Err(ProtocolError::IdentifierError(String::from(
+            return Err(Error::ByteLengthNot32BytesError(String::from(
                 "Identifier must be 32 bytes long",
             )));
         }
@@ -106,7 +102,7 @@ impl Identifier {
 }
 
 impl TryFrom<&[u8]> for Identifier {
-    type Error = ProtocolError;
+    type Error = Error;
 
     fn try_from(bytes: &[u8]) -> Result<Self, Self::Error> {
         Self::from_bytes(bytes)
@@ -114,7 +110,7 @@ impl TryFrom<&[u8]> for Identifier {
 }
 
 impl TryFrom<Vec<u8>> for Identifier {
-    type Error = ProtocolError;
+    type Error = Error;
 
     fn try_from(bytes: Vec<u8>) -> Result<Self, Self::Error> {
         Self::from_bytes(&bytes)
@@ -122,7 +118,7 @@ impl TryFrom<Vec<u8>> for Identifier {
 }
 
 impl TryFrom<String> for Identifier {
-    type Error = ProtocolError;
+    type Error = Error;
 
     fn try_from(data: String) -> Result<Self, Self::Error> {
         Self::from_string(&data, Encoding::Base58)

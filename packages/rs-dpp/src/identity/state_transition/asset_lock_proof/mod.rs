@@ -143,13 +143,28 @@ impl TryFrom<&Value> for AssetLockProof {
 
     fn try_from(value: &Value) -> Result<Self, Self::Error> {
         let proof_type_int: u8 = value
-            .get_integer("type").map_err(ProtocolError::ValueError)?;
+            .get_integer("type")
+            .map_err(ProtocolError::ValueError)?;
         let proof_type = AssetLockProofType::try_from(proof_type_int)?;
 
         match proof_type {
-            AssetLockProofType::Instant => {
-                Ok(Self::Instant(value.try_into()?))
-            }
+            AssetLockProofType::Instant => Ok(Self::Instant(value.clone().try_into()?)),
+            AssetLockProofType::Chain => Ok(Self::Chain(value.clone().try_into()?)),
+        }
+    }
+}
+
+impl TryFrom<Value> for AssetLockProof {
+    type Error = ProtocolError;
+
+    fn try_from(value: Value) -> Result<Self, Self::Error> {
+        let proof_type_int: u8 = value
+            .get_integer("type")
+            .map_err(ProtocolError::ValueError)?;
+        let proof_type = AssetLockProofType::try_from(proof_type_int)?;
+
+        match proof_type {
+            AssetLockProofType::Instant => Ok(Self::Instant(value.try_into()?)),
             AssetLockProofType::Chain => Ok(Self::Chain(value.try_into()?)),
         }
     }
@@ -160,8 +175,8 @@ impl TryInto<Value> for AssetLockProof {
 
     fn try_into(self) -> Result<Value, Self::Error> {
         match self {
-            AssetLockProof::Instant(instant_proof) => serde_json::to_value(instant_proof),
-            AssetLockProof::Chain(chain_proof) => serde_json::to_value(chain_proof),
+            AssetLockProof::Instant(instant_proof) => platform_value::to_value(instant_proof),
+            AssetLockProof::Chain(chain_proof) => platform_value::to_value(chain_proof),
         }
     }
 }
@@ -171,19 +186,19 @@ impl TryInto<Value> for &AssetLockProof {
 
     fn try_into(self) -> Result<Value, Self::Error> {
         match self {
-            AssetLockProof::Instant(instant_proof) => serde_json::to_value(instant_proof),
-            AssetLockProof::Chain(chain_proof) => serde_json::to_value(chain_proof),
+            AssetLockProof::Instant(instant_proof) => platform_value::to_value(instant_proof),
+            AssetLockProof::Chain(chain_proof) => platform_value::to_value(chain_proof),
         }
     }
 }
 
-impl TryFrom<&AssetLockProof> for JsonValue {
-    type Error = serde_json::Error;
+impl TryFrom<&AssetLockProof> for Value {
+    type Error = ProtocolError;
 
     fn try_from(asset_lock_proof: &AssetLockProof) -> Result<Self, Self::Error> {
         match asset_lock_proof {
-            AssetLockProof::Instant(instant_proof) => serde_json::to_value(instant_proof),
-            AssetLockProof::Chain(chain_proof) => serde_json::to_value(chain_proof),
+            AssetLockProof::Instant(instant_proof) => platform_value::to_value(instant_proof),
+            AssetLockProof::Chain(chain_proof) => platform_value::to_value(chain_proof),
         }
     }
 }

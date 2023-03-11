@@ -10,9 +10,7 @@ use crate::{
     identifier::{self, Identifier},
 };
 
-use super::{
-    json_path::{JsonPath, JsonPathLiteral, JsonPathStep},
-};
+use super::json_path::{JsonPath, JsonPathLiteral, JsonPathStep};
 
 mod insert_with_path;
 use insert_with_path::*;

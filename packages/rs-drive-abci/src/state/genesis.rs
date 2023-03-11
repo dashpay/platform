@@ -43,7 +43,6 @@ use drive::dpp::identity::{
 };
 
 use drive::dpp::system_data_contracts::{load_system_data_contract, SystemDataContract};
-use platform_value::string_encoding::{encode, Encoding};
 use drive::drive::batch::{
     ContractOperationType, DocumentOperationType, DriveOperationType, IdentityOperationType,
 };
@@ -51,6 +50,7 @@ use drive::drive::block_info::BlockInfo;
 use drive::drive::defaults::PROTOCOL_VERSION;
 use drive::drive::object_size_info::{DocumentAndContractInfo, DocumentInfo, OwnedDocumentInfo};
 use drive::query::TransactionArg;
+use platform_value::string_encoding::{encode, Encoding};
 use serde_json::json;
 use std::borrow::Cow;
 use std::collections::{BTreeMap, BTreeSet};

@@ -1,11 +1,10 @@
 use dashcore::{hashes::hex::FromHex, PubkeyHash, Script};
-use serde_json::{json, Value};
 use platform_value::string_encoding::{encode, Encoding};
+use serde_json::{json, Value};
 
 use crate::{
     identity::state_transition::identity_credit_withdrawal_transition::Pooling,
-    state_transition::StateTransitionType,
-    version,
+    state_transition::StateTransitionType, version,
 };
 
 pub fn identity_credit_withdrawal_transition_fixture_raw_object() -> Value {

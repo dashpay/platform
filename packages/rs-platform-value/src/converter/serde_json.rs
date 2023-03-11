@@ -1,7 +1,7 @@
+use crate::value_map::ValueMap;
 use crate::{Error, Value};
 use serde_json::{Map, Number, Value as JsonValue};
 use std::collections::BTreeMap;
-use crate::value_map::ValueMap;
 
 impl Value {
     pub fn convert_from_serde_json_map<I, R>(map: I) -> R
@@ -18,19 +18,19 @@ impl Value {
         Ok(match self {
             Value::U128(i) => {
                 if i > u64::MAX as u128 {
-                    return Err(Error::IntegerSizeError)
+                    return Err(Error::IntegerSizeError);
                 }
                 JsonValue::Number((i as u64).into())
-            },
+            }
             Value::I128(i) => {
                 if i > i64::MAX as i128 {
-                    return Err(Error::IntegerSizeError)
+                    return Err(Error::IntegerSizeError);
                 }
                 if i < i64::MIN as i128 {
-                    return Err(Error::IntegerSizeError)
+                    return Err(Error::IntegerSizeError);
                 }
                 JsonValue::Number((i as i64).into())
-            },
+            }
             Value::U64(i) => JsonValue::Number(i.into()),
             Value::I64(i) => JsonValue::Number(i.into()),
             Value::U32(i) => JsonValue::Number(i.into()),
@@ -82,26 +82,29 @@ impl Value {
     }
 
     pub fn try_into_validating_btree_map_json(self) -> Result<BTreeMap<String, JsonValue>, Error> {
-        self.into_btree_map()?.into_iter().map(|(key, value)| Ok((key, value.try_into_validating_json()?))).collect()
+        self.into_btree_map()?
+            .into_iter()
+            .map(|(key, value)| Ok((key, value.try_into_validating_json()?)))
+            .collect()
     }
 
     pub fn try_to_validating_json(&self) -> Result<JsonValue, Error> {
         Ok(match self {
             Value::U128(i) => {
                 if *i > u64::MAX as u128 {
-                    return Err(Error::IntegerSizeError)
+                    return Err(Error::IntegerSizeError);
                 }
                 JsonValue::Number((*i as u64).into())
-            },
+            }
             Value::I128(i) => {
                 if *i > i64::MAX as i128 {
-                    return Err(Error::IntegerSizeError)
+                    return Err(Error::IntegerSizeError);
                 }
                 if *i < i64::MIN as i128 {
-                    return Err(Error::IntegerSizeError)
+                    return Err(Error::IntegerSizeError);
                 }
                 JsonValue::Number((*i as i64).into())
-            },
+            }
             Value::U64(i) => JsonValue::Number((*i).into()),
             Value::I64(i) => JsonValue::Number((*i).into()),
             Value::U32(i) => JsonValue::Number((*i).into()),
@@ -217,11 +220,11 @@ impl From<&JsonValue> for Value {
                 let u8_max = u8::MAX as u64;
                 if !array.is_empty()
                     && array.iter().all(|v| {
-                    let Some(int) = v.as_u64() else {
+                        let Some(int) = v.as_u64() else {
                         return false;
                     };
-                    int.le(&u8_max)
-                })
+                        int.le(&u8_max)
+                    })
                 {
                     //this is an array of bytes
                     Self::Bytes(
@@ -234,9 +237,11 @@ impl From<&JsonValue> for Value {
                     Self::Array(array.into_iter().map(|v| v.into()).collect())
                 }
             }
-            JsonValue::Object(map) => {
-                Self::Map(map.into_iter().map(|(k, v)| (k.clone().into(), v.into())).collect())
-            }
+            JsonValue::Object(map) => Self::Map(
+                map.into_iter()
+                    .map(|(k, v)| (k.clone().into(), v.into()))
+                    .collect(),
+            ),
         }
     }
 }
@@ -363,21 +368,26 @@ impl BTreeValueRefJsonConverter for BTreeMap<String, &Value> {
 
 impl From<BTreeMap<String, JsonValue>> for Value {
     fn from(value: BTreeMap<String, JsonValue>) -> Self {
-        let map : ValueMap = value.into_iter().map(|(key, json_value)|{
-            let value : Value = json_value.into();
-            (Value::Text(key), value)
-        } ).collect();
+        let map: ValueMap = value
+            .into_iter()
+            .map(|(key, json_value)| {
+                let value: Value = json_value.into();
+                (Value::Text(key), value)
+            })
+            .collect();
         Value::Map(map)
     }
 }
 
-
 impl From<&BTreeMap<String, JsonValue>> for Value {
     fn from(value: &BTreeMap<String, JsonValue>) -> Self {
-        let map : ValueMap = value.iter().map(|(key, json_value)|{
-            let value : Value = json_value.into();
-            (Value::Text(key.clone()), value)
-        } ).collect();
+        let map: ValueMap = value
+            .iter()
+            .map(|(key, json_value)| {
+                let value: Value = json_value.into();
+                (Value::Text(key.clone()), value)
+            })
+            .collect();
         Value::Map(map)
     }
 }

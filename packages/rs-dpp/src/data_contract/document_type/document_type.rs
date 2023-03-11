@@ -422,12 +422,14 @@ fn insert_values(
                 );
             }
             "object" => {
-                if let Some(properties_as_value) = inner_properties
-                    .get(property_names::PROPERTIES) {
-                    let properties = properties_as_value.as_map()
-                        .ok_or(ProtocolError::StructureError(
-                            StructureError::ValueWrongType("properties must be a map"),
-                        ))?;
+                if let Some(properties_as_value) = inner_properties.get(property_names::PROPERTIES)
+                {
+                    let properties =
+                        properties_as_value
+                            .as_map()
+                            .ok_or(ProtocolError::StructureError(
+                                StructureError::ValueWrongType("properties must be a map"),
+                            ))?;
 
                     for (object_property_key, object_property_value) in properties.iter() {
                         let object_property_string = object_property_key

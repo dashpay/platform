@@ -9,8 +9,8 @@ use crate::identifier::IdentifierWrapper;
 
 use crate::{
     buffer::Buffer, errors::RustConversionError,
-    identity::IdentityPublicKeyWasm,
-    identity::state_transition::identity_public_key_transitions::IdentityPublicKeyCreateTransitionWasm, state_transition::StateTransitionExecutionContextWasm,
+    identity::state_transition::identity_public_key_transitions::IdentityPublicKeyCreateTransitionWasm,
+    identity::IdentityPublicKeyWasm, state_transition::StateTransitionExecutionContextWasm,
     with_js_error,
 };
 

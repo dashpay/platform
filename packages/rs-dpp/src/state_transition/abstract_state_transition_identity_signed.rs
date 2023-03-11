@@ -189,7 +189,6 @@ mod test {
 
     use crate::document::DocumentsBatchTransition;
     use crate::state_transition::state_transition_execution_context::StateTransitionExecutionContext;
-    use platform_value::string_encoding::Encoding;
     use crate::{
         assert_error_contains,
         identity::{KeyID, SecurityLevel},
@@ -199,6 +198,7 @@ mod test {
         util::hash::ripemd160_sha256,
         NativeBlsModule,
     };
+    use platform_value::string_encoding::Encoding;
 
     use super::StateTransitionIdentitySigned;
     use super::*;

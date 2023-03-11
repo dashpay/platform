@@ -2,11 +2,12 @@ use std::sync::Arc;
 
 use anyhow::anyhow;
 use lazy_static::lazy_static;
-use serde_json::Value as JsonValue;
 use platform_value::Value;
+use serde_json::Value as JsonValue;
 
-use crate::data_contract::document_type::DocumentType;
 use crate::consensus::basic::document::InvalidDocumentTypeError;
+use crate::data_contract::document_type::DocumentType;
+use crate::data_contract::DriveContractExt;
 use crate::{
     consensus::basic::BasicError,
     data_contract::{
@@ -18,7 +19,6 @@ use crate::{
     version::ProtocolVersionValidator,
     ProtocolError,
 };
-use crate::data_contract::DriveContractExt;
 
 const PROPERTY_PROTOCOL_VERSION: &str = "$protocolVersion";
 const PROPERTY_DOCUMENT_TYPE: &str = "$type";
@@ -115,7 +115,9 @@ impl DocumentValidator {
         }
         .map_err(|e| anyhow!("unable to process the contract: {}", e))?;
 
-        let json_value = raw_document.try_into_validating_json().map_err(ProtocolError::ValueError)?;
+        let json_value = raw_document
+            .try_into_validating_json()
+            .map_err(ProtocolError::ValueError)?;
         let json_schema_validation_result = json_schema_validator.validate(&json_value)?;
         result.merge(json_schema_validation_result);
 
@@ -123,7 +125,9 @@ impl DocumentValidator {
             return Ok(result);
         }
 
-        let protocol_version = raw_document.get_integer(PROPERTY_PROTOCOL_VERSION).map_err(ProtocolError::ValueError)?;
+        let protocol_version = raw_document
+            .get_integer(PROPERTY_PROTOCOL_VERSION)
+            .map_err(ProtocolError::ValueError)?;
         result.merge(self.protocol_version_validator.validate(protocol_version)?);
 
         Ok(result)
@@ -138,10 +142,10 @@ mod test {
         error::{TypeKind, ValidationErrorKind},
         primitive_type::PrimitiveType,
     };
+    use platform_value::Value;
     use serde_json::json;
     use serde_json::Value as JsonValue;
     use test_case::test_case;
-    use platform_value::Value;
 
     use crate::tests::fixtures::get_extended_documents_fixture;
     use crate::{

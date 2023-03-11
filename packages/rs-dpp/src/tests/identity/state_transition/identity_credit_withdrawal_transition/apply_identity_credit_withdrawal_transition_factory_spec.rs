@@ -10,7 +10,6 @@ mod apply_identity_credit_withdrawal_transition_factory {
     use crate::document::ExtendedDocument;
     use crate::{
         contracts::withdrawals_contract,
-        document::Document,
         identity::state_transition::identity_credit_withdrawal_transition::{
             apply_identity_credit_withdrawal_transition_factory::ApplyIdentityCreditWithdrawalTransition,
             IdentityCreditWithdrawalTransition, Pooling,

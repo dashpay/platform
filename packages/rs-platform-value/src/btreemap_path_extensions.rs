@@ -81,10 +81,7 @@ pub trait BTreeValueMapPathHelper {
         &self,
         path: &str,
     ) -> Result<I, Error>;
-    fn get_optional_hash256_bytes_at_path(
-        &self,
-        path: &str,
-    ) -> Result<Option<[u8; 32]>, Error>;
+    fn get_optional_hash256_bytes_at_path(&self, path: &str) -> Result<Option<[u8; 32]>, Error>;
     fn get_hash256_bytes_at_path(&self, path: &str) -> Result<[u8; 32], Error>;
     fn get_optional_identifier_bytes_at_path(&self, path: &str) -> Result<Option<Vec<u8>>, Error>;
     fn get_identifier_bytes_at_path(&self, path: &str) -> Result<Vec<u8>, Error>;
@@ -463,10 +460,7 @@ where
             })
     }
 
-    fn get_optional_hash256_bytes_at_path(
-        &self,
-        path: &str,
-    ) -> Result<Option<[u8; 32]>, Error> {
+    fn get_optional_hash256_bytes_at_path(&self, path: &str) -> Result<Option<[u8; 32]>, Error> {
         self.get_optional_at_path(path)?
             .map(|v| v.borrow().to_hash256())
             .transpose()
@@ -474,9 +468,7 @@ where
 
     fn get_hash256_bytes_at_path(&self, path: &str) -> Result<[u8; 32], Error> {
         self.get_optional_hash256_bytes_at_path(path)?
-            .ok_or_else(|| {
-                Error::StructureError(format!("unable to get hash256 property {path}"))
-            })
+            .ok_or_else(|| Error::StructureError(format!("unable to get hash256 property {path}")))
     }
 
     fn get_optional_bytes_at_path(&self, path: &str) -> Result<Option<Vec<u8>>, Error> {

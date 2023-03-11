@@ -1,4 +1,3 @@
-
 use crate::decode_protocol_entity_factory::DecodeProtocolEntity;
 use crate::identifier::Identifier;
 use crate::identity::identity_public_key::factory::KeyCount;
@@ -16,7 +15,7 @@ use crate::{BlsModule, ProtocolError};
 use dashcore::{InstantLock, Transaction};
 use rand::rngs::StdRng;
 use rand::{Rng, SeedableRng};
-use serde_json::{Value as JsonValue};
+use serde_json::Value as JsonValue;
 use std::collections::BTreeMap;
 use std::convert::TryInto;
 

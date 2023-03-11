@@ -1,8 +1,6 @@
-use dpp::{
-    dashcore::{
-        blockdata::{script::Script, transaction::txout::TxOut},
-        consensus::encode::serialize,
-    },
+use dpp::dashcore::{
+    blockdata::{script::Script, transaction::txout::TxOut},
+    consensus::encode::serialize,
 };
 
 use serde::{Deserialize, Serialize};

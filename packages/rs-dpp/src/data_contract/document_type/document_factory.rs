@@ -2,12 +2,12 @@ use crate::data_contract::document_type::property_names::{CREATED_AT, UPDATED_AT
 use crate::data_contract::document_type::DocumentType;
 use crate::document::document_transition::INITIAL_REVISION;
 use crate::document::Document;
-use crate::identifier::Identifier;
 use crate::prelude::TimestampMillis;
 use crate::ProtocolError;
 use chrono::Utc;
 use platform_value::Value;
 
+use platform_value::identifier::Identifier;
 use std::collections::BTreeMap;
 
 impl DocumentType {

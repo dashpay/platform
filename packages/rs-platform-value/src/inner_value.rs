@@ -30,8 +30,8 @@ impl Value {
     }
 
     pub fn remove_integer<T>(&mut self, key: &str) -> Result<T, Error>
-        where
-            T: TryFrom<i128>
+    where
+        T: TryFrom<i128>
             + TryFrom<u128>
             + TryFrom<u64>
             + TryFrom<i64>
@@ -40,15 +40,16 @@ impl Value {
             + TryFrom<u16>
             + TryFrom<i16>
             + TryFrom<u8>
-            + TryFrom<i8> {
+            + TryFrom<i8>,
+    {
         let map = self.as_map_mut_ref()?;
         let value = map.remove_key(key)?;
         value.into_integer()
     }
 
     pub fn remove_optional_integer<T>(&mut self, key: &str) -> Result<Option<T>, Error>
-        where
-            T: TryFrom<i128>
+    where
+        T: TryFrom<i128>
             + TryFrom<u128>
             + TryFrom<u64>
             + TryFrom<i64>
@@ -57,20 +58,28 @@ impl Value {
             + TryFrom<u16>
             + TryFrom<i16>
             + TryFrom<u8>
-            + TryFrom<i8> {
+            + TryFrom<i8>,
+    {
         let map = self.as_map_mut_ref()?;
-        map.remove_optional_key(key).map(|v| v.into_integer()).transpose()
+        map.remove_optional_key(key)
+            .map(|v| v.into_integer())
+            .transpose()
     }
 
-    pub fn remove_hash256_bytes(&mut self, key: &str) -> Result<[u8;32], Error> {
+    pub fn remove_hash256_bytes(&mut self, key: &str) -> Result<[u8; 32], Error> {
         let map = self.as_map_mut_ref()?;
         let value = map.remove_key(key)?;
         value.into_hash256()
     }
 
-    pub fn remove_optional_hash256_bytes<T>(&mut self, key: &str) -> Result<Option<[u8;32]>, Error> {
+    pub fn remove_optional_hash256_bytes<T>(
+        &mut self,
+        key: &str,
+    ) -> Result<Option<[u8; 32]>, Error> {
         let map = self.as_map_mut_ref()?;
-        map.remove_optional_key(key).map(|v| v.into_hash256()).transpose()
+        map.remove_optional_key(key)
+            .map(|v| v.into_hash256())
+            .transpose()
     }
 
     pub fn remove_bytes(&mut self, key: &str) -> Result<Vec<u8>, Error> {
@@ -81,12 +90,27 @@ impl Value {
 
     pub fn remove_optional_bytes<T>(&mut self, key: &str) -> Result<Option<Vec<u8>>, Error> {
         let map = self.as_map_mut_ref()?;
-        map.remove_optional_key(key).map(|v| v.into_bytes()).transpose()
+        map.remove_optional_key(key)
+            .map(|v| v.into_bytes())
+            .transpose()
+    }
+
+    pub fn remove_array(&mut self, key: &str) -> Result<Vec<Value>, Error> {
+        let map = self.as_map_mut_ref()?;
+        let value = map.remove_key(key)?;
+        value.to_array()
+    }
+
+    pub fn remove_optional_array<T>(&mut self, key: &str) -> Result<Option<Vec<Value>>, Error> {
+        let map = self.as_map_mut_ref()?;
+        map.remove_optional_key(key)
+            .map(|v| v.to_array())
+            .transpose()
     }
 
     pub fn get_optional_integer<T>(&self, key: &str) -> Result<Option<T>, Error>
-        where
-            T: TryFrom<i128>
+    where
+        T: TryFrom<i128>
             + TryFrom<u128>
             + TryFrom<u64>
             + TryFrom<i64>
@@ -95,14 +119,15 @@ impl Value {
             + TryFrom<u16>
             + TryFrom<i16>
             + TryFrom<u8>
-            + TryFrom<i8> {
+            + TryFrom<i8>,
+    {
         let map = self.to_map()?;
         Self::inner_optional_integer_value(map, key)
     }
 
     pub fn get_integer<T>(&self, key: &str) -> Result<T, Error>
-        where
-            T: TryFrom<i128>
+    where
+        T: TryFrom<i128>
             + TryFrom<u128>
             + TryFrom<u64>
             + TryFrom<i64>
@@ -111,7 +136,8 @@ impl Value {
             + TryFrom<u16>
             + TryFrom<i16>
             + TryFrom<u8>
-            + TryFrom<i8> {
+            + TryFrom<i8>,
+    {
         let map = self.to_map()?;
         Self::inner_integer_value(map, key)
     }
@@ -124,6 +150,16 @@ impl Value {
     pub fn get_str<'a>(&'a self, key: &'a str) -> Result<&'a str, Error> {
         let map = self.to_map()?;
         Self::inner_text_value(map, key)
+    }
+
+    pub fn get_optional_bool(&self, key: &str) -> Result<Option<bool>, Error> {
+        let map = self.to_map()?;
+        Self::inner_optional_bool_value(map, key)
+    }
+
+    pub fn get_bool<'a>(&'a self, key: &'a str) -> Result<bool, Error> {
+        let map = self.to_map()?;
+        Self::inner_bool_value(map, key)
     }
 
     pub fn get_optional_bytes<'a>(&'a self, key: &'a str) -> Result<Option<Vec<u8>>, Error> {
@@ -191,18 +227,27 @@ impl Value {
     }
 
     /// Gets the inner bool value from a map
-    pub fn inner_optional_bool_value(document_type: &[(Value, Value)], key: &str) -> Option<bool> {
-        let key_value = Self::get_optional_from_map(document_type, key)?;
-        if let Value::Bool(bool_value) = key_value {
-            return Some(*bool_value);
-        }
-        None
+    pub fn inner_optional_bool_value(
+        document_type: &[(Value, Value)],
+        key: &str,
+    ) -> Result<Option<bool>, Error> {
+        Self::get_optional_from_map(document_type, key)
+            .map(|value| value.to_bool())
+            .transpose()
+    }
+
+    /// Gets the inner bool value from a map
+    pub fn inner_bool_value(document_type: &[(Value, Value)], key: &str) -> Result<bool, Error> {
+        Self::get_from_map(document_type, key).map(|value| value.to_bool())?
     }
 
     /// Gets the inner integer value from a map if it exists
-    pub fn inner_optional_integer_value<T>(document_type: &[(Value, Value)], key: &str) -> Result<Option<T>, Error>
-        where
-            T: TryFrom<i128>
+    pub fn inner_optional_integer_value<T>(
+        document_type: &[(Value, Value)],
+        key: &str,
+    ) -> Result<Option<T>, Error>
+    where
+        T: TryFrom<i128>
             + TryFrom<u128>
             + TryFrom<u64>
             + TryFrom<i64>
@@ -211,14 +256,17 @@ impl Value {
             + TryFrom<u16>
             + TryFrom<i16>
             + TryFrom<u8>
-            + TryFrom<i8> {
-        Self::get_optional_from_map(document_type, key).map(|key_value|  key_value.to_integer()).transpose()
+            + TryFrom<i8>,
+    {
+        Self::get_optional_from_map(document_type, key)
+            .map(|key_value| key_value.to_integer())
+            .transpose()
     }
 
     /// Gets the inner integer value from a map
     pub fn inner_integer_value<T>(document_type: &[(Value, Value)], key: &str) -> Result<T, Error>
-        where
-            T: TryFrom<i128>
+    where
+        T: TryFrom<i128>
             + TryFrom<u128>
             + TryFrom<u64>
             + TryFrom<i64>
@@ -227,7 +275,8 @@ impl Value {
             + TryFrom<u16>
             + TryFrom<i16>
             + TryFrom<u8>
-            + TryFrom<i8> {
+            + TryFrom<i8>,
+    {
         let key_value = Self::get_from_map(document_type, key)?;
         key_value.to_integer()
     }
@@ -283,8 +332,7 @@ impl Value {
         document_type: &'a [(Value, Value)],
         key: &'a str,
     ) -> Result<Vec<u8>, Error> {
-        Self::get_from_map(document_type, key)
-            .map(|v| v.to_bytes())?
+        Self::get_from_map(document_type, key).map(|v| v.to_bytes())?
     }
 
     /// Retrieves the value of a key from a map if it's a byte array.

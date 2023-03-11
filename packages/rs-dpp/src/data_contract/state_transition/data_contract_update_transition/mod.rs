@@ -1,8 +1,8 @@
-use std::collections::BTreeMap;
-use serde::{Deserialize, Serialize};
-use serde_json::Value as JsonValue;
 use platform_value::btreemap_extensions::BTreeValueMapHelper;
 use platform_value::Value;
+use serde::{Deserialize, Serialize};
+use serde_json::Value as JsonValue;
+use std::collections::BTreeMap;
 
 use crate::{
     data_contract::DataContract,
@@ -57,13 +57,19 @@ impl DataContractUpdateTransition {
         Ok(DataContractUpdateTransition {
             protocol_version: raw_data_contract_update_transition.get_integer(PROTOCOL_VERSION)?,
             signature: raw_data_contract_update_transition
-                .remove_optional_bytes(SIGNATURE).map_err(ProtocolError::ValueError)?
+                .remove_optional_bytes(SIGNATURE)
+                .map_err(ProtocolError::ValueError)?
                 .unwrap_or_default(),
             signature_public_key_id: raw_data_contract_update_transition
-                .get_optional_integer(SIGNATURE_PUBLIC_KEY_ID).map_err(ProtocolError::ValueError)?
+                .get_optional_integer(SIGNATURE_PUBLIC_KEY_ID)
+                .map_err(ProtocolError::ValueError)?
                 .unwrap_or_default(),
             data_contract: DataContract::from_raw_object(
-                raw_data_contract_update_transition.remove(DATA_CONTRACT).ok_or(ProtocolError::DecodingError("data contract missing on state transition".to_string()))?,
+                raw_data_contract_update_transition
+                    .remove(DATA_CONTRACT)
+                    .ok_or(ProtocolError::DecodingError(
+                        "data contract missing on state transition".to_string(),
+                    ))?,
             )?,
             ..Default::default()
         })
@@ -73,15 +79,23 @@ impl DataContractUpdateTransition {
         mut raw_data_contract_update_transition: BTreeMap<String, Value>,
     ) -> Result<DataContractUpdateTransition, ProtocolError> {
         Ok(DataContractUpdateTransition {
-            protocol_version: raw_data_contract_update_transition.get_integer(PROTOCOL_VERSION).map_err(ProtocolError::ValueError)?,
+            protocol_version: raw_data_contract_update_transition
+                .get_integer(PROTOCOL_VERSION)
+                .map_err(ProtocolError::ValueError)?,
             signature: raw_data_contract_update_transition
-                .remove_optional_bytes(SIGNATURE).map_err(ProtocolError::ValueError)?
+                .remove_optional_bytes(SIGNATURE)
+                .map_err(ProtocolError::ValueError)?
                 .unwrap_or_default(),
             signature_public_key_id: raw_data_contract_update_transition
-                .remove_optional_integer(SIGNATURE_PUBLIC_KEY_ID).map_err(ProtocolError::ValueError)?
+                .remove_optional_integer(SIGNATURE_PUBLIC_KEY_ID)
+                .map_err(ProtocolError::ValueError)?
                 .unwrap_or_default(),
             data_contract: DataContract::from_raw_object(
-                raw_data_contract_update_transition.remove(DATA_CONTRACT).ok_or(ProtocolError::DecodingError("data contract missing on state transition".to_string()))?,
+                raw_data_contract_update_transition
+                    .remove(DATA_CONTRACT)
+                    .ok_or(ProtocolError::DecodingError(
+                        "data contract missing on state transition".to_string(),
+                    ))?,
             )?,
             ..Default::default()
         })
@@ -198,9 +212,9 @@ impl StateTransitionConvert for DataContractUpdateTransition {
 
 #[cfg(test)]
 mod test {
-    use std::convert::TryInto;
     use integer_encoding::VarInt;
     use serde_json::json;
+    use std::convert::TryInto;
 
     use crate::tests::fixtures::get_data_contract_fixture;
     use crate::version;
@@ -216,13 +230,15 @@ mod test {
         let data_contract = get_data_contract_fixture(None);
 
         let value_map = BTreeMap::from([
-            (PROTOCOL_VERSION.to_string(), Value::U32(version::LATEST_VERSION)),
-            (DATA_CONTRACT.to_string(), data_contract.try_into().unwrap())
+            (
+                PROTOCOL_VERSION.to_string(),
+                Value::U32(version::LATEST_VERSION),
+            ),
+            (DATA_CONTRACT.to_string(), data_contract.try_into().unwrap()),
         ]);
 
-
         let state_transition = DataContractUpdateTransition::from_value_map(value_map)
-        .expect("state transition should be created without errors");
+            .expect("state transition should be created without errors");
 
         TestData {
             data_contract,

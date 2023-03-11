@@ -6,17 +6,13 @@ use std::{
 
 use anyhow::anyhow;
 use ciborium::value::Value as CborValue;
-use serde::Serialize;
 use platform_value::string_encoding::Encoding;
+use serde::Serialize;
 
-use crate::{
-    prelude::Identifier,
-    ProtocolError,
-    util::json_value::ReplaceWith,
-};
+use crate::{prelude::Identifier, util::json_value::ReplaceWith, ProtocolError};
 
 use super::{
-    convert::convert_to, FieldType, get_from_cbor_map, ReplacePaths, to_path_of_cbors,
+    convert::convert_to, get_from_cbor_map, to_path_of_cbors, FieldType, ReplacePaths,
     ValuesCollection,
 };
 

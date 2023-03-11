@@ -5,32 +5,30 @@ use anyhow::anyhow;
 
 use itertools::{Either, Itertools};
 use platform_value::btreemap_extensions::BTreeValueMapHelper;
+use platform_value::btreemap_removal_extensions::BTreeValueRemoveFromMapHelper;
+use platform_value::identifier::Identifier;
 use platform_value::Value;
 use serde::{Deserialize, Serialize};
 use serde_json::Value as JsonValue;
-use platform_value::btreemap_removal_extensions::BTreeValueRemoveFromMapHelper;
 
 use crate::consensus::basic::document::InvalidDocumentTypeError;
-use crate::data_contract::{contract_config, DriveContractExt};
 use crate::data_contract::contract_config::{
     ContractConfig, DEFAULT_CONTRACT_CAN_BE_DELETED, DEFAULT_CONTRACT_DOCUMENTS_KEEPS_HISTORY,
     DEFAULT_CONTRACT_DOCUMENT_MUTABILITY, DEFAULT_CONTRACT_KEEPS_HISTORY,
     DEFAULT_CONTRACT_MUTABILITY,
 };
+use crate::data_contract::{contract_config, DriveContractExt};
 
 use crate::data_contract::get_binary_properties_from_schema::get_binary_properties;
 
-
-
 use crate::util::json_value::{JsonValueExt, ReplaceWith};
-use platform_value::string_encoding::Encoding;
 use crate::{
     errors::ProtocolError,
-    identifier::Identifier,
     metadata::Metadata,
     util::{hash::hash, serializer},
 };
 use crate::{identifier, Convertible};
+use platform_value::string_encoding::Encoding;
 
 use super::document_type::DocumentType;
 use super::errors::*;
@@ -114,7 +112,9 @@ impl DataContract {
     }
 
     pub fn from_raw_object(raw_object: Value) -> Result<DataContract, ProtocolError> {
-        let mut data_contract_map = raw_object.into_btree_map().map_err(ProtocolError::ValueError)?;
+        let mut data_contract_map = raw_object
+            .into_btree_map()
+            .map_err(ProtocolError::ValueError)?;
 
         let mutability = get_contract_configuration_properties(&data_contract_map)
             .map_err(|e| ProtocolError::ParsingError(e.to_string()))?;
@@ -125,9 +125,12 @@ impl DataContract {
             mutability.documents_keep_history_contract_default,
             mutability.documents_mutable_contract_default,
         )
-            .map_err(|e| ProtocolError::ParsingError(e.to_string()))?;
+        .map_err(|e| ProtocolError::ParsingError(e.to_string()))?;
 
-        let documents = data_contract_map.remove(property_names::DOCUMENTS).map(|value | value.try_into_validating_btree_map_json()).transpose()?
+        let documents = data_contract_map
+            .remove(property_names::DOCUMENTS)
+            .map(|value| value.try_into_validating_btree_map_json())
+            .transpose()?
             .unwrap_or_default();
 
         let mutability = get_contract_configuration_properties(&data_contract_map)
@@ -139,20 +142,34 @@ impl DataContract {
 
         let mut data_contract = DataContract {
             protocol_version: 0,
-            id: Identifier::from(data_contract_map.remove_hash256_bytes(property_names::ID).map_err(ProtocolError::ValueError)?),
-            schema: data_contract_map.remove_string(property_names::SCHEMA).map_err(ProtocolError::ValueError)?,
-            version: data_contract_map.remove_integer(property_names::VERSION).map_err(ProtocolError::ValueError)?,
-            owner_id: Identifier::from(data_contract_map.remove_hash256_bytes(property_names::OWNER_ID).map_err(ProtocolError::ValueError)?),
+            id: Identifier::from(
+                data_contract_map
+                    .remove_hash256_bytes(property_names::ID)
+                    .map_err(ProtocolError::ValueError)?,
+            ),
+            schema: data_contract_map
+                .remove_string(property_names::SCHEMA)
+                .map_err(ProtocolError::ValueError)?,
+            version: data_contract_map
+                .remove_integer(property_names::VERSION)
+                .map_err(ProtocolError::ValueError)?,
+            owner_id: Identifier::from(
+                data_contract_map
+                    .remove_hash256_bytes(property_names::OWNER_ID)
+                    .map_err(ProtocolError::ValueError)?,
+            ),
             document_types,
             metadata: None,
             config: mutability,
             documents,
             defs,
-            entropy: data_contract_map.remove_hash256_bytes(property_names::ENTROPY).map_err(ProtocolError::ValueError)?,
+            entropy: data_contract_map
+                .remove_hash256_bytes(property_names::ENTROPY)
+                .map_err(ProtocolError::ValueError)?,
             binary_properties: documents
                 .iter()
                 .map(|(doc_type, schema)| (String::from(doc_type), get_binary_properties(schema)))
-                .collect()
+                .collect(),
         };
 
         Ok(data_contract)
@@ -220,7 +237,10 @@ impl DataContract {
         // Ok(raw_object.into())
     }
 
-    pub fn to_json_object(&self, skip_identifiers_conversion: bool) -> Result<JsonValue, ProtocolError> {
+    pub fn to_json_object(
+        &self,
+        skip_identifiers_conversion: bool,
+    ) -> Result<JsonValue, ProtocolError> {
         let mut json_object = serde_json::to_value(self)?;
         if !json_object.is_object() {
             return Err(anyhow!("the Data Contract isn't a JSON Value Object").into());

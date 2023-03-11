@@ -1,7 +1,7 @@
 use futures::StreamExt;
 use mockall::predicate;
-use serde_json::json;
 use platform_value::string_encoding::Encoding;
+use serde_json::json;
 
 use crate::{consensus::ConsensusError, data_contract::DataContract, document::{
     document_transition::{Action, DocumentTransition},

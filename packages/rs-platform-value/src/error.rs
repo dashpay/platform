@@ -22,13 +22,15 @@ pub enum Error {
     #[error("key must be a string")]
     KeyMustBeAString,
 
-    #[error("byte length not 32 bytes error")]
-    ByteLengthNot32BytesError,
+    #[error("byte length not 32 bytes error: {0}")]
+    ByteLengthNot32BytesError(String),
 }
 
 impl serde::ser::Error for Error {
-    fn custom<T>(msg: T) -> Self where T: Display {
+    fn custom<T>(msg: T) -> Self
+    where
+        T: Display,
+    {
         todo!()
     }
 }
-

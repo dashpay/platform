@@ -70,7 +70,11 @@ impl ValueMapHelper for ValueMap {
                     false
                 }
             })
-            .map(|pos| self.remove(pos).1).ok_or(Error::StructureError(format!("trying to remove a key {} from a ValueMap that was not found", search_key)))
+            .map(|pos| self.remove(pos).1)
+            .ok_or(Error::StructureError(format!(
+                "trying to remove a key {} from a ValueMap that was not found",
+                search_key
+            )))
     }
 
     fn remove_optional_key(&mut self, search_key: &str) -> Option<Value> {

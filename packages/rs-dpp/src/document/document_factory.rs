@@ -11,28 +11,28 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value as JsonValue;
 
 use crate::consensus::basic::document::InvalidDocumentTypeError;
-use crate::document::extended_document::{ExtendedDocument, property_names};
+use crate::document::extended_document::{property_names, ExtendedDocument};
 
 use crate::data_contract::DriveContractExt;
 use crate::document::document_transition::INITIAL_REVISION;
 use crate::document::Document;
 use crate::identity::TimestampMillis;
 use crate::{
-    data_contract::{DataContract, errors::DataContractError},
+    data_contract::{errors::DataContractError, DataContract},
     decode_protocol_entity_factory::DecodeProtocolEntity,
     prelude::Identifier,
-    ProtocolError,
     state_repository::StateRepositoryLike,
     util::entropy_generator,
+    ProtocolError,
 };
 
 use super::{
     document_transition::{self, Action},
     document_validator::DocumentValidator,
-    DocumentsBatchTransition,
     errors::DocumentError,
     fetch_and_validate_data_contract::DataContractFetcherAndValidator,
     generate_document_id::generate_document_id,
+    DocumentsBatchTransition,
 };
 
 // TODO remove these const and use ones from super::document::property_names
@@ -280,10 +280,7 @@ where
         options: FactoryOptions,
     ) -> Result<ExtendedDocument, ProtocolError> {
         let data_contract = self
-            .validate_data_contract_for_extended_document(
-                &raw_document,
-                options,
-            )
+            .validate_data_contract_for_extended_document(&raw_document, options)
             .await?;
 
         ExtendedDocument::from_platform_value(raw_document, data_contract)
@@ -432,9 +429,9 @@ where
 #[cfg(test)]
 mod test {
     use platform_value::btreemap_extensions::BTreeValueMapHelper;
-    use std::sync::Arc;
-    use serde_json::json;
     use platform_value::string_encoding::Encoding;
+    use serde_json::json;
+    use std::sync::Arc;
 
     use crate::tests::fixtures::get_extended_documents_fixture;
     use crate::{

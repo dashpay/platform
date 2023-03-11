@@ -1,12 +1,12 @@
 use chrono::Utc;
-use serde_json::{json, Value as JsonValue};
 use platform_value::string_encoding::Encoding;
+use serde_json::{json, Value as JsonValue};
 
 use crate::identity::state_transition::identity_public_key_transitions::IdentityPublicKeyCreateTransition;
 use crate::{
     identity::{
-        KeyType,
-        Purpose, SecurityLevel, state_transition::identity_update_transition::identity_update_transition::IdentityUpdateTransition,
+        state_transition::identity_update_transition::identity_update_transition::IdentityUpdateTransition,
+        KeyType, Purpose, SecurityLevel,
     },
     state_transition::{
         StateTransitionConvert, StateTransitionIdentitySigned, StateTransitionType,

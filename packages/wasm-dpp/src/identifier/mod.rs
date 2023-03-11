@@ -1,6 +1,6 @@
 use dpp::prelude::Identifier;
-use platform_value::string_encoding::Encoding;
 use itertools::Itertools;
+use platform_value::string_encoding::Encoding;
 pub use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use wasm_bindgen::prelude::*;
@@ -142,7 +142,6 @@ impl Inner for IdentifierWrapper {
     type InnerItem = Identifier;
 
     fn into_inner(self) -> Identifier {
-
         self.wrapped
     }
 

@@ -1,5 +1,5 @@
-use serde_json::json;
 use platform_value::string_encoding::{decode, Encoding};
+use serde_json::json;
 
 use crate::prelude::Identity;
 

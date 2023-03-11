@@ -10,29 +10,29 @@ pub mod btreemap_field_replacement;
 mod btreemap_mut_value_extensions;
 pub mod btreemap_path_extensions;
 pub mod btreemap_path_insertion_extensions;
+pub mod btreemap_removal_extensions;
+mod btreemap_removal_inner_value_extensions;
 pub mod converter;
 pub mod display;
 mod error;
+pub mod identifier;
 pub mod inner_value;
 mod integer;
+mod ser;
+pub mod string_encoding;
 pub mod system_bytes;
 pub mod value_map;
-pub mod btreemap_removal_extensions;
-mod btreemap_removal_inner_value_extensions;
-mod ser;
-pub mod identifier;
-pub mod string_encoding;
 
 use crate::value_map::{ValueMap, ValueMapHelper};
 pub use error::Error;
 pub use integer::Integer;
+use serde::de::DeserializeOwned;
 use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, HashMap};
-use serde::de::DeserializeOwned;
 
 pub type Hash256 = [u8; 32];
-pub use btreemap_field_replacement::ReplacementType;
 use crate::ser::Serializer;
+pub use btreemap_field_replacement::ReplacementType;
 
 /// A representation of a dynamic value that can handled dynamically
 #[non_exhaustive]
@@ -1079,11 +1079,7 @@ impl<const N: usize> From<[(Value, Value); N]> for Value {
             return Value::Map(vec![]);
         }
 
-        Value::Map(
-            arr
-                .into_iter()
-                .collect(),
-        )
+        Value::Map(arr.into_iter().collect())
     }
 }
 
@@ -1104,12 +1100,7 @@ impl<const N: usize> From<[(String, Value); N]> for Value {
 
         // use stable sort to preserve the insertion order.
         arr.sort_by(|a, b| a.0.cmp(&b.0));
-        Value::Map(
-            arr
-                .into_iter()
-                .map(|(k,v)| (k.into(), v))
-                .collect(),
-        )
+        Value::Map(arr.into_iter().map(|(k, v)| (k.into(), v)).collect())
     }
 }
 
@@ -1130,12 +1121,7 @@ impl<const N: usize> From<[(&str, Value); N]> for Value {
 
         // use stable sort to preserve the insertion order.
         arr.sort_by(|a, b| a.0.cmp(&b.0));
-        Value::Map(
-            arr
-                .into_iter()
-                .map(|(k,v)| (k.into(), v))
-                .collect(),
-        )
+        Value::Map(arr.into_iter().map(|(k, v)| (k.into(), v)).collect())
     }
 }
 
@@ -1160,8 +1146,8 @@ impl From<char> for Value {
 }
 
 pub fn to_value<T>(value: T) -> Result<Value, Error>
-    where
-        T: Serialize,
+where
+    T: Serialize,
 {
     value.serialize(Serializer)
 }

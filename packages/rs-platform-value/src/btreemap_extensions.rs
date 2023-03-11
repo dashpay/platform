@@ -366,9 +366,8 @@ where
     }
 
     fn get_hash256_bytes(&self, key: &str) -> Result<[u8; 32], Error> {
-        self.get_optional_hash256_bytes(key)?.ok_or_else(|| {
-            Error::StructureError(format!("unable to get hash256 property {key}"))
-        })
+        self.get_optional_hash256_bytes(key)?
+            .ok_or_else(|| Error::StructureError(format!("unable to get hash256 property {key}")))
     }
 
     fn get_optional_bytes(&self, key: &str) -> Result<Option<Vec<u8>>, Error> {
@@ -376,9 +375,8 @@ where
     }
 
     fn get_bytes(&self, key: &str) -> Result<Vec<u8>, Error> {
-        self.get_optional_bytes(key)?.ok_or_else(|| {
-            Error::StructureError(format!("unable to get bytes property {key}"))
-        })
+        self.get_optional_bytes(key)?
+            .ok_or_else(|| Error::StructureError(format!("unable to get bytes property {key}")))
     }
 
     fn get_optional_identifier_bytes(&self, key: &str) -> Result<Option<Vec<u8>>, Error> {
@@ -388,9 +386,8 @@ where
     }
 
     fn get_identifier_bytes(&self, key: &str) -> Result<Vec<u8>, Error> {
-        self.get_optional_identifier_bytes(key)?.ok_or_else(|| {
-            Error::StructureError(format!("unable to get bytes property {key}"))
-        })
+        self.get_optional_identifier_bytes(key)?
+            .ok_or_else(|| Error::StructureError(format!("unable to get bytes property {key}")))
     }
 
     fn get_optional_binary_bytes(&self, key: &str) -> Result<Option<Vec<u8>>, Error> {
@@ -400,9 +397,8 @@ where
     }
 
     fn get_binary_bytes(&self, key: &str) -> Result<Vec<u8>, Error> {
-        self.get_optional_binary_bytes(key)?.ok_or_else(|| {
-            Error::StructureError(format!("unable to get bytes property {key}"))
-        })
+        self.get_optional_binary_bytes(key)?
+            .ok_or_else(|| Error::StructureError(format!("unable to get bytes property {key}")))
     }
 
     fn get_optional_float(&self, key: &str) -> Result<Option<f64>, Error> {

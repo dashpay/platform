@@ -1,9 +1,8 @@
-use std::convert::TryInto;
 use anyhow::anyhow;
 use ciborium::value::Value as CborValue;
+use std::convert::TryInto;
 
 use platform_value::Value;
-
 
 use crate::util::deserializer;
 use crate::util::deserializer::SplitProtocolVersionOutcome;
@@ -25,6 +24,9 @@ impl DecodeProtocolEntity {
             }
         })?;
 
-        Ok((protocol_version, cbor_value.try_into().map_err(ProtocolError::ValueError)?))
+        Ok((
+            protocol_version,
+            cbor_value.try_into().map_err(ProtocolError::ValueError)?,
+        ))
     }
 }

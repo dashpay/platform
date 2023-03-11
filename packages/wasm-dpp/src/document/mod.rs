@@ -12,7 +12,9 @@ use crate::buffer::Buffer;
 
 use crate::identifier::IdentifierWrapper;
 use crate::lodash::lodash_set;
-use crate::utils::{replace_identifiers_with_bytes_without_failing, Inner, with_serde_to_json_value, ToSerdeJSONExt};
+use crate::utils::{
+    replace_identifiers_with_bytes_without_failing, with_serde_to_json_value, Inner, ToSerdeJSONExt,
+};
 use crate::utils::{try_to_u64, WithJsError};
 use crate::with_js_error;
 use crate::DataContractWasm;
@@ -72,7 +74,10 @@ impl DocumentWasm {
 
         let document_type_name = js_document_type_name
             .as_string()
-            .ok_or(anyhow!("expected a string for the document type, got {:?}", js_document_type_name))
+            .ok_or(anyhow!(
+                "expected a string for the document type, got {:?}",
+                js_document_type_name
+            ))
             .with_js_error()?;
 
         let (identifier_paths, _) = js_data_contract

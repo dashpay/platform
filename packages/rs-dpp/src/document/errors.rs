@@ -1,5 +1,5 @@
-use thiserror::Error;
 use platform_value::Value;
+use thiserror::Error;
 
 use crate::errors::consensus::ConsensusError;
 

@@ -1,7 +1,7 @@
+use crate::value_map::ValueMap;
 use crate::{Error, Value};
 use ciborium::value::Integer;
 use ciborium::Value as CborValue;
-use crate::value_map::ValueMap;
 
 impl Value {
     pub fn convert_from_cbor_map<I, R>(map: I) -> Result<R, Error>
@@ -36,7 +36,11 @@ impl TryFrom<CborValue> for Value {
             CborValue::Text(string) => Self::Text(string),
             CborValue::Bool(value) => Self::Bool(value),
             CborValue::Null => Self::Null,
-            CborValue::Tag(int, value) => { return Err(Error::Unsupported("conversion from cbor tags are currently not supported".to_string())) },
+            CborValue::Tag(int, value) => {
+                return Err(Error::Unsupported(
+                    "conversion from cbor tags are currently not supported".to_string(),
+                ))
+            }
             CborValue::Array(array) => {
                 if !array.is_empty()
                     && array.iter().all(|v| {
@@ -54,12 +58,19 @@ impl TryFrom<CborValue> for Value {
                             .collect(),
                     )
                 } else {
-                    Self::Array(array.into_iter().map(|v| v.try_into()).collect::<Result<Vec<Value>, Error>>()?)
+                    Self::Array(
+                        array
+                            .into_iter()
+                            .map(|v| v.try_into())
+                            .collect::<Result<Vec<Value>, Error>>()?,
+                    )
                 }
             }
-            CborValue::Map(map) => {
-                Self::Map(map.into_iter().map(|(k, v)| Ok((k.try_into()?, v.try_into()?))).collect::<Result<ValueMap, Error>>()?)
-            }
+            CborValue::Map(map) => Self::Map(
+                map.into_iter()
+                    .map(|(k, v)| Ok((k.try_into()?, v.try_into()?)))
+                    .collect::<Result<ValueMap, Error>>()?,
+            ),
             _ => panic!("unsupported"),
         })
     }

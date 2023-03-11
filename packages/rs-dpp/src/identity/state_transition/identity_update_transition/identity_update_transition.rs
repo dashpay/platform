@@ -1,6 +1,8 @@
 use anyhow::anyhow;
+use platform_value::Value;
 use serde::{Deserialize, Serialize};
 use serde_json::Value as JsonValue;
+use std::convert::TryInto;
 
 use crate::identity::state_transition::identity_public_key_transitions::IdentityPublicKeyCreateTransition;
 use crate::{
@@ -82,29 +84,35 @@ impl Default for IdentityUpdateTransition {
 }
 
 impl IdentityUpdateTransition {
-    pub fn new(raw_state_transition: serde_json::Value) -> Result<Self, ProtocolError> {
+    pub fn new(raw_state_transition: Value) -> Result<Self, ProtocolError> {
         IdentityUpdateTransition::from_raw_object(raw_state_transition)
     }
 
     pub fn from_raw_object(
-        mut raw_object: JsonValue,
+        mut raw_object: Value,
     ) -> Result<IdentityUpdateTransition, ProtocolError> {
         let protocol_version = raw_object
-            .get_u64(property_names::PROTOCOL_VERSION)
-            .unwrap_or(LATEST_VERSION as u64) as u32;
+            .get_optional_integer(property_names::PROTOCOL_VERSION)
+            .map_err(ProtocolError::ValueError)?
+            .unwrap_or(LATEST_VERSION);
         let signature = raw_object
-            .get_bytes(property_names::SIGNATURE)
+            .get_optional_bytes(property_names::SIGNATURE)
+            .map_err(ProtocolError::ValueError)?
             .unwrap_or_default();
         let signature_public_key_id = raw_object
             .get_u64(property_names::SIGNATURE_PUBLIC_KEY_ID)
             .unwrap_or_default() as KeyID;
-        let identity_id =
-            Identifier::from_bytes(&raw_object.get_bytes(property_names::IDENTITY_ID)?)?;
-        let revision = raw_object.get_u64(property_names::REVISION)?;
-        let add_public_keys =
-            get_list_of_public_keys(&mut raw_object, property_names::ADD_PUBLIC_KEYS)?;
-        let disable_public_keys =
-            get_list_of_public_key_ids(&mut raw_object, property_names::DISABLE_PUBLIC_KEYS)?;
+        let identity_id = Identifier::from(
+            raw_object
+                .get_hash256(property_names::IDENTITY_ID)
+                .map_err(ProtocolError::ValueError)?,
+        );
+
+        let revision = raw_object
+            .get_integer(property_names::REVISION)
+            .map_err(ProtocolError::ValueError)?;
+        let add_public_keys = get_list(&mut raw_object, property_names::ADD_PUBLIC_KEYS)?;
+        let disable_public_keys = get_list(&mut raw_object, property_names::DISABLE_PUBLIC_KEYS)?;
         let public_keys_disabled_at = raw_object
             .remove_into::<u64>(property_names::PUBLIC_KEYS_DISABLED_AT)
             .ok();
@@ -190,50 +198,14 @@ impl IdentityUpdateTransition {
 
 /// if the property isn't present the empty list is returned. If property is defined, the function
 /// might return some serialization-related errors
-fn get_list_of_public_keys(
-    value: &mut JsonValue,
-    property_name: &str,
-) -> Result<Vec<IdentityPublicKeyCreateTransition>, ProtocolError> {
-    let mut identity_public_keys = vec![];
-    if let Ok(maybe_list) = value.remove(property_names::ADD_PUBLIC_KEYS) {
-        if let JsonValue::Array(list) = maybe_list {
-            for maybe_public_key in list {
-                identity_public_keys.push(IdentityPublicKeyCreateTransition::from_raw_json_object(
-                    maybe_public_key,
-                )?);
-            }
-        } else {
-            return Err(anyhow!("The property '{}' isn't a list", property_name).into());
-        }
-    } else {
-        return Ok(vec![]);
-    }
-
-    Ok(identity_public_keys)
-}
-
-fn get_list_of_public_key_ids(
-    value: &mut JsonValue,
-    property_name: &str,
-) -> Result<Vec<KeyID>, ProtocolError> {
-    if let Ok(maybe_key_ids) = value.remove(property_name) {
-        let key_ids: Vec<KeyID> = serde_json::from_value(maybe_key_ids)?;
-        Ok(key_ids)
-    } else {
-        Ok(vec![])
-    }
-}
-
-fn get_list_of_timestamps(
-    value: &mut JsonValue,
-    property_name: &str,
-) -> Result<Vec<TimestampMillis>, ProtocolError> {
-    if let Ok(maybe_timestamps) = value.remove(property_name) {
-        let timestamps: Vec<TimestampMillis> = serde_json::from_value(maybe_timestamps)?;
-        Ok(timestamps)
-    } else {
-        Ok(vec![])
-    }
+fn get_list<T>(value: &mut Value, property_name: &str) -> Result<Vec<T>, ProtocolError> {
+    value
+        .remove_optional_array(property_name)
+        .map_err(ProtocolError::ValueError)?
+        .unwrap_or_default()
+        .into_iter()
+        .map(|value| value.try_into())
+        .collect()
 }
 
 impl StateTransitionConvert for IdentityUpdateTransition {

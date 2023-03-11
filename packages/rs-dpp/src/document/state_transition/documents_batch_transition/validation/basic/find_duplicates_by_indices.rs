@@ -7,7 +7,7 @@ use std::collections::BTreeMap;
 use crate::data_contract::DriveContractExt;
 use crate::{
     document::document_transition::DocumentTransition, prelude::DataContract,
-    ProtocolError, util::json_schema::Index,
+    util::json_schema::Index, ProtocolError,
 };
 
 #[macro_export]
@@ -110,14 +110,14 @@ fn is_duplicate_by_indices(object1: &ValueMap, object2: &ValueMap, type_indices:
 
 #[cfg(test)]
 mod test {
+    use platform_value::string_encoding::Encoding;
     use platform_value::Value;
     use serde_json::json;
     use std::collections::BTreeMap;
     use std::convert::TryInto;
-    use platform_value::string_encoding::Encoding;
 
     use crate::data_contract::document_type::DocumentType;
-    use crate::{prelude::*};
+    use crate::prelude::*;
 
     use super::find_duplicates_by_indices;
 
