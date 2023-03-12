@@ -1,4 +1,4 @@
-use platform_value::identifier::Identifier;
+use platform_value::Identifier;
 use thiserror::Error;
 
 use crate::ProtocolError;

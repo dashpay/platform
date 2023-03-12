@@ -1,5 +1,5 @@
 use crate::consensus::basic::BasicError;
-use crate::identifier::Identifier;
+use crate::prelude::Identifier;
 use thiserror::Error;
 
 #[derive(Error, Debug, Clone, PartialEq, Eq)]

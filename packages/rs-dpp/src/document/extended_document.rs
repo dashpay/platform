@@ -1,5 +1,5 @@
 use crate::data_contract::{DataContract, DriveContractExt};
-use crate::identifier::Identifier;
+use crate::prelude::Identifier;
 use crate::metadata::Metadata;
 use crate::prelude::{Revision, TimestampMillis};
 use crate::util::cbor_value::CborCanonicalMap;
@@ -447,7 +447,7 @@ mod test {
 
     use crate::data_contract::DataContract;
     use crate::document::Document;
-    use crate::identifier::Identifier;
+    use crate::prelude::Identifier;
     use crate::tests::utils::*;
     use platform_value::btreemap_extensions::BTreeValueMapHelper;
     use platform_value::btreemap_extensions::BTreeValueMapPathHelper;

@@ -1,5 +1,5 @@
 use crate::data_contract::{property_names, DataContract};
-use crate::identifier::Identifier;
+use crate::prelude::Identifier;
 use crate::util::cbor_value::CborCanonicalMap;
 use crate::util::deserializer;
 use crate::util::deserializer::SplitProtocolVersionOutcome;

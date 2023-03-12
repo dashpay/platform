@@ -1,4 +1,4 @@
-use crate::identifier::Identifier;
+use crate::prelude::Identifier;
 use platform_value::string_encoding::Encoding;
 
 #[test]

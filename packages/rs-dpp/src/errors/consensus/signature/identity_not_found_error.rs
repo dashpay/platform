@@ -2,7 +2,7 @@ use thiserror::Error;
 
 use crate::consensus::signature::SignatureError;
 use crate::consensus::ConsensusError;
-use crate::identifier::Identifier;
+use crate::prelude::Identifier;
 
 #[derive(Error, Debug, Clone, PartialEq, Eq)]
 #[error("Identity {identity_id} not found")]

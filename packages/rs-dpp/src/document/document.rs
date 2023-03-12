@@ -52,7 +52,7 @@ use crate::data_contract::errors::DataContractError;
 
 use crate::document::errors::DocumentError;
 
-use crate::identifier::Identifier;
+use crate::prelude::Identifier;
 use crate::identity::TimestampMillis;
 use crate::prelude::Revision;
 

@@ -8,7 +8,7 @@ use std::convert::TryInto;
 
 use crate::data_contract::document_type::document_type::PROTOCOL_VERSION;
 use crate::document::Document;
-use crate::identifier::Identifier;
+use crate::prelude::Identifier;
 use crate::identity::TimestampMillis;
 use crate::prelude::{ExtendedDocument, Revision};
 use crate::{data_contract::DataContract, errors::ProtocolError};

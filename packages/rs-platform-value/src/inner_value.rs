@@ -1,4 +1,4 @@
-use crate::identifier::Identifier;
+use crate::Identifier;
 use crate::value_map::{ValueMap, ValueMapHelper};
 use crate::Value::Bool;
 use crate::{Error, Value};

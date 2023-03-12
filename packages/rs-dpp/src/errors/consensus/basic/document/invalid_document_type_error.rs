@@ -1,7 +1,7 @@
 use thiserror::Error;
 
 use crate::data_contract::errors::DataContractError;
-use crate::identifier::Identifier;
+use crate::prelude::Identifier;
 
 #[derive(Error, Debug, Clone, PartialEq, Eq)]
 #[error("Data Contract {data_contract_id} doesn't define document with the type {document_type}")]

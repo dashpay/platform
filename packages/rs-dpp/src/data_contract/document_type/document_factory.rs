@@ -7,7 +7,7 @@ use crate::ProtocolError;
 use chrono::Utc;
 use platform_value::Value;
 
-use platform_value::identifier::Identifier;
+use platform_value::Identifier;
 use std::collections::BTreeMap;
 
 impl DocumentType {

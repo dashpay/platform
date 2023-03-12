@@ -3,7 +3,7 @@ use serde_json::Value;
 use std::collections::BTreeMap;
 use std::sync::Arc;
 
-use crate::identifier::Identifier;
+use crate::prelude::Identifier;
 use crate::identity::factory::IdentityFactory;
 use crate::identity::state_transition::asset_lock_proof::chain::ChainAssetLockProof;
 use crate::identity::state_transition::asset_lock_proof::{AssetLockProof, InstantAssetLockProof};

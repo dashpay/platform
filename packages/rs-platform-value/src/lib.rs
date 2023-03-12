@@ -9,32 +9,32 @@ pub mod btreemap_extensions;
 pub mod converter;
 pub mod display;
 mod error;
-pub mod identifier;
 mod index;
 pub mod inner_value;
 mod inner_value_at_path;
-mod integer;
 mod macros;
-mod ser;
 pub mod string_encoding;
 pub mod system_bytes;
 pub mod value_map;
+mod types;
+mod value_serialization;
 
 use crate::value_map::{ValueMap, ValueMapHelper};
 pub use error::Error;
-pub use integer::Integer;
 use serde::de::DeserializeOwned;
 use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, HashMap};
 
 pub type Hash256 = [u8; 32];
-use crate::ser::Serializer;
+
 pub use btreemap_extensions::btreemap_field_replacement::ReplacementType;
+pub use types::identifier::{Identifier, IDENTIFIER_MEDIA_TYPE};
+
+pub use value_serialization::{to_value, from_value};
 
 /// A representation of a dynamic value that can handled dynamically
 #[non_exhaustive]
-#[derive(Deserialize, Clone, Debug, PartialEq, PartialOrd)]
-#[serde(untagged)]
+#[derive(Clone, Debug, PartialEq, PartialOrd)]
 pub enum Value {
     /// A u128 integer
     U128(u128),
@@ -71,6 +71,12 @@ pub enum Value {
 
     /// Bytes 32
     Bytes32([u8; 32]),
+
+    /// An enumeration of u8
+    EnumU8(Vec<u8>),
+
+    /// An enumeration of strings
+    EnumString(String),
 
     /// Identifier
     /// The identifier is very similar to bytes, however it is serialized to Base58 when converted
@@ -166,7 +172,7 @@ impl Value {
     /// Returns `Err(Error::Structure("reason"))` otherwise.
     ///
     /// ```
-    /// # use platform_value::{Value, Integer, Error};
+    /// # use platform_value::{Value, Error};
     /// #
     /// let value = Value::U64(17);
     /// let r_value : Result<u64,Error> = value.into_integer();
@@ -208,7 +214,7 @@ impl Value {
     /// Returns `Err(Error::Structure("reason"))` otherwise.
     ///
     /// ```
-    /// # use platform_value::{Value, Integer, Error};
+    /// # use platform_value::{Value, Error};
     /// #
     /// let value = Value::U64(17);
     /// let r_value : Result<u64,Error> = value.to_integer();
@@ -755,7 +761,7 @@ impl Value {
     /// Returns `Err(Error::Structure("reason"))` otherwise.
     ///
     /// ```
-    /// # use platform_value::{Value, Integer, Error};
+    /// # use platform_value::{Value, Error};
     /// #
     /// let mut value = Value::Array(
     ///     vec![
@@ -779,7 +785,7 @@ impl Value {
     /// Returns `Err(Error::Structure("reason"))` otherwise.
     ///
     /// ```
-    /// # use platform_value::{Value, Integer, Error};
+    /// # use platform_value::{Value, Error};
     /// #
     /// let mut value = Value::Array(
     ///     vec![
@@ -803,7 +809,7 @@ impl Value {
     /// Returns `Err(Error::Structure("reason"))` otherwise.
     ///
     /// ```
-    /// # use platform_value::{Value, Integer, Error};
+    /// # use platform_value::{Value, Error};
     /// #
     /// let mut value = Value::Array(
     ///     vec![
@@ -827,7 +833,7 @@ impl Value {
     /// Returns `Err(Error::Structure("reason"))` otherwise.
     ///
     /// ```
-    /// # use platform_value::{Value, Integer, Error};
+    /// # use platform_value::{Value, Error};
     /// #
     /// let mut value = Value::Array(
     ///     vec![
@@ -1212,11 +1218,4 @@ impl From<char> for Value {
         v.push(value);
         Value::Text(v)
     }
-}
-
-pub fn to_value<T>(value: T) -> Result<Value, Error>
-where
-    T: Serialize,
-{
-    value.serialize(Serializer)
 }

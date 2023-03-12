@@ -34,3 +34,9 @@ impl serde::ser::Error for Error {
         todo!()
     }
 }
+
+impl serde::de::Error for Error {
+    fn custom<T>(msg: T) -> Self where T: Display {
+        todo!()
+    }
+}

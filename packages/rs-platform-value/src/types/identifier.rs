@@ -8,7 +8,7 @@ use serde_json::Value as JsonValue;
 use crate::string_encoding::Encoding;
 use crate::{string_encoding, Error};
 
-pub const MEDIA_TYPE: &str = "application/x.dash.dpp.identifier";
+pub const IDENTIFIER_MEDIA_TYPE: &str = "application/x.dash.dpp.identifier";
 
 #[derive(Default, Debug, Clone, PartialEq, Eq, Hash, Copy)]
 pub struct Identifier {
