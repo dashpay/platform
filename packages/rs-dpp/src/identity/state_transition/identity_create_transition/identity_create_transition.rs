@@ -1,7 +1,7 @@
 use std::convert::{TryFrom, TryInto};
 
 use platform_value::btreemap_extensions::BTreeValueMapHelper;
-use platform_value::btreemap_path_extensions::BTreeValueMapPathHelper;
+use platform_value::btreemap_extensions::BTreeValueMapPathHelper;
 use platform_value::Value;
 use serde::de::Error as DeError;
 use serde::ser::Error as SerError;
@@ -17,7 +17,7 @@ use crate::state_transition::{
 };
 use crate::util::json_value::JsonValueExt;
 use crate::{NonConsensusError, ProtocolError, SerdeParsingError};
-use platform_value::btreemap_removal_inner_value_extensions::BTreeValueRemoveInnerValueFromMapHelper;
+use platform_value::btreemap_extensions::BTreeValueRemoveInnerValueFromMapHelper;
 use platform_value::string_encoding::Encoding;
 
 mod property_names {

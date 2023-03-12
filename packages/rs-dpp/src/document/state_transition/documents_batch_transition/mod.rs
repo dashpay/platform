@@ -5,7 +5,7 @@ use anyhow::{anyhow, Context};
 use ciborium::value::Value as CborValue;
 use integer_encoding::VarInt;
 use platform_value::btreemap_extensions::BTreeValueMapHelper;
-use platform_value::btreemap_field_replacement::BTreeValueMapReplacementPathHelper;
+use platform_value::btreemap_extensions::BTreeValueMapReplacementPathHelper;
 
 use platform_value::{ReplacementType, Value};
 use serde::{Deserialize, Serialize};

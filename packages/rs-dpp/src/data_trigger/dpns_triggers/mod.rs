@@ -3,7 +3,7 @@ use std::convert::TryInto;
 use anyhow::Context;
 use anyhow::{anyhow, bail};
 use platform_value::btreemap_extensions::BTreeValueMapHelper;
-use platform_value::btreemap_path_extensions::BTreeValueMapPathHelper;
+use platform_value::btreemap_extensions::BTreeValueMapPathHelper;
 use serde_json::json;
 
 use crate::document::Document;

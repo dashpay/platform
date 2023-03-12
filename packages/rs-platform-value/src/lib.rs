@@ -6,12 +6,6 @@
 //!
 //!
 pub mod btreemap_extensions;
-pub mod btreemap_field_replacement;
-mod btreemap_mut_value_extensions;
-pub mod btreemap_path_extensions;
-pub mod btreemap_path_insertion_extensions;
-pub mod btreemap_removal_extensions;
-pub mod btreemap_removal_inner_value_extensions;
 pub mod converter;
 pub mod display;
 mod error;
@@ -35,7 +29,7 @@ use std::collections::{BTreeMap, HashMap};
 
 pub type Hash256 = [u8; 32];
 use crate::ser::Serializer;
-pub use btreemap_field_replacement::ReplacementType;
+pub use btreemap_extensions::btreemap_field_replacement::ReplacementType;
 
 /// A representation of a dynamic value that can handled dynamically
 #[non_exhaustive]

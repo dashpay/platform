@@ -34,7 +34,7 @@ use crate::{
 use anyhow::anyhow;
 use lazy_static::lazy_static;
 use platform_value::btreemap_extensions::BTreeValueMapHelper;
-use platform_value::btreemap_path_extensions::BTreeValueMapPathHelper;
+use platform_value::btreemap_extensions::BTreeValueMapPathHelper;
 use platform_value::Value;
 use serde_json::Value as JsonValue;
 

@@ -42,8 +42,8 @@ use serde_json::{json, Value as JsonValue};
 
 use crate::data_contract::{DataContract, DriveContractExt};
 use platform_value::btreemap_extensions::BTreeValueMapHelper;
-use platform_value::btreemap_path_extensions::BTreeValueMapPathHelper;
-use platform_value::btreemap_removal_extensions::BTreeValueRemoveFromMapHelper;
+use platform_value::btreemap_extensions::BTreeValueMapPathHelper;
+use platform_value::btreemap_extensions::BTreeValueRemoveFromMapHelper;
 use platform_value::Value;
 use serde::{Deserialize, Serialize};
 

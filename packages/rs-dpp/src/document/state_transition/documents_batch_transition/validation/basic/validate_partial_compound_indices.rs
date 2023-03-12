@@ -1,7 +1,7 @@
 use std::borrow::Borrow;
 use std::collections::BTreeMap;
 
-use platform_value::btreemap_path_extensions::BTreeValueMapPathHelper;
+use platform_value::btreemap_extensions::BTreeValueMapPathHelper;
 use platform_value::Value;
 
 use crate::consensus::basic::document::InconsistentCompoundIndexDataError;

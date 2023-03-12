@@ -4,8 +4,7 @@ use std::convert::{TryFrom, TryInto};
 use anyhow::anyhow;
 
 use itertools::{Either, Itertools};
-use platform_value::btreemap_extensions::BTreeValueMapHelper;
-use platform_value::btreemap_removal_extensions::BTreeValueRemoveFromMapHelper;
+use platform_value::btreemap_extensions::{BTreeValueMapHelper, BTreeValueRemoveFromMapHelper};
 use platform_value::identifier::Identifier;
 use platform_value::Value;
 use serde::{Deserialize, Serialize};

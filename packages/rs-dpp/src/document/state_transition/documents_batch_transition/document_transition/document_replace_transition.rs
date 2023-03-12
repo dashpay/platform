@@ -1,5 +1,5 @@
 use platform_value::btreemap_extensions::BTreeValueMapHelper;
-use platform_value::btreemap_field_replacement::BTreeValueMapReplacementPathHelper;
+use platform_value::btreemap_extensions::BTreeValueMapReplacementPathHelper;
 use platform_value::{ReplacementType, Value};
 use serde::{Deserialize, Serialize};
 use serde_json::Value as JsonValue;

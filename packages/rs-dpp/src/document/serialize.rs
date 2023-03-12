@@ -17,7 +17,7 @@ use byteorder::{BigEndian, ReadBytesExt};
 use ciborium::Value as CborValue;
 use integer_encoding::VarIntWriter;
 use platform_value::btreemap_extensions::BTreeValueMapHelper;
-use platform_value::btreemap_removal_extensions::BTreeValueRemoveFromMapHelper;
+use platform_value::btreemap_extensions::BTreeValueRemoveFromMapHelper;
 use platform_value::Value;
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
