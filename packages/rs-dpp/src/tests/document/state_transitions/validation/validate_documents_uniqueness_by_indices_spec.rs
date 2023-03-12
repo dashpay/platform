@@ -1,4 +1,3 @@
-use futures::StreamExt;
 use mockall::predicate;
 use platform_value::string_encoding::Encoding;
 use serde_json::json;

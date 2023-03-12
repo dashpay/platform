@@ -64,23 +64,6 @@ pub struct ExtendedDocument {
 }
 
 impl ExtendedDocument {
-    /// Creates a Document from the json form. Json format contains strings instead of
-    /// arrays of u8 (bytes)
-    pub fn from_json_document(
-        json_document: JsonValue,
-        data_contract: DataContract,
-    ) -> Result<Self, ProtocolError> {
-        let document = Self::from_json_value::<String>(json_document, data_contract)?;
-        // let mut properties = document.properties_as_mut();
-
-        // replace only the dynamic data
-        //todo: not sure if this is needed anymore
-        // let (identifier_paths, binary_paths) = document.get_identifiers_and_binary_paths()?;
-        // properties.replace_binary_paths(binary_paths, ReplaceWith::Base64)?;
-        // properties.replace_identifier_paths(identifier_paths, ReplaceWith::Base58)?;
-        Ok(document)
-    }
-
     fn properties_as_json_data(&self) -> Result<JsonValue, ProtocolError> {
         self.document
             .properties

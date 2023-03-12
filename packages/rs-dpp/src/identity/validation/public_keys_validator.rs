@@ -19,11 +19,16 @@ use mockall::{automock, predicate::*};
 use platform_value::Value;
 
 lazy_static! {
-    pub static ref PUBLIC_KEY_SCHEMA: serde_json::Value =
-        serde_json::from_str(include_str!("./../../schema/identity/publicKey.json")).unwrap();
-    pub static ref PUBLIC_KEY_SCHEMA_FOR_TRANSITION: serde_json::Value = serde_json::from_str(
+    pub static ref PUBLIC_KEY_SCHEMA: platform_value::Value =
+        serde_json::from_str(include_str!("./../../schema/identity/publicKey.json"))
+            .unwrap()
+            .try_into()
+            .unwrap();
+    pub static ref PUBLIC_KEY_SCHEMA_FOR_TRANSITION: platform_value::Value = serde_json::from_str(
         include_str!("./../../schema/identity/stateTransition/publicKey.json")
     )
+    .unwrap()
+    .try_into()
     .unwrap();
 }
 

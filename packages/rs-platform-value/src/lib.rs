@@ -1122,17 +1122,6 @@ implfrom! {
     Map(Vec<(Value, Value)>),
 }
 
-impl From<BTreeMap<String, Value>> for Value {
-    fn from(value: BTreeMap<String, Value>) -> Self {
-        Value::Map(
-            value
-                .into_iter()
-                .map(|(key, value)| (Value::Text(key), value))
-                .collect(),
-        )
-    }
-}
-
 impl<const N: usize> From<[(Value, Value); N]> for Value {
     /// Converts a `[(Value, Value); N]` into a `Value`.
     ///
@@ -1194,12 +1183,29 @@ impl<const N: usize> From<[(&str, Value); N]> for Value {
     }
 }
 
-impl From<BTreeMap<String, &Value>> for Value {
-    fn from(value: BTreeMap<String, &Value>) -> Self {
+impl<T> From<BTreeMap<T, &Value>> for Value
+where
+    T: Into<Value>,
+{
+    fn from(value: BTreeMap<T, &Value>) -> Self {
         Value::Map(
             value
                 .into_iter()
-                .map(|(key, value)| (Value::Text(key), value.clone()))
+                .map(|(key, value)| (key.into(), value.clone()))
+                .collect(),
+        )
+    }
+}
+
+impl<T> From<BTreeMap<T, Value>> for Value
+where
+    T: Into<Value>,
+{
+    fn from(value: BTreeMap<T, Value>) -> Self {
+        Value::Map(
+            value
+                .into_iter()
+                .map(|(key, value)| (key.into(), value))
                 .collect(),
         )
     }

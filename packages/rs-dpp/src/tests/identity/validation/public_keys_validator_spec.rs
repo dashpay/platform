@@ -10,7 +10,7 @@ use platform_value::{platform_value, Value};
 fn setup_test() -> (Vec<Value>, PublicKeysValidator<NativeBlsModule>) {
     (
         crate::tests::fixtures::identity_fixture_raw_object()
-            .as_object()
+            .to_()
             .unwrap()
             .get("publicKeys")
             .unwrap()
@@ -35,7 +35,11 @@ pub mod id {
     #[test]
     pub fn should_be_present() {
         let (mut raw_public_keys, validator) = setup_test();
-        raw_public_keys.get_mut(1).unwrap().remove_key("id");
+        raw_public_keys
+            .get_mut(1)
+            .unwrap()
+            .remove_integer("id")
+            .unwrap();
 
         let result = validator.validate_keys(&raw_public_keys).unwrap();
         let errors = assert_consensus_errors!(&result, ConsensusError::JsonSchemaError, 1);
@@ -336,7 +340,7 @@ pub fn should_return_invalid_result_if_there_are_duplicate_key_ids() {
     platform_value_set_ref(
         key1,
         "id",
-        key0.as_object().unwrap().get("id").unwrap().clone(),
+        key0.to_map().unwrap().get_integer("id").unwrap().clone(),
     );
 
     let result = validator.validate_keys(&raw_public_keys).unwrap();
@@ -352,11 +356,9 @@ pub fn should_return_invalid_result_if_there_are_duplicate_key_ids() {
     let expected_ids = vec![raw_public_keys
         .get(1)
         .unwrap()
-        .as_object()
+        .as_map()
         .unwrap()
-        .get("id")
-        .unwrap()
-        .as_u64()
+        .get_integer("id")
         .unwrap() as KeyID];
 
     assert_eq!(consensus_error.code(), 1030);
@@ -371,7 +373,7 @@ pub fn should_return_invalid_result_if_there_are_duplicate_keys() {
     platform_value_set_ref(
         key1,
         "data",
-        key0.as_object().unwrap().get("data").unwrap().clone(),
+        key0.as_map().unwrap().get("data").unwrap().clone(),
     );
 
     let result = validator.validate_keys(&raw_public_keys).unwrap();
@@ -387,7 +389,7 @@ pub fn should_return_invalid_result_if_there_are_duplicate_keys() {
     let expected_ids = vec![raw_public_keys
         .get(1)
         .unwrap()
-        .as_object()
+        .as_map()
         .unwrap()
         .get("id")
         .unwrap()
@@ -416,7 +418,7 @@ pub fn should_return_invalid_result_if_key_data_is_not_a_valid_der() {
     assert_eq!(consensus_error.code(), 1040);
     assert_eq!(
         error.public_key_id(),
-        raw_public_keys[1].get("id").unwrap().as_u64().unwrap() as KeyID
+        raw_public_keys[1].get_integer("id").unwrap() as KeyID
     );
     assert_eq!(
         error.validation_error().as_ref().unwrap().message(),
@@ -451,19 +453,17 @@ pub fn should_return_invalid_result_if_key_has_an_invalid_combination_of_purpose
     assert_eq!(consensus_error.code(), 1047);
     assert_eq!(
         error.public_key_id(),
-        raw_public_keys[1].get("id").unwrap().as_u64().unwrap() as KeyID
+        raw_public_keys[1].get_integer("id").unwrap() as KeyID
     );
     assert_eq!(
-        error.security_level() as u64,
+        error.security_level() as u8,
         raw_public_keys[1]
-            .get("securityLevel")
-            .unwrap()
-            .as_u64()
+            .get_integer::<u8>("securityLevel")
             .unwrap()
     );
     assert_eq!(
-        error.purpose() as u64,
-        raw_public_keys[1].get("purpose").unwrap().as_u64().unwrap()
+        error.purpose() as u8,
+        raw_public_keys[1]..get_integer::<u8>("purpose").unwrap()
     );
 }
 
@@ -482,11 +482,11 @@ pub fn should_pass_valid_bls12_381_public_key() {
     // needs reevaluation once v19 is released.
 
     let (_, validator) = setup_test();
-    let raw_public_keys_json = json!([{
-        "id": 0,
-        "type": KeyType::BLS12_381 as u64,
-        "purpose": 0,
-        "securityLevel": 0,
+    let raw_public_keys_json = platform_value!([{
+        "id": 0u32,
+        "type": KeyType::BLS12_381 as u8,
+        "purpose": 0u8,
+        "securityLevel": 0u8,
         "readOnly": true,
         "data": hex::decode("01fac99ca2c8f39c286717c213e190aba4b7af76db320ec43f479b7d9a2012313a0ae59ca576edf801444bc694686694").unwrap(),
     }]);
@@ -503,11 +503,11 @@ pub fn should_pass_valid_bls12_381_public_key() {
 #[test]
 pub fn should_pass_valid_ecdsa_hash160_public_key() {
     let (_, validator) = setup_test();
-    let raw_public_keys_json = json!([{
-        "id": 0,
-        "type": KeyType::ECDSA_HASH160 as u64,
-        "purpose": 0,
-        "securityLevel": 0,
+    let raw_public_keys_json = platform_value!([{
+        "id": 0u32,
+        "type": KeyType::ECDSA_HASH160 as u8,
+        "purpose": 0u8,
+        "securityLevel": 0u8,
         "readOnly": true,
         "data": hex::decode("6086389d3fa4773aa950b8de18c5bd6d8f2b73bc").unwrap(),
     }]);
@@ -522,10 +522,10 @@ pub fn should_pass_valid_ecdsa_hash160_public_key() {
 pub fn should_return_invalid_result_if_bls12_381_public_key_is_invalid() {
     let (_, validator) = setup_test();
     let raw_public_keys_json = platform_value!([{
-        "id": 0,
-        "type": KeyType::BLS12_381,
-        "purpose": 0,
-        "securityLevel": 0,
+        "id": 0u32,
+        "type": KeyType::BLS12_381 as u8,
+        "purpose": 0u8,
+        "securityLevel": 0u8,
         "readOnly": true,
         "data": hex::decode("11fac99ca2c8f39c286717c213e190aba4b7af76db320ec43f479b7d9a2012313a0ae59ca576edf801444bc694686694").unwrap(),
     }]);
@@ -547,9 +547,9 @@ pub fn should_return_invalid_result_if_bls12_381_public_key_is_invalid() {
         raw_public_keys
             .get(0)
             .unwrap()
-            .as_object()
+            .to_map()
             .unwrap()
-            .get("id")
+            .get_integer("id")
             .unwrap()
             .as_u64()
             .unwrap() as KeyID

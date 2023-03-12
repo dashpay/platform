@@ -1,6 +1,5 @@
+use platform_value::Value;
 use std::sync::Arc;
-
-use serde_json::Value;
 
 use crate::errors::consensus::ConsensusError;
 use crate::identity::validation::{IdentityValidator, PublicKeysValidator, PUBLIC_KEY_SCHEMA};
@@ -36,7 +35,9 @@ pub mod protocol_version {
     #[test]
     pub fn should_be_present() {
         let (mut identity, identity_validator) = setup_test();
-        identity = serde_remove(identity, "protocolVersion");
+        identity
+            .remove("protocolVersion")
+            .expect("expected to remove protocol version");
 
         let result = identity_validator.validate_identity(&identity).unwrap();
 
@@ -95,7 +96,7 @@ pub mod id {
     #[test]
     pub fn should_be_present() {
         let (mut identity, identity_validator) = setup_test();
-        identity = serde_remove(identity, "id");
+        identity.remove("id").expect("expected to remove id");
 
         let result = identity_validator.validate_identity(&identity).unwrap();
 
@@ -167,7 +168,9 @@ pub mod balance {
     #[test]
     pub fn should_be_present() {
         let (mut identity, identity_validator) = setup_test();
-        identity = serde_remove(identity, "balance");
+        identity
+            .remove("balance")
+            .expect("expected to remove balance");
 
         let result = identity_validator.validate_identity(&identity).unwrap();
 
@@ -231,7 +234,9 @@ pub mod public_keys {
     #[test]
     pub fn should_be_present() {
         let (mut identity, identity_validator) = setup_test();
-        identity = serde_remove(identity, "publicKeys");
+        identity
+            .remove("publicKeys")
+            .expect("expected to remove public keys");
 
         let result = identity_validator.validate_identity(&identity).unwrap();
 
@@ -342,7 +347,9 @@ pub mod revision {
     #[test]
     pub fn should_be_present() {
         let (mut identity, identity_validator) = setup_test();
-        identity = serde_remove(identity, "revision");
+        identity
+            .remove("protocolVersion")
+            .expect("expected to remove revision");
 
         let result = identity_validator.validate_identity(&identity).unwrap();
 

@@ -2,8 +2,9 @@ use std::collections::BTreeMap;
 
 use ciborium::value::Value as CborValue;
 use integer_encoding::VarInt;
+use platform_value::Value;
 use serde::{Deserialize, Serialize};
-use serde_json::{Value as JsonValue, Value};
+use serde_json::Value as JsonValue;
 
 use crate::identity::identity_public_key;
 use crate::identity::state_transition::asset_lock_proof::AssetLockProof;
@@ -229,22 +230,7 @@ impl Identity {
     }
 
     pub fn to_object(&self) -> Result<Value, ProtocolError> {
-        let mut identity_json: JsonValue = serde_json::to_value(self)?;
-
-        identity_json.replace_identifier_paths(IDENTIFIER_FIELDS_RAW_OBJECT, ReplaceWith::Bytes)?;
-
-        let pk_values = self
-            .public_keys
-            .values()
-            .map(|pk| pk.to_raw_json_object())
-            .collect::<Result<Vec<JsonValue>, SerdeParsingError>>()?;
-
-        identity_json.insert(
-            property_names::PUBLIC_KEYS.to_string(),
-            JsonValue::Array(pk_values),
-        )?;
-
-        Ok(identity_json)
+        platform_value::to_value(self).map_err(ProtocolError::ValueError)
     }
 
     pub fn from_buffer(b: impl AsRef<[u8]>) -> Result<Self, ProtocolError> {
@@ -314,10 +300,8 @@ impl Identity {
     }
 
     /// Creates an identity from a raw object
-    pub fn from_raw_object(mut raw_object: JsonValue) -> Result<Identity, ProtocolError> {
-        raw_object.replace_identifier_paths(IDENTIFIER_FIELDS_RAW_OBJECT, ReplaceWith::Base58)?;
-
-        let identity: Identity = serde_json::from_value(raw_object)?;
+    pub fn from_raw_object(mut raw_object: Value) -> Result<Identity, ProtocolError> {
+        let identity: Identity = platform_value::from_value(raw_object)?;
 
         Ok(identity)
     }

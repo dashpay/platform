@@ -12,12 +12,12 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value as JsonValue;
 
 use crate::consensus::basic::document::InvalidDocumentTypeError;
+use crate::data_contract::contract_config;
 use crate::data_contract::contract_config::{
     ContractConfig, DEFAULT_CONTRACT_CAN_BE_DELETED, DEFAULT_CONTRACT_DOCUMENTS_KEEPS_HISTORY,
     DEFAULT_CONTRACT_DOCUMENT_MUTABILITY, DEFAULT_CONTRACT_KEEPS_HISTORY,
     DEFAULT_CONTRACT_MUTABILITY,
 };
-use crate::data_contract::{contract_config, DriveContractExt};
 
 use crate::data_contract::get_binary_properties_from_schema::get_binary_properties;
 

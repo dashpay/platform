@@ -1,13 +1,12 @@
+use platform_value::Value;
+use platform_value::Value::Null;
 use std::collections::HashMap;
-
-use serde_json::Value;
-use serde_json::Value::Null;
 
 use crate::consensus::basic::identity::MissingMasterPublicKeyError;
 use crate::identity::validation::TPublicKeysValidator;
 use crate::identity::{IdentityPublicKey, Purpose, SecurityLevel};
 use crate::validation::ValidationResult;
-use crate::{DashPlatformProtocolInitError, NonConsensusError};
+use crate::{DashPlatformProtocolInitError, NonConsensusError, ProtocolError};
 
 #[derive(Eq, Hash, PartialEq)]
 struct PurposeKey {
@@ -28,13 +27,16 @@ impl TPublicKeysValidator for RequiredPurposeAndSecurityLevelValidator {
         let mut key_purposes_and_levels_count: HashMap<PurposeKey, usize> = HashMap::new();
 
         for raw_public_key in raw_public_keys.iter().filter(|pk| {
-            if let Some(disabled_at) = pk.get("disabledAt") {
-                disabled_at == &Null
+            if let Some(disabled_at) = pk
+                .get_optional_bool("disabledAt")
+                .map_err(ProtocolError::ValueError)?
+            {
+                disabled_at == false
             } else {
                 true
             }
         }) {
-            let public_key: IdentityPublicKey = serde_json::from_value(raw_public_key.clone())?;
+            let public_key: IdentityPublicKey = platform_value::from_value(raw_public_key.clone())?;
             let combo = PurposeKey {
                 purpose: public_key.purpose,
                 security_level: public_key.security_level,

@@ -443,10 +443,6 @@ impl Document {
         Ok(json_object)
     }
 
-    pub fn from_raw_json_document(raw_document: JsonValue) -> Result<Self, ProtocolError> {
-        Self::from_json_value::<Vec<u8>>(raw_document)
-    }
-
     pub fn from_json_value<S>(mut document_value: JsonValue) -> Result<Self, ProtocolError>
     where
         for<'de> S: Deserialize<'de> + TryInto<Identifier, Error = ProtocolError>,
