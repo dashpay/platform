@@ -3,10 +3,10 @@
 pub use serde::{Deserialize, Serialize};
 use wasm_bindgen::prelude::*;
 
+use crate::utils::ToSerdeJSONExt;
 use dpp::metadata::Metadata;
 use dpp::util::deserializer::ProtocolVersion;
 use dpp::util::json_value::JsonValueExt;
-use crate::utils::ToSerdeJSONExt;
 
 #[wasm_bindgen(js_name=Metadata)]
 #[derive(Debug)]
@@ -36,10 +36,18 @@ impl MetadataWasm {
     #[wasm_bindgen(constructor)]
     pub fn new(options: JsValue) -> Result<MetadataWasm, JsValue> {
         let metadata_options = options.with_serde_to_json_value()?;
-        let block_height = metadata_options.get_f64("blockHeight").map_err(|e| JsError::new(&e.to_string()))?;
-        let core_chain_locked_height = metadata_options.get_f64("coreChainLockedHeight").map_err(|e| JsError::new(&e.to_string()))?;
-        let time_ms = metadata_options.get_f64("timeMs").map_err(|e| JsError::new(&e.to_string()))?;
-        let protocol_version = metadata_options.get_f64("protocolVersion").map_err(|e| JsError::new(&e.to_string()))?;
+        let block_height = metadata_options
+            .get_f64("blockHeight")
+            .map_err(|e| JsError::new(&e.to_string()))?;
+        let core_chain_locked_height = metadata_options
+            .get_f64("coreChainLockedHeight")
+            .map_err(|e| JsError::new(&e.to_string()))?;
+        let time_ms = metadata_options
+            .get_f64("timeMs")
+            .map_err(|e| JsError::new(&e.to_string()))?;
+        let protocol_version = metadata_options
+            .get_f64("protocolVersion")
+            .map_err(|e| JsError::new(&e.to_string()))?;
 
         let inner = Metadata {
             block_height: block_height as u64,
@@ -74,7 +82,7 @@ impl MetadataWasm {
     }
 
     #[wasm_bindgen(js_name=getCoreChainLockedHeight)]
-    pub fn getCoreChainLockedHeight(&self) -> f64 {
+    pub fn core_chain_locked_height(&self) -> f64 {
         self.0.core_chain_locked_height as f64
     }
 
