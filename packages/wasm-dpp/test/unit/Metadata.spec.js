@@ -1,4 +1,3 @@
-// const Metadata = require('@dashevo/dpp/lib/Metadata');
 const { default: loadWasmDpp } = require('../..');
 
 let Metadata;
