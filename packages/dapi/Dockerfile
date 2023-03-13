@@ -3,7 +3,8 @@
 # Build wasm-dpp
 FROM rust as builder
 
-RUN apt-get update && apt-get install -y clang
+RUN --mount=type=cache,target=/var/cache/apt \
+    apt-get update && apt-get install -y clang
 
 WORKDIR /platform
 
