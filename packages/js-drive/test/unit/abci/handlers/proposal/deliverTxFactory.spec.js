@@ -56,7 +56,6 @@ describe('deliverTxFactory', () => {
     const documentFixture = getDocumentsFixture();
 
     dpp = new DashPlatformProtocol();
-    await dpp.initialize();
 
     documentsBatchTransitionFixture = dpp.document.createStateTransition({
       create: documentFixture,
