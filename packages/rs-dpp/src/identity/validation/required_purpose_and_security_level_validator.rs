@@ -29,7 +29,7 @@ impl TPublicKeysValidator for RequiredPurposeAndSecurityLevelValidator {
         for raw_public_key in raw_public_keys.iter().filter(|pk| {
             if let Some(disabled_at) = pk
                 .get_optional_bool("disabledAt")
-                .map_err(ProtocolError::ValueError)?
+                .map_err(NonConsensusError::ValueError)?
             {
                 disabled_at == false
             } else {

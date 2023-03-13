@@ -1141,8 +1141,9 @@ mod tests {
             },
         });
 
-        let contract = serializer::value_to_cbor(contract, Some(defaults::PROTOCOL_VERSION))
-            .expect("expected to serialize to cbor");
+        let contract =
+            serializer::serializable_value_to_cbor(&contract, Some(defaults::PROTOCOL_VERSION))
+                .expect("expected to serialize to cbor");
 
         drive
             .apply_contract_cbor(
@@ -1171,7 +1172,7 @@ mod tests {
         });
 
         let serialized_document =
-            serializer::value_to_cbor(document, Some(defaults::PROTOCOL_VERSION))
+            serializer::serializable_value_to_cbor(&document, Some(defaults::PROTOCOL_VERSION))
                 .expect("expected to serialize to cbor");
 
         drive
@@ -1204,7 +1205,7 @@ mod tests {
         });
 
         let serialized_document =
-            serializer::value_to_cbor(document, Some(defaults::PROTOCOL_VERSION))
+            serializer::serializable_value_to_cbor(&document, Some(defaults::PROTOCOL_VERSION))
                 .expect("expected to serialize to cbor");
 
         drive
@@ -2084,8 +2085,9 @@ mod tests {
         transaction: TransactionArg,
     ) -> FeeResult {
         let value = serde_json::to_value(person).expect("serialized person");
-        let document_cbor = serializer::value_to_cbor(value, Some(defaults::PROTOCOL_VERSION))
-            .expect("expected to serialize to cbor");
+        let document_cbor =
+            serializer::serializable_value_to_cbor(&value, Some(defaults::PROTOCOL_VERSION))
+                .expect("expected to serialize to cbor");
         let document = Document::from_cbor(document_cbor.as_slice(), None, None)
             .expect("document should be properly deserialized");
         let document_type = contract

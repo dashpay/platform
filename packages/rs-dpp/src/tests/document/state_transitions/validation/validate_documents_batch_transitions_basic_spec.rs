@@ -22,6 +22,7 @@ use crate::{
     version::{ProtocolVersionValidator, LATEST_VERSION},
 };
 
+use crate::document::document_transition::document_base_transition::JsonValue;
 use jsonschema::error::ValidationErrorKind;
 use platform_value::{platform_value, Value};
 use test_case::test_case;
@@ -120,7 +121,7 @@ async fn property_should_be_present(property: &str) {
     assert!(matches!(
         schema_error.kind(),
         ValidationErrorKind::Required {
-            property: Value::Text(missing_property)
+            property: JsonValue::String(missing_property)
         } if missing_property == property
     ));
 }
@@ -424,8 +425,8 @@ async fn property_in_document_transition_should_be_present(property: &str) {
     assert!(matches!(
         schema_error.kind(),
         ValidationErrorKind::Required {
-            property: Value::Text(missing_property)
-        } if missing_property == property
+            property: JsonValue::String(missing_property)
+        } if missing_property.into::<Value>() == property
     ));
 }
 
@@ -709,7 +710,7 @@ async fn property_in_replace_transition_should_be_present(property: &str) {
     assert!(matches!(
         schema_error.kind(),
         ValidationErrorKind::Required {
-            property: Value::Text(missing_property)
+            property: JsonValue::String(missing_property)
         } if missing_property == property
     ));
 }
@@ -815,7 +816,7 @@ async fn id_should_be_present_in_delete_transition() {
     assert!(matches!(
         schema_error.kind(),
         ValidationErrorKind::Required {
-            property: Value::Text(missing_property)
+            property: JsonValue::String(missing_property)
         } if missing_property == "$id"
     ));
 }

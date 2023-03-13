@@ -175,8 +175,12 @@ impl TryInto<Value> for AssetLockProof {
 
     fn try_into(self) -> Result<Value, Self::Error> {
         match self {
-            AssetLockProof::Instant(instant_proof) => platform_value::to_value(instant_proof),
-            AssetLockProof::Chain(chain_proof) => platform_value::to_value(chain_proof),
+            AssetLockProof::Instant(instant_proof) => {
+                platform_value::to_value(instant_proof).map_err(ProtocolError::ValueError)
+            }
+            AssetLockProof::Chain(chain_proof) => {
+                platform_value::to_value(chain_proof).map_err(ProtocolError::ValueError)
+            }
         }
     }
 }
@@ -186,8 +190,12 @@ impl TryInto<Value> for &AssetLockProof {
 
     fn try_into(self) -> Result<Value, Self::Error> {
         match self {
-            AssetLockProof::Instant(instant_proof) => platform_value::to_value(instant_proof),
-            AssetLockProof::Chain(chain_proof) => platform_value::to_value(chain_proof),
+            AssetLockProof::Instant(instant_proof) => {
+                platform_value::to_value(instant_proof).map_err(ProtocolError::ValueError)
+            }
+            AssetLockProof::Chain(chain_proof) => {
+                platform_value::to_value(chain_proof).map_err(ProtocolError::ValueError)
+            }
         }
     }
 }

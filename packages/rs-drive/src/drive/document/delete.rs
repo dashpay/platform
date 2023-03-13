@@ -1691,8 +1691,8 @@ mod tests {
             ],
         });
 
-        let query_cbor =
-            serializer::value_to_cbor(query_json, None).expect("expected to serialize to cbor");
+        let query_cbor = serializer::serializable_value_to_cbor(&query_json, None)
+            .expect("expected to serialize to cbor");
 
         drive
             .grove
@@ -1732,8 +1732,8 @@ mod tests {
             ],
         });
 
-        let query_cbor =
-            serializer::value_to_cbor(query_json, None).expect("expected to serialize to cbor");
+        let query_cbor = serializer::serializable_value_to_cbor(&query_json, None)
+            .expect("expected to serialize to cbor");
 
         let (results, _, _) = drive
             .query_documents_cbor_from_contract(

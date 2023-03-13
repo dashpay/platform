@@ -2,7 +2,6 @@ use anyhow::anyhow;
 use platform_value::Value;
 use std::sync::Arc;
 
-use crate::document::document_transition::document_base_transition::JsonValue;
 use crate::document::ExtendedDocument;
 use crate::{
     data_contract::DataContract, prelude::Identifier, state_repository::StateRepositoryLike,

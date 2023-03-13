@@ -13,10 +13,7 @@ use crate::util::cbor_value::{CborBTreeMapHelper, CborCanonicalMap};
 use crate::util::deserializer;
 use crate::util::deserializer::SplitProtocolVersionOutcome;
 use crate::util::json_value::{JsonValueExt, ReplaceWith};
-use crate::{
-    errors::ProtocolError, identifier::Identifier, metadata::Metadata, util::hash,
-    SerdeParsingError,
-};
+use crate::{errors::ProtocolError, identifier::Identifier, metadata::Metadata, util::hash};
 
 use super::{IdentityPublicKey, KeyID};
 

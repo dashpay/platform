@@ -1,11 +1,9 @@
-use std::{collections::HashMap, sync::Arc};
-
-use anyhow::anyhow;
 use itertools::Itertools;
 use lazy_static::lazy_static;
 use log::trace;
 use platform_value::Value;
 use serde_json::Value as JsonValue;
+use std::{collections::HashMap, sync::Arc};
 
 use crate::consensus::basic::data_contract::{
     DuplicateIndexError, DuplicateIndexNameError, InvalidCompoundIndexError,

@@ -3,6 +3,7 @@ use std::convert::TryFrom;
 use async_trait::async_trait;
 #[cfg(test)]
 use mockall::{automock, predicate::*};
+use platform_value::Value;
 use serde_json::Value as JsonValue;
 
 use crate::consensus::basic::state_transition::{
@@ -20,18 +21,18 @@ use crate::{
 async fn validate_state_transition_basic(
     state_repository: &impl StateRepositoryLike,
     validate_functions_by_type: &impl ValidatorByStateTransitionType,
-    raw_state_transition: JsonValue,
+    raw_state_transition: Value,
 ) -> Result<SimpleValidationResult, ProtocolError> {
     let mut result = SimpleValidationResult::default();
 
-    let raw_transition_type = match raw_state_transition.get_u64("type") {
+    let raw_transition_type = match raw_state_transition.get_integer("type") {
         Err(_) => {
             result.add_error(BasicError::MissingStateTransitionTypeError);
             return Ok(result);
         }
 
         Ok(transaction_type) => transaction_type,
-    } as u8;
+    };
 
     let state_transition_type = match StateTransitionType::try_from(raw_transition_type) {
         Err(_) => {
@@ -70,13 +71,14 @@ async fn validate_state_transition_basic(
 pub trait ValidatorByStateTransitionType: Sync {
     async fn validate(
         &self,
-        raw_state_transition: &JsonValue,
+        raw_state_transition: &Value,
         state_transition_type: StateTransitionType,
     ) -> Result<SimpleValidationResult, ProtocolError>;
 }
 
 #[cfg(test)]
 mod test {
+    use platform_value::{platform_value, Value};
     use serde_json::{json, Value as JsonValue};
     use std::sync::Arc;
 
@@ -101,7 +103,7 @@ mod test {
     struct TestData {
         data_contract: DataContract,
         state_transition: DataContractCreateTransition,
-        raw_state_transition: JsonValue,
+        raw_state_transition: Value,
         bls: NativeBlsModule,
     }
 
@@ -182,7 +184,7 @@ mod test {
         let state_repository_mock = MockStateRepositoryLike::new();
         let validate_by_type_mock = MockValidatorByStateTransitionType::new();
 
-        raw_state_transition["type"] = json!(123);
+        raw_state_transition["type"] = platform_value!(123u32);
 
         let result = validate_state_transition_basic(
             &state_repository_mock,
@@ -215,7 +217,7 @@ mod test {
         let state_repository_mock = MockStateRepositoryLike::new();
         let validate_by_type_mock = MockValidatorByStateTransitionType::new();
 
-        raw_state_transition["type"] = json!(123);
+        raw_state_transition["type"] = platform_value!(123u32);
 
         let result = validate_state_transition_basic(
             &state_repository_mock,

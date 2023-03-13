@@ -2,7 +2,6 @@ use std::{convert::TryInto, sync::Arc};
 
 use platform_value::Value;
 
-use crate::consensus::basic::invalid_identifier_error::InvalidIdentifierError;
 use crate::data_contract::state_transition::errors::MissingDataContractIdError;
 use crate::{
     consensus::{basic::BasicError, ConsensusError},

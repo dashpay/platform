@@ -72,8 +72,8 @@ impl Platform {
             ],
         });
 
-        let query_cbor =
-            serializer::value_to_cbor(query_json, None).expect("expected to serialize to cbor");
+        let query_cbor = serializer::serializable_value_to_cbor(&query_json, None)
+            .expect("expected to serialize to cbor");
 
         let QueryDocumentsOutcome { items, .. } =
             self.drive.query_documents_cbor_with_document_type_lookup(

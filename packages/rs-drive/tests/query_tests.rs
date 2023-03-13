@@ -232,9 +232,11 @@ pub fn setup_family_tests(count: u32, with_batching: bool, seed: u64) -> (Drive,
     let people = Person::random_people(count, seed);
     for person in people {
         let value = serde_json::to_value(person).expect("serialized person");
-        let document_cbor =
-            serializer::value_to_cbor(value, Some(drive::drive::defaults::PROTOCOL_VERSION))
-                .expect("expected to serialize to cbor");
+        let document_cbor = serializer::serializable_value_to_cbor(
+            &value,
+            Some(drive::drive::defaults::PROTOCOL_VERSION),
+        )
+        .expect("expected to serialize to cbor");
         let document = Document::from_cbor(document_cbor.as_slice(), None, None)
             .expect("document should be properly deserialized");
 
@@ -311,9 +313,11 @@ pub fn setup_family_tests_with_nulls(
     let people = PersonWithOptionalValues::random_people(count, seed);
     for person in people {
         let value = serde_json::to_value(person).expect("serialized person");
-        let document_cbor =
-            serializer::value_to_cbor(value, Some(drive::drive::defaults::PROTOCOL_VERSION))
-                .expect("expected to serialize to cbor");
+        let document_cbor = serializer::serializable_value_to_cbor(
+            &value,
+            Some(drive::drive::defaults::PROTOCOL_VERSION),
+        )
+        .expect("expected to serialize to cbor");
         let document = Document::from_cbor(document_cbor.as_slice(), None, None)
             .expect("document should be properly deserialized");
         let document_type = contract
@@ -389,9 +393,11 @@ pub fn setup_family_tests_only_first_name_index(
     let people = Person::random_people(count, seed);
     for person in people {
         let value = serde_json::to_value(person).expect("serialized person");
-        let document_cbor =
-            serializer::value_to_cbor(value, Some(drive::drive::defaults::PROTOCOL_VERSION))
-                .expect("expected to serialize to cbor");
+        let document_cbor = serializer::serializable_value_to_cbor(
+            &value,
+            Some(drive::drive::defaults::PROTOCOL_VERSION),
+        )
+        .expect("expected to serialize to cbor");
         let document = Document::from_cbor(document_cbor.as_slice(), None, None)
             .expect("document should be properly deserialized");
 
@@ -501,9 +507,11 @@ pub fn add_domains_to_contract(
     let domains = Domain::random_domains_in_parent(count, seed, "dash");
     for domain in domains {
         let value = serde_json::to_value(domain).expect("serialized domain");
-        let document_cbor =
-            serializer::value_to_cbor(value, Some(drive::drive::defaults::PROTOCOL_VERSION))
-                .expect("expected to serialize to cbor");
+        let document_cbor = serializer::serializable_value_to_cbor(
+            &value,
+            Some(drive::drive::defaults::PROTOCOL_VERSION),
+        )
+        .expect("expected to serialize to cbor");
         let document = Document::from_cbor(document_cbor.as_slice(), None, None)
             .expect("document should be properly deserialized");
         let document_type = contract
@@ -598,9 +606,11 @@ pub fn setup_dpns_test_with_data(path: &str) -> (Drive, Contract) {
         let domain_json: serde_json::Value =
             serde_json::from_str(&domain_json).expect("should parse json");
 
-        let domain_cbor =
-            serializer::value_to_cbor(domain_json, Some(drive::drive::defaults::PROTOCOL_VERSION))
-                .expect("expected to serialize to cbor");
+        let domain_cbor = serializer::serializable_value_to_cbor(
+            &domain_json,
+            Some(drive::drive::defaults::PROTOCOL_VERSION),
+        )
+        .expect("expected to serialize to cbor");
 
         let domain = Document::from_cbor(&domain_cbor, None, None)
             .expect("expected to deserialize the document");
@@ -651,9 +661,11 @@ fn test_query_many() {
     let people = Person::random_people(10, 73409);
     for person in people {
         let value = serde_json::to_value(person).expect("serialized person");
-        let document_cbor =
-            serializer::value_to_cbor(value, Some(drive::drive::defaults::PROTOCOL_VERSION))
-                .expect("expected to serialize to cbor");
+        let document_cbor = serializer::serializable_value_to_cbor(
+            &value,
+            Some(drive::drive::defaults::PROTOCOL_VERSION),
+        )
+        .expect("expected to serialize to cbor");
         let document = Document::from_cbor(document_cbor.as_slice(), None, None)
             .expect("document should be properly deserialized");
         let document_type = contract
@@ -713,8 +725,8 @@ fn test_reference_proof_single_index() {
             ["firstName", "asc"]
         ]
     });
-    let where_cbor =
-        serializer::value_to_cbor(query_value, None).expect("expected to serialize to cbor");
+    let where_cbor = serializer::serializable_value_to_cbor(&query_value, None)
+        .expect("expected to serialize to cbor");
     let person_document_type = contract
         .document_types()
         .get("person")
@@ -755,8 +767,8 @@ fn test_non_existence_reference_proof_single_index() {
             ["firstName", "asc"]
         ]
     });
-    let where_cbor =
-        serializer::value_to_cbor(query_value, None).expect("expected to serialize to cbor");
+    let where_cbor = serializer::serializable_value_to_cbor(&query_value, None)
+        .expect("expected to serialize to cbor");
     let person_document_type = contract
         .document_types()
         .get("person")
@@ -817,8 +829,8 @@ fn test_family_basic_queries() {
             ["firstName", "asc"]
         ]
     });
-    let where_cbor =
-        serializer::value_to_cbor(query_value, None).expect("expected to serialize to cbor");
+    let where_cbor = serializer::serializable_value_to_cbor(&query_value, None)
+        .expect("expected to serialize to cbor");
     let person_document_type = contract
         .document_types()
         .get("person")
@@ -859,8 +871,8 @@ fn test_family_basic_queries() {
         ]
     });
 
-    let query_cbor =
-        serializer::value_to_cbor(query_value, None).expect("expected to serialize to cbor");
+    let query_cbor = serializer::serializable_value_to_cbor(&query_value, None)
+        .expect("expected to serialize to cbor");
 
     let person_document_type = contract
         .document_types()
@@ -899,8 +911,8 @@ fn test_family_basic_queries() {
         ],
     });
 
-    let query_cbor =
-        serializer::value_to_cbor(query_value, None).expect("expected to serialize to cbor");
+    let query_cbor = serializer::serializable_value_to_cbor(&query_value, None)
+        .expect("expected to serialize to cbor");
 
     let person_document_type = contract
         .document_types()
@@ -955,8 +967,8 @@ fn test_family_basic_queries() {
         ]
     });
 
-    let query_cbor =
-        serializer::value_to_cbor(query_value, None).expect("expected to serialize to cbor");
+    let query_cbor = serializer::serializable_value_to_cbor(&query_value, None)
+        .expect("expected to serialize to cbor");
 
     let person_document_type = contract
         .document_types()
@@ -998,8 +1010,8 @@ fn test_family_basic_queries() {
         ]
     });
 
-    let query_cbor =
-        serializer::value_to_cbor(query_value, None).expect("expected to serialize to cbor");
+    let query_cbor = serializer::serializable_value_to_cbor(&query_value, None)
+        .expect("expected to serialize to cbor");
 
     let person_document_type = contract
         .document_types()
@@ -1049,8 +1061,8 @@ fn test_family_basic_queries() {
         ]
     });
 
-    let query_cbor =
-        serializer::value_to_cbor(query_value, None).expect("expected to serialize to cbor");
+    let query_cbor = serializer::serializable_value_to_cbor(&query_value, None)
+        .expect("expected to serialize to cbor");
 
     let person_document_type = contract
         .document_types()
@@ -1089,8 +1101,8 @@ fn test_family_basic_queries() {
         ]
     });
 
-    let query_cbor =
-        serializer::value_to_cbor(query_value, None).expect("expected to serialize to cbor");
+    let query_cbor = serializer::serializable_value_to_cbor(&query_value, None)
+        .expect("expected to serialize to cbor");
 
     let person_document_type = contract
         .document_types()
@@ -1132,8 +1144,8 @@ fn test_family_basic_queries() {
             ["firstName", "asc"]
         ]
     });
-    let where_cbor =
-        serializer::value_to_cbor(query_value, None).expect("expected to serialize to cbor");
+    let where_cbor = serializer::serializable_value_to_cbor(&query_value, None)
+        .expect("expected to serialize to cbor");
     let person_document_type = contract
         .document_types()
         .get("person")
@@ -1184,8 +1196,8 @@ fn test_family_basic_queries() {
             ["firstName", "asc"]
         ]
     });
-    let where_cbor =
-        serializer::value_to_cbor(query_value, None).expect("expected to serialize to cbor");
+    let where_cbor = serializer::serializable_value_to_cbor(&query_value, None)
+        .expect("expected to serialize to cbor");
     let person_document_type = contract
         .document_types()
         .get("person")
@@ -1231,8 +1243,8 @@ fn test_family_basic_queries() {
             ["firstName", "desc"]
         ]
     });
-    let where_cbor =
-        serializer::value_to_cbor(query_value, None).expect("expected to serialize to cbor");
+    let where_cbor = serializer::serializable_value_to_cbor(&query_value, None)
+        .expect("expected to serialize to cbor");
     let person_document_type = contract
         .document_types()
         .get("person")
@@ -1279,8 +1291,8 @@ fn test_family_basic_queries() {
             ["firstName", "asc"]
         ]
     });
-    let where_cbor =
-        serializer::value_to_cbor(query_value, None).expect("expected to serialize to cbor");
+    let where_cbor = serializer::serializable_value_to_cbor(&query_value, None)
+        .expect("expected to serialize to cbor");
     let person_document_type = contract
         .document_types()
         .get("person")
@@ -1335,8 +1347,8 @@ fn test_family_basic_queries() {
             ["firstName", "asc"]
         ]
     });
-    let where_cbor =
-        serializer::value_to_cbor(query_value, None).expect("expected to serialize to cbor");
+    let where_cbor = serializer::serializable_value_to_cbor(&query_value, None)
+        .expect("expected to serialize to cbor");
     let person_document_type = contract
         .document_types()
         .get("person")
@@ -1379,8 +1391,8 @@ fn test_family_basic_queries() {
             ["firstName", "desc"]
         ]
     });
-    let where_cbor =
-        serializer::value_to_cbor(query_value, None).expect("expected to serialize to cbor");
+    let where_cbor = serializer::serializable_value_to_cbor(&query_value, None)
+        .expect("expected to serialize to cbor");
     let person_document_type = contract
         .document_types()
         .get("person")
@@ -1435,8 +1447,8 @@ fn test_family_basic_queries() {
             ["age", "desc"]
         ]
     });
-    let where_cbor =
-        serializer::value_to_cbor(query_value, None).expect("expected to serialize to cbor");
+    let where_cbor = serializer::serializable_value_to_cbor(&query_value, None)
+        .expect("expected to serialize to cbor");
     let person_document_type = contract
         .document_types()
         .get("person")
@@ -1490,8 +1502,8 @@ fn test_family_basic_queries() {
             ["age", "desc"]
         ]
     });
-    let where_cbor =
-        serializer::value_to_cbor(query_value, None).expect("expected to serialize to cbor");
+    let where_cbor = serializer::serializable_value_to_cbor(&query_value, None)
+        .expect("expected to serialize to cbor");
     let person_document_type = contract
         .document_types()
         .get("person")
@@ -1580,8 +1592,8 @@ fn test_family_basic_queries() {
         age: rng.gen_range(0..85),
     };
     let serialized_person = serde_json::to_value(&fixed_person).expect("serialized person");
-    let person_cbor = serializer::value_to_cbor(
-        serialized_person,
+    let person_cbor = serializer::serializable_value_to_cbor(
+        &serialized_person,
         Some(drive::drive::defaults::PROTOCOL_VERSION),
     )
     .expect("expected to serialize to cbor");
@@ -1630,8 +1642,8 @@ fn test_family_basic_queries() {
         age: rng.gen_range(0..85),
     };
     let serialized_person = serde_json::to_value(&next_person).expect("serialized person");
-    let person_cbor = serializer::value_to_cbor(
-        serialized_person,
+    let person_cbor = serializer::serializable_value_to_cbor(
+        &serialized_person,
         Some(drive::drive::defaults::PROTOCOL_VERSION),
     )
     .expect("expected to serialize to cbor");
@@ -1671,8 +1683,8 @@ fn test_family_basic_queries() {
         ],
     });
 
-    let query_cbor =
-        serializer::value_to_cbor(query_value, None).expect("expected to serialize to cbor");
+    let query_cbor = serializer::serializable_value_to_cbor(&query_value, None)
+        .expect("expected to serialize to cbor");
 
     let person_document_type = contract
         .document_types()
@@ -1714,8 +1726,8 @@ fn test_family_basic_queries() {
         "orderBy": [["$id", "asc"]],
     });
 
-    let query_cbor =
-        serializer::value_to_cbor(query_value, None).expect("expected to serialize to cbor");
+    let query_cbor = serializer::serializable_value_to_cbor(&query_value, None)
+        .expect("expected to serialize to cbor");
 
     let person_document_type = contract
         .document_types()
@@ -1755,8 +1767,8 @@ fn test_family_basic_queries() {
         "orderBy": [["$id", "desc"]],
     });
 
-    let query_cbor =
-        serializer::value_to_cbor(query_value, None).expect("expected to serialize to cbor");
+    let query_cbor = serializer::serializable_value_to_cbor(&query_value, None)
+        .expect("expected to serialize to cbor");
 
     let person_document_type = contract
         .document_types()
@@ -1792,8 +1804,8 @@ fn test_family_basic_queries() {
     //
     let query_value = json!({});
 
-    let query_cbor =
-        serializer::value_to_cbor(query_value, None).expect("expected to serialize to cbor");
+    let query_cbor = serializer::serializable_value_to_cbor(&query_value, None)
+        .expect("expected to serialize to cbor");
 
     let person_document_type = contract
         .document_types()
@@ -1819,8 +1831,8 @@ fn test_family_basic_queries() {
         "orderBy": [["$id", "desc"]]
     });
 
-    let query_cbor =
-        serializer::value_to_cbor(query_value, None).expect("expected to serialize to cbor");
+    let query_cbor = serializer::serializable_value_to_cbor(&query_value, None)
+        .expect("expected to serialize to cbor");
 
     let person_document_type = contract
         .document_types()
@@ -1861,8 +1873,8 @@ fn test_family_basic_queries() {
         "orderBy": [["$ownerId", "desc"]]
     });
 
-    let query_cbor =
-        serializer::value_to_cbor(query_value, None).expect("expected to serialize to cbor");
+    let query_cbor = serializer::serializable_value_to_cbor(&query_value, None)
+        .expect("expected to serialize to cbor");
 
     let person_document_type = contract
         .document_types()
@@ -1891,8 +1903,8 @@ fn test_family_basic_queries() {
         "orderBy": [["$ownerId", "asc"]]
     });
 
-    let query_cbor =
-        serializer::value_to_cbor(query_value, None).expect("expected to serialize to cbor");
+    let query_cbor = serializer::serializable_value_to_cbor(&query_value, None)
+        .expect("expected to serialize to cbor");
 
     let person_document_type = contract
         .document_types()
@@ -1933,8 +1945,8 @@ fn test_family_basic_queries() {
         ],
     });
 
-    let query_cbor =
-        serializer::value_to_cbor(query_value, None).expect("expected to serialize to cbor");
+    let query_cbor = serializer::serializable_value_to_cbor(&query_value, None)
+        .expect("expected to serialize to cbor");
 
     let (results, _, _) = drive
         .query_raw_documents_from_contract_cbor_using_cbor_encoded_query_with_cost(
@@ -1957,8 +1969,8 @@ fn test_family_basic_queries() {
         "orderBy": [["$id", "asc"]],
     });
 
-    let query_cbor =
-        serializer::value_to_cbor(query_value, None).expect("expected to serialize to cbor");
+    let query_cbor = serializer::serializable_value_to_cbor(&query_value, None)
+        .expect("expected to serialize to cbor");
 
     let person_document_type = contract
         .document_types()
@@ -1987,8 +1999,8 @@ fn test_family_basic_queries() {
         "orderBy": [["$id", "asc"]],
     });
 
-    let query_cbor =
-        serializer::value_to_cbor(query_value, None).expect("expected to serialize to cbor");
+    let query_cbor = serializer::serializable_value_to_cbor(&query_value, None)
+        .expect("expected to serialize to cbor");
 
     let person_document_type = contract
         .document_types()
@@ -2017,8 +2029,8 @@ fn test_family_basic_queries() {
         "orderBy": [["$id", "asc"]],
     });
 
-    let query_cbor =
-        serializer::value_to_cbor(query_value, None).expect("expected to serialize to cbor");
+    let query_cbor = serializer::serializable_value_to_cbor(&query_value, None)
+        .expect("expected to serialize to cbor");
 
     let person_document_type = contract
         .document_types()
@@ -2100,8 +2112,8 @@ fn test_family_starts_at_queries() {
             ["firstName", "asc"]
         ]
     });
-    let where_cbor =
-        serializer::value_to_cbor(query_value, None).expect("expected to serialize to cbor");
+    let where_cbor = serializer::serializable_value_to_cbor(&query_value, None)
+        .expect("expected to serialize to cbor");
     let person_document_type = contract
         .document_types()
         .get("person")
@@ -2155,8 +2167,8 @@ fn test_family_starts_at_queries() {
             ["firstName", "asc"]
         ]
     });
-    let where_cbor =
-        serializer::value_to_cbor(query_value, None).expect("expected to serialize to cbor");
+    let where_cbor = serializer::serializable_value_to_cbor(&query_value, None)
+        .expect("expected to serialize to cbor");
     let person_document_type = contract
         .document_types()
         .get("person")
@@ -2204,8 +2216,8 @@ fn test_family_starts_at_queries() {
             ["firstName", "desc"]
         ]
     });
-    let where_cbor =
-        serializer::value_to_cbor(query_value, None).expect("expected to serialize to cbor");
+    let where_cbor = serializer::serializable_value_to_cbor(&query_value, None)
+        .expect("expected to serialize to cbor");
     let person_document_type = contract
         .document_types()
         .get("person")
@@ -2259,8 +2271,8 @@ fn test_family_starts_at_queries() {
             ["firstName", "desc"]
         ]
     });
-    let where_cbor =
-        serializer::value_to_cbor(query_value, None).expect("expected to serialize to cbor");
+    let where_cbor = serializer::serializable_value_to_cbor(&query_value, None)
+        .expect("expected to serialize to cbor");
     let person_document_type = contract
         .document_types()
         .get("person")
@@ -2312,7 +2324,7 @@ fn test_family_sql_query() {
         .expect("contract should have a person document type");
 
     // Empty where clause
-    let query_cbor = serializer::value_to_cbor(
+    let query_cbor = serializer::serializable_value_to_cbor(
         json!({
             "where": [],
             "limit": 100,
@@ -2332,7 +2344,7 @@ fn test_family_sql_query() {
     assert_eq!(query1, query2);
 
     // Equality clause
-    let query_cbor = serializer::value_to_cbor(
+    let query_cbor = serializer::serializable_value_to_cbor(
         json!({
             "where": [
                 ["firstName", "==", "Chris"]
@@ -2350,7 +2362,7 @@ fn test_family_sql_query() {
     assert_eq!(query1, query2);
 
     // Less than
-    let query_cbor = serializer::value_to_cbor(
+    let query_cbor = serializer::serializable_value_to_cbor(
         json!({
             "where": [
                 ["firstName", "<", "Chris"]
@@ -2373,7 +2385,7 @@ fn test_family_sql_query() {
     assert_eq!(query1, query2);
 
     // Starts with
-    let query_cbor = serializer::value_to_cbor(
+    let query_cbor = serializer::serializable_value_to_cbor(
         json!({
             "where": [
                 ["firstName", "StartsWith", "C"]
@@ -2396,7 +2408,7 @@ fn test_family_sql_query() {
     assert_eq!(query1, query2);
 
     // Range combination
-    let query_cbor = serializer::value_to_cbor(
+    let query_cbor = serializer::serializable_value_to_cbor(
         json!({
             "where": [
                 ["firstName", ">", "Chris"],
@@ -2420,7 +2432,7 @@ fn test_family_sql_query() {
 
     // In clause
     let names = vec![String::from("a"), String::from("b")];
-    let query_cbor = serializer::value_to_cbor(
+    let query_cbor = serializer::serializable_value_to_cbor(
         json!({
             "where": [
                 ["firstName", "in", names]
@@ -2486,8 +2498,8 @@ fn test_family_with_nulls_query() {
             ["firstName", "asc"]
         ]
     });
-    let where_cbor =
-        serializer::value_to_cbor(query_value, None).expect("expected to serialize to cbor");
+    let where_cbor = serializer::serializable_value_to_cbor(&query_value, None)
+        .expect("expected to serialize to cbor");
     let person_document_type = contract
         .document_types()
         .get("person")
@@ -2596,8 +2608,8 @@ fn test_query_with_cached_contract() {
             ["firstName", "asc"]
         ]
     });
-    let where_cbor =
-        serializer::value_to_cbor(query_value, None).expect("expected to serialize to cbor");
+    let where_cbor = serializer::serializable_value_to_cbor(&query_value, None)
+        .expect("expected to serialize to cbor");
 
     let QueryDocumentsOutcome { items, .. } = drive
         .query_documents_cbor_with_document_type_lookup(
@@ -2663,8 +2675,8 @@ fn test_dpns_query() {
             ["normalizedLabel", "asc"]
         ]
     });
-    let where_cbor =
-        serializer::value_to_cbor(query_value, None).expect("expected to serialize to cbor");
+    let where_cbor = serializer::serializable_value_to_cbor(&query_value, None)
+        .expect("expected to serialize to cbor");
     let domain_document_type = contract
         .document_types()
         .get("domain")
@@ -2710,8 +2722,8 @@ fn test_dpns_query() {
             ["normalizedLabel", "asc"]
         ]
     });
-    let where_cbor =
-        serializer::value_to_cbor(query_value, None).expect("expected to serialize to cbor");
+    let where_cbor = serializer::serializable_value_to_cbor(&query_value, None)
+        .expect("expected to serialize to cbor");
     let domain_document_type = contract
         .document_types()
         .get("domain")
@@ -2785,8 +2797,8 @@ fn test_dpns_query() {
             ["normalizedLabel", "asc"]
         ]
     });
-    let where_cbor =
-        serializer::value_to_cbor(query_value, None).expect("expected to serialize to cbor");
+    let where_cbor = serializer::serializable_value_to_cbor(&query_value, None)
+        .expect("expected to serialize to cbor");
     let domain_document_type = contract
         .document_types()
         .get("domain")
@@ -2839,8 +2851,8 @@ fn test_dpns_query() {
             ["normalizedLabel", "desc"]
         ]
     });
-    let where_cbor =
-        serializer::value_to_cbor(query_value, None).expect("expected to serialize to cbor");
+    let where_cbor = serializer::serializable_value_to_cbor(&query_value, None)
+        .expect("expected to serialize to cbor");
     let domain_document_type = contract
         .document_types()
         .get("domain")
@@ -2910,8 +2922,8 @@ fn test_dpns_query() {
             ["records.dashUniqueIdentityId", "desc"]
         ]
     });
-    let where_cbor =
-        serializer::value_to_cbor(query_value, None).expect("expected to serialize to cbor");
+    let where_cbor = serializer::serializable_value_to_cbor(&query_value, None)
+        .expect("expected to serialize to cbor");
     let domain_document_type = contract
         .document_types()
         .get("domain")
@@ -2962,8 +2974,8 @@ fn test_dpns_query() {
             ["records.dashUniqueIdentityId", "asc"]
         ]
     });
-    let where_cbor =
-        serializer::value_to_cbor(query_value, None).expect("expected to serialize to cbor");
+    let where_cbor = serializer::serializable_value_to_cbor(&query_value, None)
+        .expect("expected to serialize to cbor");
     let domain_document_type = contract
         .document_types()
         .get("domain")
@@ -3006,8 +3018,8 @@ fn test_dpns_query() {
             ["records.dashUniqueIdentityId", "desc"]
         ]
     });
-    let where_cbor =
-        serializer::value_to_cbor(query_value, None).expect("expected to serialize to cbor");
+    let where_cbor = serializer::serializable_value_to_cbor(&query_value, None)
+        .expect("expected to serialize to cbor");
     let domain_document_type = contract
         .document_types()
         .get("domain")
@@ -3040,8 +3052,8 @@ fn test_dpns_insertion_no_aliases() {
         "orderBy": [["records.dashUniqueIdentityId", "desc"]],
     });
 
-    let query_cbor =
-        serializer::value_to_cbor(query_value, None).expect("expected to serialize to cbor");
+    let query_cbor = serializer::serializable_value_to_cbor(&query_value, None)
+        .expect("expected to serialize to cbor");
 
     let domain_document_type = contract
         .document_types()
@@ -3093,8 +3105,8 @@ fn test_dpns_insertion_with_aliases() {
         "orderBy": [["records.dashUniqueIdentityId", "desc"]],
     });
 
-    let query_cbor =
-        serializer::value_to_cbor(query_value, None).expect("expected to serialize to cbor");
+    let query_cbor = serializer::serializable_value_to_cbor(&query_value, None)
+        .expect("expected to serialize to cbor");
 
     let domain_document_type = contract
         .document_types()
@@ -3183,8 +3195,8 @@ fn test_dpns_query_start_at() {
             ["normalizedLabel", "asc"]
         ]
     });
-    let where_cbor =
-        serializer::value_to_cbor(query_value, None).expect("expected to serialize to cbor");
+    let where_cbor = serializer::serializable_value_to_cbor(&query_value, None)
+        .expect("expected to serialize to cbor");
     let domain_document_type = contract
         .document_types()
         .get("domain")
@@ -3271,8 +3283,8 @@ fn test_dpns_query_start_after() {
             ["normalizedLabel", "asc"]
         ]
     });
-    let where_cbor =
-        serializer::value_to_cbor(query_value, None).expect("expected to serialize to cbor");
+    let where_cbor = serializer::serializable_value_to_cbor(&query_value, None)
+        .expect("expected to serialize to cbor");
     let domain_document_type = contract
         .document_types()
         .get("domain")
@@ -3359,8 +3371,8 @@ fn test_dpns_query_start_at_desc() {
             ["normalizedLabel", "desc"]
         ]
     });
-    let where_cbor =
-        serializer::value_to_cbor(query_value, None).expect("expected to serialize to cbor");
+    let where_cbor = serializer::serializable_value_to_cbor(&query_value, None)
+        .expect("expected to serialize to cbor");
     let domain_document_type = contract
         .document_types()
         .get("domain")
@@ -3447,8 +3459,8 @@ fn test_dpns_query_start_after_desc() {
             ["normalizedLabel", "desc"]
         ]
     });
-    let where_cbor =
-        serializer::value_to_cbor(query_value, None).expect("expected to serialize to cbor");
+    let where_cbor = serializer::serializable_value_to_cbor(&query_value, None)
+        .expect("expected to serialize to cbor");
     let domain_document_type = contract
         .document_types()
         .get("domain")
@@ -3516,9 +3528,11 @@ fn test_dpns_query_start_at_with_null_id() {
     };
 
     let value0 = serde_json::to_value(&domain0).expect("serialized domain");
-    let document_cbor0 =
-        serializer::value_to_cbor(value0, Some(drive::drive::defaults::PROTOCOL_VERSION))
-            .expect("expected to serialize to cbor");
+    let document_cbor0 = serializer::serializable_value_to_cbor(
+        &value0,
+        Some(drive::drive::defaults::PROTOCOL_VERSION),
+    )
+    .expect("expected to serialize to cbor");
     let document0 = Document::from_cbor(document_cbor0.as_slice(), None, None)
         .expect("document should be properly deserialized");
 
@@ -3561,9 +3575,11 @@ fn test_dpns_query_start_at_with_null_id() {
     };
 
     let value1 = serde_json::to_value(&domain1).expect("serialized domain");
-    let document_cbor1 =
-        serializer::value_to_cbor(value1, Some(drive::drive::defaults::PROTOCOL_VERSION))
-            .expect("expected to serialize to cbor");
+    let document_cbor1 = serializer::serializable_value_to_cbor(
+        &value1,
+        Some(drive::drive::defaults::PROTOCOL_VERSION),
+    )
+    .expect("expected to serialize to cbor");
     let document1 = Document::from_cbor(document_cbor1.as_slice(), None, None)
         .expect("document should be properly deserialized");
 
@@ -3638,8 +3654,8 @@ fn test_dpns_query_start_at_with_null_id() {
             ["normalizedLabel", "asc"]
         ]
     });
-    let where_cbor =
-        serializer::value_to_cbor(query_value, None).expect("expected to serialize to cbor");
+    let where_cbor = serializer::serializable_value_to_cbor(&query_value, None)
+        .expect("expected to serialize to cbor");
     let domain_document_type = contract
         .document_types()
         .get("domain")
@@ -3716,9 +3732,11 @@ fn test_dpns_query_start_after_with_null_id() {
     };
 
     let value0 = serde_json::to_value(&domain0).expect("serialized domain");
-    let document_cbor0 =
-        serializer::value_to_cbor(value0, Some(drive::drive::defaults::PROTOCOL_VERSION))
-            .expect("expected to serialize to cbor");
+    let document_cbor0 = serializer::serializable_value_to_cbor(
+        &value0,
+        Some(drive::drive::defaults::PROTOCOL_VERSION),
+    )
+    .expect("expected to serialize to cbor");
     let document0 = Document::from_cbor(document_cbor0.as_slice(), None, None)
         .expect("document should be properly deserialized");
 
@@ -3761,9 +3779,11 @@ fn test_dpns_query_start_after_with_null_id() {
     };
 
     let value1 = serde_json::to_value(&domain1).expect("serialized domain");
-    let document_cbor1 =
-        serializer::value_to_cbor(value1, Some(drive::drive::defaults::PROTOCOL_VERSION))
-            .expect("expected to serialize to cbor");
+    let document_cbor1 = serializer::serializable_value_to_cbor(
+        &value1,
+        Some(drive::drive::defaults::PROTOCOL_VERSION),
+    )
+    .expect("expected to serialize to cbor");
     let document1 = Document::from_cbor(document_cbor1.as_slice(), None, None)
         .expect("document should be properly deserialized");
 
@@ -3839,8 +3859,8 @@ fn test_dpns_query_start_after_with_null_id() {
             ["normalizedLabel", "asc"]
         ]
     });
-    let where_cbor =
-        serializer::value_to_cbor(query_value, None).expect("expected to serialize to cbor");
+    let where_cbor = serializer::serializable_value_to_cbor(&query_value, None)
+        .expect("expected to serialize to cbor");
     let domain_document_type = contract
         .document_types()
         .get("domain")
@@ -3919,9 +3939,11 @@ fn test_dpns_query_start_after_with_null_id_desc() {
     };
 
     let value0 = serde_json::to_value(&domain0).expect("serialized domain");
-    let document_cbor0 =
-        serializer::value_to_cbor(value0, Some(drive::drive::defaults::PROTOCOL_VERSION))
-            .expect("expected to serialize to cbor");
+    let document_cbor0 = serializer::serializable_value_to_cbor(
+        &value0,
+        Some(drive::drive::defaults::PROTOCOL_VERSION),
+    )
+    .expect("expected to serialize to cbor");
     let document0 = Document::from_cbor(document_cbor0.as_slice(), None, None)
         .expect("document should be properly deserialized");
 
@@ -3964,9 +3986,11 @@ fn test_dpns_query_start_after_with_null_id_desc() {
     };
 
     let value1 = serde_json::to_value(&domain1).expect("serialized domain");
-    let document_cbor1 =
-        serializer::value_to_cbor(value1, Some(drive::drive::defaults::PROTOCOL_VERSION))
-            .expect("expected to serialize to cbor");
+    let document_cbor1 = serializer::serializable_value_to_cbor(
+        &value1,
+        Some(drive::drive::defaults::PROTOCOL_VERSION),
+    )
+    .expect("expected to serialize to cbor");
     let document1 = Document::from_cbor(document_cbor1.as_slice(), None, None)
         .expect("document should be properly deserialized");
 
@@ -4052,8 +4076,8 @@ fn test_dpns_query_start_after_with_null_id_desc() {
             ["normalizedLabel", "desc"]
         ]
     });
-    let where_cbor =
-        serializer::value_to_cbor(query_value, None).expect("expected to serialize to cbor");
+    let where_cbor = serializer::serializable_value_to_cbor(&query_value, None)
+        .expect("expected to serialize to cbor");
     let domain_document_type = contract
         .document_types()
         .get("domain")
@@ -4101,8 +4125,8 @@ fn test_dpns_query_start_after_with_null_id_desc() {
             ["normalizedLabel", "desc"]
         ]
     });
-    let where_cbor =
-        serializer::value_to_cbor(query_value, None).expect("expected to serialize to cbor");
+    let where_cbor = serializer::serializable_value_to_cbor(&query_value, None)
+        .expect("expected to serialize to cbor");
     let domain_document_type = contract
         .document_types()
         .get("domain")
@@ -4150,8 +4174,8 @@ fn test_dpns_query_start_after_with_null_id_desc() {
             ["normalizedLabel", "desc"]
         ]
     });
-    let where_cbor =
-        serializer::value_to_cbor(query_value, None).expect("expected to serialize to cbor");
+    let where_cbor = serializer::serializable_value_to_cbor(&query_value, None)
+        .expect("expected to serialize to cbor");
     let domain_document_type = contract
         .document_types()
         .get("domain")
@@ -4297,8 +4321,8 @@ fn test_query_a_b_c_d_e_contract() {
         ]
     });
 
-    let query_cbor =
-        serializer::value_to_cbor(query_json, None).expect("expected to serialize to cbor");
+    let query_cbor = serializer::serializable_value_to_cbor(&query_json, None)
+        .expect("expected to serialize to cbor");
 
     drive
         .query_documents_cbor_from_contract(

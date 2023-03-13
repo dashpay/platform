@@ -8,6 +8,7 @@ use crate::util::protocol_data::{get_protocol_version, get_raw_public_keys};
 use crate::validation::{JsonSchemaValidator, ValidationResult};
 use crate::version::ProtocolVersionValidator;
 use crate::{DashPlatformProtocolInitError, NonConsensusError, ProtocolError, SerdeParsingError};
+use crate::consensus::ConsensusError;
 use crate::identity::state_transition::identity_update_transition::identity_update_transition::property_names::PROTOCOL_VERSION;
 
 lazy_static! {
@@ -45,16 +46,13 @@ impl<T: TPublicKeysValidator> IdentityValidator<T> {
         let mut validation_result = self.json_schema_validator.validate(
             &identity_object
                 .try_to_validating_json()
-                .map_err(ProtocolError::ValueError)?,
+                .map_err(NonConsensusError::ValueError)?,
         )?;
 
         if !validation_result.is_valid() {
             return Ok(validation_result);
         }
 
-        let identity_map = identity_object
-            .to_map()
-            .map_err(ProtocolError::ValueError)?;
         let protocol_version = identity_object.get_integer(PROTOCOL_VERSION)?;
         validation_result.merge(self.protocol_version_validator.validate(protocol_version)?);
 
@@ -62,7 +60,7 @@ impl<T: TPublicKeysValidator> IdentityValidator<T> {
             return Ok(validation_result);
         }
 
-        let raw_public_keys = identity_object.get_array?;
+        let raw_public_keys = identity_object.get_array_slice("publicKeys")?;
         validation_result.merge(self.public_keys_validator.validate_keys(raw_public_keys)?);
 
         Ok(validation_result)
@@ -78,12 +76,3 @@ impl<T: TPublicKeysValidator> IdentityValidator<T> {
 //         as u32)
 // }
 //
-// fn get_raw_public_keys(
-//     identity_map: &Map<String, Value>,
-// ) -> Result<&Vec<Value>, SerdeParsingError> {
-//     identity_map
-//         .get("publicKeys")
-//         .ok_or_else(|| SerdeParsingError::new("Expected identity.publicKeys to exist"))?
-//         .as_array()
-//         .ok_or_else(|| SerdeParsingError::new("Expected identity.publicKeys to be an array"))
-// }

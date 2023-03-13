@@ -1,4 +1,4 @@
-use serde_json::{json, Map, Value as JsonValue};
+use serde_json::{Map, Value as JsonValue};
 use std::collections::BTreeMap;
 use std::convert::TryInto;
 use std::sync::Arc;
@@ -8,7 +8,7 @@ use platform_value::Value;
 
 use crate::data_contract::errors::InvalidDataContractError;
 use crate::data_contract::property_names;
-use crate::util::serializer::value_to_cbor;
+use crate::util::serializer::serializable_value_to_cbor;
 use crate::{
     data_contract::{self, generate_data_contract_id},
     decode_protocol_entity_factory::DecodeProtocolEntity,
@@ -102,7 +102,7 @@ impl DataContractFactory {
 
         root_map.insert(property_names::DOCUMENTS.to_string(), documents);
 
-        let cbor = value_to_cbor(JsonValue::Object(root_map), Some(1))?;
+        let cbor = serializable_value_to_cbor(&JsonValue::Object(root_map), Some(1))?;
 
         DataContract::from_cbor(cbor)
     }

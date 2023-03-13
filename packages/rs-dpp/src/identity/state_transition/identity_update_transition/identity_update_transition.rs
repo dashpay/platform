@@ -368,15 +368,12 @@ mod test {
 
         assert!(matches!(
             result[property_names::IDENTITY_ID],
-            JsonValue::Array(_)
+            Value::Array(_)
         ));
-        assert!(matches!(
-            result[property_names::SIGNATURE],
-            JsonValue::Array(_)
-        ));
+        assert!(matches!(result[property_names::SIGNATURE], Value::Array(_)));
         assert!(matches!(
             result[property_names::ADD_PUBLIC_KEYS][0]["data"],
-            JsonValue::Array(_)
+            Value::Array(_)
         ));
     }
 }

@@ -85,7 +85,7 @@ impl<'de> Deserialize<'de> for IdentityCreateTransition {
     where
         D: Deserializer<'de>,
     {
-        let value = serde_json::Value::deserialize(deserializer)?;
+        let value = platform_value::Value::deserialize(deserializer)?;
 
         Self::new(value).map_err(|e| D::Error::custom(e.to_string()))
     }
@@ -260,28 +260,26 @@ impl StateTransitionConvert for IdentityCreateTransition {
         vec![]
     }
 
-    fn to_object(&self, skip_signature: bool) -> Result<JsonValue, ProtocolError> {
-        let mut json_value: JsonValue = serde_json::to_value(self)?;
+    fn to_object(&self, skip_signature: bool) -> Result<Value, ProtocolError> {
+        let mut value: Value = platform_value::to_value(self)?;
 
         if skip_signature {
-            if let JsonValue::Object(ref mut o) = json_value {
-                for path in Self::signature_property_paths() {
-                    o.remove(path);
-                }
-            }
+            value
+                .remove_values_at_paths(Self::signature_property_paths())
+                .map_err(ProtocolError::ValueError)?
         }
 
-        let mut public_keys: Vec<JsonValue> = vec![];
+        let mut public_keys: Vec<Value> = vec![];
         for key in self.public_keys.iter() {
-            public_keys.push(key.to_raw_json_object(skip_signature)?);
+            public_keys.push(key.to_raw_object(skip_signature)?);
         }
 
-        json_value.insert(
+        value.insert(
             property_names::PUBLIC_KEYS.to_owned(),
-            JsonValue::Array(public_keys),
+            Value::Array(public_keys),
         )?;
 
-        Ok(json_value)
+        Ok(value)
     }
 
     fn to_json(&self, skip_signature: bool) -> Result<JsonValue, ProtocolError> {

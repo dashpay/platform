@@ -13,14 +13,31 @@ impl Value {
         self.get_optional_value(key)
     }
 
+    pub fn get_mut<'a>(&'a mut self, key: &'a str) -> Result<Option<&'a mut Value>, Error> {
+        self.get_optional_value_mut(key)
+    }
+
     pub fn get_value<'a>(&'a self, key: &'a str) -> Result<&'a Value, Error> {
         let map = self.to_map()?;
         Self::get_from_map(map, key)
     }
 
+    pub fn get_value_mut<'a>(&'a mut self, key: &'a str) -> Result<&'a mut Value, Error> {
+        let map = self.to_map_mut()?;
+        Self::get_mut_from_map(map, key)
+    }
+
     pub fn get_optional_value<'a>(&'a self, key: &'a str) -> Result<Option<&'a Value>, Error> {
         let map = self.to_map()?;
         Ok(Self::get_optional_from_map(map, key))
+    }
+
+    pub fn get_optional_value_mut<'a>(
+        &'a mut self,
+        key: &'a str,
+    ) -> Result<Option<&'a mut Value>, Error> {
+        let map = self.to_map_mut()?;
+        Ok(Self::get_optional_mut_from_map(map, key))
     }
 
     pub fn set_into_value<T>(&mut self, key: &str, value: T) -> Result<(), Error>
@@ -94,10 +111,7 @@ impl Value {
         value.into_hash256()
     }
 
-    pub fn remove_optional_hash256_bytes<T>(
-        &mut self,
-        key: &str,
-    ) -> Result<Option<[u8; 32]>, Error> {
+    pub fn remove_optional_hash256_bytes(&mut self, key: &str) -> Result<Option<[u8; 32]>, Error> {
         let map = self.as_map_mut_ref()?;
         map.remove_optional_key(key)
             .map(|v| v.into_hash256())
@@ -120,13 +134,13 @@ impl Value {
     pub fn remove_array(&mut self, key: &str) -> Result<Vec<Value>, Error> {
         let map = self.as_map_mut_ref()?;
         let value = map.remove_key(key)?;
-        value.to_array_owned()
+        value.into_array()
     }
 
     pub fn remove_optional_array<T>(&mut self, key: &str) -> Result<Option<Vec<Value>>, Error> {
         let map = self.as_map_mut_ref()?;
         map.remove_optional_key(key)
-            .map(|v| v.to_array_owned())
+            .map(|v| v.into_array())
             .transpose()
     }
 
@@ -457,12 +471,39 @@ impl Value {
         )))
     }
 
+    pub fn get_mut_from_map<'a>(
+        map: &'a mut [(Value, Value)],
+        search_key: &'a str,
+    ) -> Result<&'a mut Value, Error> {
+        Self::get_optional_mut_from_map(map, search_key).ok_or(Error::StructureError(format!(
+            "{} not found in map",
+            search_key
+        )))
+    }
+
     /// Gets a value from a map
     pub fn get_optional_from_map<'a>(
         map: &'a [(Value, Value)],
         search_key: &'a str,
     ) -> Option<&'a Value> {
         for (key, value) in map.iter() {
+            if !key.is_text() {
+                continue;
+            }
+
+            if key.as_text().expect("confirmed as text") == search_key {
+                return Some(value);
+            }
+        }
+        None
+    }
+
+    /// Gets a value from a map
+    pub fn get_optional_mut_from_map<'a>(
+        map: &'a mut [(Value, Value)],
+        search_key: &'a str,
+    ) -> Option<&'a mut Value> {
+        for (key, value) in map.iter_mut() {
             if !key.is_text() {
                 continue;
             }

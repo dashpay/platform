@@ -618,7 +618,7 @@ mod test {
     #[test]
     fn test_to_object() {
         init();
-        let dpns_contract = load_system_data_contract(SystemDataContract::DPNS)?;
+        let dpns_contract = load_system_data_contract(SystemDataContract::DPNS).unwrap();
         let document_json = get_data_from_file("src/tests/payloads/document_dpns.json").unwrap();
         let document = ExtendedDocument::from_json_string(&document_json, dpns_contract).unwrap();
         let document_object = document.to_json_object_for_validation().unwrap();
@@ -652,7 +652,9 @@ mod test {
         init();
 
         let document_json = get_data_from_file("src/tests/payloads/document_dpns.json")?;
-        ExtendedDocument::from_json_string(&document_json)?;
+        let dpns_contract = load_system_data_contract(SystemDataContract::DPNS).unwrap();
+        ExtendedDocument::from_json_string(&document_json, dpns_contract)
+            .expect("expected extended document");
         Ok(())
     }
 

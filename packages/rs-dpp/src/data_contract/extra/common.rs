@@ -1,6 +1,6 @@
 use crate::data_contract::errors::StructureError;
 use crate::util::cbor_value::cbor_value_into_json_value;
-use crate::util::serializer::value_to_cbor;
+use crate::util::serializer::serializable_value_to_cbor;
 use crate::ProtocolError;
 use ciborium::Value;
 use std::collections::BTreeMap;
@@ -276,7 +276,7 @@ pub fn json_document_to_cbor(
     protocol_version: Option<u32>,
 ) -> Result<Vec<u8>, ProtocolError> {
     let json = json_document_to_value(path)?;
-    value_to_cbor(json, protocol_version)
+    serializable_value_to_cbor(&json, protocol_version)
 }
 
 /// Make sure the protocol version is correct.

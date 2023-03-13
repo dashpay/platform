@@ -1,6 +1,5 @@
+use platform_value::Value;
 use std::sync::Arc;
-
-use serde_json::Value;
 
 use crate::bls::NativeBlsModule;
 use crate::identity::state_transition::asset_lock_proof::{
@@ -110,7 +109,7 @@ mod validate_identity_create_transition_basic_factory {
                 Arc::new(RequiredPurposeAndSecurityLevelValidator::default()),
                 state_repository,
             );
-            raw_state_transition.remove_key("protocolVersion");
+            raw_state_transition.remove("protocolVersion").unwrap();
 
             let result = validator
                 .validate(&raw_state_transition, &Default::default())
@@ -138,7 +137,9 @@ mod validate_identity_create_transition_basic_factory {
                 Arc::new(RequiredPurposeAndSecurityLevelValidator::default()),
                 MockStateRepositoryLike::new(),
             );
-            raw_state_transition.set_key_value("protocolVersion", "1");
+            raw_state_transition
+                .set_into_value("protocolVersion", "1")
+                .unwrap();
 
             let result = validator
                 .validate(&raw_state_transition, &Default::default())
@@ -160,7 +161,9 @@ mod validate_identity_create_transition_basic_factory {
                 Arc::new(RequiredPurposeAndSecurityLevelValidator::default()),
                 MockStateRepositoryLike::new(),
             );
-            raw_state_transition.set_key_value("protocolVersion", -1);
+            raw_state_transition
+                .set_into_value("protocolVersion", -1)
+                .unwrap();
 
             let result = validator
                 .validate(&raw_state_transition, &Default::default())
@@ -231,7 +234,7 @@ mod validate_identity_create_transition_basic_factory {
                 Arc::new(RequiredPurposeAndSecurityLevelValidator::default()),
                 MockStateRepositoryLike::new(),
             );
-            raw_state_transition.set_key_value("type", 666);
+            raw_state_transition.set_into_value("type", 666).unwrap();
 
             let result = validator
                 .validate(&raw_state_transition, &Default::default())
@@ -372,7 +375,7 @@ mod validate_identity_create_transition_basic_factory {
                 Arc::new(RequiredPurposeAndSecurityLevelValidator::default()),
                 MockStateRepositoryLike::new(),
             );
-            raw_state_transition.remove_key("publicKeys");
+            raw_state_transition.remove("publicKeys").unwrap();
 
             let result = validator
                 .validate(&raw_state_transition, &Default::default())
@@ -401,7 +404,9 @@ mod validate_identity_create_transition_basic_factory {
                 Arc::new(RequiredPurposeAndSecurityLevelValidator::default()),
                 MockStateRepositoryLike::new(),
             );
-            raw_state_transition.set_key_value("publicKeys", Vec::<Value>::new());
+            raw_state_transition
+                .set_into_value("publicKeys", Vec::<Value>::new())
+                .unwrap();
 
             let result = validator
                 .validate(&raw_state_transition, &Default::default())

@@ -1,9 +1,9 @@
-use std::convert::TryFrom;
 use std::sync::Arc;
 
 use anyhow::anyhow;
 use lazy_static::lazy_static;
-use serde_json::Value;
+use platform_value::Value;
+use serde_json::Value as JsonValue;
 
 use crate::consensus::basic::data_contract::InvalidDataContractIdError;
 use crate::consensus::basic::decode::ProtocolVersionParsingError;
@@ -15,7 +15,6 @@ use crate::{
         validation::data_contract_validator::DataContractValidator,
     },
     state_transition::state_transition_execution_context::StateTransitionExecutionContext,
-    util::json_value::JsonValueExt,
     validation::{
         DataValidator, DataValidatorWithContext, JsonSchemaValidator, SimpleValidationResult,
     },
@@ -24,7 +23,7 @@ use crate::{
 };
 
 lazy_static! {
-    static ref DATA_CONTRACT_CREATE_SCHEMA: Value = serde_json::from_str(include_str!(
+    static ref DATA_CONTRACT_CREATE_SCHEMA: JsonValue = serde_json::from_str(include_str!(
         "../../../../../schema/data_contract/stateTransition/dataContractCreate.json"
     ))
     .unwrap();
@@ -70,20 +69,24 @@ impl DataValidatorWithContext for DataContractCreateTransitionBasicValidator {
 }
 
 fn validate_data_contract_create_transition_basic(
-    json_schema_validator: &impl DataValidator<Item = Value>,
+    json_schema_validator: &impl DataValidator<Item = JsonValue>,
     protocol_validator: &impl DataValidator<Item = u32>,
     data_contract_validator: &impl DataValidator<Item = Value>,
     raw_state_transition: &Value,
     _execution_context: &StateTransitionExecutionContext,
 ) -> Result<SimpleValidationResult, ProtocolError> {
-    let result = json_schema_validator.validate(raw_state_transition)?;
+    let result = json_schema_validator.validate(
+        &raw_state_transition
+            .try_into_validating_json()
+            .map_err(ProtocolError::ValueError)?,
+    )?;
     if !result.is_valid() {
         return Ok(result);
     }
 
     let protocol_version = match raw_state_transition
-        .get_u64(property_names::PROTOCOL_VERSION)
-        .and_then(|x| u32::try_from(x).map_err(Into::into))
+        .get_integer(property_names::PROTOCOL_VERSION)
+        .map_err(ProtocolError::ValueError)
     {
         Ok(v) => v,
         Err(parsing_error) => {

@@ -226,9 +226,11 @@ pub fn setup(
                 }
             }
             let value = serde_json::to_value(person).expect("serialized person");
-            let document_cbor =
-                serializer::value_to_cbor(value, Some(drive::drive::defaults::PROTOCOL_VERSION))
-                    .expect("expected to serialize to cbor");
+            let document_cbor = serializer::serializable_value_to_cbor(
+                &value,
+                Some(drive::drive::defaults::PROTOCOL_VERSION),
+            )
+            .expect("expected to serialize to cbor");
             let document = Document::from_cbor(document_cbor.as_slice(), None, None)
                 .expect("document should be properly deserialized");
             let document_type = contract
@@ -322,8 +324,8 @@ fn test_query_historical() {
             ["firstName", "asc"]
         ]
     });
-    let where_cbor =
-        serializer::value_to_cbor(query_value, None).expect("expected to serialize to cbor");
+    let where_cbor = serializer::serializable_value_to_cbor(&query_value, None)
+        .expect("expected to serialize to cbor");
     let person_document_type = contract
         .document_types()
         .get("person")
@@ -359,8 +361,8 @@ fn test_query_historical() {
         ]
     });
 
-    let query_cbor =
-        serializer::value_to_cbor(query_value, None).expect("expected to serialize to cbor");
+    let query_cbor = serializer::serializable_value_to_cbor(&query_value, None)
+        .expect("expected to serialize to cbor");
 
     let person_document_type = contract
         .document_types()
@@ -388,8 +390,8 @@ fn test_query_historical() {
         ],
     });
 
-    let query_cbor =
-        serializer::value_to_cbor(query_value, None).expect("expected to serialize to cbor");
+    let query_cbor = serializer::serializable_value_to_cbor(&query_value, None)
+        .expect("expected to serialize to cbor");
 
     let person_document_type = contract
         .document_types()
@@ -432,8 +434,8 @@ fn test_query_historical() {
         ]
     });
 
-    let query_cbor =
-        serializer::value_to_cbor(query_value, None).expect("expected to serialize to cbor");
+    let query_cbor = serializer::serializable_value_to_cbor(&query_value, None)
+        .expect("expected to serialize to cbor");
 
     let person_document_type = contract
         .document_types()
@@ -463,8 +465,8 @@ fn test_query_historical() {
         ]
     });
 
-    let query_cbor =
-        serializer::value_to_cbor(query_value, None).expect("expected to serialize to cbor");
+    let query_cbor = serializer::serializable_value_to_cbor(&query_value, None)
+        .expect("expected to serialize to cbor");
 
     let person_document_type = contract
         .document_types()
@@ -502,8 +504,8 @@ fn test_query_historical() {
         ]
     });
 
-    let query_cbor =
-        serializer::value_to_cbor(query_value, None).expect("expected to serialize to cbor");
+    let query_cbor = serializer::serializable_value_to_cbor(&query_value, None)
+        .expect("expected to serialize to cbor");
 
     let person_document_type = contract
         .document_types()
@@ -530,8 +532,8 @@ fn test_query_historical() {
         ]
     });
 
-    let query_cbor =
-        serializer::value_to_cbor(query_value, None).expect("expected to serialize to cbor");
+    let query_cbor = serializer::serializable_value_to_cbor(&query_value, None)
+        .expect("expected to serialize to cbor");
 
     let person_document_type = contract
         .document_types()
@@ -561,8 +563,8 @@ fn test_query_historical() {
             ["firstName", "asc"]
         ]
     });
-    let where_cbor =
-        serializer::value_to_cbor(query_value, None).expect("expected to serialize to cbor");
+    let where_cbor = serializer::serializable_value_to_cbor(&query_value, None)
+        .expect("expected to serialize to cbor");
     let person_document_type = contract
         .document_types()
         .get("person")
@@ -607,8 +609,8 @@ fn test_query_historical() {
             ["firstName", "asc"]
         ]
     });
-    let where_cbor =
-        serializer::value_to_cbor(query_value, None).expect("expected to serialize to cbor");
+    let where_cbor = serializer::serializable_value_to_cbor(&query_value, None)
+        .expect("expected to serialize to cbor");
     let person_document_type = contract
         .document_types()
         .get("person")
@@ -649,8 +651,8 @@ fn test_query_historical() {
             ["firstName", "asc"]
         ]
     });
-    let where_cbor =
-        serializer::value_to_cbor(query_value, None).expect("expected to serialize to cbor");
+    let where_cbor = serializer::serializable_value_to_cbor(&query_value, None)
+        .expect("expected to serialize to cbor");
     let person_document_type = contract
         .document_types()
         .get("person")
@@ -725,8 +727,8 @@ fn test_query_historical() {
             ["firstName", "asc"]
         ]
     });
-    let where_cbor =
-        serializer::value_to_cbor(query_value, None).expect("expected to serialize to cbor");
+    let where_cbor = serializer::serializable_value_to_cbor(&query_value, None)
+        .expect("expected to serialize to cbor");
     let person_document_type = contract
         .document_types()
         .get("person")
@@ -775,8 +777,8 @@ fn test_query_historical() {
             ["firstName", "asc"]
         ]
     });
-    let where_cbor =
-        serializer::value_to_cbor(query_value, None).expect("expected to serialize to cbor");
+    let where_cbor = serializer::serializable_value_to_cbor(&query_value, None)
+        .expect("expected to serialize to cbor");
     let person_document_type = contract
         .document_types()
         .get("person")
@@ -819,8 +821,8 @@ fn test_query_historical() {
             ["firstName", "asc"]
         ]
     });
-    let where_cbor =
-        serializer::value_to_cbor(query_value, None).expect("expected to serialize to cbor");
+    let where_cbor = serializer::serializable_value_to_cbor(&query_value, None)
+        .expect("expected to serialize to cbor");
     let person_document_type = contract
         .document_types()
         .get("person")
@@ -857,8 +859,8 @@ fn test_query_historical() {
             ["firstName", "desc"]
         ]
     });
-    let where_cbor =
-        serializer::value_to_cbor(query_value, None).expect("expected to serialize to cbor");
+    let where_cbor = serializer::serializable_value_to_cbor(&query_value, None)
+        .expect("expected to serialize to cbor");
     let person_document_type = contract
         .document_types()
         .get("person")
@@ -928,8 +930,8 @@ fn test_query_historical() {
             ["age", "desc"]
         ]
     });
-    let where_cbor =
-        serializer::value_to_cbor(query_value, None).expect("expected to serialize to cbor");
+    let where_cbor = serializer::serializable_value_to_cbor(&query_value, None)
+        .expect("expected to serialize to cbor");
     let person_document_type = contract
         .document_types()
         .get("person")
@@ -978,8 +980,8 @@ fn test_query_historical() {
             ["age", "desc"]
         ]
     });
-    let where_cbor =
-        serializer::value_to_cbor(query_value, None).expect("expected to serialize to cbor");
+    let where_cbor = serializer::serializable_value_to_cbor(&query_value, None)
+        .expect("expected to serialize to cbor");
     let person_document_type = contract
         .document_types()
         .get("person")
@@ -1063,8 +1065,8 @@ fn test_query_historical() {
         age: rng.gen_range(0..85),
     };
     let serialized_person = serde_json::to_value(&fixed_person).expect("serialized person");
-    let person_cbor = serializer::value_to_cbor(
-        serialized_person,
+    let person_cbor = serializer::serializable_value_to_cbor(
+        &serialized_person,
         Some(drive::drive::defaults::PROTOCOL_VERSION),
     )
     .expect("expected to serialize to cbor");
@@ -1114,8 +1116,8 @@ fn test_query_historical() {
         age: rng.gen_range(0..85),
     };
     let serialized_person = serde_json::to_value(&next_person).expect("serialized person");
-    let person_cbor = serializer::value_to_cbor(
-        serialized_person,
+    let person_cbor = serializer::serializable_value_to_cbor(
+        &serialized_person,
         Some(drive::drive::defaults::PROTOCOL_VERSION),
     )
     .expect("expected to serialize to cbor");
@@ -1155,8 +1157,8 @@ fn test_query_historical() {
         ],
     });
 
-    let query_cbor =
-        serializer::value_to_cbor(query_value, None).expect("expected to serialize to cbor");
+    let query_cbor = serializer::serializable_value_to_cbor(&query_value, None)
+        .expect("expected to serialize to cbor");
 
     let person_document_type = contract
         .document_types()
@@ -1181,8 +1183,8 @@ fn test_query_historical() {
         ]
     });
 
-    let query_cbor =
-        serializer::value_to_cbor(query_value, None).expect("expected to serialize to cbor");
+    let query_cbor = serializer::serializable_value_to_cbor(&query_value, None)
+        .expect("expected to serialize to cbor");
 
     let person_document_type = contract
         .document_types()
@@ -1208,8 +1210,8 @@ fn test_query_historical() {
         "blockTime": 300
     });
 
-    let query_cbor =
-        serializer::value_to_cbor(query_value, None).expect("expected to serialize to cbor");
+    let query_cbor = serializer::serializable_value_to_cbor(&query_value, None)
+        .expect("expected to serialize to cbor");
 
     let person_document_type = contract
         .document_types()
@@ -1237,8 +1239,8 @@ fn test_query_historical() {
         "orderBy": [["$id", "asc"]],
     });
 
-    let query_cbor =
-        serializer::value_to_cbor(query_value, None).expect("expected to serialize to cbor");
+    let query_cbor = serializer::serializable_value_to_cbor(&query_value, None)
+        .expect("expected to serialize to cbor");
 
     let person_document_type = contract
         .document_types()
@@ -1278,8 +1280,8 @@ fn test_query_historical() {
         "orderBy": [["$id", "desc"]],
     });
 
-    let query_cbor =
-        serializer::value_to_cbor(query_value, None).expect("expected to serialize to cbor");
+    let query_cbor = serializer::serializable_value_to_cbor(&query_value, None)
+        .expect("expected to serialize to cbor");
 
     let person_document_type = contract
         .document_types()
@@ -1315,8 +1317,8 @@ fn test_query_historical() {
     //
     let query_value = json!({});
 
-    let query_cbor =
-        serializer::value_to_cbor(query_value, None).expect("expected to serialize to cbor");
+    let query_cbor = serializer::serializable_value_to_cbor(&query_value, None)
+        .expect("expected to serialize to cbor");
 
     let person_document_type = contract
         .document_types()
@@ -1342,8 +1344,8 @@ fn test_query_historical() {
         "orderBy": [["$id", "desc"]]
     });
 
-    let query_cbor =
-        serializer::value_to_cbor(query_value, None).expect("expected to serialize to cbor");
+    let query_cbor = serializer::serializable_value_to_cbor(&query_value, None)
+        .expect("expected to serialize to cbor");
 
     let person_document_type = contract
         .document_types()
@@ -1394,8 +1396,8 @@ fn test_query_historical() {
         "blockTime": 300
     });
 
-    let query_cbor =
-        serializer::value_to_cbor(query_value, None).expect("expected to serialize to cbor");
+    let query_cbor = serializer::serializable_value_to_cbor(&query_value, None)
+        .expect("expected to serialize to cbor");
 
     let person_document_type = contract
         .document_types()
@@ -1448,8 +1450,8 @@ fn test_query_historical() {
         "orderBy": [["$ownerId", "desc"]]
     });
 
-    let query_cbor =
-        serializer::value_to_cbor(query_value, None).expect("expected to serialize to cbor");
+    let query_cbor = serializer::serializable_value_to_cbor(&query_value, None)
+        .expect("expected to serialize to cbor");
 
     let person_document_type = contract
         .document_types()
@@ -1478,8 +1480,8 @@ fn test_query_historical() {
         "orderBy": [["$ownerId", "asc"]]
     });
 
-    let query_cbor =
-        serializer::value_to_cbor(query_value, None).expect("expected to serialize to cbor");
+    let query_cbor = serializer::serializable_value_to_cbor(&query_value, None)
+        .expect("expected to serialize to cbor");
 
     let person_document_type = contract
         .document_types()
@@ -1520,8 +1522,8 @@ fn test_query_historical() {
         ],
     });
 
-    let query_cbor =
-        serializer::value_to_cbor(query_value, None).expect("expected to serialize to cbor");
+    let query_cbor = serializer::serializable_value_to_cbor(&query_value, None)
+        .expect("expected to serialize to cbor");
 
     let (results, _, _) = drive
         .query_raw_documents_from_contract_cbor_using_cbor_encoded_query_with_cost(
@@ -1545,8 +1547,8 @@ fn test_query_historical() {
         "orderBy": [["$id", "asc"]],
     });
 
-    let query_cbor =
-        serializer::value_to_cbor(query_value, None).expect("expected to serialize to cbor");
+    let query_cbor = serializer::serializable_value_to_cbor(&query_value, None)
+        .expect("expected to serialize to cbor");
 
     let person_document_type = contract
         .document_types()
@@ -1575,8 +1577,8 @@ fn test_query_historical() {
         "orderBy": [["$id", "asc"]],
     });
 
-    let query_cbor =
-        serializer::value_to_cbor(query_value, None).expect("expected to serialize to cbor");
+    let query_cbor = serializer::serializable_value_to_cbor(&query_value, None)
+        .expect("expected to serialize to cbor");
 
     let person_document_type = contract
         .document_types()

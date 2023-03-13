@@ -1,5 +1,6 @@
 use anyhow::anyhow;
 use platform_value::string_encoding::{self, Encoding};
+use platform_value::Value;
 use serde::{Deserialize, Serialize};
 use serde_json::Value as JsonValue;
 use serde_repr::{Deserialize_repr, Serialize_repr};
@@ -76,8 +77,8 @@ impl std::default::Default for IdentityCreditWithdrawalTransition {
 }
 
 impl IdentityCreditWithdrawalTransition {
-    pub fn from_value(value: JsonValue) -> Result<Self, ProtocolError> {
-        let transition: IdentityCreditWithdrawalTransition = serde_json::from_value(value)?;
+    pub fn from_value(value: Value) -> Result<Self, ProtocolError> {
+        let transition: IdentityCreditWithdrawalTransition = platform_value::from_value(value)?;
 
         Ok(transition)
     }
@@ -85,27 +86,12 @@ impl IdentityCreditWithdrawalTransition {
     pub fn from_json(mut value: JsonValue) -> Result<Self, ProtocolError> {
         value.replace_binary_paths(Self::binary_property_paths(), ReplaceWith::Bytes)?;
 
-        Self::from_value(value)
+        Self::from_value(value.into())
     }
 
     pub fn from_raw_object(
-        mut raw_object: JsonValue,
+        mut raw_object: Value,
     ) -> Result<IdentityCreditWithdrawalTransition, ProtocolError> {
-        let output_script_option = raw_object.get(PROPERTY_OUTPUT_SCRIPT);
-
-        let output_script_string = output_script_option
-            .ok_or_else(|| anyhow!("uanble to get outputScript"))
-            .and_then(|value| serde_json::from_value(value.clone()).map_err(|e| anyhow!(e)))
-            .map(|bytes: Vec<u8>| string_encoding::encode(&bytes, Encoding::Base64))?;
-
-        raw_object.insert(
-            PROPERTY_OUTPUT_SCRIPT.to_owned(),
-            JsonValue::String(output_script_string),
-        )?;
-
-        raw_object
-            .replace_identifier_paths(Self::identifiers_property_paths(), ReplaceWith::Base58)?;
-
         Self::from_value(raw_object)
     }
 

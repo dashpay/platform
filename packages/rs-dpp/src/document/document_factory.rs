@@ -8,7 +8,6 @@ use platform_value::Value;
 use rand::rngs::StdRng;
 use rand::SeedableRng;
 use serde::{Deserialize, Serialize};
-use serde_json::Value as JsonValue;
 
 use crate::consensus::basic::document::InvalidDocumentTypeError;
 use crate::document::extended_document::{property_names, ExtendedDocument};

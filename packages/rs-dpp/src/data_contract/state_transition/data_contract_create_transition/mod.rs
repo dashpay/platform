@@ -1,7 +1,5 @@
 use std::collections::BTreeMap;
-use std::convert::TryInto;
 
-use anyhow::anyhow;
 use platform_value::btreemap_extensions::BTreeValueMapHelper;
 use platform_value::btreemap_extensions::BTreeValueRemoveFromMapHelper;
 use platform_value::Value;
@@ -222,7 +220,12 @@ impl StateTransitionConvert for DataContractCreateTransition {
         if skip_signature {
             Self::signature_property_paths()
                 .into_iter()
-                .try_for_each(|path| object.remove_value_at_path(path))?;
+                .try_for_each(|path| {
+                    object
+                        .remove_value_at_path(path)
+                        .map_err(ProtocolError::ValueError)
+                        .map(|_| ())
+                })?;
         }
         object.insert(String::from(DATA_CONTRACT), self.data_contract.to_object()?)?;
         Ok(object)
@@ -232,7 +235,6 @@ impl StateTransitionConvert for DataContractCreateTransition {
 #[cfg(test)]
 mod test {
     use integer_encoding::VarInt;
-    use serde_json::json;
 
     use crate::tests::fixtures::get_data_contract_fixture;
     use crate::version;

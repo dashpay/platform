@@ -1638,8 +1638,9 @@ mod indices {
             raw_data_contract["documents"]["indexedDocument"]["indices"][0].clone();
         index_definition["name"] = platform_value!("otherIndexName");
 
-        if let Some(JsonValue::Array(ref mut arr)) =
-            raw_data_contract["documents"]["indexedDocument"].get_mut("indices")
+        if let Some(Value::Array(ref mut arr)) = raw_data_contract["documents"]["indexedDocument"]
+            .get_mut("indices")
+            .unwrap()
         {
             arr.push(index_definition)
         } else {
@@ -1674,8 +1675,9 @@ mod indices {
         let index_definition =
             raw_data_contract["documents"]["indexedDocument"]["indices"][0].clone();
 
-        if let Some(JsonValue::Array(ref mut arr)) =
-            raw_data_contract["documents"]["indexedDocument"].get_mut("indices")
+        if let Some(Value::Array(ref mut arr)) = raw_data_contract["documents"]["indexedDocument"]
+            .get_mut("indices")
+            .unwrap()
         {
             arr.push(index_definition)
         } else {
@@ -1807,9 +1809,10 @@ mod indices {
         } = setup_test();
 
         for i in 0..10 {
-            if let Some(JsonValue::Array(ref mut properties)) = raw_data_contract["documents"]
+            if let Some(Value::Array(ref mut properties)) = raw_data_contract["documents"]
                 ["indexedDocument"]["indices"][0]
                 .get_mut("properties")
+                .unwrap()
             {
                 let field_name = format!("field{}", i);
                 properties.push(platform_value!({
@@ -1960,8 +1963,10 @@ mod indices {
                 .insert(property_name.clone(), platform_value!({ "type" : "string"}))
                 .expect("properties should be present");
 
-            if let Some(JsonValue::Array(ref mut indices)) =
-                raw_data_contract["documents"]["indexedDocument"].get_mut("indices")
+            if let Some(Value::Array(ref mut indices)) = raw_data_contract["documents"]
+                ["indexedDocument"]
+                .get_mut("indices")
+                .unwrap()
             {
                 indices.push(platform_value!({
                    "name" : format!("{}_index", property_name),
@@ -1999,8 +2004,10 @@ mod indices {
                 )
                 .expect("properties should be present");
 
-            if let Some(JsonValue::Array(ref mut indices)) =
-                raw_data_contract["documents"]["indexedDocument"].get_mut("indices")
+            if let Some(Value::Array(ref mut indices)) = raw_data_contract["documents"]
+                ["indexedDocument"]
+                .get_mut("indices")
+                .unwrap()
             {
                 indices.push(platform_value!({
                    "name" : format!("index_{}", i),
@@ -2046,8 +2053,10 @@ mod indices {
             ]
         });
 
-        if let Some(JsonValue::Array(ref mut indices)) =
-            raw_data_contract["documents"]["indexedDocument"].get_mut("indices")
+        if let Some(Value::Array(ref mut indices)) = raw_data_contract["documents"]
+            ["indexedDocument"]
+            .get_mut("indices")
+            .unwrap()
         {
             indices.push(index_definition)
         }
@@ -2079,8 +2088,10 @@ mod indices {
             ..
         } = setup_test();
 
-        if let Some(JsonValue::Array(ref mut index_properties)) =
-            raw_data_contract["documents"]["indexedDocument"]["indices"][0].get_mut("properties")
+        if let Some(Value::Array(ref mut index_properties)) = raw_data_contract["documents"]
+            ["indexedDocument"]["indices"][0]
+            .get_mut("properties")
+            .unwrap()
         {
             index_properties.push(platform_value!({ "missingProperty"  : "asc"}))
         } else {
@@ -2123,13 +2134,17 @@ mod indices {
 
         raw_data_contract["documents"]["indexedDocument"]["properties"]["objectProperty"] =
             object_property;
-        if let Some(JsonValue::Array(ref mut required)) =
-            raw_data_contract["documents"]["indexedDocument"].get_mut("required")
+        if let Some(Value::Array(ref mut required)) = raw_data_contract["documents"]
+            ["indexedDocument"]
+            .get_mut("required")
+            .unwrap()
         {
             required.push(platform_value!("objectProperty"))
         }
-        if let Some(JsonValue::Array(ref mut properties)) =
-            raw_data_contract["documents"]["indexedDocument"]["indices"][0].get_mut("properties")
+        if let Some(Value::Array(ref mut properties)) = raw_data_contract["documents"]
+            ["indexedDocument"]["indices"][0]
+            .get_mut("properties")
+            .unwrap()
         {
             properties.push(platform_value!({"objectProperty" : "asc" }))
         }
@@ -2564,7 +2579,7 @@ mod indices {
             ]
         });
 
-        if let Some(JsonValue::Array(ref mut indices)) =
+        if let Some(Value::Array(ref mut indices)) =
             raw_data_contract["documents"]["indexedDocument"].get_mut("indices")
         {
             indices.push(index_definition)

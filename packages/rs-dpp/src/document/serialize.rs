@@ -16,7 +16,6 @@ use crate::ProtocolError;
 use byteorder::{BigEndian, ReadBytesExt};
 use ciborium::Value as CborValue;
 use integer_encoding::VarIntWriter;
-use platform_value::btreemap_extensions::BTreeValueMapHelper;
 use platform_value::btreemap_extensions::BTreeValueRemoveFromMapHelper;
 use platform_value::Value;
 use serde::{Deserialize, Serialize};
@@ -344,7 +343,8 @@ impl Document {
                     "unable to decode document for document call",
                 ))
             })?;
-        let document_map: BTreeMap<String, Value> = Value::convert_from_cbor_map(document_cbor_map);
+        let document_map: BTreeMap<String, Value> =
+            Value::convert_from_cbor_map(document_cbor_map).map_err(ProtocolError::ValueError)?;
 
         Self::from_map(document_map, document_id, owner_id)
     }

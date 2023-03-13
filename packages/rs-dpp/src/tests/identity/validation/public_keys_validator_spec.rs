@@ -10,14 +10,8 @@ use platform_value::{platform_value, Value};
 fn setup_test() -> (Vec<Value>, PublicKeysValidator<NativeBlsModule>) {
     (
         crate::tests::fixtures::identity_fixture_raw_object()
-            .to_()
-            .unwrap()
-            .get("publicKeys")
-            .unwrap()
-            .clone()
-            .as_array_mut()
-            .unwrap()
-            .clone(),
+            .get_array("publicKeys")
+            .unwrap(),
         get_public_keys_validator(),
     )
 }
@@ -28,6 +22,7 @@ pub mod id {
     use crate::assert_consensus_errors;
     use crate::errors::consensus::ConsensusError;
     use crate::identity::validation::TPublicKeysValidator;
+    use crate::identity::KeyID;
     use crate::tests::identity::validation::public_keys_validator_spec::setup_test;
     use crate::tests::utils::platform_value_set_ref;
     use crate::tests::utils::SerdeTestExtension;
@@ -38,7 +33,7 @@ pub mod id {
         raw_public_keys
             .get_mut(1)
             .unwrap()
-            .remove_integer("id")
+            .remove_integer::<KeyID>("id")
             .unwrap();
 
         let result = validator.validate_keys(&raw_public_keys).unwrap();
@@ -168,11 +163,11 @@ pub mod data {
     #[test]
     pub fn should_be_a_byte_array() {
         let (mut raw_public_keys, validator) = setup_test();
-        platform_value_set_ref(
-            raw_public_keys.get_mut(1).unwrap(),
-            "data",
-            vec!["string"; 33],
-        );
+        raw_public_keys
+            .get_mut(1)
+            .unwrap()
+            .set_into_value("data", vec!["string"; 33])
+            .unwrap();
 
         let result = validator.validate_keys(&raw_public_keys).unwrap();
 
@@ -337,11 +332,8 @@ pub fn should_return_invalid_result_if_there_are_duplicate_key_ids() {
     let (mut raw_public_keys, validator) = setup_test();
     let key0 = raw_public_keys.get(0).unwrap().clone();
     let key1 = raw_public_keys.get_mut(1).unwrap();
-    platform_value_set_ref(
-        key1,
-        "id",
-        key0.to_map().unwrap().get_integer("id").unwrap().clone(),
-    );
+    key1.set_value("id", key0.get_value("id").unwrap().clone())
+        .unwrap();
 
     let result = validator.validate_keys(&raw_public_keys).unwrap();
 
@@ -356,9 +348,7 @@ pub fn should_return_invalid_result_if_there_are_duplicate_key_ids() {
     let expected_ids = vec![raw_public_keys
         .get(1)
         .unwrap()
-        .as_map()
-        .unwrap()
-        .get_integer("id")
+        .get_integer::<u32>("id")
         .unwrap() as KeyID];
 
     assert_eq!(consensus_error.code(), 1030);
@@ -370,11 +360,8 @@ pub fn should_return_invalid_result_if_there_are_duplicate_keys() {
     let (mut raw_public_keys, validator) = setup_test();
     let key0 = raw_public_keys.get(0).unwrap().clone();
     let key1 = raw_public_keys.get_mut(1).unwrap();
-    platform_value_set_ref(
-        key1,
-        "data",
-        key0.as_map().unwrap().get("data").unwrap().clone(),
-    );
+    key1.set_value("data", key0.get_value("data").unwrap())
+        .expect("expected to set data");
 
     let result = validator.validate_keys(&raw_public_keys).unwrap();
     let errors = assert_consensus_errors!(
@@ -389,12 +376,8 @@ pub fn should_return_invalid_result_if_there_are_duplicate_keys() {
     let expected_ids = vec![raw_public_keys
         .get(1)
         .unwrap()
-        .as_map()
-        .unwrap()
-        .get("id")
-        .unwrap()
-        .as_u64()
-        .unwrap() as KeyID];
+        .get_integer::<KeyID>("id")
+        .unwrap()];
 
     assert_eq!(consensus_error.code(), 1029);
     assert_eq!(error.duplicated_public_keys_ids(), &expected_ids);
@@ -403,7 +386,11 @@ pub fn should_return_invalid_result_if_there_are_duplicate_keys() {
 #[test]
 pub fn should_return_invalid_result_if_key_data_is_not_a_valid_der() {
     let (mut raw_public_keys, validator) = setup_test();
-    platform_value_set_ref(raw_public_keys.get_mut(1).unwrap(), "data", vec![0; 33]);
+    raw_public_keys
+        .get_mut(1)
+        .unwrap()
+        .set_into_value("data", vec![0; 33])
+        .expect("expected to set data");
 
     let result = validator.validate_keys(&raw_public_keys).unwrap();
     let errors = assert_consensus_errors!(
@@ -418,7 +405,7 @@ pub fn should_return_invalid_result_if_key_data_is_not_a_valid_der() {
     assert_eq!(consensus_error.code(), 1040);
     assert_eq!(
         error.public_key_id(),
-        raw_public_keys[1].get_integer("id").unwrap() as KeyID
+        raw_public_keys[1].get_integer::<KeyID>("id").unwrap()
     );
     assert_eq!(
         error.validation_error().as_ref().unwrap().message(),
@@ -463,7 +450,7 @@ pub fn should_return_invalid_result_if_key_has_an_invalid_combination_of_purpose
     );
     assert_eq!(
         error.purpose() as u8,
-        raw_public_keys[1]..get_integer::<u8>("purpose").unwrap()
+        raw_public_keys[1].get_integer::<u8>("purpose").unwrap()
     );
 }
 
@@ -547,12 +534,8 @@ pub fn should_return_invalid_result_if_bls12_381_public_key_is_invalid() {
         raw_public_keys
             .get(0)
             .unwrap()
-            .to_map()
+            .get_integer::<KeyID>("id")
             .unwrap()
-            .get_integer("id")
-            .unwrap()
-            .as_u64()
-            .unwrap() as KeyID
     );
     // TODO
     //assert_eq!(error.validation_error(), TypeError);

@@ -1,5 +1,6 @@
 use crate::value_map::ValueMapHelper;
 use crate::{Error, Value};
+use std::collections::BTreeMap;
 
 impl Value {
     pub fn remove_value_at_path(&mut self, path: &str) -> Result<Value, Error> {
@@ -23,6 +24,16 @@ impl Value {
         };
         let map = current_value.as_map_mut_ref()?;
         map.remove_key(last_path_component)
+    }
+
+    pub fn remove_values_at_paths<'a>(
+        &'a mut self,
+        paths: Vec<&'a str>,
+    ) -> Result<BTreeMap<&'a str, Value>, Error> {
+        paths
+            .into_iter()
+            .map(|path| Ok((path, self.remove_value_at_path(path)?)))
+            .collect()
     }
 
     pub fn get_value_at_path<'a>(&'a self, path: &'a str) -> Result<&'a Value, Error> {

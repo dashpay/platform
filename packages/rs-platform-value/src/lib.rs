@@ -10,6 +10,7 @@ pub mod converter;
 pub mod display;
 mod error;
 mod index;
+mod inner_array_value;
 pub mod inner_value;
 mod inner_value_at_path;
 mod macros;
@@ -1217,5 +1218,22 @@ impl From<char> for Value {
         let mut v = String::with_capacity(1);
         v.push(value);
         Value::Text(v)
+    }
+}
+
+impl From<Vec<&str>> for Value {
+    fn from(value: Vec<&str>) -> Self {
+        Value::Array(value.into_iter().map(|string| string.into()).collect())
+    }
+}
+
+impl From<&[&str]> for Value {
+    fn from(value: &[&str]) -> Self {
+        Value::Array(
+            value
+                .into_iter()
+                .map(|string| string.clone().into())
+                .collect(),
+        )
     }
 }

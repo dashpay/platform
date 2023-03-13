@@ -70,7 +70,7 @@ impl Convertible for DataContract {
             o.remove("protocolVersion");
         };
 
-        serializer::value_to_cbor(json_object, Some(protocol_version))
+        serializer::serializable_value_to_cbor(&json_object, Some(protocol_version))
     }
 }
 

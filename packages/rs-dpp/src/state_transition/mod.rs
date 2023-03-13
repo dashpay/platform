@@ -110,7 +110,10 @@ impl StateTransitionConvert for StateTransition {
         call_method!(self, to_json, skip_signature)
     }
 
-    fn to_object(&self, skip_signature: bool) -> Result<serde_json::Value, crate::ProtocolError> {
+    fn to_object(
+        &self,
+        skip_signature: bool,
+    ) -> Result<platform_value::Value, crate::ProtocolError> {
         call_method!(self, to_object, skip_signature)
     }
 

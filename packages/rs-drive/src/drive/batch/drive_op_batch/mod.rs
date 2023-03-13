@@ -311,8 +311,8 @@ mod tests {
                 ["$ownerId", "asc"],
             ]
         });
-        let where_cbor =
-            serializer::value_to_cbor(query_value, None).expect("expected to serialize to cbor");
+        let where_cbor = serializer::serializable_value_to_cbor(&query_value, None)
+            .expect("expected to serialize to cbor");
 
         let (docs, _, _) = drive
             .query_documents_cbor_from_contract(
@@ -532,8 +532,8 @@ mod tests {
                 ["$ownerId", "asc"],
             ]
         });
-        let where_cbor =
-            serializer::value_to_cbor(query_value, None).expect("expected to serialize to cbor");
+        let where_cbor = serializer::serializable_value_to_cbor(&query_value, None)
+            .expect("expected to serialize to cbor");
 
         let (docs, _, _) = drive
             .query_documents_cbor_from_contract(
@@ -660,8 +660,8 @@ mod tests {
                 ["$ownerId", "asc"],
             ]
         });
-        let where_cbor =
-            serializer::value_to_cbor(query_value, None).expect("expected to serialize to cbor");
+        let where_cbor = serializer::serializable_value_to_cbor(&query_value, None)
+            .expect("expected to serialize to cbor");
 
         let (docs, _, _) = drive
             .query_documents_cbor_from_contract(
@@ -853,8 +853,8 @@ mod tests {
                 ["age", "asc"],
             ]
         });
-        let where_cbor =
-            serializer::value_to_cbor(query_value, None).expect("expected to serialize to cbor");
+        let where_cbor = serializer::serializable_value_to_cbor(&query_value, None)
+            .expect("expected to serialize to cbor");
 
         let (docs, _, _) = drive
             .query_documents_cbor_from_contract(
@@ -876,8 +876,8 @@ mod tests {
                 ["age", "asc"],
             ]
         });
-        let where_cbor =
-            serializer::value_to_cbor(query_value, None).expect("expected to serialize to cbor");
+        let where_cbor = serializer::serializable_value_to_cbor(&query_value, None)
+            .expect("expected to serialize to cbor");
 
         let (docs, _, _) = drive
             .query_documents_cbor_from_contract(
@@ -899,8 +899,8 @@ mod tests {
                 ["age", "asc"],
             ]
         });
-        let where_cbor =
-            serializer::value_to_cbor(query_value, None).expect("expected to serialize to cbor");
+        let where_cbor = serializer::serializable_value_to_cbor(&query_value, None)
+            .expect("expected to serialize to cbor");
 
         let (docs, _, _) = drive
             .query_documents_cbor_from_contract(
@@ -1093,8 +1093,8 @@ mod tests {
                 ["age", "asc"],
             ]
         });
-        let where_cbor =
-            serializer::value_to_cbor(query_value, None).expect("expected to serialize to cbor");
+        let where_cbor = serializer::serializable_value_to_cbor(&query_value, None)
+            .expect("expected to serialize to cbor");
 
         let (docs, _, _) = drive
             .query_documents_cbor_from_contract(
@@ -1116,8 +1116,8 @@ mod tests {
                 ["age", "asc"],
             ]
         });
-        let where_cbor =
-            serializer::value_to_cbor(query_value, None).expect("expected to serialize to cbor");
+        let where_cbor = serializer::serializable_value_to_cbor(&query_value, None)
+            .expect("expected to serialize to cbor");
 
         let (docs, _, _) = drive
             .query_documents_cbor_from_contract(
@@ -1139,8 +1139,8 @@ mod tests {
                 ["age", "asc"],
             ]
         });
-        let where_cbor =
-            serializer::value_to_cbor(query_value, None).expect("expected to serialize to cbor");
+        let where_cbor = serializer::serializable_value_to_cbor(&query_value, None)
+            .expect("expected to serialize to cbor");
 
         let (docs, _, _) = drive
             .query_documents_cbor_from_contract(

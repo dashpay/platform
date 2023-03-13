@@ -85,7 +85,7 @@ fn unwrap_error_to_result<'a, 'b>(
     match v {
         Ok(v) => v,
         Err(e) => {
-            result.add_error(e.into());
+            result.add_error::<NonConsensusError>(e.into());
             None
         }
     }

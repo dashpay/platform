@@ -201,7 +201,11 @@ impl StateTransitionConvert for DataContractUpdateTransition {
         if skip_signature {
             Self::signature_property_paths()
                 .into_iter()
-                .try_for_each(|path| object.remove_value_at_path(path))?;
+                .try_for_each(|path| {
+                    object
+                        .remove_value_at_path(path)
+                        .map_err(ProtocolError::ValueError)
+                })?;
         }
         object.insert(String::from(DATA_CONTRACT), self.data_contract.to_object()?)?;
         Ok(object)
@@ -211,7 +215,6 @@ impl StateTransitionConvert for DataContractUpdateTransition {
 #[cfg(test)]
 mod test {
     use integer_encoding::VarInt;
-    use serde_json::json;
     use std::convert::TryInto;
 
     use crate::tests::fixtures::get_data_contract_fixture;

@@ -186,7 +186,12 @@ pub trait StateTransitionConvert: Serialize {
     /// Returns the [`platform_value::Value`] instance that preserves the `Vec<u8>` representation
     /// for Identifiers and binary data
     fn to_object(&self, skip_signature: bool) -> Result<Value, ProtocolError> {
-        state_transition_helpers::to_object(self, skip_signature)
+        let skip_signature_paths = if skip_signature {
+            Self::signature_property_paths()
+        } else {
+            vec![]
+        };
+        state_transition_helpers::to_object(self, skip_signature_paths)
     }
 
     /// Returns the [`serde_json::Value`] instance that encodes:
@@ -203,10 +208,10 @@ pub trait StateTransitionConvert: Serialize {
 
     // Returns the cibor-encoded bytes representation of the object. The data is  prefixed by 4 bytes containing the Protocol Version
     fn to_buffer(&self, skip_signature: bool) -> Result<Vec<u8>, ProtocolError> {
-        let mut json_value = self.to_object(skip_signature)?;
-        let protocol_version = json_value.remove_integer(PROPERTY_PROTOCOL_VERSION)?;
+        let mut value = self.to_object(skip_signature)?;
+        let protocol_version = value.remove_integer(PROPERTY_PROTOCOL_VERSION)?;
 
-        serializer::value_to_cbor(json_value, Some(protocol_version))
+        serializer::serializable_value_to_cbor(&value, Some(protocol_version))
     }
 
     // Returns the hash of cibor-encoded bytes representation of the object
