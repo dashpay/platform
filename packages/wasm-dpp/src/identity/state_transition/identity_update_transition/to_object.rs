@@ -1,4 +1,5 @@
 use dpp::identity::KeyID;
+use dpp::prelude::{ProtocolVersion, Revision, TimestampMillis};
 use dpp::state_transition::StateTransitionIdentitySigned;
 use dpp::{
     identifier::Identifier,
@@ -18,11 +19,11 @@ pub struct ToObjectOptions {
 #[derive(Default)]
 pub struct ToObject {
     pub transition_type: u8,
-    pub protocol_version: u32,
+    pub protocol_version: ProtocolVersion,
     pub revision: u32,
     pub signature: Option<Vec<u8>>,
     pub signature_public_key_id: Option<KeyID>,
-    pub public_keys_disabled_at: Option<u64>,
+    pub public_keys_disabled_at: Option<TimestampMillis>,
     pub public_keys_to_add: Option<Vec<IdentityPublicKeyCreateTransition>>,
     pub public_key_ids_to_disable: Option<Vec<KeyID>>,
     pub identity_id: Identifier,

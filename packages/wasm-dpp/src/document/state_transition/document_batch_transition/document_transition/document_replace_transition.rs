@@ -75,8 +75,8 @@ impl DocumentReplaceTransitionWasm {
     }
 
     #[wasm_bindgen(js_name=getRevision)]
-    pub fn revision(&self) -> Revision {
-        self.inner.revision
+    pub fn revision(&self) -> js_sys::BigInt {
+        js_sys::BigInt::from(self.inner.revision)
     }
 
     #[wasm_bindgen(js_name=getUpdatedAt)]

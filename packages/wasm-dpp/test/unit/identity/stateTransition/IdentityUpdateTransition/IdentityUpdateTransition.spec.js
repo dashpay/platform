@@ -60,15 +60,15 @@ describe('IdentityUpdateTransition', () => {
 
   describe('#getRevision', () => {
     it('should return revision', () => {
-      expect(stateTransition.getRevision()).to.equal(rawStateTransition.revision);
+      expect(stateTransition.getRevision()).to.equal(BigInt(rawStateTransition.revision));
     });
   });
 
   describe('#setRevision', () => {
     it('should set revision', () => {
-      stateTransition.setRevision(42);
+      stateTransition.setRevision(42n);
 
-      expect(stateTransition.getRevision()).to.equal(42);
+      expect(stateTransition.getRevision()).to.equal(42n);
     });
   });
 

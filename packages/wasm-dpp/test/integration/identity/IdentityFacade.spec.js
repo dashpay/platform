@@ -200,7 +200,7 @@ describe('IdentityFacade', () => {
       expect(stateTransition.getIdentityId().toBuffer())
         .to.be.deep.equal(identity.getId().toBuffer());
       expect(stateTransition.getRevision()).to.equal(
-        identity.getRevision() + 1,
+        identity.getRevision() + 1n,
       );
       expect(
         stateTransition.getPublicKeysToAdd().map((pk) => pk.toObject()),

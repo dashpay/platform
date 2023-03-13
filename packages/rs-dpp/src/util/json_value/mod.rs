@@ -11,6 +11,7 @@ use serde_json::{Number, Value as JsonValue};
 use crate::{
     errors::ProtocolError,
     identifier::{self, Identifier},
+    prelude::ProtocolVersion,
 };
 
 use super::{
@@ -83,7 +84,7 @@ pub trait JsonValueExt {
     fn add_protocol_version(
         &mut self,
         property_name: &str,
-        protocol_version: u32,
+        protocol_version: ProtocolVersion,
     ) -> Result<(), ProtocolError>;
 
     /// Insert value under the path. Path is dot-separated string. i.e `properties[0].id`. If parents don't

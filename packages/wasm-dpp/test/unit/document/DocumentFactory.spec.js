@@ -1,6 +1,6 @@
 const bs58 = require('bs58');
 const DocumentJs = require('@dashevo/dpp/lib/document/Document');
-const DocumentCreateTransition = require('@dashevo/dpp/lib/document/stateTransition/DocumentsBatchTransition/documentTransition/DocumentCreateTransition');
+const DocumentCreateTransitionJs = require('@dashevo/dpp/lib/document/stateTransition/DocumentsBatchTransition/documentTransition/DocumentCreateTransition');
 const getDocumentsFixture = require('@dashevo/dpp/lib/test/fixtures/getDocumentsFixture');
 const getDataContractFixture = require('@dashevo/dpp/lib/test/fixtures/getDataContractFixture');
 const getDocumentTransitionsFixture = require('@dashevo/dpp/lib/test/fixtures/getDocumentTransitionsFixture');
@@ -29,6 +29,7 @@ let DocumentFactory;
 let DataContract;
 let Document;
 let DocumentValidator;
+let DocumentCreateTransition;
 let ProtocolVersionValidator;
 
 let InvalidDocumentTypeInDataContractError;
@@ -64,7 +65,7 @@ describe('DocumentFactory', () => {
   beforeEach(async () => {
     ({
       Identifier, ProtocolVersionValidator, DocumentValidator, DocumentFactory,
-      DataContract, Document,
+      DataContract, Document, DocumentCreateTransition,
       // Errors:
       InvalidDocumentTypeInDataContractError,
       InvalidDocumentError,
@@ -182,7 +183,7 @@ describe('DocumentFactory', () => {
       expect(generateEntropyMock).to.have.been.calledOnce();
       expect(newDocumentJs.getEntropy()).to.deep.equal(entropy);
 
-      expect(newDocumentJs.getRevision()).to.equal(DocumentCreateTransition.INITIAL_REVISION);
+      expect(newDocumentJs.getRevision()).to.equal(DocumentCreateTransitionJs.INITIAL_REVISION);
       expect(newDocument.getRevision()).to.equal(DocumentCreateTransition.INITIAL_REVISION);
 
       expect(newDocumentJs.getId()).to.deep.equal(bs58.decode('E9QpjZMD7CPAGa7x2ABuLFPvBLZjhPji4TMrUfSP3Hk9'));

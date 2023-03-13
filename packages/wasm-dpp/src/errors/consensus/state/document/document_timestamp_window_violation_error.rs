@@ -1,14 +1,14 @@
 use crate::buffer::Buffer;
-use dpp::identifier::Identifier;
+use dpp::{identifier::Identifier, prelude::TimestampMillis};
 use wasm_bindgen::prelude::*;
 
 #[wasm_bindgen(js_name=DocumentTimestampWindowViolationError)]
 pub struct DocumentTimestampWindowViolationErrorWasm {
     timestamp_name: String,
     document_id: Identifier,
-    timestamp: i64,
-    time_window_start: i64,
-    time_window_end: i64,
+    timestamp: TimestampMillis,
+    time_window_start: TimestampMillis,
+    time_window_end: TimestampMillis,
     code: u32,
 }
 
@@ -55,9 +55,9 @@ impl DocumentTimestampWindowViolationErrorWasm {
     pub fn new(
         timestamp_name: String,
         document_id: Identifier,
-        timestamp: i64,
-        time_window_start: i64,
-        time_window_end: i64,
+        timestamp: TimestampMillis,
+        time_window_start: TimestampMillis,
+        time_window_end: TimestampMillis,
         code: u32,
     ) -> Self {
         Self {

@@ -19,8 +19,8 @@ use dpp::{
     },
     state_transition::state_transition_execution_context::StateTransitionExecutionContext,
 };
-use js_sys::Uint8Array;
 use js_sys::{Array, Number};
+use js_sys::{BigInt, Uint8Array};
 use wasm_bindgen::__rt::Ref;
 
 use wasm_bindgen::prelude::*;
@@ -119,7 +119,7 @@ extern "C" {
     pub async fn update_identity_revision(
         this: &ExternalStateRepositoryLike,
         identity_id: IdentifierWrapper,
-        revision: Number,
+        revision: BigInt,
         execution_context: StateTransitionExecutionContextWasm,
     ) -> Result<(), JsValue>;
 
@@ -229,6 +229,10 @@ unsafe impl Sync for ExternalStateRepositoryLikeWrapper {}
 impl ExternalStateRepositoryLikeWrapper {
     pub(crate) fn new(state_repository: ExternalStateRepositoryLike) -> Self {
         ExternalStateRepositoryLikeWrapper(Arc::new(state_repository))
+    }
+
+    pub(crate) fn new_with_arc(state_repository: Arc<ExternalStateRepositoryLike>) -> Self {
+        ExternalStateRepositoryLikeWrapper(state_repository)
     }
 }
 
@@ -474,7 +478,7 @@ impl StateRepositoryLike for ExternalStateRepositoryLikeWrapper {
         self.0
             .update_identity_revision(
                 (*identity_id).into(),
-                Number::from(revision as f64), // TODO: We should use BigInt
+                js_sys::BigInt::from(revision),
                 execution_context.clone().into(),
             )
             .await

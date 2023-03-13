@@ -2,6 +2,7 @@ use std::borrow::Borrow;
 
 use serde_json::Value as JsonValue;
 
+use crate::consensus::basic::document::InconsistentCompoundIndexDataError;
 use crate::{
     consensus::basic::BasicError,
     data_contract::DataContract,
@@ -48,10 +49,12 @@ pub fn validate_indices(
         let properties = index.properties.iter().map(|property| &property.name);
 
         if !are_all_properties_defined_or_undefined(properties.clone(), raw_transition) {
-            validation_result.add_error(BasicError::InconsistentCompoundIndexDataError {
-                index_properties: properties.map(ToOwned::to_owned).collect(),
-                document_type: document_type.to_string(),
-            })
+            validation_result.add_error(BasicError::InconsistentCompoundIndexDataError(
+                InconsistentCompoundIndexDataError::new(
+                    properties.map(ToOwned::to_owned).collect(),
+                    document_type.to_string(),
+                ),
+            ))
         }
     }
 

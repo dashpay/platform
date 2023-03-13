@@ -1,5 +1,7 @@
 use std::borrow::Borrow;
 
+use crate::prelude::Fee;
+
 use self::{
     constants::FEE_MULTIPLIER,
     operations::{Operation, OperationLike},
@@ -11,8 +13,8 @@ pub mod operations;
 
 #[derive(Default)]
 pub struct Fees {
-    storage: i64,
-    processing: i64,
+    storage: Fee,
+    processing: Fee,
 }
 
 pub fn calculate_operations_fees(

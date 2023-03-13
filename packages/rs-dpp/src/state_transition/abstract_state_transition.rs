@@ -4,6 +4,9 @@ use dashcore::signer;
 use serde::Serialize;
 use serde_json::Value as JsonValue;
 
+use crate::state_transition::errors::{
+    InvalidIdentityPublicKeyTypeError, StateTransitionIsNotSignedError,
+};
 use crate::{
     identity::KeyType,
     prelude::{ProtocolError, ProtocolVersion},
@@ -77,9 +80,9 @@ pub trait StateTransitionLike:
             // https://github.com/dashevo/platform/blob/6b02b26e5cd3a7c877c5fdfe40c4a4385a8dda15/packages/js-dpp/lib/stateTransition/AbstractStateTransition.js#L187
             // is to return the error for the BIP13_SCRIPT_HASH
             KeyType::BIP13_SCRIPT_HASH => {
-                return Err(ProtocolError::InvalidIdentityPublicKeyTypeError {
-                    public_key_type: key_type,
-                })
+                return Err(ProtocolError::InvalidIdentityPublicKeyTypeError(
+                    InvalidIdentityPublicKeyTypeError::new(key_type),
+                ))
             }
         };
         Ok(())
@@ -97,9 +100,9 @@ pub trait StateTransitionLike:
                 self.verify_ecdsa_hash_160_signature_by_public_key_hash(public_key)
             }
             KeyType::BLS12_381 => self.verify_bls_signature_by_public_key(public_key, bls),
-            KeyType::BIP13_SCRIPT_HASH => {
-                Err(ProtocolError::InvalidIdentityPublicKeyTypeError { public_key_type })
-            }
+            KeyType::BIP13_SCRIPT_HASH => Err(ProtocolError::InvalidIdentityPublicKeyTypeError(
+                InvalidIdentityPublicKeyTypeError::new(public_key_type),
+            )),
         }
     }
 
@@ -108,9 +111,9 @@ pub trait StateTransitionLike:
         public_key_hash: &[u8],
     ) -> Result<(), ProtocolError> {
         if self.get_signature().is_empty() {
-            return Err(ProtocolError::StateTransitionIsNotIsSignedError {
-                state_transition: self.clone().into(),
-            });
+            return Err(ProtocolError::StateTransitionIsNotSignedError(
+                StateTransitionIsNotSignedError::new(self.clone().into()),
+            ));
         }
         let data_hash = self.hash(true)?;
         Ok(signer::verify_hash_signature(
@@ -123,9 +126,9 @@ pub trait StateTransitionLike:
     /// Verifies an ECDSA signature with the public key
     fn verify_ecdsa_signature_by_public_key(&self, public_key: &[u8]) -> Result<(), ProtocolError> {
         if self.get_signature().is_empty() {
-            return Err(ProtocolError::StateTransitionIsNotIsSignedError {
-                state_transition: self.clone().into(),
-            });
+            return Err(ProtocolError::StateTransitionIsNotSignedError(
+                StateTransitionIsNotSignedError::new(self.clone().into()),
+            ));
         }
         let data = self.to_buffer(true)?;
         Ok(signer::verify_data_signature(
@@ -142,9 +145,9 @@ pub trait StateTransitionLike:
         bls: &T,
     ) -> Result<(), ProtocolError> {
         if self.get_signature().is_empty() {
-            return Err(ProtocolError::StateTransitionIsNotIsSignedError {
-                state_transition: self.clone().into(),
-            });
+            return Err(ProtocolError::StateTransitionIsNotSignedError(
+                StateTransitionIsNotSignedError::new(self.clone().into()),
+            ));
         }
 
         let data = self.to_buffer(true)?;

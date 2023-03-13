@@ -17,8 +17,8 @@ impl InvalidDocumentRevisionErrorWasm {
     }
 
     #[wasm_bindgen(js_name=getCurrentRevision)]
-    pub fn current_revision(&self) -> Revision {
-        self.current_revision
+    pub fn current_revision(&self) -> js_sys::BigInt {
+        js_sys::BigInt::from(self.current_revision)
     }
 
     #[wasm_bindgen(js_name=getCode)]

@@ -9,7 +9,10 @@ pub fn calculate_state_transition_fee(state_transition: &impl StateTransitionLik
     // Is not implemented yet
     let storage_refund = 0;
 
-    (fee.storage + fee.processing) + DEFAULT_USER_TIP - storage_refund
+    fee.storage
+        .saturating_add(fee.processing)
+        .saturating_add(DEFAULT_USER_TIP)
+        .saturating_sub(storage_refund)
 }
 
 #[cfg(test)]

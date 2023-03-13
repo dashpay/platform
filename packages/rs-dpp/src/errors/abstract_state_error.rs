@@ -1,6 +1,6 @@
 use thiserror::Error;
 
-use crate::prelude::Revision;
+use crate::prelude::{Revision, TimestampMillis};
 use crate::{identity::KeyID, prelude::Identifier};
 
 use super::DataTriggerError;
@@ -28,9 +28,9 @@ pub enum StateError {
     DocumentTimestampWindowViolationError {
         timestamp_name: String,
         document_id: Identifier,
-        timestamp: i64,
-        time_window_start: i64,
-        time_window_end: i64,
+        timestamp: TimestampMillis,
+        time_window_start: TimestampMillis,
+        time_window_end: TimestampMillis,
     },
 
     #[error("Document {document_id} has duplicate unique properties {duplicating_properties:?} with other documents")]
@@ -71,9 +71,9 @@ pub enum StateError {
 
     #[error("Identity public keys disabled time ({disabled_at}) is out of block time window from {time_window_start} and {time_window_end}" )]
     IdentityPublicKeyDisabledAtWindowViolationError {
-        disabled_at: u64,
-        time_window_start: u64,
-        time_window_end: u64,
+        disabled_at: TimestampMillis,
+        time_window_start: TimestampMillis,
+        time_window_end: TimestampMillis,
     },
 
     #[error("Identity Public Key #{public_key_index} is read only")]

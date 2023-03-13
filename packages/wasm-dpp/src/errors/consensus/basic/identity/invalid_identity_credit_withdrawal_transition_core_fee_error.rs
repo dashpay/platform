@@ -1,5 +1,6 @@
 use dpp::consensus::basic::identity::InvalidIdentityCreditWithdrawalTransitionCoreFeeError;
 use dpp::consensus::ConsensusError;
+use dpp::prelude::Fee;
 use wasm_bindgen::prelude::*;
 
 #[wasm_bindgen(js_name=InvalidIdentityCreditWithdrawalTransitionCoreFeeError)]
@@ -18,7 +19,7 @@ impl From<&InvalidIdentityCreditWithdrawalTransitionCoreFeeError>
 #[wasm_bindgen(js_class=InvalidIdentityCreditWithdrawalTransitionCoreFeeError)]
 impl InvalidIdentityCreditWithdrawalTransitionCoreFeeErrorWasm {
     #[wasm_bindgen(js_name=getCoreFee)]
-    pub fn core_fee_per_byte(&self) -> u32 {
+    pub fn core_fee_per_byte(&self) -> Fee {
         self.inner.core_fee_per_byte()
     }
 

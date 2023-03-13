@@ -244,7 +244,7 @@ describe('validateDocumentsBatchTransitionStateFactory', () => {
     expect(error.getCode()).to.equal(4010);
 
     expect(error.getDocumentId()).to.deep.equal(documentTransitionsJs[0].getId().toBuffer());
-    expect(Number(error.getCurrentRevision())).to.deep.equal(documents[0].getRevision());
+    expect(error.getCurrentRevision()).to.equal(documents[0].getRevision());
 
     expect(stateRepositoryMock.fetchDataContract).to.have.been.calledOnce();
     const [fetchDataContractId] = stateRepositoryMock.fetchDataContract.getCall(0).args;

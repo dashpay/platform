@@ -93,7 +93,7 @@ describe('Document', () => {
       expect(result.$ownerId.toBuffer()).to.deep.equal(getDocumentsFixture.ownerId.toBuffer());
       expect(result.identifierField.toBuffer()).to.deep.equal(document.get('identifierField').toBuffer());
       expect(result.$protocolVersion).to.deep.equal(document.getProtocolVersion());
-      expect(result.$revision).to.deep.equal(document.getRevision());
+      expect(BigInt(result.$revision)).to.deep.equal(document.getRevision());
       expect(result.$type).to.deep.equal(document.getType());
       expect(result.byteArrayField).to.deep.equal(document.get('byteArrayField'));
     });

@@ -1,6 +1,12 @@
 use anyhow::anyhow;
 use dashcore::secp256k1::{PublicKey as RawPublicKey, SecretKey as RawSecretKey};
 
+use crate::consensus::signature::InvalidSignaturePublicKeySecurityLevelError;
+use crate::data_contract::state_transition::errors::PublicKeyIsDisabledError;
+use crate::state_transition::errors::{
+    InvalidIdentityPublicKeyTypeError, InvalidSignaturePublicKeyError, PublicKeyMismatchError,
+    PublicKeySecurityLevelNotMetError, StateTransitionIsNotSignedError, WrongPublicKeyPurposeError,
+};
 use crate::{
     identity::{IdentityPublicKey, KeyID, KeyType, Purpose, SecurityLevel},
     prelude::*,
@@ -36,9 +42,9 @@ where
                 // the compressed key stored in the identity
 
                 if public_key_compressed.to_vec() != identity_public_key.data {
-                    return Err(ProtocolError::InvalidSignaturePublicKeyError {
-                        public_key: identity_public_key.data.to_owned(),
-                    });
+                    return Err(ProtocolError::InvalidSignaturePublicKeyError(
+                        InvalidSignaturePublicKeyError::new(identity_public_key.data.to_owned()),
+                    ));
                 }
 
                 self.sign_by_private_key(private_key, identity_public_key.key_type, bls)
@@ -48,9 +54,9 @@ where
                 let pub_key_hash = ripemd160_sha256(&public_key_compressed);
 
                 if pub_key_hash != identity_public_key.data {
-                    return Err(ProtocolError::InvalidSignaturePublicKeyError {
-                        public_key: identity_public_key.data.to_owned(),
-                    });
+                    return Err(ProtocolError::InvalidSignaturePublicKeyError(
+                        InvalidSignaturePublicKeyError::new(identity_public_key.data.to_owned()),
+                    ));
                 }
                 self.sign_by_private_key(private_key, identity_public_key.key_type, bls)
             }
@@ -58,9 +64,9 @@ where
                 let public_key = bls.private_key_to_public_key(private_key)?;
 
                 if public_key != identity_public_key.data {
-                    return Err(ProtocolError::InvalidSignaturePublicKeyError {
-                        public_key: identity_public_key.data.to_owned(),
-                    });
+                    return Err(ProtocolError::InvalidSignaturePublicKeyError(
+                        InvalidSignaturePublicKeyError::new(identity_public_key.data.to_owned()),
+                    ));
                 }
                 self.sign_by_private_key(private_key, identity_public_key.key_type, bls)
             }
@@ -68,9 +74,9 @@ where
             // the default behavior from
             // https://github.com/dashevo/platform/blob/6b02b26e5cd3a7c877c5fdfe40c4a4385a8dda15/packages/js-dpp/lib/stateTransition/AbstractStateTransitionIdentitySigned.js#L108
             // is to return the error for the BIP13_SCRIPT_HASH
-            KeyType::BIP13_SCRIPT_HASH => Err(ProtocolError::InvalidIdentityPublicKeyTypeError {
-                public_key_type: identity_public_key.key_type,
-            }),
+            KeyType::BIP13_SCRIPT_HASH => Err(ProtocolError::InvalidIdentityPublicKeyTypeError(
+                InvalidIdentityPublicKeyTypeError::new(identity_public_key.key_type),
+            )),
         }
     }
 
@@ -83,15 +89,15 @@ where
 
         let signature = self.get_signature();
         if signature.is_empty() {
-            return Err(ProtocolError::StateTransitionIsNotIsSignedError {
-                state_transition: self.clone().into(),
-            });
+            return Err(ProtocolError::StateTransitionIsNotSignedError(
+                StateTransitionIsNotSignedError::new(self.clone().into()),
+            ));
         }
 
         if self.get_signature_public_key_id() != Some(public_key.id) {
-            return Err(ProtocolError::PublicKeyMismatchError {
-                public_key: public_key.clone(),
-            });
+            return Err(ProtocolError::PublicKeyMismatchError(
+                PublicKeyMismatchError::new(public_key.clone()),
+            ));
         }
 
         let public_key_bytes = public_key.data.as_slice();
@@ -119,25 +125,28 @@ where
         // a MASTER key
         if public_key.is_master() && self.get_security_level_requirement() != SecurityLevel::MASTER
         {
-            return Err(ProtocolError::InvalidSignaturePublicKeySecurityLevelError {
-                public_key_security_level: public_key.security_level,
-                required_security_level: self.get_security_level_requirement(),
-            });
+            return Err(ProtocolError::InvalidSignaturePublicKeySecurityLevelError(
+                InvalidSignaturePublicKeySecurityLevelError::new(
+                    public_key.security_level,
+                    self.get_security_level_requirement(),
+                ),
+            ));
         }
 
         // Otherwise, key security level should be less than MASTER but more or equal than required
         if self.get_security_level_requirement() < public_key.security_level {
-            return Err(ProtocolError::PublicKeySecurityLevelNotMetError {
-                public_key_security_level: public_key.security_level,
-                required_security_level: self.get_security_level_requirement(),
-            });
+            return Err(ProtocolError::PublicKeySecurityLevelNotMetError(
+                PublicKeySecurityLevelNotMetError::new(
+                    public_key.security_level,
+                    self.get_security_level_requirement(),
+                ),
+            ));
         }
 
         if public_key.purpose != Purpose::AUTHENTICATION {
-            return Err(ProtocolError::WrongPublicKeyPurposeError {
-                public_key_purpose: public_key.purpose,
-                key_purpose_requirement: Purpose::AUTHENTICATION,
-            });
+            return Err(ProtocolError::WrongPublicKeyPurposeError(
+                WrongPublicKeyPurposeError::new(public_key.purpose, Purpose::AUTHENTICATION),
+            ));
         }
         Ok(())
     }
@@ -147,9 +156,9 @@ where
         public_key: &IdentityPublicKey,
     ) -> Result<(), ProtocolError> {
         if public_key.disabled_at.is_some() {
-            return Err(ProtocolError::PublicKeyIsDisabledError {
-                public_key: public_key.to_owned(),
-            });
+            return Err(ProtocolError::PublicKeyIsDisabledError(
+                PublicKeyIsDisabledError::new(public_key.to_owned()),
+            ));
         }
         Ok(())
     }
@@ -459,12 +468,9 @@ mod test {
             .sign(&keys.identity_public_key, &keys.ec_private, &bls)
             .unwrap_err();
         match sign_error {
-            ProtocolError::PublicKeySecurityLevelNotMetError {
-                public_key_security_level: sec_level,
-                required_security_level: req_sec_level,
-            } => {
-                assert_eq!(SecurityLevel::MEDIUM, sec_level);
-                assert_eq!(SecurityLevel::HIGH, req_sec_level);
+            ProtocolError::PublicKeySecurityLevelNotMetError(err) => {
+                assert_eq!(SecurityLevel::MEDIUM, err.public_key_security_level());
+                assert_eq!(SecurityLevel::HIGH, err.required_security_level());
             }
             error => {
                 panic!("invalid error type: {}", error)
@@ -483,12 +489,9 @@ mod test {
             .sign(&keys.identity_public_key, &keys.ec_private, &bls)
             .unwrap_err();
         match sign_error {
-            ProtocolError::WrongPublicKeyPurposeError {
-                public_key_purpose: purpose,
-                key_purpose_requirement: req_purpose,
-            } => {
-                assert_eq!(Purpose::ENCRYPTION, purpose);
-                assert_eq!(Purpose::AUTHENTICATION, req_purpose);
+            ProtocolError::WrongPublicKeyPurposeError(err) => {
+                assert_eq!(Purpose::ENCRYPTION, err.public_key_purpose());
+                assert_eq!(Purpose::AUTHENTICATION, err.key_purpose_requirement());
             }
             error => {
                 panic!("invalid error type: {}", error)
@@ -518,7 +521,7 @@ mod test {
             .verify_signature(&keys.identity_public_key, &bls)
             .unwrap_err();
         match verify_error {
-            ProtocolError::StateTransitionIsNotIsSignedError { .. } => {}
+            ProtocolError::StateTransitionIsNotSignedError { .. } => {}
             error => {
                 panic!("invalid error type: {}", error)
             }
@@ -537,7 +540,7 @@ mod test {
             .verify_signature(&keys.identity_public_key, &bls)
             .unwrap_err();
         match verify_error {
-            ProtocolError::StateTransitionIsNotIsSignedError { .. } => {}
+            ProtocolError::StateTransitionIsNotSignedError { .. } => {}
             error => {
                 panic!("invalid error type: {}", error)
             }
@@ -592,13 +595,15 @@ mod test {
             .sign(&keys.identity_public_key, &keys.bls_private, &bls)
             .expect_err("the protocol error should be returned");
 
-        assert!(matches!(
-            result,
-            ProtocolError::InvalidSignaturePublicKeySecurityLevelError { public_key_security_level, required_security_level } if
-            {
-                public_key_security_level == SecurityLevel::MASTER &&
-                required_security_level == SecurityLevel::HIGH
+        match result {
+            ProtocolError::InvalidSignaturePublicKeySecurityLevelError(err) => {
+                assert_eq!(err.public_key_security_level(), SecurityLevel::MASTER);
+                assert_eq!(err.required_key_security_level(), SecurityLevel::HIGH);
             }
-        ))
+            error => panic!(
+                "expected InvalidSignaturePublicKeySecurityLevelError, got {}",
+                error
+            ),
+        }
     }
 }

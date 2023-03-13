@@ -61,10 +61,9 @@ pub mod prelude {
     pub type ProtocolVersion = u32;
     pub type TimestampMillis = u64;
     pub type Revision = u64;
-    pub type OutputIndex = u32;
+    pub type DataContractVersion = u32;
 
     pub type PublicKeyId = u32;
-    pub type ErrorCode = u32;
     pub type Balance = u64;
     pub type Fee = i64;
 }

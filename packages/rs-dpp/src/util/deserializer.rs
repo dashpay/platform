@@ -2,6 +2,7 @@ use anyhow::anyhow;
 use integer_encoding::VarInt;
 use serde_json::{Map, Number, Value as JsonValue};
 
+use crate::consensus::basic::decode::ProtocolVersionParsingError;
 use crate::data_contract::errors::StructureError;
 use crate::data_contract::extra::common::check_protocol_version;
 use crate::prelude::ProtocolVersion;
@@ -23,9 +24,9 @@ pub fn parse_protocol_version(
 pub fn get_protocol_version(version_bytes: &[u8]) -> Result<ProtocolVersion, ProtocolError> {
     u32::decode_var(version_bytes)
         .ok_or_else(|| {
-            ConsensusError::ProtocolVersionParsingError {
-                parsing_error: anyhow!("length could not be decoded as a varint"),
-            }
+            ConsensusError::ProtocolVersionParsingError(ProtocolVersionParsingError::new(anyhow!(
+                "length could not be decoded as a varint"
+            )))
             .into()
         })
         .map(|(protocol_version, _size)| protocol_version)
@@ -46,9 +47,9 @@ pub fn split_protocol_version(
 ) -> Result<SplitProtocolVersionOutcome, ProtocolError> {
     let (protocol_version, protocol_version_size) =
         u32::decode_var(message_bytes).ok_or(ProtocolError::AbstractConsensusError(Box::new(
-            ConsensusError::ProtocolVersionParsingError {
-                parsing_error: anyhow!("length could not be decoded as a varint"),
-            },
+            ConsensusError::ProtocolVersionParsingError(ProtocolVersionParsingError::new(anyhow!(
+                "length could not be decoded as a varint"
+            ))),
         )))?;
     let (_, main_message_bytes) = message_bytes.split_at(protocol_version_size);
 

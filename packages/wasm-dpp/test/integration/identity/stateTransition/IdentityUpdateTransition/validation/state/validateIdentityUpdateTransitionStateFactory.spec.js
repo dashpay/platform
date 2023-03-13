@@ -72,7 +72,7 @@ describe('validateIdentityUpdateTransitionStateFactory', () => {
       getIdentityUpdateTransitionFixture().toObject(),
     );
 
-    stateTransition.setRevision(identity.getRevision() + 1);
+    stateTransition.setRevision(identity.getRevision() + 1n);
     stateTransition.setPublicKeyIdsToDisable(undefined);
     stateTransition.setPublicKeysDisabledAt(undefined);
 
@@ -96,7 +96,7 @@ describe('validateIdentityUpdateTransitionStateFactory', () => {
 
     const [error] = result.getErrors();
     expect(error.getIdentityId()).to.deep.equal(stateTransition.getIdentityId().toBuffer());
-    expect(error.getCurrentRevision()).to.equal(rawIdentity.revision);
+    expect(error.getCurrentRevision()).to.equal(BigInt(rawIdentity.revision));
   });
 
   it('should return IdentityPublicKeyIsReadOnlyError if disabling public key is readOnly', async () => {

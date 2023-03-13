@@ -3,9 +3,9 @@ use wasm_bindgen::prelude::*;
 
 #[wasm_bindgen(js_name=IdentityPublicKeyDisabledAtWindowViolationError)]
 pub struct IdentityPublicKeyDisabledAtWindowViolationErrorWasm {
-    disabled_at: u64,
-    time_window_start: u64,
-    time_window_end: u64,
+    disabled_at: TimestampMillis,
+    time_window_start: TimestampMillis,
+    time_window_end: TimestampMillis,
     code: u32,
 }
 

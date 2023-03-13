@@ -16,8 +16,8 @@ use dpp::{ProtocolError, SerdeParsingError};
 
 use crate::errors::from_dpp_err;
 use crate::identifier::IdentifierWrapper;
-use crate::utils;
-use crate::utils::to_vec_of_serde_values;
+use crate::utils::{to_vec_of_serde_values, WithJsError};
+use crate::utils::{self, try_to_u64};
 use crate::MetadataWasm;
 pub use identity_public_key::*;
 
@@ -138,13 +138,14 @@ impl IdentityWasm {
     }
 
     #[wasm_bindgen(js_name=setRevision)]
-    pub fn set_revision(&mut self, revision: f64) {
-        self.0.set_revision(revision as u64);
+    pub fn set_revision(&mut self, revision: JsValue) -> Result<(), JsValue> {
+        self.0.set_revision(try_to_u64(revision).with_js_error()?);
+        Ok(())
     }
 
     #[wasm_bindgen(js_name=getRevision)]
-    pub fn get_revision(&self) -> f64 {
-        self.0.get_revision() as f64
+    pub fn get_revision(&self) -> js_sys::BigInt {
+        js_sys::BigInt::from(self.0.get_revision())
     }
 
     #[wasm_bindgen(js_name=setMetadata)]

@@ -4,6 +4,7 @@ use itertools::Itertools;
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value as JsonValue};
 
+use crate::consensus::basic::document::InvalidDocumentTypeError;
 use crate::{
     data_contract::{errors::DataContractError, DataContract},
     decode_protocol_entity_factory::DecodeProtocolEntity,
@@ -95,10 +96,9 @@ where
         data: JsonValue,
     ) -> Result<Document, ProtocolError> {
         if !data_contract.is_document_defined(&document_type) {
-            return Err(DataContractError::InvalidDocumentTypeError {
-                doc_type: document_type,
-                data_contract,
-            }
+            return Err(DataContractError::InvalidDocumentTypeError(
+                InvalidDocumentTypeError::new(document_type, data_contract.id),
+            )
             .into());
         }
 
@@ -333,7 +333,9 @@ where
                     PROPERTY_ACTION.to_string(),
                     serde_json::to_value(Action::Replace)?,
                 );
-                let new_revision = document_revision + 1;
+                let new_revision = document_revision
+                    .checked_add(1)
+                    .ok_or(ProtocolError::Overflow("max revision reached"))?;
                 map.insert(PROPERTY_REVISION.to_string(), json!(new_revision));
 
                 // If document have an originally set `updatedAt`

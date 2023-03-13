@@ -16,10 +16,10 @@ use crate::{
 
 use crate::bls_adapter::{BlsAdapter, JsBlsAdapter};
 use crate::errors::from_dpp_err;
-use crate::utils::generic_of_js_val;
+use crate::utils::{generic_of_js_val, try_to_u64, WithJsError};
 use dpp::identity::state_transition::identity_public_key_transitions::IdentityPublicKeyCreateTransition;
 use dpp::identity::KeyID;
-use dpp::prelude::{Revision, TimestampMillis};
+use dpp::prelude::{ProtocolVersion, Revision, TimestampMillis};
 use dpp::state_transition::StateTransitionIdentitySigned;
 use dpp::{
     identifier::Identifier,
@@ -35,7 +35,7 @@ pub struct IdentityUpdateTransitionWasm(IdentityUpdateTransition);
 #[serde(rename_all = "camelCase")]
 struct IdentityUpdateTransitionParams {
     signature: Option<Vec<u8>>,
-    protocol_version: u32,
+    protocol_version: ProtocolVersion,
     identity_id: Vec<u8>,
     revision: Revision,
     add_public_keys: Option<Vec<IdentityPublicKeyCreateTransition>>,
@@ -420,13 +420,14 @@ impl IdentityUpdateTransitionWasm {
     }
 
     #[wasm_bindgen(js_name=getRevision)]
-    pub fn get_revision(&self) -> u32 {
-        self.0.get_revision() as u32
+    pub fn get_revision(&self) -> js_sys::BigInt {
+        js_sys::BigInt::from(self.0.get_revision())
     }
 
     #[wasm_bindgen(js_name=setRevision)]
-    pub fn set_revision(&mut self, revision: u32) {
-        self.0.set_revision(revision as u64)
+    pub fn set_revision(&mut self, revision: JsValue) -> Result<(), JsValue> {
+        self.0.set_revision(try_to_u64(revision).with_js_error()?);
+        Ok(())
     }
 
     #[wasm_bindgen]

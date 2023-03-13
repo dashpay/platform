@@ -14,7 +14,7 @@ use crate::buffer::Buffer;
 use crate::errors::RustConversionError;
 use crate::identifier::{identifier_from_js_value, IdentifierWrapper};
 use crate::lodash::lodash_set;
-use crate::utils::{replace_identifiers_with_bytes_without_failing, ToSerdeJSONExt};
+use crate::utils::{replace_identifiers_with_bytes_without_failing, Inner, ToSerdeJSONExt};
 use crate::utils::{try_to_u64, WithJsError};
 use crate::with_js_error;
 use crate::{DataContractWasm, MetadataWasm};
@@ -24,6 +24,7 @@ pub use state_transition::*;
 pub mod document_facade;
 mod factory;
 pub mod fetch_and_validate_data_contract;
+pub mod generate_document_id;
 pub mod state_transition;
 mod validator;
 
@@ -76,7 +77,7 @@ impl DocumentWasm {
 
     #[wasm_bindgen(js_name=setId)]
     pub fn set_id(&mut self, js_id: IdentifierWrapper) {
-        self.0.id = js_id.inner();
+        self.0.id = js_id.into_inner();
     }
 
     #[wasm_bindgen(js_name=getType)]
@@ -103,7 +104,7 @@ impl DocumentWasm {
 
     #[wasm_bindgen(js_name=setOwnerId)]
     pub fn set_owner_id(&mut self, owner_id: IdentifierWrapper) {
-        self.0.owner_id = owner_id.inner();
+        self.0.owner_id = owner_id.into_inner();
     }
 
     #[wasm_bindgen(js_name=getOwnerId)]
@@ -111,16 +112,16 @@ impl DocumentWasm {
         self.0.owner_id.into()
     }
 
-    // TODO #overflow
+    /// set the revision. Accepts BigInt or Number
     #[wasm_bindgen(js_name=setRevision)]
-    pub fn set_revision(&mut self, rev: Revision) {
-        self.0.revision = rev
+    pub fn set_revision(&mut self, revision: JsValue) -> Result<(), JsValue> {
+        self.0.revision = try_to_u64(revision).with_js_error()?;
+        Ok(())
     }
 
-    // TODO #overflow
     #[wasm_bindgen(js_name=getRevision)]
-    pub fn get_revision(&self) -> Revision {
-        self.0.revision
+    pub fn get_revision(&self) -> js_sys::BigInt {
+        js_sys::BigInt::from(self.0.revision)
     }
 
     #[wasm_bindgen(js_name=setEntropy)]

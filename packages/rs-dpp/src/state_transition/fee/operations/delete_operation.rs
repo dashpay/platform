@@ -1,8 +1,11 @@
 use serde::{Deserialize, Serialize};
 
 use super::OperationLike;
-use crate::state_transition::fee::constants::{
-    DELETE_BASE_PROCESSING_COST, PROCESSING_CREDIT_PER_BYTE, STORAGE_CREDIT_PER_BYTE,
+use crate::{
+    prelude::Fee,
+    state_transition::fee::constants::{
+        DELETE_BASE_PROCESSING_COST, PROCESSING_CREDIT_PER_BYTE, STORAGE_CREDIT_PER_BYTE,
+    },
 };
 
 #[derive(Default, Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
@@ -22,12 +25,15 @@ impl DeleteOperation {
 }
 
 impl OperationLike for DeleteOperation {
-    fn get_processing_cost(&self) -> i64 {
-        DELETE_BASE_PROCESSING_COST
-            + ((self.key_size as i64 + self.value_size as i64) * PROCESSING_CREDIT_PER_BYTE)
+    fn get_processing_cost(&self) -> Fee {
+        let current_cost = (self.key_size.saturating_add(self.value_size) as Fee)
+            .saturating_mul(PROCESSING_CREDIT_PER_BYTE);
+
+        DELETE_BASE_PROCESSING_COST.saturating_add(current_cost)
     }
 
-    fn get_storage_cost(&self) -> i64 {
-        -((self.key_size + self.value_size) as i64 * STORAGE_CREDIT_PER_BYTE)
+    fn get_storage_cost(&self) -> Fee {
+        -1 * (self.key_size.saturating_add(self.value_size) as Fee)
+            .saturating_mul(STORAGE_CREDIT_PER_BYTE)
     }
 }

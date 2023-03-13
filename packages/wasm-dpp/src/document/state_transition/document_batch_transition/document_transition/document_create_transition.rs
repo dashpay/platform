@@ -3,6 +3,7 @@ use std::convert;
 use dpp::{
     document::document_transition::{
         self, document_create_transition, DocumentCreateTransition, DocumentTransitionObjectLike,
+        INITIAL_REVISION,
     },
     prelude::{DataContract, Identifier, Revision, TimestampMillis},
     util::{json_schema::JsonSchemaExt, json_value::JsonValueExt},
@@ -83,8 +84,8 @@ impl DocumentCreateTransitionWasm {
     }
 
     #[wasm_bindgen(js_name=getRevision)]
-    pub fn revision(&self) -> Revision {
-        document_transition::INITIAL_REVISION
+    pub fn revision(&self) -> js_sys::BigInt {
+        js_sys::BigInt::from(document_transition::INITIAL_REVISION)
     }
 
     // AbstractDocumentTransitionMethods
@@ -250,6 +251,11 @@ impl DocumentCreateTransitionWasm {
         }
 
         Ok(js_value)
+    }
+
+    #[wasm_bindgen(getter, js_name = INITIAL_REVISION)]
+    pub fn initial_revision() -> js_sys::BigInt {
+        js_sys::BigInt::from(INITIAL_REVISION)
     }
 }
 

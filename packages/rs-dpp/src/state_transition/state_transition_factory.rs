@@ -1,6 +1,9 @@
 use anyhow::anyhow;
 use std::convert::{TryFrom, TryInto};
 
+use crate::consensus::basic::state_transition::InvalidStateTransitionTypeError;
+use crate::data_contract::errors::DataContractNotPresentError;
+use crate::data_contract::state_transition::errors::MissingDataContractIdError;
 use crate::{
     consensus::{basic::BasicError, ConsensusError},
     data_contract::{
@@ -72,7 +75,9 @@ pub async fn create_state_transition(
             Ok(StateTransition::DocumentsBatch(documents_batch_transition))
         }
         // TODO!! add basic validation
-        StateTransitionType::IdentityUpdate => Err(ProtocolError::InvalidStateTransitionTypeError),
+        StateTransitionType::IdentityUpdate => Err(ProtocolError::InvalidStateTransitionTypeError(
+            InvalidStateTransitionTypeError::new(transition_type as u8),
+        )),
     }
 }
 
@@ -84,9 +89,9 @@ async fn fetch_data_contracts_for_document_transition(
     let mut data_contracts = vec![];
     for transition in raw_document_transitions {
         let data_contract_id_bytes = transition.get_bytes("$dataContractId").map_err(|_| {
-            ProtocolError::MissingDataContractIdError {
-                raw_document_transition: transition.to_owned(),
-            }
+            ProtocolError::MissingDataContractIdError(MissingDataContractIdError::new(
+                transition.to_owned(),
+            ))
         })?;
 
         let data_contract_id = Identifier::from_bytes(&data_contract_id_bytes)?;
@@ -96,7 +101,11 @@ async fn fetch_data_contracts_for_document_transition(
             .map(TryInto::try_into)
             .transpose()
             .map_err(Into::into)?
-            .ok_or(ProtocolError::DataContractNotPresentError { data_contract_id })?;
+            .ok_or_else(|| {
+                ProtocolError::DataContractNotPresentError(DataContractNotPresentError::new(
+                    data_contract_id,
+                ))
+            })?;
 
         data_contracts.push(data_contract);
     }
@@ -107,11 +116,14 @@ async fn fetch_data_contracts_for_document_transition(
 pub fn try_get_transition_type(
     raw_state_transition: &JsonValue,
 ) -> Result<StateTransitionType, ProtocolError> {
-    let transition_number = raw_state_transition
+    let transition_type = raw_state_transition
         .get_u64("type")
         .map_err(|_| missing_state_transition_error())?;
-    StateTransitionType::try_from(transition_number as u8)
-        .map_err(|_| ProtocolError::InvalidStateTransitionTypeError)
+    StateTransitionType::try_from(transition_type as u8).map_err(|_| {
+        ProtocolError::InvalidStateTransitionTypeError(InvalidStateTransitionTypeError::new(
+            transition_type as u8,
+        ))
+    })
 }
 
 fn missing_state_transition_error() -> ProtocolError {
@@ -226,9 +238,20 @@ mod test {
         });
 
         let result = create_state_transition(&state_repostiory_mock, raw_state_transition).await;
-        assert!(matches!(
-            result,
-            Err(ProtocolError::InvalidStateTransitionTypeError)
-        ));
+        let err = get_protocol_error(result);
+
+        match err {
+            ProtocolError::InvalidStateTransitionTypeError(err) => {
+                assert_eq!(err.transition_type(), 154);
+            }
+            _ => panic!("expected InvalidStateTransitionTypeError, got {}", err),
+        }
+    }
+
+    pub fn get_protocol_error<T>(result: Result<T, ProtocolError>) -> ProtocolError {
+        match result {
+            Ok(_) => panic!("expected to get ProtocolError, got valid result"),
+            Err(e) => e,
+        }
     }
 }

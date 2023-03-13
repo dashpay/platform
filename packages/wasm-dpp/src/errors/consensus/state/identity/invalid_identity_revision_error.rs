@@ -19,9 +19,8 @@ impl InvalidIdentityRevisionErrorWasm {
     }
 
     #[wasm_bindgen(js_name=getCurrentRevision)]
-    pub fn current_revision(&self) -> Number {
-        // It might be overflow
-        Number::from(self.current_revision as f64)
+    pub fn current_revision(&self) -> js_sys::BigInt {
+        js_sys::BigInt::from(self.current_revision)
     }
 
     #[wasm_bindgen(js_name=getCode)]

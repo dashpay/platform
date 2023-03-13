@@ -54,7 +54,6 @@ use crate::ProtocolError;
 use crate::document::document_transition::INITIAL_REVISION;
 use crate::document::property_names;
 use crate::prelude::*;
-use crate::util::cbor_value::CborBTreeMapHelper;
 use anyhow::{anyhow, bail};
 use platform_value::btreemap_extensions::BTreeValueMapHelper;
 use platform_value::Value;

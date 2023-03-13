@@ -89,9 +89,9 @@ impl IdentityCreditWithdrawalTransitionBasicValidator {
 
         // validate core_fee is in fibonacci sequence
         let core_fee_per_byte =
-            transition_json.get_u32(withdrawals_contract::property_names::CORE_FEE_PER_BYTE)?;
+            transition_json.get_i64(withdrawals_contract::property_names::CORE_FEE_PER_BYTE)?;
 
-        if !is_fibonacci_number(core_fee_per_byte) {
+        if !is_fibonacci_number(core_fee_per_byte as u32) {
             result.add_error(InvalidIdentityCreditWithdrawalTransitionCoreFeeError::new(
                 core_fee_per_byte,
             ));

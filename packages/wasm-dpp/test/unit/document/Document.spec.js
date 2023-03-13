@@ -201,7 +201,7 @@ describe('Document', () => {
 
       document = new Document(rawDocument, dataContract);
 
-      expect(document.getRevision()).to.equal(rawDocument.$revision);
+      expect(document.getRevision()).to.equal(BigInt(rawDocument.$revision));
     });
 
     it('should create Document with $createdAt and data if present', async () => {
@@ -273,11 +273,11 @@ describe('Document', () => {
 
   describe('#setRevision/#getRevision', () => {
     it('should set $revision and get $revision', () => {
-      const revision = 5;
+      const revision = 5n;
 
       document.setRevision(revision);
 
-      expect(document.getRevision()).to.equal(revision);
+      expect(document.getRevision()).to.equal
     });
   });
 

@@ -281,7 +281,7 @@ pub fn json_document_to_cbor(
 }
 
 /// Make sure the protocol version is correct.
-pub const fn check_protocol_version(_version: u32) -> bool {
+pub const fn check_protocol_version(_version: ProtocolVersion) -> bool {
     // Temporary disabled due protocol version is dynamic and goes from consensus params
     true
 }

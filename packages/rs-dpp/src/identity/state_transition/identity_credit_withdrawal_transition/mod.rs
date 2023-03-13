@@ -3,7 +3,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value as JsonValue;
 use serde_repr::{Deserialize_repr, Serialize_repr};
 
-use crate::prelude::ProtocolVersion;
+use crate::prelude::{ProtocolVersion, Fee};
 use crate::version::LATEST_VERSION;
 use crate::{
     identity::{core_script::CoreScript, KeyID},
@@ -50,7 +50,7 @@ pub struct IdentityCreditWithdrawalTransition {
     pub transition_type: StateTransitionType,
     pub identity_id: Identifier,
     pub amount: u64,
-    pub core_fee_per_byte: u32,
+    pub core_fee_per_byte: Fee,
     pub pooling: Pooling,
     pub output_script: CoreScript,
     pub revision: Revision,
