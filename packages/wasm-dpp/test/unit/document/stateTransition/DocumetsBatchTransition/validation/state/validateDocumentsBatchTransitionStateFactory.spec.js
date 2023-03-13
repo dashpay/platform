@@ -375,7 +375,7 @@ describe('validateDocumentsBatchTransitionStateFactory', () => {
 
         const transitions = stateTransition.getTransitions();
         transitions.forEach((t) => {
-          const createdAtMinus6Mins = t.getCreatedAt() - (6 * 60 * 1000);
+          const createdAtMinus6Mins = t.getCreatedAt().getTime() - (6 * 60 * 1000);
           t.setCreatedAt(createdAtMinus6Mins);
           t.setUpdatedAt(undefined);
         });

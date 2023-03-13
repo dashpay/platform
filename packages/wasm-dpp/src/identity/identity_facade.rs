@@ -2,6 +2,7 @@ use std::convert::TryInto;
 
 use std::sync::Arc;
 
+use dpp::prelude::TimestampMillis;
 use wasm_bindgen::prelude::*;
 
 use dpp::identity::validation::PublicKeysValidator;
@@ -199,7 +200,7 @@ impl IdentityFacadeWasm {
     ) -> Result<IdentityUpdateTransitionWasm, JsValue> {
         let (add_public_keys, disable_public_keys) =
             super::factory_utils::parse_create_identity_update_transition_keys(public_keys)?;
-        let now = js_sys::Date::now() as u64;
+        let now = js_sys::Date::now() as TimestampMillis;
 
         self.0
             .create_identity_update_transition(

@@ -16,7 +16,7 @@ use crate::{
 
 use crate::bls_adapter::{BlsAdapter, JsBlsAdapter};
 use crate::errors::from_dpp_err;
-use crate::utils::{generic_of_js_val, try_to_u64, WithJsError};
+use crate::utils::{generic_of_js_val, timestamp_millis_to_js_date, try_to_u64, WithJsError};
 use dpp::identity::state_transition::identity_public_key_transitions::IdentityPublicKeyCreateTransition;
 use dpp::identity::KeyID;
 use dpp::prelude::{ProtocolVersion, Revision, TimestampMillis};
@@ -135,7 +135,7 @@ impl IdentityUpdateTransitionWasm {
     pub fn get_public_keys_disabled_at(&self) -> Option<js_sys::Date> {
         self.0
             .get_public_keys_disabled_at()
-            .map(|timestamp| js_sys::Date::new(&JsValue::from_f64(timestamp as f64)))
+            .map(timestamp_millis_to_js_date)
     }
 
     #[wasm_bindgen(js_name=setPublicKeysDisabledAt)]

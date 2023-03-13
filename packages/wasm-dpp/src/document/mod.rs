@@ -14,7 +14,10 @@ use crate::buffer::Buffer;
 use crate::errors::RustConversionError;
 use crate::identifier::{identifier_from_js_value, IdentifierWrapper};
 use crate::lodash::lodash_set;
-use crate::utils::{replace_identifiers_with_bytes_without_failing, Inner, ToSerdeJSONExt};
+use crate::utils::{
+    replace_identifiers_with_bytes_without_failing, timestamp_millis_to_js_date, Inner,
+    ToSerdeJSONExt,
+};
 use crate::utils::{try_to_u64, WithJsError};
 use crate::with_js_error;
 use crate::{DataContractWasm, MetadataWasm};
@@ -273,13 +276,13 @@ impl DocumentWasm {
     }
 
     #[wasm_bindgen(js_name=getCreatedAt)]
-    pub fn get_created_at(&self) -> Option<f64> {
-        self.0.created_at.map(|v| v as f64)
+    pub fn get_created_at(&self) -> Option<js_sys::Date> {
+        self.0.created_at.map(timestamp_millis_to_js_date)
     }
 
     #[wasm_bindgen(js_name=getUpdatedAt)]
-    pub fn get_updated_at(&self) -> Option<f64> {
-        self.0.updated_at.map(|v| v as f64)
+    pub fn get_updated_at(&self) -> Option<js_sys::Date> {
+        self.0.updated_at.map(timestamp_millis_to_js_date)
     }
 
     #[wasm_bindgen(js_name=getMetadata)]

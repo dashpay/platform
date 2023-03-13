@@ -194,7 +194,7 @@ describe('DocumentFactory', () => {
       expect(newDocument.getEntropy()).not.to.deep.be.equal(Buffer.alloc(32));
 
       expect(newDocumentJs.getCreatedAt().getTime()).to.be.equal(fakeTimeDate.getTime());
-      expect(newDocument.getCreatedAt()).to.be.an('number');
+      expect(newDocument.getCreatedAt()).to.be.an('Date');
     });
 
     it('should throw an error if type is not defined', () => {

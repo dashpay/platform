@@ -3,6 +3,7 @@ use std::convert::TryInto;
 use anyhow::{anyhow, bail};
 use dpp::{
     dashcore::{anyhow, anyhow::Context},
+    prelude::TimestampMillis,
     util::json_value::{JsonValueExt, ReplaceWith},
     ProtocolError,
 };
@@ -203,7 +204,7 @@ pub fn get_class_name(value: &JsValue) -> String {
 }
 
 pub fn try_to_u64(value: JsValue) -> Result<u64, anyhow::Error> {
-    let result = if value.is_bigint() {
+    if value.is_bigint() {
         js_sys::BigInt::new(&value)
             .map_err(|e| anyhow!("unable to create bigInt: {}", e.to_string()))?
             .try_into()
@@ -213,9 +214,7 @@ pub fn try_to_u64(value: JsValue) -> Result<u64, anyhow::Error> {
         convert_number_to_u64(number)
     } else {
         bail!("supported types are Number or BigInt")
-    };
-
-    result
+    }
 }
 
 pub fn convert_number_to_u64(js_number: js_sys::Number) -> Result<u64, anyhow::Error> {
@@ -258,4 +257,12 @@ pub(crate) trait Inner {
     fn into_inner(self) -> Self::InnerItem;
     fn inner(&self) -> &Self::InnerItem;
     fn inner_mut(&mut self) -> &mut Self::InnerItem;
+}
+
+pub(crate) fn timestamp_millis_to_js_date(timestamp_millis: TimestampMillis) -> js_sys::Date {
+    let date = js_sys::Date::new_0();
+    // u64(TimestampMillis) ans JS Date are not compatible. Its impossible to create a `Date`
+    // object from number that has precision of u64
+    date.set_time(timestamp_millis as f64);
+    date
 }

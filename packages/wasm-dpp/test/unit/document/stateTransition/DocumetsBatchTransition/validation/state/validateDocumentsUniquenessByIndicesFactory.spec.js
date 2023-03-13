@@ -294,8 +294,8 @@ describe('validateDocumentsUniquenessByIndices', () => {
         uniqueDatesDocumentJs.getType(),
         {
           where: [
-            ['$createdAt', '==', uniqueDatesDocument.getCreatedAt()],
-            ['$updatedAt', '==', uniqueDatesDocument.getUpdatedAt()],
+            ['$createdAt', '==', uniqueDatesDocument.getCreatedAt().getTime()],
+            ['$updatedAt', '==', uniqueDatesDocument.getUpdatedAt().getTime()],
           ],
         },
       )

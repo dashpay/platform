@@ -19,7 +19,10 @@ use crate::{
     document_batch_transition::document_transition::to_object,
     identifier::IdentifierWrapper,
     lodash::lodash_set,
-    utils::{replace_identifiers_with_bytes_without_failing, ToSerdeJSONExt, WithJsError},
+    utils::{
+        replace_identifiers_with_bytes_without_failing, timestamp_millis_to_js_date,
+        ToSerdeJSONExt, WithJsError,
+    },
     BinaryType, DataContractWasm,
 };
 
@@ -80,8 +83,8 @@ impl DocumentReplaceTransitionWasm {
     }
 
     #[wasm_bindgen(js_name=getUpdatedAt)]
-    pub fn updated_at(&self) -> Option<TimestampMillis> {
-        self.inner.updated_at
+    pub fn updated_at(&self) -> Option<js_sys::Date> {
+        self.inner.updated_at.map(timestamp_millis_to_js_date)
     }
 
     #[wasm_bindgen(js_name=toObject)]

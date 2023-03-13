@@ -23,7 +23,7 @@ use crate::{
     buffer::Buffer,
     identifier::{identifier_from_js_value, IdentifierWrapper},
     lodash::lodash_set,
-    utils::{try_to_u64, Inner, ToSerdeJSONExt, WithJsError},
+    utils::{timestamp_millis_to_js_date, try_to_u64, Inner, ToSerdeJSONExt, WithJsError},
     with_js_error, BinaryType, ConversionOptions, DataContractWasm,
 };
 
@@ -75,20 +75,13 @@ impl DocumentTransitionWasm {
     }
 
     #[wasm_bindgen(js_name=getCreatedAt)]
-    pub fn get_created_at(&self) -> JsValue {
-        if let Some(created_at) = self.0.get_created_at() {
-            (created_at as f64).into()
-        } else {
-            JsValue::NULL
-        }
+    pub fn get_created_at(&self) -> Option<js_sys::Date> {
+        self.0.get_created_at().map(timestamp_millis_to_js_date)
     }
+
     #[wasm_bindgen(js_name=getUpdatedAt)]
-    pub fn get_updated_at(&self) -> JsValue {
-        if let Some(updated_at) = self.0.get_updated_at() {
-            (updated_at as f64).into()
-        } else {
-            JsValue::NULL
-        }
+    pub fn get_updated_at(&self) -> Option<js_sys::Date> {
+        self.0.get_updated_at().map(timestamp_millis_to_js_date)
     }
 
     #[wasm_bindgen(js_name=setUpdatedAt)]

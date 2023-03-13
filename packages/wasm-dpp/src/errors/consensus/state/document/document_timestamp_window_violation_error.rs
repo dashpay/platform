@@ -1,4 +1,4 @@
-use crate::buffer::Buffer;
+use crate::{buffer::Buffer, utils::timestamp_millis_to_js_date};
 use dpp::{identifier::Identifier, prelude::TimestampMillis};
 use wasm_bindgen::prelude::*;
 
@@ -26,23 +26,17 @@ impl DocumentTimestampWindowViolationErrorWasm {
 
     #[wasm_bindgen(js_name=getTimestamp)]
     pub fn timestamp(&self) -> js_sys::Date {
-        let date = js_sys::Date::new_0();
-        date.set_time(self.timestamp as f64);
-        date
+        timestamp_millis_to_js_date(self.timestamp)
     }
 
     #[wasm_bindgen(js_name=getTimeWindowStart)]
     pub fn time_window_start(&self) -> js_sys::Date {
-        let date = js_sys::Date::new_0();
-        date.set_time(self.time_window_start as f64);
-        date
+        timestamp_millis_to_js_date(self.time_window_start)
     }
 
     #[wasm_bindgen(js_name=getTimeWindowEnd)]
     pub fn time_window_end(&self) -> js_sys::Date {
-        let date = js_sys::Date::new_0();
-        date.set_time(self.time_window_end as f64);
-        date
+        timestamp_millis_to_js_date(self.time_window_end)
     }
 
     #[wasm_bindgen(js_name=getCode)]

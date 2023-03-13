@@ -248,7 +248,7 @@ describe('applyDocumentsBatchTransitionFactory', () => {
 
     newDocument.setRevision(documentTransition.getRevision());
     newDocument.setData(documentTransition.getData());
-    newDocument.setUpdatedAt(documentTransition.getUpdatedAt());
+    newDocument.setUpdatedAt(documentTransition.getUpdatedAt().getTime());
 
     expect(stateRepositoryMock.updateDocument).to.have.been.called.calledOnce();
     const [updateDocument] = stateRepositoryMock.updateDocument.getCall(0).args;

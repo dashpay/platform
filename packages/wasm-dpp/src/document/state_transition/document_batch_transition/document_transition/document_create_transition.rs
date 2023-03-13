@@ -5,7 +5,7 @@ use dpp::{
         self, document_create_transition, DocumentCreateTransition, DocumentTransitionObjectLike,
         INITIAL_REVISION,
     },
-    prelude::{DataContract, Identifier, Revision, TimestampMillis},
+    prelude::{DataContract, Identifier},
     util::{json_schema::JsonSchemaExt, json_value::JsonValueExt},
 };
 use serde::Serialize;
@@ -17,7 +17,10 @@ use crate::{
     document_batch_transition::document_transition::to_object,
     identifier::IdentifierWrapper,
     lodash::lodash_set,
-    utils::{replace_identifiers_with_bytes_without_failing, ToSerdeJSONExt, WithJsError},
+    utils::{
+        replace_identifiers_with_bytes_without_failing, timestamp_millis_to_js_date,
+        ToSerdeJSONExt, WithJsError,
+    },
     BinaryType, DataContractWasm,
 };
 
@@ -74,13 +77,13 @@ impl DocumentCreateTransitionWasm {
     }
 
     #[wasm_bindgen(js_name=getCreatedAt)]
-    pub fn created_at(&self) -> Option<TimestampMillis> {
-        self.inner.created_at
+    pub fn created_at(&self) -> Option<js_sys::Date> {
+        self.inner.created_at.map(timestamp_millis_to_js_date)
     }
 
     #[wasm_bindgen(js_name=getUpdatedAt)]
-    pub fn updated_at(&self) -> Option<TimestampMillis> {
-        self.inner.updated_at
+    pub fn updated_at(&self) -> Option<js_sys::Date> {
+        self.inner.updated_at.map(timestamp_millis_to_js_date)
     }
 
     #[wasm_bindgen(js_name=getRevision)]
@@ -91,7 +94,7 @@ impl DocumentCreateTransitionWasm {
     // AbstractDocumentTransitionMethods
     #[wasm_bindgen(js_name=getId)]
     pub fn id(&self) -> IdentifierWrapper {
-        self.inner.base.id.clone().into()
+        self.inner.base.id.into()
     }
 
     #[wasm_bindgen(js_name=getType)]

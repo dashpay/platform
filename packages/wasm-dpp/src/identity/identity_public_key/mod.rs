@@ -1,10 +1,11 @@
 use dpp::dashcore::anyhow;
+use js_sys::BigInt;
 pub use serde::{Deserialize, Serialize};
 use std::convert::{TryFrom, TryInto};
 use wasm_bindgen::prelude::*;
 
 use crate::errors::from_dpp_err;
-use crate::utils::Inner;
+use crate::utils::{try_to_u64, Inner, WithJsError};
 use crate::{buffer::Buffer, utils};
 use dpp::identity::{IdentityPublicKey, KeyID};
 
@@ -104,14 +105,15 @@ impl IdentityPublicKeyWasm {
     }
 
     #[wasm_bindgen(js_name=setDisabledAt)]
-    pub fn set_disabled_at(&mut self, timestamp: u32) {
-        // TODO: It's not gonna work, must be BigInt
-        self.0.set_disabled_at(timestamp as u64);
+    pub fn set_disabled_at(&mut self, timestamp: JsValue) -> Result<(), JsValue> {
+        self.0
+            .set_disabled_at(try_to_u64(timestamp).with_js_error()?);
+        Ok(())
     }
 
     #[wasm_bindgen(js_name=getDisabledAt)]
-    pub fn get_disabled_at(&self) -> Option<f64> {
-        self.0.disabled_at.map(|timestamp| timestamp as f64)
+    pub fn get_disabled_at(&self) -> Option<BigInt> {
+        self.0.disabled_at.map(BigInt::from)
     }
 
     #[wasm_bindgen(js_name=hash)]

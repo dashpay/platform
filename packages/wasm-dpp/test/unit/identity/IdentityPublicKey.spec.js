@@ -121,7 +121,7 @@ describe('IdentityPublicKey', () => {
     it('should set disabledAt', () => {
       publicKey.setDisabledAt(123);
 
-      expect(publicKey.getDisabledAt()).to.equal(123);
+      expect(publicKey.getDisabledAt()).to.equal(123n);
     });
   });
 
@@ -129,7 +129,7 @@ describe('IdentityPublicKey', () => {
     it('should return disabledAt', () => {
       publicKey.setDisabledAt(42);
 
-      expect(publicKey.getDisabledAt()).to.equal(42);
+      expect(publicKey.getDisabledAt()).to.equal(42n);
     });
   });
 

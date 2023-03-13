@@ -1,6 +1,8 @@
 use dpp::prelude::TimestampMillis;
 use wasm_bindgen::prelude::*;
 
+use crate::utils::timestamp_millis_to_js_date;
+
 #[wasm_bindgen(js_name=IdentityPublicKeyDisabledAtWindowViolationError)]
 pub struct IdentityPublicKeyDisabledAtWindowViolationErrorWasm {
     disabled_at: TimestampMillis,
@@ -14,19 +16,19 @@ impl IdentityPublicKeyDisabledAtWindowViolationErrorWasm {
     #[wasm_bindgen(js_name=getDisabledAt)]
     pub fn disabled_at(&self) -> js_sys::Date {
         // TODO: Figure out how to match rust timestamps with JS timestamps
-        js_sys::Date::new(&JsValue::from_f64(self.disabled_at as f64))
+        timestamp_millis_to_js_date(self.disabled_at)
     }
 
     #[wasm_bindgen(js_name=getTimeWindowStart)]
     pub fn time_window_start(&self) -> js_sys::Date {
         // TODO: Figure out how to match rust timestamps with JS timestamps
-        js_sys::Date::new(&JsValue::from_f64(self.time_window_start as f64))
+        timestamp_millis_to_js_date(self.time_window_start)
     }
 
     #[wasm_bindgen(js_name=getTimeWindowEnd)]
     pub fn time_window_end(&self) -> js_sys::Date {
         // TODO: Figure out how to match rust timestamps with JS timestamps
-        js_sys::Date::new(&JsValue::from_f64(self.time_window_end as f64))
+        timestamp_millis_to_js_date(self.time_window_end)
     }
 
     #[wasm_bindgen(js_name=getCode)]

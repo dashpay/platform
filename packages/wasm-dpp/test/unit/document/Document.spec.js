@@ -219,7 +219,7 @@ describe('Document', () => {
 
       document = new Document(rawDocument, dataContract);
 
-      expect(document.getCreatedAt()).to.equal(rawDocument.$createdAt);
+      expect(document.getCreatedAt().getTime()).to.equal(rawDocument.$createdAt);
     });
 
     it('should create Document with $updatedAt and data if present', async () => {
@@ -237,7 +237,7 @@ describe('Document', () => {
 
       document = new Document(rawDocument, dataContract);
 
-      expect(document.getUpdatedAt()).to.equal(rawDocument.$updatedAt);
+      expect(document.getUpdatedAt().getTime()).to.equal(rawDocument.$updatedAt);
     });
   });
 
@@ -400,7 +400,7 @@ describe('Document', () => {
 
       document.setCreatedAt(time);
 
-      expect(document.getCreatedAt()).to.equal(time);
+      expect(document.getCreatedAt().getTime()).to.equal(time);
     });
   });
 
@@ -410,7 +410,7 @@ describe('Document', () => {
 
       document.setCreatedAt(time);
 
-      expect(document.getCreatedAt()).to.equal(time);
+      expect(document.getCreatedAt().getTime()).to.equal(time);
     });
   });
 
@@ -420,7 +420,7 @@ describe('Document', () => {
 
       document.setUpdatedAt(time);
 
-      expect(document.getUpdatedAt()).to.equal(time);
+      expect(document.getUpdatedAt().getTime()).to.equal(time);
     });
   });
 
@@ -430,7 +430,7 @@ describe('Document', () => {
 
       document.setUpdatedAt(time);
 
-      expect(document.getUpdatedAt()).to.equal(time);
+      expect(document.getUpdatedAt().getTime()).to.equal(time);
     });
   });
 });
