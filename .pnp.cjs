@@ -2328,6 +2328,7 @@ function $$SETUP_STATE(hydrateRuntimeState, basePath) {
           "packageLocation": "./packages/dapi/",\
           "packageDependencies": [\
             ["@dashevo/dapi", "workspace:packages/dapi"],\
+            ["@dashevo/bls", "npm:1.2.7"],\
             ["@dashevo/dapi-client", "workspace:packages/js-dapi-client"],\
             ["@dashevo/dapi-grpc", "workspace:packages/dapi-grpc"],\
             ["@dashevo/dashcore-lib", "npm:0.20.0"],\

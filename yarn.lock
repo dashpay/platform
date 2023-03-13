@@ -1402,6 +1402,7 @@ __metadata:
   version: 0.0.0-use.local
   resolution: "@dashevo/dapi@workspace:packages/dapi"
   dependencies:
+    "@dashevo/bls": ~1.2.7
     "@dashevo/dapi-client": "workspace:*"
     "@dashevo/dapi-grpc": "workspace:*"
     "@dashevo/dashcore-lib": ~0.20.0
