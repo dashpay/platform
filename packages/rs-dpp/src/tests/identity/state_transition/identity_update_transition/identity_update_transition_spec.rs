@@ -1,5 +1,6 @@
 use chrono::Utc;
 use platform_value::string_encoding::Encoding;
+use platform_value::{platform_value, Value};
 use serde_json::{json, Value as JsonValue};
 
 use crate::identity::state_transition::identity_public_key_transitions::IdentityPublicKeyCreateTransition;
@@ -18,7 +19,7 @@ use crate::{
 
 struct TestData {
     transition: IdentityUpdateTransition,
-    raw_transition: JsonValue,
+    raw_transition: Value,
 }
 
 fn setup_test() -> TestData {
@@ -134,25 +135,25 @@ fn to_object() {
         .to_object(false)
         .expect("conversion to object shouldn't fail");
 
-    let expected_raw_state_transition = json!({
-        "protocolVersion" : 1,
-        "type" : 5,
+    let expected_raw_state_transition = platform_value!({
+        "protocolVersion" : 1u32,
+        "type" : 5u8,
         "signature" : [],
-        "signaturePublicKeyId": 0,
-        "identityId" : transition.identity_id.to_buffer(),
-        "revision": 0,
-        "disablePublicKeys" : [0],
-        "publicKeysDisabledAt" : 1234567,
+        "signaturePublicKeyId": 0u32,
+        "identityId" : transition.identity_id,
+        "revision": 0u8,
+        "disablePublicKeys" : [0u32],
+        "publicKeysDisabledAt" : 1234567u64,
         "addPublicKeys" : [
             {
 
-                "id" : 3,
-                "purpose" : 0,
-                "type": 0,
-                "securityLevel" : 0,
+                "id" : 3u32,
+                "purpose" : 0u8,
+                "type": 0u8,
+                "securityLevel" : 0u8,
                 "data" :base64::decode("AkVuTKyF3YgKLAQlLEtaUL2HTditwGILfWUVqjzYnIgH").unwrap(),
                 "readOnly" : false,
-                "signature" : vec![0;65]
+                "signature" : vec![0u8;65]
             }
         ]
     });
@@ -167,21 +168,21 @@ fn to_object_with_signature_skipped() {
         .to_object(true)
         .expect("conversion to object shouldn't fail");
 
-    let expected_raw_state_transition = json!({
-        "protocolVersion" : 1,
-        "type" : 5,
-        "signaturePublicKeyId": 0,
+    let expected_raw_state_transition = platform_value!({
+        "protocolVersion" : 1u32,
+        "type" : 5u8,
+        "signaturePublicKeyId": 0u32,
         "identityId" : transition.identity_id.to_buffer(),
-        "revision": 0,
-        "disablePublicKeys" : [0],
-        "publicKeysDisabledAt" : 1234567,
+        "revision": 0u8,
+        "disablePublicKeys" : [0u32],
+        "publicKeysDisabledAt" : 1234567u64,
         "addPublicKeys" : [
             {
 
-                "id" : 3,
-                "purpose" : 0,
-                "type": 0,
-                "securityLevel" : 0,
+                "id" : 3u32,
+                "purpose" : 0u8,
+                "type": 0u8,
+                "securityLevel" : 0u8,
                 "data" :base64::decode("AkVuTKyF3YgKLAQlLEtaUL2HTditwGILfWUVqjzYnIgH").unwrap(),
                 "readOnly" : false,
             }

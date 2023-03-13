@@ -204,7 +204,7 @@ pub trait StateTransitionConvert: Serialize {
     // Returns the cibor-encoded bytes representation of the object. The data is  prefixed by 4 bytes containing the Protocol Version
     fn to_buffer(&self, skip_signature: bool) -> Result<Vec<u8>, ProtocolError> {
         let mut json_value = self.to_object(skip_signature)?;
-        let protocol_version = json_value.remove_u32(PROPERTY_PROTOCOL_VERSION)?;
+        let protocol_version = json_value.remove_integer(PROPERTY_PROTOCOL_VERSION)?;
 
         serializer::value_to_cbor(json_value, Some(protocol_version))
     }

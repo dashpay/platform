@@ -483,7 +483,9 @@ mod test {
     use crate::data_contract::DataContract;
     use crate::document::Document;
     use crate::prelude::Identifier;
+    use crate::system_data_contracts::load_system_data_contract;
     use crate::tests::utils::*;
+    use data_contracts::SystemDataContract;
     use platform_value::btreemap_extensions::BTreeValueMapHelper;
     use platform_value::btreemap_extensions::BTreeValueMapPathHelper;
     use platform_value::string_encoding::Encoding;
@@ -552,8 +554,9 @@ mod test {
     #[test]
     fn test_document_deserialize() -> Result<()> {
         init();
+        let dpns_contract = load_system_data_contract(SystemDataContract::DPNS)?;
         let document_json = get_data_from_file("src/tests/payloads/document_dpns.json")?;
-        let doc = ExtendedDocument::from_json_string(&document_json)?;
+        let doc = ExtendedDocument::from_json_string(&document_json, dpns_contract)?;
         assert_eq!(doc.document_type_name, "domain");
         assert_eq!(doc.protocol_version, 0);
         assert_eq!(
@@ -615,8 +618,9 @@ mod test {
     #[test]
     fn test_to_object() {
         init();
+        let dpns_contract = load_system_data_contract(SystemDataContract::DPNS)?;
         let document_json = get_data_from_file("src/tests/payloads/document_dpns.json").unwrap();
-        let document = ExtendedDocument::from_json_string(&document_json).unwrap();
+        let document = ExtendedDocument::from_json_string(&document_json, dpns_contract).unwrap();
         let document_object = document.to_json_object_for_validation().unwrap();
 
         for property in IDENTIFIER_FIELDS {
@@ -633,10 +637,13 @@ mod test {
     fn test_json_serialize() -> Result<()> {
         init();
 
+        let dpns_contract = load_system_data_contract(SystemDataContract::DPNS)?;
         let document_json = get_data_from_file("src/tests/payloads/document_dpns.json")?;
-        let document = ExtendedDocument::from_json_string(&document_json)?;
+        let document = ExtendedDocument::from_json_string(&document_json, dpns_contract)?;
 
-        serde_json::to_string(&document)?;
+        let string = serde_json::to_string(&document)?;
+        //added this, not sure if we want this check
+        assert_eq!(document_json, string);
         Ok(())
     }
 

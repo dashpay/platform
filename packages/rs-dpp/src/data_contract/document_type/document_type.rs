@@ -9,7 +9,7 @@ use crate::data_contract::document_type::{property_names, ArrayFieldType};
 use crate::data_contract::errors::{DataContractError, StructureError};
 
 use crate::ProtocolError;
-use platform_value::btreemap_extensions::BTreeValueMapHelper;
+use platform_value::btreemap_extensions::{BTreeValueMapHelper, BTreeValueRemoveFromMapHelper};
 use platform_value::Value;
 use serde::{Deserialize, Serialize};
 

@@ -5,6 +5,10 @@ use crate::{Error, Value};
 use std::collections::BTreeMap;
 
 impl Value {
+    pub fn has(&self, key: &str) -> Result<bool, Error> {
+        self.get_optional_value(key).map(|v| v.is_some())
+    }
+
     pub fn get<'a>(&'a self, key: &'a str) -> Result<Option<&'a Value>, Error> {
         self.get_optional_value(key)
     }

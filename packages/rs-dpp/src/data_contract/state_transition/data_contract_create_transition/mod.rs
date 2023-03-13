@@ -217,20 +217,15 @@ impl StateTransitionConvert for DataContractCreateTransition {
         Ok(json_value)
     }
 
-    fn to_object(&self, skip_signature: bool) -> Result<JsonValue, ProtocolError> {
-        let mut json_object: JsonValue = serde_json::to_value(self)?;
+    fn to_object(&self, skip_signature: bool) -> Result<Value, ProtocolError> {
+        let mut object: Value = platform_value::to_value(self)?;
         if skip_signature {
-            if let JsonValue::Object(ref mut o) = json_object {
-                for path in Self::signature_property_paths() {
-                    o.remove(path);
-                }
-            }
+            Self::signature_property_paths()
+                .into_iter()
+                .try_for_each(|path| object.remove_value_at_path(path))?;
         }
-        json_object.insert(
-            String::from(DATA_CONTRACT),
-            self.data_contract.to_json_object(false)?,
-        )?;
-        Ok(json_object)
+        object.insert(String::from(DATA_CONTRACT), self.data_contract.to_object()?)?;
+        Ok(object)
     }
 }
 

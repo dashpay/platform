@@ -346,9 +346,14 @@ mod test {
         let st = get_mock_state_transition();
         let st_object = st.to_object(false).unwrap();
 
-        assert_eq!(st_object["protocolVersion"].as_i64().unwrap(), 1);
-        assert_eq!(st_object["transitionType"].as_u64().unwrap(), 1);
-        assert_eq!(st_object["signaturePublicKeyId"].as_u64().unwrap(), 1);
+        assert_eq!(st_object["protocolVersion"].to_integer::<u32>().unwrap(), 1);
+        assert_eq!(st_object["transitionType"].to_integer::<u8>().unwrap(), 1);
+        assert_eq!(
+            st_object["signaturePublicKeyId"]
+                .to_integer::<u32>()
+                .unwrap(),
+            1
+        );
         assert!(st_object["signature"].as_array().unwrap().is_empty());
     }
 
@@ -357,10 +362,10 @@ mod test {
         let st = get_mock_state_transition();
         let st_object = st.to_object(true).unwrap();
 
-        assert_eq!(st_object["protocolVersion"].as_i64().unwrap(), 1);
-        assert_eq!(st_object["transitionType"].as_u64().unwrap(), 1);
-        assert!(st_object.get("signaturePublicKeyId").is_none());
-        assert!(st_object.get("signature").is_none());
+        assert_eq!(st_object["protocolVersion"].to_integer::<u32>().unwrap(), 1);
+        assert_eq!(st_object["transitionType"].to_integer::<u8>().unwrap(), 1);
+        assert!(st_object.has("signaturePublicKeyId").unwrap());
+        assert!(st_object.has("signature").unwrap());
     }
 
     #[test]

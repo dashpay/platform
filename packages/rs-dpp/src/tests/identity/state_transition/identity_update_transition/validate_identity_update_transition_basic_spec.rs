@@ -154,7 +154,7 @@ fn property_should_be_byte_array(property_name: &str) {
     } = setup_test();
 
     let array = ["string"; 32];
-    raw_state_transition[property_name] = json!(array);
+    raw_state_transition[property_name] = platform_value!(array);
 
     let validator: ValidateIdentityUpdateTransitionBasic<_, SignaturesValidatorMock> =
         ValidateIdentityUpdateTransitionBasic::new(
@@ -192,7 +192,7 @@ fn property_should_be_integer(property_name: &str) {
         ..
     } = setup_test();
 
-    raw_state_transition[property_name] = json!("1");
+    raw_state_transition[property_name] = platform_value!("1");
 
     let validator: ValidateIdentityUpdateTransitionBasic<_, SignaturesValidatorMock> =
         ValidateIdentityUpdateTransitionBasic::new(
@@ -225,7 +225,7 @@ fn signature_should_be_not_less_than_n_bytes(property_name: &str, n_bytes: usize
     } = setup_test();
 
     let array = vec![0u8; n_bytes - 1];
-    raw_state_transition[property_name] = json!(array);
+    raw_state_transition[property_name] = platform_value!(array);
 
     let validator: ValidateIdentityUpdateTransitionBasic<_, SignaturesValidatorMock> =
         ValidateIdentityUpdateTransitionBasic::new(
@@ -258,7 +258,7 @@ fn signature_should_be_not_longer_than_n_bytes(property_name: &str, n_bytes: usi
     } = setup_test();
 
     let array = vec![0u8; n_bytes + 1];
-    raw_state_transition[property_name] = json!(array);
+    raw_state_transition[property_name] = platform_value!(array);
 
     let validator: ValidateIdentityUpdateTransitionBasic<_, SignaturesValidatorMock> =
         ValidateIdentityUpdateTransitionBasic::new(
@@ -289,7 +289,7 @@ fn protocol_version_should_be_valid() {
         ..
     } = setup_test();
 
-    raw_state_transition[property_names::PROTOCOL_VERSION] = json!(-1);
+    raw_state_transition[property_names::PROTOCOL_VERSION] = platform_value!(-1);
 
     let validator: ValidateIdentityUpdateTransitionBasic<_, SignaturesValidatorMock> =
         ValidateIdentityUpdateTransitionBasic::new(
@@ -315,7 +315,7 @@ fn raw_state_transition_type_should_be_valid() {
         ..
     } = setup_test();
 
-    raw_state_transition[property_names::TYPE] = json!(666);
+    raw_state_transition[property_names::TYPE] = platform_value!(666);
 
     let validator: ValidateIdentityUpdateTransitionBasic<_, SignaturesValidatorMock> =
         ValidateIdentityUpdateTransitionBasic::new(
@@ -346,7 +346,7 @@ fn revision_should_be_greater_or_equal_0() {
         ..
     } = setup_test();
 
-    raw_state_transition[property_names::REVISION] = json!(-1);
+    raw_state_transition[property_names::REVISION] = platform_value!(-1);
 
     let validator: ValidateIdentityUpdateTransitionBasic<_, SignaturesValidatorMock> =
         ValidateIdentityUpdateTransitionBasic::new(
@@ -384,7 +384,8 @@ fn add_public_keys_should_return_valid_result() {
 
     let _ = raw_state_transition.remove(property_names::DISABLE_PUBLIC_KEYS);
     let _ = raw_state_transition.remove(property_names::PUBLIC_KEYS_DISABLED_AT);
-    raw_state_transition[property_names::ADD_PUBLIC_KEYS] = json!(vec![raw_public_key_to_add]);
+    raw_state_transition[property_names::ADD_PUBLIC_KEYS] =
+        platform_value!(vec![raw_public_key_to_add]);
 
     let validator: ValidateIdentityUpdateTransitionBasic<_, SignaturesValidatorMock> =
         ValidateIdentityUpdateTransitionBasic::new(
@@ -416,7 +417,7 @@ fn add_public_keys_should_not_be_empty() {
 
     let _ = raw_state_transition.remove(property_names::DISABLE_PUBLIC_KEYS);
     let _ = raw_state_transition.remove(property_names::PUBLIC_KEYS_DISABLED_AT);
-    raw_state_transition[property_names::ADD_PUBLIC_KEYS] = json!([]);
+    raw_state_transition[property_names::ADD_PUBLIC_KEYS] = platform_value!([]);
 
     let validator: ValidateIdentityUpdateTransitionBasic<_, SignaturesValidatorMock> =
         ValidateIdentityUpdateTransitionBasic::new(
@@ -456,7 +457,7 @@ fn add_public_keys_should_not_have_more_than_10_items() {
     let _ = raw_state_transition.remove(property_names::PUBLIC_KEYS_DISABLED_AT);
     let public_keys_to_add: Vec<JsonValue> =
         (0..11).map(|_| raw_public_key_to_add.clone()).collect();
-    raw_state_transition[property_names::ADD_PUBLIC_KEYS] = json!(public_keys_to_add);
+    raw_state_transition[property_names::ADD_PUBLIC_KEYS] = platform_value!(public_keys_to_add);
 
     let validator: ValidateIdentityUpdateTransitionBasic<_, SignaturesValidatorMock> =
         ValidateIdentityUpdateTransitionBasic::new(
@@ -496,7 +497,7 @@ fn add_public_keys_should_be_unique() {
     let _ = raw_state_transition.remove(property_names::PUBLIC_KEYS_DISABLED_AT);
     let public_keys_to_add: Vec<JsonValue> =
         (0..2).map(|_| raw_public_key_to_add.clone()).collect();
-    raw_state_transition[property_names::ADD_PUBLIC_KEYS] = json!(public_keys_to_add);
+    raw_state_transition[property_names::ADD_PUBLIC_KEYS] = platform_value!(public_keys_to_add);
 
     let validator: ValidateIdentityUpdateTransitionBasic<_, SignaturesValidatorMock> =
         ValidateIdentityUpdateTransitionBasic::new(
@@ -538,7 +539,8 @@ fn add_public_keys_should_be_valid() {
 
     let _ = raw_state_transition.remove(property_names::DISABLE_PUBLIC_KEYS);
     let _ = raw_state_transition.remove(property_names::PUBLIC_KEYS_DISABLED_AT);
-    raw_state_transition[property_names::ADD_PUBLIC_KEYS] = json!([raw_public_key_to_add]);
+    raw_state_transition[property_names::ADD_PUBLIC_KEYS] =
+        platform_value!([raw_public_key_to_add]);
 
     let validator: ValidateIdentityUpdateTransitionBasic<_, SignaturesValidatorMock> =
         ValidateIdentityUpdateTransitionBasic::new(
@@ -610,8 +612,8 @@ fn disable_public_keys_should_be_valid() {
         .returning(|_| Ok(Default::default()));
 
     let _ = raw_state_transition.remove(property_names::ADD_PUBLIC_KEYS);
-    raw_state_transition[property_names::DISABLE_PUBLIC_KEYS] = json!(vec![0]);
-    raw_state_transition[property_names::PUBLIC_KEYS_DISABLED_AT] = json!(0);
+    raw_state_transition[property_names::DISABLE_PUBLIC_KEYS] = platform_value!(vec![0]);
+    raw_state_transition[property_names::PUBLIC_KEYS_DISABLED_AT] = platform_value!(0);
 
     let validator: ValidateIdentityUpdateTransitionBasic<_, SignaturesValidatorMock> =
         ValidateIdentityUpdateTransitionBasic::new(
@@ -641,8 +643,8 @@ fn disable_public_keys_should_contain_number_greater_or_equal_0() {
         .returning(|_| Ok(Default::default()));
 
     let _ = raw_state_transition.remove(property_names::ADD_PUBLIC_KEYS);
-    raw_state_transition[property_names::DISABLE_PUBLIC_KEYS] = json!(vec![-1, 0]);
-    raw_state_transition[property_names::PUBLIC_KEYS_DISABLED_AT] = json!(0);
+    raw_state_transition[property_names::DISABLE_PUBLIC_KEYS] = platform_value!(vec![-1, 0]);
+    raw_state_transition[property_names::PUBLIC_KEYS_DISABLED_AT] = platform_value!(0);
 
     let validator: ValidateIdentityUpdateTransitionBasic<_, SignaturesValidatorMock> =
         ValidateIdentityUpdateTransitionBasic::new(
@@ -678,8 +680,8 @@ fn disable_public_keys_should_contain_integers() {
         .returning(|_| Ok(Default::default()));
 
     let _ = raw_state_transition.remove(property_names::ADD_PUBLIC_KEYS);
-    raw_state_transition[property_names::DISABLE_PUBLIC_KEYS] = json!(vec![1.1]);
-    raw_state_transition[property_names::PUBLIC_KEYS_DISABLED_AT] = json!(0);
+    raw_state_transition[property_names::DISABLE_PUBLIC_KEYS] = platform_value!(vec![1.1]);
+    raw_state_transition[property_names::PUBLIC_KEYS_DISABLED_AT] = platform_value!(0);
 
     let validator: ValidateIdentityUpdateTransitionBasic<_, SignaturesValidatorMock> =
         ValidateIdentityUpdateTransitionBasic::new(
@@ -716,7 +718,7 @@ fn disable_public_keys_should_not_have_more_than_10_items() {
 
     let _ = raw_state_transition.remove(property_names::ADD_PUBLIC_KEYS);
     let key_ids_to_disable: Vec<usize> = (0..11).collect();
-    raw_state_transition[property_names::DISABLE_PUBLIC_KEYS] = json!(key_ids_to_disable);
+    raw_state_transition[property_names::DISABLE_PUBLIC_KEYS] = platform_value!(key_ids_to_disable);
 
     let validator: ValidateIdentityUpdateTransitionBasic<_, SignaturesValidatorMock> =
         ValidateIdentityUpdateTransitionBasic::new(
@@ -753,7 +755,7 @@ fn disable_public_keys_should_be_unique() {
 
     let _ = raw_state_transition.remove(property_names::ADD_PUBLIC_KEYS);
     let key_ids_to_disable: Vec<usize> = vec![0, 0];
-    raw_state_transition[property_names::DISABLE_PUBLIC_KEYS] = json!(key_ids_to_disable);
+    raw_state_transition[property_names::DISABLE_PUBLIC_KEYS] = platform_value!(key_ids_to_disable);
 
     let validator: ValidateIdentityUpdateTransitionBasic<_, SignaturesValidatorMock> =
         ValidateIdentityUpdateTransitionBasic::new(
@@ -827,8 +829,8 @@ fn public_keys_disabled_at_should_be_greater_or_equal_0() {
         .returning(|_| Ok(Default::default()));
 
     let _ = raw_state_transition.remove(property_names::ADD_PUBLIC_KEYS);
-    raw_state_transition[property_names::DISABLE_PUBLIC_KEYS] = json!(vec![0]);
-    raw_state_transition[property_names::PUBLIC_KEYS_DISABLED_AT] = json!(-1);
+    raw_state_transition[property_names::DISABLE_PUBLIC_KEYS] = platform_value!(vec![0]);
+    raw_state_transition[property_names::PUBLIC_KEYS_DISABLED_AT] = platform_value!(-1);
 
     let validator: ValidateIdentityUpdateTransitionBasic<_, SignaturesValidatorMock> =
         ValidateIdentityUpdateTransitionBasic::new(
