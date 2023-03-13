@@ -1,6 +1,5 @@
 const getIdentityFixture = require('@dashevo/dpp/lib/test/fixtures/getIdentityFixture');
-const IdentityPublicKey = require('@dashevo/dpp/lib/identity/IdentityPublicKey');
-const Identifier = require('@dashevo/dpp/lib/identifier/Identifier');
+
 const handleUpdatedVotingAddressFactory = require('../../../../lib/identity/masternode/handleUpdatedVotingAddressFactory');
 const StorageResult = require('../../../../lib/storage/StorageResult');
 const BlockInfo = require('../../../../lib/blockExecution/BlockInfo');
@@ -14,6 +13,12 @@ describe('handleUpdatedVotingAddressFactory', () => {
   let transactionFixture;
   let identityRepositoryMock;
   let blockInfo;
+  let IdentityPublicKey;
+  let Identifier;
+
+  before(() => {
+    ({ Identifier, IdentityPublicKey } = this.dppWasm);
+  });
 
   beforeEach(function beforeEach() {
     smlEntry = {

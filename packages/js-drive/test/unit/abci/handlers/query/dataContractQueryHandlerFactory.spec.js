@@ -15,7 +15,6 @@ const {
 
 const getDataContractFixture = require('@dashevo/dpp/lib/test/fixtures/getDataContractFixture');
 
-const Identifier = require('@dashevo/dpp/lib/identifier/Identifier');
 const dataContractQueryHandlerFactory = require('../../../../../lib/abci/handlers/query/dataContractQueryHandlerFactory');
 
 const NotFoundAbciError = require('../../../../../lib/abci/errors/NotFoundAbciError');
@@ -31,6 +30,11 @@ describe('dataContractQueryHandlerFactory', () => {
   let createQueryResponseMock;
   let responseMock;
   let dataContractRepositoryMock;
+  let Identifier;
+
+  before(() => {
+    ({ Identifier } = this.dppWasm);
+  });
 
   beforeEach(function beforeEach() {
     dataContract = getDataContractFixture();
@@ -49,7 +53,7 @@ describe('dataContractQueryHandlerFactory', () => {
       createQueryResponseMock,
     );
 
-    params = { };
+    params = {};
     data = {
       id: dataContract.getId(),
     };

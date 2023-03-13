@@ -6,6 +6,7 @@ const {
   },
 } = require('@dashevo/abci/types');
 
+// TODO: should we load it from other place?
 const { hash } = require('@dashevo/dpp/lib/util/hash');
 
 const extendVoteHandlerFactory = require('../../../../lib/abci/handlers/extendVoteHandlerFactory');

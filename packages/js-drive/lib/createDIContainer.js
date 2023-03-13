@@ -18,8 +18,6 @@ const RpcClient = require('@dashevo/dashd-rpc/promise');
 
 const { PublicKey } = require('@dashevo/dashcore-lib');
 
-const DashPlatformProtocol = require('@dashevo/dpp');
-
 const Identifier = require('@dashevo/dpp/lib/identifier/Identifier');
 
 const findMyWay = require('find-my-way');
@@ -149,7 +147,7 @@ const createContextLoggerFactory = require('./abci/errors/createContextLoggerFac
 const IdentityBalanceStoreRepository = require('./identity/IdentityBalanceStoreRepository');
 
 /**
- * @param {Object} dppWasm
+ * @param {Object} dppWasmLoaded
  * @param {Object} options
  * @param {string} options.ABCI_HOST
  * @param {string} options.ABCI_PORT
@@ -188,7 +186,7 @@ const IdentityBalanceStoreRepository = require('./identity/IdentityBalanceStoreR
  *
  * @return {AwilixContainer}
  */
-function createDIContainer(dppWasm, options) {
+function createDIContainer(dppWasmLoaded, options) {
   if (!options.DPNS_MASTER_PUBLIC_KEY) {
     throw new Error('DPNS_MASTER_PUBLIC_KEY must be set');
   }
@@ -441,19 +439,19 @@ function createDIContainer(dppWasm, options) {
       logJsonFileLevel,
       logJsonFileStream,
     ) => [
-        {
-          level: logStdoutLevel,
-          stream: logStdoutStream,
-        },
-        {
-          level: logPrettyFileLevel,
-          stream: logPrettyFileStream,
-        },
-        {
-          level: logJsonFileLevel,
-          stream: logJsonFileStream,
-        },
-      ]),
+      {
+        level: logStdoutLevel,
+        stream: logStdoutStream,
+      },
+      {
+        level: logPrettyFileLevel,
+        stream: logPrettyFileStream,
+      },
+      {
+        level: logJsonFileLevel,
+        stream: logJsonFileStream,
+      },
+    ]),
 
     logger: asFunction(
       (loggerStreams) => pino({
@@ -624,7 +622,7 @@ function createDIContainer(dppWasm, options) {
    * Register DPP
    */
   container.register({
-    dppWasm: asValue(dppWasm),
+    dppWasm: asValue(dppWasmLoaded),
 
     DashPlatformProtocol: asFunction((dppWasm) => dppWasm.DashPlatformProtocol),
 
@@ -731,7 +729,11 @@ function createDIContainer(dppWasm, options) {
       })
     )).singleton(),
 
-    transactionalDpp: asFunction((DashPlatformProtocol, transactionalStateRepository, dppOptions) => (
+    transactionalDpp: asFunction((
+      DashPlatformProtocol,
+      transactionalStateRepository,
+      dppOptions,
+    ) => (
       new DashPlatformProtocol({
         ...dppOptions,
         stateRepository: transactionalStateRepository,

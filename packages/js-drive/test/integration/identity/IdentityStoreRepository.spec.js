@@ -1,10 +1,11 @@
 const fs = require('fs');
 const Drive = require('@dashevo/rs-drive');
+
+// TODO: should we take it from other place?
 const decodeProtocolEntityFactory = require('@dashevo/dpp/lib/decodeProtocolEntityFactory');
 const getIdentityFixture = require('@dashevo/dpp/lib/test/fixtures/getIdentityFixture');
-const Identity = require('@dashevo/dpp/lib/identity/Identity');
 const generateRandomIdentifier = require('@dashevo/dpp/lib/test/utils/generateRandomIdentifier');
-const IdentityPublicKey = require('@dashevo/dpp/lib/identity/IdentityPublicKey');
+
 const GroveDBStore = require('../../../lib/storage/GroveDBStore');
 const IdentityStoreRepository = require('../../../lib/identity/IdentityStoreRepository');
 const logger = require('../../../lib/util/noopLogger');
@@ -19,6 +20,12 @@ describe('IdentityStoreRepository', () => {
   let identity;
   let blockInfo;
   let publicKeyHashes;
+  let Identity;
+  let IdentityPublicKey;
+
+  before(() => {
+    ({ Identity, IdentityPublicKey } = this.dppWasm);
+  });
 
   beforeEach(async () => {
     rsDrive = new Drive('./db/grovedb_test', {

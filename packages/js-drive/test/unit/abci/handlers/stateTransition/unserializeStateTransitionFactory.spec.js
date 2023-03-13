@@ -1,13 +1,7 @@
 const getIdentityCreateTransitionFixture = require('@dashevo/dpp/lib/test/fixtures/getIdentityCreateTransitionFixture');
-
-const InvalidStateTransitionTypeError = require('@dashevo/dpp/lib/errors/consensus/basic/stateTransition/InvalidStateTransitionTypeError');
-const InvalidStateTransitionError = require('@dashevo/dpp/lib/stateTransition/errors/InvalidStateTransitionError');
-const BalanceNotEnoughError = require('@dashevo/dpp/lib/errors/consensus/fee/BalanceIsNotEnoughError');
-const ValidatorResult = require('@dashevo/dpp/lib/validation/ValidationResult');
+const getIdentityFixture = require('@dashevo/dpp/lib/test/fixtures/getIdentityFixture');
 
 const GrpcErrorCodes = require('@dashevo/grpc-common/lib/server/error/GrpcErrorCodes');
-const IdentityNotFoundError = require('@dashevo/dpp/lib/errors/consensus/signature/IdentityNotFoundError');
-const getIdentityFixture = require('@dashevo/dpp/lib/test/fixtures/getIdentityFixture');
 const unserializeStateTransitionFactory = require('../../../../../lib/abci/handlers/stateTransition/unserializeStateTransitionFactory');
 const LoggerMock = require('../../../../../lib/test/mock/LoggerMock');
 const DPPValidationAbciError = require('../../../../../lib/abci/errors/DPPValidationAbciError');
@@ -19,8 +13,23 @@ describe('unserializeStateTransitionFactory', () => {
   let dppMock;
   let noopLoggerMock;
   let stateTransition;
+  let InvalidStateTransitionTypeError;
+  let InvalidStateTransitionError;
+  let BalanceNotEnoughError;
+  let ValidatorResult;
+  let IdentityNotFoundError;
 
-  beforeEach(function beforeEach() {
+  before(() => {
+    ({
+      InvalidStateTransitionTypeError,
+      InvalidStateTransitionError,
+      BalanceNotEnoughError,
+      ValidatorResult,
+      IdentityNotFoundError,
+    } = this.dppWasm);
+  });
+
+  beforeEach(async function beforeEach() {
     stateTransition = getIdentityCreateTransitionFixture();
     stateTransitionFixture = stateTransition.toBuffer();
 

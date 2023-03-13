@@ -3,9 +3,9 @@ const {
 } = require('awilix');
 
 const SimplifiedMNListEntry = require('@dashevo/dashcore-lib/lib/deterministicmnlist/SimplifiedMNListEntry');
+
+// TODO: should we take it from other place?
 const { hash } = require('@dashevo/dpp/lib/util/hash');
-const Identifier = require('@dashevo/dpp/lib/identifier/Identifier');
-const IdentityPublicKey = require('@dashevo/dpp/lib/identity/IdentityPublicKey');
 
 const Address = require('@dashevo/dashcore-lib/lib/address');
 const Script = require('@dashevo/dashcore-lib/lib/script');
@@ -27,6 +27,7 @@ function expectOperatorIdentityFactory(
   identityPublicKeyRepository,
   getWithdrawPubKeyTypeFromPayoutScript,
   getPublicKeyFromPayoutScript,
+  dppWasm,
 ) {
   /**
    * @typedef {expectOperatorIdentity}
@@ -40,6 +41,7 @@ function expectOperatorIdentityFactory(
     previousPayoutAddress,
     payoutAddress,
   ) {
+    const { IdentityPublicKey } = dppWasm;
     // Validate operator identity
 
     const operatorIdentifier = createOperatorIdentifier(smlEntry);
@@ -143,10 +145,12 @@ function expectOperatorIdentityFactory(
 
 /**
  * @param {IdentityStoreRepository} identityRepository
+ * @param {Object} dppWasm
  * @returns {expectVotingIdentity}
  */
 function expectVotingIdentityFactory(
   identityRepository,
+  dppWasm,
 ) {
   /**
    * @typedef {expectVotingIdentity}
@@ -159,6 +163,7 @@ function expectVotingIdentityFactory(
     proRegTx,
   ) {
     // Validate voting identity
+    const { IdentityPublicKey } = dppWasm;
 
     const votingIdentifier = createVotingIdentifier(smlEntry);
 
@@ -205,6 +210,7 @@ function expectVotingIdentityFactory(
  * @param {IdentityPublicKeyStoreRepository} identityPublicKeyRepository
  * @param {getWithdrawPubKeyTypeFromPayoutScript} getWithdrawPubKeyTypeFromPayoutScript
  * @param {getPublicKeyFromPayoutScript} getPublicKeyFromPayoutScript
+ * @param {Object} dppWasm
  * @returns {expectMasternodeIdentity}
  */
 function expectMasternodeIdentityFactory(
@@ -212,6 +218,7 @@ function expectMasternodeIdentityFactory(
   identityPublicKeyRepository,
   getWithdrawPubKeyTypeFromPayoutScript,
   getPublicKeyFromPayoutScript,
+  dppWasm,
 ) {
   /**
    * @typedef {expectMasternodeIdentity}
@@ -227,6 +234,8 @@ function expectMasternodeIdentityFactory(
     previousPayoutAddress,
     payoutAddress,
   ) {
+    const { Identifier, IdentityPublicKey } = dppWasm;
+
     const masternodeIdentifier = Identifier.from(
       Buffer.from(smlEntry.proRegTxHash, 'hex'),
     );
@@ -361,6 +370,11 @@ describe('synchronizeMasternodeIdentitiesFactory', function main() {
   let expectDeterministicAppHash;
   let firstSyncAppHash;
   let blockInfo;
+  let Identifier;
+
+  before(() => {
+    ({ Identifier } = this.dppWasm);
+  });
 
   beforeEach(async function beforeEach() {
     coreHeight = 3;
@@ -495,10 +509,12 @@ describe('synchronizeMasternodeIdentitiesFactory', function main() {
       identityPublicKeyRepository,
       getWithdrawPubKeyTypeFromPayoutScript,
       getPublicKeyFromPayoutScript,
+      this.dppWasm,
     );
 
     expectVotingIdentity = expectVotingIdentityFactory(
       identityRepository,
+      this.dppWasm,
     );
 
     expectMasternodeIdentity = expectMasternodeIdentityFactory(
@@ -506,6 +522,7 @@ describe('synchronizeMasternodeIdentitiesFactory', function main() {
       identityPublicKeyRepository,
       getWithdrawPubKeyTypeFromPayoutScript,
       getPublicKeyFromPayoutScript,
+      this.dppWasm,
     );
 
     expectDeterministicAppHash = expectDeterministicAppHashFactory(

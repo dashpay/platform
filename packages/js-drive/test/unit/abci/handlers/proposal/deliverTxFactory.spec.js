@@ -2,20 +2,14 @@ const Long = require('long');
 
 const crypto = require('crypto');
 
-const DashPlatformProtocol = require('@dashevo/dpp');
-
 const { FeeResult } = require('@dashevo/rs-drive');
-
-const ValidationResult = require('@dashevo/dpp/lib/validation/ValidationResult');
 
 const createDPPMock = require('@dashevo/dpp/lib/test/mocks/createDPPMock');
 const getDataContractFixture = require('@dashevo/dpp/lib/test/fixtures/getDataContractFixture');
 const getDocumentsFixture = require('@dashevo/dpp/lib/test/fixtures/getDocumentsFixture');
-const GrpcErrorCodes = require('@dashevo/grpc-common/lib/server/error/GrpcErrorCodes');
-
-const StateTransitionExecutionContext = require('@dashevo/dpp/lib/stateTransition/StateTransitionExecutionContext');
-
 const SomeConsensusError = require('@dashevo/dpp/lib/test/mocks/SomeConsensusError');
+
+const GrpcErrorCodes = require('@dashevo/grpc-common/lib/server/error/GrpcErrorCodes');
 
 const BlockExecutionContextMock = require('../../../../../lib/test/mock/BlockExecutionContextMock');
 
@@ -48,6 +42,13 @@ describe('deliverTxFactory', () => {
   let createContextLoggerMock;
   let calculateStateTransitionFeeMock;
   let calculateStateTransitionFeeFromOperationsMock;
+  let DashPlatformProtocol;
+  let StateTransitionExecutionContext;
+  let ValidationResult;
+
+  before(() => {
+    ({ DashPlatformProtocol, StateTransitionExecutionContext, ValidationResult } = this.dppWasm);
+  });
 
   beforeEach(async function beforeEach() {
     round = 42;

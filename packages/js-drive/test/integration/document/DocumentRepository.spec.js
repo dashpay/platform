@@ -1,10 +1,8 @@
 const getDataContractFixture = require('@dashevo/dpp/lib/test/fixtures/getDataContractFixture');
 const getDocumentsFixture = require('@dashevo/dpp/lib/test/fixtures/getDocumentsFixture');
-const Identifier = require('@dashevo/dpp/lib/identifier/Identifier');
-const Document = require('@dashevo/dpp/lib/document/Document');
-const DataContractFactory = require('@dashevo/dpp/lib/dataContract/DataContractFactory');
 const createDPPMock = require('@dashevo/dpp/lib/test/mocks/createDPPMock');
 const generateRandomIdentifier = require('@dashevo/dpp/lib/test/utils/generateRandomIdentifier');
+
 const createTestDIContainer = require('../../../lib/test/createTestDIContainer');
 const createDocumentTypeTreePath = require('../../../lib/document/groveDB/createDocumentTreePath');
 const InvalidQueryError = require('../../../lib/document/errors/InvalidQueryError');
@@ -676,6 +674,13 @@ describe('DocumentRepository', function main() {
   let document;
   let documentSchema;
   let blockInfo;
+  let Identifier;
+  let Document;
+  let DataContractFactory;
+
+  before(() => {
+    ({ Identifier, Document, DataContractFactory } = this.dppWasm);
+  });
 
   beforeEach(async function beforeEach() {
     const now = 86400;
@@ -1135,7 +1140,7 @@ describe('DocumentRepository', function main() {
             },
           };
 
-          const factory = new DataContractFactory(createDPPMock(), () => {});
+          const factory = new DataContractFactory(createDPPMock(), () => { });
           const ownerId = generateRandomIdentifier();
           const myDataContract = factory.create(ownerId, schema);
           await dataContractRepository.create(myDataContract, blockInfo);
@@ -1180,7 +1185,7 @@ describe('DocumentRepository', function main() {
             },
           };
 
-          const factory = new DataContractFactory(createDPPMock(), () => {});
+          const factory = new DataContractFactory(createDPPMock(), () => { });
           const ownerId = generateRandomIdentifier();
           const myDataContract = factory.create(ownerId, schema);
           await dataContractRepository.create(myDataContract, blockInfo);

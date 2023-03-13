@@ -1,8 +1,8 @@
-const IdentityPublicKey = require('@dashevo/dpp/lib/identity/IdentityPublicKey');
-const getIdentityFixture = require('@dashevo/dpp/lib/test/fixtures/getIdentityFixture');
-const Identity = require('@dashevo/dpp/lib/identity/Identity');
-const Script = require('@dashevo/dashcore-lib/lib/script');
+// TODO: should we take it from other place?
 const identitySchema = require('@dashevo/dpp/schema/identity/identity.json');
+const getIdentityFixture = require('@dashevo/dpp/lib/test/fixtures/getIdentityFixture');
+
+const Script = require('@dashevo/dashcore-lib/lib/script');
 const handleUpdatedScriptPayoutFactory = require('../../../../lib/identity/masternode/handleUpdatedScriptPayoutFactory');
 const BlockInfo = require('../../../../lib/blockExecution/BlockInfo');
 const StorageResult = require('../../../../lib/storage/StorageResult');
@@ -15,6 +15,12 @@ describe('handleUpdatedScriptPayoutFactory', () => {
   let blockInfo;
   let identityRepositoryMock;
   let identityPublicKeyRepositoryMock;
+  let IdentityPublicKey;
+  let Identity;
+
+  before(() => {
+    ({ Identity, IdentityPublicKey } = this.dppWasm);
+  });
 
   beforeEach(function beforeEach() {
     identity = getIdentityFixture();

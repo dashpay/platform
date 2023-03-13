@@ -65,9 +65,11 @@ DashCoreOptions.setDefaultCustomOptions({
   },
 });
 
-beforeEach(async function beforeEach() {
+before(async function before() {
   this.dppWasm = await loadWasmDpp();
+});
 
+beforeEach(function beforeEach() {
   if (!this.sinon) {
     this.sinon = sinon.createSandbox();
   } else {

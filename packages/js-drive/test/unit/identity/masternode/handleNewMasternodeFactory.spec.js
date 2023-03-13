@@ -1,10 +1,9 @@
 const createDPPMock = require('@dashevo/dpp/lib/test/mocks/createDPPMock');
 const getDataContractFixture = require('@dashevo/dpp/lib/test/fixtures/getDataContractFixture');
-const Identifier = require('@dashevo/dpp/lib/identifier/Identifier');
-const IdentityPublicKey = require('@dashevo/dpp/lib/identity/IdentityPublicKey');
+const getIdentityFixture = require('@dashevo/dpp/lib/test/fixtures/getIdentityFixture');
+
 const Address = require('@dashevo/dashcore-lib/lib/address');
 const Script = require('@dashevo/dashcore-lib/lib/script');
-const getIdentityFixture = require('@dashevo/dpp/lib/test/fixtures/getIdentityFixture');
 const handleNewMasternodeFactory = require('../../../../lib/identity/masternode/handleNewMasternodeFactory');
 const getSmlFixture = require('../../../../lib/test/fixtures/getSmlFixture');
 const createOperatorIdentifier = require('../../../../lib/identity/masternode/createOperatorIdentifier');
@@ -22,6 +21,12 @@ describe('handleNewMasternodeFactory', () => {
   let dataContract;
   let blockInfo;
   let identityFixture;
+  let Identifier;
+  let IdentityPublicKey;
+
+  before(() => {
+    ({ Identifier, IdentityPublicKey } = this.dppWasm);
+  });
 
   beforeEach(function beforeEach() {
     const smlFixture = getSmlFixture();

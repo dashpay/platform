@@ -1,8 +1,12 @@
-const Identifier = require('@dashevo/dpp/lib/identifier/Identifier');
 const createVotingIdentifier = require('../../../../lib/identity/masternode/createVotingIdentifier');
 
 describe('createVotingIdentifier', () => {
   let smlEntry;
+  let Identifier;
+
+  before(() => {
+    ({ Identifier } = this.dpp);
+  });
 
   beforeEach(() => {
     smlEntry = {

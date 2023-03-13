@@ -3,9 +3,6 @@ const getIdentityFixture = require('@dashevo/dpp/lib/test/fixtures/getIdentityFi
 const getDataContractFixture = require('@dashevo/dpp/lib/test/fixtures/getDataContractFixture');
 const generateRandomIdentifier = require('@dashevo/dpp/lib/test/utils/generateRandomIdentifier');
 
-const ReadOperation = require('@dashevo/dpp/lib/stateTransition/fee/operations/ReadOperation');
-const StateTransitionExecutionContext = require('@dashevo/dpp/lib/stateTransition/StateTransitionExecutionContext');
-
 const Long = require('long');
 
 const DriveStateRepository = require('../../../lib/dpp/DriveStateRepository');
@@ -37,6 +34,12 @@ describe('DriveStateRepository', () => {
   let rsDriveMock;
   let blockHeight;
   let timeMs;
+  let ReadOperation;
+  let StateTransitionExecutionContext;
+
+  before(() => {
+    ({ ReadOperation, StateTransitionExecutionContext } = this.dppWasm);
+  });
 
   beforeEach(function beforeEach() {
     identity = getIdentityFixture();

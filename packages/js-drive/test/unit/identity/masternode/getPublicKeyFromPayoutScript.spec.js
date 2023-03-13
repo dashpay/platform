@@ -1,10 +1,16 @@
-const IdentityPublicKey = require('@dashevo/dpp/lib/identity/IdentityPublicKey');
 const Address = require('@dashevo/dashcore-lib/lib/address');
 const Script = require('@dashevo/dashcore-lib/lib/script');
-const InvalidIdentityPublicKeyTypeError = require('@dashevo/dpp/lib/stateTransition/errors/InvalidIdentityPublicKeyTypeError');
+
 const getPublicKeyFromPayoutScript = require('../../../../lib/identity/masternode/getPublicKeyFromPayoutScript');
 
 describe('getPublicKeyFromPayoutScript', () => {
+  let IdentityPublicKey;
+  let InvalidIdentityPublicKeyTypeError;
+
+  before(() => {
+    ({ IdentityPublicKey, InvalidIdentityPublicKeyTypeError } = this.dppWasm);
+  });
+
   it('should return public key for ECDSA_HASH160 script', () => {
     const payoutAddress = Address.fromString('yLceJztHVZFbeqE9v86sLD9bDKFBmNqHQD');
     const scriptBuffer = new Script(payoutAddress);

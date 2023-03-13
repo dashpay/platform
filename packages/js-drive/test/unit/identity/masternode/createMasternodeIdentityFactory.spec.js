@@ -1,8 +1,6 @@
 const createDPPMock = require('@dashevo/dpp/lib/test/mocks/createDPPMock');
-const Identity = require('@dashevo/dpp/lib/identity/Identity');
-const IdentityPublicKey = require('@dashevo/dpp/lib/identity/IdentityPublicKey');
 const generateRandomIdentifier = require('@dashevo/dpp/lib/test/utils/generateRandomIdentifier');
-const ValidationResult = require('@dashevo/dpp/lib/validation/ValidationResult');
+
 const Address = require('@dashevo/dashcore-lib/lib/address');
 const Script = require('@dashevo/dashcore-lib/lib/script');
 const createMasternodeIdentityFactory = require('../../../../lib/identity/masternode/createMasternodeIdentityFactory');
@@ -17,6 +15,13 @@ describe('createMasternodeIdentityFactory', () => {
   let getPublicKeyFromPayoutScriptMock;
   let identityRepositoryMock;
   let blockInfo;
+  let Identity;
+  let IdentityPublicKey;
+  let ValidationResult;
+
+  before(() => {
+    ({ Identity, IdentityPublicKey, ValidationResult } = this.dppWasm);
+  });
 
   beforeEach(function beforeEach() {
     dppMock = createDPPMock(this.sinon);

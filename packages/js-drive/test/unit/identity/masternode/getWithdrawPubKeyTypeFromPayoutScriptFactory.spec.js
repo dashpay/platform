@@ -1,4 +1,3 @@
-const IdentityPublicKey = require('@dashevo/dpp/lib/identity/IdentityPublicKey');
 const Address = require('@dashevo/dashcore-lib/lib/address');
 const Script = require('@dashevo/dashcore-lib/lib/script');
 const getWithdrawPubKeyTypeFromPayoutScriptFactory = require('../../../../lib/identity/masternode/getWithdrawPubKeyTypeFromPayoutScriptFactory');
@@ -7,6 +6,11 @@ const InvalidPayoutScriptError = require('../../../../lib/identity/masternode/er
 describe('getWithdrawPubKeyTypeFromPayoutScriptFactory', () => {
   let getWithdrawPubKeyTypeFromPayoutScript;
   let network;
+  let IdentityPublicKey;
+
+  before(() => {
+    ({ IdentityPublicKey } = this.dppWasm);
+  });
 
   beforeEach(() => {
     network = 'testnet';
