@@ -15,8 +15,8 @@ mod inner_value_at_path;
 mod macros;
 pub mod string_encoding;
 pub mod system_bytes;
-pub mod value_map;
 mod types;
+pub mod value_map;
 mod value_serialization;
 
 use crate::value_map::{ValueMap, ValueMapHelper};
@@ -30,7 +30,7 @@ pub type Hash256 = [u8; 32];
 pub use btreemap_extensions::btreemap_field_replacement::ReplacementType;
 pub use types::identifier::{Identifier, IDENTIFIER_MEDIA_TYPE};
 
-pub use value_serialization::{to_value, from_value};
+pub use value_serialization::{from_value, to_value};
 
 /// A representation of a dynamic value that can handled dynamically
 #[non_exhaustive]

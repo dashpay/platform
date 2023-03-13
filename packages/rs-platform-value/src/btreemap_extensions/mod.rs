@@ -13,12 +13,12 @@ mod btreemap_path_insertion_extensions;
 mod btreemap_removal_extensions;
 mod btreemap_removal_inner_value_extensions;
 
-pub use btreemap_removal_extensions::BTreeValueRemoveFromMapHelper;
 pub use btreemap_field_replacement::BTreeValueMapReplacementPathHelper;
+pub use btreemap_mut_value_extensions::BTreeMutValueMapHelper;
 pub use btreemap_path_extensions::BTreeValueMapPathHelper;
 pub use btreemap_path_insertion_extensions::BTreeValueMapInsertionPathHelper;
+pub use btreemap_removal_extensions::BTreeValueRemoveFromMapHelper;
 pub use btreemap_removal_inner_value_extensions::BTreeValueRemoveInnerValueFromMapHelper;
-pub use btreemap_mut_value_extensions::BTreeMutValueMapHelper;
 
 pub trait BTreeValueMapHelper {
     fn get_optional_identifier(&self, key: &str) -> Result<Option<[u8; 32]>, Error>;

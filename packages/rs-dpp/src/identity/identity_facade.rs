@@ -1,9 +1,9 @@
 use dashcore::{InstantLock, Transaction};
-use serde_json::Value;
+use platform_value::Value;
+use serde_json::Value as JsonValue;
 use std::collections::BTreeMap;
 use std::sync::Arc;
 
-use crate::prelude::Identifier;
 use crate::identity::factory::IdentityFactory;
 use crate::identity::state_transition::asset_lock_proof::chain::ChainAssetLockProof;
 use crate::identity::state_transition::asset_lock_proof::{AssetLockProof, InstantAssetLockProof};
@@ -13,6 +13,7 @@ use crate::identity::state_transition::identity_topup_transition::IdentityTopUpT
 use crate::identity::state_transition::identity_update_transition::identity_update_transition::IdentityUpdateTransition;
 use crate::identity::validation::{IdentityValidator, PublicKeysValidator};
 use crate::identity::{Identity, IdentityPublicKey, KeyID, TimestampMillis};
+use crate::prelude::Identifier;
 
 use crate::validation::ValidationResult;
 use crate::version::ProtocolVersionValidator;
@@ -71,9 +72,9 @@ where
 
     pub fn validate(
         &self,
-        identity_json: &serde_json::Value,
+        identity_object: &Value,
     ) -> Result<ValidationResult<()>, NonConsensusError> {
-        self.identity_validator.validate_identity(identity_json)
+        self.identity_validator.validate_identity(identity_object)
     }
 
     pub fn create_instant_lock_proof(

@@ -35,7 +35,7 @@ pub fn find_duplicates_by_indices<'a>(
     let mut groups: BTreeMap<&'a str, Group> = BTreeMap::new();
 
     for dt in raw_extended_documents.into_iter() {
-        let document_type_name = dt.get_string("$type")?;
+        let document_type_name = dt.get_str("$type")?;
         let document_type = data_contract.document_type_for_name(document_type_name)?;
         match groups.entry(document_type_name) {
             Entry::Occupied(mut o) => {

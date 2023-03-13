@@ -1,6 +1,6 @@
 use crate::data_contract::{DataContract, DriveContractExt};
-use crate::prelude::Identifier;
 use crate::metadata::Metadata;
+use crate::prelude::Identifier;
 use crate::prelude::{Revision, TimestampMillis};
 use crate::util::cbor_value::CborCanonicalMap;
 use crate::util::deserializer;
@@ -15,9 +15,9 @@ use crate::data_contract::document_type::document_type::PROTOCOL_VERSION;
 use crate::data_contract::document_type::DocumentType;
 use crate::document::Document;
 use platform_value::btreemap_extensions::BTreeValueMapHelper;
-use platform_value::btreemap_extensions::BTreeValueMapReplacementPathHelper;
-use platform_value::btreemap_extensions::BTreeValueMapPathHelper;
 use platform_value::btreemap_extensions::BTreeValueMapInsertionPathHelper;
+use platform_value::btreemap_extensions::BTreeValueMapPathHelper;
+use platform_value::btreemap_extensions::BTreeValueMapReplacementPathHelper;
 use platform_value::btreemap_extensions::BTreeValueRemoveFromMapHelper;
 use platform_value::converter::serde_json::BTreeValueJsonConverter;
 use platform_value::{ReplacementType, Value};
@@ -119,11 +119,11 @@ impl ExtendedDocument {
         self.document.updated_at.as_ref()
     }
 
-    pub fn from_json_string(string: &str) -> Result<Self, ProtocolError> {
+    pub fn from_json_string(string: &str, contract: DataContract) -> Result<Self, ProtocolError> {
         let json_value: JsonValue = serde_json::from_str(string).map_err(|_| {
             ProtocolError::StringDecodeError("error decoding from json string".to_string())
         })?;
-        Self::from_json_document(json_value, DataContract::new())
+        Self::from_untrusted_platform_value(json_value.into(), contract)
     }
 
     pub fn from_raw_document(
@@ -133,7 +133,42 @@ impl ExtendedDocument {
         Self::from_json_value::<Vec<u8>>(raw_document, data_contract)
     }
 
-    pub fn from_platform_value(
+    /// Create an extended document from a platform value object where fields are already in the
+    /// proper format for the contract
+    pub fn from_trusted_platform_value(
+        document_value: Value,
+        data_contract: DataContract,
+    ) -> Result<Self, ProtocolError> {
+        let mut properties = document_value
+            .into_btree_map()
+            .map_err(ProtocolError::ValueError)?;
+        let document_type_name = properties
+            .remove_string(property_names::DOCUMENT_TYPE)
+            .map_err(ProtocolError::ValueError)?;
+
+        let mut extended_document = Self {
+            data_contract,
+            document_type_name,
+            ..Default::default()
+        };
+
+        // if the protocol version is not set, use the current protocol version
+        extended_document.protocol_version = properties
+            .remove_optional_integer(property_names::PROTOCOL_VERSION)
+            .map_err(ProtocolError::ValueError)?
+            .unwrap_or(PROTOCOL_VERSION);
+        extended_document.data_contract_id = Identifier::new(
+            properties
+                .remove_optional_hash256_bytes(property_names::DATA_CONTRACT_ID)?
+                .unwrap_or(extended_document.data_contract.id.buffer),
+        );
+        extended_document.document = Document::from_map(properties, None, None)?;
+        Ok(extended_document)
+    }
+
+    /// Create an extended document from a platform value object where fields might not be in the
+    /// proper format for the contract
+    pub fn from_untrusted_platform_value(
         document_value: Value,
         data_contract: DataContract,
     ) -> Result<Self, ProtocolError> {

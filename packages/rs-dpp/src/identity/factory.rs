@@ -1,5 +1,4 @@
 use crate::decode_protocol_entity_factory::DecodeProtocolEntity;
-use crate::prelude::Identifier;
 use crate::identity::identity_public_key::factory::KeyCount;
 use crate::identity::state_transition::asset_lock_proof::chain::ChainAssetLockProof;
 use crate::identity::state_transition::asset_lock_proof::{AssetLockProof, InstantAssetLockProof};
@@ -9,6 +8,7 @@ use crate::identity::state_transition::identity_topup_transition::IdentityTopUpT
 use crate::identity::state_transition::identity_update_transition::identity_update_transition::IdentityUpdateTransition;
 use crate::identity::validation::{IdentityValidator, PublicKeysValidator};
 use crate::identity::{Identity, IdentityPublicKey, KeyID, TimestampMillis};
+use crate::prelude::Identifier;
 
 use crate::{BlsModule, ProtocolError};
 
@@ -120,7 +120,7 @@ where
 
     pub fn create_from_object(
         &self,
-        raw_identity: JsonValue,
+        raw_identity: Value,
         skip_validation: bool,
     ) -> Result<Identity, ProtocolError> {
         if !skip_validation {

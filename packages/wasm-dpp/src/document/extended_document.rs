@@ -56,9 +56,11 @@ impl ExtendedDocumentWasm {
         //     .with_js_error()?;
         // // The binary paths are not being converted, because they always should be a `Buffer`. `Buffer` is always an Array
 
-        let document =
-            ExtendedDocument::from_platform_value(raw_document, js_data_contract.to_owned().into())
-                .with_js_error()?;
+        let document = ExtendedDocument::from_untrusted_platform_value(
+            raw_document,
+            js_data_contract.to_owned().into(),
+        )
+        .with_js_error()?;
 
         Ok(document.into())
     }

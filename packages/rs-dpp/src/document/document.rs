@@ -52,8 +52,8 @@ use crate::data_contract::errors::DataContractError;
 
 use crate::document::errors::DocumentError;
 
-use crate::prelude::Identifier;
 use crate::identity::TimestampMillis;
+use crate::prelude::Identifier;
 use crate::prelude::Revision;
 
 use crate::util::hash::hash;

@@ -113,15 +113,12 @@ impl DataContractFactory {
         raw_data_contract: Value,
         skip_validation: bool,
     ) -> Result<DataContract, ProtocolError> {
-        let json_value = raw_data_contract
-            .try_to_validating_json()
-            .map_err(ProtocolError::ValueError)?;
         if !skip_validation {
-            let result = self.validate_data_contract.validate(&json_value)?;
+            let result = self.validate_data_contract.validate(&raw_data_contract)?;
 
             if !result.is_valid() {
                 return Err(ProtocolError::InvalidDataContractError(
-                    InvalidDataContractError::new(result.errors, json_value),
+                    InvalidDataContractError::new(result.errors, raw_data_contract),
                 ));
             }
         }

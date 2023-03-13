@@ -5,7 +5,7 @@ use crate::consensus::basic::data_contract::IncompatibleRe2PatternError;
 use crate::{
     consensus::{basic::BasicError, ConsensusError},
     validation::ValidationResult,
-    ProtocolError,
+    NonConsensusError, ProtocolError,
 };
 
 pub type SubValidator =
@@ -78,6 +78,19 @@ pub fn pattern_is_valid_regex_validator(
     }
 }
 
+fn unwrap_error_to_result<'a, 'b>(
+    v: Result<Option<&'a Value>, NonConsensusError>,
+    result: &'b mut ValidationResult<()>,
+) -> Option<&'a Value> {
+    match v {
+        Ok(v) => v,
+        Err(e) => {
+            result.add_error(e.into());
+            None
+        }
+    }
+}
+
 pub fn byte_array_has_no_items_as_parent_validator(
     path: &str,
     key: &str,
@@ -87,14 +100,18 @@ pub fn byte_array_has_no_items_as_parent_validator(
 ) {
     if key == "byteArray"
         && value.is_bool()
-        && (parent
-            .get("items")
-            .map_err(ProtocolError::ValueError)?
-            .is_some()
-            || parent
-                .get("prefixItems")
-                .map_err(ProtocolError::ValueError)?
-                .is_some())
+        && (unwrap_error_to_result(
+            parent.get("items").map_err(NonConsensusError::ValueError),
+            result,
+        )
+        .is_some()
+            || unwrap_error_to_result(
+                parent
+                    .get("prefixItems")
+                    .map_err(NonConsensusError::ValueError),
+                result,
+            )
+            .is_some())
     {
         result.add_error(BasicError::JsonSchemaCompilationError(format!(
             "invalid path: '{}': byteArray cannot be used with 'items' or 'prefixItems",

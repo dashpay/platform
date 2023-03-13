@@ -1,5 +1,5 @@
-use crate::Identifier;
 use crate::value_map::{ValueMap, ValueMapHelper};
+use crate::Identifier;
 use crate::Value::Bool;
 use crate::{Error, Value};
 use std::collections::BTreeMap;
@@ -17,6 +17,14 @@ impl Value {
     pub fn get_optional_value<'a>(&'a self, key: &'a str) -> Result<Option<&'a Value>, Error> {
         let map = self.to_map()?;
         Ok(Self::get_optional_from_map(map, key))
+    }
+
+    pub fn set_into_value<T>(&mut self, key: &str, value: T) -> Result<(), Error>
+    where
+        T: Into<Value>,
+    {
+        let map = self.as_map_mut_ref()?;
+        Ok(Self::insert_in_map(map, key, value.into()))
     }
 
     pub fn set_value(&mut self, key: &str, value: Value) -> Result<(), Error> {
@@ -172,6 +180,29 @@ impl Value {
         Self::inner_bool_value(map, key)
     }
 
+    pub fn get_optional_array(&self, key: &str) -> Result<Option<Vec<Value>>, Error> {
+        let map = self.to_map()?;
+        Self::inner_optional_array(map, key)
+    }
+
+    pub fn get_array<'a>(&'a self, key: &'a str) -> Result<Vec<Value>, Error> {
+        let map = self.to_map()?;
+        Self::inner_array(map, key)
+    }
+
+    pub fn get_optional_array_slice<'a>(
+        &'a self,
+        key: &'a str,
+    ) -> Result<Option<&'a [Value]>, Error> {
+        let map = self.to_map()?;
+        Self::inner_optional_array_slice(map, key)
+    }
+
+    pub fn get_array_slice<'a>(&'a self, key: &'a str) -> Result<&[Value], Error> {
+        let map = self.to_map()?;
+        Self::inner_array_slice(map, key)
+    }
+
     pub fn get_optional_bytes<'a>(&'a self, key: &'a str) -> Result<Option<Vec<u8>>, Error> {
         let map = self.to_map()?;
         Self::inner_optional_bytes_value(map, key)
@@ -234,6 +265,39 @@ impl Value {
         } else {
             None
         }
+    }
+
+    /// Retrieves the value of a key from a map if it's an array of strings.
+    pub fn inner_optional_array(
+        document_type: &[(Value, Value)],
+        key: &str,
+    ) -> Result<Option<Vec<Value>>, Error> {
+        Self::get_optional_from_map(document_type, key)
+            .map(|value| value.to_array_owned())
+            .transpose()
+    }
+
+    /// Retrieves the value of a key from a map if it's an array of strings.
+    pub fn inner_array(document_type: &[(Value, Value)], key: &str) -> Result<Vec<Value>, Error> {
+        Self::get_from_map(document_type, key).map(|value| value.to_array_owned())?
+    }
+
+    /// Retrieves the value of a key from a map if it's an array of strings.
+    pub fn inner_optional_array_slice<'a>(
+        document_type: &'a [(Value, Value)],
+        key: &'a str,
+    ) -> Result<Option<&'a [Value]>, Error> {
+        Self::get_optional_from_map(document_type, key)
+            .map(|value| value.to_array_slice())
+            .transpose()
+    }
+
+    /// Retrieves the value of a key from a map if it's an array of strings.
+    pub fn inner_array_slice<'a>(
+        document_type: &'a [(Value, Value)],
+        key: &'a str,
+    ) -> Result<&'a [Value], Error> {
+        Self::get_from_map(document_type, key).map(|value| value.to_array_slice())?
     }
 
     /// Gets the inner btree map from a map

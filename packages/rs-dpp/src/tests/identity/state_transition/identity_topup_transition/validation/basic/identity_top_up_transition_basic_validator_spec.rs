@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
 use jsonschema::error::ValidationErrorKind;
-use serde_json::Value;
+use platform_value::Value;
 
 use crate::assert_consensus_errors;
 use crate::errors::consensus::ConsensusError;
@@ -41,7 +41,7 @@ pub fn setup_test(
 
     let protocol_version_validator = ProtocolVersionValidator::default();
     (
-        crate::tests::fixtures::identity_topup_transition_fixture_json(None),
+        crate::tests::fixtures::identity_topup_transition_fixture(None),
         IdentityTopUpTransitionBasicValidator::new(
             protocol_version_validator,
             asset_lock_proof_validator,
@@ -60,7 +60,7 @@ mod validate_identity_topup_transition_basic {
         pub async fn should_be_present() {
             let state_repository = MockStateRepositoryLike::new();
             let (mut raw_state_transition, validator) = setup_test(state_repository);
-            raw_state_transition.remove_key("protocolVersion");
+            raw_state_transition.remove("protocolVersion").unwrap();
 
             let result = validator
                 .validate(&raw_state_transition, &Default::default())
@@ -84,7 +84,9 @@ mod validate_identity_topup_transition_basic {
         #[tokio::test]
         pub async fn should_be_an_integer() {
             let (mut raw_state_transition, validator) = setup_test(MockStateRepositoryLike::new());
-            raw_state_transition.set_key_value("protocolVersion", "1");
+            raw_state_transition
+                .set_into_value("protocolVersion", "1")
+                .unwrap();
 
             let result = validator
                 .validate(&raw_state_transition, &Default::default())
@@ -102,7 +104,9 @@ mod validate_identity_topup_transition_basic {
         #[tokio::test]
         pub async fn should_be_valid() {
             let (mut raw_state_transition, validator) = setup_test(MockStateRepositoryLike::new());
-            raw_state_transition.set_key_value("protocolVersion", -1);
+            raw_state_transition
+                .set_into_value("protocolVersion", -1)
+                .unwrap();
 
             let result = validator
                 .validate(&raw_state_transition, &Default::default())
@@ -130,7 +134,7 @@ mod validate_identity_topup_transition_basic {
         #[tokio::test]
         pub async fn should_be_present() {
             let (mut raw_state_transition, validator) = setup_test(MockStateRepositoryLike::new());
-            raw_state_transition.remove_key("type");
+            raw_state_transition.remove("type").unwrap();
             let result = validator
                 .validate(&raw_state_transition, &Default::default())
                 .await
@@ -154,7 +158,7 @@ mod validate_identity_topup_transition_basic {
         #[tokio::test]
         pub async fn should_be_equal_to_3() {
             let (mut raw_state_transition, validator) = setup_test(MockStateRepositoryLike::new());
-            raw_state_transition.set_key_value("type", 666);
+            raw_state_transition.set_into_value("type", 666).unwrap();
 
             let result = validator
                 .validate(&raw_state_transition, &Default::default())
@@ -183,7 +187,7 @@ mod validate_identity_topup_transition_basic {
         #[tokio::test]
         pub async fn should_be_present() {
             let (mut raw_state_transition, validator) = setup_test(MockStateRepositoryLike::new());
-            raw_state_transition.remove_key("assetLockProof");
+            raw_state_transition.remove("assetLockProof").unwrap();
 
             let result = validator
                 .validate(&raw_state_transition, &Default::default())
@@ -208,7 +212,9 @@ mod validate_identity_topup_transition_basic {
         #[tokio::test]
         pub async fn should_be_an_object() {
             let (mut raw_state_transition, validator) = setup_test(MockStateRepositoryLike::new());
-            raw_state_transition.set_key_value("assetLockProof", 1);
+            raw_state_transition
+                .set_into_value("assetLockProof", 1u64)
+                .unwrap();
 
             let result = validator
                 .validate(&raw_state_transition, &Default::default())
@@ -252,7 +258,7 @@ mod validate_identity_topup_transition_basic {
         #[tokio::test]
         pub async fn should_be_present() {
             let (mut raw_state_transition, validator) = setup_test(MockStateRepositoryLike::new());
-            raw_state_transition.remove_key("signature");
+            raw_state_transition.remove("signature").unwrap();
 
             let result = validator
                 .validate(&raw_state_transition, &Default::default())
@@ -277,7 +283,9 @@ mod validate_identity_topup_transition_basic {
         #[tokio::test]
         pub async fn should_be_a_byte_array() {
             let (mut raw_state_transition, validator) = setup_test(MockStateRepositoryLike::new());
-            raw_state_transition.set_key_value("signature", vec!["string"; 65]);
+            raw_state_transition
+                .set_into_value("signature", vec!["string"; 65])
+                .unwrap();
 
             let result = validator
                 .validate(&raw_state_transition, &Default::default())
@@ -295,7 +303,9 @@ mod validate_identity_topup_transition_basic {
         #[tokio::test]
         pub async fn should_be_not_shorter_than_65_bytes() {
             let (mut raw_state_transition, validator) = setup_test(MockStateRepositoryLike::new());
-            raw_state_transition.set_key_value("signature", vec![0; 64]);
+            raw_state_transition
+                .set_into_value("signature", vec![0; 64])
+                .unwrap();
 
             let result = validator
                 .validate(&raw_state_transition, &Default::default())
@@ -313,7 +323,9 @@ mod validate_identity_topup_transition_basic {
         #[tokio::test]
         pub async fn should_be_not_longer_than_65_bytes() {
             let (mut raw_state_transition, validator) = setup_test(MockStateRepositoryLike::new());
-            raw_state_transition.set_key_value("signature", vec![0; 66]);
+            raw_state_transition
+                .set_into_value("signature", vec![0; 66])
+                .unwrap();
 
             let result = validator
                 .validate(&raw_state_transition, &Default::default())

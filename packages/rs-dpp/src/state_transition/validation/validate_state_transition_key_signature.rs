@@ -153,7 +153,7 @@ mod test {
         state_transition::{StateTransition, StateTransitionLike},
         tests::{
             fixtures::{
-                identity_create_transition_fixture_json, identity_topup_transition_fixture_json,
+                identity_create_transition_fixture_json, identity_topup_transition_fixture,
             },
             utils::get_signature_error_from_result,
         },
@@ -299,7 +299,7 @@ mod test {
 
         let private_key = PrivateKey::new(secret_key, Network::Testnet);
         let state_transition: StateTransition =
-            IdentityTopUpTransition::new(identity_topup_transition_fixture_json(Some(private_key)))
+            IdentityTopUpTransition::new(identity_topup_transition_fixture(Some(private_key)))
                 .unwrap()
                 .into();
 

@@ -1,5 +1,5 @@
-use platform_value::btreemap_extensions::BTreeValueMapHelper;
 use platform_value::btreemap_extensions::BTreeValueMapReplacementPathHelper;
+use platform_value::btreemap_extensions::{BTreeValueMapHelper, BTreeValueRemoveFromMapHelper};
 use platform_value::{ReplacementType, Value};
 use serde::{Deserialize, Serialize};
 use serde_json::Value as JsonValue;
@@ -8,8 +8,8 @@ use std::convert::TryInto;
 
 use crate::data_contract::document_type::document_type::PROTOCOL_VERSION;
 use crate::document::Document;
-use crate::prelude::Identifier;
 use crate::identity::TimestampMillis;
+use crate::prelude::Identifier;
 use crate::prelude::{ExtendedDocument, Revision};
 use crate::{data_contract::DataContract, errors::ProtocolError};
 

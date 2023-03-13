@@ -2,6 +2,7 @@ use std::fmt::Debug;
 
 use dashcore::signer;
 
+use platform_value::Value;
 use serde::Serialize;
 use serde_json::Value as JsonValue;
 
@@ -182,15 +183,10 @@ pub trait StateTransitionConvert: Serialize {
     fn identifiers_property_paths() -> Vec<&'static str>;
     fn binary_property_paths() -> Vec<&'static str>;
 
-    /// Returns the [`serde_json::Value`] instance that preserves the `Vec<u8>` representation
+    /// Returns the [`platform_value::Value`] instance that preserves the `Vec<u8>` representation
     /// for Identifiers and binary data
-    fn to_object(&self, skip_signature: bool) -> Result<JsonValue, ProtocolError> {
-        state_transition_helpers::to_object(
-            self,
-            Self::signature_property_paths(),
-            Self::identifiers_property_paths(),
-            skip_signature,
-        )
+    fn to_object(&self, skip_signature: bool) -> Result<Value, ProtocolError> {
+        state_transition_helpers::to_object(self, skip_signature)
     }
 
     /// Returns the [`serde_json::Value`] instance that encodes:
@@ -243,23 +239,14 @@ pub mod state_transition_helpers {
         Ok(json_value)
     }
 
-    pub fn to_object<'a>(
+    pub fn to_object<'a, I: IntoIterator<Item = &'a str>>(
         serializable: impl Serialize,
-        signature_property_paths: impl IntoIterator<Item = &'a str>,
-        identifier_property_paths: impl IntoIterator<Item = &'a str>,
-        skip_signature: bool,
-    ) -> Result<JsonValue, ProtocolError> {
-        let mut json_value: JsonValue = serde_json::to_value(serializable)?;
-
-        json_value.replace_identifier_paths(identifier_property_paths, ReplaceWith::Bytes)?;
-
-        if skip_signature {
-            if let JsonValue::Object(ref mut o) = json_value {
-                for path in signature_property_paths {
-                    o.remove(path);
-                }
-            }
-        }
-        Ok(json_value)
+        skip_signature_paths: I,
+    ) -> Result<Value, ProtocolError> {
+        let mut value: Value = platform_value::to_value(serializable)?;
+        skip_signature_paths
+            .into_iter()
+            .try_for_each(|path| value.remove_value_at_path(path))?;
+        Ok(value)
     }
 }

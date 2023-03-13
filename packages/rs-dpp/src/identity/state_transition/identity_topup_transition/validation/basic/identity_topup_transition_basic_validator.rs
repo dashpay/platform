@@ -1,7 +1,9 @@
+use std::convert::TryInto;
 use std::sync::Arc;
 
 use lazy_static::lazy_static;
-use serde_json::Value;
+use platform_value::Value;
+use serde_json::Value as JsonValue;
 
 use crate::identity::state_transition::asset_lock_proof::AssetLockProofValidator;
 use crate::state_repository::StateRepositoryLike;
@@ -9,10 +11,10 @@ use crate::state_transition::state_transition_execution_context::StateTransition
 use crate::util::protocol_data::get_protocol_version;
 use crate::validation::{JsonSchemaValidator, ValidationResult};
 use crate::version::ProtocolVersionValidator;
-use crate::{DashPlatformProtocolInitError, NonConsensusError, SerdeParsingError};
+use crate::{DashPlatformProtocolInitError, NonConsensusError, ProtocolError, SerdeParsingError};
 
 lazy_static! {
-    static ref INDENTITY_CREATE_TRANSITION_SCHEMA: Value = serde_json::from_str(include_str!(
+    static ref INDENTITY_CREATE_TRANSITION_SCHEMA: JsonValue = serde_json::from_str(include_str!(
         "../../../../../schema/identity/stateTransition/identityTopUp.json"
     ))
     .unwrap();
@@ -48,9 +50,11 @@ impl<SR: StateRepositoryLike> IdentityTopUpTransitionBasicValidator<SR> {
         identity_topup_transition_json: &Value,
         execution_context: &StateTransitionExecutionContext,
     ) -> Result<ValidationResult<()>, NonConsensusError> {
-        let mut result = self
-            .json_schema_validator
-            .validate(identity_topup_transition_json)?;
+        let mut result = self.json_schema_validator.validate(
+            &identity_topup_transition_json
+                .try_into_validating_json()
+                .map_err(ProtocolError::ValueError)?,
+        )?;
 
         let identity_transition_map =
             identity_topup_transition_json.as_object().ok_or_else(|| {

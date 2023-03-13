@@ -10,25 +10,22 @@ use crate::errors::consensus::basic::identity::{
 use crate::identity::{IdentityPublicKey, KeyID, KeyType};
 use crate::validation::{JsonSchemaValidator, ValidationResult};
 use crate::{
-    BlsModule, DashPlatformProtocolInitError, NonConsensusError, PublicKeyValidationError,
+    BlsModule, DashPlatformProtocolInitError, NonConsensusError, ProtocolError,
+    PublicKeyValidationError,
 };
 
 use crate::identity::security_level::ALLOWED_SECURITY_LEVELS;
 #[cfg(test)]
 use mockall::{automock, predicate::*};
 use platform_value::Value;
+use serde_json::Value as JsonValue;
 
 lazy_static! {
-    pub static ref PUBLIC_KEY_SCHEMA: platform_value::Value =
-        serde_json::from_str(include_str!("./../../schema/identity/publicKey.json"))
-            .unwrap()
-            .try_into()
-            .unwrap();
-    pub static ref PUBLIC_KEY_SCHEMA_FOR_TRANSITION: platform_value::Value = serde_json::from_str(
+    pub static ref PUBLIC_KEY_SCHEMA: JsonValue =
+        serde_json::from_str(include_str!("./../../schema/identity/publicKey.json")).unwrap();
+    pub static ref PUBLIC_KEY_SCHEMA_FOR_TRANSITION: JsonValue = serde_json::from_str(
         include_str!("./../../schema/identity/stateTransition/publicKey.json")
     )
-    .unwrap()
-    .try_into()
     .unwrap();
 }
 
@@ -163,10 +160,10 @@ impl<T: BlsModule> PublicKeysValidator<T> {
     }
 
     pub fn new_with_schema(
-        schema: Value,
+        schema: JsonValue,
         bls_validator: T,
     ) -> Result<Self, DashPlatformProtocolInitError> {
-        let public_key_schema_validator = JsonSchemaValidator::new(schema.into())?;
+        let public_key_schema_validator = JsonSchemaValidator::new(schema)?;
 
         let public_keys_validator = Self {
             public_key_schema_validator,
@@ -180,7 +177,11 @@ impl<T: BlsModule> PublicKeysValidator<T> {
         &self,
         public_key: &Value,
     ) -> Result<ValidationResult<()>, NonConsensusError> {
-        self.public_key_schema_validator.validate(public_key.into())
+        self.public_key_schema_validator.validate(
+            &public_key
+                .try_to_validating_json()
+                .map_err(NonConsensusError::ValueError)?,
+        )
     }
 }
 

@@ -2,6 +2,29 @@ use crate::value_map::ValueMapHelper;
 use crate::{Error, Value};
 
 impl Value {
+    pub fn remove_value_at_path(&mut self, path: &str) -> Result<Value, Error> {
+        let mut split = path.split('.').peekable();
+        let mut current_value = self;
+        let mut last_path_component = None;
+        while let Some(path_component) = split.next() {
+            if split.peek().is_none() {
+                last_path_component = Some(path_component);
+            } else {
+                let map = current_value.to_map_mut()?;
+                current_value = map.get_key_mut(path_component).ok_or_else(|| {
+                    Error::StructureError(format!(
+                        "unable to get property {path_component} in {path}"
+                    ))
+                })?;
+            };
+        }
+        let Some(last_path_component) = last_path_component else {
+            return Err(Error::StructureError(format!("path was empty")));
+        };
+        let map = current_value.as_map_mut_ref()?;
+        map.remove_key(last_path_component)
+    }
+
     pub fn get_value_at_path<'a>(&'a self, path: &'a str) -> Result<&'a Value, Error> {
         let split = path.split('.');
         let mut current_value = self;

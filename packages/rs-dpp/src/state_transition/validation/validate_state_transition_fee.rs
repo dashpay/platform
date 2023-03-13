@@ -166,7 +166,7 @@ mod test {
 
     use crate::identity::state_transition::identity_topup_transition::IdentityTopUpTransition;
     use crate::state_transition::StateTransitionLike;
-    use crate::tests::fixtures::identity_topup_transition_fixture_json;
+    use crate::tests::fixtures::identity_topup_transition_fixture;
     use crate::ProtocolError;
     use crate::{
         consensus::fee::FeeError,
@@ -367,7 +367,7 @@ mod test {
             .returning(move |_, _| Ok(Some(identity.clone())));
 
         let mut identity_topup_transition =
-            IdentityTopUpTransition::new(identity_topup_transition_fixture_json(None)).unwrap();
+            IdentityTopUpTransition::new(identity_topup_transition_fixture(None)).unwrap();
         identity_topup_transition.set_execution_context(execution_context_with_cost(45000000, 5));
 
         let validator = StateTransitionFeeValidator::new(Arc::new(state_repository_mock));

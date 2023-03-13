@@ -78,7 +78,9 @@ impl DataContractValidator {
 
         trace!("validating against data contract meta validator");
         result.merge(JsonSchemaValidator::validate_data_contract_schema(
-            &raw_data_contract.into(),
+            &raw_data_contract
+                .try_to_validating_json()
+                .map_err(ProtocolError::ValueError)?,
         ));
         if !result.is_valid() {
             return Ok(result);

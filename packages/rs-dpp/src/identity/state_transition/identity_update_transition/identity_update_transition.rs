@@ -218,23 +218,25 @@ impl StateTransitionConvert for IdentityUpdateTransition {
         vec![property_names::SIGNATURE]
     }
 
-    fn to_object(&self, skip_signature: bool) -> Result<JsonValue, ProtocolError> {
+    fn to_object(&self, skip_signature: bool) -> Result<Value, ProtocolError> {
         // The [state_transition_helpers::to_object] doesn't  convert the `add_public_keys` property.
         // The property must be serialized manually
-        let mut add_public_keys: Vec<JsonValue> = vec![];
+        let mut add_public_keys: Vec<Value> = vec![];
         for key in self.add_public_keys.iter() {
-            add_public_keys.push(key.to_raw_json_object(skip_signature)?);
+            add_public_keys.push(key.to_raw_object(skip_signature)?);
         }
 
-        let mut raw_object: JsonValue = state_transition_helpers::to_object(
-            self,
-            Self::signature_property_paths(),
-            Self::identifiers_property_paths(),
-            skip_signature,
-        )?;
+        let skip_signature_paths = if skip_signature {
+            Self::signature_property_paths()
+        } else {
+            vec![]
+        };
+
+        let mut raw_object: Value =
+            state_transition_helpers::to_object(self, skip_signature_paths)?;
         raw_object.insert(
             property_names::ADD_PUBLIC_KEYS.to_owned(),
-            JsonValue::Array(add_public_keys),
+            Value::Array(add_public_keys),
         )?;
 
         Ok(raw_object)

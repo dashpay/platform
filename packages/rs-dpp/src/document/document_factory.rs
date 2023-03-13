@@ -283,7 +283,7 @@ where
             .validate_data_contract_for_extended_document(&raw_document, options)
             .await?;
 
-        ExtendedDocument::from_platform_value(raw_document, data_contract)
+        ExtendedDocument::from_untrusted_platform_value(raw_document, data_contract)
     }
 
     async fn validate_data_contract_for_extended_document(

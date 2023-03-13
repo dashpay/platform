@@ -83,16 +83,8 @@ impl DataContractFacade {
     /// Validate Data Contract
     pub async fn validate(
         &self,
-        data_contract: JsonValue,
+        data_contract: Value,
     ) -> Result<ValidationResult<()>, ProtocolError> {
-        // TODO: figure out what to do with a case where it's not a raw data contract
-        // let rawDataContract;
-        // if (dataContract instanceof DataContract) {
-        //     rawDataContract = dataContract.toObject();
-        // } else {
-        //     rawDataContract = dataContract;
-        // }
-
         self.data_contract_validator.validate(&data_contract)
     }
 }

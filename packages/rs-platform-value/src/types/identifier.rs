@@ -6,7 +6,7 @@ use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use serde_json::Value as JsonValue;
 
 use crate::string_encoding::Encoding;
-use crate::{string_encoding, Error};
+use crate::{string_encoding, Error, Value};
 
 pub const IDENTIFIER_MEDIA_TYPE: &str = "application/x.dash.dpp.identifier";
 
@@ -166,5 +166,33 @@ impl PartialEq<[u8; 32]> for Identifier {
 impl PartialEq<Identifier> for [u8; 32] {
     fn eq(&self, other: &Identifier) -> bool {
         self == &other.buffer
+    }
+}
+
+impl TryFrom<Value> for Identifier {
+    type Error = Error;
+
+    fn try_from(value: Value) -> Result<Self, Self::Error> {
+        value.into_identifier()
+    }
+}
+
+impl TryFrom<&Value> for Identifier {
+    type Error = Error;
+
+    fn try_from(value: &Value) -> Result<Self, Self::Error> {
+        value.to_identifier()
+    }
+}
+
+impl From<Identifier> for Value {
+    fn from(value: Identifier) -> Self {
+        Value::Identifier(value.buffer)
+    }
+}
+
+impl From<&Identifier> for Value {
+    fn from(value: &Identifier) -> Self {
+        Value::Identifier(value.buffer)
     }
 }

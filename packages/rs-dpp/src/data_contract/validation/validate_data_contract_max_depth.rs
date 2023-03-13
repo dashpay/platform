@@ -39,7 +39,7 @@ fn calc_max_depth(value: &Value) -> Result<usize, BasicError> {
                 }
                 for (property_name, v) in map {
                     // handling the internal references
-                    if property_name == ref_value {
+                    if property_name == &ref_value {
                         if let Some(uri) = v.as_str() {
                             let resolved = resolve_uri(value, uri).map_err(|e| {
                                 BasicError::InvalidJsonSchemaRefError(

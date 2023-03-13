@@ -37,7 +37,10 @@ impl serde::ser::Error for Error {
 }
 
 impl serde::de::Error for Error {
-    fn custom<T>(msg: T) -> Self where T: Display {
+    fn custom<T>(msg: T) -> Self
+    where
+        T: Display,
+    {
         println!("{msg}");
         todo!()
     }

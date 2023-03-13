@@ -45,21 +45,21 @@ fn should_return_invalid_result_if_state_transition_does_not_contain_master_key(
 fn should_return_valid_result() {
     let validator = RequiredPurposeAndSecurityLevelValidator {};
     let raw_public_keys = vec![
-        json!({
-                    "id": 0,
-                    "type" : KeyType::ECDSA_SECP256K1,
-                    "purpose" : Purpose::AUTHENTICATION,
-                    "securityLevel"  : SecurityLevel::MASTER,
+        platform_value!({
+                    "id": 0u32,
+                    "type" : KeyType::ECDSA_SECP256K1 as u8,
+                    "purpose" : Purpose::AUTHENTICATION as u8,
+                    "securityLevel"  : SecurityLevel::MASTER as u8,
                     "data": decode("AuryIuMtRrl/VviQuyLD1l4nmxi9ogPzC9LT7tdpo0di", Encoding::Base64).unwrap(),
                     "readOnly" : false,
         }),
         // this key must be filtered out
-        json!({
-                    "id": 0,
-                    "type" : KeyType::ECDSA_SECP256K1,
-                    "purpose": Purpose::AUTHENTICATION,
-                    "securityLevel" : SecurityLevel::CRITICAL,
-                    "disabledAt" : 42,
+        platform_value!({
+                    "id": 0u32,
+                    "type" : KeyType::ECDSA_SECP256K1 as u8,
+                    "purpose": Purpose::AUTHENTICATION as u8,
+                    "securityLevel" : SecurityLevel::CRITICAL as u8,
+                    "disabledAt" : 42u64,
                     "data": decode("AuryIuMtRrl/VviQuyLD1l4nmxi9ogPzC9LT7tdpo0di", Encoding::Base64).unwrap(),
                     "readOnly" : false,
         }),

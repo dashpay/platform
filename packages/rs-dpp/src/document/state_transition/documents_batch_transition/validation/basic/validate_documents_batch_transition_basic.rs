@@ -223,7 +223,7 @@ fn validate_raw_transitions<'a>(
     let mut result = ValidationResult::default();
 
     for raw_document_transition in raw_document_transitions {
-        let Some(document_type) = raw_document_transition.get_optional_str("$type").map_err(ProtocolError::ValueError) else {
+        let Some(document_type) = raw_document_transition.get_optional_str("$type").map_err(ProtocolError::ValueError)? else {
                 result.add_error(BasicError::MissingDocumentTransitionTypeError);
                 return Ok(result);
         };
@@ -270,7 +270,7 @@ fn validate_raw_transitions<'a>(
 
                 if action == Action::Create {
                     let document_id =
-                        Identifier::from_bytes(&raw_document_transition.get_bytes("$id")?)?;
+                        Identifier::from_bytes(&raw_document_transition.get_identifier("$id")?)?;
                     let entropy = raw_document_transition.get_bytes("$entropy")?;
                     // validate the id  generation
                     let generated_document_id =

@@ -1,7 +1,6 @@
 use std::{convert::TryInto, sync::Arc};
 
 use platform_value::Value;
-use serde_json::Value as JsonValue;
 
 use crate::consensus::basic::invalid_identifier_error::InvalidIdentifierError;
 use crate::data_contract::state_transition::errors::MissingDataContractIdError;
@@ -11,7 +10,6 @@ use crate::{
     prelude::Identifier,
     state_repository::StateRepositoryLike,
     state_transition::state_transition_execution_context::StateTransitionExecutionContext,
-    util::json_value::JsonValueExt,
     validation::ValidationResult,
     ProtocolError,
 };

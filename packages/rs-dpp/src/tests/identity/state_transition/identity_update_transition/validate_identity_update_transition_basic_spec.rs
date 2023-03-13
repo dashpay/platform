@@ -26,6 +26,7 @@ use crate::{
     NativeBlsModule, NonConsensusError,
 };
 use jsonschema::error::ValidationErrorKind;
+use platform_value::{platform_value, Value};
 use serde_json::{json, Value as JsonValue};
 use std::{convert::TryInto, sync::Arc};
 use test_case::test_case;
@@ -37,8 +38,8 @@ struct TestData {
     ec_private_key: [u8; 32],
     identity_public_key: IdentityPublicKey,
     state_transition: IdentityUpdateTransition,
-    raw_state_transition: JsonValue,
-    raw_public_key_to_add: JsonValue,
+    raw_state_transition: Value,
+    raw_public_key_to_add: Value,
     public_keys_signatures_validator: PublicKeysSignaturesValidator<NativeBlsModule>,
 }
 
@@ -82,12 +83,12 @@ fn setup_test() -> TestData {
         .expect("transition should be singed");
     let raw_state_transition = state_transition.to_object(false).unwrap();
 
-    let raw_public_key_to_add = json!({
-        "id": 0,
-        "type": KeyType::ECDSA_SECP256K1,
+    let raw_public_key_to_add = platform_value!({
+        "id": 0u32,
+        "type": KeyType::ECDSA_SECP256K1 as u8,
         "data":  base64::decode("AuryIuMtRrl/VviQuyLD1l4nmxi9ogPzC9LT7tdpo0di").unwrap(),
-        "purpose": Purpose::AUTHENTICATION,
-        "securityLevel": SecurityLevel::MASTER,
+        "purpose": Purpose::AUTHENTICATION as u8,
+        "securityLevel": SecurityLevel::MASTER as u8,
         "readOnly": false,
     });
 
