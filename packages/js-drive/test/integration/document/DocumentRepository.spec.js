@@ -684,7 +684,7 @@ describe('DocumentRepository', function main() {
 
   beforeEach(async function beforeEach() {
     const now = 86400;
-    container = await createTestDIContainer();
+    container = await createTestDIContainer(this.dppWasm);
 
     dataContract = getDataContractFixture();
     documents = getDocumentsFixture(dataContract).slice(0, 5);

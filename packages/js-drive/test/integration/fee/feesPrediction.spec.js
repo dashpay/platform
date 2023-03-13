@@ -131,7 +131,7 @@ describe('feesPrediction', () => {
   });
 
   beforeEach(async function beforeEach() {
-    container = await createTestDIContainer();
+    container = await createTestDIContainer(this.dppWasm);
 
     const latestBlockExecutionContext = container.resolve('latestBlockExecutionContext');
 
