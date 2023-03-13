@@ -1,9 +1,10 @@
-use anyhow::anyhow;
+use anyhow::{anyhow, Context};
 use serde_json::Value;
 use std::convert::TryInto;
 use std::sync::Arc;
 
 use crate::consensus::signature::{IdentityNotFoundError, SignatureError};
+use crate::ProtocolError;
 use crate::{
     block_time_window::validate_time_in_block_time_window::validate_time_in_block_time_window,
     identity::validation::{RequiredPurposeAndSecurityLevelValidator, TPublicKeysValidator},
@@ -66,9 +67,13 @@ where
 
         // copy identity
         let mut identity = stored_identity.clone();
+        let previous_revision = state_transition
+            .get_revision()
+            .checked_sub(1)
+            .context("the previous revision of transition cannot be negative")?;
 
         // Check revision
-        if identity.get_revision() != (state_transition.get_revision() - 1) {
+        if identity.get_revision() != previous_revision {
             validation_result.add_error(StateError::InvalidIdentityRevisionError {
                 identity_id: state_transition.get_identity_id().to_owned(),
                 current_revision: identity.get_revision(),

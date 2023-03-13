@@ -63,7 +63,6 @@ pub mod prelude {
     pub type Revision = u64;
     pub type DataContractVersion = u32;
 
-    pub type PublicKeyId = u32;
     pub type Balance = u64;
     pub type Fee = i64;
 }

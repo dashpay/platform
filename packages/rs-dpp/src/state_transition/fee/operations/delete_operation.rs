@@ -33,7 +33,7 @@ impl OperationLike for DeleteOperation {
     }
 
     fn get_storage_cost(&self) -> Fee {
-        -1 * (self.key_size.saturating_add(self.value_size) as Fee)
+        -(self.key_size.saturating_add(self.value_size) as Fee)
             .saturating_mul(STORAGE_CREDIT_PER_BYTE)
     }
 }

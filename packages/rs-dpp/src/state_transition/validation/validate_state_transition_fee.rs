@@ -85,7 +85,7 @@ where
                 if execution_context.is_dry_run() {
                     return Ok(result);
                 }
-                balance + identity.get_balance()
+                balance.saturating_add(identity.get_balance())
             }
             StateTransition::DataContractCreate(st) => {
                 let balance = self.get_identity_owner_balance(st).await?;

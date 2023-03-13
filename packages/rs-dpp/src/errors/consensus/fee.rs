@@ -1,6 +1,6 @@
 use thiserror::Error;
 
-use crate::prelude::{Fee, Balance};
+use crate::prelude::{Balance, Fee};
 
 #[derive(Error, Debug)]
 pub enum FeeError {

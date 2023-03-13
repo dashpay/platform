@@ -9,11 +9,16 @@ pub fn validate_time_in_block_time_window(
     last_block_header_time_millis: TimestampMillis,
     time_to_check_millis: TimestampMillis,
 ) -> TimeWindowValidationResult {
-    let time_window_start = last_block_header_time_millis - BLOCK_TIME_WINDOW_MILLIS;
-    let time_window_end = last_block_header_time_millis + BLOCK_TIME_WINDOW_MILLIS;
+    let maybe_time_window_start =
+        last_block_header_time_millis.checked_sub(BLOCK_TIME_WINDOW_MILLIS);
+    let maybe_time_window_end = last_block_header_time_millis.checked_add(BLOCK_TIME_WINDOW_MILLIS);
 
-    let valid =
-        time_to_check_millis >= time_window_start && time_to_check_millis <= time_window_end;
+    let time_window_start = maybe_time_window_start.unwrap_or(TimestampMillis::MIN);
+    let time_window_end = maybe_time_window_end.unwrap_or(TimestampMillis::MAX);
+
+    let valid = maybe_time_window_start.is_some()
+        && maybe_time_window_end.is_some()
+        && (time_to_check_millis >= time_window_start && time_to_check_millis <= time_window_end);
 
     TimeWindowValidationResult {
         time_window_start,

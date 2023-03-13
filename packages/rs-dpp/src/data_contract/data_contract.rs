@@ -19,7 +19,7 @@ use crate::data_contract::contract_config::{
 };
 
 use crate::data_contract::get_binary_properties_from_schema::get_binary_properties;
-use crate::prelude::{ProtocolVersion, DataContractVersion};
+use crate::prelude::{DataContractVersion, ProtocolVersion};
 use crate::util::cbor_value::CborCanonicalMap;
 use crate::util::deserializer;
 use crate::util::deserializer::SplitProtocolVersionOutcome;

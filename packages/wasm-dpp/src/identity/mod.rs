@@ -16,8 +16,8 @@ use dpp::{ProtocolError, SerdeParsingError};
 
 use crate::errors::from_dpp_err;
 use crate::identifier::IdentifierWrapper;
-use crate::utils::{to_vec_of_serde_values, WithJsError};
 use crate::utils::{self, try_to_u64};
+use crate::utils::{to_vec_of_serde_values, WithJsError};
 use crate::MetadataWasm;
 pub use identity_public_key::*;
 
