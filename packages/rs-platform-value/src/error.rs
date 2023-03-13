@@ -1,5 +1,5 @@
-use std::error;
 use std::fmt::Display;
+
 use thiserror::Error;
 
 #[derive(Error, Clone, Eq, PartialEq, Debug)]
@@ -31,12 +31,14 @@ impl serde::ser::Error for Error {
     where
         T: Display,
     {
+        println!("{msg}");
         todo!()
     }
 }
 
 impl serde::de::Error for Error {
     fn custom<T>(msg: T) -> Self where T: Display {
+        println!("{msg}");
         todo!()
     }
 }

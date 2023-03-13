@@ -78,6 +78,8 @@ impl Value {
                     .map(|byte| JsonValue::Number(byte.into()))
                     .collect(),
             ),
+            Value::EnumU8(_) => todo!(),
+            Value::EnumString(_) => todo!(),
         })
     }
 
@@ -152,6 +154,8 @@ impl Value {
                     .map(|byte| JsonValue::Number((*byte).into()))
                     .collect(),
             ),
+            Value::EnumU8(_) => todo!(),
+            Value::EnumString(_) => todo!(),
         })
     }
 }
@@ -290,6 +294,8 @@ impl TryInto<JsonValue> for Value {
             Value::Identifier(bytes) => {
                 JsonValue::String(bs58::encode(bytes.as_slice()).into_string())
             }
+            Value::EnumU8(_) => todo!(),
+            Value::EnumString(_) => todo!(),
         })
     }
 }

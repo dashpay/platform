@@ -48,6 +48,8 @@ impl Serialize for Value {
             Value::Identifier(bytes) => serializer.serialize_bytes(bytes),
             Value::Float(f64) => serializer.serialize_f64(*f64),
             Value::Text(string) => serializer.serialize_str(string),
+            Value::EnumU8(_x) => todo!(),
+            Value::EnumString(_x) => todo!(),
         }
     }
 }

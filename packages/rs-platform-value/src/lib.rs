@@ -1132,7 +1132,7 @@ impl<const N: usize> From<[(Value, Value); N]> for Value {
     /// let map2: Value = [(1, 2), (3, 4)].into();
     /// assert_eq!(map1, map2);
     /// ```
-    fn from(mut arr: [(Value, Value); N]) -> Self {
+    fn from(arr: [(Value, Value); N]) -> Self {
         if N == 0 {
             return Value::Map(vec![]);
         }

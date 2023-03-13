@@ -1,11 +1,10 @@
-use serde::de::DeserializeOwned;
-use serde::Serialize;
-use crate::{Error, Value};
 use crate::value_serialization::ser::Serializer;
+use crate::{Error, Value};
+use serde::{Deserialize, de::DeserializeOwned};
+use serde::Serialize;
 
-pub mod ser;
 pub mod de;
-
+pub mod ser;
 
 /// Convert a `T` into `platform_value::Value` which is an enum that can represent
 /// data.
@@ -62,8 +61,8 @@ pub mod de;
 /// }
 /// ```
 pub fn to_value<T>(value: T) -> Result<Value, Error>
-    where
-        T: Serialize,
+where
+    T: Serialize,
 {
     value.serialize(Serializer)
 }
@@ -103,9 +102,45 @@ pub fn to_value<T>(value: T) -> Result<Value, Error>
 /// is wrong with the data, for example required struct fields are missing from
 /// the JSON map or some number is too big to fit in the expected primitive
 /// type.
-pub fn from_value<T>(value: Value) -> Result<T, Error>
-    where
-        T: DeserializeOwned,
+pub fn from_value<'de, T>(value: Value) -> Result<T, Error>
+where
+    T: Deserialize<'de>,
 {
-    T::deserialize(value)
+    T::deserialize(de::Deserializer(value))
+}
+
+#[cfg(test)]
+mod tests {
+    use std::collections::HashMap;
+
+    use serde::{Deserialize, Serialize};
+
+    use super::*;
+
+    #[test]
+    fn yeet() {
+        #[derive(Debug, PartialEq, Eq, Clone, Serialize, Deserialize)]
+        struct Yeet {
+            arr: Vec<String>,
+            map: HashMap<String, char>,
+            number: i32,
+            static_string: &'static str,
+        }
+
+        let mut hm = HashMap::new();
+        hm.insert("wow".to_owned(), 'a');
+        hm.insert("lol".to_owned(), 'd');
+
+        let yeet = Yeet {
+            arr: vec!["kek".to_owned(), "top".to_owned()],
+            map: hm,
+            number: 420,
+            static_string: "pizza",
+        };
+
+        let platform_value = to_value(yeet.clone()).expect("please");
+        let yeet_back: Yeet = from_value(platform_value).expect("please once again");
+
+        assert_eq!(yeet, yeet_back);
+    }
 }

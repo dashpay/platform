@@ -36,7 +36,7 @@ impl TryFrom<CborValue> for Value {
             CborValue::Text(string) => Self::Text(string),
             CborValue::Bool(value) => Self::Bool(value),
             CborValue::Null => Self::Null,
-            CborValue::Tag(int, value) => {
+            CborValue::Tag(_, _) => {
                 return Err(Error::Unsupported(
                     "conversion from cbor tags are currently not supported".to_string(),
                 ))
@@ -115,6 +115,8 @@ impl TryInto<CborValue> for Value {
                     .collect::<Result<Vec<(CborValue, CborValue)>, Error>>()?,
             ),
             Value::Identifier(bytes) => CborValue::Bytes(bytes.to_vec()),
+            Value::EnumU8(_) => todo!(),
+            Value::EnumString(_) => todo!(),
         })
     }
 }
@@ -122,6 +124,6 @@ impl TryInto<CborValue> for Value {
 impl TryInto<Box<CborValue>> for Box<Value> {
     type Error = Error;
     fn try_into(self) -> Result<Box<CborValue>, Self::Error> {
-        self.try_into()
+        (*self).try_into().map(Box::new)
     }
 }

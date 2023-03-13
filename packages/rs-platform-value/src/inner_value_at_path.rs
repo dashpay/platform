@@ -3,7 +3,7 @@ use crate::{Error, Value};
 
 impl Value {
     pub fn get_value_at_path<'a>(&'a self, path: &'a str) -> Result<&'a Value, Error> {
-        let mut split = path.split('.');
+        let split = path.split('.');
         let mut current_value = self;
         for path_component in split {
             let map = current_value.to_map_ref()?;
@@ -18,7 +18,7 @@ impl Value {
         &'a self,
         path: &'a str,
     ) -> Result<Option<&'a Value>, Error> {
-        let mut split = path.split('.');
+        let split = path.split('.');
         let mut current_value = self;
         for path_component in split {
             let map = current_value.to_map_ref()?;
@@ -31,7 +31,7 @@ impl Value {
     }
 
     pub fn get_mut_value_at_path<'a>(&'a mut self, path: &'a str) -> Result<&'a mut Value, Error> {
-        let mut split = path.split('.');
+        let split = path.split('.');
         let mut current_value = self;
         for path_component in split {
             let map = current_value.to_map_mut()?;
@@ -46,7 +46,7 @@ impl Value {
         &'a mut self,
         path: &'a str,
     ) -> Result<Option<&'a mut Value>, Error> {
-        let mut split = path.split('.');
+        let split = path.split('.');
         let mut current_value = self;
         for path_component in split {
             let map = current_value.to_map_mut()?;

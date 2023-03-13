@@ -1,7 +1,8 @@
-use super::Value;
-use crate::value_map::{ValueMap, ValueMapHelper};
 use core::fmt::{self, Display};
 use core::ops;
+
+use super::Value;
+use crate::value_map::{ValueMap, ValueMapHelper};
 
 /// A type that can be used to index into a `platform_value::Value`.
 ///
@@ -163,6 +164,8 @@ impl<'a> Display for Type<'a> {
             Value::Bytes(_) => formatter.write_str("bytes"),
             Value::Bytes32(_) => formatter.write_str("bytes32"),
             Value::Identifier(_) => formatter.write_str("identifier"),
+            Value::EnumU8(_) => formatter.write_str("enum u8"),
+            Value::EnumString(_) => formatter.write_str("enum string"),
         }
     }
 }
