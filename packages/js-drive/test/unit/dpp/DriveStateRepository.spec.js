@@ -37,7 +37,7 @@ describe('DriveStateRepository', () => {
   let ReadOperation;
   let StateTransitionExecutionContext;
 
-  before(() => {
+  before(function before() {
     ({ ReadOperation, StateTransitionExecutionContext } = this.dppWasm);
   });
 

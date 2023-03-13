@@ -372,7 +372,7 @@ describe('synchronizeMasternodeIdentitiesFactory', function main() {
   let blockInfo;
   let Identifier;
 
-  before(() => {
+  before(function before() {
     ({ Identifier } = this.dppWasm);
   });
 

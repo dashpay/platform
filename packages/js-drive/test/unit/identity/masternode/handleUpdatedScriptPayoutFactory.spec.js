@@ -18,7 +18,7 @@ describe('handleUpdatedScriptPayoutFactory', () => {
   let IdentityPublicKey;
   let Identity;
 
-  before(() => {
+  before(function before() {
     ({ Identity, IdentityPublicKey } = this.dppWasm);
   });
 

@@ -24,7 +24,7 @@ describe('handleNewMasternodeFactory', () => {
   let Identifier;
   let IdentityPublicKey;
 
-  before(() => {
+  before(function before() {
     ({ Identifier, IdentityPublicKey } = this.dppWasm);
   });
 

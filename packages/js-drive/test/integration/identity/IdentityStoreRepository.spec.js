@@ -23,7 +23,7 @@ describe('IdentityStoreRepository', () => {
   let Identity;
   let IdentityPublicKey;
 
-  before(() => {
+  before(function before() {
     ({ Identity, IdentityPublicKey } = this.dppWasm);
   });
 

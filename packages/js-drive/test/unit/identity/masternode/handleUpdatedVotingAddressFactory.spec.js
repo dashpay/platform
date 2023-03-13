@@ -16,7 +16,7 @@ describe('handleUpdatedVotingAddressFactory', () => {
   let IdentityPublicKey;
   let Identifier;
 
-  before(() => {
+  before(function before() {
     ({ Identifier, IdentityPublicKey } = this.dppWasm);
   });
 

@@ -7,7 +7,7 @@ describe('getPublicKeyFromPayoutScript', () => {
   let IdentityPublicKey;
   let InvalidIdentityPublicKeyTypeError;
 
-  before(() => {
+  before(function before() {
     ({ IdentityPublicKey, InvalidIdentityPublicKeyTypeError } = this.dppWasm);
   });
 

@@ -4,7 +4,7 @@ describe('createVotingIdentifier', () => {
   let smlEntry;
   let Identifier;
 
-  before(() => {
+  before(function before() {
     ({ Identifier } = this.dpp);
   });
 

@@ -19,7 +19,7 @@ describe('unserializeStateTransitionFactory', () => {
   let ValidatorResult;
   let IdentityNotFoundError;
 
-  before(() => {
+  before(function before() {
     ({
       InvalidStateTransitionTypeError,
       InvalidStateTransitionError,

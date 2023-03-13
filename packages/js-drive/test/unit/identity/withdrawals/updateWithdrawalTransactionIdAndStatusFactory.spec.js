@@ -12,7 +12,7 @@ describe('updateWithdrawalTransactionIdAndStatusFactory', () => {
   let document2Fixture;
   let Identifier;
 
-  before(() => {
+  before(function before() {
     ({ Identifier } = this.dppWasm);
   });
 

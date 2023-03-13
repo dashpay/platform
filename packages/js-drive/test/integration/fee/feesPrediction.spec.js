@@ -120,7 +120,7 @@ describe('feesPrediction', () => {
   let BlsSignatures;
   let expectPredictedFeeHigherOrEqualThanActual;
 
-  before(() => {
+  before(function before() {
     ({
       IdentityPublicKey, Identity, BlsSignatures,
     } = this.dppWasm);

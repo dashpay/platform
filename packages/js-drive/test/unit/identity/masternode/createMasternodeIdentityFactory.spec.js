@@ -19,7 +19,7 @@ describe('createMasternodeIdentityFactory', () => {
   let IdentityPublicKey;
   let ValidationResult;
 
-  before(() => {
+  before(function before() {
     ({ Identity, IdentityPublicKey, ValidationResult } = this.dppWasm);
   });
 

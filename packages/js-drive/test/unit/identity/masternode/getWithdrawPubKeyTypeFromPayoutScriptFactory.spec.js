@@ -8,7 +8,7 @@ describe('getWithdrawPubKeyTypeFromPayoutScriptFactory', () => {
   let network;
   let IdentityPublicKey;
 
-  before(() => {
+  before(function before() {
     ({ IdentityPublicKey } = this.dppWasm);
   });
 

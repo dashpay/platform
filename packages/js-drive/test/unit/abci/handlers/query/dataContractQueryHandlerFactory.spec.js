@@ -32,7 +32,7 @@ describe('dataContractQueryHandlerFactory', () => {
   let dataContractRepositoryMock;
   let Identifier;
 
-  before(() => {
+  before(function before() {
     ({ Identifier } = this.dppWasm);
   });
 

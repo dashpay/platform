@@ -13,7 +13,7 @@ describe('getFeatureFlagForHeightFactory', () => {
   let featureFlagDataContractBlockHeight;
   let Identifier;
 
-  before(() => {
+  before(function before() {
     ({ Identifier } = this.dppWasm);
   });
 

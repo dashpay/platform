@@ -21,7 +21,7 @@ describe('DataContractStoreRepository', () => {
   let blockInfo;
   let DataContract;
 
-  before(() => {
+  before(function before() {
     ({ DataContract } = this.dppWasm);
   });
 
@@ -416,8 +416,8 @@ describe('DataContractStoreRepository', () => {
 
       const notFoundDataContractResult = await repository.prove(
         [dataContract.getId(), dataContract2.getId()], {
-          useTransaction: false,
-        },
+        useTransaction: false,
+      },
       );
 
       expect(notFoundDataContractResult.getValue()).to.be.null();

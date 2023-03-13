@@ -46,7 +46,7 @@ describe('deliverTxFactory', () => {
   let StateTransitionExecutionContext;
   let ValidationResult;
 
-  before(() => {
+  before(function before() {
     ({ DashPlatformProtocol, StateTransitionExecutionContext, ValidationResult } = this.dppWasm);
   });
 
