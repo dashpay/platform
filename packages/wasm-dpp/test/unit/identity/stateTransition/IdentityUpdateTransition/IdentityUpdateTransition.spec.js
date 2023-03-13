@@ -66,9 +66,9 @@ describe('IdentityUpdateTransition', () => {
 
   describe('#setRevision', () => {
     it('should set revision', () => {
-      stateTransition.setRevision(42n);
+      stateTransition.setRevision(BigInt(42));
 
-      expect(stateTransition.getRevision()).to.equal(42n);
+      expect(stateTransition.getRevision()).to.equal(BigInt(42));
     });
   });
 

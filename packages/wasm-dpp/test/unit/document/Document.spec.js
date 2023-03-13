@@ -273,11 +273,11 @@ describe('Document', () => {
 
   describe('#setRevision/#getRevision', () => {
     it('should set $revision and get $revision', () => {
-      const revision = 5n;
+      const revision = BigInt(5);
 
       document.setRevision(revision);
 
-      expect(document.getRevision()).to.equal
+      expect(document.getRevision()).to.equal(revision);
     });
   });
 

@@ -72,7 +72,7 @@ describe('validateIdentityUpdateTransitionStateFactory', () => {
       getIdentityUpdateTransitionFixture().toObject(),
     );
 
-    stateTransition.setRevision(identity.getRevision() + 1n);
+    stateTransition.setRevision(identity.getRevision() + BigInt(1));
     stateTransition.setPublicKeyIdsToDisable(undefined);
     stateTransition.setPublicKeysDisabledAt(undefined);
 

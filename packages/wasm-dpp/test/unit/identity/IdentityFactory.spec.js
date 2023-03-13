@@ -233,7 +233,7 @@ describe('IdentityFactory', () => {
 
   describe('createIdentityUpdateTransition', () => {
     it('should create IdentityUpdateTransition', () => {
-      const revision = 1n;
+      const revision = BigInt(1);
       const disablePublicKeys = [identity.getPublicKeyById(0)];
       const addPublicKeys = [new IdentityPublicKeyCreateTransition({
         id: 0,

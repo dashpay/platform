@@ -26,7 +26,7 @@ describe('applyIdentityUpdateTransition', () => {
     stateTransition = new IdentityUpdateTransition(
       getIdentityUpdateTransitionFixture().toObject(),
     );
-    stateTransition.setRevision(stateTransition.getRevision() + 1n);
+    stateTransition.setRevision(stateTransition.getRevision() + BigInt(1));
 
     executionContext = new StateTransitionExecutionContext();
     stateTransition.setExecutionContext(executionContext);
