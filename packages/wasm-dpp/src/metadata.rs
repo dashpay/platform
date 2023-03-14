@@ -1,11 +1,11 @@
 #![allow(clippy::from_over_into)]
 
+use dpp::prelude::{ProtocolVersion, TimestampMillis};
 pub use serde::{Deserialize, Serialize};
 use wasm_bindgen::prelude::*;
 
 use crate::utils::ToSerdeJSONExt;
 use dpp::metadata::Metadata;
-use dpp::util::deserializer::ProtocolVersion;
 use dpp::util::json_value::JsonValueExt;
 
 #[wasm_bindgen(js_name=Metadata)]
@@ -52,7 +52,7 @@ impl MetadataWasm {
         let inner = Metadata {
             block_height: block_height as u64,
             core_chain_locked_height: core_chain_locked_height as u64,
-            time_ms: time_ms as u64,
+            time_ms: time_ms as TimestampMillis,
             protocol_version: protocol_version as u64 as ProtocolVersion,
         };
         Ok(inner.into())
