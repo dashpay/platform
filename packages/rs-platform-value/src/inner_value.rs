@@ -63,6 +63,11 @@ impl Value {
         map.remove_key(key)
     }
 
+    pub fn remove_many(&mut self, keys: &Vec<&str>) -> Result<(), Error> {
+        let map = self.as_map_mut_ref()?;
+        keys.into_iter().try_for_each(|key| map.remove_key(key).map(|_| ()))
+    }
+
     pub fn remove_optional_value(&mut self, key: &str) -> Result<Option<Value>, Error> {
         let map = self.as_map_mut_ref()?;
         Ok(map.remove_optional_key(key))
@@ -208,6 +213,36 @@ impl Value {
         Self::inner_array(map, key)
     }
 
+    pub fn get_optional_string_ref_map<'a, I: FromIterator<(String, &'a Value)>>(&'a self, key: &'a str) -> Result<Option<I>, Error> {
+        let map = self.to_map()?;
+        Self::inner_optional_string_ref_map(map, key)
+    }
+
+    pub fn get_string_ref_map<'a, I: FromIterator<(String, &'a Value)>>(&'a self, key: &'a str) -> Result<I, Error> {
+        let map = self.to_map()?;
+        Self::inner_string_ref_map(map, key)
+    }
+
+    pub fn get_optional_string_mut_ref_map<'a, I: FromIterator<(String, &'a mut Value)>>(&'a mut self, key: &'a str) -> Result<Option<I>, Error> {
+        let map = self.to_map_mut()?;
+        Self::inner_optional_string_mut_ref_map(map, key)
+    }
+
+    pub fn get_string_mut_ref_map<'a, I: FromIterator<(String, &'a mut Value)>>(&'a mut self, key: &'a str) -> Result<I, Error> {
+        let map = self.to_map_mut()?;
+        Self::inner_string_mut_ref_map(map, key)
+    }
+
+    // pub fn get_array_into<'a, T: TryFrom<Value>>(&'a self, key: &'a str) -> Result<Vec<T>, Error> {
+    //     let map = self.to_map()?;
+    //     Self::inner_array(map, key).and_then(|vec | vec.into_iter().map(|value| value.try_into()).collect::<Result<Vec<T>, Error>>())
+    // }
+    //
+    // pub fn get_optional_array_into<'a, T: TryFrom<Value>>(&'a self, key: &'a str) -> Result<Option<Vec<T>>, Error> {
+    //     let map = self.to_map()?;
+    //     Self::inner_optional_array(map, key)?.map(|vec | vec.into_iter().map(|value| value.try_into()).collect::<Result<Vec<T>, Error>>()).transpose()
+    // }
+
     pub fn get_optional_array_slice<'a>(
         &'a self,
         key: &'a str,
@@ -318,6 +353,47 @@ impl Value {
         Self::get_from_map(document_type, key).map(|value| value.to_array_slice())?
     }
 
+    /// Gets the inner map from a map and converts it to a string map
+    pub fn inner_string_ref_map<'a, I: FromIterator<(String, &'a Value)>>(
+        document_type: &'a [(Value, Value)],
+        key: &'a str,
+    ) -> Result<I, Error> {
+        Self::get_from_map(document_type, key).map(|value| value.to_ref_string_map())?
+    }
+
+    /// Gets the inner map from a map and converts it to a string map
+    pub fn inner_optional_string_ref_map<'a, I: FromIterator<(String, &'a Value)>>(
+        document_type: &'a [(Value, Value)],
+        key: &'a str,
+    ) -> Result<Option<I>, Error> {
+        let Some(key_value) = Self::get_optional_from_map(document_type, key) else {
+            return Ok(None);
+        };
+        if let Value::Map(map_value) = key_value {
+            return Ok(Some(Value::map_ref_into_string_map(map_value)?));
+        }
+        Ok(None)
+    }
+
+    /// Gets the inner map from a map and converts it to a string map
+    pub fn inner_string_mut_ref_map<'a, I: FromIterator<(String, &'a mut Value)>>(
+        document_type: &'a mut [(Value, Value)],
+        key: &'a str,
+    ) -> Result<I, Error> {
+        Self::get_mut_from_map(document_type, key).map(|value| value.to_ref_string_map_mut())?
+    }
+
+    /// Gets the inner map from a map and converts it to a string map
+    pub fn inner_optional_string_mut_ref_map<'a, I: FromIterator<(String, &'a mut Value)>>(
+        document_type: &'a mut [(Value, Value)],
+        key: &'a str,
+    ) -> Result<Option<I>, Error> {
+        let Some(key_value) = Self::get_optional_mut_from_map(document_type, key) else {
+            return Ok(None);
+        };
+        Ok(Some(key_value.to_ref_string_map_mut()?))
+    }
+
     /// Gets the inner btree map from a map
     pub fn inner_optional_btree_map<'a>(
         document_type: &'a [(Value, Value)],
@@ -327,7 +403,7 @@ impl Value {
             return Ok(None);
         };
         if let Value::Map(map_value) = key_value {
-            return Ok(Some(Value::map_ref_into_btree_map(map_value)?));
+            return Ok(Some(Value::map_ref_into_btree_string_map(map_value)?));
         }
         Ok(None)
     }

@@ -2,11 +2,7 @@ use platform_value::Value;
 use regex::Regex;
 
 use crate::consensus::basic::data_contract::IncompatibleRe2PatternError;
-use crate::{
-    consensus::{basic::BasicError, ConsensusError},
-    validation::ValidationResult,
-    NonConsensusError, ProtocolError,
-};
+use crate::{consensus::{basic::BasicError, ConsensusError}, validation::ValidationResult, NonConsensusError, ProtocolError, SerdeParsingError};
 
 pub type SubValidator =
     fn(path: &str, key: &str, parent: &Value, value: &Value, result: &mut ValidationResult<()>);
@@ -28,9 +24,7 @@ pub fn validate(raw_data_contract: &Value, validators: &[SubValidator]) -> Valid
                             validator(&path, key, value, current_value, &mut result);
                         }
                     } else {
-                        result.add_error(ConsensusError::SerializedObjectParsingError(
-                            "keys of properties must be strings".to_string(),
-                        ));
+                        result.add_error(NonConsensusError::SerdeParsingError(SerdeParsingError::new("keys of properties must be strings")));
                     }
                 }
             }

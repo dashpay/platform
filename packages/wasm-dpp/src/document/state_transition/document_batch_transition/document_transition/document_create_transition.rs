@@ -166,7 +166,7 @@ impl DocumentCreateTransitionWasm {
             .map_err(ProtocolError::ValueError)
             .with_js_error()?;
         let map = value
-            .to_btree_ref_map()
+            .to_btree_ref_string_map()
             .map_err(ProtocolError::ValueError)
             .with_js_error()?;
         let js_value = json_value.serialize(&serde_wasm_bindgen::Serializer::json_compatible())?;

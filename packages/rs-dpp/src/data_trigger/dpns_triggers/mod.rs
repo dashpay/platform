@@ -69,7 +69,7 @@ where
     let records = data
         .get(PROPERTY_RECORDS)
         .ok_or_else(|| anyhow!("property '{}' doesn't exist", PROPERTY_RECORDS))?
-        .to_btree_ref_map()
+        .to_btree_ref_string_map()
         .map_err(ProtocolError::ValueError)?;
 
     let rule_allow_subdomains = data

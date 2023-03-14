@@ -84,7 +84,7 @@ impl Value {
     }
 
     pub fn try_into_validating_btree_map_json(self) -> Result<BTreeMap<String, JsonValue>, Error> {
-        self.into_btree_map()?
+        self.into_btree_string_map()?
             .into_iter()
             .map(|(key, value)| Ok((key, value.try_into_validating_json()?)))
             .collect()
@@ -345,7 +345,7 @@ impl BTreeValueJsonConverter for BTreeMap<String, Value> {
 
     fn from_json_value(value: JsonValue) -> Result<Self, Error> {
         let platform_value: Value = value.into();
-        platform_value.into_btree_map()
+        platform_value.into_btree_string_map()
     }
 }
 

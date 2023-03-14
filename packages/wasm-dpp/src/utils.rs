@@ -44,7 +44,7 @@ impl ToSerdeJSONExt for JsValue {
     /// as `JsValue` must be stringified first
     fn with_serde_to_platform_value_map(&self) -> Result<BTreeMap<String, Value>, JsValue> {
         self.with_serde_to_platform_value()?
-            .into_btree_map()
+            .into_btree_string_map()
             .map_err(ProtocolError::ValueError)
             .with_js_error()
     }

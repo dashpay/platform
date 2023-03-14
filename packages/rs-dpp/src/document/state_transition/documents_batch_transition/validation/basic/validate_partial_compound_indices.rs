@@ -30,7 +30,7 @@ pub fn validate_partial_compound_indices<'a>(
         result.merge(validate_indices(
             &indices,
             document_type,
-            &transition.to_btree_ref_map()?,
+            &transition.to_btree_ref_string_map()?,
         ));
     }
 

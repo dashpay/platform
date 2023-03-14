@@ -426,7 +426,7 @@ async fn property_in_document_transition_should_be_present(property: &str) {
         schema_error.kind(),
         ValidationErrorKind::Required {
             property: JsonValue::String(missing_property)
-        } if missing_property.into::<Value>() == property
+        } if missing_property.into() == property
     ));
 }
 

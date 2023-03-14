@@ -252,7 +252,7 @@ where
                     .as_array()
                     .map(|vec| {
                         vec.iter()
-                            .map(|v| v.to_ref_map::<M>())
+                            .map(|v| v.to_ref_string_map::<M>())
                             .collect::<Result<I, Error>>()
                     })
                     .ok_or_else(|| Error::StructureError(format!("{key} must be a an array")))

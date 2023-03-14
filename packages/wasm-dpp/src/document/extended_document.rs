@@ -145,7 +145,7 @@ impl ExtendedDocumentWasm {
     pub fn set_data(&mut self, d: JsValue) -> Result<(), JsValue> {
         let properties_as_value = d.with_serde_to_platform_value()?;
         self.0.document.properties = properties_as_value
-            .into_btree_map()
+            .into_btree_string_map()
             .map_err(ProtocolError::ValueError)
             .with_js_error()?;
         Ok(())

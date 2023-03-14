@@ -115,7 +115,7 @@ impl DocumentTransitionObjectLike for DocumentCreateTransition {
         data_contract: DataContract,
     ) -> Result<Self, ProtocolError> {
         let value: Value = json_value.into();
-        let mut map = value.into_btree_map().map_err(ProtocolError::ValueError)?;
+        let mut map = value.into_btree_string_map().map_err(ProtocolError::ValueError)?;
 
         let document_type = map.get_str("$type")?;
 
@@ -145,7 +145,7 @@ impl DocumentTransitionObjectLike for DocumentCreateTransition {
         data_contract: DataContract,
     ) -> Result<DocumentCreateTransition, ProtocolError> {
         let map = raw_transition
-            .into_btree_map()
+            .into_btree_string_map()
             .map_err(ProtocolError::ValueError)?;
         Self::from_value_map(map, data_contract)
     }
@@ -342,7 +342,7 @@ mod test {
         let object_transition = document
             .to_object()
             .expect("no errors")
-            .into_btree_map()
+            .into_btree_string_map()
             .unwrap();
         assert_eq!(object_transition.get_identifier_bytes("$id").unwrap(), id);
         assert_eq!(

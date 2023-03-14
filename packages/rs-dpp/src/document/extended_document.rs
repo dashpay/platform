@@ -140,7 +140,7 @@ impl ExtendedDocument {
         data_contract: DataContract,
     ) -> Result<Self, ProtocolError> {
         let mut properties = document_value
-            .into_btree_map()
+            .into_btree_string_map()
             .map_err(ProtocolError::ValueError)?;
         let document_type_name = properties
             .remove_string(property_names::DOCUMENT_TYPE)
@@ -173,7 +173,7 @@ impl ExtendedDocument {
         data_contract: DataContract,
     ) -> Result<Self, ProtocolError> {
         let mut properties = document_value
-            .into_btree_map()
+            .into_btree_string_map()
             .map_err(ProtocolError::ValueError)?;
         let document_type_name = properties
             .remove_string(property_names::DOCUMENT_TYPE)

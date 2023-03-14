@@ -22,7 +22,8 @@ use crate::{
 };
 
 use jsonschema::error::ValidationErrorKind;
-use serde_json::{json, Value};
+use serde_json::{json, Value as JsonValue};
+use platform_value::{platform_value, Value};
 
 struct TestData {
     version_validator: ProtocolVersionValidator,
@@ -88,7 +89,7 @@ async fn should_be_present(property: &str) {
     assert!(matches!(
         schema_error.kind(),
         ValidationErrorKind::Required {
-            property: Value::Text(missing_property)
+            property: Value::String(missing_property)
         } if missing_property == property
     ));
 }
@@ -109,7 +110,7 @@ async fn should_be_integer(property: &str) {
     )
     .expect("validator should be created");
 
-    raw_state_transition[property] = json!("1");
+    raw_state_transition[property] = platform_value!("1");
 
     let result = validator
         .validate(&raw_state_transition, &Default::default())
@@ -138,7 +139,7 @@ async fn protocol_version_should_be_valid() {
     )
     .expect("validator should be created");
 
-    raw_state_transition[property_names::PROTOCOL_VERSION] = json!(-1);
+    raw_state_transition[property_names::PROTOCOL_VERSION] = platform_value!(-1);
 
     let result = validator
         .validate(&raw_state_transition, &Default::default())
@@ -165,7 +166,7 @@ async fn type_should_be_equal_4() {
     )
     .expect("validator should be created");
 
-    raw_state_transition[property_names::TRANSITION_TYPE] = json!(666);
+    raw_state_transition[property_names::TRANSITION_TYPE] = platform_value!(666);
 
     let result = validator
         .validate(&raw_state_transition, &Default::default())
@@ -196,7 +197,7 @@ async fn property_should_be_byte_array(property_name: &str) {
     .expect("validator should be created");
 
     let array = ["string"; 32];
-    raw_state_transition[property_name] = json!(array);
+    raw_state_transition[property_name] = platform_value!(array);
 
     let result = validator
         .validate(&raw_state_transition, &Default::default())
@@ -232,7 +233,7 @@ async fn should_be_not_less_than_n_bytes(property_name: &str, n_bytes: usize) {
     .expect("validator should be created");
 
     let array = vec![0u8; n_bytes - 1];
-    raw_state_transition[property_name] = json!(array);
+    raw_state_transition[property_name] = platform_value!(array);
 
     let result = validator
         .validate(&raw_state_transition, &Default::default())
@@ -263,7 +264,7 @@ async fn should_be_not_longer_than_n_bytes(property_name: &str, n_bytes: usize) 
     .expect("validator should be created");
 
     let array = vec![0u8; n_bytes + 1];
-    raw_state_transition[property_name] = json!(array);
+    raw_state_transition[property_name] = platform_value!(array);
 
     let result = validator
         .validate(&raw_state_transition, &Default::default())
@@ -292,7 +293,7 @@ async fn signature_public_key_id_should_be_valid() {
     )
     .expect("validator should be created");
 
-    raw_state_transition[property_names::SIGNATURE_PUBLIC_KEY_ID] = json!(-1);
+    raw_state_transition[property_names::SIGNATURE_PUBLIC_KEY_ID] = platform_value!(-1);
 
     let result = validator
         .validate(&raw_state_transition, &Default::default())
@@ -321,7 +322,7 @@ async fn should_allow_making_backward_compatible_changes() {
     .expect("validator should be created");
 
     raw_state_transition[property_names::DATA_CONTRACT]["documents"]["indexedDocument"]
-        ["properties"]["newProp"] = json!({
+        ["properties"]["newProp"] = platform_value!({
         "type" : "integer",
         "minimum" : 0,
 
@@ -350,7 +351,7 @@ async fn should_have_existing_documents_schema_backward_compatible() {
     .expect("validator should be created");
 
     raw_state_transition[property_names::DATA_CONTRACT]["documents"]["niceDocument"]["required"]
-        .push(json!("name"))
+        .push(platform_value!("name"))
         .unwrap();
 
     let result = validator

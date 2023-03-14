@@ -9,6 +9,7 @@ mod validate_instant_asset_lock_proof_structure_factory {
     use dashcore::{PrivateKey, Transaction};
     use jsonschema::error::ValidationErrorKind;
     use serde_json::Value as JsonValue;
+    use platform_value::Value;
 
     use crate::assert_consensus_errors;
     use crate::consensus::ConsensusError;
@@ -28,7 +29,7 @@ mod validate_instant_asset_lock_proof_structure_factory {
     struct TestData {
         pub validate_instant_asset_lock_proof_structure:
             InstantAssetLockProofStructureValidator<MockStateRepositoryLike>,
-        pub raw_proof: JsonValue,
+        pub raw_proof: Value,
         pub transaction: Transaction,
         pub public_key_hash: Vec<u8>,
         pub state_repository_mock: Arc<MockStateRepositoryLike>,

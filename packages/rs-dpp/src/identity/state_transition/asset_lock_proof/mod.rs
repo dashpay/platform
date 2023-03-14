@@ -3,7 +3,7 @@ use std::convert::{TryFrom, TryInto};
 use dashcore::Transaction;
 use serde::de::Error as DeError;
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
-use serde_json::{Error, Value as JsonValue};
+use serde_json::{Value as JsonValue};
 
 pub use asset_lock_proof_validator::*;
 pub use asset_lock_public_key_hash_fetcher::*;
@@ -133,8 +133,8 @@ impl AssetLockProof {
         }
     }
 
-    pub fn to_raw_object(&self) -> Result<JsonValue, Error> {
-        serde_json::to_value(self)
+    pub fn to_raw_object(&self) -> Result<Value, ProtocolError> {
+        platform_value::to_value(self).map_err(ProtocolError::ValueError)
     }
 }
 

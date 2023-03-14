@@ -471,14 +471,14 @@ impl Document {
         let platform_value: Value = document_value.into();
 
         document.properties = platform_value
-            .into_btree_map()
+            .into_btree_string_map()
             .map_err(ProtocolError::ValueError)?;
         Ok(document)
     }
 
     pub fn from_platform_value(document_value: Value) -> Result<Self, ProtocolError> {
         let mut properties = document_value
-            .into_btree_map()
+            .into_btree_string_map()
             .map_err(ProtocolError::ValueError)?;
         let mut document = Self {
             ..Default::default()

@@ -472,7 +472,7 @@ impl DocumentFieldType {
             DocumentFieldType::Object(inner_fields) => {
                 if let Value::Map(map) = value {
                     let mut value_map =
-                        Value::map_into_btree_map(map).map_err(ProtocolError::ValueError)?;
+                        Value::map_into_btree_string_map(map).map_err(ProtocolError::ValueError)?;
                     let mut r_vec = vec![];
                     inner_fields.iter().try_for_each(|(key, field)| {
                         if let Some(value) = value_map.remove(key) {
@@ -608,7 +608,7 @@ impl DocumentFieldType {
                 let Some(value_map) = value.as_map() else {
                     return Err(get_field_type_matching_error())
                 };
-                let value_map = Value::map_ref_into_btree_map(value_map)?;
+                let value_map = Value::map_ref_into_btree_string_map(value_map)?;
                 let mut r_vec = vec![];
                 inner_fields.iter().try_for_each(|(key, field)| {
                     if let Some(value) = value_map.get(key) {

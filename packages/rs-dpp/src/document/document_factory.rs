@@ -152,7 +152,7 @@ where
         let document = Document {
             id: document_id.to_buffer(),
             owner_id: owner_id.to_buffer(),
-            properties: data.into_btree_map().map_err(ProtocolError::ValueError)?,
+            properties: data.into_btree_string_map().map_err(ProtocolError::ValueError)?,
             revision,
             created_at,
             updated_at,

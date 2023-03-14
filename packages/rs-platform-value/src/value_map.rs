@@ -104,13 +104,13 @@ impl Value {
     ///         (Value::Text(String::from("key")), Value::Float(18.)),
     ///     ]
     /// );
-    /// assert_eq!(value.into_btree_map(), Ok(BTreeMap::from([(String::from("key"), Value::Float(18.))])));
+    /// assert_eq!(value.into_btree_string_map(), Ok(BTreeMap::from([(String::from("key"), Value::Float(18.))])));
     ///
     /// let value = Value::Bool(true);
-    /// assert_eq!(value.into_btree_map(), Err(Error::StructureError("value is not a map".to_string())))
+    /// assert_eq!(value.into_btree_string_map(), Err(Error::StructureError("value is not a map".to_string())))
     /// ```
-    pub fn into_btree_map(self) -> Result<BTreeMap<String, Value>, Error> {
-        Self::map_into_btree_map(self.into_map()?)
+    pub fn into_btree_string_map(self) -> Result<BTreeMap<String, Value>, Error> {
+        Self::map_into_btree_string_map(self.into_map()?)
     }
 
     /// If the `Value` is a `Map`, returns a the associated `BTreeMap<String, Value>` data as `Ok`.
@@ -125,13 +125,13 @@ impl Value {
     ///         (Value::Text(String::from("key")), Value::Float(18.)),
     ///     ]
     /// );
-    /// assert_eq!(value.to_btree_ref_map(), Ok(BTreeMap::from([(String::from("key"), &Value::Float(18.))])));
+    /// assert_eq!(value.to_btree_ref_string_map(), Ok(BTreeMap::from([(String::from("key"), &Value::Float(18.))])));
     ///
     /// let value = Value::Bool(true);
-    /// assert_eq!(value.to_btree_ref_map(), Err(Error::StructureError("value is not a map".to_string())))
+    /// assert_eq!(value.to_btree_ref_string_map(), Err(Error::StructureError("value is not a map".to_string())))
     /// ```
-    pub fn to_btree_ref_map(&self) -> Result<BTreeMap<String, &Value>, Error> {
-        Self::map_ref_into_btree_map(self.to_map_ref()?)
+    pub fn to_btree_ref_string_map(&self) -> Result<BTreeMap<String, &Value>, Error> {
+        Self::map_ref_into_btree_string_map(self.to_map_ref()?)
     }
 
     /// If the `Value` is a `Map`, returns a the associated `BTreeMap<String, Value>` data as `Ok`.
@@ -146,15 +146,15 @@ impl Value {
     ///         (Value::Text(String::from("key")), Value::Float(18.)),
     ///     ]
     /// );
-    /// assert_eq!(value.to_ref_map::<BTreeMap<_,_>>(), Ok(BTreeMap::from([(String::from("key"), &Value::Float(18.))])));
+    /// assert_eq!(value.to_ref_string_map::<BTreeMap<_,_>>(), Ok(BTreeMap::from([(String::from("key"), &Value::Float(18.))])));
     ///
-    /// assert_eq!(value.to_ref_map::<Vec<(_,_)>>(), Ok(vec![(String::from("key"), &Value::Float(18.))]));
+    /// assert_eq!(value.to_ref_string_map::<Vec<(_,_)>>(), Ok(vec![(String::from("key"), &Value::Float(18.))]));
     ///
     /// let value = Value::Bool(true);
-    /// assert_eq!(value.to_ref_map::<Vec<(_,_)>>(), Err(Error::StructureError("value is not a map".to_string())))
+    /// assert_eq!(value.to_ref_string_map::<Vec<(_,_)>>(), Err(Error::StructureError("value is not a map".to_string())))
     /// ```
-    pub fn to_ref_map<'a, I: FromIterator<(String, &'a Value)>>(&'a self) -> Result<I, Error> {
-        Self::map_ref_into_map(self.to_map_ref()?)
+    pub fn to_ref_string_map<'a, I: FromIterator<(String, &'a Value)>>(&'a self) -> Result<I, Error> {
+        Self::map_ref_into_string_map(self.to_map_ref()?)
     }
 
     /// If the `Value` is a `Map`, returns a the associated `BTreeMap<String, Value>` data as `Ok`.
@@ -169,23 +169,23 @@ impl Value {
     ///         (Value::Text(String::from("key")), Value::Float(18.)),
     ///     ]
     /// );
-    /// assert_eq!(value.to_ref_map_mut::<BTreeMap<_,_>>(), Ok(BTreeMap::from([(String::from("key"), &mut Value::Float(18.))])));
+    /// assert_eq!(value.to_ref_string_map_mut::<BTreeMap<_,_>>(), Ok(BTreeMap::from([(String::from("key"), &mut Value::Float(18.))])));
     ///
-    /// assert_eq!(value.to_ref_map_mut::<Vec<(_,_)>>(), Ok(vec![(String::from("key"), &mut Value::Float(18.))]));
+    /// assert_eq!(value.to_ref_string_map_mut::<Vec<(_,_)>>(), Ok(vec![(String::from("key"), &mut Value::Float(18.))]));
     ///
     /// let mut value = Value::Bool(true);
-    /// assert_eq!(value.to_ref_map_mut::<Vec<(_,_)>>(), Err(Error::StructureError("value is not a map".to_string())))
+    /// assert_eq!(value.to_ref_string_map_mut::<Vec<(_,_)>>(), Err(Error::StructureError("value is not a map".to_string())))
     /// ```
-    pub fn to_ref_map_mut<'a, I: FromIterator<(String, &'a mut Value)>>(
+    pub fn to_ref_string_map_mut<'a, I: FromIterator<(String, &'a mut Value)>>(
         &'a mut self,
     ) -> Result<I, Error> {
-        Self::map_mut_ref_into_map(self.as_map_mut_ref()?)
+        Self::map_mut_ref_into_string_map(self.as_map_mut_ref()?)
     }
 
     /// Takes a ValueMap which is a `Vec<(Value, Value)>`
     /// Returns a BTreeMap<String, Value> as long as each Key is a String
     /// Returns `Err(Error::Structure("reason"))` otherwise.
-    pub fn map_into_btree_map(map: ValueMap) -> Result<BTreeMap<String, Value>, Error> {
+    pub fn map_into_btree_string_map(map: ValueMap) -> Result<BTreeMap<String, Value>, Error> {
         map.into_iter()
             .map(|(key, value)| {
                 let key = key
@@ -199,7 +199,7 @@ impl Value {
     /// Takes a ref to a ValueMap which is a `&Vec<(Value, Value)>`
     /// Returns a BTreeMap<String, &Value> as long as each Key is a String
     /// Returns `Err(Error::Structure("reason"))` otherwise.
-    pub fn map_ref_into_btree_map(map: &ValueMap) -> Result<BTreeMap<String, &Value>, Error> {
+    pub fn map_ref_into_btree_string_map(map: &ValueMap) -> Result<BTreeMap<String, &Value>, Error> {
         map.iter()
             .map(|(key, value)| {
                 let key = key
@@ -213,7 +213,7 @@ impl Value {
     /// Takes a ref to a ValueMap which is a `&Vec<(Value, Value)>`
     /// Returns a BTreeMap<String, &Value> as long as each Key is a String
     /// Returns `Err(Error::Structure("reason"))` otherwise.
-    pub fn map_ref_into_map<'a, I: FromIterator<(String, &'a Value)>>(
+    pub fn map_ref_into_string_map<'a, I: FromIterator<(String, &'a Value)>>(
         map: &'a ValueMap,
     ) -> Result<I, Error> {
         map.iter()
@@ -229,7 +229,7 @@ impl Value {
     /// Takes a ref to a ValueMap which is a `&Vec<(Value, Value)>`
     /// Returns a BTreeMap<String, &Value> as long as each Key is a String
     /// Returns `Err(Error::Structure("reason"))` otherwise.
-    pub fn map_mut_ref_into_map<'a, I: FromIterator<(String, &'a mut Value)>>(
+    pub fn map_mut_ref_into_string_map<'a, I: FromIterator<(String, &'a mut Value)>>(
         map: &'a mut ValueMap,
     ) -> Result<I, Error> {
         map.iter_mut()

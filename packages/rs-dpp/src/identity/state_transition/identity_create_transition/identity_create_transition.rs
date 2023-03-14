@@ -97,7 +97,7 @@ impl IdentityCreateTransition {
         let mut state_transition = Self::default();
 
         let mut transition_map = raw_state_transition
-            .into_btree_map()
+            .into_btree_string_map()
             .map_err(ProtocolError::ValueError)?;
         if let Some(keys_value_array) = transition_map
             .remove_optional_inner_value_array::<Vec<_>>(property_names::PUBLIC_KEYS)

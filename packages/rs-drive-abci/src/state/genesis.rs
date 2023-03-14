@@ -256,7 +256,7 @@ impl Platform {
         .into();
 
         let document_stub_properties = document_stub_properties_value
-            .into_btree_map()
+            .into_btree_string_map()
             .map_err(|e| Error::Protocol(ProtocolError::ValueError(e)))?;
 
         let document_cbor = document.to_buffer()?;

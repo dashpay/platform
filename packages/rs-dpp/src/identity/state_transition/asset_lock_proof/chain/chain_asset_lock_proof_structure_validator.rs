@@ -7,7 +7,8 @@ use dashcore::hashes::Hash;
 use dashcore::OutPoint;
 use lazy_static::lazy_static;
 use serde::{Deserialize, Serialize};
-use serde_json::Value;
+use serde_json::Value as JsonValue;
+use platform_value::Value;
 
 use crate::consensus::basic::identity::{
     IdentityAssetLockTransactionIsNotFoundError, InvalidAssetLockProofCoreChainHeightError,
@@ -23,7 +24,7 @@ use crate::validation::{JsonSchemaValidator, ValidationResult};
 use crate::{DashPlatformProtocolInitError, NonConsensusError};
 
 lazy_static! {
-    static ref CHAIN_ASSET_LOCK_PROOF_SCHEMA: Value = serde_json::from_str(include_str!(
+    static ref CHAIN_ASSET_LOCK_PROOF_SCHEMA: JsonValue = serde_json::from_str(include_str!(
         "../../../../schema/identity/stateTransition/assetLockProof/chainAssetLockProof.json"
     ))
     .unwrap();
@@ -71,21 +72,21 @@ where
 
     pub async fn validate(
         &self,
-        raw_asset_lock_proof: &Value,
+        asset_lock_proof_object: &Value,
         execution_context: &StateTransitionExecutionContext,
     ) -> Result<ValidationResult<PublicKeyHash>, NonConsensusError> {
         let mut result = ValidationResult::default();
 
-        result.merge(self.json_schema_validator.validate(raw_asset_lock_proof)?);
+        result.merge(self.json_schema_validator.validate(&asset_lock_proof_object.try_to_validating_json()?)?);
 
         if !result.is_valid() {
             return Ok(result);
         }
 
-        let proof: ChainAssetLockProof = serde_json::from_value(raw_asset_lock_proof.clone())
+        let proof: ChainAssetLockProof = platform_value::from_value(asset_lock_proof_object.clone())
             .map_err(|e| NonConsensusError::StateRepositoryFetchError(e.to_string()))?;
 
-        let proof_core_chain_locked_height = proof.core_chain_locked_height();
+        let proof_core_chain_locked_height = proof.core_chain_locked_height;
 
         let current_core_chain_locked_height = self
             .state_repository
@@ -103,8 +104,7 @@ where
             return Ok(result);
         }
 
-        let out_point_buffer = proof.out_point();
-        let out_point = OutPoint::consensus_decode(out_point_buffer.as_slice())
+        let out_point = OutPoint::consensus_decode(proof.out_point.as_slice())
             .map_err(|e| NonConsensusError::SerdeParsingError(e.to_string().into()))?;
 
         let output_index = out_point.vout;

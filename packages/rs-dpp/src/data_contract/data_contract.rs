@@ -112,7 +112,7 @@ impl DataContract {
 
     pub fn from_raw_object(raw_object: Value) -> Result<DataContract, ProtocolError> {
         let mut data_contract_map = raw_object
-            .into_btree_map()
+            .into_btree_string_map()
             .map_err(ProtocolError::ValueError)?;
 
         let mutability = get_contract_configuration_properties(&data_contract_map)
@@ -178,7 +178,7 @@ impl DataContract {
         json_value.replace_binary_paths(BINARY_FIELDS, ReplaceWith::Bytes)?;
 
         let value: Value = json_value.clone().into();
-        let data_contract_map = value.into_btree_map().map_err(ProtocolError::ValueError)?;
+        let data_contract_map = value.into_btree_string_map().map_err(ProtocolError::ValueError)?;
         let mut data_contract: DataContract = serde_json::from_value(json_value)?;
         data_contract.generate_binary_properties();
 
@@ -569,7 +569,7 @@ pub fn get_definitions(
         .map(|definition_value| {
             definition_value
                 .as_map()
-                .map(Value::map_ref_into_btree_map)
+                .map(Value::map_ref_into_btree_string_map)
                 .transpose()
         })
         .transpose()?

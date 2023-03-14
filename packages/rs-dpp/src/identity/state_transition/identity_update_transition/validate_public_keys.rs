@@ -1,6 +1,7 @@
 use anyhow::anyhow;
 use lazy_static::lazy_static;
 use serde_json::Value as JsonValue;
+use platform_value::Value;
 
 use crate::{
     identity::validation::{duplicated_key_ids, duplicated_keys, TPublicKeysValidator},
@@ -20,7 +21,7 @@ pub struct IdentityUpdatePublicKeysValidator {}
 impl TPublicKeysValidator for IdentityUpdatePublicKeysValidator {
     fn validate_keys(
         &self,
-        raw_public_keys: &[JsonValue],
+        raw_public_keys: &[Value],
     ) -> Result<SimpleValidationResult, crate::NonConsensusError> {
         validate_public_keys(raw_public_keys)
             .map_err(|e| crate::NonConsensusError::SerdeJsonError(e.to_string()))
@@ -28,7 +29,7 @@ impl TPublicKeysValidator for IdentityUpdatePublicKeysValidator {
 }
 
 pub fn validate_public_keys(
-    raw_public_keys: &[JsonValue],
+    raw_public_keys: &[Value],
 ) -> Result<SimpleValidationResult, ProtocolError> {
     let mut validation_result = SimpleValidationResult::default();
 
@@ -47,7 +48,7 @@ pub fn validate_public_keys(
     let public_keys: Vec<IdentityPublicKey> = raw_public_keys
         .iter()
         .cloned()
-        .map(serde_json::from_value)
+        .map(platform_value::from_value)
         .collect::<Result<_, _>>()?;
 
     // Check that there's not duplicates key ids in the state transition

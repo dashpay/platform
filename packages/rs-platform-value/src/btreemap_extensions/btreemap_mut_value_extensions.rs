@@ -39,7 +39,7 @@ where
                     .as_array_mut()
                     .map(|vec| {
                         vec.iter_mut()
-                            .map(|v| v.to_ref_map_mut::<M>())
+                            .map(|v| v.to_ref_string_map_mut::<M>())
                             .collect::<Result<I, Error>>()
                     })
                     .ok_or_else(|| Error::StructureError(format!("{key} must be a an array")))

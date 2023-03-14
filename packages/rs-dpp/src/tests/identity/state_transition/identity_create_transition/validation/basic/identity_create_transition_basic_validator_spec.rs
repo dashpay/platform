@@ -206,7 +206,7 @@ mod validate_identity_create_transition_basic_factory {
                 Arc::new(RequiredPurposeAndSecurityLevelValidator::default()),
                 MockStateRepositoryLike::new(),
             );
-            raw_state_transition.remove_key("type");
+            raw_state_transition.remove("type").unwrap();
             let result = validator
                 .validate(&raw_state_transition, &Default::default())
                 .await
@@ -278,7 +278,7 @@ mod validate_identity_create_transition_basic_factory {
                 Arc::new(RequiredPurposeAndSecurityLevelValidator::default()),
                 MockStateRepositoryLike::new(),
             );
-            raw_state_transition.remove_key("assetLockProof");
+            raw_state_transition.remove("assetLockProof").unwrap();
 
             let result = validator
                 .validate(&raw_state_transition, &Default::default())
@@ -307,7 +307,7 @@ mod validate_identity_create_transition_basic_factory {
                 Arc::new(RequiredPurposeAndSecurityLevelValidator::default()),
                 MockStateRepositoryLike::new(),
             );
-            raw_state_transition.set_key_value("assetLockProof", 1);
+            raw_state_transition.set_into_value("assetLockProof", 1).unwrap();
 
             let result = validator
                 .validate(&raw_state_transition, &Default::default())
@@ -329,8 +329,9 @@ mod validate_identity_create_transition_basic_factory {
                 Arc::new(RequiredPurposeAndSecurityLevelValidator::default()),
                 MockStateRepositoryLike::new(),
             );
+            raw_state_transition.inser
             let st_map = raw_state_transition
-                .get_mut("assetLockProof")
+                .get_string_mut_ref_map("assetLockProof")
                 .unwrap()
                 .as_object_mut()
                 .unwrap();

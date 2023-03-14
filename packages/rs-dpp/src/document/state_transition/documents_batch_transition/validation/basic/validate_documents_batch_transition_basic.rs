@@ -90,7 +90,7 @@ pub async fn validate_documents_batch_transition_basic(
     }
 
     let state_transition_map = raw_state_transition
-        .to_btree_ref_map()
+        .to_btree_ref_string_map()
         .map_err(ProtocolError::ValueError)?;
 
     let owner_id = Identifier::from(

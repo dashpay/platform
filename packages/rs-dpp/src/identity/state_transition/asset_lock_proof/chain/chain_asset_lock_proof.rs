@@ -10,9 +10,9 @@ use crate::{
 pub struct ChainAssetLockProof {
     #[serde(rename = "type")]
     asset_lock_type: u8,
-    core_chain_locked_height: u32,
+    pub core_chain_locked_height: u32,
     #[serde(with = "BigArray")]
-    out_point: [u8; 36],
+    pub out_point: [u8; 36],
 }
 
 impl ChainAssetLockProof {
@@ -28,24 +28,6 @@ impl ChainAssetLockProof {
     /// Get proof type
     pub fn asset_lock_type() -> u8 {
         1
-    }
-
-    /// Get Asset Lock proof core height
-    pub fn core_chain_locked_height(&self) -> u32 {
-        self.core_chain_locked_height
-    }
-
-    pub fn set_core_chain_locked_height(&mut self, value: u32) {
-        self.core_chain_locked_height = value;
-    }
-
-    /// Get out_point
-    pub fn out_point(&self) -> &[u8; 36] {
-        &self.out_point
-    }
-
-    pub fn set_out_point(&mut self, out_point: [u8; 36]) {
-        self.out_point = out_point;
     }
 
     /// Create identifier

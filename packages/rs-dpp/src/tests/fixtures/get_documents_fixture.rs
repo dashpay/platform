@@ -141,7 +141,7 @@ pub fn get_withdrawal_document_fixture(
     let document_type = data_contract.document_type_for_name(document_types::WITHDRAWAL)?;
 
     let value: Value = data.into();
-    let properties = value.into_btree_map().map_err(ProtocolError::ValueError)?;
+    let properties = value.into_btree_string_map().map_err(ProtocolError::ValueError)?;
 
     let id = Identifier::random(&mut rng);
     document_type.create_document_with_valid_properties(id, owner_id, properties)

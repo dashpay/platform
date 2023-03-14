@@ -364,7 +364,7 @@ fn insert_values(
             None => property_key,
             Some(prefix) => [prefix, property_key].join(".").to_owned(),
         };
-        let mut inner_properties = property_value.to_btree_ref_map()?;
+        let mut inner_properties = property_value.to_btree_ref_string_map()?;
         let type_value = inner_properties
             .remove_optional_string(property_names::TYPE)
             .map_err(ProtocolError::ValueError)?;

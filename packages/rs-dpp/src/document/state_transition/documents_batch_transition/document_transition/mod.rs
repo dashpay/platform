@@ -128,7 +128,7 @@ impl DocumentTransitionObjectLike for DocumentTransition {
         Self: Sized,
     {
         let map = raw_transition
-            .into_btree_map()
+            .into_btree_string_map()
             .map_err(ProtocolError::ValueError)?;
         Self::from_value_map(map, data_contract)
     }
