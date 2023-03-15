@@ -26,7 +26,7 @@ impl<SR> StateTransitionFeeValidator<SR>
 where
     SR: StateRepositoryLike,
 {
-    fn new(state_repository: Arc<SR>) -> Self {
+    pub fn new(state_repository: Arc<SR>) -> Self {
         let asset_lock_transition_output_fetcher =
             AssetLockTransactionOutputFetcher::new(state_repository.clone());
         StateTransitionFeeValidator {

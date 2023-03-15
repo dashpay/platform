@@ -1,3 +1,4 @@
+use std::sync::Arc;
 use std::{collections::HashSet, convert::TryInto};
 
 use anyhow::Context;
@@ -31,7 +32,7 @@ lazy_static! {
 }
 
 pub async fn validate_state_transition_identity_signature(
-    state_repository: &impl StateRepositoryLike,
+    state_repository: Arc<impl StateRepositoryLike>,
     state_transition: &mut impl StateTransitionIdentitySigned,
     bls: &impl BlsModule,
 ) -> Result<ValidationResult<()>, ProtocolError> {
@@ -317,7 +318,7 @@ mod test {
             .returning(move |_, _| Ok(Some(identity.clone())));
 
         let result = validate_state_transition_identity_signature(
-            &state_repository_mock,
+            Arc::new(state_repository_mock),
             &mut state_transition,
             &bls,
         )
@@ -342,7 +343,7 @@ mod test {
             .returning(move |_, _| Ok(None));
 
         let result = validate_state_transition_identity_signature(
-            &state_repository_mock,
+            Arc::new(state_repository_mock),
             &mut state_transition,
             &bls,
         )
@@ -375,7 +376,7 @@ mod test {
             .returning(move |_, _| Ok(Some(identity.clone())));
 
         let result = validate_state_transition_identity_signature(
-            &state_repository_mock,
+            Arc::new(state_repository_mock),
             &mut state_transition,
             &bls,
         )
@@ -407,7 +408,7 @@ mod test {
         state_transition.return_error = Some(0);
 
         let result = validate_state_transition_identity_signature(
-            &state_repository_mock,
+            Arc::new(state_repository_mock),
             &mut state_transition,
             &bls,
         )
@@ -440,7 +441,7 @@ mod test {
         state_transition.return_error = Some(1);
 
         let result = validate_state_transition_identity_signature(
-            &state_repository_mock,
+            Arc::new(state_repository_mock),
             &mut state_transition,
             &bls,
         )
@@ -471,7 +472,7 @@ mod test {
         state_transition.get_execution_context().enable_dry_run();
 
         let result = validate_state_transition_identity_signature(
-            &state_repository_mock,
+            Arc::new(state_repository_mock),
             &mut state_transition,
             &bls,
         )
@@ -498,7 +499,7 @@ mod test {
         state_transition.return_error = Some(2);
 
         let result = validate_state_transition_identity_signature(
-            &state_repository_mock,
+            Arc::new(state_repository_mock),
             &mut state_transition,
             &bls,
         )
@@ -529,7 +530,7 @@ mod test {
         state_transition.return_error = Some(3);
 
         let result = validate_state_transition_identity_signature(
-            &state_repository_mock,
+            Arc::new(state_repository_mock),
             &mut state_transition,
             &bls,
         )

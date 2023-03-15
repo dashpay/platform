@@ -28,7 +28,7 @@ pub mod generate_document_id;
 pub mod state_transition;
 mod validator;
 
-pub use document_batch_transition::DocumentsBatchTransitionWASM;
+pub use document_batch_transition::DocumentsBatchTransitionWasm;
 pub use factory::DocumentFactoryWASM;
 pub use validator::DocumentValidatorWasm;
 

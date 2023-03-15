@@ -241,7 +241,10 @@ impl StateTransitionConvert for IdentityUpdateTransition {
     }
 
     fn signature_property_paths() -> Vec<&'static str> {
-        vec![property_names::SIGNATURE]
+        vec![
+            property_names::SIGNATURE,
+            property_names::SIGNATURE_PUBLIC_KEY_ID,
+        ]
     }
 
     fn to_object(&self, skip_signature: bool) -> Result<JsonValue, ProtocolError> {

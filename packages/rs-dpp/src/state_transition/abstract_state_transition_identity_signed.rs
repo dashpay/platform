@@ -77,7 +77,11 @@ where
             KeyType::BIP13_SCRIPT_HASH => Err(ProtocolError::InvalidIdentityPublicKeyTypeError(
                 InvalidIdentityPublicKeyTypeError::new(identity_public_key.key_type),
             )),
-        }
+        }?;
+
+        self.set_signature_public_key_id(identity_public_key.id);
+
+        Ok(())
     }
 
     fn verify_signature(

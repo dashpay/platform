@@ -1,9 +1,11 @@
 use std::convert::TryInto;
 
+use async_trait::async_trait;
 use futures::future::join_all;
 use itertools::Itertools;
 
 use crate::data_contract::errors::DataContractNotPresentError;
+use crate::validation::{AsyncDataValidator, SimpleValidationResult};
 use crate::{
     block_time_window::validate_time_in_block_time_window::validate_time_in_block_time_window,
     consensus::ConsensusError,
@@ -26,6 +28,40 @@ use super::{
     execute_data_triggers::execute_data_triggers, fetch_documents::fetch_documents,
     validate_documents_uniqueness_by_indices::validate_documents_uniqueness_by_indices,
 };
+
+pub struct DocumentsBatchTransitionStateValidator<SR>
+where
+    SR: StateRepositoryLike,
+{
+    state_repository: SR,
+}
+
+#[async_trait(?Send)]
+impl<SR> AsyncDataValidator for DocumentsBatchTransitionStateValidator<SR>
+where
+    SR: StateRepositoryLike,
+{
+    type Item = DocumentsBatchTransition;
+
+    async fn validate(
+        &self,
+        data: &DocumentsBatchTransition,
+    ) -> Result<SimpleValidationResult, ProtocolError> {
+        validate_document_batch_transition_state(&self.state_repository, data).await
+    }
+}
+
+impl<SR> DocumentsBatchTransitionStateValidator<SR>
+where
+    SR: StateRepositoryLike,
+{
+    pub fn new(state_repository: SR) -> DocumentsBatchTransitionStateValidator<SR>
+    where
+        SR: StateRepositoryLike,
+    {
+        DocumentsBatchTransitionStateValidator { state_repository }
+    }
+}
 
 pub async fn validate_document_batch_transition_state(
     state_repository: &impl StateRepositoryLike,

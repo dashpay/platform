@@ -17,7 +17,9 @@ use crate::identity::state_transition::identity_update_transition::identity_upda
 
 mod abstract_state_transition;
 mod abstract_state_transition_identity_signed;
+mod state_transition_facade;
 mod state_transition_factory;
+pub use state_transition_facade::*;
 pub use state_transition_factory::*;
 
 use self::state_transition_execution_context::StateTransitionExecutionContext;
