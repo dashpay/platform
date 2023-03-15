@@ -1,6 +1,4 @@
 use std::collections::BTreeSet;
-
-use anyhow::bail;
 use platform_value::Value;
 
 use crate::consensus::basic::data_contract::InvalidJsonSchemaRefError;

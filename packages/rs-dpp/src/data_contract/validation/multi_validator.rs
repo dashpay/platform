@@ -5,7 +5,7 @@ use crate::consensus::basic::data_contract::IncompatibleRe2PatternError;
 use crate::{
     consensus::{basic::BasicError, ConsensusError},
     validation::ValidationResult,
-    NonConsensusError, ProtocolError, SerdeParsingError,
+    NonConsensusError, SerdeParsingError,
 };
 
 pub type SubValidator =
@@ -123,7 +123,6 @@ pub fn byte_array_has_no_items_as_parent_validator(
 #[cfg(test)]
 mod test {
     use platform_value::platform_value;
-    use serde_json::json;
 
     use super::*;
 

@@ -142,7 +142,7 @@ impl Value {
         value.into_array()
     }
 
-    pub fn remove_optional_array<T>(&mut self, key: &str) -> Result<Option<Vec<Value>>, Error> {
+    pub fn remove_optional_array(&mut self, key: &str) -> Result<Option<Vec<Value>>, Error> {
         let map = self.as_map_mut_ref()?;
         map.remove_optional_key(key)
             .map(|v| v.into_array())

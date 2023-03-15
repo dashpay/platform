@@ -52,33 +52,34 @@ impl IdentityPublicKeyWithWitness {
         }
     }
 
-    pub fn from_raw_object(mut raw_object: Value) -> Result<Self, ProtocolError> {
-        Ok(Self {
-            id: raw_object
-                .get_integer("id")
-                .map_err(ProtocolError::ValueError)?,
-            purpose: raw_object
-                .get_integer::<u8>("purpose")
-                .map_err(ProtocolError::ValueError)?
-                .try_into()?,
-            security_level: raw_object
-                .get_integer::<u8>("securityLevel")
-                .map_err(ProtocolError::ValueError)?
-                .try_into()?,
-            key_type: raw_object
-                .get_integer::<u8>("keyType")
-                .map_err(ProtocolError::ValueError)?
-                .try_into()?,
-            data: raw_object
-                .remove_bytes("data")
-                .map_err(ProtocolError::ValueError)?,
-            read_only: raw_object
-                .get_bool("readOnly")
-                .map_err(ProtocolError::ValueError)?,
-            signature: raw_object
-                .remove_bytes("signature")
-                .map_err(ProtocolError::ValueError)?,
-        })
+    pub fn from_raw_object(raw_object: Value) -> Result<Self, ProtocolError> {
+        raw_object.try_into().map_err(ProtocolError::ValueError)
+        // Ok(Self {
+        //     id: raw_object
+        //         .get_integer("id")
+        //         .map_err(ProtocolError::ValueError)?,
+        //     purpose: raw_object
+        //         .get_integer::<u8>("purpose")
+        //         .map_err(ProtocolError::ValueError)?
+        //         .try_into()?,
+        //     security_level: raw_object
+        //         .get_integer::<u8>("securityLevel")
+        //         .map_err(ProtocolError::ValueError)?
+        //         .try_into()?,
+        //     key_type: raw_object
+        //         .get_integer::<u8>("keyType")
+        //         .map_err(ProtocolError::ValueError)?
+        //         .try_into()?,
+        //     data: raw_object
+        //         .remove_bytes("data")
+        //         .map_err(ProtocolError::ValueError)?,
+        //     read_only: raw_object
+        //         .get_bool("readOnly")
+        //         .map_err(ProtocolError::ValueError)?,
+        //     signature: raw_object
+        //         .remove_bytes("signature")
+        //         .map_err(ProtocolError::ValueError)?,
+        // })
     }
 
     pub fn from_value_map(mut value_map: BTreeMap<String, Value>) -> Result<Self, ProtocolError> {
@@ -242,17 +243,17 @@ impl From<&IdentityPublicKeyWithWitness> for IdentityPublicKey {
 }
 
 impl TryFrom<Value> for IdentityPublicKeyWithWitness {
-    type Error = ProtocolError;
+    type Error = platform_value::Error;
 
     fn try_from(value: Value) -> Result<Self, Self::Error> {
-        IdentityPublicKeyWithWitness::from_raw_object(value)
+        platform_value::from_value(value)
     }
 }
 
 impl TryInto<Value> for IdentityPublicKeyWithWitness {
-    type Error = ProtocolError;
+    type Error = platform_value::Error;
 
     fn try_into(self) -> Result<Value, Self::Error> {
-        self.to_raw_object(false)
+        platform_value::to_value(self)
     }
 }
