@@ -17,7 +17,7 @@ use crate::{
     errors::{from_dpp_err, from_dpp_init_error},
     identity_facade::FromObjectOptions,
     state_repository::{ExternalStateRepositoryLike, ExternalStateRepositoryLikeWrapper},
-    state_transition::errors::invalid_state_transition_error::InvalidStateTransitionError,
+    state_transition::errors::invalid_state_transition_error::InvalidStateTransitionErrorWasm,
     with_js_error, DataContractCreateTransitionWasm, DataContractUpdateTransitionWasm,
     DocumentsBatchTransitionWASM, IdentityCreateTransitionWasm, IdentityTopUpTransitionWasm,
     IdentityUpdateTransitionWasm,
