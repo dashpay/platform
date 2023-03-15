@@ -39,15 +39,15 @@ describe('validateProtocolVersionFactory', () => {
   });
 
   it('should throw UnsupportedProtocolVersionError if protocolVersion is higher than latestVersion', async () => {
-    const latestVersion = protocolVersion + 1;
+    const highVersion = protocolVersion + 1;
 
-    const result = protocolVersionValidator.validate(latestVersion);
+    const result = protocolVersionValidator.validate(highVersion);
 
     await expectValidationError(result, UnsupportedProtocolVersionError);
 
     const error = result.getFirstError();
 
-    expect(error.getParsedProtocolVersion()).to.equal(latestVersion);
+    expect(error.getParsedProtocolVersion()).to.equal(highVersion);
     expect(error.getLatestVersion()).to.equal(protocolVersion);
     expect(error.getCode()).to.equal(1002);
   });
