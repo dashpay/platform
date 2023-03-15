@@ -1,7 +1,7 @@
 use crate::value_serialization::ser::Serializer;
 use crate::{Error, Value};
 use serde::Serialize;
-use serde::{de::DeserializeOwned, Deserialize};
+use serde::{Deserialize};
 
 pub mod de;
 pub mod ser;

@@ -1,5 +1,4 @@
 use crate::{Error, Value};
-use std::collections::hash_map::Entry;
 use std::collections::BTreeMap;
 
 pub type ValueMap = Vec<(Value, Value)>;
@@ -8,8 +7,11 @@ pub trait ValueMapHelper {
     fn get_key(&self, key: &str) -> Option<&Value>;
     fn get_key_mut(&mut self, key: &str) -> Option<&mut Value>;
     fn get_key_mut_or_insert(&mut self, key: &str, value: Value) -> &mut Value;
+    fn get_key_by_value_mut_or_insert(&mut self, search_key: &Value, value: Value) -> &mut Value;
+    fn insert_string_key_value(&mut self, key: String, value: Value);
     fn remove_key(&mut self, search_key: &str) -> Result<Value, Error>;
     fn remove_optional_key(&mut self, key: &str) -> Option<Value>;
+    fn remove_optional_key_value(&mut self, search_key_value: &Value) -> Option<Value>;
 }
 
 impl ValueMapHelper for ValueMap {
@@ -62,6 +64,27 @@ impl ValueMapHelper for ValueMap {
         }
     }
 
+    fn get_key_by_value_mut_or_insert(&mut self, search_key: &Value, value: Value) -> &mut Value {
+        let found = self.iter().position(|(key, _)| {
+            search_key == key
+        });
+        match found {
+            None => {
+                self.push((search_key.clone(), value));
+                let (_, value) = self.last_mut().unwrap();
+                value
+            }
+            Some(pos) => {
+                let (_, value) = self.get_mut(pos).unwrap();
+                value
+            }
+        }
+    }
+
+    fn insert_string_key_value(&mut self, key: String, value: Value) {
+        self.push((key.into(), value))
+    }
+
     fn remove_key(&mut self, search_key: &str) -> Result<Value, Error> {
         self.iter()
             .position(|(key, _)| {
@@ -86,6 +109,14 @@ impl ValueMapHelper for ValueMap {
                 } else {
                     false
                 }
+            })
+            .map(|pos| self.remove(pos).1)
+    }
+
+    fn remove_optional_key_value(&mut self, search_key_value: &Value) -> Option<Value> {
+        self.iter()
+            .position(|(key, _)| {
+                search_key_value == key
             })
             .map(|pos| self.remove(pos).1)
     }

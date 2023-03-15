@@ -1,6 +1,5 @@
 use crate::value_map::{ValueMap, ValueMapHelper};
 use crate::Identifier;
-use crate::Value::Bool;
 use crate::{Error, Value};
 use std::collections::BTreeMap;
 

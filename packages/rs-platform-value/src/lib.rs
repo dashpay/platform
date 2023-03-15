@@ -17,13 +17,13 @@ mod macros;
 pub mod string_encoding;
 pub mod system_bytes;
 mod types;
-pub mod value_map;
+mod value_map;
 mod value_serialization;
+mod patch;
+mod pointer;
 
-use crate::value_map::{ValueMap, ValueMapHelper};
+pub use crate::value_map::{ValueMap, ValueMapHelper};
 pub use error::Error;
-use serde::de::DeserializeOwned;
-use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, HashMap};
 
 pub type Hash256 = [u8; 32];
@@ -32,6 +32,8 @@ pub use btreemap_extensions::btreemap_field_replacement::ReplacementType;
 pub use types::identifier::{Identifier, IDENTIFIER_MEDIA_TYPE};
 
 pub use value_serialization::{from_value, to_value};
+
+pub use patch::{Patch, patch};
 
 /// A representation of a dynamic value that can handled dynamically
 #[non_exhaustive]
@@ -77,7 +79,7 @@ pub enum Value {
     EnumU8(Vec<u8>),
 
     /// An enumeration of strings
-    EnumString(String),
+    EnumString(Vec<String>),
 
     /// Identifier
     /// The identifier is very similar to bytes, however it is serialized to Base58 when converted
