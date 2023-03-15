@@ -1,6 +1,6 @@
-import { PrivateKey } from "@dashevo/dashcore-lib";
-import { Platform } from "../../../Platform";
-import IdentityPublicKey from "@dashevo/dpp/lib/identity/IdentityPublicKey"
+import { PrivateKey } from '@dashevo/dashcore-lib';
+import IdentityPublicKey from '@dashevo/dpp/lib/identity/IdentityPublicKey';
+import { Platform } from '../../../Platform';
 
 /**
  * Creates a funding transaction for the platform identity and returns one-time key to sign the state transition
@@ -12,25 +12,25 @@ import IdentityPublicKey from "@dashevo/dpp/lib/identity/IdentityPublicKey"
  * that can be used to sign registration/top-up state transition
  */
 export async function createIdentityTopUpTransition(this : Platform, assetLockProof: any, assetLockPrivateKey: PrivateKey, identityId: any): Promise<any> {
-    const platform = this;
-    await platform.initialize();
+  const platform = this;
+  await platform.initialize();
 
-    const { dpp } = platform;
+  const { dpp } = platform;
 
-    // @ts-ignore
-    const identityTopUpTransition = dpp.identity.createIdentityTopUpTransition(
-        identityId,  assetLockProof
-    );
+  // @ts-ignore
+  const identityTopUpTransition = dpp.identity.createIdentityTopUpTransition(
+    identityId, assetLockProof,
+  );
 
-    await identityTopUpTransition.signByPrivateKey(assetLockPrivateKey, IdentityPublicKey.TYPES.ECDSA_SECP256K1);
+  await identityTopUpTransition.signByPrivateKey(assetLockPrivateKey, IdentityPublicKey.TYPES.ECDSA_SECP256K1);
 
-    const result = await dpp.stateTransition.validateBasic(identityTopUpTransition);
+  const result = await dpp.stateTransition.validateBasic(identityTopUpTransition);
 
-    if (!result.isValid()) {
-        throw new Error(`StateTransition is invalid - ${JSON.stringify(result.getErrors())}`);
-    }
+  if (!result.isValid()) {
+    throw new Error(`StateTransition is invalid - ${JSON.stringify(result.getErrors())}`);
+  }
 
-    return identityTopUpTransition;
+  return identityTopUpTransition;
 }
 
 export default createIdentityTopUpTransition;

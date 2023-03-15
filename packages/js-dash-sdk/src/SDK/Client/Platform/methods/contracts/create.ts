@@ -1,4 +1,4 @@
-import {Platform} from "../../Platform";
+import { Platform } from '../../Platform';
 
 /**
  * Create and prepare contracts for the platform
@@ -9,9 +9,9 @@ import {Platform} from "../../Platform";
  * @returns created contracts
  */
 export async function create(this: Platform, contractDefinitions: any, identity: any): Promise<any> {
-    await this.initialize();
+  await this.initialize();
 
-    return this.dpp.dataContract.create(identity.getId(), contractDefinitions);
+  return this.dpp.dataContract.create(identity.getId(), contractDefinitions);
 }
 
 export default create;

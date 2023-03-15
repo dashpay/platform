@@ -21,7 +21,6 @@ before(function before() {
   }
 });
 
-
 after(function after() {
   this.sinon.restore();
 });

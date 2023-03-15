@@ -1,7 +1,7 @@
-import Identifier from "@dashevo/dpp/lib/Identifier";
-import {Platform} from "../../Platform";
+import Identifier from '@dashevo/dpp/lib/Identifier';
+import { Platform } from '../../Platform';
 
-import broadcastStateTransition from "../../broadcastStateTransition";
+import broadcastStateTransition from '../../broadcastStateTransition';
 
 /**
  * Register identities to the platform
@@ -12,33 +12,33 @@ import broadcastStateTransition from "../../broadcastStateTransition";
  * @returns {boolean}
  */
 export async function topUp(this: Platform, identityId: Identifier | string, amount: number): Promise<any> {
-    await this.initialize();
+  await this.initialize();
 
-    const { client } = this;
+  const { client } = this;
 
-    identityId = Identifier.from(identityId);
+  identityId = Identifier.from(identityId);
 
-    const account = await client.getWalletAccount();
+  const account = await client.getWalletAccount();
 
-    const {
-        transaction: assetLockTransaction,
-        privateKey: assetLockPrivateKey,
-        outputIndex: assetLockOutputIndex
-    } = await this.identities.utils.createAssetLockTransaction(amount);
+  const {
+    transaction: assetLockTransaction,
+    privateKey: assetLockPrivateKey,
+    outputIndex: assetLockOutputIndex,
+  } = await this.identities.utils.createAssetLockTransaction(amount);
 
-    // Broadcast Asset Lock transaction
-    await account.broadcastTransaction(assetLockTransaction);
-    // Create a proof for the asset lock transaction
-    const assetLockProof = await this.identities.utils
-      .createAssetLockProof(assetLockTransaction, assetLockOutputIndex);
+  // Broadcast Asset Lock transaction
+  await account.broadcastTransaction(assetLockTransaction);
+  // Create a proof for the asset lock transaction
+  const assetLockProof = await this.identities.utils
+    .createAssetLockProof(assetLockTransaction, assetLockOutputIndex);
 
-    const identityTopUpTransition = await this.identities.utils
-      .createIdentityTopUpTransition(assetLockProof, assetLockPrivateKey, identityId);
+  const identityTopUpTransition = await this.identities.utils
+    .createIdentityTopUpTransition(assetLockProof, assetLockPrivateKey, identityId);
 
-    // Broadcast ST
-    await broadcastStateTransition(this, identityTopUpTransition);
+  // Broadcast ST
+  await broadcastStateTransition(this, identityTopUpTransition);
 
-    return true;
+  return true;
 }
 
 export default topUp;

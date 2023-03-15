@@ -1,6 +1,6 @@
-import { Platform } from "../../Platform";
-import broadcastStateTransition from "../../broadcastStateTransition";
-import { signStateTransition } from "../../signStateTransition";
+import { Platform } from '../../Platform';
+import broadcastStateTransition from '../../broadcastStateTransition';
+import { signStateTransition } from '../../signStateTransition';
 
 /**
  * Publish contract onto the platform
@@ -11,14 +11,14 @@ import { signStateTransition } from "../../signStateTransition";
  * @return {DataContractCreateTransition}
  */
 export default async function publish(this: Platform, dataContract: any, identity: any): Promise<any> {
-    await this.initialize();
+  await this.initialize();
 
-    const { dpp } = this;
+  const { dpp } = this;
 
-    const dataContractCreateTransition = dpp.dataContract.createDataContractCreateTransition(dataContract);
+  const dataContractCreateTransition = dpp.dataContract.createDataContractCreateTransition(dataContract);
 
-    await signStateTransition(this, dataContractCreateTransition, identity, 1);
-    await broadcastStateTransition(this, dataContractCreateTransition);
+  await signStateTransition(this, dataContractCreateTransition, identity, 1);
+  await broadcastStateTransition(this, dataContractCreateTransition);
 
-    return dataContractCreateTransition;
+  return dataContractCreateTransition;
 }

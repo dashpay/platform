@@ -1,2 +1,3 @@
-import SDK from './SDK'
+import SDK from './SDK';
+
 export = SDK;

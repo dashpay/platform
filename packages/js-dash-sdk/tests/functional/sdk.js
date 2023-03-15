@@ -27,8 +27,8 @@ describe('SDK', function suite() {
       apps: {
         dpns: {
           contractId: dpnsContractId,
-        }
-      }
+        },
+      },
     };
 
     clientInstance = new Dash.Client(clientOpts);
@@ -58,9 +58,9 @@ describe('SDK', function suite() {
     account = await clientInstance.getWalletAccount();
 
     expect(account.index).to.equal(0);
-  })
+  });
 
-  it('should sign and verify a message', async function () {
+  it('should sign and verify a message', async () => {
     const idKey = account.identities.getIdentityHDKeyByIndex(0, 0);
     // This transforms from a Wallet-Lib.PrivateKey to a Dashcore-lib.PrivateKey.
     // It will quickly be annoying to perform this, and we therefore need to find a better solution for that.
@@ -71,7 +71,7 @@ describe('SDK', function suite() {
     expect(verify).to.equal(true);
   });
 
-  it('should disconnect', async function () {
+  it('should disconnect', async () => {
     await clientInstance.disconnect();
   });
 });

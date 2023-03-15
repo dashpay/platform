@@ -1,6 +1,6 @@
-import { Platform } from "../../Platform";
-import broadcastStateTransition from "../../broadcastStateTransition";
-import { signStateTransition } from "../../signStateTransition";
+import { Platform } from '../../Platform';
+import broadcastStateTransition from '../../broadcastStateTransition';
+import { signStateTransition } from '../../signStateTransition';
 
 /**
  * Publish contract onto the platform
