@@ -8,6 +8,17 @@
     "node": true,
     "mocha": true
   },
+  "rules": {
+    "import/no-extraneous-dependencies": [
+      "error",
+      {
+        "devDependencies": [
+          "src/test/**/*.js",
+          "tests/**/*.js"
+        ]
+      }
+    ]
+  },
   "overrides": [
     {
       "files": [
@@ -20,6 +31,18 @@
       ],
       "parserOptions": {
         "project": "./tsconfig.json"
+      },
+      "rules": {
+        "import/no-extraneous-dependencies": [
+          "error",
+          {
+            "devDependencies": [
+              "src/**/*.spec.ts",
+              "src/test/**/*.ts",
+              "tests/**/*.ts"
+            ]
+          }
+        ]
       }
     }
   ],
