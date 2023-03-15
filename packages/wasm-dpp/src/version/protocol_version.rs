@@ -1,4 +1,6 @@
+use crate::errors::CompatibleProtocolVersionIsNotDefinedErrorWasm;
 use crate::utils::ToSerdeJSONExt;
+use crate::validation::ValidationResultWasm;
 use dpp::util::json_value::JsonValueExt;
 use dpp::version::ProtocolVersionValidator;
 use std::collections::HashMap;
@@ -14,7 +16,9 @@ impl ProtocolVersionValidatorWasm {
     #[wasm_bindgen(constructor)]
     pub fn new(options: JsValue) -> Result<ProtocolVersionValidatorWasm, JsValue> {
         if options.is_undefined() {
-            Ok(ProtocolVersionValidatorWasm(ProtocolVersionValidator::default()))
+            Ok(ProtocolVersionValidatorWasm(
+                ProtocolVersionValidator::default(),
+            ))
         } else {
             let metadata_options = options.with_serde_to_json_value()?;
             let current_protocol_version: u32 = metadata_options
@@ -30,7 +34,9 @@ impl ProtocolVersionValidatorWasm {
 
             let hash_map = compatibility_map_value
                 .as_object()
-                .ok_or_else(|| JsValue::from(JsError::new("Expected compatibility map to be an object")))?
+                .ok_or_else(|| {
+                    JsValue::from(JsError::new("Expected compatibility map to be an object"))
+                })?
                 .into_iter()
                 .map(|(key, value)| {
                     let new_key = key
@@ -38,12 +44,10 @@ impl ProtocolVersionValidatorWasm {
                         .map_err(|e| JsError::new(&*e.to_string()))?;
 
                     let new_value_64 = value.as_u64().ok_or_else(|| {
-                        JsError::new(
-                            "Expect values in compatibility map to contain only numbers",
-                        )
+                        JsError::new("Expect values in compatibility map to contain only numbers")
                     })?;
-                    let new_value = u32::try_from(new_value_64)
-                        .map_err(|e| JsError::new(&*e.to_string()))?;
+                    let new_value =
+                        u32::try_from(new_value_64).map_err(|e| JsError::new(&*e.to_string()))?;
 
                     Ok((new_key, new_value))
                 })
@@ -55,6 +59,16 @@ impl ProtocolVersionValidatorWasm {
                 hash_map,
             )))
         }
+    }
+
+    #[wasm_bindgen]
+    pub fn validate(&self, version: u32) -> Result<ValidationResultWasm, JsValue> {
+        self.0
+            .validate(version)
+            .map(|v| v.map(|_| JsValue::undefined()))
+            .map(ValidationResultWasm::from)
+            .map_err(|e| CompatibleProtocolVersionIsNotDefinedErrorWasm::new(e).into())
+            .into()
     }
 }
 
