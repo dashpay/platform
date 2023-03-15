@@ -1,5 +1,5 @@
 use anyhow::anyhow;
-use serde_json::Value;
+use platform_value::Value;
 use std::convert::TryInto;
 use std::sync::Arc;
 
@@ -10,7 +10,7 @@ use crate::{
     state_repository::StateRepositoryLike,
     state_transition::StateTransitionLike,
     validation::SimpleValidationResult,
-    NonConsensusError, SerdeParsingError, StateError,
+    NonConsensusError, ProtocolError, SerdeParsingError, StateError,
 };
 
 use super::identity_update_transition::{property_names, IdentityUpdateTransition};
@@ -147,13 +147,15 @@ where
                 .map(|k| k.to_identity_public_key()),
         );
 
-        let raw_public_keys: Vec<Value> = identity
+        let raw_public_keys = identity
             .public_keys
             .values()
-            .map(|pk| pk.to_raw_json_object())
-            .collect::<Result<_, SerdeParsingError>>()?;
+            .map(|pk| pk.try_into())
+            .collect::<Result<Vec<Value>, ProtocolError>>()?;
 
-        let result = self.public_keys_validator.validate_keys(&raw_public_keys)?;
+        let result = self
+            .public_keys_validator
+            .validate_keys(raw_public_keys.as_slice())?;
         if !result.is_valid() {
             return Ok(result);
         }

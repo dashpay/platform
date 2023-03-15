@@ -232,12 +232,13 @@ mod validate_identity_topup_transition_basic {
         #[tokio::test]
         pub async fn should_be_valid() {
             let (mut raw_state_transition, validator) = setup_test(MockStateRepositoryLike::new());
-            let st_map = raw_state_transition
-                .get_mut("assetLockProof")
-                .unwrap()
-                .as_object_mut()
+            raw_state_transition
+                .set_value_at_path(
+                    "assetLockProof",
+                    "transaction",
+                    "totally not a valid type".into(),
+                )
                 .unwrap();
-            st_map.insert("transaction".into(), "totally not a valid type".into());
 
             let result = validator
                 .validate(&raw_state_transition, &Default::default())

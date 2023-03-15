@@ -2499,7 +2499,7 @@ mod indices {
                 .unwrap();
 
             cloned_data_contract["documents"]["indexedDocument"]["required"]
-                .push(JsonValue::String(property_name.to_string()))
+                .push(Value::Text(property_name.to_string()))
                 .unwrap();
 
             let result = data_contract_validator
@@ -2579,8 +2579,10 @@ mod indices {
             ]
         });
 
-        if let Some(Value::Array(ref mut indices)) =
-            raw_data_contract["documents"]["indexedDocument"].get_mut("indices")
+        if let Some(Value::Array(ref mut indices)) = raw_data_contract["documents"]
+            ["indexedDocument"]
+            .get_mut("indices")
+            .unwrap()
         {
             indices.push(index_definition)
         }

@@ -50,7 +50,7 @@ impl TPublicKeysSignaturesValidator for SignaturesValidatorMock {
     fn validate_public_key_signatures<'a>(
         &self,
         _raw_state_transition: &Value,
-        _raw_public_keys: impl IntoIterator<Item = &'a JsonValue>,
+        _raw_public_keys: impl IntoIterator<Item = &'a Value>,
     ) -> Result<SimpleValidationResult, NonConsensusError> {
         Ok(SimpleValidationResult::default())
     }

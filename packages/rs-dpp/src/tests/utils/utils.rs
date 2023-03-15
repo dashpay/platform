@@ -61,30 +61,6 @@ where
     map.push((key.into(), value.into()));
 }
 
-/// Removes a key value pair in serde_json object, returns the modified object
-pub fn serde_remove<T>(mut object: serde_json::Value, key: T) -> serde_json::Value
-where
-    T: Into<String>,
-{
-    let map = object
-        .as_object_mut()
-        .expect("Expected value to be an JSON object");
-    map.remove(&key.into());
-
-    object
-}
-
-/// Removes a key value pair in serde_json object, returns the modified object
-pub fn serde_remove_ref<T>(object: &mut Value, key: T)
-where
-    T: Into<String>,
-{
-    object
-        .as_object_mut()
-        .expect("Expected value to be an JSON object")
-        .remove(&key.into());
-}
-
 pub fn generate_random_identifier_struct() -> Identifier {
     let mut buffer = [0u8; 32];
     let _ = getrandom(&mut buffer);

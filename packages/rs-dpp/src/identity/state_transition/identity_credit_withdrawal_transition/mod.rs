@@ -170,40 +170,14 @@ impl StateTransitionConvert for IdentityCreditWithdrawalTransition {
         vec![PROPERTY_SIGNATURE]
     }
 
-    fn to_object(&self, skip_signature: bool) -> Result<JsonValue, ProtocolError> {
-        let mut json_value: JsonValue = serde_json::to_value(self)?;
-
-        let output_script_option = json_value.get(PROPERTY_OUTPUT_SCRIPT);
-
-        let output_script_bytes = output_script_option
-            .ok_or_else(|| anyhow!("uanble to get outputScript"))
-            .and_then(|value| serde_json::from_value(value.clone()).map_err(|e| anyhow!(e)))
-            .and_then(|string: String| {
-                string_encoding::decode(&string, Encoding::Base64).map_err(|e| anyhow!(e))
-            })?;
-
-        json_value.insert(
-            PROPERTY_OUTPUT_SCRIPT.to_owned(),
-            JsonValue::Array(
-                output_script_bytes
-                    .into_iter()
-                    .map(JsonValue::from)
-                    .collect(),
-            ),
-        )?;
-
-        json_value
-            .replace_identifier_paths(Self::identifiers_property_paths(), ReplaceWith::Bytes)?;
-
+    fn to_object(&self, skip_signature: bool) -> Result<Value, ProtocolError> {
+        let mut value = platform_value::to_value(self)?;
         if skip_signature {
-            if let JsonValue::Object(ref mut o) = json_value {
-                for path in Self::signature_property_paths() {
-                    o.remove(path);
-                }
-            }
+            value
+                .remove_many(&Self::signature_property_paths())
+                .map_err(ProtocolError::ValueError)?;
         }
-
-        Ok(json_value)
+        Ok(value)
     }
 
     fn to_json(&self, skip_signature: bool) -> Result<JsonValue, ProtocolError> {

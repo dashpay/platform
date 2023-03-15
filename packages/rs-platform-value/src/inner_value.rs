@@ -289,6 +289,21 @@ impl Value {
         Self::inner_bytes_value(map, key)
     }
 
+    pub fn get_optional_bytes_into<T: From<Vec<u8>>>(&self, key: &str) -> Result<Option<T>, Error> {
+        let map = self.to_map()?;
+        Ok(Self::inner_optional_bytes_value(map, key)?.map(|bytes| bytes.into()))
+    }
+
+    pub fn get_optional_bytes_try_into<T: TryFrom<Vec<u8>, Error = Error>>(
+        &self,
+        key: &str,
+    ) -> Result<Option<T>, Error> {
+        let map = self.to_map()?;
+        Self::inner_optional_bytes_value(map, key)?
+            .map(|bytes| bytes.try_into())
+            .transpose()
+    }
+
     pub fn get_bytes_into<T: From<Vec<u8>>>(&self, key: &str) -> Result<T, Error> {
         let map = self.to_map()?;
         Ok(Self::inner_bytes_value(map, key)?.into())

@@ -100,12 +100,12 @@ pub mod key_type {
     use crate::errors::consensus::ConsensusError;
     use crate::identity::validation::TPublicKeysValidator;
     use crate::tests::identity::validation::public_keys_validator_spec::setup_test;
-    use crate::tests::utils::{platform_value_set_ref, serde_remove_ref};
+    use crate::tests::utils::platform_value_set_ref;
 
     #[test]
     pub fn should_be_present() {
         let (mut raw_public_keys, validator) = setup_test();
-        serde_remove_ref(raw_public_keys.get_mut(1).unwrap(), "type");
+        raw_public_keys.get_mut(1).unwrap().remove("type").unwrap();
 
         let result = validator.validate_keys(&raw_public_keys).unwrap();
         // TODO: in the original code, there was only one error
@@ -138,12 +138,12 @@ pub mod data {
     use crate::errors::consensus::ConsensusError;
     use crate::identity::validation::TPublicKeysValidator;
     use crate::tests::identity::validation::public_keys_validator_spec::setup_test;
-    use crate::tests::utils::{platform_value_set_ref, serde_remove_ref};
+    use crate::tests::utils::platform_value_set_ref;
 
     #[test]
     pub fn should_be_present() {
         let (mut raw_public_keys, validator) = setup_test();
-        serde_remove_ref(raw_public_keys.get_mut(1).unwrap(), "data");
+        raw_public_keys.get_mut(1).unwrap().remove("data").unwrap();
 
         let result = validator.validate_keys(&raw_public_keys).unwrap();
         let errors = assert_consensus_errors!(&result, ConsensusError::JsonSchemaError, 1);
@@ -440,7 +440,7 @@ pub fn should_return_invalid_result_if_key_has_an_invalid_combination_of_purpose
     assert_eq!(consensus_error.code(), 1047);
     assert_eq!(
         error.public_key_id(),
-        raw_public_keys[1].get_integer("id").unwrap()
+        raw_public_keys[1].get_integer::<u32>("id").unwrap()
     );
     assert_eq!(
         error.security_level() as u8,

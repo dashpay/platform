@@ -8,6 +8,7 @@ use crate::{
 };
 use platform_value::Value;
 use serde_json::Value as JsonValue;
+use std::convert::TryInto;
 
 struct TestData {
     raw_public_keys: Vec<Value>,
@@ -19,7 +20,7 @@ fn setup_test() -> TestData {
     let raw_public_keys: Vec<Value> = identity
         .public_keys
         .values()
-        .map(|pk| pk.to_raw_json_object())
+        .map(|pk| pk.try_into())
         .collect::<Result<_, _>>()
         .unwrap();
 
