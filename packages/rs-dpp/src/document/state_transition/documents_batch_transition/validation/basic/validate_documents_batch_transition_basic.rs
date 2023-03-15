@@ -24,7 +24,6 @@ use crate::{
     prelude::Identifier,
     state_repository::StateRepositoryLike,
     state_transition::state_transition_execution_context::StateTransitionExecutionContext,
-    util::json_value::JsonValueExt,
     validation::{JsonSchemaValidator, ValidationResult},
     version::ProtocolVersionValidator,
     ProtocolError,
@@ -32,7 +31,6 @@ use crate::{
 use anyhow::anyhow;
 use lazy_static::lazy_static;
 use platform_value::btreemap_extensions::BTreeValueMapHelper;
-use platform_value::btreemap_extensions::BTreeValueMapPathHelper;
 use platform_value::converter::serde_json::BTreeValueRefJsonConverter;
 use platform_value::Value;
 use serde_json::Value as JsonValue;
@@ -261,7 +259,11 @@ fn validate_raw_transitions<'a>(
                 }
                 .map_err(|e| anyhow!("unable to compile enriched schema: {}", e))?;
 
-                let schema_result = schema_validator.validate(raw_document_transition.into())?;
+                let schema_result = schema_validator.validate(
+                    &raw_document_transition
+                        .to_validating_json_value()
+                        .map_err(ProtocolError::ValueError)?,
+                )?;
                 if !schema_result.is_valid() {
                     result.merge(schema_result);
                     return Ok(result);

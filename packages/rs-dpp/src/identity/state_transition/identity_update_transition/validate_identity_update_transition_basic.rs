@@ -9,7 +9,6 @@ use crate::{
         state_transition::validate_public_key_signatures::TPublicKeysSignaturesValidator,
         validation::TPublicKeysValidator,
     },
-    util::json_value::JsonValueExt,
     validation::{JsonSchemaValidator, SimpleValidationResult},
     version::ProtocolVersionValidator,
     NonConsensusError, ProtocolError,

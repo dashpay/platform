@@ -17,13 +17,12 @@ use crate::{
         fixtures::{get_data_contract_fixture, get_protocol_version_validator_fixture},
         utils::{get_basic_error_from_result, get_schema_error},
     },
-    util::json_value::JsonValueExt,
     version::{ProtocolVersionValidator, LATEST_VERSION},
 };
 
 use jsonschema::error::ValidationErrorKind;
 use platform_value::{platform_value, Value};
-use serde_json::{json, Value as JsonValue};
+use serde_json::Value as JsonValue;
 
 struct TestData {
     version_validator: ProtocolVersionValidator,

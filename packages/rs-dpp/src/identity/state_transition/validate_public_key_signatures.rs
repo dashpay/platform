@@ -1,5 +1,4 @@
 use platform_value::Value;
-use serde_json::Value as JsonValue;
 
 use crate::consensus::basic::identity::InvalidIdentityKeySignatureError;
 use crate::consensus::basic::state_transition::InvalidStateTransitionTypeError;

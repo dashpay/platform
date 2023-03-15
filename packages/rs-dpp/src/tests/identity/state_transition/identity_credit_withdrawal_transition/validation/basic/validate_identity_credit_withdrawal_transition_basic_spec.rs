@@ -1,7 +1,6 @@
 use std::sync::Arc;
 
 use platform_value::Value;
-use serde_json::Value as JsonValue;
 
 use crate::{identity::state_transition::identity_credit_withdrawal_transition::validation::basic::validate_identity_credit_withdrawal_transition_basic::IdentityCreditWithdrawalTransitionBasicValidator, tests::fixtures::identity_credit_withdrawal_transition_fixture_raw_object, version::ProtocolVersionValidator};
 
@@ -22,7 +21,6 @@ mod validate_identity_credit_withdrawal_transition_basic_factory {
 
     use crate::assert_consensus_errors;
     use crate::consensus::ConsensusError;
-    use crate::tests::utils::SerdeTestExtension;
     use crate::NonConsensusError;
     use jsonschema::error::ValidationErrorKind;
 

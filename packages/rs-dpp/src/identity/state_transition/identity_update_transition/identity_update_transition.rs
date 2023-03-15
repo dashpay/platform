@@ -1,8 +1,7 @@
-use anyhow::anyhow;
 use platform_value::Value;
 use serde::{Deserialize, Serialize};
 use serde_json::Value as JsonValue;
-use std::convert::TryInto;
+use std::convert::{TryFrom, TryInto};
 
 use crate::identity::state_transition::identity_public_key_transitions::IdentityPublicKeyWithWitness;
 use crate::{
@@ -192,7 +191,10 @@ impl IdentityUpdateTransition {
 
 /// if the property isn't present the empty list is returned. If property is defined, the function
 /// might return some serialization-related errors
-fn get_list<T>(value: &mut Value, property_name: &str) -> Result<Vec<T>, ProtocolError> {
+fn get_list<T: TryFrom<Value, Error = platform_value::Error>>(
+    value: &mut Value,
+    property_name: &str,
+) -> Result<Vec<T>, ProtocolError> {
     value
         .remove_optional_array(property_name)
         .map_err(ProtocolError::ValueError)?

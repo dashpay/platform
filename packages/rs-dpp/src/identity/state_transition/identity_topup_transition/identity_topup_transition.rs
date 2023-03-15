@@ -7,15 +7,13 @@ use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use serde_json::Value as JsonValue;
 
 use crate::identity::state_transition::asset_lock_proof::AssetLockProof;
-use crate::identity::state_transition::identity_create_transition::SerializationOptions;
 use crate::prelude::Identifier;
 use crate::state_transition::state_transition_execution_context::StateTransitionExecutionContext;
 use crate::state_transition::{
     StateTransition, StateTransitionConvert, StateTransitionLike, StateTransitionType,
 };
 use crate::version::LATEST_VERSION;
-use crate::{NonConsensusError, ProtocolError, SerdeParsingError};
-use platform_value::string_encoding::Encoding;
+use crate::{NonConsensusError, ProtocolError};
 
 mod property_names {
     pub const ASSET_LOCK_PROOF: &str = "assetLockProof";

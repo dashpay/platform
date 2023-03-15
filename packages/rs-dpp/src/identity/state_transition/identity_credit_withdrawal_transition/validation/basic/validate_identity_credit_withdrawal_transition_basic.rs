@@ -12,10 +12,7 @@ use crate::{
     },
     contracts::withdrawals_contract,
     identity::core_script::CoreScript,
-    util::{
-        is_fibonacci_number::is_fibonacci_number, json_value::JsonValueExt,
-        protocol_data::get_protocol_version,
-    },
+    util::{is_fibonacci_number::is_fibonacci_number, json_value::JsonValueExt},
     validation::{JsonSchemaValidator, ValidationResult},
     version::ProtocolVersionValidator,
     DashPlatformProtocolInitError, NonConsensusError, ProtocolError, SerdeParsingError,
@@ -55,7 +52,7 @@ impl IdentityCreditWithdrawalTransitionBasicValidator {
     ) -> Result<ValidationResult<()>, NonConsensusError> {
         let mut result = self.json_schema_validator.validate(
             &transition_object
-                .try_into_validating_json()
+                .try_to_validating_json()
                 .map_err(NonConsensusError::ValueError)?,
         )?;
 

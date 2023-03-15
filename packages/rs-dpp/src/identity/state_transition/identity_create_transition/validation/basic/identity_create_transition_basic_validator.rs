@@ -10,10 +10,9 @@ use crate::identity::state_transition::validate_public_key_signatures::TPublicKe
 use crate::identity::validation::TPublicKeysValidator;
 use crate::state_repository::StateRepositoryLike;
 use crate::state_transition::state_transition_execution_context::StateTransitionExecutionContext;
-use crate::util::protocol_data::{get_protocol_version, get_raw_public_keys};
 use crate::validation::{JsonSchemaValidator, ValidationResult};
 use crate::version::ProtocolVersionValidator;
-use crate::{BlsModule, DashPlatformProtocolInitError, NonConsensusError, ProtocolError};
+use crate::{BlsModule, DashPlatformProtocolInitError, NonConsensusError};
 
 lazy_static! {
     static ref INDENTITY_CREATE_TRANSITION_SCHEMA: JsonValue = serde_json::from_str(include_str!(
@@ -72,9 +71,11 @@ impl<
         transition_object: &Value,
         execution_context: &StateTransitionExecutionContext,
     ) -> Result<ValidationResult<()>, NonConsensusError> {
-        let mut result = self
-            .json_schema_validator
-            .validate(&transition_object.into())?;
+        let mut result = self.json_schema_validator.validate(
+            &transition_object
+                .try_to_validating_json()
+                .map_err(NonConsensusError::ValueError)?,
+        )?;
 
         if !result.is_valid() {
             return Ok(result);
@@ -84,7 +85,7 @@ impl<
             self.protocol_version_validator.validate(
                 transition_object
                     .get_integer(property_names::PROTOCOL_VERSION)
-                    .map_err(ProtocolError::ValueError)?,
+                    .map_err(NonConsensusError::ValueError)?,
             )?,
         );
         if !result.is_valid() {
@@ -93,7 +94,7 @@ impl<
 
         let public_keys = transition_object
             .get_array_slice("publicKeys")
-            .map_err(ProtocolError::ValueError)?;
+            .map_err(NonConsensusError::ValueError)?;
         result.merge(self.public_keys_validator.validate_keys(public_keys)?);
         if !result.is_valid() {
             return Ok(result);
@@ -120,12 +121,8 @@ impl<
             self.asset_lock_proof_validator
                 .validate_structure(
                     transition_object
-                        .get(ASSET_LOCK_PROOF_PROPERTY_NAME)
-                        .ok_or_else(|| {
-                            NonConsensusError::SerdeJsonError(String::from(
-                                "identity state transition must contain an asset lock proof",
-                            ))
-                        })?,
+                        .get_value(ASSET_LOCK_PROOF_PROPERTY_NAME)
+                        .map_err(NonConsensusError::ValueError)?,
                     execution_context,
                 )
                 .await?,

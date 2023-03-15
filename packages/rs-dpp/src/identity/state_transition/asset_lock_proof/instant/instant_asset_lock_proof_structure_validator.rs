@@ -13,9 +13,8 @@ use crate::consensus::basic::identity::{
 use crate::identity::state_transition::asset_lock_proof::AssetLockTransactionValidator;
 use crate::state_repository::StateRepositoryLike;
 use crate::state_transition::state_transition_execution_context::StateTransitionExecutionContext;
-use crate::util::json_value::JsonValueExt;
 use crate::validation::{JsonSchemaValidator, ValidationResult};
-use crate::{DashPlatformProtocolInitError, NonConsensusError, ProtocolError, SerdeParsingError};
+use crate::{DashPlatformProtocolInitError, NonConsensusError};
 
 lazy_static! {
     static ref INSTANT_ASSET_LOCK_PROOF_SCHEMA: JsonValue = serde_json::from_str(include_str!(

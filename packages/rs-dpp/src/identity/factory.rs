@@ -15,9 +15,7 @@ use crate::{BlsModule, ProtocolError};
 use dashcore::{InstantLock, Transaction};
 use rand::rngs::StdRng;
 use rand::{Rng, SeedableRng};
-use serde_json::Value as JsonValue;
 use std::collections::BTreeMap;
-use std::convert::TryInto;
 
 use platform_value::Value;
 use std::sync::Arc;

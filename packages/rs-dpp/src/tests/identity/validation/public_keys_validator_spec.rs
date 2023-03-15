@@ -137,7 +137,6 @@ pub mod data {
     use crate::errors::consensus::ConsensusError;
     use crate::identity::validation::TPublicKeysValidator;
     use crate::tests::identity::validation::public_keys_validator_spec::setup_test;
-    use crate::tests::utils::platform_value_set_ref;
 
     #[test]
     pub fn should_be_present() {

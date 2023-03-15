@@ -11,7 +11,6 @@ use crate::identity::state_transition::asset_lock_proof::{
 };
 use crate::identity::state_transition::identity_topup_transition::validation::basic::IdentityTopUpTransitionBasicValidator;
 use crate::state_repository::MockStateRepositoryLike;
-use crate::tests::utils::SerdeTestExtension;
 use crate::version::ProtocolVersionValidator;
 use crate::NonConsensusError;
 

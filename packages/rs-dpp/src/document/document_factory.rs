@@ -432,7 +432,6 @@ mod test {
     use platform_value::btreemap_extensions::BTreeValueMapHelper;
     use platform_value::platform_value;
     use platform_value::string_encoding::Encoding;
-    use serde_json::json;
     use std::sync::Arc;
 
     use crate::tests::fixtures::get_extended_documents_fixture;
