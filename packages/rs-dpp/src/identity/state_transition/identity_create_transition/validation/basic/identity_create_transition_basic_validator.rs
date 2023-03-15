@@ -29,7 +29,7 @@ pub struct IdentityCreateTransitionBasicValidator<T, S, SR: StateRepositoryLike,
     public_keys_validator: Arc<T>,
     public_keys_in_identity_transition_validator: Arc<S>,
     asset_lock_proof_validator: Arc<AssetLockProofValidator<SR>>,
-    public_keys_signatures_validator: SV,
+    public_keys_signatures_validator: Arc<SV>,
     bls_adapter: BLS,
 }
 
@@ -47,7 +47,7 @@ impl<
         public_keys_in_identity_transition_validator: Arc<S>,
         asset_lock_proof_validator: Arc<AssetLockProofValidator<SR>>,
         bls_adapter: BLS,
-        public_keys_signatures_validator: SV,
+        public_keys_signatures_validator: Arc<SV>,
     ) -> Result<Self, DashPlatformProtocolInitError> {
         let json_schema_validator =
             JsonSchemaValidator::new(INDENTITY_CREATE_TRANSITION_SCHEMA.clone())?;

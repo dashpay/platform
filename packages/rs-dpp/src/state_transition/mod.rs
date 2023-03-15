@@ -6,9 +6,8 @@ pub use abstract_state_transition::{
 pub use abstract_state_transition_identity_signed::StateTransitionIdentitySigned;
 pub use state_transition_types::*;
 
-use crate::data_contract::state_transition::{
-    DataContractCreateTransition, DataContractUpdateTransition,
-};
+use crate::data_contract::state_transition::data_contract_create_transition::DataContractCreateTransition;
+use crate::data_contract::state_transition::data_contract_update_transition::DataContractUpdateTransition;
 // TODO unify the import paths ::object::state_transition::*
 use crate::document::DocumentsBatchTransition;
 use crate::identity::state_transition::identity_create_transition::IdentityCreateTransition;
@@ -26,10 +25,10 @@ use self::state_transition_execution_context::StateTransitionExecutionContext;
 mod state_transition_types;
 pub mod validation;
 
+pub mod errors;
 pub mod fee;
 pub mod state_transition_execution_context;
 
-pub mod errors;
 mod example;
 macro_rules! call_method {
     ($state_transition:expr, $method:ident, $args:tt ) => {
@@ -155,6 +154,10 @@ impl StateTransitionLike for StateTransition {
 
     fn set_execution_context(&mut self, execution_context: StateTransitionExecutionContext) {
         call_method!(self, set_execution_context, execution_context)
+    }
+
+    fn get_modified_data_ids(&self) -> Vec<crate::prelude::Identifier> {
+        call_method!(self, get_modified_data_ids)
     }
 }
 

@@ -197,11 +197,6 @@ impl IdentityTopUpTransition {
     pub fn set_protocol_version(&mut self, protocol_version: u32) {
         self.protocol_version = protocol_version;
     }
-
-    /// Returns ids of created identities
-    pub fn get_modified_data_ids(&self) -> Vec<&Identifier> {
-        vec![self.get_identity_id()]
-    }
 }
 
 impl StateTransitionConvert for IdentityTopUpTransition {
@@ -266,6 +261,11 @@ impl StateTransitionLike for IdentityTopUpTransition {
     /// set a new signature
     fn set_signature(&mut self, signature: Vec<u8>) {
         self.signature = signature
+    }
+
+    /// Returns ids of created identities
+    fn get_modified_data_ids(&self) -> Vec<Identifier> {
+        vec![*self.get_identity_id()]
     }
 
     fn get_execution_context(&self) -> &StateTransitionExecutionContext {

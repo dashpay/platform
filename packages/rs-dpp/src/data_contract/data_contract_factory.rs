@@ -15,11 +15,9 @@ use crate::{
     util::entropy_generator,
 };
 
-use super::{
-    state_transition::{DataContractCreateTransition, DataContractUpdateTransition},
-    validation::data_contract_validator::DataContractValidator,
-    DataContract,
-};
+use super::state_transition::data_contract_create_transition::DataContractCreateTransition;
+use super::state_transition::data_contract_update_transition::DataContractUpdateTransition;
+use super::{validation::data_contract_validator::DataContractValidator, DataContract};
 
 /// A way to provide external entropy generator.
 pub trait EntropyGenerator {

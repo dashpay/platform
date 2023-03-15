@@ -9,7 +9,7 @@ use crate::state_transition::errors::{
 };
 use crate::{
     identity::KeyType,
-    prelude::ProtocolError,
+    prelude::{Identifier, ProtocolError},
     util::{
         hash,
         json_value::{JsonValueExt, ReplaceWith},
@@ -58,6 +58,8 @@ pub trait StateTransitionLike:
     fn calculate_fee(&self) -> i64 {
         calculate_state_transition_fee(self)
     }
+    /// get modified ids list
+    fn get_modified_data_ids(&self) -> Vec<Identifier>;
 
     /// Signs data with the private key
     fn sign_by_private_key(

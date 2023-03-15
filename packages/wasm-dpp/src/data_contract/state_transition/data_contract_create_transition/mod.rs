@@ -6,9 +6,8 @@ use std::collections::HashMap;
 pub use apply::*;
 pub use validation::*;
 
-use dpp::identity::KeyID;
 use dpp::{
-    data_contract::state_transition::DataContractCreateTransition,
+    data_contract::state_transition::data_contract_create_transition::DataContractCreateTransition,
     state_transition::{
         StateTransitionConvert, StateTransitionIdentitySigned, StateTransitionLike,
     },
@@ -114,7 +113,7 @@ impl DataContractCreateTransitionWasm {
         self.0
             .get_modified_data_ids()
             .into_iter()
-            .map(|identifier| Into::<IdentifierWrapper>::into(*identifier).into())
+            .map(|identifier| Into::<IdentifierWrapper>::into(identifier).into())
             .collect()
     }
 
