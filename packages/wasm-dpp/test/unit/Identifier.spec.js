@@ -29,7 +29,7 @@ describe('Identifier', () => {
     it('should throw error if buffer is not 32 bytes long', () => {
       try {
         // eslint-disable-next-line no-unused-vars
-        let identifier = new Identifier(Buffer.alloc(30));
+        const identifier = new Identifier(Buffer.alloc(30));
 
         expect.fail('Expected to throw error');
       } catch (e) {
