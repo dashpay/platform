@@ -20,5 +20,9 @@
         "project": "./tsconfig.json"
       }
     }
+  ],
+  "ignorePatterns": [
+    "build",
+    "dist"
   ]
 }
