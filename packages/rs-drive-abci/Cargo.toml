@@ -27,11 +27,12 @@ rust_decimal_macros = "1.25.0"
 mockall= { version ="0.11", optional = true }
 bytes = { version = "1.4.0", default-features = false }
 prost = { version = "0.11.6", default-features = false }
-tendermint-proto = { version = "0.28.0", default-features = false, path = "../proto" }
+tenderdash-proto = { git="https://github.com/dashpay/rs-tenderdash-abci/proto" }
 tracing = { version = "0.1.37", default-features = false }
 flex-error = { version = "0.4.4", default-features = false }
 structopt = { version = "0.3.26", optional = true, default-features = false }
 tracing-subscriber = { version = "0.3.16", optional = true, default-features = false }
+#tenderdash-abci = {  git="https://github.com/dashpay/rs-tenderdash-abci" }
 
 [dev-dependencies]
 itertools = { version = "0.10.5" }
