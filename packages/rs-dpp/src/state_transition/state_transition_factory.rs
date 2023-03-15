@@ -59,12 +59,8 @@ pub async fn create_state_transition(
             Ok(StateTransition::IdentityCreditWithdrawal(transition))
         }
         StateTransitionType::DocumentsBatch => {
-            let maybe_transitions = raw_state_transition
-                .get("transitions")
-                .ok_or_else(|| anyhow!("the transitions property doesn't exist"))?;
-            let raw_transitions = maybe_transitions
-                .as_array()
-                .ok_or_else(|| anyhow!("property transitions isn't an array"))?;
+            let raw_transitions = raw_state_transition
+                .get_array_ref("transitions").map_err(ProtocolError::ValueError)?;
             let data_contracts = fetch_data_contracts_for_document_transition(
                 state_repository,
                 raw_transitions,
@@ -139,7 +135,7 @@ fn missing_state_transition_error() -> ProtocolError {
 #[cfg(test)]
 mod test {
     use dashcore::network::constants::PROTOCOL_VERSION;
-    use platform_value::Value;
+    use platform_value::{platform_value, Value};
     use serde_json::json;
     use std::collections::BTreeMap;
 
@@ -167,10 +163,10 @@ mod test {
             .expect_fetch_data_contract()
             .returning(move |_, _| Ok(Some(data_contract_to_return.clone())));
 
-        let state_transition_data = json!( {
-                    "protocolVersion" :  PROTOCOL_VERSION,
+        let state_transition_data = platform_value!( {
+                    "protocolVersion" :  PROTOCOL_VERSION as u32,
                     "entropy": data_contract.entropy,
-                    "dataContract": data_contract.to_object(false).unwrap(),
+                    "dataContract": data_contract.to_object().unwrap(),
                 }
         );
         let data_contract_create_state_transition =
@@ -249,9 +245,8 @@ mod test {
     #[tokio::test]
     async fn should_return_invalid_state_transition_type_if_type_is_invalid() {
         let state_repostiory_mock = MockStateRepositoryLike::new();
-        let raw_state_transition = json!( {
-            "type" : 666
-
+        let raw_state_transition = platform_value!( {
+            "type" : 110u8
         });
 
         let result = create_state_transition(&state_repostiory_mock, raw_state_transition).await;

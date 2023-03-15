@@ -187,7 +187,7 @@ impl StateTransitionConvert for IdentityTopUpTransition {
     }
 
     fn to_json(&self, skip_signature: bool) -> Result<JsonValue, ProtocolError> {
-        self.to_object(skip_signature).map(|value| value.into())
+        self.to_object(skip_signature).and_then(|value| value.try_into().map_err(ProtocolError::ValueError))
     }
 }
 

@@ -3,7 +3,7 @@ use crate::identity::identity_public_key::factory::KeyCount;
 use crate::identity::state_transition::asset_lock_proof::chain::ChainAssetLockProof;
 use crate::identity::state_transition::asset_lock_proof::{AssetLockProof, InstantAssetLockProof};
 use crate::identity::state_transition::identity_create_transition::IdentityCreateTransition;
-use crate::identity::state_transition::identity_public_key_transitions::IdentityPublicKeyCreateTransition;
+use crate::identity::state_transition::identity_public_key_transitions::IdentityPublicKeyWithWitness;
 use crate::identity::state_transition::identity_topup_transition::IdentityTopUpTransition;
 use crate::identity::state_transition::identity_update_transition::identity_update_transition::IdentityUpdateTransition;
 use crate::identity::validation::{IdentityValidator, PublicKeysValidator};
@@ -151,7 +151,7 @@ where
         // TODO: the error originates here due to id having a wrong type - should be a base58 for the schema
 
         self.create_from_object(
-            raw_identity.try_into().map_err(ProtocolError::ValueError)?,
+            raw_identity,
             skip_validation,
         )
     }
@@ -182,7 +182,7 @@ where
             .get_public_keys()
             .iter()
             .map(|(_, public_key)| public_key.into())
-            .collect::<Vec<IdentityPublicKeyCreateTransition>>();
+            .collect::<Vec<IdentityPublicKeyWithWitness>>();
         identity_create_transition.set_public_keys(public_keys);
 
         let asset_lock_proof = identity.get_asset_lock_proof().ok_or_else(|| {
@@ -215,7 +215,7 @@ where
     pub fn create_identity_update_transition(
         &self,
         identity: Identity,
-        add_public_keys: Option<Vec<IdentityPublicKeyCreateTransition>>,
+        add_public_keys: Option<Vec<IdentityPublicKeyWithWitness>>,
         public_key_ids_to_disable: Option<Vec<KeyID>>,
         // Pass disable time as argument because SystemTime::now() does not work for wasm target
         // https://github.com/rust-lang/rust/issues/48564

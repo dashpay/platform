@@ -18,7 +18,7 @@ pub const BINARY_DATA_FIELDS: [&str; 2] = ["data", "signature"];
 
 #[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
-pub struct IdentityPublicKeyCreateTransition {
+pub struct IdentityPublicKeyWithWitness {
     pub id: KeyID,
     pub purpose: Purpose,
     pub security_level: SecurityLevel,
@@ -30,7 +30,7 @@ pub struct IdentityPublicKeyCreateTransition {
     pub signature: Vec<u8>,
 }
 
-impl IdentityPublicKeyCreateTransition {
+impl IdentityPublicKeyWithWitness {
     pub fn to_identity_public_key(self) -> IdentityPublicKey {
         let Self {
             id,
@@ -227,8 +227,8 @@ impl IdentityPublicKeyCreateTransition {
     }
 }
 
-impl From<&IdentityPublicKeyCreateTransition> for IdentityPublicKey {
-    fn from(val: &IdentityPublicKeyCreateTransition) -> Self {
+impl From<&IdentityPublicKeyWithWitness> for IdentityPublicKey {
+    fn from(val: &IdentityPublicKeyWithWitness) -> Self {
         IdentityPublicKey {
             id: val.id,
             purpose: val.purpose,
@@ -241,15 +241,15 @@ impl From<&IdentityPublicKeyCreateTransition> for IdentityPublicKey {
     }
 }
 
-impl TryFrom<Value> for IdentityPublicKeyCreateTransition {
+impl TryFrom<Value> for IdentityPublicKeyWithWitness {
     type Error = ProtocolError;
 
     fn try_from(value: Value) -> Result<Self, Self::Error> {
-        IdentityPublicKeyCreateTransition::from_raw_object(value)
+        IdentityPublicKeyWithWitness::from_raw_object(value)
     }
 }
 
-impl TryInto<Value> for IdentityPublicKeyCreateTransition {
+impl TryInto<Value> for IdentityPublicKeyWithWitness {
     type Error = ProtocolError;
 
     fn try_into(self) -> Result<Value, Self::Error> {

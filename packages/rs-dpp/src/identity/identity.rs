@@ -1,4 +1,5 @@
 use std::collections::BTreeMap;
+use std::convert::TryFrom;
 
 use ciborium::value::Value as CborValue;
 use integer_encoding::VarInt;
@@ -337,5 +338,21 @@ impl Identity {
             balance: Some(balance),
             revision: Some(revision),
         }
+    }
+}
+
+impl TryFrom<Value> for Identity {
+    type Error = ProtocolError;
+
+    fn try_from(value: Value) -> Result<Self, Self::Error> {
+        platform_value::from_value(value).map_err(ProtocolError::ValueError)
+    }
+}
+
+impl TryFrom<&Value> for Identity {
+    type Error = ProtocolError;
+
+    fn try_from(value: &Value) -> Result<Self, Self::Error> {
+        platform_value::from_value(value.clone()).map_err(ProtocolError::ValueError)
     }
 }

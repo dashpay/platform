@@ -150,8 +150,8 @@ where
         let raw_public_keys = identity
             .public_keys
             .values()
-            .map(|pk| pk.try_into())
-            .collect::<Result<Vec<Value>, ProtocolError>>()?;
+            .map(|pk| pk.try_into().map_err(NonConsensusError::ValueError))
+            .collect::<Result<Vec<Value>, NonConsensusError>>()?;
 
         let result = self
             .public_keys_validator

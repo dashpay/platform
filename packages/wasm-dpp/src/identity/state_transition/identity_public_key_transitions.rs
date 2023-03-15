@@ -1,6 +1,6 @@
 //todo: move this file to transition
 use dpp::dashcore::anyhow;
-use dpp::identity::state_transition::identity_public_key_transitions::IdentityPublicKeyCreateTransition;
+use dpp::identity::state_transition::identity_public_key_transitions::IdentityPublicKeyWithWitness;
 pub use serde::{Deserialize, Serialize};
 use std::convert::{TryFrom, TryInto};
 use wasm_bindgen::prelude::*;
@@ -16,7 +16,7 @@ struct ToObjectOptions {
 
 #[wasm_bindgen(js_name=IdentityPublicKeyCreateTransition)]
 #[derive(Serialize, Deserialize, Debug, Clone)]
-pub struct IdentityPublicKeyCreateTransitionWasm(IdentityPublicKeyCreateTransition);
+pub struct IdentityPublicKeyCreateTransitionWasm(IdentityPublicKeyWithWitness);
 
 #[wasm_bindgen(js_class = IdentityPublicKeyCreateTransition)]
 impl IdentityPublicKeyCreateTransitionWasm {
@@ -169,21 +169,21 @@ impl IdentityPublicKeyCreateTransitionWasm {
 }
 
 impl IdentityPublicKeyCreateTransitionWasm {
-    pub fn into_inner(self) -> IdentityPublicKeyCreateTransition {
+    pub fn into_inner(self) -> IdentityPublicKeyWithWitness {
         self.0
     }
 
-    pub fn inner(&self) -> &IdentityPublicKeyCreateTransition {
+    pub fn inner(&self) -> &IdentityPublicKeyWithWitness {
         &self.0
     }
 
-    pub fn inner_mut(&mut self) -> &mut IdentityPublicKeyCreateTransition {
+    pub fn inner_mut(&mut self) -> &mut IdentityPublicKeyWithWitness {
         &mut self.0
     }
 }
 
-impl From<IdentityPublicKeyCreateTransition> for IdentityPublicKeyCreateTransitionWasm {
-    fn from(v: IdentityPublicKeyCreateTransition) -> Self {
+impl From<IdentityPublicKeyWithWitness> for IdentityPublicKeyCreateTransitionWasm {
+    fn from(v: IdentityPublicKeyWithWitness) -> Self {
         IdentityPublicKeyCreateTransitionWasm(v)
     }
 }
@@ -195,12 +195,12 @@ impl TryFrom<JsValue> for IdentityPublicKeyCreateTransitionWasm {
         let str = String::from(js_sys::JSON::stringify(&value)?);
         let val = serde_json::from_str(&str).map_err(|e| from_dpp_err(e.into()))?;
         Ok(Self(
-            IdentityPublicKeyCreateTransition::from_raw_json_object(val).map_err(from_dpp_err)?,
+            IdentityPublicKeyWithWitness::from_raw_json_object(val).map_err(from_dpp_err)?,
         ))
     }
 }
 
-impl From<IdentityPublicKeyCreateTransitionWasm> for IdentityPublicKeyCreateTransition {
+impl From<IdentityPublicKeyCreateTransitionWasm> for IdentityPublicKeyWithWitness {
     fn from(pk: IdentityPublicKeyCreateTransitionWasm) -> Self {
         pk.0
     }

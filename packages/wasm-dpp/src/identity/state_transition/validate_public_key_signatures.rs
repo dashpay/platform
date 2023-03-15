@@ -10,7 +10,7 @@ use dpp::identity::state_transition::validate_public_key_signatures::{
     PublicKeysSignaturesValidator, TPublicKeysSignaturesValidator,
 };
 
-use dpp::identity::state_transition::identity_public_key_transitions::IdentityPublicKeyCreateTransition;
+use dpp::identity::state_transition::identity_public_key_transitions::IdentityPublicKeyWithWitness;
 
 use serde_json::Value as JsonValue;
 use wasm_bindgen::prelude::wasm_bindgen;
@@ -43,7 +43,7 @@ impl PublicKeysSignaturesValidatorWasm {
         let public_keys = raw_public_keys
             .into_iter()
             .map(|raw_key| {
-                let parsed_key: IdentityPublicKeyCreateTransition =
+                let parsed_key: IdentityPublicKeyWithWitness =
                     IdentityPublicKeyCreateTransitionWasm::new(raw_key)?.into();
                 parsed_key
                     .to_raw_json_object(false)

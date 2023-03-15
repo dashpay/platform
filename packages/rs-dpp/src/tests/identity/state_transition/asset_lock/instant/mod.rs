@@ -86,7 +86,7 @@ mod validate_instant_asset_lock_proof_structure_factory {
         #[tokio::test]
         async fn should_be_present() {
             let mut test_data = setup_test(None);
-            test_data.raw_proof.remove_key("type");
+            test_data.raw_proof.remove("type").unwrap();
 
             let result = test_data
                 .validate_instant_asset_lock_proof_structure

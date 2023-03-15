@@ -26,16 +26,16 @@ impl TPublicKeysValidator for RequiredPurposeAndSecurityLevelValidator {
 
         let mut key_purposes_and_levels_count: HashMap<PurposeKey, usize> = HashMap::new();
 
-        for raw_public_key in raw_public_keys.iter().filter(|pk| {
-            if let Some(disabled_at) = pk
-                .get_optional_bool("disabledAt")
-                .map_err(NonConsensusError::ValueError)?
+        for raw_public_key in raw_public_keys.iter().filter_map(|pk| {
+            match pk
+                .get_optional_integer::<u64>("disabledAt")
+                .map_err(NonConsensusError::ValueError)
             {
-                disabled_at == false
-            } else {
-                true
+                Ok(Some(_)) => { Some(Ok(pk)) }
+                Ok(None) => { None }
+                Err(e) => { Some(Err(e))}
             }
-        }) {
+        }).collect::<Result<Vec<_>, NonConsensusError>>()? {
             let public_key: IdentityPublicKey = platform_value::from_value(raw_public_key.clone())?;
             let combo = PurposeKey {
                 purpose: public_key.purpose,

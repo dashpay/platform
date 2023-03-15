@@ -25,7 +25,7 @@ use crate::util::json_value::{JsonValueExt, ReplaceWith};
 use crate::util::vec;
 use crate::SerdeParsingError;
 
-use crate::identity::state_transition::identity_public_key_transitions::IdentityPublicKeyCreateTransition;
+use crate::identity::state_transition::identity_public_key_transitions::IdentityPublicKeyWithWitness;
 
 pub type KeyID = u32;
 pub type TimestampMillis = u64;
@@ -46,9 +46,9 @@ pub struct IdentityPublicKey {
     pub disabled_at: Option<TimestampMillis>,
 }
 
-impl Into<IdentityPublicKeyCreateTransition> for &IdentityPublicKey {
-    fn into(self) -> IdentityPublicKeyCreateTransition {
-        IdentityPublicKeyCreateTransition {
+impl Into<IdentityPublicKeyWithWitness> for &IdentityPublicKey {
+    fn into(self) -> IdentityPublicKeyWithWitness {
+        IdentityPublicKeyWithWitness {
             id: self.id,
             purpose: self.purpose,
             security_level: self.security_level,

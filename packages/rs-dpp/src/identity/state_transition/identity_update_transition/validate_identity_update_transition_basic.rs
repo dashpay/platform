@@ -63,14 +63,14 @@ where
     ) -> Result<SimpleValidationResult, NonConsensusError> {
         let result = self
             .json_schema_validator
-            .validate(&raw_state_transition.into())?;
+            .validate(&raw_state_transition.try_into_validating_json().map_err(ProtocolError::ValueError)?)?;
         if !result.is_valid() {
             return Ok(result);
         }
 
         let protocol_version = raw_state_transition
             .get_integer(property_names::PROTOCOL_VERSION)
-            .map_err(ProtocolError::ValueError)?;
+            .map_err(NonConsensusError::ValueError)?;
 
         let result = self.protocol_version_validator.validate(protocol_version)?;
         if !result.is_valid() {
@@ -80,7 +80,7 @@ where
         let maybe_raw_public_keys = raw_state_transition
             .get_optional_value(property_names::ADD_PUBLIC_KEYS)
             .and_then(|value| value.map(|value| value.to_array_slice()).transpose())
-            .map_err(ProtocolError::ValueError)?;
+            .map_err(NonConsensusError::ValueError)?;
 
         match maybe_raw_public_keys {
             Some(raw_public_keys) => {

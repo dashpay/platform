@@ -4,7 +4,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value as JsonValue;
 use std::convert::TryInto;
 
-use crate::identity::state_transition::identity_public_key_transitions::IdentityPublicKeyCreateTransition;
+use crate::identity::state_transition::identity_public_key_transitions::IdentityPublicKeyWithWitness;
 use crate::{
     identity::{KeyID, SecurityLevel},
     prelude::{Identifier, Revision, TimestampMillis},
@@ -52,7 +52,7 @@ pub struct IdentityUpdateTransition {
     /// Public Keys to add to the Identity
     /// we want to skip serialization of transitions, as we does it manually in `to_object()`  and `to_json()`
     #[serde(skip, default)]
-    pub add_public_keys: Vec<IdentityPublicKeyCreateTransition>,
+    pub add_public_keys: Vec<IdentityPublicKeyWithWitness>,
 
     /// Identity Public Keys ID's to disable for the Identity
     #[serde(skip_serializing_if = "Vec::is_empty", default)]
@@ -151,16 +151,16 @@ impl IdentityUpdateTransition {
 
     pub fn set_public_keys_to_add(
         &mut self,
-        add_public_keys: Vec<IdentityPublicKeyCreateTransition>,
+        add_public_keys: Vec<IdentityPublicKeyWithWitness>,
     ) {
         self.add_public_keys = add_public_keys;
     }
 
-    pub fn get_public_keys_to_add(&self) -> &[IdentityPublicKeyCreateTransition] {
+    pub fn get_public_keys_to_add(&self) -> &[IdentityPublicKeyWithWitness] {
         &self.add_public_keys
     }
 
-    pub fn get_public_keys_to_add_mut(&mut self) -> &mut [IdentityPublicKeyCreateTransition] {
+    pub fn get_public_keys_to_add_mut(&mut self) -> &mut [IdentityPublicKeyWithWitness] {
         &mut self.add_public_keys
     }
 

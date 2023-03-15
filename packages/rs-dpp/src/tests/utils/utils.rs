@@ -82,8 +82,8 @@ pub trait SerdeTestExtension {
         T: Into<String>,
         S: Into<serde_json::Value>,
         serde_json::Value: From<S>;
-    fn get_value(&self, key: impl Into<String>) -> &Value;
-    fn get_value_mut(&mut self, key: impl Into<String>) -> &mut Value;
+    fn get_value(&self, key: impl Into<String>) -> &serde_json::Value;
+    fn get_value_mut(&mut self, key: impl Into<String>) -> &mut serde_json::Value;
 }
 
 #[cfg(test)]
@@ -97,8 +97,8 @@ impl SerdeTestExtension for serde_json::Value {
     fn set_key_value<T, S>(&mut self, key: T, value: S)
     where
         T: Into<String>,
-        S: Into<Value>,
-        Value: From<S>,
+        S: Into<JsonValue>,
+        JsonValue: From<S>,
     {
         let map = self
             .as_object_mut()
@@ -106,14 +106,14 @@ impl SerdeTestExtension for serde_json::Value {
         map.insert(key.into(), serde_json::Value::from(value));
     }
 
-    fn get_value(&self, key: impl Into<String>) -> &Value {
+    fn get_value(&self, key: impl Into<String>) -> &JsonValue {
         self.as_object()
             .expect("Expected key to exist")
             .get(&key.into())
             .expect("Expected key to exist")
     }
 
-    fn get_value_mut(&mut self, key: impl Into<String>) -> &mut Value {
+    fn get_value_mut(&mut self, key: impl Into<String>) -> &mut JsonValue {
         self.as_object_mut()
             .expect("Expected key to exist")
             .get_mut(&key.into())

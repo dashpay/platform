@@ -509,7 +509,7 @@ mod validate_identity_create_transition_basic_factory {
             assert_eq!(error, &&pk_error);
 
             assert_eq!(
-                &pk_validator_mock.called_with(),
+                pk_validator_mock.called_with(),
                 raw_state_transition.get_array("publicKeys").unwrap()
             );
         }
@@ -541,7 +541,7 @@ mod validate_identity_create_transition_basic_factory {
             assert_eq!(error, &&pk_error);
 
             assert_eq!(
-                &pk_validator_mock.called_with(),
+                pk_validator_mock.called_with(),
                 raw_state_transition.get_array("publicKeys").unwrap()
             );
         }
@@ -597,7 +597,7 @@ mod validate_identity_create_transition_basic_factory {
                 Arc::new(RequiredPurposeAndSecurityLevelValidator::default()),
                 MockStateRepositoryLike::new(),
             );
-            raw_state_transition.set_key_value("signature", vec!["string"; 65]);
+            raw_state_transition.set_into_value("signature", vec!["string"; 65]).unwrap();
 
             let result = validator
                 .validate(&raw_state_transition, &Default::default())
@@ -619,7 +619,7 @@ mod validate_identity_create_transition_basic_factory {
                 Arc::new(RequiredPurposeAndSecurityLevelValidator::default()),
                 MockStateRepositoryLike::new(),
             );
-            raw_state_transition.set_key_value("signature", vec![0; 64]);
+            raw_state_transition.set_into_value("signature", vec![0; 64]).unwrap();
 
             let result = validator
                 .validate(&raw_state_transition, &Default::default())
@@ -641,7 +641,7 @@ mod validate_identity_create_transition_basic_factory {
                 Arc::new(RequiredPurposeAndSecurityLevelValidator::default()),
                 MockStateRepositoryLike::new(),
             );
-            raw_state_transition.set_key_value("signature", vec![0; 66]);
+            raw_state_transition.set_into_value("signature", vec![0; 66]).unwrap();
 
             let result = validator
                 .validate(&raw_state_transition, &Default::default())
@@ -682,7 +682,7 @@ mod validate_identity_create_transition_basic_factory {
 
         assert!(result.is_valid());
         assert_eq!(
-            &pk_validator_mock.called_with(),
+            pk_validator_mock.called_with(),
             raw_state_transition.get_array("publicKeys").unwrap()
         );
     }

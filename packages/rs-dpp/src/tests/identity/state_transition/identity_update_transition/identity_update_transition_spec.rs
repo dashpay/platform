@@ -3,7 +3,7 @@ use platform_value::string_encoding::Encoding;
 use platform_value::{platform_value, Value};
 use serde_json::{json, Value as JsonValue};
 
-use crate::identity::state_transition::identity_public_key_transitions::IdentityPublicKeyCreateTransition;
+use crate::identity::state_transition::identity_public_key_transitions::IdentityPublicKeyWithWitness;
 use crate::{
     identity::{
         state_transition::identity_update_transition::identity_update_transition::IdentityUpdateTransition,
@@ -77,7 +77,7 @@ fn get_public_keys_to_add() {
 fn set_public_keys_to_add() {
     let TestData { mut transition, .. } = setup_test();
 
-    let id_public_key = IdentityPublicKeyCreateTransition {
+    let id_public_key = IdentityPublicKeyWithWitness {
         id: 0,
         key_type: KeyType::BLS12_381,
         purpose: Purpose::AUTHENTICATION,

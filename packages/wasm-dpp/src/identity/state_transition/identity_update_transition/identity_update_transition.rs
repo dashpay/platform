@@ -17,7 +17,7 @@ use crate::{
 use crate::bls_adapter::{BlsAdapter, JsBlsAdapter};
 use crate::errors::from_dpp_err;
 use crate::utils::generic_of_js_val;
-use dpp::identity::state_transition::identity_public_key_transitions::IdentityPublicKeyCreateTransition;
+use dpp::identity::state_transition::identity_public_key_transitions::IdentityPublicKeyWithWitness;
 use dpp::identity::{KeyID, TimestampMillis};
 use dpp::prelude::Revision;
 use dpp::state_transition::StateTransitionIdentitySigned;
@@ -40,7 +40,7 @@ struct IdentityUpdateTransitionParams {
     protocol_version: u32,
     identity_id: Vec<u8>,
     revision: Revision,
-    add_public_keys: Option<Vec<IdentityPublicKeyCreateTransition>>,
+    add_public_keys: Option<Vec<IdentityPublicKeyWithWitness>>,
     disable_public_keys: Option<Vec<KeyID>>,
     public_keys_disabled_at: Option<TimestampMillis>,
 }
@@ -89,7 +89,7 @@ impl IdentityUpdateTransitionWasm {
                         )?;
                     Ok(public_key.clone().into())
                 })
-                .collect::<Result<Vec<IdentityPublicKeyCreateTransition>, JsValue>>()?;
+                .collect::<Result<Vec<IdentityPublicKeyWithWitness>, JsValue>>()?;
         }
 
         self.0.set_public_keys_to_add(keys_to_add);
