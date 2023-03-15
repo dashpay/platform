@@ -89,7 +89,7 @@ pub fn validate_public_key_signatures<'a, T: BlsModule>(
     let add_public_key_transitions: Vec<IdentityPublicKeyWithWitness> = raw_public_keys
         .into_iter()
         .map(|k| {
-            IdentityPublicKeyWithWitness::from_raw_json_object(k.to_owned())
+            IdentityPublicKeyWithWitness::from_raw_object(k.to_owned())
                 .map_err(|e| NonConsensusError::IdentityPublicKeyCreateError(format!("{:#}", e)))
         })
         .collect::<Result<_, _>>()?;
@@ -115,7 +115,7 @@ fn invalid_state_transition_type_error(transition_type: u8) -> ProtocolError {
 
 fn find_invalid_public_key<T: BlsModule>(
     state_transition: &mut impl StateTransitionLike,
-    public_keys: impl IntoIterator<Item =IdentityPublicKeyWithWitness>,
+    public_keys: impl IntoIterator<Item = IdentityPublicKeyWithWitness>,
     bls: &T,
 ) -> Option<IdentityPublicKeyWithWitness> {
     for public_key in public_keys {

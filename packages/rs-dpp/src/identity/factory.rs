@@ -150,10 +150,7 @@ where
 
         // TODO: the error originates here due to id having a wrong type - should be a base58 for the schema
 
-        self.create_from_object(
-            raw_identity,
-            skip_validation,
-        )
+        self.create_from_object(raw_identity, skip_validation)
     }
 
     pub fn create_instant_lock_proof(

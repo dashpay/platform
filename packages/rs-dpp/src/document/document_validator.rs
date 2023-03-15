@@ -5,7 +5,6 @@ use lazy_static::lazy_static;
 use platform_value::Value;
 use serde_json::Value as JsonValue;
 
-use crate::consensus::basic::document::InvalidDocumentTypeError;
 use crate::data_contract::document_type::DocumentType;
 use crate::data_contract::DriveContractExt;
 use crate::{
@@ -14,7 +13,6 @@ use crate::{
         enrich_data_contract_with_base_schema::enrich_data_contract_with_base_schema,
         enrich_data_contract_with_base_schema::PREFIX_BYTE_0, DataContract,
     },
-    util::json_value::JsonValueExt,
     validation::{JsonSchemaValidator, ValidationResult},
     version::ProtocolVersionValidator,
     ProtocolError,
@@ -95,7 +93,7 @@ impl DocumentValidator {
             return Ok(result);
         };
 
-        /// check if there is a document type
+        // check if there is a document type
         data_contract.document_type_for_name(document_type_name)?;
 
         let enriched_data_contract = enrich_data_contract_with_base_schema(
@@ -143,7 +141,6 @@ mod test {
         primitive_type::PrimitiveType,
     };
     use platform_value::Value;
-    use serde_json::json;
     use serde_json::Value as JsonValue;
     use test_case::test_case;
 
@@ -153,7 +150,6 @@ mod test {
         consensus::{basic::JsonSchemaError, ConsensusError},
         data_contract::DataContract,
         tests::fixtures::get_data_contract_fixture,
-        util::json_value::JsonValueExt,
         validation::ValidationResult,
         version::{ProtocolVersionValidator, COMPATIBILITY_MAP, LATEST_VERSION},
     };

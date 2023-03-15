@@ -35,7 +35,7 @@ pub fn identity_fixture_raw_object() -> platform_value::Value {
 }
 
 pub fn identity_fixture_json() -> serde_json::Value {
-    platform_value!({
+    json!({
         "protocolVersion": 1,
         "id": "3bufpwQjL5qsvuP4fmCKgXJrKG852DDMYfi9J6XKqPAT",
         "publicKeys": [

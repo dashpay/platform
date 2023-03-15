@@ -4,11 +4,9 @@ use serde_json::Value as JsonValue;
 use std::sync::Arc;
 
 use crate::identity::validation::TPublicKeysValidator;
-use crate::util::protocol_data::{get_protocol_version, get_raw_public_keys};
 use crate::validation::{JsonSchemaValidator, ValidationResult};
 use crate::version::ProtocolVersionValidator;
-use crate::{DashPlatformProtocolInitError, NonConsensusError, ProtocolError, SerdeParsingError};
-use crate::consensus::ConsensusError;
+use crate::{DashPlatformProtocolInitError, NonConsensusError};
 use crate::identity::state_transition::identity_update_transition::identity_update_transition::property_names::PROTOCOL_VERSION;
 
 lazy_static! {

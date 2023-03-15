@@ -1,4 +1,3 @@
-use serde_json::Value as JsonValue;
 use thiserror::Error;
 
 use crate::consensus::basic::state_transition::InvalidStateTransitionTypeError;

@@ -4,7 +4,6 @@ use async_trait::async_trait;
 #[cfg(test)]
 use mockall::{automock, predicate::*};
 use platform_value::Value;
-use serde_json::Value as JsonValue;
 
 use crate::consensus::basic::state_transition::{
     InvalidStateTransitionTypeError, StateTransitionMaxSizeExceededError,
@@ -13,7 +12,6 @@ use crate::{
     consensus::basic::BasicError,
     state_repository::StateRepositoryLike,
     state_transition::{create_state_transition, StateTransitionConvert, StateTransitionType},
-    util::json_value::JsonValueExt,
     validation::SimpleValidationResult,
     ProtocolError,
 };
@@ -79,7 +77,6 @@ pub trait ValidatorByStateTransitionType: Sync {
 #[cfg(test)]
 mod test {
     use platform_value::{platform_value, Value};
-    use serde_json::{json, Value as JsonValue};
     use std::sync::Arc;
 
     use crate::{
@@ -92,7 +89,6 @@ mod test {
         state_repository::MockStateRepositoryLike,
         state_transition::{StateTransitionConvert, StateTransitionLike},
         tests::{fixtures::get_data_contract_fixture, utils::get_basic_error_from_result},
-        util::json_value::JsonValueExt,
         validation::ValidationResult,
         version::{ProtocolVersionValidator, COMPATIBILITY_MAP, LATEST_VERSION},
         NativeBlsModule,

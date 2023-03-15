@@ -82,7 +82,6 @@ mod validate_identity_create_transition_basic_factory {
     use crate::identity::validation::RequiredPurposeAndSecurityLevelValidator;
     use crate::state_repository::MockStateRepositoryLike;
     use crate::tests::fixtures::PublicKeysValidatorMock;
-    use crate::tests::utils::SerdeTestExtension;
     use crate::validation::ValidationResult;
 
     pub use super::setup_test;
@@ -96,7 +95,6 @@ mod validate_identity_create_transition_basic_factory {
         use crate::identity::validation::RequiredPurposeAndSecurityLevelValidator;
         use crate::state_repository::MockStateRepositoryLike;
         use crate::tests::fixtures::get_public_keys_validator_for_transition;
-        use crate::tests::utils::SerdeTestExtension;
         use crate::{assert_consensus_errors, NonConsensusError};
 
         use super::setup_test;
@@ -195,7 +193,6 @@ mod validate_identity_create_transition_basic_factory {
         use crate::identity::validation::RequiredPurposeAndSecurityLevelValidator;
         use crate::state_repository::MockStateRepositoryLike;
         use crate::tests::fixtures::get_public_keys_validator_for_transition;
-        use crate::tests::utils::SerdeTestExtension;
 
         use super::super::setup_test;
 
@@ -267,7 +264,6 @@ mod validate_identity_create_transition_basic_factory {
         use crate::identity::validation::RequiredPurposeAndSecurityLevelValidator;
         use crate::state_repository::MockStateRepositoryLike;
         use crate::tests::fixtures::get_public_keys_validator_for_transition;
-        use crate::tests::utils::SerdeTestExtension;
 
         use super::super::setup_test;
 
@@ -366,7 +362,6 @@ mod validate_identity_create_transition_basic_factory {
         use crate::tests::fixtures::{
             get_public_keys_validator_for_transition, PublicKeysValidatorMock,
         };
-        use crate::tests::utils::SerdeTestExtension;
         use crate::validation::ValidationResult;
 
         use super::super::setup_test;
@@ -557,7 +552,6 @@ mod validate_identity_create_transition_basic_factory {
         use crate::identity::validation::RequiredPurposeAndSecurityLevelValidator;
         use crate::state_repository::MockStateRepositoryLike;
         use crate::tests::fixtures::get_public_keys_validator_for_transition;
-        use crate::tests::utils::SerdeTestExtension;
 
         use super::super::setup_test;
 
@@ -597,7 +591,9 @@ mod validate_identity_create_transition_basic_factory {
                 Arc::new(RequiredPurposeAndSecurityLevelValidator::default()),
                 MockStateRepositoryLike::new(),
             );
-            raw_state_transition.set_into_value("signature", vec!["string"; 65]).unwrap();
+            raw_state_transition
+                .set_into_value("signature", vec!["string"; 65])
+                .unwrap();
 
             let result = validator
                 .validate(&raw_state_transition, &Default::default())
@@ -619,7 +615,9 @@ mod validate_identity_create_transition_basic_factory {
                 Arc::new(RequiredPurposeAndSecurityLevelValidator::default()),
                 MockStateRepositoryLike::new(),
             );
-            raw_state_transition.set_into_value("signature", vec![0; 64]).unwrap();
+            raw_state_transition
+                .set_into_value("signature", vec![0; 64])
+                .unwrap();
 
             let result = validator
                 .validate(&raw_state_transition, &Default::default())
@@ -641,7 +639,9 @@ mod validate_identity_create_transition_basic_factory {
                 Arc::new(RequiredPurposeAndSecurityLevelValidator::default()),
                 MockStateRepositoryLike::new(),
             );
-            raw_state_transition.set_into_value("signature", vec![0; 66]).unwrap();
+            raw_state_transition
+                .set_into_value("signature", vec![0; 66])
+                .unwrap();
 
             let result = validator
                 .validate(&raw_state_transition, &Default::default())

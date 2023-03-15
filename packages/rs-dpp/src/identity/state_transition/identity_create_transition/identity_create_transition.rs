@@ -151,10 +151,7 @@ impl IdentityCreateTransition {
     }
 
     /// Replaces existing set of public keys with a new one
-    pub fn set_public_keys(
-        &mut self,
-        public_keys: Vec<IdentityPublicKeyWithWitness>,
-    ) -> &mut Self {
+    pub fn set_public_keys(&mut self, public_keys: Vec<IdentityPublicKeyWithWitness>) -> &mut Self {
         self.public_keys = public_keys;
 
         self

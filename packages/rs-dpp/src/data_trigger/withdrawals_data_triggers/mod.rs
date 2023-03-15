@@ -88,13 +88,13 @@ where
 
 #[cfg(test)]
 mod tests {
-    use platform_value::platform_value;
     use super::*;
     use crate::identity::state_transition::identity_credit_withdrawal_transition::Pooling;
     use crate::state_repository::MockStateRepositoryLike;
     use crate::state_transition::state_transition_execution_context::StateTransitionExecutionContext;
     use crate::system_data_contracts::load_system_data_contract;
     use crate::tests::fixtures::{get_data_contract_fixture, get_withdrawal_document_fixture};
+    use platform_value::platform_value;
 
     #[tokio::test]
     async fn should_throw_error_if_withdrawal_not_found() {

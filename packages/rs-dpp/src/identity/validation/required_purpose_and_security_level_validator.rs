@@ -1,12 +1,11 @@
 use platform_value::Value;
-use platform_value::Value::Null;
 use std::collections::HashMap;
 
 use crate::consensus::basic::identity::MissingMasterPublicKeyError;
 use crate::identity::validation::TPublicKeysValidator;
 use crate::identity::{IdentityPublicKey, Purpose, SecurityLevel};
 use crate::validation::ValidationResult;
-use crate::{DashPlatformProtocolInitError, NonConsensusError, ProtocolError};
+use crate::{DashPlatformProtocolInitError, NonConsensusError};
 
 #[derive(Eq, Hash, PartialEq)]
 struct PurposeKey {
@@ -26,16 +25,20 @@ impl TPublicKeysValidator for RequiredPurposeAndSecurityLevelValidator {
 
         let mut key_purposes_and_levels_count: HashMap<PurposeKey, usize> = HashMap::new();
 
-        for raw_public_key in raw_public_keys.iter().filter_map(|pk| {
-            match pk
-                .get_optional_integer::<u64>("disabledAt")
-                .map_err(NonConsensusError::ValueError)
-            {
-                Ok(Some(_)) => { Some(Ok(pk)) }
-                Ok(None) => { None }
-                Err(e) => { Some(Err(e))}
-            }
-        }).collect::<Result<Vec<_>, NonConsensusError>>()? {
+        for raw_public_key in raw_public_keys
+            .iter()
+            .filter_map(|pk| {
+                match pk
+                    .get_optional_integer::<u64>("disabledAt")
+                    .map_err(NonConsensusError::ValueError)
+                {
+                    Ok(Some(_)) => Some(Ok(pk)),
+                    Ok(None) => None,
+                    Err(e) => Some(Err(e)),
+                }
+            })
+            .collect::<Result<Vec<_>, NonConsensusError>>()?
+        {
             let public_key: IdentityPublicKey = platform_value::from_value(raw_public_key.clone())?;
             let combo = PurposeKey {
                 purpose: public_key.purpose,

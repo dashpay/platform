@@ -45,8 +45,7 @@ pub async fn fetch_asset_lock_transaction_output(
             .ok_or_else(|| DPPError::from(AssetLockOutputNotFoundError::new()))
             .cloned(),
         AssetLockProof::Chain(asset_lock_proof) => {
-            let out_point_buffer = *asset_lock_proof.out_point;
-            let out_point = OutPoint::from(out_point_buffer);
+            let out_point = OutPoint::from(asset_lock_proof.out_point);
 
             let output_index = out_point.vout as usize;
             let transaction_hash = out_point.txid;

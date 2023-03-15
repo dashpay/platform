@@ -1,7 +1,6 @@
 use chrono::Utc;
 use platform_value::string_encoding::Encoding;
 use platform_value::{platform_value, Value};
-use serde_json::{json, Value as JsonValue};
 
 use crate::identity::state_transition::identity_public_key_transitions::IdentityPublicKeyWithWitness;
 use crate::{
@@ -196,28 +195,28 @@ fn to_object_with_signature_skipped() {
 fn to_json() {
     let TestData { transition, .. } = setup_test();
     let result = transition
-        .to_json(false)
-        .expect("conversion to json shouldn't fail");
+        .to_object(false)
+        .expect("conversion to platform value shouldn't fail");
 
     let expected_raw_state_transition = platform_value!({
-        "protocolVersion" : 1,
-        "type" : 5,
-        "signature" : "",
-        "signaturePublicKeyId": 0,
-        "identityId" : transition.identity_id.to_string(Encoding::Base58),
-        "revision": 0,
-        "disablePublicKeys" : [0],
-        "publicKeysDisabledAt" : 1234567,
+        "protocolVersion" : 1u32,
+        "type" : 5u8,
+        "signature" : vec![],
+        "signaturePublicKeyId": 0u32,
+        "identityId" : transition.identity_id,
+        "revision": 0u8,
+        "disablePublicKeys" : [0u8],
+        "publicKeysDisabledAt" : 1234567u64,
         "addPublicKeys" : [
             {
 
-                "id" : 3,
-                "purpose" : 0,
-                "type": 0,
-                "securityLevel" : 0,
-                "data" : "AkVuTKyF3YgKLAQlLEtaUL2HTditwGILfWUVqjzYnIgH",
+                "id" : 3u32,
+                "purpose" : 0u8,
+                "type": 0u8,
+                "securityLevel" : 0u8,
+                "data" : base64::decode("AkVuTKyF3YgKLAQlLEtaUL2HTditwGILfWUVqjzYnIgH"),
                 "readOnly" : false,
-                "signature" : base64::encode(vec![0;65]),
+                "signature" : vec![0;65],
             }
         ]
     });

@@ -1,4 +1,3 @@
-use anyhow::anyhow;
 use std::convert::{TryFrom, TryInto};
 
 use crate::consensus::basic::state_transition::InvalidStateTransitionTypeError;
@@ -18,11 +17,9 @@ use crate::{
     },
     prelude::Identifier,
     state_repository::StateRepositoryLike,
-    util::json_value::JsonValueExt,
     ProtocolError,
 };
 use platform_value::Value;
-use serde_json::Value as JsonValue;
 
 use super::{
     state_transition_execution_context::StateTransitionExecutionContext, StateTransition,
@@ -60,7 +57,8 @@ pub async fn create_state_transition(
         }
         StateTransitionType::DocumentsBatch => {
             let raw_transitions = raw_state_transition
-                .get_array_ref("transitions").map_err(ProtocolError::ValueError)?;
+                .get_array_ref("transitions")
+                .map_err(ProtocolError::ValueError)?;
             let data_contracts = fetch_data_contracts_for_document_transition(
                 state_repository,
                 raw_transitions,
@@ -136,7 +134,6 @@ fn missing_state_transition_error() -> ProtocolError {
 mod test {
     use dashcore::network::constants::PROTOCOL_VERSION;
     use platform_value::{platform_value, Value};
-    use serde_json::json;
     use std::collections::BTreeMap;
 
     use crate::{

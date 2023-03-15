@@ -56,7 +56,7 @@ impl IdentityCreditWithdrawalTransitionBasicValidator {
         let mut result = self.json_schema_validator.validate(
             &transition_object
                 .try_into_validating_json()
-                .map_err(ProtocolError::ValueError)?,
+                .map_err(NonConsensusError::ValueError)?,
         )?;
 
         if !result.is_valid() {
@@ -67,7 +67,7 @@ impl IdentityCreditWithdrawalTransitionBasicValidator {
             self.protocol_version_validator.validate(
                 transition_object
                     .get_integer("protocolVersion")
-                    .map_err(ProtocolError::ValueError)?,
+                    .map_err(NonConsensusError::ValueError)?,
             )?,
         );
 
@@ -78,7 +78,7 @@ impl IdentityCreditWithdrawalTransitionBasicValidator {
         // validate pooling is always equals to 0
         let pooling = transition_object
             .get_integer(withdrawals_contract::property_names::POOLING)
-            .map_err(ProtocolError::ValueError)?;
+            .map_err(NonConsensusError::ValueError)?;
 
         if pooling > 0 {
             result.add_error(
@@ -91,7 +91,7 @@ impl IdentityCreditWithdrawalTransitionBasicValidator {
         // validate core_fee is in fibonacci sequence
         let core_fee_per_byte = transition_object
             .get_integer(withdrawals_contract::property_names::CORE_FEE_PER_BYTE)
-            .map_err(ProtocolError::ValueError)?;
+            .map_err(NonConsensusError::ValueError)?;
 
         if !is_fibonacci_number(core_fee_per_byte) {
             result.add_error(InvalidIdentityCreditWithdrawalTransitionCoreFeeError::new(
@@ -104,7 +104,7 @@ impl IdentityCreditWithdrawalTransitionBasicValidator {
         // validate output_script types
         let output_script: CoreScript = transition_object
             .get_bytes_into(withdrawals_contract::property_names::OUTPUT_SCRIPT)
-            .map_err(ProtocolError::ValueError)?;
+            .map_err(NonConsensusError::ValueError)?;
 
         if !output_script.is_p2pkh() && !output_script.is_p2sh() {
             result.add_error(

@@ -4,7 +4,6 @@ use rand::SeedableRng;
 use std::sync::Arc;
 
 use platform_value::{platform_value, Value};
-use serde_json::{json, Value as JsonValue};
 
 use crate::contracts::withdrawals_contract::document_types;
 use crate::data_contract::DriveContractExt;

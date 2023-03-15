@@ -23,8 +23,8 @@ use crate::{
 };
 use anyhow::anyhow;
 use anyhow::Context;
-use json_patch::PatchOperation;
 use lazy_static::lazy_static;
+use platform_value::patch::PatchOperation;
 use platform_value::Value;
 use serde_json::{json, Value as JsonValue};
 use std::sync::Arc;
@@ -78,7 +78,7 @@ where
         let result = self.json_schema_validator.validate(
             &raw_state_transition
                 .try_into_validating_json()
-                .map_err(ProtocolError::ValueError)?
+                .map_err(ProtocolError::ValueError)?,
         )?;
         if !result.is_valid() {
             return Ok(result);
@@ -102,7 +102,8 @@ where
         }
 
         // Validate Data Contract
-        let new_data_contract_object = raw_state_transition.get_value(property_names::DATA_CONTRACT)?;
+        let new_data_contract_object =
+            raw_state_transition.get_value(property_names::DATA_CONTRACT)?;
         let result = self
             .data_contract_validator
             .validate(new_data_contract_object)?;
@@ -110,7 +111,9 @@ where
             return Ok(result);
         }
 
-        let data_contract_id = new_data_contract_object.get_identifier(contract_property_names::ID).map_err(ProtocolError::ValueError)?;
+        let data_contract_id = new_data_contract_object
+            .get_identifier(contract_property_names::ID)
+            .map_err(ProtocolError::ValueError)?;
 
         if execution_context.is_dry_run() {
             return Ok(result);
@@ -158,7 +161,7 @@ where
         new_base_data_contract.remove(contract_property_names::VERSION)?;
 
         let base_data_contract_diff =
-            json_patch::diff(&existing_data_contract_object, &new_base_data_contract);
+            platform_value::patch::diff(&existing_data_contract_object, &new_base_data_contract);
 
         for diff in base_data_contract_diff.0.iter() {
             let (operation, property_name) = get_operation_and_property_name(diff);
@@ -175,7 +178,10 @@ where
 
         // Schema should be backward compatible
         let old_schema = &existing_data_contract.documents;
-        let new_schema = new_data_contract_object.get_value("documents")?;
+        let new_schema: JsonValue = new_data_contract_object
+            .get_value("documents")?
+            .clone()
+            .into();
 
         for (document_type, document_schema) in old_schema.iter() {
             let new_document_schema = new_schema.get(document_type).unwrap_or(&EMPTY_JSON);

@@ -149,10 +149,7 @@ impl IdentityUpdateTransition {
         self.revision
     }
 
-    pub fn set_public_keys_to_add(
-        &mut self,
-        add_public_keys: Vec<IdentityPublicKeyWithWitness>,
-    ) {
+    pub fn set_public_keys_to_add(&mut self, add_public_keys: Vec<IdentityPublicKeyWithWitness>) {
         self.add_public_keys = add_public_keys;
     }
 

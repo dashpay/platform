@@ -3,7 +3,6 @@ use std::convert::TryInto;
 use dashcore::PrivateKey;
 use platform_value::Value;
 
-use crate::state_transition::StateTransitionType;
 use crate::tests::fixtures::instant_asset_lock_proof_fixture;
 use crate::version;
 

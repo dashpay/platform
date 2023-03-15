@@ -10,7 +10,7 @@ use crate::{
     state_repository::StateRepositoryLike,
     state_transition::StateTransitionLike,
     validation::SimpleValidationResult,
-    NonConsensusError, ProtocolError, SerdeParsingError, StateError,
+    NonConsensusError, StateError,
 };
 
 use super::identity_update_transition::{property_names, IdentityUpdateTransition};

@@ -173,21 +173,20 @@ impl StateTransitionConvert for IdentityTopUpTransition {
     }
 
     fn to_object(&self, skip_signature: bool) -> Result<Value, ProtocolError> {
-        let mut json_value: Value = platform_value::to_value(self)?;
+        let mut value: Value = platform_value::to_value(self)?;
 
         if skip_signature {
-            if let Value::Object(ref mut o) = json_value {
-                for path in Self::signature_property_paths() {
-                    o.remove(path);
-                }
-            }
+            value
+                .remove_values_at_paths(Self::signature_property_paths())
+                .map_err(ProtocolError::ValueError)?;
         }
 
-        Ok(json_value)
+        Ok(value)
     }
 
     fn to_json(&self, skip_signature: bool) -> Result<JsonValue, ProtocolError> {
-        self.to_object(skip_signature).and_then(|value| value.try_into().map_err(ProtocolError::ValueError))
+        self.to_object(skip_signature)
+            .and_then(|value| value.try_into().map_err(ProtocolError::ValueError))
     }
 }
 

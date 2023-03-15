@@ -116,7 +116,7 @@ impl IdentityPublicKey {
     }
 
     pub fn from_value(value: Value) -> Result<IdentityPublicKey, ProtocolError> {
-        value.try_into()
+        value.try_into().map_err(ProtocolError::ValueError)
     }
 
     pub fn from_json_object(mut raw_object: JsonValue) -> Result<IdentityPublicKey, ProtocolError> {
@@ -203,26 +203,26 @@ impl Into<CborValue> for &IdentityPublicKey {
 }
 
 impl TryInto<Value> for &IdentityPublicKey {
-    type Error = ProtocolError;
+    type Error = platform_value::Error;
 
     fn try_into(self) -> Result<Value, Self::Error> {
-        platform_value::to_value(self).map_err(ProtocolError::ValueError)
+        platform_value::to_value(self)
     }
 }
 
 impl TryInto<Value> for IdentityPublicKey {
-    type Error = ProtocolError;
+    type Error = platform_value::Error;
 
     fn try_into(self) -> Result<Value, Self::Error> {
-        platform_value::to_value(self).map_err(ProtocolError::ValueError)
+        platform_value::to_value(self)
     }
 }
 
 impl TryFrom<Value> for IdentityPublicKey {
-    type Error = ProtocolError;
+    type Error = platform_value::Error;
 
     fn try_from(value: Value) -> Result<Self, Self::Error> {
-        platform_value::from_value(value).map_err(ProtocolError::ValueError)
+        platform_value::from_value(value)
     }
 }
 

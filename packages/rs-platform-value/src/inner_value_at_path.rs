@@ -143,8 +143,14 @@ mod test {
             .expect("no errors");
 
         assert_eq!(document["root"]["from"]["id"], platform_value!("123"));
-        assert_eq!(document["root"]["from"]["message"], platform_value!("text_message"));
-        assert_eq!(document["root"]["to"]["new_field"], platform_value!("new_value"));
+        assert_eq!(
+            document["root"]["from"]["message"],
+            platform_value!("text_message")
+        );
+        assert_eq!(
+            document["root"]["to"]["new_field"],
+            platform_value!("new_value")
+        );
         assert_eq!(
             document["root"]["array"][0]["new_field"],
             platform_value!("new_value")

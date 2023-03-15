@@ -10,8 +10,7 @@ use crate::errors::consensus::basic::identity::{
 use crate::identity::{IdentityPublicKey, KeyID, KeyType};
 use crate::validation::{JsonSchemaValidator, ValidationResult};
 use crate::{
-    BlsModule, DashPlatformProtocolInitError, NonConsensusError, ProtocolError,
-    PublicKeyValidationError,
+    BlsModule, DashPlatformProtocolInitError, NonConsensusError, PublicKeyValidationError,
 };
 
 use crate::identity::security_level::ALLOWED_SECURITY_LEVELS;

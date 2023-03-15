@@ -65,9 +65,7 @@ impl ValueMapHelper for ValueMap {
     }
 
     fn get_key_by_value_mut_or_insert(&mut self, search_key: &Value, value: Value) -> &mut Value {
-        let found = self.iter().position(|(key, _)| {
-            search_key == key
-        });
+        let found = self.iter().position(|(key, _)| search_key == key);
         match found {
             None => {
                 self.push((search_key.clone(), value));
@@ -115,9 +113,7 @@ impl ValueMapHelper for ValueMap {
 
     fn remove_optional_key_value(&mut self, search_key_value: &Value) -> Option<Value> {
         self.iter()
-            .position(|(key, _)| {
-                search_key_value == key
-            })
+            .position(|(key, _)| search_key_value == key)
             .map(|pos| self.remove(pos).1)
     }
 }

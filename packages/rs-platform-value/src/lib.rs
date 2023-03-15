@@ -14,13 +14,13 @@ mod inner_array_value;
 pub mod inner_value;
 mod inner_value_at_path;
 mod macros;
+pub mod patch;
+mod pointer;
 pub mod string_encoding;
 pub mod system_bytes;
 mod types;
 mod value_map;
 mod value_serialization;
-mod patch;
-mod pointer;
 
 pub use crate::value_map::{ValueMap, ValueMapHelper};
 pub use error::Error;
@@ -33,7 +33,7 @@ pub use types::identifier::{Identifier, IDENTIFIER_MEDIA_TYPE};
 
 pub use value_serialization::{from_value, to_value};
 
-pub use patch::{Patch, patch};
+pub use patch::{patch, Patch};
 
 /// A representation of a dynamic value that can handled dynamically
 #[non_exhaustive]

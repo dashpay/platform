@@ -33,9 +33,9 @@ use anyhow::anyhow;
 use lazy_static::lazy_static;
 use platform_value::btreemap_extensions::BTreeValueMapHelper;
 use platform_value::btreemap_extensions::BTreeValueMapPathHelper;
+use platform_value::converter::serde_json::BTreeValueRefJsonConverter;
 use platform_value::Value;
 use serde_json::Value as JsonValue;
-use platform_value::converter::serde_json::BTreeValueRefJsonConverter;
 
 use super::{
     find_duplicates_by_indices::find_duplicates_by_indices,
@@ -289,7 +289,11 @@ fn validate_raw_transitions<'a>(
             Action::Delete => {
                 let validator = JsonSchemaValidator::new(BASE_TRANSITION_SCHEMA.clone())
                     .map_err(|e| anyhow!("unable to compile base transition schema: {}", e))?;
-                let validation_result = validator.validate(&raw_document_transition.to_validating_json_value().map_err(ProtocolError::ValueError)?)?;
+                let validation_result = validator.validate(
+                    &raw_document_transition
+                        .to_validating_json_value()
+                        .map_err(ProtocolError::ValueError)?,
+                )?;
                 if !validation_result.is_valid() {
                     result.merge(validation_result);
                     return Ok(result);

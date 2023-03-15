@@ -1,6 +1,6 @@
+use crate::Value;
 use std::fmt;
 use std::fmt::Display;
-use crate::Value;
 
 struct PatchDiffer {
     path: String,
@@ -216,15 +216,16 @@ impl treediff::Value for Value {
     #[allow(clippy::type_complexity)]
     fn items<'a>(&'a self) -> Option<Box<dyn Iterator<Item = (Self::Key, &'a Self::Item)> + 'a>> {
         match *self {
-            Value::Array(ref inner) => {
-                Some(Box::new(inner.iter().enumerate().map(|(i, v)| (PlatformItemKey::ArrayIndex(i), v))))
-            }
-            Value::Map(ref inner) => {
-                Some(Box::new(inner.iter().filter_map(|(s, v)| {
-                    let key : Option<PlatformItemKey> = s.clone().into();
-                    key.map(|k| (k, v))
-                })))
-            }
+            Value::Array(ref inner) => Some(Box::new(
+                inner
+                    .iter()
+                    .enumerate()
+                    .map(|(i, v)| (PlatformItemKey::ArrayIndex(i), v)),
+            )),
+            Value::Map(ref inner) => Some(Box::new(inner.iter().filter_map(|(s, v)| {
+                let key: Option<PlatformItemKey> = s.clone().into();
+                key.map(|k| (k, v))
+            }))),
             _ => None,
         }
     }
@@ -243,7 +244,7 @@ mod tests {
             from_value(platform_value!([
                 { "op": "replace", "path": "/", "value": null },
             ]))
-                .unwrap()
+            .unwrap()
         );
     }
 
@@ -256,7 +257,7 @@ mod tests {
             from_value(platform_value!([
                 { "op": "replace", "path": "/", "value": { "title": "Hello!" } },
             ]))
-                .unwrap()
+            .unwrap()
         );
     }
 
@@ -271,7 +272,7 @@ mod tests {
                 { "op": "remove", "path": "/0" },
                 { "op": "remove", "path": "/0" },
             ]))
-                .unwrap()
+            .unwrap()
         );
     }
 
@@ -286,7 +287,7 @@ mod tests {
                 { "op": "remove", "path": "/1" },
                 { "op": "remove", "path": "/1" },
             ]))
-                .unwrap()
+            .unwrap()
         );
     }
     #[test]
@@ -301,7 +302,7 @@ mod tests {
                 { "op": "remove", "path": "/0" },
                 { "op": "remove", "path": "/0" },
             ]))
-                .unwrap()
+            .unwrap()
         );
     }
 

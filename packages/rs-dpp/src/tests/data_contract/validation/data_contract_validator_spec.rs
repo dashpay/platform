@@ -3,7 +3,7 @@ use std::sync::Arc;
 use jsonschema::error::ValidationErrorKind;
 use log::trace;
 use platform_value::{platform_value, Value};
-use serde_json::{json, Value as JsonValue};
+use serde_json::Value as JsonValue;
 use test_case::test_case;
 
 use crate::{
@@ -13,7 +13,6 @@ use crate::{
     errors::consensus::basic::{BasicError, IndexError},
     prelude::*,
     tests::fixtures::get_data_contract_fixture,
-    util::json_value::JsonValueExt,
     version::{ProtocolVersionValidator, COMPATIBILITY_MAP, LATEST_VERSION},
 };
 

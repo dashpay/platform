@@ -1,8 +1,8 @@
 mod from_raw_object {
     use bls_signatures::Serialize;
     use dashcore::PublicKey;
-    use serde_json::json;
     use platform_value::platform_value;
+    use serde_json::json;
 
     use crate::identity::{KeyType, Purpose, SecurityLevel};
     use crate::prelude::IdentityPublicKey;

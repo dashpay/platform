@@ -9,7 +9,6 @@ mod validate_instant_asset_lock_proof_structure_factory {
     use dashcore::{PrivateKey, Transaction};
     use jsonschema::error::ValidationErrorKind;
     use platform_value::Value;
-    use serde_json::Value as JsonValue;
 
     use crate::assert_consensus_errors;
     use crate::consensus::ConsensusError;
@@ -24,7 +23,6 @@ mod validate_instant_asset_lock_proof_structure_factory {
     use crate::tests::fixtures::{
         instant_asset_lock_is_lock_fixture, instant_asset_lock_proof_transaction_fixture,
     };
-    use crate::tests::utils::SerdeTestExtension;
 
     struct TestData {
         pub validate_instant_asset_lock_proof_structure:

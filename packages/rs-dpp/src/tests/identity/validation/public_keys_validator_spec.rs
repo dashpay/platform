@@ -25,7 +25,6 @@ pub mod id {
     use crate::identity::KeyID;
     use crate::tests::identity::validation::public_keys_validator_spec::setup_test;
     use crate::tests::utils::platform_value_set_ref;
-    use crate::tests::utils::SerdeTestExtension;
 
     #[test]
     pub fn should_be_present() {

@@ -1,11 +1,9 @@
-use anyhow::anyhow;
 use integer_encoding::VarInt;
 use serde_json::{Map, Number, Value as JsonValue};
 
-use crate::consensus::basic::decode::ProtocolVersionParsingError;
 use crate::data_contract::errors::StructureError;
 use crate::data_contract::extra::common::check_protocol_version;
-use crate::{errors::consensus::ConsensusError, errors::ProtocolError};
+use crate::errors::ProtocolError;
 
 pub fn parse_protocol_version(
     protocol_bytes: &[u8],

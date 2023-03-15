@@ -14,7 +14,6 @@ use integer_encoding::VarInt;
 use crate::data_contract::document_type::document_type::PROTOCOL_VERSION;
 use crate::data_contract::document_type::DocumentType;
 use crate::document::Document;
-use platform_value::btreemap_extensions::BTreeValueMapHelper;
 use platform_value::btreemap_extensions::BTreeValueMapInsertionPathHelper;
 use platform_value::btreemap_extensions::BTreeValueMapPathHelper;
 use platform_value::btreemap_extensions::BTreeValueMapReplacementPathHelper;

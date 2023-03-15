@@ -20,14 +20,13 @@ use crate::{
         },
         utils::get_schema_error,
     },
-    util::json_value::JsonValueExt,
     validation::SimpleValidationResult,
     version::ProtocolVersionValidator,
     NativeBlsModule, NonConsensusError,
 };
 use jsonschema::error::ValidationErrorKind;
 use platform_value::{platform_value, Value};
-use serde_json::{json, Value as JsonValue};
+use serde_json::Value as JsonValue;
 use std::{convert::TryInto, sync::Arc};
 use test_case::test_case;
 

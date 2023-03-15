@@ -2,7 +2,7 @@ use std::convert::TryInto;
 use std::sync::Arc;
 
 use lazy_static::lazy_static;
-use platform_value::Value;
+use platform_value::{Value, ValueMapHelper};
 use serde_json::Value as JsonValue;
 
 use crate::identity::state_transition::asset_lock_proof::AssetLockProofValidator;
@@ -47,18 +47,18 @@ impl<SR: StateRepositoryLike> IdentityTopUpTransitionBasicValidator<SR> {
 
     pub async fn validate(
         &self,
-        identity_topup_transition_json: &Value,
+        identity_topup_transition_object: &Value,
         execution_context: &StateTransitionExecutionContext,
     ) -> Result<ValidationResult<()>, NonConsensusError> {
         let mut result = self.json_schema_validator.validate(
-            &identity_topup_transition_json
+            &identity_topup_transition_object
                 .try_into_validating_json()
-                .map_err(ProtocolError::ValueError)?,
+                .map_err(NonConsensusError::ValueError)?,
         )?;
 
         let identity_transition_map =
-            identity_topup_transition_json.as_object().ok_or_else(|| {
-                SerdeParsingError::new("Expected identity top up transition to be a json object")
+            identity_topup_transition_object.as_map().ok_or_else(|| {
+                SerdeParsingError::new("Expected identity top up transition to be a map object")
             })?;
 
         if !result.is_valid() {
@@ -78,7 +78,7 @@ impl<SR: StateRepositoryLike> IdentityTopUpTransitionBasicValidator<SR> {
             self.asset_lock_proof_validator
                 .validate_structure(
                     identity_transition_map
-                        .get(ASSET_LOCK_PROOF_PROPERTY_NAME)
+                        .get_key(ASSET_LOCK_PROOF_PROPERTY_NAME)
                         .ok_or_else(|| {
                             NonConsensusError::SerdeJsonError(String::from(
                                 "identity state transition must contain an asset lock proof",

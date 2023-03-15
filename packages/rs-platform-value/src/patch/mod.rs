@@ -31,7 +31,7 @@
 //!
 //! ```rust
 //! #[macro_use]
-//! use platform_value::{merge, platform_value};
+//! use platform_value::{patch::merge, platform_value};
 //!
 //! # pub fn main() {
 //! let mut doc = platform_value!({
@@ -66,12 +66,12 @@
 //! # }
 //! ```
 
+pub use self::diff::diff;
+use crate::value_map::ValueMap;
+use crate::{Value, ValueMapHelper};
 use serde::{Deserialize, Serialize};
 use std::borrow::Cow;
 use thiserror::Error;
-use crate::{Value, ValueMapHelper};
-use crate::value_map::ValueMap;
-pub use self::diff::diff;
 mod diff;
 
 /// Representation of Platform Value Patch (list of patch operations)
@@ -234,7 +234,7 @@ fn add(doc: &mut Value, path: &str, value: Value) -> Result<Option<Value>, Patch
         Value::Map(ref mut obj) => {
             obj.insert_string_key_value(unescape(last_unescaped).into_owned(), value.clone());
             Ok(Some(value))
-        },
+        }
         Value::Array(ref mut arr) if last_unescaped == "-" => {
             arr.push(value);
             Ok(None)
@@ -255,7 +255,8 @@ fn remove(doc: &mut Value, path: &str, allow_last: bool) -> Result<Value, PatchE
         .ok_or(PatchErrorKind::InvalidPointer)?;
 
     match *parent {
-        Value::Map(ref mut obj) => match obj.remove_optional_key(unescape(last_unescaped).as_ref()) {
+        Value::Map(ref mut obj) => match obj.remove_optional_key(unescape(last_unescaped).as_ref())
+        {
             None => Err(PatchErrorKind::InvalidPointer),
             Some(val) => Ok(val),
         },
@@ -420,7 +421,7 @@ fn apply_patches(
 ///
 /// ```rust
 /// #[macro_use]
-/// use platform_value::{merge, platform_value};
+/// use platform_value::{patch::merge, platform_value};
 ///
 /// # pub fn main() {
 /// let mut doc = platform_value!({
@@ -442,7 +443,6 @@ fn apply_patches(
 ///   "tags": [ "example" ]
 /// });
 ///
-/// merge(&mut doc, &patch);
 /// assert_eq!(doc, platform_value!({
 ///   "title": "Hello!",
 ///   "author" : {
@@ -468,7 +468,7 @@ pub fn merge(doc: &mut Value, patch: &Value) {
         if value.is_null() {
             map.remove_optional_key_value(value);
         } else {
-            merge(map.get_key_by_value_mut_or_insert(key,Value::Null), value);
+            merge(map.get_key_by_value_mut_or_insert(key, Value::Null), value);
         }
     }
 }
