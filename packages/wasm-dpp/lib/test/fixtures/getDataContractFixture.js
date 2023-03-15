@@ -1,5 +1,5 @@
 const protocolVersion = require('@dashevo/dpp/lib/version/protocolVersion');
-const JsIdentifier = require('@dashevo/dpp/lib/Identifier/Identifier');
+const JsIdentifier = require('@dashevo/dpp/lib/identifier/Identifier');
 const generateRandomIdentifierAsync = require('../utils/generateRandomIdentifierAsync');
 const { default: loadWasmDpp } = require('../../..');
 let { DataContractFactory, DataContractValidator } = require('../../..');
