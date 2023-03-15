@@ -1,4 +1,3 @@
-use platform_value::Value;
 use crate::identity::state_transition::asset_lock_proof::{
     AssetLockProof, AssetLockProofType, ChainAssetLockProofStructureValidator,
     InstantAssetLockProofStructureValidator, PublicKeyHash,
@@ -7,6 +6,7 @@ use crate::state_repository::StateRepositoryLike;
 use crate::state_transition::state_transition_execution_context::StateTransitionExecutionContext;
 use crate::validation::ValidationResult;
 use crate::NonConsensusError;
+use platform_value::Value;
 
 pub struct AssetLockProofValidator<SR: StateRepositoryLike> {
     instant_asset_lock_structure_validator: InstantAssetLockProofStructureValidator<SR>,

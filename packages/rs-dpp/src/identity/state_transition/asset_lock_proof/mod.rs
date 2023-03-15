@@ -3,7 +3,7 @@ use std::convert::{TryFrom, TryInto};
 use dashcore::Transaction;
 use serde::de::Error as DeError;
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
-use serde_json::{Value as JsonValue};
+use serde_json::Value as JsonValue;
 
 pub use asset_lock_proof_validator::*;
 pub use asset_lock_public_key_hash_fetcher::*;

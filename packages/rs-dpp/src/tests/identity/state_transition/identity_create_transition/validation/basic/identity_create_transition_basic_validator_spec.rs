@@ -307,7 +307,9 @@ mod validate_identity_create_transition_basic_factory {
                 Arc::new(RequiredPurposeAndSecurityLevelValidator::default()),
                 MockStateRepositoryLike::new(),
             );
-            raw_state_transition.set_into_value("assetLockProof", 1).unwrap();
+            raw_state_transition
+                .set_into_value("assetLockProof", 1)
+                .unwrap();
 
             let result = validator
                 .validate(&raw_state_transition, &Default::default())
@@ -329,13 +331,13 @@ mod validate_identity_create_transition_basic_factory {
                 Arc::new(RequiredPurposeAndSecurityLevelValidator::default()),
                 MockStateRepositoryLike::new(),
             );
-            raw_state_transition.inser
-            let st_map = raw_state_transition
-                .get_string_mut_ref_map("assetLockProof")
-                .unwrap()
-                .as_object_mut()
+            raw_state_transition
+                .set_value_at_path(
+                    "assetLockProof",
+                    "transaction",
+                    "totally not a valid type".into(),
+                )
                 .unwrap();
-            st_map.insert("transaction".into(), "totally not a valid type".into());
 
             let result = validator
                 .validate(&raw_state_transition, &Default::default())
@@ -430,9 +432,8 @@ mod validate_identity_create_transition_basic_factory {
                 MockStateRepositoryLike::new(),
             );
 
-            let public_keys = raw_state_transition
-                .get_value_mut("publicKeys")
-                .as_array_mut()
+            let mut public_keys = raw_state_transition
+                .get_array_mut_ref("publicKeys")
                 .unwrap();
             let key = public_keys.first().unwrap().clone();
 
@@ -461,12 +462,11 @@ mod validate_identity_create_transition_basic_factory {
                 MockStateRepositoryLike::new(),
             );
 
-            let public_keys = raw_state_transition
-                .get_value_mut("publicKeys")
-                .as_array_mut()
+            let mut public_keys = raw_state_transition
+                .get_array_mut_ref("publicKeys")
                 .unwrap();
             let key = public_keys.first().unwrap().clone();
-            public_keys.push(key.clone());
+            public_keys.push(key);
 
             let result = validator
                 .validate(&raw_state_transition, &Default::default())

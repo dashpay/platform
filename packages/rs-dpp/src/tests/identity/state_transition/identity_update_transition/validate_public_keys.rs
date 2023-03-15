@@ -6,16 +6,17 @@ use crate::{
     tests::{fixtures::identity_fixture, utils::get_state_error_from_result},
     StateError,
 };
+use platform_value::Value;
 use serde_json::Value as JsonValue;
 
 struct TestData {
-    raw_public_keys: Vec<JsonValue>,
+    raw_public_keys: Vec<Value>,
     identity: Identity,
 }
 
 fn setup_test() -> TestData {
     let identity = identity_fixture();
-    let raw_public_keys: Vec<JsonValue> = identity
+    let raw_public_keys: Vec<Value> = identity
         .public_keys
         .values()
         .map(|pk| pk.to_raw_json_object())
@@ -36,8 +37,8 @@ fn should_return_invalid_result_if_there_are_duplicate_key_ids() {
     } = setup_test();
 
     raw_public_keys[1]["id"] = raw_public_keys[0]["id"].clone();
-    let result =
-        validate_public_keys(&raw_public_keys).expect("the validation result should be returned");
+    let result = validate_public_keys(raw_public_keys.as_slice())
+        .expect("the validation result should be returned");
 
     let state_error = get_state_error_from_result(&result, 0);
 

@@ -376,27 +376,22 @@ impl StateTransitionConvert for DocumentsBatchTransition {
     }
 
     fn to_object(&self, skip_signature: bool) -> Result<Value, ProtocolError> {
-        let mut json_object: Value = platform_value::to_value(self)?;
-        json_object.replace_at_paths(
-            Self::identifiers_property_paths(),
-            ReplacementType::Identifier,
-        )?;
-
+        let mut object: Value = platform_value::to_value(self)?;
         if skip_signature {
             for path in Self::signature_property_paths() {
-                let _ = json_object.remove(path);
+                let _ = object.remove(path);
             }
         }
         let mut transitions = vec![];
         for transition in self.transitions.iter() {
-            transitions.push(transition.to_object()?.try_into_validating_json().unwrap())
+            transitions.push(transition.to_object()?)
         }
-        json_object.insert(
+        object.insert(
             String::from(property_names::TRANSITIONS),
-            JsonValue::Array(transitions),
+            Value::Array(transitions),
         )?;
 
-        Ok(json_object)
+        Ok(object)
     }
 
     fn to_buffer(&self, skip_signature: bool) -> Result<Vec<u8>, ProtocolError> {

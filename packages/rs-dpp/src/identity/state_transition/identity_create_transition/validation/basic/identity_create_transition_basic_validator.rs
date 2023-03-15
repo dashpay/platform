@@ -1,10 +1,11 @@
 use std::sync::Arc;
 
 use lazy_static::lazy_static;
-use serde_json::Value as JsonValue;
 use platform_value::Value;
+use serde_json::Value as JsonValue;
 
 use crate::identity::state_transition::asset_lock_proof::AssetLockProofValidator;
+use crate::identity::state_transition::identity_update_transition::identity_update_transition::property_names;
 use crate::identity::state_transition::validate_public_key_signatures::TPublicKeysSignaturesValidator;
 use crate::identity::validation::TPublicKeysValidator;
 use crate::state_repository::StateRepositoryLike;
@@ -13,7 +14,6 @@ use crate::util::protocol_data::{get_protocol_version, get_raw_public_keys};
 use crate::validation::{JsonSchemaValidator, ValidationResult};
 use crate::version::ProtocolVersionValidator;
 use crate::{BlsModule, DashPlatformProtocolInitError, NonConsensusError, ProtocolError};
-use crate::identity::state_transition::identity_update_transition::identity_update_transition::property_names;
 
 lazy_static! {
     static ref INDENTITY_CREATE_TRANSITION_SCHEMA: JsonValue = serde_json::from_str(include_str!(
@@ -72,21 +72,28 @@ impl<
         transition_object: &Value,
         execution_context: &StateTransitionExecutionContext,
     ) -> Result<ValidationResult<()>, NonConsensusError> {
-        let mut result = self.json_schema_validator.validate(&transition_object.into())?;
+        let mut result = self
+            .json_schema_validator
+            .validate(&transition_object.into())?;
 
         if !result.is_valid() {
             return Ok(result);
         }
 
         result.merge(
-            self.protocol_version_validator
-                .validate(transition_object.get_integer(property_names::PROTOCOL_VERSION).map_err(ProtocolError::ValueError)?)?,
+            self.protocol_version_validator.validate(
+                transition_object
+                    .get_integer(property_names::PROTOCOL_VERSION)
+                    .map_err(ProtocolError::ValueError)?,
+            )?,
         );
         if !result.is_valid() {
             return Ok(result);
         }
 
-        let public_keys = transition_object.get_array_slice("publicKeys").map_err(ProtocolError::ValueError)?;
+        let public_keys = transition_object
+            .get_array_slice("publicKeys")
+            .map_err(ProtocolError::ValueError)?;
         result.merge(self.public_keys_validator.validate_keys(public_keys)?);
         if !result.is_valid() {
             return Ok(result);

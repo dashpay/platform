@@ -25,6 +25,12 @@ impl CoreScript {
     }
 }
 
+impl From<Vec<u8>> for CoreScript {
+    fn from(value: Vec<u8>) -> Self {
+        CoreScript::from_bytes(value)
+    }
+}
+
 impl Deref for CoreScript {
     type Target = DashcoreScript;
 

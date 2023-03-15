@@ -204,7 +204,8 @@ impl StateTransitionConvert for DataContractUpdateTransition {
                 .try_for_each(|path| {
                     object
                         .remove_value_at_path(path)
-                        .map_err(ProtocolError::ValueError).map(|_| ())
+                        .map_err(ProtocolError::ValueError)
+                        .map(|_| ())
                 })?;
         }
         object.insert(String::from(DATA_CONTRACT), self.data_contract.to_object()?)?;

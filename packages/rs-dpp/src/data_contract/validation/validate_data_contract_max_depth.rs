@@ -90,7 +90,9 @@ fn calc_max_depth(value: &Value) -> Result<usize, BasicError> {
 
 fn resolve_uri<'a>(value: &'a Value, uri: &str) -> Result<&'a Value, ProtocolError> {
     if !uri.starts_with("#/") {
-        return Err(ProtocolError::Generic("only local references are allowed".to_string()));
+        return Err(ProtocolError::Generic(
+            "only local references are allowed".to_string(),
+        ));
     }
 
     let string_path = uri.strip_prefix("#/").unwrap().replace('/', ".");

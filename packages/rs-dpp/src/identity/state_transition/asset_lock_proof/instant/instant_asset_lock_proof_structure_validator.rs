@@ -3,8 +3,8 @@ use std::sync::Arc;
 use dashcore::consensus;
 use dashcore::InstantLock;
 use lazy_static::lazy_static;
-use serde_json::Value as JsonValue;
 use platform_value::Value;
+use serde_json::Value as JsonValue;
 
 use crate::consensus::basic::identity::{
     IdentityAssetLockProofLockedTransactionMismatchError, InvalidInstantAssetLockProofError,
@@ -60,7 +60,10 @@ where
     ) -> Result<ValidationResult<PublicKeyHash>, NonConsensusError> {
         let mut result = ValidationResult::default();
 
-        result.merge(self.json_schema_validator.validate(&asset_lock_proof_object.try_to_validating_json()?)?);
+        result.merge(
+            self.json_schema_validator
+                .validate(&asset_lock_proof_object.try_to_validating_json()?)?,
+        );
 
         if !result.is_valid() {
             return Ok(result);
@@ -88,18 +91,13 @@ where
             return Ok(result);
         }
 
-        let tx_json_uint_array = asset_lock_proof_object
-            .get_bytes("transaction")?;
+        let tx_json_uint_array = asset_lock_proof_object.get_bytes("transaction")?;
 
         let output_index = asset_lock_proof_object.get_integer("outputIndex")?;
 
         let validate_asset_lock_transaction_result = self
             .asset_lock_transaction_validator
-            .validate(
-                &tx_json_uint_array,
-                output_index,
-                execution_context,
-            )
+            .validate(&tx_json_uint_array, output_index, execution_context)
             .await?;
 
         let validation_result_data = if validate_asset_lock_transaction_result.is_valid() {

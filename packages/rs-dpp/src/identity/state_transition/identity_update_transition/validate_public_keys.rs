@@ -1,7 +1,7 @@
 use anyhow::anyhow;
 use lazy_static::lazy_static;
-use serde_json::Value as JsonValue;
 use platform_value::Value;
+use serde_json::Value as JsonValue;
 
 use crate::{
     identity::validation::{duplicated_key_ids, duplicated_keys, TPublicKeysValidator},

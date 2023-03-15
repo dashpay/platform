@@ -34,6 +34,8 @@ pub enum ProtocolError {
     DecodingError(String),
     #[error("File not found Error - {0}")]
     FileNotFound(String),
+    #[error("unknown protocol version error {0}")]
+    UnknownProtocolVersionError(String),
     #[error("Not included or invalid protocol version")]
     NoProtocolVersionError,
     #[error("Parsing error: {0}")]

@@ -11,6 +11,7 @@ use std::convert::TryInto;
 use anyhow::anyhow;
 use ciborium::value::Value as CborValue;
 use dashcore::PublicKey as ECDSAPublicKey;
+use platform_value::Value;
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use serde_json::Value as JsonValue;
 
@@ -199,6 +200,22 @@ impl IdentityPublicKey {
 impl Into<CborValue> for &IdentityPublicKey {
     fn into(self) -> CborValue {
         self.to_cbor_value()
+    }
+}
+
+impl TryInto<Value> for &IdentityPublicKey {
+    type Error = ProtocolError;
+
+    fn try_into(self) -> Result<Value, Self::Error> {
+        platform_value::to_value(self).map_err(ProtocolError::ValueError)
+    }
+}
+
+impl TryInto<Value> for IdentityPublicKey {
+    type Error = ProtocolError;
+
+    fn try_into(self) -> Result<Value, Self::Error> {
+        platform_value::to_value(self).map_err(ProtocolError::ValueError)
     }
 }
 

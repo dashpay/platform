@@ -7,6 +7,7 @@ use crate::consensus::basic::decode::ProtocolVersionParsingError;
 use crate::consensus::basic::invalid_data_contract_version_error::InvalidDataContractVersionError;
 use crate::consensus::ConsensusError;
 use crate::state_transition::state_transition_execution_context::StateTransitionExecutionContext;
+use crate::tests::utils::SerdeTestExtension;
 use crate::{
     consensus::basic::BasicError,
     data_contract::{
@@ -24,10 +25,9 @@ use anyhow::anyhow;
 use anyhow::Context;
 use json_patch::PatchOperation;
 use lazy_static::lazy_static;
+use platform_value::Value;
 use serde_json::{json, Value as JsonValue};
 use std::sync::Arc;
-use platform_value::Value;
-use crate::tests::utils::SerdeTestExtension;
 
 use super::schema_compatibility_validator::validate_schema_compatibility;
 use super::schema_compatibility_validator::DiffVAlidatorError;
@@ -75,23 +75,26 @@ where
     ) -> Result<SimpleValidationResult, ProtocolError> {
         let mut validation_result = SimpleValidationResult::default();
 
-        let result = self.json_schema_validator.validate(&raw_state_transition.try_into_validating_json().map_err(ProtocolError::ValueError)?)?;
+        let result = self.json_schema_validator.validate(
+            &raw_state_transition
+                .try_into_validating_json()
+                .map_err(ProtocolError::ValueError)?,
+        )?;
         if !result.is_valid() {
             return Ok(result);
         }
 
-        let protocol_version = match raw_state_transition
-            .get_integer(property_names::PROTOCOL_VERSION)
-        {
-            Ok(v) => v,
-            Err(parsing_error) => {
-                return Ok(SimpleValidationResult::new(Some(vec![
-                    ConsensusError::ProtocolVersionParsingError(ProtocolVersionParsingError::new(
-                        parsing_error.into(),
-                    )),
-                ])))
-            }
-        };
+        let protocol_version =
+            match raw_state_transition.get_integer(property_names::PROTOCOL_VERSION) {
+                Ok(v) => v,
+                Err(parsing_error) => {
+                    return Ok(SimpleValidationResult::new(Some(vec![
+                        ConsensusError::ProtocolVersionParsingError(
+                            ProtocolVersionParsingError::new(parsing_error.into()),
+                        ),
+                    ])))
+                }
+            };
 
         let result = self.protocol_version_validator.validate(protocol_version)?;
         if !result.is_valid() {
@@ -100,7 +103,9 @@ where
 
         // Validate Data Contract
         let data_contract_object = raw_state_transition.get_value(property_names::DATA_CONTRACT)?;
-        let result = self.data_contract_validator.validate(data_contract_object)?;
+        let result = self
+            .data_contract_validator
+            .validate(data_contract_object)?;
         if !result.is_valid() {
             return Ok(result);
         }
@@ -138,9 +143,13 @@ where
         }
         let mut existing_data_contract_object = existing_data_contract.to_object()?;
 
-
         existing_data_contract_object
-            .remove_many(&vec![contract_property_names::DEFINITIONS, contract_property_names::DOCUMENTS, contract_property_names::VERSION]).map_err(ProtocolError::ValueError)?;
+            .remove_many(&vec![
+                contract_property_names::DEFINITIONS,
+                contract_property_names::DOCUMENTS,
+                contract_property_names::VERSION,
+            ])
+            .map_err(ProtocolError::ValueError)?;
 
         let mut new_base_data_contract = data_contract_object.clone();
         new_base_data_contract

@@ -115,7 +115,9 @@ impl DocumentTransitionObjectLike for DocumentCreateTransition {
         data_contract: DataContract,
     ) -> Result<Self, ProtocolError> {
         let value: Value = json_value.into();
-        let mut map = value.into_btree_string_map().map_err(ProtocolError::ValueError)?;
+        let mut map = value
+            .into_btree_string_map()
+            .map_err(ProtocolError::ValueError)?;
 
         let document_type = map.get_str("$type")?;
 

@@ -782,6 +782,30 @@ impl Value {
         }
     }
 
+    /// If the `Value` is a `Array`, returns a the associated `Vec<&Value>` array as `Ok`.
+    /// Returns `Err(Error::Structure("reason"))` otherwise.
+    ///
+    /// ```
+    /// # use platform_value::{Value, Error};
+    /// #
+    /// let mut value = Value::Array(
+    ///     vec![
+    ///         Value::U64(17),
+    ///         Value::Float(18.),
+    ///     ]
+    /// );
+    /// assert_eq!(value.to_array_ref(), Ok(&vec![Value::U64(17), Value::Float(18.)]));
+    ///
+    /// let value = Value::Bool(true);
+    /// assert_eq!(value.to_array_ref(), Err(Error::StructureError("value is not an array".to_string())));
+    /// ```
+    pub fn to_array_ref(&self) -> Result<&Vec<Value>, Error> {
+        match self {
+            Value::Array(vec) => Ok(vec),
+            _other => Err(Error::StructureError("value is not an array".to_string())),
+        }
+    }
+
     /// If the `Value` is a `Array`, returns a the associated `Vec<Value>` data as `Ok`.
     /// Returns `Err(Error::Structure("reason"))` otherwise.
     ///

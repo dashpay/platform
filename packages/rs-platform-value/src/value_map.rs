@@ -153,7 +153,9 @@ impl Value {
     /// let value = Value::Bool(true);
     /// assert_eq!(value.to_ref_string_map::<Vec<(_,_)>>(), Err(Error::StructureError("value is not a map".to_string())))
     /// ```
-    pub fn to_ref_string_map<'a, I: FromIterator<(String, &'a Value)>>(&'a self) -> Result<I, Error> {
+    pub fn to_ref_string_map<'a, I: FromIterator<(String, &'a Value)>>(
+        &'a self,
+    ) -> Result<I, Error> {
         Self::map_ref_into_string_map(self.to_map_ref()?)
     }
 
@@ -199,7 +201,9 @@ impl Value {
     /// Takes a ref to a ValueMap which is a `&Vec<(Value, Value)>`
     /// Returns a BTreeMap<String, &Value> as long as each Key is a String
     /// Returns `Err(Error::Structure("reason"))` otherwise.
-    pub fn map_ref_into_btree_string_map(map: &ValueMap) -> Result<BTreeMap<String, &Value>, Error> {
+    pub fn map_ref_into_btree_string_map(
+        map: &ValueMap,
+    ) -> Result<BTreeMap<String, &Value>, Error> {
         map.iter()
             .map(|(key, value)| {
                 let key = key

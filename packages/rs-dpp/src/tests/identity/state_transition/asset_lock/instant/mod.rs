@@ -8,8 +8,8 @@ mod validate_instant_asset_lock_proof_structure_factory {
     use dashcore::Txid;
     use dashcore::{PrivateKey, Transaction};
     use jsonschema::error::ValidationErrorKind;
-    use serde_json::Value as JsonValue;
     use platform_value::Value;
+    use serde_json::Value as JsonValue;
 
     use crate::assert_consensus_errors;
     use crate::consensus::ConsensusError;

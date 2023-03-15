@@ -22,8 +22,8 @@ use crate::{
 };
 
 use jsonschema::error::ValidationErrorKind;
-use serde_json::{json, Value as JsonValue};
 use platform_value::{platform_value, Value};
+use serde_json::{json, Value as JsonValue};
 
 struct TestData {
     version_validator: ProtocolVersionValidator,

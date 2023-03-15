@@ -285,8 +285,6 @@ impl StateTransitionConvert for IdentityCreateTransition {
     fn to_json(&self, skip_signature: bool) -> Result<JsonValue, ProtocolError> {
         let mut json = serde_json::Value::Object(Default::default());
 
-        // TODO: super.toJSON()
-
         json.insert(
             property_names::TRANSITION_TYPE.to_string(),
             serde_json::Value::from(Self::get_type() as u8),

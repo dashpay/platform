@@ -178,7 +178,9 @@ impl DataContract {
         json_value.replace_binary_paths(BINARY_FIELDS, ReplaceWith::Bytes)?;
 
         let value: Value = json_value.clone().into();
-        let data_contract_map = value.into_btree_string_map().map_err(ProtocolError::ValueError)?;
+        let data_contract_map = value
+            .into_btree_string_map()
+            .map_err(ProtocolError::ValueError)?;
         let mut data_contract: DataContract = serde_json::from_value(json_value)?;
         data_contract.generate_binary_properties();
 

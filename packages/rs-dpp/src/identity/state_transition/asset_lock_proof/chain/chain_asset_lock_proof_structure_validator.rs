@@ -6,9 +6,9 @@ use dashcore::hashes::hex::ToHex;
 use dashcore::hashes::Hash;
 use dashcore::OutPoint;
 use lazy_static::lazy_static;
+use platform_value::Value;
 use serde::{Deserialize, Serialize};
 use serde_json::Value as JsonValue;
-use platform_value::Value;
 
 use crate::consensus::basic::identity::{
     IdentityAssetLockTransactionIsNotFoundError, InvalidAssetLockProofCoreChainHeightError,
@@ -77,14 +77,18 @@ where
     ) -> Result<ValidationResult<PublicKeyHash>, NonConsensusError> {
         let mut result = ValidationResult::default();
 
-        result.merge(self.json_schema_validator.validate(&asset_lock_proof_object.try_to_validating_json()?)?);
+        result.merge(
+            self.json_schema_validator
+                .validate(&asset_lock_proof_object.try_to_validating_json()?)?,
+        );
 
         if !result.is_valid() {
             return Ok(result);
         }
 
-        let proof: ChainAssetLockProof = platform_value::from_value(asset_lock_proof_object.clone())
-            .map_err(|e| NonConsensusError::StateRepositoryFetchError(e.to_string()))?;
+        let proof: ChainAssetLockProof =
+            platform_value::from_value(asset_lock_proof_object.clone())
+                .map_err(|e| NonConsensusError::StateRepositoryFetchError(e.to_string()))?;
 
         let proof_core_chain_locked_height = proof.core_chain_locked_height;
 

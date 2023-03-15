@@ -49,7 +49,7 @@ pub struct SignaturesValidatorMock {}
 impl TPublicKeysSignaturesValidator for SignaturesValidatorMock {
     fn validate_public_key_signatures<'a>(
         &self,
-        _raw_state_transition: &JsonValue,
+        _raw_state_transition: &Value,
         _raw_public_keys: impl IntoIterator<Item = &'a JsonValue>,
     ) -> Result<SimpleValidationResult, NonConsensusError> {
         Ok(SimpleValidationResult::default())
@@ -455,8 +455,7 @@ fn add_public_keys_should_not_have_more_than_10_items() {
 
     let _ = raw_state_transition.remove(property_names::DISABLE_PUBLIC_KEYS);
     let _ = raw_state_transition.remove(property_names::PUBLIC_KEYS_DISABLED_AT);
-    let public_keys_to_add: Vec<JsonValue> =
-        (0..11).map(|_| raw_public_key_to_add.clone()).collect();
+    let public_keys_to_add: Vec<Value> = (0..11).map(|_| raw_public_key_to_add.clone()).collect();
     raw_state_transition[property_names::ADD_PUBLIC_KEYS] = platform_value!(public_keys_to_add);
 
     let validator: ValidateIdentityUpdateTransitionBasic<_, SignaturesValidatorMock> =
@@ -495,8 +494,7 @@ fn add_public_keys_should_be_unique() {
 
     let _ = raw_state_transition.remove(property_names::DISABLE_PUBLIC_KEYS);
     let _ = raw_state_transition.remove(property_names::PUBLIC_KEYS_DISABLED_AT);
-    let public_keys_to_add: Vec<JsonValue> =
-        (0..2).map(|_| raw_public_key_to_add.clone()).collect();
+    let public_keys_to_add: Vec<Value> = (0..2).map(|_| raw_public_key_to_add.clone()).collect();
     raw_state_transition[property_names::ADD_PUBLIC_KEYS] = platform_value!(public_keys_to_add);
 
     let validator: ValidateIdentityUpdateTransitionBasic<_, SignaturesValidatorMock> =

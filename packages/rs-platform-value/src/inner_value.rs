@@ -65,7 +65,8 @@ impl Value {
 
     pub fn remove_many(&mut self, keys: &Vec<&str>) -> Result<(), Error> {
         let map = self.as_map_mut_ref()?;
-        keys.into_iter().try_for_each(|key| map.remove_key(key).map(|_| ()))
+        keys.into_iter()
+            .try_for_each(|key| map.remove_key(key).map(|_| ()))
     }
 
     pub fn remove_optional_value(&mut self, key: &str) -> Result<Option<Value>, Error> {
@@ -210,25 +211,37 @@ impl Value {
 
     pub fn get_array<'a>(&'a self, key: &'a str) -> Result<Vec<Value>, Error> {
         let map = self.to_map()?;
-        Self::inner_array(map, key)
+        Self::inner_array_owned(map, key)
     }
 
-    pub fn get_optional_string_ref_map<'a, I: FromIterator<(String, &'a Value)>>(&'a self, key: &'a str) -> Result<Option<I>, Error> {
+    pub fn get_optional_string_ref_map<'a, I: FromIterator<(String, &'a Value)>>(
+        &'a self,
+        key: &'a str,
+    ) -> Result<Option<I>, Error> {
         let map = self.to_map()?;
         Self::inner_optional_string_ref_map(map, key)
     }
 
-    pub fn get_string_ref_map<'a, I: FromIterator<(String, &'a Value)>>(&'a self, key: &'a str) -> Result<I, Error> {
+    pub fn get_string_ref_map<'a, I: FromIterator<(String, &'a Value)>>(
+        &'a self,
+        key: &'a str,
+    ) -> Result<I, Error> {
         let map = self.to_map()?;
         Self::inner_string_ref_map(map, key)
     }
 
-    pub fn get_optional_string_mut_ref_map<'a, I: FromIterator<(String, &'a mut Value)>>(&'a mut self, key: &'a str) -> Result<Option<I>, Error> {
+    pub fn get_optional_string_mut_ref_map<'a, I: FromIterator<(String, &'a mut Value)>>(
+        &'a mut self,
+        key: &'a str,
+    ) -> Result<Option<I>, Error> {
         let map = self.to_map_mut()?;
         Self::inner_optional_string_mut_ref_map(map, key)
     }
 
-    pub fn get_string_mut_ref_map<'a, I: FromIterator<(String, &'a mut Value)>>(&'a mut self, key: &'a str) -> Result<I, Error> {
+    pub fn get_string_mut_ref_map<'a, I: FromIterator<(String, &'a mut Value)>>(
+        &'a mut self,
+        key: &'a str,
+    ) -> Result<I, Error> {
         let map = self.to_map_mut()?;
         Self::inner_string_mut_ref_map(map, key)
     }
@@ -251,6 +264,16 @@ impl Value {
         Self::inner_optional_array_slice(map, key)
     }
 
+    pub fn get_array_ref<'a>(&'a self, key: &'a str) -> Result<&'a Vec<Value>, Error> {
+        let map = self.to_map()?;
+        Self::inner_array_ref(map, key)
+    }
+
+    pub fn get_array_mut_ref<'a>(&'a mut self, key: &'a str) -> Result<&'a mut Vec<Value>, Error> {
+        let map = self.to_map_mut()?;
+        Self::inner_array_mut_ref(map, key)
+    }
+
     pub fn get_array_slice<'a>(&'a self, key: &'a str) -> Result<&[Value], Error> {
         let map = self.to_map()?;
         Self::inner_array_slice(map, key)
@@ -264,6 +287,19 @@ impl Value {
     pub fn get_bytes<'a>(&'a self, key: &'a str) -> Result<Vec<u8>, Error> {
         let map = self.to_map()?;
         Self::inner_bytes_value(map, key)
+    }
+
+    pub fn get_bytes_into<T: From<Vec<u8>>>(&self, key: &str) -> Result<T, Error> {
+        let map = self.to_map()?;
+        Ok(Self::inner_bytes_value(map, key)?.into())
+    }
+
+    pub fn get_bytes_try_into<T: TryFrom<Vec<u8>, Error = Error>>(
+        &self,
+        key: &str,
+    ) -> Result<T, Error> {
+        let map = self.to_map()?;
+        Self::inner_bytes_value(map, key)?.try_into()
     }
 
     pub fn get_optional_hash256<'a>(&'a self, key: &'a str) -> Result<Option<[u8; 32]>, Error> {
@@ -331,7 +367,26 @@ impl Value {
     }
 
     /// Retrieves the value of a key from a map if it's an array of strings.
-    pub fn inner_array(document_type: &[(Value, Value)], key: &str) -> Result<Vec<Value>, Error> {
+    pub fn inner_array_mut_ref<'a>(
+        document_type: &'a mut [(Value, Value)],
+        key: &'a str,
+    ) -> Result<&'a mut Vec<Value>, Error> {
+        Self::get_mut_from_map(document_type, key).map(|value| value.to_array_mut())?
+    }
+
+    /// Retrieves the value of a key from a map if it's an array of strings.
+    pub fn inner_array_ref<'a>(
+        document_type: &'a [(Value, Value)],
+        key: &'a str,
+    ) -> Result<&'a Vec<Value>, Error> {
+        Self::get_from_map(document_type, key).map(|value| value.to_array_ref())?
+    }
+
+    /// Retrieves the value of a key from a map if it's an array of strings.
+    pub fn inner_array_owned(
+        document_type: &[(Value, Value)],
+        key: &str,
+    ) -> Result<Vec<Value>, Error> {
         Self::get_from_map(document_type, key).map(|value| value.to_array_owned())?
     }
 

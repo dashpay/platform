@@ -249,9 +249,12 @@ pub mod state_transition_helpers {
         skip_signature_paths: I,
     ) -> Result<Value, ProtocolError> {
         let mut value: Value = platform_value::to_value(serializable)?;
-        skip_signature_paths
-            .into_iter()
-            .try_for_each(|path| value.remove_value_at_path(path))?;
+        skip_signature_paths.into_iter().try_for_each(|path| {
+            value
+                .remove_value_at_path(path)
+                .map_err(ProtocolError::ValueError)
+                .map(|_| ())
+        })?;
         Ok(value)
     }
 }
