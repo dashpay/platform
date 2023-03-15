@@ -63,7 +63,6 @@ describe('StateTransitionFacade', () => {
     const publicKey = privateKeyModel.toPublicKey().toBuffer();
     const publicKeyId = 1;
 
-    // TODO: check security level. It says it needs HIGH instead of MASTER
     identityPublicKey = new IdentityPublicKey({
       id: publicKeyId,
       type: IdentityPublicKey.TYPES.ECDSA_SECP256K1,
