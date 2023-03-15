@@ -21,9 +21,15 @@ describe('Identifier', () => {
     });
 
     it('should throw error if first argument is not Buffer', () => {
-      expect(
-        () => new Identifier(1),
-      ).to.throw(TypeError, 'invalid_argument');
+      try {
+        // eslint-disable-next-line no-unused-vars
+        const id = new Identifier(1);
+
+        expect.fail('Expected to throw an error');
+      } catch (e) {
+        // not checking instance of TypeError, as it gives error in karma tests
+        expect(e.toString()).to.be.equal('TypeError: invalid_argument');
+      }
     });
 
     it('should throw error if buffer is not 32 bytes long', () => {
