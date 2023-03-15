@@ -68,7 +68,7 @@ impl StateTransitionFactoryWasm {
                 StateTransitionError::InvalidStateTransitionError {
                     errors,
                     raw_state_transition,
-                } => Err(InvalidStateTransitionError::new(
+                } => Err(InvalidStateTransitionErrorWasm::new(
                     errors,
                     serde_wasm_bindgen::to_value(&raw_state_transition)?,
                 )

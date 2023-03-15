@@ -3,6 +3,7 @@ use dpp::state_transition::state_transition_execution_context::StateTransitionEx
 use wasm_bindgen::prelude::*;
 
 pub mod errors;
+pub mod state_transition_facade;
 pub mod state_transition_factory;
 
 pub mod validation;
