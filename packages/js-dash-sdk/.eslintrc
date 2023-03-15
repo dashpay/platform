@@ -1,6 +1,7 @@
 {
   "extends": [
-    "airbnb-base"
+    "airbnb-base",
+    "plugin:chai-friendly/recommended"
   ],
   "root": true,
   "env": {
@@ -14,7 +15,8 @@
       ],
       "extends": [
         "airbnb-base",
-        "airbnb-typescript/base"
+        "airbnb-typescript/base",
+        "plugin:chai-friendly/recommended"
       ],
       "parserOptions": {
         "project": "./tsconfig.json"
@@ -23,6 +25,7 @@
   ],
   "ignorePatterns": [
     "build",
-    "dist"
+    "dist",
+    "webpack.*.js"
   ]
 }

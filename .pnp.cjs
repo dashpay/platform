@@ -7930,6 +7930,7 @@ function $$SETUP_STATE(hydrateRuntimeState, basePath) {
             ["eslint", "npm:7.32.0"],\
             ["eslint-config-airbnb-base", "virtual:ad53cff31b1dbd4927a99e71702e3b8b10338636eaff010987c27c9ccea2d52af36900a9e36a4231cbb6e5464248ccc9c1da5d1d24d9b0f4f95660296b1060a6#npm:14.2.1"],\
             ["eslint-config-airbnb-typescript", "virtual:ad53cff31b1dbd4927a99e71702e3b8b10338636eaff010987c27c9ccea2d52af36900a9e36a4231cbb6e5464248ccc9c1da5d1d24d9b0f4f95660296b1060a6#npm:17.0.0"],\
+            ["eslint-plugin-chai-friendly", "virtual:ad53cff31b1dbd4927a99e71702e3b8b10338636eaff010987c27c9ccea2d52af36900a9e36a4231cbb6e5464248ccc9c1da5d1d24d9b0f4f95660296b1060a6#npm:0.7.2"],\
             ["eslint-plugin-import", "virtual:ad53cff31b1dbd4927a99e71702e3b8b10338636eaff010987c27c9ccea2d52af36900a9e36a4231cbb6e5464248ccc9c1da5d1d24d9b0f4f95660296b1060a6#npm:2.25.3"],\
             ["events", "npm:3.3.0"],\
             ["https-browserify", "npm:1.0.0"],\
@@ -9310,6 +9311,28 @@ function $$SETUP_STATE(hydrateRuntimeState, basePath) {
             "eslint-import-resolver-node",\
             "eslint-import-resolver-typescript",\
             "eslint-import-resolver-webpack"\
+          ],\
+          "linkType": "HARD"\
+        }]\
+      ]],\
+      ["eslint-plugin-chai-friendly", [\
+        ["npm:0.7.2", {\
+          "packageLocation": "./.yarn/cache/eslint-plugin-chai-friendly-npm-0.7.2-c89144ca78-a9c70da373.zip/node_modules/eslint-plugin-chai-friendly/",\
+          "packageDependencies": [\
+            ["eslint-plugin-chai-friendly", "npm:0.7.2"]\
+          ],\
+          "linkType": "SOFT"\
+        }],\
+        ["virtual:ad53cff31b1dbd4927a99e71702e3b8b10338636eaff010987c27c9ccea2d52af36900a9e36a4231cbb6e5464248ccc9c1da5d1d24d9b0f4f95660296b1060a6#npm:0.7.2", {\
+          "packageLocation": "./.yarn/__virtual__/eslint-plugin-chai-friendly-virtual-929cb0fb91/0/cache/eslint-plugin-chai-friendly-npm-0.7.2-c89144ca78-a9c70da373.zip/node_modules/eslint-plugin-chai-friendly/",\
+          "packageDependencies": [\
+            ["eslint-plugin-chai-friendly", "virtual:ad53cff31b1dbd4927a99e71702e3b8b10338636eaff010987c27c9ccea2d52af36900a9e36a4231cbb6e5464248ccc9c1da5d1d24d9b0f4f95660296b1060a6#npm:0.7.2"],\
+            ["@types/eslint", null],\
+            ["eslint", "npm:7.32.0"]\
+          ],\
+          "packagePeers": [\
+            "@types/eslint",\
+            "eslint"\
           ],\
           "linkType": "HARD"\
         }]\
