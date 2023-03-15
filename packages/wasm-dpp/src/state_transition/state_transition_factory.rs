@@ -19,7 +19,7 @@ use crate::{
     state_repository::{ExternalStateRepositoryLike, ExternalStateRepositoryLikeWrapper},
     state_transition::errors::invalid_state_transition_error::InvalidStateTransitionErrorWasm,
     with_js_error, DataContractCreateTransitionWasm, DataContractUpdateTransitionWasm,
-    DocumentsBatchTransitionWASM, IdentityCreateTransitionWasm, IdentityTopUpTransitionWasm,
+    DocumentsBatchTransitionWasm, IdentityCreateTransitionWasm, IdentityTopUpTransitionWasm,
     IdentityUpdateTransitionWasm,
 };
 
@@ -60,7 +60,7 @@ impl StateTransitionFactoryWasm {
                     Ok(IdentityTopUpTransitionWasm::from(st).into())
                 }
                 StateTransition::DocumentsBatch(st) => {
-                    Ok(DocumentsBatchTransitionWASM::from(st).into())
+                    Ok(DocumentsBatchTransitionWasm::from(st).into())
                 }
                 _ => Err("Unsupported state transition type".into()),
             },

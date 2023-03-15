@@ -19,7 +19,7 @@ use crate::{
     utils::{
         replace_identifiers_with_bytes_without_failing, IntoWasm, ToSerdeJSONExt, WithJsError,
     },
-    DataContractWasm, DocumentWasm, DocumentsBatchTransitionWASM,
+    DataContractWasm, DocumentWasm, DocumentsBatchTransitionWasm,
 };
 
 use super::validator::DocumentValidatorWasm;
@@ -120,7 +120,7 @@ impl DocumentFactoryWASM {
     pub fn create_state_transition(
         &self,
         documents: &JsValue,
-    ) -> Result<DocumentsBatchTransitionWASM, JsValue> {
+    ) -> Result<DocumentsBatchTransitionWasm, JsValue> {
         let documents_by_action = extract_documents_by_action(documents)?;
         let batch_transition = self
             .0
