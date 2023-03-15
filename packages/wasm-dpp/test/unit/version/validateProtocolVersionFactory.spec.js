@@ -1,12 +1,15 @@
-const UnsupportedProtocolVersionError = require('@dashevo/dpp/lib/errors/consensus/basic/UnsupportedProtocolVersionError');
-const CompatibleProtocolVersionIsNotDefinedError = require('@dashevo/dpp/lib/errors/CompatibleProtocolVersionIsNotDefinedError');
-const IncompatibleProtocolVersionError = require('@dashevo/dpp/lib/errors/consensus/basic/IncompatibleProtocolVersionError');
-
 const createDPPMock = require('@dashevo/dpp/lib/test/mocks/createDPPMock');
-const validateProtocolVersionFactory = require('@dashevo/dpp/lib/version/validateProtocolVersionFactory');
 
 const { expectValidationError } = require('@dashevo/dpp/lib/test/expect/expectError');
 const { latestVersion } = require('@dashevo/dpp/lib/version/protocolVersion');
+
+let {
+  UnsupportedProtocolVersionError,
+  CompatibleProtocolVersionIsNotDefinedError,
+  IncompatibleProtocolVersionError,
+  ProtocolVersionValidator,
+} = require('../../..');
+const { default: loadWasmDpp } = require('../../..');
 
 describe('validateProtocolVersionFactory', () => {
   let validateProtocolVersion;
@@ -15,7 +18,14 @@ describe('validateProtocolVersionFactory', () => {
   let currentProtocolVersion;
   let protocolVersion;
 
-  beforeEach(function beforeEach() {
+  beforeEach(async function beforeEach() {
+    ({
+      UnsupportedProtocolVersionError,
+      CompatibleProtocolVersionIsNotDefinedError,
+      IncompatibleProtocolVersionError,
+      ProtocolVersionValidator,
+    } = await loadWasmDpp());
+
     protocolVersion = 1;
     currentProtocolVersion = 1;
 
@@ -26,10 +36,11 @@ describe('validateProtocolVersionFactory', () => {
       1: 1,
     };
 
-    validateProtocolVersion = validateProtocolVersionFactory(
-      dppMock,
+    validateProtocolVersion = new ProtocolVersionValidator({
+      currentProtocolVersion,
+      latestProtocolVersion: protocolVersion,
       versionCompatibilityMap,
-    );
+    });
   });
 
   it('should throw UnsupportedProtocolVersionError if protocolVersion is higher than latestVersion', () => {
