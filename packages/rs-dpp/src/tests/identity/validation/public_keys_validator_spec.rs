@@ -360,7 +360,7 @@ pub fn should_return_invalid_result_if_there_are_duplicate_keys() {
     let (mut raw_public_keys, validator) = setup_test();
     let key0 = raw_public_keys.get(0).unwrap().clone();
     let key1 = raw_public_keys.get_mut(1).unwrap();
-    key1.set_value("data", key0.get_value("data").unwrap())
+    key1.set_value("data", key0.get_value("data").unwrap().clone())
         .expect("expected to set data");
 
     let result = validator.validate_keys(&raw_public_keys).unwrap();
@@ -440,7 +440,7 @@ pub fn should_return_invalid_result_if_key_has_an_invalid_combination_of_purpose
     assert_eq!(consensus_error.code(), 1047);
     assert_eq!(
         error.public_key_id(),
-        raw_public_keys[1].get_integer("id").unwrap() as KeyID
+        raw_public_keys[1].get_integer("id").unwrap()
     );
     assert_eq!(
         error.security_level() as u8,

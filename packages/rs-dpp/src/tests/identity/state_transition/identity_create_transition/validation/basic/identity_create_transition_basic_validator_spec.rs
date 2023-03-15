@@ -356,7 +356,7 @@ mod validate_identity_create_transition_basic_factory {
         use std::sync::Arc;
 
         use jsonschema::error::ValidationErrorKind;
-        use serde_json::Value;
+        use platform_value::Value;
 
         use crate::assert_consensus_errors;
         use crate::consensus::basic::TestConsensusError;
@@ -510,10 +510,7 @@ mod validate_identity_create_transition_basic_factory {
 
             assert_eq!(
                 &pk_validator_mock.called_with(),
-                raw_state_transition
-                    .get_value("publicKeys")
-                    .as_array()
-                    .unwrap()
+                raw_state_transition.get_array("publicKeys").unwrap()
             );
         }
 
@@ -545,10 +542,7 @@ mod validate_identity_create_transition_basic_factory {
 
             assert_eq!(
                 &pk_validator_mock.called_with(),
-                raw_state_transition
-                    .get_value("publicKeys")
-                    .as_array()
-                    .unwrap()
+                raw_state_transition.get_array("publicKeys").unwrap()
             );
         }
     }
@@ -574,7 +568,7 @@ mod validate_identity_create_transition_basic_factory {
                 Arc::new(RequiredPurposeAndSecurityLevelValidator::default()),
                 MockStateRepositoryLike::new(),
             );
-            raw_state_transition.remove_key("signature");
+            raw_state_transition.remove("signature").unwrap();
 
             let result = validator
                 .validate(&raw_state_transition, &Default::default())
@@ -689,10 +683,7 @@ mod validate_identity_create_transition_basic_factory {
         assert!(result.is_valid());
         assert_eq!(
             &pk_validator_mock.called_with(),
-            raw_state_transition
-                .get_value("publicKeys")
-                .as_array()
-                .unwrap()
+            raw_state_transition.get_array("publicKeys").unwrap()
         );
     }
 }

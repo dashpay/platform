@@ -30,7 +30,6 @@ pub mod protocol_version {
     use crate::assert_consensus_errors;
     use crate::consensus::ConsensusError;
     use crate::tests::identity::validation::identity_validator_spec::setup_test;
-    use crate::tests::utils::{platform_value_set_ref, serde_set};
 
     #[test]
     pub fn should_be_present() {
@@ -87,7 +86,6 @@ pub mod protocol_version {
 pub mod id {
     use jsonschema::error::ValidationErrorKind;
     use platform_value::Value;
-    use serde_json::Value as JsonValue;
 
     use crate::assert_consensus_errors;
     use crate::consensus::ConsensusError;
