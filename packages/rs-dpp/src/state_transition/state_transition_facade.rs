@@ -59,13 +59,7 @@ where
     ) -> Result<Self, ProtocolError> {
         let wrapped_state_repository = Arc::new(state_repository.clone());
 
-        let state_transition_basic_validator;
-        let state_transition_state_validator;
-        let state_transition_key_signature_validator;
-        let state_transition_fee_validator;
-        let state_transition_factory;
-
-        {
+        let state_transition_factory = {
             let pk_validator =
                 Arc::new(PublicKeysValidator::new(adapter.clone()).map_err(ProtocolError::from)?);
             let pk_sig_validator = Arc::new(PublicKeysSignaturesValidator::new(adapter.clone()));
@@ -87,7 +81,7 @@ where
                 .map_err(ProtocolError::from)?,
             ));
 
-            state_transition_factory = StateTransitionFactory::new(
+            StateTransitionFactory::new(
                 wrapped_state_repository.clone(),
                 StateTransitionBasicValidator::new(
                     wrapped_state_repository.clone(),
@@ -129,10 +123,10 @@ where
                         ),
                     ),
                 ),
-            );
-        }
+            )
+        };
 
-        {
+        let state_transition_basic_validator = {
             let protocol_version_validator = Arc::new(ProtocolVersionValidator::default());
 
             let pk_validator =
@@ -166,7 +160,7 @@ where
                 })?,
             ));
 
-            state_transition_basic_validator = StateTransitionBasicValidator::new(
+            StateTransitionBasicValidator::new(
                 wrapped_state_repository.clone(),
                 StateTransitionByTypeValidator::new(
                     DataContractCreateTransitionBasicValidator::new(
@@ -221,10 +215,10 @@ where
                         protocol_version_validator.clone(),
                     ),
                 ),
-            );
-        }
+            )
+        };
 
-        {
+        let state_transition_key_signature_validator = {
             let asset_lock_transaction_output_fetcher =
                 AssetLockTransactionOutputFetcher::new(wrapped_state_repository.clone());
 
@@ -233,16 +227,16 @@ where
                 asset_lock_transaction_output_fetcher,
             );
 
-            state_transition_key_signature_validator = StateTransitionKeySignatureValidator::new(
+            StateTransitionKeySignatureValidator::new(
                 wrapped_state_repository.clone(),
                 asset_public_key_hash_fetcher,
-            );
-        }
+            )
+        };
 
-        state_transition_fee_validator =
+        let state_transition_fee_validator =
             StateTransitionFeeValidator::new(wrapped_state_repository.clone());
 
-        state_transition_state_validator = StateTransitionStateValidator::new(state_repository);
+        let state_transition_state_validator = StateTransitionStateValidator::new(state_repository);
 
         Ok(Self {
             state_repository: wrapped_state_repository,

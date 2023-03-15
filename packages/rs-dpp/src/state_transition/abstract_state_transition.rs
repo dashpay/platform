@@ -120,11 +120,13 @@ pub trait StateTransitionLike:
             ));
         }
         let data_hash = self.hash(true)?;
-        signer::verify_hash_signature(&data_hash, self.get_signature(), public_key_hash).or(Err(
-            ProtocolError::from(ConsensusError::SignatureError(
-                SignatureError::InvalidStateTransitionSignatureError,
-            )),
-        ))
+        signer::verify_hash_signature(&data_hash, self.get_signature(), public_key_hash).or_else(
+            |_| {
+                Err(ProtocolError::from(ConsensusError::SignatureError(
+                    SignatureError::InvalidStateTransitionSignatureError,
+                )))
+            },
+        )
     }
 
     /// Verifies an ECDSA signature with the public key
@@ -136,11 +138,11 @@ pub trait StateTransitionLike:
         }
         let data = self.to_buffer(true)?;
 
-        signer::verify_data_signature(&data, self.get_signature(), public_key).or(Err(
-            ProtocolError::from(ConsensusError::SignatureError(
+        signer::verify_data_signature(&data, self.get_signature(), public_key).or_else(|_| {
+            Err(ProtocolError::from(ConsensusError::SignatureError(
                 SignatureError::InvalidStateTransitionSignatureError,
-            )),
-        ))
+            )))
+        })
     }
 
     /// Verifies a BLS signature with the public key
@@ -159,9 +161,11 @@ pub trait StateTransitionLike:
 
         bls.verify_signature(self.get_signature(), &data, public_key)
             .map(|_| ())
-            .or(Err(ProtocolError::from(ConsensusError::SignatureError(
-                SignatureError::InvalidStateTransitionSignatureError,
-            ))))
+            .or_else(|_| {
+                Err(ProtocolError::from(ConsensusError::SignatureError(
+                    SignatureError::InvalidStateTransitionSignatureError,
+                )))
+            })
     }
 
     /// returns true if state transition is a document state transition
