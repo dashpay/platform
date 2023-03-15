@@ -1,33 +1,41 @@
 const crypto = require('crypto');
 const bs58 = require('bs58');
-const Identifier = require('@dashevo/dpp/lib/identifier/Identifier');
-const IdentifierError = require('@dashevo/dpp/lib/identifier/errors/IdentifierError');
+let { Identifier, IdentifierError } = require('../..');
+const { default: loadWasmDpp } = require('../..');
 
 describe('Identifier', () => {
   let buffer;
 
-  beforeEach(() => {
+  beforeEach(async () => {
     buffer = crypto.randomBytes(32);
+
+    ({ Identifier, IdentifierError } = await loadWasmDpp());
   });
 
   describe('#constructor', () => {
     it('should accept Buffer', () => {
       const identifier = new Identifier(buffer);
 
-      expect(identifier).to.be.deep.equal(buffer);
+      expect(identifier.toBuffer()).to.be.deep.equal(buffer);
       expect(identifier).to.be.an.instanceOf(Identifier);
     });
 
     it('should throw error if first argument is not Buffer', () => {
       expect(
         () => new Identifier(1),
-      ).to.throw(IdentifierError, 'Identifier expects Buffer');
+      ).to.throw(TypeError, 'invalid_argument');
     });
 
     it('should throw error if buffer is not 32 bytes long', () => {
-      expect(
-        () => new Identifier(Buffer.alloc(30)),
-      ).to.throw(IdentifierError, 'Identifier must be 32 long');
+      try {
+        // eslint-disable-next-line no-unused-vars
+        let identifier = new Identifier(Buffer.alloc(30));
+
+        expect.fail('Expected to throw error');
+      } catch (e) {
+        expect(e).to.be.instanceOf(IdentifierError);
+        expect(e.toString()).to.be.equal('IdentifierError: Identifier must be 32 bytes long');
+      }
     });
   });
 
@@ -36,25 +44,6 @@ describe('Identifier', () => {
       const identifier = new Identifier(buffer);
 
       expect(identifier.toBuffer()).to.deep.equal(buffer);
-    });
-  });
-
-  describe('#encodeCBOR', () => {
-    let encoderMock;
-
-    beforeEach(function before() {
-      encoderMock = {
-        pushAny: this.sinonSandbox.stub(),
-      };
-    });
-
-    it('should encode using cbor encoder', () => {
-      const identifier = new Identifier(buffer);
-
-      const result = identifier.encodeCBOR(encoderMock);
-
-      expect(result).to.be.true();
-      expect(encoderMock.pushAny).to.be.calledOnceWithExactly(buffer);
     });
   });
 
@@ -93,13 +82,18 @@ describe('Identifier', () => {
       const identifier = Identifier.from(buffer);
 
       expect(identifier).to.be.an.instanceOf(Identifier);
-      expect(identifier).to.deep.equal(buffer);
+      expect(identifier.toBuffer()).to.deep.equal(buffer);
     });
 
-    it('should throw error if buffer is passed among with encoding', async () => {
-      expect(
-        () => Identifier.from(buffer, 'base64'),
-      ).to.throw(IdentifierError, 'encoding accepted only with type string');
+    it('should throw error if buffer is passed among with encoding', () => {
+      try {
+        Identifier.from(buffer, 'base64');
+
+        expect.fail('Expected to throw error');
+      } catch (e) {
+        expect(e).to.be.instanceOf(IdentifierError);
+        expect(e.toString()).to.be.equal('IdentifierError: encoding accepted only with type string');
+      }
     });
 
     it('should create an instance with a base58 string', () => {
@@ -108,7 +102,7 @@ describe('Identifier', () => {
       const identifier = Identifier.from(string);
 
       expect(identifier).to.be.an.instanceOf(Identifier);
-      expect(identifier).to.deep.equal(buffer);
+      expect(identifier.toBuffer()).to.deep.equal(buffer);
     });
 
     it('should create an instance with a base64 string', () => {
@@ -117,7 +111,7 @@ describe('Identifier', () => {
       const identifier = Identifier.from(string, 'base64');
 
       expect(identifier).to.be.an.instanceOf(Identifier);
-      expect(identifier).to.deep.equal(buffer);
+      expect(identifier.toBuffer()).to.deep.equal(buffer);
     });
   });
 });

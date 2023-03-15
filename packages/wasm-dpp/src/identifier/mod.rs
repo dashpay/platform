@@ -1,3 +1,5 @@
+pub mod errors;
+
 use dpp::prelude::Identifier;
 use dpp::util::string_encoding::Encoding;
 use itertools::Itertools;
@@ -9,6 +11,7 @@ use wasm_bindgen::JsCast;
 use crate::bail_js;
 use crate::buffer::Buffer;
 use crate::errors::from_dpp_err;
+use crate::identifier::errors::IdentifierErrorWasm;
 use crate::utils::Inner;
 use crate::utils::ToSerdeJSONExt;
 use crate::utils::WithJsError;
@@ -67,13 +70,13 @@ impl IdentifierWrapper {
         if value.is_string() {
             let string = value.as_string().unwrap();
             Ok(IdentifierWrapper::from_string(string, encoding))
-        } else if value.has_type::<js_sys::Uint8Array>() {
+        } else if value.has_type::<js_sys::Uint8Array>() && encoding.is_none() {
             let vec = value.dyn_into::<js_sys::Uint8Array>()?.to_vec();
             IdentifierWrapper::new(vec)
+        } else if value.has_type::<js_sys::Uint8Array>() && encoding.is_some() {
+            Err(IdentifierErrorWasm::new("encoding accepted only with type string").into())
         } else {
-            Err(JsValue::from(
-                "Identifier.from received an unexpected value",
-            ))
+            Err(IdentifierErrorWasm::new("Identifier.from received an unexpected value").into())
         }
     }
 
