@@ -70,29 +70,29 @@ impl From<IdentityCreateTransition> for StateTransition {
     }
 }
 
-impl Serialize for IdentityCreateTransition {
-    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
-    where
-        S: Serializer,
-    {
-        let raw = self
-            .to_json_object(Default::default())
-            .map_err(|e| S::Error::custom(e.to_string()))?;
-
-        raw.serialize(serializer)
-    }
-}
-
-impl<'de> Deserialize<'de> for IdentityCreateTransition {
-    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
-    where
-        D: Deserializer<'de>,
-    {
-        let value = platform_value::Value::deserialize(deserializer)?;
-
-        Self::new(value).map_err(|e| D::Error::custom(e.to_string()))
-    }
-}
+// impl Serialize for IdentityCreateTransition {
+//     fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+//     where
+//         S: Serializer,
+//     {
+//         let raw = self
+//             .to_json_object(Default::default())
+//             .map_err(|e| S::Error::custom(e.to_string()))?;
+//
+//         raw.serialize(serializer)
+//     }
+// }
+//
+// impl<'de> Deserialize<'de> for IdentityCreateTransition {
+//     fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+//     where
+//         D: Deserializer<'de>,
+//     {
+//         let value = platform_value::Value::deserialize(deserializer)?;
+//
+//         Self::new(value).map_err(|e| D::Error::custom(e.to_string()))
+//     }
+// }
 
 /// Main state transition functionality implementation
 impl IdentityCreateTransition {

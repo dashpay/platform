@@ -2,12 +2,13 @@ mod from_raw_object {
     use bls_signatures::Serialize;
     use dashcore::PublicKey;
     use serde_json::json;
+    use platform_value::platform_value;
 
     use crate::identity::{KeyType, Purpose, SecurityLevel};
     use crate::prelude::IdentityPublicKey;
 
     #[test]
-    pub fn should_parse_raw_key() {
+    pub fn should_parse_raw_json_key() {
         let public_key_json = json!({
             "id": 0,
             "type": 0,
@@ -149,16 +150,16 @@ mod from_raw_object {
             .unwrap()
             .to_bytes();
 
-        let public_key_json = json!({
-            "id": 0,
-            "type": KeyType::ECDSA_SECP256K1,
-            "purpose": Purpose::AUTHENTICATION,
-            "securityLevel": SecurityLevel::MASTER,
+        let public_key_json = platform_value!({
+            "id": 0u32,
+            "type": KeyType::ECDSA_SECP256K1 as u8,
+            "purpose": Purpose::AUTHENTICATION as u8,
+            "securityLevel": SecurityLevel::MASTER as u8,
             "data": public_key,
             "readOnly": false
         });
 
-        let public_key = IdentityPublicKey::from_raw_object(public_key_json)
+        let public_key = IdentityPublicKey::from_value(public_key_json)
             .expect("the public key should be created");
         assert_eq!(public_key.key_type, KeyType::ECDSA_SECP256K1);
         assert_eq!(
@@ -177,16 +178,16 @@ mod from_raw_object {
             .public_key()
             .as_bytes();
 
-        let public_key_json = json!({
-            "id": 0,
-            "type": KeyType::BLS12_381,
-            "purpose": Purpose::AUTHENTICATION,
-            "securityLevel": SecurityLevel::MASTER,
+        let public_key_json = platform_value!({
+            "id": 0u32,
+            "type": KeyType::BLS12_381 as u8,
+            "purpose": Purpose::AUTHENTICATION as u8,
+            "securityLevel": SecurityLevel::MASTER as u8,
             "data": bls_public_key,
             "readOnly": false
         });
 
-        let public_key = IdentityPublicKey::from_raw_object(public_key_json)
+        let public_key = IdentityPublicKey::from_value(public_key_json)
             .expect("the public key should be created");
         assert_eq!(public_key.key_type, KeyType::BLS12_381);
         assert_eq!(

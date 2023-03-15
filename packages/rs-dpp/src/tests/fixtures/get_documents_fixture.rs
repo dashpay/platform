@@ -3,7 +3,7 @@ use rand::SeedableRng;
 
 use std::sync::Arc;
 
-use platform_value::Value;
+use platform_value::{platform_value, Value};
 use serde_json::{json, Value as JsonValue};
 
 use crate::contracts::withdrawals_contract::document_types;
@@ -71,56 +71,56 @@ fn get_extended_documents<ST: StateRepositoryLike>(
             data_contract.clone(),
             owner_id,
             "niceDocument".to_string(),
-            json!({ "name": "Cutie" }).into(),
+            platform_value!({ "name": "Cutie" }).into(),
         )?,
         factory.create_extended_document_for_state_transition(
             data_contract.clone(),
             owner_id,
             "prettyDocument".to_string(),
-            json!({ "lastName": "Shiny" }).into(),
+            platform_value!({ "lastName": "Shiny" }).into(),
         )?,
         factory.create_extended_document_for_state_transition(
             data_contract.clone(),
             owner_id,
             "prettyDocument".to_string(),
-            json!({ "lastName": "Sweety" }).into(),
+            platform_value!({ "lastName": "Sweety" }).into(),
         )?,
         factory.create_extended_document_for_state_transition(
             data_contract.clone(),
             owner_id,
             "indexedDocument".to_string(),
-            json!( { "firstName": "William", "lastName": "Birkin" }).into(),
+            platform_value!( { "firstName": "William", "lastName": "Birkin" }).into(),
         )?,
         factory.create_extended_document_for_state_transition(
             data_contract.clone(),
             owner_id,
             "indexedDocument".to_string(),
-            json!( { "firstName": "Leon", "lastName": "Kennedy" }).into(),
+            platform_value!( { "firstName": "Leon", "lastName": "Kennedy" }).into(),
         )?,
         factory.create_extended_document_for_state_transition(
             data_contract.clone(),
             owner_id,
             "noTimeDocument".to_string(),
-            json!({ "name": "ImOutOfTime" }).into(),
+            platform_value!({ "name": "ImOutOfTime" }).into(),
         )?,
         factory.create_extended_document_for_state_transition(
             data_contract.clone(),
             owner_id,
             "uniqueDates".to_string(),
-            json!({ "firstName": "John" }).into(),
+            platform_value!({ "firstName": "John" }).into(),
         )?,
         factory.create_extended_document_for_state_transition(
             data_contract.clone(),
             owner_id,
             "indexedDocument".to_string(),
-            json!( { "firstName": "Bill", "lastName": "Gates" }).into(),
+            platform_value!( { "firstName": "Bill", "lastName": "Gates" }).into(),
         )?,
-        factory.create_extended_document_for_state_transition(data_contract.clone(), owner_id, "withByteArrays".to_string(), json!( { "byteArrayField": get_random_10_bytes(), "identifierField": gen_owner_id().to_buffer() }).into())?,
+        factory.create_extended_document_for_state_transition(data_contract.clone(), owner_id, "withByteArrays".to_string(), platform_value!( { "byteArrayField": get_random_10_bytes(), "identifierField": gen_owner_id().to_buffer() }).into())?,
         factory.create_extended_document_for_state_transition(
             data_contract,
             owner_id,
             "optionalUniqueIndexedDocument".to_string(),
-            json!({ "firstName": "Jacques-Yves", "lastName": "Cousteau" }).into()
+            platform_value!({ "firstName": "Jacques-Yves", "lastName": "Cousteau" }).into()
         )?,
     ];
 
@@ -130,7 +130,7 @@ fn get_extended_documents<ST: StateRepositoryLike>(
 pub fn get_withdrawal_document_fixture(
     data_contract: &DataContract,
     owner_id: Identifier,
-    data: JsonValue,
+    data: Value,
     seed: Option<u64>,
 ) -> Result<Document, ProtocolError> {
     let mut rng = match seed {
@@ -140,8 +140,7 @@ pub fn get_withdrawal_document_fixture(
 
     let document_type = data_contract.document_type_for_name(document_types::WITHDRAWAL)?;
 
-    let value: Value = data.into();
-    let properties = value
+    let properties = data
         .into_btree_string_map()
         .map_err(ProtocolError::ValueError)?;
 

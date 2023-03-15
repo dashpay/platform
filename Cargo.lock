@@ -1593,7 +1593,7 @@ checksum = "eb3fa5a61630976fc4c353c70297f2e93f1930e3ccee574d59d618ccbd5154ce"
 dependencies = [
  "serde",
  "serde_json",
- "treediff",
+ "treediff 3.0.2",
 ]
 
 [[package]]
@@ -1626,7 +1626,7 @@ source = "git+https://github.com/fominok/jsonschema-rs?branch=feat-unevaluated-p
 dependencies = [
  "ahash 0.7.6",
  "anyhow",
- "base64 0.13.1",
+ "base64 0.21.0",
  "bytecount",
  "fancy-regex",
  "fraction",
@@ -2224,6 +2224,7 @@ dependencies = [
  "serde",
  "serde_json",
  "thiserror",
+ "treediff 4.0.2",
 ]
 
 [[package]]
@@ -3184,6 +3185,12 @@ checksum = "761e8d5ad7ce14bb82b7e61ccc0ca961005a275a060b9644a2431aa11553c2ff"
 dependencies = [
  "serde_json",
 ]
+
+[[package]]
+name = "treediff"
+version = "4.0.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "52984d277bdf2a751072b5df30ec0377febdb02f7696d64c2d7d54630bac4303"
 
 [[package]]
 name = "triomphe"

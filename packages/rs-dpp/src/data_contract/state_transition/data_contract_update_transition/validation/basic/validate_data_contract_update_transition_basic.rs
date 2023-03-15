@@ -78,7 +78,7 @@ where
         let result = self.json_schema_validator.validate(
             &raw_state_transition
                 .try_into_validating_json()
-                .map_err(ProtocolError::ValueError)?,
+                .map_err(ProtocolError::ValueError)?
         )?;
         if !result.is_valid() {
             return Ok(result);
@@ -102,16 +102,15 @@ where
         }
 
         // Validate Data Contract
-        let data_contract_object = raw_state_transition.get_value(property_names::DATA_CONTRACT)?;
+        let new_data_contract_object = raw_state_transition.get_value(property_names::DATA_CONTRACT)?;
         let result = self
             .data_contract_validator
-            .validate(data_contract_object)?;
+            .validate(new_data_contract_object)?;
         if !result.is_valid() {
             return Ok(result);
         }
 
-        let raw_data_contract_id = data_contract_object.get_bytes(contract_property_names::ID)?;
-        let data_contract_id = Identifier::from_bytes(&raw_data_contract_id)?;
+        let data_contract_id = new_data_contract_object.get_identifier(contract_property_names::ID).map_err(ProtocolError::ValueError)?;
 
         if execution_context.is_dry_run() {
             return Ok(result);
@@ -134,7 +133,7 @@ where
             }
         };
 
-        let new_version = data_contract_object.get_integer(contract_property_names::VERSION)?;
+        let new_version = new_data_contract_object.get_integer(contract_property_names::VERSION)?;
         let old_version = existing_data_contract.version;
         if (new_version - old_version) != 1 {
             validation_result.add_error(BasicError::InvalidDataContractVersionError(
@@ -151,7 +150,7 @@ where
             ])
             .map_err(ProtocolError::ValueError)?;
 
-        let mut new_base_data_contract = data_contract_object.clone();
+        let mut new_base_data_contract = new_data_contract_object.clone();
         new_base_data_contract
             .remove(contract_property_names::DEFINITIONS)
             .ok();
@@ -159,7 +158,7 @@ where
         new_base_data_contract.remove(contract_property_names::VERSION)?;
 
         let base_data_contract_diff =
-            json_patch::diff(&old_base_data_contract, &new_base_data_contract);
+            json_patch::diff(&existing_data_contract_object, &new_base_data_contract);
 
         for diff in base_data_contract_diff.0.iter() {
             let (operation, property_name) = get_operation_and_property_name(diff);
@@ -176,7 +175,7 @@ where
 
         // Schema should be backward compatible
         let old_schema = &existing_data_contract.documents;
-        let new_schema = data_contract_object.get_value("documents")?;
+        let new_schema = new_data_contract_object.get_value("documents")?;
 
         for (document_type, document_schema) in old_schema.iter() {
             let new_document_schema = new_schema.get(document_type).unwrap_or(&EMPTY_JSON);
@@ -207,7 +206,7 @@ where
         }
 
         // check indices are not changed
-        let new_documents = data_contract_object
+        let new_documents = new_data_contract_object
             .get_value("documents")?
             .as_object()
             .ok_or_else(|| anyhow!("the 'documents' property is not an array"))?;

@@ -135,7 +135,7 @@ mod test {
 
     #[test]
     fn should_return_error_if_bytes_array_parent_contains_items_or_prefix_items() {
-        let schema: Value = json!(
+        let schema: Value = platform_value!(
              {
                 "type": "object",
                 "properties": {
@@ -169,7 +169,7 @@ mod test {
 
     #[test]
     fn should_return_valid_result() {
-        let schema: Value = json!(
+        let schema: Value = platform_value!(
              {
                 "type": "object",
                 "properties": {
@@ -190,7 +190,7 @@ mod test {
 
     #[test]
     fn should_return_invalid_result() {
-        let schema: Value = json!({
+        let schema: Value = platform_value!({
             "type": "object",
             "properties": {
               "foo": { "type": "integer" },
@@ -277,7 +277,7 @@ mod test {
     }
 
     fn get_document_schema() -> Value {
-        json!({
+        platform_value!({
             "properties": {
                 "simple": {
                     "type": "string"

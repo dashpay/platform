@@ -19,7 +19,7 @@ pub fn parse_create_args(
 
     let public_keys = raw_public_keys
         .into_iter()
-        .map(|v| IdentityPublicKey::from_raw_object(v).map(|key| (key.id, key)))
+        .map(|v| IdentityPublicKey::from_value(v).map(|key| (key.id, key)))
         .collect::<Result<_, _>>()
         .map_err(|e| format!("converting to collection of IdentityPublicKeys failed: {e:#}"))?;
 

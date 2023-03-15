@@ -209,6 +209,8 @@ impl DocumentTransitionObjectLike for DocumentCreateTransition {
 #[cfg(test)]
 mod test {
     use serde_json::json;
+    use platform_value::{Identifier, platform_value};
+    use platform_value::string_encoding::Encoding;
 
     use super::*;
 
@@ -275,25 +277,26 @@ mod test {
     #[test]
     fn convert_to_json_with_dynamic_binary_paths() {
         let data_contract = data_contract_with_dynamic_properties();
-        let alpha_value = vec![10_u8; 32];
-        let id = vec![11_u8; 32];
-        let data_contract_id = vec![13_u8; 32];
+        let alpha_binary = vec![10_u8; 32];
+        let alpha_identifier = Identifier::from([10_u8; 32]);
+        let id = Identifier::from([11_u8; 32]);
+        let data_contract_id = Identifier::from([13_u8; 32]);
         let entropy = vec![14_u8; 32];
 
-        let raw_document = json!({
-            "$protocolVersion"  : 0,
+        let raw_document = platform_value!({
+            "$protocolVersion"  : 0u32,
             "$id" : id,
             "$type" : "test",
             "$dataContractId" : data_contract_id,
-            "revision" : 1,
-            "alphaBinary" : alpha_value,
-            "alphaIdentifier" : alpha_value,
+            "revision" : 1u32,
+            "alphaBinary" : alpha_binary,
+            "alphaIdentifier" : alpha_identifier,
             "$entropy" : entropy,
-            "$action": 0 ,
+            "$action": 0u8,
         });
 
         let transition: DocumentCreateTransition =
-            DocumentCreateTransition::from_json_object(raw_document, data_contract).unwrap();
+            DocumentCreateTransition::from_raw_object(raw_document, data_contract).unwrap();
 
         let json_transition = transition.to_json().expect("no errors");
         assert_eq!(
@@ -306,11 +309,11 @@ mod test {
         );
         assert_eq!(
             json_transition["alphaBinary"],
-            JsonValue::String(base64::encode(&alpha_value))
+            JsonValue::String(base64::encode(&alpha_binary))
         );
         assert_eq!(
             json_transition["alphaIdentifier"],
-            JsonValue::String(bs58::encode(&alpha_value).into_string())
+            JsonValue::String(alpha_identifier.to_string(Encoding::Base58))
         );
         assert_eq!(
             json_transition["$entropy"],
@@ -319,7 +322,7 @@ mod test {
     }
 
     #[test]
-    fn covert_to_object_with_dynamic_binary_paths() {
+    fn covert_to_object_from_json_value_with_dynamic_binary_paths() {
         let data_contract = data_contract_with_dynamic_properties();
         let alpha_value = vec![10_u8; 32];
         let id = vec![11_u8; 32];

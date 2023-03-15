@@ -256,12 +256,12 @@ macro_rules! platform_value_internal {
     };
 
     ({}) => {
-        $crate::Value::Map($crate::value_map::ValueMap::new())
+        $crate::Value::Map($crate::ValueMap::new())
     };
 
     ({ $($tt:tt)+ }) => {
         $crate::Value::Map({
-            let mut object = $crate::value_map::ValueMap::new();
+            let mut object = $crate::ValueMap::new();
             platform_value_internal!(@object object () ($($tt)+) ($($tt)+));
             object
         })

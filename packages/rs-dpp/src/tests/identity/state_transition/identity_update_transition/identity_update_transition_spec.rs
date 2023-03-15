@@ -199,7 +199,7 @@ fn to_json() {
         .to_json(false)
         .expect("conversion to json shouldn't fail");
 
-    let expected_raw_state_transition = json!({
+    let expected_raw_state_transition = platform_value!({
         "protocolVersion" : 1,
         "type" : 5,
         "signature" : "",

@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
 use data_contracts::SystemDataContract;
-use serde_json::json;
+use platform_value::platform_value;
 
 use crate::document::ExtendedDocument;
 use crate::system_data_contracts::load_system_data_contract;
@@ -38,11 +38,10 @@ pub fn get_masternode_reward_shares_documents_fixture() -> (Vec<ExtendedDocument
                 data_contract.clone(),
                 owner_id,
                 String::from("rewardShare"),
-                json!({
-                    "payToId": pay_to_id.as_bytes(),
-                    "percentage" : 500,
-                })
-                .into(),
+                platform_value!({
+                    "payToId": pay_to_id,
+                    "percentage" : 500u16,
+                }),
             )
             .expect("document for masternode reward shares contract should be created")],
         data_contract,

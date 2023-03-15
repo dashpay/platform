@@ -18,15 +18,20 @@ impl PatchDiffer {
     }
 }
 
-impl<'a> treediff::Delegate<'a, treediff::value::Key, Value> for PatchDiffer {
-    fn push(&mut self, key: &treediff::value::Key) {
+impl<'a> treediff::Delegate<'a, PlatformItemKey, Value> for PatchDiffer {
+    fn push(&mut self, key: &PlatformItemKey) {
         use std::fmt::Write;
         if self.path.len() != 1 {
             self.path.push('/');
         }
-        match *key {
-            treediff::value::Key::Index(idx) => write!(self.path, "{}", idx - self.shift).unwrap(),
-            treediff::value::Key::String(ref key) => append_path(&mut self.path, key),
+        match key {
+            PlatformItemKey::Index(idx) => write!(self.path, "{}", *idx).unwrap(),
+            PlatformItemKey::String(ref key) => append_path(&mut self.path, key),
+            PlatformItemKey::BigSignedIndex(idx) => write!(self.path, "{}", *idx).unwrap(),
+            PlatformItemKey::BigIndex(idx) => write!(self.path, "{}", *idx).unwrap(),
+            PlatformItemKey::SignedIndex(idx) => write!(self.path, "{}", *idx).unwrap(),
+            PlatformItemKey::Bytes(bytes) => write!(self.path, "{}", hex::encode(bytes)).unwrap(),
+            PlatformItemKey::ArrayIndex(idx) => write!(self.path, "{}", *idx - self.shift).unwrap(),
         }
     }
 
@@ -39,7 +44,7 @@ impl<'a> treediff::Delegate<'a, treediff::value::Key, Value> for PatchDiffer {
         self.shift = 0;
     }
 
-    fn removed<'b>(&mut self, k: &'b treediff::value::Key, _v: &'a Value) {
+    fn removed<'b>(&mut self, k: &'b PlatformItemKey, _v: &'a Value) {
         let len = self.path.len();
         self.push(k);
         self.patch
@@ -48,13 +53,13 @@ impl<'a> treediff::Delegate<'a, treediff::value::Key, Value> for PatchDiffer {
                 path: self.path.clone(),
             }));
         // Shift indices, we are deleting array elements
-        if let treediff::value::Key::Index(_) = k {
+        if let PlatformItemKey::ArrayIndex(_) = k {
             self.shift += 1;
         }
         self.path.truncate(len);
     }
 
-    fn added(&mut self, k: &treediff::value::Key, v: &Value) {
+    fn added(&mut self, k: &PlatformItemKey, v: &Value) {
         let len = self.path.len();
         self.push(k);
         self.patch
@@ -153,6 +158,8 @@ pub enum PlatformItemKey {
     /// An array index
     Index(u64),
     /// An array index
+    ArrayIndex(usize),
+    /// Bytes
     Bytes(Vec<u8>),
     /// A string index for mappings
     String(String),
@@ -167,6 +174,7 @@ impl Display for PlatformItemKey {
             PlatformItemKey::BigIndex(ref v) => v.fmt(f),
             PlatformItemKey::SignedIndex(ref v) => v.fmt(f),
             PlatformItemKey::Bytes(ref v) => hex::encode(v).fmt(f),
+            PlatformItemKey::ArrayIndex(ref v) => v.fmt(f),
         }
     }
 }
@@ -209,7 +217,7 @@ impl treediff::Value for Value {
     fn items<'a>(&'a self) -> Option<Box<dyn Iterator<Item = (Self::Key, &'a Self::Item)> + 'a>> {
         match *self {
             Value::Array(ref inner) => {
-                Some(Box::new(inner.iter().enumerate().map(|(i, v)| (PlatformItemKey::Index(i as u64), v))))
+                Some(Box::new(inner.iter().enumerate().map(|(i, v)| (PlatformItemKey::ArrayIndex(i), v))))
             }
             Value::Map(ref inner) => {
                 Some(Box::new(inner.iter().filter_map(|(s, v)| {

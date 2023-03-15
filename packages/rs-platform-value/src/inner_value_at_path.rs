@@ -120,3 +120,34 @@ impl Value {
         Ok(Self::insert_in_map(map, key, value))
     }
 }
+#[cfg(test)]
+mod test {
+    use crate::platform_value;
+
+    #[test]
+    fn insert_with_parents() {
+        let mut document = platform_value!({
+            "root" :  {
+                "from" : {
+                    "id": "123",
+                    "message": "text_message",
+                },
+            }
+        });
+
+        document
+            .set_value_at_full_path("root.to.new_field", platform_value!("new_value"))
+            .expect("no errors");
+        document
+            .set_value_at_full_path("root.array[0].new_field", platform_value!("new_value"))
+            .expect("no errors");
+
+        assert_eq!(document["root"]["from"]["id"], platform_value!("123"));
+        assert_eq!(document["root"]["from"]["message"], platform_value!("text_message"));
+        assert_eq!(document["root"]["to"]["new_field"], platform_value!("new_value"));
+        assert_eq!(
+            document["root"]["array"][0]["new_field"],
+            platform_value!("new_value")
+        );
+    }
+}

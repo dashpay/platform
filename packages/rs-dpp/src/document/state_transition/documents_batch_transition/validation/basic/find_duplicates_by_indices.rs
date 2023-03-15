@@ -1,6 +1,5 @@
 use platform_value::btreemap_extensions::BTreeValueMapHelper;
-use platform_value::value_map::ValueMap;
-use platform_value::Value;
+use platform_value::{Value, ValueMap};
 use std::collections::btree_map::Entry;
 use std::collections::BTreeMap;
 

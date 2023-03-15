@@ -6,7 +6,7 @@ pub mod purpose;
 pub mod security_level;
 pub mod serialize;
 
-use std::convert::TryInto;
+use std::convert::{TryFrom, TryInto};
 
 use anyhow::anyhow;
 use ciborium::value::Value as CborValue;
@@ -115,9 +115,8 @@ impl IdentityPublicKey {
         vec::vec_to_array::<33>(&self.data)
     }
 
-    pub fn from_raw_object(raw_object: JsonValue) -> Result<IdentityPublicKey, ProtocolError> {
-        let identity_public_key: IdentityPublicKey = serde_json::from_value(raw_object)?;
-        Ok(identity_public_key)
+    pub fn from_value(value: Value) -> Result<IdentityPublicKey, ProtocolError> {
+        value.try_into()
     }
 
     pub fn from_json_object(mut raw_object: JsonValue) -> Result<IdentityPublicKey, ProtocolError> {
@@ -216,6 +215,14 @@ impl TryInto<Value> for IdentityPublicKey {
 
     fn try_into(self) -> Result<Value, Self::Error> {
         platform_value::to_value(self).map_err(ProtocolError::ValueError)
+    }
+}
+
+impl TryFrom<Value> for IdentityPublicKey {
+    type Error = ProtocolError;
+
+    fn try_from(value: Value) -> Result<Self, Self::Error> {
+        platform_value::from_value(value).map_err(ProtocolError::ValueError)
     }
 }
 

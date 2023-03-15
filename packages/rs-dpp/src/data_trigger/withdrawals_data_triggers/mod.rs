@@ -88,6 +88,7 @@ where
 
 #[cfg(test)]
 mod tests {
+    use platform_value::platform_value;
     use super::*;
     use crate::identity::state_transition::identity_credit_withdrawal_transition::Pooling;
     use crate::state_repository::MockStateRepositoryLike;
@@ -138,14 +139,14 @@ mod tests {
         let document = get_withdrawal_document_fixture(
             &data_contract,
             owner_id,
-            json!({
-                "amount": 1000,
-                "coreFeePerByte": 1,
-                "pooling": Pooling::Never,
+            platform_value!({
+                "amount": 1000u64,
+                "coreFeePerByte": 1u32,
+                "pooling": Pooling::Never as u8,
                 "outputScript": (0..23).collect::<Vec<u8>>(),
-                "status": withdrawals_contract::WithdrawalStatus::BROADCASTED,
-                "transactionIndex": 1,
-                "transactionSignHeight": 93,
+                "status": withdrawals_contract::WithdrawalStatus::BROADCASTED as u8,
+                "transactionIndex": 1u32,
+                "transactionSignHeight": 93u64,
                 "transactionId": vec![1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1],
             }),
             None,

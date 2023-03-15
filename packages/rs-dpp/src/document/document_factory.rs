@@ -433,6 +433,7 @@ mod test {
     use platform_value::string_encoding::Encoding;
     use serde_json::json;
     use std::sync::Arc;
+    use platform_value::platform_value;
 
     use crate::tests::fixtures::get_extended_documents_fixture;
     use crate::{
@@ -476,7 +477,7 @@ mod test {
                 data_contract,
                 owner_id,
                 document_type.to_string(),
-                json!({ "name": name }).into(),
+                platform_value!({ "name": name }),
             )
             .expect("document creation shouldn't fail");
         assert_eq!(document_type, document.document_type_name);

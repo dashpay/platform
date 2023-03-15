@@ -2,8 +2,7 @@ use crate::data_contract::errors::{DataContractError, StructureError};
 use crate::ProtocolError;
 use anyhow::bail;
 
-use platform_value::value_map::ValueMap;
-use platform_value::Value;
+use platform_value::{Value, ValueMap};
 use rand::distributions::{Alphanumeric, DistString};
 use serde::{Deserialize, Serialize};
 use std::{collections::BTreeMap, convert::TryFrom};

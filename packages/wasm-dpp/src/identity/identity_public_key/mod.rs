@@ -188,7 +188,7 @@ impl TryFrom<JsValue> for IdentityPublicKeyWasm {
         let str = String::from(js_sys::JSON::stringify(&value)?);
         let val = serde_json::from_str(&str).map_err(|e| from_dpp_err(e.into()))?;
         Ok(Self(
-            IdentityPublicKey::from_raw_object(val).map_err(from_dpp_err)?,
+            IdentityPublicKey::from_value(val).map_err(from_dpp_err)?,
         ))
     }
 }

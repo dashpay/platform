@@ -2,6 +2,7 @@ use dashcore::{hashes::hex::FromHex, PubkeyHash, Script};
 use platform_value::string_encoding::{encode, Encoding};
 use platform_value::{platform_value, Value};
 use serde_json::{json, Value as JsonValue};
+use crate::prelude::Identifier;
 
 use crate::{
     identity::state_transition::identity_credit_withdrawal_transition::Pooling,
