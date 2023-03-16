@@ -1,9 +1,6 @@
-use dpp::prelude::Identifier;
 use dpp::CompatibleProtocolVersionIsNotDefinedError;
 use thiserror::Error;
 use wasm_bindgen::prelude::*;
-
-use crate::buffer::Buffer;
 
 #[wasm_bindgen(js_name=CompatibleProtocolVersionIsNotDefinedError)]
 #[derive(Error, Debug)]
