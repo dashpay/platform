@@ -236,7 +236,10 @@ mod test {
                 PROTOCOL_VERSION.to_string(),
                 Value::U32(version::LATEST_VERSION),
             ),
-            (DATA_CONTRACT.to_string(), data_contract.try_into().unwrap()),
+            (
+                DATA_CONTRACT.to_string(),
+                data_contract.clone().try_into().unwrap(),
+            ),
         ]);
 
         let state_transition = DataContractUpdateTransition::from_value_map(value_map)

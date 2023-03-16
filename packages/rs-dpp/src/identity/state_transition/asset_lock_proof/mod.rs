@@ -3,7 +3,6 @@ use std::convert::{TryFrom, TryInto};
 use dashcore::Transaction;
 use serde::de::Error as DeError;
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
-use serde_json::Value as JsonValue;
 
 pub use asset_lock_proof_validator::*;
 pub use asset_lock_public_key_hash_fetcher::*;
@@ -15,7 +14,6 @@ use platform_value::Value;
 
 use crate::identity::state_transition::asset_lock_proof::chain::ChainAssetLockProof;
 use crate::prelude::Identifier;
-use crate::util::json_value::JsonValueExt;
 use crate::{NonConsensusError, ProtocolError, SerdeParsingError};
 
 mod asset_lock_proof_validator;
@@ -62,7 +60,7 @@ impl<'de> Deserialize<'de> for AssetLockProof {
     {
         let value = platform_value::Value::deserialize(deserializer)?;
 
-        let proof_type_int = value
+        let proof_type_int: u8 = value
             .get_integer("type")
             .map_err(|e| D::Error::custom(e.to_string()))?;
         let proof_type = AssetLockProofType::try_from(proof_type_int)
@@ -122,7 +120,7 @@ impl AssetLockProof {
     pub fn out_point(&self) -> Option<[u8; 36]> {
         match self {
             AssetLockProof::Instant(proof) => proof.out_point(),
-            AssetLockProof::Chain(proof) => Some(*proof.out_point()),
+            AssetLockProof::Chain(proof) => Some(proof.out_point),
         }
     }
 

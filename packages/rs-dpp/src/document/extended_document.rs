@@ -6,7 +6,6 @@ use crate::util::cbor_value::CborCanonicalMap;
 use crate::util::deserializer;
 use crate::util::deserializer::SplitProtocolVersionOutcome;
 use crate::util::hash::hash;
-use crate::util::json_value::JsonValueExt;
 use crate::ProtocolError;
 use ciborium::Value as CborValue;
 use integer_encoding::VarInt;
@@ -125,11 +124,11 @@ impl ExtendedDocument {
         Self::from_untrusted_platform_value(json_value.into(), contract)
     }
 
-    pub fn from_raw_document(
+    pub fn from_raw_json_document(
         raw_document: JsonValue,
         data_contract: DataContract,
     ) -> Result<Self, ProtocolError> {
-        Self::from_json_value::<Vec<u8>>(raw_document, data_contract)
+        Self::from_untrusted_platform_value(raw_document.into(), data_contract)
     }
 
     /// Create an extended document from a platform value object where fields are already in the
@@ -199,53 +198,6 @@ impl ExtendedDocument {
                 .unwrap_or(extended_document.data_contract.id.buffer),
         );
         extended_document.document = Document::from_map(properties, None, None)?;
-
-        extended_document
-            .document
-            .properties
-            .replace_at_paths(identifiers, ReplacementType::Identifier)?;
-        extended_document
-            .document
-            .properties
-            .replace_at_paths(binary_paths, ReplacementType::Bytes)?;
-        Ok(extended_document)
-    }
-
-    fn from_json_value<S>(
-        mut document_value: JsonValue,
-        data_contract: DataContract,
-    ) -> Result<Self, ProtocolError>
-    where
-        for<'de> S: Deserialize<'de> + TryInto<Identifier, Error = ProtocolError>,
-    {
-        let document_type_name: String =
-            if let Ok(document_type_name) = document_value.remove(property_names::DOCUMENT_TYPE) {
-                serde_json::from_value(document_type_name)?
-            } else {
-                return Err(ProtocolError::DecodingError(
-                    "no document type in json value".to_string(),
-                ));
-            };
-
-        //Because we don't know how the json came in we need to sanitize it
-        let (identifiers, binary_paths) =
-            data_contract.get_identifiers_and_binary_paths_owned(document_type_name.as_str())?;
-
-        let mut extended_document = Self {
-            data_contract,
-            document_type_name,
-            ..Default::default()
-        };
-
-        if let Ok(value) = document_value.remove(property_names::PROTOCOL_VERSION) {
-            extended_document.protocol_version = serde_json::from_value(value)?
-        }
-
-        if let Ok(value) = document_value.remove(property_names::DATA_CONTRACT_ID) {
-            let data: S = serde_json::from_value(value)?;
-            extended_document.data_contract_id = data.try_into()?
-        }
-        extended_document.document = Document::from_json_value::<S>(document_value)?;
 
         extended_document
             .document
@@ -723,7 +675,8 @@ mod test {
             "alphaIdentifier" : alpha_value,
         });
 
-        let document = ExtendedDocument::from_raw_document(raw_document, data_contract).unwrap();
+        let document =
+            ExtendedDocument::from_raw_json_document(raw_document, data_contract).unwrap();
         let json_document = document.to_pretty_json().expect("no errors");
 
         assert_eq!(

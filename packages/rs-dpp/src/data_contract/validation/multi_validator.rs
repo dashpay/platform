@@ -5,7 +5,6 @@ use crate::consensus::basic::data_contract::IncompatibleRe2PatternError;
 use crate::{
     consensus::{basic::BasicError, ConsensusError},
     validation::ValidationResult,
-    NonConsensusError, SerdeParsingError,
 };
 
 pub type SubValidator =
@@ -23,14 +22,13 @@ pub fn validate(raw_data_contract: &Value, validators: &[SubValidator]) -> Valid
                         let new_path = format!("{}/{}", path, key);
                         values_queue.push((current_value, new_path))
                     }
-                    if let Some(key) = key.as_str() {
-                        for validator in validators {
-                            validator(&path, key, value, current_value, &mut result);
+                    match key.to_str().map_err(ConsensusError::ValueError) {
+                        Ok(key) => {
+                            for validator in validators {
+                                validator(&path, key, value, current_value, &mut result);
+                            }
                         }
-                    } else {
-                        result.add_error(NonConsensusError::SerdeParsingError(
-                            SerdeParsingError::new("keys of properties must be strings"),
-                        ));
+                        Err(err) => result.add_error(err),
                     }
                 }
             }
@@ -79,13 +77,13 @@ pub fn pattern_is_valid_regex_validator(
 }
 
 fn unwrap_error_to_result<'a, 'b>(
-    v: Result<Option<&'a Value>, NonConsensusError>,
+    v: Result<Option<&'a Value>, ConsensusError>,
     result: &'b mut ValidationResult<()>,
 ) -> Option<&'a Value> {
     match v {
         Ok(v) => v,
         Err(e) => {
-            result.add_error::<NonConsensusError>(e.into());
+            result.add_error(e);
             None
         }
     }
@@ -101,14 +99,14 @@ pub fn byte_array_has_no_items_as_parent_validator(
     if key == "byteArray"
         && value.is_bool()
         && (unwrap_error_to_result(
-            parent.get("items").map_err(NonConsensusError::ValueError),
+            parent.get("items").map_err(ConsensusError::ValueError),
             result,
         )
         .is_some()
             || unwrap_error_to_result(
                 parent
                     .get("prefixItems")
-                    .map_err(NonConsensusError::ValueError),
+                    .map_err(ConsensusError::ValueError),
                 result,
             )
             .is_some())

@@ -2,6 +2,7 @@ use std::convert::{TryFrom, TryInto};
 
 use dashcore::consensus::{Decodable, Encodable};
 use dashcore::{InstantLock, Transaction, TxOut};
+use platform_value::Value;
 use serde::de::Error as DeError;
 use serde::ser::Error as SerError;
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
@@ -53,6 +54,13 @@ impl<'de> Deserialize<'de> for InstantAssetLockProof {
         let raw = RawInstantLock::deserialize(deserializer)?;
         raw.try_into()
             .map_err(|e: ProtocolError| D::Error::custom(e.to_string()))
+    }
+}
+
+impl TryFrom<Value> for InstantAssetLockProof {
+    type Error = platform_value::Error;
+    fn try_from(value: Value) -> Result<Self, Self::Error> {
+        platform_value::from_value(value)
     }
 }
 

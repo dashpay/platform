@@ -114,7 +114,7 @@ impl DocumentValidator {
         .map_err(|e| anyhow!("unable to process the contract: {}", e))?;
 
         let json_value = raw_document
-            .try_into_validating_json()
+            .try_to_validating_json()
             .map_err(ProtocolError::ValueError)?;
         let json_schema_validation_result = json_schema_validator.validate(&json_value)?;
         result.merge(json_schema_validation_result);

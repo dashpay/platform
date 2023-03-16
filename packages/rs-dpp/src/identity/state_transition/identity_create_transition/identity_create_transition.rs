@@ -12,10 +12,8 @@ use crate::state_transition::state_transition_execution_context::StateTransition
 use crate::state_transition::{
     StateTransition, StateTransitionConvert, StateTransitionLike, StateTransitionType,
 };
-use crate::util::json_value::JsonValueExt;
-use crate::{NonConsensusError, ProtocolError, SerdeParsingError};
+use crate::{NonConsensusError, ProtocolError};
 use platform_value::btreemap_extensions::BTreeValueRemoveInnerValueFromMapHelper;
-use platform_value::string_encoding::Encoding;
 
 mod property_names {
     pub const PUBLIC_KEYS: &str = "publicKeys";
@@ -105,7 +103,7 @@ impl IdentityCreateTransition {
         {
             let keys = keys_value_array
                 .into_iter()
-                .map(|val| val.try_into())
+                .map(|val| val.try_into().map_err(ProtocolError::ValueError))
                 .collect::<Result<Vec<IdentityPublicKeyWithWitness>, ProtocolError>>()?;
             state_transition.set_public_keys(keys);
         }
@@ -180,66 +178,14 @@ impl IdentityCreateTransition {
         options: SerializationOptions,
     ) -> Result<JsonValue, ProtocolError> {
         if options.into_validating_json {
-            self.to_object(options.skip_signature)?.try_into()
+            self.to_object(options.skip_signature)?
+                .try_into_validating_json()
+                .map_err(ProtocolError::ValueError)
         } else {
-            self.to_object(options.skip_signature)?.into()
+            self.to_object(options.skip_signature)?
+                .try_into()
+                .map_err(ProtocolError::ValueError)
         }
-
-        let mut json_map = JsonValue::Object(Default::default());
-
-        json_map.insert(
-            property_names::TRANSITION_TYPE.to_string(),
-            serde_json::Value::from(Self::get_type() as u8),
-        )?;
-
-        if !options.skip_signature {
-            let sig = self.signature.iter().map(|num| JsonValue::from(*num));
-            json_map.insert(
-                property_names::SIGNATURE.to_string(),
-                JsonValue::Array(sig.collect()),
-            )?;
-        }
-
-        if !options.skip_identifiers_conversion {
-            let bytes = self
-                .identity_id
-                .as_bytes()
-                .iter()
-                .map(|num| JsonValue::from(*num));
-            json_map.insert(
-                property_names::IDENTITY_ID.to_string(),
-                JsonValue::Array(bytes.collect()),
-            )?;
-        } else {
-            json_map.insert(
-                property_names::IDENTITY_ID.to_string(),
-                JsonValue::String(self.identity_id.to_string(Encoding::Base58)),
-            )?;
-        }
-
-        let pk_values = self
-            .public_keys
-            .iter()
-            .map(|pk| pk.to_raw_json_object(options.skip_signature))
-            .collect::<Result<Vec<JsonValue>, SerdeParsingError>>()?;
-
-        json_map.insert(
-            property_names::PUBLIC_KEYS.to_string(),
-            JsonValue::Array(pk_values),
-        )?;
-
-        json_map.insert(
-            property_names::ASSET_LOCK_PROOF.to_string(),
-            self.asset_lock_proof.as_ref().try_into()?,
-        )?;
-
-        // TODO ??
-        json_map.insert(
-            property_names::PROTOCOL_VERSION.to_string(),
-            JsonValue::Number(self.get_protocol_version().into()),
-        )?;
-
-        Ok(json_map)
     }
 
     /// Returns ids of created identities
@@ -269,7 +215,7 @@ impl StateTransitionConvert for IdentityCreateTransition {
         if skip_signature {
             value
                 .remove_values_at_paths(Self::signature_property_paths())
-                .map_err(ProtocolError::ValueError)?
+                .map_err(ProtocolError::ValueError)?;
         }
 
         let mut public_keys: Vec<Value> = vec![];
@@ -286,38 +232,8 @@ impl StateTransitionConvert for IdentityCreateTransition {
     }
 
     fn to_json(&self, skip_signature: bool) -> Result<JsonValue, ProtocolError> {
-        let mut json = serde_json::Value::Object(Default::default());
-
-        json.insert(
-            property_names::TRANSITION_TYPE.to_string(),
-            serde_json::Value::from(Self::get_type() as u8),
-        )?;
-
-        json.insert(
-            property_names::ASSET_LOCK_PROOF.to_string(),
-            self.asset_lock_proof.as_ref().try_into()?,
-        )?;
-
-        let public_keys = self
-            .public_keys
-            .iter()
-            .map(|pk| pk.to_json())
-            .collect::<Result<Vec<JsonValue>, SerdeParsingError>>()?;
-
-        json.insert(
-            property_names::PUBLIC_KEYS.to_string(),
-            serde_json::Value::Array(public_keys),
-        )?;
-
-        if skip_signature {
-            if let JsonValue::Object(ref mut o) = json {
-                for path in Self::signature_property_paths() {
-                    o.remove(path);
-                }
-            }
-        }
-
-        Ok(json)
+        self.to_object(skip_signature)
+            .and_then(|v| v.try_into().map_err(ProtocolError::ValueError))
     }
 }
 

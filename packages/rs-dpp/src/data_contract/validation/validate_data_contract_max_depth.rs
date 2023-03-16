@@ -1,5 +1,5 @@
-use std::collections::BTreeSet;
 use platform_value::Value;
+use std::collections::BTreeSet;
 
 use crate::consensus::basic::data_contract::InvalidJsonSchemaRefError;
 use crate::{consensus::basic::BasicError, validation::ValidationResult, ProtocolError};

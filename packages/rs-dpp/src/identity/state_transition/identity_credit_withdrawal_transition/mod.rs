@@ -88,7 +88,7 @@ impl IdentityCreditWithdrawalTransition {
     }
 
     pub fn from_raw_object(
-        mut raw_object: Value,
+        raw_object: Value,
     ) -> Result<IdentityCreditWithdrawalTransition, ProtocolError> {
         Self::from_value(raw_object)
     }

@@ -1,5 +1,7 @@
+use platform_value::Value;
 use serde::{Deserialize, Serialize};
 use serde_big_array::BigArray;
+use std::convert::TryFrom;
 
 use crate::{
     errors::NonConsensusError, identifier::Identifier, util::hash::hash, util::vec::vec_to_array,
@@ -13,6 +15,13 @@ pub struct ChainAssetLockProof {
     pub core_chain_locked_height: u32,
     #[serde(with = "BigArray")]
     pub out_point: [u8; 36],
+}
+
+impl TryFrom<Value> for ChainAssetLockProof {
+    type Error = platform_value::Error;
+    fn try_from(value: Value) -> Result<Self, Self::Error> {
+        platform_value::from_value(value)
+    }
 }
 
 impl ChainAssetLockProof {

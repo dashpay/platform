@@ -12,7 +12,7 @@ use crate::{
     },
     contracts::withdrawals_contract,
     identity::core_script::CoreScript,
-    util::{is_fibonacci_number::is_fibonacci_number},
+    util::is_fibonacci_number::is_fibonacci_number,
     validation::{JsonSchemaValidator, ValidationResult},
     version::ProtocolVersionValidator,
     DashPlatformProtocolInitError, NonConsensusError,

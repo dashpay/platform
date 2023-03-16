@@ -144,6 +144,7 @@ impl DataContractFactory {
         &self,
         data_contract: DataContract,
     ) -> Result<DataContractCreateTransition, ProtocolError> {
+        let entropy = Value::Bytes32(data_contract.entropy);
         let raw_object = BTreeMap::from([
             (
                 st_prop::PROTOCOL_VERSION.to_string(),
@@ -153,10 +154,7 @@ impl DataContractFactory {
                 st_prop::DATA_CONTRACT.to_string(),
                 data_contract.try_into()?,
             ),
-            (
-                st_prop::ENTROPY.to_string(),
-                Value::Bytes32(data_contract.entropy),
-            ),
+            (st_prop::ENTROPY.to_string(), entropy),
         ]);
         DataContractCreateTransition::from_value_map(raw_object)
     }

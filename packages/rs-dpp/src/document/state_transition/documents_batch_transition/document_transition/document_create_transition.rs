@@ -301,11 +301,11 @@ mod test {
         let json_transition = transition.to_json().expect("no errors");
         assert_eq!(
             json_transition["$id"],
-            JsonValue::String(bs58::encode(&id).into_string())
+            JsonValue::String(id.to_string(Encoding::Base58))
         );
         assert_eq!(
             json_transition["$dataContractId"],
-            JsonValue::String(bs58::encode(&data_contract_id).into_string())
+            JsonValue::String(data_contract_id.to_string(Encoding::Base58))
         );
         assert_eq!(
             json_transition["alphaBinary"],

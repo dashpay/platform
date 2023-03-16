@@ -108,7 +108,8 @@ impl IdentityUpdateTransition {
             .get_integer(property_names::REVISION)
             .map_err(ProtocolError::ValueError)?;
         let add_public_keys = get_list(&mut raw_object, property_names::ADD_PUBLIC_KEYS)?;
-        let disable_public_keys = get_integer_list(&mut raw_object, property_names::DISABLE_PUBLIC_KEYS)?;
+        let disable_public_keys =
+            get_integer_list(&mut raw_object, property_names::DISABLE_PUBLIC_KEYS)?;
         let public_keys_disabled_at = raw_object
             .remove_optional_integer(property_names::PUBLIC_KEYS_DISABLED_AT)
             .map_err(ProtocolError::ValueError)?;
@@ -206,12 +207,9 @@ fn get_list<T: TryFrom<Value, Error = platform_value::Error>>(
 
 /// if the property isn't present the empty list is returned. If property is defined, the function
 /// might return some serialization-related errors
-fn get_integer_list<T>(
-    value: &mut Value,
-    property_name: &str,
-) -> Result<Vec<T>, ProtocolError>
-    where
-        T: TryFrom<i128>
+fn get_integer_list<T>(value: &mut Value, property_name: &str) -> Result<Vec<T>, ProtocolError>
+where
+    T: TryFrom<i128>
         + TryFrom<u128>
         + TryFrom<u64>
         + TryFrom<i64>
@@ -220,7 +218,8 @@ fn get_integer_list<T>(
         + TryFrom<u16>
         + TryFrom<i16>
         + TryFrom<u8>
-        + TryFrom<i8> {
+        + TryFrom<i8>,
+{
     value
         .remove_optional_array(property_name)
         .map_err(ProtocolError::ValueError)?

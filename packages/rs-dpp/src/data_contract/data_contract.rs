@@ -139,7 +139,11 @@ impl DataContract {
         let defs =
             data_contract_map.get_optional_inner_str_json_value_map::<BTreeMap<_, _>>("$defs")?;
 
-        let mut data_contract = DataContract {
+        let binary_properties = documents
+            .iter()
+            .map(|(doc_type, schema)| (String::from(doc_type), get_binary_properties(schema)))
+            .collect();
+        let data_contract = DataContract {
             protocol_version: 0,
             id: Identifier::from(
                 data_contract_map
@@ -165,10 +169,7 @@ impl DataContract {
             entropy: data_contract_map
                 .remove_hash256_bytes(property_names::ENTROPY)
                 .map_err(ProtocolError::ValueError)?,
-            binary_properties: documents
-                .iter()
-                .map(|(doc_type, schema)| (String::from(doc_type), get_binary_properties(schema)))
-                .collect(),
+            binary_properties,
         };
 
         Ok(data_contract)

@@ -23,6 +23,7 @@ use crate::errors::consensus::basic::{
     BasicError, IncompatibleProtocolVersionError, JsonSchemaError, UnsupportedProtocolVersionError,
 };
 use crate::errors::StateError;
+use platform_value::Error as ValueError;
 
 use super::basic::identity::{
     IdentityInsufficientBalanceError, InvalidIdentityCreditWithdrawalTransitionCoreFeeError,
@@ -122,6 +123,9 @@ pub enum ConsensusError {
     #[error(transparent)]
     FeeError(FeeError),
 
+    #[error(transparent)]
+    ValueError(ValueError),
+
     #[cfg(test)]
     #[cfg_attr(test, error(transparent))]
     TestConsensusError(TestConsensusError),
@@ -179,6 +183,7 @@ impl ConsensusError {
             // Custom error for tests
             #[cfg(test)]
             ConsensusError::TestConsensusError(_) => 1000,
+            ConsensusError::ValueError(_) => 5000,
         }
     }
 }

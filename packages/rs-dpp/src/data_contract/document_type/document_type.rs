@@ -28,6 +28,7 @@ pub const MAX_INDEX_SIZE: usize = 255;
 pub const STORAGE_FLAGS_SIZE: usize = 2;
 
 #[derive(Serialize, Deserialize, Debug, PartialEq, Default, Clone)]
+#[serde(rename_all = "camelCase")]
 pub struct DocumentType {
     pub name: String,
     pub indices: Vec<Index>,

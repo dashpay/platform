@@ -77,7 +77,7 @@ fn validate_data_contract_create_transition_basic(
 ) -> Result<SimpleValidationResult, ProtocolError> {
     let result = json_schema_validator.validate(
         &raw_state_transition
-            .try_into_validating_json()
+            .try_to_validating_json()
             .map_err(ProtocolError::ValueError)?,
     )?;
     if !result.is_valid() {

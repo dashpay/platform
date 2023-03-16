@@ -1,4 +1,4 @@
-use std::convert::{TryFrom, TryInto};
+use std::convert::TryInto;
 
 use crate::consensus::basic::data_contract::{
     DataContractImmutablePropertiesUpdateError, IncompatibleDataContractSchemaError,
@@ -7,14 +7,12 @@ use crate::consensus::basic::decode::ProtocolVersionParsingError;
 use crate::consensus::basic::invalid_data_contract_version_error::InvalidDataContractVersionError;
 use crate::consensus::ConsensusError;
 use crate::state_transition::state_transition_execution_context::StateTransitionExecutionContext;
-use crate::tests::utils::SerdeTestExtension;
 use crate::{
     consensus::basic::BasicError,
     data_contract::{
         property_names as contract_property_names, state_transition::property_names,
         validation::data_contract_validator::DataContractValidator, DataContract,
     },
-    prelude::Identifier,
     state_repository::StateRepositoryLike,
     util::json_value::JsonValueExt,
     validation::{JsonSchemaValidator, SimpleValidationResult},
@@ -77,7 +75,7 @@ where
 
         let result = self.json_schema_validator.validate(
             &raw_state_transition
-                .try_into_validating_json()
+                .try_to_validating_json()
                 .map_err(ProtocolError::ValueError)?,
         )?;
         if !result.is_valid() {
@@ -181,7 +179,8 @@ where
         let new_schema: JsonValue = new_data_contract_object
             .get_value("documents")?
             .clone()
-            .into();
+            .try_into()
+            .map_err(ProtocolError::ValueError)?;
 
         for (document_type, document_schema) in old_schema.iter() {
             let new_document_schema = new_schema.get(document_type).unwrap_or(&EMPTY_JSON);
@@ -190,7 +189,7 @@ where
                 Ok(_) => {}
                 Err(DiffVAlidatorError::SchemaCompatibilityError { diffs }) => {
                     let (operation_name, property_name) =
-                        get_operation_and_property_name(&diffs[0]);
+                        get_operation_and_property_name_json(&diffs[0]);
                     validation_result.add_error(BasicError::IncompatibleDataContractSchemaError(
                         IncompatibleDataContractSchemaError::new(
                             existing_data_contract.id.clone(),
@@ -212,8 +211,11 @@ where
         }
 
         // check indices are not changed
-        let new_documents = new_data_contract_object
-            .get_value("documents")?
+        let new_documents: JsonValue = new_data_contract_object
+            .get_value("documents")
+            .and_then(|a| a.clone().try_into())
+            .map_err(ProtocolError::ValueError)?;
+        let new_documents = new_documents
             .as_object()
             .ok_or_else(|| anyhow!("the 'documents' property is not an array"))?;
         let result = validate_indices_are_backward_compatible(
@@ -250,6 +252,17 @@ fn get_operation_and_property_name(p: &PatchOperation) -> (&'static str, &str) {
         PatchOperation::Replace(ref o) => ("replace", o.path.as_str()),
         PatchOperation::Move(ref o) => ("move", o.path.as_str()),
         PatchOperation::Test(ref o) => ("test", o.path.as_str()),
+    }
+}
+
+fn get_operation_and_property_name_json(p: &json_patch::PatchOperation) -> (&'static str, &str) {
+    match &p {
+        json_patch::PatchOperation::Add(ref o) => ("add", o.path.as_str()),
+        json_patch::PatchOperation::Copy(ref o) => ("copy", o.path.as_str()),
+        json_patch::PatchOperation::Remove(ref o) => ("remove", o.path.as_str()),
+        json_patch::PatchOperation::Replace(ref o) => ("replace", o.path.as_str()),
+        json_patch::PatchOperation::Move(ref o) => ("move", o.path.as_str()),
+        json_patch::PatchOperation::Test(ref o) => ("test", o.path.as_str()),
     }
 }
 
