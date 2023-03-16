@@ -1,3 +1,5 @@
+/* eslint-disable no-undef */
+
 /**
  * WebSocket shim for webpack browser builds
  */

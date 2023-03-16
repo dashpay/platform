@@ -33,6 +33,7 @@ export default async function update(
   await broadcastStateTransition(this, dataContractUpdateTransition);
 
   // Update app with updated data contract if available
+  // eslint-disable-next-line
   for (const appName of this.client.getApps().getNames()) {
     const appDefinition = this.client.getApps().get(appName);
     if (appDefinition.contractId.equals(updatedDataContract.getId()) && appDefinition.contract) {

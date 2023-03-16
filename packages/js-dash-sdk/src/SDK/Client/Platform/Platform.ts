@@ -187,6 +187,7 @@ export class Platform {
     // use protocol version from options if set
     // use mapped one otherwise
     // fallback to one that set in dpp as the last option
+    // eslint-disable-next-line
     const driveProtocolVersion = options.driveProtocolVersion !== undefined
       ? options.driveProtocolVersion
       : (mappedProtocolVersion !== undefined ? mappedProtocolVersion : latestProtocolVersion);

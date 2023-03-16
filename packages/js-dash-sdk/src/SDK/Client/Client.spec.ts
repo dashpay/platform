@@ -111,6 +111,7 @@ describe('Dash - Client', function suite() {
 
   it('should throw an error if client and wallet have different networks', async () => {
     try {
+      // eslint-disable-next-line
       new Client({
         network: 'testnet',
         wallet: {

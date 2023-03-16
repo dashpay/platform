@@ -20,6 +20,7 @@ export async function get(this: Platform, identifier: ContractIdentifier): Promi
   const contractId : Identifier = Identifier.from(identifier);
 
   // Try to get contract from the cache
+  // eslint-disable-next-line
   for (const appName of this.client.getApps().getNames()) {
     const appDefinition = this.client.getApps().get(appName);
     if (appDefinition.contractId.equals(contractId) && appDefinition.contract) {
@@ -53,7 +54,7 @@ export async function get(this: Platform, identifier: ContractIdentifier): Promi
   contract.setMetadata(metadata);
 
   // Store contract to the cache
-
+  // eslint-disable-next-line
   for (const appName of this.client.getApps().getNames()) {
     const appDefinition = this.client.getApps().get(appName);
     if (appDefinition.contractId.equals(contractId)) {
