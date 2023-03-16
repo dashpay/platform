@@ -1,15 +1,18 @@
 use crate::value_map::ValueMapHelper;
 use crate::{Error, Value, ValueMap};
-use std::collections::BTreeMap;
-use regex::Regex;
 use lazy_static::lazy_static;
+use regex::Regex;
+use std::collections::BTreeMap;
 
 fn is_array_path(text: &str) -> Option<(&str, usize)> {
     lazy_static! {
         static ref RE: Regex = Regex::new(r"(\w+)\[(\d+)\]").unwrap();
     }
     RE.captures(text).map(|captures| {
-        (captures.get(1).unwrap().as_str(), captures.get(2).unwrap().as_str().parse::<usize>().unwrap())
+        (
+            captures.get(1).unwrap().as_str(),
+            captures.get(2).unwrap().as_str().parse::<usize>().unwrap(),
+        )
     })
 }
 
@@ -123,11 +126,14 @@ impl Value {
                         array.push(Value::Map(ValueMap::new()));
                         current_value = array.get_mut(number_part).unwrap();
                     } else {
-                        return Err(Error::StructureError(format!("trying to insert into an array path higher than current array length")));
+                        return Err(Error::StructureError(format!(
+                            "trying to insert into an array path higher than current array length"
+                        )));
                     }
                 } else {
                     let map = current_value.to_map_mut()?;
-                    current_value = map.get_key_mut_or_insert(path_component, Value::Map(ValueMap::new()));
+                    current_value =
+                        map.get_key_mut_or_insert(path_component, Value::Map(ValueMap::new()));
                 }
             };
         }

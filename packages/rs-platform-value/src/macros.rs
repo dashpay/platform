@@ -296,3 +296,17 @@ macro_rules! platform_value_unexpected {
 macro_rules! platform_value_expect_expr_comma {
     ($e:expr , $($tt:tt)*) => {};
 }
+
+#[cfg(test)]
+mod test {
+    use crate::{platform_value, to_value, Identifier, Value};
+
+    #[test]
+    fn test_identity_is_kept() {
+        let id = Identifier::new([0; 32]);
+        let value = to_value(id).unwrap();
+        assert_eq!(value, Value::Identifier(id.to_buffer()));
+        let value = platform_value!(id);
+        assert_eq!(value, Value::Identifier(id.to_buffer()))
+    }
+}

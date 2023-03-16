@@ -28,7 +28,7 @@ impl<'a> From<&'a Value> for de::Unexpected<'a> {
             Value::Bytes32(_) => Self::Seq,
             Value::EnumU8(_x) => todo!(),
             Value::EnumString(_x) => todo!(),
-            Value::Identifier(_x) => todo!(),
+            Value::Identifier(x) => Self::Bytes(x),
         }
     }
 }
@@ -292,6 +292,8 @@ impl<'de> de::Deserializer<'de> for Deserializer {
 
         match value {
             Value::Bytes(x) => visitor.visit_bytes(&x),
+            Value::Bytes32(x) => visitor.visit_bytes(x.as_slice()),
+            Value::Identifier(x) => visitor.visit_bytes(x.as_slice()),
             _ => Err(de::Error::invalid_type((&value).into(), &"bytes")),
         }
     }

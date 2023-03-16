@@ -5,6 +5,8 @@
 //! Forked from ciborium value
 //!
 //!
+extern crate core;
+
 pub mod btreemap_extensions;
 pub mod converter;
 pub mod display;

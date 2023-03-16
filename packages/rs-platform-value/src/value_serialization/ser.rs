@@ -167,7 +167,11 @@ impl serde::Serializer for Serializer {
 
     #[inline]
     fn serialize_bytes(self, value: &[u8]) -> Result<Value, Error> {
-        Ok(Value::Bytes(value.to_vec()))
+        if value.len() == 32 {
+            Ok(Value::Bytes32(value.try_into().unwrap()))
+        } else {
+            Ok(Value::Bytes(value.to_vec()))
+        }
     }
 
     #[inline]
@@ -191,11 +195,21 @@ impl serde::Serializer for Serializer {
     }
 
     #[inline]
-    fn serialize_newtype_struct<T>(self, _name: &'static str, value: &T) -> Result<Value, Error>
+    fn serialize_newtype_struct<T>(self, name: &'static str, value: &T) -> Result<Value, Error>
     where
         T: ?Sized + Serialize,
     {
-        value.serialize(self)
+        match name {
+            "Identifier" => match value.serialize(self)? {
+                Value::Bytes32(b) => {
+                    return Ok(Value::Identifier(b));
+                }
+                data => {
+                    panic!("expected Value::Bytes32, got: {data:#?}")
+                }
+            },
+            _ => value.serialize(self),
+        }
     }
 
     fn serialize_newtype_variant<T>(
@@ -234,6 +248,10 @@ impl serde::Serializer for Serializer {
 
     fn serialize_tuple(self, len: usize) -> Result<Self::SerializeTuple, Error> {
         self.serialize_seq(Some(len))
+        //        Ok(SerializeSizedVec {
+        //             size: len,
+        //             vec: Vec::with_capacity(len),
+        //         })
     }
 
     fn serialize_tuple_struct(
@@ -295,6 +313,11 @@ impl serde::Serializer for Serializer {
     }
 }
 
+pub struct SerializeSizedVec {
+    size: usize,
+    vec: Vec<Value>,
+}
+
 pub struct SerializeVec {
     vec: Vec<Value>,
 }
@@ -348,6 +371,26 @@ impl serde::ser::SerializeTuple for SerializeVec {
         serde::ser::SerializeSeq::end(self)
     }
 }
+
+// impl serde::ser::SerializeTuple for SerializeSizedVec {
+//     type Ok = Value;
+//     type Error = Error;
+//
+//     fn serialize_element<T>(&mut self, value: &T) -> Result<(), Error>
+//         where
+//             T: ?Sized + Serialize,
+//     {
+//         serde::ser::SerializeSeq::serialize_element(self, value)
+//     }
+//
+//     fn end(self) -> Result<Value, Error> {
+//         if self.size == 32 {
+//             Ok(Value::Bytes32(self.vec))
+//         } else {
+//             serde::ser::SerializeSeq::end(self)
+//         }
+//     }
+// }
 
 impl serde::ser::SerializeTupleStruct for SerializeVec {
     type Ok = Value;

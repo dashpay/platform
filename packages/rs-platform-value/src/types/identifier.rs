@@ -1,7 +1,9 @@
 use rand::rngs::StdRng;
 use rand::Rng;
 use std::convert::{TryFrom, TryInto};
+use std::fmt;
 
+use serde::de::Visitor;
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use serde_json::Value as JsonValue;
 
@@ -11,9 +13,66 @@ use crate::{string_encoding, Error, Value};
 pub const IDENTIFIER_MEDIA_TYPE: &str = "application/x.dash.dpp.identifier";
 
 #[derive(Default, Debug, Clone, PartialEq, Eq, Hash, Copy)]
-pub struct Identifier {
-    pub buffer: [u8; 32],
+pub struct Bytes([u8; 32]);
+
+#[derive(Default, Debug, Clone, PartialEq, Eq, Hash, Copy, Serialize, Deserialize)]
+pub struct Identifier(Bytes);
+
+impl Serialize for Bytes {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        serializer.serialize_bytes(&self.0)
+    }
 }
+
+impl<'de> Deserialize<'de> for Bytes {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        struct BytesVisitor;
+
+        impl<'de> Visitor<'de> for BytesVisitor {
+            type Value = Bytes;
+
+            fn expecting(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
+                formatter.write_str("a byte array with length 32")
+            }
+
+            fn visit_bytes<E>(self, v: &[u8]) -> Result<Self::Value, E>
+            where
+                E: serde::de::Error,
+            {
+                let mut bytes = [0u8; 32];
+                if v.len() != 32 {
+                    return Err(E::invalid_length(v.len(), &self));
+                }
+                bytes.copy_from_slice(v);
+                Ok(Bytes(bytes))
+            }
+        }
+
+        deserializer.deserialize_bytes(BytesVisitor)
+    }
+}
+
+// impl<'de> Deserialize<'de> for Identifier {
+//     fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+//         where
+//             D: serde::Deserializer<'de>,
+//     {
+//         let data: DocumentValue = Deserialize::deserialize(deserializer)?;
+//         if let DocumentValue::Bytes(bytes) = data {
+//             return Ok(Identifier::from(bytes.0));
+//         }
+//         Err(serde::de::Error::custom(format!(
+//             "expected bytes, got: {:?}",
+//             data
+//         )))
+//     }
+// }
 
 fn encoding_string_to_encoding(encoding_string: Option<&str>) -> Encoding {
     match encoding_string {
@@ -31,19 +90,19 @@ fn encoding_string_to_encoding(encoding_string: Option<&str>) -> Encoding {
 
 impl Identifier {
     pub fn new(buffer: [u8; 32]) -> Identifier {
-        Identifier { buffer }
+        Identifier(Bytes(buffer))
     }
 
     pub fn random(rng: &mut StdRng) -> Identifier {
-        Identifier { buffer: rng.gen() }
+        Identifier(Bytes(rng.gen()))
     }
 
     pub fn as_bytes(&self) -> &[u8; 32] {
-        &self.buffer
+        &self.0 .0
     }
 
     pub fn as_slice(&self) -> &[u8] {
-        self.buffer.as_slice()
+        self.0 .0.as_slice()
     }
 
     pub fn from_string(encoded_value: &str, encoding: Encoding) -> Result<Identifier, Error> {
@@ -82,16 +141,16 @@ impl Identifier {
 
     // TODO - consider to change the name to 'asBuffer`
     pub fn to_buffer(&self) -> [u8; 32] {
-        self.buffer
+        self.0 .0
     }
 
     /// Convenience method to get underlying buffer as a vec
     pub fn to_buffer_vec(&self) -> Vec<u8> {
-        self.buffer.to_vec()
+        self.0 .0.to_vec()
     }
 
     pub fn to_string(&self, encoding: Encoding) -> String {
-        string_encoding::encode(&self.buffer, encoding)
+        string_encoding::encode(&self.0 .0, encoding)
     }
 
     pub fn to_string_with_encoding_string(&self, encoding_string: Option<&str>) -> String {
@@ -131,26 +190,6 @@ impl From<[u8; 32]> for Identifier {
     }
 }
 
-// TODO change default serialization to bytes
-impl Serialize for Identifier {
-    fn serialize<S>(self: &Identifier, serializer: S) -> Result<S::Ok, S::Error>
-    where
-        S: Serializer,
-    {
-        // by default we use base58 as Identifier type should be encoded in that way
-        serializer.serialize_str(&self.to_string(Encoding::Base58))
-    }
-}
-
-impl<'de> Deserialize<'de> for Identifier {
-    fn deserialize<D: Deserializer<'de>>(d: D) -> Result<Identifier, D::Error> {
-        let data: String = Deserialize::deserialize(d)?;
-        // by default we use base58 as Identifier type should be encoded in that way
-        Identifier::from_string_with_encoding_string(&data, Some("base58"))
-            .map_err(|e| serde::de::Error::custom(e.to_string()))
-    }
-}
-
 impl std::fmt::Display for Identifier {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "{}", self.to_string(Encoding::Base58))
@@ -159,13 +198,13 @@ impl std::fmt::Display for Identifier {
 
 impl PartialEq<[u8; 32]> for Identifier {
     fn eq(&self, other: &[u8; 32]) -> bool {
-        &self.buffer == other
+        &self.0 .0 == other
     }
 }
 
 impl PartialEq<Identifier> for [u8; 32] {
     fn eq(&self, other: &Identifier) -> bool {
-        self == &other.buffer
+        self == &other.0 .0
     }
 }
 
@@ -187,12 +226,12 @@ impl TryFrom<&Value> for Identifier {
 
 impl From<Identifier> for Value {
     fn from(value: Identifier) -> Self {
-        Value::Identifier(value.buffer)
+        Value::Identifier(value.0 .0)
     }
 }
 
 impl From<&Identifier> for Value {
     fn from(value: &Identifier) -> Self {
-        Value::Identifier(value.buffer)
+        Value::Identifier(value.0 .0)
     }
 }
