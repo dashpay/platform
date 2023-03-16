@@ -161,7 +161,7 @@ impl IdentityTopUpTransitionWasm {
         js_sys::Reflect::set(
             &js_object,
             &"identityId".to_owned().into(),
-            &Buffer::from_bytes(object.identity_id.buffer.as_slice()),
+            &Buffer::from_bytes(object.identity_id.to_buffer().as_slice()),
         )?;
 
         Ok(js_object.into())

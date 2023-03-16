@@ -307,7 +307,7 @@ impl DocumentsBatchTransition {
         );
         map.insert(
             property_names::OWNER_ID.to_string(),
-            Value::Identifier(self.owner_id.buffer),
+            Value::Identifier(self.owner_id.to_buffer()),
         );
 
         if !skip_signature {

@@ -57,10 +57,10 @@ fn setup_test(action: Action) -> TestData {
     let signature = [0_u8; 65].to_vec();
     let mut map = BTreeMap::new();
     map.insert("protocolVersion".to_string(), Value::U32(LATEST_VERSION));
-    map.insert("ownerId".to_string(), Value::Identifier(owner_id.buffer));
+    map.insert("ownerId".to_string(), Value::Identifier(owner_id.to_buffer()));
     map.insert(
         "contractId".to_string(),
-        Value::Identifier(data_contract.id.buffer),
+        Value::Identifier(data_contract.id.to_buffer()),
     );
     map.insert("signature".to_string(), Value::Bytes(signature));
     map.insert("signaturePublicKeyId".to_string(), Value::U32(0));

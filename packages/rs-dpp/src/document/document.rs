@@ -452,11 +452,11 @@ impl Document {
 
         if let Ok(value) = document_value.remove(property_names::ID) {
             let data: S = serde_json::from_value(value)?;
-            document.id = data.try_into()?.buffer;
+            document.id = data.try_into()?.to_buffer();
         }
         if let Ok(value) = document_value.remove(property_names::OWNER_ID) {
             let data: S = serde_json::from_value(value)?;
-            document.owner_id = data.try_into()?.buffer;
+            document.owner_id = data.try_into()?.to_buffer();
         }
         if let Ok(value) = document_value.remove(property_names::REVISION) {
             document.revision = serde_json::from_value(value)?

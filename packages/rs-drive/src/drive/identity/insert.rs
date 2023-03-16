@@ -190,7 +190,7 @@ mod tests {
             .expect("expected to insert identity");
 
         let fetched_identity = drive
-            .fetch_full_identity(identity.id.buffer, Some(&transaction))
+            .fetch_full_identity(identity.id.to_buffer(), Some(&transaction))
             .expect("should fetch an identity")
             .expect("should have an identity");
 

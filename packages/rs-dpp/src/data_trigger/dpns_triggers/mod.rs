@@ -106,7 +106,7 @@ where
             .get_optional_identifier(PROPERTY_DASH_UNIQUE_IDENTITY_ID)
             .map_err(ProtocolError::ValueError)?
         {
-            if id != owner_id.buffer {
+            if id != owner_id {
                 let err = create_error(
                     context,
                     dt_create,
@@ -125,7 +125,7 @@ where
             .get_optional_identifier(PROPERTY_DASH_ALIAS_IDENTITY_ID)
             .map_err(ProtocolError::ValueError)?
         {
-            if id != owner_id.buffer {
+            if id != owner_id {
                 let err = create_error(
                     context,
                     dt_create,

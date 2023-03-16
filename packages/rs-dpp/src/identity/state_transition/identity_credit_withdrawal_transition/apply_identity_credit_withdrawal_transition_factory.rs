@@ -120,9 +120,9 @@ where
         }
 
         let withdrawal_document = Document {
-            id: document_id.buffer,
+            id: document_id.to_buffer(),
             revision: None,
-            owner_id: state_transition.identity_id.buffer,
+            owner_id: state_transition.identity_id.to_buffer(),
             created_at: Some(document_created_at_millis),
             updated_at: Some(document_created_at_millis),
             properties: document_properties,

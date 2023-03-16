@@ -124,8 +124,8 @@ fn document_from_transition_replace(
         data_contract: Default::default(),
         entropy: Default::default(),
         document: Document {
-            id: document_replace_transition.base.id.buffer,
-            owner_id: state_transition.owner_id.buffer,
+            id: document_replace_transition.base.id.to_buffer(),
+            owner_id: state_transition.owner_id.to_buffer(),
             properties: document_replace_transition.data.clone().unwrap_or_default(),
             revision: Some(document_replace_transition.revision),
             created_at: Some(created_at),

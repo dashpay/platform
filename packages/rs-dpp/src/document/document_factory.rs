@@ -241,7 +241,7 @@ where
             ),
             (
                 PROPERTY_OWNER_ID.to_string(),
-                Value::Identifier(owner_id.buffer),
+                Value::Identifier(owner_id.to_buffer()),
             ),
             (
                 PROPERTY_TRANSITIONS.to_string(),
@@ -411,7 +411,7 @@ where
                 );
                 map.insert(
                     PROPERTY_DATA_CONTRACT_ID.to_string(),
-                    Value::Identifier(document.data_contract_id.buffer),
+                    Value::Identifier(document.data_contract_id.to_buffer()),
                 );
                 map.into()
             })
@@ -521,7 +521,7 @@ mod test {
             DataContractFetcherAndValidator::new(Arc::new(MockStateRepositoryLike::new())),
             None,
         );
-        documents[0].document.owner_id = generate_random_identifier_struct().buffer;
+        documents[0].document.owner_id = generate_random_identifier_struct().to_buffer();
 
         let result = factory.create_state_transition(vec![(Action::Create, documents)]);
         assert_error_contains!(result, "Documents have mixed owner ids")

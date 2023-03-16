@@ -60,7 +60,7 @@ pub fn get_dpns_parent_document_fixture(options: ParentDocumentOptions) -> Exten
         "records".to_string(),
         Value::Map(vec![(
             Value::Text("dashUniqueIdentityId".to_string()),
-            Value::Identifier(options.owner_id.buffer),
+            Value::Identifier(options.owner_id.to_buffer()),
         )]),
     );
     map.insert(

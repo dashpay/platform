@@ -302,7 +302,7 @@ async fn should_return_invalid_result_if_document_transition_with_action_replace
     )
     .expect("document should be created");
     let another_owner_id = generate_random_identifier_struct();
-    fetched_document.document.owner_id = another_owner_id.buffer;
+    fetched_document.document.owner_id = another_owner_id.to_buffer();
 
     let document_transitions = get_document_transitions_fixture([
         (Action::Create, vec![]),

@@ -124,7 +124,7 @@ impl DocumentBaseTransition {
             data_contract_id: Identifier::new(
                 map.remove_optional_hash256_bytes(property_names::DATA_CONTRACT_ID)
                     .map_err(ProtocolError::ValueError)?
-                    .unwrap_or(data_contract.id.buffer),
+                    .unwrap_or(data_contract.id.to_buffer()),
             ),
             data_contract,
         })
@@ -182,11 +182,11 @@ impl DocumentTransitionObjectLike for DocumentBaseTransition {
         let mut btree_map = BTreeMap::new();
         btree_map.insert(
             property_names::ID.to_string(),
-            Value::Identifier(self.id.buffer),
+            Value::Identifier(self.id.to_buffer()),
         );
         btree_map.insert(
             property_names::DATA_CONTRACT_ID.to_string(),
-            Value::Identifier(self.data_contract_id.buffer),
+            Value::Identifier(self.data_contract_id.to_buffer()),
         );
         btree_map.insert(
             property_names::ACTION.to_string(),

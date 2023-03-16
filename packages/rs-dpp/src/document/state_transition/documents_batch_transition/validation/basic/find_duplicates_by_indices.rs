@@ -199,7 +199,7 @@ mod test {
         )
         .unwrap();
         let document_raw_transition_1: Value = BTreeMap::from([
-            ("$id".to_string(), Value::Identifier(id_1.buffer)),
+            ("$id".to_string(), Value::Identifier(id_1.to_buffer())),
             (
                 "$type".to_string(),
                 Value::Text("indexedDocument".to_string()),
@@ -236,7 +236,7 @@ mod test {
         .unwrap();
 
         let document_create_transition_2: Value = BTreeMap::from([
-            ("$id".to_string(), Value::Identifier(id_2.buffer)),
+            ("$id".to_string(), Value::Identifier(id_2.to_buffer())),
             (
                 "$type".to_string(),
                 Value::Text("indexedDocument".to_string()),
@@ -324,8 +324,8 @@ mod test {
         )
         .unwrap();
         let document_raw_transition_1: Value = BTreeMap::from([
-            ("$ownerId".to_string(), Value::Identifier(id_1.buffer)),
-            ("$id".to_string(), Value::Identifier(id_1.buffer)),
+            ("$ownerId".to_string(), Value::Identifier(id_1.to_buffer())),
+            ("$id".to_string(), Value::Identifier(id_1.to_buffer())),
             (
                 "$type".to_string(),
                 Value::Text("indexedDocument".to_string()),
@@ -362,8 +362,8 @@ mod test {
         .unwrap();
 
         let document_create_transition_2: Value = BTreeMap::from([
-            ("$ownerId".to_string(), Value::Identifier(id_1.buffer)),
-            ("$id".to_string(), Value::Identifier(id_2.buffer)),
+            ("$ownerId".to_string(), Value::Identifier(id_1.to_buffer())),
+            ("$id".to_string(), Value::Identifier(id_2.to_buffer())),
             (
                 "$type".to_string(),
                 Value::Text("indexedDocument".to_string()),
@@ -450,7 +450,7 @@ mod test {
         )
         .unwrap();
         let document_raw_transition_1: Value = BTreeMap::from([
-            ("$id".to_string(), Value::Identifier(id_1.buffer)),
+            ("$id".to_string(), Value::Identifier(id_1.to_buffer())),
             (
                 "$type".to_string(),
                 Value::Text("indexedDocument".to_string()),
@@ -487,7 +487,7 @@ mod test {
         .unwrap();
 
         let document_create_transition_2: Value = BTreeMap::from([
-            ("$id".to_string(), Value::Identifier(id_2.buffer)),
+            ("$id".to_string(), Value::Identifier(id_2.to_buffer())),
             (
                 "$type".to_string(),
                 Value::Text("indexedDocument".to_string()),

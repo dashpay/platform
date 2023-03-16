@@ -235,7 +235,7 @@ mod tests {
 
         assert_eq!(data_contract.protocol_version, result.protocol_version);
         // id is generated based on entropy which is different every time the `create` call is used
-        assert_eq!(data_contract.id.buffer.len(), result.id.buffer.len());
+        assert_eq!(data_contract.id.len(), result.id.len());
         assert_ne!(data_contract.id, result.id);
         assert_eq!(data_contract.schema, result.schema);
         assert_eq!(data_contract.owner_id, result.owner_id);

@@ -1,5 +1,7 @@
 use integer_encoding::VarInt;
 use std::collections::BTreeMap;
+use futures::sink::Buffer;
+use platform_value::Identifier;
 
 use crate::data_contract::document_type::DocumentType;
 use crate::data_contract::DataContract;
@@ -61,7 +63,7 @@ pub trait DriveContractExt {
 
 impl DriveContractExt for DataContract {
     fn id(&self) -> &[u8; 32] {
-        &self.id.buffer
+        &self.id.0.0
     }
     fn document_types(&self) -> &BTreeMap<String, DocumentType> {
         &self.document_types
@@ -124,7 +126,7 @@ impl DriveContractExt for DataContract {
             }
         };
         if let Some(id) = contract_id {
-            data_contract.id.buffer = id
+            data_contract.id = Identifier::new(id)
         }
         Ok(data_contract)
     }
@@ -135,7 +137,7 @@ impl DriveContractExt for DataContract {
     {
         let mut data_contract = DataContract::from_cbor(contract_cbor)?;
         if let Some(id) = contract_id {
-            data_contract.id.buffer = id
+            data_contract.id = Identifier::from(id)
         }
 
         Ok(data_contract)

@@ -158,7 +158,7 @@ impl ExtendedDocument {
         extended_document.data_contract_id = Identifier::new(
             properties
                 .remove_optional_hash256_bytes(property_names::DATA_CONTRACT_ID)?
-                .unwrap_or(extended_document.data_contract.id.buffer),
+                .unwrap_or(extended_document.data_contract.id.to_buffer()),
         );
         extended_document.document = Document::from_map(properties, None, None)?;
         Ok(extended_document)
@@ -195,7 +195,7 @@ impl ExtendedDocument {
         extended_document.data_contract_id = Identifier::new(
             properties
                 .remove_optional_hash256_bytes(property_names::DATA_CONTRACT_ID)?
-                .unwrap_or(extended_document.data_contract.id.buffer),
+                .unwrap_or(extended_document.data_contract.id.to_buffer()),
         );
         extended_document.document = Document::from_map(properties, None, None)?;
 

@@ -69,7 +69,7 @@ fn create_test_mn_share_document(
 
     properties.insert(
         String::from("payToId"),
-        Value::Bytes(pay_to_identity.id.buffer.to_vec()),
+        Value::Bytes(pay_to_identity.id.to_buffer().to_vec()),
     );
     properties.insert(String::from("percentage"), percentage.into());
 

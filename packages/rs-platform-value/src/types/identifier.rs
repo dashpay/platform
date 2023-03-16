@@ -13,10 +13,10 @@ use crate::{string_encoding, Error, Value};
 pub const IDENTIFIER_MEDIA_TYPE: &str = "application/x.dash.dpp.identifier";
 
 #[derive(Default, Debug, Clone, PartialEq, Eq, Hash, Copy)]
-pub struct Bytes([u8; 32]);
+pub struct Bytes(pub [u8; 32]);
 
 #[derive(Default, Debug, Clone, PartialEq, Eq, Hash, Copy, Serialize, Deserialize)]
-pub struct Identifier(Bytes);
+pub struct Identifier(pub Bytes);
 
 impl Serialize for Bytes {
     fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
@@ -139,9 +139,13 @@ impl Identifier {
             .collect()
     }
 
+    pub fn len(&self) -> usize {
+        32
+    }
+
     // TODO - consider to change the name to 'asBuffer`
     pub fn to_buffer(&self) -> [u8; 32] {
-        self.0 .0
+        self.0.0
     }
 
     /// Convenience method to get underlying buffer as a vec
@@ -198,13 +202,25 @@ impl std::fmt::Display for Identifier {
 
 impl PartialEq<[u8; 32]> for Identifier {
     fn eq(&self, other: &[u8; 32]) -> bool {
-        &self.0 .0 == other
+        &self.0.0 == other
+    }
+}
+
+impl PartialEq<[u8; 32]> for &Identifier {
+    fn eq(&self, other: &[u8; 32]) -> bool {
+        &self.0.0 == other
     }
 }
 
 impl PartialEq<Identifier> for [u8; 32] {
     fn eq(&self, other: &Identifier) -> bool {
-        self == &other.0 .0
+        self == &other.0.0
+    }
+}
+
+impl PartialEq<&Identifier> for [u8; 32] {
+    fn eq(&self, other: &&Identifier) -> bool {
+        self == &other.0.0
     }
 }
 

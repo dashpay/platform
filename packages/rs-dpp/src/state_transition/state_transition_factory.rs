@@ -208,7 +208,7 @@ mod test {
         map.insert("protocolVersion".to_string(), Value::U32(PROTOCOL_VERSION));
         map.insert(
             "ownerId".to_string(),
-            Value::Identifier(data_contract.owner_id.buffer),
+            Value::Identifier(data_contract.owner_id.to_buffer()),
         );
         map.insert(
             "transitions".to_string(),

@@ -209,8 +209,8 @@ impl DataContract {
         platform_value::to_value(self).map_err(ProtocolError::ValueError)
         // let mut raw_object = BTreeMap::from([
         //                                     (property_names::PROTOCOL_VERSION.to_string(), Value::U32(self.protocol_version)),
-        //                                     (property_names::ID.to_string(), Value::Identifier(self.id.buffer)),
-        //                                     (property_names::OWNER_ID.to_string(), Value::Identifier(self.owner_id.buffer)),
+        //                                     (property_names::ID.to_string(), Value::Identifier(self.id.to_buffer())),
+        //                                     (property_names::OWNER_ID.to_string(), Value::Identifier(self.owner_id.to_buffer())),
         //                                     (property_names::SCHEMA.to_string(), Value::Text(self.schema.clone())),
         //                                     (property_names::VERSION.to_string(), Value::U32(self.version)),
         //                                     (property_names::DOCUMENTS.to_string(), self.documents.into()),
@@ -226,8 +226,8 @@ impl DataContract {
         platform_value::to_value(self).map_err(ProtocolError::ValueError)
         // let mut raw_object = BTreeMap::from([
         //     (property_names::PROTOCOL_VERSION.to_string(), Value::U32(self.protocol_version)),
-        //     (property_names::ID.to_string(), Value::Identifier(self.id.buffer)),
-        //     (property_names::OWNER_ID.to_string(), Value::Identifier(self.owner_id.buffer)),
+        //     (property_names::ID.to_string(), Value::Identifier(self.id.to_buffer())),
+        //     (property_names::OWNER_ID.to_string(), Value::Identifier(self.owner_id.to_buffer())),
         //     (property_names::SCHEMA.to_string(), Value::Text(self.schema)),
         //     (property_names::VERSION.to_string(), Value::U32(self.version)),
         //     (property_names::DOCUMENTS.to_string(), self.documents.into()),
