@@ -28,7 +28,7 @@ describe('Identifier', () => {
         expect.fail('Expected to throw an error');
       } catch (e) {
         expect(e).to.be.instanceOf(IdentifierError);
-        expect(e.toString()).to.be.equal('IdentifierError: Identifier expects Buffers');
+        expect(e.toString()).to.be.equal('IdentifierError: Identifier expects Buffer');
       }
     });
 
