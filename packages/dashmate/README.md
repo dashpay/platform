@@ -276,7 +276,11 @@ DESCRIPTION
   Reindex Core data
 ```
 
-
+### Full node
+It is also possible to start a full node instead of a masternode. Modify the config setting as follows:
+```bash
+dashmate config set core.masternode.enable false
+```
 
 
 ### Node groups
