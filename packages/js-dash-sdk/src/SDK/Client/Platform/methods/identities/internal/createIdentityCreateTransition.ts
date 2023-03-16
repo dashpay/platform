@@ -3,14 +3,21 @@ import IdentityPublicKey from '@dashevo/dpp/lib/identity/IdentityPublicKey';
 import { Platform } from '../../../Platform';
 
 /**
- * Creates a funding transaction for the platform identity and returns one-time key to sign the state transition
+ * Creates a funding transaction for the platform identity
+ *  and returns one-time key to sign the state transition
  * @param {Platform} this
- * @param {AssetLockProof} assetLockProof - asset lock transaction proof for the identity create transition
+ * @param {AssetLockProof} assetLockProof - asset lock transaction proof
+ *  for the identity create transition
  * @param {PrivateKey} assetLockPrivateKey - private key used in asset lock
- * @return {{identity: Identity, identityCreateTransition: IdentityCreateTransition}} - identity, state transition and index of the key used to create it
+ * @return {{identity: Identity, identityCreateTransition: IdentityCreateTransition}}
+ *  - identity, state transition and index of the key used to create it
  * that can be used to sign registration/top-up state transition
  */
-export async function createIdentityCreateTransition(this : Platform, assetLockProof: any, assetLockPrivateKey: PrivateKey): Promise<{ identity: any, identityCreateTransition: any, identityIndex: number }> {
+export async function createIdentityCreateTransition(
+  this : Platform,
+  assetLockProof: any,
+  assetLockPrivateKey: PrivateKey,
+): Promise<{ identity: any, identityCreateTransition: any, identityIndex: number }> {
   const platform = this;
   await platform.initialize();
 
@@ -20,10 +27,12 @@ export async function createIdentityCreateTransition(this : Platform, assetLockP
   const identityIndex = await account.getUnusedIdentityIndex();
 
   // @ts-ignore
-  const { privateKey: identityMasterPrivateKey } = account.identities.getIdentityHDKeyByIndex(identityIndex, 0);
+  const { privateKey: identityMasterPrivateKey } = account.identities
+    .getIdentityHDKeyByIndex(identityIndex, 0);
   const identityMasterPublicKey = identityMasterPrivateKey.toPublicKey();
 
-  const { privateKey: identitySecondPrivateKey } = account.identities.getIdentityHDKeyByIndex(identityIndex, 1);
+  const { privateKey: identitySecondPrivateKey } = account.identities
+    .getIdentityHDKeyByIndex(identityIndex, 1);
   const identitySecondPublicKey = identitySecondPrivateKey.toPublicKey();
 
   // Create Identity
@@ -49,13 +58,15 @@ export async function createIdentityCreateTransition(this : Platform, assetLockP
 
   const [masterKey, secondKey] = identityCreateTransition.getPublicKeys();
 
-  await identityCreateTransition.signByPrivateKey(identityMasterPrivateKey, IdentityPublicKey.TYPES.ECDSA_SECP256K1);
+  await identityCreateTransition
+    .signByPrivateKey(identityMasterPrivateKey, IdentityPublicKey.TYPES.ECDSA_SECP256K1);
 
   masterKey.setSignature(identityCreateTransition.getSignature());
 
   identityCreateTransition.setSignature(undefined);
 
-  await identityCreateTransition.signByPrivateKey(identitySecondPrivateKey, IdentityPublicKey.TYPES.ECDSA_SECP256K1);
+  await identityCreateTransition
+    .signByPrivateKey(identitySecondPrivateKey, IdentityPublicKey.TYPES.ECDSA_SECP256K1);
 
   secondKey.setSignature(identityCreateTransition.getSignature());
 
@@ -63,7 +74,8 @@ export async function createIdentityCreateTransition(this : Platform, assetLockP
 
   // Sign and validate state transition
 
-  await identityCreateTransition.signByPrivateKey(assetLockPrivateKey, IdentityPublicKey.TYPES.ECDSA_SECP256K1);
+  await identityCreateTransition
+    .signByPrivateKey(assetLockPrivateKey, IdentityPublicKey.TYPES.ECDSA_SECP256K1);
 
   const result = await dpp.stateTransition.validateBasic(identityCreateTransition);
 

@@ -68,7 +68,8 @@ export default async function broadcastStateTransition(
   }
 
   // Waiting for result to return
-  const stateTransitionResult: IStateTransitionResult = await client.getDAPIClient().platform.waitForStateTransitionResult(hash, { prove: true });
+  const stateTransitionResult: IStateTransitionResult = await client
+    .getDAPIClient().platform.waitForStateTransitionResult(hash, { prove: true });
 
   const { error } = stateTransitionResult;
 

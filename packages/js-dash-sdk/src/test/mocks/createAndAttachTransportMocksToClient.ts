@@ -52,17 +52,23 @@ function makeTxStreamEmitISLocksForTransactions(transportMock, txStreamMock) {
  */
 function makeGetIdentityRespondWithIdentity(client, dapiClientMock) {
   dapiClientMock.platform.broadcastStateTransition.callsFake(async (stBuffer) => {
-    const interceptedIdentityStateTransition = await client.platform.dpp.stateTransition.createFromBuffer(stBuffer);
+    const interceptedIdentityStateTransition = await client
+      .platform.dpp.stateTransition.createFromBuffer(stBuffer);
 
     if (interceptedIdentityStateTransition.getType() === stateTransitionTypes.IDENTITY_CREATE) {
       const identityToResolve = new Identity({
         protocolVersion: interceptedIdentityStateTransition.getProtocolVersion(),
         id: interceptedIdentityStateTransition.getIdentityId().toBuffer(),
-        publicKeys: interceptedIdentityStateTransition.getPublicKeys().map((key) => key.toObject({ skipSignature: true })),
+        publicKeys: interceptedIdentityStateTransition
+          .getPublicKeys().map((key) => key.toObject({ skipSignature: true })),
         balance: interceptedIdentityStateTransition.getAssetLockProof().getOutput().satoshis,
         revision: 0,
       });
-      dapiClientMock.platform.getIdentity.withArgs(identityToResolve.getId()).resolves(new GetIdentityResponse(identityToResolve.toBuffer(), getResponseMetadataFixture()));
+      dapiClientMock.platform.getIdentity.withArgs(identityToResolve.getId())
+        .resolves(new GetIdentityResponse(
+          identityToResolve.toBuffer(),
+          getResponseMetadataFixture()
+        ));
     }
   });
 }

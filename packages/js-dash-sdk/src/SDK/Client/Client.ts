@@ -40,7 +40,8 @@ export interface ClientOpts {
 }
 
 /**
- * Client class that wraps all components together to allow integrated payments on both the Dash Network (layer 1)
+ * Client class that wraps all components together
+ * to allow integrated payments on both the Dash Network (layer 1)
  * and the Dash Platform (layer 2).
  */
 export class Client extends EventEmitter {
@@ -96,7 +97,8 @@ export class Client extends EventEmitter {
 
     // Initialize a wallet if `wallet` option is preset
     if (this.options.wallet !== undefined) {
-      if (this.options.wallet.network !== undefined && this.options.wallet.network !== this.network) {
+      if (this.options.wallet.network !== undefined
+        && this.options.wallet.network !== this.network) {
         throw new Error('Wallet and Client networks are different');
       }
 

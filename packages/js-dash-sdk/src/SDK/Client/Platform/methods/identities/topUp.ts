@@ -11,7 +11,11 @@ import broadcastStateTransition from '../../broadcastStateTransition';
  * @param {number} amount - amount to top up in duffs
  * @returns {boolean}
  */
-export async function topUp(this: Platform, identityId: Identifier | string, amount: number): Promise<any> {
+export async function topUp(
+  this: Platform,
+  identityId: Identifier | string,
+  amount: number,
+): Promise<any> {
   await this.initialize();
 
   const { client } = this;
