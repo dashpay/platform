@@ -105,7 +105,7 @@ function expectOperatorIdentityFactory(
       const payoutPublicKey = operatorIdentity.getPublicKeyById(i);
       expect(payoutPublicKey.getType()).to.equal(publicKeyType);
       expect(payoutPublicKey.getData()).to.deep.equal(
-        getPublicKeyFromPayoutScript(dppWasm, payoutScript, publicKeyType),
+        getPublicKeyFromPayoutScript(payoutScript, publicKeyType, dppWasm),
       );
 
       const masternodeIdentityByPayoutPublicKeyHashResult = await identityPublicKeyRepository
@@ -127,7 +127,7 @@ function expectOperatorIdentityFactory(
       const payoutPublicKey = operatorIdentity.getPublicKeyById(i);
       expect(payoutPublicKey.getType()).to.equal(publicKeyType);
       expect(payoutPublicKey.getData()).to.deep.equal(
-        getPublicKeyFromPayoutScript(dppWasm, payoutScript, publicKeyType),
+        getPublicKeyFromPayoutScript(payoutScript, publicKeyType, dppWasm),
       );
 
       const masternodeIdentityByPayoutPublicKeyHashResult = await identityRepository
@@ -287,7 +287,7 @@ function expectMasternodeIdentityFactory(
       const payoutPublicKey = masternodeIdentity.getPublicKeyById(i);
       expect(payoutPublicKey.getType()).to.equal(publicKeyType);
       expect(payoutPublicKey.getData()).to.deep.equal(
-        getPublicKeyFromPayoutScript(dppWasm, payoutScript, publicKeyType),
+        getPublicKeyFromPayoutScript(payoutScript, publicKeyType, dppWasm),
       );
 
       const masternodeIdentityByPayoutPublicKeyHashResult = await identityRepository
@@ -309,7 +309,7 @@ function expectMasternodeIdentityFactory(
       const payoutPublicKey = masternodeIdentity.getPublicKeyById(i);
       expect(payoutPublicKey.getType()).to.equal(publicKeyType);
       expect(payoutPublicKey.getData()).to.deep.equal(
-        getPublicKeyFromPayoutScript(dppWasm, payoutScript, publicKeyType),
+        getPublicKeyFromPayoutScript(payoutScript, publicKeyType, dppWasm),
       );
 
       const masternodeIdentityByPayoutPublicKeyHashResult = await identityRepository

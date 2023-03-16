@@ -50,6 +50,7 @@ describe('createMasternodeIdentityFactory', () => {
       identityRepositoryMock,
       getWithdrawPubKeyTypeFromPayoutScriptMock,
       getPublicKeyFromPayoutScriptMock,
+      this.dppWasm
     );
 
     blockInfo = new BlockInfo(1, 0, Date.now());

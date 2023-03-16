@@ -16,30 +16,30 @@ describe('getWithdrawPubKeyTypeFromPayoutScriptFactory', () => {
   beforeEach(function beforeEach() {
     network = 'testnet';
     getWithdrawPubKeyTypeFromPayoutScript = getWithdrawPubKeyTypeFromPayoutScriptFactory(
-      this.dppWasm,
       network,
+      this.dppWasm,
     );
   });
 
-  it('should return ECDSA_HASH160 if address has p2pkh type', () => {
+  it('should return ECDSA_HASH160 if address has p2pkh type', function test() {
     const payoutScript = Script(Address.fromString('yTsGq4wV8WF5GKLaYV2C43zrkr2sfTtysT'));
-    const type = getWithdrawPubKeyTypeFromPayoutScript(payoutScript);
+    const type = getWithdrawPubKeyTypeFromPayoutScript(payoutScript, this.dppWasm);
 
     expect(type).to.be.equal(KeyType.ECDSA_HASH160);
   });
 
-  it('should return BIP13_SCRIPT_HASH if address has p2sh type', () => {
+  it('should return BIP13_SCRIPT_HASH if address has p2sh type', function test() {
     const payoutScript = Script(Address.fromString('7UkJidhNjEPJCQnCTXeaJKbJmL4JuyV66w'));
-    const type = getWithdrawPubKeyTypeFromPayoutScript(payoutScript);
+    const type = getWithdrawPubKeyTypeFromPayoutScript(payoutScript, this.dppWasm);
 
     expect(type).to.be.equal(KeyType.BIP13_SCRIPT_HASH);
   });
 
-  it('should throw InvalidPayoutScriptError if address is not p2sh or p2pkh', () => {
+  it('should throw InvalidPayoutScriptError if address is not p2sh or p2pkh', function test() {
     const payoutScript = new Script();
 
     try {
-      getWithdrawPubKeyTypeFromPayoutScript(payoutScript);
+      getWithdrawPubKeyTypeFromPayoutScript(payoutScript, this.dppWasm);
 
       expect.fail('should throw InvalidPayoutScriptError');
     } catch (e) {

@@ -5,7 +5,7 @@ describe('createVotingIdentifier', () => {
   let Identifier;
 
   before(function before() {
-    ({ Identifier } = this.dpp);
+    ({ Identifier } = this.dppWasm);
   });
 
   beforeEach(() => {
