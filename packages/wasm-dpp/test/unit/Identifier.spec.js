@@ -27,8 +27,8 @@ describe('Identifier', () => {
 
         expect.fail('Expected to throw an error');
       } catch (e) {
-        // not checking instance of TypeError, as it gives error in karma tests
-        expect(e.toString()).to.be.equal('TypeError: invalid_argument');
+        expect(e).to.be.instanceOf(IdentifierError);
+        expect(e.toString()).to.be.equal('IdentifierError: Identifier expects Buffers');
       }
     });
 

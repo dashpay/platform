@@ -58,8 +58,17 @@ impl std::convert::From<IdentifierWrapper> for Identifier {
 #[wasm_bindgen(js_class=Identifier)]
 impl IdentifierWrapper {
     #[wasm_bindgen(constructor)]
-    pub fn new(buffer: Vec<u8>) -> Result<IdentifierWrapper, JsValue> {
-        let identifier = identifier::Identifier::from_bytes(&buffer).map_err(from_dpp_err)?;
+    pub fn new(js_value: JsValue) -> Result<IdentifierWrapper, JsValue> {
+        // Can be possible reworked with Buffer::is_buffer(&js_value)
+        // but until we use Buffer shim for both Node and Web,
+        // it will return false negative in Node.JS environment
+        if !js_value.has_type::<js_sys::Uint8Array>() {
+            return Err(IdentifierErrorWasm::new("Identifier expects Buffer").into());
+        }
+
+        let vec = js_value.dyn_into::<js_sys::Uint8Array>()?.to_vec();
+
+        let identifier = identifier::Identifier::from_bytes(&vec).map_err(from_dpp_err)?;
 
         Ok(IdentifierWrapper {
             wrapped: identifier,
@@ -71,8 +80,7 @@ impl IdentifierWrapper {
             let string = value.as_string().unwrap();
             Ok(IdentifierWrapper::from_string(string, encoding))
         } else if value.has_type::<js_sys::Uint8Array>() && encoding.is_none() {
-            let vec = value.dyn_into::<js_sys::Uint8Array>()?.to_vec();
-            IdentifierWrapper::new(vec)
+            IdentifierWrapper::new(value)
         } else if value.has_type::<js_sys::Uint8Array>() && encoding.is_some() {
             Err(IdentifierErrorWasm::new("encoding accepted only with type string").into())
         } else {
