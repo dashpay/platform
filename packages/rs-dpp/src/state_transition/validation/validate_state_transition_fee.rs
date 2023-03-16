@@ -26,7 +26,7 @@ impl<SR> StateTransitionFeeValidator<SR>
 where
     SR: StateRepositoryLike,
 {
-    fn new(state_repository: Arc<SR>) -> Self {
+    pub fn new(state_repository: Arc<SR>) -> Self {
         let asset_lock_transition_output_fetcher =
             AssetLockTransactionOutputFetcher::new(state_repository.clone());
         StateTransitionFeeValidator {
@@ -164,13 +164,13 @@ where
 mod test {
     use std::sync::Arc;
 
+    use crate::data_contract::state_transition::data_contract_create_transition::DataContractCreateTransition;
     use crate::identity::state_transition::identity_topup_transition::IdentityTopUpTransition;
     use crate::state_transition::StateTransitionLike;
     use crate::tests::fixtures::identity_topup_transition_fixture_json;
     use crate::ProtocolError;
     use crate::{
         consensus::fee::FeeError,
-        data_contract::state_transition::DataContractCreateTransition,
         document::{document_transition::Action, DocumentsBatchTransition},
         identity::state_transition::identity_credit_withdrawal_transition::IdentityCreditWithdrawalTransition,
         state_repository::MockStateRepositoryLike,

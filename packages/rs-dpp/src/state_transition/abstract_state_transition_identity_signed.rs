@@ -77,7 +77,11 @@ where
             KeyType::BIP13_SCRIPT_HASH => Err(ProtocolError::InvalidIdentityPublicKeyTypeError(
                 InvalidIdentityPublicKeyTypeError::new(identity_public_key.key_type),
             )),
-        }
+        }?;
+
+        self.set_signature_public_key_id(identity_public_key.id);
+
+        Ok(())
     }
 
     fn verify_signature(
@@ -257,6 +261,10 @@ mod test {
 
         fn set_execution_context(&mut self, execution_context: StateTransitionExecutionContext) {
             self.execution_context = execution_context
+        }
+
+        fn get_modified_data_ids(&self) -> Vec<Identifier> {
+            vec![]
         }
     }
 

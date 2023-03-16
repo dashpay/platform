@@ -35,7 +35,7 @@ pub mod validation;
 
 #[derive(Clone, Debug)]
 #[wasm_bindgen(js_name = DocumentsBatchTransition)]
-pub struct DocumentsBatchTransitionWASM(DocumentsBatchTransition);
+pub struct DocumentsBatchTransitionWasm(DocumentsBatchTransition);
 
 #[derive(Debug, Serialize, Deserialize, Default, Clone, Copy)]
 #[serde(rename_all = "camelCase")]
@@ -47,12 +47,12 @@ pub struct ToObjectOptions {
 }
 
 #[wasm_bindgen(js_class=DocumentsBatchTransition)]
-impl DocumentsBatchTransitionWASM {
+impl DocumentsBatchTransitionWasm {
     #[wasm_bindgen(constructor)]
     pub fn from_raw_object(
         js_raw_transition: JsValue,
         data_contracts: Array,
-    ) -> Result<DocumentsBatchTransitionWASM, JsValue> {
+    ) -> Result<DocumentsBatchTransitionWasm, JsValue> {
         let data_contracts_array_js = Array::from(&data_contracts);
 
         let mut data_contracts: Vec<DataContract> = vec![];
@@ -244,7 +244,11 @@ impl DocumentsBatchTransitionWASM {
         bls: JsBlsAdapter,
     ) -> Result<(), JsValue> {
         self.0
-            .sign(identity_public_key.inner(), private_key, &BlsAdapter(bls))
+            .sign(
+                &identity_public_key.to_owned().into(),
+                private_key,
+                &BlsAdapter(bls),
+            )
             .with_js_error()
     }
 
@@ -362,14 +366,14 @@ impl DocumentsBatchTransitionWASM {
     }
 }
 
-impl From<DocumentsBatchTransition> for DocumentsBatchTransitionWASM {
+impl From<DocumentsBatchTransition> for DocumentsBatchTransitionWasm {
     fn from(t: DocumentsBatchTransition) -> Self {
-        DocumentsBatchTransitionWASM(t)
+        DocumentsBatchTransitionWasm(t)
     }
 }
 
-impl From<DocumentsBatchTransitionWASM> for DocumentsBatchTransition {
-    fn from(t: DocumentsBatchTransitionWASM) -> Self {
+impl From<DocumentsBatchTransitionWasm> for DocumentsBatchTransition {
+    fn from(t: DocumentsBatchTransitionWasm) -> Self {
         t.0
     }
 }

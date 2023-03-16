@@ -4,13 +4,13 @@ use wasm_bindgen::prelude::*;
 use crate::{
     state_repository::{ExternalStateRepositoryLike, ExternalStateRepositoryLikeWrapper},
     utils::WithJsError,
-    DocumentsBatchTransitionWASM,
+    DocumentsBatchTransitionWasm,
 };
 
 #[wasm_bindgen(js_name=applyDocumentsBatchTransition)]
 pub async fn apply_documents_batch_transition_wasm(
     state_repository: ExternalStateRepositoryLike,
-    transition: &DocumentsBatchTransitionWASM,
+    transition: &DocumentsBatchTransitionWasm,
 ) -> Result<(), JsValue> {
     let wrapped_state_repository = ExternalStateRepositoryLikeWrapper::new(state_repository);
 

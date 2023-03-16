@@ -270,6 +270,10 @@ impl DataContract {
         self.entropy
     }
 
+    pub fn set_entropy(&mut self, entropy: [u8; 32]) {
+        self.entropy = entropy;
+    }
+
     pub fn owner_id(&self) -> &Identifier {
         &self.owner_id
     }
