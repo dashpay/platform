@@ -53,10 +53,10 @@ describe('handleUpdatedVotingAddressFactory', () => {
     blockInfo = new BlockInfo(1, 0, Date.now());
 
     handleUpdatedVotingAddress = handleUpdatedVotingAddressFactory(
-      this.dpp,
       identityRepositoryMock,
       createMasternodeIdentityMock,
       fetchTransactionMock,
+      this.dppWasm,
     );
   });
 
