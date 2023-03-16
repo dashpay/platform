@@ -47,7 +47,8 @@ export async function createAssetLockTransaction(
 
   lockTransaction
     .from(selection.utxos)
-  // @ts-ignore
+    // @ts-ignore
+    // eslint-disable-next-line
     .addBurnOutput(output.satoshis, assetLockOneTimePublicKey._getID())
     .change(changeAddress);
 

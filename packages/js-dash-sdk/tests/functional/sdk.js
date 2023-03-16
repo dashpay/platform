@@ -6,6 +6,7 @@ const {
   Networks,
 } = require('@dashevo/dashcore-lib');
 
+// eslint-disable-next-line
 const Dash = require(typeof process === 'undefined' ? '../../src/index.ts' : '../../');
 
 describe('SDK', function suite() {

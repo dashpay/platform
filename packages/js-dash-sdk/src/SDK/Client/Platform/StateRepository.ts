@@ -18,6 +18,7 @@ class StateRepository {
     return this.client.platform.contracts.get(identifier);
   }
 
+  // eslint-disable-next-line
   async isAssetLockTransactionOutPointAlreadyUsed(): Promise<boolean> {
     // This check still exists on the client side, however there's no need to
     // perform the check as in this client we always use a new transaction
@@ -25,6 +26,7 @@ class StateRepository {
     return false;
   }
 
+  // eslint-disable-next-line
   async verifyInstantLock(): Promise<boolean> {
     // verification will be implemented later with DAPI SPV functionality
     return true;

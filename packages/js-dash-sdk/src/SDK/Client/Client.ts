@@ -88,6 +88,7 @@ export class Client extends EventEmitter {
       'blockHeadersProviderOptions',
       'blockHeadersProvider',
     ].forEach((optionName) => {
+      // eslint-disable-next-line
       if (this.options.hasOwnProperty(optionName)) {
         dapiClientOptions[optionName] = this.options[optionName];
       }
