@@ -42,7 +42,7 @@ impl IdentityValidatorWasm {
             serde_json::from_str(&identity_json).map_err(|e| e.to_string())?;
         let result = self
             .0
-            .validate_identity(&raw_identity)
+            .validate_identity_object(&raw_identity)
             .map_err(|e| from_dpp_err(e.into()))?;
 
         Ok(result.map(|_| JsValue::undefined()).into())

@@ -38,7 +38,7 @@ pub mod protocol_version {
             .remove("protocolVersion")
             .expect("expected to remove protocol version");
 
-        let result = identity_validator.validate_identity(&identity).unwrap();
+        let result = identity_validator.validate_identity_object(&identity).unwrap();
 
         let errors = assert_consensus_errors!(&result, ConsensusError::JsonSchemaError, 1);
         let error = errors.first().unwrap();
@@ -59,7 +59,7 @@ pub mod protocol_version {
         let (mut identity, identity_validator) = setup_test();
         identity.set_into_value("protocolVersion", "1").unwrap();
 
-        let result = identity_validator.validate_identity(&identity).unwrap();
+        let result = identity_validator.validate_identity_object(&identity).unwrap();
 
         let errors = assert_consensus_errors!(&result, ConsensusError::JsonSchemaError, 1);
         let error = errors.first().unwrap();
@@ -73,7 +73,7 @@ pub mod protocol_version {
         let (mut identity, identity_validator) = setup_test();
         identity.set_into_value("protocolVersion", -1i32).unwrap();
 
-        let result = identity_validator.validate_identity(&identity).unwrap();
+        let result = identity_validator.validate_identity_object(&identity).unwrap();
 
         let errors = assert_consensus_errors!(&result, ConsensusError::JsonSchemaError, 1);
         let error = errors.first().unwrap();
@@ -96,7 +96,7 @@ pub mod id {
         let (mut identity, identity_validator) = setup_test();
         identity.remove("id").expect("expected to remove id");
 
-        let result = identity_validator.validate_identity(&identity).unwrap();
+        let result = identity_validator.validate_identity_object(&identity).unwrap();
 
         let errors = assert_consensus_errors!(&result, ConsensusError::JsonSchemaError, 1);
         let error = errors.first().unwrap();
@@ -119,7 +119,7 @@ pub mod id {
             .set_into_value("id", vec![Value::from("string"); 32])
             .unwrap();
 
-        let result = identity_validator.validate_identity(&identity).unwrap();
+        let result = identity_validator.validate_identity_object(&identity).unwrap();
         let errors = assert_consensus_errors!(&result, ConsensusError::JsonSchemaError, 32);
 
         for (i, err) in errors.iter().enumerate() {
@@ -135,7 +135,7 @@ pub mod id {
             .set_into_value("id", vec![Value::from(15); 31])
             .unwrap();
 
-        let result = identity_validator.validate_identity(&identity).unwrap();
+        let result = identity_validator.validate_identity_object(&identity).unwrap();
 
         let errors = assert_consensus_errors!(&result, ConsensusError::JsonSchemaError, 1);
         let error = errors.first().unwrap();
@@ -151,7 +151,7 @@ pub mod id {
             .set_into_value("id", vec![Value::from(15); 33])
             .unwrap();
 
-        let result = identity_validator.validate_identity(&identity).unwrap();
+        let result = identity_validator.validate_identity_object(&identity).unwrap();
 
         let errors = assert_consensus_errors!(&result, ConsensusError::JsonSchemaError, 1);
         let error = errors.first().unwrap();
@@ -175,7 +175,7 @@ pub mod balance {
             .remove("balance")
             .expect("expected to remove balance");
 
-        let result = identity_validator.validate_identity(&identity).unwrap();
+        let result = identity_validator.validate_identity_object(&identity).unwrap();
 
         let errors = assert_consensus_errors!(&result, ConsensusError::JsonSchemaError, 1);
         let error = errors.first().unwrap();
@@ -196,7 +196,7 @@ pub mod balance {
         let (mut identity, identity_validator) = setup_test();
         identity.set_into_value("balance", 1.2).unwrap();
 
-        let result = identity_validator.validate_identity(&identity).unwrap();
+        let result = identity_validator.validate_identity_object(&identity).unwrap();
 
         let errors = assert_consensus_errors!(&result, ConsensusError::JsonSchemaError, 1);
         let error = errors.first().unwrap();
@@ -210,7 +210,7 @@ pub mod balance {
         let (mut identity, identity_validator) = setup_test();
         identity.set_into_value("balance", -1i64).unwrap();
 
-        let result = identity_validator.validate_identity(&identity).unwrap();
+        let result = identity_validator.validate_identity_object(&identity).unwrap();
 
         let errors = assert_consensus_errors!(&result, ConsensusError::JsonSchemaError, 1);
         let error = errors.first().unwrap();
@@ -219,7 +219,7 @@ pub mod balance {
         assert_eq!(error.instance_path().to_string(), "/balance");
 
         identity.set_into_value("balance", 0u64).unwrap();
-        let result = identity_validator.validate_identity(&identity).unwrap();
+        let result = identity_validator.validate_identity_object(&identity).unwrap();
 
         assert!(result.is_valid());
     }
@@ -239,7 +239,7 @@ pub mod public_keys {
             .remove("publicKeys")
             .expect("expected to remove public keys");
 
-        let result = identity_validator.validate_identity(&identity).unwrap();
+        let result = identity_validator.validate_identity_object(&identity).unwrap();
 
         let errors = assert_consensus_errors!(&result, ConsensusError::JsonSchemaError, 1);
         let error = errors.first().unwrap();
@@ -260,7 +260,7 @@ pub mod public_keys {
         let (mut identity, identity_validator) = setup_test();
         identity.set_into_value("publicKeys", 1u64).unwrap();
 
-        let result = identity_validator.validate_identity(&identity).unwrap();
+        let result = identity_validator.validate_identity_object(&identity).unwrap();
 
         let errors = assert_consensus_errors!(&result, ConsensusError::JsonSchemaError, 1);
         let error = errors.first().unwrap();
@@ -276,7 +276,7 @@ pub mod public_keys {
             .set_into_value("publicKeys", Value::Array(vec![]))
             .unwrap();
 
-        let result = identity_validator.validate_identity(&identity).unwrap();
+        let result = identity_validator.validate_identity_object(&identity).unwrap();
 
         let errors = assert_consensus_errors!(&result, ConsensusError::JsonSchemaError, 1);
         let error = errors.first().unwrap();
@@ -303,7 +303,7 @@ pub mod public_keys {
             )
             .unwrap();
 
-        let result = identity_validator.validate_identity(&identity).unwrap();
+        let result = identity_validator.validate_identity_object(&identity).unwrap();
 
         let errors = assert_consensus_errors!(&result, ConsensusError::JsonSchemaError, 1);
         let error = errors.first().unwrap();
@@ -327,7 +327,7 @@ pub mod public_keys {
             .set_into_value("publicKeys", Value::Array(vec![public_key; 101]))
             .unwrap();
 
-        let result = identity_validator.validate_identity(&identity).unwrap();
+        let result = identity_validator.validate_identity_object(&identity).unwrap();
 
         let errors = assert_consensus_errors!(&result, ConsensusError::JsonSchemaError, 2);
         let error = errors.first().unwrap();
@@ -352,7 +352,7 @@ pub mod revision {
             .remove("protocolVersion")
             .expect("expected to remove revision");
 
-        let result = identity_validator.validate_identity(&identity).unwrap();
+        let result = identity_validator.validate_identity_object(&identity).unwrap();
 
         let errors = assert_consensus_errors!(&result, ConsensusError::JsonSchemaError, 1);
         let error = errors.first().unwrap();
@@ -374,7 +374,7 @@ pub mod revision {
 
         identity.set_into_value("revision", 1.2).unwrap();
 
-        let result = identity_validator.validate_identity(&identity).unwrap();
+        let result = identity_validator.validate_identity_object(&identity).unwrap();
         let errors = assert_consensus_errors!(&result, ConsensusError::JsonSchemaError, 1);
 
         let error = errors
@@ -391,7 +391,7 @@ pub mod revision {
 
         identity.set_into_value("revision", -1i32).unwrap();
 
-        let result = identity_validator.validate_identity(&identity).unwrap();
+        let result = identity_validator.validate_identity_object(&identity).unwrap();
         let errors = assert_consensus_errors!(&result, ConsensusError::JsonSchemaError, 1);
 
         let error = errors
@@ -403,7 +403,7 @@ pub mod revision {
 
         identity.set_into_value("revision", 0).unwrap();
 
-        let result = identity_validator.validate_identity(&identity).unwrap();
+        let result = identity_validator.validate_identity_object(&identity).unwrap();
 
         assert!(result.is_valid());
     }
@@ -413,7 +413,7 @@ pub mod revision {
 pub fn should_return_valid_result_if_a_raw_identity_is_valid() {
     let (identity, identity_validator) = setup_test();
 
-    let result = identity_validator.validate_identity(&identity).unwrap();
+    let result = identity_validator.validate_identity_object(&identity).unwrap();
     assert_consensus_errors!(&result, ConsensusError::JsonSchemaError, 0);
 
     assert!(result.is_valid());

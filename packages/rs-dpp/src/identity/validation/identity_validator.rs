@@ -37,7 +37,7 @@ impl<T: TPublicKeysValidator> IdentityValidator<T> {
         Ok(identity_validator)
     }
 
-    pub fn validate_identity(
+    pub fn validate_identity_object(
         &self,
         identity_object: &Value,
     ) -> Result<ValidationResult<()>, NonConsensusError> {

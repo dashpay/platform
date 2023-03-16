@@ -1,6 +1,17 @@
 use crate::value_map::ValueMapHelper;
-use crate::{Error, Value};
+use crate::{Error, Value, ValueMap};
 use std::collections::BTreeMap;
+use regex::Regex;
+use lazy_static::lazy_static;
+
+fn is_array_path(text: &str) -> Option<(&str, usize)> {
+    lazy_static! {
+        static ref RE: Regex = Regex::new(r"(\w+)\[(\d+)\]").unwrap();
+    }
+    RE.captures(text).map(|captures| {
+        (captures.get(1).unwrap().as_str(), captures.get(2).unwrap().as_str().parse::<usize>().unwrap())
+    })
+}
 
 impl Value {
     pub fn remove_value_at_path(&mut self, path: &str) -> Result<Value, Error> {
@@ -100,18 +111,30 @@ impl Value {
             if split.peek().is_none() {
                 last_path_component = Some(path_component);
             } else {
-                let map = current_value.to_map_mut()?;
-                current_value = map.get_key_mut(path_component).ok_or_else(|| {
-                    Error::StructureError(format!(
-                        "unable to get property {path_component} in {path}"
-                    ))
-                })?;
+                if let Some((string_part, number_part)) = is_array_path(path_component) {
+                    let map = current_value.to_map_mut()?;
+                    let array_value = map.get_key_mut_or_insert(string_part, Value::Array(vec![]));
+                    let array = array_value.to_array_mut()?;
+                    if array.len() < number_part {
+                        //this already exists
+                        current_value = array.get_mut(number_part).unwrap()
+                    } else if array.len() == number_part {
+                        //we should create a new map
+                        array.push(Value::Map(ValueMap::new()));
+                        current_value = array.get_mut(number_part).unwrap();
+                    } else {
+                        return Err(Error::StructureError(format!("trying to insert into an array path higher than current array length")));
+                    }
+                } else {
+                    let map = current_value.to_map_mut()?;
+                    current_value = map.get_key_mut_or_insert(path_component, Value::Map(ValueMap::new()));
+                }
             };
         }
         let Some(last_path_component) = last_path_component else {
             return Err(Error::StructureError(format!("path was empty")));
         };
-        let map = current_value.as_map_mut_ref()?;
+        let map = current_value.to_map_mut()?;
         Ok(Self::insert_in_map(map, last_path_component, value))
     }
 

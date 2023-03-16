@@ -73,7 +73,7 @@ where
         &self,
         identity_object: &Value,
     ) -> Result<ValidationResult<()>, NonConsensusError> {
-        self.identity_validator.validate_identity(identity_object)
+        self.identity_validator.validate_identity_object(identity_object)
     }
 
     pub fn create_instant_lock_proof(

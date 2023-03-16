@@ -964,7 +964,7 @@ impl Value {
     /// assert_eq!(value, Value::Map(vec![]));
     /// assert_eq!(value.as_map().unwrap().len(), 0);
     /// ```
-    pub fn to_map_mut(&mut self) -> Result<&mut Vec<(Value, Value)>, Error> {
+    pub fn to_map_mut(&mut self) -> Result<&mut ValueMap, Error> {
         match *self {
             Value::Map(ref mut map) => Ok(map),
             _ => Err(Error::StructureError("value is not a map".to_string())),

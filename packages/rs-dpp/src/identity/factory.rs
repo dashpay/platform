@@ -122,7 +122,7 @@ where
         skip_validation: bool,
     ) -> Result<Identity, ProtocolError> {
         if !skip_validation {
-            let result = self.identity_validator.validate_identity(&raw_identity)?;
+            let result = self.identity_validator.validate_identity_object(&raw_identity)?;
 
             if !result.is_valid() {
                 return Err(ProtocolError::InvalidIdentityError {
