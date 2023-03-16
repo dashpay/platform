@@ -5,16 +5,9 @@ import 'mocha';
 
 describe('ClientApps', () => {
   let apps;
-  let appsFromProps;
   it('constructor', () => {
     apps = new ClientApps();
     expect(apps.apps).to.deep.equal({});
-    appsFromProps = new ClientApps({
-      dpns: {
-        contractId: '3VvS19qomuGSbEYWbTsRzeuRgawU3yK4fPMzLrbV62u8',
-        contract: null,
-      },
-    });
   });
   it('.set', () => {
     apps.set('dpns', {

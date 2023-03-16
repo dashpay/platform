@@ -1,6 +1,6 @@
 import { Platform } from '../../Platform';
 
-declare interface createOpts {
+declare interface CreateOpts {
   [name:string]: any;
 }
 
@@ -16,7 +16,7 @@ export async function create(
   this: Platform,
   typeLocator: string,
   identity: any,
-  data: createOpts = {},
+  data: CreateOpts = {},
 ): Promise<any> {
   await this.initialize();
 

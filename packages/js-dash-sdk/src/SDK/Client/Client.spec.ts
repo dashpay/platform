@@ -1,14 +1,16 @@
 import { expect } from 'chai';
+import { Transaction, BlockHeader } from '@dashevo/dashcore-lib';
+import stateTransitionTypes from '@dashevo/dpp/lib/stateTransition/stateTransitionTypes';
 import getResponseMetadataFixture from '../../test/fixtures/getResponseMetadataFixture';
 import { Client } from './index';
 import 'mocha';
-import { Transaction, BlockHeader } from '@dashevo/dashcore-lib';
+
 import { createFakeInstantLock } from '../../utils/createFakeIntantLock';
-import stateTransitionTypes from '@dashevo/dpp/lib/stateTransition/stateTransitionTypes';
+
 import { StateTransitionBroadcastError } from '../../errors/StateTransitionBroadcastError';
 
 import { createIdentityFixtureInAccount } from '../../test/fixtures/createIdentityFixtureInAccount';
-import { createTransactionInAccount } from '../../test/fixtures/createTransactionFixtureInAccount';
+
 import { createAndAttachTransportMocksToClient } from '../../test/mocks/createAndAttachTransportMocksToClient';
 
 // @ts-ignore
@@ -23,12 +25,10 @@ describe('Dash - Client', function suite() {
   this.timeout(30000);
 
   let testMnemonic;
-  let txStreamMock;
   let transportMock;
   let testHDKey;
   let client;
   let account;
-  let walletTransaction;
   let dapiClientMock;
   let identityFixture;
   let documentsFixture;
@@ -45,15 +45,12 @@ describe('Dash - Client', function suite() {
     });
 
     ({
-      txStreamMock,
       transportMock,
       dapiClientMock,
     } = await createAndAttachTransportMocksToClient(client, this.sinon));
 
     account = await client.getWalletAccount();
 
-    // add fake tx to the wallet so it will be able to create transactions
-    walletTransaction = await createTransactionInAccount(account);
     // create an identity in the account so we can sign state transitions
     identityFixture = createIdentityFixtureInAccount(account);
     dataContractFixture = getDataContractFixture();
@@ -84,19 +81,19 @@ describe('Dash - Client', function suite() {
   });
 
   it('should be instantiable', () => {
-    const client = new Client();
+    client = new Client();
     expect(client).to.exist;
     expect(client.network).to.be.equal('testnet');
     expect(client.getDAPIClient().constructor.name).to.be.equal('DAPIClient');
   });
 
   it('should not initiate wallet lib without mnemonic', () => {
-    const client = new Client();
+    client = new Client();
     expect(client.wallet).to.be.equal(undefined);
   });
 
   it('should initiate wallet-lib with a mnemonic', async () => {
-    const client = new Client({
+    client = new Client({
       wallet: {
         mnemonic: testMnemonic,
         offlineMode: true,
@@ -108,7 +105,7 @@ describe('Dash - Client', function suite() {
     await client.wallet?.storage.stopWorker();
     await client.wallet?.disconnect();
 
-    const account = await client.getWalletAccount();
+    account = await client.getWalletAccount();
     await account.disconnect();
   });
 
