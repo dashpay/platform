@@ -468,7 +468,6 @@ impl serde::ser::SerializeMap for SerializeMap {
     fn end(self) -> Result<Value, Error> {
         match self {
             SerializeMap::Map { mut map, .. } => {
-                map.sort_by_keys();
                 Ok(Value::Map(map))
             },
         }

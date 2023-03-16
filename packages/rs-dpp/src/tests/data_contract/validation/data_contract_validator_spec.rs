@@ -1373,7 +1373,7 @@ mod documents {
             "properties": {
               "something": {
                 "type": "string",
-                "maxLength": 100,
+                "maxLength": 100u64,
                 "pattern": "^((?!-|_)[a-zA-Z0-9-_]{0,62}[a-zA-Z0-9])$",
               },
             },
@@ -1383,7 +1383,8 @@ mod documents {
         let result = data_contract_validator
             .validate(&raw_data_contract)
             .expect("validation result should be returned");
-
+        dbg!(&raw_data_contract);
+dbg!(&result);
         let pattern_error = result
             .errors
             .get(0)

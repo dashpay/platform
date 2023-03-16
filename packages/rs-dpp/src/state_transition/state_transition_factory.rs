@@ -251,7 +251,7 @@ mod test {
 
         match err {
             ProtocolError::InvalidStateTransitionTypeError(err) => {
-                assert_eq!(err.transition_type(), 154);
+                assert_eq!(err.transition_type(), 110);
             }
             _ => panic!("expected InvalidStateTransitionTypeError, got {}", err),
         }

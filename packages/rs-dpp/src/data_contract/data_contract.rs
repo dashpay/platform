@@ -736,6 +736,7 @@ mod test {
         let contract = DataContract::try_from(string_contract.as_str())?;
         let serialized_contract = serde_json::to_string(&contract.to_json()?)?;
 
+        ///they will be out of order so won't be exactly the same
         assert_eq!(serialized_contract, string_contract);
         Ok(())
     }

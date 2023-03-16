@@ -171,8 +171,8 @@ fn to_object_with_signature_skipped() {
         "protocolVersion" : 1u32,
         "type" : 5u8,
         "signaturePublicKeyId": 0u32,
-        "identityId" : transition.identity_id.to_buffer(),
-        "revision": 0u8,
+        "identityId" : transition.identity_id,
+        "revision": 0 as Revision,
         "disablePublicKeys" : [0u32],
         "publicKeysDisabledAt" : 1234567u64,
         "addPublicKeys" : [
@@ -182,7 +182,7 @@ fn to_object_with_signature_skipped() {
                 "purpose" : 0u8,
                 "type": 0u8,
                 "securityLevel" : 0u8,
-                "data" :base64::decode("AkVuTKyF3YgKLAQlLEtaUL2HTditwGILfWUVqjzYnIgH").unwrap(),
+                "data" :BinaryData(base64::decode("AkVuTKyF3YgKLAQlLEtaUL2HTditwGILfWUVqjzYnIgH").unwrap()),
                 "readOnly" : false,
             }
         ]
