@@ -226,24 +226,33 @@ The `reset` command removes all data corresponding to the specified config and a
 ```
 USAGE
   $ dashmate reset [--config <value>] [-v] [-h] [-f] [-p]
-
 FLAGS
   -f, --force          skip running services check
   -h, --hard           reset config as well as data
   -p, --platform-only  reset platform data only
   -v, --verbose        use verbose mode for output
   --config=<value>     configuration name to use
-
 DESCRIPTION
   Reset node data
 ```
 
-With the hard reset mode enabled, the corresponding config will be reset in addition to the platform data. After a hard reset, it is necessary to run the node [setup](#setup-node) to proceed.
-
 To reset a node:
-
 ```bash
 $ dashmate reset
+=======
+#### Hard reset
+$ dashmate reset --hard
+```
+With the hard reset mode enabled, the corresponding config will be reset in addition to the platform data. After a hard reset, it is necessary to run the node [setup](#setup-node) to proceed.
+#### Manual reset
+Manual reset is used when local setup corrupts and hard reset does not fix it. This could happen, when dashmate configuration becomes incompatible after a major upgrade, making you unable to execute any commands.
+```bash
+docker stop $(docker ps -q)
+docker system prune
+docker volume prune
+rm -rf ~/.dashmate/
+```
+
 
 ### Reindex dashcore chain data
 
@@ -257,27 +266,18 @@ The `reindex` command works for regular and local configurations.
 
 ```
 Reindex Core
-
 USAGE
   $ dashmate core reindex [-v] [--config <value>]
-
 FLAGS
   -v, --verbose     use verbose mode for output
   --config=<value>  configuration name to use
-
 DESCRIPTION
   Reindex Core
-
   Reindex Core data
 ```
 
-### Full node
 
-It is also possible to start a full node instead of a masternode. Modify the config setting as follows:
 
-```bash
-dashmate config set core.masternode.enable false
-```
 
 ### Node groups
 
