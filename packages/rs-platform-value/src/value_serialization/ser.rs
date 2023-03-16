@@ -1,6 +1,6 @@
 use crate::error::Error;
 use crate::value_map::ValueMap;
-use crate::{to_value, Value};
+use crate::{to_value, Value, ValueMapHelper};
 use serde::ser::{Impossible, Serialize};
 use std::fmt::Display;
 
@@ -311,6 +311,10 @@ impl serde::Serializer for Serializer {
     {
         Ok(Value::Text(value.to_string()))
     }
+
+    fn is_human_readable(&self) -> bool {
+        false
+    }
 }
 
 pub struct SerializeSizedVec {
@@ -463,7 +467,10 @@ impl serde::ser::SerializeMap for SerializeMap {
 
     fn end(self) -> Result<Value, Error> {
         match self {
-            SerializeMap::Map { map, .. } => Ok(Value::Map(map)),
+            SerializeMap::Map { mut map, .. } => {
+                map.sort_by_keys();
+                Ok(Value::Map(map))
+            },
         }
     }
 }

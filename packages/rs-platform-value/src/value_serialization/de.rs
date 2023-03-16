@@ -406,6 +406,10 @@ impl<'de> de::Deserializer<'de> for Deserializer {
         // }
         todo!()
     }
+
+    fn is_human_readable(&self) -> bool {
+        false
+    }
 }
 
 struct ArrayDeserializer<'a>(slice::Iter<'a, Value>);

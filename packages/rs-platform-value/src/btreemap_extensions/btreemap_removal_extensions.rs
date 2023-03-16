@@ -1,4 +1,4 @@
-use crate::{Error, Value};
+use crate::{Error, Identifier, Value};
 use std::collections::BTreeMap;
 
 pub trait BTreeValueRemoveFromMapHelper {
@@ -36,6 +36,8 @@ pub trait BTreeValueRemoveFromMapHelper {
     fn remove_bytes(&mut self, key: &str) -> Result<Vec<u8>, Error>;
     fn remove_optional_bool(&mut self, key: &str) -> Result<Option<bool>, Error>;
     fn remove_bool(&mut self, key: &str) -> Result<bool, Error>;
+    fn remove_optional_identifier(&mut self, key: &str) -> Result<Option<Identifier>, Error>;
+    fn remove_identifier(&mut self, key: &str) -> Result<Identifier, Error>;
 }
 
 impl BTreeValueRemoveFromMapHelper for BTreeMap<String, &Value> {
@@ -78,6 +80,24 @@ impl BTreeValueRemoveFromMapHelper for BTreeMap<String, &Value> {
     {
         self.remove_optional_integer(key)?.ok_or_else(|| {
             Error::StructureError(format!("unable to remove integer property {key}"))
+        })
+    }
+
+    fn remove_optional_identifier(&mut self, key: &str) -> Result<Option<Identifier>, Error> {
+        self.remove(key)
+            .and_then(|v| {
+                if v.is_null() {
+                    None
+                } else {
+                    Some(v.to_identifier())
+                }
+            })
+            .transpose()
+    }
+
+    fn remove_identifier(&mut self, key: &str) -> Result<Identifier, Error> {
+        self.remove_optional_identifier(key)?.ok_or_else(|| {
+            Error::StructureError(format!("unable to remove identifier property {key}"))
         })
     }
 
@@ -196,6 +216,24 @@ impl BTreeValueRemoveFromMapHelper for BTreeMap<String, Value> {
     {
         self.remove_optional_integer(key)?.ok_or_else(|| {
             Error::StructureError(format!("unable to remove integer property {key}"))
+        })
+    }
+
+    fn remove_optional_identifier(&mut self, key: &str) -> Result<Option<Identifier>, Error> {
+        self.remove(key)
+            .and_then(|v| {
+                if v.is_null() {
+                    None
+                } else {
+                    Some(v.into_identifier())
+                }
+            })
+            .transpose()
+    }
+
+    fn remove_identifier(&mut self, key: &str) -> Result<Identifier, Error> {
+        self.remove_optional_identifier(key)?.ok_or_else(|| {
+            Error::StructureError(format!("unable to remove identifier property {key}"))
         })
     }
 

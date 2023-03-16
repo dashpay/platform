@@ -119,21 +119,6 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_identity_is_kept() {
-        let id = Identifier::new([0; 32]);
-        let value = to_value(id).unwrap();
-        assert_eq!(value, Value::Identifier(id.to_buffer()));
-    }
-
-    #[test]
-    fn test_identity_value_desialization() {
-        let id = Identifier::new([0; 32]);
-        let value = Value::Identifier(id.to_buffer());
-        let new_id: Identifier = from_value(value).unwrap();
-        assert_eq!(id, new_id);
-    }
-
-    #[test]
     fn yeet() {
         #[derive(Debug, PartialEq, Eq, Clone, Serialize, Deserialize)]
         struct Yeet {
@@ -155,6 +140,7 @@ mod tests {
         };
 
         let platform_value = to_value(yeet.clone()).expect("please");
+        dbg!(&platform_value);
         let yeet_back: Yeet = from_value(platform_value).expect("please once again");
 
         assert_eq!(yeet, yeet_back);

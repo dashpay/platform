@@ -6,7 +6,7 @@ use std::iter::FromIterator;
 use std::{collections::BTreeMap, convert::TryInto};
 
 use crate::value_map::ValueMapHelper;
-use crate::{Error, Value};
+use crate::{Error, Identifier, Value};
 
 pub trait BTreeValueMapPathHelper {
     fn get_at_path(&self, path: &str) -> Result<&Value, Error>;
@@ -118,11 +118,11 @@ pub trait BTreeValueMapPathHelper {
         path: &str,
     ) -> Result<Option<[u8; 32]>, Error>;
     fn remove_hash256_bytes_at_path(&mut self, path: &str) -> Result<[u8; 32], Error>;
-    fn remove_optional_identifier_bytes_at_path(
+    fn remove_optional_identifier_at_path(
         &mut self,
         path: &str,
-    ) -> Result<Option<Vec<u8>>, Error>;
-    fn remove_identifier_bytes_at_path(&mut self, path: &str) -> Result<Vec<u8>, Error>;
+    ) -> Result<Option<Identifier>, Error>;
+    fn remove_identifier_at_path(&mut self, path: &str) -> Result<Identifier, Error>;
     fn get_optional_bytes_at_path(&self, path: &str) -> Result<Option<Vec<u8>>, Error>;
     fn get_bytes_at_path(&self, path: &str) -> Result<Vec<u8>, Error>;
     fn get_optional_binary_bytes_at_path(&self, path: &str) -> Result<Option<Vec<u8>>, Error>;
@@ -525,17 +525,17 @@ where
             })
     }
 
-    fn remove_optional_identifier_bytes_at_path(
+    fn remove_optional_identifier_at_path(
         &mut self,
         path: &str,
-    ) -> Result<Option<Vec<u8>>, Error> {
+    ) -> Result<Option<Identifier>, Error> {
         self.remove(path)
-            .map(|v| v.borrow().to_identifier_bytes())
+            .map(|v| v.borrow().to_identifier())
             .transpose()
     }
 
-    fn remove_identifier_bytes_at_path(&mut self, path: &str) -> Result<Vec<u8>, Error> {
-        self.remove_optional_identifier_bytes_at_path(path)?
+    fn remove_identifier_at_path(&mut self, path: &str) -> Result<Identifier, Error> {
+        self.remove_optional_identifier_at_path(path)?
             .ok_or_else(|| {
                 Error::StructureError(format!("unable to remove system bytes property {path}"))
             })

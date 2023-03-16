@@ -1,7 +1,8 @@
 use chrono::Utc;
-use platform_value::{platform_value, Value};
+use platform_value::{platform_value, BinaryData, Value};
 
 use crate::identity::state_transition::identity_public_key_transitions::IdentityPublicKeyWithWitness;
+use crate::prelude::Revision;
 use crate::{
     identity::{
         state_transition::identity_update_transition::identity_update_transition::IdentityUpdateTransition,
@@ -203,8 +204,8 @@ fn to_json() {
         "signature" : Vec::<u8>::new(),
         "signaturePublicKeyId": 0u32,
         "identityId" : transition.identity_id,
-        "revision": 0u8,
-        "disablePublicKeys" : [0u8],
+        "revision": 0 as Revision,
+        "disablePublicKeys" : [0u32],
         "publicKeysDisabledAt" : 1234567u64,
         "addPublicKeys" : [
             {
@@ -213,9 +214,9 @@ fn to_json() {
                 "purpose" : 0u8,
                 "type": 0u8,
                 "securityLevel" : 0u8,
-                "data" : base64::decode("AkVuTKyF3YgKLAQlLEtaUL2HTditwGILfWUVqjzYnIgH").unwrap(),
+                "data" : BinaryData::new(base64::decode("AkVuTKyF3YgKLAQlLEtaUL2HTditwGILfWUVqjzYnIgH").unwrap()),
                 "readOnly" : false,
-                "signature" : vec![0;65],
+                "signature" : BinaryData::new(vec![0;65]),
             }
         ]
     });

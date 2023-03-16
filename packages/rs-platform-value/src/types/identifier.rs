@@ -13,48 +13,80 @@ use crate::{string_encoding, Error, Value};
 pub const IDENTIFIER_MEDIA_TYPE: &str = "application/x.dash.dpp.identifier";
 
 #[derive(Default, Debug, Clone, PartialEq, Eq, Hash, Copy)]
-pub struct Bytes(pub [u8; 32]);
+pub struct IdentifierBytes32(pub [u8; 32]);
 
 #[derive(Default, Debug, Clone, PartialEq, Eq, Hash, Copy, Serialize, Deserialize)]
-pub struct Identifier(pub Bytes);
+pub struct Identifier(pub IdentifierBytes32);
 
-impl Serialize for Bytes {
+impl Serialize for IdentifierBytes32 {
     fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
     where
         S: serde::Serializer,
     {
-        serializer.serialize_bytes(&self.0)
+        if serializer.is_human_readable() {
+            serializer.serialize_str(&bs58::encode(self.0).into_string())
+        } else {
+            serializer.serialize_bytes(&self.0)
+        }
     }
 }
 
-impl<'de> Deserialize<'de> for Bytes {
+impl<'de> Deserialize<'de> for IdentifierBytes32 {
     fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
     where
         D: serde::Deserializer<'de>,
     {
-        struct BytesVisitor;
+        if deserializer.is_human_readable() {
 
-        impl<'de> Visitor<'de> for BytesVisitor {
-            type Value = Bytes;
+            struct StringVisitor;
 
-            fn expecting(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
-                formatter.write_str("a byte array with length 32")
-            }
+            impl<'de> Visitor<'de> for StringVisitor {
+                type Value = IdentifierBytes32;
 
-            fn visit_bytes<E>(self, v: &[u8]) -> Result<Self::Value, E>
-            where
-                E: serde::de::Error,
-            {
-                let mut bytes = [0u8; 32];
-                if v.len() != 32 {
-                    return Err(E::invalid_length(v.len(), &self));
+                fn expecting(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
+                    formatter.write_str("a base58-encoded string")
                 }
-                bytes.copy_from_slice(v);
-                Ok(Bytes(bytes))
-            }
-        }
 
-        deserializer.deserialize_bytes(BytesVisitor)
+                fn visit_str<E>(self, v: &str) -> Result<Self::Value, E>
+                    where
+                        E: serde::de::Error,
+                {
+                    let bytes = bs58::decode(v).into_vec().map_err(|e| E::custom(format!("{}", e)))?;
+                    if bytes.len() != 32 {
+                        return Err(E::invalid_length(bytes.len(), &self));
+                    }
+                    let mut array = [0u8; 32];
+                    array.copy_from_slice(&bytes);
+                    Ok(IdentifierBytes32(array))
+                }
+            }
+
+            deserializer.deserialize_string(StringVisitor)
+        } else {
+            struct BytesVisitor;
+
+            impl<'de> Visitor<'de> for BytesVisitor {
+                type Value = IdentifierBytes32;
+
+                fn expecting(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
+                    formatter.write_str("a byte array with length 32")
+                }
+
+                fn visit_bytes<E>(self, v: &[u8]) -> Result<Self::Value, E>
+                    where
+                        E: serde::de::Error,
+                {
+                    let mut bytes = [0u8; 32];
+                    if v.len() != 32 {
+                        return Err(E::invalid_length(v.len(), &self));
+                    }
+                    bytes.copy_from_slice(v);
+                    Ok(IdentifierBytes32(bytes))
+                }
+            }
+
+            deserializer.deserialize_bytes(BytesVisitor)
+        }
     }
 }
 
@@ -90,11 +122,11 @@ fn encoding_string_to_encoding(encoding_string: Option<&str>) -> Encoding {
 
 impl Identifier {
     pub fn new(buffer: [u8; 32]) -> Identifier {
-        Identifier(Bytes(buffer))
+        Identifier(IdentifierBytes32(buffer))
     }
 
     pub fn random(rng: &mut StdRng) -> Identifier {
-        Identifier(Bytes(rng.gen()))
+        Identifier(IdentifierBytes32(rng.gen()))
     }
 
     pub fn as_bytes(&self) -> &[u8; 32] {
@@ -249,5 +281,30 @@ impl From<Identifier> for Value {
 impl From<&Identifier> for Value {
     fn from(value: &Identifier) -> Self {
         Value::Identifier(value.0 .0)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::collections::HashMap;
+
+    use crate::{from_value, Identifier, to_value};
+    use serde::{Deserialize, Serialize};
+
+    use super::*;
+
+    #[test]
+    fn test_identifier_value_serialization() {
+        let id = Identifier::new([2; 32]);
+        let value = to_value(id).unwrap();
+        assert_eq!(value, Value::Identifier(id.to_buffer()));
+    }
+
+    #[test]
+    fn test_identifier_value_deserialization() {
+        let id = Identifier::new([3; 32]);
+        let value = Value::Identifier(id.to_buffer());
+        let new_id: Identifier = from_value(value).unwrap();
+        assert_eq!(id, new_id);
     }
 }

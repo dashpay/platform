@@ -1,9 +1,11 @@
+use std::cmp::Ordering;
 use crate::{Error, Value};
 use std::collections::BTreeMap;
 
 pub type ValueMap = Vec<(Value, Value)>;
 
 pub trait ValueMapHelper {
+    fn sort_by_keys(&mut self);
     fn get_key(&self, key: &str) -> Option<&Value>;
     fn get_key_mut(&mut self, key: &str) -> Option<&mut Value>;
     fn get_key_mut_or_insert(&mut self, key: &str, value: Value) -> &mut Value;
@@ -15,6 +17,10 @@ pub trait ValueMapHelper {
 }
 
 impl ValueMapHelper for ValueMap {
+    fn sort_by_keys(&mut self) {
+        self.sort_by(|(key1, _), (key2, _)| key1.partial_cmp(key2).unwrap_or(Ordering::Less))
+    }
+
     fn get_key(&self, search_key: &str) -> Option<&Value> {
         self.iter().find_map(|(key, value)| {
             if let Value::Text(text) = key {

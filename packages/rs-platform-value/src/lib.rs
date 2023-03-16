@@ -32,6 +32,8 @@ pub type Hash256 = [u8; 32];
 
 pub use btreemap_extensions::btreemap_field_replacement::ReplacementType;
 pub use types::identifier::{Identifier, IDENTIFIER_MEDIA_TYPE};
+pub use types::binary_data::BinaryData;
+pub use types::bytes_32::Bytes32;
 
 pub use value_serialization::{from_value, to_value};
 

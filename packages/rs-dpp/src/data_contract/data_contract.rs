@@ -4,7 +4,9 @@ use std::convert::{TryFrom, TryInto};
 use anyhow::anyhow;
 
 use itertools::{Either, Itertools};
-use platform_value::btreemap_extensions::{BTreeValueMapHelper, BTreeValueRemoveFromMapHelper};
+use platform_value::btreemap_extensions::{
+    BTreeValueMapHelper, BTreeValueMapPathHelper, BTreeValueRemoveFromMapHelper,
+};
 use platform_value::Identifier;
 use platform_value::Value;
 use serde::{Deserialize, Serialize};
@@ -145,30 +147,27 @@ impl DataContract {
             .collect();
         let data_contract = DataContract {
             protocol_version: 0,
-            id: Identifier::from(
-                data_contract_map
-                    .remove_hash256_bytes(property_names::ID)
-                    .map_err(ProtocolError::ValueError)?,
-            ),
+            id: data_contract_map
+                .remove_identifier(property_names::ID)
+                .map_err(ProtocolError::ValueError)?,
             schema: data_contract_map
                 .remove_string(property_names::SCHEMA)
                 .map_err(ProtocolError::ValueError)?,
             version: data_contract_map
                 .remove_integer(property_names::VERSION)
                 .map_err(ProtocolError::ValueError)?,
-            owner_id: Identifier::from(
-                data_contract_map
-                    .remove_hash256_bytes(property_names::OWNER_ID)
-                    .map_err(ProtocolError::ValueError)?,
-            ),
+            owner_id: data_contract_map
+                .remove_identifier(property_names::OWNER_ID)
+                .map_err(ProtocolError::ValueError)?,
             document_types,
             metadata: None,
             config: mutability,
             documents,
             defs,
             entropy: data_contract_map
-                .remove_hash256_bytes(property_names::ENTROPY)
-                .map_err(ProtocolError::ValueError)?,
+                .remove_optional_hash256_bytes(property_names::ENTROPY)
+                .map_err(ProtocolError::ValueError)?
+                .unwrap_or_default(),
             binary_properties,
         };
 
@@ -467,9 +466,10 @@ impl TryFrom<&str> for DataContract {
     type Error = ProtocolError;
     fn try_from(v: &str) -> Result<Self, Self::Error> {
         let mut data_contract: DataContract = serde_json::from_str(v)?;
-        data_contract.generate_binary_properties();
-
-        Ok(data_contract)
+        //todo: there's a better to do this, find it
+        let value = data_contract.to_object()?;
+        dbg!(&value);
+        DataContract::from_raw_object(value)
     }
 }
 
@@ -704,8 +704,9 @@ mod test {
         init();
 
         let string_contract = get_data_from_file("src/tests/payloads/contract_example.json")?;
+        dbg!(&string_contract);
         let contract = DataContract::try_from(string_contract.as_str())?;
-
+        dbg!(&contract);
         assert_eq!(contract.protocol_version, 0);
         assert_eq!(
             contract.schema,

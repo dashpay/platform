@@ -1,3 +1,4 @@
+use std::cmp::Ordering;
 use crate::value_map::{ValueMap, ValueMapHelper};
 use crate::Identifier;
 use crate::{Error, Value};
@@ -109,6 +110,20 @@ impl Value {
             .map(|v| v.into_integer())
             .transpose()
     }
+
+    pub fn remove_identifier(&mut self, key: &str) -> Result<Identifier, Error> {
+        let map = self.as_map_mut_ref()?;
+        let value = map.remove_key(key)?;
+        value.into_identifier()
+    }
+
+    pub fn remove_optional_identifier(&mut self, key: &str) -> Result<Option<Identifier>, Error> {
+        let map = self.as_map_mut_ref()?;
+        map.remove_optional_key(key)
+            .map(|v| v.into_identifier())
+            .transpose()
+    }
+
 
     pub fn remove_hash256_bytes(&mut self, key: &str) -> Result<[u8; 32], Error> {
         let map = self.as_map_mut_ref()?;
@@ -688,6 +703,37 @@ impl Value {
     /// Inserts into a map
     /// If the element already existed it will replace it
     pub fn insert_in_map_string_value(
+        map: &mut ValueMap,
+        inserting_key: String,
+        inserting_value: Value,
+    ) {
+        let mut found_value = None;
+        let mut pos = 0;
+        for (key, value) in map.iter_mut() {
+            if let Value::Text(text) = key {
+                match inserting_key.cmp(text) {
+                    Ordering::Less => {
+                    }
+                    Ordering::Equal => {
+                        found_value = Some(value);
+                        break;
+                    }
+                    Ordering::Greater => {
+                        pos += 1;
+                    }
+                }
+            }
+        }
+        if let Some(value) = found_value {
+            *value = inserting_value;
+        } else {
+            map.insert(pos,(Value::Text(inserting_key), inserting_value))
+        }
+    }
+
+    /// Inserts into a map
+    /// If the element already existed it will replace it
+    pub fn push_to_map_string_value(
         map: &mut ValueMap,
         inserting_key: String,
         inserting_value: Value,

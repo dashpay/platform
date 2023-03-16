@@ -61,9 +61,9 @@ pub fn enrich_data_contract_with_base_schema(
     // so we can't pass two different schemas with the same $id.
     // Hacky solution for that is to replace first four bytes
     // in $id with passed prefix byte
-    cloned_data_contract.id.0.0[0] = schema_id_byte_prefix;
-    cloned_data_contract.id.0.0[1] = schema_id_byte_prefix;
-    cloned_data_contract.id.0.0[2] = schema_id_byte_prefix;
-    cloned_data_contract.id.0.0[3] = schema_id_byte_prefix;
+    cloned_data_contract.id.0 .0[0] = schema_id_byte_prefix;
+    cloned_data_contract.id.0 .0[1] = schema_id_byte_prefix;
+    cloned_data_contract.id.0 .0[2] = schema_id_byte_prefix;
+    cloned_data_contract.id.0 .0[3] = schema_id_byte_prefix;
     Ok(cloned_data_contract)
 }

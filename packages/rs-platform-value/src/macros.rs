@@ -261,8 +261,10 @@ macro_rules! platform_value_internal {
 
     ({ $($tt:tt)+ }) => {
         $crate::Value::Map({
+            use platform_value::ValueMapHelper;
             let mut object = $crate::ValueMap::new();
             platform_value_internal!(@object object () ($($tt)+) ($($tt)+));
+            object.sort_by_keys();
             object
         })
     };
@@ -300,6 +302,7 @@ macro_rules! platform_value_expect_expr_comma {
 #[cfg(test)]
 mod test {
     use crate::{platform_value, to_value, Identifier, Value};
+    use crate::types::binary_data::BinaryData;
 
     #[test]
     fn test_identity_is_kept() {
@@ -308,5 +311,14 @@ mod test {
         assert_eq!(value, Value::Identifier(id.to_buffer()));
         let value = platform_value!(id);
         assert_eq!(value, Value::Identifier(id.to_buffer()))
+    }
+
+    #[test]
+    fn test_binary_is_kept() {
+        let id = BinaryData::new([0; 44].to_vec());
+        let value = to_value(id.clone()).unwrap();
+        assert_eq!(value, Value::Bytes(id.clone().to_vec()));
+        let value = platform_value!(id.clone());
+        assert_eq!(value, Value::Bytes(id.to_vec()));
     }
 }

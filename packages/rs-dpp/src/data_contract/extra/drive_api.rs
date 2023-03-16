@@ -1,7 +1,6 @@
 use integer_encoding::VarInt;
-use std::collections::BTreeMap;
-use futures::sink::Buffer;
 use platform_value::Identifier;
+use std::collections::BTreeMap;
 
 use crate::data_contract::document_type::DocumentType;
 use crate::data_contract::DataContract;
@@ -63,7 +62,7 @@ pub trait DriveContractExt {
 
 impl DriveContractExt for DataContract {
     fn id(&self) -> &[u8; 32] {
-        &self.id.0.0
+        &self.id.0 .0
     }
     fn document_types(&self) -> &BTreeMap<String, DocumentType> {
         &self.document_types
