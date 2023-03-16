@@ -67,7 +67,7 @@ function makeGetIdentityRespondWithIdentity(client, dapiClientMock) {
       dapiClientMock.platform.getIdentity.withArgs(identityToResolve.getId())
         .resolves(new GetIdentityResponse(
           identityToResolve.toBuffer(),
-          getResponseMetadataFixture()
+          getResponseMetadataFixture(),
         ));
     }
   });

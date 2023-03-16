@@ -7,11 +7,9 @@ describe('Platform', () => {
     describe('#search', () => {
       let platformMock;
       let parentDomainDocument;
-      let childDomainDocument;
 
       beforeEach(async function beforeEach() {
         parentDomainDocument = { label: 'parent' };
-        childDomainDocument = { label: 'child.parent' };
 
         platformMock = {
           documents: {

@@ -11,7 +11,7 @@ import { Platform } from '../../Platform';
  * @param {string|Buffer|Document|Identifier} [startAt] - start value (included)
  * @param {string|Buffer|Document|Identifier} [startAfter] - start value (not included)
  */
-declare interface fetchOpts {
+declare interface FetchOpts {
   where?: WhereCondition[];
   orderBy?: OrderByCondition[];
   limit?: number;
@@ -95,10 +95,10 @@ function convertIdentifierProperties(
  *
  * @param {Platform} this bound instance class
  * @param {string} typeLocator type locator
- * @param {fetchOpts} opts - MongoDB style query
+ * @param {FetchOpts} opts - MongoDB style query
  * @returns documents
  */
-export async function get(this: Platform, typeLocator: string, opts: fetchOpts): Promise<any> {
+export async function get(this: Platform, typeLocator: string, opts: FetchOpts): Promise<any> {
   if (!typeLocator.includes('.')) throw new Error('Accessing to field is done using format: appName.fieldName');
 
   await this.initialize();

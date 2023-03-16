@@ -17,7 +17,7 @@ export async function resolve(this: Platform, name: string): Promise<any> {
   if (name.includes('.')) {
     const segments = name.toLowerCase().split('.');
 
-    normalizedLabel = segments[0];
+    [normalizedLabel] = segments;
     normalizedParentDomainName = segments.slice(1).join('.');
   }
 

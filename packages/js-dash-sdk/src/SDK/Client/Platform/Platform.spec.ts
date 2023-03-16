@@ -1,8 +1,8 @@
 import { expect } from 'chai';
+import { latestVersion as latestProtocolVersion } from '@dashevo/dpp/lib/version/protocolVersion';
 import { Platform } from './index';
 import 'mocha';
 import Client from '../Client';
-import { latestVersion as latestProtocolVersion } from '@dashevo/dpp/lib/version/protocolVersion';
 
 describe('Dash - Platform', () => {
   it('should provide expected class', () => {
