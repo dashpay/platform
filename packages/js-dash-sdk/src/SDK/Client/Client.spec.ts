@@ -12,6 +12,7 @@ import { StateTransitionBroadcastError } from '../../errors/StateTransitionBroad
 import { createIdentityFixtureInAccount } from '../../test/fixtures/createIdentityFixtureInAccount';
 
 import { createAndAttachTransportMocksToClient } from '../../test/mocks/createAndAttachTransportMocksToClient';
+import { createTransactionInAccount } from '../../test/fixtures/createTransactionFixtureInAccount';
 
 // @ts-ignore
 const getDocumentsFixture = require('@dashevo/dpp/lib/test/fixtures/getDocumentsFixture');
@@ -51,6 +52,8 @@ describe('Dash - Client', function suite() {
 
     account = await client.getWalletAccount();
 
+    // add fake tx to the wallet so it will be able to create transactions
+    await createTransactionInAccount(account);
     // create an identity in the account so we can sign state transitions
     identityFixture = createIdentityFixtureInAccount(account);
     dataContractFixture = getDataContractFixture();
