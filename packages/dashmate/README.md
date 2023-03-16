@@ -239,12 +239,13 @@ DESCRIPTION
 To reset a node:
 ```bash
 $ dashmate reset
-=======
-#### Hard reset
-$ dashmate reset --hard
 ```
 
+#### Hard reset
 With the hard reset mode enabled, the corresponding config will be reset in addition to the platform data. After a hard reset, it is necessary to run the node [setup](#setup-node) to proceed.
+```bash
+$ dashmate reset --hard
+```
 
 #### Manual reset
 Manual reset is used when local setup corrupts and hard reset does not fix it. This could happen, when dashmate configuration becomes incompatible after a major upgrade, making you unable to execute any commands.
