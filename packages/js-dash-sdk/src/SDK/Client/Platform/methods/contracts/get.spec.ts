@@ -65,8 +65,8 @@ describe('Client - Platform - Contracts - .get()', () => {
 
   describe('get a contract from string', () => {
     it('should get from DAPIClient if there is none locally', async () => {
-      // @ts-ignore
       const contract = await get.call({
+        // @ts-ignore
         apps, dpp, client, initialize,
       }, contractsFixtures.ratePlatform.$id);
       expect(contract.toJSON()).to.deep.equal(contractsFixtures.ratePlatform);
@@ -79,8 +79,8 @@ describe('Client - Platform - Contracts - .get()', () => {
     });
 
     it('should get from local when already fetched once', async () => {
-      // @ts-ignore
       const contract = await get.call({
+        // @ts-ignore
         apps, dpp, client, initialize,
       }, contractsFixtures.ratePlatform.$id);
       expect(contract.toJSON()).to.deep.equal(contractsFixtures.ratePlatform);
@@ -95,8 +95,8 @@ describe('Client - Platform - Contracts - .get()', () => {
 
   describe('other conditions', () => {
     it('should deal when contract do not exist', async () => {
-      // @ts-ignore
       const contract = await get.call({
+        // @ts-ignore
         apps, dpp, client, initialize,
       }, identitiesFixtures.bob.id);
       expect(contract).to.equal(null);
