@@ -62,7 +62,7 @@ where
     ) -> Result<SimpleValidationResult, NonConsensusError> {
         let result = self.json_schema_validator.validate(
             &raw_state_transition
-                .try_into_validating_json()
+                .try_to_validating_json()
                 .map_err(NonConsensusError::ValueError)?,
         )?;
         if !result.is_valid() {

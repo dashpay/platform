@@ -473,13 +473,14 @@ mod validate_identity_credit_withdrawal_transition_basic_factory {
 
     mod output_script {
         use crate::identity::core_script::CoreScript;
+        use crate::identity::state_transition::properties::PROPERTY_OUTPUT_SCRIPT;
 
         use super::*;
 
         pub async fn should_be_present() {
             let (mut raw_state_transition, validator) = setup_test();
 
-            raw_state_transition.remove("outputScript").unwrap();
+            raw_state_transition.remove(PROPERTY_OUTPUT_SCRIPT).unwrap();
 
             let result = validator.validate(&raw_state_transition).await.unwrap();
 
@@ -503,7 +504,7 @@ mod validate_identity_credit_withdrawal_transition_basic_factory {
             let (mut raw_state_transition, validator) = setup_test();
 
             raw_state_transition
-                .set_into_value("outputScript", vec!["string"; 23])
+                .set_into_value(PROPERTY_OUTPUT_SCRIPT, vec!["string"; 23])
                 .unwrap();
 
             let result = validator.validate(&raw_state_transition).await.unwrap();
@@ -521,7 +522,7 @@ mod validate_identity_credit_withdrawal_transition_basic_factory {
             let (mut raw_state_transition, validator) = setup_test();
 
             raw_state_transition
-                .set_into_value("outputScript", vec![0; 9])
+                .set_into_value(PROPERTY_OUTPUT_SCRIPT, vec![0; 9])
                 .unwrap();
 
             let result = validator.validate(&raw_state_transition).await.unwrap();
@@ -539,7 +540,7 @@ mod validate_identity_credit_withdrawal_transition_basic_factory {
             let (mut raw_state_transition, validator) = setup_test();
 
             raw_state_transition
-                .set_into_value("outputScript", vec![0; 10018])
+                .set_into_value(PROPERTY_OUTPUT_SCRIPT, vec![0; 10018])
                 .unwrap();
 
             let result = validator.validate(&raw_state_transition).await.unwrap();
@@ -557,7 +558,7 @@ mod validate_identity_credit_withdrawal_transition_basic_factory {
             let (mut raw_state_transition, validator) = setup_test();
 
             raw_state_transition
-                .set_into_value("outputScript", vec![6; 23])
+                .set_into_value(PROPERTY_OUTPUT_SCRIPT, vec![6; 23])
                 .unwrap();
 
             let result = validator.validate(&raw_state_transition).await.unwrap();

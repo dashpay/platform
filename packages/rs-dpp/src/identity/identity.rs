@@ -298,7 +298,7 @@ impl Identity {
     }
 
     /// Creates an identity from a raw object
-    pub fn from_raw_object(mut raw_object: Value) -> Result<Identity, ProtocolError> {
+    pub fn from_raw_object(raw_object: Value) -> Result<Identity, ProtocolError> {
         let identity: Identity = platform_value::from_value(raw_object)?;
 
         Ok(identity)

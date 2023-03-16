@@ -427,7 +427,7 @@ mod validate_identity_create_transition_basic_factory {
                 MockStateRepositoryLike::new(),
             );
 
-            let mut public_keys = raw_state_transition
+            let public_keys = raw_state_transition
                 .get_array_mut_ref("publicKeys")
                 .unwrap();
             let key = public_keys.first().unwrap().clone();
@@ -457,7 +457,7 @@ mod validate_identity_create_transition_basic_factory {
                 MockStateRepositoryLike::new(),
             );
 
-            let mut public_keys = raw_state_transition
+            let public_keys = raw_state_transition
                 .get_array_mut_ref("publicKeys")
                 .unwrap();
             let key = public_keys.first().unwrap().clone();

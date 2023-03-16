@@ -218,7 +218,7 @@ fn validate_raw_transitions<'a>(
     owner_id: &Identifier,
 ) -> Result<ValidationResult<()>, ProtocolError> {
     let mut result = ValidationResult::default();
-
+    let mut raw_document_transitions_as_value: Vec<Value> = vec![];
     for raw_document_transition in raw_document_transitions {
         let Some(document_type) = raw_document_transition.get_optional_str("$type").map_err(ProtocolError::ValueError)? else {
                 result.add_error(BasicError::MissingDocumentTransitionTypeError);
@@ -302,12 +302,8 @@ fn validate_raw_transitions<'a>(
                 }
             }
         }
+        raw_document_transitions_as_value.push(raw_document_transition.into())
     }
-
-    let raw_document_transitions_as_value: Vec<Value> = raw_document_transitions
-        .into_iter()
-        .map(|v| v.clone().into())
-        .collect();
     let raw_document_transitions_as_value_iter = raw_document_transitions_as_value.iter();
     let duplicate_transitions =
         find_duplicates_by_id(raw_document_transitions_as_value_iter.clone())?;
