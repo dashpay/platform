@@ -51,6 +51,7 @@ describe('dataContractQueryHandlerFactory', () => {
     dataContractQueryHandler = dataContractQueryHandlerFactory(
       dataContractRepositoryMock,
       createQueryResponseMock,
+      this.dppWasm,
     );
 
     params = {};
@@ -118,7 +119,7 @@ describe('dataContractQueryHandlerFactory', () => {
     const result = await dataContractQueryHandler(params, data, { prove: true });
 
     expect(dataContractRepositoryMock.prove).to.be.calledOnceWithExactly(
-      new Identifier(data.id),
+      data.id,
     );
 
     expect(result).to.be.an.instanceof(ResponseQuery);

@@ -1,5 +1,3 @@
-const IdentityPublicKey = require('@dashevo/dpp/lib/identity/IdentityPublicKey');
-const Identity = require('@dashevo/dpp/lib/identity/Identity');
 const InvalidMasternodeIdentityError = require('./errors/InvalidMasternodeIdentityError');
 
 /**
@@ -7,6 +5,7 @@ const InvalidMasternodeIdentityError = require('./errors/InvalidMasternodeIdenti
  * @param {IdentityStoreRepository} identityRepository
  * @param {getWithdrawPubKeyTypeFromPayoutScript} getWithdrawPubKeyTypeFromPayoutScript
  * @param {getPublicKeyFromPayoutScript} getPublicKeyFromPayoutScript
+ * @param {WebAssembly.Instance} dppWasm
  * @return {createMasternodeIdentity}
  */
 function createMasternodeIdentityFactory(
@@ -14,6 +13,7 @@ function createMasternodeIdentityFactory(
   identityRepository,
   getWithdrawPubKeyTypeFromPayoutScript,
   getPublicKeyFromPayoutScript,
+  dppWasm,
 ) {
   /**
    * @typedef createMasternodeIdentity
@@ -34,8 +34,8 @@ function createMasternodeIdentityFactory(
     const publicKeys = [{
       id: 0,
       type: pubKeyType,
-      purpose: IdentityPublicKey.PURPOSES.AUTHENTICATION,
-      securityLevel: IdentityPublicKey.SECURITY_LEVELS.MASTER,
+      purpose: dppWasm.KeyPurpose.AUTHENTICATION,
+      securityLevel: dppWasm.KeySecurityLevel.MASTER,
       readOnly: true,
       // Copy data buffer
       data: Buffer.from(pubKeyData),
@@ -47,14 +47,14 @@ function createMasternodeIdentityFactory(
       publicKeys.push({
         id: 1,
         type: withdrawPubKeyType,
-        purpose: IdentityPublicKey.PURPOSES.WITHDRAW,
-        securityLevel: IdentityPublicKey.SECURITY_LEVELS.CRITICAL,
+        purpose: dppWasm.KeyPurpose.WITHDRAW,
+        securityLevel: dppWasm.KeySecurityLevel.CRITICAL,
         readOnly: false,
-        data: getPublicKeyFromPayoutScript(payoutScript, withdrawPubKeyType),
+        data: getPublicKeyFromPayoutScript(dppWasm, payoutScript, withdrawPubKeyType),
       });
     }
 
-    const identity = new Identity({
+    const identity = new dppWasm.Identity({
       protocolVersion: dpp.getProtocolVersion(),
       id: identifier.toBuffer(),
       publicKeys,

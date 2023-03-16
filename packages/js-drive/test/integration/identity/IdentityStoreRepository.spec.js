@@ -22,9 +22,11 @@ describe('IdentityStoreRepository', () => {
   let publicKeyHashes;
   let Identity;
   let IdentityPublicKey;
+  let KeyType;
+  let KeySecurityLevel;
 
   before(function before() {
-    ({ Identity, IdentityPublicKey } = this.dppWasm);
+    ({ Identity, IdentityPublicKey, KeyType, KeySecurityLevel } = this.dppWasm);
   });
 
   beforeEach(async () => {
@@ -462,9 +464,9 @@ describe('IdentityStoreRepository', () => {
         publicKeys: [
           {
             id: 0,
-            type: IdentityPublicKey.TYPES.ECDSA_SECP256K1,
-            purpose: IdentityPublicKey.PURPOSES.AUTHENTICATION,
-            securityLevel: IdentityPublicKey.SECURITY_LEVELS.MASTER,
+            type: KeyType.ECDSA_SECP256K1,
+            purpose: KeyPurpose.AUTHENTICATION,
+            securityLevel: KeySecurityLevel.MASTER,
             readOnly: false,
             data,
           },

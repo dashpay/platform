@@ -1,5 +1,3 @@
-const { TYPES } = require('@dashevo/dpp/lib/identity/IdentityPublicKey');
-
 const ReadOperation = require('@dashevo/dpp/lib/stateTransition/fee/operations/ReadOperation');
 const SignatureVerificationOperation = require('@dashevo/dpp/lib/stateTransition/fee/operations/SignatureVerificationOperation');
 const BlockInfo = require('../blockExecution/BlockInfo');
@@ -22,6 +20,7 @@ class DriveStateRepository {
    * @param {BlockExecutionContext} blockExecutionContext
    * @param {SimplifiedMasternodeList} simplifiedMasternodeList
    * @param {Drive} rsDrive
+   * @param {WebAssembly.Instance} dppWasm
    * @param {Object} [options]
    * @param {Object} [options.useTransaction=false]
    */
@@ -37,6 +36,7 @@ class DriveStateRepository {
     blockExecutionContext,
     simplifiedMasternodeList,
     rsDrive,
+    dppWasm,
     options = {},
   ) {
     this.identityRepository = identityRepository;
@@ -50,6 +50,7 @@ class DriveStateRepository {
     this.blockExecutionContext = blockExecutionContext;
     this.simplifiedMasternodeList = simplifiedMasternodeList;
     this.rsDrive = rsDrive;
+    this.dppWasm = dppWasm;
     this.#options = options;
   }
 
@@ -571,7 +572,7 @@ class DriveStateRepository {
 
     if (executionContext) {
       executionContext.addOperation(
-        new SignatureVerificationOperation(TYPES.ECDSA_SECP256K1),
+        new SignatureVerificationOperation(this.dppWasm.KeyTypes.ECDSA_SECP256K1),
       );
 
       if (executionContext.isDryRun()) {

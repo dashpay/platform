@@ -20,6 +20,7 @@ const getSystemIdentityPublicKeysFixture = require('../../../../lib/test/fixture
  * @param {IdentityPublicKeyStoreRepository} identityPublicKeyRepository
  * @param {getWithdrawPubKeyTypeFromPayoutScript} getWithdrawPubKeyTypeFromPayoutScript
  * @param {getPublicKeyFromPayoutScript} getPublicKeyFromPayoutScript
+ * @param {WebAssembly.Instance} dppWasm
  * @returns {expectOperatorIdentity}
  */
 function expectOperatorIdentityFactory(
@@ -44,7 +45,8 @@ function expectOperatorIdentityFactory(
     const { IdentityPublicKey } = dppWasm;
     // Validate operator identity
 
-    const operatorIdentifier = createOperatorIdentifier(smlEntry);
+    const operatorIdentifier = createOperatorIdentifier(dppWasm, smlEntry);
+
 
     const operatorIdentityResult = await identityRepository.fetch(
       operatorIdentifier,
@@ -75,7 +77,7 @@ function expectOperatorIdentityFactory(
     const firstOperatorMasternodePublicKey = operatorIdentity.getPublicKeyById(0);
     expect(firstOperatorMasternodePublicKey.getType())
       .to
-      .equal(IdentityPublicKey.TYPES.BLS12_381);
+      .equal(dppWasm.KeyType.BLS12_381);
     expect(firstOperatorMasternodePublicKey.getData())
       .to
       .deep
@@ -103,7 +105,7 @@ function expectOperatorIdentityFactory(
       const payoutPublicKey = operatorIdentity.getPublicKeyById(i);
       expect(payoutPublicKey.getType()).to.equal(publicKeyType);
       expect(payoutPublicKey.getData()).to.deep.equal(
-        getPublicKeyFromPayoutScript(payoutScript, publicKeyType),
+        getPublicKeyFromPayoutScript(payoutScript, publicKeyType, dppWasm),
       );
 
       const masternodeIdentityByPayoutPublicKeyHashResult = await identityPublicKeyRepository
@@ -125,7 +127,7 @@ function expectOperatorIdentityFactory(
       const payoutPublicKey = operatorIdentity.getPublicKeyById(i);
       expect(payoutPublicKey.getType()).to.equal(publicKeyType);
       expect(payoutPublicKey.getData()).to.deep.equal(
-        getPublicKeyFromPayoutScript(payoutScript, publicKeyType),
+        getPublicKeyFromPayoutScript(payoutScript, publicKeyType, dppWasm),
       );
 
       const masternodeIdentityByPayoutPublicKeyHashResult = await identityRepository
@@ -165,7 +167,7 @@ function expectVotingIdentityFactory(
     // Validate voting identity
     const { IdentityPublicKey } = dppWasm;
 
-    const votingIdentifier = createVotingIdentifier(smlEntry);
+    const votingIdentifier = createVotingIdentifier(smlEntry, dppWas);
 
     const votingIdentityResult = await identityRepository.fetch(votingIdentifier, {
       useTransaction: true,
@@ -185,7 +187,7 @@ function expectVotingIdentityFactory(
       .lengthOf(1);
 
     const masternodePublicKey = votingIdentity.getPublicKeyById(0);
-    expect(masternodePublicKey.getType()).to.equal(IdentityPublicKey.TYPES.ECDSA_HASH160);
+    expect(masternodePublicKey.getType()).to.equal(dppWasm.KeyType.ECDSA_HASH160);
     expect(masternodePublicKey.getData()).to.deep.equal(
       Buffer.from(proRegTx.extraPayload.keyIDVoting, 'hex').reverse(),
     );
@@ -261,7 +263,7 @@ function expectMasternodeIdentityFactory(
     expect(masternodeIdentity.getPublicKeys()).to.have.lengthOf(publicKeysNum);
 
     const masternodePublicKey = masternodeIdentity.getPublicKeyById(0);
-    expect(masternodePublicKey.getType()).to.equal(IdentityPublicKey.TYPES.ECDSA_HASH160);
+    expect(masternodePublicKey.getType()).to.equal(dppWasm.KeyType.ECDSA_HASH160);
     expect(masternodePublicKey.getData()).to.deep.equal(
       Buffer.from(proRegTx.extraPayload.keyIDOwner, 'hex').reverse(),
     );
@@ -285,7 +287,7 @@ function expectMasternodeIdentityFactory(
       const payoutPublicKey = masternodeIdentity.getPublicKeyById(i);
       expect(payoutPublicKey.getType()).to.equal(publicKeyType);
       expect(payoutPublicKey.getData()).to.deep.equal(
-        getPublicKeyFromPayoutScript(payoutScript, publicKeyType),
+        getPublicKeyFromPayoutScript(payoutScript, publicKeyType, dppWasm),
       );
 
       const masternodeIdentityByPayoutPublicKeyHashResult = await identityRepository
@@ -307,7 +309,7 @@ function expectMasternodeIdentityFactory(
       const payoutPublicKey = masternodeIdentity.getPublicKeyById(i);
       expect(payoutPublicKey.getType()).to.equal(publicKeyType);
       expect(payoutPublicKey.getData()).to.deep.equal(
-        getPublicKeyFromPayoutScript(payoutScript, publicKeyType),
+        getPublicKeyFromPayoutScript(payoutScript, publicKeyType, dppWasm),
       );
 
       const masternodeIdentityByPayoutPublicKeyHashResult = await identityRepository
@@ -576,7 +578,7 @@ describe('synchronizeMasternodeIdentitiesFactory', function main() {
       Buffer.from(smlFixture[0].proRegTxHash, 'hex'),
     );
 
-    const firstOperatorIdentifier = createOperatorIdentifier(smlFixture[0]);
+    const firstOperatorIdentifier = createOperatorIdentifier(this.dppWasm, smlFixture[0]);
 
     let documentsResult = await documentRepository.find(
       rewardsDataContract,
@@ -708,7 +710,7 @@ describe('synchronizeMasternodeIdentitiesFactory', function main() {
     expect(fetchSimplifiedMNListMock).to.have.been.calledOnceWithExactly(1, coreHeight);
   });
 
-  it('should create masternode identities if new masternode appeared', async () => {
+  it('should create masternode identities if new masternode appeared', async function test() {
     // Sync initial list
 
     const result = await synchronizeMasternodeIdentities(coreHeight, blockInfo);
@@ -765,7 +767,7 @@ describe('synchronizeMasternodeIdentitiesFactory', function main() {
       Buffer.from(newSmlFixture[0].proRegTxHash, 'hex'),
     );
 
-    const newOperatorIdentifier = createOperatorIdentifier(newSmlFixture[0]);
+    const newOperatorIdentifier = createOperatorIdentifier(this.dppWasm, newSmlFixture[0]);
 
     const documentsResult = await documentRepository.find(
       rewardsDataContract,
@@ -913,7 +915,7 @@ describe('synchronizeMasternodeIdentitiesFactory', function main() {
     expect(documents).to.have.lengthOf(0);
   });
 
-  it('should create operator identity and reward shares if PubKeyOperator was changed', async () => {
+  it('should create operator identity and reward shares if PubKeyOperator was changed', async function test() {
     // Initial sync
 
     await synchronizeMasternodeIdentities(coreHeight, blockInfo);
@@ -988,12 +990,12 @@ describe('synchronizeMasternodeIdentitiesFactory', function main() {
 
     const [document] = documents;
 
-    const newOperatorIdentifier = createOperatorIdentifier(changedSmlEntry);
+    const newOperatorIdentifier = createOperatorIdentifier(this.dppWasm, changedSmlEntry);
 
     expect(document.get('payToId')).to.deep.equal(newOperatorIdentifier);
   });
 
-  it('should handle changed payout, voting and operator payout addresses', async () => {
+  it('should handle changed payout, voting and operator payout addresses', async function test() {
     // Sync initial list
 
     await synchronizeMasternodeIdentities(coreHeight, blockInfo);
@@ -1077,12 +1079,12 @@ describe('synchronizeMasternodeIdentitiesFactory', function main() {
 
     const [document] = documents;
 
-    const newOperatorIdentifier = createOperatorIdentifier(changedSmlEntry);
+    const newOperatorIdentifier = createOperatorIdentifier(this.dppWasm, changedSmlEntry);
 
     expect(document.get('payToId')).to.deep.equal(newOperatorIdentifier);
   });
 
-  it('should not create voting Identity if owner and voting keys are the same', async () => {
+  it('should not create voting Identity if owner and voting keys are the same', async function test() {
     transaction1 = {
       extraPayload: {
         operatorReward: 100,
@@ -1097,7 +1099,7 @@ describe('synchronizeMasternodeIdentitiesFactory', function main() {
 
     await synchronizeMasternodeIdentities(coreHeight, blockInfo);
     await expectDeterministicAppHash('7a5729e3511c5cc98e8452faa6132f0d600e04fef85df0f95f56e59c776de170');
-    const votingIdentifier = createVotingIdentifier(smlFixture[0]);
+    const votingIdentifier = createVotingIdentifier(smlFixture[0], this.dppWasm);
 
     const votingIdentityResult = await identityRepository.fetch(
       votingIdentifier,
