@@ -7,7 +7,6 @@ const getDocumentTransitionsFixture = require('@dashevo/dpp/lib/test/fixtures/ge
 const ValidationResult = require('@dashevo/dpp/lib/validation/ValidationResult');
 const IdentifierJs = require('@dashevo/dpp/lib/identifier/Identifier');
 
-const InvalidDocumentTypeErrorJs = require('@dashevo/dpp/lib/errors/InvalidDocumentTypeError');
 const InvalidDocumentErrorJs = require('@dashevo/dpp/lib/document/errors/InvalidDocumentError');
 const InvalidActionNameErrorJs = require('@dashevo/dpp/lib/document/errors/InvalidActionNameError');
 const NoDocumentsSuppliedErrorJs = require('@dashevo/dpp/lib/document/errors/NoDocumentsSuppliedError');
@@ -22,21 +21,13 @@ const SomeConsensusError = require('@dashevo/dpp/lib/test/mocks/SomeConsensusErr
 const entropyGenerator = require('@dashevo/dpp/lib/util/entropyGenerator');
 const DocumentFactoryJS = require('@dashevo/dpp/lib/document/DocumentFactory');
 
-const { default: loadWasmDpp } = require('../../../dist');
+let {
+  Identifier, DocumentFactory, DataContract, Document, DocumentValidator, ProtocolVersionValidator,
+  InvalidDocumentTypeInDataContractError, InvalidDocumentError, JsonSchemaError,
+  NoDocumentsSuppliedError, MismatchOwnerIdsError, InvalidInitialRevisionError,
+} = require('../../..');
 
-let Identifier;
-let DocumentFactory;
-let DataContract;
-let Document;
-let DocumentValidator;
-let ProtocolVersionValidator;
-
-let InvalidDocumentTypeInDataContractError;
-let InvalidDocumentError;
-let JsonSchemaError;
-let NoDocumentsSuppliedError;
-let MismatchOwnerIdsError;
-let InvalidInitialRevisionError;
+const { default: loadWasmDpp } = require('../../..');
 
 describe('DocumentFactory', () => {
   let decodeProtocolEntityMock;
@@ -60,6 +51,8 @@ describe('DocumentFactory', () => {
   let fakeTimeDate;
   let entropy;
   let dppMock;
+  let dataContractId;
+  let documentValidator;
 
   beforeEach(async () => {
     ({
@@ -77,7 +70,7 @@ describe('DocumentFactory', () => {
 
   beforeEach(function beforeEach() {
     const protocolValidator = new ProtocolVersionValidator();
-    const documentValidator = new DocumentValidator(protocolValidator);
+    documentValidator = new DocumentValidator(protocolValidator);
 
     ({ ownerId: ownerIdJs } = getDocumentsFixture);
     ownerId = Identifier.from(ownerIdJs);
@@ -85,6 +78,7 @@ describe('DocumentFactory', () => {
     dataContractJs = getDataContractFixture();
     dataContract = DataContract.fromBuffer(dataContractJs.toBuffer());
     const dc = DataContract.fromBuffer(dataContractJs.toBuffer());
+    dataContractId = dataContractJs.getId().toBuffer();
 
     documentsJs = getDocumentsFixture(dataContractJs);
     documents = documentsJs.map((d) => {
@@ -200,46 +194,17 @@ describe('DocumentFactory', () => {
       const type = 'wrong';
 
       try {
-        factoryJs.create(dataContractJs, ownerIdJs, type);
-
-        expect.fail('InvalidDocumentTypeError should be thrown');
-      } catch (e) {
-        expect(e).to.be.an.instanceOf(InvalidDocumentTypeErrorJs);
-        expect(e.getType()).to.equal(type);
-        expect(e.getDataContract()).to.equal(dataContractJs);
-      }
-    });
-
-    it('should throw an error if type is not defined - Rust', () => {
-      const type = 'wrong';
-
-      try {
         factory.create(dataContract, ownerId, type, {});
 
         expect.fail('InvalidDocumentTypeError should be thrown');
       } catch (e) {
         expect(e).to.be.an.instanceOf(InvalidDocumentTypeInDataContractError);
         expect(e.getType()).to.equal(type);
+        expect(e.getDataContractId().toBuffer()).to.deep.equal(dataContractId);
       }
     });
 
     it('should throw an error if validation failed', () => {
-      const error = new Error('validation failed');
-      const validationResult = new ValidationResult();
-      validationResult.addError(error);
-
-      validateDocumentMock.returns(validationResult);
-
-      try {
-        factoryJs.create(dataContractJs, ownerIdJs, rawDocumentJs.$type);
-
-        expect.fail('InvalidDocumentError should be thrown');
-      } catch (e) {
-        expect(e).to.be.an.instanceOf(InvalidDocumentErrorJs);
-      }
-    });
-
-    it('should throw an error if validation failed - Rust', () => {
       const error = new Error('validation failed');
       const validationResult = new ValidationResult();
       validationResult.addError(error);
@@ -258,46 +223,12 @@ describe('DocumentFactory', () => {
 
   describe('createFromObject', () => {
     it('should return new Data Contract with data from passed object', async () => {
-      validateDocumentMock.returns(new ValidationResult());
-
-      const result = await factoryJs.createFromObject(rawDocumentJs);
-
-      expect(result).to.be.an.instanceOf(DocumentJs);
-      expect(result.toObject()).to.deep.equal(documentJs.toObject());
-
-      expect(fetchAndValidateDataContractMock).to.have.been.calledOnceWithExactly(rawDocumentJs);
-
-      expect(validateDocumentMock).to.have.been.calledOnceWithExactly(
-        rawDocumentJs, dataContractJs,
-      );
-    });
-
-    it('should return new Data Contract with data from passed object - Rust', async () => {
       const result = await factory.createFromObject(rawDocument);
 
       expect(result).to.be.an.instanceOf(Document);
-      expect(result.toJSON()).to.deep.equal(document.toJSON());
+      expect(result.toObject()).to.deep.equal(document.toObject());
 
       expect(stateRepositoryMock.fetchDataContract).to.have.been.calledOnce();
-    });
-
-    it('should return new Document without validation if "skipValidation" option is passed', async function it() {
-      const resultMock = {
-        isValid: () => true,
-        merge: this.sinonSandbox.stub(),
-        getData: () => getDataContractFixture(),
-      };
-
-      fetchAndValidateDataContractMock.resolves(resultMock);
-
-      const result = await factoryJs.createFromObject(rawDocumentJs, { skipValidation: true });
-
-      expect(result).to.be.an.instanceOf(DocumentJs);
-      expect(result.toObject()).to.deep.equal(documentJs.toObject());
-
-      expect(fetchAndValidateDataContractMock).to.have.been.calledOnceWithExactly(rawDocumentJs);
-      expect(validateDocumentMock).to.have.not.been.called();
-      expect(resultMock.merge).to.have.not.been.called();
     });
 
     it('should return new Document without validation if "skipValidation" option is passed - Rust', async () => {
@@ -310,32 +241,6 @@ describe('DocumentFactory', () => {
     });
 
     it('should throw InvalidDocumentError if passed object is not valid', async () => {
-      const validationError = new SomeConsensusError('test');
-
-      validateDocumentMock.returns(
-        new ValidationResult([validationError]),
-      );
-
-      try {
-        await factoryJs.createFromObject(rawDocumentJs);
-
-        expect.fail('InvalidDocumentError should be thrown');
-      } catch (e) {
-        expect(e).to.be.an.instanceOf(InvalidDocumentErrorJs);
-
-        expect(e.getErrors()).to.have.length(1);
-        expect(e.getRawDocument()).to.equal(rawDocumentJs);
-
-        const [consensusError] = e.getErrors();
-        expect(consensusError).to.equal(validationError);
-
-        expect(fetchAndValidateDataContractMock).to.have.been.calledOnceWithExactly(rawDocumentJs);
-        expect(validateDocumentMock)
-          .to.have.been.calledOnceWithExactly(rawDocumentJs, dataContractJs);
-      }
-    });
-
-    it('should throw InvalidDocumentError if passed object is not valid - Rust', async () => {
       delete rawDocument.lastName;
 
       try {
@@ -346,9 +251,11 @@ describe('DocumentFactory', () => {
         expect(e).to.be.an.instanceOf(InvalidDocumentError);
         expect(e.getErrors()).to.have.length(1);
 
-        // TODO rawDocument cannot be converted back to the original form as it is invalid
-        // TODO so we cannot use valid fields DataContract to convert to buffer/identifier
-        // expect(e.getRawDocument()).to.equal(rawDocument);
+        // Identifiers don't survive conversion back and forth unless done through
+        // a Document constructor
+        expect(
+          (new Document(e.getRawDocument(), dataContract)).toObject(),
+        ).to.deep.equal(rawDocument);
 
         const [consensusError] = e.getErrors();
         expect(consensusError).to.be.an.instanceOf(JsonSchemaError);
@@ -356,27 +263,31 @@ describe('DocumentFactory', () => {
     });
 
     it('should throw InvalidDocumentError if Data Contract is not valid', async () => {
-      const fetchContractError = new SomeConsensusError('error');
+      const dc = DataContract.fromBuffer(dataContractJs.toBuffer());
+      dc.setDocuments({ '$%34': { '^&*': 'Keck' } });
+      stateRepositoryMock.fetchDataContract.resolves(dc);
+      // const protocolValidator = new ProtocolVersionValidator();
+      // documentValidator = new DocumentValidator(protocolValidator);
 
-      fetchAndValidateDataContractMock.returns(
-        new ValidationResult([fetchContractError]),
-      );
+      // factory = new DocumentFactory(1, documentValidator, stateRepositoryMock);
+      // const fetchContractError = new SomeConsensusError('error');
+
+      // fetchAndValidateDataContractMock.returns(
+      //   new ValidationResult([fetchContractError]),
+      // );
 
       try {
-        await factoryJs.createFromObject(rawDocumentJs);
+        await factory.createFromObject(rawDocumentJs);
 
         expect.fail('InvalidDocumentError should be thrown');
       } catch (e) {
-        expect(e).to.be.an.instanceOf(InvalidDocumentErrorJs);
+        console.log(e);
+        expect(e).to.be.an.instanceOf(InvalidDocumentError);
 
         expect(e.getErrors()).to.have.length(1);
-        expect(e.getRawDocument()).to.equal(rawDocumentJs);
+        expect((new Document(e.getRawDocument(), DataContract.fromBuffer(dataContractJs.toBuffer())).toObject())).to.deep.equal(rawDocumentJs);
 
-        const [consensusError] = e.getErrors();
-
-        expect(consensusError).to.equal(fetchContractError);
-        expect(fetchAndValidateDataContractMock).to.have.been.calledOnceWith(rawDocumentJs);
-        expect(validateDocumentMock).to.have.not.been.called();
+        expect(stateRepositoryMock.fetchDataContract).to.have.been.calledOnceWith(dc.getId().toBuffer());
       }
     });
   });

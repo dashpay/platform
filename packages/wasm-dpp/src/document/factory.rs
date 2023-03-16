@@ -93,7 +93,7 @@ impl DocumentFactoryWASM {
         DocumentFactoryWASM(factory)
     }
 
-    #[wasm_bindgen(js_name=create)]
+    #[wasm_bindgen]
     pub fn create(
         &self,
         data_contract: &DataContractWasm,
@@ -103,6 +103,7 @@ impl DocumentFactoryWASM {
     ) -> Result<DocumentWasm, JsValue> {
         let owner_id = identifier_from_js_value(js_owner_id)?;
         let dynamic_data = data.with_serde_to_json_value()?;
+
         let document = self
             .0
             .create(
