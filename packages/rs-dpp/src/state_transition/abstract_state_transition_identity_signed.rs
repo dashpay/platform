@@ -364,8 +364,8 @@ mod test {
 
         assert_eq!(st_object["protocolVersion"].to_integer::<u32>().unwrap(), 1);
         assert_eq!(st_object["transitionType"].to_integer::<u8>().unwrap(), 1);
-        assert!(st_object.has("signaturePublicKeyId").unwrap());
-        assert!(st_object.has("signature").unwrap());
+        assert!(!st_object.has("signaturePublicKeyId").unwrap());
+        assert!(!st_object.has("signature").unwrap());
     }
 
     #[test]
@@ -389,7 +389,7 @@ mod test {
         let st = get_mock_state_transition();
         let hash = st.hash(false).unwrap();
         assert_eq!(
-            "b067b5f84b748080684f3b203b07227a3b2db9f745815e3449113ac9e5619523",
+            "bb9f19724ffe1be08e6f9d111c8930a3a6de59a6653ad983f922a3523d75d33b",
             hex::encode(hash)
         )
     }
@@ -400,8 +400,7 @@ mod test {
         let hash = st.to_buffer(false).unwrap();
         let result = hex::encode(hash);
 
-        assert_eq!(210, result.len());
-        assert!(result.starts_with("01"))
+        assert_eq!("01a4676f776e6572496458208d6e06cac6cd2c4b9020806a3f1a4ec48fc90defd314330a5ce7d8548dfc2524697369676e617475726580747369676e61747572655075626c69634b65794964016e7472616e736974696f6e5479706501", result.as_str());
     }
 
     #[test]
@@ -410,7 +409,7 @@ mod test {
         let hash = st.to_buffer(true).unwrap();
         let result = hex::encode(hash);
 
-        assert_eq!("01a26e7472616e736974696f6e5479706501676f776e65724964782c4158356f323241525746595a45394a5a5441355353657976707274657442637662514c53425a376352374777", result);
+        assert_eq!("01a2676f776e6572496458208d6e06cac6cd2c4b9020806a3f1a4ec48fc90defd314330a5ce7d8548dfc25246e7472616e736974696f6e5479706501", result);
     }
 
     #[test]

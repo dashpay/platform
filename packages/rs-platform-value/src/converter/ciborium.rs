@@ -1,5 +1,5 @@
 use crate::value_map::ValueMap;
-use crate::{Error, Value};
+use crate::{Error, Value, ValueMapHelper};
 use ciborium::value::Integer;
 use ciborium::Value as CborValue;
 
@@ -109,11 +109,14 @@ impl TryInto<CborValue> for Value {
                     .map(|value| value.try_into())
                     .collect::<Result<Vec<CborValue>, Error>>()?,
             ),
-            Value::Map(map) => CborValue::Map(
-                map.into_iter()
-                    .map(|(k, v)| Ok((k.try_into()?, v.try_into()?)))
-                    .collect::<Result<Vec<(CborValue, CborValue)>, Error>>()?,
-            ),
+            Value::Map(mut map) => {
+                map.sort_by_keys();
+                CborValue::Map(
+                    map.into_iter()
+                        .map(|(k, v)| Ok((k.try_into()?, v.try_into()?)))
+                        .collect::<Result<Vec<(CborValue, CborValue)>, Error>>()?,
+                )
+            },
             Value::Identifier(bytes) => CborValue::Bytes(bytes.to_vec()),
             Value::EnumU8(_) => todo!(),
             Value::EnumString(_) => todo!(),

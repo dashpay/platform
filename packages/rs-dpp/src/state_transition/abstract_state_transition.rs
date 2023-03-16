@@ -2,7 +2,7 @@ use std::fmt::Debug;
 
 use dashcore::signer;
 
-use platform_value::Value;
+use platform_value::{Value, ValueMapHelper};
 use serde::Serialize;
 use serde_json::Value as JsonValue;
 
@@ -209,8 +209,9 @@ pub trait StateTransitionConvert: Serialize {
     // Returns the cibor-encoded bytes representation of the object. The data is  prefixed by 4 bytes containing the Protocol Version
     fn to_buffer(&self, skip_signature: bool) -> Result<Vec<u8>, ProtocolError> {
         let mut value = self.to_object(skip_signature)?;
-        dbg!(&value);
         let protocol_version = value.remove_integer(PROPERTY_PROTOCOL_VERSION)?;
+
+        value.as_map_mut_ref().unwrap().sort_by_keys();
 
         serializer::serializable_value_to_cbor(&value, Some(protocol_version))
     }
