@@ -55,7 +55,7 @@ pub struct InitChainRequest {
 }
 
 /// System identity public keys
-#[derive(Serialize, Deserialize)]
+#[derive(Serialize, Deserialize, Clone)]
 #[serde(rename_all = "camelCase")]
 pub struct SystemIdentityPublicKeys {
     /// Required public key set for masternode reward shares contract owner identity
@@ -71,7 +71,7 @@ pub struct SystemIdentityPublicKeys {
 }
 
 /// Required public key set for an identity
-#[derive(Serialize, Deserialize)]
+#[derive(Serialize, Deserialize, Clone)]
 #[serde(rename_all = "camelCase")]
 pub struct RequiredIdentityPublicKeysSet {
     /// Authentication key with master security level

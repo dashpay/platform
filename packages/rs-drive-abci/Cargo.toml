@@ -1,38 +1,48 @@
 [package]
 name = "drive-abci"
 version = "0.1.0"
-authors = ["Samuel Westrich <sam@dash.org>", "Ivan Shumkov <ivan@shumkov.ru>", "Djavid Gabibiyan <djavid@dash.org>"]
+authors = [
+    "Samuel Westrich <sam@dash.org>",
+    "Ivan Shumkov <ivan@shumkov.ru>",
+    "Djavid Gabibiyan <djavid@dash.org>",
+]
 edition = "2021"
 license = "MIT"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-ciborium = { git="https://github.com/qrayven/ciborium", branch="feat-ser-null-as-undefined"}
+ciborium = { git = "https://github.com/qrayven/ciborium", branch = "feat-ser-null-as-undefined" }
 chrono = "0.4.20"
 serde = { version = "1.0.152", features = ["derive"] }
-serde_json = { version="1.0", features=["preserve_order"] }
-drive = { path = "../rs-drive", features = ["fixtures-and-mocks"]}
+serde_json = { version = "1.0", features = ["preserve_order"] }
+drive = { path = "../rs-drive", features = ["fixtures-and-mocks"] }
 thiserror = "1.0.30"
 rand = "0.8.5"
 tempfile = "3.3.0"
 bs58 = "0.4.0"
 base64 = "0.13.0"
 hex = "0.4.3"
-dashcore = { git="https://github.com/dashevo/rust-dashcore", features=["std", "secp-recovery", "rand", "signer", "use-serde"], default-features = false, rev = "51548a4a1b9eca7430f5f3caf94d9784886ff2e9" }
-dashcore-rpc = { git="https://github.com/jawid-h/rust-dashcore-rpc", branch="fix/attempt-to-fix" }
-dpp = { path = "../rs-dpp", features = ["fixtures-and-mocks"]}
+dashcore = { git = "https://github.com/dashevo/rust-dashcore", features = [
+    "std",
+    "secp-recovery",
+    "rand",
+    "signer",
+    "use-serde",
+], default-features = false, rev = "51548a4a1b9eca7430f5f3caf94d9784886ff2e9" }
+dashcore-rpc = { git = "https://github.com/jawid-h/rust-dashcore-rpc", branch = "fix/attempt-to-fix" }
+dpp = { path = "../rs-dpp", features = ["fixtures-and-mocks"] }
 rust_decimal = "1.2.5"
 rust_decimal_macros = "1.25.0"
-mockall= { version ="0.11", optional = true }
+mockall = { version = "0.11", optional = true }
 bytes = { version = "1.4.0", default-features = false }
 prost = { version = "0.11.6", default-features = false }
-tenderdash-proto = { git="https://github.com/dashpay/rs-tenderdash-abci/proto" }
 tracing = { version = "0.1.37", default-features = false }
 flex-error = { version = "0.4.4", default-features = false }
 structopt = { version = "0.3.26", optional = true, default-features = false }
 tracing-subscriber = { version = "0.3.16", optional = true, default-features = false }
 #tenderdash-abci = {  git="https://github.com/dashpay/rs-tenderdash-abci" }
+tenderdash-abci = { path = "/home/lklimek/git/lklimek/tenderdash-abci-rs/abci" }
 
 [dev-dependencies]
 itertools = { version = "0.10.5" }
