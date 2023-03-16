@@ -244,23 +244,6 @@ To reset a node:
 
 ```bash
 $ dashmate reset
-=======
-#### Hard reset
-
-``dashmate reset --hard``
-
-With the hard reset mode enabled, the corresponding config will be reset as well. This command cleans up all related containers and volumes. To proceed, running the node [setup](#setup-node) is required.
-
-#### Manual reset
-
-Manual reset is used when local setup corrupts and hard reset does not fix it. This could happen, when dashmate configuration becomes incompatible after a major upgrade, making you unable to execute any commands.
-
-```bash
-docker stop $(docker ps -q)
-docker system prune
-docker volume prune
-rm -rf ~/.dashmate/
-```
 
 ### Reindex dashcore chain data
 
