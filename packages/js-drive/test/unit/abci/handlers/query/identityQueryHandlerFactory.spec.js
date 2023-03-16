@@ -45,6 +45,7 @@ describe('identityQueryHandlerFactory', () => {
     identityQueryHandler = identityQueryHandlerFactory(
       identityRepositoryMock,
       createQueryResponseMock,
+      this.dpp,
     );
 
     identity = getIdentityFixture();

@@ -1,4 +1,3 @@
-const IdentityPublicKey = require('@dashevo/dpp/lib/identity/IdentityPublicKey');
 const identitySchema = require('@dashevo/dpp/schema/identity/identity.json');
 
 /**
@@ -7,6 +6,7 @@ const identitySchema = require('@dashevo/dpp/schema/identity/identity.json');
  * @param {IdentityPublicKeyStoreRepository} identityPublicKeyRepository
  * @param {getWithdrawPubKeyTypeFromPayoutScript} getWithdrawPubKeyTypeFromPayoutScript
  * @param {getPublicKeyFromPayoutScript} getPublicKeyFromPayoutScript
+ * @param {WebAssembly.Instance} dppWasm
  * @returns {handleUpdatedScriptPayout}
  */
 function handleUpdatedScriptPayoutFactory(
@@ -14,6 +14,7 @@ function handleUpdatedScriptPayoutFactory(
   identityPublicKeyRepository,
   getWithdrawPubKeyTypeFromPayoutScript,
   getPublicKeyFromPayoutScript,
+  dppWasm,
 ) {
   /**
    * @typedef handleUpdatedScriptPayout
@@ -55,6 +56,7 @@ function handleUpdatedScriptPayoutFactory(
     if (previousPayoutScript) {
       const previousPubKeyType = getWithdrawPubKeyTypeFromPayoutScript(previousPayoutScript);
       const previousPubKeyData = getPublicKeyFromPayoutScript(
+        dppWasm,
         previousPayoutScript,
         previousPubKeyType,
       );
@@ -78,15 +80,16 @@ function handleUpdatedScriptPayoutFactory(
 
     // add new
     const withdrawPubKeyType = getWithdrawPubKeyTypeFromPayoutScript(newPayoutScript);
-    const pubKeyData = getPublicKeyFromPayoutScript(newPayoutScript, withdrawPubKeyType);
+    const pubKeyData = getPublicKeyFromPayoutScript(newPayoutScript, withdrawPubKeyType, dppWasm);
 
-    const newWithdrawalIdentityPublicKey = new IdentityPublicKey()
+    // TODO wasm-dpp doesn' use fluent api
+    const newWithdrawalIdentityPublicKey = new dppWasm.IdentityPublicKey()
       .setId(identity.getPublicKeyMaxId() + 1)
       .setType(withdrawPubKeyType)
       .setData(pubKeyData)
-      .setPurpose(IdentityPublicKey.PURPOSES.WITHDRAW)
+      .setPurpose(dppWasm.KeyPurpose.WITHDRAW)
       .setReadOnly(true)
-      .setSecurityLevel(IdentityPublicKey.SECURITY_LEVELS.MASTER);
+      .setSecurityLevel(dppWasm.KeySecurityLevel.MASTER);
 
     await identityPublicKeyRepository.add(
       identityId,

@@ -72,6 +72,7 @@ describe('getProofsQueryHandlerFactory', () => {
       identityRepositoryMock,
       dataContractRepositoryMock,
       documentRepository,
+      this.dpp,
     );
 
     dataContractData = {

@@ -18,10 +18,6 @@ const RpcClient = require('@dashevo/dashd-rpc/promise');
 
 const { PublicKey } = require('@dashevo/dashcore-lib');
 
-const Identifier = require('@dashevo/dpp/lib/identifier/Identifier');
-
-const findMyWay = require('find-my-way');
-
 const pino = require('pino');
 const pinoMultistream = require('pino-multi-stream');
 
@@ -147,7 +143,7 @@ const createContextLoggerFactory = require('./abci/errors/createContextLoggerFac
 const IdentityBalanceStoreRepository = require('./identity/IdentityBalanceStoreRepository');
 
 /**
- * @param {Object} dppWasmLoaded
+ * @param {WebAssembly.Instance} dppWasm
  * @param {Object} options
  * @param {string} options.ABCI_HOST
  * @param {string} options.ABCI_PORT
@@ -186,7 +182,7 @@ const IdentityBalanceStoreRepository = require('./identity/IdentityBalanceStoreR
  *
  * @return {AwilixContainer}
  */
-function createDIContainer(dppWasmLoaded, options) {
+function createDIContainer(dppWasm, options) {
   if (!options.DPNS_MASTER_PUBLIC_KEY) {
     throw new Error('DPNS_MASTER_PUBLIC_KEY must be set');
   }
@@ -289,10 +285,10 @@ function createDIContainer(dppWasmLoaded, options) {
       parseInt(options.VALIDATOR_SET_LLMQ_TYPE, 10),
     ),
     masternodeRewardSharesContractId: asValue(
-      Identifier.from(masternodeRewardsSystemIds.contractId),
+      dppWasm.Identifier.from(masternodeRewardsSystemIds.contractId),
     ),
     masternodeRewardSharesOwnerId: asValue(
-      Identifier.from(masternodeRewardsSystemIds.ownerId),
+      dppWasm.Identifier.from(masternodeRewardsSystemIds.ownerId),
     ),
     masternodeRewardSharesOwnerMasterPublicKey: asValue(
       PublicKey.fromString(
@@ -308,10 +304,10 @@ function createDIContainer(dppWasmLoaded, options) {
       masternodeRewardsDocuments,
     ),
     featureFlagsContractId: asValue(
-      Identifier.from(featureFlagsSystemIds.contractId),
+      dppWasm.Identifier.from(featureFlagsSystemIds.contractId),
     ),
     featureFlagsOwnerId: asValue(
-      Identifier.from(featureFlagsSystemIds.ownerId),
+      dppWasm.Identifier.from(featureFlagsSystemIds.ownerId),
     ),
     featureFlagsOwnerMasterPublicKey: asValue(
       PublicKey.fromString(
@@ -324,8 +320,8 @@ function createDIContainer(dppWasmLoaded, options) {
       ),
     ),
     featureFlagsDocuments: asValue(featureFlagsDocuments),
-    dpnsContractId: asValue(Identifier.from(dpnsSystemIds.contractId)),
-    dpnsOwnerId: asValue(Identifier.from(dpnsSystemIds.ownerId)),
+    dpnsContractId: asValue(dppWasm.Identifier.from(dpnsSystemIds.contractId)),
+    dpnsOwnerId: asValue(dppWasm.Identifier.from(dpnsSystemIds.ownerId)),
     dpnsOwnerMasterPublicKey: asValue(
       PublicKey.fromString(
         options.DPNS_MASTER_PUBLIC_KEY,
@@ -337,8 +333,8 @@ function createDIContainer(dppWasmLoaded, options) {
       ),
     ),
     dpnsDocuments: asValue(dpnsDocuments),
-    dashpayContractId: asValue(Identifier.from(dashpaySystemIds.contractId)),
-    dashpayOwnerId: asValue(Identifier.from(dashpaySystemIds.ownerId)),
+    dashpayContractId: asValue(dppWasm.Identifier.from(dashpaySystemIds.contractId)),
+    dashpayOwnerId: asValue(dppWasm.Identifier.from(dashpaySystemIds.ownerId)),
     dashpayOwnerMasterPublicKey: asValue(
       PublicKey.fromString(
         options.DASHPAY_MASTER_PUBLIC_KEY,
@@ -350,8 +346,8 @@ function createDIContainer(dppWasmLoaded, options) {
       ),
     ),
     dashpayDocuments: asValue(dashpayDocuments),
-    withdrawalsContractId: asValue(Identifier.from(withdrawalsSystemIds.contractId)),
-    withdrawalsOwnerId: asValue(Identifier.from(withdrawalsSystemIds.ownerId)),
+    withdrawalsContractId: asValue(dppWasm.Identifier.from(withdrawalsSystemIds.contractId)),
+    withdrawalsOwnerId: asValue(dppWasm.Identifier.from(withdrawalsSystemIds.ownerId)),
     withdrawalsOwnerMasterPublicKey: asValue(
       PublicKey.fromString(
         options.WITHDRAWALS_MASTER_PUBLIC_KEY,
@@ -439,19 +435,19 @@ function createDIContainer(dppWasmLoaded, options) {
       logJsonFileLevel,
       logJsonFileStream,
     ) => [
-      {
-        level: logStdoutLevel,
-        stream: logStdoutStream,
-      },
-      {
-        level: logPrettyFileLevel,
-        stream: logPrettyFileStream,
-      },
-      {
-        level: logJsonFileLevel,
-        stream: logJsonFileStream,
-      },
-    ]),
+        {
+          level: logStdoutLevel,
+          stream: logStdoutStream,
+        },
+        {
+          level: logPrettyFileLevel,
+          stream: logPrettyFileStream,
+        },
+        {
+          level: logJsonFileLevel,
+          stream: logJsonFileStream,
+        },
+      ]),
 
     logger: asFunction(
       (loggerStreams) => pino({
@@ -622,7 +618,7 @@ function createDIContainer(dppWasmLoaded, options) {
    * Register DPP
    */
   container.register({
-    dppWasm: asValue(dppWasmLoaded),
+    dppWasm: asValue(dppWasm),
 
     DashPlatformProtocol: asFunction((dppWasm) => dppWasm.DashPlatformProtocol),
 

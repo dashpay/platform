@@ -23,9 +23,10 @@ describe('handleNewMasternodeFactory', () => {
   let identityFixture;
   let Identifier;
   let IdentityPublicKey;
+  let KeyType;
 
   before(function before() {
-    ({ Identifier, IdentityPublicKey } = this.dppWasm);
+    ({ Identifier, IdentityPublicKey, KeyType } = this.dppWasm);
   });
 
   beforeEach(function beforeEach() {
@@ -55,6 +56,7 @@ describe('handleNewMasternodeFactory', () => {
     fetchTransactionMock = this.sinon.stub().resolves(transactionFixture);
 
     handleNewMasternode = handleNewMasternodeFactory(
+      this.dpp,
       dppMock,
       createMasternodeIdentityMock,
       createRewardShareDocumentMock,
@@ -82,7 +84,7 @@ describe('handleNewMasternodeFactory', () => {
       blockInfo,
       Identifier.from('HYyu6DdUQyiHZwzeWpmahu7AUrsEF9MKkRcrdQnKeNSj'),
       Buffer.from('6161616161616161616161616161616161616161', 'hex'),
-      IdentityPublicKey.TYPES.ECDSA_HASH160,
+      KeyType.ECDSA_HASH160,
       payoutScript,
     );
 
@@ -90,7 +92,7 @@ describe('handleNewMasternodeFactory', () => {
       blockInfo,
       Identifier.from('GVYoKVDd29gbmHzbVGepFjCbdymCS5Jq26CCiLnWNL6C'),
       Buffer.from('6262626262626262626262626262626262626262', 'hex'),
-      IdentityPublicKey.TYPES.ECDSA_HASH160,
+      KeyType.ECDSA_HASH160,
     );
 
     expect(createRewardShareDocumentMock).to.not.be.called();
@@ -119,14 +121,14 @@ describe('handleNewMasternodeFactory', () => {
       blockInfo,
       Identifier.from('HYyu6DdUQyiHZwzeWpmahu7AUrsEF9MKkRcrdQnKeNSj'),
       Buffer.from('6161616161616161616161616161616161616161', 'hex'),
-      IdentityPublicKey.TYPES.ECDSA_HASH160,
+      KeyType.ECDSA_HASH160,
       payoutScript,
     );
 
     expect(createRewardShareDocumentMock).to.not.be.called();
   });
 
-  it('should create masternode identity and a document in rewards data contract with percentage', async () => {
+  it('should create masternode identity and a document in rewards data contract with percentage', async function test() {
     transactionFixture.extraPayload.operatorReward = 10;
 
     const result = await handleNewMasternode(masternodeEntry, dataContract, blockInfo);
@@ -139,11 +141,11 @@ describe('handleNewMasternodeFactory', () => {
     expect(result.createdEntities[1].toJSON()).to.deep.equal(identityFixture.toJSON());
     expect(result.createdEntities[2].toJSON()).to.deep.equal(identityFixture.toJSON());
 
-    const operatorIdentifier = createOperatorIdentifier(masternodeEntry);
+    const operatorIdentifier = createOperatorIdentifier(this.dppWasm, masternodeEntry);
     const operatorPayoutAddress = Address.fromString(masternodeEntry.operatorPayoutAddress);
     const operatorPayoutScript = new Script(operatorPayoutAddress);
 
-    const votingIdentifier = createVotingIdentifier(masternodeEntry);
+    const votingIdentifier = createVotingIdentifier(masternodeEntry, this.dppWasm);
     const payoutAddress = Address.fromString(masternodeEntry.payoutAddress);
     const payoutScript = new Script(payoutAddress);
 
@@ -153,7 +155,7 @@ describe('handleNewMasternodeFactory', () => {
       blockInfo,
       Identifier.from('HYyu6DdUQyiHZwzeWpmahu7AUrsEF9MKkRcrdQnKeNSj'),
       Buffer.from('6161616161616161616161616161616161616161', 'hex'),
-      IdentityPublicKey.TYPES.ECDSA_HASH160,
+      KeyType.ECDSA_HASH160,
       payoutScript,
     );
 
@@ -161,7 +163,7 @@ describe('handleNewMasternodeFactory', () => {
       blockInfo,
       operatorIdentifier,
       Buffer.from('951a3208ba531ea75aedd2dc0a9efc75f2c4d9492f1ee0a989b593bcd9722b1a101774d80a426552a9f91d24eb55af6e', 'hex'),
-      IdentityPublicKey.TYPES.BLS12_381,
+      KeyType.BLS12_381,
       operatorPayoutScript,
     );
 
@@ -169,7 +171,7 @@ describe('handleNewMasternodeFactory', () => {
       blockInfo,
       votingIdentifier,
       Buffer.from('6262626262626262626262626262626262626262', 'hex'),
-      IdentityPublicKey.TYPES.ECDSA_HASH160,
+      KeyType.ECDSA_HASH160,
     );
 
     expect(createRewardShareDocumentMock).to.be.calledOnceWithExactly(

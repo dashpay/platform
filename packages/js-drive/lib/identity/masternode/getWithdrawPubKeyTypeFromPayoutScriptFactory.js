@@ -1,13 +1,12 @@
-const IdentityPublicKey = require('@dashevo/dpp/lib/identity/IdentityPublicKey');
-
 const InvalidPayoutScriptError = require('./errors/InvalidPayoutScriptError');
 
 /**
  *
  * @param {string} network
+ * @param {WebAssembly.Instance} dppWasm
  * @returns {getWithdrawPubKeyTypeFromPayoutScript}
  */
-function getWithdrawPubKeyTypeFromPayoutScriptFactory(network) {
+function getWithdrawPubKeyTypeFromPayoutScriptFactory(network, dppWasm) {
   /**
    * @typedef getWithdrawPubKeyTypeFromPayoutScript
    * @param {Script} payoutScript
@@ -22,9 +21,9 @@ function getWithdrawPubKeyTypeFromPayoutScriptFactory(network) {
 
     let withdrawPubKeyType;
     if (address.isPayToScriptHash()) {
-      withdrawPubKeyType = IdentityPublicKey.TYPES.BIP13_SCRIPT_HASH;
+      withdrawPubKeyType = dppWasm.KeyType.BIP13_SCRIPT_HASH;
     } else if (address.isPayToPublicKeyHash()) {
-      withdrawPubKeyType = IdentityPublicKey.TYPES.ECDSA_HASH160;
+      withdrawPubKeyType = dppWasm.KeyType.ECDSA_HASH160;
     } else {
       throw new InvalidPayoutScriptError(payoutScript);
     }

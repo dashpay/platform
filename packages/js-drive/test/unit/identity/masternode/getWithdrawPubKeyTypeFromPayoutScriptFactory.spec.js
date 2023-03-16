@@ -7,14 +7,16 @@ describe('getWithdrawPubKeyTypeFromPayoutScriptFactory', () => {
   let getWithdrawPubKeyTypeFromPayoutScript;
   let network;
   let IdentityPublicKey;
+  let KeyType;
 
   before(function before() {
-    ({ IdentityPublicKey } = this.dppWasm);
+    ({ IdentityPublicKey, KeyType } = this.dppWasm);
   });
 
-  beforeEach(() => {
+  beforeEach(function beforeEach() {
     network = 'testnet';
     getWithdrawPubKeyTypeFromPayoutScript = getWithdrawPubKeyTypeFromPayoutScriptFactory(
+      this.dppWasm,
       network,
     );
   });
@@ -23,14 +25,14 @@ describe('getWithdrawPubKeyTypeFromPayoutScriptFactory', () => {
     const payoutScript = Script(Address.fromString('yTsGq4wV8WF5GKLaYV2C43zrkr2sfTtysT'));
     const type = getWithdrawPubKeyTypeFromPayoutScript(payoutScript);
 
-    expect(type).to.be.equal(IdentityPublicKey.TYPES.ECDSA_HASH160);
+    expect(type).to.be.equal(KeyType.ECDSA_HASH160);
   });
 
   it('should return BIP13_SCRIPT_HASH if address has p2sh type', () => {
     const payoutScript = Script(Address.fromString('7UkJidhNjEPJCQnCTXeaJKbJmL4JuyV66w'));
     const type = getWithdrawPubKeyTypeFromPayoutScript(payoutScript);
 
-    expect(type).to.be.equal(IdentityPublicKey.TYPES.BIP13_SCRIPT_HASH);
+    expect(type).to.be.equal(KeyType.BIP13_SCRIPT_HASH);
   });
 
   it('should throw InvalidPayoutScriptError if address is not p2sh or p2pkh', () => {

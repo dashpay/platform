@@ -4,7 +4,7 @@ describe('createOperatorIdentifier', () => {
   let smlEntry;
   let Identifier;
 
-  beforeEach(() => {
+  beforeEach(function beforeEach() {
     ({ Identifier } = this.dppWasm);
 
     smlEntry = {
@@ -18,7 +18,7 @@ describe('createOperatorIdentifier', () => {
   });
 
   it('should return operator identifier from smlEntry', () => {
-    const identifier = createOperatorIdentifier(smlEntry);
+    const identifier = createOperatorIdentifier(this.dppWasm, smlEntry);
 
     expect(identifier).to.deep.equal(Identifier.from('EwLi1FgGwvmLQ9nkfnttpXzv4SfC7XGBvs61QBCtnHEL'));
   });

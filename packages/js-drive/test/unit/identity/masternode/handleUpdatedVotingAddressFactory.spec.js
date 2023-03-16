@@ -15,9 +15,10 @@ describe('handleUpdatedVotingAddressFactory', () => {
   let blockInfo;
   let IdentityPublicKey;
   let Identifier;
+  let KeyType;
 
   before(function before() {
-    ({ Identifier, IdentityPublicKey } = this.dppWasm);
+    ({ Identifier, IdentityPublicKey, KeyType } = this.dppWasm);
   });
 
   beforeEach(function beforeEach() {
@@ -52,6 +53,7 @@ describe('handleUpdatedVotingAddressFactory', () => {
     blockInfo = new BlockInfo(1, 0, Date.now());
 
     handleUpdatedVotingAddress = handleUpdatedVotingAddressFactory(
+      this.dpp,
       identityRepositoryMock,
       createMasternodeIdentityMock,
       fetchTransactionMock,
@@ -72,7 +74,7 @@ describe('handleUpdatedVotingAddressFactory', () => {
       blockInfo,
       Identifier.from('G1p14MYdpNRLNWuKgQ9SjJUPxfuaJMTwYjdRWu9sLzvL'),
       Buffer.from('8fd1a9502c58ab103792693e951bf39f10ee46a9', 'hex'),
-      IdentityPublicKey.TYPES.ECDSA_HASH160,
+      KeyType.ECDSA_HASH160,
     );
     expect(fetchTransactionMock).to.be.calledWithExactly(smlEntry.proRegTxHash);
   });
