@@ -55,7 +55,11 @@ const ensureAppContractFetched = async function (this: Platform, appName) {
  *
  * @return {WhereCondition}
  */
-function convertIdentifierProperties(whereCondition: WhereCondition, binaryProperties: Record<string, any>, parentProperty: null | string = null) {
+function convertIdentifierProperties(
+  whereCondition: WhereCondition,
+  binaryProperties: Record<string, any>,
+  parentProperty: null | string = null,
+) {
   const [propertyName, operator, propertyValue] = whereCondition;
 
   const fullPropertyName = parentProperty ? `${parentProperty}.${propertyName}` : propertyName;
@@ -119,7 +123,10 @@ export async function get(this: Platform, typeLocator: string, opts: fetchOpts):
   if (opts.where) {
     const binaryProperties = appDefinition.contract.getBinaryProperties(fieldType);
 
-    opts.where = opts.where.map((whereCondition) => convertIdentifierProperties(whereCondition, binaryProperties));
+    opts.where = opts.where
+      .map((whereCondition) => convertIdentifierProperties(
+        whereCondition, binaryProperties,
+      ));
   }
 
   if (opts.startAt instanceof Document) {

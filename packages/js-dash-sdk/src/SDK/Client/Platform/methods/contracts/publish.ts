@@ -10,12 +10,17 @@ import { signStateTransition } from '../../signStateTransition';
  * @param identity - identity
  * @return {DataContractCreateTransition}
  */
-export default async function publish(this: Platform, dataContract: any, identity: any): Promise<any> {
+export default async function publish(
+  this: Platform,
+  dataContract: any,
+  identity: any,
+): Promise<any> {
   await this.initialize();
 
   const { dpp } = this;
 
-  const dataContractCreateTransition = dpp.dataContract.createDataContractCreateTransition(dataContract);
+  const dataContractCreateTransition = dpp.dataContract
+    .createDataContractCreateTransition(dataContract);
 
   await signStateTransition(this, dataContractCreateTransition, identity, 1);
   await broadcastStateTransition(this, dataContractCreateTransition);

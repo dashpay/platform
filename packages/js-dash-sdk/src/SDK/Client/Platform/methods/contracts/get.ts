@@ -39,7 +39,8 @@ export async function get(this: Platform, identifier: ContractIdentifier): Promi
     throw e;
   }
 
-  const contract = await this.dpp.dataContract.createFromBuffer(dataContractResponse.getDataContract());
+  const contract = await this.dpp.dataContract
+    .createFromBuffer(dataContractResponse.getDataContract());
 
   let metadata = null;
   const responseMetadata = dataContractResponse.getMetadata();

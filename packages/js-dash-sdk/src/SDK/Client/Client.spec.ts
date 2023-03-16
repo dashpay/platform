@@ -44,7 +44,11 @@ describe('Dash - Client', function suite() {
       },
     });
 
-    ({ txStreamMock, transportMock, dapiClientMock } = await createAndAttachTransportMocksToClient(client, this.sinon));
+    ({
+      txStreamMock,
+      transportMock,
+      dapiClientMock,
+    } = await createAndAttachTransportMocksToClient(client, this.sinon));
 
     account = await client.getWalletAccount();
 
@@ -67,7 +71,11 @@ describe('Dash - Client', function suite() {
     transportMock.getBlockHeaderByHash
       .returns(BlockHeader.fromString(blockHeaderFixture));
 
-    dapiClientMock.platform.getDataContract.resolves(new GetDataContractResponse(dataContractFixture.toBuffer(), getResponseMetadataFixture()));
+    dapiClientMock.platform.getDataContract
+      .resolves(new GetDataContractResponse(
+        dataContractFixture.toBuffer(),
+        getResponseMetadataFixture(),
+      ));
   });
 
   it('should provide expected class', () => {
@@ -130,7 +138,8 @@ describe('Dash - Client', function suite() {
       expect(identity).to.be.not.null;
 
       const serializedSt = dapiClientMock.platform.broadcastStateTransition.getCall(0).args[0];
-      const interceptedIdentityStateTransition = await client.platform.dpp.stateTransition.createFromBuffer(serializedSt);
+      const interceptedIdentityStateTransition = await client
+        .platform.dpp.stateTransition.createFromBuffer(serializedSt);
       const interceptedAssetLockProof = interceptedIdentityStateTransition.getAssetLockProof();
 
       const transaction = new Transaction(transportMock.sendTransaction.getCall(0).args[0]);
@@ -143,7 +152,8 @@ describe('Dash - Client', function suite() {
       const importedIdentityIds = account.identities.getIdentityIds();
       // Check that we've imported identities properly
       expect(importedIdentityIds.length).to.be.equal(accountIdentitiesCountBeforeTest + 1);
-      expect(importedIdentityIds[1]).to.be.equal(interceptedIdentityStateTransition.getIdentityId().toString());
+      expect(importedIdentityIds[1]).to.be
+        .equal(interceptedIdentityStateTransition.getIdentityId().toString());
     });
 
     it('should throw TransitionBroadcastError when transport resolves error', async () => {
@@ -186,10 +196,12 @@ describe('Dash - Client', function suite() {
       expect(identity).to.be.not.null;
 
       const serializedSt = dapiClientMock.platform.broadcastStateTransition.getCall(1).args[0];
-      const interceptedIdentityStateTransition = await client.platform.dpp.stateTransition.createFromBuffer(serializedSt);
+      const interceptedIdentityStateTransition = await client
+        .platform.dpp.stateTransition.createFromBuffer(serializedSt);
       const interceptedAssetLockProof = interceptedIdentityStateTransition.getAssetLockProof();
 
-      expect(interceptedIdentityStateTransition.getType()).to.be.equal(stateTransitionTypes.IDENTITY_TOP_UP);
+      expect(interceptedIdentityStateTransition.getType())
+        .to.be.equal(stateTransitionTypes.IDENTITY_TOP_UP);
 
       const transaction = new Transaction(transportMock.sendTransaction.getCall(1).args[0]);
       const isLock = createFakeInstantLock(transaction.hash);
@@ -264,10 +276,13 @@ describe('Dash - Client', function suite() {
       }, identityFixture);
 
       const serializedSt = dapiClientMock.platform.broadcastStateTransition.getCall(0).args[0];
-      const interceptedSt = await client.platform.dpp.stateTransition.createFromBuffer(serializedSt);
+      const interceptedSt = await client
+        .platform.dpp.stateTransition.createFromBuffer(serializedSt);
 
       // .to.be.true() doesn't work after TS compilation in Chrome
-      expect(await interceptedSt.verifySignature(identityFixture.getPublicKeyById(1))).to.be.equal(true);
+      expect(await interceptedSt.verifySignature(
+        identityFixture.getPublicKeyById(1),
+      )).to.be.equal(true);
 
       const documentTransitions = interceptedSt.getTransitions();
 
@@ -308,12 +323,16 @@ describe('Dash - Client', function suite() {
       await client.platform.contracts.publish(dataContractFixture, identityFixture);
 
       const serializedSt = dapiClientMock.platform.broadcastStateTransition.getCall(0).args[0];
-      const interceptedSt = await client.platform.dpp.stateTransition.createFromBuffer(serializedSt);
+      const interceptedSt = await client
+        .platform.dpp.stateTransition.createFromBuffer(serializedSt);
 
       // .to.be.true() doesn't work after TS compilation in Chrome
-      expect(await interceptedSt.verifySignature(identityFixture.getPublicKeyById(1))).to.be.equal(true);
+      expect(await interceptedSt.verifySignature(
+        identityFixture.getPublicKeyById(1),
+      )).to.be.equal(true);
       expect(interceptedSt.getEntropy()).to.be.deep.equal(dataContractFixture.entropy);
-      expect(interceptedSt.getDataContract().toObject()).to.be.deep.equal(dataContractFixture.toObject());
+      expect(interceptedSt.getDataContract().toObject())
+        .to.be.deep.equal(dataContractFixture.toObject());
     });
   });
 });

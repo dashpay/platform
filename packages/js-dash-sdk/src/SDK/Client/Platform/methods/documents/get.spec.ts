@@ -24,7 +24,8 @@ describe('Client - Platform - Documents - .get()', () => {
       contract: dataContract,
     };
 
-    getDocumentsMock = this.sinon.stub().resolves(new GetDocumentsResponse([], getResponseMetadataFixture()));
+    getDocumentsMock = this.sinon.stub()
+      .resolves(new GetDocumentsResponse([], getResponseMetadataFixture()));
     appsGetMock = this.sinon.stub().returns(appDefinition);
 
     platform = {

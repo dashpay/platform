@@ -5,8 +5,10 @@ const getIdentityFixture = require('@dashevo/dpp/lib/test/fixtures/getIdentityFi
 export function createIdentityFixtureInAccount(account) {
   const identityFixture = getIdentityFixture();
   const identityFixtureIndex = 0;
-  const { privateKey: identityMasterPrivateKey } = account.identities.getIdentityHDKeyByIndex(identityFixtureIndex, 0);
-  const { privateKey: identitySecondPrivateKey } = account.identities.getIdentityHDKeyByIndex(identityFixtureIndex, 1);
+  const { privateKey: identityMasterPrivateKey } = account
+    .identities.getIdentityHDKeyByIndex(identityFixtureIndex, 0);
+  const { privateKey: identitySecondPrivateKey } = account
+    .identities.getIdentityHDKeyByIndex(identityFixtureIndex, 1);
 
   identityFixture.publicKeys[0] = new IdentityPublicKey({
     id: 0,

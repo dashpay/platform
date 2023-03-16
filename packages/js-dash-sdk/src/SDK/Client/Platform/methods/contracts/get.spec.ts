@@ -73,7 +73,8 @@ describe('Client - Platform - Contracts - .get()', () => {
       expect(contract.getMetadata().getBlockHeight()).to.equal(10);
       expect(contract.getMetadata().getCoreChainLockedHeight()).to.equal(42);
       expect(contract.getMetadata().getTimeMs()).to.equal(metadataFixture.getTimeMs());
-      expect(contract.getMetadata().getProtocolVersion()).to.equal(metadataFixture.getProtocolVersion());
+      expect(contract.getMetadata().getProtocolVersion())
+        .to.equal(metadataFixture.getProtocolVersion());
       expect(askedFromDapi).to.equal(1);
     });
 
@@ -86,7 +87,8 @@ describe('Client - Platform - Contracts - .get()', () => {
       expect(contract.getMetadata().getBlockHeight()).to.equal(10);
       expect(contract.getMetadata().getCoreChainLockedHeight()).to.equal(42);
       expect(contract.getMetadata().getTimeMs()).to.equal(metadataFixture.getTimeMs());
-      expect(contract.getMetadata().getProtocolVersion()).to.equal(metadataFixture.getProtocolVersion());
+      expect(contract.getMetadata().getProtocolVersion())
+        .to.equal(metadataFixture.getProtocolVersion());
       expect(askedFromDapi).to.equal(1);
     });
   });

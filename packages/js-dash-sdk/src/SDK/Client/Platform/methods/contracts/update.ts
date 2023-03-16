@@ -10,7 +10,11 @@ import { signStateTransition } from '../../signStateTransition';
  * @param identity - identity
  * @return {DataContractUpdateTransition}
  */
-export default async function update(this: Platform, dataContract: any, identity: any): Promise<any> {
+export default async function update(
+  this: Platform,
+  dataContract: any,
+  identity: any,
+): Promise<any> {
   await this.initialize();
 
   const { dpp } = this;
@@ -22,7 +26,8 @@ export default async function update(this: Platform, dataContract: any, identity
 
   updatedDataContract.incrementVersion();
 
-  const dataContractUpdateTransition = dpp.dataContract.createDataContractUpdateTransition(updatedDataContract);
+  const dataContractUpdateTransition = dpp.dataContract
+    .createDataContractUpdateTransition(updatedDataContract);
 
   await signStateTransition(this, dataContractUpdateTransition, identity, 1);
   await broadcastStateTransition(this, dataContractUpdateTransition);
