@@ -36,9 +36,6 @@ module.exports = {
         'airbnb-base',
         'airbnb-typescript/base',
       ],
-      plugins: [
-        'chai-friendly',
-      ],
       parserOptions: {
         project: './tsconfig.json',
       },
