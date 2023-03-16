@@ -238,7 +238,7 @@ DESCRIPTION
   Reset node data
 ```
 
-With the hard reset mode enabled, the corresponding config will be reset as well. To proceed, running the node [setup](#setup-node) is required.
+With the hard reset mode enabled, the corresponding config will be reset in addition to the platform data. After a hard reset, it is necessary to run the node [setup](#setup-node) to proceed.
 
 To reset a node:
 ```bash
