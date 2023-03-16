@@ -15,6 +15,7 @@ class GroupResetCommand extends GroupBaseCommand {
    * @param {configureCoreTask} configureCoreTask
    * @param {configureTenderdashTask} configureTenderdashTask
    * @param {generateToAddressTask} generateToAddressTask
+   * @param {configureContractsPrivateKeysTask} configureContractsPrivateKeysTask
    * @param {ConfigFile} configFile
    * @param {Object[]} systemConfigs
    * @return {Promise<void>}
@@ -33,6 +34,7 @@ class GroupResetCommand extends GroupBaseCommand {
     configureCoreTask,
     configureTenderdashTask,
     generateToAddressTask,
+    configureContractsPrivateKeysTask,
     configFile,
     systemConfigs,
   ) {
@@ -55,11 +57,19 @@ class GroupResetCommand extends GroupBaseCommand {
             task: (ctx) => {
               ctx.skipPlatformInitialization = true;
 
+              const subTasks = [{ task: () => resetNodeTask(config) }];
+
               if (config.has('platform')) {
+                const network = configGroup[0].get('network');
+
                 config.set('platform.dpns', baseConfig.platform.dpns);
                 config.set('platform.dashpay', baseConfig.platform.dashpay);
                 config.set('platform.featureFlags', baseConfig.platform.featureFlags);
                 config.set('platform.masternodeRewardShares', baseConfig.platform.masternodeRewardShares);
+
+                subTasks.unshift({
+                  task: () => configureContractsPrivateKeysTask(config, network),
+                });
 
                 // TODO: Should stay the same
                 config.set('platform.drive.tenderdash.nodeId', baseConfig.platform.drive.tenderdash.nodeId);
@@ -71,7 +81,7 @@ class GroupResetCommand extends GroupBaseCommand {
                 config.set('core.masternode.operator.privateKey', baseConfig.core.masternode.operator.privateKey);
               }
 
-              return resetNodeTask(config);
+              return new Listr(subTasks);
             },
           }))),
         },
