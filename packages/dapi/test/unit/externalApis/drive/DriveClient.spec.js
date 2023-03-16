@@ -5,7 +5,7 @@ const cbor = require('cbor');
 const chaiAsPromised = require('chai-as-promised');
 const dirtyChai = require('dirty-chai');
 
-const getIdentityFixture = require('@dashevo/dpp/lib/test/fixtures/getIdentityFixture');
+const getIdentityFixture = require('@dashevo/wasm-dpp/lib/test/fixtures/getIdentityFixture');
 const InvalidArgumentGrpcError = require('@dashevo/grpc-common/lib/server/error/InvalidArgumentGrpcError');
 const GrpcErrorCodes = require('@dashevo/grpc-common/lib/server/error/GrpcErrorCodes');
 const DriveClient = require('../../../../lib/externalApis/drive/DriveClient');
@@ -162,11 +162,11 @@ describe('DriveClient', () => {
     });
   });
 
-  describe('#fetchIdentitiesByPublicKeyHashes', () => {
+  describe('#fetchIdentitiesByPublicKeyHashes', async () => {
     it('Should call \'fetchIdentitiesByPublicKeyHashes\' RPC with the given parameters', async () => {
       const drive = new DriveClient({ host: '127.0.0.1', port: 3000 });
 
-      const identity = getIdentityFixture();
+      const identity = await getIdentityFixture();
       const proof = Buffer.from('proof');
 
       const buffer = cbor.encode({ data: [identity], proof });

@@ -15,7 +15,7 @@ const {
 
 /* eslint-disable import/no-extraneous-dependencies */
 const generateRandomIdentifier = require('@dashevo/dpp/lib/test/utils/generateRandomIdentifier');
-const getIdentityFixture = require('@dashevo/dpp/lib/test/fixtures/getIdentityFixture');
+const getIdentityFixture = require('@dashevo/wasm-dpp/lib/test/fixtures/getIdentityFixture');
 
 const getIdentityHandlerFactory = require('../../../../../lib/grpcServer/handlers/platform/getIdentityHandlerFactory');
 
@@ -31,14 +31,14 @@ describe('getIdentityHandlerFactory', () => {
   let proofMock;
   let response;
 
-  beforeEach(function beforeEach() {
+  beforeEach(async function beforeEach() {
     id = generateRandomIdentifier();
     call = new GrpcCallMock(this.sinon, {
       getId: this.sinon.stub().returns(id),
       getProve: this.sinon.stub().returns(false),
     });
 
-    identity = getIdentityFixture();
+    identity = await getIdentityFixture();
 
     proofFixture = {
       merkleProof: Buffer.alloc(1, 1),
@@ -60,7 +60,7 @@ describe('getIdentityHandlerFactory', () => {
     );
   });
 
-  it('should return valid result', async () => {
+  it('should return valid result', async function it() {
     response.setProof(null);
     driveStateRepositoryMock.fetchIdentity.resolves(response.serializeBinary());
 
@@ -68,13 +68,16 @@ describe('getIdentityHandlerFactory', () => {
 
     expect(result).to.be.an.instanceOf(GetIdentityResponse);
     expect(result.getIdentity()).to.deep.equal(identity.toBuffer());
-    expect(driveStateRepositoryMock.fetchIdentity).to.be.calledOnceWith(id.toBuffer(), false);
+    expect(driveStateRepositoryMock.fetchIdentity).to.be.calledOnceWith(
+      this.sinon.match((arg) => arg.equals(id.toBuffer())),
+      false,
+    );
 
     const proof = result.getProof();
     expect(proof).to.be.undefined();
   });
 
-  it('should return proof', async () => {
+  it('should return proof', async function it() {
     call.request.getProve.returns(true);
 
     const result = await getIdentityHandler(call);
@@ -88,7 +91,10 @@ describe('getIdentityHandlerFactory', () => {
 
     expect(merkleProof).to.deep.equal(proofFixture.merkleProof);
 
-    expect(driveStateRepositoryMock.fetchIdentity).to.be.calledOnceWith(id.toBuffer(), true);
+    expect(driveStateRepositoryMock.fetchIdentity).to.be.calledOnceWith(
+      this.sinon.match((arg) => arg.equals(id.toBuffer())),
+      true,
+    );
   });
 
   it('should throw an InvalidArgumentGrpcError if id is not specified', async () => {
@@ -105,7 +111,7 @@ describe('getIdentityHandlerFactory', () => {
     }
   });
 
-  it('should throw an error when fetchIdentity throws unknown error', async () => {
+  it('should throw an error when fetchIdentity throws unknown error', async function it() {
     const error = new Error('Unknown error');
 
     driveStateRepositoryMock.fetchIdentity.throws(error);
@@ -116,7 +122,10 @@ describe('getIdentityHandlerFactory', () => {
       expect.fail('should throw an error');
     } catch (e) {
       expect(e).to.equal(error);
-      expect(driveStateRepositoryMock.fetchIdentity).to.be.calledOnceWith(id.toBuffer());
+      expect(driveStateRepositoryMock.fetchIdentity).to.be.calledOnceWith(
+        this.sinon.match((arg) => arg.equals(id.toBuffer())),
+        false,
+      );
     }
   });
 });
