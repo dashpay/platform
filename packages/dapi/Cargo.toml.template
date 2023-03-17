@@ -2,6 +2,7 @@
 [workspace]
 
 members = [
+    "packages/rs-platform-value",
     "packages/dashpay-contract",
     "packages/withdrawals-contract",
     "packages/masternode-reward-shares-contract",

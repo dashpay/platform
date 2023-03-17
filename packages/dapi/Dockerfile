@@ -13,6 +13,7 @@ COPY Cargo.lock rust-toolchain.toml ./
 # Use Cargo.toml.template instead of Cargo.toml from project root to avoid copying unnecessary Rust packages
 COPY packages/dapi/Cargo.toml.template ./Cargo.toml
 
+COPY packages/rs-platform-value packages/rs-platform-value
 COPY packages/withdrawals-contract packages/withdrawals-contract
 COPY packages/masternode-reward-shares-contract packages/masternode-reward-shares-contract
 COPY packages/dashpay-contract packages/dashpay-contract
