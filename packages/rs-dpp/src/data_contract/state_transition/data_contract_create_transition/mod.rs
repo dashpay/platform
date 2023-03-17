@@ -30,8 +30,6 @@ pub struct DataContractCreateTransition {
     pub protocol_version: u32,
     #[serde(rename = "type")]
     pub transition_type: StateTransitionType,
-    // we want to skip serialization of transitions, as we does it manually in `to_object()`  and `to_json()`
-    #[serde(skip_serializing)]
     pub data_contract: DataContract,
     pub entropy: Bytes32,
     pub signature_public_key_id: KeyID,

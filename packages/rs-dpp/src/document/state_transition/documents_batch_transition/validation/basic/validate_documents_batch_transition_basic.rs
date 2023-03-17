@@ -9,6 +9,7 @@ use crate::consensus::basic::document::{
     InvalidDocumentTransitionActionError, InvalidDocumentTransitionIdError,
     InvalidDocumentTypeError,
 };
+use crate::consensus::ConsensusError;
 use crate::data_contract::state_transition::errors::MissingDataContractIdError;
 use crate::document::state_transition::documents_batch_transition::property_names;
 use crate::document::validation::basic::find_duplicates_by_id::find_duplicates_by_id;
@@ -92,11 +93,9 @@ pub async fn validate_documents_batch_transition_basic(
         .to_btree_ref_string_map()
         .map_err(ProtocolError::ValueError)?;
 
-    let owner_id = Identifier::from(
-        state_transition_map
-            .get_hash256_bytes(property_names::OWNER_ID)
-            .map_err(ProtocolError::ValueError)?,
-    );
+    let owner_id = state_transition_map
+        .get_identifier(property_names::OWNER_ID)
+        .map_err(ProtocolError::ValueError)?;
 
     let protocol_version = state_transition_map.get_integer(property_names::PROTOCOL_VERSION)?;
     let validation_result = protocol_version_validator.validate(protocol_version)?;
@@ -112,19 +111,21 @@ pub async fn validate_documents_batch_transition_basic(
         HashMap::new();
 
     for raw_document_transition in raw_document_transitions {
-        let data_contract_id_bytes = match raw_document_transition
-            .get_optional_hash256_bytes(property_names::DATA_CONTRACT_ID)?
+        let identifier = match raw_document_transition
+            .get_optional_identifier(property_names::DATA_CONTRACT_ID)
         {
-            None => {
+            Ok(None) => {
                 result.add_error(BasicError::MissingDataContractIdError(
                     MissingDataContractIdError::new(raw_document_transition.into()),
                 ));
                 continue;
             }
-            Some(id) => id,
+            Ok(Some(id)) => id,
+            Err(err) => {
+                result.add_error(ConsensusError::ValueError(err));
+                continue;
+            }
         };
-
-        let identifier = Identifier::from(data_contract_id_bytes);
 
         match document_transitions_by_contracts.entry(identifier) {
             Entry::Vacant(vacant) => {
@@ -273,8 +274,7 @@ fn validate_raw_transitions<'a>(
                 }
 
                 if action == Action::Create {
-                    let document_id =
-                        Identifier::from_bytes(&raw_document_transition.get_identifier("$id")?)?;
+                    let document_id = raw_document_transition.get_identifier("$id")?;
                     let entropy = raw_document_transition.get_bytes("$entropy")?;
                     // validate the id  generation
                     let generated_document_id =

@@ -380,12 +380,12 @@ mod test {
 
         assert!(matches!(
             result[property_names::IDENTITY_ID],
-            Value::Array(_)
+            Value::Identifier(_)
         ));
-        assert!(matches!(result[property_names::SIGNATURE], Value::Array(_)));
+        assert!(matches!(result[property_names::SIGNATURE], Value::Bytes(_)));
         assert!(matches!(
             result[property_names::ADD_PUBLIC_KEYS][0]["data"],
-            Value::Array(_)
+            Value::Bytes(_)
         ));
     }
 }

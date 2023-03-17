@@ -209,7 +209,7 @@ impl DocumentTransitionObjectLike for DocumentCreateTransition {
 #[cfg(test)]
 mod test {
     use platform_value::string_encoding::Encoding;
-    use platform_value::{platform_value, Identifier};
+    use platform_value::{platform_value, BinaryData, Identifier};
     use serde_json::json;
 
     use super::*;
@@ -267,7 +267,7 @@ mod test {
             ("$id", Value::Identifier([0_u8; 32])),
             ("$schema", Value::Text("schema".to_string())),
             ("version", Value::U32(0)),
-            ("$ownerId", Value::Identifier([0_u8; 32])),
+            ("ownerId", Value::Identifier([0_u8; 32])),
             ("documents", documents),
         ])
         .try_into()
@@ -277,11 +277,11 @@ mod test {
     #[test]
     fn convert_to_json_with_dynamic_binary_paths() {
         let data_contract = data_contract_with_dynamic_properties();
-        let alpha_binary = vec![10_u8; 32];
+        let alpha_binary = BinaryData::new(vec![10_u8; 32]);
         let alpha_identifier = Identifier::from([10_u8; 32]);
         let id = Identifier::from([11_u8; 32]);
         let data_contract_id = Identifier::from([13_u8; 32]);
-        let entropy = vec![14_u8; 32];
+        let entropy = Bytes32::new([14_u8; 32]);
 
         let raw_document = platform_value!({
             "$protocolVersion"  : 0u32,
@@ -299,25 +299,22 @@ mod test {
             DocumentCreateTransition::from_raw_object(raw_document, data_contract).unwrap();
 
         let json_transition = transition.to_json().expect("no errors");
-        assert_eq!(
-            json_transition["$id"],
-            JsonValue::String(id.to_string(Encoding::Base58))
-        );
+        assert_eq!(json_transition["$id"], JsonValue::String(id.into()));
         assert_eq!(
             json_transition["$dataContractId"],
-            JsonValue::String(data_contract_id.to_string(Encoding::Base58))
+            JsonValue::String(data_contract_id.into())
         );
         assert_eq!(
             json_transition["alphaBinary"],
-            JsonValue::String(base64::encode(&alpha_binary))
+            JsonValue::String(alpha_binary.into())
         );
         assert_eq!(
             json_transition["alphaIdentifier"],
-            JsonValue::String(alpha_identifier.to_string(Encoding::Base58))
+            JsonValue::String(alpha_identifier.into())
         );
         assert_eq!(
             json_transition["$entropy"],
-            JsonValue::String(base64::encode(&entropy))
+            JsonValue::String(entropy.into())
         );
     }
 

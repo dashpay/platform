@@ -4,7 +4,7 @@ use std::convert::TryFrom;
 use std::iter::FromIterator;
 use std::{collections::BTreeMap, convert::TryInto};
 
-use crate::{BinaryData, Error, Value, ValueMap};
+use crate::{BinaryData, Error, Identifier, Value, ValueMap};
 
 pub(crate) mod btreemap_field_replacement;
 mod btreemap_mut_value_extensions;
@@ -21,8 +21,8 @@ pub use btreemap_removal_extensions::BTreeValueRemoveFromMapHelper;
 pub use btreemap_removal_inner_value_extensions::BTreeValueRemoveInnerValueFromMapHelper;
 
 pub trait BTreeValueMapHelper {
-    fn get_optional_identifier(&self, key: &str) -> Result<Option<[u8; 32]>, Error>;
-    fn get_identifier(&self, key: &str) -> Result<[u8; 32], Error>;
+    fn get_optional_identifier(&self, key: &str) -> Result<Option<Identifier>, Error>;
+    fn get_identifier(&self, key: &str) -> Result<Identifier, Error>;
     fn get_optional_string(&self, key: &str) -> Result<Option<String>, Error>;
     fn get_string(&self, key: &str) -> Result<String, Error>;
     fn get_optional_str(&self, key: &str) -> Result<Option<&str>, Error>;
@@ -116,11 +116,11 @@ impl<V> BTreeValueMapHelper for BTreeMap<String, V>
 where
     V: Borrow<Value>,
 {
-    fn get_optional_identifier(&self, key: &str) -> Result<Option<[u8; 32]>, Error> {
-        self.get(key).map(|v| v.borrow().to_hash256()).transpose()
+    fn get_optional_identifier(&self, key: &str) -> Result<Option<Identifier>, Error> {
+        self.get(key).map(|v| v.borrow().to_identifier()).transpose()
     }
 
-    fn get_identifier(&self, key: &str) -> Result<[u8; 32], Error> {
+    fn get_identifier(&self, key: &str) -> Result<Identifier, Error> {
         self.get_optional_identifier(key)?.ok_or_else(|| {
             Error::StructureError(format!("unable to get identifier property {key}"))
         })

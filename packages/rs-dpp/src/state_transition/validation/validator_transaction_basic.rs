@@ -261,7 +261,7 @@ mod test {
         )
         .await
         .expect("the validation result should be returned");
-
+        dbg!(&result);
         let basic_error = get_basic_error_from_result(&result, 0);
 
         match basic_error {

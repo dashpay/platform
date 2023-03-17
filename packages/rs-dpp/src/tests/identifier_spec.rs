@@ -28,7 +28,7 @@ pub fn from_string_fails_for_strings_encoding_more_than_32_bytes() {
     match res {
         Err(err) => assert_eq!(
             err.to_string(),
-            "Identifier Error: Identifier must be 32 bytes long"
+            "byte length not 32 bytes error: Identifier must be 32 bytes long"
         ),
         Ok(_) => panic!("Expected from_string to return error"),
     }

@@ -519,7 +519,7 @@ async fn data_contract_id_should_be_byte_array() {
     .expect("validation result should be returned");
 
     let error = &result.errors()[0];
-    assert_eq!(1025, error.code());
+    assert_eq!(5000, error.code());
 }
 
 #[test_case("$id")]

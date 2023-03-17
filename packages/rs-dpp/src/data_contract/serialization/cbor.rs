@@ -30,8 +30,8 @@ impl DataContract {
         let data_contract_map: BTreeMap<String, Value> =
             Value::convert_from_cbor_map(data_contract_cbor_map)?;
 
-        let contract_id: [u8; 32] = data_contract_map.get_identifier(property_names::ID)?;
-        let owner_id: [u8; 32] = data_contract_map.get_identifier(property_names::OWNER_ID)?;
+        let contract_id: Identifier = data_contract_map.get_identifier(property_names::ID)?;
+        let owner_id: Identifier = data_contract_map.get_identifier(property_names::OWNER_ID)?;
         let schema = data_contract_map.get_string(property_names::SCHEMA)?;
         let version = data_contract_map.get_integer(property_names::VERSION)?;
 
@@ -58,10 +58,10 @@ impl DataContract {
 
         let mut data_contract = Self {
             protocol_version,
-            id: Identifier::new(contract_id),
+            id: contract_id,
             schema,
             version,
-            owner_id: Identifier::new(owner_id),
+            owner_id,
             documents,
             defs,
             metadata: None,

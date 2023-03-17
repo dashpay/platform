@@ -220,6 +220,12 @@ impl std::fmt::Display for Identifier {
     }
 }
 
+impl PartialEq<&Identifier> for Identifier {
+    fn eq(&self, other: &&Identifier) -> bool {
+        &self.0.0 == &other.0.0
+    }
+}
+
 impl PartialEq<[u8; 32]> for Identifier {
     fn eq(&self, other: &[u8; 32]) -> bool {
         &self.0.0 == other
@@ -271,6 +277,19 @@ impl From<&Identifier> for Value {
         Value::Identifier(value.0 .0)
     }
 }
+
+impl Into<String> for Identifier {
+    fn into(self) -> String {
+        self.to_string(Encoding::Base58)
+    }
+}
+
+impl Into<String> for &Identifier {
+    fn into(self) -> String {
+        self.to_string(Encoding::Base58)
+    }
+}
+
 
 #[cfg(test)]
 mod tests {

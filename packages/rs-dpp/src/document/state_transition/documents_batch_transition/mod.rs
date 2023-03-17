@@ -378,7 +378,7 @@ impl StateTransitionConvert for DocumentsBatchTransition {
 
     fn to_buffer(&self, skip_signature: bool) -> Result<Vec<u8>, ProtocolError> {
         let mut result_buf = self.protocol_version.encode_var_vec();
-        let value = self.to_object(skip_signature)?;
+        let value: CborValue = self.to_object(skip_signature)?.try_into()?;
 
         let map = CborValue::serialized(&value)
             .map_err(|e| ProtocolError::EncodingError(e.to_string()))?;
@@ -637,7 +637,6 @@ mod test {
 
         let bytes = state_transition.to_buffer(false).unwrap();
 
-        pretty_assertions::assert_eq!(expected_bytes.len(), bytes.len());
-        pretty_assertions::assert_eq!(expected_bytes, bytes);
+        assert_eq!(hex::encode(expected_bytes), hex::encode(bytes));
     }
 }

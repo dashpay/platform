@@ -112,9 +112,7 @@ where
                     dt_create,
                     format!(
                         "ownerId {} doesn't match {} {}",
-                        owner_id,
-                        PROPERTY_DASH_UNIQUE_IDENTITY_ID,
-                        Identifier::new(id)
+                        owner_id, PROPERTY_DASH_UNIQUE_IDENTITY_ID, id
                     ),
                 );
                 result.add_error(err.into())
@@ -131,9 +129,7 @@ where
                     dt_create,
                     format!(
                         "ownerId {} doesn't match {} {}",
-                        owner_id,
-                        PROPERTY_DASH_ALIAS_IDENTITY_ID,
-                        Identifier::new(id)
+                        owner_id, PROPERTY_DASH_ALIAS_IDENTITY_ID, id
                     ),
                 );
                 result.add_error(err.into());
