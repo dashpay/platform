@@ -1,3 +1,4 @@
+use anyhow::anyhow;
 use serde_json::Value as JsonValue;
 use std::collections::BTreeMap;
 use std::convert::TryInto;
@@ -26,14 +27,14 @@ use super::{validation::data_contract_validator::DataContractValidator, DataCont
 
 /// A way to provide external entropy generator.
 pub trait EntropyGenerator {
-    fn generate(&self) -> [u8; 32];
+    fn generate(&self) -> anyhow::Result<[u8; 32]>;
 }
 
 struct DefaultEntropyGenerator;
 
 impl EntropyGenerator for DefaultEntropyGenerator {
-    fn generate(&self) -> [u8; 32] {
-        entropy_generator::generate().expect("entropy generation failed")
+    fn generate(&self) -> anyhow::Result<[u8; 32]> {
+        entropy_generator::generate()
     }
 }
 
@@ -72,7 +73,7 @@ impl DataContractFactory {
         config: Option<ContractConfig>,
         definitions: Option<Value>,
     ) -> Result<DataContract, ProtocolError> {
-        let entropy = Bytes32::new(self.entropy_generator.generate());
+        let entropy = Bytes32::new(self.entropy_generator.generate()?);
 
         let data_contract_id = Identifier::from_bytes(&generate_data_contract_id(
             owner_id.to_buffer(),

@@ -13,6 +13,7 @@ use dpp::{
 };
 use wasm_bindgen::prelude::*;
 
+use crate::errors::from_js_error;
 use crate::utils::WithJsError;
 use crate::{
     data_contract::errors::InvalidDataContractError,
@@ -83,17 +84,28 @@ impl From<DataContractFactoryWasm> for DataContractFactory {
 extern "C" {
     pub type ExternalEntropyGenerator;
 
-    #[wasm_bindgen(structural, method)]
-    pub fn generate(this: &ExternalEntropyGenerator) -> Vec<u8>;
+    #[wasm_bindgen(catch, structural, method)]
+    pub fn generate(this: &ExternalEntropyGenerator) -> Result<JsValue, JsValue>;
 }
 
 impl EntropyGenerator for ExternalEntropyGenerator {
-    fn generate(&self) -> [u8; 32] {
-        // TODO: think about changing API to return an error but does it worth it for JS?
+    fn generate(&self) -> anyhow::Result<[u8; 32]> {
+        let js_value = ExternalEntropyGenerator::generate(self).map_err(from_js_error)?;
 
-        ExternalEntropyGenerator::generate(self)
-            .try_into()
-            .expect("Bad entropy generator provided: should return 32 bytes")
+        if !js_value.has_type::<js_sys::Uint8Array>() {
+            anyhow::bail!("Entropy generator should return Buffer");
+        }
+
+        let vec = js_value
+            .dyn_into::<js_sys::Uint8Array>()
+            .map_err(from_js_error)?
+            .to_vec();
+
+        let bytes = vec.try_into().map_err(|_| {
+            anyhow::anyhow!("Bad entropy generator provided: should return 32 bytes")
+        })?;
+
+        Ok(bytes)
     }
 }
 #[wasm_bindgen(js_class=DataContractFactory)]
