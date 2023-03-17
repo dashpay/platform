@@ -75,8 +75,10 @@ impl DataContractFactory {
     ) -> Result<DataContract, ProtocolError> {
         let entropy = Bytes32::new(self.entropy_generator.generate());
 
-        let data_contract_id =
-            Identifier::from_bytes(&generate_data_contract_id(owner_id.to_buffer(), entropy.to_buffer()))?;
+        let data_contract_id = Identifier::from_bytes(&generate_data_contract_id(
+            owner_id.to_buffer(),
+            entropy.to_buffer(),
+        ))?;
 
         let definition_references = definitions
             .as_ref()

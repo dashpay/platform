@@ -13,10 +13,10 @@ use crate::types::encoding_string_to_encoding;
 
 pub const IDENTIFIER_MEDIA_TYPE: &str = "application/x.dash.dpp.identifier";
 
-#[derive(Default, Debug, Clone, PartialEq, Eq, Hash, Copy)]
+#[derive(Default, Debug, Clone, PartialEq, Eq, Hash, Ord, PartialOrd, Copy)]
 pub struct IdentifierBytes32(pub [u8; 32]);
 
-#[derive(Default, Debug, Clone, PartialEq, Eq, Hash, Copy, Serialize, Deserialize)]
+#[derive(Default, Debug, Clone, PartialEq, Eq, Hash, Ord, PartialOrd, Copy, Serialize, Deserialize)]
 pub struct Identifier(pub IdentifierBytes32);
 
 impl Serialize for IdentifierBytes32 {

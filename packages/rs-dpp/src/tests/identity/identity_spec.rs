@@ -170,6 +170,7 @@ mod api {
         prelude::IdentityPublicKey,
         tests::fixtures::identity_fixture,
     };
+    use platform_value::BinaryData;
 
     #[test]
     fn should_get_biggest_public_key_id() {
@@ -178,7 +179,7 @@ mod api {
         let identity_public_key_1 = IdentityPublicKey {
             id: 99,
             key_type: crate::identity::KeyType::ECDSA_SECP256K1,
-            data: vec![97_u8, 36],
+            data: BinaryData::new(vec![97_u8, 36]),
             purpose: Purpose::AUTHENTICATION,
             security_level: SecurityLevel::MASTER,
             read_only: false,
@@ -187,7 +188,7 @@ mod api {
         let identity_public_key_2 = IdentityPublicKey {
             id: 50,
             key_type: crate::identity::KeyType::ECDSA_SECP256K1,
-            data: vec![97_u8, 36],
+            data: BinaryData::new(vec![97_u8, 36]),
             purpose: Purpose::AUTHENTICATION,
             security_level: SecurityLevel::MASTER,
             read_only: false,

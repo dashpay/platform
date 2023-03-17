@@ -5,8 +5,8 @@ use anyhow::anyhow;
 
 use itertools::{Either, Itertools};
 use platform_value::btreemap_extensions::{BTreeValueMapHelper, BTreeValueRemoveFromMapHelper};
-use platform_value::{BinaryData, Bytes32, Identifier};
 use platform_value::Value;
+use platform_value::{BinaryData, Bytes32, Identifier};
 use serde::{Deserialize, Serialize};
 use serde_json::Value as JsonValue;
 

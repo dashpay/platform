@@ -43,7 +43,7 @@ where
 
                 if public_key_compressed.to_vec() != identity_public_key.data {
                     return Err(ProtocolError::InvalidSignaturePublicKeyError(
-                        InvalidSignaturePublicKeyError::new(identity_public_key.data.to_owned()),
+                        InvalidSignaturePublicKeyError::new(identity_public_key.data.to_vec()),
                     ));
                 }
 
@@ -55,7 +55,7 @@ where
 
                 if pub_key_hash != identity_public_key.data {
                     return Err(ProtocolError::InvalidSignaturePublicKeyError(
-                        InvalidSignaturePublicKeyError::new(identity_public_key.data.to_owned()),
+                        InvalidSignaturePublicKeyError::new(identity_public_key.data.to_vec()),
                     ));
                 }
                 self.sign_by_private_key(private_key, identity_public_key.key_type, bls)
@@ -65,7 +65,7 @@ where
 
                 if public_key != identity_public_key.data {
                     return Err(ProtocolError::InvalidSignaturePublicKeyError(
-                        InvalidSignaturePublicKeyError::new(identity_public_key.data.to_owned()),
+                        InvalidSignaturePublicKeyError::new(identity_public_key.data.to_vec()),
                     ));
                 }
                 self.sign_by_private_key(private_key, identity_public_key.key_type, bls)
@@ -330,7 +330,7 @@ mod test {
             key_type: KeyType::ECDSA_SECP256K1,
             purpose: Purpose::AUTHENTICATION,
             security_level: SecurityLevel::HIGH,
-            data: ec_public_compressed_bytes.try_into().unwrap(),
+            data: BinaryData::new(ec_public_compressed_bytes.try_into().unwrap()),
             read_only: false,
             disabled_at: None,
         };
@@ -442,7 +442,8 @@ mod test {
         let mut st = get_mock_state_transition();
         let mut keys = get_test_keys();
         keys.identity_public_key.key_type = KeyType::ECDSA_HASH160;
-        keys.identity_public_key.data = ripemd160_sha256(&keys.identity_public_key.data);
+        keys.identity_public_key.data =
+            BinaryData::new(ripemd160_sha256(keys.identity_public_key.data.as_slice()));
 
         st.sign(&keys.identity_public_key, &keys.ec_private, &bls)
             .unwrap();
@@ -460,7 +461,7 @@ mod test {
         let mut rng = dashcore::secp256k1::rand::thread_rng();
         let (_, public_key) = secp.generate_keypair(&mut rng);
 
-        keys.identity_public_key.data = public_key.serialize().to_vec();
+        keys.identity_public_key.data = BinaryData::new(public_key.serialize().to_vec());
 
         let sign_result = st.sign(&keys.identity_public_key, &keys.ec_private, &bls);
         assert_error_contains!(sign_result, "Invalid signature public key");
@@ -514,7 +515,7 @@ mod test {
         let mut st = get_mock_state_transition();
         let mut keys = get_test_keys();
         keys.identity_public_key.key_type = KeyType::BLS12_381;
-        keys.identity_public_key.data = keys.bls_public.clone();
+        keys.identity_public_key.data = BinaryData::new(keys.bls_public.clone());
 
         st.sign(&keys.identity_public_key, &keys.bls_private, &bls)
             .expect("validation should be successful");
@@ -543,7 +544,7 @@ mod test {
         let st = get_mock_state_transition();
         let mut keys = get_test_keys();
         keys.identity_public_key.key_type = KeyType::BLS12_381;
-        keys.identity_public_key.data = keys.bls_public.clone();
+        keys.identity_public_key.data = BinaryData::new(keys.bls_public.clone());
 
         let verify_error = st
             .verify_signature(&keys.identity_public_key, &bls)

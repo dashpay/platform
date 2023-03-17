@@ -8,6 +8,8 @@ use crate::{
     tests::utils::generate_random_identifier_struct,
     version::LATEST_VERSION,
 };
+use platform_value::string_encoding::Encoding;
+use platform_value::BinaryData;
 
 pub fn get_identity_update_transition_fixture() -> IdentityUpdateTransition {
     IdentityUpdateTransition {
@@ -20,9 +22,13 @@ pub fn get_identity_update_transition_fixture() -> IdentityUpdateTransition {
             key_type: KeyType::ECDSA_SECP256K1,
             purpose: Purpose::AUTHENTICATION,
             read_only: false,
-            data: base64::decode("AkVuTKyF3YgKLAQlLEtaUL2HTditwGILfWUVqjzYnIgH").unwrap(),
+            data: BinaryData::from_string(
+                "AkVuTKyF3YgKLAQlLEtaUL2HTditwGILfWUVqjzYnIgH",
+                Encoding::Base64,
+            )
+            .unwrap(),
             security_level: SecurityLevel::MASTER,
-            signature: vec![0; 65],
+            signature: BinaryData::new(vec![0; 65]),
         }],
         disable_public_keys: vec![0],
         public_keys_disabled_at: Some(1234567),

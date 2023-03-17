@@ -11,7 +11,7 @@ use std::convert::{TryFrom, TryInto};
 use anyhow::anyhow;
 use ciborium::value::Value as CborValue;
 use dashcore::PublicKey as ECDSAPublicKey;
-use platform_value::Value;
+use platform_value::{BinaryData, Value};
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use serde_json::Value as JsonValue;
 
@@ -41,7 +41,7 @@ pub struct IdentityPublicKey {
     #[serde(rename = "type")]
     pub key_type: KeyType,
     pub read_only: bool,
-    pub data: Vec<u8>,
+    pub data: BinaryData,
     #[serde(default)]
     pub disabled_at: Option<TimestampMillis>,
 }
@@ -55,7 +55,7 @@ impl Into<IdentityPublicKeyWithWitness> for &IdentityPublicKey {
             key_type: self.key_type,
             read_only: self.read_only,
             data: self.data.clone(),
-            signature: vec![],
+            signature: BinaryData::default(),
         }
     }
 }
@@ -107,12 +107,12 @@ impl IdentityPublicKey {
                     Ok(ripemd160_sha256(self.data.as_slice()))
                 }
             }
-            KeyType::ECDSA_HASH160 | KeyType::BIP13_SCRIPT_HASH => Ok(self.data.clone()),
+            KeyType::ECDSA_HASH160 | KeyType::BIP13_SCRIPT_HASH => Ok(self.data.to_vec()),
         }
     }
 
     pub fn as_ecdsa_array(&self) -> Result<[u8; 33], InvalidVectorSizeError> {
-        vec::vec_to_array::<33>(&self.data)
+        vec::vec_to_array::<33>(self.data.as_slice())
     }
 
     pub fn from_value(value: Value) -> Result<IdentityPublicKey, ProtocolError> {
@@ -173,7 +173,7 @@ impl IdentityPublicKey {
             purpose: purpose.try_into()?,
             security_level: security_level.try_into()?,
             key_type: key_type.try_into()?,
-            data: public_key_bytes,
+            data: BinaryData::new(public_key_bytes),
             read_only: readonly,
             disabled_at,
         })

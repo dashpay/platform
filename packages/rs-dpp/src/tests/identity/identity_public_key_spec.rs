@@ -26,7 +26,7 @@ mod from_raw_object {
         assert_eq!(public_key.security_level, SecurityLevel::MASTER);
         assert!(!public_key.read_only);
         assert_eq!(
-            public_key.data,
+            public_key.data.to_vec(),
             [
                 2, 234, 242, 34, 227, 45, 70, 185, 127, 86, 248, 144, 187, 34, 195, 214, 94, 39,
                 155, 24, 189, 162, 3, 243, 11, 210, 211, 238, 215, 105, 163, 71, 98
@@ -97,7 +97,7 @@ mod from_raw_object {
         assert_eq!(public_key.security_level, SecurityLevel::MASTER);
         assert!(!public_key.read_only);
         assert_eq!(
-            public_key.data,
+            public_key.data.to_vec(),
             [
                 2, 234, 242, 34, 227, 45, 70, 185, 127, 86, 248, 144, 187, 34, 195, 214, 94, 39,
                 155, 24, 189, 162, 3, 243, 11, 210, 211, 238, 215, 105, 163, 71, 98

@@ -82,7 +82,7 @@ fn set_public_keys_to_add() {
         purpose: Purpose::AUTHENTICATION,
         security_level : SecurityLevel::CRITICAL,
         read_only: true,
-        data: hex::decode("01fac99ca2c8f39c286717c213e190aba4b7af76db320ec43f479b7d9a2012313a0ae59ca576edf801444bc694686694").unwrap(),
+        data: BinaryData::new(hex::decode("01fac99ca2c8f39c286717c213e190aba4b7af76db320ec43f479b7d9a2012313a0ae59ca576edf801444bc694686694").unwrap()),
         signature : Default::default(),
     };
 

@@ -5,7 +5,7 @@ use std::convert::{TryFrom, TryInto};
 
 use platform_value::btreemap_extensions::BTreeValueMapHelper;
 use platform_value::btreemap_extensions::BTreeValueRemoveFromMapHelper;
-use platform_value::Value;
+use platform_value::{BinaryData, Value};
 use serde::{Deserialize, Serialize};
 use serde_json::Value as JsonValue;
 
@@ -24,10 +24,10 @@ pub struct IdentityPublicKeyWithWitness {
     pub security_level: SecurityLevel,
     #[serde(rename = "type")]
     pub key_type: KeyType,
-    pub data: Vec<u8>,
+    pub data: BinaryData,
     pub read_only: bool,
     /// The signature is needed for ECDSA_SECP256K1 Key type and BLS12_381 Key type
-    pub signature: Vec<u8>,
+    pub signature: BinaryData,
 }
 
 impl IdentityPublicKeyWithWitness {
@@ -100,13 +100,13 @@ impl IdentityPublicKeyWithWitness {
                 .map_err(ProtocolError::ValueError)?
                 .try_into()?,
             data: value_map
-                .remove_bytes("data")
+                .remove_binary_data("data")
                 .map_err(ProtocolError::ValueError)?,
             read_only: value_map
                 .get_bool("readOnly")
                 .map_err(ProtocolError::ValueError)?,
             signature: value_map
-                .remove_bytes("signature")
+                .remove_binary_data("signature")
                 .map_err(ProtocolError::ValueError)?,
         })
     }
@@ -133,14 +133,14 @@ impl IdentityPublicKeyWithWitness {
                 Value::U8(self.security_level as u8),
             ),
             ("keyType".to_string(), Value::U8(self.key_type as u8)),
-            ("data".to_string(), Value::Bytes(self.data.clone())),
+            ("data".to_string(), Value::Bytes(self.data.to_vec())),
             ("readOnly".to_string(), Value::Bool(self.read_only)),
         ]);
 
         if !skip_signature && !self.signature.is_empty() {
             map.insert(
                 "signature".to_string(),
-                Value::Bytes(self.signature.clone()),
+                Value::Bytes(self.signature.to_vec()),
             );
         }
 
@@ -204,9 +204,9 @@ impl IdentityPublicKeyWithWitness {
             purpose: purpose.try_into()?,
             security_level: security_level.try_into()?,
             key_type: key_type.try_into()?,
-            data: public_key_bytes,
+            data: BinaryData::from(public_key_bytes),
             read_only: readonly,
-            signature: signature_bytes,
+            signature: BinaryData::from(signature_bytes),
         })
     }
 

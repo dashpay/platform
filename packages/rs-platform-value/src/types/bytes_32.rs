@@ -6,7 +6,7 @@ use crate::{Error, string_encoding, Value};
 use crate::string_encoding::Encoding;
 use crate::types::encoding_string_to_encoding;
 
-#[derive(Default, Debug, Clone, PartialEq, Eq, Hash, Copy)]
+#[derive(Default, Debug, Clone, PartialEq, Eq, Ord, PartialOrd, Hash, Copy)]
 pub struct Bytes32(pub [u8; 32]);
 
 impl Bytes32 {

@@ -1,8 +1,11 @@
 use std::fmt;
 use serde::{Deserialize, Serialize};
 use serde::de::Visitor;
+use crate::{Error, string_encoding, Value};
+use crate::string_encoding::Encoding;
+use crate::types::encoding_string_to_encoding;
 
-#[derive(Default, Debug, Clone, PartialEq, Eq, Hash)]
+#[derive(Default, Debug, Clone, PartialEq, Eq, Ord, PartialOrd, Hash)]
 pub struct BinaryData(pub Vec<u8>);
 
 impl Serialize for BinaryData {
@@ -83,11 +86,89 @@ impl BinaryData {
     pub fn is_empty(&self) -> bool {
         self.0.is_empty()
     }
+
+    pub fn len(&self) -> usize {
+        self.0.len()
+    }
+
+    pub fn from_string(encoded_value: &str, encoding: Encoding) -> Result<BinaryData, Error> {
+        let vec = string_encoding::decode(encoded_value, encoding)?;
+
+        Ok(BinaryData::new(vec))
+    }
+
+    pub fn from_string_with_encoding_string(
+        encoded_value: &str,
+        encoding_string: Option<&str>,
+    ) -> Result<BinaryData, Error> {
+        let encoding = encoding_string_to_encoding(encoding_string);
+
+        BinaryData::from_string(encoded_value, encoding)
+    }
+
+    pub fn to_string(&self, encoding: Encoding) -> String {
+        string_encoding::encode(&self.0, encoding)
+    }
+
+    pub fn to_string_with_encoding_string(&self, encoding_string: Option<&str>) -> String {
+        let encoding = encoding_string_to_encoding(encoding_string);
+
+        self.to_string(encoding)
+    }
 }
 
 impl From<Vec<u8>> for BinaryData {
     fn from(value: Vec<u8>) -> Self {
         BinaryData::new(value)
+    }
+}
+
+
+impl TryFrom<Value> for BinaryData {
+    type Error = Error;
+
+    fn try_from(value: Value) -> Result<Self, Self::Error> {
+        value.into_binary_data()
+    }
+}
+
+impl TryFrom<&Value> for BinaryData {
+    type Error = Error;
+
+    fn try_from(value: &Value) -> Result<Self, Self::Error> {
+        value.to_binary_data()
+    }
+}
+
+impl From<BinaryData> for Value {
+    fn from(value: BinaryData) -> Self {
+        Value::Bytes(value.0)
+    }
+}
+
+impl From<&BinaryData> for Value {
+    fn from(value: &BinaryData) -> Self {
+        Value::Bytes(value.to_vec())
+    }
+}
+
+impl TryFrom<String> for BinaryData {
+    type Error = Error;
+
+    fn try_from(data: String) -> Result<Self, Self::Error> {
+        Self::from_string(&data, Encoding::Base64)
+    }
+}
+
+impl Into<String> for BinaryData {
+    fn into(self) -> String {
+        self.to_string(Encoding::Base64)
+    }
+}
+
+impl Into<String> for &BinaryData {
+    fn into(self) -> String {
+        self.to_string(Encoding::Base64)
     }
 }
 
@@ -106,6 +187,12 @@ impl PartialEq<[u8]> for BinaryData {
 impl PartialEq<Vec<u8>> for BinaryData {
     fn eq(&self, other: &Vec<u8>) -> bool {
         self.as_slice() == other
+    }
+}
+
+impl PartialEq<BinaryData> for Vec<u8> {
+    fn eq(&self, other: &BinaryData) -> bool {
+        other.as_slice() == self
     }
 }
 

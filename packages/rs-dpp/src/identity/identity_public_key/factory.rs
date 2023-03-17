@@ -4,6 +4,7 @@ use crate::identity::Purpose::AUTHENTICATION;
 use crate::identity::SecurityLevel::MASTER;
 use crate::identity::{IdentityPublicKey, KeyID, KeyType, Purpose, SecurityLevel};
 use crate::ProtocolError;
+use platform_value::BinaryData;
 use rand::rngs::StdRng;
 use rand::{Rng, SeedableRng};
 use std::convert::TryFrom;
@@ -88,7 +89,7 @@ impl IdentityPublicKey {
         let security_level = SecurityLevel::try_from(security_level).unwrap();
         let key_type = KeyType::try_from(key_type).unwrap();
         let read_only = false;
-        let data = key_type.random_public_key_data(rng);
+        let data = BinaryData::new(key_type.random_public_key_data(rng));
         Ok(IdentityPublicKey {
             id,
             key_type,
@@ -138,7 +139,7 @@ impl IdentityPublicKey {
         let purpose = Purpose::try_from(purpose).unwrap();
         let key_type = KeyType::try_from(key_type).unwrap();
         let read_only = false;
-        let data = key_type.random_public_key_data(rng);
+        let data = BinaryData::new(key_type.random_public_key_data(rng));
         Ok(IdentityPublicKey {
             id,
             key_type,
@@ -156,7 +157,7 @@ impl IdentityPublicKey {
         let purpose = AUTHENTICATION;
         let security_level = MASTER;
         let read_only = false;
-        let data = vec![255; key_type.default_size()];
+        let data = BinaryData::new(vec![255; key_type.default_size()]);
 
         IdentityPublicKey {
             id,
@@ -175,7 +176,7 @@ impl IdentityPublicKey {
         let purpose = AUTHENTICATION;
         let security_level = MASTER;
         let read_only = false;
-        let data = key_type.random_public_key_data(rng);
+        let data = BinaryData::new(key_type.random_public_key_data(rng));
         IdentityPublicKey {
             id,
             key_type,

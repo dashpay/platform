@@ -25,7 +25,7 @@ use crate::{
     NativeBlsModule, NonConsensusError,
 };
 use jsonschema::error::ValidationErrorKind;
-use platform_value::{platform_value, Value};
+use platform_value::{platform_value, BinaryData, Value};
 use serde_json::Value as JsonValue;
 use std::{convert::TryInto, sync::Arc};
 use test_case::test_case;
@@ -72,7 +72,7 @@ fn setup_test() -> TestData {
         key_type: KeyType::ECDSA_SECP256K1,
         purpose: Purpose::AUTHENTICATION,
         security_level: SecurityLevel::MASTER,
-        data: ec_public_key.try_into().unwrap(),
+        data: BinaryData::new(ec_public_key.try_into().unwrap()),
         read_only: false,
         disabled_at: None,
     };
