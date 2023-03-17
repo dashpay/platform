@@ -115,10 +115,15 @@ impl PlatformWrapper {
                 data_contracts_block_cache_size,
                 ..Default::default()
             };
-
+            //core_addr: Vec<&str>
+            let core_addr: Vec<&str> = core_rpc_url.split(':').collect();
+            let core_host = core_addr.first().unwrap();
+            let core_port = core_addr.get(1).unwrap();
             let core_config = CoreConfig {
                 rpc: CoreRpcConfig {
-                    url: core_rpc_url,
+                    host: core_host.to_string(),
+                    port: core_port.to_string(),
+
                     username: core_rpc_username,
                     password: core_rpc_password,
                 },

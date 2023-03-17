@@ -26,38 +26,82 @@
 // IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
 // DEALINGS IN THE SOFTWARE.
 
+use std::path::PathBuf;
+
 use drive::drive::config::DriveConfig;
+use serde::{de::DeserializeOwned, Deserialize, Serialize};
+
+use crate::{abci::config::AbciConfig, error::Error};
 
 /// Configuration for Dash Core RPC client
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct CoreRpcConfig {
-    /// Core RPC client url
-    pub url: String,
+    /// Core RPC client hostname or IP address
+    #[serde(rename = "core_json_rpc_host")]
+    pub host: String,
+
+    // FIXME: fix error  Configuration(Custom("invalid type: string \"9998\", expected i16")) and change port to i16
+    /// Core RPC client port number
+    #[serde(rename = "core_json_rpc_port")]
+    pub port: String,
 
     /// Core RPC client username
+    #[serde(rename = "core_json_rpc_username")]
     pub username: String,
 
     /// Core RPC client password
+    #[serde(rename = "core_json_rpc_password")]
     pub password: String,
 }
 
+impl CoreRpcConfig {
+    /// Return core address in the `host:port` format.
+    pub fn url(&self) -> String {
+        return format!("{}:{}", self.host, self.port);
+    }
+}
+
 /// Configuration for Dash Core related things
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct CoreConfig {
     /// Core RPC config
+    #[serde(flatten)]
     pub rpc: CoreRpcConfig,
 }
 
-/// Platform configuration
-#[derive(Clone, Debug)]
+/// Configurtion of Dash Platform.
+///
+/// All fields in this struct can be configured using environment variables.
+/// These variables can also be defined in `.env` file in the current directory
+/// or its parents. You can also provide path to the .env file as a command-line argument.
+///
+/// Environment variables should be renamed to `SCREAMING_SNAKE_CASE`.
+/// For example, to define [`verify_sum_trees`], you should set VERIFY_SUM_TREES
+/// environment variable:
+///
+/// ``
+/// export VERIFY_SUM_TREES=true
+/// ``
+///
+/// [`verify_sum_trees`]: PlatformConfig::verify_sum_trees
+#[derive(Clone, Debug, Serialize, Deserialize)]
+// NOTE: in renames, we use lower_snake_case, because uppercase does not work; see
+// https://github.com/softprops/envy/issues/61 and https://github.com/softprops/envy/pull/69
 pub struct PlatformConfig {
     /// Drive configuration
+    #[serde(flatten)]
     pub drive: Option<DriveConfig>,
 
     /// Dash Core config
+    #[serde(flatten)]
     pub core: CoreConfig,
 
-    /// Should we verify sum trees? Useful to set as no for tests
+    /// ABCI Application Server config
+    #[serde(flatten)]
+    pub abci: AbciConfig,
+
+    /// Should we verify sum trees? Useful to set as `false` for tests
+    #[serde(default = "PlatformConfig::default_verify_sum_trees")]
     pub verify_sum_trees: bool,
 
     /// The default quorum size
@@ -65,22 +109,67 @@ pub struct PlatformConfig {
 
     /// How often should quorums change?
     pub validator_set_quorum_rotation_block_count: u64,
+
+    /// Path to data storage
+    pub data_dir: PathBuf,
 }
+
+impl PlatformConfig {
+    // #[allow(unused)]
+    fn default_verify_sum_trees() -> bool {
+        true
+    }
+}
+/// create new object using values from environment variables
+pub trait FromEnv {
+    /// create new object using values from environment variables
+    fn from_env() -> Result<Self, Error>
+    where
+        Self: Sized + DeserializeOwned,
+    {
+        envy::from_env::<Self>().map_err(|e| Error::from(e))
+    }
+}
+
+impl FromEnv for PlatformConfig {}
 
 impl Default for PlatformConfig {
     fn default() -> Self {
         Self {
             verify_sum_trees: true,
-            quorum_size: 100,
+            quorum_size: 0,
             validator_set_quorum_rotation_block_count: 15,
             drive: Default::default(),
+            abci: Default::default(),
             core: CoreConfig {
                 rpc: CoreRpcConfig {
-                    url: "127.0.0.1".to_owned(),
+                    host: "127.0.0.1".to_owned(),
+                    port: "0".to_owned(),
                     username: "".to_owned(),
                     password: "".to_owned(),
                 },
             },
+            data_dir: PathBuf::from("/var/lib/dash-platform/data"),
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::env;
+
+    use super::FromEnv;
+
+    #[test]
+    fn test_config_from_env() {
+        let envfile = format!("{}/.env.example", env!("CARGO_MANIFEST_DIR"));
+        let envfile = std::path::PathBuf::from(envfile);
+        dbg!(&envfile);
+
+        dotenvy::from_path(envfile.as_path()).expect("cannot load .env file");
+        assert_eq!("5", env::var("QUORUM_SIZE").unwrap());
+
+        let config = super::PlatformConfig::from_env().unwrap();
+        assert_eq!(config.verify_sum_trees, true);
     }
 }

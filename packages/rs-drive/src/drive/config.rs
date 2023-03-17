@@ -30,6 +30,8 @@
 //! Drive Configuration File
 //!
 
+use serde::{Deserialize, Serialize};
+
 use crate::drive::config::DriveEncoding::DriveCbor;
 
 /// Boolean if GroveDB batching is enabled by default
@@ -41,7 +43,7 @@ pub const DEFAULT_GROVE_HAS_RAW_ENABLED: bool = true;
 /// Default maximum number of contracts in cache
 pub const DEFAULT_DATA_CONTRACTS_CACHE_SIZE: u64 = 500;
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 /// Encoding for Drive
 pub enum DriveEncoding {
     /// Drive CBOR
@@ -50,7 +52,7 @@ pub enum DriveEncoding {
     DriveProtobuf,
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 /// Drive configuration struct
 pub struct DriveConfig {
     /// Boolean if batching is enabled

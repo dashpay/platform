@@ -1,45 +1,54 @@
 //! This module implements ABCI application server.
 //!
-use super::messages::SystemIdentityPublicKeys;
-use crate::{error::Error, platform::Platform};
+use super::config::AbciConfig;
+use crate::{config::PlatformConfig, error::Error, platform::Platform};
 use dpp::identity::TimestampMillis;
 use drive::query::TransactionArg;
 use std::sync::MutexGuard;
-use tenderdash_abci::{proto::abci as proto, start_server, BindAddress, Server};
-
-/// AbciAppConfig stores configuration of the ABCI Application.
-#[allow(dead_code)]
-pub struct AbciAppConfig {
-    bind_address: BindAddress,
-    system_identity_public_keys: SystemIdentityPublicKeys,
-}
-
+use tenderdash_abci::proto::abci as proto;
 /// AbciApp is an implementation of ABCI Application, as defined by Tenderdash.
 ///
 /// AbciApp implements logic that should be triggered when Tenderdash performs various operations, like
 /// creating new proposal or finalizing new block.
-pub struct AbciApp<'a> {
+pub struct AbciApplication<'a> {
     platform: std::sync::Mutex<&'a Platform>,
     transaction: TransactionArg<'a, 'a>,
-    config: &'a AbciAppConfig,
-    // TODO: read from configuation?
+    config: AbciConfig,
 }
 
-impl<'a> AbciApp<'a> {
+/// Start ABCI server and process incoming connections.
+///
+/// Should never return.
+pub fn start(config: &PlatformConfig) -> Result<(), Error> {
+    let bind_address = config.abci.bind_address.clone();
+    let abci_config = config.abci.clone();
+
+    let platform: Platform =
+        Platform::open(config.data_dir.to_owned(), Some(config.to_owned())).unwrap();
+
+    let abci = AbciApplication::new(abci_config, &platform)?;
+
+    let server =
+        tenderdash_abci::start_server(&bind_address, abci).map_err(|e| super::Error::from(e))?;
+
+    loop {
+        match server.handle_connection() {
+            Ok(_) => (),
+            Err(e) => tracing::error!("tenderdash connection terminated: {:?}", e),
+        }
+    }
+}
+
+impl<'a> AbciApplication<'a> {
     /// Create new ABCI app
-    pub fn new(config: &'a AbciAppConfig, platform: &'a Platform) -> Result<AbciApp<'a>, Error> {
-        let app = AbciApp {
+    pub fn new(config: AbciConfig, platform: &'a Platform) -> Result<AbciApplication<'a>, Error> {
+        let app = AbciApplication {
             platform: std::sync::Mutex::new(platform),
             transaction: None,
             config,
         };
 
         Ok(app)
-    }
-
-    /// Create ABCI Server for this application
-    pub fn bind(self) -> Result<Box<dyn Server + 'a>, tenderdash_abci::Error> {
-        start_server(&self.config.bind_address, self)
     }
 
     fn platform(&self) -> MutexGuard<&'a Platform> {
@@ -51,7 +60,7 @@ impl<'a> AbciApp<'a> {
     }
 }
 
-impl<'a> tenderdash_abci::Application for AbciApp<'a> {
+impl<'a> tenderdash_abci::Application for AbciApplication<'a> {
     fn init_chain(&self, request: proto::RequestInitChain) -> proto::ResponseInitChain {
         let platform = self.platform();
         let transaction = self.transaction();
@@ -61,11 +70,11 @@ impl<'a> tenderdash_abci::Application for AbciApp<'a> {
             genesis_time.nanos as u32,
         )
         .unwrap();
-        let keys = self.config.system_identity_public_keys.to_owned();
+
         platform
             .create_genesis_state(
                 genesis_time.timestamp_millis() as TimestampMillis,
-                keys,
+                self.config.keys.clone().into(),
                 transaction,
             )
             .expect("create genesis state");
