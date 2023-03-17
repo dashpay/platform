@@ -4,7 +4,7 @@ const sinon = require('sinon');
 const chaiAsPromised = require('chai-as-promised');
 const dirtyChai = require('dirty-chai');
 
-const DashPlatformProtocol = require('@dashevo/dpp');
+const { default: loadWasmDpp } = require('@dashevo/wasm-dpp');
 
 const generateRandomIdentifierAsync = require('@dashevo/wasm-dpp/lib/test/utils/generateRandomIdentifierAsync');
 const getDataContractFixture = require('@dashevo/wasm-dpp/lib/test/fixtures/getDataContractFixture');
@@ -29,12 +29,16 @@ describe('DriveStateRepository', () => {
   let dataContractFixture;
   let proto;
 
+  let DashPlatformProtocol;
+
+  before(async () => {
+    ({ DashPlatformProtocol } = await loadWasmDpp());
+  });
+
   beforeEach(async function before() {
     dataContractFixture = await getDataContractFixture();
 
-    dpp = new DashPlatformProtocol();
-    await dpp.initialize();
-    sinon.spy(dpp.dataContract, 'createFromBuffer');
+    dpp = new DashPlatformProtocol({}, null, null);
 
     proto = new GetDataContractResponse();
     // TODO: Identifier/buffer issue - problem with Buffer shim:
@@ -55,13 +59,6 @@ describe('DriveStateRepository', () => {
       const result = await stateRepository.fetchDataContract(contractId);
 
       expect(result.toObject()).to.be.deep.equal(dataContractFixture.toObject());
-
-      expect(dpp.dataContract.createFromBuffer).to.be.calledOnceWithExactly(
-        proto.getDataContract_asU8(),
-        {
-          skipValidation: true,
-        },
-      );
 
       expect(driveClientMock.fetchDataContract).to.be.calledOnce();
       expect(driveClientMock.fetchDataContract).to.be.calledWithExactly(contractId, false);
