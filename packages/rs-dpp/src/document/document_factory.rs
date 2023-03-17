@@ -13,6 +13,7 @@ use crate::consensus::basic::document::InvalidDocumentTypeError;
 use crate::document::extended_document::{property_names, ExtendedDocument};
 
 use crate::data_contract::DriveContractExt;
+use crate::data_contract::{DefaultEntropyGenerator, EntropyGenerator};
 use crate::document::document_transition::INITIAL_REVISION;
 use crate::document::Document;
 use crate::identity::TimestampMillis;
@@ -22,6 +23,7 @@ use crate::{
     prelude::Identifier,
     state_repository::StateRepositoryLike,
     util::entropy_generator,
+    util::{json_schema::JsonSchemaExt, json_value::JsonValueExt},
     ProtocolError,
 };
 
@@ -71,7 +73,7 @@ pub struct DocumentFactory<ST> {
     protocol_version: u32,
     document_validator: DocumentValidator,
     data_contract_fetcher_and_validator: DataContractFetcherAndValidator<ST>,
-    rng: StdRng,
+    entropy_generator: Box<dyn EntropyGenerator>,
 }
 
 #[derive(Debug, Copy, Clone, Serialize, Deserialize, Default)]
@@ -91,17 +93,26 @@ where
         protocol_version: u32,
         validate_document: DocumentValidator,
         data_contract_fetcher_and_validator: DataContractFetcherAndValidator<ST>,
-        seed: Option<u64>,
     ) -> Self {
-        let rng = match seed {
-            None => StdRng::from_entropy(),
-            Some(seed_value) => StdRng::seed_from_u64(seed_value),
-        };
         DocumentFactory {
             protocol_version,
             document_validator: validate_document,
             data_contract_fetcher_and_validator,
-            rng,
+            entropy_generator: Box::new(DefaultEntropyGenerator),
+        }
+    }
+
+    pub fn new_with_entropy_generator(
+        protocol_version: u32,
+        validate_document: DocumentValidator,
+        data_contract_fetcher_and_validator: DataContractFetcherAndValidator<ST>,
+        entropy_generator: Box<dyn EntropyGenerator>,
+    ) -> Self {
+        DocumentFactory {
+            protocol_version,
+            document_validator: validate_document,
+            data_contract_fetcher_and_validator,
+            entropy_generator,
         }
     }
 
@@ -119,7 +130,7 @@ where
             .into());
         }
 
-        let document_entropy = entropy_generator::generate()?; // TODO use EntropyGenerator
+        let document_entropy = self.entropy_generator.generate()?;
 
         let document_id = generate_document_id(
             &data_contract.id,
@@ -452,7 +463,6 @@ mod test {
             1,
             get_document_validator_fixture(),
             DataContractFetcherAndValidator::new(Arc::new(MockStateRepositoryLike::new())),
-            None,
         );
         let name = "Cutie";
         let contract_id = Identifier::from_string(
@@ -500,7 +510,6 @@ mod test {
             1,
             get_document_validator_fixture(),
             DataContractFetcherAndValidator::new(Arc::new(MockStateRepositoryLike::new())),
-            None,
         );
 
         let result = factory.create_state_transition(vec![]);
@@ -516,7 +525,6 @@ mod test {
             1,
             get_document_validator_fixture(),
             DataContractFetcherAndValidator::new(Arc::new(MockStateRepositoryLike::new())),
-            None,
         );
 
         documents[0].document.owner_id = generate_random_identifier_struct();
@@ -535,7 +543,6 @@ mod test {
             1,
             get_document_validator_fixture(),
             DataContractFetcherAndValidator::new(Arc::new(MockStateRepositoryLike::new())),
-            None,
         );
         let result = factory.create_state_transition(vec![(Action::Create, documents)]);
         assert_error_contains!(result, "Invalid Document initial revision '3'")
@@ -549,7 +556,6 @@ mod test {
             1,
             get_document_validator_fixture(),
             DataContractFetcherAndValidator::new(Arc::new(MockStateRepositoryLike::new())),
-            None,
         );
 
         let new_document = documents[0].clone();

@@ -30,7 +30,7 @@ pub trait EntropyGenerator {
     fn generate(&self) -> anyhow::Result<[u8; 32]>;
 }
 
-struct DefaultEntropyGenerator;
+pub struct DefaultEntropyGenerator;
 
 impl EntropyGenerator for DefaultEntropyGenerator {
     fn generate(&self) -> anyhow::Result<[u8; 32]> {
