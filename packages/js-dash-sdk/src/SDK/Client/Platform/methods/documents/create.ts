@@ -1,7 +1,7 @@
-import {Platform} from "../../Platform";
+import { Platform } from '../../Platform';
 
 declare interface createOpts {
-    [name:string]: any;
+  [name:string]: any;
 }
 
 /**
@@ -13,29 +13,29 @@ declare interface createOpts {
  * @param {Object} [data] - options
  */
 export async function create(this: Platform, typeLocator: string, identity: any, data: createOpts = {}): Promise<any> {
-    await this.initialize();
+  await this.initialize();
 
-    const { dpp } = this;
+  const { dpp } = this;
 
-    const appNames = this.client.getApps().getNames();
+  const appNames = this.client.getApps().getNames();
 
-    //We can either provide of type `dashpay.profile` or if only one schema provided, of type `profile`.
-    const [appName, fieldType] = (typeLocator.includes('.')) ? typeLocator.split('.') : [appNames[0], typeLocator];
+  // We can either provide of type `dashpay.profile` or if only one schema provided, of type `profile`.
+  const [appName, fieldType] = (typeLocator.includes('.')) ? typeLocator.split('.') : [appNames[0], typeLocator];
 
-    const { contractId } = this.client.getApps().get(appName);
+  const { contractId } = this.client.getApps().get(appName);
 
-    const dataContract = await this.contracts.get(contractId);
+  const dataContract = await this.contracts.get(contractId);
 
-    if (dataContract === null) {
-        throw new Error(`Contract ${appName} not found. Ensure contractId ${contractId} is correct.`)
-    }
+  if (dataContract === null) {
+    throw new Error(`Contract ${appName} not found. Ensure contractId ${contractId} is correct.`);
+  }
 
-    return dpp.document.create(
-        dataContract,
-        identity.getId(),
-        fieldType,
-        data,
-    );
+  return dpp.document.create(
+    dataContract,
+    identity.getId(),
+    fieldType,
+    data,
+  );
 }
 
 export default create;

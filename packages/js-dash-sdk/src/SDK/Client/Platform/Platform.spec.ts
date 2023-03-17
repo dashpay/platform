@@ -1,14 +1,13 @@
 import { expect } from 'chai';
-import { Platform } from "./index";
+import { Platform } from './index';
 import 'mocha';
 import Client from '../Client';
-import { latestVersion as latestProtocolVersion } from "@dashevo/dpp/lib/version/protocolVersion";
+import { latestVersion as latestProtocolVersion } from '@dashevo/dpp/lib/version/protocolVersion';
 
 describe('Dash - Platform', () => {
-
-  it('should provide expected class', function () {
-    expect(Platform.name).to.be.equal('Platform')
-    expect(Platform.constructor.name).to.be.equal('Function')
+  it('should provide expected class', () => {
+    expect(Platform.name).to.be.equal('Platform');
+    expect(Platform.constructor.name).to.be.equal('Function');
   });
 
   it('should set protocol version for DPP though options', () => {

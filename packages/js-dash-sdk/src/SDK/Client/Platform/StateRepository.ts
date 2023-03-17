@@ -1,6 +1,6 @@
-import DataContract from "@dashevo/dpp/lib/dataContract/DataContract";
-import Identity from "@dashevo/dpp/lib/identity/Identity";
-import Identifier from "@dashevo/dpp/lib/Identifier";
+import DataContract from '@dashevo/dpp/lib/dataContract/DataContract';
+import Identity from '@dashevo/dpp/lib/identity/Identity';
+import Identifier from '@dashevo/dpp/lib/Identifier';
 import Client from '../Client';
 
 class StateRepository {
@@ -10,11 +10,11 @@ class StateRepository {
     this.client = client;
   }
 
-  async fetchIdentity(id: Identifier|string): Promise<Identity|null> {
+  async fetchIdentity(id: Identifier | string): Promise<Identity | null> {
     return this.client.platform.identities.get(id);
   }
 
-  async fetchDataContract(identifier: Identifier|string): Promise<DataContract|null> {
+  async fetchDataContract(identifier: Identifier | string): Promise<DataContract | null> {
     return this.client.platform.contracts.get(identifier);
   }
 
