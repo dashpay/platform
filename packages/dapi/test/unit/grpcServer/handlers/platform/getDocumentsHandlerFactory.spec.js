@@ -17,7 +17,7 @@ const {
 
 /* eslint-disable import/no-extraneous-dependencies */
 const generateRandomIdentifierAsync = require('@dashevo/wasm-dpp/lib/test/utils/generateRandomIdentifierAsync');
-const getDocumentsFixture = require('@dashevo/dpp/lib/test/fixtures/getDocumentsFixture');
+const getDocumentsFixture = require('@dashevo/wasm-dpp/lib/test/fixtures/getDocumentsFixture');
 
 const GrpcCallMock = require('../../../../../lib/test/mock/GrpcCallMock');
 
@@ -65,11 +65,12 @@ describe('getDocumentsHandlerFactory', () => {
 
     call = new GrpcCallMock(this.sinon, request);
 
-    const [document] = getDocumentsFixture();
+    const [document] = await getDocumentsFixture();
 
     documentsFixture = [document];
 
-    documentsSerialized = documentsFixture.map((documentItem) => documentItem.toBuffer());
+    documentsSerialized = documentsFixture
+      .map((documentItem) => Buffer.from(documentItem.toBuffer()));
     proofFixture = {
       merkleProof: Buffer.alloc(1, 1),
     };
