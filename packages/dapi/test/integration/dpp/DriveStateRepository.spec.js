@@ -7,7 +7,7 @@ const dirtyChai = require('dirty-chai');
 const DashPlatformProtocol = require('@dashevo/dpp');
 
 const generateRandomIdentifierAsync = require('@dashevo/wasm-dpp/lib/test/utils/generateRandomIdentifierAsync');
-const getDataContractFixture = require('@dashevo/dpp/lib/test/fixtures/getDataContractFixture');
+const getDataContractFixture = require('@dashevo/wasm-dpp/lib/test/fixtures/getDataContractFixture');
 
 const {
   v0: {
@@ -30,14 +30,16 @@ describe('DriveStateRepository', () => {
   let proto;
 
   beforeEach(async function before() {
-    dataContractFixture = getDataContractFixture();
+    dataContractFixture = await getDataContractFixture();
 
     dpp = new DashPlatformProtocol();
     await dpp.initialize();
     sinon.spy(dpp.dataContract, 'createFromBuffer');
 
     proto = new GetDataContractResponse();
-    proto.setDataContract(dataContractFixture.toBuffer());
+    // TODO: Identifier/buffer issue - problem with Buffer shim:
+    //  Without Buffer.from it throws AssertionError: Failure: Type not convertible to Uint8Array.
+    proto.setDataContract(Buffer.from(dataContractFixture.toBuffer()));
 
     driveClientMock = sinon.stub();
     driveClientMock.fetchDataContract = this.sinon.stub().resolves(

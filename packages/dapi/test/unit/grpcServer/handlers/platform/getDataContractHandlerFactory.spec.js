@@ -15,7 +15,7 @@ const {
 
 /* eslint-disable import/no-extraneous-dependencies */
 const generateRandomIdentifierAsync = require('@dashevo/wasm-dpp/lib/test/utils/generateRandomIdentifierAsync');
-const getDataContractFixture = require('@dashevo/dpp/lib/test/fixtures/getDataContractFixture');
+const getDataContractFixture = require('@dashevo/wasm-dpp/lib/test/fixtures/getDataContractFixture');
 
 const GrpcCallMock = require('../../../../../lib/test/mock/GrpcCallMock');
 
@@ -43,7 +43,7 @@ describe('getDataContractHandlerFactory', () => {
 
     call = new GrpcCallMock(this.sinon, request);
 
-    dataContractFixture = getDataContractFixture();
+    dataContractFixture = await getDataContractFixture();
     proofFixture = {
       merkleProof: Buffer.alloc(1, 1),
     };
@@ -53,7 +53,9 @@ describe('getDataContractHandlerFactory', () => {
 
     response = new GetDataContractResponse();
     response.setProof(proofMock);
-    response.setDataContract(dataContractFixture.toBuffer());
+    // TODO: Identifier/buffer issue - problem with Buffer shim:
+    //  Without Buffer.from it throws AssertionError: Failure: Type not convertible to Uint8Array.
+    response.setDataContract(Buffer.from(dataContractFixture.toBuffer()));
 
     driveStateRepositoryMock = {
       fetchDataContract: this.sinon.stub().resolves(response.serializeBinary()),
