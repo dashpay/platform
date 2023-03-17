@@ -43,8 +43,8 @@ impl DocumentReplaceTransition {
     ) -> Result<Document, ProtocolError> {
         let properties = self.data.clone().unwrap_or_default();
         Ok(Document {
-            id: self.base.id.to_buffer(),
-            owner_id: owner_id.to_buffer(),
+            id: self.base.id,
+            owner_id,
             properties,
             created_at: self.updated_at, // we can use the same time, as it can't be worse
             updated_at: self.updated_at,

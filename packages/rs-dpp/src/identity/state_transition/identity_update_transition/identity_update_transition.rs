@@ -326,21 +326,20 @@ impl StateTransitionIdentitySigned for IdentityUpdateTransition {
 
 #[cfg(test)]
 mod test {
-
-    use crate::tests::{
-        fixtures::identity_fixture,
-        utils::{generate_random_identifier, generate_random_identifier_struct},
-    };
+    use crate::tests::{fixtures::identity_fixture, utils::generate_random_identifier_struct};
+    use getrandom::getrandom;
 
     use super::*;
 
     #[test]
     fn conversion_to_json_object() {
         let public_key = identity_fixture().get_public_keys()[&0].to_owned();
+        let mut buffer = [0u8; 33];
+        let _ = getrandom(&mut buffer);
         let transition = IdentityUpdateTransition {
             identity_id: generate_random_identifier_struct(),
             add_public_keys: vec![(&public_key).into()],
-            signature: BinaryData::new(generate_random_identifier().to_vec()),
+            signature: BinaryData::new(buffer.to_vec()),
             ..Default::default()
         };
 
@@ -365,10 +364,12 @@ mod test {
     #[test]
     fn conversion_to_raw_object() {
         let public_key = identity_fixture().get_public_keys()[&0].to_owned();
+        let mut buffer = [0u8; 33];
+        let _ = getrandom(&mut buffer);
         let transition = IdentityUpdateTransition {
             identity_id: generate_random_identifier_struct(),
             add_public_keys: vec![(&public_key).into()],
-            signature: BinaryData::new(generate_random_identifier().to_vec()),
+            signature: BinaryData::new(buffer.to_vec()),
 
             ..Default::default()
         };

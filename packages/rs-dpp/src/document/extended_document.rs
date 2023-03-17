@@ -82,11 +82,11 @@ impl ExtendedDocument {
     }
 
     pub fn id(&self) -> Identifier {
-        Identifier::new(self.document.id)
+        self.document.id
     }
 
     pub fn owner_id(&self) -> Identifier {
-        Identifier::new(self.document.owner_id)
+        self.document.owner_id
     }
 
     pub fn document_type(&self) -> Result<&DocumentType, ProtocolError> {
@@ -532,7 +532,13 @@ mod test {
             doc.properties()
                 .get_at_path("records.dashUniqueIdentityId")
                 .expect("expected to get value"),
-            &Value::Text("HBNMY5QWuBVKNFLhgBTC1VmpEnscrmqKPMXpnYSHwhfn".to_string())
+            &Value::Identifier(
+                bs58::decode("HBNMY5QWuBVKNFLhgBTC1VmpEnscrmqKPMXpnYSHwhfn")
+                    .into_vec()
+                    .unwrap()
+                    .try_into()
+                    .unwrap()
+            )
         );
         assert_eq!(
             doc.properties()
@@ -701,13 +707,13 @@ mod test {
     fn new_example_document() -> ExtendedDocument {
         ExtendedDocument {
             document: Document {
-                id: generate_random_identifier(),
-                owner_id: generate_random_identifier(),
+                id: generate_random_identifier_struct(),
+                owner_id: generate_random_identifier_struct(),
                 created_at: Some(1648013404492),
                 updated_at: Some(1648013404492),
                 ..Default::default()
             },
-            data_contract_id: Identifier::from_bytes(&generate_random_identifier()).unwrap(),
+            data_contract_id: generate_random_identifier_struct(),
             ..Default::default()
         }
     }

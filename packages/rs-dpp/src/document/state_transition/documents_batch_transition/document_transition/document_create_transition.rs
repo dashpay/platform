@@ -1,7 +1,7 @@
 use platform_value::btreemap_extensions::BTreeValueMapHelper;
 use platform_value::btreemap_extensions::BTreeValueMapReplacementPathHelper;
 use platform_value::btreemap_extensions::BTreeValueRemoveFromMapHelper;
-use platform_value::{Bytes32, ReplacementType, Value};
+use platform_value::{Bytes32, Identifier, ReplacementType, Value};
 use serde::{Deserialize, Serialize};
 use serde_json::Value as JsonValue;
 use std::collections::BTreeMap;
@@ -65,10 +65,10 @@ impl DocumentCreateTransition {
         Ok(())
     }
 
-    pub(crate) fn to_document(&self, owner_id: [u8; 32]) -> Result<Document, ProtocolError> {
+    pub(crate) fn to_document(&self, owner_id: Identifier) -> Result<Document, ProtocolError> {
         let properties = self.data.clone().unwrap_or_default();
         Ok(Document {
-            id: self.base.id.to_buffer(),
+            id: self.base.id,
             owner_id,
             properties,
             created_at: self.created_at,
@@ -79,7 +79,7 @@ impl DocumentCreateTransition {
 
     pub(crate) fn to_extended_document(
         &self,
-        owner_id: [u8; 32],
+        owner_id: Identifier,
     ) -> Result<ExtendedDocument, ProtocolError> {
         Ok(ExtendedDocument {
             protocol_version: PROTOCOL_VERSION,
@@ -92,8 +92,8 @@ impl DocumentCreateTransition {
         })
     }
 
-    pub(crate) fn into_document(self, owner_id: [u8; 32]) -> Result<Document, ProtocolError> {
-        let id = self.base.id.to_buffer();
+    pub(crate) fn into_document(self, owner_id: Identifier) -> Result<Document, ProtocolError> {
+        let id = self.base.id;
         let revision = self.get_revision();
         let created_at = self.created_at;
         let updated_at = self.updated_at;

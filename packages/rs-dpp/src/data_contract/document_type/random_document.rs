@@ -37,6 +37,7 @@ use crate::data_contract::document_type::property_names::{CREATED_AT, UPDATED_AT
 use crate::data_contract::document_type::DocumentType;
 use crate::document::Document;
 use crate::ProtocolError;
+use platform_value::Identifier;
 use rand::rngs::StdRng;
 use rand::{Rng, SeedableRng};
 
@@ -96,8 +97,8 @@ impl CreateRandomDocument for DocumentType {
 
     /// Creates a document with a random id, owner id, and properties using StdRng.
     fn random_document_with_rng(&self, rng: &mut StdRng) -> Document {
-        let id = rng.gen::<[u8; 32]>();
-        let owner_id = rng.gen::<[u8; 32]>();
+        let id = Identifier::random(rng);
+        let owner_id = Identifier::random(rng);
         let mut created_at = None;
         let mut updated_at = None;
         let properties = self
@@ -166,8 +167,8 @@ impl CreateRandomDocument for DocumentType {
     /// Creates a Document with properties filled to max size with random data, along with
     /// a random id and owner id.
     fn random_filled_document_with_rng(&self, rng: &mut StdRng) -> Document {
-        let id = rng.gen::<[u8; 32]>();
-        let owner_id = rng.gen::<[u8; 32]>();
+        let id = Identifier::random(rng);
+        let owner_id = Identifier::random(rng);
         let properties = self
             .properties
             .iter()

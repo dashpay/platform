@@ -302,7 +302,7 @@ async fn should_return_invalid_result_if_document_transition_with_action_replace
     )
     .expect("document should be created");
     let another_owner_id = generate_random_identifier_struct();
-    fetched_document.document.owner_id = another_owner_id.to_buffer();
+    fetched_document.document.owner_id = another_owner_id;
 
     let document_transitions = get_document_transitions_fixture([
         (Action::Create, vec![]),
@@ -613,8 +613,8 @@ async fn should_return_valid_result_if_document_transitions_are_valid() {
     let mut fetched_document_2 = extended_documents[2].clone();
     fetched_document_1.document.revision = Some(1);
     fetched_document_2.document.revision = Some(1);
-    fetched_document_1.document.owner_id = owner_id.to_buffer();
-    fetched_document_2.document.owner_id = owner_id.to_buffer();
+    fetched_document_1.document.owner_id = owner_id;
+    fetched_document_2.document.owner_id = owner_id;
 
     state_repository_mock
         .expect_fetch_extended_documents()

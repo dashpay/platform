@@ -27,12 +27,6 @@ macro_rules! assert_error_contains {
     };
 }
 
-pub fn generate_random_identifier() -> [u8; 32] {
-    let mut buffer = [0u8; 32];
-    let _ = getrandom(&mut buffer);
-    buffer
-}
-
 /// Sets a key value pair in serde_json object, returns the modified object
 pub fn serde_set<T, S>(mut object: serde_json::Value, key: T, value: S) -> serde_json::Value
 where

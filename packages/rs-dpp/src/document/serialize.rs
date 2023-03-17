@@ -17,7 +17,7 @@ use byteorder::{BigEndian, ReadBytesExt};
 use ciborium::Value as CborValue;
 use integer_encoding::VarIntWriter;
 use platform_value::btreemap_extensions::BTreeValueRemoveFromMapHelper;
-use platform_value::Value;
+use platform_value::{Identifier, Value};
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 use std::convert::TryFrom;
@@ -61,10 +61,10 @@ impl TryFrom<Document> for DocumentForCbor {
             updated_at,
         } = value;
         Ok(DocumentForCbor {
-            id,
+            id: id.to_buffer(),
             properties: Value::convert_to_cbor_map(properties)
                 .map_err(ProtocolError::ValueError)?,
-            owner_id,
+            owner_id: owner_id.to_buffer(),
             revision,
             created_at,
             updated_at,
@@ -145,8 +145,8 @@ impl Document {
         mut self,
         document_type: &DocumentType,
     ) -> Result<Vec<u8>, ProtocolError> {
-        let mut buffer: Vec<u8> = Vec::try_from(self.id).unwrap();
-        let mut owner_id = Vec::try_from(self.owner_id).unwrap();
+        let mut buffer: Vec<u8> = self.id.to_buffer_vec();
+        let mut owner_id = self.owner_id.to_buffer_vec();
         buffer.append(&mut owner_id);
 
         if let Some(revision) = self.revision {
@@ -314,9 +314,9 @@ impl Document {
             })
             .collect::<Result<BTreeMap<String, Value>, ProtocolError>>()?;
         Ok(Document {
-            id,
+            id: Identifier::new(id),
             properties,
-            owner_id,
+            owner_id: Identifier::new(owner_id),
             revision,
             created_at,
             updated_at,
@@ -378,8 +378,8 @@ impl Document {
         // dev-note: properties is everything other than the id and owner id
         Ok(Document {
             properties: document_map,
-            owner_id,
-            id,
+            owner_id: Identifier::new(owner_id),
+            id: Identifier::new(id),
             revision,
             created_at,
             updated_at,

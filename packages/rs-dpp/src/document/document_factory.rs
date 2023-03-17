@@ -150,8 +150,8 @@ where
         };
 
         let document = Document {
-            id: document_id.to_buffer(),
-            owner_id: owner_id.to_buffer(),
+            id: document_id,
+            owner_id,
             properties: data
                 .into_btree_string_map()
                 .map_err(ProtocolError::ValueError)?,
@@ -401,17 +401,14 @@ where
             .map(|document| {
                 let mut map: BTreeMap<String, Value> = BTreeMap::new();
                 map.insert(PROPERTY_ACTION.to_string(), Value::U8(Action::Delete as u8));
-                map.insert(
-                    PROPERTY_ID.to_string(),
-                    Value::Identifier(document.document.id),
-                );
+                map.insert(PROPERTY_ID.to_string(), document.document.id.into());
                 map.insert(
                     PROPERTY_TYPE.to_string(),
                     Value::Text(document.document_type_name),
                 );
                 map.insert(
                     PROPERTY_DATA_CONTRACT_ID.to_string(),
-                    Value::Identifier(document.data_contract_id.to_buffer()),
+                    document.data_contract_id.into(),
                 );
                 map.into()
             })
@@ -422,7 +419,7 @@ where
         data.into_iter().next().is_none()
     }
 
-    fn is_ownership_the_same<'a>(ids: impl IntoIterator<Item = &'a [u8; 32]>) -> bool {
+    fn is_ownership_the_same<'a>(ids: impl IntoIterator<Item = &'a Identifier>) -> bool {
         ids.into_iter().all_equal()
     }
 }
@@ -521,7 +518,8 @@ mod test {
             DataContractFetcherAndValidator::new(Arc::new(MockStateRepositoryLike::new())),
             None,
         );
-        documents[0].document.owner_id = generate_random_identifier_struct().to_buffer();
+
+        documents[0].document.owner_id = generate_random_identifier_struct();
 
         let result = factory.create_state_transition(vec![(Action::Create, documents)]);
         assert_error_contains!(result, "Documents have mixed owner ids")

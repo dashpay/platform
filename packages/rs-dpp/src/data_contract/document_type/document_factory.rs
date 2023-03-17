@@ -38,8 +38,8 @@ impl DocumentType {
         };
 
         Ok(Document {
-            id: id.to_buffer(),
-            owner_id: owner_id.to_buffer(),
+            id,
+            owner_id,
             properties,
             revision,
             created_at,

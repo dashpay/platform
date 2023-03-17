@@ -15,7 +15,6 @@ use crate::{
             get_protocol_version_validator_fixture,
         },
         utils::{
-            generate_random_identifier,
             get_schema_error,
         },
     },
@@ -23,6 +22,7 @@ use crate::{
 };
 
 use crate::document::document_transition::document_base_transition::JsonValue;
+use crate::tests::utils::generate_random_identifier_struct;
 use jsonschema::error::ValidationErrorKind;
 use platform_value::{platform_value, Value};
 use test_case::test_case;
@@ -671,7 +671,8 @@ async fn id_should_be_valid_generated_id() {
         ..
     } = setup_test(Action::Create);
 
-    raw_state_transition["transitions"][0]["$id"] = platform_value!(generate_random_identifier());
+    raw_state_transition["transitions"][0]["$id"] =
+        platform_value!(generate_random_identifier_struct());
 
     let result = validate_documents_batch_transition_basic(
         &protocol_version_validator,

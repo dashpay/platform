@@ -65,8 +65,8 @@ pub async fn apply_documents_batch_transition(
     for document_transition in state_transition.get_transitions() {
         match document_transition {
             DocumentTransition::Create(document_create_transition) => {
-                let document = document_create_transition
-                    .to_extended_document(state_transition.owner_id.to_buffer())?;
+                let document =
+                    document_create_transition.to_extended_document(state_transition.owner_id)?;
                 //todo: eventually we should use Cow instead
                 state_repository
                     .create_document(&document, state_transition.get_execution_context())
@@ -124,8 +124,8 @@ fn document_from_transition_replace(
         data_contract: Default::default(),
         entropy: Default::default(),
         document: Document {
-            id: document_replace_transition.base.id.to_buffer(),
-            owner_id: state_transition.owner_id.to_buffer(),
+            id: document_replace_transition.base.id,
+            owner_id: state_transition.owner_id,
             properties: document_replace_transition.data.clone().unwrap_or_default(),
             revision: Some(document_replace_transition.revision),
             created_at: Some(created_at),

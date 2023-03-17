@@ -77,12 +77,10 @@ pub struct Document {
     //todo: add an optional version
     /// The unique document ID.
     #[serde(rename = "$id")]
-    //todo: change to identifier once identifier serialized to bytes
-    pub id: [u8; 32],
+    pub id: Identifier,
     /// The ID of the document's owner.
     #[serde(rename = "$ownerId")]
-    //todo: change to identifier once identifier serialized to bytes
-    pub owner_id: [u8; 32],
+    pub owner_id: Identifier,
     /// The document's properties (data).
     #[serde(flatten)]
     pub properties: BTreeMap<String, Value>,
@@ -109,8 +107,8 @@ impl Document {
         } else {
             match key_path {
                 // returns self.id or self.owner_id if key path is $id or $ownerId
-                "$id" => return Ok(Some(Vec::from(self.id))),
-                "$ownerId" => return Ok(Some(Vec::from(self.owner_id))),
+                "$id" => return Ok(Some(self.id.to_buffer_vec())),
+                "$ownerId" => return Ok(Some(self.owner_id.to_buffer_vec())),
                 "$createdAt" => {
                     return Ok(self
                         .created_at
@@ -325,11 +323,8 @@ impl Document {
 
     pub fn to_map_value(&self) -> Result<BTreeMap<String, Value>, ProtocolError> {
         let mut map: BTreeMap<String, Value> = BTreeMap::new();
-        map.insert(property_names::ID.to_string(), Value::Identifier(self.id));
-        map.insert(
-            property_names::OWNER_ID.to_string(),
-            Value::Identifier(self.owner_id),
-        );
+        map.insert(property_names::ID.to_string(), self.id.into());
+        map.insert(property_names::OWNER_ID.to_string(), self.owner_id.into());
 
         if let Some(created_at) = self.created_at {
             map.insert(
@@ -354,11 +349,8 @@ impl Document {
 
     pub fn into_map_value(self) -> Result<BTreeMap<String, Value>, ProtocolError> {
         let mut map: BTreeMap<String, Value> = BTreeMap::new();
-        map.insert(property_names::ID.to_string(), Value::Identifier(self.id));
-        map.insert(
-            property_names::OWNER_ID.to_string(),
-            Value::Identifier(self.owner_id),
-        );
+        map.insert(property_names::ID.to_string(), self.id.into());
+        map.insert(property_names::OWNER_ID.to_string(), self.owner_id.into());
 
         if let Some(created_at) = self.created_at {
             map.insert(
@@ -452,11 +444,11 @@ impl Document {
 
         if let Ok(value) = document_value.remove(property_names::ID) {
             let data: S = serde_json::from_value(value)?;
-            document.id = data.try_into()?.to_buffer();
+            document.id = data.try_into()?;
         }
         if let Ok(value) = document_value.remove(property_names::OWNER_ID) {
             let data: S = serde_json::from_value(value)?;
-            document.owner_id = data.try_into()?.to_buffer();
+            document.owner_id = data.try_into()?;
         }
         if let Ok(value) = document_value.remove(property_names::REVISION) {
             document.revision = serde_json::from_value(value)?
@@ -484,8 +476,8 @@ impl Document {
             ..Default::default()
         };
 
-        document.id = properties.remove_hash256_bytes(property_names::ID)?;
-        document.owner_id = properties.remove_hash256_bytes(property_names::OWNER_ID)?;
+        document.id = properties.remove_identifier(property_names::ID)?;
+        document.owner_id = properties.remove_identifier(property_names::OWNER_ID)?;
         document.revision = properties.remove_optional_integer(property_names::REVISION)?;
         document.created_at = properties.remove_optional_integer(property_names::CREATED_AT)?;
         document.updated_at = properties.remove_optional_integer(property_names::UPDATED_AT)?;
@@ -497,8 +489,8 @@ impl Document {
 
 impl fmt::Display for Document {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "id:{} ", bs58::encode(self.id).into_string())?;
-        write!(f, "owner_id:{} ", bs58::encode(self.owner_id).into_string())?;
+        write!(f, "id:{} ", self.id)?;
+        write!(f, "owner_id:{} ", self.owner_id)?;
         if let Some(created_at) = self.created_at {
             let naive = NaiveDateTime::from_timestamp_millis(created_at as i64).unwrap_or_default();
             let datetime: DateTime<Utc> = DateTime::from_utc(naive, Utc);
