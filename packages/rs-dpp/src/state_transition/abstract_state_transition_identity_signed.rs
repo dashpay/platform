@@ -359,7 +359,7 @@ mod test {
                 .unwrap(),
             1
         );
-        assert!(st_object["signature"].as_array().unwrap().is_empty());
+        assert!(st_object["signature"].as_bytes().unwrap().is_empty());
     }
 
     #[test]
@@ -394,7 +394,7 @@ mod test {
         let st = get_mock_state_transition();
         let hash = st.hash(false).unwrap();
         assert_eq!(
-            "bb9f19724ffe1be08e6f9d111c8930a3a6de59a6653ad983f922a3523d75d33b",
+            "208afc16722df887c6e2935d1a0c13c56c5a91318beec4089cad6919be18debc",
             hex::encode(hash)
         )
     }
