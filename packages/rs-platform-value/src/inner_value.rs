@@ -1,6 +1,6 @@
 use std::cmp::Ordering;
 use crate::value_map::{ValueMap, ValueMapHelper};
-use crate::Identifier;
+use crate::{BinaryData, Identifier};
 use crate::{Error, Value};
 use std::collections::BTreeMap;
 
@@ -151,6 +151,19 @@ impl Value {
             .transpose()
     }
 
+    pub fn remove_binary_data(&mut self, key: &str) -> Result<BinaryData, Error> {
+        let map = self.as_map_mut_ref()?;
+        let value = map.remove_key(key)?;
+        value.into_binary_data()
+    }
+
+    pub fn remove_optional_binary_data(&mut self, key: &str) -> Result<Option<BinaryData>, Error> {
+        let map = self.as_map_mut_ref()?;
+        map.remove_optional_key(key)
+            .map(|v| v.into_binary_data())
+            .transpose()
+    }
+
     pub fn remove_array(&mut self, key: &str) -> Result<Vec<Value>, Error> {
         let map = self.as_map_mut_ref()?;
         let value = map.remove_key(key)?;
@@ -291,6 +304,16 @@ impl Value {
     pub fn get_array_slice<'a>(&'a self, key: &'a str) -> Result<&[Value], Error> {
         let map = self.to_map()?;
         Self::inner_array_slice(map, key)
+    }
+
+    pub fn get_optional_binary_data<'a>(&'a self, key: &'a str) -> Result<Option<BinaryData>, Error> {
+        let map = self.to_map()?;
+        Self::inner_optional_binary_data_value(map, key)
+    }
+
+    pub fn get_binary_data<'a>(&'a self, key: &'a str) -> Result<BinaryData, Error> {
+        let map = self.to_map()?;
+        Self::inner_binary_data_value(map, key)
     }
 
     pub fn get_optional_bytes<'a>(&'a self, key: &'a str) -> Result<Option<Vec<u8>>, Error> {
@@ -583,6 +606,26 @@ impl Value {
         Self::get_from_map(document_type, key).map(|v| v.to_hash256())?
     }
 
+    /// Retrieves the value of a key from a map if it's a byte array.
+    pub fn inner_optional_binary_data_value<'a>(
+        document_type: &'a [(Value, Value)],
+        key: &'a str,
+    ) -> Result<Option<BinaryData>, Error> {
+        Self::get_optional_from_map(document_type, key)
+            .map(|v| v.to_binary_data())
+            .transpose()
+    }
+
+    /// Retrieves the value of a key from a map if it's a byte array.
+    pub fn inner_binary_data_value<'a>(
+        document_type: &'a [(Value, Value)],
+        key: &'a str,
+    ) -> Result<BinaryData, Error> {
+        Self::get_from_map(document_type, key).map(|v| v.to_binary_data())?
+    }
+
+    /// Retrieves the val
+    ///
     /// Retrieves the value of a key from a map if it's a byte array.
     pub fn inner_optional_bytes_value<'a>(
         document_type: &'a [(Value, Value)],

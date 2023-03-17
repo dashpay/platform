@@ -1,8 +1,9 @@
 use std::collections::BTreeMap;
+use std::convert::TryInto;
 
 use platform_value::btreemap_extensions::BTreeValueMapHelper;
 use platform_value::btreemap_extensions::BTreeValueRemoveFromMapHelper;
-use platform_value::Value;
+use platform_value::{BinaryData, Value};
 use serde::{Deserialize, Serialize};
 use serde_json::Value as JsonValue;
 
@@ -15,7 +16,7 @@ use crate::{
         StateTransitionConvert, StateTransitionIdentitySigned, StateTransitionLike,
         StateTransitionType,
     },
-    util::json_value::{JsonValueExt, ReplaceWith},
+    util::json_value::JsonValueExt,
     ProtocolError,
 };
 
@@ -35,7 +36,7 @@ pub struct DataContractCreateTransition {
     pub data_contract: DataContract,
     pub entropy: [u8; 32],
     pub signature_public_key_id: KeyID,
-    pub signature: Vec<u8>,
+    pub signature: BinaryData,
     #[serde(skip)]
     pub execution_context: StateTransitionExecutionContext,
 }
@@ -47,7 +48,7 @@ impl std::default::Default for DataContractCreateTransition {
             transition_type: StateTransitionType::DataContractCreate,
             entropy: [0u8; 32],
             signature_public_key_id: 0,
-            signature: vec![],
+            signature: BinaryData::default(),
             data_contract: Default::default(),
             execution_context: Default::default(),
         }
@@ -61,7 +62,7 @@ impl DataContractCreateTransition {
         Ok(DataContractCreateTransition {
             protocol_version: raw_data_contract_update_transition.get_integer(PROTOCOL_VERSION)?,
             signature: raw_data_contract_update_transition
-                .remove_optional_bytes(SIGNATURE)
+                .remove_optional_binary_data(SIGNATURE)
                 .map_err(ProtocolError::ValueError)?
                 .unwrap_or_default(),
             signature_public_key_id: raw_data_contract_update_transition
@@ -93,7 +94,7 @@ impl DataContractCreateTransition {
                 .get_integer(PROTOCOL_VERSION)
                 .map_err(ProtocolError::ValueError)?,
             signature: raw_data_contract_update_transition
-                .remove_optional_bytes(SIGNATURE)
+                .remove_optional_binary_data(SIGNATURE)
                 .map_err(ProtocolError::ValueError)?
                 .unwrap_or_default(),
             signature_public_key_id: raw_data_contract_update_transition
@@ -161,12 +162,16 @@ impl StateTransitionLike for DataContractCreateTransition {
         self.transition_type
     }
     /// returns the signature as a byte-array
-    fn get_signature(&self) -> &Vec<u8> {
+    fn get_signature(&self) -> &BinaryData {
         &self.signature
     }
     /// set a new signature
-    fn set_signature(&mut self, signature: Vec<u8>) {
+    fn set_signature(&mut self, signature: BinaryData) {
         self.signature = signature
+    }
+
+    fn set_signature_bytes(&mut self, signature: Vec<u8>) {
+        self.signature = BinaryData::new(signature)
     }
 
     fn get_execution_context(&self) -> &StateTransitionExecutionContext {
@@ -196,23 +201,8 @@ impl StateTransitionConvert for DataContractCreateTransition {
     }
 
     fn to_json(&self, skip_signature: bool) -> Result<JsonValue, ProtocolError> {
-        let mut json_value: JsonValue = serde_json::to_value(self)?;
-
-        if skip_signature {
-            if let JsonValue::Object(ref mut o) = json_value {
-                for path in Self::signature_property_paths() {
-                    o.remove(path);
-                }
-            }
-        }
-
-        json_value.replace_binary_paths(Self::binary_property_paths(), ReplaceWith::Base64)?;
-        json_value
-            .replace_identifier_paths(Self::identifiers_property_paths(), ReplaceWith::Base58)?;
-
-        json_value.insert(DATA_CONTRACT.to_string(), self.data_contract.to_json()?)?;
-
-        Ok(json_value)
+        self.to_object(skip_signature)
+            .and_then(|value| value.try_into().map_err(ProtocolError::ValueError))
     }
 
     fn to_object(&self, skip_signature: bool) -> Result<Value, ProtocolError> {

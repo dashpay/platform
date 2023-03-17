@@ -121,7 +121,7 @@ impl DocumentTransitionObjectLike for DocumentReplaceTransition {
         let (identifiers_paths, binary_paths) =
             data_contract.get_identifiers_and_binary_paths_owned(document_type)?;
 
-        map.replace_at_paths(binary_paths.into_iter(), ReplacementType::Bytes)?;
+        map.replace_at_paths(binary_paths.into_iter(), ReplacementType::BinaryBytes)?;
 
         map.replace_at_paths(
             identifiers_paths

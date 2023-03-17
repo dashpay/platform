@@ -7,7 +7,7 @@ use integer_encoding::VarInt;
 use platform_value::btreemap_extensions::BTreeValueMapHelper;
 use platform_value::btreemap_extensions::BTreeValueMapReplacementPathHelper;
 
-use platform_value::{ReplacementType, Value};
+use platform_value::{BinaryData, ReplacementType, Value};
 use serde::{Deserialize, Serialize};
 use serde_json::Value as JsonValue;
 
@@ -68,7 +68,7 @@ pub struct DocumentsBatchTransition {
     pub signature_public_key_id: Option<KeyID>,
 
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub signature: Option<Vec<u8>>,
+    pub signature: Option<BinaryData>,
 
     #[serde(skip)]
     pub execution_context: StateTransitionExecutionContext,
@@ -97,7 +97,9 @@ impl DocumentsBatchTransition {
 
         let maybe_signature = json_value.get_string(property_names::SIGNATURE).ok();
         let signature = if let Some(signature) = maybe_signature {
-            Some(base64::decode(signature).context("signature exists but isn't valid base64")?)
+            Some(BinaryData(
+                base64::decode(signature).context("signature exists but isn't valid base64")?,
+            ))
         } else {
             None
         };
@@ -173,7 +175,7 @@ impl DocumentsBatchTransition {
                 // js-dpp allows `protocolVersion` to be undefined
                 .unwrap_or(LATEST_VERSION as u64) as u32,
             signature: map
-                .get_optional_bytes(property_names::SIGNATURE)
+                .get_optional_binary_data(property_names::SIGNATURE)
                 .map_err(ProtocolError::ValueError)?,
             signature_public_key_id: map
                 .get_optional_integer(property_names::SIGNATURE_PUBLIC_KEY_ID)
@@ -226,7 +228,7 @@ impl DocumentsBatchTransition {
                         binary_paths
                             .into_iter()
                             .chain(BINARY_FIELDS.iter().map(|a| a.to_string())),
-                        ReplacementType::Bytes,
+                        ReplacementType::BinaryBytes,
                     )
                     .map_err(ProtocolError::ValueError)?;
 
@@ -314,7 +316,7 @@ impl DocumentsBatchTransition {
             if let Some(signature) = self.signature.as_ref() {
                 map.insert(
                     property_names::SIGNATURE.to_string(),
-                    Value::Bytes(signature.clone()),
+                    Value::Bytes(signature.to_vec()),
                 );
             }
             if let Some(signature_key_id) = self.signature_public_key_id {
@@ -351,28 +353,8 @@ impl StateTransitionConvert for DocumentsBatchTransition {
     }
 
     fn to_json(&self, skip_signature: bool) -> Result<JsonValue, ProtocolError> {
-        let mut json_value: JsonValue = serde_json::to_value(self)?;
-
-        if skip_signature {
-            if let JsonValue::Object(ref mut o) = json_value {
-                for path in Self::signature_property_paths() {
-                    o.remove(path);
-                }
-            }
-        }
-
-        json_value.replace_binary_paths(Self::binary_property_paths(), ReplaceWith::Base64)?;
-
-        let mut transitions = vec![];
-        for transition in self.transitions.iter() {
-            transitions.push(transition.to_json()?)
-        }
-        json_value.insert(
-            String::from(property_names::TRANSITIONS),
-            JsonValue::Array(transitions),
-        )?;
-
-        Ok(json_value)
+        self.to_object(skip_signature)
+            .and_then(|value| value.try_into().map_err(ProtocolError::ValueError))
     }
 
     fn to_object(&self, skip_signature: bool) -> Result<Value, ProtocolError> {
@@ -470,7 +452,7 @@ impl StateTransitionLike for DocumentsBatchTransition {
         self.protocol_version
     }
 
-    fn get_signature(&self) -> &Vec<u8> {
+    fn get_signature(&self) -> &BinaryData {
         if let Some(ref signature) = self.signature {
             signature
         } else {
@@ -484,8 +466,11 @@ impl StateTransitionLike for DocumentsBatchTransition {
         self.transition_type
     }
 
-    fn set_signature(&mut self, signature: Vec<u8>) {
+    fn set_signature(&mut self, signature: BinaryData) {
         self.signature = Some(signature);
+    }
+    fn set_signature_bytes(&mut self, signature: Vec<u8>) {
+        self.signature = Some(BinaryData::new(signature));
     }
     fn get_execution_context(&self) -> &StateTransitionExecutionContext {
         &self.execution_context

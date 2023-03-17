@@ -128,7 +128,7 @@ impl DocumentTransitionObjectLike for DocumentCreateTransition {
             binary_paths
                 .into_iter()
                 .chain(BINARY_FIELDS.iter().map(|a| a.to_string())),
-            ReplacementType::Bytes,
+            ReplacementType::BinaryBytes,
         )?;
 
         map.replace_at_paths(

@@ -1,3 +1,4 @@
+use crate::data_contract::contract_config::ContractConfig;
 use crate::data_contract::state_transition::{
     DataContractCreateTransition, DataContractUpdateTransition,
 };
@@ -31,10 +32,12 @@ impl DataContractFacade {
     pub fn create(
         &self,
         owner_id: Identifier,
-        documents: JsonValue,
-        definitions: Option<JsonValue>,
+        documents: Value,
+        config: Option<ContractConfig>,
+        definitions: Option<Value>,
     ) -> Result<DataContract, ProtocolError> {
-        self.factory.create(owner_id, documents, definitions)
+        self.factory
+            .create(owner_id, documents, config, definitions)
     }
 
     /// Create Data Contract from plain object

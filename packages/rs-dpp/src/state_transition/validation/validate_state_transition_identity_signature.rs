@@ -162,13 +162,14 @@ mod test {
         },
         NativeBlsModule,
     };
+    use platform_value::BinaryData;
     use serde::{Deserialize, Serialize};
 
     #[derive(Debug, Clone, Serialize, Deserialize)]
     #[serde(rename_all = "camelCase")]
     struct ExampleStateTransition {
         pub protocol_version: u32,
-        pub signature: Vec<u8>,
+        pub signature: BinaryData,
         pub signature_public_key_id: KeyID,
         pub transition_type: StateTransitionType,
         pub owner_id: Identifier,
@@ -204,10 +205,10 @@ mod test {
         fn get_type(&self) -> StateTransitionType {
             StateTransitionType::DocumentsBatch
         }
-        fn get_signature(&self) -> &Vec<u8> {
+        fn get_signature(&self) -> &BinaryData {
             &self.signature
         }
-        fn set_signature(&mut self, signature: Vec<u8>) {
+        fn set_signature(&mut self, signature: BinaryData) {
             self.signature = signature
         }
         fn get_execution_context(&self) -> &StateTransitionExecutionContext {
@@ -220,6 +221,10 @@ mod test {
 
         fn set_execution_context(&mut self, execution_context: StateTransitionExecutionContext) {
             self.execution_context = execution_context
+        }
+
+        fn set_signature_bytes(&mut self, signature: Vec<u8>) {
+            self.signature = BinaryData::new(signature)
         }
     }
 

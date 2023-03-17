@@ -121,7 +121,6 @@ pub fn byte_array_has_no_items_as_parent_validator(
 #[cfg(test)]
 mod test {
     use platform_value::platform_value;
-    use platform_value::ValueMapHelper;
 
     use super::*;
 

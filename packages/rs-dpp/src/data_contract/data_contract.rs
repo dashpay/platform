@@ -4,9 +4,7 @@ use std::convert::{TryFrom, TryInto};
 use anyhow::anyhow;
 
 use itertools::{Either, Itertools};
-use platform_value::btreemap_extensions::{
-    BTreeValueMapHelper, BTreeValueMapPathHelper, BTreeValueRemoveFromMapHelper,
-};
+use platform_value::btreemap_extensions::{BTreeValueMapHelper, BTreeValueRemoveFromMapHelper};
 use platform_value::Identifier;
 use platform_value::Value;
 use serde::{Deserialize, Serialize};
@@ -97,8 +95,8 @@ pub struct DataContract {
     pub documents: BTreeMap<DocumentName, JsonSchema>,
 
     // TODO we may ensure in compile time that defs are not empty if we define a type for it
-    #[serde(skip_serializing_if = "Option::is_none", rename = "$defs", default)]
-    pub defs: Option<BTreeMap<DefinitionName, JsonSchema>>,
+    #[serde(rename = "$defs", default)]
+    pub defs: BTreeMap<DefinitionName, JsonSchema>,
 
     #[serde(skip)]
     pub entropy: [u8; 32],
@@ -120,13 +118,17 @@ impl DataContract {
         let mutability = get_contract_configuration_properties(&data_contract_map)
             .map_err(|e| ProtocolError::ParsingError(e.to_string()))?;
         let definition_references = get_definitions(&data_contract_map)?;
-        let document_types = get_document_types(
+        let document_types = get_document_types_from_contract(
             &data_contract_map,
-            definition_references,
+            &definition_references,
             mutability.documents_keep_history_contract_default,
             mutability.documents_mutable_contract_default,
         )
         .map_err(|e| ProtocolError::ParsingError(e.to_string()))?;
+
+        let protocol_version = data_contract_map
+            .remove_integer(property_names::PROTOCOL_VERSION)
+            .map_err(ProtocolError::ValueError)?;
 
         let documents = data_contract_map
             .remove(property_names::DOCUMENTS)
@@ -138,15 +140,16 @@ impl DataContract {
             .map_err(|e| ProtocolError::ParsingError(e.to_string()))?;
 
         // Defs
-        let defs =
-            data_contract_map.get_optional_inner_str_json_value_map::<BTreeMap<_, _>>("$defs")?;
+        let defs = data_contract_map
+            .get_optional_inner_str_json_value_map::<BTreeMap<_, _>>("$defs")?
+            .unwrap_or_default();
 
         let binary_properties = documents
             .iter()
             .map(|(doc_type, schema)| (String::from(doc_type), get_binary_properties(schema)))
             .collect();
         let data_contract = DataContract {
-            protocol_version: 0,
+            protocol_version,
             id: data_contract_map
                 .remove_identifier(property_names::ID)
                 .map_err(ProtocolError::ValueError)?,
@@ -187,9 +190,9 @@ impl DataContract {
         let mutability = get_contract_configuration_properties(&data_contract_map)
             .map_err(|e| ProtocolError::ParsingError(e.to_string()))?;
         let definition_references = get_definitions(&data_contract_map)?;
-        let document_types = get_document_types(
+        let document_types = get_document_types_from_contract(
             &data_contract_map,
-            definition_references,
+            &definition_references,
             mutability.documents_keep_history_contract_default,
             mutability.documents_mutable_contract_default,
         )
@@ -263,8 +266,8 @@ impl DataContract {
         self.to_cbor()
     }
 
-    pub fn definitions(&self) -> Option<&BTreeMap<String, JsonValue>> {
-        self.defs.as_ref()
+    pub fn definitions(&self) -> &BTreeMap<String, JsonValue> {
+        &self.defs
     }
 
     // Returns hash from Data Contract
@@ -468,7 +471,6 @@ impl TryFrom<&str> for DataContract {
         let mut data_contract: DataContract = serde_json::from_str(v)?;
         //todo: there's a better to do this, find it
         let value = data_contract.to_object()?;
-        dbg!(&value);
         DataContract::from_raw_object(value)
     }
 }
@@ -520,17 +522,12 @@ pub fn get_contract_configuration_properties(
     })
 }
 
-pub fn get_document_types(
-    contract: &BTreeMap<String, Value>,
-    definition_references: BTreeMap<String, &Value>,
+pub fn get_document_types_from_value(
+    documents_value: &Value,
+    definition_references: &BTreeMap<String, &Value>,
     documents_keep_history_contract_default: bool,
     documents_mutable_contract_default: bool,
 ) -> Result<BTreeMap<String, DocumentType>, ProtocolError> {
-    let Some(documents_value) =
-        contract
-            .get("documents") else {
-        return Ok(BTreeMap::new());
-    };
     let contract_document_types_raw =
         documents_value
             .as_map()
@@ -555,13 +552,32 @@ pub fn get_document_types(
         let document_type = DocumentType::from_platform_value(
             type_key_str,
             document_type_value_map,
-            &definition_references,
+            definition_references,
             documents_keep_history_contract_default,
             documents_mutable_contract_default,
         )?;
         contract_document_types.insert(type_key_str.to_string(), document_type);
     }
     Ok(contract_document_types)
+}
+
+pub fn get_document_types_from_contract(
+    contract: &BTreeMap<String, Value>,
+    definition_references: &BTreeMap<String, &Value>,
+    documents_keep_history_contract_default: bool,
+    documents_mutable_contract_default: bool,
+) -> Result<BTreeMap<String, DocumentType>, ProtocolError> {
+    let Some(documents_value) =
+        contract
+            .get("documents") else {
+        return Ok(BTreeMap::new());
+    };
+    get_document_types_from_value(
+        documents_value,
+        definition_references,
+        documents_keep_history_contract_default,
+        documents_mutable_contract_default,
+    )
 }
 
 pub fn get_definitions(
@@ -704,9 +720,7 @@ mod test {
         init();
 
         let string_contract = get_data_from_file("src/tests/payloads/contract_example.json")?;
-        dbg!(&string_contract);
         let contract = DataContract::try_from(string_contract.as_str())?;
-        dbg!(&contract);
         assert_eq!(contract.protocol_version, 0);
         assert_eq!(
             contract.schema,

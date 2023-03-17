@@ -1383,8 +1383,6 @@ mod documents {
         let result = data_contract_validator
             .validate(&raw_data_contract)
             .expect("validation result should be returned");
-        dbg!(&raw_data_contract);
-dbg!(&result);
         let pattern_error = result
             .errors
             .get(0)

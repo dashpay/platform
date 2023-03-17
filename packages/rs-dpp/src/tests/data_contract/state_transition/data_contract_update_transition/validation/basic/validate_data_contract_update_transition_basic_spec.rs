@@ -21,7 +21,7 @@ use crate::{
 };
 
 use jsonschema::error::ValidationErrorKind;
-use platform_value::{platform_value, Value};
+use platform_value::{platform_value, BinaryData, Value};
 use serde_json::Value as JsonValue;
 
 struct TestData {
@@ -38,7 +38,7 @@ fn setup_test() -> TestData {
     let state_transition = DataContractUpdateTransition {
         protocol_version: LATEST_VERSION,
         data_contract: updated_data_contract,
-        signature: vec![0; 65],
+        signature: BinaryData::new(vec![0; 65]),
         signature_public_key_id: 0,
         transition_type: StateTransitionType::DataContractUpdate,
         execution_context: Default::default(),

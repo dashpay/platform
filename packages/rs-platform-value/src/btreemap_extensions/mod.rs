@@ -4,7 +4,7 @@ use std::convert::TryFrom;
 use std::iter::FromIterator;
 use std::{collections::BTreeMap, convert::TryInto};
 
-use crate::{Error, Value, ValueMap};
+use crate::{BinaryData, Error, Value, ValueMap};
 
 pub(crate) mod btreemap_field_replacement;
 mod btreemap_mut_value_extensions;
@@ -108,6 +108,8 @@ pub trait BTreeValueMapHelper {
     fn get_bytes(&self, key: &str) -> Result<Vec<u8>, Error>;
     fn get_optional_binary_bytes(&self, key: &str) -> Result<Option<Vec<u8>>, Error>;
     fn get_binary_bytes(&self, key: &str) -> Result<Vec<u8>, Error>;
+    fn get_optional_binary_data(&self, key: &str) -> Result<Option<BinaryData>, Error>;
+    fn get_binary_data(&self, key: &str) -> Result<BinaryData, Error>;
 }
 
 impl<V> BTreeValueMapHelper for BTreeMap<String, V>
@@ -413,6 +415,17 @@ where
     fn get_binary_bytes(&self, key: &str) -> Result<Vec<u8>, Error> {
         self.get_optional_binary_bytes(key)?
             .ok_or_else(|| Error::StructureError(format!("unable to get bytes property {key}")))
+    }
+
+    fn get_optional_binary_data(&self, key: &str) -> Result<Option<BinaryData>, Error> {
+        self.get(key)
+            .map(|v| v.borrow().to_binary_data())
+            .transpose()
+    }
+
+    fn get_binary_data(&self, key: &str) -> Result<BinaryData, Error> {
+        self.get_optional_binary_data(key)?
+            .ok_or_else(|| Error::StructureError(format!("unable to get binary data property {key}")))
     }
 
     fn get_optional_float(&self, key: &str) -> Result<Option<f64>, Error> {

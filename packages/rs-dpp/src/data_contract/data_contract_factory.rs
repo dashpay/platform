@@ -6,8 +6,10 @@ use std::sync::Arc;
 use data_contract::state_transition::property_names as st_prop;
 use platform_value::Value;
 
+use crate::data_contract::contract_config::ContractConfig;
 use crate::data_contract::errors::InvalidDataContractError;
 use crate::data_contract::property_names;
+use crate::data_contract::property_names::PROTOCOL_VERSION;
 use crate::util::serializer::serializable_value_to_cbor;
 use crate::{
     data_contract::{self, generate_data_contract_id},
@@ -67,62 +69,99 @@ impl DataContractFactory {
     pub fn create(
         &self,
         owner_id: Identifier,
-        documents: JsonValue,
-        definitions: Option<JsonValue>,
+        documents: Value,
+        config: Option<ContractConfig>,
+        definitions: Option<Value>,
     ) -> Result<DataContract, ProtocolError> {
         let entropy = self.entropy_generator.generate();
 
         let data_contract_id =
             Identifier::from_bytes(&generate_data_contract_id(owner_id.to_buffer(), entropy))?;
 
-        // todo: workaround
+        let definition_references = definitions
+            .as_ref()
+            .map(|defs| defs.to_btree_ref_string_map())
+            .transpose()
+            .map_err(ProtocolError::ValueError)?
+            .unwrap_or_default();
 
-        let mut root_map = Map::new();
+        let config = config.unwrap_or_default();
+        let document_types = data_contract::get_document_types_from_value(
+            &documents,
+            &definition_references,
+            config.documents_keep_history_contract_default,
+            config.documents_mutable_contract_default,
+        )
+        .map_err(|e| ProtocolError::ParsingError(e.to_string()))?;
 
-        root_map.insert(
-            property_names::ID.to_string(),
-            JsonValue::String(bs58::encode(data_contract_id.to_buffer().as_slice()).into_string()),
-        );
-        root_map.insert(
-            property_names::OWNER_ID.to_string(),
-            JsonValue::String(bs58::encode(owner_id.to_buffer().as_slice()).into_string()),
-        );
-        root_map.insert(
-            property_names::SCHEMA.to_string(),
-            JsonValue::String(data_contract::SCHEMA_URI.to_string()),
-        );
-        root_map.insert(
-            property_names::VERSION.to_string(),
-            JsonValue::Number(1.into()),
-        );
+        let document_values = documents
+            .into_btree_string_map()
+            .map_err(ProtocolError::ValueError)?;
+        let documents = document_values
+            .into_iter()
+            .map(|(key, value)| Ok((key, value.try_into().map_err(ProtocolError::ValueError)?)))
+            .collect::<Result<BTreeMap<String, JsonValue>, ProtocolError>>()?;
 
-        if let Some(defs) = definitions {
-            root_map.insert(property_names::DEFINITIONS.to_string(), defs);
-        }
+        let json_defs = definition_references
+            .into_iter()
+            .map(|(key, value)| {
+                Ok((
+                    key,
+                    value
+                        .clone()
+                        .try_into()
+                        .map_err(ProtocolError::ValueError)?,
+                ))
+            })
+            .collect::<Result<BTreeMap<String, JsonValue>, ProtocolError>>()?;
+        let mut data_contract = DataContract {
+            protocol_version: self.protocol_version,
+            id: data_contract_id,
+            schema: data_contract::SCHEMA_URI.to_string(),
+            version: 1,
+            owner_id,
+            document_types,
+            metadata: None,
+            config,
+            documents,
+            defs: json_defs,
+            entropy,
+            binary_properties: Default::default(),
+        };
 
-        root_map.insert(property_names::DOCUMENTS.to_string(), documents);
-
-        let cbor = serializable_value_to_cbor(&JsonValue::Object(root_map), Some(1))?;
-
-        DataContract::from_cbor(cbor)
+        data_contract.generate_binary_properties();
+        Ok(data_contract)
     }
 
     /// Create Data Contract from plain object
     pub async fn create_from_object(
         &self,
-        raw_data_contract: Value,
+        mut data_contract_object: Value,
         skip_validation: bool,
     ) -> Result<DataContract, ProtocolError> {
         if !skip_validation {
-            let result = self.validate_data_contract.validate(&raw_data_contract)?;
+            let result = self
+                .validate_data_contract
+                .validate(&data_contract_object)?;
 
             if !result.is_valid() {
                 return Err(ProtocolError::InvalidDataContractError(
-                    InvalidDataContractError::new(result.errors, raw_data_contract),
+                    InvalidDataContractError::new(result.errors, data_contract_object),
                 ));
             }
         }
-        DataContract::from_raw_object(raw_data_contract)
+        if !data_contract_object
+            .has(PROTOCOL_VERSION)
+            .map_err(ProtocolError::ValueError)?
+        {
+            data_contract_object
+                .insert(
+                    PROTOCOL_VERSION.to_string(),
+                    Value::U32(self.protocol_version),
+                )
+                .map_err(ProtocolError::ValueError)?;
+        }
+        DataContract::from_raw_object(data_contract_object)
     }
 
     /// Create Data Contract from buffer
@@ -187,13 +226,13 @@ mod tests {
 
     pub struct TestData {
         data_contract: DataContract,
-        raw_data_contract: JsonValue,
+        raw_data_contract: Value,
         factory: DataContractFactory,
     }
 
     fn get_test_data() -> TestData {
         let data_contract = get_data_contract_fixture(None);
-        let raw_data_contract = data_contract.to_json_object(false).unwrap();
+        let raw_data_contract = data_contract.to_object().unwrap();
         let protocol_version_validator = ProtocolVersionValidator::new(
             LATEST_VERSION,
             LATEST_VERSION,
@@ -220,17 +259,17 @@ mod tests {
         } = get_test_data();
 
         let raw_defs = raw_data_contract
-            .get(property_names::DEFINITIONS)
+            .get_value(property_names::DEFINITIONS)
             .expect("documents property should exist")
             .clone();
 
         let raw_documents = raw_data_contract
-            .get(property_names::DOCUMENTS)
+            .get_value(property_names::DOCUMENTS)
             .expect("documents property should exist")
             .clone();
 
         let result = factory
-            .create(data_contract.owner_id, raw_documents, Some(raw_defs))
+            .create(data_contract.owner_id, raw_documents, None, Some(raw_defs))
             .expect("Data Contract should be created");
 
         assert_eq!(data_contract.protocol_version, result.protocol_version);
@@ -306,9 +345,6 @@ mod tests {
 
         assert_eq!(1, result.get_protocol_version());
         assert_eq!(&data_contract.entropy, result.get_entropy());
-        assert_eq!(
-            raw_data_contract,
-            result.data_contract.to_json_object(false).unwrap()
-        );
+        assert_eq!(raw_data_contract, result.data_contract.to_object().unwrap());
     }
 }

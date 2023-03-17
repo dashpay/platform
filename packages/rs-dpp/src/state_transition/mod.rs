@@ -4,6 +4,7 @@ pub use abstract_state_transition::{
     state_transition_helpers, StateTransitionConvert, StateTransitionLike,
 };
 pub use abstract_state_transition_identity_signed::StateTransitionIdentitySigned;
+use platform_value::BinaryData;
 pub use state_transition_types::*;
 
 use crate::data_contract::state_transition::{
@@ -139,12 +140,12 @@ impl StateTransitionLike for StateTransition {
         call_method!(self, get_type)
     }
     /// returns the signature as a byte-array
-    fn get_signature(&self) -> &Vec<u8> {
+    fn get_signature(&self) -> &BinaryData {
         call_method!(self, get_signature)
     }
 
     /// set a new signature
-    fn set_signature(&mut self, signature: Vec<u8>) {
+    fn set_signature(&mut self, signature: BinaryData) {
         call_method!(self, set_signature, signature)
     }
 
@@ -158,6 +159,10 @@ impl StateTransitionLike for StateTransition {
 
     fn set_execution_context(&mut self, execution_context: StateTransitionExecutionContext) {
         call_method!(self, set_execution_context, execution_context)
+    }
+
+    fn set_signature_bytes(&mut self, signature: Vec<u8>) {
+        call_method!(self, set_signature_bytes, signature)
     }
 }
 

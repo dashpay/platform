@@ -1,4 +1,4 @@
-use platform_value::Value;
+use platform_value::{BinaryData, Value};
 use serde::{Deserialize, Serialize};
 use serde_json::Value as JsonValue;
 use std::convert::{TryFrom, TryInto};
@@ -37,7 +37,7 @@ pub struct IdentityUpdateTransition {
     pub transition_type: StateTransitionType,
 
     /// Cryptographic signature of the State Transition
-    pub signature: Vec<u8>,
+    pub signature: BinaryData,
 
     /// The ID of the public key used to sing the State Transition
     pub signature_public_key_id: KeyID,
@@ -95,7 +95,7 @@ impl IdentityUpdateTransition {
             .map_err(ProtocolError::ValueError)?
             .unwrap_or(LATEST_VERSION);
         let signature = raw_object
-            .get_bytes(property_names::SIGNATURE)
+            .get_binary_data(property_names::SIGNATURE)
             .map_err(ProtocolError::ValueError)?;
         let signature_public_key_id = raw_object
             .get_integer(property_names::SIGNATURE_PUBLIC_KEY_ID)
@@ -267,25 +267,8 @@ impl StateTransitionConvert for IdentityUpdateTransition {
     }
 
     fn to_json(&self, skip_signature: bool) -> Result<JsonValue, ProtocolError> {
-        // The [state_transition_helpers::to_json] doesn't  convert the `add_public_keys` property.
-        // The property must be serialized manually
-        let mut add_public_keys: Vec<JsonValue> = vec![];
-        for key in self.add_public_keys.iter() {
-            add_public_keys.push(key.to_json()?);
-        }
-
-        let mut json_object: JsonValue = state_transition_helpers::to_json(
-            self,
-            Self::binary_property_paths(),
-            Self::signature_property_paths(),
-            skip_signature,
-        )?;
-        json_object.insert(
-            property_names::ADD_PUBLIC_KEYS.to_owned(),
-            JsonValue::Array(add_public_keys),
-        )?;
-
-        Ok(json_object)
+        self.to_object(skip_signature)
+            .and_then(|value| value.try_into().map_err(ProtocolError::ValueError))
     }
 }
 
@@ -294,7 +277,7 @@ impl StateTransitionLike for IdentityUpdateTransition {
         self.protocol_version
     }
 
-    fn get_signature(&self) -> &Vec<u8> {
+    fn get_signature(&self) -> &BinaryData {
         &self.signature
     }
 
@@ -302,7 +285,7 @@ impl StateTransitionLike for IdentityUpdateTransition {
         self.transition_type
     }
 
-    fn set_signature(&mut self, signature: Vec<u8>) {
+    fn set_signature(&mut self, signature: BinaryData) {
         self.signature = signature;
     }
 
@@ -316,6 +299,10 @@ impl StateTransitionLike for IdentityUpdateTransition {
 
     fn set_execution_context(&mut self, execution_context: StateTransitionExecutionContext) {
         self.execution_context = execution_context
+    }
+
+    fn set_signature_bytes(&mut self, signature: Vec<u8>) {
+        self.signature = BinaryData::new(signature)
     }
 }
 
@@ -353,7 +340,7 @@ mod test {
         let transition = IdentityUpdateTransition {
             identity_id: generate_random_identifier_struct(),
             add_public_keys: vec![(&public_key).into()],
-            signature: generate_random_identifier().to_vec(),
+            signature: BinaryData::new(generate_random_identifier().to_vec()),
             ..Default::default()
         };
 
@@ -381,7 +368,7 @@ mod test {
         let transition = IdentityUpdateTransition {
             identity_id: generate_random_identifier_struct(),
             add_public_keys: vec![(&public_key).into()],
-            signature: generate_random_identifier().to_vec(),
+            signature: BinaryData::new(generate_random_identifier().to_vec()),
 
             ..Default::default()
         };

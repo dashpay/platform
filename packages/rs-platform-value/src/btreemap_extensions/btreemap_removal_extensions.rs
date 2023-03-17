@@ -1,4 +1,4 @@
-use crate::{Error, Identifier, Value};
+use crate::{BinaryData, Error, Identifier, Value};
 use std::collections::BTreeMap;
 
 pub trait BTreeValueRemoveFromMapHelper {
@@ -38,6 +38,8 @@ pub trait BTreeValueRemoveFromMapHelper {
     fn remove_bool(&mut self, key: &str) -> Result<bool, Error>;
     fn remove_optional_identifier(&mut self, key: &str) -> Result<Option<Identifier>, Error>;
     fn remove_identifier(&mut self, key: &str) -> Result<Identifier, Error>;
+    fn remove_binary_data(&mut self, key: &str) -> Result<BinaryData, Error>;
+    fn remove_optional_binary_data(&mut self, key: &str) -> Result<Option<BinaryData>, Error>;
 }
 
 impl BTreeValueRemoveFromMapHelper for BTreeMap<String, &Value> {
@@ -174,6 +176,24 @@ impl BTreeValueRemoveFromMapHelper for BTreeMap<String, &Value> {
         self.remove_optional_bool(key)?
             .ok_or_else(|| Error::StructureError(format!("unable to remove float property {key}")))
     }
+
+    fn remove_binary_data(&mut self, key: &str) -> Result<BinaryData, Error> {
+        self.remove_optional_binary_data(key)?.ok_or_else(|| {
+            Error::StructureError(format!("unable to remove binary data property {key}"))
+        })
+    }
+
+    fn remove_optional_binary_data(&mut self, key: &str) -> Result<Option<BinaryData>, Error> {
+        self.remove(key)
+            .and_then(|v| {
+                if v.is_null() {
+                    None
+                } else {
+                    Some(v.to_binary_data())
+                }
+            })
+            .transpose()
+    }
 }
 
 impl BTreeValueRemoveFromMapHelper for BTreeMap<String, Value> {
@@ -269,6 +289,23 @@ impl BTreeValueRemoveFromMapHelper for BTreeMap<String, Value> {
 
     fn remove_bytes(&mut self, key: &str) -> Result<Vec<u8>, Error> {
         self.remove_optional_bytes(key)?
+            .ok_or_else(|| Error::StructureError(format!("unable to remove bytes property {key}")))
+    }
+
+    fn remove_optional_binary_data(&mut self, key: &str) -> Result<Option<BinaryData>, Error> {
+        self.remove(key)
+            .and_then(|v| {
+                if v.is_null() {
+                    None
+                } else {
+                    Some(v.into_binary_data())
+                }
+            })
+            .transpose()
+    }
+
+    fn remove_binary_data(&mut self, key: &str) -> Result<BinaryData, Error> {
+        self.remove_optional_binary_data(key)?
             .ok_or_else(|| Error::StructureError(format!("unable to remove bytes property {key}")))
     }
 

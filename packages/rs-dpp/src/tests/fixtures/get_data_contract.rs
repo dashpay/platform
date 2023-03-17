@@ -1,5 +1,6 @@
 use std::sync::Arc;
 
+use platform_value::platform_value;
 use serde_json::json;
 
 use crate::prelude::*;
@@ -12,14 +13,14 @@ use crate::{
 };
 
 pub fn get_data_contract_fixture(owner_id: Option<Identifier>) -> DataContract {
-    let defs = json!(
+    let defs = platform_value!(
     {
         "lastName": {
             "type" : "string",
         },
     });
 
-    let documents = json!(
+    let documents = platform_value!(
     {
         "niceDocument": {
             "type": "object",
@@ -113,11 +114,11 @@ pub fn get_data_contract_fixture(owner_id: Option<Identifier>) -> DataContract {
             "properties": {
                 "firstName": {
                     "type": "string",
-                    "maxLength": 63
+                    "maxLength": 63u32
                 },
                 "lastName": {
                     "type": "string",
-                    "maxLength": 63
+                    "maxLength": 63u32
                 }
             },
             "required": [
@@ -198,14 +199,14 @@ pub fn get_data_contract_fixture(owner_id: Option<Identifier>) -> DataContract {
                 "byteArrayField": {
                     "type": "array",
                     "byteArray": true,
-                    "maxItems": 16,
+                    "maxItems": 16u32,
                 },
                 "identifierField": {
                     "type": "array",
                     "byteArray": true,
                     "contentMediaType": identifier::MEDIA_TYPE,
-                    "minItems": 32,
-                    "maxItems": 32
+                    "minItems": 32u32,
+                    "maxItems": 32u32
                 }
             },
             "required": [
@@ -218,19 +219,19 @@ pub fn get_data_contract_fixture(owner_id: Option<Identifier>) -> DataContract {
             "properties": {
                 "firstName": {
                     "type": "string",
-                    "maxLength": 63
+                    "maxLength": 63u32
                 },
                 "lastName": {
                     "type": "string",
-                    "maxLength": 63
+                    "maxLength": 63u32
                 },
                 "country": {
                     "type": "string",
-                    "maxLength": 63
+                    "maxLength": 63u32
                 },
                 "city": {
                     "type": "string",
-                    "maxLength": 63
+                    "maxLength": 63u32
                 }
             },
             "indices": [
@@ -287,6 +288,6 @@ pub fn get_data_contract_fixture(owner_id: Option<Identifier>) -> DataContract {
     let owner_id = owner_id.unwrap_or_else(generate_random_identifier_struct);
 
     factory
-        .create(owner_id, documents, Some(defs))
+        .create(owner_id, documents, None, Some(defs))
         .expect("data in fixture should be correct")
 }

@@ -352,6 +352,31 @@ impl Value {
         }
     }
 
+    /// If the `Value` is a ref to `Bytes`, returns a the associated `BinaryData` data as `Ok`.
+    /// BinaryData wraps Vec<u8>
+    /// Returns `Err(Error::Structure("reason"))` otherwise.
+    ///
+    /// ```
+    /// # use platform_value::{BinaryData, Error, Value};
+    /// #
+    /// let value = Value::Bytes(vec![104, 101, 108, 108, 111]);
+    /// assert_eq!(value.to_binary_data(), Ok(BinaryData::new(vec![104, 101, 108, 108, 111])));
+    ///
+    /// let value = Value::Bool(true);
+    /// assert_eq!(value.to_binary_data(), Err(Error::StructureError("ref value are not bytes found true instead".to_string())));
+    /// ```
+    pub fn to_binary_data(&self) -> Result<BinaryData, Error> {
+        match self {
+            Value::Bytes(vec) => Ok(BinaryData::new(vec.clone())),
+            Value::Bytes32(vec) => Ok(BinaryData::new(vec.to_vec())),
+            Value::Identifier(vec) => Ok(BinaryData::new(vec.to_vec())),
+            other => Err(Error::StructureError(format!(
+                "ref value are not bytes found {} instead",
+                other
+            ))),
+        }
+    }
+
     /// If the `Value` is a ref to `Bytes`, returns a the associated `&[u8]` data as `Ok`.
     /// Returns `Err(Error::Structure("reason"))` otherwise.
     ///
@@ -1085,7 +1110,13 @@ impl Value {
             };
 
             if split.peek().is_none() {
-                let bytes = new_value.to_identifier_bytes()?;
+                let bytes = match replacement_type {
+                    ReplacementType::Identifier
+                    | ReplacementType::IdentifierBytes
+                    | ReplacementType::TextBase58 => new_value.to_identifier_bytes(),
+                    ReplacementType::BinaryBytes
+                    | ReplacementType::TextBase64 => new_value.to_binary_bytes(),
+                }?;
                 *new_value = replacement_type.replace_for_bytes(bytes)?;
                 return Ok(true);
             }

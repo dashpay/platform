@@ -1,6 +1,6 @@
 use std::convert::{TryFrom, TryInto};
 
-use platform_value::Value;
+use platform_value::{BinaryData, Value};
 use serde::de::Error as DeError;
 use serde::ser::Error as SerError;
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
@@ -31,7 +31,7 @@ pub struct IdentityTopUpTransition {
     // Generic identity ST fields
     pub protocol_version: u32,
     pub transition_type: StateTransitionType,
-    pub signature: Vec<u8>,
+    pub signature: BinaryData,
     pub execution_context: StateTransitionExecutionContext,
 }
 
@@ -90,7 +90,7 @@ impl IdentityTopUpTransition {
             .map_err(ProtocolError::ValueError)?
             .unwrap_or(LATEST_VERSION);
         let signature = raw_object
-            .get_optional_bytes(property_names::SIGNATURE)
+            .get_optional_binary_data(property_names::SIGNATURE)
             .map_err(ProtocolError::ValueError)?
             .unwrap_or_default();
         let identity_id = Identifier::from(
@@ -197,12 +197,16 @@ impl StateTransitionLike for IdentityTopUpTransition {
         StateTransitionType::IdentityTopUp
     }
     /// returns the signature as a byte-array
-    fn get_signature(&self) -> &Vec<u8> {
+    fn get_signature(&self) -> &BinaryData {
         &self.signature
     }
     /// set a new signature
-    fn set_signature(&mut self, signature: Vec<u8>) {
+    fn set_signature(&mut self, signature: BinaryData) {
         self.signature = signature
+    }
+
+    fn set_signature_bytes(&mut self, signature: Vec<u8>) {
+        self.signature = BinaryData::new(signature)
     }
 
     fn get_execution_context(&self) -> &StateTransitionExecutionContext {

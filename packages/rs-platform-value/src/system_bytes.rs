@@ -1,4 +1,4 @@
-use crate::{Error, Identifier, Value};
+use crate::{BinaryData, Error, Identifier, Value};
 
 impl Value {
     /// If the `Value` is a `Bytes`, a `Text` using base 58 or Vector of `U8`, returns the
@@ -137,6 +137,32 @@ impl Value {
                     .to_string(),
             )),
         }
+    }
+
+    /// If the `Value` is a `Bytes`, a `Text` using base 64 or Vector of `U8`, returns the
+    /// associated `Vec<u8>` data as `Ok`.
+    /// Returns `Err(Error::Structure("reason"))` otherwise.
+    ///
+    /// ```
+    /// # use platform_value::{BinaryData, Error, Value};
+    /// #
+    /// let value = Value::Bytes(vec![104, 101, 108, 108, 111]);
+    /// assert_eq!(value.into_binary_data(), Ok(BinaryData::new(vec![104, 101, 108, 108, 111])));    ///
+    ///
+    /// let value = Value::Text("a811".to_string());
+    /// assert_eq!(value.into_binary_data(), Ok(BinaryData::new(vec![107, 205, 117])));
+    ///
+    /// let value = Value::Array(vec![Value::U8(104), Value::U8(101), Value::U8(108)]);
+    /// assert_eq!(value.into_binary_data(), Ok(BinaryData::new(vec![104, 101, 108])));
+    ///
+    /// let value = Value::Identifier([5u8;32]);
+    /// assert_eq!(value.into_binary_data(), Ok(BinaryData::new(vec![5, 5, 5,5,5,5,5,5,5, 5, 5,5,5,5,5,5,5, 5, 5,5,5,5,5,5,5, 5, 5,5,5,5,5,5])));
+    ///
+    /// let value = Value::Bool(true);
+    /// assert_eq!(value.into_binary_data(), Err(Error::StructureError("value are not bytes, a string, or an array of values representing bytes".to_string())));
+    /// ```
+    pub fn into_binary_data(self) -> Result<BinaryData, Error> {
+        Ok(BinaryData::new(self.into_binary_bytes()?))
     }
 
     /// If the `Value` is a ref to a `Bytes`, a `Text` using base 58 or Vector of `U8`, returns the

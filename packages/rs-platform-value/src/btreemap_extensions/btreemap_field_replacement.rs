@@ -8,7 +8,8 @@ use std::vec::IntoIter;
 #[derive(Debug, Clone, Copy)]
 pub enum ReplacementType {
     Identifier,
-    Bytes,
+    IdentifierBytes,
+    BinaryBytes,
     TextBase58,
     TextBase64,
 }
@@ -23,7 +24,8 @@ impl ReplacementType {
                     ))
                 })?))
             }
-            ReplacementType::Bytes => Ok(Value::Bytes(bytes)),
+            ReplacementType::BinaryBytes
+            | ReplacementType::IdentifierBytes => Ok(Value::Bytes(bytes)),
             ReplacementType::TextBase58 => Ok(Value::Text(bs58::encode(bytes).into_string())),
             ReplacementType::TextBase64 => Ok(Value::Text(base64::encode(bytes))),
         }
@@ -32,7 +34,8 @@ impl ReplacementType {
     pub fn replace_for_bytes_32(&self, bytes: [u8; 32]) -> Result<Value, Error> {
         match self {
             ReplacementType::Identifier => Ok(Value::Identifier(bytes)),
-            ReplacementType::Bytes => Ok(Value::Bytes32(bytes)),
+            ReplacementType::BinaryBytes
+            | ReplacementType::IdentifierBytes => Ok(Value::Bytes32(bytes)),
             ReplacementType::TextBase58 => Ok(Value::Text(bs58::encode(bytes).into_string())),
             ReplacementType::TextBase64 => Ok(Value::Text(base64::encode(bytes))),
         }

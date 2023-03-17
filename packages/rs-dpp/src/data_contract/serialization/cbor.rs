@@ -36,8 +36,9 @@ impl DataContract {
         let version = data_contract_map.get_integer(property_names::VERSION)?;
 
         // Defs
-        let defs =
-            data_contract_map.get_optional_inner_str_json_value_map::<BTreeMap<_, _>>("$defs")?;
+        let defs = data_contract_map
+            .get_optional_inner_str_json_value_map::<BTreeMap<_, _>>("$defs")?
+            .unwrap_or_default();
 
         // Documents
         let documents: BTreeMap<String, JsonValue> = data_contract_map
@@ -47,9 +48,9 @@ impl DataContract {
         let mutability = data_contract::get_contract_configuration_properties(&data_contract_map)
             .map_err(|e| ProtocolError::ParsingError(e.to_string()))?;
         let definition_references = data_contract::get_definitions(&data_contract_map)?;
-        let document_types = data_contract::get_document_types(
+        let document_types = data_contract::get_document_types_from_contract(
             &data_contract_map,
-            definition_references,
+            &definition_references,
             mutability.documents_keep_history_contract_default,
             mutability.documents_mutable_contract_default,
         )
@@ -100,13 +101,11 @@ impl DataContract {
 
         contract_cbor_map.insert(property_names::DOCUMENTS, docs);
 
-        if let Some(defs) = &self.defs {
-            contract_cbor_map.insert(
-                property_names::DEFINITIONS,
-                CborValue::serialized(defs)
-                    .map_err(|e| ProtocolError::EncodingError(e.to_string()))?,
-            );
-        }
+        contract_cbor_map.insert(
+            property_names::DEFINITIONS,
+            CborValue::serialized(&self.defs)
+                .map_err(|e| ProtocolError::EncodingError(e.to_string()))?,
+        );
 
         Ok(contract_cbor_map)
     }

@@ -252,8 +252,11 @@ fn validate_raw_transitions<'a>(
                 let enriched_data_contract = &enriched_contracts_by_action[&action];
                 let document_schema = enriched_data_contract.get_document_schema(document_type)?;
 
-                let schema_validator = if let Some(defs) = enriched_data_contract.definitions() {
-                    JsonSchemaValidator::new_with_definitions(document_schema.clone(), defs)
+                let schema_validator = if !enriched_data_contract.defs.is_empty() {
+                    JsonSchemaValidator::new_with_definitions(
+                        document_schema.clone(),
+                        enriched_data_contract.defs.iter(),
+                    )
                 } else {
                     JsonSchemaValidator::new(document_schema.clone())
                 }

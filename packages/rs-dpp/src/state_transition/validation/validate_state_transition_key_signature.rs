@@ -106,7 +106,7 @@ pub async fn validate_state_transition_key_signature<SR: StateRepositoryLike>(
 
     let verification_result = verify_hash_signature(
         &state_transition_hash,
-        state_transition.get_signature(),
+        state_transition.get_signature().as_slice(),
         &public_key_hash,
     );
     if verification_result.is_err() {
@@ -134,6 +134,7 @@ fn get_asset_lock_proof(
 #[cfg(test)]
 mod test {
     use dashcore::{secp256k1::SecretKey, Network, PrivateKey};
+    use platform_value::BinaryData;
     use std::sync::Arc;
 
     use crate::{
@@ -269,7 +270,7 @@ mod test {
             .expect("state transition should be signed");
 
         // setting an invalid signature
-        state_transition.set_signature(vec![0u8; 65]);
+        state_transition.set_signature(BinaryData::new(vec![0u8; 65]));
 
         let result = validate_state_transition_key_signature(
             &state_repository,

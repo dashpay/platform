@@ -79,6 +79,34 @@ impl BinaryData {
     pub fn to_vec(&self) -> Vec<u8> {
         self.0.clone()
     }
+
+    pub fn is_empty(&self) -> bool {
+        self.0.is_empty()
+    }
+}
+
+impl From<Vec<u8>> for BinaryData {
+    fn from(value: Vec<u8>) -> Self {
+        BinaryData::new(value)
+    }
+}
+
+impl PartialEq<&[u8]> for BinaryData {
+    fn eq(&self, other: &&[u8]) -> bool {
+        self.as_slice() == *other
+    }
+}
+
+impl PartialEq<[u8]> for BinaryData {
+    fn eq(&self, other: &[u8]) -> bool {
+        self.as_slice() == other
+    }
+}
+
+impl PartialEq<Vec<u8>> for BinaryData {
+    fn eq(&self, other: &Vec<u8>) -> bool {
+        self.as_slice() == other
+    }
 }
 
 #[cfg(test)]

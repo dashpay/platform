@@ -206,7 +206,7 @@ impl ExtendedDocument {
         extended_document
             .document
             .properties
-            .replace_at_paths(binary_paths, ReplacementType::Bytes)?;
+            .replace_at_paths(binary_paths, ReplacementType::BinaryBytes)?;
         Ok(extended_document)
     }
 

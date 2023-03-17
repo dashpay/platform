@@ -1,3 +1,4 @@
+use platform_value::BinaryData;
 use serde::{Deserialize, Serialize};
 
 use super::{
@@ -13,7 +14,7 @@ const PROPERTY_PROTOCOL_VERSION: &str = "protocolVersion";
 #[serde(rename_all = "camelCase")]
 struct ExampleStateTransition {
     pub protocol_version: u32,
-    pub signature: Vec<u8>,
+    pub signature: BinaryData,
     pub transition_type: StateTransitionType,
     #[serde(skip)]
     pub execution_context: StateTransitionExecutionContext,
@@ -30,7 +31,7 @@ impl StateTransitionLike for ExampleStateTransition {
         self.protocol_version
     }
 
-    fn get_signature(&self) -> &Vec<u8> {
+    fn get_signature(&self) -> &BinaryData {
         &self.signature
     }
 
@@ -38,8 +39,12 @@ impl StateTransitionLike for ExampleStateTransition {
         self.transition_type
     }
 
-    fn set_signature(&mut self, signature: Vec<u8>) {
+    fn set_signature(&mut self, signature: BinaryData) {
         self.signature = signature
+    }
+
+    fn set_signature_bytes(&mut self, signature: Vec<u8>) {
+        self.signature = BinaryData::new(signature)
     }
     fn get_execution_context(&self) -> &StateTransitionExecutionContext {
         &self.execution_context

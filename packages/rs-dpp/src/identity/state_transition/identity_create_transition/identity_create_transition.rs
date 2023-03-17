@@ -1,7 +1,7 @@
 use std::convert::{TryFrom, TryInto};
 
 use platform_value::btreemap_extensions::BTreeValueMapHelper;
-use platform_value::Value;
+use platform_value::{BinaryData, Value};
 use serde::{Deserialize, Serialize};
 use serde_json::Value as JsonValue;
 
@@ -39,7 +39,7 @@ pub struct IdentityCreateTransition {
     // Generic identity ST fields
     pub protocol_version: u32,
     pub transition_type: StateTransitionType,
-    pub signature: Vec<u8>,
+    pub signature: BinaryData,
     #[serde(skip)]
     pub execution_context: StateTransitionExecutionContext,
 }
@@ -246,12 +246,16 @@ impl StateTransitionLike for IdentityCreateTransition {
         StateTransitionType::IdentityCreate
     }
     /// returns the signature as a byte-array
-    fn get_signature(&self) -> &Vec<u8> {
+    fn get_signature(&self) -> &BinaryData {
         &self.signature
     }
     /// set a new signature
-    fn set_signature(&mut self, signature: Vec<u8>) {
+    fn set_signature(&mut self, signature: BinaryData) {
         self.signature = signature
+    }
+
+    fn set_signature_bytes(&mut self, signature: Vec<u8>) {
+        self.signature = BinaryData::new(signature)
     }
     fn get_execution_context(&self) -> &StateTransitionExecutionContext {
         &self.execution_context

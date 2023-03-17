@@ -140,7 +140,6 @@ mod tests {
         };
 
         let platform_value = to_value(yeet.clone()).expect("please");
-        dbg!(&platform_value);
         let yeet_back: Yeet = from_value(platform_value).expect("please once again");
 
         assert_eq!(yeet, yeet_back);

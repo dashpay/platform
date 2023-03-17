@@ -1,7 +1,8 @@
-use platform_value::Value;
+use platform_value::{BinaryData, ReplacementType, Value};
 use serde::{Deserialize, Serialize};
 use serde_json::Value as JsonValue;
 use serde_repr::{Deserialize_repr, Serialize_repr};
+use std::convert::TryInto;
 
 use crate::version::LATEST_VERSION;
 use crate::{
@@ -12,7 +13,6 @@ use crate::{
         StateTransitionConvert, StateTransitionIdentitySigned, StateTransitionLike,
         StateTransitionType,
     },
-    util::json_value::{JsonValueExt, ReplaceWith},
     ProtocolError,
 };
 
@@ -50,7 +50,7 @@ pub struct IdentityCreditWithdrawalTransition {
     pub output_script: CoreScript,
     pub revision: Revision,
     pub signature_public_key_id: KeyID,
-    pub signature: Vec<u8>,
+    pub signature: BinaryData,
     #[serde(skip)]
     pub execution_context: StateTransitionExecutionContext,
 }
@@ -81,9 +81,18 @@ impl IdentityCreditWithdrawalTransition {
     }
 
     pub fn from_json(mut value: JsonValue) -> Result<Self, ProtocolError> {
-        value.replace_binary_paths(Self::binary_property_paths(), ReplaceWith::Bytes)?;
+        let mut value: Value = value.into();
+        value
+            .replace_at_paths(Self::binary_property_paths(), ReplacementType::BinaryBytes)
+            .map_err(ProtocolError::ValueError)?;
+        value
+            .replace_at_paths(
+                Self::identifiers_property_paths(),
+                ReplacementType::Identifier,
+            )
+            .map_err(ProtocolError::ValueError)?;
 
-        Self::from_value(value.into())
+        Self::from_value(value)
     }
 
     pub fn from_raw_object(
@@ -132,13 +141,17 @@ impl StateTransitionLike for IdentityCreditWithdrawalTransition {
     }
 
     /// returns the signature as a byte-array
-    fn get_signature(&self) -> &Vec<u8> {
+    fn get_signature(&self) -> &BinaryData {
         &self.signature
     }
 
     /// set a new signature
-    fn set_signature(&mut self, signature: Vec<u8>) {
+    fn set_signature(&mut self, signature: BinaryData) {
         self.signature = signature
+    }
+
+    fn set_signature_bytes(&mut self, signature: Vec<u8>) {
+        self.signature = BinaryData::new(signature)
     }
 
     fn get_execution_context(&self) -> &StateTransitionExecutionContext {
@@ -178,18 +191,7 @@ impl StateTransitionConvert for IdentityCreditWithdrawalTransition {
     }
 
     fn to_json(&self, skip_signature: bool) -> Result<JsonValue, ProtocolError> {
-        let mut json_value: JsonValue = serde_json::to_value(self)?;
-
-        if skip_signature {
-            if let JsonValue::Object(ref mut o) = json_value {
-                for path in Self::signature_property_paths() {
-                    o.remove(path);
-                }
-            }
-        }
-
-        json_value.replace_binary_paths(Self::binary_property_paths(), ReplaceWith::Base64)?;
-
-        Ok(json_value)
+        self.to_object(skip_signature)
+            .and_then(|value| value.try_into().map_err(ProtocolError::ValueError))
     }
 }

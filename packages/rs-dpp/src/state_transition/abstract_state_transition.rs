@@ -2,7 +2,7 @@ use std::fmt::Debug;
 
 use dashcore::signer;
 
-use platform_value::{Value, ValueMapHelper};
+use platform_value::{BinaryData, Value, ValueMapHelper};
 use serde::Serialize;
 use serde_json::Value as JsonValue;
 
@@ -53,9 +53,9 @@ pub trait StateTransitionLike:
     /// returns the type of State Transition
     fn get_type(&self) -> StateTransitionType;
     /// returns the signature as a byte-array
-    fn get_signature(&self) -> &Vec<u8>;
+    fn get_signature(&self) -> &BinaryData;
     /// set a new signature
-    fn set_signature(&mut self, signature: Vec<u8>);
+    fn set_signature(&mut self, signature: BinaryData);
     /// Calculates the ST fee in credits
     fn calculate_fee(&self) -> i64 {
         calculate_state_transition_fee(self)
@@ -70,12 +70,12 @@ pub trait StateTransitionLike:
     ) -> Result<(), ProtocolError> {
         let data = self.to_buffer(true)?;
         match key_type {
-            KeyType::BLS12_381 => self.set_signature(bls.sign(&data, private_key)?),
+            KeyType::BLS12_381 => self.set_signature(bls.sign(&data, private_key)?.into()),
 
             // https://github.com/dashevo/platform/blob/9c8e6a3b6afbc330a6ab551a689de8ccd63f9120/packages/js-dpp/lib/stateTransition/AbstractStateTransition.js#L169
             KeyType::ECDSA_SECP256K1 | KeyType::ECDSA_HASH160 => {
                 let signature = signer::sign(&data, private_key)?;
-                self.set_signature(signature.to_vec());
+                self.set_signature(signature.to_vec().into());
             }
 
             // the default behavior from
@@ -120,7 +120,7 @@ pub trait StateTransitionLike:
         let data_hash = self.hash(true)?;
         Ok(signer::verify_hash_signature(
             &data_hash,
-            self.get_signature(),
+            self.get_signature().as_slice(),
             public_key_hash,
         )?)
     }
@@ -135,7 +135,7 @@ pub trait StateTransitionLike:
         let data = self.to_buffer(true)?;
         Ok(signer::verify_data_signature(
             &data,
-            self.get_signature(),
+            self.get_signature().as_slice(),
             public_key,
         )?)
     }
@@ -154,7 +154,7 @@ pub trait StateTransitionLike:
 
         let data = self.to_buffer(true)?;
 
-        bls.verify_signature(self.get_signature(), &data, public_key)
+        bls.verify_signature(self.get_signature().as_slice(), &data, public_key)
             .map(|_| ())
     }
 
@@ -174,6 +174,7 @@ pub trait StateTransitionLike:
     fn get_execution_context(&self) -> &StateTransitionExecutionContext;
     fn get_execution_context_mut(&mut self) -> &mut StateTransitionExecutionContext;
     fn set_execution_context(&mut self, execution_context: StateTransitionExecutionContext);
+    fn set_signature_bytes(&mut self, signature: Vec<u8>);
 }
 
 /// The trait contains methods related to conversion of StateTransition into different formats
