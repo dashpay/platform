@@ -1,6 +1,7 @@
 use std::collections::BTreeMap;
 
 use dpp::data_contract::document_type::random_document::CreateRandomDocument;
+use dpp::platform_value::Value;
 use dpp::{
     contracts::withdrawals_contract, data_contract::DriveContractExt,
     document::document_stub::DocumentStub,
@@ -45,7 +46,7 @@ impl Drive {
             WhereClause {
                 field: withdrawals_contract::property_names::STATUS.to_string(),
                 operator: crate::query::WhereOperator::Equal,
-                value: ciborium::Value::Integer(status.into()),
+                value: Value::U8(status),
             },
         );
 
@@ -127,7 +128,7 @@ impl Drive {
             WhereClause {
                 field: withdrawals_contract::property_names::TRANSACTION_ID.to_string(),
                 operator: crate::query::WhereOperator::Equal,
-                value: ciborium::Value::Bytes(original_transaction_id.to_vec()),
+                value: Value::Bytes(original_transaction_id.to_vec()),
             },
         );
 
@@ -136,9 +137,7 @@ impl Drive {
             WhereClause {
                 field: withdrawals_contract::property_names::STATUS.to_string(),
                 operator: crate::query::WhereOperator::Equal,
-                value: ciborium::Value::Integer(
-                    (withdrawals_contract::WithdrawalStatus::POOLED as u8).into(),
-                ),
+                value: Value::U8(withdrawals_contract::WithdrawalStatus::POOLED as u8),
             },
         );
 

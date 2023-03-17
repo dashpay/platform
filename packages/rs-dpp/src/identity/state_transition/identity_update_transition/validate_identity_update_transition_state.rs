@@ -1,12 +1,11 @@
 use anyhow::anyhow;
-use dashcore::{consensus, BlockHeader};
 use serde_json::Value;
 use std::convert::TryInto;
 use std::sync::Arc;
 
+use crate::consensus::signature::{IdentityNotFoundError, SignatureError};
 use crate::{
     block_time_window::validate_time_in_block_time_window::validate_time_in_block_time_window,
-    consensus::basic::BasicError,
     identity::validation::{RequiredPurposeAndSecurityLevelValidator, TPublicKeysValidator},
     state_repository::StateRepositoryLike,
     state_transition::StateTransitionLike,
@@ -57,9 +56,9 @@ where
 
         let stored_identity = match maybe_stored_identity {
             None => {
-                validation_result.add_error(BasicError::IdentityNotFoundError {
-                    identity_id: state_transition.get_identity_id().to_owned(),
-                });
+                validation_result.add_error(SignatureError::IdentityNotFoundError(
+                    IdentityNotFoundError::new(state_transition.get_identity_id().to_owned()),
+                ));
                 return Ok(validation_result);
             }
             Some(identity) => identity,
@@ -102,16 +101,12 @@ where
         }
 
         if !state_transition.get_public_key_ids_to_disable().is_empty() {
-            let block_header_bytes = self
+            let last_block_header_time = self
                 .state_repository
-                .fetch_latest_platform_block_header()
+                .fetch_latest_platform_block_time()
                 .await
                 .map_err(|e| NonConsensusError::StateRepositoryFetchError(e.to_string()))?;
 
-            let block_header: BlockHeader = consensus::deserialize(&block_header_bytes)
-                .map_err(|e| NonConsensusError::from(anyhow!(e.to_string())))?;
-
-            let last_block_header_time = block_header.time as u64 * 1000;
             let disabled_at_ms = state_transition.get_public_keys_disabled_at().ok_or(
                 NonConsensusError::RequiredPropertyError {
                     property_name: property_names::PUBLIC_KEYS_DISABLED_AT.to_owned(),

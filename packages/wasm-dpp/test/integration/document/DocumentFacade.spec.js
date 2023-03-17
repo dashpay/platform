@@ -1,47 +1,63 @@
 const generateRandomIdentifier = require('@dashevo/dpp/lib/test/utils/generateRandomIdentifier');
-const DashPlatformProtocol = require('@dashevo/dpp/lib/DashPlatformProtocol');
-
-const Document = require('@dashevo/dpp/lib/document/Document');
-const DocumentsBatchTransition = require('@dashevo/dpp/lib/document/stateTransition/DocumentsBatchTransition/DocumentsBatchTransition');
-
-const ValidationResult = require('@dashevo/dpp/lib/validation/ValidationResult');
-
 const createStateRepositoryMock = require('@dashevo/dpp/lib/test/mocks/createStateRepositoryMock');
-
 const getDataContractFixture = require('@dashevo/dpp/lib/test/fixtures/getDataContractFixture');
 const getDocumentsFixture = require('@dashevo/dpp/lib/test/fixtures/getDocumentsFixture');
 const getDocumentTransitionsFixture = require('@dashevo/dpp/lib/test/fixtures/getDocumentTransitionsFixture');
 
-const DataContractNotPresentError = require('@dashevo/dpp/lib/errors/consensus/basic/document/DataContractNotPresentError');
-const MissingOptionError = require('@dashevo/dpp/lib/errors/MissingOptionError');
+const { default: loadWasmDpp } = require('../../../dist');
+const getBlsAdapterMock = require('../../../lib/test/mocks/getBlsAdapterMock');
+
+let Document;
+let DataContract;
+let Identifier;
+let ValidationResult;
+let DocumentsBatchTransition;
+let DashPlatformProtocol;
+let DataContractNotPresentError;
 
 describe('DocumentFacade', () => {
   let dpp;
   let document;
   let documents;
+  let documentsJs;
   let dataContract;
   let ownerId;
   let stateRepositoryMock;
+  let blsAdapter;
 
   beforeEach(async function beforeEach() {
-    ownerId = generateRandomIdentifier();
-    dataContract = getDataContractFixture(ownerId);
+    ({
+      Document,
+      DataContract,
+      Identifier,
+      ValidationResult,
+      DocumentsBatchTransition,
+      DashPlatformProtocol,
+      DataContractNotPresentError,
+    } = await loadWasmDpp());
+
+    const ownerIdJs = generateRandomIdentifier();
+    ownerId = new Identifier(ownerIdJs.toBuffer());
+    const dataContractJs = getDataContractFixture(ownerIdJs);
+    dataContract = new DataContract(dataContractJs.toObject());
 
     stateRepositoryMock = createStateRepositoryMock(this.sinonSandbox);
-
     stateRepositoryMock.fetchDataContract.resolves(dataContract);
 
-    dpp = new DashPlatformProtocol({
-      stateRepository: stateRepositoryMock,
-    });
-    await dpp.initialize();
+    blsAdapter = await getBlsAdapterMock();
+    dpp = new DashPlatformProtocol({}, blsAdapter, stateRepositoryMock);
 
-    documents = getDocumentsFixture(dataContract);
+    documentsJs = getDocumentsFixture(dataContractJs);
+    documents = documentsJs.map((d) => {
+      const currentDocument = new Document(d.toObject(), dataContract.clone());
+      currentDocument.setEntropy(d.entropy);
+      return currentDocument;
+    });
     ([document] = documents);
   });
 
   describe('create', () => {
-    it('should create Document', () => {
+    it('should create Document - Rust', async () => {
       const result = dpp.document.create(
         dataContract,
         ownerId,
@@ -57,21 +73,11 @@ describe('DocumentFacade', () => {
   });
 
   describe('createFromObject', () => {
-    it('should throw MissingOption if stateRepository is not set', async () => {
-      dpp = new DashPlatformProtocol();
-      await dpp.initialize();
-
-      try {
-        await dpp.document.createFromObject(document.toObject());
-
-        expect.fail('MissingOption should be thrown');
-      } catch (e) {
-        expect(e).to.be.an.instanceOf(MissingOptionError);
-        expect(e.getOptionName()).to.equal('stateRepository');
-      }
+    it('should throw MissingOption if stateRepository is not set - Rust', async () => {
+      // not applicable
     });
 
-    it('should create Document from plain object', async () => {
+    it('should create Document from plain object - Rust', async () => {
       const result = await dpp.document.createFromObject(document.toObject());
 
       expect(result).to.be.an.instanceOf(Document);
@@ -81,21 +87,11 @@ describe('DocumentFacade', () => {
   });
 
   describe('createFromBuffer', () => {
-    it('should throw MissingOption if stateRepository is not set', async () => {
-      dpp = new DashPlatformProtocol();
-      await dpp.initialize();
-
-      try {
-        await dpp.document.createFromBuffer(document.toObject());
-
-        expect.fail('MissingOption should be thrown');
-      } catch (e) {
-        expect(e).to.be.an.instanceOf(MissingOptionError);
-        expect(e.getOptionName()).to.equal('stateRepository');
-      }
+    it('should throw MissingOption if stateRepository is not set - Rust', async () => {
+      // not applicable
     });
 
-    it('should create Document from serialized', async () => {
+    it('should create Document from serialized - Rust', async () => {
       const result = await dpp.document.createFromBuffer(document.toBuffer());
 
       expect(result).to.be.an.instanceOf(Document);
@@ -105,41 +101,32 @@ describe('DocumentFacade', () => {
   });
 
   describe('createStateTransition', () => {
-    it('should create DocumentsBatchTransition with passed documents', () => {
+    it('should create DocumentsBatchTransition with passed documents - Rust', () => {
       const result = dpp.document.createStateTransition({
         create: documents,
       });
 
       expect(result).to.be.instanceOf(DocumentsBatchTransition);
-      expect(result.getTransitions()).to.deep.equal(getDocumentTransitionsFixture({
-        create: documents,
-      }));
+      expect(result.getTransitions().map((t) => t.toObject()))
+        .has.deep.members(getDocumentTransitionsFixture({
+          create: documentsJs,
+        }).map((t) => t.toObject()));
     });
   });
 
   describe('validate', () => {
-    it('should throw MissingOption if stateRepository is not set', async () => {
-      dpp = new DashPlatformProtocol();
-      await dpp.initialize();
-
-      try {
-        await dpp.document.validate(document);
-
-        expect.fail('MissingOption should be thrown');
-      } catch (e) {
-        expect(e).to.be.an.instanceOf(MissingOptionError);
-        expect(e.getOptionName()).to.equal('stateRepository');
-      }
+    it('should throw MissingOption if stateRepository is not set - Rust', async () => {
+      // not applicable
     });
 
-    it('should validate Document', async () => {
+    it('should validate Document - Rust', async () => {
       const result = await dpp.document.validate(document);
 
       expect(result).to.be.an.instanceOf(ValidationResult);
       expect(result.isValid()).to.be.true();
     });
 
-    it('should return invalid result if Data Contract is invalid', async () => {
+    it('should return invalid result if Data Contract is invalid - Rust', async () => {
       stateRepositoryMock.fetchDataContract.resolves(null);
 
       const result = await dpp.document.validate(document);

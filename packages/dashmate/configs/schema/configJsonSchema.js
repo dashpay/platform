@@ -401,7 +401,7 @@ module.exports = {
                     llmqType: {
                       type: 'number',
                       // https://github.com/dashevo/dashcore-lib/blob/286c33a9d29d33f05d874c47a9b33764a0be0cf1/lib/constants/index.js#L42-L57
-                      enum: [1, 2, 3, 4, 100, 101, 102],
+                      enum: [1, 2, 3, 4, 100, 101, 102, 106, 107],
                     },
                   },
                   additionalProperties: false,
@@ -478,8 +478,17 @@ module.exports = {
                   required: ['port'],
                   additionalProperties: false,
                 },
-                nodeKey: {
+                node: {
                   type: 'object',
+                  properties: {
+                    id: {
+                      type: ['string', 'null'],
+                    },
+                    key: {
+                      type: ['string', 'null'],
+                    },
+                  },
+                  additionalProperties: false,
                 },
                 moniker: {
                   type: ['string', 'null'],
@@ -487,12 +496,8 @@ module.exports = {
                 genesis: {
                   type: 'object',
                 },
-                nodeId: {
-                  type: ['string', 'null'],
-                },
               },
-              required: ['docker', 'p2p', 'rpc', 'consensus',
-                'nodeKey', 'moniker', 'genesis', 'nodeId'],
+              required: ['docker', 'p2p', 'rpc', 'consensus', 'node', 'moniker', 'genesis'],
               additionalProperties: false,
             },
           },

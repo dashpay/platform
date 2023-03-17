@@ -24,7 +24,6 @@ const { base } = require('../../../../configs/system');
 /**
  * @param {ConfigFile} configFile
  * @param {generateBlsKeys} generateBlsKeys
- * @param {tenderdashInitTask} tenderdashInitTask
  * @param {registerMasternodeTask} registerMasternodeTask
  * @param {renderServiceTemplates} renderServiceTemplates
  * @param {writeServiceConfigs} writeServiceConfigs

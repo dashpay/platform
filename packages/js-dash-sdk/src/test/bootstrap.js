@@ -3,7 +3,7 @@ const path = require('path');
 
 const sinon = require('sinon');
 const sinonChai = require('sinon-chai');
-const { expect, use } = require('chai');
+const { use } = require('chai');
 const dirtyChai = require('dirty-chai');
 
 dotenvSafe.config({
@@ -20,7 +20,6 @@ before(function before() {
     this.sinon.restore();
   }
 });
-
 
 after(function after() {
   this.sinon.restore();

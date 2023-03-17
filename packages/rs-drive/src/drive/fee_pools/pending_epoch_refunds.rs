@@ -216,6 +216,7 @@ pub fn add_update_pending_epoch_refunds_operations(
     Ok(())
 }
 
+#[cfg(feature = "full")]
 #[cfg(test)]
 mod tests {
     use super::*;

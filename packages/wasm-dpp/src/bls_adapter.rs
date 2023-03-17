@@ -33,6 +33,7 @@ extern "C" {
     ) -> Result<js_sys::Uint8Array, JsValue>;
 }
 
+#[derive(Clone)]
 pub struct BlsAdapter(pub JsBlsAdapter);
 
 impl BlsModule for BlsAdapter {

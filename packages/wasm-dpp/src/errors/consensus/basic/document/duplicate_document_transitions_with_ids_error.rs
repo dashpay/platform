@@ -16,7 +16,7 @@ impl DuplicateDocumentTransitionsWithIdsErrorWasm {
 
 #[wasm_bindgen(js_class=DuplicateDocumentTransitionsWithIdsError)]
 impl DuplicateDocumentTransitionsWithIdsErrorWasm {
-    #[wasm_bindgen(js_name=getReferences)]
+    #[wasm_bindgen(js_name=getDocumentTransitionReferences)]
     pub fn get_references(&self) -> js_sys::Array {
         self.references
             .iter()

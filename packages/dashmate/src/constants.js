@@ -28,7 +28,8 @@ const quorumTypes = {
   LLMQ_TYPE_TEST: 100,
 };
 
-const MASTERNODE_DASH_AMOUNT = 1000;
+const MASTERNODE_COLLATERAL_AMOUNT = 1000;
+const HPMN_COLLATERAL_AMOUNT = 4000;
 
 const HOME_DIR_PATH = process.env.DASHMATE_HOME_DIR
   ? process.env.DASHMATE_HOME_DIR
@@ -56,7 +57,8 @@ module.exports = {
   NODE_TYPES: Object.values(nodeTypes),
   QUORUM_NAMES: Object.values(quorumNames),
   QUORUM_TYPES: quorumTypes,
-  MASTERNODE_DASH_AMOUNT,
+  MASTERNODE_COLLATERAL_AMOUNT,
+  HPMN_COLLATERAL_AMOUNT,
   HOME_DIR_PATH,
   CONFIG_FILE_PATH,
   OUTPUT_FORMATS,

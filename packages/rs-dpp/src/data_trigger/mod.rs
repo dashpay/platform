@@ -1,5 +1,3 @@
-use futures::future::LocalBoxFuture;
-
 pub use data_trigger_execution_context::*;
 pub use data_trigger_execution_result::*;
 pub use reject_data_trigger::*;
@@ -28,14 +26,6 @@ pub mod withdrawals_data_triggers;
 mod data_trigger_execution_result;
 mod reject_data_trigger;
 
-pub type BoxedTrigger<'a, SR> = Box<Trigger<'a, SR>>;
-pub type Trigger<'a, SR> =
-    dyn Fn(
-        &'a DocumentTransition,
-        &'a DataTriggerExecutionContext<SR>,
-        Option<&'a Identifier>,
-    ) -> LocalBoxFuture<'a, Result<DataTriggerExecutionResult, anyhow::Error>>;
-
 #[derive(Debug, Clone, Copy)]
 pub enum DataTriggerKind {
     CreateDataContractRequest,
@@ -45,7 +35,26 @@ pub enum DataTriggerKind {
     CrateFeatureFlag,
     DeleteWithdrawal,
 }
+impl From<DataTriggerKind> for &str {
+    fn from(value: DataTriggerKind) -> Self {
+        match value {
+            DataTriggerKind::CrateFeatureFlag => "createFeatureFlag",
+            DataTriggerKind::DataTriggerReject => "dataTriggerReject",
+            DataTriggerKind::DataTriggerRewardShare => "dataTriggerRewardShare",
+            DataTriggerKind::DataTriggerCreateDomain => "dataTriggerCreateDomain",
+            DataTriggerKind::CreateDataContractRequest => "createDataContractRequest",
+            DataTriggerKind::DeleteWithdrawal => "deleteWithdrawal",
+        }
+    }
+}
 
+impl Default for DataTriggerKind {
+    fn default() -> Self {
+        DataTriggerKind::CrateFeatureFlag
+    }
+}
+
+#[derive(Default, Clone)]
 pub struct DataTrigger {
     pub data_contract_id: Identifier,
     pub document_type: String,
@@ -78,7 +87,7 @@ impl DataTrigger {
         // TODO remove the clone
         let data_contract_id = context.data_contract.id.to_owned();
 
-        let execution_result = execute_trigger(
+        let maybe_execution_result = execute_trigger(
             self.data_trigger_kind,
             document_transition,
             context,
@@ -86,20 +95,22 @@ impl DataTrigger {
         )
         .await;
 
-        if let Err(err) = execution_result {
-            let consensus_error = DataTriggerError::DataTriggerExecutionError {
-                data_contract_id,
-                document_transition_id: *get_from_transition!(document_transition, id),
-                message: err.to_string(),
-                execution_error: err,
-                document_transition: None,
-                owner_id: None,
-            };
-            result.add_error(consensus_error.into());
-            return result;
-        }
+        match maybe_execution_result {
+            Err(err) => {
+                let consensus_error = DataTriggerError::DataTriggerExecutionError {
+                    data_contract_id,
+                    document_transition_id: *get_from_transition!(document_transition, id),
+                    message: err.to_string(),
+                    execution_error: err,
+                    document_transition: None,
+                    owner_id: None,
+                };
+                result.add_error(consensus_error.into());
+                result
+            }
 
-        result
+            Ok(execution_result) => execution_result,
+        }
     }
 }
 
@@ -135,8 +146,8 @@ where
     }
 }
 
-fn create_error<'a, SR>(
-    context: &DataTriggerExecutionContext<'a, SR>,
+fn create_error<SR>(
+    context: &DataTriggerExecutionContext<SR>,
     dt_create: &DocumentCreateTransition,
     msg: String,
 ) -> DataTriggerError

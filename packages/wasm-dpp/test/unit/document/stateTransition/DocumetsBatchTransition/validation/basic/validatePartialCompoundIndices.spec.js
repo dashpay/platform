@@ -1,42 +1,51 @@
-const validatePartialCompoundIndices = require('@dashevo/dpp/lib/document/stateTransition/DocumentsBatchTransition/validation/basic/validatePartialCompoundIndices');
-const InconsistentCompoundIndexDataError = require('@dashevo/dpp/lib/errors/consensus/basic/document/InconsistentCompoundIndexDataError');
-
 const getDocumentsFixture = require('@dashevo/dpp/lib/test/fixtures/getDocumentsFixture');
 const getContractFixture = require('@dashevo/dpp/lib/test/fixtures/getDataContractFixture');
 const getDocumentTransitionsFixture = require('@dashevo/dpp/lib/test/fixtures/getDocumentTransitionsFixture');
 
-const ValidationResult = require('@dashevo/dpp/lib/validation/ValidationResult');
-const { expectValidationError } = require('@dashevo/dpp/lib/test/expect/expectError');
+const { default: loadWasmDpp } = require('../../../../../../../dist');
+
+let DataContract;
+let validatePartialCompoundIndices;
+let InconsistentCompoundIndexDataError;
+let ValidationResult;
 
 describe('validatePartialCompoundIndices', () => {
-  let documents;
+  let documentsJs;
   let rawDocumentTransitions;
+  let dataContractJs;
   let dataContract;
-  let ownerId;
 
-  beforeEach(() => {
-    dataContract = getContractFixture();
-    ownerId = dataContract.getOwnerId();
+  beforeEach(async () => {
+    ({
+      DataContract,
+      validatePartialCompoundIndices,
+      ValidationResult,
+      // Errors:
+      InconsistentCompoundIndexDataError,
+    } = await loadWasmDpp());
+
+    dataContractJs = getContractFixture();
+    dataContract = DataContract.fromBuffer(dataContractJs.toBuffer());
   });
 
-  it('should return invalid result if compound index contains not all fields', () => {
-    const document = getDocumentsFixture(dataContract)[9];
-    document.set('lastName', undefined);
+  it('should return invalid result if compound index contains not all fields - Rust', () => {
+    const documentJs = getDocumentsFixture(dataContractJs)[9];
+    documentJs.set('lastName', undefined);
 
-    documents = [document];
+    documentsJs = [documentJs];
     rawDocumentTransitions = getDocumentTransitionsFixture({
-      create: documents,
+      create: documentsJs,
     }).map((documentTransition) => documentTransition.toObject());
 
-    const result = validatePartialCompoundIndices(ownerId, rawDocumentTransitions, dataContract);
+    const result = validatePartialCompoundIndices(rawDocumentTransitions, dataContract);
 
-    expectValidationError(result, InconsistentCompoundIndexDataError);
+    expect(result.isValid()).is.false();
 
     const [error] = result.getErrors();
-
+    expect(error).is.instanceOf(InconsistentCompoundIndexDataError);
     expect(error.getCode()).to.equal(1021);
 
-    const { optionalUniqueIndexedDocument } = dataContract.getDocuments();
+    const { optionalUniqueIndexedDocument } = dataContractJs.getDocuments();
 
     expect(error.getIndexedProperties()).to.deep.equal(
       optionalUniqueIndexedDocument.indices[1].properties.map((i) => Object.keys(i)[0]),
@@ -45,29 +54,29 @@ describe('validatePartialCompoundIndices', () => {
     expect(error.getDocumentType()).to.equal('optionalUniqueIndexedDocument');
   });
 
-  it('should return valid result if compound index contains no fields', () => {
-    const document = getDocumentsFixture(dataContract)[8];
-    document.setData({ });
+  it('should return valid result if compound index contains no fields - Rust', () => {
+    const document = getDocumentsFixture(dataContractJs)[8];
+    document.setData({});
 
-    documents = [document];
+    documentsJs = [document];
 
     rawDocumentTransitions = getDocumentTransitionsFixture({
-      create: documents,
+      create: documentsJs,
     }).map((documentTransition) => documentTransition.toObject());
 
-    const result = validatePartialCompoundIndices(ownerId, rawDocumentTransitions, dataContract);
+    const result = validatePartialCompoundIndices(rawDocumentTransitions, dataContract);
 
     expect(result).to.be.an.instanceOf(ValidationResult);
     expect(result.isValid()).to.be.true();
   });
 
-  it('should return valid result if compound index contains all fields', () => {
-    documents = [getDocumentsFixture(dataContract)[8]];
+  it('should return valid result if compound index contains all fields - Rust', () => {
+    documentsJs = [getDocumentsFixture(dataContractJs)[8]];
     rawDocumentTransitions = getDocumentTransitionsFixture({
-      create: documents,
+      create: documentsJs,
     }).map((documentTransition) => documentTransition.toObject());
 
-    const result = validatePartialCompoundIndices(ownerId, rawDocumentTransitions, dataContract);
+    const result = validatePartialCompoundIndices(rawDocumentTransitions, dataContract);
 
     expect(result).to.be.an.instanceOf(ValidationResult);
     expect(result.isValid()).to.be.true();

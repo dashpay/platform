@@ -1,13 +1,16 @@
+use std::convert::TryInto;
+
+use anyhow::{anyhow, bail};
 use dpp::{
     dashcore::{anyhow, anyhow::Context},
+    util::json_value::{JsonValueExt, ReplaceWith},
     ProtocolError,
 };
 
 use js_sys::Function;
 use serde::de::DeserializeOwned;
 use serde_json::Value;
-use wasm_bindgen::convert::RefFromWasmAbi;
-use wasm_bindgen::prelude::*;
+use wasm_bindgen::{convert::RefFromWasmAbi, prelude::*};
 
 use crate::errors::{from_dpp_err, RustConversionError};
 
@@ -82,7 +85,7 @@ where
 pub fn stringify(data: &JsValue) -> Result<String, JsValue> {
     let replacer_func = Function::new_with_args(
         "key, value",
-        "return value && value.type=='Buffer' ? value.data : value ",
+        "return (value != undefined && value.type=='Buffer')  ? value.data : value ",
     );
 
     let data_string: String =
@@ -120,6 +123,20 @@ impl<T> WithJsError<T> for Result<T, serde_json::Error> {
             Ok(ok) => Ok(ok),
             Err(error) => Err(RustConversionError::from(error).to_js_value()),
         }
+    }
+}
+
+pub trait IntoWasm {
+    fn to_wasm<T: RefFromWasmAbi<Abi = u32>>(&self, class_name: &str)
+        -> Result<T::Anchor, JsValue>;
+}
+
+impl IntoWasm for JsValue {
+    fn to_wasm<T: RefFromWasmAbi<Abi = u32>>(
+        &self,
+        class_name: &str,
+    ) -> Result<T::Anchor, JsValue> {
+        generic_of_js_val::<T>(self, class_name)
     }
 }
 
@@ -176,4 +193,69 @@ pub fn get_bool_from_options(
     } else {
         Ok(default)
     }
+}
+
+pub fn get_class_name(value: &JsValue) -> String {
+    js_sys::Object::get_prototype_of(value)
+        .constructor()
+        .name()
+        .into()
+}
+
+pub fn try_to_u64(value: JsValue) -> Result<u64, anyhow::Error> {
+    let result = if value.is_bigint() {
+        js_sys::BigInt::new(&value)
+            .map_err(|e| anyhow!("unable to create bigInt: {}", e.to_string()))?
+            .try_into()
+            .map_err(|e| anyhow!("conversion of BigInt to u64 failed: {:#}", e))
+    } else if value.as_f64().is_some() {
+        let number = js_sys::Number::from(value);
+        convert_number_to_u64(number)
+    } else {
+        bail!("supported types are Number or BigInt")
+    };
+
+    result
+}
+
+pub fn convert_number_to_u64(js_number: js_sys::Number) -> Result<u64, anyhow::Error> {
+    if let Some(float_number) = js_number.as_f64() {
+        if float_number.is_nan() || float_number.is_infinite() {
+            bail!("received an invalid timestamp: the number is either NaN or Inf")
+        }
+        if float_number < 0. {
+            bail!("received an invalid timestamp: the number is negative");
+        }
+        if float_number.fract() != 0. {
+            bail!("received an invalid timestamp: the number is fractional")
+        }
+        if float_number > u64::MAX as f64 {
+            bail!("received an invalid timestamp: the number is > u64::max")
+        }
+
+        return Ok(float_number as u64);
+    }
+    bail!("the value is not a number")
+}
+
+pub(crate) fn replace_identifiers_with_bytes_without_failing<'a>(
+    value: &mut Value,
+    paths: impl IntoIterator<Item = &'a str>,
+) {
+    // Errors are ignored. When `Buffer` crosses the WASM boundary it becomes an Array.
+    // When `Identifier` crosses the WASM boundary it becomes a String. From perspective of JS
+    // `Identifier` and `Buffer` are used interchangeably, so we we can expect the replacing may fail when `Buffer` is provided
+    let _ = value
+        .replace_identifier_paths(paths, ReplaceWith::Bytes)
+        .with_js_error();
+}
+
+// The trait `Inner` provides better flexibility and visibility when you need to switch
+// between WASM structure and original structure.
+pub(crate) trait Inner {
+    type InnerItem;
+
+    fn into_inner(self) -> Self::InnerItem;
+    fn inner(&self) -> &Self::InnerItem;
+    fn inner_mut(&mut self) -> &mut Self::InnerItem;
 }

@@ -1,128 +1,90 @@
 const getDocumentsFixture = require('@dashevo/dpp/lib/test/fixtures/getDocumentsFixture');
 const getDocumentTransitionsFixture = require('@dashevo/dpp/lib/test/fixtures/getDocumentTransitionsFixture');
 
-const fetchDocumentsFactory = require('@dashevo/dpp/lib/document/stateTransition/DocumentsBatchTransition/validation/state/fetchDocumentsFactory');
-
 const createStateRepositoryMock = require('@dashevo/dpp/lib/test/mocks/createStateRepositoryMock');
 
-const generateRandomIdentifier = require('@dashevo/dpp/lib/test/utils/generateRandomIdentifier');
-const StateTransitionExecutionContext = require('@dashevo/dpp/lib/stateTransition/StateTransitionExecutionContext');
+const generateRandomIdentifierJs = require('@dashevo/dpp/lib/test/utils/generateRandomIdentifier');
+
+const sinon = require('sinon');
+const { default: loadWasmDpp } = require('../../../../../../../dist');
+
+let Identifier;
+let DataContract;
+let Document;
+let fetchDocuments;
+let DocumentTransition;
+let DocumentCreateTransition;
+let StateTransitionExecutionContext;
 
 describe('fetchDocumentsFactory', () => {
-  let fetchDocuments;
   let stateRepositoryMock;
+  let documentTransitionsJs;
   let documentTransitions;
+  let documentsJs;
   let documents;
   let executionContext;
 
-  beforeEach(function beforeEach() {
-    stateRepositoryMock = createStateRepositoryMock(this.sinonSandbox);
+  beforeEach(async function beforeEach() {
+    ({
+      Identifier,
+      Document,
+      DataContract,
+      DocumentTransition,
+      DocumentCreateTransition,
+      StateTransitionExecutionContext,
+      fetchDocuments,
+    } = await loadWasmDpp());
 
-    fetchDocuments = fetchDocumentsFactory(stateRepositoryMock);
+    stateRepositoryMock = createStateRepositoryMock(this.sinonSandbox);
 
     executionContext = new StateTransitionExecutionContext();
 
-    documents = getDocumentsFixture().slice(0, 5);
+    documentsJs = getDocumentsFixture().slice(0, 5);
+    const dataContractBuffer = documentsJs[0].dataContract.toBuffer();
+    const dataContract = DataContract.fromBuffer(dataContractBuffer);
 
-    documentTransitions = getDocumentTransitionsFixture({
-      create: documents,
+    documents = documentsJs.map((document) => new Document(
+      document.toObject(), dataContract.clone(),
+    ));
+    documentTransitionsJs = getDocumentTransitionsFixture({
+      create: documentsJs,
     });
+    documentTransitions = documentTransitionsJs.map(
+      (transition) => DocumentTransition.fromTransitionCreate(
+        new DocumentCreateTransition(
+          transition.toObject(), dataContract.clone(),
+        ),
+      ),
+    );
   });
 
-  it('should fetch specified Documents using StateRepository', async () => {
-    const firstDocumentDataContractId = generateRandomIdentifier().toBuffer();
+  it('should fetch specified Documents using StateRepository - Rust', async () => {
+    const firstDocumentDataContractId = generateRandomIdentifierJs().toBuffer();
 
-    documentTransitions[0].dataContractId = firstDocumentDataContractId;
-    documents[0].dataContractId = firstDocumentDataContractId;
+    documentTransitions[0].setDataContractId(firstDocumentDataContractId);
+    documents[0].setDataContractId(firstDocumentDataContractId);
 
     stateRepositoryMock.fetchDocuments.withArgs(
-      documentTransitions[0].getDataContractId(),
+      sinon.match.instanceOf(Identifier),
       documentTransitions[0].getType(),
     ).resolves([documents[0]]);
 
     stateRepositoryMock.fetchDocuments.withArgs(
-      documentTransitions[1].getDataContractId(),
+      sinon.match.instanceOf(Identifier),
       documentTransitions[1].getType(),
     ).resolves([documents[1], documents[2]]);
 
     stateRepositoryMock.fetchDocuments.withArgs(
-      documentTransitions[3].getDataContractId(),
-      documentTransitions[3].getType(),
+      sinon.match.instanceOf(Identifier),
+      documentTransitionsJs[3].getType(),
     ).resolves([documents[3], documents[4]]);
 
-    const fetchedDocuments = await fetchDocuments(documentTransitions, executionContext);
+    await fetchDocuments(
+      stateRepositoryMock,
+      documentTransitions,
+      executionContext,
+    );
 
     expect(stateRepositoryMock.fetchDocuments).to.have.been.calledThrice();
-
-    const callArgsOne = [
-      documents[0].getDataContractId(),
-      documents[0].getType(),
-      {
-        where: [
-          ['$id', 'in', [documents[0].getId()]],
-        ],
-        orderBy: [
-          [
-            '$id',
-            'asc',
-          ],
-        ],
-      },
-      executionContext,
-    ];
-
-    const callArgsTwo = [
-      documents[1].getDataContractId(),
-      documents[1].getType(),
-      {
-        where: [
-          ['$id', 'in', [
-            documents[1].getId(),
-            documents[2].getId(),
-          ]],
-        ],
-        orderBy: [
-          [
-            '$id',
-            'asc',
-          ],
-        ],
-      },
-      executionContext,
-    ];
-
-    const callArgsThree = [
-      documents[3].getDataContractId(),
-      documents[3].getType(),
-      {
-        where: [
-          ['$id', 'in', [
-            documents[3].getId(),
-            documents[4].getId(),
-          ]],
-        ],
-        orderBy: [
-          [
-            '$id',
-            'asc',
-          ],
-        ],
-      },
-      executionContext,
-    ];
-
-    const callsArgs = [];
-    for (let i = 0; i < stateRepositoryMock.fetchDocuments.callCount; i++) {
-      const call = stateRepositoryMock.fetchDocuments.getCall(i);
-      callsArgs.push(call.args);
-    }
-
-    expect(callsArgs).to.have.deep.members([
-      callArgsOne,
-      callArgsTwo,
-      callArgsThree,
-    ]);
-
-    expect(fetchedDocuments).to.deep.equal(documents);
   });
 });

@@ -15,7 +15,6 @@ const {
   PRESETS,
   NODE_TYPES,
   NODE_TYPE_MASTERNODE,
-  MASTERNODE_DASH_AMOUNT,
   SSL_PROVIDERS,
 } = require('../constants');
 
@@ -171,7 +170,7 @@ SetupCommand.flags = {
   'masternode-operator-private-key': Flags.string({ char: 'k', description: 'masternode operator BLS private key' }),
   'platform-p2p-key': Flags.string({ char: 'p', description: 'platform p2p private key' }),
   // TODO: Remove this one?
-  'funding-private-key': Flags.string({ char: 'f', description: `private key with more than ${MASTERNODE_DASH_AMOUNT} dash for funding collateral` }),
+  'funding-private-key': Flags.string({ char: 'f', description: 'private key with enough dash for masternode collateral' }),
   'node-count': Flags.integer({ description: 'number of nodes to setup' }),
   'miner-interval': Flags.string({ char: 'm', description: 'interval between blocks' }),
   // TODO: Refactor this

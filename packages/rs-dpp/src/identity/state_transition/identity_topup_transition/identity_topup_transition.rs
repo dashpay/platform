@@ -133,6 +133,11 @@ impl IdentityTopUpTransition {
         &self.asset_lock_proof
     }
 
+    /// Set identity id
+    pub fn set_identity_id(&mut self, identity_id: Identifier) {
+        self.identity_id = identity_id;
+    }
+
     /// Returns identity id
     pub fn get_identity_id(&self) -> &Identifier {
         &self.identity_id
@@ -189,9 +194,8 @@ impl IdentityTopUpTransition {
         Ok(json_map)
     }
 
-    /// Returns ids of created identities
-    pub fn get_modified_data_ids(&self) -> Vec<&Identifier> {
-        vec![self.get_identity_id()]
+    pub fn set_protocol_version(&mut self, protocol_version: u32) {
+        self.protocol_version = protocol_version;
     }
 }
 
@@ -257,6 +261,11 @@ impl StateTransitionLike for IdentityTopUpTransition {
     /// set a new signature
     fn set_signature(&mut self, signature: Vec<u8>) {
         self.signature = signature
+    }
+
+    /// Returns ids of created identities
+    fn get_modified_data_ids(&self) -> Vec<Identifier> {
+        vec![*self.get_identity_id()]
     }
 
     fn get_execution_context(&self) -> &StateTransitionExecutionContext {

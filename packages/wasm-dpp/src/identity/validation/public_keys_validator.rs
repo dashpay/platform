@@ -38,7 +38,6 @@ impl PublicKeysValidatorWasm {
             .public_key_validator
             .validate_keys(&raw_public_keys)
             .map_err(|e| JsValue::from(e.to_string()))?;
-
         Ok(validation_result.map(|_| JsValue::undefined()).into())
     }
 
@@ -53,7 +52,6 @@ impl PublicKeysValidatorWasm {
             .public_key_validator
             .validate_public_key_structure(&pk_serde_json)
             .map_err(|e| JsValue::from(e.to_string()))?;
-
         Ok(validation_result.map(|_| JsValue::undefined()).into())
     }
 
@@ -68,7 +66,6 @@ impl PublicKeysValidatorWasm {
             .public_key_in_state_transition_validator
             .validate_keys(&raw_public_keys)
             .map_err(|e| JsValue::from(e.to_string()))?;
-
         Ok(validation_result.map(|_| JsValue::undefined()).into())
     }
 }

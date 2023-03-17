@@ -23,7 +23,7 @@ mod from_raw_object {
         assert_eq!(public_key.key_type, KeyType::ECDSA_SECP256K1);
         assert_eq!(public_key.purpose, Purpose::AUTHENTICATION);
         assert_eq!(public_key.security_level, SecurityLevel::MASTER);
-        assert_eq!(public_key.read_only, false);
+        assert!(!public_key.read_only);
         assert_eq!(
             public_key.data,
             [
@@ -94,7 +94,7 @@ mod from_raw_object {
         assert_eq!(public_key.key_type, KeyType::ECDSA_SECP256K1);
         assert_eq!(public_key.purpose, Purpose::AUTHENTICATION);
         assert_eq!(public_key.security_level, SecurityLevel::MASTER);
-        assert_eq!(public_key.read_only, false);
+        assert!(!public_key.read_only);
         assert_eq!(
             public_key.data,
             [
