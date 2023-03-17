@@ -195,21 +195,35 @@ pub trait StateTransitionConvert: Serialize {
         state_transition_helpers::to_object(self, skip_signature_paths)
     }
 
+    /// Returns the [`platform_value::Value`] instance that preserves the `Vec<u8>` representation
+    /// for Identifiers and binary data
+    fn to_canonical_object(&self, skip_signature: bool) -> Result<Value, ProtocolError> {
+        let skip_signature_paths = if skip_signature {
+            Self::signature_property_paths()
+        } else {
+            vec![]
+        };
+        let mut object = state_transition_helpers::to_object(self, skip_signature_paths)?;
+
+        object.as_map_mut_ref().unwrap().sort_by_keys();
+        Ok(object)
+    }
+
     /// Returns the [`serde_json::Value`] instance that encodes:
     ///  - Identifiers  - with base58
     ///  - Binary data  - with base64
     fn to_json(&self, skip_signature: bool) -> Result<JsonValue, ProtocolError> {
-        state_transition_helpers::to_json(
-            self,
-            Self::binary_property_paths(),
-            Self::signature_property_paths(),
-            skip_signature,
-        )
+        let skip_signature_paths = if skip_signature {
+            Self::signature_property_paths()
+        } else {
+            vec![]
+        };
+        state_transition_helpers::to_json(self, skip_signature_paths)
     }
 
     // Returns the cibor-encoded bytes representation of the object. The data is  prefixed by 4 bytes containing the Protocol Version
     fn to_buffer(&self, skip_signature: bool) -> Result<Vec<u8>, ProtocolError> {
-        let mut value = self.to_object(skip_signature)?;
+        let mut value = self.to_canonical_object(skip_signature)?;
         let protocol_version = value.remove_integer(PROPERTY_PROTOCOL_VERSION)?;
 
         serializer::serializable_value_to_cbor(&value, Some(protocol_version))
@@ -223,26 +237,14 @@ pub trait StateTransitionConvert: Serialize {
 
 pub mod state_transition_helpers {
     use super::*;
+    use std::convert::TryInto;
 
-    pub fn to_json<'a>(
+    pub fn to_json<'a, I: IntoIterator<Item = &'a str>>(
         serializable: impl Serialize,
-        binary_property_paths: impl IntoIterator<Item = &'a str>,
-        signature_property_paths: impl IntoIterator<Item = &'a str>,
-        skip_signature: bool,
+        skip_signature_paths: I,
     ) -> Result<JsonValue, ProtocolError> {
-        let mut json_value: JsonValue = serde_json::to_value(serializable)?;
-
-        if skip_signature {
-            if let JsonValue::Object(ref mut o) = json_value {
-                for path in signature_property_paths {
-                    o.remove(path);
-                }
-            }
-        }
-
-        json_value.replace_binary_paths(binary_property_paths, ReplaceWith::Base64)?;
-
-        Ok(json_value)
+        to_object(serializable, skip_signature_paths)
+            .and_then(|v| v.try_into().map_err(ProtocolError::ValueError))
     }
 
     pub fn to_object<'a, I: IntoIterator<Item = &'a str>>(

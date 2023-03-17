@@ -32,8 +32,8 @@ impl TPublicKeysValidator for RequiredPurposeAndSecurityLevelValidator {
                     .get_optional_integer::<u64>("disabledAt")
                     .map_err(NonConsensusError::ValueError)
                 {
-                    Ok(Some(_)) => Some(Ok(pk)),
-                    Ok(None) => None,
+                    Ok(Some(_)) => None,
+                    Ok(None) => Some(Ok(pk)),
                     Err(e) => Some(Err(e)),
                 }
             })

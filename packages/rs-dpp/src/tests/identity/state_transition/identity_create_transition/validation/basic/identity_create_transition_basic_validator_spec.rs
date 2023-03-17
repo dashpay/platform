@@ -339,7 +339,6 @@ mod validate_identity_create_transition_basic_factory {
                 .validate(&raw_state_transition, &Default::default())
                 .await
                 .unwrap();
-
             let errors = assert_consensus_errors!(result, ConsensusError::JsonSchemaError, 1);
 
             let error = errors.first().unwrap();
