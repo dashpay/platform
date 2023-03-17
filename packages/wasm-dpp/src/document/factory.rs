@@ -205,7 +205,6 @@ fn extract_documents_by_action(
 }
 
 fn check_actions(documents: &JsValue) -> Result<(), JsValue> {
-    //HashMap<Action, Vec<Document>>
     if !documents.is_object() {
         return Err(anyhow!("Expected documents to be an object")).with_js_error();
     }
@@ -224,28 +223,6 @@ fn check_actions(documents: &JsValue) -> Result<(), JsValue> {
     }
 
     Ok(())
-
-    // let val: serde_json::Value = with_serde_to_json_value(documents)?;
-
-    // let map = val
-    //     .as_object()
-    //     .ok_or_else(anyhow!("Expected documents to be a map"))?;
-    //
-    // map.iter()
-    //     .map(|(action_string, documents_array)| {
-    //         let action = Action::try_from(action_string).map_err(|e| {
-    //             DocumentError::InvalidActionNameError {
-    //                 actions: vec![action_string.to_string()],
-    //             }
-    //         })?;
-    //
-    //         let doc_vec = documents_array
-    //             .as_array()
-    //             .ok_or_else(anyhow!("Expected documents to be an array"))?
-    //             .iter()
-    //             .map(|doc| {});
-    //     })
-    //     .collect()
 }
 
 fn extract_documents_of_action(
