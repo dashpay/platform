@@ -20,6 +20,8 @@ const {
  * @param {waitForConfirmations} waitForConfirmations
  * @param {registerMasternode} registerMasternode
  * @param {waitForBalanceToConfirm} waitForBalanceToConfirm
+ * @param {renderServiceTemplates} renderServiceTemplates
+ * @param {writeServiceConfigs} writeServiceConfigs
  * @return {registerMasternodeTask}
  */
 function registerMasternodeTaskFactory(
@@ -34,6 +36,8 @@ function registerMasternodeTaskFactory(
   waitForConfirmations,
   registerMasternode,
   waitForBalanceToConfirm,
+  renderServiceTemplates,
+  writeServiceConfigs
 ) {
   /**
    * @typedef {registerMasternodeTask}
@@ -52,7 +56,14 @@ function registerMasternodeTaskFactory(
         },
         task: async (ctx) => {
           ctx.coreServicePassed = false;
-          ctx.coreService = await startCore(config, { wallet: true, addressIndex: true });
+          ctx.masternodePrivateKey = config.get('core.masternode.operator.privateKey')
+
+          config.set('core.masternode.enable', false)
+          config.set('core.masternode.operator.privateKey', null)
+          const configFiles = renderServiceTemplates(config);
+          writeServiceConfigs(config.getName(), configFiles);
+
+          ctx.coreService = await startCore(config, {wallet: true, addressIndex: true});
         },
       },
       {
@@ -172,7 +183,7 @@ function registerMasternodeTaskFactory(
           // eslint-disable-next-line no-param-reassign
           task.output = `Collateral transaction ID: ${ctx.collateralTxId}`;
         },
-        options: { persistentOutput: true },
+        options: {persistentOutput: true},
       },
       {
         title: 'Wait for 1 confirmation',
@@ -276,7 +287,16 @@ function registerMasternodeTaskFactory(
       {
         title: 'Stop Core',
         enabled: (ctx) => !ctx.coreServicePassed,
-        task: async (ctx) => ctx.coreService.stop(),
+        task: async (ctx) => {
+          ctx.coreService.stop()
+
+          config.set('core.masternode.enable', true)
+          config.set('core.masternode.operator.privateKey', ctx.masternodePrivateKey)
+          const configFiles = renderServiceTemplates(config);
+          writeServiceConfigs(config.getName(), configFiles);
+
+          ctx.masternodePrivateKey = null
+        },
       },
     ]);
   }
