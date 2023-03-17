@@ -3,7 +3,7 @@ use std::convert::{TryFrom, TryInto};
 use platform_value::{BinaryData, Value};
 use serde::de::Error as DeError;
 use serde::ser::Error as SerError;
-use serde::{Deserialize, Deserializer, Serialize, Serializer};
+use serde::{Deserialize, Serialize};
 use serde_json::Value as JsonValue;
 
 use crate::identity::state_transition::asset_lock_proof::AssetLockProof;
@@ -23,7 +23,8 @@ mod property_names {
     pub const IDENTITY_ID: &str = "identityId";
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct IdentityTopUpTransition {
     // Own ST fields
     pub asset_lock_proof: AssetLockProof,
@@ -32,6 +33,7 @@ pub struct IdentityTopUpTransition {
     pub protocol_version: u32,
     pub transition_type: StateTransitionType,
     pub signature: BinaryData,
+    #[serde(skip)]
     pub execution_context: StateTransitionExecutionContext,
 }
 
@@ -51,30 +53,6 @@ impl Default for IdentityTopUpTransition {
 impl From<IdentityTopUpTransition> for StateTransition {
     fn from(d: IdentityTopUpTransition) -> Self {
         Self::IdentityTopUp(d)
-    }
-}
-
-impl Serialize for IdentityTopUpTransition {
-    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
-    where
-        S: Serializer,
-    {
-        let raw = self
-            .to_object(Default::default())
-            .map_err(|e| S::Error::custom(e.to_string()))?;
-
-        raw.serialize(serializer)
-    }
-}
-
-impl<'de> Deserialize<'de> for IdentityTopUpTransition {
-    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
-    where
-        D: Deserializer<'de>,
-    {
-        let value = platform_value::Value::deserialize(deserializer)?;
-
-        Self::new(value).map_err(|e| D::Error::custom(e.to_string()))
     }
 }
 

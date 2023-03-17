@@ -43,9 +43,27 @@ impl Serialize for Value {
             Value::I16(i) => serializer.serialize_i16(*i),
             Value::U8(i) => serializer.serialize_u8(*i),
             Value::I8(i) => serializer.serialize_i8(*i),
-            Value::Bytes(bytes) => serializer.serialize_bytes(bytes),
-            Value::Bytes32(bytes) => serializer.serialize_bytes(bytes),
-            Value::Identifier(bytes) => serializer.serialize_bytes(bytes),
+            Value::Bytes(bytes) => {
+                if serializer.is_human_readable() {
+                    serializer.serialize_str(base64::encode(bytes).as_str())
+                } else {
+                    serializer.serialize_bytes(bytes)
+                }
+            },
+            Value::Bytes32(bytes) => {
+                if serializer.is_human_readable() {
+                    serializer.serialize_str(base64::encode(bytes).as_str())
+                } else {
+                    serializer.serialize_bytes(bytes)
+                }
+            },
+            Value::Identifier(bytes) => {
+                if serializer.is_human_readable() {
+                    serializer.serialize_str(bs58::encode(bytes).into_string().as_str())
+                } else {
+                    serializer.serialize_bytes(bytes)
+                }
+            },
             Value::Float(f64) => serializer.serialize_f64(*f64),
             Value::Text(string) => serializer.serialize_str(string),
             Value::EnumU8(_x) => todo!(),

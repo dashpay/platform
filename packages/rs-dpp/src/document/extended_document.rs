@@ -590,10 +590,10 @@ mod test {
         let dpns_contract = load_system_data_contract(SystemDataContract::DPNS)?;
         let document_json = get_data_from_file("src/tests/payloads/document_dpns.json")?;
         let document = ExtendedDocument::from_json_string(&document_json, dpns_contract)?;
-
         let string = serde_json::to_string(&document)?;
-        //added this, not sure if we want this check
-        assert_eq!(document_json, string);
+
+        assert_eq!("{\"$protocolVersion\":0,\"$type\":\"domain\",\"$dataContractId\":\"566vcJkmebVCAb2Dkj2yVMSgGFcsshupnQqtsz1RFbcy\",\"$id\":\"4veLBZPHDkaCPF9LfZ8fX3JZiS5q5iUVGhdBbaa9ga5E\",\"$ownerId\":\"HBNMY5QWuBVKNFLhgBTC1VmpEnscrmqKPMXpnYSHwhfn\",\"label\":\"user-9999\",\"normalizedLabel\":\"user-9999\",\"normalizedParentDomainName\":\"dash\",\"preorderSalt\":\"BzQi567XVqc8wYiVHS887sJtL6MDbxLHNnp+UpTFSB0=\",\"records\":{\"dashUniqueIdentityId\":\"HBNMY5QWuBVKNFLhgBTC1VmpEnscrmqKPMXpnYSHwhfn\"},\"subdomainRules\":{\"allowSubdomains\":false},\"$revision\":1,\"$createdAt\":null,\"$updatedAt\":null}", string);
+
         Ok(())
     }
 

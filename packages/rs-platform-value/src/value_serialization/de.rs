@@ -164,8 +164,15 @@ impl<'de> de::Deserializer<'de> for Deserializer {
     type Error = Error;
 
     fn deserialize_any<V: de::Visitor<'de>>(self, visitor: V) -> Result<V::Value, Self::Error> {
+        let human_readable = self.is_human_readable();
         match self.0 {
-            Value::Bytes(x) => visitor.visit_bytes(&x),
+            Value::Bytes(x) => {
+                if human_readable {
+                    visitor.visit_str(base64::encode(x).as_str())
+                } else {
+                    visitor.visit_bytes(&x)
+                }
+            },
             Value::Text(x) => visitor.visit_str(&x),
             Value::Array(x) => visitor.visit_seq(ArrayDeserializer(x.iter())),
             Value::Map(x) => visitor.visit_map(ValueMapDeserializer(x.iter().peekable())),
@@ -182,10 +189,22 @@ impl<'de> de::Deserializer<'de> for Deserializer {
             Value::I16(x) => visitor.visit_i16(x),
             Value::U8(x) => visitor.visit_u8(x),
             Value::I8(x) => visitor.visit_i8(x),
-            Value::Bytes32(x) => visitor.visit_bytes(&x),
+            Value::Bytes32(x) => {
+                if human_readable {
+                    visitor.visit_str(base64::encode(x).as_str())
+                } else {
+                    visitor.visit_bytes(&x)
+                }
+            },
             Value::EnumU8(_x) => todo!(),
             Value::EnumString(_x) => todo!(),
-            Value::Identifier(x) => visitor.visit_bytes(&x),
+            Value::Identifier(x) => {
+                if human_readable {
+                    visitor.visit_str(bs58::encode(x).into_string().as_str())
+                } else {
+                    visitor.visit_bytes(&x)
+                }
+            },
         }
     }
 

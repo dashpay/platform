@@ -31,6 +31,7 @@ pub struct SerializationOptions {
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
+#[serde(rename_all = "camelCase")]
 pub struct IdentityCreateTransition {
     // Own ST fields
     pub public_keys: Vec<IdentityPublicKeyWithWitness>,
