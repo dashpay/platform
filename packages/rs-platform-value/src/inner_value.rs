@@ -1,6 +1,6 @@
 use std::cmp::Ordering;
 use crate::value_map::{ValueMap, ValueMapHelper};
-use crate::{BinaryData, Identifier};
+use crate::{BinaryData, Bytes32, Identifier};
 use crate::{Error, Value};
 use std::collections::BTreeMap;
 
@@ -124,6 +124,18 @@ impl Value {
             .transpose()
     }
 
+    pub fn remove_bytes_32(&mut self, key: &str) -> Result<Bytes32, Error> {
+        let map = self.as_map_mut_ref()?;
+        let value = map.remove_key(key)?;
+        value.into_bytes_32()
+    }
+
+    pub fn remove_optional_bytes_32(&mut self, key: &str) -> Result<Option<Bytes32>, Error> {
+        let map = self.as_map_mut_ref()?;
+        map.remove_optional_key(key)
+            .map(|v| v.into_bytes_32())
+            .transpose()
+    }
 
     pub fn remove_hash256_bytes(&mut self, key: &str) -> Result<[u8; 32], Error> {
         let map = self.as_map_mut_ref()?;

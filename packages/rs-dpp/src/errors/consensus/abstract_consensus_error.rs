@@ -139,6 +139,13 @@ impl ConsensusError {
         }
     }
 
+    pub fn value_error(&self) -> Option<&ValueError> {
+        match self {
+            ConsensusError::ValueError(err) => Some(err),
+            _ => None,
+        }
+    }
+
     pub fn code(&self) -> u32 {
         match self {
             // Decoding

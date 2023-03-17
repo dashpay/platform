@@ -3,7 +3,7 @@ use std::convert::TryInto;
 
 use platform_value::btreemap_extensions::BTreeValueMapHelper;
 use platform_value::btreemap_extensions::BTreeValueRemoveFromMapHelper;
-use platform_value::{BinaryData, Value};
+use platform_value::{BinaryData, Bytes32, Value};
 use serde::{Deserialize, Serialize};
 use serde_json::Value as JsonValue;
 
@@ -34,7 +34,7 @@ pub struct DataContractCreateTransition {
     // we want to skip serialization of transitions, as we does it manually in `to_object()`  and `to_json()`
     #[serde(skip_serializing)]
     pub data_contract: DataContract,
-    pub entropy: [u8; 32],
+    pub entropy: Bytes32,
     pub signature_public_key_id: KeyID,
     pub signature: BinaryData,
     #[serde(skip)]
@@ -46,7 +46,7 @@ impl std::default::Default for DataContractCreateTransition {
         DataContractCreateTransition {
             protocol_version: Default::default(),
             transition_type: StateTransitionType::DataContractCreate,
-            entropy: [0u8; 32],
+            entropy: Bytes32::default(),
             signature_public_key_id: 0,
             signature: BinaryData::default(),
             data_contract: Default::default(),
@@ -70,7 +70,7 @@ impl DataContractCreateTransition {
                 .map_err(ProtocolError::ValueError)?
                 .unwrap_or_default(),
             entropy: raw_data_contract_update_transition
-                .remove_optional_hash256_bytes(ENTROPY)
+                .remove_optional_bytes_32(ENTROPY)
                 .map_err(ProtocolError::ValueError)?
                 .unwrap_or_default(),
             data_contract: DataContract::from_raw_object(
@@ -102,7 +102,7 @@ impl DataContractCreateTransition {
                 .map_err(ProtocolError::ValueError)?
                 .unwrap_or_default(),
             entropy: raw_data_contract_update_transition
-                .remove_optional_hash256_bytes(ENTROPY)
+                .remove_optional_bytes_32(ENTROPY)
                 .map_err(ProtocolError::ValueError)?
                 .unwrap_or_default(),
             data_contract: DataContract::from_raw_object(
@@ -126,10 +126,6 @@ impl DataContractCreateTransition {
 
     pub fn set_data_contract(&mut self, data_contract: DataContract) {
         self.data_contract = data_contract;
-    }
-
-    pub fn get_entropy(&self) -> &[u8; 32] {
-        &self.entropy
     }
 
     /// Returns ID of the created contract
@@ -241,7 +237,7 @@ mod test {
 
         let state_transition = DataContractCreateTransition::from_raw_object(Value::from([
             (PROTOCOL_VERSION, version::LATEST_VERSION.into()),
-            (ENTROPY, Value::Bytes32(data_contract.entropy)),
+            (ENTROPY, data_contract.entropy.into()),
             (DATA_CONTRACT, data_contract.to_object().unwrap()),
         ]))
         .expect("state transition should be created without errors");
@@ -320,7 +316,7 @@ mod test {
         );
 
         assert_eq!(
-            base64::encode(data.data_contract.entropy),
+            <Bytes32 as Into<String>>::into(data.data_contract.entropy),
             json_object
                 .remove_into::<String>(ENTROPY)
                 .expect("the entropy should be present")

@@ -2,9 +2,60 @@ use std::fmt;
 use std::fmt::Write;
 use serde::{Deserialize, Serialize};
 use serde::de::Visitor;
+use crate::{Error, string_encoding, Value};
+use crate::string_encoding::Encoding;
+use crate::types::encoding_string_to_encoding;
 
 #[derive(Default, Debug, Clone, PartialEq, Eq, Hash, Copy)]
 pub struct Bytes32(pub [u8; 32]);
+
+impl Bytes32 {
+    pub fn new(buffer: [u8; 32]) -> Self {
+        Bytes32(buffer)
+    }
+
+    pub fn from_vec(buffer: Vec<u8>) -> Result<Self, Error> {
+        let buffer : [u8; 32] = buffer.try_into().map_err(|_| Error::ByteLengthNot32BytesError("buffer was not 32 bytes long".to_string()))?;
+        Ok(Bytes32::new(buffer))
+    }
+
+    pub fn as_slice(&self) -> &[u8] {
+        self.0.as_slice()
+    }
+
+    pub fn to_vec(&self) -> Vec<u8> {
+        self.0.to_vec()
+    }
+
+    pub fn to_buffer(&self) -> [u8; 32] {
+        self.0
+    }
+
+    pub fn from_string(encoded_value: &str, encoding: Encoding) -> Result<Bytes32, Error> {
+        let vec = string_encoding::decode(encoded_value, encoding)?;
+
+        Bytes32::from_vec(vec)
+    }
+
+    pub fn from_string_with_encoding_string(
+        encoded_value: &str,
+        encoding_string: Option<&str>,
+    ) -> Result<Bytes32, Error> {
+        let encoding = encoding_string_to_encoding(encoding_string);
+
+        Bytes32::from_string(encoded_value, encoding)
+    }
+
+    pub fn to_string(&self, encoding: Encoding) -> String {
+        string_encoding::encode(&self.0, encoding)
+    }
+
+    pub fn to_string_with_encoding_string(&self, encoding_string: Option<&str>) -> String {
+        let encoding = encoding_string_to_encoding(encoding_string);
+
+        self.to_string(encoding)
+    }
+}
 
 impl Serialize for Bytes32 {
     fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
@@ -75,5 +126,53 @@ impl<'de> Deserialize<'de> for Bytes32 {
 
             deserializer.deserialize_bytes(BytesVisitor)
         }
+    }
+}
+
+impl TryFrom<Value> for Bytes32 {
+    type Error = Error;
+
+    fn try_from(value: Value) -> Result<Self, Self::Error> {
+        value.into_bytes_32()
+    }
+}
+
+impl TryFrom<&Value> for Bytes32 {
+    type Error = Error;
+
+    fn try_from(value: &Value) -> Result<Self, Self::Error> {
+        value.to_bytes_32()
+    }
+}
+
+impl From<Bytes32> for Value {
+    fn from(value: Bytes32) -> Self {
+        Value::Bytes32(value.0)
+    }
+}
+
+impl From<&Bytes32> for Value {
+    fn from(value: &Bytes32) -> Self {
+        Value::Bytes32(value.0)
+    }
+}
+
+impl TryFrom<String> for Bytes32 {
+    type Error = Error;
+
+    fn try_from(data: String) -> Result<Self, Self::Error> {
+        Self::from_string(&data, Encoding::Base64)
+    }
+}
+
+impl Into<String> for Bytes32 {
+    fn into(self) -> String {
+        self.to_string(Encoding::Base64)
+    }
+}
+
+impl Into<String> for &Bytes32 {
+    fn into(self) -> String {
+        self.to_string(Encoding::Base64)
     }
 }

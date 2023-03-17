@@ -9,6 +9,7 @@ use serde_json::Value as JsonValue;
 
 use crate::string_encoding::Encoding;
 use crate::{string_encoding, Error, Value};
+use crate::types::encoding_string_to_encoding;
 
 pub const IDENTIFIER_MEDIA_TYPE: &str = "application/x.dash.dpp.identifier";
 
@@ -106,19 +107,6 @@ impl<'de> Deserialize<'de> for IdentifierBytes32 {
 //     }
 // }
 
-fn encoding_string_to_encoding(encoding_string: Option<&str>) -> Encoding {
-    match encoding_string {
-        Some(str) => {
-            //? should it be case-sensitive??
-            if str == "base58" {
-                Encoding::Base58
-            } else {
-                Encoding::Base64
-            }
-        }
-        None => Encoding::Base58,
-    }
-}
 
 impl Identifier {
     pub fn new(buffer: [u8; 32]) -> Identifier {

@@ -22,8 +22,8 @@ pub fn validate_data_contract_max_depth(data_contract_object: &Value) -> Validat
     result
 }
 
-fn calc_max_depth(value: &Value) -> Result<usize, BasicError> {
-    let mut values_depth_queue: Vec<(&Value, usize)> = vec![(value, 0)];
+fn calc_max_depth(platform_value: &Value) -> Result<usize, BasicError> {
+    let mut values_depth_queue: Vec<(&Value, usize)> = vec![(platform_value, 0)];
     let mut max_depth: usize = 0;
     let mut visited: BTreeSet<*const Value> = BTreeSet::new();
     let ref_value = Value::Text("$ref".to_string());
@@ -39,10 +39,10 @@ fn calc_max_depth(value: &Value) -> Result<usize, BasicError> {
                     // handling the internal references
                     if property_name == &ref_value {
                         if let Some(uri) = v.as_str() {
-                            let resolved = resolve_uri(value, uri).map_err(|e| {
+                            let resolved = resolve_uri(platform_value, uri).map_err(|e| {
                                 BasicError::InvalidJsonSchemaRefError(
                                     InvalidJsonSchemaRefError::new(format!(
-                                        "invalid ref '{}': {}",
+                                        "invalid ref for max depth '{}': {}",
                                         uri, e
                                     )),
                                 )

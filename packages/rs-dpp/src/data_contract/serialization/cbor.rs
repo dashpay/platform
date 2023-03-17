@@ -7,7 +7,7 @@ use crate::{data_contract, ProtocolError};
 use ciborium::Value as CborValue;
 use integer_encoding::VarInt;
 use platform_value::btreemap_extensions::BTreeValueMapHelper;
-use platform_value::Value;
+use platform_value::{Bytes32, Value};
 use serde_json::Value as JsonValue;
 use std::collections::BTreeMap;
 
@@ -65,7 +65,7 @@ impl DataContract {
             documents,
             defs,
             metadata: None,
-            entropy: [0; 32],
+            entropy: Bytes32::default(),
             binary_properties: Default::default(),
             document_types,
             config: mutability,

@@ -1,4 +1,4 @@
-use crate::{BinaryData, Error, Identifier, Value};
+use crate::{BinaryData, Bytes32, Error, Identifier, Value};
 use std::collections::BTreeMap;
 
 pub trait BTreeValueRemoveFromMapHelper {
@@ -40,6 +40,8 @@ pub trait BTreeValueRemoveFromMapHelper {
     fn remove_identifier(&mut self, key: &str) -> Result<Identifier, Error>;
     fn remove_binary_data(&mut self, key: &str) -> Result<BinaryData, Error>;
     fn remove_optional_binary_data(&mut self, key: &str) -> Result<Option<BinaryData>, Error>;
+    fn remove_optional_bytes_32(&mut self, key: &str) -> Result<Option<Bytes32>, Error>;
+    fn remove_bytes_32(&mut self, key: &str) -> Result<Bytes32, Error>;
 }
 
 impl BTreeValueRemoveFromMapHelper for BTreeMap<String, &Value> {
@@ -100,6 +102,24 @@ impl BTreeValueRemoveFromMapHelper for BTreeMap<String, &Value> {
     fn remove_identifier(&mut self, key: &str) -> Result<Identifier, Error> {
         self.remove_optional_identifier(key)?.ok_or_else(|| {
             Error::StructureError(format!("unable to remove identifier property {key}"))
+        })
+    }
+
+    fn remove_optional_bytes_32(&mut self, key: &str) -> Result<Option<Bytes32>, Error> {
+        self.remove(key)
+            .and_then(|v| {
+                if v.is_null() {
+                    None
+                } else {
+                    Some(v.to_bytes_32())
+                }
+            })
+            .transpose()
+    }
+
+    fn remove_bytes_32(&mut self, key: &str) -> Result<Bytes32, Error> {
+        self.remove_optional_bytes_32(key)?.ok_or_else(|| {
+            Error::StructureError(format!("unable to remove hash256 property {key}"))
         })
     }
 
@@ -254,6 +274,24 @@ impl BTreeValueRemoveFromMapHelper for BTreeMap<String, Value> {
     fn remove_identifier(&mut self, key: &str) -> Result<Identifier, Error> {
         self.remove_optional_identifier(key)?.ok_or_else(|| {
             Error::StructureError(format!("unable to remove identifier property {key}"))
+        })
+    }
+
+    fn remove_optional_bytes_32(&mut self, key: &str) -> Result<Option<Bytes32>, Error> {
+        self.remove(key)
+            .and_then(|v| {
+                if v.is_null() {
+                    None
+                } else {
+                    Some(v.into_bytes_32())
+                }
+            })
+            .transpose()
+    }
+
+    fn remove_bytes_32(&mut self, key: &str) -> Result<Bytes32, Error> {
+        self.remove_optional_bytes_32(key)?.ok_or_else(|| {
+            Error::StructureError(format!("unable to remove hash256 property {key}"))
         })
     }
 

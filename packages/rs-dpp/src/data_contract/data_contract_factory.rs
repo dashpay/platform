@@ -4,7 +4,7 @@ use std::convert::TryInto;
 use std::sync::Arc;
 
 use data_contract::state_transition::property_names as st_prop;
-use platform_value::Value;
+use platform_value::{Bytes32, Value};
 
 use crate::data_contract::contract_config::ContractConfig;
 use crate::data_contract::errors::InvalidDataContractError;
@@ -73,10 +73,10 @@ impl DataContractFactory {
         config: Option<ContractConfig>,
         definitions: Option<Value>,
     ) -> Result<DataContract, ProtocolError> {
-        let entropy = self.entropy_generator.generate();
+        let entropy = Bytes32::new(self.entropy_generator.generate());
 
         let data_contract_id =
-            Identifier::from_bytes(&generate_data_contract_id(owner_id.to_buffer(), entropy))?;
+            Identifier::from_bytes(&generate_data_contract_id(owner_id.to_buffer(), entropy.to_buffer()))?;
 
         let definition_references = definitions
             .as_ref()
@@ -183,7 +183,7 @@ impl DataContractFactory {
         &self,
         data_contract: DataContract,
     ) -> Result<DataContractCreateTransition, ProtocolError> {
-        let entropy = Value::Bytes32(data_contract.entropy);
+        let entropy = Value::Bytes32(data_contract.entropy.to_buffer());
         let raw_object = BTreeMap::from([
             (
                 st_prop::PROTOCOL_VERSION.to_string(),
@@ -344,7 +344,7 @@ mod tests {
             .expect("Data Contract Transition should be created");
 
         assert_eq!(1, result.get_protocol_version());
-        assert_eq!(&data_contract.entropy, result.get_entropy());
+        assert_eq!(&data_contract.entropy, &result.entropy);
         assert_eq!(raw_data_contract, result.data_contract.to_object().unwrap());
     }
 }

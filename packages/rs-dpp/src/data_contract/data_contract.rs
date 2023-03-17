@@ -5,7 +5,7 @@ use anyhow::anyhow;
 
 use itertools::{Either, Itertools};
 use platform_value::btreemap_extensions::{BTreeValueMapHelper, BTreeValueRemoveFromMapHelper};
-use platform_value::Identifier;
+use platform_value::{BinaryData, Bytes32, Identifier};
 use platform_value::Value;
 use serde::{Deserialize, Serialize};
 use serde_json::Value as JsonValue;
@@ -99,7 +99,7 @@ pub struct DataContract {
     pub defs: BTreeMap<DefinitionName, JsonSchema>,
 
     #[serde(skip)]
-    pub entropy: [u8; 32],
+    pub entropy: Bytes32,
 
     #[serde(skip)]
     pub binary_properties: BTreeMap<DocumentName, BTreeMap<PropertyPath, JsonValue>>,
@@ -168,7 +168,7 @@ impl DataContract {
             documents,
             defs,
             entropy: data_contract_map
-                .remove_optional_hash256_bytes(property_names::ENTROPY)
+                .remove_optional_bytes_32(property_names::ENTROPY)
                 .map_err(ProtocolError::ValueError)?
                 .unwrap_or_default(),
             binary_properties,
