@@ -1,16 +1,16 @@
 import { EventEmitter } from 'events';
-import { Account, Wallet } from "@dashevo/wallet-lib";
-import DAPIClientTransport from "@dashevo/wallet-lib/src/transport/DAPIClientTransport/DAPIClientTransport"
+import { Account, Wallet } from '@dashevo/wallet-lib';
+import DAPIClientTransport from '@dashevo/wallet-lib/src/transport/DAPIClientTransport/DAPIClientTransport';
+import { Network } from '@dashevo/dashcore-lib';
+import DAPIClient from '@dashevo/dapi-client';
+import { contractId as dpnsContractId } from '@dashevo/dpns-contract/lib/systemIds';
+import { contractId as dashpayContractId } from '@dashevo/dashpay-contract/lib/systemIds';
+import { contractId as masternodeRewardSharesContractId } from '@dashevo/masternode-reward-shares-contract/lib/systemIds';
 import { Platform } from './Platform';
-import { Network } from "@dashevo/dashcore-lib";
-import DAPIClient from "@dashevo/dapi-client";
-import { contractId as dpnsContractId } from "@dashevo/dpns-contract/lib/systemIds";
-import { contractId as dashpayContractId } from "@dashevo/dashpay-contract/lib/systemIds";
-import { contractId as masternodeRewardSharesContractId } from "@dashevo/masternode-reward-shares-contract/lib/systemIds";
-import { ClientApps, ClientAppsOptions } from "./ClientApps";
+import { ClientApps, ClientAppsOptions } from './ClientApps';
 
 export interface WalletOptions extends Wallet.IWalletOptions {
-    defaultAccountIndex?: number;
+  defaultAccountIndex?: number;
 }
 
 /**
@@ -27,147 +27,158 @@ export interface WalletOptions extends Wallet.IWalletOptions {
  * @param {number} [baseBanTime=60000]
  */
 export interface ClientOpts {
-    apps?: ClientAppsOptions,
-    wallet?: WalletOptions,
-    dapiAddressProvider?: any,
-    dapiAddresses?: any[],
-    seeds?: any[],
-    network?: Network | string,
-    timeout?: number,
-    retries?: number,
-    baseBanTime?: number,
-    driveProtocolVersion?: number,
+  apps?: ClientAppsOptions,
+  wallet?: WalletOptions,
+  dapiAddressProvider?: any,
+  dapiAddresses?: any[],
+  seeds?: any[],
+  network?: Network | string,
+  timeout?: number,
+  retries?: number,
+  baseBanTime?: number,
+  driveProtocolVersion?: number,
 }
 
 /**
- * Client class that wraps all components together to allow integrated payments on both the Dash Network (layer 1)
+ * Client class that wraps all components together
+ * to allow integrated payments on both the Dash Network (layer 1)
  * and the Dash Platform (layer 2).
  */
 export class Client extends EventEmitter {
-    public network: string = 'testnet';
-    public wallet: Wallet | undefined;
-    public account: Account | undefined;
-    public platform: Platform;
-    public defaultAccountIndex: number | undefined = 0;
-    private readonly dapiClient: DAPIClient;
-    private readonly apps: ClientApps;
-    private options: ClientOpts;
+  public network: string = 'testnet';
 
-    /**
+  public wallet: Wallet | undefined;
+
+  public account: Account | undefined;
+
+  public platform: Platform;
+
+  public defaultAccountIndex: number | undefined = 0;
+
+  private readonly dapiClient: DAPIClient;
+
+  private readonly apps: ClientApps;
+
+  private options: ClientOpts;
+
+  /**
      * Construct some instance of SDK Client
      *
      * @param {ClientOpts} [options] - options for SDK Client
      */
-    constructor(options: ClientOpts = {}) {
-        super();
+  constructor(options: ClientOpts = {}) {
+    super();
 
-        this.options = options;
+    this.options = options;
 
-        this.network = this.options.network ? this.options.network.toString() : 'testnet';
+    this.network = this.options.network ? this.options.network.toString() : 'testnet';
 
-        // Initialize DAPI Client
-        const dapiClientOptions = {
-            network: this.network,
-        };
+    // Initialize DAPI Client
+    const dapiClientOptions = {
+      network: this.network,
+    };
 
-        [
-            'dapiAddressProvider',
-            'dapiAddresses',
-            'seeds',
-            'timeout',
-            'retries',
-            'baseBanTime',
-            'blockHeadersProviderOptions',
-            'blockHeadersProvider'
-        ].forEach((optionName) => {
-            if (this.options.hasOwnProperty(optionName)) {
-                dapiClientOptions[optionName] = this.options[optionName];
-            }
-        });
+    [
+      'dapiAddressProvider',
+      'dapiAddresses',
+      'seeds',
+      'timeout',
+      'retries',
+      'baseBanTime',
+      'blockHeadersProviderOptions',
+      'blockHeadersProvider',
+    ].forEach((optionName) => {
+      // eslint-disable-next-line
+      if (this.options.hasOwnProperty(optionName)) {
+        dapiClientOptions[optionName] = this.options[optionName];
+      }
+    });
 
-        this.dapiClient = new DAPIClient(dapiClientOptions);
+    this.dapiClient = new DAPIClient(dapiClientOptions);
 
-        // Initialize a wallet if `wallet` option is preset
-        if (this.options.wallet !== undefined) {
-            if (this.options.wallet.network !== undefined && this.options.wallet.network !== this.network) {
-                throw new Error('Wallet and Client networks are different');
-            }
+    // Initialize a wallet if `wallet` option is preset
+    if (this.options.wallet !== undefined) {
+      if (this.options.wallet.network !== undefined
+        && this.options.wallet.network !== this.network) {
+        throw new Error('Wallet and Client networks are different');
+      }
 
-            const transport = new DAPIClientTransport(this.dapiClient);
+      const transport = new DAPIClientTransport(this.dapiClient);
 
-            this.wallet = new Wallet({
-                transport,
-                network: this.network,
-                ...this.options.wallet,
-            });
+      this.wallet = new Wallet({
+        transport,
+        network: this.network,
+        ...this.options.wallet,
+      });
 
-            // @ts-ignore
-            this.wallet.on('error', (error, context) => (
-                this.emit('error', error, { wallet: context })
-            ));
-        }
-
-        // @ts-ignore
-        this.defaultAccountIndex = this.options.wallet?.defaultAccountIndex || 0;
-
-        this.apps = new ClientApps(Object.assign({
-            dpns: {
-                contractId: dpnsContractId,
-            },
-            dashpay: {
-                contractId: dashpayContractId,
-            },
-            masternodeRewardShares: {
-                contractId: masternodeRewardSharesContractId,
-            }
-        }, this.options.apps));
-
-        this.platform = new Platform({
-            client: this,
-            network: this.network,
-            driveProtocolVersion: this.options.driveProtocolVersion,
-        });
+      // @ts-ignore
+      this.wallet.on('error', (error, context) => (
+        this.emit('error', error, { wallet: context })
+      ));
     }
 
-    /**
+    // @ts-ignore
+    this.defaultAccountIndex = this.options.wallet?.defaultAccountIndex || 0;
+
+    this.apps = new ClientApps({
+      dpns: {
+        contractId: dpnsContractId,
+      },
+      dashpay: {
+        contractId: dashpayContractId,
+      },
+      masternodeRewardShares: {
+        contractId: masternodeRewardSharesContractId,
+      },
+      ...this.options.apps,
+    });
+
+    this.platform = new Platform({
+      client: this,
+      network: this.network,
+      driveProtocolVersion: this.options.driveProtocolVersion,
+    });
+  }
+
+  /**
      * Get Wallet account
      *
      * @param {Account.Options} [options]
      * @returns {Promise<Account>}
      */
-    async getWalletAccount(options: Account.Options = {}) : Promise<Account> {
-        if (!this.wallet) {
-            throw new Error('Wallet is not initialized, pass `wallet` option to Client');
-        }
-
-        options = {
-            index: this.defaultAccountIndex,
-            ...options,
-        }
-
-        return this.wallet.getAccount(options);
+  async getWalletAccount(options: Account.Options = {}) : Promise<Account> {
+    if (!this.wallet) {
+      throw new Error('Wallet is not initialized, pass `wallet` option to Client');
     }
 
-    /**
+    options = {
+      index: this.defaultAccountIndex,
+      ...options,
+    };
+
+    return this.wallet.getAccount(options);
+  }
+
+  /**
      * disconnect wallet from Dapi
      * @returns {void}
      */
-    async disconnect() {
-        if (this.wallet) {
-            await this.wallet.disconnect();
-        }
+  async disconnect() {
+    if (this.wallet) {
+      await this.wallet.disconnect();
     }
+  }
 
-    /**
+  /**
      * Get DAPI Client instance
      *
      * @returns {DAPIClient}
      */
-    getDAPIClient() : DAPIClient {
-        return this.dapiClient;
-    }
+  getDAPIClient() : DAPIClient {
+    return this.dapiClient;
+  }
 
-    /**
+  /**
      * fetch list of applications
      *
      * @remarks
@@ -175,9 +186,9 @@ export class Client extends EventEmitter {
      *
      * @returns {ClientApps} applications list
      */
-    getApps(): ClientApps {
-        return this.apps;
-    }
+  getApps(): ClientApps {
+    return this.apps;
+  }
 }
 
 export default Client;
