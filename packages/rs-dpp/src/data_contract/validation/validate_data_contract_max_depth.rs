@@ -196,7 +196,11 @@ mod test {
         let result = calc_max_depth(&schema);
 
         let err = get_ref_error(result);
-        assert!(err.ref_error().starts_with("invalid ref '#/$defs/object'"));
+        assert_eq!(
+            err.ref_error(),
+            "invalid ref for max depth '#/$defs/object': value error: structure error: unable to get property $defs in $defs.object"
+                .to_string()
+        );
     }
 
     #[test]
@@ -224,7 +228,7 @@ mod test {
         let err = get_ref_error(result);
         assert_eq!(
             err.ref_error(),
-            "invalid ref 'https://json-schema.org/some': only local references are allowed"
+            "invalid ref for max depth 'https://json-schema.org/some': Generic Error: only local references are allowed"
                 .to_string()
         );
     }
@@ -254,7 +258,8 @@ mod test {
         let err = get_ref_error(result);
         assert_eq!(
             err.ref_error(),
-            "invalid ref '': only local references are allowed".to_string()
+            "invalid ref for max depth '': Generic Error: only local references are allowed"
+                .to_string()
         );
     }
 

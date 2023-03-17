@@ -58,6 +58,7 @@ pub trait DriveContractExt {
         &self,
         document_type_name: &str,
     ) -> Result<&DocumentType, ProtocolError>;
+    fn has_document_type_for_name(&self, document_type_name: &str) -> bool;
 }
 
 impl DriveContractExt for DataContract {
@@ -180,6 +181,10 @@ impl DriveContractExt for DataContract {
                 "can not get document type from contract",
             ))
         })
+    }
+
+    fn has_document_type_for_name(&self, document_type_name: &str) -> bool {
+        self.document_types.get(document_type_name).is_some()
     }
 }
 

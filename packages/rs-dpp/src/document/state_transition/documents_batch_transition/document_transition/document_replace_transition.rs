@@ -1,6 +1,6 @@
 use platform_value::btreemap_extensions::BTreeValueMapReplacementPathHelper;
 use platform_value::btreemap_extensions::{BTreeValueMapHelper, BTreeValueRemoveFromMapHelper};
-use platform_value::{ReplacementType, Value};
+use platform_value::{Bytes32, ReplacementType, Value};
 use serde::{Deserialize, Serialize};
 use serde_json::Value as JsonValue;
 use std::collections::BTreeMap;
@@ -63,7 +63,7 @@ impl DocumentReplaceTransition {
             document: self.to_document_for_dry_run(owner_id)?,
             data_contract: self.base.data_contract.clone(),
             metadata: None,
-            entropy: [0; 32],
+            entropy: Bytes32::default(),
         })
     }
 

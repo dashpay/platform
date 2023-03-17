@@ -212,8 +212,6 @@ pub trait StateTransitionConvert: Serialize {
         let mut value = self.to_object(skip_signature)?;
         let protocol_version = value.remove_integer(PROPERTY_PROTOCOL_VERSION)?;
 
-        value.as_map_mut_ref().unwrap().sort_by_keys();
-
         serializer::serializable_value_to_cbor(&value, Some(protocol_version))
     }
 

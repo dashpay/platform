@@ -414,7 +414,7 @@ impl DataContract {
             None => (HashSet::new(), HashSet::new()),
             Some(binary_properties) => binary_properties.iter().partition_map(|(path, v)| {
                 if let Some(JsonValue::String(content_type)) = v.get("contentMediaType") {
-                    if content_type == identifier::MEDIA_TYPE {
+                    if content_type == platform_value::IDENTIFIER_MEDIA_TYPE {
                         Either::Right(path.clone())
                     } else {
                         Either::Left(path.clone())
@@ -865,6 +865,6 @@ mod test {
 
         let serialized = data_contract.to_buffer().unwrap();
 
-        assert_eq!(data_contract_cbor, serialized);
+        assert_eq!(hex::encode(data_contract_cbor), hex::encode(serialized));
     }
 }

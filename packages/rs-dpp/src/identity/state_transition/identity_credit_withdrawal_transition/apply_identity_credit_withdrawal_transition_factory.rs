@@ -4,7 +4,7 @@ use lazy_static::__Deref;
 use std::collections::BTreeMap;
 use std::convert::TryInto;
 
-use platform_value::Value;
+use platform_value::{Bytes32, Value};
 use serde_json::json;
 
 use crate::contracts::withdrawals_contract::property_names;
@@ -135,7 +135,7 @@ where
             document: withdrawal_document,
             data_contract: withdrawals_data_contract,
             metadata: None,
-            entropy: [0; 32],
+            entropy: Bytes32::default(),
         };
 
         self.state_repository

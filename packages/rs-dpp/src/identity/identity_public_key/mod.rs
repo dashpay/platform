@@ -11,7 +11,7 @@ use std::convert::{TryFrom, TryInto};
 use anyhow::anyhow;
 use ciborium::value::Value as CborValue;
 use dashcore::PublicKey as ECDSAPublicKey;
-use platform_value::{BinaryData, Value};
+use platform_value::{BinaryData, ReplacementType, Value};
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use serde_json::Value as JsonValue;
 
@@ -120,10 +120,9 @@ impl IdentityPublicKey {
     }
 
     pub fn from_json_object(mut raw_object: JsonValue) -> Result<IdentityPublicKey, ProtocolError> {
-        raw_object.replace_binary_paths(BINARY_DATA_FIELDS, ReplaceWith::Bytes)?;
-        let identity_public_key: IdentityPublicKey = serde_json::from_value(raw_object)?;
-
-        Ok(identity_public_key)
+        let mut value: Value = raw_object.into();
+        value.replace_at_paths(BINARY_DATA_FIELDS, ReplacementType::BinaryBytes)?;
+        Self::from_value(value)
     }
 
     /// Return raw data, with all binary fields represented as arrays

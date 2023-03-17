@@ -5,6 +5,7 @@ use lazy_static::lazy_static;
 use platform_value::Value;
 use serde_json::Value as JsonValue;
 
+use crate::consensus::basic::document::InvalidDocumentTypeError;
 use crate::data_contract::document_type::DocumentType;
 use crate::data_contract::DriveContractExt;
 use crate::{
@@ -94,7 +95,15 @@ impl DocumentValidator {
         };
 
         // check if there is a document type
-        data_contract.document_type_for_name(document_type_name)?;
+        if !data_contract.has_document_type_for_name(document_type_name) {
+            result.add_error(BasicError::InvalidDocumentTypeError(
+                InvalidDocumentTypeError::new(
+                    document_type_name.to_owned(),
+                    data_contract.id.to_owned(),
+                ),
+            ));
+            return Ok(result);
+        }
 
         let enriched_data_contract = enrich_data_contract_with_base_schema(
             data_contract,

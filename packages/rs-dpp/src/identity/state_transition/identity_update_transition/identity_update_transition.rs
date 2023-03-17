@@ -258,7 +258,7 @@ impl StateTransitionConvert for IdentityUpdateTransition {
 
         let mut raw_object: Value =
             state_transition_helpers::to_object(self, skip_signature_paths)?;
-        raw_object.insert(
+        raw_object.insert_at_end(
             property_names::ADD_PUBLIC_KEYS.to_owned(),
             Value::Array(add_public_keys),
         )?;

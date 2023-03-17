@@ -4,7 +4,7 @@ use std::collections::BTreeMap;
 
 use itertools::Itertools;
 
-use platform_value::Value;
+use platform_value::{Bytes32, Value};
 use rand::rngs::StdRng;
 use rand::SeedableRng;
 use serde::{Deserialize, Serialize};
@@ -172,7 +172,7 @@ where
             document,
             data_contract,
             metadata: None,
-            entropy: document_entropy,
+            entropy: Bytes32::new(document_entropy),
         };
 
         // if !validation_result.is_valid() {

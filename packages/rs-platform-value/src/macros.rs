@@ -264,7 +264,6 @@ macro_rules! platform_value_internal {
             use platform_value::ValueMapHelper;
             let mut object = $crate::ValueMap::new();
             platform_value_internal!(@object object () ($($tt)+) ($($tt)+));
-            object.sort_by_keys();
             object
         })
     };

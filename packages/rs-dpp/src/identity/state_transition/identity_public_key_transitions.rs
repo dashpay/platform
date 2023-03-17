@@ -125,26 +125,15 @@ impl IdentityPublicKeyWithWitness {
 
     /// Return raw data, with all binary fields represented as arrays
     pub fn to_raw_object(&self, skip_signature: bool) -> Result<Value, ProtocolError> {
-        let mut map = BTreeMap::from([
-            ("id".to_string(), Value::U32(self.id)),
-            ("purpose".to_string(), Value::U8(self.purpose as u8)),
-            (
-                "securityLevel".to_string(),
-                Value::U8(self.security_level as u8),
-            ),
-            ("keyType".to_string(), Value::U8(self.key_type as u8)),
-            ("data".to_string(), Value::Bytes(self.data.to_vec())),
-            ("readOnly".to_string(), Value::Bool(self.read_only)),
-        ]);
+        let mut value = platform_value::to_value(self)?;
 
-        if !skip_signature && !self.signature.is_empty() {
-            map.insert(
-                "signature".to_string(),
-                Value::Bytes(self.signature.to_vec()),
-            );
+        if skip_signature || self.signature.is_empty() {
+            value
+                .remove("signature")
+                .map_err(ProtocolError::ValueError)?;
         }
 
-        Ok(map.into())
+        Ok(value)
     }
 
     /// Return raw data, with all binary fields represented as arrays

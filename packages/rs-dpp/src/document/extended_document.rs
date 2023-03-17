@@ -18,7 +18,7 @@ use platform_value::btreemap_extensions::BTreeValueMapPathHelper;
 use platform_value::btreemap_extensions::BTreeValueMapReplacementPathHelper;
 use platform_value::btreemap_extensions::BTreeValueRemoveFromMapHelper;
 use platform_value::converter::serde_json::BTreeValueJsonConverter;
-use platform_value::{ReplacementType, Value};
+use platform_value::{Bytes32, ReplacementType, Value};
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value as JsonValue};
 use std::collections::{BTreeMap, HashSet};
@@ -58,7 +58,7 @@ pub struct ExtendedDocument {
     pub metadata: Option<Metadata>,
     #[serde(skip)]
     //todo: make entropy optional
-    pub entropy: [u8; 32],
+    pub entropy: Bytes32,
 }
 
 impl ExtendedDocument {
@@ -192,11 +192,9 @@ impl ExtendedDocument {
             .remove_optional_integer(property_names::PROTOCOL_VERSION)
             .map_err(ProtocolError::ValueError)?
             .unwrap_or(PROTOCOL_VERSION);
-        extended_document.data_contract_id = Identifier::new(
-            properties
-                .remove_optional_hash256_bytes(property_names::DATA_CONTRACT_ID)?
-                .unwrap_or(extended_document.data_contract.id.to_buffer()),
-        );
+        extended_document.data_contract_id = properties
+            .remove_optional_identifier(property_names::DATA_CONTRACT_ID)?
+            .unwrap_or(extended_document.data_contract.id);
         extended_document.document = Document::from_map(properties, None, None)?;
 
         extended_document
@@ -377,11 +375,6 @@ impl ExtendedDocument {
         self.properties().get_optional_at_path(path).ok().flatten()
     }
 
-    /// Get entropy
-    pub fn get_entropy(&self) -> &[u8] {
-        &self.entropy
-    }
-
     pub fn get_identifiers_and_binary_paths(
         &self,
     ) -> Result<(HashSet<&str>, HashSet<&str>), ProtocolError> {
@@ -475,14 +468,14 @@ mod test {
         let test_document_properties_alpha_identifier = Value::from([
             ("type", Value::Text("array".to_string())),
             ("byteArray", Value::Bool(true)),
-        ]);
-        let test_document_properties_alpha_binary = Value::from([
-            ("type", Value::Text("array".to_string())),
-            ("byteArray", Value::Bool(true)),
             (
                 "contentMediaType",
                 Value::Text("application/x.dash.dpp.identifier".to_string()),
             ),
+        ]);
+        let test_document_properties_alpha_binary = Value::from([
+            ("type", Value::Text("array".to_string())),
+            ("byteArray", Value::Bool(true)),
         ]);
         let test_document_properties = Value::from([
             ("alphaIdentifier", test_document_properties_alpha_identifier),
@@ -495,7 +488,7 @@ mod test {
             ("$id", Value::Identifier([0_u8; 32])),
             ("$schema", Value::Text("schema".to_string())),
             ("version", Value::U32(0)),
-            ("$ownerId", Value::Identifier([0_u8; 32])),
+            ("ownerId", Value::Identifier([0_u8; 32])),
             ("documents", documents),
         ])
         .try_into()
@@ -670,7 +663,7 @@ mod test {
             "$ownerId" : owner_id,
             "$type" : "test",
             "$dataContractId" : data_contract_id,
-            "revision" : 1,
+            "$revision" : 1,
             "alphaBinary" : alpha_value,
             "alphaIdentifier" : alpha_value,
         });

@@ -137,10 +137,10 @@ fn to_object() {
     let expected_raw_state_transition = platform_value!({
         "protocolVersion" : 1u32,
         "type" : 5u8,
-        "signature" : [],
+        "signature" : BinaryData::default(),
         "signaturePublicKeyId": 0u32,
         "identityId" : transition.identity_id,
-        "revision": 0u8,
+        "revision": 0 as Revision,
         "disablePublicKeys" : [0u32],
         "publicKeysDisabledAt" : 1234567u64,
         "addPublicKeys" : [
@@ -148,11 +148,11 @@ fn to_object() {
 
                 "id" : 3u32,
                 "purpose" : 0u8,
-                "type": 0u8,
                 "securityLevel" : 0u8,
-                "data" :base64::decode("AkVuTKyF3YgKLAQlLEtaUL2HTditwGILfWUVqjzYnIgH").unwrap(),
+                "type": 0u8,
+                "data" :BinaryData::new(base64::decode("AkVuTKyF3YgKLAQlLEtaUL2HTditwGILfWUVqjzYnIgH").unwrap()),
                 "readOnly" : false,
-                "signature" : vec![0u8;65]
+                "signature" : BinaryData::new(vec![0u8;65])
             }
         ]
     });
@@ -180,9 +180,9 @@ fn to_object_with_signature_skipped() {
 
                 "id" : 3u32,
                 "purpose" : 0u8,
-                "type": 0u8,
                 "securityLevel" : 0u8,
-                "data" :BinaryData(base64::decode("AkVuTKyF3YgKLAQlLEtaUL2HTditwGILfWUVqjzYnIgH").unwrap()),
+                "type": 0u8,
+                "data" :BinaryData::new(base64::decode("AkVuTKyF3YgKLAQlLEtaUL2HTditwGILfWUVqjzYnIgH").unwrap()),
                 "readOnly" : false,
             }
         ]
@@ -201,7 +201,7 @@ fn to_json() {
     let expected_raw_state_transition = platform_value!({
         "protocolVersion" : 1u32,
         "type" : 5u8,
-        "signature" : Vec::<u8>::new(),
+        "signature" : BinaryData::default(),
         "signaturePublicKeyId": 0u32,
         "identityId" : transition.identity_id,
         "revision": 0 as Revision,
@@ -212,8 +212,8 @@ fn to_json() {
 
                 "id" : 3u32,
                 "purpose" : 0u8,
-                "type": 0u8,
                 "securityLevel" : 0u8,
+                "type": 0u8,
                 "data" : BinaryData::new(base64::decode("AkVuTKyF3YgKLAQlLEtaUL2HTditwGILfWUVqjzYnIgH").unwrap()),
                 "readOnly" : false,
                 "signature" : BinaryData::new(vec![0;65]),

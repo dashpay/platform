@@ -16,7 +16,6 @@ use crate::{
         StateTransitionConvert, StateTransitionIdentitySigned, StateTransitionLike,
         StateTransitionType,
     },
-    util::json_value::JsonValueExt,
     ProtocolError,
 };
 
@@ -223,6 +222,7 @@ mod test {
     use integer_encoding::VarInt;
 
     use crate::tests::fixtures::get_data_contract_fixture;
+    use crate::util::json_value::JsonValueExt;
     use crate::version;
 
     use super::*;

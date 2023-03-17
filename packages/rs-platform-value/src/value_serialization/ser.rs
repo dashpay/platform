@@ -248,10 +248,6 @@ impl serde::Serializer for Serializer {
 
     fn serialize_tuple(self, len: usize) -> Result<Self::SerializeTuple, Error> {
         self.serialize_seq(Some(len))
-        //        Ok(SerializeSizedVec {
-        //             size: len,
-        //             vec: Vec::with_capacity(len),
-        //         })
     }
 
     fn serialize_tuple_struct(

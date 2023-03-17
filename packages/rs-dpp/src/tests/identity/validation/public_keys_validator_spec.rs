@@ -387,7 +387,7 @@ pub fn should_return_invalid_result_if_key_data_is_not_a_valid_der() {
     raw_public_keys
         .get_mut(1)
         .unwrap()
-        .set_into_value("data", vec![0; 33])
+        .set_into_binary_data("data", vec![0; 33])
         .expect("expected to set data");
 
     let result = validator.validate_keys(&raw_public_keys).unwrap();

@@ -1,5 +1,6 @@
 use platform_value::platform_value;
 use platform_value::string_encoding::{decode, Encoding};
+use platform_value::BinaryData;
 use serde_json::json;
 
 use crate::prelude::{Identifier, Identity};
@@ -17,7 +18,7 @@ pub fn identity_fixture_raw_object() -> platform_value::Value {
                 "type": 0u8,
                 "purpose": 0u8,
                 "securityLevel": 0u8,
-                "data": decode("AuryIuMtRrl/VviQuyLD1l4nmxi9ogPzC9LT7tdpo0di", Encoding::Base64).unwrap(),
+                "data": BinaryData::from_string("AuryIuMtRrl/VviQuyLD1l4nmxi9ogPzC9LT7tdpo0di", Encoding::Base64).unwrap(),
                 "readOnly": false
             },
             {
@@ -25,7 +26,7 @@ pub fn identity_fixture_raw_object() -> platform_value::Value {
                 "type": 0u8,
                 "purpose": 1u8,
                 "securityLevel": 3u8,
-                "data": decode("A8AK95PYMVX5VQKzOhcVQRCUbc9pyg3RiL7jttEMDU+L", Encoding::Base64).unwrap(),
+                "data": BinaryData::from_string("A8AK95PYMVX5VQKzOhcVQRCUbc9pyg3RiL7jttEMDU+L", Encoding::Base64).unwrap(),
                 "readOnly": false
             }
         ],

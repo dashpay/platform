@@ -48,6 +48,12 @@ impl Value {
         Ok(Self::insert_in_map(map, key, value.into()))
     }
 
+    pub fn set_into_binary_data(&mut self, key: &str, value: Vec<u8>) -> Result<(), Error>
+    {
+        let map = self.as_map_mut_ref()?;
+        Ok(Self::insert_in_map(map, key, Value::Bytes(value)))
+    }
+
     pub fn set_value(&mut self, key: &str, value: Value) -> Result<(), Error> {
         let map = self.as_map_mut_ref()?;
         Ok(Self::insert_in_map(map, key, value))
@@ -56,6 +62,11 @@ impl Value {
     pub fn insert(&mut self, key: String, value: Value) -> Result<(), Error> {
         let map = self.as_map_mut_ref()?;
         Ok(Self::insert_in_map_string_value(map, key, value))
+    }
+
+    pub fn insert_at_end(&mut self, key: String, value: Value) -> Result<(), Error> {
+        let map = self.as_map_mut_ref()?;
+        Ok(Self::push_to_map_string_value(map, key, value))
     }
 
     pub fn remove(&mut self, key: &str) -> Result<Value, Error> {

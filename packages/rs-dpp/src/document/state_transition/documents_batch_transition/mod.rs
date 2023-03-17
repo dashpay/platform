@@ -497,6 +497,7 @@ pub fn get_security_level_requirement(v: &JsonValue, default: SecurityLevel) -> 
 mod test {
     use std::sync::Arc;
 
+    use platform_value::Bytes32;
     use serde_json::json;
 
     use crate::tests::fixtures::get_extended_documents_fixture;
@@ -612,7 +613,7 @@ mod test {
 
         let documents = get_extended_documents_fixture(data_contract.clone()).unwrap();
         let mut document = documents.first().unwrap().to_owned();
-        document.entropy = entropy_bytes;
+        document.entropy = Bytes32::new(entropy_bytes);
 
         let transitions = get_document_transitions_fixture([(Action::Create, vec![document])]);
         let mut transition = transitions.first().unwrap().to_owned();

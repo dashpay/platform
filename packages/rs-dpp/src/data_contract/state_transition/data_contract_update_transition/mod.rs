@@ -15,7 +15,6 @@ use crate::{
         StateTransitionConvert, StateTransitionIdentitySigned, StateTransitionLike,
         StateTransitionType,
     },
-    util::json_value::JsonValueExt,
     ProtocolError,
 };
 
@@ -205,6 +204,7 @@ impl StateTransitionConvert for DataContractUpdateTransition {
 
 #[cfg(test)]
 mod test {
+    use crate::util::json_value::JsonValueExt;
     use integer_encoding::VarInt;
     use std::convert::TryInto;
 

@@ -80,7 +80,13 @@ fn replace_down(
                                 *new_value = replacement_type.replace_for_bytes_32(*bytes)?;
                             }
                             _ => {
-                                let bytes = new_value.to_identifier_bytes()?;
+                                let bytes = match replacement_type {
+                                    ReplacementType::Identifier
+                                    | ReplacementType::IdentifierBytes
+                                    | ReplacementType::TextBase58 => new_value.to_identifier_bytes(),
+                                    ReplacementType::BinaryBytes
+                                    | ReplacementType::TextBase64 => new_value.to_binary_bytes(),
+                                }?;
                                 *new_value = replacement_type.replace_for_bytes(bytes)?;
                             }
                         }
@@ -127,7 +133,13 @@ impl BTreeValueMapReplacementPathHelper for BTreeMap<String, Value> {
                     *current_value = replacement_type.replace_for_bytes_32(*bytes)?;
                 }
                 _ => {
-                    let bytes = current_value.to_identifier_bytes()?;
+                    let bytes = match replacement_type {
+                        ReplacementType::Identifier
+                        | ReplacementType::IdentifierBytes
+                        | ReplacementType::TextBase58 => current_value.to_identifier_bytes(),
+                        ReplacementType::BinaryBytes
+                        | ReplacementType::TextBase64 => current_value.to_binary_bytes(),
+                    }?;
                     *current_value = replacement_type.replace_for_bytes(bytes)?;
                 }
             }

@@ -101,11 +101,13 @@ impl DataContract {
 
         contract_cbor_map.insert(property_names::DOCUMENTS, docs);
 
-        contract_cbor_map.insert(
-            property_names::DEFINITIONS,
-            CborValue::serialized(&self.defs)
-                .map_err(|e| ProtocolError::EncodingError(e.to_string()))?,
-        );
+        if !self.defs.is_empty() {
+            contract_cbor_map.insert(
+                property_names::DEFINITIONS,
+                CborValue::serialized(&self.defs)
+                    .map_err(|e| ProtocolError::EncodingError(e.to_string()))?,
+            );
+        }
 
         Ok(contract_cbor_map)
     }
