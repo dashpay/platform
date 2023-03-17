@@ -1,5 +1,5 @@
-use std::{convert::TryInto, sync::Arc};
 use std::convert::TryFrom;
+use std::{convert::TryInto, sync::Arc};
 
 use serde_json::Value;
 
@@ -84,7 +84,7 @@ pub async fn fetch_and_validate_data_contract(
     let maybe_data_contract = state_repository
         .fetch_data_contract(&data_contract_id, execution_context)
         .await?
-        .map(DataContract::try_from)
+        .map(TryInto::try_into)
         .transpose()
         .map_err(Into::into)?;
 

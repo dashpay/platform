@@ -3,21 +3,12 @@ const DocumentJs = require('@dashevo/dpp/lib/document/Document');
 const DocumentCreateTransition = require('@dashevo/dpp/lib/document/stateTransition/DocumentsBatchTransition/documentTransition/DocumentCreateTransition');
 const getDocumentsFixture = require('@dashevo/dpp/lib/test/fixtures/getDocumentsFixture');
 const getDataContractFixture = require('@dashevo/dpp/lib/test/fixtures/getDataContractFixture');
-const getDocumentTransitionsFixture = require('@dashevo/dpp/lib/test/fixtures/getDocumentTransitionsFixture');
 const ValidationResult = require('@dashevo/dpp/lib/validation/ValidationResult');
 const IdentifierJs = require('@dashevo/dpp/lib/identifier/Identifier');
-
-const InvalidDocumentErrorJs = require('@dashevo/dpp/lib/document/errors/InvalidDocumentError');
-const InvalidActionNameErrorJs = require('@dashevo/dpp/lib/document/errors/InvalidActionNameError');
-const NoDocumentsSuppliedErrorJs = require('@dashevo/dpp/lib/document/errors/NoDocumentsSuppliedError');
-const MismatchOwnerIdsErrorJs = require('@dashevo/dpp/lib/document/errors/MismatchOwnerIdsError');
-const InvalidInitialRevisionErrorJs = require('@dashevo/dpp/lib/document/errors/InvalidInitialRevisionError');
-const SerializedObjectParsingErrorJs = require('@dashevo/dpp/lib/errors/consensus/basic/decode/SerializedObjectParsingError');
 
 const createStateRepositoryMock = require('@dashevo/dpp/lib/test/mocks/createStateRepositoryMock');
 const generateRandomIdentifier = require('@dashevo/dpp/lib/test/utils/generateRandomIdentifier');
 const createDPPMock = require('@dashevo/dpp/lib/test/mocks/createDPPMock');
-const SomeConsensusError = require('@dashevo/dpp/lib/test/mocks/SomeConsensusError');
 const entropyGenerator = require('@dashevo/dpp/lib/util/entropyGenerator');
 const DocumentFactoryJS = require('@dashevo/dpp/lib/document/DocumentFactory');
 
@@ -25,6 +16,7 @@ let {
   Identifier, DocumentFactory, DataContract, Document, DocumentValidator, ProtocolVersionValidator,
   InvalidDocumentTypeInDataContractError, InvalidDocumentError, JsonSchemaError,
   NoDocumentsSuppliedError, MismatchOwnerIdsError, InvalidInitialRevisionError,
+  InvalidActionNameError,
 } = require('../../..');
 
 const { default: loadWasmDpp } = require('../../..');
@@ -65,6 +57,7 @@ describe('DocumentFactory', () => {
       NoDocumentsSuppliedError,
       MismatchOwnerIdsError,
       InvalidInitialRevisionError,
+      InvalidActionNameError,
     } = await loadWasmDpp());
   });
 
@@ -265,29 +258,27 @@ describe('DocumentFactory', () => {
     it('should throw InvalidDocumentError if Data Contract is not valid', async () => {
       const dc = DataContract.fromBuffer(dataContractJs.toBuffer());
       dc.setDocuments({ '$%34': { '^&*': 'Keck' } });
+      const oldDataContract = DataContract.fromBuffer(dataContractJs.toBuffer());
       stateRepositoryMock.fetchDataContract.resolves(dc);
-      // const protocolValidator = new ProtocolVersionValidator();
-      // documentValidator = new DocumentValidator(protocolValidator);
-
-      // factory = new DocumentFactory(1, documentValidator, stateRepositoryMock);
-      // const fetchContractError = new SomeConsensusError('error');
-
-      // fetchAndValidateDataContractMock.returns(
-      //   new ValidationResult([fetchContractError]),
-      // );
 
       try {
         await factory.createFromObject(rawDocumentJs);
 
         expect.fail('InvalidDocumentError should be thrown');
       } catch (e) {
-        console.log(e);
         expect(e).to.be.an.instanceOf(InvalidDocumentError);
 
         expect(e.getErrors()).to.have.length(1);
-        expect((new Document(e.getRawDocument(), DataContract.fromBuffer(dataContractJs.toBuffer())).toObject())).to.deep.equal(rawDocumentJs);
+        expect(
+          (new Document(e.getRawDocument(), oldDataContract).toObject()),
+        ).to.deep.equal(rawDocumentJs);
 
-        expect(stateRepositoryMock.fetchDataContract).to.have.been.calledOnceWith(dc.getId().toBuffer());
+        expect(stateRepositoryMock.fetchDataContract.callCount).to.be.equal(1);
+        const callArguments = stateRepositoryMock.fetchDataContract.getCall(0).args[0];
+
+        // Due to wasm-bindgen boundry we need to do some additional work to retrieve the exact
+        // Buffer it has been called with
+        expect(Buffer.from(callArguments)).to.be.deep.equal(dc.getId().toBuffer());
       }
     });
   });
@@ -309,56 +300,22 @@ describe('DocumentFactory', () => {
     });
 
     it('should return new Document from serialized one', async () => {
-      decodeProtocolEntityMock.returns([rawDocumentJs.$protocolVersion, rawDocumentJs]);
-
-      factoryJs.createFromObject.returns(documentJs);
-
-      const result = await factoryJs.createFromBuffer(serializedDocument);
-
-      expect(result).to.equal(documentJs);
-      expect(factoryJs.createFromObject).to.have.been.calledOnceWith(rawDocumentJs);
-      expect(decodeProtocolEntityMock).to.have.been.calledOnceWith(
-        serializedDocument,
-      );
-    });
-
-    it('should return new Document from serialized one - Rust', async () => {
       const result = await factory.createFromBuffer(serializedDocument);
       expect(result.toObject()).to.deep.equal(documentJs.toObject());
       expect(stateRepositoryMock.fetchDataContract).to.have.been.calledOnce();
     });
 
     it('should throw InvalidDocumentError if the decoding fails with consensus error', async () => {
-      const parsingError = new SerializedObjectParsingErrorJs(
-        serializedDocument,
-        new Error(),
-      );
-
-      decodeProtocolEntityMock.throws(parsingError);
+      documentJs.data = 'Not a valid data';
+      serializedDocument = documentJs.toBuffer();
 
       try {
-        await factoryJs.createFromBuffer(serializedDocument);
+        await factory.createFromBuffer(serializedDocument);
 
         expect.fail('should throw InvalidDocumentError');
       } catch (e) {
-        expect(e).to.be.an.instanceOf(InvalidDocumentErrorJs);
-
-        const [innerError] = e.getErrors();
-        expect(innerError).to.equal(parsingError);
-      }
-    });
-
-    it('should throw an error if decoding fails with any other error', async () => {
-      const parsingError = new Error('Something failed during parsing');
-
-      decodeProtocolEntityMock.throws(parsingError);
-
-      try {
-        await factoryJs.createFromBuffer(serializedDocument);
-
-        expect.fail('should throw an error');
-      } catch (e) {
-        expect(e).to.equal(parsingError);
+        console.log(e);
+        expect(e).to.be.an.instanceOf(InvalidDocumentError);
       }
     });
 
@@ -369,24 +326,14 @@ describe('DocumentFactory', () => {
 
         expect.fail('should throw an error');
       } catch (e) {
-        // TODO - parsing errors are not handled yet
+        console.log(e.toString());
+        // TODO - parsing errors are not handled yet, as they happen directly in the rust code when
+        //  trying to access a field
         expect(e).to.startsWith('Error conversion not implemented:');
       }
     });
   }); describe('createStateTransition', () => {
-    it('should throw and error if documents have unknown action', () => {
-      try {
-        factoryJs.createStateTransition({
-          unknown: documentsJs,
-        });
-        expect.fail('Error was not thrown');
-      } catch (e) {
-        expect(e).to.be.an.instanceOf(InvalidActionNameErrorJs);
-        expect(e.getActions()).to.have.deep.members(['unknown']);
-      }
-    });
-
-    it('should throw and error if documents have unknown action - Rust', async () => {
+    it('should throw and error if documents have unknown action', async () => {
       try {
         factory.createStateTransition({
           unknown: documents,
@@ -395,20 +342,12 @@ describe('DocumentFactory', () => {
         expect.fail('Error was not thrown');
       } catch (e) {
         // documents of unknown actions are filtered out
-        expect(e).to.be.an.instanceOf(NoDocumentsSuppliedError);
+        expect(e).to.be.an.instanceOf(InvalidActionNameError);
+        expect(e.getActions()).to.have.deep.members(['unknown']);
       }
     });
 
-    it('should throw and error if no documents were supplied', () => {
-      try {
-        factoryJs.createStateTransition({});
-        expect.fail('Error was not thrown');
-      } catch (e) {
-        expect(e).to.be.an.instanceOf(NoDocumentsSuppliedErrorJs);
-      }
-    });
-
-    it('should throw and error if no documents were supplied - Rust', async () => {
+    it('should throw and error if no documents were supplied', async () => {
       try {
         factory.createStateTransition({});
         expect.fail('Error was not thrown');
@@ -417,20 +356,7 @@ describe('DocumentFactory', () => {
       }
     });
 
-    it('should throw and error if documents have mixed owner ids', () => {
-      documentsJs[0].ownerId = generateRandomIdentifier().toBuffer();
-      try {
-        factoryJs.createStateTransition({
-          create: documentsJs,
-        });
-        expect.fail('Error was not thrown');
-      } catch (e) {
-        expect(e).to.be.an.instanceOf(MismatchOwnerIdsErrorJs);
-        expect(e.getDocuments()).to.have.deep.members(documentsJs);
-      }
-    });
-
-    it('should throw and error if documents have mixed owner ids - Rust', async () => {
+    it('should throw and error if documents have mixed owner ids', async () => {
       const newId = generateRandomIdentifier().toBuffer();
       documents[0].setOwnerId(new Identifier(newId));
       const rawDocuments = documents.map((d) => d.toObject());
@@ -447,20 +373,7 @@ describe('DocumentFactory', () => {
       }
     });
 
-    it('should throw and error if create documents have invalid initial version', () => {
-      documentsJs[0].setRevision(3);
-      try {
-        factoryJs.createStateTransition({
-          create: documentsJs,
-        });
-        expect.fail('Error was not thrown');
-      } catch (e) {
-        expect(e).to.be.an.instanceOf(InvalidInitialRevisionErrorJs);
-        expect(e.getDocument()).to.deep.equal(documentsJs[0]);
-      }
-    });
-
-    it('should throw and error if create documents have invalid initial version - Rust', async () => {
+    it('should throw and error if create documents have invalid initial version', async () => {
       documents[0].setRevision(3);
       const expectedDocument = documents[0].toObject();
       try {
@@ -474,29 +387,7 @@ describe('DocumentFactory', () => {
       }
     });
 
-    it('should create DocumentsBatchTransition with passed documents', () => {
-      const [newDocument] = getDocumentsFixture(dataContractJs);
-
-      fakeTime.tick(1000);
-
-      const stateTransition = factoryJs.createStateTransition({
-        create: documentsJs,
-        replace: [newDocument],
-      });
-
-      const expectedTransitions = getDocumentTransitionsFixture({
-        create: documentsJs,
-        replace: [newDocument],
-      });
-
-      expectedTransitions.slice(-1).updatedAt = new Date();
-
-      expect(stateTransition.getTransitions()).to.deep.equal(
-        expectedTransitions,
-      );
-    });
-
-    it('should create DocumentsBatchTransition with passed documents - Rust', async () => {
+    it('should create DocumentsBatchTransition with passed documents', async () => {
       const [newDocumentJs] = getDocumentsFixture(dataContractJs);
       const newDocument = new Document(newDocumentJs.toObject(), dataContract);
 
@@ -510,10 +401,10 @@ describe('DocumentFactory', () => {
         replace: [newDocumentJs],
       });
 
-      const transitions = stateTransition.getTransitions().map((t) => t.toJSON());
-      const transitionsJs = stateTransitionJs.getTransitions().map((t) => t.toJSON());
+      const transitions = stateTransition.getTransitions().map((t) => t.toObject());
+      const expectedTransitions = stateTransitionJs.getTransitions().map((t) => t.toObject());
 
-      expect(transitionsJs).to.deep.includes.members(transitions);
+      expect(transitions).to.deep.includes.members(expectedTransitions);
     });
   });
 });

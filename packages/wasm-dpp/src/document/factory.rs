@@ -1,6 +1,7 @@
 use std::{collections::HashMap, convert::TryFrom, sync::Arc};
 
 use anyhow::anyhow;
+use dpp::document::errors::DocumentError;
 use dpp::{
     document::{
         self,
@@ -10,8 +11,11 @@ use dpp::{
     },
     prelude::Document,
 };
+use js_sys::Object;
 use wasm_bindgen::prelude::*;
 
+use crate::document::errors::InvalidActionNameError;
+use crate::utils::with_serde_to_json_value;
 use crate::{
     document::document_data_to_bytes,
     identifier::identifier_from_js_value,
@@ -185,6 +189,8 @@ impl DocumentFactoryWASM {
 fn extract_documents_by_action(
     documents: &JsValue,
 ) -> Result<HashMap<Action, Vec<Document>>, JsValue> {
+    check_actions(documents)?;
+
     let mut documents_by_action: HashMap<Action, Vec<Document>> = Default::default();
 
     let documents_create = extract_documents_of_action(documents, "create").with_js_error()?;
@@ -196,6 +202,50 @@ fn extract_documents_by_action(
     documents_by_action.insert(Action::Delete, documents_delete);
 
     Ok(documents_by_action)
+}
+
+fn check_actions(documents: &JsValue) -> Result<(), JsValue> {
+    //HashMap<Action, Vec<Document>>
+    if !documents.is_object() {
+        return Err(anyhow!("Expected documents to be an object")).with_js_error();
+    }
+
+    let documents_object = js_sys::Object::from(documents.clone());
+
+    let actions: js_sys::Array = js_sys::Object::keys(&documents_object);
+
+    for action in actions.iter() {
+        let action_string: String = action
+            .as_string()
+            .ok_or_else(|| anyhow!("Expected all keys to be strings"))
+            .with_js_error()?;
+        Action::try_from(action_string)
+            .map_err(|e| InvalidActionNameError::new(vec![action.clone()]))?;
+    }
+
+    Ok(())
+
+    // let val: serde_json::Value = with_serde_to_json_value(documents)?;
+
+    // let map = val
+    //     .as_object()
+    //     .ok_or_else(anyhow!("Expected documents to be a map"))?;
+    //
+    // map.iter()
+    //     .map(|(action_string, documents_array)| {
+    //         let action = Action::try_from(action_string).map_err(|e| {
+    //             DocumentError::InvalidActionNameError {
+    //                 actions: vec![action_string.to_string()],
+    //             }
+    //         })?;
+    //
+    //         let doc_vec = documents_array
+    //             .as_array()
+    //             .ok_or_else(anyhow!("Expected documents to be an array"))?
+    //             .iter()
+    //             .map(|doc| {});
+    //     })
+    //     .collect()
 }
 
 fn extract_documents_of_action(

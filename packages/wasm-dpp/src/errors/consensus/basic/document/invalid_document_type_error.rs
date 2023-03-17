@@ -24,9 +24,15 @@ impl InvalidDocumentTypeErrorWasm {
 #[wasm_bindgen(js_class=InvalidDocumentTypeError)]
 impl InvalidDocumentTypeErrorWasm {
     #[wasm_bindgen(constructor)]
-    pub fn constructor(document_type: String, data_contract_id: IdentifierWrapper, code: u32) -> Self {
+    pub fn constructor(
+        document_type: String,
+        data_contract_id: IdentifierWrapper,
+        code: u32,
+    ) -> Self {
         Self {
-            document_type, data_contract_id: data_contract_id.into(), code
+            document_type,
+            data_contract_id: data_contract_id.into(),
+            code,
         }
     }
 
