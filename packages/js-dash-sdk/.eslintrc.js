@@ -64,6 +64,7 @@ module.exports = {
       files: [
         'src/test/**/*.js',
         'tests/**/*.js',
+        '*.config.js',
       ],
       rules: {
         // Ignore dirty-chai errors
@@ -78,6 +79,5 @@ module.exports = {
     '*.d.ts',
     'build',
     'dist',
-    'webpack.*.js',
   ],
 };
