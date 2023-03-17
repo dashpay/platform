@@ -118,7 +118,13 @@ impl Value {
     {
         let map = self.as_map_mut_ref()?;
         map.remove_optional_key(key)
-            .map(|v| v.into_integer())
+            .map(|v|
+                     if v.is_null() {
+                         None
+                     } else {
+                         Some(v.into_integer())
+                     }
+                ).flatten()
             .transpose()
     }
 
@@ -131,7 +137,12 @@ impl Value {
     pub fn remove_optional_identifier(&mut self, key: &str) -> Result<Option<Identifier>, Error> {
         let map = self.as_map_mut_ref()?;
         map.remove_optional_key(key)
-            .map(|v| v.into_identifier())
+            .map(|v|                      if v.is_null() {
+                None
+            } else {
+                Some(v.into_identifier())
+            })
+            .flatten()
             .transpose()
     }
 
@@ -557,7 +568,12 @@ impl Value {
         key: &str,
     ) -> Result<Option<bool>, Error> {
         Self::get_optional_from_map(document_type, key)
-            .map(|value| value.to_bool())
+            .map(|value| if value.is_null() {
+                None
+            } else {
+                Some(value.to_bool())
+            })
+            .flatten()
             .transpose()
     }
 
@@ -584,7 +600,12 @@ impl Value {
             + TryFrom<i8>,
     {
         Self::get_optional_from_map(document_type, key)
-            .map(|key_value| key_value.to_integer())
+            .map(|key_value| if key_value.is_null() {
+                None
+            } else {
+                Some(key_value.to_integer())
+            })
+            .flatten()
             .transpose()
     }
 

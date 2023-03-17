@@ -255,7 +255,7 @@ impl Value {
             Value::I16(int) => (*int).try_into().map_err(|_| Error::IntegerSizeError),
             Value::U8(int) => (*int).try_into().map_err(|_| Error::IntegerSizeError),
             Value::I8(int) => (*int).try_into().map_err(|_| Error::IntegerSizeError),
-            _other => Err(Error::StructureError("value is not an integer".to_string())),
+            other => Err(Error::StructureError(format!("value is not an integer, found {}", other))),
         }
     }
 

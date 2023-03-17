@@ -302,7 +302,7 @@ fn protocol_version_should_be_valid() {
         .validate(&raw_state_transition)
         .expect_err("error should be returned");
 
-    assert!(matches!(result, NonConsensusError::SerdeJsonError(_)));
+    assert!(matches!(result, NonConsensusError::ValueError(_)));
 }
 
 #[test]
