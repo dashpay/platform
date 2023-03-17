@@ -1,3 +1,3 @@
 export interface IPlatformStateProof {
-    merkleProof: Buffer,
+  merkleProof: Buffer,
 }
