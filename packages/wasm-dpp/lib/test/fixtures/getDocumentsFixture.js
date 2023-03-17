@@ -23,7 +23,7 @@ module.exports = async function getDocumentsFixture(
   const documentValidator = new DocumentValidator(new ProtocolVersionValidator());
   const entropyGenerator = {
     generate() {
-      return Buffer.alloc(32);
+      return crypto.randomBytes(32);
     },
   };
   const factory = new DocumentFactory(1, documentValidator, {}, entropyGenerator);

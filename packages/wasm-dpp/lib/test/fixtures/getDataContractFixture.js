@@ -1,3 +1,4 @@
+const crypto = require('crypto');
 const protocolVersion = require('@dashevo/dpp/lib/version/protocolVersion');
 const JsIdentifier = require('@dashevo/dpp/lib/identifier/Identifier');
 const generateRandomIdentifierAsync = require('../utils/generateRandomIdentifierAsync');
@@ -252,7 +253,7 @@ module.exports = async function getDataContractFixture(ownerId = randomOwnerId) 
   const dataContractValidator = new DataContractValidator();
   const entropyGenerator = {
     generate() {
-      return Buffer.alloc(32);
+      return crypto.randomBytes(32);
     },
   };
   const factory = new DataContractFactory(
