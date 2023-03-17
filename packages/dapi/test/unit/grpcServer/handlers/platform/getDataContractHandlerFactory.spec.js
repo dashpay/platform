@@ -14,7 +14,7 @@ const {
 } = require('@dashevo/dapi-grpc');
 
 /* eslint-disable import/no-extraneous-dependencies */
-const generateRandomIdentifier = require('@dashevo/dpp/lib/test/utils/generateRandomIdentifier');
+const generateRandomIdentifierAsync = require('@dashevo/wasm-dpp/lib/test/utils/generateRandomIdentifierAsync');
 const getDataContractFixture = require('@dashevo/dpp/lib/test/fixtures/getDataContractFixture');
 
 const GrpcCallMock = require('../../../../../lib/test/mock/GrpcCallMock');
@@ -34,8 +34,8 @@ describe('getDataContractHandlerFactory', () => {
   let proofMock;
   let response;
 
-  beforeEach(function beforeEach() {
-    id = generateRandomIdentifier();
+  beforeEach(async function beforeEach() {
+    id = await generateRandomIdentifierAsync();
     request = {
       getId: this.sinon.stub().returns(id),
       getProve: this.sinon.stub().returns(true),
@@ -64,7 +64,7 @@ describe('getDataContractHandlerFactory', () => {
     );
   });
 
-  it('should return valid data', async () => {
+  it('should return valid data', async function () {
     const result = await getDataContractHandler(call);
 
     expect(result).to.be.an.instanceOf(GetDataContractResponse);
@@ -81,10 +81,13 @@ describe('getDataContractHandlerFactory', () => {
 
     expect(merkleProof).to.deep.equal(proofFixture.merkleProof);
 
-    expect(driveStateRepositoryMock.fetchDataContract).to.be.calledOnceWith(id.toBuffer(), true);
+    expect(driveStateRepositoryMock.fetchDataContract).to.be.calledOnceWith(
+      this.sinon.match((identifier) => identifier.equals(id.toBuffer())),
+      true,
+    );
   });
 
-  it('should not include proof', async () => {
+  it('should not include proof', async function () {
     request.getProve.returns(false);
     response.setProof(null);
     driveStateRepositoryMock.fetchDataContract.resolves(response.serializeBinary());
@@ -96,7 +99,10 @@ describe('getDataContractHandlerFactory', () => {
 
     expect(proof).to.be.undefined();
 
-    expect(driveStateRepositoryMock.fetchDataContract).to.be.calledOnceWith(id.toBuffer(), false);
+    expect(driveStateRepositoryMock.fetchDataContract).to.be.calledOnceWith(
+      this.sinon.match((identifier) => identifier.equals(id.toBuffer())),
+      false,
+    );
   });
 
   it('should throw InvalidArgumentGrpcError error if id is not specified', async () => {

@@ -6,7 +6,7 @@ const dirtyChai = require('dirty-chai');
 
 const DashPlatformProtocol = require('@dashevo/dpp');
 
-const generateRandomIdentifier = require('@dashevo/dpp/lib/test/utils/generateRandomIdentifier');
+const generateRandomIdentifierAsync = require('@dashevo/wasm-dpp/lib/test/utils/generateRandomIdentifierAsync');
 const getDataContractFixture = require('@dashevo/dpp/lib/test/fixtures/getDataContractFixture');
 
 const {
@@ -49,7 +49,7 @@ describe('DriveStateRepository', () => {
 
   describe('#fetchDataContract', () => {
     it('should fetch and parse data contract', async () => {
-      const contractId = generateRandomIdentifier();
+      const contractId = await generateRandomIdentifierAsync();
       const result = await stateRepository.fetchDataContract(contractId);
 
       expect(result.toObject()).to.be.deep.equal(dataContractFixture.toObject());

@@ -16,7 +16,7 @@ const {
 } = require('@dashevo/dapi-grpc');
 
 /* eslint-disable import/no-extraneous-dependencies */
-const generateRandomIdentifier = require('@dashevo/dpp/lib/test/utils/generateRandomIdentifier');
+const generateRandomIdentifierAsync = require('@dashevo/wasm-dpp/lib/test/utils/generateRandomIdentifierAsync');
 const getDocumentsFixture = require('@dashevo/dpp/lib/test/fixtures/getDocumentsFixture');
 
 const GrpcCallMock = require('../../../../../lib/test/mock/GrpcCallMock');
@@ -43,13 +43,13 @@ describe('getDocumentsHandlerFactory', () => {
   let response;
   let proofMock;
 
-  beforeEach(function beforeEach() {
-    dataContractId = generateRandomIdentifier();
+  beforeEach(async function beforeEach() {
+    dataContractId = await generateRandomIdentifierAsync();
     documentType = 'document';
     where = [['name', '==', 'John']];
     orderBy = [{ order: 'asc' }];
     limit = 20;
-    startAfter = new Uint8Array(generateRandomIdentifier().toBuffer());
+    startAfter = new Uint8Array((await generateRandomIdentifierAsync()).toBuffer());
     startAt = new Uint8Array([]);
 
     request = {
@@ -90,7 +90,7 @@ describe('getDocumentsHandlerFactory', () => {
     );
   });
 
-  it('should return valid result', async () => {
+  it('should return valid result', async function () {
     response.setProof(null);
 
     driveStateRepositoryMock.fetchDocuments.resolves(response.serializeBinary());
@@ -104,7 +104,7 @@ describe('getDocumentsHandlerFactory', () => {
     expect(documentsBinary).to.have.lengthOf(documentsFixture.length);
 
     expect(driveStateRepositoryMock.fetchDocuments).to.be.calledOnceWith(
-      dataContractId.toBuffer(),
+      this.sinon.match((id) => id.equals(dataContractId.toBuffer())),
       documentType,
       {
         where,
@@ -123,7 +123,7 @@ describe('getDocumentsHandlerFactory', () => {
     expect(proof).to.be.undefined();
   });
 
-  it('should return proof', async () => {
+  it('should return proof', async function () {
     request.getProve.returns(true);
 
     const result = await getDocumentsHandler(call);
@@ -131,7 +131,7 @@ describe('getDocumentsHandlerFactory', () => {
     expect(result).to.be.an.instanceOf(GetDocumentsResponse);
 
     expect(driveStateRepositoryMock.fetchDocuments).to.be.calledOnceWith(
-      dataContractId.toBuffer(),
+      this.sinon.match((id) => id.equals(dataContractId.toBuffer())),
       documentType,
       {
         where,

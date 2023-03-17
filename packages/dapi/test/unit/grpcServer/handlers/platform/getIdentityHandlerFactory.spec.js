@@ -14,7 +14,7 @@ const {
 } = require('@dashevo/dapi-grpc');
 
 /* eslint-disable import/no-extraneous-dependencies */
-const generateRandomIdentifier = require('@dashevo/dpp/lib/test/utils/generateRandomIdentifier');
+const generateRandomIdentifierAsync = require('@dashevo/wasm-dpp/lib/test/utils/generateRandomIdentifierAsync');
 const getIdentityFixture = require('@dashevo/wasm-dpp/lib/test/fixtures/getIdentityFixture');
 
 const getIdentityHandlerFactory = require('../../../../../lib/grpcServer/handlers/platform/getIdentityHandlerFactory');
@@ -32,7 +32,7 @@ describe('getIdentityHandlerFactory', () => {
   let response;
 
   beforeEach(async function beforeEach() {
-    id = generateRandomIdentifier();
+    id = await generateRandomIdentifierAsync();
     call = new GrpcCallMock(this.sinon, {
       getId: this.sinon.stub().returns(id),
       getProve: this.sinon.stub().returns(false),
