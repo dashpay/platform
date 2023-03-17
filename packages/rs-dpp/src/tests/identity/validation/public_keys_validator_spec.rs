@@ -5,6 +5,7 @@ use crate::identity::{KeyID, KeyType, Purpose, SecurityLevel};
 use crate::tests::fixtures::get_public_keys_validator;
 use crate::tests::utils::platform_value_set_ref;
 use crate::{assert_consensus_errors, NativeBlsModule};
+use platform_value::BinaryData;
 use platform_value::{platform_value, Value};
 
 fn setup_test() -> (Vec<Value>, PublicKeysValidator<NativeBlsModule>) {
@@ -494,7 +495,7 @@ pub fn should_pass_valid_ecdsa_hash160_public_key() {
         "purpose": 0u8,
         "securityLevel": 0u8,
         "readOnly": true,
-        "data": hex::decode("6086389d3fa4773aa950b8de18c5bd6d8f2b73bc").unwrap(),
+        "data": BinaryData::new(hex::decode("6086389d3fa4773aa950b8de18c5bd6d8f2b73bc").unwrap()),
     }]);
     let raw_public_keys = raw_public_keys_json.as_array().unwrap();
 
@@ -512,7 +513,7 @@ pub fn should_return_invalid_result_if_bls12_381_public_key_is_invalid() {
         "purpose": 0u8,
         "securityLevel": 0u8,
         "readOnly": true,
-        "data": hex::decode("11fac99ca2c8f39c286717c213e190aba4b7af76db320ec43f479b7d9a2012313a0ae59ca576edf801444bc694686694").unwrap(),
+        "data": BinaryData::new(hex::decode("11fac99ca2c8f39c286717c213e190aba4b7af76db320ec43f479b7d9a2012313a0ae59ca576edf801444bc694686694").unwrap()),
     }]);
     let raw_public_keys = raw_public_keys_json.as_array().unwrap();
 

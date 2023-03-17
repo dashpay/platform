@@ -396,7 +396,7 @@ pub mod revision {
 
         match error.kind() {
             ValidationErrorKind::Required { property } => {
-                assert_eq!(property.to_string(), "\"revision\"");
+                assert_eq!(property.to_string(), "\"protocolVersion\"");
             }
             _ => panic!("Expected to be missing property"),
         }

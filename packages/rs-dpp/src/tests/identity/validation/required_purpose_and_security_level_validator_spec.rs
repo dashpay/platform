@@ -4,6 +4,7 @@ use crate::identity::{
 };
 use platform_value::platform_value;
 use platform_value::string_encoding::{decode, Encoding};
+use platform_value::BinaryData;
 
 #[test]
 fn should_return_invalid_result_if_state_transition_does_not_contain_master_key() {
@@ -14,7 +15,7 @@ fn should_return_invalid_result_if_state_transition_does_not_contain_master_key(
                     "type" : KeyType::ECDSA_SECP256K1 as u8,
                     "purpose" : Purpose::AUTHENTICATION as u8,
                     "securityLevel"  : SecurityLevel::CRITICAL as u8,
-                    "data": decode("AuryIuMtRrl/VviQuyLD1l4nmxi9ogPzC9LT7tdpo0di", Encoding::Base64).unwrap(),
+                    "data": BinaryData::new(decode("AuryIuMtRrl/VviQuyLD1l4nmxi9ogPzC9LT7tdpo0di", Encoding::Base64).unwrap()),
                     "readOnly" : false,
         }),
         // this key must be filtered out
@@ -24,7 +25,7 @@ fn should_return_invalid_result_if_state_transition_does_not_contain_master_key(
                     "purpose": Purpose::AUTHENTICATION as u8,
                     "securityLevel" : SecurityLevel::CRITICAL as u8,
                     "disabledAt" : 42,
-                    "data": decode("AuryIuMtRrl/VviQuyLD1l4nmxi9ogPzC9LT7tdpo0di", Encoding::Base64).unwrap(),
+                    "data": BinaryData::new(decode("AuryIuMtRrl/VviQuyLD1l4nmxi9ogPzC9LT7tdpo0di", Encoding::Base64).unwrap()),
                     "readOnly" : false,
         }),
     ];
@@ -49,7 +50,7 @@ fn should_return_valid_result() {
                     "type" : KeyType::ECDSA_SECP256K1 as u8,
                     "purpose" : Purpose::AUTHENTICATION as u8,
                     "securityLevel"  : SecurityLevel::MASTER as u8,
-                    "data": decode("AuryIuMtRrl/VviQuyLD1l4nmxi9ogPzC9LT7tdpo0di", Encoding::Base64).unwrap(),
+                    "data": BinaryData::new(decode("AuryIuMtRrl/VviQuyLD1l4nmxi9ogPzC9LT7tdpo0di", Encoding::Base64).unwrap()),
                     "readOnly" : false,
         }),
         // this key must be filtered out
@@ -59,7 +60,7 @@ fn should_return_valid_result() {
                     "purpose": Purpose::AUTHENTICATION as u8,
                     "securityLevel" : SecurityLevel::CRITICAL as u8,
                     "disabledAt" : 42u64,
-                    "data": decode("AuryIuMtRrl/VviQuyLD1l4nmxi9ogPzC9LT7tdpo0di", Encoding::Base64).unwrap(),
+                    "data": BinaryData::new(decode("AuryIuMtRrl/VviQuyLD1l4nmxi9ogPzC9LT7tdpo0di", Encoding::Base64).unwrap()),
                     "readOnly" : false,
         }),
     ];
