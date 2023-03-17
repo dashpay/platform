@@ -319,6 +319,11 @@ impl Value {
         Self::inner_array_ref(map, key)
     }
 
+    pub fn get_optional_array_mut_ref<'a>(&'a mut self, key: &'a str) -> Result<Option<&'a mut Vec<Value>>, Error> {
+        let map = self.to_map_mut()?;
+        Self::inner_optional_array_mut_ref(map, key)
+    }
+
     pub fn get_array_mut_ref<'a>(&'a mut self, key: &'a str) -> Result<&'a mut Vec<Value>, Error> {
         let map = self.to_map_mut()?;
         Self::inner_array_mut_ref(map, key)
@@ -447,6 +452,14 @@ impl Value {
         key: &'a str,
     ) -> Result<&'a mut Vec<Value>, Error> {
         Self::get_mut_from_map(document_type, key).map(|value| value.to_array_mut())?
+    }
+
+    /// Retrieves the value of a key from a map if it's an array of strings.
+    pub fn inner_optional_array_mut_ref<'a>(
+        document_type: &'a mut [(Value, Value)],
+        key: &'a str,
+    ) -> Result<Option<&'a mut Vec<Value>>, Error> {
+        Self::get_optional_mut_from_map(document_type, key).map(|value| value.to_array_mut()).transpose()
     }
 
     /// Retrieves the value of a key from a map if it's an array of strings.

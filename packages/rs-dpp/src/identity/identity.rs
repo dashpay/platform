@@ -3,7 +3,7 @@ use std::convert::TryFrom;
 
 use ciborium::value::Value as CborValue;
 use integer_encoding::VarInt;
-use platform_value::Value;
+use platform_value::{ReplacementType, Value};
 use serde::{Deserialize, Serialize};
 use serde_json::Value as JsonValue;
 
@@ -281,18 +281,21 @@ impl Identity {
 
     /// Creates an identity from a json structure
     pub fn from_json(mut json_object: JsonValue) -> Result<Identity, ProtocolError> {
-        if let Some(public_keys_value) = json_object.get_mut("publicKeys") {
-            if let Some(public_keys_array) = public_keys_value.as_array_mut() {
-                for public_key in public_keys_array.iter_mut() {
-                    public_key.replace_binary_paths(
-                        identity_public_key::BINARY_DATA_FIELDS,
-                        ReplaceWith::Bytes,
-                    )?;
-                }
+        let mut platform_value: Value = json_object.into();
+
+        platform_value
+            .replace_at_paths(IDENTIFIER_FIELDS_RAW_OBJECT, ReplacementType::Identifier)?;
+
+        if let Some(public_keys_array) = platform_value.get_optional_array_mut_ref("publicKeys")? {
+            for public_key in public_keys_array.iter_mut() {
+                public_key.replace_at_paths(
+                    identity_public_key::BINARY_DATA_FIELDS,
+                    ReplacementType::BinaryBytes,
+                )?;
             }
         }
 
-        let identity: Identity = serde_json::from_value(json_object)?;
+        let identity: Identity = platform_value::from_value(platform_value)?;
 
         Ok(identity)
     }
