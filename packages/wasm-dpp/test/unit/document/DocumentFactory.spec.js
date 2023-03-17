@@ -1,16 +1,13 @@
 const bs58 = require('bs58');
-const DocumentJs = require('@dashevo/dpp/lib/document/Document');
 const DocumentCreateTransition = require('@dashevo/dpp/lib/document/stateTransition/DocumentsBatchTransition/documentTransition/DocumentCreateTransition');
 const getDocumentsFixture = require('@dashevo/dpp/lib/test/fixtures/getDocumentsFixture');
 const getDataContractFixture = require('@dashevo/dpp/lib/test/fixtures/getDataContractFixture');
 const ValidationResult = require('@dashevo/dpp/lib/validation/ValidationResult');
-const IdentifierJs = require('@dashevo/dpp/lib/identifier/Identifier');
 
-const createStateRepositoryMock = require('@dashevo/dpp/lib/test/mocks/createStateRepositoryMock');
-const generateRandomIdentifier = require('@dashevo/dpp/lib/test/utils/generateRandomIdentifier');
 const createDPPMock = require('@dashevo/dpp/lib/test/mocks/createDPPMock');
-const entropyGenerator = require('@dashevo/dpp/lib/util/entropyGenerator');
 const DocumentFactoryJS = require('@dashevo/dpp/lib/document/DocumentFactory');
+const createStateRepositoryMock = require('../../../lib/test/mocks/createStateRepositoryMock');
+const generateRandomIdentifierAsync = require('../../../lib/test/utils/generateRandomIdentifierAsync');
 
 let {
   Identifier, DocumentFactory, DataContract, Document, DocumentValidator, ProtocolVersionValidator,
@@ -23,7 +20,6 @@ const { default: loadWasmDpp } = require('../../..');
 
 describe('DocumentFactory', () => {
   let decodeProtocolEntityMock;
-  let generateEntropyMock;
   let validateDocumentMock;
   let fetchAndValidateDataContractMock;
   let stateRepositoryMock;
@@ -41,7 +37,6 @@ describe('DocumentFactory', () => {
   let factory;
   let fakeTime;
   let fakeTimeDate;
-  let entropy;
   let dppMock;
   let dataContractId;
   let documentValidator;
@@ -86,12 +81,9 @@ describe('DocumentFactory', () => {
     rawDocument = document.toObject();
 
     decodeProtocolEntityMock = this.sinonSandbox.stub();
-    generateEntropyMock = this.sinonSandbox.stub(entropyGenerator, 'generate');
     validateDocumentMock = this.sinonSandbox.stub();
 
     validateDocumentMock.returns(new ValidationResult());
-    entropy = bs58.decode('789');
-    generateEntropyMock.returns(entropy);
 
     const fetchContractResult = new ValidationResult();
     fetchContractResult.setData(dataContractJs);
@@ -116,7 +108,6 @@ describe('DocumentFactory', () => {
 
   afterEach(() => {
     fakeTime.reset();
-    generateEntropyMock.restore();
   });
 
   describe('create', () => {
@@ -134,15 +125,7 @@ describe('DocumentFactory', () => {
       ownerIdJs = bs58.decode('5zcXZpTLWFwZjKjq3ME5KVavtZa9YUaZESVzrndehBhq');
       ownerId = Identifier.from(ownerIdJs);
 
-      dataContractJs.id = IdentifierJs.from(contractId);
       dataContract.setId(Identifier.from(contractId));
-
-      const newDocumentJs = factoryJs.create(
-        dataContractJs,
-        ownerIdJs,
-        newRawDocument.$type,
-        { name },
-      );
 
       const newDocument = factory.create(
         dataContract,
@@ -152,34 +135,23 @@ describe('DocumentFactory', () => {
       );
 
       expect(newDocument).to.be.an.instanceOf(Document);
-      expect(newDocumentJs).to.be.an.instanceOf(DocumentJs);
 
-      expect(newDocumentJs.getType()).to.equal(newRawDocument.$type);
       expect(newDocument.getType()).to.equal(newRawDocument.$type);
 
-      expect(newDocumentJs.get('name')).to.equal(name);
       expect(newDocument.get('name')).to.equal(name);
 
-      expect(newDocumentJs.getDataContractId().toBuffer()).to.deep.equal(contractId);
       expect(newDocument.getDataContractId().toBuffer()).to.deep.equal(contractId);
 
-      expect(newDocumentJs.getOwnerId().toBuffer()).to.deep.equal(ownerIdJs);
       expect(newDocument.getOwnerId().toBuffer()).to.deep.equal(ownerIdJs);
 
-      expect(generateEntropyMock).to.have.been.calledOnce();
-      expect(newDocumentJs.getEntropy()).to.deep.equal(entropy);
-
-      expect(newDocumentJs.getRevision()).to.equal(DocumentCreateTransition.INITIAL_REVISION);
       expect(newDocument.getRevision()).to.equal(DocumentCreateTransition.INITIAL_REVISION);
 
-      expect(newDocumentJs.getId()).to.deep.equal(bs58.decode('E9QpjZMD7CPAGa7x2ABuLFPvBLZjhPji4TMrUfSP3Hk9'));
       // in case of rust version, it is impossible to test the ID, because the ID
       // is generated based on entropy generator which generates different output
       // every time and it cannot be mocked. ID generation should be verified
       // in a true unit test. Not here.
       expect(newDocument.getEntropy()).not.to.deep.be.equal(Buffer.alloc(32));
 
-      expect(newDocumentJs.getCreatedAt().getTime()).to.be.equal(fakeTimeDate.getTime());
       expect(newDocument.getCreatedAt()).to.be.an('number');
     });
 
@@ -198,12 +170,6 @@ describe('DocumentFactory', () => {
     });
 
     it('should throw an error if validation failed', () => {
-      const error = new Error('validation failed');
-      const validationResult = new ValidationResult();
-      validationResult.addError(error);
-
-      validateDocumentMock.returns(validationResult);
-
       try {
         factory.create(dataContract, ownerId, rawDocumentJs.$type, {});
 
@@ -314,7 +280,6 @@ describe('DocumentFactory', () => {
 
         expect.fail('should throw InvalidDocumentError');
       } catch (e) {
-        console.log(e);
         expect(e).to.be.an.instanceOf(InvalidDocumentError);
       }
     });
@@ -326,7 +291,6 @@ describe('DocumentFactory', () => {
 
         expect.fail('should throw an error');
       } catch (e) {
-        console.log(e.toString());
         // TODO - parsing errors are not handled yet, as they happen directly in the rust code when
         //  trying to access a field
         expect(e).to.startsWith('Error conversion not implemented:');
@@ -357,8 +321,8 @@ describe('DocumentFactory', () => {
     });
 
     it('should throw and error if documents have mixed owner ids', async () => {
-      const newId = generateRandomIdentifier().toBuffer();
-      documents[0].setOwnerId(new Identifier(newId));
+      const newId = await generateRandomIdentifierAsync();
+      documents[0].setOwnerId(newId);
       const rawDocuments = documents.map((d) => d.toObject());
 
       try {
