@@ -1,10 +1,10 @@
 mod from_raw_object {
-    use std::convert::TryInto;
     use bls_signatures::Serialize;
     use dashcore::PublicKey;
     use platform_value::platform_value;
-    use serde_json::json;
     use platform_value::BinaryData;
+    use serde_json::json;
+    use std::convert::TryInto;
 
     use crate::identity::{KeyType, Purpose, SecurityLevel};
     use crate::prelude::IdentityPublicKey;
@@ -89,7 +89,9 @@ mod from_raw_object {
             \"securityLevel\":0, \
             \"readOnly\":false \
         }";
-        let public_key: IdentityPublicKey = pk_str.try_into().expect("expected to convert to IdentityPublicKey");
+        let public_key: IdentityPublicKey = pk_str
+            .try_into()
+            .expect("expected to convert to IdentityPublicKey");
 
         // let public_key = IdentityPublicKey::from_raw_object(public_key_json).unwrap();
 

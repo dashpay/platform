@@ -229,12 +229,13 @@ impl TryFrom<&str> for IdentityPublicKey {
     type Error = ProtocolError;
 
     fn try_from(value: &str) -> Result<Self, Self::Error> {
-        let mut platform_value: Value = serde_json::from_str::<JsonValue>(value).map_err(|e| ProtocolError::StringDecodeError(e.to_string()))?.into();
+        let mut platform_value: Value = serde_json::from_str::<JsonValue>(value)
+            .map_err(|e| ProtocolError::StringDecodeError(e.to_string()))?
+            .into();
         platform_value.replace_at_paths(BINARY_DATA_FIELDS, ReplacementType::BinaryBytes)?;
         platform_value.try_into().map_err(ProtocolError::ValueError)
     }
 }
-
 
 pub fn de_base64_to_vec<'de, D: Deserializer<'de>>(d: D) -> Result<Vec<u8>, D::Error> {
     let data: String = Deserialize::deserialize(d)?;

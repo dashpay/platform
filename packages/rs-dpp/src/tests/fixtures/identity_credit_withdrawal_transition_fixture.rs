@@ -1,6 +1,6 @@
+use crate::identity::core_script::CoreScript;
 use crate::prelude::Identifier;
 use crate::prelude::Revision;
-use crate::identity::core_script::CoreScript;
 use dashcore::{hashes::hex::FromHex, PubkeyHash, Script};
 use platform_value::string_encoding::{encode, Encoding};
 use platform_value::BinaryData;
