@@ -153,9 +153,7 @@ mod test {
         state_repository::MockStateRepositoryLike,
         state_transition::{StateTransition, StateTransitionLike},
         tests::{
-            fixtures::{
-                identity_create_transition_fixture, identity_topup_transition_fixture,
-            },
+            fixtures::{identity_create_transition_fixture, identity_topup_transition_fixture},
             utils::get_signature_error_from_result,
         },
         NativeBlsModule,
@@ -218,11 +216,10 @@ mod test {
             .expect("secret key should be created");
 
         let private_key = PrivateKey::new(secret_key, Network::Testnet);
-        let mut state_transition: StateTransition = IdentityCreateTransition::new(
-            identity_create_transition_fixture(Some(private_key)),
-        )
-        .unwrap()
-        .into();
+        let mut state_transition: StateTransition =
+            IdentityCreateTransition::new(identity_create_transition_fixture(Some(private_key)))
+                .unwrap()
+                .into();
 
         state_transition
             .sign_by_private_key(
@@ -255,11 +252,10 @@ mod test {
             .expect("secret key should be created");
 
         let private_key = PrivateKey::new(secret_key, Network::Testnet);
-        let mut state_transition: StateTransition = IdentityCreateTransition::new(
-            identity_create_transition_fixture(Some(private_key)),
-        )
-        .unwrap()
-        .into();
+        let mut state_transition: StateTransition =
+            IdentityCreateTransition::new(identity_create_transition_fixture(Some(private_key)))
+                .unwrap()
+                .into();
 
         state_transition
             .sign_by_private_key(

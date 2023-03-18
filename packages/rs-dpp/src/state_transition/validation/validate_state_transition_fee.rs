@@ -151,9 +151,7 @@ where
             .transpose()
             .map_err(Into::into)?
             .ok_or_else(|| {
-                ProtocolError::IdentityNotPresentError(IdentityNotPresentError::new(
-                    *identity_id,
-                ))
+                ProtocolError::IdentityNotPresentError(IdentityNotPresentError::new(*identity_id))
             })?;
 
         Ok(identity.get_balance())
