@@ -443,6 +443,8 @@ fn apply_patches(
 ///   "tags": [ "example" ]
 /// });
 ///
+/// merge(&mut doc, &patch);
+///
 /// assert_eq!(doc, platform_value!({
 ///   "title": "Hello!",
 ///   "author" : {
@@ -466,7 +468,7 @@ pub fn merge(doc: &mut Value, patch: &Value) {
     let map = doc.as_map_mut().unwrap();
     for (key, value) in patch.as_map().unwrap() {
         if value.is_null() {
-            map.remove_optional_key_value(value);
+            map.remove_optional_key_value(key);
         } else {
             merge(map.get_key_by_value_mut_or_insert(key, Value::Null), value);
         }

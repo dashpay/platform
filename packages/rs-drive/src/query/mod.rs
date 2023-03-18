@@ -102,7 +102,6 @@ use dpp::data_contract::extra::common::bytes_for_system_value;
 #[cfg(any(feature = "full", feature = "verify"))]
 use dpp::document::Document;
 #[cfg(any(feature = "full", feature = "verify"))]
-use dpp::platform_value::btreemap_extensions::BTreeValueMapHelper;
 use dpp::platform_value::btreemap_extensions::BTreeValueRemoveFromMapHelper;
 #[cfg(any(feature = "full", feature = "verify"))]
 use dpp::platform_value::Value;

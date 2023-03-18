@@ -303,6 +303,12 @@ mod test {
     use crate::{platform_value, to_value, Identifier, Value};
 
     #[test]
+    fn test_null() {
+        let value = platform_value!(null);
+        assert_eq!(value, Value::Null)
+    }
+
+    #[test]
     fn test_identity_is_kept() {
         let id = Identifier::new([0; 32]);
         let value = to_value(id).unwrap();

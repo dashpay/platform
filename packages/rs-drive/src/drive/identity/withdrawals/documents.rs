@@ -2,7 +2,6 @@ use std::collections::BTreeMap;
 
 use dpp::data_contract::document_type::random_document::CreateRandomDocument;
 use dpp::document::Document;
-use dpp::identity::core_script::CoreScript;
 use dpp::platform_value::Value;
 use dpp::{contracts::withdrawals_contract, data_contract::DriveContractExt};
 use grovedb::TransactionArg;
