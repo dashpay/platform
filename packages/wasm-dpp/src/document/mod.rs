@@ -27,7 +27,7 @@ pub mod generate_document_id;
 pub mod state_transition;
 mod validator;
 
-pub use document_batch_transition::DocumentsBatchTransitionWASM;
+pub use document_batch_transition::DocumentsBatchTransitionWasm;
 use dpp::data_contract::DriveContractExt;
 use dpp::document::{Document, EXTENDED_DOCUMENT_IDENTIFIER_FIELDS};
 
@@ -39,7 +39,6 @@ use dpp::platform_value::converter::serde_json::BTreeValueJsonConverter;
 use dpp::platform_value::ReplacementType;
 use dpp::platform_value::Value;
 use dpp::ProtocolError;
-pub use document_batch_transition::DocumentsBatchTransitionWasm;
 pub use factory::DocumentFactoryWASM;
 use serde_json::Value as JsonValue;
 pub use validator::DocumentValidatorWasm;

@@ -74,7 +74,7 @@ impl<SR> AsyncDataValidatorWithContext for DataContractUpdateTransitionBasicVali
 where
     SR: StateRepositoryLike,
 {
-    type Item = JsonValue;
+    type Item = Value;
 
     async fn validate(
         &self,

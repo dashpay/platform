@@ -19,7 +19,6 @@ use crate::{
     ProtocolError,
 };
 
-
 use super::validate_state_transition_by_type::ValidatorByStateTransitionType;
 
 pub struct StateTransitionBasicValidator<SR, VBT>
@@ -59,7 +58,7 @@ where
     ) -> Result<SimpleValidationResult, ProtocolError> {
         let mut result = SimpleValidationResult::default();
 
-        let Ok(state_transition_type) = raw_state_transition.get_u8("type") else {
+        let Ok(state_transition_type) = raw_state_transition.get_integer("type") else {
             result.add_error(
                 ConsensusError::BasicError(
                     Box::new(BasicError::MissingStateTransitionTypeError)

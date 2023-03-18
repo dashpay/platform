@@ -1,7 +1,4 @@
 use crate::data_contract::contract_config::ContractConfig;
-use crate::data_contract::state_transition::{
-    DataContractCreateTransition, DataContractUpdateTransition,
-};
 use crate::data_contract::validation::data_contract_validator::DataContractValidator;
 use crate::data_contract::{DataContract, DataContractFactory};
 

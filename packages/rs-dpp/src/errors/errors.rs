@@ -17,7 +17,6 @@ use crate::{
     SerdeParsingError,
 };
 
-use crate::{CompatibleProtocolVersionIsNotDefinedError, NonConsensusError, SerdeParsingError};
 use platform_value::{Error as ValueError, Value};
 
 #[derive(Error, Debug)]

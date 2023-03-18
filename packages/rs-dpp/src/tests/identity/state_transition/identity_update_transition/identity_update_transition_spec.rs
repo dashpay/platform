@@ -170,7 +170,6 @@ fn to_object_with_signature_skipped() {
     let expected_raw_state_transition = platform_value!({
         "protocolVersion" : 1u32,
         "type" : 5u8,
-        "signaturePublicKeyId": 0u32,
         "identityId" : transition.identity_id,
         "revision": 0 as Revision,
         "disablePublicKeys" : [0u32],

@@ -14,10 +14,7 @@ use crate::state_transition::errors::{
 use crate::{
     identity::KeyType,
     prelude::{Identifier, ProtocolError},
-    util::{
-        hash,
-        serializer,
-    },
+    util::{hash, serializer},
     BlsModule,
 };
 
@@ -121,13 +118,12 @@ pub trait StateTransitionLike:
             ));
         }
         let data_hash = self.hash(true)?;
-        signer::verify_hash_signature(&data_hash, self.get_signature().as_slice(), public_key_hash).or_else(
-            |_| {
+        signer::verify_hash_signature(&data_hash, self.get_signature().as_slice(), public_key_hash)
+            .or_else(|_| {
                 Err(ProtocolError::from(ConsensusError::SignatureError(
                     SignatureError::InvalidStateTransitionSignatureError,
                 )))
-            },
-        )
+            })
     }
 
     /// Verifies an ECDSA signature with the public key
@@ -139,11 +135,13 @@ pub trait StateTransitionLike:
         }
         let data = self.to_buffer(true)?;
 
-        signer::verify_data_signature(&data, self.get_signature().as_slice(), public_key).or_else(|_| {
-            Err(ProtocolError::from(ConsensusError::SignatureError(
-                SignatureError::InvalidStateTransitionSignatureError,
-            )))
-        })
+        signer::verify_data_signature(&data, self.get_signature().as_slice(), public_key).or_else(
+            |_| {
+                Err(ProtocolError::from(ConsensusError::SignatureError(
+                    SignatureError::InvalidStateTransitionSignatureError,
+                )))
+            },
+        )
     }
 
     /// Verifies a BLS signature with the public key

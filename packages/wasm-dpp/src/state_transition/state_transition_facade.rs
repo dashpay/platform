@@ -55,7 +55,7 @@ impl StateTransitionFacadeWasm {
             Default::default()
         };
 
-        let raw_state_transition = raw_state_transition.with_serde_to_json_value()?;
+        let raw_state_transition = raw_state_transition.with_serde_to_platform_value()?;
 
         let result = self
             .0
@@ -117,10 +117,10 @@ impl StateTransitionFacadeWasm {
                     super::super::conversion::state_transition_wasm_to_object(
                         &raw_state_transition,
                     )?
-                    .with_serde_to_json_value()?;
+                    .with_serde_to_platform_value()?;
                 (state_transition, state_transition_json, execution_context)
             } else {
-                let state_transition_json = raw_state_transition.with_serde_to_json_value()?;
+                let state_transition_json = raw_state_transition.with_serde_to_platform_value()?;
                 let execution_context = StateTransitionExecutionContext::default();
                 let state_transition = self
                     .0
@@ -163,9 +163,9 @@ impl StateTransitionFacadeWasm {
             //  state_transition.to_object() returns value that does not pass basic validation
             state_transition_json =
                 super::super::conversion::state_transition_wasm_to_object(&raw_state_transition)?
-                    .with_serde_to_json_value()?;
+                    .with_serde_to_platform_value()?;
         } else {
-            state_transition_json = raw_state_transition.with_serde_to_json_value()?;
+            state_transition_json = raw_state_transition.with_serde_to_platform_value()?;
             execution_context = StateTransitionExecutionContext::default();
         }
 

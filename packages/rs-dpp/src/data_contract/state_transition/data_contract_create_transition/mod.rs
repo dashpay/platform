@@ -126,12 +126,8 @@ impl DataContractCreateTransition {
     }
 
     /// Returns ID of the created contract
-    pub fn get_modified_data_ids(&self) -> Vec<&Identifier> {
-        vec![&self.data_contract.id]
-    }
-
-    pub fn get_entropy(&self) -> &[u8; 32] {
-        &self.entropy.to_buffer()
+    pub fn get_modified_data_ids(&self) -> Vec<Identifier> {
+        vec![self.data_contract.id]
     }
 }
 

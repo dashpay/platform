@@ -21,9 +21,7 @@ use std::convert::TryFrom;
 use crate::{
     identifier::identifier_from_js_value,
     state_repository::{ExternalStateRepositoryLike, ExternalStateRepositoryLikeWrapper},
-    utils::{
-        replace_identifiers_with_bytes_without_failing, IntoWasm, ToSerdeJSONExt, WithJsError,
-    },
+    utils::{IntoWasm, ToSerdeJSONExt, WithJsError},
     DataContractWasm, DocumentsBatchTransitionWasm, ExtendedDocumentWasm,
 };
 

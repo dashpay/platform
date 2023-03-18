@@ -7,7 +7,7 @@ pub use apply::*;
 pub use validation::*;
 
 use dpp::{
-    data_contract::state_transition::DataContractUpdateTransition,
+    data_contract::state_transition::data_contract_update_transition::DataContractUpdateTransition,
     platform_value,
     state_transition::{
         StateTransitionConvert, StateTransitionIdentitySigned, StateTransitionLike,

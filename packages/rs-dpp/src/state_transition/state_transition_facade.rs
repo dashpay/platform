@@ -1,7 +1,7 @@
 use std::ops::Deref;
 
 use std::sync::Arc;
-use serde_json::Value;
+use platform_value::Value;
 use crate::{BlsModule, ProtocolError};
 use crate::data_contract::state_transition::data_contract_create_transition::validation::state::validate_data_contract_create_transition_basic::DataContractCreateTransitionBasicValidator;
 use crate::data_contract::state_transition::data_contract_update_transition::validation::basic::DataContractUpdateTransitionBasicValidator;

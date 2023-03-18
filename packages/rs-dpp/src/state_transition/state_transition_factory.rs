@@ -1,3 +1,4 @@
+use anyhow::anyhow;
 use std::{
     convert::{TryFrom, TryInto},
     sync::Arc,
@@ -27,7 +28,7 @@ use crate::{
     validation::AsyncDataValidatorWithContext,
     BlsModule, ProtocolError,
 };
-use platform_value::Value;
+use platform_value::{Value, ValueMapHelper};
 
 use super::{
     state_transition_execution_context::StateTransitionExecutionContext,
@@ -69,7 +70,7 @@ where
 
     pub async fn create_from_object(
         &self,
-        raw_state_transition: JsonValue,
+        raw_state_transition: Value,
         options: Option<StateTransitionFactoryOptions>,
     ) -> Result<StateTransition, ProtocolError> {
         let options = options.unwrap_or_default();
@@ -104,9 +105,9 @@ where
             DecodeProtocolEntity::decode_protocol_entity(state_transition_buffer)?;
 
         match raw_state_transition {
-            JsonValue::Object(ref mut m) => m.insert(
-                String::from("protocolVersion"),
-                JsonValue::Number(Number::from(protocol_version)),
+            Value::Map(ref mut m) => m.insert_string_key_value(
+                "protocolVersion".to_string(),
+                Value::U32(protocol_version),
             ),
             _ => {
                 return Err(ConsensusError::SerializedObjectParsingError {

@@ -1,5 +1,3 @@
-use std::collections::BTreeMap;
-use std::sync::Arc;
 use crate::{
     data_contract::DataContract,
     document::{
@@ -17,10 +15,12 @@ use crate::{
             get_documents_fixture_with_owner_id_from_contract,
             get_protocol_version_validator_fixture,
         },
-        utils::{generate_random_identifier, get_schema_error},
+        utils::get_schema_error,
     },
     version::{ProtocolVersionValidator, LATEST_VERSION},
 };
+use std::collections::BTreeMap;
+use std::sync::Arc;
 
 use crate::document::document_transition::document_base_transition::JsonValue;
 use crate::tests::utils::generate_random_identifier_struct;
