@@ -12,7 +12,6 @@ use crate::{
         state_transition_helpers, StateTransitionConvert, StateTransitionIdentitySigned,
         StateTransitionLike, StateTransitionType,
     },
-    util::json_value::JsonValueExt,
     version::LATEST_VERSION,
     ProtocolError,
 };

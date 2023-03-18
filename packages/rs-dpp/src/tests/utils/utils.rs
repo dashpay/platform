@@ -2,6 +2,7 @@ use anyhow::Result;
 use dashcore::{Block, BlockHeader};
 use getrandom::getrandom;
 use platform_value::Value;
+#[cfg(test)]
 use serde_json::Value as JsonValue;
 
 use crate::prelude::Identifier;
