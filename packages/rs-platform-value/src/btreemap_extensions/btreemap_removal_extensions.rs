@@ -119,7 +119,7 @@ impl BTreeValueRemoveFromMapHelper for BTreeMap<String, &Value> {
 
     fn remove_bytes_32(&mut self, key: &str) -> Result<Bytes32, Error> {
         self.remove_optional_bytes_32(key)?.ok_or_else(|| {
-            Error::StructureError(format!("unable to remove hash256 property {key}"))
+            Error::StructureError(format!("unable to remove binary 32 bytes property {key}"))
         })
     }
 
@@ -291,7 +291,7 @@ impl BTreeValueRemoveFromMapHelper for BTreeMap<String, Value> {
 
     fn remove_bytes_32(&mut self, key: &str) -> Result<Bytes32, Error> {
         self.remove_optional_bytes_32(key)?.ok_or_else(|| {
-            Error::StructureError(format!("unable to remove hash256 property {key}"))
+            Error::StructureError(format!("unable to remove binary bytes 32 property {key}"))
         })
     }
 

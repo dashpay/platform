@@ -521,7 +521,7 @@ where
     fn remove_hash256_bytes_at_path(&mut self, path: &str) -> Result<[u8; 32], Error> {
         self.remove_optional_hash256_bytes_at_path(path)?
             .ok_or_else(|| {
-                Error::StructureError(format!("unable to remove system hash256 property {path}"))
+                Error::StructureError(format!("unable to remove hash256 property {path}"))
             })
     }
 

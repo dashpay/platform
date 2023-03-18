@@ -160,7 +160,7 @@ describe('Document', () => {
         document = new ExtendedDocument(rawDocument, dataContract);
       } catch (e) {
         expect(e).to.be.instanceOf(PlatformValueError);
-        expect(e.getMessage()).to.equal('structure error: unable to remove system hash256 property $ownerId');
+        expect(e.getMessage()).to.equal('structure error: unable to remove hash256 property $ownerId');
       }
     });
 
@@ -180,7 +180,7 @@ describe('Document', () => {
         document = new ExtendedDocument(rawDocument, dataContract);
       } catch (e) {
         expect(e).to.be.instanceOf(PlatformValueError);
-        expect(e.getMessage()).to.equal('structure error: unable to remove system hash256 property $id');
+        expect(e.getMessage()).to.equal('structure error: unable to remove hash256 property $id');
       }
     });
 
@@ -220,7 +220,7 @@ describe('Document', () => {
         document = new ExtendedDocument(rawDocument, dataContract);
       } catch (e) {
         expect(e).to.be.instanceOf(PlatformValueError);
-        expect(e.getMessage()).to.equal('structure error: unable to remove system hash256 property $dataContractId');
+        expect(e.getMessage()).to.equal('structure error: unable to remove hash256 property $dataContractId');
       }
     });
 
