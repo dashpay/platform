@@ -244,7 +244,7 @@ impl Platform {
             "normalizedParentDomainName" => "",
             "preorderSalt" => CborValue::Bytes(DPNS_DASH_TLD_PREORDER_SALT.to_vec()),
             "records" => {
-                "dashAliasIdentityId" => CborValue::Bytes(contract.owner_id.to_buffer_vec()),
+                "dashAliasIdentityId" => CborValue::Bytes(contract.owner_id.to_vec()),
             },
         })
         .map_err(|_| {

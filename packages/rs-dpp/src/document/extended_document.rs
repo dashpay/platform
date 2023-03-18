@@ -345,7 +345,7 @@ impl ExtendedDocument {
 
         value_mut.push((
             CborValue::Text(property_names::DATA_CONTRACT_ID.to_string()),
-            CborValue::Bytes(self.data_contract_id.to_buffer_vec()),
+            CborValue::Bytes(self.data_contract_id.to_vec()),
         ));
 
         let canonical_map: CborCanonicalMap = cbor_value.try_into()?;

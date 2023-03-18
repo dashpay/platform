@@ -145,8 +145,8 @@ impl Document {
         mut self,
         document_type: &DocumentType,
     ) -> Result<Vec<u8>, ProtocolError> {
-        let mut buffer: Vec<u8> = self.id.to_buffer_vec();
-        let mut owner_id = self.owner_id.to_buffer_vec();
+        let mut buffer: Vec<u8> = self.id.to_vec();
+        let mut owner_id = self.owner_id.to_vec();
         buffer.append(&mut owner_id);
 
         if let Some(revision) = self.revision {

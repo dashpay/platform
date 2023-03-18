@@ -152,7 +152,7 @@ impl Identifier {
         Ok(Identifier::new(bytes.try_into().unwrap()))
     }
 
-    pub fn to_vec(&self) -> Vec<JsonValue> {
+    pub fn to_json_value_vec(&self) -> Vec<JsonValue> {
         self.to_buffer()
             .iter()
             .map(|v| JsonValue::from(*v))
@@ -169,7 +169,7 @@ impl Identifier {
     }
 
     /// Convenience method to get underlying buffer as a vec
-    pub fn to_buffer_vec(&self) -> Vec<u8> {
+    pub fn to_vec(&self) -> Vec<u8> {
         self.0 .0.to_vec()
     }
 

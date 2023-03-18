@@ -107,8 +107,8 @@ impl Document {
         } else {
             match key_path {
                 // returns self.id or self.owner_id if key path is $id or $ownerId
-                "$id" => return Ok(Some(self.id.to_buffer_vec())),
-                "$ownerId" => return Ok(Some(self.owner_id.to_buffer_vec())),
+                "$id" => return Ok(Some(self.id.to_vec())),
+                "$ownerId" => return Ok(Some(self.owner_id.to_vec())),
                 "$createdAt" => {
                     return Ok(self
                         .created_at
@@ -252,7 +252,7 @@ impl Document {
         contract: &DataContract,
         document_type: &DocumentType,
     ) -> Result<Vec<u8>, ProtocolError> {
-        let mut buf = contract.id.to_buffer_vec();
+        let mut buf = contract.id.to_vec();
         buf.extend(document_type.name.as_bytes());
         buf.extend(self.serialize(document_type)?);
         Ok(hash(buf))

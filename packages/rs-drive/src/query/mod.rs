@@ -103,6 +103,7 @@ use dpp::data_contract::extra::common::bytes_for_system_value;
 use dpp::document::Document;
 #[cfg(any(feature = "full", feature = "verify"))]
 use dpp::platform_value::btreemap_extensions::BTreeValueMapHelper;
+use dpp::platform_value::btreemap_extensions::BTreeValueRemoveFromMapHelper;
 #[cfg(any(feature = "full", feature = "verify"))]
 use dpp::platform_value::Value;
 #[cfg(any(feature = "full", feature = "verify"))]
@@ -317,7 +318,8 @@ impl<'a> DriveQuery<'a> {
                 ))
             })?;
         let mut query_document: BTreeMap<String, Value> =
-            Value::convert_from_cbor_map(query_document_cbor);
+            Value::convert_from_cbor_map(query_document_cbor)
+                .map_err(|e| Error::Protocol(ProtocolError::ValueError(e)))?;
 
         let maybe_limit: Option<u16> = query_document
             .remove_optional_integer("limit")

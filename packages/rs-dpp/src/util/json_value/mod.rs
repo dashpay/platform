@@ -496,7 +496,7 @@ pub fn replace_identifier(
         }
         ReplaceWith::Bytes => {
             let data_string: String = serde_json::from_value(to_replace.clone())?;
-            let identifier = Identifier::from_string(&data_string, Encoding::Base58)?.to_vec();
+            let identifier = Identifier::from_string(&data_string, Encoding::Base58)?.to_json_value_vec();
             *to_replace = JsonValue::Array(identifier);
         }
     }
