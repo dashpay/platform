@@ -7,6 +7,7 @@ use crate::errors::from_dpp_err;
 use crate::utils::Inner;
 use crate::{buffer::Buffer, utils};
 use dpp::identity::{IdentityPublicKey, KeyID};
+use dpp::platform_value::BinaryData;
 
 mod purpose;
 pub use purpose::*;
@@ -58,13 +59,13 @@ impl IdentityPublicKeyWasm {
 
     #[wasm_bindgen(js_name=setData)]
     pub fn set_data(&mut self, data: Vec<u8>) -> Result<(), JsValue> {
-        self.0.data = data;
+        self.0.data = BinaryData::new(data);
         Ok(())
     }
 
     #[wasm_bindgen(js_name=getData)]
     pub fn get_data(&self) -> Vec<u8> {
-        self.0.data.clone()
+        self.0.data.to_vec()
     }
 
     #[wasm_bindgen(js_name=setPurpose)]

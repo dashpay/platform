@@ -8,6 +8,7 @@ use dpp::{
         },
         state::validate_data_contract_update_transition_state::validate_data_contract_update_transition_state as dpp_validate_data_contract_update_transition_state,
     },
+    platform_value,
     version::ProtocolVersionValidator,
 };
 use wasm_bindgen::prelude::*;
@@ -72,7 +73,7 @@ pub async fn validate_data_contract_update_transition_basic(
 
     let validation_result = validator
         .validate(
-            &serde_json::to_value(&parameters)?,
+            &platform_value::to_value(&parameters)?,
             &execution_context.into(),
         )
         .await?;

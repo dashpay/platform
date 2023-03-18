@@ -8,8 +8,9 @@ use serde_json::Value as JsonValue;
 use wasm_bindgen::prelude::*;
 
 use dpp::data_contract::{DataContract, SCHEMA_URI};
-use dpp::platform_value::Value;
-use platform_value::string_encoding::Encoding;
+use dpp::platform_value;
+use dpp::platform_value::string_encoding::Encoding;
+use dpp::platform_value::{Bytes32, Value};
 
 use crate::errors::{from_dpp_err, RustConversionError};
 use crate::identifier::identifier_from_js_value;
@@ -88,8 +89,8 @@ impl DataContractWasm {
         let parameters: DataContractParameters =
             with_js_error!(serde_wasm_bindgen::from_value(raw_parameters))?;
 
-        DataContract::from_json_raw_object(
-            serde_json::to_value(parameters).expect("Implements Serialize"),
+        DataContract::from_raw_object(
+            platform_value::to_value(parameters).expect("Implements Serialize"),
         )
         .map_err(from_dpp_err)
         .map(Into::into)
@@ -217,9 +218,9 @@ impl DataContractWasm {
                 definitions.insert(k, v);
             }
             if definitions.is_empty() {
-                bail_js!("`defitions` cannot be empty");
+                bail_js!("`definitions` cannot be empty");
             }
-            self.0.defs = Some(definitions);
+            self.0.defs = definitions;
         } else {
             bail_js!("the parameter 'definitions' is not an JS object");
         }
@@ -240,13 +241,13 @@ impl DataContractWasm {
             ))
             .to_js_value()
         })?;
-        self.0.entropy = entropy;
+        self.0.entropy = Bytes32::new(entropy);
         Ok(())
     }
 
     #[wasm_bindgen(js_name=getEntropy)]
     pub fn get_entropy(&mut self) -> Buffer {
-        Buffer::from_bytes(&self.0.entropy)
+        Buffer::from_bytes_owned(self.0.entropy.to_vec())
     }
 
     #[wasm_bindgen(js_name=getBinaryProperties)]

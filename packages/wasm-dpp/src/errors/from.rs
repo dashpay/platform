@@ -1,4 +1,3 @@
-use dpp::data_contract::errors::DataContractNotPresentError;
 use wasm_bindgen::JsValue;
 
 use dpp::errors::ProtocolError;

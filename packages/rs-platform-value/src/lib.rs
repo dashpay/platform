@@ -31,9 +31,9 @@ use std::collections::{BTreeMap, HashMap};
 pub type Hash256 = [u8; 32];
 
 pub use btreemap_extensions::btreemap_field_replacement::ReplacementType;
-pub use types::identifier::{Identifier, IDENTIFIER_MEDIA_TYPE};
 pub use types::binary_data::BinaryData;
 pub use types::bytes_32::Bytes32;
+pub use types::identifier::{Identifier, IDENTIFIER_MEDIA_TYPE};
 
 pub use value_serialization::{from_value, to_value};
 
@@ -255,7 +255,10 @@ impl Value {
             Value::I16(int) => (*int).try_into().map_err(|_| Error::IntegerSizeError),
             Value::U8(int) => (*int).try_into().map_err(|_| Error::IntegerSizeError),
             Value::I8(int) => (*int).try_into().map_err(|_| Error::IntegerSizeError),
-            other => Err(Error::StructureError(format!("value is not an integer, found {}", other))),
+            other => Err(Error::StructureError(format!(
+                "value is not an integer, found {}",
+                other
+            ))),
         }
     }
 
@@ -1114,8 +1117,9 @@ impl Value {
                     ReplacementType::Identifier
                     | ReplacementType::IdentifierBytes
                     | ReplacementType::TextBase58 => new_value.to_identifier_bytes(),
-                    ReplacementType::BinaryBytes
-                    | ReplacementType::TextBase64 => new_value.to_binary_bytes(),
+                    ReplacementType::BinaryBytes | ReplacementType::TextBase64 => {
+                        new_value.to_binary_bytes()
+                    }
                 }?;
                 *new_value = replacement_type.replace_for_bytes(bytes)?;
                 return Ok(true);
@@ -1296,5 +1300,21 @@ impl From<&[&str]> for Value {
                 .map(|string| string.clone().into())
                 .collect(),
         )
+    }
+}
+
+impl TryInto<Vec<u8>> for Value {
+    type Error = Error;
+
+    fn try_into(self) -> Result<Vec<u8>, Self::Error> {
+        self.to_bytes()
+    }
+}
+
+impl TryInto<String> for Value {
+    type Error = Error;
+
+    fn try_into(self) -> Result<String, Self::Error> {
+        self.into_text()
     }
 }

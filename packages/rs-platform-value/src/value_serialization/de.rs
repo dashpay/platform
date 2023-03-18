@@ -172,7 +172,7 @@ impl<'de> de::Deserializer<'de> for Deserializer {
                 } else {
                     visitor.visit_bytes(&x)
                 }
-            },
+            }
             Value::Text(x) => visitor.visit_str(&x),
             Value::Array(x) => visitor.visit_seq(ArrayDeserializer(x.iter())),
             Value::Map(x) => visitor.visit_map(ValueMapDeserializer(x.iter().peekable())),
@@ -195,7 +195,7 @@ impl<'de> de::Deserializer<'de> for Deserializer {
                 } else {
                     visitor.visit_bytes(&x)
                 }
-            },
+            }
             Value::EnumU8(_x) => todo!(),
             Value::EnumString(_x) => todo!(),
             Value::Identifier(x) => {
@@ -204,7 +204,7 @@ impl<'de> de::Deserializer<'de> for Deserializer {
                 } else {
                     visitor.visit_bytes(&x)
                 }
-            },
+            }
         }
     }
 

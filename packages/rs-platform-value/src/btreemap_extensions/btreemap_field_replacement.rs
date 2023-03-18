@@ -24,8 +24,9 @@ impl ReplacementType {
                     ))
                 })?))
             }
-            ReplacementType::BinaryBytes
-            | ReplacementType::IdentifierBytes => Ok(Value::Bytes(bytes)),
+            ReplacementType::BinaryBytes | ReplacementType::IdentifierBytes => {
+                Ok(Value::Bytes(bytes))
+            }
             ReplacementType::TextBase58 => Ok(Value::Text(bs58::encode(bytes).into_string())),
             ReplacementType::TextBase64 => Ok(Value::Text(base64::encode(bytes))),
         }
@@ -34,8 +35,9 @@ impl ReplacementType {
     pub fn replace_for_bytes_32(&self, bytes: [u8; 32]) -> Result<Value, Error> {
         match self {
             ReplacementType::Identifier => Ok(Value::Identifier(bytes)),
-            ReplacementType::BinaryBytes
-            | ReplacementType::IdentifierBytes => Ok(Value::Bytes32(bytes)),
+            ReplacementType::BinaryBytes | ReplacementType::IdentifierBytes => {
+                Ok(Value::Bytes32(bytes))
+            }
             ReplacementType::TextBase58 => Ok(Value::Text(bs58::encode(bytes).into_string())),
             ReplacementType::TextBase64 => Ok(Value::Text(base64::encode(bytes))),
         }
@@ -83,9 +85,12 @@ fn replace_down(
                                 let bytes = match replacement_type {
                                     ReplacementType::Identifier
                                     | ReplacementType::IdentifierBytes
-                                    | ReplacementType::TextBase58 => new_value.to_identifier_bytes(),
-                                    ReplacementType::BinaryBytes
-                                    | ReplacementType::TextBase64 => new_value.to_binary_bytes(),
+                                    | ReplacementType::TextBase58 => {
+                                        new_value.to_identifier_bytes()
+                                    }
+                                    ReplacementType::BinaryBytes | ReplacementType::TextBase64 => {
+                                        new_value.to_binary_bytes()
+                                    }
                                 }?;
                                 *new_value = replacement_type.replace_for_bytes(bytes)?;
                             }
@@ -137,8 +142,9 @@ impl BTreeValueMapReplacementPathHelper for BTreeMap<String, Value> {
                         ReplacementType::Identifier
                         | ReplacementType::IdentifierBytes
                         | ReplacementType::TextBase58 => current_value.to_identifier_bytes(),
-                        ReplacementType::BinaryBytes
-                        | ReplacementType::TextBase64 => current_value.to_binary_bytes(),
+                        ReplacementType::BinaryBytes | ReplacementType::TextBase64 => {
+                            current_value.to_binary_bytes()
+                        }
                     }?;
                     *current_value = replacement_type.replace_for_bytes(bytes)?;
                 }

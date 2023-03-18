@@ -15,8 +15,8 @@ use dpp::{
 use js_sys::{Array, Reflect};
 use serde::{Deserialize, Serialize};
 
-use dpp::platform_value::btreemap_field_replacement::BTreeValueMapReplacementPathHelper;
-use dpp::platform_value::ReplacementType;
+use dpp::platform_value::btreemap_extensions::BTreeValueMapReplacementPathHelper;
+use dpp::platform_value::{BinaryData, ReplacementType};
 use wasm_bindgen::prelude::*;
 
 use crate::{
@@ -25,10 +25,7 @@ use crate::{
     document_batch_transition::document_transition::DocumentTransitionWasm,
     identifier::IdentifierWrapper,
     lodash::lodash_set,
-    utils::{
-        replace_identifiers_with_bytes_without_failing, Inner, IntoWasm, ToSerdeJSONExt,
-        WithJsError,
-    },
+    utils::{Inner, IntoWasm, ToSerdeJSONExt, WithJsError},
     IdentityPublicKeyWasm, StateTransitionExecutionContextWasm,
 };
 pub mod apply_document_batch_transition;
@@ -165,7 +162,11 @@ impl DocumentsBatchTransitionWASM {
         let mut value = self.0.to_object(options.skip_signature).with_js_error()?;
         let serializer = serde_wasm_bindgen::Serializer::json_compatible();
         let js_value = value.serialize(&serializer)?;
-        let is_signature_present = value.get(property_names::SIGNATURE).is_some();
+        let is_signature_present = value
+            .get(property_names::SIGNATURE)
+            .map_err(ProtocolError::ValueError)
+            .with_js_error()?
+            .is_some();
 
         // Transform every transition individually
         let transitions = Array::new();
@@ -183,20 +184,26 @@ impl DocumentsBatchTransitionWASM {
 
         // Transform paths that are specific to the DocumentsBatchTransition
         for path in DocumentsBatchTransition::binary_property_paths() {
-            if let Ok(bytes) = value.remove_path_into::<Vec<u8>>(path) {
-                let buffer = Buffer::from_bytes(&bytes);
-                lodash_set(&js_value, path, buffer.into());
-            }
+            let bytes = value
+                .remove_value_at_path(path)
+                .and_then(|value| value.to_binary_bytes())
+                .map_err(ProtocolError::ValueError)
+                .with_js_error()?;
+            let buffer = Buffer::from_bytes_owned(bytes);
+            lodash_set(&js_value, path, buffer.into());
         }
         for path in DocumentsBatchTransition::identifiers_property_paths() {
-            if let Ok(bytes) = value.remove_path_into::<Vec<u8>>(path) {
-                if !options.skip_identifiers_conversion {
-                    let buffer = Buffer::from_bytes(&bytes);
-                    lodash_set(&js_value, path, buffer.into());
-                } else {
-                    let id = IdentifierWrapper::new(bytes)?;
-                    lodash_set(&js_value, path, id.into());
-                }
+            let bytes = value
+                .remove_value_at_path(path)
+                .and_then(|value| value.to_identifier_bytes())
+                .map_err(ProtocolError::ValueError)
+                .with_js_error()?;
+            if !options.skip_identifiers_conversion {
+                let buffer = Buffer::from_bytes_owned(bytes);
+                lodash_set(&js_value, path, buffer.into());
+            } else {
+                let id = IdentifierWrapper::new(bytes)?;
+                lodash_set(&js_value, path, id.into());
             }
         }
 
@@ -207,7 +214,12 @@ impl DocumentsBatchTransitionWASM {
                 &JsValue::undefined(),
             )?;
         }
-        if value.get(property_names::SIGNATURE_PUBLIC_KEY_ID).is_none() {
+        if value
+            .get(property_names::SIGNATURE_PUBLIC_KEY_ID)
+            .map_err(ProtocolError::ValueError)
+            .with_js_error()?
+            .is_none()
+        {
             js_sys::Reflect::set(
                 &js_value,
                 &property_names::SIGNATURE_PUBLIC_KEY_ID.into(),
@@ -297,12 +309,12 @@ impl DocumentsBatchTransitionWASM {
 
     #[wasm_bindgen(js_name=getSignature)]
     pub fn get_signature(&self) -> Vec<u8> {
-        self.0.get_signature().to_owned()
+        self.0.get_signature().to_vec()
     }
 
     #[wasm_bindgen(js_name=setSignature)]
     pub fn set_signature(&mut self, signature: Vec<u8>) {
-        self.0.set_signature(signature)
+        self.0.set_signature(BinaryData::new(signature))
     }
 
     #[wasm_bindgen(js_name=calculateFee)]

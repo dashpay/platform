@@ -5,6 +5,7 @@ use dpp::{
         validate_data_contract_create_transition_basic::DataContractCreateTransitionBasicValidator,
         validate_data_contract_create_transition_state::validate_data_contract_create_transition_state as dpp_validate_data_contract_create_transition_state,
     },
+    platform_value,
     state_transition::state_transition_execution_context::StateTransitionExecutionContext,
     validation::DataValidatorWithContext,
     version::ProtocolVersionValidator,
@@ -47,7 +48,7 @@ pub async fn validate_data_contract_create_transition_basic(
     ))?;
 
     let validation_result = validator.validate(
-        &serde_json::to_value(&parameters)?,
+        &platform_value::to_value(&parameters)?,
         &StateTransitionExecutionContext::default(),
     )?;
 

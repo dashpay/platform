@@ -8,13 +8,16 @@ pub use validation::*;
 
 use dpp::{
     data_contract::state_transition::DataContractUpdateTransition,
+    platform_value,
     state_transition::{
         StateTransitionConvert, StateTransitionIdentitySigned, StateTransitionLike,
     },
+    ProtocolError,
 };
 use serde::{Deserialize, Serialize};
 use wasm_bindgen::prelude::*;
 
+use crate::utils::WithJsError;
 use crate::{
     buffer::Buffer,
     errors::{from_dpp_err, protocol_error::from_protocol_error},
@@ -57,11 +60,12 @@ impl DataContractUpdateTransitionWasm {
     pub fn new(raw_parameters: JsValue) -> Result<DataContractUpdateTransitionWasm, JsValue> {
         let parameters: DataContractUpdateTransitionParameters =
             with_js_error!(serde_wasm_bindgen::from_value(raw_parameters))?;
-        DataContractUpdateTransition::from_raw_object(
-            serde_json::to_value(parameters).expect("the struct will be a valid json"),
-        )
-        .map(Into::into)
-        .map_err(from_dpp_err)
+        let raw_data_contract_update_transition = platform_value::to_value(parameters)
+            .map_err(ProtocolError::ValueError)
+            .with_js_error()?;
+        DataContractUpdateTransition::from_raw_object(raw_data_contract_update_transition)
+            .map(Into::into)
+            .map_err(from_dpp_err)
     }
 
     #[wasm_bindgen(js_name=getDataContract)]
@@ -76,7 +80,7 @@ impl DataContractUpdateTransitionWasm {
 
     #[wasm_bindgen(js_name=getEntropy)]
     pub fn get_entropy(&self) -> Buffer {
-        Buffer::from_bytes(&self.0.data_contract.entropy)
+        Buffer::from_bytes_owned(self.0.data_contract.entropy.to_vec())
     }
 
     #[wasm_bindgen(js_name=getOwnerId)]

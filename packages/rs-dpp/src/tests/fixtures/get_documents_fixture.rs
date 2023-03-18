@@ -143,7 +143,7 @@ pub fn get_withdrawal_document_fixture(
         .into_btree_string_map()
         .map_err(ProtocolError::ValueError)?;
 
-    let id = Identifier::random(&mut rng);
+    let id = Identifier::random_with_rng(&mut rng);
     document_type.create_document_with_valid_properties(id, owner_id, properties)
 }
 

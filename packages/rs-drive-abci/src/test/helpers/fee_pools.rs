@@ -37,6 +37,7 @@ use std::collections::BTreeMap;
 
 use dpp::document::document_transition::INITIAL_REVISION;
 use dpp::platform_value::Value;
+use dpp::prelude::Identifier;
 use drive::dpp::identity::Identity;
 use rand::rngs::StdRng;
 use rand::{Rng, SeedableRng};
@@ -58,12 +59,12 @@ use crate::contracts::reward_shares::MN_REWARD_SHARES_DOCUMENT_TYPE;
 fn create_test_mn_share_document(
     drive: &Drive,
     contract: &Contract,
-    identity_id: [u8; 32],
+    identity_id: Identifier,
     pay_to_identity: &Identity,
     percentage: u16,
     transaction: TransactionArg,
 ) -> Document {
-    let id = rand::random::<[u8; 32]>();
+    let id = Identifier::random();
 
     let mut properties: BTreeMap<String, Value> = BTreeMap::new();
 
@@ -139,7 +140,7 @@ pub fn create_test_masternode_share_identities_and_documents(
                 let document = create_test_mn_share_document(
                     drive,
                     contract,
-                    *mn_identity,
+                    Identifier::new(*mn_identity),
                     &identity,
                     5000,
                     transaction,

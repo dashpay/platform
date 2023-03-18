@@ -38,7 +38,7 @@ pub fn to_object_struct(
     };
 
     if !options.skip_signature.unwrap_or(false) {
-        to_object.signature = Some(transition.get_signature().to_owned());
+        to_object.signature = Some(transition.get_signature().to_vec());
     }
 
     to_object

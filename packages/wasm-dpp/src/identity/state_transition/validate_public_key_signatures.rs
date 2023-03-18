@@ -12,7 +12,7 @@ use dpp::identity::state_transition::validate_public_key_signatures::{
 
 use dpp::identity::state_transition::identity_public_key_transitions::IdentityPublicKeyWithWitness;
 
-use serde_json::Value as JsonValue;
+use dpp::platform_value::Value;
 use wasm_bindgen::prelude::wasm_bindgen;
 use wasm_bindgen::JsValue;
 
@@ -38,7 +38,7 @@ impl PublicKeysSignaturesValidatorWasm {
         raw_state_transition: JsValue,
         raw_public_keys: Vec<JsValue>,
     ) -> Result<ValidationResultWasm, JsValue> {
-        let state_transition_json = raw_state_transition.with_serde_to_json_value()?;
+        let state_transition_object = raw_state_transition.with_serde_to_platform_value()?;
 
         let public_keys = raw_public_keys
             .into_iter()
@@ -46,14 +46,14 @@ impl PublicKeysSignaturesValidatorWasm {
                 let parsed_key: IdentityPublicKeyWithWitness =
                     IdentityPublicKeyCreateTransitionWasm::new(raw_key)?.into();
                 parsed_key
-                    .to_raw_json_object(false)
+                    .to_raw_object(false)
                     .map_err(|e| from_dpp_err(e.into()))
             })
-            .collect::<Result<Vec<JsonValue>, JsValue>>()?;
+            .collect::<Result<Vec<Value>, JsValue>>()?;
 
         let result = self
             .0
-            .validate_public_key_signatures(&state_transition_json, &public_keys)
+            .validate_public_key_signatures(&state_transition_object, &public_keys)
             .map_err(|e| from_dpp_err(e.into()))?;
 
         Ok(result.map(|_| JsValue::undefined()).into())

@@ -261,7 +261,6 @@ macro_rules! platform_value_internal {
 
     ({ $($tt:tt)+ }) => {
         $crate::Value::Map({
-            use platform_value::ValueMapHelper;
             let mut object = $crate::ValueMap::new();
             platform_value_internal!(@object object () ($($tt)+) ($($tt)+));
             object
@@ -300,8 +299,8 @@ macro_rules! platform_value_expect_expr_comma {
 
 #[cfg(test)]
 mod test {
-    use crate::{platform_value, to_value, Identifier, Value};
     use crate::types::binary_data::BinaryData;
+    use crate::{platform_value, to_value, Identifier, Value};
 
     #[test]
     fn test_identity_is_kept() {

@@ -94,6 +94,18 @@ impl TryFrom<u8> for AssetLockProofType {
     }
 }
 
+impl TryFrom<u64> for AssetLockProofType {
+    type Error = SerdeParsingError;
+
+    fn try_from(value: u64) -> Result<Self, Self::Error> {
+        match value {
+            0 => Ok(Self::Instant),
+            1 => Ok(Self::Chain),
+            _ => Err(SerdeParsingError::new("Unexpected asset lock proof type")),
+        }
+    }
+}
+
 impl AssetLockProof {
     pub fn type_from_raw_value(value: &Value) -> Option<AssetLockProofType> {
         let proof_type_res = value.get_integer::<u8>("type");

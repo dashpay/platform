@@ -1,5 +1,5 @@
-use std::cmp::Ordering;
 use crate::{Error, Value};
+use std::cmp::Ordering;
 use std::collections::BTreeMap;
 
 pub type ValueMap = Vec<(Value, Value)>;

@@ -87,7 +87,7 @@ pub trait JsonValueExt {
     fn insert_with_path(&mut self, path: &str, value: JsonValue) -> Result<(), anyhow::Error>;
 
     /// Removes data from given path and tries deserialize it into provided type
-    fn remove_path_into<K: DeserializeOwned>(
+    fn remove_value_at_path_into<K: DeserializeOwned>(
         &mut self,
         property_name: &str,
     ) -> Result<K, anyhow::Error>;
@@ -431,7 +431,10 @@ impl JsonValueExt for JsonValue {
     }
 
     /// Removes the value under given path and tries to deserialize it into provided type
-    fn remove_path_into<K: DeserializeOwned>(&mut self, path: &str) -> Result<K, anyhow::Error> {
+    fn remove_value_at_path_into<K: DeserializeOwned>(
+        &mut self,
+        path: &str,
+    ) -> Result<K, anyhow::Error> {
         let path_literal: JsonPathLiteral = path.into();
         let json_path: JsonPath = path_literal.try_into().unwrap();
 
@@ -496,7 +499,8 @@ pub fn replace_identifier(
         }
         ReplaceWith::Bytes => {
             let data_string: String = serde_json::from_value(to_replace.clone())?;
-            let identifier = Identifier::from_string(&data_string, Encoding::Base58)?.to_json_value_vec();
+            let identifier =
+                Identifier::from_string(&data_string, Encoding::Base58)?.to_json_value_vec();
             *to_replace = JsonValue::Array(identifier);
         }
     }

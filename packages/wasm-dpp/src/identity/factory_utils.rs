@@ -1,6 +1,6 @@
 use crate::errors::RustConversionError;
 use crate::identity::identity_public_key_transitions::IdentityPublicKeyCreateTransitionWasm;
-use crate::utils::{generic_of_js_val, to_vec_of_serde_values};
+use crate::utils::{generic_of_js_val, to_vec_of_platform_values};
 use crate::{create_asset_lock_proof_from_wasm_instance, IdentityPublicKeyWasm};
 use dpp::identity::state_transition::asset_lock_proof::AssetLockProof;
 use dpp::identity::state_transition::identity_public_key_transitions::IdentityPublicKeyWithWitness;
@@ -15,7 +15,7 @@ pub fn parse_create_args(
 ) -> Result<(AssetLockProof, BTreeMap<KeyID, IdentityPublicKey>), JsValue> {
     let asset_lock_proof = create_asset_lock_proof_from_wasm_instance(&asset_lock_proof)?;
 
-    let raw_public_keys = to_vec_of_serde_values(public_keys.iter())?;
+    let raw_public_keys = to_vec_of_platform_values(public_keys.iter())?;
 
     let public_keys = raw_public_keys
         .into_iter()

@@ -117,7 +117,9 @@ where
     V: Borrow<Value>,
 {
     fn get_optional_identifier(&self, key: &str) -> Result<Option<Identifier>, Error> {
-        self.get(key).map(|v| v.borrow().to_identifier()).transpose()
+        self.get(key)
+            .map(|v| v.borrow().to_identifier())
+            .transpose()
     }
 
     fn get_identifier(&self, key: &str) -> Result<Identifier, Error> {
@@ -424,8 +426,9 @@ where
     }
 
     fn get_binary_data(&self, key: &str) -> Result<BinaryData, Error> {
-        self.get_optional_binary_data(key)?
-            .ok_or_else(|| Error::StructureError(format!("unable to get binary data property {key}")))
+        self.get_optional_binary_data(key)?.ok_or_else(|| {
+            Error::StructureError(format!("unable to get binary data property {key}"))
+        })
     }
 
     fn get_optional_float(&self, key: &str) -> Result<Option<f64>, Error> {

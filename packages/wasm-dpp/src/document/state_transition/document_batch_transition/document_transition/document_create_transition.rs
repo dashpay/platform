@@ -3,9 +3,9 @@ use std::convert::TryInto;
 
 use dpp::document::document_transition::document_base_transition::JsonValue;
 use dpp::identity::TimestampMillis;
-use dpp::platform_value::btreemap_extensions::BTreeValueMapHelper;
-use dpp::platform_value::btreemap_field_replacement::BTreeValueMapReplacementPathHelper;
-use dpp::platform_value::btreemap_path_extensions::BTreeValueMapPathHelper;
+use dpp::platform_value::btreemap_extensions::{
+    BTreeValueMapHelper, BTreeValueMapPathHelper, BTreeValueMapReplacementPathHelper,
+};
 use dpp::platform_value::converter::serde_json::BTreeValueJsonConverter;
 use dpp::platform_value::ReplacementType;
 use dpp::prelude::Revision;

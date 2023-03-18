@@ -1,6 +1,5 @@
 use dpp::platform_value::Error as PlatformValueError;
 use wasm_bindgen::prelude::*;
-use wasm_bindgen::JsValue;
 
 #[wasm_bindgen(js_name=PlatformValueError)]
 pub struct PlatformValueErrorWasm {

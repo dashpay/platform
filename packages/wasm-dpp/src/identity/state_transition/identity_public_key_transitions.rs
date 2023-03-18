@@ -1,6 +1,7 @@
 //todo: move this file to transition
 use dpp::dashcore::anyhow;
 use dpp::identity::state_transition::identity_public_key_transitions::IdentityPublicKeyWithWitness;
+use dpp::platform_value::BinaryData;
 pub use serde::{Deserialize, Serialize};
 use std::convert::{TryFrom, TryInto};
 use wasm_bindgen::prelude::*;
@@ -54,13 +55,13 @@ impl IdentityPublicKeyCreateTransitionWasm {
 
     #[wasm_bindgen(js_name=setData)]
     pub fn set_data(&mut self, data: Vec<u8>) -> Result<(), JsValue> {
-        self.0.data = data;
+        self.0.data = BinaryData::new(data);
         Ok(())
     }
 
     #[wasm_bindgen(js_name=getData)]
     pub fn get_data(&self) -> Vec<u8> {
-        self.0.data.clone()
+        self.0.data.to_vec()
     }
 
     #[wasm_bindgen(js_name=setPurpose)]
@@ -101,12 +102,12 @@ impl IdentityPublicKeyCreateTransitionWasm {
 
     #[wasm_bindgen(js_name=setSignature)]
     pub fn set_signature(&mut self, signature: Vec<u8>) {
-        self.0.signature = signature
+        self.0.signature = BinaryData::new(signature)
     }
 
     #[wasm_bindgen(js_name=getSignature)]
     pub fn get_signature(&self) -> Vec<u8> {
-        self.0.signature.clone()
+        self.0.signature.to_vec()
     }
 
     #[wasm_bindgen(js_name=hash)]
@@ -160,7 +161,7 @@ impl IdentityPublicKeyCreateTransitionWasm {
             js_sys::Reflect::set(
                 &js_object,
                 &JsValue::from_str("signature"),
-                &JsValue::from(Buffer::from_bytes(&self.0.signature)),
+                &JsValue::from(Buffer::from_bytes_owned(self.0.signature.to_vec())),
             )?;
         }
 

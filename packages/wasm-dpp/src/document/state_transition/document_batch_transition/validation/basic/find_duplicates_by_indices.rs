@@ -9,7 +9,7 @@ use js_sys::Array;
 use wasm_bindgen::prelude::*;
 
 use crate::identifier::IdentifierWrapper;
-use crate::utils::{with_serde_to_platform_value, Inner};
+use crate::utils::Inner;
 use crate::{
     document_batch_transition::document_transition::to_object,
     utils::{ToSerdeJSONExt, WithJsError},
@@ -22,7 +22,7 @@ pub fn find_duplicates_by_indices_wasm(
     data_contract: &DataContractWasm,
     owner_id: &IdentifierWrapper,
 ) -> Result<Vec<JsValue>, JsValue> {
-    let mut owner_id_value: Value = Value::Identifier(owner_id.inner().buffer);
+    let owner_id_value: Value = Value::Identifier(owner_id.inner().to_buffer());
     let raw_transitions: Vec<Value> = js_raw_transitions
         .iter()
         .map(|transition| {
@@ -39,7 +39,7 @@ pub fn find_duplicates_by_indices_wasm(
         })
         .collect::<Result<Vec<Value>, JsValue>>()?;
 
-    let mut result =
+    let result =
         find_duplicates_by_indices(&raw_transitions, data_contract.inner()).with_js_error()?;
 
     let duplicates: Vec<JsValue> = result

@@ -97,8 +97,8 @@ impl CreateRandomDocument for DocumentType {
 
     /// Creates a document with a random id, owner id, and properties using StdRng.
     fn random_document_with_rng(&self, rng: &mut StdRng) -> Document {
-        let id = Identifier::random(rng);
-        let owner_id = Identifier::random(rng);
+        let id = Identifier::random_with_rng(rng);
+        let owner_id = Identifier::random_with_rng(rng);
         let mut created_at = None;
         let mut updated_at = None;
         let properties = self
@@ -167,8 +167,8 @@ impl CreateRandomDocument for DocumentType {
     /// Creates a Document with properties filled to max size with random data, along with
     /// a random id and owner id.
     fn random_filled_document_with_rng(&self, rng: &mut StdRng) -> Document {
-        let id = Identifier::random(rng);
-        let owner_id = Identifier::random(rng);
+        let id = Identifier::random_with_rng(rng);
+        let owner_id = Identifier::random_with_rng(rng);
         let properties = self
             .properties
             .iter()

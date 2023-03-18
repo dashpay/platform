@@ -1,15 +1,17 @@
 use crate::errors::protocol_error::from_protocol_error;
 
 use crate::{
-    js_value_to_platform_value, js_value_to_serde_value, DataContractCreateTransitionWasm,
-    DataContractUpdateTransitionWasm, DataContractWasm,
+    js_value_to_platform_value, DataContractCreateTransitionWasm, DataContractUpdateTransitionWasm,
+    DataContractWasm,
 };
 use dpp::data_contract::DataContractFacade;
 use dpp::identifier::Identifier;
 use dpp::version::ProtocolVersionValidator;
 
-use crate::utils::{get_bool_from_options, SKIP_VALIDATION_PROPERTY_NAME};
+use crate::utils::{get_bool_from_options, WithJsError, SKIP_VALIDATION_PROPERTY_NAME};
 use crate::validation::ValidationResultWasm;
+use dpp::platform_value::Value;
+use dpp::ProtocolError;
 use std::sync::Arc;
 use wasm_bindgen::prelude::*;
 
@@ -38,16 +40,24 @@ impl DataContractFacadeWasm {
         documents: JsValue,
         definitions: JsValue,
     ) -> Result<DataContractWasm, JsValue> {
-        let id = Identifier::from_bytes(&owner_id).map_err(from_protocol_error)?;
+        let id = Identifier::from_bytes(&owner_id)
+            .map_err(ProtocolError::ValueError)
+            .with_js_error()?;
 
-        let definitions: Option<serde_json::Value> = if definitions.is_object() {
+        let definitions: Option<Value> = if definitions.is_object() {
             Some(serde_wasm_bindgen::from_value(definitions)?)
         } else {
             None
         };
 
+        //todo: contract config
         self.0
-            .create(id, serde_wasm_bindgen::from_value(documents)?, definitions)
+            .create(
+                id,
+                serde_wasm_bindgen::from_value(documents)?,
+                None,
+                definitions,
+            )
             .map(Into::into)
             .map_err(from_protocol_error)
     }
@@ -116,7 +126,7 @@ impl DataContractFacadeWasm {
         &self,
         js_raw_data_contract: JsValue,
     ) -> Result<ValidationResultWasm, JsValue> {
-        let raw_data_contract = js_value_to_serde_value(js_raw_data_contract)?;
+        let raw_data_contract = js_value_to_platform_value(js_raw_data_contract)?;
 
         self.0
             .validate(raw_data_contract)

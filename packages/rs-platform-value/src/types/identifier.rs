@@ -8,15 +8,17 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value as JsonValue;
 
 use crate::string_encoding::Encoding;
-use crate::{string_encoding, Error, Value};
 use crate::types::encoding_string_to_encoding;
+use crate::{string_encoding, Error, Value};
 
 pub const IDENTIFIER_MEDIA_TYPE: &str = "application/x.dash.dpp.identifier";
 
 #[derive(Default, Debug, Clone, PartialEq, Eq, Hash, Ord, PartialOrd, Copy)]
 pub struct IdentifierBytes32(pub [u8; 32]);
 
-#[derive(Default, Debug, Clone, PartialEq, Eq, Hash, Ord, PartialOrd, Copy, Serialize, Deserialize)]
+#[derive(
+    Default, Debug, Clone, PartialEq, Eq, Hash, Ord, PartialOrd, Copy, Serialize, Deserialize,
+)]
 pub struct Identifier(pub IdentifierBytes32);
 
 impl Serialize for IdentifierBytes32 {
@@ -38,7 +40,6 @@ impl<'de> Deserialize<'de> for IdentifierBytes32 {
         D: serde::Deserializer<'de>,
     {
         if deserializer.is_human_readable() {
-
             struct StringVisitor;
 
             impl<'de> Visitor<'de> for StringVisitor {
@@ -49,10 +50,12 @@ impl<'de> Deserialize<'de> for IdentifierBytes32 {
                 }
 
                 fn visit_str<E>(self, v: &str) -> Result<Self::Value, E>
-                    where
-                        E: serde::de::Error,
+                where
+                    E: serde::de::Error,
                 {
-                    let bytes = bs58::decode(v).into_vec().map_err(|e| E::custom(format!("{}", e)))?;
+                    let bytes = bs58::decode(v)
+                        .into_vec()
+                        .map_err(|e| E::custom(format!("{}", e)))?;
                     if bytes.len() != 32 {
                         return Err(E::invalid_length(bytes.len(), &self));
                     }
@@ -74,8 +77,8 @@ impl<'de> Deserialize<'de> for IdentifierBytes32 {
                 }
 
                 fn visit_bytes<E>(self, v: &[u8]) -> Result<Self::Value, E>
-                    where
-                        E: serde::de::Error,
+                where
+                    E: serde::de::Error,
                 {
                     let mut bytes = [0u8; 32];
                     if v.len() != 32 {
@@ -91,29 +94,16 @@ impl<'de> Deserialize<'de> for IdentifierBytes32 {
     }
 }
 
-// impl<'de> Deserialize<'de> for Identifier {
-//     fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
-//         where
-//             D: serde::Deserializer<'de>,
-//     {
-//         let data: DocumentValue = Deserialize::deserialize(deserializer)?;
-//         if let DocumentValue::Bytes(bytes) = data {
-//             return Ok(Identifier::from(bytes.0));
-//         }
-//         Err(serde::de::Error::custom(format!(
-//             "expected bytes, got: {:?}",
-//             data
-//         )))
-//     }
-// }
-
-
 impl Identifier {
     pub fn new(buffer: [u8; 32]) -> Identifier {
         Identifier(IdentifierBytes32(buffer))
     }
 
-    pub fn random(rng: &mut StdRng) -> Identifier {
+    pub fn random() -> Identifier {
+        Identifier(IdentifierBytes32(rand::random::<[u8; 32]>()))
+    }
+
+    pub fn random_with_rng(rng: &mut StdRng) -> Identifier {
         Identifier(IdentifierBytes32(rng.gen()))
     }
 
@@ -165,7 +155,7 @@ impl Identifier {
 
     // TODO - consider to change the name to 'asBuffer`
     pub fn to_buffer(&self) -> [u8; 32] {
-        self.0.0
+        self.0 .0
     }
 
     /// Convenience method to get underlying buffer as a vec
@@ -222,31 +212,31 @@ impl std::fmt::Display for Identifier {
 
 impl PartialEq<&Identifier> for Identifier {
     fn eq(&self, other: &&Identifier) -> bool {
-        &self.0.0 == &other.0.0
+        &self.0 .0 == &other.0 .0
     }
 }
 
 impl PartialEq<[u8; 32]> for Identifier {
     fn eq(&self, other: &[u8; 32]) -> bool {
-        &self.0.0 == other
+        &self.0 .0 == other
     }
 }
 
 impl PartialEq<[u8; 32]> for &Identifier {
     fn eq(&self, other: &[u8; 32]) -> bool {
-        &self.0.0 == other
+        &self.0 .0 == other
     }
 }
 
 impl PartialEq<Identifier> for [u8; 32] {
     fn eq(&self, other: &Identifier) -> bool {
-        self == &other.0.0
+        self == &other.0 .0
     }
 }
 
 impl PartialEq<&Identifier> for [u8; 32] {
     fn eq(&self, other: &&Identifier) -> bool {
-        self == &other.0.0
+        self == &other.0 .0
     }
 }
 
@@ -290,12 +280,11 @@ impl Into<String> for &Identifier {
     }
 }
 
-
 #[cfg(test)]
 mod tests {
     use std::collections::HashMap;
 
-    use crate::{from_value, Identifier, to_value};
+    use crate::{from_value, to_value, Identifier};
     use serde::{Deserialize, Serialize};
 
     use super::*;

@@ -49,21 +49,21 @@ impl Serialize for Value {
                 } else {
                     serializer.serialize_bytes(bytes)
                 }
-            },
+            }
             Value::Bytes32(bytes) => {
                 if serializer.is_human_readable() {
                     serializer.serialize_str(base64::encode(bytes).as_str())
                 } else {
                     serializer.serialize_bytes(bytes)
                 }
-            },
+            }
             Value::Identifier(bytes) => {
                 if serializer.is_human_readable() {
                     serializer.serialize_str(bs58::encode(bytes).into_string().as_str())
                 } else {
                     serializer.serialize_bytes(bytes)
                 }
-            },
+            }
             Value::Float(f64) => serializer.serialize_f64(*f64),
             Value::Text(string) => serializer.serialize_str(string),
             Value::EnumU8(_x) => todo!(),
@@ -476,9 +476,7 @@ impl serde::ser::SerializeMap for SerializeMap {
 
     fn end(self) -> Result<Value, Error> {
         match self {
-            SerializeMap::Map { map, .. } => {
-                Ok(Value::Map(map))
-            },
+            SerializeMap::Map { map, .. } => Ok(Value::Map(map)),
         }
     }
 }

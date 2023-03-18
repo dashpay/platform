@@ -1,9 +1,9 @@
-use std::fmt;
-use serde::{Deserialize, Serialize};
-use serde::de::Visitor;
-use crate::{Error, string_encoding, Value};
 use crate::string_encoding::Encoding;
 use crate::types::encoding_string_to_encoding;
+use crate::{string_encoding, Error, Value};
+use serde::de::Visitor;
+use serde::{Deserialize, Serialize};
+use std::fmt;
 
 #[derive(Default, Debug, Clone, PartialEq, Eq, Ord, PartialOrd, Hash, Copy)]
 pub struct Bytes32(pub [u8; 32]);
@@ -14,7 +14,9 @@ impl Bytes32 {
     }
 
     pub fn from_vec(buffer: Vec<u8>) -> Result<Self, Error> {
-        let buffer : [u8; 32] = buffer.try_into().map_err(|_| Error::ByteLengthNot32BytesError("buffer was not 32 bytes long".to_string()))?;
+        let buffer: [u8; 32] = buffer.try_into().map_err(|_| {
+            Error::ByteLengthNot32BytesError("buffer was not 32 bytes long".to_string())
+        })?;
         Ok(Bytes32::new(buffer))
     }
 
@@ -58,8 +60,8 @@ impl Bytes32 {
 
 impl Serialize for Bytes32 {
     fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
-        where
-            S: serde::Serializer,
+    where
+        S: serde::Serializer,
     {
         if serializer.is_human_readable() {
             serializer.serialize_str(&base64::encode(self.0))
@@ -71,11 +73,10 @@ impl Serialize for Bytes32 {
 
 impl<'de> Deserialize<'de> for Bytes32 {
     fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
-        where
-            D: serde::Deserializer<'de>,
+    where
+        D: serde::Deserializer<'de>,
     {
         if deserializer.is_human_readable() {
-
             struct StringVisitor;
 
             impl<'de> Visitor<'de> for StringVisitor {
@@ -86,8 +87,8 @@ impl<'de> Deserialize<'de> for Bytes32 {
                 }
 
                 fn visit_str<E>(self, v: &str) -> Result<Self::Value, E>
-                    where
-                        E: serde::de::Error,
+                where
+                    E: serde::de::Error,
                 {
                     let bytes = base64::decode(v).map_err(|e| E::custom(format!("{}", e)))?;
                     if bytes.len() != 32 {
@@ -111,8 +112,8 @@ impl<'de> Deserialize<'de> for Bytes32 {
                 }
 
                 fn visit_bytes<E>(self, v: &[u8]) -> Result<Self::Value, E>
-                    where
-                        E: serde::de::Error,
+                where
+                    E: serde::de::Error,
                 {
                     let mut bytes = [0u8; 32];
                     if v.len() != 32 {

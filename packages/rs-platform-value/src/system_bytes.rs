@@ -355,21 +355,24 @@ impl Value {
     /// ```
     pub fn into_bytes_32(self) -> Result<Bytes32, Error> {
         match self {
-            Value::Text(text) => {
-                Bytes32::from_vec(base64::decode(text).map_err(|_| Error::StructureError("value was a string, but could not be decoded from base 64".to_string()))?)
-            },
-            Value::Array(array) => {
-                Bytes32::from_vec(array
+            Value::Text(text) => Bytes32::from_vec(base64::decode(text).map_err(|_| {
+                Error::StructureError(
+                    "value was a string, but could not be decoded from base 64".to_string(),
+                )
+            })?),
+            Value::Array(array) => Bytes32::from_vec(
+                array
                     .iter()
                     .map(|byte| byte.to_integer())
-                    .collect::<Result<Vec<u8>, Error>>()?)
-            },
+                    .collect::<Result<Vec<u8>, Error>>()?,
+            ),
             Value::Bytes32(bytes) => Ok(Bytes32::new(bytes)),
-            Value::Bytes(vec) => {
-                Bytes32::from_vec(vec)
-            },
+            Value::Bytes(vec) => Bytes32::from_vec(vec),
             Value::Identifier(identifier) => Ok(Bytes32::new(identifier)),
-            _other => Err(Error::StructureError("value are not bytes, a string, or an array of values representing bytes".to_string())),
+            _other => Err(Error::StructureError(
+                "value are not bytes, a string, or an array of values representing bytes"
+                    .to_string(),
+            )),
         }
     }
 
@@ -403,21 +406,24 @@ impl Value {
     /// ```
     pub fn to_bytes_32(&self) -> Result<Bytes32, Error> {
         match self {
-            Value::Text(text) => {
-                Bytes32::from_vec(base64::decode(text).map_err(|_| Error::StructureError("value was a string, but could not be decoded from base 64".to_string()))?)
-            },
-            Value::Array(array) => {
-                Bytes32::from_vec(array
+            Value::Text(text) => Bytes32::from_vec(base64::decode(text).map_err(|_| {
+                Error::StructureError(
+                    "value was a string, but could not be decoded from base 64".to_string(),
+                )
+            })?),
+            Value::Array(array) => Bytes32::from_vec(
+                array
                     .iter()
                     .map(|byte| byte.to_integer())
-                    .collect::<Result<Vec<u8>, Error>>()?)
-            },
+                    .collect::<Result<Vec<u8>, Error>>()?,
+            ),
             Value::Bytes32(bytes) => Ok(Bytes32::new(*bytes)),
-            Value::Bytes(vec) => {
-                Bytes32::from_vec(vec.clone())
-            },
+            Value::Bytes(vec) => Bytes32::from_vec(vec.clone()),
             Value::Identifier(identifier) => Ok(Bytes32::new(*identifier)),
-            _other => Err(Error::StructureError("value are not bytes, a string, or an array of values representing bytes".to_string())),
+            _other => Err(Error::StructureError(
+                "value are not bytes, a string, or an array of values representing bytes"
+                    .to_string(),
+            )),
         }
     }
 

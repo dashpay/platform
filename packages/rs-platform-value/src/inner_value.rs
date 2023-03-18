@@ -1,7 +1,7 @@
-use std::cmp::Ordering;
 use crate::value_map::{ValueMap, ValueMapHelper};
 use crate::{BinaryData, Bytes32, Identifier};
 use crate::{Error, Value};
+use std::cmp::Ordering;
 use std::collections::BTreeMap;
 
 impl Value {
@@ -48,8 +48,7 @@ impl Value {
         Ok(Self::insert_in_map(map, key, value.into()))
     }
 
-    pub fn set_into_binary_data(&mut self, key: &str, value: Vec<u8>) -> Result<(), Error>
-    {
+    pub fn set_into_binary_data(&mut self, key: &str, value: Vec<u8>) -> Result<(), Error> {
         let map = self.as_map_mut_ref()?;
         Ok(Self::insert_in_map(map, key, Value::Bytes(value)))
     }
@@ -118,13 +117,14 @@ impl Value {
     {
         let map = self.as_map_mut_ref()?;
         map.remove_optional_key(key)
-            .map(|v|
-                     if v.is_null() {
-                         None
-                     } else {
-                         Some(v.into_integer())
-                     }
-                ).flatten()
+            .map(|v| {
+                if v.is_null() {
+                    None
+                } else {
+                    Some(v.into_integer())
+                }
+            })
+            .flatten()
             .transpose()
     }
 
@@ -137,10 +137,12 @@ impl Value {
     pub fn remove_optional_identifier(&mut self, key: &str) -> Result<Option<Identifier>, Error> {
         let map = self.as_map_mut_ref()?;
         map.remove_optional_key(key)
-            .map(|v|                      if v.is_null() {
-                None
-            } else {
-                Some(v.into_identifier())
+            .map(|v| {
+                if v.is_null() {
+                    None
+                } else {
+                    Some(v.into_identifier())
+                }
             })
             .flatten()
             .transpose()
@@ -330,7 +332,10 @@ impl Value {
         Self::inner_array_ref(map, key)
     }
 
-    pub fn get_optional_array_mut_ref<'a>(&'a mut self, key: &'a str) -> Result<Option<&'a mut Vec<Value>>, Error> {
+    pub fn get_optional_array_mut_ref<'a>(
+        &'a mut self,
+        key: &'a str,
+    ) -> Result<Option<&'a mut Vec<Value>>, Error> {
         let map = self.to_map_mut()?;
         Self::inner_optional_array_mut_ref(map, key)
     }
@@ -345,7 +350,10 @@ impl Value {
         Self::inner_array_slice(map, key)
     }
 
-    pub fn get_optional_binary_data<'a>(&'a self, key: &'a str) -> Result<Option<BinaryData>, Error> {
+    pub fn get_optional_binary_data<'a>(
+        &'a self,
+        key: &'a str,
+    ) -> Result<Option<BinaryData>, Error> {
         let map = self.to_map()?;
         Self::inner_optional_binary_data_value(map, key)
     }
@@ -470,7 +478,9 @@ impl Value {
         document_type: &'a mut [(Value, Value)],
         key: &'a str,
     ) -> Result<Option<&'a mut Vec<Value>>, Error> {
-        Self::get_optional_mut_from_map(document_type, key).map(|value| value.to_array_mut()).transpose()
+        Self::get_optional_mut_from_map(document_type, key)
+            .map(|value| value.to_array_mut())
+            .transpose()
     }
 
     /// Retrieves the value of a key from a map if it's an array of strings.
@@ -568,10 +578,12 @@ impl Value {
         key: &str,
     ) -> Result<Option<bool>, Error> {
         Self::get_optional_from_map(document_type, key)
-            .map(|value| if value.is_null() {
-                None
-            } else {
-                Some(value.to_bool())
+            .map(|value| {
+                if value.is_null() {
+                    None
+                } else {
+                    Some(value.to_bool())
+                }
             })
             .flatten()
             .transpose()
@@ -600,10 +612,12 @@ impl Value {
             + TryFrom<i8>,
     {
         Self::get_optional_from_map(document_type, key)
-            .map(|key_value| if key_value.is_null() {
-                None
-            } else {
-                Some(key_value.to_integer())
+            .map(|key_value| {
+                if key_value.is_null() {
+                    None
+                } else {
+                    Some(key_value.to_integer())
+                }
             })
             .flatten()
             .transpose()
@@ -812,8 +826,7 @@ impl Value {
         for (key, value) in map.iter_mut() {
             if let Value::Text(text) = key {
                 match inserting_key.cmp(text) {
-                    Ordering::Less => {
-                    }
+                    Ordering::Less => {}
                     Ordering::Equal => {
                         found_value = Some(value);
                         break;
@@ -827,7 +840,7 @@ impl Value {
         if let Some(value) = found_value {
             *value = inserting_value;
         } else {
-            map.insert(pos,(Value::Text(inserting_key), inserting_value))
+            map.insert(pos, (Value::Text(inserting_key), inserting_value))
         }
     }
 

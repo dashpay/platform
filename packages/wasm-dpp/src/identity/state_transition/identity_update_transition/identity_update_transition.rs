@@ -16,18 +16,18 @@ use crate::{
 
 use crate::bls_adapter::{BlsAdapter, JsBlsAdapter};
 use crate::errors::from_dpp_err;
-use crate::utils::generic_of_js_val;
+use crate::utils::{generic_of_js_val, WithJsError};
 use dpp::identity::state_transition::identity_public_key_transitions::IdentityPublicKeyWithWitness;
 use dpp::identity::{KeyID, TimestampMillis};
+use dpp::platform_value::string_encoding;
+use dpp::platform_value::string_encoding::Encoding;
 use dpp::prelude::Revision;
 use dpp::state_transition::StateTransitionIdentitySigned;
 use dpp::{
     identifier::Identifier,
     identity::state_transition::identity_update_transition::identity_update_transition::IdentityUpdateTransition,
-    state_transition::StateTransitionLike,
+    platform_value, state_transition::StateTransitionLike, ProtocolError,
 };
-use platform_value::string_encoding;
-use platform_value::string_encoding::Encoding;
 
 #[wasm_bindgen(js_name=IdentityUpdateTransition)]
 #[derive(Clone)]
@@ -64,7 +64,9 @@ impl IdentityUpdateTransitionWasm {
         let parameters: IdentityUpdateTransitionParams =
             with_js_error!(serde_wasm_bindgen::from_value(raw_parameters))?;
 
-        let raw_state_transition = with_js_error!(serde_json::to_value(parameters))?;
+        let raw_state_transition = platform_value::to_value(parameters)
+            .map_err(ProtocolError::ValueError)
+            .with_js_error()?;
 
         let identity_update_transition = IdentityUpdateTransition::new(raw_state_transition)
             .map_err(|e| RustConversionError::Error(e.to_string()).to_js_value())?;
@@ -418,7 +420,7 @@ impl IdentityUpdateTransitionWasm {
 
     #[wasm_bindgen(js_name=getSignature)]
     pub fn get_signature(&self) -> Buffer {
-        Buffer::from_bytes(self.0.get_signature())
+        Buffer::from_bytes_owned(self.0.get_signature().to_vec())
     }
 
     #[wasm_bindgen(js_name=getRevision)]

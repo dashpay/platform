@@ -32,7 +32,7 @@ use crate::error::Error;
 use crate::platform::Platform;
 use ciborium::{cbor, Value as CborValue};
 use dpp::platform_value::converter::serde_json::BTreeValueJsonConverter;
-use dpp::platform_value::Value;
+use dpp::platform_value::{platform_value, BinaryData, Bytes32, Value};
 use dpp::ProtocolError;
 use drive::contract::DataContract;
 use drive::dpp::data_contract::DriveContractExt;
@@ -42,6 +42,7 @@ use drive::dpp::identity::{
     Identity, IdentityPublicKey, KeyType, Purpose, SecurityLevel, TimestampMillis,
 };
 
+use dpp::platform_value::string_encoding::{encode, Encoding};
 use drive::dpp::system_data_contracts::{load_system_data_contract, SystemDataContract};
 use drive::drive::batch::{
     ContractOperationType, DocumentOperationType, DriveOperationType, IdentityOperationType,
@@ -50,7 +51,6 @@ use drive::drive::block_info::BlockInfo;
 use drive::drive::defaults::PROTOCOL_VERSION;
 use drive::drive::object_size_info::{DocumentAndContractInfo, DocumentInfo, OwnedDocumentInfo};
 use drive::query::TransactionArg;
-use platform_value::string_encoding::{encode, Encoding};
 use serde_json::json;
 use std::borrow::Cow;
 use std::collections::{BTreeMap, BTreeSet};
@@ -128,7 +128,7 @@ impl Platform {
                     security_level: SecurityLevel::MASTER,
                     key_type: KeyType::ECDSA_SECP256K1,
                     read_only: false,
-                    data: identity_public_keys_set.master,
+                    data: identity_public_keys_set.master.into(),
                     disabled_at: None,
                 },
                 IdentityPublicKey {
@@ -137,7 +137,7 @@ impl Platform {
                     security_level: SecurityLevel::HIGH,
                     key_type: KeyType::ECDSA_SECP256K1,
                     read_only: false,
-                    data: identity_public_keys_set.high,
+                    data: identity_public_keys_set.high.into(),
                     disabled_at: None,
                 },
             ]);
@@ -226,11 +226,11 @@ impl Platform {
             data_contract_id: contract.id,
             data_contract: contract.clone(),
             metadata: None,
-            entropy: [0; 32],
+            entropy: Bytes32::new([0; 32]),
             document: Document {
-                id: DPNS_DASH_TLD_DOCUMENT_ID,
+                id: DPNS_DASH_TLD_DOCUMENT_ID.into(),
                 revision: None,
-                owner_id: contract.owner_id.to_buffer(),
+                owner_id: contract.owner_id,
                 created_at: None,
                 updated_at: None,
                 properties: BTreeMap::from_json_value(properties_json)
@@ -238,22 +238,15 @@ impl Platform {
             },
         };
 
-        let document_stub_properties_value: Value = cbor!({
-            "label" => domain,
-            "normalizedLabel" => domain,
-            "normalizedParentDomainName" => "",
-            "preorderSalt" => CborValue::Bytes(DPNS_DASH_TLD_PREORDER_SALT.to_vec()),
-            "records" => {
-                "dashAliasIdentityId" => CborValue::Bytes(contract.owner_id.to_vec()),
+        let document_stub_properties_value = platform_value!({
+            "label" : domain,
+            "normalizedLabel" : domain,
+            "normalizedParentDomainName" : "",
+            "preorderSalt" : BinaryData::new(DPNS_DASH_TLD_PREORDER_SALT.to_vec()),
+            "records" : {
+                "dashAliasIdentityId" : contract.owner_id,
             },
-        })
-        .map_err(|_| {
-            // TODO: Can't pass original error because the error expecting String
-            Error::Execution(ExecutionError::CorruptedCodeExecution(
-                "can't create cbor for dpns tld",
-            ))
-        })?
-        .into();
+        });
 
         let document_stub_properties = document_stub_properties_value
             .into_btree_string_map()
@@ -262,9 +255,9 @@ impl Platform {
         let document_cbor = document.to_buffer()?;
 
         let document = Document {
-            id: DPNS_DASH_TLD_DOCUMENT_ID,
+            id: DPNS_DASH_TLD_DOCUMENT_ID.into(),
             properties: document_stub_properties,
-            owner_id: contract.owner_id.to_buffer(),
+            owner_id: contract.owner_id,
             revision: None,
             created_at: None,
             updated_at: None,

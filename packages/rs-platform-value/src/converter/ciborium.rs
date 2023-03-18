@@ -116,7 +116,7 @@ impl TryInto<CborValue> for Value {
                         .map(|(k, v)| Ok((k.try_into()?, v.try_into()?)))
                         .collect::<Result<Vec<(CborValue, CborValue)>, Error>>()?,
                 )
-            },
+            }
             Value::Identifier(bytes) => CborValue::Bytes(bytes.to_vec()),
             Value::EnumU8(_) => todo!(),
             Value::EnumString(_) => todo!(),

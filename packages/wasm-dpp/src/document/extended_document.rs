@@ -1,7 +1,7 @@
 use dpp::document::document_transition::document_base_transition::JsonValue;
 use dpp::document::{ExtendedDocument, EXTENDED_DOCUMENT_IDENTIFIER_FIELDS};
 
-use dpp::platform_value::{ReplacementType, Value};
+use dpp::platform_value::{Bytes32, ReplacementType, Value};
 use dpp::prelude::{Identifier, Revision};
 use dpp::util::json_schema::JsonSchemaExt;
 use dpp::util::json_value::JsonValueExt;
@@ -77,7 +77,7 @@ impl ExtendedDocumentWasm {
 
     #[wasm_bindgen(js_name=setId)]
     pub fn set_id(&mut self, js_id: IdentifierWrapper) {
-        self.0.document.id = js_id.inner().buffer;
+        self.0.document.id = js_id.into_inner();
     }
 
     #[wasm_bindgen(js_name=getType)]
@@ -104,7 +104,7 @@ impl ExtendedDocumentWasm {
 
     #[wasm_bindgen(js_name=setOwnerId)]
     pub fn set_owner_id(&mut self, owner_id: IdentifierWrapper) {
-        self.0.document.owner_id = owner_id.into_inner().buffer;
+        self.0.document.owner_id = owner_id.into_inner();
     }
 
     #[wasm_bindgen(js_name=getOwnerId)]
@@ -132,13 +132,13 @@ impl ExtendedDocumentWasm {
             ))
             .to_js_value()
         })?;
-        self.0.entropy = entropy;
+        self.0.entropy = Bytes32::new(entropy);
         Ok(())
     }
 
     #[wasm_bindgen(js_name=getEntropy)]
     pub fn get_entropy(&mut self) -> Buffer {
-        Buffer::from_bytes(&self.0.entropy)
+        Buffer::from_bytes_owned(self.0.entropy.to_vec())
     }
 
     #[wasm_bindgen(js_name=setData)]
@@ -170,7 +170,7 @@ impl ExtendedDocumentWasm {
         let (identifier_paths, _) = self.0.get_identifiers_and_binary_paths().with_js_error()?;
         let mut value: Value = js_value_to_set.with_serde_to_json_value()?.into();
         if identifier_paths.contains(path.as_str()) {
-            let identifier_value = ReplacementType::Bytes
+            let identifier_value = ReplacementType::IdentifierBytes
                 .replace_consume_value(value)
                 .map_err(ProtocolError::ValueError)
                 .with_js_error()?;
@@ -182,7 +182,7 @@ impl ExtendedDocumentWasm {
                     if identifier_path.starts_with(path.as_str()) {
                         let (_, suffix) = identifier_path.split_at(path.len() + 1);
                         value
-                            .replace_at_path(suffix, ReplacementType::Bytes)
+                            .replace_at_path(suffix, ReplacementType::IdentifierBytes)
                             .map_err(ProtocolError::ValueError)
                             .map(|_| ())
                             .with_js_error()
@@ -196,24 +196,22 @@ impl ExtendedDocumentWasm {
 
     #[wasm_bindgen(js_name=get)]
     pub fn get(&mut self, path: String) -> JsValue {
-        let binary_type = self.get_binary_type_of_path(&path);
-
         if let Some(value) = self.0.get(&path) {
-            match binary_type {
-                BinaryType::Identifier => {
-                    if let Ok(bytes) = value.to_identifier_bytes() {
-                        let id: IdentifierWrapper = Identifier::from_bytes(&bytes).unwrap().into();
+            match value {
+                Value::Bytes(bytes) => {
+                    return Buffer::from_bytes(bytes).into();
+                }
+                Value::Bytes32(bytes) => {
+                    return Buffer::from_bytes(bytes.as_slice()).into();
+                }
+                Value::Identifier(bytes) => {
+                    let id: IdentifierWrapper = Identifier::new(*bytes).into();
 
-                        return id.into();
-                    }
+                    return id.into();
                 }
-                BinaryType::Buffer => {
-                    if let Ok(bytes) = value.to_identifier_bytes() {
-                        return Buffer::from_bytes(&bytes).into();
-                    }
-                }
-                BinaryType::None => {
+                _ => {
                     let serializer = serde_wasm_bindgen::Serializer::json_compatible();
+                    //todo: maybe go directly from value
                     let json_value: Option<JsonValue> = value.clone().try_into().ok();
                     if let Some(json_value) = json_value {
                         if let Ok(js_value) = json_value.serialize(&serializer) {
@@ -276,7 +274,7 @@ impl ExtendedDocumentWasm {
             .into_iter()
             .chain(EXTENDED_DOCUMENT_IDENTIFIER_FIELDS)
         {
-            if let Ok(bytes) = value.remove_path_into::<Vec<u8>>(path) {
+            if let Ok(bytes) = value.remove_value_at_path_into::<Vec<u8>>(path) {
                 if !options.skip_identifiers_conversion {
                     let buffer = Buffer::from_bytes(&bytes);
                     lodash_set(&js_value, path, buffer.into());
@@ -288,7 +286,7 @@ impl ExtendedDocumentWasm {
         }
 
         for path in binary_paths {
-            if let Ok(bytes) = value.remove_path_into::<Vec<u8>>(path) {
+            if let Ok(bytes) = value.remove_value_at_path_into::<Vec<u8>>(path) {
                 let buffer = Buffer::from_bytes(&bytes);
                 lodash_set(&js_value, path, buffer.into());
             }

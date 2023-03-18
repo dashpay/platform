@@ -21,6 +21,8 @@ use crate::{
 use crate::bls_adapter::{BlsAdapter, JsBlsAdapter};
 use crate::errors::from_dpp_err;
 
+use dpp::platform_value::string_encoding;
+use dpp::platform_value::string_encoding::Encoding;
 use dpp::{
     identifier::Identifier,
     identity::state_transition::{
@@ -28,8 +30,6 @@ use dpp::{
     },
     state_transition::StateTransitionLike,
 };
-use platform_value::string_encoding;
-use platform_value::string_encoding::Encoding;
 
 #[wasm_bindgen(js_name=IdentityTopUpTransition)]
 #[derive(Clone)]
@@ -51,7 +51,7 @@ impl From<IdentityTopUpTransitionWasm> for IdentityTopUpTransition {
 impl IdentityTopUpTransitionWasm {
     #[wasm_bindgen(constructor)]
     pub fn new(raw_parameters: JsValue) -> Result<IdentityTopUpTransitionWasm, JsValue> {
-        let raw_state_transition = raw_parameters.with_serde_to_json_value()?;
+        let raw_state_transition = raw_parameters.with_serde_to_platform_value()?;
 
         let identity_topup_transition =
             IdentityTopUpTransition::from_raw_object(raw_state_transition)

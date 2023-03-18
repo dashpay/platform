@@ -1,17 +1,17 @@
-use std::fmt;
-use serde::{Deserialize, Serialize};
-use serde::de::Visitor;
-use crate::{Error, string_encoding, Value};
 use crate::string_encoding::Encoding;
 use crate::types::encoding_string_to_encoding;
+use crate::{string_encoding, Error, Value};
+use serde::de::Visitor;
+use serde::{Deserialize, Serialize};
+use std::fmt;
 
 #[derive(Default, Debug, Clone, PartialEq, Eq, Ord, PartialOrd, Hash)]
 pub struct BinaryData(pub Vec<u8>);
 
 impl Serialize for BinaryData {
     fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
-        where
-            S: serde::Serializer,
+    where
+        S: serde::Serializer,
     {
         if serializer.is_human_readable() {
             serializer.serialize_str(&base64::encode(self.0.as_slice()))
@@ -23,11 +23,10 @@ impl Serialize for BinaryData {
 
 impl<'de> Deserialize<'de> for BinaryData {
     fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
-        where
-            D: serde::Deserializer<'de>,
+    where
+        D: serde::Deserializer<'de>,
     {
         if deserializer.is_human_readable() {
-
             struct StringVisitor;
 
             impl<'de> Visitor<'de> for StringVisitor {
@@ -38,8 +37,8 @@ impl<'de> Deserialize<'de> for BinaryData {
                 }
 
                 fn visit_str<E>(self, v: &str) -> Result<Self::Value, E>
-                    where
-                        E: serde::de::Error,
+                where
+                    E: serde::de::Error,
                 {
                     let bytes = base64::decode(v).map_err(|e| E::custom(format!("{}", e)))?;
                     Ok(BinaryData(bytes))
@@ -58,8 +57,8 @@ impl<'de> Deserialize<'de> for BinaryData {
                 }
 
                 fn visit_bytes<E>(self, v: &[u8]) -> Result<Self::Value, E>
-                    where
-                        E: serde::de::Error,
+                where
+                    E: serde::de::Error,
                 {
                     Ok(BinaryData(v.to_vec()))
                 }
@@ -122,7 +121,6 @@ impl From<Vec<u8>> for BinaryData {
         BinaryData::new(value)
     }
 }
-
 
 impl TryFrom<Value> for BinaryData {
     type Error = Error;
@@ -200,7 +198,7 @@ impl PartialEq<BinaryData> for Vec<u8> {
 mod tests {
     use std::collections::HashMap;
 
-    use crate::{from_value, Identifier, to_value, Value};
+    use crate::{from_value, to_value, Identifier, Value};
     use serde::{Deserialize, Serialize};
 
     use super::*;

@@ -75,7 +75,7 @@ impl IdentityFacadeWasm {
             Default::default()
         };
 
-        let raw_identity = identity_object.with_serde_to_json_value()?;
+        let raw_identity = identity_object.with_serde_to_platform_value()?;
 
         let result = self
             .0

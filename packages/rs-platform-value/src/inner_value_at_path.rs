@@ -1,5 +1,5 @@
 use crate::value_map::ValueMapHelper;
-use crate::{Error, Value, ValueMap};
+use crate::{error, Error, Value, ValueMap};
 use lazy_static::lazy_static;
 use regex::Regex;
 use std::collections::BTreeMap;
@@ -38,6 +38,13 @@ impl Value {
         };
         let map = current_value.as_map_mut_ref()?;
         map.remove_key(last_path_component)
+    }
+
+    pub fn remove_value_at_path_into<T: TryFrom<Value, Error = error::Error>>(
+        &mut self,
+        path: &str,
+    ) -> Result<T, Error> {
+        self.remove_value_at_path(path)?.try_into()
     }
 
     pub fn remove_values_at_paths<'a>(

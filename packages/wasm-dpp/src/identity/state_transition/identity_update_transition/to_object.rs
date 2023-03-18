@@ -41,7 +41,7 @@ pub fn to_object_struct(
     };
 
     if !options.skip_signature.unwrap_or(false) {
-        let signature = Some(transition.get_signature().to_owned());
+        let signature = Some(transition.get_signature().to_vec());
         if let Some(signature) = &signature {
             if !signature.is_empty() {
                 to_object.signature_public_key_id = transition.get_signature_public_key_id()

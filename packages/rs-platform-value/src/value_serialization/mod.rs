@@ -111,10 +111,8 @@ where
 
 #[cfg(test)]
 mod tests {
-    use std::collections::HashMap;
-
-    use crate::Identifier;
     use serde::{Deserialize, Serialize};
+    use std::collections::HashMap;
 
     use super::*;
 

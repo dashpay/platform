@@ -21,6 +21,8 @@ use crate::{
 use crate::bls_adapter::{BlsAdapter, JsBlsAdapter};
 use crate::errors::from_dpp_err;
 use crate::utils::{generic_of_js_val, ToSerdeJSONExt};
+use dpp::platform_value::string_encoding;
+use dpp::platform_value::string_encoding::Encoding;
 use dpp::{
     identifier::Identifier,
     identity::state_transition::{
@@ -29,8 +31,6 @@ use dpp::{
     },
     state_transition::StateTransitionLike,
 };
-use platform_value::string_encoding;
-use platform_value::string_encoding::Encoding;
 
 #[wasm_bindgen(js_name=IdentityCreateTransition)]
 #[derive(Clone)]
@@ -52,7 +52,7 @@ impl From<IdentityCreateTransitionWasm> for IdentityCreateTransition {
 impl IdentityCreateTransitionWasm {
     #[wasm_bindgen(constructor)]
     pub fn new(raw_parameters: JsValue) -> Result<IdentityCreateTransitionWasm, JsValue> {
-        let raw_state_transition = raw_parameters.with_serde_to_json_value()?;
+        let raw_state_transition = raw_parameters.with_serde_to_platform_value()?;
 
         let identity_create_transition = IdentityCreateTransition::new(raw_state_transition)
             .map_err(|e| RustConversionError::Error(e.to_string()).to_js_value())?;
@@ -332,6 +332,6 @@ impl IdentityCreateTransitionWasm {
 
     #[wasm_bindgen(js_name=getSignature)]
     pub fn get_signature(&self) -> Buffer {
-        Buffer::from_bytes(self.0.get_signature())
+        Buffer::from_bytes_owned(self.0.get_signature().to_vec())
     }
 }

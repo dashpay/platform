@@ -233,7 +233,7 @@ impl Strategy {
                                 .clone()
                                 .into_partial_identity_info();
 
-                            document.owner_id = identity.id.to_buffer();
+                            document.owner_id = identity.id;
                             let storage_flags = StorageFlags::new_single_epoch(
                                 block_info.epoch.index,
                                 Some(identity.id.to_buffer()),
@@ -274,12 +274,12 @@ impl Strategy {
                                     .expect("expected to deserialize document");
                             let identity = platform
                                 .drive
-                                .fetch_identity_with_balance(document.owner_id, None)
+                                .fetch_identity_with_balance(document.owner_id.to_buffer(), None)
                                 .expect("expected to be able to get identity")
                                 .expect("expected to get an identity");
                             let delete_op = DriveOperationType::DocumentOperation(
                                 DocumentOperationType::DeleteDocumentForContract {
-                                    document_id: document.id,
+                                    document_id: document.id.to_buffer(),
                                     contract: &op.contract,
                                     document_type: &op.document_type,
                                     owner_id: None,

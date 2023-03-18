@@ -2,7 +2,6 @@ use anyhow::anyhow;
 use std::collections::HashMap;
 use std::sync::Arc;
 
-use dpp::platform_value::btreemap_field_replacement::BTreeValueMapReplacementPathHelper;
 use dpp::platform_value::ReplacementType;
 use dpp::{
     document::{
@@ -11,11 +10,11 @@ use dpp::{
         extended_document,
         fetch_and_validate_data_contract::DataContractFetcherAndValidator,
     },
-    util::json_value::{JsonValueExt, ReplaceWith},
     ProtocolError,
 };
 use wasm_bindgen::prelude::*;
 
+use dpp::platform_value::btreemap_extensions::BTreeValueMapReplacementPathHelper;
 use dpp::prelude::ExtendedDocument;
 use std::convert::TryFrom;
 
@@ -169,11 +168,11 @@ impl DocumentFactoryWASM {
         // When data contract is available, replace remaining dynamic paths
         let document_data = document.properties_as_mut();
         document_data
-            .replace_at_paths(identifier_paths, ReplacementType::Bytes)
+            .replace_at_paths(identifier_paths, ReplacementType::IdentifierBytes)
             .map_err(ProtocolError::ValueError)
             .with_js_error()?;
         document_data
-            .replace_at_paths(binary_paths, ReplacementType::Bytes)
+            .replace_at_paths(binary_paths, ReplacementType::BinaryBytes)
             .map_err(ProtocolError::ValueError)
             .with_js_error()?;
         Ok(document.into())

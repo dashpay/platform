@@ -12,10 +12,8 @@ use crate::buffer::Buffer;
 
 use crate::identifier::IdentifierWrapper;
 use crate::lodash::lodash_set;
-use crate::utils::{
-    replace_identifiers_with_bytes_without_failing, with_serde_to_json_value, Inner, ToSerdeJSONExt,
-};
 use crate::utils::{try_to_u64, WithJsError};
+use crate::utils::{with_serde_to_json_value, Inner, ToSerdeJSONExt};
 use crate::with_js_error;
 use crate::DataContractWasm;
 
@@ -31,12 +29,12 @@ mod validator;
 
 pub use document_batch_transition::DocumentsBatchTransitionWASM;
 use dpp::data_contract::DriveContractExt;
-use dpp::document::{Document, EXTENDED_DOCUMENT_IDENTIFIER_FIELDS, IDENTIFIER_FIELDS};
+use dpp::document::{Document, EXTENDED_DOCUMENT_IDENTIFIER_FIELDS};
 
 pub use extended_document::ExtendedDocumentWasm;
 
 use dpp::document::extended_document::property_names;
-use dpp::platform_value::btreemap_field_replacement::BTreeValueMapReplacementPathHelper;
+use dpp::platform_value::btreemap_extensions::BTreeValueMapReplacementPathHelper;
 use dpp::platform_value::converter::serde_json::BTreeValueJsonConverter;
 use dpp::platform_value::ReplacementType;
 use dpp::platform_value::Value;
@@ -91,7 +89,7 @@ impl DocumentWasm {
                 identifier_paths
                     .into_iter()
                     .chain(EXTENDED_DOCUMENT_IDENTIFIER_FIELDS),
-                ReplacementType::Bytes,
+                ReplacementType::IdentifierBytes,
             )
             .map_err(ProtocolError::ValueError)
             .with_js_error()?;
@@ -109,12 +107,12 @@ impl DocumentWasm {
 
     #[wasm_bindgen(js_name=setId)]
     pub fn set_id(&mut self, js_id: IdentifierWrapper) {
-        self.0.id = js_id.into_inner().buffer;
+        self.0.id = js_id.into_inner();
     }
 
     #[wasm_bindgen(js_name=setOwnerId)]
     pub fn set_owner_id(&mut self, owner_id: IdentifierWrapper) {
-        self.0.owner_id = owner_id.into_inner().buffer;
+        self.0.owner_id = owner_id.into_inner();
     }
 
     #[wasm_bindgen(js_name=getOwnerId)]
@@ -175,7 +173,7 @@ impl DocumentWasm {
                     return Ok(Buffer::from_bytes(bytes.as_slice()).into());
                 }
                 Value::Identifier(identifier) => {
-                    let id: IdentifierWrapper = Identifier::from(*identifier).into();
+                    let id: IdentifierWrapper = Identifier::new(*identifier).into();
                     return Ok(id.into());
                 }
                 _ => {
@@ -247,7 +245,7 @@ impl DocumentWasm {
         let js_value = value.serialize(&serializer)?;
 
         for path in identifiers_paths.into_iter() {
-            if let Ok(bytes) = value.remove_path_into::<Vec<u8>>(path) {
+            if let Ok(bytes) = value.remove_value_at_path_into::<Vec<u8>>(path) {
                 if !options.skip_identifiers_conversion {
                     let buffer = Buffer::from_bytes(&bytes);
                     lodash_set(&js_value, path, buffer.into());
@@ -259,7 +257,7 @@ impl DocumentWasm {
         }
 
         for path in binary_paths {
-            if let Ok(bytes) = value.remove_path_into::<Vec<u8>>(path) {
+            if let Ok(bytes) = value.remove_value_at_path_into::<Vec<u8>>(path) {
                 let buffer = Buffer::from_bytes(&bytes);
                 lodash_set(&js_value, path, buffer.into());
             }
@@ -341,12 +339,12 @@ pub(crate) fn document_data_to_bytes(
         .with_js_error()?;
     document
         .properties
-        .replace_at_paths(identifier_paths, ReplacementType::Bytes)
+        .replace_at_paths(identifier_paths, ReplacementType::IdentifierBytes)
         .map_err(ProtocolError::ValueError)
         .with_js_error()?;
     document
         .properties
-        .replace_at_paths(binary_paths, ReplacementType::Bytes)
+        .replace_at_paths(binary_paths, ReplacementType::BinaryBytes)
         .map_err(ProtocolError::ValueError)
         .with_js_error()?;
     Ok(())
@@ -355,23 +353,27 @@ pub(crate) fn document_data_to_bytes(
 pub(crate) fn raw_document_from_js_value(
     js_raw_document: &JsValue,
     data_contract: &DataContract,
-) -> Result<JsonValue, JsValue> {
-    let mut raw_document = js_raw_document.with_serde_to_json_value()?;
+) -> Result<Value, JsValue> {
+    let mut raw_document = js_raw_document.with_serde_to_platform_value()?;
 
-    let document_type = raw_document
-        .get_string(property_names::DOCUMENT_TYPE)
+    let document_type_name = raw_document
+        .get_str(property_names::DOCUMENT_TYPE)
+        .map_err(ProtocolError::ValueError)
         .with_js_error()?;
 
-    let (identifier_paths, _) = data_contract
-        .get_identifiers_and_binary_paths(document_type)
+    let (identifier_paths, binary_paths) = data_contract
+        .get_identifiers_and_binary_paths(document_type_name)
         .with_js_error()?;
 
-    replace_identifiers_with_bytes_without_failing(
-        &mut raw_document,
-        identifier_paths.into_iter().chain(IDENTIFIER_FIELDS),
-    );
+    raw_document
+        .replace_at_paths(identifier_paths, ReplacementType::Identifier)
+        .map_err(ProtocolError::ValueError)
+        .with_js_error()?;
+    raw_document
+        .replace_at_paths(binary_paths, ReplacementType::BinaryBytes)
+        .map_err(ProtocolError::ValueError)
+        .with_js_error()?;
 
-    // The binary paths are not being converted, because they always should be a `Buffer`. `Buffer` is always an Array
     Ok(raw_document)
 }
 
