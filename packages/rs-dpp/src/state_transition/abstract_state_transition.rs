@@ -119,10 +119,10 @@ pub trait StateTransitionLike:
         }
         let data_hash = self.hash(true)?;
         signer::verify_hash_signature(&data_hash, self.get_signature().as_slice(), public_key_hash)
-            .or_else(|_| {
-                Err(ProtocolError::from(ConsensusError::SignatureError(
+            .map_err(|_| {
+                ProtocolError::from(ConsensusError::SignatureError(
                     SignatureError::InvalidStateTransitionSignatureError,
-                )))
+                ))
             })
     }
 
@@ -135,11 +135,11 @@ pub trait StateTransitionLike:
         }
         let data = self.to_buffer(true)?;
 
-        signer::verify_data_signature(&data, self.get_signature().as_slice(), public_key).or_else(
+        signer::verify_data_signature(&data, self.get_signature().as_slice(), public_key).map_err(
             |_| {
-                Err(ProtocolError::from(ConsensusError::SignatureError(
+                ProtocolError::from(ConsensusError::SignatureError(
                     SignatureError::InvalidStateTransitionSignatureError,
-                )))
+                ))
             },
         )
     }
@@ -160,10 +160,10 @@ pub trait StateTransitionLike:
 
         bls.verify_signature(self.get_signature().as_slice(), &data, public_key)
             .map(|_| ())
-            .or_else(|_| {
-                Err(ProtocolError::from(ConsensusError::SignatureError(
+            .map_err(|_| {
+                ProtocolError::from(ConsensusError::SignatureError(
                     SignatureError::InvalidStateTransitionSignatureError,
-                )))
+                ))
             })
     }
 

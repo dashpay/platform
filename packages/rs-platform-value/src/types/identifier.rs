@@ -153,6 +153,10 @@ impl Identifier {
         32
     }
 
+    pub fn is_empty(&self) -> bool {
+        false
+    }
+
     // TODO - consider to change the name to 'asBuffer`
     pub fn to_buffer(&self) -> [u8; 32] {
         self.0 .0
@@ -212,7 +216,7 @@ impl std::fmt::Display for Identifier {
 
 impl PartialEq<&Identifier> for Identifier {
     fn eq(&self, other: &&Identifier) -> bool {
-        &self.0 .0 == &other.0 .0
+        self.0 .0 == other.0 .0
     }
 }
 
