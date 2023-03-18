@@ -1,8 +1,10 @@
+/* eslint-disable no-undef */
+
 /**
  * WebSocket shim for webpack browser builds
  */
 
-var ws;
+let ws;
 
 if (typeof WebSocket !== 'undefined') {
   ws = WebSocket;

@@ -2,11 +2,12 @@ import getDataContractFixture from '@dashevo/dpp/lib/test/fixtures/getDataContra
 import generateRandomIdentifier from '@dashevo/dpp/lib/test/utils/generateRandomIdentifier';
 import createDPPMock from '@dashevo/dpp/lib/test/mocks/createDPPMock';
 import getDocumentsFixture from '@dashevo/dpp/lib/test/fixtures/getDocumentsFixture';
+import { expect } from 'chai';
 import getResponseMetadataFixture from '../../../../../test/fixtures/getResponseMetadataFixture';
-const GetDocumentsResponse = require("@dashevo/dapi-client/lib/methods/platform/getDocuments/GetDocumentsResponse");
 
 import get from './get';
-import { expect } from 'chai';
+
+const GetDocumentsResponse = require('@dashevo/dapi-client/lib/methods/platform/getDocuments/GetDocumentsResponse');
 
 describe('Client - Platform - Documents - .get()', () => {
   let platform;
@@ -23,7 +24,8 @@ describe('Client - Platform - Documents - .get()', () => {
       contract: dataContract,
     };
 
-    getDocumentsMock = this.sinon.stub().resolves(new GetDocumentsResponse([], getResponseMetadataFixture()));
+    getDocumentsMock = this.sinon.stub()
+      .resolves(new GetDocumentsResponse([], getResponseMetadataFixture()));
     appsGetMock = this.sinon.stub().returns(appDefinition);
 
     platform = {
@@ -37,7 +39,7 @@ describe('Client - Platform - Documents - .get()', () => {
           platform: {
             getDocuments: getDocumentsMock,
           },
-        })
+        }),
       },
       initialize: this.sinon.stub(),
     };
@@ -129,9 +131,9 @@ describe('Client - Platform - Documents - .get()', () => {
       type: 'object',
       properties: {
         idField: {
-          type: "array",
+          type: 'array',
           byteArray: true,
-          contentMediaType: "application/x.dash.dpp.identifier",
+          contentMediaType: 'application/x.dash.dpp.identifier',
           minItems: 32,
           maxItems: 32,
         },
@@ -139,9 +141,9 @@ describe('Client - Platform - Documents - .get()', () => {
           type: 'object',
           properties: {
             anotherIdField: {
-              type: "array",
+              type: 'array',
               byteArray: true,
-              contentMediaType: "application/x.dash.dpp.identifier",
+              contentMediaType: 'application/x.dash.dpp.identifier',
               minItems: 32,
               maxItems: 32,
             },
@@ -161,7 +163,7 @@ describe('Client - Platform - Documents - .get()', () => {
     await get.call(platform, 'app.withByteArrays', {
       where: [
         ['nestedObject', 'elementMatch', ['idField', '==', id.toString()]],
-        ['nestedObject', 'elementMatch', ['anotherNested', 'elementMatch', ['anotherIdField', '==', id.toString()]]]
+        ['nestedObject', 'elementMatch', ['anotherNested', 'elementMatch', ['anotherIdField', '==', id.toString()]]],
       ],
     });
 
@@ -171,7 +173,7 @@ describe('Client - Platform - Documents - .get()', () => {
       {
         where: [
           ['nestedObject', 'elementMatch', ['idField', '==', id]],
-          ['nestedObject', 'elementMatch', ['anotherNested', 'elementMatch', ['anotherIdField', '==', id]]]
+          ['nestedObject', 'elementMatch', ['anotherNested', 'elementMatch', ['anotherIdField', '==', id]]],
         ],
       },
     ]);

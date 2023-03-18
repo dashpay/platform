@@ -101,11 +101,6 @@ impl IdentityCreditWithdrawalTransition {
         Self::from_value(raw_object)
     }
 
-    /// Returns ID of the created contract
-    pub fn get_modified_data_ids(&self) -> Vec<&Identifier> {
-        vec![&self.identity_id]
-    }
-
     pub fn set_revision(&mut self, revision: Revision) {
         self.revision = revision;
     }
@@ -131,6 +126,10 @@ impl StateTransitionIdentitySigned for IdentityCreditWithdrawalTransition {
 }
 
 impl StateTransitionLike for IdentityCreditWithdrawalTransition {
+    fn get_modified_data_ids(&self) -> Vec<Identifier> {
+        vec![self.identity_id]
+    }
+
     fn get_protocol_version(&self) -> u32 {
         self.protocol_version
     }

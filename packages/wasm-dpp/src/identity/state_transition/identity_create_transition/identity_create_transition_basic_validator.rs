@@ -116,7 +116,7 @@ impl IdentityCreateTransitionBasicValidatorWasm {
             Arc::new(public_keys_transition_validator),
             Arc::new(asset_lock_proof_validator),
             BlsAdapter(js_bls),
-            public_keys_signature_validator,
+            Arc::new(public_keys_signature_validator),
         )
         .map_err(|e| from_dpp_err(ProtocolError::Generic(e.to_string())))?;
 

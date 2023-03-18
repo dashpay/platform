@@ -70,7 +70,7 @@ pub fn setup_test(
             public_keys_transition_validator,
             asset_lock_proof_validator,
             NativeBlsModule::default(),
-            SignaturesValidatorMock::default(),
+            Arc::new(SignaturesValidatorMock::default()),
         )
         .unwrap(),
     )

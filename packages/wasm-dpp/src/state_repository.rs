@@ -37,6 +37,7 @@ use crate::{ExtendedDocumentWasm, IdentityPublicKeyWasm};
 
 #[wasm_bindgen]
 extern "C" {
+    #[derive(Clone)]
     pub type ExternalStateRepositoryLike;
 
     #[wasm_bindgen(catch, structural, method, js_name=fetchDataContract)]

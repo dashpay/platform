@@ -9,8 +9,14 @@ use crate::data_contract::state_transition::errors::PublicKeyIsDisabledError;
 use crate::document::errors::*;
 use crate::state_transition::errors::{
     InvalidIdentityPublicKeyTypeError, InvalidSignaturePublicKeyError, PublicKeyMismatchError,
-    PublicKeySecurityLevelNotMetError, StateTransitionIsNotSignedError, WrongPublicKeyPurposeError,
+    PublicKeySecurityLevelNotMetError, StateTransitionError, StateTransitionIsNotSignedError,
+    WrongPublicKeyPurposeError,
 };
+use crate::{
+    CompatibleProtocolVersionIsNotDefinedError, DashPlatformProtocolInitError, NonConsensusError,
+    SerdeParsingError,
+};
+
 use crate::{CompatibleProtocolVersionIsNotDefinedError, NonConsensusError, SerdeParsingError};
 use platform_value::{Error as ValueError, Value};
 
@@ -48,6 +54,9 @@ pub enum ProtocolError {
 
     #[error(transparent)]
     DataContractError(#[from] DataContractError),
+
+    #[error(transparent)]
+    StateTransitionError(#[from] StateTransitionError),
 
     #[error(transparent)]
     StructureError(#[from] StructureError),
@@ -165,5 +174,11 @@ impl From<DocumentError> for ProtocolError {
 impl From<SerdeParsingError> for ProtocolError {
     fn from(e: SerdeParsingError) -> Self {
         ProtocolError::ParsingError(e.to_string())
+    }
+}
+
+impl From<DashPlatformProtocolInitError> for ProtocolError {
+    fn from(e: DashPlatformProtocolInitError) -> Self {
+        ProtocolError::Generic(e.to_string())
     }
 }

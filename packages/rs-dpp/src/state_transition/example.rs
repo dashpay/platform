@@ -57,6 +57,10 @@ impl StateTransitionLike for ExampleStateTransition {
     fn set_execution_context(&mut self, execution_context: StateTransitionExecutionContext) {
         self.execution_context = execution_context
     }
+
+    fn get_modified_data_ids(&self) -> Vec<crate::prelude::Identifier> {
+        vec![]
+    }
 }
 
 /// To implement the StateTransitionConvert is enough to implement the _property_paths methods

@@ -1,3 +1,4 @@
+use dpp::DashPlatformProtocolInitError;
 use wasm_bindgen::JsValue;
 
 use dpp::errors::ProtocolError;
@@ -31,5 +32,13 @@ pub fn from_dpp_err(pe: ProtocolError) -> JsValue {
         }
         ProtocolError::ValueError(value_error) => PlatformValueErrorWasm::new(value_error).into(),
         _ => JsValue::from_str(&format!("Error conversion not implemented: {pe:#}",)),
+    }
+}
+
+pub fn from_dpp_init_error(e: DashPlatformProtocolInitError) -> JsValue {
+    match e {
+        DashPlatformProtocolInitError::SchemaDeserializationError(e) => e.to_string().into(),
+        DashPlatformProtocolInitError::ValidationError(e) => e.to_string().into(),
+        DashPlatformProtocolInitError::InvalidSchemaError(e) => e.to_string().into(),
     }
 }

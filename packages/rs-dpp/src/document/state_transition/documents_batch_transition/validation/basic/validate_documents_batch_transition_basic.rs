@@ -2,6 +2,7 @@ use std::collections::BTreeMap;
 use std::{
     collections::{hash_map::Entry, HashMap},
     convert::{TryFrom, TryInto},
+    sync::Arc,
 };
 
 use crate::consensus::basic::document::{
@@ -64,10 +65,45 @@ pub trait Validator {
     fn validate(&self, data: JsonValue) -> Result<ValidationResult<()>, ProtocolError>;
 }
 
+pub struct DocumentBatchTransitionBasicValidator<SR> {
+    state_repository: Arc<SR>,
+    protocol_version_validator: Arc<ProtocolVersionValidator>,
+}
+
+impl<SR> DocumentBatchTransitionBasicValidator<SR>
+where
+    SR: StateRepositoryLike,
+{
+    pub fn new(
+        state_repository: Arc<SR>,
+        protocol_version_validator: Arc<ProtocolVersionValidator>,
+    ) -> Self {
+        Self {
+            state_repository,
+            protocol_version_validator,
+        }
+    }
+
+    pub async fn validate(
+        &self,
+        raw_state_transition: &Value,
+        execution_context: &StateTransitionExecutionContext,
+    ) -> Result<ValidationResult<()>, ProtocolError> {
+        // TODO: move validation code into function body to avoid cloning of state_repository
+        validate_documents_batch_transition_basic(
+            &self.protocol_version_validator,
+            raw_state_transition,
+            self.state_repository.clone(),
+            execution_context,
+        )
+        .await
+    }
+}
+
 pub async fn validate_documents_batch_transition_basic(
     protocol_version_validator: &ProtocolVersionValidator,
     raw_state_transition: &Value,
-    state_repository: &impl StateRepositoryLike,
+    state_repository: Arc<impl StateRepositoryLike>,
     execution_context: &StateTransitionExecutionContext,
 ) -> Result<ValidationResult<()>, ProtocolError> {
     let mut result = ValidationResult::default();

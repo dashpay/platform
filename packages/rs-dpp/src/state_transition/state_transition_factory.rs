@@ -1,4 +1,7 @@
-use std::convert::{TryFrom, TryInto};
+use std::{
+    convert::{TryFrom, TryInto},
+    sync::Arc,
+};
 
 use crate::consensus::basic::state_transition::InvalidStateTransitionTypeError;
 use crate::data_contract::errors::DataContractNotPresentError;
@@ -6,9 +9,13 @@ use crate::data_contract::state_transition::errors::MissingDataContractIdError;
 use crate::{
     consensus::{basic::BasicError, ConsensusError},
     data_contract::{
-        state_transition::{DataContractCreateTransition, DataContractUpdateTransition},
+        state_transition::{
+            data_contract_create_transition::DataContractCreateTransition,
+            data_contract_update_transition::DataContractUpdateTransition,
+        },
         DataContract,
     },
+    decode_protocol_entity_factory::DecodeProtocolEntity,
     document::DocumentsBatchTransition,
     identity::state_transition::{
         identity_create_transition::IdentityCreateTransition,
@@ -17,14 +24,101 @@ use crate::{
     },
     prelude::Identifier,
     state_repository::StateRepositoryLike,
-    ProtocolError,
+    validation::AsyncDataValidatorWithContext,
+    BlsModule, ProtocolError,
 };
 use platform_value::Value;
 
 use super::{
-    state_transition_execution_context::StateTransitionExecutionContext, StateTransition,
-    StateTransitionType,
+    state_transition_execution_context::StateTransitionExecutionContext,
+    validation::{
+        validate_state_transition_basic::StateTransitionBasicValidator,
+        validate_state_transition_by_type::StateTransitionByTypeValidator,
+    },
+    StateTransition, StateTransitionType,
 };
+
+#[derive(Default)]
+pub struct StateTransitionFactoryOptions {
+    pub skip_validation: bool,
+}
+
+pub struct StateTransitionFactory<SR, BLS>
+where
+    SR: StateRepositoryLike,
+    BLS: BlsModule,
+{
+    state_repository: Arc<SR>,
+    basic_validator: StateTransitionBasicValidator<SR, StateTransitionByTypeValidator<SR, BLS>>,
+}
+
+impl<SR, BLS> StateTransitionFactory<SR, BLS>
+where
+    SR: StateRepositoryLike,
+    BLS: BlsModule,
+{
+    pub fn new(
+        state_repository: Arc<SR>,
+        basic_validator: StateTransitionBasicValidator<SR, StateTransitionByTypeValidator<SR, BLS>>,
+    ) -> Self {
+        StateTransitionFactory {
+            state_repository,
+            basic_validator,
+        }
+    }
+
+    pub async fn create_from_object(
+        &self,
+        raw_state_transition: JsonValue,
+        options: Option<StateTransitionFactoryOptions>,
+    ) -> Result<StateTransition, ProtocolError> {
+        let options = options.unwrap_or_default();
+
+        if !options.skip_validation {
+            let execution_context = StateTransitionExecutionContext::default();
+
+            let validation_result = self
+                .basic_validator
+                .validate(&raw_state_transition, &execution_context)
+                .await?;
+
+            if !validation_result.is_valid() {
+                return Err(ProtocolError::StateTransitionError(
+                    super::errors::StateTransitionError::InvalidStateTransitionError {
+                        errors: validation_result.errors,
+                        raw_state_transition,
+                    },
+                ));
+            }
+        }
+
+        create_state_transition(self.state_repository.as_ref(), raw_state_transition).await
+    }
+
+    pub async fn create_from_buffer(
+        &self,
+        state_transition_buffer: &[u8],
+        options: Option<StateTransitionFactoryOptions>,
+    ) -> Result<StateTransition, ProtocolError> {
+        let (protocol_version, mut raw_state_transition) =
+            DecodeProtocolEntity::decode_protocol_entity(state_transition_buffer)?;
+
+        match raw_state_transition {
+            JsonValue::Object(ref mut m) => m.insert(
+                String::from("protocolVersion"),
+                JsonValue::Number(Number::from(protocol_version)),
+            ),
+            _ => {
+                return Err(ConsensusError::SerializedObjectParsingError {
+                    parsing_error: anyhow!("the '{:?}' is not a map", raw_state_transition),
+                }
+                .into())
+            }
+        };
+
+        self.create_from_object(raw_state_transition, options).await
+    }
+}
 
 pub async fn create_state_transition(
     state_repository: &impl StateRepositoryLike,
@@ -135,7 +229,7 @@ mod test {
     use std::collections::BTreeMap;
 
     use crate::{
-        data_contract::state_transition::DataContractCreateTransition,
+        data_contract::state_transition::data_contract_create_transition::DataContractCreateTransition,
         document::{
             document_transition::{Action, DocumentTransitionObjectLike},
             DocumentsBatchTransition,

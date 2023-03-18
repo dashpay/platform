@@ -21,12 +21,13 @@ use std::convert::TryFrom;
 use crate::{
     identifier::identifier_from_js_value,
     state_repository::{ExternalStateRepositoryLike, ExternalStateRepositoryLikeWrapper},
-    utils::{ToSerdeJSONExt, WithJsError},
-    DataContractWasm, DocumentsBatchTransitionWASM, ExtendedDocumentWasm,
+    utils::{
+        replace_identifiers_with_bytes_without_failing, IntoWasm, ToSerdeJSONExt, WithJsError,
+    },
+    DataContractWasm, DocumentsBatchTransitionWasm, ExtendedDocumentWasm,
 };
 
 use super::validator::DocumentValidatorWasm;
-use crate::utils::IntoWasm;
 
 #[wasm_bindgen(js_name=DocumentTransitions)]
 #[derive(Debug, Default)]
@@ -102,7 +103,7 @@ impl DocumentFactoryWASM {
     #[wasm_bindgen(js_name=create)]
     pub fn create(
         &self,
-        data_contract: DataContractWasm,
+        data_contract: &DataContractWasm,
         js_owner_id: &JsValue,
         document_type: &str,
         data: &JsValue,
@@ -112,7 +113,7 @@ impl DocumentFactoryWASM {
         let document = self
             .0
             .create_extended_document_for_state_transition(
-                data_contract.into(),
+                data_contract.to_owned().into(),
                 owner_id,
                 document_type.to_string(),
                 dynamic_data.into(),
@@ -126,7 +127,7 @@ impl DocumentFactoryWASM {
     pub fn create_state_transition(
         &self,
         documents: &JsValue,
-    ) -> Result<DocumentsBatchTransitionWASM, JsValue> {
+    ) -> Result<DocumentsBatchTransitionWasm, JsValue> {
         let documents_by_action = extract_documents_by_action(documents)?;
         let batch_transition = self
             .0

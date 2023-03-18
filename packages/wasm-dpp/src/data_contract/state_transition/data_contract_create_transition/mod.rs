@@ -17,11 +17,13 @@ use dpp::{
 use serde::{Deserialize, Serialize};
 use wasm_bindgen::prelude::*;
 
+use crate::bls_adapter::{BlsAdapter, JsBlsAdapter};
 use crate::errors::protocol_error::from_protocol_error;
 use crate::utils::WithJsError;
 use crate::{
     buffer::Buffer, errors::from_dpp_err, identifier::IdentifierWrapper, with_js_error,
-    DataContractParameters, DataContractWasm, StateTransitionExecutionContextWasm,
+    DataContractParameters, DataContractWasm, IdentityPublicKeyWasm,
+    StateTransitionExecutionContextWasm,
 };
 
 #[derive(Clone)]
@@ -117,7 +119,7 @@ impl DataContractCreateTransitionWasm {
         self.0
             .get_modified_data_ids()
             .into_iter()
-            .map(|identifier| Into::<IdentifierWrapper>::into(*identifier).into())
+            .map(|identifier| Into::<IdentifierWrapper>::into(identifier).into())
             .collect()
     }
 
@@ -150,5 +152,22 @@ impl DataContractCreateTransitionWasm {
         serde_object
             .serialize(&serde_wasm_bindgen::Serializer::json_compatible())
             .map_err(|e| e.into())
+    }
+
+    #[wasm_bindgen]
+    pub fn sign(
+        &mut self,
+        identity_public_key: &IdentityPublicKeyWasm,
+        private_key: Vec<u8>,
+        bls: JsBlsAdapter,
+    ) -> Result<(), JsValue> {
+        let bls_adapter = BlsAdapter(bls);
+        self.0
+            .sign(
+                &identity_public_key.to_owned().into(),
+                &private_key,
+                &bls_adapter,
+            )
+            .map_err(from_dpp_err)
     }
 }

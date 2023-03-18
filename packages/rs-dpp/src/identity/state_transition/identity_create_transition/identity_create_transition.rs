@@ -189,11 +189,6 @@ impl IdentityCreateTransition {
         }
     }
 
-    /// Returns ids of created identities
-    pub fn get_modified_data_ids(&self) -> Vec<&Identifier> {
-        vec![self.get_identity_id()]
-    }
-
     pub fn set_protocol_version(&mut self, protocol_version: u32) {
         self.protocol_version = protocol_version;
     }
@@ -239,6 +234,11 @@ impl StateTransitionConvert for IdentityCreateTransition {
 }
 
 impl StateTransitionLike for IdentityCreateTransition {
+    /// Returns ids of created identities
+    fn get_modified_data_ids(&self) -> Vec<Identifier> {
+        vec![*self.get_identity_id()]
+    }
+
     fn get_protocol_version(&self) -> u32 {
         self.protocol_version
     }

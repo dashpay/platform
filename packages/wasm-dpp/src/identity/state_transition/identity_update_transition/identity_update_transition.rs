@@ -372,7 +372,7 @@ impl IdentityUpdateTransitionWasm {
         let ids = self.0.get_modified_data_ids();
 
         ids.into_iter()
-            .map(|id| <IdentifierWrapper as std::convert::From<Identifier>>::from(*id).into())
+            .map(|id| <IdentifierWrapper as std::convert::From<Identifier>>::from(id).into())
             .collect()
     }
 
@@ -436,13 +436,17 @@ impl IdentityUpdateTransitionWasm {
     #[wasm_bindgen]
     pub fn sign(
         &mut self,
-        identity_public_key: IdentityPublicKeyWasm,
+        identity_public_key: &IdentityPublicKeyWasm,
         private_key: Vec<u8>,
         bls: JsBlsAdapter,
     ) -> Result<(), JsValue> {
         let bls_adapter = BlsAdapter(bls);
         self.0
-            .sign(&identity_public_key.into(), &private_key, &bls_adapter)
+            .sign(
+                &identity_public_key.to_owned().into(),
+                &private_key,
+                &bls_adapter,
+            )
             .map_err(from_dpp_err)
     }
 }

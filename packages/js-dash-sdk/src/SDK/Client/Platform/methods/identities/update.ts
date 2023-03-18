@@ -1,9 +1,9 @@
-import Identity from "@dashevo/dpp/lib/identity/Identity";
-import { Platform } from "../../Platform";
-import IdentityPublicKey from "@dashevo/dpp/lib/identity/IdentityPublicKey"
+import Identity from '@dashevo/dpp/lib/identity/Identity';
+import IdentityPublicKey from '@dashevo/dpp/lib/identity/IdentityPublicKey';
+import { Platform } from '../../Platform';
 import { signStateTransition } from '../../signStateTransition';
 
-import broadcastStateTransition from "../../broadcastStateTransition";
+import broadcastStateTransition from '../../broadcastStateTransition';
 
 /**
  * Update platform identities
@@ -20,7 +20,7 @@ export async function update(
   identity: Identity,
   publicKeys: { add?: IdentityPublicKey[]; disable?: IdentityPublicKey[] },
   privateKeys: { string, any },
-  ): Promise<any> {
+): Promise<any> {
   await this.initialize();
 
   const { dpp } = this;

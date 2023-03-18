@@ -39,6 +39,7 @@ use dpp::platform_value::converter::serde_json::BTreeValueJsonConverter;
 use dpp::platform_value::ReplacementType;
 use dpp::platform_value::Value;
 use dpp::ProtocolError;
+pub use document_batch_transition::DocumentsBatchTransitionWasm;
 pub use factory::DocumentFactoryWASM;
 use serde_json::Value as JsonValue;
 pub use validator::DocumentValidatorWasm;

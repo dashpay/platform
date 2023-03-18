@@ -111,11 +111,6 @@ impl DataContractUpdateTransition {
     pub fn set_data_contract(&mut self, data_contract: DataContract) {
         self.data_contract = data_contract;
     }
-
-    /// Returns ID of the created contract
-    pub fn get_modified_data_ids(&self) -> Vec<&Identifier> {
-        vec![&self.data_contract.id]
-    }
 }
 
 impl StateTransitionIdentitySigned for DataContractUpdateTransition {
@@ -134,6 +129,11 @@ impl StateTransitionIdentitySigned for DataContractUpdateTransition {
 }
 
 impl StateTransitionLike for DataContractUpdateTransition {
+    /// Returns ID of the created contract
+    fn get_modified_data_ids(&self) -> Vec<Identifier> {
+        vec![self.data_contract.id]
+    }
+
     fn get_protocol_version(&self) -> u32 {
         self.protocol_version
     }

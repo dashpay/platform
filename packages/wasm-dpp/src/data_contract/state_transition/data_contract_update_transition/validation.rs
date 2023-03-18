@@ -1,5 +1,6 @@
 use std::{collections::BTreeMap, sync::Arc};
 
+use dpp::validation::AsyncDataValidatorWithContext;
 use dpp::{
     data_contract::state_transition::data_contract_update_transition::validation::{
         basic::{

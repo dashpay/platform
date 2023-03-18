@@ -5,13 +5,13 @@ use crate::{
     state_repository::{ExternalStateRepositoryLike, ExternalStateRepositoryLikeWrapper},
     utils::WithJsError,
     validation::ValidationResultWasm,
-    DocumentsBatchTransitionWASM,
+    DocumentsBatchTransitionWasm,
 };
 
 #[wasm_bindgen(js_name = "validateDocumentsBatchTransitionState")]
 pub async fn validate_documents_batch_transition_state_wasm(
     state_repository: ExternalStateRepositoryLike,
-    state_transition: &DocumentsBatchTransitionWASM,
+    state_transition: &DocumentsBatchTransitionWasm,
 ) -> Result<ValidationResultWasm, JsValue> {
     let wrapped_state_repository = ExternalStateRepositoryLikeWrapper::new(state_repository);
 

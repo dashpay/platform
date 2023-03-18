@@ -129,6 +129,10 @@ impl DataContractCreateTransition {
     pub fn get_modified_data_ids(&self) -> Vec<&Identifier> {
         vec![&self.data_contract.id]
     }
+
+    pub fn get_entropy(&self) -> &[u8; 32] {
+        &self.entropy.to_buffer()
+    }
 }
 
 impl StateTransitionIdentitySigned for DataContractCreateTransition {
@@ -147,6 +151,11 @@ impl StateTransitionIdentitySigned for DataContractCreateTransition {
 }
 
 impl StateTransitionLike for DataContractCreateTransition {
+    /// Returns ID of the created contract
+    fn get_modified_data_ids(&self) -> Vec<Identifier> {
+        vec![self.data_contract.id]
+    }
+
     fn get_protocol_version(&self) -> u32 {
         self.protocol_version
     }

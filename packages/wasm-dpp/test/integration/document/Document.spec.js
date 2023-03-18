@@ -102,7 +102,12 @@ describe('ExtendedDocument', () => {
 
   describe('#setMetadata', () => {
     it('should set metadata - Rust', () => {
-      const otherMetadata = new Metadata(43, 1);
+      const otherMetadata = new Metadata({
+        blockHeight: 43,
+        coreChainLockedHeight: 1,
+        timeMs: 100,
+        protocolVersion: 2,
+      });
       document.setMetadata(otherMetadata);
 
       expect(document.getMetadata().toObject()).to.deep.equal(otherMetadata.toObject());
