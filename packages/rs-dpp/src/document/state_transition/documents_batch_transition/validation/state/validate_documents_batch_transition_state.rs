@@ -216,7 +216,7 @@ fn check_ownership(
         Some(d) => d,
         None => return result,
     };
-    if &fetched_document.owner_id() != owner_id {
+    if fetched_document.owner_id() != owner_id {
         result.add_error(ConsensusError::StateError(Box::new(
             StateError::DocumentOwnerIdMismatchError {
                 document_id: document_transition.base().id,
