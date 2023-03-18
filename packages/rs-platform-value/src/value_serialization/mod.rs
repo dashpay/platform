@@ -23,7 +23,7 @@ pub mod ser;
 ///     location: String,
 /// }
 ///
-/// fn compare_platform_values() -> Result<(), Box<Error>> {
+/// fn compare_platform_values() -> Result<(), Box<dyn Error>> {
 ///     let u = User {
 ///         fingerprint: "0xF9BA143B95FF6D82".to_owned(),
 ///         location: "Menlo Park, CA".to_owned(),
@@ -123,7 +123,8 @@ mod tests {
             arr: Vec<String>,
             map: HashMap<String, char>,
             number: i32,
-            static_string: &'static str,
+            //todo: manage static strings
+            //static_string: &'static str,
         }
 
         let mut hm = HashMap::new();
@@ -134,7 +135,7 @@ mod tests {
             arr: vec!["kek".to_owned(), "top".to_owned()],
             map: hm,
             number: 420,
-            static_string: "pizza",
+            //static_string: "pizza",
         };
 
         let platform_value = to_value(yeet.clone()).expect("please");

@@ -105,7 +105,7 @@ fn append_path(path: &mut String, key: &str) {
 /// use platform_value::{from_value, patch, platform_value};
 ///
 /// # pub fn main() {
-/// use treediff::diff;
+/// use platform_value::patch::diff;
 /// let left = platform_value!({
 ///   "title": "Goodbye!",
 ///   "author" : {

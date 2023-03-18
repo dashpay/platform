@@ -1,4 +1,5 @@
 use crate::{Value, ValueMapHelper};
+use std::mem;
 
 fn parse_index(s: &str) -> Option<usize> {
     if s.starts_with('+') || (s.starts_with('0') && s.len() != 1) {
@@ -71,8 +72,8 @@ impl Value {
     /// use platform_value::Value;
     ///
     /// fn main() {
-    ///     let s = r#"{"x": 1.0, "y": 2.0}"#;
-    ///     let mut value: Value = serde_json::from_str(s).unwrap().into();
+    ///     use platform_value::platform_value;
+    ///     let mut value: Value = platform_value!({"x": 1.0, "y": 2.0});
     ///
     ///     // Check value using read-only pointer
     ///     assert_eq!(value.pointer("/x"), Some(&1.0.into()));
@@ -105,5 +106,18 @@ impl Value {
                 Value::Array(list) => parse_index(&token).and_then(move |x| list.get_mut(x)),
                 _ => None,
             })
+    }
+
+    /// Takes the value out of the `Value`, leaving a `Null` in its place.
+    ///
+    /// ```
+    /// # use platform_value::platform_value;
+    /// #
+    /// let mut v = platform_value!({ "x": "y" });
+    /// assert_eq!(v["x"].take(), platform_value!("y"));
+    /// assert_eq!(v, platform_value!({ "x": null }));
+    /// ```
+    pub fn take(&mut self) -> Value {
+        mem::replace(self, Value::Null)
     }
 }

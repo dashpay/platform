@@ -329,20 +329,20 @@ impl Value {
     /// Returns `Err(Error::Structure("reason"))` otherwise.
     ///
     /// ```
-    /// # use platform_value::{Error, Value};
-    /// use platform_value::Value::Bytes32;
+    /// # use platform_value::{Bytes32, Error, Value};
+    ///
     /// #
     /// let value = Value::Bytes(vec![104, 101, 108, 108, 111, 32, 12, 50, 104, 101, 108, 108, 111, 32, 12, 50, 104, 101, 108, 108, 111, 32, 12, 50, 104, 101, 108, 108, 111, 32, 12, 50]);
     /// assert_eq!(value.into_bytes_32(), Ok(Bytes32([104, 101, 108, 108, 111, 32, 12, 50, 104, 101, 108, 108, 111, 32, 12, 50, 104, 101, 108, 108, 111, 32, 12, 50, 104, 101, 108, 108, 111, 32, 12, 50])));    ///
     ///
-    /// let value = Value::Text("6oFRdsUNiAtXscRn52atKYCiF8RBnH9vbUzhtzY3d83e".to_string());
+    /// let value = Value::Text("ViN2Q6crZW1IYSNjAP5smv6avijtGTr2bxMs142MnHU=".to_string());
     /// assert_eq!(value.into_bytes_32(), Ok(Bytes32([86, 35, 118, 67, 167, 43, 101, 109, 72, 97, 35, 99, 0, 254, 108, 154, 254, 154, 190, 40, 237, 25, 58, 246, 111, 19, 44, 215, 141, 140, 156, 117])));
     ///
     /// let value = Value::Text("a811".to_string());
-    /// assert_eq!(value.into_bytes_32(), Err(Error::StructureError("buffer was not 32 bytes long".to_string())));
+    /// assert_eq!(value.into_bytes_32(), Err(Error::ByteLengthNot32BytesError("buffer was not 32 bytes long".to_string())));
     ///
     /// let value = Value::Text("a811Ii".to_string());
-    /// assert_eq!(value.into_bytes_32(), Err(Error::StructureError("value was a string, but could not be decoded from base 58".to_string())));
+    /// assert_eq!(value.into_bytes_32(), Err(Error::StructureError("value was a string, but could not be decoded from base 64".to_string())));
     ///
     /// let value = Value::Array(vec![Value::U8(104), Value::U8(101), Value::U8(108),Value::U8(104), Value::U8(101), Value::U8(108),Value::U8(104), Value::U8(101), Value::U8(108),Value::U8(104), Value::U8(101), Value::U8(108),Value::U8(104), Value::U8(101), Value::U8(108),Value::U8(104), Value::U8(101), Value::U8(108),Value::U8(104), Value::U8(101), Value::U8(108),Value::U8(104), Value::U8(101), Value::U8(108),Value::U8(104), Value::U8(101), Value::U8(108),Value::U8(104), Value::U8(101), Value::U8(108),Value::U8(104), Value::U8(101)]);
     /// assert_eq!(value.into_bytes_32(), Ok(Bytes32([104, 101, 108, 104, 101, 108, 104, 101, 108, 104, 101, 108, 104, 101, 108, 104, 101, 108, 104, 101, 108, 104, 101, 108, 104, 101, 108, 104, 101, 108, 104, 101])));
@@ -381,25 +381,25 @@ impl Value {
     /// Returns `Err(Error::Structure("reason"))` otherwise.
     ///
     /// ```
-    /// # use platform_value::{Error, Value};
+    /// # use platform_value::{Bytes32, Error, Value};
     /// #
     /// let value = Value::Bytes(vec![104, 101, 108, 108, 111, 32, 12, 50, 104, 101, 108, 108, 111, 32, 12, 50, 104, 101, 108, 108, 111, 32, 12, 50, 104, 101, 108, 108, 111, 32, 12, 50]);
-    /// assert_eq!(value.to_bytes_32(), Ok([104, 101, 108, 108, 111, 32, 12, 50, 104, 101, 108, 108, 111, 32, 12, 50, 104, 101, 108, 108, 111, 32, 12, 50, 104, 101, 108, 108, 111, 32, 12, 50]));    ///
+    /// assert_eq!(value.to_bytes_32(), Ok(Bytes32::new([104, 101, 108, 108, 111, 32, 12, 50, 104, 101, 108, 108, 111, 32, 12, 50, 104, 101, 108, 108, 111, 32, 12, 50, 104, 101, 108, 108, 111, 32, 12, 50])));    ///
     ///
-    /// let value = Value::Text("6oFRdsUNiAtXscRn52atKYCiF8RBnH9vbUzhtzY3d83e".to_string());
-    /// assert_eq!(value.to_bytes_32(), Ok([86, 35, 118, 67, 167, 43, 101, 109, 72, 97, 35, 99, 0, 254, 108, 154, 254, 154, 190, 40, 237, 25, 58, 246, 111, 19, 44, 215, 141, 140, 156, 117]));
+    /// let value = Value::Text("ViN2Q6crZW1IYSNjAP5smv6avijtGTr2bxMs142MnHU=".to_string());
+    /// assert_eq!(value.to_bytes_32(), Ok(Bytes32::new([86, 35, 118, 67, 167, 43, 101, 109, 72, 97, 35, 99, 0, 254, 108, 154, 254, 154, 190, 40, 237, 25, 58, 246, 111, 19, 44, 215, 141, 140, 156, 117])));
     ///
     /// let value = Value::Text("a811".to_string());
-    /// assert_eq!(value.to_bytes_32(), Err(Error::StructureError("buffer was not 32 bytes long".to_string())));
+    /// assert_eq!(value.to_bytes_32(), Err(Error::ByteLengthNot32BytesError("buffer was not 32 bytes long".to_string())));
     ///
     /// let value = Value::Text("a811Ii".to_string());
     /// assert_eq!(value.to_bytes_32(), Err(Error::StructureError("value was a string, but could not be decoded from base 64".to_string())));
     ///
     /// let value = Value::Array(vec![Value::U8(104), Value::U8(101), Value::U8(108),Value::U8(104), Value::U8(101), Value::U8(108),Value::U8(104), Value::U8(101), Value::U8(108),Value::U8(104), Value::U8(101), Value::U8(108),Value::U8(104), Value::U8(101), Value::U8(108),Value::U8(104), Value::U8(101), Value::U8(108),Value::U8(104), Value::U8(101), Value::U8(108),Value::U8(104), Value::U8(101), Value::U8(108),Value::U8(104), Value::U8(101), Value::U8(108),Value::U8(104), Value::U8(101), Value::U8(108),Value::U8(104), Value::U8(101)]);
-    /// assert_eq!(value.to_bytes_32(), Ok([104, 101, 108, 104, 101, 108, 104, 101, 108, 104, 101, 108, 104, 101, 108, 104, 101, 108, 104, 101, 108, 104, 101, 108, 104, 101, 108, 104, 101, 108, 104, 101]));
+    /// assert_eq!(value.to_bytes_32(), Ok(Bytes32::new([104, 101, 108, 104, 101, 108, 104, 101, 108, 104, 101, 108, 104, 101, 108, 104, 101, 108, 104, 101, 108, 104, 101, 108, 104, 101, 108, 104, 101, 108, 104, 101])));
     ///
     /// let value = Value::Identifier([5u8;32]);
-    /// assert_eq!(value.to_bytes_32(), Ok([5, 5, 5,5,5,5,5,5,5, 5, 5,5,5,5,5,5,5, 5, 5,5,5,5,5,5,5, 5, 5,5,5,5,5,5]));
+    /// assert_eq!(value.to_bytes_32(), Ok(Bytes32::new([5, 5, 5,5,5,5,5,5,5, 5, 5,5,5,5,5,5,5, 5, 5,5,5,5,5,5,5, 5, 5,5,5,5,5,5])));
     ///
     /// let value = Value::Bool(true);
     /// assert_eq!(value.to_bytes_32(), Err(Error::StructureError("value are not bytes, a string, or an array of values representing bytes".to_string())));

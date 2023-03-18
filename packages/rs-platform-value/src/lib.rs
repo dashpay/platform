@@ -10,6 +10,7 @@ extern crate core;
 pub mod btreemap_extensions;
 pub mod converter;
 pub mod display;
+mod eq;
 mod error;
 mod index;
 mod inner_array_value;
@@ -229,7 +230,7 @@ impl Value {
     ///
     /// let value = Value::Bool(true);
     /// let r_value : Result<u64,Error> = value.to_integer();
-    /// assert_eq!(r_value, Err(Error::StructureError("value is not an integer".to_string())));
+    /// assert_eq!(r_value, Err(Error::StructureError("value is not an integer, found true".to_string())));
     /// ```
     pub fn to_integer<T>(&self) -> Result<T, Error>
     where
@@ -1194,8 +1195,8 @@ impl<const N: usize> From<[(Value, Value); N]> for Value {
     /// ```
     /// use platform_value::Value;
     ///
-    /// let map1 = Value::from([(1, 2), (3, 4)]);
-    /// let map2: Value = [(1, 2), (3, 4)].into();
+    /// let map1 = Value::from([(Value::from(1), Value::from(2)), (Value::from(3), Value::from(4))]);
+    /// let map2: Value = [(Value::from(1), Value::from(2)), (Value::from(3), Value::from(4))].into();
     /// assert_eq!(map1, map2);
     /// ```
     fn from(arr: [(Value, Value); N]) -> Self {
@@ -1213,8 +1214,8 @@ impl<const N: usize> From<[(String, Value); N]> for Value {
     /// ```
     /// use platform_value::Value;
     ///
-    /// let map1 = Value::from([("1".to_string(), 2), ("3".to_string(), 4)]);
-    /// let map2: Value = [("1".to_string(), 2), ("3".to_string(), 4)].into();
+    /// let map1 = Value::from([("1".to_string(), Value::from(2)), ("3".to_string(), Value::from(4))]);
+    /// let map2: Value = [("1".to_string(), Value::from(2)), ("3".to_string(), Value::from(4))].into();
     /// assert_eq!(map1, map2);
     /// ```
     fn from(mut arr: [(String, Value); N]) -> Self {
@@ -1234,8 +1235,8 @@ impl<const N: usize> From<[(&str, Value); N]> for Value {
     /// ```
     /// use platform_value::Value;
     ///
-    /// let map1 = Value::from([("1", 2), ("3", 4)]);
-    /// let map2: Value = [("1", 2), ("3", 4)].into();
+    /// let map1 = Value::from([("1", Value::from(2)), ("3", Value::from(4))]);
+    /// let map2: Value = [("1", Value::from(2)), ("3", Value::from(4))].into();
     /// assert_eq!(map1, map2);
     /// ```
     fn from(mut arr: [(&str, Value); N]) -> Self {
