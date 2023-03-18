@@ -129,7 +129,7 @@ impl BTreeValueMapReplacementPathHelper for BTreeMap<String, Value> {
         let Some(first_path_component) = first else {
             return Err(Error::PathError("path was empty".to_string()));
         };
-        let Some(current_value) = self.get_mut(first_path_component.clone()) else {
+        let Some(current_value) = self.get_mut(first_path_component.to_owned()) else {
             return Ok(());
         };
         if split.len() == 1 {

@@ -34,7 +34,10 @@ pub fn find_duplicates_by_indices_wasm(
                 )
                 .map_err(ProtocolError::ValueError)
                 .with_js_error()?;
-            value.set_value("$ownerId", owner_id_value.clone());
+            value
+                .set_value("$ownerId", owner_id_value.clone())
+                .map_err(ProtocolError::ValueError)
+                .with_js_error()?;
             Ok(value)
         })
         .collect::<Result<Vec<Value>, JsValue>>()?;

@@ -1295,7 +1295,12 @@ impl From<Vec<&str>> for Value {
 
 impl From<&[&str]> for Value {
     fn from(value: &[&str]) -> Self {
-        Value::Array(value.iter().map(|string| string.clone().into()).collect())
+        Value::Array(
+            value
+                .iter()
+                .map(|string| string.to_owned().into())
+                .collect(),
+        )
     }
 }
 
