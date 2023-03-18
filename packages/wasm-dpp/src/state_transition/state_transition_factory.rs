@@ -1,7 +1,5 @@
 use std::{ops::Deref, sync::Arc};
 
-use serde_json::Value as JsonValue;
-
 use dpp::{state_transition::{
     validation::{
         validate_state_transition_basic::StateTransitionBasicValidator,

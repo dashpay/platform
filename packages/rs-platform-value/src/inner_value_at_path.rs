@@ -34,7 +34,7 @@ impl Value {
             };
         }
         let Some(last_path_component) = last_path_component else {
-            return Err(Error::StructureError(format!("path was empty")));
+            return Err(Error::StructureError("path was empty".to_string()));
         };
         let map = current_value.as_map_mut_ref()?;
         map.remove_key(last_path_component)
@@ -120,40 +120,41 @@ impl Value {
         while let Some(path_component) = split.next() {
             if split.peek().is_none() {
                 last_path_component = Some(path_component);
-            } else {
-                if let Some((string_part, number_part)) = is_array_path(path_component) {
-                    let map = current_value.to_map_mut()?;
-                    let array_value = map.get_key_mut_or_insert(string_part, Value::Array(vec![]));
-                    let array = array_value.to_array_mut()?;
-                    if array.len() < number_part {
-                        //this already exists
-                        current_value = array.get_mut(number_part).unwrap()
-                    } else if array.len() == number_part {
-                        //we should create a new map
-                        array.push(Value::Map(ValueMap::new()));
-                        current_value = array.get_mut(number_part).unwrap();
-                    } else {
-                        return Err(Error::StructureError(format!(
-                            "trying to insert into an array path higher than current array length"
-                        )));
-                    }
+            } else if let Some((string_part, number_part)) = is_array_path(path_component) {
+                let map = current_value.to_map_mut()?;
+                let array_value = map.get_key_mut_or_insert(string_part, Value::Array(vec![]));
+                let array = array_value.to_array_mut()?;
+                if array.len() < number_part {
+                    //this already exists
+                    current_value = array.get_mut(number_part).unwrap()
+                } else if array.len() == number_part {
+                    //we should create a new map
+                    array.push(Value::Map(ValueMap::new()));
+                    current_value = array.get_mut(number_part).unwrap();
                 } else {
-                    let map = current_value.to_map_mut()?;
-                    current_value =
-                        map.get_key_mut_or_insert(path_component, Value::Map(ValueMap::new()));
+                    return Err(Error::StructureError(
+                        "trying to insert into an array path higher than current array length"
+                            .to_string(),
+                    ));
                 }
+            } else {
+                let map = current_value.to_map_mut()?;
+                current_value =
+                    map.get_key_mut_or_insert(path_component, Value::Map(ValueMap::new()));
             };
         }
         let Some(last_path_component) = last_path_component else {
-            return Err(Error::StructureError(format!("path was empty")));
+            return Err(Error::StructureError("path was empty".to_string()));
         };
         let map = current_value.to_map_mut()?;
-        Ok(Self::insert_in_map(map, last_path_component, value))
+        Self::insert_in_map(map, last_path_component, value);
+        Ok(())
     }
 
     pub fn set_value_at_path(&mut self, path: &str, key: &str, value: Value) -> Result<(), Error> {
         let map = self.get_mut_value_at_path(path)?.as_map_mut_ref()?;
-        Ok(Self::insert_in_map(map, key, value))
+        Self::insert_in_map(map, key, value);
+        Ok(())
     }
 }
 #[cfg(test)]

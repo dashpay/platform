@@ -26,9 +26,6 @@ pub fn from_data_contract_to_js_error(e: DataContractError) -> JsValue {
             )
             .into()
         }
-        other => {
-            DataContractGenericError::new(format!("data contract error: {}", other.to_string()))
-                .into()
-        }
+        other => DataContractGenericError::new(format!("data contract error: {}", other)).into(),
     }
 }

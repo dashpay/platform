@@ -45,9 +45,7 @@ impl PublicKeysSignaturesValidatorWasm {
             .map(|raw_key| {
                 let parsed_key: IdentityPublicKeyWithWitness =
                     IdentityPublicKeyCreateTransitionWasm::new(raw_key)?.into();
-                parsed_key
-                    .to_raw_object(false)
-                    .map_err(|e| from_dpp_err(e.into()))
+                parsed_key.to_raw_object(false).map_err(from_dpp_err)
             })
             .collect::<Result<Vec<Value>, JsValue>>()?;
 

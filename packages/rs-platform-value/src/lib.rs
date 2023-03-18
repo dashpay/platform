@@ -1245,7 +1245,7 @@ impl<const N: usize> From<[(&str, Value); N]> for Value {
         }
 
         // use stable sort to preserve the insertion order.
-        arr.sort_by(|a, b| a.0.cmp(&b.0));
+        arr.sort_by(|a, b| a.0.cmp(b.0));
         Value::Map(arr.into_iter().map(|(k, v)| (k.into(), v)).collect())
     }
 }
@@ -1295,12 +1295,7 @@ impl From<Vec<&str>> for Value {
 
 impl From<&[&str]> for Value {
     fn from(value: &[&str]) -> Self {
-        Value::Array(
-            value
-                .into_iter()
-                .map(|string| string.clone().into())
-                .collect(),
-        )
+        Value::Array(value.iter().map(|string| string.clone().into()).collect())
     }
 }
 

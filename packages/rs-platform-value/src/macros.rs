@@ -321,8 +321,8 @@ mod test {
     fn test_binary_is_kept() {
         let id = BinaryData::new([0; 44].to_vec());
         let value = to_value(id.clone()).unwrap();
-        assert_eq!(value, Value::Bytes(id.clone().to_vec()));
-        let value = platform_value!(id.clone());
+        assert_eq!(value, Value::Bytes(id.to_vec()));
+        let value = platform_value!(id);
         assert_eq!(value, Value::Bytes(id.to_vec()));
     }
 }

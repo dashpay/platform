@@ -27,12 +27,12 @@
 // DEALINGS IN THE SOFTWARE.
 
 use crate::abci::messages::SystemIdentityPublicKeys;
-use crate::error::execution::ExecutionError;
+
 use crate::error::Error;
 use crate::platform::Platform;
-use ciborium::{cbor, Value as CborValue};
+
 use dpp::platform_value::converter::serde_json::BTreeValueJsonConverter;
-use dpp::platform_value::{platform_value, BinaryData, Bytes32, Value};
+use dpp::platform_value::{platform_value, BinaryData, Bytes32};
 use dpp::ProtocolError;
 use drive::contract::DataContract;
 use drive::dpp::data_contract::DriveContractExt;

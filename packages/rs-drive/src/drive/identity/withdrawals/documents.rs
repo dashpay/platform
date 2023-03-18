@@ -190,7 +190,6 @@ mod tests {
     use dpp::contracts::withdrawals_contract;
     use dpp::prelude::Identifier;
     use dpp::tests::fixtures::get_withdrawal_document_fixture;
-    use serde_json::json;
 
     use crate::tests::helpers::setup::setup_drive_with_initial_state_structure;
     use crate::tests::helpers::setup::{setup_document, setup_system_data_contract};

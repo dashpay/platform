@@ -114,7 +114,7 @@ impl DocumentFactoryWASM {
                 data_contract.to_owned().into(),
                 owner_id,
                 document_type.to_string(),
-                dynamic_data.into(),
+                dynamic_data,
             )
             .with_js_error()?;
 

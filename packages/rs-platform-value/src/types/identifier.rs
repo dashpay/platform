@@ -268,15 +268,15 @@ impl From<&Identifier> for Value {
     }
 }
 
-impl Into<String> for Identifier {
-    fn into(self) -> String {
-        self.to_string(Encoding::Base58)
+impl From<Identifier> for String {
+    fn from(val: Identifier) -> Self {
+        val.to_string(Encoding::Base58)
     }
 }
 
-impl Into<String> for &Identifier {
-    fn into(self) -> String {
-        self.to_string(Encoding::Base58)
+impl From<&Identifier> for String {
+    fn from(val: &Identifier) -> Self {
+        val.to_string(Encoding::Base58)
     }
 }
 

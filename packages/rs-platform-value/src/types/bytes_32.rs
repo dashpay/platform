@@ -165,14 +165,14 @@ impl TryFrom<String> for Bytes32 {
     }
 }
 
-impl Into<String> for Bytes32 {
-    fn into(self) -> String {
-        self.to_string(Encoding::Base64)
+impl From<Bytes32> for String {
+    fn from(val: Bytes32) -> Self {
+        val.to_string(Encoding::Base64)
     }
 }
 
-impl Into<String> for &Bytes32 {
-    fn into(self) -> String {
-        self.to_string(Encoding::Base64)
+impl From<&Bytes32> for String {
+    fn from(val: &Bytes32) -> Self {
+        val.to_string(Encoding::Base64)
     }
 }

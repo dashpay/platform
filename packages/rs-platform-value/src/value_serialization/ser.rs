@@ -219,9 +219,7 @@ impl serde::Serializer for Serializer {
     {
         match name {
             "Identifier" => match value.serialize(self)? {
-                Value::Bytes32(b) => {
-                    return Ok(Value::Identifier(b));
-                }
+                Value::Bytes32(b) => Ok(Value::Identifier(b)),
                 data => {
                     panic!("expected Value::Bytes32, got: {data:#?}")
                 }
@@ -298,12 +296,10 @@ impl serde::Serializer for Serializer {
 
     fn serialize_struct(
         self,
-        name: &'static str,
+        _name: &'static str,
         len: usize,
     ) -> Result<Self::SerializeStruct, Error> {
-        match name {
-            _ => self.serialize_map(Some(len)),
-        }
+        self.serialize_map(Some(len))
     }
 
     fn serialize_struct_variant(

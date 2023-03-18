@@ -158,15 +158,15 @@ impl TryFrom<String> for BinaryData {
     }
 }
 
-impl Into<String> for BinaryData {
-    fn into(self) -> String {
-        self.to_string(Encoding::Base64)
+impl From<BinaryData> for String {
+    fn from(val: BinaryData) -> Self {
+        val.to_string(Encoding::Base64)
     }
 }
 
-impl Into<String> for &BinaryData {
-    fn into(self) -> String {
-        self.to_string(Encoding::Base64)
+impl From<&BinaryData> for String {
+    fn from(val: &BinaryData) -> Self {
+        val.to_string(Encoding::Base64)
     }
 }
 

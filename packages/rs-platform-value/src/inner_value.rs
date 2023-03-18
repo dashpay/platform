@@ -45,27 +45,32 @@ impl Value {
         T: Into<Value>,
     {
         let map = self.as_map_mut_ref()?;
-        Ok(Self::insert_in_map(map, key, value.into()))
+        Self::insert_in_map(map, key, value.into());
+        Ok(())
     }
 
     pub fn set_into_binary_data(&mut self, key: &str, value: Vec<u8>) -> Result<(), Error> {
         let map = self.as_map_mut_ref()?;
-        Ok(Self::insert_in_map(map, key, Value::Bytes(value)))
+        Self::insert_in_map(map, key, Value::Bytes(value));
+        Ok(())
     }
 
     pub fn set_value(&mut self, key: &str, value: Value) -> Result<(), Error> {
         let map = self.as_map_mut_ref()?;
-        Ok(Self::insert_in_map(map, key, value))
+        Self::insert_in_map(map, key, value);
+        Ok(())
     }
 
     pub fn insert(&mut self, key: String, value: Value) -> Result<(), Error> {
         let map = self.as_map_mut_ref()?;
-        Ok(Self::insert_in_map_string_value(map, key, value))
+        Self::insert_in_map_string_value(map, key, value);
+        Ok(())
     }
 
     pub fn insert_at_end(&mut self, key: String, value: Value) -> Result<(), Error> {
         let map = self.as_map_mut_ref()?;
-        Ok(Self::push_to_map_string_value(map, key, value))
+        Self::push_to_map_string_value(map, key, value);
+        Ok(())
     }
 
     pub fn remove(&mut self, key: &str) -> Result<Value, Error> {
@@ -75,7 +80,7 @@ impl Value {
 
     pub fn remove_many(&mut self, keys: &Vec<&str>) -> Result<(), Error> {
         let map = self.as_map_mut_ref()?;
-        keys.into_iter()
+        keys.iter()
             .try_for_each(|key| map.remove_key(key).map(|_| ()))
     }
 
@@ -117,14 +122,13 @@ impl Value {
     {
         let map = self.as_map_mut_ref()?;
         map.remove_optional_key(key)
-            .map(|v| {
+            .and_then(|v| {
                 if v.is_null() {
                     None
                 } else {
                     Some(v.into_integer())
                 }
             })
-            .flatten()
             .transpose()
     }
 
@@ -137,14 +141,13 @@ impl Value {
     pub fn remove_optional_identifier(&mut self, key: &str) -> Result<Option<Identifier>, Error> {
         let map = self.as_map_mut_ref()?;
         map.remove_optional_key(key)
-            .map(|v| {
+            .and_then(|v| {
                 if v.is_null() {
                     None
                 } else {
                     Some(v.into_identifier())
                 }
             })
-            .flatten()
             .transpose()
     }
 
@@ -416,8 +419,7 @@ impl Value {
         key: &'a str,
     ) -> Result<Option<Identifier>, Error> {
         let map = self.to_map()?;
-        Ok(Self::inner_optional_hash256_value(map, key)?
-            .map(|identifier| Identifier::new(identifier)))
+        Ok(Self::inner_optional_hash256_value(map, key)?.map(Identifier::new))
     }
 
     pub fn get_hash256<'a>(&'a self, key: &'a str) -> Result<[u8; 32], Error> {
@@ -578,14 +580,13 @@ impl Value {
         key: &str,
     ) -> Result<Option<bool>, Error> {
         Self::get_optional_from_map(document_type, key)
-            .map(|value| {
+            .and_then(|value| {
                 if value.is_null() {
                     None
                 } else {
                     Some(value.to_bool())
                 }
             })
-            .flatten()
             .transpose()
     }
 
@@ -612,14 +613,13 @@ impl Value {
             + TryFrom<i8>,
     {
         Self::get_optional_from_map(document_type, key)
-            .map(|key_value| {
+            .and_then(|key_value| {
                 if key_value.is_null() {
                     None
                 } else {
                     Some(key_value.to_integer())
                 }
             })
-            .flatten()
             .transpose()
     }
 

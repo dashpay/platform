@@ -23,7 +23,7 @@ impl DuplicateDocumentTransitionsWithIndicesErrorWasm {
             .map(|v| {
                 js_sys::Array::from_iter(vec![
                     JsValue::from(v.0.clone()),
-                    JsValue::from(Buffer::from_bytes(&v.1.to_vec())),
+                    JsValue::from(Buffer::from_bytes(v.1.as_ref())),
                 ])
             })
             .collect()

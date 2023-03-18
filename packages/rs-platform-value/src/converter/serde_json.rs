@@ -231,14 +231,9 @@ impl From<&JsonValue> for Value {
                     })
                 {
                     //this is an array of bytes
-                    Self::Bytes(
-                        array
-                            .into_iter()
-                            .map(|v| v.as_u64().unwrap() as u8)
-                            .collect(),
-                    )
+                    Self::Bytes(array.iter().map(|v| v.as_u64().unwrap() as u8).collect())
                 } else {
-                    Self::Array(array.into_iter().map(|v| v.into()).collect())
+                    Self::Array(array.iter().map(|v| v.into()).collect())
                 }
             }
             JsonValue::Object(map) => Self::Map(
