@@ -145,7 +145,7 @@ mod tests {
                 "pooling": Pooling::Never as u8,
                 "outputScript": (0..23).collect::<Vec<u8>>(),
                 "status": withdrawals_contract::WithdrawalStatus::BROADCASTED as u8,
-                "transactionIndex": 1u32,
+                "transactionIndex": 1u64,
                 "transactionSignHeight": 93u64,
                 "transactionId": vec![1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1],
             }),

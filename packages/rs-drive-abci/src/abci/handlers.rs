@@ -251,7 +251,9 @@ mod tests {
         use dashcore::BlockHash;
         use dpp::contracts::withdrawals_contract;
         use dpp::data_contract::DriveContractExt;
+        use dpp::identity::core_script::CoreScript;
         use dpp::identity::state_transition::identity_credit_withdrawal_transition::Pooling;
+        use dpp::platform_value::{platform_value, BinaryData};
         use dpp::prelude::Identifier;
         use dpp::system_data_contracts::{load_system_data_contract, SystemDataContract};
         use dpp::tests::fixtures::get_withdrawal_document_fixture;
@@ -310,15 +312,15 @@ mod tests {
                 let document = get_withdrawal_document_fixture(
                     &data_contract,
                     owner_id,
-                    json!({
-                        "amount": 1000,
-                        "coreFeePerByte": 1,
-                        "pooling": Pooling::Never,
-                        "outputScript": (0..23).collect::<Vec<u8>>(),
-                        "status": withdrawals_contract::WithdrawalStatus::POOLED,
-                        "transactionIndex": 1,
-                        "transactionSignHeight": 93,
-                        "transactionId": tx_id,
+                    platform_value!({
+                        "amount": 1000u64,
+                        "coreFeePerByte": 1u32,
+                        "pooling": Pooling::Never as u8,
+                        "outputScript": CoreScript::from_bytes((0..23).collect::<Vec<u8>>()),
+                        "status": withdrawals_contract::WithdrawalStatus::POOLED as u8,
+                        "transactionIndex": 1u64,
+                        "transactionSignHeight": 93u64,
+                        "transactionId": BinaryData::new(tx_id),
                     }),
                     None,
                 )

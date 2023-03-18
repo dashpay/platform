@@ -2,6 +2,7 @@ use std::collections::BTreeMap;
 
 use dpp::data_contract::document_type::random_document::CreateRandomDocument;
 use dpp::document::Document;
+use dpp::identity::core_script::CoreScript;
 use dpp::platform_value::Value;
 use dpp::{contracts::withdrawals_contract, data_contract::DriveContractExt};
 use grovedb::TransactionArg;
@@ -176,8 +177,8 @@ impl Drive {
 
         let document = documents
             .get(0)
-            .ok_or(Error::Drive(DriveError::CorruptedCodeExecution(
-                "document was not found by transactionId",
+            .ok_or(Error::Drive(DriveError::CorruptedDriveState(
+                "document was not found by transactionId".to_string(),
             )))?
             .clone();
 
@@ -197,7 +198,9 @@ mod tests {
 
     mod fetch_withdrawal_documents_by_status {
         use dpp::data_contract::DriveContractExt;
+        use dpp::identity::core_script::CoreScript;
         use dpp::identity::state_transition::identity_credit_withdrawal_transition::Pooling;
+        use dpp::platform_value::platform_value;
         use dpp::system_data_contracts::{load_system_data_contract, SystemDataContract};
 
         use super::*;
@@ -227,13 +230,13 @@ mod tests {
             let document = get_withdrawal_document_fixture(
                 &data_contract,
                 owner_id,
-                json!({
-                    "amount": 1000,
-                    "coreFeePerByte": 1,
-                    "pooling": Pooling::Never,
-                    "outputScript": (0..23).collect::<Vec<u8>>(),
-                    "status": withdrawals_contract::WithdrawalStatus::QUEUED,
-                    "transactionIndex": 1,
+                platform_value!({
+                    "amount": 1000u64,
+                    "coreFeePerByte": 1u32,
+                    "pooling": Pooling::Never as u8,
+                    "outputScript": CoreScript::from_bytes((0..23).collect::<Vec<u8>>()),
+                    "status": withdrawals_contract::WithdrawalStatus::QUEUED as u8,
+                    "transactionIndex": 1u64,
                 }),
                 None,
             )
@@ -254,13 +257,13 @@ mod tests {
             let document = get_withdrawal_document_fixture(
                 &data_contract,
                 owner_id,
-                json!({
-                    "amount": 1000,
-                    "coreFeePerByte": 1,
-                    "pooling": Pooling::Never,
-                    "outputScript": (0..23).collect::<Vec<u8>>(),
+                platform_value!({
+                    "amount": 1000u64,
+                    "coreFeePerByte": 1u32,
+                    "pooling": Pooling::Never as u8,
+                    "outputScript": CoreScript::from_bytes((0..23).collect::<Vec<u8>>()),
                     "status": withdrawals_contract::WithdrawalStatus::POOLED,
-                    "transactionIndex": 2,
+                    "transactionIndex": 2u64,
                 }),
                 None,
             )
@@ -296,7 +299,9 @@ mod tests {
 
     mod find_document_by_transaction_id {
         use dpp::data_contract::DriveContractExt;
+        use dpp::identity::core_script::CoreScript;
         use dpp::identity::state_transition::identity_credit_withdrawal_transition::Pooling;
+        use dpp::platform_value::{platform_value, Bytes32};
         use dpp::system_data_contracts::{load_system_data_contract, SystemDataContract};
 
         use super::*;
@@ -317,14 +322,14 @@ mod tests {
             let document = get_withdrawal_document_fixture(
                 &data_contract,
                 owner_id,
-                json!({
-                    "amount": 1000,
-                    "coreFeePerByte": 1,
-                    "pooling": Pooling::Never,
-                    "outputScript": (0..23).collect::<Vec<u8>>(),
-                    "status": withdrawals_contract::WithdrawalStatus::POOLED,
-                    "transactionIndex": 1,
-                    "transactionId": (0..32).collect::<Vec<u8>>(),
+                platform_value!({
+                    "amount": 1000u64,
+                    "coreFeePerByte": 1u32,
+                    "pooling": Pooling::Never as u8,
+                    "outputScript": CoreScript::from_bytes((0..23).collect::<Vec<u8>>()),
+                    "status": withdrawals_contract::WithdrawalStatus::POOLED as u8,
+                    "transactionIndex": 1u64,
+                    "transactionId": Bytes32::default(),
                 }),
                 None,
             )
@@ -344,7 +349,7 @@ mod tests {
 
             let found_document = drive
                 .find_withdrawal_document_by_transaction_id(
-                    &(0..32).collect::<Vec<u8>>(),
+                    Bytes32::default().as_slice(),
                     Some(&transaction),
                 )
                 .expect("to find document by it's transaction id");

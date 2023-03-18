@@ -196,10 +196,7 @@ impl PartialEq<BinaryData> for Vec<u8> {
 
 #[cfg(test)]
 mod tests {
-    use std::collections::HashMap;
-
     use crate::{from_value, to_value, Identifier, Value};
-    use serde::{Deserialize, Serialize};
 
     use super::*;
 

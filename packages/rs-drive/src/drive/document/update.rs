@@ -684,7 +684,7 @@ mod tests {
     use dpp::document::document_factory::DocumentFactory;
     use dpp::document::document_validator::DocumentValidator;
 
-    use dpp::platform_value::Value;
+    use dpp::platform_value::{platform_value, Value};
     use dpp::prelude::DataContract;
     use dpp::util::serializer;
     use dpp::version::{ProtocolVersionValidator, COMPATIBILITY_MAP, LATEST_VERSION};
@@ -1054,7 +1054,7 @@ mod tests {
 
         drive
             .delete_document_for_contract(
-                alice_profile.id,
+                alice_profile.id.to_buffer(),
                 &contract,
                 "profile",
                 None,
@@ -2351,7 +2351,7 @@ mod tests {
         let block_info = BlockInfo::default();
         let owner_id = dpp::identifier::Identifier::new([2u8; 32]);
 
-        let documents = json!({
+        let documents = platform_value!({
             "niceDocument": {
                 "type": "object",
                 "properties": {
@@ -2382,7 +2382,7 @@ mod tests {
         );
 
         let contract = factory
-            .create(owner_id, documents, None)
+            .create(owner_id, documents, None, None)
             .expect("data in fixture should be correct");
 
         let contract_cbor = contract.to_cbor().expect("should encode contract to cbor");

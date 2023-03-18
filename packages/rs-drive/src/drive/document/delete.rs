@@ -1716,10 +1716,10 @@ mod tests {
 
         drive
             .delete_document_for_contract(
-                documents.get(0).unwrap().id,
+                documents.get(0).unwrap().id.to_buffer(),
                 &contract,
                 "niceDocument",
-                Some(documents.get(0).unwrap().owner_id),
+                Some(documents.get(0).unwrap().owner_id.to_buffer()),
                 BlockInfo::default(),
                 true,
                 Some(&db_transaction),

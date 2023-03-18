@@ -574,23 +574,7 @@ impl DocumentFieldType {
                 }
             }
             DocumentFieldType::ByteArray(_, _) => {
-                let mut bytes = match value {
-                    Value::Bytes(bytes) => Ok(bytes.clone()),
-                    Value::Text(text) => {
-                        let value_as_bytes = base64::decode(text).map_err(|_| {
-                            ProtocolError::DataContractError(DataContractError::ValueDecodingError(
-                                "bytearray: invalid base64 value",
-                            ))
-                        })?;
-                        Ok(value_as_bytes)
-                    }
-                    Value::Array(array) => array
-                        .iter()
-                        .map(|byte| byte.to_integer().map_err(ProtocolError::ValueError))
-                        .collect::<Result<Vec<u8>, ProtocolError>>(),
-                    _ => Err(get_field_type_matching_error()),
-                }?;
-
+                let mut bytes = value.to_binary_bytes()?;
                 let mut r_vec = bytes.len().encode_var_vec();
                 r_vec.append(&mut bytes);
                 Ok(r_vec)
@@ -680,22 +664,9 @@ impl DocumentFieldType {
             DocumentFieldType::Number => {
                 encode_float(value.to_float().map_err(ProtocolError::ValueError)?)
             }
-            DocumentFieldType::ByteArray(_, _) => match value {
-                Value::Bytes(bytes) => Ok(bytes.clone()),
-                Value::Text(text) => {
-                    let value_as_bytes = base64::decode(text).map_err(|_| {
-                        ProtocolError::DataContractError(DataContractError::ValueDecodingError(
-                            "bytearray: invalid base64 value",
-                        ))
-                    })?;
-                    Ok(value_as_bytes)
-                }
-                Value::Array(array) => array
-                    .iter()
-                    .map(|byte| byte.to_integer().map_err(ProtocolError::ValueError))
-                    .collect::<Result<Vec<u8>, ProtocolError>>(),
-                _ => Err(get_field_type_matching_error()),
-            },
+            DocumentFieldType::ByteArray(_, _) => {
+                value.to_binary_bytes().map_err(ProtocolError::ValueError)
+            }
             DocumentFieldType::Boolean => {
                 let value_as_boolean = value.as_bool().ok_or_else(get_field_type_matching_error)?;
                 if value_as_boolean {

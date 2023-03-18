@@ -282,12 +282,9 @@ impl Into<String> for &Identifier {
 
 #[cfg(test)]
 mod tests {
-    use std::collections::HashMap;
-
-    use crate::{from_value, to_value, Identifier};
-    use serde::{Deserialize, Serialize};
 
     use super::*;
+    use crate::{from_value, to_value, Identifier};
 
     #[test]
     fn test_identifier_value_serialization() {

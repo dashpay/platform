@@ -88,6 +88,7 @@ use drive::tests::helpers::setup::setup_drive;
 use dpp::data_contract::validation::data_contract_validator::DataContractValidator;
 #[cfg(feature = "full")]
 use dpp::document::Document;
+use dpp::platform_value::platform_value;
 #[cfg(feature = "full")]
 use dpp::platform_value::Value;
 
@@ -1750,12 +1751,11 @@ fn test_family_basic_queries() {
         .expect("we should be able to deserialize the cbor");
 
     assert_eq!(
-        last_person.id,
+        last_person.id.to_vec(),
         vec![
             76, 161, 17, 201, 152, 232, 129, 48, 168, 13, 49, 10, 218, 53, 118, 136, 165, 198, 189,
             116, 116, 22, 133, 92, 104, 165, 186, 249, 94, 81, 45, 20,
         ]
-        .as_slice()
     );
 
     // fetching by $id with order by desc
@@ -1791,12 +1791,11 @@ fn test_family_basic_queries() {
         .expect("we should be able to deserialize the cbor");
 
     assert_eq!(
-        last_person.id,
+        last_person.id.to_vec(),
         vec![
             140, 161, 17, 201, 152, 232, 129, 48, 168, 13, 49, 10, 218, 53, 118, 136, 165, 198,
             189, 116, 116, 22, 133, 92, 104, 165, 186, 249, 94, 81, 45, 20,
         ]
-        .as_slice()
     );
 
     //
@@ -1855,12 +1854,11 @@ fn test_family_basic_queries() {
         .expect("we should be able to deserialize the cbor");
 
     assert_eq!(
-        last_person.id,
+        last_person.id.to_vec(),
         vec![
             249, 170, 70, 122, 181, 31, 35, 176, 175, 131, 70, 150, 250, 223, 194, 203, 175, 200,
             107, 252, 199, 227, 154, 105, 89, 57, 38, 85, 236, 192, 254, 88,
         ]
-        .as_slice()
     );
 
     //
@@ -2325,7 +2323,7 @@ fn test_family_sql_query() {
 
     // Empty where clause
     let query_cbor = serializer::serializable_value_to_cbor(
-        json!({
+        &json!({
             "where": [],
             "limit": 100,
             "orderBy": [
@@ -2345,7 +2343,7 @@ fn test_family_sql_query() {
 
     // Equality clause
     let query_cbor = serializer::serializable_value_to_cbor(
-        json!({
+        &json!({
             "where": [
                 ["firstName", "==", "Chris"]
             ]
@@ -2363,7 +2361,7 @@ fn test_family_sql_query() {
 
     // Less than
     let query_cbor = serializer::serializable_value_to_cbor(
-        json!({
+        &json!({
             "where": [
                 ["firstName", "<", "Chris"]
             ],
@@ -2386,7 +2384,7 @@ fn test_family_sql_query() {
 
     // Starts with
     let query_cbor = serializer::serializable_value_to_cbor(
-        json!({
+        &json!({
             "where": [
                 ["firstName", "StartsWith", "C"]
             ],
@@ -2409,7 +2407,7 @@ fn test_family_sql_query() {
 
     // Range combination
     let query_cbor = serializer::serializable_value_to_cbor(
-        json!({
+        &json!({
             "where": [
                 ["firstName", ">", "Chris"],
                 ["firstName", "<=", "Noellyn"]
@@ -2433,7 +2431,7 @@ fn test_family_sql_query() {
     // In clause
     let names = vec![String::from("a"), String::from("b")];
     let query_cbor = serializer::serializable_value_to_cbor(
-        json!({
+        &json!({
             "where": [
                 ["firstName", "in", names]
             ],
@@ -2543,7 +2541,7 @@ fn test_family_with_nulls_query() {
         .map(|result| {
             let document = Document::from_cbor(result.as_slice(), None, None)
                 .expect("we should be able to deserialize the cbor");
-            base64::encode(document.id)
+            base64::encode(document.id.as_slice())
         })
         .collect();
 
@@ -2768,7 +2766,7 @@ fn test_dpns_query() {
         .map(|result| {
             let document = Document::from_cbor(result.as_slice(), None, None)
                 .expect("we should be able to deserialize the cbor");
-            hex::encode(document.id)
+            hex::encode(document.id.as_slice())
         })
         .collect();
 
@@ -4093,7 +4091,7 @@ fn test_dpns_query_start_after_with_null_id_desc() {
         .map(|result| {
             let document = Document::from_cbor(result.as_slice(), None, None)
                 .expect("we should be able to deserialize the cbor");
-            Vec::from(document.id)
+            document.id.to_vec()
         })
         .collect();
 
@@ -4141,7 +4139,7 @@ fn test_dpns_query_start_after_with_null_id_desc() {
         .map(|result| {
             let document = Document::from_cbor(result.as_slice(), None, None)
                 .expect("we should be able to deserialize the cbor");
-            Vec::from(document.id)
+            document.id.to_vec()
         })
         .collect();
 
@@ -4232,7 +4230,7 @@ fn test_query_a_b_c_d_e_contract() {
     let block_info = BlockInfo::default();
     let owner_id = dpp::identifier::Identifier::new([2u8; 32]);
 
-    let documents = json!({
+    let documents = platform_value!({
       "testDocument": {
         "type": "object",
         "properties": {
@@ -4285,7 +4283,7 @@ fn test_query_a_b_c_d_e_contract() {
     let factory = DataContractFactory::new(1, Arc::new(data_contract_validator));
 
     let contract = factory
-        .create(owner_id, documents, None)
+        .create(owner_id, documents, None, None)
         .expect("data in fixture should be correct");
 
     let contract_cbor = contract.to_cbor().expect("should encode contract to cbor");

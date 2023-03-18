@@ -554,6 +554,7 @@ mod tests {
 
         use crate::block::BlockStateInfo;
         use crate::test::helpers::setup::setup_platform_with_initial_state_structure;
+        use dpp::identity::core_script::CoreScript;
         use dpp::platform_value::platform_value;
         use dpp::{
             data_contract::{DataContract, DriveContractExt},
@@ -640,9 +641,9 @@ mod tests {
                     "amount": 1000u64,
                     "coreFeePerByte": 1u32,
                     "pooling": Pooling::Never,
-                    "outputScript": CoreScript::new((0..23).collect::<Vec<u8>>()),
+                    "outputScript": CoreScript::from_bytes((0..23).collect::<Vec<u8>>()),
                     "status": withdrawals_contract::WithdrawalStatus::BROADCASTED as u8,
-                    "transactionIndex": 1u32,
+                    "transactionIndex": 1u64,
                     "transactionSignHeight": 93u64,
                     "transactionId": Identifier::new([1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1]),
                 }),
@@ -668,9 +669,9 @@ mod tests {
                     "amount": 1000u64,
                     "coreFeePerByte": 1u32,
                     "pooling": Pooling::Never as u8,
-                    "outputScript": CoreScript::new((0..23).collect::<Vec<u8>>()),
+                    "outputScript": CoreScript::from_bytes((0..23).collect::<Vec<u8>>()),
                     "status": withdrawals_contract::WithdrawalStatus::BROADCASTED as u8,
-                    "transactionIndex": 2u32,
+                    "transactionIndex": 2u64,
                     "transactionSignHeight": 10u64,
                     "transactionId": Identifier::new([3, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1]),
                 }),
@@ -742,6 +743,7 @@ mod tests {
         use std::cell::RefCell;
 
         use dpp::data_contract::DriveContractExt;
+        use dpp::identity::core_script::CoreScript;
         use dpp::identity::state_transition::identity_credit_withdrawal_transition::Pooling;
         use dpp::platform_value::btreemap_extensions::BTreeValueMapHelper;
         use dpp::platform_value::platform_value;
@@ -775,9 +777,9 @@ mod tests {
                     "amount": 1000u64,
                     "coreFeePerByte": 1u32,
                     "pooling": Pooling::Never as u8,
-                    "outputScript": CoreScript::new((0..23).collect::<Vec<u8>>()),
+                    "outputScript": CoreScript::from_bytes((0..23).collect::<Vec<u8>>()),
                     "status": withdrawals_contract::WithdrawalStatus::QUEUED as u8,
-                    "transactionIndex": 1u32,
+                    "transactionIndex": 1u64,
                 }),
                 None,
             )
@@ -802,9 +804,9 @@ mod tests {
                     "amount": 1000u64,
                     "coreFeePerByte": 1u32,
                     "pooling": Pooling::Never as u8,
-                    "outputScript": CoreScript::new((0..23).collect::<Vec<u8>>()),
+                    "outputScript": CoreScript::from_bytes((0..23).collect::<Vec<u8>>()),
                     "status": withdrawals_contract::WithdrawalStatus::QUEUED as u8,
-                    "transactionIndex": 2u32,
+                    "transactionIndex": 2u64,
                 }),
                 None,
             )
@@ -938,6 +940,7 @@ mod tests {
         use crate::test::helpers::setup::setup_platform_with_initial_state_structure;
         use dpp::data_contract::DriveContractExt;
         use dpp::document::Document;
+        use dpp::identity::core_script::CoreScript;
         use dpp::identity::state_transition::identity_credit_withdrawal_transition::Pooling;
         use dpp::platform_value::platform_value;
         use dpp::prelude::Identifier;
@@ -969,9 +972,9 @@ mod tests {
                     "amount": 1000u64,
                     "coreFeePerByte": 1u32,
                     "pooling": Pooling::Never as u8,
-                    "outputScript": CoreScript::new((0..23).collect::<Vec<u8>>()),
+                    "outputScript": CoreScript::from_bytes((0..23).collect::<Vec<u8>>()),
                     "status": withdrawals_contract::WithdrawalStatus::POOLED as u8,
-                    "transactionIndex": 1u32,
+                    "transactionIndex": 1u64,
                 }),
                 None,
             )
@@ -996,9 +999,9 @@ mod tests {
                     "amount": 1000u64,
                     "coreFeePerByte": 1u32,
                     "pooling": Pooling::Never as u8,
-                    "outputScript": CoreScript::new((0..23).collect::<Vec<u8>>()),
+                    "outputScript": CoreScript::from_bytes((0..23).collect::<Vec<u8>>()),
                     "status": withdrawals_contract::WithdrawalStatus::POOLED as u8,
-                    "transactionIndex": 2u32,
+                    "transactionIndex": 2u64,
                 }),
                 None,
             )

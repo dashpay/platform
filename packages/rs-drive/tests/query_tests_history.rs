@@ -707,7 +707,7 @@ fn test_query_historical() {
                 .as_text()
                 .expect("the first name should be a string")
                 .to_string();
-            (name, Vec::from(document.id))
+            (name, document.id.to_vec())
         })
         .collect();
 
@@ -1263,7 +1263,7 @@ fn test_query_historical() {
         .expect("we should be able to deserialize the cbor");
 
     assert_eq!(
-        last_person.id,
+        last_person.id.to_vec(),
         vec![
             76, 161, 17, 201, 152, 232, 129, 48, 168, 13, 49, 10, 218, 53, 118, 136, 165, 198, 189,
             116, 116, 22, 133, 92, 104, 165, 186, 249, 94, 81, 45, 20
@@ -1304,7 +1304,7 @@ fn test_query_historical() {
         .expect("we should be able to deserialize the cbor");
 
     assert_eq!(
-        last_person.id,
+        last_person.id.to_vec(),
         vec![
             140, 161, 17, 201, 152, 232, 129, 48, 168, 13, 49, 10, 218, 53, 118, 136, 165, 198,
             189, 116, 116, 22, 133, 92, 104, 165, 186, 249, 94, 81, 45, 20
@@ -1368,7 +1368,7 @@ fn test_query_historical() {
         .expect("we should be able to deserialize the cbor");
 
     assert_eq!(
-        last_person.id,
+        last_person.id.to_vec(),
         vec![
             249, 170, 70, 122, 181, 31, 35, 176, 175, 131, 70, 150, 250, 223, 194, 203, 175, 200,
             107, 252, 199, 227, 154, 105, 89, 57, 38, 85, 236, 192, 254, 88
