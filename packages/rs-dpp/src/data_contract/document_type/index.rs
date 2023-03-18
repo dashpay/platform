@@ -18,7 +18,7 @@ pub struct Index {
 impl Index {
     /// Check to see if two objects are conflicting
     pub fn objects_are_conflicting(&self, object1: &ValueMap, object2: &ValueMap) -> bool {
-        if self.unique == false {
+        if !self.unique {
             return false;
         }
         self.properties.iter().all(|property| {

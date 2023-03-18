@@ -78,7 +78,7 @@ where
                     .map_err(Into::into)?
                     .ok_or_else(|| {
                         ProtocolError::IdentityNotPresentError(IdentityNotPresentError::new(
-                            identity_id.clone(),
+                            *identity_id,
                         ))
                     })?;
 
@@ -152,7 +152,7 @@ where
             .map_err(Into::into)?
             .ok_or_else(|| {
                 ProtocolError::IdentityNotPresentError(IdentityNotPresentError::new(
-                    identity_id.clone(),
+                    *identity_id,
                 ))
             })?;
 

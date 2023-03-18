@@ -34,7 +34,7 @@ impl IncompatibleDataContractSchemaError {
     }
 
     pub fn data_contract_id(&self) -> Identifier {
-        self.data_contract_id.clone()
+        self.data_contract_id
     }
     pub fn operation(&self) -> String {
         self.operation.clone()

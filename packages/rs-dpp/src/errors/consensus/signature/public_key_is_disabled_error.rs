@@ -16,7 +16,7 @@ impl PublicKeyIsDisabledError {
     }
 
     pub fn public_key_id(&self) -> KeyID {
-        self.public_key_id.clone()
+        self.public_key_id
     }
 }
 

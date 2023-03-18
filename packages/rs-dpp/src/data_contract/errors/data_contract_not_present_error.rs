@@ -15,7 +15,7 @@ impl DataContractNotPresentError {
     }
 
     pub fn data_contract_id(&self) -> Identifier {
-        self.data_contract_id.clone()
+        self.data_contract_id
     }
 }
 

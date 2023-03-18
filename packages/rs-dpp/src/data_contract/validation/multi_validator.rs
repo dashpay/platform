@@ -178,8 +178,7 @@ mod test {
                 "required": ["foo"],
                 "additionalProperties": false,
               }
-        )
-        .into();
+        );
 
         assert!(validate(&schema, &[pattern_is_valid_regex_validator]).is_valid())
     }

@@ -15,7 +15,7 @@ impl IdentityNotPresentError {
     }
 
     pub fn id(&self) -> Identifier {
-        self.id.clone()
+        self.id
     }
 }
 

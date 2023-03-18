@@ -66,7 +66,7 @@ pub async fn create_state_transition(
             )
             .await?;
             let documents_batch_transition = DocumentsBatchTransition::from_raw_object(
-                raw_state_transition.into(),
+                raw_state_transition,
                 data_contracts,
             )?;
             Ok(StateTransition::DocumentsBatch(documents_batch_transition))
