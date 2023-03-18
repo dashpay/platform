@@ -13,7 +13,7 @@ use crate::prelude::Revision;
 use crate::util::cbor_value::{CborBTreeMapHelper, CborCanonicalMap};
 use crate::util::deserializer;
 use crate::util::deserializer::SplitProtocolVersionOutcome;
-use crate::util::json_value::{JsonValueExt, ReplaceWith};
+use crate::util::json_value::JsonValueExt;
 use crate::{errors::ProtocolError, identifier::Identifier, metadata::Metadata, util::hash};
 
 use super::{IdentityPublicKey, KeyID};
@@ -280,7 +280,7 @@ impl Identity {
     }
 
     /// Creates an identity from a json structure
-    pub fn from_json(mut json_object: JsonValue) -> Result<Identity, ProtocolError> {
+    pub fn from_json(json_object: JsonValue) -> Result<Identity, ProtocolError> {
         let mut platform_value: Value = json_object.into();
 
         platform_value

@@ -12,11 +12,7 @@ use crate::state_transition::errors::{
 use crate::{
     identity::KeyType,
     prelude::ProtocolError,
-    util::{
-        hash,
-        json_value::{JsonValueExt, ReplaceWith},
-        serializer,
-    },
+    util::{hash, serializer},
     BlsModule,
 };
 

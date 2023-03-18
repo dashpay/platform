@@ -1,8 +1,7 @@
 use std::convert::{TryFrom, TryInto};
 
 use platform_value::{BinaryData, Value};
-use serde::de::Error as DeError;
-use serde::ser::Error as SerError;
+
 use serde::{Deserialize, Serialize};
 use serde_json::Value as JsonValue;
 

@@ -3,7 +3,7 @@ use crate::identity::validation::PublicKeysValidator;
 use crate::identity::validation::TPublicKeysValidator;
 use crate::identity::{KeyID, KeyType, Purpose, SecurityLevel};
 use crate::tests::fixtures::get_public_keys_validator;
-use crate::tests::utils::platform_value_set_ref;
+
 use crate::{assert_consensus_errors, NativeBlsModule};
 use platform_value::BinaryData;
 use platform_value::{platform_value, Value};

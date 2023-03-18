@@ -18,7 +18,7 @@ use crate::document::document_transition::DocumentTransitionObjectLike;
 use crate::prelude::{DocumentTransition, Identifier};
 use crate::state_transition::state_transition_execution_context::StateTransitionExecutionContext;
 use crate::util::cbor_value::{CborCanonicalMap, FieldType, ReplacePaths, ValuesCollection};
-use crate::util::json_value::{JsonValueExt, ReplaceWith};
+use crate::util::json_value::JsonValueExt;
 use crate::version::LATEST_VERSION;
 use crate::ProtocolError;
 use crate::{

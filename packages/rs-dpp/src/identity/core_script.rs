@@ -1,10 +1,9 @@
 use std::fmt;
-use std::fmt::Write;
 use std::ops::Deref;
 
 use dashcore::Script as DashcoreScript;
 use platform_value::string_encoding::{self, Encoding};
-use platform_value::BinaryData;
+
 use serde::de::Visitor;
 use serde::{Deserialize, Serialize};
 

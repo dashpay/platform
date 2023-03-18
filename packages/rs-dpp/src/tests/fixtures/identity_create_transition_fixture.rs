@@ -1,5 +1,3 @@
-use std::convert::TryInto;
-
 use dashcore::PrivateKey;
 use platform_value::BinaryData;
 use platform_value::{platform_value, Value};

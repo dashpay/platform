@@ -81,7 +81,7 @@ impl IdentityCreditWithdrawalTransition {
         Ok(transition)
     }
 
-    pub fn from_json(mut value: JsonValue) -> Result<Self, ProtocolError> {
+    pub fn from_json(value: JsonValue) -> Result<Self, ProtocolError> {
         let mut value: Value = value.into();
         value
             .replace_at_paths(Self::binary_property_paths(), ReplacementType::BinaryBytes)

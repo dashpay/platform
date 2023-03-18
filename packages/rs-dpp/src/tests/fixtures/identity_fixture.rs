@@ -1,5 +1,5 @@
 use platform_value::platform_value;
-use platform_value::string_encoding::{decode, Encoding};
+use platform_value::string_encoding::Encoding;
 use platform_value::BinaryData;
 use serde_json::json;
 

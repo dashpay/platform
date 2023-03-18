@@ -208,7 +208,7 @@ impl DocumentTransitionObjectLike for DocumentCreateTransition {
 
 #[cfg(test)]
 mod test {
-    use platform_value::string_encoding::Encoding;
+
     use platform_value::{platform_value, BinaryData, Identifier};
     use serde_json::json;
 

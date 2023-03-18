@@ -4,7 +4,7 @@ use std::convert::{TryFrom, TryInto};
 use std::fmt;
 
 use serde::de::Visitor;
-use serde::{Deserialize, Deserializer, Serialize, Serializer};
+use serde::{Deserialize, Serialize};
 use serde_json::Value as JsonValue;
 
 use crate::string_encoding::Encoding;

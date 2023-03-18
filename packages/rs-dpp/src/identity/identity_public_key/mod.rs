@@ -119,7 +119,7 @@ impl IdentityPublicKey {
         value.try_into().map_err(ProtocolError::ValueError)
     }
 
-    pub fn from_json_object(mut raw_object: JsonValue) -> Result<IdentityPublicKey, ProtocolError> {
+    pub fn from_json_object(raw_object: JsonValue) -> Result<IdentityPublicKey, ProtocolError> {
         let mut value: Value = raw_object.into();
         value.replace_at_paths(BINARY_DATA_FIELDS, ReplacementType::BinaryBytes)?;
         Self::from_value(value)

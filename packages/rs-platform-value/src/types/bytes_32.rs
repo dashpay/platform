@@ -1,5 +1,4 @@
 use std::fmt;
-use std::fmt::Write;
 use serde::{Deserialize, Serialize};
 use serde::de::Visitor;
 use crate::{Error, string_encoding, Value};

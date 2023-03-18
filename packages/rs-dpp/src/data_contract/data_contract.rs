@@ -6,7 +6,7 @@ use anyhow::anyhow;
 use itertools::{Either, Itertools};
 use platform_value::btreemap_extensions::{BTreeValueMapHelper, BTreeValueRemoveFromMapHelper};
 use platform_value::Value;
-use platform_value::{BinaryData, Bytes32, Identifier};
+use platform_value::{Bytes32, Identifier};
 use serde::{Deserialize, Serialize};
 use serde_json::Value as JsonValue;
 
@@ -468,7 +468,7 @@ impl TryInto<Value> for &DataContract {
 impl TryFrom<&str> for DataContract {
     type Error = ProtocolError;
     fn try_from(v: &str) -> Result<Self, Self::Error> {
-        let mut data_contract: DataContract = serde_json::from_str(v)?;
+        let data_contract: DataContract = serde_json::from_str(v)?;
         //todo: there's a better to do this, find it
         let value = data_contract.to_object()?;
         DataContract::from_raw_object(value)
@@ -750,7 +750,7 @@ mod test {
         let contract = DataContract::try_from(string_contract.as_str())?;
         let serialized_contract = serde_json::to_string(&contract.to_json()?)?;
 
-        ///they will be out of order so won't be exactly the same
+        // they will be out of order so won't be exactly the same
         assert_eq!(serialized_contract, string_contract);
         Ok(())
     }
