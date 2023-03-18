@@ -278,13 +278,13 @@ impl DataContractWasm {
         js_sys::Reflect::set(
             &object,
             &Into::<JsValue>::into("$id".to_owned()),
-            &Into::<JsValue>::into(Buffer::from_bytes(&self.0.id.to_buffer())),
+            &Into::<JsValue>::into(Buffer::from_bytes_owned(self.0.id.to_vec())),
         )
         .expect("target is an object");
         js_sys::Reflect::set(
             &object,
             &Into::<JsValue>::into("ownerId".to_owned()),
-            &Into::<JsValue>::into(Buffer::from_bytes(&self.0.owner_id.to_buffer())),
+            &Into::<JsValue>::into(Buffer::from_bytes_owned(&self.0.owner_id.to_vec())),
         )
         .expect("target is an object");
         Ok(object)
