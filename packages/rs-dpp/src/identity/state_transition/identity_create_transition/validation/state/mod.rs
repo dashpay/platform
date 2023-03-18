@@ -40,7 +40,7 @@ mod test {
     use crate::{
         identity::state_transition::identity_create_transition::IdentityCreateTransition,
         state_repository::MockStateRepositoryLike, state_transition::StateTransitionLike,
-        tests::fixtures::identity_create_transition_fixture_json,
+        tests::fixtures::identity_create_transition_fixture,
     };
 
     use super::validate_identity_create_transition_state;
@@ -48,7 +48,7 @@ mod test {
     #[tokio::test]
     async fn should_not_verify_signature_on_dry_run() {
         let mut state_repository = MockStateRepositoryLike::new();
-        let raw_transition = identity_create_transition_fixture_json(None);
+        let raw_transition = identity_create_transition_fixture(None);
         let transition = IdentityCreateTransition::new(raw_transition).unwrap();
 
         transition.get_execution_context().enable_dry_run();

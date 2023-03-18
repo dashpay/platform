@@ -63,7 +63,7 @@ pub fn setup_test(
 
     let protocol_version_validator = ProtocolVersionValidator::default();
     (
-        crate::tests::fixtures::identity_create_transition_fixture_json(None),
+        crate::tests::fixtures::identity_create_transition_fixture(None),
         IdentityCreateTransitionBasicValidator::new(
             protocol_version_validator,
             public_keys_validator,

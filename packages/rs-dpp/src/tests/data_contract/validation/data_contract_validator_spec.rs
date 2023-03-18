@@ -335,7 +335,7 @@ mod defs {
                 .set_value_at_path(
                     "$defs",
                     format!("def_{}", i).as_str(),
-                    platform_value!({"type" : "string"}).into(),
+                    platform_value!({"type" : "string"}),
                 )
                 .expect("expected to set value");
         }
@@ -408,7 +408,7 @@ fn owner_id_should_be_byte_array(property_name: &str) {
 
     let array = ["string"; 32];
     raw_data_contract
-        .set_value(property_name, platform_value!(array).into())
+        .set_value(property_name, platform_value!(array))
         .expect("expected to set value");
 
     let result = data_contract_validator
@@ -440,7 +440,7 @@ fn owner_id_should_be_no_less_32_bytes(property_name: &str) {
 
     let array = [0u8; 31];
     raw_data_contract
-        .set_value(property_name, platform_value!(array).into())
+        .set_value(property_name, platform_value!(array))
         .expect("expected to set value");
 
     let result = data_contract_validator
@@ -467,7 +467,7 @@ fn owner_id_should_be_no_longer_32_bytes(property_name: &str) {
     let mut too_long_id = Vec::new();
     too_long_id.resize(33, 0u8);
     raw_data_contract
-        .set_value(property_name, platform_value!(too_long_id).into())
+        .set_value(property_name, platform_value!(too_long_id))
         .expect("expected to set value");
 
     let result = data_contract_validator
@@ -494,7 +494,7 @@ mod documents {
         } = setup_test();
 
         raw_data_contract
-            .set_value("documents", platform_value!(1).into())
+            .set_value("documents", platform_value!(1))
             .expect("expected to set value");
 
         let result = data_contract_validator
@@ -516,7 +516,7 @@ mod documents {
         } = setup_test();
 
         raw_data_contract
-            .set_value("documents", platform_value!({}).into())
+            .set_value("documents", platform_value!({}))
             .expect("expected to set value");
         raw_data_contract["documents"] = platform_value!({});
 

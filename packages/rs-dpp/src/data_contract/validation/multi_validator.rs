@@ -147,8 +147,7 @@ mod test {
                 "required": ["foo"],
                 "additionalProperties": false,
               }
-        )
-        .into();
+        );
         let mut result = validate(&schema, &[byte_array_has_no_items_as_parent_validator]);
         assert_eq!(2, result.errors().len());
         let first_error = get_basic_error(result.errors.pop().unwrap());
@@ -199,8 +198,7 @@ mod test {
             "required": ["foo"],
             "additionalProperties": false,
 
-        })
-        .into();
+        });
         let result = validate(&schema, &[pattern_is_valid_regex_validator]);
         let consensus_error = result.errors.get(0).expect("the error should be returned");
 
@@ -351,7 +349,6 @@ mod test {
                 }
             }
         })
-        .into()
     }
 
     fn get_basic_error(error: ConsensusError) -> BasicError {

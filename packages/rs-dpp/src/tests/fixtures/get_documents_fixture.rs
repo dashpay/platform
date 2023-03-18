@@ -119,7 +119,7 @@ fn get_extended_documents<ST: StateRepositoryLike>(
             data_contract,
             owner_id,
             "optionalUniqueIndexedDocument".to_string(),
-            platform_value!({ "firstName": "Jacques-Yves", "lastName": "Cousteau" }).into()
+            platform_value!({ "firstName": "Jacques-Yves", "lastName": "Cousteau" })
         )?,
     ];
 

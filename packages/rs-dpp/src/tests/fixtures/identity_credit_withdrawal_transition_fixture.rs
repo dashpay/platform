@@ -14,7 +14,7 @@ use crate::{
 
 pub fn identity_credit_withdrawal_transition_fixture_raw_object() -> Value {
     platform_value!({
-        "protocolVersion": version::LATEST_VERSION as u32,
+        "protocolVersion": version::LATEST_VERSION,
         "type": StateTransitionType::IdentityCreditWithdrawal as u8,
         "identityId": Identifier::from([1_u8; 32]),
         "amount": 1042u64,

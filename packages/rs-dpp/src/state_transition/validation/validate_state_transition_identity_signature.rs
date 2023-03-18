@@ -401,7 +401,7 @@ mod test {
         let owner_id = identity.get_id();
         let mut state_transition = get_mock_state_transition();
 
-        state_transition.owner_id = owner_id.clone();
+        state_transition.owner_id = *owner_id;
         state_repository_mock
             .expect_fetch_identity()
             .returning(move |_, _| Ok(Some(identity.clone())));
@@ -434,7 +434,7 @@ mod test {
         let owner_id = identity.get_id();
         let mut state_transition = get_mock_state_transition();
 
-        state_transition.owner_id = owner_id.clone();
+        state_transition.owner_id = *owner_id;
         state_repository_mock
             .expect_fetch_identity()
             .returning(move |_, _| Ok(Some(identity.clone())));
@@ -464,7 +464,7 @@ mod test {
         let owner_id = identity.get_id();
         let mut state_transition = get_mock_state_transition();
 
-        state_transition.owner_id = owner_id.clone();
+        state_transition.owner_id = *owner_id;
         state_repository_mock
             .expect_fetch_identity()
             .returning(move |_, _| Ok(Some(identity.clone())));
@@ -492,7 +492,7 @@ mod test {
         let owner_id = identity.get_id();
         let mut state_transition = get_mock_state_transition();
 
-        state_transition.owner_id = owner_id.clone();
+        state_transition.owner_id = *owner_id;
         state_repository_mock
             .expect_fetch_identity()
             .returning(move |_, _| Ok(Some(identity.clone())));
@@ -523,7 +523,7 @@ mod test {
         let owner_id = identity.get_id();
         let mut state_transition = get_mock_state_transition();
 
-        state_transition.owner_id = owner_id.clone();
+        state_transition.owner_id = *owner_id;
         state_repository_mock
             .expect_fetch_identity()
             .returning(move |_, _| Ok(Some(identity.clone())));

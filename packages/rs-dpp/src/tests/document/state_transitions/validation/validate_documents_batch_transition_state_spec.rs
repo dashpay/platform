@@ -284,8 +284,6 @@ async fn should_return_invalid_result_if_document_transition_with_action_replace
     let mut replace_document = ExtendedDocument::from_raw_json_document(
         extended_documents[0]
             .to_json_object_for_validation()
-            .unwrap()
-            .try_into()
             .unwrap(),
         data_contract.clone(),
     )
@@ -295,8 +293,6 @@ async fn should_return_invalid_result_if_document_transition_with_action_replace
     let mut fetched_document = ExtendedDocument::from_raw_json_document(
         extended_documents[0]
             .to_json_object_for_validation()
-            .unwrap()
-            .try_into()
             .unwrap(),
         data_contract.clone(),
     )
