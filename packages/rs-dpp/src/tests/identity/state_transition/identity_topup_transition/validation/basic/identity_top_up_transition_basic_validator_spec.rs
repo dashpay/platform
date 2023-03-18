@@ -116,8 +116,8 @@ mod validate_identity_topup_transition_basic {
                     panic!("Expected error");
                 }
                 Err(e) => match e {
-                    NonConsensusError::SerdeParsingError(e) => {
-                        assert_eq!(e.message(), "Expected protocolVersion to be a uint");
+                    NonConsensusError::ValueError(e) => {
+                        assert_eq!(e.to_string(), "integer out of bounds");
                     }
                     _ => {
                         panic!("Expected version parsing error");

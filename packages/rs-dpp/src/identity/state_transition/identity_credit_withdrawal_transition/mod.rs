@@ -4,6 +4,7 @@ use serde_json::Value as JsonValue;
 use serde_repr::{Deserialize_repr, Serialize_repr};
 use std::convert::TryInto;
 
+use crate::contracts::withdrawals_contract::property_names::OUTPUT_SCRIPT;
 use crate::version::LATEST_VERSION;
 use crate::{
     identity::{core_script::CoreScript, KeyID},
@@ -91,7 +92,6 @@ impl IdentityCreditWithdrawalTransition {
                 ReplacementType::Identifier,
             )
             .map_err(ProtocolError::ValueError)?;
-
         Self::from_value(value)
     }
 
@@ -177,7 +177,7 @@ impl StateTransitionConvert for IdentityCreditWithdrawalTransition {
     }
 
     fn binary_property_paths() -> Vec<&'static str> {
-        vec![PROPERTY_SIGNATURE]
+        vec![PROPERTY_SIGNATURE, OUTPUT_SCRIPT]
     }
 
     fn to_object(&self, skip_signature: bool) -> Result<Value, ProtocolError> {

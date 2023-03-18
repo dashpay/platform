@@ -1,6 +1,8 @@
 use std::fmt::Display;
+use serde::Deserialize;
 
 use thiserror::Error;
+use crate::value_serialization;
 
 #[derive(Error, Clone, Eq, PartialEq, Debug)]
 pub enum Error {
@@ -24,6 +26,12 @@ pub enum Error {
 
     #[error("byte length not 32 bytes error: {0}")]
     ByteLengthNot32BytesError(String),
+
+    #[error("serde serialization error: {0}")]
+    SerdeSerializationError(String),
+
+    #[error("serde deserialization error: {0}")]
+    SerdeDeserializationError(String),
 }
 
 impl serde::ser::Error for Error {
@@ -31,8 +39,7 @@ impl serde::ser::Error for Error {
     where
         T: Display,
     {
-        println!("{msg}");
-        todo!()
+        Error::SerdeSerializationError(msg.to_string())
     }
 }
 
@@ -41,7 +48,6 @@ impl serde::de::Error for Error {
     where
         T: Display,
     {
-        println!("{msg}");
-        todo!()
+        Error::SerdeDeserializationError(msg.to_string())
     }
 }

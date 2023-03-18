@@ -82,11 +82,11 @@ mod validate_identity_credit_withdrawal_transition_basic_factory {
                     panic!("Expected error");
                 }
                 Err(e) => match e {
-                    NonConsensusError::SerdeParsingError(e) => {
-                        assert_eq!(e.message(), "Expected protocolVersion to be a uint");
+                    NonConsensusError::ValueError(e) => {
+                        assert_eq!(e.to_string(), "integer out of bounds");
                     }
-                    _ => {
-                        panic!("Expected version parsing error");
+                    other => {
+                        panic!("Expected version parsing error, got {}", other);
                     }
                 },
             }

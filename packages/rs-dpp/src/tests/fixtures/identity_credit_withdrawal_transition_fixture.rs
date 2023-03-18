@@ -1,6 +1,9 @@
 use crate::prelude::Identifier;
+use crate::prelude::Revision;
+use crate::identity::core_script::CoreScript;
 use dashcore::{hashes::hex::FromHex, PubkeyHash, Script};
 use platform_value::string_encoding::{encode, Encoding};
+use platform_value::BinaryData;
 use platform_value::{platform_value, Value};
 use serde_json::{json, Value as JsonValue};
 
@@ -17,10 +20,10 @@ pub fn identity_credit_withdrawal_transition_fixture_raw_object() -> Value {
         "amount": 1042u64,
         "coreFeePerByte": 3u32,
         "pooling": Pooling::Never as u8,
-        "outputScript": Script::new_p2pkh(&PubkeyHash::from_hex("0000000000000000000000000000000000000000").unwrap()).to_bytes(),
-        "signature": vec![0_u8; 65],
+        "outputScript": CoreScript::new(Script::new_p2pkh(&PubkeyHash::from_hex("0000000000000000000000000000000000000000").unwrap())),
+        "revision": 1 as Revision,
         "signaturePublicKeyId": 0u32,
-        "revision": 1u32,
+        "signature": BinaryData::new(vec![0_u8; 65]),
     })
 }
 

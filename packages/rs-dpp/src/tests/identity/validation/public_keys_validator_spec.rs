@@ -416,16 +416,9 @@ pub fn should_return_invalid_result_if_key_data_is_not_a_valid_der() {
 pub fn should_return_invalid_result_if_key_has_an_invalid_combination_of_purpose_and_security_level(
 ) {
     let (mut raw_public_keys, validator) = setup_test();
-    platform_value_set_ref(
-        raw_public_keys.get_mut(1).unwrap(),
-        "purpose",
-        Purpose::ENCRYPTION as u64,
-    );
-    platform_value_set_ref(
-        raw_public_keys.get_mut(1).unwrap(),
-        "securityLevel",
-        SecurityLevel::MASTER as u64,
-    );
+
+    raw_public_keys.get_mut(1).unwrap().set_into_value("purpose", Purpose::ENCRYPTION as u8).unwrap();
+    raw_public_keys.get_mut(1).unwrap().set_into_value("securityLevel", SecurityLevel::MASTER as u8).unwrap();
 
     let result = validator.validate_keys(&raw_public_keys).unwrap();
     let errors = assert_consensus_errors!(

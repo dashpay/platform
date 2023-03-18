@@ -1,7 +1,11 @@
+use std::fmt;
+use std::fmt::Write;
 use std::ops::Deref;
 
 use dashcore::Script as DashcoreScript;
 use platform_value::string_encoding::{self, Encoding};
+use platform_value::BinaryData;
+use serde::de::Visitor;
 use serde::{Deserialize, Serialize};
 
 use crate::ProtocolError;
@@ -10,6 +14,10 @@ use crate::ProtocolError;
 pub struct CoreScript(DashcoreScript);
 
 impl CoreScript {
+    pub fn new(script: DashcoreScript) -> Self {
+        CoreScript(script)
+    }
+
     pub fn to_string(&self, encoding: Encoding) -> String {
         string_encoding::encode(&self.0.to_bytes(), encoding)
     }
@@ -44,7 +52,11 @@ impl Serialize for CoreScript {
     where
         S: serde::Serializer,
     {
-        serializer.serialize_str(&self.to_string(Encoding::Base64))
+        if serializer.is_human_readable() {
+            serializer.serialize_str(&self.to_string(Encoding::Base64))
+        } else {
+            serializer.serialize_bytes(self.as_bytes())
+        }
     }
 }
 
@@ -53,10 +65,31 @@ impl<'de> Deserialize<'de> for CoreScript {
     where
         D: serde::Deserializer<'de>,
     {
-        let data: String = Deserialize::deserialize(deserializer)?;
+        if deserializer.is_human_readable() {
+            let data: String = Deserialize::deserialize(deserializer)?;
 
-        Self::from_string(&data, Encoding::Base64)
-            .map_err(|e| serde::de::Error::custom(e.to_string()))
+            Self::from_string(&data, Encoding::Base64)
+                .map_err(|e| serde::de::Error::custom(e.to_string()))
+        } else {
+            struct BytesVisitor;
+
+            impl<'de> Visitor<'de> for BytesVisitor {
+                type Value = CoreScript;
+
+                fn expecting(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
+                    formatter.write_str("a byte array")
+                }
+
+                fn visit_bytes<E>(self, v: &[u8]) -> Result<Self::Value, E>
+                where
+                    E: serde::de::Error,
+                {
+                    Ok(CoreScript::from_bytes(v.to_vec()))
+                }
+            }
+
+            deserializer.deserialize_bytes(BytesVisitor)
+        }
     }
 }
 
