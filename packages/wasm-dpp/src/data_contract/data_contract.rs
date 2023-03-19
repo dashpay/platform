@@ -268,9 +268,9 @@ impl DataContractWasm {
 
     #[wasm_bindgen(js_name=toObject)]
     pub fn to_object(&self) -> Result<JsValue, JsValue> {
-        let serializer =
-            serde_wasm_bindgen::Serializer::json_compatible().serialize_bytes_as_arrays(false);
-        let object = with_js_error!(self.0.serialize(&serializer))?;
+        let value = self.0.to_cleaned_object().with_js_error()?;
+        let serializer = serde_wasm_bindgen::Serializer::json_compatible();
+        let object = with_js_error!(value.serialize(&serializer))?;
 
         js_sys::Reflect::set(
             &object,

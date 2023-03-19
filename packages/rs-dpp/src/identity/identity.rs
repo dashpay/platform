@@ -91,6 +91,11 @@ impl Convertible for Identity {
         platform_value::to_value(self).map_err(ProtocolError::ValueError)
     }
 
+    fn to_cleaned_object(&self) -> Result<Value, ProtocolError> {
+        //same as object for Identities
+        self.to_object()
+    }
+
     fn into_object(self) -> Result<Value, ProtocolError> {
         platform_value::to_value(self).map_err(ProtocolError::ValueError)
     }

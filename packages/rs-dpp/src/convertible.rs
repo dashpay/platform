@@ -6,6 +6,7 @@ use crate::ProtocolError;
 pub trait Convertible {
     /// Returns the [`platform_value::Value`] instance on an object
     fn to_object(&self) -> Result<Value, ProtocolError>;
+    fn to_cleaned_object(&self) -> Result<Value, ProtocolError>;
     /// Returns the [`platform_value::Value`] instance on an object
     fn into_object(self) -> Result<Value, ProtocolError>;
     /// Returns the [`serde_json::Value`] instance that preserves the `Vec<u8>` representation

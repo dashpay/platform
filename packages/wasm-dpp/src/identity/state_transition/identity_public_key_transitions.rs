@@ -1,5 +1,6 @@
 //todo: move this file to transition
 use dpp::dashcore::anyhow;
+use dpp::document::document_transition::document_base_transition::JsonValue;
 use dpp::identity::state_transition::identity_public_key_transitions::IdentityPublicKeyWithWitness;
 use dpp::platform_value::BinaryData;
 pub use serde::{Deserialize, Serialize};
@@ -7,6 +8,7 @@ use std::convert::{TryFrom, TryInto};
 use wasm_bindgen::prelude::*;
 
 use crate::errors::from_dpp_err;
+use crate::utils::WithJsError;
 use crate::{buffer::Buffer, utils, with_js_error};
 
 #[derive(Deserialize, Default)]
@@ -24,10 +26,11 @@ impl IdentityPublicKeyCreateTransitionWasm {
     #[wasm_bindgen(constructor)]
     pub fn new(raw_public_key: JsValue) -> Result<IdentityPublicKeyCreateTransitionWasm, JsValue> {
         let data_string = utils::stringify(&raw_public_key)?;
-        let pk: IdentityPublicKeyCreateTransitionWasm =
-            serde_json::from_str(&data_string).map_err(|e| e.to_string())?;
+        let value: JsonValue = serde_json::from_str(&data_string).map_err(|e| e.to_string())?;
 
-        Ok(pk)
+        let pk = IdentityPublicKeyWithWitness::from_json_object(value).with_js_error()?;
+
+        Ok(IdentityPublicKeyCreateTransitionWasm(pk))
     }
 
     #[wasm_bindgen(js_name=getId)]

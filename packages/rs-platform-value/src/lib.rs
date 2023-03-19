@@ -353,6 +353,10 @@ impl Value {
             Value::Bytes(vec) => Ok(vec),
             Value::Bytes32(vec) => Ok(vec.to_vec()),
             Value::Identifier(vec) => Ok(vec.to_vec()),
+            Value::Array(array) => Ok(array
+                .into_iter()
+                .map(|byte| byte.into_integer())
+                .collect::<Result<Vec<u8>, Error>>()?),
             _other => Err(Error::StructureError("value are not bytes".to_string())),
         }
     }
@@ -374,6 +378,10 @@ impl Value {
             Value::Bytes(vec) => Ok(vec.clone()),
             Value::Bytes32(vec) => Ok(vec.to_vec()),
             Value::Identifier(vec) => Ok(vec.to_vec()),
+            Value::Array(array) => Ok(array
+                .iter()
+                .map(|byte| byte.to_integer())
+                .collect::<Result<Vec<u8>, Error>>()?),
             other => Err(Error::StructureError(format!(
                 "ref value are not bytes found {} instead",
                 other
@@ -399,6 +407,12 @@ impl Value {
             Value::Bytes(vec) => Ok(BinaryData::new(vec.clone())),
             Value::Bytes32(vec) => Ok(BinaryData::new(vec.to_vec())),
             Value::Identifier(vec) => Ok(BinaryData::new(vec.to_vec())),
+            Value::Array(array) => Ok(BinaryData::new(
+                array
+                    .iter()
+                    .map(|byte| byte.to_integer())
+                    .collect::<Result<Vec<u8>, Error>>()?,
+            )),
             other => Err(Error::StructureError(format!(
                 "ref value are not bytes found {} instead",
                 other

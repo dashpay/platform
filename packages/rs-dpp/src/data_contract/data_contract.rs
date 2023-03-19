@@ -46,6 +46,14 @@ impl Convertible for DataContract {
         platform_value::to_value(self).map_err(ProtocolError::ValueError)
     }
 
+    fn to_cleaned_object(&self) -> Result<Value, ProtocolError> {
+        let mut value = platform_value::to_value(self).map_err(ProtocolError::ValueError)?;
+        if self.defs.is_none() {
+            value.remove(property_names::DEFINITIONS)?;
+        }
+        Ok(value)
+    }
+
     fn into_object(self) -> Result<Value, ProtocolError> {
         platform_value::to_value(self).map_err(ProtocolError::ValueError)
     }
