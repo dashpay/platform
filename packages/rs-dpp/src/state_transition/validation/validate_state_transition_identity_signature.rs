@@ -163,7 +163,7 @@ mod test {
         },
         NativeBlsModule,
     };
-    use platform_value::BinaryData;
+    use platform_value::{BinaryData, Value};
     use serde::{Deserialize, Serialize};
 
     #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -181,14 +181,14 @@ mod test {
     }
 
     impl StateTransitionConvert for ExampleStateTransition {
-        fn binary_property_paths() -> Vec<&'static str> {
-            vec!["signature"]
+        fn signature_property_paths() -> Vec<&'static str> {
+            vec!["signature", "signaturePublicKeyId"]
         }
         fn identifiers_property_paths() -> Vec<&'static str> {
             vec![]
         }
-        fn signature_property_paths() -> Vec<&'static str> {
-            vec!["signature", "signaturePublicKeyId"]
+        fn binary_property_paths() -> Vec<&'static str> {
+            vec!["signature"]
         }
     }
 

@@ -443,6 +443,25 @@ impl StateTransitionConvert for DocumentsBatchTransition {
 
         Ok(result_buf)
     }
+
+    fn to_cleaned_object(&self, skip_signature: bool) -> Result<Value, ProtocolError> {
+        let mut object: Value = platform_value::to_value(self)?;
+        if skip_signature {
+            for path in Self::signature_property_paths() {
+                let _ = object.remove(path);
+            }
+        }
+        let mut transitions = vec![];
+        for transition in self.transitions.iter() {
+            transitions.push(transition.to_cleaned_object()?)
+        }
+        object.insert(
+            String::from(property_names::TRANSITIONS),
+            Value::Array(transitions),
+        )?;
+
+        Ok(object)
+    }
 }
 
 impl StateTransitionLike for DocumentsBatchTransition {

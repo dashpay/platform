@@ -58,6 +58,10 @@ impl DocumentTransitionObjectLike for DocumentDeleteTransition {
     fn to_json(&self) -> Result<JsonValue, ProtocolError> {
         self.base.to_json()
     }
+
+    fn to_cleaned_object(&self) -> Result<Value, ProtocolError> {
+        self.base.to_cleaned_object()
+    }
 }
 
 #[cfg(test)]

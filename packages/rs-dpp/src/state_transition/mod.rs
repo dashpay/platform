@@ -4,7 +4,7 @@ pub use abstract_state_transition::{
     state_transition_helpers, StateTransitionConvert, StateTransitionLike,
 };
 pub use abstract_state_transition_identity_signed::StateTransitionIdentitySigned;
-use platform_value::BinaryData;
+use platform_value::{BinaryData, Value};
 pub use state_transition_types::*;
 
 use crate::data_contract::state_transition::data_contract_create_transition::DataContractCreateTransition;
@@ -20,6 +20,7 @@ mod abstract_state_transition;
 mod abstract_state_transition_identity_signed;
 mod state_transition_facade;
 mod state_transition_factory;
+use crate::ProtocolError;
 pub use state_transition_facade::*;
 pub use state_transition_factory::*;
 
@@ -129,6 +130,10 @@ impl StateTransitionConvert for StateTransition {
 
     fn binary_property_paths() -> Vec<&'static str> {
         panic!("Static call is not supported")
+    }
+
+    fn to_cleaned_object(&self, skip_signature: bool) -> Result<Value, ProtocolError> {
+        call_method!(self, to_cleaned_object, skip_signature)
     }
 }
 

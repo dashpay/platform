@@ -9,7 +9,7 @@ use crate::utils::{Inner, WithJsError};
 use crate::{buffer::Buffer, utils};
 use dpp::identity::{IdentityPublicKey, KeyID};
 use dpp::platform_value::BinaryData;
-use dpp::ProtocolError;
+use dpp::{Convertible, ProtocolError};
 
 mod purpose;
 pub use purpose::*;
@@ -139,7 +139,7 @@ impl IdentityPublicKeyWasm {
     pub fn to_object(&self) -> Result<JsValue, JsValue> {
         let val = self
             .0
-            .to_raw_json_object()
+            .to_json_object()
             .map_err(|e| from_dpp_err(e.into()))?;
 
         let data_buffer = Buffer::from_bytes(self.0.data.as_slice());

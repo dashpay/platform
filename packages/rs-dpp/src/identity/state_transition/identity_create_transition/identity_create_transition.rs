@@ -236,8 +236,30 @@ impl StateTransitionConvert for IdentityCreateTransition {
     }
 
     fn to_json(&self, skip_signature: bool) -> Result<JsonValue, ProtocolError> {
-        self.to_object(skip_signature)
+        self.to_cleaned_object(skip_signature)
             .and_then(|v| v.try_into().map_err(ProtocolError::ValueError))
+    }
+
+    fn to_cleaned_object(&self, skip_signature: bool) -> Result<Value, ProtocolError> {
+        let mut value: Value = platform_value::to_value(self)?;
+
+        if skip_signature {
+            value
+                .remove_values_at_paths(Self::signature_property_paths())
+                .map_err(ProtocolError::ValueError)?;
+        }
+
+        let mut public_keys: Vec<Value> = vec![];
+        for key in self.public_keys.iter() {
+            public_keys.push(key.to_raw_object(skip_signature)?);
+        }
+
+        value.insert(
+            property_names::PUBLIC_KEYS.to_owned(),
+            Value::Array(public_keys),
+        )?;
+
+        Ok(value)
     }
 }
 

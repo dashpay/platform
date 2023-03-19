@@ -199,7 +199,7 @@ impl StateTransitionConvert for DataContractCreateTransition {
     }
 
     fn to_json(&self, skip_signature: bool) -> Result<JsonValue, ProtocolError> {
-        self.to_object(skip_signature)
+        self.to_cleaned_object(skip_signature)
             .and_then(|value| value.try_into().map_err(ProtocolError::ValueError))
     }
 
@@ -216,6 +216,25 @@ impl StateTransitionConvert for DataContractCreateTransition {
                 })?;
         }
         object.insert(String::from(DATA_CONTRACT), self.data_contract.to_object()?)?;
+        Ok(object)
+    }
+
+    fn to_cleaned_object(&self, skip_signature: bool) -> Result<Value, ProtocolError> {
+        let mut object: Value = platform_value::to_value(self)?;
+        if skip_signature {
+            Self::signature_property_paths()
+                .into_iter()
+                .try_for_each(|path| {
+                    object
+                        .remove_value_at_path(path)
+                        .map_err(ProtocolError::ValueError)
+                        .map(|_| ())
+                })?;
+        }
+        object.insert(
+            String::from(DATA_CONTRACT),
+            self.data_contract.to_cleaned_object()?,
+        )?;
         Ok(object)
     }
 }

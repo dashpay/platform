@@ -190,9 +190,13 @@ impl DocumentTransitionObjectLike for DocumentCreateTransition {
     }
 
     fn to_json(&self) -> Result<JsonValue, ProtocolError> {
-        self.to_object()?
+        self.to_cleaned_object()?
             .try_into()
             .map_err(ProtocolError::ValueError)
+    }
+
+    fn to_cleaned_object(&self) -> Result<Value, ProtocolError> {
+        Ok(self.to_value_map()?.into())
     }
 }
 

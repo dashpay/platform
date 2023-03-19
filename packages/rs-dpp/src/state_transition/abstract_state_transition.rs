@@ -7,6 +7,7 @@ use serde::Serialize;
 use serde_json::Value as JsonValue;
 
 use crate::consensus::ConsensusError;
+use crate::data_contract::state_transition::property_names::DATA_CONTRACT;
 use crate::errors::consensus::signature::SignatureError;
 use crate::state_transition::errors::{
     InvalidIdentityPublicKeyTypeError, StateTransitionIsNotSignedError,
@@ -241,6 +242,10 @@ pub trait StateTransitionConvert: Serialize {
     // Returns the hash of cibor-encoded bytes representation of the object
     fn hash(&self, skip_signature: bool) -> Result<Vec<u8>, ProtocolError> {
         Ok(hash::hash(self.to_buffer(skip_signature)?))
+    }
+
+    fn to_cleaned_object(&self, skip_signature: bool) -> Result<Value, ProtocolError> {
+        self.to_object(skip_signature)
     }
 }
 

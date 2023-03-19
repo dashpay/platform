@@ -190,7 +190,17 @@ impl StateTransitionConvert for IdentityCreditWithdrawalTransition {
     }
 
     fn to_json(&self, skip_signature: bool) -> Result<JsonValue, ProtocolError> {
-        self.to_object(skip_signature)
+        self.to_cleaned_object(skip_signature)
             .and_then(|value| value.try_into().map_err(ProtocolError::ValueError))
+    }
+
+    fn to_cleaned_object(&self, skip_signature: bool) -> Result<Value, ProtocolError> {
+        let mut value = platform_value::to_value(self)?;
+        if skip_signature {
+            value
+                .remove_many(&Self::signature_property_paths())
+                .map_err(ProtocolError::ValueError)?;
+        }
+        Ok(value)
     }
 }

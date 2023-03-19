@@ -204,6 +204,10 @@ impl DocumentTransitionObjectLike for DocumentBaseTransition {
             .try_into()
             .map_err(ProtocolError::ValueError)
     }
+
+    fn to_cleaned_object(&self) -> Result<Value, ProtocolError> {
+        Ok(self.to_value_map()?.into())
+    }
 }
 
 pub trait DocumentTransitionObjectLike {
@@ -239,4 +243,5 @@ pub trait DocumentTransitionObjectLike {
     ///  - base58 string for Identifiers
     ///  - base64 string for other binary data
     fn to_json(&self) -> Result<JsonValue, ProtocolError>;
+    fn to_cleaned_object(&self) -> Result<Value, ProtocolError>;
 }

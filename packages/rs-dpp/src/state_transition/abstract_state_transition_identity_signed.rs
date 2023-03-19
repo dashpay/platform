@@ -187,7 +187,7 @@ pub fn get_compressed_public_ec_key(private_key: &[u8]) -> Result<[u8; 33], Prot
 mod test {
     use bls_signatures::Serialize as BlsSerialize;
     use chrono::Utc;
-    use platform_value::BinaryData;
+    use platform_value::{BinaryData, Value};
     use serde::{Deserialize, Serialize};
     use serde_json::json;
     use std::convert::TryInto;
@@ -229,6 +229,10 @@ mod test {
         }
         fn signature_property_paths() -> Vec<&'static str> {
             vec!["signature", "signaturePublicKeyId"]
+        }
+
+        fn to_cleaned_object(&self, skip_signature: bool) -> Result<Value, ProtocolError> {
+            todo!()
         }
     }
 

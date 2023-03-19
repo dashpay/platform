@@ -145,6 +145,10 @@ impl DocumentTransitionObjectLike for DocumentTransition {
         call_method!(self, to_object)
     }
 
+    fn to_cleaned_object(&self) -> Result<Value, ProtocolError> {
+        call_method!(self, to_cleaned_object)
+    }
+
     fn from_value_map(
         map: BTreeMap<String, Value>,
         data_contract: DataContract,

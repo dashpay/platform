@@ -5,13 +5,14 @@ use std::convert::{TryFrom, TryInto};
 
 use platform_value::btreemap_extensions::BTreeValueMapHelper;
 use platform_value::btreemap_extensions::BTreeValueRemoveFromMapHelper;
-use platform_value::{BinaryData, ReplacementType, Value};
+use platform_value::{BinaryData, ReplacementType, Value, ValueMapHelper};
 use serde::{Deserialize, Serialize};
 use serde_json::Value as JsonValue;
 
 use crate::errors::ProtocolError;
 use crate::util::cbor_value::{CborCanonicalMap, CborMapExtension};
-use crate::SerdeParsingError;
+use crate::util::serializer;
+use crate::{Convertible, SerdeParsingError};
 
 pub const BINARY_DATA_FIELDS: [&str; 2] = ["data", "signature"];
 
@@ -27,6 +28,42 @@ pub struct IdentityPublicKeyWithWitness {
     pub read_only: bool,
     /// The signature is needed for ECDSA_SECP256K1 Key type and BLS12_381 Key type
     pub signature: BinaryData,
+}
+
+impl Convertible for IdentityPublicKeyWithWitness {
+    fn to_object(&self) -> Result<Value, ProtocolError> {
+        platform_value::to_value(self).map_err(ProtocolError::ValueError)
+    }
+
+    fn to_cleaned_object(&self) -> Result<Value, ProtocolError> {
+        platform_value::to_value(self).map_err(ProtocolError::ValueError)
+    }
+
+    fn into_object(self) -> Result<Value, ProtocolError> {
+        platform_value::to_value(self).map_err(ProtocolError::ValueError)
+    }
+
+    fn to_json_object(&self) -> Result<JsonValue, ProtocolError> {
+        self.to_cleaned_object()?
+            .try_into_validating_json()
+            .map_err(ProtocolError::ValueError)
+    }
+
+    fn to_json(&self) -> Result<JsonValue, ProtocolError> {
+        self.to_cleaned_object()?
+            .try_into()
+            .map_err(ProtocolError::ValueError)
+    }
+
+    fn to_buffer(&self) -> Result<Vec<u8>, ProtocolError> {
+        let mut object = self.to_cleaned_object()?;
+        object
+            .to_map_mut()
+            .unwrap()
+            .sort_by_lexicographical_byte_ordering_keys_and_inner_maps();
+
+        serializer::serializable_value_to_cbor(&object, None)
+    }
 }
 
 impl IdentityPublicKeyWithWitness {
@@ -53,32 +90,6 @@ impl IdentityPublicKeyWithWitness {
 
     pub fn from_raw_object(raw_object: Value) -> Result<Self, ProtocolError> {
         raw_object.try_into().map_err(ProtocolError::ValueError)
-        // Ok(Self {
-        //     id: raw_object
-        //         .get_integer("id")
-        //         .map_err(ProtocolError::ValueError)?,
-        //     purpose: raw_object
-        //         .get_integer::<u8>("purpose")
-        //         .map_err(ProtocolError::ValueError)?
-        //         .try_into()?,
-        //     security_level: raw_object
-        //         .get_integer::<u8>("securityLevel")
-        //         .map_err(ProtocolError::ValueError)?
-        //         .try_into()?,
-        //     key_type: raw_object
-        //         .get_integer::<u8>("keyType")
-        //         .map_err(ProtocolError::ValueError)?
-        //         .try_into()?,
-        //     data: raw_object
-        //         .remove_bytes("data")
-        //         .map_err(ProtocolError::ValueError)?,
-        //     read_only: raw_object
-        //         .get_bool("readOnly")
-        //         .map_err(ProtocolError::ValueError)?,
-        //     signature: raw_object
-        //         .remove_bytes("signature")
-        //         .map_err(ProtocolError::ValueError)?,
-        // })
     }
 
     pub fn from_value_map(mut value_map: BTreeMap<String, Value>) -> Result<Self, ProtocolError> {
@@ -155,12 +166,6 @@ impl IdentityPublicKeyWithWitness {
     /// Get the original public key hash
     pub fn hash(&self) -> Result<Vec<u8>, ProtocolError> {
         Into::<IdentityPublicKey>::into(self).hash()
-    }
-
-    /// Return json with all binary data converted to base64
-    pub fn to_json(&self) -> Result<JsonValue, ProtocolError> {
-        let value: Value = self.try_into()?;
-        value.try_into().map_err(ProtocolError::ValueError)
     }
 
     pub fn from_cbor_value(cbor_value: &CborValue) -> Result<Self, ProtocolError> {
