@@ -14,7 +14,6 @@ use crate::{
         state_transition_execution_context::StateTransitionExecutionContext,
         StateTransitionConvert, StateTransitionType,
     },
-    util::json_value::JsonValueExt,
     validation::{AsyncDataValidatorWithContext, SimpleValidationResult},
     ProtocolError,
 };

@@ -61,10 +61,6 @@ impl IdentityCreateTransitionWasm {
             .replace_at_paths(BINARY_FIELDS, ReplacementType::BinaryBytes)
             .map_err(ProtocolError::ValueError)
             .with_js_error()?;
-        raw_state_transition
-            .replace_at_paths(IDENTIFIER_FIELDS, ReplacementType::Identifier)
-            .map_err(ProtocolError::ValueError)
-            .with_js_error()?;
         let identity_create_transition = IdentityCreateTransition::new(raw_state_transition)
             .map_err(|e| RustConversionError::Error(e.to_string()).to_js_value())?;
 

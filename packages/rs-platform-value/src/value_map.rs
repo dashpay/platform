@@ -6,6 +6,9 @@ pub type ValueMap = Vec<(Value, Value)>;
 
 pub trait ValueMapHelper {
     fn sort_by_keys(&mut self);
+    fn sort_by_keys_and_inner_maps(&mut self);
+    fn sort_by_lexicographical_byte_ordering_keys(&mut self);
+    fn sort_by_lexicographical_byte_ordering_keys_and_inner_maps(&mut self);
     fn get_key(&self, search_key: &str) -> Result<&Value, Error>;
     fn get_optional_key(&self, key: &str) -> Option<&Value>;
     fn get_key_mut(&mut self, search_key: &str) -> Result<&mut Value, Error>;
@@ -20,7 +23,41 @@ pub trait ValueMapHelper {
 
 impl ValueMapHelper for ValueMap {
     fn sort_by_keys(&mut self) {
-        self.sort_by(|(key1, _), (key2, _)| key1.partial_cmp(key2).unwrap_or(Ordering::Less))
+        self.sort_by(|(key1, _), (key2, _)| key1.partial_cmp(key2).unwrap_or(Ordering::Less));
+    }
+
+    fn sort_by_keys_and_inner_maps(&mut self) {
+        self.sort_by_keys();
+        self.iter_mut().for_each(|(_, v)| {
+           if let Value::Map(m) = v {
+               m.sort_by_keys_and_inner_maps()
+           }
+        });
+    }
+
+    fn sort_by_lexicographical_byte_ordering_keys(&mut self) {
+        self.sort_by(|(key1, _), (key2, _)| {
+            if key1.is_text() && key2.is_text() {
+                let key1 = key1.to_text().unwrap();
+                let key2 = key2.to_text().unwrap();
+                match key1.len().cmp(&key2.len()) {
+                    Ordering::Less => Ordering::Less,
+                    Ordering::Equal => { key1.cmp(&key2) },
+                    Ordering::Greater => Ordering::Greater,
+                }
+            } else {
+                key1.partial_cmp(key2).unwrap_or(Ordering::Less)
+            }
+        })
+    }
+
+    fn sort_by_lexicographical_byte_ordering_keys_and_inner_maps(&mut self) {
+        self.sort_by_lexicographical_byte_ordering_keys();
+        self.iter_mut().for_each(|(_, v)| {
+            if let Value::Map(m) = v {
+                m.sort_by_lexicographical_byte_ordering_keys_and_inner_maps()
+            }
+        });
     }
 
     fn get_key(&self, search_key: &str) -> Result<&Value, Error> {

@@ -36,9 +36,8 @@ impl DataContract {
         let version = data_contract_map.get_integer(property_names::VERSION)?;
 
         // Defs
-        let defs = data_contract_map
-            .get_optional_inner_str_json_value_map::<BTreeMap<_, _>>("$defs")?
-            .unwrap_or_default();
+        let defs =
+            data_contract_map.get_optional_inner_str_json_value_map::<BTreeMap<_, _>>("$defs")?;
 
         // Documents
         let documents: BTreeMap<String, JsonValue> = data_contract_map
@@ -101,13 +100,13 @@ impl DataContract {
 
         contract_cbor_map.insert(property_names::DOCUMENTS, docs);
 
-        if !self.defs.is_empty() {
+        if let Some(defs) = &self.defs {
             contract_cbor_map.insert(
                 property_names::DEFINITIONS,
                 CborValue::serialized(&self.defs)
                     .map_err(|e| ProtocolError::EncodingError(e.to_string()))?,
             );
-        }
+        };
 
         Ok(contract_cbor_map)
     }

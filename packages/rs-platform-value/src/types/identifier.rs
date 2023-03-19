@@ -3,7 +3,7 @@ use rand::Rng;
 use std::convert::{TryFrom, TryInto};
 use std::fmt;
 
-use serde::de::Visitor;
+use serde::de::{Error as SerdeDeError, Visitor};
 use serde::{Deserialize, Serialize};
 use serde_json::Value as JsonValue;
 
@@ -67,29 +67,9 @@ impl<'de> Deserialize<'de> for IdentifierBytes32 {
 
             deserializer.deserialize_string(StringVisitor)
         } else {
-            struct BytesVisitor;
+            let value = Value::deserialize(deserializer).map_err(|err| err.into())?;
 
-            impl<'de> Visitor<'de> for BytesVisitor {
-                type Value = IdentifierBytes32;
-
-                fn expecting(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
-                    formatter.write_str("a byte array with length 32")
-                }
-
-                fn visit_bytes<E>(self, v: &[u8]) -> Result<Self::Value, E>
-                where
-                    E: serde::de::Error,
-                {
-                    let mut bytes = [0u8; 32];
-                    if v.len() != 32 {
-                        return Err(E::invalid_length(v.len(), &self));
-                    }
-                    bytes.copy_from_slice(v);
-                    Ok(IdentifierBytes32(bytes))
-                }
-            }
-
-            deserializer.deserialize_bytes(BytesVisitor)
+            Ok(IdentifierBytes32(value.into_hash256().map_err(|_| D::Error::custom("hello"))?))
         }
     }
 }

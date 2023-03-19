@@ -38,7 +38,7 @@ use dpp::platform_value::btreemap_extensions::BTreeValueMapReplacementPathHelper
 use dpp::platform_value::converter::serde_json::BTreeValueJsonConverter;
 use dpp::platform_value::ReplacementType;
 use dpp::platform_value::Value;
-use dpp::ProtocolError;
+use dpp::{platform_value, ProtocolError};
 pub use factory::DocumentFactoryWASM;
 use serde_json::Value as JsonValue;
 pub use validator::DocumentValidatorWasm;
@@ -228,8 +228,8 @@ impl DocumentWasm {
         document_type_name: &str,
     ) -> Result<JsValue, JsValue> {
         let options: ConversionOptions = if !options.is_undefined() && options.is_object() {
-            let raw_options = options.with_serde_to_json_value()?;
-            serde_json::from_value(raw_options).with_js_error()?
+            let raw_options = options.with_serde_to_platform_value()?;
+            platform_value::from_value(raw_options).with_js_error()?
         } else {
             Default::default()
         };

@@ -64,8 +64,8 @@ impl DocumentValidator {
             .get_document_schema(document_type.name.as_str())?
             .to_owned();
 
-        let json_schema_validator = if !data_contract.defs.is_empty() {
-            JsonSchemaValidator::new_with_definitions(document_schema, data_contract.defs.iter())
+        let json_schema_validator = if let Some(defs) = &data_contract.defs {
+            JsonSchemaValidator::new_with_definitions(document_schema, defs.iter())
         } else {
             JsonSchemaValidator::new(document_schema)
         }
@@ -115,8 +115,8 @@ impl DocumentValidator {
             .get_document_schema(document_type_name)?
             .to_owned();
 
-        let json_schema_validator = if !data_contract.defs.is_empty() {
-            JsonSchemaValidator::new_with_definitions(document_schema, data_contract.defs.iter())
+        let json_schema_validator = if let Some(defs) = &data_contract.defs {
+            JsonSchemaValidator::new_with_definitions(document_schema, defs.iter())
         } else {
             JsonSchemaValidator::new(document_schema)
         }

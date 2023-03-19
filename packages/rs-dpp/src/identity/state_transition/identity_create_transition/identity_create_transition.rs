@@ -16,7 +16,10 @@ use crate::{NonConsensusError, ProtocolError};
 use platform_value::btreemap_extensions::BTreeValueRemoveInnerValueFromMapHelper;
 
 pub const IDENTIFIER_FIELDS: [&str; 1] = [property_names::IDENTITY_ID];
-pub const BINARY_FIELDS: [&str; 2] = [property_names::PUBLIC_KEYS_DATA, property_names::SIGNATURE];
+pub const BINARY_FIELDS: [&str; 2] = [
+    property_names::PUBLIC_KEYS_DATA,
+    property_names::PUBLIC_KEYS_SIGNATURE,
+];
 
 mod property_names {
     pub const PUBLIC_KEYS: &str = "publicKeys";

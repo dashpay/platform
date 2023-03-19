@@ -1,12 +1,10 @@
 use std::collections::{BTreeMap, HashSet};
 use std::convert::{TryFrom, TryInto};
 
-use anyhow::anyhow;
-
 use itertools::{Either, Itertools};
 use platform_value::btreemap_extensions::{BTreeValueMapHelper, BTreeValueRemoveFromMapHelper};
-use platform_value::Value;
 use platform_value::{Bytes32, Identifier};
+use platform_value::{ReplacementType, Value, ValueMapHelper};
 use serde::{Deserialize, Serialize};
 use serde_json::Value as JsonValue;
 
@@ -20,7 +18,6 @@ use crate::data_contract::contract_config::{
 
 use crate::data_contract::get_binary_properties_from_schema::get_binary_properties;
 
-use crate::util::json_value::{JsonValueExt, ReplaceWith};
 use crate::{
     errors::ProtocolError,
     metadata::Metadata,
@@ -45,32 +42,42 @@ pub const IDENTIFIER_FIELDS: [&str; 2] = [property_names::ID, property_names::OW
 pub const BINARY_FIELDS: [&str; 1] = [property_names::ENTROPY];
 
 impl Convertible for DataContract {
-    fn to_json_object(&self) -> Result<JsonValue, ProtocolError> {
-        let mut json_object = serde_json::to_value(self)?;
-        if !json_object.is_object() {
-            return Err(anyhow!("the Data Contract isn't a JSON Value Object").into());
-        }
+    fn to_object(&self) -> Result<Value, ProtocolError> {
+        platform_value::to_value(self).map_err(ProtocolError::ValueError)
+    }
 
-        json_object.replace_identifier_paths(IDENTIFIER_FIELDS, ReplaceWith::Bytes)?;
-        Ok(json_object)
+    fn into_object(self) -> Result<Value, ProtocolError> {
+        platform_value::to_value(self).map_err(ProtocolError::ValueError)
+    }
+
+    fn to_json_object(&self) -> Result<JsonValue, ProtocolError> {
+        self.to_object()?
+            .try_into_validating_json()
+            .map_err(ProtocolError::ValueError)
     }
 
     /// Returns Data Contract as a JSON Value
     fn to_json(&self) -> Result<JsonValue, ProtocolError> {
-        Ok(serde_json::to_value(self)?)
+        self.to_object()?
+            .try_into()
+            .map_err(ProtocolError::ValueError)
     }
 
     /// Returns Data Contract as a Buffer
     fn to_buffer(&self) -> Result<Vec<u8>, ProtocolError> {
         let protocol_version = self.protocol_version;
-        // what means skip_identifiers_conversion
-        let mut json_object = self.to_json_object(true)?;
 
-        if let JsonValue::Object(ref mut o) = json_object {
-            o.remove("protocolVersion");
-        };
+        let mut object = self.to_object()?;
+        object.remove(property_names::PROTOCOL_VERSION)?;
+        if self.defs.is_none() {
+            object.remove(property_names::DEFINITIONS)?;
+        }
+        object
+            .to_map_mut()
+            .unwrap()
+            .sort_by_lexicographical_byte_ordering_keys_and_inner_maps();
 
-        serializer::serializable_value_to_cbor(&json_object, Some(protocol_version))
+        serializer::serializable_value_to_cbor(&object, Some(protocol_version))
     }
 }
 
@@ -96,7 +103,7 @@ pub struct DataContract {
 
     // TODO we may ensure in compile time that defs are not empty if we define a type for it
     #[serde(rename = "$defs", default)]
-    pub defs: BTreeMap<DefinitionName, JsonSchema>,
+    pub defs: Option<BTreeMap<DefinitionName, JsonSchema>>,
 
     #[serde(skip)]
     pub entropy: Bytes32,
@@ -140,9 +147,8 @@ impl DataContract {
             .map_err(|e| ProtocolError::ParsingError(e.to_string()))?;
 
         // Defs
-        let defs = data_contract_map
-            .get_optional_inner_str_json_value_map::<BTreeMap<_, _>>("$defs")?
-            .unwrap_or_default();
+        let defs =
+            data_contract_map.get_optional_inner_str_json_value_map::<BTreeMap<_, _>>("$defs")?;
 
         let binary_properties = documents
             .iter()
@@ -177,97 +183,15 @@ impl DataContract {
         Ok(data_contract)
     }
 
-    pub fn from_json_object(mut json_value: JsonValue) -> Result<DataContract, ProtocolError> {
-        json_value.replace_binary_paths(BINARY_FIELDS, ReplaceWith::Bytes)?;
-
-        let value: Value = json_value.clone().into();
-        let data_contract_map = value
-            .into_btree_string_map()
-            .map_err(ProtocolError::ValueError)?;
-        let mut data_contract: DataContract = serde_json::from_value(json_value)?;
-        data_contract.generate_binary_properties();
-
-        let mutability = get_contract_configuration_properties(&data_contract_map)
-            .map_err(|e| ProtocolError::ParsingError(e.to_string()))?;
-        let definition_references = get_definitions(&data_contract_map)?;
-        let document_types = get_document_types_from_contract(
-            &data_contract_map,
-            &definition_references,
-            mutability.documents_keep_history_contract_default,
-            mutability.documents_mutable_contract_default,
-        )
-        .map_err(|e| ProtocolError::ParsingError(e.to_string()))?;
-
-        data_contract.document_types = document_types;
-
-        Ok(data_contract)
+    pub fn from_json_object(json_value: JsonValue) -> Result<DataContract, ProtocolError> {
+        let mut value: Value = json_value.into();
+        value.replace_at_paths(BINARY_FIELDS, ReplacementType::BinaryBytes)?;
+        value.replace_at_paths(IDENTIFIER_FIELDS, ReplacementType::Identifier)?;
+        Self::from_raw_object(value)
     }
 
     pub fn from_buffer(b: impl AsRef<[u8]>) -> Result<DataContract, ProtocolError> {
         Self::from_cbor(b)
-    }
-
-    pub fn to_object(&self) -> Result<Value, ProtocolError> {
-        platform_value::to_value(self).map_err(ProtocolError::ValueError)
-        // let mut raw_object = BTreeMap::from([
-        //                                     (property_names::PROTOCOL_VERSION.to_string(), Value::U32(self.protocol_version)),
-        //                                     (property_names::ID.to_string(), Value::Identifier(self.id.to_buffer())),
-        //                                     (property_names::OWNER_ID.to_string(), Value::Identifier(self.owner_id.to_buffer())),
-        //                                     (property_names::SCHEMA.to_string(), Value::Text(self.schema.clone())),
-        //                                     (property_names::VERSION.to_string(), Value::U32(self.version)),
-        //                                     (property_names::DOCUMENTS.to_string(), self.documents.into()),
-        //                                     (property_names::ENTROPY.to_string(), Value::Bytes32(self.entropy))]);
-        // if let Some(defs) = &self.defs {
-        //     raw_object.insert(property_names::DEFINITIONS.to_string(), defs.into())
-        // }
-        //
-        // Ok(raw_object.into())
-    }
-
-    pub fn into_object(self) -> Result<Value, ProtocolError> {
-        platform_value::to_value(self).map_err(ProtocolError::ValueError)
-        // let mut raw_object = BTreeMap::from([
-        //     (property_names::PROTOCOL_VERSION.to_string(), Value::U32(self.protocol_version)),
-        //     (property_names::ID.to_string(), Value::Identifier(self.id.to_buffer())),
-        //     (property_names::OWNER_ID.to_string(), Value::Identifier(self.owner_id.to_buffer())),
-        //     (property_names::SCHEMA.to_string(), Value::Text(self.schema)),
-        //     (property_names::VERSION.to_string(), Value::U32(self.version)),
-        //     (property_names::DOCUMENTS.to_string(), self.documents.into()),
-        //     (property_names::ENTROPY.to_string(), Value::Bytes32(self.entropy))]);
-        // if let Some(defs) = &self.defs {
-        //     raw_object.insert(property_names::DEFINITIONS.to_string(), defs.into())
-        // }
-        //
-        // Ok(raw_object.into())
-    }
-
-    pub fn to_json_object(
-        &self,
-        skip_identifiers_conversion: bool,
-    ) -> Result<JsonValue, ProtocolError> {
-        let mut json_object = serde_json::to_value(self)?;
-        if !json_object.is_object() {
-            return Err(anyhow!("the Data Contract isn't a JSON Value Object").into());
-        }
-
-        if !skip_identifiers_conversion {
-            json_object.replace_identifier_paths(IDENTIFIER_FIELDS, ReplaceWith::Bytes)?;
-        }
-        Ok(json_object)
-    }
-
-    /// Returns Data Contract as a JSON Value
-    pub fn to_json(&self) -> Result<JsonValue, ProtocolError> {
-        Ok(serde_json::to_value(self)?)
-    }
-
-    /// Returns Data Contract as a Buffer
-    pub fn to_buffer(&self) -> Result<Vec<u8>, ProtocolError> {
-        self.to_cbor()
-    }
-
-    pub fn definitions(&self) -> &BTreeMap<String, JsonValue> {
-        &self.defs
     }
 
     // Returns hash from Data Contract
@@ -431,14 +355,7 @@ impl DataContract {
 impl TryFrom<JsonValue> for DataContract {
     type Error = ProtocolError;
     fn try_from(v: JsonValue) -> Result<Self, Self::Error> {
-        let mut v = v;
-
-        v.replace_identifier_paths(IDENTIFIER_FIELDS, ReplaceWith::Base58)?;
-
-        let mut data_contract: Self = serde_json::from_value(v)?;
-        data_contract.generate_binary_properties();
-
-        Ok(data_contract)
+        DataContract::from_json_object(v)
     }
 }
 
@@ -760,7 +677,7 @@ mod test {
         let string_contract = get_data_from_file("src/tests/payloads/contract_example.json")?;
         let data_contract: DataContract = serde_json::from_str(&string_contract)?;
 
-        let raw_data_contract = data_contract.to_json_object(false)?;
+        let raw_data_contract = data_contract.to_json_object()?;
         for path in IDENTIFIER_FIELDS {
             assert!(raw_data_contract
                 .get(path)
@@ -775,14 +692,10 @@ mod test {
         init();
 
         let string_contract = get_data_from_file("src/tests/payloads/contract_example.json")?;
-        let mut raw_contract: JsonValue = serde_json::from_str(&string_contract)?;
-        raw_contract.replace_identifier_paths(IDENTIFIER_FIELDS, ReplaceWith::Bytes)?;
+        let raw_contract: JsonValue = serde_json::from_str(&string_contract)?;
 
         for path in IDENTIFIER_FIELDS {
-            assert!(raw_contract
-                .get(path)
-                .expect("the path should exist")
-                .is_array())
+            raw_contract.get(path).expect("the path should exist");
         }
 
         let data_contract_from_raw = DataContract::try_from(raw_contract)?;
@@ -801,26 +714,6 @@ mod test {
             "string"
         );
 
-        Ok(())
-    }
-
-    #[test]
-    fn conversion_from_invalid_object() -> Result<()> {
-        init();
-
-        let string_contract = get_data_from_file("src/tests/payloads/contract_example.json")?;
-
-        let invalid_raw_contract: JsonValue = serde_json::from_str(&string_contract)?;
-        // The identifiers are strings but they should be arrays of bytes
-        for path in IDENTIFIER_FIELDS {
-            assert!(invalid_raw_contract
-                .get(path)
-                .expect("the path should exist")
-                .is_string())
-        }
-
-        let result = DataContract::try_from(invalid_raw_contract);
-        assert_error_contains!(result, "expected a sequence");
         Ok(())
     }
 

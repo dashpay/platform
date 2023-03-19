@@ -18,7 +18,7 @@ use crate::{
     util::json_value::JsonValueExt,
     validation::{JsonSchemaValidator, SimpleValidationResult},
     version::ProtocolVersionValidator,
-    DashPlatformProtocolInitError, ProtocolError,
+    Convertible, DashPlatformProtocolInitError, ProtocolError,
 };
 use anyhow::anyhow;
 use anyhow::Context;

@@ -102,18 +102,24 @@ impl DataContractFactory {
             .map(|(key, value)| Ok((key, value.try_into().map_err(ProtocolError::ValueError)?)))
             .collect::<Result<BTreeMap<String, JsonValue>, ProtocolError>>()?;
 
-        let json_defs = definition_references
-            .into_iter()
-            .map(|(key, value)| {
-                Ok((
-                    key,
-                    value
-                        .clone()
-                        .try_into()
-                        .map_err(ProtocolError::ValueError)?,
-                ))
-            })
-            .collect::<Result<BTreeMap<String, JsonValue>, ProtocolError>>()?;
+        let json_defs = if !definition_references.is_empty() {
+            Some(
+                definition_references
+                    .into_iter()
+                    .map(|(key, value)| {
+                        Ok((
+                            key,
+                            value
+                                .clone()
+                                .try_into()
+                                .map_err(ProtocolError::ValueError)?,
+                        ))
+                    })
+                    .collect::<Result<BTreeMap<String, JsonValue>, ProtocolError>>()?,
+            )
+        } else {
+            None
+        };
         let mut data_contract = DataContract {
             protocol_version: self.protocol_version,
             id: data_contract_id,
@@ -223,6 +229,7 @@ mod tests {
     use crate::data_contract::property_names;
     use crate::tests::fixtures::get_data_contract_fixture;
     use crate::version::{ProtocolVersionValidator, COMPATIBILITY_MAP, LATEST_VERSION};
+    use crate::Convertible;
     use std::sync::Arc;
 
     pub struct TestData {

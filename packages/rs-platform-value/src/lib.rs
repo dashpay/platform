@@ -277,6 +277,32 @@ impl Value {
         self.as_bytes().is_some()
     }
 
+    /// Returns true if the `Value` is a `Bytes`. Returns false otherwise.
+    ///
+    /// ```
+    /// # use platform_value::Value;
+    /// #
+    /// let value = Value::Bytes(vec![104, 101, 108, 108, 111]);
+    ///
+    /// assert!(value.is_any_bytes_type());
+    ///
+    /// let value = Value::Identifier([1u8;32]);
+    ///
+    /// assert!(value.is_any_bytes_type());
+    ///
+    /// let value = Value::Bytes32([1u8;32]);
+    ///
+    /// assert!(value.is_any_bytes_type());
+    /// ```
+    pub fn is_any_bytes_type(&self) -> bool {
+        match self {
+            Value::Bytes(_)
+            | Value::Bytes32(_)
+            | Value::Identifier(_) => true,
+            _ => false,
+        }
+    }
+
     /// If the `Value` is a `Bytes`, returns a reference to the associated bytes vector.
     /// Returns None otherwise.
     ///

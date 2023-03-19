@@ -15,7 +15,7 @@ use crate::{
         StateTransitionConvert, StateTransitionIdentitySigned, StateTransitionLike,
         StateTransitionType,
     },
-    ProtocolError,
+    Convertible, ProtocolError,
 };
 
 use super::property_names::*;
@@ -266,10 +266,10 @@ mod test {
         assert_eq!(
             data.state_transition
                 .get_data_contract()
-                .to_json_object(false)
+                .to_json_object()
                 .expect("conversion to object shouldn't fail"),
             data.data_contract
-                .to_json_object(false)
+                .to_json_object()
                 .expect("conversion to object shouldn't fail")
         );
     }

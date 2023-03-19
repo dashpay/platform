@@ -13,10 +13,7 @@ use crate::identity::TimestampMillis;
 use crate::prelude::Revision;
 
 use crate::data_contract::document_type::document_type::PROTOCOL_VERSION;
-use crate::{
-    data_contract::DataContract, errors::ProtocolError, util::json_value::JsonValueExt,
-    util::json_value::ReplaceWith,
-};
+use crate::{data_contract::DataContract, errors::ProtocolError};
 
 use super::INITIAL_REVISION;
 use super::{document_base_transition::DocumentBaseTransition, DocumentTransitionObjectLike};
@@ -56,13 +53,6 @@ impl DocumentCreateTransition {
     pub fn get_revision(&self) -> Option<Revision> {
         //todo: fix this
         Some(INITIAL_REVISION)
-    }
-
-    pub fn bytes_to_strings(
-        raw_create_document_transition: &mut JsonValue,
-    ) -> Result<(), ProtocolError> {
-        raw_create_document_transition.replace_binary_paths(BINARY_FIELDS, ReplaceWith::Base64)?;
-        Ok(())
     }
 
     pub(crate) fn to_document(&self, owner_id: Identifier) -> Result<Document, ProtocolError> {

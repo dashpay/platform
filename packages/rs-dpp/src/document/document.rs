@@ -57,7 +57,6 @@ use crate::prelude::Revision;
 
 use crate::util::hash::hash;
 use crate::util::json_value::JsonValueExt;
-use crate::util::json_value::ReplaceWith;
 use crate::ProtocolError;
 
 /// The property names of a document
@@ -377,61 +376,18 @@ impl Document {
         Ok(self.into_map_value()?.into())
     }
 
-    pub fn to_value(&self) -> Result<Value, ProtocolError> {
+    pub fn to_object(&self) -> Result<Value, ProtocolError> {
         Ok(self.to_map_value()?.into())
     }
 
     pub fn to_cbor_value(&self) -> Result<CborValue, ProtocolError> {
-        self.to_value()
+        self.to_object()
             .map(|v| v.try_into().map_err(ProtocolError::ValueError))?
     }
 
     pub fn to_json(&self) -> Result<JsonValue, ProtocolError> {
-        self.to_value()
+        self.to_object()
             .map(|v| v.try_into().map_err(ProtocolError::ValueError))?
-    }
-
-    pub fn replace_all_fields(
-        value: &mut JsonValue,
-        data_contract: &DataContract,
-        document_type_name: &str,
-    ) -> Result<(), ProtocolError> {
-        let (identifier_paths, binary_paths) =
-            Self::get_identifiers_and_binary_paths(data_contract, document_type_name)?;
-
-        value.replace_identifier_paths(identifier_paths, ReplaceWith::Base58)?;
-        value.replace_binary_paths(binary_paths, ReplaceWith::Base64)?;
-        Ok(())
-    }
-
-    pub fn replace_property_fields(
-        value: &mut JsonValue,
-        data_contract: &DataContract,
-        document_type_name: &str,
-    ) -> Result<(), ProtocolError> {
-        let (identifier_paths, binary_paths) =
-            data_contract.get_identifiers_and_binary_paths(document_type_name)?;
-
-        value.replace_identifier_paths(identifier_paths, ReplaceWith::Base58)?;
-        value.replace_binary_paths(binary_paths, ReplaceWith::Base64)?;
-        Ok(())
-    }
-
-    // The skipIdentifierConversion option is removed as it doesn't make sense in the case of
-    // of Rust. Rust doesn't distinguish between `Buffer` and `Identifier`
-    pub fn to_object(
-        &self,
-        data_contract: &DataContract,
-        document_type_name: &str,
-    ) -> Result<JsonValue, ProtocolError> {
-        let mut json_object = serde_json::to_value(self)?;
-
-        let (identifier_paths, binary_paths) =
-            Self::get_identifiers_and_binary_paths(data_contract, document_type_name)?;
-        let _ = json_object.replace_identifier_paths(identifier_paths, ReplaceWith::Bytes);
-        let _ = json_object.replace_binary_paths(binary_paths, ReplaceWith::Bytes);
-
-        Ok(json_object)
     }
 
     pub fn from_json_value<S>(mut document_value: JsonValue) -> Result<Self, ProtocolError>

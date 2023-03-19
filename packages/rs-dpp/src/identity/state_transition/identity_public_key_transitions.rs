@@ -5,13 +5,12 @@ use std::convert::{TryFrom, TryInto};
 
 use platform_value::btreemap_extensions::BTreeValueMapHelper;
 use platform_value::btreemap_extensions::BTreeValueRemoveFromMapHelper;
-use platform_value::{BinaryData, Value};
+use platform_value::{BinaryData, ReplacementType, Value};
 use serde::{Deserialize, Serialize};
 use serde_json::Value as JsonValue;
 
 use crate::errors::ProtocolError;
 use crate::util::cbor_value::{CborCanonicalMap, CborMapExtension};
-use crate::util::json_value::{JsonValueExt, ReplaceWith};
 use crate::SerdeParsingError;
 
 pub const BINARY_DATA_FIELDS: [&str; 2] = ["data", "signature"];
@@ -116,11 +115,10 @@ impl IdentityPublicKeyWithWitness {
         Ok(identity_public_key)
     }
 
-    pub fn from_json_object(mut raw_object: JsonValue) -> Result<Self, ProtocolError> {
-        raw_object.replace_binary_paths(BINARY_DATA_FIELDS, ReplaceWith::Bytes)?;
-        let identity_public_key: Self = serde_json::from_value(raw_object)?;
-
-        Ok(identity_public_key)
+    pub fn from_json_object(raw_object: JsonValue) -> Result<Self, ProtocolError> {
+        let mut value: Value = raw_object.into();
+        value.replace_at_paths(BINARY_DATA_FIELDS, ReplacementType::BinaryBytes)?;
+        value.try_into().map_err(ProtocolError::ValueError)
     }
 
     /// Return raw data, with all binary fields represented as arrays
@@ -160,12 +158,9 @@ impl IdentityPublicKeyWithWitness {
     }
 
     /// Return json with all binary data converted to base64
-    pub fn to_json(&self) -> Result<JsonValue, SerdeParsingError> {
-        let mut value = self.to_raw_json_object(false)?;
-
-        value.replace_binary_paths(BINARY_DATA_FIELDS, ReplaceWith::Base64)?;
-
-        Ok(value)
+    pub fn to_json(&self) -> Result<JsonValue, ProtocolError> {
+        let value: Value = self.try_into()?;
+        value.try_into().map_err(ProtocolError::ValueError)
     }
 
     pub fn from_cbor_value(cbor_value: &CborValue) -> Result<Self, ProtocolError> {
@@ -240,6 +235,14 @@ impl TryFrom<Value> for IdentityPublicKeyWithWitness {
 }
 
 impl TryInto<Value> for IdentityPublicKeyWithWitness {
+    type Error = platform_value::Error;
+
+    fn try_into(self) -> Result<Value, Self::Error> {
+        platform_value::to_value(self)
+    }
+}
+
+impl TryInto<Value> for &IdentityPublicKeyWithWitness {
     type Error = platform_value::Error;
 
     fn try_into(self) -> Result<Value, Self::Error> {

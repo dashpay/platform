@@ -22,13 +22,6 @@ use remove_path::*;
 const PROPERTY_CONTENT_MEDIA_TYPE: &str = "contentMediaType";
 const PROPERTY_PROTOCOL_VERSION: &str = "protocolVersion";
 
-#[derive(Debug, Clone, Copy)]
-pub enum ReplaceWith {
-    Bytes,
-    Base58,
-    Base64,
-}
-
 /// JsonValueExt contains a set of helper methods that simplify work with JsonValue
 pub trait JsonValueExt {
     /// assumes the Json Value is a map and tries to remove the given property
@@ -61,20 +54,6 @@ pub trait JsonValueExt {
 
     /// assumes that the JsonValue is a Map and tries to remove the u32
     fn remove_u32(&mut self, property_name: &str) -> Result<u32, anyhow::Error>;
-
-    /// replaces Identifiers specified by path with either the Bytes format or string format (base58 or base64)
-    fn replace_identifier_paths<'a>(
-        &mut self,
-        paths: impl IntoIterator<Item = &'a str>,
-        with: ReplaceWith,
-    ) -> Result<(), anyhow::Error>;
-
-    /// replaces binary data specified by path with either the Bytes format or string format (base58 or base64)
-    fn replace_binary_paths<'a>(
-        &mut self,
-        paths: impl IntoIterator<Item = &'a str>,
-        with: ReplaceWith,
-    ) -> Result<(), anyhow::Error>;
 
     fn add_protocol_version(
         &mut self,
@@ -325,68 +304,6 @@ impl JsonValueExt for JsonValue {
             .ok_or_else(|| anyhow!("the property '{:?}' not found", path))
     }
 
-    fn replace_identifier_paths<'a>(
-        &mut self,
-        paths: impl IntoIterator<Item = &'a str>,
-        with: ReplaceWith,
-    ) -> Result<(), anyhow::Error> {
-        let mut results = vec![];
-
-        for raw_path in paths {
-            let mut to_replace = get_value_mut(raw_path, self);
-            match to_replace {
-                Some(ref mut v) => {
-                    results.push(replace_identifier(v, with).map_err(|err| {
-                        anyhow!(
-                            "unable replace the {:?} with {:?}: '{}'",
-                            raw_path,
-                            with,
-                            err
-                        )
-                    }));
-                }
-                None => {
-                    trace!(
-                        "path '{}' is not found, when replacing to {:?} ",
-                        raw_path,
-                        with
-                    )
-                }
-            }
-        }
-        results.into_iter().collect::<Result<_, _>>()
-    }
-
-    /// replaces binary data specified by path with either the Bytes format or string format (base58 or base64)
-    fn replace_binary_paths<'a>(
-        &mut self,
-        paths: impl IntoIterator<Item = &'a str>,
-        with: ReplaceWith,
-    ) -> Result<(), anyhow::Error> {
-        let mut results = vec![];
-
-        for raw_path in paths {
-            let mut to_replace = get_value_mut(raw_path, self);
-            match to_replace {
-                Some(ref mut value) => {
-                    results.push(replace_binary(value, with).map_err(|err| {
-                        anyhow!(
-                            "unable replace {:?} with {:?}: '{}' input data: '{}'",
-                            raw_path,
-                            with,
-                            err,
-                            value
-                        )
-                    }));
-                }
-                None => {
-                    trace!("path '{}' is not found, replacing to {:?} ", raw_path, with)
-                }
-            }
-        }
-        results.into_iter().collect::<Result<_, _>>()
-    }
-
     fn add_protocol_version<'a>(
         &mut self,
         property_name: &str,
@@ -464,68 +381,6 @@ impl JsonValueExt for JsonValue {
     }
 }
 
-/// replaces the Identifiers specified in binary_properties with Bytes or Base58
-pub fn identifiers_to(
-    binary_properties: &BTreeMap<String, JsonValue>,
-    dynamic_data: &mut JsonValue,
-    to: ReplaceWith,
-) -> Result<(), ProtocolError> {
-    let identifier_paths = binary_properties
-        .iter()
-        .filter(|(_, p)| identifier_filter(p))
-        .map(|(name, _)| name.as_str());
-
-    dynamic_data.replace_identifier_paths(identifier_paths, to)?;
-    Ok(())
-}
-
-/// replaces the Identifier wrapped in Json Value to either the Bytes or Base58 form
-pub fn replace_identifier(
-    to_replace: &mut JsonValue,
-    with: ReplaceWith,
-) -> Result<(), ProtocolError> {
-    // TODO: remove the clone(). If replace fails, the original value should be untouched
-    match with {
-        ReplaceWith::Base58 => {
-            let data_bytes: Vec<u8> = serde_json::from_value(to_replace.clone())?;
-            let identifier = Identifier::from_bytes(&data_bytes)?;
-
-            *to_replace = JsonValue::String(identifier.to_string(Encoding::Base58));
-        }
-        ReplaceWith::Base64 => {
-            let data_bytes: Vec<u8> = serde_json::from_value(to_replace.clone())?;
-            let identifier = Identifier::from_bytes(&data_bytes)?;
-            *to_replace = JsonValue::String(identifier.to_string(Encoding::Base64));
-        }
-        ReplaceWith::Bytes => {
-            let data_string: String = serde_json::from_value(to_replace.clone())?;
-            let identifier =
-                Identifier::from_string(&data_string, Encoding::Base58)?.to_json_value_vec();
-            *to_replace = JsonValue::Array(identifier);
-        }
-    }
-    Ok(())
-}
-
-pub fn replace_binary(to_replace: &mut JsonValue, with: ReplaceWith) -> Result<(), anyhow::Error> {
-    // TODO: remove the clone(). If replace fails, the original value should be untouched
-    match with {
-        ReplaceWith::Base58 => {
-            let data_bytes: Vec<u8> = serde_json::from_value(to_replace.clone())?;
-            *to_replace = JsonValue::String(bs58::encode(data_bytes).into_string());
-        }
-        ReplaceWith::Base64 => {
-            let data_bytes: Vec<u8> = serde_json::from_value(to_replace.clone())?;
-            *to_replace = JsonValue::String(base64::encode(data_bytes));
-        }
-        ReplaceWith::Bytes => {
-            let base64: String = serde_json::from_value(to_replace.clone())?;
-            *to_replace = JsonValue::from(base64::decode(base64)?);
-        }
-    }
-    Ok(())
-}
-
 fn identifier_filter(value: &JsonValue) -> bool {
     if let JsonValue::Object(object) = value {
         if let Some(JsonValue::String(media_type)) = object.get(PROPERTY_CONTENT_MEDIA_TYPE) {
@@ -592,94 +447,6 @@ mod test {
     use super::*;
 
     #[test]
-    fn test_replace_identifier_paths_happy_path() {
-        let mut document = json!({
-            "root" :  {
-                "from" : {
-                    "id": "6oCKUeLVgjr7VZCyn1LdGbrepqKLmoabaff5WQqyTKYP",
-                    "message": "text_message",
-                },
-                "to" : {
-                    "id": "5wpZAEWndYcTeuwZpkmSa8s49cHXU5q2DhdibesxFSu8",
-                    "message": "text_message",
-                },
-                "transactions" : [
-                    {
-                    "message": "text_message",
-                    },
-                    {
-                    "id": "5wpZAEWndYcTeuwZpkmSa8s49cHXU5q2DhdibesxFSu8",
-                    "message": "text_message",
-                    "inner":  {
-                        "document_id" : "5wpZAEWndYcTeuwZpkmSa8s49cHXU5q2DhdibesxFSu8",
-                    }
-                    }
-                ]
-            }
-        });
-
-        assert!(document["root"]["from"]["id"].is_string());
-        assert!(document["root"]["from"]["message"].is_string());
-        assert!(document["root"]["to"]["id"].is_string());
-        assert!(document["root"]["to"]["message"].is_string());
-        assert!(document["root"]["transactions"][1]["id"].is_string());
-        assert!(document["root"]["transactions"][1]["inner"]["document_id"].is_string());
-
-        let mut binary_properties: BTreeMap<String, JsonValue> = Default::default();
-        let paths = vec![
-            "root.from.id",
-            "root.to.id",
-            "root.transactions[1].id",
-            "root.transactions[1].inner.document_id",
-        ];
-
-        for p in paths {
-            binary_properties.insert(
-                p.to_string(),
-                json!({ "contentMediaType": "application/x.dash.dpp.identifier"}),
-            );
-        }
-
-        identifiers_to(&binary_properties, &mut document, ReplaceWith::Bytes).unwrap();
-        assert!(document["root"]["from"]["id"].is_array());
-        assert!(document["root"]["from"]["message"].is_string());
-        assert!(document["root"]["to"]["id"].is_array());
-        assert!(document["root"]["to"]["message"].is_string());
-        assert!(document["root"]["transactions"][1]["id"].is_array());
-        assert!(document["root"]["transactions"][1]["inner"]["document_id"].is_array());
-
-        identifiers_to(&binary_properties, &mut document, ReplaceWith::Base58).unwrap();
-        assert!(document["root"]["from"]["id"].is_string());
-        assert!(document["root"]["from"]["message"].is_string());
-        assert!(document["root"]["to"]["id"].is_string());
-        assert!(document["root"]["to"]["message"].is_string());
-        assert!(document["root"]["transactions"][1]["id"].is_string());
-        assert!(document["root"]["transactions"][1]["inner"]["document_id"].is_string());
-    }
-
-    #[test]
-    fn test_replace_identifier_path_with_bytes_wrong_identifier() {
-        let mut document = json!({
-            "root" :  {
-                "from" : {
-                    "id": "123",
-                    "message": "text_message",
-                },
-            }
-        });
-
-        assert!(document["root"]["from"]["id"].is_string());
-
-        let mut binary_properties: BTreeMap<String, JsonValue> = BTreeMap::new();
-        binary_properties.insert(
-            "root.from.id".to_string(),
-            json!({ "contentMediaType": "application/x.dash.dpp.identifier"}),
-        );
-        let result = identifiers_to(&binary_properties, &mut document, ReplaceWith::Bytes);
-        assert_error_contains!(result, "Identifier must be 32 bytes long");
-    }
-
-    #[test]
     fn insert_with_parents() {
         let mut document = json!({
             "root" :  {
@@ -703,32 +470,6 @@ mod test {
         assert_eq!(
             document["root"]["array"][0]["new_field"],
             json!("new_value")
-        );
-    }
-
-    #[test]
-    fn failed_replace_should_leave_original_data_untouched() {
-        let mut document = json!({
-            "root" :  {
-                "from" : {
-                    "id": "123",
-                    "message": "text_message",
-                },
-            }
-        });
-
-        assert!(document["root"]["from"]["id"].is_string());
-
-        let mut binary_properties: BTreeMap<String, JsonValue> = BTreeMap::new();
-        binary_properties.insert(
-            "root.from.id".to_string(),
-            json!({ "contentMediaType": "application/x.dash.dpp.identifier"}),
-        );
-        let result = identifiers_to(&binary_properties, &mut document, ReplaceWith::Bytes);
-        assert_error_contains!(result, "Identifier must be 32 bytes long");
-        assert_eq!(
-            document["root"]["from"]["id"],
-            JsonValue::String(String::from("123"))
         );
     }
 }

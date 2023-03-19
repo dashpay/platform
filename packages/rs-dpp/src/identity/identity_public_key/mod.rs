@@ -21,7 +21,7 @@ pub use crate::identity::purpose::Purpose;
 pub use crate::identity::security_level::SecurityLevel;
 use crate::util::cbor_value::{CborCanonicalMap, CborMapExtension};
 use crate::util::hash::ripemd160_sha256;
-use crate::util::json_value::{JsonValueExt, ReplaceWith};
+use crate::util::json_value::JsonValueExt;
 use crate::util::vec;
 use crate::SerdeParsingError;
 
@@ -139,12 +139,9 @@ impl IdentityPublicKey {
     }
 
     /// Return json with all binary data converted to base64
-    pub fn to_json(&self) -> Result<JsonValue, SerdeParsingError> {
-        let mut value = self.to_raw_json_object()?;
-
-        value.replace_binary_paths(BINARY_DATA_FIELDS, ReplaceWith::Base64)?;
-
-        Ok(value)
+    pub fn to_json(&self) -> Result<JsonValue, ProtocolError> {
+        let value: Value = self.try_into()?;
+        value.try_into().map_err(ProtocolError::ValueError)
     }
 
     pub fn from_cbor_value(cbor_value: &CborValue) -> Result<Self, ProtocolError> {

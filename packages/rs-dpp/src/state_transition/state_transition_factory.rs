@@ -5,6 +5,7 @@ use std::{
 };
 
 use crate::consensus::basic::state_transition::InvalidStateTransitionTypeError;
+use crate::convertible::Convertible;
 use crate::data_contract::errors::DataContractNotPresentError;
 use crate::data_contract::state_transition::errors::MissingDataContractIdError;
 use crate::{
@@ -225,6 +226,7 @@ fn missing_state_transition_error() -> ProtocolError {
 
 #[cfg(test)]
 mod test {
+    use crate::convertible::Convertible;
     use dashcore::network::constants::PROTOCOL_VERSION;
     use platform_value::{platform_value, Value};
     use std::collections::BTreeMap;
@@ -273,7 +275,7 @@ mod test {
 
         assert!(
             matches!(result, StateTransition::DataContractCreate(transition) if  {
-                transition.get_data_contract().to_json_object(false).unwrap() == data_contract.to_json_object(false).unwrap()
+                transition.get_data_contract().to_json_object().unwrap() == data_contract.to_json_object().unwrap()
             })
         )
     }
