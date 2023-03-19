@@ -100,7 +100,7 @@ impl DataContract {
 
         contract_cbor_map.insert(property_names::DOCUMENTS, docs);
 
-        if let Some(defs) = &self.defs {
+        if let Some(_defs) = &self.defs {
             contract_cbor_map.insert(
                 property_names::DEFINITIONS,
                 CborValue::serialized(&self.defs)

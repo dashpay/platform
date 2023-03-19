@@ -1,20 +1,20 @@
-use std::{collections::BTreeMap, convert::TryInto};
+use std::{convert::TryInto};
 
 use anyhow::{anyhow, bail};
-use log::trace;
+
 use serde::de::DeserializeOwned;
 use serde_json::{Number, Value as JsonValue};
 
 use crate::{
     errors::ProtocolError,
-    identifier::{self, Identifier},
+    identifier::{self},
 };
 
 use super::json_path::{JsonPath, JsonPathLiteral, JsonPathStep};
 
 mod insert_with_path;
 use insert_with_path::*;
-use platform_value::string_encoding::Encoding;
+
 
 mod remove_path;
 use remove_path::*;
@@ -442,7 +442,7 @@ pub fn get_value_from_json_path<'a>(
 mod test {
     use serde_json::json;
 
-    use crate::assert_error_contains;
+    
 
     use super::*;
 

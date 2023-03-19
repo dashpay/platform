@@ -519,7 +519,6 @@ mod test {
     use integer_encoding::VarInt;
 
     use crate::{
-        assert_error_contains,
         tests::{fixtures::get_data_contract_fixture, utils::*},
     };
 

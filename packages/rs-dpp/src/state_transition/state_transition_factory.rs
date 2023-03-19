@@ -5,7 +5,7 @@ use std::{
 };
 
 use crate::consensus::basic::state_transition::InvalidStateTransitionTypeError;
-use crate::convertible::Convertible;
+
 use crate::data_contract::errors::DataContractNotPresentError;
 use crate::data_contract::state_transition::errors::MissingDataContractIdError;
 use crate::{

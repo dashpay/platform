@@ -4,12 +4,12 @@ use std::{
     convert::{TryFrom, TryInto},
 };
 
-use anyhow::anyhow;
+
 use ciborium::value::Value as CborValue;
-use platform_value::string_encoding::Encoding;
+
 use serde::Serialize;
 
-use crate::{prelude::Identifier, ProtocolError};
+use crate::{ProtocolError};
 
 use super::{
     convert::convert_to, get_from_cbor_map, to_path_of_cbors, FieldType, ReplacePaths,
