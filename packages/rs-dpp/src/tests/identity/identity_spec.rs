@@ -151,7 +151,7 @@ mod conversions {
     fn from_raw_object() {
         let identity_fixture = identity_fixture_raw_object();
 
-        let identity = Identity::from_raw_object(identity_fixture)
+        let identity = Identity::from_object(identity_fixture)
             .expect("Expected from_raw_object to parse an Object");
 
         assert_eq!(

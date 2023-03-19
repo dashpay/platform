@@ -1,5 +1,5 @@
 use std::collections::BTreeMap;
-use std::convert::TryFrom;
+use std::convert::{TryFrom, TryInto};
 
 use ciborium::value::Value as CborValue;
 use integer_encoding::VarInt;
@@ -300,24 +300,14 @@ impl Identity {
     }
 
     /// Creates an identity from a raw object
-    pub fn from_raw_object(raw_object: Value) -> Result<Identity, ProtocolError> {
-        let identity: Identity = platform_value::from_value(raw_object)?;
-
-        Ok(identity)
+    pub fn from_object(raw_object: Value) -> Result<Identity, ProtocolError> {
+        raw_object.try_into()
     }
 
     /// Creates an identity from a json object
     pub fn from_json_object(raw_object: JsonValue) -> Result<Identity, ProtocolError> {
-        let pks = raw_object.get("publicKeys").unwrap().as_array().unwrap();
-
-        for pk in pks {
-            let _pkd: IdentityPublicKey = serde_json::from_value(pk.clone())
-                .map_err(|_e| ProtocolError::Generic(format!("Can't parse public key: {}", pk)))?;
-        }
-
-        let identity: Identity = serde_json::from_value(raw_object)?;
-
-        Ok(identity)
+        let value: Value = raw_object.into();
+        value.try_into()
     }
 
     /// Computes the hash of an identity

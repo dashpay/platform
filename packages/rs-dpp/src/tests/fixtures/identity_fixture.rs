@@ -64,5 +64,5 @@ pub fn identity_fixture_json() -> serde_json::Value {
 
 pub fn identity_fixture() -> Identity {
     let raw_object = identity_fixture_raw_object();
-    Identity::from_raw_object(raw_object).unwrap()
+    Identity::from_object(raw_object).unwrap()
 }

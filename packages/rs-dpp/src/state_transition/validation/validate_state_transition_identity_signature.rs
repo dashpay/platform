@@ -313,7 +313,7 @@ mod test {
         let bls = NativeBlsModule::default();
         let mut state_repository_mock = MockStateRepositoryLike::new();
         let raw_identity = identity_fixture_raw_object();
-        let identity = Identity::from_raw_object(raw_identity).unwrap();
+        let identity = Identity::from_object(raw_identity).unwrap();
         let owner_id = identity.get_id();
         let mut state_transition = get_mock_state_transition();
 
@@ -338,7 +338,7 @@ mod test {
         let bls = NativeBlsModule::default();
         let mut state_repository_mock = MockStateRepositoryLike::new();
         let raw_identity = identity_fixture_raw_object();
-        let identity = Identity::from_raw_object(raw_identity).unwrap();
+        let identity = Identity::from_object(raw_identity).unwrap();
         let owner_id = identity.get_id();
         let mut state_transition = get_mock_state_transition();
 
@@ -370,7 +370,7 @@ mod test {
         let bls = NativeBlsModule::default();
         let mut state_repository_mock = MockStateRepositoryLike::new();
         let raw_identity = identity_fixture_raw_object();
-        let identity = Identity::from_raw_object(raw_identity).unwrap();
+        let identity = Identity::from_object(raw_identity).unwrap();
         let owner_id = identity.get_id();
         let mut state_transition = get_mock_state_transition();
 
@@ -402,7 +402,7 @@ mod test {
         let bls = NativeBlsModule::default();
         let mut state_repository_mock = MockStateRepositoryLike::new();
         let raw_identity = identity_fixture_raw_object();
-        let identity = Identity::from_raw_object(raw_identity).unwrap();
+        let identity = Identity::from_object(raw_identity).unwrap();
         let owner_id = identity.get_id();
         let mut state_transition = get_mock_state_transition();
 
@@ -435,7 +435,7 @@ mod test {
         // 'should return InvalidSignaturePublicKeySecurityLevelConsensusError if InvalidSignaturePublicKeySecurityLevelError was thrown'
         let mut state_repository_mock = MockStateRepositoryLike::new();
         let raw_identity = identity_fixture_raw_object();
-        let identity = Identity::from_raw_object(raw_identity).unwrap();
+        let identity = Identity::from_object(raw_identity).unwrap();
         let owner_id = identity.get_id();
         let mut state_transition = get_mock_state_transition();
 
@@ -465,7 +465,7 @@ mod test {
         let bls = NativeBlsModule::default();
         let mut state_repository_mock = MockStateRepositoryLike::new();
         let raw_identity = identity_fixture_raw_object();
-        let identity = Identity::from_raw_object(raw_identity).unwrap();
+        let identity = Identity::from_object(raw_identity).unwrap();
         let owner_id = identity.get_id();
         let mut state_transition = get_mock_state_transition();
 
@@ -493,7 +493,7 @@ mod test {
         // 'should return PubicKeySecurityLevelNotMetConsensusError if PubicKeySecurityLevelNotMetError was thrown'
         let mut state_repository_mock = MockStateRepositoryLike::new();
         let raw_identity = identity_fixture_raw_object();
-        let identity = Identity::from_raw_object(raw_identity).unwrap();
+        let identity = Identity::from_object(raw_identity).unwrap();
         let owner_id = identity.get_id();
         let mut state_transition = get_mock_state_transition();
 
@@ -524,7 +524,7 @@ mod test {
         // 'should return PublicKeyIsDisabledConsensusError if PublicKeyIsDisabledError was thrown'
         let mut state_repository_mock = MockStateRepositoryLike::new();
         let raw_identity = identity_fixture_raw_object();
-        let identity = Identity::from_raw_object(raw_identity).unwrap();
+        let identity = Identity::from_object(raw_identity).unwrap();
         let owner_id = identity.get_id();
         let mut state_transition = get_mock_state_transition();
 

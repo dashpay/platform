@@ -134,7 +134,7 @@ where
             }
         }
 
-        Identity::from_raw_object(raw_identity)
+        Identity::from_object(raw_identity)
     }
 
     pub fn create_from_buffer(
