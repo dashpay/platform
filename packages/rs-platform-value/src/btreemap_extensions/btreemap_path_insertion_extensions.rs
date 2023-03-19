@@ -31,7 +31,7 @@ impl BTreeValueMapInsertionPathHelper for BTreeMap<String, Value> {
             }
             if let Some(last_path_component) = last_path_component {
                 let map = current_value.as_map_mut_ref()?;
-                if let Some(new_value) = map.get_key_mut(last_path_component) {
+                if let Some(new_value) = map.get_optional_key_mut(last_path_component) {
                     *new_value = value;
                 } else {
                     map.push((Value::Text(last_path_component.to_string()), value));

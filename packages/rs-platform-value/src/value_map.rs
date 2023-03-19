@@ -6,8 +6,10 @@ pub type ValueMap = Vec<(Value, Value)>;
 
 pub trait ValueMapHelper {
     fn sort_by_keys(&mut self);
-    fn get_key(&self, key: &str) -> Option<&Value>;
-    fn get_key_mut(&mut self, key: &str) -> Option<&mut Value>;
+    fn get_key(&self, search_key: &str) -> Result<&Value, Error>;
+    fn get_optional_key(&self, key: &str) -> Option<&Value>;
+    fn get_key_mut(&mut self, search_key: &str) -> Result<&mut Value, Error>;
+    fn get_optional_key_mut(&mut self, key: &str) -> Option<&mut Value>;
     fn get_key_mut_or_insert(&mut self, key: &str, value: Value) -> &mut Value;
     fn get_key_by_value_mut_or_insert(&mut self, search_key: &Value, value: Value) -> &mut Value;
     fn insert_string_key_value(&mut self, key: String, value: Value);
@@ -21,7 +23,14 @@ impl ValueMapHelper for ValueMap {
         self.sort_by(|(key1, _), (key2, _)| key1.partial_cmp(key2).unwrap_or(Ordering::Less))
     }
 
-    fn get_key(&self, search_key: &str) -> Option<&Value> {
+    fn get_key(&self, search_key: &str) -> Result<&Value, Error> {
+        self.get_optional_key(search_key)
+            .ok_or(Error::StructureError(format!(
+                "required property not found {search_key}"
+            )))
+    }
+
+    fn get_optional_key(&self, search_key: &str) -> Option<&Value> {
         self.iter().find_map(|(key, value)| {
             if let Value::Text(text) = key {
                 if text == search_key {
@@ -35,7 +44,14 @@ impl ValueMapHelper for ValueMap {
         })
     }
 
-    fn get_key_mut(&mut self, search_key: &str) -> Option<&mut Value> {
+    fn get_key_mut(&mut self, search_key: &str) -> Result<&mut Value, Error> {
+        self.get_optional_key_mut(search_key)
+            .ok_or(Error::StructureError(format!(
+                "{search_key} not found, but was required"
+            )))
+    }
+
+    fn get_optional_key_mut(&mut self, search_key: &str) -> Option<&mut Value> {
         self.iter_mut().find_map(|(key, value)| {
             if let Value::Text(text) = key {
                 if text == search_key {

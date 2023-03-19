@@ -47,7 +47,7 @@ impl Value {
             .skip(1)
             .map(|x| x.replace("~1", "/").replace("~0", "~"))
             .try_fold(self, |target, token| match target {
-                Value::Map(map) => map.get_key(&token),
+                Value::Map(map) => map.get_optional_key(&token),
                 Value::Array(list) => parse_index(&token).and_then(|x| list.get(x)),
                 _ => None,
             })
@@ -102,7 +102,7 @@ impl Value {
             .skip(1)
             .map(|x| x.replace("~1", "/").replace("~0", "~"))
             .try_fold(self, |target, token| match target {
-                Value::Map(map) => map.get_key_mut(&token),
+                Value::Map(map) => map.get_optional_key_mut(&token),
                 Value::Array(list) => parse_index(&token).and_then(move |x| list.get_mut(x)),
                 _ => None,
             })

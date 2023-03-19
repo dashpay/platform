@@ -15,8 +15,13 @@ use crate::state_transition::{
 use crate::{NonConsensusError, ProtocolError};
 use platform_value::btreemap_extensions::BTreeValueRemoveInnerValueFromMapHelper;
 
+pub const IDENTIFIER_FIELDS: [&str; 1] = [property_names::IDENTITY_ID];
+pub const BINARY_FIELDS: [&str; 2] = [property_names::PUBLIC_KEYS_DATA, property_names::SIGNATURE];
+
 mod property_names {
     pub const PUBLIC_KEYS: &str = "publicKeys";
+    pub const PUBLIC_KEYS_DATA: &str = "publicKeys[].data";
+    pub const PUBLIC_KEYS_SIGNATURE: &str = "publicKeys[].signature";
     pub const ASSET_LOCK_PROOF: &str = "assetLockProof";
     pub const SIGNATURE: &str = "signature";
     pub const PROTOCOL_VERSION: &str = "protocolVersion";

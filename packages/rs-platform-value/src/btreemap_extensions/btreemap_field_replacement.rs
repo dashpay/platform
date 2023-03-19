@@ -74,7 +74,7 @@ fn replace_down(
             .map(|current_value| {
                 if current_value.is_map() {
                     let map = current_value.as_map_mut_ref()?;
-                    let Some(new_value) = map.get_key_mut(path_component) else {
+                    let Some(new_value) = map.get_optional_key_mut(path_component) else {
                     return Ok(None);
                 };
                     if split.peek().is_none() {

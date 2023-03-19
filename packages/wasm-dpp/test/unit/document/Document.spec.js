@@ -431,7 +431,7 @@ describe('Document', () => {
       const documentIdBuffer = document.get(path).toBuffer();
 
       expect(documentJsIdBuffer).to.deep.equal(jsId);
-      expect(documentIdBuffer.get(path).toBuffer()).to.deep.equal(jsId.toBuffer());
+      expect(documentIdBuffer).to.deep.equal(jsId);
 
       const jsBuffer = documentJs.toBuffer();
       const buffer = document.toBuffer();

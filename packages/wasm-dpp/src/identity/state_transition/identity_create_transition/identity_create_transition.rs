@@ -20,9 +20,12 @@ use crate::{
 
 use crate::bls_adapter::{BlsAdapter, JsBlsAdapter};
 use crate::errors::from_dpp_err;
-use crate::utils::{generic_of_js_val, ToSerdeJSONExt};
-use dpp::platform_value::string_encoding;
+use crate::utils::{generic_of_js_val, ToSerdeJSONExt, WithJsError};
+use dpp::identity::state_transition::identity_create_transition::{
+    BINARY_FIELDS, IDENTIFIER_FIELDS,
+};
 use dpp::platform_value::string_encoding::Encoding;
+use dpp::platform_value::{string_encoding, ReplacementType};
 use dpp::{
     identifier::Identifier,
     identity::state_transition::{
@@ -30,6 +33,7 @@ use dpp::{
         identity_public_key_transitions::IdentityPublicKeyWithWitness,
     },
     state_transition::StateTransitionLike,
+    ProtocolError,
 };
 
 #[wasm_bindgen(js_name=IdentityCreateTransition)]
@@ -52,8 +56,15 @@ impl From<IdentityCreateTransitionWasm> for IdentityCreateTransition {
 impl IdentityCreateTransitionWasm {
     #[wasm_bindgen(constructor)]
     pub fn new(raw_parameters: JsValue) -> Result<IdentityCreateTransitionWasm, JsValue> {
-        let raw_state_transition = raw_parameters.with_serde_to_platform_value()?;
-
+        let mut raw_state_transition = raw_parameters.with_serde_to_platform_value()?;
+        raw_state_transition
+            .replace_at_paths(BINARY_FIELDS, ReplacementType::BinaryBytes)
+            .map_err(ProtocolError::ValueError)
+            .with_js_error()?;
+        raw_state_transition
+            .replace_at_paths(IDENTIFIER_FIELDS, ReplacementType::Identifier)
+            .map_err(ProtocolError::ValueError)
+            .with_js_error()?;
         let identity_create_transition = IdentityCreateTransition::new(raw_state_transition)
             .map_err(|e| RustConversionError::Error(e.to_string()).to_js_value())?;
 

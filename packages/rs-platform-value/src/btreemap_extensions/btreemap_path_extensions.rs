@@ -149,7 +149,7 @@ where
             .borrow();
         for path_component in split {
             let map = current_value.to_map_ref()?;
-            current_value = map.get_key(path_component).ok_or_else(|| {
+            current_value = map.get_optional_key(path_component).ok_or_else(|| {
                 Error::StructureError(format!("unable to get property {path_component} in {path}"))
             })?;
         }
@@ -167,7 +167,7 @@ where
         };
         for path_component in split {
             let map = current_value.to_map_ref()?;
-            let Some(new_value) = map.get_key(path_component) else {
+            let Some(new_value) = map.get_optional_key(path_component) else {
                 return Ok(None);
             };
             current_value = new_value;

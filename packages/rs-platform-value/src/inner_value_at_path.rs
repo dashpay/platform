@@ -4,16 +4,25 @@ use lazy_static::lazy_static;
 use regex::Regex;
 use std::collections::BTreeMap;
 
-fn is_array_path(text: &str) -> Option<(&str, usize)> {
+pub(crate) fn is_array_path(text: &str) -> Result<Option<(&str, Option<usize>)>, Error> {
     lazy_static! {
-        static ref RE: Regex = Regex::new(r"(\w+)\[(\d+)\]").unwrap();
+        static ref RE: Regex = Regex::new(r"(\w+)\[(\d+)?\]").unwrap();
     }
-    RE.captures(text).map(|captures| {
-        (
-            captures.get(1).unwrap().as_str(),
-            captures.get(2).unwrap().as_str().parse::<usize>().unwrap(),
-        )
-    })
+    RE.captures(text)
+        .map(|captures| {
+            Ok((
+                captures.get(1).unwrap().as_str(),
+                captures
+                    .get(2)
+                    .map(|m| {
+                        m.as_str()
+                            .parse::<usize>()
+                            .map_err(|_| Error::IntegerSizeError)
+                    })
+                    .transpose()?,
+            ))
+        })
+        .transpose()
 }
 
 impl Value {
@@ -26,7 +35,7 @@ impl Value {
                 last_path_component = Some(path_component);
             } else {
                 let map = current_value.to_map_mut()?;
-                current_value = map.get_key_mut(path_component).ok_or_else(|| {
+                current_value = map.get_optional_key_mut(path_component).ok_or_else(|| {
                     Error::StructureError(format!(
                         "unable to get property {path_component} in {path}"
                     ))
@@ -61,10 +70,30 @@ impl Value {
         let split = path.split('.');
         let mut current_value = self;
         for path_component in split {
-            let map = current_value.to_map_ref()?;
-            current_value = map.get_key(path_component).ok_or_else(|| {
-                Error::StructureError(format!("unable to get property {path_component} in {path}"))
-            })?;
+            if let Some((string_part, number_part)) = is_array_path(path_component)? {
+                let map = current_value.to_map_ref()?;
+                let array_value = map.get_key(string_part)?;
+                let array = array_value.to_array_ref()?;
+                let Some(number_part) = number_part else {
+                    return Err(Error::Unsupported("getting values of more than 1 member of an array is currently not supported".to_string()))
+                };
+                // We are setting the value of just member of the array
+                if number_part < array.len() {
+                    //this already exists
+                    current_value = array.get(number_part).unwrap()
+                } else {
+                    return Err(Error::StructureError(
+                        format!("trying to get the value in an array at an index {} higher than current array length {}", number_part, array.len()),
+                    ));
+                }
+            } else {
+                let map = current_value.to_map_ref()?;
+                current_value = map.get_optional_key(path_component).ok_or_else(|| {
+                    Error::StructureError(format!(
+                        "unable to get property {path_component} in {path}"
+                    ))
+                })?;
+            }
         }
         Ok(current_value)
     }
@@ -76,11 +105,29 @@ impl Value {
         let split = path.split('.');
         let mut current_value = self;
         for path_component in split {
-            let map = current_value.to_map_ref()?;
-            let Some(new_value) = map.get_key(path_component) else {
-                return Ok(None);
-            };
-            current_value = new_value;
+            if let Some((string_part, number_part)) = is_array_path(path_component)? {
+                let map = current_value.to_map_ref()?;
+                let Some(array_value) = map.get_optional_key(string_part) else {
+                    return Ok(None);
+                };
+                let array = array_value.to_array_ref()?;
+                let Some(number_part) = number_part else {
+                    return Err(Error::Unsupported("setting values of all members in an array is currently not supported".to_string()))
+                };
+                // We are setting the value of just member of the array
+                if number_part < array.len() {
+                    //this already exists
+                    current_value = array.get(number_part).unwrap()
+                } else {
+                    return Ok(None);
+                }
+            } else {
+                let map = current_value.to_map_ref()?;
+                let Some(new_value) = map.get_optional_key(path_component) else {
+                    return Ok(None);
+                };
+                current_value = new_value;
+            }
         }
         Ok(Some(current_value))
     }
@@ -90,7 +137,7 @@ impl Value {
         let mut current_value = self;
         for path_component in split {
             let map = current_value.to_map_mut()?;
-            current_value = map.get_key_mut(path_component).ok_or_else(|| {
+            current_value = map.get_optional_key_mut(path_component).ok_or_else(|| {
                 Error::StructureError(format!("unable to get property {path_component} in {path}"))
             })?;
         }
@@ -105,7 +152,7 @@ impl Value {
         let mut current_value = self;
         for path_component in split {
             let map = current_value.to_map_mut()?;
-            let Some(new_value) = map.get_key_mut(path_component) else {
+            let Some(new_value) = map.get_optional_key_mut(path_component) else {
                 return Ok(None);
             };
             current_value = new_value;
@@ -120,11 +167,15 @@ impl Value {
         while let Some(path_component) = split.next() {
             if split.peek().is_none() {
                 last_path_component = Some(path_component);
-            } else if let Some((string_part, number_part)) = is_array_path(path_component) {
+            } else if let Some((string_part, number_part)) = is_array_path(path_component)? {
                 let map = current_value.to_map_mut()?;
                 let array_value = map.get_key_mut_or_insert(string_part, Value::Array(vec![]));
                 let array = array_value.to_array_mut()?;
-                if array.len() < number_part {
+                let Some(number_part) = number_part else {
+                    return Err(Error::Unsupported("setting values of all members in an array is currently not supported".to_string()))
+                };
+                // We are setting the value of just member of the array
+                if number_part < array.len() {
                     //this already exists
                     current_value = array.get_mut(number_part).unwrap()
                 } else if array.len() == number_part {

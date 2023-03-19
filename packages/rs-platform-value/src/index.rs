@@ -82,13 +82,13 @@ impl Index for usize {
 impl Index for str {
     fn index_into<'v>(&self, v: &'v Value) -> Option<&'v Value> {
         match v {
-            Value::Map(map) => map.get_key(self),
+            Value::Map(map) => map.get_optional_key(self),
             _ => None,
         }
     }
     fn index_into_mut<'v>(&self, v: &'v mut Value) -> Option<&'v mut Value> {
         match v {
-            Value::Map(map) => map.get_key_mut(self),
+            Value::Map(map) => map.get_optional_key_mut(self),
             _ => None,
         }
     }
