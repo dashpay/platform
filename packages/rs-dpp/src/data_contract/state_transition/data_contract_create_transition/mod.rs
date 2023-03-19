@@ -84,26 +84,26 @@ impl DataContractCreateTransition {
     }
 
     pub fn from_value_map(
-        mut raw_data_contract_update_transition: BTreeMap<String, Value>,
+        mut raw_data_contract_create_transition: BTreeMap<String, Value>,
     ) -> Result<DataContractCreateTransition, ProtocolError> {
         Ok(DataContractCreateTransition {
-            protocol_version: raw_data_contract_update_transition
+            protocol_version: raw_data_contract_create_transition
                 .get_integer(PROTOCOL_VERSION)
                 .map_err(ProtocolError::ValueError)?,
-            signature: raw_data_contract_update_transition
+            signature: raw_data_contract_create_transition
                 .remove_optional_binary_data(SIGNATURE)
                 .map_err(ProtocolError::ValueError)?
                 .unwrap_or_default(),
-            signature_public_key_id: raw_data_contract_update_transition
+            signature_public_key_id: raw_data_contract_create_transition
                 .remove_optional_integer(SIGNATURE_PUBLIC_KEY_ID)
                 .map_err(ProtocolError::ValueError)?
                 .unwrap_or_default(),
-            entropy: raw_data_contract_update_transition
+            entropy: raw_data_contract_create_transition
                 .remove_optional_bytes_32(ENTROPY)
                 .map_err(ProtocolError::ValueError)?
                 .unwrap_or_default(),
             data_contract: DataContract::from_raw_object(
-                raw_data_contract_update_transition
+                raw_data_contract_create_transition
                     .remove(DATA_CONTRACT)
                     .ok_or(ProtocolError::DecodingError(
                         "data contract missing on state transition".to_string(),

@@ -177,6 +177,14 @@ where
                 DataContractImmutablePropertiesUpdateError::new(
                     operation.to_owned(),
                     property_name.to_owned(),
+                    existing_data_contract_object
+                        .get(property_name.split_at(1).1)?
+                        .cloned()
+                        .unwrap_or(Value::Null),
+                    new_base_data_contract
+                        .get(property_name.split_at(1).1)?
+                        .cloned()
+                        .unwrap_or(Value::Null),
                 ),
             ))
         }
@@ -267,12 +275,12 @@ fn get_operation_and_property_name(p: &PatchOperation) -> (&'static str, &str) {
 
 fn get_operation_and_property_name_json(p: &json_patch::PatchOperation) -> (&'static str, &str) {
     match &p {
-        json_patch::PatchOperation::Add(ref o) => ("add", o.path.as_str()),
-        json_patch::PatchOperation::Copy(ref o) => ("copy", o.path.as_str()),
-        json_patch::PatchOperation::Remove(ref o) => ("remove", o.path.as_str()),
-        json_patch::PatchOperation::Replace(ref o) => ("replace", o.path.as_str()),
-        json_patch::PatchOperation::Move(ref o) => ("move", o.path.as_str()),
-        json_patch::PatchOperation::Test(ref o) => ("test", o.path.as_str()),
+        json_patch::PatchOperation::Add(ref o) => ("add json", o.path.as_str()),
+        json_patch::PatchOperation::Copy(ref o) => ("copy json", o.path.as_str()),
+        json_patch::PatchOperation::Remove(ref o) => ("remove json", o.path.as_str()),
+        json_patch::PatchOperation::Replace(ref o) => ("replace json", o.path.as_str()),
+        json_patch::PatchOperation::Move(ref o) => ("move json", o.path.as_str()),
+        json_patch::PatchOperation::Test(ref o) => ("test json", o.path.as_str()),
     }
 }
 

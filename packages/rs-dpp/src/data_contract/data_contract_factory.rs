@@ -4,13 +4,14 @@ use std::convert::TryInto;
 use std::sync::Arc;
 
 use data_contract::state_transition::property_names as st_prop;
-use platform_value::{Bytes32, Value};
+use platform_value::{BinaryData, Bytes32, Value};
 
 use crate::data_contract::contract_config::ContractConfig;
 use crate::data_contract::errors::InvalidDataContractError;
 
 use crate::data_contract::property_names::PROTOCOL_VERSION;
 
+use crate::state_transition::StateTransitionType;
 use crate::{
     data_contract::{self, generate_data_contract_id},
     decode_protocol_entity_factory::DecodeProtocolEntity,
@@ -189,19 +190,17 @@ impl DataContractFactory {
         &self,
         data_contract: DataContract,
     ) -> Result<DataContractCreateTransition, ProtocolError> {
-        let entropy = Value::Bytes32(data_contract.entropy.to_buffer());
-        let raw_object = BTreeMap::from([
-            (
-                st_prop::PROTOCOL_VERSION.to_string(),
-                Value::U32(self.protocol_version),
-            ),
-            (
-                st_prop::DATA_CONTRACT.to_string(),
-                data_contract.try_into()?,
-            ),
-            (st_prop::ENTROPY.to_string(), entropy),
-        ]);
-        DataContractCreateTransition::from_value_map(raw_object)
+        //todo: is this right for entropy?
+        let entropy = data_contract.entropy.clone();
+        Ok(DataContractCreateTransition {
+            protocol_version: self.protocol_version,
+            transition_type: StateTransitionType::DataContractCreate,
+            data_contract,
+            entropy,
+            signature_public_key_id: 0,
+            signature: Default::default(),
+            execution_context: Default::default(),
+        })
     }
 
     pub fn create_data_contract_update_transition(

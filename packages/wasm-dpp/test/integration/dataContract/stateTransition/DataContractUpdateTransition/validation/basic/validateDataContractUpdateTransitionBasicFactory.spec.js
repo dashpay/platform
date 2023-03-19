@@ -373,7 +373,7 @@ describe('validateDataContractUpdateTransitionBasicFactory', () => {
       rawStateTransition,
       executionContext,
     );
-
+    console.log(result.errorsText());
     expect(result).to.be.an.instanceOf(ValidationResult);
     expect(result.isValid()).to.be.true();
   });

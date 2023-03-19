@@ -1,7 +1,10 @@
 use std::{collections::BTreeMap, sync::Arc};
 
+use dpp::data_contract::state_transition::data_contract_update_transition::DataContractUpdateTransition;
+use dpp::platform_value::{ReplacementType, Value};
 use dpp::validation::AsyncDataValidatorWithContext;
 use dpp::{
+    data_contract,
     data_contract::state_transition::data_contract_update_transition::validation::{
         basic::{
             validate_indices_are_backward_compatible as dpp_validate_indices_are_backward_compatible,
@@ -11,6 +14,7 @@ use dpp::{
     },
     platform_value,
     version::ProtocolVersionValidator,
+    ProtocolError,
 };
 use wasm_bindgen::prelude::*;
 
@@ -67,6 +71,14 @@ pub async fn validate_data_contract_update_transition_basic(
     let parameters: DataContractUpdateTransitionParameters =
         serde_wasm_bindgen::from_value(raw_parameters)?;
 
+    let mut value = platform_value::to_value(&parameters)?;
+    value.replace_at_paths(
+        data_contract::IDENTIFIER_FIELDS,
+        ReplacementType::Identifier,
+    )?;
+    value.replace_at_paths(data_contract::BINARY_FIELDS, ReplacementType::BinaryBytes)?;
+    value.set_into_value("protocolVersion", 1u32)?;
+
     let validator: DataContractUpdateTransitionBasicValidator<ExternalStateRepositoryLikeWrapper> =
         DataContractUpdateTransitionBasicValidator::new(
             Arc::new(ExternalStateRepositoryLikeWrapper::new(state_repository)),
@@ -74,10 +86,7 @@ pub async fn validate_data_contract_update_transition_basic(
         )?;
 
     let validation_result = validator
-        .validate(
-            &platform_value::to_value(&parameters)?,
-            &execution_context.into(),
-        )
+        .validate(&value, &execution_context.into())
         .await?;
 
     Ok(validation_result.map(|_| JsValue::undefined()).into())
