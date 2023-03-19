@@ -8,7 +8,6 @@ use std::vec::IntoIter;
 #[derive(Debug, Clone, Copy)]
 pub enum ReplacementType {
     Identifier,
-    IdentifierBytes,
     BinaryBytes,
     TextBase58,
     TextBase64,
@@ -24,9 +23,7 @@ impl ReplacementType {
                     ))
                 })?))
             }
-            ReplacementType::BinaryBytes | ReplacementType::IdentifierBytes => {
-                Ok(Value::Bytes(bytes))
-            }
+            ReplacementType::BinaryBytes => Ok(Value::Bytes(bytes)),
             ReplacementType::TextBase58 => Ok(Value::Text(bs58::encode(bytes).into_string())),
             ReplacementType::TextBase64 => Ok(Value::Text(base64::encode(bytes))),
         }
@@ -35,9 +32,7 @@ impl ReplacementType {
     pub fn replace_for_bytes_32(&self, bytes: [u8; 32]) -> Result<Value, Error> {
         match self {
             ReplacementType::Identifier => Ok(Value::Identifier(bytes)),
-            ReplacementType::BinaryBytes | ReplacementType::IdentifierBytes => {
-                Ok(Value::Bytes32(bytes))
-            }
+            ReplacementType::BinaryBytes => Ok(Value::Bytes32(bytes)),
             ReplacementType::TextBase58 => Ok(Value::Text(bs58::encode(bytes).into_string())),
             ReplacementType::TextBase64 => Ok(Value::Text(base64::encode(bytes))),
         }
@@ -46,6 +41,12 @@ impl ReplacementType {
     pub fn replace_consume_value(&self, value: Value) -> Result<Value, Error> {
         let bytes = value.into_identifier_bytes()?;
         self.replace_for_bytes(bytes)
+    }
+
+    pub fn replace_value_in_place(&self, value: &mut Value) -> Result<(), Error> {
+        let bytes = value.take().into_identifier_bytes()?;
+        *value = self.replace_for_bytes(bytes)?;
+        Ok(())
     }
 }
 
@@ -83,9 +84,7 @@ fn replace_down(
                             }
                             _ => {
                                 let bytes = match replacement_type {
-                                    ReplacementType::Identifier
-                                    | ReplacementType::IdentifierBytes
-                                    | ReplacementType::TextBase58 => {
+                                    ReplacementType::Identifier | ReplacementType::TextBase58 => {
                                         new_value.to_identifier_bytes()
                                     }
                                     ReplacementType::BinaryBytes | ReplacementType::TextBase64 => {
@@ -139,9 +138,9 @@ impl BTreeValueMapReplacementPathHelper for BTreeMap<String, Value> {
                 }
                 _ => {
                     let bytes = match replacement_type {
-                        ReplacementType::Identifier
-                        | ReplacementType::IdentifierBytes
-                        | ReplacementType::TextBase58 => current_value.to_identifier_bytes(),
+                        ReplacementType::Identifier | ReplacementType::TextBase58 => {
+                            current_value.to_identifier_bytes()
+                        }
                         ReplacementType::BinaryBytes | ReplacementType::TextBase64 => {
                             current_value.to_binary_bytes()
                         }

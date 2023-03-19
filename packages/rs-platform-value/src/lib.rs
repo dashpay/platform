@@ -19,6 +19,7 @@ mod inner_value_at_path;
 mod macros;
 pub mod patch;
 mod pointer;
+mod replace;
 pub mod string_encoding;
 pub mod system_bytes;
 mod types;
@@ -27,7 +28,7 @@ mod value_serialization;
 
 pub use crate::value_map::{ValueMap, ValueMapHelper};
 pub use error::Error;
-use std::collections::{BTreeMap, HashMap};
+use std::collections::BTreeMap;
 
 pub type Hash256 = [u8; 32];
 
@@ -1098,50 +1099,6 @@ impl Value {
             Value::Map(map) => Ok(map),
             _other => Err(Error::StructureError("value is not a map".to_string())),
         }
-    }
-
-    pub fn replace_at_path(
-        &mut self,
-        path: &str,
-        replacement_type: ReplacementType,
-    ) -> Result<bool, Error> {
-        let mut split = path.split('.').peekable();
-        let mut current_value = self;
-        while let Some(path_component) = split.next() {
-            let map = current_value.as_map_mut_ref()?;
-            let Some(new_value) = map.get_key_mut(path_component) else {
-                return Ok(false);
-            };
-
-            if split.peek().is_none() {
-                let bytes = match replacement_type {
-                    ReplacementType::Identifier
-                    | ReplacementType::IdentifierBytes
-                    | ReplacementType::TextBase58 => new_value.to_identifier_bytes(),
-                    ReplacementType::BinaryBytes | ReplacementType::TextBase64 => {
-                        new_value.to_binary_bytes()
-                    }
-                }?;
-                *new_value = replacement_type.replace_for_bytes(bytes)?;
-                return Ok(true);
-            }
-            current_value = new_value;
-        }
-        Ok(false)
-    }
-
-    pub fn replace_at_paths<'a, I: IntoIterator<Item = &'a str>>(
-        &mut self,
-        paths: I,
-        replacement_type: ReplacementType,
-    ) -> Result<HashMap<&'a str, bool>, Error> {
-        paths
-            .into_iter()
-            .map(|path| {
-                let success = self.replace_at_path(path, replacement_type)?;
-                Ok((path, success))
-            })
-            .collect()
     }
 }
 

@@ -89,7 +89,7 @@ impl DocumentWasm {
                 identifier_paths
                     .into_iter()
                     .chain(EXTENDED_DOCUMENT_IDENTIFIER_FIELDS),
-                ReplacementType::IdentifierBytes,
+                ReplacementType::Identifier,
             )
             .map_err(ProtocolError::ValueError)
             .with_js_error()?;
@@ -339,7 +339,7 @@ pub(crate) fn document_data_to_bytes(
         .with_js_error()?;
     document
         .properties
-        .replace_at_paths(identifier_paths, ReplacementType::IdentifierBytes)
+        .replace_at_paths(identifier_paths, ReplacementType::Identifier)
         .map_err(ProtocolError::ValueError)
         .with_js_error()?;
     document

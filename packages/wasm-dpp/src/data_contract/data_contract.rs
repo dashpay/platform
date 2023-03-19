@@ -71,15 +71,11 @@ pub(crate) struct DataContractParameters {
     _extras: serde_json::Value, // Captures excess fields to trigger validation failure later.
 }
 
-pub fn js_value_to_serde_value(object: JsValue) -> Result<JsonValue, JsValue> {
+pub fn js_value_to_platform_value(object: JsValue) -> Result<Value, JsValue> {
     let parameters: DataContractParameters =
         with_js_error!(serde_wasm_bindgen::from_value(object))?;
 
-    serde_json::to_value(parameters).map_err(|e| e.to_string().into())
-}
-
-pub fn js_value_to_platform_value(raw_parameters: JsValue) -> Result<Value, JsValue> {
-    Ok(js_value_to_serde_value(raw_parameters)?.into())
+    platform_value::to_value(parameters).map_err(|e| e.to_string().into())
 }
 
 #[wasm_bindgen(js_class=DataContract)]
@@ -272,7 +268,8 @@ impl DataContractWasm {
 
     #[wasm_bindgen(js_name=toObject)]
     pub fn to_object(&self) -> Result<JsValue, JsValue> {
-        let serializer = serde_wasm_bindgen::Serializer::json_compatible();
+        let serializer =
+            serde_wasm_bindgen::Serializer::json_compatible().serialize_bytes_as_arrays(false);
         let object = with_js_error!(self.0.serialize(&serializer))?;
 
         js_sys::Reflect::set(

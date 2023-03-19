@@ -427,8 +427,11 @@ describe('Document', () => {
       documentJs.set(path, jsId);
       document.set(path, id);
 
-      expect(documentJs.get(path).toBuffer()).to.deep.equal(jsId);
-      expect(document.get(path).toBuffer()).to.deep.equal(jsId.toBuffer());
+      const documentJsIdBuffer = documentJs.get(path).toBuffer();
+      const documentIdBuffer = document.get(path).toBuffer();
+
+      expect(documentJsIdBuffer).to.deep.equal(jsId);
+      expect(documentIdBuffer.get(path).toBuffer()).to.deep.equal(jsId.toBuffer());
 
       const jsBuffer = documentJs.toBuffer();
       const buffer = document.toBuffer();

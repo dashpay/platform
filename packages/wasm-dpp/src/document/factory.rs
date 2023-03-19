@@ -167,7 +167,7 @@ impl DocumentFactoryWASM {
         // When data contract is available, replace remaining dynamic paths
         let document_data = document.properties_as_mut();
         document_data
-            .replace_at_paths(identifier_paths, ReplacementType::IdentifierBytes)
+            .replace_at_paths(identifier_paths, ReplacementType::Identifier)
             .map_err(ProtocolError::ValueError)
             .with_js_error()?;
         document_data

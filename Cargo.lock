@@ -2713,9 +2713,8 @@ dependencies = [
 
 [[package]]
 name = "serde-wasm-bindgen"
-version = "0.4.5"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "e3b4c031cd0d9014307d82b8abf653c0290fbdaeb4c02d00c63cf52f728628bf"
+version = "0.5.0"
+source = "git+https://github.com/QuantumExplorer/serde-wasm-bindgen?branch=feat/not_human_readable#2737b68b506cbf87a115917b6b3b4aa852a3ad73"
 dependencies = [
  "js-sys",
  "serde",

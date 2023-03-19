@@ -1,7 +1,7 @@
 use dpp::document::document_transition::document_base_transition::JsonValue;
 use dpp::document::{ExtendedDocument, EXTENDED_DOCUMENT_IDENTIFIER_FIELDS};
 
-use dpp::platform_value::{Bytes32, ReplacementType, Value};
+use dpp::platform_value::{Bytes32, Value};
 use dpp::prelude::{Identifier, Revision};
 use dpp::util::json_schema::JsonSchemaExt;
 use dpp::util::json_value::JsonValueExt;
@@ -167,30 +167,17 @@ impl ExtendedDocumentWasm {
 
     #[wasm_bindgen(js_name=set)]
     pub fn set(&mut self, path: String, js_value_to_set: JsValue) -> Result<(), JsValue> {
-        let (identifier_paths, _) = self.0.get_identifiers_and_binary_paths().with_js_error()?;
-        let mut value: Value = js_value_to_set.with_serde_to_json_value()?.into();
-        if identifier_paths.contains(path.as_str()) {
-            let identifier_value = ReplacementType::IdentifierBytes
-                .replace_consume_value(value)
-                .map_err(ProtocolError::ValueError)
-                .with_js_error()?;
-            return self.0.set(&path, identifier_value).with_js_error();
-        } else {
-            identifier_paths
-                .into_iter()
-                .try_for_each(|identifier_path| {
-                    if identifier_path.starts_with(path.as_str()) {
-                        let (_, suffix) = identifier_path.split_at(path.len() + 1);
-                        value
-                            .replace_at_path(suffix, ReplacementType::IdentifierBytes)
-                            .map_err(ProtocolError::ValueError)
-                            .map(|_| ())
-                            .with_js_error()
-                    } else {
-                        Ok(())
-                    }
-                })?;
-        }
+        let (identifier_paths, binary_paths) =
+            self.0.get_identifiers_and_binary_paths().with_js_error()?;
+        let mut value: Value = js_value_to_set.with_serde_to_platform_value()?;
+        value
+            .replace_to_binary_types_when_setting_with_path(
+                path.as_str(),
+                identifier_paths,
+                binary_paths,
+            )
+            .map_err(ProtocolError::ValueError)
+            .with_js_error()?;
         self.0.set(&path, value).with_js_error()
     }
 
@@ -211,12 +198,8 @@ impl ExtendedDocumentWasm {
                 }
                 _ => {
                     let serializer = serde_wasm_bindgen::Serializer::json_compatible();
-                    //todo: maybe go directly from value
-                    let json_value: Option<JsonValue> = value.clone().try_into().ok();
-                    if let Some(json_value) = json_value {
-                        if let Ok(js_value) = json_value.serialize(&serializer) {
-                            return js_value;
-                        }
+                    if let Ok(js_value) = value.serialize(&serializer) {
+                        return js_value;
                     }
                 }
             }
