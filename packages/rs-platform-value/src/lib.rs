@@ -296,9 +296,7 @@ impl Value {
     /// ```
     pub fn is_any_bytes_type(&self) -> bool {
         match self {
-            Value::Bytes(_)
-            | Value::Bytes32(_)
-            | Value::Identifier(_) => true,
+            Value::Bytes(_) | Value::Bytes32(_) | Value::Identifier(_) => true,
             _ => false,
         }
     }

@@ -69,7 +69,11 @@ impl<'de> Deserialize<'de> for IdentifierBytes32 {
         } else {
             let value = Value::deserialize(deserializer).map_err(|err| err.into())?;
 
-            Ok(IdentifierBytes32(value.into_hash256().map_err(|_| D::Error::custom("hello"))?))
+            Ok(IdentifierBytes32(
+                value
+                    .into_hash256()
+                    .map_err(|_| D::Error::custom("hello"))?,
+            ))
         }
     }
 }

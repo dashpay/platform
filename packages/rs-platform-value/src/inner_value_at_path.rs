@@ -56,6 +56,10 @@ impl Value {
         self.remove_value_at_path(path)?.try_into()
     }
 
+    pub fn remove_value_at_path_as_bytes(&mut self, path: &str) -> Result<Vec<u8>, Error> {
+        self.remove_value_at_path(path)?.try_into()
+    }
+
     pub fn remove_values_at_paths<'a>(
         &'a mut self,
         paths: Vec<&'a str>,

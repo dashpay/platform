@@ -229,14 +229,13 @@ impl DocumentWasm {
     ) -> Result<JsValue, JsValue> {
         let options: ConversionOptions = if !options.is_undefined() && options.is_object() {
             let raw_options = options.with_serde_to_platform_value()?;
-            platform_value::from_value(raw_options).with_js_error()?
+            platform_value::from_value(raw_options)
+                .map_err(ProtocolError::ValueError)
+                .with_js_error()?
         } else {
             Default::default()
         };
-        let mut value = self
-            .0
-            .to_object(&data_contract.0, document_type_name)
-            .with_js_error()?;
+        let mut value = self.0.to_object().with_js_error()?;
 
         let (identifiers_paths, binary_paths) =
             Document::get_identifiers_and_binary_paths(&data_contract.0, document_type_name)
@@ -245,7 +244,7 @@ impl DocumentWasm {
         let js_value = value.serialize(&serializer)?;
 
         for path in identifiers_paths.into_iter() {
-            if let Ok(bytes) = value.remove_value_at_path_into::<Vec<u8>>(path) {
+            if let Ok(bytes) = value.remove_value_at_path_as_bytes(path) {
                 if !options.skip_identifiers_conversion {
                     let buffer = Buffer::from_bytes(&bytes);
                     lodash_set(&js_value, path, buffer.into());
@@ -257,8 +256,8 @@ impl DocumentWasm {
         }
 
         for path in binary_paths {
-            if let Ok(bytes) = value.remove_value_at_path_into::<Vec<u8>>(path) {
-                let buffer = Buffer::from_bytes(&bytes);
+            if let Ok(bytes) = value.remove_value_at_path_as_bytes(path) {
+                let buffer = Buffer::from_bytes_owned(bytes);
                 lodash_set(&js_value, path, buffer.into());
             }
         }

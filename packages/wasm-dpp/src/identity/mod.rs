@@ -17,7 +17,7 @@ use dpp::{ProtocolError, SerdeParsingError};
 use crate::errors::from_dpp_err;
 use crate::identifier::IdentifierWrapper;
 use crate::utils;
-use crate::utils::to_vec_of_serde_values;
+use crate::utils::{to_vec_of_serde_values, WithJsError};
 use crate::MetadataWasm;
 pub use identity_public_key::*;
 
@@ -173,8 +173,8 @@ impl IdentityWasm {
             .public_keys
             .values()
             .map(|pk| pk.to_json())
-            .collect::<Result<Vec<serde_json::Value>, SerdeParsingError>>()
-            .map_err(|e| from_dpp_err(e.into()))?;
+            .collect::<Result<Vec<serde_json::Value>, ProtocolError>>()
+            .with_js_error()?;
 
         let mut identity_json =
             serde_json::to_value(self.0.clone()).map_err(|e| from_dpp_err(e.into()))?;

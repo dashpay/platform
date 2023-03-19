@@ -8,9 +8,9 @@ use serde_json::Value as JsonValue;
 use wasm_bindgen::prelude::*;
 
 use dpp::data_contract::{DataContract, SCHEMA_URI};
-use dpp::platform_value;
 use dpp::platform_value::string_encoding::Encoding;
 use dpp::platform_value::{Bytes32, Value};
+use dpp::{platform_value, Convertible};
 
 use crate::errors::{from_dpp_err, RustConversionError};
 use crate::identifier::identifier_from_js_value;
@@ -216,7 +216,7 @@ impl DataContractWasm {
             if definitions.is_empty() {
                 bail_js!("`definitions` cannot be empty");
             }
-            self.0.defs = definitions;
+            self.0.defs = Some(definitions);
         } else {
             bail_js!("the parameter 'definitions' is not an JS object");
         }

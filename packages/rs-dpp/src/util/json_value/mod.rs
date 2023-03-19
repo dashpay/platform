@@ -1,4 +1,4 @@
-use std::{convert::TryInto};
+use std::convert::TryInto;
 
 use anyhow::{anyhow, bail};
 
@@ -14,7 +14,6 @@ use super::json_path::{JsonPath, JsonPathLiteral, JsonPathStep};
 
 mod insert_with_path;
 use insert_with_path::*;
-
 
 mod remove_path;
 use remove_path::*;
@@ -441,8 +440,6 @@ pub fn get_value_from_json_path<'a>(
 #[cfg(test)]
 mod test {
     use serde_json::json;
-
-    
 
     use super::*;
 

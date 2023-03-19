@@ -12,6 +12,7 @@ use crate::fee::result::FeeResultWrapper;
 
 use drive::dpp::identity::{KeyID, TimestampMillis};
 use drive::dpp::prelude::Revision;
+use drive::dpp::Convertible;
 use drive::drive::flags::StorageFlags;
 use drive::drive::query::QueryDocumentsOutcome;
 use drive::error::Error;

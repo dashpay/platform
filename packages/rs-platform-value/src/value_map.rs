@@ -29,9 +29,9 @@ impl ValueMapHelper for ValueMap {
     fn sort_by_keys_and_inner_maps(&mut self) {
         self.sort_by_keys();
         self.iter_mut().for_each(|(_, v)| {
-           if let Value::Map(m) = v {
-               m.sort_by_keys_and_inner_maps()
-           }
+            if let Value::Map(m) = v {
+                m.sort_by_keys_and_inner_maps()
+            }
         });
     }
 
@@ -42,7 +42,7 @@ impl ValueMapHelper for ValueMap {
                 let key2 = key2.to_text().unwrap();
                 match key1.len().cmp(&key2.len()) {
                     Ordering::Less => Ordering::Less,
-                    Ordering::Equal => { key1.cmp(&key2) },
+                    Ordering::Equal => key1.cmp(&key2),
                     Ordering::Greater => Ordering::Greater,
                 }
             } else {

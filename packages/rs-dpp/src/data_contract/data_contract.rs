@@ -518,9 +518,7 @@ mod test {
     use anyhow::Result;
     use integer_encoding::VarInt;
 
-    use crate::{
-        tests::{fixtures::get_data_contract_fixture, utils::*},
-    };
+    use crate::tests::{fixtures::get_data_contract_fixture, utils::*};
 
     use super::*;
 
