@@ -13,7 +13,9 @@ use crate::prelude::Revision;
 use crate::util::cbor_value::{CborBTreeMapHelper, CborCanonicalMap};
 use crate::util::deserializer;
 use crate::util::deserializer::SplitProtocolVersionOutcome;
-use crate::{errors::ProtocolError, identifier::Identifier, metadata::Metadata, util::hash};
+use crate::{
+    errors::ProtocolError, identifier::Identifier, metadata::Metadata, util::hash, Convertible,
+};
 
 use super::{IdentityPublicKey, KeyID};
 
@@ -81,6 +83,32 @@ mod public_key_serialization {
             seq.serialize_element(element)?;
         }
         seq.end()
+    }
+}
+
+impl Convertible for Identity {
+    fn to_object(&self) -> Result<Value, ProtocolError> {
+        platform_value::to_value(self).map_err(ProtocolError::ValueError)
+    }
+
+    fn into_object(self) -> Result<Value, ProtocolError> {
+        platform_value::to_value(self).map_err(ProtocolError::ValueError)
+    }
+
+    fn to_json_object(&self) -> Result<JsonValue, ProtocolError> {
+        self.to_object()?
+            .try_into_validating_json()
+            .map_err(ProtocolError::ValueError)
+    }
+
+    fn to_json(&self) -> Result<JsonValue, ProtocolError> {
+        self.to_object()?
+            .try_into()
+            .map_err(ProtocolError::ValueError)
+    }
+
+    fn to_buffer(&self) -> Result<Vec<u8>, ProtocolError> {
+        self.to_cbor()
     }
 }
 
@@ -195,11 +223,6 @@ impl Identity {
         self.public_keys.keys().copied().max().unwrap_or_default()
     }
 
-    /// Converts the identity to a cbor buffer (same as to_cbor)
-    pub fn to_buffer(&self) -> Result<Vec<u8>, ProtocolError> {
-        self.to_cbor()
-    }
-
     /// Converts the identity to a cbor buffer
     pub fn to_cbor(&self) -> Result<Vec<u8>, ProtocolError> {
         // Prepend protocol version to the result
@@ -224,10 +247,6 @@ impl Identity {
         buf.append(&mut identity_cbor);
 
         Ok(buf)
-    }
-
-    pub fn to_object(&self) -> Result<Value, ProtocolError> {
-        platform_value::to_value(self).map_err(ProtocolError::ValueError)
     }
 
     pub fn from_buffer(b: impl AsRef<[u8]>) -> Result<Self, ProtocolError> {

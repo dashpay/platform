@@ -23,7 +23,7 @@ use crate::{
 use dpp::dashcore::{consensus, InstantLock, Transaction};
 
 use dpp::version::ProtocolVersionValidator;
-use dpp::NonConsensusError;
+use dpp::{Convertible, NonConsensusError};
 use serde::Deserialize;
 
 #[derive(Clone)]

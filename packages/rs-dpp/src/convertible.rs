@@ -15,7 +15,7 @@ pub trait Convertible {
     ///  - Identifiers  - with base58
     ///  - Binary data  - with base64
     fn to_json(&self) -> Result<JsonValue, ProtocolError>;
-    /// Returns the cibor-encoded bytes representation of the object. The data is prefixed by 4 bytes containing
+    /// Returns the cbor-encoded bytes representation of the object. The data is prefixed by 4 bytes containing
     /// the Protocol Version
     fn to_buffer(&self) -> Result<Vec<u8>, ProtocolError>;
 }
