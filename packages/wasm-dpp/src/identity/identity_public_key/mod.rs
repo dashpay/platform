@@ -4,7 +4,6 @@ pub use serde::{Deserialize, Serialize};
 use std::convert::{TryFrom, TryInto};
 use wasm_bindgen::prelude::*;
 
-use crate::errors::from_dpp_err;
 use crate::utils::{Inner, WithJsError};
 use crate::{buffer::Buffer, utils};
 use dpp::identity::{IdentityPublicKey, KeyID};
@@ -19,6 +18,7 @@ pub use security_level::*;
 
 mod key_type;
 
+use crate::errors::from_dpp_err;
 pub use key_type::*;
 
 #[wasm_bindgen(js_name=IdentityPublicKey)]
@@ -120,7 +120,7 @@ impl IdentityPublicKeyWasm {
 
     #[wasm_bindgen(js_name=hash)]
     pub fn hash(&self) -> Result<Vec<u8>, JsValue> {
-        self.0.hash().map_err(from_dpp_err)
+        self.0.hash().with_js_error()
     }
 
     #[wasm_bindgen(js_name=isMaster)]
@@ -191,9 +191,7 @@ impl TryFrom<JsValue> for IdentityPublicKeyWasm {
     fn try_from(value: JsValue) -> Result<Self, Self::Error> {
         let str = String::from(js_sys::JSON::stringify(&value)?);
         let val = serde_json::from_str(&str).map_err(|e| from_dpp_err(e.into()))?;
-        Ok(Self(
-            IdentityPublicKey::from_value(val).map_err(from_dpp_err)?,
-        ))
+        Ok(Self(IdentityPublicKey::from_value(val).with_js_error()?))
     }
 }
 

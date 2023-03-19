@@ -66,7 +66,7 @@ impl DataContractCreateTransitionWasm {
             .with_js_error()?;
         DataContractCreateTransition::from_raw_object(transition_object)
             .map(Into::into)
-            .map_err(from_dpp_err)
+            .with_js_error()
     }
 
     #[wasm_bindgen(js_name=getDataContract)]
@@ -100,7 +100,7 @@ impl DataContractCreateTransitionWasm {
         Ok(self
             .0
             .to_json(skip_signature.unwrap_or(false))
-            .map_err(from_dpp_err)?
+            .with_js_error()?
             .serialize(&serializer)
             .expect("JSON is a valid object"))
     }
@@ -110,7 +110,7 @@ impl DataContractCreateTransitionWasm {
         let bytes = self
             .0
             .to_buffer(skip_signature.unwrap_or(false))
-            .map_err(from_dpp_err)?;
+            .with_js_error()?;
         Ok(Buffer::from_bytes(&bytes))
     }
 
@@ -168,6 +168,6 @@ impl DataContractCreateTransitionWasm {
                 &private_key,
                 &bls_adapter,
             )
-            .map_err(from_dpp_err)
+            .with_js_error()
     }
 }

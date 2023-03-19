@@ -131,7 +131,7 @@ impl DataContractFactoryWasm {
         self.0
             .create(identifier, documents_object, None, None)
             .map(Into::into)
-            .map_err(from_dpp_err)
+            .with_js_error()
     }
 
     #[wasm_bindgen(js_name=createFromObject)]
@@ -175,6 +175,6 @@ impl DataContractFactoryWasm {
         self.0
             .create_data_contract_create_transition(data_contract.clone().into())
             .map(Into::into)
-            .map_err(from_dpp_err)
+            .with_js_error()
     }
 }

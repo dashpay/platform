@@ -20,7 +20,7 @@ use std::convert::TryInto;
 
 use std::sync::Arc;
 
-use crate::utils::with_serde_to_platform_value;
+use crate::utils::{with_serde_to_platform_value, WithJsError};
 use wasm_bindgen::prelude::wasm_bindgen;
 use wasm_bindgen::JsValue;
 
@@ -56,7 +56,7 @@ impl IdentityFactoryWasm {
         self.0
             .create(asset_lock_proof, public_keys)
             .map(|identity| identity.into())
-            .map_err(from_dpp_err)
+            .with_js_error()
     }
 
     #[wasm_bindgen(js_name=createFromObject)]
@@ -160,7 +160,7 @@ impl IdentityFactoryWasm {
         self.0
             .create_identity_create_transition(Identity::from(identity.to_owned()))
             .map(Into::into)
-            .map_err(from_dpp_err)
+            .with_js_error()
     }
 
     #[wasm_bindgen(js_name=createIdentityTopUpTransition)]
@@ -174,7 +174,7 @@ impl IdentityFactoryWasm {
         self.0
             .create_identity_topup_transition(identity_id.to_owned().into(), asset_lock_proof)
             .map(Into::into)
-            .map_err(from_dpp_err)
+            .with_js_error()
     }
 
     #[wasm_bindgen(js_name=createIdentityUpdateTransition)]
@@ -196,7 +196,7 @@ impl IdentityFactoryWasm {
                 Some(now),
             )
             .map(Into::into)
-            .map_err(from_dpp_err)
+            .with_js_error()
     }
 }
 

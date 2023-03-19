@@ -1,8 +1,8 @@
 use crate::bls_adapter::{BlsAdapter, JsBlsAdapter};
-use crate::errors::from_dpp_err;
+
 use crate::state_repository::{ExternalStateRepositoryLike, ExternalStateRepositoryLikeWrapper};
 use crate::state_transition_factory::StateTransitionFactoryWasm;
-use crate::utils::ToSerdeJSONExt;
+use crate::utils::{ToSerdeJSONExt, WithJsError};
 use crate::validation::ValidationResultWasm;
 use crate::with_js_error;
 use dpp::state_transition::state_transition_execution_context::StateTransitionExecutionContext;
@@ -35,7 +35,7 @@ impl StateTransitionFacadeWasm {
             adapter,
             protocol_version_validator,
         )
-        .map_err(from_dpp_err)?;
+        .with_js_error()?;
 
         Ok(StateTransitionFacadeWasm(state_transition_facade))
     }
@@ -126,7 +126,7 @@ impl StateTransitionFacadeWasm {
                     .0
                     .create_from_object(state_transition_json.clone(), true)
                     .await
-                    .map_err(from_dpp_err)?;
+                    .with_js_error()?;
                 (state_transition, state_transition_json, execution_context)
             };
 
@@ -139,7 +139,7 @@ impl StateTransitionFacadeWasm {
                 options.into(),
             )
             .await
-            .map_err(from_dpp_err)?;
+            .with_js_error()?;
 
         Ok(validation_result.map(|_| JsValue::undefined()).into())
     }
@@ -173,7 +173,7 @@ impl StateTransitionFacadeWasm {
             .0
             .validate_basic(&state_transition_json, &execution_context)
             .await
-            .map_err(from_dpp_err)?;
+            .with_js_error()?;
 
         Ok(validation_result.map(|_| JsValue::undefined()).into())
     }
@@ -192,7 +192,7 @@ impl StateTransitionFacadeWasm {
             .0
             .validate_signature(state_transition)
             .await
-            .map_err(from_dpp_err)?;
+            .with_js_error()?;
 
         Ok(validation_result.map(|_| JsValue::undefined()).into())
     }
@@ -211,7 +211,7 @@ impl StateTransitionFacadeWasm {
             .0
             .validate_fee(&state_transition)
             .await
-            .map_err(from_dpp_err)?;
+            .with_js_error()?;
 
         Ok(validation_result.map(|_| JsValue::undefined()).into())
     }
@@ -230,7 +230,7 @@ impl StateTransitionFacadeWasm {
             .0
             .validate_state(&state_transition)
             .await
-            .map_err(from_dpp_err)?;
+            .with_js_error()?;
 
         Ok(validation_result.map(|_| JsValue::undefined()).into())
     }

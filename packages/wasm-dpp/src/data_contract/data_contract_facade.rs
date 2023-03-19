@@ -106,7 +106,7 @@ impl DataContractFacadeWasm {
         self.0
             .create_data_contract_create_transition(data_contract.clone().into())
             .map(DataContractCreateTransitionWasm::from)
-            .map_err(from_protocol_error)
+            .with_js_error()
     }
 
     /// Create Data Contract Update State Transition

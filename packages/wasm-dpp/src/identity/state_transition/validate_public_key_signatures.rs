@@ -1,6 +1,6 @@
 use crate::bls_adapter::{BlsAdapter, JsBlsAdapter};
-use crate::errors::from_dpp_err;
-use crate::utils::ToSerdeJSONExt;
+
+use crate::utils::{ToSerdeJSONExt, WithJsError};
 
 use crate::validation::ValidationResultWasm;
 
@@ -12,6 +12,7 @@ use dpp::identity::state_transition::validate_public_key_signatures::{
 
 use dpp::identity::state_transition::identity_public_key_transitions::IdentityPublicKeyWithWitness;
 
+use crate::errors::from_dpp_err;
 use dpp::platform_value::Value;
 use wasm_bindgen::prelude::wasm_bindgen;
 use wasm_bindgen::JsValue;
@@ -45,7 +46,7 @@ impl PublicKeysSignaturesValidatorWasm {
             .map(|raw_key| {
                 let parsed_key: IdentityPublicKeyWithWitness =
                     IdentityPublicKeyCreateTransitionWasm::new(raw_key)?.into();
-                parsed_key.to_raw_object(false).map_err(from_dpp_err)
+                parsed_key.to_raw_object(false).with_js_error()
             })
             .collect::<Result<Vec<Value>, JsValue>>()?;
 

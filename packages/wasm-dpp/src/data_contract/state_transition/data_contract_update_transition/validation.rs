@@ -14,6 +14,7 @@ use dpp::{
 };
 use wasm_bindgen::prelude::*;
 
+use crate::utils::WithJsError;
 use crate::{
     data_contract::state_transition::data_contract_update_transition::DataContractUpdateTransitionParameters,
     errors::{from_dpp_err, protocol_error::from_protocol_error},
@@ -33,7 +34,7 @@ pub async fn validate_data_contract_update_transition_state(
         &state_transition.into(),
     )
     .await
-    .map_err(from_dpp_err)?;
+    .with_js_error()?;
 
     Ok(result.map(|_| JsValue::undefined()).into())
 }

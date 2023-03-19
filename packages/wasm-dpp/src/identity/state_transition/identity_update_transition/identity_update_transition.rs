@@ -15,7 +15,7 @@ use crate::{
 };
 
 use crate::bls_adapter::{BlsAdapter, JsBlsAdapter};
-use crate::errors::from_dpp_err;
+
 use crate::utils::{generic_of_js_val, WithJsError};
 use dpp::identity::state_transition::identity_public_key_transitions::IdentityPublicKeyWithWitness;
 use dpp::identity::{KeyID, TimestampMillis};
@@ -415,7 +415,7 @@ impl IdentityUpdateTransitionWasm {
 
         self.0
             .sign_by_private_key(private_key.as_slice(), key_type, &bls_adapter)
-            .map_err(from_dpp_err)
+            .with_js_error()
     }
 
     #[wasm_bindgen(js_name=getSignature)]
@@ -447,6 +447,6 @@ impl IdentityUpdateTransitionWasm {
                 &private_key,
                 &bls_adapter,
             )
-            .map_err(from_dpp_err)
+            .with_js_error()
     }
 }

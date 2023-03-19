@@ -1,5 +1,6 @@
 use crate::errors::from_dpp_err;
 use crate::identity::state_transition::identity_public_key_transitions::IdentityPublicKeyCreateTransitionWasm;
+use crate::utils::WithJsError;
 use crate::validation::ValidationResultWasm;
 use dpp::identity::state_transition::identity_public_key_transitions::IdentityPublicKeyWithWitness;
 use dpp::identity::state_transition::identity_update_transition::validate_public_keys::IdentityUpdatePublicKeysValidator;
@@ -33,7 +34,7 @@ impl IdentityUpdatePublicKeysValidatorWasm {
                 let parsed_key: IdentityPublicKeyWithWitness =
                     IdentityPublicKeyCreateTransitionWasm::new(raw_key)?.into();
 
-                parsed_key.to_raw_object(false).map_err(from_dpp_err)
+                parsed_key.to_raw_object(false).with_js_error()
             })
             .collect::<Result<Vec<Value>, JsValue>>()?;
 

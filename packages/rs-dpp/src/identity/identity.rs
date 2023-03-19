@@ -39,7 +39,6 @@ pub struct Identity {
     pub public_keys: BTreeMap<KeyID, IdentityPublicKey>,
     pub balance: u64,
     pub revision: Revision,
-    #[serde(skip)]
     pub asset_lock_proof: Option<AssetLockProof>,
     #[serde(skip)]
     pub metadata: Option<Metadata>,
@@ -93,7 +92,13 @@ impl Convertible for Identity {
 
     fn to_cleaned_object(&self) -> Result<Value, ProtocolError> {
         //same as object for Identities
-        self.to_object()
+        let mut value = self.to_object()?;
+        if self.asset_lock_proof.is_none() {
+            value
+                .remove("assetLockProof")
+                .map_err(ProtocolError::ValueError)?;
+        }
+        Ok(value)
     }
 
     fn into_object(self) -> Result<Value, ProtocolError> {
@@ -101,13 +106,13 @@ impl Convertible for Identity {
     }
 
     fn to_json_object(&self) -> Result<JsonValue, ProtocolError> {
-        self.to_object()?
+        self.to_cleaned_object()?
             .try_into_validating_json()
             .map_err(ProtocolError::ValueError)
     }
 
     fn to_json(&self) -> Result<JsonValue, ProtocolError> {
-        self.to_object()?
+        self.to_cleaned_object()?
             .try_into()
             .map_err(ProtocolError::ValueError)
     }

@@ -10,7 +10,7 @@ use dpp::{state_transition::{
 use wasm_bindgen::{prelude::wasm_bindgen, JsValue};
 use dpp::platform_value::Value;
 
-use crate::utils::ToSerdeJSONExt;
+use crate::utils::{ToSerdeJSONExt, WithJsError};
 use crate::{
     bls_adapter::{BlsAdapter, JsBlsAdapter},
     errors::{from_dpp_err, from_dpp_init_error},
@@ -120,7 +120,7 @@ impl StateTransitionFactoryWasm {
                     DataContractCreateTransitionBasicValidator::new(
                         protocol_version_validator.clone(),
                     )
-                    .map_err(from_dpp_err)?,
+                    .with_js_error()?,
                     DataContractUpdateTransitionBasicValidator::new(
                         state_repository_wrapper.clone(),
                         protocol_version_validator.clone(),
@@ -140,7 +140,7 @@ impl StateTransitionFactoryWasm {
                         pk_validator,
                         pk_sig_validator,
                     )
-                    .map_err(from_dpp_err)?,
+                    .with_js_error()?,
                     IdentityTopUpTransitionBasicValidator::new(
                         ProtocolVersionValidator::default(),
                         asset_lock_validator,

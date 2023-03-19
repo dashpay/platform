@@ -88,7 +88,7 @@ impl DataContractWasm {
         DataContract::from_raw_object(
             platform_value::to_value(parameters).expect("Implements Serialize"),
         )
-        .map_err(from_dpp_err)
+        .with_js_error()
         .map(Into::into)
     }
 
@@ -186,7 +186,7 @@ impl DataContractWasm {
 
     #[wasm_bindgen(js_name=getDocumentSchema)]
     pub fn get_document_schema(&mut self, doc_type: &str) -> Result<JsValue, JsValue> {
-        let doc_schema = self.0.get_document_schema(doc_type).map_err(from_dpp_err)?;
+        let doc_schema = self.0.get_document_schema(doc_type).with_js_error()?;
         let serializer = serde_wasm_bindgen::Serializer::json_compatible();
         with_js_error!(doc_schema.serialize(&serializer))
     }
@@ -194,10 +194,7 @@ impl DataContractWasm {
     #[wasm_bindgen(js_name=getDocumentSchemaRef)]
     pub fn get_document_schema_ref(&self, doc_type: &str) -> Result<JsValue, JsValue> {
         with_js_error!(serde_wasm_bindgen::to_value(
-            &self
-                .0
-                .get_document_schema_ref(doc_type)
-                .map_err(from_dpp_err)?
+            &self.0.get_document_schema_ref(doc_type).with_js_error()?
         ))
     }
 
@@ -252,7 +249,7 @@ impl DataContractWasm {
         with_js_error!(self
             .0
             .get_binary_properties(doc_type)
-            .map_err(from_dpp_err)?
+            .with_js_error()?
             .serialize(&serializer))
     }
 
@@ -296,20 +293,20 @@ impl DataContractWasm {
 
     #[wasm_bindgen(js_name=toBuffer)]
     pub fn to_buffer(&self) -> Result<Buffer, JsValue> {
-        let bytes = self.0.to_buffer().map_err(from_dpp_err)?;
+        let bytes = self.0.to_buffer().with_js_error()?;
         Ok(Buffer::from_bytes(&bytes))
     }
 
     #[wasm_bindgen(js_name=hash)]
     pub fn hash(&self) -> Result<Vec<u8>, JsValue> {
-        self.0.hash().map_err(from_dpp_err)
+        self.0.hash().with_js_error()
     }
 
     #[wasm_bindgen(js_name=from)]
     pub fn from_js_value(v: JsValue) -> Result<DataContractWasm, JsValue> {
         let json_contract: JsonValue = with_js_error!(serde_wasm_bindgen::from_value(v))?;
         Ok(DataContract::try_from(json_contract)
-            .map_err(from_dpp_err)?
+            .with_js_error()?
             .into())
     }
 

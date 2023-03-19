@@ -16,6 +16,7 @@ use std::sync::Arc;
 use wasm_bindgen::prelude::*;
 
 use crate::bls_adapter::{BlsAdapter, JsBlsAdapter};
+
 use crate::errors::from_dpp_err;
 use crate::utils::ToSerdeJSONExt;
 use crate::{

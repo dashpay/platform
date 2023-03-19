@@ -13,6 +13,7 @@ use dpp::{
 };
 use wasm_bindgen::prelude::*;
 
+use crate::utils::WithJsError;
 use crate::validation::ValidationResultWasm;
 use crate::{
     errors::from_dpp_err,
@@ -33,7 +34,7 @@ pub async fn validate_data_contract_create_transition_state(
         &state_transition.into(),
     )
     .await
-    .map_err(from_dpp_err)?;
+    .with_js_error()?;
     Ok(validation_result.map(|_| JsValue::undefined()).into())
 }
 
