@@ -111,7 +111,7 @@ pub struct PlatformConfig {
     pub validator_set_quorum_rotation_block_count: u64,
 
     /// Path to data storage
-    pub data_dir: PathBuf,
+    pub db_path: PathBuf,
 }
 
 impl PlatformConfig {
@@ -149,7 +149,7 @@ impl Default for PlatformConfig {
                     password: "".to_owned(),
                 },
             },
-            data_dir: PathBuf::from("/var/lib/dash-platform/data"),
+            db_path: PathBuf::from("/var/lib/dash-platform/data"),
         }
     }
 }

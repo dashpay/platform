@@ -24,7 +24,7 @@ pub fn start(config: &PlatformConfig) -> Result<(), Error> {
     let abci_config = config.abci.clone();
 
     let platform: Platform =
-        Platform::open(config.data_dir.to_owned(), Some(config.to_owned())).unwrap();
+        Platform::open(config.db_path.to_owned(), Some(config.to_owned())).unwrap();
 
     let abci = AbciApplication::new(abci_config, &platform)?;
 
@@ -61,6 +61,15 @@ impl<'a> AbciApplication<'a> {
 }
 
 impl<'a> tenderdash_abci::Application for AbciApplication<'a> {
+    fn info(&self, request: proto::RequestInfo) -> proto::ResponseInfo {
+        tracing::info!("tenderdash info: {:?}", request);
+        proto::ResponseInfo {
+            app_version: 1,
+            version: env!("CARGO_PKG_VERSION").to_string(),
+            ..Default::default()
+        }
+    }
+
     fn init_chain(&self, request: proto::RequestInitChain) -> proto::ResponseInitChain {
         let platform = self.platform();
         let transaction = self.transaction();

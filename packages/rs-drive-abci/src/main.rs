@@ -1,7 +1,7 @@
-use std::{panic, path::PathBuf};
-
 use clap::{Parser, Subcommand};
 use drive_abci::config::{FromEnv, PlatformConfig};
+use std::{panic, path::PathBuf};
+use tracing_subscriber::prelude::*;
 
 #[derive(Debug, Parser)]
 #[command( author, version, about, long_about = None)]
@@ -11,6 +11,14 @@ struct Cli {
     /// Path to the config (.env) file.
     #[arg(short, long, value_hint = clap::ValueHint::FilePath) ]
     config: Option<std::path::PathBuf>,
+    /// Enable verbose logging. Use multiple times for even more logs.
+    ///
+    /// This overrides any settings defined in RUST_LOG.
+    /// For more about RUST_LOG, see:
+    /// https://rust-lang-nursery.github.io/rust-cookbook/development_tools/debugging/config_log.html
+    ///
+    #[arg(short, long, action = clap::ArgAction::Count)]
+    verbose: u8,
 }
 
 #[derive(Debug, Subcommand)]
@@ -39,6 +47,8 @@ pub fn main() {
     let cli = Cli::parse();
     let config = load_config(&cli.config);
 
+    set_verbosity(&cli);
+
     match cli.command {
         Commands::Start {} => drive_abci::abci::server::start(&config).unwrap(),
         Commands::Config {} => dump_config(&config),
@@ -65,4 +75,24 @@ fn load_config(config: &Option<PathBuf>) -> PlatformConfig {
     };
 
     PlatformConfig::from_env().expect("cannot parse configuration file")
+}
+
+fn set_verbosity(cli: &Cli) {
+    use tracing_subscriber::*;
+
+    let env_filter = match cli.verbose {
+        0 => EnvFilter::builder()
+            .with_default_directive(
+                "error,tenderdash_abci=warn,drive_abci=warn"
+                    .parse()
+                    .unwrap(),
+            )
+            .from_env_lossy(),
+        1 => EnvFilter::new("error,tenderdash_abci=info,drive_abci=info"),
+        2 => EnvFilter::new("info,tenderdash_abci=debug,drive_abci=debug"),
+        3 => EnvFilter::new("debug,tenderdash_abci=debug,drive_abci=debug"),
+        _ => panic!("max verbosity level is 3"),
+    };
+
+    registry().with(fmt::layer()).with(env_filter).init();
 }
