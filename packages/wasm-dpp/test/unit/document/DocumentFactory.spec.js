@@ -246,9 +246,7 @@ describe('DocumentFactory', () => {
         expect(stateRepositoryMock.fetchDataContract.callCount).to.be.equal(1);
         const callArguments = stateRepositoryMock.fetchDataContract.getCall(0).args[0];
 
-        // Due to wasm-bindgen boundry we need to do some additional work to retrieve the exact
-        // Buffer it has been called with
-        expect(Buffer.from(callArguments)).to.be.deep.equal(dc.getId().toBuffer());
+        expect(callArguments.toBuffer()).to.be.deep.equal(dc.getId().toBuffer());
       }
     });
   });
