@@ -15,11 +15,9 @@ use crate::{
     util::entropy_generator,
 };
 
-use super::{
-    state_transition::{DataContractCreateTransition, DataContractUpdateTransition},
-    validation::data_contract_validator::DataContractValidator,
-    DataContract,
-};
+use super::state_transition::data_contract_create_transition::DataContractCreateTransition;
+use super::state_transition::data_contract_update_transition::DataContractUpdateTransition;
+use super::{validation::data_contract_validator::DataContractValidator, DataContract};
 
 /// A way to provide external entropy generator.
 pub trait EntropyGenerator {
@@ -102,7 +100,9 @@ impl DataContractFactory {
 
         let cbor = value_to_cbor(JsonValue::Object(root_map), Some(1))?;
 
-        DataContract::from_cbor(cbor)
+        let mut data_contract = DataContract::from_cbor(cbor)?;
+        data_contract.set_entropy(entropy);
+        Ok(data_contract)
     }
 
     /// Create Data Contract from plain object

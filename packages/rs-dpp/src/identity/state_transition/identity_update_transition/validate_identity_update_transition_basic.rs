@@ -27,8 +27,7 @@ pub struct ValidateIdentityUpdateTransitionBasic<KV, SV> {
     protocol_version_validator: ProtocolVersionValidator,
     json_schema_validator: JsonSchemaValidator,
     public_keys_validator: Arc<KV>,
-
-    public_keys_signatures_validator: SV,
+    public_keys_signatures_validator: Arc<SV>,
 }
 
 impl<KV, SV> ValidateIdentityUpdateTransitionBasic<KV, SV>
@@ -39,7 +38,7 @@ where
     pub fn new(
         protocol_version_validator: ProtocolVersionValidator,
         public_keys_validator: Arc<KV>,
-        public_keys_signatures_validator: SV,
+        public_keys_signatures_validator: Arc<SV>,
     ) -> Result<Self, ProtocolError> {
         let json_schema_validator = JsonSchemaValidator::new(IDENTITY_UPDATE_SCHEMA.clone())
             .map_err(|e| {

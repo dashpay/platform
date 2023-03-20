@@ -5,8 +5,11 @@ use test_case::test_case;
 use crate::{
     consensus::{basic::BasicError, ConsensusError},
     data_contract::state_transition::{
-        data_contract_update_transition::validation::basic::DataContractUpdateTransitionBasicValidator,
-        property_names, DataContractUpdateTransition,
+        data_contract_update_transition::{
+            validation::basic::DataContractUpdateTransitionBasicValidator,
+            DataContractUpdateTransition,
+        },
+        property_names,
     },
     state_repository::MockStateRepositoryLike,
     state_transition::{
@@ -18,6 +21,7 @@ use crate::{
         utils::{get_basic_error_from_result, get_schema_error},
     },
     util::json_value::JsonValueExt,
+    validation::AsyncDataValidatorWithContext,
     version::{ProtocolVersionValidator, LATEST_VERSION},
 };
 

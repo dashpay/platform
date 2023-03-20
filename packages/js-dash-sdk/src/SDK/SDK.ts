@@ -1,10 +1,4 @@
-import { Client as _Client } from './Client';
-import { Core as _Core } from './Core';
-import { Platform as _Platform } from './Platform';
 import { default as _DAPIClient } from '@dashevo/dapi-client';
-
-import { StateTransitionBroadcastError } from '../errors/StateTransitionBroadcastError'
-
 import {
   Wallet as _Wallet,
   Account as _Account,
@@ -12,38 +6,43 @@ import {
   CONSTANTS as _WalletLibCONSTANTS,
   EVENTS as _WalletLibEVENTS,
   utils as _WalletLibUtils,
-  plugins as _WalletLibPlugins
+  plugins as _WalletLibPlugins,
 } from '@dashevo/wallet-lib';
+import { Client as _Client } from './Client';
+import { Core as _Core } from './Core';
+import { Platform as _Platform } from './Platform';
+
+import { StateTransitionBroadcastError } from '../errors/StateTransitionBroadcastError';
 
 export namespace SDK {
-  export let DAPIClient = _DAPIClient;
-  export let Client = _Client;
+  export const DAPIClient = _DAPIClient;
+  export const Client = _Client;
 
-  export let Core = _Core;
+  export const Core = _Core;
   // TODO: consider marking as DEPRECATED and use PlatformProtocol below instead
-  export let Platform = _Platform;
+  export const Platform = _Platform;
 
   // Wallet-lib primitives
-  export let Wallet = _Wallet;
-  export let Account = _Account;
-  export let KeyChain = _KeyChain;
+  export const Wallet = _Wallet;
+  export const Account = _Account;
+  export const KeyChain = _KeyChain;
 
   // TODO: consider merging into Wallet above and mark as DEPRECATED
-  export let WalletLib = {
+  export const WalletLib = {
     CONSTANTS: _WalletLibCONSTANTS,
     EVENTS: _WalletLibEVENTS,
     plugins: _WalletLibPlugins,
     utils: _WalletLibUtils,
-  }
+  };
 
-  export let PlatformProtocol = Platform.DashPlatformProtocol;
+  export const PlatformProtocol = Platform.DashPlatformProtocol;
 
-  export let Essentials = {
+  export const Essentials = {
     Buffer,
-  }
+  };
 
-  export let Errors = {
-    StateTransitionBroadcastError
-  }
+  export const Errors = {
+    StateTransitionBroadcastError,
+  };
 }
 export { SDK as default };

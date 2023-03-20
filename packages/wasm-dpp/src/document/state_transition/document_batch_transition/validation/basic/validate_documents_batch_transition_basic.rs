@@ -1,4 +1,5 @@
 use dpp::document::validation::basic::validate_documents_batch_transition_basic;
+use std::sync::Arc;
 use wasm_bindgen::prelude::*;
 
 use crate::{
@@ -23,7 +24,7 @@ pub async fn validate_documents_batch_transition_basic_wasm(
         validate_documents_batch_transition_basic::validate_documents_batch_transition_basic(
             &protocol_version_validator.into(),
             &raw_state_transition,
-            &wrapped_state_repository,
+            Arc::new(wrapped_state_repository),
             &execution_context.into(),
         )
         .await

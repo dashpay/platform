@@ -1,78 +1,116 @@
-use std::convert::TryFrom;
+use std::{convert::TryFrom, sync::Arc};
 
 use async_trait::async_trait;
-#[cfg(test)]
-use mockall::{automock, predicate::*};
 use serde_json::Value as JsonValue;
 
 use crate::consensus::basic::state_transition::{
     InvalidStateTransitionTypeError, StateTransitionMaxSizeExceededError,
 };
 use crate::{
-    consensus::basic::BasicError,
+    consensus::{basic::BasicError, ConsensusError},
     state_repository::StateRepositoryLike,
-    state_transition::{create_state_transition, StateTransitionConvert, StateTransitionType},
+    state_transition::{
+        create_state_transition,
+        state_transition_execution_context::StateTransitionExecutionContext,
+        StateTransitionConvert, StateTransitionType,
+    },
     util::json_value::JsonValueExt,
-    validation::SimpleValidationResult,
+    validation::{AsyncDataValidatorWithContext, SimpleValidationResult},
     ProtocolError,
 };
 
-async fn validate_state_transition_basic(
-    state_repository: &impl StateRepositoryLike,
-    validate_functions_by_type: &impl ValidatorByStateTransitionType,
-    raw_state_transition: JsonValue,
-) -> Result<SimpleValidationResult, ProtocolError> {
-    let mut result = SimpleValidationResult::default();
+use super::validate_state_transition_by_type::ValidatorByStateTransitionType;
 
-    let raw_transition_type = match raw_state_transition.get_u64("type") {
-        Err(_) => {
-            result.add_error(BasicError::MissingStateTransitionTypeError);
-            return Ok(result);
-        }
-
-        Ok(transaction_type) => transaction_type,
-    } as u8;
-
-    let state_transition_type = match StateTransitionType::try_from(raw_transition_type) {
-        Err(_) => {
-            result.add_error(BasicError::InvalidStateTransitionTypeError(
-                InvalidStateTransitionTypeError::new(raw_transition_type),
-            ));
-            return Ok(result);
-        }
-        Ok(transition_type) => transition_type,
-    };
-
-    let validate_result = validate_functions_by_type
-        .validate(&raw_state_transition, state_transition_type)
-        .await?;
-    result.merge(validate_result);
-    if !result.is_valid() {
-        return Ok(result);
-    }
-
-    let state_transition = create_state_transition(state_repository, raw_state_transition).await?;
-    if let Err(ProtocolError::MaxEncodedBytesReachedError {
-        max_size_kbytes,
-        payload,
-    }) = state_transition.to_buffer(false)
-    {
-        result.add_error(BasicError::StateTransitionMaxSizeExceededError(
-            StateTransitionMaxSizeExceededError::new(payload.len() / 1024, max_size_kbytes),
-        ));
-    }
-
-    Ok(result)
+pub struct StateTransitionBasicValidator<SR, VBT>
+where
+    SR: StateRepositoryLike,
+    VBT: ValidatorByStateTransitionType,
+{
+    state_repository: Arc<SR>,
+    validate_state_transition_by_type: VBT,
 }
 
-#[cfg_attr(test, automock)]
+impl<SR, VBT> StateTransitionBasicValidator<SR, VBT>
+where
+    SR: StateRepositoryLike,
+    VBT: ValidatorByStateTransitionType,
+{
+    pub fn new(state_repository: Arc<SR>, validate_state_transition_by_type: VBT) -> Self {
+        StateTransitionBasicValidator {
+            state_repository,
+            validate_state_transition_by_type,
+        }
+    }
+}
+
 #[async_trait(?Send)]
-pub trait ValidatorByStateTransitionType: Sync {
+impl<SR, VBT> AsyncDataValidatorWithContext for StateTransitionBasicValidator<SR, VBT>
+where
+    SR: StateRepositoryLike,
+    VBT: ValidatorByStateTransitionType,
+{
+    type Item = JsonValue;
+
     async fn validate(
         &self,
         raw_state_transition: &JsonValue,
-        state_transition_type: StateTransitionType,
-    ) -> Result<SimpleValidationResult, ProtocolError>;
+        execution_context: &StateTransitionExecutionContext,
+    ) -> Result<SimpleValidationResult, ProtocolError> {
+        let mut result = SimpleValidationResult::default();
+
+        let Ok(state_transition_type) = raw_state_transition.get_u8("type") else {
+            result.add_error(
+                ConsensusError::BasicError(
+                    Box::new(BasicError::MissingStateTransitionTypeError)
+                )
+            );
+
+            return Ok(result);
+        };
+
+        let Ok(state_transition_type) = StateTransitionType::try_from(state_transition_type) else {
+            result.add_error(
+                ConsensusError::BasicError(
+                    Box::new(
+                        BasicError::InvalidStateTransitionTypeError(InvalidStateTransitionTypeError::new(state_transition_type))
+                    )
+                )
+            );
+
+            return Ok(result);
+        };
+
+        let validate_result = self
+            .validate_state_transition_by_type
+            .validate(
+                raw_state_transition,
+                state_transition_type,
+                execution_context,
+            )
+            .await?;
+
+        result.merge(validate_result);
+
+        if !result.is_valid() {
+            return Ok(result);
+        }
+
+        let state_transition =
+            create_state_transition(self.state_repository.as_ref(), raw_state_transition.clone())
+                .await?;
+
+        if let Err(ProtocolError::MaxEncodedBytesReachedError {
+            max_size_kbytes,
+            payload,
+        }) = state_transition.to_buffer(false)
+        {
+            result.add_error(BasicError::StateTransitionMaxSizeExceededError(
+                StateTransitionMaxSizeExceededError::new(payload.len() / 1024, max_size_kbytes),
+            ));
+        }
+
+        Ok(result)
+    }
 }
 
 #[cfg(test)]
@@ -81,22 +119,30 @@ mod test {
     use std::sync::Arc;
 
     use crate::{
+        data_contract::state_transition::data_contract_create_transition::DataContractCreateTransition,
+        state_transition::validation::validate_state_transition_by_type::MockValidatorByStateTransitionType,
+        validation::AsyncDataValidatorWithContext,
+    };
+
+    use super::StateTransitionBasicValidator;
+
+    use crate::{
         consensus::basic::BasicError,
         data_contract::{
-            state_transition::DataContractCreateTransition,
             validation::data_contract_validator::DataContractValidator, DataContract,
             DataContractFactory,
         },
         state_repository::MockStateRepositoryLike,
-        state_transition::{StateTransitionConvert, StateTransitionLike},
+        state_transition::{
+            state_transition_execution_context::StateTransitionExecutionContext,
+            StateTransitionConvert, StateTransitionLike,
+        },
         tests::{fixtures::get_data_contract_fixture, utils::get_basic_error_from_result},
         util::json_value::JsonValueExt,
         validation::ValidationResult,
         version::{ProtocolVersionValidator, COMPATIBILITY_MAP, LATEST_VERSION},
         NativeBlsModule,
     };
-
-    use super::{validate_state_transition_basic, MockValidatorByStateTransitionType};
 
     struct TestData {
         data_contract: DataContract,
@@ -157,13 +203,18 @@ mod test {
             .remove("type")
             .expect("type should exist and be remove");
 
-        let result = validate_state_transition_basic(
-            &state_repository_mock,
-            &validate_by_type_mock,
-            raw_state_transition,
-        )
-        .await
-        .expect("the validation result should be returned");
+        let validator = StateTransitionBasicValidator::new(
+            Arc::new(state_repository_mock),
+            validate_by_type_mock,
+        );
+
+        let execution_context = StateTransitionExecutionContext::default();
+
+        let result = validator
+            .validate(&raw_state_transition, &execution_context)
+            .await
+            .expect("the validation result should be returned");
+
         let basic_error = get_basic_error_from_result(&result, 0);
 
         assert!(matches!(
@@ -184,13 +235,18 @@ mod test {
 
         raw_state_transition["type"] = json!(123);
 
-        let result = validate_state_transition_basic(
-            &state_repository_mock,
-            &validate_by_type_mock,
-            raw_state_transition,
-        )
-        .await
-        .expect("the validation result should be returned");
+        let validator = StateTransitionBasicValidator::new(
+            Arc::new(state_repository_mock),
+            validate_by_type_mock,
+        );
+
+        let execution_context = StateTransitionExecutionContext::default();
+
+        let result = validator
+            .validate(&raw_state_transition, &execution_context)
+            .await
+            .expect("the validation result should be returned");
+
         let basic_error = get_basic_error_from_result(&result, 0);
 
         match basic_error {
@@ -217,13 +273,18 @@ mod test {
 
         raw_state_transition["type"] = json!(123);
 
-        let result = validate_state_transition_basic(
-            &state_repository_mock,
-            &validate_by_type_mock,
-            raw_state_transition,
-        )
-        .await
-        .expect("the validation result should be returned");
+        let validator = StateTransitionBasicValidator::new(
+            Arc::new(state_repository_mock),
+            validate_by_type_mock,
+        );
+
+        let execution_context = StateTransitionExecutionContext::default();
+
+        let result = validator
+            .validate(&raw_state_transition, &execution_context)
+            .await
+            .expect("the validation result should be returned");
+
         let basic_error = get_basic_error_from_result(&result, 0);
 
         match basic_error {
@@ -248,7 +309,7 @@ mod test {
         let mut validate_by_type_mock = MockValidatorByStateTransitionType::new();
         validate_by_type_mock
             .expect_validate()
-            .returning(|_, _| Ok(ValidationResult::<()>::default()));
+            .returning(|_, _, _| Ok(ValidationResult::<()>::default()));
 
         for i in 0..500 {
             let document_type_name = format!("anotherDocument{}", i);
@@ -256,13 +317,17 @@ mod test {
                 raw_state_transition["dataContract"]["documents"]["niceDocument"].clone();
         }
 
-        let result = validate_state_transition_basic(
-            &state_repository_mock,
-            &validate_by_type_mock,
-            raw_state_transition,
-        )
-        .await
-        .expect("the validation result should be returned");
+        let validator = StateTransitionBasicValidator::new(
+            Arc::new(state_repository_mock),
+            validate_by_type_mock,
+        );
+
+        let execution_context = StateTransitionExecutionContext::default();
+
+        let result = validator
+            .validate(&raw_state_transition, &execution_context)
+            .await
+            .expect("the validation result should be returned");
 
         let basic_error = get_basic_error_from_result(&result, 0);
 
@@ -289,15 +354,19 @@ mod test {
         let mut validate_by_type_mock = MockValidatorByStateTransitionType::new();
         validate_by_type_mock
             .expect_validate()
-            .returning(|_, _| Ok(ValidationResult::<()>::default()));
+            .returning(|_, _, _| Ok(ValidationResult::<()>::default()));
 
-        let result = validate_state_transition_basic(
-            &state_repository_mock,
-            &validate_by_type_mock,
-            raw_state_transition,
-        )
-        .await
-        .expect("should return validation result");
+        let validator = StateTransitionBasicValidator::new(
+            Arc::new(state_repository_mock),
+            validate_by_type_mock,
+        );
+
+        let execution_context = StateTransitionExecutionContext::default();
+
+        let result = validator
+            .validate(&raw_state_transition, &execution_context)
+            .await
+            .expect("should return validation result");
 
         assert!(result.is_valid());
     }

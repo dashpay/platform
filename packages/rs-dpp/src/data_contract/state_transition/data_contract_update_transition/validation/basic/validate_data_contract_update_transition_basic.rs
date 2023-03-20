@@ -7,6 +7,7 @@ use crate::consensus::basic::decode::ProtocolVersionParsingError;
 use crate::consensus::basic::invalid_data_contract_version_error::InvalidDataContractVersionError;
 use crate::consensus::ConsensusError;
 use crate::state_transition::state_transition_execution_context::StateTransitionExecutionContext;
+use crate::validation::AsyncDataValidatorWithContext;
 use crate::{
     consensus::basic::BasicError,
     data_contract::{
@@ -22,6 +23,7 @@ use crate::{
 };
 use anyhow::anyhow;
 use anyhow::Context;
+use async_trait::async_trait;
 use json_patch::PatchOperation;
 use lazy_static::lazy_static;
 use serde_json::{json, Value as JsonValue};
@@ -65,8 +67,16 @@ where
             json_schema_validator,
         })
     }
+}
 
-    pub async fn validate(
+#[async_trait(?Send)]
+impl<SR> AsyncDataValidatorWithContext for DataContractUpdateTransitionBasicValidator<SR>
+where
+    SR: StateRepositoryLike,
+{
+    type Item = JsonValue;
+
+    async fn validate(
         &self,
         raw_state_transition: &JsonValue,
         execution_context: &StateTransitionExecutionContext,
