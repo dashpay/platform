@@ -33,13 +33,12 @@
 //!
 
 use std::collections::BTreeMap;
-use std::convert::{TryFrom, TryInto};
+use std::convert::TryFrom;
 use std::fmt;
 use std::io::{BufReader, Read};
 
-use byteorder::{BigEndian, WriteBytesExt};
-use ciborium::value::Value;
-use integer_encoding::{VarInt, VarIntWriter};
+use ciborium::value::Value as CborValue;
+use integer_encoding::{VarInt, VarIntReader, VarIntWriter};
 
 use crate::data_contract::{DataContract, DriveContractExt};
 use serde::{Deserialize, Serialize};
@@ -47,29 +46,73 @@ use serde::{Deserialize, Serialize};
 use crate::data_contract::document_type::document_type::PROTOCOL_VERSION;
 use crate::data_contract::document_type::DocumentType;
 use crate::data_contract::errors::{DataContractError, StructureError};
-use crate::data_contract::extra::common::{
-    bytes_for_system_value_from_tree_map, check_protocol_version, check_protocol_version_bytes,
-    get_key_from_cbor_map, reduced_value_string_representation,
-};
+
 use crate::util::deserializer;
 use crate::util::deserializer::SplitProtocolVersionOutcome;
 use crate::ProtocolError;
 
-//todo: rename
-/// Documents contain the data that goes into data contracts.
+use crate::document::document_transition::INITIAL_REVISION;
+use crate::document::property_names;
+use crate::prelude::*;
+use anyhow::{anyhow, bail};
+use platform_value::btreemap_extensions::BTreeValueMapHelper;
+use platform_value::Value;
+
+//todo: delete in later PR
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
-pub struct DocumentStub {
+pub struct DocumentStubForCbor {
     /// The unique document ID.
     #[serde(rename = "$id")]
     pub id: [u8; 32],
 
     /// The document's properties (data).
     #[serde(flatten)]
-    pub properties: BTreeMap<String, Value>,
+    pub properties: BTreeMap<String, CborValue>,
 
     /// The ID of the document's owner.
     #[serde(rename = "$ownerId")]
     pub owner_id: [u8; 32],
+
+    /// The document revision.
+    #[serde(rename = "$revision")]
+    pub revision: Revision,
+}
+
+impl TryFrom<DocumentStub> for DocumentStubForCbor {
+    type Error = ProtocolError;
+
+    fn try_from(value: DocumentStub) -> Result<Self, Self::Error> {
+        let DocumentStub {
+            id,
+            properties,
+            owner_id,
+            revision,
+        } = value;
+        Ok(DocumentStubForCbor {
+            id,
+            properties: Value::convert_to_cbor_map(properties)
+                .map_err(ProtocolError::ValueError)?,
+            owner_id,
+            revision,
+        })
+    }
+}
+
+//todo: rename
+/// Documents contain the data that goes into data contracts.
+#[derive(Clone, Debug, PartialEq)]
+pub struct DocumentStub {
+    /// The unique document ID.
+    pub id: [u8; 32],
+
+    /// The document's properties (data).
+    pub properties: BTreeMap<String, Value>,
+
+    /// The ID of the document's owner.
+    pub owner_id: [u8; 32],
+
+    /// The document revision.
+    pub revision: Revision,
 }
 
 impl DocumentStub {
@@ -80,6 +123,9 @@ impl DocumentStub {
     pub fn serialize(&self, document_type: &DocumentType) -> Result<Vec<u8>, ProtocolError> {
         let mut buffer: Vec<u8> = self.id.as_slice().to_vec();
         buffer.extend(self.owner_id.as_slice());
+        if document_type.documents_mutable {
+            buffer.append(&mut self.revision.encode_var_vec());
+        }
         document_type
             .properties
             .iter()
@@ -114,6 +160,9 @@ impl DocumentStub {
         let mut buffer: Vec<u8> = Vec::try_from(self.id).unwrap();
         let mut owner_id = Vec::try_from(self.owner_id).unwrap();
         buffer.append(&mut owner_id);
+        if document_type.documents_mutable {
+            buffer.append(&mut self.revision.encode_var_vec());
+        }
         document_type
             .properties
             .iter()
@@ -150,13 +199,26 @@ impl DocumentStub {
         }
         let mut id = [0; 32];
         buf.read_exact(&mut id).map_err(|_| {
-            ProtocolError::DecodingError("error reading from serialized document".to_string())
+            ProtocolError::DecodingError("error reading id from serialized document".to_string())
         })?;
 
         let mut owner_id = [0; 32];
         buf.read_exact(&mut owner_id).map_err(|_| {
-            ProtocolError::DecodingError("error reading from serialized document".to_string())
+            ProtocolError::DecodingError(
+                "error reading owner id from serialized document".to_string(),
+            )
         })?;
+
+        let revision = if document_type.documents_mutable {
+            let revision: Revision = buf.read_varint().map_err(|_| {
+                ProtocolError::DataContractError(DataContractError::CorruptedSerialization(
+                    "error reading varint revision from serialized document",
+                ))
+            })?;
+            revision
+        } else {
+            INITIAL_REVISION as Revision
+        };
 
         let properties = document_type
             .properties
@@ -173,6 +235,7 @@ impl DocumentStub {
             id,
             properties,
             owner_id,
+            revision,
         })
     }
 
@@ -186,109 +249,43 @@ impl DocumentStub {
         let SplitProtocolVersionOutcome {
             main_message_bytes: read_document_cbor,
             ..
-        } = deserializer::split_protocol_version(document_cbor.as_ref())?;
+        } = deserializer::split_protocol_version(document_cbor)?;
 
         // first we need to deserialize the document and contract indices
         // we would need dedicated deserialization functions based on the document type
-        let mut document: BTreeMap<String, Value> = ciborium::de::from_reader(read_document_cbor)
-            .map_err(|_| {
-            ProtocolError::StructureError(StructureError::InvalidCBOR(
-                "unable to decode contract for document call",
-            ))
-        })?;
+        let document_cbor: BTreeMap<String, CborValue> =
+            ciborium::de::from_reader(read_document_cbor).map_err(|_| {
+                ProtocolError::StructureError(StructureError::InvalidCBOR(
+                    "unable to decode document for document call",
+                ))
+            })?;
 
-        let owner_id: [u8; 32] = match owner_id {
-            None => {
-                let owner_id: Vec<u8> =
-                    bytes_for_system_value_from_tree_map(&document, "$ownerId")?.ok_or({
-                        ProtocolError::DataContractError(DataContractError::DocumentOwnerIdMissing(
-                            "unable to get document $ownerId",
-                        ))
-                    })?;
-                document.remove("$ownerId");
-                if owner_id.len() != 32 {
-                    return Err(ProtocolError::DataContractError(
-                        DataContractError::FieldRequirementUnmet("invalid owner id"),
-                    ));
-                }
-                owner_id.as_slice().try_into()
-            }
-            Some(owner_id) => Ok(owner_id),
-        }
-        .expect("conversion to 32bytes shouldn't fail");
+        let mut document: BTreeMap<String, Value> = Value::convert_from_cbor_map(document_cbor);
 
-        let id: [u8; 32] = match document_id {
-            None => {
-                let document_id: Vec<u8> = bytes_for_system_value_from_tree_map(&document, "$id")?
-                    .ok_or({
-                        ProtocolError::DataContractError(DataContractError::DocumentIdMissing(
-                            "unable to get document $id",
-                        ))
-                    })?;
-                document.remove("$id");
-                if document_id.len() != 32 {
-                    return Err(ProtocolError::DataContractError(
-                        DataContractError::FieldRequirementUnmet("invalid document id"),
-                    ));
-                }
-                document_id.as_slice().try_into()
-            }
-            Some(document_id) => {
-                // we need to start by verifying that the document_id is a 256 bit number (32 bytes)
-                Ok(document_id)
-            }
-        }
-        .expect("document_id must be 32 bytes");
+        let owner_id = match owner_id {
+            None => document
+                .remove_system_hash256_bytes(property_names::OWNER_ID)
+                .map_err(ProtocolError::ValueError)?,
+            Some(owner_id) => owner_id,
+        };
+
+        let id = match document_id {
+            None => document
+                .remove_system_hash256_bytes(property_names::ID)
+                .map_err(ProtocolError::ValueError)?,
+            Some(document_id) => document_id,
+        };
+
+        let revision: Revision = document
+            .remove_optional_integer(property_names::REVISION)?
+            .unwrap_or(INITIAL_REVISION as Revision);
 
         // dev-note: properties is everything other than the id and owner id
         Ok(DocumentStub {
             properties: document,
             owner_id,
             id,
-        })
-    }
-
-    /// Reads a CBOR-serialized document and creates a Document from it with the provided IDs.
-    pub fn from_cbor_with_id(
-        document_cbor: &[u8],
-        document_id: &[u8],
-        owner_id: &[u8],
-    ) -> Result<Self, ProtocolError> {
-        // we need to start by verifying that the owner_id is a 256 bit number (32 bytes)
-        if owner_id.len() != 32 {
-            return Err(ProtocolError::DataContractError(
-                DataContractError::FieldRequirementUnmet("invalid owner id"),
-            ));
-        }
-
-        if document_id.len() != 32 {
-            return Err(ProtocolError::DataContractError(
-                DataContractError::FieldRequirementUnmet("invalid document id"),
-            ));
-        }
-        let SplitProtocolVersionOutcome {
-            main_message_bytes: read_document_cbor,
-            ..
-        } = deserializer::split_protocol_version(document_cbor.as_ref())?;
-
-        // first we need to deserialize the document and contract indices
-        // we would need dedicated deserialization functions based on the document type
-        let properties: BTreeMap<String, Value> = ciborium::de::from_reader(read_document_cbor)
-            .map_err(|_| {
-                ProtocolError::StructureError(StructureError::InvalidCBOR(
-                    "unable to decode contract for document call with id",
-                ))
-            })?;
-
-        // dev-note: properties is everything other than the id and owner id
-        Ok(DocumentStub {
-            properties,
-            owner_id: owner_id
-                .try_into()
-                .expect("try_into shouldn't fail, document_id must be 32 bytes"),
-            id: document_id
-                .try_into()
-                .expect("try_into shouldn't fail, document_id must be 32 bytes"),
+            revision,
         })
     }
 
@@ -298,13 +295,15 @@ impl DocumentStub {
         buffer
             .write_varint(PROTOCOL_VERSION)
             .expect("writing protocol version caused error");
-        ciborium::ser::into_writer(&self, &mut buffer).expect("unable to serialize into cbor");
+        let cbor_document = DocumentStubForCbor::try_from(self.clone()).unwrap();
+        ciborium::ser::into_writer(&cbor_document, &mut buffer)
+            .expect("unable to serialize into cbor");
         buffer
     }
 
     /// Return a value given the path to its key for a document type.
-    pub fn get_raw_for_document_type<'a>(
-        &'a self,
+    pub fn get_raw_for_document_type(
+        &self,
         key_path: &str,
         document_type: &DocumentType,
         owner_id: Option<[u8; 32]>,
@@ -349,7 +348,7 @@ impl DocumentStub {
                         ))
                     })?;
                     // given a map of values and a key, get the corresponding value
-                    match get_key_from_cbor_map(map_values, key) {
+                    match Value::get_from_map(map_values, key) {
                         None => Ok(None),
                         Some(value) => get_value_at_path(value, rest_key_paths),
                     }
@@ -370,8 +369,8 @@ impl DocumentStub {
     }
 
     /// Return a value given the path to its key and the document type for a contract.
-    pub fn get_raw_for_contract<'a>(
-        &'a self,
+    pub fn get_raw_for_contract(
+        &self,
         key: &str,
         document_type_name: &str,
         contract: &DataContract,
@@ -384,6 +383,82 @@ impl DocumentStub {
         })?;
         self.get_raw_for_document_type(key, document_type, owner_id)
     }
+
+    /// Temporary helper method to get property in u64 format
+    /// Imitating JsonValueExt trait
+    pub fn get_integer<T>(&self, property_name: &str) -> Result<T, anyhow::Error>
+    where
+        T: TryFrom<i128>
+            + TryFrom<u128>
+            + TryFrom<u64>
+            + TryFrom<i64>
+            + TryFrom<u32>
+            + TryFrom<i32>
+            + TryFrom<u16>
+            + TryFrom<i16>
+            + TryFrom<u8>
+            + TryFrom<i8>,
+    {
+        let property_value = self.properties.get(property_name).ok_or_else(|| {
+            anyhow!(
+                "the property '{}' doesn't exist in '{:?}'",
+                property_name,
+                self
+            )
+        })?;
+
+        property_value
+            .to_integer()
+            .map_err(|_| anyhow!("unable convert {} to u64", property_name))
+    }
+
+    /// Temporary helper method to get property in bytes format
+    /// Imitating JsonValueExt trait
+    pub fn get_bytes(&self, property_name: &str) -> Result<Vec<u8>, anyhow::Error> {
+        let property_value = self.properties.get(property_name).ok_or_else(|| {
+            anyhow!(
+                "the property '{}' doesn't exist in '{:?}'",
+                property_name,
+                self
+            )
+        })?;
+
+        if let Value::Bytes(s) = property_value {
+            return Ok(s.clone());
+        }
+        bail!(
+            "getting property '{}' failed: {:?} isn't an array of bytes",
+            property_name,
+            property_value
+        );
+    }
+
+    pub fn set_u8(&mut self, property_name: &str, value: u8) {
+        self.properties
+            .insert(property_name.to_string(), Value::U8(value));
+    }
+
+    pub fn set_i64(&mut self, property_name: &str, value: i64) {
+        self.properties
+            .insert(property_name.to_string(), Value::I64(value));
+    }
+
+    pub fn set_bytes(&mut self, property_name: &str, value: Vec<u8>) {
+        self.properties
+            .insert(property_name.to_string(), Value::Bytes(value));
+    }
+
+    pub fn increment_revision(&mut self) -> Result<(), ProtocolError> {
+        let revision = self.revision;
+
+        let new_revision = revision
+            .checked_add(1)
+            .ok_or(ProtocolError::Overflow("overflow when adding 1"))?;
+
+        self.revision = new_revision;
+
+        Ok(())
+    }
 }
 
 impl fmt::Display for DocumentStub {
@@ -394,7 +469,7 @@ impl fmt::Display for DocumentStub {
             write!(f, "no properties")?;
         } else {
             for (key, value) in self.properties.iter() {
-                write!(f, "{}:{} ", key, reduced_value_string_representation(value))?
+                write!(f, "{}:{} ", key, value)?
             }
         }
         Ok(())

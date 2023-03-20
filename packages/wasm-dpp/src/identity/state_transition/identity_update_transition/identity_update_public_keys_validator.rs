@@ -1,10 +1,10 @@
 use crate::errors::from_dpp_err;
+use crate::identity::state_transition::identity_public_key_transitions::IdentityPublicKeyCreateTransitionWasm;
 use crate::validation::ValidationResultWasm;
-use crate::IdentityPublicKeyWasm;
 use dpp::document::document_transition::document_base_transition::JsonValue;
+use dpp::identity::state_transition::identity_public_key_transitions::IdentityPublicKeyCreateTransition;
 use dpp::identity::state_transition::identity_update_transition::validate_public_keys::IdentityUpdatePublicKeysValidator;
 use dpp::identity::validation::TPublicKeysValidator;
-use dpp::identity::IdentityPublicKey;
 use wasm_bindgen::prelude::wasm_bindgen;
 use wasm_bindgen::JsValue;
 
@@ -30,7 +30,9 @@ impl IdentityUpdatePublicKeysValidatorWasm {
         let public_keys = raw_public_keys
             .into_iter()
             .map(|raw_key| {
-                let parsed_key: IdentityPublicKey = IdentityPublicKeyWasm::new(raw_key)?.into();
+                let parsed_key: IdentityPublicKeyCreateTransition =
+                    IdentityPublicKeyCreateTransitionWasm::new(raw_key)?.into();
+
                 parsed_key
                     .to_raw_json_object(false)
                     .map_err(|e| from_dpp_err(e.into()))

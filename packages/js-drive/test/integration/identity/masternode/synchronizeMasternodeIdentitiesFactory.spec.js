@@ -13,17 +13,18 @@ const createTestDIContainer = require('../../../../lib/test/createTestDIContaine
 const createOperatorIdentifier = require('../../../../lib/identity/masternode/createOperatorIdentifier');
 const BlockInfo = require('../../../../lib/blockExecution/BlockInfo');
 const createVotingIdentifier = require('../../../../lib/identity/masternode/createVotingIdentifier');
+const getSystemIdentityPublicKeysFixture = require('../../../../lib/test/fixtures/getSystemIdentityPublicKeysFixture');
 
 /**
  * @param {IdentityStoreRepository} identityRepository
- * @param {PublicKeyToIdentitiesStoreRepository} publicKeyToIdentitiesRepository
+ * @param {IdentityPublicKeyStoreRepository} identityPublicKeyRepository
  * @param {getWithdrawPubKeyTypeFromPayoutScript} getWithdrawPubKeyTypeFromPayoutScript
  * @param {getPublicKeyFromPayoutScript} getPublicKeyFromPayoutScript
  * @returns {expectOperatorIdentity}
  */
 function expectOperatorIdentityFactory(
   identityRepository,
-  publicKeyToIdentitiesRepository,
+  identityPublicKeyRepository,
   getWithdrawPubKeyTypeFromPayoutScript,
   getPublicKeyFromPayoutScript,
 ) {
@@ -50,9 +51,7 @@ function expectOperatorIdentityFactory(
 
     const operatorIdentity = operatorIdentityResult.getValue();
 
-    expect(operatorIdentity)
-      .to
-      .exist();
+    expect(operatorIdentity).to.exist();
 
     // Validate operator public keys
 
@@ -80,17 +79,14 @@ function expectOperatorIdentityFactory(
       .deep
       .equal(operatorPubKey);
 
-    const firstOperatorIdentityByPublicKeyHashResult = await publicKeyToIdentitiesRepository
-      .fetch(firstOperatorMasternodePublicKey.hash(), { useTransaction: true });
+    const firstOperatorIdentityByPublicKeyHashResult = await identityRepository
+      .fetchByPublicKeyHash(firstOperatorMasternodePublicKey.hash(), { useTransaction: true });
 
     const firstOperatorIdentityByPublicKeyHash = firstOperatorIdentityByPublicKeyHashResult
       .getValue();
 
-    expect(firstOperatorIdentityByPublicKeyHash)
-      .to
-      .have
-      .lengthOf(1);
-    expect(firstOperatorIdentityByPublicKeyHash[0].getId())
+    expect(firstOperatorIdentityByPublicKeyHash).to.be.not.null();
+    expect(firstOperatorIdentityByPublicKeyHash.getId())
       .to
       .deep
       .equal(operatorIdentifier);
@@ -108,7 +104,7 @@ function expectOperatorIdentityFactory(
         getPublicKeyFromPayoutScript(payoutScript, publicKeyType),
       );
 
-      const masternodeIdentityByPayoutPublicKeyHashResult = await publicKeyToIdentitiesRepository
+      const masternodeIdentityByPayoutPublicKeyHashResult = await identityPublicKeyRepository
         .fetch(payoutPublicKey.hash(), { useTransaction: true });
 
       const masternodeIdentityByPayoutPublicKeyHash = masternodeIdentityByPayoutPublicKeyHashResult
@@ -130,14 +126,14 @@ function expectOperatorIdentityFactory(
         getPublicKeyFromPayoutScript(payoutScript, publicKeyType),
       );
 
-      const masternodeIdentityByPayoutPublicKeyHashResult = await publicKeyToIdentitiesRepository
-        .fetch(payoutPublicKey.hash(), { useTransaction: true });
+      const masternodeIdentityByPayoutPublicKeyHashResult = await identityRepository
+        .fetchByPublicKeyHash(payoutPublicKey.hash(), { useTransaction: true });
 
       const masternodeIdentityByPayoutPublicKeyHash = masternodeIdentityByPayoutPublicKeyHashResult
         .getValue();
 
-      expect(masternodeIdentityByPayoutPublicKeyHash).to.have.lengthOf(1);
-      expect(masternodeIdentityByPayoutPublicKeyHash[0].getId())
+      expect(masternodeIdentityByPayoutPublicKeyHash).to.be.not.null();
+      expect(masternodeIdentityByPayoutPublicKeyHash.getId())
         .to.deep.equal(operatorIdentifier);
     }
   }
@@ -147,12 +143,10 @@ function expectOperatorIdentityFactory(
 
 /**
  * @param {IdentityStoreRepository} identityRepository
- * @param {PublicKeyToIdentitiesStoreRepository} publicKeyToIdentitiesRepository
  * @returns {expectVotingIdentity}
  */
 function expectVotingIdentityFactory(
   identityRepository,
-  publicKeyToIdentitiesRepository,
 ) {
   /**
    * @typedef {expectVotingIdentity}
@@ -191,15 +185,15 @@ function expectVotingIdentityFactory(
       Buffer.from(proRegTx.extraPayload.keyIDVoting, 'hex').reverse(),
     );
 
-    const masternodeIdentityByPublicKeyHashResult = await publicKeyToIdentitiesRepository
-      .fetch(masternodePublicKey.hash(), {
+    const masternodeIdentityByPublicKeyHashResult = await identityRepository
+      .fetchByPublicKeyHash(masternodePublicKey.hash(), {
         useTransaction: true,
       });
 
     const masternodeIdentityByPublicKeyHash = masternodeIdentityByPublicKeyHashResult.getValue();
 
-    expect(masternodeIdentityByPublicKeyHash).to.have.lengthOf(1);
-    expect(masternodeIdentityByPublicKeyHash[0].getId())
+    expect(masternodeIdentityByPublicKeyHash).to.be.not.null();
+    expect(masternodeIdentityByPublicKeyHash.getId())
       .to.deep.equal(votingIdentifier);
   }
 
@@ -208,14 +202,14 @@ function expectVotingIdentityFactory(
 
 /**
  * @param {IdentityStoreRepository} identityRepository
- * @param {PublicKeyToIdentitiesStoreRepository} publicKeyToIdentitiesRepository
+ * @param {IdentityPublicKeyStoreRepository} identityPublicKeyRepository
  * @param {getWithdrawPubKeyTypeFromPayoutScript} getWithdrawPubKeyTypeFromPayoutScript
  * @param {getPublicKeyFromPayoutScript} getPublicKeyFromPayoutScript
  * @returns {expectMasternodeIdentity}
  */
 function expectMasternodeIdentityFactory(
   identityRepository,
-  publicKeyToIdentitiesRepository,
+  identityPublicKeyRepository,
   getWithdrawPubKeyTypeFromPayoutScript,
   getPublicKeyFromPayoutScript,
 ) {
@@ -263,8 +257,8 @@ function expectMasternodeIdentityFactory(
       Buffer.from(proRegTx.extraPayload.keyIDOwner, 'hex').reverse(),
     );
 
-    const masternodeIdentityByPublicKeyHashResult = await publicKeyToIdentitiesRepository
-      .fetch(masternodePublicKey.hash(), { useTransaction: true });
+    const masternodeIdentityByPublicKeyHashResult = await identityRepository
+      .fetchManyByPublicKeyHashes([masternodePublicKey.hash()], { useTransaction: true });
 
     const masternodeIdentityByPublicKeyHash = masternodeIdentityByPublicKeyHashResult.getValue();
 
@@ -285,14 +279,14 @@ function expectMasternodeIdentityFactory(
         getPublicKeyFromPayoutScript(payoutScript, publicKeyType),
       );
 
-      const masternodeIdentityByPayoutPublicKeyHashResult = await publicKeyToIdentitiesRepository
-        .fetch(payoutPublicKey.hash(), { useTransaction: true });
+      const masternodeIdentityByPayoutPublicKeyHashResult = await identityRepository
+        .fetchByPublicKeyHash(payoutPublicKey.hash(), { useTransaction: true });
 
       const masternodeIdentityByPayoutPublicKeyHash = masternodeIdentityByPayoutPublicKeyHashResult
         .getValue();
 
-      expect(masternodeIdentityByPayoutPublicKeyHash).to.have.lengthOf(1);
-      expect(masternodeIdentityByPayoutPublicKeyHash[0].getId())
+      expect(masternodeIdentityByPayoutPublicKeyHash).to.not.be.null();
+      expect(masternodeIdentityByPayoutPublicKeyHash.getId())
         .to.deep.equal(masternodeIdentifier);
     }
 
@@ -307,14 +301,14 @@ function expectMasternodeIdentityFactory(
         getPublicKeyFromPayoutScript(payoutScript, publicKeyType),
       );
 
-      const masternodeIdentityByPayoutPublicKeyHashResult = await publicKeyToIdentitiesRepository
-        .fetch(payoutPublicKey.hash(), { useTransaction: true });
+      const masternodeIdentityByPayoutPublicKeyHashResult = await identityRepository
+        .fetchByPublicKeyHash(payoutPublicKey.hash(), { useTransaction: true });
 
       const masternodeIdentityByPayoutPublicKeyHash = masternodeIdentityByPayoutPublicKeyHashResult
         .getValue();
 
-      expect(masternodeIdentityByPayoutPublicKeyHash).to.have.lengthOf(1);
-      expect(masternodeIdentityByPayoutPublicKeyHash[0].getId())
+      expect(masternodeIdentityByPayoutPublicKeyHash).to.not.be.null();
+      expect(masternodeIdentityByPayoutPublicKeyHash.getId())
         .to.deep.equal(masternodeIdentifier);
     }
   }
@@ -343,7 +337,8 @@ function expectDeterministicAppHashFactory(groveDBStore) {
   return expectDeterministicAppHash;
 }
 
-describe('synchronizeMasternodeIdentitiesFactory', () => {
+describe('synchronizeMasternodeIdentitiesFactory', function main() {
+  this.timeout(10000);
   let container;
   let coreHeight;
   let fetchSimplifiedMNListMock;
@@ -351,13 +346,15 @@ describe('synchronizeMasternodeIdentitiesFactory', () => {
   let fetchTransactionMock;
   let smlStoreMock;
   let smlFixture;
+  let newSmlFixture;
   let transaction1;
   let transaction2;
+  let transaction3;
   let synchronizeMasternodeIdentities;
   let rewardsDataContract;
   let identityRepository;
   let documentRepository;
-  let publicKeyToIdentitiesRepository;
+  let identityPublicKeyRepository;
   let expectOperatorIdentity;
   let expectVotingIdentity;
   let expectMasternodeIdentity;
@@ -367,35 +364,10 @@ describe('synchronizeMasternodeIdentitiesFactory', () => {
 
   beforeEach(async function beforeEach() {
     coreHeight = 3;
-    firstSyncAppHash = '56964579e1cd1814f0a7ee7c8340881b208b7253d3b574d15007ff585d6d9be6';
+    firstSyncAppHash = 'c55de453e3ea4481f20225efdc12d671f715f0618cf3084bb32e56e75123bfdd';
     blockInfo = new BlockInfo(10, 0, 1668702100799);
 
     container = await createTestDIContainer();
-
-    // Mock fetchTransaction
-
-    fetchTransactionMock = this.sinon.stub();
-
-    transaction1 = {
-      extraPayload: {
-        operatorReward: 100,
-        keyIDOwner: Buffer.alloc(20).fill('a').toString('hex'),
-        keyIDVoting: Buffer.alloc(20).fill('c').toString('hex'),
-      },
-    };
-
-    transaction2 = {
-      extraPayload: {
-        operatorReward: 0,
-        keyIDOwner: Buffer.alloc(20).fill('b').toString('hex'),
-        keyIDVoting: Buffer.alloc(20).fill('d').toString('hex'),
-      },
-    };
-
-    fetchTransactionMock.withArgs('954112bb018895896cfa3c3d00761a045fc16b22f2170c1fbb029a2936c68f16').resolves(transaction1);
-    fetchTransactionMock.withArgs('9673b21f45b216dce2b4ffb4a85e1471d57aed6bf8e34d961a48296fe9b7f51a').resolves(transaction2);
-
-    container.register('fetchTransaction', asValue(fetchTransactionMock));
 
     // Mock Core RPC
 
@@ -411,23 +383,39 @@ describe('synchronizeMasternodeIdentitiesFactory', () => {
 
     smlFixture = [
       new SimplifiedMNListEntry({
-        proRegTxHash: '954112bb018895896cfa3c3d00761a045fc16b22f2170c1fbb029a2936c68f16',
-        confirmedHash: '1de71625dbc973e2377ebd7da4fe6f8a8eb8af8c5a99373e36151a4fbe9947cc',
-        service: '192.168.65.2:20101',
-        pubKeyOperator: '8e4c8c144bd6c62640fe3ae295973d512f83f7f541525a5da3c91e77ec02ff4dcd214e7431b7d2cc28e420ebfeb612ee',
-        votingAddress: 'yfLLjdEynGQBdoPcCDUNAxu6pksYGzXKA4',
+        proRegTxHash: 'a2c9b34ef525271d84f70a0d4d2c107e8a2f81cd4d8256dc7b3911ed253d5611',
+        confirmedHash: '29ff8afb463604ba7d984b483e92dfefa4e80e12de3acae6d75f9b910df9eab6',
+        service: '192.168.65.2:20201',
+        pubKeyOperator: 'a5ad6d8cad7b233210b718a5fc9ec3cea18aeebe38b2e3122deb581e430aa28875fe7336c283871db42808f8d4107745',
+        votingAddress: 'yRXtaRmQ7LCmT5XcgzQdLwPEf31dycBaeY',
         isValid: true,
         payoutAddress: 'yR843jN58m5dubmQjfUmKDDJMJzNatFV9M',
         payoutOperatorAddress: 'yNjsnYM16J5NZPA2P8BKJG3MKfUD7XHAFE',
+        nType: 0,
       }),
       new SimplifiedMNListEntry({
-        proRegTxHash: '9673b21f45b216dce2b4ffb4a85e1471d57aed6bf8e34d961a48296fe9b7f51a',
-        confirmedHash: '25e1884e4251cbf42a0f9f42666443c62d89b3bc1aae73fb1e9d753e0b2732f4',
-        service: '192.168.65.2:20201',
-        pubKeyOperator: '06a9789fab00deae1464ed80bda281fc833f85959b04201645e5fc25635e3e7ecda30d13d328b721af0809fca3bf3b63',
-        votingAddress: 'yVRXh9Tgf9qt9tCbXmeX9FQsEYa526FMxR',
+        proRegTxHash: 'f5ec54aed788c434da2fc535ea6b125ec6fc54e58bc0a00a005d1a8d5e477a90',
+        confirmedHash: '53125505b0e9d11b371cf3e12c92d164296dfa215fde6201d28ea44bed992187',
+        service: '192.168.65.2:20101',
+        pubKeyOperator: '951a3208ba531ea75aedd2dc0a9efc75f2c4d9492f1ee0a989b593bcd9722b1a101774d80a426552a9f91d24eb55af6e',
+        votingAddress: 'yYH1rgZsgvkmT8bSSSw1cKCjyVPnFpTBCw',
         isValid: true,
         payoutAddress: 'ycL7L4mhYoaZdm9TH85svvpfeKtdfo249u',
+        nType: 0,
+      }),
+    ];
+
+    newSmlFixture = [
+      new SimplifiedMNListEntry({
+        proRegTxHash: '1c81a5faa2c0e0d96eb59c58a10fcbc87f431bb6cd880d960b43b269e682d2d2',
+        confirmedHash: '03cc2acc135ab51304d3cff42215c7a8041902fa3f19451d5562a03b38143e8f',
+        service: '192.168.65.2:20001',
+        pubKeyOperator: '96f83eedc8a7b87663e591987f051ce341a6fb88989322c64bbbf56d205e4e77d2cb7d839d8b4106a8a1f5d5cf7cfa57',
+        votingAddress: 'ybJfuKs59MJWkPEnS8qNmtvdisHrCy7Njn',
+        isValid: true,
+        payoutAddress: '7UkJidhNjEPJCQnCTXeaJKbJmL4JuyV66w',
+        payoutOperatorAddress: 'yPDBTHAjPwJfZSSQYczccA78XRS2tZ5fZF',
+        nType: 0,
       }),
     ];
 
@@ -441,6 +429,40 @@ describe('synchronizeMasternodeIdentitiesFactory', () => {
 
     container.register('simplifiedMasternodeList', asValue(simplifiedMasternodeListMock));
 
+    // Mock fetchTransaction
+
+    fetchTransactionMock = this.sinon.stub();
+
+    transaction1 = {
+      extraPayload: {
+        operatorReward: 100,
+        keyIDOwner: Buffer.alloc(20).fill('a').toString('hex'),
+        keyIDVoting: Buffer.alloc(20).fill('b').toString('hex'),
+      },
+    };
+
+    transaction2 = {
+      extraPayload: {
+        operatorReward: 0,
+        keyIDOwner: Buffer.alloc(20).fill('c').toString('hex'),
+        keyIDVoting: Buffer.alloc(20).fill('d').toString('hex'),
+      },
+    };
+
+    transaction3 = {
+      extraPayload: {
+        operatorReward: 200,
+        keyIDOwner: Buffer.alloc(20).fill('e').toString('hex'),
+        keyIDVoting: Buffer.alloc(20).fill('f').toString('hex'),
+      },
+    };
+
+    fetchTransactionMock.withArgs('a2c9b34ef525271d84f70a0d4d2c107e8a2f81cd4d8256dc7b3911ed253d5611').resolves(transaction1);
+    fetchTransactionMock.withArgs('f5ec54aed788c434da2fc535ea6b125ec6fc54e58bc0a00a005d1a8d5e477a90').resolves(transaction2);
+    fetchTransactionMock.withArgs('1c81a5faa2c0e0d96eb59c58a10fcbc87f431bb6cd880d960b43b269e682d2d2').resolves(transaction3);
+
+    container.register('fetchTransaction', asValue(fetchTransactionMock));
+
     const groveDBStore = container.resolve('groveDBStore');
     await groveDBStore.startTransaction();
 
@@ -448,23 +470,14 @@ describe('synchronizeMasternodeIdentitiesFactory', () => {
      * @type {Drive}
      */
     const rsDrive = container.resolve('rsDrive');
-    await rsDrive.createInitialStateStructure(true);
+    await rsDrive.getAbci().initChain({
+      genesisTimeMs: 0,
+      systemIdentityPublicKeys: getSystemIdentityPublicKeysFixture(),
+    }, true);
 
-    const registerSystemDataContract = container.resolve('registerSystemDataContract');
     const masternodeRewardSharesContractId = container.resolve('masternodeRewardSharesContractId');
-    const masternodeRewardSharesOwnerId = container.resolve('masternodeRewardSharesOwnerId');
-    const masternodeRewardSharesOwnerMasterPublicKey = container.resolve('masternodeRewardSharesOwnerMasterPublicKey');
-    const masternodeRewardSharesOwnerSecondPublicKey = container.resolve('masternodeRewardSharesOwnerSecondPublicKey');
-    const masternodeRewardSharesDocuments = container.resolve('masternodeRewardSharesDocuments');
 
-    rewardsDataContract = await registerSystemDataContract(
-      masternodeRewardSharesOwnerId,
-      masternodeRewardSharesContractId,
-      masternodeRewardSharesOwnerMasterPublicKey,
-      masternodeRewardSharesOwnerSecondPublicKey,
-      masternodeRewardSharesDocuments,
-      blockInfo,
-    );
+    [rewardsDataContract] = await rsDrive.fetchContract(masternodeRewardSharesContractId, 0, true);
 
     /**
      * @type {synchronizeMasternodeIdentities}
@@ -473,25 +486,24 @@ describe('synchronizeMasternodeIdentitiesFactory', () => {
 
     identityRepository = container.resolve('identityRepository');
     documentRepository = container.resolve('documentRepository');
-    publicKeyToIdentitiesRepository = container.resolve('publicKeyToIdentitiesRepository');
+    identityPublicKeyRepository = container.resolve('identityPublicKeyRepository');
     const getWithdrawPubKeyTypeFromPayoutScript = container.resolve('getWithdrawPubKeyTypeFromPayoutScript');
     const getPublicKeyFromPayoutScript = container.resolve('getPublicKeyFromPayoutScript');
 
     expectOperatorIdentity = expectOperatorIdentityFactory(
       identityRepository,
-      publicKeyToIdentitiesRepository,
+      identityPublicKeyRepository,
       getWithdrawPubKeyTypeFromPayoutScript,
       getPublicKeyFromPayoutScript,
     );
 
     expectVotingIdentity = expectVotingIdentityFactory(
       identityRepository,
-      publicKeyToIdentitiesRepository,
     );
 
     expectMasternodeIdentity = expectMasternodeIdentityFactory(
       identityRepository,
-      publicKeyToIdentitiesRepository,
+      identityPublicKeyRepository,
       getWithdrawPubKeyTypeFromPayoutScript,
       getPublicKeyFromPayoutScript,
     );
@@ -654,34 +666,11 @@ describe('synchronizeMasternodeIdentitiesFactory', () => {
 
     // Mock SML
 
-    const newSmlFixture = [
-      new SimplifiedMNListEntry({
-        proRegTxHash: '3b73b21f45b216dce2b4ffb4a85e1471d57aed6bf8e34d961a48296fe9b7f53b',
-        confirmedHash: '3be1884e4251cbf42a0f9f42666443c62d89b3bc1aae73fb1e9d753e0b27323b',
-        service: '192.168.65.3:20201',
-        pubKeyOperator: '3ba9789fab00deae1464ed80bda281fc833f85959b04201645e5fc25635e3e7ecda30d13d328b721af0809fca3bf3b3b',
-        votingAddress: 'yVey9g4fsN3RY3ZjQ7HqiKEH2zEVAG95EN',
-        isValid: true,
-        payoutAddress: '7UkJidhNjEPJCQnCTXeaJKbJmL4JuyV66w',
-        payoutOperatorAddress: 'yPDBTHAjPwJfZSSQYczccA78XRS2tZ5fZF',
-      }),
-    ];
-
     smlStoreMock.getSMLbyHeight.withArgs(nextCoreHeight).returns({
       mnList: smlFixture.concat(newSmlFixture),
     });
 
     fetchedSimplifiedMNList.mnList = smlFixture;
-
-    const transaction3 = {
-      extraPayload: {
-        operatorReward: 0,
-        keyIDOwner: Buffer.alloc(20).fill('c').toString('hex'),
-        keyIDVoting: Buffer.alloc(20).fill('d').toString('hex'),
-      },
-    };
-
-    fetchTransactionMock.withArgs('3b73b21f45b216dce2b4ffb4a85e1471d57aed6bf8e34d961a48296fe9b7f53b').resolves(transaction3);
 
     // Second call
 
@@ -689,13 +678,13 @@ describe('synchronizeMasternodeIdentitiesFactory', () => {
 
     expect(result.fromHeight).to.be.equal(3);
     expect(result.toHeight).to.be.equal(45);
-    expect(result.createdEntities).to.have.lengthOf(2);
+    expect(result.createdEntities).to.have.lengthOf(4);
     expect(result.updatedEntities).to.have.lengthOf(0);
     expect(result.removedEntities).to.have.lengthOf(0);
 
     // Nothing happened
 
-    await expectDeterministicAppHash('72a6582fa713e6a0188c5037beb6a5c3f3c68bf4f62f9a083b0f848d98b4e394');
+    await expectDeterministicAppHash('a789fe73ceea6769634b98ae82dddad5013c4711b2a8353d2150b813fb953cb3');
 
     // Core RPC should be called
 
@@ -705,52 +694,33 @@ describe('synchronizeMasternodeIdentitiesFactory', () => {
   it('should create masternode identities if new masternode appeared', async () => {
     // Sync initial list
 
-    await synchronizeMasternodeIdentities(coreHeight, blockInfo);
+    const result = await synchronizeMasternodeIdentities(coreHeight, blockInfo);
+
+    expect(result.fromHeight).to.be.equal(0);
+    expect(result.toHeight).to.be.equal(coreHeight);
+    expect(result.createdEntities).to.have.lengthOf(6);
+    expect(result.updatedEntities).to.have.lengthOf(0);
+    expect(result.removedEntities).to.have.lengthOf(0);
 
     await expectDeterministicAppHash(firstSyncAppHash);
 
     // Mock SML
 
-    const newSmlFixture = [
-      new SimplifiedMNListEntry({
-        proRegTxHash: '3b73b21f45b216dce2b4ffb4a85e1471d57aed6bf8e34d961a48296fe9b7f53b',
-        confirmedHash: '3be1884e4251cbf42a0f9f42666443c62d89b3bc1aae73fb1e9d753e0b27323b',
-        service: '192.168.65.3:20201',
-        pubKeyOperator: '3ba9789fab00deae1464ed80bda281fc833f85959b04201645e5fc25635e3e7ecda30d13d328b721af0809fca3bf3b3b',
-        votingAddress: 'yVey9g4fsN3RY3ZjQ7HqiKEH2zEVAG95EN',
-        isValid: true,
-        payoutAddress: '7UkJidhNjEPJCQnCTXeaJKbJmL4JuyV66w',
-        payoutOperatorAddress: 'yPDBTHAjPwJfZSSQYczccA78XRS2tZ5fZF',
-      }),
-    ];
-
     smlStoreMock.getSMLbyHeight.withArgs(coreHeight + 1).returns(
       { mnList: smlFixture.concat(newSmlFixture) },
     );
 
-    // Mock fetchTransaction
-
-    const transaction3 = {
-      extraPayload: {
-        operatorReward: 200,
-        keyIDOwner: Buffer.alloc(20).fill('e').toString('hex'),
-        keyIDVoting: Buffer.alloc(20).fill('f').toString('hex'),
-      },
-    };
-
-    fetchTransactionMock.withArgs('3b73b21f45b216dce2b4ffb4a85e1471d57aed6bf8e34d961a48296fe9b7f53b').resolves(transaction3);
-
     // Second call
 
-    const result = await synchronizeMasternodeIdentities(coreHeight + 1, blockInfo);
+    const result2 = await synchronizeMasternodeIdentities(coreHeight + 1, blockInfo);
 
-    expect(result.fromHeight).to.be.equal(3);
-    expect(result.toHeight).to.be.equal(4);
-    expect(result.createdEntities).to.have.lengthOf(4);
-    expect(result.updatedEntities).to.have.lengthOf(0);
-    expect(result.removedEntities).to.have.lengthOf(0);
+    expect(result2.fromHeight).to.be.equal(3);
+    expect(result2.toHeight).to.be.equal(4);
+    expect(result2.createdEntities).to.have.lengthOf(4);
+    expect(result2.updatedEntities).to.have.lengthOf(0);
+    expect(result2.removedEntities).to.have.lengthOf(0);
 
-    await expectDeterministicAppHash('de31529588ed3545988367dfbeccc29704f3de95da0b8f1dc59d734dcfe20542');
+    await expectDeterministicAppHash('b58bc0499156caea9b930ab0e357f56b20bb191bc7ba97a2eb8941d9ba7a8183');
 
     // New masternode identity should be created
 
@@ -834,7 +804,7 @@ describe('synchronizeMasternodeIdentitiesFactory', () => {
     expect(result.updatedEntities).to.have.lengthOf(0);
     expect(result.removedEntities).to.have.lengthOf(1);
 
-    await expectDeterministicAppHash('4055b1fd4ddfe79a43a90cb7fe8102bdf4eba2fcc565dc5f3f27d0552961c8d0');
+    await expectDeterministicAppHash('ea28d7339efd80984e53bd06b0d3708611f24862f401997e9cd69328af6a54c2');
 
     // Masternode identity should stay
 
@@ -902,7 +872,7 @@ describe('synchronizeMasternodeIdentitiesFactory', () => {
     expect(result.updatedEntities).to.have.lengthOf(0);
     expect(result.removedEntities).to.have.lengthOf(1);
 
-    await expectDeterministicAppHash('4055b1fd4ddfe79a43a90cb7fe8102bdf4eba2fcc565dc5f3f27d0552961c8d0');
+    await expectDeterministicAppHash('ea28d7339efd80984e53bd06b0d3708611f24862f401997e9cd69328af6a54c2');
 
     const invalidMasternodeIdentifier = Identifier.from(
       Buffer.from(invalidSmlEntry.proRegTxHash, 'hex'),
@@ -936,7 +906,7 @@ describe('synchronizeMasternodeIdentitiesFactory', () => {
     // Mock SML
 
     const changedSmlEntry = smlFixture[0].copy();
-    changedSmlEntry.pubKeyOperator = '3ba9789fab00deae1464ed80bda281fc833f85959b04201645e5fc25635e3e7ecda30d13d328b721af0809fca3bf3b3b';
+    changedSmlEntry.pubKeyOperator = '96f83eedc8a7b87663e591987f051ce341a6fb88989322c64bbbf56d205e4e77d2cb7d839d8b4106a8a1f5d5cf7cfa57';
 
     smlStoreMock.getSMLbyHeight.withArgs(coreHeight + 1).returns(
       { mnList: [smlFixture[1], changedSmlEntry] },
@@ -952,7 +922,7 @@ describe('synchronizeMasternodeIdentitiesFactory', () => {
     expect(result.updatedEntities).to.have.lengthOf(1);
     expect(result.removedEntities).to.have.lengthOf(1);
 
-    await expectDeterministicAppHash('5cb5a8dc96548735498e532a0a24749efa4e945fa396c2cf03cf58e54ae5c6ab');
+    await expectDeterministicAppHash('d80a3bbf5e699a0295e4ba734e3729d12bef3001bdd9cdd295673832d05454cf');
 
     // Masternode identity should stay
 
@@ -1027,7 +997,7 @@ describe('synchronizeMasternodeIdentitiesFactory', () => {
 
     await synchronizeMasternodeIdentities(coreHeight + 1, blockInfo);
 
-    await expectDeterministicAppHash('09aa8c14efcd1b1d1e0aa025c54a9bd4510dd6bc5eb63fa5fea1bf047d9ae9a7');
+    await expectDeterministicAppHash('cfc8c439d00c2afab01594dc699ef71c8b23cff66b0302794d3c6b88c44d687c');
 
     // Masternode identity should contain new public key
 
@@ -1104,14 +1074,12 @@ describe('synchronizeMasternodeIdentitiesFactory', () => {
       },
     };
 
-    fetchTransactionMock.withArgs('954112bb018895896cfa3c3d00761a045fc16b22f2170c1fbb029a2936c68f16').resolves(transaction1);
+    fetchTransactionMock.withArgs('a2c9b34ef525271d84f70a0d4d2c107e8a2f81cd4d8256dc7b3911ed253d5611').resolves(transaction1);
 
     // Initial sync
 
     await synchronizeMasternodeIdentities(coreHeight, blockInfo);
-
-    await expectDeterministicAppHash('ca2f5dde68e9d8bc3ad4cfab2919880a1018c807e22b726c5d59f3e021d2fe95');
-
+    await expectDeterministicAppHash('7a5729e3511c5cc98e8452faa6132f0d600e04fef85df0f95f56e59c776de170');
     const votingIdentifier = createVotingIdentifier(smlFixture[0]);
 
     const votingIdentityResult = await identityRepository.fetch(

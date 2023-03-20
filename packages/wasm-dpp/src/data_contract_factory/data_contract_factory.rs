@@ -1,4 +1,5 @@
 use std::convert::TryInto;
+use std::sync::Arc;
 
 use dpp::{
     data_contract::{
@@ -12,9 +13,7 @@ use wasm_bindgen::prelude::*;
 
 use crate::{
     data_contract::errors::InvalidDataContractError,
-    errors::{
-        consensus_error::from_consensus_error, from_dpp_err, protocol_error::from_protocol_error,
-    },
+    errors::{from_dpp_err, protocol_error::from_protocol_error},
     validation::ValidationResultWasm,
     with_js_error, DataContractCreateTransitionWasm, DataContractParameters, DataContractWasm,
 };
@@ -34,6 +33,12 @@ impl From<DataContractValidatorWasm> for DataContractValidator {
     }
 }
 
+impl Default for DataContractValidatorWasm {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 #[wasm_bindgen(js_class=DataContractValidator)]
 impl DataContractValidatorWasm {
     #[wasm_bindgen(constructor)]
@@ -46,8 +51,8 @@ impl DataContractValidatorWasm {
         let parameters: DataContractParameters =
             with_js_error!(serde_wasm_bindgen::from_value(raw_data_contract))?;
         let json_object = serde_json::to_value(parameters).expect("Implements Serialize");
-        let validation_result = self.0.validate(&json_object).map_err(from_protocol_error)?;
 
+        let validation_result = self.0.validate(&json_object).map_err(from_protocol_error)?;
         Ok(validation_result.map(|_| JsValue::undefined()).into())
     }
 }
@@ -95,11 +100,11 @@ impl DataContractFactoryWasm {
         if let Some(external_entropy_generator) = external_entropy_generator_arg {
             DataContractFactory::new_with_entropy_generator(
                 protocol_version,
-                validate_data_contract.into(),
+                Arc::new(validate_data_contract.into()),
                 Box::new(external_entropy_generator),
             )
         } else {
-            DataContractFactory::new(protocol_version, validate_data_contract.into())
+            DataContractFactory::new(protocol_version, Arc::new(validate_data_contract.into()))
         }
         .into()
     }
@@ -114,7 +119,7 @@ impl DataContractFactoryWasm {
             with_js_error!(serde_wasm_bindgen::from_value(documents))?;
         let identifier = Identifier::from_bytes(&owner_id).map_err(from_dpp_err)?;
         self.0
-            .create(identifier, documents_json)
+            .create(identifier, documents_json, None)
             .map(Into::into)
             .map_err(from_dpp_err)
     }
@@ -134,9 +139,8 @@ impl DataContractFactoryWasm {
             .await;
         match result {
             Ok(data_contract) => Ok(data_contract.into()),
-            Err(dpp::ProtocolError::InvalidDataContractError { errors, .. }) => {
-                let js_errors = errors.into_iter().map(from_consensus_error).collect();
-                Err(InvalidDataContractError::new(js_errors, object).into())
+            Err(dpp::ProtocolError::InvalidDataContractError(err)) => {
+                Err(InvalidDataContractError::new(err.errors, object).into())
             }
             Err(other) => Err(from_dpp_err(other)),
         }
@@ -158,10 +162,10 @@ impl DataContractFactoryWasm {
     #[wasm_bindgen(js_name=createDataContractCreateTransition)]
     pub async fn create_data_contract_create_transition(
         &self,
-        data_contract: DataContractWasm,
+        data_contract: &DataContractWasm,
     ) -> Result<DataContractCreateTransitionWasm, JsValue> {
         self.0
-            .create_data_contract_create_transition(data_contract.into())
+            .create_data_contract_create_transition(data_contract.clone().into())
             .map(Into::into)
             .map_err(from_dpp_err)
     }

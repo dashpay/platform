@@ -66,14 +66,17 @@ COPY packages/rs-dpp packages/rs-dpp
 COPY packages/wasm-dpp packages/wasm-dpp
 COPY packages/rs-drive packages/rs-drive
 COPY packages/rs-drive-abci packages/rs-drive-abci
+COPY packages/rs-platform-value packages/rs-platform-value
 COPY packages/rs-drive-nodejs packages/rs-drive-nodejs
 COPY packages/dapi-grpc packages/dapi-grpc
-COPY packages/feature-flags-contract packages/feature-flags-contract
 COPY packages/js-dpp packages/js-dpp
 COPY packages/js-grpc-common packages/js-grpc-common
-COPY packages/masternode-reward-shares-contract packages/masternode-reward-shares-contract
-COPY packages/dpns-contract packages/dpns-contract
 COPY packages/dashpay-contract packages/dashpay-contract
+COPY packages/dpns-contract packages/dpns-contract
+COPY packages/feature-flags-contract packages/feature-flags-contract
+COPY packages/masternode-reward-shares-contract packages/masternode-reward-shares-contract
+COPY packages/withdrawals-contract packages/withdrawals-contract
+COPY packages/data-contracts packages/data-contracts
 
 # Build RS Drive Node.JS binding
 RUN --mount=type=cache,target=target \
@@ -104,7 +107,7 @@ WORKDIR /platform
 COPY --from=builder /platform /platform
 
 # Remove Rust sources
-RUN rm -rf packages/rs-drive packages/rs-drive-abci packages/rs-dpp
+RUN rm -rf packages/rs-drive packages/rs-drive-abci packages/rs-dpp packages/rs-platform-value
 
 RUN cp /platform/packages/js-drive/.env.example /platform/packages/js-drive/.env
 

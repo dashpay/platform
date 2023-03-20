@@ -119,7 +119,7 @@ describe('LoggedStateRepositoryDecorator', () => {
     });
   });
 
-  describe('#updateIdentity', () => {
+  describe('#addKeysToIdentity', () => {
     let identity;
 
     beforeEach(() => {
@@ -129,26 +129,32 @@ describe('LoggedStateRepositoryDecorator', () => {
     it('should call logger with proper params', async () => {
       const response = undefined;
 
-      stateRepositoryMock.updateIdentity.resolves(response);
+      stateRepositoryMock.addKeysToIdentity.resolves(response);
 
-      await loggedStateRepositoryDecorator.updateIdentity(identity);
+      await loggedStateRepositoryDecorator.addKeysToIdentity(
+        identity.getId(),
+        identity.getPublicKeys(),
+      );
 
       expect(loggerMock.trace).to.be.calledOnceWithExactly({
         stateRepository: {
-          method: 'updateIdentity',
-          parameters: { identity },
+          method: 'addKeysToIdentity',
+          parameters: { identityId: identity.getId(), keys: identity.getPublicKeys() },
           response,
         },
-      }, 'StateRepository#updateIdentity');
+      }, 'StateRepository#addKeysToIdentity');
     });
 
     it('should call logger in case of error', async () => {
       const error = new Error('unknown error');
 
-      stateRepositoryMock.updateIdentity.throws(error);
+      stateRepositoryMock.addKeysToIdentity.throws(error);
 
       try {
-        await loggedStateRepositoryDecorator.updateIdentity(identity);
+        await loggedStateRepositoryDecorator.addKeysToIdentity(
+          identity.getId(),
+          identity.getPublicKeys(),
+        );
 
         expect.fail('should throw an error');
       } catch (e) {
@@ -157,51 +163,46 @@ describe('LoggedStateRepositoryDecorator', () => {
 
       expect(loggerMock.trace).to.be.calledOnceWithExactly({
         stateRepository: {
-          method: 'updateIdentity',
-          parameters: { identity },
+          method: 'addKeysToIdentity',
+          parameters: { identityId: identity.getId(), keys: identity.getPublicKeys() },
           response: undefined,
         },
-      }, 'StateRepository#updateIdentity');
+      }, 'StateRepository#addKeysToIdentity');
     });
   });
 
-  describe('#storeIdentityPublicKeyHashes', () => {
-    let identityId;
-    let publicKeyHashes;
+  describe('#fetchIdentityBalance', () => {
+    let identity;
 
     beforeEach(() => {
-      identityId = generateRandomIdentifier();
-      publicKeyHashes = [Buffer.alloc(36), Buffer.alloc(36)];
+      identity = getIdentityFixture();
     });
 
     it('should call logger with proper params', async () => {
       const response = undefined;
 
-      stateRepositoryMock.storeIdentityPublicKeyHashes.resolves(response);
+      stateRepositoryMock.fetchIdentityBalance.resolves(response);
 
-      await loggedStateRepositoryDecorator
-        .storeIdentityPublicKeyHashes(identityId, publicKeyHashes);
+      await loggedStateRepositoryDecorator.fetchIdentityBalance(
+        identity.getId(),
+      );
 
       expect(loggerMock.trace).to.be.calledOnceWithExactly({
         stateRepository: {
-          method: 'storeIdentityPublicKeyHashes',
-          parameters: {
-            identityId,
-            publicKeyHashes: publicKeyHashes.map((hash) => hash.toString('base64')),
-          },
+          method: 'fetchIdentityBalance',
+          parameters: { identityId: identity.getId() },
           response,
         },
-      }, 'StateRepository#storeIdentityPublicKeyHashes');
+      }, 'StateRepository#fetchIdentityBalance');
     });
 
     it('should call logger in case of error', async () => {
       const error = new Error('unknown error');
 
-      stateRepositoryMock.storeIdentityPublicKeyHashes.throws(error);
+      stateRepositoryMock.fetchIdentityBalance.throws(error);
 
       try {
-        await loggedStateRepositoryDecorator
-          .storeIdentityPublicKeyHashes(identityId, publicKeyHashes);
+        await loggedStateRepositoryDecorator.fetchIdentityBalance(identity.getId());
 
         expect.fail('should throw an error');
       } catch (e) {
@@ -210,49 +211,46 @@ describe('LoggedStateRepositoryDecorator', () => {
 
       expect(loggerMock.trace).to.be.calledOnceWithExactly({
         stateRepository: {
-          method: 'storeIdentityPublicKeyHashes',
-          parameters: {
-            identityId,
-            publicKeyHashes: publicKeyHashes.map((hash) => hash.toString('base64')),
-          },
+          method: 'fetchIdentityBalance',
+          parameters: { identityId: identity.getId() },
           response: undefined,
         },
-      }, 'StateRepository#storeIdentityPublicKeyHashes');
+      }, 'StateRepository#fetchIdentityBalance');
     });
   });
 
-  describe('#fetchIdentityIdsByPublicKeyHashes', () => {
-    let publicKeyHashes;
+  describe('#fetchIdentityBalanceWithDebt', () => {
+    let identity;
 
     beforeEach(() => {
-      publicKeyHashes = [Buffer.alloc(36), Buffer.alloc(36)];
+      identity = getIdentityFixture();
     });
 
     it('should call logger with proper params', async () => {
-      const response = [null, generateRandomIdentifier()];
+      const response = undefined;
 
-      stateRepositoryMock.fetchIdentityIdsByPublicKeyHashes.resolves(response);
+      stateRepositoryMock.fetchIdentityBalanceWithDebt.resolves(response);
 
-      await loggedStateRepositoryDecorator.fetchIdentityIdsByPublicKeyHashes(publicKeyHashes);
+      await loggedStateRepositoryDecorator.fetchIdentityBalanceWithDebt(
+        identity.getId(),
+      );
 
       expect(loggerMock.trace).to.be.calledOnceWithExactly({
         stateRepository: {
-          method: 'fetchIdentityIdsByPublicKeyHashes',
-          parameters: {
-            publicKeyHashes: publicKeyHashes.map((hash) => hash.toString('base64')),
-          },
+          method: 'fetchIdentityBalanceWithDebt',
+          parameters: { identityId: identity.getId() },
           response,
         },
-      }, 'StateRepository#fetchIdentityIdsByPublicKeyHashes');
+      }, 'StateRepository#fetchIdentityBalanceWithDebt');
     });
 
     it('should call logger in case of error', async () => {
       const error = new Error('unknown error');
 
-      stateRepositoryMock.fetchIdentityIdsByPublicKeyHashes.throws(error);
+      stateRepositoryMock.fetchIdentityBalanceWithDebt.throws(error);
 
       try {
-        await loggedStateRepositoryDecorator.fetchIdentityIdsByPublicKeyHashes(publicKeyHashes);
+        await loggedStateRepositoryDecorator.fetchIdentityBalanceWithDebt(identity.getId());
 
         expect.fail('should throw an error');
       } catch (e) {
@@ -261,13 +259,180 @@ describe('LoggedStateRepositoryDecorator', () => {
 
       expect(loggerMock.trace).to.be.calledOnceWithExactly({
         stateRepository: {
-          method: 'fetchIdentityIdsByPublicKeyHashes',
-          parameters: {
-            publicKeyHashes: publicKeyHashes.map((hash) => hash.toString('base64')),
-          },
+          method: 'fetchIdentityBalanceWithDebt',
+          parameters: { identityId: identity.getId() },
           response: undefined,
         },
-      }, 'StateRepository#fetchIdentityIdsByPublicKeyHashes');
+      }, 'StateRepository#fetchIdentityBalanceWithDebt');
+    });
+  });
+
+  describe('#addToIdentityBalance', () => {
+    let identity;
+
+    beforeEach(() => {
+      identity = getIdentityFixture();
+    });
+
+    it('should call logger with proper params', async () => {
+      const response = undefined;
+
+      stateRepositoryMock.addToIdentityBalance.resolves(response);
+
+      const amount = 200;
+
+      await loggedStateRepositoryDecorator.addToIdentityBalance(
+        identity.getId(),
+        amount,
+      );
+
+      expect(loggerMock.trace).to.be.calledOnceWithExactly({
+        stateRepository: {
+          method: 'addToIdentityBalance',
+          parameters: { identityId: identity.getId(), amount },
+          response,
+        },
+      }, 'StateRepository#addToIdentityBalance');
+    });
+
+    it('should call logger in case of error', async () => {
+      const error = new Error('unknown error');
+
+      stateRepositoryMock.addToIdentityBalance.throws(error);
+
+      const amount = 100;
+
+      try {
+        await loggedStateRepositoryDecorator.addToIdentityBalance(identity.getId(), amount);
+
+        expect.fail('should throw an error');
+      } catch (e) {
+        expect(e).equals(error);
+      }
+
+      expect(loggerMock.trace).to.be.calledOnceWithExactly({
+        stateRepository: {
+          method: 'addToIdentityBalance',
+          parameters: { identityId: identity.getId(), amount },
+          response: undefined,
+        },
+      }, 'StateRepository#addToIdentityBalance');
+    });
+  });
+
+  describe('#disableIdentityKeys', () => {
+    let identity;
+
+    beforeEach(() => {
+      identity = getIdentityFixture();
+    });
+
+    it('should call logger with proper params', async () => {
+      const response = undefined;
+
+      stateRepositoryMock.disableIdentityKeys.resolves(response);
+
+      const keyIds = [1, 2];
+      const disableAt = 123;
+
+      await loggedStateRepositoryDecorator.disableIdentityKeys(
+        identity.getId(),
+        keyIds,
+        disableAt,
+      );
+
+      expect(loggerMock.trace).to.be.calledOnceWithExactly({
+        stateRepository: {
+          method: 'disableIdentityKeys',
+          parameters: { identityId: identity.getId(), keyIds, disableAt },
+          response,
+        },
+      }, 'StateRepository#disableIdentityKeys');
+    });
+
+    it('should call logger in case of error', async () => {
+      const error = new Error('unknown error');
+
+      stateRepositoryMock.disableIdentityKeys.throws(error);
+
+      const keyIds = [1, 2];
+      const disableAt = 123;
+
+      try {
+        await loggedStateRepositoryDecorator.disableIdentityKeys(
+          identity.getId(),
+          keyIds,
+          disableAt,
+        );
+
+        expect.fail('should throw an error');
+      } catch (e) {
+        expect(e).equals(error);
+      }
+
+      expect(loggerMock.trace).to.be.calledOnceWithExactly({
+        stateRepository: {
+          method: 'disableIdentityKeys',
+          parameters: { identityId: identity.getId(), keyIds, disableAt },
+          response: undefined,
+        },
+      }, 'StateRepository#disableIdentityKeys');
+    });
+  });
+
+  describe('#updateIdentityRevision', () => {
+    let identity;
+
+    beforeEach(() => {
+      identity = getIdentityFixture();
+    });
+
+    it('should call logger with proper params', async () => {
+      const response = undefined;
+
+      stateRepositoryMock.updateIdentityRevision.resolves(response);
+
+      const revision = 1;
+
+      await loggedStateRepositoryDecorator.updateIdentityRevision(
+        identity.getId(),
+        revision,
+      );
+
+      expect(loggerMock.trace).to.be.calledOnceWithExactly({
+        stateRepository: {
+          method: 'updateIdentityRevision',
+          parameters: { identityId: identity.getId(), revision },
+          response,
+        },
+      }, 'StateRepository#updateIdentityRevision');
+    });
+
+    it('should call logger in case of error', async () => {
+      const error = new Error('unknown error');
+
+      stateRepositoryMock.updateIdentityRevision.throws(error);
+
+      const revision = 1;
+
+      try {
+        await loggedStateRepositoryDecorator.updateIdentityRevision(
+          identity.getId(),
+          revision,
+        );
+
+        expect.fail('should throw an error');
+      } catch (e) {
+        expect(e).equals(error);
+      }
+
+      expect(loggerMock.trace).to.be.calledOnceWithExactly({
+        stateRepository: {
+          method: 'updateIdentityRevision',
+          parameters: { identityId: identity.getId(), revision },
+          response: undefined,
+        },
+      }, 'StateRepository#updateIdentityRevision');
     });
   });
 

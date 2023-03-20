@@ -4,6 +4,8 @@ use anyhow::{bail, Context};
 use async_trait::async_trait;
 use dashcore::signer::verify_hash_signature;
 
+use crate::consensus::signature::IdentityNotFoundError;
+use crate::consensus::ConsensusError;
 use crate::{
     consensus::signature::SignatureError,
     identity::{
@@ -25,7 +27,7 @@ pub struct StateTransitionKeySignatureValidator<SR> {
     asset_lock_public_key_hash_fetcher: AssetLockPublicKeyHashFetcher<SR>,
 }
 
-#[async_trait]
+#[async_trait(?Send)]
 impl<SR> AsyncDataValidator for StateTransitionKeySignatureValidator<SR>
 where
     SR: StateRepositoryLike,
@@ -74,17 +76,19 @@ pub async fn validate_state_transition_key_signature<SR: StateRepositoryLike>(
         let tmp_execution_context = StateTransitionExecutionContext::default();
 
         // Target identity must exist
-        let identity = state_repository
-            .fetch_identity(target_identity_id, &tmp_execution_context)
+        let balance = state_repository
+            .fetch_identity_balance(target_identity_id, &tmp_execution_context)
             .await?;
 
         // Collect operations back from temporary context
         execution_context.add_operations(tmp_execution_context.get_operations());
 
-        if identity.is_none() {
-            result.add_error(SignatureError::IdentityNotFoundError {
-                identity_id: target_identity_id.clone(),
-            });
+        if balance.is_none() {
+            result.add_error(ConsensusError::SignatureError(
+                SignatureError::IdentityNotFoundError(IdentityNotFoundError::new(
+                    *target_identity_id,
+                )),
+            ));
             return Ok(result);
         }
     }
@@ -300,7 +304,7 @@ mod test {
                 .into();
 
         state_repository
-            .expect_fetch_identity()
+            .expect_fetch_identity_balance()
             .return_once(|_, _| Ok(None));
 
         let result = validate_state_transition_key_signature(

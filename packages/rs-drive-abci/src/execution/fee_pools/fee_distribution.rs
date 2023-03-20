@@ -33,11 +33,15 @@
 //!
 
 use crate::error::execution::ExecutionError;
+use serde::{Deserialize, Serialize};
 
 use crate::abci::messages::BlockFees;
 use crate::error::Error;
 use crate::platform::Platform;
+use drive::drive::batch::drive_op_batch::IdentityOperationType::AddToIdentityBalance;
+use drive::drive::batch::DriveOperationType::IdentityOperation;
 use drive::drive::batch::GroveDbOpBatch;
+use drive::drive::block_info::BlockInfo;
 use drive::error::fee::FeeError;
 use drive::fee::credits::Credits;
 use drive::fee::epoch::GENESIS_EPOCH_INDEX;
@@ -47,8 +51,6 @@ use drive::fee_pools::{
 };
 use drive::grovedb::TransactionArg;
 use drive::{error, grovedb};
-use rust_decimal::Decimal;
-use rust_decimal_macros::dec;
 
 /// Struct containing the number of proposers to be paid and the index of the epoch
 /// they're to be paid from.
@@ -61,7 +63,7 @@ pub struct ProposersPayouts {
 }
 
 /// Struct containing the amount of processing and storage fees in the distribution pools
-#[derive(PartialEq, Eq)]
+#[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq, Eq)]
 pub struct FeesInPools {
     /// Amount of processing fees in the distribution pools
     pub processing_fees: u64,
@@ -234,6 +236,7 @@ impl Platform {
         transaction: TransactionArg,
         batch: &mut GroveDbOpBatch,
     ) -> Result<u16, Error> {
+        let mut drive_operations = vec![];
         let unpaid_epoch_tree = Epoch::new(unpaid_epoch.epoch_index);
 
         let total_fees = self
@@ -241,10 +244,10 @@ impl Platform {
             .get_epoch_total_credits_for_distribution(&unpaid_epoch_tree, transaction)
             .map_err(Error::Drive)?;
 
-        let total_fees = Decimal::from(total_fees);
+        let mut remaining_fees = total_fees;
 
         // Calculate block count
-        let unpaid_epoch_block_count = Decimal::from(unpaid_epoch.block_count()?);
+        let unpaid_epoch_block_count = unpaid_epoch.block_count()?;
 
         let proposers = self
             .drive
@@ -253,20 +256,25 @@ impl Platform {
 
         let proposers_len = proposers.len() as u16;
 
-        let mut fee_leftovers = dec!(0.0);
+        let mut proposers_pro_tx_hashes = vec![];
 
-        for (i, (proposer_tx_hash, proposed_block_count)) in proposers.iter().enumerate() {
+        for (i, (proposer_tx_hash, proposed_block_count)) in proposers.into_iter().enumerate() {
             let i = i as u16;
-            let proposed_block_count = Decimal::from(*proposed_block_count);
 
-            let mut masternode_reward =
-                (total_fees * proposed_block_count) / unpaid_epoch_block_count;
+            let total_masternode_reward = total_fees
+                .checked_mul(proposed_block_count)
+                .and_then(|r| r.checked_div(unpaid_epoch_block_count))
+                .ok_or(Error::Execution(ExecutionError::Overflow(
+                    "overflow when getting masternode reward division",
+                )))?;
+
+            let mut masternode_reward_leftover = total_masternode_reward;
 
             let documents =
-                self.get_reward_shares_list_for_masternode(proposer_tx_hash, transaction)?;
+                self.get_reward_shares_list_for_masternode(&proposer_tx_hash, transaction)?;
 
             for document in documents {
-                let pay_to_id = document
+                let pay_to_id: [u8; 32] = document
                     .properties
                     .get("payToId")
                     .ok_or(Error::Execution(ExecutionError::DriveMissingData(
@@ -275,108 +283,87 @@ impl Platform {
                     .as_bytes()
                     .ok_or(Error::Execution(ExecutionError::DriveIncoherence(
                         "payToId property type is not bytes",
-                    )))?;
+                    )))?
+                    .clone()
+                    .try_into()
+                    .map_err(|_| {
+                        Error::Execution(ExecutionError::DriveIncoherence(
+                            "payToId property type is not 32 bytes long",
+                        ))
+                    })?;
 
                 // TODO this shouldn't be a percentage we need to update masternode share contract
-                let share_percentage_integer: i64 = document
+                let share_percentage: u64 = document
                     .properties
                     .get("percentage")
                     .ok_or(Error::Execution(ExecutionError::DriveMissingData(
                         "percentage property is missing",
                     )))?
-                    .as_integer()
-                    .ok_or(Error::Execution(ExecutionError::DriveIncoherence(
-                        "percentage property type is not integer",
-                    )))?
-                    .try_into()
+                    .to_integer()
                     .map_err(|_| {
-                        Error::Execution(ExecutionError::Overflow(
-                            "percentage property cannot be converted to i64",
+                        Error::Execution(ExecutionError::DriveIncoherence(
+                            "percentage property type is not integer",
                         ))
                     })?;
 
-                let share_percentage = Decimal::from(share_percentage_integer) / dec!(10000.0);
-
-                let reward = masternode_reward * share_percentage;
-
-                let reward_floored = reward.floor();
+                let share_reward = total_masternode_reward
+                    .checked_mul(share_percentage)
+                    .and_then(|a| a.checked_div(10000))
+                    .ok_or(Error::Execution(ExecutionError::Overflow(
+                        "overflow when calculating reward share",
+                    )))?;
 
                 // update masternode reward that would be paid later
-                masternode_reward -= reward_floored;
+                masternode_reward_leftover = masternode_reward_leftover
+                    .checked_sub(share_reward)
+                    .ok_or(Error::Execution(ExecutionError::Overflow(
+                    "overflow when subtracting for the masternode share leftover",
+                )))?;
 
-                let reward_floored: u64 = reward_floored.try_into().map_err(|_| {
-                    Error::Execution(ExecutionError::Overflow(
-                        "can't convert reward to i64 from Decimal",
-                    ))
-                })?;
-
-                self.add_pay_reward_to_identity_operations(
-                    pay_to_id,
-                    reward_floored,
-                    transaction,
-                    batch,
-                )?;
+                drive_operations.push(IdentityOperation(AddToIdentityBalance {
+                    identity_id: pay_to_id,
+                    added_balance: share_reward,
+                }));
             }
 
-            // Since balance is an integer, we collect rewards remainder
-            // and add leftovers to the latest proposer of the chunk
-            let masternode_reward_floored = masternode_reward.floor();
-
-            fee_leftovers += masternode_reward - masternode_reward_floored;
+            remaining_fees =
+                remaining_fees
+                    .checked_sub(total_masternode_reward)
+                    .ok_or(Error::Execution(ExecutionError::Overflow(
+                        "overflow when subtracting for the remaining fees",
+                    )))?;
 
             let masternode_reward_given = if i == proposers_len - 1 {
-                masternode_reward_floored + fee_leftovers
+                remaining_fees + masternode_reward_leftover
             } else {
-                masternode_reward_floored
+                masternode_reward_leftover
             };
 
-            // Convert to integer, since identity balance is u64
-            let masternode_reward_given: u64 =
-                masternode_reward_given.floor().try_into().map_err(|_| {
-                    Error::Execution(ExecutionError::Overflow(
-                        "can't convert reward to i64 from Decimal",
-                    ))
-                })?;
+            let proposer = proposer_tx_hash.as_slice().try_into().map_err(|_| {
+                Error::Execution(ExecutionError::DriveIncoherence(
+                    "proposer_tx_hash is not 32 bytes long",
+                ))
+            })?;
 
-            self.add_pay_reward_to_identity_operations(
-                proposer_tx_hash,
-                masternode_reward_given,
-                transaction,
-                batch,
-            )?;
+            drive_operations.push(IdentityOperation(AddToIdentityBalance {
+                identity_id: proposer,
+                added_balance: masternode_reward_given,
+            }));
+
+            proposers_pro_tx_hashes.push(proposer_tx_hash);
         }
 
-        // remove proposers we've paid out
-        let proposer_pro_tx_hashes: Vec<Vec<u8>> =
-            proposers.iter().map(|(hash, _)| hash.clone()).collect();
+        let mut operations = self.drive.convert_drive_operations_to_grove_operations(
+            drive_operations,
+            &BlockInfo::default(),
+            transaction,
+        )?;
 
-        unpaid_epoch_tree.add_delete_proposers_operations(proposer_pro_tx_hashes, batch);
+        batch.append(&mut operations);
+
+        unpaid_epoch_tree.add_delete_proposers_operations(proposers_pro_tx_hashes, batch);
 
         Ok(proposers_len)
-    }
-
-    /// Adds operations to an op batch which pay a reward to an identity's balance
-    fn add_pay_reward_to_identity_operations(
-        &self,
-        id: &[u8],
-        reward: u64,
-        transaction: TransactionArg,
-        batch: &mut GroveDbOpBatch,
-    ) -> Result<(), Error> {
-        // We don't need additional verification, since we ensure an identity
-        // existence in the data contract triggers in DPP
-        let (mut identity, storage_flags) = self.drive.fetch_identity(id, transaction)?;
-
-        identity.balance = identity
-            .balance
-            .checked_add(reward)
-            .ok_or(Error::Execution(ExecutionError::Overflow(
-                "pay reward overflow",
-            )))?;
-
-        self.drive
-            .add_insert_identity_operations(identity, storage_flags.as_ref(), batch)
-            .map_err(Error::Drive)
     }
 
     /// Adds operations to an op batch which update total storage fees
@@ -409,7 +396,7 @@ impl Platform {
         let storage_distribution_credits_in_fee_pool = match cached_aggregated_storage_fees {
             None => self
                 .drive
-                .get_aggregate_storage_fees_from_distribution_pool(transaction)?,
+                .get_storage_fees_from_distribution_pool(transaction)?,
             Some(storage_fees) => storage_fees,
         };
 
@@ -430,7 +417,7 @@ impl Platform {
 mod tests {
     use super::*;
 
-    use crate::common::helpers::setup::setup_platform_with_initial_state_structure;
+    use crate::test::helpers::setup::setup_platform_with_initial_state_structure;
     use drive::common::helpers::identities::create_test_masternode_identities_and_add_them_as_epoch_block_proposers;
 
     mod add_distribute_fees_from_oldest_unpaid_epoch_pool_to_proposers_operations {
@@ -440,7 +427,7 @@ mod tests {
 
         #[test]
         fn test_nothing_to_distribute_if_there_is_no_epochs_needing_payment() {
-            let platform = setup_platform_with_initial_state_structure();
+            let platform = setup_platform_with_initial_state_structure(None);
             let transaction = platform.drive.grove.start_transaction();
 
             let current_epoch_index = 0;
@@ -461,7 +448,7 @@ mod tests {
 
         #[test]
         fn test_set_proposers_limit_50_for_one_unpaid_epoch() {
-            let platform = setup_platform_with_initial_state_structure();
+            let platform = setup_platform_with_initial_state_structure(None);
             let transaction = platform.drive.grove.start_transaction();
 
             // Create masternode reward shares contract
@@ -503,6 +490,7 @@ mod tests {
                 &platform.drive,
                 &unpaid_epoch_tree_0,
                 proposers_count,
+                Some(59), //random number
                 Some(&transaction),
             );
 
@@ -533,7 +521,7 @@ mod tests {
 
         #[test]
         fn test_increased_proposers_limit_to_100_for_two_unpaid_epochs() {
-            let platform = setup_platform_with_initial_state_structure();
+            let platform = setup_platform_with_initial_state_structure(None);
             let transaction = platform.drive.grove.start_transaction();
 
             // Create masternode reward shares contract
@@ -583,6 +571,7 @@ mod tests {
                 &platform.drive,
                 &unpaid_epoch_tree_0,
                 proposers_count,
+                Some(57), //random number
                 Some(&transaction),
             );
 
@@ -590,6 +579,7 @@ mod tests {
                 &platform.drive,
                 &unpaid_epoch_tree_1,
                 proposers_count,
+                Some(58), //random number
                 Some(&transaction),
             );
 
@@ -620,7 +610,7 @@ mod tests {
 
         #[test]
         fn test_increased_proposers_limit_to_150_for_three_unpaid_epochs() {
-            let platform = setup_platform_with_initial_state_structure();
+            let platform = setup_platform_with_initial_state_structure(None);
             let transaction = platform.drive.grove.start_transaction();
 
             // Create masternode reward shares contract
@@ -678,6 +668,7 @@ mod tests {
                 &platform.drive,
                 &unpaid_epoch_tree_0,
                 proposers_count,
+                Some(62), //random number
                 Some(&transaction),
             );
 
@@ -685,6 +676,7 @@ mod tests {
                 &platform.drive,
                 &unpaid_epoch_tree_1,
                 proposers_count,
+                Some(61), //random number
                 Some(&transaction),
             );
 
@@ -692,6 +684,7 @@ mod tests {
                 &platform.drive,
                 &unpaid_epoch_tree_2,
                 proposers_count,
+                Some(60), //random number
                 Some(&transaction),
             );
 
@@ -722,7 +715,7 @@ mod tests {
 
         #[test]
         fn test_mark_epoch_as_paid_and_update_next_update_epoch_index_if_all_proposers_paid() {
-            let platform = setup_platform_with_initial_state_structure();
+            let platform = setup_platform_with_initial_state_structure(None);
             let transaction = platform.drive.grove.start_transaction();
 
             // Create masternode reward shares contract
@@ -751,7 +744,7 @@ mod tests {
                     .expect("should add operation"),
             );
 
-            current_epoch.add_init_current_operations(1.0, 2, 2, &mut batch);
+            current_epoch.add_init_current_operations(1.0, 11, 2, &mut batch);
 
             platform
                 .drive
@@ -762,6 +755,7 @@ mod tests {
                 &platform.drive,
                 &unpaid_epoch,
                 proposers_count,
+                Some(65), //random number
                 Some(&transaction),
             );
 
@@ -781,13 +775,13 @@ mod tests {
                 .grove_apply_batch(batch, false, Some(&transaction))
                 .expect("should apply batch");
 
-            match proposer_payouts {
-                None => assert!(false, "proposers should be paid"),
-                Some(payouts) => {
-                    assert_eq!(payouts.proposers_paid_count, proposers_count);
-                    assert_eq!(payouts.paid_epoch_index, 0);
-                }
-            }
+            assert!(matches!(
+                proposer_payouts,
+                Some(ProposersPayouts {
+                    proposers_paid_count: p,
+                    paid_epoch_index: 0,
+                }) if p == proposers_count
+            ));
 
             let next_unpaid_epoch_index = platform
                 .drive
@@ -814,7 +808,7 @@ mod tests {
         #[test]
         fn test_mark_epoch_as_paid_and_update_next_update_epoch_index_if_all_50_proposers_were_paid_last_block(
         ) {
-            let platform = setup_platform_with_initial_state_structure();
+            let platform = setup_platform_with_initial_state_structure(None);
             let transaction = platform.drive.grove.start_transaction();
 
             // Create masternode reward shares contract
@@ -843,7 +837,12 @@ mod tests {
                     .expect("should add operation"),
             );
 
-            current_epoch.add_init_current_operations(1.0, 2, 2, &mut batch);
+            current_epoch.add_init_current_operations(
+                1.0,
+                (proposers_count as u64) + 1,
+                2,
+                &mut batch,
+            );
 
             platform
                 .drive
@@ -854,6 +853,7 @@ mod tests {
                 &platform.drive,
                 &unpaid_epoch,
                 proposers_count,
+                Some(66), //random number
                 Some(&transaction),
             );
 
@@ -935,7 +935,7 @@ mod tests {
 
         #[test]
         fn test_no_epoch_to_pay_on_genesis_epoch() {
-            let platform = setup_platform_with_initial_state_structure();
+            let platform = setup_platform_with_initial_state_structure(None);
             let transaction = platform.drive.grove.start_transaction();
 
             let unpaid_epoch = platform
@@ -947,7 +947,7 @@ mod tests {
 
         #[test]
         fn test_no_epoch_to_pay_if_oldest_unpaid_epoch_is_current_epoch() {
-            let platform = setup_platform_with_initial_state_structure();
+            let platform = setup_platform_with_initial_state_structure(None);
             let transaction = platform.drive.grove.start_transaction();
 
             let epoch_0_tree = Epoch::new(GENESIS_EPOCH_INDEX);
@@ -977,7 +977,7 @@ mod tests {
 
         #[test]
         fn test_use_cached_current_start_block_height_as_end_block_if_unpaid_epoch_is_previous() {
-            let platform = setup_platform_with_initial_state_structure();
+            let platform = setup_platform_with_initial_state_structure(None);
             let transaction = platform.drive.grove.start_transaction();
 
             let epoch_0_tree = Epoch::new(GENESIS_EPOCH_INDEX);
@@ -1023,7 +1023,7 @@ mod tests {
         #[test]
         fn test_use_stored_start_block_height_from_current_epoch_as_end_block_if_unpaid_epoch_is_previous(
         ) {
-            let platform = setup_platform_with_initial_state_structure();
+            let platform = setup_platform_with_initial_state_structure(None);
             let transaction = platform.drive.grove.start_transaction();
 
             let epoch_0_tree = Epoch::new(GENESIS_EPOCH_INDEX);
@@ -1065,7 +1065,7 @@ mod tests {
 
         #[test]
         fn test_find_stored_next_start_block_as_end_block_if_unpaid_epoch_more_than_one_ago() {
-            let platform = setup_platform_with_initial_state_structure();
+            let platform = setup_platform_with_initial_state_structure(None);
             let transaction = platform.drive.grove.start_transaction();
 
             let epoch_0_tree = Epoch::new(GENESIS_EPOCH_INDEX);
@@ -1109,7 +1109,7 @@ mod tests {
 
         #[test]
         fn test_use_cached_start_block_height_if_not_found_in_case_of_epoch_change() {
-            let platform = setup_platform_with_initial_state_structure();
+            let platform = setup_platform_with_initial_state_structure(None);
             let transaction = platform.drive.grove.start_transaction();
 
             let epoch_0_tree = Epoch::new(GENESIS_EPOCH_INDEX);
@@ -1155,7 +1155,7 @@ mod tests {
         #[test]
         fn test_error_if_cached_start_block_height_is_not_present_and_not_found_in_case_of_epoch_change(
         ) {
-            let platform = setup_platform_with_initial_state_structure();
+            let platform = setup_platform_with_initial_state_structure(None);
             let transaction = platform.drive.grove.start_transaction();
 
             let epoch_0_tree = Epoch::new(GENESIS_EPOCH_INDEX);
@@ -1186,13 +1186,14 @@ mod tests {
 
     mod add_epoch_pool_to_proposers_payout_operations {
         use super::*;
-        use crate::common::helpers::fee_pools::{
-            create_test_masternode_share_identities_and_documents, refetch_identities,
-        };
+        use crate::test::helpers::fee_pools::create_test_masternode_share_identities_and_documents;
+        use dpp::platform_value::btreemap_extensions::BTreeValueMapHelper;
+        use rust_decimal::Decimal;
+        use rust_decimal_macros::dec;
 
         #[test]
         fn test_payout_to_proposers() {
-            let platform = setup_platform_with_initial_state_structure();
+            let platform = setup_platform_with_initial_state_structure(None);
             let transaction = platform.drive.grove.start_transaction();
 
             // Create masternode reward shares contract
@@ -1238,6 +1239,7 @@ mod tests {
                     &platform.drive,
                     &unpaid_epoch_tree,
                     proposers_count,
+                    Some(68), //random number
                     Some(&transaction),
                 );
 
@@ -1246,6 +1248,7 @@ mod tests {
                     &platform.drive,
                     &contract,
                     &pro_tx_hashes,
+                    Some(55),
                     Some(&transaction),
                 );
 
@@ -1275,9 +1278,9 @@ mod tests {
             assert_eq!(proposers_paid_count, 10);
 
             // check we paid 500 to every mn identity
-            let paid_mn_identities = platform
+            let paid_mn_identities_balances = platform
                 .drive
-                .fetch_identities(&pro_tx_hashes, Some(&transaction))
+                .fetch_identities_balances(&pro_tx_hashes, Some(&transaction))
                 .expect("expected to get identities");
 
             let total_fees = Decimal::from(storage_fees + processing_fees);
@@ -1287,12 +1290,8 @@ mod tests {
             let shares_percentage_with_precision: u64 = share_identities_and_documents[0]
                 .1
                 .properties
-                .get("percentage")
-                .expect("should have percentage field")
-                .as_integer()
-                .expect("percentage should an integer")
-                .try_into()
-                .expect("percentage should be u64");
+                .get_integer("percentage")
+                .expect("should have percentage field");
 
             let shares_percentage = Decimal::from(shares_percentage_with_precision) / dec!(10000);
 
@@ -1300,21 +1299,22 @@ mod tests {
 
             let payout_credits: u64 = payout_credits.try_into().expect("should convert to u64");
 
-            for paid_mn_identity in paid_mn_identities {
-                assert_eq!(paid_mn_identity.balance, payout_credits);
+            for (_, paid_mn_identity_balance) in paid_mn_identities_balances {
+                assert_eq!(paid_mn_identity_balance, payout_credits);
             }
 
             let share_identities = share_identities_and_documents
                 .iter()
-                .map(|(identity, _)| identity)
+                .map(|(identity, _)| identity.id.buffer)
                 .collect();
 
-            let refetched_share_identities =
-                refetch_identities(&platform.drive, share_identities, Some(&transaction))
-                    .expect("expected to refresh identities");
+            let refetched_share_identities_balances = platform
+                .drive
+                .fetch_identities_balances(&share_identities, Some(&transaction))
+                .expect("expected to get identities");
 
-            for identity in refetched_share_identities {
-                assert_eq!(identity.balance, payout_credits);
+            for (_, balance) in refetched_share_identities_balances {
+                assert_eq!(balance, payout_credits);
             }
         }
     }
@@ -1324,7 +1324,7 @@ mod tests {
 
         #[test]
         fn test_distribute_block_fees_into_uncommitted_epoch_on_epoch_change() {
-            let platform = setup_platform_with_initial_state_structure();
+            let platform = setup_platform_with_initial_state_structure(None);
             let transaction = platform.drive.grove.start_transaction();
 
             let current_epoch_tree = Epoch::new(1);
@@ -1361,7 +1361,7 @@ mod tests {
 
             let stored_storage_fee_credits = platform
                 .drive
-                .get_aggregate_storage_fees_from_distribution_pool(Some(&transaction))
+                .get_storage_fees_from_distribution_pool(Some(&transaction))
                 .expect("should get storage fee pool");
 
             assert_eq!(stored_processing_fee_credits, processing_fees);
@@ -1370,7 +1370,7 @@ mod tests {
 
         #[test]
         fn test_distribute_block_fees_into_pools() {
-            let platform = setup_platform_with_initial_state_structure();
+            let platform = setup_platform_with_initial_state_structure(None);
             let transaction = platform.drive.grove.start_transaction();
 
             let current_epoch_tree = Epoch::new(1);
@@ -1415,7 +1415,7 @@ mod tests {
 
             let stored_storage_fee_credits = platform
                 .drive
-                .get_aggregate_storage_fees_from_distribution_pool(Some(&transaction))
+                .get_storage_fees_from_distribution_pool(Some(&transaction))
                 .expect("should get storage fee pool");
 
             assert_eq!(stored_processing_fee_credits, processing_fees);

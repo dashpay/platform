@@ -1,8 +1,9 @@
 use std::sync::Arc;
 
-use serde_json::json;
+use serde_json::{json, Value};
 
 use crate::{
+    contracts::withdrawals_contract,
     document::{
         document_factory::DocumentFactory,
         fetch_and_validate_data_contract::DataContractFetcherAndValidator,
@@ -25,7 +26,7 @@ pub fn get_documents_fixture_with_owner_id_from_contract(
         get_document_validator_fixture(),
         data_contract_fetcher_and_validator,
     );
-    let owner_id = data_contract.owner_id().clone();
+    let owner_id = *data_contract.owner_id();
 
     get_documents(factory, data_contract, owner_id)
 }
@@ -51,53 +52,53 @@ fn get_documents<ST: StateRepositoryLike>(
     let documents = vec![
         factory.create(
             data_contract.clone(),
-            owner_id.clone(),
+            owner_id,
             "niceDocument".to_string(),
             json!({ "name": "Cutie" }),
         )?,
         factory.create(
             data_contract.clone(),
-            owner_id.clone(),
+            owner_id,
             "prettyDocument".to_string(),
             json!({ "lastName": "Shiny" }),
         )?,
         factory.create(
             data_contract.clone(),
-            owner_id.clone(),
+            owner_id,
             "prettyDocument".to_string(),
             json!({ "lastName": "Sweety" }),
         )?,
         factory.create(
             data_contract.clone(),
-            owner_id.clone(),
+            owner_id,
             "indexedDocument".to_string(),
             json!( { "firstName": "William", "lastName": "Birkin" }),
         )?,
         factory.create(
             data_contract.clone(),
-            owner_id.clone(),
+            owner_id,
             "indexedDocument".to_string(),
             json!( { "firstName": "Leon", "lastName": "Kennedy" }),
         )?,
         factory.create(
             data_contract.clone(),
-            owner_id.clone(),
+            owner_id,
             "noTimeDocument".to_string(),
             json!({ "name": "ImOutOfTime" }),
         )?,
         factory.create(
             data_contract.clone(),
-            owner_id.clone(),
+            owner_id,
             "uniqueDates".to_string(),
             json!({ "firstName": "John" }),
         )?,
         factory.create(
             data_contract.clone(),
-            owner_id.clone(),
+            owner_id,
             "indexedDocument".to_string(),
             json!( { "firstName": "Bill", "lastName": "Gates" }),
         )?,
-        factory.create(data_contract.clone(), owner_id.clone(), "withByteArrays".to_string(), json!( { "byteArrayField": get_random_10_bytes(), "identifierField": gen_owner_id().to_buffer() }),)?,
+        factory.create(data_contract.clone(), owner_id, "withByteArrays".to_string(), json!( { "byteArrayField": get_random_10_bytes(), "identifierField": gen_owner_id().to_buffer() }),)?,
         factory.create(
             data_contract,
             owner_id,
@@ -107,6 +108,27 @@ fn get_documents<ST: StateRepositoryLike>(
     ];
 
     Ok(documents)
+}
+
+pub fn get_withdrawal_document_fixture(
+    data_contract: &DataContract,
+    owner_id: Identifier,
+    data: Value,
+) -> Document {
+    let factory = DocumentFactory::new(
+        LATEST_VERSION,
+        get_document_validator_fixture(),
+        DataContractFetcherAndValidator::new(Arc::new(MockStateRepositoryLike::new())),
+    );
+
+    factory
+        .create(
+            data_contract.clone(),
+            owner_id,
+            withdrawals_contract::document_types::WITHDRAWAL.to_string(),
+            data,
+        )
+        .unwrap()
 }
 
 fn get_random_10_bytes() -> Vec<u8> {

@@ -11,6 +11,7 @@ use dpp::data_contract::{DataContract, SCHEMA_URI};
 use dpp::util::string_encoding::Encoding;
 
 use crate::errors::{from_dpp_err, RustConversionError};
+use crate::identifier::identifier_from_js_value;
 use crate::metadata::MetadataWasm;
 use crate::utils::WithJsError;
 use crate::{bail_js, with_js_error};
@@ -23,6 +24,12 @@ pub struct DataContractWasm(DataContract);
 impl std::convert::From<DataContract> for DataContractWasm {
     fn from(v: DataContract) -> Self {
         DataContractWasm(v)
+    }
+}
+
+impl std::convert::From<&DataContractWasm> for DataContract {
+    fn from(v: &DataContractWasm) -> Self {
+        v.0.clone()
     }
 }
 
@@ -62,6 +69,13 @@ pub(crate) struct DataContractParameters {
     _extras: serde_json::Value, // Captures excess fields to trigger validation failure later.
 }
 
+pub fn js_value_to_serde_value(raw_parameters: JsValue) -> Result<Value, JsValue> {
+    let parameters: DataContractParameters =
+        with_js_error!(serde_wasm_bindgen::from_value(raw_parameters))?;
+
+    serde_json::to_value(parameters).map_err(|e| e.to_string().into())
+}
+
 #[wasm_bindgen(js_class=DataContract)]
 impl DataContractWasm {
     #[wasm_bindgen(constructor)]
@@ -83,17 +97,19 @@ impl DataContractWasm {
 
     #[wasm_bindgen(js_name=getId)]
     pub fn get_id(&self) -> IdentifierWrapper {
-        self.0.id.clone().into()
+        self.0.id.into()
     }
 
     #[wasm_bindgen(js_name=setId)]
-    pub fn set_id(&mut self, id: IdentifierWrapper) {
-        self.0.id = id.inner();
+    pub fn set_id(&mut self, id: &JsValue) -> Result<(), JsValue> {
+        let id = identifier_from_js_value(id)?;
+        self.0.id = id;
+        Ok(())
     }
 
     #[wasm_bindgen(js_name=getOwnerId)]
     pub fn get_owner_id(&self) -> IdentifierWrapper {
-        self.0.owner_id.clone().into()
+        self.0.owner_id.into()
     }
 
     #[wasm_bindgen(js_name=getVersion)]
@@ -286,7 +302,7 @@ impl DataContractWasm {
     }
 
     #[wasm_bindgen(js_name=from)]
-    pub fn from(v: JsValue) -> Result<DataContractWasm, JsValue> {
+    pub fn from_js_value(v: JsValue) -> Result<DataContractWasm, JsValue> {
         let json_contract: Value = with_js_error!(serde_wasm_bindgen::from_value(v))?;
         Ok(DataContract::try_from(json_contract)
             .map_err(from_dpp_err)?
@@ -297,6 +313,11 @@ impl DataContractWasm {
     pub fn from_buffer(b: &[u8]) -> Result<DataContractWasm, JsValue> {
         let data_contract = DataContract::from_cbor(b).with_js_error()?;
         Ok(data_contract.into())
+    }
+
+    #[wasm_bindgen(js_name=clone)]
+    pub fn deep_clone(&self) -> Self {
+        self.clone()
     }
 }
 

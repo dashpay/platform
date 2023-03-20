@@ -1,4 +1,4 @@
-use jsonschema::{JSONSchema, KeywordDefinition};
+use jsonschema::{Draft, JSONSchema, KeywordDefinition};
 use lazy_static::lazy_static;
 use serde_json::{json, Value};
 
@@ -41,6 +41,7 @@ lazy_static! {
     .unwrap();
 
     pub static ref DRAFT_202012_META_SCHEMA: JSONSchema = JSONSchema::options()
+        .with_draft(Draft::Draft202012)
         .should_validate_formats(true)
         .with_document(
             "https://json-schema.org/draft/2020-12/meta/applicator".to_string(),
@@ -92,6 +93,7 @@ lazy_static! {
                 })),
             )
         .should_validate_formats(true)
+        .with_draft(Draft::Draft202012)
         .with_document(
             "https://json-schema.org/draft/2020-12/meta/applicator".to_string(),
             DRAFT202012_APPLICATOR.clone(),

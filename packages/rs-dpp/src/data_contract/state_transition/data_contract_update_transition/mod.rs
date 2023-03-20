@@ -58,7 +58,7 @@ impl DataContractUpdateTransition {
                 .unwrap_or_default(),
             signature_public_key_id: raw_data_contract_update_transition
                 .get_u64(SIGNATURE_PUBLIC_KEY_ID)
-                .unwrap_or_default(),
+                .unwrap_or_default() as KeyID,
             data_contract: DataContract::from_raw_object(
                 raw_data_contract_update_transition.remove(DATA_CONTRACT)?,
             )?,
@@ -72,11 +72,6 @@ impl DataContractUpdateTransition {
 
     pub fn set_data_contract(&mut self, data_contract: DataContract) {
         self.data_contract = data_contract;
-    }
-
-    /// Returns ID of the created contract
-    pub fn get_modified_data_ids(&self) -> Vec<&Identifier> {
-        vec![&self.data_contract.id]
     }
 }
 
@@ -96,6 +91,11 @@ impl StateTransitionIdentitySigned for DataContractUpdateTransition {
 }
 
 impl StateTransitionLike for DataContractUpdateTransition {
+    /// Returns ID of the created contract
+    fn get_modified_data_ids(&self) -> Vec<Identifier> {
+        vec![self.data_contract.id]
+    }
+
     fn get_protocol_version(&self) -> u32 {
         self.protocol_version
     }
@@ -181,7 +181,7 @@ mod test {
     use serde_json::json;
 
     use crate::tests::fixtures::get_data_contract_fixture;
-    use crate::{util::deserializer::get_protocol_version, version};
+    use crate::version;
 
     use super::*;
 

@@ -34,6 +34,7 @@ describe('prepareProposalHandlerFactory', () => {
   let round;
   let executionTimerMock;
   let createContextLoggerMock;
+  let quorumHash;
 
   beforeEach(function beforeEach() {
     round = 1;
@@ -78,10 +79,9 @@ describe('prepareProposalHandlerFactory', () => {
       fees: {
         processingFee: 10,
         storageFee: 100,
-        feeRefunds: {
+        refundsPerEpoch: {
           1: 15,
         },
-        feeRefundsSum: 15,
       },
     });
 
@@ -122,9 +122,13 @@ describe('prepareProposalHandlerFactory', () => {
 
     const proposerProTxHash = Uint8Array.from([1, 2, 3, 4]);
 
+    const proposedAppVersion = Long.fromInt(1);
+
     const coreChainLockedHeight = 10;
 
     const localLastCommit = {};
+
+    quorumHash = Buffer.alloc(32, 0);
 
     request = {
       height,
@@ -135,7 +139,9 @@ describe('prepareProposalHandlerFactory', () => {
       localLastCommit,
       time,
       proposerProTxHash,
+      proposedAppVersion,
       round,
+      quorumHash,
     };
   });
 
@@ -165,7 +171,9 @@ describe('prepareProposalHandlerFactory', () => {
         version: request.version,
         time: request.time,
         proposerProTxHash: Buffer.from(request.proposerProTxHash),
+        proposedAppVersion: request.proposedAppVersion,
         round,
+        quorumHash,
       },
       loggerMock,
     );
@@ -185,10 +193,9 @@ describe('prepareProposalHandlerFactory', () => {
         fees: {
           processingFee: 10 * 3,
           storageFee: 100 * 3,
-          feeRefunds: {
+          refundsPerEpoch: {
             1: 15 * 3,
           },
-          feeRefundsSum: 15 * 3,
         },
         coreChainLockedHeight: request.coreChainLockedHeight,
       },

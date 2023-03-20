@@ -32,7 +32,7 @@
 //! This module implements functions in Drive relevant to inserting documents.
 //!
 
-use dpp::data_contract::document_type::IndexLevel;
+use dpp::data_contract::document_type::{encode_unsigned_integer, IndexLevel};
 use dpp::data_contract::DriveContractExt;
 use grovedb::batch::key_info::KeyInfo;
 use grovedb::batch::key_info::KeyInfo::KnownKey;
@@ -42,6 +42,7 @@ use grovedb::EstimatedLayerCount::{ApproximateElements, PotentiallyAtMaxElements
 use grovedb::EstimatedLayerSizes::AllSubtrees;
 use grovedb::EstimatedSumTrees::NoSumTrees;
 use grovedb::{Element, EstimatedLayerInformation, TransactionArg};
+use std::borrow::Cow;
 use std::collections::HashMap;
 use std::option::Option::None;
 
@@ -57,13 +58,13 @@ use crate::drive::document::{
 };
 use crate::drive::flags::StorageFlags;
 use crate::drive::object_size_info::DocumentInfo::{
-    DocumentEstimatedAverageSize, DocumentRefAndSerialization, DocumentRefWithoutSerialization,
-    DocumentWithoutSerialization,
+    DocumentAndSerialization, DocumentEstimatedAverageSize, DocumentRefAndSerialization,
+    DocumentRefWithoutSerialization, DocumentWithoutSerialization,
 };
 use crate::drive::object_size_info::DriveKeyInfo::{Key, KeyRef};
 use crate::drive::object_size_info::KeyElementInfo::{KeyElement, KeyUnknownElementSize};
 use crate::drive::object_size_info::PathKeyElementInfo::{
-    PathFixedSizeKeyElement, PathKeyUnknownElementSize,
+    PathFixedSizeKeyRefElement, PathKeyUnknownElementSize,
 };
 use crate::drive::object_size_info::PathKeyInfo::{PathFixedSizeKeyRef, PathKeySize};
 use crate::drive::object_size_info::{
@@ -75,7 +76,6 @@ use crate::error::Error;
 use crate::fee::calculate_fee;
 use crate::fee::op::DriveOperation;
 
-use crate::common::encode::encode_unsigned_integer;
 use crate::drive::block_info::BlockInfo;
 use crate::drive::grove_operations::DirectQueryType::{StatefulDirectQuery, StatelessDirectQuery};
 use crate::drive::grove_operations::QueryTarget::QueryTargetValue;
@@ -158,9 +158,9 @@ impl Drive {
                 )
             };
             let apply_type = if estimated_costs_only_with_layer_info.is_none() {
-                BatchInsertTreeApplyType::StatefulBatchInsert
+                BatchInsertTreeApplyType::StatefulBatchInsertTree
             } else {
-                BatchInsertTreeApplyType::StatelessBatchInsert {
+                BatchInsertTreeApplyType::StatelessBatchInsertTree {
                     in_tree_using_sums: false,
                     is_sum_tree: false,
                     flags_len: storage_flags
@@ -183,7 +183,7 @@ impl Drive {
                     DocumentRefAndSerialization((document, serialized_document, storage_flags)) => {
                         let element = Element::Item(
                             serialized_document.to_vec(),
-                            StorageFlags::map_to_some_element_flags(*storage_flags),
+                            StorageFlags::map_borrowed_cow_to_some_element_flags(storage_flags),
                         );
                         let document_id_in_primary_path =
                             contract_documents_keeping_history_primary_key_path_for_document_id(
@@ -191,7 +191,24 @@ impl Drive {
                                 document_type.name.as_str(),
                                 document.id.as_slice(),
                             );
-                        PathFixedSizeKeyElement((
+                        PathFixedSizeKeyRefElement((
+                            document_id_in_primary_path,
+                            encoded_time.as_slice(),
+                            element,
+                        ))
+                    }
+                    DocumentAndSerialization((document, serialized_document, storage_flags)) => {
+                        let element = Element::Item(
+                            serialized_document.to_vec(),
+                            StorageFlags::map_borrowed_cow_to_some_element_flags(storage_flags),
+                        );
+                        let document_id_in_primary_path =
+                            contract_documents_keeping_history_primary_key_path_for_document_id(
+                                contract.id().as_bytes(),
+                                document_type.name.as_str(),
+                                document.id.as_slice(),
+                            );
+                        PathFixedSizeKeyRefElement((
                             document_id_in_primary_path,
                             encoded_time.as_slice(),
                             element,
@@ -202,7 +219,7 @@ impl Drive {
                             document.serialize(document_and_contract_info.document_type)?;
                         let element = Element::Item(
                             serialized_document,
-                            StorageFlags::map_to_some_element_flags(storage_flags.as_ref()),
+                            StorageFlags::map_borrowed_cow_to_some_element_flags(storage_flags),
                         );
                         let document_id_in_primary_path =
                             contract_documents_keeping_history_primary_key_path_for_document_id(
@@ -210,7 +227,7 @@ impl Drive {
                                 document_type.name.as_str(),
                                 document.id.as_slice(),
                             );
-                        PathFixedSizeKeyElement((
+                        PathFixedSizeKeyRefElement((
                             document_id_in_primary_path,
                             encoded_time.as_slice(),
                             element,
@@ -221,7 +238,7 @@ impl Drive {
                             document.serialize(document_and_contract_info.document_type)?;
                         let element = Element::Item(
                             serialized_document,
-                            StorageFlags::map_to_some_element_flags(*storage_flags),
+                            StorageFlags::map_borrowed_cow_to_some_element_flags(storage_flags),
                         );
                         let document_id_in_primary_path =
                             contract_documents_keeping_history_primary_key_path_for_document_id(
@@ -229,7 +246,7 @@ impl Drive {
                                 document_type.name.as_str(),
                                 document.id.as_slice(),
                             );
-                        PathFixedSizeKeyElement((
+                        PathFixedSizeKeyRefElement((
                             document_id_in_primary_path,
                             encoded_time.as_slice(),
                             element,
@@ -249,7 +266,6 @@ impl Drive {
                     }
                 };
             self.batch_insert(path_key_element_info, drive_operations)?;
-
             let path_key_element_info = if document_and_contract_info
                 .owned_document_info
                 .document_info
@@ -284,7 +300,7 @@ impl Drive {
                                 "can not get document id from estimated document",
                             )))?,
                     );
-                PathFixedSizeKeyElement((
+                PathFixedSizeKeyRefElement((
                     document_id_in_primary_path,
                     &[0],
                     Element::Reference(
@@ -297,80 +313,98 @@ impl Drive {
 
             self.batch_insert(path_key_element_info, drive_operations)?;
         } else if insert_without_check {
-            let path_key_element_info =
-                match &document_and_contract_info.owned_document_info.document_info {
-                    DocumentRefAndSerialization((document, serialized_document, storage_flags)) => {
-                        let element = Element::Item(
-                            serialized_document.to_vec(),
-                            StorageFlags::map_to_some_element_flags(*storage_flags),
-                        );
-                        PathFixedSizeKeyElement((primary_key_path, document.id.as_slice(), element))
-                    }
-                    DocumentRefWithoutSerialization((document, storage_flags)) => {
-                        let serialized_document =
-                            document.serialize(document_and_contract_info.document_type)?;
-                        let element = Element::Item(
-                            serialized_document,
-                            StorageFlags::map_to_some_element_flags(*storage_flags),
-                        );
-                        PathFixedSizeKeyElement((primary_key_path, document.id.as_slice(), element))
-                    }
-                    DocumentEstimatedAverageSize(average_size) => PathKeyUnknownElementSize((
-                        KeyInfoPath::from_known_path(primary_key_path),
-                        KeyInfo::MaxKeySize {
-                            unique_id: document_type.unique_id_for_storage().to_vec(),
-                            max_size: DEFAULT_HASH_SIZE_U8,
-                        },
-                        Element::required_item_space(*average_size, STORAGE_FLAGS_SIZE),
-                    )),
-                    DocumentWithoutSerialization((document, storage_flags)) => {
-                        let serialized_document =
-                            document.serialize(document_and_contract_info.document_type)?;
-                        let element = Element::Item(
-                            serialized_document,
-                            StorageFlags::map_to_some_element_flags(storage_flags.as_ref()),
-                        );
-                        PathFixedSizeKeyElement((primary_key_path, document.id.as_slice(), element))
-                    }
-                };
+            let path_key_element_info = match &document_and_contract_info
+                .owned_document_info
+                .document_info
+            {
+                DocumentRefAndSerialization((document, serialized_document, storage_flags)) => {
+                    let element = Element::Item(
+                        serialized_document.to_vec(),
+                        StorageFlags::map_borrowed_cow_to_some_element_flags(storage_flags),
+                    );
+                    PathFixedSizeKeyRefElement((primary_key_path, document.id.as_slice(), element))
+                }
+                DocumentAndSerialization((document, serialized_document, storage_flags)) => {
+                    let element = Element::Item(
+                        serialized_document.to_vec(),
+                        StorageFlags::map_borrowed_cow_to_some_element_flags(storage_flags),
+                    );
+                    PathFixedSizeKeyRefElement((primary_key_path, document.id.as_slice(), element))
+                }
+                DocumentRefWithoutSerialization((document, storage_flags)) => {
+                    let serialized_document =
+                        document.serialize(document_and_contract_info.document_type)?;
+                    let element = Element::Item(
+                        serialized_document,
+                        StorageFlags::map_borrowed_cow_to_some_element_flags(storage_flags),
+                    );
+                    PathFixedSizeKeyRefElement((primary_key_path, document.id.as_slice(), element))
+                }
+                DocumentEstimatedAverageSize(average_size) => PathKeyUnknownElementSize((
+                    KeyInfoPath::from_known_path(primary_key_path),
+                    KeyInfo::MaxKeySize {
+                        unique_id: document_type.unique_id_for_storage().to_vec(),
+                        max_size: DEFAULT_HASH_SIZE_U8,
+                    },
+                    Element::required_item_space(*average_size, STORAGE_FLAGS_SIZE),
+                )),
+                DocumentWithoutSerialization((document, storage_flags)) => {
+                    let serialized_document =
+                        document.serialize(document_and_contract_info.document_type)?;
+                    let element = Element::Item(
+                        serialized_document,
+                        StorageFlags::map_borrowed_cow_to_some_element_flags(storage_flags),
+                    );
+                    PathFixedSizeKeyRefElement((primary_key_path, document.id.as_slice(), element))
+                }
+            };
             self.batch_insert(path_key_element_info, drive_operations)?;
         } else {
-            let path_key_element_info =
-                match &document_and_contract_info.owned_document_info.document_info {
-                    DocumentRefAndSerialization((document, serialized_document, storage_flags)) => {
-                        let element = Element::Item(
-                            serialized_document.to_vec(),
-                            StorageFlags::map_to_some_element_flags(*storage_flags),
-                        );
-                        PathFixedSizeKeyElement((primary_key_path, document.id.as_slice(), element))
-                    }
-                    DocumentWithoutSerialization((document, storage_flags)) => {
-                        let serialized_document =
-                            document.serialize(document_and_contract_info.document_type)?;
-                        let element = Element::Item(
-                            serialized_document,
-                            StorageFlags::map_to_some_element_flags(storage_flags.as_ref()),
-                        );
-                        PathFixedSizeKeyElement((primary_key_path, document.id.as_slice(), element))
-                    }
-                    DocumentRefWithoutSerialization((document, storage_flags)) => {
-                        let serialized_document =
-                            document.serialize(document_and_contract_info.document_type)?;
-                        let element = Element::Item(
-                            serialized_document,
-                            StorageFlags::map_to_some_element_flags(*storage_flags),
-                        );
-                        PathFixedSizeKeyElement((primary_key_path, document.id.as_slice(), element))
-                    }
-                    DocumentEstimatedAverageSize(max_size) => PathKeyUnknownElementSize((
-                        KeyInfoPath::from_known_path(primary_key_path),
-                        KeyInfo::MaxKeySize {
-                            unique_id: document_type.unique_id_for_storage().to_vec(),
-                            max_size: DEFAULT_HASH_SIZE_U8,
-                        },
-                        Element::required_item_space(*max_size, STORAGE_FLAGS_SIZE),
-                    )),
-                };
+            let path_key_element_info = match &document_and_contract_info
+                .owned_document_info
+                .document_info
+            {
+                DocumentRefAndSerialization((document, serialized_document, storage_flags)) => {
+                    let element = Element::Item(
+                        serialized_document.to_vec(),
+                        StorageFlags::map_borrowed_cow_to_some_element_flags(storage_flags),
+                    );
+                    PathFixedSizeKeyRefElement((primary_key_path, document.id.as_slice(), element))
+                }
+                DocumentAndSerialization((document, serialized_document, storage_flags)) => {
+                    let element = Element::Item(
+                        serialized_document.to_vec(),
+                        StorageFlags::map_borrowed_cow_to_some_element_flags(storage_flags),
+                    );
+                    PathFixedSizeKeyRefElement((primary_key_path, document.id.as_slice(), element))
+                }
+                DocumentWithoutSerialization((document, storage_flags)) => {
+                    let serialized_document =
+                        document.serialize(document_and_contract_info.document_type)?;
+                    let element = Element::Item(
+                        serialized_document,
+                        StorageFlags::map_borrowed_cow_to_some_element_flags(storage_flags),
+                    );
+                    PathFixedSizeKeyRefElement((primary_key_path, document.id.as_slice(), element))
+                }
+                DocumentRefWithoutSerialization((document, storage_flags)) => {
+                    let serialized_document =
+                        document.serialize(document_and_contract_info.document_type)?;
+                    let element = Element::Item(
+                        serialized_document,
+                        StorageFlags::map_borrowed_cow_to_some_element_flags(storage_flags),
+                    );
+                    PathFixedSizeKeyRefElement((primary_key_path, document.id.as_slice(), element))
+                }
+                DocumentEstimatedAverageSize(max_size) => PathKeyUnknownElementSize((
+                    KeyInfoPath::from_known_path(primary_key_path),
+                    KeyInfo::MaxKeySize {
+                        unique_id: document_type.unique_id_for_storage().to_vec(),
+                        max_size: DEFAULT_HASH_SIZE_U8,
+                    },
+                    Element::required_item_space(*max_size, STORAGE_FLAGS_SIZE),
+                )),
+            };
             let apply_type = if estimated_costs_only_with_layer_info.is_none() {
                 BatchInsertApplyType::StatefulBatchInsert
             } else {
@@ -409,7 +443,7 @@ impl Drive {
         override_document: bool,
         block_info: BlockInfo,
         apply: bool,
-        storage_flags: Option<&StorageFlags>,
+        storage_flags: Option<Cow<StorageFlags>>,
         transaction: TransactionArg,
     ) -> Result<FeeResult, Error> {
         let contract = <Contract as DriveContractExt>::from_cbor(serialized_contract, None)?;
@@ -447,7 +481,7 @@ impl Drive {
         override_document: bool,
         block_info: BlockInfo,
         apply: bool,
-        storage_flags: Option<&StorageFlags>,
+        storage_flags: Option<Cow<StorageFlags>>,
         transaction: TransactionArg,
     ) -> Result<FeeResult, Error> {
         let document = DocumentStub::from_cbor(serialized_document, None, owner_id)?;
@@ -483,7 +517,7 @@ impl Drive {
         override_document: bool,
         block_info: BlockInfo,
         apply: bool,
-        storage_flags: Option<&StorageFlags>,
+        storage_flags: Option<Cow<StorageFlags>>,
         transaction: TransactionArg,
     ) -> Result<FeeResult, Error> {
         let mut drive_operations: Vec<DriveOperation> = vec![];
@@ -623,9 +657,9 @@ impl Drive {
             let path_key_info = key_path_info.add_path_info(index_path_info.clone());
 
             let apply_type = if estimated_costs_only_with_layer_info.is_none() {
-                BatchInsertTreeApplyType::StatefulBatchInsert
+                BatchInsertTreeApplyType::StatefulBatchInsertTree
             } else {
-                BatchInsertTreeApplyType::StatelessBatchInsert {
+                BatchInsertTreeApplyType::StatelessBatchInsertTree {
                     in_tree_using_sums: false,
                     is_sum_tree: false,
                     flags_len: storage_flags
@@ -670,15 +704,16 @@ impl Drive {
                         let document_reference = make_document_reference(
                             document,
                             document_and_contract_info.document_type,
-                            *storage_flags,
+                            storage_flags.as_ref().map(|flags| flags.as_ref()),
                         );
                         KeyElement((document.id.as_slice(), document_reference))
                     }
-                    DocumentWithoutSerialization((document, storage_flags)) => {
+                    DocumentWithoutSerialization((document, storage_flags))
+                    | DocumentAndSerialization((document, _, storage_flags)) => {
                         let document_reference = make_document_reference(
                             document,
                             document_and_contract_info.document_type,
-                            storage_flags.as_ref(),
+                            storage_flags.as_ref().map(|flags| flags.as_ref()),
                         );
                         KeyElement((document.id.as_slice(), document_reference))
                     }
@@ -709,15 +744,16 @@ impl Drive {
                         let document_reference = make_document_reference(
                             document,
                             document_and_contract_info.document_type,
-                            *storage_flags,
+                            storage_flags.as_ref().map(|flags| flags.as_ref()),
                         );
                         KeyElement((&[0], document_reference))
                     }
-                    DocumentWithoutSerialization((document, storage_flags)) => {
+                    DocumentWithoutSerialization((document, storage_flags))
+                    | DocumentAndSerialization((document, _, storage_flags)) => {
                         let document_reference = make_document_reference(
                             document,
                             document_and_contract_info.document_type,
-                            storage_flags.as_ref(),
+                            storage_flags.as_ref().map(|flags| flags.as_ref()),
                         );
                         KeyElement((&[0], document_reference))
                     }
@@ -819,9 +855,9 @@ impl Drive {
         }
 
         let apply_type = if estimated_costs_only_with_layer_info.is_none() {
-            BatchInsertTreeApplyType::StatefulBatchInsert
+            BatchInsertTreeApplyType::StatefulBatchInsertTree
         } else {
-            BatchInsertTreeApplyType::StatelessBatchInsert {
+            BatchInsertTreeApplyType::StatelessBatchInsertTree {
                 in_tree_using_sums: false,
                 is_sum_tree: false,
                 flags_len: storage_flags
@@ -983,9 +1019,9 @@ impl Drive {
         }
 
         let apply_type = if estimated_costs_only_with_layer_info.is_none() {
-            BatchInsertTreeApplyType::StatefulBatchInsert
+            BatchInsertTreeApplyType::StatefulBatchInsertTree
         } else {
-            BatchInsertTreeApplyType::StatelessBatchInsert {
+            BatchInsertTreeApplyType::StatelessBatchInsertTree {
                 in_tree_using_sums: false,
                 is_sum_tree: false,
                 flags_len: storage_flags
@@ -1175,6 +1211,7 @@ impl Drive {
     }
 }
 
+#[cfg(feature = "full")]
 #[cfg(test)]
 mod tests {
     use std::option::Option::None;
@@ -1190,8 +1227,9 @@ mod tests {
     use crate::drive::object_size_info::DocumentAndContractInfo;
     use crate::drive::object_size_info::DocumentInfo::DocumentRefAndSerialization;
     use crate::drive::Drive;
-    use crate::fee::default_costs::STORAGE_DISK_USAGE_CREDIT_PER_BYTE;
+    use crate::fee::default_costs::KnownCostItem::StorageDiskUsageCreditPerByte;
     use crate::fee::op::DriveOperation;
+    use crate::fee_pools::epochs::Epoch;
     use dpp::document::document_stub::DocumentStub;
 
     #[test]
@@ -1214,7 +1252,7 @@ mod tests {
                 false,
                 BlockInfo::default(),
                 true,
-                StorageFlags::optional_default_as_ref(),
+                StorageFlags::optional_default_as_cow(),
                 None,
             )
             .expect("expected to insert a document successfully");
@@ -1228,7 +1266,7 @@ mod tests {
                 false,
                 BlockInfo::default(),
                 true,
-                StorageFlags::optional_default_as_ref(),
+                StorageFlags::optional_default_as_cow(),
                 None,
             )
             .expect_err("expected not to be able to insert same document twice");
@@ -1242,7 +1280,7 @@ mod tests {
                 true,
                 BlockInfo::default(),
                 true,
-                StorageFlags::optional_default_as_ref(),
+                StorageFlags::optional_default_as_cow(),
                 None,
             )
             .expect("expected to override a document successfully");
@@ -1282,7 +1320,7 @@ mod tests {
                 false,
                 BlockInfo::default(),
                 true,
-                StorageFlags::optional_default_as_ref(),
+                StorageFlags::optional_default_as_cow(),
                 Some(&db_transaction),
             )
             .expect("expected to insert a document successfully");
@@ -1296,7 +1334,7 @@ mod tests {
                 false,
                 BlockInfo::default(),
                 true,
-                StorageFlags::optional_default_as_ref(),
+                StorageFlags::optional_default_as_cow(),
                 Some(&db_transaction),
             )
             .expect_err("expected not to be able to insert same document twice");
@@ -1310,7 +1348,7 @@ mod tests {
                 true,
                 BlockInfo::default(),
                 true,
-                StorageFlags::optional_default_as_ref(),
+                StorageFlags::optional_default_as_cow(),
                 Some(&db_transaction),
             )
             .expect("expected to override a document successfully");
@@ -1342,12 +1380,7 @@ mod tests {
 
         let random_owner_id = rand::thread_rng().gen::<[u8; 32]>();
 
-        let FeeResult {
-            storage_fee,
-            processing_fee,
-            fee_refunds: _,
-            removed_bytes_from_system: _,
-        } = drive
+        let fee_result = drive
             .add_serialized_document_for_contract(
                 &dashpay_cr_serialized_document,
                 &contract,
@@ -1356,13 +1389,20 @@ mod tests {
                 false,
                 BlockInfo::default(),
                 true,
-                StorageFlags::optional_default_as_ref(),
+                StorageFlags::optional_default_as_cow(),
                 Some(&db_transaction),
             )
             .expect("expected to insert a document successfully");
 
-        let added_bytes = storage_fee / STORAGE_DISK_USAGE_CREDIT_PER_BYTE;
-        assert_eq!((3244, 2837200), (added_bytes, processing_fee));
+        assert_eq!(
+            fee_result,
+            FeeResult {
+                storage_fee: 3244
+                    * Epoch::new(0).cost_for_known_cost_item(StorageDiskUsageCreditPerByte),
+                processing_fee: 2392120,
+                ..Default::default()
+            }
+        );
     }
 
     #[test]
@@ -1391,12 +1431,7 @@ mod tests {
 
         let random_owner_id = rand::thread_rng().gen::<[u8; 32]>();
 
-        let FeeResult {
-            storage_fee,
-            processing_fee,
-            fee_refunds: _,
-            removed_bytes_from_system: _,
-        } = drive
+        let fee_result = drive
             .add_serialized_document_for_contract(
                 &dashpay_cr_serialized_document,
                 &contract,
@@ -1405,13 +1440,20 @@ mod tests {
                 false,
                 BlockInfo::default(),
                 true,
-                StorageFlags::optional_default_as_ref(),
+                StorageFlags::optional_default_as_cow(),
                 Some(&db_transaction),
             )
             .expect("expected to insert a document successfully");
 
-        let added_bytes = storage_fee / STORAGE_DISK_USAGE_CREDIT_PER_BYTE;
-        assert_eq!((1425, 1864200), (added_bytes, processing_fee));
+        assert_eq!(
+            fee_result,
+            FeeResult {
+                storage_fee: 1425
+                    * Epoch::new(0).cost_for_known_cost_item(StorageDiskUsageCreditPerByte),
+                processing_fee: 1546190,
+                ..Default::default()
+            }
+        );
     }
 
     #[test]
@@ -1454,17 +1496,17 @@ mod tests {
                 false,
                 BlockInfo::default(),
                 false,
-                StorageFlags::optional_default_as_ref(),
+                StorageFlags::optional_default_as_cow(),
                 Some(&db_transaction),
             )
             .expect("expected to insert a document successfully");
 
-        let added_bytes = storage_fee / STORAGE_DISK_USAGE_CREDIT_PER_BYTE;
+        let added_bytes =
+            storage_fee / Epoch::new(0).cost_for_known_cost_item(StorageDiskUsageCreditPerByte);
         assert_eq!(1425, added_bytes);
-        assert_eq!(145602400, processing_fee);
+        assert_eq!(145173660, processing_fee);
     }
 
-    #[ignore]
     #[test]
     fn test_unknown_state_cost_dashpay_fee_for_add_documents() {
         let tmp_dir = TempDir::new().unwrap();
@@ -1499,7 +1541,7 @@ mod tests {
                 false,
                 BlockInfo::default(),
                 false,
-                StorageFlags::optional_default_as_ref(),
+                StorageFlags::optional_default_as_cow(),
                 Some(&db_transaction),
             )
             .expect("expected to get back fee for document insertion successfully");
@@ -1513,12 +1555,12 @@ mod tests {
                 false,
                 BlockInfo::default(),
                 true,
-                StorageFlags::optional_default_as_ref(),
+                StorageFlags::optional_default_as_cow(),
                 Some(&db_transaction),
             )
             .expect("expected to insert a document successfully");
 
-        assert_eq!(fees, actual_fees);
+        assert_eq!(fees.storage_fee, actual_fees.storage_fee);
     }
 
     #[test]
@@ -1550,12 +1592,12 @@ mod tests {
             DocumentStub::from_cbor(&dashpay_cr_serialized_document, None, Some(owner_id))
                 .expect("expected to deserialize document successfully");
 
-        let storage_flags = Some(StorageFlags::SingleEpoch(0));
+        let storage_flags = Some(Cow::Owned(StorageFlags::SingleEpoch(0)));
 
         let document_info = DocumentRefAndSerialization((
             &document,
             &dashpay_cr_serialized_document,
-            storage_flags.as_ref(),
+            storage_flags,
         ));
 
         let document_type = contract
@@ -1654,21 +1696,16 @@ mod tests {
             .document_type_for_name("domain")
             .expect("expected to get a document type");
 
-        let storage_flags = Some(StorageFlags::SingleEpoch(0));
+        let storage_flags = Some(Cow::Owned(StorageFlags::SingleEpoch(0)));
 
-        let FeeResult {
-            storage_fee,
-            processing_fee,
-            fee_refunds: _,
-            removed_bytes_from_system: _,
-        } = drive
+        let fee_result = drive
             .add_document_for_contract(
                 DocumentAndContractInfo {
                     owned_document_info: OwnedDocumentInfo {
                         document_info: DocumentRefAndSerialization((
                             &document,
                             &dpns_domain_serialized_document,
-                            storage_flags.as_ref(),
+                            storage_flags,
                         )),
                         owner_id: None,
                     },
@@ -1682,8 +1719,15 @@ mod tests {
             )
             .expect("expected to insert a document successfully");
 
-        let added_bytes = storage_fee / STORAGE_DISK_USAGE_CREDIT_PER_BYTE;
-        assert_eq!((1983, 2555400), (added_bytes, processing_fee));
+        assert_eq!(
+            fee_result,
+            FeeResult {
+                storage_fee: 1983
+                    * Epoch::new(0).cost_for_known_cost_item(StorageDiskUsageCreditPerByte),
+                processing_fee: 2177870,
+                ..Default::default()
+            }
+        );
 
         drive
             .grove
@@ -1724,7 +1768,7 @@ mod tests {
                 false,
                 BlockInfo::default(),
                 true,
-                StorageFlags::optional_default_as_ref(),
+                StorageFlags::optional_default_as_cow(),
                 None,
             )
             .expect("expected to insert a document successfully");
@@ -1737,7 +1781,7 @@ mod tests {
                 false,
                 BlockInfo::default(),
                 true,
-                StorageFlags::optional_default_as_ref(),
+                StorageFlags::optional_default_as_cow(),
                 None,
             )
             .expect("expected to insert a document successfully");
@@ -1750,7 +1794,7 @@ mod tests {
                 false,
                 BlockInfo::default(),
                 true,
-                StorageFlags::optional_default_as_ref(),
+                StorageFlags::optional_default_as_cow(),
                 None,
             )
             .expect("expected to insert a document successfully");
@@ -1782,7 +1826,7 @@ mod tests {
                 false,
                 BlockInfo::default(),
                 true,
-                StorageFlags::optional_default_as_ref(),
+                StorageFlags::optional_default_as_cow(),
                 None,
             )
             .expect("expected to insert a document successfully");
@@ -1795,7 +1839,7 @@ mod tests {
                 false,
                 BlockInfo::default(),
                 true,
-                StorageFlags::optional_default_as_ref(),
+                StorageFlags::optional_default_as_cow(),
                 None,
             )
             .expect_err(
@@ -1822,7 +1866,7 @@ mod tests {
                 None,
                 BlockInfo::default(),
                 true,
-                StorageFlags::optional_default_as_ref(),
+                StorageFlags::optional_default_as_cow(),
                 Some(&db_transaction),
             )
             .expect("expected to apply contract successfully");
@@ -1840,7 +1884,7 @@ mod tests {
                 true,
                 BlockInfo::default(),
                 true,
-                StorageFlags::optional_default_as_ref(),
+                StorageFlags::optional_default_as_cow(),
                 Some(&db_transaction),
             )
             .expect("should create dash tld");
@@ -1866,7 +1910,7 @@ mod tests {
                 true,
                 BlockInfo::default(),
                 true,
-                StorageFlags::optional_default_as_ref(),
+                StorageFlags::optional_default_as_cow(),
                 Some(&db_transaction),
             )
             .expect("should add random tld");

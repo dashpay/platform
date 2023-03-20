@@ -3,8 +3,12 @@ use std::convert::TryInto;
 use anyhow::Result;
 use async_trait::async_trait;
 
+use crate::consensus::basic::invalid_data_contract_version_error::InvalidDataContractVersionError;
 use crate::{
-    data_contract::{state_transition::DataContractUpdateTransition, DataContract},
+    data_contract::{
+        state_transition::data_contract_update_transition::DataContractUpdateTransition,
+        DataContract,
+    },
     errors::consensus::basic::BasicError,
     state_repository::StateRepositoryLike,
     state_transition::StateTransitionLike,
@@ -19,7 +23,7 @@ where
     state_repository: SR,
 }
 
-#[async_trait]
+#[async_trait(?Send)]
 impl<SR> AsyncDataValidator for DataContractUpdateTransitionStateValidator<SR>
 where
     SR: StateRepositoryLike,
@@ -67,7 +71,7 @@ pub async fn validate_data_contract_update_transition_state(
     let existing_data_contract: DataContract = match maybe_existing_data_contract {
         None => {
             let err = BasicError::DataContractNotPresent {
-                data_contract_id: state_transition.data_contract.id.clone(),
+                data_contract_id: state_transition.data_contract.id,
             };
             result.add_error(err);
             return Ok(result);
@@ -80,10 +84,9 @@ pub async fn validate_data_contract_update_transition_state(
     let new_version = state_transition.data_contract.version;
 
     if new_version < old_version || new_version - old_version != 1 {
-        let err = BasicError::InvalidDataContractVersionError {
-            expected_version: old_version + 1,
-            version: new_version,
-        };
+        let err = BasicError::InvalidDataContractVersionError(
+            InvalidDataContractVersionError::new(old_version + 1, new_version),
+        );
         result.add_error(err);
     }
 
@@ -94,7 +97,7 @@ pub async fn validate_data_contract_update_transition_state(
 mod test {
     use super::*;
     use crate::{
-        data_contract::state_transition::DataContractUpdateTransition,
+        data_contract::state_transition::data_contract_update_transition::DataContractUpdateTransition,
         state_repository::MockStateRepositoryLike, state_transition::StateTransitionLike,
         tests::fixtures::get_data_contract_fixture,
     };

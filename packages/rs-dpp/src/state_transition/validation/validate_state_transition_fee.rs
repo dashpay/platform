@@ -1,6 +1,9 @@
 use anyhow::Context;
 use std::convert::TryInto;
 
+use crate::consensus::basic::state_transition::InvalidStateTransitionTypeError;
+use crate::data_contract::errors::IdentityNotPresentError;
+use crate::state_transition::StateTransitionType;
 use crate::{
     consensus::fee::FeeError,
     identity::{
@@ -23,7 +26,7 @@ impl<SR> StateTransitionFeeValidator<SR>
 where
     SR: StateRepositoryLike,
 {
-    fn new(state_repository: Arc<SR>) -> Self {
+    pub fn new(state_repository: Arc<SR>) -> Self {
         let asset_lock_transition_output_fetcher =
             AssetLockTransactionOutputFetcher::new(state_repository.clone());
         StateTransitionFeeValidator {
@@ -73,8 +76,10 @@ where
                     .map(TryInto::try_into)
                     .transpose()
                     .map_err(Into::into)?
-                    .ok_or_else(|| ProtocolError::IdentityNotPresentError {
-                        id: identity_id.clone(),
+                    .ok_or_else(|| {
+                        ProtocolError::IdentityNotPresentError(IdentityNotPresentError::new(
+                            identity_id.clone(),
+                        ))
                     })?;
 
                 if execution_context.is_dry_run() {
@@ -112,7 +117,11 @@ where
                 balance
             }
             StateTransition::IdentityCreditWithdrawal(_) => {
-                return Err(ProtocolError::InvalidStateTransitionTypeError);
+                return Err(ProtocolError::InvalidStateTransitionTypeError(
+                    InvalidStateTransitionTypeError::new(
+                        StateTransitionType::IdentityCreditWithdrawal as u8,
+                    ),
+                ));
             }
         };
 
@@ -141,8 +150,10 @@ where
             .map(TryInto::try_into)
             .transpose()
             .map_err(Into::into)?
-            .ok_or_else(|| ProtocolError::IdentityNotPresentError {
-                id: identity_id.clone(),
+            .ok_or_else(|| {
+                ProtocolError::IdentityNotPresentError(IdentityNotPresentError::new(
+                    identity_id.clone(),
+                ))
             })?;
 
         Ok(identity.get_balance())
@@ -153,13 +164,13 @@ where
 mod test {
     use std::sync::Arc;
 
+    use crate::data_contract::state_transition::data_contract_create_transition::DataContractCreateTransition;
     use crate::identity::state_transition::identity_topup_transition::IdentityTopUpTransition;
     use crate::state_transition::StateTransitionLike;
     use crate::tests::fixtures::identity_topup_transition_fixture_json;
     use crate::ProtocolError;
     use crate::{
         consensus::fee::FeeError,
-        data_contract::state_transition::DataContractCreateTransition,
         document::{document_transition::Action, DocumentsBatchTransition},
         identity::state_transition::identity_credit_withdrawal_transition::IdentityCreditWithdrawalTransition,
         state_repository::MockStateRepositoryLike,
@@ -383,9 +394,12 @@ mod test {
             .validate(&transition.into())
             .await
             .expect_err("error should be returned");
-        assert!(matches!(
-            result,
-            ProtocolError::InvalidStateTransitionTypeError
-        ))
+
+        match result {
+            ProtocolError::InvalidStateTransitionTypeError(err) => {
+                assert_eq!(err.transition_type(), 6);
+            }
+            _ => panic!("expected InvalidStateTransitionTypeError, got {}", result),
+        }
     }
 }

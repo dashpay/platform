@@ -5,18 +5,21 @@ use anyhow::anyhow;
 use ciborium::value::Value as CborValue;
 use integer_encoding::VarInt;
 use itertools::{Either, Itertools};
+use platform_value::btreemap_extensions::BTreeValueMapHelper;
+use platform_value::Value;
 use serde::{Deserialize, Serialize};
 use serde_json::Value as JsonValue;
 
+use crate::consensus::basic::document::InvalidDocumentTypeError;
 use crate::data_contract::contract_config;
 use crate::data_contract::contract_config::{
     ContractConfig, DEFAULT_CONTRACT_CAN_BE_DELETED, DEFAULT_CONTRACT_DOCUMENTS_KEEPS_HISTORY,
     DEFAULT_CONTRACT_DOCUMENT_MUTABILITY, DEFAULT_CONTRACT_KEEPS_HISTORY,
     DEFAULT_CONTRACT_MUTABILITY,
 };
-use crate::data_contract::extra::common::{cbor_map_into_serde_btree_map, cbor_map_to_btree_map};
+
 use crate::data_contract::get_binary_properties_from_schema::get_binary_properties;
-use crate::util::cbor_value::{cbor_value_to_json_value, CborBTreeMapHelper, CborCanonicalMap};
+use crate::util::cbor_value::CborCanonicalMap;
 use crate::util::deserializer;
 use crate::util::deserializer::SplitProtocolVersionOutcome;
 use crate::util::json_value::{JsonValueExt, ReplaceWith};
@@ -142,7 +145,7 @@ impl DataContract {
             main_message_bytes: contract_cbor_bytes,
         } = deserializer::split_protocol_version(cbor_bytes.as_ref())?;
 
-        let data_contract_map: BTreeMap<String, CborValue> =
+        let data_contract_cbor_map: BTreeMap<String, CborValue> =
             ciborium::de::from_reader(contract_cbor_bytes).map_err(|_| {
                 ProtocolError::DecodingError(format!(
                     "unable to decode contract with protocol version {} offset {}",
@@ -150,43 +153,26 @@ impl DataContract {
                 ))
             })?;
 
+        let data_contract_map: BTreeMap<String, Value> =
+            Value::convert_from_cbor_map(data_contract_cbor_map);
+
         let contract_id: [u8; 32] = data_contract_map.get_identifier(property_names::ID)?;
         let owner_id: [u8; 32] = data_contract_map.get_identifier(property_names::OWNER_ID)?;
         let schema = data_contract_map.get_string(property_names::SCHEMA)?;
         let version = data_contract_map.get_integer(property_names::VERSION)?;
 
         // Defs
-        let defs = data_contract_map
-            .get("$defs")
-            .and_then(CborValue::as_map)
-            .map(|definition_map| {
-                let mut res = BTreeMap::<String, JsonValue>::new();
-                for (key, value) in definition_map {
-                    let key_string = key.as_text().ok_or_else(|| {
-                        ProtocolError::DecodingError(String::from(
-                            "Expect $defs keys to be strings",
-                        ))
-                    })?;
-                    let json_value = cbor_value_to_json_value(value)?;
-                    res.insert(String::from(key_string), json_value);
-                }
-                Ok(res)
-            })
-            .map_or(Ok(None), |r: Result<_, ProtocolError>| r.map(Some))?;
+        let defs =
+            data_contract_map.get_optional_inner_str_json_value_map::<BTreeMap<_, _>>("$defs")?;
 
         // Documents
-        let documents_cbor_value = data_contract_map
-            .get("documents")
-            .ok_or_else(|| ProtocolError::DecodingError(String::from("unable to get documents")))?;
-        let contract_documents_cbor_map = documents_cbor_value
-            .as_map()
-            .ok_or_else(|| ProtocolError::DecodingError(String::from("documents must be a map")))?;
-
-        let documents = cbor_map_into_serde_btree_map(contract_documents_cbor_map.clone())?;
+        let documents: BTreeMap<String, JsonValue> = data_contract_map
+            .get_inner_str_json_value_map("documents")
+            .map_err(ProtocolError::ValueError)?;
 
         let mutability = get_contract_configuration_properties(&data_contract_map)
             .map_err(|e| ProtocolError::ParsingError(e.to_string()))?;
-        let definition_references = get_definitions(&data_contract_map);
+        let definition_references = get_definitions(&data_contract_map)?;
         let document_types = get_document_types(
             &data_contract_map,
             definition_references,
@@ -284,6 +270,10 @@ impl DataContract {
         self.entropy
     }
 
+    pub fn set_entropy(&mut self, entropy: [u8; 32]) {
+        self.entropy = entropy;
+    }
+
     pub fn owner_id(&self) -> &Identifier {
         &self.owner_id
     }
@@ -334,10 +324,10 @@ impl DataContract {
             .documents
             .get(doc_type)
             .ok_or(ProtocolError::DataContractError(
-                DataContractError::InvalidDocumentTypeError {
-                    doc_type: doc_type.to_owned(),
-                    data_contract: self.clone(),
-                },
+                DataContractError::InvalidDocumentTypeError(InvalidDocumentTypeError::new(
+                    doc_type.to_owned(),
+                    self.id.clone(),
+                )),
             ))?;
         Ok(document)
     }
@@ -345,10 +335,10 @@ impl DataContract {
     pub fn get_document_schema_ref(&self, doc_type: &str) -> Result<String, ProtocolError> {
         if !self.is_document_defined(doc_type) {
             return Err(ProtocolError::DataContractError(
-                DataContractError::InvalidDocumentTypeError {
-                    doc_type: doc_type.to_owned(),
-                    data_contract: self.clone(),
-                },
+                DataContractError::InvalidDocumentTypeError(InvalidDocumentTypeError::new(
+                    doc_type.to_owned(),
+                    self.id.clone(),
+                )),
             ));
         };
 
@@ -369,10 +359,10 @@ impl DataContract {
     ) -> Result<&BTreeMap<String, JsonValue>, ProtocolError> {
         self.get_optional_binary_properties(doc_type)?
             .ok_or(ProtocolError::DataContractError(
-                DataContractError::InvalidDocumentTypeError {
-                    doc_type: doc_type.to_owned(),
-                    data_contract: self.clone(),
-                },
+                DataContractError::InvalidDocumentTypeError(InvalidDocumentTypeError::new(
+                    doc_type.to_owned(),
+                    self.id.clone(),
+                )),
             ))
     }
 
@@ -482,7 +472,7 @@ impl TryFrom<Vec<u8>> for DataContract {
 }
 
 pub fn get_contract_configuration_properties(
-    contract: &BTreeMap<String, CborValue>,
+    contract: &BTreeMap<String, Value>,
 ) -> Result<ContractConfig, ProtocolError> {
     let keeps_history = contract
         .get_optional_bool(contract_config::property::KEEPS_HISTORY)?
@@ -513,8 +503,8 @@ pub fn get_contract_configuration_properties(
 }
 
 pub fn get_document_types(
-    contract: &BTreeMap<String, CborValue>,
-    definition_references: BTreeMap<String, &CborValue>,
+    contract: &BTreeMap<String, Value>,
+    definition_references: BTreeMap<String, &Value>,
     documents_keep_history_contract_default: bool,
     documents_mutable_contract_default: bool,
 ) -> Result<BTreeMap<String, DocumentType>, ProtocolError> {
@@ -545,7 +535,7 @@ pub fn get_document_types(
             )));
         };
 
-        let document_type = DocumentType::from_cbor_value(
+        let document_type = DocumentType::from_platform_value(
             type_key_str,
             document_type_value_map,
             &definition_references,
@@ -557,18 +547,20 @@ pub fn get_document_types(
     Ok(contract_document_types)
 }
 
-pub fn get_definitions(contract: &BTreeMap<String, CborValue>) -> BTreeMap<String, &CborValue> {
-    let definition_references = match contract.get("$defs") {
-        None => BTreeMap::new(),
-        Some(definition_value) => {
-            let definition_map = definition_value.as_map();
-            match definition_map {
-                None => BTreeMap::new(),
-                Some(key_value) => cbor_map_to_btree_map(key_value),
-            }
-        }
-    };
-    definition_references
+pub fn get_definitions(
+    contract: &BTreeMap<String, Value>,
+) -> Result<BTreeMap<String, &Value>, ProtocolError> {
+    Ok(contract
+        .get("$defs")
+        .map(|definition_value| {
+            definition_value
+                .as_map()
+                .map(Value::map_ref_into_btree_map)
+                .transpose()
+        })
+        .transpose()?
+        .flatten()
+        .unwrap_or_default())
 }
 
 #[cfg(test)]
@@ -596,7 +588,7 @@ mod test {
         let data_contract_bytes = data_contract
             .to_buffer()
             .expect("data contract should be converted into the bytes");
-        let data_contract_restored = DataContract::from_buffer(&data_contract_bytes)
+        let data_contract_restored = DataContract::from_buffer(data_contract_bytes)
             .expect("data contract should be created from bytes");
 
         assert_eq!(
@@ -624,7 +616,7 @@ mod test {
             .to_buffer()
             .expect("data contract should be converted into the bytes");
 
-        let data_contract_restored = DataContract::from_buffer(&data_contract_bytes)
+        let data_contract_restored = DataContract::from_buffer(data_contract_bytes)
             .expect("data contract should be created from bytes");
 
         assert_eq!(
@@ -645,8 +637,7 @@ mod test {
     #[test]
     fn conversion_to_buffer_from_buffer_too_high_version() {
         init();
-        let mut data_contract = get_data_contract_fixture(None);
-        data_contract.protocol_version;
+        let data_contract = get_data_contract_fixture(None);
 
         let data_contract_bytes = data_contract
             .to_buffer()
@@ -796,7 +787,7 @@ mod test {
     fn deserialize_dpp_cbor() {
         let data_contract_cbor = get_data_contract_cbor_bytes();
 
-        let data_contract = DataContract::from_buffer(&data_contract_cbor).unwrap();
+        let data_contract = DataContract::from_buffer(data_contract_cbor).unwrap();
 
         assert_eq!(data_contract.version(), 1);
         assert_eq!(data_contract.protocol_version(), 1);

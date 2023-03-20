@@ -3,7 +3,7 @@ const fs = require('fs');
 
 const publicIp = require('public-ip');
 
-const BlsSignatures = require('bls-signatures');
+const BlsSignatures = require('@dashevo/bls');
 
 const { PrivateKey } = require('@dashevo/dashcore-lib');
 
@@ -17,7 +17,6 @@ const {
 /**
  * @param {ConfigFile} configFile
  * @param {generateBlsKeys} generateBlsKeys
- * @param {tenderdashInitTask} tenderdashInitTask
  * @param {registerMasternodeTask} registerMasternodeTask
  * @param {renderServiceTemplates} renderServiceTemplates
  * @param {writeServiceConfigs} writeServiceConfigs
@@ -28,7 +27,6 @@ const {
 function setupRegularPresetTaskFactory(
   configFile,
   generateBlsKeys,
-  tenderdashInitTask,
   registerMasternodeTask,
   renderServiceTemplates,
   writeServiceConfigs,
@@ -110,7 +108,7 @@ function setupRegularPresetTaskFactory(
           const { PrivateKey: BlsPrivateKey } = blsSignatures;
 
           const privateKey = BlsPrivateKey.fromBytes(operatorBlsPrivateKeyBuffer, true);
-          const publicKey = privateKey.getPublicKey();
+          const publicKey = privateKey.getG1();
           const publicKeyHex = Buffer.from(publicKey.serialize()).toString('hex');
 
           ctx.config.set('core.masternode.operator.privateKey', ctx.operatorBlsPrivateKey);
@@ -118,6 +116,9 @@ function setupRegularPresetTaskFactory(
           ctx.operator = {
             publicKey: publicKeyHex,
           };
+
+          privateKey.delete();
+          publicKey.delete();
 
           // eslint-disable-next-line no-param-reassign
           task.output = `BLS public key: ${publicKeyHex}\nBLS private key: ${ctx.operatorBlsPrivateKey}`;
@@ -239,11 +240,6 @@ function setupRegularPresetTaskFactory(
 
           return saveCertificateTask(ctx.config);
         },
-      },
-      {
-        title: 'Initialize Tenderdash',
-        enabled: (ctx) => ctx.preset !== PRESET_MAINNET,
-        task: (ctx) => tenderdashInitTask(ctx.config),
       },
     ]);
   }

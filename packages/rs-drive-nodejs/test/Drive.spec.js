@@ -1,13 +1,22 @@
 const fs = require('fs');
 
+const { PrivateKey } = require('@dashevo/dashcore-lib');
+
 const { expect, use } = require('chai');
 use(require('dirty-chai'));
 
+const DashPlatformProtocol = require('@dashevo/dpp');
+
 const Document = require('@dashevo/dpp/lib/document/Document');
+const Identifier = require('@dashevo/dpp/lib/Identifier');
 
 const getDataContractFixture = require('@dashevo/dpp/lib/test/fixtures/getDataContractFixture');
 const getDocumentsFixture = require('@dashevo/dpp/lib/test/fixtures/getDocumentsFixture');
 const getIdentityFixture = require('@dashevo/dpp/lib/test/fixtures/getIdentityFixture');
+const generateRandomIdentifier = require('@dashevo/dpp/lib/test/utils/generateRandomIdentifier');
+
+const withdrawalContractDocumentsSchema = require('@dashevo/withdrawals-contract/schema/withdrawals-documents.json');
+const withdrawalContractIds = require('@dashevo/withdrawals-contract/lib/systemIds');
 
 const {
   expectFeeResult,
@@ -19,19 +28,46 @@ const FeeResult = require('../FeeResult');
 
 const TEST_DATA_PATH = './test_data';
 
-describe('Drive', () => {
+describe('Drive', function main() {
+  this.timeout(10000);
+
   let drive;
   let dataContract;
   let identity;
   let blockInfo;
   let documents;
   let initialRootHash;
+  let withdrawalsDataContract;
 
   beforeEach(async () => {
     drive = new Drive(TEST_DATA_PATH, {
-      dataContractsGlobalCacheSize: 500,
-      dataContractsBlockCacheSize: 500,
+      drive: {
+        dataContractsGlobalCacheSize: 500,
+        dataContractsBlockCacheSize: 500,
+      },
+      core: {
+        rpc: {
+          url: '127.0.0.1',
+          username: '',
+          password: '',
+        },
+      },
     });
+
+    const dpp = new DashPlatformProtocol({
+      stateRepository: {
+        fetchDataContract: () => { },
+      },
+    });
+
+    await dpp.initialize();
+
+    withdrawalsDataContract = dpp.dataContract.create(
+      generateRandomIdentifier(),
+      withdrawalContractDocumentsSchema,
+    );
+
+    withdrawalsDataContract.id = Identifier.from(withdrawalContractIds.contractId);
 
     dataContract = getDataContractFixture();
     identity = getIdentityFixture();
@@ -465,38 +501,527 @@ describe('Drive', () => {
     });
   });
 
+  describe('#fetchIdentity', () => {
+    beforeEach(async () => {
+      await drive.createInitialStateStructure();
+
+      initialRootHash = await drive.getGroveDB().getRootHash();
+    });
+
+    it('should return null if identity not exists', async () => {
+      const result = await drive.fetchIdentity(Buffer.alloc(32));
+
+      expect(result).to.be.null();
+    });
+
+    it('should return identity if it is present', async () => {
+      await drive.insertIdentity(identity, blockInfo);
+
+      const result = await drive.fetchIdentity(identity.getId());
+
+      expect(result.toBuffer()).to.deep.equal(identity.toBuffer());
+    });
+  });
+
+  describe('#fetchIdentityWithCosts', () => {
+    beforeEach(async () => {
+      await drive.createInitialStateStructure();
+
+      initialRootHash = await drive.getGroveDB().getRootHash();
+    });
+
+    it('should return null if contract not exists', async () => {
+      const result = await drive.fetchIdentityWithCosts(Buffer.alloc(32), blockInfo.epoch);
+
+      expect(result).to.be.an.instanceOf(Array);
+      expect(result).to.have.lengthOf(2);
+
+      const [fetchedIdentity, feeResult] = result;
+
+      expect(fetchedIdentity).to.be.null();
+
+      expect(feeResult).to.be.instanceOf(FeeResult);
+
+      expect(feeResult.processingFee).to.greaterThan(0, 'processing fee must be higher than 0');
+      expect(feeResult.storageFee).to.be.equal(0, 'storage fee must be equal to 0');
+    });
+
+    it('should return contract if contract is present', async () => {
+      await drive.insertIdentity(identity, blockInfo);
+
+      const result = await drive.fetchIdentityWithCosts(identity.getId(), blockInfo.epoch);
+
+      expect(result).to.be.an.instanceOf(Array);
+      expect(result).to.have.lengthOf(2);
+
+      const [fetchedIdentity, feeResult] = result;
+
+      expect(fetchedIdentity.toBuffer()).to.deep.equal(identity.toBuffer());
+
+      expect(feeResult).to.be.an.instanceOf(FeeResult);
+
+      expect(feeResult.processingFee).to.greaterThan(0, 'processing fee must be higher than 0');
+      expect(feeResult.storageFee).to.be.equal(0, 'storage fee must be equal to 0');
+    });
+  });
+
+  describe('#fetchIdentityBalance', () => {
+    beforeEach(async () => {
+      await drive.createInitialStateStructure();
+
+      initialRootHash = await drive.getGroveDB().getRootHash();
+    });
+
+    it('should return null if identity not exists', async () => {
+      const result = await drive.fetchIdentityBalance(Buffer.alloc(32));
+
+      expect(result).to.be.null();
+    });
+
+    it('should return balance if identity is present', async () => {
+      await drive.insertIdentity(identity, blockInfo);
+
+      const balance = await drive.fetchIdentityBalance(identity.getId());
+
+      expect(balance).to.deep.equal(identity.getBalance());
+    });
+  });
+
+  describe('#fetchIdentityBalanceWithCosts', () => {
+    beforeEach(async () => {
+      await drive.createInitialStateStructure();
+
+      initialRootHash = await drive.getGroveDB().getRootHash();
+    });
+
+    it('should return null if identity not exists', async () => {
+      const result = await drive.fetchIdentityBalanceWithCosts(Buffer.alloc(32), blockInfo);
+
+      expect(result).to.be.an.instanceOf(Array);
+      expect(result).to.have.lengthOf(2);
+
+      const [balance, feeResult] = result;
+
+      expect(balance).to.be.null();
+
+      expect(feeResult).to.be.instanceOf(FeeResult);
+
+      expect(feeResult.processingFee).to.greaterThan(0, 'processing fee must be higher than 0');
+      expect(feeResult.storageFee).to.be.equal(0, 'storage fee must be equal to 0');
+    });
+
+    it('should return contract if identity is present', async () => {
+      await drive.insertIdentity(identity, blockInfo);
+
+      const result = await drive.fetchIdentityBalanceWithCosts(identity.getId(), blockInfo);
+
+      expect(result).to.be.an.instanceOf(Array);
+      expect(result).to.have.lengthOf(2);
+
+      const [balance, feeResult] = result;
+
+      expect(balance).to.equal(identity.getBalance());
+
+      expect(feeResult).to.be.an.instanceOf(FeeResult);
+
+      expect(feeResult.processingFee).to.greaterThan(0, 'processing fee must be higher than 0');
+      expect(feeResult.storageFee).to.be.equal(0, 'storage fee must be equal to 0');
+    });
+  });
+
+  describe('#fetchIdentityBalanceIncludeDebtWithCosts', () => {
+    beforeEach(async () => {
+      await drive.createInitialStateStructure();
+
+      initialRootHash = await drive.getGroveDB().getRootHash();
+    });
+
+    it('should return null if identity not exists', async () => {
+      const result = await drive.fetchIdentityBalanceIncludeDebtWithCosts(
+        Buffer.alloc(32),
+        blockInfo,
+      );
+
+      expect(result).to.be.an.instanceOf(Array);
+      expect(result).to.have.lengthOf(2);
+
+      const [balance, feeResult] = result;
+
+      expect(balance).to.be.null();
+
+      expect(feeResult).to.be.instanceOf(FeeResult);
+
+      expect(feeResult.processingFee).to.greaterThan(0, 'processing fee must be higher than 0');
+      expect(feeResult.storageFee).to.be.equal(0, 'storage fee must be equal to 0');
+    });
+
+    it('should return balance if identity is present', async () => {
+      await drive.insertIdentity(identity, blockInfo);
+
+      const result = await drive.fetchIdentityBalanceIncludeDebtWithCosts(
+        identity.getId(),
+        blockInfo,
+      );
+
+      expect(result).to.be.an.instanceOf(Array);
+      expect(result).to.have.lengthOf(2);
+
+      const [balance, feeResult] = result;
+
+      expect(balance).to.equal(identity.getBalance());
+
+      expect(feeResult).to.be.an.instanceOf(FeeResult);
+
+      expect(feeResult.processingFee).to.greaterThan(0, 'processing fee must be higher than 0');
+      expect(feeResult.storageFee).to.be.equal(0, 'storage fee must be equal to 0');
+    });
+  });
+
+  describe('#addToIdentityBalance', () => {
+    beforeEach(async () => {
+      await drive.createInitialStateStructure();
+    });
+
+    it('should add to balance', async () => {
+      await drive.insertIdentity(identity, blockInfo);
+
+      const amount = 100;
+
+      const result = await drive.addToIdentityBalance(
+        identity.getId(),
+        amount,
+        blockInfo,
+      );
+
+      expect(result).to.be.an.instanceOf(FeeResult);
+
+      expect(result.processingFee).to.greaterThan(0, 'processing fee must be higher than 0');
+      expect(result.storageFee).to.be.equal(0, 'storage fee must be equal to 0');
+
+      const fetchedIdentity = await drive.fetchIdentity(identity.getId());
+
+      expect(fetchedIdentity.getBalance()).to.equals(identity.getBalance() + amount);
+    });
+
+    it('should not update state with dry run', async () => {
+      initialRootHash = await drive.getGroveDB().getRootHash();
+
+      const result = await drive.addToIdentityBalance(
+        identity.getId(),
+        100,
+        blockInfo,
+        false,
+        true,
+      );
+
+      expect(result).to.be.an.instanceOf(FeeResult);
+
+      expect(result.processingFee).to.greaterThan(0, 'processing fee must be higher than 0');
+      expect(result.storageFee).to.be.equal(0, 'storage fee must be equal to 0');
+
+      expect(await drive.getGroveDB().getRootHash()).to.deep.equals(initialRootHash);
+    });
+  });
+
+  describe('#removeFromIdentitiyBalance', () => {
+    beforeEach(async () => {
+      await drive.createInitialStateStructure();
+    });
+
+    it('should remove from balance', async () => {
+      await drive.insertIdentity(identity, blockInfo);
+
+      const amount = 2;
+
+      const result = await drive.removeFromIdentityBalance(
+        identity.getId(),
+        amount,
+        blockInfo,
+      );
+
+      expect(result).to.be.an.instanceOf(FeeResult);
+
+      expect(result.processingFee).to.greaterThan(0, 'processing fee must be higher than 0');
+      expect(result.storageFee).to.be.equal(0, 'storage fee must be equal to 0');
+
+      const fetchedIdentity = await drive.fetchIdentity(identity.getId());
+
+      expect(fetchedIdentity.getBalance()).to.equals(
+        identity.getBalance() - amount,
+      );
+    });
+
+    it('should not update state with dry run', async () => {
+      initialRootHash = await drive.getGroveDB().getRootHash();
+
+      const amount = 2;
+
+      const result = await drive.removeFromIdentityBalance(
+        identity.getId(),
+        amount,
+        blockInfo,
+        false,
+        true,
+      );
+
+      expect(result).to.be.an.instanceOf(FeeResult);
+
+      expect(result.processingFee).to.greaterThan(0, 'processing fee must be higher than 0');
+      expect(result.storageFee).to.be.equal(0, 'storage fee must be equal to 0');
+
+      expect(await drive.getGroveDB().getRootHash()).to.deep.equals(initialRootHash);
+    });
+  });
+
+  describe('#applyFeesToIdentityBalance', () => {
+    beforeEach(async () => {
+      await drive.createInitialStateStructure();
+    });
+
+    it('should change balance according to provided fees', async () => {
+      blockInfo.epoch = 3;
+
+      await drive.insertIdentity(identity, blockInfo);
+
+      const feeResult = FeeResult.create(10000, 10, [{
+        identifier: identity.getId().toBuffer(),
+        creditsPerEpoch: { 0: 1000000 },
+      }]);
+
+      const result = await drive.applyFeesToIdentityBalance(
+        identity.getId(),
+        feeResult,
+      );
+
+      expect(result).to.be.an.instanceOf(FeeResult);
+
+      const fetchedIdentity = await drive.fetchIdentity(identity.getId());
+
+      expect(fetchedIdentity.getBalance()).to.not.equals(
+        identity.getBalance(),
+      );
+    });
+  });
+
+  describe('#addToSystemCredits', () => {
+    beforeEach(async () => {
+      await drive.createInitialStateStructure();
+    });
+
+    it('should add to system credits', async () => {
+      await drive.addToSystemCredits(
+        100,
+      );
+    });
+  });
+
+  describe('#fetchIdentitiesByPublicKeyHashes', () => {
+    beforeEach(async () => {
+      await drive.createInitialStateStructure();
+
+      initialRootHash = await drive.getGroveDB().getRootHash();
+    });
+
+    it('should return empty array if identity not exists', async () => {
+      const result = await drive.fetchIdentitiesByPublicKeyHashes([Buffer.alloc(20)]);
+
+      expect(result).to.be.instanceOf(Array);
+      expect(result).to.be.empty();
+    });
+
+    it('should return identities if it is present', async () => {
+      await drive.insertIdentity(identity, blockInfo);
+
+      const result = await drive.fetchIdentitiesByPublicKeyHashes(
+        identity.getPublicKeys().map((k) => k.hash()),
+      );
+
+      expect(result).to.deep.equal(identity.getPublicKeys().map(() => identity));
+    });
+  });
+
+  describe('#addKeysToIdentity', () => {
+    beforeEach(async () => {
+      await drive.createInitialStateStructure();
+    });
+
+    it('should add keys to identity', async () => {
+      const keysToAdd = [identity.getPublicKeys().pop()];
+
+      await drive.insertIdentity(identity, blockInfo);
+
+      const result = await drive.addKeysToIdentity(
+        identity.getId(),
+        keysToAdd,
+        blockInfo,
+      );
+
+      expectFeeResult(result);
+
+      const fetchedIdentity = await drive.fetchIdentity(identity.getId());
+
+      expect(fetchedIdentity.getPublicKeys()).to.have.lengthOf(
+        identity.getPublicKeys().length + keysToAdd.length,
+      );
+    });
+
+    it('should not update state with dry run', async () => {
+      initialRootHash = await drive.getGroveDB().getRootHash();
+
+      const keysToAdd = [identity.getPublicKeys().pop()];
+
+      const result = await drive.addKeysToIdentity(
+        identity.getId(),
+        keysToAdd,
+        blockInfo,
+        false,
+        true,
+      );
+
+      expectFeeResult(result);
+
+      expect(await drive.getGroveDB().getRootHash()).to.deep.equals(initialRootHash);
+    });
+  });
+
+  describe('#disableIdentityKeys', () => {
+    beforeEach(async () => {
+      await drive.createInitialStateStructure();
+
+      initialRootHash = await drive.getGroveDB().getRootHash();
+    });
+
+    it('should disable specified identity keys', async () => {
+      await drive.insertIdentity(identity, blockInfo);
+
+      const keyIds = identity.getPublicKeys().map((key) => key.getId());
+      const disableAt = Date.now();
+
+      const result = await drive.disableIdentityKeys(
+        identity.getId(),
+        keyIds,
+        disableAt,
+        blockInfo,
+      );
+
+      expectFeeResult(result);
+
+      const fetchedIdentity = await drive.fetchIdentity(identity.getId());
+
+      expect(fetchedIdentity.getPublicKeys()).to.have.lengthOf(identity.getPublicKeys().length);
+
+      fetchedIdentity.getPublicKeys().forEach((key) => {
+        expect(key.getDisabledAt()).to.equals(disableAt);
+      });
+    });
+
+    it('should not update state with dry run', async () => {
+      const keyIds = identity.getPublicKeys().map((key) => key.getId());
+      const disableAt = Date.now();
+
+      const result = await drive.disableIdentityKeys(
+        identity.getId(),
+        keyIds,
+        disableAt,
+        blockInfo,
+        false,
+        true,
+      );
+
+      expectFeeResult(result);
+
+      expect(await drive.getGroveDB().getRootHash()).to.deep.equals(initialRootHash);
+    });
+  });
+
+  describe('#updateIdentityRevision', () => {
+    beforeEach(async () => {
+      await drive.createInitialStateStructure();
+
+      initialRootHash = await drive.getGroveDB().getRootHash();
+    });
+
+    it('should update identity revision', async () => {
+      await drive.insertIdentity(identity, blockInfo);
+
+      const revision = 2;
+
+      const result = await drive.updateIdentityRevision(
+        identity.getId(),
+        revision,
+        blockInfo,
+      );
+
+      expect(result).to.be.an.instanceOf(FeeResult);
+
+      expect(result.processingFee).to.greaterThan(0, 'processing fee must be higher than 0');
+      expect(result.storageFee).to.be.equal(0, 'storage fee must be equal to 0');
+
+      const fetchedIdentity = await drive.fetchIdentity(identity.getId());
+
+      expect(fetchedIdentity.getRevision()).to.equals(revision);
+    });
+
+    it('should not update state with dry run', async () => {
+      const result = await drive.updateIdentityRevision(
+        identity.getId(),
+        2,
+        blockInfo,
+        false,
+        true,
+      );
+
+      expect(result).to.be.an.instanceOf(FeeResult);
+
+      expect(result.processingFee).to.greaterThan(0, 'processing fee must be higher than 0');
+      expect(result.storageFee).to.be.equal(0, 'storage fee must be equal to 0');
+
+      expect(await drive.getGroveDB().getRootHash()).to.deep.equals(initialRootHash);
+    });
+  });
+
   describe('#fetchLatestWithdrawalTransactionIndex', () => {
     beforeEach(async () => {
       await drive.createInitialStateStructure();
     });
 
     it('should return 0 on the first call', async () => {
-      const result = await drive.fetchLatestWithdrawalTransactionIndex();
+      const result = await drive.fetchLatestWithdrawalTransactionIndex({
+        height: 1,
+        epoch: 1,
+        timeMs: (new Date()).getTime(),
+      });
 
       expect(result).to.equal(0);
     });
   });
 
-  describe('#enqueueWithdrawalTransaction', () => {
-    beforeEach(async () => {
-      await drive.createInitialStateStructure();
-    });
-
-    it('should enqueue withdrawal transaction into the queue', async () => {
-      await drive.enqueueWithdrawalTransaction(1, Buffer.alloc(32, 1));
-
-      const result = await drive.fetchLatestWithdrawalTransactionIndex();
-
-      expect(result).to.equal(1);
-    });
-  });
-
   describe('ABCI', () => {
+    let initChainRequest;
+
+    function generateRequiredIdentityPublicKeysSet() {
+      return {
+        master: new PrivateKey().toPublicKey().toBuffer(),
+        high: new PrivateKey().toPublicKey().toBuffer(),
+      };
+    }
+
+    beforeEach(() => {
+      initChainRequest = {
+        genesisTimeMs: Date.now(),
+        systemIdentityPublicKeys: {
+          masternodeRewardSharesContractOwner: generateRequiredIdentityPublicKeysSet(),
+          featureFlagsContractOwner: generateRequiredIdentityPublicKeysSet(),
+          dpnsContractOwner: generateRequiredIdentityPublicKeysSet(),
+          withdrawalsContractOwner: generateRequiredIdentityPublicKeysSet(),
+          dashpayContractOwner: generateRequiredIdentityPublicKeysSet(),
+        },
+      };
+    });
+
     describe('InitChain', () => {
       it('should successfully init chain', async () => {
-        const request = {};
-
-        const response = await drive.getAbci().initChain(request);
+        const response = await drive.getAbci().initChain(initChainRequest);
 
         expect(response).to.be.empty('object');
       });
@@ -504,7 +1029,7 @@ describe('Drive', () => {
 
     describe('BlockBegin', () => {
       beforeEach(async () => {
-        await drive.getAbci().initChain({});
+        await drive.getAbci().initChain(initChainRequest);
       });
 
       it('should process a block without previous block time', async () => {
@@ -512,7 +1037,11 @@ describe('Drive', () => {
           blockHeight: 1,
           blockTimeMs: (new Date()).getTime(),
           proposerProTxHash: Buffer.alloc(32, 1),
+          proposedAppVersion: 1,
           validatorSetQuorumHash: Buffer.alloc(32, 2),
+          lastSyncedCoreHeight: 1,
+          coreChainLockedHeight: 1,
+          totalHpmns: 100,
         };
 
         const response = await drive.getAbci().blockBegin(request);
@@ -532,7 +1061,11 @@ describe('Drive', () => {
           blockHeight: 1,
           blockTimeMs,
           proposerProTxHash: Buffer.alloc(32, 1),
+          proposedAppVersion: 1,
           validatorSetQuorumHash: Buffer.alloc(32, 2),
+          lastSyncedCoreHeight: 1,
+          coreChainLockedHeight: 1,
+          totalHpmns: 100,
         });
 
         const response = await drive.getAbci().blockBegin({
@@ -540,7 +1073,11 @@ describe('Drive', () => {
           blockTimeMs: blockTimeMs + 100,
           proposerProTxHash: Buffer.alloc(32, 1),
           previousBlockTimeMs: blockTimeMs,
+          proposedAppVersion: 1,
           validatorSetQuorumHash: Buffer.alloc(32, 2),
+          lastSyncedCoreHeight: 1,
+          coreChainLockedHeight: 1,
+          totalHpmns: 100,
         });
 
         expect(response.unsignedWithdrawalTransactions).to.be.empty();
@@ -554,25 +1091,26 @@ describe('Drive', () => {
 
     describe('BlockEnd', () => {
       beforeEach(async () => {
-        await drive.getAbci().initChain({});
+        await drive.getAbci().initChain(initChainRequest);
 
         await drive.getAbci().blockBegin({
           blockHeight: 1,
           blockTimeMs: (new Date()).getTime(),
+          proposedAppVersion: 1,
           proposerProTxHash: Buffer.alloc(32, 1),
           validatorSetQuorumHash: Buffer.alloc(32, 2),
+          lastSyncedCoreHeight: 1,
+          coreChainLockedHeight: 1,
+          totalHpmns: 100,
         });
       });
 
       it('should process a block', async () => {
         const request = {
           fees: {
-            storageFee: 100,
-            processingFee: 100,
-            feeRefunds: {
-              1: 15,
-              2: 16,
-            },
+            storageFee: 0,
+            processingFee: 0,
+            refundsPerEpoch: {},
           },
         };
 
@@ -588,24 +1126,27 @@ describe('Drive', () => {
       beforeEach(async function beforeEach() {
         this.timeout(10000);
 
-        await drive.createInitialStateStructure();
+        await drive.getAbci().initChain(initChainRequest);
 
         await drive.createContract(dataContract, blockInfo);
-
-        await drive.getAbci().initChain({});
+        await drive.createContract(withdrawalsDataContract, blockInfo);
 
         await drive.getAbci().blockBegin({
           blockHeight: 1,
           blockTimeMs: (new Date()).getTime(),
+          proposedAppVersion: 1,
           proposerProTxHash: Buffer.alloc(32, 1),
           validatorSetQuorumHash: Buffer.alloc(32, 2),
+          lastSyncedCoreHeight: 1,
+          coreChainLockedHeight: 1,
+          totalHpmns: 100,
         });
 
         await drive.getAbci().blockEnd({
           fees: {
-            storageFee: 100,
-            processingFee: 100,
-            feeRefunds: {},
+            storageFee: 0,
+            processingFee: 0,
+            refundsPerEpoch: {},
           },
         });
       });
@@ -633,7 +1174,7 @@ describe('Drive', () => {
 
       const [amount, leftovers] = result;
 
-      expect(amount).to.equals(558);
+      expect(amount).to.equals(556);
       expect(leftovers).to.equals(440);
     });
   });

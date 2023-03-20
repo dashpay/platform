@@ -109,12 +109,18 @@ function validatePublicKeysFactory(validator, jsonSchema, bls) {
             break;
           }
           case IdentityPublicKey.TYPES.BLS12_381: {
+            let publicKey;
+
             try {
-              bls.PublicKey.fromBytes(
+              publicKey = bls.G1Element.fromBytes(
                 Uint8Array.from(rawPublicKey.data),
               );
             } catch (e) {
               validationError = new TypeError('Invalid public key');
+            } finally {
+              if (publicKey) {
+                publicKey.delete();
+              }
             }
             break;
           }

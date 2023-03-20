@@ -2,10 +2,8 @@ use dpp::identity::KeyID;
 use dpp::state_transition::StateTransitionIdentitySigned;
 use dpp::{
     identifier::Identifier,
-    identity::{
-        state_transition::identity_update_transition::identity_update_transition::IdentityUpdateTransition,
-        IdentityPublicKey,
-    },
+    identity::state_transition::identity_public_key_transitions::IdentityPublicKeyCreateTransition,
+    identity::state_transition::identity_update_transition::identity_update_transition::IdentityUpdateTransition,
     state_transition::StateTransitionLike,
 };
 use serde::Deserialize;
@@ -25,7 +23,7 @@ pub struct ToObject {
     pub signature: Option<Vec<u8>>,
     pub signature_public_key_id: Option<KeyID>,
     pub public_keys_disabled_at: Option<u64>,
-    pub public_keys_to_add: Option<Vec<IdentityPublicKey>>,
+    pub public_keys_to_add: Option<Vec<IdentityPublicKeyCreateTransition>>,
     pub public_key_ids_to_disable: Option<Vec<KeyID>>,
     pub identity_id: Identifier,
 }

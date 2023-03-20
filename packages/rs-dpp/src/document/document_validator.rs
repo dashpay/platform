@@ -4,6 +4,7 @@ use anyhow::anyhow;
 use lazy_static::lazy_static;
 use serde_json::Value as JsonValue;
 
+use crate::consensus::basic::document::InvalidDocumentTypeError;
 use crate::{
     consensus::basic::BasicError,
     data_contract::{
@@ -24,6 +25,7 @@ lazy_static! {
         serde_json::from_str(include_str!("../../schema/document/documentBase.json")).unwrap();
 }
 
+#[derive(Clone)]
 pub struct DocumentValidator {
     protocol_version_validator: Arc<ProtocolVersionValidator>,
 }
@@ -56,10 +58,12 @@ impl DocumentValidator {
         })?;
 
         if !data_contract.is_document_defined(document_type) {
-            result.add_error(BasicError::InvalidDocumentTypeError {
-                document_type: document_type.to_owned(),
-                data_contract_id: data_contract.id.to_owned(),
-            });
+            result.add_error(BasicError::InvalidDocumentTypeError(
+                InvalidDocumentTypeError::new(
+                    document_type.to_owned(),
+                    data_contract.id.to_owned(),
+                ),
+            ));
             return Ok(result);
         }
 

@@ -27,53 +27,97 @@
 // DEALINGS IN THE SOFTWARE.
 //
 
+#[cfg(any(feature = "full", feature = "verify"))]
 use std::collections::BTreeMap;
+#[cfg(any(feature = "full", feature = "verify"))]
 use std::ops::BitXor;
 
-use ciborium::value::Value;
-
+#[cfg(feature = "full")]
+use grovedb::query_result_type::{QueryResultElements, QueryResultType};
 /// Import grovedb
-pub use grovedb::{
-    Element, Error as GroveError, GroveDb, PathQuery, Query, QueryItem, SizedQuery, TransactionArg,
-};
+#[cfg(feature = "full")]
+pub use grovedb::{Element, Error as GroveError, GroveDb, TransactionArg};
+#[cfg(any(feature = "full", feature = "verify"))]
+pub use grovedb::{PathQuery, Query, QueryItem, SizedQuery};
 
+#[cfg(any(feature = "full", feature = "verify"))]
 use indexmap::IndexMap;
+#[cfg(feature = "full")]
+use integer_encoding::VarInt;
+#[cfg(any(feature = "full", feature = "verify"))]
 use sqlparser::ast;
+#[cfg(any(feature = "full", feature = "verify"))]
 use sqlparser::ast::TableFactor::Table;
+#[cfg(any(feature = "full", feature = "verify"))]
 use sqlparser::ast::Value::Number;
+#[cfg(any(feature = "full", feature = "verify"))]
 use sqlparser::ast::{OrderByExpr, Select, Statement};
+#[cfg(any(feature = "full", feature = "verify"))]
 use sqlparser::dialect::GenericDialect;
+#[cfg(any(feature = "full", feature = "verify"))]
 use sqlparser::parser::Parser;
 
+#[cfg(feature = "full")]
 use crate::drive::block_info::BlockInfo;
-use conditions::WhereOperator::{Equal, In};
+#[cfg(any(feature = "full", feature = "verify"))]
+pub use conditions::WhereClause;
 /// Import conditions
-pub use conditions::{WhereClause, WhereOperator};
-use dpp::data_contract::document_type::{DocumentType, Index, IndexProperty};
+#[cfg(feature = "full")]
+pub use conditions::WhereOperator;
+#[cfg(feature = "full")]
+use conditions::WhereOperator::{Equal, In};
+#[cfg(any(feature = "full", feature = "verify"))]
+use dpp::data_contract::document_type::DocumentType;
+#[cfg(feature = "full")]
+use dpp::data_contract::document_type::{Index, IndexProperty};
+#[cfg(any(feature = "full", feature = "verify"))]
 use dpp::data_contract::DriveContractExt;
 /// Import ordering
+#[cfg(any(feature = "full", feature = "verify"))]
 pub use ordering::OrderClause;
 
+#[cfg(any(feature = "full", feature = "verify"))]
 use crate::common::encode::encode_float;
+#[cfg(any(feature = "full", feature = "verify"))]
 use crate::contract::Contract;
-use crate::drive::contract::paths::ContractPaths;
+#[cfg(feature = "full")]
 use crate::drive::grove_operations::QueryType::StatefulQuery;
+#[cfg(feature = "full")]
 use crate::drive::Drive;
+#[cfg(feature = "full")]
 use crate::error::drive::DriveError;
+#[cfg(any(feature = "full", feature = "verify"))]
 use crate::error::query::QueryError;
+#[cfg(any(feature = "full", feature = "verify"))]
 use crate::error::Error;
+#[cfg(feature = "full")]
 use crate::fee::calculate_fee;
+#[cfg(feature = "full")]
 use crate::fee::op::DriveOperation;
 
+#[cfg(feature = "full")]
+use crate::drive::contract::paths::ContractPaths;
+#[cfg(any(feature = "full", feature = "verify"))]
 use dpp::data_contract::extra::common::bytes_for_system_value;
+#[cfg(any(feature = "full", feature = "verify"))]
 use dpp::document::document_stub::DocumentStub;
+#[cfg(any(feature = "full", feature = "verify"))]
+use dpp::platform_value::btreemap_extensions::BTreeValueMapHelper;
+#[cfg(any(feature = "full", feature = "verify"))]
+use dpp::platform_value::Value;
+#[cfg(any(feature = "full", feature = "verify"))]
 use dpp::ProtocolError;
 
+#[cfg(any(feature = "full", feature = "verify"))]
 pub mod conditions;
+#[cfg(any(feature = "full", feature = "verify"))]
 mod defaults;
+#[cfg(any(feature = "full", feature = "verify"))]
 pub mod ordering;
+#[cfg(feature = "full")]
 mod test_index;
 
+#[cfg(any(feature = "full", feature = "verify"))]
 /// Internal clauses struct
 #[derive(Clone, Debug, PartialEq, Default)]
 pub struct InternalClauses {
@@ -90,6 +134,7 @@ pub struct InternalClauses {
 }
 
 impl InternalClauses {
+    #[cfg(any(feature = "full", feature = "verify"))]
     /// Returns true if the clause is a valid format.
     pub fn verify(&self) -> bool {
         // There can only be 1 primary key clause, or many other clauses
@@ -107,11 +152,13 @@ impl InternalClauses {
         }
     }
 
+    #[cfg(feature = "full")]
     /// Returns true if the query clause is for primary keys.
     pub fn is_for_primary_key(&self) -> bool {
         self.primary_key_in_clause.is_some() || self.primary_key_equal_clause.is_some()
     }
 
+    #[cfg(feature = "full")]
     /// Returns true if self is empty.
     pub fn is_empty(&self) -> bool {
         self.in_clause.is_none()
@@ -121,6 +168,7 @@ impl InternalClauses {
             && self.primary_key_equal_clause.is_none()
     }
 
+    #[cfg(any(feature = "full", feature = "verify"))]
     /// Extracts the `WhereClause`s and returns them as type `InternalClauses`.
     fn extract_from_clauses(all_where_clauses: Vec<WhereClause>) -> Result<Self, Error> {
         let primary_key_equal_clauses_array = all_where_clauses
@@ -195,6 +243,7 @@ impl InternalClauses {
     }
 }
 
+#[cfg(any(feature = "full", feature = "verify"))]
 /// Drive query struct
 #[derive(Debug, PartialEq)]
 pub struct DriveQuery<'a> {
@@ -218,7 +267,26 @@ pub struct DriveQuery<'a> {
     pub block_time: Option<f64>,
 }
 
+// TODO: expose this also
+//  also figure out main export
 impl<'a> DriveQuery<'a> {
+    #[cfg(feature = "full")]
+    /// Returns any item
+    pub fn any_item_query(contract: &'a Contract, document_type: &'a DocumentType) -> Self {
+        DriveQuery {
+            contract,
+            document_type,
+            internal_clauses: Default::default(),
+            offset: 0,
+            limit: 1,
+            order_by: Default::default(),
+            start_at: None,
+            start_at_included: true,
+            block_time: None,
+        }
+    }
+
+    #[cfg(feature = "full")]
     /// Returns true if the query clause if for primary keys.
     pub fn is_for_primary_key(&self) -> bool {
         self.internal_clauses.is_for_primary_key()
@@ -235,46 +303,41 @@ impl<'a> DriveQuery<'a> {
                             == "$id")))
     }
 
+    #[cfg(any(feature = "full", feature = "verify"))]
     /// Converts a query CBOR to a `DriveQuery`.
     pub fn from_cbor(
         query_cbor: &[u8],
         contract: &'a Contract,
         document_type: &'a DocumentType,
     ) -> Result<Self, Error> {
-        let mut query_document: BTreeMap<String, Value> = ciborium::de::from_reader(query_cbor)
-            .map_err(|_| {
+        let query_document_cbor: BTreeMap<String, ciborium::Value> =
+            ciborium::de::from_reader(query_cbor).map_err(|_| {
                 Error::Query(QueryError::DeserializationError(
                     "unable to decode query from cbor",
                 ))
             })?;
+        let mut query_document: BTreeMap<String, Value> =
+            Value::convert_from_cbor_map(query_document_cbor);
 
-        let limit: u16 = query_document
-            .remove("limit")
-            .map_or(Some(defaults::DEFAULT_QUERY_LIMIT), |id_cbor| {
-                if let Value::Integer(b) = id_cbor {
-                    let reduced = i128::from(b) as u64;
-                    if reduced == 0 || reduced > (defaults::DEFAULT_QUERY_LIMIT as u64) {
-                        None
-                    } else {
-                        Some(reduced as u16)
-                    }
-                } else {
+        let maybe_limit: Option<u16> = query_document
+            .remove_optional_integer("limit")
+            .map_err(|e| Error::Protocol(ProtocolError::ValueError(e)))?;
+
+        let limit = maybe_limit
+            .map_or(Some(defaults::DEFAULT_QUERY_LIMIT), |limit_value| {
+                if limit_value == 0 || limit_value > defaults::DEFAULT_QUERY_LIMIT {
                     None
+                } else {
+                    Some(limit_value)
                 }
             })
             .ok_or(Error::Query(QueryError::InvalidLimit(
                 "limit should be a integer from 1 to 100",
             )))?;
 
-        let block_time: Option<f64> = query_document.remove("blockTime").and_then(|id_cbor| {
-            if let Value::Float(b) = id_cbor {
-                Some(b)
-            } else if let Value::Integer(b) = id_cbor {
-                Some(i128::from(b) as f64)
-            } else {
-                None
-            }
-        });
+        let block_time: Option<f64> = query_document
+            .remove_optional_float("blockTime")
+            .map_err(|e| Error::Protocol(ProtocolError::ValueError(e)))?;
 
         let all_where_clauses: Vec<WhereClause> =
             query_document
@@ -322,11 +385,12 @@ impl<'a> DriveQuery<'a> {
             start_at_included = true;
         }
 
-        let start_at: Option<Vec<u8>> = if start_option.is_some() {
-            bytes_for_system_value(&start_option.unwrap())?
-        } else {
-            None
-        };
+        let start_at: Option<Vec<u8>> = start_option
+            .map(|v| {
+                v.into_system_bytes()
+                    .map_err(|e| Error::Protocol(ProtocolError::ValueError(e)))
+            })
+            .transpose()?;
 
         let order_by: IndexMap<String, OrderClause> = query_document
             .remove("orderBy")
@@ -369,6 +433,7 @@ impl<'a> DriveQuery<'a> {
         })
     }
 
+    #[cfg(any(feature = "full", feature = "verify"))]
     /// Converts a SQL expression to a `DriveQuery`.
     pub fn from_sql_expr(sql_string: &str, contract: &'a Contract) -> Result<Self, Error> {
         let dialect: GenericDialect = sqlparser::dialect::GenericDialect {};
@@ -490,6 +555,7 @@ impl<'a> DriveQuery<'a> {
         })
     }
 
+    #[cfg(feature = "full")]
     /// Operations to construct a path query.
     pub fn construct_path_query_operations(
         &self,
@@ -572,6 +638,8 @@ impl<'a> DriveQuery<'a> {
         }
     }
 
+    // #[cfg(feature = "full")]
+    #[cfg(any(feature = "full", feature = "verify"))]
     /// Returns a path query given a document type path and starting document.
     pub fn get_primary_key_path_query(
         &self,
@@ -719,6 +787,7 @@ impl<'a> DriveQuery<'a> {
         }
     }
 
+    #[cfg(feature = "full")]
     /// Finds the best index for the query.
     pub fn find_best_index(&self) -> Result<&Index, Error> {
         let equal_fields = self
@@ -772,6 +841,7 @@ impl<'a> DriveQuery<'a> {
         Ok(index)
     }
 
+    #[cfg(feature = "full")]
     /// Returns a `QueryItem` given a start key and query direction.
     fn query_item_for_starts_at_key(starts_at_key: Vec<u8>, left_to_right: bool) -> QueryItem {
         if left_to_right {
@@ -781,6 +851,7 @@ impl<'a> DriveQuery<'a> {
         }
     }
 
+    #[cfg(feature = "full")]
     /// Returns a `Query` that either starts at or after the given document ID if given.
     fn inner_query_from_starts_at_for_id(
         starts_at_document: &Option<(DocumentStub, &DocumentType, &IndexProperty, bool)>,
@@ -803,6 +874,7 @@ impl<'a> DriveQuery<'a> {
         inner_query
     }
 
+    #[cfg(feature = "full")]
     /// Returns a `Query` that either starts at or after the given key.
     fn inner_query_starts_from_key(
         start_at_key: Vec<u8>,
@@ -825,6 +897,7 @@ impl<'a> DriveQuery<'a> {
         inner_query
     }
 
+    #[cfg(feature = "full")]
     /// Returns a `Query` that either starts at or after the given document if given.
     // We are passing in starts_at_document 4 parameters
     // The document
@@ -868,6 +941,7 @@ impl<'a> DriveQuery<'a> {
         Ok(inner_query)
     }
 
+    #[cfg(feature = "full")]
     /// Recursively queries as long as there are leftover index properties.
     fn recursive_insert_on_query(
         query: Option<&mut Query>,
@@ -993,6 +1067,7 @@ impl<'a> DriveQuery<'a> {
         }
     }
 
+    #[cfg(feature = "full")]
     /// Returns a path query for non-primary keys given a document type path and starting document.
     pub fn get_non_primary_key_path_query(
         &self,
@@ -1192,6 +1267,7 @@ impl<'a> DriveQuery<'a> {
         ))
     }
 
+    #[cfg(feature = "full")]
     /// Executes a query with proof and returns the items and fee.
     pub fn execute_with_proof(
         self,
@@ -1210,6 +1286,7 @@ impl<'a> DriveQuery<'a> {
         Ok((items, cost))
     }
 
+    #[cfg(feature = "full")]
     /// Executes an internal query with proof and returns the items.
     pub(crate) fn execute_with_proof_internal(
         self,
@@ -1219,9 +1296,10 @@ impl<'a> DriveQuery<'a> {
     ) -> Result<Vec<u8>, Error> {
         let path_query =
             self.construct_path_query_operations(drive, transaction, drive_operations)?;
-        drive.grove_get_proved_path_query(&path_query, transaction, drive_operations)
+        drive.grove_get_proved_path_query(&path_query, false, transaction, drive_operations)
     }
 
+    #[cfg(feature = "full")]
     /// Executes a query with proof and returns the root hash, items, and fee.
     pub fn execute_with_proof_only_get_elements(
         self,
@@ -1244,6 +1322,7 @@ impl<'a> DriveQuery<'a> {
         Ok((root_hash, items, cost))
     }
 
+    #[cfg(feature = "full")]
     /// Executes an internal query with proof and returns the root hash and values.
     pub(crate) fn execute_with_proof_only_get_elements_internal(
         self,
@@ -1255,29 +1334,35 @@ impl<'a> DriveQuery<'a> {
             self.construct_path_query_operations(drive, transaction, drive_operations)?;
 
         let proof =
-            drive.grove_get_proved_path_query(&path_query, transaction, drive_operations)?;
+            drive.grove_get_proved_path_query(&path_query, false, transaction, drive_operations)?;
         let (root_hash, key_value_elements) =
             GroveDb::verify_query(proof.as_slice(), &path_query).map_err(Error::GroveDB)?;
 
-        let mut values = vec![];
-        for proved_key_value in key_value_elements.into_iter() {
-            let element = Element::deserialize(proved_key_value.value.as_slice()).unwrap();
-            match element {
-                Element::Item(val, _) => values.push(val),
-                Element::SumItem(val, _) => values.push(val.to_be_bytes().to_vec()),
-                Element::Tree(..) | Element::SumTree(..) | Element::Reference(..) => {
-                    return Err(Error::GroveDB(GroveError::InvalidQuery(
-                        "path query should only point to items: got trees",
-                    )));
+        let values = key_value_elements
+            .into_iter()
+            .filter_map(|proved_key_value| {
+                let Some(element) = proved_key_value.2 else {
+                return None;
+            };
+
+                match element {
+                    Element::Item(val, _) => Some(Ok(val)),
+                    Element::SumItem(val, _) => Some(Ok(val.encode_var_vec())),
+                    Element::Tree(..) | Element::SumTree(..) | Element::Reference(..) => {
+                        Some(Err(Error::GroveDB(GroveError::InvalidQuery(
+                            "path query should only point to items: got trees",
+                        ))))
+                    }
                 }
-            }
-        }
+            })
+            .collect::<Result<Vec<Vec<u8>>, Error>>()?;
 
         Ok((root_hash, values))
     }
 
+    #[cfg(feature = "full")]
     /// Executes a query with no proof and returns the items, skipped items, and fee.
-    pub fn execute_no_proof(
+    pub fn execute_serialized_no_proof(
         &self,
         drive: &Drive,
         block_info: Option<BlockInfo>,
@@ -1285,7 +1370,7 @@ impl<'a> DriveQuery<'a> {
     ) -> Result<(Vec<Vec<u8>>, u16, u64), Error> {
         let mut drive_operations = vec![];
         let (items, skipped) =
-            self.execute_no_proof_internal(drive, transaction, &mut drive_operations)?;
+            self.execute_serialized_no_proof_internal(drive, transaction, &mut drive_operations)?;
         let cost = if let Some(block_info) = block_info {
             let fee_result = calculate_fee(None, Some(drive_operations), &block_info.epoch)?;
             fee_result.processing_fee
@@ -1295,8 +1380,9 @@ impl<'a> DriveQuery<'a> {
         Ok((items, skipped, cost))
     }
 
+    #[cfg(feature = "full")]
     /// Executes an internal query with no proof and returns the values and skipped items.
-    pub(crate) fn execute_no_proof_internal(
+    pub(crate) fn execute_serialized_no_proof_internal(
         &self,
         drive: &Drive,
         transaction: TransactionArg,
@@ -1304,7 +1390,11 @@ impl<'a> DriveQuery<'a> {
     ) -> Result<(Vec<Vec<u8>>, u16), Error> {
         let path_query =
             self.construct_path_query_operations(drive, transaction, drive_operations)?;
-        let query_result = drive.grove_get_path_query(&path_query, transaction, drive_operations);
+        let query_result = drive.grove_get_path_query_serialized_results(
+            &path_query,
+            transaction,
+            drive_operations,
+        );
         match query_result {
             Err(Error::GroveDB(GroveError::PathKeyNotFound(_)))
             | Err(Error::GroveDB(GroveError::PathNotFound(_)))
@@ -1317,15 +1407,44 @@ impl<'a> DriveQuery<'a> {
             }
         }
     }
+
+    #[cfg(feature = "full")]
+    /// Executes an internal query with no proof and returns the values and skipped items.
+    pub(crate) fn execute_no_proof_internal(
+        &self,
+        drive: &Drive,
+        result_type: QueryResultType,
+        transaction: TransactionArg,
+        drive_operations: &mut Vec<DriveOperation>,
+    ) -> Result<(QueryResultElements, u16), Error> {
+        let path_query =
+            self.construct_path_query_operations(drive, transaction, drive_operations)?;
+        let query_result =
+            drive.grove_get_path_query(&path_query, transaction, result_type, drive_operations);
+        match query_result {
+            Err(Error::GroveDB(GroveError::PathKeyNotFound(_)))
+            | Err(Error::GroveDB(GroveError::PathNotFound(_)))
+            | Err(Error::GroveDB(GroveError::PathParentLayerNotFound(_))) => {
+                Ok((QueryResultElements::new(), 0))
+            }
+            _ => {
+                let (data, skipped) = query_result?;
+                {
+                    Ok((data, skipped))
+                }
+            }
+        }
+    }
 }
 
+#[cfg(feature = "full")]
 #[cfg(test)]
 mod tests {
     use serde_json::json;
+    use std::borrow::Cow;
     use std::option::Option::None;
     use tempfile::TempDir;
 
-    use crate::common;
     use crate::contract::Contract;
     use crate::drive::flags::StorageFlags;
     use crate::drive::Drive;
@@ -1354,14 +1473,14 @@ mod tests {
         let contract = <Contract as DriveContractExt>::from_cbor(&contract_cbor, None)
             .expect("expected to deserialize the contract");
 
-        let storage_flags = Some(StorageFlags::SingleEpoch(0));
+        let storage_flags = Some(Cow::Owned(StorageFlags::SingleEpoch(0)));
         drive
             .apply_contract(
                 &contract,
                 contract_cbor,
                 BlockInfo::default(),
                 true,
-                storage_flags.as_ref(),
+                storage_flags,
                 None,
             )
             .expect("expected to apply contract successfully");
@@ -1385,14 +1504,14 @@ mod tests {
             json_document_to_cbor(contract_path, Some(1)).expect("expected to get cbor document");
         let contract = <Contract as DriveContractExt>::from_cbor(&contract_cbor, None)
             .expect("expected to deserialize the contract");
-        let storage_flags = Some(StorageFlags::SingleEpoch(0));
+        let storage_flags = Some(Cow::Owned(StorageFlags::SingleEpoch(0)));
         drive
             .apply_contract(
                 &contract,
                 contract_cbor,
                 BlockInfo::default(),
                 true,
-                storage_flags.as_ref(),
+                storage_flags,
                 None,
             )
             .expect("expected to apply contract successfully");
@@ -1538,7 +1657,7 @@ mod tests {
         let query = DriveQuery::from_cbor(where_cbor.as_slice(), &contract, document_type)
             .expect("fields of queries length must be under 256 bytes long");
         query
-            .execute_no_proof(&drive, None, None)
+            .execute_serialized_no_proof(&drive, None, None)
             .expect_err("fields of queries length must be under 256 bytes long");
     }
 
@@ -1620,7 +1739,7 @@ mod tests {
         let query = DriveQuery::from_cbor(where_cbor.as_slice(), &contract, document_type)
             .expect("The query itself should be valid for a null type");
         query
-            .execute_no_proof(&drive, None, None)
+            .execute_serialized_no_proof(&drive, None, None)
             .expect("a Null value doesn't make sense for a float");
     }
 
@@ -1648,7 +1767,7 @@ mod tests {
             .expect("query should be valid for empty array");
 
         query
-            .execute_no_proof(&drive, None, None)
+            .execute_serialized_no_proof(&drive, None, None)
             .expect_err("query should not be able to execute for empty array");
     }
 
@@ -1680,7 +1799,7 @@ mod tests {
             .expect("query is valid for too many elements");
 
         query
-            .execute_no_proof(&drive, None, None)
+            .execute_serialized_no_proof(&drive, None, None)
             .expect_err("query should not be able to execute with too many elements");
     }
 
@@ -1712,7 +1831,7 @@ mod tests {
             .expect("the query should be created");
 
         query
-            .execute_no_proof(&drive, None, None)
+            .execute_serialized_no_proof(&drive, None, None)
             .expect_err("there should be no duplicates values for In query");
     }
 

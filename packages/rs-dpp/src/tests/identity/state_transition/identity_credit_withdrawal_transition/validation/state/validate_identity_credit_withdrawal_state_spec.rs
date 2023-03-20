@@ -33,6 +33,7 @@ mod validate_identity_credit_withdrawal_transition_state_factory {
     use anyhow::Error;
 
     use crate::assert_consensus_errors;
+    use crate::consensus::signature::SignatureError;
     use crate::consensus::ConsensusError;
     use crate::prelude::{Identifier, Identity};
 
@@ -55,11 +56,21 @@ mod validate_identity_credit_withdrawal_transition_state_factory {
             .await
             .unwrap();
 
-        assert_consensus_errors!(result, ConsensusError::BasicError, 1);
+        let errors = result.errors();
+        assert_eq!(errors.len(), 1);
 
-        let error = result.first_error().unwrap();
-
+        let error = errors.first().unwrap();
         assert_eq!(error.code(), 2000);
+
+        match error {
+            ConsensusError::SignatureError(err) => match err {
+                SignatureError::IdentityNotFoundError(e) => {
+                    assert_eq!(e.identity_id(), Identifier::default());
+                }
+                e => panic!("expected IdentityNotFoundError, got {}", e),
+            },
+            e => panic!("expected IdentityNotFoundError, got {:?}", e),
+        }
     }
 
     #[tokio::test]
@@ -109,7 +120,7 @@ mod validate_identity_credit_withdrawal_transition_state_factory {
             .await;
 
         match result {
-            Ok(_) => assert!(false, "should not return Ok result"),
+            Ok(_) => panic!("should not return Ok result"),
             Err(e) => assert_eq!(e.to_string(), "Some error"),
         }
     }
@@ -130,13 +141,15 @@ mod validate_identity_credit_withdrawal_transition_state_factory {
                 anyhow::Ok(Some(identity))
             });
 
-        let (state_transition, validator) = setup_test(state_repository, Some(5));
+        let (mut state_transition, validator) = setup_test(state_repository, Some(5));
+
+        state_transition.revision = 1;
 
         let result = validator
             .validate_identity_credit_withdrawal_transition_state(&state_transition)
             .await
             .unwrap();
 
-        assert_eq!(result.is_valid(), true);
+        assert!(result.is_valid());
     }
 }

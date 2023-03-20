@@ -1,14 +1,13 @@
 use std::collections::BTreeMap;
-use std::convert::{TryFrom, TryInto};
+
 use std::io::{BufReader, Read};
 
 use crate::data_contract::errors::DataContractError;
-use crate::data_contract::extra::common;
-use crate::data_contract::extra::common::cbor_map_to_btree_map;
+
 use crate::ProtocolError;
 use byteorder::{BigEndian, ReadBytesExt, WriteBytesExt};
-use ciborium::value::{Integer, Value};
 use integer_encoding::{VarInt, VarIntReader};
+use platform_value::Value;
 use rand::distributions::{Alphanumeric, Standard};
 use rand::rngs::StdRng;
 use rand::Rng;
@@ -24,6 +23,7 @@ pub struct DocumentField {
 
 #[derive(Serialize, Deserialize, Debug, PartialEq, Clone)]
 pub enum DocumentFieldType {
+    ///Todo decompose integer
     Integer,
     Number,
     String(Option<u16>, Option<u16>),
@@ -180,9 +180,7 @@ impl DocumentFieldType {
 
     pub fn random_value(&self, rng: &mut StdRng) -> Value {
         match self {
-            DocumentFieldType::Integer => {
-                Value::Integer(Integer::try_from(rng.gen::<i64>()).unwrap())
-            }
+            DocumentFieldType::Integer => Value::I64(rng.gen::<i64>()),
             DocumentFieldType::Number => Value::Float(rng.gen::<f64>()),
             DocumentFieldType::String(_, _) => {
                 let size = self.random_size(rng);
@@ -221,9 +219,7 @@ impl DocumentFieldType {
 
     pub fn random_filled_value(&self, rng: &mut StdRng) -> Value {
         match self {
-            DocumentFieldType::Integer => {
-                Value::Integer(Integer::try_from(rng.gen::<i64>()).unwrap())
-            }
+            DocumentFieldType::Integer => Value::I64(rng.gen::<i64>()),
             DocumentFieldType::Number => Value::Float(rng.gen::<f64>()),
             DocumentFieldType::String(_, _) => {
                 let size = self.max_size().unwrap();
@@ -263,7 +259,7 @@ impl DocumentFieldType {
     fn read_varint_value(buf: &mut BufReader<&[u8]>) -> Result<Option<Vec<u8>>, ProtocolError> {
         let bytes: usize = buf.read_varint().map_err(|_| {
             ProtocolError::DataContractError(DataContractError::CorruptedSerialization(
-                "error reading from serialized document",
+                "error reading varint length from serialized document",
             ))
         })?;
         if bytes == 0 {
@@ -272,7 +268,7 @@ impl DocumentFieldType {
             let mut value: Vec<u8> = vec![0u8; bytes];
             buf.read_exact(&mut value).map_err(|_| {
                 ProtocolError::DataContractError(DataContractError::CorruptedSerialization(
-                    "error reading from serialized document",
+                    "error reading varint from serialized document",
                 ))
             })?;
             Ok(Some(value))
@@ -332,7 +328,7 @@ impl DocumentFieldType {
                         "error reading from serialized document",
                     ))
                 })?;
-                Ok(Some(Value::Integer(Integer::from(integer))))
+                Ok(Some(Value::I64(integer)))
             }
             DocumentFieldType::Boolean => {
                 let value = buf.read_u8().map_err(|_| {
@@ -402,19 +398,7 @@ impl DocumentFieldType {
                 }
             }
             DocumentFieldType::Date => {
-                let value_as_f64 = match value {
-                    Value::Integer(value_as_integer) => {
-                        let value_as_i128: i128 = value_as_integer.try_into().map_err(|_| {
-                            ProtocolError::DataContractError(DataContractError::ValueWrongType(
-                                "expected integer value",
-                            ))
-                        })?;
-                        let value_as_f64: f64 = value_as_i128 as f64;
-                        Ok(value_as_f64)
-                    }
-                    Value::Float(value_as_float) => Ok(value_as_float),
-                    _ => Err(get_field_type_matching_error()),
-                }?;
+                let value_as_f64 = value.into_float().map_err(ProtocolError::ValueError)?;
                 let mut value_bytes = value_as_f64.to_be_bytes().to_vec();
                 if required {
                     Ok(value_bytes)
@@ -426,15 +410,7 @@ impl DocumentFieldType {
                 }
             }
             DocumentFieldType::Integer => {
-                let value_as_integer = value
-                    .as_integer()
-                    .ok_or_else(get_field_type_matching_error)?;
-
-                let value_as_i64: i64 = value_as_integer.try_into().map_err(|_| {
-                    ProtocolError::DataContractError(DataContractError::ValueWrongType(
-                        "expected integer value",
-                    ))
-                })?;
+                let value_as_i64: i64 = value.into_integer().map_err(ProtocolError::ValueError)?;
                 let mut value_bytes = value_as_i64.to_be_bytes().to_vec();
                 if required {
                     Ok(value_bytes)
@@ -446,21 +422,7 @@ impl DocumentFieldType {
                 }
             }
             DocumentFieldType::Number => {
-                let value_as_f64 = if value.is_integer() {
-                    let value_as_integer = value
-                        .as_integer()
-                        .ok_or_else(get_field_type_matching_error)?;
-
-                    let value_as_i64: i64 = value_as_integer.try_into().map_err(|_| {
-                        ProtocolError::DataContractError(DataContractError::ValueWrongType(
-                            "expected number value",
-                        ))
-                    })?;
-
-                    value_as_i64 as f64
-                } else {
-                    value.as_float().ok_or_else(get_field_type_matching_error)?
-                };
+                let value_as_f64 = value.into_float().map_err(ProtocolError::ValueError)?;
                 let mut value_bytes = value_as_f64.to_be_bytes().to_vec();
                 if required {
                     Ok(value_bytes)
@@ -485,16 +447,9 @@ impl DocumentFieldType {
                     Value::Array(array) => array
                         .into_iter()
                         .map(|byte| match byte {
-                            Value::Integer(int) => {
-                                let value_as_u8: u8 = int.try_into().map_err(|_| {
-                                    ProtocolError::DataContractError(
-                                        DataContractError::ValueWrongType("expected u8 value"),
-                                    )
-                                })?;
-                                Ok(value_as_u8)
-                            }
+                            Value::U8(value_as_u8) => Ok(value_as_u8),
                             _ => Err(ProtocolError::DataContractError(
-                                DataContractError::ValueWrongType("not an array of integers"),
+                                DataContractError::ValueWrongType("not an array of bytes"),
                             )),
                         })
                         .collect::<Result<Vec<u8>, ProtocolError>>(),
@@ -516,7 +471,8 @@ impl DocumentFieldType {
             }
             DocumentFieldType::Object(inner_fields) => {
                 if let Value::Map(map) = value {
-                    let mut value_map = common::cbor_map_into_btree_map(map)?;
+                    let mut value_map =
+                        Value::map_into_btree_map(map).map_err(ProtocolError::ValueError)?;
                     let mut r_vec = vec![];
                     inner_fields.iter().try_for_each(|(key, field)| {
                         if let Some(value) = value_map.remove(key) {
@@ -582,19 +538,7 @@ impl DocumentFieldType {
                 Ok(r_vec)
             }
             DocumentFieldType::Date => {
-                let value_as_f64 = match *value {
-                    Value::Integer(value_as_integer) => {
-                        let value_as_i128: i128 = value_as_integer.try_into().map_err(|_| {
-                            ProtocolError::DataContractError(DataContractError::ValueWrongType(
-                                "expected integer value",
-                            ))
-                        })?;
-                        let value_as_f64: f64 = value_as_i128 as f64;
-                        Ok(value_as_f64)
-                    }
-                    Value::Float(value_as_float) => Ok(value_as_float),
-                    _ => Err(get_field_type_matching_error()),
-                }?;
+                let value_as_f64 = value.to_float().map_err(ProtocolError::ValueError)?;
                 let mut value_bytes = value_as_f64.to_be_bytes().to_vec();
                 if required {
                     Ok(value_bytes)
@@ -606,15 +550,7 @@ impl DocumentFieldType {
                 }
             }
             DocumentFieldType::Integer => {
-                let value_as_integer = value
-                    .as_integer()
-                    .ok_or_else(get_field_type_matching_error)?;
-
-                let value_as_i64: i64 = value_as_integer.try_into().map_err(|_| {
-                    ProtocolError::DataContractError(DataContractError::ValueWrongType(
-                        "expected integer value",
-                    ))
-                })?;
+                let value_as_i64: i64 = value.to_integer().map_err(ProtocolError::ValueError)?;
                 let mut value_bytes = value_as_i64.to_be_bytes().to_vec();
                 if required {
                     Ok(value_bytes)
@@ -626,21 +562,7 @@ impl DocumentFieldType {
                 }
             }
             DocumentFieldType::Number => {
-                let value_as_f64 = if value.is_integer() {
-                    let value_as_integer = value
-                        .as_integer()
-                        .ok_or_else(get_field_type_matching_error)?;
-
-                    let value_as_i64: i64 = value_as_integer.try_into().map_err(|_| {
-                        ProtocolError::DataContractError(DataContractError::ValueWrongType(
-                            "expected number value",
-                        ))
-                    })?;
-
-                    value_as_i64 as f64
-                } else {
-                    value.as_float().ok_or_else(get_field_type_matching_error)?
-                };
+                let value_as_f64 = value.to_float().map_err(ProtocolError::ValueError)?;
                 let mut value_bytes = value_as_f64.to_be_bytes().to_vec();
                 if required {
                     Ok(value_bytes)
@@ -664,19 +586,7 @@ impl DocumentFieldType {
                     }
                     Value::Array(array) => array
                         .iter()
-                        .map(|byte| match byte {
-                            Value::Integer(int) => {
-                                let value_as_u8: u8 = (*int).try_into().map_err(|_| {
-                                    ProtocolError::DataContractError(
-                                        DataContractError::ValueWrongType("expected u8 value"),
-                                    )
-                                })?;
-                                Ok(value_as_u8)
-                            }
-                            _ => Err(ProtocolError::DataContractError(
-                                DataContractError::ValueWrongType("not an array of integers"),
-                            )),
-                        })
+                        .map(|byte| byte.to_integer().map_err(ProtocolError::ValueError))
                         .collect::<Result<Vec<u8>, ProtocolError>>(),
                     _ => Err(get_field_type_matching_error()),
                 }?;
@@ -698,7 +608,7 @@ impl DocumentFieldType {
                 let Some(value_map) = value.as_map() else {
                     return Err(get_field_type_matching_error())
                 };
-                let value_map = cbor_map_to_btree_map(value_map);
+                let value_map = Value::map_ref_into_btree_map(value_map)?;
                 let mut r_vec = vec![];
                 inner_fields.iter().try_for_each(|(key, field)| {
                     if let Some(value) = value_map.get(key) {
@@ -759,51 +669,16 @@ impl DocumentFieldType {
                     Ok(vec)
                 }
             }
-            DocumentFieldType::Date => match *value {
-                Value::Integer(value_as_integer) => {
-                    let value_as_i128: i128 = value_as_integer.try_into().map_err(|_| {
-                        ProtocolError::DataContractError(DataContractError::ValueWrongType(
-                            "expected integer value",
-                        ))
-                    })?;
-                    let value_as_f64: f64 = value_as_i128 as f64;
-
-                    encode_float(value_as_f64)
-                }
-                Value::Float(value_as_float) => encode_float(value_as_float),
-                _ => Err(get_field_type_matching_error()),
-            },
+            DocumentFieldType::Date => {
+                encode_float(value.to_float().map_err(ProtocolError::ValueError)?)
+            }
             DocumentFieldType::Integer => {
-                let value_as_integer = value
-                    .as_integer()
-                    .ok_or_else(get_field_type_matching_error)?;
-
-                let value_as_i64: i64 = value_as_integer.try_into().map_err(|_| {
-                    ProtocolError::DataContractError(DataContractError::ValueWrongType(
-                        "expected integer value",
-                    ))
-                })?;
+                let value_as_i64 = value.to_integer().map_err(ProtocolError::ValueError)?;
 
                 encode_signed_integer(value_as_i64)
             }
             DocumentFieldType::Number => {
-                let value_as_f64 = if value.is_integer() {
-                    let value_as_integer = value
-                        .as_integer()
-                        .ok_or_else(get_field_type_matching_error)?;
-
-                    let value_as_i64: i64 = value_as_integer.try_into().map_err(|_| {
-                        ProtocolError::DataContractError(DataContractError::ValueWrongType(
-                            "expected number value",
-                        ))
-                    })?;
-
-                    value_as_i64 as f64
-                } else {
-                    value.as_float().ok_or_else(get_field_type_matching_error)?
-                };
-
-                encode_float(value_as_f64)
+                encode_float(value.to_float().map_err(ProtocolError::ValueError)?)
             }
             DocumentFieldType::ByteArray(_, _) => match value {
                 Value::Bytes(bytes) => Ok(bytes.clone()),
@@ -817,19 +692,7 @@ impl DocumentFieldType {
                 }
                 Value::Array(array) => array
                     .iter()
-                    .map(|byte| match byte {
-                        Value::Integer(int) => {
-                            let value_as_u8: u8 = (*int).try_into().map_err(|_| {
-                                ProtocolError::DataContractError(DataContractError::ValueWrongType(
-                                    "expected u8 value",
-                                ))
-                            })?;
-                            Ok(value_as_u8)
-                        }
-                        _ => Err(ProtocolError::DataContractError(
-                            DataContractError::ValueWrongType("not an array of integers"),
-                        )),
-                    })
+                    .map(|byte| byte.to_integer().map_err(ProtocolError::ValueError))
                     .collect::<Result<Vec<u8>, ProtocolError>>(),
                 _ => Err(get_field_type_matching_error()),
             },
@@ -876,14 +739,11 @@ impl DocumentFieldType {
                 }
                 Ok(Value::Text(str.to_string()))
             }
-            DocumentFieldType::Integer => str
-                .parse::<i128>()
-                .map(|f| Value::Integer(Integer::try_from(f).unwrap()))
-                .map_err(|_| {
-                    ProtocolError::DataContractError(DataContractError::ValueWrongType(
-                        "value is not an integer",
-                    ))
-                }),
+            DocumentFieldType::Integer => str.parse::<i128>().map(Value::I128).map_err(|_| {
+                ProtocolError::DataContractError(DataContractError::ValueWrongType(
+                    "value is not an integer",
+                ))
+            }),
             DocumentFieldType::Number | DocumentFieldType::Date => {
                 str.parse::<f64>().map(Value::Float).map_err(|_| {
                     ProtocolError::DataContractError(DataContractError::ValueWrongType(

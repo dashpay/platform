@@ -1,10 +1,10 @@
+#[cfg(feature = "full")]
 #[cfg(test)]
 mod tests {
     use dpp::data_contract::document_type::{DocumentType, Index, IndexProperty};
     use dpp::util::serializer;
     use serde_json::json;
 
-    use crate::common;
     use crate::contract::Contract;
     use crate::error::{query::QueryError, Error};
     use crate::query::DriveQuery;

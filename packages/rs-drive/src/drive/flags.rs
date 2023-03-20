@@ -30,29 +30,51 @@
 //! Flags
 //!
 
+#[cfg(feature = "full")]
 use crate::drive::defaults::DEFAULT_HASH_SIZE;
+#[cfg(feature = "full")]
 use crate::drive::flags::StorageFlags::{
     MultiEpoch, MultiEpochOwned, SingleEpoch, SingleEpochOwned,
 };
+#[cfg(feature = "full")]
 use costs::storage_cost::removal::StorageRemovedBytes::SectionedStorageRemoval;
+#[cfg(feature = "full")]
 use costs::storage_cost::removal::{StorageRemovalPerEpochByIdentifier, StorageRemovedBytes};
+#[cfg(feature = "full")]
 use grovedb::ElementFlags;
+#[cfg(feature = "full")]
 use integer_encoding::VarInt;
+#[cfg(feature = "full")]
 use intmap::IntMap;
+#[cfg(feature = "full")]
+use std::borrow::Cow;
+#[cfg(feature = "full")]
 use std::cmp::Ordering;
+#[cfg(any(feature = "full", feature = "verify"))]
 use std::collections::BTreeMap;
 
+#[cfg(feature = "full")]
 use crate::error::storage_flags::StorageFlagsError;
+#[cfg(feature = "full")]
 use crate::error::Error;
 
+#[cfg(any(feature = "full", feature = "verify"))]
 type EpochIndex = u16;
 
+#[cfg(any(feature = "full", feature = "verify"))]
 type BaseEpoch = EpochIndex;
 
+#[cfg(any(feature = "full", feature = "verify"))]
 type BytesAddedInEpoch = u32;
 
+#[cfg(any(feature = "full", feature = "verify"))]
 type OwnerId = [u8; 32];
 
+#[cfg(feature = "full")]
+/// The size of single epoch flags
+pub const SINGLE_EPOCH_FLAGS_SIZE: u32 = 3;
+
+#[cfg(any(feature = "full", feature = "verify"))]
 /// Storage flags
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum StorageFlags {
@@ -73,6 +95,7 @@ pub enum StorageFlags {
     MultiEpochOwned(BaseEpoch, BTreeMap<EpochIndex, BytesAddedInEpoch>, OwnerId),
 }
 
+#[cfg(feature = "full")]
 impl StorageFlags {
     /// Create new single epoch storage flags
     pub fn new_single_epoch(epoch: BaseEpoch, maybe_owner_id: Option<OwnerId>) -> Self {
@@ -302,6 +325,11 @@ impl StorageFlags {
 
     /// Returns default optional storage flag as ref
     pub fn optional_default_as_ref() -> Option<&'static Self> {
+        None
+    }
+
+    /// Returns default optional storage flag as ref
+    pub fn optional_default_as_cow() -> Option<Cow<'static, Self>> {
         None
     }
 
@@ -550,10 +578,20 @@ impl StorageFlags {
     }
 
     /// Create Storage flags from optional element flags ref
-    pub fn from_some_element_flags_ref(data: &Option<ElementFlags>) -> Result<Option<Self>, Error> {
+    pub fn map_some_element_flags_ref(data: &Option<ElementFlags>) -> Result<Option<Self>, Error> {
         match data {
             None => Ok(None),
             Some(data) => Self::from_slice(data.as_slice()),
+        }
+    }
+
+    /// Create Storage flags from optional element flags ref
+    pub fn map_cow_some_element_flags_ref(
+        data: &Option<ElementFlags>,
+    ) -> Result<Option<Cow<Self>>, Error> {
+        match data {
+            None => Ok(None),
+            Some(data) => Self::from_slice(data.as_slice()).map(|option| option.map(Cow::Owned)),
         }
     }
 
@@ -567,6 +605,22 @@ impl StorageFlags {
     /// Map to optional element flags
     pub fn map_to_some_element_flags(maybe_storage_flags: Option<&Self>) -> Option<ElementFlags> {
         maybe_storage_flags.map(|storage_flags| storage_flags.serialize())
+    }
+
+    /// Map to optional element flags
+    pub fn map_cow_to_some_element_flags(
+        maybe_storage_flags: Option<Cow<Self>>,
+    ) -> Option<ElementFlags> {
+        maybe_storage_flags.map(|storage_flags| storage_flags.serialize())
+    }
+
+    /// Map to optional element flags
+    pub fn map_borrowed_cow_to_some_element_flags(
+        maybe_storage_flags: &Option<Cow<Self>>,
+    ) -> Option<ElementFlags> {
+        maybe_storage_flags
+            .as_ref()
+            .map(|storage_flags| storage_flags.serialize())
     }
 
     /// Creates optional element flags
@@ -692,5 +746,10 @@ impl StorageFlags {
                 Ok((key_storage_removal, value_storage_removal))
             }
         }
+    }
+
+    /// Wrap Storage Flags into optional owned cow
+    pub fn into_optional_cow<'a>(self) -> Option<Cow<'a, Self>> {
+        Some(Cow::Owned(self))
     }
 }

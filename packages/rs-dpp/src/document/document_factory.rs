@@ -4,6 +4,7 @@ use itertools::Itertools;
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value as JsonValue};
 
+use crate::consensus::basic::document::InvalidDocumentTypeError;
 use crate::{
     data_contract::{errors::DataContractError, DataContract},
     decode_protocol_entity_factory::DecodeProtocolEntity,
@@ -95,10 +96,9 @@ where
         data: JsonValue,
     ) -> Result<Document, ProtocolError> {
         if !data_contract.is_document_defined(&document_type) {
-            return Err(DataContractError::InvalidDocumentTypeError {
-                doc_type: document_type,
-                data_contract,
-            }
+            return Err(DataContractError::InvalidDocumentTypeError(
+                InvalidDocumentTypeError::new(document_type, data_contract.id),
+            )
             .into());
         }
 
@@ -412,12 +412,12 @@ mod test {
         )
         .unwrap();
 
-        data_contract.id = contract_id.clone();
+        data_contract.id = contract_id;
 
         let document = factory
             .create(
                 data_contract,
-                owner_id.clone(),
+                owner_id,
                 document_type.to_string(),
                 json!({ "name": name }),
             )

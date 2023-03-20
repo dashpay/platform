@@ -8,7 +8,7 @@ const {
 
 const statuses = require('./statuses');
 
-const addToFeeTxResults = require('./fees/addToFeeTxResults');
+const addStateTransitionFeesToBlockFees = require('./fees/addStateTransitionFeesToBlockFees');
 
 /**
  *
@@ -42,7 +42,9 @@ function processProposalFactory(
       proposedLastCommit: lastCommitInfo,
       time,
       proposerProTxHash,
+      proposedAppVersion,
       round,
+      quorumHash,
     } = request;
 
     contextLogger.info(`Processing a block proposal for height #${height} round #${round}`);
@@ -55,17 +57,18 @@ function processProposalFactory(
         version,
         time,
         proposerProTxHash: Buffer.from(proposerProTxHash),
+        proposedAppVersion,
         round,
+        quorumHash,
       },
       contextLogger,
     );
 
     const txResults = [];
-    const feeResults = {
+    const blockFees = {
       storageFee: 0,
       processingFee: 0,
-      feeRefunds: { },
-      feeRefundsSum: 0,
+      refundsPerEpoch: {},
     };
 
     let validTxCount = 0;
@@ -81,7 +84,7 @@ function processProposalFactory(
       if (code === 0) {
         validTxCount += 1;
         // TODO We should calculate fees for invalid transitions as well
-        addToFeeTxResults(feeResults, fees);
+        addStateTransitionFeesToBlockFees(blockFees, fees);
       } else {
         invalidTxCount += 1;
       }
@@ -105,7 +108,7 @@ function processProposalFactory(
     } = await endBlock({
       height,
       round,
-      fees: feeResults,
+      fees: blockFees,
       coreChainLockedHeight,
     }, contextLogger);
 

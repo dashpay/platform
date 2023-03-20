@@ -102,7 +102,8 @@ impl DocumentsBatchTransition {
             signature,
             signature_public_key_id: json_value
                 .get_u64(property_names::SIGNATURE_PUBLIC_KEY_ID)
-                .ok(),
+                .ok()
+                .map(|v| v as KeyID),
             owner_id: Identifier::from_string(
                 json_value.get_string(property_names::OWNER_ID)?,
                 Encoding::Base58,
@@ -155,7 +156,8 @@ impl DocumentsBatchTransition {
             signature: raw_object.get_bytes(property_names::SIGNATURE).ok(),
             signature_public_key_id: raw_object
                 .get_u64(property_names::SIGNATURE_PUBLIC_KEY_ID)
-                .ok(),
+                .ok()
+                .map(|v| v as KeyID),
             owner_id: Identifier::from_bytes(&raw_object.get_bytes(property_names::OWNER_ID)?)?,
             ..Default::default()
         };
@@ -188,11 +190,6 @@ impl DocumentsBatchTransition {
 
     pub fn get_transitions(&self) -> &Vec<DocumentTransition> {
         &self.transitions
-    }
-
-    // TODO to decide if this should be a lazy iterator or a vector
-    pub fn get_modified_data_ids(&self) -> impl Iterator<Item = &Identifier> {
-        self.transitions.iter().map(|t| &t.base().id)
     }
 }
 
@@ -246,7 +243,10 @@ impl StateTransitionConvert for DocumentsBatchTransition {
     }
 
     fn signature_property_paths() -> Vec<&'static str> {
-        vec![property_names::SIGNATURE]
+        vec![
+            property_names::SIGNATURE,
+            property_names::SIGNATURE_PUBLIC_KEY_ID,
+        ]
     }
 
     fn to_json(&self, skip_signature: bool) -> Result<JsonValue, ProtocolError> {
@@ -366,6 +366,10 @@ impl StateTransitionConvert for DocumentsBatchTransition {
 }
 
 impl StateTransitionLike for DocumentsBatchTransition {
+    fn get_modified_data_ids(&self) -> Vec<Identifier> {
+        self.transitions.iter().map(|t| t.base().id).collect()
+    }
+
     fn get_protocol_version(&self) -> u32 {
         self.protocol_version
     }
@@ -403,7 +407,7 @@ impl StateTransitionLike for DocumentsBatchTransition {
 pub fn get_security_level_requirement(v: &JsonValue, default: SecurityLevel) -> SecurityLevel {
     let maybe_security_level = v.get_u64(property_names::SECURITY_LEVEL_REQUIREMENT);
     match maybe_security_level {
-        Ok(some_level) => (some_level as usize).try_into().unwrap_or(default),
+        Ok(some_level) => (some_level as u8).try_into().unwrap_or(default),
         Err(_) => default,
     }
 }
@@ -520,7 +524,7 @@ mod test {
         let owner_id = Identifier::from_string(owner_id_base58, Encoding::Base58).unwrap();
         let entropy_bytes: [u8; 32] = base64::decode(entropy_base64).unwrap().try_into().unwrap();
 
-        let mut data_contract = get_data_contract_fixture(Some(owner_id.clone()));
+        let mut data_contract = get_data_contract_fixture(Some(owner_id));
         data_contract.id = data_contract_id;
 
         let documents = get_documents_fixture(data_contract.clone()).unwrap();

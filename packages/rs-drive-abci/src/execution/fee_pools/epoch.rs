@@ -33,9 +33,10 @@
 //! information about the current epoch.
 //!
 
-use crate::block::BlockInfo;
+use crate::block::BlockStateInfo;
 use crate::error::execution::ExecutionError;
 use crate::error::Error;
+use drive::fee::epoch::GENESIS_EPOCH_INDEX;
 use rust_decimal::Decimal;
 use serde::{Deserialize, Serialize};
 
@@ -58,6 +59,11 @@ pub struct EpochInfo {
 }
 
 impl EpochInfo {
+    /// Returns true if it's an epoch change but not the Epoch 0 on genesis
+    pub fn is_epoch_change_but_not_genesis(&self) -> bool {
+        self.is_epoch_change && self.current_epoch_index != GENESIS_EPOCH_INDEX
+    }
+
     /// Converts some values to decimal types and calculates some relevant epoch info values.
     pub fn calculate(
         genesis_time_ms: u64,
@@ -113,7 +119,7 @@ impl EpochInfo {
     /// the is_epoch_change bool by calling calculate().
     pub fn from_genesis_time_and_block_info(
         genesis_time_ms: u64,
-        block_info: &BlockInfo,
+        block_info: &BlockStateInfo,
     ) -> Result<Self, Error> {
         Self::calculate(
             genesis_time_ms,
@@ -148,7 +154,7 @@ mod test {
                 .expect("should calculate epochs info");
 
             assert_eq!(epoch_info.current_epoch_index, 0);
-            assert_eq!(epoch_info.is_epoch_change, true);
+            assert!(epoch_info.is_epoch_change);
         }
 
         #[test]
@@ -162,7 +168,7 @@ mod test {
                     .expect("should calculate epochs info");
 
             assert_eq!(epoch_info.current_epoch_index, 0);
-            assert_eq!(epoch_info.is_epoch_change, false);
+            assert!(!epoch_info.is_epoch_change);
         }
 
         #[test]
@@ -176,7 +182,7 @@ mod test {
                     .expect("should calculate epochs info");
 
             assert_eq!(epoch_info.current_epoch_index, 1);
-            assert_eq!(epoch_info.is_epoch_change, true);
+            assert!(epoch_info.is_epoch_change);
         }
     }
 }

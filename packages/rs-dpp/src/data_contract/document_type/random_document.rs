@@ -44,6 +44,8 @@ use rand::{Rng, SeedableRng};
 pub trait CreateRandomDocument {
     /// Random documents
     fn random_documents(&self, count: u32, seed: Option<u64>) -> Vec<DocumentStub>;
+    /// Random documents with rng
+    fn random_documents_with_rng(&self, count: u32, rng: &mut StdRng) -> Vec<DocumentStub>;
     /// Document from bytes
     fn document_from_bytes(&self, bytes: &[u8]) -> Result<DocumentStub, ProtocolError>;
     /// Random document
@@ -65,9 +67,14 @@ impl CreateRandomDocument for DocumentType {
             None => StdRng::from_entropy(),
             Some(seed_value) => StdRng::seed_from_u64(seed_value),
         };
+        self.random_documents_with_rng(count, &mut rng)
+    }
+
+    /// Creates `count` Documents with random data using the random number generator given.
+    fn random_documents_with_rng(&self, count: u32, rng: &mut StdRng) -> Vec<DocumentStub> {
         let mut vec: Vec<DocumentStub> = vec![];
         for _i in 0..count {
-            vec.push(self.random_document_with_rng(&mut rng));
+            vec.push(self.random_document_with_rng(rng));
         }
         vec
     }
@@ -102,6 +109,7 @@ impl CreateRandomDocument for DocumentType {
             id,
             properties,
             owner_id,
+            revision: 1,
         }
     }
 
@@ -149,6 +157,7 @@ impl CreateRandomDocument for DocumentType {
             id,
             properties,
             owner_id,
+            revision: 1,
         }
     }
 }

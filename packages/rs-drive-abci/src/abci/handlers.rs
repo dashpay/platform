@@ -36,7 +36,7 @@ use crate::abci::messages::{
     AfterFinalizeBlockRequest, AfterFinalizeBlockResponse, BlockBeginRequest, BlockBeginResponse,
     BlockEndRequest, BlockEndResponse, InitChainRequest, InitChainResponse,
 };
-use crate::block::{BlockExecutionContext, BlockInfo};
+use crate::block::{BlockExecutionContext, BlockStateInfo};
 use crate::execution::fee_pools::epoch::EpochInfo;
 use drive::grovedb::TransactionArg;
 
@@ -78,12 +78,14 @@ impl TenderdashAbci for Platform {
     /// Creates initial state structure and returns response
     fn init_chain(
         &self,
-        _request: InitChainRequest,
+        request: InitChainRequest,
         transaction: TransactionArg,
     ) -> Result<InitChainResponse, Error> {
-        self.drive
-            .create_initial_state_structure(transaction)
-            .map_err(Error::Drive)?;
+        self.create_genesis_state(
+            request.genesis_time_ms,
+            request.system_identity_public_keys,
+            transaction,
+        )?;
 
         let response = InitChainResponse {};
 
@@ -96,12 +98,15 @@ impl TenderdashAbci for Platform {
         request: BlockBeginRequest,
         transaction: TransactionArg,
     ) -> Result<BlockBeginResponse, Error> {
+        // TODO: If genesis time is not set in genesis config then it set on the first block
+        //  which is great but we still need time on init chain. Having two genesis times is not great at all.
+
         // Set genesis time
         let genesis_time_ms = if request.block_height == 1 {
             self.drive.set_genesis_time(request.block_time_ms);
-
             request.block_time_ms
         } else {
+            //todo: lazy load genesis time
             self.drive
                 .get_genesis_time(transaction)
                 .map_err(Error::Drive)?
@@ -110,22 +115,45 @@ impl TenderdashAbci for Platform {
                 )))?
         };
 
+        // Update versions
+        let proposed_app_version = request.proposed_app_version;
+
+        self.drive.update_validator_proposed_app_version(
+            request.proposer_pro_tx_hash,
+            proposed_app_version,
+            transaction,
+        )?;
+
         // Init block execution context
-        let block_info = BlockInfo::from_block_begin_request(&request);
+        let block_info = BlockStateInfo::from_block_begin_request(&request);
 
         let epoch_info = EpochInfo::from_genesis_time_and_block_info(genesis_time_ms, &block_info)?;
 
         let block_execution_context = BlockExecutionContext {
             block_info,
             epoch_info: epoch_info.clone(),
+            hpmn_count: request.total_hpmns,
+        };
+
+        // If last synced Core block height is not set instead of scanning
+        // number of blocks for asset unlock transactions scan only one
+        // on Core chain locked height by setting last_synced_core_height to the same value
+        let last_synced_core_height = if request.last_synced_core_height == 0 {
+            block_execution_context.block_info.core_chain_locked_height
+        } else {
+            request.last_synced_core_height
         };
 
         self.block_execution_context
             .replace(Some(block_execution_context));
 
+        self.update_broadcasted_withdrawal_transaction_statuses(
+            last_synced_core_height,
+            transaction,
+        )?;
+
         let unsigned_withdrawal_transaction_bytes = self
             .fetch_and_prepare_unsigned_withdrawal_transactions(
-                request.block_height as u32,
                 request.validator_set_quorum_hash,
                 transaction,
             )?;
@@ -152,16 +180,51 @@ impl TenderdashAbci for Platform {
             ),
         ))?;
 
+        self.pool_withdrawals_into_transactions_queue(transaction)?;
+
         // Process fees
-        let process_block_fees_result = self.process_block_fees(
+        let process_block_fees_outcome = self.process_block_fees(
             &block_execution_context.block_info,
             &block_execution_context.epoch_info,
             request.fees,
             transaction,
         )?;
 
-        Ok(BlockEndResponse::from_process_block_fees_result(
-            &process_block_fees_result,
+        // Determine a new protocol version if enough proposers voted
+        let changed_protocol_version = if block_execution_context
+            .epoch_info
+            .is_epoch_change_but_not_genesis()
+        {
+            // Set current protocol version to the version from upcoming epoch
+            self.state.replace_with(|state| {
+                state.current_protocol_version_in_consensus = state.next_epoch_protocol_version;
+
+                state.clone()
+            });
+
+            // Determine new protocol version based on votes for the next epoch
+            let maybe_new_protocol_version = self.check_for_desired_protocol_upgrade(
+                block_execution_context.hpmn_count,
+                transaction,
+            )?;
+
+            self.state.replace_with(|state| {
+                if let Some(new_protocol_version) = maybe_new_protocol_version {
+                    state.next_epoch_protocol_version = new_protocol_version;
+                } else {
+                    state.next_epoch_protocol_version = state.current_protocol_version_in_consensus;
+                }
+                state.clone()
+            });
+
+            Some(self.state.borrow().current_protocol_version_in_consensus)
+        } else {
+            None
+        };
+
+        Ok(BlockEndResponse::from_outcomes(
+            &process_block_fees_outcome,
+            changed_protocol_version,
         ))
     }
 
@@ -181,47 +244,113 @@ impl TenderdashAbci for Platform {
 mod tests {
     mod handlers {
         use crate::abci::handlers::TenderdashAbci;
-        use crate::common::helpers::fee_pools::create_test_masternode_share_identities_and_documents;
+        use crate::config::PlatformConfig;
+        use crate::rpc::core::MockCoreRPCLike;
         use chrono::{Duration, Utc};
+        use dashcore::hashes::hex::FromHex;
+        use dashcore::BlockHash;
+        use dpp::contracts::withdrawals_contract;
+        use dpp::data_contract::DriveContractExt;
+        use dpp::identity::state_transition::identity_credit_withdrawal_transition::Pooling;
+        use dpp::prelude::Identifier;
+        use dpp::system_data_contracts::{load_system_data_contract, SystemDataContract};
+        use dpp::tests::fixtures::get_withdrawal_document_fixture;
+        use dpp::util::hash;
         use drive::common::helpers::identities::create_test_masternode_identities;
-        use drive::drive::batch::GroveDbOpBatch;
+        use drive::drive::block_info::BlockInfo;
+        use drive::drive::identity::withdrawals::WithdrawalTransactionIdAndBytes;
         use drive::fee::epoch::CreditsPerEpoch;
+        use drive::fee_pools::epochs::Epoch;
+        use drive::tests::helpers::setup::setup_document;
         use rust_decimal::prelude::ToPrimitive;
+        use serde_json::json;
+        use std::cmp::Ordering;
         use std::ops::Div;
 
         use crate::abci::messages::{
             AfterFinalizeBlockRequest, BlockBeginRequest, BlockEndRequest, BlockFees,
-            InitChainRequest,
         };
-        use crate::common::helpers::setup::setup_platform;
+        use crate::test::fixture::abci::static_init_chain_request;
+        use crate::test::helpers::fee_pools::create_test_masternode_share_identities_and_documents;
+        use crate::test::helpers::setup::setup_platform_raw;
+
+        // TODO: Should we remove this test in favor of strategy tests?
 
         #[test]
         fn test_abci_flow() {
-            let platform = setup_platform();
+            let mut platform = setup_platform_raw(Some(PlatformConfig {
+                verify_sum_trees: false,
+                ..Default::default()
+            }));
+
+            let mut core_rpc_mock = MockCoreRPCLike::new();
+
             let transaction = platform.drive.grove.start_transaction();
 
             // init chain
-            let init_chain_request = InitChainRequest {};
+            let init_chain_request = static_init_chain_request();
 
             platform
                 .init_chain(init_chain_request, Some(&transaction))
                 .expect("should init chain");
 
+            let data_contract = load_system_data_contract(SystemDataContract::Withdrawals)
+                .expect("to load system data contract");
+
             // Init withdrawal requests
-            let withdrawals = (0..16)
+            let withdrawals: Vec<WithdrawalTransactionIdAndBytes> = (0..16)
                 .map(|index: u64| (index.to_be_bytes().to_vec(), vec![index as u8; 32]))
                 .collect();
 
-            let mut batch = GroveDbOpBatch::new();
+            let owner_id = Identifier::new([1u8; 32]);
+
+            for (_, tx_bytes) in withdrawals.iter() {
+                let tx_id = hash::hash(tx_bytes);
+
+                let document = get_withdrawal_document_fixture(
+                    &data_contract,
+                    owner_id,
+                    json!({
+                        "amount": 1000,
+                        "coreFeePerByte": 1,
+                        "pooling": Pooling::Never,
+                        "outputScript": (0..23).collect::<Vec<u8>>(),
+                        "status": withdrawals_contract::WithdrawalStatus::POOLED,
+                        "transactionIndex": 1,
+                        "transactionSignHeight": 93,
+                        "transactionId": tx_id,
+                    }),
+                );
+
+                let document_type = data_contract
+                    .document_type_for_name(withdrawals_contract::document_types::WITHDRAWAL)
+                    .expect("expected to get document type");
+
+                setup_document(
+                    &platform.drive,
+                    &document,
+                    &data_contract,
+                    document_type,
+                    Some(&transaction),
+                );
+            }
+
+            let block_info = BlockInfo {
+                time_ms: 1,
+                height: 1,
+                epoch: Epoch::new(1),
+            };
+
+            let mut drive_operations = vec![];
 
             platform
                 .drive
-                .add_enqueue_withdrawal_transaction_operations(&mut batch, withdrawals);
+                .add_enqueue_withdrawal_transaction_operations(&withdrawals, &mut drive_operations);
 
             platform
                 .drive
-                .grove_apply_batch(batch, true, Some(&transaction))
-                .expect("to apply batch");
+                .apply_drive_operations(drive_operations, true, &block_info, Some(&transaction))
+                .expect("to apply drive operations");
 
             // setup the contract
             let contract = platform.create_mn_shares_contract(Some(&transaction));
@@ -244,6 +373,7 @@ mod tests {
             let proposers = create_test_masternode_identities(
                 &platform.drive,
                 proposers_count,
+                Some(51),
                 Some(&transaction),
             );
 
@@ -251,12 +381,30 @@ mod tests {
                 &platform.drive,
                 &contract,
                 &proposers,
+                Some(53),
                 Some(&transaction),
             );
 
             let block_interval = 86400i64.div(blocks_per_day);
 
             let mut previous_block_time_ms: Option<u64> = None;
+
+            core_rpc_mock
+                .expect_get_block_hash()
+                // .times(total_days)
+                .returning(|_| {
+                    Ok(BlockHash::from_hex(
+                        "0000000000000000000000000000000000000000000000000000000000000000",
+                    )
+                    .unwrap())
+                });
+
+            core_rpc_mock
+                .expect_get_block_json()
+                // .times(total_days)
+                .returning(|_| Ok(json!({})));
+
+            platform.core_rpc = Box::new(core_rpc_mock);
 
             // process blocks
             for day in 0..total_days {
@@ -281,17 +429,22 @@ mod tests {
                         block_height,
                         block_time_ms,
                         previous_block_time_ms,
-                        proposer_pro_tx_hash: proposers
-                            [block_height as usize % (proposers_count as usize)],
+                        proposer_pro_tx_hash: *proposers
+                            .get(block_height as usize % (proposers_count as usize))
+                            .unwrap(),
+                        proposed_app_version: 1,
                         validator_set_quorum_hash: Default::default(),
+                        last_synced_core_height: 1,
+                        core_chain_locked_height: 1,
+                        total_hpmns: proposers_count as u32,
                     };
 
                     let block_begin_response = platform
                         .block_begin(block_begin_request, Some(&transaction))
-                        .unwrap_or_else(|_| {
+                        .unwrap_or_else(|e| {
                             panic!(
-                                "should begin process block #{} for day #{}",
-                                block_height, day
+                                "should begin process block #{} for day #{} : {}",
+                                block_height, day, e
                             )
                         });
 
@@ -302,12 +455,10 @@ mod tests {
                     let (epoch_index, epoch_change) = if day > epoch_1_start_day {
                         (1, false)
                     } else if day == epoch_1_start_day {
-                        if block_num < epoch_1_start_block {
-                            (0, false)
-                        } else if block_num == epoch_1_start_block {
-                            (1, true)
-                        } else {
-                            (1, false)
+                        match block_num.cmp(&epoch_1_start_block) {
+                            Ordering::Less => (0, false),
+                            Ordering::Equal => (1, true),
+                            Ordering::Greater => (1, false),
                         }
                     } else if day == 0 && block_num == 0 {
                         (0, true)
@@ -361,7 +512,7 @@ mod tests {
                         fees: BlockFees {
                             storage_fee: storage_fees_per_block,
                             processing_fee: 1600,
-                            fee_refunds: CreditsPerEpoch::from_iter([(0, 100)]),
+                            refunds_per_epoch: CreditsPerEpoch::from_iter([(0, 100)]),
                         },
                     };
 
@@ -409,11 +560,34 @@ mod tests {
         fn test_chain_halt_for_36_days() {
             // TODO refactor to remove code duplication
 
-            let platform = setup_platform();
+            let mut platform = setup_platform_raw(Some(PlatformConfig {
+                verify_sum_trees: false,
+                ..Default::default()
+            }));
+
+            let mut core_rpc_mock = MockCoreRPCLike::new();
+
+            core_rpc_mock
+                .expect_get_block_hash()
+                // .times(1) // TODO: investigate why it always n + 1
+                .returning(|_| {
+                    Ok(BlockHash::from_hex(
+                        "0000000000000000000000000000000000000000000000000000000000000000",
+                    )
+                    .unwrap())
+                });
+
+            core_rpc_mock
+                .expect_get_block_json()
+                // .times(1) // TODO: investigate why it always n + 1
+                .returning(|_| Ok(json!({})));
+
+            platform.core_rpc = Box::new(core_rpc_mock);
+
             let transaction = platform.drive.grove.start_transaction();
 
             // init chain
-            let init_chain_request = InitChainRequest {};
+            let init_chain_request = static_init_chain_request();
 
             platform
                 .init_chain(init_chain_request, Some(&transaction))
@@ -436,6 +610,7 @@ mod tests {
             let proposers = create_test_masternode_identities(
                 &platform.drive,
                 proposers_count,
+                Some(52),
                 Some(&transaction),
             );
 
@@ -443,6 +618,7 @@ mod tests {
                 &platform.drive,
                 &contract,
                 &proposers,
+                Some(54),
                 Some(&transaction),
             );
 
@@ -473,9 +649,14 @@ mod tests {
                         block_height,
                         block_time_ms,
                         previous_block_time_ms,
-                        proposer_pro_tx_hash: proposers
-                            [block_height as usize % (proposers_count as usize)],
+                        proposer_pro_tx_hash: *proposers
+                            .get(block_height as usize % (proposers_count as usize))
+                            .unwrap(),
+                        proposed_app_version: 1,
                         validator_set_quorum_hash: Default::default(),
+                        last_synced_core_height: 1,
+                        core_chain_locked_height: 1,
+                        total_hpmns: proposers_count as u32,
                     };
 
                     let block_begin_response = platform
@@ -517,7 +698,7 @@ mod tests {
                         fees: BlockFees {
                             storage_fee: storage_fees_per_block,
                             processing_fee: 1600,
-                            fee_refunds: CreditsPerEpoch::from_iter([(0, 100)]),
+                            refunds_per_epoch: CreditsPerEpoch::from_iter([(0, 100)]),
                         },
                     };
 

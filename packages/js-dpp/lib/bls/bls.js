@@ -1,5 +1,5 @@
 const EventEmitter = require('events');
-const BlsSignatures = require('bls-signatures');
+const BlsSignatures = require('@dashevo/bls');
 
 const eventNames = {
   LOADED_EVENT: 'LOADED',

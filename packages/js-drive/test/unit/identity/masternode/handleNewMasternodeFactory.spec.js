@@ -69,19 +69,21 @@ describe('handleNewMasternodeFactory', () => {
     expect(result.updatedEntities).to.have.lengthOf(0);
     expect(result.removedEntities).to.have.lengthOf(0);
 
-    expect(result.createdEntities[0].toJSON()).to.deep.equal(identityFixture.toJSON());
-    expect(result.createdEntities[1].toJSON()).to.deep.equal(identityFixture.toJSON());
+    expect(result.createdEntities[0].toObject()).to.deep.equal(identityFixture.toObject());
+    expect(result.createdEntities[1].toObject()).to.deep.equal(identityFixture.toObject());
 
     expect(fetchTransactionMock).to.be.calledOnceWithExactly(masternodeEntry.proRegTxHash);
     expect(createMasternodeIdentityMock.getCall(0)).to.be.calledWithExactly(
-      Identifier.from('6k8jXHFuno3vqpfrQ36CaxrGi4SupdTJcGNeZLPioxQo'),
+      blockInfo,
+      Identifier.from('HYyu6DdUQyiHZwzeWpmahu7AUrsEF9MKkRcrdQnKeNSj'),
       Buffer.from('6161616161616161616161616161616161616161', 'hex'),
       IdentityPublicKey.TYPES.ECDSA_HASH160,
       payoutScript,
     );
 
     expect(createMasternodeIdentityMock.getCall(1)).to.be.calledWithExactly(
-      Identifier.from('G1p14MYdpNRLNWuKgQ9SjJUPxfuaJMTwYjdRWu9sLzvL'),
+      blockInfo,
+      Identifier.from('GVYoKVDd29gbmHzbVGepFjCbdymCS5Jq26CCiLnWNL6C'),
       Buffer.from('6262626262626262626262626262626262626262', 'hex'),
       IdentityPublicKey.TYPES.ECDSA_HASH160,
     );
@@ -109,7 +111,8 @@ describe('handleNewMasternodeFactory', () => {
 
     expect(fetchTransactionMock).to.be.calledOnceWithExactly(masternodeEntry.proRegTxHash);
     expect(createMasternodeIdentityMock).to.be.calledOnceWithExactly(
-      Identifier.from('6k8jXHFuno3vqpfrQ36CaxrGi4SupdTJcGNeZLPioxQo'),
+      blockInfo,
+      Identifier.from('HYyu6DdUQyiHZwzeWpmahu7AUrsEF9MKkRcrdQnKeNSj'),
       Buffer.from('6161616161616161616161616161616161616161', 'hex'),
       IdentityPublicKey.TYPES.ECDSA_HASH160,
       payoutScript,
@@ -136,22 +139,29 @@ describe('handleNewMasternodeFactory', () => {
     const operatorPayoutScript = new Script(operatorPayoutAddress);
 
     const votingIdentifier = createVotingIdentifier(masternodeEntry);
+    const payoutAddress = Address.fromString(masternodeEntry.payoutAddress);
+    const payoutScript = new Script(payoutAddress);
 
     expect(fetchTransactionMock).to.be.calledOnceWithExactly(masternodeEntry.proRegTxHash);
     expect(createMasternodeIdentityMock).to.be.calledThrice();
-    expect(createMasternodeIdentityMock.getCall(0)).to.be.calledWith(
-      Identifier.from('6k8jXHFuno3vqpfrQ36CaxrGi4SupdTJcGNeZLPioxQo'),
+    expect(createMasternodeIdentityMock.getCall(0)).to.be.calledWithExactly(
+      blockInfo,
+      Identifier.from('HYyu6DdUQyiHZwzeWpmahu7AUrsEF9MKkRcrdQnKeNSj'),
       Buffer.from('6161616161616161616161616161616161616161', 'hex'),
       IdentityPublicKey.TYPES.ECDSA_HASH160,
-      undefined,
+      payoutScript,
     );
-    expect(createMasternodeIdentityMock.getCall(1)).to.be.calledWith(
+
+    expect(createMasternodeIdentityMock.getCall(1)).to.be.calledWithExactly(
+      blockInfo,
       operatorIdentifier,
-      Buffer.from('08b66151b81bd6a08bad2e68810ea07014012d6d804859219958a7fbc293689aa902bd0cd6db7a4699c9e88a4ae8c2c0', 'hex'),
+      Buffer.from('951a3208ba531ea75aedd2dc0a9efc75f2c4d9492f1ee0a989b593bcd9722b1a101774d80a426552a9f91d24eb55af6e', 'hex'),
       IdentityPublicKey.TYPES.BLS12_381,
       operatorPayoutScript,
     );
-    expect(createMasternodeIdentityMock.getCall(2)).to.be.calledWith(
+
+    expect(createMasternodeIdentityMock.getCall(2)).to.be.calledWithExactly(
+      blockInfo,
       votingIdentifier,
       Buffer.from('6262626262626262626262626262626262626262', 'hex'),
       IdentityPublicKey.TYPES.ECDSA_HASH160,
@@ -159,8 +169,8 @@ describe('handleNewMasternodeFactory', () => {
 
     expect(createRewardShareDocumentMock).to.be.calledOnceWithExactly(
       dataContract,
-      Identifier.from('6k8jXHFuno3vqpfrQ36CaxrGi4SupdTJcGNeZLPioxQo'),
-      Identifier.from('EwLi1FgGwvmLQ9nkfnttpXzv4SfC7XGBvs61QBCtnHEL'),
+      Identifier.from('HYyu6DdUQyiHZwzeWpmahu7AUrsEF9MKkRcrdQnKeNSj'),
+      Identifier.from('4Ftw1Euv5BJrUk73gKeELFsVqrfVXjbUTSt4tNZjBaVq'),
       10,
       blockInfo,
     );

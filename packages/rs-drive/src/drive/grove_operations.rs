@@ -39,13 +39,15 @@ use costs::CostContext;
 use grovedb::batch::estimated_costs::EstimatedCostsType::AverageCaseCostsType;
 use grovedb::batch::{key_info::KeyInfo, BatchApplyOptions, GroveDbOp, KeyInfoPath, Op};
 use grovedb::{Element, EstimatedLayerInformation, GroveDb, PathQuery, TransactionArg};
+
 use std::collections::HashMap;
 
 use crate::drive::flags::StorageFlags;
 use crate::drive::object_size_info::DriveKeyInfo::{Key, KeyRef, KeySize};
 
 use crate::drive::object_size_info::PathKeyElementInfo::{
-    PathFixedSizeKeyElement, PathKeyElement, PathKeyElementSize, PathKeyUnknownElementSize,
+    PathFixedSizeKeyRefElement, PathKeyElement, PathKeyElementSize, PathKeyRefElement,
+    PathKeyUnknownElementSize,
 };
 use crate::drive::object_size_info::PathKeyInfo::{
     PathFixedSizeKey, PathFixedSizeKeyRef, PathKey, PathKeyRef, PathKeySize,
@@ -58,8 +60,11 @@ use crate::fee::op::DriveOperation;
 use crate::fee::op::DriveOperation::{CalculatedCostOperation, GroveOperation};
 use grovedb::operations::delete::{DeleteOptions, DeleteUpTreeOptions};
 use grovedb::operations::insert::InsertOptions;
-use grovedb::query_result_type::{QueryResultElements, QueryResultType};
+use grovedb::query_result_type::{
+    PathKeyOptionalElementTrio, QueryResultElements, QueryResultType,
+};
 use grovedb::Error as GroveError;
+use integer_encoding::VarInt;
 
 use intmap::IntMap;
 use storage::rocksdb_storage::RocksDbStorage;
@@ -115,18 +120,18 @@ pub enum BatchDeleteUpTreeApplyType {
 
 #[derive(Clone, Copy)]
 pub enum BatchInsertTreeApplyType {
-    StatelessBatchInsert {
+    StatelessBatchInsertTree {
         in_tree_using_sums: bool,
         is_sum_tree: bool,
         flags_len: FlagsLen,
     },
-    StatefulBatchInsert,
+    StatefulBatchInsertTree,
 }
 
 impl BatchInsertTreeApplyType {
     pub(crate) fn to_direct_query_type(&self) -> DirectQueryType {
         match self {
-            BatchInsertTreeApplyType::StatelessBatchInsert {
+            BatchInsertTreeApplyType::StatelessBatchInsertTree {
                 in_tree_using_sums,
                 is_sum_tree,
                 flags_len,
@@ -134,7 +139,9 @@ impl BatchInsertTreeApplyType {
                 in_tree_using_sums: *in_tree_using_sums,
                 query_target: QueryTarget::QueryTargetTree(*flags_len, *is_sum_tree),
             },
-            BatchInsertTreeApplyType::StatefulBatchInsert => DirectQueryType::StatefulDirectQuery,
+            BatchInsertTreeApplyType::StatefulBatchInsertTree => {
+                DirectQueryType::StatefulDirectQuery
+            }
         }
     }
 }
@@ -192,7 +199,7 @@ pub enum DirectQueryType {
 }
 
 impl DirectQueryType {
-    pub(crate) fn to_query_type(self) -> QueryType {
+    pub(crate) fn into_query_type(self) -> QueryType {
         match self {
             DirectQueryType::StatelessDirectQuery {
                 in_tree_using_sums,
@@ -250,6 +257,44 @@ impl Drive {
         push_drive_operation_result(cost_context, drive_operations)
     }
 
+    /// Pushes the `OperationCost` of inserting an empty tree in groveDB to `drive_operations`.
+    pub fn grove_insert_empty_tree<'p, P>(
+        &self,
+        path: P,
+        key: &'p [u8],
+        transaction: TransactionArg,
+        options: Option<InsertOptions>,
+        drive_operations: &mut Vec<DriveOperation>,
+    ) -> Result<(), Error>
+    where
+        P: IntoIterator<Item = &'p [u8]>,
+        <P as IntoIterator>::IntoIter: ExactSizeIterator + DoubleEndedIterator + Clone,
+    {
+        let cost_context =
+            self.grove
+                .insert(path, key, Element::empty_tree(), options, transaction);
+        push_drive_operation_result(cost_context, drive_operations)
+    }
+
+    /// Pushes the `OperationCost` of inserting an empty sum tree in groveDB to `drive_operations`.
+    pub fn grove_insert_empty_sum_tree<'p, P>(
+        &self,
+        path: P,
+        key: &'p [u8],
+        transaction: TransactionArg,
+        options: Option<InsertOptions>,
+        drive_operations: &mut Vec<DriveOperation>,
+    ) -> Result<(), Error>
+    where
+        P: IntoIterator<Item = &'p [u8]>,
+        <P as IntoIterator>::IntoIter: ExactSizeIterator + DoubleEndedIterator + Clone,
+    {
+        let cost_context =
+            self.grove
+                .insert(path, key, Element::empty_sum_tree(), options, transaction);
+        push_drive_operation_result(cost_context, drive_operations)
+    }
+
     /// Pushes the `OperationCost` of inserting an element in groveDB where the path key does not yet exist
     /// to `drive_operations`.
     pub fn grove_insert_if_not_exists<'p, P>(
@@ -292,9 +337,9 @@ impl Drive {
         push_drive_operation_result(cost_context, drive_operations)
     }
 
-    /// grove_get_direct basically means that there are no reference hops, this only matters
+    /// grove_get_raw basically means that there are no reference hops, this only matters
     /// when calculating worst case costs
-    pub fn grove_get_direct<'p, P>(
+    pub fn grove_get_raw<'p, P>(
         &self,
         path: P,
         key: &'p [u8],
@@ -306,13 +351,132 @@ impl Drive {
         P: IntoIterator<Item = &'p [u8]>,
         <P as IntoIterator>::IntoIter: ExactSizeIterator + DoubleEndedIterator + Clone,
     {
-        self.grove_get(
+        let path_iter = path.into_iter();
+        match direct_query_type {
+            DirectQueryType::StatelessDirectQuery {
+                in_tree_using_sums,
+                query_target,
+            } => {
+                let key_info_path = KeyInfoPath::from_known_path(path_iter);
+                let key_info = KeyInfo::KnownKey(key.to_vec());
+                let cost = match query_target {
+                    QueryTarget::QueryTargetTree(flags_size, is_sum_tree) => {
+                        GroveDb::average_case_for_get_tree(
+                            &key_info_path,
+                            &key_info,
+                            flags_size,
+                            is_sum_tree,
+                            in_tree_using_sums,
+                        )
+                    }
+                    QueryTarget::QueryTargetValue(estimated_value_size) => {
+                        GroveDb::average_case_for_get_raw(
+                            &key_info_path,
+                            &key_info,
+                            estimated_value_size,
+                            in_tree_using_sums,
+                        )
+                    }
+                };
+
+                drive_operations.push(CalculatedCostOperation(cost));
+                Ok(None)
+            }
+            DirectQueryType::StatefulDirectQuery => {
+                let CostContext { value, cost } = self.grove.get_raw(path_iter, key, transaction);
+                drive_operations.push(CalculatedCostOperation(cost));
+                Ok(Some(value.map_err(Error::GroveDB)?))
+            }
+        }
+    }
+
+    /// grove_get_raw basically means that there are no reference hops, this only matters
+    /// when calculating worst case costs
+    pub fn grove_get_raw_optional<'p, P>(
+        &self,
+        path: P,
+        key: &'p [u8],
+        direct_query_type: DirectQueryType,
+        transaction: TransactionArg,
+        drive_operations: &mut Vec<DriveOperation>,
+    ) -> Result<Option<Element>, Error>
+    where
+        P: IntoIterator<Item = &'p [u8]>,
+        <P as IntoIterator>::IntoIter: ExactSizeIterator + DoubleEndedIterator + Clone,
+    {
+        let path_iter = path.into_iter();
+        match direct_query_type {
+            DirectQueryType::StatelessDirectQuery {
+                in_tree_using_sums,
+                query_target,
+            } => {
+                let key_info_path = KeyInfoPath::from_known_path(path_iter);
+                let key_info = KeyInfo::KnownKey(key.to_vec());
+                let cost = match query_target {
+                    QueryTarget::QueryTargetTree(flags_size, is_sum_tree) => {
+                        GroveDb::average_case_for_get_tree(
+                            &key_info_path,
+                            &key_info,
+                            flags_size,
+                            is_sum_tree,
+                            in_tree_using_sums,
+                        )
+                    }
+                    QueryTarget::QueryTargetValue(estimated_value_size) => {
+                        GroveDb::average_case_for_get_raw(
+                            &key_info_path,
+                            &key_info,
+                            estimated_value_size,
+                            in_tree_using_sums,
+                        )
+                    }
+                };
+
+                drive_operations.push(CalculatedCostOperation(cost));
+                Ok(None)
+            }
+            DirectQueryType::StatefulDirectQuery => {
+                let CostContext { value, cost } =
+                    self.grove.get_raw_optional(path_iter, key, transaction);
+                drive_operations.push(CalculatedCostOperation(cost));
+                Ok(value.map_err(Error::GroveDB)?)
+            }
+        }
+    }
+
+    /// grove_get_direct_u64 is a helper function to get a
+    pub fn grove_get_raw_value_u64_from_encoded_var_vec<'p, P>(
+        &self,
+        path: P,
+        key: &'p [u8],
+        direct_query_type: DirectQueryType,
+        transaction: TransactionArg,
+        drive_operations: &mut Vec<DriveOperation>,
+    ) -> Result<Option<u64>, Error>
+    where
+        P: IntoIterator<Item = &'p [u8]>,
+        <P as IntoIterator>::IntoIter: ExactSizeIterator + DoubleEndedIterator + Clone,
+    {
+        let element = self.grove_get_raw_optional(
             path,
             key,
-            direct_query_type.to_query_type(),
+            direct_query_type,
             transaction,
             drive_operations,
-        )
+        )?;
+        element
+            .map(|element| match element {
+                Element::Item(value, ..) => u64::decode_var(value.as_slice())
+                    .ok_or(Error::Drive(DriveError::CorruptedElementType(
+                        "encoded value could not be decoded",
+                    )))
+                    .map(|(value, _)| value),
+                Element::SumItem(value, ..) => Ok(value as u64),
+                _ => Err(Error::Drive(DriveError::CorruptedQueryReturnedNonItem(
+                    "expected an item",
+                ))),
+            })
+            .transpose()
     }
 
     /// Gets the element at the given path from groveDB.
@@ -330,9 +494,6 @@ impl Drive {
         <P as IntoIterator>::IntoIter: ExactSizeIterator + DoubleEndedIterator + Clone,
     {
         let path_iter = path.into_iter();
-        // if let Some((max_value_size, max_reference_sizes)) =
-        //     query_stateless_with_max_value_size_and_max_reference_sizes
-        // {
         match query_type {
             QueryType::StatelessQuery {
                 in_tree_using_sums,
@@ -375,7 +536,7 @@ impl Drive {
 
     /// Gets the return value and the cost of a groveDB path query.
     /// Pushes the cost to `drive_operations` and returns the return value.
-    pub(crate) fn grove_get_path_query(
+    pub(crate) fn grove_get_path_query_serialized_results(
         &self,
         path_query: &PathQuery,
         transaction: TransactionArg,
@@ -384,6 +545,52 @@ impl Drive {
         let CostContext { value, cost } =
             self.grove
                 .query_item_value(path_query, transaction.is_some(), transaction);
+        drive_operations.push(CalculatedCostOperation(cost));
+        value.map_err(Error::GroveDB)
+    }
+
+    /// Gets the return value and the cost of a groveDB path query.
+    /// Pushes the cost to `drive_operations` and returns the return value.
+    pub(crate) fn grove_get_path_query(
+        &self,
+        path_query: &PathQuery,
+        transaction: TransactionArg,
+        result_type: QueryResultType,
+        drive_operations: &mut Vec<DriveOperation>,
+    ) -> Result<(QueryResultElements, u16), Error> {
+        let CostContext { value, cost } =
+            self.grove
+                .query(path_query, transaction.is_some(), result_type, transaction);
+        drive_operations.push(CalculatedCostOperation(cost));
+        value.map_err(Error::GroveDB)
+    }
+
+    /// Gets the return value and the cost of a groveDB path query.
+    /// Pushes the cost to `drive_operations` and returns the return value.
+    pub(crate) fn grove_get_path_query_with_optional(
+        &self,
+        path_query: &PathQuery,
+        transaction: TransactionArg,
+        drive_operations: &mut Vec<DriveOperation>,
+    ) -> Result<Vec<PathKeyOptionalElementTrio>, Error> {
+        let CostContext { value, cost } =
+            self.grove
+                .query_keys_optional(path_query, true, transaction);
+        drive_operations.push(CalculatedCostOperation(cost));
+        value.map_err(Error::GroveDB)
+    }
+
+    /// Gets the return value and the cost of a groveDB path query.
+    /// Pushes the cost to `drive_operations` and returns the return value.
+    pub(crate) fn grove_get_raw_path_query_with_optional(
+        &self,
+        path_query: &PathQuery,
+        transaction: TransactionArg,
+        drive_operations: &mut Vec<DriveOperation>,
+    ) -> Result<Vec<PathKeyOptionalElementTrio>, Error> {
+        let CostContext { value, cost } =
+            self.grove
+                .query_raw_keys_optional(path_query, true, transaction);
         drive_operations.push(CalculatedCostOperation(cost));
         value.map_err(Error::GroveDB)
     }
@@ -406,15 +613,74 @@ impl Drive {
 
     /// Gets the return value and the cost of a groveDB proved path query.
     /// Pushes the cost to `drive_operations` and returns the return value.
+    /// Verbose should be generally set to false unless one needs to prove
+    /// subsets of a proof.
     pub(crate) fn grove_get_proved_path_query(
         &self,
         path_query: &PathQuery,
+        verbose: bool,
         transaction: TransactionArg,
         drive_operations: &mut Vec<DriveOperation>,
     ) -> Result<Vec<u8>, Error> {
-        let CostContext { value, cost } = self.grove.get_proved_path_query(path_query, transaction);
+        let CostContext { value, cost } =
+            self.grove
+                .get_proved_path_query(path_query, verbose, transaction);
         drive_operations.push(CalculatedCostOperation(cost));
         value.map_err(Error::GroveDB)
+    }
+
+    /// Gets the element at the given path from groveDB.
+    /// Pushes the `OperationCost` of getting the element to `drive_operations`.
+    pub fn grove_get_sum_tree_total_value<'p, P>(
+        &self,
+        path: P,
+        key: &'p [u8],
+        query_type: DirectQueryType,
+        transaction: TransactionArg,
+        drive_operations: &mut Vec<DriveOperation>,
+    ) -> Result<i64, Error>
+    where
+        P: IntoIterator<Item = &'p [u8]>,
+        <P as IntoIterator>::IntoIter: ExactSizeIterator + DoubleEndedIterator + Clone,
+    {
+        let path_iter = path.into_iter();
+        match query_type {
+            DirectQueryType::StatelessDirectQuery {
+                in_tree_using_sums,
+                query_target,
+            } => {
+                let key_info_path = KeyInfoPath::from_known_path(path_iter);
+                let key_info = KeyInfo::KnownKey(key.to_vec());
+                let cost = match query_target {
+                    QueryTarget::QueryTargetTree(flags_size, is_sum_tree) => {
+                        Ok(GroveDb::average_case_for_get_tree(
+                            &key_info_path,
+                            &key_info,
+                            flags_size,
+                            is_sum_tree,
+                            in_tree_using_sums,
+                        ))
+                    }
+                    _ => Err(Error::Drive(DriveError::CorruptedCodeExecution(
+                        "can not query a non tree",
+                    ))),
+                }?;
+
+                drive_operations.push(CalculatedCostOperation(cost));
+                Ok(0)
+            }
+            DirectQueryType::StatefulDirectQuery => {
+                let CostContext { value, cost } = self.grove.get_raw(path_iter, key, transaction);
+                drive_operations.push(CalculatedCostOperation(cost));
+                let element = value.map_err(Error::GroveDB)?;
+                match element {
+                    Element::SumTree(_, value, _) => Ok(value),
+                    _ => Err(Error::Drive(DriveError::CorruptedBalancePath(
+                        "balance path does not refer to a sum tree",
+                    ))),
+                }
+            }
+        }
     }
 
     /// Gets the return value and the cost of a groveDB `has_raw` operation.
@@ -525,9 +791,9 @@ impl Drive {
 
     /// Pushes an "insert empty tree where path key does not yet exist" operation to `drive_operations`.
     /// Will also check the current drive operations
-    pub(crate) fn batch_insert_empty_tree_if_not_exists<'a, 'c, const N: usize>(
-        &'a self,
-        path_key_info: PathKeyInfo<'c, N>,
+    pub(crate) fn batch_insert_empty_tree_if_not_exists<const N: usize>(
+        &self,
+        path_key_info: PathKeyInfo<N>,
         storage_flags: Option<&StorageFlags>,
         apply_type: BatchInsertTreeApplyType,
         transaction: TransactionArg,
@@ -794,6 +1060,121 @@ impl Drive {
         }
     }
 
+    /// Pushes an "insert empty tree where path key does not yet exist" operation to `drive_operations`.
+    /// Will also check the current drive operations
+    pub(crate) fn batch_insert_empty_tree_if_not_exists_check_existing_operations<
+        const N: usize,
+    >(
+        &self,
+        path_key_info: PathKeyInfo<N>,
+        storage_flags: Option<&StorageFlags>,
+        apply_type: BatchInsertTreeApplyType,
+        transaction: TransactionArg,
+        drive_operations: &mut Vec<DriveOperation>,
+    ) -> Result<bool, Error> {
+        match path_key_info {
+            PathKeyRef((path, key)) => {
+                let path_iter: Vec<&[u8]> = path.iter().map(|x| x.as_slice()).collect();
+                let drive_operation = DriveOperation::for_known_path_key_empty_tree(
+                    path.clone(),
+                    key.to_vec(),
+                    storage_flags,
+                );
+                // we only add the operation if it doesn't already exist in the current batch
+                if !drive_operations.contains(&drive_operation) {
+                    let has_raw = self.grove_has_raw(
+                        path_iter.clone(),
+                        key,
+                        apply_type.to_direct_query_type(),
+                        transaction,
+                        drive_operations,
+                    )?;
+                    if !has_raw {
+                        drive_operations.push(drive_operation);
+                    }
+                    Ok(!has_raw)
+                } else {
+                    Ok(false)
+                }
+            }
+            PathKeySize(_key_path_info, _key_info) => Err(Error::Drive(
+                DriveError::NotSupportedPrivate("document sizes in batch operations not supported"),
+            )),
+            PathKey((path, key)) => {
+                let drive_operation = DriveOperation::for_known_path_key_empty_tree(
+                    path.clone(),
+                    key.clone(),
+                    storage_flags,
+                );
+                // we only add the operation if it doesn't already exist in the current batch
+                if !drive_operations.contains(&drive_operation) {
+                    let path_iter: Vec<&[u8]> = path.iter().map(|x| x.as_slice()).collect();
+                    let has_raw = self.grove_has_raw(
+                        path_iter.clone(),
+                        key.as_slice(),
+                        apply_type.to_direct_query_type(),
+                        transaction,
+                        drive_operations,
+                    )?;
+                    if !has_raw {
+                        drive_operations.push(drive_operation);
+                    }
+                    Ok(!has_raw)
+                } else {
+                    Ok(false)
+                }
+            }
+            PathFixedSizeKey((path, key)) => {
+                let path_items: Vec<Vec<u8>> = path.into_iter().map(Vec::from).collect();
+                let drive_operation = DriveOperation::for_known_path_key_empty_tree(
+                    path_items,
+                    key.to_vec(),
+                    storage_flags,
+                );
+                // we only add the operation if it doesn't already exist in the current batch
+                if !drive_operations.contains(&drive_operation) {
+                    let has_raw = self.grove_has_raw(
+                        path,
+                        key.as_slice(),
+                        apply_type.to_direct_query_type(),
+                        transaction,
+                        drive_operations,
+                    )?;
+                    if !has_raw {
+                        drive_operations.push(drive_operation);
+                    }
+                    Ok(!has_raw)
+                } else {
+                    Ok(false)
+                }
+            }
+            PathFixedSizeKeyRef((path, key)) => {
+                let path_items: Vec<Vec<u8>> = path.into_iter().map(Vec::from).collect();
+                let drive_operation = DriveOperation::for_known_path_key_empty_tree(
+                    path_items,
+                    key.to_vec(),
+                    storage_flags,
+                );
+                // we only add the operation if it doesn't already exist in the current batch
+                if !drive_operations.contains(&drive_operation) {
+                    let has_raw = self.grove_has_raw(
+                        path,
+                        key,
+                        apply_type.to_direct_query_type(),
+                        transaction,
+                        drive_operations,
+                    )?;
+                    if !has_raw {
+                        drive_operations.push(drive_operation);
+                    }
+                    Ok(!has_raw)
+                } else {
+                    Ok(false)
+                }
+            }
+        }
+    }
+
     /// Pushes an "insert element" operation to `drive_operations`.
     pub(crate) fn batch_insert<const N: usize>(
         &self,
@@ -801,16 +1182,22 @@ impl Drive {
         drive_operations: &mut Vec<DriveOperation>,
     ) -> Result<(), Error> {
         match path_key_element_info {
-            PathKeyElement((path, key, element)) => {
-                drive_operations.push(DriveOperation::for_known_path_key_element(
+            PathKeyRefElement((path, key, element)) => {
+                drive_operations.push(DriveOperation::insert_for_known_path_key_element(
                     path,
                     key.to_vec(),
                     element,
                 ));
                 Ok(())
             }
+            PathKeyElement((path, key, element)) => {
+                drive_operations.push(DriveOperation::insert_for_known_path_key_element(
+                    path, key, element,
+                ));
+                Ok(())
+            }
             PathKeyElementSize((key_info_path, key_info, element)) => {
-                drive_operations.push(DriveOperation::for_estimated_path_key_element(
+                drive_operations.push(DriveOperation::insert_for_estimated_path_key_element(
                     key_info_path,
                     key_info,
                     element,
@@ -820,9 +1207,9 @@ impl Drive {
             PathKeyUnknownElementSize(_) => Err(Error::Drive(DriveError::NotSupportedPrivate(
                 "inserting unsized documents into a batch is not currently supported",
             ))),
-            PathFixedSizeKeyElement((path, key, element)) => {
+            PathFixedSizeKeyRefElement((path, key, element)) => {
                 let path_items: Vec<Vec<u8>> = path.into_iter().map(Vec::from).collect();
-                drive_operations.push(DriveOperation::for_known_path_key_element(
+                drive_operations.push(DriveOperation::insert_for_known_path_key_element(
                     path_items,
                     key.to_vec(),
                     element,
@@ -834,15 +1221,15 @@ impl Drive {
 
     /// Pushes an "insert element if the path key does not yet exist" operation to `drive_operations`.
     /// Returns true if the path key already exists without references.
-    pub(crate) fn batch_insert_if_not_exists<'a, 'c, const N: usize>(
-        &'a self,
-        path_key_element_info: PathKeyElementInfo<'c, N>,
+    pub(crate) fn batch_insert_if_not_exists<const N: usize>(
+        &self,
+        path_key_element_info: PathKeyElementInfo<N>,
         apply_type: BatchInsertApplyType,
         transaction: TransactionArg,
         drive_operations: &mut Vec<DriveOperation>,
     ) -> Result<bool, Error> {
         match path_key_element_info {
-            PathKeyElement((path, key, element)) => {
+            PathKeyRefElement((path, key, element)) => {
                 let path_iter: Vec<&[u8]> = path.iter().map(|x| x.as_slice()).collect();
                 let has_raw = self.grove_has_raw(
                     path_iter.clone(),
@@ -852,7 +1239,7 @@ impl Drive {
                     drive_operations,
                 )?;
                 if !has_raw {
-                    drive_operations.push(DriveOperation::for_known_path_key_element(
+                    drive_operations.push(DriveOperation::insert_for_known_path_key_element(
                         path,
                         key.to_vec(),
                         element,
@@ -860,7 +1247,23 @@ impl Drive {
                 }
                 Ok(!has_raw)
             }
-            PathFixedSizeKeyElement((path, key, element)) => {
+            PathKeyElement((path, key, element)) => {
+                let path_iter: Vec<&[u8]> = path.iter().map(|x| x.as_slice()).collect();
+                let has_raw = self.grove_has_raw(
+                    path_iter.clone(),
+                    key.as_slice(),
+                    apply_type.to_direct_query_type(),
+                    transaction,
+                    drive_operations,
+                )?;
+                if !has_raw {
+                    drive_operations.push(DriveOperation::insert_for_known_path_key_element(
+                        path, key, element,
+                    ));
+                }
+                Ok(!has_raw)
+            }
+            PathFixedSizeKeyRefElement((path, key, element)) => {
                 let has_raw = self.grove_has_raw(
                     path,
                     key,
@@ -870,7 +1273,7 @@ impl Drive {
                 )?;
                 if !has_raw {
                     let path_items: Vec<Vec<u8>> = path.into_iter().map(Vec::from).collect();
-                    drive_operations.push(DriveOperation::for_known_path_key_element(
+                    drive_operations.push(DriveOperation::insert_for_known_path_key_element(
                         path_items,
                         key.to_vec(),
                         element,
@@ -892,12 +1295,124 @@ impl Drive {
                                 in_tree_using_sums,
                             ),
                         ));
-                        drive_operations.push(DriveOperation::for_estimated_path_key_element(
-                            key_info_path,
-                            key_info,
-                            element,
-                        ));
+                        drive_operations.push(
+                            DriveOperation::insert_for_estimated_path_key_element(
+                                key_info_path,
+                                key_info,
+                                element,
+                            ),
+                        );
                         Ok(true)
+                    }
+                    BatchInsertApplyType::StatefulBatchInsert => {
+                        Err(Error::Drive(DriveError::NotSupportedPrivate(
+                            "document sizes for stateful insert in batch operations not supported",
+                        )))
+                    }
+                }
+            }
+            PathKeyUnknownElementSize(_) => Err(Error::Drive(DriveError::NotSupportedPrivate(
+                "document sizes in batch operations not supported",
+            ))),
+        }
+    }
+
+    /// Pushes an "insert element if element was changed or is new" operation to `drive_operations`.
+    /// Returns true if the path key already exists without references.
+    pub(crate) fn batch_insert_if_changed_value<const N: usize>(
+        &self,
+        path_key_element_info: PathKeyElementInfo<N>,
+        apply_type: BatchInsertApplyType,
+        transaction: TransactionArg,
+        drive_operations: &mut Vec<DriveOperation>,
+    ) -> Result<(bool, Option<Element>), Error> {
+        match path_key_element_info {
+            PathKeyRefElement((path, key, element)) => {
+                let path_iter: Vec<&[u8]> = path.iter().map(|x| x.as_slice()).collect();
+                let previous_element = self.grove_get_raw_optional(
+                    path_iter.clone(),
+                    key,
+                    apply_type.to_direct_query_type(),
+                    transaction,
+                    drive_operations,
+                )?;
+                let needs_insert = match &previous_element {
+                    None => true,
+                    Some(previous_element) => previous_element != &element,
+                };
+                if needs_insert {
+                    drive_operations.push(DriveOperation::insert_for_known_path_key_element(
+                        path,
+                        key.to_vec(),
+                        element,
+                    ));
+                }
+                Ok((needs_insert, previous_element))
+            }
+            PathKeyElement((path, key, element)) => {
+                let path_iter: Vec<&[u8]> = path.iter().map(|x| x.as_slice()).collect();
+                let previous_element = self.grove_get_raw_optional(
+                    path_iter.clone(),
+                    key.as_slice(),
+                    apply_type.to_direct_query_type(),
+                    transaction,
+                    drive_operations,
+                )?;
+                let needs_insert = match &previous_element {
+                    None => true,
+                    Some(previous_element) => previous_element != &element,
+                };
+                if needs_insert {
+                    drive_operations.push(DriveOperation::insert_for_known_path_key_element(
+                        path, key, element,
+                    ));
+                }
+                Ok((needs_insert, previous_element))
+            }
+            PathFixedSizeKeyRefElement((path, key, element)) => {
+                let previous_element = self.grove_get_raw_optional(
+                    path,
+                    key,
+                    apply_type.to_direct_query_type(),
+                    transaction,
+                    drive_operations,
+                )?;
+                let needs_insert = match &previous_element {
+                    None => true,
+                    Some(previous_element) => previous_element != &element,
+                };
+                if needs_insert {
+                    let path_items: Vec<Vec<u8>> = path.into_iter().map(Vec::from).collect();
+                    drive_operations.push(DriveOperation::insert_for_known_path_key_element(
+                        path_items,
+                        key.to_vec(),
+                        element,
+                    ));
+                }
+                Ok((needs_insert, previous_element))
+            }
+            PathKeyElementSize((key_info_path, key_info, element)) => {
+                match apply_type {
+                    BatchInsertApplyType::StatelessBatchInsert {
+                        in_tree_using_sums, ..
+                    } => {
+                        // we can estimate that the element was the same size
+                        drive_operations.push(CalculatedCostOperation(
+                            GroveDb::average_case_for_get_raw(
+                                &key_info_path,
+                                &key_info,
+                                element.serialized_size() as u32,
+                                in_tree_using_sums,
+                            ),
+                        ));
+                        drive_operations.push(
+                            DriveOperation::insert_for_estimated_path_key_element(
+                                key_info_path,
+                                key_info,
+                                element,
+                            ),
+                        );
+                        Ok((true, None))
                     }
                     BatchInsertApplyType::StatefulBatchInsert => {
                         Err(Error::Drive(DriveError::NotSupportedPrivate(
@@ -930,7 +1445,7 @@ impl Drive {
             allow_deleting_non_empty_trees: false,
             deleting_non_empty_trees_returns_error: true,
             base_root_storage_is_free: true,
-            validate_tree_at_path_exists: false,
+            validate_tree_at_path_exists: false, //todo: not sure about this one
         };
         let delete_operation = match apply_type {
             BatchDeleteApplyType::StatelessBatchDelete {
@@ -940,7 +1455,7 @@ impl Drive {
                 &KeyInfoPath::from_known_path(path),
                 &KeyInfo::KnownKey(key.to_vec()),
                 is_sum_tree,
-                true,
+                false,
                 true,
                 0,
                 estimated_value_size,
@@ -969,10 +1484,10 @@ impl Drive {
     }
 
     /// Pushes a "delete up tree while empty" operation to `drive_operations`.
-    pub(crate) fn batch_delete_up_tree_while_empty<'a, 'c>(
-        &'a self,
+    pub(crate) fn batch_delete_up_tree_while_empty(
+        &self,
         path: KeyInfoPath,
-        key: &'c [u8],
+        key: &[u8],
         stop_path_height: Option<u16>,
         apply_type: BatchDeleteUpTreeApplyType,
         transaction: TransactionArg,
@@ -1099,7 +1614,7 @@ impl Drive {
                     // This could be none only because the old element didn't exist
                     // If they were empty we get an error
                     let maybe_old_storage_flags =
-                        StorageFlags::from_some_element_flags_ref(&old_flags).map_err(|_| GroveError::JustInTimeElementFlagsClientError("drive did not understand flags of old item being updated"))?;
+                        StorageFlags::map_some_element_flags_ref(&old_flags).map_err(|_| GroveError::JustInTimeElementFlagsClientError("drive did not understand flags of old item being updated"))?;
                     let new_storage_flags = StorageFlags::from_element_flags_ref(new_flags).map_err(|_| GroveError::JustInTimeElementFlagsClientError("drive did not understand updated item flag information"))?.ok_or(GroveError::JustInTimeElementFlagsClientError("removing flags from an item with flags is not allowed"))?;
                     match &cost.transition_type() {
                         OperationStorageTransitionType::OperationUpdateBiggerSize => {

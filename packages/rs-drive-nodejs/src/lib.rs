@@ -1,17 +1,21 @@
 mod converter;
 mod fee;
 
-use std::num::ParseIntError;
+use drive::drive::config::DriveConfig;
+use drive_abci::config::{CoreConfig, CoreRpcConfig, PlatformConfig};
+
+use std::ops::Deref;
 use std::{option::Option::None, path::Path, sync::mpsc, thread};
 
+use crate::converter::js_object_to_fee_refunds;
 use crate::fee::result::FeeResultWrapper;
-use drive::dpp::identity::Identity;
-use drive::drive::batch::GroveDbOpBatch;
-use drive::drive::config::DriveConfig;
+
+use drive::dpp::identity::{KeyID, TimestampMillis};
+use drive::dpp::prelude::Revision;
 use drive::drive::flags::StorageFlags;
+use drive::drive::query::QueryDocumentsOutcome;
 use drive::error::Error;
 use drive::fee::credits::Credits;
-use drive::fee::epoch::CreditsPerEpoch;
 use drive::fee_pools::epochs::Epoch;
 use drive::grovedb::{PathQuery, Transaction};
 use drive::query::TransactionArg;
@@ -60,7 +64,19 @@ impl PlatformWrapper {
     fn new(cx: &mut FunctionContext) -> NeonResult<Self> {
         // Drive's configuration
         let path_string = cx.argument::<JsString>(0)?.value(cx);
-        let drive_config = cx.argument::<JsObject>(1)?;
+        let platform_config = cx.argument::<JsObject>(1)?;
+
+        let drive_config: Handle<JsObject> = platform_config.get(cx, "drive")?;
+        let core_config: Handle<JsObject> = platform_config.get(cx, "core")?;
+        let core_rpc_config: Handle<JsObject> = core_config.get(cx, "rpc")?;
+
+        let js_core_rpc_url: Handle<JsString> = core_rpc_config.get(cx, "url")?;
+        let js_core_rpc_username: Handle<JsString> = core_rpc_config.get(cx, "username")?;
+        let js_core_rpc_password: Handle<JsString> = core_rpc_config.get(cx, "password")?;
+
+        let core_rpc_url = js_core_rpc_url.value(cx);
+        let core_rpc_username = js_core_rpc_username.value(cx);
+        let core_rpc_password = js_core_rpc_password.value(cx);
 
         let js_data_contracts_cache_size: Handle<JsNumber> =
             drive_config.get(cx, "dataContractsGlobalCacheSize")?;
@@ -100,8 +116,27 @@ impl PlatformWrapper {
                 ..Default::default()
             };
 
+            let core_config = CoreConfig {
+                rpc: CoreRpcConfig {
+                    url: core_rpc_url,
+                    username: core_rpc_username,
+                    password: core_rpc_password,
+                },
+            };
+
+            let platform_config = PlatformConfig {
+                drive: Some(drive_config),
+                core: core_config,
+                verify_sum_trees: true,
+                ..Default::default()
+            };
+
             // TODO: think how to pass this error to JS
-            let platform: Platform = Platform::open(path, Some(drive_config)).unwrap();
+            let mut platform: Platform = Platform::open(path, Some(platform_config)).unwrap();
+
+            if cfg!(feature = "enable-mocking") {
+                platform.mock_core_rpc_client();
+            }
 
             let mut maybe_transaction: Option<Transaction> = None;
 
@@ -467,9 +502,9 @@ impl PlatformWrapper {
             .this()
             .downcast_or_throw::<JsBox<PlatformWrapper>, _>(&mut cx)?;
 
-        let contract_cbor = converter::js_buffer_to_vec_u8(js_contract_cbor, &mut cx);
+        let contract_cbor = converter::js_buffer_to_vec_u8(&mut cx, js_contract_cbor);
         let apply = js_apply.value(&mut cx);
-        let block_info = converter::js_object_to_block_info(js_block_info, &mut cx)?;
+        let block_info = converter::js_object_to_block_info(&mut cx, js_block_info)?;
         let using_transaction = js_using_transaction.value(&mut cx);
 
         drive
@@ -535,10 +570,10 @@ impl PlatformWrapper {
             .this()
             .downcast_or_throw::<JsBox<PlatformWrapper>, _>(&mut cx)?;
 
-        let contract_cbor = converter::js_buffer_to_vec_u8(js_contract_cbor, &mut cx);
+        let contract_cbor = converter::js_buffer_to_vec_u8(&mut cx, js_contract_cbor);
         let apply = js_apply.value(&mut cx);
 
-        let block_info = converter::js_object_to_block_info(js_block_info, &mut cx)?;
+        let block_info = converter::js_object_to_block_info(&mut cx, js_block_info)?;
 
         let using_transaction = js_using_transaction.value(&mut cx);
 
@@ -609,12 +644,12 @@ impl PlatformWrapper {
             .this()
             .downcast_or_throw::<JsBox<PlatformWrapper>, _>(&mut cx)?;
 
-        let document_cbor = converter::js_buffer_to_vec_u8(js_document_cbor, &mut cx);
+        let document_cbor = converter::js_buffer_to_vec_u8(&mut cx, js_document_cbor);
         let contract_id = converter::js_buffer_to_identifier(&mut cx, js_contract_id)?;
         let document_type_name = js_document_type_name.value(&mut cx);
         let owner_id = converter::js_buffer_to_identifier(&mut cx, js_owner_id)?;
         let override_document = js_override_document.value(&mut cx);
-        let block_info = converter::js_object_to_block_info(js_block_info, &mut cx)?;
+        let block_info = converter::js_object_to_block_info(&mut cx, js_block_info)?;
         let apply = js_apply.value(&mut cx);
         let using_transaction = js_using_transaction.value(&mut cx);
 
@@ -644,7 +679,7 @@ impl PlatformWrapper {
                             override_document,
                             block_info,
                             apply,
-                            Some(storage_flags).as_ref(),
+                            storage_flags.into_optional_cow(),
                             transaction_arg,
                         )
                         .map_err(|err| err.to_string())
@@ -691,11 +726,11 @@ impl PlatformWrapper {
             .this()
             .downcast_or_throw::<JsBox<PlatformWrapper>, _>(&mut cx)?;
 
-        let document_cbor = converter::js_buffer_to_vec_u8(js_document_cbor, &mut cx);
+        let document_cbor = converter::js_buffer_to_vec_u8(&mut cx, js_document_cbor);
         let contract_id = converter::js_buffer_to_identifier(&mut cx, js_contract_id)?;
         let document_type_name = js_document_type_name.value(&mut cx);
         let owner_id = converter::js_buffer_to_identifier(&mut cx, js_owner_id)?;
-        let block_info = converter::js_object_to_block_info(js_block_info, &mut cx)?;
+        let block_info = converter::js_object_to_block_info(&mut cx, js_block_info)?;
         let apply = js_apply.value(&mut cx);
         let using_transaction = js_using_transaction.value(&mut cx);
 
@@ -724,7 +759,7 @@ impl PlatformWrapper {
                             Some(owner_id),
                             block_info,
                             apply,
-                            Some(storage_flags).as_ref(),
+                            storage_flags.into_optional_cow(),
                             transaction_arg,
                         )
                         .map_err(|err| err.to_string())
@@ -773,7 +808,7 @@ impl PlatformWrapper {
         let document_id = converter::js_buffer_to_identifier(&mut cx, js_document_id)?;
         let contract_id = converter::js_buffer_to_identifier(&mut cx, js_contract_id)?;
         let document_type_name = js_document_type_name.value(&mut cx);
-        let block_info = converter::js_object_to_block_info(js_block_info, &mut cx)?;
+        let block_info = converter::js_object_to_block_info(&mut cx, js_block_info)?;
         let apply = js_apply.value(&mut cx);
         let using_transaction = js_using_transaction.value(&mut cx);
 
@@ -842,13 +877,10 @@ impl PlatformWrapper {
             .this()
             .downcast_or_throw::<JsBox<PlatformWrapper>, _>(&mut cx)?;
 
-        let identity_cbor = converter::js_buffer_to_vec_u8(js_identity_cbor, &mut cx);
-        let block_info = converter::js_object_to_block_info(js_block_info, &mut cx)?;
+        let identity_cbor = converter::js_buffer_to_vec_u8(&mut cx, js_identity_cbor);
+        let block_info = converter::js_object_to_block_info(&mut cx, js_block_info)?;
         let apply = js_apply.value(&mut cx);
         let using_transaction = js_using_transaction.value(&mut cx);
-
-        let identity =
-            Identity::from_buffer(identity_cbor).or_else(|e| cx.throw_error(e.to_string()))?;
 
         drive
             .send_to_drive_thread(move |platform: &Platform, transaction, channel| {
@@ -862,19 +894,1161 @@ impl PlatformWrapper {
                     Ok(None)
                 };
 
-                let storage_flags = StorageFlags::new_single_epoch(
-                    block_info.epoch.index,
-                    Some(identity.id.to_buffer()),
-                );
+                let result = transaction_result.and_then(|transaction_arg| {
+                    platform
+                        .drive
+                        .add_new_identity_from_cbor_encoded_bytes(
+                            identity_cbor,
+                            &block_info,
+                            apply,
+                            transaction_arg,
+                        )
+                        .map_err(|err| err.to_string())
+                });
+
+                channel.send(move |mut task_context| {
+                    let callback = js_callback.into_inner(&mut task_context);
+                    let this = task_context.undefined();
+
+                    let callback_arguments: Vec<Handle<JsValue>> = match result {
+                        Ok(fee_result) => {
+                            let js_fee_result =
+                                task_context.boxed(FeeResultWrapper::new(fee_result));
+
+                            // First parameter of JS callbacks is error, which is null in this case
+                            vec![task_context.null().upcast(), js_fee_result.upcast()]
+                        }
+
+                        // Convert the error to a JavaScript exception on failure
+                        Err(err) => vec![task_context.error(err)?.upcast()],
+                    };
+
+                    callback.call(&mut task_context, this, callback_arguments)?;
+
+                    Ok(())
+                });
+            })
+            .or_else(|err| cx.throw_error(err.to_string()))?;
+
+        Ok(cx.undefined())
+    }
+
+    fn js_fetch_identity(mut cx: FunctionContext) -> JsResult<JsUndefined> {
+        let js_identity_id = cx.argument::<JsBuffer>(0)?;
+        let js_using_transaction = cx.argument::<JsBoolean>(1)?;
+        let js_callback = cx.argument::<JsFunction>(2)?.root(&mut cx);
+
+        let drive = cx
+            .this()
+            .downcast_or_throw::<JsBox<PlatformWrapper>, _>(&mut cx)?;
+
+        let identity_id = converter::js_buffer_to_identifier(&mut cx, js_identity_id)?;
+
+        let using_transaction = js_using_transaction.value(&mut cx);
+
+        drive
+            .send_to_drive_thread(move |platform: &Platform, transaction, channel| {
+                let transaction_result = if using_transaction {
+                    if transaction.is_none() {
+                        Err("transaction is not started".to_string())
+                    } else {
+                        Ok(transaction)
+                    }
+                } else {
+                    Ok(None)
+                };
 
                 let result = transaction_result.and_then(|transaction_arg| {
                     platform
                         .drive
-                        .insert_identity(
-                            identity,
-                            block_info,
+                        .fetch_full_identity(identity_id, transaction_arg)
+                        .map_err(|err| err.to_string())
+                });
+
+                channel.send(move |mut task_context| {
+                    let callback = js_callback.into_inner(&mut task_context);
+                    let this = task_context.undefined();
+
+                    let callback_arguments: Vec<Handle<JsValue>> = match result {
+                        Ok(maybe_identity) => {
+                            if let Some(identity) = maybe_identity {
+                                match identity.to_buffer() {
+                                    Ok(serialized_identity) => {
+                                        let js_serialized_identity = JsBuffer::external(
+                                            &mut task_context,
+                                            serialized_identity,
+                                        );
+
+                                        vec![
+                                            task_context.null().upcast(),
+                                            js_serialized_identity.upcast(),
+                                        ]
+                                    }
+                                    Err(e) => {
+                                        let err_message =
+                                            format!("can't serialise identities: {}", e);
+
+                                        vec![task_context.error(err_message)?.upcast()]
+                                    }
+                                }
+                            } else {
+                                vec![task_context.null().upcast(), task_context.null().upcast()]
+                            }
+                        }
+
+                        // Convert the error to a JavaScript exception on failure
+                        Err(err) => vec![task_context.error(err)?.upcast()],
+                    };
+
+                    callback.call(&mut task_context, this, callback_arguments)?;
+
+                    Ok(())
+                });
+            })
+            .or_else(|err| cx.throw_error(err.to_string()))?;
+
+        Ok(cx.undefined())
+    }
+
+    fn js_fetch_identity_balance(mut cx: FunctionContext) -> JsResult<JsUndefined> {
+        let js_identity_id = cx.argument::<JsBuffer>(0)?;
+        let js_using_transaction = cx.argument::<JsBoolean>(1)?;
+        let js_callback = cx.argument::<JsFunction>(2)?.root(&mut cx);
+
+        let drive = cx
+            .this()
+            .downcast_or_throw::<JsBox<PlatformWrapper>, _>(&mut cx)?;
+
+        let identity_id = converter::js_buffer_to_identifier(&mut cx, js_identity_id)?;
+
+        let using_transaction = js_using_transaction.value(&mut cx);
+
+        drive
+            .send_to_drive_thread(move |platform: &Platform, transaction, channel| {
+                let transaction_result = if using_transaction {
+                    if transaction.is_none() {
+                        Err("transaction is not started".to_string())
+                    } else {
+                        Ok(transaction)
+                    }
+                } else {
+                    Ok(None)
+                };
+
+                let result = transaction_result.and_then(|transaction_arg| {
+                    platform
+                        .drive
+                        .fetch_identity_balance(identity_id, transaction_arg)
+                        .map_err(|err| err.to_string())
+                });
+
+                channel.send(move |mut task_context| {
+                    let callback = js_callback.into_inner(&mut task_context);
+                    let this = task_context.undefined();
+
+                    let callback_arguments: Vec<Handle<JsValue>> = match result {
+                        Ok(maybe_balance) => {
+                            if let Some(credits) = maybe_balance {
+                                let value = JsNumber::new(&mut task_context, credits as f64);
+                                vec![task_context.null().upcast(), value.upcast()]
+                            } else {
+                                vec![task_context.null().upcast(), task_context.null().upcast()]
+                            }
+                        }
+
+                        // Convert the error to a JavaScript exception on failure
+                        Err(err) => vec![task_context.error(err)?.upcast()],
+                    };
+
+                    callback.call(&mut task_context, this, callback_arguments)?;
+
+                    Ok(())
+                });
+            })
+            .or_else(|err| cx.throw_error(err.to_string()))?;
+
+        Ok(cx.undefined())
+    }
+
+    fn js_fetch_identity_balance_include_debt_with_costs(
+        mut cx: FunctionContext,
+    ) -> JsResult<JsUndefined> {
+        let js_identity_id = cx.argument::<JsBuffer>(0)?;
+        let js_block_info = cx.argument::<JsObject>(1)?;
+        let js_apply = cx.argument::<JsBoolean>(2)?;
+        let js_using_transaction = cx.argument::<JsBoolean>(3)?;
+        let js_callback = cx.argument::<JsFunction>(4)?.root(&mut cx);
+
+        let drive = cx
+            .this()
+            .downcast_or_throw::<JsBox<PlatformWrapper>, _>(&mut cx)?;
+
+        let identity_id = converter::js_buffer_to_identifier(&mut cx, js_identity_id)?;
+
+        let block_info = converter::js_object_to_block_info(&mut cx, js_block_info)?;
+
+        let apply = js_apply.value(&mut cx);
+
+        let using_transaction = js_using_transaction.value(&mut cx);
+
+        drive
+            .send_to_drive_thread(move |platform: &Platform, transaction, channel| {
+                let transaction_result = if using_transaction {
+                    if transaction.is_none() {
+                        Err("transaction is not started".to_string())
+                    } else {
+                        Ok(transaction)
+                    }
+                } else {
+                    Ok(None)
+                };
+
+                let result = transaction_result.and_then(|transaction_arg| {
+                    platform
+                        .drive
+                        .fetch_identity_balance_include_debt_with_costs(
+                            identity_id,
+                            &block_info,
                             apply,
-                            Some(storage_flags).as_ref(),
+                            transaction_arg,
+                        )
+                        .map_err(|err| err.to_string())
+                });
+
+                channel.send(move |mut task_context| {
+                    let callback = js_callback.into_inner(&mut task_context);
+                    let this = task_context.undefined();
+
+                    let callback_arguments: Vec<Handle<JsValue>> = match result {
+                        Ok((maybe_balance, fee_result)) => {
+                            let js_result = task_context.empty_array();
+
+                            let js_balance: Handle<JsValue> = if let Some(credits) = maybe_balance {
+                                let value = JsNumber::new(&mut task_context, credits as f64);
+                                value.upcast()
+                            } else {
+                                task_context.null().upcast()
+                            };
+
+                            js_result.set(&mut task_context, 0, js_balance)?;
+
+                            let js_fee_result =
+                                task_context.boxed(FeeResultWrapper::new(fee_result));
+
+                            js_result.set(&mut task_context, 1, js_fee_result)?;
+
+                            // First parameter of JS callbacks is error, which is null in this case
+                            vec![task_context.null().upcast(), js_result.upcast()]
+                        }
+
+                        // Convert the error to a JavaScript exception on failure
+                        Err(err) => vec![task_context.error(err)?.upcast()],
+                    };
+
+                    callback.call(&mut task_context, this, callback_arguments)?;
+
+                    Ok(())
+                });
+            })
+            .or_else(|err| cx.throw_error(err.to_string()))?;
+
+        Ok(cx.undefined())
+    }
+
+    fn js_fetch_identity_balance_with_costs(mut cx: FunctionContext) -> JsResult<JsUndefined> {
+        let js_identity_id = cx.argument::<JsBuffer>(0)?;
+        let js_block_info = cx.argument::<JsObject>(1)?;
+        let js_apply = cx.argument::<JsBoolean>(2)?;
+        let js_using_transaction = cx.argument::<JsBoolean>(3)?;
+        let js_callback = cx.argument::<JsFunction>(4)?.root(&mut cx);
+
+        let drive = cx
+            .this()
+            .downcast_or_throw::<JsBox<PlatformWrapper>, _>(&mut cx)?;
+
+        let identity_id = converter::js_buffer_to_identifier(&mut cx, js_identity_id)?;
+
+        let block_info = converter::js_object_to_block_info(&mut cx, js_block_info)?;
+
+        let apply = js_apply.value(&mut cx);
+
+        let using_transaction = js_using_transaction.value(&mut cx);
+
+        drive
+            .send_to_drive_thread(move |platform: &Platform, transaction, channel| {
+                let transaction_result = if using_transaction {
+                    if transaction.is_none() {
+                        Err("transaction is not started".to_string())
+                    } else {
+                        Ok(transaction)
+                    }
+                } else {
+                    Ok(None)
+                };
+
+                let result = transaction_result.and_then(|transaction_arg| {
+                    platform
+                        .drive
+                        .fetch_identity_balance_with_costs(
+                            identity_id,
+                            &block_info,
+                            apply,
+                            transaction_arg,
+                        )
+                        .map_err(|err| err.to_string())
+                });
+
+                channel.send(move |mut task_context| {
+                    let callback = js_callback.into_inner(&mut task_context);
+                    let this = task_context.undefined();
+
+                    let callback_arguments: Vec<Handle<JsValue>> = match result {
+                        Ok((maybe_balance, fee_result)) => {
+                            let js_result = task_context.empty_array();
+
+                            let js_balance: Handle<JsValue> = if let Some(credits) = maybe_balance {
+                                let value = JsNumber::new(&mut task_context, credits as f64);
+                                value.upcast()
+                            } else {
+                                task_context.null().upcast()
+                            };
+
+                            js_result.set(&mut task_context, 0, js_balance)?;
+
+                            let js_fee_result =
+                                task_context.boxed(FeeResultWrapper::new(fee_result));
+
+                            js_result.set(&mut task_context, 1, js_fee_result)?;
+
+                            // First parameter of JS callbacks is error, which is null in this case
+                            vec![task_context.null().upcast(), js_result.upcast()]
+                        }
+
+                        // Convert the error to a JavaScript exception on failure
+                        Err(err) => vec![task_context.error(err)?.upcast()],
+                    };
+
+                    callback.call(&mut task_context, this, callback_arguments)?;
+
+                    Ok(())
+                });
+            })
+            .or_else(|err| cx.throw_error(err.to_string()))?;
+
+        Ok(cx.undefined())
+    }
+
+    fn js_fetch_proved_identity(mut cx: FunctionContext) -> JsResult<JsUndefined> {
+        let js_identity_id = cx.argument::<JsBuffer>(0)?;
+        let js_using_transaction = cx.argument::<JsBoolean>(1)?;
+        let js_callback = cx.argument::<JsFunction>(2)?.root(&mut cx);
+
+        let drive = cx
+            .this()
+            .downcast_or_throw::<JsBox<PlatformWrapper>, _>(&mut cx)?;
+
+        let identity_id = converter::js_buffer_to_identifier(&mut cx, js_identity_id)?;
+
+        let using_transaction = js_using_transaction.value(&mut cx);
+
+        drive
+            .send_to_drive_thread(move |platform: &Platform, transaction, channel| {
+                let transaction_result = if using_transaction {
+                    if transaction.is_none() {
+                        Err("transaction is not started".to_string())
+                    } else {
+                        Ok(transaction)
+                    }
+                } else {
+                    Ok(None)
+                };
+
+                let result = transaction_result.and_then(|transaction_arg| {
+                    platform
+                        .drive
+                        .prove_full_identity(identity_id, transaction_arg)
+                        .map_err(|err| err.to_string())
+                });
+
+                channel.send(move |mut task_context| {
+                    let callback = js_callback.into_inner(&mut task_context);
+                    let this = task_context.undefined();
+
+                    let callback_arguments: Vec<Handle<JsValue>> = match result {
+                        Ok(identity_proof) => {
+                            let js_identity_proof =
+                                JsBuffer::external(&mut task_context, identity_proof);
+
+                            vec![task_context.null().upcast(), js_identity_proof.upcast()]
+                        }
+
+                        // Convert the error to a JavaScript exception on failure
+                        Err(err) => vec![task_context.error(err)?.upcast()],
+                    };
+
+                    callback.call(&mut task_context, this, callback_arguments)?;
+
+                    Ok(())
+                });
+            })
+            .or_else(|err| cx.throw_error(err.to_string()))?;
+
+        Ok(cx.undefined())
+    }
+
+    fn js_fetch_many_proved_identities(mut cx: FunctionContext) -> JsResult<JsUndefined> {
+        let js_identity_ids = cx.argument::<JsArray>(0)?;
+        let js_using_transaction = cx.argument::<JsBoolean>(1)?;
+        let js_callback = cx.argument::<JsFunction>(2)?.root(&mut cx);
+
+        let drive = cx
+            .this()
+            .downcast_or_throw::<JsBox<PlatformWrapper>, _>(&mut cx)?;
+
+        let identity_ids = converter::js_array_of_buffers_to_identifiers(&mut cx, js_identity_ids)?;
+
+        let using_transaction = js_using_transaction.value(&mut cx);
+
+        drive
+            .send_to_drive_thread(move |platform: &Platform, transaction, channel| {
+                let transaction_result = if using_transaction {
+                    if transaction.is_none() {
+                        Err("transaction is not started".to_string())
+                    } else {
+                        Ok(transaction)
+                    }
+                } else {
+                    Ok(None)
+                };
+
+                let result = transaction_result.and_then(|transaction_arg| {
+                    platform
+                        .drive
+                        .proved_full_identities(&identity_ids, transaction_arg)
+                        .map_err(|err| err.to_string())
+                });
+
+                channel.send(move |mut task_context| {
+                    let callback = js_callback.into_inner(&mut task_context);
+                    let this = task_context.undefined();
+
+                    let callback_arguments: Vec<Handle<JsValue>> = match result {
+                        Ok(identities_proof) => {
+                            let js_identities_proof =
+                                JsBuffer::external(&mut task_context, identities_proof);
+
+                            vec![task_context.null().upcast(), js_identities_proof.upcast()]
+                        }
+
+                        // Convert the error to a JavaScript exception on failure
+                        Err(err) => vec![task_context.error(err)?.upcast()],
+                    };
+
+                    callback.call(&mut task_context, this, callback_arguments)?;
+
+                    Ok(())
+                });
+            })
+            .or_else(|err| cx.throw_error(err.to_string()))?;
+
+        Ok(cx.undefined())
+    }
+
+    fn js_fetch_identities_by_public_key_hashes(mut cx: FunctionContext) -> JsResult<JsUndefined> {
+        let js_public_key_hashes = cx.argument::<JsArray>(0)?;
+        let js_using_transaction = cx.argument::<JsBoolean>(1)?;
+        let js_callback = cx.argument::<JsFunction>(2)?.root(&mut cx);
+
+        let drive = cx
+            .this()
+            .downcast_or_throw::<JsBox<PlatformWrapper>, _>(&mut cx)?;
+
+        let public_key_hashes: Vec<[u8; 20]> =
+            converter::js_array_of_buffers_to_vec(&mut cx, js_public_key_hashes)?
+                .into_iter()
+                .map(|hash| {
+                    hash.try_into()
+                        .or_else(|_| cx.throw_error("invalid hash size"))
+                })
+                .collect::<Result<_, _>>()?;
+
+        let using_transaction = js_using_transaction.value(&mut cx);
+
+        drive
+            .send_to_drive_thread(move |platform: &Platform, transaction, channel| {
+                let transaction_result = if using_transaction {
+                    if transaction.is_none() {
+                        Err("transaction is not started".to_string())
+                    } else {
+                        Ok(transaction)
+                    }
+                } else {
+                    Ok(None)
+                };
+
+                let result: Result<Vec<Option<Vec<u8>>>, String> =
+                    transaction_result.and_then(|transaction_arg| {
+                        platform
+                            .drive
+                            .fetch_full_identities_by_unique_public_key_hashes(
+                                &public_key_hashes,
+                                transaction_arg,
+                            )
+                            .map_err(|err| err.to_string())
+                            .and_then(|hashes_to_identities| {
+                                hashes_to_identities
+                                    .into_values()
+                                    .filter(|identity| identity.is_some())
+                                    .map(|identity| identity.map(|i| i.to_buffer()).transpose())
+                                    .collect::<Result<_, _>>()
+                                    .map_err(|err| err.to_string())
+                            })
+                    });
+
+                channel.send(move |mut task_context| {
+                    let callback = js_callback.into_inner(&mut task_context);
+                    let this = task_context.undefined();
+
+                    let callback_arguments: Vec<Handle<JsValue>> = match result {
+                        Ok(hashes_to_identities) => {
+                            let js_array = task_context.empty_array();
+
+                            hashes_to_identities.into_iter().enumerate().try_for_each(
+                                |(i, identity_bytes)| {
+                                    let value: Handle<JsValue> = if let Some(bytes) = identity_bytes
+                                    {
+                                        JsBuffer::external(&mut task_context, bytes).upcast()
+                                    } else {
+                                        task_context.null().upcast()
+                                    };
+
+                                    js_array.set(&mut task_context, i as u32, value).map(|_| ())
+                                },
+                            )?;
+
+                            vec![task_context.null().upcast(), js_array.upcast()]
+                        }
+
+                        // Convert the error to a JavaScript exception on failure
+                        Err(err) => vec![task_context.error(err)?.upcast()],
+                    };
+
+                    callback.call(&mut task_context, this, callback_arguments)?;
+
+                    Ok(())
+                });
+            })
+            .or_else(|err| cx.throw_error(err.to_string()))?;
+
+        Ok(cx.undefined())
+    }
+
+    fn js_prove_identities_by_public_key_hashes(mut cx: FunctionContext) -> JsResult<JsUndefined> {
+        let js_public_key_hashes = cx.argument::<JsArray>(0)?;
+        let js_using_transaction = cx.argument::<JsBoolean>(1)?;
+        let js_callback = cx.argument::<JsFunction>(2)?.root(&mut cx);
+
+        let drive = cx
+            .this()
+            .downcast_or_throw::<JsBox<PlatformWrapper>, _>(&mut cx)?;
+
+        let public_key_hashes: Vec<[u8; 20]> =
+            converter::js_array_of_buffers_to_vec(&mut cx, js_public_key_hashes)?
+                .into_iter()
+                .map(|hash| {
+                    hash.try_into()
+                        .or_else(|_| cx.throw_error("invalid hash size"))
+                })
+                .collect::<Result<_, _>>()?;
+
+        let using_transaction = js_using_transaction.value(&mut cx);
+
+        drive
+            .send_to_drive_thread(move |platform: &Platform, transaction, channel| {
+                let transaction_result = if using_transaction {
+                    if transaction.is_none() {
+                        Err("transaction is not started".to_string())
+                    } else {
+                        Ok(transaction)
+                    }
+                } else {
+                    Ok(None)
+                };
+
+                let result: Result<Vec<u8>, String> =
+                    transaction_result.and_then(|transaction_arg| {
+                        platform
+                            .drive
+                            .prove_full_identities_by_unique_public_key_hashes(
+                                &public_key_hashes,
+                                transaction_arg,
+                            )
+                            .map_err(|err| err.to_string())
+                    });
+
+                channel.send(move |mut task_context| {
+                    let callback = js_callback.into_inner(&mut task_context);
+                    let this = task_context.undefined();
+
+                    let callback_arguments: Vec<Handle<JsValue>> = match result {
+                        Ok(proof) => {
+                            let js_proof = JsBuffer::external(&mut task_context, proof);
+
+                            vec![task_context.null().upcast(), js_proof.upcast()]
+                        }
+
+                        // Convert the error to a JavaScript exception on failure
+                        Err(err) => vec![task_context.error(err)?.upcast()],
+                    };
+
+                    callback.call(&mut task_context, this, callback_arguments)?;
+
+                    Ok(())
+                });
+            })
+            .or_else(|err| cx.throw_error(err.to_string()))?;
+
+        Ok(cx.undefined())
+    }
+
+    fn js_fetch_identity_with_costs(mut cx: FunctionContext) -> JsResult<JsUndefined> {
+        let js_identity_id = cx.argument::<JsBuffer>(0)?;
+        let js_epoch_index = cx.argument::<JsNumber>(1)?;
+        let js_using_transaction = cx.argument::<JsBoolean>(2)?;
+        let js_callback = cx.argument::<JsFunction>(3)?.root(&mut cx);
+
+        let drive = cx
+            .this()
+            .downcast_or_throw::<JsBox<PlatformWrapper>, _>(&mut cx)?;
+
+        let identity_id = converter::js_buffer_to_identifier(&mut cx, js_identity_id)?;
+
+        let epoch_index = u16::try_from(js_epoch_index.value(&mut cx) as i64)
+            .or_else(|_| cx.throw_range_error("`epochs` must fit in u16"))?;
+
+        let epoch = Epoch::new(epoch_index);
+
+        let using_transaction = js_using_transaction.value(&mut cx);
+
+        drive
+            .send_to_drive_thread(move |platform: &Platform, transaction, channel| {
+                let transaction_result = if using_transaction {
+                    if transaction.is_none() {
+                        Err("transaction is not started".to_string())
+                    } else {
+                        Ok(transaction)
+                    }
+                } else {
+                    Ok(None)
+                };
+
+                let result = transaction_result.and_then(|transaction_arg| {
+                    platform
+                        .drive
+                        .fetch_full_identity_with_costs(identity_id, &epoch, transaction_arg)
+                        .map_err(|err| err.to_string())
+                });
+
+                channel.send(move |mut task_context| {
+                    let callback = js_callback.into_inner(&mut task_context);
+                    let this = task_context.undefined();
+
+                    let callback_arguments: Vec<Handle<JsValue>> = match result {
+                        Ok((maybe_identity, fee_result)) => {
+                            let js_result = task_context.empty_array();
+
+                            let js_identity: Handle<JsValue> = if let Some(identity) =
+                                maybe_identity
+                            {
+                                let serialized_identity = identity.to_buffer().or_else(|e| {
+                                    task_context
+                                        .throw_error(format!("can't serialize identity: {}", e))
+                                })?;
+
+                                JsBuffer::external(&mut task_context, serialized_identity).upcast()
+                            } else {
+                                task_context.null().upcast()
+                            };
+
+                            js_result.set(&mut task_context, 0, js_identity)?;
+
+                            let js_fee_result =
+                                task_context.boxed(FeeResultWrapper::new(fee_result));
+
+                            js_result.set(&mut task_context, 1, js_fee_result)?;
+
+                            // First parameter of JS callbacks is error, which is null in this case
+                            vec![task_context.null().upcast(), js_result.upcast()]
+                        }
+
+                        // Convert the error to a JavaScript exception on failure
+                        Err(err) => vec![task_context.error(err)?.upcast()],
+                    };
+
+                    callback.call(&mut task_context, this, callback_arguments)?;
+
+                    Ok(())
+                });
+            })
+            .or_else(|err| cx.throw_error(err.to_string()))?;
+
+        Ok(cx.undefined())
+    }
+
+    fn js_add_to_identity_balance(mut cx: FunctionContext) -> JsResult<JsUndefined> {
+        let js_identity_id = cx.argument::<JsBuffer>(0)?;
+        let js_balance_to_add = cx.argument::<JsNumber>(1)?;
+        let js_block_info = cx.argument::<JsObject>(2)?;
+        let js_apply = cx.argument::<JsBoolean>(3)?;
+        let js_using_transaction = cx.argument::<JsBoolean>(4)?;
+        let js_callback = cx.argument::<JsFunction>(5)?.root(&mut cx);
+
+        let drive = cx
+            .this()
+            .downcast_or_throw::<JsBox<PlatformWrapper>, _>(&mut cx)?;
+
+        let identity_id = converter::js_buffer_to_identifier(&mut cx, js_identity_id)?;
+        let balance_to_add = js_balance_to_add.value(&mut cx) as u64;
+        let block_info = converter::js_object_to_block_info(&mut cx, js_block_info)?;
+        let apply = js_apply.value(&mut cx);
+        let using_transaction = js_using_transaction.value(&mut cx);
+
+        drive
+            .send_to_drive_thread(move |platform: &Platform, transaction, channel| {
+                let transaction_result = if using_transaction {
+                    if transaction.is_none() {
+                        Err("transaction is not started".to_string())
+                    } else {
+                        Ok(transaction)
+                    }
+                } else {
+                    Ok(None)
+                };
+
+                let result = transaction_result.and_then(|transaction_arg| {
+                    platform
+                        .drive
+                        .add_to_identity_balance(
+                            identity_id,
+                            balance_to_add,
+                            &block_info,
+                            apply,
+                            transaction_arg,
+                        )
+                        .map_err(|err| err.to_string())
+                });
+
+                channel.send(move |mut task_context| {
+                    let callback = js_callback.into_inner(&mut task_context);
+                    let this = task_context.undefined();
+
+                    let callback_arguments: Vec<Handle<JsValue>> = match result {
+                        Ok(fee_result) => {
+                            let js_fee_result =
+                                task_context.boxed(FeeResultWrapper::new(fee_result));
+
+                            // First parameter of JS callbacks is error, which is null in this case
+                            vec![task_context.null().upcast(), js_fee_result.upcast()]
+                        }
+
+                        // Convert the error to a JavaScript exception on failure
+                        Err(err) => vec![task_context.error(err)?.upcast()],
+                    };
+
+                    callback.call(&mut task_context, this, callback_arguments)?;
+
+                    Ok(())
+                });
+            })
+            .or_else(|err| cx.throw_error(err.to_string()))?;
+
+        Ok(cx.undefined())
+    }
+
+    fn js_remove_from_identity_balance(mut cx: FunctionContext) -> JsResult<JsUndefined> {
+        let js_identity_id = cx.argument::<JsBuffer>(0)?;
+        let js_amount = cx.argument::<JsNumber>(1)?;
+        let js_block_info = cx.argument::<JsObject>(2)?;
+        let js_apply = cx.argument::<JsBoolean>(3)?;
+        let js_using_transaction = cx.argument::<JsBoolean>(4)?;
+        let js_callback = cx.argument::<JsFunction>(5)?.root(&mut cx);
+
+        let drive = cx
+            .this()
+            .downcast_or_throw::<JsBox<PlatformWrapper>, _>(&mut cx)?;
+
+        let identity_id = converter::js_buffer_to_identifier(&mut cx, js_identity_id)?;
+        let amount = js_amount.value(&mut cx) as u64;
+        let block_info = converter::js_object_to_block_info(&mut cx, js_block_info)?;
+        let apply = js_apply.value(&mut cx);
+        let using_transaction = js_using_transaction.value(&mut cx);
+
+        drive
+            .send_to_drive_thread(move |platform: &Platform, transaction, channel| {
+                let transaction_result = if using_transaction {
+                    if transaction.is_none() {
+                        Err("transaction is not started".to_string())
+                    } else {
+                        Ok(transaction)
+                    }
+                } else {
+                    Ok(None)
+                };
+
+                let result = transaction_result.and_then(|transaction_arg| {
+                    platform
+                        .drive
+                        .remove_from_identity_balance(
+                            identity_id,
+                            amount,
+                            &block_info,
+                            apply,
+                            transaction_arg,
+                        )
+                        .map_err(|err| err.to_string())
+                });
+
+                channel.send(move |mut task_context| {
+                    let callback = js_callback.into_inner(&mut task_context);
+                    let this = task_context.undefined();
+
+                    let callback_arguments: Vec<Handle<JsValue>> = match result {
+                        Ok(fee_result) => {
+                            let js_fee_result =
+                                task_context.boxed(FeeResultWrapper::new(fee_result));
+
+                            // First parameter of JS callbacks is error, which is null in this case
+                            vec![task_context.null().upcast(), js_fee_result.upcast()]
+                        }
+
+                        // Convert the error to a JavaScript exception on failure
+                        Err(err) => vec![task_context.error(err)?.upcast()],
+                    };
+
+                    callback.call(&mut task_context, this, callback_arguments)?;
+
+                    Ok(())
+                });
+            })
+            .or_else(|err| cx.throw_error(err.to_string()))?;
+
+        Ok(cx.undefined())
+    }
+
+    fn js_apply_fees_to_identity_balance(mut cx: FunctionContext) -> JsResult<JsUndefined> {
+        let js_identity_id = cx.argument::<JsBuffer>(0)?;
+        let js_fee_result = cx.argument::<JsBox<FeeResultWrapper>>(1)?;
+        let js_using_transaction = cx.argument::<JsBoolean>(2)?;
+        let js_callback = cx.argument::<JsFunction>(3)?.root(&mut cx);
+
+        let drive = cx
+            .this()
+            .downcast_or_throw::<JsBox<PlatformWrapper>, _>(&mut cx)?;
+
+        let identity_id = converter::js_buffer_to_identifier(&mut cx, js_identity_id)?;
+
+        let fee_result = js_fee_result.deref().deref().deref().clone();
+        let balance_change = fee_result.into_balance_change(identity_id);
+
+        let using_transaction = js_using_transaction.value(&mut cx);
+
+        drive
+            .send_to_drive_thread(move |platform: &Platform, transaction, channel| {
+                let transaction_result = if using_transaction {
+                    if transaction.is_none() {
+                        Err("transaction is not started".to_string())
+                    } else {
+                        Ok(transaction)
+                    }
+                } else {
+                    Ok(None)
+                };
+
+                let result = transaction_result.and_then(|transaction_arg| {
+                    platform
+                        .drive
+                        .apply_balance_change_from_fee_to_identity(balance_change, transaction_arg)
+                        .map_err(|err| err.to_string())
+                });
+
+                channel.send(move |mut task_context| {
+                    let callback = js_callback.into_inner(&mut task_context);
+                    let this = task_context.undefined();
+
+                    let callback_arguments: Vec<Handle<JsValue>> = match result {
+                        Ok(outcome) => {
+                            let js_fee_result =
+                                task_context.boxed(FeeResultWrapper::new(outcome.actual_fee_paid));
+
+                            // First parameter of JS callbacks is error, which is null in this case
+                            vec![task_context.null().upcast(), js_fee_result.upcast()]
+                        }
+
+                        // Convert the error to a JavaScript exception on failure
+                        Err(err) => vec![task_context.error(err)?.upcast()],
+                    };
+
+                    callback.call(&mut task_context, this, callback_arguments)?;
+
+                    Ok(())
+                });
+            })
+            .or_else(|err| cx.throw_error(err.to_string()))?;
+
+        Ok(cx.undefined())
+    }
+
+    fn js_add_to_system_credits(mut cx: FunctionContext) -> JsResult<JsUndefined> {
+        let js_amount = cx.argument::<JsNumber>(0)?;
+        let js_using_transaction = cx.argument::<JsBoolean>(1)?;
+        let js_callback = cx.argument::<JsFunction>(2)?.root(&mut cx);
+
+        let drive = cx
+            .this()
+            .downcast_or_throw::<JsBox<PlatformWrapper>, _>(&mut cx)?;
+
+        let amount = js_amount.value(&mut cx) as Credits;
+        let using_transaction = js_using_transaction.value(&mut cx);
+
+        drive
+            .send_to_drive_thread(move |platform: &Platform, transaction, channel| {
+                let transaction_result = if using_transaction {
+                    if transaction.is_none() {
+                        Err("transaction is not started".to_string())
+                    } else {
+                        Ok(transaction)
+                    }
+                } else {
+                    Ok(None)
+                };
+
+                let result = transaction_result.and_then(|transaction_arg| {
+                    platform
+                        .drive
+                        .add_to_system_credits(amount, transaction_arg)
+                        .map_err(|err| err.to_string())
+                });
+
+                channel.send(move |mut task_context| {
+                    let callback = js_callback.into_inner(&mut task_context);
+                    let this = task_context.undefined();
+
+                    let callback_arguments: Vec<Handle<JsValue>> = match result {
+                        Ok(()) => {
+                            // First parameter of JS callbacks is error, which is null in this case
+                            vec![task_context.null().upcast()]
+                        }
+
+                        // Convert the error to a JavaScript exception on failure
+                        Err(err) => vec![task_context.error(err)?.upcast()],
+                    };
+
+                    callback.call(&mut task_context, this, callback_arguments)?;
+
+                    Ok(())
+                });
+            })
+            .or_else(|err| cx.throw_error(err.to_string()))?;
+
+        Ok(cx.undefined())
+    }
+
+    fn js_add_keys_to_identity(mut cx: FunctionContext) -> JsResult<JsUndefined> {
+        let js_identity_id = cx.argument::<JsBuffer>(0)?;
+        let js_keys_to_add = cx.argument::<JsArray>(1)?;
+        let js_block_info = cx.argument::<JsObject>(2)?;
+        let js_apply = cx.argument::<JsBoolean>(3)?;
+        let js_using_transaction = cx.argument::<JsBoolean>(4)?;
+        let js_callback = cx.argument::<JsFunction>(5)?.root(&mut cx);
+
+        let drive = cx
+            .this()
+            .downcast_or_throw::<JsBox<PlatformWrapper>, _>(&mut cx)?;
+
+        let identity_id = converter::js_buffer_to_identifier(&mut cx, js_identity_id)?;
+        let keys_to_add = converter::js_array_to_keys(&mut cx, js_keys_to_add)?;
+        let block_info = converter::js_object_to_block_info(&mut cx, js_block_info)?;
+        let apply = js_apply.value(&mut cx);
+        let using_transaction = js_using_transaction.value(&mut cx);
+
+        drive
+            .send_to_drive_thread(move |platform: &Platform, transaction, channel| {
+                let transaction_result = if using_transaction {
+                    if transaction.is_none() {
+                        Err("transaction is not started".to_string())
+                    } else {
+                        Ok(transaction)
+                    }
+                } else {
+                    Ok(None)
+                };
+
+                let result = transaction_result.and_then(|transaction_arg| {
+                    platform
+                        .drive
+                        .add_new_keys_to_identity(
+                            identity_id,
+                            keys_to_add,
+                            &block_info,
+                            apply,
+                            transaction_arg,
+                        )
+                        .map_err(|err| err.to_string())
+                });
+
+                channel.send(move |mut task_context| {
+                    let callback = js_callback.into_inner(&mut task_context);
+                    let this = task_context.undefined();
+
+                    let callback_arguments: Vec<Handle<JsValue>> = match result {
+                        Ok(fee_result) => {
+                            let js_fee_result =
+                                task_context.boxed(FeeResultWrapper::new(fee_result));
+
+                            // First parameter of JS callbacks is error, which is null in this case
+                            vec![task_context.null().upcast(), js_fee_result.upcast()]
+                        }
+
+                        // Convert the error to a JavaScript exception on failure
+                        Err(err) => vec![task_context.error(err)?.upcast()],
+                    };
+
+                    callback.call(&mut task_context, this, callback_arguments)?;
+
+                    Ok(())
+                });
+            })
+            .or_else(|err| cx.throw_error(err.to_string()))?;
+
+        Ok(cx.undefined())
+    }
+
+    fn js_disable_identity_keys(mut cx: FunctionContext) -> JsResult<JsUndefined> {
+        let js_identity_id = cx.argument::<JsBuffer>(0)?;
+        let js_key_ids = cx.argument::<JsArray>(1)?;
+        let js_disable_at = cx.argument::<JsNumber>(2)?;
+        let js_block_info = cx.argument::<JsObject>(3)?;
+        let js_apply = cx.argument::<JsBoolean>(4)?;
+        let js_using_transaction = cx.argument::<JsBoolean>(5)?;
+        let js_callback = cx.argument::<JsFunction>(6)?.root(&mut cx);
+
+        let drive = cx
+            .this()
+            .downcast_or_throw::<JsBox<PlatformWrapper>, _>(&mut cx)?;
+
+        let identity_id = converter::js_buffer_to_identifier(&mut cx, js_identity_id)?;
+
+        let key_ids = js_key_ids
+            .to_vec(&mut cx)?
+            .into_iter()
+            .map(|js_value| {
+                let js_key = js_value.downcast_or_throw::<JsNumber, _>(&mut cx)?;
+                let key = KeyID::try_from(js_key.value(&mut cx) as u64)
+                    .or_else(|_| cx.throw_range_error("key id must be u32"))?;
+
+                Ok(key)
+            })
+            .collect::<Result<Vec<KeyID>, _>>()?;
+
+        let disabled_at = js_disable_at.value(&mut cx) as TimestampMillis;
+
+        let block_info = converter::js_object_to_block_info(&mut cx, js_block_info)?;
+        let apply = js_apply.value(&mut cx);
+        let using_transaction = js_using_transaction.value(&mut cx);
+
+        drive
+            .send_to_drive_thread(move |platform: &Platform, transaction, channel| {
+                let transaction_result = if using_transaction {
+                    if transaction.is_none() {
+                        Err("transaction is not started".to_string())
+                    } else {
+                        Ok(transaction)
+                    }
+                } else {
+                    Ok(None)
+                };
+
+                let result = transaction_result.and_then(|transaction_arg| {
+                    platform
+                        .drive
+                        .disable_identity_keys(
+                            identity_id,
+                            key_ids,
+                            disabled_at,
+                            &block_info,
+                            apply,
+                            transaction_arg,
+                        )
+                        .map_err(|err| err.to_string())
+                });
+
+                channel.send(move |mut task_context| {
+                    let callback = js_callback.into_inner(&mut task_context);
+                    let this = task_context.undefined();
+
+                    let callback_arguments: Vec<Handle<JsValue>> = match result {
+                        Ok(fee_result) => {
+                            let js_fee_result =
+                                task_context.boxed(FeeResultWrapper::new(fee_result));
+
+                            // First parameter of JS callbacks is error, which is null in this case
+                            vec![task_context.null().upcast(), js_fee_result.upcast()]
+                        }
+
+                        // Convert the error to a JavaScript exception on failure
+                        Err(err) => vec![task_context.error(err)?.upcast()],
+                    };
+
+                    callback.call(&mut task_context, this, callback_arguments)?;
+
+                    Ok(())
+                });
+            })
+            .or_else(|err| cx.throw_error(err.to_string()))?;
+
+        Ok(cx.undefined())
+    }
+
+    fn js_update_identity_revision(mut cx: FunctionContext) -> JsResult<JsUndefined> {
+        let js_identity_id = cx.argument::<JsBuffer>(0)?;
+        let js_revision = cx.argument::<JsNumber>(1)?;
+        let js_block_info = cx.argument::<JsObject>(2)?;
+        let js_apply = cx.argument::<JsBoolean>(3)?;
+        let js_using_transaction = cx.argument::<JsBoolean>(4)?;
+        let js_callback = cx.argument::<JsFunction>(5)?.root(&mut cx);
+
+        let drive = cx
+            .this()
+            .downcast_or_throw::<JsBox<PlatformWrapper>, _>(&mut cx)?;
+
+        let identity_id = converter::js_buffer_to_identifier(&mut cx, js_identity_id)?;
+
+        let revision = js_revision.value(&mut cx) as Revision;
+
+        let block_info = converter::js_object_to_block_info(&mut cx, js_block_info)?;
+        let apply = js_apply.value(&mut cx);
+        let using_transaction = js_using_transaction.value(&mut cx);
+
+        drive
+            .send_to_drive_thread(move |platform: &Platform, transaction, channel| {
+                let transaction_result = if using_transaction {
+                    if transaction.is_none() {
+                        Err("transaction is not started".to_string())
+                    } else {
+                        Ok(transaction)
+                    }
+                } else {
+                    Ok(None)
+                };
+
+                let result = transaction_result.and_then(|transaction_arg| {
+                    platform
+                        .drive
+                        .update_identity_revision(
+                            identity_id,
+                            revision,
+                            &block_info,
+                            apply,
                             transaction_arg,
                         )
                         .map_err(|err| err.to_string())
@@ -920,7 +2094,7 @@ impl PlatformWrapper {
             .this()
             .downcast_or_throw::<JsBox<PlatformWrapper>, _>(&mut cx)?;
 
-        let query_cbor = converter::js_buffer_to_vec_u8(js_query_cbor, &mut cx);
+        let query_cbor = converter::js_buffer_to_vec_u8(&mut cx, js_query_cbor);
         let contract_id = converter::js_buffer_to_identifier(&mut cx, js_contract_id)?;
         let document_type_name = js_document_type_name.value(&mut cx);
 
@@ -954,7 +2128,7 @@ impl PlatformWrapper {
                 let result = transaction_result.and_then(|transaction_arg| {
                     platform
                         .drive
-                        .query_documents(
+                        .query_documents_cbor_with_document_type_lookup(
                             &query_cbor,
                             contract_id,
                             document_type_name.as_str(),
@@ -968,9 +2142,13 @@ impl PlatformWrapper {
                     let callback = js_callback.into_inner(&mut task_context);
                     let this = task_context.undefined();
                     let callback_arguments: Vec<Handle<JsValue>> = match result {
-                        Ok((value, skipped, cost)) => {
+                        Ok(QueryDocumentsOutcome {
+                            items,
+                            skipped,
+                            cost,
+                        }) => {
                             let js_array: Handle<JsArray> = task_context.empty_array();
-                            let js_vecs = converter::nested_vecs_to_js(&mut task_context, value)?;
+                            let js_vecs = converter::nested_vecs_to_js(&mut task_context, items)?;
                             let js_num = task_context.number(skipped).upcast::<JsValue>();
                             let js_cost = task_context.number(cost as f64).upcast::<JsValue>();
 
@@ -1007,7 +2185,7 @@ impl PlatformWrapper {
             .this()
             .downcast_or_throw::<JsBox<PlatformWrapper>, _>(&mut cx)?;
 
-        let query_cbor = converter::js_buffer_to_vec_u8(js_query_cbor, &mut cx);
+        let query_cbor = converter::js_buffer_to_vec_u8(&mut cx, js_query_cbor);
         let contract_id = converter::js_buffer_to_identifier(&mut cx, js_contract_id)?;
         let document_type_name = js_document_type_name.value(&mut cx);
         let using_transaction = js_using_transaction.value(&mut cx);
@@ -1027,7 +2205,7 @@ impl PlatformWrapper {
                 let result = transaction_result.and_then(|transaction_arg| {
                     platform
                         .drive
-                        .query_documents_as_grove_proof(
+                        .query_proof_of_documents_using_contract_id_using_cbor_encoded_query_with_cost(
                             &query_cbor,
                             contract_id,
                             document_type_name.as_str(),
@@ -1211,8 +2389,8 @@ impl PlatformWrapper {
 
         let js_callback = cx.argument::<JsFunction>(3)?.root(&mut cx);
 
-        let path = converter::js_array_of_buffers_to_vec(js_path, &mut cx)?;
-        let key = converter::js_buffer_to_vec_u8(js_key, &mut cx);
+        let path = converter::js_array_of_buffers_to_vec(&mut cx, js_path)?;
+        let key = converter::js_buffer_to_vec_u8(&mut cx, js_key);
 
         let using_transaction = js_using_transaction.value(&mut cx);
 
@@ -1277,8 +2455,8 @@ impl PlatformWrapper {
 
         let js_callback = cx.argument::<JsFunction>(4)?.root(&mut cx);
 
-        let path = converter::js_array_of_buffers_to_vec(js_path, &mut cx)?;
-        let key = converter::js_buffer_to_vec_u8(js_key, &mut cx);
+        let path = converter::js_array_of_buffers_to_vec(&mut cx, js_path)?;
+        let key = converter::js_buffer_to_vec_u8(&mut cx, js_key);
         let element = converter::js_object_to_element(&mut cx, js_element)?;
 
         let using_transaction = js_using_transaction.value(&mut cx);
@@ -1335,8 +2513,8 @@ impl PlatformWrapper {
 
         let js_callback = cx.argument::<JsFunction>(4)?.root(&mut cx);
 
-        let path = converter::js_array_of_buffers_to_vec(js_path, &mut cx)?;
-        let key = converter::js_buffer_to_vec_u8(js_key, &mut cx);
+        let path = converter::js_array_of_buffers_to_vec(&mut cx, js_path)?;
+        let key = converter::js_buffer_to_vec_u8(&mut cx, js_key);
         let element = converter::js_object_to_element(&mut cx, js_element)?;
 
         let using_transaction = js_using_transaction.value(&mut cx);
@@ -1398,8 +2576,8 @@ impl PlatformWrapper {
 
         let js_callback = cx.argument::<JsFunction>(3)?.root(&mut cx);
 
-        let key = converter::js_buffer_to_vec_u8(js_key, &mut cx);
-        let value = converter::js_buffer_to_vec_u8(js_value, &mut cx);
+        let key = converter::js_buffer_to_vec_u8(&mut cx, js_key);
+        let value = converter::js_buffer_to_vec_u8(&mut cx, js_value);
 
         let using_transaction = js_using_transaction.value(&mut cx);
 
@@ -1457,7 +2635,7 @@ impl PlatformWrapper {
 
         let js_callback = cx.argument::<JsFunction>(2)?.root(&mut cx);
 
-        let key = converter::js_buffer_to_vec_u8(js_key, &mut cx);
+        let key = converter::js_buffer_to_vec_u8(&mut cx, js_key);
 
         let using_transaction = js_using_transaction.value(&mut cx);
 
@@ -1515,7 +2693,7 @@ impl PlatformWrapper {
 
         let js_callback = cx.argument::<JsFunction>(2)?.root(&mut cx);
 
-        let key = converter::js_buffer_to_vec_u8(js_key, &mut cx);
+        let key = converter::js_buffer_to_vec_u8(&mut cx, js_key);
 
         let db = cx
             .this()
@@ -1581,7 +2759,7 @@ impl PlatformWrapper {
 
         let js_callback = cx.argument::<JsFunction>(3)?.root(&mut cx);
 
-        let path_query = converter::js_path_query_to_path_query(js_path_query, &mut cx)?;
+        let path_query = converter::js_path_query_to_path_query(&mut cx, js_path_query)?;
 
         let skip_cache = js_skip_cache.value(&mut cx);
 
@@ -1616,10 +2794,11 @@ impl PlatformWrapper {
                 let callback = js_callback.into_inner(&mut task_context);
                 let this = task_context.undefined();
                 let callback_arguments: Vec<Handle<JsValue>> = match result {
-                    Ok((value, skipped)) => {
+                    Ok((values, skipped)) => {
                         let js_array: Handle<JsArray> = task_context.empty_array();
-                        let js_vecs = converter::nested_vecs_to_js(&mut task_context, value)?;
+                        let js_vecs = converter::nested_vecs_to_js(&mut task_context, values)?;
                         let js_num = task_context.number(skipped).upcast::<JsValue>();
+
                         js_array.set(&mut task_context, 0, js_vecs)?;
                         js_array.set(&mut task_context, 1, js_num)?;
 
@@ -1643,11 +2822,14 @@ impl PlatformWrapper {
 
     fn js_grove_db_prove_query(mut cx: FunctionContext) -> JsResult<JsUndefined> {
         let js_path_query = cx.argument::<JsObject>(0)?;
-        let js_using_transaction = cx.argument::<JsBoolean>(1)?;
+        let js_get_verbose_proof = cx.argument::<JsBoolean>(1)?;
+        let js_using_transaction = cx.argument::<JsBoolean>(2)?;
 
-        let js_callback = cx.argument::<JsFunction>(2)?.root(&mut cx);
+        let js_callback = cx.argument::<JsFunction>(3)?.root(&mut cx);
 
-        let path_query = converter::js_path_query_to_path_query(js_path_query, &mut cx)?;
+        let path_query = converter::js_path_query_to_path_query(&mut cx, js_path_query)?;
+
+        let get_verbose_proof = js_get_verbose_proof.value(&mut cx);
 
         let using_transaction = js_using_transaction.value(&mut cx);
 
@@ -1670,7 +2852,7 @@ impl PlatformWrapper {
 
             let result = transaction_result.and_then(|transaction_arg| {
                 grove_db
-                    .get_proved_path_query(&path_query, transaction_arg)
+                    .get_proved_path_query(&path_query, get_verbose_proof, transaction_arg)
                     .unwrap()
                     .map_err(Error::GroveDB)
                     .map_err(|err| err.to_string())
@@ -1718,8 +2900,8 @@ impl PlatformWrapper {
         for js_path_query in js_path_queries {
             let js_path_query = js_path_query.downcast_or_throw::<JsObject, _>(&mut cx)?;
             path_queries.push(converter::js_path_query_to_path_query(
-                js_path_query,
                 &mut cx,
+                js_path_query,
             )?);
         }
 
@@ -1850,8 +3032,8 @@ impl PlatformWrapper {
 
         let js_callback = cx.argument::<JsFunction>(3)?.root(&mut cx);
 
-        let path = converter::js_array_of_buffers_to_vec(js_path, &mut cx)?;
-        let key = converter::js_buffer_to_vec_u8(js_key, &mut cx);
+        let path = converter::js_array_of_buffers_to_vec(&mut cx, js_path)?;
+        let key = converter::js_buffer_to_vec_u8(&mut cx, js_key);
 
         let using_transaction = js_using_transaction.value(&mut cx);
 
@@ -1916,7 +3098,7 @@ impl PlatformWrapper {
             .this()
             .downcast_or_throw::<JsBox<PlatformWrapper>, _>(&mut cx)?;
 
-        let request_bytes = converter::js_buffer_to_vec_u8(js_request, &mut cx);
+        let request_bytes = converter::js_buffer_to_vec_u8(&mut cx, js_request);
 
         db.send_to_drive_thread(move |platform: &Platform, transaction, channel| {
             let transaction_result = if using_transaction {
@@ -1974,7 +3156,7 @@ impl PlatformWrapper {
             .this()
             .downcast_or_throw::<JsBox<PlatformWrapper>, _>(&mut cx)?;
 
-        let request_bytes = converter::js_buffer_to_vec_u8(js_request, &mut cx);
+        let request_bytes = converter::js_buffer_to_vec_u8(&mut cx, js_request);
 
         db.send_to_drive_thread(move |platform: &Platform, transaction, channel| {
             let transaction_result = if using_transaction {
@@ -2041,26 +3223,9 @@ impl PlatformWrapper {
         let js_storage_fee: Handle<JsNumber> = js_fees.get(&mut cx, "storageFee")?;
         let storage_fee = js_storage_fee.value(&mut cx) as u64;
 
-        let js_fee_refunds: Handle<JsObject> = js_fees.get(&mut cx, "feeRefunds")?;
+        let js_refunds_per_epoch: Handle<JsObject> = js_fees.get(&mut cx, "refundsPerEpoch")?;
 
-        let mut fee_refunds: CreditsPerEpoch = Default::default();
-
-        for js_epoch_index_value in js_fee_refunds
-            .get_own_property_names(&mut cx)?
-            .to_vec(&mut cx)?
-        {
-            let js_epoch_index = js_epoch_index_value.downcast_or_throw::<JsString, _>(&mut cx)?;
-
-            let epoch_index = js_epoch_index
-                .value(&mut cx)
-                .parse()
-                .or_else(|e: ParseIntError| cx.throw_error(e.to_string()))?;
-
-            let js_credits: Handle<JsNumber> = js_fee_refunds.get(&mut cx, js_epoch_index)?;
-            let credits = js_credits.value(&mut cx) as Credits;
-
-            fee_refunds.insert(epoch_index, credits);
-        }
+        let refunds_per_epoch = js_object_to_fee_refunds(&mut cx, js_refunds_per_epoch)?;
 
         db.send_to_drive_thread(move |platform: &Platform, transaction, channel| {
             let transaction_result = if using_transaction {
@@ -2078,7 +3243,7 @@ impl PlatformWrapper {
                     fees: BlockFees {
                         processing_fee,
                         storage_fee,
-                        fee_refunds,
+                        refunds_per_epoch,
                     },
                 };
 
@@ -2122,7 +3287,7 @@ impl PlatformWrapper {
             .this()
             .downcast_or_throw::<JsBox<PlatformWrapper>, _>(&mut cx)?;
 
-        let request_bytes = converter::js_buffer_to_vec_u8(js_request, &mut cx);
+        let request_bytes = converter::js_buffer_to_vec_u8(&mut cx, js_request);
 
         db.send_to_drive_thread(move |platform: &Platform, _, channel| {
             let result = AfterFinalizeBlockRequest::from_bytes(&request_bytes)
@@ -2158,9 +3323,13 @@ impl PlatformWrapper {
     fn js_fetch_latest_withdrawal_transaction_index(
         mut cx: FunctionContext,
     ) -> JsResult<JsUndefined> {
-        let js_using_transaction = cx.argument::<JsBoolean>(0)?;
-        let js_callback = cx.argument::<JsFunction>(1)?.root(&mut cx);
+        let js_block_info = cx.argument::<JsObject>(0)?;
+        let js_apply = cx.argument::<JsBoolean>(1)?;
+        let js_using_transaction = cx.argument::<JsBoolean>(2)?;
+        let js_callback = cx.argument::<JsFunction>(3)?.root(&mut cx);
 
+        let apply = js_apply.value(&mut cx);
+        let block_info = converter::js_object_to_block_info(&mut cx, js_block_info)?;
         let using_transaction = js_using_transaction.value(&mut cx);
 
         let db = cx
@@ -2179,10 +3348,27 @@ impl PlatformWrapper {
             };
 
             let result = transaction_result.and_then(|transaction_arg| {
+                let mut drive_operation_types = vec![];
+
+                let result = platform
+                    .drive
+                    .fetch_and_remove_latest_withdrawal_transaction_index_operations(
+                        &mut drive_operation_types,
+                        transaction_arg,
+                    )
+                    .map_err(|err| err.to_string())?;
+
                 platform
                     .drive
-                    .fetch_latest_withdrawal_transaction_index(transaction_arg)
-                    .map_err(|err| err.to_string())
+                    .apply_drive_operations(
+                        drive_operation_types,
+                        apply,
+                        &block_info,
+                        transaction_arg,
+                    )
+                    .map_err(|err| err.to_string())?;
+
+                Ok(result)
             });
 
             channel.send(move |mut task_context| {
@@ -2201,76 +3387,6 @@ impl PlatformWrapper {
 
                             vec![task_context.null().upcast(), value.upcast()]
                         }
-                    }
-
-                    // Convert the error to a JavaScript exception on failure
-                    Err(err) => vec![task_context.error(err)?.upcast()],
-                };
-
-                callback.call(&mut task_context, this, callback_arguments)?;
-
-                Ok(())
-            });
-        })
-        .or_else(|err| cx.throw_error(err.to_string()))?;
-
-        // The result is returned through the callback, not through direct return
-        Ok(cx.undefined())
-    }
-
-    fn js_enqueue_withdrawal_transaction(mut cx: FunctionContext) -> JsResult<JsUndefined> {
-        let js_index = cx.argument::<JsNumber>(0)?;
-        let js_core_transaction = cx.argument::<JsBuffer>(1)?;
-        let js_using_transaction = cx.argument::<JsBoolean>(2)?;
-        let js_callback = cx.argument::<JsFunction>(3)?.root(&mut cx);
-
-        let db = cx
-            .this()
-            .downcast_or_throw::<JsBox<PlatformWrapper>, _>(&mut cx)?;
-
-        let index = js_index.value(&mut cx);
-        let transaction_bytes = converter::js_buffer_to_vec_u8(js_core_transaction, &mut cx);
-        let using_transaction = js_using_transaction.value(&mut cx);
-
-        db.send_to_drive_thread(move |platform: &Platform, transaction, channel| {
-            let transaction_result = if using_transaction {
-                if transaction.is_none() {
-                    Err("transaction is not started".to_string())
-                } else {
-                    Ok(transaction)
-                }
-            } else {
-                Ok(None)
-            };
-
-            let mut batch = GroveDbOpBatch::new();
-
-            let index_bytes = (index as u64).to_be_bytes().to_vec();
-
-            let withdrawals = vec![(index_bytes.clone(), transaction_bytes)];
-
-            platform
-                .drive
-                .add_enqueue_withdrawal_transaction_operations(&mut batch, withdrawals);
-
-            platform
-                .drive
-                .add_update_withdrawal_index_counter_operation(&mut batch, index_bytes);
-
-            let result = transaction_result.and_then(|transaction_arg| {
-                platform
-                    .drive
-                    .grove_apply_batch(batch, false, transaction_arg)
-                    .map_err(|err| err.to_string())
-            });
-
-            channel.send(move |mut task_context| {
-                let callback = js_callback.into_inner(&mut task_context);
-                let this = task_context.undefined();
-
-                let callback_arguments: Vec<Handle<JsValue>> = match result {
-                    Ok(_) => {
-                        vec![task_context.null().upcast(), task_context.null().upcast()]
                     }
 
                     // Convert the error to a JavaScript exception on failure
@@ -2307,6 +3423,68 @@ fn main(mut cx: ModuleContext) -> NeonResult<()> {
         "driveInsertIdentity",
         PlatformWrapper::js_insert_identity_cbor,
     )?;
+    cx.export_function("driveFetchIdentity", PlatformWrapper::js_fetch_identity)?;
+    cx.export_function(
+        "driveFetchIdentityBalance",
+        PlatformWrapper::js_fetch_identity_balance,
+    )?;
+    cx.export_function(
+        "driveFetchIdentityBalanceWithCosts",
+        PlatformWrapper::js_fetch_identity_balance_with_costs,
+    )?;
+    cx.export_function(
+        "driveFetchIdentityBalanceIncludeDebtWithCosts",
+        PlatformWrapper::js_fetch_identity_balance_include_debt_with_costs,
+    )?;
+    cx.export_function(
+        "driveFetchProvedIdentity",
+        PlatformWrapper::js_fetch_proved_identity,
+    )?;
+    cx.export_function(
+        "driveFetchManyProvedIdentities",
+        PlatformWrapper::js_fetch_many_proved_identities,
+    )?;
+    cx.export_function(
+        "driveFetchIdentityWithCosts",
+        PlatformWrapper::js_fetch_identity_with_costs,
+    )?;
+    cx.export_function(
+        "driveAddToIdentityBalance",
+        PlatformWrapper::js_add_to_identity_balance,
+    )?;
+    cx.export_function(
+        "driveRemoveFromIdentityBalance",
+        PlatformWrapper::js_remove_from_identity_balance,
+    )?;
+    cx.export_function(
+        "driveApplyFeesToIdentityBalance",
+        PlatformWrapper::js_apply_fees_to_identity_balance,
+    )?;
+    cx.export_function(
+        "driveAddToSystemCredits",
+        PlatformWrapper::js_add_to_system_credits,
+    )?;
+    cx.export_function(
+        "driveFetchIdentitiesByPublicKeyHashes",
+        PlatformWrapper::js_fetch_identities_by_public_key_hashes,
+    )?;
+    cx.export_function(
+        "driveProveIdentitiesByPublicKeyHashes",
+        PlatformWrapper::js_prove_identities_by_public_key_hashes,
+    )?;
+    cx.export_function(
+        "driveAddKeysToIdentity",
+        PlatformWrapper::js_add_keys_to_identity,
+    )?;
+    cx.export_function(
+        "driveDisableIdentityKeys",
+        PlatformWrapper::js_disable_identity_keys,
+    )?;
+    cx.export_function(
+        "driveUpdateIdentityRevision",
+        PlatformWrapper::js_update_identity_revision,
+    )?;
+
     cx.export_function("driveQueryDocuments", PlatformWrapper::js_query_documents)?;
 
     cx.export_function(
@@ -2317,10 +3495,6 @@ fn main(mut cx: ModuleContext) -> NeonResult<()> {
     cx.export_function(
         "driveFetchLatestWithdrawalTransactionIndex",
         PlatformWrapper::js_fetch_latest_withdrawal_transaction_index,
-    )?;
-    cx.export_function(
-        "driveEnqueueWithdrawalTransaction",
-        PlatformWrapper::js_enqueue_withdrawal_transaction,
     )?;
 
     cx.export_function("groveDbInsert", PlatformWrapper::js_grove_db_insert)?;
@@ -2381,7 +3555,11 @@ fn main(mut cx: ModuleContext) -> NeonResult<()> {
     cx.export_function("feeResultAdd", FeeResultWrapper::add)?;
     cx.export_function("feeResultAddFees", FeeResultWrapper::add_fees)?;
     cx.export_function("feeResultCreate", FeeResultWrapper::create)?;
-    cx.export_function("feeResultGetRefunds", FeeResultWrapper::get_fee_refunds)?;
+    cx.export_function("feeResultGetRefunds", FeeResultWrapper::get_refunds)?;
+    cx.export_function(
+        "feeResultSumRefundsPerEpoch",
+        FeeResultWrapper::get_refunds_per_epoch,
+    )?;
 
     cx.export_function(
         "calculateStorageFeeDistributionAmountAndLeftovers",

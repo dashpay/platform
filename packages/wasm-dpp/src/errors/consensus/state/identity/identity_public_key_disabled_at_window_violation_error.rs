@@ -1,3 +1,4 @@
+use dpp::identity::TimestampMillis;
 use wasm_bindgen::prelude::*;
 
 #[wasm_bindgen(js_name=IdentityPublicKeyDisabledAtWindowViolationError)]
@@ -35,7 +36,12 @@ impl IdentityPublicKeyDisabledAtWindowViolationErrorWasm {
 }
 
 impl IdentityPublicKeyDisabledAtWindowViolationErrorWasm {
-    pub fn new(disabled_at: u64, time_window_start: u64, time_window_end: u64, code: u32) -> Self {
+    pub fn new(
+        disabled_at: TimestampMillis,
+        time_window_start: TimestampMillis,
+        time_window_end: TimestampMillis,
+        code: u32,
+    ) -> Self {
         Self {
             disabled_at,
             time_window_start,

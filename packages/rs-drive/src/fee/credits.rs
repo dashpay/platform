@@ -39,23 +39,32 @@
 
 // TODO: Should be moved to DPP when integration is done
 
+#[cfg(feature = "full")]
 use crate::error::drive::DriveError;
+#[cfg(feature = "full")]
 use crate::error::Error;
+#[cfg(feature = "full")]
 use crate::fee::get_overflow_error;
+#[cfg(feature = "full")]
 use integer_encoding::VarInt;
+#[cfg(feature = "full")]
 use rust_decimal::Decimal;
 
 /// Credits type
+#[cfg(any(feature = "full", feature = "verify"))]
 pub type Credits = u64;
 
 /// Signed Credits type is used for internal computations and total credits
 /// balance verification
+#[cfg(feature = "full")]
 pub type SignedCredits = i64;
 
 /// Maximum value of credits
+#[cfg(feature = "full")]
 pub const MAX_CREDITS: Credits = SignedCredits::MAX as Credits;
 
 /// Trait for signed and unsigned credits
+#[cfg(feature = "full")]
 pub trait Creditable: Into<Decimal> {
     /// Convert unsigned credit to singed
     fn to_signed(&self) -> Result<SignedCredits, Error>;
@@ -70,6 +79,7 @@ pub trait Creditable: Into<Decimal> {
     fn to_vec_bytes(&self) -> Vec<u8>;
 }
 
+#[cfg(feature = "full")]
 impl Creditable for Credits {
     fn to_signed(&self) -> Result<SignedCredits, Error> {
         SignedCredits::try_from(*self)
@@ -84,7 +94,7 @@ impl Creditable for Credits {
         Self::decode_var(vec.as_slice())
             .map(|(n, _)| n)
             .ok_or(Error::Drive(DriveError::CorruptedSerialization(
-                "pending updates epoch index for must be u16",
+                "pending refunds epoch index for must be u16",
             )))
     }
 
@@ -92,6 +102,8 @@ impl Creditable for Credits {
         self.encode_var_vec()
     }
 }
+
+#[cfg(feature = "full")]
 impl Creditable for SignedCredits {
     fn to_signed(&self) -> Result<SignedCredits, Error> {
         Ok(*self)
@@ -105,7 +117,7 @@ impl Creditable for SignedCredits {
         Self::decode_var(vec.as_slice())
             .map(|(n, _)| n)
             .ok_or(Error::Drive(DriveError::CorruptedSerialization(
-                "pending updates epoch index for must be u16",
+                "pending refunds epoch index for must be u16",
             )))
     }
 

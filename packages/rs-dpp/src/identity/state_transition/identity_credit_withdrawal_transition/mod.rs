@@ -3,9 +3,10 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value as JsonValue;
 use serde_repr::{Deserialize_repr, Serialize_repr};
 
+use crate::version::LATEST_VERSION;
 use crate::{
     identity::{core_script::CoreScript, KeyID},
-    prelude::Identifier,
+    prelude::{Identifier, Revision},
     state_transition::{
         state_transition_execution_context::StateTransitionExecutionContext,
         StateTransitionConvert, StateTransitionIdentitySigned, StateTransitionLike,
@@ -48,9 +49,10 @@ pub struct IdentityCreditWithdrawalTransition {
     pub transition_type: StateTransitionType,
     pub identity_id: Identifier,
     pub amount: u64,
-    pub core_fee: u32,
+    pub core_fee_per_byte: u32,
     pub pooling: Pooling,
     pub output_script: CoreScript,
+    pub revision: Revision,
     pub signature_public_key_id: KeyID,
     pub signature: Vec<u8>,
     #[serde(skip)]
@@ -60,13 +62,14 @@ pub struct IdentityCreditWithdrawalTransition {
 impl std::default::Default for IdentityCreditWithdrawalTransition {
     fn default() -> Self {
         IdentityCreditWithdrawalTransition {
-            protocol_version: Default::default(),
+            protocol_version: LATEST_VERSION,
             transition_type: StateTransitionType::IdentityCreditWithdrawal,
             identity_id: Default::default(),
             amount: Default::default(),
-            core_fee: Default::default(),
+            core_fee_per_byte: Default::default(),
             pooling: Default::default(),
             output_script: Default::default(),
+            revision: Default::default(),
             signature_public_key_id: Default::default(),
             signature: Default::default(),
             execution_context: Default::default(),
@@ -108,9 +111,12 @@ impl IdentityCreditWithdrawalTransition {
         Self::from_value(raw_object)
     }
 
-    /// Returns ID of the created contract
-    pub fn get_modified_data_ids(&self) -> Vec<&Identifier> {
-        vec![&self.identity_id]
+    pub fn set_revision(&mut self, revision: Revision) {
+        self.revision = revision;
+    }
+
+    pub fn get_revision(&self) -> Revision {
+        self.revision
     }
 }
 
@@ -130,6 +136,10 @@ impl StateTransitionIdentitySigned for IdentityCreditWithdrawalTransition {
 }
 
 impl StateTransitionLike for IdentityCreditWithdrawalTransition {
+    fn get_modified_data_ids(&self) -> Vec<Identifier> {
+        vec![self.identity_id]
+    }
+
     fn get_protocol_version(&self) -> u32 {
         self.protocol_version
     }

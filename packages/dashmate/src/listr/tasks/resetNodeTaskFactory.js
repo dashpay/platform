@@ -3,7 +3,6 @@ const { Listr } = require('listr2');
 /**
  * @param {DockerCompose} dockerCompose
  * @param {Docker} docker
- * @param {tenderdashInitTask} tenderdashInitTask
  * @param {startNodeTask} startNodeTask
  * @param {generateToAddressTask} generateToAddressTask
  * @param {systemConfigs} systemConfigs
@@ -12,7 +11,6 @@ const { Listr } = require('listr2');
 function resetNodeTaskFactory(
   dockerCompose,
   docker,
-  tenderdashInitTask,
   startNodeTask,
   generateToAddressTask,
   systemConfigs,
@@ -78,13 +76,6 @@ function resetNodeTaskFactory(
             config.setOptions(systemConfigs[name]);
           }
         },
-      },
-      {
-        title: 'Initialize Tenderdash',
-        enabled: (ctx) => (
-          !ctx.isHardReset && !ctx.skipPlatformInitialization && config.has('platform')
-        ),
-        task: () => tenderdashInitTask(config),
       },
     ]);
   }

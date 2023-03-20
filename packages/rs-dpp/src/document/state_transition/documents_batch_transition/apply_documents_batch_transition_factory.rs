@@ -1,6 +1,5 @@
 use std::collections::HashMap;
 
-use dashcore::{consensus, Block, BlockHeader};
 use serde_json::Value;
 
 use crate::{
@@ -76,14 +75,8 @@ pub async fn apply_documents_batch_transition(
             }
             DocumentTransition::Replace(dt) => {
                 let document = if state_transition.execution_context.is_dry_run() {
-                    let block_header_bytes = state_repository
-                        .fetch_latest_platform_block_header()
-                        .await?;
-
-                    let block_header: BlockHeader = consensus::deserialize(&block_header_bytes)
-                        .map_err(|e| ProtocolError::Generic(e.to_string()))?;
-
-                    let timestamp_millis = (block_header.time * 1000) as i64;
+                    let timestamp_millis =
+                        state_repository.fetch_latest_platform_block_time().await?;
                     document_from_transition_replace(dt, state_transition, timestamp_millis)
                 } else {
                     let mut document = fetched_documents_by_id
@@ -124,10 +117,10 @@ fn document_from_transition_create(
     // TODO cloning is costly. Probably the [`Document`] should have properties of type `Cov<'a, K>`
     Document {
         protocol_version: state_transition.protocol_version,
-        id: document_create_transition.base.id.clone(),
+        id: document_create_transition.base.id,
         document_type: document_create_transition.base.document_type.clone(),
-        data_contract_id: document_create_transition.base.data_contract_id.clone(),
-        owner_id: state_transition.owner_id.clone(),
+        data_contract_id: document_create_transition.base.data_contract_id,
+        owner_id: state_transition.owner_id,
         data: document_create_transition
             .data
             .as_ref()
@@ -148,15 +141,15 @@ fn document_from_transition_create(
 fn document_from_transition_replace(
     document_replace_transition: &DocumentReplaceTransition,
     state_transition: &DocumentsBatchTransition,
-    created_at: i64,
+    created_at: u64,
 ) -> Document {
     // TODO cloning is costly. Probably the [`Document`] should have properties of type `Cov<'a, K>`
     Document {
         protocol_version: state_transition.protocol_version,
-        id: document_replace_transition.base.id.clone(),
+        id: document_replace_transition.base.id,
         document_type: document_replace_transition.base.document_type.clone(),
-        data_contract_id: document_replace_transition.base.data_contract_id.clone(),
-        owner_id: state_transition.owner_id.clone(),
+        data_contract_id: document_replace_transition.base.data_contract_id,
+        owner_id: state_transition.owner_id,
         data: document_replace_transition
             .data
             .as_ref()
@@ -164,7 +157,7 @@ fn document_from_transition_replace(
             .clone(),
         updated_at: document_replace_transition.updated_at,
         revision: document_replace_transition.revision,
-        created_at: Some(created_at),
+        created_at: Some(created_at as i64),
         metadata: None,
 
         //? In the JS implementation the `data_contract` and `entropy` properties are completely omitted, what suggest we should make
@@ -177,14 +170,12 @@ fn document_from_transition_replace(
 
 #[cfg(test)]
 mod test {
-    use dashcore::consensus;
     use serde_json::{json, Value};
 
-    use crate::tests::utils::new_block_header;
     use crate::{
         document::{
             document_transition::{Action, DocumentTransitionObjectLike},
-            Document, DocumentsBatchTransition,
+            DocumentsBatchTransition,
         },
         state_repository::MockStateRepositoryLike,
         state_transition::StateTransitionLike,
@@ -192,7 +183,7 @@ mod test {
             fixtures::{
                 get_data_contract_fixture, get_document_transitions_fixture, get_documents_fixture,
             },
-            utils::{create_empty_block, generate_random_identifier_struct},
+            utils::generate_random_identifier_struct,
         },
     };
 
@@ -225,14 +216,14 @@ mod test {
 
         state_transition.get_execution_context().enable_dry_run();
         state_repository
-            .expect_fetch_documents::<Document>()
+            .expect_fetch_documents()
             .returning(|_, _, _, _| Ok(vec![]));
         state_repository
             .expect_update_document()
             .returning(|_, _| Ok(()));
         state_repository
-            .expect_fetch_latest_platform_block_header()
-            .returning(|| Ok(consensus::serialize(&new_block_header(None))));
+            .expect_fetch_latest_platform_block_time()
+            .returning(|| Ok(0));
 
         let result = apply_documents_batch_transition(&state_repository, &state_transition).await;
         assert!(result.is_ok());

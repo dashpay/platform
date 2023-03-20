@@ -1,11 +1,14 @@
+use std::convert::TryFrom;
 use std::sync::Arc;
 
 use anyhow::anyhow;
 use lazy_static::lazy_static;
 use serde_json::Value;
 
+use crate::consensus::basic::data_contract::InvalidDataContractIdError;
+use crate::consensus::basic::decode::ProtocolVersionParsingError;
 use crate::{
-    consensus::basic::BasicError,
+    consensus::{basic::BasicError, ConsensusError},
     data_contract::{generate_data_contract_id, state_transition::property_names},
     data_contract::{
         property_names as data_contract_property_names,
@@ -66,7 +69,7 @@ impl DataValidatorWithContext for DataContractCreateTransitionBasicValidator {
     }
 }
 
-pub fn validate_data_contract_create_transition_basic(
+fn validate_data_contract_create_transition_basic(
     json_schema_validator: &impl DataValidator<Item = Value>,
     protocol_validator: &impl DataValidator<Item = u32>,
     data_contract_validator: &impl DataValidator<Item = Value>,
@@ -78,7 +81,20 @@ pub fn validate_data_contract_create_transition_basic(
         return Ok(result);
     }
 
-    let protocol_version = raw_state_transition.get_u64(property_names::PROTOCOL_VERSION)? as u32;
+    let protocol_version = match raw_state_transition
+        .get_u64(property_names::PROTOCOL_VERSION)
+        .and_then(|x| u32::try_from(x).map_err(Into::into))
+    {
+        Ok(v) => v,
+        Err(parsing_error) => {
+            return Ok(SimpleValidationResult::new(Some(vec![
+                ConsensusError::ProtocolVersionParsingError(ProtocolVersionParsingError::new(
+                    parsing_error,
+                )),
+            ])))
+        }
+    };
+
     let result = protocol_validator.validate(&protocol_version)?;
     if !result.is_valid() {
         return Ok(result);
@@ -87,13 +103,12 @@ pub fn validate_data_contract_create_transition_basic(
     let raw_data_contract = raw_state_transition.get_value(property_names::DATA_CONTRACT)?;
 
     // Validate Data Contract
-    let result = data_contract_validator.validate(raw_state_transition)?;
+    let result = data_contract_validator.validate(raw_data_contract)?;
     if !result.is_valid() {
         return Ok(result);
     }
-
     let owner_id = raw_data_contract.get_bytes(data_contract_property_names::OWNER_ID)?;
-    let entropy = raw_data_contract.get_bytes(data_contract_property_names::ENTROPY)?;
+    let entropy = raw_state_transition.get_bytes(property_names::ENTROPY)?;
     let raw_data_contract_id = raw_data_contract.get_bytes(data_contract_property_names::ID)?;
 
     // Validate Data Contract ID
@@ -101,10 +116,9 @@ pub fn validate_data_contract_create_transition_basic(
 
     let mut validation_result = SimpleValidationResult::default();
     if generated_id != raw_data_contract_id {
-        validation_result.add_error(BasicError::InvalidDataContractIdError {
-            expected_id: generated_id,
-            invalid_id: raw_data_contract_id,
-        })
+        validation_result.add_error(BasicError::InvalidDataContractIdError(
+            InvalidDataContractIdError::new(generated_id, raw_data_contract_id),
+        ))
     }
 
     Ok(validation_result)

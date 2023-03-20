@@ -31,7 +31,7 @@ struct TestData {
 
 fn setup_test() -> TestData {
     let owner_id = generate_random_identifier_struct();
-    let data_contract = get_data_contract_fixture(Some(owner_id.clone()));
+    let data_contract = get_data_contract_fixture(Some(owner_id));
     let documents = get_documents_fixture(data_contract.clone()).unwrap();
 
     TestData {
@@ -55,7 +55,7 @@ async fn should_return_valid_result_if_documents_have_no_unique_indices() {
     } = setup_test();
     let mut state_repository_mock = MockStateRepositoryLike::default();
     state_repository_mock
-        .expect_fetch_documents::<Document>()
+        .expect_fetch_documents()
         .returning(|_, _, _, _| Ok(vec![]));
 
     let document_transitions =
@@ -88,9 +88,9 @@ async fn should_return_valid_result_if_document_has_unique_indices_and_there_are
     let expect_document = william_doc.to_owned();
 
     state_repository_mock
-        .expect_fetch_documents::<Document>()
+        .expect_fetch_documents()
         .with(
-            predicate::eq(data_contract.id.clone()),
+            predicate::eq(data_contract.id),
             predicate::eq("indexedDocument"),
             predicate::eq(json!({
                "where" : [
@@ -104,9 +104,9 @@ async fn should_return_valid_result_if_document_has_unique_indices_and_there_are
 
     let expect_document = william_doc.to_owned();
     state_repository_mock
-        .expect_fetch_documents::<Document>()
+        .expect_fetch_documents()
         .with(
-            predicate::eq(data_contract.id.clone()),
+            predicate::eq(data_contract.id),
             predicate::eq("indexedDocument"),
             predicate::eq(json!({
                "where" : [
@@ -149,9 +149,9 @@ async fn should_return_invalid_result_if_document_has_unique_indices_and_there_a
 
     let expect_document = leon_doc.to_owned();
     state_repository_mock
-        .expect_fetch_documents::<Document>()
+        .expect_fetch_documents()
         .with(
-            predicate::eq(data_contract.id.clone()),
+            predicate::eq(data_contract.id),
             predicate::eq("indexedDocument"),
             predicate::eq(json!({
                "where" : [
@@ -165,9 +165,9 @@ async fn should_return_invalid_result_if_document_has_unique_indices_and_there_a
 
     let expect_document = leon_doc.to_owned();
     state_repository_mock
-        .expect_fetch_documents::<Document>()
+        .expect_fetch_documents()
         .with(
-            predicate::eq(data_contract.id.clone()),
+            predicate::eq(data_contract.id),
             predicate::eq("indexedDocument"),
             predicate::eq(json!({
                "where" : [
@@ -181,9 +181,9 @@ async fn should_return_invalid_result_if_document_has_unique_indices_and_there_a
 
     let expect_document = william_doc.to_owned();
     state_repository_mock
-        .expect_fetch_documents::<Document>()
+        .expect_fetch_documents()
         .with(
-            predicate::eq(data_contract.id.clone()),
+            predicate::eq(data_contract.id),
             predicate::eq("indexedDocument"),
             predicate::eq(json!({
                "where" : [
@@ -197,9 +197,9 @@ async fn should_return_invalid_result_if_document_has_unique_indices_and_there_a
 
     let expect_document = william_doc.to_owned();
     state_repository_mock
-        .expect_fetch_documents::<Document>()
+        .expect_fetch_documents()
         .with(
-            predicate::eq(data_contract.id.clone()),
+            predicate::eq(data_contract.id),
             predicate::eq("indexedDocument"),
             predicate::eq(json!({
                "where" : [
@@ -257,9 +257,9 @@ async fn should_return_valid_result_in_dry_run_if_document_has_unique_indices_an
 
     let expect_document = leon_doc.to_owned();
     state_repository_mock
-        .expect_fetch_documents::<Document>()
+        .expect_fetch_documents()
         .with(
-            predicate::eq(data_contract.id.clone()),
+            predicate::eq(data_contract.id),
             predicate::eq("indexedDocument"),
             predicate::eq(json!({
                "where" : [
@@ -273,9 +273,9 @@ async fn should_return_valid_result_in_dry_run_if_document_has_unique_indices_an
 
     let expect_document = leon_doc.to_owned();
     state_repository_mock
-        .expect_fetch_documents::<Document>()
+        .expect_fetch_documents()
         .with(
-            predicate::eq(data_contract.id.clone()),
+            predicate::eq(data_contract.id),
             predicate::eq("indexedDocument"),
             predicate::eq(json!({
                "where" : [
@@ -289,9 +289,9 @@ async fn should_return_valid_result_in_dry_run_if_document_has_unique_indices_an
 
     let expect_document = william_doc.to_owned();
     state_repository_mock
-        .expect_fetch_documents::<Document>()
+        .expect_fetch_documents()
         .with(
-            predicate::eq(data_contract.id.clone()),
+            predicate::eq(data_contract.id),
             predicate::eq("indexedDocument"),
             predicate::eq(json!({
                "where" : [
@@ -305,9 +305,9 @@ async fn should_return_valid_result_in_dry_run_if_document_has_unique_indices_an
 
     let expect_document = william_doc.to_owned();
     state_repository_mock
-        .expect_fetch_documents::<Document>()
+        .expect_fetch_documents()
         .with(
-            predicate::eq(data_contract.id.clone()),
+            predicate::eq(data_contract.id),
             predicate::eq("indexedDocument"),
             predicate::eq(json!({
                "where" : [
@@ -350,9 +350,9 @@ async fn should_return_valid_result_if_document_has_undefined_field_from_index()
 
     let expect_document = indexed_document.to_owned();
     state_repository_mock
-        .expect_fetch_documents::<Document>()
+        .expect_fetch_documents()
         .with(
-            predicate::eq(data_contract.id.clone()),
+            predicate::eq(data_contract.id),
             predicate::eq("indexedDocument"),
             predicate::eq(json!({
                "where" : [
@@ -366,9 +366,9 @@ async fn should_return_valid_result_if_document_has_undefined_field_from_index()
 
     let expect_document = indexed_document.to_owned();
     state_repository_mock
-        .expect_fetch_documents::<Document>()
+        .expect_fetch_documents()
         .with(
-            predicate::eq(data_contract.id.clone()),
+            predicate::eq(data_contract.id),
             predicate::eq("indexedDocument"),
             predicate::eq(json!({
                "where" : [
@@ -408,9 +408,9 @@ async fn should_return_valid_result_if_document_being_created_and_has_created_at
 
     let expect_document = unique_dates_doc.to_owned();
     state_repository_mock
-            .expect_fetch_documents::<Document>()
+            .expect_fetch_documents()
             .with(
-                predicate::eq(data_contract.id.clone()),
+                predicate::eq(data_contract.id),
                 predicate::eq("uniqueDates"),
                 predicate::eq(json!({
                    "where" : [
@@ -440,7 +440,7 @@ fn get_state_error(result: &ValidationResult<()>, error_number: usize) -> &State
         .get(error_number)
         .expect("error should be found")
     {
-        ConsensusError::StateError(state_error) => &*state_error,
+        ConsensusError::StateError(state_error) => state_error,
         _ => panic!(
             "error '{:?}' isn't a basic error",
             result.errors[error_number]

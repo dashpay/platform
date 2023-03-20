@@ -37,7 +37,6 @@ describe('Identity', () => {
           purpose: KeyPurpose.AUTHENTICATION,
           securityLevel: KeySecurityLevel.MASTER,
           readOnly: false,
-          signature: Buffer.alloc(36).fill('a'),
         },
       ],
       balance: 0,
@@ -46,11 +45,21 @@ describe('Identity', () => {
 
     identity = new Identity(rawIdentity);
 
-    metadataFixture = new Metadata(42, 0);
+    metadataFixture = new Metadata({
+      blockHeight: 42,
+      coreChainLockedHeight: 0,
+      timeMs: 100,
+      protocolVersion: 2,
+    });
 
     identity.setMetadata(metadataFixture);
 
-    metadataFixture = new Metadata(42, 0);
+    metadataFixture = new Metadata({
+      blockHeight: 42,
+      coreChainLockedHeight: 0,
+      timeMs: 100,
+      protocolVersion: 2,
+    });
   });
 
   afterEach(() => {
@@ -97,7 +106,6 @@ describe('Identity', () => {
         data: Buffer.alloc(36).fill('a'),
         purpose: KeyPurpose.AUTHENTICATION,
         securityLevel: KeySecurityLevel.MASTER,
-        signature: Buffer.alloc(36).fill('a'),
         readOnly: false,
       };
 
@@ -177,7 +185,6 @@ describe('Identity', () => {
             data: rawIdentity.publicKeys[0].data.toString('base64'),
             purpose: KeyPurpose.AUTHENTICATION,
             securityLevel: KeySecurityLevel.MASTER,
-            signature: rawIdentity.publicKeys[0].signature.toString('base64'),
             readOnly: false,
           },
         ],
@@ -223,8 +230,18 @@ describe('Identity', () => {
 
   describe('#setMetadata', () => {
     it('should set metadata', () => {
-      const otherMetadata = new Metadata(43, 1);
-      const expectedMetadata = new Metadata(43, 1);
+      const otherMetadata = new Metadata({
+        blockHeight: 43,
+        coreChainLockedHeight: 1,
+        timeMs: 100,
+        protocolVersion: 2,
+      });
+      const expectedMetadata = new Metadata({
+        blockHeight: 43,
+        coreChainLockedHeight: 1,
+        timeMs: 100,
+        protocolVersion: 2,
+      });
 
       identity.setMetadata(otherMetadata);
 

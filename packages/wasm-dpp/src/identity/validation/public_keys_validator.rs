@@ -19,9 +19,7 @@ impl PublicKeysValidatorWasm {
     #[wasm_bindgen(constructor)]
     pub fn new(adapter: JsBlsAdapter) -> Result<PublicKeysValidatorWasm, JsError> {
         Ok(Self {
-            public_key_validator: PublicKeysValidator::new(BlsAdapter(JsBlsAdapter::from(
-                adapter.clone(),
-            )))?,
+            public_key_validator: PublicKeysValidator::new(BlsAdapter(adapter.clone()))?,
             public_key_in_state_transition_validator: PublicKeysValidator::new_with_schema(
                 PUBLIC_KEY_SCHEMA_FOR_TRANSITION.clone(),
                 BlsAdapter(adapter),
@@ -40,7 +38,6 @@ impl PublicKeysValidatorWasm {
             .public_key_validator
             .validate_keys(&raw_public_keys)
             .map_err(|e| JsValue::from(e.to_string()))?;
-
         Ok(validation_result.map(|_| JsValue::undefined()).into())
     }
 
@@ -55,7 +52,6 @@ impl PublicKeysValidatorWasm {
             .public_key_validator
             .validate_public_key_structure(&pk_serde_json)
             .map_err(|e| JsValue::from(e.to_string()))?;
-
         Ok(validation_result.map(|_| JsValue::undefined()).into())
     }
 
@@ -70,7 +66,6 @@ impl PublicKeysValidatorWasm {
             .public_key_in_state_transition_validator
             .validate_keys(&raw_public_keys)
             .map_err(|e| JsValue::from(e.to_string()))?;
-
         Ok(validation_result.map(|_| JsValue::undefined()).into())
     }
 }

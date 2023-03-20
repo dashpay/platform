@@ -21,12 +21,14 @@ use crate::util::hash::hash;
 use crate::util::json_value::{JsonValueExt, ReplaceWith};
 use crate::util::{cbor_value, deserializer};
 
+pub mod document_facade;
 pub mod document_factory;
 pub mod document_stub;
 pub mod document_validator;
 pub mod errors;
 pub mod fetch_and_validate_data_contract;
 pub mod generate_document_id;
+pub mod serialize;
 pub mod state_transition;
 
 pub mod property_names {
@@ -54,6 +56,7 @@ pub struct Document {
     #[serde(rename = "$id")]
     pub id: Identifier,
     #[serde(rename = "$type")]
+    /// TODO: Why not &str?
     pub document_type: String,
     #[serde(rename = "$revision")]
     pub revision: u32,
@@ -62,6 +65,7 @@ pub struct Document {
     #[serde(rename = "$ownerId")]
     pub owner_id: Identifier,
     #[serde(rename = "$createdAt", skip_serializing_if = "Option::is_none")]
+    // TODO: Must be TimestampMillis
     pub created_at: Option<i64>,
     #[serde(rename = "$updatedAt", skip_serializing_if = "Option::is_none")]
     pub updated_at: Option<i64>,
@@ -257,6 +261,11 @@ impl Document {
         self.data = data;
     }
 
+    /// Increment document's revision
+    pub fn increment_revision(&mut self) {
+        self.revision += 1;
+    }
+
     /// Get entropy
     pub fn get_entropy(&self) -> &[u8] {
         &self.entropy
@@ -366,8 +375,8 @@ mod test {
         let init_doc = new_example_document();
         let buffer_document = init_doc.to_buffer().expect("no errors");
 
-        let doc = Document::from_buffer(&buffer_document)
-            .expect("document should be created from buffer");
+        let doc =
+            Document::from_buffer(buffer_document).expect("document should be created from buffer");
 
         assert_eq!(init_doc.created_at, doc.created_at);
         assert_eq!(init_doc.updated_at, doc.updated_at);
@@ -417,7 +426,7 @@ mod test {
     fn deserialize_js_cpp_cbor() -> Result<()> {
         let document_cbor = document_cbor_bytes();
 
-        let document = Document::from_buffer(&document_cbor)?;
+        let document = Document::from_buffer(document_cbor)?;
 
         assert_eq!(document.protocol_version, 1);
         assert_eq!(

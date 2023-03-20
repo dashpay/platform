@@ -1,10 +1,14 @@
+use std::convert::TryInto;
+
 use anyhow::Context;
 use anyhow::{anyhow, bail};
+use itertools::Itertools;
 use serde_json::{json, Value as JsonValue};
 
 use crate::document::Document;
 use crate::util::hash::hash;
 use crate::util::string_encoding::Encoding;
+use crate::ProtocolError;
 use crate::{
     document::document_transition::DocumentTransition, get_from_transition, prelude::Identifier,
     state_repository::StateRepositoryLike, util::json_value::JsonValueExt,
@@ -132,7 +136,7 @@ where
         let parent_domain_label = parent_domain_segments.next().unwrap().to_string();
         let grand_parent_domain_name = parent_domain_segments.collect::<Vec<&str>>().join(".");
 
-        let documents: Vec<Document> = context
+        let documents_data = context
             .state_repository
             .fetch_documents(
                 &context.data_contract.id,
@@ -146,6 +150,10 @@ where
                 context.state_transition_execution_context,
             )
             .await?;
+        let documents: Vec<Document> = documents_data
+            .into_iter()
+            .map(|d| d.try_into().map_err(Into::<ProtocolError>::into))
+            .try_collect()?;
 
         if !is_dry_run {
             if documents.is_empty() {
@@ -155,6 +163,7 @@ where
                     "Parent domain is not present".to_string(),
                 );
                 result.add_error(err.into());
+                return Ok(result);
             }
             let parent_domain = &documents[0];
 
@@ -191,7 +200,7 @@ where
 
     let salted_domain_hash = hash(salted_domain_buffer);
 
-    let preorder_documents: Vec<Document> = context
+    let preorder_documents_data = context
         .state_repository
         .fetch_documents(
             &context.data_contract.id,
@@ -203,6 +212,10 @@ where
             context.state_transition_execution_context,
         )
         .await?;
+    let preorder_documents: Vec<Document> = preorder_documents_data
+        .into_iter()
+        .map(|d| d.try_into().map_err(Into::<ProtocolError>::into))
+        .try_collect()?;
 
     if is_dry_run {
         return Ok(result);
@@ -224,7 +237,7 @@ where
 mod test {
     use crate::{
         data_trigger::DataTriggerExecutionContext,
-        document::{document_transition::Action, Document},
+        document::document_transition::Action,
         state_repository::MockStateRepositoryLike,
         state_transition::state_transition_execution_context::StateTransitionExecutionContext,
         tests::{
@@ -244,15 +257,15 @@ mod test {
         let transition_execution_context = StateTransitionExecutionContext::default();
         let owner_id = generate_random_identifier_struct();
         let document = get_dpns_parent_document_fixture(ParentDocumentOptions {
-            owner_id: owner_id.clone(),
+            owner_id,
             ..Default::default()
         });
-        let data_contract = get_dpns_data_contract_fixture(Some(owner_id.clone()));
+        let data_contract = get_dpns_data_contract_fixture(Some(owner_id));
         let transitions = get_document_transitions_fixture([(Action::Create, vec![document])]);
         let first_transition = transitions.get(0).expect("transition should be present");
 
         state_repository
-            .expect_fetch_documents::<Document>()
+            .expect_fetch_documents()
             .returning(|_, _, _, _| Ok(vec![]));
         transition_execution_context.enable_dry_run();
 

@@ -1,4 +1,11 @@
 use async_trait::async_trait;
+
+#[cfg(test)]
+use mockall::automock;
+
+#[cfg(test)]
+use serde_json::Value as JsonValue;
+
 pub use json_schema_validator::JsonSchemaValidator;
 pub use validation_result::{SimpleValidationResult, ValidationResult};
 
@@ -20,7 +27,7 @@ pub trait DataValidator {
 }
 
 /// Async validator validates data of given type
-#[async_trait]
+#[async_trait(?Send)]
 pub trait AsyncDataValidator {
     // TODO, when GAT is available remove the reference in method and use: `type Item<'a>`
     type Item;
@@ -39,7 +46,8 @@ pub trait DataValidatorWithContext {
 }
 
 /// Async validator takes additionally an execution context and generates fee
-#[async_trait]
+#[cfg_attr(test, automock(type Item = JsonValue;))]
+#[async_trait(?Send)]
 pub trait AsyncDataValidatorWithContext {
     // TODO, when GAT is available remove the reference in method and use: `type Item<'a>`
     type Item;

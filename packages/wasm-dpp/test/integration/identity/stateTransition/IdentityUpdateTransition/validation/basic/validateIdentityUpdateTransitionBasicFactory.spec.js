@@ -13,6 +13,7 @@ describe('validateIdentityUpdateTransitionBasicFactory', () => {
 
   let IdentityUpdateTransition;
   let IdentityPublicKey;
+  let IdentityPublicKeyCreateTransition;
   let UnsupportedProtocolVersionError;
   let InvalidIdentityKeySignatureError;
   let DuplicatedIdentityPublicKeyIdStateError;
@@ -25,6 +26,7 @@ describe('validateIdentityUpdateTransitionBasicFactory', () => {
       InvalidIdentityKeySignatureError,
       DuplicatedIdentityPublicKeyIdStateError,
       IdentityPublicKey,
+      IdentityPublicKeyCreateTransition,
       IdentityUpdateTransitionBasicValidator,
     } = await loadWasmDpp());
   });
@@ -41,7 +43,7 @@ describe('validateIdentityUpdateTransitionBasicFactory', () => {
     const privateKey = new PrivateKey('9b67f852093bc61cea0eeca38599dbfba0de28574d2ed9b99d10d33dc1bde7b2');
     const publicKey = privateKey.toPublicKey().toBuffer();
 
-    let identityPublicKey = new IdentityPublicKey({
+    const identityPublicKey = new IdentityPublicKey({
       id: 1,
       type: IdentityPublicKey.TYPES.ECDSA_SECP256K1,
       data: publicKey,
@@ -49,12 +51,19 @@ describe('validateIdentityUpdateTransitionBasicFactory', () => {
       securityLevel: IdentityPublicKey.SECURITY_LEVELS.MASTER,
       readOnly: false,
     });
-    stateTransition.setPublicKeysToAdd([identityPublicKey]);
+
+    let identityPublicKeyCreateTransition = new IdentityPublicKeyCreateTransition({
+      ...identityPublicKey.toObject(),
+      signature: Buffer.alloc(0),
+    });
+
+    stateTransition.setPublicKeysToAdd([identityPublicKeyCreateTransition]);
+
     await stateTransition.sign(identityPublicKey, privateKey.toBuffer());
 
-    [identityPublicKey] = stateTransition.getPublicKeysToAdd();
-    identityPublicKey.setSignature(stateTransition.getSignature());
-    stateTransition.setPublicKeysToAdd([identityPublicKey]);
+    [identityPublicKeyCreateTransition] = stateTransition.getPublicKeysToAdd();
+    identityPublicKeyCreateTransition.setSignature(stateTransition.getSignature());
+    stateTransition.setPublicKeysToAdd([identityPublicKeyCreateTransition]);
 
     rawStateTransition = stateTransition.toObject();
 
@@ -65,6 +74,7 @@ describe('validateIdentityUpdateTransitionBasicFactory', () => {
       purpose: IdentityPublicKey.PURPOSES.AUTHENTICATION,
       securityLevel: IdentityPublicKey.SECURITY_LEVELS.MASTER,
       readOnly: false,
+      signature: Buffer.alloc(0),
     };
   });
 
@@ -305,16 +315,18 @@ describe('validateIdentityUpdateTransitionBasicFactory', () => {
       const privateKey = new PrivateKey();
       const publicKey = privateKey.toPublicKey();
 
-      const identityPublicKey = new IdentityPublicKey(publicKeyToAdd);
-      identityPublicKey.setData(publicKey.toBuffer());
+      const identityPublicKeyCreateTransition = new IdentityPublicKeyCreateTransition(
+        publicKeyToAdd,
+      );
+      identityPublicKeyCreateTransition.setData(publicKey.toBuffer());
 
-      stateTransition.setPublicKeysToAdd([identityPublicKey]);
+      stateTransition.setPublicKeysToAdd([identityPublicKeyCreateTransition]);
       await stateTransition.signByPrivateKey(
         privateKey.toBuffer(),
-        identityPublicKey.type,
+        identityPublicKeyCreateTransition.type,
       );
-      identityPublicKey.setSignature(stateTransition.getSignature());
-      stateTransition.setPublicKeysToAdd([identityPublicKey]);
+      identityPublicKeyCreateTransition.setSignature(stateTransition.getSignature());
+      stateTransition.setPublicKeysToAdd([identityPublicKeyCreateTransition]);
 
       rawStateTransition = stateTransition.toObject();
 
@@ -375,8 +387,8 @@ describe('validateIdentityUpdateTransitionBasicFactory', () => {
       const keyWithDupeId = { ...publicKeyToAdd, data: Buffer.alloc(33) };
 
       stateTransition.setPublicKeysToAdd([
-        new IdentityPublicKey(publicKeyToAdd),
-        new IdentityPublicKey(keyWithDupeId),
+        new IdentityPublicKeyCreateTransition(publicKeyToAdd),
+        new IdentityPublicKeyCreateTransition(keyWithDupeId),
       ]);
 
       rawStateTransition = stateTransition.toObject();

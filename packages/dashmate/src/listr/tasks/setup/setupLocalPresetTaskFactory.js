@@ -15,6 +15,7 @@ const {
  * @param {resolveDockerHostIp} resolveDockerHostIp
  * @param {configFileRepository} configFileRepository
  * @param {generateHDPrivateKeys} generateHDPrivateKeys
+ * @param {generateTenderdashNodeKeyAndId} generateTenderdashNodeKeyAndId
  */
 function setupLocalPresetTaskFactory(
   configFile,
@@ -24,6 +25,7 @@ function setupLocalPresetTaskFactory(
   resolveDockerHostIp,
   configFileRepository,
   generateHDPrivateKeys,
+  generateTenderdashNodeKeyAndId,
 ) {
   /**
    * @typedef {setupLocalPresetTask}
@@ -125,6 +127,14 @@ function setupLocalPresetTaskFactory(
           } = await generateHDPrivateKeys(network, [0, 1]);
 
           const {
+            hdPrivateKey: withdrawalsPrivateKey,
+            derivedPrivateKeys: [
+              withdrawalsDerivedMasterPrivateKey,
+              withdrawalsDerivedSecondPrivateKey,
+            ],
+          } = await generateHDPrivateKeys(network, [0, 1]);
+
+          const {
             hdPrivateKey: masternodeRewardSharesPrivateKey,
             derivedPrivateKeys: [
               masternodeRewardSharesDerivedMasterPrivateKey,
@@ -143,6 +153,9 @@ function setupLocalPresetTaskFactory(
 
           // eslint-disable-next-line no-param-reassign
           task.output = `Masternode Reward Shares Private Key: ${masternodeRewardSharesPrivateKey.toString()}`;
+
+          // eslint-disable-next-line no-param-reassign
+          task.output = `Withdrawals Private Key: ${withdrawalsPrivateKey.toString()}`;
 
           const subTasks = ctx.configGroup.map((config, i) => (
             {
@@ -180,6 +193,14 @@ function setupLocalPresetTaskFactory(
                 } else {
                   config.set('description', `local node #${nodeIndex}`);
 
+                  const {
+                    id,
+                    key,
+                  } = generateTenderdashNodeKeyAndId();
+
+                  config.set('platform.drive.tenderdash.node.id', id);
+                  config.set('platform.drive.tenderdash.node.key', key);
+
                   config.set('platform.dapi.envoy.http.port', 3000 + (i * 100));
                   config.set('platform.drive.tenderdash.p2p.port', 26656 + (i * 100));
                   config.set('platform.drive.tenderdash.rpc.port', 26657 + (i * 100));
@@ -211,6 +232,9 @@ function setupLocalPresetTaskFactory(
 
                   config.set('platform.dashpay.masterPublicKey', dashpayDerivedMasterPrivateKey.privateKey.toPublicKey().toString());
                   config.set('platform.dashpay.secondPublicKey', dashpayDerivedSecondPrivateKey.privateKey.toPublicKey().toString());
+
+                  config.set('platform.withdrawals.masterPublicKey', withdrawalsDerivedMasterPrivateKey.privateKey.toPublicKey().toString());
+                  config.set('platform.withdrawals.secondPublicKey', withdrawalsDerivedSecondPrivateKey.privateKey.toPublicKey().toString());
 
                   config.set(
                     'platform.masternodeRewardShares.masterPublicKey',

@@ -3,7 +3,7 @@ use std::collections::BTreeMap;
 use ciborium::value::Value as CborValue;
 use integer_encoding::VarInt;
 use serde::{Deserialize, Serialize};
-use serde_json::Value as JsonValue;
+use serde_json::{Value as JsonValue, Value};
 
 use crate::identity::identity_public_key;
 use crate::identity::state_transition::asset_lock_proof::AssetLockProof;
@@ -12,27 +12,78 @@ use crate::util::cbor_value::{CborBTreeMapHelper, CborCanonicalMap};
 use crate::util::deserializer;
 use crate::util::deserializer::SplitProtocolVersionOutcome;
 use crate::util::json_value::{JsonValueExt, ReplaceWith};
-use crate::{errors::ProtocolError, identifier::Identifier, metadata::Metadata, util::hash};
+use crate::{
+    errors::ProtocolError, identifier::Identifier, metadata::Metadata, util::hash,
+    SerdeParsingError,
+};
 
 use super::{IdentityPublicKey, KeyID};
 
-pub const IDENTIFIER_FIELDS_JSON: [&str; 1] = ["$id"];
-pub const IDENTIFIER_FIELDS_RAW_OBJECT: [&str; 1] = ["id"];
+mod property_names {
+    pub const PUBLIC_KEYS: &str = "publicKeys";
+    pub const ID_JSON: &str = "$id";
+    pub const ID_RAW_OBJECT: &str = "id";
+}
+
+pub const IDENTIFIER_FIELDS_JSON: [&str; 1] = [property_names::ID_JSON];
+pub const IDENTIFIER_FIELDS_RAW_OBJECT: [&str; 1] = [property_names::ID_RAW_OBJECT];
 
 /// Implement the Identity. Identity is a low-level construct that provides the foundation
 /// for user-facing functionality on the platform
-#[derive(Default, Debug, Serialize, Deserialize, Clone)]
+#[derive(Default, Debug, Serialize, Deserialize, Clone, Eq, PartialEq)]
 #[serde(rename_all = "camelCase")]
 pub struct Identity {
     pub protocol_version: u32,
     pub id: Identifier,
-    pub public_keys: Vec<IdentityPublicKey>,
+    #[serde(with = "public_key_serialization")]
+    pub public_keys: BTreeMap<KeyID, IdentityPublicKey>,
     pub balance: u64,
     pub revision: Revision,
     #[serde(skip)]
     pub asset_lock_proof: Option<AssetLockProof>,
     #[serde(skip)]
     pub metadata: Option<Metadata>,
+}
+
+/// An identity struct that represent partially set/loaded identity data.
+#[derive(Debug, Clone, Eq, PartialEq)]
+pub struct PartialIdentity {
+    pub id: Identifier,
+    pub loaded_public_keys: BTreeMap<KeyID, IdentityPublicKey>,
+    pub balance: Option<u64>,
+    pub revision: Option<Revision>,
+}
+
+mod public_key_serialization {
+    use crate::identity::{IdentityPublicKey, KeyID};
+    use serde::ser::SerializeSeq;
+    use serde::{Deserialize, Serializer};
+    use std::collections::BTreeMap;
+
+    /// deserialize_public_keys deserializes public keys from a vector
+    pub fn deserialize<'de, D>(
+        deserializer: D,
+    ) -> Result<BTreeMap<KeyID, IdentityPublicKey>, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        let public_key_vec: Vec<IdentityPublicKey> = Deserialize::deserialize(deserializer)?;
+        Ok(public_key_vec.into_iter().map(|k| (k.id, k)).collect())
+    }
+
+    pub fn serialize<S>(
+        public_keys: &BTreeMap<KeyID, IdentityPublicKey>,
+        serializer: S,
+    ) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        let mut seq = serializer.serialize_seq(Some(public_keys.len()))?;
+        for element in public_keys.values() {
+            seq.serialize_element(element)?;
+        }
+        seq.end()
+    }
 }
 
 impl Identity {
@@ -47,33 +98,35 @@ impl Identity {
     }
 
     /// Set Identity public key
-    pub fn set_public_keys(&mut self, pub_key: Vec<IdentityPublicKey>) {
+    /// TODO: It's inconvenient to put id as keys all the time. Either we change setter and getter
+    ///   to accept BTreeSet and keep BTreeMap only for field or change to BTreeSet entirely
+    pub fn set_public_keys(&mut self, pub_key: BTreeMap<KeyID, IdentityPublicKey>) {
         self.public_keys = pub_key;
     }
 
     /// Get Identity public keys revision
-    pub fn get_public_keys(&self) -> &[IdentityPublicKey] {
+    pub fn get_public_keys(&self) -> &BTreeMap<KeyID, IdentityPublicKey> {
         &self.public_keys
     }
 
     /// Get Identity public keys revision
-    pub fn get_public_keys_mut(&mut self) -> &mut [IdentityPublicKey] {
+    pub fn get_public_keys_mut(&mut self) -> &mut BTreeMap<KeyID, IdentityPublicKey> {
         &mut self.public_keys
     }
 
-    // Returns a public key for a given id
+    /// Returns a public key for a given id
     pub fn get_public_key_by_id(&self, key_id: KeyID) -> Option<&IdentityPublicKey> {
-        self.public_keys.iter().find(|i| i.id == key_id)
+        self.public_keys.get(&key_id)
     }
 
-    // Returns a public key for a given id
+    /// Returns a public key for a given id
     pub fn get_public_key_by_id_mut(&mut self, key_id: KeyID) -> Option<&mut IdentityPublicKey> {
-        self.public_keys.iter_mut().find(|i| i.id == key_id)
+        self.public_keys.get_mut(&key_id)
     }
 
     /// Add identity public keys
     pub fn add_public_keys(&mut self, keys: impl IntoIterator<Item = IdentityPublicKey>) {
-        self.public_keys.extend(keys);
+        self.public_keys.extend(keys.into_iter().map(|a| (a.id, a)));
     }
 
     /// Returns balance
@@ -118,6 +171,17 @@ impl Identity {
         self.revision
     }
 
+    /// Increment revision
+    pub fn increment_revision(&mut self) -> Result<(), ProtocolError> {
+        let result = self.revision.checked_add(1).ok_or(ProtocolError::Generic(
+            "identity revision is at max level".to_string(),
+        ))?;
+
+        self.revision = result;
+
+        Ok(())
+    }
+
     /// Get metadata
     pub fn get_metadata(&self) -> Option<&Metadata> {
         self.metadata.as_ref()
@@ -130,17 +194,15 @@ impl Identity {
 
     /// Get the biggest public KeyID
     pub fn get_public_key_max_id(&self) -> KeyID {
-        self.public_keys
-            .iter()
-            .map(|pk| pk.id)
-            .max()
-            .unwrap_or_default()
+        self.public_keys.keys().copied().max().unwrap_or_default()
     }
 
+    /// Converts the identity to a cbor buffer (same as to_cbor)
     pub fn to_buffer(&self) -> Result<Vec<u8>, ProtocolError> {
         self.to_cbor()
     }
 
+    /// Converts the identity to a cbor buffer
     pub fn to_cbor(&self) -> Result<Vec<u8>, ProtocolError> {
         // Prepend protocol version to the result
         let mut buf = self.get_protocol_version().encode_var_vec();
@@ -154,7 +216,7 @@ impl Identity {
             "publicKeys",
             self.get_public_keys()
                 .iter()
-                .map(|pk| pk.into())
+                .map(|(_, pk)| pk.into())
                 .collect::<Vec<CborValue>>(),
         );
 
@@ -164,6 +226,25 @@ impl Identity {
         buf.append(&mut identity_cbor);
 
         Ok(buf)
+    }
+
+    pub fn to_object(&self) -> Result<Value, ProtocolError> {
+        let mut identity_json: JsonValue = serde_json::to_value(self)?;
+
+        identity_json.replace_identifier_paths(IDENTIFIER_FIELDS_RAW_OBJECT, ReplaceWith::Bytes)?;
+
+        let pk_values = self
+            .public_keys
+            .iter()
+            .map(|(_, pk)| pk.to_raw_json_object())
+            .collect::<Result<Vec<JsonValue>, SerdeParsingError>>()?;
+
+        identity_json.insert(
+            property_names::PUBLIC_KEYS.to_string(),
+            JsonValue::Array(pk_values),
+        )?;
+
+        Ok(identity_json)
     }
 
     pub fn from_buffer(b: impl AsRef<[u8]>) -> Result<Self, ProtocolError> {
@@ -200,8 +281,8 @@ impl Identity {
 
         let public_keys = keys_cbor
             .iter()
-            .map(IdentityPublicKey::from_cbor_value)
-            .collect::<Result<Vec<IdentityPublicKey>, ProtocolError>>()?;
+            .map(|k| IdentityPublicKey::from_cbor_value(k).map(|d| (d.id, d)))
+            .collect::<Result<BTreeMap<KeyID, IdentityPublicKey>, ProtocolError>>()?;
 
         Ok(Self {
             protocol_version,
@@ -214,6 +295,7 @@ impl Identity {
         })
     }
 
+    /// Creates an identity from a json structure
     pub fn from_json(mut json_object: JsonValue) -> Result<Identity, ProtocolError> {
         if let Some(public_keys_value) = json_object.get_mut("publicKeys") {
             if let Some(public_keys_array) = public_keys_value.as_array_mut() {
@@ -231,6 +313,7 @@ impl Identity {
         Ok(identity)
     }
 
+    /// Creates an identity from a raw object
     pub fn from_raw_object(mut raw_object: JsonValue) -> Result<Identity, ProtocolError> {
         raw_object.replace_identifier_paths(IDENTIFIER_FIELDS_RAW_OBJECT, ReplaceWith::Base58)?;
 
@@ -239,6 +322,7 @@ impl Identity {
         Ok(identity)
     }
 
+    /// Creates an identity from a json object
     pub fn from_json_object(raw_object: JsonValue) -> Result<Identity, ProtocolError> {
         let pks = raw_object.get("publicKeys").unwrap().as_array().unwrap();
 
@@ -252,7 +336,25 @@ impl Identity {
         Ok(identity)
     }
 
+    /// Computes the hash of an identity
     pub fn hash(&self) -> Result<Vec<u8>, ProtocolError> {
-        Ok(hash::hash(&self.to_buffer()?))
+        Ok(hash::hash(self.to_buffer()?))
+    }
+
+    /// Convenience method to get Partial Identity Info
+    pub fn into_partial_identity_info(self) -> PartialIdentity {
+        let Identity {
+            id,
+            public_keys,
+            balance,
+            revision,
+            ..
+        } = self;
+        PartialIdentity {
+            id,
+            loaded_public_keys: public_keys,
+            balance: Some(balance),
+            revision: Some(revision),
+        }
     }
 }

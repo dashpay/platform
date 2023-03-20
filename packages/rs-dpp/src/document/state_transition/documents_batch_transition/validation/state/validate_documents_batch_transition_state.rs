@@ -1,10 +1,11 @@
 use std::convert::TryInto;
 
-use dashcore::{consensus, BlockHeader};
+use async_trait::async_trait;
 use futures::future::join_all;
 use itertools::Itertools;
-use serde::{Deserialize, Serialize};
 
+use crate::data_contract::errors::DataContractNotPresentError;
+use crate::validation::{AsyncDataValidator, SimpleValidationResult};
 use crate::{
     block_time_window::validate_time_in_block_time_window::validate_time_in_block_time_window,
     consensus::ConsensusError,
@@ -13,7 +14,7 @@ use crate::{
         document_transition::{Action, DocumentTransition, DocumentTransitionExt},
         Document, DocumentsBatchTransition,
     },
-    prelude::{Identifier, TimestampMillis},
+    prelude::{Identifier, Revision, TimestampMillis},
     state_repository::StateRepositoryLike,
     state_transition::{
         state_transition_execution_context::StateTransitionExecutionContext,
@@ -28,9 +29,38 @@ use super::{
     validate_documents_uniqueness_by_indices::validate_documents_uniqueness_by_indices,
 };
 
-#[derive(Serialize, Deserialize, Clone, Debug)]
-pub struct HeaderTime {
-    pub seconds: usize,
+pub struct DocumentsBatchTransitionStateValidator<SR>
+where
+    SR: StateRepositoryLike,
+{
+    state_repository: SR,
+}
+
+#[async_trait(?Send)]
+impl<SR> AsyncDataValidator for DocumentsBatchTransitionStateValidator<SR>
+where
+    SR: StateRepositoryLike,
+{
+    type Item = DocumentsBatchTransition;
+
+    async fn validate(
+        &self,
+        data: &DocumentsBatchTransition,
+    ) -> Result<SimpleValidationResult, ProtocolError> {
+        validate_document_batch_transition_state(&self.state_repository, data).await
+    }
+}
+
+impl<SR> DocumentsBatchTransitionStateValidator<SR>
+where
+    SR: StateRepositoryLike,
+{
+    pub fn new(state_repository: SR) -> DocumentsBatchTransitionStateValidator<SR>
+    where
+        SR: StateRepositoryLike,
+    {
+        DocumentsBatchTransitionStateValidator { state_repository }
+    }
 }
 
 pub async fn validate_document_batch_transition_state(
@@ -84,8 +114,10 @@ pub async fn validate_document_transitions(
         .map(TryInto::try_into)
         .transpose()
         .map_err(Into::into)?
-        .ok_or_else(|| ProtocolError::DataContractNotPresentError {
-            data_contract_id: data_contract_id.clone(),
+        .ok_or_else(|| {
+            ProtocolError::DataContractNotPresentError(DataContractNotPresentError::new(
+                data_contract_id.clone(),
+            ))
         })?;
 
     execution_context.add_operations(tmp_execution_context.get_operations());
@@ -94,14 +126,7 @@ pub async fn validate_document_transitions(
         fetch_documents(state_repository, &transitions, execution_context).await?;
 
     // Calculate time window for timestamp
-    let block_header_bytes = state_repository
-        .fetch_latest_platform_block_header()
-        .await?;
-
-    let block_header: BlockHeader = consensus::deserialize(&block_header_bytes)
-        .map_err(|e| ProtocolError::Generic(e.to_string()))?;
-
-    let last_header_time_millis = block_header.time as u64 * 1000;
+    let last_header_time_millis = state_repository.fetch_latest_platform_block_time().await?;
 
     if !execution_context.is_dry_run() {
         for transition in transitions.iter() {
@@ -258,7 +283,7 @@ fn check_revision(
         result.add_error(ConsensusError::StateError(Box::new(
             StateError::InvalidDocumentRevisionError {
                 document_id: document_transition.base().id.clone(),
-                current_revision: fetched_document.revision,
+                current_revision: fetched_document.revision as Revision,
             },
         )))
     }

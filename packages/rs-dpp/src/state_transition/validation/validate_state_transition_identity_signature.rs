@@ -1,8 +1,13 @@
+use std::sync::Arc;
 use std::{collections::HashSet, convert::TryInto};
 
 use anyhow::Context;
 use lazy_static::lazy_static;
 
+use crate::consensus::signature::{
+    IdentityNotFoundError, InvalidIdentityPublicKeyTypeError, MissingPublicKeyError,
+    PublicKeyIsDisabledError, PublicKeySecurityLevelNotMetError,
+};
 use crate::{
     consensus::{signature::SignatureError, ConsensusError},
     identity::KeyType,
@@ -27,7 +32,7 @@ lazy_static! {
 }
 
 pub async fn validate_state_transition_identity_signature(
-    state_repository: &impl StateRepositoryLike,
+    state_repository: Arc<impl StateRepositoryLike>,
     state_transition: &mut impl StateTransitionIdentitySigned,
     bls: &impl BlsModule,
 ) -> Result<ValidationResult<()>, ProtocolError> {
@@ -54,9 +59,9 @@ pub async fn validate_state_transition_identity_signature(
     let identity = match maybe_identity {
         Some(identity) => identity,
         None => {
-            validation_result.add_error(SignatureError::IdentityNotFoundError {
-                identity_id: state_transition.get_owner_id().to_owned(),
-            });
+            validation_result.add_error(SignatureError::IdentityNotFoundError(
+                IdentityNotFoundError::new(state_transition.get_owner_id().to_owned()),
+            ));
             return Ok(validation_result);
         }
     };
@@ -69,18 +74,18 @@ pub async fn validate_state_transition_identity_signature(
 
     let public_key = match maybe_public_key {
         None => {
-            validation_result.add_error(SignatureError::MissingPublicKeyError {
-                public_key_id: signature_public_key_id,
-            });
+            validation_result.add_error(SignatureError::MissingPublicKeyError(
+                MissingPublicKeyError::new(signature_public_key_id),
+            ));
             return Ok(validation_result);
         }
         Some(pk) => pk,
     };
 
-    if !SUPPORTED_KEY_TYPES.contains(&public_key.get_type()) {
-        validation_result.add_error(SignatureError::InvalidIdentityPublicKeyTypeError {
-            public_key_type: public_key.get_type(),
-        });
+    if !SUPPORTED_KEY_TYPES.contains(&public_key.key_type) {
+        validation_result.add_error(SignatureError::InvalidIdentityPublicKeyTypeError(
+            InvalidIdentityPublicKeyTypeError::new(public_key.key_type),
+        ));
         return Ok(validation_result);
     }
 
@@ -108,34 +113,29 @@ fn convert_to_consensus_signature_error(
     error: ProtocolError,
 ) -> Result<ConsensusError, ProtocolError> {
     match error {
-        ProtocolError::InvalidSignaturePublicKeySecurityLevelError {
-            public_key_security_level,
-            required_security_level,
-        } => Ok(ConsensusError::SignatureError(
-            SignatureError::InvalidSignaturePublicKeySecurityLevelError {
-                public_key_security_level,
-                required_key_security_level: required_security_level,
-            },
-        )),
-        ProtocolError::PublicKeySecurityLevelNotMetError {
-            public_key_security_level,
-            required_security_level,
-        } => Ok(ConsensusError::SignatureError(
-            SignatureError::PublicKeySecurityLevelNotMetError {
-                public_key_security_level,
-                required_security_level,
-            },
-        )),
-        ProtocolError::PublicKeyIsDisabledError { public_key } => Ok(
-            ConsensusError::SignatureError(SignatureError::PublicKeyIsDisabledError {
-                public_key_id: public_key.get_id(),
-            }),
-        ),
-        ProtocolError::InvalidIdentityPublicKeyTypeError { public_key_type } => {
+        ProtocolError::InvalidSignaturePublicKeySecurityLevelError(err) => {
             Ok(ConsensusError::SignatureError(
-                SignatureError::InvalidIdentityPublicKeyTypeError { public_key_type },
+                SignatureError::InvalidSignaturePublicKeySecurityLevelError(err),
             ))
         }
+        ProtocolError::PublicKeySecurityLevelNotMetError(err) => Ok(
+            ConsensusError::SignatureError(SignatureError::PublicKeySecurityLevelNotMetError(
+                PublicKeySecurityLevelNotMetError::new(
+                    err.public_key_security_level(),
+                    err.required_security_level(),
+                ),
+            )),
+        ),
+        ProtocolError::PublicKeyIsDisabledError(err) => Ok(ConsensusError::SignatureError(
+            SignatureError::PublicKeyIsDisabledError(PublicKeyIsDisabledError::new(
+                err.public_key().id,
+            )),
+        )),
+        ProtocolError::InvalidIdentityPublicKeyTypeError(err) => Ok(
+            ConsensusError::SignatureError(SignatureError::InvalidIdentityPublicKeyTypeError(
+                InvalidIdentityPublicKeyTypeError::new(err.public_key_type()),
+            )),
+        ),
         ProtocolError::Error(_) => Err(error),
         _ => Ok(ConsensusError::SignatureError(
             SignatureError::InvalidStateTransitionSignatureError,
@@ -146,6 +146,8 @@ fn convert_to_consensus_signature_error(
 #[cfg(test)]
 mod test {
     use super::*;
+    use crate::consensus::signature::InvalidSignaturePublicKeySecurityLevelError;
+    use crate::state_transition::errors::{PublicKeyMismatchError, WrongPublicKeyPurposeError};
     use crate::{
         document::DocumentsBatchTransition,
         identity::{KeyID, Purpose, SecurityLevel},
@@ -162,6 +164,7 @@ mod test {
         NativeBlsModule,
     };
     use serde::{Deserialize, Serialize};
+
     #[derive(Debug, Clone, Serialize, Deserialize)]
     #[serde(rename_all = "camelCase")]
     struct ExampleStateTransition {
@@ -188,8 +191,8 @@ mod test {
         }
     }
 
-    impl Into<StateTransition> for ExampleStateTransition {
-        fn into(self) -> StateTransition {
+    impl From<ExampleStateTransition> for StateTransition {
+        fn from(_val: ExampleStateTransition) -> Self {
             let st = DocumentsBatchTransition::default();
             StateTransition::DocumentsBatch(st)
         }
@@ -219,6 +222,10 @@ mod test {
         fn set_execution_context(&mut self, execution_context: StateTransitionExecutionContext) {
             self.execution_context = execution_context
         }
+
+        fn get_modified_data_ids(&self) -> Vec<Identifier> {
+            vec![]
+        }
     }
 
     impl StateTransitionIdentitySigned for ExampleStateTransition {
@@ -234,32 +241,35 @@ mod test {
             if let Some(error_num) = self.return_error {
                 match error_num {
                     0 => {
-                        return Err(ProtocolError::PublicKeyMismatchError {
-                            public_key: public_key.clone(),
-                        })
+                        return Err(ProtocolError::PublicKeyMismatchError(
+                            PublicKeyMismatchError::new(public_key.clone()),
+                        ))
                     }
                     1 => {
-                        return Err(ProtocolError::InvalidSignaturePublicKeySecurityLevelError {
-                            public_key_security_level: SecurityLevel::CRITICAL,
-                            required_security_level: SecurityLevel::MASTER,
-                        })
+                        return Err(ProtocolError::InvalidSignaturePublicKeySecurityLevelError(
+                            InvalidSignaturePublicKeySecurityLevelError::new(
+                                SecurityLevel::CRITICAL,
+                                SecurityLevel::MASTER,
+                            ),
+                        ))
                     }
                     2 => {
-                        return Err(ProtocolError::PublicKeySecurityLevelNotMetError {
-                            public_key_security_level: SecurityLevel::CRITICAL,
-                            required_security_level: SecurityLevel::HIGH,
-                        })
+                        return Err(ProtocolError::PublicKeySecurityLevelNotMetError(
+                            crate::state_transition::errors::PublicKeySecurityLevelNotMetError::new(
+                                SecurityLevel::CRITICAL,
+                                SecurityLevel::HIGH,
+                            ),
+                        ))
                     }
                     3 => {
-                        return Err(ProtocolError::PublicKeyIsDisabledError {
-                            public_key: public_key.clone(),
-                        })
+                        return Err(ProtocolError::PublicKeyIsDisabledError(
+                            crate::data_contract::state_transition::errors::PublicKeyIsDisabledError::new(public_key.clone()),
+                        ))
                     }
                     4 => {
-                        return Err(ProtocolError::WrongPublicKeyPurposeError {
-                            public_key_purpose: Purpose::WITHDRAW,
-                            key_purpose_requirement: Purpose::DECRYPTION,
-                        })
+                        return Err(ProtocolError::WrongPublicKeyPurposeError(
+                            WrongPublicKeyPurposeError::new(Purpose::WITHDRAW, Purpose::DECRYPTION),
+                        ))
                     }
                     _ => {}
                 }
@@ -302,13 +312,13 @@ mod test {
         let owner_id = identity.get_id();
         let mut state_transition = get_mock_state_transition();
 
-        state_transition.owner_id = owner_id.clone();
+        state_transition.owner_id = *owner_id;
         state_repository_mock
             .expect_fetch_identity()
             .returning(move |_, _| Ok(Some(identity.clone())));
 
         let result = validate_state_transition_identity_signature(
-            &state_repository_mock,
+            Arc::new(state_repository_mock),
             &mut state_transition,
             &bls,
         )
@@ -327,13 +337,13 @@ mod test {
         let owner_id = identity.get_id();
         let mut state_transition = get_mock_state_transition();
 
-        state_transition.owner_id = owner_id.clone();
+        state_transition.owner_id = *owner_id;
         state_repository_mock
             .expect_fetch_identity()
             .returning(move |_, _| Ok(None));
 
         let result = validate_state_transition_identity_signature(
-            &state_repository_mock,
+            Arc::new(state_repository_mock),
             &mut state_transition,
             &bls,
         )
@@ -341,11 +351,12 @@ mod test {
         .expect("the validation result should be returned");
         let signature_error = get_signature_error_from_result(&result, 0);
 
-        assert!(
-            matches!(signature_error, SignatureError::IdentityNotFoundError { identity_id }  if {
-             identity_id == identity.get_id()
-            })
-        );
+        match signature_error {
+            SignatureError::IdentityNotFoundError(err) => {
+                assert_eq!(err.identity_id(), identity.get_id().clone())
+            }
+            error => panic!("expected IdentityNotFoundError, got {}", error),
+        }
     }
 
     #[tokio::test]
@@ -358,14 +369,14 @@ mod test {
         let owner_id = identity.get_id();
         let mut state_transition = get_mock_state_transition();
 
-        state_transition.owner_id = owner_id.clone();
+        state_transition.owner_id = *owner_id;
         state_transition.signature_public_key_id = 12332;
         state_repository_mock
             .expect_fetch_identity()
             .returning(move |_, _| Ok(Some(identity.clone())));
 
         let result = validate_state_transition_identity_signature(
-            &state_repository_mock,
+            Arc::new(state_repository_mock),
             &mut state_transition,
             &bls,
         )
@@ -373,11 +384,12 @@ mod test {
         .expect("the validation result should be returned");
         let signature_error = get_signature_error_from_result(&result, 0);
 
-        assert!(
-            matches!(signature_error, SignatureError::MissingPublicKeyError { public_key_id }  if {
-                 *public_key_id == 12332
-            })
-        );
+        match signature_error {
+            SignatureError::MissingPublicKeyError(err) => {
+                assert_eq!(err.public_key_id(), 12332)
+            }
+            error => panic!("expected MissingPublicKeyError, got {}", error),
+        }
     }
 
     #[tokio::test]
@@ -396,7 +408,7 @@ mod test {
         state_transition.return_error = Some(0);
 
         let result = validate_state_transition_identity_signature(
-            &state_repository_mock,
+            Arc::new(state_repository_mock),
             &mut state_transition,
             &bls,
         )
@@ -429,7 +441,7 @@ mod test {
         state_transition.return_error = Some(1);
 
         let result = validate_state_transition_identity_signature(
-            &state_repository_mock,
+            Arc::new(state_repository_mock),
             &mut state_transition,
             &bls,
         )
@@ -460,7 +472,7 @@ mod test {
         state_transition.get_execution_context().enable_dry_run();
 
         let result = validate_state_transition_identity_signature(
-            &state_repository_mock,
+            Arc::new(state_repository_mock),
             &mut state_transition,
             &bls,
         )
@@ -487,7 +499,7 @@ mod test {
         state_transition.return_error = Some(2);
 
         let result = validate_state_transition_identity_signature(
-            &state_repository_mock,
+            Arc::new(state_repository_mock),
             &mut state_transition,
             &bls,
         )
@@ -518,7 +530,7 @@ mod test {
         state_transition.return_error = Some(3);
 
         let result = validate_state_transition_identity_signature(
-            &state_repository_mock,
+            Arc::new(state_repository_mock),
             &mut state_transition,
             &bls,
         )

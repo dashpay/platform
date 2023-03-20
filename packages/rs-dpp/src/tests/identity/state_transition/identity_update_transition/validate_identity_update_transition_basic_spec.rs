@@ -75,7 +75,6 @@ fn setup_test() -> TestData {
         data: ec_public_key.try_into().unwrap(),
         read_only: false,
         disabled_at: None,
-        signature: vec![0; 65],
     };
 
     state_transition
@@ -126,7 +125,7 @@ fn property_should_be_present(property: &str) {
         ValidateIdentityUpdateTransitionBasic::new(
             protocol_version_validator,
             Arc::new(validate_public_keys_mock),
-            SignaturesValidatorMock::default(),
+            Arc::new(SignaturesValidatorMock::default()),
         )
         .unwrap();
 
@@ -160,7 +159,7 @@ fn property_should_be_byte_array(property_name: &str) {
         ValidateIdentityUpdateTransitionBasic::new(
             protocol_version_validator,
             Arc::new(validate_public_keys_mock),
-            SignaturesValidatorMock::default(),
+            Arc::new(SignaturesValidatorMock::default()),
         )
         .unwrap();
 
@@ -198,7 +197,7 @@ fn property_should_be_integer(property_name: &str) {
         ValidateIdentityUpdateTransitionBasic::new(
             protocol_version_validator,
             Arc::new(validate_public_keys_mock),
-            SignaturesValidatorMock::default(),
+            Arc::new(SignaturesValidatorMock::default()),
         )
         .unwrap();
 
@@ -231,7 +230,7 @@ fn signature_should_be_not_less_than_n_bytes(property_name: &str, n_bytes: usize
         ValidateIdentityUpdateTransitionBasic::new(
             protocol_version_validator,
             Arc::new(validate_public_keys_mock),
-            SignaturesValidatorMock::default(),
+            Arc::new(SignaturesValidatorMock::default()),
         )
         .unwrap();
 
@@ -264,7 +263,7 @@ fn signature_should_be_not_longer_than_n_bytes(property_name: &str, n_bytes: usi
         ValidateIdentityUpdateTransitionBasic::new(
             protocol_version_validator,
             Arc::new(validate_public_keys_mock),
-            SignaturesValidatorMock::default(),
+            Arc::new(SignaturesValidatorMock::default()),
         )
         .unwrap();
 
@@ -295,7 +294,7 @@ fn protocol_version_should_be_valid() {
         ValidateIdentityUpdateTransitionBasic::new(
             protocol_version_validator,
             Arc::new(validate_public_keys_mock),
-            SignaturesValidatorMock::default(),
+            Arc::new(SignaturesValidatorMock::default()),
         )
         .unwrap();
 
@@ -321,7 +320,7 @@ fn raw_state_transition_type_should_be_valid() {
         ValidateIdentityUpdateTransitionBasic::new(
             protocol_version_validator,
             Arc::new(validate_public_keys_mock),
-            SignaturesValidatorMock::default(),
+            Arc::new(SignaturesValidatorMock::default()),
         )
         .unwrap();
 
@@ -352,7 +351,7 @@ fn revision_should_be_greater_or_equal_0() {
         ValidateIdentityUpdateTransitionBasic::new(
             protocol_version_validator,
             Arc::new(validate_public_keys_mock),
-            SignaturesValidatorMock::default(),
+            Arc::new(SignaturesValidatorMock::default()),
         )
         .unwrap();
 
@@ -390,7 +389,7 @@ fn add_public_keys_should_return_valid_result() {
         ValidateIdentityUpdateTransitionBasic::new(
             protocol_version_validator,
             Arc::new(validate_public_keys_mock),
-            SignaturesValidatorMock::default(),
+            Arc::new(SignaturesValidatorMock::default()),
         )
         .unwrap();
 
@@ -422,7 +421,7 @@ fn add_public_keys_should_not_be_empty() {
         ValidateIdentityUpdateTransitionBasic::new(
             protocol_version_validator,
             Arc::new(validate_public_keys_mock),
-            SignaturesValidatorMock::default(),
+            Arc::new(SignaturesValidatorMock::default()),
         )
         .unwrap();
 
@@ -462,7 +461,7 @@ fn add_public_keys_should_not_have_more_than_10_items() {
         ValidateIdentityUpdateTransitionBasic::new(
             protocol_version_validator,
             Arc::new(validate_public_keys_mock),
-            SignaturesValidatorMock::default(),
+            Arc::new(SignaturesValidatorMock::default()),
         )
         .unwrap();
 
@@ -502,7 +501,7 @@ fn add_public_keys_should_be_unique() {
         ValidateIdentityUpdateTransitionBasic::new(
             protocol_version_validator,
             Arc::new(validate_public_keys_mock),
-            SignaturesValidatorMock::default(),
+            Arc::new(SignaturesValidatorMock::default()),
         )
         .unwrap();
 
@@ -544,7 +543,7 @@ fn add_public_keys_should_be_valid() {
         ValidateIdentityUpdateTransitionBasic::new(
             protocol_version_validator,
             Arc::new(validate_public_keys_mock),
-            SignaturesValidatorMock::default(),
+            Arc::new(SignaturesValidatorMock::default()),
         )
         .unwrap();
 
@@ -578,7 +577,7 @@ fn disable_public_keys_should_be_used_only_with_public_keys_disabled_at() {
         ValidateIdentityUpdateTransitionBasic::new(
             protocol_version_validator,
             Arc::new(validate_public_keys_mock),
-            SignaturesValidatorMock::default(),
+            Arc::new(SignaturesValidatorMock::default()),
         )
         .unwrap();
 
@@ -617,7 +616,7 @@ fn disable_public_keys_should_be_valid() {
         ValidateIdentityUpdateTransitionBasic::new(
             protocol_version_validator,
             Arc::new(validate_public_keys_mock),
-            SignaturesValidatorMock::default(),
+            Arc::new(SignaturesValidatorMock::default()),
         )
         .unwrap();
 
@@ -648,7 +647,7 @@ fn disable_public_keys_should_contain_number_greater_or_equal_0() {
         ValidateIdentityUpdateTransitionBasic::new(
             protocol_version_validator,
             Arc::new(validate_public_keys_mock),
-            SignaturesValidatorMock::default(),
+            Arc::new(SignaturesValidatorMock::default()),
         )
         .unwrap();
 
@@ -685,7 +684,7 @@ fn disable_public_keys_should_contain_integers() {
         ValidateIdentityUpdateTransitionBasic::new(
             protocol_version_validator,
             Arc::new(validate_public_keys_mock),
-            SignaturesValidatorMock::default(),
+            Arc::new(SignaturesValidatorMock::default()),
         )
         .unwrap();
 
@@ -722,7 +721,7 @@ fn disable_public_keys_should_not_have_more_than_10_items() {
         ValidateIdentityUpdateTransitionBasic::new(
             protocol_version_validator,
             Arc::new(validate_public_keys_mock),
-            SignaturesValidatorMock::default(),
+            Arc::new(SignaturesValidatorMock::default()),
         )
         .unwrap();
 
@@ -759,7 +758,7 @@ fn disable_public_keys_should_be_unique() {
         ValidateIdentityUpdateTransitionBasic::new(
             protocol_version_validator,
             Arc::new(validate_public_keys_mock),
-            SignaturesValidatorMock::default(),
+            Arc::new(SignaturesValidatorMock::default()),
         )
         .unwrap();
 
@@ -795,7 +794,7 @@ fn public_keys_disabled_at_should_be_used_only_with_disable_public_keys() {
         ValidateIdentityUpdateTransitionBasic::new(
             protocol_version_validator,
             Arc::new(validate_public_keys_mock),
-            SignaturesValidatorMock::default(),
+            Arc::new(SignaturesValidatorMock::default()),
         )
         .unwrap();
 
@@ -834,7 +833,7 @@ fn public_keys_disabled_at_should_be_greater_or_equal_0() {
         ValidateIdentityUpdateTransitionBasic::new(
             protocol_version_validator,
             Arc::new(validate_public_keys_mock),
-            SignaturesValidatorMock::default(),
+            Arc::new(SignaturesValidatorMock::default()),
         )
         .unwrap();
 
@@ -869,7 +868,7 @@ fn public_keys_disabled_at_should_return_valid_result() {
         ValidateIdentityUpdateTransitionBasic::new(
             protocol_version_validator,
             Arc::new(validate_public_keys_mock),
-            SignaturesValidatorMock::default(),
+            Arc::new(SignaturesValidatorMock::default()),
         )
         .unwrap();
 
@@ -896,7 +895,7 @@ fn should_return_valid_result() {
         ValidateIdentityUpdateTransitionBasic::new(
             protocol_version_validator,
             Arc::new(validate_public_keys_mock),
-            SignaturesValidatorMock::default(),
+            Arc::new(SignaturesValidatorMock::default()),
         )
         .unwrap();
 
@@ -928,7 +927,7 @@ fn should_have_either_add_public_keys_or_disable_public_keys() {
         ValidateIdentityUpdateTransitionBasic::new(
             protocol_version_validator,
             Arc::new(validate_public_keys_mock),
-            SignaturesValidatorMock::default(),
+            Arc::new(SignaturesValidatorMock::default()),
         )
         .unwrap();
 

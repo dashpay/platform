@@ -1,5 +1,4 @@
-const { BlockHeader } = require('@dashevo/dashcore-lib');
-
+const identitySchema = require('@dashevo/dpp/schema/identity/identity.json');
 const createStateRepositoryMock = require('@dashevo/dpp/lib/test/mocks/createStateRepositoryMock');
 const getIdentityUpdateTransitionFixture = require('@dashevo/dpp/lib/test/fixtures/getIdentityUpdateTransitionFixture');
 const getIdentityFixture = require('@dashevo/dpp/lib/test/fixtures/getIdentityFixture');
@@ -30,7 +29,7 @@ describe('validateIdentityUpdateTransitionStateFactory', () => {
   let InvalidIdentityPublicKeyIdError;
   let MissingMasterPublicKeyError;
   let IdentityPublicKeyDisabledAtWindowViolationError;
-  let DuplicatedIdentityPublicKeyIdStateError;
+  let MaxIdentityPublicKeyLimitReachedError;
   let StateTransitionExecutionContext;
   let IdentityUpdateTransitionStateValidator;
 
@@ -44,7 +43,7 @@ describe('validateIdentityUpdateTransitionStateFactory', () => {
       IdentityPublicKeyIsDisabledError,
       InvalidIdentityPublicKeyIdError,
       IdentityPublicKeyDisabledAtWindowViolationError,
-      DuplicatedIdentityPublicKeyIdStateError,
+      MaxIdentityPublicKeyLimitReachedError,
       StateTransitionExecutionContext,
       IdentityUpdateTransitionStateValidator,
       MissingMasterPublicKeyError,
@@ -58,23 +57,13 @@ describe('validateIdentityUpdateTransitionStateFactory', () => {
     identity = new Identity(rawIdentity);
 
     stateRepositoryMock = createStateRepositoryMock(this.sinonSandbox);
-    stateRepositoryMock.fetchIdentity.returns(identity);
+    stateRepositoryMock.fetchIdentity.resolves(identity);
 
     blockTime = Date.now();
-
-    const blockTimeSeconds = Math.round(blockTime / 1000);
     const blsAdapter = await getBlsAdapterMock();
-    const header = new BlockHeader({
-      version: 536870913,
-      prevHash: '0000000000000000000000000000000000000000000000000000000000000000',
-      merkleRoot: 'c4970326400177ce67ec582425a698b85ae03cae2b0d168e87eed697f1388e4b',
-      time: blockTimeSeconds,
-      timestamp: blockTimeSeconds,
-      bits: 0,
-      nonce: 1449878271,
-    });
 
-    stateRepositoryMock.fetchLatestPlatformBlockHeader.returns(header.toBuffer());
+    stateRepositoryMock.fetchLatestPlatformBlockTime = this.sinonSandbox.stub();
+    stateRepositoryMock.fetchLatestPlatformBlockTime.resolves(blockTime);
 
     const validator = new IdentityUpdateTransitionStateValidator(stateRepositoryMock, blsAdapter);
     validateIdentityUpdateTransitionState = (st) => validator.validate(st);
@@ -193,7 +182,7 @@ describe('validateIdentityUpdateTransitionStateFactory', () => {
         match.instanceOf(StateTransitionExecutionContext),
       );
 
-    expect(stateRepositoryMock.fetchLatestPlatformBlockHeader)
+    expect(stateRepositoryMock.fetchLatestPlatformBlockTime)
       .to.be.calledOnce();
   });
 
@@ -212,7 +201,7 @@ describe('validateIdentityUpdateTransitionStateFactory', () => {
         match.instanceOf(StateTransitionExecutionContext),
       );
 
-    expect(stateRepositoryMock.fetchLatestPlatformBlockHeader)
+    expect(stateRepositoryMock.fetchLatestPlatformBlockTime)
       .to.not.be.called();
   });
 
@@ -231,7 +220,7 @@ describe('validateIdentityUpdateTransitionStateFactory', () => {
         match.instanceOf(StateTransitionExecutionContext),
       );
 
-    expect(stateRepositoryMock.fetchLatestPlatformBlockHeader)
+    expect(stateRepositoryMock.fetchLatestPlatformBlockTime)
       .to.be.calledOnce();
   });
 
@@ -250,19 +239,21 @@ describe('validateIdentityUpdateTransitionStateFactory', () => {
   });
 
   it('should validate public keys to add', async () => {
-    // Set duplicated keys
-    const firstKey = identity.getPublicKeys()[0];
-    identity.setPublicKeys([
-      firstKey,
-      firstKey,
-    ]);
+    // Reach max allowed public keys to fail validation
+    const { maxItems } = identitySchema.properties.publicKeys;
+
+    const firstKey = identity.getPublicKeys()[0].toObject();
+    const keys = Array.from({ length: maxItems + 1 })
+      .map((_, index) => new IdentityPublicKey({ ...firstKey, id: index }));
+    identity.setPublicKeys(keys);
+
     const result = await validateIdentityUpdateTransitionState(stateTransition);
 
-    await expectValidationError(result, DuplicatedIdentityPublicKeyIdStateError);
+    await expectValidationError(result, MaxIdentityPublicKeyLimitReachedError);
   });
 
   // TODO: remove?
-  // Skipped, because two tests above are enough
+  // Skipped, because two tests above are seem to be enough
   it.skip('should validate resulting identity public keys', async () => {
     const publicKeysError = new SomeConsensusError('test');
 
@@ -286,7 +277,7 @@ describe('validateIdentityUpdateTransitionStateFactory', () => {
     stateTransition.setPublicKeysDisabledAt(new Date());
 
     // Make code that executes after dry run check to fail
-    stateRepositoryMock.fetchLatestPlatformBlockHeader.returns({});
+    stateRepositoryMock.fetchLatestPlatformBlockTime.resolves({});
 
     stateTransition.getExecutionContext().enableDryRun();
     const result = await validateIdentityUpdateTransitionState(stateTransition);
@@ -302,7 +293,7 @@ describe('validateIdentityUpdateTransitionStateFactory', () => {
         match.instanceOf(StateTransitionExecutionContext),
       );
 
-    expect(stateRepositoryMock.fetchLatestPlatformBlockHeader)
+    expect(stateRepositoryMock.fetchLatestPlatformBlockTime)
       .to.not.be.called();
   });
 });
