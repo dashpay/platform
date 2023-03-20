@@ -1,7 +1,7 @@
 use std::{collections::HashMap, convert::TryFrom, sync::Arc};
 
 use anyhow::anyhow;
-use dpp::document::errors::DocumentError;
+
 use dpp::{
     document::{
         self,
@@ -11,11 +11,11 @@ use dpp::{
     },
     prelude::Document,
 };
-use js_sys::Object;
+
 use wasm_bindgen::prelude::*;
 
 use crate::document::errors::InvalidActionNameError;
-use crate::utils::with_serde_to_json_value;
+
 use crate::{
     document::document_data_to_bytes,
     identifier::identifier_from_js_value,
@@ -219,7 +219,7 @@ fn check_actions(documents: &JsValue) -> Result<(), JsValue> {
             .ok_or_else(|| anyhow!("Expected all keys to be strings"))
             .with_js_error()?;
         Action::try_from(action_string)
-            .map_err(|e| InvalidActionNameError::new(vec![action.clone()]))?;
+            .map_err(|_| InvalidActionNameError::new(vec![action.clone()]))?;
     }
 
     Ok(())
