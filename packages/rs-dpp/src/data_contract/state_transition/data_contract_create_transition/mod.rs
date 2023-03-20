@@ -156,7 +156,7 @@ impl DataContractCreateTransition {
         vec![self.data_contract.id]
     }
 
-    pub fn clean_value(value: &mut Value) -> Result<(), ProtocolError> {
+    pub fn clean_value(value: &mut Value) -> Result<(), platform_value::Error> {
         value.replace_at_paths(IDENTIFIER_FIELDS, ReplacementType::Identifier)?;
         value.replace_at_paths(BINARY_FIELDS, ReplacementType::BinaryBytes)?;
         value.replace_integer_type_at_paths(U32_FIELDS, IntegerReplacementType::U32)?;

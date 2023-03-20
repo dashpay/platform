@@ -1,7 +1,9 @@
 use std::sync::Arc;
 
+use dpp::block_time_window::validation_result;
 use dpp::data_contract::state_transition::data_contract_create_transition::DataContractCreateTransition;
 use dpp::platform_value::Value;
+use dpp::validation::SimpleValidationResult;
 use dpp::{
     data_contract::state_transition::data_contract_create_transition::validation::state::{
         validate_data_contract_create_transition_basic::DataContractCreateTransitionBasicValidator,
@@ -11,6 +13,7 @@ use dpp::{
     state_transition::state_transition_execution_context::StateTransitionExecutionContext,
     validation::DataValidatorWithContext,
     version::ProtocolVersionValidator,
+    ProtocolError,
 };
 use wasm_bindgen::prelude::*;
 
@@ -47,14 +50,18 @@ pub async fn validate_data_contract_create_transition_basic(
         serde_wasm_bindgen::from_value(raw_parameters)?;
 
     let mut value = platform_value::to_value(&parameters)?;
-    DataContractCreateTransition::clean_value(&mut value)?;
+    let mut validation_result = SimpleValidationResult::default();
+    if let Some(err) = DataContractCreateTransition::clean_value(&mut value).err() {
+        validation_result.add_error(err);
+        return Ok(validation_result.map(|_| JsValue::undefined()).into());
+    }
 
     let validator = DataContractCreateTransitionBasicValidator::new(Arc::new(
         ProtocolVersionValidator::default(),
     ))?;
 
-    let validation_result =
-        validator.validate(&value, &StateTransitionExecutionContext::default())?;
+    validation_result
+        .merge(validator.validate(&value, &StateTransitionExecutionContext::default())?);
 
     Ok(validation_result.map(|_| JsValue::undefined()).into())
 }

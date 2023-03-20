@@ -339,3 +339,9 @@ impl From<FeeError> for ConsensusError {
         Self::FeeError(err)
     }
 }
+
+impl From<ValueError> for ConsensusError {
+    fn from(err: ValueError) -> Self {
+        Self::ValueError(err)
+    }
+}
