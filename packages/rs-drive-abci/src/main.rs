@@ -3,7 +3,7 @@
 //! RS-Drive-ABCI server starts a single-threaded server and listens to connections from Tenderdash.
 use clap::{Parser, Subcommand};
 use drive_abci::config::{FromEnv, PlatformConfig};
-use std::{panic, path::PathBuf};
+use std::path::PathBuf;
 use tracing_subscriber::prelude::*;
 
 /// Main command container for ABCI Server
@@ -52,6 +52,7 @@ pub fn main() {
     let config = load_config(&cli.config);
 
     set_verbosity(&cli);
+    install_panic_hook();
 
     match cli.command {
         Commands::Start {} => drive_abci::abci::server::start(&config).unwrap(),
@@ -98,5 +99,12 @@ fn set_verbosity(cli: &Cli) {
         _ => panic!("max verbosity level is 3"),
     };
 
-    registry().with(fmt::layer()).with(env_filter).init();
+    let layer = fmt::layer().with_ansi(atty::is(atty::Stream::Stdout));
+
+    registry().with(layer).with(env_filter).init();
+}
+
+/// Install panic hook to ensure that all panic logs are correctly formatted
+fn install_panic_hook() {
+    std::panic::set_hook(Box::new(|info| tracing::error!("panic: {:?}", info)));
 }

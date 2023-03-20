@@ -33,9 +33,13 @@ pub fn start(config: &PlatformConfig) -> Result<(), Error> {
         tenderdash_abci::start_server(&bind_address, abci).map_err(|e| super::Error::from(e))?;
 
     loop {
-        match server.handle_connection() {
+        tracing::info!("waiting for new connection");
+        let result = std::panic::catch_unwind(|| match server.handle_connection() {
             Ok(_) => (),
             Err(e) => tracing::error!("tenderdash connection terminated: {:?}", e),
+        });
+        if let Err(_e) = result {
+            tracing::error!("panic: connection terminated");
         }
     }
 }

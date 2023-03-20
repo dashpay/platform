@@ -47,8 +47,10 @@ envy = { version = "0.4.2" }
 dotenvy = { version = "0.15.6", optional = true }
 tracing-subscriber = { version = "0.3.16", default-features = false, features = [
     "env-filter",
+    "ansi",
 ], optional = true }
 semver = { version = "1.0.17", optional = true }
+atty = { version = "0.2.14", optional = true }
 #tenderdash-abci = {  git="https://github.com/dashpay/rs-tenderdash-abci" , optional = true }
 tenderdash-abci = { path = "/home/lklimek/git/lklimek/tenderdash-abci-rs/abci", optional = true }
 
@@ -58,8 +60,16 @@ itertools = { version = "0.10.5" }
 [features]
 default = ["fixtures-and-mocks", "server"]
 fixtures-and-mocks = ["mockall"]
-server = ["tenderdash-abci", "clap", "dotenvy", "tracing-subscriber", "semver"]
+server = [
+    "tenderdash-abci",
+    "clap",
+    "dotenvy",
+    "tracing-subscriber",
+    "semver",
+    "atty",
+]
+
 [[bin]]
-name = "rs-drive-abci"
+name = "drive-abci"
 path = "src/main.rs"
 required-features = ["server"]
