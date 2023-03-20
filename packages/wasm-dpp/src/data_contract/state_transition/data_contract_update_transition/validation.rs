@@ -73,7 +73,7 @@ pub async fn validate_data_contract_update_transition_basic(
         serde_wasm_bindgen::from_value(raw_parameters)?;
 
     let mut value = platform_value::to_value(&parameters)?;
-    DataContractUpdateTransition::clean_value(&mut value);
+    DataContractUpdateTransition::clean_value(&mut value)?;
 
     let validator: DataContractUpdateTransitionBasicValidator<ExternalStateRepositoryLikeWrapper> =
         DataContractUpdateTransitionBasicValidator::new(

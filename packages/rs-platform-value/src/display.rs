@@ -12,19 +12,19 @@ impl Value {
         match self {
             Value::Bytes(bytes) => format!("bytes {}", hex::encode(bytes)),
             Value::Float(float) => {
-                format!("{}", float)
+                format!("float {}", float)
             }
             Value::Text(text) => {
                 let len = text.len();
                 if len > 20 {
                     let first_text = text.split_at(20).0.to_string();
-                    format!("{}[...({})]", first_text, len)
+                    format!("string {}[...({})]", first_text, len)
                 } else {
-                    text.clone()
+                    format!("string {}", text)
                 }
             }
             Value::Bool(b) => {
-                format!("{}", b)
+                format!("bool {}", b)
             }
             Value::Null => "Null".to_string(),
             Value::Array(value) => {

@@ -712,13 +712,13 @@ impl DocumentFieldType {
             }
             DocumentFieldType::Integer => str.parse::<i128>().map(Value::I128).map_err(|_| {
                 ProtocolError::DataContractError(DataContractError::ValueWrongType(
-                    "value is not an integer",
+                    "value is not an integer from string",
                 ))
             }),
             DocumentFieldType::Number | DocumentFieldType::Date => {
                 str.parse::<f64>().map(Value::Float).map_err(|_| {
                     ProtocolError::DataContractError(DataContractError::ValueWrongType(
-                        "value is not a float",
+                        "value is not a float from string",
                     ))
                 })
             }

@@ -38,7 +38,10 @@ pub const IDENTIFIER_FIELDS: [&str; 2] = [
     property_names::DATA_CONTRACT_ID,
     property_names::DATA_CONTRACT_OWNER_ID,
 ];
-pub const BINARY_FIELDS: [&str; 1] = [property_names::DATA_CONTRACT_ENTROPY];
+pub const BINARY_FIELDS: [&str; 2] = [
+    property_names::DATA_CONTRACT_ENTROPY,
+    property_names::SIGNATURE,
+];
 pub const U32_FIELDS: [&str; 2] = [
     property_names::PROTOCOL_VERSION,
     property_names::DATA_CONTRACT_PROTOCOL_VERSION,
@@ -125,10 +128,11 @@ impl DataContractUpdateTransition {
         })
     }
 
-    pub fn clean_value(value: &mut Value) {
+    pub fn clean_value(value: &mut Value) -> Result<(), ProtocolError> {
         value.replace_at_paths(IDENTIFIER_FIELDS, ReplacementType::Identifier)?;
         value.replace_at_paths(BINARY_FIELDS, ReplacementType::BinaryBytes)?;
         value.replace_integer_type_at_paths(U32_FIELDS, IntegerReplacementType::U32)?;
+        Ok(())
     }
 
     pub fn get_data_contract(&self) -> &DataContract {

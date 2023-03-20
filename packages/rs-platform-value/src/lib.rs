@@ -266,6 +266,80 @@ impl Value {
         }
     }
 
+    /// If the `Value` is an `Integer`, a `String` or a `Float` or even a `Bool`, returns the
+    /// associated `Integer` data as `Ok`.
+    /// Returns `Err(Error::Structure("reason"))` otherwise.
+    ///
+    /// ```
+    /// # use platform_value::{Value, Error};
+    /// #
+    /// let value = Value::U64(17);
+    /// let r_value : Result<u64,Error> = value.to_integer_broad_conversion();
+    /// assert_eq!(r_value, Ok(17));
+    ///
+    /// let value = Value::Text("17".to_string());
+    /// let r_value : Result<u64,Error> = value.to_integer_broad_conversion();
+    /// assert_eq!(r_value, Ok(17));
+    ///
+    /// let value = Value::Bool(true);
+    /// let r_value : Result<u64,Error> = value.to_integer_broad_conversion();
+    /// assert_eq!(r_value, Ok(1));
+    /// ```
+    pub fn to_integer_broad_conversion<T>(&self) -> Result<T, Error>
+    where
+        T: TryFrom<i128>
+            + TryFrom<u128>
+            + TryFrom<u64>
+            + TryFrom<i64>
+            + TryFrom<u32>
+            + TryFrom<i32>
+            + TryFrom<u16>
+            + TryFrom<i16>
+            + TryFrom<u8>
+            + TryFrom<i8>,
+    {
+        match self {
+            Value::U128(int) => (*int).try_into().map_err(|_| Error::IntegerSizeError),
+            Value::I128(int) => (*int).try_into().map_err(|_| Error::IntegerSizeError),
+            Value::U64(int) => (*int).try_into().map_err(|_| Error::IntegerSizeError),
+            Value::I64(int) => (*int).try_into().map_err(|_| Error::IntegerSizeError),
+            Value::U32(int) => (*int).try_into().map_err(|_| Error::IntegerSizeError),
+            Value::I32(int) => (*int).try_into().map_err(|_| Error::IntegerSizeError),
+            Value::U16(int) => (*int).try_into().map_err(|_| Error::IntegerSizeError),
+            Value::I16(int) => (*int).try_into().map_err(|_| Error::IntegerSizeError),
+            Value::U8(int) => (*int).try_into().map_err(|_| Error::IntegerSizeError),
+            Value::I8(int) => (*int).try_into().map_err(|_| Error::IntegerSizeError),
+            Value::Float(float) => {
+                let max_f64 = u128::MAX as f64;
+                let min_f64 = i128::MIN as f64;
+                if *float > 0f64 && *float < max_f64 {
+                    (*float as u128)
+                        .try_into()
+                        .map_err(|_| Error::IntegerSizeError)
+                } else if *float > min_f64 && *float < 0f64 {
+                    (*float as i128)
+                        .try_into()
+                        .map_err(|_| Error::IntegerSizeError)
+                } else {
+                    Err(Error::IntegerSizeError)
+                }
+            }
+            Value::Bool(bool) => {
+                let i: u8 = (*bool).into();
+                i.try_into().map_err(|_| Error::IntegerSizeError)
+            }
+            Value::Text(text) => text
+                .parse::<i128>()
+                .map_err(|_| Error::IntegerSizeError)?
+                .try_into()
+                .map_err(|_| Error::IntegerSizeError),
+            other => Err(Error::StructureError(format!(
+                "value can not be converted to an integer, found {}",
+                other
+            ))),
+        }
+    }
+
     /// Returns true if the `Value` is a `Bytes`. Returns false otherwise.
     ///
     /// ```

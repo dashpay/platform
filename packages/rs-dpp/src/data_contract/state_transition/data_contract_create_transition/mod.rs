@@ -3,7 +3,7 @@ use std::convert::TryInto;
 
 use platform_value::btreemap_extensions::BTreeValueMapHelper;
 use platform_value::btreemap_extensions::BTreeValueRemoveFromMapHelper;
-use platform_value::{BinaryData, Bytes32, Value};
+use platform_value::{BinaryData, Bytes32, IntegerReplacementType, ReplacementType, Value};
 use serde::{Deserialize, Serialize};
 use serde_json::Value as JsonValue;
 
@@ -23,6 +23,32 @@ use super::property_names::*;
 
 pub mod apply_data_contract_create_transition_factory;
 pub mod validation;
+
+pub mod property_names {
+    pub const PROTOCOL_VERSION: &str = "protocolVersion";
+    pub const DATA_CONTRACT: &str = "dataContract";
+    pub const DATA_CONTRACT_ID: &str = "dataContract.$id";
+    pub const DATA_CONTRACT_OWNER_ID: &str = "dataContract.ownerId";
+    pub const DATA_CONTRACT_ENTROPY: &str = "dataContract.entropy";
+    pub const ENTROPY: &str = "entropy";
+    pub const DATA_CONTRACT_PROTOCOL_VERSION: &str = "dataContract.protocolVersion";
+    pub const SIGNATURE_PUBLIC_KEY_ID: &str = "signaturePublicKeyId";
+    pub const SIGNATURE: &str = "signature";
+}
+
+pub const IDENTIFIER_FIELDS: [&str; 2] = [
+    property_names::DATA_CONTRACT_ID,
+    property_names::DATA_CONTRACT_OWNER_ID,
+];
+pub const BINARY_FIELDS: [&str; 3] = [
+    property_names::ENTROPY,
+    property_names::DATA_CONTRACT_ENTROPY,
+    property_names::SIGNATURE,
+];
+pub const U32_FIELDS: [&str; 2] = [
+    property_names::PROTOCOL_VERSION,
+    property_names::DATA_CONTRACT_PROTOCOL_VERSION,
+];
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -128,6 +154,13 @@ impl DataContractCreateTransition {
     /// Returns ID of the created contract
     pub fn get_modified_data_ids(&self) -> Vec<Identifier> {
         vec![self.data_contract.id]
+    }
+
+    pub fn clean_value(value: &mut Value) -> Result<(), ProtocolError> {
+        value.replace_at_paths(IDENTIFIER_FIELDS, ReplacementType::Identifier)?;
+        value.replace_at_paths(BINARY_FIELDS, ReplacementType::BinaryBytes)?;
+        value.replace_integer_type_at_paths(U32_FIELDS, IntegerReplacementType::U32)?;
+        Ok(())
     }
 }
 

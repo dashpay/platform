@@ -1,5 +1,6 @@
 use std::sync::Arc;
 
+use dpp::data_contract::state_transition::data_contract_create_transition::DataContractCreateTransition;
 use dpp::platform_value::Value;
 use dpp::{
     data_contract::state_transition::data_contract_create_transition::validation::state::{
@@ -45,14 +46,15 @@ pub async fn validate_data_contract_create_transition_basic(
     let parameters: DataContractCreateTransitionParameters =
         serde_wasm_bindgen::from_value(raw_parameters)?;
 
+    let mut value = platform_value::to_value(&parameters)?;
+    DataContractCreateTransition::clean_value(&mut value)?;
+
     let validator = DataContractCreateTransitionBasicValidator::new(Arc::new(
         ProtocolVersionValidator::default(),
     ))?;
 
-    let validation_result = validator.validate(
-        &platform_value::to_value(&parameters)?,
-        &StateTransitionExecutionContext::default(),
-    )?;
+    let validation_result =
+        validator.validate(&value, &StateTransitionExecutionContext::default())?;
 
     Ok(validation_result.map(|_| JsValue::undefined()).into())
 }

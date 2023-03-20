@@ -1,7 +1,7 @@
 use std::convert::{TryFrom, TryInto};
 
 use platform_value::btreemap_extensions::BTreeValueMapHelper;
-use platform_value::{BinaryData, Value};
+use platform_value::{BinaryData, IntegerReplacementType, ReplacementType, Value};
 use serde::{Deserialize, Serialize};
 use serde_json::Value as JsonValue;
 
@@ -20,6 +20,7 @@ pub const BINARY_FIELDS: [&str; 2] = [
     property_names::PUBLIC_KEYS_DATA,
     property_names::PUBLIC_KEYS_SIGNATURE,
 ];
+pub const U32_FIELDS: [&str; 1] = [property_names::PROTOCOL_VERSION];
 
 mod property_names {
     pub const PUBLIC_KEYS: &str = "publicKeys";
@@ -199,6 +200,13 @@ impl IdentityCreateTransition {
 
     pub fn set_protocol_version(&mut self, protocol_version: u32) {
         self.protocol_version = protocol_version;
+    }
+
+    pub fn clean_value(value: &mut Value) -> Result<(), ProtocolError> {
+        value.replace_at_paths(IDENTIFIER_FIELDS, ReplacementType::Identifier)?;
+        value.replace_at_paths(BINARY_FIELDS, ReplacementType::BinaryBytes)?;
+        value.replace_integer_type_at_paths(U32_FIELDS, IntegerReplacementType::U32)?;
+        Ok(())
     }
 }
 
