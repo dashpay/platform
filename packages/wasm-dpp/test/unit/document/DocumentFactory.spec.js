@@ -213,9 +213,12 @@ describe('DocumentFactory', () => {
 
         // Identifiers don't survive conversion back and forth unless done through
         // a Document constructor
-        expect(
-          (new Document(e.getRawDocument(), dataContract)).toObject(),
-        ).to.deep.equal(rawDocument);
+        const rawDocumentFromError = e.getRawDocument();
+        rawDocumentFromError.$id = Buffer.from(rawDocumentFromError.$id);
+        rawDocumentFromError.$dataContractId = Buffer.from(rawDocumentFromError.$dataContractId);
+        rawDocumentFromError.$ownerId = Buffer.from(rawDocumentFromError.$ownerId);
+
+        expect(rawDocumentFromError).to.deep.equal(rawDocument);
 
         const [consensusError] = e.getErrors();
         expect(consensusError).to.be.an.instanceOf(JsonSchemaError);
