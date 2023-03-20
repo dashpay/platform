@@ -1,7 +1,7 @@
 use crate::errors::protocol_error::from_protocol_error;
 
 use crate::{
-    js_value_to_platform_value, DataContractCreateTransitionWasm, DataContractUpdateTransitionWasm,
+    js_value_to_data_contract_value, DataContractCreateTransitionWasm, DataContractUpdateTransitionWasm,
     DataContractWasm,
 };
 use dpp::data_contract::DataContractFacade;
@@ -73,7 +73,7 @@ impl DataContractFacadeWasm {
 
         self.0
             .create_from_object(
-                js_value_to_platform_value(js_raw_data_contract)?,
+                js_value_to_data_contract_value(js_raw_data_contract)?,
                 skip_validation,
             )
             .await
@@ -126,7 +126,7 @@ impl DataContractFacadeWasm {
         &self,
         js_raw_data_contract: JsValue,
     ) -> Result<ValidationResultWasm, JsValue> {
-        let raw_data_contract = js_value_to_platform_value(js_raw_data_contract)?;
+        let raw_data_contract = js_value_to_data_contract_value(js_raw_data_contract)?;
 
         self.0
             .validate(raw_data_contract)

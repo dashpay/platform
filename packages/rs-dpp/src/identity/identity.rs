@@ -39,6 +39,7 @@ pub struct Identity {
     pub public_keys: BTreeMap<KeyID, IdentityPublicKey>,
     pub balance: u64,
     pub revision: Revision,
+    #[serde(skip)]
     pub asset_lock_proof: Option<AssetLockProof>,
     #[serde(skip)]
     pub metadata: Option<Metadata>,
@@ -93,11 +94,6 @@ impl Convertible for Identity {
     fn to_cleaned_object(&self) -> Result<Value, ProtocolError> {
         //same as object for Identities
         let mut value = self.to_object()?;
-        if self.asset_lock_proof.is_none() {
-            value
-                .remove("assetLockProof")
-                .map_err(ProtocolError::ValueError)?;
-        }
         if let Some(keys) = value.get_optional_array_mut_ref(property_names::PUBLIC_KEYS)? {
             for key in keys.iter_mut() {
                 if let Some(value) = key.get_optional_value("disabledAt")? {

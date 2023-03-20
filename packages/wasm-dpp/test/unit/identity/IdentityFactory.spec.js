@@ -139,7 +139,7 @@ describe('IdentityFactory', () => {
         expect(e).to.be.an.instanceOf(InvalidIdentityError);
 
         const [innerError] = e.getErrors();
-        expect(innerError).to.be.instanceOf(JsonSchemaError);
+        expect(innerError).to.be.instanceOf(UnsupportedProtocolVersionError);
       }
     });
 

@@ -15,6 +15,8 @@ pub fn get_identity_update_transition_fixture() -> IdentityUpdateTransition {
     IdentityUpdateTransition {
         protocol_version: LATEST_VERSION,
         transition_type: StateTransitionType::IdentityUpdate,
+        signature: BinaryData::new(vec![0; 65]),
+        signature_public_key_id: 0,
         identity_id: generate_random_identifier_struct(),
         revision: 0,
         add_public_keys: vec![IdentityPublicKeyWithWitness {

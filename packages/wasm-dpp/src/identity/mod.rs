@@ -181,6 +181,7 @@ impl IdentityWasm {
         }
 
         let value = self.0.to_cleaned_object().with_js_error()?;
+
         let serializer = serde_wasm_bindgen::Serializer::json_compatible();
         let js_object = with_js_error!(value.serialize(&serializer))?;
 

@@ -7,6 +7,8 @@ const IdentityPublicKey = require('../../identity/IdentityPublicKey');
 
 module.exports = function getIdentityUpdateTransitionFixture() {
   const rawStateTransition = {
+    signature: Buffer.alloc(0),
+    signaturePublicKeyId: 0,
     protocolVersion: protocolVersion.latestVersion,
     type: stateTransitionTypes.IDENTITY_UPDATE,
     assetLockProof: getInstantAssetLockProofFixture().toObject(),

@@ -1,4 +1,4 @@
-use platform_value::{BinaryData, Value};
+use platform_value::{BinaryData, IntegerReplacementType, ReplacementType, Value};
 use serde::{Deserialize, Serialize};
 use serde_json::Value as JsonValue;
 use std::convert::{TryFrom, TryInto};
@@ -21,12 +21,21 @@ pub mod property_names {
     pub const TYPE: &str = "type";
     pub const IDENTITY_ID: &str = "identityId";
     pub const REVISION: &str = "revision";
+    pub const ADD_PUBLIC_KEYS_DATA: &str = "addPublicKeys[].data";
+    pub const ADD_PUBLIC_KEYS_SIGNATURE: &str = "addPublicKeys[].signature";
     pub const ADD_PUBLIC_KEYS: &str = "addPublicKeys";
     pub const DISABLE_PUBLIC_KEYS: &str = "disablePublicKeys";
     pub const PUBLIC_KEYS_DISABLED_AT: &str = "publicKeysDisabledAt";
     pub const SIGNATURE: &str = "signature";
     pub const SIGNATURE_PUBLIC_KEY_ID: &str = "signaturePublicKeyId";
 }
+
+pub const IDENTIFIER_FIELDS: [&str; 1] = [property_names::IDENTITY_ID];
+pub const BINARY_FIELDS: [&str; 3] = [
+    property_names::ADD_PUBLIC_KEYS_DATA,
+    property_names::ADD_PUBLIC_KEYS_SIGNATURE,
+    property_names::SIGNATURE,
+];
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
 #[serde(rename_all = "camelCase")]
@@ -181,6 +190,12 @@ impl IdentityUpdateTransition {
 
     pub fn set_protocol_version(&mut self, protocol_version: u32) {
         self.protocol_version = protocol_version;
+    }
+
+    pub fn clean_value(value: &mut Value) -> Result<(), platform_value::Error> {
+        value.replace_at_paths(IDENTIFIER_FIELDS, ReplacementType::Identifier)?;
+        value.replace_at_paths(BINARY_FIELDS, ReplacementType::BinaryBytes)?;
+        Ok(())
     }
 }
 

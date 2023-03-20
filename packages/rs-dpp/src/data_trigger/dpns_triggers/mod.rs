@@ -195,7 +195,7 @@ where
 
             if (!parent_domain
                 .properties
-                .get_bool(PROPERTY_ALLOW_SUBDOMAINS)?)
+                .get_bool_at_path(PROPERTY_ALLOW_SUBDOMAINS)?)
                 && context.owner_id != &parent_domain.owner_id
             {
                 let err = create_error(

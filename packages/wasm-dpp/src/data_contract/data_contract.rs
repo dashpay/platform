@@ -72,7 +72,7 @@ pub(crate) struct DataContractParameters {
     _extras: serde_json::Value, // Captures excess fields to trigger validation failure later.
 }
 
-pub fn js_value_to_platform_value(object: JsValue) -> Result<Value, JsValue> {
+pub fn js_value_to_data_contract_value(object: JsValue) -> Result<Value, JsValue> {
     let parameters: DataContractParameters =
         with_js_error!(serde_wasm_bindgen::from_value(object))?;
 

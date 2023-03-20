@@ -23,8 +23,9 @@ describe('applyIdentityUpdateTransition', () => {
   });
 
   beforeEach(async function beforeEach() {
+    const object = getIdentityUpdateTransitionFixture().toObject();
     stateTransition = new IdentityUpdateTransition(
-      getIdentityUpdateTransitionFixture().toObject(),
+      object,
     );
     stateTransition.setRevision(stateTransition.getRevision() + 1);
 

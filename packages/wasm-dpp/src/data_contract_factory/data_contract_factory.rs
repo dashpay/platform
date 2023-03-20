@@ -14,13 +14,7 @@ use dpp::{
 use wasm_bindgen::prelude::*;
 
 use crate::utils::WithJsError;
-use crate::{
-    data_contract::errors::InvalidDataContractError,
-    errors::{from_dpp_err, protocol_error::from_protocol_error},
-    js_value_to_platform_value,
-    validation::ValidationResultWasm,
-    with_js_error, DataContractCreateTransitionWasm, DataContractParameters, DataContractWasm,
-};
+use crate::{data_contract::errors::InvalidDataContractError, errors::{from_dpp_err, protocol_error::from_protocol_error}, js_value_to_identity_update_transition_object, validation::ValidationResultWasm, with_js_error, DataContractCreateTransitionWasm, DataContractParameters, DataContractWasm, js_value_to_data_contract_value};
 
 #[wasm_bindgen(js_name=DataContractValidator)]
 pub struct DataContractValidatorWasm(DataContractValidator);
@@ -140,7 +134,7 @@ impl DataContractFactoryWasm {
         object: JsValue,
         skip_validation: Option<bool>,
     ) -> Result<DataContractWasm, JsValue> {
-        let parameters_value = js_value_to_platform_value(object.clone())?;
+        let parameters_value = js_value_to_data_contract_value(object.clone())?;
         let result = self
             .0
             .create_from_object(parameters_value, skip_validation.unwrap_or(false))
