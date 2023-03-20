@@ -85,9 +85,11 @@ pub async fn validate_data_contract_update_transition_basic(
             Arc::new(ProtocolVersionValidator::default()),
         )?;
 
-    validation_result.merge(validator
-        .validate(&value, &execution_context.into())
-        .await?);
+    validation_result.merge(
+        validator
+            .validate(&value, &execution_context.into())
+            .await?,
+    );
 
     Ok(validation_result.map(|_| JsValue::undefined()).into())
 }

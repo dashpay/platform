@@ -8,6 +8,53 @@ impl Display for Value {
 }
 
 impl Value {
+    pub fn non_qualified_string_representation(&self) -> String {
+        match self {
+            Value::Bytes(bytes) => format!("bytes {}", hex::encode(bytes)),
+            Value::Float(float) => {
+                format!("{}", float)
+            }
+            Value::Text(text) => text.clone(),
+            Value::Bool(b) => {
+                format!("{}", b)
+            }
+            Value::Null => "Null".to_string(),
+            Value::Array(value) => {
+                let inner_values = value
+                    .iter()
+                    .map(|v| v.string_representation())
+                    .collect::<Vec<String>>()
+                    .join(", ");
+                format!("array of [{}]", inner_values)
+            }
+            Value::Map(map) => {
+                let inner_string = map
+                    .iter()
+                    .map(|(key, value)| format!("{key}: {value}"))
+                    .collect::<Vec<_>>()
+                    .join(",\n");
+                format!("Map {{ {} }}", inner_string)
+            }
+            Value::U128(i) => format!("{}", i),
+            Value::I128(i) => format!("{}", i),
+            Value::U64(i) => format!("{}", i),
+            Value::I64(i) => format!("{}", i),
+            Value::U32(i) => format!("{}", i),
+            Value::I32(i) => format!("{}", i),
+            Value::U16(i) => format!("{}", i),
+            Value::I16(i) => format!("{}", i),
+            Value::U8(i) => format!("{}", i),
+            Value::I8(i) => format!("{}", i),
+            Value::Bytes32(bytes32) => format!("bytes32 {}", base64::encode(bytes32.as_slice())),
+            Value::Identifier(identifier) => format!(
+                "identifier {}",
+                bs58::encode(identifier.as_slice()).into_string()
+            ),
+            Value::EnumU8(_) => todo!(),
+            Value::EnumString(_) => todo!(),
+        }
+    }
+
     fn string_representation(&self) -> String {
         match self {
             Value::Bytes(bytes) => format!("bytes {}", hex::encode(bytes)),

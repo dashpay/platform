@@ -19,7 +19,8 @@ pub fn validate(raw_data_contract: &Value, validators: &[SubValidator]) -> Valid
             Value::Map(current_map) => {
                 for (key, current_value) in current_map.iter() {
                     if current_value.is_map() || current_value.is_array() {
-                        let new_path = format!("{}/{}", path, key);
+                        let new_path =
+                            format!("{}/{}", path, key.non_qualified_string_representation());
                         values_queue.push((current_value, new_path))
                     }
                     match key.to_str().map_err(ConsensusError::ValueError) {
