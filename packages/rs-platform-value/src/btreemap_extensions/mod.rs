@@ -80,11 +80,8 @@ pub trait BTreeValueMapHelper {
         key: &str,
     ) -> Result<Option<I>, Error>;
     fn get_inner_string_array<I: FromIterator<String>>(&self, key: &str) -> Result<I, Error>;
-    fn get_optional_inner_borrowed_map(
-        &self,
-        key: &str,
-    ) -> Result<Option<&Vec<(Value, Value)>>, Error>;
-    fn get_optional_inner_borrowed_str_value_map<'a, I: FromIterator<(String, &'a Value)>>(
+    fn get_optional_map(&self, key: &str) -> Result<Option<&Vec<(Value, Value)>>, Error>;
+    fn get_optional_str_value_map<'a, I: FromIterator<(String, &'a Value)>>(
         &'a self,
         key: &str,
     ) -> Result<Option<I>, Error>;
@@ -280,22 +277,25 @@ where
     ) -> Result<Option<I>, Error> {
         self.get(key)
             .map(|v| {
-                v.borrow()
-                    .as_array()
-                    .map(|inner| {
-                        inner
-                            .iter()
-                            .map(|v| {
-                                let Some(str) = v.as_text() else {
-                                    return Err(Error::StructureError(format!("{key} must be an string")))
-                                };
-                                Ok(str.to_string())
-                            })
-                            .collect::<Result<I, Error>>()
-                    })
-                    .transpose()?
-                    .ok_or_else(|| Error::StructureError(format!("{key} must be a bool")))
-            })
+                let value = v.borrow();
+                if value.is_null() {
+                    None
+                } else {
+                    Some(value.to_array_ref()
+                        .and_then(|inner| {
+                            inner
+                                .iter()
+                                .map(|v| {
+                                    let Some(str) = v.as_text() else {
+                                        return Err(Error::StructureError(format!("{key} must be an string")))
+                                    };
+                                    Ok(str.to_string())
+                                })
+                                .collect::<Result<I, Error>>()
+                        }))
+                }
+
+            }).flatten()
             .transpose()
     }
 
@@ -305,33 +305,43 @@ where
         })
     }
 
-    fn get_optional_inner_borrowed_map(&self, key: &str) -> Result<Option<&ValueMap>, Error> {
+    fn get_optional_map(&self, key: &str) -> Result<Option<&ValueMap>, Error> {
         self.get(key)
             .map(|v| {
-                v.borrow()
-                    .as_map()
-                    .ok_or_else(|| Error::StructureError(format!("{key} must be a map")))
+                let value = v.borrow();
+                if value.is_null() {
+                    None
+                } else {
+                    Some(
+                        value
+                            .as_map()
+                            .ok_or_else(|| Error::StructureError(format!("{key} must be a map"))),
+                    )
+                }
             })
+            .flatten()
             .transpose()
     }
 
-    fn get_optional_inner_borrowed_str_value_map<'a, I: FromIterator<(String, &'a Value)>>(
+    fn get_optional_str_value_map<'a, I: FromIterator<(String, &'a Value)>>(
         &'a self,
         key: &str,
     ) -> Result<Option<I>, Error> {
         self.get(key)
             .map(|v| {
-                v.borrow()
-                    .as_map()
-                    .map(|inner| {
+                let value = v.borrow();
+                if value.is_null() {
+                    None
+                } else {
+                    Some(value.to_map_ref().and_then(|inner| {
                         inner
                             .iter()
                             .map(|(k, v)| Ok((k.to_text()?, v)))
                             .collect::<Result<I, Error>>()
-                    })
-                    .transpose()?
-                    .ok_or_else(|| Error::StructureError(format!("{key} must be a bool")))
+                    }))
+                }
             })
+            .flatten()
             .transpose()
     }
 
@@ -339,12 +349,11 @@ where
         &'a self,
         key: &str,
     ) -> Result<I, Error> {
-        self.get_optional_inner_borrowed_str_value_map(key)?
-            .ok_or_else(|| {
-                Error::StructureError(format!(
-                    "unable to get borrowed str value map property {key}"
-                ))
-            })
+        self.get_optional_str_value_map(key)?.ok_or_else(|| {
+            Error::StructureError(format!(
+                "unable to get borrowed str value map property {key}"
+            ))
+        })
     }
 
     fn get_optional_inner_str_json_value_map<I: FromIterator<(String, JsonValue)>>(
@@ -353,17 +362,19 @@ where
     ) -> Result<Option<I>, Error> {
         self.get(key)
             .map(|v| {
-                v.borrow()
-                    .as_map()
-                    .map(|inner| {
+                let value = v.borrow();
+                if value.is_null() {
+                    None
+                } else {
+                    Some(value.to_map_ref().and_then(|inner| {
                         inner
                             .iter()
                             .map(|(k, v)| Ok((k.to_text()?, v.clone().try_into()?)))
                             .collect::<Result<I, Error>>()
-                    })
-                    .transpose()?
-                    .ok_or_else(|| Error::StructureError(format!("{key} must be a bool")))
+                    }))
+                }
             })
+            .flatten()
             .transpose()
     }
 

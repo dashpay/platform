@@ -55,29 +55,30 @@ impl DocumentsBatchTransitionWasm {
         let data_contracts_array_js = Array::from(&data_contracts);
 
         let mut data_contracts: Vec<DataContract> = vec![];
+
         for contract in data_contracts_array_js.iter() {
-            let json_value = contract.with_serde_to_json_value()?;
-            let data_contract = DataContract::from_json_object(json_value).with_js_error()?;
+            let value = contract.with_serde_to_platform_value()?;
+            let data_contract = DataContract::from_raw_object(value).with_js_error()?;
             data_contracts.push(data_contract);
         }
 
-        let mut batch_transition_value = js_raw_transition.with_serde_to_platform_value_map()?;
+        let mut batch_transition_value = js_raw_transition.with_serde_to_platform_value()?;
         let base_identifier_fields = document_base_transition::IDENTIFIER_FIELDS
             .iter()
-            .map(|field| format!("{}.{}", property_names::TRANSITIONS, field));
+            .map(|field| format!("{}[].{}", property_names::TRANSITIONS, field))
+            .collect::<Vec<_>>();
         batch_transition_value
             .replace_at_paths(
                 DocumentsBatchTransition::identifiers_property_paths()
                     .into_iter()
-                    .map(|field| field.to_string())
-                    .chain(base_identifier_fields),
+                    .chain(base_identifier_fields.iter().map(|s| s.as_str())),
                 ReplacementType::Identifier,
             )
             .map_err(ProtocolError::ValueError)
             .with_js_error()?;
 
         let documents_batch_transition =
-            DocumentsBatchTransition::from_value_map(batch_transition_value, data_contracts)
+            DocumentsBatchTransition::from_raw_object(batch_transition_value, data_contracts)
                 .with_js_error()?;
 
         Ok(documents_batch_transition.into())

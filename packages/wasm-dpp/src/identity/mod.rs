@@ -174,6 +174,12 @@ impl IdentityWasm {
 
     #[wasm_bindgen(js_name=toObject)]
     pub fn to_object(&self) -> Result<JsValue, JsValue> {
+        let js_public_keys = js_sys::Array::new();
+        for pk in self.0.public_keys.values() {
+            let pk_wasm = IdentityPublicKeyWasm::from(pk.to_owned());
+            js_public_keys.push(&pk_wasm.to_object()?);
+        }
+
         let value = self.0.to_cleaned_object().with_js_error()?;
         let serializer = serde_wasm_bindgen::Serializer::json_compatible();
         let js_object = with_js_error!(value.serialize(&serializer))?;
@@ -184,6 +190,12 @@ impl IdentityWasm {
             &js_object,
             &"id".to_owned().into(),
             &JsValue::from(id.to_buffer()),
+        )?;
+
+        js_sys::Reflect::set(
+            &js_object,
+            &"publicKeys".to_owned().into(),
+            &JsValue::from(&js_public_keys),
         )?;
 
         Ok(js_object)

@@ -130,20 +130,17 @@ impl DataContract {
             .into_btree_string_map()
             .map_err(ProtocolError::ValueError)?;
 
-        let mutability = get_contract_configuration_properties(&data_contract_map)
-            .map_err(|e| ProtocolError::ParsingError(e.to_string()))?;
+        let mutability = get_contract_configuration_properties(&data_contract_map)?;
         let definition_references = get_definitions(&data_contract_map)?;
         let document_types = get_document_types_from_contract(
             &data_contract_map,
             &definition_references,
             mutability.documents_keep_history_contract_default,
             mutability.documents_mutable_contract_default,
-        )
-        .map_err(|e| ProtocolError::ParsingError(e.to_string()))?;
+        )?;
 
-        let protocol_version = data_contract_map
-            .remove_integer(property_names::PROTOCOL_VERSION)
-            .map_err(ProtocolError::ValueError)?;
+        let protocol_version =
+            data_contract_map.remove_integer(property_names::PROTOCOL_VERSION)?;
 
         let documents = data_contract_map
             .remove(property_names::DOCUMENTS)
@@ -151,8 +148,7 @@ impl DataContract {
             .transpose()?
             .unwrap_or_default();
 
-        let mutability = get_contract_configuration_properties(&data_contract_map)
-            .map_err(|e| ProtocolError::ParsingError(e.to_string()))?;
+        let mutability = get_contract_configuration_properties(&data_contract_map)?;
 
         // Defs
         let defs =
@@ -162,6 +158,7 @@ impl DataContract {
             .iter()
             .map(|(doc_type, schema)| (String::from(doc_type), get_binary_properties(schema)))
             .collect();
+
         let data_contract = DataContract {
             protocol_version,
             id: data_contract_map
@@ -509,15 +506,7 @@ pub fn get_definitions(
     contract: &BTreeMap<String, Value>,
 ) -> Result<BTreeMap<String, &Value>, ProtocolError> {
     Ok(contract
-        .get("$defs")
-        .map(|definition_value| {
-            definition_value
-                .as_map()
-                .map(Value::map_ref_into_btree_string_map)
-                .transpose()
-        })
-        .transpose()?
-        .flatten()
+        .get_optional_str_value_map("$defs")?
         .unwrap_or_default())
 }
 
