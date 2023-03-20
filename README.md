@@ -50,7 +50,7 @@ this repository may be used on the following networks:
 
 - Clone the repo
 - Install prerequisites:
-  - [node.js](https://nodejs.org/) Any v16 version
+  - [node.js](https://nodejs.org/) v16
   - [docker](https://docs.docker.com/get-docker/) v20.10+
 - Run `corepack enable` to enable [corepack](https://nodejs.org/dist/latest/docs/api/corepack.html) and install yarn
 - Run `yarn setup` to install dependencies and configure and build all packages
