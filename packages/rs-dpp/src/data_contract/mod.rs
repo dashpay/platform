@@ -20,7 +20,7 @@ pub mod serialization;
 pub mod state_transition;
 pub mod validation;
 
-pub(self) mod property_names {
+pub mod property_names {
     pub const PROTOCOL_VERSION: &str = "protocolVersion";
     pub const ID: &str = "$id";
     pub const OWNER_ID: &str = "ownerId";

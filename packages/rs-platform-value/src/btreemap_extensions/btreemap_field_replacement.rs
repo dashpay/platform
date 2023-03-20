@@ -6,6 +6,37 @@ use std::iter::Peekable;
 use std::vec::IntoIter;
 
 #[derive(Debug, Clone, Copy)]
+pub enum IntegerReplacementType {
+    U128,
+    I128,
+    U64,
+    I64,
+    U32,
+    I32,
+    U16,
+    I16,
+    U8,
+    I8,
+}
+
+impl IntegerReplacementType {
+    pub fn replace_for_value(&self, value: Value) -> Result<Value, Error> {
+        Ok(match self {
+            IntegerReplacementType::U128 => Value::U128(value.try_into()?),
+            IntegerReplacementType::I128 => Value::I128(value.try_into()?),
+            IntegerReplacementType::U64 => Value::U64(value.try_into()?),
+            IntegerReplacementType::I64 => Value::I64(value.try_into()?),
+            IntegerReplacementType::U32 => Value::U32(value.try_into()?),
+            IntegerReplacementType::I32 => Value::I32(value.try_into()?),
+            IntegerReplacementType::U16 => Value::U16(value.try_into()?),
+            IntegerReplacementType::I16 => Value::I16(value.try_into()?),
+            IntegerReplacementType::U8 => Value::U8(value.try_into()?),
+            IntegerReplacementType::I8 => Value::I8(value.try_into()?),
+        })
+    }
+}
+
+#[derive(Debug, Clone, Copy)]
 pub enum ReplacementType {
     Identifier,
     BinaryBytes,

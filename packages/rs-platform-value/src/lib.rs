@@ -32,7 +32,9 @@ use std::collections::BTreeMap;
 
 pub type Hash256 = [u8; 32];
 
-pub use btreemap_extensions::btreemap_field_replacement::ReplacementType;
+pub use btreemap_extensions::btreemap_field_replacement::{
+    IntegerReplacementType, ReplacementType,
+};
 pub use types::binary_data::BinaryData;
 pub use types::bytes_32::Bytes32;
 pub use types::identifier::{Identifier, IDENTIFIER_MEDIA_TYPE};
@@ -1151,6 +1153,33 @@ macro_rules! implfrom {
             }
         )+
     };
+}
+
+macro_rules! impltryinto {
+    ($($t:ty),+ $(,)?) => {
+        $(
+            impl TryInto<$t> for Value {
+                type Error = Error;
+                #[inline]
+                fn try_into(self) -> Result<$t, Self::Error> {
+                    self.to_integer()
+                }
+            }
+        )+
+    };
+}
+
+impltryinto! {
+    u128,
+    i128,
+    u64,
+    i64,
+    u32,
+    i32,
+    u16,
+    i16,
+    u8,
+    i8,
 }
 
 implfrom! {

@@ -1,6 +1,6 @@
 use platform_value::btreemap_extensions::BTreeValueMapHelper;
 use platform_value::btreemap_extensions::BTreeValueRemoveFromMapHelper;
-use platform_value::{BinaryData, Value};
+use platform_value::{BinaryData, IntegerReplacementType, ReplacementType, Value};
 use serde::{Deserialize, Serialize};
 use serde_json::Value as JsonValue;
 use std::collections::BTreeMap;
@@ -22,6 +22,27 @@ use super::property_names::*;
 
 pub mod apply_data_contract_update_transition_factory;
 pub mod validation;
+
+pub mod property_names {
+    pub const PROTOCOL_VERSION: &str = "protocolVersion";
+    pub const DATA_CONTRACT: &str = "dataContract";
+    pub const DATA_CONTRACT_ID: &str = "dataContract.$id";
+    pub const DATA_CONTRACT_OWNER_ID: &str = "dataContract.ownerId";
+    pub const DATA_CONTRACT_ENTROPY: &str = "dataContract.entropy";
+    pub const DATA_CONTRACT_PROTOCOL_VERSION: &str = "dataContract.protocolVersion";
+    pub const SIGNATURE_PUBLIC_KEY_ID: &str = "signaturePublicKeyId";
+    pub const SIGNATURE: &str = "signature";
+}
+
+pub const IDENTIFIER_FIELDS: [&str; 2] = [
+    property_names::DATA_CONTRACT_ID,
+    property_names::DATA_CONTRACT_OWNER_ID,
+];
+pub const BINARY_FIELDS: [&str; 1] = [property_names::DATA_CONTRACT_ENTROPY];
+pub const U32_FIELDS: [&str; 2] = [
+    property_names::PROTOCOL_VERSION,
+    property_names::DATA_CONTRACT_PROTOCOL_VERSION,
+];
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -102,6 +123,12 @@ impl DataContractUpdateTransition {
             )?,
             ..Default::default()
         })
+    }
+
+    pub fn clean_value(value: &mut Value) {
+        value.replace_at_paths(IDENTIFIER_FIELDS, ReplacementType::Identifier)?;
+        value.replace_at_paths(BINARY_FIELDS, ReplacementType::BinaryBytes)?;
+        value.replace_integer_type_at_paths(U32_FIELDS, IntegerReplacementType::U32)?;
     }
 
     pub fn get_data_contract(&self) -> &DataContract {

@@ -1,3 +1,4 @@
+use crate::btreemap_extensions::btreemap_field_replacement::IntegerReplacementType;
 use crate::inner_value_at_path::is_array_path;
 use crate::{Error, ReplacementType, Value, ValueMapHelper};
 use std::collections::HashSet;
@@ -161,6 +162,155 @@ impl Value {
         paths
             .into_iter()
             .try_for_each(|path| self.replace_at_path(path, replacement_type))
+    }
+
+    /// If the `Value` is a `Map`, replaces the value at the path inside the map.
+    /// This is used to set inner values as Identifiers or BinaryData, or from Identifiers or
+    /// BinaryData to base58 or base64 strings.
+    /// Either returns `Err(Error::Structure("reason"))` or `Err(Error::ByteLengthNot32BytesError))`
+    /// if the replacement can not happen.
+    ///
+    /// ```
+    /// # use platform_value::{Error, Identifier, IntegerReplacementType, Value};
+    /// #
+    /// let mut inner_value = Value::Map(
+    ///     vec![
+    ///         (Value::Text(String::from("food_id")), Value::U8(5)),
+    ///     ]
+    /// );
+    /// let mut value = Value::Map(
+    ///     vec![
+    ///         (Value::Text(String::from("foods")), inner_value),
+    ///     ]
+    /// );
+    ///
+    /// value.replace_integer_type_at_path("foods.food_id", IntegerReplacementType::U32).expect("expected to replace at path with identifier");
+    ///
+    /// assert_eq!(value.get_value_at_path("foods.food_id"), Ok(&Value::U32(5)));
+    ///
+    /// let mut tangerine_value = Value::Map(
+    ///     vec![
+    ///         (Value::Text(String::from("food_id")), Value::U128(8)),
+    ///     ]
+    /// );
+    /// let mut mandarin_value = Value::Map(
+    ///     vec![
+    ///         (Value::Text(String::from("food_id")), Value::U32(2)),
+    ///     ]
+    /// );
+    /// let mut oranges_value = Value::Array(
+    ///     vec![
+    ///         tangerine_value,
+    ///         mandarin_value
+    ///     ]
+    /// );
+    /// let mut value = Value::Map(
+    ///     vec![
+    ///         (Value::Text(String::from("foods")), oranges_value),
+    ///     ]
+    /// );
+    ///
+    /// value.replace_integer_type_at_path("foods[].food_id", IntegerReplacementType::U16).expect("expected to replace at path with identifier");
+    ///
+    /// assert_eq!(value.get_value_at_path("foods[0].food_id"), Ok(&Value::U16(8)));
+    ///
+    /// ```
+    pub fn replace_integer_type_at_path(
+        &mut self,
+        path: &str,
+        replacement_type: IntegerReplacementType,
+    ) -> Result<(), Error> {
+        let mut split = path.split('.').peekable();
+        let mut current_values = vec![self];
+        while let Some(path_component) = split.next() {
+            if let Some((string_part, number_part)) = is_array_path(path_component)? {
+                current_values = current_values
+                    .into_iter()
+                    .map(|current_value| {
+                        let map = current_value.to_map_mut()?;
+                        let array_value = map.get_key_mut(string_part)?;
+                        let array = array_value.to_array_mut()?;
+                        if let Some(number_part) = number_part {
+                            if array.len() < number_part {
+                                //this already exists
+                                Ok(vec![array.get_mut(number_part).unwrap()])
+                            } else {
+                                return Err(Error::StructureError(format!(
+                                    "element at position {number_part} in array does not exist"
+                                )));
+                            }
+                        } else {
+                            // we are replacing all members in array
+                            Ok(array.into_iter().collect())
+                        }
+                    })
+                    .collect::<Result<Vec<Vec<&mut Value>>, Error>>()?
+                    .into_iter()
+                    .flatten()
+                    .collect()
+            } else {
+                current_values = current_values
+                    .into_iter()
+                    .filter_map(|current_value| {
+                        let map = match current_value.as_map_mut_ref() {
+                            Ok(map) => map,
+                            Err(err) => return Some(Err(err)),
+                        };
+                        let Some(new_value) = map.get_optional_key_mut(path_component) else {
+                            return None;
+                        };
+
+                        if split.peek().is_none() {
+                            *new_value = match replacement_type.replace_for_value(new_value.clone())
+                            {
+                                Ok(value) => value,
+                                Err(err) => return Some(Err(err)),
+                            };
+                            return None;
+                        }
+                        Some(Ok(new_value))
+                    })
+                    .collect::<Result<Vec<&mut Value>, Error>>()?;
+            }
+        }
+        Ok(())
+    }
+
+    /// Calls replace_at_path for every path in a given array.
+    /// Either returns `Err(Error::Structure("reason"))` or `Err(Error::ByteLengthNot32BytesError))`
+    /// if the replacement can not happen.
+    ///
+    /// ```
+    /// # use platform_value::{Error, Identifier, IntegerReplacementType, ReplacementType, Value};
+    /// #
+    /// let mut inner_value = Value::Map(
+    ///     vec![
+    ///         (Value::Text(String::from("grapes")), Value::U16(5)),
+    ///         (Value::Text(String::from("oranges")), Value::I32(6)),
+    ///     ]
+    /// );
+    /// let mut value = Value::Map(
+    ///     vec![
+    ///         (Value::Text(String::from("foods")), inner_value),
+    ///     ]
+    /// );
+    ///
+    /// let paths = vec!["foods.grapes", "foods.oranges"];
+    ///
+    /// value.replace_integer_type_at_paths(paths, IntegerReplacementType::U32).expect("expected to replace at paths with identifier");
+    ///
+    /// assert_eq!(value.get_value_at_path("foods.grapes"), Ok(&Value::U32(5)));
+    /// assert_eq!(value.get_value_at_path("foods.oranges"), Ok(&Value::U32(6)));
+    ///
+    /// ```
+    pub fn replace_integer_type_at_paths<'a, I: IntoIterator<Item = &'a str>>(
+        &mut self,
+        paths: I,
+        replacement_type: IntegerReplacementType,
+    ) -> Result<(), Error> {
+        paths
+            .into_iter()
+            .try_for_each(|path| self.replace_integer_type_at_path(path, replacement_type))
     }
 
     /// `replace_to_binary_types_when_setting_with_path` will replace a value with a corresponding

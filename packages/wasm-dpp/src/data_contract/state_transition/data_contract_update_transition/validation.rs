@@ -1,5 +1,6 @@
 use std::{collections::BTreeMap, sync::Arc};
 
+use dpp::data_contract::state_transition::data_contract_update_transition;
 use dpp::data_contract::state_transition::data_contract_update_transition::DataContractUpdateTransition;
 use dpp::platform_value::{ReplacementType, Value};
 use dpp::validation::AsyncDataValidatorWithContext;
@@ -72,12 +73,7 @@ pub async fn validate_data_contract_update_transition_basic(
         serde_wasm_bindgen::from_value(raw_parameters)?;
 
     let mut value = platform_value::to_value(&parameters)?;
-    value.replace_at_paths(
-        data_contract::IDENTIFIER_FIELDS,
-        ReplacementType::Identifier,
-    )?;
-    value.replace_at_paths(data_contract::BINARY_FIELDS, ReplacementType::BinaryBytes)?;
-    value.set_into_value("protocolVersion", 1u32)?;
+    DataContractUpdateTransition::clean_value(&mut value);
 
     let validator: DataContractUpdateTransitionBasicValidator<ExternalStateRepositoryLikeWrapper> =
         DataContractUpdateTransitionBasicValidator::new(

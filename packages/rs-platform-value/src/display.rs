@@ -35,7 +35,14 @@ impl Value {
                     .join(", ");
                 format!("array of [{}]", inner_values)
             }
-            Value::Map(_) => "Map".to_string(),
+            Value::Map(map) => {
+                let inner_string = map
+                    .iter()
+                    .map(|(key, value)| format!("{key}: {value}"))
+                    .collect::<Vec<_>>()
+                    .join(",\n");
+                format!("Map {{ {} }}", inner_string)
+            }
             Value::U128(i) => format!("(u128){}", i),
             Value::I128(i) => format!("(i128){}", i),
             Value::U64(i) => format!("(u64){}", i),
