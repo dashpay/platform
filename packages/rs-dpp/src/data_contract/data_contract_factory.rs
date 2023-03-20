@@ -4,7 +4,7 @@ use std::convert::TryInto;
 use std::sync::Arc;
 
 use data_contract::state_transition::property_names as st_prop;
-use platform_value::{BinaryData, Bytes32, Value};
+use platform_value::{Bytes32, Value};
 
 use crate::data_contract::contract_config::ContractConfig;
 use crate::data_contract::errors::InvalidDataContractError;

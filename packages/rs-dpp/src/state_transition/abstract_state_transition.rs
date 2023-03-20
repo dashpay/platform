@@ -7,7 +7,6 @@ use serde::Serialize;
 use serde_json::Value as JsonValue;
 
 use crate::consensus::ConsensusError;
-use crate::data_contract::state_transition::property_names::DATA_CONTRACT;
 use crate::errors::consensus::signature::SignatureError;
 use crate::state_transition::errors::{
     InvalidIdentityPublicKeyTypeError, StateTransitionIsNotSignedError,

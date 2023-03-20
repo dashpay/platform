@@ -545,6 +545,6 @@ mod tests {
         let document = document_type.random_document(Some(3333));
 
         let document_string = format!("{}", document);
-        assert_eq!(document_string.as_str(), "id:2vq574DjKi7ZD8kJ6dMHxT5wu6ZKD2bW5xKAyKAGW7qZ owner_id:ChTEGXJcpyknkADUC5s6tAzvPqVG7x6Lo1Nr5mFtj2mk created_at:2027-09-24 14:16:54 updated_at:2030-06-20 21:52:44 avatarUrl:RD1DbW18RuyblDX7hxB3[...(1936)] displayName:jALmlamgYbnlKUkT1 publicMessage:oyGtAOjibsOvx9OUjxVO[...(110)] ")
+        assert_eq!(document_string.as_str(), "id:2vq574DjKi7ZD8kJ6dMHxT5wu6ZKD2bW5xKAyKAGW7qZ owner_id:ChTEGXJcpyknkADUC5s6tAzvPqVG7x6Lo1Nr5mFtj2mk created_at:2027-09-24 14:16:54 updated_at:2030-06-20 21:52:44 avatarUrl:string RD1DbW18RuyblDX7hxB3[...(1936)] displayName:string jALmlamgYbnlKUkT1 publicMessage:string oyGtAOjibsOvx9OUjxVO[...(110)] ")
     }
 }

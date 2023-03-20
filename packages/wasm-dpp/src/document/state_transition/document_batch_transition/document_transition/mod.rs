@@ -306,11 +306,11 @@ pub(crate) fn to_object<'a>(
 
     for path in identifiers_paths.into_iter() {
         if let Ok(bytes) = value.remove_value_at_path_into::<Vec<u8>>(path) {
+            let buffer = Buffer::from_bytes_owned(bytes);
             if !options.skip_identifiers_conversion {
-                let buffer = Buffer::from_bytes(&bytes);
                 lodash_set(&js_value, path, buffer.into());
             } else {
-                let id = IdentifierWrapper::new(bytes)?;
+                let id = IdentifierWrapper::new(buffer.into())?;
                 lodash_set(&js_value, path, id.into());
             }
         }

@@ -163,7 +163,7 @@ mod test {
         },
         NativeBlsModule,
     };
-    use platform_value::{BinaryData, Value};
+    use platform_value::BinaryData;
     use serde::{Deserialize, Serialize};
 
     #[derive(Debug, Clone, Serialize, Deserialize)]

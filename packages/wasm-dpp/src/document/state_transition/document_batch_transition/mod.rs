@@ -199,11 +199,11 @@ impl DocumentsBatchTransitionWasm {
                 .and_then(|value| value.to_identifier_bytes())
                 .map_err(ProtocolError::ValueError)
                 .with_js_error()?;
+            let buffer = Buffer::from_bytes_owned(bytes);
             if !options.skip_identifiers_conversion {
-                let buffer = Buffer::from_bytes_owned(bytes);
                 lodash_set(&js_value, path, buffer.into());
             } else {
-                let id = IdentifierWrapper::new(bytes)?;
+                let id = IdentifierWrapper::new(buffer.into())?;
                 lodash_set(&js_value, path, id.into());
             }
         }

@@ -1,7 +1,5 @@
-use anyhow::anyhow;
 use std::collections::HashMap;
-use std::sync::Arc;
-
+use anyhow::anyhow;
 use dpp::platform_value::ReplacementType;
 use dpp::{
     document::{
@@ -12,11 +10,14 @@ use dpp::{
     },
     ProtocolError,
 };
+
 use wasm_bindgen::prelude::*;
 
 use dpp::platform_value::btreemap_extensions::BTreeValueMapReplacementPathHelper;
 use dpp::prelude::ExtendedDocument;
 use std::convert::TryFrom;
+use std::sync::Arc;
+use crate::document::errors::InvalidActionNameError;
 
 use crate::{
     identifier::identifier_from_js_value,
@@ -98,7 +99,7 @@ impl DocumentFactoryWASM {
         DocumentFactoryWASM(factory)
     }
 
-    #[wasm_bindgen(js_name=create)]
+    #[wasm_bindgen]
     pub fn create(
         &self,
         data_contract: &DataContractWasm,
@@ -203,6 +204,7 @@ impl DocumentFactoryWASM {
 fn extract_documents_by_action(
     documents: &JsValue,
 ) -> Result<HashMap<Action, Vec<ExtendedDocument>>, JsValue> {
+    check_actions(documents)?;
     let mut documents_by_action: HashMap<Action, Vec<ExtendedDocument>> = Default::default();
 
     let documents_create = extract_documents_of_action(documents, "create").with_js_error()?;
@@ -214,6 +216,27 @@ fn extract_documents_by_action(
     documents_by_action.insert(Action::Delete, documents_delete);
 
     Ok(documents_by_action)
+}
+
+fn check_actions(documents: &JsValue) -> Result<(), JsValue> {
+    if !documents.is_object() {
+        return Err(anyhow!("Expected documents to be an object")).with_js_error();
+    }
+
+    let documents_object = js_sys::Object::from(documents.clone());
+
+    let actions: js_sys::Array = js_sys::Object::keys(&documents_object);
+
+    for action in actions.iter() {
+        let action_string: String = action
+            .as_string()
+            .ok_or_else(|| anyhow!("Expected all keys to be strings"))
+            .with_js_error()?;
+        Action::try_from(action_string)
+            .map_err(|_| InvalidActionNameError::new(vec![action.clone()]))?;
+    }
+
+    Ok(())
 }
 
 fn extract_documents_of_action(

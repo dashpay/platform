@@ -233,7 +233,7 @@ impl Value {
     ///
     /// let value = Value::Bool(true);
     /// let r_value : Result<u64,Error> = value.to_integer();
-    /// assert_eq!(r_value, Err(Error::StructureError("value is not an integer, found true".to_string())));
+    /// assert_eq!(r_value, Err(Error::StructureError("value is not an integer, found bool true".to_string())));
     /// ```
     pub fn to_integer<T>(&self) -> Result<T, Error>
     where
@@ -447,7 +447,7 @@ impl Value {
     /// assert_eq!(value.to_bytes(), Ok(vec![104, 101, 108, 108, 111]));
     ///
     /// let value = Value::Bool(true);
-    /// assert_eq!(value.to_bytes(), Err(Error::StructureError("ref value are not bytes found true instead".to_string())));
+    /// assert_eq!(value.to_bytes(), Err(Error::StructureError("ref value are not bytes found bool true instead".to_string())));
     /// ```
     pub fn to_bytes(&self) -> Result<Vec<u8>, Error> {
         match self {
@@ -476,7 +476,7 @@ impl Value {
     /// assert_eq!(value.to_binary_data(), Ok(BinaryData::new(vec![104, 101, 108, 108, 111])));
     ///
     /// let value = Value::Bool(true);
-    /// assert_eq!(value.to_binary_data(), Err(Error::StructureError("ref value are not bytes found true instead".to_string())));
+    /// assert_eq!(value.to_binary_data(), Err(Error::StructureError("ref value are not bytes found bool true instead".to_string())));
     /// ```
     pub fn to_binary_data(&self) -> Result<BinaryData, Error> {
         match self {
