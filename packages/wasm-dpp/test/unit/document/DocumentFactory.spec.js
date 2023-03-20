@@ -1,11 +1,12 @@
 const bs58 = require('bs58');
+
 const DocumentCreateTransition = require('@dashevo/dpp/lib/document/stateTransition/DocumentsBatchTransition/documentTransition/DocumentCreateTransition');
 const getDocumentsFixture = require('@dashevo/dpp/lib/test/fixtures/getDocumentsFixture');
 const getDataContractFixture = require('@dashevo/dpp/lib/test/fixtures/getDataContractFixture');
 const ValidationResult = require('@dashevo/dpp/lib/validation/ValidationResult');
-
 const createDPPMock = require('@dashevo/dpp/lib/test/mocks/createDPPMock');
 const DocumentFactoryJS = require('@dashevo/dpp/lib/document/DocumentFactory');
+
 const createStateRepositoryMock = require('../../../lib/test/mocks/createStateRepositoryMock');
 const generateRandomIdentifierAsync = require('../../../lib/test/utils/generateRandomIdentifierAsync');
 
