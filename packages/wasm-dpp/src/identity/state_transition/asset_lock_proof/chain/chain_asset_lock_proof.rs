@@ -2,6 +2,7 @@ use serde::{Deserialize, Serialize};
 use std::convert::TryInto;
 use wasm_bindgen::prelude::*;
 
+use crate::utils::WithJsError;
 use crate::{
     buffer::Buffer,
     errors::{from_dpp_err, RustConversionError},
@@ -104,12 +105,10 @@ impl ChainAssetLockProofWasm {
 
     #[wasm_bindgen(js_name=toObject)]
     pub fn to_object(&self) -> Result<JsValue, JsValue> {
-        let asset_lock_json =
-            serde_json::to_value(self.0.clone()).map_err(|e| from_dpp_err(e.into()))?;
+        let asset_lock_value = self.0.to_cleaned_object().with_js_error()?;
 
-        let asset_lock_json_string =
-            serde_json::to_string(&asset_lock_json).map_err(|e| from_dpp_err(e.into()))?;
-        let js_object = js_sys::JSON::parse(&asset_lock_json_string)?;
+        let serializer = serde_wasm_bindgen::Serializer::json_compatible();
+        let js_object = with_js_error!(asset_lock_value.serialize(&serializer))?;
 
         let out_point = self.get_out_point();
 

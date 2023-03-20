@@ -259,7 +259,7 @@ impl StateTransitionConvert for IdentityCreateTransition {
 
         let mut public_keys: Vec<Value> = vec![];
         for key in self.public_keys.iter() {
-            public_keys.push(key.to_raw_object(skip_signature)?);
+            public_keys.push(key.to_raw_cleaned_object(skip_signature)?);
         }
 
         value.insert(

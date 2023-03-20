@@ -5,6 +5,7 @@ use std::convert::TryFrom;
 
 use crate::{
     errors::NonConsensusError, identifier::Identifier, util::hash::hash, util::vec::vec_to_array,
+    ProtocolError,
 };
 
 #[derive(Clone, PartialEq, Eq, Debug, Serialize, Deserialize)]
@@ -25,6 +26,13 @@ impl TryFrom<Value> for ChainAssetLockProof {
 }
 
 impl ChainAssetLockProof {
+    pub fn to_object(&self) -> Result<Value, ProtocolError> {
+        platform_value::to_value(self).map_err(ProtocolError::ValueError)
+    }
+    pub fn to_cleaned_object(&self) -> Result<Value, ProtocolError> {
+        self.to_object()
+    }
+
     pub fn new(core_chain_locked_height: u32, out_point: [u8; 36]) -> Self {
         Self {
             // TODO: change to const

@@ -134,7 +134,20 @@ impl IdentityPublicKeyWithWitness {
 
     /// Return raw data, with all binary fields represented as arrays
     pub fn to_raw_object(&self, skip_signature: bool) -> Result<Value, ProtocolError> {
-        let mut value = platform_value::to_value(self)?;
+        let mut value = self.to_object()?;
+
+        if skip_signature || self.signature.is_empty() {
+            value
+                .remove("signature")
+                .map_err(ProtocolError::ValueError)?;
+        }
+
+        Ok(value)
+    }
+
+    /// Return raw data, with all binary fields represented as arrays
+    pub fn to_raw_cleaned_object(&self, skip_signature: bool) -> Result<Value, ProtocolError> {
+        let mut value = self.to_cleaned_object()?;
 
         if skip_signature || self.signature.is_empty() {
             value

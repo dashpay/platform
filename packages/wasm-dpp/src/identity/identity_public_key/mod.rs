@@ -5,7 +5,7 @@ use std::convert::{TryFrom, TryInto};
 use wasm_bindgen::prelude::*;
 
 use crate::utils::{Inner, WithJsError};
-use crate::{buffer::Buffer, utils};
+use crate::{buffer::Buffer, utils, with_js_error};
 use dpp::identity::{IdentityPublicKey, KeyID};
 use dpp::platform_value::BinaryData;
 use dpp::{Convertible, ProtocolError};
@@ -137,15 +137,12 @@ impl IdentityPublicKeyWasm {
 
     #[wasm_bindgen(js_name=toObject)]
     pub fn to_object(&self) -> Result<JsValue, JsValue> {
-        let val = self
-            .0
-            .to_json_object()
-            .map_err(|e| from_dpp_err(e.into()))?;
+        let value = self.0.to_cleaned_object().with_js_error()?;
 
         let data_buffer = Buffer::from_bytes(self.0.data.as_slice());
 
-        let json = val.to_string();
-        let js_object = js_sys::JSON::parse(&json)?;
+        let serializer = serde_wasm_bindgen::Serializer::json_compatible();
+        let js_object = with_js_error!(value.serialize(&serializer))?;
 
         js_sys::Reflect::set(
             &js_object,

@@ -174,9 +174,9 @@ impl IdentityWasm {
 
     #[wasm_bindgen(js_name=toObject)]
     pub fn to_object(&self) -> Result<JsValue, JsValue> {
-        let json = self.0.to_json_object().with_js_error()?;
+        let value = self.0.to_cleaned_object().with_js_error()?;
         let serializer = serde_wasm_bindgen::Serializer::json_compatible();
-        let js_object = with_js_error!(json.serialize(&serializer))?;
+        let js_object = with_js_error!(value.serialize(&serializer))?;
 
         let id: IdentifierWrapper = self.0.id.into();
 

@@ -79,6 +79,13 @@ impl InstantAssetLockProof {
         }
     }
 
+    pub fn to_object(&self) -> Result<Value, ProtocolError> {
+        platform_value::to_value(self).map_err(ProtocolError::ValueError)
+    }
+    pub fn to_cleaned_object(&self) -> Result<Value, ProtocolError> {
+        self.to_object()
+    }
+
     pub fn asset_lock_type(&self) -> u8 {
         self.asset_lock_type
     }
