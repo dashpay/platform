@@ -6,6 +6,7 @@ use dpp::identity::TimestampMillis;
 use drive::query::TransactionArg;
 use std::sync::MutexGuard;
 use tenderdash_abci::proto::abci as proto;
+use tracing::debug;
 /// AbciApp is an implementation of ABCI Application, as defined by Tenderdash.
 ///
 /// AbciApp implements logic that should be triggered when Tenderdash performs various operations, like
@@ -63,6 +64,15 @@ impl<'a> AbciApplication<'a> {
 impl<'a> tenderdash_abci::Application for AbciApplication<'a> {
     fn info(&self, request: proto::RequestInfo) -> proto::ResponseInfo {
         tracing::info!("tenderdash info: {:?}", request);
+
+        if !check_version(&request.abci_version, tenderdash_abci::proto::ABCI_VERSION) {
+            panic!(
+                "SemVer mismatch: Tenderdash requires ABCI version {}, our version is {}",
+                request.version,
+                tenderdash_abci::proto::ABCI_VERSION
+            );
+        }
+
         proto::ResponseInfo {
             app_version: 1,
             version: env!("CARGO_PKG_VERSION").to_string(),
@@ -90,6 +100,82 @@ impl<'a> tenderdash_abci::Application for AbciApplication<'a> {
 
         proto::ResponseInitChain {
             ..Default::default()
+        }
+    }
+}
+/// Check if ABCI version required by Tenderdash matches our protobuf version.
+///
+/// Match is determined based on Semantic Versioning rules, as defined for '^' operator.
+fn check_version(tenderdash_abci_requirement: &str, our_abci_version: &str) -> bool {
+    let our_version =
+        semver::Version::parse(our_abci_version).expect("cannot parse version of protobuf library");
+
+    let requirement = String::from("^") + tenderdash_abci_requirement;
+    let td_version = semver::VersionReq::parse(requirement.as_str())
+        .expect("cannot parse version of tenderdash server");
+
+    debug!(
+        "ABCI version check: required: {}, our: {}",
+        requirement, our_version
+    );
+
+    td_version.matches(&our_version)
+}
+
+#[cfg(test)]
+mod tests {
+    use crate::abci::server::check_version;
+
+    #[test]
+    fn test_versions() {
+        #[derive(Debug)]
+        struct TestCase<'a> {
+            our_version: &'a str,
+            td_version: &'a str,
+            expect: bool,
+        }
+
+        let test_cases = vec![
+            TestCase {
+                td_version: "0.1.2-dev.1",
+                our_version: "0.1.0",
+                expect: false,
+            },
+            TestCase {
+                td_version: "0.1.0",
+                our_version: "0.1.0",
+                expect: true,
+            },
+            TestCase {
+                td_version: "0.1.0",
+                our_version: "0.1.2",
+                expect: true,
+            },
+            TestCase {
+                td_version: "0.1.0-dev.1",
+                our_version: "0.1.0-dev.1",
+                expect: true,
+            },
+            TestCase {
+                td_version: "0.1.0-dev.1",
+                our_version: "0.1.0-dev.2",
+                expect: true,
+            },
+            TestCase {
+                td_version: "0.1.0",
+                our_version: "0.1.0-dev.1",
+                expect: false,
+            },
+            TestCase {
+                td_version: "0.1.0-dev.1",
+                our_version: "0.1.0-dev.1",
+                expect: true,
+            },
+        ];
+
+        for tc in test_cases {
+            dbg!(&tc);
+            assert_eq!(check_version(tc.td_version, tc.our_version,), tc.expect);
         }
     }
 }

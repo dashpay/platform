@@ -42,22 +42,24 @@ prost = { version = "0.11.6", default-features = false }
 tracing = { version = "0.1.37", default-features = false }
 flex-error = { version = "0.4.4", default-features = false }
 structopt = { version = "0.3.26", optional = true, default-features = false }
+clap = { version = "4.1.8", optional = true, features = ["derive"] }
+envy = { version = "0.4.2" }
+dotenvy = { version = "0.15.6", optional = true }
 tracing-subscriber = { version = "0.3.16", default-features = false, features = [
     "env-filter",
-] }
-clap = { version = "4.1.8", features = ["derive"] }
-envy = { version = "0.4.2" }
-dotenvy = { version = "0.15.6" }
-#tenderdash-abci = {  git="https://github.com/dashpay/rs-tenderdash-abci" }
-tenderdash-abci = { path = "/home/lklimek/git/lklimek/tenderdash-abci-rs/abci" }
+], optional = true }
+semver = { version = "1.0.17", optional = true }
+#tenderdash-abci = {  git="https://github.com/dashpay/rs-tenderdash-abci" , optional = true }
+tenderdash-abci = { path = "/home/lklimek/git/lklimek/tenderdash-abci-rs/abci", optional = true }
 
 [dev-dependencies]
 itertools = { version = "0.10.5" }
 
 [features]
-default = ["fixtures-and-mocks"]
+default = ["fixtures-and-mocks", "server"]
 fixtures-and-mocks = ["mockall"]
-
+server = ["tenderdash-abci", "clap", "dotenvy", "tracing-subscriber", "semver"]
 [[bin]]
 name = "rs-drive-abci"
 path = "src/main.rs"
+required-features = ["server"]

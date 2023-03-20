@@ -1,8 +1,12 @@
+//! Main server process for RS-Drive-ABCI
+//!
+//! RS-Drive-ABCI server starts a single-threaded server and listens to connections from Tenderdash.
 use clap::{Parser, Subcommand};
 use drive_abci::config::{FromEnv, PlatformConfig};
 use std::{panic, path::PathBuf};
 use tracing_subscriber::prelude::*;
 
+/// Main command container for ABCI Server
 #[derive(Debug, Parser)]
 #[command( author, version, about, long_about = None)]
 struct Cli {
