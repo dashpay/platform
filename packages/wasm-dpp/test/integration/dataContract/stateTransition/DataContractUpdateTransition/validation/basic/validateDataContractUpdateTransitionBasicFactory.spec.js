@@ -1,7 +1,7 @@
 const protocolVersion = require('@dashevo/dpp/lib/version/protocolVersion');
 const createStateRepositoryMock = require('@dashevo/dpp/lib/test/mocks/createStateRepositoryMock');
 const getDataContractFixture = require('@dashevo/dpp/lib/test/fixtures/getDataContractFixture');
-const { expectJsonSchemaError, expectValidationError } = require('../../../../../../../lib/test/expect/expectError');
+const { expectJsonSchemaError, expectValidationError, expectPlatformValueError } = require('../../../../../../../lib/test/expect/expectError');
 
 const { default: loadWasmDpp } = require('../../../../../../../dist');
 
@@ -10,7 +10,7 @@ describe('validateDataContractUpdateTransitionBasicFactory', () => {
   let validateDataContractUpdateTransitionBasic;
   let ValidationResult;
   let StateTransitionExecutionContext;
-  let ProtocolVersionParsingError;
+  let PlatformValueError;
   let DataContractValidator;
   let DataContractFactory;
   let DataContractImmutablePropertiesUpdateError;
@@ -30,7 +30,7 @@ describe('validateDataContractUpdateTransitionBasicFactory', () => {
       validateDataContractUpdateTransitionBasic,
       ValidationResult,
       StateTransitionExecutionContext,
-      ProtocolVersionParsingError,
+      PlatformValueError,
       DataContractValidator,
       DataContractFactory,
       DataContractImmutablePropertiesUpdateError,
@@ -93,12 +93,11 @@ describe('validateDataContractUpdateTransitionBasicFactory', () => {
         executionContext,
       );
 
-      await expectJsonSchemaError(result);
+      await expectPlatformValueError(result);
 
       const [error] = result.getErrors();
 
-      expect(error.getInstancePath()).to.equal('/protocolVersion');
-      expect(error.getKeyword()).to.equal('type');
+      expect(error).to.be.an.instanceOf(PlatformValueError);
     });
 
     it('should be valid', async () => {
@@ -109,11 +108,11 @@ describe('validateDataContractUpdateTransitionBasicFactory', () => {
         executionContext,
       );
 
-      await expectValidationError(result);
+      await expectPlatformValueError(result);
 
       const [error] = result.getErrors();
 
-      expect(error).to.be.an.instanceOf(ProtocolVersionParsingError);
+      expect(error).to.be.an.instanceOf(PlatformValueError);
     });
   });
 
@@ -182,7 +181,7 @@ describe('validateDataContractUpdateTransitionBasicFactory', () => {
       const [error] = result.getErrors();
 
       expect(error).to.be.an.instanceOf(IncompatibleDataContractSchemaError);
-      expect(error.getOperation()).to.equal('remove');
+      expect(error.getOperation()).to.equal('remove json');
       expect(error.getFieldPath()).to.equal('/additionalProperties');
     });
 
@@ -213,7 +212,7 @@ describe('validateDataContractUpdateTransitionBasicFactory', () => {
       const [error] = result.getErrors();
 
       expect(error).to.be.an.instanceOf(IncompatibleDataContractSchemaError);
-      expect(error.getOperation()).to.equal('replace');
+      expect(error.getOperation()).to.equal('replace json');
       expect(error.getFieldPath()).to.equal('/properties/firstName/maxLength');
     });
 
