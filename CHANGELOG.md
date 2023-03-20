@@ -1,3 +1,75 @@
+## [0.24.0-dev.14](https://github.com/dashpay/platform/compare/v0.24.0-dev.13...v0.24.0-dev.14) (2023-03-20)
+
+
+### ⚠ BREAKING CHANGES
+
+* core version 19.0-beta integration (#771)
+
+### Features
+
+* better Core 19 support ([#832](https://github.com/dashpay/platform/issues/832))
+* core version 19.0-beta integration ([#771](https://github.com/dashpay/platform/issues/771))
+* **dashmate:** register HPMN for local network ([#796](https://github.com/dashpay/platform/issues/796))
+* **dasmate:** pack release script ([#781](https://github.com/dashpay/platform/issues/781))
+* **dpp:** identity facade ([#782](https://github.com/dashpay/platform/issues/782))
+* **dpp:** integration tests for wasm-dpp document transitions ([#777](https://github.com/dashpay/platform/issues/777))
+* **dpp:** wasm bindings for Documents related validations ([#709](https://github.com/dashpay/platform/issues/709))
+* **dpp:** wasm-dpp: integration tests for document ([#762](https://github.com/dashpay/platform/issues/762))
+* Identity v2 ([#705](https://github.com/dashpay/platform/issues/705))
+* platform value abstraction ([#805](https://github.com/dashpay/platform/issues/805))
+* proposer signaling of protocol version upgrade and fork activation ([#778](https://github.com/dashpay/platform/issues/778))
+* register system data contracts in RS Drive ([#776](https://github.com/dashpay/platform/issues/776))
+* **rs-dpp:**  dashpay datatrigger toUserIds better validation ([#799](https://github.com/dashpay/platform/issues/799))
+* **rs-dpp:** backport of index_definitions.unique validation ([#802](https://github.com/dashpay/platform/issues/802))
+* **rs-dpp:** backports of identity/stateTransition from js-dpp ([#800](https://github.com/dashpay/platform/issues/800))
+* **rs-dpp:** introduce `StateTransitionFactory` ([#810](https://github.com/dashpay/platform/issues/810))
+* **rs-dpp:** validate indices are backwards compatible backport ([#797](https://github.com/dashpay/platform/issues/797))
+* **rs-drive:** verification feature ([#803](https://github.com/dashpay/platform/issues/803))
+* **wasm dpp:** validate state transition key signature ([#806](https://github.com/dashpay/platform/issues/806))
+* **wasm-dpp:**  wasm bindings for Document Transitions  ([#707](https://github.com/dashpay/platform/issues/707))
+* **wasm-dpp:** async state repository ([#766](https://github.com/dashpay/platform/issues/766))
+* **wasm-dpp:** data contract facade ([#716](https://github.com/dashpay/platform/issues/716))
+* **wasm-dpp:** Fix metadata, metadata tests and backport v23 matedata changes into wasm-dpp ([#819](https://github.com/dashpay/platform/issues/819))
+* **wasm-dpp:** implement identity update transition ([#748](https://github.com/dashpay/platform/issues/748))
+* **wasm-dpp:** integration tests validate data contract update transition ([#812](https://github.com/dashpay/platform/issues/812))
+* **wasm-dpp:** protocol version validator tests ([#823](https://github.com/dashpay/platform/issues/823))
+* **wasm-dpp:** remove unused documents factory tests ([#828](https://github.com/dashpay/platform/issues/828))
+* **wasm-dpp:** state transition facade ([#814](https://github.com/dashpay/platform/issues/814))
+* withdrawals status sync ([#679](https://github.com/dashpay/platform/issues/679))
+
+
+### Bug Fixes
+
+* **ci:** fix release workflow syntax error ([#808](https://github.com/dashpay/platform/issues/808))
+* **dashmate:** make dashmate helper run commands as host user ([#765](https://github.com/dashpay/platform/issues/765))
+* **dashmate:** visual fixes for dashmate status ([#787](https://github.com/dashpay/platform/issues/787))
+* **dpp:** update jsonschema-rs and enable tests ([#780](https://github.com/dashpay/platform/issues/780))
+* **rs-dpp:** fetch latest core chain locked height misuse ([#789](https://github.com/dashpay/platform/issues/789))
+* update webpack to resolve npm audit error ([#822](https://github.com/dashpay/platform/issues/822))
+* **wasm-dpp:** Identifier and its tests ([#821](https://github.com/dashpay/platform/issues/821))
+
+
+### Code Refactoring
+
+* remove various Clippy warnings ([#793](https://github.com/dashpay/platform/issues/793))
+* **rs-dpp:** bring error type to one format ([#804](https://github.com/dashpay/platform/issues/804))
+
+
+### Build System
+
+* add missing deps ([#824](https://github.com/dashpay/platform/issues/824))
+
+
+### Documentation
+
+* supported Node.JS version and dashmate command description ([#825](https://github.com/dashpay/platform/issues/825))
+
+
+### Miscellaneous Chores
+
+* **drive:** temporary disable unstable withdrawal logic ([#831](https://github.com/dashpay/platform/issues/831))
+* **sdk:** add eslint ([#827](https://github.com/dashpay/platform/issues/827))
+
 ## [0.24.0-dev.13](https://github.com/dashpay/platform/compare/v0.24.0-dev.12...v0.24.0-dev.13) (2023-01-30)
 
 
