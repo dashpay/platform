@@ -7,13 +7,11 @@ use integer_encoding::VarInt;
 use platform_value::btreemap_extensions::BTreeValueMapHelper;
 use platform_value::btreemap_extensions::BTreeValueMapReplacementPathHelper;
 
-use platform_value::{BinaryData, ReplacementType, Value};
+use platform_value::{BinaryData, IntegerReplacementType, ReplacementType, Value};
 use serde::{Deserialize, Serialize};
 use serde_json::Value as JsonValue;
 
 use crate::data_contract::DataContract;
-use crate::document::document_transition::document_base_transition::IDENTIFIER_FIELDS;
-use crate::document::document_transition::document_create_transition::BINARY_FIELDS;
 use crate::document::document_transition::DocumentTransitionObjectLike;
 use crate::prelude::{DocumentTransition, Identifier};
 use crate::state_transition::state_transition_execution_context::StateTransitionExecutionContext;
@@ -43,12 +41,21 @@ pub mod property_names {
     pub const DATA_CONTRACT_ID: &str = "$dataContractId";
     pub const DOCUMENT_TYPE: &str = "$type";
     pub const TRANSITIONS: &str = "transitions";
+    pub const TRANSITIONS_ID: &str = "transitions[].$id";
+    pub const TRANSITIONS_DATA_CONTRACT_ID: &str = "transitions[].$dataContractId";
     pub const OWNER_ID: &str = "ownerId";
     pub const SIGNATURE_PUBLIC_KEY_ID: &str = "signaturePublicKeyId";
     pub const SIGNATURE: &str = "signature";
     pub const PROTOCOL_VERSION: &str = "protocolVersion";
     pub const SECURITY_LEVEL_REQUIREMENT: &str = "signatureSecurityLevelRequirement";
 }
+
+pub const IDENTIFIER_FIELDS: [&str; 3] = [
+    property_names::OWNER_ID,
+    property_names::TRANSITIONS_ID,
+    property_names::TRANSITIONS_DATA_CONTRACT_ID,
+];
+pub const U32_FIELDS: [&str; 1] = [property_names::PROTOCOL_VERSION];
 
 const DEFAULT_SECURITY_LEVEL: SecurityLevel = SecurityLevel::HIGH;
 const EMPTY_VEC: Vec<u8> = vec![];
@@ -217,17 +224,21 @@ impl DocumentsBatchTransition {
 
                 raw_transition_map
                     .replace_at_paths(
-                        identifiers
-                            .into_iter()
-                            .chain(IDENTIFIER_FIELDS.iter().map(|a| a.to_string())),
+                        identifiers.into_iter().chain(
+                            document_base_transition::IDENTIFIER_FIELDS
+                                .iter()
+                                .map(|a| a.to_string()),
+                        ),
                         ReplacementType::Identifier,
                     )
                     .map_err(ProtocolError::ValueError)?;
                 raw_transition_map
                     .replace_at_paths(
-                        binary_paths
-                            .into_iter()
-                            .chain(BINARY_FIELDS.iter().map(|a| a.to_string())),
+                        binary_paths.into_iter().chain(
+                            document_create_transition::BINARY_FIELDS
+                                .iter()
+                                .map(|a| a.to_string()),
+                        ),
                         ReplacementType::BinaryBytes,
                     )
                     .map_err(ProtocolError::ValueError)?;
@@ -244,6 +255,12 @@ impl DocumentsBatchTransition {
 
     pub fn get_transitions(&self) -> &Vec<DocumentTransition> {
         &self.transitions
+    }
+
+    pub fn clean_value(value: &mut Value) -> Result<(), platform_value::Error> {
+        value.replace_at_paths(IDENTIFIER_FIELDS, ReplacementType::Identifier)?;
+        value.replace_integer_type_at_paths(U32_FIELDS, IntegerReplacementType::U32)?;
+        Ok(())
     }
 }
 

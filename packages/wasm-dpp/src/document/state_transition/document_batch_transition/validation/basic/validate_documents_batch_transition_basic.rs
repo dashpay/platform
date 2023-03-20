@@ -1,4 +1,6 @@
 use dpp::document::validation::basic::validate_documents_batch_transition_basic;
+use dpp::document::DocumentsBatchTransition;
+use dpp::validation::SimpleValidationResult;
 use std::sync::Arc;
 use wasm_bindgen::prelude::*;
 
@@ -18,17 +20,24 @@ pub async fn validate_documents_batch_transition_basic_wasm(
     execution_context: StateTransitionExecutionContextWasm,
 ) -> Result<ValidationResultWasm, JsValue> {
     let wrapped_state_repository = ExternalStateRepositoryLikeWrapper::new(state_repository);
-    let raw_state_transition = js_raw_state_transition.with_serde_to_platform_value()?;
+    let mut value = js_raw_state_transition.with_serde_to_platform_value()?;
 
-    let validation_result =
+    let mut validation_result = SimpleValidationResult::default();
+    if let Some(err) = DocumentsBatchTransition::clean_value(&mut value).err() {
+        validation_result.add_error(err);
+        return Ok(validation_result.map(|_| JsValue::undefined()).into());
+    }
+
+    validation_result.merge(
         validate_documents_batch_transition_basic::validate_documents_batch_transition_basic(
             &protocol_version_validator.into(),
-            &raw_state_transition,
+            &value,
             Arc::new(wrapped_state_repository),
             &execution_context.into(),
         )
         .await
-        .with_js_error()?;
+        .with_js_error()?,
+    );
 
     Ok(validation_result.map(|_| JsValue::undefined()).into())
 }

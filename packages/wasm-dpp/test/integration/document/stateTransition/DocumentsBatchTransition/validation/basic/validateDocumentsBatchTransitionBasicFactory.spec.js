@@ -6,7 +6,7 @@ const getDataContractFixture = require('@dashevo/dpp/lib/test/fixtures/getDataCo
 const createStateRepositoryMock = require('@dashevo/dpp/lib/test/mocks/createStateRepositoryMock');
 
 const { default: loadWasmDpp } = require('../../../../../../../dist');
-const { expectJsonSchemaError, expectValidationError } = require('../../../../../../../lib/test/expect/expectError');
+const { expectJsonSchemaError, expectValidationError, expectPlatformValueError } = require('../../../../../../../lib/test/expect/expectError');
 
 let DataContract;
 let DocumentsBatchTransition;
@@ -25,6 +25,7 @@ let DuplicateDocumentTransitionsWithIndicesError;
 let DuplicateDocumentTransitionsWithIdsError;
 let ValidationResult;
 let ProtocolVersionValidator;
+let PlatformValueError;
 
 describe('validateDocumentsBatchTransitionBasicFactory', () => {
   let dataContract;
@@ -56,6 +57,7 @@ describe('validateDocumentsBatchTransitionBasicFactory', () => {
       InvalidDocumentTransitionIdError,
       DuplicateDocumentTransitionsWithIndicesError,
       DuplicateDocumentTransitionsWithIdsError,
+      PlatformValueError,
     } = await loadWasmDpp());
 
     const dataContractJs = getDataContractFixture();
@@ -117,12 +119,11 @@ describe('validateDocumentsBatchTransitionBasicFactory', () => {
         executionContext,
       );
 
-      await expectJsonSchemaError(result, 1);
+      await expectPlatformValueError(result, 1);
 
       const [error] = result.getErrors();
 
-      expect(error.getInstancePath()).to.equal('/protocolVersion');
-      expect(error.getKeyword()).to.equal('type');
+      expect(error).to.be.an.instanceOf(PlatformValueError);
     });
 
     it('should be valid - Rust', async () => {
@@ -210,12 +211,11 @@ describe('validateDocumentsBatchTransitionBasicFactory', () => {
         executionContext,
       );
 
-      await expectJsonSchemaError(result, 32);
+      await expectPlatformValueError(result, 1);
 
       const [error] = result.getErrors();
 
-      expect(error.getInstancePath()).to.equal('/ownerId/0');
-      expect(error.getKeyword()).to.equal('type');
+      expect(error).to.be.an.instanceOf(PlatformValueError);
     });
 
     it('should be no less than 32 bytes - Rust', async () => {
@@ -228,12 +228,11 @@ describe('validateDocumentsBatchTransitionBasicFactory', () => {
         executionContext,
       );
 
-      await expectJsonSchemaError(result, 1);
+      await expectPlatformValueError(result, 1);
 
       const [error] = result.getErrors();
 
-      expect(error.getInstancePath()).to.equal('/ownerId');
-      expect(error.getKeyword()).to.equal('minItems');
+      expect(error).to.be.an.instanceOf(PlatformValueError);
     });
 
     it('should be no longer than 32 bytes - Rust', async () => {
@@ -246,12 +245,11 @@ describe('validateDocumentsBatchTransitionBasicFactory', () => {
         executionContext,
       );
 
-      await expectJsonSchemaError(result, 1);
+      await expectPlatformValueError(result, 1);
 
       const [error] = result.getErrors();
 
-      expect(error.getInstancePath()).to.equal('/ownerId');
-      expect(error.getKeyword()).to.equal('maxItems');
+      expect(error).to.be.an.instanceOf(PlatformValueError);
     });
   });
 
@@ -265,13 +263,11 @@ describe('validateDocumentsBatchTransitionBasicFactory', () => {
         rawStateTransition,
         executionContext,
       );
-      await expectJsonSchemaError(result, 1);
+      await expectPlatformValueError(result, 1);
 
       const [error] = result.getErrors();
 
-      expect(error.getInstancePath()).to.equal('');
-      expect(error.getKeyword()).to.equal('required');
-      expect(error.getParams().missingProperty).to.equal('transitions');
+      expect(error).to.be.an.instanceOf(PlatformValueError);
     });
 
     it('should be an array - Rust', async () => {
@@ -284,12 +280,11 @@ describe('validateDocumentsBatchTransitionBasicFactory', () => {
         executionContext,
       );
 
-      await expectJsonSchemaError(result, 1);
+      await expectPlatformValueError(result, 1);
 
       const [error] = result.getErrors();
 
-      expect(error.getInstancePath()).to.equal('/transitions');
-      expect(error.getKeyword()).to.equal('type');
+      expect(error).to.be.an.instanceOf(PlatformValueError);
     });
 
     it('should have at least one element - Rust', async () => {
@@ -340,12 +335,11 @@ describe('validateDocumentsBatchTransitionBasicFactory', () => {
         executionContext,
       );
 
-      await expectJsonSchemaError(result, 1);
+      await expectPlatformValueError(result, 1);
 
       const [error] = result.getErrors();
 
-      expect(error.getInstancePath()).to.equal('/transitions/0');
-      expect(error.getKeyword()).to.equal('type');
+      expect(error).to.be.an.instanceOf(PlatformValueError);
     });
 
     describe('document transition', () => {
@@ -382,12 +376,11 @@ describe('validateDocumentsBatchTransitionBasicFactory', () => {
             executionContext,
           );
 
-          await expectJsonSchemaError(result, 32);
+          await expectPlatformValueError(result, 1);
 
           const [error] = result.getErrors();
 
-          expect(error.getInstancePath()).to.equal('/$id/0');
-          expect(error.getKeyword()).to.equal('type');
+          expect(error).to.be.an.instanceOf(PlatformValueError);
         });
 
         it('should be no less than 32 bytes - Rust', async () => {
@@ -402,13 +395,11 @@ describe('validateDocumentsBatchTransitionBasicFactory', () => {
             executionContext,
           );
 
-          await expectJsonSchemaError(result);
+          await expectPlatformValueError(result, 1);
 
           const [error] = result.getErrors();
 
-          expect(error.getInstancePath()).to.equal('/$id');
-          expect(error.getKeyword()).to.equal('minItems');
-          expect(error.getParams().minItems).to.equal(32);
+          expect(error).to.be.an.instanceOf(PlatformValueError);
         });
 
         it('should be no longer than 32 bytes - Rust', async () => {
@@ -422,13 +413,11 @@ describe('validateDocumentsBatchTransitionBasicFactory', () => {
             rawStateTransition,
             executionContext,
           );
-          await expectJsonSchemaError(result);
+          await expectPlatformValueError(result, 1);
 
           const [error] = result.getErrors();
 
-          expect(error.getInstancePath()).to.equal('/$id');
-          expect(error.getKeyword()).to.equal('maxItems');
-          expect(error.getParams().maxItems).to.equal(32);
+          expect(error).to.be.an.instanceOf(PlatformValueError);
         });
 
         it('should no have duplicate IDs in the state transition - Rust', async () => {
