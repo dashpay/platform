@@ -14,7 +14,7 @@ let {
   Identifier, DocumentFactory, DataContract, ExtendedDocument, DocumentValidator,
   ProtocolVersionValidator, InvalidDocumentTypeInDataContractError, InvalidDocumentError,
   JsonSchemaError, NoDocumentsSuppliedError, MismatchOwnerIdsError, InvalidInitialRevisionError,
-  InvalidActionNameError,
+  InvalidActionNameError, PlatformValueError,
 } = require('../../..');
 
 const { default: loadWasmDpp } = require('../../..');
@@ -54,6 +54,7 @@ describe('DocumentFactory', () => {
       MismatchOwnerIdsError,
       InvalidInitialRevisionError,
       InvalidActionNameError,
+      PlatformValueError,
     } = await loadWasmDpp());
   });
 
@@ -228,20 +229,14 @@ describe('DocumentFactory', () => {
     it('should throw InvalidDocumentError if Data Contract is not valid', async () => {
       const dc = DataContract.fromBuffer(dataContractJs.toBuffer());
       dc.setDocuments({ '$%34': { '^&*': 'Keck' } });
-      const oldDataContract = DataContract.fromBuffer(dataContractJs.toBuffer());
       stateRepositoryMock.fetchDataContract.resolves(dc);
 
       try {
         await factory.createFromObject(rawDocumentJs);
 
-        expect.fail('InvalidDocumentError should be thrown');
+        expect.fail('InvalidDocumentTypeInDataContractError should be thrown');
       } catch (e) {
-        expect(e).to.be.an.instanceOf(InvalidDocumentError);
-
-        expect(e.getErrors()).to.have.length(1);
-        expect(
-          (new Document(e.getRawDocument(), oldDataContract).toObject()),
-        ).to.deep.equal(rawDocumentJs);
+        expect(e).to.be.an.instanceOf(InvalidDocumentTypeInDataContractError);
 
         expect(stateRepositoryMock.fetchDataContract.callCount).to.be.equal(1);
         const callArguments = stateRepositoryMock.fetchDataContract.getCall(0).args[0];
@@ -293,9 +288,8 @@ describe('DocumentFactory', () => {
 
         expect.fail('should throw an error');
       } catch (e) {
-        // TODO - parsing errors are not handled yet, as they happen directly in the rust code when
-        //  trying to access a field
-        expect(e).to.startsWith('Error conversion not implemented:');
+        expect(e).to.be.instanceOf(PlatformValueError);
+        expect(e.getMessage()).to.equal('structure error: value is not a map');
       }
     });
   }); describe('createStateTransition', () => {

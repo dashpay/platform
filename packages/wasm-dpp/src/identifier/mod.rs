@@ -75,7 +75,9 @@ impl IdentifierWrapper {
 
         let vec = js_value.dyn_into::<js_sys::Uint8Array>()?.to_vec();
 
-        let identifier = Identifier::from_bytes(&vec).map_err(ProtocolError::ValueError).with_js_error()?;
+        let identifier = Identifier::from_bytes(&vec)
+            .map_err(ProtocolError::ValueError)
+            .with_js_error()?;
 
         Ok(IdentifierWrapper {
             wrapped: identifier,

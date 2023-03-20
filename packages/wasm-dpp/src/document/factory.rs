@@ -1,4 +1,3 @@
-use std::collections::HashMap;
 use anyhow::anyhow;
 use dpp::platform_value::ReplacementType;
 use dpp::{
@@ -10,14 +9,15 @@ use dpp::{
     },
     ProtocolError,
 };
+use std::collections::HashMap;
 
 use wasm_bindgen::prelude::*;
 
+use crate::document::errors::InvalidActionNameError;
 use dpp::platform_value::btreemap_extensions::BTreeValueMapReplacementPathHelper;
 use dpp::prelude::ExtendedDocument;
 use std::convert::TryFrom;
 use std::sync::Arc;
-use crate::document::errors::InvalidActionNameError;
 
 use crate::{
     identifier::identifier_from_js_value,
