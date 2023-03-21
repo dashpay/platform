@@ -1,8 +1,8 @@
 use std::sync::Arc;
 
-use dpp::block_time_window::validation_result;
+
 use dpp::data_contract::state_transition::data_contract_create_transition::DataContractCreateTransition;
-use dpp::platform_value::Value;
+
 use dpp::validation::SimpleValidationResult;
 use dpp::{
     data_contract::state_transition::data_contract_create_transition::validation::state::{
@@ -13,14 +13,12 @@ use dpp::{
     state_transition::state_transition_execution_context::StateTransitionExecutionContext,
     validation::DataValidatorWithContext,
     version::ProtocolVersionValidator,
-    ProtocolError,
 };
 use wasm_bindgen::prelude::*;
 
 use crate::utils::WithJsError;
 use crate::validation::ValidationResultWasm;
 use crate::{
-    errors::from_dpp_err,
     state_repository::{ExternalStateRepositoryLike, ExternalStateRepositoryLikeWrapper},
     DataContractCreateTransitionWasm,
 };

@@ -8,7 +8,7 @@ use crate::utils::{Inner, WithJsError};
 use crate::{buffer::Buffer, utils, with_js_error};
 use dpp::identity::{IdentityPublicKey, KeyID};
 use dpp::platform_value::BinaryData;
-use dpp::{Convertible, ProtocolError};
+use dpp::{Convertible};
 
 mod purpose;
 pub use purpose::*;

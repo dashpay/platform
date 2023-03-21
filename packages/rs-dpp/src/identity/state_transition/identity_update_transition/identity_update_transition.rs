@@ -1,4 +1,4 @@
-use platform_value::{BinaryData, IntegerReplacementType, ReplacementType, Value};
+use platform_value::{BinaryData, ReplacementType, Value};
 use serde::{Deserialize, Serialize};
 use serde_json::Value as JsonValue;
 use std::convert::{TryFrom, TryInto};

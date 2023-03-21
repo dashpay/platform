@@ -22,7 +22,7 @@ use crate::bls_adapter::{BlsAdapter, JsBlsAdapter};
 
 use crate::utils::{generic_of_js_val, ToSerdeJSONExt, WithJsError};
 use dpp::platform_value::string_encoding::Encoding;
-use dpp::platform_value::{string_encoding, ReplacementType};
+use dpp::platform_value::{string_encoding};
 use dpp::{
     identifier::Identifier,
     identity::state_transition::{
@@ -30,7 +30,6 @@ use dpp::{
         identity_public_key_transitions::IdentityPublicKeyWithWitness,
     },
     state_transition::StateTransitionLike,
-    ProtocolError,
 };
 
 #[wasm_bindgen(js_name=IdentityCreateTransition)]

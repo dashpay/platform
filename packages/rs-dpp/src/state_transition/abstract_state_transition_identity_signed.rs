@@ -231,7 +231,7 @@ mod test {
             vec!["signature", "signaturePublicKeyId"]
         }
 
-        fn to_cleaned_object(&self, skip_signature: bool) -> Result<Value, ProtocolError> {
+        fn to_cleaned_object(&self, _skip_signature: bool) -> Result<Value, ProtocolError> {
             todo!()
         }
     }

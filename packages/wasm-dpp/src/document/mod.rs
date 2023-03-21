@@ -1,7 +1,7 @@
 use dpp::dashcore::anyhow::Context;
 use dpp::prelude::{DataContract, Identifier};
 use dpp::util::json_schema::JsonSchemaExt;
-use dpp::util::json_value::JsonValueExt;
+
 
 use anyhow::anyhow;
 use serde::{Deserialize, Serialize};

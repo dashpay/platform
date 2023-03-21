@@ -17,7 +17,7 @@ use crate::utils::WithJsError;
 use crate::{
     data_contract::errors::InvalidDataContractError,
     errors::{from_dpp_err, protocol_error::from_protocol_error},
-    js_value_to_data_contract_value, js_value_to_identity_update_transition_object,
+    js_value_to_data_contract_value,
     validation::ValidationResultWasm,
     with_js_error, DataContractCreateTransitionWasm, DataContractParameters, DataContractWasm,
 };
