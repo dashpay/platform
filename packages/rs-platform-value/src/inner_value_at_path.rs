@@ -49,6 +49,64 @@ impl Value {
         map.remove_key(last_path_component)
     }
 
+    pub fn remove_values_matching_path(&mut self, path: &str) -> Result<Vec<Value>, Error> {
+        let mut split = path.split('.').peekable();
+        let mut current_values = vec![self];
+        let mut removed_values = vec![];
+        while let Some(path_component) = split.next() {
+            if let Some((string_part, number_part)) = is_array_path(path_component)? {
+                current_values = current_values
+                    .into_iter()
+                    .map(|current_value| {
+                        let map = current_value.to_map_mut()?;
+                        let array_value = map.get_key_mut(string_part)?;
+                        let array = array_value.to_array_mut()?;
+                        if let Some(number_part) = number_part {
+                            if array.len() < number_part {
+                                //this already exists
+                                Ok(vec![array.get_mut(number_part).unwrap()])
+                            } else {
+                                return Err(Error::StructureError(format!(
+                                    "element at position {number_part} in array does not exist"
+                                )));
+                            }
+                        } else {
+                            // we are replacing all members in array
+                            Ok(array.into_iter().collect())
+                        }
+                    })
+                    .collect::<Result<Vec<Vec<&mut Value>>, Error>>()?
+                    .into_iter()
+                    .flatten()
+                    .collect()
+            } else {
+                current_values = current_values
+                    .into_iter()
+                    .filter_map(|current_value| {
+                        let map = match current_value.as_map_mut_ref() {
+                            Ok(map) => map,
+                            Err(err) => return Some(Err(err)),
+                        };
+
+
+                        if split.peek().is_none() {
+                            if let Some(removed) = map.remove_optional_key(path_component) {
+                                removed_values.push(removed)
+                            }
+                            None
+                        } else {
+                            let Some(new_value) = map.get_optional_key_mut(path_component) else {
+                                return None;
+                            };
+                            Some(Ok(new_value))
+                        }
+                    })
+                    .collect::<Result<Vec<&mut Value>, Error>>()?;
+            }
+        }
+        Ok(removed_values)
+    }
+
     pub fn remove_value_at_path_into<T: TryFrom<Value, Error = error::Error>>(
         &mut self,
         path: &str,
@@ -67,6 +125,16 @@ impl Value {
         paths
             .into_iter()
             .map(|path| Ok((path, self.remove_value_at_path(path)?)))
+            .collect()
+    }
+
+    pub fn remove_values_matching_paths<'a>(
+        &'a mut self,
+        paths: Vec<&'a str>,
+    ) -> Result<BTreeMap<&'a str, Vec<Value>>, Error> {
+        paths
+            .into_iter()
+            .map(|path| Ok((path, self.remove_values_matching_path(path)?)))
             .collect()
     }
 
