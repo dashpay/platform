@@ -1,6 +1,6 @@
 {
   "name": "@dashevo/wasm-dpp",
-  "version": "0.24.0-dev.13",
+  "version": "0.24.0-dev.14",
   "description": "The JavaScript implementation of the Dash Platform Protocol",
   "main": "dist/index.js",
   "types": "dist/lib/index.d.ts",
@@ -30,13 +30,13 @@
   ],
   "license": "MIT",
   "dependencies": {
-    "@dashevo/bls": "~1.2.7",
+    "@dashevo/bls": "~1.2.9",
     "lodash": "^4.17.21",
     "varint": "^6.0.0"
   },
   "devDependencies": {
     "@apidevtools/json-schema-ref-parser": "^8.0.0",
-    "@dashevo/dashcore-lib": "github:dashevo/dashcore-lib#1179c8be52dcd4f5ded55ef5337790533917f904",
+    "@dashevo/dashcore-lib": "~0.20.0",
     "@dashevo/dpns-contract": "workspace:*",
     "@dashevo/dpp": "workspace:*",
     "@dashevo/wasm-re2": "~1.0.2",
