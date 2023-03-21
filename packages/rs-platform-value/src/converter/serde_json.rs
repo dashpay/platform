@@ -192,7 +192,7 @@ impl From<JsonValue> for Value {
                 let u8_max = u8::MAX as u64;
                 //todo: hacky solution, to fix
                 let len = array.len();
-                if (len == 20 || len == 32 || len == 36)
+                if len >= 20
                     && array.iter().all(|v| {
                         let Some(int) = v.as_u64() else {
                         return false;
@@ -238,7 +238,7 @@ impl From<&JsonValue> for Value {
                 let u8_max = u8::MAX as u64;
                 //todo: hacky solution, to fix
                 let len = array.len();
-                if (len == 20 || len == 32 || len == 36)
+                if len >= 20
                     && array.iter().all(|v| {
                         let Some(int) = v.as_u64() else {
                         return false;
