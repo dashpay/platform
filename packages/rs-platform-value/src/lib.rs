@@ -936,12 +936,12 @@ impl Value {
     /// assert_eq!(value.to_array_slice(), Ok(vec![Value::U64(17), Value::Float(18.)].as_slice()));
     ///
     /// let value = Value::Bool(true);
-    /// assert_eq!(value.to_array_slice(), Err(Error::StructureError("value is not an array".to_string())));
+    /// assert_eq!(value.to_array_slice(), Err(Error::StructureError("value is not an array got bool true".to_string())));
     /// ```
     pub fn to_array_slice(&self) -> Result<&[Value], Error> {
         match self {
             Value::Array(vec) => Ok(vec.as_slice()),
-            _other => Err(Error::StructureError("value is not an array".to_string())),
+            other => Err(Error::StructureError(format!("value is not an array got {}", other))),
         }
     }
 
