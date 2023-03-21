@@ -37,7 +37,7 @@ function registerMasternodeTaskFactory(
   registerMasternode,
   waitForBalanceToConfirm,
   renderServiceTemplates,
-  writeServiceConfigs
+  writeServiceConfigs,
 ) {
   /**
    * @typedef {registerMasternodeTask}
@@ -56,14 +56,14 @@ function registerMasternodeTaskFactory(
         },
         task: async (ctx) => {
           ctx.coreServicePassed = false;
-          ctx.masternodePrivateKey = config.get('core.masternode.operator.privateKey')
+          ctx.masternodePrivateKey = config.get('core.masternode.operator.privateKey');
 
-          config.set('core.masternode.enable', false)
-          config.set('core.masternode.operator.privateKey', null)
+          config.set('core.masternode.enable', false);
+          config.set('core.masternode.operator.privateKey', null);
           const configFiles = renderServiceTemplates(config);
           writeServiceConfigs(config.getName(), configFiles);
 
-          ctx.coreService = await startCore(config, {wallet: true, addressIndex: true});
+          ctx.coreService = await startCore(config, { wallet: true, addressIndex: true });
         },
       },
       {
@@ -183,7 +183,7 @@ function registerMasternodeTaskFactory(
           // eslint-disable-next-line no-param-reassign
           task.output = `Collateral transaction ID: ${ctx.collateralTxId}`;
         },
-        options: {persistentOutput: true},
+        options: { persistentOutput: true },
       },
       {
         title: 'Wait for 1 confirmation',
@@ -288,14 +288,14 @@ function registerMasternodeTaskFactory(
         title: 'Stop Core',
         enabled: (ctx) => !ctx.coreServicePassed,
         task: async (ctx) => {
-          ctx.coreService.stop()
+          ctx.coreService.stop();
 
-          config.set('core.masternode.enable', true)
-          config.set('core.masternode.operator.privateKey', ctx.masternodePrivateKey)
+          config.set('core.masternode.enable', true);
+          config.set('core.masternode.operator.privateKey', ctx.masternodePrivateKey);
           const configFiles = renderServiceTemplates(config);
           writeServiceConfigs(config.getName(), configFiles);
 
-          ctx.masternodePrivateKey = null
+          ctx.masternodePrivateKey = null;
         },
       },
     ]);
