@@ -428,26 +428,32 @@ impl Value {
         identifier_paths: HashSet<&str>,
         binary_paths: HashSet<&str>,
     ) -> Result<(), Error> {
-        let mut path = path.to_string();
-        path.push('.');
-        identifier_paths
-            .into_iter()
-            .try_for_each(|identifier_path| {
-                if let Some(suffix) = identifier_path.strip_prefix(path.as_str()) {
-                    self.replace_at_path(suffix, ReplacementType::Identifier)
+        if identifier_paths.contains(path) {
+            ReplacementType::Identifier.replace_value_in_place(self)?;
+        } else if binary_paths.contains(path) {
+            ReplacementType::BinaryBytes.replace_value_in_place(self)?;
+        } else {
+            let mut path = path.to_string();
+            path.push('.');
+            identifier_paths
+                .into_iter()
+                .try_for_each(|identifier_path| {
+                    if let Some(suffix) = identifier_path.strip_prefix(path.as_str()) {
+                        self.replace_at_path(suffix, ReplacementType::Identifier)
+                            .map(|_| ())
+                    } else {
+                        Ok(())
+                    }
+                })?;
+            binary_paths.into_iter().try_for_each(|binary_path| {
+                if let Some(suffix) = binary_path.strip_prefix(path.as_str()) {
+                    self.replace_at_path(suffix, ReplacementType::BinaryBytes)
                         .map(|_| ())
                 } else {
                     Ok(())
                 }
             })?;
-        binary_paths.into_iter().try_for_each(|binary_path| {
-            if let Some(suffix) = binary_path.strip_prefix(path.as_str()) {
-                self.replace_at_path(suffix, ReplacementType::BinaryBytes)
-                    .map(|_| ())
-            } else {
-                Ok(())
-            }
-        })?;
+        }
         Ok(())
     }
 
