@@ -37,6 +37,7 @@ pub use btreemap_extensions::btreemap_field_replacement::{
 };
 pub use types::binary_data::BinaryData;
 pub use types::bytes_32::Bytes32;
+pub use types::bytes_36::Bytes36;
 pub use types::identifier::{Identifier, IDENTIFIER_MEDIA_TYPE};
 
 pub use value_serialization::{from_value, to_value};
@@ -82,6 +83,9 @@ pub enum Value {
 
     /// Bytes 32
     Bytes32([u8; 32]),
+
+    /// Bytes 36 : Useful for outpoints
+    Bytes36([u8; 36]),
 
     /// An enumeration of u8
     EnumU8(Vec<u8>),
@@ -369,10 +373,14 @@ impl Value {
     /// let value = Value::Bytes32([1u8;32]);
     ///
     /// assert!(value.is_any_bytes_type());
+    ///
+    /// let value = Value::Bytes36([1u8;36]);
+    ///
+    /// assert!(value.is_any_bytes_type());
     /// ```
     pub fn is_any_bytes_type(&self) -> bool {
         match self {
-            Value::Bytes(_) | Value::Bytes32(_) | Value::Identifier(_) => true,
+            Value::Bytes(_) | Value::Bytes32(_) | Value::Bytes36(_) | Value::Identifier(_) => true,
             _ => false,
         }
     }
@@ -428,6 +436,7 @@ impl Value {
         match self {
             Value::Bytes(vec) => Ok(vec),
             Value::Bytes32(vec) => Ok(vec.to_vec()),
+            Value::Bytes36(vec) => Ok(vec.to_vec()),
             Value::Identifier(vec) => Ok(vec.to_vec()),
             Value::Array(array) => Ok(array
                 .into_iter()
@@ -453,6 +462,7 @@ impl Value {
         match self {
             Value::Bytes(vec) => Ok(vec.clone()),
             Value::Bytes32(vec) => Ok(vec.to_vec()),
+            Value::Bytes36(vec) => Ok(vec.to_vec()),
             Value::Identifier(vec) => Ok(vec.to_vec()),
             Value::Array(array) => Ok(array
                 .iter()
@@ -482,6 +492,7 @@ impl Value {
         match self {
             Value::Bytes(vec) => Ok(BinaryData::new(vec.clone())),
             Value::Bytes32(vec) => Ok(BinaryData::new(vec.to_vec())),
+            Value::Bytes36(vec) => Ok(BinaryData::new(vec.to_vec())),
             Value::Identifier(vec) => Ok(BinaryData::new(vec.to_vec())),
             Value::Array(array) => Ok(BinaryData::new(
                 array
@@ -512,6 +523,8 @@ impl Value {
         match self {
             Value::Bytes(vec) => Ok(vec),
             Value::Bytes32(vec) => Ok(vec.as_slice()),
+            Value::Bytes36(vec) => Ok(vec.as_slice()),
+            Value::Identifier(vec) => Ok(vec.as_slice()),
             _other => Err(Error::StructureError(
                 "ref value are not bytes slice".to_string(),
             )),

@@ -48,7 +48,12 @@ where
             .map(TryInto::try_into)
             .transpose()
             .map_err(Into::into)
-            .map_err(|e| NonConsensusError::StateRepositoryFetchError(e.to_string()))?;
+            .map_err(|e| {
+                NonConsensusError::StateRepositoryFetchError(format!(
+                    "state repository fetch identity for identity update validation error: {}",
+                    e.to_string()
+                ))
+            })?;
 
         if state_transition.get_execution_context().is_dry_run() {
             return Ok(validation_result);
@@ -105,7 +110,12 @@ where
                 .state_repository
                 .fetch_latest_platform_block_time()
                 .await
-                .map_err(|e| NonConsensusError::StateRepositoryFetchError(e.to_string()))?;
+                .map_err(|e| {
+                    NonConsensusError::StateRepositoryFetchError(format!(
+                        "state repository fetch latest platform block time error: {}",
+                        e.to_string()
+                    ))
+                })?;
 
             let disabled_at_ms = state_transition.get_public_keys_disabled_at().ok_or(
                 NonConsensusError::RequiredPropertyError {

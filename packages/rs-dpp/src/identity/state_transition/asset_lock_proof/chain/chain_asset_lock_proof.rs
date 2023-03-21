@@ -1,4 +1,4 @@
-use platform_value::Value;
+use platform_value::{Bytes36, Value};
 use serde::{Deserialize, Serialize};
 use serde_big_array::BigArray;
 use std::convert::TryFrom;
@@ -14,8 +14,7 @@ pub struct ChainAssetLockProof {
     #[serde(rename = "type")]
     asset_lock_type: u8,
     pub core_chain_locked_height: u32,
-    #[serde(with = "BigArray")]
-    pub out_point: [u8; 36],
+    pub out_point: Bytes36,
 }
 
 impl TryFrom<Value> for ChainAssetLockProof {
@@ -38,7 +37,7 @@ impl ChainAssetLockProof {
             // TODO: change to const
             asset_lock_type: 1,
             core_chain_locked_height,
-            out_point,
+            out_point: Bytes36::new(out_point),
         }
     }
 
@@ -49,7 +48,7 @@ impl ChainAssetLockProof {
 
     /// Create identifier
     pub fn create_identifier(&self) -> Result<Identifier, NonConsensusError> {
-        let array = vec_to_array(hash(self.out_point).as_ref())?;
+        let array = vec_to_array(hash(self.out_point.as_slice()).as_ref())?;
         Ok(Identifier::new(array))
     }
 }

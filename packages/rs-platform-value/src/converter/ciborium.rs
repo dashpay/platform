@@ -99,6 +99,7 @@ impl TryInto<CborValue> for Value {
             Value::I8(i) => CborValue::Integer(i.into()),
             Value::Bytes(bytes) => CborValue::Bytes(bytes),
             Value::Bytes32(bytes) => CborValue::Bytes(bytes.to_vec()),
+            Value::Bytes36(bytes) => CborValue::Bytes(bytes.to_vec()),
             Value::Float(float) => CborValue::Float(float),
             Value::Text(string) => CborValue::Text(string),
             Value::Bool(value) => CborValue::Bool(value),

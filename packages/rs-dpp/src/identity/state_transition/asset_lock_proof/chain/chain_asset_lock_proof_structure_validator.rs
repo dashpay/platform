@@ -88,7 +88,7 @@ where
 
         let proof: ChainAssetLockProof =
             platform_value::from_value(asset_lock_proof_object.clone())
-                .map_err(|e| NonConsensusError::StateRepositoryFetchError(e.to_string()))?;
+                .map_err(NonConsensusError::ValueError)?;
 
         let proof_core_chain_locked_height = proof.core_chain_locked_height;
 
@@ -96,7 +96,7 @@ where
             .state_repository
             .fetch_latest_platform_core_chain_locked_height()
             .await
-            .map_err(|e| NonConsensusError::StateRepositoryFetchError(e.to_string()))?
+            .map_err(|e| NonConsensusError::StateRepositoryFetchError(format!("state repository fetch current core chain locked height for chain asset lock proof verification error: {}",e.to_string())))?
             .unwrap_or(0);
 
         if current_core_chain_locked_height < proof_core_chain_locked_height {
@@ -119,12 +119,22 @@ where
             .state_repository
             .fetch_transaction(&transaction_hash_string, execution_context)
             .await
-            .map_err(|e| NonConsensusError::StateRepositoryFetchError(e.to_string()))?;
+            .map_err(|e| {
+                NonConsensusError::StateRepositoryFetchError(format!(
+                    "transaction fetching error for chain lock: {}",
+                    e.to_string()
+                ))
+            })?;
 
         let transaction_result = transaction_fetch_result
             .try_into()
             .map_err(Into::into)
-            .map_err(|e| NonConsensusError::StateRepositoryFetchError(e.to_string()))?;
+            .map_err(|e| {
+                NonConsensusError::StateRepositoryFetchError(format!(
+                    "transaction decoding error: {}",
+                    e.to_string()
+                ))
+            })?;
 
         if let Some(tx_height) = transaction_result.height {
             if proof_core_chain_locked_height < tx_height {

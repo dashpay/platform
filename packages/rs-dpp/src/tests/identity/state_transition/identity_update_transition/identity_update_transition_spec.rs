@@ -137,7 +137,7 @@ fn to_object() {
     let expected_raw_state_transition = platform_value!({
         "protocolVersion" : 1u32,
         "type" : 5u8,
-        "signature" : BinaryData::default(),
+        "signature" : BinaryData::new(vec![0u8;65]),
         "signaturePublicKeyId": 0u32,
         "identityId" : transition.identity_id,
         "revision": 0 as Revision,
@@ -200,7 +200,7 @@ fn to_json() {
     let expected_raw_state_transition = platform_value!({
         "protocolVersion" : 1u32,
         "type" : 5u8,
-        "signature" : BinaryData::default(),
+        "signature" : BinaryData::new(vec![0u8;65]),
         "signaturePublicKeyId": 0u32,
         "identityId" : transition.identity_id,
         "revision": 0 as Revision,

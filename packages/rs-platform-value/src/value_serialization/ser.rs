@@ -57,6 +57,13 @@ impl Serialize for Value {
                     serializer.serialize_bytes(bytes)
                 }
             }
+            Value::Bytes36(bytes) => {
+                if serializer.is_human_readable() {
+                    serializer.serialize_str(base64::encode(bytes).as_str())
+                } else {
+                    serializer.serialize_bytes(bytes)
+                }
+            }
             Value::Identifier(bytes) => {
                 if serializer.is_human_readable() {
                     serializer.serialize_str(bs58::encode(bytes).into_string().as_str())
@@ -187,6 +194,8 @@ impl serde::Serializer for Serializer {
     fn serialize_bytes(self, value: &[u8]) -> Result<Value, Error> {
         if value.len() == 32 {
             Ok(Value::Bytes32(value.try_into().unwrap()))
+        } else if value.len() == 36 {
+            Ok(Value::Bytes36(value.try_into().unwrap()))
         } else {
             Ok(Value::Bytes(value.to_vec()))
         }

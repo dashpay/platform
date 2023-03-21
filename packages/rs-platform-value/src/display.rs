@@ -46,6 +46,7 @@ impl Value {
             Value::U8(i) => format!("{}", i),
             Value::I8(i) => format!("{}", i),
             Value::Bytes32(bytes32) => format!("bytes32 {}", base64::encode(bytes32.as_slice())),
+            Value::Bytes36(bytes36) => format!("bytes36 {}", base64::encode(bytes36.as_slice())),
             Value::Identifier(identifier) => format!(
                 "identifier {}",
                 bs58::encode(identifier.as_slice()).into_string()
@@ -101,6 +102,7 @@ impl Value {
             Value::U8(i) => format!("(u8){}", i),
             Value::I8(i) => format!("(i8){}", i),
             Value::Bytes32(bytes32) => format!("bytes32 {}", base64::encode(bytes32.as_slice())),
+            Value::Bytes36(bytes36) => format!("bytes36 {}", base64::encode(bytes36.as_slice())),
             Value::Identifier(identifier) => format!(
                 "identifier {}",
                 bs58::encode(identifier.as_slice()).into_string()

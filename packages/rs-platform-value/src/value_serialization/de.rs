@@ -25,7 +25,8 @@ impl<'a> From<&'a Value> for de::Unexpected<'a> {
             Value::I16(x) => Self::Signed(*x as i64),
             Value::U8(x) => Self::Unsigned(*x as u64),
             Value::I8(x) => Self::Signed(*x as i64),
-            Value::Bytes32(_) => Self::Seq,
+            Value::Bytes32(x) => Self::Bytes(x),
+            Value::Bytes36(x) => Self::Bytes(x),
             Value::EnumU8(_x) => todo!(),
             Value::EnumString(_x) => todo!(),
             Value::Identifier(x) => Self::Bytes(x),
@@ -196,6 +197,13 @@ impl<'de> de::Deserializer<'de> for Deserializer {
                     visitor.visit_bytes(&x)
                 }
             }
+            Value::Bytes36(x) => {
+                if human_readable {
+                    visitor.visit_str(base64::encode(x).as_str())
+                } else {
+                    visitor.visit_bytes(&x)
+                }
+            }
             Value::EnumU8(_x) => todo!(),
             Value::EnumString(_x) => todo!(),
             Value::Identifier(x) => {
@@ -312,6 +320,7 @@ impl<'de> de::Deserializer<'de> for Deserializer {
         match value {
             Value::Bytes(x) => visitor.visit_bytes(&x),
             Value::Bytes32(x) => visitor.visit_bytes(x.as_slice()),
+            Value::Bytes36(x) => visitor.visit_bytes(x.as_slice()),
             Value::Identifier(x) => visitor.visit_bytes(x.as_slice()),
             _ => Err(de::Error::invalid_type((&value).into(), &"bytes")),
         }

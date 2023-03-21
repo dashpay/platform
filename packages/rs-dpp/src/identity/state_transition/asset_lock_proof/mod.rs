@@ -132,7 +132,7 @@ impl AssetLockProof {
     pub fn out_point(&self) -> Option<[u8; 36]> {
         match self {
             AssetLockProof::Instant(proof) => proof.out_point(),
-            AssetLockProof::Chain(proof) => Some(proof.out_point),
+            AssetLockProof::Chain(proof) => Some(proof.out_point.to_buffer()),
         }
     }
 

@@ -14,7 +14,13 @@ use dpp::{
 use wasm_bindgen::prelude::*;
 
 use crate::utils::WithJsError;
-use crate::{data_contract::errors::InvalidDataContractError, errors::{from_dpp_err, protocol_error::from_protocol_error}, js_value_to_identity_update_transition_object, validation::ValidationResultWasm, with_js_error, DataContractCreateTransitionWasm, DataContractParameters, DataContractWasm, js_value_to_data_contract_value};
+use crate::{
+    data_contract::errors::InvalidDataContractError,
+    errors::{from_dpp_err, protocol_error::from_protocol_error},
+    js_value_to_data_contract_value, js_value_to_identity_update_transition_object,
+    validation::ValidationResultWasm,
+    with_js_error, DataContractCreateTransitionWasm, DataContractParameters, DataContractWasm,
+};
 
 #[wasm_bindgen(js_name=DataContractValidator)]
 pub struct DataContractValidatorWasm(DataContractValidator);

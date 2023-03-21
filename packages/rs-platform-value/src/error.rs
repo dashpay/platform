@@ -28,6 +28,9 @@ pub enum Error {
     #[error("byte length not 32 bytes error: {0}")]
     ByteLengthNot32BytesError(String),
 
+    #[error("byte length not 36 bytes error: {0}")]
+    ByteLengthNot36BytesError(String),
+
     #[error("serde serialization error: {0}")]
     SerdeSerializationError(String),
 

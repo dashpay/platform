@@ -10,8 +10,8 @@ use crate::{
     with_js_error,
 };
 use dpp::identity::state_transition::asset_lock_proof::chain::ChainAssetLockProof;
-use dpp::platform_value::string_encoding;
 use dpp::platform_value::string_encoding::Encoding;
+use dpp::platform_value::{string_encoding, Bytes36};
 
 #[wasm_bindgen(js_name=ChainAssetLockProof)]
 #[derive(Clone)]
@@ -82,7 +82,7 @@ impl ChainAssetLockProofWasm {
             RustConversionError::Error(String::from("outPoint must be a 36 byte array"))
                 .to_js_value()
         })?;
-        self.0.out_point = out_point;
+        self.0.out_point = Bytes36::new(out_point);
 
         Ok(())
     }

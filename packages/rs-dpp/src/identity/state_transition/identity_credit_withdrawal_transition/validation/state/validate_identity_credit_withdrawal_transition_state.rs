@@ -43,7 +43,12 @@ where
             .map(TryInto::try_into)
             .transpose()
             .map_err(Into::into)
-            .map_err(|e| NonConsensusError::StateRepositoryFetchError(e.to_string()))?;
+            .map_err(|e| {
+                NonConsensusError::StateRepositoryFetchError(format!(
+                    "state repository fetch identity for credit withdrawal verification error: {}",
+                    e.to_string()
+                ))
+            })?;
 
         let Some(existing_identity) = maybe_existing_identity else {
             let err = IdentityNotFoundError::new(state_transition.identity_id);

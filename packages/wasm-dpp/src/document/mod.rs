@@ -172,6 +172,9 @@ impl DocumentWasm {
                 Value::Bytes32(bytes) => {
                     return Ok(Buffer::from_bytes(bytes.as_slice()).into());
                 }
+                Value::Bytes36(bytes) => {
+                    return Ok(Buffer::from_bytes(bytes.as_slice()).into());
+                }
                 Value::Identifier(identifier) => {
                     let id: IdentifierWrapper = Identifier::new(*identifier).into();
                     return Ok(id.into());

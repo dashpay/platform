@@ -60,7 +60,12 @@ pub async fn validate_identity_create_transition_state(
     let balance = state_repository
         .fetch_identity_balance(identity_id, state_transition.get_execution_context())
         .await
-        .map_err(|e| NonConsensusError::StateRepositoryFetchError(e.to_string()))?;
+        .map_err(|e| {
+            NonConsensusError::StateRepositoryFetchError(format!(
+                "state repository fetch identity balance error: {}",
+                e.to_string()
+            ))
+        })?;
 
     if state_transition.get_execution_context().is_dry_run() {
         return Ok(result);

@@ -191,6 +191,9 @@ impl ExtendedDocumentWasm {
                 Value::Bytes32(bytes) => {
                     return Buffer::from_bytes(bytes.as_slice()).into();
                 }
+                Value::Bytes36(bytes) => {
+                    return Buffer::from_bytes(bytes.as_slice()).into();
+                }
                 Value::Identifier(bytes) => {
                     let id: IdentifierWrapper = Identifier::new(*bytes).into();
 

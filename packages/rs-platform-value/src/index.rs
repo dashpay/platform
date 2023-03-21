@@ -163,6 +163,7 @@ impl<'a> Display for Type<'a> {
             Value::I8(_) => formatter.write_str("i8"),
             Value::Bytes(_) => formatter.write_str("bytes"),
             Value::Bytes32(_) => formatter.write_str("bytes32"),
+            Value::Bytes36(_) => formatter.write_str("bytes36"),
             Value::Identifier(_) => formatter.write_str("identifier"),
             Value::EnumU8(_) => formatter.write_str("enum u8"),
             Value::EnumString(_) => formatter.write_str("enum string"),

@@ -113,8 +113,9 @@ describe('StateTransitionFacade', () => {
 
   describe('createFromObject', () => {
     it('should create State Transition from plain object', async () => {
+      const object = dataContractCreateTransition.toObject();
       const result = await dpp.stateTransition.createFromObject(
-        dataContractCreateTransition.toObject(),
+        object,
       );
 
       expect(result).to.be.an.instanceOf(DataContractCreateTransition);

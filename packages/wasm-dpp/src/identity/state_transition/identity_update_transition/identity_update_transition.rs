@@ -19,8 +19,8 @@ use crate::bls_adapter::{BlsAdapter, JsBlsAdapter};
 use crate::utils::{generic_of_js_val, WithJsError};
 use dpp::identity::state_transition::identity_public_key_transitions::IdentityPublicKeyWithWitness;
 use dpp::identity::{KeyID, TimestampMillis};
-use dpp::platform_value::{string_encoding, Value};
 use dpp::platform_value::string_encoding::Encoding;
+use dpp::platform_value::{string_encoding, Value};
 use dpp::prelude::Revision;
 use dpp::state_transition::StateTransitionIdentitySigned;
 use dpp::{
@@ -69,12 +69,16 @@ pub fn js_value_to_identity_update_transition_object(object: JsValue) -> Result<
 impl IdentityUpdateTransitionWasm {
     #[wasm_bindgen(constructor)]
     pub fn new(raw_parameters: JsValue) -> Result<IdentityUpdateTransitionWasm, JsValue> {
-        let mut identity_update_transition_object = js_value_to_identity_update_transition_object(raw_parameters)?;
+        let mut identity_update_transition_object =
+            js_value_to_identity_update_transition_object(raw_parameters)?;
 
-        IdentityUpdateTransition::clean_value(&mut identity_update_transition_object).map_err(ProtocolError::ValueError).with_js_error()?;
+        IdentityUpdateTransition::clean_value(&mut identity_update_transition_object)
+            .map_err(ProtocolError::ValueError)
+            .with_js_error()?;
 
-        let identity_update_transition = IdentityUpdateTransition::new(identity_update_transition_object)
-            .map_err(|e| RustConversionError::Error(e.to_string()).to_js_value())?;
+        let identity_update_transition =
+            IdentityUpdateTransition::new(identity_update_transition_object)
+                .map_err(|e| RustConversionError::Error(e.to_string()).to_js_value())?;
 
         Ok(identity_update_transition.into())
     }

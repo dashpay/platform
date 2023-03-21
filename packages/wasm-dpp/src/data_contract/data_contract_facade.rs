@@ -1,8 +1,8 @@
 use crate::errors::protocol_error::from_protocol_error;
 
 use crate::{
-    js_value_to_data_contract_value, DataContractCreateTransitionWasm, DataContractUpdateTransitionWasm,
-    DataContractWasm,
+    js_value_to_data_contract_value, DataContractCreateTransitionWasm,
+    DataContractUpdateTransitionWasm, DataContractWasm,
 };
 use dpp::data_contract::DataContractFacade;
 use dpp::identifier::Identifier;

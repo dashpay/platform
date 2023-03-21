@@ -1,4 +1,4 @@
-use crate::{BinaryData, Bytes32, Error, Identifier, Value};
+use crate::{BinaryData, Bytes32, Bytes36, Error, Identifier, Value};
 
 impl Value {
     /// If the `Value` is a `Bytes`, a `Text` using base 58 or Vector of `U8`, returns the
@@ -362,8 +362,8 @@ impl Value {
             })?),
             Value::Array(array) => Bytes32::from_vec(
                 array
-                    .iter()
-                    .map(|byte| byte.to_integer())
+                    .into_iter()
+                    .map(|byte| byte.into_integer())
                     .collect::<Result<Vec<u8>, Error>>()?,
             ),
             Value::Bytes32(bytes) => Ok(Bytes32::new(bytes)),
@@ -420,6 +420,102 @@ impl Value {
             Value::Bytes32(bytes) => Ok(Bytes32::new(*bytes)),
             Value::Bytes(vec) => Bytes32::from_vec(vec.clone()),
             Value::Identifier(identifier) => Ok(Bytes32::new(*identifier)),
+            _other => Err(Error::StructureError(
+                "value are not bytes, a string, or an array of values representing bytes"
+                    .to_string(),
+            )),
+        }
+    }
+
+    /// If the `Value` is a `Bytes`, a `Text` using base 64 or Vector of `U8`, returns the
+    /// associated `Bytes36` data as `Ok`.
+    /// Returns `Err(Error::Structure("reason"))` otherwise.
+    ///
+    /// ```
+    /// # use platform_value::{Bytes36, Error, Value};
+    ///
+    /// #
+    /// let value = Value::Bytes(vec![104, 101, 108, 108, 111, 32, 12, 50, 104, 101, 108, 108, 111, 32, 12, 50, 104, 101, 108, 108, 111, 32, 12, 50, 104, 101, 108, 108, 111, 32, 12, 50, 50, 51, 52, 53]);
+    /// assert_eq!(value.into_bytes_36(), Ok(Bytes36([104, 101, 108, 108, 111, 32, 12, 50, 104, 101, 108, 108, 111, 32, 12, 50, 104, 101, 108, 108, 111, 32, 12, 50, 104, 101, 108, 108, 111, 32, 12, 50, 50, 51, 52, 53])));    ///
+    ///
+    /// let value = Value::Text("sNr9aH0VUnzvKDADkuJUlZ4Yj7Yd7gbNnnOR4ANNat2g498D".to_string());
+    /// assert_eq!(value.into_bytes_36(), Ok(Bytes36([86, 35, 118, 67, 167, 43, 101, 109, 72, 97, 35, 99, 0, 254, 108, 154, 254, 154, 190, 40, 237, 25, 58, 246, 111, 19, 44, 215, 141, 140, 156, 117, 00, 00, 00, 00])));
+    ///
+    /// let value = Value::Text("a811".to_string());
+    /// assert_eq!(value.into_bytes_36(), Err(Error::ByteLengthNot36BytesError("buffer was not 36 bytes long".to_string())));
+    ///
+    /// let value = Value::Text("a811Ii".to_string());
+    /// assert_eq!(value.into_bytes_36(), Err(Error::StructureError("value was a string, but could not be decoded from base 64".to_string())));
+    ///
+    /// let value = Value::Array(vec![Value::U8(104), Value::U8(101), Value::U8(108),Value::U8(104), Value::U8(101), Value::U8(108),Value::U8(104), Value::U8(101), Value::U8(108),Value::U8(104), Value::U8(101), Value::U8(108),Value::U8(104), Value::U8(101), Value::U8(108),Value::U8(104), Value::U8(101), Value::U8(108),Value::U8(104), Value::U8(101), Value::U8(108),Value::U8(104), Value::U8(101), Value::U8(108),Value::U8(104), Value::U8(101), Value::U8(108),Value::U8(104), Value::U8(101), Value::U8(108),Value::U8(104), Value::U8(101), Value::U8(101), Value::U8(101), Value::U8(101), Value::U8(101)]);
+    /// assert_eq!(value.into_bytes_36(), Ok(Bytes36([104, 101, 108, 104, 101, 108, 104, 101, 108, 104, 101, 108, 104, 101, 108, 104, 101, 108, 104, 101, 108, 104, 101, 108, 104, 101, 108, 104, 101, 108, 104, 101, 101, 101, 101, 101])));
+    ///
+    /// let value = Value::Bool(true);
+    /// assert_eq!(value.into_bytes_36(), Err(Error::StructureError("value are not bytes, a string, or an array of values representing bytes".to_string())));
+    /// ```
+    pub fn into_bytes_36(self) -> Result<Bytes36, Error> {
+        match self {
+            Value::Text(text) => Bytes36::from_vec(base64::decode(text).map_err(|_| {
+                Error::StructureError(
+                    "value was a string, but could not be decoded from base 64".to_string(),
+                )
+            })?),
+            Value::Array(array) => Bytes36::from_vec(
+                array
+                    .into_iter()
+                    .map(|byte| byte.into_integer())
+                    .collect::<Result<Vec<u8>, Error>>()?,
+            ),
+            Value::Bytes36(bytes) => Ok(Bytes36::new(bytes)),
+            Value::Bytes(vec) => Bytes36::from_vec(vec),
+            _other => Err(Error::StructureError(
+                "value are not bytes, a string, or an array of values representing bytes"
+                    .to_string(),
+            )),
+        }
+    }
+
+    /// If the `Value` is a `Bytes`, a `Text` using base 64 or Vector of `U8`, returns the
+    /// associated `Bytes36` data as `Ok`.
+    /// Returns `Err(Error::Structure("reason"))` otherwise.
+    ///
+    /// ```
+    /// # use platform_value::{Bytes36, Error, Value};
+    ///
+    /// #
+    /// let value = Value::Bytes(vec![104, 101, 108, 108, 111, 32, 12, 50, 104, 101, 108, 108, 111, 32, 12, 50, 104, 101, 108, 108, 111, 32, 12, 50, 104, 101, 108, 108, 111, 32, 12, 50, 50, 51, 52, 53]);
+    /// assert_eq!(value.to_bytes_36(), Ok(Bytes36([104, 101, 108, 108, 111, 32, 12, 50, 104, 101, 108, 108, 111, 32, 12, 50, 104, 101, 108, 108, 111, 32, 12, 50, 104, 101, 108, 108, 111, 32, 12, 50, 50, 51, 52, 53])));    ///
+    ///
+    /// let value = Value::Text("sNr9aH0VUnzvKDADkuJUlZ4Yj7Yd7gbNnnOR4ANNat2g498D".to_string());
+    /// assert_eq!(value.to_bytes_36(), Ok(Bytes36([86, 35, 118, 67, 167, 43, 101, 109, 72, 97, 35, 99, 0, 254, 108, 154, 254, 154, 190, 40, 237, 25, 58, 246, 111, 19, 44, 215, 141, 140, 156, 117, 00, 00, 00, 00])));
+    ///
+    /// let value = Value::Text("a811".to_string());
+    /// assert_eq!(value.to_bytes_36(), Err(Error::ByteLengthNot36BytesError("buffer was not 36 bytes long".to_string())));
+    ///
+    /// let value = Value::Text("a811Ii".to_string());
+    /// assert_eq!(value.to_bytes_36(), Err(Error::StructureError("value was a string, but could not be decoded from base 64".to_string())));
+    ///
+    /// let value = Value::Array(vec![Value::U8(104), Value::U8(101), Value::U8(108),Value::U8(104), Value::U8(101), Value::U8(108),Value::U8(104), Value::U8(101), Value::U8(108),Value::U8(104), Value::U8(101), Value::U8(108),Value::U8(104), Value::U8(101), Value::U8(108),Value::U8(104), Value::U8(101), Value::U8(108),Value::U8(104), Value::U8(101), Value::U8(108),Value::U8(104), Value::U8(101), Value::U8(108),Value::U8(104), Value::U8(101), Value::U8(108),Value::U8(104), Value::U8(101), Value::U8(108),Value::U8(104), Value::U8(101), Value::U8(101), Value::U8(101), Value::U8(101), Value::U8(101)]);
+    /// assert_eq!(value.to_bytes_36(), Ok(Bytes36([104, 101, 108, 104, 101, 108, 104, 101, 108, 104, 101, 108, 104, 101, 108, 104, 101, 108, 104, 101, 108, 104, 101, 108, 104, 101, 108, 104, 101, 108, 104, 101, 101, 101, 101, 101])));
+    ///
+    /// let value = Value::Bool(true);
+    /// assert_eq!(value.to_bytes_36(), Err(Error::StructureError("value are not bytes, a string, or an array of values representing bytes".to_string())));
+    /// ```
+    pub fn to_bytes_36(&self) -> Result<Bytes36, Error> {
+        match self {
+            Value::Text(text) => Bytes36::from_vec(base64::decode(text).map_err(|_| {
+                Error::StructureError(
+                    "value was a string, but could not be decoded from base 64".to_string(),
+                )
+            })?),
+            Value::Array(array) => Bytes36::from_vec(
+                array
+                    .iter()
+                    .map(|byte| byte.to_integer())
+                    .collect::<Result<Vec<u8>, Error>>()?,
+            ),
+            Value::Bytes36(bytes) => Ok(Bytes36::new(*bytes)),
+            Value::Bytes(vec) => Bytes36::from_vec(vec.clone()),
             _other => Err(Error::StructureError(
                 "value are not bytes, a string, or an array of values representing bytes"
                     .to_string(),

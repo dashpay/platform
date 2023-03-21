@@ -69,6 +69,17 @@ impl ReplacementType {
         }
     }
 
+    pub fn replace_for_bytes_36(&self, bytes: [u8; 36]) -> Result<Value, Error> {
+        match self {
+            ReplacementType::BinaryBytes => Ok(Value::Bytes36(bytes)),
+            ReplacementType::TextBase58 => Ok(Value::Text(bs58::encode(bytes).into_string())),
+            ReplacementType::TextBase64 => Ok(Value::Text(base64::encode(bytes))),
+            _ => Err(Error::ByteLengthNot36BytesError(
+                "trying to replace 36 bytes into an identifier".to_string(),
+            )),
+        }
+    }
+
     pub fn replace_consume_value(&self, value: Value) -> Result<Value, Error> {
         let bytes = value.into_identifier_bytes()?;
         self.replace_for_bytes(bytes)
@@ -112,6 +123,9 @@ fn replace_down(
                         match new_value {
                             Value::Bytes32(bytes) => {
                                 *new_value = replacement_type.replace_for_bytes_32(*bytes)?;
+                            }
+                            Value::Bytes36(bytes) => {
+                                *new_value = replacement_type.replace_for_bytes_36(*bytes)?;
                             }
                             _ => {
                                 let bytes = match replacement_type {
@@ -166,6 +180,9 @@ impl BTreeValueMapReplacementPathHelper for BTreeMap<String, Value> {
             match current_value {
                 Value::Bytes32(bytes) => {
                     *current_value = replacement_type.replace_for_bytes_32(*bytes)?;
+                }
+                Value::Bytes36(bytes) => {
+                    *current_value = replacement_type.replace_for_bytes_36(*bytes)?;
                 }
                 _ => {
                     let bytes = match replacement_type {

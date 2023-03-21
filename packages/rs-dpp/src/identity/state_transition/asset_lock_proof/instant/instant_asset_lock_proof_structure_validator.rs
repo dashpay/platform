@@ -83,7 +83,12 @@ where
             .state_repository
             .verify_instant_lock(&instant_lock, execution_context)
             .await
-            .map_err(|err| NonConsensusError::StateRepositoryFetchError(err.to_string()))?;
+            .map_err(|e| {
+                NonConsensusError::StateRepositoryFetchError(format!(
+                    "state repository verify instant send lock error: {}",
+                    e.to_string()
+                ))
+            })?;
 
         if !is_signature_verified {
             result.add_error(InvalidInstantAssetLockProofSignatureError::new());
