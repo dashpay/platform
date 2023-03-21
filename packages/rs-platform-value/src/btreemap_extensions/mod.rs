@@ -276,7 +276,7 @@ where
         key: &str,
     ) -> Result<Option<I>, Error> {
         self.get(key)
-            .map(|v| {
+            .and_then(|v| {
                 let value = v.borrow();
                 if value.is_null() {
                     None
@@ -295,7 +295,7 @@ where
                         }))
                 }
 
-            }).flatten()
+            })
             .transpose()
     }
 
@@ -307,7 +307,7 @@ where
 
     fn get_optional_map(&self, key: &str) -> Result<Option<&ValueMap>, Error> {
         self.get(key)
-            .map(|v| {
+            .and_then(|v| {
                 let value = v.borrow();
                 if value.is_null() {
                     None
@@ -319,7 +319,6 @@ where
                     )
                 }
             })
-            .flatten()
             .transpose()
     }
 
@@ -328,7 +327,7 @@ where
         key: &str,
     ) -> Result<Option<I>, Error> {
         self.get(key)
-            .map(|v| {
+            .and_then(|v| {
                 let value = v.borrow();
                 if value.is_null() {
                     None
@@ -341,7 +340,6 @@ where
                     }))
                 }
             })
-            .flatten()
             .transpose()
     }
 
@@ -361,7 +359,7 @@ where
         key: &str,
     ) -> Result<Option<I>, Error> {
         self.get(key)
-            .map(|v| {
+            .and_then(|v| {
                 let value = v.borrow();
                 if value.is_null() {
                     None
@@ -374,7 +372,6 @@ where
                     }))
                 }
             })
-            .flatten()
             .transpose()
     }
 

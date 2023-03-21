@@ -67,7 +67,7 @@ impl<'de> Deserialize<'de> for IdentifierBytes32 {
 
             deserializer.deserialize_string(StringVisitor)
         } else {
-            let value = Value::deserialize(deserializer).map_err(|err| err.into())?;
+            let value = Value::deserialize(deserializer)?;
 
             Ok(IdentifierBytes32(
                 value

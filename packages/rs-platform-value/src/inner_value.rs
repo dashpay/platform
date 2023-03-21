@@ -91,7 +91,8 @@ impl Value {
 
     pub fn remove_optional_value_if_null(&mut self, key: &str) -> Result<(), Error> {
         let map = self.as_map_mut_ref()?;
-        Ok(map.remove_optional_key_if_null(key))
+        map.remove_optional_key_if_null(key);
+        Ok(())
     }
 
     pub fn remove_integer<T>(&mut self, key: &str) -> Result<T, Error>

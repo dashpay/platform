@@ -109,7 +109,7 @@ impl Value {
                             }
                         } else {
                             // we are replacing all members in array
-                            Some(Ok(array.into_iter().collect()))
+                            Some(Ok(array.iter_mut().collect()))
                         }
                     })
                     .collect::<Result<Vec<Vec<&mut Value>>, Error>>()?
