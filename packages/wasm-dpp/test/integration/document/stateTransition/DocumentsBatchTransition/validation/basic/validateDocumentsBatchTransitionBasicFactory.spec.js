@@ -128,16 +128,19 @@ describe('validateDocumentsBatchTransitionBasicFactory', () => {
 
     it('should be valid - Rust', async () => {
       rawStateTransition.protocolVersion = -1;
-      try {
-        await validateDocumentsBatchTransitionBasic(
-          protocolVersionValidator,
-          stateRepositoryMock,
-          rawStateTransition,
-          executionContext,
-        );
-      } catch (e) {
-        expect(e).equal('Error conversion not implemented: unable convert -1 to u64');
-      }
+      const result = await validateDocumentsBatchTransitionBasic(
+        protocolVersionValidator,
+        stateRepositoryMock,
+        rawStateTransition,
+        executionContext,
+      );
+
+      await expectPlatformValueError(result, 1);
+
+      const [error] = result.getErrors();
+
+      expect(error).to.be.an.instanceOf(PlatformValueError);
+      expect(error.getMessage()).equal('integer out of bounds');
     });
   });
 
@@ -488,18 +491,15 @@ describe('validateDocumentsBatchTransitionBasicFactory', () => {
             executionContext,
           );
 
-          await expectValidationError(result, InvalidIdentifierError);
+          await expectPlatformValueError(result);
 
           const [error] = result.getErrors();
 
-          expect(error.getCode()).to.equal(1006);
+          expect(error.getMessage()).to.equal('byte length not 32 bytes error: Trying to replace into an identifier, but not 32 bytes long');
 
-          expect(error.getIdentifierName()).to.equal('$dataContractId');
-          expect(error.getIdentifierError()).to.equal('Identifier Error: Identifier must be 32 bytes long');
-
-          expect(stateRepositoryMock.fetchDataContract).to.have.been.calledOnce();
-          const [fetchDataContractId] = stateRepositoryMock.fetchDataContract.getCall(0).args;
-          expect(fetchDataContractId.toBuffer()).is.deep.equal(dataContract.getId().toBuffer());
+          // we won't call fetch data contract, because the state transition structure validation
+          // happens first
+          expect(stateRepositoryMock.fetchDataContract).to.have.not.been.called();
         });
 
         it('should exists in the state - Rust', async () => {

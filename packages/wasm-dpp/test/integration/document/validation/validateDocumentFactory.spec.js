@@ -72,7 +72,7 @@ describe('validateDocumentFactory', () => {
           documentValidator.validate(rawDocument, dataContract);
         } catch (e) {
           // TODO - fix error when conversion errors are enabled
-          expect(e).to.equal('Error conversion not implemented: unable convert -1 to u64');
+          expect(e.getMessage()).to.equal('integer out of bounds');
         }
       });
     });
