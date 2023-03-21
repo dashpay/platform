@@ -345,12 +345,12 @@ impl Value {
     ///
     /// let identifier_paths = HashSet::from(["foods.oranges.tangerines"]);
     ///
-    /// value.replace_to_binary_types_when_setting_with_path("foods.oranges", identifier_paths, HashSet::new()).expect("expected to replace at paths with identifier");
+    /// value.replace_to_binary_types_of_root_value_when_setting_at_path("foods.oranges", identifier_paths, HashSet::new()).expect("expected to replace at paths with identifier");
     ///
     /// assert_eq!(value.get_value_at_path("foods.oranges.tangerines"), Ok(&Value::Identifier([104, 101, 108, 104, 101, 108, 104, 101, 108, 104, 101, 108, 104, 101, 108, 104, 101, 108, 104, 101, 108, 104, 101, 108, 104, 101, 108, 104, 101, 108, 104, 101])));
     ///
     /// ```
-    pub fn replace_to_binary_types_when_setting_with_path(
+    pub fn replace_to_binary_types_of_root_value_when_setting_at_path(
         &mut self,
         path: &str,
         identifier_paths: HashSet<&str>,
@@ -381,6 +381,73 @@ impl Value {
                 }
             })?;
         }
+        Ok(())
+    }
+
+    /// `replace_to_binary_types_when_setting_with_path` will replace a value with a corresponding
+    /// binary type (Identifier or Binary Data) if that data is in one of the given paths.
+    /// Paths can either be terminal, or can represent an object or an array (with values) where
+    /// all subvalues must be set to the bianry type.
+    /// Either returns `Err(Error::Structure("reason"))` or `Err(Error::ByteLengthNot32BytesError))`
+    /// if the replacement can not happen.
+    ///
+    /// ```
+    /// # use std::collections::HashSet;
+    /// use platform_value::{Error, Identifier, ReplacementType, Value};
+    /// #
+    /// let mut inner_inner_value = Value::Map(
+    ///     vec![
+    ///         (Value::Text(String::from("mandarins")), Value::Text("6oFRdsUNiAtXscRn52atKYCiF8RBnH9vbUzhtzY3d83e".to_string())),
+    ///         (Value::Text(String::from("tangerines")), Value::Array(vec![Value::U8(104), Value::U8(101), Value::U8(108),Value::U8(104), Value::U8(101), Value::U8(108),Value::U8(104), Value::U8(101), Value::U8(108),Value::U8(104), Value::U8(101), Value::U8(108),Value::U8(104), Value::U8(101), Value::U8(108),Value::U8(104), Value::U8(101), Value::U8(108),Value::U8(104), Value::U8(101), Value::U8(108),Value::U8(104), Value::U8(101), Value::U8(108),Value::U8(104), Value::U8(101), Value::U8(108),Value::U8(104), Value::U8(101), Value::U8(108),Value::U8(104), Value::U8(101)])),
+    ///     ]
+    /// );
+    /// let mut inner_value = Value::Map(
+    ///     vec![
+    ///         (Value::Text(String::from("grapes")), Value::Text("6oFRdsUNiAtXscRn52atKYCiF8RBnH9vbUzhtzY3d83e".to_string())),
+    ///         (Value::Text(String::from("oranges")), inner_inner_value),
+    ///     ]
+    /// );
+    /// let mut value = Value::Map(
+    ///     vec![
+    ///         (Value::Text(String::from("foods")), inner_value),
+    ///     ]
+    /// );
+    ///
+    ///
+    /// let identifier_paths = HashSet::from(["foods.oranges.tangerines"]);
+    ///
+    /// let oranges = value.get_mut_value_at_path("foods.oranges").unwrap();
+    /// oranges.replace_to_binary_types_when_setting_with_path("foods.oranges", identifier_paths, HashSet::new()).expect("expected to replace at paths with identifier");
+    ///
+    /// assert_eq!(value.get_value_at_path("foods.oranges.tangerines"), Ok(&Value::Identifier([104, 101, 108, 104, 101, 108, 104, 101, 108, 104, 101, 108, 104, 101, 108, 104, 101, 108, 104, 101, 108, 104, 101, 108, 104, 101, 108, 104, 101, 108, 104, 101])));
+    ///
+    /// ```
+    pub fn replace_to_binary_types_when_setting_with_path(
+        &mut self,
+        path: &str,
+        identifier_paths: HashSet<&str>,
+        binary_paths: HashSet<&str>,
+    ) -> Result<(), Error> {
+        let mut path = path.to_string();
+        path.push('.');
+        identifier_paths
+            .into_iter()
+            .try_for_each(|identifier_path| {
+                if let Some(suffix) = identifier_path.strip_prefix(path.as_str()) {
+                    self.replace_at_path(suffix, ReplacementType::Identifier)
+                        .map(|_| ())
+                } else {
+                    Ok(())
+                }
+            })?;
+        binary_paths.into_iter().try_for_each(|binary_path| {
+            if let Some(suffix) = binary_path.strip_prefix(path.as_str()) {
+                self.replace_at_path(suffix, ReplacementType::BinaryBytes)
+                    .map(|_| ())
+            } else {
+                Ok(())
+            }
+        })?;
         Ok(())
     }
 
