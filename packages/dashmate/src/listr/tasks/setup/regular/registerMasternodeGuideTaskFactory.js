@@ -63,14 +63,14 @@ function registerMasternodeGuideTaskFactory(
     const { PrivateKey: BlsPrivateKey, BasicSchemeMPL } = blsSignatures;
 
     const REGISTRARS = {
-      CORE: 'dashDesktop',
+      CORE: 'dashCore',
       ANDROID: 'dashAndroid',
       IOS: 'dashIOS',
       OTHER: 'other',
     };
 
     const registrarList = [
-      { name: REGISTRARS.CORE, message: 'Desktop Dash Wallet' },
+      { name: REGISTRARS.CORE, message: 'Dash Core Wallet' },
       { name: REGISTRARS.ANDROID, message: 'Android Dash Wallet' },
       { name: REGISTRARS.IOS, message: 'iOS Dash Wallet' },
       { name: REGISTRARS.OTHER, message: 'Other' },
@@ -164,11 +164,10 @@ function registerMasternodeGuideTaskFactory(
               type: 'select',
               header: 'For security reasons, Dash masternodes should never store masternode owner'
                 + ' or collateral private keys. Dashmate therefore cannot register a masternode for'
-                + ' you directly. Instead, we will generate RPC commands that you can use in '
-                + ' Desktop Dash Wallet (Dash Core)'
-                + ' or other external tools where the keys are handled securely. During this'
+                + ' you directly. Instead, we will generate RPC commands that you can use in'
+                + ' Dash Core or other external tools where keys are handled securely. During this'
                 + ' process, dashmate can optionally generate configuration elements as necessary,'
-                + ' such the BLS operator key and the node id, since this is the'
+                + ' such as the BLS operator key and the node id, since this is the'
                 + ' only information necessary for dashmate to configure the masternode.\n',
               message: 'Which wallet will you use to store keys for your masternode?',
               choices: registrarList,
@@ -210,8 +209,10 @@ function registerMasternodeGuideTaskFactory(
             {
               type: 'form',
               name: 'collateral',
-              header: 'Help user with collateral \n',
-              message: 'Enter collateral information:',
+              header: 'Dashmate needs to collect details about your collateral funding'
+                + ' transaction. The funding value must be exactly 1000 DASH (masternode)'
+                + ' or 4000 DASH (high-performance masternode).\n',
+              message: 'Enter collateral funding transaction information:',
               choices: [
                 {
                   name: 'txId',
@@ -230,8 +231,10 @@ function registerMasternodeGuideTaskFactory(
             {
               type: 'form',
               name: 'keys',
-              header: 'Help user with these keys \n',
-              message: 'Enter masternode addresses:',
+              header: 'Dashmate needs to collect details about the owner, voting and payout'
+                + ' addresses to use in the masternode registration transaction. These are'
+                + ' regular Dash addresses, encoded in HEX format.\n',
+              message: 'Enter DIP3 masternode addresses:',
               choices: [
                 {
                   name: 'ownerAddress',
@@ -254,7 +257,7 @@ function registerMasternodeGuideTaskFactory(
               ],
               validate: ({ ownerAddress, votingAddress, payoutAddress }) => {
                 if (ownerAddress === payoutAddress || votingAddress === payoutAddress) {
-                  return 'you should use different payout address';
+                  return 'The payout address may not be the same as the owner or voting address';
                 }
 
                 return validateAddressHexWithNetwork(ownerAddress)
@@ -265,18 +268,23 @@ function registerMasternodeGuideTaskFactory(
             {
               type: 'form',
               name: 'operator',
-              header: 'Explain options with operator key and explain operator rewards\n',
-              message: 'Please provide the following information:',
+              header: 'Dashmate needs to collect details on the operator key and operator'
+                + ' reward share to use in the registration transaction. The operator key is'
+                + ' a BLS private key, encoded in HEX format. Dashmate will record the private'
+                + ' key in the masternode configuration, and derive the public key for use in'
+                + ' the masternode registration transaction. You may optionally also specify a'
+                + ' percentage share of the masternode reward to pay to the operator.\n',
+              message: 'Enter masternode operator private key and reward share:',
               choices: [
                 {
                   name: 'privateKey',
-                  message: chalk`BLS private key HEX encoded`,
+                  message: chalk`BLS private key {gray HEX encoded}`,
                   initial: initialOperatorPrivateKey,
                   validate: validateBLSPrivateKey,
                 },
                 {
                   name: 'rewardShare',
-                  message: chalk`Reward shares %`,
+                  message: chalk`Reward share %`,
                   initial: '0.00',
                   validate: validateRewardShare,
                   format: formatRewardShares,
@@ -292,9 +300,12 @@ function registerMasternodeGuideTaskFactory(
             prompts.push({
               type: 'input',
               name: 'platformNodeKey',
-              header: 'Platform node ED25519 key. What\'s that. Must be base64 tendermint' +
-                ' format\n',
-              message: 'Enter Node key',
+              header: 'Dashmate needs to collect details on your Tenderdash node key. This key'
+                + ' is used to uniquely identify your high-performance masternode on Dash'
+                + ' Platform. The node key is derived from a standard Ed25519 cryptographic'
+                + ' key pair, presented in a cached format specific to Tenderdash. You can'
+                + ' provide a key, or a new key will be generated for you.\n',
+              message: 'Enter Ed25519 node key',
               hint: 'Base64 encoded',
               initial: generateTenderdashNodeKey(),
               validate: validateTenderdashNodeKey,
