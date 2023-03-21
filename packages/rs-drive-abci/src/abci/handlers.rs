@@ -138,7 +138,7 @@ impl TenderdashAbci for Platform {
         // If last synced Core block height is not set instead of scanning
         // number of blocks for asset unlock transactions scan only one
         // on Core chain locked height by setting last_synced_core_height to the same value
-        let last_synced_core_height = if request.last_synced_core_height == 0 {
+        let _last_synced_core_height = if request.last_synced_core_height == 0 {
             block_execution_context.block_info.core_chain_locked_height
         } else {
             request.last_synced_core_height
@@ -147,10 +147,12 @@ impl TenderdashAbci for Platform {
         self.block_execution_context
             .replace(Some(block_execution_context));
 
-        self.update_broadcasted_withdrawal_transaction_statuses(
-            last_synced_core_height,
-            transaction,
-        )?;
+        // TODO: This code is not stable and blocking WASM-DPP integration and v0.24 testing
+        //   Must be enabled and accomplished when we come back to withdrawals
+        // self.update_broadcasted_withdrawal_transaction_statuses(
+        //     last_synced_core_height,
+        //     transaction,
+        // )?;
 
         let unsigned_withdrawal_transaction_bytes = self
             .fetch_and_prepare_unsigned_withdrawal_transactions(

@@ -218,7 +218,7 @@ fn validate_index_definitions(
         }
 
         // Make sure that compound unique indices contain all fields
-        if index_definition.properties.len() > 1 {
+        if index_definition.unique && index_definition.properties.len() > 1 {
             let required_fields = document_schema
                 .get_schema_required_fields()
                 .unwrap_or_default();

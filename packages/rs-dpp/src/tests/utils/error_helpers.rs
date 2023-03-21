@@ -5,8 +5,9 @@ use crate::{
         signature::SignatureError,
         ConsensusError,
     },
+    data_trigger::DataTriggerExecutionResult,
     validation::ValidationResult,
-    StateError,
+    DataTriggerError, StateError,
 };
 
 pub fn get_schema_error(result: &ValidationResult<()>, number: usize) -> &JsonSchemaError {
@@ -98,6 +99,23 @@ pub fn get_fee_error_from_result<K: Clone>(
         ConsensusError::FeeError(signature_error) => signature_error,
         _ => panic!(
             "error '{:?}' isn't a Fee error",
+            result.errors[error_number]
+        ),
+    }
+}
+
+pub fn get_data_trigger_error_from_execution_result(
+    result: &DataTriggerExecutionResult,
+    error_number: usize,
+) -> &DataTriggerError {
+    match result
+        .errors
+        .get(error_number)
+        .expect("basic error should be found")
+    {
+        StateError::DataTriggerError(error) => error,
+        _ => panic!(
+            "error '{:?}' isn't a Data Trigger error",
             result.errors[error_number]
         ),
     }
