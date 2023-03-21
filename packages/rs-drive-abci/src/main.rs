@@ -17,7 +17,16 @@ struct Cli {
     config: Option<std::path::PathBuf>,
     /// Enable verbose logging. Use multiple times for even more logs.
     ///
-    /// This overrides any settings defined in RUST_LOG.
+    /// Repeat `v` multiple times to increase log verbosity:
+    ///
+    /// - none - `warn` unless overriden by RUST_LOG variable
+    /// - `-v` - `info` from Drive, `error` from libraries
+    /// - `-vv` - `debug` from Drive, `info` from libraries
+    /// - `-vvv` - `debug` from all components
+    /// - `-vvvv` - `trace` from Drive, `debug` from libraries
+    /// - `-vvvvv` - `trace` from all components
+    ///
+    /// Note: This overrides any settings defined in RUST_LOG.
     /// For more about RUST_LOG, see:
     /// https://rust-lang-nursery.github.io/rust-cookbook/development_tools/debugging/config_log.html
     ///
@@ -55,7 +64,7 @@ pub fn main() {
     install_panic_hook();
 
     match cli.command {
-        Commands::Start {} => drive_abci::abci::server::start(&config).unwrap(),
+        Commands::Start {} => drive_abci::abci::start(&config).unwrap(),
         Commands::Config {} => dump_config(&config),
     }
 }
@@ -96,7 +105,9 @@ fn set_verbosity(cli: &Cli) {
         1 => EnvFilter::new("error,tenderdash_abci=info,drive_abci=info"),
         2 => EnvFilter::new("info,tenderdash_abci=debug,drive_abci=debug"),
         3 => EnvFilter::new("debug,tenderdash_abci=debug,drive_abci=debug"),
-        _ => panic!("max verbosity level is 3"),
+        4 => EnvFilter::new("debug,tenderdash_abci=trace,drive_abci=trace"),
+        5 => EnvFilter::new("trace"),
+        _ => panic!("max verbosity level is 5"),
     };
 
     let layer = fmt::layer().with_ansi(atty::is(atty::Stream::Stdout));

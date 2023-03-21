@@ -22,6 +22,16 @@ pub struct AbciConfig {
     ///
     #[serde(flatten)]
     pub keys: ContractKeys,
+
+    /// Height of genesis block; defaults to 1
+    #[serde(default = "AbciConfig::default_genesis_height")]
+    pub genesis_height: i64,
+}
+
+impl AbciConfig {
+    fn default_genesis_height() -> i64 {
+        1
+    }
 }
 
 impl FromEnv for AbciConfig {}

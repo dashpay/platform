@@ -1,11 +1,11 @@
 //! This module implements ABCI application server.
 //!
 use super::config::AbciConfig;
-use crate::{config::PlatformConfig, error::Error, platform::Platform};
+use crate::{abci::proposal::Proposal, config::PlatformConfig, error::Error, platform::Platform};
 use dpp::identity::TimestampMillis;
 use drive::query::TransactionArg;
 use std::sync::MutexGuard;
-use tenderdash_abci::proto::abci as proto;
+use tenderdash_abci::proto::{abci as proto, serializers::timestamp::ToMilis};
 use tracing::debug;
 /// AbciApp is an implementation of ABCI Application, as defined by Tenderdash.
 ///
@@ -87,16 +87,15 @@ impl<'a> tenderdash_abci::Application for AbciApplication<'a> {
     fn init_chain(&self, request: proto::RequestInitChain) -> proto::ResponseInitChain {
         let platform = self.platform();
         let transaction = self.transaction();
-        let genesis_time = request.time.expect("init chain REQUIRES genesis time");
-        let genesis_time = chrono::NaiveDateTime::from_timestamp_opt(
-            genesis_time.seconds,
-            genesis_time.nanos as u32,
-        )
-        .unwrap();
+
+        let genesis_time = request
+            .time
+            .expect("init chain REQUIRES genesis time")
+            .to_milis();
 
         platform
             .create_genesis_state(
-                genesis_time.timestamp_millis() as TimestampMillis,
+                genesis_time as TimestampMillis,
                 self.config.keys.clone().into(),
                 transaction,
             )
@@ -105,6 +104,17 @@ impl<'a> tenderdash_abci::Application for AbciApplication<'a> {
         proto::ResponseInitChain {
             ..Default::default()
         }
+    }
+
+    fn prepare_proposal(
+        &self,
+        request: proto::RequestPrepareProposal,
+    ) -> proto::ResponsePrepareProposal {
+        let platform = self.platform();
+        let transaction = self.transaction();
+        platform
+            .prepare_proposal(request, transaction)
+            .expect("failed to prepare proposal")
     }
 }
 /// Check if ABCI version required by Tenderdash matches our protobuf version.
