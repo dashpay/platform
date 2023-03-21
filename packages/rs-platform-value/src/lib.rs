@@ -917,8 +917,10 @@ impl Value {
     /// assert_eq!(value, Value::Array(vec![]));
     /// ```
     pub fn to_array_mut(&mut self) -> Result<&mut Vec<Value>, Error> {
-        self.as_array_mut()
-            .ok_or(Error::StructureError("value is not an array".to_string()))
+        match self {
+            Value::Array(vec) => Ok(vec),
+            other => Err(Error::StructureError(format!("value is not a mut array got {}", other))),
+        }
     }
 
     /// If the `Value` is a `Array`, returns a the associated `&[Value]` slice as `Ok`.
@@ -960,12 +962,12 @@ impl Value {
     /// assert_eq!(value.to_array_ref(), Ok(&vec![Value::U64(17), Value::Float(18.)]));
     ///
     /// let value = Value::Bool(true);
-    /// assert_eq!(value.to_array_ref(), Err(Error::StructureError("value is not an array".to_string())));
+    /// assert_eq!(value.to_array_ref(), Err(Error::StructureError("value is not an array got bool true".to_string())));
     /// ```
     pub fn to_array_ref(&self) -> Result<&Vec<Value>, Error> {
         match self {
             Value::Array(vec) => Ok(vec),
-            _other => Err(Error::StructureError("value is not an array".to_string())),
+            other => Err(Error::StructureError(format!("value is not an array got {}", other))),
         }
     }
 
@@ -984,12 +986,12 @@ impl Value {
     /// assert_eq!(value.to_array_owned(), Ok(vec![Value::U64(17), Value::Float(18.)]));
     ///
     /// let value = Value::Bool(true);
-    /// assert_eq!(value.to_array_owned(), Err(Error::StructureError("value is not an array".to_string())));
+    /// assert_eq!(value.to_array_owned(), Err(Error::StructureError("value is not an owned array got bool true".to_string())));
     /// ```
     pub fn to_array_owned(&self) -> Result<Vec<Value>, Error> {
         match self {
             Value::Array(vec) => Ok(vec.clone()),
-            _other => Err(Error::StructureError("value is not an array".to_string())),
+            other => Err(Error::StructureError(format!("value is not an owned array got {}", other))),
         }
     }
 
@@ -1008,12 +1010,12 @@ impl Value {
     /// assert_eq!(value.into_array(), Ok(vec![Value::U64(17), Value::Float(18.)]));
     ///
     /// let value = Value::Bool(true);
-    /// assert_eq!(value.into_array(), Err(Error::StructureError("value is not an array".to_string())));
+    /// assert_eq!(value.into_array(), Err(Error::StructureError("value is not an array (into) got bool true".to_string())));
     /// ```
     pub fn into_array(self) -> Result<Vec<Value>, Error> {
         match self {
             Value::Array(vec) => Ok(vec),
-            _other => Err(Error::StructureError("value is not an array".to_string())),
+            other => Err(Error::StructureError(format!("value is not an array (into) got {}", other))),
         }
     }
 
@@ -1032,12 +1034,12 @@ impl Value {
     /// assert_eq!(value.as_slice(), Ok(vec![Value::U64(17), Value::Float(18.)].as_slice()));
     ///
     /// let value = Value::Bool(true);
-    /// assert_eq!(value.as_slice(), Err(Error::StructureError("value is not an array".to_string())));
+    /// assert_eq!(value.as_slice(), Err(Error::StructureError("value is not a slice got bool true".to_string())));
     /// ```
     pub fn as_slice(&self) -> Result<&[Value], Error> {
         match self {
             Value::Array(vec) => Ok(vec),
-            _other => Err(Error::StructureError("value is not an array".to_string())),
+            other => Err(Error::StructureError(format!("value is not a slice got {}", other))),
         }
     }
 
