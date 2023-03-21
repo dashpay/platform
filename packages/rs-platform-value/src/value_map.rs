@@ -187,7 +187,6 @@ impl ValueMapHelper for ValueMap {
             .map(|pos| self.remove(pos).1);
     }
 
-
     fn remove_optional_key_value(&mut self, search_key_value: &Value) -> Option<Value> {
         self.iter()
             .position(|(key, _)| search_key_value == key)

@@ -49,6 +49,29 @@ impl Value {
         map.remove_key(last_path_component)
     }
 
+    pub fn remove_optional_value_at_path(&mut self, path: &str) -> Result<Option<Value>, Error> {
+        let mut split = path.split('.').peekable();
+        let mut current_value = self;
+        let mut last_path_component = None;
+        while let Some(path_component) = split.next() {
+            if split.peek().is_none() {
+                last_path_component = Some(path_component);
+            } else {
+                let map = current_value.to_map_mut()?;
+                if let Some(maybe_value) = map.get_optional_key_mut(path_component) {
+                    current_value = maybe_value;
+                } else {
+                    return Ok(None);
+                }
+            };
+        }
+        let Some(last_path_component) = last_path_component else {
+            return Err(Error::StructureError("path was empty".to_string()));
+        };
+        let map = current_value.as_map_mut_ref()?;
+        OK(map.remove_optional_key(last_path_component))
+    }
+
     pub fn remove_values_matching_path(&mut self, path: &str) -> Result<Vec<Value>, Error> {
         let mut split = path.split('.').peekable();
         let mut current_values = vec![self];
