@@ -26,7 +26,7 @@ impl IdentityTopUpTransitionStateValidator {
         state_transition: &IdentityTopUpTransitionWasm,
     ) -> Result<ValidationResultWasm, JsValue> {
         let validation_result = validate_identity_topup_transition_state(
-            state_transition.to_owned().into(),
+            &state_transition.to_owned().into(),
             &self.state_repository,
         )
         .await

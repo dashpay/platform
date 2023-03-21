@@ -7,7 +7,7 @@ use crate::{
     utils::{get_class_name, IntoWasm},
     validation::ValidationResultWasm,
     DataContractWasm, DocumentFactoryWASM, DocumentValidatorWasm, DocumentWasm,
-    DocumentsBatchTransitionWASM,
+    DocumentsBatchTransitionWasm,
 };
 
 #[derive(Clone)]
@@ -50,7 +50,7 @@ impl DocumentFacadeWasm {
     #[wasm_bindgen(js_name=create)]
     pub fn create(
         &self,
-        data_contract: DataContractWasm,
+        data_contract: &DataContractWasm,
         js_owner_id: &JsValue,
         document_type: &str,
         data: &JsValue,
@@ -84,7 +84,7 @@ impl DocumentFacadeWasm {
     pub fn create_state_transition(
         &self,
         documents: &JsValue, // documents_container: DocumentsContainer,
-    ) -> Result<DocumentsBatchTransitionWASM, JsValue> {
+    ) -> Result<DocumentsBatchTransitionWasm, JsValue> {
         self.factory.create_state_transition(documents)
     }
 

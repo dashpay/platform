@@ -139,8 +139,8 @@ impl DataContractFactoryWasm {
             .await;
         match result {
             Ok(data_contract) => Ok(data_contract.into()),
-            Err(dpp::ProtocolError::InvalidDataContractError { errors, .. }) => {
-                Err(InvalidDataContractError::new(errors, object).into())
+            Err(dpp::ProtocolError::InvalidDataContractError(err)) => {
+                Err(InvalidDataContractError::new(err.errors, object).into())
             }
             Err(other) => Err(from_dpp_err(other)),
         }

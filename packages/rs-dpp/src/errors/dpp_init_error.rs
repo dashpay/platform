@@ -5,9 +5,9 @@ use thiserror::Error;
 
 #[derive(Error, Debug)]
 pub enum DashPlatformProtocolInitError {
-    #[error("{0}")]
+    #[error(transparent)]
     SchemaDeserializationError(serde_json::Error),
-    #[error("{0}")]
+    #[error(transparent)]
     ValidationError(ValidationError<'static>),
     #[error("Loaded Schema is invalid: {0}")]
     InvalidSchemaError(&'static str),

@@ -61,7 +61,7 @@ impl IdentityUpdateTransitionBasicValidatorWasm {
         let validator = ValidateIdentityUpdateTransitionBasic::new(
             protocol_version_validator,
             Arc::new(public_keys_validator),
-            public_keys_signatures_validator,
+            Arc::new(public_keys_signatures_validator),
         )
         .map_err(|e| from_dpp_err(ProtocolError::Generic(e.to_string())))?;
 

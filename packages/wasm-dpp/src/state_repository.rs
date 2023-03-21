@@ -36,6 +36,7 @@ use crate::{
 
 #[wasm_bindgen]
 extern "C" {
+    #[derive(Clone)]
     pub type ExternalStateRepositoryLike;
 
     #[wasm_bindgen(catch, structural, method, js_name=fetchDataContract)]
@@ -229,6 +230,10 @@ unsafe impl Sync for ExternalStateRepositoryLikeWrapper {}
 impl ExternalStateRepositoryLikeWrapper {
     pub(crate) fn new(state_repository: ExternalStateRepositoryLike) -> Self {
         ExternalStateRepositoryLikeWrapper(Arc::new(state_repository))
+    }
+
+    pub(crate) fn new_with_arc(state_repository: Arc<ExternalStateRepositoryLike>) -> Self {
+        ExternalStateRepositoryLikeWrapper(state_repository)
     }
 }
 
