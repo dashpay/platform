@@ -69,7 +69,7 @@ impl Value {
             return Err(Error::StructureError("path was empty".to_string()));
         };
         let map = current_value.as_map_mut_ref()?;
-        OK(map.remove_optional_key(last_path_component))
+        Ok(map.remove_optional_key(last_path_component))
     }
 
     pub fn remove_values_matching_path(&mut self, path: &str) -> Result<Vec<Value>, Error> {

@@ -1,6 +1,5 @@
 use platform_value::{Bytes36, Value};
 use serde::{Deserialize, Serialize};
-use serde_big_array::BigArray;
 use std::convert::TryFrom;
 
 use crate::{
