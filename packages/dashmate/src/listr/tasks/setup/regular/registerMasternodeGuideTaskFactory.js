@@ -294,7 +294,8 @@ function registerMasternodeGuideTaskFactory(
               name: 'platformNodeKey',
               header: 'Platform node ED25519 key. What\'s that. Must be base64 tendermint' +
                 ' format\n',
-              message: 'Enter Node key Base64 encoded',
+              message: 'Enter Node key',
+              hint: 'Base64 encoded',
               initial: generateTenderdashNodeKey(),
               validate: validateTenderdashNodeKey,
             });
