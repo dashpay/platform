@@ -766,7 +766,11 @@ impl Value {
             }
 
             if key.as_text().expect("confirmed as text") == search_key {
-                return Some(value);
+                return if value.is_null() {
+                    None
+                } else {
+                    Some(value)
+                }
             }
         }
         None
@@ -783,7 +787,11 @@ impl Value {
             }
 
             if key.as_text().expect("confirmed as text") == search_key {
-                return Some(value);
+                return if value.is_null() {
+                    None
+                } else {
+                    Some(value)
+                };
             }
         }
         None
