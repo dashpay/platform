@@ -149,7 +149,7 @@ describe('validateDocumentFactory', () => {
         } catch (e) {
           // TODO - fix error when conversion errors are enabled
           // expect(error.getCode()).to.equal(1028);
-          expect(e).to.startsWith("the property '$type' doesn't exist");
+          expect(e.getMessage()).to.be.equal('structure error: $type not found in map');
         }
       });
 
