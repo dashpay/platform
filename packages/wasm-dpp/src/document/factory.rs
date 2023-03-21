@@ -162,7 +162,7 @@ impl DocumentFactoryWASM {
             .create_from_object(raw_document, options)
             .await
             .with_js_error()?;
-        let (identifier_paths, binary_paths) = document
+        let (identifier_paths, binary_paths): (Vec<_>, Vec<_>) = document
             .get_identifiers_and_binary_paths_owned()
             .with_js_error()?;
         // When data contract is available, replace remaining dynamic paths

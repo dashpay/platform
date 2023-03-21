@@ -331,29 +331,31 @@ impl DataContract {
         Ok((identifiers_paths, binary_paths))
     }
 
-    pub fn get_identifiers_and_binary_paths_owned(
+    pub fn get_identifiers_and_binary_paths_owned<
+        I: IntoIterator<Item = String> + Extend<String> + Default,
+    >(
         &self,
         document_type: &str,
-    ) -> Result<(HashSet<String>, HashSet<String>), ProtocolError> {
+    ) -> Result<(I, I), ProtocolError> {
         let binary_properties = self.get_optional_binary_properties(document_type)?;
 
         // At this point we don't bother about returned error from `get_binary_properties`.
         // If document of given type isn't found, then empty vectors will be returned.
-        let (binary_paths, identifiers_paths) = match binary_properties {
-            None => (HashSet::new(), HashSet::new()),
-            Some(binary_properties) => binary_properties.iter().partition_map(|(path, v)| {
-                if let Some(JsonValue::String(content_type)) = v.get("contentMediaType") {
-                    if content_type == platform_value::IDENTIFIER_MEDIA_TYPE {
-                        Either::Right(path.clone())
+        Ok(binary_properties
+            .map(|binary_properties| {
+                binary_properties.iter().partition_map(|(path, v)| {
+                    if let Some(JsonValue::String(content_type)) = v.get("contentMediaType") {
+                        if content_type == platform_value::IDENTIFIER_MEDIA_TYPE {
+                            Either::Left(path.clone())
+                        } else {
+                            Either::Right(path.clone())
+                        }
                     } else {
-                        Either::Left(path.clone())
+                        Either::Right(path.clone())
                     }
-                } else {
-                    Either::Left(path.clone())
-                }
-            }),
-        };
-        Ok((identifiers_paths, binary_paths))
+                })
+            })
+            .unwrap_or_default())
     }
 }
 
@@ -371,19 +373,19 @@ impl TryFrom<Value> for DataContract {
     }
 }
 
-impl TryInto<Value> for DataContract {
+impl TryFrom<DataContract> for Value {
     type Error = ProtocolError;
 
-    fn try_into(self) -> Result<Value, Self::Error> {
-        self.into_object()
+    fn try_from(value: DataContract) -> Result<Self, Self::Error> {
+        value.into_object()
     }
 }
 
-impl TryInto<Value> for &DataContract {
+impl TryFrom<&DataContract> for Value {
     type Error = ProtocolError;
 
-    fn try_into(self) -> Result<Value, Self::Error> {
-        self.to_object()
+    fn try_from(value: &DataContract) -> Result<Self, Self::Error> {
+        value.to_object()
     }
 }
 

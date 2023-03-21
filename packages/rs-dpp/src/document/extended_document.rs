@@ -178,7 +178,7 @@ impl ExtendedDocument {
             .map_err(ProtocolError::ValueError)?;
 
         //Because we don't know how the json came in we need to sanitize it
-        let (identifiers, binary_paths) =
+        let (identifiers, binary_paths): (HashSet<_>, HashSet<_>) =
             data_contract.get_identifiers_and_binary_paths_owned(document_type_name.as_str())?;
 
         let mut extended_document = Self {
@@ -387,10 +387,12 @@ impl ExtendedDocument {
         Ok((identifiers_paths, binary_paths))
     }
 
-    pub fn get_identifiers_and_binary_paths_owned(
+    pub fn get_identifiers_and_binary_paths_owned<
+        I: IntoIterator<Item = String> + Extend<String> + Default,
+    >(
         &self,
-    ) -> Result<(HashSet<String>, HashSet<String>), ProtocolError> {
-        let (mut identifiers_paths, binary_paths) = self
+    ) -> Result<(I, I), ProtocolError> {
+        let (mut identifiers_paths, binary_paths): (I, I) = self
             .data_contract
             .get_identifiers_and_binary_paths_owned(&self.document_type_name)?;
 

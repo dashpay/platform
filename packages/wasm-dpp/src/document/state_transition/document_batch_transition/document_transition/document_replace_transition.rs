@@ -60,7 +60,7 @@ impl DocumentReplaceTransitionWasm {
             .map_err(ProtocolError::ValueError)
             .with_js_error()?;
 
-        let (identifier_paths, _) = data_contract
+        let (identifier_paths, _): (Vec<_>, Vec<_>) = data_contract
             .get_identifiers_and_binary_paths_owned(document_type.as_str())
             .with_js_error()?;
         value

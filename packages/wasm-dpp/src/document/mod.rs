@@ -335,7 +335,7 @@ pub(crate) fn document_data_to_bytes(
     contract: &DataContract,
     document_type: &str,
 ) -> Result<(), JsValue> {
-    let (identifier_paths, binary_paths) = contract
+    let (identifier_paths, binary_paths): (Vec<_>, Vec<_>) = contract
         .get_identifiers_and_binary_paths_owned(document_type)
         .with_js_error()?;
     document

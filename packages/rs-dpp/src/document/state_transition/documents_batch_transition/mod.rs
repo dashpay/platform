@@ -219,7 +219,7 @@ impl DocumentsBatchTransition {
                     })?;
 
                 //Because we don't know how the json came in we need to sanitize it
-                let (identifiers, binary_paths) =
+                let (identifiers, binary_paths): (Vec<_>, Vec<_>) =
                     data_contract.get_identifiers_and_binary_paths_owned(document_type)?;
 
                 raw_transition_map

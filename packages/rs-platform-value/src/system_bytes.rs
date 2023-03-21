@@ -203,6 +203,7 @@ impl Value {
                 .collect::<Result<Vec<u8>, Error>>(),
             Value::Bytes(vec) => Ok(vec.clone()),
             Value::Bytes32(vec) => Ok(vec.to_vec()),
+            Value::Bytes36(vec) => Ok(vec.to_vec()),
             Value::Identifier(identifier) => Ok(Vec::from(identifier.as_slice())),
             _other => Err(Error::StructureError(
                 "value are not bytes, a string, or an array of values representing bytes"

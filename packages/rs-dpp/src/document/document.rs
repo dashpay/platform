@@ -120,53 +120,10 @@ impl Document {
                 }
                 _ => {}
             }
-            // split the key path
-            let key_paths: Vec<&str> = key_path.split('.').collect::<Vec<&str>>();
-            // key is the first key of the key path and rest_key_paths are the rest
-            let (key, rest_key_paths) = key_paths.split_first().ok_or({
-                ProtocolError::DataContractError(DataContractError::MissingRequiredKey(
-                    "key must not be null when getting from document",
-                ))
-            })?;
-
-            /// Gets the value at the given path. Returns `value` if `key_paths` is empty.
-            fn get_value_at_path<'a>(
-                value: &'a Value,
-                key_paths: &'a [&str],
-            ) -> Result<Option<&'a Value>, ProtocolError> {
-                // return value if key_paths is empty
-                if key_paths.is_empty() {
-                    Ok(Some(value))
-                } else {
-                    // split first again
-                    let (key, rest_key_paths) = key_paths.split_first().ok_or({
-                        ProtocolError::DataContractError(DataContractError::MissingRequiredKey(
-                            "key must not be null when getting from document",
-                        ))
-                    })?;
-                    let map_values = value.as_map().ok_or({
-                        ProtocolError::DataContractError(DataContractError::ValueWrongType(
-                            "inner key must refer to a value map",
-                        ))
-                    })?;
-                    // given a map of values and a key, get the corresponding value
-                    match Value::get_optional_from_map(map_values, key) {
-                        None => Ok(None),
-                        Some(value) => get_value_at_path(value, rest_key_paths),
-                    }
-                }
-            }
-
-            // match the value at the given key
-            match self.properties.get(*key) {
-                None => Ok(None),
-                Some(value) => match get_value_at_path(value, rest_key_paths)? {
-                    None => Ok(None),
-                    Some(path_value) => Ok(Some(
-                        document_type.serialize_value_for_key(key_path, path_value)?,
-                    )),
-                },
-            }
+            self.properties
+                .get_optional_at_path(key_path)?
+                .map(|value| document_type.serialize_value_for_key(key_path, value))
+                .transpose()
         }
     }
 

@@ -118,7 +118,7 @@ impl DocumentTransitionObjectLike for DocumentReplaceTransition {
 
         let document_type = map.get_str("$type")?;
 
-        let (identifiers_paths, binary_paths) =
+        let (identifiers_paths, binary_paths): (Vec<_>, Vec<_>) =
             data_contract.get_identifiers_and_binary_paths_owned(document_type)?;
 
         map.replace_at_paths(binary_paths.into_iter(), ReplacementType::BinaryBytes)?;
