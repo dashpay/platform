@@ -384,8 +384,9 @@ describe('Document', () => {
       const value = { identifier };
 
       document.set(path, value);
+      const returnedIdentifier = document.get(identifierPath);
 
-      expect(document.get(identifierPath).toBuffer()).to.deep.equal(buffer);
+      expect(returnedIdentifier.toBuffer()).to.deep.equal(buffer);
     });
   });
 
