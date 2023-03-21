@@ -256,7 +256,7 @@ fn validate_raw_transitions<'a>(
 ) -> Result<ValidationResult<()>, ProtocolError> {
     let mut result = ValidationResult::default();
     let mut raw_document_transitions_as_value: Vec<Value> = vec![];
-    let owner_id_value : Value = owner_id.into();
+    let owner_id_value: Value = owner_id.into();
     for mut raw_document_transition in raw_document_transitions {
         let Some(document_type) = raw_document_transition.get_optional_str("$type").map_err(ProtocolError::ValueError)? else {
                 result.add_error(BasicError::MissingDocumentTransitionTypeError);

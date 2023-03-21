@@ -57,22 +57,36 @@ impl Value {
             if let Some((string_part, number_part)) = is_array_path(path_component)? {
                 current_values = current_values
                     .into_iter()
-                    .map(|current_value| {
-                        let map = current_value.to_map_mut()?;
-                        let array_value = map.get_key_mut(string_part)?;
-                        let array = array_value.to_array_mut()?;
+                    .filter_map(|current_value| {
+                        if current_value.is_null() {
+                            return None;
+                        }
+                        let Some(map) = current_value.as_map_mut() else {
+                            return Some(Err(Error::StructureError("value is not a map during removal".to_string())));
+                        };
+
+                        let Some(array_value) = map.get_optional_key_mut(string_part) else {
+                            return None;
+                        };
+
+                        if array_value.is_null() {
+                            return None;
+                        }
+                        let Some(array) = current_value.as_array_mut() else {
+                            return Some(Err(Error::StructureError("value is not an array during removal".to_string())));
+                        };
                         if let Some(number_part) = number_part {
                             if array.len() < number_part {
                                 //this already exists
-                                Ok(vec![array.get_mut(number_part).unwrap()])
+                                Some(Ok(vec![array.get_mut(number_part).unwrap()]))
                             } else {
-                                return Err(Error::StructureError(format!(
+                                Some(Err(Error::StructureError(format!(
                                     "element at position {number_part} in array does not exist"
-                                )));
+                                ))))
                             }
                         } else {
                             // we are replacing all members in array
-                            Ok(array.into_iter().collect())
+                            Some(Ok(array.into_iter().collect()))
                         }
                     })
                     .collect::<Result<Vec<Vec<&mut Value>>, Error>>()?
@@ -83,11 +97,14 @@ impl Value {
                 current_values = current_values
                     .into_iter()
                     .filter_map(|current_value| {
+                        if current_value.is_null() {
+                            return None;
+                        }
+
                         let map = match current_value.as_map_mut_ref() {
                             Ok(map) => map,
                             Err(err) => return Some(Err(err)),
                         };
-
 
                         if split.peek().is_none() {
                             if let Some(removed) = map.remove_optional_key(path_component) {

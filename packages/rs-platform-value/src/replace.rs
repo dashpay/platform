@@ -407,21 +407,22 @@ impl Value {
     /// assert_eq!(value.get_optional_value_at_path("foods.grapes"), Ok(None));
     ///
     pub fn clean_recursive(self) -> Result<Value, Error> {
-        Ok(Value::Map(self
-            .into_map()?
-            .into_iter()
-            .filter_map(|(key, value)| {
-                if value.is_null() {
-                    None
-                } else if value.is_map() {
-                    match value.clean_recursive() {
-                        Ok(value) => Some(Ok((key, value))),
-                        Err(e) => Some(Err(e))
+        Ok(Value::Map(
+            self.into_map()?
+                .into_iter()
+                .filter_map(|(key, value)| {
+                    if value.is_null() {
+                        None
+                    } else if value.is_map() {
+                        match value.clean_recursive() {
+                            Ok(value) => Some(Ok((key, value))),
+                            Err(e) => Some(Err(e)),
+                        }
+                    } else {
+                        Some(Ok((key, value)))
                     }
-                } else {
-                    Some(Ok((key, value)))
-                }
-            })
-            .collect::<Result<Vec<_>, Error>>()?))
+                })
+                .collect::<Result<Vec<_>, Error>>()?,
+        ))
     }
 }
