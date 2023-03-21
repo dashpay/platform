@@ -190,7 +190,9 @@ impl From<JsonValue> for Value {
             JsonValue::String(string) => Self::Text(string),
             JsonValue::Array(array) => {
                 let u8_max = u8::MAX as u64;
-                if !array.is_empty()
+                //todo: hacky solution, to fix
+                let len = array.len();
+                if (len == 20 || len == 32 || len == 36)
                     && array.iter().all(|v| {
                         let Some(int) = v.as_u64() else {
                         return false;
@@ -234,7 +236,9 @@ impl From<&JsonValue> for Value {
             JsonValue::String(string) => Self::Text(string.clone()),
             JsonValue::Array(array) => {
                 let u8_max = u8::MAX as u64;
-                if !array.is_empty()
+                //todo: hacky solution, to fix
+                let len = array.len();
+                if (len == 20 || len == 32 || len == 36)
                     && array.iter().all(|v| {
                         let Some(int) = v.as_u64() else {
                         return false;
@@ -442,5 +446,10 @@ mod tests {
             .unwrap();
         assert_eq!(array.len(), 1);
         assert!(array.get(0).unwrap().is_map());
+        let array = value
+            .get_optional_array_slice("disablePublicKeys")
+            .expect("expected to get array slice")
+            .unwrap();
+        assert_eq!(array.len(), 1);
     }
 }
