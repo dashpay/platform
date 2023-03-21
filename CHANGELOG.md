@@ -1,3 +1,15 @@
+## [0.24.0-dev.15](https://github.com/dashpay/platform/compare/v0.24.0-dev.14...v0.24.0-dev.15) (2023-03-21)
+
+
+### Miscellaneous Chores
+
+* **drive:** temporary disable payout script ([#835](https://github.com/dashpay/platform/issues/835))
+
+
+### Continuous Integration
+
+* dashmate release script fix ([#836](https://github.com/dashpay/platform/issues/836))
+
 ## [0.24.0-dev.14](https://github.com/dashpay/platform/compare/v0.24.0-dev.13...v0.24.0-dev.14) (2023-03-20)
 
 
