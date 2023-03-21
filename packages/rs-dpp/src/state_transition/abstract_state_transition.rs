@@ -218,6 +218,20 @@ pub trait StateTransitionConvert: Serialize {
         Ok(object)
     }
 
+    /// Returns the [`platform_value::Value`] instance that preserves the `Vec<u8>` representation
+    /// for Identifiers and binary data
+    fn to_canonical_cleaned_object(&self, skip_signature: bool) -> Result<Value, ProtocolError> {
+        let skip_signature_paths = if skip_signature {
+            Self::signature_property_paths()
+        } else {
+            vec![]
+        };
+        let mut object = state_transition_helpers::to_cleaned_object(self, skip_signature_paths)?;
+
+        object.as_map_mut_ref().unwrap().sort_by_keys();
+        Ok(object)
+    }
+
     /// Returns the [`serde_json::Value`] instance that encodes:
     ///  - Identifiers  - with base58
     ///  - Binary data  - with base64
@@ -232,7 +246,7 @@ pub trait StateTransitionConvert: Serialize {
 
     // Returns the cbor-encoded bytes representation of the object. The data is  prefixed by 4 bytes containing the Protocol Version
     fn to_buffer(&self, skip_signature: bool) -> Result<Vec<u8>, ProtocolError> {
-        let mut value = self.to_canonical_object(skip_signature)?;
+        let mut value = self.to_canonical_cleaned_object(skip_signature)?;
         let protocol_version = value.remove_integer(PROPERTY_PROTOCOL_VERSION)?;
 
         serializer::serializable_value_to_cbor(&value, Some(protocol_version))
@@ -265,6 +279,23 @@ pub mod state_transition_helpers {
         skip_signature_paths: I,
     ) -> Result<Value, ProtocolError> {
         let mut value: Value = platform_value::to_value(serializable)?;
+        skip_signature_paths.into_iter().try_for_each(|path| {
+            value
+                .remove_value_at_path(path)
+                .map_err(ProtocolError::ValueError)
+                .map(|_| ())
+        })?;
+        Ok(value)
+    }
+
+    pub fn to_cleaned_object<'a, I: IntoIterator<Item = &'a str>>(
+        serializable: impl Serialize,
+        skip_signature_paths: I,
+    ) -> Result<Value, ProtocolError> {
+        let mut value: Value = platform_value::to_value(serializable)?;
+
+        value = value.clean_recursive()?;
+
         skip_signature_paths.into_iter().try_for_each(|path| {
             value
                 .remove_value_at_path(path)
