@@ -78,8 +78,7 @@ where
         }
 
         let maybe_raw_public_keys = raw_state_transition
-            .get_optional_value(property_names::ADD_PUBLIC_KEYS)
-            .and_then(|value| value.map(|value| value.to_array_slice()).transpose())
+            .get_optional_array_slice(property_names::ADD_PUBLIC_KEYS)
             .map_err(NonConsensusError::ValueError)?;
 
         match maybe_raw_public_keys {
