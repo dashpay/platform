@@ -252,18 +252,18 @@ impl TryFrom<Value> for IdentityPublicKeyWithWitness {
     }
 }
 
-impl TryInto<Value> for IdentityPublicKeyWithWitness {
+impl TryFrom<IdentityPublicKeyWithWitness> for Value {
     type Error = platform_value::Error;
 
-    fn try_into(self) -> Result<Value, Self::Error> {
-        platform_value::to_value(self)
+    fn try_from(value: IdentityPublicKeyWithWitness) -> Result<Self, Self::Error> {
+        platform_value::to_value(value)
     }
 }
 
-impl TryInto<Value> for &IdentityPublicKeyWithWitness {
+impl TryFrom<&IdentityPublicKeyWithWitness> for Value {
     type Error = platform_value::Error;
 
-    fn try_into(self) -> Result<Value, Self::Error> {
-        platform_value::to_value(self)
+    fn try_from(value: &IdentityPublicKeyWithWitness) -> Result<Self, Self::Error> {
+        platform_value::to_value(value)
     }
 }

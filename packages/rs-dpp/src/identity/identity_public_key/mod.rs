@@ -220,19 +220,19 @@ impl Into<CborValue> for &IdentityPublicKey {
     }
 }
 
-impl TryInto<Value> for &IdentityPublicKey {
+impl TryFrom<&IdentityPublicKey> for Value {
     type Error = platform_value::Error;
 
-    fn try_into(self) -> Result<Value, Self::Error> {
-        platform_value::to_value(self)
+    fn try_from(value: &IdentityPublicKey) -> Result<Self, Self::Error> {
+        platform_value::to_value(value)
     }
 }
 
-impl TryInto<Value> for IdentityPublicKey {
+impl TryFrom<IdentityPublicKey> for Value {
     type Error = platform_value::Error;
 
-    fn try_into(self) -> Result<Value, Self::Error> {
-        platform_value::to_value(self)
+    fn try_from(value: IdentityPublicKey) -> Result<Self, Self::Error> {
+        platform_value::to_value(value)
     }
 }
 
