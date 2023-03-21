@@ -147,7 +147,7 @@ pub async fn validate_documents_batch_transition_basic(
         HashMap::new();
 
     for raw_document_transition in raw_document_transitions {
-        let identifier = match raw_document_transition
+        let contract_identifier = match raw_document_transition
             .get_optional_identifier(property_names::DATA_CONTRACT_ID)
         {
             Ok(None) => {
@@ -163,7 +163,7 @@ pub async fn validate_documents_batch_transition_basic(
             }
         };
 
-        match document_transitions_by_contracts.entry(identifier) {
+        match document_transitions_by_contracts.entry(contract_identifier) {
             Entry::Vacant(vacant) => {
                 vacant.insert(vec![raw_document_transition]);
             }
@@ -194,7 +194,7 @@ pub async fn validate_documents_batch_transition_basic(
         };
 
         let validation_result =
-            validate_document_transitions(&data_contract, &owner_id, transitions)?;
+            validate_document_transitions(&data_contract, owner_id, transitions)?;
         result.merge(validation_result);
     }
 
@@ -203,7 +203,7 @@ pub async fn validate_documents_batch_transition_basic(
 
 fn validate_document_transitions<'a>(
     data_contract: &DataContract,
-    owner_id: &Identifier,
+    owner_id: Identifier,
     raw_document_transitions: impl IntoIterator<Item = BTreeMap<String, &'a Value>>,
 ) -> Result<ValidationResult<()>, ProtocolError> {
     let mut result = ValidationResult::default();
@@ -252,11 +252,12 @@ fn validate_raw_transitions<'a>(
     data_contract: &DataContract,
     raw_document_transitions: impl IntoIterator<Item = BTreeMap<String, &'a Value>>,
     enriched_contracts_by_action: &HashMap<Action, DataContract>,
-    owner_id: &Identifier,
+    owner_id: Identifier,
 ) -> Result<ValidationResult<()>, ProtocolError> {
     let mut result = ValidationResult::default();
     let mut raw_document_transitions_as_value: Vec<Value> = vec![];
-    for raw_document_transition in raw_document_transitions {
+    let owner_id_value : Value = owner_id.into();
+    for mut raw_document_transition in raw_document_transitions {
         let Some(document_type) = raw_document_transition.get_optional_str("$type").map_err(ProtocolError::ValueError)? else {
                 result.add_error(BasicError::MissingDocumentTransitionTypeError);
                 return Ok(result);
@@ -311,7 +312,7 @@ fn validate_raw_transitions<'a>(
                     let entropy = raw_document_transition.get_bytes("$entropy")?;
                     // validate the id  generation
                     let generated_document_id =
-                        generate_document_id(&data_contract.id, owner_id, document_type, &entropy);
+                        generate_document_id(&data_contract.id, &owner_id, document_type, &entropy);
 
                     if generated_document_id != document_id {
                         result.add_error(BasicError::InvalidDocumentTransitionIdError(
@@ -338,6 +339,9 @@ fn validate_raw_transitions<'a>(
                 }
             }
         }
+        // we passed validation, let's add the owner_id now so we can validate indices (that might
+        // use the ownerId)
+        raw_document_transition.insert("$ownerId".to_string(), &owner_id_value);
         raw_document_transitions_as_value.push(raw_document_transition.into())
     }
     let raw_document_transitions_as_value_iter = raw_document_transitions_as_value.iter();

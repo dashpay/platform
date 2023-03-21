@@ -70,7 +70,7 @@ pub async fn validate_document_batch_transition_state(
     state_transition: &DocumentsBatchTransition,
 ) -> Result<ValidationResult<()>, ProtocolError> {
     let mut result = ValidationResult::default();
-    let owner_id = state_transition.get_owner_id();
+    let owner_id = *state_transition.get_owner_id();
 
     let transitions_by_data_contract_id = state_transition
         .get_transitions()
@@ -97,7 +97,7 @@ pub async fn validate_document_batch_transition_state(
 pub async fn validate_document_transitions(
     state_repository: &impl StateRepositoryLike,
     data_contract_id: &Identifier,
-    owner_id: &Identifier,
+    owner_id: Identifier,
     document_transitions: impl IntoIterator<Item = impl AsRef<DocumentTransition>>,
     execution_context: &StateTransitionExecutionContext,
 ) -> Result<ValidationResult<()>, ProtocolError> {
@@ -136,7 +136,7 @@ pub async fn validate_document_transitions(
                 transition.as_ref(),
                 &fetched_documents,
                 last_header_time_millis,
-                owner_id,
+                &owner_id,
             );
             result.merge(validation_result);
         }
@@ -147,7 +147,7 @@ pub async fn validate_document_transitions(
 
     let validation_result = validate_documents_uniqueness_by_indices(
         state_repository,
-        owner_id,
+        &owner_id,
         transitions
             .iter()
             .filter(|d| d.as_ref().as_transition_delete().is_none()),
@@ -162,7 +162,7 @@ pub async fn validate_document_transitions(
 
     let data_trigger_execution_context = DataTriggerExecutionContext {
         state_repository: state_repository.to_owned(),
-        owner_id,
+        owner_id: &owner_id,
         data_contract: &data_contract,
         state_transition_execution_context: execution_context,
     };

@@ -439,7 +439,7 @@ impl Value {
     /// assert_eq!(value.into_bytes_36(), Ok(Bytes36([104, 101, 108, 108, 111, 32, 12, 50, 104, 101, 108, 108, 111, 32, 12, 50, 104, 101, 108, 108, 111, 32, 12, 50, 104, 101, 108, 108, 111, 32, 12, 50, 50, 51, 52, 53])));    ///
     ///
     /// let value = Value::Text("sNr9aH0VUnzvKDADkuJUlZ4Yj7Yd7gbNnnOR4ANNat2g498D".to_string());
-    /// assert_eq!(value.into_bytes_36(), Ok(Bytes36([86, 35, 118, 67, 167, 43, 101, 109, 72, 97, 35, 99, 0, 254, 108, 154, 254, 154, 190, 40, 237, 25, 58, 246, 111, 19, 44, 215, 141, 140, 156, 117, 00, 00, 00, 00])));
+    /// assert_eq!(value.into_bytes_36(), Ok(Bytes36([176, 218, 253, 104, 125, 21, 82, 124, 239, 40, 48, 3, 146, 226, 84, 149, 158, 24, 143, 182, 29, 238, 6, 205, 158, 115, 145, 224, 3, 77, 106, 221, 160, 227, 223, 3])));
     ///
     /// let value = Value::Text("a811".to_string());
     /// assert_eq!(value.into_bytes_36(), Err(Error::ByteLengthNot36BytesError("buffer was not 36 bytes long".to_string())));
@@ -487,7 +487,7 @@ impl Value {
     /// assert_eq!(value.to_bytes_36(), Ok(Bytes36([104, 101, 108, 108, 111, 32, 12, 50, 104, 101, 108, 108, 111, 32, 12, 50, 104, 101, 108, 108, 111, 32, 12, 50, 104, 101, 108, 108, 111, 32, 12, 50, 50, 51, 52, 53])));    ///
     ///
     /// let value = Value::Text("sNr9aH0VUnzvKDADkuJUlZ4Yj7Yd7gbNnnOR4ANNat2g498D".to_string());
-    /// assert_eq!(value.to_bytes_36(), Ok(Bytes36([86, 35, 118, 67, 167, 43, 101, 109, 72, 97, 35, 99, 0, 254, 108, 154, 254, 154, 190, 40, 237, 25, 58, 246, 111, 19, 44, 215, 141, 140, 156, 117, 00, 00, 00, 00])));
+    /// assert_eq!(value.to_bytes_36(), Ok(Bytes36([176, 218, 253, 104, 125, 21, 82, 124, 239, 40, 48, 3, 146, 226, 84, 149, 158, 24, 143, 182, 29, 238, 6, 205, 158, 115, 145, 224, 3, 77, 106, 221, 160, 227, 223, 3])));
     ///
     /// let value = Value::Text("a811".to_string());
     /// assert_eq!(value.to_bytes_36(), Err(Error::ByteLengthNot36BytesError("buffer was not 36 bytes long".to_string())));

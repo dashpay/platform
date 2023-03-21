@@ -131,7 +131,7 @@ async fn should_throw_error_if_data_contract_was_not_found() {
     let error = validate_document_transitions(
         &state_repository_mock,
         &data_contract.id,
-        &owner_id,
+        owner_id,
         document_transitions,
         &Default::default(),
     )

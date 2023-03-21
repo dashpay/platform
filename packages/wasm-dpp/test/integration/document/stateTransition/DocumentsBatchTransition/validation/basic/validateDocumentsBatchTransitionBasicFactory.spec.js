@@ -894,6 +894,7 @@ describe('validateDocumentsBatchTransitionBasicFactory', () => {
           duplicatedTransition.$type,
           duplicatedTransition.$entropy,
         );
+        duplicatedTransition.firstName = 'Ted';
         const duplicates = [duplicatedTransition, indexedTransition];
 
         stateTransition = new DocumentsBatchTransition({
