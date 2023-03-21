@@ -1,9 +1,9 @@
 const identitySchema = require('@dashevo/dpp/schema/identity/identity.json');
 const createStateRepositoryMock = require('@dashevo/dpp/lib/test/mocks/createStateRepositoryMock');
-const getIdentityUpdateTransitionFixture = require('@dashevo/dpp/lib/test/fixtures/getIdentityUpdateTransitionFixture');
 const getIdentityFixture = require('@dashevo/dpp/lib/test/fixtures/getIdentityFixture');
 const ValidationResult = require('@dashevo/dpp/lib/validation/ValidationResult');
 const SomeConsensusError = require('@dashevo/dpp/lib/test/mocks/SomeConsensusError');
+const getIdentityUpdateTransitionFixture = require('../../../../../../../lib/test/fixtures/getIdentityUpdateTransitionFixture');
 
 const { default: loadWasmDpp } = require('../../../../../../../dist');
 const { expectValidationError } = require('../../../../../../../lib/test/expect/expectError');
@@ -22,7 +22,6 @@ describe('validateIdentityUpdateTransitionStateFactory', () => {
 
   let Identity;
   let IdentityPublicKey;
-  let IdentityUpdateTransition;
   let InvalidIdentityRevisionError;
   let IdentityPublicKeyIsReadOnlyError;
   let IdentityPublicKeyIsDisabledError;
@@ -37,7 +36,6 @@ describe('validateIdentityUpdateTransitionStateFactory', () => {
     ({
       Identity,
       IdentityPublicKey,
-      IdentityUpdateTransition,
       InvalidIdentityRevisionError,
       IdentityPublicKeyIsReadOnlyError,
       IdentityPublicKeyIsDisabledError,
@@ -68,9 +66,7 @@ describe('validateIdentityUpdateTransitionStateFactory', () => {
     const validator = new IdentityUpdateTransitionStateValidator(stateRepositoryMock, blsAdapter);
     validateIdentityUpdateTransitionState = (st) => validator.validate(st);
 
-    stateTransition = new IdentityUpdateTransition(
-      getIdentityUpdateTransitionFixture().toObject(),
-    );
+    stateTransition = await getIdentityUpdateTransitionFixture();
 
     stateTransition.setRevision(identity.getRevision() + 1);
     stateTransition.setPublicKeyIdsToDisable(undefined);
