@@ -182,7 +182,8 @@ describe('validateDocumentsBatchTransitionStateFactory', () => {
     const [fetchDataContractId] = stateRepositoryMock.fetchDataContract.getCall(0).args;
     expect(fetchDataContractId.toBuffer()).to.deep.equal(dataContract.getId().toBuffer());
 
-    expect(stateRepositoryMock.fetchExtendedDocuments).to.have.been.callCount(documentTransitionsJs.length);
+    expect(stateRepositoryMock.fetchExtendedDocuments)
+      .to.have.been.callCount(documentTransitionsJs.length);
   });
 
   it('should return invalid result if document transition with action "delete" is not present - Rust', async () => {
@@ -212,7 +213,8 @@ describe('validateDocumentsBatchTransitionStateFactory', () => {
     const [fetchDataContractId] = stateRepositoryMock.fetchDataContract.getCall(0).args;
     expect(fetchDataContractId.toBuffer()).to.deep.equal(dataContract.getId().toBuffer());
 
-    expect(stateRepositoryMock.fetchExtendedDocuments).to.have.been.callCount(documentTransitionsJs.length);
+    expect(stateRepositoryMock.fetchExtendedDocuments).to.have.been
+      .callCount(documentTransitionsJs.length);
   });
 
   it('should return invalid result if document transition with action "replace" has wrong revision - Rust', async () => {
@@ -250,7 +252,8 @@ describe('validateDocumentsBatchTransitionStateFactory', () => {
     const [fetchDataContractId] = stateRepositoryMock.fetchDataContract.getCall(0).args;
     expect(fetchDataContractId.toBuffer()).to.deep.equal(dataContract.getId().toBuffer());
 
-    expect(stateRepositoryMock.fetchExtendedDocuments).to.have.been.callCount(documentTransitionsJs.length);
+    expect(stateRepositoryMock.fetchExtendedDocuments).to.have.been
+      .callCount(documentTransitionsJs.length);
   });
 
   it('should return invalid result if document transition with action "replace" has mismatch of ownerId with previous revision - Rust', async () => {
@@ -292,7 +295,8 @@ describe('validateDocumentsBatchTransitionStateFactory', () => {
     const [fetchDataContractId] = stateRepositoryMock.fetchDataContract.getCall(0).args;
     expect(fetchDataContractId.toBuffer()).to.deep.equal(dataContract.getId().toBuffer());
 
-    expect(stateRepositoryMock.fetchExtendedDocuments).to.have.been.callCount(documentTransitionsJs.length);
+    expect(stateRepositoryMock.fetchExtendedDocuments).to.have.been
+      .callCount(documentTransitionsJs.length);
   });
 
   it('should throw an error if document transition has invalid action - Rust', async () => {

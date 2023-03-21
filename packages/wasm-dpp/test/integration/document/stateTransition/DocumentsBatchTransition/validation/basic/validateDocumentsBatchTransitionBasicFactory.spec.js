@@ -14,7 +14,6 @@ let StateTransitionExecutionContext;
 let validateDocumentsBatchTransitionBasic;
 let generateDocumentId;
 let MissingDataContractIdError;
-let InvalidIdentifierError;
 let DataContractNotPresentError;
 let MissingDocumentTransitionTypeError;
 let InvalidDocumentTypeError;
@@ -47,7 +46,6 @@ describe('validateDocumentsBatchTransitionBasicFactory', () => {
       ValidationResult,
       validateDocumentsBatchTransitionBasic,
       generateDocumentId,
-      InvalidIdentifierError,
       MissingDataContractIdError,
       DataContractNotPresentError,
       MissingDocumentTransitionTypeError,

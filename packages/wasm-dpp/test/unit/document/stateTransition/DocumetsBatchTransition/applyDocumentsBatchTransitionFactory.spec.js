@@ -166,7 +166,8 @@ describe('applyDocumentsBatchTransitionFactory', () => {
     await applyDocumentsBatchTransition(stateRepositoryMock, stateTransition);
     expect(stateRepositoryMock.createDocument).to.have.been.calledOnce();
 
-    const [fetchContractId, fetchDocumentType] = stateRepositoryMock.fetchExtendedDocuments.getCall(0).args;
+    const [fetchContractId, fetchDocumentType] = stateRepositoryMock
+      .fetchExtendedDocuments.getCall(0).args;
     expect(fetchContractId.toBuffer()).to.deep.equal(documentTransitionsJs[1].getDataContractId());
     expect(fetchDocumentType).to.equal(documentTransitionsJs[1].getType());
 
