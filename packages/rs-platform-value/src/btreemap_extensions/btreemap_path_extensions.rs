@@ -150,7 +150,9 @@ where
         for path_component in split {
             let map = current_value.to_map_ref()?;
             current_value = map.get_optional_key(path_component).ok_or_else(|| {
-                Error::StructureError(format!("unable to get property {path_component} in {path}"))
+                Error::StructureError(format!(
+                    "unable to get property at path {path_component} in {path}"
+                ))
             })?;
         }
         Ok(current_value)

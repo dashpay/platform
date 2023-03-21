@@ -37,7 +37,7 @@ impl Value {
                 let map = current_value.to_map_mut()?;
                 current_value = map.get_optional_key_mut(path_component).ok_or_else(|| {
                     Error::StructureError(format!(
-                        "unable to get property {path_component} in {path}"
+                        "unable to remove property {path_component} in {path}"
                     ))
                 })?;
             };
@@ -72,7 +72,7 @@ impl Value {
                         if array_value.is_null() {
                             return None;
                         }
-                        let Some(array) = current_value.as_array_mut() else {
+                        let Some(array) = array_value.as_array_mut() else {
                             return Some(Err(Error::StructureError("value is not an array during removal".to_string())));
                         };
                         if let Some(number_part) = number_part {
@@ -227,7 +227,9 @@ impl Value {
         for path_component in split {
             let map = current_value.to_map_mut()?;
             current_value = map.get_optional_key_mut(path_component).ok_or_else(|| {
-                Error::StructureError(format!("unable to get property {path_component} in {path}"))
+                Error::StructureError(format!(
+                    "unable to get mut property {path_component} in {path}"
+                ))
             })?;
         }
         Ok(current_value)
