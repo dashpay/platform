@@ -919,7 +919,10 @@ impl Value {
     pub fn to_array_mut(&mut self) -> Result<&mut Vec<Value>, Error> {
         match self {
             Value::Array(vec) => Ok(vec),
-            other => Err(Error::StructureError(format!("value is not a mut array got {}", other))),
+            other => Err(Error::StructureError(format!(
+                "value is not a mut array got {}",
+                other
+            ))),
         }
     }
 
@@ -943,7 +946,10 @@ impl Value {
     pub fn to_array_slice(&self) -> Result<&[Value], Error> {
         match self {
             Value::Array(vec) => Ok(vec.as_slice()),
-            other => Err(Error::StructureError(format!("value is not an array got {}", other))),
+            other => Err(Error::StructureError(format!(
+                "value is not an array got {}",
+                other
+            ))),
         }
     }
 
@@ -967,7 +973,10 @@ impl Value {
     pub fn to_array_ref(&self) -> Result<&Vec<Value>, Error> {
         match self {
             Value::Array(vec) => Ok(vec),
-            other => Err(Error::StructureError(format!("value is not an array got {}", other))),
+            other => Err(Error::StructureError(format!(
+                "value is not an array got {}",
+                other
+            ))),
         }
     }
 
@@ -991,7 +1000,10 @@ impl Value {
     pub fn to_array_owned(&self) -> Result<Vec<Value>, Error> {
         match self {
             Value::Array(vec) => Ok(vec.clone()),
-            other => Err(Error::StructureError(format!("value is not an owned array got {}", other))),
+            other => Err(Error::StructureError(format!(
+                "value is not an owned array got {}",
+                other
+            ))),
         }
     }
 
@@ -1015,7 +1027,10 @@ impl Value {
     pub fn into_array(self) -> Result<Vec<Value>, Error> {
         match self {
             Value::Array(vec) => Ok(vec),
-            other => Err(Error::StructureError(format!("value is not an array (into) got {}", other))),
+            other => Err(Error::StructureError(format!(
+                "value is not an array (into) got {}",
+                other
+            ))),
         }
     }
 
@@ -1039,7 +1054,10 @@ impl Value {
     pub fn as_slice(&self) -> Result<&[Value], Error> {
         match self {
             Value::Array(vec) => Ok(vec),
-            other => Err(Error::StructureError(format!("value is not a slice got {}", other))),
+            other => Err(Error::StructureError(format!(
+                "value is not a slice got {}",
+                other
+            ))),
         }
     }
 

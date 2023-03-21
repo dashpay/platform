@@ -405,3 +405,42 @@ impl From<&BTreeMap<String, JsonValue>> for Value {
         Value::Map(map)
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use crate::Value;
+    use serde_json::json;
+
+    #[test]
+    fn test_json_array() {
+        let json = json!({
+          "type": 5,
+          "protocolVersion": 1,
+          "revision": 0,
+          "signature": "HxtcTSpRdACokorvpx/f4ezM40e0WtgW2GUvjiwNkHPwKDppkIoS2cirhqpZURlhDuYdu+E0KllbHNlYghcK9Bg=",
+          "signaturePublicKeyId": 1,
+          "publicKeysDisabledAt": 1234567,
+          "addPublicKeys": [
+            {
+              "id": 0,
+              "purpose": 0,
+              "securityLevel": 0,
+              "type": 0,
+              "data": "Aya0WP8EhKQ6Dq+51sAnqdPah664X9CUciVJYAfvfTnX",
+              "readOnly": false,
+              "signature": "HxtcTSpRdACokorvpx/f4ezM40e0WtgW2GUvjiwNkHPwKDppkIoS2cirhqpZURlhDuYdu+E0KllbHNlYghcK9Bg="
+            }
+          ],
+          "disablePublicKeys": [ 0 ],
+          "identityId": "62DHhTfZV3NvUbXUha1mavLqSEy2GaWYja2qeTYNUhk"
+        });
+
+        let value: Value = json.into();
+        let array = value
+            .get_optional_array_slice("addPublicKeys")
+            .expect("expected to get array slice")
+            .unwrap();
+        assert_eq!(array.len(), 1);
+        assert!(array.get(0).unwrap().is_map());
+    }
+}
