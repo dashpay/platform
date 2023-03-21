@@ -197,6 +197,7 @@ describe('StateTransitionFacade', () => {
 
     it('should validate DocumentsBatchTransition', async () => {
       stateRepositoryMock.fetchDocuments.resolves([]);
+      stateRepositoryMock.fetchExtendedDocuments.resolves([]);
 
       stateRepositoryMock.fetchDataContract.resolves(dataContract);
       const result = await dpp.stateTransition.validate(

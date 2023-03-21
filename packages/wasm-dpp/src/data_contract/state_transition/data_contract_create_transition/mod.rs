@@ -147,7 +147,7 @@ impl DataContractCreateTransitionWasm {
     pub fn to_object(&self, skip_signature: Option<bool>) -> Result<JsValue, JsValue> {
         let serde_object = self
             .0
-            .to_object(skip_signature.unwrap_or(false))
+            .to_cleaned_object(skip_signature.unwrap_or(false))
             .map_err(from_protocol_error)?;
         serde_object
             .serialize(&serde_wasm_bindgen::Serializer::json_compatible())
