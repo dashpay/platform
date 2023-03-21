@@ -1,7 +1,7 @@
 const getOverviewScopeFactory = require('../../../../src/status/scopes/overview');
-const MasternodeStateEnum = require('../../../../src/enums/masternodeState');
-const DockerStatusEnum = require('../../../../src/enums/dockerStatus');
-const ServiceStatusEnum = require('../../../../src/enums/serviceStatus');
+const MasternodeStateEnum = require('../../../../src/status/enums/masternodeState');
+const DockerStatusEnum = require('../../../../src/status/enums/dockerStatus');
+const ServiceStatusEnum = require('../../../../src/status/enums/serviceStatus');
 
 describe('getOverviewScopeFactory', () => {
   describe('#getOverviewScope', () => {

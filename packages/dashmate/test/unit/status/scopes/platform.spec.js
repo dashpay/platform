@@ -4,9 +4,9 @@ const { FetchError } = fetch;
 
 const getPlatformScopeFactory = require('../../../../src/status/scopes/platform');
 const determineStatus = require('../../../../src/status/determineStatus');
-const DockerStatusEnum = require('../../../../src/enums/dockerStatus');
+const DockerStatusEnum = require('../../../../src/status/enums/dockerStatus');
 const providers = require('../../../../src/status/providers');
-const ServiceStatusEnum = require('../../../../src/enums/serviceStatus');
+const ServiceStatusEnum = require('../../../../src/status/enums/serviceStatus');
 
 describe('getPlatformScopeFactory', () => {
   describe('#getPlatformScope', () => {

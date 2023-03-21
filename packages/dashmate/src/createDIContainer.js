@@ -89,7 +89,9 @@ const generateKeyPair = require('./ssl/generateKeyPair');
 const createSelfSignedCertificate = require('./ssl/selfSigned/createCertificate');
 
 const scheduleRenewZeroSslCertificateFactory = require('./helper/scheduleRenewZeroSslCertificateFactory');
-const generateTenderdashNodeKeyAndId = require('./tenderdash/generateTenderdashNodeKeyAndId');
+const generateTenderdashNodeKeyAndId = require('./tenderdash/createTenderdashNodeId');
+const registerMasternodeGuideTaskFactory = require('./listr/tasks/setup/regular/registerMasternodeGuideTaskFactory');
+const createIpAndPortsFormFactory = require('./listr/prompts/createIpAndPortsFormFactory');
 
 async function createDIContainer() {
   const container = createAwilixContainer({
@@ -214,6 +216,7 @@ async function createDIContainer() {
     configureTenderdashTask: asFunction(configureTenderdashTaskFactory).singleton(),
     waitForNodeToBeReadyTask: asFunction(waitForNodeToBeReadyTaskFactory).singleton(),
     enableCoreQuorumsTask: asFunction(enableCoreQuorumsTaskFactory).singleton(),
+    registerMasternodeGuideTask: asFunction(registerMasternodeGuideTaskFactory).singleton(),
     obtainZeroSSLCertificateTask: asFunction(obtainZeroSSLCertificateTaskFactory).singleton(),
     renewZeroSSLCertificateTask: asFunction(renewZeroSSLCertificateTaskFactory).singleton(),
     obtainSelfSignedCertificateTask: asFunction(obtainSelfSignedCertificateTaskFactory).singleton(),
@@ -225,6 +228,13 @@ async function createDIContainer() {
     getOverviewScope: asFunction(getOverviewScopeFactory).singleton(),
     getServicesScope: asFunction(getServicesScopeFactory).singleton(),
     getHostScope: asFunction(getHostScopeFactory).singleton(),
+  });
+
+  /**
+   * Prompts
+   */
+  container.register({
+    createIpAndPortsForm: asFunction(createIpAndPortsFormFactory).singleton(),
   });
 
   /**

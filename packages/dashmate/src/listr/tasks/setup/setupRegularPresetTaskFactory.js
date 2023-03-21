@@ -30,6 +30,7 @@ const { base } = require('../../../../configs/system');
  * @param {obtainZeroSSLCertificateTask} obtainZeroSSLCertificateTask
  * @param {saveCertificateTask} saveCertificateTask
  * @param {listCertificates} listCertificates
+ * @param {registerMasternodeGuideTask} registerMasternodeGuideTask
  */
 function setupRegularPresetTaskFactory(
   configFile,
@@ -40,6 +41,7 @@ function setupRegularPresetTaskFactory(
   obtainZeroSSLCertificateTask,
   saveCertificateTask,
   listCertificates,
+  registerMasternodeGuideTask,
 ) {
   /**
    * @typedef {setupRegularPresetTask}
@@ -115,193 +117,9 @@ function setupRegularPresetTaskFactory(
         },
       },
       {
-        enabled: (ctx) => (ctx.nodeType === NODE_TYPE_MASTERNODE || ctx.nodeType === NODE_TYPE_HPMN)
-          && !ctx.isMasternodeRegistered,
-        task: async (ctx, task) => {
-          ctx.registrar = await task.prompt([
-            {
-              type: 'select',
-              header: 'For security reasons, Dash masternodes should never store masternode owner'
-                + ' or collateral private keys. Dashmate therefore cannot register a masternode for'
-                + ' you directly. Instead, we will generate RPC commands that you can use in Dash'
-                + ' Core or other external tools where the keys are handled securely. During this'
-                + ' process, dashmate can optionally generate configuration elements as necessary,'
-                + ' such as certificates, the BLS operator key and the node id, since this is the'
-                + ' only information necessary for dashmate to configure the masternode.',
-              message: 'Which tool will you use to register your masternode?',
-              choices: [
-                { name: 'core', message: 'Dash Core (Wallet?)' },
-                { name: 'other', message: 'Other' },
-              ],
-              initial: 'core',
-            },
-          ]);
-        },
-      },
-      {
-        title: 'Register masternode with Dash Core',
-        enabled: (ctx) => ctx.registrar === 'core'
-          && (ctx.nodeType === NODE_TYPE_HPMN || ctx.nodeType === NODE_TYPE_MASTERNODE),
-        task: async (ctx, task) => {
-          function validateOutputIndex(value) {
-            const index = Math.floor(Number(value));
-
-            return index >= 0 && index.toString() === value;
-          }
-
-          function validateTxHash(value) {
-            return value.length === 64;
-          }
-
-          function validateECDSAPublicKey(value) {
-            try {
-              PublicKey(value);
-
-              return true;
-            } catch (e) {
-              return false;
-            }
-          }
-
-          function validateAddress(value) {
-            try {
-              Address(value);
-
-              return true;
-            } catch (e) {
-              return false;
-            }
-          }
-
-          const blsSignatures = await BlsSignatures();
-          const { PrivateKey: BlsPrivateKey, BasicSchemeMPL } = blsSignatures;
-
-          const randomBytes = new Uint8Array(crypto.randomBytes(256));
-          const operatorPrivateKey = BasicSchemeMPL.keyGen(randomBytes);
-
-          const initialOperatorPrivateKey = Buffer.from(operatorPrivateKey.serialize()).toString('hex');
-
-          function validateBLSPrivateKey(value) {
-            if (value.length === 0) {
-              return 'should not be empty';
-            }
-
-            const operatorPrivateKeyBuffer = Buffer.from(value, 'hex');
-
-            let key;
-            try {
-              key = BlsPrivateKey.fromBytes(operatorPrivateKeyBuffer, true);
-            } catch (e) {
-              return 'invalid key';
-            } finally {
-              if (key) {
-                key.delete();
-              }
-            }
-
-            return true;
-          }
-
-          function validateRewardShare(value) {
-            const reminder = value.split('.')[1];
-
-            return Number(value) <= 100 && (!reminder || reminder.length <= 2);
-          }
-
-          function formatRewardShares(input, choice) {
-            let str;
-
-            const number = Number(input);
-            if (Number.isNaN(number) || number.toFixed(2).length < input.length) {
-              str = input;
-            } else {
-              str = number.toFixed(2);
-            }
-
-            const pos = Math.min(choice.cursor, str.length);
-
-            const options = {
-              input: str,
-              initial: choice.initial,
-              pos,
-              showCursor: this.state.index === 1,
-            };
-
-            return placeholder(this, options);
-          }
-
-          const form = await task.prompt([
-            // {
-            //   type: 'form',
-            //   header: 'Help user with collateral \n',
-            //   message: 'Enter collateral information:',
-            //   choices: [
-            //     {
-            //       name: 'txId',
-            //       message: 'Transaction hash',
-            //       validate: validateTxHash,
-            //     },
-            //     {
-            //       name: 'outputIndex',
-            //       message: 'Output index',
-            //       validate: validateOutputIndex,
-            //     },
-            //   ],
-            //   validate: ({ txId, outputIndex }) => validateTxHash(txId)
-            //     && validateOutputIndex(outputIndex),
-            // },
-            // {
-            //   type: 'form',
-            //   header: 'Help user with these keys \n',
-            //   message: 'Enter masternode keys and payout address:',
-            //   choices: [
-            //     {
-            //       name: 'ownerPublicKey',
-            //       message: 'Owner public key',
-            //       validate: validateECDSAPublicKey,
-            //     },
-            //     {
-            //       name: 'votingPublicKey',
-            //       message: 'Voting public key',
-            //       validate: validateECDSAPublicKey,
-            //     },
-            //     {
-            //       name: 'payoutAddress',
-            //       message: 'Payout address',
-            //       validate: validateAddress,
-            //     },
-            //   ],
-            //   validate: ({ ownerPublicKey, votingPublicKey, payoutAddress }) => (
-            //     validateECDSAPublicKey(ownerPublicKey)
-            //     && validateECDSAPublicKey(votingPublicKey)
-            //     && validateAddress(payoutAddress)
-            //   ),
-            // },
-            {
-              type: 'form',
-              header: 'Explain options with operator key and explain operator rewards\n',
-              message: 'Please provide the following information:',
-              choices: [
-                {
-                  name: 'privateKey',
-                  message: 'BLS private key',
-                  initial: initialOperatorPrivateKey,
-                  validate: validateBLSPrivateKey,
-                },
-                {
-                  name: 'rewardShare',
-                  message: 'Reward share',
-                  initial: '0.00',
-                  validate: validateRewardShare,
-                  format: formatRewardShares,
-                  result: (value) => Number(value).toFixed(2),
-                },
-              ],
-              validate: ({ privateKey, rewardShare }) => validateBLSPrivateKey(privateKey)
-                && validateRewardShare(rewardShare),
-            },
-          ]);
-        },
+        enabled: (ctx) => !ctx.isMasternodeRegistered
+        && (ctx.nodeType === NODE_TYPE_MASTERNODE || ctx.nodeType === NODE_TYPE_HPMN),
+        task: () => registerMasternodeGuideTask(),
       },
       {
         title: 'Masternode operator key',

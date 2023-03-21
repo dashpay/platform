@@ -1,6 +1,6 @@
 const fetch = require('node-fetch');
 const determineStatus = require('../determineStatus');
-const ServiceStatusEnum = require('../../enums/serviceStatus');
+const ServiceStatusEnum = require('../enums/serviceStatus');
 const providers = require('../providers');
 
 /**
