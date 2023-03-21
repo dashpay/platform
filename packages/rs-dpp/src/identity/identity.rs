@@ -96,11 +96,7 @@ impl Convertible for Identity {
         let mut value = self.to_object()?;
         if let Some(keys) = value.get_optional_array_mut_ref(property_names::PUBLIC_KEYS)? {
             for key in keys.iter_mut() {
-                if let Some(value) = key.get_optional_value("disabledAt")? {
-                    if value.is_null() {
-                        key.remove("disabledAt")?;
-                    }
-                }
+                key.remove_optional_value_if_null("disabledAt")?;
             }
         }
         Ok(value)
