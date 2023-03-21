@@ -482,7 +482,7 @@ describe('validateDocumentsBatchTransitionBasicFactory', () => {
         it('should be a byte array - Rust', async () => {
           const [firstDocumentTransition] = rawStateTransition.transitions;
 
-          firstDocumentTransition.$dataContractId = Buffer.alloc(2);
+          firstDocumentTransition.$dataContractId = Buffer.alloc(10);
 
           const result = await validateDocumentsBatchTransitionBasic(
             protocolVersionValidator,
