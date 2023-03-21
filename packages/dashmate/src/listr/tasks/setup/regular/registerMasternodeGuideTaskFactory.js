@@ -304,8 +304,31 @@ function registerMasternodeGuideTaskFactory(
             isHPMN: ctx.nodeType === NODE_TYPE_HPMN,
           }));
 
-          const form = await task.prompt(prompts);
 
+          let form;
+          let confirmation;
+          do {
+            form = await task.prompt(prompts);
+
+            confirmation = await task.prompt([
+              {
+                type: 'toggle',
+                name: 'confirm',
+                header: chalk` You should run the command:
+                {bold.green dash-cli ${ctx.nodeType === NODE_TYPE_HPMN ? 'register_hpmn' : 'register'}
+                      argument1
+                      argument2
+                }
+                
+                Go with nope to come back to edit command\n`,
+                message: 'Have you registered a masternode successfully?',
+                enabled: 'Yep',
+                disabled: 'Nope',
+              },
+            ]);
+          } while (!confirmation);
+
+          // TODO: Store form information to the config
           console.dir(form);
         },
       },

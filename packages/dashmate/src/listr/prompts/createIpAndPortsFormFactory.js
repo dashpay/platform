@@ -36,6 +36,7 @@ function createIpAndPortsFormFactory() {
     // TODO: Ports shouldn't be equal and must not be busy
     // TODO: Validate that IP address is available from outside
     // TODO: Validate ports according to the current network
+    // TODO: We should take initial values from corresponding configs not from the base
 
     const fields = [
       {
