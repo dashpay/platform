@@ -213,7 +213,10 @@ impl IdentityCreateTransition {
 
 impl StateTransitionConvert for IdentityCreateTransition {
     fn signature_property_paths() -> Vec<&'static str> {
-        vec![property_names::SIGNATURE]
+        vec![
+            property_names::SIGNATURE,
+            property_names::PUBLIC_KEYS_SIGNATURE,
+        ]
     }
     fn identifiers_property_paths() -> Vec<&'static str> {
         vec![property_names::IDENTITY_ID]

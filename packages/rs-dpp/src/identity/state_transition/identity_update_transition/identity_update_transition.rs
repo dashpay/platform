@@ -240,7 +240,10 @@ where
 
 impl StateTransitionConvert for IdentityUpdateTransition {
     fn binary_property_paths() -> Vec<&'static str> {
-        vec![property_names::SIGNATURE]
+        vec![
+            property_names::SIGNATURE,
+            property_names::ADD_PUBLIC_KEYS_SIGNATURE,
+        ]
     }
 
     fn identifiers_property_paths() -> Vec<&'static str> {
@@ -251,6 +254,7 @@ impl StateTransitionConvert for IdentityUpdateTransition {
         vec![
             property_names::SIGNATURE,
             property_names::SIGNATURE_PUBLIC_KEY_ID,
+            property_names::ADD_PUBLIC_KEYS_SIGNATURE,
         ]
     }
 
