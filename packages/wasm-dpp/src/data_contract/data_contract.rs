@@ -13,7 +13,7 @@ use dpp::platform_value::{Bytes32, Value};
 
 use dpp::{platform_value, Convertible};
 
-use crate::errors::{RustConversionError};
+use crate::errors::RustConversionError;
 use crate::identifier::identifier_from_js_value;
 use crate::metadata::MetadataWasm;
 use crate::utils::WithJsError;

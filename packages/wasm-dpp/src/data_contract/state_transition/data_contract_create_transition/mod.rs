@@ -21,9 +21,8 @@ use crate::bls_adapter::{BlsAdapter, JsBlsAdapter};
 use crate::errors::protocol_error::from_protocol_error;
 use crate::utils::WithJsError;
 use crate::{
-    buffer::Buffer, identifier::IdentifierWrapper, with_js_error,
-    DataContractParameters, DataContractWasm, IdentityPublicKeyWasm,
-    StateTransitionExecutionContextWasm,
+    buffer::Buffer, identifier::IdentifierWrapper, with_js_error, DataContractParameters,
+    DataContractWasm, IdentityPublicKeyWasm, StateTransitionExecutionContextWasm,
 };
 
 #[derive(Clone)]

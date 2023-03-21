@@ -1,6 +1,5 @@
 use std::sync::Arc;
 
-
 use dpp::data_contract::state_transition::data_contract_create_transition::DataContractCreateTransition;
 
 use dpp::validation::SimpleValidationResult;

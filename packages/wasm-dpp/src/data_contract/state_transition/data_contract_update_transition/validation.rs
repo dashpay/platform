@@ -1,6 +1,5 @@
 use std::{collections::BTreeMap, sync::Arc};
 
-
 use dpp::data_contract::state_transition::data_contract_update_transition::DataContractUpdateTransition;
 
 use dpp::validation::{AsyncDataValidatorWithContext, SimpleValidationResult};
@@ -20,7 +19,7 @@ use wasm_bindgen::prelude::*;
 use crate::utils::WithJsError;
 use crate::{
     data_contract::state_transition::data_contract_update_transition::DataContractUpdateTransitionParameters,
-    errors::{protocol_error::from_protocol_error},
+    errors::protocol_error::from_protocol_error,
     state_repository::{ExternalStateRepositoryLike, ExternalStateRepositoryLikeWrapper},
     validation::ValidationResultWasm,
     DataContractUpdateTransitionWasm, StateTransitionExecutionContextWasm,

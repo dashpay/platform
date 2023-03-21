@@ -216,7 +216,10 @@ fn get_list<T: TryFrom<Value, Error = platform_value::Error>>(
 
 /// if the property isn't present the empty list is returned. If property is defined, the function
 /// might return some serialization-related errors
-fn remove_integer_list_or_default<T>(value: &mut Value, property_name: &str) -> Result<Vec<T>, ProtocolError>
+fn remove_integer_list_or_default<T>(
+    value: &mut Value,
+    property_name: &str,
+) -> Result<Vec<T>, ProtocolError>
 where
     T: TryFrom<i128>
         + TryFrom<u128>

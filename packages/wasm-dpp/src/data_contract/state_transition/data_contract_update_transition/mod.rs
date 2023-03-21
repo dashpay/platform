@@ -19,9 +19,7 @@ use wasm_bindgen::prelude::*;
 
 use crate::utils::WithJsError;
 use crate::{
-    buffer::Buffer,
-    errors::{protocol_error::from_protocol_error},
-    identifier::IdentifierWrapper,
+    buffer::Buffer, errors::protocol_error::from_protocol_error, identifier::IdentifierWrapper,
     with_js_error, DataContractParameters, DataContractWasm, StateTransitionExecutionContextWasm,
 };
 

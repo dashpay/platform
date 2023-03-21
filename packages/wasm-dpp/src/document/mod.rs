@@ -2,7 +2,6 @@ use dpp::dashcore::anyhow::Context;
 use dpp::prelude::{DataContract, Identifier};
 use dpp::util::json_schema::JsonSchemaExt;
 
-
 use anyhow::anyhow;
 use serde::{Deserialize, Serialize};
 use std::convert::TryInto;
