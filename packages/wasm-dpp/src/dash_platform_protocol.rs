@@ -22,6 +22,9 @@ pub struct DashPlatformProtocol {
     document: DocumentFacadeWasm,
     data_contract: DataContractFacadeWasm,
     state_transition: StateTransitionFacadeWasm,
+    protocol_version: u32,
+    state_repository: ExternalStateRepositoryLikeWrapper,
+    public_keys_validator: Arc<PublicKeysValidator<BlsAdapter>>
 }
 
 #[derive(Serialize, Deserialize)]
@@ -53,7 +56,7 @@ impl DashPlatformProtocol {
         let public_keys_validator = Arc::new(PublicKeysValidator::new(bls).unwrap());
 
         let identity_facade =
-            IdentityFacadeWasm::new(protocol_version_validator.clone(), public_keys_validator);
+            IdentityFacadeWasm::new(protocol_version_validator.clone(), public_keys_validator.clone());
 
         let document_facade = init_document_facade(
             protocol_version,
@@ -65,7 +68,7 @@ impl DashPlatformProtocol {
             DataContractFacadeWasm::new(protocol_version, protocol_version_validator.clone());
 
         let state_transition_facade = StateTransitionFacadeWasm::new(
-            state_repository,
+            state_repository.clone(),
             bls_adapter,
             protocol_version_validator,
         )?;
@@ -75,6 +78,9 @@ impl DashPlatformProtocol {
             identity: identity_facade,
             data_contract: data_contract_facade,
             state_transition: state_transition_facade,
+            protocol_version,
+            state_repository,
+            public_keys_validator
         })
     }
 
@@ -97,6 +103,46 @@ impl DashPlatformProtocol {
     pub fn state_transition(&self) -> StateTransitionFacadeWasm {
         self.state_transition.clone()
     }
+
+    #[wasm_bindgen(getter = getProtocolVersion)]
+    pub fn get_protocol_version(&self) -> u32 {
+        self.protocol_version
+    }
+
+    pub fn set_protocol_version(&self) {
+        let kek = init();
+    }
+
+    fn init() {}
+}
+
+fn init(public_keys_validator: Arc<PublicKeysValidator<BlsAdapter>>, protocol_version: u32, state_repository: ExternalStateRepositoryLikeWrapper) -> (IdentityFacadeWasm, DocumentFacadeWasm, DataContractFacadeWasm, StateTransitionFacadeWasm) {
+    let protocol_version_validator = Arc::new(ProtocolVersionValidator::new(
+        protocol_version,
+        LATEST_VERSION,
+        COMPATIBILITY_MAP.clone(),
+    ));
+    let public_keys_validator = Arc::new(PublicKeysValidator::new(bls).unwrap());
+
+    let identity_facade =
+        IdentityFacadeWasm::new(protocol_version_validator.clone(), public_keys_validator);
+
+    let document_facade = init_document_facade(
+        protocol_version,
+        protocol_version_validator.clone(),
+        wrapped_state_repository,
+    );
+
+    let data_contract_facade =
+        DataContractFacadeWasm::new(protocol_version, protocol_version_validator.clone());
+
+    let state_transition_facade = StateTransitionFacadeWasm::new(
+        state_repository,
+        bls_adapter,
+        protocol_version_validator,
+    )?;
+
+    (identity_facade, document_facade, data_contract_facade, state_transition_facade)
 }
 
 fn init_document_facade(

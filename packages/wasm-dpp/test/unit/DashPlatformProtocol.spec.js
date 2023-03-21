@@ -2,10 +2,11 @@ const { default: Ajv } = require('ajv/dist/2020');
 
 const protocolVersion = require('@dashevo/dpp/lib/version/protocolVersion');
 
-const DashPlatformProtocol = require('@dashevo/dpp/lib/DashPlatformProtocol');
-const JsonSchemaValidator = require('@dashevo/dpp/lib/validation/JsonSchemaValidator');
-
-const createStateRepositoryMock = require('@dashevo/dpp/lib/test/mocks/createStateRepositoryMock');
+// const DashPlatformProtocol = require('@dashevo/dpp/lib/DashPlatformProtocol');
+const createStateRepositoryMock = require('../../lib/test/mocks/createStateRepositoryMock');
+let { DashPlatformProtocol } = require('../..');
+const { default: loadWasmDpp } = require('../..');
+// const JsonSchemaValidator = require('@dashevo/dpp/lib/validation/JsonSchemaValidator');
 
 describe('DashPlatformProtocol', () => {
   let dpp;
@@ -13,6 +14,7 @@ describe('DashPlatformProtocol', () => {
   let jsonSchemaValidatorMock;
 
   beforeEach(async function beforeEach() {
+    ({ DashPlatformProtocol } = await loadWasmDpp());
     stateRepositoryMock = createStateRepositoryMock(this.sinonSandbox);
     jsonSchemaValidatorMock = {};
 
@@ -24,20 +26,10 @@ describe('DashPlatformProtocol', () => {
   });
 
   describe('constructor', () => {
-    it('should create JsonSchemaValidator if not passed in options', async () => {
-      dpp = new DashPlatformProtocol();
-      await dpp.initialize();
-
-      const jsonSchemaValidator = dpp.getJsonSchemaValidator();
-
-      expect(jsonSchemaValidator).to.be.instanceOf(JsonSchemaValidator);
-      expect(jsonSchemaValidator.ajv).to.be.instanceOf(Ajv);
-    });
-
     it('should set default protocol version', () => {
       dpp = new DashPlatformProtocol();
 
-      expect(dpp.protocolVersion).to.equal(protocolVersion.latestVersion);
+      expect(dpp.getProtocolVersion()).to.equal(protocolVersion.latestVersion);
     });
   });
 
