@@ -12,10 +12,7 @@ use serde::de::DeserializeOwned;
 use serde_json::Value;
 use wasm_bindgen::{convert::RefFromWasmAbi, prelude::*};
 
-use crate::{
-    bail_js,
-    errors::{from_dpp_err, RustConversionError},
-};
+use crate::errors::{from_dpp_err, RustConversionError};
 
 pub trait ToSerdeJSONExt {
     fn with_serde_to_json_value(&self) -> Result<Value, JsValue>;
@@ -251,4 +248,14 @@ pub(crate) fn replace_identifiers_with_bytes_without_failing<'a>(
     let _ = value
         .replace_identifier_paths(paths, ReplaceWith::Bytes)
         .with_js_error();
+}
+
+// The trait `Inner` provides better flexibility and visibility when you need to switch
+// between WASM structure and original structure.
+pub(crate) trait Inner {
+    type InnerItem;
+
+    fn into_inner(self) -> Self::InnerItem;
+    fn inner(&self) -> &Self::InnerItem;
+    fn inner_mut(&mut self) -> &mut Self::InnerItem;
 }

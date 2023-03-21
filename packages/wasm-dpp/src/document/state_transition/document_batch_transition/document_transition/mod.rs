@@ -23,7 +23,7 @@ use crate::{
     buffer::Buffer,
     identifier::{identifier_from_js_value, IdentifierWrapper},
     lodash::lodash_set,
-    utils::{try_to_u64, ToSerdeJSONExt, WithJsError},
+    utils::{try_to_u64, Inner, ToSerdeJSONExt, WithJsError},
     with_js_error, BinaryType, ConversionOptions, DataContractWasm,
 };
 
@@ -253,6 +253,22 @@ impl From<DocumentTransitionWasm> for DocumentTransition {
     }
 }
 
+impl Inner for DocumentTransitionWasm {
+    type InnerItem = DocumentTransition;
+
+    fn into_inner(self) -> Self::InnerItem {
+        self.0
+    }
+
+    fn inner(&self) -> &Self::InnerItem {
+        &self.0
+    }
+
+    fn inner_mut(&mut self) -> &mut Self::InnerItem {
+        &mut self.0
+    }
+}
+
 pub fn from_document_transition_to_js_value(document_transition: DocumentTransition) -> JsValue {
     match document_transition {
         DocumentTransition::Create(create_transition) => {
@@ -286,11 +302,11 @@ pub(crate) fn to_object<'a>(
 
     for path in identifiers_paths.into_iter() {
         if let Ok(bytes) = value.remove_path_into::<Vec<u8>>(path) {
+            let buffer = Buffer::from_bytes(&bytes);
             if !options.skip_identifiers_conversion {
-                let buffer = Buffer::from_bytes(&bytes);
                 lodash_set(&js_value, path, buffer.into());
             } else {
-                let id = IdentifierWrapper::new(bytes)?;
+                let id = IdentifierWrapper::new(buffer.into())?;
                 lodash_set(&js_value, path, id.into());
             }
         }

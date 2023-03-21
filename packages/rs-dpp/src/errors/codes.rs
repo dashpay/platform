@@ -112,7 +112,7 @@ impl ErrorWithCode for BasicError {
 
             Self::DuplicateDocumentTransitionsWithIdsError { .. } => 1019,
             Self::DuplicateDocumentTransitionsWithIndicesError { .. } => 1020,
-            Self::MissingDataContractIdError => 1025,
+            Self::MissingDataContractIdError { .. } => 1025,
             Self::InvalidIdentifierError { .. } => 1006,
 
             // Data contract
@@ -130,7 +130,6 @@ impl ErrorWithCode for BasicError {
             Self::DataContractHaveNewUniqueIndexError { .. } => 0,
             Self::DataContractInvalidIndexDefinitionUpdateError { .. } => 0,
             Self::IndexError(ref e) => e.get_code(),
-            Self::IdentityNotFoundError { .. } => 2000,
             Self::InvalidDataContractIdError { .. } => 1011,
 
             // State Transition

@@ -6,6 +6,12 @@ use lazy_static::lazy_static;
 use log::trace;
 use serde_json::Value as JsonValue;
 
+use crate::consensus::basic::data_contract::{
+    DuplicateIndexError, DuplicateIndexNameError, InvalidCompoundIndexError,
+    InvalidIndexPropertyTypeError, InvalidIndexedPropertyConstraintError,
+    SystemPropertyIndexAlreadyPresentError, UndefinedIndexPropertyError,
+    UniqueIndicesLimitReachedError,
+};
 use crate::{
     consensus::basic::{BasicError, IndexError},
     data_contract::{
@@ -212,7 +218,7 @@ fn validate_index_definitions(
         }
 
         // Make sure that compound unique indices contain all fields
-        if index_definition.properties.len() > 1 {
+        if index_definition.unique && index_definition.properties.len() > 1 {
             let required_fields = document_schema
                 .get_schema_required_fields()
                 .unwrap_or_default();
@@ -230,10 +236,10 @@ fn validate_index_definitions(
 
             if !all_are_required && !all_are_not_required {
                 result.add_error(BasicError::IndexError(
-                    IndexError::InvalidCompoundIndexError {
-                        document_type: document_type.to_owned(),
-                        index_definition: index_definition.clone(),
-                    },
+                    IndexError::InvalidCompoundIndexError(InvalidCompoundIndexError::new(
+                        document_type.to_owned(),
+                        index_definition.clone(),
+                    )),
                 ));
             }
 
@@ -241,10 +247,9 @@ fn validate_index_definitions(
             let indices_fingerprint = serde_json::to_string(&index_definition.properties)
                 .expect("fingerprint creation shouldn't fail");
             if indices_fingerprints.contains(&indices_fingerprint) {
-                result.add_error(BasicError::IndexError(IndexError::DuplicateIndexError {
-                    document_type: document_type.to_owned(),
-                    index_definition: index_definition.clone(),
-                }));
+                result.add_error(BasicError::IndexError(IndexError::DuplicateIndexError(
+                    DuplicateIndexError::new(document_type.to_owned(), index_definition.clone()),
+                )));
             }
             indices_fingerprints.push(indices_fingerprint)
         }
@@ -289,12 +294,12 @@ fn validate_property_definition(
 
     if !invalid_property_type.is_empty() {
         result.add_error(BasicError::IndexError(
-            IndexError::InvalidIndexPropertyTypeError {
-                document_type: document_type.to_owned(),
-                index_definition: index_definition.clone(),
-                property_name: property_name.to_owned(),
-                property_type: invalid_property_type.clone(),
-            },
+            IndexError::InvalidIndexPropertyTypeError(InvalidIndexPropertyTypeError::new(
+                document_type.to_owned(),
+                index_definition.clone(),
+                property_name.to_owned(),
+                invalid_property_type.clone(),
+            )),
         ));
     }
 
@@ -336,13 +341,15 @@ fn validate_property_definition(
 
         if max_items.is_none() || max_items.unwrap() > max_limit as u64 {
             result.add_error(BasicError::IndexError(
-                IndexError::InvalidIndexedPropertyConstraintError {
-                    document_type: document_type.to_owned(),
-                    index_definition: index_definition.clone(),
-                    property_name: property_name.to_owned(),
-                    constraint_name: String::from("maxItems"),
-                    reason: format!("should be less or equal {}", max_limit),
-                },
+                IndexError::InvalidIndexedPropertyConstraintError(
+                    InvalidIndexedPropertyConstraintError::new(
+                        document_type.to_owned(),
+                        index_definition.clone(),
+                        property_name.to_owned(),
+                        String::from("maxItems"),
+                        format!("should be less or equal {}", max_limit),
+                    ),
+                ),
             ));
         }
     }
@@ -352,16 +359,18 @@ fn validate_property_definition(
 
         if max_length.is_none() || max_length.unwrap() > MAX_INDEXED_STRING_PROPERTY_LENGTH as u64 {
             result.add_error(BasicError::IndexError(
-                IndexError::InvalidIndexedPropertyConstraintError {
-                    document_type: document_type.to_owned(),
-                    index_definition: index_definition.clone(),
-                    property_name: property_name.to_owned(),
-                    constraint_name: String::from("maxLength"),
-                    reason: format!(
-                        "should be less or equal than {}",
-                        MAX_INDEXED_STRING_PROPERTY_LENGTH
+                IndexError::InvalidIndexedPropertyConstraintError(
+                    InvalidIndexedPropertyConstraintError::new(
+                        document_type.to_owned(),
+                        index_definition.clone(),
+                        property_name.to_owned(),
+                        String::from("maxLength"),
+                        format!(
+                            "should be less or equal than {}",
+                            MAX_INDEXED_STRING_PROPERTY_LENGTH
+                        ),
                     ),
-                },
+                ),
             ))
         }
     }
@@ -379,11 +388,11 @@ fn validate_not_defined_properties(
     for (property_name, definition) in properties {
         if definition.is_none() {
             result.add_error(BasicError::IndexError(
-                IndexError::UndefinedIndexPropertyError {
-                    document_type: document_type.to_owned(),
-                    index_definition: index_definition.clone(),
-                    property_name: property_name.to_owned().to_owned(),
-                },
+                IndexError::UndefinedIndexPropertyError(UndefinedIndexPropertyError::new(
+                    document_type.to_owned(),
+                    index_definition.clone(),
+                    property_name.to_owned().to_owned(),
+                )),
             ))
         }
     }
@@ -397,10 +406,9 @@ fn validate_index_naming_duplicates(
 ) -> ValidationResult<()> {
     let mut result = ValidationResult::default();
     for duplicate_index in indices.iter().map(|i| &i.name).duplicates() {
-        result.add_error(BasicError::DuplicateIndexNameError {
-            document_type: document_type.to_owned(),
-            duplicate_index_name: duplicate_index.to_owned(),
-        })
+        result.add_error(BasicError::DuplicateIndexNameError(
+            DuplicateIndexNameError::new(document_type.to_owned(), duplicate_index.to_owned()),
+        ))
     }
     result
 }
@@ -410,10 +418,10 @@ fn validate_max_unique_indices(indices: &[Index], document_type: &str) -> Valida
     let mut result = ValidationResult::default();
     if indices.iter().filter(|i| i.unique).count() > UNIQUE_INDEX_LIMIT {
         result.add_error(BasicError::IndexError(
-            IndexError::UniqueIndicesLimitReachedError {
-                document_type: document_type.to_owned(),
-                index_limit: UNIQUE_INDEX_LIMIT,
-            },
+            IndexError::UniqueIndicesLimitReachedError(UniqueIndicesLimitReachedError::new(
+                document_type.to_owned(),
+                UNIQUE_INDEX_LIMIT,
+            )),
         ))
     }
 
@@ -430,11 +438,13 @@ fn validate_no_system_indices(
     for property in index_definition.properties.iter() {
         if NOT_ALLOWED_SYSTEM_PROPERTIES.contains(&property.name.as_str()) {
             result.add_error(BasicError::IndexError(
-                IndexError::SystemPropertyIndexAlreadyPresentError {
-                    property_name: property.name.to_owned(),
-                    document_type: document_type.to_owned(),
-                    index_definition: index_definition.clone(),
-                },
+                IndexError::SystemPropertyIndexAlreadyPresentError(
+                    SystemPropertyIndexAlreadyPresentError::new(
+                        document_type.to_owned(),
+                        index_definition.clone(),
+                        property.name.to_owned(),
+                    ),
+                ),
             ));
         }
     }

@@ -17,6 +17,11 @@ impl DataTriggerExecutionResult {
         self.errors.push(err)
     }
 
+    /// Add an error to result
+    pub fn add_errors(&mut self, errors: impl IntoIterator<Item = StateError>) {
+        self.errors.extend(errors.into_iter())
+    }
+
     /// Get all Trigger Execution Errors
     pub fn get_errors(&self) -> &Vec<StateError> {
         &self.errors

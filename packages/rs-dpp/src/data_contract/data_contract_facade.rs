@@ -1,6 +1,3 @@
-use crate::data_contract::state_transition::{
-    DataContractCreateTransition, DataContractUpdateTransition,
-};
 use crate::data_contract::validation::data_contract_validator::DataContractValidator;
 use crate::data_contract::{DataContract, DataContractFactory};
 use crate::document::document_transition::document_base_transition::JsonValue;
@@ -8,6 +5,9 @@ use crate::prelude::{Identifier, ValidationResult};
 use crate::version::ProtocolVersionValidator;
 use crate::ProtocolError;
 use std::sync::Arc;
+
+use super::state_transition::data_contract_create_transition::DataContractCreateTransition;
+use super::state_transition::data_contract_update_transition::DataContractUpdateTransition;
 
 pub struct DataContractFacade {
     factory: DataContractFactory,

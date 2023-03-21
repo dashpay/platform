@@ -15,6 +15,7 @@ const {
  * @param {resolveDockerHostIp} resolveDockerHostIp
  * @param {configFileRepository} configFileRepository
  * @param {generateHDPrivateKeys} generateHDPrivateKeys
+ * @param {generateTenderdashNodeKeyAndId} generateTenderdashNodeKeyAndId
  */
 function setupLocalPresetTaskFactory(
   configFile,
@@ -24,6 +25,7 @@ function setupLocalPresetTaskFactory(
   resolveDockerHostIp,
   configFileRepository,
   generateHDPrivateKeys,
+  generateTenderdashNodeKeyAndId,
 ) {
   /**
    * @typedef {setupLocalPresetTask}
@@ -190,6 +192,14 @@ function setupLocalPresetTaskFactory(
                   config.set('platform', undefined);
                 } else {
                   config.set('description', `local node #${nodeIndex}`);
+
+                  const {
+                    id,
+                    key,
+                  } = generateTenderdashNodeKeyAndId();
+
+                  config.set('platform.drive.tenderdash.node.id', id);
+                  config.set('platform.drive.tenderdash.node.key', key);
 
                   config.set('platform.dapi.envoy.http.port', 3000 + (i * 100));
                   config.set('platform.drive.tenderdash.p2p.port', 26656 + (i * 100));

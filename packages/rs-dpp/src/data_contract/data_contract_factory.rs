@@ -4,6 +4,7 @@ use std::sync::Arc;
 
 use data_contract::state_transition::property_names as st_prop;
 
+use crate::data_contract::errors::InvalidDataContractError;
 use crate::data_contract::property_names;
 use crate::util::serializer::value_to_cbor;
 use crate::{
@@ -14,11 +15,9 @@ use crate::{
     util::entropy_generator,
 };
 
-use super::{
-    state_transition::{DataContractCreateTransition, DataContractUpdateTransition},
-    validation::data_contract_validator::DataContractValidator,
-    DataContract,
-};
+use super::state_transition::data_contract_create_transition::DataContractCreateTransition;
+use super::state_transition::data_contract_update_transition::DataContractUpdateTransition;
+use super::{validation::data_contract_validator::DataContractValidator, DataContract};
 
 /// A way to provide external entropy generator.
 pub trait EntropyGenerator {
@@ -101,7 +100,9 @@ impl DataContractFactory {
 
         let cbor = value_to_cbor(JsonValue::Object(root_map), Some(1))?;
 
-        DataContract::from_cbor(cbor)
+        let mut data_contract = DataContract::from_cbor(cbor)?;
+        data_contract.set_entropy(entropy);
+        Ok(data_contract)
     }
 
     /// Create Data Contract from plain object
@@ -114,10 +115,9 @@ impl DataContractFactory {
             let result = self.validate_data_contract.validate(&raw_data_contract)?;
 
             if !result.is_valid() {
-                return Err(ProtocolError::InvalidDataContractError {
-                    errors: result.errors,
-                    raw_data_contract,
-                });
+                return Err(ProtocolError::InvalidDataContractError(
+                    InvalidDataContractError::new(result.errors, raw_data_contract),
+                ));
             }
         }
         DataContract::from_raw_object(raw_data_contract)

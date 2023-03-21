@@ -5,8 +5,11 @@ use test_case::test_case;
 use crate::{
     consensus::{basic::BasicError, ConsensusError},
     data_contract::state_transition::{
-        data_contract_update_transition::validation::basic::DataContractUpdateTransitionBasicValidator,
-        property_names, DataContractUpdateTransition,
+        data_contract_update_transition::{
+            validation::basic::DataContractUpdateTransitionBasicValidator,
+            DataContractUpdateTransition,
+        },
+        property_names,
     },
     state_repository::MockStateRepositoryLike,
     state_transition::{
@@ -18,6 +21,7 @@ use crate::{
         utils::{get_basic_error_from_result, get_schema_error},
     },
     util::json_value::JsonValueExt,
+    validation::AsyncDataValidatorWithContext,
     version::{ProtocolVersionValidator, LATEST_VERSION},
 };
 
@@ -359,13 +363,17 @@ async fn should_have_existing_documents_schema_backward_compatible() {
         .expect("validation result should be returned");
 
     let basic_error = get_basic_error_from_result(&result, 0);
-    assert!(matches!(
-        basic_error,
-        BasicError::IncompatibleDataContractSchemaError {  operation, field_path, ..}  if {
-            operation == "add" &&
-            field_path == "/required/1"
+
+    match basic_error {
+        BasicError::IncompatibleDataContractSchemaError(err) => {
+            assert_eq!(err.operation(), "add".to_string());
+            assert_eq!(err.field_path(), "/required/1".to_string());
         }
-    ));
+        _ => panic!(
+            "Expected IncompatibleDataContractSchemaError, got {}",
+            basic_error
+        ),
+    }
 }
 
 #[tokio::test]

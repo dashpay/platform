@@ -1,3 +1,5 @@
+pub mod errors;
+
 use dpp::prelude::Identifier;
 use dpp::util::string_encoding::Encoding;
 use itertools::Itertools;
@@ -9,6 +11,8 @@ use wasm_bindgen::JsCast;
 use crate::bail_js;
 use crate::buffer::Buffer;
 use crate::errors::from_dpp_err;
+use crate::identifier::errors::IdentifierErrorWasm;
+use crate::utils::Inner;
 use crate::utils::ToSerdeJSONExt;
 use crate::utils::WithJsError;
 use dpp::identifier;
@@ -27,7 +31,7 @@ extern "C" {
     fn log(a: &str);
 }
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 #[wasm_bindgen(js_name=Identifier, inspectable)]
 pub struct IdentifierWrapper {
     wrapped: identifier::Identifier,
@@ -54,8 +58,17 @@ impl std::convert::From<IdentifierWrapper> for Identifier {
 #[wasm_bindgen(js_class=Identifier)]
 impl IdentifierWrapper {
     #[wasm_bindgen(constructor)]
-    pub fn new(buffer: Vec<u8>) -> Result<IdentifierWrapper, JsValue> {
-        let identifier = identifier::Identifier::from_bytes(&buffer).map_err(from_dpp_err)?;
+    pub fn new(js_value: JsValue) -> Result<IdentifierWrapper, JsValue> {
+        // Can be possible reworked with Buffer::is_buffer(&js_value)
+        // but until we use Buffer shim for both Node and Web,
+        // it will return false negative in Node.JS environment
+        if !js_value.has_type::<js_sys::Uint8Array>() {
+            return Err(IdentifierErrorWasm::new("Identifier expects Buffer").into());
+        }
+
+        let vec = js_value.dyn_into::<js_sys::Uint8Array>()?.to_vec();
+
+        let identifier = identifier::Identifier::from_bytes(&vec).map_err(from_dpp_err)?;
 
         Ok(IdentifierWrapper {
             wrapped: identifier,
@@ -66,13 +79,12 @@ impl IdentifierWrapper {
         if value.is_string() {
             let string = value.as_string().unwrap();
             Ok(IdentifierWrapper::from_string(string, encoding))
-        } else if value.has_type::<js_sys::Uint8Array>() {
-            let vec = value.dyn_into::<js_sys::Uint8Array>()?.to_vec();
-            IdentifierWrapper::new(vec)
+        } else if value.has_type::<js_sys::Uint8Array>() && encoding.is_none() {
+            IdentifierWrapper::new(value)
+        } else if value.has_type::<js_sys::Uint8Array>() && encoding.is_some() {
+            Err(IdentifierErrorWasm::new("encoding accepted only with type string").into())
         } else {
-            Err(JsValue::from(
-                "Identifier.from received an unexpected value",
-            ))
+            Err(IdentifierErrorWasm::new("Identifier.from received an unexpected value").into())
         }
     }
 
@@ -129,14 +141,28 @@ impl IdentifierWrapper {
     }
 }
 
-impl IdentifierWrapper {
-    pub fn inner(self) -> Identifier {
+impl Inner for IdentifierWrapper {
+    type InnerItem = Identifier;
+
+    fn into_inner(self) -> Identifier {
         self.wrapped
+    }
+
+    fn inner(&self) -> &Identifier {
+        &self.wrapped
+    }
+
+    fn inner_mut(&mut self) -> &mut Identifier {
+        &mut self.wrapped
     }
 }
 
-/// tries to create identifier from
-pub fn identifier_from_js_value(js_value: &JsValue) -> Result<Identifier, JsValue> {
+// Try to extract Identifier from **stringified** identifier.
+// The `js_value` can be a stringified instance of: `Identifier`, `Buffer` or `Array`
+pub(crate) fn identifier_from_js_value(js_value: &JsValue) -> Result<Identifier, JsValue> {
+    if js_value.is_undefined() || js_value.is_null() {
+        bail_js!("the identifier cannot be null or undefined")
+    }
     let value = js_value.with_serde_to_json_value()?;
     match value {
         Value::Array(arr) => {

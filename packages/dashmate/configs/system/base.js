@@ -37,7 +37,7 @@ module.exports = {
   },
   core: {
     docker: {
-      image: 'dashpay/dashd:19.0.0-beta.6',
+      image: 'dashpay/dashd:19.0.0-rc.4',
     },
     p2p: {
       port: 20001,
@@ -141,7 +141,7 @@ module.exports = {
       },
       tenderdash: {
         docker: {
-          image: 'dashpay/tenderdash:0.11.0-dev.3',
+          image: 'dashpay/tenderdash:0.11.0-dev.4',
         },
         p2p: {
           port: 26656,
@@ -159,13 +159,32 @@ module.exports = {
           level: 'debug',
           format: 'plain',
         },
-        nodeKey: {
-
+        node: {
+          id: null,
+          key: null,
         },
         genesis: {
-
+          consensus_params: {
+            block: {
+              max_bytes: '22020096',
+              max_gas: '-1',
+              time_iota_ms: '5000',
+            },
+            evidence: {
+              max_age: '100000',
+              max_age_num_blocks: '100000',
+              max_age_duration: '172800000000000',
+            },
+            validator: {
+              pub_key_types: [
+                'bls12381',
+              ],
+            },
+            version: {
+              app_version: '1',
+            },
+          },
         },
-        nodeId: null,
         moniker: null,
       },
     },

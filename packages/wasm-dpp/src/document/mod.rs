@@ -14,7 +14,7 @@ use crate::buffer::Buffer;
 use crate::errors::RustConversionError;
 use crate::identifier::{identifier_from_js_value, IdentifierWrapper};
 use crate::lodash::lodash_set;
-use crate::utils::{replace_identifiers_with_bytes_without_failing, ToSerdeJSONExt};
+use crate::utils::{replace_identifiers_with_bytes_without_failing, Inner, ToSerdeJSONExt};
 use crate::utils::{try_to_u64, WithJsError};
 use crate::with_js_error;
 use crate::{DataContractWasm, MetadataWasm};
@@ -24,10 +24,11 @@ pub use state_transition::*;
 pub mod document_facade;
 mod factory;
 pub mod fetch_and_validate_data_contract;
+pub mod generate_document_id;
 pub mod state_transition;
 mod validator;
 
-pub use document_batch_transition::DocumentsBatchTransitionWASM;
+pub use document_batch_transition::DocumentsBatchTransitionWasm;
 pub use factory::DocumentFactoryWASM;
 pub use validator::DocumentValidatorWasm;
 
@@ -76,7 +77,7 @@ impl DocumentWasm {
 
     #[wasm_bindgen(js_name=setId)]
     pub fn set_id(&mut self, js_id: IdentifierWrapper) {
-        self.0.id = js_id.inner();
+        self.0.id = js_id.into_inner();
     }
 
     #[wasm_bindgen(js_name=getType)]
@@ -103,7 +104,7 @@ impl DocumentWasm {
 
     #[wasm_bindgen(js_name=setOwnerId)]
     pub fn set_owner_id(&mut self, owner_id: IdentifierWrapper) {
-        self.0.owner_id = owner_id.inner();
+        self.0.owner_id = owner_id.into_inner();
     }
 
     #[wasm_bindgen(js_name=getOwnerId)]
@@ -306,11 +307,11 @@ impl DocumentWasm {
 
         for path in identifiers_paths.into_iter().chain(IDENTIFIER_FIELDS) {
             if let Ok(bytes) = value.remove_path_into::<Vec<u8>>(path) {
+                let buffer = Buffer::from_bytes(&bytes);
                 if !options.skip_identifiers_conversion {
-                    let buffer = Buffer::from_bytes(&bytes);
                     lodash_set(&js_value, path, buffer.into());
                 } else {
-                    let id = IdentifierWrapper::new(bytes)?;
+                    let id = IdentifierWrapper::new(buffer.into())?;
                     lodash_set(&js_value, path, id.into());
                 }
             }

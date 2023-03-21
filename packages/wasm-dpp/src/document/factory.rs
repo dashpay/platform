@@ -1,6 +1,7 @@
 use std::{collections::HashMap, convert::TryFrom, sync::Arc};
 
 use anyhow::anyhow;
+
 use dpp::{
     document::{
         self,
@@ -10,7 +11,10 @@ use dpp::{
     },
     prelude::Document,
 };
+
 use wasm_bindgen::prelude::*;
+
+use crate::document::errors::InvalidActionNameError;
 
 use crate::{
     document::document_data_to_bytes,
@@ -19,7 +23,7 @@ use crate::{
     utils::{
         replace_identifiers_with_bytes_without_failing, IntoWasm, ToSerdeJSONExt, WithJsError,
     },
-    DataContractWasm, DocumentWasm, DocumentsBatchTransitionWASM,
+    DataContractWasm, DocumentWasm, DocumentsBatchTransitionWasm,
 };
 
 use super::validator::DocumentValidatorWasm;
@@ -93,20 +97,21 @@ impl DocumentFactoryWASM {
         DocumentFactoryWASM(factory)
     }
 
-    #[wasm_bindgen(js_name=create)]
+    #[wasm_bindgen]
     pub fn create(
         &self,
-        data_contract: DataContractWasm,
+        data_contract: &DataContractWasm,
         js_owner_id: &JsValue,
         document_type: &str,
         data: &JsValue,
     ) -> Result<DocumentWasm, JsValue> {
         let owner_id = identifier_from_js_value(js_owner_id)?;
         let dynamic_data = data.with_serde_to_json_value()?;
+
         let document = self
             .0
             .create(
-                data_contract.into(),
+                data_contract.to_owned().into(),
                 owner_id,
                 document_type.to_string(),
                 dynamic_data,
@@ -120,7 +125,7 @@ impl DocumentFactoryWASM {
     pub fn create_state_transition(
         &self,
         documents: &JsValue,
-    ) -> Result<DocumentsBatchTransitionWASM, JsValue> {
+    ) -> Result<DocumentsBatchTransitionWasm, JsValue> {
         let documents_by_action = extract_documents_by_action(documents)?;
         let batch_transition = self
             .0
@@ -184,6 +189,8 @@ impl DocumentFactoryWASM {
 fn extract_documents_by_action(
     documents: &JsValue,
 ) -> Result<HashMap<Action, Vec<Document>>, JsValue> {
+    check_actions(documents)?;
+
     let mut documents_by_action: HashMap<Action, Vec<Document>> = Default::default();
 
     let documents_create = extract_documents_of_action(documents, "create").with_js_error()?;
@@ -195,6 +202,27 @@ fn extract_documents_by_action(
     documents_by_action.insert(Action::Delete, documents_delete);
 
     Ok(documents_by_action)
+}
+
+fn check_actions(documents: &JsValue) -> Result<(), JsValue> {
+    if !documents.is_object() {
+        return Err(anyhow!("Expected documents to be an object")).with_js_error();
+    }
+
+    let documents_object = js_sys::Object::from(documents.clone());
+
+    let actions: js_sys::Array = js_sys::Object::keys(&documents_object);
+
+    for action in actions.iter() {
+        let action_string: String = action
+            .as_string()
+            .ok_or_else(|| anyhow!("Expected all keys to be strings"))
+            .with_js_error()?;
+        Action::try_from(action_string)
+            .map_err(|_| InvalidActionNameError::new(vec![action.clone()]))?;
+    }
+
+    Ok(())
 }
 
 fn extract_documents_of_action(
