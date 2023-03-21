@@ -147,7 +147,7 @@ impl StateTransitionConvert for IdentityTopUpTransition {
 
         if skip_signature {
             value
-                .remove_values_at_paths(Self::signature_property_paths())
+                .remove_values_matching_paths(Self::signature_property_paths())
                 .map_err(ProtocolError::ValueError)?;
         }
 
@@ -164,7 +164,7 @@ impl StateTransitionConvert for IdentityTopUpTransition {
 
         if skip_signature {
             value
-                .remove_values_at_paths(Self::signature_property_paths())
+                .remove_values_matching_paths(Self::signature_property_paths())
                 .map_err(ProtocolError::ValueError)?;
         }
 

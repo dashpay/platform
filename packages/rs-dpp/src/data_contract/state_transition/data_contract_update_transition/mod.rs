@@ -223,7 +223,7 @@ impl StateTransitionConvert for DataContractUpdateTransition {
                 .into_iter()
                 .try_for_each(|path| {
                     object
-                        .remove_value_at_path(path)
+                        .remove_values_matching_path(path)
                         .map_err(ProtocolError::ValueError)
                         .map(|_| ())
                 })?;
@@ -239,7 +239,7 @@ impl StateTransitionConvert for DataContractUpdateTransition {
                 .into_iter()
                 .try_for_each(|path| {
                     object
-                        .remove_value_at_path(path)
+                        .remove_values_matching_path(path)
                         .map_err(ProtocolError::ValueError)
                         .map(|_| ())
                 })?;

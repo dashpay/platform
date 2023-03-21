@@ -376,7 +376,7 @@ impl StateTransitionConvert for DocumentsBatchTransition {
         let mut object: Value = platform_value::to_value(self)?;
         if skip_signature {
             for path in Self::signature_property_paths() {
-                let _ = object.remove(path);
+                let _ = object.remove_values_matching_path(path);
             }
         }
         let mut transitions = vec![];
@@ -465,7 +465,7 @@ impl StateTransitionConvert for DocumentsBatchTransition {
         let mut object: Value = platform_value::to_value(self)?;
         if skip_signature {
             for path in Self::signature_property_paths() {
-                let _ = object.remove(path);
+                let _ = object.remove_values_matching_path(path);
             }
         }
         let mut transitions = vec![];

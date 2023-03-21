@@ -10,7 +10,6 @@ const { default: loadWasmDpp } = require('../../../../../../../dist');
 
 let Identifier;
 let DataContract;
-let Document;
 let fetchExtendedDocuments;
 let DocumentTransition;
 let DocumentCreateTransition;
@@ -28,7 +27,6 @@ describe('fetchDocumentsFactory', () => {
   beforeEach(async function beforeEach() {
     ({
       Identifier,
-      Document,
       DataContract,
       DocumentTransition,
       DocumentCreateTransition,

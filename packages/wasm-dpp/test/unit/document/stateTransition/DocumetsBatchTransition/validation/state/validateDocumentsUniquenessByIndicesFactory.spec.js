@@ -232,7 +232,9 @@ describe('validateDocumentsUniquenessByIndices', () => {
 
   it('should return valid result if Document has undefined field from index - Rust', async () => {
     const indexedDocumentJs = documentsJs[7];
-    const indexedDocument = new Document(indexedDocumentJs.toObject(), dataContract.clone(), indexedDocumentJs.getType());
+    const indexedDocument = new Document(
+      indexedDocumentJs.toObject(), dataContract.clone(), indexedDocumentJs.getType(),
+    );
     const indexedDocumentTransitions = getDocumentTransitionsFixture({
       create: [indexedDocumentJs],
     }).map(

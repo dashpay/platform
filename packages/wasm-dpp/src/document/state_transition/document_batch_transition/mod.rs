@@ -160,7 +160,10 @@ impl DocumentsBatchTransitionWasm {
             Default::default()
         };
 
-        let mut value = self.0.to_object(options.skip_signature).with_js_error()?;
+        let mut value = self
+            .0
+            .to_cleaned_object(options.skip_signature)
+            .with_js_error()?;
         let serializer = serde_wasm_bindgen::Serializer::json_compatible();
         let js_value = value.serialize(&serializer)?;
         let is_signature_present = value
@@ -185,26 +188,30 @@ impl DocumentsBatchTransitionWasm {
 
         // Transform paths that are specific to the DocumentsBatchTransition
         for path in DocumentsBatchTransition::binary_property_paths() {
-            let bytes = value
-                .remove_value_at_path(path)
-                .and_then(|value| value.to_binary_bytes())
+            if let Some(bytes) = value
+                .remove_optional_value_at_path(path)
+                .and_then(|value| value.map(|value| value.to_binary_bytes()).transpose())
                 .map_err(ProtocolError::ValueError)
-                .with_js_error()?;
-            let buffer = Buffer::from_bytes_owned(bytes);
-            lodash_set(&js_value, path, buffer.into());
+                .with_js_error()?
+            {
+                let buffer = Buffer::from_bytes_owned(bytes);
+                lodash_set(&js_value, path, buffer.into());
+            }
         }
         for path in DocumentsBatchTransition::identifiers_property_paths() {
-            let bytes = value
-                .remove_value_at_path(path)
-                .and_then(|value| value.to_identifier_bytes())
+            if let Some(bytes) = value
+                .remove_optional_value_at_path(path)
+                .and_then(|value| value.map(|value| value.to_identifier_bytes()).transpose())
                 .map_err(ProtocolError::ValueError)
-                .with_js_error()?;
-            let buffer = Buffer::from_bytes_owned(bytes);
-            if !options.skip_identifiers_conversion {
-                lodash_set(&js_value, path, buffer.into());
-            } else {
-                let id = IdentifierWrapper::new(buffer.into())?;
-                lodash_set(&js_value, path, id.into());
+                .with_js_error()?
+            {
+                let buffer = Buffer::from_bytes_owned(bytes);
+                if !options.skip_identifiers_conversion {
+                    lodash_set(&js_value, path, buffer.into());
+                } else {
+                    let id = IdentifierWrapper::new(buffer.into())?;
+                    lodash_set(&js_value, path, id.into());
+                }
             }
         }
 
