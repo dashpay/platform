@@ -208,7 +208,7 @@ function setupRegularPresetTaskFactory(
               {
                 type: 'input',
                 header: 'Platform node key. Must be base64\n',
-                message: 'Enter ED25519 key',
+                message: 'Enter Tenderdash Ed25519 cached key',
                 validate,
               },
             ]);
@@ -252,8 +252,9 @@ function setupRegularPresetTaskFactory(
             const form = await task.prompt([
               {
                 type: 'form',
-                header: 'The node external IP address must be static and will be used by the'
-                  + ' network ..\n',
+                header: 'The masternode public static IPv4 address and port will be included'
+                  + ' in the masternode registration transaction. Your masternode must provide'
+                  + ' service to the network at this address, or it will eventually be banned.\n',
                 message: 'Enter IP address and port:',
                 choices: [
                   {
