@@ -55,12 +55,12 @@ impl DocumentDeleteTransitionWasm {
     // AbstractDocumentTransition
     #[wasm_bindgen(js_name=getId)]
     pub fn id(&self) -> IdentifierWrapper {
-        self.inner.base.id.clone().into()
+        self.inner.base.id.into()
     }
 
     #[wasm_bindgen(js_name=getType)]
     pub fn document_type(&self) -> String {
-        self.inner.base.document_type.clone()
+        self.inner.base.document_type_name.clone()
     }
 
     #[wasm_bindgen(js_name=getDataContract)]
@@ -70,7 +70,7 @@ impl DocumentDeleteTransitionWasm {
 
     #[wasm_bindgen(js_name=getDataContractId)]
     pub fn data_contract_id(&self) -> IdentifierWrapper {
-        self.inner.base.data_contract.id.clone().into()
+        self.inner.base.data_contract.id.into()
     }
 
     #[wasm_bindgen(js_name=get)]

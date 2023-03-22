@@ -42,7 +42,7 @@ impl DataContractCache {
     /// Inserts Data Contract to block cache
     /// otherwise to goes to global cache
     pub fn insert(&mut self, fetch_info: Arc<ContractFetchInfo>, is_block_cache: bool) {
-        let data_contract_id_bytes = fetch_info.contract.id().to_buffer();
+        let data_contract_id_bytes = fetch_info.contract.id.to_buffer();
 
         if is_block_cache {
             self.block_cache.insert(data_contract_id_bytes, fetch_info);
@@ -96,7 +96,7 @@ mod tests {
             // Create global contract
             let fetch_info_global = Arc::new(ContractFetchInfo::default());
 
-            let contract_id = fetch_info_global.contract.id().to_buffer();
+            let contract_id = fetch_info_global.contract.id.to_buffer();
 
             data_contract_cache
                 .global_cache
@@ -126,7 +126,7 @@ mod tests {
 
             let fetch_info_global = Arc::new(ContractFetchInfo::default());
 
-            let contract_id = fetch_info_global.contract.id().to_buffer();
+            let contract_id = fetch_info_global.contract.id.to_buffer();
 
             data_contract_cache
                 .global_cache
@@ -145,7 +145,7 @@ mod tests {
 
             let fetch_info_block = Arc::new(ContractFetchInfo::default());
 
-            let contract_id = fetch_info_block.contract.id().to_buffer();
+            let contract_id = fetch_info_block.contract.id.to_buffer();
 
             data_contract_cache
                 .block_cache

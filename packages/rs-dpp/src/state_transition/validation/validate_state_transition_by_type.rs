@@ -2,8 +2,7 @@ use async_trait::async_trait;
 
 #[cfg(test)]
 use mockall::{automock, predicate::*};
-
-use serde_json::Value as JsonValue;
+use platform_value::Value;
 
 use crate::{
     state_transition::{
@@ -18,7 +17,7 @@ use crate::{
 pub trait ValidatorByStateTransitionType {
     async fn validate(
         &self,
-        raw_state_transition: &JsonValue,
+        raw_state_transition: &Value,
         state_transition_type: StateTransitionType,
         execution_context: &StateTransitionExecutionContext,
     ) -> Result<SimpleValidationResult, ProtocolError>;
@@ -90,7 +89,7 @@ where
 {
     async fn validate(
         &self,
-        raw_state_transition: &JsonValue,
+        raw_state_transition: &Value,
         state_transition_type: StateTransitionType,
         execution_context: &StateTransitionExecutionContext,
     ) -> Result<SimpleValidationResult, ProtocolError> {

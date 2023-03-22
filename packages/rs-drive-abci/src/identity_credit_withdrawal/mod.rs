@@ -9,9 +9,10 @@ use dashcore::{
     hashes::Hash,
     QuorumHash, Script, TxOut,
 };
+use dpp::document::Document;
+use dpp::platform_value::btreemap_extensions::BTreeValueMapHelper;
 use drive::dpp::contracts::withdrawals_contract;
 use drive::dpp::data_contract::DriveContractExt;
-use drive::dpp::document::document_stub::DocumentStub;
 use drive::dpp::identifier::Identifier;
 use drive::dpp::identity::convert_credits_to_satoshi;
 use drive::dpp::util::hash;
@@ -77,10 +78,11 @@ impl Platform {
         let mut drive_operations: Vec<DriveOperationType> = vec![];
 
         // Collecting only documents that have been updated
-        let documents_to_update: Vec<DocumentStub> = broadcasted_withdrawal_documents
+        let documents_to_update: Vec<Document> = broadcasted_withdrawal_documents
             .into_iter()
             .map(|mut document| {
                 let transaction_sign_height: u32 = document
+                    .properties
                     .get_integer(withdrawals_contract::property_names::TRANSACTION_SIGN_HEIGHT)
                     .map_err(|_| {
                         Error::Execution(ExecutionError::CorruptedCodeExecution(
@@ -89,6 +91,7 @@ impl Platform {
                     })?;
 
                 let transaction_id_bytes = document
+                    .properties
                     .get_bytes(withdrawals_contract::property_names::TRANSACTION_ID)
                     .map_err(|_| {
                         Error::Execution(ExecutionError::CorruptedCodeExecution(
@@ -97,6 +100,7 @@ impl Platform {
                     })?;
 
                 let transaction_index = document
+                    .properties
                     .get_integer(withdrawals_contract::property_names::TRANSACTION_INDEX)
                     .map_err(|_| {
                         Error::Execution(ExecutionError::CorruptedCodeExecution(
@@ -122,13 +126,9 @@ impl Platform {
 
                 document.set_u8(withdrawals_contract::property_names::STATUS, status.into());
 
-                document.set_i64(
+                document.set_u64(
                     withdrawals_contract::property_names::UPDATED_AT,
-                    block_info.time_ms.try_into().map_err(|_| {
-                        Error::Execution(ExecutionError::CorruptedCodeExecution(
-                            "Can't convert u64 block time to i64 updated_at",
-                        ))
-                    })?,
+                    block_info.time_ms,
                 );
 
                 document.increment_revision().map_err(Error::Protocol)?;
@@ -142,7 +142,7 @@ impl Platform {
 
                 Ok(Some(document))
             })
-            .collect::<Result<Vec<Option<DocumentStub>>, Error>>()?
+            .collect::<Result<Vec<Option<Document>>, Error>>()?
             .into_iter()
             .flatten()
             .collect();
@@ -266,7 +266,7 @@ impl Platform {
 
                     Ok((unsigned_transaction_bytes, document))
                 })
-                .collect::<Result<Vec<(Vec<u8>, DocumentStub)>, Error>>()?
+                .collect::<Result<Vec<(Vec<u8>, Document)>, Error>>()?
                 .into_iter()
                 .unzip();
 
@@ -339,9 +339,7 @@ impl Platform {
         )?;
 
         for document in documents.iter_mut() {
-            let document_id = Identifier::from_bytes(&document.id)?;
-
-            let Some((_, transaction_bytes)) = withdrawal_transactions.get(&document_id) else {
+            let Some((_, transaction_bytes)) = withdrawal_transactions.get(&document.id) else {
                 return Err(Error::Execution(ExecutionError::CorruptedCodeExecution("transactions must contain a transaction")))
             };
 
@@ -448,7 +446,7 @@ impl Platform {
     /// Build list of Core transactions from withdrawal documents
     pub fn build_withdrawal_transactions_from_documents(
         &self,
-        documents: &[DocumentStub],
+        documents: &[Document],
         drive_operation_types: &mut Vec<DriveOperationType>,
         transaction: TransactionArg,
     ) -> Result<HashMap<Identifier, WithdrawalTransactionIdAndBytes>, Error> {
@@ -463,6 +461,7 @@ impl Platform {
 
         for (i, document) in documents.iter().enumerate() {
             let output_script_bytes = document
+                .properties
                 .get_bytes(withdrawals_contract::property_names::OUTPUT_SCRIPT)
                 .map_err(|_| {
                     Error::Execution(ExecutionError::CorruptedCodeExecution(
@@ -471,6 +470,7 @@ impl Platform {
                 })?;
 
             let amount = document
+                .properties
                 .get_integer(withdrawals_contract::property_names::AMOUNT)
                 .map_err(|_| {
                     Error::Execution(ExecutionError::CorruptedCodeExecution(
@@ -479,6 +479,7 @@ impl Platform {
                 })?;
 
             let core_fee_per_byte: u32 = document
+                .properties
                 .get_integer(withdrawals_contract::property_names::CORE_FEE_PER_BYTE)
                 .map_err(|_| {
                     Error::Execution(ExecutionError::CorruptedCodeExecution(
@@ -519,7 +520,7 @@ impl Platform {
                 })?;
 
             withdrawals.insert(
-                Identifier::from_bytes(&document.id)?,
+                document.id,
                 (
                     transaction_index.to_be_bytes().to_vec(),
                     transaction_buffer.clone(),
@@ -553,6 +554,8 @@ mod tests {
 
         use crate::block::BlockStateInfo;
         use crate::test::helpers::setup::setup_platform_with_initial_state_structure;
+        use dpp::identity::core_script::CoreScript;
+        use dpp::platform_value::platform_value;
         use dpp::{
             data_contract::{DataContract, DriveContractExt},
             prelude::Identifier,
@@ -634,17 +637,18 @@ mod tests {
             let document_1 = get_withdrawal_document_fixture(
                 &data_contract,
                 owner_id,
-                json!({
-                    "amount": 1000,
-                    "coreFeePerByte": 1,
+                platform_value!({
+                    "amount": 1000u64,
+                    "coreFeePerByte": 1u32,
                     "pooling": Pooling::Never,
-                    "outputScript": (0..23).collect::<Vec<u8>>(),
-                    "status": withdrawals_contract::WithdrawalStatus::BROADCASTED,
-                    "transactionIndex": 1,
-                    "transactionSignHeight": 93,
-                    "transactionId": vec![1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1],
+                    "outputScript": CoreScript::from_bytes((0..23).collect::<Vec<u8>>()),
+                    "status": withdrawals_contract::WithdrawalStatus::BROADCASTED as u8,
+                    "transactionIndex": 1u64,
+                    "transactionSignHeight": 93u64,
+                    "transactionId": Identifier::new([1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1]),
                 }),
-            );
+                None,
+            ).expect("expected withdrawal document");
 
             let document_type = data_contract
                 .document_type_for_name(withdrawals_contract::document_types::WITHDRAWAL)
@@ -661,17 +665,18 @@ mod tests {
             let document_2 = get_withdrawal_document_fixture(
                 &data_contract,
                 owner_id,
-                json!({
-                    "amount": 1000,
-                    "coreFeePerByte": 1,
-                    "pooling": Pooling::Never,
-                    "outputScript": (0..23).collect::<Vec<u8>>(),
-                    "status": withdrawals_contract::WithdrawalStatus::BROADCASTED,
-                    "transactionIndex": 2,
-                    "transactionSignHeight": 10,
-                    "transactionId": vec![3, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1],
+                platform_value!({
+                    "amount": 1000u64,
+                    "coreFeePerByte": 1u32,
+                    "pooling": Pooling::Never as u8,
+                    "outputScript": CoreScript::from_bytes((0..23).collect::<Vec<u8>>()),
+                    "status": withdrawals_contract::WithdrawalStatus::BROADCASTED as u8,
+                    "transactionIndex": 2u64,
+                    "transactionSignHeight": 10u64,
+                    "transactionId": Identifier::new([3, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1]),
                 }),
-            );
+                None,
+            ).expect("expected withdrawal document");
 
             setup_document(
                 &platform.drive,
@@ -738,7 +743,10 @@ mod tests {
         use std::cell::RefCell;
 
         use dpp::data_contract::DriveContractExt;
+        use dpp::identity::core_script::CoreScript;
         use dpp::identity::state_transition::identity_credit_withdrawal_transition::Pooling;
+        use dpp::platform_value::btreemap_extensions::BTreeValueMapHelper;
+        use dpp::platform_value::platform_value;
         use dpp::prelude::Identifier;
         use dpp::system_data_contracts::{load_system_data_contract, SystemDataContract};
         use drive::dpp::contracts::withdrawals_contract;
@@ -765,15 +773,17 @@ mod tests {
             let document_1 = get_withdrawal_document_fixture(
                 &data_contract,
                 owner_id,
-                json!({
-                    "amount": 1000,
-                    "coreFeePerByte": 1,
-                    "pooling": Pooling::Never,
-                    "outputScript": (0..23).collect::<Vec<u8>>(),
-                    "status": withdrawals_contract::WithdrawalStatus::QUEUED,
-                    "transactionIndex": 1,
+                platform_value!({
+                    "amount": 1000u64,
+                    "coreFeePerByte": 1u32,
+                    "pooling": Pooling::Never as u8,
+                    "outputScript": CoreScript::from_bytes((0..23).collect::<Vec<u8>>()),
+                    "status": withdrawals_contract::WithdrawalStatus::QUEUED as u8,
+                    "transactionIndex": 1u64,
                 }),
-            );
+                None,
+            )
+            .expect("expected withdrawal document");
 
             let document_type = data_contract
                 .document_type_for_name(withdrawals_contract::document_types::WITHDRAWAL)
@@ -790,15 +800,17 @@ mod tests {
             let document_2 = get_withdrawal_document_fixture(
                 &data_contract,
                 owner_id,
-                json!({
-                    "amount": 1000,
-                    "coreFeePerByte": 1,
-                    "pooling": Pooling::Never,
-                    "outputScript": (0..23).collect::<Vec<u8>>(),
-                    "status": withdrawals_contract::WithdrawalStatus::QUEUED,
-                    "transactionIndex": 2,
+                platform_value!({
+                    "amount": 1000u64,
+                    "coreFeePerByte": 1u32,
+                    "pooling": Pooling::Never as u8,
+                    "outputScript": CoreScript::from_bytes((0..23).collect::<Vec<u8>>()),
+                    "status": withdrawals_contract::WithdrawalStatus::QUEUED as u8,
+                    "transactionIndex": 2u64,
                 }),
-            );
+                None,
+            )
+            .expect("expected withdrawal document");
 
             setup_document(
                 &platform.drive,
@@ -845,9 +857,10 @@ mod tests {
             ];
 
             for document in updated_documents {
-                assert_eq!(document.revision, 2);
+                assert_eq!(document.revision, Some(2));
 
                 let tx_id: Vec<u8> = document
+                    .properties
                     .get_bytes("transactionId")
                     .expect("to get transactionId");
 
@@ -926,12 +939,12 @@ mod tests {
     mod build_withdrawal_transactions_from_documents {
         use crate::test::helpers::setup::setup_platform_with_initial_state_structure;
         use dpp::data_contract::DriveContractExt;
+        use dpp::document::Document;
+        use dpp::identity::core_script::CoreScript;
+        use dpp::identity::state_transition::identity_credit_withdrawal_transition::Pooling;
+        use dpp::platform_value::platform_value;
         use dpp::prelude::Identifier;
         use dpp::system_data_contracts::{load_system_data_contract, SystemDataContract};
-        use dpp::{
-            document::document_stub::DocumentStub,
-            identity::state_transition::identity_credit_withdrawal_transition::Pooling,
-        };
         use drive::drive::block_info::BlockInfo;
         use drive::drive::identity::withdrawals::WithdrawalTransactionIdAndBytes;
         use drive::tests::helpers::setup::setup_system_data_contract;
@@ -955,15 +968,17 @@ mod tests {
             let document_1 = get_withdrawal_document_fixture(
                 &data_contract,
                 owner_id,
-                json!({
-                    "amount": 1000,
-                    "coreFeePerByte": 1,
-                    "pooling": Pooling::Never,
-                    "outputScript": (0..23).collect::<Vec<u8>>(),
-                    "status": withdrawals_contract::WithdrawalStatus::POOLED,
-                    "transactionIndex": 1,
+                platform_value!({
+                    "amount": 1000u64,
+                    "coreFeePerByte": 1u32,
+                    "pooling": Pooling::Never as u8,
+                    "outputScript": CoreScript::from_bytes((0..23).collect::<Vec<u8>>()),
+                    "status": withdrawals_contract::WithdrawalStatus::POOLED as u8,
+                    "transactionIndex": 1u64,
                 }),
-            );
+                None,
+            )
+            .expect("expected withdrawal document");
 
             let document_type = data_contract
                 .document_type_for_name(withdrawals_contract::document_types::WITHDRAWAL)
@@ -980,15 +995,17 @@ mod tests {
             let document_2 = get_withdrawal_document_fixture(
                 &data_contract,
                 owner_id,
-                json!({
-                    "amount": 1000,
-                    "coreFeePerByte": 1,
-                    "pooling": Pooling::Never,
-                    "outputScript": (0..23).collect::<Vec<u8>>(),
-                    "status": withdrawals_contract::WithdrawalStatus::POOLED,
-                    "transactionIndex": 2,
+                platform_value!({
+                    "amount": 1000u64,
+                    "coreFeePerByte": 1u32,
+                    "pooling": Pooling::Never as u8,
+                    "outputScript": CoreScript::from_bytes((0..23).collect::<Vec<u8>>()),
+                    "status": withdrawals_contract::WithdrawalStatus::POOLED as u8,
+                    "transactionIndex": 2u64,
                 }),
-            );
+                None,
+            )
+            .expect("expected withdrawal document");
 
             setup_document(
                 &platform.drive,
@@ -999,14 +1016,14 @@ mod tests {
             );
 
             let documents = vec![
-                DocumentStub::from_cbor(
-                    &document_1.to_buffer().expect("to convert document to cbor"),
+                Document::from_cbor(
+                    &document_1.to_cbor().expect("to convert document to cbor"),
                     None,
                     None,
                 )
                 .expect("to create document from cbor"),
-                DocumentStub::from_cbor(
-                    &document_2.to_buffer().expect("to convert document to cbor"),
+                Document::from_cbor(
+                    &document_2.to_cbor().expect("to convert document to cbor"),
                     None,
                     None,
                 )

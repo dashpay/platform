@@ -1,14 +1,16 @@
+use dpp::platform_value::ReplacementType;
 use dpp::{
     document::{self, fetch_and_validate_data_contract::fetch_and_validate_data_contract},
     prelude::DataContract,
     state_transition::state_transition_execution_context::StateTransitionExecutionContext,
     validation::ValidationResult,
+    ProtocolError,
 };
 use wasm_bindgen::prelude::*;
 
 use crate::{
     state_repository::{ExternalStateRepositoryLike, ExternalStateRepositoryLikeWrapper},
-    utils::{replace_identifiers_with_bytes_without_failing, ToSerdeJSONExt, WithJsError},
+    utils::{ToSerdeJSONExt, WithJsError},
     validation::ValidationResultWasm,
     DataContractWasm,
 };
@@ -58,11 +60,11 @@ async fn fetch_and_validate_data_contract_inner(
     state_repository: &ExternalStateRepositoryLikeWrapper,
     js_raw_document: &JsValue,
 ) -> Result<ValidationResultWasm, JsValue> {
-    let mut document_value = js_raw_document.with_serde_to_json_value()?;
-    replace_identifiers_with_bytes_without_failing(
-        &mut document_value,
-        document::IDENTIFIER_FIELDS,
-    );
+    let mut document_value = js_raw_document.with_serde_to_platform_value()?;
+    document_value
+        .replace_at_paths(document::IDENTIFIER_FIELDS, ReplacementType::Identifier)
+        .map_err(ProtocolError::ValueError)
+        .with_js_error()?;
 
     // TODO! remove the context. The the providing the context in state repository should be optional
     let ctx = StateTransitionExecutionContext::default();

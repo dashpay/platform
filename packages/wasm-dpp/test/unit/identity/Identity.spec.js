@@ -257,16 +257,17 @@ describe('Identity', () => {
 
   describe('#getPublicKeyMaxId', () => {
     it('should get the biggest public key ID', () => {
+      const key = new IdentityPublicKey({
+        id: 99,
+        type: KeyType.ECDSA_SECP256K1,
+        data: Buffer.alloc(36).fill('a'),
+        purpose: KeyPurpose.AUTHENTICATION,
+        securityLevel: KeySecurityLevel.MASTER,
+        signature: Buffer.alloc(36).fill('a'),
+        readOnly: false,
+      });
       identity.addPublicKeys(
-        new IdentityPublicKey({
-          id: 99,
-          type: KeyType.ECDSA_SECP256K1,
-          data: Buffer.alloc(36).fill('a'),
-          purpose: KeyPurpose.AUTHENTICATION,
-          securityLevel: KeySecurityLevel.MASTER,
-          signature: Buffer.alloc(36).fill('a'),
-          readOnly: false,
-        }),
+        key,
         new IdentityPublicKey({
           id: 50,
           type: KeyType.ECDSA_SECP256K1,

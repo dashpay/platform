@@ -20,10 +20,10 @@ impl WrongPublicKeyPurposeError {
     }
 
     pub fn public_key_purpose(&self) -> Purpose {
-        self.public_key_purpose.clone()
+        self.public_key_purpose
     }
     pub fn key_purpose_requirement(&self) -> Purpose {
-        self.key_purpose_requirement.clone()
+        self.key_purpose_requirement
     }
 }
 

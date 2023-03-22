@@ -27,21 +27,23 @@
 // DEALINGS IN THE SOFTWARE.
 
 use crate::abci::messages::SystemIdentityPublicKeys;
-use crate::error::execution::ExecutionError;
+
 use crate::error::Error;
 use crate::platform::Platform;
-use ciborium::{cbor, Value as CborValue};
-use dpp::platform_value::Value;
+
+use dpp::platform_value::converter::serde_json::BTreeValueJsonConverter;
+use dpp::platform_value::{platform_value, BinaryData, Bytes32};
 use dpp::ProtocolError;
 use drive::contract::DataContract;
 use drive::dpp::data_contract::DriveContractExt;
-use drive::dpp::document::document_stub::DocumentStub;
+use drive::dpp::document::Document;
+use drive::dpp::document::ExtendedDocument;
 use drive::dpp::identity::{
     Identity, IdentityPublicKey, KeyType, Purpose, SecurityLevel, TimestampMillis,
 };
-use drive::dpp::prelude::{Document, Identifier};
+
+use dpp::platform_value::string_encoding::{encode, Encoding};
 use drive::dpp::system_data_contracts::{load_system_data_contract, SystemDataContract};
-use drive::dpp::util::string_encoding::{encode, Encoding};
 use drive::drive::batch::{
     ContractOperationType, DocumentOperationType, DriveOperationType, IdentityOperationType,
 };
@@ -126,7 +128,7 @@ impl Platform {
                     security_level: SecurityLevel::MASTER,
                     key_type: KeyType::ECDSA_SECP256K1,
                     read_only: false,
-                    data: identity_public_keys_set.master,
+                    data: identity_public_keys_set.master.into(),
                     disabled_at: None,
                 },
                 IdentityPublicKey {
@@ -135,7 +137,7 @@ impl Platform {
                     security_level: SecurityLevel::HIGH,
                     key_type: KeyType::ECDSA_SECP256K1,
                     read_only: false,
-                    data: identity_public_keys_set.high,
+                    data: identity_public_keys_set.high.into(),
                     disabled_at: None,
                 },
             ]);
@@ -205,16 +207,7 @@ impl Platform {
 
         // TODO: Add created and updated at to DPNS contract
 
-        let document = Document {
-            protocol_version: PROTOCOL_VERSION,
-            id: Identifier::new(DPNS_DASH_TLD_DOCUMENT_ID),
-            document_type: "domain".to_string(),
-            revision: 0,
-            data_contract_id: contract.id,
-            owner_id: contract.owner_id,
-            created_at: None,
-            updated_at: None,
-            data: json!({
+        let properties_json = json!({
                 "label": domain,
                 "normalizedLabel": domain,
                 "normalizedParentDomainName": "",
@@ -225,40 +218,49 @@ impl Platform {
                 "subdomainRules": {
                     "allowSubdomains": true,
                 }
-            }),
+        });
+
+        let document = ExtendedDocument {
+            protocol_version: PROTOCOL_VERSION,
+            document_type_name: "domain".to_string(),
+            data_contract_id: contract.id,
             data_contract: contract.clone(),
             metadata: None,
-            entropy: [0; 32],
+            entropy: Bytes32::new([0; 32]),
+            document: Document {
+                id: DPNS_DASH_TLD_DOCUMENT_ID.into(),
+                revision: None,
+                owner_id: contract.owner_id,
+                created_at: None,
+                updated_at: None,
+                properties: BTreeMap::from_json_value(properties_json)
+                    .map_err(ProtocolError::ValueError)?,
+            },
         };
 
-        let document_stub_properties_value: Value = cbor!({
-            "label" => domain,
-            "normalizedLabel" => domain,
-            "normalizedParentDomainName" => "",
-            "preorderSalt" => CborValue::Bytes(DPNS_DASH_TLD_PREORDER_SALT.to_vec()),
-            "records" => {
-                "dashAliasIdentityId" => CborValue::Bytes(contract.owner_id.to_buffer_vec()),
+        let document_stub_properties_value = platform_value!({
+            "label" : domain,
+            "normalizedLabel" : domain,
+            "normalizedParentDomainName" : "",
+            "preorderSalt" : BinaryData::new(DPNS_DASH_TLD_PREORDER_SALT.to_vec()),
+            "records" : {
+                "dashAliasIdentityId" : contract.owner_id,
             },
-        })
-        .map_err(|_| {
-            // TODO: Can't pass original error because the error expecting String
-            Error::Execution(ExecutionError::CorruptedCodeExecution(
-                "can't create cbor for dpns tld",
-            ))
-        })?
-        .into();
+        });
 
         let document_stub_properties = document_stub_properties_value
-            .into_btree_map()
+            .into_btree_string_map()
             .map_err(|e| Error::Protocol(ProtocolError::ValueError(e)))?;
 
         let document_cbor = document.to_buffer()?;
 
-        let document_stub = DocumentStub {
-            id: DPNS_DASH_TLD_DOCUMENT_ID,
+        let document = Document {
+            id: DPNS_DASH_TLD_DOCUMENT_ID.into(),
             properties: document_stub_properties,
-            owner_id: contract.owner_id.to_buffer(),
-            revision: 1,
+            owner_id: contract.owner_id,
+            revision: None,
+            created_at: None,
+            updated_at: None,
         };
 
         let document_type = contract.document_type_for_name("domain")?;
@@ -269,7 +271,7 @@ impl Platform {
                     owned_document_info: OwnedDocumentInfo {
                         //todo: remove cbor and use DocumentInfo::DocumentWithoutSerialization((document, None))
                         document_info: DocumentInfo::DocumentAndSerialization((
-                            document_stub,
+                            document,
                             document_cbor,
                             None,
                         )),
@@ -306,8 +308,8 @@ mod tests {
             assert_eq!(
                 root_hash,
                 [
-                    59, 16, 30, 145, 9, 47, 66, 85, 133, 88, 194, 109, 241, 15, 226, 214, 163, 196,
-                    146, 107, 122, 145, 111, 45, 251, 242, 250, 157, 153, 43, 219, 184
+                    111, 88, 10, 143, 94, 71, 51, 8, 40, 196, 201, 45, 155, 81, 130, 150, 9, 253,
+                    0, 184, 61, 2, 173, 157, 131, 24, 71, 199, 114, 11, 16, 44
                 ]
             )
         }

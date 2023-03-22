@@ -1,4 +1,5 @@
 use crate::{ProtocolError, PublicKeyValidationError};
+#[cfg(not(target_arch = "wasm32"))]
 use anyhow::anyhow;
 use bls_signatures::{verify_messages, PrivateKey, PublicKey, Serialize};
 use std::convert::TryInto;

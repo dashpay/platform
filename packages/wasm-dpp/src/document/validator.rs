@@ -18,6 +18,7 @@ impl DocumentValidatorWasm {
         DocumentValidatorWasm(DocumentValidator::new(Arc::new(protocol_validator.into())))
     }
 
+    #[wasm_bindgen]
     pub fn validate(
         &self,
         js_raw_document: &JsValue,
@@ -26,7 +27,7 @@ impl DocumentValidatorWasm {
         let raw_document = raw_document_from_js_value(js_raw_document, js_data_contract.inner())?;
         let validation_result = self
             .0
-            .validate(&raw_document, js_data_contract.inner())
+            .validate_extended(&raw_document, js_data_contract.inner())
             .with_js_error()?;
 
         Ok(validation_result.map(|_| JsValue::undefined()).into())
@@ -35,7 +36,7 @@ impl DocumentValidatorWasm {
 
 impl DocumentValidatorWasm {
     pub(crate) fn new_with_arc(protocol_validator: Arc<ProtocolVersionValidator>) -> Self {
-        DocumentValidatorWasm(DocumentValidator::new(protocol_validator.clone()))
+        DocumentValidatorWasm(DocumentValidator::new(protocol_validator))
     }
 }
 

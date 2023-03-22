@@ -1,6 +1,6 @@
 use crate::bls_adapter::{BlsAdapter, JsBlsAdapter};
 
-use crate::utils::{to_vec_of_serde_values, ToSerdeJSONExt};
+use crate::utils::{to_vec_of_platform_values, ToSerdeJSONExt};
 use crate::validation::ValidationResultWasm;
 use dpp::identity::validation::{
     PublicKeysValidator, TPublicKeysValidator, PUBLIC_KEY_SCHEMA_FOR_TRANSITION,
@@ -32,7 +32,7 @@ impl PublicKeysValidatorWasm {
         &self,
         public_keys: js_sys::Array,
     ) -> Result<ValidationResultWasm, JsValue> {
-        let raw_public_keys = to_vec_of_serde_values(public_keys.iter())?;
+        let raw_public_keys = to_vec_of_platform_values(public_keys.iter())?;
 
         let validation_result = self
             .public_key_validator
@@ -46,11 +46,11 @@ impl PublicKeysValidatorWasm {
         &self,
         public_key: JsValue,
     ) -> Result<ValidationResultWasm, JsValue> {
-        let pk_serde_json = public_key.with_serde_to_json_value()?;
+        let pk_object = public_key.with_serde_to_platform_value()?;
 
         let validation_result = self
             .public_key_validator
-            .validate_public_key_structure(&pk_serde_json)
+            .validate_public_key_structure(&pk_object)
             .map_err(|e| JsValue::from(e.to_string()))?;
         Ok(validation_result.map(|_| JsValue::undefined()).into())
     }
@@ -60,7 +60,7 @@ impl PublicKeysValidatorWasm {
         &self,
         public_keys: js_sys::Array,
     ) -> Result<ValidationResultWasm, JsValue> {
-        let raw_public_keys = to_vec_of_serde_values(public_keys.iter())?;
+        let raw_public_keys = to_vec_of_platform_values(public_keys.iter())?;
 
         let validation_result = self
             .public_key_in_state_transition_validator

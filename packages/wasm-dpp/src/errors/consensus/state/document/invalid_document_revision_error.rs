@@ -5,7 +5,7 @@ use wasm_bindgen::prelude::*;
 #[wasm_bindgen(js_name=InvalidDocumentRevisionError)]
 pub struct InvalidDocumentRevisionErrorWasm {
     document_id: Identifier,
-    current_revision: Revision,
+    current_revision: Option<Revision>,
     code: u32,
 }
 
@@ -17,7 +17,7 @@ impl InvalidDocumentRevisionErrorWasm {
     }
 
     #[wasm_bindgen(js_name=getCurrentRevision)]
-    pub fn current_revision(&self) -> Revision {
+    pub fn current_revision(&self) -> Option<Revision> {
         self.current_revision
     }
 
@@ -28,7 +28,7 @@ impl InvalidDocumentRevisionErrorWasm {
 }
 
 impl InvalidDocumentRevisionErrorWasm {
-    pub fn new(document_id: Identifier, current_revision: Revision, code: u32) -> Self {
+    pub fn new(document_id: Identifier, current_revision: Option<Revision>, code: u32) -> Self {
         Self {
             document_id,
             current_revision,

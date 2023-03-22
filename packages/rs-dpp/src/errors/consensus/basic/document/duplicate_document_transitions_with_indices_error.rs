@@ -7,15 +7,15 @@ use thiserror::Error;
     references
 )]
 pub struct DuplicateDocumentTransitionsWithIndicesError {
-    references: Vec<(String, Vec<u8>)>,
+    references: Vec<(String, [u8; 32])>,
 }
 
 impl DuplicateDocumentTransitionsWithIndicesError {
-    pub fn new(references: Vec<(String, Vec<u8>)>) -> Self {
+    pub fn new(references: Vec<(String, [u8; 32])>) -> Self {
         Self { references }
     }
 
-    pub fn references(&self) -> Vec<(String, Vec<u8>)> {
+    pub fn references(&self) -> Vec<(String, [u8; 32])> {
         self.references.clone()
     }
 }
