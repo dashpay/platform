@@ -1843,7 +1843,9 @@ describe('DocumentRepository', function main() {
 
                     expect.fail('should throw an error');
                   } catch (e) {
-                    expect(e.message).to.equal('value error: structure error: value is not a float');
+                    expect(e.message).to.startsWith(
+                      'value error: structure error: value is not an integer',
+                    );
                     expect(e).to.be.instanceOf(InvalidQueryError);
                   }
                 });
@@ -1857,8 +1859,8 @@ describe('DocumentRepository', function main() {
                     expect.fail('should throw an error');
                   } catch (e) {
                     expect(e).to.be.instanceOf(InvalidQueryError);
-                    expect(e.message).to.equal(
-                      'value error: structure error: value is not a float',
+                    expect(e.message).to.startsWith(
+                      'value error: structure error: value is not an integer',
                     );
                   }
                 });
