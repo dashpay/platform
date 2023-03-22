@@ -29,7 +29,6 @@ pub fn get_masternode_reward_shares_documents_fixture() -> (Vec<ExtendedDocument
         LATEST_VERSION,
         document_validator,
         DataContractFetcherAndValidator::new(Arc::new(MockStateRepositoryLike::new())),
-        None,
     );
 
     (
