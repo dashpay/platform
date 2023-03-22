@@ -130,7 +130,7 @@ describe('Dash - Client', function suite() {
     }
   });
 
-  describe('#platform.identities.register', async () => {
+  describe.only('#platform.identities.register ', async () => {
     it('should register an identity', async () => {
       const accountIdentitiesCountBeforeTest = account.identities.getIdentityIds().length;
 
@@ -140,15 +140,15 @@ describe('Dash - Client', function suite() {
 
       const serializedSt = dapiClientMock.platform.broadcastStateTransition.getCall(0).args[0];
       const interceptedIdentityStateTransition = await client
-        .platform.dpp.stateTransition.createFromBuffer(serializedSt);
+        .platform.wasmDpp.stateTransition.createFromBuffer(serializedSt);
       const interceptedAssetLockProof = interceptedIdentityStateTransition.getAssetLockProof();
 
       const transaction = new Transaction(transportMock.sendTransaction.getCall(0).args[0]);
       const isLock = createFakeInstantLock(transaction.hash);
 
       // Check intercepted st
-      expect(interceptedAssetLockProof.getInstantLock()).to.be.deep.equal(isLock);
-      expect(interceptedAssetLockProof.getTransaction().hash).to.be.equal(transaction.hash);
+      expect(interceptedAssetLockProof.getInstantLock()).to.be.deep.equal(isLock.toBuffer());
+      expect(interceptedAssetLockProof.getTransaction()).to.be.deep.equal(transaction.toBuffer());
 
       const importedIdentityIds = account.identities.getIdentityIds();
       // Check that we've imported identities properly

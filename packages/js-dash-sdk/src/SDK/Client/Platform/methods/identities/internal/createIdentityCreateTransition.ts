@@ -1,4 +1,5 @@
 import { PrivateKey } from '@dashevo/dashcore-lib';
+// TODO(wasm): replace with IdentityPublicKey from wasm-dpp
 import IdentityPublicKey from '@dashevo/dpp/lib/identity/IdentityPublicKey';
 import { Platform } from '../../../Platform';
 
@@ -22,7 +23,7 @@ export async function createIdentityCreateTransition(
   await platform.initialize();
 
   const account = await platform.client.getWalletAccount();
-  const { dpp } = platform;
+  const { wasmDpp } = platform;
 
   const identityIndex = await account.getUnusedIdentityIndex();
 
@@ -37,47 +38,56 @@ export async function createIdentityCreateTransition(
 
   // Create Identity
   // @ts-ignore
-  const identity = dpp.identity.create(
+  const identity = wasmDpp.identity.create(
     assetLockProof, [{
-      key: identityMasterPublicKey,
+      id: 0,
+      data: identityMasterPublicKey.toBuffer(),
+      type: IdentityPublicKey.TYPES.ECDSA_SECP256K1,
       purpose: IdentityPublicKey.PURPOSES.AUTHENTICATION,
       securityLevel: IdentityPublicKey.SECURITY_LEVELS.MASTER,
+      readOnly: false,
     },
     {
-      key: identitySecondPublicKey,
+      id: 1,
+      data: identitySecondPublicKey.toBuffer(),
+      type: IdentityPublicKey.TYPES.ECDSA_SECP256K1,
       purpose: IdentityPublicKey.PURPOSES.AUTHENTICATION,
       securityLevel: IdentityPublicKey.SECURITY_LEVELS.HIGH,
+      readOnly: false,
     },
     ],
   );
 
   // Create ST
-  const identityCreateTransition = dpp.identity.createIdentityCreateTransition(identity);
+  const identityCreateTransition = wasmDpp.identity.createIdentityCreateTransition(identity);
 
   // Create key proofs
 
   const [masterKey, secondKey] = identityCreateTransition.getPublicKeys();
 
   await identityCreateTransition
-    .signByPrivateKey(identityMasterPrivateKey, IdentityPublicKey.TYPES.ECDSA_SECP256K1);
+    .signByPrivateKey(identityMasterPrivateKey.toBuffer(), IdentityPublicKey.TYPES.ECDSA_SECP256K1);
 
   masterKey.setSignature(identityCreateTransition.getSignature());
 
-  identityCreateTransition.setSignature(undefined);
+  identityCreateTransition.setSignature([]);
 
   await identityCreateTransition
-    .signByPrivateKey(identitySecondPrivateKey, IdentityPublicKey.TYPES.ECDSA_SECP256K1);
+    .signByPrivateKey(identitySecondPrivateKey.toBuffer(), IdentityPublicKey.TYPES.ECDSA_SECP256K1);
 
   secondKey.setSignature(identityCreateTransition.getSignature());
 
-  identityCreateTransition.setSignature(undefined);
+  identityCreateTransition.setSignature([]);
+
+  // Set public keys back after updating their signatures
+  identityCreateTransition.setPublicKeys([masterKey, secondKey]);
 
   // Sign and validate state transition
 
   await identityCreateTransition
-    .signByPrivateKey(assetLockPrivateKey, IdentityPublicKey.TYPES.ECDSA_SECP256K1);
+    .signByPrivateKey(assetLockPrivateKey.toBuffer(), IdentityPublicKey.TYPES.ECDSA_SECP256K1);
 
-  const result = await dpp.stateTransition.validateBasic(identityCreateTransition);
+  const result = await wasmDpp.stateTransition.validateBasic(identityCreateTransition);
 
   if (!result.isValid()) {
     throw new Error(`StateTransition is invalid - ${JSON.stringify(result.getErrors())}`);

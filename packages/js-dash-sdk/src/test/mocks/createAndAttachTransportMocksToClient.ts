@@ -1,7 +1,7 @@
 import { Transaction } from '@dashevo/dashcore-lib';
 import DAPIClient from '@dashevo/dapi-client';
 import stateTransitionTypes from '@dashevo/dpp/lib/stateTransition/stateTransitionTypes';
-import Identity from '@dashevo/dpp/lib/identity/Identity';
+import loadWasmDpp from '@dashevo/wasm-dpp';
 
 import { createFakeInstantLock } from '../../utils/createFakeIntantLock';
 import getResponseMetadataFixture from '../fixtures/getResponseMetadataFixture';
@@ -50,21 +50,28 @@ function makeTxStreamEmitISLocksForTransactions(transportMock, txStreamMock) {
  * @param {Client} client
  * @param dapiClientMock
  */
-function makeGetIdentityRespondWithIdentity(client, dapiClientMock) {
+async function makeGetIdentityRespondWithIdentity(client, dapiClientMock, sinon) {
+  // TODO(wasm): expose Identity from dedicated module that handles all WASM-DPP types
+  const { Identity } = await loadWasmDpp();
+
   dapiClientMock.platform.broadcastStateTransition.callsFake(async (stBuffer) => {
     const interceptedIdentityStateTransition = await client
-      .platform.dpp.stateTransition.createFromBuffer(stBuffer);
+      .platform.wasmDpp.stateTransition.createFromBuffer(stBuffer);
 
     if (interceptedIdentityStateTransition.getType() === stateTransitionTypes.IDENTITY_CREATE) {
       const identityToResolve = new Identity({
-        protocolVersion: interceptedIdentityStateTransition.getProtocolVersion(),
+        // TODO(wasm): get from platform.wasmDpp once we merge
+        //  https://github.com/dashpay/platform/pull/841
+        protocolVersion: 1,
         id: interceptedIdentityStateTransition.getIdentityId().toBuffer(),
         publicKeys: interceptedIdentityStateTransition
           .getPublicKeys().map((key) => key.toObject({ skipSignature: true })),
         balance: interceptedIdentityStateTransition.getAssetLockProof().getOutput().satoshis,
         revision: 0,
       });
-      dapiClientMock.platform.getIdentity.withArgs(identityToResolve.getId())
+      dapiClientMock.platform.getIdentity.withArgs(
+        sinon.match((id) => id.equals(identityToResolve.getId().toBuffer())),
+      )
         .resolves(new GetIdentityResponse(
           identityToResolve.toBuffer(),
           getResponseMetadataFixture(),
@@ -102,7 +109,7 @@ export async function createAndAttachTransportMocksToClient(client, sinon) {
   // Putting data in transport stubs
   transportMock.getIdentitiesByPublicKeyHashes.resolves([]);
   makeTxStreamEmitISLocksForTransactions(transportMock, txStreamMock);
-  makeGetIdentityRespondWithIdentity(client, dapiClientMock);
+  await makeGetIdentityRespondWithIdentity(client, dapiClientMock, sinon);
 
   return { txStreamMock, transportMock, dapiClientMock };
 }
