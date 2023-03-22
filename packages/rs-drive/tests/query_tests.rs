@@ -107,7 +107,7 @@ use drive::drive::block_info::BlockInfo;
 use drive::drive::defaults;
 #[cfg(feature = "full")]
 use drive::drive::query::QuerySerializedDocumentsOutcome;
-use drive::query;
+
 use drive::query::{WhereClause, WhereOperator};
 use drive::tests::helpers::setup::setup_drive_with_initial_state_structure;
 
