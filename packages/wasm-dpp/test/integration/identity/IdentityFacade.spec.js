@@ -43,7 +43,7 @@ describe('IdentityFacade', () => {
       height: 42,
     });
 
-    dpp = new DashPlatformProtocol(1, getBlsAdapterMock(), stateRepositoryMock);
+    dpp = new DashPlatformProtocol(getBlsAdapterMock(), stateRepositoryMock, 1);
 
     const chainAssetLockProofJS = getChainAssetLockProofFixture();
     const instantAssetLockProofJS = getInstantAssetLockProofFixture();

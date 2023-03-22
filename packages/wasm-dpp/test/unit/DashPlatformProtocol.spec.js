@@ -15,9 +15,9 @@ describe('DashPlatformProtocol', () => {
     stateRepositoryMock = createStateRepositoryMock(this.sinonSandbox);
 
     dpp = new DashPlatformProtocol(
-      protocolVersion.latestVersion,
       getBlsAdapterMock(),
       stateRepositoryMock,
+      protocolVersion.latestVersion,
     );
   });
 

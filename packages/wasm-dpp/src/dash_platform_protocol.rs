@@ -38,15 +38,15 @@ pub struct DPPOptions {
 impl DashPlatformProtocol {
     #[wasm_bindgen(constructor)]
     pub fn new(
-        options: Option<u32>,
         bls_adapter: JsBlsAdapter,
         state_repository: ExternalStateRepositoryLike,
+        maybe_protocol_version: Option<u32>,
     ) -> Result<DashPlatformProtocol, JsValue> {
         // // TODO: wrap whole thing around rs-dpp/dash_platform_protocol?
         // let options: DPPOptions = with_js_error!(serde_wasm_bindgen::from_value(options))?;
 
         let bls = BlsAdapter(bls_adapter.clone());
-        let protocol_version = options.unwrap_or(LATEST_VERSION);
+        let protocol_version = maybe_protocol_version.unwrap_or(LATEST_VERSION);
         let public_keys_validator = Arc::new(PublicKeysValidator::new(bls.clone()).unwrap());
 
         let (identity_facade, document_facade, data_contract_facade, state_transition_facade) =
