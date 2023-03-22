@@ -8,7 +8,7 @@ use crate::drive::object_size_info::{DocumentAndContractInfo, OwnedDocumentInfo}
 use crate::error::Error;
 
 impl DriveHighLevelOperationConverter for DocumentDeleteTransition {
-    fn to_high_level_drive_operations(&self) -> Result<Vec<DriveOperation>, Error> {
+    fn to_high_level_drive_operations(&self, epoch: &Epoch) -> Result<Vec<DriveOperation>, Error> {
         let DocumentDeleteTransition {
             base
         } = self;

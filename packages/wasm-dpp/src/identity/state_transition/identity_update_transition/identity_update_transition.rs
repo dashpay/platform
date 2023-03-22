@@ -250,9 +250,7 @@ impl IdentityUpdateTransitionWasm {
         if let Some(public_keys_to_add) = object.public_keys_to_add {
             let keys_objects = public_keys_to_add
                 .into_iter()
-                .map(|key| {
-                    IdentityPublicKeyWithWitnessWasm::from(key).to_object(options.clone())
-                })
+                .map(|key| IdentityPublicKeyWithWitnessWasm::from(key).to_object(options.clone()))
                 .collect::<Result<js_sys::Array, _>>()?;
 
             js_sys::Reflect::set(

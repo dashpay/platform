@@ -1,8 +1,8 @@
 use crate::identifier::Identifier;
-use crate::identity::{IdentityPublicKey, KeyID, TimestampMillis};
-use serde::{Deserialize, Serialize};
 use crate::identity::state_transition::identity_public_key_transitions::IdentityPublicKeyWithWitness;
 use crate::identity::state_transition::identity_update_transition::identity_update_transition::IdentityUpdateTransition;
+use crate::identity::{IdentityPublicKey, KeyID, TimestampMillis};
+use serde::{Deserialize, Serialize};
 
 pub const IDENTITY_UPDATE_TRANSITION_ACTION_VERSION: u32 = 0;
 

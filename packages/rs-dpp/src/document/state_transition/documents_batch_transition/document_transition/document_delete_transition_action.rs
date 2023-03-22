@@ -2,9 +2,8 @@ use crate::document::document_transition::document_base_transition_action::Docum
 use crate::document::document_transition::DocumentDeleteTransition;
 use serde::{Deserialize, Serialize};
 
-#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default)]
 pub struct DocumentDeleteTransitionAction {
-    #[serde(flatten)]
     pub base: DocumentBaseTransitionAction,
 }
 

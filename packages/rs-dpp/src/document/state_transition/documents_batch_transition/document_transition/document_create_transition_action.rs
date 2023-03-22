@@ -1,23 +1,24 @@
+use crate::data_contract::DriveContractExt;
 use crate::document::document_transition::document_base_transition_action::DocumentBaseTransitionAction;
 use crate::document::document_transition::DocumentCreateTransition;
+use crate::document::Document;
 use crate::identity::TimestampMillis;
-use platform_value::Value;
+use crate::ProtocolError;
+use platform_value::{Identifier, Value};
 use serde::{Deserialize, Serialize};
+use std::collections::BTreeMap;
 
-#[derive(Debug, Clone, Default, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
+#[derive(Debug, Clone, Default)]
 pub struct DocumentCreateTransitionAction {
     /// Document Base Transition
-    #[serde(flatten)]
     pub base: DocumentBaseTransitionAction,
-
-    #[serde(rename = "$createdAt", skip_serializing_if = "Option::is_none")]
+    /// The creation time of the document
     pub created_at: Option<TimestampMillis>,
-    #[serde(rename = "$updatedAt", skip_serializing_if = "Option::is_none")]
+    //todo: remove updated_at
+    /// The time the document was last updated
     pub updated_at: Option<TimestampMillis>,
-
-    #[serde(flatten, skip_serializing_if = "Option::is_none")]
-    pub data: Option<Value>,
+    /// Document properties
+    pub data: BTreeMap<String, Value>,
 }
 
 impl From<DocumentCreateTransition> for DocumentCreateTransitionAction {
@@ -33,7 +34,7 @@ impl From<DocumentCreateTransition> for DocumentCreateTransitionAction {
             base: base.into(),
             created_at,
             updated_at,
-            data: data.map(|value| value.into()),
+            data: data.unwrap_or_default(),
         }
     }
 }
@@ -51,7 +52,7 @@ impl From<&DocumentCreateTransition> for DocumentCreateTransitionAction {
             base: base.into(),
             created_at: created_at.clone(),
             updated_at: updated_at.clone(),
-            data: data.clone().map(|value| value.into()),
+            data: data.clone().unwrap_or_default(),
         }
     }
 }

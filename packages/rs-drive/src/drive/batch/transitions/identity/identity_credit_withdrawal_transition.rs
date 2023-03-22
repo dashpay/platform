@@ -11,9 +11,10 @@ use crate::drive::batch::DriveOperation::{DocumentOperation, IdentityOperation, 
 use crate::drive::batch::transitions::DriveHighLevelOperationConverter;
 use crate::drive::object_size_info::{DocumentAndContractInfo, OwnedDocumentInfo, DocumentInfo};
 use crate::error::Error;
+use crate::fee_pools::epochs::Epoch;
 
 impl DriveHighLevelOperationConverter for IdentityCreditWithdrawalTransitionAction {
-    fn to_high_level_drive_operations(self) -> Result<Vec<DriveOperation>, Error> {
+    fn to_high_level_drive_operations(self, epoch: &Epoch) -> Result<Vec<DriveOperation>, Error> {
         let IdentityCreditWithdrawalTransitionAction {
             version, identity_id, amount, core_fee_per_byte, pooling, output_script, revision
         } = self;

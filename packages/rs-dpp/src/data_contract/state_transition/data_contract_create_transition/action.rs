@@ -1,6 +1,6 @@
+use crate::data_contract::state_transition::data_contract_create_transition::DataContractCreateTransition;
 use crate::data_contract::DataContract;
 use serde::{Deserialize, Serialize};
-use crate::data_contract::state_transition::data_contract_create_transition::DataContractCreateTransition;
 
 pub const DATA_CONTRACT_CREATE_TRANSITION_ACTION_VERSION: u32 = 0;
 

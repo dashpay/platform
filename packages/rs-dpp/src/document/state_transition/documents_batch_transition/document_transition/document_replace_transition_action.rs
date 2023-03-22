@@ -1,21 +1,22 @@
 use crate::document::document_transition::document_base_transition_action::DocumentBaseTransitionAction;
 use crate::document::document_transition::DocumentReplaceTransition;
 use crate::identity::TimestampMillis;
+use crate::prelude::Revision;
 use platform_value::Value;
 use serde::{Deserialize, Serialize};
-use crate::prelude::Revision;
+use std::collections::BTreeMap;
 
-#[derive(Debug, Clone, Default, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
+#[derive(Debug, Clone, Default)]
 pub struct DocumentReplaceTransitionAction {
-    #[serde(flatten)]
+    /// Document Base Transition
     pub base: DocumentBaseTransitionAction,
-    #[serde(rename = "$revision")]
+    /// The current revision we are setting
     pub revision: Revision,
-    #[serde(skip_serializing_if = "Option::is_none", rename = "$updatedAt")]
+    //todo: remove updated_at
+    /// The time the document was last updated
     pub updated_at: Option<TimestampMillis>,
-    #[serde(flatten, skip_serializing_if = "Option::is_none")]
-    pub data: Option<Value>,
+    /// Document properties
+    pub data: BTreeMap<String, Value>,
 }
 
 impl From<DocumentReplaceTransition> for DocumentReplaceTransitionAction {
@@ -31,7 +32,7 @@ impl From<DocumentReplaceTransition> for DocumentReplaceTransitionAction {
             base: base.into(),
             revision,
             updated_at,
-            data: data.map(|value| value.into()),
+            data: data.unwrap_or_default(),
         }
     }
 }
@@ -49,7 +50,7 @@ impl From<&DocumentReplaceTransition> for DocumentReplaceTransitionAction {
             base: base.into(),
             revision: *revision,
             updated_at: updated_at.clone(),
-            data: data.clone().map(|value| value.into()),
+            data: data.clone().unwrap_or_default(),
         }
     }
 }

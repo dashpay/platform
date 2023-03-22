@@ -146,6 +146,10 @@ impl Identifier {
         self.0 .0
     }
 
+    pub fn into_buffer(self) -> [u8; 32] {
+        self.0 .0
+    }
+
     /// Convenience method to get underlying buffer as a vec
     pub fn to_vec(&self) -> Vec<u8> {
         self.0 .0.to_vec()

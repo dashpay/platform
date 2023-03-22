@@ -6,7 +6,7 @@ use serde::{Deserialize, Serialize};
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 #[serde(rename_all = "camelCase")]
 pub struct DocumentBaseTransitionAction {
-    /// The document ID
+    /// The document Id
     #[serde(rename = "$id")]
     pub id: Identifier,
     /// Name of document type found int the data contract associated with the `data_contract_id`

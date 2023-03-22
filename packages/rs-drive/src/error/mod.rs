@@ -6,6 +6,7 @@ use dpp::ProtocolError;
 use fee::FeeError;
 use identity::IdentityError;
 use query::QueryError;
+use dpp::platform_value::Error as ValueError;
 
 /// Document module
 pub mod document;
@@ -52,4 +53,7 @@ pub enum Error {
     /// Document error
     #[error("document: {0}")]
     Document(#[from] DocumentError),
+    /// Value error
+    #[error("value: {0}")]
+    Value(#[from] ValueError),
 }

@@ -9,8 +9,7 @@ use serde::{Deserialize, Serialize};
 
 pub const DOCUMENT_TRANSITION_ACTION_VERSION: u32 = 0;
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
+#[derive(Debug, Clone)]
 pub enum DocumentTransitionAction {
     CreateAction(DocumentCreateTransitionAction),
     ReplaceAction(DocumentReplaceTransitionAction),

@@ -15,6 +15,8 @@ use grovedb::batch::KeyInfoPath;
 use grovedb::{EstimatedLayerInformation, TransactionArg};
 use std::borrow::{Borrow, Cow};
 use std::collections::HashMap;
+use dpp::prelude::Identifier;
+use crate::error::document::DocumentError;
 
 /// A wrapper for a document operation
 #[derive(Clone, Debug)]
@@ -73,6 +75,17 @@ pub enum DocumentOperationType<'a> {
         override_document: bool,
         /// Add storage flags (like epoch, owner id, etc)
         storage_flags: Option<Cow<'a, StorageFlags>>,
+    },
+    /// Adds a document to a contract matching the desired info.
+    AddDocument {
+        /// The document and contract info, also may contain the owner_id
+        owned_document_info: OwnedDocumentInfo<'a>,
+        /// Contract
+        contract_id: Identifier,
+        /// Document type
+        document_type_name: &'a str,
+        /// Should we override the document if one already exists?
+        override_document: bool,
     },
     /// Adds a document to a contract.
     AddDocumentForContract {
@@ -156,6 +169,15 @@ pub enum DocumentOperationType<'a> {
         owner_id: Option<[u8; 32]>,
         /// Add storage flags (like epoch, owner id, etc)
         storage_flags: Option<Cow<'a, StorageFlags>>,
+    },
+    /// Updates a document and returns the associated fee.
+    UpdateDocument {
+        /// The document and contract info, also may contain the owner_id
+        owned_document_info: OwnedDocumentInfo<'a>,
+        /// Contract
+        contract_id: Identifier,
+        /// Document type
+        document_type_name: &'a str,
     },
     /// Updates a document and returns the associated fee.
     UpdateDocumentForContract {
@@ -251,6 +273,33 @@ impl DriveLowLevelOperationConverter for DocumentOperationType<'_> {
                     estimated_costs_only_with_layer_info,
                     transaction,
                 )
+            }
+            DocumentOperationType::AddDocument { owned_document_info, contract_id, document_type_name, override_document } => {
+                let contract_fetch_info = drive
+                    .get_contract_with_fetch_info_and_add_to_operations(
+                        contract_id.into_buffer(),
+                        Some(&block_info.epoch),
+                        transaction,
+                        &mut drive_operations,
+                    )?
+                    .ok_or(Error::Document(DocumentError::ContractNotFound))?;
+
+                let contract = &contract_fetch_info.contract;
+
+                let document_type = contract.document_type_for_name(document_type_name)?;
+
+                let document_and_contract_info = DocumentAndContractInfo {
+                    owned_document_info,
+                    contract,
+                    document_type,
+                };
+                drive.add_document_for_contract_operations(
+                    document_and_contract_info,
+                    override_document,
+                    block_info,
+                    &mut None,
+                    estimated_costs_only_with_layer_info,
+                    transaction)
             }
             DocumentOperationType::AddDocumentForContract {
                 document_and_contract_info,
@@ -483,6 +532,32 @@ impl DriveLowLevelOperationConverter for DocumentOperationType<'_> {
                     }
                 }
                 Ok(drive_operations)
+            }
+            DocumentOperationType::UpdateDocument { owned_document_info, contract_id, document_type_name } => {
+                let contract_fetch_info = drive
+                    .get_contract_with_fetch_info_and_add_to_operations(
+                        contract_id.into_buffer(),
+                        Some(&block_info.epoch),
+                        transaction,
+                        &mut drive_operations,
+                    )?
+                    .ok_or(Error::Document(DocumentError::ContractNotFound))?;
+
+                let contract = &contract_fetch_info.contract;
+
+                let document_type = contract.document_type_for_name(document_type_name)?;
+
+                let document_and_contract_info = DocumentAndContractInfo {
+                    owned_document_info,
+                    contract,
+                    document_type,
+                };
+                drive.update_document_for_contract_operations(
+                    document_and_contract_info,
+                    block_info,
+                    &mut None,
+                    estimated_costs_only_with_layer_info,
+                    transaction)
             }
         }
     }

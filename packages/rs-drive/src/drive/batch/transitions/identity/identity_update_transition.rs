@@ -9,7 +9,7 @@ use crate::drive::object_size_info::{DocumentAndContractInfo, OwnedDocumentInfo}
 use crate::error::Error;
 
 impl DriveHighLevelOperationConverter for IdentityUpdateTransitionAction {
-    fn to_high_level_drive_operations(self) -> Result<Vec<DriveOperation>, Error> {
+    fn to_high_level_drive_operations(self, epoch: &Epoch) -> Result<Vec<DriveOperation>, Error> {
         let IdentityUpdateTransitionAction {
             add_public_keys, disable_public_keys, public_keys_disabled_at, identity_id, ..
         } = self;

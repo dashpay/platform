@@ -1,17 +1,18 @@
 use crate::document::document_transition::DocumentTransitionAction;
 use crate::document::DocumentsBatchTransition;
 use crate::identifier::Identifier;
+use platform_value::Error;
 use serde::{Deserialize, Serialize};
 
 pub const DOCUMENTS_BATCH_TRANSITION_ACTION_VERSION: u32 = 0;
 
-#[derive(Debug, Serialize, Deserialize, Clone)]
-#[serde(rename_all = "camelCase")]
+#[derive(Debug, Clone)]
 pub struct DocumentsBatchTransitionAction {
+    /// The version of the transition
     pub version: u32,
+    /// The owner making the transitions
     pub owner_id: Identifier,
-    // we want to skip serialization of transitions, as we does it manually in `to_object()`  and `to_json()`
-    #[serde(skip_serializing)]
+    /// The inner transitions
     pub transitions: Vec<DocumentTransitionAction>,
 }
 
