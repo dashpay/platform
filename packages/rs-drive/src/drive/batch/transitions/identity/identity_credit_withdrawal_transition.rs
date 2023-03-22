@@ -18,7 +18,7 @@ impl DriveHighLevelOperationConverter for IdentityCreditWithdrawalTransitionActi
             version, identity_id, amount, core_fee_per_byte, pooling, output_script, revision
         } = self;
 
-        let data_contract_id = withdrawals_contract::CONTRACT_ID.deref();
+        let data_contract_id = *withdrawals_contract::CONTRACT_ID;
 
         let data_contract = self.;
 

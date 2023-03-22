@@ -3,6 +3,7 @@ use crate::document::document_transition::DocumentReplaceTransition;
 use crate::identity::TimestampMillis;
 use platform_value::Value;
 use serde::{Deserialize, Serialize};
+use crate::prelude::Revision;
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -10,7 +11,7 @@ pub struct DocumentReplaceTransitionAction {
     #[serde(flatten)]
     pub base: DocumentBaseTransitionAction,
     #[serde(rename = "$revision")]
-    pub revision: u32,
+    pub revision: Revision,
     #[serde(skip_serializing_if = "Option::is_none", rename = "$updatedAt")]
     pub updated_at: Option<TimestampMillis>,
     #[serde(flatten, skip_serializing_if = "Option::is_none")]

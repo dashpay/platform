@@ -1,6 +1,3 @@
-use crate::data_contract::state_transition::{
-    DataContractCreateTransitionAction, DataContractUpdateTransitionAction,
-};
 use crate::document::state_transition::documents_batch_transition::DocumentsBatchTransitionAction;
 use crate::identity::state_transition::identity_create_transition::IdentityCreateTransitionAction;
 use crate::identity::state_transition::identity_topup_transition::IdentityTopUpTransitionAction;
@@ -8,6 +5,8 @@ use crate::identity::state_transition::identity_update_transition::IdentityUpdat
 
 use crate::identity::state_transition::identity_credit_withdrawal_transition::IdentityCreditWithdrawalTransitionAction;
 use serde::{Deserialize, Serialize};
+use crate::data_contract::state_transition::data_contract_create_transition::DataContractCreateTransitionAction;
+use crate::data_contract::state_transition::data_contract_update_transition::DataContractUpdateTransitionAction;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum StateTransitionAction {

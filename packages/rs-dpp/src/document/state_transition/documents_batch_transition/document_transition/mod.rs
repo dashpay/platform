@@ -34,7 +34,6 @@ pub use document_create_transition_action::DocumentCreateTransitionAction;
 pub use document_delete_transition_action::DocumentDeleteTransitionAction;
 pub use document_replace_transition_action::DocumentReplaceTransitionAction;
 
-use crate::identity::TimestampMillis;
 pub use action::{DocumentTransitionAction, DOCUMENT_TRANSITION_ACTION_VERSION};
 
 /// the initial revision of newly created document

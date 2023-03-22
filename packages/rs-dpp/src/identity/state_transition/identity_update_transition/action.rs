@@ -1,8 +1,8 @@
 use crate::identifier::Identifier;
-use crate::identity::state_transition::identity_public_key_transitions::IdentityPublicKeyCreateTransition;
-use crate::identity::state_transition::identity_update_transition::identity_update_transition::IdentityUpdateTransition;
 use crate::identity::{IdentityPublicKey, KeyID, TimestampMillis};
 use serde::{Deserialize, Serialize};
+use crate::identity::state_transition::identity_public_key_transitions::IdentityPublicKeyWithWitness;
+use crate::identity::state_transition::identity_update_transition::identity_update_transition::IdentityUpdateTransition;
 
 pub const IDENTITY_UPDATE_TRANSITION_ACTION_VERSION: u32 = 0;
 
@@ -29,7 +29,7 @@ impl From<IdentityUpdateTransition> for IdentityUpdateTransitionAction {
             version: IDENTITY_UPDATE_TRANSITION_ACTION_VERSION,
             add_public_keys: add_public_keys
                 .into_iter()
-                .map(IdentityPublicKeyCreateTransition::to_identity_public_key)
+                .map(IdentityPublicKeyWithWitness::to_identity_public_key)
                 .collect(),
             disable_public_keys,
             public_keys_disabled_at,

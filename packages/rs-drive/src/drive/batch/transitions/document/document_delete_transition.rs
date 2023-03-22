@@ -14,7 +14,7 @@ impl DriveHighLevelOperationConverter for DocumentDeleteTransition {
         } = self;
 
         let DocumentBaseTransition {
-            id, document_type, data_contract, ..
+            id, document_type_name, data_contract, ..
         } = &base;
 
         let mut drive_operations = vec![];
@@ -22,7 +22,7 @@ impl DriveHighLevelOperationConverter for DocumentDeleteTransition {
         drive_operations.push(DocumentOperation(DocumentOperationType::DeleteDocumentOfNamedTypeForContract {
             document_id: id.to_buffer(),
             contract: data_contract,
-            document_type_name: document_type,
+            document_type_name,
             owner_id: None,
         }));
 

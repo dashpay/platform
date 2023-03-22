@@ -11,7 +11,7 @@ pub struct DocumentBaseTransitionAction {
     pub id: Identifier,
     /// Name of document type found int the data contract associated with the `data_contract_id`
     #[serde(rename = "$type")]
-    pub document_type: String,
+    pub document_type_name: String,
     /// Data contract ID generated from the data contract's `owner_id` and `entropy`
     #[serde(rename = "$dataContractId")]
     pub data_contract_id: Identifier,
@@ -23,14 +23,14 @@ impl From<DocumentBaseTransition> for DocumentBaseTransitionAction {
     fn from(value: DocumentBaseTransition) -> Self {
         let DocumentBaseTransition {
             id,
-            document_type,
+            document_type_name,
             data_contract_id,
             data_contract,
             ..
         } = value;
         DocumentBaseTransitionAction {
             id,
-            document_type,
+            document_type_name,
             data_contract_id,
             data_contract,
         }
@@ -41,14 +41,14 @@ impl From<&DocumentBaseTransition> for DocumentBaseTransitionAction {
     fn from(value: &DocumentBaseTransition) -> Self {
         let DocumentBaseTransition {
             id,
-            document_type,
+            document_type_name,
             data_contract_id,
             data_contract,
             ..
         } = value;
         DocumentBaseTransitionAction {
             id: *id,
-            document_type: document_type.clone(),
+            document_type_name: document_type_name.clone(),
             data_contract_id: *data_contract_id,
             data_contract: data_contract.clone(),
         }

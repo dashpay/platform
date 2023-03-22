@@ -15,7 +15,7 @@ impl DriveHighLevelOperationConverter for DocumentCreateTransitionAction {
         } = self;
 
         let DocumentBaseTransitionAction {
-            id, document_type, data_contract_id, data_contract
+            id, document_type_name: document_type, data_contract_id, data_contract
         } = &base;
 
         let mut drive_operations = vec![];

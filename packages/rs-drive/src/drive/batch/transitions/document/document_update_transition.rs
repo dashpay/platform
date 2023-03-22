@@ -14,7 +14,7 @@ impl DriveHighLevelOperationConverter for DocumentReplaceTransition {
         } = self;
 
         let DocumentBaseTransition {
-            id, document_type, action, data_contract_id, data_contract
+            id, document_type_name, action, data_contract_id, data_contract
         } = &base;
 
         let mut drive_operations = vec![];
@@ -23,7 +23,7 @@ impl DriveHighLevelOperationConverter for DocumentReplaceTransition {
             document: &DocumentStub {},
             serialized_document: &[],
             contract: &Default::default(),
-            document_type_name: "",
+            document_type_name,
             owner_id: None,
             storage_flags: None,
         }));

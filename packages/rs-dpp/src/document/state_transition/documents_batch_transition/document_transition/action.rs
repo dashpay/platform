@@ -32,3 +32,19 @@ impl From<DocumentTransition> for DocumentTransitionAction {
         }
     }
 }
+
+impl From<&DocumentTransition> for DocumentTransitionAction {
+    fn from(value: &DocumentTransition) -> Self {
+        match value {
+            DocumentTransition::Create(document_create_transition) => {
+                CreateAction(document_create_transition.into())
+            }
+            DocumentTransition::Replace(document_replace_transition) => {
+                ReplaceAction(document_replace_transition.into())
+            }
+            DocumentTransition::Delete(document_delete_transition) => {
+                DeleteAction(document_delete_transition.into())
+            }
+        }
+    }
+}
