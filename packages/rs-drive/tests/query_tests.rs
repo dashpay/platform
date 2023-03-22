@@ -30,6 +30,7 @@
 //! Query Tests
 //!
 
+use ciborium::cbor;
 #[cfg(feature = "full")]
 use grovedb::TransactionArg;
 #[cfg(feature = "full")]
@@ -94,6 +95,7 @@ use dpp::platform_value::Value;
 
 #[cfg(feature = "full")]
 use dpp::prelude::DataContract;
+use dpp::prelude::Revision;
 #[cfg(feature = "full")]
 use dpp::util::serializer;
 #[cfg(feature = "full")]
@@ -102,8 +104,12 @@ use dpp::version::{ProtocolVersionValidator, COMPATIBILITY_MAP, LATEST_VERSION};
 use drive::contract::Contract;
 #[cfg(feature = "full")]
 use drive::drive::block_info::BlockInfo;
+use drive::drive::defaults;
 #[cfg(feature = "full")]
 use drive::drive::query::QueryDocumentsOutcome;
+use drive::query;
+use drive::query::{WhereClause, WhereOperator};
+use drive::tests::helpers::setup::setup_drive_with_initial_state_structure;
 
 #[cfg(feature = "full")]
 #[derive(Serialize, Deserialize)]
@@ -4334,6 +4340,138 @@ fn test_query_a_b_c_d_e_contract() {
             None,
         )
         .expect("should perform query");
+}
+
+#[cfg(feature = "full")]
+#[test]
+fn test_query_documents_by_created_at() {
+    let drive = setup_drive_with_initial_state_structure();
+
+    let contract = json!({
+        "protocolVersion": 1,
+        "$id": "BZUodcFoFL6KvnonehrnMVggTvCe8W5MiRnZuqLb6M54",
+        "$schema": "https://schema.dash.org/dpp-0-4-0/meta/data-contract",
+        "version": 1,
+        "ownerId": "GZVdTnLFAN2yE9rLeCHBDBCr7YQgmXJuoExkY347j7Z5",
+        "documents": {
+            "indexedDocument": {
+                "type": "object",
+                "indices": [
+                    {"name":"index1", "properties": [{"$ownerId":"asc"}, {"firstName":"desc"}], "unique":true},
+                    {"name":"index2", "properties": [{"$ownerId":"asc"}, {"lastName":"desc"}], "unique":true},
+                    {"name":"index3", "properties": [{"lastName":"asc"}]},
+                    {"name":"index4", "properties": [{"$createdAt":"asc"}, {"$updatedAt":"asc"}]},
+                    {"name":"index5", "properties": [{"$updatedAt":"asc"}]},
+                    {"name":"index6", "properties": [{"$createdAt":"asc"}]}
+                ],
+                "properties":{
+                    "firstName": {
+                        "type": "string",
+                        "maxLength": 63,
+                    },
+                    "lastName": {
+                        "type": "string",
+                        "maxLength": 63,
+                    }
+                },
+                "required": ["firstName", "$createdAt", "$updatedAt", "lastName"],
+                "additionalProperties": false,
+            },
+        },
+    });
+
+    let contract_cbor =
+        serializer::serializable_value_to_cbor(&contract, Some(defaults::PROTOCOL_VERSION))
+            .expect("expected to serialize to cbor");
+
+    let contract =
+        DataContract::from_cbor(&contract_cbor).expect("should create a contract from cbor");
+
+    drive
+        .apply_contract(
+            &contract,
+            contract_cbor.clone(),
+            BlockInfo::default(),
+            true,
+            None,
+            None,
+        )
+        .expect("should apply contract");
+
+    // Create document
+
+    let created_at = 1647535750329_u64;
+
+    let document = platform_value!({
+       "$protocolVersion": 1u32,
+       "$id": "DLRWw2eRbLAW5zDU2c7wwsSFQypTSZPhFYzpY48tnaXN",
+       "$type": "indexedDocument",
+       "$dataContractId": "BZUodcFoFL6KvnonehrnMVggTvCe8W5MiRnZuqLb6M54",
+       "$ownerId": "GZVdTnLFAN2yE9rLeCHBDBCr7YQgmXJuoExkY347j7Z5",
+       "$revision": 1 as Revision,
+       "firstName": "myName",
+       "lastName": "lastName",
+       "$createdAt": created_at,
+       "$updatedAt": created_at,
+    });
+
+    let serialized_document =
+        serializer::serializable_value_to_cbor(&document, Some(defaults::PROTOCOL_VERSION))
+            .expect("expected to serialize to cbor");
+
+    drive
+        .add_serialized_document_for_serialized_contract(
+            serialized_document.as_slice(),
+            contract_cbor.as_slice(),
+            "indexedDocument",
+            None,
+            true,
+            BlockInfo::default(),
+            true,
+            StorageFlags::optional_default_as_cow(),
+            None,
+        )
+        .expect("should add document");
+
+    // Query document
+
+    let query_cbor = cbor!({
+        "where" => [
+            ["$createdAt", "==", created_at]
+        ]
+    })
+    .expect("should create cbor");
+
+    let query_bytes = serializer::serializable_value_to_cbor(&query_cbor, None)
+        .expect("should serialize cbor value to bytes");
+
+    let document_type = contract
+        .document_type_for_name("indexedDocument")
+        .expect("should get document type");
+
+    let query = DriveQuery::from_cbor(&query_bytes, &contract, document_type)
+        .expect("should create a query from cbor");
+
+    assert_eq!(
+        query.internal_clauses.equal_clauses.get("$createdAt"),
+        Some(&WhereClause {
+            field: "$createdAt".to_string(),
+            operator: WhereOperator::Equal,
+            value: Value::I128(created_at as i128)
+        })
+    );
+
+    let query_result = drive
+        .query_documents_cbor_with_document_type_lookup(
+            &query_bytes,
+            contract.id.to_buffer(),
+            "indexedDocument",
+            None,
+            None,
+        )
+        .expect("should query documents");
+
+    assert_eq!(query_result.items.len(), 1);
 }
 
 #[cfg(feature = "full")]
