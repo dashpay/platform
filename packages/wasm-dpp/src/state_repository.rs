@@ -732,6 +732,6 @@ fn ctx_to_js_value(maybe_ctx: Option<&StateTransitionExecutionContext>) -> JsVal
         let ctx_wasm: StateTransitionExecutionContextWasm = ctx.into();
         ctx_wasm.into()
     } else {
-        JsValue::null()
+        JsValue::undefined()
     }
 }

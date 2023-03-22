@@ -13,7 +13,7 @@ use dpp::util::string_encoding::Encoding;
 use crate::errors::{from_dpp_err, RustConversionError};
 use crate::identifier::identifier_from_js_value;
 use crate::metadata::MetadataWasm;
-use crate::utils::{Inner, WithJsError};
+use crate::utils::WithJsError;
 use crate::{bail_js, with_js_error};
 use crate::{buffer::Buffer, identifier::IdentifierWrapper};
 
