@@ -3286,6 +3286,7 @@ dependencies = [
 [[package]]
 name = "tenderdash-abci"
 version = "0.12.0-dev.1"
+source = "git+https://github.com/dashpay/rs-tenderdash-abci?branch=proto-timestamp-milis#627d9607b9dec9d5b4182f877229a15e6568cbdd"
 dependencies = [
  "bytes",
  "prost",
@@ -3299,6 +3300,7 @@ dependencies = [
 [[package]]
 name = "tenderdash-proto"
 version = "0.12.0-dev.1"
+source = "git+https://github.com/dashpay/rs-tenderdash-abci?branch=proto-timestamp-milis#627d9607b9dec9d5b4182f877229a15e6568cbdd"
 dependencies = [
  "bytes",
  "chrono",

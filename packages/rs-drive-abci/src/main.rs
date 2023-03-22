@@ -4,6 +4,7 @@
 use clap::{Parser, Subcommand};
 use drive_abci::config::{FromEnv, PlatformConfig};
 use std::path::PathBuf;
+use tracing::warn;
 use tracing_subscriber::prelude::*;
 
 /// Main command container for ABCI Server
@@ -84,7 +85,13 @@ fn load_config(config: &Option<PathBuf>) -> PlatformConfig {
             }
         }
         None => {
-            dotenvy::dotenv().expect("cannot load .env file");
+            if let Err(e) = dotenvy::dotenv() {
+                if e.not_found() {
+                    warn!("cannot find any matching .env file");
+                } else {
+                    panic!("cannot load config file: {}", e);
+                }
+            }
         }
     };
 
