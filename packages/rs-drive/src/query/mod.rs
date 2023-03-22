@@ -62,10 +62,8 @@ use crate::drive::block_info::BlockInfo;
 #[cfg(any(feature = "full", feature = "verify"))]
 pub use conditions::WhereClause;
 /// Import conditions
-#[cfg(feature = "full")]
+#[cfg(any(feature = "full", feature = "verify"))]
 pub use conditions::WhereOperator;
-#[cfg(feature = "full")]
-use conditions::WhereOperator::{Equal, In};
 #[cfg(any(feature = "full", feature = "verify"))]
 use dpp::data_contract::document_type::DocumentType;
 #[cfg(feature = "full")]
@@ -174,7 +172,7 @@ impl InternalClauses {
         let primary_key_equal_clauses_array = all_where_clauses
             .iter()
             .filter_map(|where_clause| match where_clause.operator {
-                Equal => match where_clause.is_identifier() {
+                WhereOperator::Equal => match where_clause.is_identifier() {
                     true => Some(where_clause.clone()),
                     false => None,
                 },
@@ -185,7 +183,7 @@ impl InternalClauses {
         let primary_key_in_clauses_array = all_where_clauses
             .iter()
             .filter_map(|where_clause| match where_clause.operator {
-                In => match where_clause.is_identifier() {
+                WhereOperator::In => match where_clause.is_identifier() {
                     true => Some(where_clause.clone()),
                     false => None,
                 },
