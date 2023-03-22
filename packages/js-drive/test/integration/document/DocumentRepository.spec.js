@@ -83,14 +83,6 @@ const nonNumberTestCases = [
   typesTestCases.buffer,
 ];
 
-const nonNumberAndUndefinedTestCases = [
-  typesTestCases.string,
-  typesTestCases.boolean,
-  typesTestCases.null,
-  typesTestCases.object,
-  typesTestCases.buffer,
-];
-
 const nonNumberNullAndUndefinedTestCases = [
   typesTestCases.string,
   typesTestCases.boolean,
@@ -2611,7 +2603,7 @@ describe('DocumentRepository', function main() {
           }
         });
 
-        nonNumberAndUndefinedTestCases.forEach(({ type, value }) => {
+        nonNumberNullAndUndefinedTestCases.forEach(({ type, value }) => {
           it(`should return invalid result if "limit" is not a number, but ${type}`, async () => {
             try {
               await documentRepository.find(queryDataContract, 'documentNumber', {
