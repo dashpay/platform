@@ -12,7 +12,7 @@ use crate::identity::state_transition::identity_credit_withdrawal_transition::va
 use crate::identity::state_transition::identity_topup_transition::validation::basic::IdentityTopUpTransitionBasicValidator;
 use crate::identity::state_transition::identity_update_transition::validate_identity_update_transition_basic::ValidateIdentityUpdateTransitionBasic;
 use crate::identity::state_transition::validate_public_key_signatures::PublicKeysSignaturesValidator;
-use crate::identity::validation::PublicKeysValidator;
+use crate::identity::validation::{PUBLIC_KEY_SCHEMA_FOR_TRANSITION, PublicKeysValidator};
 
 use crate::state_repository::StateRepositoryLike;
 use crate::state_transition::{
@@ -129,10 +129,15 @@ where
         let state_transition_basic_validator = {
             let protocol_version_validator = Arc::new(ProtocolVersionValidator::default());
 
-            let pk_validator =
-                Arc::new(PublicKeysValidator::new(adapter.clone()).map_err(|_| {
+            let pk_validator = Arc::new(
+                PublicKeysValidator::new_with_schema(
+                    PUBLIC_KEY_SCHEMA_FOR_TRANSITION.clone(),
+                    adapter.clone(),
+                )
+                .map_err(|_| {
                     ProtocolError::Generic(String::from("Unable to initialize PublicKeysValidator"))
-                })?);
+                })?,
+            );
             let pk_sig_validator = Arc::new(PublicKeysSignaturesValidator::new(adapter.clone()));
 
             let asset_lock_tx_validator = Arc::new(AssetLockTransactionValidator::new(
