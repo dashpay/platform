@@ -804,6 +804,11 @@ jobs:
         if: runner.os == 'Linux'
         run: sudo apt-get install -y nsis
 
+      - uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: stable
+          target: wasm32-unknown-unknown
+
       - name: Enable corepack
         run: corepack enable
 
@@ -820,16 +825,12 @@ jobs:
 
       - name: Install dependencies
         run: yarn install
-        env:
-          YARN_ENABLE_IMMUTABLE_INSTALLS: false
 
-      - name: Build SDK
-        run: yarn packages/js-dash-sdk run build
+      - name: Build packages
+        run: yarn build
 
       - name: Create package
         run: "${GITHUB_WORKSPACE}/scripts/pack_dashmate.sh ${{ matrix.package_type }}"
-        env:
-          YARN_ENABLE_IMMUTABLE_INSTALLS: false
 
       - name: Upload artifacts to action summary
         uses: actions/upload-artifact@v3

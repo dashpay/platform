@@ -29,7 +29,7 @@ cd $ROOT_PATH/packages/dashmate/package || exit 1
 cp $ROOT_PATH/yarn.lock ./yarn.lock
 mkdir .yarn
 echo "nodeLinker: node-modules"  > .yarnrc.yml
-yarn install
+YARN_ENABLE_IMMUTABLE_INSTALLS=0 yarn install
 yarn oclif manifest
 yarn oclif pack $COMMAND
 cd ..  || exit 1
