@@ -16,7 +16,7 @@ use crate::identity::validation::PublicKeysValidator;
 
 use crate::state_repository::StateRepositoryLike;
 use crate::state_transition::{
-    StateTransition, StateTransitionFactory, StateTransitionFactoryOptions,
+    StateTransition, StateTransitionConvert, StateTransitionFactory, StateTransitionFactoryOptions,
 };
 
 use crate::state_transition::state_transition_execution_context::StateTransitionExecutionContext;
@@ -278,18 +278,15 @@ where
     pub async fn validate(
         &self,
         state_transition: &StateTransition,
-        // TODO: revisit after https://github.com/dashpay/platform/pull/809 is merged
-        //  we need to pass state_transition_json here because `StateTransition#to_object` output
-        //  does not pass basic validation, and we use other means of producing JSON value for validation
-        state_transition_json: &Value,
         execution_context: &StateTransitionExecutionContext,
         options: ValidateOptions,
     ) -> Result<SimpleValidationResult, ProtocolError> {
         let mut result = SimpleValidationResult::default();
 
         if options.basic {
+            let state_transition_cleaned = state_transition.to_cleaned_object(false)?;
             result.merge(
-                self.validate_basic(state_transition_json, execution_context)
+                self.validate_basic(&state_transition_cleaned, execution_context)
                     .await?,
             );
         }

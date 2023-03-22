@@ -23,8 +23,8 @@ use crate::errors::from_dpp_err;
 use dpp::state_transition::StateTransitionConvert;
 
 use crate::utils::{generic_of_js_val, ToSerdeJSONExt, WithJsError};
-use dpp::platform_value::string_encoding;
 use dpp::platform_value::string_encoding::Encoding;
+use dpp::platform_value::{string_encoding, BinaryData};
 use dpp::{
     identifier::Identifier,
     identity::state_transition::{
@@ -351,5 +351,9 @@ impl IdentityCreateTransitionWasm {
     #[wasm_bindgen(js_name=getSignature)]
     pub fn get_signature(&self) -> Buffer {
         Buffer::from_bytes_owned(self.0.get_signature().to_vec())
+    }
+    #[wasm_bindgen(js_name=setSignature)]
+    pub fn set_signature(&mut self, signature: Vec<u8>) {
+        self.0.signature = BinaryData::new(signature)
     }
 }
