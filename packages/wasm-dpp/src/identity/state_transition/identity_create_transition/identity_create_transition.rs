@@ -20,7 +20,6 @@ use crate::{
 
 use crate::bls_adapter::{BlsAdapter, JsBlsAdapter};
 use crate::errors::from_dpp_err;
-use crate::utils::{generic_of_js_val, ToSerdeJSONExt};
 use dpp::state_transition::StateTransitionConvert;
 
 use crate::utils::{generic_of_js_val, ToSerdeJSONExt, WithJsError};

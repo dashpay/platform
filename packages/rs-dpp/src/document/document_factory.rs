@@ -5,8 +5,7 @@ use std::collections::BTreeMap;
 use itertools::Itertools;
 
 use platform_value::{Bytes32, Value};
-use rand::rngs::StdRng;
-use rand::SeedableRng;
+
 use serde::{Deserialize, Serialize};
 
 use crate::consensus::basic::document::InvalidDocumentTypeError;
@@ -22,8 +21,6 @@ use crate::{
     decode_protocol_entity_factory::DecodeProtocolEntity,
     prelude::Identifier,
     state_repository::StateRepositoryLike,
-    util::entropy_generator,
-    util::{json_schema::JsonSchemaExt, json_value::JsonValueExt},
     ProtocolError,
 };
 

@@ -12,7 +12,6 @@ use dpp::{
 use wasm_bindgen::prelude::*;
 
 use crate::entropy_generator::ExternalEntropyGenerator;
-use crate::errors::from_js_error;
 use crate::utils::WithJsError;
 
 use crate::{
