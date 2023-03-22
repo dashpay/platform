@@ -50,11 +50,6 @@ ARG CARGO_BUILD_PROFILE=debug
 RUN rustup install stable
 
 #
-# Fetch build dependencies
-#
-WORKDIR /usr/src/platform-fetch
-
-#
 # EXECUTE BUILD
 #
 FROM deps as build
@@ -63,20 +58,16 @@ WORKDIR /usr/src/platform
 
 COPY . .
 
-WORKDIR /usr/src/platform
-
+#
+# Configure sccache
+#
 
 # Set RUSTC_WRAPPER=/usr/bin/sccache to enable `sccache` caching.
 ARG RUSTC_WRAPPER=/usr/bin/sccache
-# Set SCCACHE_DIR to location of sccache on disk
-# ARG SCCACHE_DIR
-# Set SCCACHE_MEMCACHED to use local memcache daemon
-# ARG SCCACHE_MEMCACHED
 # Set args below to use Github Actions cache; see https://github.com/mozilla/sccache/blob/main/docs/GHA.md
 ARG SCCACHE_GHA_ENABLED
 ARG ACTIONS_CACHE_URL
 ARG ACTIONS_RUNTIME_TOKEN
-
 # Disable incremental buildings, not supported by sccache
 ARG CARGO_INCREMENTAL=false
 
@@ -100,7 +91,6 @@ FROM debian:bullseye-slim AS release
 VOLUME /var/lib/platform
 
 ENV DB_PATH=/var/lib/platform/rs-drive-abci/db
-ENV RUST_LOG="info,tenderdash_abci=debug,drive_abci=debug"
 
 #
 # Install binaries and data
@@ -121,6 +111,7 @@ RUN groupadd --gid $USER_GID $USERNAME \
     && chown -R $USER_UID:$USER_GID /var/lib/platform/rs-drive-abci 
 
 USER $USERNAME
+
 WORKDIR /var/lib/platform/rs-drive-abci
 ENTRYPOINT ["/usr/bin/drive-abci"]
 CMD ["start"]

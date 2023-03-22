@@ -1,11 +1,19 @@
-pub mod config;
 mod error;
+
+// old code - handlers and messages
+#[deprecated = "logic moved to [server] and [proposal] mod"]
 pub mod handlers;
+#[deprecated = "use tenderdash-proto crate whenever possible"]
 pub mod messages;
+
+// new code - config, 
+#[cfg(feature = "server")]
+pub mod config;
+#[cfg(feature = "server")]
 mod proposal;
 #[cfg(feature = "server")]
 mod server;
-#[cfg(feature = "server")]
-pub use server::start;
 
 pub use error::Error;
+#[cfg(feature = "server")]
+pub use server::start;

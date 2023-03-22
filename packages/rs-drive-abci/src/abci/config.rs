@@ -18,10 +18,10 @@ pub struct AbciConfig {
     /// - `unix:///var/run/abci.sock`
     #[serde(rename = "abci_bind_address")]
     pub bind_address: String,
+
     /// Public keys used for system identity
-    ///
     #[serde(flatten)]
-    pub keys: ContractKeys,
+    pub keys: Keys,
 
     /// Height of genesis block; defaults to 1
     #[serde(default = "AbciConfig::default_genesis_height")]
@@ -39,8 +39,12 @@ impl FromEnv for AbciConfig {}
 #[serde_as]
 #[derive(Clone, Debug, Serialize, Deserialize, Default)]
 
-/// Various keys
-pub struct ContractKeys {
+/// Struct to easily load from environment keys used by the Platform.
+///
+/// Once loaded, Keys can be easily converted to [SystemIdentityPublicKeys]
+///
+/// [SystemIdentityPublicKeys]: super::messages::SystemIdentityPublicKeys
+pub struct Keys {
     // dpns contract
     /// hex-encoded
     #[serde_as(as = "serde_with::hex::Hex")]
@@ -82,8 +86,8 @@ pub struct ContractKeys {
     withdrawals_second_public_key: Vec<u8>,
 }
 
-impl From<ContractKeys> for SystemIdentityPublicKeys {
-    fn from(keys: ContractKeys) -> Self {
+impl From<Keys> for SystemIdentityPublicKeys {
+    fn from(keys: Keys) -> Self {
         Self {
             masternode_reward_shares_contract_owner: RequiredIdentityPublicKeysSet {
                 master: keys.masternode_reward_shares_master_public_key,
@@ -123,7 +127,6 @@ mod tests {
 
         dotenvy::from_path(envfile.as_path()).expect("cannot load .env file");
 
-        let config = super::AbciConfig::from_env().unwrap();
-        dbg!(config.keys.dashpay_master_public_key);
+        let _config = super::AbciConfig::from_env().unwrap();
     }
 }

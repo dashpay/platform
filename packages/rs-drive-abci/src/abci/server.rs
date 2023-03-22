@@ -56,10 +56,13 @@ impl<'a> AbciApplication<'a> {
         Ok(app)
     }
 
+    /// Return locked Platform object
     fn platform(&self) -> MutexGuard<&'a Platform> {
         self.platform.lock().unwrap()
     }
 
+    /// Return current transaction.
+    /// TODO: implement
     fn transaction(&self) -> TransactionArg {
         self.transaction
     }
@@ -67,7 +70,7 @@ impl<'a> AbciApplication<'a> {
 
 impl<'a> Debug for AbciApplication<'a> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "AbciApp")
+        write!(f, "<AbciApp>")
     }
 }
 
@@ -87,13 +90,7 @@ impl<'a> tenderdash_abci::Application for AbciApplication<'a> {
             ..Default::default()
         };
 
-        tracing::info!(
-            method = "info",
-            method = "info",
-            ?request,
-            ?response,
-            "info received"
-        );
+        tracing::info!(method = "info", ?request, ?response, "info executed");
         response
     }
 
@@ -104,15 +101,11 @@ impl<'a> tenderdash_abci::Application for AbciApplication<'a> {
         let genesis_time = request
             .time
             .clone()
-            .expect("init chain REQUIRES genesis time")
-            .to_milis();
+            .expect("genesis time is required")
+            .to_milis() as TimestampMillis;
 
         platform
-            .create_genesis_state(
-                genesis_time as TimestampMillis,
-                self.config.keys.clone().into(),
-                transaction,
-            )
+            .create_genesis_state(genesis_time, self.config.keys.clone().into(), transaction)
             .expect("create genesis state");
 
         let response = proto::ResponseInitChain {
@@ -141,21 +134,19 @@ impl<'a> tenderdash_abci::Application for AbciApplication<'a> {
         response
     }
 }
+
 /// Check if ABCI version required by Tenderdash matches our protobuf version.
 ///
 /// Match is determined based on Semantic Versioning rules, as defined for '^' operator.
 fn check_version(tenderdash_abci_requirement: &str, our_abci_version: &str) -> bool {
     let our_version =
-        semver::Version::parse(our_abci_version).expect("cannot parse version of protobuf library");
+        semver::Version::parse(our_abci_version).expect("cannot parse protobuf library version");
 
-    let requirement = String::from("^") + tenderdash_abci_requirement;
-    let td_version = semver::VersionReq::parse(requirement.as_str())
-        .expect("cannot parse version of tenderdash server");
+    let require = String::from("^") + tenderdash_abci_requirement;
+    let td_version =
+        semver::VersionReq::parse(require.as_str()).expect("cannot parse tenderdash version");
 
-    debug!(
-        "ABCI version check: required: {}, our: {}",
-        requirement, our_version
-    );
+    debug!("ABCI version: required: {}, our: {}", require, our_version);
 
     td_version.matches(&our_version)
 }
@@ -164,56 +155,25 @@ fn check_version(tenderdash_abci_requirement: &str, our_abci_version: &str) -> b
 mod tests {
     use crate::abci::server::check_version;
 
-    #[test]
-    fn test_versions() {
-        #[derive(Debug)]
-        struct TestCase<'a> {
-            our_version: &'a str,
-            td_version: &'a str,
-            expect: bool,
+    /// test_versions! {} (td_version, our_version, expected); }
+    macro_rules! test_versions {
+        ($($name:ident: $value:expr,)*) => {
+        $(
+            #[test]
+            fn $name() {
+                let (td, our, expect) = $value;
+                assert_eq!(check_version(td, our),expect);
+            }
+        )*
         }
+    }
 
-        let test_cases = vec![
-            TestCase {
-                td_version: "0.1.2-dev.1",
-                our_version: "0.1.0",
-                expect: false,
-            },
-            TestCase {
-                td_version: "0.1.0",
-                our_version: "0.1.0",
-                expect: true,
-            },
-            TestCase {
-                td_version: "0.1.0",
-                our_version: "0.1.2",
-                expect: true,
-            },
-            TestCase {
-                td_version: "0.1.0-dev.1",
-                our_version: "0.1.0-dev.1",
-                expect: true,
-            },
-            TestCase {
-                td_version: "0.1.0-dev.1",
-                our_version: "0.1.0-dev.2",
-                expect: true,
-            },
-            TestCase {
-                td_version: "0.1.0",
-                our_version: "0.1.0-dev.1",
-                expect: false,
-            },
-            TestCase {
-                td_version: "0.1.0-dev.1",
-                our_version: "0.1.0-dev.1",
-                expect: true,
-            },
-        ];
-
-        for tc in test_cases {
-            dbg!(&tc);
-            assert_eq!(check_version(tc.td_version, tc.our_version,), tc.expect);
-        }
+    test_versions! {
+        test_versions_td_newer: ("0.1.2-dev.1", "0.1.0", false),
+        test_versions_equal: ("0.1.0","0.1.0",true),
+        test_versions_td_older: ("0.1.0","0.1.2",true),
+        test_versions_equal_dev: ("0.1.0-dev.1","0.1.0-dev.1",true),
+        test_versions_our_newer_dev: ("0.1.0-dev.1", "0.1.0-dev.2",true),
+        test_versions_our_dev:("0.1.0","0.1.0-dev.1",false),
     }
 }
