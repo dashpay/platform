@@ -86,8 +86,13 @@ describe('IdentityFacade', () => {
   });
 
   describe('#createFromBuffer', () => {
-    it('should create Identity from string', () => {
-      const result = dpp.identity.createFromBuffer(identity.toBuffer());
+    it('should create Identity from a Buffer', () => {
+      let result;
+      try {
+        result = dpp.identity.createFromBuffer(identity.toBuffer());
+      } catch (e) {
+        console.dir(e.getErrors()[0].toString());
+      }
 
       expect(result).to.be.an.instanceOf(Identity);
 

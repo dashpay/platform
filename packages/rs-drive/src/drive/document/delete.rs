@@ -59,7 +59,7 @@ use crate::drive::object_size_info::DocumentInfo::{
     DocumentEstimatedAverageSize, DocumentWithoutSerialization,
 };
 use crate::drive::object_size_info::DriveKeyInfo::KeyRef;
-use dpp::document::document_stub::DocumentStub;
+use dpp::document::Document;
 
 use crate::drive::grove_operations::BatchDeleteApplyType::{
     StatefulBatchDelete, StatelessBatchDelete,
@@ -756,9 +756,9 @@ impl Drive {
         } else if let Some(document_element) = &document_element {
             if let Element::Item(data, element_flags) = document_element {
                 //todo: remove this hack
-                let document = match DocumentStub::from_cbor(data.as_slice(), None, owner_id) {
+                let document = match Document::from_cbor(data.as_slice(), None, owner_id) {
                     Ok(document) => Ok(document),
-                    Err(_) => DocumentStub::from_bytes(data.as_slice(), document_type),
+                    Err(_) => Document::from_bytes(data.as_slice(), document_type),
                 }?;
                 let storage_flags = StorageFlags::map_cow_some_element_flags_ref(element_flags)?;
                 DocumentWithoutSerialization((document, storage_flags))
@@ -824,7 +824,7 @@ mod tests {
     use crate::fee::default_costs::KnownCostItem::StorageDiskUsageCreditPerByte;
     use crate::fee_pools::epochs::Epoch;
     use crate::query::DriveQuery;
-    use dpp::document::document_stub::DocumentStub;
+    use dpp::document::Document;
     use dpp::util::serializer;
 
     #[test]
@@ -852,7 +852,7 @@ mod tests {
         let random_owner_id = rand::thread_rng().gen::<[u8; 32]>();
 
         let document =
-            DocumentStub::from_cbor(&person_serialized_document, None, Some(random_owner_id))
+            Document::from_cbor(&person_serialized_document, None, Some(random_owner_id))
                 .expect("expected to deserialize the document");
 
         let document_type = contract
@@ -950,7 +950,7 @@ mod tests {
         let random_owner_id = rand::thread_rng().gen::<[u8; 32]>();
 
         let document =
-            DocumentStub::from_cbor(&person_serialized_document, None, Some(random_owner_id))
+            Document::from_cbor(&person_serialized_document, None, Some(random_owner_id))
                 .expect("expected to deserialize the document");
 
         let document_type = contract
@@ -1064,7 +1064,7 @@ mod tests {
         let random_owner_id = rand::thread_rng().gen::<[u8; 32]>();
 
         let document =
-            DocumentStub::from_cbor(&person_serialized_document, None, Some(random_owner_id))
+            Document::from_cbor(&person_serialized_document, None, Some(random_owner_id))
                 .expect("expected to deserialize the document");
 
         let document_type = contract
@@ -1103,7 +1103,7 @@ mod tests {
         let random_owner_id = rand::thread_rng().gen::<[u8; 32]>();
 
         let document =
-            DocumentStub::from_cbor(&person_serialized_document, None, Some(random_owner_id))
+            Document::from_cbor(&person_serialized_document, None, Some(random_owner_id))
                 .expect("expected to deserialize the document");
 
         let document_type = contract
@@ -1251,7 +1251,7 @@ mod tests {
         let random_owner_id = rand::thread_rng().gen::<[u8; 32]>();
 
         let document =
-            DocumentStub::from_cbor(&person_serialized_document, None, Some(random_owner_id))
+            Document::from_cbor(&person_serialized_document, None, Some(random_owner_id))
                 .expect("expected to deserialize the document");
 
         let document_type = contract
@@ -1290,7 +1290,7 @@ mod tests {
         let random_owner_id = rand::thread_rng().gen::<[u8; 32]>();
 
         let document =
-            DocumentStub::from_cbor(&person_serialized_document, None, Some(random_owner_id))
+            Document::from_cbor(&person_serialized_document, None, Some(random_owner_id))
                 .expect("expected to deserialize the document");
 
         let document_type = contract
@@ -1368,7 +1368,7 @@ mod tests {
         let db_transaction = drive.grove.start_transaction();
 
         let document =
-            DocumentStub::from_cbor(&person_serialized_document, None, Some(random_owner_id))
+            Document::from_cbor(&person_serialized_document, None, Some(random_owner_id))
                 .expect("expected to deserialize the document");
 
         let storage_flags = Some(Cow::Owned(StorageFlags::SingleEpoch(0)));
@@ -1680,12 +1680,12 @@ mod tests {
 
         let storage_flags = Some(Cow::Owned(StorageFlags::SingleEpoch(0)));
 
-        let documents: Vec<DocumentStub> = document_hexes
+        let documents: Vec<Document> = document_hexes
             .iter()
             .map(|document_hex| {
                 let serialized_document = cbor_from_hex(document_hex.to_string());
 
-                let document = DocumentStub::from_cbor(&serialized_document, None, None)
+                let document = Document::from_cbor(&serialized_document, None, None)
                     .expect("expected to deserialize the document");
 
                 let document_type = contract
@@ -1725,8 +1725,8 @@ mod tests {
             ],
         });
 
-        let query_cbor =
-            serializer::value_to_cbor(query_json, None).expect("expected to serialize to cbor");
+        let query_cbor = serializer::serializable_value_to_cbor(&query_json, None)
+            .expect("expected to serialize to cbor");
 
         drive
             .grove
@@ -1750,10 +1750,10 @@ mod tests {
 
         drive
             .delete_document_for_contract(
-                documents.get(0).unwrap().id,
+                documents.get(0).unwrap().id.to_buffer(),
                 &contract,
                 "niceDocument",
-                Some(documents.get(0).unwrap().owner_id),
+                Some(documents.get(0).unwrap().owner_id.to_buffer()),
                 BlockInfo::default(),
                 true,
                 Some(&db_transaction),
@@ -1766,8 +1766,8 @@ mod tests {
             ],
         });
 
-        let query_cbor =
-            serializer::value_to_cbor(query_json, None).expect("expected to serialize to cbor");
+        let query_cbor = serializer::serializable_value_to_cbor(&query_json, None)
+            .expect("expected to serialize to cbor");
 
         let (results, _, _) = drive
             .query_documents_cbor_from_contract(

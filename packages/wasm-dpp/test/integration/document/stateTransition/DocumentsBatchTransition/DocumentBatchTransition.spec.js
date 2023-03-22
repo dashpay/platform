@@ -1,42 +1,66 @@
 const IdentityPublicKey = require('@dashevo/dpp/lib/identity/IdentityPublicKey');
 
+const createStateRepositoryMock = require('@dashevo/dpp/lib/test/mocks/createStateRepositoryMock');
 const getDataContractFixture = require('@dashevo/dpp/lib/test/fixtures/getDataContractFixture');
 const getDocumentsFixture = require('@dashevo/dpp/lib/test/fixtures/getDocumentsFixture');
-const DocumentFactory = require('@dashevo/dpp/lib/document/DocumentFactory');
-const createDPPMock = require('@dashevo/dpp/lib/test/mocks/createDPPMock');
+
+const { default: loadWasmDpp } = require('../../../../../dist');
+
+let ExtendedDocument;
+let DataContract;
+let ProtocolVersionValidator;
+let DocumentValidator;
+let DocumentFactory;
 
 describe('DocumentBatchTransition', () => {
   let stateTransitionFixture;
   let dataContractFixture;
   let documentsFixture;
   let documentFactory;
+
   let mediumSecurityDocumentFixture;
   let masterSecurityDocumentFixture;
   let noSecurityLevelSpecifiedDocumentFixture;
 
-  beforeEach(() => {
-    dataContractFixture = getDataContractFixture();
+  beforeEach(async function beforeEach() {
+    ({
+      ExtendedDocument,
+      DataContract,
+      ProtocolVersionValidator,
+      DocumentFactory,
+      DocumentValidator,
+    } = await loadWasmDpp());
 
-    dataContractFixture.documents.niceDocument
+    console.log(ExtendedDocument);
+    const dataContractFixtureJs = getDataContractFixture();
+
+    dataContractFixtureJs.documents.niceDocument
       .signatureSecurityLevelRequirement = IdentityPublicKey.SECURITY_LEVELS.MEDIUM;
-    dataContractFixture.documents.prettyDocument
+    dataContractFixtureJs.documents.prettyDocument
       .signatureSecurityLevelRequirement = IdentityPublicKey.SECURITY_LEVELS.MASTER;
+
+    dataContractFixture = new DataContract(dataContractFixtureJs.toObject());
 
     // 0 is niceDocument,
     // 1 and 2 are pretty documents,
     // 3 and 4 are indexed documents that do not have security level specified
-    documentsFixture = getDocumentsFixture(dataContractFixture);
+    documentsFixture = getDocumentsFixture(dataContractFixtureJs).map((doc) => {
+      const document = new ExtendedDocument(doc.toObject(), dataContractFixture.clone());
+      document.setEntropy(doc.entropy);
+      return document;
+    });
+
     [
-      mediumSecurityDocumentFixture,,
-      masterSecurityDocumentFixture,,
+      mediumSecurityDocumentFixture, ,
+      masterSecurityDocumentFixture, ,
       noSecurityLevelSpecifiedDocumentFixture,
     ] = documentsFixture;
 
-    documentFactory = new DocumentFactory(
-      createDPPMock(),
-      () => {},
-      () => {},
-    );
+    const protocolValidator = new ProtocolVersionValidator();
+    const documentValidator = new DocumentValidator(protocolValidator);
+    const stateRepositoryMock = createStateRepositoryMock(this.sinonSandbox);
+
+    documentFactory = new DocumentFactory(1, documentValidator, stateRepositoryMock);
 
     stateTransitionFixture = documentFactory.createStateTransition({
       create: documentsFixture,
@@ -46,7 +70,7 @@ describe('DocumentBatchTransition', () => {
   });
 
   describe('#getRequiredKeySecurityLevel', () => {
-    it('should return the highest security level of all transitions', () => {
+    it('should return the highest security level of all transitions - Rust', () => {
       stateTransitionFixture = documentFactory.createStateTransition({
         create: [mediumSecurityDocumentFixture],
         replace: [],
@@ -68,7 +92,7 @@ describe('DocumentBatchTransition', () => {
         .to.be.equal(IdentityPublicKey.SECURITY_LEVELS.MASTER);
     });
 
-    it('should return default security level if no document has a security level defined', () => {
+    it('should return default security level if no document has a security level defined - Rust', () => {
       stateTransitionFixture = documentFactory.createStateTransition({
         create: [noSecurityLevelSpecifiedDocumentFixture],
         replace: [],

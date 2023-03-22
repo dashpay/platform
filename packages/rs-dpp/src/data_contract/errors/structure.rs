@@ -1,4 +1,4 @@
-/// Structure errors
+/// structure errors
 #[derive(Debug, thiserror::Error)]
 pub enum StructureError {
     /// Invalid protocol version error

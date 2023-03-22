@@ -109,8 +109,10 @@ pub mod query;
 mod system;
 #[cfg(test)]
 mod test_utils;
+
+/// Contains a set of useful grovedb proof verification functions
 #[cfg(any(feature = "full", feature = "verify"))]
-mod verify;
+pub mod verify;
 
 #[cfg(feature = "full")]
 use crate::drive::block_info::BlockInfo;

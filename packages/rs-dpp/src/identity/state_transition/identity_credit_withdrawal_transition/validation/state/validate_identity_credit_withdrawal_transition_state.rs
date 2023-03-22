@@ -3,13 +3,12 @@ use std::sync::Arc;
 
 use anyhow::Result;
 
+use crate::consensus::signature::IdentityNotFoundError;
 use crate::{
-    consensus::basic::{identity::IdentityInsufficientBalanceError, BasicError},
+    consensus::basic::identity::IdentityInsufficientBalanceError,
     identity::state_transition::identity_credit_withdrawal_transition::IdentityCreditWithdrawalTransition,
-    state_repository::StateRepositoryLike,
-    state_transition::StateTransitionLike,
-    validation::ValidationResult,
-    NonConsensusError, StateError,
+    state_repository::StateRepositoryLike, state_transition::StateTransitionLike,
+    validation::ValidationResult, NonConsensusError, StateError,
 };
 
 pub struct IdentityCreditWithdrawalTransitionValidator<SR>
@@ -44,12 +43,15 @@ where
             .map(TryInto::try_into)
             .transpose()
             .map_err(Into::into)
-            .map_err(|e| NonConsensusError::StateRepositoryFetchError(e.to_string()))?;
+            .map_err(|e| {
+                NonConsensusError::StateRepositoryFetchError(format!(
+                    "state repository fetch identity for credit withdrawal verification error: {}",
+                    e.to_string()
+                ))
+            })?;
 
         let Some(existing_identity) = maybe_existing_identity else {
-            let err = BasicError::IdentityNotFoundError {
-                identity_id: state_transition.identity_id,
-            };
+            let err = IdentityNotFoundError::new(state_transition.identity_id);
 
             result.add_error(err);
 

@@ -1,12 +1,11 @@
 import { expect } from 'chai';
-import SDK from "./index";
+import SDK from './index';
 import 'mocha';
 
 describe('Dash', () => {
-
-  it('should provide expected class', function () {
+  it('should provide expected class', () => {
     expect(SDK).to.have.property('Client');
-    expect(SDK.Client.name).to.be.equal('Client')
-    expect(SDK.Client.constructor.name).to.be.equal('Function')
+    expect(SDK.Client.name).to.be.equal('Client');
+    expect(SDK.Client.constructor.name).to.be.equal('Function');
   });
 });

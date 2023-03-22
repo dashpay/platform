@@ -57,7 +57,7 @@ use crate::drive::flags::StorageFlags;
 use crate::drive::object_size_info::DocumentInfo::{
     DocumentRefAndSerialization, DocumentWithoutSerialization,
 };
-use dpp::document::document_stub::DocumentStub;
+use dpp::document::Document;
 
 use crate::drive::object_size_info::PathKeyElementInfo::PathKeyRefElement;
 use crate::drive::object_size_info::{
@@ -95,7 +95,7 @@ impl Drive {
     ) -> Result<FeeResult, Error> {
         let contract = <Contract as DriveContractExt>::from_cbor(contract_cbor, None)?;
 
-        let document = DocumentStub::from_cbor(serialized_document, None, owner_id)?;
+        let document = Document::from_cbor(serialized_document, None, owner_id)?;
 
         self.update_document_for_contract(
             &document,
@@ -140,7 +140,7 @@ impl Drive {
 
         let contract = &contract_fetch_info.contract;
 
-        let document = DocumentStub::from_cbor(serialized_document, None, owner_id)?;
+        let document = Document::from_cbor(serialized_document, None, owner_id)?;
 
         let document_info =
             DocumentRefAndSerialization((&document, serialized_document, storage_flags));
@@ -179,7 +179,7 @@ impl Drive {
         storage_flags: Option<Cow<StorageFlags>>,
         transaction: TransactionArg,
     ) -> Result<FeeResult, Error> {
-        let document = DocumentStub::from_cbor(serialized_document, None, owner_id)?;
+        let document = Document::from_cbor(serialized_document, None, owner_id)?;
 
         self.update_document_for_contract(
             &document,
@@ -197,7 +197,7 @@ impl Drive {
     /// Updates a document and returns the associated fee.
     pub fn update_document_for_contract(
         &self,
-        document: &DocumentStub,
+        document: &Document,
         serialized_document: &[u8],
         contract: &Contract,
         document_type_name: &str,
@@ -364,11 +364,11 @@ impl Drive {
         let old_document_info = if let Some(old_document_element) = old_document_element {
             if let Element::Item(old_serialized_document, element_flags) = old_document_element {
                 let document_result =
-                    DocumentStub::from_cbor(old_serialized_document.as_slice(), None, owner_id);
+                    Document::from_cbor(old_serialized_document.as_slice(), None, owner_id);
                 let document = match document_result {
                     Ok(document_result) => Ok(document_result),
                     Err(_) => {
-                        DocumentStub::from_bytes(old_serialized_document.as_slice(), document_type)
+                        Document::from_bytes(old_serialized_document.as_slice(), document_type)
                     }
                 }?;
                 let storage_flags = StorageFlags::map_some_element_flags_ref(&element_flags)?;
@@ -637,7 +637,7 @@ impl Drive {
     /// Add update multiple documents operations
     pub fn add_update_multiple_documents_operations<'a>(
         &self,
-        documents: &'a [DocumentStub],
+        documents: &'a [Document],
         data_contract: &'a DataContract,
         document_type: &'a DocumentType,
         drive_operation_types: &mut Vec<DriveOperation<'a>>,
@@ -684,12 +684,13 @@ mod tests {
     use dpp::document::document_factory::DocumentFactory;
     use dpp::document::document_validator::DocumentValidator;
 
+    use dpp::platform_value::{platform_value, Value};
     use dpp::prelude::DataContract;
     use dpp::util::serializer;
     use dpp::version::{ProtocolVersionValidator, COMPATIBILITY_MAP, LATEST_VERSION};
     use rand::Rng;
     use serde::{Deserialize, Serialize};
-    use serde_json::{json, Value};
+    use serde_json::json;
     use tempfile::TempDir;
 
     use super::*;
@@ -792,7 +793,7 @@ mod tests {
 
         let alice_profile_cbor = hex::decode("01a763246964582035edfec54aea574df968990abb47b39c206abe5c43a6157885f62958a1f1230c6524747970656770726f66696c656561626f75746a4920616d20416c69636568246f776e65724964582041d52f93f6f7c5af79ce994381c90df73cce2863d3850b9c05ef586ff0fe795f69247265766973696f6e016961766174617255726c7819687474703a2f2f746573742e636f6d2f616c6963652e6a70676f2464617461436f6e747261637449645820b0248cd9a27f86d05badf475dd9ff574d63219cd60c52e2be1e540c2fdd71333").unwrap();
 
-        let alice_profile = DocumentStub::from_cbor(alice_profile_cbor.as_slice(), None, None)
+        let alice_profile = Document::from_cbor(alice_profile_cbor.as_slice(), None, None)
             .expect("expected to get a document");
 
         let document_type = contract
@@ -885,7 +886,7 @@ mod tests {
 
         let alice_profile_cbor = hex::decode("01a763246964582035edfec54aea574df968990abb47b39c206abe5c43a6157885f62958a1f1230c6524747970656770726f66696c656561626f75746a4920616d20416c69636568246f776e65724964582041d52f93f6f7c5af79ce994381c90df73cce2863d3850b9c05ef586ff0fe795f69247265766973696f6e016961766174617255726c7819687474703a2f2f746573742e636f6d2f616c6963652e6a70676f2464617461436f6e747261637449645820b0248cd9a27f86d05badf475dd9ff574d63219cd60c52e2be1e540c2fdd71333").unwrap();
 
-        let alice_profile = DocumentStub::from_cbor(alice_profile_cbor.as_slice(), None, None)
+        let alice_profile = Document::from_cbor(alice_profile_cbor.as_slice(), None, None)
             .expect("expected to get a document");
 
         let document_type = contract
@@ -998,7 +999,7 @@ mod tests {
 
         let alice_profile_cbor = hex::decode("01a763246964582035edfec54aea574df968990abb47b39c206abe5c43a6157885f62958a1f1230c6524747970656770726f66696c656561626f75746a4920616d20416c69636568246f776e65724964582041d52f93f6f7c5af79ce994381c90df73cce2863d3850b9c05ef586ff0fe795f69247265766973696f6e016961766174617255726c7819687474703a2f2f746573742e636f6d2f616c6963652e6a70676f2464617461436f6e747261637449645820b0248cd9a27f86d05badf475dd9ff574d63219cd60c52e2be1e540c2fdd71333").unwrap();
 
-        let alice_profile = DocumentStub::from_cbor(alice_profile_cbor.as_slice(), None, None)
+        let alice_profile = Document::from_cbor(alice_profile_cbor.as_slice(), None, None)
             .expect("expected to get a document");
 
         let document_type = contract
@@ -1053,7 +1054,7 @@ mod tests {
 
         drive
             .delete_document_for_contract(
-                alice_profile.id,
+                alice_profile.id.to_buffer(),
                 &contract,
                 "profile",
                 None,
@@ -1140,8 +1141,9 @@ mod tests {
             },
         });
 
-        let contract = serializer::value_to_cbor(contract, Some(defaults::PROTOCOL_VERSION))
-            .expect("expected to serialize to cbor");
+        let contract =
+            serializer::serializable_value_to_cbor(&contract, Some(defaults::PROTOCOL_VERSION))
+                .expect("expected to serialize to cbor");
 
         drive
             .apply_contract_cbor(
@@ -1170,7 +1172,7 @@ mod tests {
         });
 
         let serialized_document =
-            serializer::value_to_cbor(document, Some(defaults::PROTOCOL_VERSION))
+            serializer::serializable_value_to_cbor(&document, Some(defaults::PROTOCOL_VERSION))
                 .expect("expected to serialize to cbor");
 
         drive
@@ -1203,7 +1205,7 @@ mod tests {
         });
 
         let serialized_document =
-            serializer::value_to_cbor(document, Some(defaults::PROTOCOL_VERSION))
+            serializer::serializable_value_to_cbor(&document, Some(defaults::PROTOCOL_VERSION))
                 .expect("expected to serialize to cbor");
 
         drive
@@ -2083,9 +2085,10 @@ mod tests {
         transaction: TransactionArg,
     ) -> FeeResult {
         let value = serde_json::to_value(person).expect("serialized person");
-        let document_cbor = serializer::value_to_cbor(value, Some(defaults::PROTOCOL_VERSION))
-            .expect("expected to serialize to cbor");
-        let document = DocumentStub::from_cbor(document_cbor.as_slice(), None, None)
+        let document_cbor =
+            serializer::serializable_value_to_cbor(&value, Some(defaults::PROTOCOL_VERSION))
+                .expect("expected to serialize to cbor");
+        let document = Document::from_cbor(document_cbor.as_slice(), None, None)
             .expect("document should be properly deserialized");
         let document_type = contract
             .document_type_for_name("person")
@@ -2348,7 +2351,7 @@ mod tests {
         let block_info = BlockInfo::default();
         let owner_id = dpp::identifier::Identifier::new([2u8; 32]);
 
-        let documents = json!({
+        let documents = platform_value!({
             "niceDocument": {
                 "type": "object",
                 "properties": {
@@ -2379,7 +2382,7 @@ mod tests {
         );
 
         let contract = factory
-            .create(owner_id, documents, None)
+            .create(owner_id, documents, None, None)
             .expect("data in fixture should be correct");
 
         let contract_cbor = contract.to_cbor().expect("should encode contract to cbor");
@@ -2413,6 +2416,7 @@ mod tests {
             1,
             document_validator,
             DataContractFetcherAndValidator::new(Arc::new(MockStateRepositoryLike::new())),
+            None,
         );
 
         // Create a document
@@ -2420,11 +2424,11 @@ mod tests {
         let document_type = "niceDocument".to_string();
 
         let mut document = document_factory
-            .create(
+            .create_extended_document_for_state_transition(
                 contract.clone(),
                 owner_id,
                 document_type.clone(),
-                json!({ "name": "Ivan" }),
+                json!({ "name": "Ivan" }).into(),
             )
             .expect("should create a document");
 
@@ -2454,7 +2458,7 @@ mod tests {
         // Update the document in a second
 
         document
-            .set("name", Value::String("Ivaaaaaaaaaan!".to_string()))
+            .set("name", Value::Text("Ivaaaaaaaaaan!".to_string()))
             .expect("should change name");
 
         let document_cbor = document.to_buffer().expect("should encode to buffer");

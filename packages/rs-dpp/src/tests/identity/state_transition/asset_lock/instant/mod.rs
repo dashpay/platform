@@ -8,7 +8,7 @@ mod validate_instant_asset_lock_proof_structure_factory {
     use dashcore::Txid;
     use dashcore::{PrivateKey, Transaction};
     use jsonschema::error::ValidationErrorKind;
-    use serde_json::Value as JsonValue;
+    use platform_value::Value;
 
     use crate::assert_consensus_errors;
     use crate::consensus::ConsensusError;
@@ -23,12 +23,11 @@ mod validate_instant_asset_lock_proof_structure_factory {
     use crate::tests::fixtures::{
         instant_asset_lock_is_lock_fixture, instant_asset_lock_proof_transaction_fixture,
     };
-    use crate::tests::utils::SerdeTestExtension;
 
     struct TestData {
         pub validate_instant_asset_lock_proof_structure:
             InstantAssetLockProofStructureValidator<MockStateRepositoryLike>,
-        pub raw_proof: JsonValue,
+        pub raw_proof: Value,
         pub transaction: Transaction,
         pub public_key_hash: Vec<u8>,
         pub state_repository_mock: Arc<MockStateRepositoryLike>,
@@ -85,7 +84,7 @@ mod validate_instant_asset_lock_proof_structure_factory {
         #[tokio::test]
         async fn should_be_present() {
             let mut test_data = setup_test(None);
-            test_data.raw_proof.remove_key("type");
+            test_data.raw_proof.remove("type").unwrap();
 
             let result = test_data
                 .validate_instant_asset_lock_proof_structure
@@ -109,7 +108,7 @@ mod validate_instant_asset_lock_proof_structure_factory {
         #[tokio::test]
         async fn should_be_equal_to_0() {
             let mut test_data = setup_test(None);
-            test_data.raw_proof.set_key_value("type", -1);
+            test_data.raw_proof.set_into_value("type", -1).unwrap();
 
             let result = test_data
                 .validate_instant_asset_lock_proof_structure
@@ -132,7 +131,7 @@ mod validate_instant_asset_lock_proof_structure_factory {
         #[tokio::test]
         async fn should_be_present() {
             let mut test_data = setup_test(None);
-            test_data.raw_proof.remove_key("instantLock");
+            test_data.raw_proof.remove("instantLock").unwrap();
 
             let result = test_data
                 .validate_instant_asset_lock_proof_structure
@@ -158,7 +157,8 @@ mod validate_instant_asset_lock_proof_structure_factory {
             let mut test_data = setup_test(None);
             test_data
                 .raw_proof
-                .set_key_value("instantLock", vec!["string"; 165]);
+                .set_into_value("instantLock", vec!["string"; 165])
+                .unwrap();
 
             let result = test_data
                 .validate_instant_asset_lock_proof_structure
@@ -178,7 +178,8 @@ mod validate_instant_asset_lock_proof_structure_factory {
             let mut test_data = setup_test(None);
             test_data
                 .raw_proof
-                .set_key_value("instantLock", vec![0u8; 159]);
+                .set_into_value("instantLock", vec![0u8; 159])
+                .unwrap();
 
             let result = test_data
                 .validate_instant_asset_lock_proof_structure
@@ -198,7 +199,8 @@ mod validate_instant_asset_lock_proof_structure_factory {
             let mut test_data = setup_test(None);
             test_data
                 .raw_proof
-                .set_key_value("instantLock", vec![0u8; 100001]);
+                .set_into_value("instantLock", vec![0u8; 100001])
+                .unwrap();
 
             let result = test_data
                 .validate_instant_asset_lock_proof_structure
@@ -218,7 +220,8 @@ mod validate_instant_asset_lock_proof_structure_factory {
             let mut test_data = setup_test(None);
             test_data
                 .raw_proof
-                .set_key_value("instantLock", vec![0u8; 200]);
+                .set_into_value("instantLock", vec![0u8; 200])
+                .unwrap();
 
             let result = test_data
                 .validate_instant_asset_lock_proof_structure
@@ -302,7 +305,7 @@ mod validate_instant_asset_lock_proof_structure_factory {
         #[tokio::test]
         async fn should_be_present() {
             let mut test_data = setup_test(None);
-            test_data.raw_proof.remove_key("transaction");
+            test_data.raw_proof.remove("transaction").unwrap();
 
             let result = test_data
                 .validate_instant_asset_lock_proof_structure
@@ -328,7 +331,8 @@ mod validate_instant_asset_lock_proof_structure_factory {
             let mut test_data = setup_test(None);
             test_data
                 .raw_proof
-                .set_key_value("instantLock", vec!["string"; 65]);
+                .set_into_value("instantLock", vec!["string"; 65])
+                .unwrap();
 
             let result = test_data
                 .validate_instant_asset_lock_proof_structure
@@ -348,7 +352,8 @@ mod validate_instant_asset_lock_proof_structure_factory {
             let mut test_data = setup_test(None);
             test_data
                 .raw_proof
-                .set_key_value("instantLock", vec![0u8; 0]);
+                .set_into_value("instantLock", vec![0u8; 0])
+                .unwrap();
 
             let result = test_data
                 .validate_instant_asset_lock_proof_structure
@@ -368,7 +373,8 @@ mod validate_instant_asset_lock_proof_structure_factory {
             let mut test_data = setup_test(None);
             test_data
                 .raw_proof
-                .set_key_value("instantLock", vec![0u8; 100001]);
+                .set_into_value("instantLock", vec![0u8; 100001])
+                .unwrap();
 
             let result = test_data
                 .validate_instant_asset_lock_proof_structure
@@ -388,7 +394,8 @@ mod validate_instant_asset_lock_proof_structure_factory {
             let mut test_data = setup_test(None);
             test_data
                 .raw_proof
-                .set_key_value("transaction", vec![0u8; 64]);
+                .set_into_value("transaction", vec![0u8; 64])
+                .unwrap();
 
             let result = test_data
                 .validate_instant_asset_lock_proof_structure
@@ -413,7 +420,7 @@ mod validate_instant_asset_lock_proof_structure_factory {
         #[tokio::test]
         async fn should_be_present() {
             let mut test_data = setup_test(None);
-            test_data.raw_proof.remove_key("outputIndex");
+            test_data.raw_proof.remove("outputIndex").unwrap();
 
             let result = test_data
                 .validate_instant_asset_lock_proof_structure
@@ -437,7 +444,10 @@ mod validate_instant_asset_lock_proof_structure_factory {
         #[tokio::test]
         async fn should_be_an_integer() {
             let mut test_data = setup_test(None);
-            test_data.raw_proof.set_key_value("outputIndex", 1.1);
+            test_data
+                .raw_proof
+                .set_into_value("outputIndex", 1.1)
+                .unwrap();
 
             let result = test_data
                 .validate_instant_asset_lock_proof_structure
@@ -455,7 +465,10 @@ mod validate_instant_asset_lock_proof_structure_factory {
         #[tokio::test]
         async fn should_not_be_less_than_0() {
             let mut test_data = setup_test(None);
-            test_data.raw_proof.set_key_value("outputIndex", -1);
+            test_data
+                .raw_proof
+                .set_into_value("outputIndex", -1)
+                .unwrap();
 
             let result = test_data
                 .validate_instant_asset_lock_proof_structure

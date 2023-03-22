@@ -45,11 +45,21 @@ describe('Identity', () => {
 
     identity = new Identity(rawIdentity);
 
-    metadataFixture = new Metadata(42, 0);
+    metadataFixture = new Metadata({
+      blockHeight: 42,
+      coreChainLockedHeight: 0,
+      timeMs: 100,
+      protocolVersion: 2,
+    });
 
     identity.setMetadata(metadataFixture);
 
-    metadataFixture = new Metadata(42, 0);
+    metadataFixture = new Metadata({
+      blockHeight: 42,
+      coreChainLockedHeight: 0,
+      timeMs: 100,
+      protocolVersion: 2,
+    });
   });
 
   afterEach(() => {
@@ -220,8 +230,18 @@ describe('Identity', () => {
 
   describe('#setMetadata', () => {
     it('should set metadata', () => {
-      const otherMetadata = new Metadata(43, 1);
-      const expectedMetadata = new Metadata(43, 1);
+      const otherMetadata = new Metadata({
+        blockHeight: 43,
+        coreChainLockedHeight: 1,
+        timeMs: 100,
+        protocolVersion: 2,
+      });
+      const expectedMetadata = new Metadata({
+        blockHeight: 43,
+        coreChainLockedHeight: 1,
+        timeMs: 100,
+        protocolVersion: 2,
+      });
 
       identity.setMetadata(otherMetadata);
 
@@ -237,16 +257,17 @@ describe('Identity', () => {
 
   describe('#getPublicKeyMaxId', () => {
     it('should get the biggest public key ID', () => {
+      const key = new IdentityPublicKey({
+        id: 99,
+        type: KeyType.ECDSA_SECP256K1,
+        data: Buffer.alloc(36).fill('a'),
+        purpose: KeyPurpose.AUTHENTICATION,
+        securityLevel: KeySecurityLevel.MASTER,
+        signature: Buffer.alloc(36).fill('a'),
+        readOnly: false,
+      });
       identity.addPublicKeys(
-        new IdentityPublicKey({
-          id: 99,
-          type: KeyType.ECDSA_SECP256K1,
-          data: Buffer.alloc(36).fill('a'),
-          purpose: KeyPurpose.AUTHENTICATION,
-          securityLevel: KeySecurityLevel.MASTER,
-          signature: Buffer.alloc(36).fill('a'),
-          readOnly: false,
-        }),
+        key,
         new IdentityPublicKey({
           id: 50,
           type: KeyType.ECDSA_SECP256K1,

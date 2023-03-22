@@ -214,7 +214,7 @@ mod tests {
 
     use dpp::data_contract::extra::common::json_document_to_cbor;
     use dpp::data_contract::DriveContractExt;
-    use dpp::document::document_stub::DocumentStub;
+    use dpp::document::Document;
     use dpp::util::serializer;
     use rand::Rng;
     use serde_json::json;
@@ -301,7 +301,7 @@ mod tests {
         let element = drive
             .grove
             .get(
-                contract_root_path(&contract.id.buffer),
+                contract_root_path(&contract.id.to_buffer()),
                 &[0],
                 Some(&db_transaction),
             )
@@ -318,8 +318,8 @@ mod tests {
                 ["$ownerId", "asc"],
             ]
         });
-        let where_cbor =
-            serializer::value_to_cbor(query_value, None).expect("expected to serialize to cbor");
+        let where_cbor = serializer::serializable_value_to_cbor(&query_value, None)
+            .expect("expected to serialize to cbor");
 
         let (docs, _, _) = drive
             .query_documents_cbor_from_contract(
@@ -462,7 +462,7 @@ mod tests {
 
         let mut operations = vec![];
 
-        let document0 = DocumentStub::from_cbor(
+        let document0 = Document::from_cbor(
             dashpay_cr_serialized_document0.as_slice(),
             None,
             Some(random_owner_id),
@@ -481,7 +481,7 @@ mod tests {
             override_document: false,
         });
 
-        let document1 = DocumentStub::from_cbor(
+        let document1 = Document::from_cbor(
             dashpay_cr_serialized_document1.as_slice(),
             None,
             Some(random_owner_id),
@@ -522,7 +522,7 @@ mod tests {
         let element = drive
             .grove
             .get(
-                contract_root_path(&contract.id.buffer),
+                contract_root_path(&contract.id.to_buffer()),
                 &[0],
                 Some(&db_transaction),
             )
@@ -539,8 +539,8 @@ mod tests {
                 ["$ownerId", "asc"],
             ]
         });
-        let where_cbor =
-            serializer::value_to_cbor(query_value, None).expect("expected to serialize to cbor");
+        let where_cbor = serializer::serializable_value_to_cbor(&query_value, None)
+            .expect("expected to serialize to cbor");
 
         let (docs, _, _) = drive
             .query_documents_cbor_from_contract(
@@ -600,7 +600,7 @@ mod tests {
 
         let mut operations = vec![];
 
-        let document0 = DocumentStub::from_cbor(
+        let document0 = Document::from_cbor(
             person_serialized_document0.as_slice(),
             None,
             Some(random_owner_id0),
@@ -621,7 +621,7 @@ mod tests {
 
         let random_owner_id1 = rand::thread_rng().gen::<[u8; 32]>();
 
-        let document1 = DocumentStub::from_cbor(
+        let document1 = Document::from_cbor(
             person_serialized_document1.as_slice(),
             None,
             Some(random_owner_id1),
@@ -667,8 +667,8 @@ mod tests {
                 ["$ownerId", "asc"],
             ]
         });
-        let where_cbor =
-            serializer::value_to_cbor(query_value, None).expect("expected to serialize to cbor");
+        let where_cbor = serializer::serializable_value_to_cbor(&query_value, None)
+            .expect("expected to serialize to cbor");
 
         let (docs, _, _) = drive
             .query_documents_cbor_from_contract(
@@ -728,7 +728,7 @@ mod tests {
 
         let mut operations = vec![];
 
-        let document0 = DocumentStub::from_cbor(
+        let document0 = Document::from_cbor(
             person_serialized_document0.as_slice(),
             None,
             Some(random_owner_id0),
@@ -749,7 +749,7 @@ mod tests {
 
         let random_owner_id1 = rand::thread_rng().gen::<[u8; 32]>();
 
-        let document1 = DocumentStub::from_cbor(
+        let document1 = Document::from_cbor(
             person_serialized_document1.as_slice(),
             None,
             Some(random_owner_id1),
@@ -805,7 +805,7 @@ mod tests {
 
         let mut operations = vec![];
 
-        let document0 = DocumentStub::from_cbor(
+        let document0 = Document::from_cbor(
             person_serialized_document0.as_slice(),
             None,
             Some(random_owner_id0),
@@ -819,7 +819,7 @@ mod tests {
             storage_flags: None,
         }));
 
-        let document1 = DocumentStub::from_cbor(
+        let document1 = Document::from_cbor(
             person_serialized_document1.as_slice(),
             None,
             Some(random_owner_id1),
@@ -860,8 +860,8 @@ mod tests {
                 ["age", "asc"],
             ]
         });
-        let where_cbor =
-            serializer::value_to_cbor(query_value, None).expect("expected to serialize to cbor");
+        let where_cbor = serializer::serializable_value_to_cbor(&query_value, None)
+            .expect("expected to serialize to cbor");
 
         let (docs, _, _) = drive
             .query_documents_cbor_from_contract(
@@ -883,8 +883,8 @@ mod tests {
                 ["age", "asc"],
             ]
         });
-        let where_cbor =
-            serializer::value_to_cbor(query_value, None).expect("expected to serialize to cbor");
+        let where_cbor = serializer::serializable_value_to_cbor(&query_value, None)
+            .expect("expected to serialize to cbor");
 
         let (docs, _, _) = drive
             .query_documents_cbor_from_contract(
@@ -906,8 +906,8 @@ mod tests {
                 ["age", "asc"],
             ]
         });
-        let where_cbor =
-            serializer::value_to_cbor(query_value, None).expect("expected to serialize to cbor");
+        let where_cbor = serializer::serializable_value_to_cbor(&query_value, None)
+            .expect("expected to serialize to cbor");
 
         let (docs, _, _) = drive
             .query_documents_cbor_from_contract(
@@ -967,7 +967,7 @@ mod tests {
 
         let mut operations = vec![];
 
-        let document0 = DocumentStub::from_cbor(
+        let document0 = Document::from_cbor(
             person_serialized_document0.as_slice(),
             None,
             Some(random_owner_id0),
@@ -988,7 +988,7 @@ mod tests {
 
         let random_owner_id1 = rand::thread_rng().gen::<[u8; 32]>();
 
-        let document1 = DocumentStub::from_cbor(
+        let document1 = Document::from_cbor(
             person_serialized_document1.as_slice(),
             None,
             Some(random_owner_id1),
@@ -1044,7 +1044,7 @@ mod tests {
 
         let mut operations = vec![];
 
-        let document0 = DocumentStub::from_cbor(
+        let document0 = Document::from_cbor(
             person_serialized_document0.as_slice(),
             None,
             Some(random_owner_id0),
@@ -1058,7 +1058,7 @@ mod tests {
             storage_flags: None,
         }));
 
-        let document1 = DocumentStub::from_cbor(
+        let document1 = Document::from_cbor(
             person_serialized_document1.as_slice(),
             None,
             Some(random_owner_id1),
@@ -1100,8 +1100,8 @@ mod tests {
                 ["age", "asc"],
             ]
         });
-        let where_cbor =
-            serializer::value_to_cbor(query_value, None).expect("expected to serialize to cbor");
+        let where_cbor = serializer::serializable_value_to_cbor(&query_value, None)
+            .expect("expected to serialize to cbor");
 
         let (docs, _, _) = drive
             .query_documents_cbor_from_contract(
@@ -1123,8 +1123,8 @@ mod tests {
                 ["age", "asc"],
             ]
         });
-        let where_cbor =
-            serializer::value_to_cbor(query_value, None).expect("expected to serialize to cbor");
+        let where_cbor = serializer::serializable_value_to_cbor(&query_value, None)
+            .expect("expected to serialize to cbor");
 
         let (docs, _, _) = drive
             .query_documents_cbor_from_contract(
@@ -1146,8 +1146,8 @@ mod tests {
                 ["age", "asc"],
             ]
         });
-        let where_cbor =
-            serializer::value_to_cbor(query_value, None).expect("expected to serialize to cbor");
+        let where_cbor = serializer::serializable_value_to_cbor(&query_value, None)
+            .expect("expected to serialize to cbor");
 
         let (docs, _, _) = drive
             .query_documents_cbor_from_contract(

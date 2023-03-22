@@ -1,6 +1,7 @@
 use std::vec;
 
 use lazy_static::__Deref;
+use platform_value::string_encoding::Encoding;
 
 use crate::{
     contracts::{
@@ -10,23 +11,18 @@ use crate::{
     document::document_transition::Action,
     errors::ProtocolError,
     prelude::Identifier,
-    state_repository::StateRepositoryLike,
-    util::string_encoding::Encoding,
 };
 
 use super::{DataTrigger, DataTriggerKind};
 
 /// returns Date Triggers filtered out by dataContractId, documentType, transactionAction
-pub fn get_data_triggers<'a, SR>(
+pub fn get_data_triggers<'a>(
     data_contract_id: &'a Identifier,
     document_type: &'a str,
     transition_action: Action,
-) -> Result<Vec<DataTrigger>, ProtocolError>
-where
-    SR: StateRepositoryLike,
-{
-    let data_triggers = data_triggers()?;
-    Ok(data_triggers
+    data_triggers_list: impl IntoIterator<Item = &'a DataTrigger>,
+) -> Result<Vec<&'a DataTrigger>, ProtocolError> {
+    Ok(data_triggers_list
         .into_iter()
         .filter(|dt| {
             dt.is_matching_trigger_for_data(data_contract_id, document_type, transition_action)
@@ -34,7 +30,7 @@ where
         .collect())
 }
 
-fn data_triggers() -> Result<Vec<DataTrigger>, ProtocolError> {
+pub fn data_triggers() -> Result<Vec<DataTrigger>, ProtocolError> {
     let dpns_data_contract_id =
         Identifier::from_string(&dpns_contract::system_ids().contract_id, Encoding::Base58)?;
     let dpns_owner_id =
@@ -112,7 +108,7 @@ fn data_triggers() -> Result<Vec<DataTrigger>, ProtocolError> {
         DataTrigger {
             data_contract_id: dashpay_data_contract_id,
             document_type: "contactRequest".to_string(),
-            transition_action: Action::Replace,
+            transition_action: Action::Delete,
             data_trigger_kind: DataTriggerKind::DataTriggerReject,
             top_level_identity: None,
         },
@@ -141,14 +137,14 @@ fn data_triggers() -> Result<Vec<DataTrigger>, ProtocolError> {
             data_contract_id: master_node_reward_shares_contract_id,
             document_type: feature_flags_contract::types::UPDATE_CONSENSUS_PARAMS.to_string(),
             transition_action: Action::Create,
-            data_trigger_kind: DataTriggerKind::CreateDataContractRequest,
+            data_trigger_kind: DataTriggerKind::DataTriggerRewardShare,
             top_level_identity: None,
         },
         DataTrigger {
             data_contract_id: master_node_reward_shares_contract_id,
-            document_type: feature_flags_contract::types::UPDATE_CONSENSUS_PARAMS.to_string(),
+            document_type: "rewardShare".to_string(),
             transition_action: Action::Replace,
-            data_trigger_kind: DataTriggerKind::CreateDataContractRequest,
+            data_trigger_kind: DataTriggerKind::DataTriggerRewardShare,
             top_level_identity: None,
         },
         DataTrigger {

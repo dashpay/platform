@@ -1,8 +1,9 @@
-use std::convert::TryFrom;
+use std::collections::BTreeMap;
+use std::convert::{TryFrom, TryInto};
 
-use anyhow::{bail, Context};
+use anyhow::Context;
 use serde::{Deserialize, Serialize};
-use serde_json::Value;
+use serde_json::Value as JsonValue;
 
 use crate::{
     data_contract::DataContract, prelude::Identifier, util::json_value::JsonValueExt, ProtocolError,
@@ -19,10 +20,14 @@ mod document_delete_transition_action;
 pub mod document_replace_transition;
 mod document_replace_transition_action;
 
+use crate::identity::TimestampMillis;
+use crate::prelude::Revision;
 pub use document_base_transition::{Action, DocumentTransitionObjectLike};
 pub use document_create_transition::DocumentCreateTransition;
 pub use document_delete_transition::DocumentDeleteTransition;
 pub use document_replace_transition::DocumentReplaceTransition;
+use platform_value::btreemap_extensions::BTreeValueMapHelper;
+use platform_value::Value;
 
 pub use document_base_transition_action::DocumentBaseTransitionAction;
 pub use document_create_transition_action::DocumentCreateTransitionAction;
@@ -33,18 +38,18 @@ use crate::identity::TimestampMillis;
 pub use action::{DocumentTransitionAction, DOCUMENT_TRANSITION_ACTION_VERSION};
 
 /// the initial revision of newly created document
-pub const INITIAL_REVISION: u32 = 1;
+pub const INITIAL_REVISION: u64 = 1;
 pub const PROPERTY_ACTION: &str = "$action";
 
 pub trait DocumentTransitionExt {
     /// returns the creation timestamp (in milliseconds) if it exists for given type of document transition
-    fn get_created_at(&self) -> Option<i64>;
+    fn get_created_at(&self) -> Option<TimestampMillis>;
     /// returns the update timestamp  (in milliseconds) if it exists for given type of document transition
-    fn get_updated_at(&self) -> Option<i64>;
+    fn get_updated_at(&self) -> Option<TimestampMillis>;
     /// set the created_at (in milliseconds) if it exists
-    fn set_created_at(&mut self, timestamp_millis: Option<i64>);
+    fn set_created_at(&mut self, timestamp_millis: Option<TimestampMillis>);
     /// set the updated_at (in milliseconds) if it exists
-    fn set_updated_at(&mut self, timestamp_millis: Option<i64>);
+    fn set_updated_at(&mut self, timestamp_millis: Option<TimestampMillis>);
     /// returns the value of dynamic property. The dynamic property is a property that is not specified in protocol
     /// the `path` supports dot-syntax: i.e: property.internal_property
     fn get_dynamic_property(&self, path: &str) -> Option<&Value>;
@@ -59,9 +64,9 @@ pub trait DocumentTransitionExt {
     /// get the data contract id
     fn get_data_contract_id(&self) -> &Identifier;
     /// get the data of the transition if exits
-    fn get_data(&self) -> Option<&Value>;
+    fn get_data(&self) -> Option<&BTreeMap<String, Value>>;
     /// get the revision of transition if exits
-    fn get_revision(&self) -> Option<u32>;
+    fn get_revision(&self) -> Option<Revision>;
     #[cfg(test)]
     /// Inserts the dynamic property into the document
     fn insert_dynamic_property(&mut self, property_name: String, value: Value);
@@ -106,7 +111,7 @@ struct TransitionWithAction {
 
 impl DocumentTransitionObjectLike for DocumentTransition {
     fn from_json_object(
-        json_value: Value,
+        json_value: JsonValue,
         data_contract: DataContract,
     ) -> Result<Self, ProtocolError>
     where
@@ -135,27 +140,49 @@ impl DocumentTransitionObjectLike for DocumentTransition {
     where
         Self: Sized,
     {
-        let action: Action = TryFrom::try_from(raw_transition.get_u64(PROPERTY_ACTION)? as u8)
-            .context("invalid document transition action")?;
-        Ok(match action {
-            Action::Create => DocumentTransition::Create(
-                DocumentCreateTransition::from_raw_object(raw_transition, data_contract)?,
-            ),
-            Action::Replace => DocumentTransition::Replace(
-                DocumentReplaceTransition::from_raw_object(raw_transition, data_contract)?,
-            ),
-            Action::Delete => DocumentTransition::Delete(
-                DocumentDeleteTransition::from_raw_object(raw_transition, data_contract)?,
-            ),
-        })
+        let map = raw_transition
+            .into_btree_string_map()
+            .map_err(ProtocolError::ValueError)?;
+        Self::from_value_map(map, data_contract)
     }
 
-    fn to_json(&self) -> Result<Value, ProtocolError> {
+    fn to_json(&self) -> Result<JsonValue, ProtocolError> {
         call_method!(self, to_json)
+    }
+
+    fn to_value_map(&self) -> Result<BTreeMap<String, Value>, ProtocolError> {
+        call_method!(self, to_value_map)
     }
 
     fn to_object(&self) -> Result<Value, ProtocolError> {
         call_method!(self, to_object)
+    }
+
+    fn to_cleaned_object(&self) -> Result<Value, ProtocolError> {
+        call_method!(self, to_cleaned_object)
+    }
+
+    fn from_value_map(
+        map: BTreeMap<String, Value>,
+        data_contract: DataContract,
+    ) -> Result<Self, ProtocolError>
+    where
+        Self: Sized,
+    {
+        let action: Action = map.get_integer::<u8>(PROPERTY_ACTION)?.try_into()?;
+        Ok(match action {
+            Action::Create => DocumentTransition::Create(DocumentCreateTransition::from_value_map(
+                map,
+                data_contract,
+            )?),
+            Action::Replace => DocumentTransition::Replace(
+                DocumentReplaceTransition::from_value_map(map, data_contract)?,
+            ),
+            Action::Delete => DocumentTransition::Delete(DocumentDeleteTransition::from_value_map(
+                map,
+                data_contract,
+            )?),
+        })
     }
 }
 
@@ -202,7 +229,7 @@ impl DocumentTransitionExt for DocumentTransition {
     }
 
     fn get_document_type(&self) -> &String {
-        &self.base().document_type
+        &self.base().document_type_name
     }
 
     fn get_action(&self) -> Action {
@@ -253,14 +280,14 @@ impl DocumentTransitionExt for DocumentTransition {
         match self {
             DocumentTransition::Create(t) => {
                 if let Some(ref data) = t.data {
-                    data.get_value(path).ok()
+                    data.get(path)
                 } else {
                     None
                 }
             }
             DocumentTransition::Replace(t) => {
                 if let Some(ref data) = t.data {
-                    data.get_value(path).ok()
+                    data.get(path)
                 } else {
                     None
                 }
@@ -269,7 +296,7 @@ impl DocumentTransitionExt for DocumentTransition {
         }
     }
 
-    fn get_data(&self) -> Option<&Value> {
+    fn get_data(&self) -> Option<&BTreeMap<String, Value>> {
         match self {
             DocumentTransition::Create(t) => t.data.as_ref(),
             DocumentTransition::Replace(t) => t.data.as_ref(),
@@ -277,10 +304,10 @@ impl DocumentTransitionExt for DocumentTransition {
         }
     }
 
-    fn get_revision(&self) -> Option<u32> {
+    fn get_revision(&self) -> Option<Revision> {
         match self {
-            DocumentTransition::Create(t) => Some(t.get_revision()),
-            DocumentTransition::Replace(t) => Some(t.get_revision()),
+            DocumentTransition::Create(t) => t.get_revision(),
+            DocumentTransition::Replace(t) => Some(t.revision),
             DocumentTransition::Delete(_) => None,
         }
     }
@@ -315,18 +342,4 @@ impl DocumentTransitionExt for DocumentTransition {
             }
         }
     }
-}
-
-/// Assumes both values are maps and merges them together. In case of overlap, b is used.
-fn merge_serde_json_values(a: &mut Value, b: Value) -> Result<(), anyhow::Error> {
-    if let Value::Object(ref mut map_a) = a {
-        if let Value::Object(map_b) = b {
-            map_a.extend(map_b);
-        } else {
-            bail!("{} isn't a map", b)
-        }
-    } else {
-        bail!("{} isn't a map", a)
-    }
-    Ok(())
 }

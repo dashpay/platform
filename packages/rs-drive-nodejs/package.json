@@ -1,6 +1,6 @@
 {
   "name": "@dashevo/rs-drive",
-  "version": "0.24.0-dev.13",
+  "version": "0.24.0-dev.15",
   "description": "Node.JS binding for Rust Drive",
   "main": "Drive.js",
   "scripts": {
@@ -17,7 +17,7 @@
   ],
   "license": "MIT",
   "devDependencies": {
-    "@dashevo/dashcore-lib": "github:dashevo/dashcore-lib#3527419e8739b5e7d4017028d642dba8851c3e25",
+    "@dashevo/dashcore-lib": "~0.20.0",
     "@dashevo/withdrawals-contract": "workspace:*",
     "chai": "^4.3.4",
     "dirty-chai": "^2.0.1",

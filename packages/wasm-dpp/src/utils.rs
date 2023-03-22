@@ -1,24 +1,26 @@
+use std::collections::BTreeMap;
 use std::convert::TryInto;
 
 use anyhow::{anyhow, bail};
 use dpp::{
     dashcore::{anyhow, anyhow::Context},
-    util::json_value::{JsonValueExt, ReplaceWith},
     ProtocolError,
 };
 
+use dpp::platform_value::Value;
 use js_sys::Function;
 use serde::de::DeserializeOwned;
-use serde_json::Value;
+use serde_json::Value as JsonValue;
 use wasm_bindgen::{convert::RefFromWasmAbi, prelude::*};
 
-use crate::{
-    bail_js,
-    errors::{from_dpp_err, RustConversionError},
-};
+use crate::errors::{from_dpp_err, RustConversionError};
 
 pub trait ToSerdeJSONExt {
-    fn with_serde_to_json_value(&self) -> Result<Value, JsValue>;
+    fn with_serde_to_json_value(&self) -> Result<JsonValue, JsValue>;
+    fn with_serde_to_platform_value(&self) -> Result<Value, JsValue>;
+    /// Converts the `JsValue` into `platform::Value`. It's an expensive conversion,
+    /// as `JsValue` must be stringified first
+    fn with_serde_to_platform_value_map(&self) -> Result<BTreeMap<String, Value>, JsValue>;
     fn with_serde_into<D: DeserializeOwned>(&self) -> Result<D, JsValue>
     where
         D: for<'de> serde::de::Deserialize<'de> + 'static;
@@ -27,8 +29,23 @@ pub trait ToSerdeJSONExt {
 impl ToSerdeJSONExt for JsValue {
     /// Converts the `JsValue` into `serde_json::Value`. It's an expensive conversion,
     /// as `JsValue` must be stringified first
-    fn with_serde_to_json_value(&self) -> Result<Value, JsValue> {
+    fn with_serde_to_json_value(&self) -> Result<JsonValue, JsValue> {
         with_serde_to_json_value(self)
+    }
+
+    /// Converts the `JsValue` into `platform::Value`. It's an expensive conversion,
+    /// as `JsValue` must be stringified first
+    fn with_serde_to_platform_value(&self) -> Result<Value, JsValue> {
+        with_serde_to_platform_value(self)
+    }
+
+    /// Converts the `JsValue` into `platform::Value`. It's an expensive conversion,
+    /// as `JsValue` must be stringified first
+    fn with_serde_to_platform_value_map(&self) -> Result<BTreeMap<String, Value>, JsValue> {
+        self.with_serde_to_platform_value()?
+            .into_btree_string_map()
+            .map_err(ProtocolError::ValueError)
+            .with_js_error()
     }
 
     /// converts the `JsValue` into any type that is supported by serde. It's an expensive conversion
@@ -50,10 +67,19 @@ where
 
 pub fn to_vec_of_serde_values(
     values: impl IntoIterator<Item = impl AsRef<JsValue>>,
-) -> Result<Vec<Value>, JsValue> {
+) -> Result<Vec<JsonValue>, JsValue> {
     values
         .into_iter()
         .map(|v| v.as_ref().with_serde_to_json_value())
+        .collect()
+}
+
+pub fn to_vec_of_platform_values(
+    values: impl IntoIterator<Item = impl AsRef<JsValue>>,
+) -> Result<Vec<Value>, JsValue> {
+    values
+        .into_iter()
+        .map(|v| v.as_ref().with_serde_to_platform_value())
         .collect()
 }
 
@@ -66,12 +92,16 @@ where
         .collect()
 }
 
-pub fn with_serde_to_json_value(data: &JsValue) -> Result<Value, JsValue> {
+pub fn with_serde_to_json_value(data: &JsValue) -> Result<JsonValue, JsValue> {
     let data = stringify(data)?;
-    let value: Value = serde_json::from_str(&data)
+    let value: JsonValue = serde_json::from_str(&data)
         .with_context(|| format!("cant convert {data:#?} to serde json value"))
         .map_err(|e| format!("{e:#}"))?;
     Ok(value)
+}
+
+pub fn with_serde_to_platform_value(data: &JsValue) -> Result<Value, JsValue> {
+    Ok(with_serde_to_json_value(data)?.into())
 }
 
 pub fn with_serde_into<D>(data: &JsValue) -> Result<D, JsValue>
@@ -241,14 +271,12 @@ pub fn convert_number_to_u64(js_number: js_sys::Number) -> Result<u64, anyhow::E
     bail!("the value is not a number")
 }
 
-pub(crate) fn replace_identifiers_with_bytes_without_failing<'a>(
-    value: &mut Value,
-    paths: impl IntoIterator<Item = &'a str>,
-) {
-    // Errors are ignored. When `Buffer` crosses the WASM boundary it becomes an Array.
-    // When `Identifier` crosses the WASM boundary it becomes a String. From perspective of JS
-    // `Identifier` and `Buffer` are used interchangeably, so we we can expect the replacing may fail when `Buffer` is provided
-    let _ = value
-        .replace_identifier_paths(paths, ReplaceWith::Bytes)
-        .with_js_error();
+// The trait `Inner` provides better flexibility and visibility when you need to switch
+// between WASM structure and original structure.
+pub(crate) trait Inner {
+    type InnerItem;
+
+    fn into_inner(self) -> Self::InnerItem;
+    fn inner(&self) -> &Self::InnerItem;
+    fn inner_mut(&mut self) -> &mut Self::InnerItem;
 }

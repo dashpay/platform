@@ -24,7 +24,7 @@ impl InvalidIdentifierErrorWasm {
         self.identifier_name.clone()
     }
 
-    #[wasm_bindgen(js_name=getError)]
+    #[wasm_bindgen(js_name=getIdentifierError)]
     pub fn get_error(&self) -> String {
         self.error.clone()
     }

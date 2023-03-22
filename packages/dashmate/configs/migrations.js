@@ -434,4 +434,40 @@ module.exports = {
 
     return configFile;
   },
+  '0.24.0-dev.14': (configFile) => {
+    configFile.configs.base.platform.drive.tenderdash.genesis = systemConfigs.base.platform
+      .drive.tenderdash.genesis;
+
+    configFile.configs.base.platform.drive.tenderdash.genesis = systemConfigs.base.platform
+      .drive.tenderdash.genesis;
+
+    configFile.configs.local.platform.drive.abci.validatorSet.llmqType = systemConfigs.local
+      .platform.drive.abci.validatorSet.llmqType;
+
+    Object.entries(configFile.configs)
+      .forEach(([, config]) => {
+        if (config.platform) {
+          if (config.group === 'local') {
+            config.platform.drive.abci.validatorSet.llmqType = systemConfigs.local
+              .platform.drive.abci.validatorSet.llmqType;
+          }
+
+          config.platform.drive.tenderdash.node = {
+            id: config.platform.drive.tenderdash.nodeId,
+          };
+
+          if (config.platform.drive.tenderdash.nodeKey.priv_key
+            && config.platform.drive.tenderdash.nodeKey.priv_key.value
+          ) {
+            config.platform.drive.tenderdash.node.key = config.platform.drive
+              .tenderdash.nodeKey.priv_key.value;
+          }
+
+          delete config.platform.drive.tenderdash.nodeId;
+          delete config.platform.drive.tenderdash.nodeKey;
+        }
+      });
+
+    return configFile;
+  },
 };

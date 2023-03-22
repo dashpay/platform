@@ -1,18 +1,16 @@
 use std::convert::TryInto;
 
 use anyhow::{anyhow, bail};
-use itertools::Itertools;
+use platform_value::btreemap_extensions::BTreeValueMapHelper;
+
+use platform_value::string_encoding::Encoding;
 use serde_json::json;
 
+use crate::document::Document;
 use crate::{
-    data_trigger::create_error,
-    document::{document_transition::DocumentTransition, Document},
-    get_from_transition,
-    mocks::SMLStore,
-    prelude::Identifier,
-    state_repository::StateRepositoryLike,
-    util::{json_value::JsonValueExt, string_encoding::Encoding},
-    ProtocolError,
+    data_trigger::create_error, document::document_transition::DocumentTransition,
+    get_from_transition, mocks::SMLStore, prelude::Identifier,
+    state_repository::StateRepositoryLike, ProtocolError,
 };
 
 use super::{DataTriggerExecutionContext, DataTriggerExecutionResult};
@@ -34,22 +32,22 @@ where
     let is_dry_run = context.state_transition_execution_context.is_dry_run();
     let owner_id = context.owner_id.to_string(Encoding::Base58);
 
-    let dt_create = match document_transition {
-        DocumentTransition::Create(d) => d,
+    let document_create_transition = match document_transition {
+        DocumentTransition::Create(document_create_transition) => document_create_transition,
         _ => bail!(
             "the Document Transition {} isn't 'CREATE'",
             get_from_transition!(document_transition, id)
         ),
     };
-    let data = dt_create.data.as_ref().ok_or_else(|| {
+    let properties = document_create_transition.data.as_ref().ok_or_else(|| {
         anyhow!(
             "data isn't defined in Data Transition '{}'",
-            dt_create.base.id
+            document_create_transition.base.id
         )
     })?;
 
-    let pay_to_id_bytes = data.get_bytes(PROPERTY_PAY_TO_ID)?;
-    let percentage = data.get_u64(PROPERTY_PERCENTAGE)?;
+    let pay_to_id = properties.get_hash256_bytes(PROPERTY_PAY_TO_ID)?;
+    let percentage = properties.get_integer(PROPERTY_PERCENTAGE)?;
 
     if !is_dry_run {
         // Do not allow creating document if ownerId is not in SML
@@ -65,7 +63,7 @@ where
         if !owner_id_in_sml {
             let err = create_error(
                 context,
-                dt_create,
+                document_create_transition,
                 "Only masternode identities can share rewards".to_string(),
             );
             result.add_error(err.into());
@@ -73,7 +71,7 @@ where
     }
 
     // payToId identity exists
-    let pay_to_identifier = Identifier::from_bytes(&pay_to_id_bytes)?;
+    let pay_to_identifier = Identifier::from(pay_to_id);
     let maybe_identity = context
         .state_repository
         .fetch_identity(
@@ -85,7 +83,7 @@ where
     if !is_dry_run && maybe_identity.is_none() {
         let err = create_error(
             context,
-            dt_create,
+            document_create_transition,
             format!("Identity '{}' doesn't exist", pay_to_identifier),
         );
         result.add_error(err.into())
@@ -95,7 +93,7 @@ where
         .state_repository
         .fetch_documents(
             &context.data_contract.id,
-            &dt_create.base.document_type,
+            &document_create_transition.base.document_type_name,
             json!({
                 "where" : [ [ "$owner_id", "==", owner_id ]]
             }),
@@ -105,7 +103,7 @@ where
     let documents: Vec<Document> = documents_data
         .into_iter()
         .map(|d| d.try_into().map_err(Into::<ProtocolError>::into))
-        .try_collect()?;
+        .collect::<Result<Vec<Document>, ProtocolError>>()?;
 
     if is_dry_run {
         return Ok(result);
@@ -114,7 +112,7 @@ where
     if documents.len() >= MAX_DOCUMENTS {
         let err = create_error(
             context,
-            dt_create,
+            document_create_transition,
             format!(
                 "Reward shares cannot contain more than {} identities",
                 MAX_DOCUMENTS
@@ -126,13 +124,13 @@ where
 
     let mut total_percent: u64 = percentage;
     for d in documents.iter() {
-        total_percent += d.data.get_u64(PROPERTY_PERCENTAGE)?;
+        total_percent += d.properties.get_integer::<u64>(PROPERTY_PERCENTAGE)?;
     }
 
     if total_percent > MAX_PERCENTAGE {
         let err = create_error(
             context,
-            dt_create,
+            document_create_transition,
             format!("Percentage can not be more than {}", MAX_PERCENTAGE),
         );
         result.add_error(err.into());
@@ -144,17 +142,15 @@ where
 #[cfg(test)]
 mod test {
     use super::*;
-    use itertools::Itertools;
-    use serde_json::json;
 
+    use platform_value::Value;
+
+    use crate::document::{Document, ExtendedDocument};
     use crate::identity::Identity;
     use crate::{
         data_contract::DataContract,
         data_trigger::DataTriggerExecutionContext,
-        document::{
-            document_transition::{Action, DocumentTransition, DocumentTransitionExt},
-            Document,
-        },
+        document::document_transition::{Action, DocumentTransition, DocumentTransitionExt},
         mocks::{SMLEntry, SMLStore, SimplifiedMNList},
         prelude::Identifier,
         state_repository::MockStateRepositoryLike,
@@ -172,7 +168,7 @@ mod test {
         top_level_identifier: Identifier,
         data_contract: DataContract,
         sml_store: SMLStore,
-        documents: Vec<Document>,
+        extended_documents: Vec<ExtendedDocument>,
         document_transition: DocumentTransition,
         identity: Identity,
     }
@@ -214,9 +210,8 @@ mod test {
         };
         let document_transitions =
             get_document_transitions_fixture([(Action::Create, vec![documents[0].clone()])]);
-
         TestData {
-            documents,
+            extended_documents: documents,
             data_contract,
             top_level_identifier,
             sml_store,
@@ -246,12 +241,18 @@ mod test {
     async fn should_return_an_error_if_percentage_greater_than_1000() {
         let TestData {
             mut document_transition,
-            documents,
+            extended_documents,
             sml_store,
             data_contract,
             top_level_identifier,
             ..
         } = setup_test();
+
+        let documents: Vec<Document> = extended_documents
+            .clone()
+            .into_iter()
+            .map(|dt| dt.document)
+            .collect();
 
         let mut state_repository_mock = MockStateRepositoryLike::new();
         state_repository_mock
@@ -265,7 +266,7 @@ mod test {
             .returning(move |_, _, _, _| Ok(documents.clone()));
 
         // documentsFixture contains percentage = 500
-        document_transition.insert_dynamic_property(String::from("percentage"), json!(9501));
+        document_transition.insert_dynamic_property(String::from("percentage"), Value::U64(9501));
 
         let execution_context = StateTransitionExecutionContext::default();
         let context = DataTriggerExecutionContext {
@@ -319,15 +320,12 @@ mod test {
                 .await;
 
         let error = get_data_trigger_error(&result, 0);
-        let pay_to_id_bytes: Vec<u8> = document_transition
+        let pay_to_id_bytes = document_transition
             .get_dynamic_property(PROPERTY_PAY_TO_ID)
             .expect("payToId should exist")
-            .as_array()
-            .unwrap()
-            .iter()
-            .map(|v| v.as_u64().unwrap() as u8)
-            .collect_vec();
-        let pay_to_id = Identifier::from_bytes(&pay_to_id_bytes).unwrap();
+            .to_hash256()
+            .expect("expected to be able to get a hash");
+        let pay_to_id = Identifier::from(pay_to_id_bytes);
 
         assert_eq!(
             format!("Identity '{}' doesn't exist", pay_to_id),

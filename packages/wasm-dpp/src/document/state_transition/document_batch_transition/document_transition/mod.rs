@@ -7,6 +7,7 @@ pub use document_create_transition::*;
 pub use document_delete_transition::*;
 pub use document_replace_transition::*;
 
+use dpp::platform_value::Value;
 use dpp::{
     document::document_transition::{
         DocumentCreateTransition, DocumentDeleteTransition, DocumentReplaceTransition,
@@ -14,16 +15,17 @@ use dpp::{
     },
     prelude::{DocumentTransition, Identifier},
     util::{json_schema::JsonSchemaExt, json_value::JsonValueExt},
+    ProtocolError,
 };
 use serde::Serialize;
-use serde_json::Value;
+use serde_json::Value as JsonValue;
 use wasm_bindgen::prelude::*;
 
 use crate::{
     buffer::Buffer,
     identifier::{identifier_from_js_value, IdentifierWrapper},
     lodash::lodash_set,
-    utils::{try_to_u64, ToSerdeJSONExt, WithJsError},
+    utils::{try_to_u64, Inner, ToSerdeJSONExt, WithJsError},
     with_js_error, BinaryType, ConversionOptions, DataContractWasm,
 };
 
@@ -100,7 +102,7 @@ impl DocumentTransitionWasm {
         let timestamp_millis = try_to_u64(js_timestamp_millis)
             .context("setting updatedAt in DocumentsBatchTransition")
             .with_js_error()?;
-        self.0.set_updated_at(Some(timestamp_millis as i64));
+        self.0.set_updated_at(Some(timestamp_millis));
 
         Ok(())
     }
@@ -114,7 +116,7 @@ impl DocumentTransitionWasm {
         let timestamp_millis = try_to_u64(js_timestamp_millis)
             .context("setting createdAt in DocumentsBatchTransition")
             .with_js_error()?;
-        self.0.set_created_at(Some(timestamp_millis as i64));
+        self.0.set_created_at(Some(timestamp_millis));
 
         Ok(())
     }
@@ -129,7 +131,7 @@ impl DocumentTransitionWasm {
                 .with_js_error()?;
 
             let js_value = to_object(
-                data.to_owned(),
+                data.clone().into(),
                 &JsValue::NULL,
                 identifier_paths,
                 binary_paths,
@@ -147,14 +149,13 @@ impl DocumentTransitionWasm {
         if let Some(value) = self.0.get_dynamic_property(path) {
             match binary_type {
                 BinaryType::Identifier => {
-                    if let Ok(bytes) = serde_json::from_value::<Vec<u8>>(value.to_owned()) {
+                    if let Ok(bytes) = value.to_identifier_bytes() {
                         let id: IdentifierWrapper = Identifier::from_bytes(&bytes).unwrap().into();
-
                         return id.into();
                     }
                 }
                 BinaryType::Buffer => {
-                    if let Ok(bytes) = serde_json::from_value::<Vec<u8>>(value.to_owned()) {
+                    if let Ok(bytes) = value.to_binary_bytes() {
                         return Buffer::from_bytes(&bytes).into();
                     }
                 }
@@ -253,6 +254,22 @@ impl From<DocumentTransitionWasm> for DocumentTransition {
     }
 }
 
+impl Inner for DocumentTransitionWasm {
+    type InnerItem = DocumentTransition;
+
+    fn into_inner(self) -> Self::InnerItem {
+        self.0
+    }
+
+    fn inner(&self) -> &Self::InnerItem {
+        &self.0
+    }
+
+    fn inner_mut(&mut self) -> &mut Self::InnerItem {
+        &mut self.0
+    }
+}
+
 pub fn from_document_transition_to_js_value(document_transition: DocumentTransition) -> JsValue {
     match document_transition {
         DocumentTransition::Create(create_transition) => {
@@ -273,7 +290,10 @@ pub(crate) fn to_object<'a>(
     identifiers_paths: impl IntoIterator<Item = &'a str>,
     binary_paths: impl IntoIterator<Item = &'a str>,
 ) -> Result<JsValue, JsValue> {
-    let mut value = value;
+    let mut value: JsonValue = value
+        .try_into_validating_json()
+        .map_err(ProtocolError::ValueError)
+        .with_js_error()?;
     let options: ConversionOptions = if options.is_object() {
         let raw_options = options.with_serde_to_json_value()?;
         serde_json::from_value(raw_options).with_js_error()?
@@ -285,19 +305,19 @@ pub(crate) fn to_object<'a>(
     let js_value = value.serialize(&serializer)?;
 
     for path in identifiers_paths.into_iter() {
-        if let Ok(bytes) = value.remove_path_into::<Vec<u8>>(path) {
+        if let Ok(bytes) = value.remove_value_at_path_into::<Vec<u8>>(path) {
+            let buffer = Buffer::from_bytes_owned(bytes);
             if !options.skip_identifiers_conversion {
-                let buffer = Buffer::from_bytes(&bytes);
                 lodash_set(&js_value, path, buffer.into());
             } else {
-                let id = IdentifierWrapper::new(bytes)?;
+                let id = IdentifierWrapper::new(buffer.into())?;
                 lodash_set(&js_value, path, id.into());
             }
         }
     }
 
     for path in binary_paths.into_iter() {
-        if let Ok(bytes) = value.remove_path_into::<Vec<u8>>(path) {
+        if let Ok(bytes) = value.remove_value_at_path_into::<Vec<u8>>(path) {
             let buffer = Buffer::from_bytes(&bytes);
             lodash_set(&js_value, path, buffer.into());
         }

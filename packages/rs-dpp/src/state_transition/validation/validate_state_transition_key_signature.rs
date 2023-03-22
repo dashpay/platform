@@ -4,6 +4,8 @@ use anyhow::{bail, Context};
 use async_trait::async_trait;
 use dashcore::signer::verify_hash_signature;
 
+use crate::consensus::signature::IdentityNotFoundError;
+use crate::consensus::ConsensusError;
 use crate::{
     consensus::signature::SignatureError,
     identity::{
@@ -82,9 +84,11 @@ pub async fn validate_state_transition_key_signature<SR: StateRepositoryLike>(
         execution_context.add_operations(tmp_execution_context.get_operations());
 
         if balance.is_none() {
-            result.add_error(SignatureError::IdentityNotFoundError {
-                identity_id: *target_identity_id,
-            });
+            result.add_error(ConsensusError::SignatureError(
+                SignatureError::IdentityNotFoundError(IdentityNotFoundError::new(
+                    *target_identity_id,
+                )),
+            ));
             return Ok(result);
         }
     }
@@ -102,7 +106,7 @@ pub async fn validate_state_transition_key_signature<SR: StateRepositoryLike>(
 
     let verification_result = verify_hash_signature(
         &state_transition_hash,
-        state_transition.get_signature(),
+        state_transition.get_signature().as_slice(),
         &public_key_hash,
     );
     if verification_result.is_err() {
@@ -130,6 +134,7 @@ fn get_asset_lock_proof(
 #[cfg(test)]
 mod test {
     use dashcore::{secp256k1::SecretKey, Network, PrivateKey};
+    use platform_value::BinaryData;
     use std::sync::Arc;
 
     use crate::{
@@ -148,9 +153,7 @@ mod test {
         state_repository::MockStateRepositoryLike,
         state_transition::{StateTransition, StateTransitionLike},
         tests::{
-            fixtures::{
-                identity_create_transition_fixture_json, identity_topup_transition_fixture_json,
-            },
+            fixtures::{identity_create_transition_fixture, identity_topup_transition_fixture},
             utils::get_signature_error_from_result,
         },
         NativeBlsModule,
@@ -213,11 +216,10 @@ mod test {
             .expect("secret key should be created");
 
         let private_key = PrivateKey::new(secret_key, Network::Testnet);
-        let mut state_transition: StateTransition = IdentityCreateTransition::new(
-            identity_create_transition_fixture_json(Some(private_key)),
-        )
-        .unwrap()
-        .into();
+        let mut state_transition: StateTransition =
+            IdentityCreateTransition::new(identity_create_transition_fixture(Some(private_key)))
+                .unwrap()
+                .into();
 
         state_transition
             .sign_by_private_key(
@@ -250,11 +252,10 @@ mod test {
             .expect("secret key should be created");
 
         let private_key = PrivateKey::new(secret_key, Network::Testnet);
-        let mut state_transition: StateTransition = IdentityCreateTransition::new(
-            identity_create_transition_fixture_json(Some(private_key)),
-        )
-        .unwrap()
-        .into();
+        let mut state_transition: StateTransition =
+            IdentityCreateTransition::new(identity_create_transition_fixture(Some(private_key)))
+                .unwrap()
+                .into();
 
         state_transition
             .sign_by_private_key(
@@ -265,7 +266,7 @@ mod test {
             .expect("state transition should be signed");
 
         // setting an invalid signature
-        state_transition.set_signature(vec![0u8; 65]);
+        state_transition.set_signature(BinaryData::new(vec![0u8; 65]));
 
         let result = validate_state_transition_key_signature(
             &state_repository,
@@ -295,7 +296,7 @@ mod test {
 
         let private_key = PrivateKey::new(secret_key, Network::Testnet);
         let state_transition: StateTransition =
-            IdentityTopUpTransition::new(identity_topup_transition_fixture_json(Some(private_key)))
+            IdentityTopUpTransition::new(identity_topup_transition_fixture(Some(private_key)))
                 .unwrap()
                 .into();
 

@@ -1,17 +1,24 @@
+use platform_value::btreemap_extensions::BTreeValueMapReplacementPathHelper;
+use platform_value::btreemap_extensions::{BTreeValueMapHelper, BTreeValueRemoveFromMapHelper};
+use platform_value::{Bytes32, ReplacementType, Value};
 use serde::{Deserialize, Serialize};
 use serde_json::Value as JsonValue;
+use std::collections::BTreeMap;
+use std::convert::TryInto;
 
+use crate::data_contract::document_type::document_type::PROTOCOL_VERSION;
+use crate::document::Document;
 use crate::identity::TimestampMillis;
-use crate::{
-    data_contract::DataContract,
-    errors::ProtocolError,
-    util::json_value::{JsonValueExt, ReplaceWith},
-};
+use crate::prelude::Identifier;
+use crate::prelude::{ExtendedDocument, Revision};
+use crate::{data_contract::DataContract, errors::ProtocolError};
 
-use super::{
-    document_base_transition, document_base_transition::DocumentBaseTransition,
-    merge_serde_json_values, Action, DocumentTransitionObjectLike,
-};
+use super::{document_base_transition::DocumentBaseTransition, DocumentTransitionObjectLike};
+
+pub(self) mod property_names {
+    pub const REVISION: &str = "$revision";
+    pub const UPDATED_AT: &str = "$updatedAt";
+}
 
 /// Identifier fields in [`DocumentReplaceTransition`]
 pub use super::document_base_transition::IDENTIFIER_FIELDS;
@@ -22,83 +29,177 @@ pub struct DocumentReplaceTransition {
     #[serde(flatten)]
     pub base: DocumentBaseTransition,
     #[serde(rename = "$revision")]
-    pub revision: u32,
+    pub revision: Revision,
     #[serde(skip_serializing_if = "Option::is_none", rename = "$updatedAt")]
     pub updated_at: Option<TimestampMillis>,
     #[serde(flatten, skip_serializing_if = "Option::is_none")]
-    pub data: Option<JsonValue>,
+    pub data: Option<BTreeMap<String, Value>>,
 }
 
 impl DocumentReplaceTransition {
-    pub fn get_revision(&self) -> u32 {
-        self.revision
+    pub(crate) fn to_document_for_dry_run(
+        &self,
+        owner_id: Identifier,
+    ) -> Result<Document, ProtocolError> {
+        let properties = self.data.clone().unwrap_or_default();
+        Ok(Document {
+            id: self.base.id,
+            owner_id,
+            properties,
+            created_at: self.updated_at, // we can use the same time, as it can't be worse
+            updated_at: self.updated_at,
+            revision: Some(self.revision),
+        })
+    }
+
+    pub(crate) fn to_extended_document_for_dry_run(
+        &self,
+        owner_id: Identifier,
+    ) -> Result<ExtendedDocument, ProtocolError> {
+        Ok(ExtendedDocument {
+            protocol_version: PROTOCOL_VERSION,
+            document_type_name: self.base.document_type_name.clone(),
+            data_contract_id: self.base.data_contract_id,
+            document: self.to_document_for_dry_run(owner_id)?,
+            data_contract: self.base.data_contract.clone(),
+            metadata: None,
+            entropy: Bytes32::default(),
+        })
+    }
+
+    pub(crate) fn replace_document(&self, document: &mut Document) -> Result<(), ProtocolError> {
+        let properties = self.data.clone().unwrap_or_default();
+        document.revision = Some(self.revision);
+        document.updated_at = self.updated_at;
+        document.properties = properties;
+        Ok(())
+    }
+
+    pub(crate) fn replace_extended_document(
+        &self,
+        document: &mut ExtendedDocument,
+    ) -> Result<(), ProtocolError> {
+        let properties = self.data.clone().unwrap_or_default();
+        document.document.revision = Some(self.revision);
+        document.document.updated_at = self.updated_at;
+        document.document.properties = properties;
+        Ok(())
+    }
+
+    pub(crate) fn patch_document(self, document: &mut Document) -> Result<(), ProtocolError> {
+        let properties = self.data.clone().unwrap_or_default();
+        document.revision = Some(self.revision);
+        document.updated_at = self.updated_at;
+        document.properties.extend(properties);
+        Ok(())
+    }
+
+    pub(crate) fn patch_extended_document(
+        self,
+        document: &mut ExtendedDocument,
+    ) -> Result<(), ProtocolError> {
+        let properties = self.data.clone().unwrap_or_default();
+        document.document.revision = Some(self.revision);
+        document.document.updated_at = self.updated_at;
+        document.document.properties.extend(properties);
+        Ok(())
     }
 }
 
 impl DocumentTransitionObjectLike for DocumentReplaceTransition {
     fn from_json_object(
-        mut json_value: JsonValue,
+        json_value: JsonValue,
         data_contract: DataContract,
     ) -> Result<Self, ProtocolError> {
-        let document_type = json_value.get_string("$type")?;
+        let value: Value = json_value.into();
+        let mut map = value
+            .into_btree_string_map()
+            .map_err(ProtocolError::ValueError)?;
 
-        let (identifiers_paths, binary_paths) =
-            data_contract.get_identifiers_and_binary_paths(document_type)?;
+        let document_type = map.get_str("$type")?;
 
-        // Only dynamic binary paths are replaced with Bytes (no static ones)
-        json_value.replace_binary_paths(binary_paths.into_iter(), ReplaceWith::Bytes)?;
-        // Only dynamic identifiers are replaced with Bytes
-        json_value.replace_identifier_paths(identifiers_paths, ReplaceWith::Bytes)?;
-        let mut document: DocumentReplaceTransition = serde_json::from_value(json_value)?;
+        let (identifiers_paths, binary_paths): (Vec<_>, Vec<_>) =
+            data_contract.get_identifiers_and_binary_paths_owned(document_type)?;
 
-        document.base.action = Action::Replace;
-        document.base.data_contract = data_contract;
+        map.replace_at_paths(binary_paths.into_iter(), ReplacementType::BinaryBytes)?;
+
+        map.replace_at_paths(
+            identifiers_paths
+                .into_iter()
+                .chain(IDENTIFIER_FIELDS.iter().map(|a| a.to_string())),
+            ReplacementType::Identifier,
+        )?;
+        let document = Self::from_value_map(map, data_contract)?;
 
         Ok(document)
     }
 
     fn from_raw_object(
-        mut raw_transition: JsonValue,
+        raw_transition: Value,
         data_contract: DataContract,
     ) -> Result<DocumentReplaceTransition, ProtocolError> {
-        // Only static identifiers are replaced, as the dynamic ones are stored as Arrays
-        raw_transition.replace_identifier_paths(
-            document_base_transition::IDENTIFIER_FIELDS,
-            ReplaceWith::Base58,
-        )?;
-
-        let mut document: DocumentReplaceTransition = serde_json::from_value(raw_transition)?;
-        document.base.action = Action::Replace;
-        document.base.data_contract = data_contract;
-
-        Ok(document)
+        let map = raw_transition
+            .into_btree_string_map()
+            .map_err(ProtocolError::ValueError)?;
+        Self::from_value_map(map, data_contract)
     }
 
-    fn to_object(&self) -> Result<JsonValue, ProtocolError> {
-        let transition_base_value = self.base.to_object()?;
-        let mut transition_create_value = serde_json::to_value(self)?;
+    fn from_value_map(
+        mut map: BTreeMap<String, Value>,
+        data_contract: DataContract,
+    ) -> Result<Self, ProtocolError>
+    where
+        Self: Sized,
+    {
+        Ok(DocumentReplaceTransition {
+            base: DocumentBaseTransition::from_value_map_consume(&mut map, data_contract)?,
+            revision: map
+                .remove_integer(property_names::REVISION)
+                .map_err(ProtocolError::ValueError)?,
+            updated_at: map
+                .remove_optional_integer(property_names::UPDATED_AT)
+                .map_err(ProtocolError::ValueError)?,
+            data: Some(map),
+        })
+    }
 
-        merge_serde_json_values(&mut transition_create_value, transition_base_value)?;
-        Ok(transition_create_value)
+    fn to_object(&self) -> Result<Value, ProtocolError> {
+        Ok(self.to_value_map()?.into())
+    }
+
+    fn to_value_map(&self) -> Result<BTreeMap<String, Value>, ProtocolError> {
+        let mut transition_base_map = self.base.to_value_map()?;
+        transition_base_map.insert(
+            property_names::REVISION.to_string(),
+            Value::U64(self.revision),
+        );
+        if let Some(updated_at) = self.updated_at {
+            transition_base_map.insert(
+                property_names::UPDATED_AT.to_string(),
+                Value::U64(updated_at),
+            );
+        }
+        if let Some(properties) = self.data.clone() {
+            transition_base_map.extend(properties)
+        }
+        Ok(transition_base_map)
     }
 
     fn to_json(&self) -> Result<JsonValue, ProtocolError> {
-        let mut value = serde_json::to_value(self)?;
-        let (identifier_paths, binary_paths) = self
-            .base
-            .data_contract
-            .get_identifiers_and_binary_paths(&self.base.document_type)?;
+        self.to_cleaned_object()?
+            .try_into()
+            .map_err(ProtocolError::ValueError)
+    }
 
-        value.replace_binary_paths(identifier_paths, ReplaceWith::Base58)?;
-        value.replace_binary_paths(binary_paths, ReplaceWith::Base64)?;
-
-        Ok(value)
+    fn to_cleaned_object(&self) -> Result<Value, ProtocolError> {
+        Ok(self.to_value_map()?.into())
     }
 }
 
 #[cfg(test)]
 mod test {
     use super::*;
+    use crate::document::document_transition::Action;
 
     fn init() {
         let _ = env_logger::builder()
@@ -110,11 +211,11 @@ mod test {
     fn test_deserialize_serialize_to_json() {
         init();
         let transition_json = r#"{
+                    "$action": 1,
+                    "$dataContractId": "5wpZAEWndYcTeuwZpkmSa8s49cHXU5q2DhdibesxFSu8",
 					"$id": "6oCKUeLVgjr7VZCyn1LdGbrepqKLmoabaff5WQqyTKYP",
-					"$type": "note",
-					"$action": 1,
-					"$dataContractId": "5wpZAEWndYcTeuwZpkmSa8s49cHXU5q2DhdibesxFSu8",
 					"$revision" : 1,
+					"$type": "note",
 					"message": "example_message_replace"
 				}"#;
 
@@ -122,10 +223,10 @@ mod test {
             serde_json::from_str(transition_json).expect("no error");
 
         assert_eq!(cdt.base.action, Action::Replace);
-        assert_eq!(cdt.base.document_type, "note");
+        assert_eq!(cdt.base.document_type_name, "note");
         assert_eq!(cdt.revision, 1);
         assert_eq!(
-            cdt.data.as_ref().unwrap()["message"],
+            cdt.data.as_ref().unwrap().get_str("message").unwrap(),
             "example_message_replace"
         );
 

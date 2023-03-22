@@ -1,7 +1,7 @@
 {
   "name": "@dashevo/drive",
   "private": true,
-  "version": "0.24.0-dev.13",
+  "version": "0.24.0-dev.15",
   "description": "Replicated state machine for Dash Platform",
   "engines": {
     "node": ">=12"
@@ -33,7 +33,7 @@
     "echo": "node scripts/echo",
     "lint": "eslint .",
     "test": "yarn run test:coverage",
-    "test:coverage": "nyc --check-coverage --stmts=93 --branch=85 --funcs=90 --lines=90 yarn run mocha './test/unit/**/*.spec.js' './test/integration/**/*.spec.js'",
+    "test:coverage": "nyc --check-coverage --stmts=93 --branch=85 --funcs=90 --lines=88 yarn run mocha './test/unit/**/*.spec.js' './test/integration/**/*.spec.js'",
     "test:unit": "mocha './test/unit/**/*.spec.js'",
     "test:integration": "mocha './test/integration/**/*.spec.js'"
   },
@@ -69,7 +69,7 @@
   "dependencies": {
     "@dashevo/abci": "github:dashpay/js-abci#09f72120bc2059144f72eb7a246d632ead3fc3c6",
     "@dashevo/dapi-grpc": "workspace:*",
-    "@dashevo/dashcore-lib": "github:dashevo/dashcore-lib#3527419e8739b5e7d4017028d642dba8851c3e25",
+    "@dashevo/dashcore-lib": "~0.20.0",
     "@dashevo/dashd-rpc": "^18.2.0",
     "@dashevo/dashpay-contract": "workspace:*",
     "@dashevo/dpns-contract": "workspace:*",

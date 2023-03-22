@@ -6,7 +6,7 @@ use crate::identity::errors::InvalidIdentityError;
 use crate::identity::validation::IdentityValidatorWasm;
 
 use crate::{
-    create_asset_lock_proof_from_wasm_instance, utils, with_js_error, ChainAssetLockProofWasm,
+    create_asset_lock_proof_from_wasm_instance, with_js_error, ChainAssetLockProofWasm,
     IdentityCreateTransitionWasm, IdentityTopUpTransitionWasm, IdentityUpdateTransitionWasm,
     IdentityWasm, InstantAssetLockProofWasm,
 };
@@ -16,11 +16,11 @@ use dpp::identity::factory::IdentityFactory;
 use dpp::prelude::Identity;
 
 use serde::Deserialize;
-use serde_json::Value;
 use std::convert::TryInto;
 
 use std::sync::Arc;
 
+use crate::utils::{with_serde_to_platform_value, WithJsError};
 use wasm_bindgen::prelude::wasm_bindgen;
 use wasm_bindgen::JsValue;
 
@@ -56,7 +56,7 @@ impl IdentityFactoryWasm {
         self.0
             .create(asset_lock_proof, public_keys)
             .map(|identity| identity.into())
-            .map_err(from_dpp_err)
+            .with_js_error()
     }
 
     #[wasm_bindgen(js_name=createFromObject)]
@@ -71,9 +71,7 @@ impl IdentityFactoryWasm {
             Default::default()
         };
 
-        let identity_json = utils::stringify(&identity_object)?;
-        let raw_identity: Value =
-            serde_json::from_str(&identity_json).map_err(|e| e.to_string())?;
+        let raw_identity = with_serde_to_platform_value(&identity_object)?;
 
         let result = self
             .0
@@ -162,7 +160,7 @@ impl IdentityFactoryWasm {
         self.0
             .create_identity_create_transition(Identity::from(identity.to_owned()))
             .map(Into::into)
-            .map_err(from_dpp_err)
+            .with_js_error()
     }
 
     #[wasm_bindgen(js_name=createIdentityTopUpTransition)]
@@ -176,7 +174,7 @@ impl IdentityFactoryWasm {
         self.0
             .create_identity_topup_transition(identity_id.to_owned().into(), asset_lock_proof)
             .map(Into::into)
-            .map_err(from_dpp_err)
+            .with_js_error()
     }
 
     #[wasm_bindgen(js_name=createIdentityUpdateTransition)]
@@ -198,7 +196,7 @@ impl IdentityFactoryWasm {
                 Some(now),
             )
             .map(Into::into)
-            .map_err(from_dpp_err)
+            .with_js_error()
     }
 }
 

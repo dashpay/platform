@@ -1,7 +1,7 @@
 #[cfg(any(feature = "full", feature = "verify"))]
 use crate::drive::identity::{identity_key_tree_path_vec, identity_query_keys_tree_path_vec};
 
-#[cfg(feature = "full")]
+#[cfg(any(feature = "full", feature = "verify"))]
 use crate::drive::identity::key::fetch::KeyKindRequestType::{
     AllKeysOfKindRequest, CurrentKeyOfKindRequest,
 };

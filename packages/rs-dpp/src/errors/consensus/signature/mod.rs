@@ -1,42 +1,44 @@
+mod identity_not_found_error;
+mod invalid_identity_public_key_type_error;
+mod invalid_signature_public_key_security_level_error;
+mod missing_public_key_error;
+mod public_key_is_disabled_error;
+mod public_key_security_level_not_met_error;
+mod wrong_public_key_purpose_error;
+
 use thiserror::Error;
 
-use crate::{
-    identity::{KeyID, KeyType, Purpose, SecurityLevel},
-    prelude::Identifier,
-};
+pub use crate::consensus::signature::identity_not_found_error::IdentityNotFoundError;
+pub use crate::consensus::signature::invalid_identity_public_key_type_error::InvalidIdentityPublicKeyTypeError;
+pub use crate::consensus::signature::invalid_signature_public_key_security_level_error::InvalidSignaturePublicKeySecurityLevelError;
+pub use crate::consensus::signature::missing_public_key_error::MissingPublicKeyError;
+pub use crate::consensus::signature::public_key_is_disabled_error::PublicKeyIsDisabledError;
+pub use crate::consensus::signature::public_key_security_level_not_met_error::PublicKeySecurityLevelNotMetError;
+pub use crate::consensus::signature::wrong_public_key_purpose_error::WrongPublicKeyPurposeError;
 
 #[derive(Error, Debug)]
 pub enum SignatureError {
-    #[error("Public key {public_key_id} doesn't exist")]
-    MissingPublicKeyError { public_key_id: KeyID },
+    #[error(transparent)]
+    MissingPublicKeyError(MissingPublicKeyError),
 
-    #[error("Unsupported signature type {public_key_type}. Please use ECDSA (0), BLS (1) or ECDSA_HASH160 (2) keys to sign the state transition")]
-    InvalidIdentityPublicKeyTypeError { public_key_type: KeyType },
+    #[error(transparent)]
+    InvalidIdentityPublicKeyTypeError(InvalidIdentityPublicKeyTypeError),
 
     #[error("Invalid State Transition signature")]
     InvalidStateTransitionSignatureError,
 
-    #[error("Identity {identity_id} not found")]
-    IdentityNotFoundError { identity_id: Identifier },
+    #[error(transparent)]
+    IdentityNotFoundError(IdentityNotFoundError),
 
-    #[error("Invalid public key security level {public_key_security_level}. The state transition requires {required_key_security_level}")]
-    InvalidSignaturePublicKeySecurityLevelError {
-        public_key_security_level: SecurityLevel,
-        required_key_security_level: SecurityLevel,
-    },
+    #[error(transparent)]
+    InvalidSignaturePublicKeySecurityLevelError(InvalidSignaturePublicKeySecurityLevelError),
 
-    #[error("Identity key {public_key_id} is disabled")]
-    PublicKeyIsDisabledError { public_key_id: KeyID },
+    #[error(transparent)]
+    PublicKeyIsDisabledError(PublicKeyIsDisabledError),
 
-    #[error("Invalid security level {public_key_security_level}. This state transition requires at least {required_security_level}")]
-    PublicKeySecurityLevelNotMetError {
-        public_key_security_level: SecurityLevel,
-        required_security_level: SecurityLevel,
-    },
+    #[error(transparent)]
+    PublicKeySecurityLevelNotMetError(PublicKeySecurityLevelNotMetError),
 
-    #[error("Invalid identity key purpose {public_key_purpose}. This state transition requires {key_purpose_requirement}")]
-    WrongPublicKeyPurposeError {
-        public_key_purpose: Purpose,
-        key_purpose_requirement: Purpose,
-    },
+    #[error(transparent)]
+    WrongPublicKeyPurposeError(WrongPublicKeyPurposeError),
 }

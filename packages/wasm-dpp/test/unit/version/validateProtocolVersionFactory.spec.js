@@ -1,48 +1,54 @@
-const UnsupportedProtocolVersionError = require('@dashevo/dpp/lib/errors/consensus/basic/UnsupportedProtocolVersionError');
-const CompatibleProtocolVersionIsNotDefinedError = require('@dashevo/dpp/lib/errors/CompatibleProtocolVersionIsNotDefinedError');
-const IncompatibleProtocolVersionError = require('@dashevo/dpp/lib/errors/consensus/basic/IncompatibleProtocolVersionError');
+const { expectValidationError } = require('../../../lib/test/expect/expectError');
 
-const createDPPMock = require('@dashevo/dpp/lib/test/mocks/createDPPMock');
-const validateProtocolVersionFactory = require('@dashevo/dpp/lib/version/validateProtocolVersionFactory');
-
-const { expectValidationError } = require('@dashevo/dpp/lib/test/expect/expectError');
-const { latestVersion } = require('@dashevo/dpp/lib/version/protocolVersion');
+let {
+  UnsupportedProtocolVersionError,
+  CompatibleProtocolVersionIsNotDefinedError,
+  IncompatibleProtocolVersionError,
+  ProtocolVersionValidator,
+} = require('../../..');
+const { default: loadWasmDpp } = require('../../..');
 
 describe('validateProtocolVersionFactory', () => {
-  let validateProtocolVersion;
-  let dppMock;
+  let protocolVersionValidator;
   let versionCompatibilityMap;
   let currentProtocolVersion;
   let protocolVersion;
 
-  beforeEach(function beforeEach() {
+  before(async () => {
+    ({
+      UnsupportedProtocolVersionError,
+      CompatibleProtocolVersionIsNotDefinedError,
+      IncompatibleProtocolVersionError,
+      ProtocolVersionValidator,
+    } = await loadWasmDpp());
+  });
+
+  beforeEach(() => {
     protocolVersion = 1;
     currentProtocolVersion = 1;
-
-    dppMock = createDPPMock(this.sinonSandbox);
-    dppMock.getProtocolVersion.returns(currentProtocolVersion);
 
     versionCompatibilityMap = {
       1: 1,
     };
 
-    validateProtocolVersion = validateProtocolVersionFactory(
-      dppMock,
+    protocolVersionValidator = new ProtocolVersionValidator({
+      currentProtocolVersion,
+      latestProtocolVersion: protocolVersion,
       versionCompatibilityMap,
-    );
+    });
   });
 
-  it('should throw UnsupportedProtocolVersionError if protocolVersion is higher than latestVersion', () => {
-    protocolVersion = latestVersion + 1;
+  it('should throw UnsupportedProtocolVersionError if protocolVersion is higher than latestVersion', async () => {
+    const highVersion = protocolVersion + 1;
 
-    const result = validateProtocolVersion(protocolVersion);
+    const result = protocolVersionValidator.validate(highVersion);
 
-    expectValidationError(result, UnsupportedProtocolVersionError);
+    await expectValidationError(result, UnsupportedProtocolVersionError);
 
     const error = result.getFirstError();
 
-    expect(error.getParsedProtocolVersion()).to.equal(protocolVersion);
-    expect(error.getLatestVersion()).to.equal(latestVersion);
+    expect(error.getParsedProtocolVersion()).to.equal(highVersion);
+    expect(error.getLatestVersion()).to.equal(protocolVersion);
     expect(error.getCode()).to.equal(1002);
   });
 
@@ -50,8 +56,14 @@ describe('validateProtocolVersionFactory', () => {
     + ' defined for the current protocol version', () => {
     delete versionCompatibilityMap[currentProtocolVersion.toString()];
 
+    protocolVersionValidator = new ProtocolVersionValidator({
+      currentProtocolVersion,
+      latestProtocolVersion: protocolVersion,
+      versionCompatibilityMap,
+    });
+
     try {
-      validateProtocolVersion(protocolVersion);
+      protocolVersionValidator.validate(protocolVersion);
 
       expect.fail('should throw CompatibleProtocolVersionIsNotDefinedError');
     } catch (e) {
@@ -59,7 +71,7 @@ describe('validateProtocolVersionFactory', () => {
     }
   });
 
-  it('should throw IncompatibleProtocolVersionError if parsed version is lower than compatible one', () => {
+  it('should throw IncompatibleProtocolVersionError if parsed version is lower than compatible one', async () => {
     const minimalProtocolVersion = 1;
 
     protocolVersion = 0;
@@ -67,9 +79,15 @@ describe('validateProtocolVersionFactory', () => {
 
     versionCompatibilityMap[currentProtocolVersion.toString()] = minimalProtocolVersion;
 
-    const result = validateProtocolVersion(protocolVersion);
+    protocolVersionValidator = new ProtocolVersionValidator({
+      currentProtocolVersion,
+      latestProtocolVersion: protocolVersion,
+      versionCompatibilityMap,
+    });
 
-    expectValidationError(result, IncompatibleProtocolVersionError);
+    const result = protocolVersionValidator.validate(protocolVersion);
+
+    await expectValidationError(result, IncompatibleProtocolVersionError);
 
     const error = result.getFirstError();
 
