@@ -828,6 +828,8 @@ jobs:
 
       - name: Build packages
         run: yarn build
+        env:
+          CARGO_BUILD_PROFILE: release
 
       - name: Create package
         run: "${GITHUB_WORKSPACE}/scripts/pack_dashmate.sh ${{ matrix.package_type }}"
