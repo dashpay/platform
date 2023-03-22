@@ -21,7 +21,12 @@ module.exports = async function getDocumentsFixture(
   ({ DocumentFactory, DocumentValidator, ProtocolVersionValidator } = await loadWasmDpp());
 
   const documentValidator = new DocumentValidator(new ProtocolVersionValidator());
-  const factory = new DocumentFactory(1, documentValidator, {});
+  const entropyGenerator = {
+    generate() {
+      return crypto.randomBytes(32);
+    },
+  };
+  const factory = new DocumentFactory(1, documentValidator, {}, entropyGenerator);
 
   const ownerId = await generateRandomIdentifierAsync();
 
