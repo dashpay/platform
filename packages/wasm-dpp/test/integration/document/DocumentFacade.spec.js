@@ -7,7 +7,7 @@ const getDocumentTransitionsFixture = require('@dashevo/dpp/lib/test/fixtures/ge
 const { default: loadWasmDpp } = require('../../../dist');
 const getBlsAdapterMock = require('../../../lib/test/mocks/getBlsAdapterMock');
 
-let Document;
+let ExtendedDocument;
 let DataContract;
 let Identifier;
 let ValidationResult;
@@ -27,7 +27,7 @@ describe('DocumentFacade', () => {
 
   beforeEach(async function beforeEach() {
     ({
-      Document,
+      ExtendedDocument,
       DataContract,
       Identifier,
       ValidationResult,
@@ -49,7 +49,7 @@ describe('DocumentFacade', () => {
 
     documentsJs = getDocumentsFixture(dataContractJs);
     documents = documentsJs.map((d) => {
-      const currentDocument = new Document(d.toObject(), dataContract.clone());
+      const currentDocument = new ExtendedDocument(d.toObject(), dataContract.clone());
       currentDocument.setEntropy(d.entropy);
       return currentDocument;
     });
@@ -58,14 +58,16 @@ describe('DocumentFacade', () => {
 
   describe('create', () => {
     it('should create Document - Rust', async () => {
+      const documentType = document.getType();
+      const documentData = document.getData();
       const result = dpp.document.create(
         dataContract,
         ownerId,
-        document.getType(),
-        document.getData(),
+        documentType,
+        documentData,
       );
 
-      expect(result).to.be.an.instanceOf(Document);
+      expect(result).to.be.an.instanceOf(ExtendedDocument);
 
       expect(result.getType()).to.equal(document.getType());
       expect(result.getData()).to.deep.equal(document.getData());
@@ -78,9 +80,10 @@ describe('DocumentFacade', () => {
     });
 
     it('should create Document from plain object - Rust', async () => {
-      const result = await dpp.document.createFromObject(document.toObject());
+      const a = document.toObject();
+      const result = await dpp.document.createFromObject(a);
 
-      expect(result).to.be.an.instanceOf(Document);
+      expect(result).to.be.an.instanceOf(ExtendedDocument);
 
       expect(result.toObject()).to.deep.equal(document.toObject());
     });
@@ -94,7 +97,7 @@ describe('DocumentFacade', () => {
     it('should create Document from serialized - Rust', async () => {
       const result = await dpp.document.createFromBuffer(document.toBuffer());
 
-      expect(result).to.be.an.instanceOf(Document);
+      expect(result).to.be.an.instanceOf(ExtendedDocument);
 
       expect(result.toObject()).to.deep.equal(document.toObject());
     });

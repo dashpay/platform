@@ -1,18 +1,18 @@
 use std::sync::Arc;
 
 use lazy_static::lazy_static;
-use serde_json::Value;
+use platform_value::Value;
+use serde_json::Value as JsonValue;
 
 use crate::identity::state_transition::asset_lock_proof::AssetLockProofValidator;
 use crate::state_repository::StateRepositoryLike;
 use crate::state_transition::state_transition_execution_context::StateTransitionExecutionContext;
-use crate::util::protocol_data::get_protocol_version;
 use crate::validation::{JsonSchemaValidator, ValidationResult};
 use crate::version::ProtocolVersionValidator;
-use crate::{DashPlatformProtocolInitError, NonConsensusError, SerdeParsingError};
+use crate::{DashPlatformProtocolInitError, NonConsensusError};
 
 lazy_static! {
-    static ref INDENTITY_CREATE_TRANSITION_SCHEMA: Value = serde_json::from_str(include_str!(
+    static ref INDENTITY_CREATE_TRANSITION_SCHEMA: JsonValue = serde_json::from_str(include_str!(
         "../../../../../schema/identity/stateTransition/identityTopUp.json"
     ))
     .unwrap();
@@ -45,25 +45,25 @@ impl<SR: StateRepositoryLike> IdentityTopUpTransitionBasicValidator<SR> {
 
     pub async fn validate(
         &self,
-        identity_topup_transition_json: &Value,
+        identity_topup_transition_object: &Value,
         execution_context: &StateTransitionExecutionContext,
     ) -> Result<ValidationResult<()>, NonConsensusError> {
-        let mut result = self
-            .json_schema_validator
-            .validate(identity_topup_transition_json)?;
-
-        let identity_transition_map =
-            identity_topup_transition_json.as_object().ok_or_else(|| {
-                SerdeParsingError::new("Expected identity top up transition to be a json object")
-            })?;
+        let mut result = self.json_schema_validator.validate(
+            &identity_topup_transition_object
+                .try_to_validating_json()
+                .map_err(NonConsensusError::ValueError)?,
+        )?;
 
         if !result.is_valid() {
             return Ok(result);
         }
 
         result.merge(
-            self.protocol_version_validator
-                .validate(get_protocol_version(identity_transition_map)?)?,
+            self.protocol_version_validator.validate(
+                identity_topup_transition_object
+                    .get_integer("protocolVersion")
+                    .map_err(NonConsensusError::ValueError)?,
+            )?,
         );
 
         if !result.is_valid() {
@@ -73,13 +73,9 @@ impl<SR: StateRepositoryLike> IdentityTopUpTransitionBasicValidator<SR> {
         result.merge(
             self.asset_lock_proof_validator
                 .validate_structure(
-                    identity_transition_map
-                        .get(ASSET_LOCK_PROOF_PROPERTY_NAME)
-                        .ok_or_else(|| {
-                            NonConsensusError::SerdeJsonError(String::from(
-                                "identity state transition must contain an asset lock proof",
-                            ))
-                        })?,
+                    identity_topup_transition_object
+                        .get_value(ASSET_LOCK_PROOF_PROPERTY_NAME)
+                        .map_err(NonConsensusError::ValueError)?,
                     execution_context,
                 )
                 .await?,

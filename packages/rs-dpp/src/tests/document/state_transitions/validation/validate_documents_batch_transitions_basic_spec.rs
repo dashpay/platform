@@ -1,5 +1,3 @@
-use std::sync::Arc;
-
 use crate::{
     data_contract::DataContract,
     document::{
@@ -17,20 +15,23 @@ use crate::{
             get_documents_fixture_with_owner_id_from_contract,
             get_protocol_version_validator_fixture,
         },
-        utils::{generate_random_identifier, get_schema_error},
+        utils::get_schema_error,
     },
-    util::json_value::JsonValueExt,
     version::{ProtocolVersionValidator, LATEST_VERSION},
 };
+use std::collections::BTreeMap;
+use std::sync::Arc;
 
+use crate::document::document_transition::document_base_transition::JsonValue;
+use crate::tests::utils::generate_random_identifier_struct;
 use jsonschema::error::ValidationErrorKind;
-use serde_json::{json, Value as JsonValue};
+use platform_value::{platform_value, Value};
 use test_case::test_case;
 
 struct TestData {
     data_contract: DataContract,
     state_transition: DocumentsBatchTransition,
-    raw_state_transition: JsonValue,
+    raw_state_transition: Value,
     protocol_version_validator: ProtocolVersionValidator,
     state_repository_mock: MockStateRepositoryLike,
 }
@@ -53,21 +54,26 @@ fn setup_test(action: Action) -> TestData {
     };
 
     let owner_id = data_contract.owner_id;
-    let raw_transitions: Vec<JsonValue> =
-        transitions.iter().map(|d| d.to_object().unwrap()).collect();
+    let raw_transitions: Vec<Value> = transitions.iter().map(|d| d.to_object().unwrap()).collect();
     let signature = [0_u8; 65].to_vec();
-    let state_transition = DocumentsBatchTransition::from_raw_object(
-        json!({
-            "protocolVersion":  LATEST_VERSION,
-            "ownerId" : owner_id.as_bytes(),
-            "contractId" : data_contract.id().as_bytes(),
-            "transitions" : raw_transitions,
-            "signature": signature,
-            "signaturePublicKeyId": 0,
-        }),
-        vec![data_contract.clone()],
-    )
-    .expect("crating state transition shouldn't fail");
+    let mut map = BTreeMap::new();
+    map.insert("protocolVersion".to_string(), Value::U32(LATEST_VERSION));
+    map.insert(
+        "ownerId".to_string(),
+        Value::Identifier(owner_id.to_buffer()),
+    );
+    map.insert(
+        "contractId".to_string(),
+        Value::Identifier(data_contract.id.to_buffer()),
+    );
+    map.insert("signature".to_string(), Value::Bytes(signature));
+    map.insert("signaturePublicKeyId".to_string(), Value::U32(0));
+
+    map.insert("transitions".to_string(), Value::Array(raw_transitions));
+
+    let state_transition =
+        DocumentsBatchTransition::from_value_map(map, vec![data_contract.clone()])
+            .expect("crating state transition shouldn't fail");
 
     let raw_state_transition = state_transition
         .to_object(false)
@@ -134,7 +140,7 @@ async fn protocol_version_should_be_integer() {
         ..
     } = setup_test(Action::Create);
 
-    raw_state_transition["protocolVersion"] = json!("1");
+    raw_state_transition["protocolVersion"] = platform_value!("1");
 
     let validator = DocumentBatchTransitionBasicValidator::new(
         Arc::new(state_repository_mock),
@@ -160,7 +166,7 @@ async fn protocol_version_should_be_valid() {
         ..
     } = setup_test(Action::Create);
 
-    raw_state_transition["protocolVersion"] = json!("-1");
+    raw_state_transition["protocolVersion"] = platform_value!("-1");
 
     let validator = DocumentBatchTransitionBasicValidator::new(
         Arc::new(state_repository_mock),
@@ -186,7 +192,7 @@ async fn type_should_be_equal_1() {
         ..
     } = setup_test(Action::Create);
 
-    raw_state_transition["type"] = json!(666);
+    raw_state_transition["type"] = platform_value!(666);
 
     let validator = DocumentBatchTransitionBasicValidator::new(
         Arc::new(state_repository_mock),
@@ -215,7 +221,7 @@ async fn property_in_state_transition_should_be_byte_array(property_name: &str) 
     } = setup_test(Action::Create);
 
     let array = ["string"; 32];
-    raw_state_transition[property_name] = json!(array);
+    raw_state_transition[property_name] = platform_value!(array);
 
     let validator = DocumentBatchTransitionBasicValidator::new(
         Arc::new(state_repository_mock),
@@ -250,7 +256,7 @@ async fn owner_id_should_be_no_less_than_32_bytes() {
     } = setup_test(Action::Create);
 
     let array = [0u8; 31];
-    raw_state_transition["ownerId"] = json!(array);
+    raw_state_transition["ownerId"] = platform_value!(array);
 
     let validator = DocumentBatchTransitionBasicValidator::new(
         Arc::new(state_repository_mock),
@@ -278,7 +284,7 @@ async fn owner_id_should_be_no_longer_than_32_bytes() {
 
     let mut array = Vec::new();
     array.resize(33, 0u8);
-    raw_state_transition["ownerId"] = json!(array);
+    raw_state_transition["ownerId"] = platform_value!(array);
 
     let validator = DocumentBatchTransitionBasicValidator::new(
         Arc::new(state_repository_mock),
@@ -304,7 +310,7 @@ async fn transitions_should_be_an_array() {
         ..
     } = setup_test(Action::Create);
 
-    raw_state_transition["transitions"] = json!("not an array");
+    raw_state_transition["transitions"] = platform_value!("not an array");
 
     let validator = DocumentBatchTransitionBasicValidator::new(
         Arc::new(state_repository_mock),
@@ -330,7 +336,7 @@ async fn transitions_should_have_at_least_one_element() {
         ..
     } = setup_test(Action::Create);
 
-    raw_state_transition["transitions"] = json!([]);
+    raw_state_transition["transitions"] = platform_value!([]);
 
     let validator = DocumentBatchTransitionBasicValidator::new(
         Arc::new(state_repository_mock),
@@ -358,9 +364,9 @@ async fn transitions_should_have_no_more_than_10_elements() {
 
     let mut elements = vec![];
     for _ in 0..11 {
-        elements.push(json!({}))
+        elements.push(platform_value!({}))
     }
-    raw_state_transition["transitions"] = JsonValue::Array(elements);
+    raw_state_transition["transitions"] = Value::Array(elements);
 
     let validator = DocumentBatchTransitionBasicValidator::new(
         Arc::new(state_repository_mock),
@@ -386,8 +392,8 @@ async fn transitions_should_have_an_object_as_elements() {
         ..
     } = setup_test(Action::Create);
 
-    let elements = vec![json!(1)];
-    raw_state_transition["transitions"] = JsonValue::Array(elements);
+    let elements = vec![platform_value!(1)];
+    raw_state_transition["transitions"] = Value::Array(elements);
 
     let validator = DocumentBatchTransitionBasicValidator::new(
         Arc::new(state_repository_mock),
@@ -482,7 +488,7 @@ async fn property_should_be_byte_array(property_name: &str) {
     } = setup_test(Action::Create);
 
     let array = ["string"; 32];
-    raw_state_transition["transitions"][0][property_name] = json!(array);
+    raw_state_transition["transitions"][0][property_name] = platform_value!(array);
 
     let validator = DocumentBatchTransitionBasicValidator::new(
         Arc::new(state_repository_mock),
@@ -516,7 +522,7 @@ async fn data_contract_id_should_be_byte_array() {
         ..
     } = setup_test(Action::Create);
 
-    raw_state_transition["transitions"][0]["$dataContractId"] = json!("something");
+    raw_state_transition["transitions"][0]["$dataContractId"] = platform_value!("something");
 
     let validator = DocumentBatchTransitionBasicValidator::new(
         Arc::new(state_repository_mock),
@@ -529,7 +535,7 @@ async fn data_contract_id_should_be_byte_array() {
         .expect("validation result should be returned");
 
     let error = &result.errors()[0];
-    assert_eq!(1025, error.code());
+    assert_eq!(5000, error.code());
 }
 
 #[test_case("$id")]
@@ -544,7 +550,7 @@ async fn property_should_be_no_less_than_32_bytes(property_name: &str) {
     } = setup_test(Action::Create);
 
     let array = [0u8; 31];
-    raw_state_transition["transitions"][0][property_name] = json!(array);
+    raw_state_transition["transitions"][0][property_name] = platform_value!(array);
 
     let validator = DocumentBatchTransitionBasicValidator::new(
         Arc::new(state_repository_mock),
@@ -577,7 +583,7 @@ async fn id_should_be_no_longer_than_32_bytes(property_name: &str) {
 
     let mut array = Vec::new();
     array.resize(33, 0u8);
-    raw_state_transition["transitions"][0][property_name] = json!(array);
+    raw_state_transition["transitions"][0][property_name] = platform_value!(array);
 
     let validator = DocumentBatchTransitionBasicValidator::new(
         Arc::new(state_repository_mock),
@@ -636,7 +642,7 @@ async fn type_should_be_defined_in_data_contract() {
         ..
     } = setup_test(Action::Create);
 
-    raw_state_transition["transitions"][0]["$type"] = json!("wrong");
+    raw_state_transition["transitions"][0]["$type"] = platform_value!("wrong");
 
     let validator = DocumentBatchTransitionBasicValidator::new(
         Arc::new(state_repository_mock),
@@ -661,7 +667,7 @@ async fn should_throw_invalid_document_transaction_action_error_if_action_is_not
         ..
     } = setup_test(Action::Create);
 
-    raw_state_transition["transitions"][0]["$action"] = json!(4);
+    raw_state_transition["transitions"][0]["$action"] = platform_value!(4);
 
     let validator = DocumentBatchTransitionBasicValidator::new(
         Arc::new(state_repository_mock),
@@ -686,7 +692,8 @@ async fn id_should_be_valid_generated_id() {
         ..
     } = setup_test(Action::Create);
 
-    raw_state_transition["transitions"][0]["$id"] = json!(generate_random_identifier());
+    raw_state_transition["transitions"][0]["$id"] =
+        platform_value!(generate_random_identifier_struct());
 
     let validator = DocumentBatchTransitionBasicValidator::new(
         Arc::new(state_repository_mock),
@@ -744,7 +751,7 @@ async fn revision_should_be_number() {
         ..
     } = setup_test(Action::Replace);
 
-    raw_state_transition["transitions"][0]["$revision"] = json!("1");
+    raw_state_transition["transitions"][0]["$revision"] = platform_value!("1");
 
     let validator = DocumentBatchTransitionBasicValidator::new(
         Arc::new(state_repository_mock),
@@ -770,7 +777,7 @@ async fn revision_should_not_be_fractional() {
         ..
     } = setup_test(Action::Replace);
 
-    raw_state_transition["transitions"][0]["$revision"] = json!(1.2);
+    raw_state_transition["transitions"][0]["$revision"] = platform_value!(1.2);
 
     let validator = DocumentBatchTransitionBasicValidator::new(
         Arc::new(state_repository_mock),
@@ -796,7 +803,7 @@ async fn revision_should_be_at_least_1() {
         ..
     } = setup_test(Action::Replace);
 
-    raw_state_transition["transitions"][0]["$revision"] = json!(0);
+    raw_state_transition["transitions"][0]["$revision"] = platform_value!(0);
 
     let validator = DocumentBatchTransitionBasicValidator::new(
         Arc::new(state_repository_mock),
@@ -867,7 +874,7 @@ async fn signature_should_be_not_less_than_65_bytes() {
     } = setup_test(Action::Create);
 
     let array = [0u8; 64].to_vec();
-    raw_state_transition["signature"] = json!(array);
+    raw_state_transition["signature"] = platform_value!(array);
 
     let validator = DocumentBatchTransitionBasicValidator::new(
         Arc::new(state_repository_mock),
@@ -894,7 +901,7 @@ async fn signature_should_be_not_longer_than_96_bytes() {
     } = setup_test(Action::Create);
 
     let array = [0u8; 97].to_vec();
-    raw_state_transition["signature"] = json!(array);
+    raw_state_transition["signature"] = platform_value!(array);
 
     let validator = DocumentBatchTransitionBasicValidator::new(
         Arc::new(state_repository_mock),
@@ -920,7 +927,7 @@ async fn signature_public_key_should_be_an_integer() {
         ..
     } = setup_test(Action::Delete);
 
-    raw_state_transition["signaturePublicKeyId"] = json!(1.4);
+    raw_state_transition["signaturePublicKeyId"] = platform_value!(1.4);
 
     let validator = DocumentBatchTransitionBasicValidator::new(
         Arc::new(state_repository_mock),
@@ -959,7 +966,7 @@ async fn validation_should_be_successful() {
         .await
         .expect("validation result should be returned");
 
-    assert!(result.is_valid());
+    assert!(result.is_valid(), "{:?}", result.errors);
 }
 
 #[tokio::test]

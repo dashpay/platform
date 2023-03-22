@@ -1,5 +1,5 @@
 use anyhow::anyhow;
-use serde_json::Value;
+use platform_value::Value;
 use std::convert::TryInto;
 use std::sync::Arc;
 
@@ -10,7 +10,7 @@ use crate::{
     state_repository::StateRepositoryLike,
     state_transition::StateTransitionLike,
     validation::SimpleValidationResult,
-    NonConsensusError, SerdeParsingError, StateError,
+    NonConsensusError, StateError,
 };
 
 use super::identity_update_transition::{property_names, IdentityUpdateTransition};
@@ -48,7 +48,12 @@ where
             .map(TryInto::try_into)
             .transpose()
             .map_err(Into::into)
-            .map_err(|e| NonConsensusError::StateRepositoryFetchError(e.to_string()))?;
+            .map_err(|e| {
+                NonConsensusError::StateRepositoryFetchError(format!(
+                    "state repository fetch identity for identity update validation error: {}",
+                    e.to_string()
+                ))
+            })?;
 
         if state_transition.get_execution_context().is_dry_run() {
             return Ok(validation_result);
@@ -105,7 +110,12 @@ where
                 .state_repository
                 .fetch_latest_platform_block_time()
                 .await
-                .map_err(|e| NonConsensusError::StateRepositoryFetchError(e.to_string()))?;
+                .map_err(|e| {
+                    NonConsensusError::StateRepositoryFetchError(format!(
+                        "state repository fetch latest platform block time error: {}",
+                        e.to_string()
+                    ))
+                })?;
 
             let disabled_at_ms = state_transition.get_public_keys_disabled_at().ok_or(
                 NonConsensusError::RequiredPropertyError {
@@ -147,13 +157,15 @@ where
                 .map(|k| k.to_identity_public_key()),
         );
 
-        let raw_public_keys: Vec<Value> = identity
+        let raw_public_keys = identity
             .public_keys
             .values()
-            .map(|pk| pk.to_raw_json_object())
-            .collect::<Result<_, SerdeParsingError>>()?;
+            .map(|pk| pk.try_into().map_err(NonConsensusError::ValueError))
+            .collect::<Result<Vec<Value>, NonConsensusError>>()?;
 
-        let result = self.public_keys_validator.validate_keys(&raw_public_keys)?;
+        let result = self
+            .public_keys_validator
+            .validate_keys(raw_public_keys.as_slice())?;
         if !result.is_valid() {
             return Ok(result);
         }

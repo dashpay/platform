@@ -1,11 +1,15 @@
 #[cfg(test)]
 mod apply_identity_credit_withdrawal_transition_factory {
     use dashcore::{consensus, BlockHeader};
-    use serde_json::json;
 
+    use std::collections::BTreeMap;
+
+    use crate::contracts::withdrawals_contract::property_names::{
+        AMOUNT, CORE_FEE_PER_BYTE, OUTPUT_SCRIPT, POOLING, STATUS,
+    };
+    use crate::document::ExtendedDocument;
     use crate::{
         contracts::withdrawals_contract,
-        document::Document,
         identity::state_transition::identity_credit_withdrawal_transition::{
             apply_identity_credit_withdrawal_transition_factory::ApplyIdentityCreditWithdrawalTransition,
             IdentityCreditWithdrawalTransition, Pooling,
@@ -14,6 +18,7 @@ mod apply_identity_credit_withdrawal_transition_factory {
         tests::fixtures::get_data_contract_fixture,
     };
     use mockall::predicate::{always, eq};
+    use platform_value::Value;
     use std::default::Default;
 
     #[tokio::test]
@@ -82,18 +87,25 @@ mod apply_identity_credit_withdrawal_transition_factory {
         state_repository
             .expect_create_document()
             .times(1)
-            .withf(move |doc, _| {
-                let created_at_match = doc.created_at == Some(block_time_seconds as i64 * 1000);
-                let updated_at_match = doc.created_at == Some(block_time_seconds as i64 * 1000);
+            .withf(move |extended_document: &ExtendedDocument, _| {
+                let document = &extended_document.document;
+                let created_at_match =
+                    document.created_at == Some(block_time_seconds as u64 * 1000);
+                let updated_at_match =
+                    document.updated_at == Some(block_time_seconds as u64 * 1000);
 
-                let document_data_match = doc.data
-                    == json!({
-                        "amount": 10,
-                        "coreFeePerByte": 0,
-                        "pooling": Pooling::Never,
-                        "outputScript": [],
-                        "status": withdrawals_contract::WithdrawalStatus::QUEUED,
-                    });
+                let document_expected_properties = BTreeMap::from([
+                    (AMOUNT.to_string(), Value::U64(10)),
+                    (CORE_FEE_PER_BYTE.to_string(), Value::U32(0)),
+                    (POOLING.to_string(), Value::U8(Pooling::Never as u8)),
+                    (OUTPUT_SCRIPT.to_string(), Value::Bytes(vec![])),
+                    (
+                        STATUS.to_string(),
+                        Value::U8(withdrawals_contract::WithdrawalStatus::QUEUED as u8),
+                    ),
+                ]);
+
+                let document_data_match = document.properties == document_expected_properties;
 
                 created_at_match && updated_at_match && document_data_match
             })

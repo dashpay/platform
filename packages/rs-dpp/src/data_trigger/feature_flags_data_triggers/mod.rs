@@ -1,9 +1,9 @@
 use anyhow::{anyhow, bail, Context};
+use platform_value::btreemap_extensions::BTreeValueMapHelper;
 
 use crate::{
     data_trigger::create_error, document::document_transition::DocumentTransition,
     get_from_transition, prelude::Identifier, state_repository::StateRepositoryLike,
-    util::json_value::JsonValueExt,
 };
 
 use super::{DataTriggerExecutionContext, DataTriggerExecutionResult};
@@ -43,9 +43,14 @@ where
     let block_height = context
         .state_repository
         .fetch_latest_platform_block_height()
-        .await? as i64;
+        .await?;
 
-    let enable_at_height = data.get_i64(PROPERTY_ENABLE_AT_HEIGHT)?;
+    let enable_at_height: u64 = data.get_integer(PROPERTY_ENABLE_AT_HEIGHT).map_err(|_| {
+        anyhow!(
+            "property missing for create_feature_flag_data_trigger '{}'",
+            PROPERTY_ENABLE_AT_HEIGHT
+        )
+    })?;
 
     if enable_at_height < block_height {
         let err = create_error(
@@ -85,12 +90,12 @@ mod test {
         let transition_execution_context = StateTransitionExecutionContext::default();
         let state_repository = MockStateRepositoryLike::new();
         let data_contract = get_data_contract_fixture(None);
-        let owner_id = data_contract.owner_id().to_owned();
+        let owner_id = &data_contract.owner_id;
 
         let document_transition = DocumentTransition::Create(Default::default());
         let data_trigger_context = DataTriggerExecutionContext {
             data_contract: &data_contract,
-            owner_id: &owner_id,
+            owner_id,
             state_repository: &state_repository,
             state_transition_execution_context: &transition_execution_context,
         };

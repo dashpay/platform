@@ -419,7 +419,7 @@ impl Drive {
 
         let contract = <Contract as DriveContractExt>::from_cbor(&contract_cbor, contract_id)?;
 
-        let contract_id = contract_id.unwrap_or_else(|| *contract.id().as_bytes());
+        let contract_id = contract_id.unwrap_or_else(|| *contract.id.as_bytes());
 
         // Since we can update the contract by definition it already has storage flags
         let storage_flags = Some(StorageFlags::new_single_epoch(
@@ -1223,7 +1223,10 @@ mod tests {
                     owned_document_info: OwnedDocumentInfo {
                         document_info: DocumentInfo::DocumentRefAndSerialization((
                             &document,
-                            document.to_cbor().as_slice(),
+                            document
+                                .to_cbor()
+                                .expect("expected to encode to cbor")
+                                .as_slice(),
                             storage_flags,
                         )),
                         owner_id: Some(random_owner_id),
@@ -1262,7 +1265,10 @@ mod tests {
                     owned_document_info: OwnedDocumentInfo {
                         document_info: DocumentInfo::DocumentRefAndSerialization((
                             &document,
-                            document.to_cbor().as_slice(),
+                            document
+                                .to_cbor()
+                                .expect("expected to encode to cbor")
+                                .as_slice(),
                             storage_flags,
                         )),
                         owner_id: Some(random_owner_id),
@@ -1379,6 +1385,7 @@ mod tests {
     mod get_contract_with_fetch_info {
         use super::*;
         use dpp::prelude::Identifier;
+        use dpp::Convertible;
 
         #[test]
         fn should_get_contract_from_global_and_block_cache() {
@@ -1401,20 +1408,20 @@ mod tests {
                 .expect("should update contract");
 
             let fetch_info_from_database = drive
-                .get_contract_with_fetch_info(contract.id().to_buffer(), None, None)
+                .get_contract_with_fetch_info(contract.id.to_buffer(), None, None)
                 .expect("should get contract")
                 .1
                 .expect("should be present");
 
-            assert_eq!(fetch_info_from_database.contract.version(), 1);
+            assert_eq!(fetch_info_from_database.contract.version, 1);
 
             let fetch_info_from_cache = drive
-                .get_contract_with_fetch_info(contract.id().to_buffer(), None, Some(&transaction))
+                .get_contract_with_fetch_info(contract.id.to_buffer(), None, Some(&transaction))
                 .expect("should get contract")
                 .1
                 .expect("should be present");
 
-            assert_eq!(fetch_info_from_cache.contract.version(), 2);
+            assert_eq!(fetch_info_from_cache.contract.version, 2);
         }
 
         #[test]
@@ -1510,7 +1517,7 @@ mod tests {
 
             let mut deep_contract_fetch_info_transactional = drive
                 .get_contract_with_fetch_info(
-                    deep_contract.id().to_buffer(),
+                    deep_contract.id.to_buffer(),
                     Some(&Epoch::new(0)),
                     Some(&transaction),
                 )
@@ -1534,7 +1541,7 @@ mod tests {
              */
 
             let deep_contract_fetch_info = drive
-                .get_contract_with_fetch_info(deep_contract.id().to_buffer(), None, None)
+                .get_contract_with_fetch_info(deep_contract.id.to_buffer(), None, None)
                 .expect("got contract")
                 .1
                 .expect("got contract fetch info");
@@ -1569,7 +1576,7 @@ mod tests {
              */
 
             let deep_contract_fetch_info_without_cache = drive
-                .get_contract_with_fetch_info(deep_contract.id().to_buffer(), None, None)
+                .get_contract_with_fetch_info(deep_contract.id.to_buffer(), None, None)
                 .expect("got contract")
                 .1
                 .expect("got contract fetch info");
@@ -1636,7 +1643,7 @@ mod tests {
 
             let mut deep_contract_fetch_info_transactional2 = drive
                 .get_contract_with_fetch_info(
-                    deep_contract.id().to_buffer(),
+                    deep_contract.id.to_buffer(),
                     Some(&Epoch::new(0)),
                     Some(&transaction),
                 )

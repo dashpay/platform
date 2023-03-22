@@ -2,7 +2,7 @@ use crate::bls_adapter::BlsAdapter;
 use crate::errors::from_dpp_err;
 use crate::state_repository::{ExternalStateRepositoryLike, ExternalStateRepositoryLikeWrapper};
 use crate::state_transition_factory::StateTransitionFactoryWasm;
-use crate::utils::ToSerdeJSONExt;
+use crate::utils::{ToSerdeJSONExt, WithJsError};
 use crate::validation::ValidationResultWasm;
 use crate::with_js_error;
 use dpp::state_transition::state_transition_execution_context::StateTransitionExecutionContext;
@@ -33,7 +33,7 @@ impl StateTransitionFacadeWasm {
             bls_adapter,
             protocol_version_validator,
         )
-        .map_err(from_dpp_err)?;
+        .with_js_error()?;
 
         Ok(StateTransitionFacadeWasm(state_transition_facade))
     }
@@ -53,7 +53,7 @@ impl StateTransitionFacadeWasm {
             Default::default()
         };
 
-        let raw_state_transition = raw_state_transition.with_serde_to_json_value()?;
+        let raw_state_transition = raw_state_transition.with_serde_to_platform_value()?;
 
         let result = self
             .0
@@ -115,16 +115,16 @@ impl StateTransitionFacadeWasm {
                     super::super::conversion::state_transition_wasm_to_object(
                         &raw_state_transition,
                     )?
-                    .with_serde_to_json_value()?;
+                    .with_serde_to_platform_value()?;
                 (state_transition, state_transition_json, execution_context)
             } else {
-                let state_transition_json = raw_state_transition.with_serde_to_json_value()?;
+                let state_transition_json = raw_state_transition.with_serde_to_platform_value()?;
                 let execution_context = StateTransitionExecutionContext::default();
                 let state_transition = self
                     .0
                     .create_from_object(state_transition_json.clone(), true)
                     .await
-                    .map_err(from_dpp_err)?;
+                    .with_js_error()?;
                 (state_transition, state_transition_json, execution_context)
             };
 
@@ -137,7 +137,7 @@ impl StateTransitionFacadeWasm {
                 options.into(),
             )
             .await
-            .map_err(from_dpp_err)?;
+            .with_js_error()?;
 
         Ok(validation_result.map(|_| JsValue::undefined()).into())
     }
@@ -161,9 +161,9 @@ impl StateTransitionFacadeWasm {
             //  state_transition.to_object() returns value that does not pass basic validation
             state_transition_json =
                 super::super::conversion::state_transition_wasm_to_object(&raw_state_transition)?
-                    .with_serde_to_json_value()?;
+                    .with_serde_to_platform_value()?;
         } else {
-            state_transition_json = raw_state_transition.with_serde_to_json_value()?;
+            state_transition_json = raw_state_transition.with_serde_to_platform_value()?;
             execution_context = StateTransitionExecutionContext::default();
         }
 
@@ -171,7 +171,7 @@ impl StateTransitionFacadeWasm {
             .0
             .validate_basic(&state_transition_json, &execution_context)
             .await
-            .map_err(from_dpp_err)?;
+            .with_js_error()?;
 
         Ok(validation_result.map(|_| JsValue::undefined()).into())
     }
@@ -190,7 +190,7 @@ impl StateTransitionFacadeWasm {
             .0
             .validate_signature(state_transition)
             .await
-            .map_err(from_dpp_err)?;
+            .with_js_error()?;
 
         Ok(validation_result.map(|_| JsValue::undefined()).into())
     }
@@ -209,7 +209,7 @@ impl StateTransitionFacadeWasm {
             .0
             .validate_fee(&state_transition)
             .await
-            .map_err(from_dpp_err)?;
+            .with_js_error()?;
 
         Ok(validation_result.map(|_| JsValue::undefined()).into())
     }
@@ -228,7 +228,7 @@ impl StateTransitionFacadeWasm {
             .0
             .validate_state(&state_transition)
             .await
-            .map_err(from_dpp_err)?;
+            .with_js_error()?;
 
         Ok(validation_result.map(|_| JsValue::undefined()).into())
     }

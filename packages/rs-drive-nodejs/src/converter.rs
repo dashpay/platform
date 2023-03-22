@@ -1,4 +1,5 @@
 use drive::dpp::identity::{IdentityPublicKey, KeyID, KeyType, Purpose, SecurityLevel};
+use drive::dpp::platform_value::BinaryData;
 use drive::drive::block_info::BlockInfo;
 use drive::drive::flags::StorageFlags;
 use drive::fee::credits::Credits;
@@ -485,7 +486,7 @@ pub fn js_object_to_identity_public_key<'a, C: Context<'a>>(
         security_level,
         key_type,
         read_only,
-        data,
+        data: BinaryData::new(data),
         disabled_at,
     })
 }

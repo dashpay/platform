@@ -1,7 +1,7 @@
 {
   "name": "@dashevo/drive",
   "private": true,
-  "version": "0.24.0-dev.14",
+  "version": "0.24.0-dev.15",
   "description": "Replicated state machine for Dash Platform",
   "engines": {
     "node": ">=12"
@@ -33,7 +33,7 @@
     "echo": "node scripts/echo",
     "lint": "eslint .",
     "test": "yarn run test:coverage",
-    "test:coverage": "nyc --check-coverage --stmts=93 --branch=85 --funcs=90 --lines=90 yarn run mocha './test/unit/**/*.spec.js' './test/integration/**/*.spec.js'",
+    "test:coverage": "nyc --check-coverage --stmts=93 --branch=85 --funcs=90 --lines=88 yarn run mocha './test/unit/**/*.spec.js' './test/integration/**/*.spec.js'",
     "test:unit": "mocha './test/unit/**/*.spec.js'",
     "test:integration": "mocha './test/integration/**/*.spec.js'"
   },

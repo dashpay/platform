@@ -37,7 +37,7 @@ use crate::drive::defaults::DEFAULT_HASH_SIZE_U8;
 use crate::drive::flags::StorageFlags;
 use crate::drive::{defaults, RootTree};
 use dpp::data_contract::document_type::DocumentType;
-use dpp::document::document_stub::DocumentStub;
+use dpp::document::Document;
 use grovedb::batch::key_info::KeyInfo;
 use grovedb::batch::KeyInfoPath;
 use grovedb::reference_path::ReferencePathType::UpstreamRootHeightReference;
@@ -138,7 +138,7 @@ fn contract_documents_keeping_history_storage_time_reference_path_size(
 
 /// Creates a reference to a document.
 fn make_document_reference(
-    document: &DocumentStub,
+    document: &Document,
     document_type: &DocumentType,
     storage_flags: Option<&StorageFlags>,
 ) -> Element {
@@ -147,7 +147,7 @@ fn make_document_reference(
     // 0 represents document storage
     // Then we add document id
     // Then we add 0 if the document type keys history
-    let mut reference_path = vec![vec![0], Vec::from(document.id)];
+    let mut reference_path = vec![vec![0], document.id.to_vec()];
     let mut max_reference_hops = 1;
     if document_type.documents_keep_history {
         reference_path.push(vec![0]);

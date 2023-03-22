@@ -6,7 +6,7 @@ const getDocumentsFixture = require('@dashevo/dpp/lib/test/fixtures/getDocuments
 
 const { default: loadWasmDpp } = require('../../../../../dist');
 
-let Document;
+let ExtendedDocument;
 let DataContract;
 let ProtocolVersionValidator;
 let DocumentValidator;
@@ -24,12 +24,14 @@ describe('DocumentBatchTransition', () => {
 
   beforeEach(async function beforeEach() {
     ({
-      Document,
+      ExtendedDocument,
       DataContract,
       ProtocolVersionValidator,
       DocumentFactory,
       DocumentValidator,
     } = await loadWasmDpp());
+
+    console.log(ExtendedDocument);
     const dataContractFixtureJs = getDataContractFixture();
 
     dataContractFixtureJs.documents.niceDocument
@@ -43,7 +45,7 @@ describe('DocumentBatchTransition', () => {
     // 1 and 2 are pretty documents,
     // 3 and 4 are indexed documents that do not have security level specified
     documentsFixture = getDocumentsFixture(dataContractFixtureJs).map((doc) => {
-      const document = new Document(doc.toObject(), dataContractFixture.clone());
+      const document = new ExtendedDocument(doc.toObject(), dataContractFixture.clone());
       document.setEntropy(doc.entropy);
       return document;
     });

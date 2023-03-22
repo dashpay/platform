@@ -1,5 +1,5 @@
 const createStateRepositoryMock = require('@dashevo/dpp/lib/test/mocks/createStateRepositoryMock');
-const getIdentityUpdateTransitionFixture = require('@dashevo/dpp/lib/test/fixtures/getIdentityUpdateTransitionFixture');
+const getIdentityUpdateTransitionFixture = require('../../../../../lib/test/fixtures/getIdentityUpdateTransitionFixture');
 
 const { default: loadWasmDpp } = require('../../../../../dist');
 
@@ -10,22 +10,18 @@ describe('applyIdentityUpdateTransition', () => {
   let executionContext;
 
   let StateTransitionExecutionContext;
-  let IdentityUpdateTransition;
 
   let applyIdentityUpdateTransitionDPP;
 
   before(async () => {
     ({
       StateTransitionExecutionContext,
-      IdentityUpdateTransition,
       applyIdentityUpdateTransition: applyIdentityUpdateTransitionDPP,
     } = await loadWasmDpp());
   });
 
   beforeEach(async function beforeEach() {
-    stateTransition = new IdentityUpdateTransition(
-      getIdentityUpdateTransitionFixture().toObject(),
-    );
+    stateTransition = await getIdentityUpdateTransitionFixture();
     stateTransition.setRevision(stateTransition.getRevision() + 1);
 
     executionContext = new StateTransitionExecutionContext();

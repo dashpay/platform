@@ -23,6 +23,7 @@ use crate::errors::consensus::basic::{
     BasicError, IncompatibleProtocolVersionError, JsonSchemaError, UnsupportedProtocolVersionError,
 };
 use crate::errors::StateError;
+use platform_value::Error as ValueError;
 
 use super::basic::identity::{
     IdentityInsufficientBalanceError, InvalidIdentityCreditWithdrawalTransitionCoreFeeError,
@@ -122,6 +123,9 @@ pub enum ConsensusError {
     #[error(transparent)]
     FeeError(FeeError),
 
+    #[error(transparent)]
+    ValueError(ValueError),
+
     #[cfg(test)]
     #[cfg_attr(test, error(transparent))]
     TestConsensusError(TestConsensusError),
@@ -131,6 +135,13 @@ impl ConsensusError {
     pub fn json_schema_error(&self) -> Option<&JsonSchemaError> {
         match self {
             ConsensusError::JsonSchemaError(err) => Some(err),
+            _ => None,
+        }
+    }
+
+    pub fn value_error(&self) -> Option<&ValueError> {
+        match self {
+            ConsensusError::ValueError(err) => Some(err),
             _ => None,
         }
     }
@@ -179,6 +190,7 @@ impl ConsensusError {
             // Custom error for tests
             #[cfg(test)]
             ConsensusError::TestConsensusError(_) => 1000,
+            ConsensusError::ValueError(_) => 5000,
         }
     }
 }
@@ -325,5 +337,11 @@ impl From<SignatureError> for ConsensusError {
 impl From<FeeError> for ConsensusError {
     fn from(err: FeeError) -> Self {
         Self::FeeError(err)
+    }
+}
+
+impl From<ValueError> for ConsensusError {
+    fn from(err: ValueError) -> Self {
+        Self::ValueError(err)
     }
 }
