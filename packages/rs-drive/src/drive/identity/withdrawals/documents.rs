@@ -9,7 +9,7 @@ use indexmap::IndexMap;
 use lazy_static::__Deref;
 
 use crate::{
-    drive::{query::QueryDocumentsOutcome, Drive},
+    drive::{query::QuerySerializedDocumentsOutcome, Drive},
     error::{drive::DriveError, Error},
     query::{DriveQuery, InternalClauses, OrderClause, WhereClause},
 };
@@ -76,11 +76,11 @@ impl Drive {
             block_time: None,
         };
 
-        let QueryDocumentsOutcome {
+        let QuerySerializedDocumentsOutcome {
             items,
             skipped: _,
             cost: _,
-        } = self.query_documents(drive_query, None, transaction)?;
+        } = self.query_documents_as_serialized(drive_query, None, transaction)?;
 
         let documents = items
             .iter()
@@ -157,11 +157,11 @@ impl Drive {
             block_time: None,
         };
 
-        let QueryDocumentsOutcome {
+        let QuerySerializedDocumentsOutcome {
             items,
             skipped: _,
             cost: _,
-        } = self.query_documents(drive_query, None, transaction)?;
+        } = self.query_documents_as_serialized(drive_query, None, transaction)?;
 
         let documents = items
             .iter()

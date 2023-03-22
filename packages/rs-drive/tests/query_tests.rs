@@ -106,7 +106,7 @@ use drive::contract::Contract;
 use drive::drive::block_info::BlockInfo;
 use drive::drive::defaults;
 #[cfg(feature = "full")]
-use drive::drive::query::QueryDocumentsOutcome;
+use drive::drive::query::QuerySerializedDocumentsOutcome;
 use drive::query;
 use drive::query::{WhereClause, WhereOperator};
 use drive::tests::helpers::setup::setup_drive_with_initial_state_structure;
@@ -2615,7 +2615,7 @@ fn test_query_with_cached_contract() {
     let where_cbor = serializer::serializable_value_to_cbor(&query_value, None)
         .expect("expected to serialize to cbor");
 
-    let QueryDocumentsOutcome { items, .. } = drive
+    let QuerySerializedDocumentsOutcome { items, .. } = drive
         .query_documents_cbor_with_document_type_lookup(
             where_cbor.as_slice(),
             *contract.id.as_bytes(),
@@ -4385,7 +4385,7 @@ fn test_query_documents_by_created_at() {
             .expect("expected to serialize to cbor");
 
     let contract =
-        DataContract::from_cbor(&contract_cbor).expect("should create a contract from cbor");
+        DataContract::from_json_object(contract).expect("should create a contract from cbor");
 
     drive
         .apply_contract(
@@ -4438,7 +4438,7 @@ fn test_query_documents_by_created_at() {
     let query_cbor = cbor!({
         "where" => [
             ["$createdAt", "==", created_at]
-        ]
+        ],
     })
     .expect("should create cbor");
 
@@ -4462,16 +4462,10 @@ fn test_query_documents_by_created_at() {
     );
 
     let query_result = drive
-        .query_documents_cbor_with_document_type_lookup(
-            &query_bytes,
-            contract.id.to_buffer(),
-            "indexedDocument",
-            None,
-            None,
-        )
+        .query_documents(query, None, None)
         .expect("should query documents");
 
-    assert_eq!(query_result.items.len(), 1);
+    assert_eq!(query_result.documents.len(), 1);
 }
 
 #[cfg(feature = "full")]

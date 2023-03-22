@@ -45,7 +45,7 @@ use drive::dpp::document::Document;
 use drive::dpp::util::serializer;
 use drive::drive::block_info::BlockInfo;
 use drive::drive::flags::StorageFlags;
-use drive::drive::query::QueryDocumentsOutcome;
+use drive::drive::query::QuerySerializedDocumentsOutcome;
 use drive::grovedb::TransactionArg;
 use serde_json::json;
 use std::borrow::Cow;
@@ -75,7 +75,7 @@ impl Platform {
         let query_cbor = serializer::serializable_value_to_cbor(&query_json, None)
             .expect("expected to serialize to cbor");
 
-        let QueryDocumentsOutcome { items, .. } =
+        let QuerySerializedDocumentsOutcome { items, .. } =
             self.drive.query_documents_cbor_with_document_type_lookup(
                 &query_cbor,
                 MN_REWARD_SHARES_CONTRACT_ID,

@@ -12,6 +12,7 @@ use rand::distributions::{Alphanumeric, Standard};
 use rand::rngs::StdRng;
 use rand::Rng;
 use serde::{Deserialize, Serialize};
+use crate::prelude::TimestampMillis;
 
 use super::array_field::ArrayFieldType;
 
@@ -654,7 +655,7 @@ impl DocumentFieldType {
                 }
             }
             DocumentFieldType::Date => {
-                encode_float(value.to_float().map_err(ProtocolError::ValueError)?)
+                encode_date_timestamp(value.to_integer().map_err(ProtocolError::ValueError)?)
             }
             DocumentFieldType::Integer => {
                 let value_as_i64 = value.to_integer().map_err(ProtocolError::ValueError)?;
@@ -776,6 +777,10 @@ fn get_field_type_matching_error() -> ProtocolError {
     ProtocolError::DataContractError(DataContractError::ValueWrongType(
         "document field type doesn't match document value",
     ))
+}
+
+pub fn encode_date_timestamp(val: TimestampMillis) -> Result<Vec<u8>, ProtocolError> {
+    encode_unsigned_integer(val)
 }
 
 pub fn encode_unsigned_integer(val: u64) -> Result<Vec<u8>, ProtocolError> {

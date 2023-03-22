@@ -46,7 +46,7 @@ use platform_value::btreemap_extensions::BTreeValueRemoveFromMapHelper;
 use platform_value::Value;
 use serde::{Deserialize, Serialize};
 
-use crate::data_contract::document_type::{encode_unsigned_integer, DocumentType};
+use crate::data_contract::document_type::{encode_date_timestamp, DocumentType};
 use crate::data_contract::errors::DataContractError;
 
 use crate::document::errors::DocumentError;
@@ -100,6 +100,8 @@ impl Document {
         document_type: &DocumentType,
         owner_id: Option<[u8; 32]>,
     ) -> Result<Option<Vec<u8>>, ProtocolError> {
+        // todo: maybe merge with document_type.serialize_value_for_key() because we use different
+        //   code paths for query and index creation
         // returns the owner id if the key path is $ownerId and an owner id is given
         if key_path == "$ownerId" && owner_id.is_some() {
             Ok(Some(Vec::from(owner_id.unwrap())))
@@ -111,12 +113,12 @@ impl Document {
                 "$createdAt" => {
                     return Ok(self
                         .created_at
-                        .map(|time| encode_unsigned_integer(time).unwrap()))
+                        .map(|time| encode_date_timestamp(time).unwrap()))
                 }
                 "$updatedAt" => {
                     return Ok(self
                         .updated_at
-                        .map(|time| encode_unsigned_integer(time).unwrap()))
+                        .map(|time| encode_date_timestamp(time).unwrap()))
                 }
                 _ => {}
             }
