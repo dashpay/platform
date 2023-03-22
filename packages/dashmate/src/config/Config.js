@@ -104,6 +104,16 @@ class Config {
   }
 
   /**
+   * Remove by path
+   *
+   * @param {string} path
+   * @returns {Config}
+   */
+  remove(path) {
+    return this.set(path, undefined);
+  }
+
+  /**
    * Get options
    *
    * @return {Object}

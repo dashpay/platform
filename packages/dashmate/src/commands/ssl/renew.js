@@ -10,12 +10,7 @@ class RenewCommand extends ConfigBaseCommand {
    * @param {Object} args
    * @param {Object} flags
    * @param {Config} config
-   * @param {createCertificate} createCertificate
-   * @param {verifyDomain} verifyDomain
-   * @param {downloadCertificate} downloadCertificate
-   * @param {listCertificates} listCertificates
-   * @param {saveCertificateTask} saveCertificateTask
-   * @param {VerificationServer} verificationServer
+   * @param {renewZeroSSLCertificateTask} renewZeroSSLCertificateTask
    * @return {Promise<void>}
    */
   async runWithDependencies(

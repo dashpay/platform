@@ -1,9 +1,9 @@
 const fs = require('fs');
 
-const CouldNotCreateHomeDirError = require('./config/errors/CouldNotCreateHomeDirError');
-const HomeDirIsNotWritableError = require('./config/errors/HomeDirIsNotWritableError');
+const CouldNotCreateHomeDirError = require('./errors/CouldNotCreateHomeDirError');
+const HomeDirIsNotWritableError = require('./errors/HomeDirIsNotWritableError');
 
-const { HOME_DIR_PATH } = require('./constants');
+const { HOME_DIR_PATH } = require('../constants');
 
 /**
  * @return {ensureHomeDir}
