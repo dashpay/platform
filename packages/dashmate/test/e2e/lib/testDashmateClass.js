@@ -23,7 +23,7 @@ class TestDashmateClass {
    * @param {string} args
    */
   async setupLocal(nodes = 3, minerInterval = '2.5m', ...args) {
-    const res = await execute(`dashmate setup local --node-count=${nodes} --debug-logs --miner-interval=${minerInterval} ${args} --verbose`);
+    const res = await execute(`yarn dashmate setup local --node-count=${nodes} --debug-logs --miner-interval=${minerInterval} ${args} --verbose`);
 
     if (res.status !== undefined) {
       throw new Error(`${res.stderr} with exit code: ${res.status}`);
