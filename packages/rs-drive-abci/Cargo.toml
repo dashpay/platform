@@ -5,6 +5,7 @@ authors = [
     "Samuel Westrich <sam@dash.org>",
     "Ivan Shumkov <ivan@shumkov.ru>",
     "Djavid Gabibiyan <djavid@dash.org>",
+    "Lukasz Klimek <lukasz.klimek@dash.org>",
 ]
 edition = "2021"
 license = "MIT"

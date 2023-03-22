@@ -54,35 +54,6 @@ RUN rustup install stable
 #
 WORKDIR /usr/src/platform-fetch
 
-# We copy just .toml files and create some dummy files to avoid copying over full source.
-# If we copy everything, docker layered caching will invalidate the cache when any file changes.
-# But we only care about files with dependencies.
-
-# COPY Cargo.lock Cargo.toml .
-# COPY packages/rs-dpp/Cargo.toml packages/rs-dpp/Cargo.toml
-# COPY packages/wasm-dpp/Cargo.toml packages/wasm-dpp/Cargo.toml
-# COPY packages/rs-drive/Cargo.toml packages/rs-drive/Cargo.toml
-# COPY packages/rs-drive/Cargo.toml packages/rs-drive/Cargo.toml
-# COPY packages/rs-platform-value/Cargo.toml packages/rs-platform-value/Cargo.toml
-# COPY packages/rs-drive-abci/Cargo.toml packages/rs-drive-abci/Cargo.toml
-# COPY packages/rs-drive-nodejs/Cargo.toml packages/rs-drive-nodejs/Cargo.toml
-# COPY packages/dashpay-contract/Cargo.toml packages/dashpay-contract/Cargo.toml
-# COPY packages/withdrawals-contract/Cargo.toml packages/withdrawals-contract/Cargo.toml
-# COPY packages/masternode-reward-shares-contract/Cargo.toml packages/masternode-reward-shares-contract/Cargo.toml
-# COPY packages/feature-flags-contract/Cargo.toml packages/feature-flags-contract/Cargo.toml
-# COPY packages/dpns-contract/Cargo.toml packages/dpns-contract/Cargo.toml
-# COPY packages/data-contracts/Cargo.toml packages/data-contracts/Cargo.toml
-# # We need to add some dummy files, so that `cargo fetch` will not complain.
-# RUN for d in packages/*; do \
-#     mkdir -p ${d}/src && touch --date="2000-01-01" ${d}/src/lib.rs ;\
-#     done
-# RUN mkdir -p  packages/rs-drive/benches && touch --date="2000-01-01" packages/rs-drive/benches/benchmarks.rs
-
-#
-# Fetch all dependencies
-#
-# RUN cargo fetch --verbose
-
 #
 # EXECUTE BUILD
 #
@@ -130,10 +101,6 @@ VOLUME /var/lib/platform
 
 ENV DB_PATH=/var/lib/platform/rs-drive-abci/db
 ENV RUST_LOG="info,tenderdash_abci=debug,drive_abci=debug"
-
-# Install ZMQ shared library
-#  zeromq-dev
-# RUN apt-get update && apt-get install --yes libzmq5 && apt-get clean
 
 #
 # Install binaries and data

@@ -7,9 +7,15 @@ use std::path::PathBuf;
 use tracing::warn;
 use tracing_subscriber::prelude::*;
 
-/// Main command container for ABCI Server
+// struct aaa {}
+
+/// Server that accepts connections from Tenderdash, and
+/// executes Dash Platform logic as part of the ABCI++ protocol.
+///
+/// Server configuration is based on environment variables that can be
+/// set in the environment or saved in .env file.
 #[derive(Debug, Parser)]
-#[command( author, version, about, long_about = None)]
+#[command(author, version)]
 struct Cli {
     #[command(subcommand)]
     command: Commands,
@@ -20,16 +26,14 @@ struct Cli {
     ///
     /// Repeat `v` multiple times to increase log verbosity:
     ///
-    /// - none - `warn` unless overriden by RUST_LOG variable
-    /// - `-v` - `info` from Drive, `error` from libraries
-    /// - `-vv` - `debug` from Drive, `info` from libraries
-    /// - `-vvv` - `debug` from all components
-    /// - `-vvvv` - `trace` from Drive, `debug` from libraries
-    /// - `-vvvvv` - `trace` from all components
+    /// * none     - `warn` unless overriden by RUST_LOG variable{n}
+    /// * `-v`     - `info` from Drive, `error` from libraries{n}
+    /// * `-vv`    - `debug` from Drive, `info` from libraries{n}
+    /// * `-vvv`   - `debug` from all components{n}
+    /// * `-vvvv`  - `trace` from Drive, `debug` from libraries{n}
+    /// * `-vvvvv` - `trace` from all components{n}
     ///
-    /// Note: This overrides any settings defined in RUST_LOG.
-    /// For more about RUST_LOG, see:
-    /// https://rust-lang-nursery.github.io/rust-cookbook/development_tools/debugging/config_log.html
+    /// Note: Using `-v` overrides any settings defined in RUST_LOG.
     ///
     #[arg(short, long, action = clap::ArgAction::Count)]
     verbose: u8,
@@ -37,7 +41,7 @@ struct Cli {
 
 #[derive(Debug, Subcommand)]
 enum Commands {
-    /// Start server in foreground
+    /// Start server in foreground.
     #[command()]
     Start {},
     /// Dump configuration
@@ -46,16 +50,6 @@ enum Commands {
     #[command()]
     Config {},
 }
-
-// #[derive(Debug, Args)]
-// #[command(args_conflicts_with_subcommands = true)]
-// struct StartArgs {
-//     /// Path to data directory (GroveDB)
-//     ///
-//     /// Path to the data directory, containing transactions database.
-//     #[arg(short, long, value_hint = clap::ValueHint::DirPath) ]
-//     data: std::path::PathBuf,
-// }
 
 pub fn main() {
     let cli = Cli::parse();
