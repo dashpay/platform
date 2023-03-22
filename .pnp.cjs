@@ -7911,6 +7911,7 @@ function $$SETUP_STATE(hydrateRuntimeState, basePath) {
             ["@dashevo/grpc-common", "workspace:packages/js-grpc-common"],\
             ["@dashevo/masternode-reward-shares-contract", "workspace:packages/masternode-reward-shares-contract"],\
             ["@dashevo/wallet-lib", "workspace:packages/wallet-lib"],\
+            ["@dashevo/wasm-dpp", "workspace:packages/wasm-dpp"],\
             ["@types/chai", "npm:4.2.22"],\
             ["@types/dirty-chai", "npm:2.0.2"],\
             ["@types/expect", "npm:24.3.0"],\
