@@ -4,6 +4,7 @@ use std::io::{BufReader, Read};
 
 use crate::data_contract::errors::DataContractError;
 
+use crate::prelude::TimestampMillis;
 use crate::ProtocolError;
 use byteorder::{BigEndian, ReadBytesExt, WriteBytesExt};
 use integer_encoding::{VarInt, VarIntReader};
@@ -12,7 +13,6 @@ use rand::distributions::{Alphanumeric, Standard};
 use rand::rngs::StdRng;
 use rand::Rng;
 use serde::{Deserialize, Serialize};
-use crate::prelude::TimestampMillis;
 
 use super::array_field::ArrayFieldType;
 

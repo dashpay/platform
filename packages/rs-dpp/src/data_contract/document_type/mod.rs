@@ -10,8 +10,8 @@ use super::errors::DataContractError;
 pub use {
     array_field::ArrayFieldType,
     document_field::{
-        encode_float, encode_signed_integer, encode_unsigned_integer, encode_date_timestamp, DocumentField,
-        DocumentFieldType,
+        encode_date_timestamp, encode_float, encode_signed_integer, encode_unsigned_integer,
+        DocumentField, DocumentFieldType,
     },
     document_type::{DocumentType, IndexLevel},
     index::{Index, IndexProperty},

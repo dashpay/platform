@@ -263,7 +263,11 @@ impl Strategy {
                             DriveQuery::any_item_query(&op.contract, &op.document_type);
                         let mut items = platform
                             .drive
-                            .query_documents_as_serialized(any_item_query, Some(&block_info.epoch), None)
+                            .query_documents_as_serialized(
+                                any_item_query,
+                                Some(&block_info.epoch),
+                                None,
+                            )
                             .expect("expect to execute query")
                             .items;
 
