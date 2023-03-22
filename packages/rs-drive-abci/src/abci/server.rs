@@ -4,7 +4,7 @@ use super::config::AbciConfig;
 use crate::{abci::proposal::Proposal, config::PlatformConfig, error::Error, platform::Platform};
 use dpp::identity::TimestampMillis;
 use drive::query::TransactionArg;
-use std::sync::MutexGuard;
+use std::{fmt::Debug, sync::MutexGuard};
 use tenderdash_abci::proto::{abci as proto, serializers::timestamp::ToMilis};
 use tracing::debug;
 /// AbciApp is an implementation of ABCI Application, as defined by Tenderdash.
@@ -65,10 +65,14 @@ impl<'a> AbciApplication<'a> {
     }
 }
 
+impl<'a> Debug for AbciApplication<'a> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "AbciApp")
+    }
+}
+
 impl<'a> tenderdash_abci::Application for AbciApplication<'a> {
     fn info(&self, request: proto::RequestInfo) -> proto::ResponseInfo {
-        tracing::info!("tenderdash info: {:?}", request);
-
         if !check_version(&request.abci_version, tenderdash_abci::proto::ABCI_VERSION) {
             panic!(
                 "SemVer mismatch: Tenderdash requires ABCI version {}, our version is {}",
@@ -77,11 +81,20 @@ impl<'a> tenderdash_abci::Application for AbciApplication<'a> {
             );
         }
 
-        proto::ResponseInfo {
+        let response = proto::ResponseInfo {
             app_version: 1,
             version: env!("CARGO_PKG_VERSION").to_string(),
             ..Default::default()
-        }
+        };
+
+        tracing::info!(
+            method = "info",
+            method = "info",
+            ?request,
+            ?response,
+            "info received"
+        );
+        response
     }
 
     fn init_chain(&self, request: proto::RequestInitChain) -> proto::ResponseInitChain {
@@ -90,6 +103,7 @@ impl<'a> tenderdash_abci::Application for AbciApplication<'a> {
 
         let genesis_time = request
             .time
+            .clone()
             .expect("init chain REQUIRES genesis time")
             .to_milis();
 
@@ -101,9 +115,12 @@ impl<'a> tenderdash_abci::Application for AbciApplication<'a> {
             )
             .expect("create genesis state");
 
-        proto::ResponseInitChain {
+        let response = proto::ResponseInitChain {
             ..Default::default()
-        }
+        };
+
+        tracing::info!(method = "init_chain", "init chain executed");
+        response
     }
 
     fn prepare_proposal(
@@ -112,9 +129,16 @@ impl<'a> tenderdash_abci::Application for AbciApplication<'a> {
     ) -> proto::ResponsePrepareProposal {
         let platform = self.platform();
         let transaction = self.transaction();
-        platform
-            .prepare_proposal(request, transaction)
-            .expect("failed to prepare proposal")
+        let response = platform
+            .prepare_proposal(&request, transaction)
+            .expect("failed to prepare proposal");
+
+        tracing::info!(
+            method = "prepare_proposal",
+            height = request.height,
+            "prepare proposal executed",
+        );
+        response
     }
 }
 /// Check if ABCI version required by Tenderdash matches our protobuf version.

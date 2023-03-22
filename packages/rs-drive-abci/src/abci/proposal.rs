@@ -17,14 +17,15 @@ use tenderdash_abci::proto::{
 pub trait Proposal {
     fn prepare_proposal(
         &self,
-        request: proto::RequestPrepareProposal,
+        request: &proto::RequestPrepareProposal,
         transaction: TransactionArg,
     ) -> Result<proto::ResponsePrepareProposal, Error>;
 }
+
 impl Proposal for Platform {
     fn prepare_proposal(
         &self,
-        request: proto::RequestPrepareProposal,
+        request: &proto::RequestPrepareProposal,
         transaction: TransactionArg,
     ) -> Result<proto::ResponsePrepareProposal, Error> {
         let genesis_time_ms = if request.height == self.config.abci.genesis_height {
@@ -93,7 +94,7 @@ impl Proposal for Platform {
         //     )?;
 
         let mut tx_results = ::prost::alloc::vec::Vec::<ExecTxResult>::new();
-        for tx in request.txs {
+        for tx in request.txs.clone() {
             tx_results.push(mock_exec_tx(tx)) // TODO: execute transactions in a proper way
         }
         // TODO: implement all fields, including tx processing; for now, just leaving bare minimum

@@ -118,5 +118,5 @@ fn set_verbosity(cli: &Cli) {
 
 /// Install panic hook to ensure that all panic logs are correctly formatted
 fn install_panic_hook() {
-    std::panic::set_hook(Box::new(|info| tracing::error!("panic: {:?}", info)));
+    std::panic::set_hook(Box::new(|info| tracing::error!(panic=%info, "panic")));
 }
