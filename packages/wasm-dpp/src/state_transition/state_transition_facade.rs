@@ -1,4 +1,4 @@
-use crate::bls_adapter::{BlsAdapter};
+use crate::bls_adapter::BlsAdapter;
 use crate::errors::from_dpp_err;
 use crate::state_repository::{ExternalStateRepositoryLike, ExternalStateRepositoryLikeWrapper};
 use crate::state_transition_factory::StateTransitionFactoryWasm;

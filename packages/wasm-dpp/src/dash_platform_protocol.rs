@@ -104,12 +104,11 @@ impl DashPlatformProtocol {
     }
 
     #[wasm_bindgen(js_name = setStateRepository)]
-    pub fn set_state_repository(&mut self, state_repository: ExternalStateRepositoryLike) -> Result<(), JsValue> {
-        self.init(
-            self.protocol_version,
-            state_repository,
-            self.bls.clone(),
-        )
+    pub fn set_state_repository(
+        &mut self,
+        state_repository: ExternalStateRepositoryLike,
+    ) -> Result<(), JsValue> {
+        self.init(self.protocol_version, state_repository, self.bls.clone())
     }
 
     #[wasm_bindgen(js_name = getStateRepository)]
