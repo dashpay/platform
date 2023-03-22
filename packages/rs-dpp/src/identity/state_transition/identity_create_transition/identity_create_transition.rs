@@ -49,6 +49,7 @@ pub struct IdentityCreateTransition {
     pub identity_id: Identifier,
     // Generic identity ST fields
     pub protocol_version: u32,
+    #[serde(rename = "type")]
     pub transition_type: StateTransitionType,
     pub signature: BinaryData,
     #[serde(skip)]
