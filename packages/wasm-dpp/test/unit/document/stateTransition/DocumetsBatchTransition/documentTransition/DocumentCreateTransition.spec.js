@@ -1,4 +1,4 @@
-const getDocumentTransitionsFixture = require('@dashevo/dpp/lib/test/fixtures/getDocumentTransitionsFixture');
+const getDocumentTransitionsFixture = require('../../../../../../lib/test/fixtures/getDocumentTransitionsFixture');
 const { default: loadWasmDpp } = require('../../../../../../dist');
 
 let DataContract;
