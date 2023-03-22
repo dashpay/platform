@@ -1,4 +1,3 @@
-use serde_json::Value as JsonValue;
 use thiserror::Error;
 
 use crate::consensus::basic::state_transition::InvalidStateTransitionTypeError;
@@ -10,10 +9,15 @@ use crate::data_contract::state_transition::errors::PublicKeyIsDisabledError;
 use crate::document::errors::*;
 use crate::state_transition::errors::{
     InvalidIdentityPublicKeyTypeError, InvalidSignaturePublicKeyError, PublicKeyMismatchError,
-    PublicKeySecurityLevelNotMetError, StateTransitionIsNotSignedError, WrongPublicKeyPurposeError,
+    PublicKeySecurityLevelNotMetError, StateTransitionError, StateTransitionIsNotSignedError,
+    WrongPublicKeyPurposeError,
 };
-use crate::{CompatibleProtocolVersionIsNotDefinedError, NonConsensusError, SerdeParsingError};
-use platform_value::Error as ValueError;
+use crate::{
+    CompatibleProtocolVersionIsNotDefinedError, DashPlatformProtocolInitError, NonConsensusError,
+    SerdeParsingError,
+};
+
+use platform_value::{Error as ValueError, Value};
 
 #[derive(Error, Debug)]
 pub enum ProtocolError {
@@ -34,6 +38,8 @@ pub enum ProtocolError {
     DecodingError(String),
     #[error("File not found Error - {0}")]
     FileNotFound(String),
+    #[error("unknown protocol version error {0}")]
+    UnknownProtocolVersionError(String),
     #[error("Not included or invalid protocol version")]
     NoProtocolVersionError,
     #[error("Parsing error: {0}")]
@@ -47,6 +53,9 @@ pub enum ProtocolError {
 
     #[error(transparent)]
     DataContractError(#[from] DataContractError),
+
+    #[error(transparent)]
+    StateTransitionError(#[from] StateTransitionError),
 
     #[error(transparent)]
     StructureError(#[from] StructureError),
@@ -124,7 +133,7 @@ pub enum ProtocolError {
     #[error("Invalid Identity: {errors:?}")]
     InvalidIdentityError {
         errors: Vec<ConsensusError>,
-        raw_identity: JsonValue,
+        raw_identity: Value,
     },
 
     #[error("Public key generation error {0}")]
@@ -164,5 +173,11 @@ impl From<DocumentError> for ProtocolError {
 impl From<SerdeParsingError> for ProtocolError {
     fn from(e: SerdeParsingError) -> Self {
         ProtocolError::ParsingError(e.to_string())
+    }
+}
+
+impl From<DashPlatformProtocolInitError> for ProtocolError {
+    fn from(e: DashPlatformProtocolInitError) -> Self {
+        ProtocolError::Generic(e.to_string())
     }
 }

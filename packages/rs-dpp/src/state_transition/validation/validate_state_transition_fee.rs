@@ -26,7 +26,7 @@ impl<SR> StateTransitionFeeValidator<SR>
 where
     SR: StateRepositoryLike,
 {
-    fn new(state_repository: Arc<SR>) -> Self {
+    pub fn new(state_repository: Arc<SR>) -> Self {
         let asset_lock_transition_output_fetcher =
             AssetLockTransactionOutputFetcher::new(state_repository.clone());
         StateTransitionFeeValidator {
@@ -78,7 +78,7 @@ where
                     .map_err(Into::into)?
                     .ok_or_else(|| {
                         ProtocolError::IdentityNotPresentError(IdentityNotPresentError::new(
-                            identity_id.clone(),
+                            *identity_id,
                         ))
                     })?;
 
@@ -151,9 +151,7 @@ where
             .transpose()
             .map_err(Into::into)?
             .ok_or_else(|| {
-                ProtocolError::IdentityNotPresentError(IdentityNotPresentError::new(
-                    identity_id.clone(),
-                ))
+                ProtocolError::IdentityNotPresentError(IdentityNotPresentError::new(*identity_id))
             })?;
 
         Ok(identity.get_balance())
@@ -164,13 +162,13 @@ where
 mod test {
     use std::sync::Arc;
 
+    use crate::data_contract::state_transition::data_contract_create_transition::DataContractCreateTransition;
     use crate::identity::state_transition::identity_topup_transition::IdentityTopUpTransition;
     use crate::state_transition::StateTransitionLike;
-    use crate::tests::fixtures::identity_topup_transition_fixture_json;
+    use crate::tests::fixtures::identity_topup_transition_fixture;
     use crate::ProtocolError;
     use crate::{
         consensus::fee::FeeError,
-        data_contract::state_transition::DataContractCreateTransition,
         document::{document_transition::Action, DocumentsBatchTransition},
         identity::state_transition::identity_credit_withdrawal_transition::IdentityCreditWithdrawalTransition,
         state_repository::MockStateRepositoryLike,
@@ -213,7 +211,7 @@ mod test {
 
         let data_contract = get_data_contract_fixture(None);
         let data_contract_create_transition = DataContractCreateTransition {
-            entropy: data_contract.entropy().to_owned(),
+            entropy: data_contract.entropy,
             data_contract,
             execution_context: execution_context_with_cost(40, 5),
             ..Default::default()
@@ -246,7 +244,7 @@ mod test {
 
         let data_contract = get_data_contract_fixture(None);
         let data_contract_create_transition = DataContractCreateTransition {
-            entropy: data_contract.entropy().to_owned(),
+            entropy: data_contract.entropy,
             data_contract,
             execution_context: execution_context_with_cost(40, 5),
             ..Default::default()
@@ -275,7 +273,7 @@ mod test {
             get_documents_fixture_with_owner_id_from_contract(data_contract.clone()).unwrap();
         let transitions = get_document_transitions_fixture([(Action::Create, documents)]);
         let documents_batch_transition = DocumentsBatchTransition {
-            owner_id: data_contract.owner_id().to_owned(),
+            owner_id: data_contract.owner_id,
             transitions,
             execution_context: execution_context_with_cost(40, 5),
             ..Default::default()
@@ -311,7 +309,7 @@ mod test {
             get_documents_fixture_with_owner_id_from_contract(data_contract.clone()).unwrap();
         let transitions = get_document_transitions_fixture([(Action::Create, documents)]);
         let documents_batch_transition = DocumentsBatchTransition {
-            owner_id: data_contract.owner_id().to_owned(),
+            owner_id: data_contract.owner_id,
             transitions,
             execution_context: execution_context_with_cost(40, 5),
             ..Default::default()
@@ -343,7 +341,7 @@ mod test {
         execution_context.enable_dry_run();
 
         let documents_batch_transition = DocumentsBatchTransition {
-            owner_id: data_contract.owner_id().to_owned(),
+            owner_id: data_contract.owner_id,
             transitions,
             execution_context,
             ..Default::default()
@@ -367,7 +365,7 @@ mod test {
             .returning(move |_, _| Ok(Some(identity.clone())));
 
         let mut identity_topup_transition =
-            IdentityTopUpTransition::new(identity_topup_transition_fixture_json(None)).unwrap();
+            IdentityTopUpTransition::new(identity_topup_transition_fixture(None)).unwrap();
         identity_topup_transition.set_execution_context(execution_context_with_cost(45000000, 5));
 
         let validator = StateTransitionFeeValidator::new(Arc::new(state_repository_mock));

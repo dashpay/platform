@@ -31,6 +31,16 @@ const expectError = {
     const wasmDpp = await loadWasmDpp();
     await expectError.expectValidationError(result, wasmDpp.JsonSchemaError, count);
   },
+
+  /**
+   *
+   * @param {ValidationResult} result
+   * @param [count]
+   */
+  async expectPlatformValueError(result, count = 1) {
+    const wasmDpp = await loadWasmDpp();
+    await expectError.expectValidationError(result, wasmDpp.PlatformValueError, count);
+  },
 };
 
 module.exports = expectError;

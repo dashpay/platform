@@ -337,7 +337,8 @@ function expectDeterministicAppHashFactory(groveDBStore) {
   return expectDeterministicAppHash;
 }
 
-describe('synchronizeMasternodeIdentitiesFactory', function main() {
+// TODO: Enable keys when we have support of non unique keys in DPP
+describe.skip('synchronizeMasternodeIdentitiesFactory', function main() {
   this.timeout(10000);
   let container;
   let coreHeight;

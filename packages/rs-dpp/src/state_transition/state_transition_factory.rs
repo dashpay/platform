@@ -1,15 +1,23 @@
 use anyhow::anyhow;
-use std::convert::{TryFrom, TryInto};
+use std::{
+    convert::{TryFrom, TryInto},
+    sync::Arc,
+};
 
 use crate::consensus::basic::state_transition::InvalidStateTransitionTypeError;
+
 use crate::data_contract::errors::DataContractNotPresentError;
 use crate::data_contract::state_transition::errors::MissingDataContractIdError;
 use crate::{
     consensus::{basic::BasicError, ConsensusError},
     data_contract::{
-        state_transition::{DataContractCreateTransition, DataContractUpdateTransition},
+        state_transition::{
+            data_contract_create_transition::DataContractCreateTransition,
+            data_contract_update_transition::DataContractUpdateTransition,
+        },
         DataContract,
     },
+    decode_protocol_entity_factory::DecodeProtocolEntity,
     document::DocumentsBatchTransition,
     identity::state_transition::{
         identity_create_transition::IdentityCreateTransition,
@@ -18,19 +26,105 @@ use crate::{
     },
     prelude::Identifier,
     state_repository::StateRepositoryLike,
-    util::json_value::JsonValueExt,
-    ProtocolError,
+    validation::AsyncDataValidatorWithContext,
+    BlsModule, ProtocolError,
 };
-use serde_json::Value as JsonValue;
+use platform_value::{Value, ValueMapHelper};
 
 use super::{
-    state_transition_execution_context::StateTransitionExecutionContext, StateTransition,
-    StateTransitionType,
+    state_transition_execution_context::StateTransitionExecutionContext,
+    validation::{
+        validate_state_transition_basic::StateTransitionBasicValidator,
+        validate_state_transition_by_type::StateTransitionByTypeValidator,
+    },
+    StateTransition, StateTransitionType,
 };
+
+#[derive(Default)]
+pub struct StateTransitionFactoryOptions {
+    pub skip_validation: bool,
+}
+
+pub struct StateTransitionFactory<SR, BLS>
+where
+    SR: StateRepositoryLike,
+    BLS: BlsModule,
+{
+    state_repository: Arc<SR>,
+    basic_validator: StateTransitionBasicValidator<SR, StateTransitionByTypeValidator<SR, BLS>>,
+}
+
+impl<SR, BLS> StateTransitionFactory<SR, BLS>
+where
+    SR: StateRepositoryLike,
+    BLS: BlsModule,
+{
+    pub fn new(
+        state_repository: Arc<SR>,
+        basic_validator: StateTransitionBasicValidator<SR, StateTransitionByTypeValidator<SR, BLS>>,
+    ) -> Self {
+        StateTransitionFactory {
+            state_repository,
+            basic_validator,
+        }
+    }
+
+    pub async fn create_from_object(
+        &self,
+        raw_state_transition: Value,
+        options: Option<StateTransitionFactoryOptions>,
+    ) -> Result<StateTransition, ProtocolError> {
+        let options = options.unwrap_or_default();
+
+        if !options.skip_validation {
+            let execution_context = StateTransitionExecutionContext::default();
+
+            let validation_result = self
+                .basic_validator
+                .validate(&raw_state_transition, &execution_context)
+                .await?;
+
+            if !validation_result.is_valid() {
+                return Err(ProtocolError::StateTransitionError(
+                    super::errors::StateTransitionError::InvalidStateTransitionError {
+                        errors: validation_result.errors,
+                        raw_state_transition,
+                    },
+                ));
+            }
+        }
+
+        create_state_transition(self.state_repository.as_ref(), raw_state_transition).await
+    }
+
+    pub async fn create_from_buffer(
+        &self,
+        state_transition_buffer: &[u8],
+        options: Option<StateTransitionFactoryOptions>,
+    ) -> Result<StateTransition, ProtocolError> {
+        let (protocol_version, mut raw_state_transition) =
+            DecodeProtocolEntity::decode_protocol_entity(state_transition_buffer)?;
+
+        match raw_state_transition {
+            Value::Map(ref mut m) => m.insert_string_key_value(
+                "protocolVersion".to_string(),
+                Value::U32(protocol_version),
+            ),
+            _ => {
+                return Err(ConsensusError::SerializedObjectParsingError {
+                    parsing_error: anyhow!("the '{:?}' is not a map", raw_state_transition),
+                }
+                .into())
+            }
+        };
+
+        self.create_from_object(raw_state_transition, options).await
+    }
+}
 
 pub async fn create_state_transition(
     state_repository: &impl StateRepositoryLike,
-    raw_state_transition: JsonValue,
+    raw_state_transition: Value,
 ) -> Result<StateTransition, ProtocolError> {
     let transition_type = try_get_transition_type(&raw_state_transition)?;
     let execution_context = StateTransitionExecutionContext::default();
@@ -58,12 +152,9 @@ pub async fn create_state_transition(
             Ok(StateTransition::IdentityCreditWithdrawal(transition))
         }
         StateTransitionType::DocumentsBatch => {
-            let maybe_transitions = raw_state_transition
-                .get("transitions")
-                .ok_or_else(|| anyhow!("the transitions property doesn't exist"))?;
-            let raw_transitions = maybe_transitions
-                .as_array()
-                .ok_or_else(|| anyhow!("property transitions isn't an array"))?;
+            let raw_transitions = raw_state_transition
+                .get_array_ref("transitions")
+                .map_err(ProtocolError::ValueError)?;
             let data_contracts = fetch_data_contracts_for_document_transition(
                 state_repository,
                 raw_transitions,
@@ -83,7 +174,7 @@ pub async fn create_state_transition(
 
 async fn fetch_data_contracts_for_document_transition(
     state_repository: &impl StateRepositoryLike,
-    raw_document_transitions: impl IntoIterator<Item = &JsonValue>,
+    raw_document_transitions: impl IntoIterator<Item = &Value>,
     execution_context: &StateTransitionExecutionContext,
 ) -> Result<Vec<DataContract>, ProtocolError> {
     let mut data_contracts = vec![];
@@ -114,14 +205,15 @@ async fn fetch_data_contracts_for_document_transition(
 }
 
 pub fn try_get_transition_type(
-    raw_state_transition: &JsonValue,
+    raw_state_transition: &Value,
 ) -> Result<StateTransitionType, ProtocolError> {
-    let transition_type = raw_state_transition
-        .get_u64("type")
-        .map_err(|_| missing_state_transition_error())?;
-    StateTransitionType::try_from(transition_type as u8).map_err(|_| {
+    let transition_type: u8 = raw_state_transition
+        .get_optional_integer("type")
+        .map_err(ProtocolError::ValueError)?
+        .ok_or(missing_state_transition_error())?;
+    StateTransitionType::try_from(transition_type).map_err(|_| {
         ProtocolError::InvalidStateTransitionTypeError(InvalidStateTransitionTypeError::new(
-            transition_type as u8,
+            transition_type,
         ))
     })
 }
@@ -134,11 +226,13 @@ fn missing_state_transition_error() -> ProtocolError {
 
 #[cfg(test)]
 mod test {
+    use crate::convertible::Convertible;
     use dashcore::network::constants::PROTOCOL_VERSION;
-    use serde_json::{json, Value as JsonValue};
+    use platform_value::{platform_value, Value};
+    use std::collections::BTreeMap;
 
     use crate::{
-        data_contract::state_transition::DataContractCreateTransition,
+        data_contract::state_transition::data_contract_create_transition::DataContractCreateTransition,
         document::{
             document_transition::{Action, DocumentTransitionObjectLike},
             DocumentsBatchTransition,
@@ -161,10 +255,10 @@ mod test {
             .expect_fetch_data_contract()
             .returning(move |_, _| Ok(Some(data_contract_to_return.clone())));
 
-        let state_transition_data = json!( {
-                    "protocolVersion" :  PROTOCOL_VERSION,
-                    "entropy": data_contract.entropy(),
-                    "dataContract": data_contract.to_object(false).unwrap(),
+        let state_transition_data = platform_value!( {
+                    "protocolVersion" :  PROTOCOL_VERSION as u32,
+                    "entropy": data_contract.entropy,
+                    "dataContract": data_contract.to_object().unwrap(),
                 }
         );
         let data_contract_create_state_transition =
@@ -181,7 +275,7 @@ mod test {
 
         assert!(
             matches!(result, StateTransition::DataContractCreate(transition) if  {
-                transition.get_data_contract().to_object(false).unwrap() == data_contract.to_object(false).unwrap()
+                transition.get_data_contract().to_json_object().unwrap() == data_contract.to_json_object().unwrap()
             })
         )
     }
@@ -194,7 +288,7 @@ mod test {
         let document_transitions =
             get_document_transitions_fixture(vec![(Action::Create, documents)]);
 
-        let raw_document_transitions: Vec<JsonValue> = document_transitions
+        let raw_document_transitions: Vec<Value> = document_transitions
             .iter()
             .map(|t| t.to_object().unwrap())
             .collect();
@@ -205,15 +299,19 @@ mod test {
             .expect_fetch_data_contract()
             .returning(move |_, _| Ok(Some(data_contract_to_return.clone())));
 
-        let state_transition_data = json!( {
-                    "protocolVersion" :  PROTOCOL_VERSION,
-                    "ownerId": data_contract.owner_id().as_bytes(),
-                    "transitions": raw_document_transitions,
-                }
+        let mut map = BTreeMap::new();
+        map.insert("protocolVersion".to_string(), Value::U32(PROTOCOL_VERSION));
+        map.insert(
+            "ownerId".to_string(),
+            Value::Identifier(data_contract.owner_id.to_buffer()),
         );
+        map.insert(
+            "transitions".to_string(),
+            Value::Array(raw_document_transitions.clone()),
+        );
+
         let documents_batch_state_transition =
-            DocumentsBatchTransition::from_raw_object(state_transition_data, vec![data_contract])
-                .unwrap();
+            DocumentsBatchTransition::from_value_map(map, vec![data_contract]).unwrap();
 
         let result = create_state_transition(
             &state_repostiory_mock,
@@ -222,19 +320,25 @@ mod test {
         .await
         .expect("the state transition should be created");
 
-        assert!(
-            matches!(result, StateTransition::DocumentsBatch(transition) if  {
-                transition.get_transitions().iter().map(|t| t.to_object().unwrap()).collect::<Vec<JsonValue>>() == raw_document_transitions
-            })
-        )
+        assert!(matches!(result, StateTransition::DocumentsBatch(_)));
+
+        let StateTransition::DocumentsBatch(transition) = result else {
+            panic!("must be a DocumentsBatch transition")
+        };
+        let values = transition
+            .get_transitions()
+            .iter()
+            .map(|t| t.to_object().unwrap())
+            .collect::<Vec<Value>>();
+
+        assert_eq!(values, raw_document_transitions);
     }
 
     #[tokio::test]
     async fn should_return_invalid_state_transition_type_if_type_is_invalid() {
         let state_repostiory_mock = MockStateRepositoryLike::new();
-        let raw_state_transition = json!( {
-            "type" : 666
-
+        let raw_state_transition = platform_value!( {
+            "type" : 110u8
         });
 
         let result = create_state_transition(&state_repostiory_mock, raw_state_transition).await;
@@ -242,7 +346,7 @@ mod test {
 
         match err {
             ProtocolError::InvalidStateTransitionTypeError(err) => {
-                assert_eq!(err.transition_type(), 154);
+                assert_eq!(err.transition_type(), 110);
             }
             _ => panic!("expected InvalidStateTransitionTypeError, got {}", err),
         }

@@ -31,7 +31,7 @@ Distribution package for Dash Masternode installation
 ### Dependencies
 
 * [Docker](https://docs.docker.com/engine/installation/) (v20.10+)
-* [Node.js](https://nodejs.org/en/download/) (v16.0+, NPM v8.0+)
+* [Node.js](https://nodejs.org/en/download/) (v16, NPM v8.0+)
 
 For Linux installations you may optionally wish to follow the [post-installation steps](https://docs.docker.com/engine/install/linux-postinstall/) to manage Docker as a non-root user, otherwise you will have to run CLI and Docker commands with `sudo`.
 
@@ -226,14 +226,12 @@ The `reset` command removes all data corresponding to the specified config and a
 ```
 USAGE
   $ dashmate reset [--config <value>] [-v] [-h] [-f] [-p]
-
 FLAGS
   -f, --force          skip running services check
   -h, --hard           reset config as well as data
   -p, --platform-only  reset platform data only
   -v, --verbose        use verbose mode for output
   --config=<value>     configuration name to use
-
 DESCRIPTION
   Reset node data
 ```
@@ -242,6 +240,22 @@ To reset a node:
 ```bash
 $ dashmate reset
 ```
+
+#### Hard reset
+With the hard reset mode enabled, the corresponding config will be reset in addition to the platform data. After a hard reset, it is necessary to run the node [setup](#setup-node) to proceed.
+```bash
+$ dashmate reset --hard
+```
+
+#### Manual reset
+Manual reset is used when local setup corrupts and hard reset does not fix it. This could happen, when dashmate configuration becomes incompatible after a major upgrade, making you unable to execute any commands.
+```bash
+docker stop $(docker ps -q)
+docker system prune
+docker volume prune
+rm -rf ~/.dashmate/
+```
+
 
 ### Reindex dashcore chain data
 
@@ -255,50 +269,22 @@ The `reindex` command works for regular and local configurations.
 
 ```
 Reindex Core
-
 USAGE
   $ dashmate core reindex [-v] [--config <value>]
-
 FLAGS
   -v, --verbose     use verbose mode for output
   --config=<value>  configuration name to use
-
 DESCRIPTION
   Reindex Core
-
   Reindex Core data
 ```
 
-With the hard reset mode enabled, the corresponding config will be reset as well. To proceed, running the node [setup](#setup-node) is required.
-
-To reset a node:
-```bash
-$ dashmate reset
-=======
-#### Hard reset
-
-``dashmate reset --hard``
-
-With the hard reset mode enabled, the corresponding config will be reset as well. This command cleans up all related containers and volumes. To proceed, running the node [setup](#setup-node) is required.
-
-#### Manual reset
-
-Manual reset is used when local setup corrupts and hard reset does not fix it. This could happen, when dashmate configuration becomes incompatible after a major upgrade, making you unable to execute any commands.
-
-```bash
-docker stop $(docker ps -q)
-docker system prune
-docker volume prune
-rm -rf ~/.dashmate/
-```
-
 ### Full node
-
 It is also possible to start a full node instead of a masternode. Modify the config setting as follows:
-
 ```bash
 dashmate config set core.masternode.enable false
 ```
+
 
 ### Node groups
 

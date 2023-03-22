@@ -1,9 +1,13 @@
-use std::collections::HashMap;
+use std::collections::{BTreeMap, HashMap};
 use std::convert::TryInto;
 
 use anyhow::{anyhow, Context};
 use ciborium::value::Value as CborValue;
 use integer_encoding::VarInt;
+use platform_value::btreemap_extensions::BTreeValueMapHelper;
+use platform_value::btreemap_extensions::BTreeValueMapReplacementPathHelper;
+
+use platform_value::{BinaryData, IntegerReplacementType, ReplacementType, Value};
 use serde::{Deserialize, Serialize};
 use serde_json::Value as JsonValue;
 
@@ -12,8 +16,7 @@ use crate::document::document_transition::DocumentTransitionObjectLike;
 use crate::prelude::{DocumentTransition, Identifier};
 use crate::state_transition::state_transition_execution_context::StateTransitionExecutionContext;
 use crate::util::cbor_value::{CborCanonicalMap, FieldType, ReplacePaths, ValuesCollection};
-use crate::util::json_value::{JsonValueExt, ReplaceWith};
-use crate::util::string_encoding::Encoding;
+use crate::util::json_value::JsonValueExt;
 use crate::version::LATEST_VERSION;
 use crate::ProtocolError;
 use crate::{
@@ -23,6 +26,7 @@ use crate::{
         StateTransitionType,
     },
 };
+use platform_value::string_encoding::Encoding;
 
 use self::document_transition::{
     document_base_transition, document_create_transition, DocumentTransitionExt,
@@ -33,14 +37,25 @@ pub mod document_transition;
 pub mod validation;
 
 pub mod property_names {
+    pub const TRANSITION_TYPE: &str = "type";
     pub const DATA_CONTRACT_ID: &str = "$dataContractId";
+    pub const DOCUMENT_TYPE: &str = "$type";
     pub const TRANSITIONS: &str = "transitions";
+    pub const TRANSITIONS_ID: &str = "transitions[].$id";
+    pub const TRANSITIONS_DATA_CONTRACT_ID: &str = "transitions[].$dataContractId";
     pub const OWNER_ID: &str = "ownerId";
     pub const SIGNATURE_PUBLIC_KEY_ID: &str = "signaturePublicKeyId";
     pub const SIGNATURE: &str = "signature";
     pub const PROTOCOL_VERSION: &str = "protocolVersion";
     pub const SECURITY_LEVEL_REQUIREMENT: &str = "signatureSecurityLevelRequirement";
 }
+
+pub const IDENTIFIER_FIELDS: [&str; 3] = [
+    property_names::OWNER_ID,
+    property_names::TRANSITIONS_ID,
+    property_names::TRANSITIONS_DATA_CONTRACT_ID,
+];
+pub const U32_FIELDS: [&str; 1] = [property_names::PROTOCOL_VERSION];
 
 const DEFAULT_SECURITY_LEVEL: SecurityLevel = SecurityLevel::HIGH;
 const EMPTY_VEC: Vec<u8> = vec![];
@@ -60,7 +75,7 @@ pub struct DocumentsBatchTransition {
     pub signature_public_key_id: Option<KeyID>,
 
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub signature: Option<Vec<u8>>,
+    pub signature: Option<BinaryData>,
 
     #[serde(skip)]
     pub execution_context: StateTransitionExecutionContext,
@@ -89,7 +104,9 @@ impl DocumentsBatchTransition {
 
         let maybe_signature = json_value.get_string(property_names::SIGNATURE).ok();
         let signature = if let Some(signature) = maybe_signature {
-            Some(base64::decode(signature).context("signature exists but isn't valid base64")?)
+            Some(BinaryData(
+                base64::decode(signature).context("signature exists but isn't valid base64")?,
+            ))
         } else {
             None
         };
@@ -145,41 +162,89 @@ impl DocumentsBatchTransition {
 
     /// creates the instance of [`DocumentsBatchTransition`] from raw object
     pub fn from_raw_object(
-        mut raw_object: JsonValue,
+        raw_object: Value,
+        data_contracts: Vec<DataContract>,
+    ) -> Result<Self, ProtocolError> {
+        let map = raw_object
+            .into_btree_string_map()
+            .map_err(ProtocolError::ValueError)?;
+        Self::from_value_map(map, data_contracts)
+    }
+
+    /// creates the instance of [`DocumentsBatchTransition`] from a value map
+    pub fn from_value_map(
+        mut map: BTreeMap<String, Value>,
         data_contracts: Vec<DataContract>,
     ) -> Result<Self, ProtocolError> {
         let mut batch_transitions = DocumentsBatchTransition {
-            protocol_version: raw_object
-                .get_u64(property_names::PROTOCOL_VERSION)
+            protocol_version: map
+                .get_integer(property_names::PROTOCOL_VERSION)
                 // js-dpp allows `protocolVersion` to be undefined
                 .unwrap_or(LATEST_VERSION as u64) as u32,
-            signature: raw_object.get_bytes(property_names::SIGNATURE).ok(),
-            signature_public_key_id: raw_object
-                .get_u64(property_names::SIGNATURE_PUBLIC_KEY_ID)
-                .ok()
-                .map(|v| v as KeyID),
-            owner_id: Identifier::from_bytes(&raw_object.get_bytes(property_names::OWNER_ID)?)?,
+            signature: map
+                .get_optional_binary_data(property_names::SIGNATURE)
+                .map_err(ProtocolError::ValueError)?,
+            signature_public_key_id: map
+                .get_optional_integer(property_names::SIGNATURE_PUBLIC_KEY_ID)
+                .map_err(ProtocolError::ValueError)?,
+            owner_id: Identifier::from(
+                map.get_hash256_bytes(property_names::OWNER_ID)
+                    .map_err(ProtocolError::ValueError)?,
+            ),
             ..Default::default()
         };
 
         let mut document_transitions: Vec<DocumentTransition> = vec![];
-        let maybe_transitions = raw_object.remove(property_names::TRANSITIONS);
-        if let Ok(JsonValue::Array(raw_transitions)) = maybe_transitions {
+        let maybe_transitions = map.remove(property_names::TRANSITIONS);
+        if let Some(Value::Array(raw_transitions)) = maybe_transitions {
             let data_contracts_map: HashMap<Vec<u8>, DataContract> = data_contracts
                 .into_iter()
                 .map(|dc| (dc.id.as_bytes().to_vec(), dc))
                 .collect();
 
             for raw_transition in raw_transitions {
-                let id = raw_transition.get_bytes(property_names::DATA_CONTRACT_ID)?;
-                let data_contract = data_contracts_map.get(&id).ok_or_else(|| {
-                    anyhow!(
-                        "Data Contract doesn't exists for Transition: {:?}",
-                        raw_transition
+                let mut raw_transition_map = raw_transition
+                    .into_btree_string_map()
+                    .map_err(ProtocolError::ValueError)?;
+                let data_contract_id =
+                    raw_transition_map.get_hash256_bytes(property_names::DATA_CONTRACT_ID)?;
+                let document_type = raw_transition_map.get_str(property_names::DOCUMENT_TYPE)?;
+                let data_contract = data_contracts_map
+                    .get(data_contract_id.as_slice())
+                    .ok_or_else(|| {
+                        anyhow!(
+                            "Data Contract doesn't exists for Transition: {:?}",
+                            raw_transition_map
+                        )
+                    })?;
+
+                //Because we don't know how the json came in we need to sanitize it
+                let (identifiers, binary_paths): (Vec<_>, Vec<_>) =
+                    data_contract.get_identifiers_and_binary_paths_owned(document_type)?;
+
+                raw_transition_map
+                    .replace_at_paths(
+                        identifiers.into_iter().chain(
+                            document_base_transition::IDENTIFIER_FIELDS
+                                .iter()
+                                .map(|a| a.to_string()),
+                        ),
+                        ReplacementType::Identifier,
                     )
-                })?;
+                    .map_err(ProtocolError::ValueError)?;
+                raw_transition_map
+                    .replace_at_paths(
+                        binary_paths.into_iter().chain(
+                            document_create_transition::BINARY_FIELDS
+                                .iter()
+                                .map(|a| a.to_string()),
+                        ),
+                        ReplacementType::BinaryBytes,
+                    )
+                    .map_err(ProtocolError::ValueError)?;
+
                 let document_transition =
-                    DocumentTransition::from_raw_object(raw_transition, data_contract.clone())?;
+                    DocumentTransition::from_value_map(raw_transition_map, data_contract.clone())?;
                 document_transitions.push(document_transition);
             }
         }
@@ -192,9 +257,10 @@ impl DocumentsBatchTransition {
         &self.transitions
     }
 
-    // TODO to decide if this should be a lazy iterator or a vector
-    pub fn get_modified_data_ids(&self) -> impl Iterator<Item = &Identifier> {
-        self.transitions.iter().map(|t| &t.base().id)
+    pub fn clean_value(value: &mut Value) -> Result<(), platform_value::Error> {
+        value.replace_at_paths(IDENTIFIER_FIELDS, ReplacementType::Identifier)?;
+        value.replace_integer_type_at_paths(U32_FIELDS, IntegerReplacementType::U32)?;
+        Ok(())
     }
 }
 
@@ -212,7 +278,7 @@ impl StateTransitionIdentitySigned for DocumentsBatchTransition {
         let mut highest_security_level = SecurityLevel::lowest_level();
 
         for transition in self.transitions.iter() {
-            let document_type = &transition.base().document_type;
+            let document_type = &transition.base().document_type_name;
             let data_contract = &transition.base().data_contract;
             let maybe_document_schema = data_contract.get_document_schema(document_type);
 
@@ -238,6 +304,53 @@ impl StateTransitionIdentitySigned for DocumentsBatchTransition {
     }
 }
 
+impl DocumentsBatchTransition {
+    fn to_value(&self, skip_signature: bool) -> Result<Value, ProtocolError> {
+        Ok(self.to_value_map(skip_signature)?.into())
+    }
+
+    fn to_value_map(&self, skip_signature: bool) -> Result<BTreeMap<String, Value>, ProtocolError> {
+        let mut map = BTreeMap::new();
+        map.insert(
+            property_names::PROTOCOL_VERSION.to_string(),
+            Value::U32(self.protocol_version),
+        );
+        map.insert(
+            property_names::TRANSITION_TYPE.to_string(),
+            Value::U8(self.transition_type as u8),
+        );
+        map.insert(
+            property_names::OWNER_ID.to_string(),
+            Value::Identifier(self.owner_id.to_buffer()),
+        );
+
+        if !skip_signature {
+            if let Some(signature) = self.signature.as_ref() {
+                map.insert(
+                    property_names::SIGNATURE.to_string(),
+                    Value::Bytes(signature.to_vec()),
+                );
+            }
+            if let Some(signature_key_id) = self.signature_public_key_id {
+                map.insert(
+                    property_names::SIGNATURE.to_string(),
+                    Value::U32(signature_key_id),
+                );
+            }
+        }
+        let mut transitions = vec![];
+        for transition in self.transitions.iter() {
+            transitions.push(transition.to_object()?)
+        }
+        map.insert(
+            property_names::TRANSITIONS.to_string(),
+            Value::Array(transitions),
+        );
+
+        Ok(map)
+    }
+}
+
 impl StateTransitionConvert for DocumentsBatchTransition {
     fn binary_property_paths() -> Vec<&'static str> {
         vec![property_names::SIGNATURE]
@@ -248,59 +361,39 @@ impl StateTransitionConvert for DocumentsBatchTransition {
     }
 
     fn signature_property_paths() -> Vec<&'static str> {
-        vec![property_names::SIGNATURE]
+        vec![
+            property_names::SIGNATURE,
+            property_names::SIGNATURE_PUBLIC_KEY_ID,
+        ]
     }
 
     fn to_json(&self, skip_signature: bool) -> Result<JsonValue, ProtocolError> {
-        let mut json_value: JsonValue = serde_json::to_value(self)?;
-
-        if skip_signature {
-            if let JsonValue::Object(ref mut o) = json_value {
-                for path in Self::signature_property_paths() {
-                    o.remove(path);
-                }
-            }
-        }
-
-        json_value.replace_binary_paths(Self::binary_property_paths(), ReplaceWith::Base64)?;
-
-        let mut transitions = vec![];
-        for transition in self.transitions.iter() {
-            transitions.push(transition.to_json()?)
-        }
-        json_value.insert(
-            String::from(property_names::TRANSITIONS),
-            JsonValue::Array(transitions),
-        )?;
-
-        Ok(json_value)
+        self.to_object(skip_signature)
+            .and_then(|value| value.try_into().map_err(ProtocolError::ValueError))
     }
 
-    fn to_object(&self, skip_signature: bool) -> Result<JsonValue, ProtocolError> {
-        let mut json_object: JsonValue = serde_json::to_value(self)?;
-        json_object
-            .replace_identifier_paths(Self::identifiers_property_paths(), ReplaceWith::Bytes)?;
-
+    fn to_object(&self, skip_signature: bool) -> Result<Value, ProtocolError> {
+        let mut object: Value = platform_value::to_value(self)?;
         if skip_signature {
             for path in Self::signature_property_paths() {
-                let _ = json_object.remove(path);
+                let _ = object.remove_values_matching_path(path);
             }
         }
         let mut transitions = vec![];
         for transition in self.transitions.iter() {
             transitions.push(transition.to_object()?)
         }
-        json_object.insert(
+        object.insert(
             String::from(property_names::TRANSITIONS),
-            JsonValue::Array(transitions),
+            Value::Array(transitions),
         )?;
 
-        Ok(json_object)
+        Ok(object)
     }
 
     fn to_buffer(&self, skip_signature: bool) -> Result<Vec<u8>, ProtocolError> {
         let mut result_buf = self.protocol_version.encode_var_vec();
-        let value = self.to_object(skip_signature)?;
+        let value: CborValue = self.to_object(skip_signature)?.try_into()?;
 
         let map = CborValue::serialized(&value)
             .map_err(|e| ProtocolError::EncodingError(e.to_string()))?;
@@ -321,7 +414,9 @@ impl StateTransitionConvert for DocumentsBatchTransition {
                 let (identifier_properties, binary_properties) = transition
                     .base()
                     .data_contract
-                    .get_identifiers_and_binary_paths(&self.transitions[i].base().document_type)?;
+                    .get_identifiers_and_binary_paths(
+                        &self.transitions[i].base().document_type_name,
+                    )?;
 
                 if transition.get_updated_at().is_none() {
                     cbor_transition.remove("$updatedAt");
@@ -365,14 +460,37 @@ impl StateTransitionConvert for DocumentsBatchTransition {
 
         Ok(result_buf)
     }
+
+    fn to_cleaned_object(&self, skip_signature: bool) -> Result<Value, ProtocolError> {
+        let mut object: Value = platform_value::to_value(self)?;
+        if skip_signature {
+            for path in Self::signature_property_paths() {
+                let _ = object.remove_values_matching_path(path);
+            }
+        }
+        let mut transitions = vec![];
+        for transition in self.transitions.iter() {
+            transitions.push(transition.to_cleaned_object()?)
+        }
+        object.insert(
+            String::from(property_names::TRANSITIONS),
+            Value::Array(transitions),
+        )?;
+
+        Ok(object)
+    }
 }
 
 impl StateTransitionLike for DocumentsBatchTransition {
+    fn get_modified_data_ids(&self) -> Vec<Identifier> {
+        self.transitions.iter().map(|t| t.base().id).collect()
+    }
+
     fn get_protocol_version(&self) -> u32 {
         self.protocol_version
     }
 
-    fn get_signature(&self) -> &Vec<u8> {
+    fn get_signature(&self) -> &BinaryData {
         if let Some(ref signature) = self.signature {
             signature
         } else {
@@ -386,8 +504,11 @@ impl StateTransitionLike for DocumentsBatchTransition {
         self.transition_type
     }
 
-    fn set_signature(&mut self, signature: Vec<u8>) {
+    fn set_signature(&mut self, signature: BinaryData) {
         self.signature = Some(signature);
+    }
+    fn set_signature_bytes(&mut self, signature: Vec<u8>) {
+        self.signature = Some(BinaryData::new(signature));
     }
     fn get_execution_context(&self) -> &StateTransitionExecutionContext {
         &self.execution_context
@@ -414,8 +535,10 @@ pub fn get_security_level_requirement(v: &JsonValue, default: SecurityLevel) -> 
 mod test {
     use std::sync::Arc;
 
+    use platform_value::Bytes32;
     use serde_json::json;
 
+    use crate::tests::fixtures::get_extended_documents_fixture;
     use crate::{
         document::{
             document_factory::DocumentFactory,
@@ -424,7 +547,7 @@ mod test {
         state_repository::MockStateRepositoryLike,
         tests::fixtures::{
             get_data_contract_fixture, get_document_transitions_fixture,
-            get_document_validator_fixture, get_documents_fixture,
+            get_document_validator_fixture,
         },
     };
 
@@ -455,7 +578,7 @@ mod test {
         // 0 is niceDocument,
         // 1 and 2 are pretty documents,
         // 3 and 4 are indexed documents that do not have security level specified
-        let documents = get_documents_fixture(data_contract).unwrap();
+        let documents = get_extended_documents_fixture(data_contract).unwrap();
         let medium_security_document = documents.get(0).unwrap();
         let master_security_document = documents.get(1).unwrap();
         let no_security_level_document = documents.get(3).unwrap();
@@ -464,6 +587,7 @@ mod test {
             1,
             get_document_validator_fixture(),
             DataContractFetcherAndValidator::new(Arc::new(MockStateRepositoryLike::new())),
+            None,
         );
 
         let batch_transition = document_factory
@@ -525,9 +649,9 @@ mod test {
         let mut data_contract = get_data_contract_fixture(Some(owner_id));
         data_contract.id = data_contract_id;
 
-        let documents = get_documents_fixture(data_contract.clone()).unwrap();
+        let documents = get_extended_documents_fixture(data_contract.clone()).unwrap();
         let mut document = documents.first().unwrap().to_owned();
-        document.entropy = entropy_bytes;
+        document.entropy = Bytes32::new(entropy_bytes);
 
         let transitions = get_document_transitions_fixture([(Action::Create, vec![document])]);
         let mut transition = transitions.first().unwrap().to_owned();
@@ -536,18 +660,21 @@ mod test {
             t.base.id = transition_id;
         }
 
-        let state_transition = DocumentsBatchTransition::from_raw_object(
-            json!({
-                "ownerId" : owner_id.as_bytes(),
-                "transitions" : [transition.to_object().unwrap()],
-            }),
-            vec![data_contract],
-        )
-        .expect("transition should be created");
+        let mut map = BTreeMap::new();
+        map.insert(
+            "ownerId".to_string(),
+            Value::Identifier(owner_id.to_buffer()),
+        );
+        map.insert(
+            "transitions".to_string(),
+            Value::Array(vec![transition.to_object().unwrap()]),
+        );
+
+        let state_transition = DocumentsBatchTransition::from_value_map(map, vec![data_contract])
+            .expect("transition should be created");
 
         let bytes = state_transition.to_buffer(false).unwrap();
 
-        pretty_assertions::assert_eq!(expected_bytes.len(), bytes.len());
-        pretty_assertions::assert_eq!(expected_bytes, bytes);
+        assert_eq!(hex::encode(expected_bytes), hex::encode(bytes));
     }
 }

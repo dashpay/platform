@@ -1,7 +1,8 @@
 use std::sync::Arc;
 
 use lazy_static::lazy_static;
-use serde_json::Value;
+use platform_value::Value;
+use serde_json::Value as JsonValue;
 
 use crate::{
     consensus::basic::identity::{
@@ -11,17 +12,14 @@ use crate::{
     },
     contracts::withdrawals_contract,
     identity::core_script::CoreScript,
-    util::{
-        is_fibonacci_number::is_fibonacci_number, json_value::JsonValueExt,
-        protocol_data::get_protocol_version,
-    },
+    util::is_fibonacci_number::is_fibonacci_number,
     validation::{JsonSchemaValidator, ValidationResult},
     version::ProtocolVersionValidator,
-    DashPlatformProtocolInitError, NonConsensusError, SerdeParsingError,
+    DashPlatformProtocolInitError, NonConsensusError,
 };
 
 lazy_static! {
-    static ref INDENTITY_CREDIT_WITHDRAWAL_TRANSITION_SCHEMA: Value =
+    static ref INDENTITY_CREDIT_WITHDRAWAL_TRANSITION_SCHEMA: JsonValue =
         serde_json::from_str(include_str!(
             "../../../../../schema/identity/stateTransition/identityCreditWithdrawal.json"
         ))
@@ -50,26 +48,24 @@ impl IdentityCreditWithdrawalTransitionBasicValidator {
 
     pub async fn validate(
         &self,
-        transition_json: &Value,
+        transition_object: &Value,
     ) -> Result<ValidationResult<()>, NonConsensusError> {
-        let mut result = self.json_schema_validator.validate(transition_json)?;
-
-        let identity_credit_withdrawal_transition_map =
-            transition_json.as_object().ok_or_else(|| {
-                SerdeParsingError::new(
-                    "Expected identity credit withdrawal transition to be a json object",
-                )
-            })?;
+        let mut result = self.json_schema_validator.validate(
+            &transition_object
+                .try_to_validating_json()
+                .map_err(NonConsensusError::ValueError)?,
+        )?;
 
         if !result.is_valid() {
             return Ok(result);
         }
 
         result.merge(
-            self.protocol_version_validator
-                .validate(get_protocol_version(
-                    identity_credit_withdrawal_transition_map,
-                )?)?,
+            self.protocol_version_validator.validate(
+                transition_object
+                    .get_integer("protocolVersion")
+                    .map_err(NonConsensusError::ValueError)?,
+            )?,
         );
 
         if !result.is_valid() {
@@ -77,7 +73,9 @@ impl IdentityCreditWithdrawalTransitionBasicValidator {
         }
 
         // validate pooling is always equals to 0
-        let pooling = transition_json.get_u8(withdrawals_contract::property_names::POOLING)?;
+        let pooling = transition_object
+            .get_integer(withdrawals_contract::property_names::POOLING)
+            .map_err(NonConsensusError::ValueError)?;
 
         if pooling > 0 {
             result.add_error(
@@ -88,8 +86,9 @@ impl IdentityCreditWithdrawalTransitionBasicValidator {
         }
 
         // validate core_fee is in fibonacci sequence
-        let core_fee_per_byte =
-            transition_json.get_u32(withdrawals_contract::property_names::CORE_FEE_PER_BYTE)?;
+        let core_fee_per_byte = transition_object
+            .get_integer(withdrawals_contract::property_names::CORE_FEE_PER_BYTE)
+            .map_err(NonConsensusError::ValueError)?;
 
         if !is_fibonacci_number(core_fee_per_byte) {
             result.add_error(InvalidIdentityCreditWithdrawalTransitionCoreFeeError::new(
@@ -100,18 +99,9 @@ impl IdentityCreditWithdrawalTransitionBasicValidator {
         }
 
         // validate output_script types
-        let output_script_value = transition_json
-            .get(withdrawals_contract::property_names::OUTPUT_SCRIPT)
-            .ok_or_else(|| {
-                SerdeParsingError::new(format!(
-                    "Expected credit withdrawal transition to have {} property",
-                    withdrawals_contract::property_names::OUTPUT_SCRIPT
-                ))
-            })?;
-
-        let output_script_bytes: Vec<u8> = serde_json::from_value(output_script_value.clone())?;
-
-        let output_script = CoreScript::from_bytes(output_script_bytes);
+        let output_script: CoreScript = transition_object
+            .get_bytes_into(withdrawals_contract::property_names::OUTPUT_SCRIPT)
+            .map_err(NonConsensusError::ValueError)?;
 
         if !output_script.is_p2pkh() && !output_script.is_p2sh() {
             result.add_error(

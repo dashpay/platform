@@ -1,3 +1,4 @@
+use std::sync::Arc;
 use std::{collections::HashSet, convert::TryInto};
 
 use anyhow::Context;
@@ -31,7 +32,7 @@ lazy_static! {
 }
 
 pub async fn validate_state_transition_identity_signature(
-    state_repository: &impl StateRepositoryLike,
+    state_repository: Arc<impl StateRepositoryLike>,
     state_transition: &mut impl StateTransitionIdentitySigned,
     bls: &impl BlsModule,
 ) -> Result<ValidationResult<()>, ProtocolError> {
@@ -162,13 +163,14 @@ mod test {
         },
         NativeBlsModule,
     };
+    use platform_value::BinaryData;
     use serde::{Deserialize, Serialize};
 
     #[derive(Debug, Clone, Serialize, Deserialize)]
     #[serde(rename_all = "camelCase")]
     struct ExampleStateTransition {
         pub protocol_version: u32,
-        pub signature: Vec<u8>,
+        pub signature: BinaryData,
         pub signature_public_key_id: KeyID,
         pub transition_type: StateTransitionType,
         pub owner_id: Identifier,
@@ -179,14 +181,14 @@ mod test {
     }
 
     impl StateTransitionConvert for ExampleStateTransition {
-        fn binary_property_paths() -> Vec<&'static str> {
-            vec!["signature"]
+        fn signature_property_paths() -> Vec<&'static str> {
+            vec!["signature", "signaturePublicKeyId"]
         }
         fn identifiers_property_paths() -> Vec<&'static str> {
             vec![]
         }
-        fn signature_property_paths() -> Vec<&'static str> {
-            vec!["signature", "signaturePublicKeyId"]
+        fn binary_property_paths() -> Vec<&'static str> {
+            vec!["signature"]
         }
     }
 
@@ -204,10 +206,10 @@ mod test {
         fn get_type(&self) -> StateTransitionType {
             StateTransitionType::DocumentsBatch
         }
-        fn get_signature(&self) -> &Vec<u8> {
+        fn get_signature(&self) -> &BinaryData {
             &self.signature
         }
-        fn set_signature(&mut self, signature: Vec<u8>) {
+        fn set_signature(&mut self, signature: BinaryData) {
             self.signature = signature
         }
         fn get_execution_context(&self) -> &StateTransitionExecutionContext {
@@ -220,6 +222,14 @@ mod test {
 
         fn set_execution_context(&mut self, execution_context: StateTransitionExecutionContext) {
             self.execution_context = execution_context
+        }
+
+        fn set_signature_bytes(&mut self, signature: Vec<u8>) {
+            self.signature = BinaryData::new(signature)
+        }
+
+        fn get_modified_data_ids(&self) -> Vec<Identifier> {
+            vec![]
         }
     }
 
@@ -303,7 +313,7 @@ mod test {
         let bls = NativeBlsModule::default();
         let mut state_repository_mock = MockStateRepositoryLike::new();
         let raw_identity = identity_fixture_raw_object();
-        let identity = Identity::from_raw_object(raw_identity).unwrap();
+        let identity = Identity::from_object(raw_identity).unwrap();
         let owner_id = identity.get_id();
         let mut state_transition = get_mock_state_transition();
 
@@ -313,7 +323,7 @@ mod test {
             .returning(move |_, _| Ok(Some(identity.clone())));
 
         let result = validate_state_transition_identity_signature(
-            &state_repository_mock,
+            Arc::new(state_repository_mock),
             &mut state_transition,
             &bls,
         )
@@ -328,7 +338,7 @@ mod test {
         let bls = NativeBlsModule::default();
         let mut state_repository_mock = MockStateRepositoryLike::new();
         let raw_identity = identity_fixture_raw_object();
-        let identity = Identity::from_raw_object(raw_identity).unwrap();
+        let identity = Identity::from_object(raw_identity).unwrap();
         let owner_id = identity.get_id();
         let mut state_transition = get_mock_state_transition();
 
@@ -338,7 +348,7 @@ mod test {
             .returning(move |_, _| Ok(None));
 
         let result = validate_state_transition_identity_signature(
-            &state_repository_mock,
+            Arc::new(state_repository_mock),
             &mut state_transition,
             &bls,
         )
@@ -360,7 +370,7 @@ mod test {
         let bls = NativeBlsModule::default();
         let mut state_repository_mock = MockStateRepositoryLike::new();
         let raw_identity = identity_fixture_raw_object();
-        let identity = Identity::from_raw_object(raw_identity).unwrap();
+        let identity = Identity::from_object(raw_identity).unwrap();
         let owner_id = identity.get_id();
         let mut state_transition = get_mock_state_transition();
 
@@ -371,7 +381,7 @@ mod test {
             .returning(move |_, _| Ok(Some(identity.clone())));
 
         let result = validate_state_transition_identity_signature(
-            &state_repository_mock,
+            Arc::new(state_repository_mock),
             &mut state_transition,
             &bls,
         )
@@ -392,18 +402,18 @@ mod test {
         let bls = NativeBlsModule::default();
         let mut state_repository_mock = MockStateRepositoryLike::new();
         let raw_identity = identity_fixture_raw_object();
-        let identity = Identity::from_raw_object(raw_identity).unwrap();
+        let identity = Identity::from_object(raw_identity).unwrap();
         let owner_id = identity.get_id();
         let mut state_transition = get_mock_state_transition();
 
-        state_transition.owner_id = owner_id.clone();
+        state_transition.owner_id = *owner_id;
         state_repository_mock
             .expect_fetch_identity()
             .returning(move |_, _| Ok(Some(identity.clone())));
         state_transition.return_error = Some(0);
 
         let result = validate_state_transition_identity_signature(
-            &state_repository_mock,
+            Arc::new(state_repository_mock),
             &mut state_transition,
             &bls,
         )
@@ -425,18 +435,18 @@ mod test {
         // 'should return InvalidSignaturePublicKeySecurityLevelConsensusError if InvalidSignaturePublicKeySecurityLevelError was thrown'
         let mut state_repository_mock = MockStateRepositoryLike::new();
         let raw_identity = identity_fixture_raw_object();
-        let identity = Identity::from_raw_object(raw_identity).unwrap();
+        let identity = Identity::from_object(raw_identity).unwrap();
         let owner_id = identity.get_id();
         let mut state_transition = get_mock_state_transition();
 
-        state_transition.owner_id = owner_id.clone();
+        state_transition.owner_id = *owner_id;
         state_repository_mock
             .expect_fetch_identity()
             .returning(move |_, _| Ok(Some(identity.clone())));
         state_transition.return_error = Some(1);
 
         let result = validate_state_transition_identity_signature(
-            &state_repository_mock,
+            Arc::new(state_repository_mock),
             &mut state_transition,
             &bls,
         )
@@ -455,11 +465,11 @@ mod test {
         let bls = NativeBlsModule::default();
         let mut state_repository_mock = MockStateRepositoryLike::new();
         let raw_identity = identity_fixture_raw_object();
-        let identity = Identity::from_raw_object(raw_identity).unwrap();
+        let identity = Identity::from_object(raw_identity).unwrap();
         let owner_id = identity.get_id();
         let mut state_transition = get_mock_state_transition();
 
-        state_transition.owner_id = owner_id.clone();
+        state_transition.owner_id = *owner_id;
         state_repository_mock
             .expect_fetch_identity()
             .returning(move |_, _| Ok(Some(identity.clone())));
@@ -467,7 +477,7 @@ mod test {
         state_transition.get_execution_context().enable_dry_run();
 
         let result = validate_state_transition_identity_signature(
-            &state_repository_mock,
+            Arc::new(state_repository_mock),
             &mut state_transition,
             &bls,
         )
@@ -483,18 +493,18 @@ mod test {
         // 'should return PubicKeySecurityLevelNotMetConsensusError if PubicKeySecurityLevelNotMetError was thrown'
         let mut state_repository_mock = MockStateRepositoryLike::new();
         let raw_identity = identity_fixture_raw_object();
-        let identity = Identity::from_raw_object(raw_identity).unwrap();
+        let identity = Identity::from_object(raw_identity).unwrap();
         let owner_id = identity.get_id();
         let mut state_transition = get_mock_state_transition();
 
-        state_transition.owner_id = owner_id.clone();
+        state_transition.owner_id = *owner_id;
         state_repository_mock
             .expect_fetch_identity()
             .returning(move |_, _| Ok(Some(identity.clone())));
         state_transition.return_error = Some(2);
 
         let result = validate_state_transition_identity_signature(
-            &state_repository_mock,
+            Arc::new(state_repository_mock),
             &mut state_transition,
             &bls,
         )
@@ -514,18 +524,18 @@ mod test {
         // 'should return PublicKeyIsDisabledConsensusError if PublicKeyIsDisabledError was thrown'
         let mut state_repository_mock = MockStateRepositoryLike::new();
         let raw_identity = identity_fixture_raw_object();
-        let identity = Identity::from_raw_object(raw_identity).unwrap();
+        let identity = Identity::from_object(raw_identity).unwrap();
         let owner_id = identity.get_id();
         let mut state_transition = get_mock_state_transition();
 
-        state_transition.owner_id = owner_id.clone();
+        state_transition.owner_id = *owner_id;
         state_repository_mock
             .expect_fetch_identity()
             .returning(move |_, _| Ok(Some(identity.clone())));
         state_transition.return_error = Some(3);
 
         let result = validate_state_transition_identity_signature(
-            &state_repository_mock,
+            Arc::new(state_repository_mock),
             &mut state_transition,
             &bls,
         )

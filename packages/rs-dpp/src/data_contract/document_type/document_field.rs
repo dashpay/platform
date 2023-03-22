@@ -4,6 +4,7 @@ use std::io::{BufReader, Read};
 
 use crate::data_contract::errors::DataContractError;
 
+use crate::prelude::TimestampMillis;
 use crate::ProtocolError;
 use byteorder::{BigEndian, ReadBytesExt, WriteBytesExt};
 use integer_encoding::{VarInt, VarIntReader};
@@ -472,7 +473,7 @@ impl DocumentFieldType {
             DocumentFieldType::Object(inner_fields) => {
                 if let Value::Map(map) = value {
                     let mut value_map =
-                        Value::map_into_btree_map(map).map_err(ProtocolError::ValueError)?;
+                        Value::map_into_btree_string_map(map).map_err(ProtocolError::ValueError)?;
                     let mut r_vec = vec![];
                     inner_fields.iter().try_for_each(|(key, field)| {
                         if let Some(value) = value_map.remove(key) {
@@ -574,23 +575,7 @@ impl DocumentFieldType {
                 }
             }
             DocumentFieldType::ByteArray(_, _) => {
-                let mut bytes = match value {
-                    Value::Bytes(bytes) => Ok(bytes.clone()),
-                    Value::Text(text) => {
-                        let value_as_bytes = base64::decode(text).map_err(|_| {
-                            ProtocolError::DataContractError(DataContractError::ValueDecodingError(
-                                "bytearray: invalid base64 value",
-                            ))
-                        })?;
-                        Ok(value_as_bytes)
-                    }
-                    Value::Array(array) => array
-                        .iter()
-                        .map(|byte| byte.to_integer().map_err(ProtocolError::ValueError))
-                        .collect::<Result<Vec<u8>, ProtocolError>>(),
-                    _ => Err(get_field_type_matching_error()),
-                }?;
-
+                let mut bytes = value.to_binary_bytes()?;
                 let mut r_vec = bytes.len().encode_var_vec();
                 r_vec.append(&mut bytes);
                 Ok(r_vec)
@@ -608,7 +593,7 @@ impl DocumentFieldType {
                 let Some(value_map) = value.as_map() else {
                     return Err(get_field_type_matching_error())
                 };
-                let value_map = Value::map_ref_into_btree_map(value_map)?;
+                let value_map = Value::map_ref_into_btree_string_map(value_map)?;
                 let mut r_vec = vec![];
                 inner_fields.iter().try_for_each(|(key, field)| {
                     if let Some(value) = value_map.get(key) {
@@ -670,7 +655,7 @@ impl DocumentFieldType {
                 }
             }
             DocumentFieldType::Date => {
-                encode_float(value.to_float().map_err(ProtocolError::ValueError)?)
+                encode_date_timestamp(value.to_integer().map_err(ProtocolError::ValueError)?)
             }
             DocumentFieldType::Integer => {
                 let value_as_i64 = value.to_integer().map_err(ProtocolError::ValueError)?;
@@ -680,22 +665,9 @@ impl DocumentFieldType {
             DocumentFieldType::Number => {
                 encode_float(value.to_float().map_err(ProtocolError::ValueError)?)
             }
-            DocumentFieldType::ByteArray(_, _) => match value {
-                Value::Bytes(bytes) => Ok(bytes.clone()),
-                Value::Text(text) => {
-                    let value_as_bytes = base64::decode(text).map_err(|_| {
-                        ProtocolError::DataContractError(DataContractError::ValueDecodingError(
-                            "bytearray: invalid base64 value",
-                        ))
-                    })?;
-                    Ok(value_as_bytes)
-                }
-                Value::Array(array) => array
-                    .iter()
-                    .map(|byte| byte.to_integer().map_err(ProtocolError::ValueError))
-                    .collect::<Result<Vec<u8>, ProtocolError>>(),
-                _ => Err(get_field_type_matching_error()),
-            },
+            DocumentFieldType::ByteArray(_, _) => {
+                value.to_binary_bytes().map_err(ProtocolError::ValueError)
+            }
             DocumentFieldType::Boolean => {
                 let value_as_boolean = value.as_bool().ok_or_else(get_field_type_matching_error)?;
                 if value_as_boolean {
@@ -741,13 +713,13 @@ impl DocumentFieldType {
             }
             DocumentFieldType::Integer => str.parse::<i128>().map(Value::I128).map_err(|_| {
                 ProtocolError::DataContractError(DataContractError::ValueWrongType(
-                    "value is not an integer",
+                    "value is not an integer from string",
                 ))
             }),
             DocumentFieldType::Number | DocumentFieldType::Date => {
                 str.parse::<f64>().map(Value::Float).map_err(|_| {
                     ProtocolError::DataContractError(DataContractError::ValueWrongType(
-                        "value is not a float",
+                        "value is not a float from string",
                     ))
                 })
             }
@@ -805,6 +777,10 @@ fn get_field_type_matching_error() -> ProtocolError {
     ProtocolError::DataContractError(DataContractError::ValueWrongType(
         "document field type doesn't match document value",
     ))
+}
+
+pub fn encode_date_timestamp(val: TimestampMillis) -> Result<Vec<u8>, ProtocolError> {
+    encode_unsigned_integer(val)
 }
 
 pub fn encode_unsigned_integer(val: u64) -> Result<Vec<u8>, ProtocolError> {

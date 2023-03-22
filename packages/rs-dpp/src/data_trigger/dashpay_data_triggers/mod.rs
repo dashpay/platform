@@ -1,16 +1,20 @@
 use anyhow::{anyhow, bail};
+use platform_value::btreemap_extensions::BTreeValueMapHelper;
 
+use crate::data_trigger::dashpay_data_triggers::property_names::CORE_HEIGHT_CREATED_AT;
 use crate::{
     document::document_transition::DocumentTransition, errors::DataTriggerError,
-    get_from_transition, prelude::Identifier, state_repository::StateRepositoryLike,
-    util::json_value::JsonValueExt,
+    get_from_transition, prelude::Identifier, state_repository::StateRepositoryLike, ProtocolError,
 };
 
 use super::{DataTriggerExecutionContext, DataTriggerExecutionResult};
 
-const BLOCKS_SIZE_WINDOW: i64 = 8;
-const PROPERTY_CORE_HEIGHT_CREATED_AT: &str = "coreHeightCreatedAt";
-const PROPERTY_CORE_CHAIN_LOCKED_HEIGHT: &str = "coreChainLockedHeight";
+const BLOCKS_SIZE_WINDOW: u32 = 8;
+mod property_names {
+    pub const TO_USER_ID: &str = "toUserId";
+    pub const CORE_HEIGHT_CREATED_AT: &str = "coreHeightCreatedAt";
+    pub const CORE_CHAIN_LOCKED_HEIGHT: &str = "coreChainLockedHeight";
+}
 
 pub async fn create_contact_request_data_trigger<'a, SR>(
     document_transition: &DocumentTransition,
@@ -20,49 +24,94 @@ pub async fn create_contact_request_data_trigger<'a, SR>(
 where
     SR: StateRepositoryLike,
 {
-    if context.state_transition_execution_context.is_dry_run() {
-        return Ok(Default::default());
-    }
+    let mut result = DataTriggerExecutionResult::default();
+    let is_dry_run = context.state_transition_execution_context.is_dry_run();
+    let owner_id = context.owner_id;
 
-    let dt_create = match document_transition {
+    let document_create_transition = match document_transition {
         DocumentTransition::Create(d) => d,
         _ => bail!(
             "the Document Transition {} isn't 'CREATE",
             get_from_transition!(document_transition, id)
         ),
     };
-    let data = dt_create.data.as_ref().ok_or_else(|| {
+    let data = document_create_transition.data.as_ref().ok_or_else(|| {
         anyhow!(
             "data isn't defined in Data Transition {}",
-            dt_create.base.id
+            document_create_transition.base.id
         )
     })?;
 
-    let core_height_created_at = data.get_i64(PROPERTY_CORE_HEIGHT_CREATED_AT)?;
+    let maybe_core_height_created_at: Option<u32> = data
+        .get_optional_integer(CORE_HEIGHT_CREATED_AT)
+        .map_err(ProtocolError::ValueError)?;
+    let to_user_id = data.get_identifier(property_names::TO_USER_ID)?;
 
-    let core_chain_locked_height = context
+    if !is_dry_run {
+        if owner_id == &to_user_id {
+            let err = DataTriggerError::DataTriggerConditionError {
+                data_contract_id: context.data_contract.id,
+                document_transition_id: document_create_transition.base.id,
+                message: format!("Identity {to_user_id} must not be equal to owner id"),
+                document_transition: Some(DocumentTransition::Create(
+                    document_create_transition.clone(),
+                )),
+                owner_id: Some(*context.owner_id),
+            };
+            result.add_error(err.into());
+            return Ok(result);
+        }
+
+        if let Some(core_height_created_at) = maybe_core_height_created_at {
+            let core_chain_locked_height = context
+                .state_repository
+                .fetch_latest_platform_core_chain_locked_height()
+                .await?
+                // is unwrap_or_default necessary?
+                .unwrap_or_default();
+
+            let height_window_start = core_chain_locked_height.saturating_sub(BLOCKS_SIZE_WINDOW);
+            let height_window_end = core_chain_locked_height.saturating_add(BLOCKS_SIZE_WINDOW);
+
+            if core_height_created_at < height_window_start
+                || core_height_created_at > height_window_end
+            {
+                let err = DataTriggerError::DataTriggerConditionError {
+                    data_contract_id: context.data_contract.id,
+                    document_transition_id: document_create_transition.base.id,
+                    message: format!(
+                        "Core height {} is out of block height window from {} to {}",
+                        core_height_created_at, height_window_start, height_window_end
+                    ),
+                    document_transition: Some(DocumentTransition::Create(
+                        document_create_transition.clone(),
+                    )),
+                    owner_id: Some(*context.owner_id),
+                };
+                result.add_error(err.into());
+                return Ok(result);
+            }
+        }
+    }
+
+    //  toUserId identity exits
+    let identity = context
         .state_repository
-        .fetch_latest_platform_core_chain_locked_height()
-        .await?
-        .unwrap_or_default() as i64;
+        .fetch_identity(&to_user_id, context.state_transition_execution_context)
+        .await?;
 
-    let height_window_start = core_chain_locked_height - BLOCKS_SIZE_WINDOW;
-    let height_window_end = core_chain_locked_height + BLOCKS_SIZE_WINDOW;
-
-    let mut result = DataTriggerExecutionResult::default();
-
-    if core_height_created_at < height_window_start || core_height_created_at > height_window_end {
+    if !is_dry_run && identity.is_none() {
         let err = DataTriggerError::DataTriggerConditionError {
             data_contract_id: context.data_contract.id,
-            document_transition_id: dt_create.base.id,
-            message: format!(
-                "Core height {} is out of block height window from {} to {}",
-                core_height_created_at, height_window_start, height_window_end
-            ),
-            document_transition: Some(DocumentTransition::Create(dt_create.clone())),
+            document_transition_id: document_create_transition.base.id,
+            message: format!("Identity {to_user_id} doesn't exist"),
+            document_transition: Some(DocumentTransition::Create(
+                document_create_transition.clone(),
+            )),
             owner_id: Some(*context.owner_id),
         };
         result.add_error(err.into());
+        return Ok(result);
     }
 
     Ok(result)
@@ -70,26 +119,52 @@ where
 
 #[cfg(test)]
 mod test {
+    use platform_value::btreemap_extensions::BTreeValueMapHelper;
+    use platform_value::platform_value;
+
     use super::create_contact_request_data_trigger;
     use crate::{
         data_trigger::DataTriggerExecutionContext,
-        document::document_transition::DocumentTransition,
+        document::document_transition::Action,
         state_repository::MockStateRepositoryLike,
         state_transition::state_transition_execution_context::StateTransitionExecutionContext,
-        tests::fixtures::get_data_contract_fixture,
+        tests::{
+            fixtures::{
+                get_contact_request_document_fixture, get_dashpay_contract_fixture,
+                get_document_transitions_fixture, identity_fixture,
+            },
+            utils::get_data_trigger_error_from_execution_result,
+        },
+        DataTriggerError,
     };
 
     #[tokio::test]
     async fn should_successfully_execute_on_dry_run() {
-        let transition_execution_context = StateTransitionExecutionContext::default();
-        let state_repository = MockStateRepositoryLike::new();
-        let data_contract = get_data_contract_fixture(None);
-        let owner_id = data_contract.owner_id().to_owned();
+        let mut contact_request_document = get_contact_request_document_fixture(None, None);
+        contact_request_document
+            .set(
+                super::property_names::CORE_HEIGHT_CREATED_AT,
+                platform_value!(10u32),
+            )
+            .expect("expected to set core height created at");
+        let owner_id = &contact_request_document.owner_id();
 
-        let document_transition = DocumentTransition::Create(Default::default());
+        let document_transitions =
+            get_document_transitions_fixture([(Action::Create, vec![contact_request_document])]);
+        let document_transition = document_transitions
+            .get(0)
+            .expect("document transition should be present");
+
+        let data_contract = get_dashpay_contract_fixture(None);
+        let mut state_repository = MockStateRepositoryLike::new();
+        state_repository
+            .expect_fetch_identity()
+            .returning(|_, _| Ok(None));
+        let transition_execution_context = StateTransitionExecutionContext::default();
+
         let data_trigger_context = DataTriggerExecutionContext {
             data_contract: &data_contract,
-            owner_id: &owner_id,
+            owner_id,
             state_repository: &state_repository,
             state_transition_execution_context: &transition_execution_context,
         };
@@ -97,11 +172,120 @@ mod test {
         transition_execution_context.enable_dry_run();
 
         let result =
-            create_contact_request_data_trigger(&document_transition, &data_trigger_context, None)
+            create_contact_request_data_trigger(document_transition, &data_trigger_context, None)
                 .await
                 .expect("the execution result should be returned");
 
         assert!(result.is_ok());
+    }
+
+    #[tokio::test]
+    async fn should_fail_if_owner_id_equals_to_user_id() {
+        let mut contact_request_document = get_contact_request_document_fixture(None, None);
+        let owner_id = contact_request_document.owner_id();
+        contact_request_document
+            .set("toUserId", platform_value::to_value(owner_id).unwrap())
+            .expect("expected to set toUserId");
+
+        let data_contract = get_dashpay_contract_fixture(None);
+        let document_transitions =
+            get_document_transitions_fixture([(Action::Create, vec![contact_request_document])]);
+        let document_transition = document_transitions
+            .get(0)
+            .expect("document transition should be present");
+
+        let transition_execution_context = StateTransitionExecutionContext::default();
+        let identity_fixture = identity_fixture();
+        let mut state_repository = MockStateRepositoryLike::new();
+
+        state_repository
+            .expect_fetch_identity()
+            .returning(move |_, _| Ok(Some(identity_fixture.clone())));
+        state_repository
+            .expect_fetch_latest_platform_core_chain_locked_height()
+            .returning(|| Ok(Some(42)));
+
+        let data_trigger_context = DataTriggerExecutionContext {
+            data_contract: &data_contract,
+            owner_id: &owner_id,
+            state_repository: &state_repository,
+            state_transition_execution_context: &transition_execution_context,
+        };
+
+        let dashpay_identity_id = data_trigger_context.owner_id.to_owned();
+
+        let result = create_contact_request_data_trigger(
+            document_transition,
+            &data_trigger_context,
+            Some(&dashpay_identity_id),
+        )
+        .await
+        .expect("data trigger result should be returned");
+
+        assert!(!result.is_ok());
+        let data_trigger_error = get_data_trigger_error_from_execution_result(&result, 0);
+
+        assert!(matches!(
+            &data_trigger_error,
+            &DataTriggerError::DataTriggerConditionError { message, .. }  if {
+                message == &format!("Identity {owner_id} must not be equal to owner id")
+
+
+            }
+        ));
+    }
+
+    #[tokio::test]
+    async fn should_fail_if_id_not_exists() {
+        let contact_request_document = get_contact_request_document_fixture(None, None);
+        let data_contract = get_dashpay_contract_fixture(None);
+        let owner_id = contact_request_document.owner_id();
+        let contract_request_to_user_id = contact_request_document
+            .document
+            .properties
+            .get_identifier("toUserId")
+            .expect("expected to get toUserId");
+
+        let document_transitions =
+            get_document_transitions_fixture([(Action::Create, vec![contact_request_document])]);
+        let document_transition = document_transitions
+            .get(0)
+            .expect("document transition should be present");
+
+        let transition_execution_context = StateTransitionExecutionContext::default();
+        let mut state_repository = MockStateRepositoryLike::new();
+        state_repository
+            .expect_fetch_identity()
+            .returning(|_, _| Ok(None));
+
+        let data_trigger_context = DataTriggerExecutionContext {
+            data_contract: &data_contract,
+            owner_id: &owner_id,
+            state_repository: &state_repository,
+            state_transition_execution_context: &transition_execution_context,
+        };
+
+        let dashpay_identity_id = data_trigger_context.owner_id.to_owned();
+
+        let result = create_contact_request_data_trigger(
+            document_transition,
+            &data_trigger_context,
+            Some(&dashpay_identity_id),
+        )
+        .await
+        .expect("data trigger result should be returned");
+
+        assert!(!result.is_ok());
+        let data_trigger_error = get_data_trigger_error_from_execution_result(&result, 0);
+
+        assert!(matches!(
+            &data_trigger_error,
+            &DataTriggerError::DataTriggerConditionError { message, .. }  if {
+                message == &format!("Identity {contract_request_to_user_id} doesn't exist")
+
+
+            }
+        ));
     }
 
     // TODO! implement remaining tests

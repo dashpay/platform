@@ -22,10 +22,10 @@ impl PublicKeySecurityLevelNotMetError {
     }
 
     pub fn public_key_security_level(&self) -> SecurityLevel {
-        self.public_key_security_level.clone()
+        self.public_key_security_level
     }
     pub fn required_security_level(&self) -> SecurityLevel {
-        self.required_security_level.clone()
+        self.required_security_level
     }
 }
 

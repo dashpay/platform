@@ -16,7 +16,7 @@ impl InvalidIdentityPublicKeyTypeError {
     }
 
     pub fn public_key_type(&self) -> KeyType {
-        self.public_key_type.clone()
+        self.public_key_type
     }
 }
 

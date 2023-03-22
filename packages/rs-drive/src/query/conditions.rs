@@ -43,7 +43,7 @@ use WhereOperator::{
 use crate::error::query::QueryError;
 use crate::error::Error;
 use dpp::data_contract::document_type::DocumentType;
-use dpp::document::document_stub::DocumentStub;
+use dpp::document::Document;
 use dpp::platform_value::Value;
 
 /// Converts SQL values to CBOR.
@@ -665,7 +665,7 @@ impl<'a> WhereClause {
     pub(crate) fn to_path_query(
         &self,
         document_type: &DocumentType,
-        start_at_document: &Option<(DocumentStub, bool)>,
+        start_at_document: &Option<(Document, bool)>,
         left_to_right: bool,
     ) -> Result<Query, Error> {
         // If there is a start_at_document, we need to get the value that it has for the

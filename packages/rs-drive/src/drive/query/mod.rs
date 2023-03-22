@@ -44,12 +44,25 @@ use crate::fee::op::DriveOperation;
 use crate::query::DriveQuery;
 use dpp::data_contract::document_type::DocumentType;
 use dpp::data_contract::DriveContractExt;
+use dpp::document::Document;
+use dpp::ProtocolError;
 
 use crate::drive::block_info::BlockInfo;
 use crate::fee_pools::epochs::Epoch;
 
+#[derive(Debug)]
 /// The outcome of a query
 pub struct QueryDocumentsOutcome {
+    /// returned items
+    pub documents: Vec<Document>,
+    /// skipped item count
+    pub skipped: u16,
+    /// the processing cost
+    pub cost: u64,
+}
+
+/// The outcome of a query
+pub struct QuerySerializedDocumentsOutcome {
     /// returned items
     pub items: Vec<Vec<u8>>,
     /// skipped item count
@@ -80,6 +93,10 @@ impl Drive {
         let mut drive_operations: Vec<DriveOperation> = vec![];
         let (items, skipped) =
             query.execute_serialized_no_proof_internal(self, transaction, &mut drive_operations)?;
+        let documents = items
+            .into_iter()
+            .map(|serialized| Document::from_cbor(serialized.as_slice(), None, None))
+            .collect::<Result<Vec<Document>, ProtocolError>>()?;
         let cost = if let Some(epoch) = epoch {
             let fee_result = calculate_fee(None, Some(drive_operations), epoch)?;
             fee_result.processing_fee
@@ -88,6 +105,31 @@ impl Drive {
         };
 
         Ok(QueryDocumentsOutcome {
+            documents,
+            skipped,
+            cost,
+        })
+    }
+
+    /// Performs and returns the result of the specified query along with skipped items
+    /// and the cost.
+    pub fn query_documents_as_serialized(
+        &self,
+        query: DriveQuery,
+        epoch: Option<&Epoch>,
+        transaction: TransactionArg,
+    ) -> Result<QuerySerializedDocumentsOutcome, Error> {
+        let mut drive_operations: Vec<DriveOperation> = vec![];
+        let (items, skipped) =
+            query.execute_serialized_no_proof_internal(self, transaction, &mut drive_operations)?;
+        let cost = if let Some(epoch) = epoch {
+            let fee_result = calculate_fee(None, Some(drive_operations), epoch)?;
+            fee_result.processing_fee
+        } else {
+            0
+        };
+
+        Ok(QuerySerializedDocumentsOutcome {
             items,
             skipped,
             cost,
@@ -136,7 +178,7 @@ impl Drive {
         document_type_name: &str,
         epoch: Option<&Epoch>,
         transaction: TransactionArg,
-    ) -> Result<QueryDocumentsOutcome, Error> {
+    ) -> Result<QuerySerializedDocumentsOutcome, Error> {
         let mut drive_operations: Vec<DriveOperation> = vec![];
         let contract = self
             .get_contract_with_fetch_info_and_add_to_operations(
@@ -154,7 +196,7 @@ impl Drive {
 
         let query = DriveQuery::from_cbor(query_cbor, &contract.contract, document_type)?;
 
-        self.query_documents(query, epoch, transaction)
+        self.query_documents_as_serialized(query, epoch, transaction)
     }
 
     /// Performs and returns the result of the specified query along with skipped items and the cost.

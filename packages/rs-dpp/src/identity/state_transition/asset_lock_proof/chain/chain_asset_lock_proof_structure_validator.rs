@@ -6,8 +6,9 @@ use dashcore::hashes::hex::ToHex;
 use dashcore::hashes::Hash;
 use dashcore::OutPoint;
 use lazy_static::lazy_static;
+use platform_value::Value;
 use serde::{Deserialize, Serialize};
-use serde_json::Value;
+use serde_json::Value as JsonValue;
 
 use crate::consensus::basic::identity::{
     IdentityAssetLockTransactionIsNotFoundError, InvalidAssetLockProofCoreChainHeightError,
@@ -23,7 +24,7 @@ use crate::validation::{JsonSchemaValidator, ValidationResult};
 use crate::{DashPlatformProtocolInitError, NonConsensusError};
 
 lazy_static! {
-    static ref CHAIN_ASSET_LOCK_PROOF_SCHEMA: Value = serde_json::from_str(include_str!(
+    static ref CHAIN_ASSET_LOCK_PROOF_SCHEMA: JsonValue = serde_json::from_str(include_str!(
         "../../../../schema/identity/stateTransition/assetLockProof/chainAssetLockProof.json"
     ))
     .unwrap();
@@ -71,27 +72,31 @@ where
 
     pub async fn validate(
         &self,
-        raw_asset_lock_proof: &Value,
+        asset_lock_proof_object: &Value,
         execution_context: &StateTransitionExecutionContext,
     ) -> Result<ValidationResult<PublicKeyHash>, NonConsensusError> {
         let mut result = ValidationResult::default();
 
-        result.merge(self.json_schema_validator.validate(raw_asset_lock_proof)?);
+        result.merge(
+            self.json_schema_validator
+                .validate(&asset_lock_proof_object.try_to_validating_json()?)?,
+        );
 
         if !result.is_valid() {
             return Ok(result);
         }
 
-        let proof: ChainAssetLockProof = serde_json::from_value(raw_asset_lock_proof.clone())
-            .map_err(|e| NonConsensusError::StateRepositoryFetchError(e.to_string()))?;
+        let proof: ChainAssetLockProof =
+            platform_value::from_value(asset_lock_proof_object.clone())
+                .map_err(NonConsensusError::ValueError)?;
 
-        let proof_core_chain_locked_height = proof.core_chain_locked_height();
+        let proof_core_chain_locked_height = proof.core_chain_locked_height;
 
         let current_core_chain_locked_height = self
             .state_repository
             .fetch_latest_platform_core_chain_locked_height()
             .await
-            .map_err(|e| NonConsensusError::StateRepositoryFetchError(e.to_string()))?
+            .map_err(|e| NonConsensusError::StateRepositoryFetchError(format!("state repository fetch current core chain locked height for chain asset lock proof verification error: {}",e.to_string())))?
             .unwrap_or(0);
 
         if current_core_chain_locked_height < proof_core_chain_locked_height {
@@ -103,8 +108,7 @@ where
             return Ok(result);
         }
 
-        let out_point_buffer = proof.out_point();
-        let out_point = OutPoint::consensus_decode(out_point_buffer.as_slice())
+        let out_point = OutPoint::consensus_decode(proof.out_point.as_slice())
             .map_err(|e| NonConsensusError::SerdeParsingError(e.to_string().into()))?;
 
         let output_index = out_point.vout;
@@ -115,12 +119,22 @@ where
             .state_repository
             .fetch_transaction(&transaction_hash_string, execution_context)
             .await
-            .map_err(|e| NonConsensusError::StateRepositoryFetchError(e.to_string()))?;
+            .map_err(|e| {
+                NonConsensusError::StateRepositoryFetchError(format!(
+                    "transaction fetching error for chain lock: {}",
+                    e.to_string()
+                ))
+            })?;
 
         let transaction_result = transaction_fetch_result
             .try_into()
             .map_err(Into::into)
-            .map_err(|e| NonConsensusError::StateRepositoryFetchError(e.to_string()))?;
+            .map_err(|e| {
+                NonConsensusError::StateRepositoryFetchError(format!(
+                    "transaction decoding error: {}",
+                    e.to_string()
+                ))
+            })?;
 
         if let Some(tx_height) = transaction_result.height {
             if proof_core_chain_locked_height < tx_height {

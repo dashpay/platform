@@ -2,6 +2,7 @@ use serde::{Deserialize, Serialize};
 use std::convert::TryInto;
 use wasm_bindgen::prelude::*;
 
+use crate::utils::WithJsError;
 use crate::{
     buffer::Buffer,
     errors::{from_dpp_err, RustConversionError},
@@ -9,8 +10,8 @@ use crate::{
     with_js_error,
 };
 use dpp::identity::state_transition::asset_lock_proof::chain::ChainAssetLockProof;
-use dpp::util::string_encoding;
-use dpp::util::string_encoding::Encoding;
+use dpp::platform_value::string_encoding::Encoding;
+use dpp::platform_value::{string_encoding, Bytes36};
 
 #[wasm_bindgen(js_name=ChainAssetLockProof)]
 #[derive(Clone)]
@@ -62,17 +63,17 @@ impl ChainAssetLockProofWasm {
 
     #[wasm_bindgen(js_name=getCoreChainLockedHeight)]
     pub fn get_core_chain_locked_height(&self) -> u32 {
-        self.0.core_chain_locked_height()
+        self.0.core_chain_locked_height
     }
 
     #[wasm_bindgen(js_name=setCoreChainLockedHeight)]
     pub fn set_core_chain_locked_height(&mut self, value: u32) {
-        self.0.set_core_chain_locked_height(value);
+        self.0.core_chain_locked_height = value;
     }
 
     #[wasm_bindgen(js_name=getOutPoint)]
     pub fn get_out_point(&self) -> Buffer {
-        Buffer::from_bytes(self.0.out_point())
+        Buffer::from_bytes_owned(self.0.out_point.to_vec())
     }
 
     #[wasm_bindgen(js_name=setOutPoint)]
@@ -81,7 +82,7 @@ impl ChainAssetLockProofWasm {
             RustConversionError::Error(String::from("outPoint must be a 36 byte array"))
                 .to_js_value()
         })?;
-        self.0.set_out_point(out_point);
+        self.0.out_point = Bytes36::new(out_point);
 
         Ok(())
     }
@@ -90,7 +91,8 @@ impl ChainAssetLockProofWasm {
     pub fn to_json(&self) -> Result<JsValue, JsValue> {
         let js_object = self.to_object()?;
 
-        let out_point_base64 = string_encoding::encode(self.0.out_point(), Encoding::Base64);
+        let out_point_base64 =
+            string_encoding::encode(self.0.out_point.as_slice(), Encoding::Base64);
 
         js_sys::Reflect::set(
             &js_object,
@@ -103,12 +105,10 @@ impl ChainAssetLockProofWasm {
 
     #[wasm_bindgen(js_name=toObject)]
     pub fn to_object(&self) -> Result<JsValue, JsValue> {
-        let asset_lock_json =
-            serde_json::to_value(self.0.clone()).map_err(|e| from_dpp_err(e.into()))?;
+        let asset_lock_value = self.0.to_cleaned_object().with_js_error()?;
 
-        let asset_lock_json_string =
-            serde_json::to_string(&asset_lock_json).map_err(|e| from_dpp_err(e.into()))?;
-        let js_object = js_sys::JSON::parse(&asset_lock_json_string)?;
+        let serializer = serde_wasm_bindgen::Serializer::json_compatible();
+        let js_object = with_js_error!(asset_lock_value.serialize(&serializer))?;
 
         let out_point = self.get_out_point();
 
