@@ -51,7 +51,8 @@ where
     BLS: BlsModule,
 {
     state_repository: Arc<SR>,
-    basic_validator: StateTransitionBasicValidator<SR, StateTransitionByTypeValidator<SR, BLS>>,
+    basic_validator:
+        Arc<StateTransitionBasicValidator<SR, StateTransitionByTypeValidator<SR, BLS>>>,
 }
 
 impl<SR, BLS> StateTransitionFactory<SR, BLS>
@@ -61,7 +62,9 @@ where
 {
     pub fn new(
         state_repository: Arc<SR>,
-        basic_validator: StateTransitionBasicValidator<SR, StateTransitionByTypeValidator<SR, BLS>>,
+        basic_validator: Arc<
+            StateTransitionBasicValidator<SR, StateTransitionByTypeValidator<SR, BLS>>,
+        >,
     ) -> Self {
         StateTransitionFactory {
             state_repository,
