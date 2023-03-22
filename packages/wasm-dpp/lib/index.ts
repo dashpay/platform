@@ -26,7 +26,7 @@ const loadDppModule = async () => {
   // @ts-ignore
   let bytes = Buffer.from(wasmBase, 'base64');
 
-  if (typeof fetch !== 'undefined') {
+  if (typeof window !== 'undefined') {
     let blob = new Blob([bytes], { type: "application/wasm" });
     let wasmUrl = URL.createObjectURL(blob);
     await init(wasmUrl);
