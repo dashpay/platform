@@ -192,10 +192,10 @@ function registerMasternodeGuideTaskFactory() {
                     argument2
               }
 
-              Go with nope to come back to edit command\n`,
-              message: 'Have you registered a masternode successfully?',
-              enabled: 'Yep',
-              disabled: 'Nope',
+  Select "No" to modify the transaction by amending your previous input.\n`,
+              message: 'Was the masternode registration transaction successful?',
+              enabled: 'Yes',
+              disabled: 'No',
             });
           } while (!confirmation);
 
