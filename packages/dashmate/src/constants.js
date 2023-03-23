@@ -9,9 +9,9 @@ const networks = {
 };
 
 const presets = {
-  PRESET_LOCAL: 'local',
-  PRESET_TESTNET: 'testnet',
   PRESET_MAINNET: 'mainnet',
+  PRESET_TESTNET: 'testnet',
+  PRESET_LOCAL: 'local',
 };
 
 const nodeTypes = {

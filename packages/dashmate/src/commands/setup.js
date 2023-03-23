@@ -55,9 +55,9 @@ class SetupCommand extends BaseCommand {
                 type: 'select',
                 header: `  Dashmate provides three default configuration presets:
 
-    local   - Run a full network environment on your machine for local development
+    mainnet - Run a node connected to the Dash main network
     testnet - Run a node connected to the Dash test network
-    mainnet - Run a node connected to the Dash main network\n`,
+    local   - Run a full network environment on your machine for local development\n`,
                 message: 'Select preset',
                 choices: PRESETS,
                 initial: PRESET_MAINNET,
