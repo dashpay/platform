@@ -42,9 +42,6 @@ impl DashPlatformProtocol {
         state_repository: ExternalStateRepositoryLike,
         maybe_protocol_version: Option<u32>,
     ) -> Result<DashPlatformProtocol, JsValue> {
-        // // TODO: wrap whole thing around rs-dpp/dash_platform_protocol?
-        // let options: DPPOptions = with_js_error!(serde_wasm_bindgen::from_value(options))?;
-
         let bls = BlsAdapter(bls_adapter.clone());
         let protocol_version = maybe_protocol_version.unwrap_or(LATEST_VERSION);
         let public_keys_validator = Arc::new(PublicKeysValidator::new(bls.clone()).unwrap());
@@ -90,8 +87,13 @@ impl DashPlatformProtocol {
     }
 
     #[wasm_bindgen(getter = protocolVersion)]
-    pub fn get_protocol_version(&self) -> u32 {
+    pub fn protocol_version(&self) -> u32 {
         self.protocol_version
+    }
+
+    #[wasm_bindgen(js_name = getProtocolVersion)]
+    pub fn get_protocol_version(&self) -> u32 {
+        self.protocol_version()
     }
 
     #[wasm_bindgen(js_name = setProtocolVersion)]

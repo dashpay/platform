@@ -1,6 +1,5 @@
 const protocolVersion = require('@dashevo/dpp/lib/version/protocolVersion');
 
-// const DashPlatformProtocol = require('@dashevo/dpp/lib/DashPlatformProtocol');
 const createStateRepositoryMock = require('../../lib/test/mocks/createStateRepositoryMock');
 const getBlsAdapterMock = require('../../lib/test/mocks/getBlsAdapterMock');
 let { DashPlatformProtocol } = require('../..');
