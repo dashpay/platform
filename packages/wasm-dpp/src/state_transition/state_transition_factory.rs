@@ -112,50 +112,50 @@ impl StateTransitionFactoryWasm {
             .map_err(from_dpp_init_error)?,
         ));
 
-        let state_transition_basic_validator = StateTransitionBasicValidator::new(
+        let factory = StateTransitionFactory::new(
             state_repository_wrapper.clone(),
-            StateTransitionByTypeValidator::new(
-                DataContractCreateTransitionBasicValidator::new(protocol_version_validator.clone())
+            StateTransitionBasicValidator::new(
+                state_repository_wrapper.clone(),
+                StateTransitionByTypeValidator::new(
+                    DataContractCreateTransitionBasicValidator::new(
+                        protocol_version_validator.clone(),
+                    )
                     .with_js_error()?,
-                DataContractUpdateTransitionBasicValidator::new(
-                    state_repository_wrapper.clone(),
-                    protocol_version_validator.clone(),
-                )
-                .map_err(from_dpp_init_error)?,
-                IdentityCreateTransitionBasicValidator::new(
-                    protocol_version_validator.deref().clone(),
-                    pk_validator.clone(),
-                    pk_validator.clone(),
-                    asset_lock_validator.clone(),
-                    adapter,
-                    pk_sig_validator.clone(),
-                )
-                .map_err(from_dpp_init_error)?,
-                ValidateIdentityUpdateTransitionBasic::new(
-                    ProtocolVersionValidator::default(),
-                    pk_validator,
-                    pk_sig_validator,
-                )
-                .with_js_error()?,
-                IdentityTopUpTransitionBasicValidator::new(
-                    ProtocolVersionValidator::default(),
-                    asset_lock_validator,
-                )
-                .map_err(from_dpp_init_error)?,
-                IdentityCreditWithdrawalTransitionBasicValidator::new(
-                    protocol_version_validator.clone(),
-                )
-                .map_err(from_dpp_init_error)?,
-                DocumentBatchTransitionBasicValidator::new(
-                    state_repository_wrapper.clone(),
-                    protocol_version_validator.clone(),
+                    DataContractUpdateTransitionBasicValidator::new(
+                        state_repository_wrapper.clone(),
+                        protocol_version_validator.clone(),
+                    )
+                    .map_err(from_dpp_init_error)?,
+                    IdentityCreateTransitionBasicValidator::new(
+                        protocol_version_validator.deref().clone(),
+                        pk_validator.clone(),
+                        pk_validator.clone(),
+                        asset_lock_validator.clone(),
+                        adapter,
+                        pk_sig_validator.clone(),
+                    )
+                    .map_err(from_dpp_init_error)?,
+                    ValidateIdentityUpdateTransitionBasic::new(
+                        ProtocolVersionValidator::default(),
+                        pk_validator,
+                        pk_sig_validator,
+                    )
+                    .with_js_error()?,
+                    IdentityTopUpTransitionBasicValidator::new(
+                        ProtocolVersionValidator::default(),
+                        asset_lock_validator,
+                    )
+                    .map_err(from_dpp_init_error)?,
+                    IdentityCreditWithdrawalTransitionBasicValidator::new(
+                        protocol_version_validator.clone(),
+                    )
+                    .map_err(from_dpp_init_error)?,
+                    DocumentBatchTransitionBasicValidator::new(
+                        state_repository_wrapper,
+                        protocol_version_validator.clone(),
+                    ),
                 ),
             ),
-        );
-
-        let factory = StateTransitionFactory::new(
-            state_repository_wrapper,
-            Arc::new(state_transition_basic_validator),
         );
 
         Ok(factory.into())
