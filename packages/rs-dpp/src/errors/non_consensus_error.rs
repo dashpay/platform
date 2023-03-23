@@ -1,3 +1,4 @@
+use platform_value::Error as ValueError;
 use thiserror::Error;
 
 use crate::{
@@ -6,19 +7,22 @@ use crate::{
 
 #[derive(Debug, Error)]
 pub enum NonConsensusError {
+    /// Value error
+    #[error("value error: {0}")]
+    ValueError(#[from] ValueError),
     #[error("Unexpected serde parsing error: {0:#}")]
     SerdeParsingError(SerdeParsingError),
-    #[error("{0}")]
+    #[error(transparent)]
     CompatibleProtocolVersionIsNotDefinedError(CompatibleProtocolVersionIsNotDefinedError),
-    #[error("{0}")]
+    #[error("SerdeJsonError: {0}")]
     SerdeJsonError(String),
-    #[error("{0}")]
+    #[error(transparent)]
     InvalidVectorSizeError(InvalidVectorSizeError),
-    #[error("{0}")]
+    #[error("StateRepositoryFetchError: {0}")]
     StateRepositoryFetchError(String),
-    #[error("{0}")]
+    #[error("IdentifierCreateError: {0}")]
     IdentifierCreateError(String),
-    #[error("{0}")]
+    #[error("IdentityPublicKeyCreateError: {0}")]
     IdentityPublicKeyCreateError(String),
 
     /// When dynamic `Value` is validated it requires some specific properties to properly work

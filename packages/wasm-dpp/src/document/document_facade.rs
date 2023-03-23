@@ -6,8 +6,8 @@ use crate::{
     fetch_and_validate_data_contract::DataContractFetcherAndValidatorWasm,
     utils::{get_class_name, IntoWasm},
     validation::ValidationResultWasm,
-    DataContractWasm, DocumentFactoryWASM, DocumentValidatorWasm, DocumentWasm,
-    DocumentsBatchTransitionWASM,
+    DataContractWasm, DocumentFactoryWASM, DocumentValidatorWasm, DocumentsBatchTransitionWasm,
+    ExtendedDocumentWasm,
 };
 
 #[derive(Clone)]
@@ -50,11 +50,11 @@ impl DocumentFacadeWasm {
     #[wasm_bindgen(js_name=create)]
     pub fn create(
         &self,
-        data_contract: DataContractWasm,
+        data_contract: &DataContractWasm,
         js_owner_id: &JsValue,
         document_type: &str,
         data: &JsValue,
-    ) -> Result<DocumentWasm, JsValue> {
+    ) -> Result<ExtendedDocumentWasm, JsValue> {
         self.factory
             .create(data_contract, js_owner_id, document_type, data)
     }
@@ -65,7 +65,7 @@ impl DocumentFacadeWasm {
         &self,
         raw_document: JsValue,
         options: JsValue,
-    ) -> Result<DocumentWasm, JsValue> {
+    ) -> Result<ExtendedDocumentWasm, JsValue> {
         self.factory.create_from_object(raw_document, options).await
     }
 
@@ -75,7 +75,7 @@ impl DocumentFacadeWasm {
         &self,
         bytes: Vec<u8>,
         options: JsValue,
-    ) -> Result<DocumentWasm, JsValue> {
+    ) -> Result<ExtendedDocumentWasm, JsValue> {
         self.factory.create_from_buffer(bytes, &options).await
     }
 
@@ -83,8 +83,8 @@ impl DocumentFacadeWasm {
     #[wasm_bindgen(js_name=createStateTransition)]
     pub fn create_state_transition(
         &self,
-        documents: &JsValue, // documents_container: DocumentsContainer,
-    ) -> Result<DocumentsBatchTransitionWASM, JsValue> {
+        documents: &JsValue,
+    ) -> Result<DocumentsBatchTransitionWasm, JsValue> {
         self.factory.create_state_transition(documents)
     }
 
@@ -94,8 +94,8 @@ impl DocumentFacadeWasm {
         &self,
         document: &JsValue,
     ) -> Result<ValidationResultWasm, JsValue> {
-        let raw_document = if get_class_name(document) == "Document" {
-            let document = document.to_wasm::<DocumentWasm>("Document")?;
+        let raw_document = if get_class_name(document) == "ExtendedDocument" {
+            let document = document.to_wasm::<ExtendedDocumentWasm>("ExtendedDocument")?;
             document.to_object(&JsValue::NULL)?
         } else {
             document.to_owned()

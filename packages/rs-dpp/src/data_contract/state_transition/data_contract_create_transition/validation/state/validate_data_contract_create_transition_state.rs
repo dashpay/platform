@@ -4,7 +4,10 @@ use anyhow::Result;
 use async_trait::async_trait;
 
 use crate::{
-    data_contract::{state_transition::DataContractCreateTransition, DataContract},
+    data_contract::{
+        state_transition::data_contract_create_transition::DataContractCreateTransition,
+        DataContract,
+    },
     errors::StateError,
     state_repository::StateRepositoryLike,
     state_transition::StateTransitionLike,
@@ -89,7 +92,7 @@ mod test {
         let mut state_repository_mock = MockStateRepositoryLike::new();
         let data_contract = get_data_contract_fixture(None);
         let state_transition = &DataContractCreateTransition {
-            entropy: data_contract.entropy().to_owned(),
+            entropy: data_contract.entropy,
             data_contract,
             ..Default::default()
         };

@@ -6,7 +6,7 @@ const getDataContractFixture = require('@dashevo/dpp/lib/test/fixtures/getDataCo
 const createStateRepositoryMock = require('@dashevo/dpp/lib/test/mocks/createStateRepositoryMock');
 
 const { default: loadWasmDpp } = require('../../../../../../../dist');
-const { expectJsonSchemaError, expectValidationError } = require('../../../../../../../lib/test/expect/expectError');
+const { expectJsonSchemaError, expectValidationError, expectPlatformValueError } = require('../../../../../../../lib/test/expect/expectError');
 
 let DataContract;
 let DocumentsBatchTransition;
@@ -14,7 +14,6 @@ let StateTransitionExecutionContext;
 let validateDocumentsBatchTransitionBasic;
 let generateDocumentId;
 let MissingDataContractIdError;
-let InvalidIdentifierError;
 let DataContractNotPresentError;
 let MissingDocumentTransitionTypeError;
 let InvalidDocumentTypeError;
@@ -25,6 +24,7 @@ let DuplicateDocumentTransitionsWithIndicesError;
 let DuplicateDocumentTransitionsWithIdsError;
 let ValidationResult;
 let ProtocolVersionValidator;
+let PlatformValueError;
 
 describe('validateDocumentsBatchTransitionBasicFactory', () => {
   let dataContract;
@@ -46,7 +46,6 @@ describe('validateDocumentsBatchTransitionBasicFactory', () => {
       ValidationResult,
       validateDocumentsBatchTransitionBasic,
       generateDocumentId,
-      InvalidIdentifierError,
       MissingDataContractIdError,
       DataContractNotPresentError,
       MissingDocumentTransitionTypeError,
@@ -56,6 +55,7 @@ describe('validateDocumentsBatchTransitionBasicFactory', () => {
       InvalidDocumentTransitionIdError,
       DuplicateDocumentTransitionsWithIndicesError,
       DuplicateDocumentTransitionsWithIdsError,
+      PlatformValueError,
     } = await loadWasmDpp());
 
     const dataContractJs = getDataContractFixture();
@@ -117,26 +117,28 @@ describe('validateDocumentsBatchTransitionBasicFactory', () => {
         executionContext,
       );
 
-      await expectJsonSchemaError(result, 1);
+      await expectPlatformValueError(result, 1);
 
       const [error] = result.getErrors();
 
-      expect(error.getInstancePath()).to.equal('/protocolVersion');
-      expect(error.getKeyword()).to.equal('type');
+      expect(error).to.be.an.instanceOf(PlatformValueError);
     });
 
     it('should be valid - Rust', async () => {
       rawStateTransition.protocolVersion = -1;
-      try {
-        await validateDocumentsBatchTransitionBasic(
-          protocolVersionValidator,
-          stateRepositoryMock,
-          rawStateTransition,
-          executionContext,
-        );
-      } catch (e) {
-        expect(e).equal('Error conversion not implemented: unable convert -1 to u64');
-      }
+      const result = await validateDocumentsBatchTransitionBasic(
+        protocolVersionValidator,
+        stateRepositoryMock,
+        rawStateTransition,
+        executionContext,
+      );
+
+      await expectPlatformValueError(result, 1);
+
+      const [error] = result.getErrors();
+
+      expect(error).to.be.an.instanceOf(PlatformValueError);
+      expect(error.getMessage()).equal('integer out of bounds');
     });
   });
 
@@ -210,12 +212,11 @@ describe('validateDocumentsBatchTransitionBasicFactory', () => {
         executionContext,
       );
 
-      await expectJsonSchemaError(result, 32);
+      await expectPlatformValueError(result, 1);
 
       const [error] = result.getErrors();
 
-      expect(error.getInstancePath()).to.equal('/ownerId/0');
-      expect(error.getKeyword()).to.equal('type');
+      expect(error).to.be.an.instanceOf(PlatformValueError);
     });
 
     it('should be no less than 32 bytes - Rust', async () => {
@@ -228,12 +229,11 @@ describe('validateDocumentsBatchTransitionBasicFactory', () => {
         executionContext,
       );
 
-      await expectJsonSchemaError(result, 1);
+      await expectPlatformValueError(result, 1);
 
       const [error] = result.getErrors();
 
-      expect(error.getInstancePath()).to.equal('/ownerId');
-      expect(error.getKeyword()).to.equal('minItems');
+      expect(error).to.be.an.instanceOf(PlatformValueError);
     });
 
     it('should be no longer than 32 bytes - Rust', async () => {
@@ -246,12 +246,11 @@ describe('validateDocumentsBatchTransitionBasicFactory', () => {
         executionContext,
       );
 
-      await expectJsonSchemaError(result, 1);
+      await expectPlatformValueError(result, 1);
 
       const [error] = result.getErrors();
 
-      expect(error.getInstancePath()).to.equal('/ownerId');
-      expect(error.getKeyword()).to.equal('maxItems');
+      expect(error).to.be.an.instanceOf(PlatformValueError);
     });
   });
 
@@ -265,13 +264,11 @@ describe('validateDocumentsBatchTransitionBasicFactory', () => {
         rawStateTransition,
         executionContext,
       );
-      await expectJsonSchemaError(result, 1);
+      await expectPlatformValueError(result, 1);
 
       const [error] = result.getErrors();
 
-      expect(error.getInstancePath()).to.equal('');
-      expect(error.getKeyword()).to.equal('required');
-      expect(error.getParams().missingProperty).to.equal('transitions');
+      expect(error).to.be.an.instanceOf(PlatformValueError);
     });
 
     it('should be an array - Rust', async () => {
@@ -284,12 +281,11 @@ describe('validateDocumentsBatchTransitionBasicFactory', () => {
         executionContext,
       );
 
-      await expectJsonSchemaError(result, 1);
+      await expectPlatformValueError(result, 1);
 
       const [error] = result.getErrors();
 
-      expect(error.getInstancePath()).to.equal('/transitions');
-      expect(error.getKeyword()).to.equal('type');
+      expect(error).to.be.an.instanceOf(PlatformValueError);
     });
 
     it('should have at least one element - Rust', async () => {
@@ -340,12 +336,11 @@ describe('validateDocumentsBatchTransitionBasicFactory', () => {
         executionContext,
       );
 
-      await expectJsonSchemaError(result, 1);
+      await expectPlatformValueError(result, 1);
 
       const [error] = result.getErrors();
 
-      expect(error.getInstancePath()).to.equal('/transitions/0');
-      expect(error.getKeyword()).to.equal('type');
+      expect(error).to.be.an.instanceOf(PlatformValueError);
     });
 
     describe('document transition', () => {
@@ -382,12 +377,11 @@ describe('validateDocumentsBatchTransitionBasicFactory', () => {
             executionContext,
           );
 
-          await expectJsonSchemaError(result, 32);
+          await expectPlatformValueError(result, 1);
 
           const [error] = result.getErrors();
 
-          expect(error.getInstancePath()).to.equal('/$id/0');
-          expect(error.getKeyword()).to.equal('type');
+          expect(error).to.be.an.instanceOf(PlatformValueError);
         });
 
         it('should be no less than 32 bytes - Rust', async () => {
@@ -402,13 +396,11 @@ describe('validateDocumentsBatchTransitionBasicFactory', () => {
             executionContext,
           );
 
-          await expectJsonSchemaError(result);
+          await expectPlatformValueError(result, 1);
 
           const [error] = result.getErrors();
 
-          expect(error.getInstancePath()).to.equal('/$id');
-          expect(error.getKeyword()).to.equal('minItems');
-          expect(error.getParams().minItems).to.equal(32);
+          expect(error).to.be.an.instanceOf(PlatformValueError);
         });
 
         it('should be no longer than 32 bytes - Rust', async () => {
@@ -422,13 +414,11 @@ describe('validateDocumentsBatchTransitionBasicFactory', () => {
             rawStateTransition,
             executionContext,
           );
-          await expectJsonSchemaError(result);
+          await expectPlatformValueError(result, 1);
 
           const [error] = result.getErrors();
 
-          expect(error.getInstancePath()).to.equal('/$id');
-          expect(error.getKeyword()).to.equal('maxItems');
-          expect(error.getParams().maxItems).to.equal(32);
+          expect(error).to.be.an.instanceOf(PlatformValueError);
         });
 
         it('should no have duplicate IDs in the state transition - Rust', async () => {
@@ -490,7 +480,7 @@ describe('validateDocumentsBatchTransitionBasicFactory', () => {
         it('should be a byte array - Rust', async () => {
           const [firstDocumentTransition] = rawStateTransition.transitions;
 
-          firstDocumentTransition.$dataContractId = Buffer.alloc(2);
+          firstDocumentTransition.$dataContractId = Buffer.alloc(10);
 
           const result = await validateDocumentsBatchTransitionBasic(
             protocolVersionValidator,
@@ -499,18 +489,15 @@ describe('validateDocumentsBatchTransitionBasicFactory', () => {
             executionContext,
           );
 
-          await expectValidationError(result, InvalidIdentifierError);
+          await expectPlatformValueError(result);
 
           const [error] = result.getErrors();
 
-          expect(error.getCode()).to.equal(1006);
+          expect(error.getMessage()).to.equal('byte length not 32 bytes error: Trying to replace into an identifier, but not 32 bytes long');
 
-          expect(error.getIdentifierName()).to.equal('$dataContractId');
-          expect(error.getIdentifierError()).to.equal('Identifier Error: Identifier must be 32 bytes long');
-
-          expect(stateRepositoryMock.fetchDataContract).to.have.been.calledOnce();
-          const [fetchDataContractId] = stateRepositoryMock.fetchDataContract.getCall(0).args;
-          expect(fetchDataContractId.toBuffer()).is.deep.equal(dataContract.getId().toBuffer());
+          // we won't call fetch data contract, because the state transition structure validation
+          // happens first
+          expect(stateRepositoryMock.fetchDataContract).to.have.not.been.called();
         });
 
         it('should exists in the state - Rust', async () => {
@@ -905,6 +892,7 @@ describe('validateDocumentsBatchTransitionBasicFactory', () => {
           duplicatedTransition.$type,
           duplicatedTransition.$entropy,
         );
+        duplicatedTransition.firstName = 'Ted';
         const duplicates = [duplicatedTransition, indexedTransition];
 
         stateTransition = new DocumentsBatchTransition({

@@ -1,16 +1,27 @@
 use anyhow::Context;
 use chrono::Utc;
-use itertools::Itertools;
-use serde::{Deserialize, Serialize};
-use serde_json::{json, Value as JsonValue};
+use std::collections::BTreeMap;
 
+use itertools::Itertools;
+
+use platform_value::{Bytes32, Value};
+use rand::rngs::StdRng;
+use rand::SeedableRng;
+use serde::{Deserialize, Serialize};
+
+use crate::consensus::basic::document::InvalidDocumentTypeError;
+use crate::document::extended_document::{property_names, ExtendedDocument};
+
+use crate::data_contract::DriveContractExt;
+use crate::document::document_transition::INITIAL_REVISION;
+use crate::document::Document;
+use crate::identity::TimestampMillis;
 use crate::{
     data_contract::{errors::DataContractError, DataContract},
     decode_protocol_entity_factory::DecodeProtocolEntity,
     prelude::Identifier,
     state_repository::StateRepositoryLike,
     util::entropy_generator,
-    util::{json_schema::JsonSchemaExt, json_value::JsonValueExt},
     ProtocolError,
 };
 
@@ -20,7 +31,7 @@ use super::{
     errors::DocumentError,
     fetch_and_validate_data_contract::DataContractFetcherAndValidator,
     generate_document_id::generate_document_id,
-    property_names, Document, DocumentsBatchTransition,
+    DocumentsBatchTransition,
 };
 
 // TODO remove these const and use ones from super::document::property_names
@@ -60,6 +71,7 @@ pub struct DocumentFactory<ST> {
     protocol_version: u32,
     document_validator: DocumentValidator,
     data_contract_fetcher_and_validator: DataContractFetcherAndValidator<ST>,
+    rng: StdRng,
 }
 
 #[derive(Debug, Copy, Clone, Serialize, Deserialize, Default)]
@@ -79,99 +91,120 @@ where
         protocol_version: u32,
         validate_document: DocumentValidator,
         data_contract_fetcher_and_validator: DataContractFetcherAndValidator<ST>,
+        seed: Option<u64>,
     ) -> Self {
+        let rng = match seed {
+            None => StdRng::from_entropy(),
+            Some(seed_value) => StdRng::seed_from_u64(seed_value),
+        };
         DocumentFactory {
             protocol_version,
             document_validator: validate_document,
             data_contract_fetcher_and_validator,
+            rng,
         }
     }
 
-    pub fn create(
+    pub fn create_extended_document_for_state_transition(
         &self,
         data_contract: DataContract,
         owner_id: Identifier,
-        document_type: String,
-        data: JsonValue,
-    ) -> Result<Document, ProtocolError> {
-        if !data_contract.is_document_defined(&document_type) {
-            return Err(DataContractError::InvalidDocumentTypeError {
-                doc_type: document_type,
-                data_contract,
-            }
+        document_type_name: String,
+        data: Value,
+    ) -> Result<ExtendedDocument, ProtocolError> {
+        if !data_contract.is_document_defined(&document_type_name) {
+            return Err(DataContractError::InvalidDocumentTypeError(
+                InvalidDocumentTypeError::new(document_type_name, data_contract.id),
+            )
             .into());
         }
 
         let document_entropy = entropy_generator::generate()?; // TODO use EntropyGenerator
 
-        let document_required_fields = data_contract
-            .get_document_schema(&document_type)?
-            .get_schema_required_fields()?;
-
         let document_id = generate_document_id(
             &data_contract.id,
             &owner_id,
-            &document_type,
+            &document_type_name,
             &document_entropy,
         );
 
-        let mut raw_document = json!({
-            PROPERTY_DOCUMENT_PROTOCOL_VERSION: self.protocol_version,
-            PROPERTY_ID: document_id.to_buffer(),
-            PROPERTY_DOCUMENT_TYPE: document_type,
-            PROPERTY_DATA_CONTRACT_ID: data_contract.id.to_buffer(),
-            PROPERTY_DOCUMENT_OWNER_ID: owner_id.to_buffer(),
-            PROPERTY_REVISION: document_transition::INITIAL_REVISION,
-        });
+        let document_type = data_contract.document_type_for_name(document_type_name.as_str())?;
+        let revision = if document_type.documents_mutable {
+            Some(INITIAL_REVISION)
+        } else {
+            None
+        };
 
-        if let JsonValue::Object(ref mut raw_document_map) = raw_document {
-            if let JsonValue::Object(data_map) = data {
-                raw_document_map.extend(data_map)
-            }
-        }
+        let contains_created_at = document_type.required_fields.contains(PROPERTY_CREATED_AT);
+        let contains_updated_at = document_type.required_fields.contains(PROPERTY_UPDATED_AT);
 
-        let creation_time = Utc::now().timestamp_millis();
-        if document_required_fields.contains(&PROPERTY_CREATED_AT) {
-            raw_document.insert(PROPERTY_CREATED_AT.to_string(), json!(Some(creation_time)))?;
-        }
+        let (created_at, updated_at) = if contains_created_at || contains_updated_at {
+            //we want only one call to get current time
+            let now = Utc::now().timestamp_millis() as TimestampMillis;
+            let created_at = if contains_created_at { Some(now) } else { None };
 
-        if document_required_fields.contains(&PROPERTY_UPDATED_AT) {
-            raw_document.insert(PROPERTY_UPDATED_AT.to_string(), json!(Some(creation_time)))?;
-        }
+            let updated_at = if contains_updated_at { Some(now) } else { None };
+            (created_at, updated_at)
+        } else {
+            (None, None)
+        };
 
-        let validation_result = self
-            .document_validator
-            .validate(&raw_document, &data_contract)?;
-        if !validation_result.is_valid() {
-            return Err(ProtocolError::Document(Box::new(
-                DocumentError::InvalidDocumentError {
-                    errors: validation_result.errors,
-                    raw_document,
-                },
-            )));
-        }
+        let document = Document {
+            id: document_id,
+            owner_id,
+            properties: data
+                .into_btree_string_map()
+                .map_err(ProtocolError::ValueError)?,
+            revision,
+            created_at,
+            updated_at,
+        };
 
-        let mut document = Document::from_raw_document(raw_document, data_contract)?;
-        document.entropy = document_entropy;
+        // let json_value = document.to_json_with_identifiers_using_bytes()?;
+        // let validation_result =
+        //     self.document_validator
+        //         .validate(&json_value, &data_contract, document_type)?;
 
-        Ok(document)
+        let extended_document = ExtendedDocument {
+            protocol_version: self.protocol_version,
+            document_type_name,
+            data_contract_id: data_contract.id,
+            document,
+            data_contract,
+            metadata: None,
+            entropy: Bytes32::new(document_entropy),
+        };
+
+        // if !validation_result.is_valid() {
+        //     return Err(ProtocolError::Document(Box::new(
+        //         DocumentError::InvalidDocumentError {
+        //             errors: validation_result.errors,
+        //             raw_document: json_value,
+        //         },
+        //     )));
+        // }
+
+        Ok(extended_document)
     }
 
     pub fn create_state_transition(
         &self,
-        documents_iter: impl IntoIterator<Item = (Action, Vec<Document>)>,
+        documents_iter: impl IntoIterator<Item = (Action, Vec<ExtendedDocument>)>,
     ) -> Result<DocumentsBatchTransition, ProtocolError> {
-        let mut raw_documents_transitions: Vec<JsonValue> = vec![];
+        let mut raw_documents_transitions: Vec<Value> = vec![];
         let mut data_contracts: Vec<DataContract> = vec![];
-        let documents: Vec<(Action, Vec<Document>)> = documents_iter.into_iter().collect();
+        let documents: Vec<(Action, Vec<ExtendedDocument>)> = documents_iter.into_iter().collect();
         let flattened_documents_iter = documents.iter().flat_map(|(_, v)| v);
 
         if Self::is_empty(flattened_documents_iter.clone()) {
             return Err(DocumentError::NoDocumentsSuppliedError.into());
         }
 
-        let is_the_same =
-            Self::is_ownership_the_same(flattened_documents_iter.clone().map(|d| &d.owner_id));
+        let is_the_same = Self::is_ownership_the_same(
+            flattened_documents_iter
+                .clone()
+                .map(|extended_document| &extended_document.document.owner_id),
+        );
         if !is_the_same {
             return Err(DocumentError::MismatchOwnerIdsError {
                 documents: documents.into_iter().flat_map(|(_, v)| v).collect(),
@@ -183,7 +216,7 @@ where
             .clone()
             .next()
             .unwrap()
-            .owner_id
+            .owner_id()
             .to_owned();
         for (action, documents) in documents {
             data_contracts.extend(documents.iter().map(|d| d.data_contract.clone()));
@@ -201,34 +234,42 @@ where
             return Err(DocumentError::NoDocumentsSuppliedError.into());
         }
 
-        let raw_batch_transition = json!({
-            PROPERTY_PROTOCOL_VERSION: self.protocol_version,
-            PROPERTY_OWNER_ID : owner_id.to_buffer(),
-            PROPERTY_TRANSITIONS: raw_documents_transitions,
-        });
+        let raw_batch_transition = BTreeMap::from([
+            (
+                PROPERTY_PROTOCOL_VERSION.to_string(),
+                Value::U32(self.protocol_version),
+            ),
+            (
+                PROPERTY_OWNER_ID.to_string(),
+                Value::Identifier(owner_id.to_buffer()),
+            ),
+            (
+                PROPERTY_TRANSITIONS.to_string(),
+                Value::Array(raw_documents_transitions),
+            ),
+        ]);
 
-        DocumentsBatchTransition::from_raw_object(raw_batch_transition, data_contracts)
+        DocumentsBatchTransition::from_value_map(raw_batch_transition, data_contracts)
     }
 
     pub async fn create_from_buffer(
         &self,
         buffer: impl AsRef<[u8]>,
         options: FactoryOptions,
-    ) -> Result<Document, ProtocolError> {
+    ) -> Result<ExtendedDocument, ProtocolError> {
         let result = DecodeProtocolEntity::decode_protocol_entity(buffer);
 
         match result {
             Err(ProtocolError::AbstractConsensusError(err)) => {
                 Err(DocumentError::InvalidDocumentError {
                     errors: vec![*err],
-                    raw_document: JsonValue::Null,
+                    raw_document: Value::Null,
                 }
                 .into())
             }
             Err(err) => Err(err),
             Ok((version, mut raw_document)) => {
-                raw_document
-                    .insert(property_names::PROTOCOL_VERSION.to_string(), json!(version))?;
+                raw_document.set_value(property_names::PROTOCOL_VERSION, Value::U32(version))?;
                 self.create_from_object(raw_document, options).await
             }
         }
@@ -236,24 +277,24 @@ where
 
     pub async fn create_from_object(
         &self,
-        raw_document: JsonValue,
+        raw_document: Value,
         options: FactoryOptions,
-    ) -> Result<Document, ProtocolError> {
+    ) -> Result<ExtendedDocument, ProtocolError> {
         let data_contract = self
-            .validate_data_contract_for_document(&raw_document, options)
+            .validate_data_contract_for_extended_document(&raw_document, options)
             .await?;
 
-        Document::from_raw_document(raw_document, data_contract)
+        ExtendedDocument::from_untrusted_platform_value(raw_document, data_contract)
     }
 
-    async fn validate_data_contract_for_document(
+    async fn validate_data_contract_for_extended_document(
         &self,
-        raw_document: &JsonValue,
+        raw_document: &Value,
         options: FactoryOptions,
     ) -> Result<DataContract, ProtocolError> {
         let mut result = self
             .data_contract_fetcher_and_validator
-            .validate(raw_document)
+            .validate_extended(raw_document)
             .await?;
 
         if !result.is_valid() {
@@ -271,7 +312,7 @@ where
         if !options.skip_validation {
             let result = self
                 .document_validator
-                .validate(raw_document, &data_contract)?;
+                .validate_extended(raw_document, &data_contract)?;
             if !result.is_valid() {
                 return Err(ProtocolError::Document(Box::new(
                     DocumentError::InvalidDocumentError {
@@ -286,79 +327,90 @@ where
     }
 
     fn raw_document_create_transitions(
-        documents: Vec<Document>,
-    ) -> Result<Vec<JsonValue>, ProtocolError> {
+        documents: Vec<ExtendedDocument>,
+    ) -> Result<Vec<Value>, ProtocolError> {
         let mut raw_transitions = vec![];
         for document in documents {
-            if document.revision != document_transition::INITIAL_REVISION {
-                return Err(DocumentError::InvalidInitialRevisionError {
-                    document: Box::new(document),
+            if document.needs_revision()? {
+                let Some(revision) = document.revision() else {
+                    return Err(DocumentError::RevisionAbsentError {
+                        document: Box::new(document),
+                    }.into());
+                };
+                if revision != &document_transition::INITIAL_REVISION {
+                    return Err(DocumentError::InvalidInitialRevisionError {
+                        document: Box::new(document),
+                    }
+                    .into());
                 }
-                .into());
             }
-            let mut raw_document = document.to_object()?;
+            let mut map = document.to_map_value()?;
 
-            if let Some(map) = raw_document.as_object_mut() {
-                map.retain(|key, _| {
-                    !key.starts_with('$') || DOCUMENT_CREATE_KEYS_TO_STAY.contains(&key.as_str())
-                });
-                map.insert(
-                    PROPERTY_ACTION.to_string(),
-                    serde_json::to_value(Action::Create)?,
-                );
-                map.insert(
-                    PROPERTY_ENTROPY.to_string(),
-                    serde_json::to_value(document.entropy)?,
-                );
-            }
-            raw_transitions.push(raw_document);
+            map.retain(|key, _| {
+                !key.starts_with('$') || DOCUMENT_CREATE_KEYS_TO_STAY.contains(&key.as_str())
+            });
+            map.insert(PROPERTY_ACTION.to_string(), Value::U8(Action::Create as u8));
+            map.insert(
+                PROPERTY_ENTROPY.to_string(),
+                Value::Bytes(document.entropy.to_vec()),
+            );
+            raw_transitions.push(map.into());
         }
 
         Ok(raw_transitions)
     }
 
     fn raw_document_replace_transitions(
-        documents: Vec<Document>,
-    ) -> Result<Vec<JsonValue>, ProtocolError> {
+        documents: Vec<ExtendedDocument>,
+    ) -> Result<Vec<Value>, ProtocolError> {
         let mut raw_transitions = vec![];
         for document in documents {
-            let document_revision = document.revision;
-            let mut raw_document = document.to_object()?;
-
-            if let Some(map) = raw_document.as_object_mut() {
-                map.retain(|key, _| {
-                    !key.starts_with('$') || DOCUMENT_REPLACE_KEYS_TO_STAY.contains(&key.as_str())
-                });
-                map.insert(
-                    PROPERTY_ACTION.to_string(),
-                    serde_json::to_value(Action::Replace)?,
-                );
-                let new_revision = document_revision + 1;
-                map.insert(PROPERTY_REVISION.to_string(), json!(new_revision));
-
-                // If document have an originally set `updatedAt`
-                // we should update it then
-                if let Some(update_at) = map.get_mut(PROPERTY_UPDATED_AT) {
-                    *update_at = json!(Utc::now().timestamp_millis())
+            if !document.can_be_modified()? {
+                return Err(DocumentError::TryingToReplaceImmutableDocument {
+                    document: Box::new(document),
                 }
+                .into());
             }
+            let Some(document_revision) = document.revision() else {
+                return Err(DocumentError::RevisionAbsentError {
+                    document: Box::new(document),
+                }.into());
+            };
+            let mut map = document.to_map_value()?;
 
-            raw_transitions.push(raw_document);
+            map.retain(|key, _| {
+                !key.starts_with('$') || DOCUMENT_REPLACE_KEYS_TO_STAY.contains(&key.as_str())
+            });
+            map.insert(
+                PROPERTY_ACTION.to_string(),
+                Value::U8(Action::Replace as u8),
+            );
+            let new_revision = document_revision + 1;
+            map.insert(PROPERTY_REVISION.to_string(), Value::U64(new_revision));
+
+            raw_transitions.push(map.into());
         }
         Ok(raw_transitions)
     }
 
     fn raw_document_delete_transitions(
-        documents: Vec<Document>,
-    ) -> Result<Vec<JsonValue>, ProtocolError> {
+        documents: Vec<ExtendedDocument>,
+    ) -> Result<Vec<Value>, ProtocolError> {
         Ok(documents
             .into_iter()
             .map(|document| {
-                json!({
-                PROPERTY_ACTION: Action::Delete,
-                PROPERTY_ID: document.id.buffer,
-                PROPERTY_TYPE: document.document_type,
-                PROPERTY_DATA_CONTRACT_ID: document.data_contract_id.buffer})
+                let mut map: BTreeMap<String, Value> = BTreeMap::new();
+                map.insert(PROPERTY_ACTION.to_string(), Value::U8(Action::Delete as u8));
+                map.insert(PROPERTY_ID.to_string(), document.document.id.into());
+                map.insert(
+                    PROPERTY_TYPE.to_string(),
+                    Value::Text(document.document_type_name),
+                );
+                map.insert(
+                    PROPERTY_DATA_CONTRACT_ID.to_string(),
+                    document.data_contract_id.into(),
+                );
+                map.into()
             })
             .collect())
     }
@@ -374,18 +426,19 @@ where
 
 #[cfg(test)]
 mod test {
+    use platform_value::btreemap_extensions::BTreeValueMapHelper;
+    use platform_value::platform_value;
+    use platform_value::string_encoding::Encoding;
     use std::sync::Arc;
 
+    use crate::tests::fixtures::get_extended_documents_fixture;
     use crate::{
         assert_error_contains,
         state_repository::MockStateRepositoryLike,
         tests::{
-            fixtures::{
-                get_data_contract_fixture, get_document_validator_fixture, get_documents_fixture,
-            },
+            fixtures::{get_data_contract_fixture, get_document_validator_fixture},
             utils::generate_random_identifier_struct,
         },
-        util::string_encoding::Encoding,
     };
 
     use super::*;
@@ -399,6 +452,7 @@ mod test {
             1,
             get_document_validator_fixture(),
             DataContractFetcherAndValidator::new(Arc::new(MockStateRepositoryLike::new())),
+            None,
         );
         let name = "Cutie";
         let contract_id = Identifier::from_string(
@@ -415,23 +469,29 @@ mod test {
         data_contract.id = contract_id;
 
         let document = factory
-            .create(
+            .create_extended_document_for_state_transition(
                 data_contract,
                 owner_id,
                 document_type.to_string(),
-                json!({ "name": name }),
+                platform_value!({ "name": name }),
             )
             .expect("document creation shouldn't fail");
-        assert_eq!(document_type, document.document_type);
+        assert_eq!(document_type, document.document_type_name);
         assert_eq!(
             name,
-            document.get("name").expect("property 'name' should exist")
+            document
+                .properties()
+                .get_str("name")
+                .expect("property 'name' should exist")
         );
         assert_eq!(contract_id, document.data_contract_id);
-        assert_eq!(owner_id, document.owner_id);
-        assert_eq!(document_transition::INITIAL_REVISION, document.revision);
-        assert!(!document.id.to_string(Encoding::Base58).is_empty());
-        assert!(document.created_at.is_some());
+        assert_eq!(owner_id, document.owner_id());
+        assert_eq!(
+            document_transition::INITIAL_REVISION,
+            *document.revision().unwrap()
+        );
+        assert!(!document.id().to_string(Encoding::Base58).is_empty());
+        assert!(document.created_at().is_some());
     }
 
     #[test]
@@ -440,6 +500,7 @@ mod test {
             1,
             get_document_validator_fixture(),
             DataContractFetcherAndValidator::new(Arc::new(MockStateRepositoryLike::new())),
+            None,
         );
 
         let result = factory.create_state_transition(vec![]);
@@ -449,14 +510,16 @@ mod test {
     #[test]
     fn create_transition_mismatch_user_id() {
         let data_contract = get_data_contract_fixture(None);
-        let mut documents = get_documents_fixture(data_contract).unwrap();
+        let mut documents = get_extended_documents_fixture(data_contract).unwrap();
 
         let factory = DocumentFactory::new(
             1,
             get_document_validator_fixture(),
             DataContractFetcherAndValidator::new(Arc::new(MockStateRepositoryLike::new())),
+            None,
         );
-        documents[0].owner_id = generate_random_identifier_struct();
+
+        documents[0].document.owner_id = generate_random_identifier_struct();
 
         let result = factory.create_state_transition(vec![(Action::Create, documents)]);
         assert_error_contains!(result, "Documents have mixed owner ids")
@@ -465,13 +528,14 @@ mod test {
     #[test]
     fn create_transition_invalid_initial_revision() {
         let data_contract = get_data_contract_fixture(None);
-        let mut documents = get_documents_fixture(data_contract).unwrap();
-        documents[0].revision = 3;
+        let mut documents = get_extended_documents_fixture(data_contract).unwrap();
+        documents[0].document.revision = Some(3);
 
         let factory = DocumentFactory::new(
             1,
             get_document_validator_fixture(),
             DataContractFetcherAndValidator::new(Arc::new(MockStateRepositoryLike::new())),
+            None,
         );
         let result = factory.create_state_transition(vec![(Action::Create, documents)]);
         assert_error_contains!(result, "Invalid Document initial revision '3'")
@@ -480,11 +544,12 @@ mod test {
     #[test]
     fn create_transitions_with_passed_documents() {
         let data_contract = get_data_contract_fixture(None);
-        let documents = get_documents_fixture(data_contract).unwrap();
+        let documents = get_extended_documents_fixture(data_contract).unwrap();
         let factory = DocumentFactory::new(
             1,
             get_document_validator_fixture(),
             DataContractFetcherAndValidator::new(Arc::new(MockStateRepositoryLike::new())),
+            None,
         );
 
         let new_document = documents[0].clone();

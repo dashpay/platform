@@ -1,7 +1,8 @@
 const protocolVersion = require('@dashevo/dpp/lib/version/protocolVersion');
+const JsIdentifier = require('@dashevo/dpp/lib/identifier/Identifier');
 const generateRandomIdentifierAsync = require('../utils/generateRandomIdentifierAsync');
 const { default: loadWasmDpp } = require('../../..');
-let { DataContractFactory, Identifier, DataContractValidator } = require('../../..');
+let { DataContractFactory, DataContractValidator } = require('../../..');
 
 let randomOwnerId = null;
 
@@ -11,7 +12,7 @@ let randomOwnerId = null;
  * @return {Promise<DataContract>}
  */
 module.exports = async function getDataContractFixture(ownerId = randomOwnerId) {
-  ({ DataContractFactory, Identifier, DataContractValidator } = await loadWasmDpp());
+  ({ DataContractFactory, DataContractValidator } = await loadWasmDpp());
 
   if (!randomOwnerId) {
     randomOwnerId = await generateRandomIdentifierAsync();
@@ -189,7 +190,7 @@ module.exports = async function getDataContractFixture(ownerId = randomOwnerId) 
         identifierField: {
           type: 'array',
           byteArray: true,
-          contentMediaType: Identifier.MEDIA_TYPE,
+          contentMediaType: JsIdentifier.MEDIA_TYPE,
           minItems: 32,
           maxItems: 32,
         },
@@ -250,7 +251,7 @@ module.exports = async function getDataContractFixture(ownerId = randomOwnerId) 
 
   const dataContractValidator = new DataContractValidator();
   const factory = new DataContractFactory(
-    protocolVersion.latestProtocolVersion,
+    protocolVersion.latestVersion,
     dataContractValidator,
   );
 

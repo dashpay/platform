@@ -1,8 +1,8 @@
 use anyhow::anyhow;
+use platform_value::Value;
 use std::sync::Arc;
 
-use serde_json::Value;
-
+use crate::document::ExtendedDocument;
 use crate::{
     data_contract::DataContract, prelude::Identifier, state_repository::StateRepositoryLike,
     validation::ValidationResult, version::ProtocolVersionValidator, ProtocolError,
@@ -13,7 +13,7 @@ use super::{
     document_transition::Action,
     document_validator::DocumentValidator,
     fetch_and_validate_data_contract::DataContractFetcherAndValidator,
-    Document, DocumentsBatchTransition,
+    DocumentsBatchTransition,
 };
 
 pub struct DocumentFacade<SR> {
@@ -39,6 +39,7 @@ where
             protocol_version,
             document_validator.clone(),
             data_contract_fetcher_and_validator.clone(),
+            None,
         );
 
         Self {
@@ -52,11 +53,15 @@ where
         &self,
         data_contract: DataContract,
         owner_id: Identifier,
-        document_type: String,
+        document_type_name: String,
         data: Value,
-    ) -> Result<Document, ProtocolError> {
-        self.factory
-            .create(data_contract, owner_id, document_type, data)
+    ) -> Result<ExtendedDocument, ProtocolError> {
+        self.factory.create_extended_document_for_state_transition(
+            data_contract,
+            owner_id,
+            document_type_name,
+            data,
+        )
     }
 
     /// Creates Document from object
@@ -64,7 +69,7 @@ where
         &self,
         raw_document: Value,
         options: FactoryOptions,
-    ) -> Result<Document, ProtocolError> {
+    ) -> Result<ExtendedDocument, ProtocolError> {
         self.factory.create_from_object(raw_document, options).await
     }
 
@@ -73,14 +78,14 @@ where
         &self,
         bytes: impl AsRef<[u8]>,
         options: FactoryOptions,
-    ) -> Result<Document, ProtocolError> {
+    ) -> Result<ExtendedDocument, ProtocolError> {
         self.factory.create_from_buffer(bytes, options).await
     }
 
     /// Creates Documents State Transition
     pub fn create_state_transition(
         &self,
-        documents: impl IntoIterator<Item = (Action, Vec<Document>)>,
+        documents: impl IntoIterator<Item = (Action, Vec<ExtendedDocument>)>,
     ) -> Result<DocumentsBatchTransition, ProtocolError> {
         self.factory.create_state_transition(documents)
     }
@@ -88,20 +93,20 @@ where
     /// Creates Documents State Transition
     pub async fn validate_document(
         &self,
-        document: &Document,
+        extended_document: &ExtendedDocument,
     ) -> Result<ValidationResult<DataContract>, ProtocolError> {
-        let raw_document = document.to_object()?;
-        self.validate_raw_document(&raw_document).await
+        let raw_extended_document = extended_document.to_value()?;
+        self.validate_raw_document(&raw_extended_document).await
     }
 
     /// Creates Documents State Transition
     pub async fn validate_raw_document(
         &self,
-        raw_document: &Value,
+        raw_extended_document: &Value,
     ) -> Result<ValidationResult<DataContract>, ProtocolError> {
         let result = self
             .data_contract_fetcher_and_validator
-            .validate(raw_document)
+            .validate_extended(raw_extended_document)
             .await?;
 
         if !result.is_valid() {
@@ -111,7 +116,9 @@ where
         let data_contract = result
             .data()
             .ok_or_else(|| anyhow!("Data Contract for document not present"))?;
-        let result = self.validator.validate(raw_document, data_contract)?;
+        let result = self
+            .validator
+            .validate_extended(raw_extended_document, data_contract)?;
 
         Ok(ValidationResult::new(Some(result.errors)))
     }

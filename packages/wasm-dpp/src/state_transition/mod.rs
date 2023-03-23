@@ -1,9 +1,16 @@
 use dpp::state_transition::state_transition_execution_context::StateTransitionExecutionContext;
+
 use wasm_bindgen::prelude::*;
 
+pub mod errors;
+pub mod state_transition_facade;
+pub mod state_transition_factory;
+
+pub mod validation;
 use crate::utils::Inner;
-mod conversion;
-mod validation;
+pub use validation::*;
+
+pub(crate) mod conversion;
 
 #[wasm_bindgen(js_name=StateTransitionExecutionContext)]
 #[derive(Clone)]

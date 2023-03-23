@@ -1,19 +1,19 @@
 use std::{convert::TryInto, sync::Arc};
 
-use serde_json::Value;
+use platform_value::Value;
 
+use crate::data_contract::state_transition::errors::MissingDataContractIdError;
 use crate::{
     consensus::{basic::BasicError, ConsensusError},
     data_contract::DataContract,
     prelude::Identifier,
     state_repository::StateRepositoryLike,
     state_transition::state_transition_execution_context::StateTransitionExecutionContext,
-    util::json_value::JsonValueExt,
     validation::ValidationResult,
     ProtocolError,
 };
 
-use super::property_names;
+use crate::document::extended_document::property_names;
 
 pub struct DataContractFetcherAndValidator<ST> {
     state_repository: Arc<ST>,
@@ -35,47 +35,44 @@ where
         Self { state_repository }
     }
 
-    pub async fn validate(
+    pub async fn validate_extended(
         &self,
-        raw_document: &Value,
+        raw_extended_document: &Value,
     ) -> Result<ValidationResult<DataContract>, ProtocolError> {
         // TODO - stateTransitionExecutionContext shouldn't be created because it should be optional for
         // TODO all StateRepository queries
         let ctx = StateTransitionExecutionContext::default();
-        fetch_and_validate_data_contract(self.state_repository.as_ref(), raw_document, &ctx).await
+        fetch_and_validate_data_contract(
+            self.state_repository.as_ref(),
+            raw_extended_document,
+            &ctx,
+        )
+        .await
     }
 }
 
 pub async fn fetch_and_validate_data_contract(
     state_repository: &impl StateRepositoryLike,
-    raw_document: &Value,
+    raw_extended_document: &Value,
     execution_context: &StateTransitionExecutionContext,
 ) -> Result<ValidationResult<DataContract>, ProtocolError> {
     let mut validation_result = ValidationResult::<DataContract>::default();
 
-    let id_bytes = if let Ok(id_bytes) = raw_document.get_bytes(property_names::DATA_CONTRACT_ID) {
+    let id_bytes = if let Some(id_bytes) = raw_extended_document
+        .get_optional_hash256(property_names::DATA_CONTRACT_ID)
+        .map_err(ProtocolError::ValueError)?
+    {
         id_bytes
     } else {
         validation_result.add_error(ConsensusError::BasicError(Box::new(
-            BasicError::MissingDataContractIdError,
+            BasicError::MissingDataContractIdError(MissingDataContractIdError::new(
+                raw_extended_document.clone(),
+            )),
         )));
         return Ok(validation_result);
     };
 
-    let data_contract_id = match Identifier::from_bytes(&id_bytes) {
-        Ok(id) => id,
-
-        Err(e) => {
-            let id_base58 = bs58::encode(id_bytes).into_string();
-            let consensus_error =
-                ConsensusError::BasicError(Box::new(BasicError::InvalidIdentifierError {
-                    identifier_name: id_base58,
-                    error: e.to_string(),
-                }));
-            validation_result.add_error(consensus_error);
-            return Ok(validation_result);
-        }
-    };
+    let data_contract_id = Identifier::from(id_bytes);
 
     let maybe_data_contract = state_repository
         .fetch_data_contract(&data_contract_id, Some(execution_context))

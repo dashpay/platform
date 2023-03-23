@@ -1,23 +1,32 @@
 use std::convert::{TryFrom, TryInto};
 
-use serde::de::Error as DeError;
-use serde::ser::Error as SerError;
-use serde::{Deserialize, Deserializer, Serialize, Serializer};
+use platform_value::btreemap_extensions::BTreeValueMapHelper;
+use platform_value::{BinaryData, IntegerReplacementType, ReplacementType, Value};
+use serde::{Deserialize, Serialize};
 use serde_json::Value as JsonValue;
 
 use crate::identity::state_transition::asset_lock_proof::AssetLockProof;
-use crate::identity::state_transition::identity_public_key_transitions::IdentityPublicKeyCreateTransition;
+use crate::identity::state_transition::identity_public_key_transitions::IdentityPublicKeyWithWitness;
 use crate::prelude::Identifier;
 use crate::state_transition::state_transition_execution_context::StateTransitionExecutionContext;
 use crate::state_transition::{
     StateTransition, StateTransitionConvert, StateTransitionLike, StateTransitionType,
 };
-use crate::util::json_value::JsonValueExt;
-use crate::util::string_encoding::Encoding;
-use crate::{NonConsensusError, ProtocolError, SerdeParsingError};
+use crate::{NonConsensusError, ProtocolError};
+use platform_value::btreemap_extensions::BTreeValueRemoveInnerValueFromMapHelper;
+
+pub const IDENTIFIER_FIELDS: [&str; 1] = [property_names::IDENTITY_ID];
+pub const BINARY_FIELDS: [&str; 3] = [
+    property_names::PUBLIC_KEYS_DATA,
+    property_names::PUBLIC_KEYS_SIGNATURE,
+    property_names::SIGNATURE,
+];
+pub const U32_FIELDS: [&str; 1] = [property_names::PROTOCOL_VERSION];
 
 mod property_names {
     pub const PUBLIC_KEYS: &str = "publicKeys";
+    pub const PUBLIC_KEYS_DATA: &str = "publicKeys[].data";
+    pub const PUBLIC_KEYS_SIGNATURE: &str = "publicKeys[].signature";
     pub const ASSET_LOCK_PROOF: &str = "assetLockProof";
     pub const SIGNATURE: &str = "signature";
     pub const PROTOCOL_VERSION: &str = "protocolVersion";
@@ -28,22 +37,25 @@ mod property_names {
 #[derive(Debug, Copy, Clone, Default)]
 pub struct SerializationOptions {
     pub skip_signature: bool,
-    pub skip_identifiers_conversion: bool,
+    pub into_validating_json: bool,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Serialize, Deserialize, Debug, Clone)]
+#[serde(rename_all = "camelCase")]
 pub struct IdentityCreateTransition {
     // Own ST fields
-    pub public_keys: Vec<IdentityPublicKeyCreateTransition>,
+    pub public_keys: Vec<IdentityPublicKeyWithWitness>,
     pub asset_lock_proof: AssetLockProof,
     pub identity_id: Identifier,
     // Generic identity ST fields
     pub protocol_version: u32,
     pub transition_type: StateTransitionType,
-    pub signature: Vec<u8>,
+    pub signature: BinaryData,
+    #[serde(skip)]
     pub execution_context: StateTransitionExecutionContext,
 }
 
+//todo: there shouldn't be a default
 impl Default for IdentityCreateTransition {
     fn default() -> Self {
         Self {
@@ -64,46 +76,46 @@ impl From<IdentityCreateTransition> for StateTransition {
     }
 }
 
-impl Serialize for IdentityCreateTransition {
-    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
-    where
-        S: Serializer,
-    {
-        let raw = self
-            .to_json_object(Default::default())
-            .map_err(|e| S::Error::custom(e.to_string()))?;
-
-        raw.serialize(serializer)
-    }
-}
-
-impl<'de> Deserialize<'de> for IdentityCreateTransition {
-    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
-    where
-        D: Deserializer<'de>,
-    {
-        let value = serde_json::Value::deserialize(deserializer)?;
-
-        Self::new(value).map_err(|e| D::Error::custom(e.to_string()))
-    }
-}
+// impl Serialize for IdentityCreateTransition {
+//     fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+//     where
+//         S: Serializer,
+//     {
+//         let raw = self
+//             .to_json_object(Default::default())
+//             .map_err(|e| S::Error::custom(e.to_string()))?;
+//
+//         raw.serialize(serializer)
+//     }
+// }
+//
+// impl<'de> Deserialize<'de> for IdentityCreateTransition {
+//     fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+//     where
+//         D: Deserializer<'de>,
+//     {
+//         let value = platform_value::Value::deserialize(deserializer)?;
+//
+//         Self::new(value).map_err(|e| D::Error::custom(e.to_string()))
+//     }
+// }
 
 /// Main state transition functionality implementation
 impl IdentityCreateTransition {
-    pub fn new(raw_state_transition: serde_json::Value) -> Result<Self, NonConsensusError> {
+    pub fn new(raw_state_transition: Value) -> Result<Self, ProtocolError> {
         let mut state_transition = Self::default();
 
-        let transition_map = raw_state_transition.as_object().ok_or_else(|| {
-            SerdeParsingError::new("Expected raw identity transition to be a map")
-        })?;
-        if let Some(keys_value) = transition_map.get(property_names::PUBLIC_KEYS) {
-            let keys_value_arr = keys_value
-                .as_array()
-                .ok_or_else(|| SerdeParsingError::new("Expected public keys to be an array"))?;
-            let keys = keys_value_arr
-                .iter()
-                .map(|val| serde_json::from_value(val.clone()))
-                .collect::<Result<Vec<IdentityPublicKeyCreateTransition>, serde_json::Error>>()?;
+        let mut transition_map = raw_state_transition
+            .into_btree_string_map()
+            .map_err(ProtocolError::ValueError)?;
+        if let Some(keys_value_array) = transition_map
+            .remove_optional_inner_value_array::<Vec<_>>(property_names::PUBLIC_KEYS)
+            .map_err(ProtocolError::ValueError)?
+        {
+            let keys = keys_value_array
+                .into_iter()
+                .map(|val| val.try_into().map_err(ProtocolError::ValueError))
+                .collect::<Result<Vec<IdentityPublicKeyWithWitness>, ProtocolError>>()?;
             state_transition.set_public_keys(keys);
         }
 
@@ -111,9 +123,8 @@ impl IdentityCreateTransition {
             state_transition.set_asset_lock_proof(AssetLockProof::try_from(proof)?)?;
         }
 
-        if let Some(protocol_version) = transition_map.get(property_names::PROTOCOL_VERSION) {
-            state_transition.protocol_version = protocol_version.as_u64().unwrap() as u32;
-        }
+        state_transition.protocol_version =
+            transition_map.get_integer(property_names::PROTOCOL_VERSION)?;
 
         Ok(state_transition)
     }
@@ -141,15 +152,12 @@ impl IdentityCreateTransition {
     }
 
     /// Get identity public keys
-    pub fn get_public_keys(&self) -> &[IdentityPublicKeyCreateTransition] {
+    pub fn get_public_keys(&self) -> &[IdentityPublicKeyWithWitness] {
         &self.public_keys
     }
 
     /// Replaces existing set of public keys with a new one
-    pub fn set_public_keys(
-        &mut self,
-        public_keys: Vec<IdentityPublicKeyCreateTransition>,
-    ) -> &mut Self {
+    pub fn set_public_keys(&mut self, public_keys: Vec<IdentityPublicKeyWithWitness>) -> &mut Self {
         self.public_keys = public_keys;
 
         self
@@ -158,7 +166,7 @@ impl IdentityCreateTransition {
     /// Adds public keys to the existing public keys array
     pub fn add_public_keys(
         &mut self,
-        public_keys: &mut Vec<IdentityPublicKeyCreateTransition>,
+        public_keys: &mut Vec<IdentityPublicKeyWithWitness>,
     ) -> &mut Self {
         self.public_keys.append(public_keys);
 
@@ -179,77 +187,36 @@ impl IdentityCreateTransition {
     pub fn to_json_object(
         &self,
         options: SerializationOptions,
-    ) -> Result<JsonValue, SerdeParsingError> {
-        let mut json_map = JsonValue::Object(Default::default());
-
-        json_map.insert(
-            property_names::TRANSITION_TYPE.to_string(),
-            serde_json::Value::from(Self::get_type() as u8),
-        )?;
-
-        if !options.skip_signature {
-            let sig = self.signature.iter().map(|num| JsonValue::from(*num));
-            json_map.insert(
-                property_names::SIGNATURE.to_string(),
-                JsonValue::Array(sig.collect()),
-            )?;
-        }
-
-        if !options.skip_identifiers_conversion {
-            let bytes = self
-                .identity_id
-                .as_bytes()
-                .iter()
-                .map(|num| JsonValue::from(*num));
-            json_map.insert(
-                property_names::IDENTITY_ID.to_string(),
-                JsonValue::Array(bytes.collect()),
-            )?;
+    ) -> Result<JsonValue, ProtocolError> {
+        if options.into_validating_json {
+            self.to_object(options.skip_signature)?
+                .try_into_validating_json()
+                .map_err(ProtocolError::ValueError)
         } else {
-            json_map.insert(
-                property_names::IDENTITY_ID.to_string(),
-                JsonValue::String(self.identity_id.to_string(Encoding::Base58)),
-            )?;
+            self.to_object(options.skip_signature)?
+                .try_into()
+                .map_err(ProtocolError::ValueError)
         }
-
-        let pk_values = self
-            .public_keys
-            .iter()
-            .map(|pk| pk.to_raw_json_object(options.skip_signature))
-            .collect::<Result<Vec<JsonValue>, SerdeParsingError>>()?;
-
-        json_map.insert(
-            property_names::PUBLIC_KEYS.to_string(),
-            JsonValue::Array(pk_values),
-        )?;
-
-        json_map.insert(
-            property_names::ASSET_LOCK_PROOF.to_string(),
-            self.asset_lock_proof.as_ref().try_into()?,
-        )?;
-
-        // TODO ??
-        json_map.insert(
-            property_names::PROTOCOL_VERSION.to_string(),
-            JsonValue::Number(self.get_protocol_version().into()),
-        )?;
-
-        Ok(json_map)
-    }
-
-    /// Returns ids of created identities
-    pub fn get_modified_data_ids(&self) -> Vec<&Identifier> {
-        vec![self.get_identity_id()]
     }
 
     pub fn set_protocol_version(&mut self, protocol_version: u32) {
         self.protocol_version = protocol_version;
     }
+
+    pub fn clean_value(value: &mut Value) -> Result<(), ProtocolError> {
+        value.replace_at_paths(IDENTIFIER_FIELDS, ReplacementType::Identifier)?;
+        value.replace_at_paths(BINARY_FIELDS, ReplacementType::BinaryBytes)?;
+        value.replace_integer_type_at_paths(U32_FIELDS, IntegerReplacementType::U32)?;
+        Ok(())
+    }
 }
 
 impl StateTransitionConvert for IdentityCreateTransition {
     fn signature_property_paths() -> Vec<&'static str> {
-        vec![property_names::SIGNATURE]
+        vec![
+            property_names::SIGNATURE,
+            property_names::PUBLIC_KEYS_SIGNATURE,
+        ]
     }
     fn identifiers_property_paths() -> Vec<&'static str> {
         vec![property_names::IDENTITY_ID]
@@ -258,69 +225,62 @@ impl StateTransitionConvert for IdentityCreateTransition {
         vec![]
     }
 
-    fn to_object(&self, skip_signature: bool) -> Result<JsonValue, ProtocolError> {
-        let mut json_value: JsonValue = serde_json::to_value(self)?;
+    fn to_object(&self, skip_signature: bool) -> Result<Value, ProtocolError> {
+        let mut value: Value = platform_value::to_value(self)?;
 
         if skip_signature {
-            if let JsonValue::Object(ref mut o) = json_value {
-                for path in Self::signature_property_paths() {
-                    o.remove(path);
-                }
-            }
+            value
+                .remove_values_matching_paths(Self::signature_property_paths())
+                .map_err(ProtocolError::ValueError)?;
         }
 
-        let mut public_keys: Vec<JsonValue> = vec![];
+        let mut public_keys: Vec<Value> = vec![];
         for key in self.public_keys.iter() {
-            public_keys.push(key.to_raw_json_object(skip_signature)?);
+            public_keys.push(key.to_raw_object(skip_signature)?);
         }
 
-        json_value.insert(
+        value.insert(
             property_names::PUBLIC_KEYS.to_owned(),
-            JsonValue::Array(public_keys),
+            Value::Array(public_keys),
         )?;
 
-        Ok(json_value)
+        Ok(value)
     }
 
     fn to_json(&self, skip_signature: bool) -> Result<JsonValue, ProtocolError> {
-        let mut json = serde_json::Value::Object(Default::default());
+        self.to_cleaned_object(skip_signature)
+            .and_then(|v| v.try_into().map_err(ProtocolError::ValueError))
+    }
 
-        // TODO: super.toJSON()
-
-        json.insert(
-            property_names::TRANSITION_TYPE.to_string(),
-            serde_json::Value::from(Self::get_type() as u8),
-        )?;
-
-        json.insert(
-            property_names::ASSET_LOCK_PROOF.to_string(),
-            self.asset_lock_proof.as_ref().try_into()?,
-        )?;
-
-        let public_keys = self
-            .public_keys
-            .iter()
-            .map(|pk| pk.to_json())
-            .collect::<Result<Vec<JsonValue>, SerdeParsingError>>()?;
-
-        json.insert(
-            property_names::PUBLIC_KEYS.to_string(),
-            serde_json::Value::Array(public_keys),
-        )?;
+    fn to_cleaned_object(&self, skip_signature: bool) -> Result<Value, ProtocolError> {
+        let mut value: Value = platform_value::to_value(self)?;
 
         if skip_signature {
-            if let JsonValue::Object(ref mut o) = json {
-                for path in Self::signature_property_paths() {
-                    o.remove(path);
-                }
-            }
+            value
+                .remove_values_matching_paths(Self::signature_property_paths())
+                .map_err(ProtocolError::ValueError)?;
         }
 
-        Ok(json)
+        let mut public_keys: Vec<Value> = vec![];
+        for key in self.public_keys.iter() {
+            public_keys.push(key.to_raw_cleaned_object(skip_signature)?);
+        }
+
+        value.insert(
+            property_names::PUBLIC_KEYS.to_owned(),
+            Value::Array(public_keys),
+        )?;
+
+        Ok(value)
     }
 }
 
 impl StateTransitionLike for IdentityCreateTransition {
+    /// Returns ids of created identities
+    fn get_modified_data_ids(&self) -> Vec<Identifier> {
+        vec![*self.get_identity_id()]
+    }
+
     fn get_protocol_version(&self) -> u32 {
         self.protocol_version
     }
@@ -329,12 +289,16 @@ impl StateTransitionLike for IdentityCreateTransition {
         StateTransitionType::IdentityCreate
     }
     /// returns the signature as a byte-array
-    fn get_signature(&self) -> &Vec<u8> {
+    fn get_signature(&self) -> &BinaryData {
         &self.signature
     }
     /// set a new signature
-    fn set_signature(&mut self, signature: Vec<u8>) {
+    fn set_signature(&mut self, signature: BinaryData) {
         self.signature = signature
+    }
+
+    fn set_signature_bytes(&mut self, signature: Vec<u8>) {
+        self.signature = BinaryData::new(signature)
     }
     fn get_execution_context(&self) -> &StateTransitionExecutionContext {
         &self.execution_context

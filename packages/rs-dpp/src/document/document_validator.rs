@@ -2,15 +2,18 @@ use std::sync::Arc;
 
 use anyhow::anyhow;
 use lazy_static::lazy_static;
+use platform_value::Value;
 use serde_json::Value as JsonValue;
 
+use crate::consensus::basic::document::InvalidDocumentTypeError;
+use crate::data_contract::document_type::DocumentType;
+use crate::data_contract::DriveContractExt;
 use crate::{
     consensus::basic::BasicError,
     data_contract::{
         enrich_data_contract_with_base_schema::enrich_data_contract_with_base_schema,
         enrich_data_contract_with_base_schema::PREFIX_BYTE_0, DataContract,
     },
-    util::json_value::JsonValueExt,
     validation::{JsonSchemaValidator, ValidationResult},
     version::ProtocolVersionValidator,
     ProtocolError,
@@ -22,6 +25,11 @@ const PROPERTY_DOCUMENT_TYPE: &str = "$type";
 lazy_static! {
     static ref BASE_DOCUMENT_SCHEMA: JsonValue =
         serde_json::from_str(include_str!("../../schema/document/documentBase.json")).unwrap();
+}
+
+lazy_static! {
+    static ref EXTENDED_DOCUMENT_SCHEMA: JsonValue =
+        serde_json::from_str(include_str!("../../schema/document/documentExtended.json")).unwrap();
 }
 
 #[derive(Clone)]
@@ -40,38 +48,20 @@ impl DocumentValidator {
         &self,
         raw_document: &JsonValue,
         data_contract: &DataContract,
+        document_type: &DocumentType,
     ) -> Result<ValidationResult<()>, ProtocolError> {
         let mut result = ValidationResult::default();
-
-        let maybe_document_type = raw_document.get(PROPERTY_DOCUMENT_TYPE);
-        if maybe_document_type.is_none() {
-            result.add_error(BasicError::MissingDocumentTypeError);
-            return Ok(result);
-        }
-
-        let document_type = maybe_document_type.unwrap().as_str().ok_or_else(|| {
-            anyhow!(
-                "the document type '{:?}' cannot be converted into the string",
-                maybe_document_type
-            )
-        })?;
-
-        if !data_contract.is_document_defined(document_type) {
-            result.add_error(BasicError::InvalidDocumentTypeError {
-                document_type: document_type.to_owned(),
-                data_contract_id: data_contract.id.to_owned(),
-            });
-            return Ok(result);
-        }
-
         let enriched_data_contract = enrich_data_contract_with_base_schema(
             data_contract,
             &BASE_DOCUMENT_SCHEMA,
             PREFIX_BYTE_0,
             &[],
         )?;
+
+        //todo: maybe we should validate on the document type instead as it already has all the
+        //information needed
         let document_schema = enriched_data_contract
-            .get_document_schema(document_type)?
+            .get_document_schema(document_type.name.as_str())?
             .to_owned();
 
         let json_schema_validator = if let Some(defs) = &data_contract.defs {
@@ -87,8 +77,64 @@ impl DocumentValidator {
         if !result.is_valid() {
             return Ok(result);
         }
+        //todo: validate the version
 
-        let protocol_version = raw_document.get_u64(PROPERTY_PROTOCOL_VERSION)? as u32;
+        Ok(result)
+    }
+
+    pub fn validate_extended(
+        &self,
+        raw_document: &Value,
+        data_contract: &DataContract,
+    ) -> Result<ValidationResult<()>, ProtocolError> {
+        let mut result = ValidationResult::default();
+
+        let Some(document_type_name) = raw_document.get_optional_str(PROPERTY_DOCUMENT_TYPE).map_err(ProtocolError::ValueError)? else {
+            result.add_error(BasicError::MissingDocumentTypeError);
+            return Ok(result);
+        };
+
+        // check if there is a document type
+        if !data_contract.has_document_type_for_name(document_type_name) {
+            result.add_error(BasicError::InvalidDocumentTypeError(
+                InvalidDocumentTypeError::new(
+                    document_type_name.to_owned(),
+                    data_contract.id.to_owned(),
+                ),
+            ));
+            return Ok(result);
+        }
+
+        let enriched_data_contract = enrich_data_contract_with_base_schema(
+            data_contract,
+            &EXTENDED_DOCUMENT_SCHEMA,
+            PREFIX_BYTE_0,
+            &[],
+        )?;
+        let document_schema = enriched_data_contract
+            .get_document_schema(document_type_name)?
+            .to_owned();
+
+        let json_schema_validator = if let Some(defs) = &data_contract.defs {
+            JsonSchemaValidator::new_with_definitions(document_schema, defs.iter())
+        } else {
+            JsonSchemaValidator::new(document_schema)
+        }
+        .map_err(|e| anyhow!("unable to process the contract: {}", e))?;
+
+        let json_value = raw_document
+            .try_to_validating_json()
+            .map_err(ProtocolError::ValueError)?;
+        let json_schema_validation_result = json_schema_validator.validate(&json_value)?;
+        result.merge(json_schema_validation_result);
+
+        if !result.is_valid() {
+            return Ok(result);
+        }
+
+        let protocol_version = raw_document
+            .get_integer(PROPERTY_PROTOCOL_VERSION)
+            .map_err(ProtocolError::ValueError)?;
         result.merge(self.protocol_version_validator.validate(protocol_version)?);
 
         Ok(result)
@@ -103,16 +149,16 @@ mod test {
         error::{TypeKind, ValidationErrorKind},
         primitive_type::PrimitiveType,
     };
-    use serde_json::json;
+    use platform_value::Value;
     use serde_json::Value as JsonValue;
     use test_case::test_case;
 
+    use crate::tests::fixtures::get_extended_documents_fixture;
     use crate::{
         codes::ErrorWithCode,
         consensus::{basic::JsonSchemaError, ConsensusError},
         data_contract::DataContract,
-        tests::fixtures::{get_data_contract_fixture, get_documents_fixture},
-        util::json_value::JsonValueExt,
+        tests::fixtures::get_data_contract_fixture,
         validation::ValidationResult,
         version::{ProtocolVersionValidator, COMPATIBILITY_MAP, LATEST_VERSION},
     };
@@ -121,16 +167,16 @@ mod test {
 
     struct TestData {
         data_contract: DataContract,
-        raw_document: JsonValue,
+        raw_document: Value,
         document_validator: DocumentValidator,
     }
 
     fn get_test_data() -> TestData {
         let data_contract = get_data_contract_fixture(None);
-        let documents = get_documents_fixture(data_contract.clone()).unwrap();
+        let documents = get_extended_documents_fixture(data_contract.clone()).unwrap();
         let raw_document = documents
             .iter()
-            .map(|d| d.to_object())
+            .map(|d| d.to_value())
             .next()
             .expect("at least one Document should be present")
             .expect("Document should be converted to Object");
@@ -165,7 +211,7 @@ mod test {
             .unwrap_or_else(|_| panic!("the {} should exist and be removed", property_name));
 
         let result = document_validator
-            .validate(&raw_document, &data_contract)
+            .validate_extended(&raw_document, &data_contract)
             .expect("the validator should return the validation result");
         let schema_error = get_first_schema_error(&result);
 
@@ -188,11 +234,14 @@ mod test {
         } = get_test_data();
 
         raw_document
-            .insert(String::from(property_name), json!("string"))
+            .insert(
+                String::from(property_name),
+                Value::Text("string".to_string()),
+            )
             .unwrap();
 
         let result = document_validator
-            .validate(&raw_document, &data_contract)
+            .validate_extended(&raw_document, &data_contract)
             .expect("the validator should return the validation result");
         let schema_error = get_first_schema_error(&result);
 
@@ -225,11 +274,14 @@ mod test {
 
         let too_short_id = [0u8; 31];
         raw_document
-            .insert(String::from(property_name), json!(too_short_id))
+            .insert(
+                String::from(property_name),
+                Value::Bytes(too_short_id.to_vec()),
+            )
             .unwrap();
 
         let result = document_validator
-            .validate(&raw_document, &data_contract)
+            .validate_extended(&raw_document, &data_contract)
             .expect("the validator should return the validation result");
         let schema_error = get_first_schema_error(&result);
 
@@ -262,12 +314,12 @@ mod test {
         raw_document
             .insert(
                 String::from(property_name),
-                serde_json::to_value(too_long_id).unwrap(),
+                Value::Bytes(too_long_id.to_vec()),
             )
             .unwrap();
 
         let result = document_validator
-            .validate(&raw_document, &data_contract)
+            .validate_extended(&raw_document, &data_contract)
             .expect("the validator should return the validation result");
         let schema_error = get_first_schema_error(&result);
 
@@ -294,11 +346,14 @@ mod test {
         } = get_test_data();
 
         raw_document
-            .insert(String::from("$protocolVersion"), json!("1"))
+            .insert(
+                String::from("$protocolVersion"),
+                Value::Text("1".to_string()),
+            )
             .unwrap();
 
         let result = document_validator
-            .validate(&raw_document, &data_contract)
+            .validate_extended(&raw_document, &data_contract)
             .expect("the validator should return the validation result");
         let schema_error = get_first_schema_error(&result);
 
@@ -328,7 +383,7 @@ mod test {
             .expect("the '$type' should exist and be removed");
 
         let result = document_validator
-            .validate(&raw_document, &data_contract)
+            .validate_extended(&raw_document, &data_contract)
             .expect("the validator should return the validation result");
         let validation_error = result.errors.get(0).expect("should return an error");
         assert!(
@@ -345,11 +400,14 @@ mod test {
         } = get_test_data();
 
         raw_document
-            .insert("$type".to_string(), json!("undefinedDocument"))
+            .insert(
+                "$type".to_string(),
+                Value::Text("undefinedDocument".to_string()),
+            )
             .unwrap();
 
         let result = document_validator
-            .validate(&raw_document, &data_contract)
+            .validate_extended(&raw_document, &data_contract)
             .expect("the validator should return the validation result");
         let validation_error = result.errors.get(0).expect("the error should exist");
         assert_eq!(1024, validation_error.get_code());
@@ -364,11 +422,11 @@ mod test {
         } = get_test_data();
 
         raw_document
-            .insert(String::from("$revision"), json!("string"))
+            .insert(String::from("$revision"), Value::Text("string".to_string()))
             .unwrap();
 
         let result = document_validator
-            .validate(&raw_document, &data_contract)
+            .validate_extended(&raw_document, &data_contract)
             .expect("the validator should return the validation result");
         let schema_error = get_first_schema_error(&result);
 
@@ -390,11 +448,11 @@ mod test {
         } = get_test_data();
 
         raw_document
-            .insert(String::from("$revision"), json!(1.1))
+            .insert(String::from("$revision"), Value::Float(1.1))
             .unwrap();
 
         let result = document_validator
-            .validate(&raw_document, &data_contract)
+            .validate_extended(&raw_document, &data_contract)
             .expect("the validator should return the validation result");
         let schema_error = get_first_schema_error(&result);
 
@@ -419,9 +477,11 @@ mod test {
             data_contract,
         } = get_test_data();
 
-        raw_document.insert(String::from("name"), json!(1)).unwrap();
+        raw_document
+            .insert(String::from("name"), Value::U64(1))
+            .unwrap();
         let result = document_validator
-            .validate(&raw_document, &data_contract)
+            .validate_extended(&raw_document, &data_contract)
             .expect("the validator should return the validation result");
         let schema_error = get_first_schema_error(&result);
 
@@ -446,11 +506,11 @@ mod test {
         } = get_test_data();
 
         raw_document
-            .insert(String::from("undefined"), json!(1))
+            .insert(String::from("undefined"), Value::U64(1))
             .unwrap();
 
         let result = document_validator
-            .validate(&raw_document, &data_contract)
+            .validate_extended(&raw_document, &data_contract)
             .expect("the validator should return the validation result");
         let schema_error = get_first_schema_error(&result);
 
@@ -473,17 +533,17 @@ mod test {
             ..
         } = get_test_data();
 
-        let documents = get_documents_fixture(data_contract.clone()).unwrap();
+        let documents = get_extended_documents_fixture(data_contract.clone()).unwrap();
         let document = documents.get(8).unwrap();
 
         let data = [0u8; 32];
-        let mut raw_document = document.to_object().unwrap();
+        let mut raw_document = document.to_value().unwrap();
         raw_document
-            .insert("byteArrayField".to_string(), json!(data))
+            .set_value("byteArrayField", Value::Bytes32(data))
             .unwrap();
 
         let result = document_validator
-            .validate(&raw_document, &data_contract)
+            .validate_extended(&raw_document, &data_contract)
             .expect("the validator should return the validation result");
         let schema_error = get_first_schema_error(&result);
 
@@ -507,7 +567,7 @@ mod test {
         } = get_test_data();
 
         let result = document_validator
-            .validate(&raw_document, &data_contract)
+            .validate_extended(&raw_document, &data_contract)
             .expect("the validator should return the validation result");
 
         assert!(result.is_valid())

@@ -12,7 +12,6 @@ use dpp::prelude::{Revision, TimestampMillis};
 use dpp::{
     dashcore::InstantLock,
     data_contract::DataContract,
-    document::Document,
     prelude::{Identifier, Identity},
     state_repository::{
         FetchTransactionResponse as FetchTransactionResponseDPP, StateRepositoryLike,
@@ -21,21 +20,24 @@ use dpp::{
 };
 use js_sys::Uint8Array;
 use js_sys::{Array, Number};
+
 use wasm_bindgen::__rt::Ref;
 
+use dpp::document::ExtendedDocument;
 use wasm_bindgen::prelude::*;
 
 use crate::buffer::Buffer;
 use crate::errors::from_js_error;
 use crate::utils::generic_of_js_val;
-use crate::IdentityPublicKeyWasm;
 use crate::{
     identifier::IdentifierWrapper, utils::IntoWasm, DataContractWasm, DocumentWasm, IdentityWasm,
     StateTransitionExecutionContextWasm,
 };
+use crate::{ExtendedDocumentWasm, IdentityPublicKeyWasm};
 
 #[wasm_bindgen]
 extern "C" {
+    #[derive(Clone)]
     pub type ExternalStateRepositoryLike;
 
     #[wasm_bindgen(catch, structural, method, js_name=fetchDataContract)]
@@ -55,14 +57,14 @@ extern "C" {
     #[wasm_bindgen(catch, structural, method, js_name=createDocument)]
     pub async fn create_document(
         this: &ExternalStateRepositoryLike,
-        document: DocumentWasm,
+        document: ExtendedDocumentWasm,
         execution_context: &JsValue,
     ) -> Result<(), JsValue>;
 
     #[wasm_bindgen(catch, structural, method, js_name=updateDocument)]
     pub async fn update_document(
         this: &ExternalStateRepositoryLike,
-        document: DocumentWasm,
+        document: ExtendedDocumentWasm,
         execution_context: &JsValue,
     ) -> Result<(), JsValue>;
 
@@ -77,6 +79,15 @@ extern "C" {
 
     #[wasm_bindgen(catch, structural, method, js_name=fetchDocuments)]
     pub async fn fetch_documents(
+        this: &ExternalStateRepositoryLike,
+        data_contract_id: IdentifierWrapper,
+        data_contract_type: String,
+        where_query: JsValue,
+        execution_context: &JsValue,
+    ) -> Result<JsValue, JsValue>;
+
+    #[wasm_bindgen(catch, structural, method, js_name=fetchExtendedDocuments)]
+    pub async fn fetch_extended_documents(
         this: &ExternalStateRepositoryLike,
         data_contract_id: IdentifierWrapper,
         data_contract_type: String,
@@ -269,6 +280,7 @@ impl StateRepositoryLike for ExternalStateRepositoryLikeWrapper {
     type ConversionError = Infallible;
     type FetchDataContract = DataContractWasm;
     type FetchDocument = DocumentWasm;
+    type FetchExtendedDocument = ExtendedDocumentWasm;
     type FetchIdentity = IdentityWasm;
     type FetchTransaction = FetchTransactionResponse;
 
@@ -342,26 +354,57 @@ impl StateRepositoryLike for ExternalStateRepositoryLikeWrapper {
         Ok(documents)
     }
 
+    async fn fetch_extended_documents<'a>(
+        &self,
+        contract_id: &Identifier,
+        data_contract_type: &str,
+        where_query: serde_json::Value,
+        execution_context: Option<&'a StateTransitionExecutionContext>,
+    ) -> anyhow::Result<Vec<Self::FetchExtendedDocument>> {
+        let js_documents = self
+            .0
+            .fetch_extended_documents(
+                contract_id.to_owned().into(),
+                data_contract_type.to_owned(),
+                where_query
+                    .serialize(&serde_wasm_bindgen::Serializer::json_compatible())
+                    .map_err(|e| anyhow!("serialization error: {}", e))?,
+                &ctx_to_js_value(execution_context),
+            )
+            .await
+            .map_err(from_js_error)?;
+        let js_documents_array = js_sys::Array::from(&js_documents);
+
+        let mut documents: Vec<ExtendedDocumentWasm> = vec![];
+        for js_document in js_documents_array.iter() {
+            let document = js_document
+                .to_wasm::<ExtendedDocumentWasm>("ExtendedDocument")
+                .map_err(|e| anyhow!("{e:#?}"))?;
+            documents.push(document.to_owned());
+        }
+        Ok(documents)
+    }
+
     async fn create_document<'a>(
         &self,
-        document: &Document,
+        extended_document: &ExtendedDocument,
         execution_context: Option<&'a StateTransitionExecutionContext>,
     ) -> anyhow::Result<()> {
-        let document_wasm: DocumentWasm = document.to_owned().into();
+        let extended_document_wasm: ExtendedDocumentWasm = extended_document.to_owned().into();
         self.0
-            .create_document(document_wasm, &ctx_to_js_value(execution_context))
+            .create_document(extended_document_wasm, &ctx_to_js_value(execution_context))
             .await
             .map_err(from_js_error)
     }
 
     async fn update_document<'a>(
         &self,
-        document: &Document,
+        extended_document: &ExtendedDocument,
         execution_context: Option<&'a StateTransitionExecutionContext>,
     ) -> anyhow::Result<()> {
-        let document_wasm: DocumentWasm = document.to_owned().into();
+        let extended_document_wasm: ExtendedDocumentWasm = extended_document.to_owned().into();
         self.0
-            .update_document(document_wasm, &ctx_to_js_value(execution_context))
+            .update_document(extended_document_wasm, &ctx_to_js_value(execution_context))
             .await
             .map_err(from_js_error)
     }

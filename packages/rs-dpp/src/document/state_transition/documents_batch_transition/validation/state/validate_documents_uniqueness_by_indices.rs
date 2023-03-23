@@ -2,20 +2,16 @@ use std::convert::TryInto;
 
 use futures::future::join_all;
 use itertools::Itertools;
+use platform_value::string_encoding::Encoding;
 use serde_json::{json, Value as JsonValue};
 
+use crate::document::Document;
 use crate::{
-    document::{
-        document_transition::{Action, DocumentTransition, DocumentTransitionExt},
-        Document,
-    },
+    document::document_transition::{Action, DocumentTransition, DocumentTransitionExt},
     prelude::{DataContract, Identifier},
     state_repository::StateRepositoryLike,
     state_transition::state_transition_execution_context::StateTransitionExecutionContext,
-    util::{
-        json_schema::{Index, JsonSchemaExt},
-        string_encoding::Encoding,
-    },
+    util::json_schema::{Index, JsonSchemaExt},
     validation::ValidationResult,
     ProtocolError, StateError,
 };
@@ -43,7 +39,7 @@ where
     for t in document_transitions {
         let transition = t.as_ref();
         let document_schema =
-            data_contract.get_document_schema(&transition.base().document_type)?;
+            data_contract.get_document_schema(&transition.base().document_type_name)?;
         let document_indices = document_schema.get_indices::<Vec<_>>()?;
         if document_indices.is_empty() {
             continue;
@@ -65,6 +61,7 @@ where
                     (query.index_definition, query.document_transition),
                 )
             });
+
         let (futures, futures_meta) = unzip_iter_and_collect(queries);
         let results = join_all(futures).await;
 
@@ -91,7 +88,7 @@ fn generate_document_index_queries<'a>(
         .map(move |index| {
             let where_query = build_query_for_index_definition(index, transition, owner_id);
             QueryDefinition {
-                document_type: &transition.base().document_type,
+                document_type: &transition.base().document_type_name,
                 index_definition: index,
                 document_transition: transition,
                 where_query,

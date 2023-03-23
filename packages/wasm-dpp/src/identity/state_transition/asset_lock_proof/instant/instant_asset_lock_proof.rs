@@ -1,16 +1,13 @@
-use dpp::{
-    dashcore::{
-        blockdata::{script::Script, transaction::txout::TxOut},
-        consensus::encode::serialize,
-    },
-    util::string_encoding,
-    util::string_encoding::Encoding,
+use dpp::dashcore::{
+    blockdata::{script::Script, transaction::txout::TxOut},
+    consensus::encode::serialize,
 };
 
 use serde::{Deserialize, Serialize};
 use std::convert::TryInto;
 use wasm_bindgen::prelude::*;
 
+use crate::utils::WithJsError;
 use crate::{
     buffer::Buffer,
     errors::{from_dpp_err, RustConversionError},
@@ -20,6 +17,8 @@ use crate::{
 use dpp::identity::state_transition::asset_lock_proof::instant::{
     InstantAssetLockProof, RawInstantLock,
 };
+use dpp::platform_value::string_encoding;
+use dpp::platform_value::string_encoding::Encoding;
 
 #[derive(Serialize, Deserialize)]
 #[serde(remote = "TxOut")]
@@ -117,12 +116,10 @@ impl InstantAssetLockProofWasm {
 
     #[wasm_bindgen(js_name=toObject)]
     pub fn to_object(&self) -> Result<JsValue, JsValue> {
-        let asset_lock_json =
-            serde_json::to_value(self.0.clone()).map_err(|e| from_dpp_err(e.into()))?;
+        let asset_lock_value = self.0.to_cleaned_object().with_js_error()?;
 
-        let asset_lock_json_string =
-            serde_json::to_string(&asset_lock_json).map_err(|e| from_dpp_err(e.into()))?;
-        let js_object = js_sys::JSON::parse(&asset_lock_json_string)?;
+        let serializer = serde_wasm_bindgen::Serializer::json_compatible();
+        let js_object = with_js_error!(asset_lock_value.serialize(&serializer))?;
 
         let transaction = self.get_transaction();
         let instant_lock = self.get_instant_lock();

@@ -2,7 +2,8 @@ use std::sync::Arc;
 
 use jsonschema::error::ValidationErrorKind;
 use log::trace;
-use serde_json::{json, Value as JsonValue};
+use platform_value::{platform_value, Value};
+use serde_json::Value as JsonValue;
 use test_case::test_case;
 
 use crate::{
@@ -12,21 +13,20 @@ use crate::{
     errors::consensus::basic::{BasicError, IndexError},
     prelude::*,
     tests::fixtures::get_data_contract_fixture,
-    util::json_value::JsonValueExt,
     version::{ProtocolVersionValidator, COMPATIBILITY_MAP, LATEST_VERSION},
 };
 
 struct TestData {
     data_contract_validator: DataContractValidator,
     data_contract: DataContract,
-    raw_data_contract: JsonValue,
+    raw_data_contract: Value,
 }
 
 fn setup_test() -> TestData {
     init();
 
     let data_contract = get_data_contract_fixture(None);
-    let raw_data_contract = data_contract.to_object(false).unwrap();
+    let raw_data_contract = data_contract.to_object().unwrap();
 
     let protocol_version_validator =
         ProtocolVersionValidator::new(LATEST_VERSION, LATEST_VERSION, COMPATIBILITY_MAP.clone());
@@ -53,6 +53,15 @@ fn get_schema_error(result: &ValidationResult<()>, number: usize) -> &JsonSchema
         .expect("the error should be returned in validation result")
         .json_schema_error()
         .expect("the error should be json schema error")
+}
+
+fn get_value_error(result: &ValidationResult<()>, number: usize) -> &platform_value::Error {
+    result
+        .errors
+        .get(number)
+        .expect("the error should be returned in validation result")
+        .value_error()
+        .expect("the error should be a value error")
 }
 
 fn get_basic_error(consensus_error: &ConsensusError) -> &BasicError {
@@ -125,7 +134,9 @@ mod protocol {
             ..
         } = setup_test();
 
-        raw_data_contract["protocolVersion"] = json!("1");
+        raw_data_contract
+            .set_value("protocolVersion", "1".into())
+            .expect("expected to set value");
 
         let result = data_contract_validator
             .validate(&raw_data_contract)
@@ -144,7 +155,9 @@ mod protocol {
             ..
         } = setup_test();
 
-        raw_data_contract["protocolVersion"] = json!(-1);
+        raw_data_contract
+            .set_value("protocolVersion", Value::I8(-1))
+            .expect("expected to set value");
 
         let result = data_contract_validator
             .validate(&raw_data_contract)
@@ -164,7 +177,10 @@ fn defs_should_be_object() {
         data_contract_validator,
         ..
     } = setup_test();
-    raw_data_contract["$defs"] = json!(1);
+
+    raw_data_contract
+        .set_value("$defs", Value::U32(1))
+        .expect("expected to set value");
 
     let result = data_contract_validator
         .validate(&raw_data_contract)
@@ -178,6 +194,7 @@ fn defs_should_be_object() {
 
 mod defs {
     use super::*;
+    use platform_value::platform_value;
 
     #[test]
     fn defs_should_not_be_empty() {
@@ -186,7 +203,9 @@ mod defs {
             data_contract_validator,
             ..
         } = setup_test();
-        raw_data_contract["$defs"] = json!({});
+        raw_data_contract
+            .set_value("$defs", Value::Map(vec![]))
+            .expect("expected to set value");
 
         let result = data_contract_validator
             .validate(&raw_data_contract)
@@ -205,7 +224,15 @@ mod defs {
             data_contract_validator,
             ..
         } = setup_test();
-        raw_data_contract["$defs"] = json!({ "$subSchema" : {}});
+        raw_data_contract
+            .set_value(
+                "$defs",
+                Value::Map(vec![(
+                    Value::Text("$subSchema".to_string()),
+                    Value::Map(vec![]),
+                )]),
+            )
+            .expect("expected to set value");
 
         let result = data_contract_validator
             .validate(&raw_data_contract)
@@ -251,7 +278,9 @@ mod defs {
         ];
 
         for property_name in valid_names {
-            raw_data_contract["$defs"][property_name] = json!({"type" : "string"})
+            raw_data_contract
+                .set_value_at_path("$defs", property_name, platform_value!({"type" : "string"}))
+                .expect("expected to set value");
         }
 
         let result = data_contract_validator
@@ -279,7 +308,9 @@ mod defs {
             "ab",
         ];
         for property_name in invalid_names {
-            raw_data_contract["$defs"][property_name] = json!({"type" : "string"})
+            raw_data_contract
+                .set_value_at_path("$defs", property_name, platform_value!({"type" : "string"}))
+                .expect("expected to set value");
         }
 
         let result = data_contract_validator
@@ -300,7 +331,13 @@ mod defs {
         } = setup_test();
 
         for i in 1..101 {
-            raw_data_contract["$defs"][format!("def_{}", i)] = json!({"type" : "string"})
+            raw_data_contract
+                .set_value_at_path(
+                    "$defs",
+                    format!("def_{}", i).as_str(),
+                    platform_value!({"type" : "string"}),
+                )
+                .expect("expected to set value");
         }
 
         let result = data_contract_validator
@@ -324,7 +361,9 @@ mod schema {
             ..
         } = setup_test();
 
-        raw_data_contract["$schema"] = json!(1);
+        raw_data_contract
+            .set_value("$schema", Value::U64(1))
+            .expect("expected to set value");
 
         let result = data_contract_validator
             .validate(&raw_data_contract)
@@ -343,7 +382,9 @@ mod schema {
             ..
         } = setup_test();
 
-        raw_data_contract["$schema"] = json!("wrong");
+        raw_data_contract
+            .set_value("$schema", Value::Text("wrong".to_string()))
+            .expect("expected to set value");
 
         let result = data_contract_validator
             .validate(&raw_data_contract)
@@ -366,7 +407,9 @@ fn owner_id_should_be_byte_array(property_name: &str) {
     } = setup_test();
 
     let array = ["string"; 32];
-    raw_data_contract[property_name] = json!(array);
+    raw_data_contract
+        .set_value(property_name, platform_value!(array))
+        .expect("expected to set value");
 
     let result = data_contract_validator
         .validate(&raw_data_contract)
@@ -396,7 +439,9 @@ fn owner_id_should_be_no_less_32_bytes(property_name: &str) {
     } = setup_test();
 
     let array = [0u8; 31];
-    raw_data_contract[property_name] = json!(array);
+    raw_data_contract
+        .set_value(property_name, platform_value!(array))
+        .expect("expected to set value");
 
     let result = data_contract_validator
         .validate(&raw_data_contract)
@@ -421,7 +466,9 @@ fn owner_id_should_be_no_longer_32_bytes(property_name: &str) {
 
     let mut too_long_id = Vec::new();
     too_long_id.resize(33, 0u8);
-    raw_data_contract[property_name] = json!(too_long_id);
+    raw_data_contract
+        .set_value(property_name, platform_value!(too_long_id))
+        .expect("expected to set value");
 
     let result = data_contract_validator
         .validate(&raw_data_contract)
@@ -446,7 +493,9 @@ mod documents {
             ..
         } = setup_test();
 
-        raw_data_contract["documents"] = json!(1);
+        raw_data_contract
+            .set_value("documents", platform_value!(1))
+            .expect("expected to set value");
 
         let result = data_contract_validator
             .validate(&raw_data_contract)
@@ -466,7 +515,10 @@ mod documents {
             ..
         } = setup_test();
 
-        raw_data_contract["documents"] = json!({});
+        raw_data_contract
+            .set_value("documents", platform_value!({}))
+            .expect("expected to set value");
+        raw_data_contract["documents"] = platform_value!({});
 
         let result = data_contract_validator
             .validate(&raw_data_contract)
@@ -487,7 +539,7 @@ mod documents {
         } = setup_test();
 
         let nice_document_data_contract = raw_data_contract["documents"]["niceDocument"].clone();
-        raw_data_contract["documents"] = json!({});
+        raw_data_contract["documents"] = platform_value!({});
 
         let valid_names = [
             "validName",
@@ -522,7 +574,7 @@ mod documents {
         } = setup_test();
 
         let nice_document_data_contract = raw_data_contract["documents"]["niceDocument"].clone();
-        raw_data_contract["documents"] = json!({});
+        raw_data_contract["documents"] = platform_value!({});
         let invalid_names = [
             "-invalidname",
             "_invalidname",
@@ -578,7 +630,7 @@ mod documents {
             ..
         } = setup_test();
 
-        raw_data_contract["documents"]["niceDocument"]["properties"] = json!({});
+        raw_data_contract["documents"]["niceDocument"]["properties"] = platform_value!({});
 
         let result = data_contract_validator
             .validate(&raw_data_contract)
@@ -600,7 +652,7 @@ mod documents {
             ..
         } = setup_test();
 
-        raw_data_contract["documents"]["niceDocument"]["type"] = json!("string");
+        raw_data_contract["documents"]["niceDocument"]["type"] = platform_value!("string");
 
         let result = data_contract_validator
             .validate(&raw_data_contract)
@@ -652,7 +704,7 @@ mod documents {
             ..
         } = setup_test();
 
-        raw_data_contract["documents"]["niceDocument"]["properties"]["object"] = json!({
+        raw_data_contract["documents"]["niceDocument"]["properties"]["object"] = platform_value!({
           "type": "array",
           "prefixItems": [
             {
@@ -710,7 +762,7 @@ mod documents {
 
         for property_name in valid_names {
             raw_data_contract["documents"]["niceDocument"]["properties"][property_name] =
-                json!({ "type" : "string"})
+                platform_value!({ "type" : "string"})
         }
 
         let result = data_contract_validator
@@ -727,8 +779,7 @@ mod documents {
             ..
         } = setup_test();
 
-        raw_data_contract["documents"]["niceDocument"]["properties"]["something"] =
-            json!({"type": "object", "properties": json!({}), "additionalProperties" : false});
+        raw_data_contract["documents"]["niceDocument"]["properties"]["something"] = platform_value!({"type": "object", "properties": platform_value!({}), "additionalProperties" : false});
 
         let valid_names = [
             "validName",
@@ -746,7 +797,7 @@ mod documents {
 
         for property_name in valid_names {
             raw_data_contract["documents"]["niceDocument"]["properties"]["something"]
-                ["properties"][property_name] = json!({ "type" : "string"})
+                ["properties"][property_name] = platform_value!({ "type" : "string"})
         }
 
         let result = data_contract_validator
@@ -766,7 +817,8 @@ mod documents {
 
         let invalid_names = ["*(*&^", "$test", ".", ".a"];
         for property_name in invalid_names {
-            raw_data_contract["documents"]["niceDocument"]["properties"][property_name] = json!({})
+            raw_data_contract["documents"]["niceDocument"]["properties"][property_name] =
+                platform_value!({})
         }
 
         let result = data_contract_validator
@@ -791,15 +843,15 @@ mod documents {
 
         let invalid_names = ["*(*&^", "$test", ".", ".a"];
 
-        raw_data_contract["documents"]["niceDocument"]["properties"]["something"] = json!({
-            "properties" :   json!({}),
+        raw_data_contract["documents"]["niceDocument"]["properties"]["something"] = platform_value!({
+            "properties" :   platform_value!({}),
             "additionalProperties" :  false,
 
         });
 
         for property_name in invalid_names {
             raw_data_contract["documents"]["niceDocument"]["properties"]["something"]
-                ["properties"][property_name] = json!({});
+                ["properties"][property_name] = platform_value!({});
 
             let result = data_contract_validator
                 .validate(&raw_data_contract)
@@ -858,7 +910,8 @@ mod documents {
             ..
         } = setup_test();
 
-        raw_data_contract["documents"]["niceDocument"]["additionalProperties"] = json!(true);
+        raw_data_contract["documents"]["niceDocument"]["additionalProperties"] =
+            platform_value!(true);
 
         let result = data_contract_validator
             .validate(&raw_data_contract)
@@ -881,7 +934,7 @@ mod documents {
             ..
         } = setup_test();
 
-        raw_data_contract["additionalProperty"] = json!({});
+        raw_data_contract["additionalProperty"] = platform_value!({});
 
         let result = data_contract_validator
             .validate(&raw_data_contract)
@@ -900,10 +953,10 @@ mod documents {
             ..
         } = setup_test();
 
-        raw_data_contract["documents"]["niceDocument"]["properties"] = json!({});
+        raw_data_contract["documents"]["niceDocument"]["properties"] = platform_value!({});
 
         for i in 0..101 {
-            raw_data_contract["documents"]["niceDocument"]["properties"][format!("p_{}", i)] = json!({
+            raw_data_contract["documents"]["niceDocument"]["properties"][format!("p_{}", i)] = platform_value!({
                 "properties": {
                     "something" :  {
                         "type" : "string"
@@ -933,7 +986,7 @@ mod documents {
             ..
         } = setup_test();
 
-        raw_data_contract["documents"]["new"] = json!( {
+        raw_data_contract["documents"]["new"] = platform_value!( {
           "properties": {
             "something": {
               "type": "array",
@@ -970,7 +1023,7 @@ mod documents {
             ..
         } = setup_test();
 
-        raw_data_contract["documents"]["new"] = json!({
+        raw_data_contract["documents"]["new"] = platform_value!({
             "type": "object",
             "properties": {
               "something": {
@@ -1015,7 +1068,7 @@ mod documents {
             ..
         } = setup_test();
 
-        raw_data_contract["documents"]["new"] = json!({
+        raw_data_contract["documents"]["new"] = platform_value!({
             "properties": {
                 "something": {
                   "type": "array",
@@ -1054,7 +1107,7 @@ mod documents {
         } = setup_test();
 
         raw_data_contract["documents"]["indexedDocument"]["properties"]["firstName"]["default"] =
-            json!("1");
+            platform_value!("1");
 
         let result = data_contract_validator
             .validate(&raw_data_contract)
@@ -1079,7 +1132,7 @@ mod documents {
         } = setup_test();
 
         raw_data_contract["documents"]["indexedDocument"] =
-            json!({"$ref" : "http://remote.com/schema#"});
+            platform_value!({"$ref" : "http://remote.com/schema#"});
 
         let result = data_contract_validator
             .validate(&raw_data_contract)
@@ -1101,7 +1154,7 @@ mod documents {
             ..
         } = setup_test();
 
-        raw_data_contract["documents"]["indexedDocument"] = json!({
+        raw_data_contract["documents"]["indexedDocument"] = platform_value!({
             "type": "object",
             "properties": {
               "something": {
@@ -1135,7 +1188,7 @@ mod documents {
             ..
         } = setup_test();
 
-        raw_data_contract["documents"]["indexedDocument"] = json!({
+        raw_data_contract["documents"]["indexedDocument"] = platform_value!({
             "type": "object",
             "properties": {
               "something": {
@@ -1172,7 +1225,7 @@ mod documents {
             ..
         } = setup_test();
 
-        raw_data_contract["documents"]["indexedDocument"] = json!(
+        raw_data_contract["documents"]["indexedDocument"] = platform_value!(
             {
                 "type": "object",
                 "properties": {
@@ -1215,7 +1268,7 @@ mod documents {
             ..
         } = setup_test();
 
-        raw_data_contract["documents"]["indexedDocument"] = json!({
+        raw_data_contract["documents"]["indexedDocument"] = platform_value!({
             "type": "object",
             "properties": {
               "something": {
@@ -1226,7 +1279,6 @@ mod documents {
             },
             "additionalProperties": false,
         });
-
         let result = data_contract_validator
             .validate(&raw_data_contract)
             .expect("validation result should be returned");
@@ -1253,7 +1305,7 @@ mod documents {
             ..
         } = setup_test();
 
-        raw_data_contract["documents"]["indexedDocument"] = json!({
+        raw_data_contract["documents"]["indexedDocument"] = platform_value!({
             "type": "object",
             "properties": {
               "something": {
@@ -1291,7 +1343,7 @@ mod documents {
             ..
         } = setup_test();
 
-        raw_data_contract["documents"]["indexedDocument"] = json!({
+        raw_data_contract["documents"]["indexedDocument"] = platform_value!({
             "type": "object",
             "properties": {
               "something": {
@@ -1324,12 +1376,12 @@ mod documents {
             ..
         } = setup_test();
 
-        raw_data_contract["documents"]["indexedDocument"] = json!({
+        raw_data_contract["documents"]["indexedDocument"] = platform_value!({
             "type": "object",
             "properties": {
               "something": {
                 "type": "string",
-                "maxLength": 100,
+                "maxLength": 100u64,
                 "pattern": "^((?!-|_)[a-zA-Z0-9-_]{0,62}[a-zA-Z0-9])$",
               },
             },
@@ -1339,20 +1391,29 @@ mod documents {
         let result = data_contract_validator
             .validate(&raw_data_contract)
             .expect("validation result should be returned");
-
         let pattern_error = result
             .errors
             .get(0)
             .expect("the error in result should exist");
 
         assert_eq!(1009, pattern_error.get_code());
-        assert!(
-            matches!(pattern_error, ConsensusError::IncompatibleRe2PatternError { path, pattern, .. }
-            if  {
-                path == "/documents/indexedDocument/properties/something" &&
-                pattern == "^((?!-|_)[a-zA-Z0-9-_]{0,62}[a-zA-Z0-9])$"
-            })
-        );
+
+        match pattern_error {
+            ConsensusError::IncompatibleRe2PatternError(err) => {
+                assert_eq!(
+                    err.path(),
+                    "/documents/indexedDocument/properties/something".to_string()
+                );
+                assert_eq!(
+                    err.pattern(),
+                    "^((?!-|_)[a-zA-Z0-9-_]{0,62}[a-zA-Z0-9])$".to_string()
+                );
+            }
+            _ => panic!(
+                "Expected IncompatibleRe2PatternError, got {:?}",
+                pattern_error
+            ),
+        }
     }
 }
 
@@ -1368,7 +1429,7 @@ mod byte_array {
         } = setup_test();
 
         raw_data_contract["documents"]["withByteArrays"]["properties"]["byteArrayField"]
-            ["byteArray"] = json!(1);
+            ["byteArray"] = platform_value!(1);
 
         let result = data_contract_validator
             .validate(&raw_data_contract)
@@ -1391,7 +1452,7 @@ mod byte_array {
         } = setup_test();
 
         raw_data_contract["documents"]["withByteArrays"]["properties"]["byteArrayField"]
-            ["byteArray"] = json!(false);
+            ["byteArray"] = platform_value!(false);
 
         let result = data_contract_validator
             .validate(&raw_data_contract)
@@ -1414,7 +1475,7 @@ mod byte_array {
         } = setup_test();
 
         raw_data_contract["documents"]["withByteArrays"]["properties"]["byteArrayField"]["type"] =
-            json!("string");
+            platform_value!("string");
 
         let result = data_contract_validator
             .validate(&raw_data_contract)
@@ -1437,7 +1498,7 @@ mod byte_array {
         } = setup_test();
 
         raw_data_contract["documents"]["withByteArrays"]["properties"]["byteArrayField"]["items"] =
-            json!({ "type" : "string"});
+            platform_value!({ "type" : "string"});
 
         let result = data_contract_validator
             .validate(&raw_data_contract)
@@ -1484,7 +1545,7 @@ mod identifier {
         } = setup_test();
 
         raw_data_contract["documents"]["withByteArrays"]["properties"]["identifierField"]
-            ["minItems"] = json!(31);
+            ["minItems"] = platform_value!(31);
 
         let result = data_contract_validator
             .validate(&raw_data_contract)
@@ -1507,7 +1568,7 @@ mod identifier {
         } = setup_test();
 
         raw_data_contract["documents"]["withByteArrays"]["properties"]["identifierField"]
-            ["maxItems"] = json!(31);
+            ["maxItems"] = platform_value!(31);
 
         let result = data_contract_validator
             .validate(&raw_data_contract)
@@ -1535,7 +1596,7 @@ mod indices {
         } = setup_test();
 
         raw_data_contract["documents"]["indexedDocument"]["indices"] =
-            json!("definitely not an array");
+            platform_value!("definitely not an array");
 
         let result = data_contract_validator
             .validate(&raw_data_contract)
@@ -1557,7 +1618,7 @@ mod indices {
             ..
         } = setup_test();
 
-        raw_data_contract["documents"]["indexedDocument"]["indices"] = json!([]);
+        raw_data_contract["documents"]["indexedDocument"]["indices"] = platform_value!([]);
 
         let result = data_contract_validator
             .validate(&raw_data_contract)
@@ -1581,10 +1642,11 @@ mod indices {
 
         let mut index_definition =
             raw_data_contract["documents"]["indexedDocument"]["indices"][0].clone();
-        index_definition["name"] = json!("otherIndexName");
+        index_definition["name"] = platform_value!("otherIndexName");
 
-        if let Some(JsonValue::Array(ref mut arr)) =
-            raw_data_contract["documents"]["indexedDocument"].get_mut("indices")
+        if let Some(Value::Array(ref mut arr)) = raw_data_contract["documents"]["indexedDocument"]
+            .get_mut("indices")
+            .unwrap()
         {
             arr.push(index_definition)
         } else {
@@ -1600,10 +1662,12 @@ mod indices {
             .expect("the validation error should be returned");
         let index_error = get_index_error(validation_error);
 
-        assert_eq!(1008, index_error.get_code());
-        assert!(
-            matches!(index_error, IndexError::DuplicateIndexError { document_type, .. } if document_type == "indexedDocument")
-        );
+        match index_error {
+            IndexError::DuplicateIndexError(err) => {
+                assert_eq!(err.document_type(), "indexedDocument".to_string());
+            }
+            _ => panic!("Expected DuplicateIndexError, got {}", index_error),
+        }
     }
 
     #[test]
@@ -1617,8 +1681,9 @@ mod indices {
         let index_definition =
             raw_data_contract["documents"]["indexedDocument"]["indices"][0].clone();
 
-        if let Some(JsonValue::Array(ref mut arr)) =
-            raw_data_contract["documents"]["indexedDocument"].get_mut("indices")
+        if let Some(Value::Array(ref mut arr)) = raw_data_contract["documents"]["indexedDocument"]
+            .get_mut("indices")
+            .unwrap()
         {
             arr.push(index_definition)
         } else {
@@ -1635,13 +1700,13 @@ mod indices {
         let basic_error = get_basic_error(validation_error);
 
         assert_eq!(1048, basic_error.get_code());
-        assert!(
-            matches!(basic_error, BasicError::DuplicateIndexNameError { document_type, duplicate_index_name }
-            if  {
-                document_type == "indexedDocument" &&
-                duplicate_index_name == "index1"
-            })
-        );
+        match basic_error {
+            BasicError::DuplicateIndexNameError(err) => {
+                assert_eq!(err.document_type(), "indexedDocument".to_string());
+                assert_eq!(err.duplicate_index_name(), "index1".to_string())
+            }
+            _ => panic!("Expected DuplicateIndexNameError, got {}", basic_error),
+        }
     }
 
     #[test]
@@ -1652,7 +1717,8 @@ mod indices {
             ..
         } = setup_test();
 
-        raw_data_contract["documents"]["indexedDocument"]["indices"] = json!(["something else"]);
+        raw_data_contract["documents"]["indexedDocument"]["indices"] =
+            platform_value!(["something else"]);
         let result = data_contract_validator
             .validate(&raw_data_contract)
             .expect("validation result should be returned");
@@ -1674,7 +1740,7 @@ mod indices {
             ..
         } = setup_test();
 
-        raw_data_contract["documents"]["indexedDocument"]["indices"] = json!([{}]);
+        raw_data_contract["documents"]["indexedDocument"]["indices"] = platform_value!([{}]);
         let result = data_contract_validator
             .validate(&raw_data_contract)
             .expect("validation result should be returned");
@@ -1703,7 +1769,7 @@ mod indices {
         } = setup_test();
 
         raw_data_contract["documents"]["indexedDocument"]["indices"][0]["properties"] =
-            json!("something else");
+            platform_value!("something else");
 
         let result = data_contract_validator
             .validate(&raw_data_contract)
@@ -1725,7 +1791,8 @@ mod indices {
             ..
         } = setup_test();
 
-        raw_data_contract["documents"]["indexedDocument"]["indices"][0]["properties"] = json!([]);
+        raw_data_contract["documents"]["indexedDocument"]["indices"][0]["properties"] =
+            platform_value!([]);
 
         let result = data_contract_validator
             .validate(&raw_data_contract)
@@ -1748,12 +1815,13 @@ mod indices {
         } = setup_test();
 
         for i in 0..10 {
-            if let Some(JsonValue::Array(ref mut properties)) = raw_data_contract["documents"]
+            if let Some(Value::Array(ref mut properties)) = raw_data_contract["documents"]
                 ["indexedDocument"]["indices"][0]
                 .get_mut("properties")
+                .unwrap()
             {
                 let field_name = format!("field{}", i);
-                properties.push(json!({
+                properties.push(platform_value!({
                     field_name : "asc"
                 }))
             }
@@ -1780,7 +1848,7 @@ mod indices {
         } = setup_test();
 
         raw_data_contract["documents"]["indexedDocument"]["indices"][0]["properties"][0] =
-            json!("something else");
+            platform_value!("something else");
 
         let result = data_contract_validator
             .validate(&raw_data_contract)
@@ -1802,7 +1870,8 @@ mod indices {
             ..
         } = setup_test();
 
-        raw_data_contract["documents"]["indexedDocument"]["indices"][0]["properties"] = json!([]);
+        raw_data_contract["documents"]["indexedDocument"]["indices"][0]["properties"] =
+            platform_value!([]);
 
         let result = data_contract_validator
             .validate(&raw_data_contract)
@@ -1826,7 +1895,7 @@ mod indices {
 
         let property =
             &mut raw_data_contract["documents"]["indexedDocument"]["indices"][0]["properties"][0];
-        property["anotherField"] = json!("something");
+        property["anotherField"] = platform_value!("something");
 
         let result = data_contract_validator
             .validate(&raw_data_contract)
@@ -1849,7 +1918,7 @@ mod indices {
         } = setup_test();
 
         raw_data_contract["documents"]["indexedDocument"]["indices"][0]["properties"][0]
-            ["$ownerId"] = json!("wrong");
+            ["$ownerId"] = platform_value!("wrong");
 
         let result = data_contract_validator
             .validate(&raw_data_contract)
@@ -1871,7 +1940,8 @@ mod indices {
             ..
         } = setup_test();
 
-        raw_data_contract["documents"]["indexedDocument"]["indices"][0]["unique"] = json!(12);
+        raw_data_contract["documents"]["indexedDocument"]["indices"][0]["unique"] =
+            platform_value!(12);
 
         let result = data_contract_validator
             .validate(&raw_data_contract)
@@ -1896,13 +1966,15 @@ mod indices {
         for i in 0..10 {
             let property_name = format!("field{}", i);
             raw_data_contract["documents"]["indexedDocument"]["properties"]
-                .insert(property_name.clone(), json!({ "type" : "string"}))
+                .insert(property_name.clone(), platform_value!({ "type" : "string"}))
                 .expect("properties should be present");
 
-            if let Some(JsonValue::Array(ref mut indices)) =
-                raw_data_contract["documents"]["indexedDocument"].get_mut("indices")
+            if let Some(Value::Array(ref mut indices)) = raw_data_contract["documents"]
+                ["indexedDocument"]
+                .get_mut("indices")
+                .unwrap()
             {
-                indices.push(json!({
+                indices.push(platform_value!({
                    "name" : format!("{}_index", property_name),
                    "properties" : [ { property_name : "asc"}]
                 }))
@@ -1934,14 +2006,16 @@ mod indices {
             raw_data_contract["documents"]["indexedDocument"]["properties"]
                 .insert(
                     property_name.clone(),
-                    json!({ "type" : "string", "maxLength" : 63 }),
+                    platform_value!({ "type" : "string", "maxLength" : 63 }),
                 )
                 .expect("properties should be present");
 
-            if let Some(JsonValue::Array(ref mut indices)) =
-                raw_data_contract["documents"]["indexedDocument"].get_mut("indices")
+            if let Some(Value::Array(ref mut indices)) = raw_data_contract["documents"]
+                ["indexedDocument"]
+                .get_mut("indices")
+                .unwrap()
             {
-                indices.push(json!({
+                indices.push(platform_value!({
                    "name" : format!("index_{}", i),
                    "properties" : [ { property_name : "asc"}],
                    "unique" : true
@@ -1956,13 +2030,17 @@ mod indices {
         let index_error = get_index_error(error);
 
         assert_eq!(1017, index_error.get_code());
-        assert!(
-            matches!(index_error, IndexError::UniqueIndicesLimitReachedError { document_type, index_limit }
-            if  {
-                document_type == "indexedDocument" &&
-                index_limit == &3
-            })
-        );
+        match index_error {
+            IndexError::UniqueIndicesLimitReachedError(err) => {
+                assert_eq!(err.document_type(), "indexedDocument".to_string());
+                assert_eq!(err.index_limit(), 3);
+                // assert_eq!(err.property_type(), "array".to_string());
+            }
+            _ => panic!(
+                "Expected UniqueIndicesLimitReachedError, got {}",
+                index_error
+            ),
+        }
     }
 
     #[test]
@@ -1973,7 +2051,7 @@ mod indices {
             ..
         } = setup_test();
 
-        let index_definition = json!({
+        let index_definition = platform_value!({
             "name" : "index_1",
             "properties" : [
                 { "$id"  : "asc"},
@@ -1981,8 +2059,10 @@ mod indices {
             ]
         });
 
-        if let Some(JsonValue::Array(ref mut indices)) =
-            raw_data_contract["documents"]["indexedDocument"].get_mut("indices")
+        if let Some(Value::Array(ref mut indices)) = raw_data_contract["documents"]
+            ["indexedDocument"]
+            .get_mut("indices")
+            .unwrap()
         {
             indices.push(index_definition)
         }
@@ -1994,13 +2074,16 @@ mod indices {
         let index_error = get_index_error(error);
 
         assert_eq!(1015, index_error.get_code());
-        assert!(
-            matches!(index_error, IndexError::SystemPropertyIndexAlreadyPresentError { document_type, property_name, .. }
-            if  {
-                document_type == "indexedDocument" &&
-                property_name == "$id"
-            })
-        );
+        match index_error {
+            IndexError::SystemPropertyIndexAlreadyPresentError(err) => {
+                assert_eq!(err.document_type(), "indexedDocument".to_string());
+                assert_eq!(err.property_name(), "$id".to_string());
+            }
+            _ => panic!(
+                "Expected SystemPropertyIndexAlreadyPresentError, got {}",
+                index_error
+            ),
+        }
     }
 
     #[test]
@@ -2011,10 +2094,12 @@ mod indices {
             ..
         } = setup_test();
 
-        if let Some(JsonValue::Array(ref mut index_properties)) =
-            raw_data_contract["documents"]["indexedDocument"]["indices"][0].get_mut("properties")
+        if let Some(Value::Array(ref mut index_properties)) = raw_data_contract["documents"]
+            ["indexedDocument"]["indices"][0]
+            .get_mut("properties")
+            .unwrap()
         {
-            index_properties.push(json!({ "missingProperty"  : "asc"}))
+            index_properties.push(platform_value!({ "missingProperty"  : "asc"}))
         } else {
             panic!("the index properties are not array")
         }
@@ -2026,13 +2111,13 @@ mod indices {
         let index_error = get_index_error(error);
 
         assert_eq!(1016, index_error.get_code());
-        assert!(
-            matches!(index_error, IndexError::UndefinedIndexPropertyError { document_type, property_name, .. }
-            if  {
-                document_type == "indexedDocument" &&
-                property_name == "missingProperty"
-            })
-        );
+        match index_error {
+            IndexError::UndefinedIndexPropertyError(err) => {
+                assert_eq!(err.document_type(), "indexedDocument".to_string());
+                assert_eq!(err.property_name(), "missingProperty".to_string());
+            }
+            _ => panic!("Expected UndefinedIndexPropertyError, got {}", index_error),
+        }
     }
 
     #[test]
@@ -2043,7 +2128,7 @@ mod indices {
             ..
         } = setup_test();
 
-        let object_property = json!({
+        let object_property = platform_value!({
             "type" : "object",
             "properties" :  {
                 "something" : {
@@ -2055,15 +2140,19 @@ mod indices {
 
         raw_data_contract["documents"]["indexedDocument"]["properties"]["objectProperty"] =
             object_property;
-        if let Some(JsonValue::Array(ref mut required)) =
-            raw_data_contract["documents"]["indexedDocument"].get_mut("required")
+        if let Some(Value::Array(ref mut required)) = raw_data_contract["documents"]
+            ["indexedDocument"]
+            .get_mut("required")
+            .unwrap()
         {
-            required.push(json!("objectProperty"))
+            required.push(platform_value!("objectProperty"))
         }
-        if let Some(JsonValue::Array(ref mut properties)) =
-            raw_data_contract["documents"]["indexedDocument"]["indices"][0].get_mut("properties")
+        if let Some(Value::Array(ref mut properties)) = raw_data_contract["documents"]
+            ["indexedDocument"]["indices"][0]
+            .get_mut("properties")
+            .unwrap()
         {
-            properties.push(json!({"objectProperty" : "asc" }))
+            properties.push(platform_value!({"objectProperty" : "asc" }))
         }
 
         let result = data_contract_validator
@@ -2073,14 +2162,17 @@ mod indices {
         let index_error = get_index_error(error);
 
         assert_eq!(1013, index_error.get_code());
-        assert!(
-            matches!(index_error, IndexError::InvalidIndexPropertyTypeError { document_type, property_name, property_type, ..}
-            if  {
-                document_type == "indexedDocument" &&
-                property_name == "objectProperty" &&
-                property_type == "object"
-            })
-        );
+        match index_error {
+            IndexError::InvalidIndexPropertyTypeError(err) => {
+                assert_eq!(err.document_type(), "indexedDocument".to_string());
+                assert_eq!(err.property_name(), "objectProperty".to_string());
+                assert_eq!(err.property_type(), "object".to_string());
+            }
+            _ => panic!(
+                "Expected InvalidIndexPropertyTypeError, got {}",
+                index_error
+            ),
+        }
     }
 
     #[test]
@@ -2091,7 +2183,7 @@ mod indices {
             ..
         } = setup_test();
 
-        raw_data_contract["documents"]["indexedArray"] = json!({
+        raw_data_contract["documents"]["indexedArray"] = platform_value!({
             "type": "object",
             "indices": [
               {
@@ -2125,14 +2217,17 @@ mod indices {
         let index_error = get_index_error(error);
 
         assert_eq!(1013, index_error.get_code());
-        assert!(
-            matches!(index_error, IndexError::InvalidIndexPropertyTypeError { document_type, property_name, property_type, ..}
-            if  {
-                document_type == "indexedArray" &&
-                property_name == "mentions" &&
-                property_type == "array"
-            })
-        );
+        match index_error {
+            IndexError::InvalidIndexPropertyTypeError(err) => {
+                assert_eq!(err.document_type(), "indexedArray".to_string());
+                assert_eq!(err.property_name(), "mentions".to_string());
+                assert_eq!(err.property_type(), "array".to_string());
+            }
+            _ => panic!(
+                "Expected InvalidIndexPropertyTypeError, got {}",
+                index_error
+            ),
+        }
     }
 
     // This section is originally commented out
@@ -2304,7 +2399,7 @@ mod indices {
         } = setup_test();
 
         let indexed_document_definition = &mut raw_data_contract["documents"]["indexedDocument"];
-        indexed_document_definition["properties"]["arrayProperty"] = json!({
+        indexed_document_definition["properties"]["arrayProperty"] = platform_value!({
             "type": "array",
             "prefixItems": [
               {
@@ -2318,11 +2413,11 @@ mod indices {
             "items": false,
         });
         indexed_document_definition["required"]
-            .push(json!("arrayProperty"))
+            .push(platform_value!("arrayProperty"))
             .expect("array should exist");
         let index_definition = &mut indexed_document_definition["indices"][0];
         index_definition["properties"]
-            .push(json!({ "arrayProperty" : "asc"}))
+            .push(platform_value!({ "arrayProperty" : "asc"}))
             .expect("properties of index should exist");
 
         let result = data_contract_validator
@@ -2332,14 +2427,17 @@ mod indices {
         let index_error = get_index_error(error);
 
         assert_eq!(1013, index_error.get_code());
-        assert!(
-            matches!(index_error, IndexError::InvalidIndexPropertyTypeError { document_type, property_name, property_type, ..}
-            if  {
-                document_type == "indexedDocument" &&
-                property_name == "arrayProperty" &&
-                property_type == "array"
-            })
-        );
+        match index_error {
+            IndexError::InvalidIndexPropertyTypeError(err) => {
+                assert_eq!(err.document_type(), "indexedDocument".to_string());
+                assert_eq!(err.property_name(), "arrayProperty");
+                assert_eq!(err.property_type(), "array".to_string());
+            }
+            _ => panic!(
+                "Expected InvalidIndexPropertyTypeError, got {}",
+                index_error
+            ),
+        }
     }
 
     #[test]
@@ -2351,8 +2449,9 @@ mod indices {
             ..
         } = setup_test();
 
-        if let Some(JsonValue::Array(arr)) =
-            raw_data_contract["documents"]["optionalUniqueIndexedDocument"].get_mut("required")
+        if let Some(Value::Array(arr)) = raw_data_contract
+            .get_optional_mut_value_at_path("documents.optionalUniqueIndexedDocument.required")
+            .expect("expected to get optional value at path")
         {
             arr.pop();
         }
@@ -2364,12 +2463,15 @@ mod indices {
         let index_error = get_index_error(error);
 
         assert_eq!(1010, index_error.get_code());
-        assert!(
-            matches!(index_error, IndexError::InvalidCompoundIndexError { document_type, ..}
-            if  {
-                document_type == "optionalUniqueIndexedDocument"
-            })
-        );
+        match index_error {
+            IndexError::InvalidCompoundIndexError(err) => {
+                assert_eq!(
+                    err.document_type(),
+                    "optionalUniqueIndexedDocument".to_string()
+                );
+            }
+            _ => panic!("Expected InvalidCompoundIndexError, got {}", index_error),
+        }
     }
 
     #[test]
@@ -2396,14 +2498,14 @@ mod indices {
         for property_name in valid_names {
             let mut cloned_data_contract = raw_data_contract.clone();
             cloned_data_contract["documents"]["indexedDocument"]["properties"][property_name] =
-                json!({"type" : "string", "maxLength" : 63});
+                platform_value!({"type" : "string", "maxLength" : 63});
 
             cloned_data_contract["documents"]["indexedDocument"]["indices"][0]["properties"]
-                .push(json!({ property_name : "asc"}))
+                .push(platform_value!({ property_name : "asc"}))
                 .unwrap();
 
             cloned_data_contract["documents"]["indexedDocument"]["required"]
-                .push(JsonValue::String(property_name.to_string()))
+                .push(Value::Text(property_name.to_string()))
                 .unwrap();
 
             let result = data_contract_validator
@@ -2422,7 +2524,7 @@ mod indices {
         } = setup_test();
         let invalid_names = ["a.", ".a"];
 
-        raw_data_contract["documents"]["indexedDocument"] = json!({
+        raw_data_contract["documents"]["indexedDocument"] = platform_value!({
             "type": "object",
             "properties": {
               "a": {
@@ -2449,7 +2551,7 @@ mod indices {
         for invalid_name in invalid_names {
             let mut cloned_data_contract = raw_data_contract.clone();
             cloned_data_contract["documents"]["indexedDocument"]["indices"][0]["properties"]
-                .push(json!({ invalid_name : "asc"}))
+                .push(platform_value!({ invalid_name : "asc"}))
                 .unwrap();
             let result = data_contract_validator
                 .validate(&cloned_data_contract)
@@ -2457,12 +2559,12 @@ mod indices {
 
             let index_error = get_index_error(&result.errors()[0]);
             assert_eq!(1016, index_error.get_code());
-            assert!(
-                matches!(index_error, IndexError::UndefinedIndexPropertyError { property_name, ..}
-                if  {
-                    property_name == invalid_name
-                })
-            );
+            match index_error {
+                IndexError::UndefinedIndexPropertyError(err) => {
+                    assert_eq!(err.property_name(), invalid_name.to_string());
+                }
+                _ => panic!("Expected UndefinedIndexPropertyError, got {}", index_error),
+            }
         }
     }
 
@@ -2476,15 +2578,17 @@ mod indices {
             ..
         } = setup_test();
 
-        let index_definition = json!({
+        let index_definition = platform_value!({
             "name" : "index_1",
             "properties" : [
                 { "$id"  : "desc"},
             ]
         });
 
-        if let Some(JsonValue::Array(ref mut indices)) =
-            raw_data_contract["documents"]["indexedDocument"].get_mut("indices")
+        if let Some(Value::Array(ref mut indices)) = raw_data_contract["documents"]
+            ["indexedDocument"]
+            .get_mut("indices")
+            .unwrap()
         {
             indices.push(index_definition)
         }
@@ -2514,7 +2618,7 @@ mod signature_level {
         } = setup_test();
 
         raw_data_contract["documents"]["indexedDocument"]["signatureSecurityLevelRequirement"] =
-            json!("definitely not a number");
+            platform_value!("definitely not a number");
 
         let result = data_contract_validator
             .validate(&raw_data_contract)
@@ -2537,7 +2641,7 @@ mod signature_level {
         } = setup_test();
 
         raw_data_contract["documents"]["indexedDocument"]["signatureSecurityLevelRequirement"] =
-            json!(199);
+            platform_value!(199);
 
         let result = data_contract_validator
             .validate(&raw_data_contract)
@@ -2563,7 +2667,7 @@ mod dependent_schemas {
             ..
         } = setup_test();
 
-        raw_data_contract["documents"]["indexedDocument"] = json!({
+        raw_data_contract["documents"]["indexedDocument"] = platform_value!({
             "type": "object",
             "properties": {
               "abc": {
@@ -2594,7 +2698,7 @@ mod dependent_schemas {
             ..
         } = setup_test();
 
-        raw_data_contract["documents"]["indexedDocument"] = json!({
+        raw_data_contract["documents"]["indexedDocument"] = platform_value!({
             "type": "object",
             "properties": {
               "abc": {
@@ -2625,7 +2729,7 @@ mod dependent_schemas {
             ..
         } = setup_test();
 
-        raw_data_contract["documents"]["indexedDocument"] = json!({
+        raw_data_contract["documents"]["indexedDocument"] = platform_value!({
             "type": "object",
             "properties": {
               "abc": {
@@ -2659,7 +2763,7 @@ mod dependent_schemas {
             ..
         } = setup_test();
 
-        raw_data_contract["documents"]["indexedDocument"] = json!({
+        raw_data_contract["documents"]["indexedDocument"] = platform_value!({
             "type": "object",
             "properties": {
               "abc": {
@@ -2692,7 +2796,7 @@ mod dependent_schemas {
             ..
         } = setup_test();
 
-        raw_data_contract["documents"]["indexedDocument"] = json!({
+        raw_data_contract["documents"]["indexedDocument"] = platform_value!({
             "type": "object",
             "properties": {
               "abc": {
@@ -2726,7 +2830,7 @@ fn should_return_invalid_result_with_circular_ref_pointer() {
         ..
     } = setup_test();
 
-    raw_data_contract["$defs"]["object"] = json!({ "$ref" : "#/$defs/object"});
+    raw_data_contract["$defs"]["object"] = platform_value!({ "$ref" : "#/$defs/object"});
 
     let result = data_contract_validator
         .validate(&raw_data_contract)
@@ -2738,12 +2842,15 @@ fn should_return_invalid_result_with_circular_ref_pointer() {
     let basic_error = get_basic_error(validation_error);
 
     assert_eq!(1014, validation_error.get_code());
-    assert!(
-        matches!(basic_error, BasicError::InvalidJsonSchemaRefError { ref_error}
-        if  {
-            ref_error == "the ref '#/$defs/object' contains cycles"
-        })
-    );
+    match basic_error {
+        BasicError::InvalidJsonSchemaRefError(err) => {
+            assert_eq!(
+                err.ref_error(),
+                "the ref '#/$defs/object' contains cycles".to_string()
+            );
+        }
+        _ => panic!("Expected InvalidJsonSchemaRefError, got {}", basic_error),
+    }
 }
 
 #[test]
@@ -2769,14 +2876,17 @@ fn should_return_invalid_result_if_indexed_string_property_missing_max_length_co
     let index_error = get_index_error(validation_error);
 
     assert_eq!(1012, index_error.get_code());
-    assert!(
-        matches!(index_error, IndexError::InvalidIndexedPropertyConstraintError { property_name, constraint_name, reason, ..}
-        if  {
-            property_name == "firstName" &&
-            constraint_name == "maxLength" &&
-            reason == "should be less or equal than 63"
-        })
-    );
+    match index_error {
+        IndexError::InvalidIndexedPropertyConstraintError(err) => {
+            assert_eq!(err.property_name(), "firstName".to_string());
+            assert_eq!(err.constraint_name(), "maxLength".to_string());
+            assert_eq!(err.reason(), "should be less or equal than 63".to_string());
+        }
+        _ => panic!(
+            "Expected InvalidIndexedPropertyConstraintError, got {}",
+            index_error
+        ),
+    }
 }
 
 mod indexed_array {
@@ -2870,14 +2980,17 @@ mod indexed_array {
         let index_error = get_index_error(validation_error);
 
         assert_eq!(1012, index_error.get_code());
-        assert!(
-            matches!(index_error, IndexError::InvalidIndexedPropertyConstraintError { property_name, constraint_name, reason, ..}
-            if  {
-                property_name == "byteArrayField" &&
-                constraint_name == "maxItems" &&
-                reason == "should be less or equal 255"
-            })
-        );
+        match index_error {
+            IndexError::InvalidIndexedPropertyConstraintError(err) => {
+                assert_eq!(err.property_name(), "byteArrayField".to_string());
+                assert_eq!(err.constraint_name(), "maxItems".to_string());
+                assert_eq!(err.reason(), "should be less or equal 255".to_string());
+            }
+            _ => panic!(
+                "Expected InvalidIndexedPropertyConstraintError, got {}",
+                index_error
+            ),
+        }
     }
 
     #[test]
@@ -2889,7 +3002,7 @@ mod indexed_array {
         } = setup_test();
 
         raw_data_contract["documents"]["withByteArrays"]["properties"]["byteArrayField"]
-            ["maxItems"] = json!(8192);
+            ["maxItems"] = platform_value!(8192);
 
         let result = data_contract_validator
             .validate(&raw_data_contract)
@@ -2901,14 +3014,17 @@ mod indexed_array {
         let index_error = get_index_error(validation_error);
 
         assert_eq!(1012, index_error.get_code());
-        assert!(
-            matches!(index_error, IndexError::InvalidIndexedPropertyConstraintError { property_name, constraint_name, reason, ..}
-            if  {
-                property_name == "byteArrayField" &&
-                constraint_name == "maxItems" &&
-                reason == "should be less or equal 255"
-            })
-        );
+        match index_error {
+            IndexError::InvalidIndexedPropertyConstraintError(err) => {
+                assert_eq!(err.property_name(), "byteArrayField".to_string());
+                assert_eq!(err.constraint_name(), "maxItems".to_string());
+                assert_eq!(err.reason(), "should be less or equal 255".to_string());
+            }
+            _ => panic!(
+                "Expected InvalidIndexedPropertyConstraintError, got {}",
+                index_error
+            ),
+        }
     }
 }
 

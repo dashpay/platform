@@ -1,4 +1,5 @@
 use integer_encoding::VarInt;
+use platform_value::Identifier;
 use std::collections::BTreeMap;
 
 use crate::data_contract::document_type::DocumentType;
@@ -57,11 +58,12 @@ pub trait DriveContractExt {
         &self,
         document_type_name: &str,
     ) -> Result<&DocumentType, ProtocolError>;
+    fn has_document_type_for_name(&self, document_type_name: &str) -> bool;
 }
 
 impl DriveContractExt for DataContract {
     fn id(&self) -> &[u8; 32] {
-        &self.id.buffer
+        &self.id.0 .0
     }
     fn document_types(&self) -> &BTreeMap<String, DocumentType> {
         &self.document_types
@@ -124,7 +126,7 @@ impl DriveContractExt for DataContract {
             }
         };
         if let Some(id) = contract_id {
-            data_contract.id.buffer = id
+            data_contract.id = Identifier::new(id)
         }
         Ok(data_contract)
     }
@@ -135,7 +137,7 @@ impl DriveContractExt for DataContract {
     {
         let mut data_contract = DataContract::from_cbor(contract_cbor)?;
         if let Some(id) = contract_id {
-            data_contract.id.buffer = id
+            data_contract.id = Identifier::from(id)
         }
 
         Ok(data_contract)
@@ -144,7 +146,7 @@ impl DriveContractExt for DataContract {
     /// `to_cbor` overloads the original method from [`DataContract`] and adds the properties
     /// from [`super::Mutability`].
     fn to_cbor(&self) -> Result<Vec<u8>, ProtocolError> {
-        let mut buf = self.protocol_version().encode_var_vec();
+        let mut buf = self.protocol_version.encode_var_vec();
 
         let mut contract_cbor_map = self.to_cbor_canonical_map()?;
 
@@ -179,6 +181,10 @@ impl DriveContractExt for DataContract {
                 "can not get document type from contract",
             ))
         })
+    }
+
+    fn has_document_type_for_name(&self, document_type_name: &str) -> bool {
+        self.document_types.get(document_type_name).is_some()
     }
 }
 
@@ -294,16 +300,16 @@ mod test {
         let data_contract =
             DataContract::from_cbor(cbor_bytes).expect("contract should be deserialized");
 
-        assert_eq!(1, data_contract.protocol_version());
-        assert_eq!(expect_id, data_contract.id().as_bytes());
-        assert_eq!(expect_owner_id, data_contract.owner_id().as_bytes());
+        assert_eq!(1, data_contract.protocol_version);
+        assert_eq!(expect_id, data_contract.id.as_bytes());
+        assert_eq!(expect_owner_id, data_contract.owner_id.as_bytes());
 
-        assert_eq!(7, data_contract.documents().len());
-        assert_eq!(7, data_contract.document_types().len());
-        assert_eq!(1, data_contract.version());
+        assert_eq!(7, data_contract.documents.len());
+        assert_eq!(7, data_contract.document_types.len());
+        assert_eq!(1, data_contract.version);
         assert_eq!(
             "https://schema.dash.org/dpp-0-4-0/meta/data-contract",
-            data_contract.schema()
+            data_contract.schema
         );
 
         for expect in expected_documents() {

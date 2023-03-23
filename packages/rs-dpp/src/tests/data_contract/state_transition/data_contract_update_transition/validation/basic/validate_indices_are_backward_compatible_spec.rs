@@ -50,8 +50,8 @@ fn setup_test() -> TestData {
         }))
         .expect("the non-unique index should be added to the document");
     new_data_contract.set_document_schema(String::from("indexedDocument"), indexed_document);
-    let old_documents_schema = old_data_contract.documents().to_owned();
-    let new_documents_schema = new_data_contract.documents().to_owned();
+    let old_documents_schema = old_data_contract.documents.to_owned();
+    let new_documents_schema = new_data_contract.documents.to_owned();
 
     TestData {
         old_data_contract,
@@ -96,10 +96,17 @@ fn should_return_invalid_result_if_some_of_unique_indices_have_changed() {
     assert_eq!(1053, result.errors()[0].code());
 
     let basic_error = get_basic_error(&result, 0);
-    matches!(basic_error, BasicError::DataContractUniqueIndicesChangedError { document_type, index_name }if {
-        document_type == "indexedDocument" &&
-        index_name == "index1"
-    });
+
+    match basic_error {
+        BasicError::DataContractUniqueIndicesChangedError(err) => {
+            assert_eq!(err.document_type(), "indexedDocument".to_string());
+            assert_eq!(err.index_name(), "index1".to_string());
+        }
+        _ => panic!(
+            "Expected DataContractUniqueIndicesChangedError, got {}",
+            basic_error
+        ),
+    }
 }
 
 #[test]
@@ -123,10 +130,17 @@ fn should_return_invalid_result_if_non_unique_index_update_failed_due_to_changed
     assert_eq!(0, result.errors()[0].code());
 
     let basic_error = get_basic_error(&result, 0);
-    matches!(basic_error, BasicError::DataContractInvalidIndexDefinitionUpdateError { document_type, index_name }if {
-        document_type == "indexedDocument" &&
-        index_name == "index3"
-    });
+
+    match basic_error {
+        BasicError::DataContractInvalidIndexDefinitionUpdateError(err) => {
+            assert_eq!(err.document_type(), "indexedDocument".to_string());
+            assert_eq!(err.index_name(), "index3".to_string());
+        }
+        _ => panic!(
+            "Expected DataContractInvalidIndexDefinitionUpdateError, got {}",
+            basic_error
+        ),
+    }
 }
 
 #[test]
@@ -151,10 +165,16 @@ fn should_return_invalid_result_if_already_indexed_properties_are_added_to_exist
     assert_eq!(0, result.errors()[0].code());
 
     let basic_error = get_basic_error(&result, 0);
-    matches!(basic_error, BasicError::DataContractInvalidIndexDefinitionUpdateError { document_type, index_name }if {
-        document_type == "indexedDocument" &&
-        index_name == "index3"
-    });
+    match basic_error {
+        BasicError::DataContractInvalidIndexDefinitionUpdateError(err) => {
+            assert_eq!(err.document_type(), "indexedDocument".to_string());
+            assert_eq!(err.index_name(), "index3".to_string());
+        }
+        _ => panic!(
+            "Expected DataContractInvalidIndexDefinitionUpdateError, got {}",
+            basic_error
+        ),
+    }
 }
 
 #[test]
@@ -186,12 +206,19 @@ fn should_return_invalid_result_if_one_of_new_indices_contains_old_properties_in
     assert_eq!(0, result.errors()[0].code());
 
     let basic_error = get_basic_error(&result, 0);
+
     // the JS-version imports DataContractInvalidIndexDefinitionUpdateError as DataContractHaveNewIndexWithOldPropertiesError as
     // we should decide if we want to have a separate error called DataContractInvalidIndexDefinitionUpdateError
-    matches!(basic_error, BasicError::DataContractInvalidIndexDefinitionUpdateError { document_type, index_name }if {
-        document_type == "indexedDocument" &&
-        index_name == "index_other"
-    });
+    match basic_error {
+        BasicError::DataContractInvalidIndexDefinitionUpdateError(err) => {
+            assert_eq!(err.document_type(), "indexedDocument".to_string());
+            assert_eq!(err.index_name(), "index_other".to_string());
+        }
+        _ => panic!(
+            "Expected DataContractInvalidIndexDefinitionUpdateError, got {}",
+            basic_error
+        ),
+    }
 }
 
 #[test]
@@ -222,10 +249,17 @@ fn should_return_invalid_result_if_one_of_new_indices_is_unique() {
     assert_eq!(0, result.errors()[0].code());
 
     let basic_error = get_basic_error(&result, 0);
-    matches!(basic_error, BasicError::DataContractHaveNewUniqueIndexError { document_type, index_name }if {
-        document_type == "indexedDocument" &&
-        index_name == "index_other"
-    });
+
+    match basic_error {
+        BasicError::DataContractHaveNewUniqueIndexError(err) => {
+            assert_eq!(err.document_type(), "indexedDocument".to_string());
+            assert_eq!(err.index_name(), "index_other".to_string());
+        }
+        _ => panic!(
+            "Expected DataContractHaveNewUniqueIndexError, got {}",
+            basic_error
+        ),
+    }
 }
 
 #[test]
@@ -284,13 +318,15 @@ fn should_return_invalid_result_if_non_unique_index_added_for_non_indexed_proper
     assert_eq!(result.errors()[0].code(), 0);
 
     let basic_error = get_basic_error(&result, 0);
-    assert!(matches!(
-        basic_error,
-        BasicError::DataContractInvalidIndexDefinitionUpdateError {
-            document_type,
-            index_name,
-        } if {
-        document_type == "indexedDocument" &&
-        index_name == "index1337"
-    }));
+
+    match basic_error {
+        BasicError::DataContractInvalidIndexDefinitionUpdateError(err) => {
+            assert_eq!(err.document_type(), "indexedDocument".to_string());
+            assert_eq!(err.index_name(), "index1337".to_string());
+        }
+        _ => panic!(
+            "Expected DataContractInvalidIndexDefinitionUpdateError, got {}",
+            basic_error
+        ),
+    }
 }

@@ -1,5 +1,5 @@
 use std::sync::Arc;
-use crate::errors::from_dpp_err;
+
 use crate::state_repository::{ExternalStateRepositoryLike, ExternalStateRepositoryLikeWrapper};
 use crate::validation::ValidationResultWasm;
 use crate::{IdentityUpdateTransitionWasm};
@@ -8,6 +8,7 @@ use wasm_bindgen::JsValue;
 use dpp::identity::state_transition::identity_update_transition::identity_update_transition::IdentityUpdateTransition;
 use dpp::identity::state_transition::identity_update_transition::validate_identity_update_transition_state::IdentityUpdateTransitionStateValidator;
 use dpp::identity::state_transition::identity_update_transition::validate_public_keys::IdentityUpdatePublicKeysValidator;
+use crate::errors::from_dpp_err;
 
 #[wasm_bindgen(js_name=IdentityUpdateTransitionStateValidator)]
 pub struct IdentityUpdateTransitionStateValidatorWasm(

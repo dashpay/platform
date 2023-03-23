@@ -1593,7 +1593,7 @@ checksum = "eb3fa5a61630976fc4c353c70297f2e93f1930e3ccee574d59d618ccbd5154ce"
 dependencies = [
  "serde",
  "serde_json",
- "treediff",
+ "treediff 3.0.2",
 ]
 
 [[package]]
@@ -1626,7 +1626,7 @@ source = "git+https://github.com/fominok/jsonschema-rs?branch=feat-unevaluated-p
 dependencies = [
  "ahash 0.7.6",
  "anyhow",
- "base64 0.13.1",
+ "base64 0.21.0",
  "bytecount",
  "fancy-regex",
  "fraction",
@@ -2216,12 +2216,18 @@ checksum = "6ac9a59f73473f1b8d852421e59e64809f025994837ef743615c6d0c5b305160"
 name = "platform-value"
 version = "0.1.0"
 dependencies = [
+ "base64 0.13.1",
  "bs58",
  "ciborium",
  "hex",
+ "lazy_static",
+ "rand",
+ "regex",
  "serde",
+ "serde_bytes",
  "serde_json",
  "thiserror",
+ "treediff 4.0.2",
 ]
 
 [[package]]
@@ -2707,13 +2713,21 @@ dependencies = [
 
 [[package]]
 name = "serde-wasm-bindgen"
-version = "0.4.5"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "e3b4c031cd0d9014307d82b8abf653c0290fbdaeb4c02d00c63cf52f728628bf"
+version = "0.5.0"
+source = "git+https://github.com/QuantumExplorer/serde-wasm-bindgen?branch=feat/not_human_readable#2737b68b506cbf87a115917b6b3b4aa852a3ad73"
 dependencies = [
  "js-sys",
  "serde",
  "wasm-bindgen",
+]
+
+[[package]]
+name = "serde_bytes"
+version = "0.11.9"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "416bda436f9aab92e02c8e10d49a15ddd339cea90b6e340fe51ed97abb548294"
+dependencies = [
+ "serde",
 ]
 
 [[package]]
@@ -3182,6 +3196,12 @@ checksum = "761e8d5ad7ce14bb82b7e61ccc0ca961005a275a060b9644a2431aa11553c2ff"
 dependencies = [
  "serde_json",
 ]
+
+[[package]]
+name = "treediff"
+version = "4.0.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "52984d277bdf2a751072b5df30ec0377febdb02f7696d64c2d7d54630bac4303"
 
 [[package]]
 name = "triomphe"
