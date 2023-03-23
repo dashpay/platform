@@ -138,7 +138,7 @@ function setupRegularPresetTaskFactory(
         //  first version
         enabled: (ctx) => ctx.nodeType === NODE_TYPE_MASTERNODE
           && ctx.isHP
-          && ctx.preset !== PRESET_MAINNET,
+          && ctx.config.isPlatformEnabled(),
         task: () => configureSSLCertificateTask(),
       },
       {
