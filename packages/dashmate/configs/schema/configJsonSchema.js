@@ -646,11 +646,11 @@ module.exports = {
           required: ['contract', 'masterPublicKey', 'secondPublicKey'],
           additionalProperties: false,
         },
-        enabled: {
+        enable: {
           type: 'boolean',
         },
       },
-      required: ['dapi', 'drive', 'dpns', 'dashpay', 'featureFlags', 'sourcePath', 'masternodeRewardShares', 'withdrawals', 'enabled'],
+      required: ['dapi', 'drive', 'dpns', 'dashpay', 'featureFlags', 'sourcePath', 'masternodeRewardShares', 'withdrawals', 'enable'],
       additionalProperties: false,
     },
     dashmate: {

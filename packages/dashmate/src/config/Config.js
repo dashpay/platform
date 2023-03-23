@@ -197,7 +197,7 @@ class Config {
    * @returns {boolean}
    */
   isPlatformEnabled() {
-    return this.has('platform') && this.get('platform.enabled');
+    return this.has('platform') && this.get('platform.enable');
   }
 }
 

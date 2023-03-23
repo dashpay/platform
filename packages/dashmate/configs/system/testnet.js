@@ -128,7 +128,7 @@ module.exports = lodashMerge({}, baseConfig, {
       masterPublicKey: '0211234327aed200b2771788aec1c7d6a799f534d02dd6766c6de53e3fd7152dfc',
       secondPublicKey: '035655d53d061275314535b74bfbbfb74cf640023a5cc466283e83881876cb9a3f',
     },
-    enabled: true,
+    enable: true,
   },
   network: NETWORK_TESTNET,
 });
