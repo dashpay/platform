@@ -74,7 +74,6 @@ function setupRegularPresetTaskFactory(
           ctx.nodeType = getNodeTypeByName(nodeTypeName);
           ctx.isHP = isNodeTypeNameHighPerformance(nodeTypeName);
 
-
           ctx.config = new Config(ctx.preset, systemConfigs[ctx.preset]);
 
           if (!ctx.isHP) {
@@ -131,7 +130,9 @@ function setupRegularPresetTaskFactory(
         title: 'Configure SSL certificate',
         // TODO: We don't need certificates for mainnet since we don't run platform there on
         //  first version
-        enabled: (ctx) => ctx.isHP && ctx.preset !== PRESET_MAINNET,
+        enabled: (ctx) => ctx.nodeType === NODE_TYPE_MASTERNODE
+          && ctx.isHP
+          && ctx.preset !== PRESET_MAINNET,
         task: () => configureSSLCertificateTask(),
       },
       {

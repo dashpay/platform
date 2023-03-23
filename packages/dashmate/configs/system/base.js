@@ -92,7 +92,7 @@ module.exports = {
           image: 'dashpay/envoy:0.24-dev',
         },
         http: {
-          port: 3000,
+          port: 443,
         },
         rateLimiter: {
           maxTokens: 300,

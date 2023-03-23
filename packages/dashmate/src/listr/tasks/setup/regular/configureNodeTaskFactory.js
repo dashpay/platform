@@ -6,6 +6,7 @@ const BlsSignatures = require('@dashevo/bls');
 
 const {
   NODE_TYPE_MASTERNODE,
+  PRESET_MAINNET,
 } = require('../../../../constants');
 
 const validateBLSPrivateKeyFactory = require('../../../prompts/validators/validateBLSPrivateKeyFactory');
@@ -30,6 +31,7 @@ function configureNodeTaskFactory() {
           // eslint-disable-next-line no-param-reassign
           task.title = `Configure ${ctx.nodeType}`;
 
+          // Masternode Operator key
           if (ctx.nodeType === NODE_TYPE_MASTERNODE) {
             const masternodeOperatorPrivateKey = await task.prompt({
               type: 'input',
@@ -42,6 +44,7 @@ function configureNodeTaskFactory() {
             ctx.config.set('core.masternode.operator.privateKey', masternodeOperatorPrivateKey);
           }
 
+          // Platform Node Key
           if (ctx.isHP) {
             const platformNodeKey = await task.prompt(createPlatformNodeKeyInput({
               skipInitial: ctx.nodeType === NODE_TYPE_MASTERNODE,
@@ -51,20 +54,26 @@ function configureNodeTaskFactory() {
             ctx.config.set('platform.drive.tenderdash.node.key', platformNodeKey);
           }
 
+          // IP and ports
           if (ctx.nodeType === NODE_TYPE_MASTERNODE) {
             const form = await task.prompt(await createIpAndPortsForm({
               isHPMN: ctx.isHP,
               skipInitial: true,
             }));
 
-            ctx.config.set('core.p2p.port', form.coreP2PPort);
             ctx.config.set('externalIp', form.ip);
 
-            if (ctx.isHP) {
-              ctx.config.set('platform.dapi.envoy.http.port', form.platformHTTPPort);
-              ctx.config.set('platform.drive.tenderdash.p2p.port', form.platformP2PPort);
+            if (ctx.preset !== PRESET_MAINNET) {
+              ctx.config.set('core.p2p.port', form.coreP2PPort);
+
+              if (ctx.isHP) {
+                ctx.config.set('platform.dapi.envoy.http.port', form.platformHTTPPort);
+                ctx.config.set('platform.drive.tenderdash.p2p.port', form.platformP2PPort);
+              }
             }
           }
+
+          // TODO: Output configuration
         },
       },
     ]);

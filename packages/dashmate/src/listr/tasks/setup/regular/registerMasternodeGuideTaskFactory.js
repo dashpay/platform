@@ -66,12 +66,6 @@ function registerMasternodeGuideTaskFactory() {
 
           // TODO: We need to add description on how to find key generation form in the
           //  specified wallet
-          // TODO: Implement additional validations
-          /*
-           ipAddress is set and port is not set to the default mainnet port
-           ipAddress is set and not routable or not an IPv4 mapped address
-           ipAddress is set and already used in the registered masternodes set
-           */
 
           const validateAddressHexWithNetwork = (value) => validateAddressHex(value, ctx.preset);
 
@@ -204,6 +198,8 @@ function registerMasternodeGuideTaskFactory() {
           // config.set('platform.drive.tenderdash.nodeId', nodeId);
 
           // ctx.config.set('platform.drive.tenderdash.nodeKey', ctx.platformP2PKey);
+
+          // TODO: Output configuration
         },
       },
     ]);
