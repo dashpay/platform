@@ -10,14 +10,19 @@ const MuteOneLineError = require('../oclif/errors/MuteOneLineError');
 
 const {
   PRESET_LOCAL,
+  PRESET_MAINNET,
   PRESETS,
 } = require('../constants');
+
+const systemConfigs = require('../../configs/system');
+
+const Config = require('../config/Config');
 
 class SetupCommand extends BaseCommand {
   /**
    * @param {Object} args
    * @param {Object} flags
-   * @param {generateBlsKeys} generateBlsKeys
+   * @param {ConfigFile} configFile
    * @param {setupLocalPresetTask} setupLocalPresetTask
    * @param {setupRegularPresetTask} setupRegularPresetTask
    * @return {Promise<void>}
@@ -32,7 +37,7 @@ class SetupCommand extends BaseCommand {
       'miner-interval': minerInterval,
       verbose: isVerbose,
     },
-    generateBlsKeys,
+    configFile,
     setupLocalPresetTask,
     setupRegularPresetTask,
   ) {
@@ -48,21 +53,42 @@ class SetupCommand extends BaseCommand {
             ctx.preset = await task.prompt([
               {
                 type: 'select',
-                header: '  Dashmate provides three default configuration presets:\n    local - Run a fully functional network environment on your machine for local development'
-                  + '\n    mainnet - Run a node connected to the Dash main network'
-                  + '\n    testnet - Run a node connected to the Dash test network\n',
+                header: `  Dashmate provides three default configuration presets:\n
+    local - Run a fully functional network environment on your machine for local development
+    mainnet - Run a node connected to the Dash main network
+    testnet - Run a node connected to the Dash test network\n`,
                 message: 'Select preset',
                 choices: PRESETS,
-                initial: 'testnet',
+                initial: PRESET_MAINNET,
               },
             ]);
 
-            // eslint-disable-next-line no-param-reassign
-            task.output = ctx.preset;
+            let isAlreadyConfigured = false;
+            if (ctx.preset === PRESET_LOCAL) {
+              isAlreadyConfigured = configFile.isGroupExists(ctx.preset);
+            } else {
+              const systemConfig = new Config(ctx.preset, systemConfigs[ctx.preset]);
+
+              isAlreadyConfigured = !configFile.getConfig(ctx.preset).isEqual(systemConfig);
+            }
+
+            if (isAlreadyConfigured) {
+              task.output = `Preset ${ctx.preset} already configured.
+              To setup a node with this preset from scratch use "dashmate reset --config ${ctx.preset} --hard". Previous data and configuration for this preset will be lost.
+              If you want to keep existing data and configuration please use "dashmate config create" command to create a new configuration for this preset`;
+
+              throw new Error(`Preset ${ctx.preset} already configured`);
+            } else {
+              // eslint-disable-next-line no-param-reassign
+
+              task.output = ctx.preset;
+            }
+
           }
         },
         options: {
           persistentOutput: true,
+          showErrorMessage: false,
         },
       },
       {
@@ -86,17 +112,17 @@ class SetupCommand extends BaseCommand {
       },
     });
 
-    // eslint-disable-next-line no-console
-    await import('begoo').then(({ begoo }) => {
-      console.log(
-        begoo(
-          `Hello! I'm your ${chalk.bold.cyanBright('Dash')} mate!\n\nI will assist you with setting up a Dash node on mainnet or testnet. I can also help you set up a development network on your local system.`,
-          { maxLength: 45 },
-        ),
+    if (!isVerbose) { // TODO: We need to print it only with default renderer
+      const { begoo } = await import('begoo');
+
+      const welcomeText = begoo(
+        chalk`Hello! I'm your {bold.cyanBright Dash} mate!\n\nI will assist you with setting up a Dash node on mainnet or testnet. I can also help you set up a development network on your local system.`,
+        { maxLength: 45 },
       );
-    })
 
-
+      // eslint-disable-next-line no-console
+      console.log(welcomeText);
+    }
 
     try {
       await tasks.run({
