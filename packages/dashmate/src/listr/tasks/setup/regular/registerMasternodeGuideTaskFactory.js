@@ -22,6 +22,7 @@ const generateBlsKeys = require('../../../../core/generateBlsKeys');
 const validateBLSPrivateKeyFactory = require('../../../prompts/validators/validateBLSPrivateKeyFactory');
 const createPlatformNodeKeyInput = require('../../../prompts/createPlatformNodeKeyInput');
 const createIpAndPortsForm = require('../../../prompts/createIpAndPortsForm');
+const createTenderdashNodeId = require('../../../../tenderdash/createTenderdashNodeId');
 
 /**
  * @return {registerMasternodeGuideTask}
@@ -183,14 +184,54 @@ function registerMasternodeGuideTaskFactory() {
           do {
             form = await task.prompt(prompts);
 
+            const operatorPrivateKeyBuffer = Buffer.from(form.operator.privateKey, 'hex');
+            const operatorPrivateKey = blsSignatures.PrivateKey.fromBytes(
+              operatorPrivateKeyBuffer,
+              true,
+            );
+            const operatorPublicKey = operatorPrivateKey.getG1();
+            const operatorPublicKeyHex = Buffer.from(operatorPublicKey.serialize()).toString('hex');
+
+            const coreP2PPort = form.ipAndPorts.coreP2PPort
+              || systemConfigs[ctx.preset].core.p2p.port;
+
+            const platformP2PPort = form.ipAndPorts.platformP2PPort
+              || systemConfigs[ctx.preset].platform.drive.tenderdash.p2p.port;
+
+            const platformHTTPPort = form.ipAndPorts.platformHTTPPort
+              || systemConfigs[ctx.preset].platform.dapi.envoy.http.port;
+
+            let command;
+            if (ctx.isHP) {
+              command = `dash-cli register_hpmn
+                    ${form.collateral.txId}
+                    ${form.collateral.outputIndex}
+                    ${form.ipAndPorts.ip}:${coreP2PPort}
+                    ${form.keys.ownerAddress}
+                    ${operatorPublicKeyHex}
+                    ${form.keys.votingAddress}
+                    ${form.operator.rewardShare}
+                    ${form.keys.payoutAddress}
+                    ${createTenderdashNodeId(form.platformNodeKey)}
+                    ${platformP2PPort}
+                    ${platformHTTPPort}`;
+            } else {
+              command = `dash-cli register_hpmn
+                    ${form.collateral.txId}
+                    ${form.collateral.outputIndex}
+                    ${form.ipAndPorts.ip}:${coreP2PPort}
+                    ${form.keys.ownerAddress}
+                    ${operatorPublicKeyHex}
+                    ${form.keys.votingAddress}
+                    ${form.operator.rewardShare}
+                    ${form.keys.payoutAddress}`;
+            }
+
             confirmation = await task.prompt({
               type: 'toggle',
               name: 'confirm',
               header: chalk`  Now run the following command to create the registration transaction:
-              {bold.green dash-cli ${ctx.isHP ? 'register_hpmn' : 'register'}
-                    argument1
-                    argument2
-              }
+              {bold.green ${command}}
 
   Select "No" to modify the transaction by amending your previous input.\n`,
               message: 'Was the masternode registration transaction successful?',
@@ -199,15 +240,23 @@ function registerMasternodeGuideTaskFactory() {
             });
           } while (!confirmation);
 
-          // TODO: Store form information to the config
-          console.dir(form);
+          ctx.config.set('core.masternode.operator.privateKey', form.operator.privateKey);
 
-          // ctx.config.set('externalIp', form.ip);
-          // ctx.config.set('core.p2p.port', form.port);
-          // TODO: Derive node id from key
-          // config.set('platform.drive.tenderdash.nodeId', nodeId);
+          ctx.config.set('externalIp', form.ipAndPorts.ip);
 
-          // ctx.config.set('platform.drive.tenderdash.nodeKey', ctx.platformP2PKey);
+          if (ctx.isHP) {
+            ctx.config.set('platform.drive.tenderdash.node.id', createTenderdashNodeId(form.platformNodeKey));
+            ctx.config.set('platform.drive.tenderdash.node.key', form.platformNodeKey);
+          }
+
+          if (ctx.preset !== PRESET_MAINNET) {
+            ctx.config.set('core.p2p.port', form.ipAndPorts.coreP2PPort);
+
+            if (ctx.isHP) {
+              ctx.config.set('platform.dapi.envoy.http.port', form.ipAndPorts.platformHTTPPort);
+              ctx.config.set('platform.drive.tenderdash.p2p.port', form.ipAndPorts.platformP2PPort);
+            }
+          }
 
           // TODO: Output configuration
         },
