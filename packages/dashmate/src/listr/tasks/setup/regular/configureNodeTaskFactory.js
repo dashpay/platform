@@ -48,6 +48,8 @@ function configureNodeTaskFactory() {
             ctx.config.set('core.masternode.operator.privateKey', masternodeOperatorPrivateKey);
           }
 
+          ctx.config.set('platform.enabled', ctx.preset !== PRESET_MAINNET);
+
           // Platform Node Key
           if (ctx.isHP) {
             const platformNodeKey = await task.prompt(createPlatformNodeKeyInput({
@@ -68,7 +70,6 @@ function configureNodeTaskFactory() {
             ctx.config.set('externalIp', form.ip);
 
             if (ctx.preset !== PRESET_MAINNET) {
-              ctx.config.set('platform.enabled', true);
               ctx.config.set('core.p2p.port', form.coreP2PPort);
 
               if (ctx.isHP) {
