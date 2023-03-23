@@ -152,7 +152,6 @@ function setupRegularPresetTaskFactory(
         task: (ctx, task) => {
           configFile.setDefaultConfigName(ctx.preset);
 
-          ctx.config.set('platform.enabled', true);
           // eslint-disable-next-line no-param-reassign
           task.output = `${ctx.config.getName()} set as default config\n`;
         },

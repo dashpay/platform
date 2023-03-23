@@ -650,7 +650,7 @@ module.exports = {
           type: 'boolean',
         },
       },
-      required: ['dapi', 'drive', 'dpns', 'dashpay', 'featureFlags', 'sourcePath', 'masternodeRewardShares', 'withdrawals'],
+      required: ['dapi', 'drive', 'dpns', 'dashpay', 'featureFlags', 'sourcePath', 'masternodeRewardShares', 'withdrawals', 'enabled'],
       additionalProperties: false,
     },
     dashmate: {
