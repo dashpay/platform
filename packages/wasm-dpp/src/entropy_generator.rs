@@ -1,5 +1,5 @@
 use crate::errors::from_js_error;
-use dpp::data_contract::EntropyGenerator;
+use dpp::util::entropy_generator::EntropyGenerator;
 use std::convert::TryInto;
 use wasm_bindgen::prelude::*;
 use wasm_bindgen::JsValue;

@@ -1,3 +1,25 @@
+## [0.24.0-dev.16](https://github.com/dashpay/platform/compare/v0.24.0-dev.15...v0.24.0-dev.16) (2023-03-22)
+
+
+### Features
+
+* **wasm-dpp:** decodeProtocolEntity test ([#834](https://github.com/dashpay/platform/issues/834))
+
+
+### Code Refactoring
+
+* change dpp to be based on platform value ([#809](https://github.com/dashpay/platform/issues/809))
+
+
+### Miscellaneous Chores
+
+* **dashmate:** upgrade dashcore version for local networks ([#843](https://github.com/dashpay/platform/issues/843))
+
+
+### Continuous Integration
+
+* dashmate release script fix ([#846](https://github.com/dashpay/platform/issues/846))
+
 ## [0.24.0-dev.15](https://github.com/dashpay/platform/compare/v0.24.0-dev.14...v0.24.0-dev.15) (2023-03-21)
 
 

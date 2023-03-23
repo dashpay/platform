@@ -12,30 +12,17 @@ use crate::data_contract::errors::InvalidDataContractError;
 use crate::data_contract::property_names::PROTOCOL_VERSION;
 
 use crate::state_transition::StateTransitionType;
+use crate::util::entropy_generator::{DefaultEntropyGenerator, EntropyGenerator};
 use crate::{
     data_contract::{self, generate_data_contract_id},
     decode_protocol_entity_factory::DecodeProtocolEntity,
     errors::ProtocolError,
     prelude::Identifier,
-    util::entropy_generator,
 };
 
 use super::state_transition::data_contract_create_transition::DataContractCreateTransition;
 use super::state_transition::data_contract_update_transition::DataContractUpdateTransition;
 use super::{validation::data_contract_validator::DataContractValidator, DataContract};
-
-/// A way to provide external entropy generator.
-pub trait EntropyGenerator {
-    fn generate(&self) -> anyhow::Result<[u8; 32]>;
-}
-
-pub struct DefaultEntropyGenerator;
-
-impl EntropyGenerator for DefaultEntropyGenerator {
-    fn generate(&self) -> anyhow::Result<[u8; 32]> {
-        entropy_generator::generate()
-    }
-}
 
 pub struct DataContractFactory {
     protocol_version: u32,
