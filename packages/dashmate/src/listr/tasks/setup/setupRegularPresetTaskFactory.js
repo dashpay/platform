@@ -57,6 +57,7 @@ function setupRegularPresetTaskFactory(
           const nodeTypeName = await task.prompt([
             {
               type: 'select',
+              // Keep this order, because each item references the text in the previous item
               header: `  The Dash network consists of several different node types:
     Full node                   - Host the full Dash blockchain (no collateral)
     Masternode                  - Full node features, plus Core services such as
@@ -148,10 +149,11 @@ function setupRegularPresetTaskFactory(
           // eslint-disable-next-line no-param-reassign
           task.output = chalk`Node configuration completed successfully!
 
-            You can now run {bold.cyanBright dashmate start} to start your node, followed by {bold.cyanBright dashmate
-            status} for a node health status overview.
-            
-            Run {bold.cyanBright dashmate --help} or {bold.cyanBright dashmate <command> --help} for quick help on how to use dashmate to manage your node.\n`;
+            You can now run {bold.cyanBright dashmate start} to start your node, followed by
+            {bold.cyanBright dashmate status} for a node health status overview.
+
+            Run {bold.cyanBright dashmate --help} or {bold.cyanBright dashmate <command> --help} for quick help on how
+            to use dashmate to manage your node.\n`;
         },
         options: {
           persistentOutput: true,
