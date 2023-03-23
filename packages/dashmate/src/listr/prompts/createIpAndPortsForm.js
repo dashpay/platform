@@ -23,6 +23,7 @@ async function createIpAndPortsForm(network, options = {}) {
     initialIp = await publicIp.v4();
   }
 
+  // TODO User input fo IP only?
   const fields = [
     {
       name: 'ip',
@@ -31,6 +32,8 @@ async function createIpAndPortsForm(network, options = {}) {
       validate: validateIPv4,
     },
   ];
+
+  // TODO: we can't use mainnet ports for other networks
 
   if (network !== PRESET_MAINNET) {
     let initialCoreP2PPort;
