@@ -11,7 +11,9 @@ const {
   PRESET_MAINNET,
 } = require('../../../../constants');
 
-const validateAddressHex = require('../../../prompts/validators/validateAddressHex');
+const systemConfigs = require('../../../../../configs/system');
+
+const validateAddress = require('../../../prompts/validators/validateAddress');
 const validateTxHex = require('../../../prompts/validators/validateTxHex');
 const validatePositiveInteger = require('../../../prompts/validators/validatePositiveInteger');
 const validatePercentage = require('../../../prompts/validators/validatePercentage');
@@ -73,7 +75,7 @@ function registerMasternodeGuideTaskFactory() {
           // TODO: We need to add description on how to find key generation form in the
           //  specified wallet
 
-          const validateAddressHexWithNetwork = (value) => validateAddressHex(value, ctx.preset);
+          const validateAddressWithNetwork = (value) => validateAddress(value, ctx.preset);
 
           const collateralAmount = ctx.nodeType === NODE_TYPE_MASTERNODE ? MASTERNODE_COLLATERAL_AMOUNT : HPMN_COLLATERAL_AMOUNT;
           const collateralDenomination = ctx.preset === PRESET_MAINNET ? 'DASH' : 'tDASH';
@@ -110,21 +112,21 @@ function registerMasternodeGuideTaskFactory() {
               choices: [
                 {
                   name: 'ownerAddress',
-                  message: chalk` Owner address {gray HEX encoded}`,
+                  message: chalk` Owner address {gray Base58 encoded}`,
                   network: ctx.preset,
-                  validate: validateAddressHexWithNetwork,
+                  validate: validateAddressWithNetwork,
                 },
                 {
                   name: 'votingAddress',
-                  message: chalk` Voting address {gray HEX encoded}`,
+                  message: chalk` Voting address {gray Base58 encoded}`,
                   network: ctx.preset,
-                  validate: validateAddressHexWithNetwork,
+                  validate: validateAddressWithNetwork,
                 },
                 {
                   name: 'payoutAddress',
-                  message: chalk` Payout address {gray HEX encoded}`,
+                  message: chalk` Payout address {gray Base58 encoded}`,
                   network: ctx.preset,
-                  validate: validateAddressHexWithNetwork,
+                  validate: validateAddressWithNetwork,
                 },
               ],
               validate: ({ ownerAddress, votingAddress, payoutAddress }) => {
@@ -132,9 +134,9 @@ function registerMasternodeGuideTaskFactory() {
                   return 'The payout address may not be the same as the owner or voting address';
                 }
 
-                return validateAddressHexWithNetwork(ownerAddress)
-                  && validateAddressHexWithNetwork(votingAddress)
-                  && validateAddressHexWithNetwork(payoutAddress);
+                return validateAddressWithNetwork(ownerAddress)
+                  && validateAddressWithNetwork(votingAddress)
+                  && validateAddressWithNetwork(payoutAddress);
               },
             },
             {

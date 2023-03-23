@@ -6156,13 +6156,6 @@ function $$SETUP_STATE(hydrateRuntimeState, basePath) {
             ["safe-buffer", "npm:5.2.1"]\
           ],\
           "linkType": "HARD"\
-        }],\
-        ["npm:4.0.0", {\
-          "packageLocation": "./.yarn/cache/base-x-npm-4.0.0-64a1f6fa5e-b25db9e07e.zip/node_modules/base-x/",\
-          "packageDependencies": [\
-            ["base-x", "npm:4.0.0"]\
-          ],\
-          "linkType": "HARD"\
         }]\
       ]],\
       ["base64-js", [\
@@ -6522,14 +6515,6 @@ function $$SETUP_STATE(hydrateRuntimeState, basePath) {
           "packageDependencies": [\
             ["bs58", "npm:4.0.1"],\
             ["base-x", "npm:3.0.9"]\
-          ],\
-          "linkType": "HARD"\
-        }],\
-        ["npm:5.0.0", {\
-          "packageLocation": "./.yarn/cache/bs58-npm-5.0.0-da02537b92-2475cb0684.zip/node_modules/bs58/",\
-          "packageDependencies": [\
-            ["bs58", "npm:5.0.0"],\
-            ["base-x", "npm:4.0.0"]\
           ],\
           "linkType": "HARD"\
         }]\
@@ -8035,7 +8020,6 @@ function $$SETUP_STATE(hydrateRuntimeState, basePath) {
             ["ajv-formats", "virtual:58fb68f2aed20e5e0f2e48520ab903ae9bb3440369bfd5e912034003cf27c5aae368649fc5620dd2acbed578131f3a0975e75b838d77d12335fb0412e24026c6#npm:2.1.1"],\
             ["awilix", "npm:4.3.4"],\
             ["begoo", "npm:2.0.2"],\
-            ["bs58", "npm:5.0.0"],\
             ["chai", "npm:4.3.4"],\
             ["chai-as-promised", "virtual:58fb68f2aed20e5e0f2e48520ab903ae9bb3440369bfd5e912034003cf27c5aae368649fc5620dd2acbed578131f3a0975e75b838d77d12335fb0412e24026c6#npm:7.1.1"],\
             ["chalk", "npm:4.1.2"],\
