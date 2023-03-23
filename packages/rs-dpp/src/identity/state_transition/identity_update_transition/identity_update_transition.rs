@@ -9,8 +9,8 @@ use crate::{
     prelude::{Identifier, Revision, TimestampMillis},
     state_transition::{
         state_transition_execution_context::StateTransitionExecutionContext,
-        state_transition_helpers, StateTransitionConvert, StateTransitionIdentitySigned,
-        StateTransitionLike, StateTransitionType,
+        StateTransitionConvert, StateTransitionIdentitySigned, StateTransitionLike,
+        StateTransitionType,
     },
     version::LATEST_VERSION,
     ProtocolError,
