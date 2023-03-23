@@ -1,6 +1,6 @@
-const MasternodeSyncAssetEnum = require('../../../../src/enums/masternodeSyncAsset');
+const MasternodeSyncAssetEnum = require('../../../../src/status/enums/masternodeSyncAsset');
 const getMasternodeScopeFactory = require('../../../../src/status/scopes/masternode');
-const MasternodeStateEnum = require('../../../../src/enums/masternodeState');
+const MasternodeStateEnum = require('../../../../src/status/enums/masternodeState');
 
 describe('getMasternodeScopeFactory', () => {
   describe('#getMasternodeScope', () => {

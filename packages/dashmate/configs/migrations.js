@@ -456,7 +456,8 @@ module.exports = {
             id: config.platform.drive.tenderdash.nodeId,
           };
 
-          if (config.platform.drive.tenderdash.nodeKey.priv_key
+          if (config.platform.drive.tenderdash.nodeKey
+            && config.platform.drive.tenderdash.nodeKey.priv_key
             && config.platform.drive.tenderdash.nodeKey.priv_key.value
           ) {
             config.platform.drive.tenderdash.node.key = config.platform.drive

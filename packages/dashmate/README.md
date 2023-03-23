@@ -82,21 +82,7 @@ The CLI can be used to perform routine tasks. Invoke the CLI with `dashmate` if 
 The `setup` command is used to quickly configure common node configurations. Arguments may be provided as options, otherwise they will be queried interactively with sensible values suggested.
 
 ```
-USAGE
-  $ dashmate setup [PRESET] [NODE-TYPE]
 
-ARGUMENTS
-  PRESET     (testnet|local) Node configuration preset
-  NODE-TYPE  (masternode|fullnode) Node type
-
-OPTIONS
-  -d, --[no-]debug-logs                                    enable debug logs
-  -i, --external-ip=external-ip                            external ip
-  -k, --operator-bls-private-key=operator-bls-private-key  operator bls private key
-  -m, --miner-interval=miner-interval                      interval between blocks
-  -p, --funding-private-key=funding-private-key            private key with more than 1000 dash for funding collateral
-  -v, --verbose                                            use verbose mode for output
-  --node-count=node-count                                  number of nodes to setup
 ```
 
 Supported presets:

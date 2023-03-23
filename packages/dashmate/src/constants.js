@@ -15,6 +15,7 @@ const presets = {
 };
 
 const nodeTypes = {
+  NODE_TYPE_HPMN: 'hpmn',
   NODE_TYPE_MASTERNODE: 'masternode',
   NODE_TYPE_FULLNODE: 'fullnode',
 };
