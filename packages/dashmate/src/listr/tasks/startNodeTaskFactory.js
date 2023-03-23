@@ -45,7 +45,7 @@ function startNodeTaskFactory(
     }
 
     // Check Drive log files are created
-    if (config.has('platform')) {
+    if (config.isPlatformEnabled()) {
       const prettyFilePath = config.get('platform.drive.abci.log.prettyFile.path');
 
       // Remove directory that could potentially be created by Docker mount
