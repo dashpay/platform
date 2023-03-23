@@ -216,7 +216,7 @@ function registerMasternodeGuideTaskFactory() {
                     ${platformP2PPort}
                     ${platformHTTPPort}`;
             } else {
-              command = `dash-cli register_hpmn
+              command = `dash-cli register
                     ${form.collateral.txId}
                     ${form.collateral.outputIndex}
                     ${form.ipAndPorts.ip}:${coreP2PPort}
