@@ -60,7 +60,7 @@ function configureNodeTaskFactory() {
 
           // IP and ports
           if (ctx.nodeType === NODE_TYPE_MASTERNODE) {
-            const form = await task.prompt(await createIpAndPortsForm({
+            const form = await task.prompt(await createIpAndPortsForm(ctx.preset, {
               isHPMN: ctx.isHP,
               skipInitial: true,
             }));
