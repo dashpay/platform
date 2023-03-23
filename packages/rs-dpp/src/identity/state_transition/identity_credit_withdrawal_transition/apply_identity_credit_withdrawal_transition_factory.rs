@@ -46,7 +46,10 @@ where
 
         let maybe_withdrawals_data_contract: Option<DataContract> = self
             .state_repository
-            .fetch_data_contract(data_contract_id, state_transition.get_execution_context())
+            .fetch_data_contract(
+                data_contract_id,
+                Some(state_transition.get_execution_context()),
+            )
             .await?
             .map(TryInto::try_into)
             .transpose()
@@ -112,7 +115,7 @@ where
                             ["$id", "==", document_id],
                         ],
                     }),
-                    &state_transition.execution_context,
+                    Some(&state_transition.execution_context),
                 )
                 .await?;
 
@@ -143,7 +146,7 @@ where
         self.state_repository
             .create_document(
                 &extended_withdrawal_document,
-                state_transition.get_execution_context(),
+                Some(state_transition.get_execution_context()),
             )
             .await?;
 
@@ -152,14 +155,14 @@ where
             .remove_from_identity_balance(
                 &state_transition.identity_id,
                 state_transition.amount,
-                state_transition.get_execution_context(),
+                Some(state_transition.get_execution_context()),
             )
             .await?;
 
         self.state_repository
             .remove_from_system_credits(
                 state_transition.amount,
-                state_transition.get_execution_context(),
+                Some(state_transition.get_execution_context()),
             )
             .await
     }
