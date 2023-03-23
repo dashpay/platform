@@ -12,7 +12,6 @@ use crate::consensus::basic::document::InvalidDocumentTypeError;
 use crate::document::extended_document::{property_names, ExtendedDocument};
 
 use crate::data_contract::DriveContractExt;
-use crate::data_contract::{DefaultEntropyGenerator, EntropyGenerator};
 use crate::document::document_transition::INITIAL_REVISION;
 use crate::document::Document;
 use crate::identity::TimestampMillis;
