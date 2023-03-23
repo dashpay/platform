@@ -70,14 +70,14 @@ export async function createIdentityCreateTransition(
 
   masterKey.setSignature(identityCreateTransition.getSignature());
 
-  identityCreateTransition.setSignature([]);
+  identityCreateTransition.setSignature(undefined);
 
   await identityCreateTransition
     .signByPrivateKey(identitySecondPrivateKey.toBuffer(), IdentityPublicKey.TYPES.ECDSA_SECP256K1);
 
   secondKey.setSignature(identityCreateTransition.getSignature());
 
-  identityCreateTransition.setSignature([]);
+  identityCreateTransition.setSignature(undefined);
 
   // Set public keys back after updating their signatures
   identityCreateTransition.setPublicKeys([masterKey, secondKey]);

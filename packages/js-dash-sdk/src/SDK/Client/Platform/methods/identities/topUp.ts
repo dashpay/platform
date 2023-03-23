@@ -41,6 +41,8 @@ export async function topUp(
     .createIdentityTopUpTransition(assetLockProof, assetLockPrivateKey, identityId);
   this.logger.silly(`[Identity#register] Created IdentityTopUpTransition with asset lock tx "${assetLockTransaction.hash}"`);
 
+  // TODO: add skipValidation flag?
+  //  Basic validation already happening in createIdentityCreateTransition
   // Broadcast ST
   await broadcastStateTransition(this, identityTopUpTransition);
   this.logger.silly('[Identity#register] Broadcasted IdentityTopUpTransition');
