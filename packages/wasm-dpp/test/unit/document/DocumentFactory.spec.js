@@ -5,8 +5,10 @@ const ValidationResult = require('@dashevo/dpp/lib/validation/ValidationResult')
 const createDPPMock = require('@dashevo/dpp/lib/test/mocks/createDPPMock');
 const DocumentFactoryJS = require('@dashevo/dpp/lib/document/DocumentFactory');
 
+const getDataContractFixtureJs = require('@dashevo/dpp/lib/test/fixtures/getDataContractFixture');
 const getDataContractFixture = require('../../../lib/test/fixtures/getDataContractFixture');
 const getDocumentsFixture = require('../../../lib/test/fixtures/getDocumentsFixture');
+const getDocumentsFixtureJs = require('@dashevo/dpp/lib/test/fixtures/getDocumentsFixture');
 const createStateRepositoryMock = require('../../../lib/test/mocks/createStateRepositoryMock');
 const generateRandomIdentifierAsync = require('../../../lib/test/utils/generateRandomIdentifierAsync');
 
@@ -62,15 +64,15 @@ describe('DocumentFactory', () => {
     const protocolValidator = new ProtocolVersionValidator();
     documentValidator = new DocumentValidator(protocolValidator);
 
-    ({ ownerId: ownerIdJs } = getDocumentsFixture);
+    ({ ownerId: ownerIdJs } = getDocumentsFixtureJs()[0]);
     ownerId = Identifier.from(ownerIdJs);
 
-    dataContractJs = getDataContractFixture();
+    dataContractJs = getDataContractFixtureJs();
     dataContract = DataContract.fromBuffer(dataContractJs.toBuffer());
     const dc = DataContract.fromBuffer(dataContractJs.toBuffer());
     dataContractId = dataContractJs.getId().toBuffer();
 
-    documentsJs = getDocumentsFixture(dataContractJs);
+    documentsJs = getDocumentsFixtureJs(dataContractJs);
     documents = documentsJs.map((d) => {
       const doc = new ExtendedDocument(d.toObject(), dataContract);
       doc.setEntropy(d.entropy);
@@ -348,7 +350,7 @@ describe('DocumentFactory', () => {
     });
 
     it('should create DocumentsBatchTransition with passed documents', async () => {
-      const [newDocumentJs] = getDocumentsFixture(dataContractJs);
+      const [newDocumentJs] = getDocumentsFixtureJs(dataContractJs);
       const newDocument = new ExtendedDocument(newDocumentJs.toObject(), dataContract);
 
       const stateTransition = factory.createStateTransition({
