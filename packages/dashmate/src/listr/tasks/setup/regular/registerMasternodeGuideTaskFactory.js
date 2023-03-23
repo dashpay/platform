@@ -23,6 +23,8 @@ const validateBLSPrivateKeyFactory = require('../../../prompts/validators/valida
 const createPlatformNodeKeyInput = require('../../../prompts/createPlatformNodeKeyInput');
 const createIpAndPortsForm = require('../../../prompts/createIpAndPortsForm');
 const createTenderdashNodeId = require('../../../../tenderdash/createTenderdashNodeId');
+const getConfigurationOutputFromContext = require('./getConfigurationOutputFromContext');
+const getBLSPublicKeyFromPrivateKeyHex = require('../../../../core/getBLSPublicKeyFromPrivateKeyHex');
 
 /**
  * @return {registerMasternodeGuideTask}
@@ -78,11 +80,16 @@ function registerMasternodeGuideTaskFactory() {
 
           // TODO: Deal with hints in forms
 
-          // TODO: When registering a new masternode, if registration transaction was not successful, then going back through the previous steps should already contain the previously filled in information
+          // TODO: When registering a new masternode, if registration transaction was not
+          //  successful,then going back through the previous steps should already contain
+          //  the previously filled in information
 
           const validateAddressWithNetwork = (value) => validateAddress(value, ctx.preset);
 
-          const collateralAmount = ctx.nodeType === NODE_TYPE_MASTERNODE ? MASTERNODE_COLLATERAL_AMOUNT : HPMN_COLLATERAL_AMOUNT;
+          const collateralAmount = ctx.nodeType === NODE_TYPE_MASTERNODE
+            ? MASTERNODE_COLLATERAL_AMOUNT
+            : HPMN_COLLATERAL_AMOUNT;
+
           const collateralDenomination = ctx.preset === PRESET_MAINNET ? 'DASH' : 'tDASH';
 
           const prompts = [
@@ -190,13 +197,9 @@ function registerMasternodeGuideTaskFactory() {
           do {
             form = await task.prompt(prompts);
 
-            const operatorPrivateKeyBuffer = Buffer.from(form.operator.privateKey, 'hex');
-            const operatorPrivateKey = blsSignatures.PrivateKey.fromBytes(
-              operatorPrivateKeyBuffer,
-              true,
+            const operatorPublicKeyHex = await getBLSPublicKeyFromPrivateKeyHex(
+              form.operator.privateKey,
             );
-            const operatorPublicKey = operatorPrivateKey.getG1();
-            const operatorPublicKeyHex = Buffer.from(operatorPublicKey.serialize()).toString('hex');
 
             const platformP2PPort = form.ipAndPorts.platformP2PPort
               || systemConfigs[ctx.preset].platform.drive.tenderdash.p2p.port;
@@ -256,7 +259,11 @@ function registerMasternodeGuideTaskFactory() {
             ctx.config.set('platform.drive.tenderdash.p2p.port', form.ipAndPorts.platformP2PPort);
           }
 
-          // TODO: Output configuration
+          // eslint-disable-next-line no-param-reassign
+          task.output = await getConfigurationOutputFromContext(ctx);
+        },
+        options: {
+          persistentOutput: true,
         },
       },
     ]);

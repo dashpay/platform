@@ -13,6 +13,7 @@ const validateBLSPrivateKeyFactory = require('../../../prompts/validators/valida
 const createPlatformNodeKeyInput = require('../../../prompts/createPlatformNodeKeyInput');
 const createIpAndPortsForm = require('../../../prompts/createIpAndPortsForm');
 const createTenderdashNodeId = require('../../../../tenderdash/createTenderdashNodeId');
+const getConfigurationOutputFromContext = require('./getConfigurationOutputFromContext');
 
 function configureNodeTaskFactory() {
   /**
@@ -62,22 +63,23 @@ function configureNodeTaskFactory() {
           if (ctx.nodeType === NODE_TYPE_MASTERNODE) {
             const form = await task.prompt(await createIpAndPortsForm(ctx.preset, {
               isHPMN: ctx.isHP,
-              skipInitial: true,
+              skipInitial: ctx.preset !== PRESET_MAINNET,
             }));
 
             ctx.config.set('externalIp', form.ip);
+            ctx.config.set('core.p2p.port', form.coreP2PPort);
 
-            if (ctx.preset !== PRESET_MAINNET) {
-              ctx.config.set('core.p2p.port', form.coreP2PPort);
-
-              if (ctx.isHP) {
-                ctx.config.set('platform.dapi.envoy.http.port', form.platformHTTPPort);
-                ctx.config.set('platform.drive.tenderdash.p2p.port', form.platformP2PPort);
-              }
+            if (ctx.isHP) {
+              ctx.config.set('platform.dapi.envoy.http.port', form.platformHTTPPort);
+              ctx.config.set('platform.drive.tenderdash.p2p.port', form.platformP2PPort);
             }
           }
 
-          // TODO: Output configuration
+          // eslint-disable-next-line no-param-reassign
+          task.output = await getConfigurationOutputFromContext(ctx);
+        },
+        options: {
+          persistentOutput: true,
         },
       },
     ]);

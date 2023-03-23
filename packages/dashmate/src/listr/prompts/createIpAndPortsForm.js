@@ -18,17 +18,7 @@ const {
  * @returns {Object}
  */
 async function createIpAndPortsForm(network, options = {}) {
-  let initialIp;
-  if (!options.skipInitial) {
-    initialIp = await publicIp.v4();
-  }
-
   const mainnetCfg = systemConfigs[PRESET_MAINNET];
-
-  let initialCoreP2PPort;
-  if (!options.skipInitial || network === PRESET_MAINNET) {
-    initialCoreP2PPort = mainnetCfg.core.p2p.port.toString();
-  }
 
   function validateCoreP2PPort(value) {
     if (network !== PRESET_MAINNET
@@ -55,6 +45,16 @@ async function createIpAndPortsForm(network, options = {}) {
     }
 
     return validatePort(value);
+  }
+
+  let initialIp;
+  if (!options.skipInitial) {
+    initialIp = await publicIp.v4();
+  }
+
+  let initialCoreP2PPort;
+  if (!options.skipInitial || network === PRESET_MAINNET) {
+    initialCoreP2PPort = mainnetCfg.core.p2p.port.toString();
   }
 
   const fields = [

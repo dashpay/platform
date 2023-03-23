@@ -26,6 +26,7 @@ function configureSSLCertificateTaskFactory(
     return new Listr([
       {
         task: async (ctx, task) => {
+          // TODO Move to upper function to show output in upper task?
           const choices = [
             { name: SSL_PROVIDERS.ZEROSSL, message: 'ZeroSSL' },
             { name: SSL_PROVIDERS.FILE, message: 'File on disk' },
