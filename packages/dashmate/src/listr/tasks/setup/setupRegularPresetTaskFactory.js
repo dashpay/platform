@@ -55,11 +55,14 @@ function setupRegularPresetTaskFactory(
           const nodeTypeName = await task.prompt([
             {
               type: 'select',
-              header: '  The Dash network consists of several different node types:'
-                + ' \n    Full node                   - Host a full copy of the Dash blockchain (no collateral required)'
-                + ' \n    Masternode                  - Full node features, plus Core services such as ChainLocks and InstantSend (1000 DASH collateral)'
-                + ' \n    High-performance full node  - Full node features, plus host a full copy of the Platform blockchain (no collateral required)'
-                + ' \n    High-performance masternode - Masternode features, plus Platform services such as DAPI and Drive (4000 DASH collateral)\n',
+              header: `  The Dash network consists of several different node types:
+    Full node                   - Host the full Dash blockchain (no collateral)
+    Masternode                  - Full node features, plus Core services such as
+                                  ChainLocks and InstantSend (1000 DASH collateral)
+    High-performance full node  - Full node features, plus host a full copy of the
+                                  Platform blockchain (no collateral)
+    High-performance masternode - Masternode features, plus Platform services such
+                                  as DAPI and Drive (4000 DASH collateral)\n`,
               message: 'Select node type',
               choices: [
                 { name: NODE_TYPE_NAMES.FULLNODE },
@@ -94,19 +97,19 @@ function setupRegularPresetTaskFactory(
         task: async (ctx, task) => {
           let header;
           if (ctx.isHP === NODE_TYPE_HPMN) {
-            header = 'If your HP masternode is already registered, we will import your masternode'
-              + ' operator and platform node keys to configure an HP masternode.'
-              + ' Please make sure your IP address has not changed, otherwise you will need'
-              + ' to create a provider update service transaction.\n\n'
-              + ' If you are registering a new HP masternode, I will provide more information'
-              + ' and help you to generate the necessary keys.\n';
+            header = `  If your HP masternode is already registered, we will import your masternode
+  operator and platform node keys to configure an HP masternode. Please make
+  sure your IP address has not changed, otherwise you will need to create a
+  provider update service transaction.\n\n
+  If you are registering a new HP masternode, dashmate will provide more
+  information and help you to generate the necessary keys.\n`;
           } else {
-            header = 'If your masternode is already registered, we will import your masternode'
-              + ' operator key to configure a masternode.'
-              + ' Please make sure your IP address has not changed, otherwise you will need'
-              + ' to create a provider update service transaction.\n\n'
-              + ' If you are registering a new masternode, I will provide more information'
-              + ' and help you to generate the necessary keys.\n';
+            header = `  If your masternode is already registered, we will import your masternode
+  operator key to configure a masternode. Please make sure your IP address has
+  not changed, otherwise you will need to create a provider update service
+  transaction.\n\n
+  If you are registering a new masternode, dashmate will provide more
+  information and help you to generate the necessary keys.\n`;
           }
 
           ctx.isMasternodeRegistered = await task.prompt({
@@ -142,8 +145,9 @@ function setupRegularPresetTaskFactory(
 
           // eslint-disable-next-line no-param-reassign
           task.output = `Node configuration completed successfully!\n
-            You can now run "dashmate start" to start your node, followed by "dashmate status" for a node health status overview.\n
-            Run "dashmate --help" or "dashmate <command> --help" for quick help on how to use dashmate to manage your node.\n`;
+            You can now run "dashmate start" to start your node, followed by "dashmate
+            status" for a node health status overview. Run "dashmate --help" or "dashmate
+            <command> --help" for quick help on how to use dashmate to manage your node.\n`;
         },
         options: {
           persistentOutput: true,

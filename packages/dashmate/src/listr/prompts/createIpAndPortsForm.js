@@ -75,8 +75,10 @@ async function createIpAndPortsForm(network, options = {}) {
   return {
     type: 'form',
     name: 'ipAndPorts',
-    header: 'Dashmate needs to collect your external public static IP address and port information to use in the registration transaction.\n'
-      + 'You will need to ensure these ports are open and reachable from the public internet at this IP address in order to avoid PoSe bans.\n',
+    header: `  Dashmate needs to collect your external public static IP address and port
+  information to use in the registration transaction. You will need to ensure
+  these ports are open and reachable from the public internet at this IP address
+  in order to avoid PoSe bans.\n`,
     message: 'Enter IP address and ports:',
     choices: fields,
     validate: ({

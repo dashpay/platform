@@ -55,7 +55,7 @@ class SetupCommand extends BaseCommand {
                 type: 'select',
                 header: `  Dashmate provides three default configuration presets:
 
-    local   - Run a fully functional network environment on your machine for local development
+    local   - Run a full network environment on your machine for local development
     testnet - Run a node connected to the Dash test network
     mainnet - Run a node connected to the Dash main network\n`,
                 message: 'Select preset',
@@ -75,9 +75,11 @@ class SetupCommand extends BaseCommand {
 
             if (isAlreadyConfigured) {
               task.output = `Preset ${ctx.preset} already configured.
-              To set up a node with this preset from scratch use "dashmate reset --config ${ctx.preset} --hard". Previous data and configuration for this preset will be lost.
-              If you want to keep existing data and configuration, please use the "dashmate config create" command to create a new configuration for this preset.`;
-
+  To set up a node with this preset from scratch use "dashmate reset
+  --config ${ctx.preset} --hard". Previous data and configuration for this
+  preset will be lost. If you want to keep existing data and configuration,
+  please use the "dashmate config create" command to create a new configuration
+  for this preset.`;
               throw new Error(`Preset ${ctx.preset} already configured`);
             } else {
               // eslint-disable-next-line no-param-reassign
