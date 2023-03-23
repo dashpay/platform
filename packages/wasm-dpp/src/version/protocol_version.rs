@@ -41,13 +41,13 @@ impl ProtocolVersionValidatorWasm {
                 .map(|(key, value)| {
                     let new_key = key
                         .parse::<u32>()
-                        .map_err(|e| JsError::new(&*e.to_string()))?;
+                        .map_err(|e| JsError::new(&e.to_string()))?;
 
                     let new_value_64 = value.as_u64().ok_or_else(|| {
                         JsError::new("Expect values in compatibility map to contain only numbers")
                     })?;
                     let new_value =
-                        u32::try_from(new_value_64).map_err(|e| JsError::new(&*e.to_string()))?;
+                        u32::try_from(new_value_64).map_err(|e| JsError::new(&e.to_string()))?;
 
                     Ok((new_key, new_value))
                 })
@@ -68,7 +68,6 @@ impl ProtocolVersionValidatorWasm {
             .map(|v| v.map(|_| JsValue::undefined()))
             .map(ValidationResultWasm::from)
             .map_err(|e| CompatibleProtocolVersionIsNotDefinedErrorWasm::new(e).into())
-            .into()
     }
 }
 

@@ -2,7 +2,7 @@ use dpp::identity::KeyID;
 use dpp::state_transition::StateTransitionIdentitySigned;
 use dpp::{
     identifier::Identifier,
-    identity::state_transition::identity_public_key_transitions::IdentityPublicKeyCreateTransition,
+    identity::state_transition::identity_public_key_transitions::IdentityPublicKeyWithWitness,
     identity::state_transition::identity_update_transition::identity_update_transition::IdentityUpdateTransition,
     state_transition::StateTransitionLike,
 };
@@ -23,7 +23,7 @@ pub struct ToObject {
     pub signature: Option<Vec<u8>>,
     pub signature_public_key_id: Option<KeyID>,
     pub public_keys_disabled_at: Option<u64>,
-    pub public_keys_to_add: Option<Vec<IdentityPublicKeyCreateTransition>>,
+    pub public_keys_to_add: Option<Vec<IdentityPublicKeyWithWitness>>,
     pub public_key_ids_to_disable: Option<Vec<KeyID>>,
     pub identity_id: Identifier,
 }
@@ -41,7 +41,7 @@ pub fn to_object_struct(
     };
 
     if !options.skip_signature.unwrap_or(false) {
-        let signature = Some(transition.get_signature().to_owned());
+        let signature = Some(transition.get_signature().to_vec());
         if let Some(signature) = &signature {
             if !signature.is_empty() {
                 to_object.signature_public_key_id = transition.get_signature_public_key_id()

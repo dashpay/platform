@@ -1,10 +1,15 @@
 use anyhow::{anyhow, Result};
 use dashcore::{consensus, BlockHeader};
 use lazy_static::__Deref;
+use std::collections::BTreeMap;
 use std::convert::TryInto;
 
+use platform_value::{Bytes32, Value};
 use serde_json::json;
 
+use crate::contracts::withdrawals_contract::property_names;
+use crate::data_contract::document_type::document_type::PROTOCOL_VERSION;
+use crate::document::ExtendedDocument;
 use crate::{
     contracts::withdrawals_contract, data_contract::DataContract, document::generate_document_id,
     document::Document, identity::state_transition::identity_credit_withdrawal_transition::Pooling,
@@ -58,15 +63,30 @@ where
             consensus::deserialize(&latest_platform_block_header_bytes)?;
 
         let document_type = String::from(withdrawals_contract::document_types::WITHDRAWAL);
-        let document_created_at_millis: i64 = latest_platform_block_header.time as i64 * 1000i64;
+        let document_created_at_millis: u64 = latest_platform_block_header.time as u64 * 1000u64;
 
-        let document_data = json!({
-            withdrawals_contract::property_names::AMOUNT: state_transition.amount,
-            withdrawals_contract::property_names::CORE_FEE_PER_BYTE: state_transition.core_fee_per_byte,
-            withdrawals_contract::property_names::POOLING: Pooling::Never,
-            withdrawals_contract::property_names::OUTPUT_SCRIPT: state_transition.output_script.as_bytes(),
-            withdrawals_contract::property_names::STATUS: withdrawals_contract::WithdrawalStatus::QUEUED,
-        });
+        let document_properties = BTreeMap::from([
+            (
+                property_names::AMOUNT.to_string(),
+                Value::U64(state_transition.amount),
+            ),
+            (
+                property_names::CORE_FEE_PER_BYTE.to_string(),
+                Value::U32(state_transition.core_fee_per_byte),
+            ),
+            (
+                property_names::POOLING.to_string(),
+                Value::U8(Pooling::Never as u8),
+            ),
+            (
+                property_names::OUTPUT_SCRIPT.to_string(),
+                Value::Bytes(state_transition.output_script.as_bytes().to_vec()),
+            ),
+            (
+                property_names::STATUS.to_string(),
+                Value::U8(withdrawals_contract::WithdrawalStatus::QUEUED as u8),
+            ),
+        ]);
 
         let mut document_id;
 
@@ -99,25 +119,28 @@ where
             }
         }
 
-        // TODO: use DocumentFactory once it is complete
         let withdrawal_document = Document {
-            protocol_version: state_transition.protocol_version,
             id: document_id,
-            document_type,
-            revision: 0,
-            data_contract_id: *data_contract_id,
+            revision: None,
             owner_id: state_transition.identity_id,
             created_at: Some(document_created_at_millis),
             updated_at: Some(document_created_at_millis),
-            data: document_data,
+            properties: document_properties,
+        };
+
+        let extended_withdrawal_document = ExtendedDocument {
+            protocol_version: PROTOCOL_VERSION,
+            document_type_name: document_type,
+            data_contract_id: withdrawals_data_contract.id,
+            document: withdrawal_document,
             data_contract: withdrawals_data_contract,
             metadata: None,
-            entropy: [0; 32],
+            entropy: Bytes32::default(),
         };
 
         self.state_repository
             .create_document(
-                &withdrawal_document,
+                &extended_withdrawal_document,
                 state_transition.get_execution_context(),
             )
             .await?;

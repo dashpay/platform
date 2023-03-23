@@ -1,32 +1,72 @@
 use crate::identity::{IdentityPublicKey, KeyID, KeyType, Purpose, SecurityLevel};
 use ciborium::value::Value as CborValue;
-use std::convert::TryInto;
+use std::collections::BTreeMap;
+use std::convert::{TryFrom, TryInto};
 
+use platform_value::btreemap_extensions::BTreeValueMapHelper;
+use platform_value::btreemap_extensions::BTreeValueRemoveFromMapHelper;
+use platform_value::{BinaryData, ReplacementType, Value, ValueMapHelper};
 use serde::{Deserialize, Serialize};
 use serde_json::Value as JsonValue;
 
 use crate::errors::ProtocolError;
 use crate::util::cbor_value::{CborCanonicalMap, CborMapExtension};
-use crate::util::json_value::{JsonValueExt, ReplaceWith};
-use crate::SerdeParsingError;
+use crate::util::serializer;
+use crate::{Convertible, SerdeParsingError};
 
 pub const BINARY_DATA_FIELDS: [&str; 2] = ["data", "signature"];
 
 #[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
-pub struct IdentityPublicKeyCreateTransition {
+pub struct IdentityPublicKeyWithWitness {
     pub id: KeyID,
     pub purpose: Purpose,
     pub security_level: SecurityLevel,
     #[serde(rename = "type")]
     pub key_type: KeyType,
-    pub data: Vec<u8>,
+    pub data: BinaryData,
     pub read_only: bool,
     /// The signature is needed for ECDSA_SECP256K1 Key type and BLS12_381 Key type
-    pub signature: Vec<u8>,
+    pub signature: BinaryData,
 }
 
-impl IdentityPublicKeyCreateTransition {
+impl Convertible for IdentityPublicKeyWithWitness {
+    fn to_object(&self) -> Result<Value, ProtocolError> {
+        platform_value::to_value(self).map_err(ProtocolError::ValueError)
+    }
+
+    fn to_cleaned_object(&self) -> Result<Value, ProtocolError> {
+        platform_value::to_value(self).map_err(ProtocolError::ValueError)
+    }
+
+    fn into_object(self) -> Result<Value, ProtocolError> {
+        platform_value::to_value(self).map_err(ProtocolError::ValueError)
+    }
+
+    fn to_json_object(&self) -> Result<JsonValue, ProtocolError> {
+        self.to_cleaned_object()?
+            .try_into_validating_json()
+            .map_err(ProtocolError::ValueError)
+    }
+
+    fn to_json(&self) -> Result<JsonValue, ProtocolError> {
+        self.to_cleaned_object()?
+            .try_into()
+            .map_err(ProtocolError::ValueError)
+    }
+
+    fn to_buffer(&self) -> Result<Vec<u8>, ProtocolError> {
+        let mut object = self.to_cleaned_object()?;
+        object
+            .to_map_mut()
+            .unwrap()
+            .sort_by_lexicographical_byte_ordering_keys_and_inner_maps();
+
+        serializer::serializable_value_to_cbor(&object, None)
+    }
+}
+
+impl IdentityPublicKeyWithWitness {
     pub fn to_identity_public_key(self) -> IdentityPublicKey {
         let Self {
             id,
@@ -48,16 +88,74 @@ impl IdentityPublicKeyCreateTransition {
         }
     }
 
-    pub fn from_raw_object(raw_object: JsonValue) -> Result<Self, ProtocolError> {
+    pub fn from_raw_object(raw_object: Value) -> Result<Self, ProtocolError> {
+        raw_object.try_into().map_err(ProtocolError::ValueError)
+    }
+
+    pub fn from_value_map(mut value_map: BTreeMap<String, Value>) -> Result<Self, ProtocolError> {
+        Ok(Self {
+            id: value_map
+                .get_integer("id")
+                .map_err(ProtocolError::ValueError)?,
+            purpose: value_map
+                .get_integer::<u8>("purpose")
+                .map_err(ProtocolError::ValueError)?
+                .try_into()?,
+            security_level: value_map
+                .get_integer::<u8>("securityLevel")
+                .map_err(ProtocolError::ValueError)?
+                .try_into()?,
+            key_type: value_map
+                .get_integer::<u8>("keyType")
+                .map_err(ProtocolError::ValueError)?
+                .try_into()?,
+            data: value_map
+                .remove_binary_data("data")
+                .map_err(ProtocolError::ValueError)?,
+            read_only: value_map
+                .get_bool("readOnly")
+                .map_err(ProtocolError::ValueError)?,
+            signature: value_map
+                .remove_binary_data("signature")
+                .map_err(ProtocolError::ValueError)?,
+        })
+    }
+
+    pub fn from_raw_json_object(raw_object: JsonValue) -> Result<Self, ProtocolError> {
         let identity_public_key: Self = serde_json::from_value(raw_object)?;
         Ok(identity_public_key)
     }
 
-    pub fn from_json_object(mut raw_object: JsonValue) -> Result<Self, ProtocolError> {
-        raw_object.replace_binary_paths(BINARY_DATA_FIELDS, ReplaceWith::Bytes)?;
-        let identity_public_key: Self = serde_json::from_value(raw_object)?;
+    pub fn from_json_object(raw_object: JsonValue) -> Result<Self, ProtocolError> {
+        let mut value: Value = raw_object.into();
+        value.replace_at_paths(BINARY_DATA_FIELDS, ReplacementType::BinaryBytes)?;
+        value.try_into().map_err(ProtocolError::ValueError)
+    }
 
-        Ok(identity_public_key)
+    /// Return raw data, with all binary fields represented as arrays
+    pub fn to_raw_object(&self, skip_signature: bool) -> Result<Value, ProtocolError> {
+        let mut value = self.to_object()?;
+
+        if skip_signature || self.signature.is_empty() {
+            value
+                .remove("signature")
+                .map_err(ProtocolError::ValueError)?;
+        }
+
+        Ok(value)
+    }
+
+    /// Return raw data, with all binary fields represented as arrays
+    pub fn to_raw_cleaned_object(&self, skip_signature: bool) -> Result<Value, ProtocolError> {
+        let mut value = self.to_cleaned_object()?;
+
+        if skip_signature || self.signature.is_empty() {
+            value
+                .remove("signature")
+                .map_err(ProtocolError::ValueError)?;
+        }
+
+        Ok(value)
     }
 
     /// Return raw data, with all binary fields represented as arrays
@@ -81,15 +179,6 @@ impl IdentityPublicKeyCreateTransition {
     /// Get the original public key hash
     pub fn hash(&self) -> Result<Vec<u8>, ProtocolError> {
         Into::<IdentityPublicKey>::into(self).hash()
-    }
-
-    /// Return json with all binary data converted to base64
-    pub fn to_json(&self) -> Result<JsonValue, SerdeParsingError> {
-        let mut value = self.to_raw_json_object(false)?;
-
-        value.replace_binary_paths(BINARY_DATA_FIELDS, ReplaceWith::Base64)?;
-
-        Ok(value)
     }
 
     pub fn from_cbor_value(cbor_value: &CborValue) -> Result<Self, ProtocolError> {
@@ -117,9 +206,9 @@ impl IdentityPublicKeyCreateTransition {
             purpose: purpose.try_into()?,
             security_level: security_level.try_into()?,
             key_type: key_type.try_into()?,
-            data: public_key_bytes,
+            data: BinaryData::from(public_key_bytes),
             read_only: readonly,
-            signature: signature_bytes,
+            signature: BinaryData::from(signature_bytes),
         })
     }
 
@@ -141,8 +230,8 @@ impl IdentityPublicKeyCreateTransition {
     }
 }
 
-impl From<&IdentityPublicKeyCreateTransition> for IdentityPublicKey {
-    fn from(val: &IdentityPublicKeyCreateTransition) -> Self {
+impl From<&IdentityPublicKeyWithWitness> for IdentityPublicKey {
+    fn from(val: &IdentityPublicKeyWithWitness) -> Self {
         IdentityPublicKey {
             id: val.id,
             purpose: val.purpose,
@@ -152,5 +241,29 @@ impl From<&IdentityPublicKeyCreateTransition> for IdentityPublicKey {
             data: val.data.clone(),
             disabled_at: None,
         }
+    }
+}
+
+impl TryFrom<Value> for IdentityPublicKeyWithWitness {
+    type Error = platform_value::Error;
+
+    fn try_from(value: Value) -> Result<Self, Self::Error> {
+        platform_value::from_value(value)
+    }
+}
+
+impl TryFrom<IdentityPublicKeyWithWitness> for Value {
+    type Error = platform_value::Error;
+
+    fn try_from(value: IdentityPublicKeyWithWitness) -> Result<Self, Self::Error> {
+        platform_value::to_value(value)
+    }
+}
+
+impl TryFrom<&IdentityPublicKeyWithWitness> for Value {
+    type Error = platform_value::Error;
+
+    fn try_from(value: &IdentityPublicKeyWithWitness) -> Result<Self, Self::Error> {
+        platform_value::to_value(value)
     }
 }

@@ -1,3 +1,4 @@
+use platform_value::Error as ValueError;
 use thiserror::Error;
 
 use crate::{
@@ -6,6 +7,9 @@ use crate::{
 
 #[derive(Debug, Error)]
 pub enum NonConsensusError {
+    /// Value error
+    #[error("value error: {0}")]
+    ValueError(#[from] ValueError),
     #[error("Unexpected serde parsing error: {0:#}")]
     SerdeParsingError(SerdeParsingError),
     #[error(transparent)]

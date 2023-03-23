@@ -25,11 +25,11 @@ ROOT_PATH=$(dirname "$DIR_PATH")
 cd $ROOT_PATH/packages/dashmate || exit 1
 yarn pack --install-if-needed
 tar zxvf package.tgz -C .
-cd package || exit 1
+cd $ROOT_PATH/packages/dashmate/package || exit 1
 cp $ROOT_PATH/yarn.lock ./yarn.lock
 mkdir .yarn
 echo "nodeLinker: node-modules"  > .yarnrc.yml
-yarn install
+yarn install --no-immutable
 yarn oclif manifest
 yarn oclif pack $COMMAND
 cd ..  || exit 1

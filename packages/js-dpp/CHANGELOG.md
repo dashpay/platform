@@ -288,7 +288,7 @@
 ### Bug Fixes
 
 * do not allow to change `ownerId` and `entropy` ([bff5807](https://github.com/dashevo/js-dpp/commit/bff580701322e2100e484989c476d583d26af38a))
-* json schema for `signaturePublicKeyId` ([#161](https://github.com/dashevo/js-dpp/issues/161))
+* json schema for `signature_public_key_id` ([#161](https://github.com/dashevo/js-dpp/issues/161))
 * wrong entropy size ([#157](https://github.com/dashevo/js-dpp/issues/157))
 * data contract definitions might be `null` or `undefined` ([#153](https://github.com/dashevo/js-dpp/issues/153))
 * identity existence validation in data contract structure validation ([#149](https://github.com/dashevo/js-dpp/issues/149))

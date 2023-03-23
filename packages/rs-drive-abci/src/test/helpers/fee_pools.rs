@@ -37,6 +37,7 @@ use std::collections::BTreeMap;
 
 use dpp::document::document_transition::INITIAL_REVISION;
 use dpp::platform_value::Value;
+use dpp::prelude::Identifier;
 use drive::dpp::identity::Identity;
 use rand::rngs::StdRng;
 use rand::{Rng, SeedableRng};
@@ -44,7 +45,7 @@ use rand::{Rng, SeedableRng};
 use drive::common::helpers::identities::create_test_identity_with_rng;
 use drive::contract::Contract;
 use drive::dpp::data_contract::DriveContractExt;
-use drive::dpp::document::document_stub::DocumentStub;
+use drive::dpp::document::Document;
 use drive::drive::block_info::BlockInfo;
 use drive::drive::flags::StorageFlags;
 use drive::drive::object_size_info::DocumentInfo::DocumentRefAndSerialization;
@@ -58,26 +59,28 @@ use crate::contracts::reward_shares::MN_REWARD_SHARES_DOCUMENT_TYPE;
 fn create_test_mn_share_document(
     drive: &Drive,
     contract: &Contract,
-    identity_id: [u8; 32],
+    identity_id: Identifier,
     pay_to_identity: &Identity,
     percentage: u16,
     transaction: TransactionArg,
-) -> DocumentStub {
-    let id = rand::random::<[u8; 32]>();
+) -> Document {
+    let id = Identifier::random();
 
     let mut properties: BTreeMap<String, Value> = BTreeMap::new();
 
     properties.insert(
         String::from("payToId"),
-        Value::Bytes(pay_to_identity.id.buffer.to_vec()),
+        Value::Bytes(pay_to_identity.id.to_buffer().to_vec()),
     );
     properties.insert(String::from("percentage"), percentage.into());
 
-    let document = DocumentStub {
+    let document = Document {
         id,
         properties,
         owner_id: identity_id,
-        revision: INITIAL_REVISION as u64,
+        revision: Some(INITIAL_REVISION),
+        created_at: None,
+        updated_at: None,
     };
 
     let document_type = contract
@@ -86,7 +89,7 @@ fn create_test_mn_share_document(
 
     let storage_flags = Some(Cow::Owned(StorageFlags::SingleEpoch(0)));
 
-    let document_cbor = document.to_cbor();
+    let document_cbor = document.to_cbor().expect("expected to encode to cbor");
 
     drive
         .add_document_for_contract(
@@ -120,7 +123,7 @@ pub fn create_test_masternode_share_identities_and_documents(
     pro_tx_hashes: &Vec<[u8; 32]>,
     seed: Option<u64>,
     transaction: TransactionArg,
-) -> Vec<(Identity, DocumentStub)> {
+) -> Vec<(Identity, Document)> {
     let mut rng = match seed {
         None => StdRng::from_entropy(),
         Some(seed_value) => StdRng::seed_from_u64(seed_value),
@@ -137,7 +140,7 @@ pub fn create_test_masternode_share_identities_and_documents(
                 let document = create_test_mn_share_document(
                     drive,
                     contract,
-                    *mn_identity,
+                    Identifier::new(*mn_identity),
                     &identity,
                     5000,
                     transaction,
