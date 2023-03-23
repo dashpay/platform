@@ -35,7 +35,9 @@ function configureNodeTaskFactory() {
           if (ctx.nodeType === NODE_TYPE_MASTERNODE) {
             const masternodeOperatorPrivateKey = await task.prompt({
               type: 'input',
-              header: 'Any suggestions where to get it?\n',
+              header: `  Your existing BLS private key can be found in the "dash.conf" file of your
+  masternode, in the DMT configuration tool, or in the safe location in which you
+  stored it when initially configuring your masternode.\n`,
               message: 'BLS private key',
               hint: 'HEX encoded',
               validate: validateBLSPrivateKey,

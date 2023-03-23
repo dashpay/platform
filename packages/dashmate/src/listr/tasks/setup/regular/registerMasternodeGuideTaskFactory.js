@@ -41,13 +41,12 @@ function registerMasternodeGuideTaskFactory() {
           const registrar = await task.prompt([
             {
               type: 'select',
-              header: 'For security reasons, Dash masternodes should never store masternode owner'
-                + ' or collateral private keys. Dashmate therefore cannot register a masternode for'
-                + ' you directly. Instead, we will generate RPC commands that you can use in'
-                + ' Dash Core or other external tools where keys are handled securely. During this'
-                + ' process, dashmate can optionally generate configuration elements as necessary,'
-                + ' such as the BLS operator key and the node id, since this is the'
-                + ' only information necessary for dashmate to configure the masternode.\n',
+              header: `  For security reasons, Dash masternodes should never store masternode owner or
+  collateral private keys. Dashmate therefore cannot register a masternode for you
+  directly. Instead, we will generate RPC commands that you can use in Dash Core
+  or other external tools where keys are handled securely. During this process,
+  dashmate can optionally generate configuration elements as necessary, such as
+  the BLS operator key and the node id.\n`,
               message: 'Which wallet will you use to store keys for your masternode?',
               choices: [
                 { name: REGISTRARS.CORE, message: 'Dash Core Wallet' },
@@ -181,7 +180,7 @@ function registerMasternodeGuideTaskFactory() {
                     argument1
                     argument2
               }
-              
+
               Go with nope to come back to edit command\n`,
               message: 'Have you registered a masternode successfully?',
               enabled: 'Yep',
