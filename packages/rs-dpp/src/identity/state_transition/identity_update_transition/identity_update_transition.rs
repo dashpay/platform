@@ -1,8 +1,9 @@
-use anyhow::anyhow;
+use platform_value::{BinaryData, ReplacementType, Value};
 use serde::{Deserialize, Serialize};
 use serde_json::Value as JsonValue;
+use std::convert::{TryFrom, TryInto};
 
-use crate::identity::state_transition::identity_public_key_transitions::IdentityPublicKeyCreateTransition;
+use crate::identity::state_transition::identity_public_key_transitions::IdentityPublicKeyWithWitness;
 use crate::{
     identity::{KeyID, SecurityLevel},
     prelude::{Identifier, Revision, TimestampMillis},
@@ -11,7 +12,6 @@ use crate::{
         state_transition_helpers, StateTransitionConvert, StateTransitionIdentitySigned,
         StateTransitionLike, StateTransitionType,
     },
-    util::json_value::JsonValueExt,
     version::LATEST_VERSION,
     ProtocolError,
 };
@@ -21,12 +21,21 @@ pub mod property_names {
     pub const TYPE: &str = "type";
     pub const IDENTITY_ID: &str = "identityId";
     pub const REVISION: &str = "revision";
+    pub const ADD_PUBLIC_KEYS_DATA: &str = "addPublicKeys[].data";
+    pub const ADD_PUBLIC_KEYS_SIGNATURE: &str = "addPublicKeys[].signature";
     pub const ADD_PUBLIC_KEYS: &str = "addPublicKeys";
     pub const DISABLE_PUBLIC_KEYS: &str = "disablePublicKeys";
     pub const PUBLIC_KEYS_DISABLED_AT: &str = "publicKeysDisabledAt";
     pub const SIGNATURE: &str = "signature";
     pub const SIGNATURE_PUBLIC_KEY_ID: &str = "signaturePublicKeyId";
 }
+
+pub const IDENTIFIER_FIELDS: [&str; 1] = [property_names::IDENTITY_ID];
+pub const BINARY_FIELDS: [&str; 3] = [
+    property_names::ADD_PUBLIC_KEYS_DATA,
+    property_names::ADD_PUBLIC_KEYS_SIGNATURE,
+    property_names::SIGNATURE,
+];
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
 #[serde(rename_all = "camelCase")]
@@ -36,7 +45,7 @@ pub struct IdentityUpdateTransition {
     pub transition_type: StateTransitionType,
 
     /// Cryptographic signature of the State Transition
-    pub signature: Vec<u8>,
+    pub signature: BinaryData,
 
     /// The ID of the public key used to sing the State Transition
     pub signature_public_key_id: KeyID,
@@ -50,7 +59,7 @@ pub struct IdentityUpdateTransition {
     /// Public Keys to add to the Identity
     /// we want to skip serialization of transitions, as we does it manually in `to_object()`  and `to_json()`
     #[serde(skip, default)]
-    pub add_public_keys: Vec<IdentityPublicKeyCreateTransition>,
+    pub add_public_keys: Vec<IdentityPublicKeyWithWitness>,
 
     /// Identity Public Keys ID's to disable for the Identity
     #[serde(skip_serializing_if = "Vec::is_empty", default)]
@@ -82,32 +91,36 @@ impl Default for IdentityUpdateTransition {
 }
 
 impl IdentityUpdateTransition {
-    pub fn new(raw_state_transition: serde_json::Value) -> Result<Self, ProtocolError> {
+    pub fn new(raw_state_transition: Value) -> Result<Self, ProtocolError> {
         IdentityUpdateTransition::from_raw_object(raw_state_transition)
     }
 
     pub fn from_raw_object(
-        mut raw_object: JsonValue,
+        mut raw_object: Value,
     ) -> Result<IdentityUpdateTransition, ProtocolError> {
         let protocol_version = raw_object
-            .get_u64(property_names::PROTOCOL_VERSION)
-            .unwrap_or(LATEST_VERSION as u64) as u32;
+            .get_optional_integer(property_names::PROTOCOL_VERSION)
+            .map_err(ProtocolError::ValueError)?
+            .unwrap_or(LATEST_VERSION);
         let signature = raw_object
-            .get_bytes(property_names::SIGNATURE)
-            .unwrap_or_default();
+            .get_binary_data(property_names::SIGNATURE)
+            .map_err(ProtocolError::ValueError)?;
         let signature_public_key_id = raw_object
-            .get_u64(property_names::SIGNATURE_PUBLIC_KEY_ID)
-            .unwrap_or_default() as KeyID;
-        let identity_id =
-            Identifier::from_bytes(&raw_object.get_bytes(property_names::IDENTITY_ID)?)?;
-        let revision = raw_object.get_u64(property_names::REVISION)?;
-        let add_public_keys =
-            get_list_of_public_keys(&mut raw_object, property_names::ADD_PUBLIC_KEYS)?;
+            .get_integer(property_names::SIGNATURE_PUBLIC_KEY_ID)
+            .map_err(ProtocolError::ValueError)?;
+        let identity_id = raw_object
+            .get_identifier(property_names::IDENTITY_ID)
+            .map_err(ProtocolError::ValueError)?;
+
+        let revision = raw_object
+            .get_integer(property_names::REVISION)
+            .map_err(ProtocolError::ValueError)?;
+        let add_public_keys = get_list(&mut raw_object, property_names::ADD_PUBLIC_KEYS)?;
         let disable_public_keys =
-            get_list_of_public_key_ids(&mut raw_object, property_names::DISABLE_PUBLIC_KEYS)?;
+            remove_integer_list_or_default(&mut raw_object, property_names::DISABLE_PUBLIC_KEYS)?;
         let public_keys_disabled_at = raw_object
-            .remove_into::<u64>(property_names::PUBLIC_KEYS_DISABLED_AT)
-            .ok();
+            .remove_optional_integer(property_names::PUBLIC_KEYS_DISABLED_AT)
+            .map_err(ProtocolError::ValueError)?;
 
         Ok(IdentityUpdateTransition {
             protocol_version,
@@ -144,18 +157,15 @@ impl IdentityUpdateTransition {
         self.revision
     }
 
-    pub fn set_public_keys_to_add(
-        &mut self,
-        add_public_keys: Vec<IdentityPublicKeyCreateTransition>,
-    ) {
+    pub fn set_public_keys_to_add(&mut self, add_public_keys: Vec<IdentityPublicKeyWithWitness>) {
         self.add_public_keys = add_public_keys;
     }
 
-    pub fn get_public_keys_to_add(&self) -> &[IdentityPublicKeyCreateTransition] {
+    pub fn get_public_keys_to_add(&self) -> &[IdentityPublicKeyWithWitness] {
         &self.add_public_keys
     }
 
-    pub fn get_public_keys_to_add_mut(&mut self) -> &mut [IdentityPublicKeyCreateTransition] {
+    pub fn get_public_keys_to_add_mut(&mut self) -> &mut [IdentityPublicKeyWithWitness] {
         &mut self.add_public_keys
     }
 
@@ -181,59 +191,62 @@ impl IdentityUpdateTransition {
     pub fn set_protocol_version(&mut self, protocol_version: u32) {
         self.protocol_version = protocol_version;
     }
+
+    pub fn clean_value(value: &mut Value) -> Result<(), platform_value::Error> {
+        value.replace_at_paths(IDENTIFIER_FIELDS, ReplacementType::Identifier)?;
+        value.replace_at_paths(BINARY_FIELDS, ReplacementType::BinaryBytes)?;
+        Ok(())
+    }
 }
 
 /// if the property isn't present the empty list is returned. If property is defined, the function
 /// might return some serialization-related errors
-fn get_list_of_public_keys(
-    value: &mut JsonValue,
+fn get_list<T: TryFrom<Value, Error = platform_value::Error>>(
+    value: &mut Value,
     property_name: &str,
-) -> Result<Vec<IdentityPublicKeyCreateTransition>, ProtocolError> {
-    let mut identity_public_keys = vec![];
-    if let Ok(maybe_list) = value.remove(property_names::ADD_PUBLIC_KEYS) {
-        if let JsonValue::Array(list) = maybe_list {
-            for maybe_public_key in list {
-                identity_public_keys.push(IdentityPublicKeyCreateTransition::from_raw_object(
-                    maybe_public_key,
-                )?);
-            }
-        } else {
-            return Err(anyhow!("The property '{}' isn't a list", property_name).into());
-        }
-    } else {
-        return Ok(vec![]);
-    }
-
-    Ok(identity_public_keys)
+) -> Result<Vec<T>, ProtocolError> {
+    value
+        .remove_optional_array(property_name)
+        .map_err(ProtocolError::ValueError)?
+        .unwrap_or_default()
+        .into_iter()
+        .map(|value| value.try_into().map_err(ProtocolError::ValueError))
+        .collect()
 }
 
-fn get_list_of_public_key_ids(
-    value: &mut JsonValue,
+/// if the property isn't present the empty list is returned. If property is defined, the function
+/// might return some serialization-related errors
+fn remove_integer_list_or_default<T>(
+    value: &mut Value,
     property_name: &str,
-) -> Result<Vec<KeyID>, ProtocolError> {
-    if let Ok(maybe_key_ids) = value.remove(property_name) {
-        let key_ids: Vec<KeyID> = serde_json::from_value(maybe_key_ids)?;
-        Ok(key_ids)
-    } else {
-        Ok(vec![])
-    }
-}
-
-fn get_list_of_timestamps(
-    value: &mut JsonValue,
-    property_name: &str,
-) -> Result<Vec<TimestampMillis>, ProtocolError> {
-    if let Ok(maybe_timestamps) = value.remove(property_name) {
-        let timestamps: Vec<TimestampMillis> = serde_json::from_value(maybe_timestamps)?;
-        Ok(timestamps)
-    } else {
-        Ok(vec![])
-    }
+) -> Result<Vec<T>, ProtocolError>
+where
+    T: TryFrom<i128>
+        + TryFrom<u128>
+        + TryFrom<u64>
+        + TryFrom<i64>
+        + TryFrom<u32>
+        + TryFrom<i32>
+        + TryFrom<u16>
+        + TryFrom<i16>
+        + TryFrom<u8>
+        + TryFrom<i8>,
+{
+    value
+        .remove_optional_array(property_name)
+        .map_err(ProtocolError::ValueError)?
+        .unwrap_or_default()
+        .into_iter()
+        .map(|value| value.to_integer().map_err(ProtocolError::ValueError))
+        .collect()
 }
 
 impl StateTransitionConvert for IdentityUpdateTransition {
     fn binary_property_paths() -> Vec<&'static str> {
-        vec![property_names::SIGNATURE]
+        vec![
+            property_names::SIGNATURE,
+            property_names::ADD_PUBLIC_KEYS_SIGNATURE,
+        ]
     }
 
     fn identifiers_property_paths() -> Vec<&'static str> {
@@ -244,51 +257,41 @@ impl StateTransitionConvert for IdentityUpdateTransition {
         vec![
             property_names::SIGNATURE,
             property_names::SIGNATURE_PUBLIC_KEY_ID,
+            property_names::ADD_PUBLIC_KEYS_SIGNATURE,
         ]
     }
 
-    fn to_object(&self, skip_signature: bool) -> Result<JsonValue, ProtocolError> {
+    fn to_object(&self, skip_signature: bool) -> Result<Value, ProtocolError> {
         // The [state_transition_helpers::to_object] doesn't  convert the `add_public_keys` property.
         // The property must be serialized manually
-        let mut add_public_keys: Vec<JsonValue> = vec![];
+        let mut add_public_keys: Vec<Value> = vec![];
         for key in self.add_public_keys.iter() {
-            add_public_keys.push(key.to_raw_json_object(skip_signature)?);
+            add_public_keys.push(key.to_raw_object(skip_signature)?);
         }
 
-        let mut raw_object: JsonValue = state_transition_helpers::to_object(
-            self,
-            Self::signature_property_paths(),
-            Self::identifiers_property_paths(),
-            skip_signature,
-        )?;
-        raw_object.insert(
+        let skip_signature_paths = if skip_signature {
+            Self::signature_property_paths()
+        } else {
+            vec![]
+        };
+
+        let mut raw_object: Value =
+            state_transition_helpers::to_object(self, skip_signature_paths)?;
+        raw_object.insert_at_end(
             property_names::ADD_PUBLIC_KEYS.to_owned(),
-            JsonValue::Array(add_public_keys),
+            Value::Array(add_public_keys),
         )?;
 
         Ok(raw_object)
     }
 
     fn to_json(&self, skip_signature: bool) -> Result<JsonValue, ProtocolError> {
-        // The [state_transition_helpers::to_json] doesn't  convert the `add_public_keys` property.
-        // The property must be serialized manually
-        let mut add_public_keys: Vec<JsonValue> = vec![];
-        for key in self.add_public_keys.iter() {
-            add_public_keys.push(key.to_json()?);
-        }
+        self.to_cleaned_object(skip_signature)
+            .and_then(|value| value.try_into().map_err(ProtocolError::ValueError))
+    }
 
-        let mut json_object: JsonValue = state_transition_helpers::to_json(
-            self,
-            Self::binary_property_paths(),
-            Self::signature_property_paths(),
-            skip_signature,
-        )?;
-        json_object.insert(
-            property_names::ADD_PUBLIC_KEYS.to_owned(),
-            JsonValue::Array(add_public_keys),
-        )?;
-
-        Ok(json_object)
+    fn to_cleaned_object(&self, skip_signature: bool) -> Result<Value, ProtocolError> {
+        self.to_object(skip_signature)
     }
 }
 
@@ -302,7 +305,7 @@ impl StateTransitionLike for IdentityUpdateTransition {
         self.protocol_version
     }
 
-    fn get_signature(&self) -> &Vec<u8> {
+    fn get_signature(&self) -> &BinaryData {
         &self.signature
     }
 
@@ -310,7 +313,7 @@ impl StateTransitionLike for IdentityUpdateTransition {
         self.transition_type
     }
 
-    fn set_signature(&mut self, signature: Vec<u8>) {
+    fn set_signature(&mut self, signature: BinaryData) {
         self.signature = signature;
     }
 
@@ -324,6 +327,10 @@ impl StateTransitionLike for IdentityUpdateTransition {
 
     fn set_execution_context(&mut self, execution_context: StateTransitionExecutionContext) {
         self.execution_context = execution_context
+    }
+
+    fn set_signature_bytes(&mut self, signature: Vec<u8>) {
+        self.signature = BinaryData::new(signature)
     }
 }
 
@@ -347,21 +354,20 @@ impl StateTransitionIdentitySigned for IdentityUpdateTransition {
 
 #[cfg(test)]
 mod test {
-
-    use crate::tests::{
-        fixtures::identity_fixture,
-        utils::{generate_random_identifier, generate_random_identifier_struct},
-    };
+    use crate::tests::{fixtures::identity_fixture, utils::generate_random_identifier_struct};
+    use getrandom::getrandom;
 
     use super::*;
 
     #[test]
     fn conversion_to_json_object() {
         let public_key = identity_fixture().get_public_keys()[&0].to_owned();
+        let mut buffer = [0u8; 33];
+        let _ = getrandom(&mut buffer);
         let transition = IdentityUpdateTransition {
             identity_id: generate_random_identifier_struct(),
             add_public_keys: vec![(&public_key).into()],
-            signature: generate_random_identifier().to_vec(),
+            signature: BinaryData::new(buffer.to_vec()),
             ..Default::default()
         };
 
@@ -386,10 +392,12 @@ mod test {
     #[test]
     fn conversion_to_raw_object() {
         let public_key = identity_fixture().get_public_keys()[&0].to_owned();
+        let mut buffer = [0u8; 33];
+        let _ = getrandom(&mut buffer);
         let transition = IdentityUpdateTransition {
             identity_id: generate_random_identifier_struct(),
             add_public_keys: vec![(&public_key).into()],
-            signature: generate_random_identifier().to_vec(),
+            signature: BinaryData::new(buffer.to_vec()),
 
             ..Default::default()
         };
@@ -400,15 +408,12 @@ mod test {
 
         assert!(matches!(
             result[property_names::IDENTITY_ID],
-            JsonValue::Array(_)
+            Value::Identifier(_)
         ));
-        assert!(matches!(
-            result[property_names::SIGNATURE],
-            JsonValue::Array(_)
-        ));
+        assert!(matches!(result[property_names::SIGNATURE], Value::Bytes(_)));
         assert!(matches!(
             result[property_names::ADD_PUBLIC_KEYS][0]["data"],
-            JsonValue::Array(_)
+            Value::Bytes(_)
         ));
     }
 }

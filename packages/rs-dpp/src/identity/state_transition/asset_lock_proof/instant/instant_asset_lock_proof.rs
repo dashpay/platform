@@ -2,11 +2,12 @@ use std::convert::{TryFrom, TryInto};
 
 use dashcore::consensus::{Decodable, Encodable};
 use dashcore::{InstantLock, Transaction, TxOut};
+use platform_value::{BinaryData, Value};
 use serde::de::Error as DeError;
 use serde::ser::Error as SerError;
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 
-use crate::identifier::Identifier;
+use crate::prelude::Identifier;
 use crate::util::cbor_value::CborCanonicalMap;
 use crate::util::hash::hash;
 use crate::util::vec::vec_to_array;
@@ -20,20 +21,6 @@ pub struct InstantAssetLockProof {
     output_index: u32,
 }
 
-/// Deterministically sorts the keys in the serialized value. Needed to serialize and hash
-/// binaries.
-pub fn serialize_deterministically<T, S>(raw: &T, serializer: S) -> Result<S::Ok, S::Error>
-where
-    T: Serialize,
-    S: Serializer,
-{
-    let cbor_map =
-        CborCanonicalMap::from_serializable(&raw).map_err(|e| S::Error::custom(e.to_string()))?;
-    let sorted_cbor = cbor_map.to_value_sorted();
-
-    sorted_cbor.serialize(serializer)
-}
-
 impl Serialize for InstantAssetLockProof {
     fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
     where
@@ -41,7 +28,7 @@ impl Serialize for InstantAssetLockProof {
     {
         let raw = RawInstantLock::try_from(self).map_err(|e| S::Error::custom(e.to_string()))?;
 
-        serialize_deterministically(&raw, serializer)
+        raw.serialize(serializer)
     }
 }
 
@@ -53,6 +40,13 @@ impl<'de> Deserialize<'de> for InstantAssetLockProof {
         let raw = RawInstantLock::deserialize(deserializer)?;
         raw.try_into()
             .map_err(|e: ProtocolError| D::Error::custom(e.to_string()))
+    }
+}
+
+impl TryFrom<Value> for InstantAssetLockProof {
+    type Error = platform_value::Error;
+    fn try_from(value: Value) -> Result<Self, Self::Error> {
+        platform_value::from_value(value)
     }
 }
 
@@ -83,6 +77,13 @@ impl InstantAssetLockProof {
             output_index,
             asset_lock_type: 0,
         }
+    }
+
+    pub fn to_object(&self) -> Result<Value, ProtocolError> {
+        platform_value::to_value(self).map_err(ProtocolError::ValueError)
+    }
+    pub fn to_cleaned_object(&self) -> Result<Value, ProtocolError> {
+        self.to_object()
     }
 
     pub fn asset_lock_type(&self) -> u8 {
@@ -151,8 +152,8 @@ impl InstantAssetLockProof {
 pub struct RawInstantLock {
     #[serde(rename = "type")]
     lock_type: u8,
-    instant_lock: Vec<u8>,
-    transaction: Vec<u8>,
+    instant_lock: BinaryData,
+    transaction: BinaryData,
     output_index: u32,
 }
 
@@ -191,8 +192,8 @@ impl TryFrom<&InstantAssetLockProof> for RawInstantLock {
 
         Ok(Self {
             lock_type: instant_asset_lock_proof.asset_lock_type,
-            instant_lock: is_lock_buffer,
-            transaction: transaction_buffer,
+            instant_lock: BinaryData::new(is_lock_buffer),
+            transaction: BinaryData::new(transaction_buffer),
             output_index: instant_asset_lock_proof.output_index,
         })
     }

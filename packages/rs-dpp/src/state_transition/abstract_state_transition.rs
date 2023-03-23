@@ -1,6 +1,8 @@
 use std::fmt::Debug;
 
 use dashcore::signer;
+
+use platform_value::{BinaryData, Value, ValueMapHelper};
 use serde::Serialize;
 use serde_json::Value as JsonValue;
 
@@ -12,11 +14,7 @@ use crate::state_transition::errors::{
 use crate::{
     identity::KeyType,
     prelude::{Identifier, ProtocolError},
-    util::{
-        hash,
-        json_value::{JsonValueExt, ReplaceWith},
-        serializer,
-    },
+    util::{hash, serializer},
     BlsModule,
 };
 
@@ -53,9 +51,9 @@ pub trait StateTransitionLike:
     /// returns the type of State Transition
     fn get_type(&self) -> StateTransitionType;
     /// returns the signature as a byte-array
-    fn get_signature(&self) -> &Vec<u8>;
+    fn get_signature(&self) -> &BinaryData;
     /// set a new signature
-    fn set_signature(&mut self, signature: Vec<u8>);
+    fn set_signature(&mut self, signature: BinaryData);
     /// get modified ids list
     fn get_modified_data_ids(&self) -> Vec<Identifier>;
 
@@ -68,12 +66,12 @@ pub trait StateTransitionLike:
     ) -> Result<(), ProtocolError> {
         let data = self.to_buffer(true)?;
         match key_type {
-            KeyType::BLS12_381 => self.set_signature(bls.sign(&data, private_key)?),
+            KeyType::BLS12_381 => self.set_signature(bls.sign(&data, private_key)?.into()),
 
             // https://github.com/dashevo/platform/blob/9c8e6a3b6afbc330a6ab551a689de8ccd63f9120/packages/js-dpp/lib/stateTransition/AbstractStateTransition.js#L169
             KeyType::ECDSA_SECP256K1 | KeyType::ECDSA_HASH160 => {
                 let signature = signer::sign(&data, private_key)?;
-                self.set_signature(signature.to_vec());
+                self.set_signature(signature.to_vec().into());
             }
 
             // the default behavior from
@@ -116,13 +114,12 @@ pub trait StateTransitionLike:
             ));
         }
         let data_hash = self.hash(true)?;
-        signer::verify_hash_signature(&data_hash, self.get_signature(), public_key_hash).or_else(
-            |_| {
-                Err(ProtocolError::from(ConsensusError::SignatureError(
+        signer::verify_hash_signature(&data_hash, self.get_signature().as_slice(), public_key_hash)
+            .map_err(|_| {
+                ProtocolError::from(ConsensusError::SignatureError(
                     SignatureError::InvalidStateTransitionSignatureError,
-                )))
-            },
-        )
+                ))
+            })
     }
 
     /// Verifies an ECDSA signature with the public key
@@ -134,11 +131,13 @@ pub trait StateTransitionLike:
         }
         let data = self.to_buffer(true)?;
 
-        signer::verify_data_signature(&data, self.get_signature(), public_key).or_else(|_| {
-            Err(ProtocolError::from(ConsensusError::SignatureError(
-                SignatureError::InvalidStateTransitionSignatureError,
-            )))
-        })
+        signer::verify_data_signature(&data, self.get_signature().as_slice(), public_key).map_err(
+            |_| {
+                ProtocolError::from(ConsensusError::SignatureError(
+                    SignatureError::InvalidStateTransitionSignatureError,
+                ))
+            },
+        )
     }
 
     /// Verifies a BLS signature with the public key
@@ -155,12 +154,12 @@ pub trait StateTransitionLike:
 
         let data = self.to_buffer(true)?;
 
-        bls.verify_signature(self.get_signature(), &data, public_key)
+        bls.verify_signature(self.get_signature().as_slice(), &data, public_key)
             .map(|_| ())
-            .or_else(|_| {
-                Err(ProtocolError::from(ConsensusError::SignatureError(
+            .map_err(|_| {
+                ProtocolError::from(ConsensusError::SignatureError(
                     SignatureError::InvalidStateTransitionSignatureError,
-                )))
+                ))
             })
     }
 
@@ -180,6 +179,7 @@ pub trait StateTransitionLike:
     fn get_execution_context(&self) -> &StateTransitionExecutionContext;
     fn get_execution_context_mut(&mut self) -> &mut StateTransitionExecutionContext;
     fn set_execution_context(&mut self, execution_context: StateTransitionExecutionContext);
+    fn set_signature_bytes(&mut self, signature: Vec<u8>);
 }
 
 /// The trait contains methods related to conversion of StateTransition into different formats
@@ -189,84 +189,115 @@ pub trait StateTransitionConvert: Serialize {
     fn identifiers_property_paths() -> Vec<&'static str>;
     fn binary_property_paths() -> Vec<&'static str>;
 
-    /// Returns the [`serde_json::Value`] instance that preserves the `Vec<u8>` representation
+    /// Returns the [`platform_value::Value`] instance that preserves the `Vec<u8>` representation
     /// for Identifiers and binary data
-    fn to_object(&self, skip_signature: bool) -> Result<JsonValue, ProtocolError> {
-        state_transition_helpers::to_object(
-            self,
-            Self::signature_property_paths(),
-            Self::identifiers_property_paths(),
-            skip_signature,
-        )
+    fn to_object(&self, skip_signature: bool) -> Result<Value, ProtocolError> {
+        let skip_signature_paths = if skip_signature {
+            Self::signature_property_paths()
+        } else {
+            vec![]
+        };
+        state_transition_helpers::to_object(self, skip_signature_paths)
+    }
+
+    /// Returns the [`platform_value::Value`] instance that preserves the `Vec<u8>` representation
+    /// for Identifiers and binary data
+    fn to_canonical_object(&self, skip_signature: bool) -> Result<Value, ProtocolError> {
+        let skip_signature_paths = if skip_signature {
+            Self::signature_property_paths()
+        } else {
+            vec![]
+        };
+        let mut object = state_transition_helpers::to_object(self, skip_signature_paths)?;
+
+        object.as_map_mut_ref().unwrap().sort_by_keys();
+        Ok(object)
+    }
+
+    /// Returns the [`platform_value::Value`] instance that preserves the `Vec<u8>` representation
+    /// for Identifiers and binary data
+    fn to_canonical_cleaned_object(&self, skip_signature: bool) -> Result<Value, ProtocolError> {
+        let skip_signature_paths = if skip_signature {
+            Self::signature_property_paths()
+        } else {
+            vec![]
+        };
+        let mut object = state_transition_helpers::to_cleaned_object(self, skip_signature_paths)?;
+
+        object.as_map_mut_ref().unwrap().sort_by_keys();
+        Ok(object)
     }
 
     /// Returns the [`serde_json::Value`] instance that encodes:
     ///  - Identifiers  - with base58
     ///  - Binary data  - with base64
     fn to_json(&self, skip_signature: bool) -> Result<JsonValue, ProtocolError> {
-        state_transition_helpers::to_json(
-            self,
-            Self::binary_property_paths(),
-            Self::signature_property_paths(),
-            skip_signature,
-        )
+        let skip_signature_paths = if skip_signature {
+            Self::signature_property_paths()
+        } else {
+            vec![]
+        };
+        state_transition_helpers::to_json(self, skip_signature_paths)
     }
 
-    // Returns the cibor-encoded bytes representation of the object. The data is  prefixed by 4 bytes containing the Protocol Version
+    // Returns the cbor-encoded bytes representation of the object. The data is  prefixed by 4 bytes containing the Protocol Version
     fn to_buffer(&self, skip_signature: bool) -> Result<Vec<u8>, ProtocolError> {
-        let mut json_value = self.to_object(skip_signature)?;
-        let protocol_version = json_value.remove_u32(PROPERTY_PROTOCOL_VERSION)?;
+        let mut value = self.to_canonical_cleaned_object(skip_signature)?;
+        let protocol_version = value.remove_integer(PROPERTY_PROTOCOL_VERSION)?;
 
-        serializer::value_to_cbor(json_value, Some(protocol_version))
+        serializer::serializable_value_to_cbor(&value, Some(protocol_version))
     }
 
     // Returns the hash of cibor-encoded bytes representation of the object
     fn hash(&self, skip_signature: bool) -> Result<Vec<u8>, ProtocolError> {
         Ok(hash::hash(self.to_buffer(skip_signature)?))
     }
+
+    fn to_cleaned_object(&self, skip_signature: bool) -> Result<Value, ProtocolError> {
+        self.to_object(skip_signature)
+    }
 }
 
 pub mod state_transition_helpers {
     use super::*;
+    use std::convert::TryInto;
 
-    pub fn to_json<'a>(
+    pub fn to_json<'a, I: IntoIterator<Item = &'a str>>(
         serializable: impl Serialize,
-        binary_property_paths: impl IntoIterator<Item = &'a str>,
-        signature_property_paths: impl IntoIterator<Item = &'a str>,
-        skip_signature: bool,
+        skip_signature_paths: I,
     ) -> Result<JsonValue, ProtocolError> {
-        let mut json_value: JsonValue = serde_json::to_value(serializable)?;
-
-        if skip_signature {
-            if let JsonValue::Object(ref mut o) = json_value {
-                for path in signature_property_paths {
-                    o.remove(path);
-                }
-            }
-        }
-
-        json_value.replace_binary_paths(binary_property_paths, ReplaceWith::Base64)?;
-
-        Ok(json_value)
+        to_object(serializable, skip_signature_paths)
+            .and_then(|v| v.try_into().map_err(ProtocolError::ValueError))
     }
 
-    pub fn to_object<'a>(
+    pub fn to_object<'a, I: IntoIterator<Item = &'a str>>(
         serializable: impl Serialize,
-        signature_property_paths: impl IntoIterator<Item = &'a str>,
-        identifier_property_paths: impl IntoIterator<Item = &'a str>,
-        skip_signature: bool,
-    ) -> Result<JsonValue, ProtocolError> {
-        let mut json_value: JsonValue = serde_json::to_value(serializable)?;
+        skip_signature_paths: I,
+    ) -> Result<Value, ProtocolError> {
+        let mut value: Value = platform_value::to_value(serializable)?;
+        skip_signature_paths.into_iter().try_for_each(|path| {
+            value
+                .remove_values_matching_path(path)
+                .map_err(ProtocolError::ValueError)
+                .map(|_| ())
+        })?;
+        Ok(value)
+    }
 
-        json_value.replace_identifier_paths(identifier_property_paths, ReplaceWith::Bytes)?;
+    pub fn to_cleaned_object<'a, I: IntoIterator<Item = &'a str>>(
+        serializable: impl Serialize,
+        skip_signature_paths: I,
+    ) -> Result<Value, ProtocolError> {
+        let mut value: Value = platform_value::to_value(serializable)?;
 
-        if skip_signature {
-            if let JsonValue::Object(ref mut o) = json_value {
-                for path in signature_property_paths {
-                    o.remove(path);
-                }
-            }
-        }
-        Ok(json_value)
+        value = value.clean_recursive()?;
+
+        skip_signature_paths.into_iter().try_for_each(|path| {
+            value
+                .remove_values_matching_path(path)
+                .map_err(ProtocolError::ValueError)
+                .map(|_| ())
+        })?;
+        Ok(value)
     }
 }

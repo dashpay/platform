@@ -14,9 +14,11 @@ const { default: loadWasmDpp } = require('../../../dist');
 
 let DataContractFactory;
 let DataContractValidator;
+let PlatformValueError;
 let Identifier;
-let Document;
+let ExtendedDocument;
 
+// TODO: should be renamed to ExtendedDocument?
 describe('Document', () => {
   let rawDocument;
   let document;
@@ -29,7 +31,7 @@ describe('Document', () => {
   // eslint-disable-next-line prefer-arrow-callback
   beforeEach(async function beforeEach() {
     ({
-      Identifier, Document, DataContractFactory, DataContractValidator,
+      Identifier, DataContractFactory, DataContractValidator, ExtendedDocument, PlatformValueError,
     } = await loadWasmDpp());
 
     const now = new Date().getTime();
@@ -100,7 +102,7 @@ describe('Document', () => {
       $updatedAt: now,
     };
 
-    document = new Document(rawDocument, dataContract);
+    document = new ExtendedDocument(rawDocument, dataContract);
     rawDocumentJs = lodash.cloneDeepWith(rawDocument);
     rawDocumentJs.$id = jsId;
     rawDocumentJs.$ownerId = jsOwnerId;
@@ -111,70 +113,23 @@ describe('Document', () => {
   });
 
   describe('constructor', () => {
-    it('should create Document with $id and data if present', async () => {
-      const data = {
-        test: 1,
-      };
-
-      rawDocument = {
-        $id: await generateRandomIdentifierAsync(),
-        $type: 'test',
-        ...data,
-      };
-
-      document = new Document(rawDocument, dataContract);
-      expect(document.getId().toBuffer()).to.deep.equal(rawDocument.$id.toBuffer());
-    });
-
-    it('should create Document with $type and data if present', () => {
-      const data = {
-        test: 1,
-      };
-
-      rawDocument = {
-        $type: 'test',
-        ...data,
-      };
-
-      document = new Document(rawDocument, dataContract);
-
-      expect(document.getType()).to.equal(rawDocument.$type);
-    });
-
-    it('should create Document with $dataContractId and data if present', async () => {
-      const data = {
-        test: 1,
-      };
-
-      rawDocument = {
-        $dataContractId: await generateRandomIdentifierAsync(),
-        $type: 'test',
-        ...data,
-      };
-
-      document = new Document(rawDocument, dataContract);
-
-      expect(document.getDataContractId().toBuffer())
-        .to.deep.equal(rawDocument.$dataContractId.toBuffer());
-    });
-
-    it('should create Document with $ownerId and data if present', async () => {
+    it('should create ExtendedDocument with $id and data if present', async () => {
       const data = {
         test: 1,
       };
 
       rawDocument = {
         $ownerId: await generateRandomIdentifierAsync(),
+        $id: await generateRandomIdentifierAsync(),
         $type: 'test',
         ...data,
       };
 
-      document = new Document(rawDocument, dataContract);
-
-      expect(document.getOwnerId().toBuffer()).to.deep.equal(rawDocument.$ownerId.toBuffer());
+      document = new ExtendedDocument(rawDocument, dataContract);
+      expect(document.getId().toBuffer()).to.deep.equal(rawDocument.$id.toBuffer());
     });
 
-    it('should create Document with undefined action and data if present', () => {
+    it('should create DocumentCreateTransition with $type and data if present', () => {
       const data = {
         test: 1,
       };
@@ -184,22 +139,123 @@ describe('Document', () => {
         ...data,
       };
 
-      document = new Document(rawDocument, dataContract);
+      document = new DocumentCreateTransition(rawDocument, dataContract);
+
+      expect(document.getType()).to.equal(rawDocument.$type);
+    });
+
+    it('should not create ExtendedDocument if $ownerId is missing', async () => {
+      const data = {
+        test: 1,
+      };
+
+      rawDocument = {
+        $id: await generateRandomIdentifierAsync(),
+        $dataContractId: await generateRandomIdentifierAsync(),
+        $type: 'test',
+        ...data,
+      };
+
+      try {
+        document = new ExtendedDocument(rawDocument, dataContract);
+      } catch (e) {
+        expect(e).to.be.instanceOf(PlatformValueError);
+        expect(e.getMessage()).to.equal('structure error: unable to remove hash256 property $ownerId');
+      }
+    });
+
+    it('should not create ExtendedDocument if $id is missing', async () => {
+      const data = {
+        test: 1,
+      };
+
+      rawDocument = {
+        $ownerId: await generateRandomIdentifierAsync(),
+        $dataContractId: await generateRandomIdentifierAsync(),
+        $type: 'test',
+        ...data,
+      };
+
+      try {
+        document = new ExtendedDocument(rawDocument, dataContract);
+      } catch (e) {
+        expect(e).to.be.instanceOf(PlatformValueError);
+        expect(e.getMessage()).to.equal('structure error: unable to remove hash256 property $id');
+      }
+    });
+
+    it('should not create ExtendedDocument if $type is missing', async () => {
+      const data = {
+        test: 1,
+      };
+
+      rawDocument = {
+        $id: await generateRandomIdentifierAsync(),
+        $ownerId: await generateRandomIdentifierAsync(),
+        $dataContractId: await generateRandomIdentifierAsync(),
+        ...data,
+      };
+
+      try {
+        document = new ExtendedDocument(rawDocument, dataContract);
+      } catch (e) {
+        expect(e).to.be.instanceOf(PlatformValueError);
+        expect(e.getMessage()).to.equal('structure error: unable to remove string property $type');
+      }
+    });
+
+    it('should not create ExtendedDocument if $dataContractId is missing', async () => {
+      const data = {
+        test: 1,
+      };
+
+      rawDocument = {
+        $id: await generateRandomIdentifierAsync(),
+        $ownerId: await generateRandomIdentifierAsync(),
+        $type: 'test',
+        ...data,
+      };
+
+      try {
+        document = new ExtendedDocument(rawDocument, dataContract);
+      } catch (e) {
+        expect(e).to.be.instanceOf(PlatformValueError);
+        expect(e.getMessage()).to.equal('structure error: unable to remove hash256 property $dataContractId');
+      }
+    });
+
+    it('should create Document with undefined action and data if present', async () => {
+      const data = {
+        test: 1,
+      };
+
+      rawDocument = {
+        $id: await generateRandomIdentifierAsync(),
+        $ownerId: await generateRandomIdentifierAsync(),
+        $dataContractId: await generateRandomIdentifierAsync(),
+        $type: 'test',
+        ...data,
+      };
+
+      document = new ExtendedDocument(rawDocument, dataContract);
       expect(document.get('action')).to.equal(undefined);
     });
 
-    it('should create Document with $revision and data if present', () => {
+    it('should create Document with $revision and data if present', async () => {
       const data = {
         test: 1,
       };
 
       rawDocument = {
+        $id: await generateRandomIdentifierAsync(),
+        $ownerId: await generateRandomIdentifierAsync(),
+        $dataContractId: await generateRandomIdentifierAsync(),
         $revision: 123,
         $type: 'test',
         ...data,
       };
 
-      document = new Document(rawDocument, dataContract);
+      document = new ExtendedDocument(rawDocument, dataContract);
 
       expect(document.getRevision()).to.equal(rawDocument.$revision);
     });
@@ -212,12 +268,15 @@ describe('Document', () => {
       const createdAt = new Date().getTime();
 
       rawDocument = {
+        $id: await generateRandomIdentifierAsync(),
+        $ownerId: await generateRandomIdentifierAsync(),
+        $dataContractId: await generateRandomIdentifierAsync(),
         $createdAt: createdAt,
         $type: 'test',
         ...data,
       };
 
-      document = new Document(rawDocument, dataContract);
+      document = new ExtendedDocument(rawDocument, dataContract);
 
       expect(document.getCreatedAt()).to.equal(rawDocument.$createdAt);
     });
@@ -230,12 +289,15 @@ describe('Document', () => {
       const updatedAt = new Date().getTime();
 
       rawDocument = {
+        $dataContractId: await generateRandomIdentifierAsync(),
+        $ownerId: await generateRandomIdentifierAsync(),
+        $id: await generateRandomIdentifierAsync(),
         $updatedAt: updatedAt,
         $type: 'test',
         ...data,
       };
 
-      document = new Document(rawDocument, dataContract);
+      document = new ExtendedDocument(rawDocument, dataContract);
 
       expect(document.getUpdatedAt()).to.equal(rawDocument.$updatedAt);
     });
@@ -322,8 +384,9 @@ describe('Document', () => {
       const value = { identifier };
 
       document.set(path, value);
+      const returnedIdentifier = document.get(identifierPath);
 
-      expect(document.get(identifierPath).toBuffer()).to.deep.equal(buffer);
+      expect(returnedIdentifier.toBuffer()).to.deep.equal(buffer);
     });
   });
 
@@ -365,8 +428,11 @@ describe('Document', () => {
       documentJs.set(path, jsId);
       document.set(path, id);
 
-      expect(documentJs.get(path).toBuffer()).to.deep.equal(jsId);
-      expect(document.get(path).toBuffer()).to.deep.equal(jsId.toBuffer());
+      const documentJsIdBuffer = documentJs.get(path).toBuffer();
+      const documentIdBuffer = document.get(path).toBuffer();
+
+      expect(documentJsIdBuffer).to.deep.equal(jsId);
+      expect(documentIdBuffer).to.deep.equal(jsId);
 
       const jsBuffer = documentJs.toBuffer();
       const buffer = document.toBuffer();

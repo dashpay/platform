@@ -1,6 +1,6 @@
+use platform_value::Identifier;
 use thiserror::Error;
 
-use crate::identifier::Identifier;
 use crate::ProtocolError;
 
 #[derive(Error, Debug, Clone, PartialEq, Eq)]
@@ -15,7 +15,7 @@ impl IdentityNotPresentError {
     }
 
     pub fn id(&self) -> Identifier {
-        self.id.clone()
+        self.id
     }
 }
 

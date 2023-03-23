@@ -5,19 +5,19 @@ const getDocumentsFixture = require('@dashevo/dpp/lib/test/fixtures/getDocuments
 
 const { default: loadWasmDpp } = require('../../../dist');
 
-let Document;
+let ExtendedDocument;
 let DataContract;
 let Metadata;
 let Identifier;
 
-describe('Document', () => {
+describe('ExtendedDocument', () => {
   let document;
   let dataContract;
   let metadataFixture;
 
   beforeEach(async () => {
     ({
-      Document,
+      ExtendedDocument,
       DataContract,
       Metadata,
       Identifier,
@@ -27,7 +27,7 @@ describe('Document', () => {
     dataContract = new DataContract(dataContractJs.toObject());
 
     const [documentJs] = getDocumentsFixture(dataContractJs).slice(8);
-    document = new Document(documentJs.toObject(), dataContract);
+    document = new ExtendedDocument(documentJs.toObject(), dataContract);
 
     const metadataFixtureJs = new MetadataJs({
       blockHeight: 42,
@@ -49,6 +49,7 @@ describe('Document', () => {
 
   describe('#toJSON', () => {
     it('should return json document - Rust', () => {
+      console.log(document);
       const result = document.toJSON();
 
       expect(result).to.deep.equal({

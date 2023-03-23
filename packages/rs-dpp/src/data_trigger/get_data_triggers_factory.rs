@@ -1,6 +1,7 @@
 use std::vec;
 
 use lazy_static::__Deref;
+use platform_value::string_encoding::Encoding;
 
 use crate::{
     contracts::{
@@ -10,7 +11,6 @@ use crate::{
     document::document_transition::Action,
     errors::ProtocolError,
     prelude::Identifier,
-    util::string_encoding::Encoding,
 };
 
 use super::{DataTrigger, DataTriggerKind};

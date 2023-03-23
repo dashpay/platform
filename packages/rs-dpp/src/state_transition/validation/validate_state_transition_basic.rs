@@ -1,7 +1,7 @@
 use std::{convert::TryFrom, sync::Arc};
 
 use async_trait::async_trait;
-use serde_json::Value as JsonValue;
+use platform_value::Value;
 
 use crate::consensus::basic::state_transition::{
     InvalidStateTransitionTypeError, StateTransitionMaxSizeExceededError,
@@ -14,7 +14,6 @@ use crate::{
         state_transition_execution_context::StateTransitionExecutionContext,
         StateTransitionConvert, StateTransitionType,
     },
-    util::json_value::JsonValueExt,
     validation::{AsyncDataValidatorWithContext, SimpleValidationResult},
     ProtocolError,
 };
@@ -49,16 +48,16 @@ where
     SR: StateRepositoryLike,
     VBT: ValidatorByStateTransitionType,
 {
-    type Item = JsonValue;
+    type Item = Value;
 
     async fn validate(
         &self,
-        raw_state_transition: &JsonValue,
+        raw_state_transition: &Value,
         execution_context: &StateTransitionExecutionContext,
     ) -> Result<SimpleValidationResult, ProtocolError> {
         let mut result = SimpleValidationResult::default();
 
-        let Ok(state_transition_type) = raw_state_transition.get_u8("type") else {
+        let Ok(state_transition_type) = raw_state_transition.get_integer("type") else {
             result.add_error(
                 ConsensusError::BasicError(
                     Box::new(BasicError::MissingStateTransitionTypeError)
@@ -115,7 +114,7 @@ where
 
 #[cfg(test)]
 mod test {
-    use serde_json::{json, Value as JsonValue};
+    use platform_value::{platform_value, Value};
     use std::sync::Arc;
 
     use crate::{
@@ -138,7 +137,6 @@ mod test {
             StateTransitionConvert, StateTransitionLike,
         },
         tests::{fixtures::get_data_contract_fixture, utils::get_basic_error_from_result},
-        util::json_value::JsonValueExt,
         validation::ValidationResult,
         version::{ProtocolVersionValidator, COMPATIBILITY_MAP, LATEST_VERSION},
         NativeBlsModule,
@@ -147,7 +145,7 @@ mod test {
     struct TestData {
         data_contract: DataContract,
         state_transition: DataContractCreateTransition,
-        raw_state_transition: JsonValue,
+        raw_state_transition: Value,
         bls: NativeBlsModule,
     }
 
@@ -233,7 +231,7 @@ mod test {
         let state_repository_mock = MockStateRepositoryLike::new();
         let validate_by_type_mock = MockValidatorByStateTransitionType::new();
 
-        raw_state_transition["type"] = json!(123);
+        raw_state_transition["type"] = platform_value!(123u32);
 
         let validator = StateTransitionBasicValidator::new(
             Arc::new(state_repository_mock),
@@ -271,7 +269,7 @@ mod test {
         let state_repository_mock = MockStateRepositoryLike::new();
         let validate_by_type_mock = MockValidatorByStateTransitionType::new();
 
-        raw_state_transition["type"] = json!(123);
+        raw_state_transition["type"] = platform_value!(123u32);
 
         let validator = StateTransitionBasicValidator::new(
             Arc::new(state_repository_mock),

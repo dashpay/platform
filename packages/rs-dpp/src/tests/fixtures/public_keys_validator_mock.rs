@@ -1,6 +1,5 @@
+use platform_value::Value;
 use std::sync::Mutex;
-
-use serde_json::Value;
 
 use crate::identity::validation::TPublicKeysValidator;
 use crate::validation::ValidationResult;

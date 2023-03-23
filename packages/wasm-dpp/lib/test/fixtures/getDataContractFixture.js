@@ -251,7 +251,7 @@ module.exports = async function getDataContractFixture(ownerId = randomOwnerId) 
 
   const dataContractValidator = new DataContractValidator();
   const factory = new DataContractFactory(
-    protocolVersion.latestProtocolVersion,
+    protocolVersion.latestVersion,
     dataContractValidator,
   );
 

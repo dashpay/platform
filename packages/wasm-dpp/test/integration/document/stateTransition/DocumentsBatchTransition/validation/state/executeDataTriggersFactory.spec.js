@@ -51,8 +51,11 @@ describe('executeDataTriggersFactory', () => {
     contractMock = new DataContract(getDpnsContractFixture().toObject());
 
     childDocumentJs = dpnsDocumentFixture.getChildDocumentFixture();
-    childDocument = new Document(childDocumentJs.toObject(),
-      dataContract.clone());
+    childDocument = new Document(
+      childDocumentJs.toObject(),
+      dataContract.clone(),
+      childDocumentJs.getType(),
+    );
 
     stateRepositoryMock = createStateRepositoryMock(this.sinonSandbox);
 

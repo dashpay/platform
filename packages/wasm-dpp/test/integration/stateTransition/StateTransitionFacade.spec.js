@@ -113,8 +113,9 @@ describe('StateTransitionFacade', () => {
 
   describe('createFromObject', () => {
     it('should create State Transition from plain object', async () => {
+      const object = dataContractCreateTransition.toObject();
       const result = await dpp.stateTransition.createFromObject(
-        dataContractCreateTransition.toObject(),
+        object,
       );
 
       expect(result).to.be.an.instanceOf(DataContractCreateTransition);
@@ -196,6 +197,7 @@ describe('StateTransitionFacade', () => {
 
     it('should validate DocumentsBatchTransition', async () => {
       stateRepositoryMock.fetchDocuments.resolves([]);
+      stateRepositoryMock.fetchExtendedDocuments.resolves([]);
 
       stateRepositoryMock.fetchDataContract.resolves(dataContract);
       const result = await dpp.stateTransition.validate(

@@ -84,9 +84,14 @@ where
                     .state_repository
                     .fetch_identity_balance_with_debt(identity_id, execution_context)
                     .await?
-                    .context(format!(
-                        "balance for given identity {identity_id} not found"
-                    ))?;
+                    .map(TryInto::try_into)
+                    .transpose()
+                    .map_err(Into::into)?
+                    .ok_or_else(|| {
+                        ProtocolError::IdentityNotPresentError(IdentityNotPresentError::new(
+                            *identity_id,
+                        ))
+                    })?;
 
                 if execution_context.is_dry_run() {
                     return Ok(result);
@@ -246,7 +251,7 @@ mod test {
 
         let data_contract = get_data_contract_fixture(None);
         let data_contract_create_transition = DataContractCreateTransition {
-            entropy: data_contract.entropy().to_owned(),
+            entropy: data_contract.entropy,
             data_contract,
             execution_context: execution_context_with_cost(40, 5),
             ..Default::default()
@@ -278,7 +283,7 @@ mod test {
 
         let data_contract = get_data_contract_fixture(None);
         let data_contract_create_transition = DataContractCreateTransition {
-            entropy: data_contract.entropy().to_owned(),
+            entropy: data_contract.entropy,
             data_contract,
             execution_context: execution_context_with_cost(40, 5),
             ..Default::default()
@@ -307,7 +312,7 @@ mod test {
             get_documents_fixture_with_owner_id_from_contract(data_contract.clone()).unwrap();
         let transitions = get_document_transitions_fixture([(Action::Create, documents)]);
         let documents_batch_transition = DocumentsBatchTransition {
-            owner_id: data_contract.owner_id().to_owned(),
+            owner_id: data_contract.owner_id,
             transitions,
             execution_context: execution_context_with_cost(40, 5),
             ..Default::default()
@@ -342,7 +347,7 @@ mod test {
             get_documents_fixture_with_owner_id_from_contract(data_contract.clone()).unwrap();
         let transitions = get_document_transitions_fixture([(Action::Create, documents)]);
         let documents_batch_transition = DocumentsBatchTransition {
-            owner_id: data_contract.owner_id().to_owned(),
+            owner_id: data_contract.owner_id,
             transitions,
             execution_context: execution_context_with_cost(40, 5),
             ..Default::default()
@@ -374,7 +379,7 @@ mod test {
         execution_context.enable_dry_run();
 
         let documents_batch_transition = DocumentsBatchTransition {
-            owner_id: data_contract.owner_id().to_owned(),
+            owner_id: data_contract.owner_id,
             transitions,
             execution_context,
             ..Default::default()
