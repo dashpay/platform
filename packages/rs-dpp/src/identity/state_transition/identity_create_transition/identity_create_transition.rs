@@ -46,9 +46,11 @@ pub struct IdentityCreateTransition {
     // Own ST fields
     pub public_keys: Vec<IdentityPublicKeyWithWitness>,
     pub asset_lock_proof: AssetLockProof,
+    #[serde(skip)]
     pub identity_id: Identifier,
     // Generic identity ST fields
     pub protocol_version: u32,
+    #[serde(rename = "type")]
     pub transition_type: StateTransitionType,
     pub signature: BinaryData,
     #[serde(skip)]
