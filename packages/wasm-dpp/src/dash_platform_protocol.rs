@@ -7,7 +7,7 @@ use crate::document_facade::DocumentFacadeWasm;
 use crate::fetch_and_validate_data_contract::DataContractFetcherAndValidatorWasm;
 use crate::identity_facade::IdentityFacadeWasm;
 use crate::state_repository::{ExternalStateRepositoryLike, ExternalStateRepositoryLikeWrapper};
-use crate::{with_js_error, DataContractFacadeWasm};
+use crate::{DataContractFacadeWasm};
 use crate::{DocumentFactoryWASM, DocumentValidatorWasm};
 use dpp::identity::validation::PublicKeysValidator;
 
@@ -42,7 +42,7 @@ impl DashPlatformProtocol {
         state_repository: ExternalStateRepositoryLike,
         maybe_protocol_version: Option<u32>,
     ) -> Result<DashPlatformProtocol, JsValue> {
-        let bls = BlsAdapter(bls_adapter.clone());
+        let bls = BlsAdapter(bls_adapter);
         let protocol_version = maybe_protocol_version.unwrap_or(LATEST_VERSION);
         let public_keys_validator = Arc::new(PublicKeysValidator::new(bls.clone()).unwrap());
 
@@ -171,7 +171,7 @@ fn create_facades(
     let document_facade = init_document_facade(
         protocol_version,
         protocol_version_validator.clone(),
-        wrapped_state_repository.clone(),
+        wrapped_state_repository,
     );
 
     let data_contract_facade =
