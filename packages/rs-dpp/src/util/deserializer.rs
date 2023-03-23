@@ -45,7 +45,6 @@ pub fn split_protocol_version(
     message_bytes: &[u8],
 ) -> Result<SplitProtocolVersionOutcome, ProtocolError> {
     let (protocol_version, protocol_version_size) =
-    let (protocol_version, protocol_version_size) =
         u32::decode_var(message_bytes).ok_or(ProtocolError::UnknownProtocolVersionError(
             "protocol version could not be decoded as a varint".to_string(),
         ))?;
