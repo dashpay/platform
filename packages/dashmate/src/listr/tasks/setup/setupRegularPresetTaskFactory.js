@@ -1,5 +1,7 @@
 const { Listr } = require('listr2');
 
+const chalk = require('chalk');
+
 const {
   NODE_TYPE_MASTERNODE,
   PRESET_MAINNET,
@@ -144,10 +146,12 @@ function setupRegularPresetTaskFactory(
           configFile.setDefaultConfigName(ctx.preset);
 
           // eslint-disable-next-line no-param-reassign
-          task.output = `Node configuration completed successfully!\n
-            You can now run "dashmate start" to start your node, followed by "dashmate
-            status" for a node health status overview. Run "dashmate --help" or "dashmate
-            <command> --help" for quick help on how to use dashmate to manage your node.\n`;
+          task.output = chalk`Node configuration completed successfully!
+
+            You can now run {bold.cyanBright dashmate start} to start your node, followed by {bold.cyanBright dashmate
+            status} for a node health status overview.
+            
+            Run {bold.cyanBright dashmate --help} or {bold.cyanBright dashmate <command> --help} for quick help on how to use dashmate to manage your node.\n`;
         },
         options: {
           persistentOutput: true,

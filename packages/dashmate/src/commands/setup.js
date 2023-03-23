@@ -111,6 +111,7 @@ class SetupCommand extends BaseCommand {
         clearOutput: false,
         collapse: false,
         showSubtasks: true,
+        removeEmptyLines: false,
       },
     });
 

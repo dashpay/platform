@@ -76,6 +76,8 @@ function registerMasternodeGuideTaskFactory() {
           // TODO: We need to add description on how to find key generation form in the
           //  specified wallet
 
+          // TODO: Deal with hints in forms
+
           const validateAddressWithNetwork = (value) => validateAddress(value, ctx.preset);
 
           const collateralAmount = ctx.nodeType === NODE_TYPE_MASTERNODE ? MASTERNODE_COLLATERAL_AMOUNT : HPMN_COLLATERAL_AMOUNT;
@@ -231,7 +233,7 @@ function registerMasternodeGuideTaskFactory() {
               type: 'toggle',
               name: 'confirm',
               header: chalk`  Now run the following command to create the registration transaction:
-              {bold.green ${command}}
+              {bold.cyanBright ${command}}
 
   Select "No" to modify the transaction by amending your previous input.\n`,
               message: 'Was the masternode registration transaction successful?',
