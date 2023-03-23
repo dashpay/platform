@@ -48,9 +48,10 @@ class SetupCommand extends BaseCommand {
             ctx.preset = await task.prompt([
               {
                 type: 'select',
-                header: '  Dashmate provides three default configuration presets:\n    local - Run a fully functional network environment on your machine for local development'
-                  + '\n    mainnet - Run a node connected to the Dash main network'
-                  + '\n    testnet - Run a node connected to the Dash test network\n',
+                header: '  Dashmate provides three default configuration presets:'
+                  + '\n    local   - Run a fully functional network environment on your machine for local development'
+                  + '\n    testnet - Run a node connected to the Dash test network'
+                  + '\n    mainnet - Run a node connected to the Dash main network\n',
                 message: 'Select preset',
                 choices: PRESETS,
                 initial: 'testnet',

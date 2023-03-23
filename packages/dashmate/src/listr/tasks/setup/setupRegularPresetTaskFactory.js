@@ -56,15 +56,16 @@ function setupRegularPresetTaskFactory(
             {
               type: 'select',
               header: '  The Dash network consists of several different node types:'
-                + ' \n    Full nodes: Host a full copy of the Dash blockchain (no collateral required)'
-                + ' \n    Masternodes: Full node features, plus Core services such as ChainLocks and InstantSend (1000 DASH collateral)'
-                + ' \n    High-performance masternodes: Masternode features, plus Platform services such as DAPI and Drive (4000 DASH collateral)\n',
+                + ' \n    Full node                   - Host a full copy of the Dash blockchain (no collateral required)'
+                + ' \n    Masternode                  - Full node features, plus Core services such as ChainLocks and InstantSend (1000 DASH collateral)'
+                + ' \n    High-performance full node  - Full node features, plus host a full copy of the Platform blockchain (no collateral required)'
+                + ' \n    High-performance masternode - Masternode features, plus Platform services such as DAPI and Drive (4000 DASH collateral)\n',
               message: 'Select node type',
               choices: [
-                { name: NODE_TYPE_NAMES.MASTERNODE, hint: '1000 DASH collateral' },
-                { name: NODE_TYPE_NAMES.HP_MASTERNODE, hint: '4000 DASH collateral' },
                 { name: NODE_TYPE_NAMES.FULLNODE },
+                { name: NODE_TYPE_NAMES.MASTERNODE, hint: '1000 DASH collateral' },
                 { name: NODE_TYPE_NAMES.HP_FULLNODE },
+                { name: NODE_TYPE_NAMES.HP_MASTERNODE, hint: '4000 DASH collateral' },
               ],
               initial: NODE_TYPE_NAMES.MASTERNODE,
             },
@@ -139,7 +140,8 @@ function setupRegularPresetTaskFactory(
           configFile.setDefaultConfigName(ctx.preset);
 
           // eslint-disable-next-line no-param-reassign
-          task.output = 'Use dashmate start \n \n to .... quick help on how \n to use \n node';
+          task.output = 'Your node configuration is now complete. You can now run `dashmate start` to start your node, and `dashmate status` for a status\n'
+            + 'overview of node health. Run `dashmate --help` or `dashmate <command> --help` for quick help on how to use dashmate to manage your node.\n';
         },
         options: {
           persistentOutput: true,
