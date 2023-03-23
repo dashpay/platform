@@ -37,7 +37,8 @@ function configureSSLCertificateTaskFactory(
 
           ctx.certificateProvider = await task.prompt({
             type: 'select',
-            message: 'How do you prefer to configure SSL',
+            header: ``,
+            message: 'How do you want to configure SSL',
             choices,
             initial: SSL_PROVIDERS.ZEROSSL,
           });

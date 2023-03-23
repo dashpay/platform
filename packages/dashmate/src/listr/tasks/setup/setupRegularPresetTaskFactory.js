@@ -140,8 +140,9 @@ function setupRegularPresetTaskFactory(
           configFile.setDefaultConfigName(ctx.preset);
 
           // eslint-disable-next-line no-param-reassign
-          task.output = 'Your node configuration is now complete. You can now run `dashmate start` to start your node, and `dashmate status` for a status\n'
-            + 'overview of node health. Run `dashmate --help` or `dashmate <command> --help` for quick help on how to use dashmate to manage your node.\n';
+          task.output = `Node configuration completed successfully!\n
+            You can now run "dashmate start" to start your node, followed by "dashmate status" for a node health status overview.\n
+            Run "dashmate --help" or "dashmate <command> --help" for quick help on how to use dashmate to manage your node.\n`;
         },
         options: {
           persistentOutput: true,

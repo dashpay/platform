@@ -75,8 +75,8 @@ class SetupCommand extends BaseCommand {
 
             if (isAlreadyConfigured) {
               task.output = `Preset ${ctx.preset} already configured.
-              To setup a node with this preset from scratch use "dashmate reset --config ${ctx.preset} --hard". Previous data and configuration for this preset will be lost.
-              If you want to keep existing data and configuration please use "dashmate config create" command to create a new configuration for this preset`;
+              To set up a node with this preset from scratch use "dashmate reset --config ${ctx.preset} --hard". Previous data and configuration for this preset will be lost.
+              If you want to keep existing data and configuration, please use the "dashmate config create" command to create a new configuration for this preset.`;
 
               throw new Error(`Preset ${ctx.preset} already configured`);
             } else {
@@ -117,7 +117,7 @@ class SetupCommand extends BaseCommand {
 
       const welcomeText = begoo(
         chalk`Hello! I'm your {bold.cyanBright Dash} mate!
-        
+
 I will assist you with setting up a Dash node on mainnet or testnet. I can also help you set up a development network on your local system.`,
         { maxLength: 45 },
       );
