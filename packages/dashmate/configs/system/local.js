@@ -28,7 +28,6 @@ module.exports = lodashMerge({}, baseConfig, {
         },
       },
     },
-    enable: true,
   },
   externalIp: null,
   environment: 'development',
