@@ -105,7 +105,7 @@ function registerMasternodeGuideTaskFactory() {
               name: 'keys',
               header: `  Dashmate needs to collect details about the owner, voting and payout addresses
   to use in the masternode registration transaction. These are regular Dash
-  addresses, encoded in HEX format.\n`,
+  addresses, encoded in base58 format.\n`,
               message: 'Enter DIP3 masternode addresses:',
               choices: [
                 {
@@ -184,7 +184,7 @@ function registerMasternodeGuideTaskFactory() {
             confirmation = await task.prompt({
               type: 'toggle',
               name: 'confirm',
-              header: chalk` You should run the command:
+              header: chalk`  Now run the following command to create the registration transaction:
               {bold.green dash-cli ${ctx.isHP ? 'register_hpmn' : 'register'}
                     argument1
                     argument2
