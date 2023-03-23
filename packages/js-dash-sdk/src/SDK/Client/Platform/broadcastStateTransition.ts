@@ -34,7 +34,7 @@ export default async function broadcastStateTransition(
       //  and that StateTransitionBroadcastError handles consensusError correctly
       throw new StateTransitionBroadcastError(
         consensusError.getCode(),
-        consensusError.getMessage(),
+        consensusError.message,
         consensusError,
       );
     }
@@ -63,7 +63,7 @@ export default async function broadcastStateTransition(
       //  and that StateTransitionBroadcastError handles consensusError correctly
       throw new StateTransitionBroadcastError(
         cause.getCode(),
-        cause.getMessage(),
+        cause.message,
         cause,
       );
     }
