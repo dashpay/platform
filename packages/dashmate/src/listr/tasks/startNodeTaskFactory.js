@@ -36,7 +36,9 @@ function startNodeTaskFactory(
     }
 
     // Check external IP is set
-    config.get('externalIp', true);
+    if (config.get('core.masternode.enable')) {
+      config.get('externalIp', true);
+    }
 
     const isMinerEnabled = config.get('core.miner.enable');
 

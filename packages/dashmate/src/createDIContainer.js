@@ -8,8 +8,8 @@ const {
 
 const Docker = require('dockerode');
 
-const ensureHomeDirFactory = require('./ensureHomeDirFactory');
-const getConnectionHostFactory = require('./getConnectionHostFactory');
+const ensureHomeDirFactory = require('./config/ensureHomeDirFactory');
+const getConnectionHostFactory = require('./docker/getConnectionHostFactory');
 const ConfigFileJsonRepository = require('./config/configFile/ConfigFileJsonRepository');
 const createSystemConfigsFactory = require('./config/systemConfigs/createSystemConfigsFactory');
 const isSystemConfigFactory = require('./config/systemConfigs/isSystemConfigFactory');
@@ -91,7 +91,8 @@ const createSelfSignedCertificate = require('./ssl/selfSigned/createCertificate'
 const scheduleRenewZeroSslCertificateFactory = require('./helper/scheduleRenewZeroSslCertificateFactory');
 const generateTenderdashNodeKeyAndId = require('./tenderdash/createTenderdashNodeId');
 const registerMasternodeGuideTaskFactory = require('./listr/tasks/setup/regular/registerMasternodeGuideTaskFactory');
-const createIpAndPortsFormFactory = require('./listr/prompts/createIpAndPortsFormFactory');
+const configureNodeTaskFactory = require('./listr/tasks/setup/regular/configureNodeTaskFactory');
+const configureSSLCertificateTaskFactory = require('./listr/tasks/setup/regular/configureSSLCertificateTaskFactory');
 
 async function createDIContainer() {
   const container = createAwilixContainer({
@@ -228,13 +229,8 @@ async function createDIContainer() {
     getOverviewScope: asFunction(getOverviewScopeFactory).singleton(),
     getServicesScope: asFunction(getServicesScopeFactory).singleton(),
     getHostScope: asFunction(getHostScopeFactory).singleton(),
-  });
-
-  /**
-   * Prompts
-   */
-  container.register({
-    createIpAndPortsForm: asFunction(createIpAndPortsFormFactory).singleton(),
+    configureNodeTask: asFunction(configureNodeTaskFactory).singleton(),
+    configureSSLCertificateTask: asFunction(configureSSLCertificateTaskFactory).singleton(),
   });
 
   /**

@@ -28,6 +28,4 @@ const mainnetConfig = lodashMerge({}, baseConfig, {
   network: NETWORK_MAINNET,
 });
 
-delete mainnetConfig.platform;
-
 module.exports = mainnetConfig;

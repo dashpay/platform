@@ -1,66 +1,41 @@
 const { Listr } = require('listr2');
 
-const styles = require('enquirer/lib/styles');
 const chalk = require('chalk');
-
-const { Observable } = require('rxjs');
-
-const {
-  NODE_TYPE_MASTERNODE,
-  NODE_TYPE_HPMN,
-} = require('../../../../constants');
-
-const crypto = require('crypto');
-
-const publicIp = require('public-ip');
 
 const BlsSignatures = require('@dashevo/bls');
 
-const { PrivateKey, PublicKey, Address } = require('@dashevo/dashcore-lib');
+const {
+  NODE_TYPE_MASTERNODE,
+  MASTERNODE_COLLATERAL_AMOUNT,
+  HPMN_COLLATERAL_AMOUNT,
+  PRESET_MAINNET,
+} = require('../../../../constants');
 
-const placeholder = require('enquirer/lib/placeholder');
+const systemConfigs = require('../../../../../configs/system');
+
+const validateAddress = require('../../../prompts/validators/validateAddress');
+const validateTxHex = require('../../../prompts/validators/validateTxHex');
+const validatePositiveInteger = require('../../../prompts/validators/validatePositiveInteger');
+const validatePercentage = require('../../../prompts/validators/validatePercentage');
+const formatPercentage = require('../../../prompts/formatters/formatPercentage');
+const generateBlsKeys = require('../../../../core/generateBlsKeys');
+const validateBLSPrivateKeyFactory = require('../../../prompts/validators/validateBLSPrivateKeyFactory');
+const createPlatformNodeKeyInput = require('../../../prompts/createPlatformNodeKeyInput');
+const createIpAndPortsForm = require('../../../prompts/createIpAndPortsForm');
 const createTenderdashNodeId = require('../../../../tenderdash/createTenderdashNodeId');
-const generateTenderdashNodeKey = require('../../../../tenderdash/generateTenderdashNodeKey');
-const validateTenderdashNodeKey = require('../../../prompts/validators/validateTenderdashNodeKey');
-const validateAddressHex = require('../../../prompts/validators/validateAddressHex');
 
 /**
- *
- * @param {startCore} startCore
- * @param {createNewAddress} createNewAddress
- * @param {generateToAddress} generateToAddress
- * @param {generateBlocks} generateBlocks
- * @param {waitForCoreSync} waitForCoreSync
- * @param {importPrivateKey} importPrivateKey
- * @param {getAddressBalance} getAddressBalance
- * @param {sendToAddress} sendToAddress
- * @param {waitForConfirmations} waitForConfirmations
- * @param {registerMasternode} registerMasternode
- * @param {waitForBalanceToConfirm} waitForBalanceToConfirm
- * @param {createIpAndPortsForm} createIpAndPortsForm
  * @return {registerMasternodeGuideTask}
  */
-function registerMasternodeGuideTaskFactory(
-  startCore,
-  createNewAddress,
-  generateToAddress,
-  generateBlocks,
-  waitForCoreSync,
-  importPrivateKey,
-  getAddressBalance,
-  sendToAddress,
-  waitForConfirmations,
-  registerMasternode,
-  waitForBalanceToConfirm,
-  createIpAndPortsForm,
-) {
+function registerMasternodeGuideTaskFactory() {
   /**
    * @typedef {registerMasternodeGuideTask}
    * @return {Listr}
    */
   async function registerMasternodeGuideTask() {
     const blsSignatures = await BlsSignatures();
-    const { PrivateKey: BlsPrivateKey, BasicSchemeMPL } = blsSignatures;
+
+    const validateBLSPrivateKey = validateBLSPrivateKeyFactory(blsSignatures);
 
     const REGISTRARS = {
       CORE: 'dashCore',
@@ -69,190 +44,92 @@ function registerMasternodeGuideTaskFactory(
       OTHER: 'other',
     };
 
-    const registrarList = [
-      { name: REGISTRARS.CORE, message: 'Dash Core Wallet' },
-      { name: REGISTRARS.ANDROID, message: 'Android Dash Wallet' },
-      { name: REGISTRARS.IOS, message: 'iOS Dash Wallet' },
-      { name: REGISTRARS.OTHER, message: 'Other' },
-    ];
-
-    const registrarMap = registrarList.reduce((obj, { name, message }) => {
-      // eslint-disable-next-line no-param-reassign
-      obj[name] = message;
-
-      return obj;
-    }, {});
-
-
-    function validateOutputIndex(value) {
-      const index = Math.floor(Number(value));
-
-      return index >= 0 && index.toString() === value;
-    }
-
-    function validateTxHash(value) {
-      return value.length === 64;
-    }
-
-    function validateECDSAPublicKey(value) {
-      try {
-        PublicKey(value);
-
-        return true;
-      } catch (e) {
-        return false;
-      }
-    }
-
-    function validateBLSPrivateKey(value) {
-      if (value.length === 0) {
-        return 'should not be empty';
-      }
-
-      const operatorPrivateKeyBuffer = Buffer.from(value, 'hex');
-
-      let key;
-      try {
-        key = BlsPrivateKey.fromBytes(operatorPrivateKeyBuffer, true);
-      } catch (e) {
-        return 'invalid key';
-      } finally {
-        if (key) {
-          key.delete();
-        }
-      }
-
-      return true;
-    }
-
-    function validateRewardShare(value) {
-      const reminder = value.split('.')[1];
-
-      return Number(value) <= 100 && (!reminder || reminder.length <= 2);
-    }
-
-    function formatRewardShares(input, choice) {
-      let str;
-
-      const number = Number(input);
-      if (Number.isNaN(number) || number.toFixed(2).length < input.length) {
-        str = input;
-      } else {
-        str = number.toFixed(2);
-      }
-
-      const pos = Math.min(choice.cursor, str.length);
-
-      const options = {
-        input: str,
-        initial: choice.initial,
-        pos,
-        showCursor: this.state.index === 1,
-      };
-
-      return placeholder(this, options);
-    }
-
-
-
-
     return new Listr([
       {
+        title: 'Register masternode',
         task: async (ctx, task) => {
-          ctx.registrar = await task.prompt([
+          const registrar = await task.prompt([
             {
               type: 'select',
-              header: 'For security reasons, Dash masternodes should never store masternode owner'
-                + ' or collateral private keys. Dashmate therefore cannot register a masternode for'
-                + ' you directly. Instead, we will generate RPC commands that you can use in'
-                + ' Dash Core or other external tools where keys are handled securely. During this'
-                + ' process, dashmate can optionally generate configuration elements as necessary,'
-                + ' such as the BLS operator key and the node id, since this is the'
-                + ' only information necessary for dashmate to configure the masternode.\n',
+              header: `  For security reasons, Dash masternodes should never store masternode owner or
+  collateral private keys. Dashmate therefore cannot register a masternode for you
+  directly. Instead, we will generate RPC commands that you can use in Dash Core
+  or other external tools where keys are handled securely. During this process,
+  dashmate can optionally generate configuration elements as necessary, such as
+  the BLS operator key and the node id.\n`,
               message: 'Which wallet will you use to store keys for your masternode?',
-              choices: registrarList,
+              choices: [
+                { name: REGISTRARS.CORE, message: 'Dash Core Wallet' },
+                { name: REGISTRARS.ANDROID, message: 'Android Dash Wallet' },
+                { name: REGISTRARS.IOS, message: 'iOS Dash Wallet' },
+                { name: REGISTRARS.OTHER, message: 'Other' },
+              ],
               initial: REGISTRARS.CORE,
             },
           ]);
-        },
-      },
-      {
-        title: 'Register masternode',
-        enabled: (ctx) => !ctx.isMasternodeRegistered
-          && (ctx.nodeType === NODE_TYPE_HPMN || ctx.nodeType === NODE_TYPE_MASTERNODE),
-        task: async (ctx, task) => {
-          // eslint-disable-next-line no-param-reassign
-          task.title = `Register masternode with ${registrarMap[ctx.registrar]}`;
 
           let initialOperatorPrivateKey;
-          if (ctx.registrar === REGISTRARS.CORE || ctx.registrar === REGISTRARS.OTHER) {
-            const randomBytes = new Uint8Array(crypto.randomBytes(256));
-            const operatorPrivateKey = BasicSchemeMPL.keyGen(randomBytes);
-
-            initialOperatorPrivateKey = Buffer.from(operatorPrivateKey.serialize()).toString('hex');
+          if (registrar === REGISTRARS.CORE || registrar === REGISTRARS.OTHER) {
+            ({ privateKey: initialOperatorPrivateKey } = await generateBlsKeys());
           }
 
           // TODO: We need to add description on how to find key generation form in the
           //  specified wallet
 
+          // TODO: Deal with hints in forms
 
-          // TODO: Implement additional validations
-          /*
-           ipAddress is set and port is not set to the default mainnet port
-           ipAddress is set and not routable or not an IPv4 mapped address
-           ipAddress is set and already used in the registered masternodes set
-           */
+          const validateAddressWithNetwork = (value) => validateAddress(value, ctx.preset);
 
-          const validateAddressHexWithNetwork = (value) => validateAddressHex(value, ctx.preset);
+          const collateralAmount = ctx.nodeType === NODE_TYPE_MASTERNODE ? MASTERNODE_COLLATERAL_AMOUNT : HPMN_COLLATERAL_AMOUNT;
+          const collateralDenomination = ctx.preset === PRESET_MAINNET ? 'DASH' : 'tDASH';
 
           const prompts = [
             {
               type: 'form',
               name: 'collateral',
-              header: 'Dashmate needs to collect details about your collateral funding'
-                + ' transaction. The funding value must be exactly 1000 DASH (masternode)'
-                + ' or 4000 DASH (high-performance masternode).\n',
+              header: `  Dashmate needs to collect your collateral funding transaction hash and index.
+  The funding value must be exactly ${collateralAmount} ${collateralDenomination}.\n`,
               message: 'Enter collateral funding transaction information:',
               choices: [
                 {
                   name: 'txId',
                   message: 'Transaction hash',
-                  validate: validateTxHash,
+                  validate: validateTxHex,
                 },
                 {
                   name: 'outputIndex',
                   message: 'Output index',
-                  validate: validateOutputIndex,
+                  validate: validatePositiveInteger,
                 },
               ],
-              validate: ({ txId, outputIndex }) => validateTxHash(txId)
-                && validateOutputIndex(outputIndex),
+              validate: ({ txId, outputIndex }) => validateTxHex(txId)
+                && validatePositiveInteger(outputIndex),
             },
             {
               type: 'form',
               name: 'keys',
-              header: 'Dashmate needs to collect details about the owner, voting and payout'
-                + ' addresses to use in the masternode registration transaction. These are'
-                + ' regular Dash addresses, encoded in HEX format.\n',
+              header: `  Dashmate needs to collect details about the owner, voting and payout addresses
+  to use in the masternode registration transaction. These are regular Dash
+  addresses, encoded in base58 format.\n`,
               message: 'Enter DIP3 masternode addresses:',
               choices: [
                 {
                   name: 'ownerAddress',
-                  message: chalk` Owner address {gray HEX encoded}`,
+                  message: chalk` Owner address {gray Base58 encoded}`,
                   network: ctx.preset,
-                  validate: validateAddressHexWithNetwork,
+                  validate: validateAddressWithNetwork,
                 },
                 {
                   name: 'votingAddress',
-                  message: chalk` Voting address {gray HEX encoded}`,
+                  message: chalk` Voting address {gray Base58 encoded}`,
                   network: ctx.preset,
-                  validate: validateAddressHexWithNetwork,
+                  validate: validateAddressWithNetwork,
                 },
                 {
                   name: 'payoutAddress',
-                  message: chalk` Payout address {gray HEX encoded}`,
+                  message: chalk` Payout address {gray Base58 encoded}`,
                   network: ctx.preset,
-                  validate: validateAddressHexWithNetwork,
+                  validate: validateAddressWithNetwork,
                 },
               ],
               validate: ({ ownerAddress, votingAddress, payoutAddress }) => {
@@ -260,20 +137,20 @@ function registerMasternodeGuideTaskFactory(
                   return 'The payout address may not be the same as the owner or voting address';
                 }
 
-                return validateAddressHexWithNetwork(ownerAddress)
-                  && validateAddressHexWithNetwork(votingAddress)
-                  && validateAddressHexWithNetwork(payoutAddress);
+                return validateAddressWithNetwork(ownerAddress)
+                  && validateAddressWithNetwork(votingAddress)
+                  && validateAddressWithNetwork(payoutAddress);
               },
             },
             {
               type: 'form',
               name: 'operator',
-              header: 'Dashmate needs to collect details on the operator key and operator'
-                + ' reward share to use in the registration transaction. The operator key is'
-                + ' a BLS private key, encoded in HEX format. Dashmate will record the private'
-                + ' key in the masternode configuration, and derive the public key for use in'
-                + ' the masternode registration transaction. You may optionally also specify a'
-                + ' percentage share of the masternode reward to pay to the operator.\n',
+              header: `  Dashmate needs to collect details on the operator key and operator reward share
+  to use in the registration transaction. The operator key is a BLS private key,
+  encoded in HEX format. Dashmate will record the private key in the masternode
+  configuration, and derive the public key for use in the masternode registration
+  transaction. You may optionally also specify a percentage share of the
+  masternode reward to pay to the operator.\n`,
               message: 'Enter masternode operator private key and reward share:',
               choices: [
                 {
@@ -286,62 +163,104 @@ function registerMasternodeGuideTaskFactory(
                   name: 'rewardShare',
                   message: chalk`Reward share %`,
                   initial: '0.00',
-                  validate: validateRewardShare,
-                  format: formatRewardShares,
+                  validate: validatePercentage,
+                  format: formatPercentage,
                   result: (value) => Number(value).toFixed(2),
                 },
               ],
               validate: ({ privateKey, rewardShare }) => validateBLSPrivateKey(privateKey)
-                && validateRewardShare(rewardShare),
+                && validatePercentage(rewardShare),
             },
           ];
 
-          if (ctx.nodeType === NODE_TYPE_HPMN) {
-            prompts.push({
-              type: 'input',
-              name: 'platformNodeKey',
-              header: 'Dashmate needs to collect details on your Tenderdash node key. This key'
-                + ' is used to uniquely identify your high-performance masternode on Dash'
-                + ' Platform. The node key is derived from a standard Ed25519 cryptographic'
-                + ' key pair, presented in a cached format specific to Tenderdash. You can'
-                + ' provide a key, or a new key will be generated for you.\n',
-              message: 'Enter Ed25519 node key',
-              hint: 'Base64 encoded',
-              initial: generateTenderdashNodeKey(),
-              validate: validateTenderdashNodeKey,
-            });
+          if (ctx.isHP) {
+            prompts.push(createPlatformNodeKeyInput());
           }
 
-          prompts.push(await createIpAndPortsForm({
-            isHPMN: ctx.nodeType === NODE_TYPE_HPMN,
+          prompts.push(await createIpAndPortsForm(ctx.preset, {
+            isHPMN: ctx.isHP,
           }));
-
 
           let form;
           let confirmation;
           do {
             form = await task.prompt(prompts);
 
-            confirmation = await task.prompt([
-              {
-                type: 'toggle',
-                name: 'confirm',
-                header: chalk` You should run the command:
-                {bold.green dash-cli ${ctx.nodeType === NODE_TYPE_HPMN ? 'register_hpmn' : 'register'}
-                      argument1
-                      argument2
-                }
-                
-                Go with nope to come back to edit command\n`,
-                message: 'Have you registered a masternode successfully?',
-                enabled: 'Yep',
-                disabled: 'Nope',
-              },
-            ]);
+            const operatorPrivateKeyBuffer = Buffer.from(form.operator.privateKey, 'hex');
+            const operatorPrivateKey = blsSignatures.PrivateKey.fromBytes(
+              operatorPrivateKeyBuffer,
+              true,
+            );
+            const operatorPublicKey = operatorPrivateKey.getG1();
+            const operatorPublicKeyHex = Buffer.from(operatorPublicKey.serialize()).toString('hex');
+
+            const coreP2PPort = form.ipAndPorts.coreP2PPort
+              || systemConfigs[ctx.preset].core.p2p.port;
+
+            const platformP2PPort = form.ipAndPorts.platformP2PPort
+              || systemConfigs[ctx.preset].platform.drive.tenderdash.p2p.port;
+
+            const platformHTTPPort = form.ipAndPorts.platformHTTPPort
+              || systemConfigs[ctx.preset].platform.dapi.envoy.http.port;
+
+            let command;
+            if (ctx.isHP) {
+              command = `dash-cli register_hpmn
+                    ${form.collateral.txId}
+                    ${form.collateral.outputIndex}
+                    ${form.ipAndPorts.ip}:${coreP2PPort}
+                    ${form.keys.ownerAddress}
+                    ${operatorPublicKeyHex}
+                    ${form.keys.votingAddress}
+                    ${form.operator.rewardShare}
+                    ${form.keys.payoutAddress}
+                    ${createTenderdashNodeId(form.platformNodeKey)}
+                    ${platformP2PPort}
+                    ${platformHTTPPort}`;
+            } else {
+              command = `dash-cli register
+                    ${form.collateral.txId}
+                    ${form.collateral.outputIndex}
+                    ${form.ipAndPorts.ip}:${coreP2PPort}
+                    ${form.keys.ownerAddress}
+                    ${operatorPublicKeyHex}
+                    ${form.keys.votingAddress}
+                    ${form.operator.rewardShare}
+                    ${form.keys.payoutAddress}`;
+            }
+
+            confirmation = await task.prompt({
+              type: 'toggle',
+              name: 'confirm',
+              header: chalk`  Now run the following command to create the registration transaction:
+              {bold.cyanBright ${command}}
+
+  Select "No" to modify the transaction by amending your previous input.\n`,
+              message: 'Was the masternode registration transaction successful?',
+              enabled: 'Yes',
+              disabled: 'No',
+            });
           } while (!confirmation);
 
-          // TODO: Store form information to the config
-          console.dir(form);
+          ctx.config.set('core.masternode.operator.privateKey', form.operator.privateKey);
+
+          ctx.config.set('externalIp', form.ipAndPorts.ip);
+
+          if (ctx.isHP) {
+            ctx.config.set('platform.drive.tenderdash.node.id', createTenderdashNodeId(form.platformNodeKey));
+            ctx.config.set('platform.drive.tenderdash.node.key', form.platformNodeKey);
+          }
+
+          if (ctx.preset !== PRESET_MAINNET) {
+            ctx.config.set('core.p2p.port', form.ipAndPorts.coreP2PPort);
+
+            if (ctx.isHP) {
+              ctx.config.set('platform.dapi.envoy.http.port', form.ipAndPorts.platformHTTPPort);
+              ctx.config.set('platform.drive.tenderdash.p2p.port', form.ipAndPorts.platformP2PPort);
+            }
+          }
+
+          // TODO: Output configuration
         },
       },
     ]);
