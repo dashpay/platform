@@ -150,7 +150,7 @@ class Config {
       dockerComposeFiles.push('docker-compose.sentinel.yml');
     }
 
-    if (this.has('platform')) {
+    if (this.isPlatformEnabled()) {
       dockerComposeFiles.push('docker-compose.platform.yml');
 
       if (this.get('platform.sourcePath') !== null) {
@@ -167,7 +167,7 @@ class Config {
       ...convertObjectToEnvs(this.getOptions()),
     };
 
-    if (this.has('platform')) {
+    if (this.isPlatformEnabled()) {
       envs = {
         ...envs,
 
@@ -190,6 +190,14 @@ class Config {
     }
 
     return envs;
+  }
+
+  /**
+   *
+   * @returns {boolean}
+   */
+  isPlatformEnabled() {
+    return this.has('platform') && this.get('platform.enabled');
   }
 }
 

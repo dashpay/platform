@@ -198,6 +198,7 @@ function setupLocalPresetTaskFactory(
                     key,
                   } = generateTenderdashNodeKeyAndId();
 
+                  config.set('platform.enabled', true);
                   config.set('platform.drive.tenderdash.node.id', id);
                   config.set('platform.drive.tenderdash.node.key', key);
 
