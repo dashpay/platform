@@ -10,11 +10,12 @@ use serde_json::json;
 use crate::contracts::withdrawals_contract::property_names;
 use crate::data_contract::document_type::document_type::PROTOCOL_VERSION;
 use crate::document::ExtendedDocument;
+use crate::util::entropy_generator::DefaultEntropyGenerator;
 use crate::{
     contracts::withdrawals_contract, data_contract::DataContract, document::generate_document_id,
     document::Document, identity::state_transition::identity_credit_withdrawal_transition::Pooling,
     state_repository::StateRepositoryLike, state_transition::StateTransitionLike,
-    util::entropy_generator::generate,
+    util::entropy_generator::EntropyGenerator,
 };
 
 use super::IdentityCreditWithdrawalTransition;
@@ -90,8 +91,9 @@ where
 
         let mut document_id;
 
+        let generator = DefaultEntropyGenerator;
         loop {
-            let document_entropy = generate()?;
+            let document_entropy = generator.generate()?;
 
             document_id = generate_document_id::generate_document_id(
                 data_contract_id,

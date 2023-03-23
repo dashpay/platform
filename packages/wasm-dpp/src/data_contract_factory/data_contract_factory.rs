@@ -1,10 +1,8 @@
-use std::convert::TryInto;
 use std::sync::Arc;
 
 use dpp::{
     data_contract::{
         validation::data_contract_validator::DataContractValidator, DataContractFactory,
-        EntropyGenerator,
     },
     platform_value,
     prelude::Identifier,
@@ -13,7 +11,9 @@ use dpp::{
 };
 use wasm_bindgen::prelude::*;
 
+use crate::entropy_generator::ExternalEntropyGenerator;
 use crate::utils::WithJsError;
+
 use crate::{
     data_contract::errors::InvalidDataContractError,
     errors::{from_dpp_err, protocol_error::from_protocol_error},
@@ -79,23 +79,6 @@ impl From<DataContractFactoryWasm> for DataContractFactory {
     }
 }
 
-#[wasm_bindgen]
-extern "C" {
-    pub type ExternalEntropyGenerator;
-
-    #[wasm_bindgen(structural, method)]
-    pub fn generate(this: &ExternalEntropyGenerator) -> Vec<u8>;
-}
-
-impl EntropyGenerator for ExternalEntropyGenerator {
-    fn generate(&self) -> [u8; 32] {
-        // TODO: think about changing API to return an error but does it worth it for JS?
-
-        ExternalEntropyGenerator::generate(self)
-            .try_into()
-            .expect("Bad entropy generator provided: should return 32 bytes")
-    }
-}
 #[wasm_bindgen(js_class=DataContractFactory)]
 impl DataContractFactoryWasm {
     #[wasm_bindgen(constructor)]

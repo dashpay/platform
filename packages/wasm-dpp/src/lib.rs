@@ -28,5 +28,6 @@ mod utils;
 mod bls_adapter;
 mod buffer;
 mod decode_protocol_entity;
+mod entropy_generator;
 mod lodash;
 mod validation;
