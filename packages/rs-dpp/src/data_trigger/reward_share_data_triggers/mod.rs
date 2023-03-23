@@ -237,55 +237,55 @@ mod test {
         }
     }
 
-        #[tokio::test]
-        async fn should_return_an_error_if_percentage_greater_than_1000() {
-            let TestData {
-                mut document_transition,
-                extended_documents,
-                sml_store,
-                data_contract,
-                top_level_identifier,
-                ..
-            } = setup_test();
+    #[tokio::test]
+    async fn should_return_an_error_if_percentage_greater_than_1000() {
+        let TestData {
+            mut document_transition,
+            extended_documents,
+            sml_store,
+            data_contract,
+            top_level_identifier,
+            ..
+        } = setup_test();
 
-            let documents: Vec<Document> = extended_documents
-                .clone()
-                .into_iter()
-                .map(|dt| dt.document)
-                .collect();
+        let documents: Vec<Document> = extended_documents
+            .clone()
+            .into_iter()
+            .map(|dt| dt.document)
+            .collect();
 
-            let mut state_repository_mock = MockStateRepositoryLike::new();
-            state_repository_mock
-                .expect_fetch_sml_store()
-                .returning(move || Ok(sml_store.clone()));
-            state_repository_mock
-                .expect_fetch_identity()
-                .returning(|_, _| Ok(None));
-            state_repository_mock
-                .expect_fetch_documents()
-                .returning(move |_, _, _, _| Ok(documents.clone()));
+        let mut state_repository_mock = MockStateRepositoryLike::new();
+        state_repository_mock
+            .expect_fetch_sml_store()
+            .returning(move || Ok(sml_store.clone()));
+        state_repository_mock
+            .expect_fetch_identity()
+            .returning(|_, _| Ok(None));
+        state_repository_mock
+            .expect_fetch_documents()
+            .returning(move |_, _, _, _| Ok(documents.clone()));
 
-            // documentsFixture contains percentage = 500
-            document_transition.insert_dynamic_property(String::from("percentage"), Value::U64(9501));
+        // documentsFixture contains percentage = 500
+        document_transition.insert_dynamic_property(String::from("percentage"), Value::U64(9501));
 
-            let execution_context = StateTransitionExecutionContext::default();
-            let context = DataTriggerExecutionContext {
-                data_contract: &data_contract,
-                owner_id: &top_level_identifier,
-                state_repository: &state_repository_mock,
-                state_transition_execution_context: &execution_context,
-            };
+        let execution_context = StateTransitionExecutionContext::default();
+        let context = DataTriggerExecutionContext {
+            data_contract: &data_contract,
+            owner_id: &top_level_identifier,
+            state_repository: &state_repository_mock,
+            state_transition_execution_context: &execution_context,
+        };
 
-            let result =
-                create_masternode_reward_shares_data_trigger(&document_transition, &context, None)
-                    .await;
+        let result =
+            create_masternode_reward_shares_data_trigger(&document_transition, &context, None)
+                .await;
 
-            let percentage_error = get_data_trigger_error(&result, 1);
-            assert_eq!(
-                "Percentage can not be more than 10000",
-                percentage_error.to_string()
-            );
-        }
+        let percentage_error = get_data_trigger_error(&result, 1);
+        assert_eq!(
+            "Percentage can not be more than 10000",
+            percentage_error.to_string()
+        );
+    }
 
     #[tokio::test]
     async fn should_return_an_error_if_pay_to_id_does_not_exists() {

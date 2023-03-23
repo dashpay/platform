@@ -1,6 +1,7 @@
 use dpp::document::document_transition::DocumentTransitionAction;
 use dpp::prelude::Identifier;
 use crate::drive::batch::DriveOperation;
+use crate::drive::batch::transitions::document::DriveHighLevelDocumentOperationConverter;
 use crate::error::Error;
 use crate::fee_pools::epochs::Epoch;
 

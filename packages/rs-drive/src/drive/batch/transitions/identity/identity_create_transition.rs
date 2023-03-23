@@ -6,6 +6,7 @@ use crate::drive::batch::transitions::DriveHighLevelOperationConverter;
 use crate::drive::defaults::PROTOCOL_VERSION;
 use crate::drive::object_size_info::{DocumentAndContractInfo, OwnedDocumentInfo};
 use crate::error::Error;
+use crate::fee_pools::epochs::Epoch;
 
 impl DriveHighLevelOperationConverter for IdentityCreateTransitionAction {
     fn to_high_level_drive_operations(self, epoch: &Epoch) -> Result<Vec<DriveOperation>, Error> {

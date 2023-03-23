@@ -6,6 +6,7 @@ use dpp::document::document_transition::{DocumentBaseTransitionAction, DocumentC
 use dpp::prelude::Identifier;
 use crate::drive::batch::{DocumentOperationType, DriveOperation};
 use crate::drive::batch::DriveOperation::DocumentOperation;
+use crate::drive::batch::transitions::document::DriveHighLevelDocumentOperationConverter;
 use crate::drive::flags::StorageFlags;
 use crate::drive::object_size_info::{DocumentAndContractInfo, OwnedDocumentInfo};
 use crate::drive::object_size_info::DocumentInfo::DocumentWithoutSerialization;
@@ -19,7 +20,7 @@ impl DriveHighLevelDocumentOperationConverter for DocumentCreateTransitionAction
         } = self;
 
         let DocumentBaseTransitionAction {
-            id, owner_id,  document_type_name, data_contract_id, data_contract
+            id, document_type_name, data_contract_id, data_contract
         } = base;
 
         let document_type = data_contract.document_type_for_name(document_type_name.as_str())?;
@@ -36,7 +37,6 @@ impl DriveHighLevelDocumentOperationConverter for DocumentCreateTransitionAction
         let storage_flags = StorageFlags::new_single_epoch(epoch.index, Some(owner_id.to_buffer()));
 
         let mut drive_operations = vec![];
-        /// We must create the contract
         drive_operations.push(DocumentOperation(DocumentOperationType::AddDocument {
             owned_document_info: OwnedDocumentInfo { document_info: DocumentWithoutSerialization((document, Some(Cow::Owned(storage_flags)))), owner_id: Some(owner_id.into_buffer()) },
             contract_id: data_contract_id,

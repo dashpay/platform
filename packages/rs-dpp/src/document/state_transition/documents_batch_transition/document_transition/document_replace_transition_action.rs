@@ -12,7 +12,8 @@ pub struct DocumentReplaceTransitionAction {
     pub base: DocumentBaseTransitionAction,
     /// The current revision we are setting
     pub revision: Revision,
-    //todo: remove updated_at
+    /// The time the document was last updated
+    pub created_at: Option<TimestampMillis>,
     /// The time the document was last updated
     pub updated_at: Option<TimestampMillis>,
     /// Document properties

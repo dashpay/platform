@@ -1,27 +1,29 @@
 use dpp::data_contract::DriveContractExt;
 use dpp::document::document_transition::document_base_transition::DocumentBaseTransition;
 use dpp::document::document_transition::{DocumentCreateTransition, DocumentDeleteTransition};
+use dpp::identifier::Identifier;
 use crate::drive::batch::{DocumentOperationType, DriveOperation};
 use crate::drive::batch::DriveOperation::DocumentOperation;
+use crate::drive::batch::transitions::document::DriveHighLevelDocumentOperationConverter;
 use crate::drive::batch::transitions::DriveHighLevelOperationConverter;
 use crate::drive::object_size_info::{DocumentAndContractInfo, OwnedDocumentInfo};
 use crate::error::Error;
+use crate::fee_pools::epochs::Epoch;
 
-impl DriveHighLevelOperationConverter for DocumentDeleteTransition {
-    fn to_high_level_drive_operations(&self, epoch: &Epoch) -> Result<Vec<DriveOperation>, Error> {
+impl DriveHighLevelDocumentOperationConverter for DocumentDeleteTransition {
+    fn to_high_level_document_drive_operations(&self, epoch: &Epoch, owner_id: Identifier) -> Result<Vec<DriveOperation>, Error> {
         let DocumentDeleteTransition {
             base
         } = self;
 
         let DocumentBaseTransition {
-            id, document_type_name, data_contract, ..
+            id, document_type_name, data_contract_id, ..
         } = &base;
 
         let mut drive_operations = vec![];
-        /// We must create the contract
-        drive_operations.push(DocumentOperation(DocumentOperationType::DeleteDocumentOfNamedTypeForContract {
+        drive_operations.push(DocumentOperation(DocumentOperationType::DeleteDocumentOfNamedTypeForContractId {
             document_id: id.to_buffer(),
-            contract: data_contract,
+            contract_id: data_contract_id.to_buffer(),
             document_type_name,
             owner_id: None,
         }));
