@@ -4,6 +4,13 @@ const chalk = require('chalk');
 
 const BlsSignatures = require('@dashevo/bls');
 
+const {
+  NODE_TYPE_MASTERNODE,
+  MASTERNODE_COLLATERAL_AMOUNT,
+  HPMN_COLLATERAL_AMOUNT,
+  PRESET_MAINNET,
+} = require('../../../../constants');
+
 const validateAddressHex = require('../../../prompts/validators/validateAddressHex');
 const validateTxHex = require('../../../prompts/validators/validateTxHex');
 const validatePositiveInteger = require('../../../prompts/validators/validatePositiveInteger');
@@ -68,13 +75,15 @@ function registerMasternodeGuideTaskFactory() {
 
           const validateAddressHexWithNetwork = (value) => validateAddressHex(value, ctx.preset);
 
+          const collateralAmount = ctx.nodeType === NODE_TYPE_MASTERNODE ? MASTERNODE_COLLATERAL_AMOUNT : HPMN_COLLATERAL_AMOUNT;
+          const collateralDenomination = ctx.preset === PRESET_MAINNET ? 'DASH' : 'tDASH';
+
           const prompts = [
             {
               type: 'form',
               name: 'collateral',
-              header: 'Dashmate needs to collect details about your collateral funding'
-                + ' transaction. The funding value must be exactly 1000 DASH (masternode)'
-                + ' or 4000 DASH (high-performance masternode).\n',
+              header: `  Dashmate needs to collect your collateral funding transaction hash and index.
+  The funding value must be exactly ${collateralAmount} ${collateralDenomination}.\n`,
               message: 'Enter collateral funding transaction information:',
               choices: [
                 {
@@ -163,7 +172,7 @@ function registerMasternodeGuideTaskFactory() {
             prompts.push(createPlatformNodeKeyInput());
           }
 
-          prompts.push(await createIpAndPortsForm({
+          prompts.push(await createIpAndPortsForm(ctx.preset, {
             isHPMN: ctx.isHP,
           }));
 
