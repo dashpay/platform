@@ -1,13 +1,14 @@
 use anyhow::Context;
 use chrono::Utc;
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, HashSet};
 
 use itertools::Itertools;
 
-use platform_value::{Bytes32, Value};
+use platform_value::{Bytes32, ReplacementType, Value};
 use rand::rngs::StdRng;
 use rand::SeedableRng;
 use serde::{Deserialize, Serialize};
+use platform_value::btreemap_extensions::BTreeValueMapReplacementPathHelper;
 
 use crate::consensus::basic::document::InvalidDocumentTypeError;
 use crate::document::extended_document::{property_names, ExtendedDocument};
@@ -149,7 +150,7 @@ where
             (None, None)
         };
 
-        let document = Document {
+        let mut document = Document {
             id: document_id,
             owner_id,
             properties: data
@@ -159,6 +160,13 @@ where
             created_at,
             updated_at,
         };
+
+        let (identifiers, _): (HashSet<_>, HashSet<_>) =
+            data_contract.get_identifiers_and_binary_paths_owned(document_type_name.as_str())?;
+
+        document
+            .properties
+            .replace_at_paths(identifiers, ReplacementType::Identifier)?;
 
         // let json_value = document.to_json_with_identifiers_using_bytes()?;
         // let validation_result =

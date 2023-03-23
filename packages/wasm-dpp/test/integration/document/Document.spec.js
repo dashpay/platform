@@ -3,8 +3,6 @@ const getDocumentsFixture = require('../../../lib/test/fixtures/getDocumentsFixt
 
 const { default: loadWasmDpp } = require('../../../dist');
 
-let ExtendedDocument;
-let DataContract;
 let Metadata;
 let Identifier;
 
@@ -15,23 +13,14 @@ describe('ExtendedDocument', () => {
 
   beforeEach(async () => {
     ({
-      ExtendedDocument,
-      DataContract,
       Metadata,
       Identifier,
     } = await loadWasmDpp());
 
     dataContract = await getDataContractFixture();
 
-    const [documentJs] = getDocumentsFixture(dataContractJs).slice(8);
-    document = new ExtendedDocument(documentJs.toObject(), dataContract);
-
-    const metadataFixtureJs = new MetadataJs({
-      blockHeight: 42,
-      coreChainLockedHeight: 0,
-      timeMs: new Date().getTime(),
-      protocolVersion: 1,
-    });
+    const documents = await getDocumentsFixture(dataContract);
+    [document] = documents.slice(8);
 
     metadataFixture = Metadata.from({
       blockHeight: 42,
@@ -63,6 +52,8 @@ describe('ExtendedDocument', () => {
   describe('#toObject', () => {
     it('should return raw document - Rust', () => {
       const result = document.toObject();
+
+      console.log(document.get('byteArrayField'));
 
       expect(result).to.deep.equal({
         $protocolVersion: document.getProtocolVersion(),
