@@ -31,17 +31,17 @@ export default async function register(
 
   const assetLockProof = await this.identities.utils
     .createAssetLockProof(assetLockTransaction, assetLockOutputIndex);
-  this.logger.silly(`[Identity#register] Created asset lock proof "${assetLockTransaction.hash}"`);
+  this.logger.silly(`[Identity#register] Created asset lock proof with tx "${assetLockTransaction.hash}"`);
 
   const { identity, identityCreateTransition, identityIndex } = await this.identities.utils
     .createIdentityCreateTransition(assetLockProof, assetLockPrivateKey);
 
-  this.logger.silly(`[Identity#register] Created IdentityCreateTransition "${assetLockTransaction.hash}"`);
+  this.logger.silly(`[Identity#register] Created IdentityCreateTransition with asset lock tx "${assetLockTransaction.hash}"`);
 
   // TODO: add skipValidation flag?
   //  Basic validation already happening in createIdentityCreateTransition
   await broadcastStateTransition(this, identityCreateTransition);
-  this.logger.silly('[Identity#register] Broadcasted IdentityCreateTransition"');
+  this.logger.silly('[Identity#register] Broadcasted IdentityCreateTransition');
 
   // If state transition was broadcast without any errors, import identity to the account
   account.storage
