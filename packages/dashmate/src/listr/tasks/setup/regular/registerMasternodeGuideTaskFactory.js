@@ -78,6 +78,8 @@ function registerMasternodeGuideTaskFactory() {
 
           // TODO: Deal with hints in forms
 
+          // TODO: When registering a new masternode, if registration transaction was not successful, then going back through the previous steps should already contain the previously filled in information
+
           const validateAddressWithNetwork = (value) => validateAddress(value, ctx.preset);
 
           const collateralAmount = ctx.nodeType === NODE_TYPE_MASTERNODE ? MASTERNODE_COLLATERAL_AMOUNT : HPMN_COLLATERAL_AMOUNT;
@@ -194,9 +196,6 @@ function registerMasternodeGuideTaskFactory() {
             const operatorPublicKey = operatorPrivateKey.getG1();
             const operatorPublicKeyHex = Buffer.from(operatorPublicKey.serialize()).toString('hex');
 
-            const coreP2PPort = form.ipAndPorts.coreP2PPort
-              || systemConfigs[ctx.preset].core.p2p.port;
-
             const platformP2PPort = form.ipAndPorts.platformP2PPort
               || systemConfigs[ctx.preset].platform.drive.tenderdash.p2p.port;
 
@@ -208,7 +207,7 @@ function registerMasternodeGuideTaskFactory() {
               command = `dash-cli register_hpmn
                     ${form.collateral.txId}
                     ${form.collateral.outputIndex}
-                    ${form.ipAndPorts.ip}:${coreP2PPort}
+                    ${form.ipAndPorts.ip}:${form.ipAndPorts.coreP2PPort}
                     ${form.keys.ownerAddress}
                     ${operatorPublicKeyHex}
                     ${form.keys.votingAddress}
@@ -221,7 +220,7 @@ function registerMasternodeGuideTaskFactory() {
               command = `dash-cli register
                     ${form.collateral.txId}
                     ${form.collateral.outputIndex}
-                    ${form.ipAndPorts.ip}:${coreP2PPort}
+                    ${form.ipAndPorts.ip}:${form.ipAndPorts.coreP2PPort}
                     ${form.keys.ownerAddress}
                     ${operatorPublicKeyHex}
                     ${form.keys.votingAddress}
@@ -245,19 +244,14 @@ function registerMasternodeGuideTaskFactory() {
           ctx.config.set('core.masternode.operator.privateKey', form.operator.privateKey);
 
           ctx.config.set('externalIp', form.ipAndPorts.ip);
+          ctx.config.set('core.p2p.port', form.ipAndPorts.coreP2PPort);
 
           if (ctx.isHP) {
             ctx.config.set('platform.drive.tenderdash.node.id', createTenderdashNodeId(form.platformNodeKey));
             ctx.config.set('platform.drive.tenderdash.node.key', form.platformNodeKey);
-          }
 
-          if (ctx.preset !== PRESET_MAINNET) {
-            ctx.config.set('core.p2p.port', form.ipAndPorts.coreP2PPort);
-
-            if (ctx.isHP) {
-              ctx.config.set('platform.dapi.envoy.http.port', form.ipAndPorts.platformHTTPPort);
-              ctx.config.set('platform.drive.tenderdash.p2p.port', form.ipAndPorts.platformP2PPort);
-            }
+            ctx.config.set('platform.dapi.envoy.http.port', form.ipAndPorts.platformHTTPPort);
+            ctx.config.set('platform.drive.tenderdash.p2p.port', form.ipAndPorts.platformP2PPort);
           }
 
           // TODO: Output configuration

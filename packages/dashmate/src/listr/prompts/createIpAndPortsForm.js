@@ -23,31 +23,56 @@ async function createIpAndPortsForm(network, options = {}) {
     initialIp = await publicIp.v4();
   }
 
-  // TODO User input fo IP only?
+  const mainnetCfg = systemConfigs[PRESET_MAINNET];
+
+  let initialCoreP2PPort;
+  if (!options.skipInitial || network === PRESET_MAINNET) {
+    initialCoreP2PPort = mainnetCfg.core.p2p.port.toString();
+  }
+
+  function validateCoreP2PPort(value) {
+    if (network !== PRESET_MAINNET
+      && value === mainnetCfg.core.p2p.port.toString()) {
+      return false;
+    }
+
+    return validatePort(value);
+  }
+
+  function validatePlatformP2PPort(value) {
+    if (network !== PRESET_MAINNET
+      && value === mainnetCfg.platform.drive.tenderdash.p2p.port.toString()) {
+      return false;
+    }
+
+    return validatePort(value);
+  }
+
+  function validatePlatformHTTPPort(value) {
+    if (network !== PRESET_MAINNET
+      && value === mainnetCfg.platform.drive.tenderdash.p2p.port.toString()) {
+      return false;
+    }
+
+    return validatePort(value);
+  }
+
   const fields = [
     {
       name: 'ip',
-      message: 'External IP address IPv4',
+      message: 'External IP address',
+      hint: 'IPv4',
       initial: initialIp,
       validate: validateIPv4,
     },
-  ];
-
-  // TODO: we can't use mainnet ports for other networks
-
-  if (network !== PRESET_MAINNET) {
-    let initialCoreP2PPort;
-    if (!options.skipInitial) {
-      initialCoreP2PPort = systemConfigs[network].core.p2p.port.toString();
-    }
-
-    fields.push({
+    {
       name: 'coreP2PPort',
-      message: 'Core P2P Port',
+      message: 'Core P2P port',
       initial: initialCoreP2PPort,
-      validate: validatePort,
-    });
-  }
+      validate: validateCoreP2PPort,
+      disabled: network === PRESET_MAINNET,
+    },
+  ];
 
   if (options.isHPMN) {
     let initialPlatformP2PPort;
@@ -59,7 +84,8 @@ async function createIpAndPortsForm(network, options = {}) {
       name: 'platformP2PPort',
       message: 'Platform P2P port',
       initial: initialPlatformP2PPort,
-      validate: validatePort,
+      validate: validatePlatformP2PPort,
+      disabled: network === PRESET_MAINNET,
     });
 
     let initialPlatformHTTPPort;
@@ -71,7 +97,8 @@ async function createIpAndPortsForm(network, options = {}) {
       name: 'platformHTTPPort',
       message: 'Platform HTTP port',
       initial: initialPlatformHTTPPort,
-      validate: validatePort,
+      validate: validatePlatformHTTPPort,
+      disabled: network === PRESET_MAINNET,
     });
   }
 
@@ -90,10 +117,6 @@ async function createIpAndPortsForm(network, options = {}) {
       platformP2PPort,
       platformHTTPPort,
     }) => {
-      if (network === PRESET_MAINNET) {
-        return validateIPv4(ip);
-      }
-
       if (options.isHPMN) {
         if (coreP2PPort === platformP2PPort
           || coreP2PPort === platformHTTPPort
@@ -102,8 +125,14 @@ async function createIpAndPortsForm(network, options = {}) {
         }
       }
 
-      return validateIPv4(ip) && validatePort(coreP2PPort)
-        && (!options.isHPMN || (validatePort(platformP2PPort) && validatePort(platformHTTPPort)));
+      return validateIPv4(ip) && validateCoreP2PPort(coreP2PPort)
+        && (
+          !options.isHPMN
+          || (
+            validatePlatformP2PPort(platformP2PPort)
+            && validatePlatformHTTPPort(platformHTTPPort)
+          )
+        );
     },
   };
 }

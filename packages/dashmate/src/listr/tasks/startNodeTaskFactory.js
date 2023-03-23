@@ -43,7 +43,7 @@ function startNodeTaskFactory(
     const isMinerEnabled = config.get('core.miner.enable');
 
     if (isMinerEnabled === true && config.get('network') !== NETWORK_LOCAL) {
-      throw new Error(`'core.miner.enabled' option only works with local network. Your network is ${config.get('network')}.`);
+      throw new Error(`'core.miner.enable' option only works with local network. Your network is ${config.get('network')}.`);
     }
 
     // Check Drive log files are created
