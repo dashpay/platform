@@ -16,13 +16,14 @@ use crate::{
 
 use crate::bls_adapter::{BlsAdapter, JsBlsAdapter};
 
+use crate::errors::from_dpp_err;
 use crate::utils::{generic_of_js_val, WithJsError};
 use dpp::identity::state_transition::identity_public_key_transitions::IdentityPublicKeyWithWitness;
 use dpp::identity::{KeyID, TimestampMillis};
 use dpp::platform_value::string_encoding::Encoding;
-use dpp::platform_value::{string_encoding, Value};
+use dpp::platform_value::{string_encoding, BinaryData, Value};
 use dpp::prelude::Revision;
-use dpp::state_transition::StateTransitionIdentitySigned;
+use dpp::state_transition::{StateTransitionConvert, StateTransitionIdentitySigned};
 use dpp::{
     identifier::Identifier,
     identity::state_transition::identity_update_transition::identity_update_transition::IdentityUpdateTransition,
@@ -284,6 +285,22 @@ impl IdentityUpdateTransitionWasm {
         Ok(js_object.into())
     }
 
+    #[wasm_bindgen(js_name=toBuffer)]
+    pub fn to_buffer(&self, options: JsValue) -> Result<JsValue, JsValue> {
+        let opts: super::to_object::ToObjectOptions = if options.is_object() {
+            with_js_error!(serde_wasm_bindgen::from_value(options))?
+        } else {
+            Default::default()
+        };
+
+        let buffer = self
+            .0
+            .to_buffer(opts.skip_signature.unwrap_or(false))
+            .map_err(from_dpp_err)?;
+
+        Ok(Buffer::from_bytes(&buffer).into())
+    }
+
     #[wasm_bindgen(js_name=toJSON)]
     pub fn to_json(&self) -> Result<JsValue, JsValue> {
         let object = super::to_object::to_object_struct(&self.0, Default::default());
@@ -427,9 +444,19 @@ impl IdentityUpdateTransitionWasm {
             .with_js_error()
     }
 
+    #[wasm_bindgen(js_name=setSignaturePublicKeyId)]
+    pub fn set_signature_public_key_id(&mut self, key_id: Option<u32>) {
+        self.0.set_signature_public_key_id(key_id.unwrap_or(0))
+    }
+
     #[wasm_bindgen(js_name=getSignature)]
     pub fn get_signature(&self) -> Buffer {
         Buffer::from_bytes_owned(self.0.get_signature().to_vec())
+    }
+
+    #[wasm_bindgen(js_name=setSignature)]
+    pub fn set_signature(&mut self, signature: Option<Vec<u8>>) {
+        self.0.signature = BinaryData::new(signature.unwrap_or(vec![]))
     }
 
     #[wasm_bindgen(js_name=getRevision)]

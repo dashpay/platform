@@ -353,7 +353,7 @@ impl IdentityCreateTransitionWasm {
         Buffer::from_bytes_owned(self.0.get_signature().to_vec())
     }
     #[wasm_bindgen(js_name=setSignature)]
-    pub fn set_signature(&mut self, signature: Vec<u8>) {
-        self.0.signature = BinaryData::new(signature)
+    pub fn set_signature(&mut self, signature: Option<Vec<u8>>) {
+        self.0.signature = BinaryData::new(signature.unwrap_or(vec![]))
     }
 }

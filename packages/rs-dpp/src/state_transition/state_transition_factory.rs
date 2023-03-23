@@ -8,6 +8,7 @@ use crate::consensus::basic::state_transition::InvalidStateTransitionTypeError;
 
 use crate::data_contract::errors::DataContractNotPresentError;
 use crate::data_contract::state_transition::errors::MissingDataContractIdError;
+use crate::identity::state_transition::identity_update_transition::identity_update_transition::IdentityUpdateTransition;
 use crate::{
     consensus::{basic::BasicError, ConsensusError},
     data_contract::{
@@ -168,10 +169,10 @@ pub async fn create_state_transition(
                 DocumentsBatchTransition::from_raw_object(raw_state_transition, data_contracts)?;
             Ok(StateTransition::DocumentsBatch(documents_batch_transition))
         }
-        // TODO!! add basic validation
-        StateTransitionType::IdentityUpdate => Err(ProtocolError::InvalidStateTransitionTypeError(
-            InvalidStateTransitionTypeError::new(transition_type as u8),
-        )),
+        StateTransitionType::IdentityUpdate => {
+            let transition = IdentityUpdateTransition::new(raw_state_transition)?;
+            Ok(StateTransition::IdentityUpdate(transition))
+        }
     }
 }
 
