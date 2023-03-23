@@ -14,6 +14,7 @@ use crate::identity::state_transition::identity_create_transition::IdentityCreat
 use crate::identity::state_transition::identity_credit_withdrawal_transition::IdentityCreditWithdrawalTransition;
 use crate::identity::state_transition::identity_topup_transition::IdentityTopUpTransition;
 use crate::identity::state_transition::identity_update_transition::identity_update_transition::IdentityUpdateTransition;
+use crate::prelude::Identifier;
 
 mod abstract_state_transition;
 mod abstract_state_transition_identity_signed;
@@ -95,6 +96,10 @@ impl StateTransition {
 
     fn binary_property_paths(&self) -> Vec<&'static str> {
         call_static_method!(self, binary_property_paths)
+    }
+
+    fn get_owner_id(&self) -> &Identifier {
+        call_method!(self, get_owner_id)
     }
 }
 
