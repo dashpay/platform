@@ -2,7 +2,7 @@ const crypto = require('crypto');
 const protocolVersion = require('@dashevo/dpp/lib/version/protocolVersion');
 
 const getDataContractFixture = require('@dashevo/dpp/lib/test/fixtures/getDataContractFixture');
-const { expectJsonSchemaError, expectValidationError } = require('../../../../../../../lib/test/expect/expectError');
+const { expectJsonSchemaError, expectValidationError, expectPlatformValueError } = require('../../../../../../../lib/test/expect/expectError');
 
 const { default: loadWasmDpp } = require('../../../../../../../dist');
 
@@ -15,7 +15,7 @@ describe('validateDataContractCreateTransitionBasicFactory', () => {
   let DataContractCreateTransition;
   let validateDataContractCreateTransitionBasic;
   let ValidationResult;
-  let ProtocolVersionParsingError;
+  let PlatformValueError;
   let InvalidDataContractIdError;
 
   before(async () => {
@@ -23,7 +23,7 @@ describe('validateDataContractCreateTransitionBasicFactory', () => {
       DataContractCreateTransition,
       validateDataContractCreateTransitionBasic,
       ValidationResult,
-      ProtocolVersionParsingError,
+      PlatformValueError,
       InvalidDataContractIdError,
     } = await loadWasmDpp());
   });
@@ -63,12 +63,11 @@ describe('validateDataContractCreateTransitionBasicFactory', () => {
 
       const result = await validateDataContractCreateTransitionBasic(rawStateTransition);
 
-      await expectJsonSchemaError(result);
+      await expectPlatformValueError(result);
 
       const [error] = result.getErrors();
 
-      expect(error.getInstancePath()).to.equal('/protocolVersion');
-      expect(error.getKeyword()).to.equal('type');
+      expect(error).to.be.an.instanceOf(PlatformValueError);
     });
 
     it('should be valid', async () => {
@@ -77,7 +76,7 @@ describe('validateDataContractCreateTransitionBasicFactory', () => {
       const result = await validateDataContractCreateTransitionBasic(rawStateTransition);
 
       const [error] = result.getErrors();
-      expect(error).to.be.an.instanceOf(ProtocolVersionParsingError);
+      expect(error).to.be.an.instanceOf(PlatformValueError);
     });
   });
 
@@ -128,7 +127,7 @@ describe('validateDataContractCreateTransitionBasicFactory', () => {
 
     it('should be valid', async () => {
       const result = await validateDataContractCreateTransitionBasic(rawStateTransition);
-
+      console.log(result.errorsText());
       expect(result).to.be.an.instanceOf(ValidationResult);
       expect(result.isValid()).to.be.true();
     });

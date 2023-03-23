@@ -1,29 +1,33 @@
+use crate::identity::core_script::CoreScript;
+use crate::prelude::Identifier;
+use crate::prelude::Revision;
 use dashcore::{hashes::hex::FromHex, PubkeyHash, Script};
-use serde_json::{json, Value};
+use platform_value::string_encoding::{encode, Encoding};
+use platform_value::BinaryData;
+use platform_value::{platform_value, Value};
+use serde_json::{json, Value as JsonValue};
 
 use crate::{
     identity::state_transition::identity_credit_withdrawal_transition::Pooling,
-    state_transition::StateTransitionType,
-    util::string_encoding::{encode, Encoding},
-    version,
+    state_transition::StateTransitionType, version,
 };
 
 pub fn identity_credit_withdrawal_transition_fixture_raw_object() -> Value {
-    json!({
+    platform_value!({
         "protocolVersion": version::LATEST_VERSION,
-        "type": StateTransitionType::IdentityCreditWithdrawal,
-        "identityId": vec![1_u8; 32],
-        "amount": 1042,
-        "coreFeePerByte": 3,
-        "pooling": Pooling::Never,
-        "outputScript": Script::new_p2pkh(&PubkeyHash::from_hex("0000000000000000000000000000000000000000").unwrap()).to_bytes(),
-        "signature": vec![0_u8; 65],
-        "signaturePublicKeyId": 0,
-        "revision": 1,
+        "type": StateTransitionType::IdentityCreditWithdrawal as u8,
+        "identityId": Identifier::from([1_u8; 32]),
+        "amount": 1042u64,
+        "coreFeePerByte": 3u32,
+        "pooling": Pooling::Never as u8,
+        "outputScript": CoreScript::new(Script::new_p2pkh(&PubkeyHash::from_hex("0000000000000000000000000000000000000000").unwrap())),
+        "revision": 1 as Revision,
+        "signaturePublicKeyId": 0u32,
+        "signature": BinaryData::new(vec![0_u8; 65]),
     })
 }
 
-pub fn identity_credit_withdrawal_transition_fixture_json() -> Value {
+pub fn identity_credit_withdrawal_transition_fixture_json() -> JsonValue {
     json!({
         "protocolVersion": version::LATEST_VERSION,
         "type": StateTransitionType::IdentityCreditWithdrawal,

@@ -80,8 +80,8 @@ mod tests {
                 ["b", "==", "2"],
             ]
         });
-        let where_cbor =
-            serializer::value_to_cbor(query_value, None).expect("expected to serialize to cbor");
+        let where_cbor = serializer::serializable_value_to_cbor(&query_value, None)
+            .expect("expected to serialize to cbor");
         let query = DriveQuery::from_cbor(where_cbor.as_slice(), &contract, &document_type)
             .expect("query should be valid");
         let index = query.find_best_index().expect("expected to find index");
@@ -92,8 +92,8 @@ mod tests {
                 ["a", "==", "1"],
             ]
         });
-        let where_cbor =
-            serializer::value_to_cbor(query_value, None).expect("expected to serialize to cbor");
+        let where_cbor = serializer::serializable_value_to_cbor(&query_value, None)
+            .expect("expected to serialize to cbor");
         let query = DriveQuery::from_cbor(where_cbor.as_slice(), &contract, &document_type)
             .expect("query should be valid");
         let index = query.find_best_index().expect("expected to find index");
@@ -110,8 +110,8 @@ mod tests {
                 ["c", "==", "1"]
             ]
         });
-        let where_cbor =
-            serializer::value_to_cbor(query_value, None).expect("expected to serialize to cbor");
+        let where_cbor = serializer::serializable_value_to_cbor(&query_value, None)
+            .expect("expected to serialize to cbor");
         let query = DriveQuery::from_cbor(where_cbor.as_slice(), &contract, &document_type)
             .expect("query should be valid");
         let error = query

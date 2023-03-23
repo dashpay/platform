@@ -1305,7 +1305,7 @@ mod tests {
 
             let share_identities = share_identities_and_documents
                 .iter()
-                .map(|(identity, _)| identity.id.buffer)
+                .map(|(identity, _)| identity.id.to_buffer())
                 .collect();
 
             let refetched_share_identities_balances = platform

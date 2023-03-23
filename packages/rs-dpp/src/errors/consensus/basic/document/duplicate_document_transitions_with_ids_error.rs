@@ -4,15 +4,15 @@ use thiserror::Error;
 #[derive(Error, Debug, Clone, PartialEq, Eq)]
 #[error("Document transitions with duplicate IDs {:?}", references)]
 pub struct DuplicateDocumentTransitionsWithIdsError {
-    references: Vec<(String, Vec<u8>)>,
+    references: Vec<(String, [u8; 32])>,
 }
 
 impl DuplicateDocumentTransitionsWithIdsError {
-    pub fn new(references: Vec<(String, Vec<u8>)>) -> Self {
+    pub fn new(references: Vec<(String, [u8; 32])>) -> Self {
         Self { references }
     }
 
-    pub fn references(&self) -> Vec<(String, Vec<u8>)> {
+    pub fn references(&self) -> Vec<(String, [u8; 32])> {
         self.references.clone()
     }
 }

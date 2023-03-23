@@ -1,18 +1,17 @@
 use crate::consensus::ConsensusError;
-use thiserror::Error;
-
-use crate::document::document_transition::document_base_transition::JsonValue;
 use crate::ProtocolError;
+use platform_value::Value;
+use thiserror::Error;
 
 #[derive(Error, Debug)]
 #[error("Invalid Data Contract: {errors:?}")]
 pub struct InvalidDataContractError {
     pub errors: Vec<ConsensusError>,
-    raw_data_contract: JsonValue,
+    raw_data_contract: Value,
 }
 
 impl InvalidDataContractError {
-    pub fn new(errors: Vec<ConsensusError>, raw_data_contract: JsonValue) -> Self {
+    pub fn new(errors: Vec<ConsensusError>, raw_data_contract: Value) -> Self {
         Self {
             errors,
             raw_data_contract,
@@ -22,7 +21,7 @@ impl InvalidDataContractError {
     pub fn errors(&self) -> &[ConsensusError] {
         &self.errors
     }
-    pub fn raw_data_contract(&self) -> JsonValue {
+    pub fn raw_data_contract(&self) -> Value {
         self.raw_data_contract.clone()
     }
 }

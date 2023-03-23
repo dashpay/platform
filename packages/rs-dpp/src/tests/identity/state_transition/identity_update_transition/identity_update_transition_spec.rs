@@ -1,7 +1,8 @@
 use chrono::Utc;
-use serde_json::{json, Value as JsonValue};
+use platform_value::{platform_value, BinaryData, Value};
 
-use crate::identity::state_transition::identity_public_key_transitions::IdentityPublicKeyCreateTransition;
+use crate::identity::state_transition::identity_public_key_transitions::IdentityPublicKeyWithWitness;
+use crate::prelude::Revision;
 use crate::{
     identity::{
         state_transition::identity_update_transition::identity_update_transition::IdentityUpdateTransition,
@@ -13,12 +14,11 @@ use crate::{
     tests::{
         fixtures::get_identity_update_transition_fixture, utils::generate_random_identifier_struct,
     },
-    util::string_encoding::Encoding,
 };
 
 struct TestData {
     transition: IdentityUpdateTransition,
-    raw_transition: JsonValue,
+    raw_transition: Value,
 }
 
 fn setup_test() -> TestData {
@@ -76,13 +76,13 @@ fn get_public_keys_to_add() {
 fn set_public_keys_to_add() {
     let TestData { mut transition, .. } = setup_test();
 
-    let id_public_key = IdentityPublicKeyCreateTransition {
+    let id_public_key = IdentityPublicKeyWithWitness {
         id: 0,
         key_type: KeyType::BLS12_381,
         purpose: Purpose::AUTHENTICATION,
         security_level : SecurityLevel::CRITICAL,
         read_only: true,
-        data: hex::decode("01fac99ca2c8f39c286717c213e190aba4b7af76db320ec43f479b7d9a2012313a0ae59ca576edf801444bc694686694").unwrap(),
+        data: BinaryData::new(hex::decode("01fac99ca2c8f39c286717c213e190aba4b7af76db320ec43f479b7d9a2012313a0ae59ca576edf801444bc694686694").unwrap()),
         signature : Default::default(),
     };
 
@@ -134,25 +134,25 @@ fn to_object() {
         .to_object(false)
         .expect("conversion to object shouldn't fail");
 
-    let expected_raw_state_transition = json!({
-        "protocolVersion" : 1,
-        "type" : 5,
-        "signature" : [],
-        "signaturePublicKeyId": 0,
-        "identityId" : transition.identity_id.to_buffer(),
-        "revision": 0,
-        "disablePublicKeys" : [0],
-        "publicKeysDisabledAt" : 1234567,
+    let expected_raw_state_transition = platform_value!({
+        "protocolVersion" : 1u32,
+        "type" : 5u8,
+        "signature" : BinaryData::new(vec![0u8;65]),
+        "signaturePublicKeyId": 0u32,
+        "identityId" : transition.identity_id,
+        "revision": 0 as Revision,
+        "disablePublicKeys" : [0u32],
+        "publicKeysDisabledAt" : 1234567u64,
         "addPublicKeys" : [
             {
 
-                "id" : 3,
-                "purpose" : 0,
-                "type": 0,
-                "securityLevel" : 0,
-                "data" :base64::decode("AkVuTKyF3YgKLAQlLEtaUL2HTditwGILfWUVqjzYnIgH").unwrap(),
+                "id" : 3u32,
+                "purpose" : 0u8,
+                "securityLevel" : 0u8,
+                "type": 0u8,
+                "data" :BinaryData::new(base64::decode("AkVuTKyF3YgKLAQlLEtaUL2HTditwGILfWUVqjzYnIgH").unwrap()),
                 "readOnly" : false,
-                "signature" : vec![0;65]
+                "signature" : BinaryData::new(vec![0u8;65])
             }
         ]
     });
@@ -167,21 +167,21 @@ fn to_object_with_signature_skipped() {
         .to_object(true)
         .expect("conversion to object shouldn't fail");
 
-    let expected_raw_state_transition = json!({
-        "protocolVersion" : 1,
-        "type" : 5,
-        "identityId" : transition.identity_id.to_buffer(),
-        "revision": 0,
-        "disablePublicKeys" : [0],
-        "publicKeysDisabledAt" : 1234567,
+    let expected_raw_state_transition = platform_value!({
+        "protocolVersion" : 1u32,
+        "type" : 5u8,
+        "identityId" : transition.identity_id,
+        "revision": 0 as Revision,
+        "disablePublicKeys" : [0u32],
+        "publicKeysDisabledAt" : 1234567u64,
         "addPublicKeys" : [
             {
 
-                "id" : 3,
-                "purpose" : 0,
-                "type": 0,
-                "securityLevel" : 0,
-                "data" :base64::decode("AkVuTKyF3YgKLAQlLEtaUL2HTditwGILfWUVqjzYnIgH").unwrap(),
+                "id" : 3u32,
+                "purpose" : 0u8,
+                "securityLevel" : 0u8,
+                "type": 0u8,
+                "data" :BinaryData::new(base64::decode("AkVuTKyF3YgKLAQlLEtaUL2HTditwGILfWUVqjzYnIgH").unwrap()),
                 "readOnly" : false,
             }
         ]
@@ -194,28 +194,28 @@ fn to_object_with_signature_skipped() {
 fn to_json() {
     let TestData { transition, .. } = setup_test();
     let result = transition
-        .to_json(false)
-        .expect("conversion to json shouldn't fail");
+        .to_object(false)
+        .expect("conversion to platform value shouldn't fail");
 
-    let expected_raw_state_transition = json!({
-        "protocolVersion" : 1,
-        "type" : 5,
-        "signature" : "",
-        "signaturePublicKeyId": 0,
-        "identityId" : transition.identity_id.to_string(Encoding::Base58),
-        "revision": 0,
-        "disablePublicKeys" : [0],
-        "publicKeysDisabledAt" : 1234567,
+    let expected_raw_state_transition = platform_value!({
+        "protocolVersion" : 1u32,
+        "type" : 5u8,
+        "signature" : BinaryData::new(vec![0u8;65]),
+        "signaturePublicKeyId": 0u32,
+        "identityId" : transition.identity_id,
+        "revision": 0 as Revision,
+        "disablePublicKeys" : [0u32],
+        "publicKeysDisabledAt" : 1234567u64,
         "addPublicKeys" : [
             {
 
-                "id" : 3,
-                "purpose" : 0,
-                "type": 0,
-                "securityLevel" : 0,
-                "data" : "AkVuTKyF3YgKLAQlLEtaUL2HTditwGILfWUVqjzYnIgH",
+                "id" : 3u32,
+                "purpose" : 0u8,
+                "securityLevel" : 0u8,
+                "type": 0u8,
+                "data" : BinaryData::new(base64::decode("AkVuTKyF3YgKLAQlLEtaUL2HTditwGILfWUVqjzYnIgH").unwrap()),
                 "readOnly" : false,
-                "signature" : base64::encode(vec![0;65]),
+                "signature" : BinaryData::new(vec![0;65]),
             }
         ]
     });

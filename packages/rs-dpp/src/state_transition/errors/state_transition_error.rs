@@ -1,4 +1,4 @@
-use serde_json::Value as JsonValue;
+use platform_value::Value;
 use thiserror::Error;
 
 use crate::consensus::ConsensusError;
@@ -8,6 +8,6 @@ pub enum StateTransitionError {
     #[error("Invalid State Transition: {errors:?}")]
     InvalidStateTransitionError {
         errors: Vec<ConsensusError>,
-        raw_state_transition: JsonValue,
+        raw_state_transition: Value,
     },
 }

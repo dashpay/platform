@@ -1,38 +1,31 @@
 use mockall::predicate;
+use platform_value::string_encoding::Encoding;
 use serde_json::json;
 
-use crate::{
-    consensus::ConsensusError,
-    data_contract::DataContract,
-    document::{
-        Document,
-        document_transition::{Action, DocumentTransition},
-        state_transition::documents_batch_transition::validation::state::validate_documents_uniqueness_by_indices::*,
+use crate::{consensus::ConsensusError, data_contract::DataContract, document::{
+    document_transition::{Action, DocumentTransition},
+    state_transition::documents_batch_transition::validation::state::validate_documents_uniqueness_by_indices::*,
+}, prelude::Identifier, state_repository::MockStateRepositoryLike, state_transition::state_transition_execution_context::StateTransitionExecutionContext, StateError, tests::{
+    fixtures::{
+        get_data_contract_fixture, get_document_transitions_fixture,
     },
-    prelude::Identifier,
-    state_repository::MockStateRepositoryLike,
-    StateError,
-    tests::{
-        fixtures::{
-            get_data_contract_fixture, get_document_transitions_fixture, get_documents_fixture,
-        },
-        utils::generate_random_identifier_struct,
-    },
-    util::string_encoding::Encoding,
-    validation::ValidationResult, state_transition::state_transition_execution_context::StateTransitionExecutionContext,
-};
+    utils::generate_random_identifier_struct,
+}, validation::ValidationResult};
+use crate::document::{Document, ExtendedDocument};
+use crate::tests::fixtures::get_extended_documents_fixture;
 
 struct TestData {
     owner_id: Identifier,
     data_contract: DataContract,
     documents: Vec<Document>,
+    extended_documents: Vec<ExtendedDocument>,
     document_transitions: Vec<DocumentTransition>,
 }
 
 fn setup_test() -> TestData {
     let owner_id = generate_random_identifier_struct();
     let data_contract = get_data_contract_fixture(Some(owner_id));
-    let documents = get_documents_fixture(data_contract.clone()).unwrap();
+    let documents = get_extended_documents_fixture(data_contract.clone()).unwrap();
 
     TestData {
         owner_id,
@@ -41,7 +34,12 @@ fn setup_test() -> TestData {
             Action::Create,
             documents.clone(),
         )]),
-        documents,
+        documents: documents
+            .clone()
+            .into_iter()
+            .map(|extended_document| extended_document.document)
+            .collect(),
+        extended_documents: documents,
     }
 }
 
@@ -50,7 +48,7 @@ async fn should_return_valid_result_if_documents_have_no_unique_indices() {
     let TestData {
         owner_id,
         data_contract,
-        documents,
+        extended_documents,
         ..
     } = setup_test();
     let mut state_repository_mock = MockStateRepositoryLike::default();
@@ -59,7 +57,7 @@ async fn should_return_valid_result_if_documents_have_no_unique_indices() {
         .returning(|_, _, _, _| Ok(vec![]));
 
     let document_transitions =
-        get_document_transitions_fixture([(Action::Create, vec![documents[0].clone()])]);
+        get_document_transitions_fixture([(Action::Create, vec![extended_documents[0].clone()])]);
     let validation_result = validate_documents_uniqueness_by_indices(
         &state_repository_mock,
         &owner_id,
@@ -77,15 +75,15 @@ async fn should_return_valid_result_if_document_has_unique_indices_and_there_are
     let TestData {
         owner_id,
         data_contract,
-        documents,
+        extended_documents,
         ..
     } = setup_test();
-    let william_doc = documents[3].clone();
+    let william_doc = extended_documents[3].clone();
     let owner_id_base58 = owner_id.to_string(Encoding::Base58);
     let mut state_repository_mock = MockStateRepositoryLike::default();
     let document_transitions =
         get_document_transitions_fixture([(Action::Create, vec![william_doc.clone()])]);
-    let expect_document = william_doc.to_owned();
+    let expect_document: Document = william_doc.to_owned().document;
 
     state_repository_mock
         .expect_fetch_documents()
@@ -102,7 +100,7 @@ async fn should_return_valid_result_if_document_has_unique_indices_and_there_are
         )
         .returning(move |_, _, _, _| Ok(vec![expect_document.clone()]));
 
-    let expect_document = william_doc.to_owned();
+    let expect_document: Document = william_doc.to_owned().document;
     state_repository_mock
         .expect_fetch_documents()
         .with(
@@ -135,11 +133,11 @@ async fn should_return_invalid_result_if_document_has_unique_indices_and_there_a
     let TestData {
         owner_id,
         data_contract,
-        documents,
+        extended_documents,
         ..
     } = setup_test();
-    let william_doc = documents[3].clone();
-    let leon_doc = documents[4].clone();
+    let william_doc = extended_documents[3].clone();
+    let leon_doc = extended_documents[4].clone();
     let owner_id_base58 = owner_id.to_string(Encoding::Base58);
     let mut state_repository_mock = MockStateRepositoryLike::default();
     let document_transitions = get_document_transitions_fixture([(
@@ -147,7 +145,7 @@ async fn should_return_invalid_result_if_document_has_unique_indices_and_there_a
         vec![william_doc.clone(), leon_doc.clone()],
     )]);
 
-    let expect_document = leon_doc.to_owned();
+    let expect_document: Document = leon_doc.to_owned().document;
     state_repository_mock
         .expect_fetch_documents()
         .with(
@@ -163,7 +161,7 @@ async fn should_return_invalid_result_if_document_has_unique_indices_and_there_a
         )
         .returning(move |_, _, _, _| Ok(vec![expect_document.clone()]));
 
-    let expect_document = leon_doc.to_owned();
+    let expect_document: Document = leon_doc.to_owned().document;
     state_repository_mock
         .expect_fetch_documents()
         .with(
@@ -179,7 +177,7 @@ async fn should_return_invalid_result_if_document_has_unique_indices_and_there_a
         )
         .returning(move |_, _, _, _| Ok(vec![expect_document.clone()]));
 
-    let expect_document = william_doc.to_owned();
+    let expect_document: Document = william_doc.to_owned().document;
     state_repository_mock
         .expect_fetch_documents()
         .with(
@@ -195,7 +193,7 @@ async fn should_return_invalid_result_if_document_has_unique_indices_and_there_a
         )
         .returning(move |_, _, _, _| Ok(vec![expect_document.clone()]));
 
-    let expect_document = william_doc.to_owned();
+    let expect_document: Document = william_doc.to_owned().document;
     state_repository_mock
         .expect_fetch_documents()
         .with(
@@ -243,11 +241,11 @@ async fn should_return_valid_result_in_dry_run_if_document_has_unique_indices_an
     let TestData {
         owner_id,
         data_contract,
-        documents,
+        extended_documents,
         ..
     } = setup_test();
-    let william_doc = documents[3].clone();
-    let leon_doc = documents[4].clone();
+    let william_doc = extended_documents[3].clone();
+    let leon_doc = extended_documents[4].clone();
     let owner_id_base58 = owner_id.to_string(Encoding::Base58);
     let mut state_repository_mock = MockStateRepositoryLike::default();
     let document_transitions = get_document_transitions_fixture([(
@@ -255,7 +253,7 @@ async fn should_return_valid_result_in_dry_run_if_document_has_unique_indices_an
         vec![william_doc.clone(), leon_doc.clone()],
     )]);
 
-    let expect_document = leon_doc.to_owned();
+    let expect_document: Document = leon_doc.to_owned().document;
     state_repository_mock
         .expect_fetch_documents()
         .with(
@@ -271,7 +269,7 @@ async fn should_return_valid_result_in_dry_run_if_document_has_unique_indices_an
         )
         .returning(move |_, _, _, _| Ok(vec![expect_document.clone()]));
 
-    let expect_document = leon_doc.to_owned();
+    let expect_document: Document = leon_doc.to_owned().document;
     state_repository_mock
         .expect_fetch_documents()
         .with(
@@ -287,7 +285,7 @@ async fn should_return_valid_result_in_dry_run_if_document_has_unique_indices_an
         )
         .returning(move |_, _, _, _| Ok(vec![expect_document.clone()]));
 
-    let expect_document = william_doc.to_owned();
+    let expect_document: Document = william_doc.to_owned().document;
     state_repository_mock
         .expect_fetch_documents()
         .with(
@@ -303,7 +301,7 @@ async fn should_return_valid_result_in_dry_run_if_document_has_unique_indices_an
         )
         .returning(move |_, _, _, _| Ok(vec![expect_document.clone()]));
 
-    let expect_document = william_doc.to_owned();
+    let expect_document: Document = william_doc.to_owned().document;
     state_repository_mock
         .expect_fetch_documents()
         .with(
@@ -339,16 +337,16 @@ async fn should_return_valid_result_if_document_has_undefined_field_from_index()
     let TestData {
         owner_id,
         data_contract,
-        documents,
+        extended_documents,
         ..
     } = setup_test();
-    let indexed_document = documents[7].clone();
+    let indexed_document = extended_documents[7].clone();
     let document_transitions =
         get_document_transitions_fixture([(Action::Create, vec![indexed_document.clone()])]);
     let owner_id_base58 = owner_id.to_string(Encoding::Base58);
     let mut state_repository_mock = MockStateRepositoryLike::default();
 
-    let expect_document = indexed_document.to_owned();
+    let expect_document: Document = indexed_document.to_owned().document;
     state_repository_mock
         .expect_fetch_documents()
         .with(
@@ -364,7 +362,7 @@ async fn should_return_valid_result_if_document_has_undefined_field_from_index()
         )
         .returning(move |_, _, _, _| Ok(vec![expect_document.clone()]));
 
-    let expect_document = indexed_document.to_owned();
+    let expect_document: Document = indexed_document.to_owned().document;
     state_repository_mock
         .expect_fetch_documents()
         .with(
@@ -398,15 +396,15 @@ async fn should_return_valid_result_if_document_being_created_and_has_created_at
     let TestData {
         owner_id,
         data_contract,
-        documents,
+        extended_documents,
         ..
     } = setup_test();
-    let unique_dates_doc = documents[6].clone();
+    let unique_dates_doc = extended_documents[6].clone();
     let document_transitions =
         get_document_transitions_fixture([(Action::Create, vec![unique_dates_doc.clone()])]);
     let mut state_repository_mock = MockStateRepositoryLike::default();
 
-    let expect_document = unique_dates_doc.to_owned();
+    let expect_document: Document = unique_dates_doc.to_owned().document;
     state_repository_mock
             .expect_fetch_documents()
             .with(
@@ -414,8 +412,8 @@ async fn should_return_valid_result_if_document_being_created_and_has_created_at
                 predicate::eq("uniqueDates"),
                 predicate::eq(json!({
                    "where" : [
-                    ["$createdAt", "==", unique_dates_doc.created_at.expect("createdAt should be present") ],
-                    ["$updatedAt", "==", unique_dates_doc.created_at.expect("createdAt should be present") ],
+                    ["$createdAt", "==", unique_dates_doc.created_at().expect("createdAt should be present") ],
+                    ["$updatedAt", "==", unique_dates_doc.created_at().expect("createdAt should be present") ],
                    ],
                 })),
                predicate::always(),

@@ -6,11 +6,12 @@ pub mod purpose;
 pub mod security_level;
 pub mod serialize;
 
-use std::convert::TryInto;
+use std::convert::{TryFrom, TryInto};
 
 use anyhow::anyhow;
 use ciborium::value::Value as CborValue;
 use dashcore::PublicKey as ECDSAPublicKey;
+use platform_value::{BinaryData, ReplacementType, Value, ValueMapHelper};
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use serde_json::Value as JsonValue;
 
@@ -20,11 +21,10 @@ pub use crate::identity::purpose::Purpose;
 pub use crate::identity::security_level::SecurityLevel;
 use crate::util::cbor_value::{CborCanonicalMap, CborMapExtension};
 use crate::util::hash::ripemd160_sha256;
-use crate::util::json_value::{JsonValueExt, ReplaceWith};
-use crate::util::vec;
-use crate::SerdeParsingError;
+use crate::util::{serializer, vec};
+use crate::Convertible;
 
-use crate::identity::state_transition::identity_public_key_transitions::IdentityPublicKeyCreateTransition;
+use crate::identity::state_transition::identity_public_key_transitions::IdentityPublicKeyWithWitness;
 
 pub type KeyID = u32;
 pub type TimestampMillis = u64;
@@ -40,22 +40,64 @@ pub struct IdentityPublicKey {
     #[serde(rename = "type")]
     pub key_type: KeyType,
     pub read_only: bool,
-    pub data: Vec<u8>,
+    pub data: BinaryData,
     #[serde(default)]
     pub disabled_at: Option<TimestampMillis>,
 }
 
-impl Into<IdentityPublicKeyCreateTransition> for &IdentityPublicKey {
-    fn into(self) -> IdentityPublicKeyCreateTransition {
-        IdentityPublicKeyCreateTransition {
+impl Into<IdentityPublicKeyWithWitness> for &IdentityPublicKey {
+    fn into(self) -> IdentityPublicKeyWithWitness {
+        IdentityPublicKeyWithWitness {
             id: self.id,
             purpose: self.purpose,
             security_level: self.security_level,
             key_type: self.key_type,
             read_only: self.read_only,
             data: self.data.clone(),
-            signature: vec![],
+            signature: BinaryData::default(),
         }
+    }
+}
+
+impl Convertible for IdentityPublicKey {
+    fn to_object(&self) -> Result<Value, ProtocolError> {
+        platform_value::to_value(self).map_err(ProtocolError::ValueError)
+    }
+
+    fn to_cleaned_object(&self) -> Result<Value, ProtocolError> {
+        let mut value = platform_value::to_value(self).map_err(ProtocolError::ValueError)?;
+        if self.disabled_at.is_none() {
+            value
+                .remove("disabledAt")
+                .map_err(ProtocolError::ValueError)?;
+        }
+        Ok(value)
+    }
+
+    fn into_object(self) -> Result<Value, ProtocolError> {
+        platform_value::to_value(self).map_err(ProtocolError::ValueError)
+    }
+
+    fn to_json_object(&self) -> Result<JsonValue, ProtocolError> {
+        self.to_cleaned_object()?
+            .try_into_validating_json()
+            .map_err(ProtocolError::ValueError)
+    }
+
+    fn to_json(&self) -> Result<JsonValue, ProtocolError> {
+        self.to_cleaned_object()?
+            .try_into()
+            .map_err(ProtocolError::ValueError)
+    }
+
+    fn to_buffer(&self) -> Result<Vec<u8>, ProtocolError> {
+        let mut object = self.to_cleaned_object()?;
+        object
+            .to_map_mut()
+            .unwrap()
+            .sort_by_lexicographical_byte_ordering_keys_and_inner_maps();
+
+        serializer::serializable_value_to_cbor(&object, None)
     }
 }
 
@@ -106,46 +148,22 @@ impl IdentityPublicKey {
                     Ok(ripemd160_sha256(self.data.as_slice()))
                 }
             }
-            KeyType::ECDSA_HASH160 | KeyType::BIP13_SCRIPT_HASH => Ok(self.data.clone()),
+            KeyType::ECDSA_HASH160 | KeyType::BIP13_SCRIPT_HASH => Ok(self.data.to_vec()),
         }
     }
 
     pub fn as_ecdsa_array(&self) -> Result<[u8; 33], InvalidVectorSizeError> {
-        vec::vec_to_array::<33>(&self.data)
+        vec::vec_to_array::<33>(self.data.as_slice())
     }
 
-    pub fn from_raw_object(raw_object: JsonValue) -> Result<IdentityPublicKey, ProtocolError> {
-        let identity_public_key: IdentityPublicKey = serde_json::from_value(raw_object)?;
-        Ok(identity_public_key)
+    pub fn from_value(value: Value) -> Result<IdentityPublicKey, ProtocolError> {
+        value.try_into().map_err(ProtocolError::ValueError)
     }
 
-    pub fn from_json_object(mut raw_object: JsonValue) -> Result<IdentityPublicKey, ProtocolError> {
-        raw_object.replace_binary_paths(BINARY_DATA_FIELDS, ReplaceWith::Bytes)?;
-        let identity_public_key: IdentityPublicKey = serde_json::from_value(raw_object)?;
-
-        Ok(identity_public_key)
-    }
-
-    /// Return raw data, with all binary fields represented as arrays
-    pub fn to_raw_json_object(&self) -> Result<JsonValue, SerdeParsingError> {
-        let mut value = serde_json::to_value(self)?;
-
-        if self.disabled_at.is_none() {
-            if let JsonValue::Object(ref mut o) = value {
-                o.remove("disabledAt");
-            }
-        }
-
-        Ok(value)
-    }
-
-    /// Return json with all binary data converted to base64
-    pub fn to_json(&self) -> Result<JsonValue, SerdeParsingError> {
-        let mut value = self.to_raw_json_object()?;
-
-        value.replace_binary_paths(BINARY_DATA_FIELDS, ReplaceWith::Base64)?;
-
-        Ok(value)
+    pub fn from_json_object(raw_object: JsonValue) -> Result<IdentityPublicKey, ProtocolError> {
+        let mut value: Value = raw_object.into();
+        value.replace_at_paths(BINARY_DATA_FIELDS, ReplacementType::BinaryBytes)?;
+        Self::from_value(value)
     }
 
     pub fn from_cbor_value(cbor_value: &CborValue) -> Result<Self, ProtocolError> {
@@ -173,7 +191,7 @@ impl IdentityPublicKey {
             purpose: purpose.try_into()?,
             security_level: security_level.try_into()?,
             key_type: key_type.try_into()?,
-            data: public_key_bytes,
+            data: BinaryData::new(public_key_bytes),
             read_only: readonly,
             disabled_at,
         })
@@ -199,6 +217,42 @@ impl IdentityPublicKey {
 impl Into<CborValue> for &IdentityPublicKey {
     fn into(self) -> CborValue {
         self.to_cbor_value()
+    }
+}
+
+impl TryFrom<&IdentityPublicKey> for Value {
+    type Error = platform_value::Error;
+
+    fn try_from(value: &IdentityPublicKey) -> Result<Self, Self::Error> {
+        platform_value::to_value(value)
+    }
+}
+
+impl TryFrom<IdentityPublicKey> for Value {
+    type Error = platform_value::Error;
+
+    fn try_from(value: IdentityPublicKey) -> Result<Self, Self::Error> {
+        platform_value::to_value(value)
+    }
+}
+
+impl TryFrom<Value> for IdentityPublicKey {
+    type Error = platform_value::Error;
+
+    fn try_from(value: Value) -> Result<Self, Self::Error> {
+        platform_value::from_value(value)
+    }
+}
+
+impl TryFrom<&str> for IdentityPublicKey {
+    type Error = ProtocolError;
+
+    fn try_from(value: &str) -> Result<Self, Self::Error> {
+        let mut platform_value: Value = serde_json::from_str::<JsonValue>(value)
+            .map_err(|e| ProtocolError::StringDecodeError(e.to_string()))?
+            .into();
+        platform_value.replace_at_paths(BINARY_DATA_FIELDS, ReplacementType::BinaryBytes)?;
+        platform_value.try_into().map_err(ProtocolError::ValueError)
     }
 }
 

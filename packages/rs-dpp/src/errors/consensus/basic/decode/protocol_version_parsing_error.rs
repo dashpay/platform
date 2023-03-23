@@ -1,15 +1,16 @@
 use thiserror::Error;
 
 use crate::consensus::ConsensusError;
+use crate::ProtocolError;
 
 #[derive(Error, Debug)]
 #[error("Can't read protocol version from serialized object: {parsing_error}")]
 pub struct ProtocolVersionParsingError {
-    pub parsing_error: anyhow::Error,
+    pub parsing_error: ProtocolError,
 }
 
 impl ProtocolVersionParsingError {
-    pub fn new(parsing_error: anyhow::Error) -> Self {
+    pub fn new(parsing_error: ProtocolError) -> Self {
         Self { parsing_error }
     }
 }

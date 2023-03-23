@@ -99,12 +99,12 @@ describe('validateDocumentsUniquenessByIndices', () => {
 
   it('should return valid result if Document has unique indices and there are no duplicates - Rust', async () => {
     const [, , , william] = documentsJs;
-    const williamDocument = new Document(william.toObject(), dataContract);
+    const williamDocument = new Document(william.toObject(), dataContract, william.getType());
 
     stateRepositoryMock.fetchDocuments
       .withArgs(
         dataContract.getId().toBuffer(),
-        williamDocument.getType(),
+        william.getType(),
         {
           where: [
             ['$ownerId', '==', ownerIdJs],
@@ -142,15 +142,18 @@ describe('validateDocumentsUniquenessByIndices', () => {
   it('should return invalid result if Document has unique indices and there are duplicates - Rust', async () => {
     let [, , , william, leon] = documentsJs;
 
-    william = new Document(william.toObject(), dataContract.clone());
-    leon = new Document(leon.toObject(), dataContract.clone());
+    const williamType = william.getType();
+    const leonType = leon.getType();
 
-    const indicesDefinition = dataContractJs.getDocumentSchema(william.getType()).indices;
+    william = new Document(william.toObject(), dataContract.clone(), williamType);
+    leon = new Document(leon.toObject(), dataContract.clone(), leonType);
+
+    const indicesDefinition = dataContractJs.getDocumentSchema(williamType).indices;
 
     stateRepositoryMock.fetchDocuments
       .withArgs(
         sinon.match.instanceOf(Identifier),
-        william.getType(),
+        williamType,
         {
           where: [
             ['$ownerId', '==', ownerId.toJSON()],
@@ -163,7 +166,7 @@ describe('validateDocumentsUniquenessByIndices', () => {
     stateRepositoryMock.fetchDocuments
       .withArgs(
         sinon.match.instanceOf(Identifier),
-        william.getType(),
+        williamType,
         {
           where: [
             ['$ownerId', '==', ownerId.toJSON()],
@@ -176,7 +179,7 @@ describe('validateDocumentsUniquenessByIndices', () => {
     stateRepositoryMock.fetchDocuments
       .withArgs(
         sinon.match.instanceOf(Identifier),
-        leon.getType(),
+        leonType,
         {
           where: [
             ['$ownerId', '==', ownerId.toJSON()],
@@ -189,7 +192,7 @@ describe('validateDocumentsUniquenessByIndices', () => {
     stateRepositoryMock.fetchDocuments
       .withArgs(
         sinon.match.instanceOf(Identifier),
-        leon.getType(),
+        leonType,
         {
           where: [
             ['$ownerId', '==', ownerId.toJSON()],
@@ -229,7 +232,9 @@ describe('validateDocumentsUniquenessByIndices', () => {
 
   it('should return valid result if Document has undefined field from index - Rust', async () => {
     const indexedDocumentJs = documentsJs[7];
-    const indexedDocument = new Document(indexedDocumentJs.toObject(), dataContract.clone());
+    const indexedDocument = new Document(
+      indexedDocumentJs.toObject(), dataContract.clone(), indexedDocumentJs.getType(),
+    );
     const indexedDocumentTransitions = getDocumentTransitionsFixture({
       create: [indexedDocumentJs],
     }).map(
@@ -241,7 +246,7 @@ describe('validateDocumentsUniquenessByIndices', () => {
     stateRepositoryMockJs.fetchDocuments
       .withArgs(
         sinon.match.instanceOf(Identifier),
-        indexedDocument.getType(),
+        indexedDocumentJs.getType(),
         {
           where: [
             ['$ownerId', '==', ownerId.toJSON()],
@@ -254,7 +259,7 @@ describe('validateDocumentsUniquenessByIndices', () => {
     stateRepositoryMockJs.fetchDocuments
       .withArgs(
         sinon.match.instanceOf(Identifier),
-        indexedDocument.getType(),
+        indexedDocumentJs.getType(),
         {
           where: [
             ['$ownerId', '==', ownerId.toJSON()],
@@ -278,7 +283,7 @@ describe('validateDocumentsUniquenessByIndices', () => {
   it('should return valid result if Document being created and has createdAt and updatedAt indices - Rust', async () => {
     const [, , , , , , uniqueDatesDocumentJs] = documentsJs;
     const uniqueDatesDocument = new Document(
-      uniqueDatesDocumentJs.toObject(), dataContract.clone(),
+      uniqueDatesDocumentJs.toObject(), dataContract.clone(), uniqueDatesDocumentJs.getType(),
     );
     const uniqueDatesDocumentTransitions = getDocumentTransitionsFixture({
       create: [uniqueDatesDocumentJs],

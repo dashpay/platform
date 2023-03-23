@@ -1,5 +1,5 @@
 use crate::consensus::basic::BasicError;
-use crate::identifier::Identifier;
+use crate::prelude::Identifier;
 use thiserror::Error;
 
 #[derive(Error, Debug, Clone, PartialEq, Eq)]
@@ -22,11 +22,11 @@ impl InvalidDocumentTransitionIdError {
     }
 
     pub fn expected_id(&self) -> Identifier {
-        self.expected_id.clone()
+        self.expected_id
     }
 
     pub fn invalid_id(&self) -> Identifier {
-        self.invalid_id.clone()
+        self.invalid_id
     }
 }
 

@@ -1,9 +1,11 @@
+use crate::data_contract::contract_config::ContractConfig;
 use crate::data_contract::validation::data_contract_validator::DataContractValidator;
 use crate::data_contract::{DataContract, DataContractFactory};
-use crate::document::document_transition::document_base_transition::JsonValue;
+
 use crate::prelude::{Identifier, ValidationResult};
 use crate::version::ProtocolVersionValidator;
 use crate::ProtocolError;
+use platform_value::Value;
 use std::sync::Arc;
 
 use super::state_transition::data_contract_create_transition::DataContractCreateTransition;
@@ -30,16 +32,18 @@ impl DataContractFacade {
     pub fn create(
         &self,
         owner_id: Identifier,
-        documents: JsonValue,
-        definitions: Option<JsonValue>,
+        documents: Value,
+        config: Option<ContractConfig>,
+        definitions: Option<Value>,
     ) -> Result<DataContract, ProtocolError> {
-        self.factory.create(owner_id, documents, definitions)
+        self.factory
+            .create(owner_id, documents, config, definitions)
     }
 
     /// Create Data Contract from plain object
     pub async fn create_from_object(
         &self,
-        raw_data_contract: JsonValue,
+        raw_data_contract: Value,
         skip_validation: bool,
     ) -> Result<DataContract, ProtocolError> {
         let res = self
@@ -82,16 +86,8 @@ impl DataContractFacade {
     /// Validate Data Contract
     pub async fn validate(
         &self,
-        data_contract: JsonValue,
+        data_contract: Value,
     ) -> Result<ValidationResult<()>, ProtocolError> {
-        // TODO: figure out what to do with a case where it's not a raw data contract
-        // let rawDataContract;
-        // if (dataContract instanceof DataContract) {
-        //     rawDataContract = dataContract.toObject();
-        // } else {
-        //     rawDataContract = dataContract;
-        // }
-
         self.data_contract_validator.validate(&data_contract)
     }
 }

@@ -1,16 +1,20 @@
-const protocolVersion = require('../../version/protocolVersion');
-const stateTransitionTypes = require('../../stateTransition/stateTransitionTypes');
-const getInstantAssetLockProofFixture = require('./getInstantAssetLockProofFixture');
-const generateRandomIdentifier = require('../utils/generateRandomIdentifier');
-const IdentityUpdateTransition = require('../../identity/stateTransition/IdentityUpdateTransition/IdentityUpdateTransition');
-const IdentityPublicKey = require('../../identity/IdentityPublicKey');
+const generateRandomIdentifierAsync = require('../utils/generateRandomIdentifierAsync');
 
-module.exports = function getIdentityUpdateTransitionFixture() {
+const getInstantAssetLockProofFixture = require('./getInstantAssetLockProofFixture');
+
+const { default: loadWasmDpp } = require('../../..');
+let { IdentityUpdateTransition, IdentityPublicKey } = require('../../..');
+
+module.exports = async function getIdentityUpdateTransitionFixture() {
+  ({ IdentityUpdateTransition, IdentityPublicKey } = await loadWasmDpp());
+
   const rawStateTransition = {
-    protocolVersion: protocolVersion.latestVersion,
-    type: stateTransitionTypes.IDENTITY_UPDATE,
-    assetLockProof: getInstantAssetLockProofFixture().toObject(),
-    identityId: generateRandomIdentifier(),
+    signature: Buffer.alloc(0),
+    signaturePublicKeyId: 0,
+    protocolVersion: 1,
+    type: 5,
+    assetLockProof: (await getInstantAssetLockProofFixture()).toObject(),
+    identityId: (await generateRandomIdentifierAsync()).toBuffer(),
     revision: 0,
     addPublicKeys: [
       {

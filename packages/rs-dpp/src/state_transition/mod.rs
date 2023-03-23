@@ -4,6 +4,7 @@ pub use abstract_state_transition::{
     state_transition_helpers, StateTransitionConvert, StateTransitionLike,
 };
 pub use abstract_state_transition_identity_signed::StateTransitionIdentitySigned;
+use platform_value::{BinaryData, Value};
 pub use state_transition_types::*;
 
 use crate::data_contract::state_transition::data_contract_create_transition::DataContractCreateTransition;
@@ -19,6 +20,7 @@ mod abstract_state_transition;
 mod abstract_state_transition_identity_signed;
 mod state_transition_facade;
 mod state_transition_factory;
+use crate::ProtocolError;
 pub use state_transition_facade::*;
 pub use state_transition_factory::*;
 
@@ -111,7 +113,10 @@ impl StateTransitionConvert for StateTransition {
         call_method!(self, to_json, skip_signature)
     }
 
-    fn to_object(&self, skip_signature: bool) -> Result<serde_json::Value, crate::ProtocolError> {
+    fn to_object(
+        &self,
+        skip_signature: bool,
+    ) -> Result<platform_value::Value, crate::ProtocolError> {
         call_method!(self, to_object, skip_signature)
     }
 
@@ -126,6 +131,10 @@ impl StateTransitionConvert for StateTransition {
     fn binary_property_paths() -> Vec<&'static str> {
         panic!("Static call is not supported")
     }
+
+    fn to_cleaned_object(&self, skip_signature: bool) -> Result<Value, ProtocolError> {
+        call_method!(self, to_cleaned_object, skip_signature)
+    }
 }
 
 impl StateTransitionLike for StateTransition {
@@ -137,12 +146,12 @@ impl StateTransitionLike for StateTransition {
         call_method!(self, get_type)
     }
     /// returns the signature as a byte-array
-    fn get_signature(&self) -> &Vec<u8> {
+    fn get_signature(&self) -> &BinaryData {
         call_method!(self, get_signature)
     }
 
     /// set a new signature
-    fn set_signature(&mut self, signature: Vec<u8>) {
+    fn set_signature(&mut self, signature: BinaryData) {
         call_method!(self, set_signature, signature)
     }
 
@@ -156,6 +165,10 @@ impl StateTransitionLike for StateTransition {
 
     fn set_execution_context(&mut self, execution_context: StateTransitionExecutionContext) {
         call_method!(self, set_execution_context, execution_context)
+    }
+
+    fn set_signature_bytes(&mut self, signature: Vec<u8>) {
+        call_method!(self, set_signature_bytes, signature)
     }
 
     fn get_modified_data_ids(&self) -> Vec<crate::prelude::Identifier> {

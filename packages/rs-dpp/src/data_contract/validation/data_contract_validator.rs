@@ -1,10 +1,9 @@
-use std::{collections::HashMap, sync::Arc};
-
-use anyhow::anyhow;
 use itertools::Itertools;
 use lazy_static::lazy_static;
 use log::trace;
+use platform_value::Value;
 use serde_json::Value as JsonValue;
+use std::{collections::HashMap, sync::Arc};
 
 use crate::consensus::basic::data_contract::{
     DuplicateIndexError, DuplicateIndexNameError, InvalidCompoundIndexError,
@@ -52,7 +51,7 @@ pub struct DataContractValidator {
 }
 
 impl DataValidator for DataContractValidator {
-    type Item = JsonValue;
+    type Item = Value;
 
     fn validate(
         &self,
@@ -71,13 +70,15 @@ impl DataContractValidator {
 
     pub fn validate(
         &self,
-        raw_data_contract: &JsonValue,
+        raw_data_contract: &Value,
     ) -> Result<ValidationResult<()>, ProtocolError> {
         let mut result = ValidationResult::default();
 
         trace!("validating against data contract meta validator");
         result.merge(JsonSchemaValidator::validate_data_contract_schema(
-            raw_data_contract,
+            &raw_data_contract
+                .try_to_validating_json()
+                .map_err(ProtocolError::ValueError)?,
         ));
         if !result.is_valid() {
             return Ok(result);
@@ -87,9 +88,8 @@ impl DataContractValidator {
         result.merge(
             self.protocol_version_validator.validate(
                 raw_data_contract
-                    .get_u64("protocolVersion")
-                    .map_err(|_| anyhow!("protocolVersion isn't unsigned integer"))?
-                    as u32,
+                    .get_integer("protocolVersion")
+                    .map_err(ProtocolError::ValueError)?,
             )?,
         );
         if !result.is_valid() {

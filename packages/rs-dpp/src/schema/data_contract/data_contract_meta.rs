@@ -453,7 +453,7 @@
 // }"#;
 //
 //   let json_schema = serde_json::from_str(data)?;
-//   let kek = json!({ "string": "yes" });
+//   let kek = platform_value!({ "string": "yes" });
 //
 //   JSONSchema::compile(&kek)
 // }

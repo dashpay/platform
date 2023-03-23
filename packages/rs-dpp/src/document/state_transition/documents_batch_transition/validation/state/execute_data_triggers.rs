@@ -33,7 +33,7 @@ where
 
     for dt in document_transitions {
         let document_transition = dt.as_ref();
-        let document_type = &document_transition.base().document_type;
+        let document_type = &document_transition.base().document_type_name;
         let transition_action = document_transition.base().action;
 
         let data_triggers_for_transition = get_data_triggers(

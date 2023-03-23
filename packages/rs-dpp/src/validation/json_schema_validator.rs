@@ -2,7 +2,7 @@ use std::collections::HashMap;
 
 use anyhow::Context;
 use jsonschema::{JSONSchema, KeywordDefinition};
-use serde_json::{json, Value};
+use serde_json::{json, Value as JsonValue};
 
 use crate::consensus::ConsensusError;
 use crate::util::json_value::JsonValueExt;
@@ -13,12 +13,12 @@ use crate::{DashPlatformProtocolInitError, NonConsensusError, SerdeParsingError}
 use super::meta_validators;
 
 pub struct JsonSchemaValidator {
-    raw_schema_json: Value,
+    raw_schema_json: JsonValue,
     schema: Option<JSONSchema>,
 }
 
 impl DataValidator for JsonSchemaValidator {
-    type Item = Value;
+    type Item = JsonValue;
     fn validate(
         &self,
         data: &Self::Item,
@@ -31,7 +31,7 @@ impl DataValidator for JsonSchemaValidator {
 }
 
 impl JsonSchemaValidator {
-    pub fn new(schema_json: Value) -> Result<Self, DashPlatformProtocolInitError> {
+    pub fn new(schema_json: JsonValue) -> Result<Self, DashPlatformProtocolInitError> {
         let mut json_schema_validator = Self {
             raw_schema_json: schema_json,
             schema: None,
@@ -48,10 +48,10 @@ impl JsonSchemaValidator {
 
     /// creates a new json schema validator from the json schema and allows to add the definitions
     pub fn new_with_definitions<'a>(
-        mut schema_json: Value,
-        definitions: impl IntoIterator<Item = (&'a String, &'a Value)>,
+        mut schema_json: JsonValue,
+        definitions: impl IntoIterator<Item = (&'a String, &'a JsonValue)>,
     ) -> Result<Self, DashPlatformProtocolInitError> {
-        let defs: HashMap<&str, &'a Value> = definitions
+        let defs: HashMap<&str, &'a JsonValue> = definitions
             .into_iter()
             .map(|(k, v)| (k.as_ref(), v))
             .collect();
@@ -69,7 +69,7 @@ impl JsonSchemaValidator {
         Ok(json_schema_validator)
     }
 
-    pub fn validate(&self, object: &Value) -> Result<ValidationResult<()>, NonConsensusError> {
+    pub fn validate(&self, object: &JsonValue) -> Result<ValidationResult<()>, NonConsensusError> {
         // TODO: create better error messages
         let res = self
             .schema
@@ -91,7 +91,7 @@ impl JsonSchemaValidator {
     }
 
     /// validates schema through compilation
-    pub fn validate_schema(schema: &Value) -> ValidationResult<()> {
+    pub fn validate_schema(schema: &JsonValue) -> ValidationResult<()> {
         let mut validation_result = ValidationResult::new(None);
 
         let res = JSONSchema::options()
@@ -108,7 +108,7 @@ impl JsonSchemaValidator {
     }
 
     /// Uses predefined meta-schemas to validate data contract schema
-    pub fn validate_data_contract_schema(data_contract_schema: &Value) -> ValidationResult<()> {
+    pub fn validate_data_contract_schema(data_contract_schema: &JsonValue) -> ValidationResult<()> {
         let mut validation_result = ValidationResult::new(None);
         let res = meta_validators::DATA_CONTRACT_META_SCHEMA.validate(data_contract_schema);
 

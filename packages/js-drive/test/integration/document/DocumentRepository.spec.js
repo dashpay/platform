@@ -83,14 +83,6 @@ const nonNumberTestCases = [
   typesTestCases.buffer,
 ];
 
-const nonNumberAndUndefinedTestCases = [
-  typesTestCases.string,
-  typesTestCases.boolean,
-  typesTestCases.null,
-  typesTestCases.object,
-  typesTestCases.buffer,
-];
-
 const nonNumberNullAndUndefinedTestCases = [
   typesTestCases.string,
   typesTestCases.boolean,
@@ -1511,7 +1503,7 @@ describe('DocumentRepository', function main() {
                       expect.fail('should throw an error');
                     } catch (e) {
                       expect(e).to.be.instanceOf(InvalidQueryError);
-                      expect(e.message).to.equal('value error: structure Error: value is not a float');
+                      expect(e.message).to.equal('value error: structure error: value is not a float');
                     }
                   });
                 });
@@ -1851,7 +1843,9 @@ describe('DocumentRepository', function main() {
 
                     expect.fail('should throw an error');
                   } catch (e) {
-                    expect(e.message).to.equal('value error: structure Error: value is not a float');
+                    expect(e.message).to.startsWith(
+                      'value error: structure error: value is not an integer',
+                    );
                     expect(e).to.be.instanceOf(InvalidQueryError);
                   }
                 });
@@ -1865,8 +1859,8 @@ describe('DocumentRepository', function main() {
                     expect.fail('should throw an error');
                   } catch (e) {
                     expect(e).to.be.instanceOf(InvalidQueryError);
-                    expect(e.message).to.equal(
-                      'value error: structure Error: value is not a float',
+                    expect(e.message).to.startsWith(
+                      'value error: structure error: value is not an integer',
                     );
                   }
                 });
@@ -1984,7 +1978,7 @@ describe('DocumentRepository', function main() {
                   expect.fail('should throw an error');
                 } catch (e) {
                   expect(e).to.be.instanceOf(InvalidQueryError);
-                  expect(e.message).to.equal('value error: structure Error: value is not a float');
+                  expect(e.message).to.equal('value error: structure error: value is not a float');
                 }
               });
             });
@@ -2607,11 +2601,11 @@ describe('DocumentRepository', function main() {
             expect.fail('should throw an error');
           } catch (e) {
             expect(e).to.be.instanceOf(InvalidQueryError);
-            expect(e.message).to.equal('value error: structure Error: value is not an integer');
+            expect(e.message).to.equal('value error: structure error: value is not an integer');
           }
         });
 
-        nonNumberAndUndefinedTestCases.forEach(({ type, value }) => {
+        nonNumberNullAndUndefinedTestCases.forEach(({ type, value }) => {
           it(`should return invalid result if "limit" is not a number, but ${type}`, async () => {
             try {
               await documentRepository.find(queryDataContract, 'documentNumber', {
@@ -2625,7 +2619,7 @@ describe('DocumentRepository', function main() {
               expect.fail('should throw an error');
             } catch (e) {
               expect(e).to.be.instanceOf(InvalidQueryError);
-              expect(e.message).to.equal('value error: structure Error: value is not an integer');
+              expect(e.message).to.equal('value error: structure error: value is not an integer');
             }
           });
         });
@@ -2799,7 +2793,7 @@ describe('DocumentRepository', function main() {
               expect.fail('should throw an error');
             } catch (e) {
               expect(e).to.be.instanceOf(InvalidQueryError);
-              expect(e.message).to.equal('value error: structure Error: value are not bytes, a string, or an array of values representing bytes');
+              expect(e.message).to.equal('value error: structure error: value are not bytes, a string, or an array of values representing bytes');
             }
           });
         });

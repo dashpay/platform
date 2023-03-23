@@ -6,12 +6,15 @@ const {
   Opcode,
 } = require('@dashevo/dashcore-lib');
 
-const InstantAssetLockProof = require('../../identity/stateTransition/assetLockProof/instant/InstantAssetLockProof');
+const { default: loadWasmDpp } = require('../../..');
+let { InstantAssetLockProof } = require('../../..');
 
 /**
  * @param {PrivateKey} [oneTimePrivateKey]
  */
-function getInstantAssetLockProofFixture(oneTimePrivateKey = new PrivateKey()) {
+async function getInstantAssetLockProofFixture(oneTimePrivateKey = new PrivateKey()) {
+  ({ InstantAssetLockProof } = await loadWasmDpp());
+
   const privateKeyHex = 'cSBnVM4xvxarwGQuAfQFwqDg9k5tErHUHzgWsEfD4zdwUasvqRVY';
   const privateKey = new PrivateKey(privateKeyHex);
   const fromAddress = privateKey.toAddress();

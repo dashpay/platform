@@ -11,10 +11,10 @@ const createStateRepositoryMock = require('../../../lib/test/mocks/createStateRe
 const generateRandomIdentifierAsync = require('../../../lib/test/utils/generateRandomIdentifierAsync');
 
 let {
-  Identifier, DocumentFactory, DataContract, Document, DocumentValidator, ProtocolVersionValidator,
-  InvalidDocumentTypeInDataContractError, InvalidDocumentError, JsonSchemaError,
-  NoDocumentsSuppliedError, MismatchOwnerIdsError, InvalidInitialRevisionError,
-  InvalidActionNameError,
+  Identifier, DocumentFactory, DataContract, ExtendedDocument, DocumentValidator,
+  ProtocolVersionValidator, InvalidDocumentTypeInDataContractError, InvalidDocumentError,
+  JsonSchemaError, NoDocumentsSuppliedError, MismatchOwnerIdsError, InvalidInitialRevisionError,
+  InvalidActionNameError, PlatformValueError,
 } = require('../../..');
 
 const { default: loadWasmDpp } = require('../../..');
@@ -45,7 +45,7 @@ describe('DocumentFactory', () => {
   beforeEach(async () => {
     ({
       Identifier, ProtocolVersionValidator, DocumentValidator, DocumentFactory,
-      DataContract, Document,
+      DataContract, ExtendedDocument,
       // Errors:
       InvalidDocumentTypeInDataContractError,
       InvalidDocumentError,
@@ -54,6 +54,7 @@ describe('DocumentFactory', () => {
       MismatchOwnerIdsError,
       InvalidInitialRevisionError,
       InvalidActionNameError,
+      PlatformValueError,
     } = await loadWasmDpp());
   });
 
@@ -71,7 +72,7 @@ describe('DocumentFactory', () => {
 
     documentsJs = getDocumentsFixture(dataContractJs);
     documents = documentsJs.map((d) => {
-      const doc = new Document(d.toObject(), dataContract);
+      const doc = new ExtendedDocument(d.toObject(), dataContract);
       doc.setEntropy(d.entropy);
       return doc;
     });
@@ -135,7 +136,7 @@ describe('DocumentFactory', () => {
         { name },
       );
 
-      expect(newDocument).to.be.an.instanceOf(Document);
+      expect(newDocument).to.be.an.instanceOf(ExtendedDocument);
 
       expect(newDocument.getType()).to.equal(newRawDocument.$type);
 
@@ -172,11 +173,11 @@ describe('DocumentFactory', () => {
 
     it('should throw an error if validation failed', () => {
       try {
-        factory.create(dataContract, ownerId, rawDocumentJs.$type, {});
+        factory.create(dataContract, ownerId, 'invalidType', {});
 
         expect.fail('InvalidDocumentError should be thrown');
       } catch (e) {
-        expect(e).to.be.an.instanceOf(InvalidDocumentError);
+        expect(e).to.be.an.instanceOf(InvalidDocumentTypeInDataContractError);
       }
     });
   });
@@ -185,7 +186,7 @@ describe('DocumentFactory', () => {
     it('should return new Data Contract with data from passed object', async () => {
       const result = await factory.createFromObject(rawDocument);
 
-      expect(result).to.be.an.instanceOf(Document);
+      expect(result).to.be.an.instanceOf(ExtendedDocument);
       expect(result.toObject()).to.deep.equal(document.toObject());
 
       expect(stateRepositoryMock.fetchDataContract).to.have.been.calledOnce();
@@ -194,7 +195,7 @@ describe('DocumentFactory', () => {
     it('should return new Document without validation if "skipValidation" option is passed - Rust', async () => {
       delete rawDocument.lastName;
       const result = await factory.createFromObject(rawDocument, { skipValidation: true });
-      expect(result).to.be.an.instanceOf(Document);
+      expect(result).to.be.an.instanceOf(ExtendedDocument);
 
       expect(result.toObject()).to.deep.equal(rawDocument);
       expect(stateRepositoryMock.fetchDataContract).to.have.been.calledOnce();
@@ -228,20 +229,14 @@ describe('DocumentFactory', () => {
     it('should throw InvalidDocumentError if Data Contract is not valid', async () => {
       const dc = DataContract.fromBuffer(dataContractJs.toBuffer());
       dc.setDocuments({ '$%34': { '^&*': 'Keck' } });
-      const oldDataContract = DataContract.fromBuffer(dataContractJs.toBuffer());
       stateRepositoryMock.fetchDataContract.resolves(dc);
 
       try {
         await factory.createFromObject(rawDocumentJs);
 
-        expect.fail('InvalidDocumentError should be thrown');
+        expect.fail('InvalidDocumentTypeInDataContractError should be thrown');
       } catch (e) {
-        expect(e).to.be.an.instanceOf(InvalidDocumentError);
-
-        expect(e.getErrors()).to.have.length(1);
-        expect(
-          (new Document(e.getRawDocument(), oldDataContract).toObject()),
-        ).to.deep.equal(rawDocumentJs);
+        expect(e).to.be.an.instanceOf(InvalidDocumentTypeInDataContractError);
 
         expect(stateRepositoryMock.fetchDataContract.callCount).to.be.equal(1);
         const callArguments = stateRepositoryMock.fetchDataContract.getCall(0).args[0];
@@ -293,9 +288,8 @@ describe('DocumentFactory', () => {
 
         expect.fail('should throw an error');
       } catch (e) {
-        // TODO - parsing errors are not handled yet, as they happen directly in the rust code when
-        //  trying to access a field
-        expect(e).to.startsWith('Error conversion not implemented:');
+        expect(e).to.be.instanceOf(PlatformValueError);
+        expect(e.getMessage()).to.equal('structure error: value is not a map');
       }
     });
   }); describe('createStateTransition', () => {
@@ -355,7 +349,7 @@ describe('DocumentFactory', () => {
 
     it('should create DocumentsBatchTransition with passed documents', async () => {
       const [newDocumentJs] = getDocumentsFixture(dataContractJs);
-      const newDocument = new Document(newDocumentJs.toObject(), dataContract);
+      const newDocument = new ExtendedDocument(newDocumentJs.toObject(), dataContract);
 
       const stateTransition = factory.createStateTransition({
         create: documents,
