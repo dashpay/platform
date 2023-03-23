@@ -56,6 +56,7 @@ pub fn main() {
     let config = load_config(&cli.config);
 
     set_verbosity(&cli);
+
     install_panic_hook();
 
     match cli.command {
@@ -71,8 +72,8 @@ fn dump_config(config: &PlatformConfig) {
     println!("{}", serialized);
 }
 
-fn load_config(config: &Option<PathBuf>) -> PlatformConfig {
-    match config {
+fn load_config(path: &Option<PathBuf>) -> PlatformConfig {
+    match path {
         Some(path) => {
             if let Err(e) = dotenvy::from_path(path) {
                 panic!("cannot load config file {:?}: {}", path, e);
@@ -89,7 +90,17 @@ fn load_config(config: &Option<PathBuf>) -> PlatformConfig {
         }
     };
 
-    PlatformConfig::from_env().expect("cannot parse configuration file")
+    let config = PlatformConfig::from_env();
+    if let Err(ref e) = config {
+        if let drive_abci::error::Error::Configuration(src) = e {
+            if let envy::Error::MissingValue(e2) = src {
+                panic!("missing configuration option: {}", e2.to_uppercase());
+            };
+            panic!("cannot parse configuration file: {}", e);
+        }
+    };
+
+    config.expect("cannot parse configuration file")
 }
 
 fn set_verbosity(cli: &Cli) {
@@ -116,7 +127,9 @@ fn set_verbosity(cli: &Cli) {
     registry().with(layer).with(env_filter).init();
 }
 
-/// Install panic hook to ensure that all panic logs are correctly formatted
+/// Install panic hook to ensure that all panic logs are correctly formatted.
+///
+/// Depends on [set_verbosity()].
 fn install_panic_hook() {
     std::panic::set_hook(Box::new(|info| tracing::error!(panic=%info, "panic")));
 }
