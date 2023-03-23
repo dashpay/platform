@@ -117,20 +117,20 @@ function registerMasternodeGuideTaskFactory() {
               choices: [
                 {
                   name: 'ownerAddress',
-                  message: chalk` Owner address {gray Base58 encoded}`,
-                  network: ctx.preset,
+                  message: 'Owner address',
+                  hint: 'Base58 encoded',
                   validate: validateAddressWithNetwork,
                 },
                 {
                   name: 'votingAddress',
-                  message: chalk` Voting address {gray Base58 encoded}`,
-                  network: ctx.preset,
+                  message: 'Voting address',
+                  hint: 'Base58 encoded',
                   validate: validateAddressWithNetwork,
                 },
                 {
                   name: 'payoutAddress',
-                  message: chalk` Payout address {gray Base58 encoded}`,
-                  network: ctx.preset,
+                  message: 'Payout address',
+                  hint: 'Base58 encoded',
                   validate: validateAddressWithNetwork,
                 },
               ],
@@ -157,13 +157,15 @@ function registerMasternodeGuideTaskFactory() {
               choices: [
                 {
                   name: 'privateKey',
-                  message: chalk`BLS private key {gray HEX encoded}`,
+                  message: 'BLS private key',
+                  hint: 'HEX encoded',
                   initial: initialOperatorPrivateKey,
                   validate: validateBLSPrivateKey,
                 },
                 {
                   name: 'rewardShare',
-                  message: chalk`Reward share %`,
+                  message: 'Reward share',
+                  hint: '%',
                   initial: '0.00',
                   validate: validatePercentage,
                   format: formatPercentage,

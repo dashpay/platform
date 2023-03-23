@@ -42,7 +42,7 @@ async function createIpAndPortsForm(network, options = {}) {
   function validatePlatformP2PPort(value) {
     if (network !== PRESET_MAINNET
       && value === mainnetCfg.platform.drive.tenderdash.p2p.port.toString()) {
-      return false;
+      return 'this port is reserved for mainnet';
     }
 
     return validatePort(value);
@@ -51,7 +51,7 @@ async function createIpAndPortsForm(network, options = {}) {
   function validatePlatformHTTPPort(value) {
     if (network !== PRESET_MAINNET
       && value === mainnetCfg.platform.drive.tenderdash.p2p.port.toString()) {
-      return false;
+      return 'this port is reserved for mainnet';
     }
 
     return validatePort(value);
