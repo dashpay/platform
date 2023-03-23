@@ -326,7 +326,8 @@ function setupRegularPresetTaskFactory(
       },
       {
         title: 'SSL certificate',
-        enabled: (ctx) => !ctx.certificateProvider,
+        // TODO disable platform for mainnet preset
+        enabled: (ctx) => !ctx.certificateProvider && ctx.config.isPlatformEnabled(),
         task: async (ctx, task) => {
           const sslProviders = [...SSL_PROVIDERS].filter((item) => item !== 'selfSigned');
 
@@ -342,7 +343,7 @@ function setupRegularPresetTaskFactory(
       },
       {
         title: 'Obtain ZeroSSL certificate',
-        enabled: (ctx) => ctx.certificateProvider === 'zerossl',
+        enabled: (ctx) => ctx.certificateProvider === 'zerossl' && ctx.config.isPlatformEnabled(),
         task: async (ctx, task) => {
           let apiKey = ctx.zeroSslApiKey;
 
@@ -371,7 +372,7 @@ function setupRegularPresetTaskFactory(
       },
       {
         title: 'Set SSL certificate',
-        enabled: (ctx) => ctx.certificateProvider === 'manual',
+        enabled: (ctx) => ctx.certificateProvider === 'manual' && ctx.config.isPlatformEnabled(),
         task: async (ctx, task) => {
           if (!ctx.sslCertificateFilePath) {
             ctx.sslCertificateFilePath = await task.prompt({
