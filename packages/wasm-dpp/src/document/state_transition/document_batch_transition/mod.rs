@@ -1,4 +1,5 @@
 use dpp::identity::KeyID;
+use dpp::state_transition::fee::calculate_state_transition_fee_factory::calculate_state_transition_fee;
 use dpp::{
     document::{
         document_transition::document_base_transition,
@@ -327,11 +328,6 @@ impl DocumentsBatchTransitionWasm {
     #[wasm_bindgen(js_name=setSignature)]
     pub fn set_signature(&mut self, signature: Vec<u8>) {
         self.0.set_signature(BinaryData::new(signature))
-    }
-
-    #[wasm_bindgen(js_name=calculateFee)]
-    pub fn calculate_fee(&self) -> i64 {
-        self.0.calculate_fee()
     }
 
     #[wasm_bindgen(js_name=isDocumentStateTransition)]
