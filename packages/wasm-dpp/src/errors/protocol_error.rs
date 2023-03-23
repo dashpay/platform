@@ -18,10 +18,6 @@ pub fn from_protocol_error(protocol_error: dpp::ProtocolError) -> JsValue {
         dpp::ProtocolError::Error(anyhow_error) => {
             format!("Non-protocol error: {}", anyhow_error).into()
         }
-        e => format!(
-            "ProtocolError conversion not implemented: {}",
-            e
-        )
-        .into(),
+        e => format!("ProtocolError conversion not implemented: {}", e).into(),
     }
 }
