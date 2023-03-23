@@ -9,7 +9,8 @@ module.exports = function getIdentityUpdateTransitionFixture() {
   const rawStateTransition = {
     protocolVersion: protocolVersion.latestVersion,
     type: stateTransitionTypes.IDENTITY_UPDATE,
-    assetLockProof: getInstantAssetLockProofFixture().toObject(),
+    assetLockProof: getInstantAssetLockProofFixture()
+      .toObject(),
     identityId: generateRandomIdentifier(),
     revision: 0,
     addPublicKeys: [

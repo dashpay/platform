@@ -1,6 +1,7 @@
 use std::sync::Arc;
 
 use data_contracts::{DataContractSource, SystemDataContract};
+use platform_value::platform_value;
 use serde_json::json;
 
 use crate::prelude::*;
@@ -26,14 +27,15 @@ pub fn get_dpns_data_contract_fixture(owner_id: Option<Identifier>) -> DataContr
         .source()
         .expect("should return DPNS data contract source");
 
-    let defs = json!({
+    let defs = platform_value!({
         "lastName": { "type" : "string"},
     });
 
     // TODO the pattern is invalid as it's a re2
     document_schemas["domain"]["properties"]["normalizedParentDomainName"]["pattern"] = json!(".*");
 
+    //todo: the config should not be None
     factory
-        .create(owner_id, document_schemas, Some(defs))
+        .create(owner_id, document_schemas.into(), None, Some(defs))
         .expect("data in fixture should be correct")
 }

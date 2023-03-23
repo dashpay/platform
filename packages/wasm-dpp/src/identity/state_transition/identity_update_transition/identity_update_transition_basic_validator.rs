@@ -12,6 +12,7 @@ use wasm_bindgen::prelude::*;
 
 use crate::bls_adapter::{BlsAdapter, JsBlsAdapter};
 use crate::errors::from_dpp_err;
+
 use crate::utils::ToSerdeJSONExt;
 use crate::validation::ValidationResultWasm;
 
@@ -82,7 +83,7 @@ impl IdentityUpdateTransitionBasicValidatorWasm {
             .protocol_version_validator()
             .set_current_protocol_version(current_protocol_version);
 
-        let state_transition_json = raw_state_transition.with_serde_to_json_value()?;
+        let state_transition_json = raw_state_transition.with_serde_to_platform_value()?;
 
         let validation_result = self
             .0

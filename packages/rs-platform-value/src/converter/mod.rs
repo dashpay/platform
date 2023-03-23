@@ -1,2 +1,2 @@
-mod ciborium;
-mod serde_json;
+pub mod ciborium;
+pub mod serde_json;

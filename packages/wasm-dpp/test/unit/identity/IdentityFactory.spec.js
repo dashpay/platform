@@ -21,7 +21,7 @@ describe('IdentityFactory', () => {
   let IdentityUpdateTransition;
   let IdentityPublicKeyCreateTransition;
   let InvalidIdentityError;
-  let SerializedObjectParsingError;
+  let PlatformValueError;
   let UnsupportedProtocolVersionError;
   let ChainAssetLockProof;
 
@@ -30,7 +30,7 @@ describe('IdentityFactory', () => {
       Identity, IdentityFactory, IdentityValidator,
       InstantAssetLockProof, ChainAssetLockProof, IdentityUpdateTransition,
       IdentityCreateTransition, IdentityTopUpTransition, IdentityPublicKeyCreateTransition,
-      InvalidIdentityError, UnsupportedProtocolVersionError, SerializedObjectParsingError,
+      InvalidIdentityError, UnsupportedProtocolVersionError, PlatformValueError,
     } = await loadWasmDpp());
   });
 
@@ -149,7 +149,7 @@ describe('IdentityFactory', () => {
 
         expect.fail('should throw an error');
       } catch (e) {
-        expect(e).to.be.instanceOf(SerializedObjectParsingError);
+        expect(e).to.be.instanceOf(PlatformValueError);
       }
     });
   });

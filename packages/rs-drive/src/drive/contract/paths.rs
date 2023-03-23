@@ -24,14 +24,14 @@ impl ContractPaths for DataContract {
     fn root_path(&self) -> [&[u8]; 2] {
         [
             Into::<&[u8; 1]>::into(RootTree::ContractDocuments),
-            self.id().as_bytes(),
+            self.id.as_bytes(),
         ]
     }
 
     fn documents_path(&self) -> [&[u8]; 3] {
         [
             Into::<&[u8; 1]>::into(RootTree::ContractDocuments),
-            self.id().as_bytes(),
+            self.id.as_bytes(),
             &[1],
         ]
     }
@@ -62,7 +62,7 @@ impl ContractPaths for DataContract {
     ) -> [&'a [u8]; 6] {
         [
             Into::<&[u8; 1]>::into(RootTree::ContractDocuments),
-            self.id().as_bytes(),
+            self.id.as_bytes(),
             &[1],
             document_type_name.as_bytes(),
             &[0],

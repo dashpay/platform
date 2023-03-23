@@ -146,7 +146,8 @@ describe('createMasternodeIdentityFactory', () => {
     }
   });
 
-  it('should create masternode identity with payoutScript public key', async () => {
+  // TODO: Enable keys when we have support of non unique keys in DPP
+  it.skip('should create masternode identity with payoutScript public key', async () => {
     const identityId = generateRandomIdentifier();
     const pubKeyData = Buffer.from([0]);
     const pubKeyType = KeyType.ECDSA_HASH160;

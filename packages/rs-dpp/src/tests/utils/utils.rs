@@ -1,7 +1,9 @@
 use anyhow::Result;
 use dashcore::{Block, BlockHeader};
 use getrandom::getrandom;
-use serde_json::Value;
+use platform_value::Value;
+#[cfg(test)]
+use serde_json::Value as JsonValue;
 
 use crate::prelude::Identifier;
 
@@ -26,12 +28,6 @@ macro_rules! assert_error_contains {
     };
 }
 
-pub fn generate_random_identifier() -> [u8; 32] {
-    let mut buffer = [0u8; 32];
-    let _ = getrandom(&mut buffer);
-    buffer
-}
-
 /// Sets a key value pair in serde_json object, returns the modified object
 pub fn serde_set<T, S>(mut object: serde_json::Value, key: T, value: S) -> serde_json::Value
 where
@@ -48,40 +44,16 @@ where
 }
 
 /// Sets a key value pair in serde_json object, returns the modified object
-pub fn serde_set_ref<T, S>(object: &mut Value, key: T, value: S)
+pub fn platform_value_set_ref<T, S>(object: &mut Value, key: T, value: S)
 where
-    T: Into<String>,
-    S: Into<serde_json::Value>,
-    serde_json::Value: From<S>,
+    T: Into<Value>,
+    S: Into<Value>,
+    Value: From<S>,
 {
     let map = object
-        .as_object_mut()
+        .as_map_mut()
         .expect("Expected value to be an JSON object");
-    map.insert(key.into(), serde_json::Value::from(value));
-}
-
-/// Removes a key value pair in serde_json object, returns the modified object
-pub fn serde_remove<T>(mut object: serde_json::Value, key: T) -> serde_json::Value
-where
-    T: Into<String>,
-{
-    let map = object
-        .as_object_mut()
-        .expect("Expected value to be an JSON object");
-    map.remove(&key.into());
-
-    object
-}
-
-/// Removes a key value pair in serde_json object, returns the modified object
-pub fn serde_remove_ref<T>(object: &mut Value, key: T)
-where
-    T: Into<String>,
-{
-    object
-        .as_object_mut()
-        .expect("Expected value to be an JSON object")
-        .remove(&key.into());
+    map.push((key.into(), value.into()));
 }
 
 pub fn generate_random_identifier_struct() -> Identifier {
@@ -105,8 +77,8 @@ pub trait SerdeTestExtension {
         T: Into<String>,
         S: Into<serde_json::Value>,
         serde_json::Value: From<S>;
-    fn get_value(&self, key: impl Into<String>) -> &Value;
-    fn get_value_mut(&mut self, key: impl Into<String>) -> &mut Value;
+    fn get_value(&self, key: impl Into<String>) -> &serde_json::Value;
+    fn get_value_mut(&mut self, key: impl Into<String>) -> &mut serde_json::Value;
 }
 
 #[cfg(test)]
@@ -120,8 +92,8 @@ impl SerdeTestExtension for serde_json::Value {
     fn set_key_value<T, S>(&mut self, key: T, value: S)
     where
         T: Into<String>,
-        S: Into<Value>,
-        Value: From<S>,
+        S: Into<JsonValue>,
+        JsonValue: From<S>,
     {
         let map = self
             .as_object_mut()
@@ -129,14 +101,14 @@ impl SerdeTestExtension for serde_json::Value {
         map.insert(key.into(), serde_json::Value::from(value));
     }
 
-    fn get_value(&self, key: impl Into<String>) -> &Value {
+    fn get_value(&self, key: impl Into<String>) -> &JsonValue {
         self.as_object()
             .expect("Expected key to exist")
             .get(&key.into())
             .expect("Expected key to exist")
     }
 
-    fn get_value_mut(&mut self, key: impl Into<String>) -> &mut Value {
+    fn get_value_mut(&mut self, key: impl Into<String>) -> &mut JsonValue {
         self.as_object_mut()
             .expect("Expected key to exist")
             .get_mut(&key.into())
