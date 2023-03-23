@@ -74,7 +74,6 @@ function setupRegularPresetTaskFactory(
           ctx.nodeType = getNodeTypeByName(nodeTypeName);
           ctx.isHP = isNodeTypeNameHighPerformance(nodeTypeName);
 
-
           ctx.config = new Config(ctx.preset, systemConfigs[ctx.preset]);
 
           if (!ctx.isHP) {
@@ -131,7 +130,9 @@ function setupRegularPresetTaskFactory(
         title: 'Configure SSL certificate',
         // TODO: We don't need certificates for mainnet since we don't run platform there on
         //  first version
-        enabled: (ctx) => ctx.isHP && ctx.preset !== PRESET_MAINNET,
+        enabled: (ctx) => ctx.nodeType === NODE_TYPE_MASTERNODE
+          && ctx.isHP
+          && ctx.preset !== PRESET_MAINNET,
         task: () => configureSSLCertificateTask(),
       },
       {
@@ -140,8 +141,9 @@ function setupRegularPresetTaskFactory(
           configFile.setDefaultConfigName(ctx.preset);
 
           // eslint-disable-next-line no-param-reassign
-          task.output = 'Your node configuration is now complete. You can now run `dashmate start` to start your node, and `dashmate status` for a status\n'
-            + 'overview of node health. Run `dashmate --help` or `dashmate <command> --help` for quick help on how to use dashmate to manage your node.\n';
+          task.output = `Your node configuration is now complete!
+                         You can now run "dashmate start" to start your node, and "dashmate status" for a status overview of node health.
+                         Run "dashmate --help" or "dashmate <command> --help" for quick help on how to use dashmate to manage your node.\n`;
         },
         options: {
           persistentOutput: true,
