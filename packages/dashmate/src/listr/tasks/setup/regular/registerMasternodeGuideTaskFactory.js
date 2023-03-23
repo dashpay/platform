@@ -105,9 +105,9 @@ function registerMasternodeGuideTaskFactory() {
             {
               type: 'form',
               name: 'keys',
-              header: 'Dashmate needs to collect details about the owner, voting and payout'
-                + ' addresses to use in the masternode registration transaction. These are'
-                + ' regular Dash addresses, encoded in HEX format.\n',
+              header: `  Dashmate needs to collect details about the owner, voting and payout addresses
+  to use in the masternode registration transaction. These are regular Dash
+  addresses, encoded in base58 format.\n`,
               message: 'Enter DIP3 masternode addresses:',
               choices: [
                 {
@@ -142,12 +142,12 @@ function registerMasternodeGuideTaskFactory() {
             {
               type: 'form',
               name: 'operator',
-              header: 'Dashmate needs to collect details on the operator key and operator'
-                + ' reward share to use in the registration transaction. The operator key is'
-                + ' a BLS private key, encoded in HEX format. Dashmate will record the private'
-                + ' key in the masternode configuration, and derive the public key for use in'
-                + ' the masternode registration transaction. You may optionally also specify a'
-                + ' percentage share of the masternode reward to pay to the operator.\n',
+              header: `  Dashmate needs to collect details on the operator key and operator reward share
+  to use in the registration transaction. The operator key is a BLS private key,
+  encoded in HEX format. Dashmate will record the private key in the masternode
+  configuration, and derive the public key for use in the masternode registration
+  transaction. You may optionally also specify a percentage share of the
+  masternode reward to pay to the operator.\n`,
               message: 'Enter masternode operator private key and reward share:',
               choices: [
                 {
@@ -186,7 +186,7 @@ function registerMasternodeGuideTaskFactory() {
             confirmation = await task.prompt({
               type: 'toggle',
               name: 'confirm',
-              header: chalk` You should run the command:
+              header: chalk`  Now run the following command to create the registration transaction:
               {bold.green dash-cli ${ctx.isHP ? 'register_hpmn' : 'register'}
                     argument1
                     argument2
