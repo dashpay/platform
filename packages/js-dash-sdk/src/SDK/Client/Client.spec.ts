@@ -130,7 +130,7 @@ describe('Dash - Client', function suite() {
     }
   });
 
-  describe.only('#platform.identities.register ', async () => {
+  describe('#platform.identities.register ', async () => {
     it('should register an identity', async () => {
       const accountIdentitiesCountBeforeTest = account.identities.getIdentityIds().length;
 
@@ -187,7 +187,7 @@ describe('Dash - Client', function suite() {
     });
   });
 
-  describe('#platform.identities.topUp', async () => {
+  describe.only('#platform.identities.topUp', async () => {
     it('should top up an identity', async () => {
       // Registering an identity we're going to top up
       const identity = await client.platform.identities.register(1000);
