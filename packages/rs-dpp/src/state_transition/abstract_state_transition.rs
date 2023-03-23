@@ -18,7 +18,6 @@ use crate::{
     BlsModule,
 };
 
-use super::fee::Credits;
 use super::{
     state_transition_execution_context::StateTransitionExecutionContext, StateTransition,
     StateTransitionType,
