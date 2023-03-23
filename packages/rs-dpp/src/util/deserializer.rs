@@ -1,3 +1,5 @@
+use crate::consensus::basic::decode::ProtocolVersionParsingError;
+use crate::consensus::ConsensusError;
 use integer_encoding::VarInt;
 use serde_json::{Map, Number, Value as JsonValue};
 
@@ -45,8 +47,10 @@ pub fn split_protocol_version(
     message_bytes: &[u8],
 ) -> Result<SplitProtocolVersionOutcome, ProtocolError> {
     let (protocol_version, protocol_version_size) =
-        u32::decode_var(message_bytes).ok_or(ProtocolError::UnknownProtocolVersionError(
-            "protocol version could not be decoded as a varint".to_string(),
+        u32::decode_var(message_bytes).ok_or(ConsensusError::ProtocolVersionParsingError(
+            ProtocolVersionParsingError::new(ProtocolError::UnknownProtocolVersionError(
+                "protocol version could not be decoded as a varint".to_string(),
+            )),
         ))?;
     let (_, main_message_bytes) = message_bytes.split_at(protocol_version_size);
 
