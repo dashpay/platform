@@ -22,14 +22,16 @@ export default async function broadcastStateTransition(
   stateTransition: any,
   options: { skipValidation?: boolean; } = {},
 ): Promise<IStateTransitionResult | void> {
-  const { client, dpp } = platform;
+  const { client, wasmDpp } = platform;
 
   if (!options.skipValidation) {
-    const result = await dpp.stateTransition.validateBasic(stateTransition);
+    const result = await wasmDpp.stateTransition.validateBasic(stateTransition);
 
     if (!result.isValid()) {
       const consensusError = result.getFirstError();
 
+      // TODO(wasm): make sure code, message and error are present
+      //  and that StateTransitionBroadcastError handles consensusError correctly
       throw new StateTransitionBroadcastError(
         consensusError.getCode(),
         consensusError.message,
@@ -57,6 +59,8 @@ export default async function broadcastStateTransition(
         cause = cause.getConsensusError();
       }
 
+      // TODO(wasm): make sure code, message and error are present
+      //  and that StateTransitionBroadcastError handles consensusError correctly
       throw new StateTransitionBroadcastError(
         cause.getCode(),
         cause.message,

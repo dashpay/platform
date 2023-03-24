@@ -1,9 +1,11 @@
 // @ts-ignore
-import Identifier from '@dashevo/dpp/lib/Identifier';
-import Metadata from '@dashevo/dpp/lib/Metadata';
+import loadWasmDpp from '@dashevo/wasm-dpp';
 import { Platform } from '../../Platform';
 
 const NotFoundError = require('@dashevo/dapi-client/lib/transport/GrpcTransport/errors/NotFoundError');
+
+// TODO(wasm): import Identifier from wasm-dpp to use as a type
+let Identifier;
 
 /**
  * Get an identity from the platform
@@ -12,14 +14,19 @@ const NotFoundError = require('@dashevo/dapi-client/lib/transport/GrpcTransport/
  * @param {string|Identifier} id - id
  * @returns Identity
  */
-export async function get(this: Platform, id: Identifier | string): Promise<any> {
+export async function get(this: Platform, id: typeof Identifier | string): Promise<any> {
   await this.initialize();
 
-  const identifier = Identifier.from(id);
+  // TODO(wasm): expose Metadata from dedicated module that handles all WASM-DPP types
+  const { Metadata } = await loadWasmDpp();
 
   let identityResponse;
   try {
-    identityResponse = await this.client.getDAPIClient().platform.getIdentity(identifier);
+    // TODO: Identifier/buffer issue - hidden Identifier bug.
+    //  Without toBuffer() it most probably wont
+    //  be recognized on DAPI client side
+    identityResponse = await this.client.getDAPIClient().platform
+      .getIdentity(id.toBuffer());
   } catch (e) {
     if (e instanceof NotFoundError) {
       return null;
@@ -28,9 +35,9 @@ export async function get(this: Platform, id: Identifier | string): Promise<any>
     throw e;
   }
 
-  const identity = this.dpp.identity.createFromBuffer(identityResponse.getIdentity());
+  const identity = this.wasmDpp.identity.createFromBuffer(identityResponse.getIdentity());
 
-  let metadata = null;
+  let metadata;
   const responseMetadata = identityResponse.getMetadata();
   if (responseMetadata) {
     metadata = new Metadata({
@@ -41,6 +48,7 @@ export async function get(this: Platform, id: Identifier | string): Promise<any>
     });
   }
 
+  // TODO(wasm): handle optional metadata in Identity Wasm side
   identity.setMetadata(metadata);
 
   return identity;

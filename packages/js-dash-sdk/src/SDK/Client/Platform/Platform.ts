@@ -1,5 +1,8 @@
 // @ts-ignore
 import DashPlatformProtocol from '@dashevo/dpp';
+import loadWasmDpp from '@dashevo/wasm-dpp';
+
+import * as BlsSignatures from '@dashevo/dpp/lib/bls/bls';
 
 import { latestVersion as latestProtocolVersion } from '@dashevo/dpp/lib/version/protocolVersion';
 import Client from '../Client';
@@ -102,6 +105,10 @@ interface DataContracts {
 export class Platform {
   dpp: DashPlatformProtocol;
 
+  wasmDpp: DashPlatformProtocol;
+
+  options: PlatformOpts;
+
   public documents: Records;
 
   /**
@@ -145,6 +152,8 @@ export class Platform {
      * @param {PlatformOpts} options - options for Platform
      */
   constructor(options: PlatformOpts) {
+    this.options = { ...options };
+
     this.documents = {
       broadcast: broadcastDocument.bind(this),
       create: createDocument.bind(this),
@@ -203,5 +212,20 @@ export class Platform {
 
   async initialize() {
     await this.dpp.initialize();
+
+    const { DashPlatformProtocol: DashPlatformProtocolWasm } = await loadWasmDpp();
+
+    if (!this.wasmDpp) {
+      const bls = await BlsSignatures.getInstance();
+
+      const protocolVersion = this.dpp.getProtocolVersion();
+      const stateRepository = this.dpp.getStateRepository();
+
+      this.wasmDpp = new DashPlatformProtocolWasm({
+        ...this.options,
+        protocolVersion,
+      },
+      bls, stateRepository);
+    }
   }
 }

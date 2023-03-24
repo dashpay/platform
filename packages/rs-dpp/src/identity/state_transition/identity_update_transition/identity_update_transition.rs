@@ -9,8 +9,8 @@ use crate::{
     prelude::{Identifier, Revision, TimestampMillis},
     state_transition::{
         state_transition_execution_context::StateTransitionExecutionContext,
-        state_transition_helpers, StateTransitionConvert, StateTransitionIdentitySigned,
-        StateTransitionLike, StateTransitionType,
+        StateTransitionConvert, StateTransitionIdentitySigned, StateTransitionLike,
+        StateTransitionType,
     },
     version::LATEST_VERSION,
     ProtocolError,
@@ -58,7 +58,7 @@ pub struct IdentityUpdateTransition {
 
     /// Public Keys to add to the Identity
     /// we want to skip serialization of transitions, as we does it manually in `to_object()`  and `to_json()`
-    #[serde(skip, default)]
+    #[serde(default)]
     pub add_public_keys: Vec<IdentityPublicKeyWithWitness>,
 
     /// Identity Public Keys ID's to disable for the Identity
@@ -262,27 +262,25 @@ impl StateTransitionConvert for IdentityUpdateTransition {
     }
 
     fn to_object(&self, skip_signature: bool) -> Result<Value, ProtocolError> {
-        // The [state_transition_helpers::to_object] doesn't  convert the `add_public_keys` property.
-        // The property must be serialized manually
+        let mut value: Value = platform_value::to_value(self)?;
+
+        if skip_signature {
+            value
+                .remove_values_matching_paths(Self::signature_property_paths())
+                .map_err(ProtocolError::ValueError)?;
+        }
+
         let mut add_public_keys: Vec<Value> = vec![];
         for key in self.add_public_keys.iter() {
             add_public_keys.push(key.to_raw_object(skip_signature)?);
         }
 
-        let skip_signature_paths = if skip_signature {
-            Self::signature_property_paths()
-        } else {
-            vec![]
-        };
-
-        let mut raw_object: Value =
-            state_transition_helpers::to_object(self, skip_signature_paths)?;
-        raw_object.insert_at_end(
+        value.insert(
             property_names::ADD_PUBLIC_KEYS.to_owned(),
             Value::Array(add_public_keys),
         )?;
 
-        Ok(raw_object)
+        Ok(value)
     }
 
     fn to_json(&self, skip_signature: bool) -> Result<JsonValue, ProtocolError> {
@@ -291,7 +289,25 @@ impl StateTransitionConvert for IdentityUpdateTransition {
     }
 
     fn to_cleaned_object(&self, skip_signature: bool) -> Result<Value, ProtocolError> {
-        self.to_object(skip_signature)
+        let mut value: Value = platform_value::to_value(self)?;
+
+        if skip_signature {
+            value
+                .remove_values_matching_paths(Self::signature_property_paths())
+                .map_err(ProtocolError::ValueError)?;
+        }
+
+        let mut add_public_keys: Vec<Value> = vec![];
+        for key in self.add_public_keys.iter() {
+            add_public_keys.push(key.to_raw_cleaned_object(skip_signature)?);
+        }
+
+        value.insert(
+            property_names::ADD_PUBLIC_KEYS.to_owned(),
+            Value::Array(add_public_keys),
+        )?;
+
+        Ok(value)
     }
 }
 

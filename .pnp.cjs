@@ -2328,6 +2328,7 @@ function $$SETUP_STATE(hydrateRuntimeState, basePath) {
           "packageLocation": "./packages/dapi/",\
           "packageDependencies": [\
             ["@dashevo/dapi", "workspace:packages/dapi"],\
+            ["@dashevo/bls", "npm:1.2.9"],\
             ["@dashevo/dapi-client", "workspace:packages/js-dapi-client"],\
             ["@dashevo/dapi-grpc", "workspace:packages/dapi-grpc"],\
             ["@dashevo/dashcore-lib", "npm:0.20.0"],\
@@ -2335,6 +2336,7 @@ function $$SETUP_STATE(hydrateRuntimeState, basePath) {
             ["@dashevo/dp-services-ctl", "https://github.com/dashevo/js-dp-services-ctl.git#commit=3976076b0018c5b4632ceda4c752fc597f27a640"],\
             ["@dashevo/dpp", "workspace:packages/js-dpp"],\
             ["@dashevo/grpc-common", "workspace:packages/js-grpc-common"],\
+            ["@dashevo/wasm-dpp", "workspace:packages/wasm-dpp"],\
             ["@grpc/grpc-js", "npm:1.4.4"],\
             ["ajv", "npm:8.8.1"],\
             ["bs58", "npm:4.0.1"],\
@@ -7910,6 +7912,7 @@ function $$SETUP_STATE(hydrateRuntimeState, basePath) {
             ["@dashevo/grpc-common", "workspace:packages/js-grpc-common"],\
             ["@dashevo/masternode-reward-shares-contract", "workspace:packages/masternode-reward-shares-contract"],\
             ["@dashevo/wallet-lib", "workspace:packages/wallet-lib"],\
+            ["@dashevo/wasm-dpp", "workspace:packages/wasm-dpp"],\
             ["@types/chai", "npm:4.2.22"],\
             ["@types/dirty-chai", "npm:2.0.2"],\
             ["@types/expect", "npm:24.3.0"],\

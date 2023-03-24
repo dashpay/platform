@@ -16,11 +16,10 @@ export async function topUp(
   identityId: Identifier | string,
   amount: number,
 ): Promise<any> {
+  this.logger.debug(`[Identity#topUp] Top up identity ${identityId.toString()} with amount ${amount}`);
   await this.initialize();
 
   const { client } = this;
-
-  identityId = Identifier.from(identityId);
 
   const account = await client.getWalletAccount();
 
@@ -32,15 +31,21 @@ export async function topUp(
 
   // Broadcast Asset Lock transaction
   await account.broadcastTransaction(assetLockTransaction);
+  this.logger.silly(`[Identity#topUp] Broadcasted asset lock transaction "${assetLockTransaction.hash}"`);
   // Create a proof for the asset lock transaction
   const assetLockProof = await this.identities.utils
     .createAssetLockProof(assetLockTransaction, assetLockOutputIndex);
+  this.logger.silly(`[Identity#topUp] Created asset lock proof with tx "${assetLockTransaction.hash}"`);
 
   const identityTopUpTransition = await this.identities.utils
     .createIdentityTopUpTransition(assetLockProof, assetLockPrivateKey, identityId);
+  this.logger.silly(`[Identity#register] Created IdentityTopUpTransition with asset lock tx "${assetLockTransaction.hash}"`);
 
+  // TODO: add skipValidation flag?
+  //  Basic validation already happening in createIdentityCreateTransition
   // Broadcast ST
   await broadcastStateTransition(this, identityTopUpTransition);
+  this.logger.silly('[Identity#register] Broadcasted IdentityTopUpTransition');
 
   return true;
 }

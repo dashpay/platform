@@ -15,7 +15,7 @@
     "lint:fix": "eslint . --fix",
     "test": "yarn run test:unit && yarn run test:functional && yarn run test:browsers",
     "test:browsers": "karma start ./karma.conf.js --single-run",
-    "test:unit": "TS_NODE_COMPILER_OPTIONS={\"target\":\"es6\"} ts-mocha \"src/**/*.spec.ts\"",
+    "test:unit": "ts-mocha -p tsconfig.mocha.json src/**/*.spec.ts",
     "test:functional": "yarn run build && mocha --recursive tests/functional/**/*.js",
     "prepublishOnly": "yarn run build",
     "prepare": "yarn run build"
@@ -44,6 +44,7 @@
     "@dashevo/grpc-common": "workspace:*",
     "@dashevo/masternode-reward-shares-contract": "workspace:*",
     "@dashevo/wallet-lib": "workspace:*",
+    "@dashevo/wasm-dpp": "workspace:*",
     "bs58": "^4.0.1",
     "node-inspect-extracted": "^1.0.8",
     "winston": "^3.2.1"

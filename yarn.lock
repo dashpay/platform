@@ -1313,7 +1313,7 @@ __metadata:
   languageName: unknown
   linkType: soft
 
-"@dashevo/bls@npm:~1.2.9":
+"@dashevo/bls@npm:~1.2.7, @dashevo/bls@npm:~1.2.9":
   version: 1.2.9
   resolution: "@dashevo/bls@npm:1.2.9"
   dependencies:
@@ -1402,6 +1402,7 @@ __metadata:
   version: 0.0.0-use.local
   resolution: "@dashevo/dapi@workspace:packages/dapi"
   dependencies:
+    "@dashevo/bls": ~1.2.7
     "@dashevo/dapi-client": "workspace:*"
     "@dashevo/dapi-grpc": "workspace:*"
     "@dashevo/dashcore-lib": ~0.20.0
@@ -1409,6 +1410,7 @@ __metadata:
     "@dashevo/dp-services-ctl": "github:dashevo/js-dp-services-ctl#v0.19-dev"
     "@dashevo/dpp": "workspace:*"
     "@dashevo/grpc-common": "workspace:*"
+    "@dashevo/wasm-dpp": "workspace:*"
     "@grpc/grpc-js": ^1.3.7
     ajv: ^8.6.0
     bs58: ^4.0.1
@@ -5869,6 +5871,7 @@ __metadata:
     "@dashevo/grpc-common": "workspace:*"
     "@dashevo/masternode-reward-shares-contract": "workspace:*"
     "@dashevo/wallet-lib": "workspace:*"
+    "@dashevo/wasm-dpp": "workspace:*"
     "@types/chai": ^4.2.12
     "@types/dirty-chai": ^2.0.2
     "@types/expect": ^24.3.0
