@@ -4,11 +4,11 @@ use std::collections::{BTreeMap, HashSet};
 
 use itertools::Itertools;
 
+use platform_value::btreemap_extensions::BTreeValueMapReplacementPathHelper;
 use platform_value::{Bytes32, ReplacementType, Value};
 use rand::rngs::StdRng;
 use rand::SeedableRng;
 use serde::{Deserialize, Serialize};
-use platform_value::btreemap_extensions::BTreeValueMapReplacementPathHelper;
 
 use crate::consensus::basic::document::InvalidDocumentTypeError;
 use crate::document::extended_document::{property_names, ExtendedDocument};
