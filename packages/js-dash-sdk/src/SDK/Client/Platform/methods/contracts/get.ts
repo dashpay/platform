@@ -1,11 +1,13 @@
 // @ts-ignore
-import Identifier from '@dashevo/dpp/lib/Identifier';
-import Metadata from '@dashevo/dpp/lib/Metadata';
+import loadWasmDpp from '@dashevo/wasm-dpp';
 import { Platform } from '../../Platform';
 
 const NotFoundError = require('@dashevo/dapi-client/lib/transport/GrpcTransport/errors/NotFoundError');
 
-declare type ContractIdentifier = string | Identifier;
+let Identifier;
+let Metadata;
+
+declare type ContractIdentifier = string | typeof Identifier;
 
 /**
  * Get contracts from the platform
@@ -17,13 +19,21 @@ declare type ContractIdentifier = string | Identifier;
 export async function get(this: Platform, identifier: ContractIdentifier): Promise<any> {
   await this.initialize();
 
-  const contractId : Identifier = Identifier.from(identifier);
+  // TODO(wasm): expose Metadata from dedicated module that handles all WASM-DPP types
+  ({ Metadata, Identifier } = await loadWasmDpp());
+
+  // TODO: Identifier/buffer issue - hidden Identifier bug.
+  //  Without Buffer.from(identifier.toBuffer()) will throw an error
+
+  const contractId : typeof Identifier = Identifier.from(identifier.toBuffer());
 
   // Try to get contract from the cache
   // eslint-disable-next-line
   for (const appName of this.client.getApps().getNames()) {
     const appDefinition = this.client.getApps().get(appName);
-    if (appDefinition.contractId.equals(contractId) && appDefinition.contract) {
+    // TODO: Identifier/buffer issue - hidden Identifier bug.
+    //  Without Buffer.from(contractId.toBuffer()) will throw an error
+    if (appDefinition.contractId.equals(contractId.toBuffer()) && appDefinition.contract) {
       return appDefinition.contract;
     }
   }
@@ -31,7 +41,10 @@ export async function get(this: Platform, identifier: ContractIdentifier): Promi
   // Fetch contract otherwise
   let dataContractResponse;
   try {
-    dataContractResponse = await this.client.getDAPIClient().platform.getDataContract(contractId);
+    // TODO: Identifier/buffer issue - hidden Identifier bug.
+    //  Without .toBuffer() will throw an error
+    dataContractResponse = await this.client.getDAPIClient()
+      .platform.getDataContract(contractId.toBuffer());
   } catch (e) {
     if (e instanceof NotFoundError) {
       return null;
@@ -40,7 +53,7 @@ export async function get(this: Platform, identifier: ContractIdentifier): Promi
     throw e;
   }
 
-  const contract = await this.dpp.dataContract
+  const contract = await this.wasmDpp.dataContract
     .createFromBuffer(dataContractResponse.getDataContract());
 
   let metadata = null;
@@ -59,7 +72,9 @@ export async function get(this: Platform, identifier: ContractIdentifier): Promi
   // eslint-disable-next-line
   for (const appName of this.client.getApps().getNames()) {
     const appDefinition = this.client.getApps().get(appName);
-    if (appDefinition.contractId.equals(contractId)) {
+    // TODO: Identifier/buffer issue - hidden Identifier bug.
+    //  Without Buffer.from(contractId.toBuffer()) will throw an error
+    if (appDefinition.contractId.equals(contractId.toBuffer())) {
       appDefinition.contract = contract;
     }
   }

@@ -20,9 +20,9 @@ export default async function broadcast(
 ): Promise<any> {
   await this.initialize();
 
-  const { dpp } = this;
+  const { wasmDpp } = this;
 
-  const documentsBatchTransition = dpp.document.createStateTransition(documents);
+  const documentsBatchTransition = wasmDpp.document.createStateTransition(documents);
 
   await signStateTransition(this, documentsBatchTransition, identity, 1);
 

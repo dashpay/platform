@@ -322,7 +322,7 @@ describe('Dash - Client', function suite() {
     });
   });
 
-  describe('#platform.documents.broadcast', () => {
+  describe.only('#platform.documents.broadcast', () => {
     it('should throw TransitionBroadcastError when transport resolves error', async () => {
       const errorResponse = {
         error: {
@@ -361,7 +361,7 @@ describe('Dash - Client', function suite() {
 
       const serializedSt = dapiClientMock.platform.broadcastStateTransition.getCall(0).args[0];
       const interceptedSt = await client
-        .platform.dpp.stateTransition.createFromBuffer(serializedSt);
+        .platform.wasmDpp.stateTransition.createFromBuffer(serializedSt);
 
       // .to.be.true() doesn't work after TS compilation in Chrome
       expect(await interceptedSt.verifySignature(
