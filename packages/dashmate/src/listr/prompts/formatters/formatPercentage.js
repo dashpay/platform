@@ -4,7 +4,7 @@ function formatPercentage(input, choice) {
   let str;
 
   const number = Number(input);
-  if (Number.isNaN(number) || number.toFixed(2).length < input.length) {
+  if (input === '' || Number.isNaN(number) || number.toFixed(2).length < input.length) {
     str = input;
   } else {
     str = number.toFixed(2);

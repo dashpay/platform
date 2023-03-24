@@ -36,7 +36,7 @@ function configureNodeTaskFactory() {
           if (ctx.nodeType === NODE_TYPE_MASTERNODE) {
             const masternodeOperatorPrivateKey = await task.prompt({
               type: 'input',
-              header: `  Please enter your existing BLS private key.
+              header: `  Please enter your Masternode Operator BLS Private key.
 
   Your BLS private key can be found in the "dash.conf" file of your masternode,
   in the DMT configuration tool, or in the safe location in which you stored it
@@ -63,7 +63,10 @@ function configureNodeTaskFactory() {
           if (ctx.nodeType === NODE_TYPE_MASTERNODE) {
             const form = await task.prompt(await createIpAndPortsForm(ctx.preset, {
               isHPMN: ctx.isHP,
-              skipInitial: ctx.preset !== PRESET_MAINNET,
+              initialIp: '',
+              initialCoreP2PPort: ctx.preset !== PRESET_MAINNET ? '' : undefined,
+              initialPlatformHTTPPort: ctx.preset !== PRESET_MAINNET ? '' : undefined,
+              initialPlatformP2PPort: ctx.preset !== PRESET_MAINNET ? '' : undefined,
             }));
 
             ctx.config.set('externalIp', form.ip);

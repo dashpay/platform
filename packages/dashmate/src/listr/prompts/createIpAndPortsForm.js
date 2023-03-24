@@ -13,7 +13,10 @@ const {
  * @typedef {createIpAndPortsForm}
  * @param {string} network
  * @param {Object} [options]
- * @param {Object} [options.skipInitial=false]
+ * @param {string} [options.initialIp]
+ * @param {string} [options.initialCoreP2PPort]
+ * @param {string} [options.initialPlatformP2PPort]
+ * @param {string} [options.initialPlatformHTTPPort]
  * @param {Object} [options.isHPMN=false]
  * @returns {Object}
  */
@@ -48,13 +51,13 @@ async function createIpAndPortsForm(network, options = {}) {
   }
 
   let initialIp;
-  if (!options.skipInitial) {
+  if (options.initialIp !== '' || !options.initialIp) {
     initialIp = await publicIp.v4();
   }
 
   let initialCoreP2PPort;
-  if (!options.skipInitial || network === PRESET_MAINNET) {
-    initialCoreP2PPort = mainnetCfg.core.p2p.port.toString();
+  if (options.initialCoreP2PPort !== '' || !options.initialCoreP2PPort || network === PRESET_MAINNET) {
+    initialCoreP2PPort = systemConfigs[network].core.p2p.port.toString();
   }
 
   const fields = [
@@ -76,7 +79,7 @@ async function createIpAndPortsForm(network, options = {}) {
 
   if (options.isHPMN) {
     let initialPlatformP2PPort;
-    if (!options.skipInitial) {
+    if (options.initialPlatformP2PPort !== '' || !options.initialPlatformP2PPort || network === PRESET_MAINNET) {
       initialPlatformP2PPort = systemConfigs[network].platform.drive.tenderdash.p2p.port.toString();
     }
 
@@ -89,7 +92,7 @@ async function createIpAndPortsForm(network, options = {}) {
     });
 
     let initialPlatformHTTPPort;
-    if (!options.skipInitial) {
+    if (options.initialPlatformHTTPPort !== '' || !options.initialPlatformHTTPPort || network === PRESET_MAINNET) {
       initialPlatformHTTPPort = systemConfigs[network].platform.dapi.envoy.http.port.toString();
     }
 

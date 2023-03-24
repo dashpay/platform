@@ -3,7 +3,7 @@ const validateTenderdashNodeKey = require('./validators/validateTenderdashNodeKe
 
 /**
  * @param {Object} [options]
- * @param {boolean} [options.skipInitial=false]
+ * @param {string} [options.initial]
  * @returns {Object}
  */
 function createPlatformNodeKeyInput(options = {}) {
@@ -18,7 +18,7 @@ function createPlatformNodeKeyInput(options = {}) {
   automatically generated for you.\n`,
     message: 'Enter Ed25519 node key',
     hint: 'Base64 encoded',
-    initial: options.skipInitial ? undefined : generateTenderdashNodeKey(),
+    initial: options.initial === '' || options.initial ? options.initial : generateTenderdashNodeKey(),
     validate: validateTenderdashNodeKey,
   };
 }
