@@ -28,7 +28,6 @@ function configureSSLCertificateTaskFactory(
         title: 'Set SSL certificate file',
         enabled: (ctx) => ctx.certificateProvider === SSL_PROVIDERS.FILE,
         task: async (ctx, task) => {
-
           const form = await task.prompt({
             type: 'form',
             message: 'Provide paths to your certificate files',

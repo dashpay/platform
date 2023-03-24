@@ -60,6 +60,7 @@ function obtainZeroSSLCertificateTaskFactory(
       },
       {
         title: 'Verify IP',
+        // TODO: If it doesn't work we should ask to open 80 port and retry
         task: async (ctx) => verifyDomain(ctx.response.id, config.get('platform.dapi.envoy.ssl.providerConfigs.zerossl.apiKey')),
       },
       {

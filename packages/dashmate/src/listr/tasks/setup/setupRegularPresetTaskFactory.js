@@ -133,9 +133,7 @@ function setupRegularPresetTaskFactory(
         task: () => configureNodeTask(),
       },
       {
-        // TODO: We don't need certificates for mainnet since we don't run platform there on
-        //  first version
-        enabled: (ctx) => ctx.isHP && ctx.preset !== PRESET_MAINNET,
+        enabled: (ctx) => ctx.config.isPlatformEnabled(),
         task: () => configureSSLCertificateTask(),
       },
       {
