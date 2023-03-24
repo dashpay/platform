@@ -30,7 +30,7 @@ async function verifyDomain(id, apiKey) {
   const data = await response.json();
 
   if (data.error) {
-    throw new Error(data.error.type);
+    throw new Error(data.error.message);
   }
 
   return data;
