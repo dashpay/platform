@@ -77,8 +77,6 @@ function registerMasternodeGuideTaskFactory() {
           // TODO: We need to add description on how to find key generation form in the
           //  specified wallet
 
-          // TODO: Deal with hints in forms
-
           const validateAddressWithNetwork = (value) => validateAddress(value, ctx.preset);
 
           const collateralAmount = ctx.isHP === true
@@ -131,21 +129,18 @@ function registerMasternodeGuideTaskFactory() {
                   {
                     name: 'ownerAddress',
                     message: 'Owner address',
-                    hint: 'Base58 encoded',
                     validate: validateAddressWithNetwork,
                     initial: state.keys.ownerAddress,
                   },
                   {
                     name: 'votingAddress',
                     message: 'Voting address',
-                    hint: 'Base58 encoded',
                     validate: validateAddressWithNetwork,
                     initial: state.keys.votingAddress,
                   },
                   {
                     name: 'payoutAddress',
                     message: 'Payout address',
-                    hint: 'Base58 encoded',
                     validate: validateAddressWithNetwork,
                     initial: state.keys.payoutAddress,
                   },

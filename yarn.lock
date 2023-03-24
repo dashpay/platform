@@ -5985,7 +5985,7 @@ __metadata:
     dockerode: ^3.2.0
     dot: ^1.1.3
     dotenv: ^8.6.0
-    enquirer: ^2.3.6
+    enquirer: "github:dashpay/enquirer#patch-1"
     eslint: ^7.32.0
     eslint-config-airbnb-base: ^14.2.1
     eslint-plugin-import: ^2.24.2
@@ -6607,7 +6607,16 @@ __metadata:
   languageName: node
   linkType: hard
 
-"enquirer@npm:^2.3.5, enquirer@npm:^2.3.6":
+"enquirer@github:dashpay/enquirer#patch-1":
+  version: 2.3.6
+  resolution: "enquirer@https://github.com/dashpay/enquirer.git#commit=86aaef0b1c82dfaa3436775e6b37de310eeb94f5"
+  dependencies:
+    ansi-colors: ^4.1.1
+  checksum: 2262f9819ba08a6090f4b2b32c7061b65f8ca7e5df414a45d807dd3e0e740dc4019bd8f749dbaafc8e9bfd97f595816e5a27e1666bb045ca31a495331eadf9ff
+  languageName: node
+  linkType: hard
+
+"enquirer@npm:^2.3.5":
   version: 2.3.6
   resolution: "enquirer@npm:2.3.6"
   dependencies:

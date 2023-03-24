@@ -4,7 +4,6 @@ const chalk = require('chalk');
 
 const {
   NODE_TYPE_MASTERNODE,
-  PRESET_MAINNET,
   NODE_TYPE_HPMN,
   NODE_TYPE_FULLNODE,
 } = require('../../../constants');
@@ -133,7 +132,7 @@ function setupRegularPresetTaskFactory(
         task: () => configureNodeTask(),
       },
       {
-        enabled: (ctx) => ctx.config.isPlatformEnabled(),
+        enabled: (ctx) => ctx.config && ctx.config.isPlatformEnabled(),
         task: () => configureSSLCertificateTask(),
       },
       {

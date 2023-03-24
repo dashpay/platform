@@ -8029,7 +8029,7 @@ function $$SETUP_STATE(hydrateRuntimeState, basePath) {
             ["dockerode", "npm:3.3.1"],\
             ["dot", "npm:1.1.3"],\
             ["dotenv", "npm:8.6.0"],\
-            ["enquirer", "npm:2.3.6"],\
+            ["enquirer", "https://github.com/dashpay/enquirer.git#commit=86aaef0b1c82dfaa3436775e6b37de310eeb94f5"],\
             ["eslint", "npm:7.32.0"],\
             ["eslint-config-airbnb-base", "virtual:12a596dc9572e25ce715d3736dc74b317c5ca5cfb3b4f67864b1e76b3a401006f84d381aaf975bb5b4da9cafac5125e6869fc78d5202f4c95780c81479112f32#npm:14.2.1"],\
             ["eslint-plugin-import", "virtual:12a596dc9572e25ce715d3736dc74b317c5ca5cfb3b4f67864b1e76b3a401006f84d381aaf975bb5b4da9cafac5125e6869fc78d5202f4c95780c81479112f32#npm:2.25.3"],\
@@ -8825,6 +8825,14 @@ function $$SETUP_STATE(hydrateRuntimeState, basePath) {
         }]\
       ]],\
       ["enquirer", [\
+        ["https://github.com/dashpay/enquirer.git#commit=86aaef0b1c82dfaa3436775e6b37de310eeb94f5", {\
+          "packageLocation": "./.yarn/cache/enquirer-https-9a17ef3ad5-2262f9819b.zip/node_modules/enquirer/",\
+          "packageDependencies": [\
+            ["enquirer", "https://github.com/dashpay/enquirer.git#commit=86aaef0b1c82dfaa3436775e6b37de310eeb94f5"],\
+            ["ansi-colors", "npm:4.1.1"]\
+          ],\
+          "linkType": "HARD"\
+        }],\
         ["npm:2.3.6", {\
           "packageLocation": "./.yarn/cache/enquirer-npm-2.3.6-7899175762-1c0911e14a.zip/node_modules/enquirer/",\
           "packageDependencies": [\
@@ -12599,7 +12607,7 @@ function $$SETUP_STATE(hydrateRuntimeState, basePath) {
             ["@types/enquirer", null],\
             ["cli-truncate", "npm:2.1.0"],\
             ["colorette", "npm:2.0.19"],\
-            ["enquirer", "npm:2.3.6"],\
+            ["enquirer", "https://github.com/dashpay/enquirer.git#commit=86aaef0b1c82dfaa3436775e6b37de310eeb94f5"],\
             ["log-update", "npm:4.0.0"],\
             ["p-map", "npm:4.0.0"],\
             ["rfdc", "npm:1.3.0"],\
