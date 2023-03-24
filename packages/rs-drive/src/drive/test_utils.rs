@@ -1,6 +1,6 @@
 use std::cell::RefCell;
 
-use dpp::util::entropy_generator::EntropyGenerator;
+use dpp::{dashcore::anyhow, util::entropy_generator::EntropyGenerator};
 use rand::{rngs::SmallRng, Rng, SeedableRng};
 
 pub(crate) struct TestEntropyGenerator {
@@ -16,7 +16,7 @@ impl TestEntropyGenerator {
 }
 
 impl EntropyGenerator for TestEntropyGenerator {
-    fn generate(&self) -> [u8; 32] {
-        self.rng.borrow_mut().gen()
+    fn generate(&self) -> anyhow::Result<[u8; 32]> {
+        Ok(self.rng.borrow_mut().gen())
     }
 }
