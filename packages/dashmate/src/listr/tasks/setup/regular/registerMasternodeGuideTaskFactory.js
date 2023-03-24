@@ -80,10 +80,6 @@ function registerMasternodeGuideTaskFactory() {
 
           // TODO: Deal with hints in forms
 
-          // TODO: When registering a new masternode, if registration transaction was not
-          //  successful,then going back through the previous steps should already contain
-          //  the previously filled in information
-
           const validateAddressWithNetwork = (value) => validateAddress(value, ctx.preset);
 
           const collateralAmount = ctx.nodeType === NODE_TYPE_MASTERNODE
@@ -92,171 +88,191 @@ function registerMasternodeGuideTaskFactory() {
 
           const collateralDenomination = ctx.preset === PRESET_MAINNET ? 'DASH' : 'tDASH';
 
-          const prompts = [
-            {
-              type: 'form',
-              name: 'collateral',
-              header: `  Dashmate needs to collect your collateral funding transaction hash and index.
+          let state = {
+            collateral: {},
+            keys: {},
+            operator: {},
+            ipAndPorts: {},
+          };
+
+          let confirmation;
+          do {
+            const prompts = [
+              {
+                type: 'form',
+                name: 'collateral',
+                header: `  Dashmate needs to collect your collateral funding transaction hash and index.
   The funding value must be exactly ${collateralAmount} ${collateralDenomination}.\n`,
-              message: 'Enter collateral funding transaction information:',
-              choices: [
-                {
-                  name: 'txId',
-                  message: 'Transaction hash',
-                  validate: validateTxHex,
-                },
-                {
-                  name: 'outputIndex',
-                  message: 'Output index',
-                  validate: validatePositiveInteger,
-                },
-              ],
-              validate: ({ txId, outputIndex }) => validateTxHex(txId)
-                && validatePositiveInteger(outputIndex),
-            },
-            {
-              type: 'form',
-              name: 'keys',
-              header: `  Dashmate needs to collect details about the owner, voting and payout addresses
+                message: 'Enter collateral funding transaction information:',
+                choices: [
+                  {
+                    name: 'txId',
+                    message: 'Transaction hash',
+                    validate: validateTxHex,
+                    initial: state.collateral.txId,
+                  },
+                  {
+                    name: 'outputIndex',
+                    message: 'Output index',
+                    validate: validatePositiveInteger,
+                    initial: state.collateral.outputIndex,
+                  },
+                ],
+                validate: ({ txId, outputIndex }) => validateTxHex(txId)
+                  && validatePositiveInteger(outputIndex),
+              },
+              {
+                type: 'form',
+                name: 'keys',
+                header: `  Dashmate needs to collect details about the owner, voting and payout addresses
   to use in the masternode registration transaction. These are regular Dash
   addresses, encoded in base58 format.\n`,
-              message: 'Enter DIP3 masternode addresses:',
-              choices: [
-                {
-                  name: 'ownerAddress',
-                  message: 'Owner address',
-                  hint: 'Base58 encoded',
-                  validate: validateAddressWithNetwork,
-                },
-                {
-                  name: 'votingAddress',
-                  message: 'Voting address',
-                  hint: 'Base58 encoded',
-                  validate: validateAddressWithNetwork,
-                },
-                {
-                  name: 'payoutAddress',
-                  message: 'Payout address',
-                  hint: 'Base58 encoded',
-                  validate: validateAddressWithNetwork,
-                },
-              ],
-              validate: ({ ownerAddress, votingAddress, payoutAddress }) => {
-                if (ownerAddress === payoutAddress || votingAddress === payoutAddress) {
-                  return 'The payout address may not be the same as the owner or voting address';
-                }
+                message: 'Enter DIP3 masternode addresses:',
+                choices: [
+                  {
+                    name: 'ownerAddress',
+                    message: 'Owner address',
+                    hint: 'Base58 encoded',
+                    validate: validateAddressWithNetwork,
+                    initial: state.keys.ownerAddress,
+                  },
+                  {
+                    name: 'votingAddress',
+                    message: 'Voting address',
+                    hint: 'Base58 encoded',
+                    validate: validateAddressWithNetwork,
+                    initial: state.keys.votingAddress,
+                  },
+                  {
+                    name: 'payoutAddress',
+                    message: 'Payout address',
+                    hint: 'Base58 encoded',
+                    validate: validateAddressWithNetwork,
+                    initial: state.keys.payoutAddress,
+                  },
+                ],
+                validate: ({ ownerAddress, votingAddress, payoutAddress }) => {
+                  if (ownerAddress === payoutAddress || votingAddress === payoutAddress) {
+                    return 'The payout address may not be the same as the owner or voting address';
+                  }
 
-                return validateAddressWithNetwork(ownerAddress)
-                  && validateAddressWithNetwork(votingAddress)
-                  && validateAddressWithNetwork(payoutAddress);
+                  return validateAddressWithNetwork(ownerAddress)
+                    && validateAddressWithNetwork(votingAddress)
+                    && validateAddressWithNetwork(payoutAddress);
+                },
               },
-            },
-            {
-              type: 'form',
-              name: 'operator',
-              header: `  Dashmate needs to collect details on the operator key and operator reward share
+              {
+                type: 'form',
+                name: 'operator',
+                header: `  Dashmate needs to collect details on the operator key and operator reward share
   to use in the registration transaction. The operator key is a BLS private key,
   encoded in HEX format. Dashmate will record the private key in the masternode
   configuration, and derive the public key for use in the masternode registration
   transaction. You may optionally also specify a percentage share of the
   masternode reward to pay to the operator.\n`,
-              message: 'Enter masternode operator private key and reward share:',
-              choices: [
-                {
-                  name: 'privateKey',
-                  message: 'BLS private key',
-                  hint: 'HEX encoded',
-                  initial: initialOperatorPrivateKey,
-                  validate: validateBLSPrivateKey,
-                },
-                {
-                  name: 'rewardShare',
-                  message: 'Reward share',
-                  hint: '%',
-                  initial: '0.00',
-                  validate: validatePercentage,
-                  format: formatPercentage,
-                  result: (value) => Number(value).toFixed(2),
-                },
-              ],
-              validate: ({ privateKey, rewardShare }) => validateBLSPrivateKey(privateKey)
-                && validatePercentage(rewardShare),
-            },
-          ];
+                message: 'Enter masternode operator private key and reward share:',
+                choices: [
+                  {
+                    name: 'privateKey',
+                    message: 'BLS private key',
+                    hint: 'HEX encoded',
+                    initial: state.operator.privateKey || initialOperatorPrivateKey,
+                    validate: validateBLSPrivateKey,
+                  },
+                  {
+                    name: 'rewardShare',
+                    message: 'Reward share',
+                    hint: '%',
+                    initial: state.operator.rewardShare || '0.00',
+                    validate: validatePercentage,
+                    format: formatPercentage,
+                    result: (value) => Number(value).toFixed(2),
+                  },
+                ],
+                validate: ({ privateKey, rewardShare }) => validateBLSPrivateKey(privateKey)
+                  && validatePercentage(rewardShare),
+              },
+            ];
 
-          if (ctx.isHP) {
-            prompts.push(createPlatformNodeKeyInput());
-          }
+            if (ctx.isHP) {
+              prompts.push(createPlatformNodeKeyInput({
+                initial: state.platformNodeKey,
+              }));
+            }
 
-          prompts.push(await createIpAndPortsForm(ctx.preset, {
-            isHPMN: ctx.isHP,
-          }));
+            prompts.push(await createIpAndPortsForm(ctx.preset, {
+              isHPMN: ctx.isHP,
+              initialIp: state.ipAndPorts.ip,
+              initialCoreP2PPort: state.ipAndPorts.coreP2PPort,
+              initialPlatformP2PPort: state.ipAndPorts.platformP2PPort,
+              initialPlatformHTTPPort: state.ipAndPorts.platformHTTPPort,
+            }));
 
-          let form;
-          let confirmation;
-          do {
-            form = await task.prompt(prompts);
+            state = await task.prompt(prompts);
 
             const operatorPublicKeyHex = await getBLSPublicKeyFromPrivateKeyHex(
-              form.operator.privateKey,
+              state.operator.privateKey,
             );
 
-            const platformP2PPort = form.ipAndPorts.platformP2PPort
+            const platformP2PPort = state.ipAndPorts.platformP2PPort
               || systemConfigs[ctx.preset].platform.drive.tenderdash.p2p.port;
 
-            const platformHTTPPort = form.ipAndPorts.platformHTTPPort
+            const platformHTTPPort = state.ipAndPorts.platformHTTPPort
               || systemConfigs[ctx.preset].platform.dapi.envoy.http.port;
 
             let command;
             if (ctx.isHP) {
               command = `dash-cli register_hpmn
-                    ${form.collateral.txId}
-                    ${form.collateral.outputIndex}
-                    ${form.ipAndPorts.ip}:${form.ipAndPorts.coreP2PPort}
-                    ${form.keys.ownerAddress}
+                    ${state.collateral.txId}
+                    ${state.collateral.outputIndex}
+                    ${state.ipAndPorts.ip}:${state.ipAndPorts.coreP2PPort}
+                    ${state.keys.ownerAddress}
                     ${operatorPublicKeyHex}
-                    ${form.keys.votingAddress}
-                    ${form.operator.rewardShare}
-                    ${form.keys.payoutAddress}
-                    ${createTenderdashNodeId(form.platformNodeKey)}
+                    ${state.keys.votingAddress}
+                    ${state.operator.rewardShare}
+                    ${state.keys.payoutAddress}
+                    ${createTenderdashNodeId(state.platformNodeKey)}
                     ${platformP2PPort}
                     ${platformHTTPPort}`;
             } else {
               command = `dash-cli register
-                    ${form.collateral.txId}
-                    ${form.collateral.outputIndex}
-                    ${form.ipAndPorts.ip}:${form.ipAndPorts.coreP2PPort}
-                    ${form.keys.ownerAddress}
+                    ${state.collateral.txId}
+                    ${state.collateral.outputIndex}
+                    ${state.ipAndPorts.ip}:${state.ipAndPorts.coreP2PPort}
+                    ${state.keys.ownerAddress}
                     ${operatorPublicKeyHex}
-                    ${form.keys.votingAddress}
-                    ${form.operator.rewardShare}
-                    ${form.keys.payoutAddress}`;
+                    ${state.keys.votingAddress}
+                    ${state.operator.rewardShare}
+                    ${state.keys.payoutAddress}`;
             }
+
+            // TODO: We need to give more info on how to run this command
 
             confirmation = await task.prompt({
               type: 'toggle',
               name: 'confirm',
               header: chalk`  Now run the following command to create the registration transaction:
+              
               {bold.cyanBright ${command}}
 
-  Select "No" to modify the transaction by amending your previous input.\n`,
+  Select "No" to modify the command by amending your previous input.\n`,
               message: 'Was the masternode registration transaction successful?',
               enabled: 'Yes',
               disabled: 'No',
             });
           } while (!confirmation);
 
-          ctx.config.set('core.masternode.operator.privateKey', form.operator.privateKey);
+          ctx.config.set('core.masternode.operator.privateKey', state.operator.privateKey);
 
-          ctx.config.set('externalIp', form.ipAndPorts.ip);
-          ctx.config.set('core.p2p.port', form.ipAndPorts.coreP2PPort);
+          ctx.config.set('externalIp', state.ipAndPorts.ip);
+          ctx.config.set('core.p2p.port', state.ipAndPorts.coreP2PPort);
 
           if (ctx.isHP) {
-            ctx.config.set('platform.drive.tenderdash.node.id', createTenderdashNodeId(form.platformNodeKey));
-            ctx.config.set('platform.drive.tenderdash.node.key', form.platformNodeKey);
+            ctx.config.set('platform.drive.tenderdash.node.id', createTenderdashNodeId(state.platformNodeKey));
+            ctx.config.set('platform.drive.tenderdash.node.key', state.platformNodeKey);
 
-            ctx.config.set('platform.dapi.envoy.http.port', form.ipAndPorts.platformHTTPPort);
-            ctx.config.set('platform.drive.tenderdash.p2p.port', form.ipAndPorts.platformP2PPort);
+            ctx.config.set('platform.dapi.envoy.http.port', state.ipAndPorts.platformHTTPPort);
+            ctx.config.set('platform.drive.tenderdash.p2p.port', state.ipAndPorts.platformP2PPort);
           }
 
           // eslint-disable-next-line no-param-reassign
