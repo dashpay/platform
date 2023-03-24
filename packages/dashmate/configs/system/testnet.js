@@ -27,6 +27,13 @@ module.exports = lodashMerge({}, baseConfig, {
     },
   },
   platform: {
+    dapi: {
+      envoy: {
+        http: {
+          port: 1443,
+        },
+      },
+    },
     drive: {
       abci: {
         log: {
@@ -44,14 +51,15 @@ module.exports = lodashMerge({}, baseConfig, {
             {
               id: '74907790a03b51ac062c8a1453dafd72a08668a3',
               host: '34.209.100.240',
-              port: 26656,
+              port: 36656,
             },
             {
               id: '2006632eb20e670923d13d4f53abc24468eaad4d',
               host: '54.213.254.17',
-              port: 26656,
+              port: 36656,
             },
           ],
+          port: 36656,
         },
         genesis: {
           genesis_time: '2021-07-22T12:57:05.429Z',
