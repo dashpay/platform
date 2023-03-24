@@ -45,7 +45,7 @@ function obtainZeroSSLCertificateTaskFactory(
         },
       },
       {
-        title: 'Setup verification server',
+        title: 'Set up verification server',
         task: async (ctx) => {
           const validationResponse = ctx.response.validation.other_methods[config.get('externalIp')];
           const route = validationResponse.file_validation_url_http.replace(`http://${config.get('externalIp')}`, '');
