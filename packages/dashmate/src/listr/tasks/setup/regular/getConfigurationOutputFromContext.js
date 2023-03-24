@@ -11,7 +11,7 @@ async function getConfigurationOutputFromContext(ctx) {
     );
 
     output += chalk`Operator Public key: ${publicKeyHex}
-                    Operator Private key: *** - use {blue.cyanBright dashmate config get core.masternode.operator.privateKey}\n\n`;
+                    Operator Private key: ******** - view with {bold.cyanBright dashmate config get core.masternode.operator.privateKey}\n\n`;
   }
 
   if (ctx.isHP) {
@@ -19,7 +19,7 @@ async function getConfigurationOutputFromContext(ctx) {
       output += '\n\n';
     }
     output += chalk`Platform Node ID: ${ctx.config.get('platform.drive.tenderdash.node.id')}
-                    Platform Node key: *** - use {blue.cyanBright dashmate config get platform.drive.tenderdash.node.key}\n\n`;
+                    Platform Node key: ******** - view with {bold.cyanBright dashmate config get platform.drive.tenderdash.node.key}\n\n`;
   }
 
   output += `External IP: ${ctx.config.get('externalIp') || 'auto'}

@@ -77,9 +77,9 @@ class SetupCommand extends BaseCommand {
               task.output = chalk`Preset {bold ${ctx.preset}} already configured.
 
   To set up a node with this preset from scratch use {bold.cyanBright dashmate reset --config ${ctx.preset} --hard}.
-  Previous data and configuration for this preset will be lost. If you want to keep existing
-  data and configuration, please use the {bold.cyanBright dashmate config create} command to create a new
-  configuration for this preset.`;
+  Previous data and configuration for this preset will be lost. If you want to
+  keep existing data and configuration, please use the {bold.cyanBright dashmate config create}
+  command to create a new configuration for this preset.`;
               throw new Error(`Preset ${ctx.preset} already configured`);
             } else {
               // eslint-disable-next-line no-param-reassign
