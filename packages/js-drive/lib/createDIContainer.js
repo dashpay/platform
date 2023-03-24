@@ -145,6 +145,7 @@ const createContextLoggerFactory = require('./abci/errors/createContextLoggerFac
 const IdentityBalanceStoreRepository = require('./identity/IdentityBalanceStoreRepository');
 
 /**
+ * @param {WebAssembly.Instance} blsSignatures
  * @param {WebAssembly.Instance} dppWasm
  * @param {Object} options
  * @param {string} options.ABCI_HOST
@@ -184,7 +185,7 @@ const IdentityBalanceStoreRepository = require('./identity/IdentityBalanceStoreR
  *
  * @return {AwilixContainer}
  */
-function createDIContainer(dppWasm, options) {
+function createDIContainer(blsSignatures, dppWasm, options) {
   if (!options.DPNS_MASTER_PUBLIC_KEY) {
     throw new Error('DPNS_MASTER_PUBLIC_KEY must be set');
   }
@@ -621,6 +622,7 @@ function createDIContainer(dppWasm, options) {
    */
   container.register({
     dppWasm: asValue(dppWasm),
+    blsSignatures: asValue(blsSignatures),
 
     DashPlatformProtocol: asFunction((dppWasm) => dppWasm.DashPlatformProtocol),
 
@@ -720,22 +722,17 @@ function createDIContainer(dppWasm, options) {
       noopLogger,
     ) => unserializeStateTransitionFactory(transactionalDpp, noopLogger)).singleton(),
 
-    dpp: asFunction((DashPlatformProtocol, stateRepository, dppOptions) => (
-      new DashPlatformProtocol({
-        ...dppOptions,
-        stateRepository,
-      })
+    dpp: asFunction((DashPlatformProtocol, stateRepository, dppOptions, blsSignatures) => (
+      new DashPlatformProtocol(blsSignatures, stateRepository, dppOptions)
     )).singleton(),
 
     transactionalDpp: asFunction((
       DashPlatformProtocol,
       transactionalStateRepository,
       dppOptions,
+      blsSignatures,
     ) => (
-      new DashPlatformProtocol({
-        ...dppOptions,
-        stateRepository: transactionalStateRepository,
-      })
+      new DashPlatformProtocol(blsSignatures, transactionalStateRepository, dppOptions)
     )).singleton(),
   });
 
