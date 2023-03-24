@@ -33,7 +33,7 @@ impl Proposal for Platform {
         let genesis_time_ms = if request.height == self.config.abci.genesis_height {
             let block_time_ms = request
                 .time
-                .clone()
+                .as_ref()
                 .ok_or(AbciError::BadRequest(String::from("missing proposal time")))?
                 .to_milis();
             self.drive.set_genesis_time(block_time_ms);
