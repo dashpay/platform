@@ -24,7 +24,7 @@ describe('DataContractFacade', () => {
 
   beforeEach(async () => {
     blsAdapter = await getBlsAdapterMock();
-    dpp = new DashPlatformProtocol(blsAdapter);
+    dpp = new DashPlatformProtocol(1, blsAdapter);
 
     dataContractJs = await getDataContractJSFixture();
     rawDataContract = dataContractJs.toObject();
