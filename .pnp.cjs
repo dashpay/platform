@@ -2660,6 +2660,7 @@ function $$SETUP_STATE(hydrateRuntimeState, basePath) {
           "packageDependencies": [\
             ["@dashevo/drive", "workspace:packages/js-drive"],\
             ["@dashevo/abci", "https://github.com/dashpay/js-abci.git#commit=09f72120bc2059144f72eb7a246d632ead3fc3c6"],\
+            ["@dashevo/bls", "npm:1.2.9"],\
             ["@dashevo/dapi-grpc", "workspace:packages/dapi-grpc"],\
             ["@dashevo/dashcore-lib", "npm:0.20.0"],\
             ["@dashevo/dashd-rpc", "npm:18.2.0"],\
