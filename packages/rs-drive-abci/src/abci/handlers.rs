@@ -47,6 +47,7 @@ use crate::platform::Platform;
 /// A trait for handling the Tenderdash ABCI (Application Blockchain Interface).
 pub trait TenderdashAbci {
     /// Called with JS drive on init chain
+    #[deprecated = "use abci::server module"]
     fn init_chain(
         &self,
         request: InitChainRequest,
@@ -54,6 +55,7 @@ pub trait TenderdashAbci {
     ) -> Result<InitChainResponse, Error>;
 
     /// Called with JS Drive on block begin
+    #[deprecated = "use abci::server mod, prepare_proposal or process_proposal"]
     fn block_begin(
         &self,
         request: BlockBeginRequest,
@@ -61,6 +63,7 @@ pub trait TenderdashAbci {
     ) -> Result<BlockBeginResponse, Error>;
 
     /// Called with JS Drive on block end
+    #[deprecated = "use abci::server finalize_block"]
     fn block_end(
         &self,
         request: BlockEndRequest,
@@ -68,6 +71,7 @@ pub trait TenderdashAbci {
     ) -> Result<BlockEndResponse, Error>;
 
     /// Called with JS Drive after the current block db transaction is committed
+    #[deprecated = "use abci::server finalize_block"]
     fn after_finalize_block(
         &self,
         request: AfterFinalizeBlockRequest,

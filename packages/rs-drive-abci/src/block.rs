@@ -27,6 +27,10 @@
 // DEALINGS IN THE SOFTWARE.
 //
 
+use dpp::util::vec::vec_to_array;
+use tenderdash_abci::proto::abci as proto;
+use tenderdash_abci::proto::serializers::timestamp::ToMilis;
+
 use crate::abci::messages::BlockBeginRequest;
 use crate::execution::fee_pools::epoch::EpochInfo;
 
@@ -46,6 +50,7 @@ pub struct BlockStateInfo {
 
 impl BlockStateInfo {
     /// Given a `BlockBeginRequest` return `BlockInfo`
+    #[deprecated = "use from_prepare_proposal_request and from_process_proposal_request"]
     pub fn from_block_begin_request(block_begin_request: &BlockBeginRequest) -> BlockStateInfo {
         BlockStateInfo {
             block_height: block_begin_request.block_height,
@@ -55,8 +60,21 @@ impl BlockStateInfo {
             core_chain_locked_height: block_begin_request.core_chain_locked_height,
         }
     }
+    /// Generate block state info based on Prepare Proposal request
+    pub fn from_prepare_proposal_request(
+        request: &proto::RequestPrepareProposal,
+    ) -> BlockStateInfo {
+        BlockStateInfo {
+            block_height: request.height as u64,
+            block_time_ms: request.time.clone().unwrap().to_milis(),
+            previous_block_time_ms: None, // TODO: implement properly
+            //<dyn Into<[u8; 32]>>::into()
+            proposer_pro_tx_hash: vec_to_array(&request.proposer_pro_tx_hash)
+                .expect("invalid proposer protxhash"),
+            core_chain_locked_height: request.core_chain_locked_height,
+        }
+    }
 }
-
 /// Block execution context
 pub struct BlockExecutionContext {
     /// Block info

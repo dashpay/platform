@@ -79,7 +79,7 @@ impl Platform {
 
         let core_rpc: Box<dyn CoreRPCLike> = Box::new(
             DefaultCoreRPC::open(
-                config.core.rpc.url.as_str(),
+                config.core.rpc.url().as_str(),
                 config.core.rpc.username.clone(),
                 config.core.rpc.password.clone(),
             )
