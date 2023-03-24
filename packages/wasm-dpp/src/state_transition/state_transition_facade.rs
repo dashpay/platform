@@ -14,7 +14,6 @@ use std::sync::Arc;
 use wasm_bindgen::prelude::*;
 use wasm_bindgen::JsValue;
 
-
 #[derive(Clone)]
 #[wasm_bindgen(js_name = StateTransitionFacade)]
 pub struct StateTransitionFacadeWasm(
