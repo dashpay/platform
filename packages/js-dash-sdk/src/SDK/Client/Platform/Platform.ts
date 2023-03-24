@@ -221,11 +221,11 @@ export class Platform {
       const protocolVersion = this.dpp.getProtocolVersion();
       const stateRepository = this.dpp.getStateRepository();
 
-      this.wasmDpp = new DashPlatformProtocolWasm({
-        ...this.options,
+      this.wasmDpp = new DashPlatformProtocolWasm(
+        bls,
+        stateRepository,
         protocolVersion,
-      },
-      bls, stateRepository);
+      );
     }
   }
 }

@@ -70,7 +70,7 @@ async function main() {
     port: config.tendermintCore.port,
   });
 
-  const dppForParsingContracts = new DashPlatformProtocol({}, blsSignatures, {});
+  const dppForParsingContracts = new DashPlatformProtocol(blsSignatures, {});
   const driveStateRepository = new DriveStateRepository(driveClient, dppForParsingContracts);
 
   log.info(`Connecting to Tenderdash on ${config.tendermintCore.host}:${config.tendermintCore.port}`);
@@ -98,7 +98,7 @@ async function main() {
   });
   log.info(`JSON RPC server is listening on port ${config.rpcServer.port}`);
 
-  const dpp = new DashPlatformProtocol({}, blsSignatures, driveStateRepository);
+  const dpp = new DashPlatformProtocol(blsSignatures, driveStateRepository);
   // const dpp = new DashPlatformProtocolJS({
   //   stateRepository: driveStateRepository,
   // });
