@@ -73,31 +73,24 @@ fn dump_config(config: &PlatformConfig) {
 }
 
 fn load_config(path: &Option<PathBuf>) -> PlatformConfig {
-    match path {
-        Some(path) => {
-            if let Err(e) = dotenvy::from_path(path) {
-                panic!("cannot load config file {:?}: {}", path, e);
-            }
+    if let Some(path) = path {
+        if let Err(e) = dotenvy::from_path(path) {
+            panic!("cannot load config file {:?}: {}", path, e);
         }
-        None => {
-            if let Err(e) = dotenvy::dotenv() {
-                if e.not_found() {
-                    warn!("cannot find any matching .env file");
-                } else {
-                    panic!("cannot load config file: {}", e);
-                }
-            }
+    } else if let Err(e) = dotenvy::dotenv() {
+        if e.not_found() {
+            warn!("cannot find any matching .env file");
+        } else {
+            panic!("cannot load config file: {}", e);
         }
-    };
+    }
 
     let config = PlatformConfig::from_env();
     if let Err(ref e) = config {
-        if let drive_abci::error::Error::Configuration(src) = e {
-            if let envy::Error::MissingValue(e2) = src {
-                panic!("missing configuration option: {}", e2.to_uppercase());
-            };
-            panic!("cannot parse configuration file: {}", e);
+        if let drive_abci::error::Error::Configuration(envy::Error::MissingValue(field)) = e {
+            panic!("missing configuration option: {}", field.to_uppercase());
         }
+        panic!("cannot parse configuration file: {}", e);
     };
 
     config.expect("cannot parse configuration file")

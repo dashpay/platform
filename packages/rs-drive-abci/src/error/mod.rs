@@ -1,4 +1,4 @@
-use crate::abci::Error as AbciError;
+use crate::abci::AbciError;
 use crate::error::execution::ExecutionError;
 use crate::error::serialization::SerializationError;
 use drive::dpp::ProtocolError;

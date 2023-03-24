@@ -164,7 +164,6 @@ mod tests {
     fn test_config_from_env() {
         let envfile = format!("{}/.env.example", env!("CARGO_MANIFEST_DIR"));
         let envfile = std::path::PathBuf::from(envfile);
-        dbg!(&envfile);
 
         dotenvy::from_path(envfile.as_path()).expect("cannot load .env file");
         assert_eq!("5", env::var("QUORUM_SIZE").unwrap());

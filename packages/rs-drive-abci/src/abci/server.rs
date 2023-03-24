@@ -24,13 +24,12 @@ pub fn start(config: &PlatformConfig) -> Result<(), Error> {
     let bind_address = config.abci.bind_address.clone();
     let abci_config = config.abci.clone();
 
-    let platform: Platform =
-        Platform::open(config.db_path.to_owned(), Some(config.to_owned())).unwrap();
+    let platform: Platform = Platform::open(&config.db_path, Some(config.clone()))?;
 
     let abci = AbciApplication::new(abci_config, &platform)?;
 
-    let server =
-        tenderdash_abci::start_server(&bind_address, abci).map_err(|e| super::Error::from(e))?;
+    let server = tenderdash_abci::start_server(&bind_address, abci)
+        .map_err(|e| super::AbciError::from(e))?;
 
     loop {
         tracing::info!("waiting for new connection");
@@ -58,7 +57,9 @@ impl<'a> AbciApplication<'a> {
 
     /// Return locked Platform object
     fn platform(&self) -> MutexGuard<&'a Platform> {
-        self.platform.lock().unwrap()
+        self.platform
+            .lock()
+            .expect("cannot acquire lock on platform")
     }
 
     /// Return current transaction.
@@ -97,12 +98,8 @@ impl<'a> tenderdash_abci::Application for AbciApplication<'a> {
     fn init_chain(&self, request: proto::RequestInitChain) -> proto::ResponseInitChain {
         let platform = self.platform();
         let transaction = self.transaction();
-
-        let genesis_time = request
-            .time
-            .clone()
-            .expect("genesis time is required")
-            .to_milis() as TimestampMillis;
+        let genesis_time =
+            request.time.expect("genesis time is required").to_milis() as TimestampMillis;
 
         platform
             .create_genesis_state(genesis_time, self.config.keys.clone().into(), transaction)

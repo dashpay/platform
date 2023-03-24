@@ -6,7 +6,7 @@ pub mod handlers;
 #[deprecated = "use tenderdash-proto crate whenever possible"]
 pub mod messages;
 
-// new code - config, 
+// new code - config,
 #[cfg(feature = "server")]
 pub mod config;
 #[cfg(feature = "server")]
@@ -14,6 +14,6 @@ mod proposal;
 #[cfg(feature = "server")]
 mod server;
 
-pub use error::Error;
+pub use error::AbciError;
 #[cfg(feature = "server")]
 pub use server::start;

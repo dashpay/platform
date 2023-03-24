@@ -14,6 +14,8 @@ use tenderdash_abci::proto::{
     serializers::timestamp::ToMilis,
 };
 
+use super::AbciError;
+
 pub trait Proposal {
     fn prepare_proposal(
         &self,
@@ -29,7 +31,11 @@ impl Proposal for Platform {
         transaction: TransactionArg,
     ) -> Result<proto::ResponsePrepareProposal, Error> {
         let genesis_time_ms = if request.height == self.config.abci.genesis_height {
-            let block_time_ms = request.time.clone().unwrap().to_milis();
+            let block_time_ms = request
+                .time
+                .clone()
+                .ok_or(AbciError::BadRequest(String::from("missing proposal time")))?
+                .to_milis();
             self.drive.set_genesis_time(block_time_ms);
             block_time_ms
         } else {
@@ -39,20 +45,17 @@ impl Proposal for Platform {
                 .map_err(Error::Drive)?
                 .ok_or(Error::Execution(ExecutionError::DriveIncoherence(
                     "the genesis time must be set",
-                )))
-                .unwrap()
+                )))?
         };
 
         // Update versions
         let proposed_app_version = request.proposed_app_version;
 
-        self.drive
-            .update_validator_proposed_app_version(
-                vec_to_array(&request.proposer_pro_tx_hash).expect("invalid proposer protxhash"),
-                proposed_app_version as u32,
-                transaction,
-            )
-            .unwrap();
+        self.drive.update_validator_proposed_app_version(
+            vec_to_array(&request.proposer_pro_tx_hash).expect("invalid proposer protxhash"),
+            proposed_app_version as u32,
+            transaction,
+        )?;
 
         // Init block execution context
         let block_info = BlockStateInfo::from_prepare_proposal_request(&request);

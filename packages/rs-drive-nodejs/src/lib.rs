@@ -117,8 +117,10 @@ impl PlatformWrapper {
             };
             //core_addr: Vec<&str>
             let core_addr: Vec<&str> = core_rpc_url.split(':').collect();
-            let core_host = core_addr.first().unwrap();
-            let core_port = core_addr.get(1).unwrap();
+            let core_host = core_addr.first().expect("missing core address");
+            let core_port = core_addr
+                .get(1)
+                .expect("missing port number in core address");
             let core_config = CoreConfig {
                 rpc: CoreRpcConfig {
                     host: core_host.to_string(),
