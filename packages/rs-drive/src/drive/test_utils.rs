@@ -1,6 +1,6 @@
 use std::cell::RefCell;
 
-use dpp::data_contract::EntropyGenerator;
+use dpp::util::entropy_generator::EntropyGenerator;
 use rand::{rngs::SmallRng, Rng, SeedableRng};
 
 pub(crate) struct TestEntropyGenerator {
