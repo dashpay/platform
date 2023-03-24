@@ -133,12 +133,9 @@ function setupRegularPresetTaskFactory(
         task: () => configureNodeTask(),
       },
       {
-        title: 'Configure SSL certificate',
         // TODO: We don't need certificates for mainnet since we don't run platform there on
         //  first version
-        enabled: (ctx) => ctx.nodeType === NODE_TYPE_MASTERNODE
-          && ctx.isHP
-          && ctx.preset !== PRESET_MAINNET,
+        enabled: (ctx) => ctx.isHP && ctx.preset !== PRESET_MAINNET,
         task: () => configureSSLCertificateTask(),
       },
       {

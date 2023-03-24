@@ -15,7 +15,7 @@ async function getConfigurationOutputFromContext(ctx) {
   }
 
   if (ctx.isHP) {
-    if (output === '') {
+    if (output !== '') {
       output += '\n\n';
     }
     output += chalk`Platform Node ID: ${ctx.config.get('platform.drive.tenderdash.node.id')}
