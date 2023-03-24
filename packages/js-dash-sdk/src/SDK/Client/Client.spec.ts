@@ -208,7 +208,7 @@ describe('Dash - Client', function suite() {
 
       const serializedSt = dapiClientMock.platform.broadcastStateTransition.getCall(1).args[0];
       const interceptedIdentityStateTransition = await client
-        .platform.dpp.stateTransition.createFromBuffer(serializedSt);
+        .platform.wasmDpp.stateTransition.createFromBuffer(serializedSt);
       const interceptedAssetLockProof = interceptedIdentityStateTransition.getAssetLockProof();
 
       expect(interceptedIdentityStateTransition.getType())
@@ -217,8 +217,10 @@ describe('Dash - Client', function suite() {
       const transaction = new Transaction(transportMock.sendTransaction.getCall(1).args[0]);
       const isLock = createFakeInstantLock(transaction.hash);
       // Check intercepted st
-      expect(interceptedAssetLockProof.getInstantLock()).to.be.deep.equal(isLock);
-      expect(interceptedAssetLockProof.getTransaction().hash).to.be.equal(transaction.hash);
+      expect(interceptedAssetLockProof.getInstantLock()).to.be
+        .deep.equal(isLock.toBuffer());
+      expect(interceptedAssetLockProof.getTransaction()).to.be
+        .deep.equal(transaction.toBuffer());
     });
 
     it('should throw TransitionBroadcastError when transport resolves error', async () => {
@@ -322,7 +324,7 @@ describe('Dash - Client', function suite() {
     });
   });
 
-  describe.only('#platform.documents.broadcast', () => {
+  describe('#platform.documents.broadcast', () => {
     it('should throw TransitionBroadcastError when transport resolves error', async () => {
       const errorResponse = {
         error: {
