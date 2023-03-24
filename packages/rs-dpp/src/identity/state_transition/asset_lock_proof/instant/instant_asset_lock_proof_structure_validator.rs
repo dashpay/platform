@@ -81,7 +81,7 @@ where
 
         let is_signature_verified = self
             .state_repository
-            .verify_instant_lock(&instant_lock, execution_context)
+            .verify_instant_lock(&instant_lock, Some(execution_context))
             .await
             .map_err(|e| {
                 NonConsensusError::StateRepositoryFetchError(format!(

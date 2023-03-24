@@ -187,7 +187,7 @@ async fn fetch_data_contracts_for_document_transition(
 
         let data_contract_id = Identifier::from_bytes(&data_contract_id_bytes)?;
         let data_contract: DataContract = state_repository
-            .fetch_data_contract(&data_contract_id, execution_context)
+            .fetch_data_contract(&data_contract_id, Some(execution_context))
             .await?
             .map(TryInto::try_into)
             .transpose()

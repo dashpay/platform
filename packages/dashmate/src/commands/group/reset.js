@@ -55,7 +55,7 @@ class GroupResetCommand extends GroupBaseCommand {
             task: (ctx) => {
               ctx.skipPlatformInitialization = true;
 
-              if (config.has('platform')) {
+              if (config.isPlatformEnabled()) {
                 config.set('platform.dpns', baseConfig.platform.dpns);
                 config.set('platform.dashpay', baseConfig.platform.dashpay);
                 config.set('platform.featureFlags', baseConfig.platform.featureFlags);
