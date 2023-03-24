@@ -155,7 +155,7 @@ function startGroupNodesTaskFactory(
         enabled: (ctx) => Boolean(ctx.waitForReadiness),
         task: () => {
           const tasks = configGroup
-            .filter((config) => config.has('platform'))
+            .filter((config) => config.isPlatformEnabled())
             .map((config) => ({
               title: `Wait for ${config.getName()} node`,
               task: () => waitForNodeToBeReadyTask(config),

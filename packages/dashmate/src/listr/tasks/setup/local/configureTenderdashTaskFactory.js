@@ -19,7 +19,7 @@ function configureTenderdashTaskFactory(
     return new Listr([
       {
         task: async (ctx) => {
-          const platformConfigs = configGroup.filter((config) => config.has('platform'));
+          const platformConfigs = configGroup.filter((config) => config.isPlatformEnabled());
 
           const subTasks = [];
 
