@@ -9,6 +9,7 @@ const InvalidMasternodeIdentityError = require('./errors/InvalidMasternodeIdenti
  * @return {createMasternodeIdentity}
  */
 function createMasternodeIdentityFactory(
+  dpp,
   dppWasm,
   identityRepository,
   // getWithdrawPubKeyTypeFromPayoutScript,
