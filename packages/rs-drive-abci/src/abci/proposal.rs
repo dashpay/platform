@@ -10,7 +10,7 @@ use crate::{
 use dpp::util::vec::vec_to_array;
 use drive::query::TransactionArg;
 use tenderdash_abci::proto::{
-    abci::{self as proto, ExecTxResult},
+    abci::{self as proto, ExecTxResult, ResponseException},
     serializers::timestamp::ToMilis,
 };
 
@@ -21,7 +21,7 @@ pub trait Proposal {
         &self,
         request: &proto::RequestPrepareProposal,
         transaction: TransactionArg,
-    ) -> Result<proto::ResponsePrepareProposal, Error>;
+    ) -> Result<proto::ResponsePrepareProposal, ResponseException>;
 }
 
 impl Proposal for Platform {
@@ -29,12 +29,12 @@ impl Proposal for Platform {
         &self,
         request: &proto::RequestPrepareProposal,
         transaction: TransactionArg,
-    ) -> Result<proto::ResponsePrepareProposal, Error> {
+    ) -> Result<proto::ResponsePrepareProposal, ResponseException> {
         let genesis_time_ms = if request.height == self.config.abci.genesis_height {
             let block_time_ms = request
                 .time
                 .as_ref()
-                .ok_or(AbciError::BadRequest(String::from("missing proposal time")))?
+                .ok_or("missing proposal time")?
                 .to_milis();
             self.drive.set_genesis_time(block_time_ms);
             block_time_ms
@@ -51,11 +51,14 @@ impl Proposal for Platform {
         // Update versions
         let proposed_app_version = request.proposed_app_version;
 
-        self.drive.update_validator_proposed_app_version(
-            vec_to_array(&request.proposer_pro_tx_hash).expect("invalid proposer protxhash"),
-            proposed_app_version as u32,
-            transaction,
-        )?;
+        self.drive
+            .update_validator_proposed_app_version(
+                vec_to_array(&request.proposer_pro_tx_hash)
+                    .map_err(|e| format!("invalid proposer protxhash: {}", e))?,
+                proposed_app_version as u32,
+                transaction,
+            )
+            .map_err(|e| format!("cannot update proposed app version: {}", e))?;
 
         // Init block execution context
         let block_info = BlockStateInfo::from_prepare_proposal_request(&request);
@@ -102,7 +105,7 @@ impl Proposal for Platform {
         }
         // TODO: implement all fields, including tx processing; for now, just leaving bare minimum
         let response = proto::ResponsePrepareProposal {
-            app_hash: vec![0, 32], // TODO: implement
+            app_hash: vec![0; 32], // TODO: implement
             tx_results,
             ..Default::default()
         };

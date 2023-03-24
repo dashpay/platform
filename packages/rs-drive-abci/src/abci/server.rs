@@ -5,8 +5,10 @@ use crate::{abci::proposal::Proposal, config::PlatformConfig, error::Error, plat
 use dpp::identity::TimestampMillis;
 use drive::query::TransactionArg;
 use std::{fmt::Debug, sync::MutexGuard};
-use tenderdash_abci::proto::{abci as proto, serializers::timestamp::ToMilis};
-use tracing::debug;
+use tenderdash_abci::proto::{
+    abci::{self as proto, ResponseException},
+    serializers::timestamp::ToMilis,
+};
 /// AbciApp is an implementation of ABCI Application, as defined by Tenderdash.
 ///
 /// AbciApp implements logic that should be triggered when Tenderdash performs various operations, like
@@ -76,13 +78,13 @@ impl<'a> Debug for AbciApplication<'a> {
 }
 
 impl<'a> tenderdash_abci::Application for AbciApplication<'a> {
-    fn info(&self, request: proto::RequestInfo) -> proto::ResponseInfo {
-        if !check_version(&request.abci_version, tenderdash_abci::proto::ABCI_VERSION) {
-            panic!(
-                "SemVer mismatch: Tenderdash requires ABCI version {}, our version is {}",
+    fn info(&self, request: proto::RequestInfo) -> Result<proto::ResponseInfo, ResponseException> {
+        if !tenderdash_abci::check_version(&request.abci_version) {
+            return Err(ResponseException::from(format!(
+                "tenderdash requires ABCI version {}, our version is {}",
                 request.version,
                 tenderdash_abci::proto::ABCI_VERSION
-            );
+            )));
         }
 
         let response = proto::ResponseInfo {
@@ -92,85 +94,47 @@ impl<'a> tenderdash_abci::Application for AbciApplication<'a> {
         };
 
         tracing::info!(method = "info", ?request, ?response, "info executed");
-        response
+        Ok(response)
     }
 
-    fn init_chain(&self, request: proto::RequestInitChain) -> proto::ResponseInitChain {
+    fn init_chain(
+        &self,
+        request: proto::RequestInitChain,
+    ) -> Result<proto::ResponseInitChain, ResponseException> {
         let platform = self.platform();
         let transaction = self.transaction();
-        let genesis_time =
-            request.time.expect("genesis time is required").to_milis() as TimestampMillis;
+        let genesis_time = request
+            .time
+            .ok_or("genesis time is required in init chain")?
+            .to_milis() as TimestampMillis;
 
-        platform
-            .create_genesis_state(genesis_time, self.config.keys.clone().into(), transaction)
-            .expect("create genesis state");
+        platform.create_genesis_state(
+            genesis_time,
+            self.config.keys.clone().into(),
+            transaction,
+        )?;
 
         let response = proto::ResponseInitChain {
             ..Default::default()
         };
 
         tracing::info!(method = "init_chain", "init chain executed");
-        response
+        Ok(response)
     }
 
     fn prepare_proposal(
         &self,
         request: proto::RequestPrepareProposal,
-    ) -> proto::ResponsePrepareProposal {
+    ) -> Result<proto::ResponsePrepareProposal, ResponseException> {
         let platform = self.platform();
         let transaction = self.transaction();
-        let response = platform
-            .prepare_proposal(&request, transaction)
-            .expect("failed to prepare proposal");
+        let response = platform.prepare_proposal(&request, transaction)?;
 
         tracing::info!(
             method = "prepare_proposal",
             height = request.height,
             "prepare proposal executed",
         );
-        response
-    }
-}
-
-/// Check if ABCI version required by Tenderdash matches our protobuf version.
-///
-/// Match is determined based on Semantic Versioning rules, as defined for '^' operator.
-fn check_version(tenderdash_abci_requirement: &str, our_abci_version: &str) -> bool {
-    let our_version =
-        semver::Version::parse(our_abci_version).expect("cannot parse protobuf library version");
-
-    let require = String::from("^") + tenderdash_abci_requirement;
-    let td_version =
-        semver::VersionReq::parse(require.as_str()).expect("cannot parse tenderdash version");
-
-    debug!("ABCI version: required: {}, our: {}", require, our_version);
-
-    td_version.matches(&our_version)
-}
-
-#[cfg(test)]
-mod tests {
-    use crate::abci::server::check_version;
-
-    /// test_versions! {} (td_version, our_version, expected); }
-    macro_rules! test_versions {
-        ($($name:ident: $value:expr,)*) => {
-        $(
-            #[test]
-            fn $name() {
-                let (td, our, expect) = $value;
-                assert_eq!(check_version(td, our),expect);
-            }
-        )*
-        }
-    }
-
-    test_versions! {
-        test_versions_td_newer: ("0.1.2-dev.1", "0.1.0", false),
-        test_versions_equal: ("0.1.0","0.1.0",true),
-        test_versions_td_older: ("0.1.0","0.1.2",true),
-        test_versions_equal_dev: ("0.1.0-dev.1","0.1.0-dev.1",true),
-        test_versions_our_newer_dev: ("0.1.0-dev.1", "0.1.0-dev.2",true),
-        test_versions_our_dev:("0.1.0","0.1.0-dev.1",false),
+        Ok(response)
     }
 }

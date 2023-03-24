@@ -3,7 +3,9 @@ use crate::error::execution::ExecutionError;
 use crate::error::serialization::SerializationError;
 use drive::dpp::ProtocolError;
 use drive::error::Error as DriveError;
+use tenderdash_abci::proto::abci::ResponseException;
 use tracing::error;
+
 /// Execution errors module
 pub mod execution;
 
@@ -31,4 +33,12 @@ pub enum Error {
     /// Configuration Error
     #[error("configuration: {0}")]
     Configuration(#[from] envy::Error),
+}
+
+impl From<Error> for ResponseException {
+    fn from(value: Error) -> Self {
+        Self {
+            error: value.to_string(),
+        }
+    }
 }
