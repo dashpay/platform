@@ -5,7 +5,6 @@ const chalk = require('chalk');
 const BlsSignatures = require('@dashevo/bls');
 
 const {
-  NODE_TYPE_MASTERNODE,
   MASTERNODE_COLLATERAL_AMOUNT,
   HPMN_COLLATERAL_AMOUNT,
   PRESET_MAINNET,
@@ -252,7 +251,7 @@ function registerMasternodeGuideTaskFactory() {
               type: 'toggle',
               name: 'confirm',
               header: chalk`  Now run the following command to create the registration transaction:
-              
+
               {bold.cyanBright ${command}}
 
   Select "No" to modify the command by amending your previous input.\n`,
