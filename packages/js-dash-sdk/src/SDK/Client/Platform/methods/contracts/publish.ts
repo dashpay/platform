@@ -17,9 +17,9 @@ export default async function publish(
 ): Promise<any> {
   await this.initialize();
 
-  const { dpp } = this;
+  const { wasmDpp } = this;
 
-  const dataContractCreateTransition = dpp.dataContract
+  const dataContractCreateTransition = wasmDpp.dataContract
     .createDataContractCreateTransition(dataContract);
 
   await signStateTransition(this, dataContractCreateTransition, identity, 1);
