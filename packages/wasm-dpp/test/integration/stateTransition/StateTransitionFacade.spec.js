@@ -108,7 +108,7 @@ describe('StateTransitionFacade', () => {
 
     const blsAdapter = await getBlsAdapterMock();
 
-    dpp = new DashPlatformProtocol({}, blsAdapter, stateRepositoryMock);
+    dpp = new DashPlatformProtocol(blsAdapter, stateRepositoryMock, 1);
   });
 
   describe('createFromObject', () => {

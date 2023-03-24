@@ -10,11 +10,12 @@ use serde_json::json;
 use crate::contracts::withdrawals_contract::property_names;
 use crate::data_contract::document_type::document_type::PROTOCOL_VERSION;
 use crate::document::ExtendedDocument;
+use crate::util::entropy_generator::DefaultEntropyGenerator;
 use crate::{
     contracts::withdrawals_contract, data_contract::DataContract, document::generate_document_id,
     document::Document, identity::state_transition::identity_credit_withdrawal_transition::Pooling,
     state_repository::StateRepositoryLike, state_transition::StateTransitionLike,
-    util::entropy_generator::generate,
+    util::entropy_generator::EntropyGenerator,
 };
 
 use super::IdentityCreditWithdrawalTransition;
@@ -45,7 +46,10 @@ where
 
         let maybe_withdrawals_data_contract: Option<DataContract> = self
             .state_repository
-            .fetch_data_contract(data_contract_id, state_transition.get_execution_context())
+            .fetch_data_contract(
+                data_contract_id,
+                Some(state_transition.get_execution_context()),
+            )
             .await?
             .map(TryInto::try_into)
             .transpose()
@@ -90,8 +94,9 @@ where
 
         let mut document_id;
 
+        let generator = DefaultEntropyGenerator;
         loop {
-            let document_entropy = generate()?;
+            let document_entropy = generator.generate()?;
 
             document_id = generate_document_id::generate_document_id(
                 data_contract_id,
@@ -110,7 +115,7 @@ where
                             ["$id", "==", document_id],
                         ],
                     }),
-                    &state_transition.execution_context,
+                    Some(&state_transition.execution_context),
                 )
                 .await?;
 
@@ -141,7 +146,7 @@ where
         self.state_repository
             .create_document(
                 &extended_withdrawal_document,
-                state_transition.get_execution_context(),
+                Some(state_transition.get_execution_context()),
             )
             .await?;
 
@@ -150,14 +155,14 @@ where
             .remove_from_identity_balance(
                 &state_transition.identity_id,
                 state_transition.amount,
-                state_transition.get_execution_context(),
+                Some(state_transition.get_execution_context()),
             )
             .await?;
 
         self.state_repository
             .remove_from_system_credits(
                 state_transition.amount,
-                state_transition.get_execution_context(),
+                Some(state_transition.get_execution_context()),
             )
             .await
     }

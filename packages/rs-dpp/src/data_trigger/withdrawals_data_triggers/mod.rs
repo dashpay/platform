@@ -41,7 +41,7 @@ where
                     ["$id", "==", dt_delete.base.id],
                 ]
             }),
-            context.state_transition_execution_context,
+            Some(context.state_transition_execution_context),
         )
         .await?;
 

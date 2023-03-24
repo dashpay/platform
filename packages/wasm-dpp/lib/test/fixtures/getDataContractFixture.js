@@ -1,3 +1,4 @@
+const crypto = require('crypto');
 const protocolVersion = require('@dashevo/dpp/lib/version/protocolVersion');
 const JsIdentifier = require('@dashevo/dpp/lib/identifier/Identifier');
 const generateRandomIdentifierAsync = require('../utils/generateRandomIdentifierAsync');
@@ -250,12 +251,20 @@ module.exports = async function getDataContractFixture(ownerId = randomOwnerId) 
   };
 
   const dataContractValidator = new DataContractValidator();
+  const entropyGenerator = {
+    generate() {
+      return crypto.randomBytes(32);
+    },
+  };
   const factory = new DataContractFactory(
     protocolVersion.latestVersion,
     dataContractValidator,
+    entropyGenerator,
   );
 
-  const dataContract = factory.create(ownerId, documents);
+  // TODO: Identifier/buffer issue - hidden Identifier bug.
+  //  Without toBuffer() it results on Identifier filled with zeroes
+  const dataContract = factory.create(ownerId.toBuffer(), documents);
 
   // dataContract.setDefinitions({
   //   lastName: {

@@ -1,39 +1,26 @@
-const { default: Ajv } = require('ajv/dist/2020');
-
 const protocolVersion = require('@dashevo/dpp/lib/version/protocolVersion');
 
-const DashPlatformProtocol = require('@dashevo/dpp/lib/DashPlatformProtocol');
-const JsonSchemaValidator = require('@dashevo/dpp/lib/validation/JsonSchemaValidator');
-
-const createStateRepositoryMock = require('@dashevo/dpp/lib/test/mocks/createStateRepositoryMock');
+const createStateRepositoryMock = require('../../lib/test/mocks/createStateRepositoryMock');
+const getBlsAdapterMock = require('../../lib/test/mocks/getBlsAdapterMock');
+let { DashPlatformProtocol } = require('../..');
+const { default: loadWasmDpp } = require('../..');
 
 describe('DashPlatformProtocol', () => {
   let dpp;
   let stateRepositoryMock;
-  let jsonSchemaValidatorMock;
 
   beforeEach(async function beforeEach() {
+    ({ DashPlatformProtocol } = await loadWasmDpp());
     stateRepositoryMock = createStateRepositoryMock(this.sinonSandbox);
-    jsonSchemaValidatorMock = {};
 
-    dpp = new DashPlatformProtocol({
-      stateRepository: stateRepositoryMock,
-      jsonSchemaValidator: jsonSchemaValidatorMock,
-    });
-    await dpp.initialize();
+    dpp = new DashPlatformProtocol(
+      getBlsAdapterMock(),
+      stateRepositoryMock,
+      protocolVersion.latestVersion,
+    );
   });
 
   describe('constructor', () => {
-    it('should create JsonSchemaValidator if not passed in options', async () => {
-      dpp = new DashPlatformProtocol();
-      await dpp.initialize();
-
-      const jsonSchemaValidator = dpp.getJsonSchemaValidator();
-
-      expect(jsonSchemaValidator).to.be.instanceOf(JsonSchemaValidator);
-      expect(jsonSchemaValidator.ajv).to.be.instanceOf(Ajv);
-    });
-
     it('should set default protocol version', () => {
       dpp = new DashPlatformProtocol();
 
@@ -49,14 +36,6 @@ describe('DashPlatformProtocol', () => {
     });
   });
 
-  describe('getJsonSchemaValidator', () => {
-    it('should return JsonSchemaValidator', () => {
-      const result = dpp.getJsonSchemaValidator();
-
-      expect(result).to.equal(jsonSchemaValidatorMock);
-    });
-  });
-
   describe('setProtocolVersion', () => {
     it('should set protocol version', () => {
       expect(dpp.protocolVersion).to.equal(protocolVersion.latestVersion);
@@ -69,11 +48,11 @@ describe('DashPlatformProtocol', () => {
 
   describe('getProtocolVersion', () => {
     it('should get protocol version', () => {
-      expect(dpp.getProtocolVersion()).to.equal(protocolVersion.latestVersion);
+      expect(dpp.protocolVersion).to.equal(protocolVersion.latestVersion);
 
       dpp.setProtocolVersion(42);
 
-      expect(dpp.getProtocolVersion()).to.equal(42);
+      expect(dpp.protocolVersion).to.equal(42);
     });
   });
 });

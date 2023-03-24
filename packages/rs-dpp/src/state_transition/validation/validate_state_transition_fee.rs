@@ -84,7 +84,7 @@ where
                 let identity_id = st.get_owner_id();
                 let identity_balance: i64 = self
                     .state_repository
-                    .fetch_identity_balance_with_debt(identity_id, execution_context)
+                    .fetch_identity_balance_with_debt(identity_id, Some(execution_context))
                     .await?
                     .ok_or_else(|| {
                         ProtocolError::IdentityNotPresentError(IdentityNotPresentError::new(
@@ -170,7 +170,7 @@ where
         let identity_id = st.get_owner_id();
         let identity = self
             .state_repository
-            .fetch_identity(identity_id, st.get_execution_context())
+            .fetch_identity(identity_id, Some(st.get_execution_context()))
             .await?
             .map(TryInto::try_into)
             .transpose()

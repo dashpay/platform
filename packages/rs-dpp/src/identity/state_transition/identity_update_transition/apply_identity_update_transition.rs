@@ -34,7 +34,7 @@ pub async fn apply_identity_update_transition(
         .update_identity_revision(
             &state_transition.identity_id,
             state_transition.revision,
-            state_transition.get_execution_context(),
+            Some(state_transition.get_execution_context()),
         )
         .await?;
 
@@ -48,7 +48,7 @@ pub async fn apply_identity_update_transition(
                 &state_transition.identity_id,
                 state_transition.get_public_key_ids_to_disable(),
                 disabled_at,
-                state_transition.get_execution_context(),
+                Some(state_transition.get_execution_context()),
             )
             .await?;
     }
@@ -65,7 +65,7 @@ pub async fn apply_identity_update_transition(
             .add_keys_to_identity(
                 &state_transition.identity_id,
                 &keys_to_add,
-                state_transition.get_execution_context(),
+                Some(state_transition.get_execution_context()),
             )
             .await?;
     }

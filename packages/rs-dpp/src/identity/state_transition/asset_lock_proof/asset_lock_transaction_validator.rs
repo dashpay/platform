@@ -91,7 +91,7 @@ where
                         .state_repository
                         .is_asset_lock_transaction_out_point_already_used(
                             &out_point_buf,
-                            execution_context,
+                            Some(execution_context),
                         )
                         .await
                         .map_err(|err| {
