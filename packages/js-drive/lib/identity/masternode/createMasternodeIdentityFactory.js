@@ -55,7 +55,7 @@ function createMasternodeIdentityFactory(
     // }
 
     const identity = new dppWasm.Identity({
-      protocolVersion: dpp.getProtocolVersion(),
+      protocolVersion: dppWasm.getProtocolVersion(),
       id: identifier.toBuffer(),
       publicKeys,
       balance: 0,
