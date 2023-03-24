@@ -471,4 +471,14 @@ module.exports = {
 
     return configFile;
   },
+  '0.24.0-dev.17': (configFile) => {
+    Object.entries(configFile.configs)
+      .forEach(([, config]) => {
+        if (config.platform) {
+          config.platform.enable = true;
+        }
+      });
+
+    return configFile;
+  },
 };

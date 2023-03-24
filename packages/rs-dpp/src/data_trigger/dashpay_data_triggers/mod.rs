@@ -97,7 +97,10 @@ where
     //  toUserId identity exits
     let identity = context
         .state_repository
-        .fetch_identity(&to_user_id, context.state_transition_execution_context)
+        .fetch_identity(
+            &to_user_id.into(),
+            Some(context.state_transition_execution_context),
+        )
         .await?;
 
     if !is_dry_run && identity.is_none() {

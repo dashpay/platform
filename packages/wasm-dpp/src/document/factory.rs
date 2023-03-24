@@ -19,6 +19,7 @@ use dpp::prelude::ExtendedDocument;
 use std::convert::TryFrom;
 use std::sync::Arc;
 
+use crate::entropy_generator::ExternalEntropyGenerator;
 use crate::{
     identifier::identifier_from_js_value,
     state_repository::{ExternalStateRepositoryLike, ExternalStateRepositoryLikeWrapper},
@@ -72,7 +73,6 @@ impl DocumentFactoryWASM {
             protocol_version,
             document_validator.into(),
             DataContractFetcherAndValidator::new(Arc::new(state_repository)),
-            Some(5000), //5000 has been chosen arbitrarily
         );
 
         DocumentFactoryWASM(factory)
@@ -86,15 +86,26 @@ impl DocumentFactoryWASM {
         protocol_version: u32,
         document_validator: DocumentValidatorWasm,
         state_repository: ExternalStateRepositoryLike,
+        external_entropy_generator_arg: Option<ExternalEntropyGenerator>,
     ) -> DocumentFactoryWASM {
-        let factory = DocumentFactory::new(
-            protocol_version,
-            document_validator.into(),
-            DataContractFetcherAndValidator::new(Arc::new(
-                ExternalStateRepositoryLikeWrapper::new(state_repository),
-            )),
-            None,
-        );
+        let factory = if let Some(external_entropy_generator) = external_entropy_generator_arg {
+            DocumentFactory::new_with_entropy_generator(
+                protocol_version,
+                document_validator.into(),
+                DataContractFetcherAndValidator::new(Arc::new(
+                    ExternalStateRepositoryLikeWrapper::new(state_repository),
+                )),
+                Box::new(external_entropy_generator),
+            )
+        } else {
+            DocumentFactory::new(
+                protocol_version,
+                document_validator.into(),
+                DataContractFetcherAndValidator::new(Arc::new(
+                    ExternalStateRepositoryLikeWrapper::new(state_repository),
+                )),
+            )
+        };
 
         DocumentFactoryWASM(factory)
     }

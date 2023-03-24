@@ -587,7 +587,6 @@ mod test {
             1,
             get_document_validator_fixture(),
             DataContractFetcherAndValidator::new(Arc::new(MockStateRepositoryLike::new())),
-            None,
         );
 
         let batch_transition = document_factory

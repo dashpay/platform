@@ -226,6 +226,7 @@ module.exports = {
       masterPublicKey: null,
       secondPublicKey: null,
     },
+    enable: true,
   },
   dashmate: {
     helper: {

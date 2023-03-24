@@ -18,6 +18,7 @@ impl DecodeProtocolEntity {
             main_message_bytes: document_bytes,
             ..
         } = deserializer::split_protocol_version(buffer.as_ref())?;
+
         let cbor_value: CborValue = ciborium::de::from_reader(document_bytes).map_err(|e| {
             ConsensusError::SerializedObjectParsingError {
                 parsing_error: anyhow!("Decode protocol entity: {:#?}", e),
