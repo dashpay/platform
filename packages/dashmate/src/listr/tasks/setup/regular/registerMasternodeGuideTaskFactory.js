@@ -82,9 +82,9 @@ function registerMasternodeGuideTaskFactory() {
 
           const validateAddressWithNetwork = (value) => validateAddress(value, ctx.preset);
 
-          const collateralAmount = ctx.nodeType === NODE_TYPE_MASTERNODE
-            ? MASTERNODE_COLLATERAL_AMOUNT
-            : HPMN_COLLATERAL_AMOUNT;
+          const collateralAmount = ctx.isHP === true
+            ? HPMN_COLLATERAL_AMOUNT
+            : MASTERNODE_COLLATERAL_AMOUNT;
 
           const collateralDenomination = ctx.preset === PRESET_MAINNET ? 'DASH' : 'tDASH';
 
