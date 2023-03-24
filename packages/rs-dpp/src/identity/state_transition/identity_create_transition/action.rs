@@ -16,6 +16,10 @@ pub struct IdentityCreateTransitionAction {
 }
 
 impl IdentityCreateTransitionAction {
+    pub fn current_version() -> u32 {
+        IDENTITY_CREATE_TRANSITION_ACTION_VERSION
+    }
+
     pub fn from(value: IdentityCreateTransition, initial_balance_amount: u64) -> Self {
         let IdentityCreateTransition {
             public_keys,

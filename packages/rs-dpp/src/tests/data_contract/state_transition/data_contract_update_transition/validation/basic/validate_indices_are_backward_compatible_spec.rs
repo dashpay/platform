@@ -63,14 +63,14 @@ fn setup_test() -> TestData {
 
 fn get_basic_error(result: &ValidationResult<()>, error_number: usize) -> &BasicError {
     match result
-        .errors
+        .consensus_errors
         .get(error_number)
         .expect("error should be found")
     {
         ConsensusError::BasicError(basic_error) => basic_error,
         _ => panic!(
             "error '{:?}' isn't a basic error",
-            result.errors[error_number]
+            result.consensus_errors[error_number]
         ),
     }
 }

@@ -220,8 +220,8 @@ async fn should_return_invalid_result_if_document_has_unique_indices_and_there_a
     .expect("validation result should be returned");
     assert!(!validation_result.is_valid());
 
-    assert_eq!(4, validation_result.errors.len());
-    assert_eq!(4009, validation_result.errors[0].code());
+    assert_eq!(4, validation_result.consensus_errors.len());
+    assert_eq!(4009, validation_result.consensus_errors[0].code());
 
     let state_error_1 = get_state_error(&validation_result, 0);
     assert!(matches!(
@@ -434,14 +434,14 @@ async fn should_return_valid_result_if_document_being_created_and_has_created_at
 
 fn get_state_error(result: &ValidationResult<()>, error_number: usize) -> &StateError {
     match result
-        .errors
+        .consensus_errors
         .get(error_number)
         .expect("error should be found")
     {
         ConsensusError::StateError(state_error) => state_error,
         _ => panic!(
             "error '{:?}' isn't a basic error",
-            result.errors[error_number]
+            result.consensus_errors[error_number]
         ),
     }
 }

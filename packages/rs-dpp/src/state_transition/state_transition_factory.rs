@@ -87,7 +87,7 @@ where
             if !validation_result.is_valid() {
                 return Err(ProtocolError::StateTransitionError(
                     super::errors::StateTransitionError::InvalidStateTransitionError {
-                        errors: validation_result.errors,
+                        errors: validation_result.consensus_errors,
                         raw_state_transition,
                     },
                 ));

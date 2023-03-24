@@ -1,6 +1,10 @@
-use crate::identity::state_transition::identity_topup_transition::IdentityTopUpTransition;
+use crate::identity::state_transition::identity_topup_transition::{
+    IdentityTopUpTransition, IdentityTopUpTransitionAction,
+};
 use crate::state_repository::StateRepositoryLike;
-use crate::validation::{AsyncDataValidator, SimpleValidationResult, ValidationResult};
+use crate::validation::{
+    AsyncStateTransitionDataValidator, SimpleValidationResult, ValidationResult,
+};
 use crate::{NonConsensusError, ProtocolError};
 use async_trait::async_trait;
 
@@ -12,16 +16,17 @@ where
 }
 
 #[async_trait(?Send)]
-impl<SR> AsyncDataValidator for IdentityTopUpTransitionStateValidator<SR>
+impl<SR> AsyncStateTransitionDataValidator for IdentityTopUpTransitionStateValidator<SR>
 where
     SR: StateRepositoryLike,
 {
-    type Item = IdentityTopUpTransition;
+    type StateTransition = IdentityTopUpTransition;
+    type StateTransitionAction = IdentityTopUpTransitionAction;
 
     async fn validate(
         &self,
         data: &IdentityTopUpTransition,
-    ) -> Result<SimpleValidationResult, ProtocolError> {
+    ) -> Result<IdentityTopUpTransitionAction, SimpleValidationResult> {
         validate_identity_topup_transition_state(data, &self.state_repository)
             .await
             .map(|result| result.into())
@@ -49,8 +54,9 @@ where
 /// 1. We need to check that outpoint exists (not now)
 /// 2. Verify ownership proof signature, as it requires special transaction to be implemented
 pub async fn validate_identity_topup_transition_state(
-    _state_transition: &IdentityTopUpTransition,
+    state_transition: &IdentityTopUpTransition,
     _state_repository: &impl StateRepositoryLike,
-) -> Result<ValidationResult<()>, NonConsensusError> {
-    Ok(ValidationResult::default())
+) -> Result<IdentityTopUpTransitionAction, ValidationResult<()>> {
+    //todo: I think we need to validate that identity actually exists
+    Ok(state_transition.into())
 }

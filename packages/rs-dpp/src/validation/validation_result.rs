@@ -1,10 +1,12 @@
 use crate::errors::consensus::ConsensusError;
+use crate::{NonConsensusError, ProtocolError};
 
 pub type SimpleValidationResult = ValidationResult<()>;
 
 #[derive(Default, Debug)]
 pub struct ValidationResult<TData: Clone> {
-    pub errors: Vec<ConsensusError>,
+    pub system_error: Option<ProtocolError>,
+    pub consensus_errors: Vec<ConsensusError>,
     // TODO: data can be anything, figure out what to do with it
     data: Option<TData>,
 }
@@ -12,7 +14,8 @@ pub struct ValidationResult<TData: Clone> {
 impl<TData: Clone> ValidationResult<TData> {
     pub fn new(errors: Option<Vec<ConsensusError>>) -> Self {
         Self {
-            errors: errors.unwrap_or_default(),
+            system_error: None,
+            consensus_errors: errors.unwrap_or_default(),
             data: None,
         }
     }
@@ -22,7 +25,8 @@ impl<TData: Clone> ValidationResult<TData> {
         F: FnOnce(TData) -> U,
     {
         ValidationResult {
-            errors: self.errors,
+            system_error: None,
+            consensus_errors: self.consensus_errors,
             data: self.data.map(f),
         }
     }
@@ -31,23 +35,23 @@ impl<TData: Clone> ValidationResult<TData> {
     where
         T: Into<ConsensusError>,
     {
-        self.errors.push(error.into())
+        self.consensus_errors.push(error.into())
     }
 
     pub fn add_errors(&mut self, mut errors: Vec<ConsensusError>) {
-        self.errors.append(&mut errors)
+        self.consensus_errors.append(&mut errors)
     }
 
     pub fn merge<TOtherData: Clone>(&mut self, mut other: ValidationResult<TOtherData>) {
-        self.errors.append(other.errors_mut());
+        self.consensus_errors.append(other.errors_mut());
     }
 
     pub fn errors(&self) -> &Vec<ConsensusError> {
-        &self.errors
+        &self.consensus_errors
     }
 
     pub fn errors_mut(&mut self) -> &mut Vec<ConsensusError> {
-        &mut self.errors
+        &mut self.consensus_errors
     }
 
     pub fn is_valid(&self) -> bool {
@@ -55,7 +59,7 @@ impl<TData: Clone> ValidationResult<TData> {
     }
 
     pub fn first_error(&self) -> Option<&ConsensusError> {
-        self.errors.first()
+        self.consensus_errors.first()
     }
 
     pub fn set_data(&mut self, data: TData) {
@@ -72,8 +76,29 @@ impl<TData: Clone> ValidationResult<TData> {
 
     pub fn into_result_without_data(self) -> ValidationResult<()> {
         ValidationResult {
-            errors: self.errors,
+            system_error: None,
+            consensus_errors: self.consensus_errors,
             data: Some(()),
+        }
+    }
+}
+
+impl From<ProtocolError> for ValidationResult<()> {
+    fn from(value: ProtocolError) -> Self {
+        ValidationResult {
+            system_error: Some(value),
+            consensus_errors: vec![],
+            data: None,
+        }
+    }
+}
+
+impl From<ConsensusError> for ValidationResult<()> {
+    fn from(value: ConsensusError) -> Self {
+        ValidationResult {
+            system_error: None,
+            consensus_errors: vec![value],
+            data: None,
         }
     }
 }

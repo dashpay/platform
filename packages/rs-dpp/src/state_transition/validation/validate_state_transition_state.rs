@@ -9,8 +9,8 @@ use crate::identity::state_transition::identity_topup_transition::validation::st
 use crate::identity::state_transition::identity_update_transition::validate_identity_update_transition_state::IdentityUpdateTransitionStateValidator;
 use crate::identity::state_transition::identity_update_transition::validate_public_keys::IdentityUpdatePublicKeysValidator;
 use crate::ProtocolError;
-use crate::state_transition::StateTransition;
-use crate::validation::{AsyncDataValidator, SimpleValidationResult};
+use crate::state_transition::{StateTransition, StateTransitionAction};
+use crate::validation::{AsyncStateTransitionDataValidator, SimpleValidationResult};
 
 pub struct StateTransitionStateValidator<SR>
 where
@@ -66,7 +66,7 @@ where
     pub async fn validate(
         &self,
         state_transition: &StateTransition,
-    ) -> Result<SimpleValidationResult, ProtocolError> {
+    ) -> Result<StateTransitionAction, SimpleValidationResult> {
         match state_transition {
             StateTransition::DataContractCreate(st) => {
                 self.data_contract_create_validator.validate(st).await

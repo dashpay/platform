@@ -5,8 +5,10 @@ use futures::future::join_all;
 use itertools::Itertools;
 
 use crate::data_contract::errors::DataContractNotPresentError;
+use crate::document::document_transition::DocumentTransitionAction;
+use crate::document::state_transition::documents_batch_transition::DocumentsBatchTransitionAction;
 use crate::document::ExtendedDocument;
-use crate::validation::{AsyncDataValidator, SimpleValidationResult};
+use crate::validation::{AsyncStateTransitionDataValidator, SimpleValidationResult};
 use crate::{
     block_time_window::validate_time_in_block_time_window::validate_time_in_block_time_window,
     consensus::ConsensusError,
@@ -39,16 +41,17 @@ where
 }
 
 #[async_trait(?Send)]
-impl<SR> AsyncDataValidator for DocumentsBatchTransitionStateValidator<SR>
+impl<SR> AsyncStateTransitionDataValidator for DocumentsBatchTransitionStateValidator<SR>
 where
     SR: StateRepositoryLike,
 {
-    type Item = DocumentsBatchTransition;
+    type StateTransition = DocumentsBatchTransition;
+    type StateTransitionAction = DocumentsBatchTransitionAction;
 
     async fn validate(
         &self,
         data: &DocumentsBatchTransition,
-    ) -> Result<SimpleValidationResult, ProtocolError> {
+    ) -> Result<DocumentsBatchTransitionAction, SimpleValidationResult> {
         validate_document_batch_transition_state(&self.state_repository, data).await
     }
 }
@@ -68,7 +71,7 @@ where
 pub async fn validate_document_batch_transition_state(
     state_repository: &impl StateRepositoryLike,
     state_transition: &DocumentsBatchTransition,
-) -> Result<ValidationResult<()>, ProtocolError> {
+) -> Result<DocumentsBatchTransitionAction, ValidationResult<()>> {
     let mut result = ValidationResult::default();
     let owner_id = *state_transition.get_owner_id();
 
@@ -91,7 +94,7 @@ pub async fn validate_document_batch_transition_state(
         result.merge(execution_result?);
     }
 
-    Ok(result)
+    Ok(state_transition.into())
 }
 
 pub async fn validate_document_transitions(
@@ -100,7 +103,7 @@ pub async fn validate_document_transitions(
     owner_id: Identifier,
     document_transitions: impl IntoIterator<Item = impl AsRef<DocumentTransition>>,
     execution_context: &StateTransitionExecutionContext,
-) -> Result<ValidationResult<()>, ProtocolError> {
+) -> Result<Vec<DocumentTransitionAction>, ValidationResult<()>> {
     let mut result = ValidationResult::default();
     let transitions: Vec<_> = document_transitions.into_iter().collect();
 
@@ -141,11 +144,11 @@ pub async fn validate_document_transitions(
             result.merge(validation_result);
         }
         if !result.is_valid() {
-            return Ok(result);
+            return Err(result);
         }
     }
 
-    let validation_result = validate_documents_uniqueness_by_indices(
+    validate_documents_uniqueness_by_indices(
         state_repository,
         &owner_id,
         transitions
@@ -154,11 +157,11 @@ pub async fn validate_document_transitions(
         &data_contract,
         execution_context,
     )
-    .await?;
-    if !result.is_valid() {
+    .await
+    .map_err(|e| {
         result.merge(validation_result);
-        return Ok(result);
-    }
+        result
+    })?;
 
     let data_trigger_execution_context = DataTriggerExecutionContext {
         state_repository: state_repository.to_owned(),
@@ -181,7 +184,14 @@ pub async fn validate_document_transitions(
         }
     }
 
-    Ok(result)
+    return if !result.is_valid() {
+        Err(result)
+    } else {
+        Ok(transitions
+            .into_iter()
+            .map(|transition| transition.into())
+            .collect())
+    };
 }
 
 fn validate_transition(

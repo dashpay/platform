@@ -281,7 +281,7 @@ async fn should_pass_when_adding_public_key() {
         .validate(&state_transition)
         .await
         .expect("the validation result should be returned");
-    assert!(result.is_valid(), "{:?}", result.errors);
+    assert!(result.is_valid(), "{:?}", result.consensus_errors);
 }
 
 #[tokio::test]
@@ -353,7 +353,7 @@ async fn should_validate_purpose_and_security_level() {
         .expect("the validation result should be returned");
 
     assert!(matches!(
-        result.errors[0],
+        result.consensus_errors[0],
         ConsensusError::MissingMasterPublicKeyError(_)
     ));
 }
@@ -382,7 +382,7 @@ async fn should_validate_pubic_keys_to_add() {
         .expect("the validation result should be returned");
 
     assert!(matches!(
-        result.errors[0],
+        result.consensus_errors[0],
         ConsensusError::TestConsensusError(_)
     ));
 }

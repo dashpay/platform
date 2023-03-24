@@ -552,7 +552,7 @@ fn add_public_keys_should_be_valid() {
         .expect("validation result should be returned");
 
     assert!(matches!(
-        result.errors[0],
+        result.consensus_errors[0],
         ConsensusError::TestConsensusError(_)
     ))
 }

@@ -3,6 +3,7 @@ use std::convert::TryInto;
 use anyhow::Result;
 use async_trait::async_trait;
 
+use crate::data_contract::state_transition::data_contract_create_transition::DataContractCreateTransitionAction;
 use crate::{
     data_contract::{
         state_transition::data_contract_create_transition::DataContractCreateTransition,
@@ -11,7 +12,7 @@ use crate::{
     errors::StateError,
     state_repository::StateRepositoryLike,
     state_transition::StateTransitionLike,
-    validation::{AsyncDataValidator, SimpleValidationResult, ValidationResult},
+    validation::{AsyncStateTransitionDataValidator, SimpleValidationResult, ValidationResult},
     ProtocolError,
 };
 
@@ -23,16 +24,17 @@ where
 }
 
 #[async_trait(?Send)]
-impl<SR> AsyncDataValidator for DataContractCreateTransitionStateValidator<SR>
+impl<SR> AsyncStateTransitionDataValidator for DataContractCreateTransitionStateValidator<SR>
 where
     SR: StateRepositoryLike,
 {
-    type Item = DataContractCreateTransition;
+    type StateTransition = DataContractCreateTransition;
+    type StateTransitionAction = DataContractCreateTransitionAction;
 
     async fn validate(
         &self,
         data: &DataContractCreateTransition,
-    ) -> Result<SimpleValidationResult, ProtocolError> {
+    ) -> Result<DataContractCreateTransitionAction, SimpleValidationResult> {
         validate_data_contract_create_transition_state(&self.state_repository, data).await
     }
 }
@@ -52,7 +54,7 @@ where
 pub async fn validate_data_contract_create_transition_state(
     state_repository: &impl StateRepositoryLike,
     state_transition: &DataContractCreateTransition,
-) -> Result<ValidationResult<()>, ProtocolError> {
+) -> Result<DataContractCreateTransitionAction, ValidationResult<()>> {
     let mut result = ValidationResult::default();
 
     // Data contract shouldn't exist
@@ -67,16 +69,17 @@ pub async fn validate_data_contract_create_transition_state(
         .map_err(Into::into)?;
 
     if state_transition.get_execution_context().is_dry_run() {
-        return Ok(result);
+        return Ok(state_transition.into());
     }
 
     if maybe_existing_data_contract.is_some() {
         result.add_error(StateError::DataContractAlreadyPresentError {
             data_contract_id: state_transition.data_contract.id.to_owned(),
-        })
+        });
+        Err(result)
+    } else {
+        Ok(state_transition.into())
     }
-
-    Ok(result)
 }
 
 #[cfg(test)]

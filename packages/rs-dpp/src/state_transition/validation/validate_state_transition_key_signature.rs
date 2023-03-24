@@ -6,6 +6,7 @@ use dashcore::signer::verify_hash_signature;
 
 use crate::consensus::signature::IdentityNotFoundError;
 use crate::consensus::ConsensusError;
+use crate::validation::AsyncDataValidator;
 use crate::{
     consensus::signature::SignatureError,
     identity::{
@@ -18,7 +19,7 @@ use crate::{
         state_transition_execution_context::StateTransitionExecutionContext,
         StateTransition, StateTransitionConvert, StateTransitionLike,
     },
-    validation::{AsyncDataValidator, SimpleValidationResult, ValidationResult},
+    validation::{AsyncStateTransitionDataValidator, SimpleValidationResult, ValidationResult},
     ProtocolError,
 };
 

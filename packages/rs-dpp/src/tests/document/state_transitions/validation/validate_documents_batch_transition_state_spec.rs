@@ -88,14 +88,14 @@ fn setup_test() -> TestData {
 
 fn get_state_error(result: &ValidationResult<()>, error_number: usize) -> &StateError {
     match result
-        .errors
+        .consensus_errors
         .get(error_number)
         .expect("error should be found")
     {
         ConsensusError::StateError(state_error) => state_error,
         _ => panic!(
             "error '{:?}' isn't a basic error",
-            result.errors[error_number]
+            result.consensus_errors[error_number]
         ),
     }
 }

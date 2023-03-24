@@ -47,7 +47,7 @@ fn should_return_invalid_result_if_there_are_duplicate_key_ids() {
         StateError::DuplicatedIdentityPublicKeyIdError { duplicated_ids }
         if duplicated_ids == &vec![0]
     ));
-    assert_eq!(4022, result.errors[0].code());
+    assert_eq!(4022, result.consensus_errors[0].code());
 }
 
 #[test]
@@ -68,7 +68,7 @@ fn should_return_invalid_result_if_there_are_duplicate_keys() {
         StateError::DuplicatedIdentityPublicKeyError { duplicated_public_key_ids }
         if duplicated_public_key_ids == &vec![1]
     ));
-    assert_eq!(4021, result.errors[0].code());
+    assert_eq!(4021, result.consensus_errors[0].code());
 }
 
 #[test]
@@ -107,5 +107,5 @@ fn should_return_invalid_result_if_number_of_public_keys_is_bigger_than_32() {
         StateError::MaxIdentityPublicKeyLimitReachedError { max_items }
         if max_items == &32
     ));
-    assert_eq!(4020, result.errors[0].code());
+    assert_eq!(4020, result.consensus_errors[0].code());
 }

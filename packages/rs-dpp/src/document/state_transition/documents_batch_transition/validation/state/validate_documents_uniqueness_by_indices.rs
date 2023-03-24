@@ -5,6 +5,7 @@ use itertools::Itertools;
 use platform_value::string_encoding::Encoding;
 use serde_json::{json, Value as JsonValue};
 
+use crate::document::document_transition::DocumentTransitionAction;
 use crate::document::Document;
 use crate::{
     document::document_transition::{Action, DocumentTransition, DocumentTransitionExt},
@@ -29,7 +30,7 @@ pub async fn validate_documents_uniqueness_by_indices<SR>(
     document_transitions: impl IntoIterator<Item = impl AsRef<DocumentTransition>>,
     data_contract: &DataContract,
     execution_context: &StateTransitionExecutionContext,
-) -> Result<ValidationResult<()>, ProtocolError>
+) -> Result<(), ValidationResult<()>>
 where
     SR: StateRepositoryLike,
 {
@@ -66,7 +67,7 @@ where
         let results = join_all(futures).await;
 
         if execution_context.is_dry_run() {
-            return Ok(validation_result);
+            return Err(t.into());
         }
 
         // 3. Create errors if duplicates found
@@ -74,7 +75,11 @@ where
         validation_result.merge(result);
     }
 
-    Ok(validation_result)
+    if !validation_result.is_valid() {
+        Err(validation_result)
+    } else {
+        Ok(())
+    }
 }
 
 fn generate_document_index_queries<'a>(

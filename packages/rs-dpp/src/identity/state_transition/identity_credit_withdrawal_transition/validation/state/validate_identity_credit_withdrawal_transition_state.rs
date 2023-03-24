@@ -4,6 +4,10 @@ use std::sync::Arc;
 use anyhow::Result;
 
 use crate::consensus::signature::IdentityNotFoundError;
+use crate::contracts::withdrawals_contract;
+use crate::document::{generate_document_id, Document};
+use crate::identity::state_transition::identity_credit_withdrawal_transition::IdentityCreditWithdrawalTransitionAction;
+use crate::system_data_contracts::load_system_data_contract;
 use crate::{
     consensus::basic::identity::IdentityInsufficientBalanceError,
     identity::state_transition::identity_credit_withdrawal_transition::IdentityCreditWithdrawalTransition,
@@ -29,7 +33,7 @@ where
     pub async fn validate_identity_credit_withdrawal_transition_state(
         &self,
         state_transition: &IdentityCreditWithdrawalTransition,
-    ) -> Result<ValidationResult<()>, NonConsensusError> {
+    ) -> Result<IdentityCreditWithdrawalTransitionAction, ValidationResult<()>> {
         let mut result: ValidationResult<()> = ValidationResult::default();
 
         // TODO: Use fetchIdentityBalance
@@ -50,13 +54,8 @@ where
                 ))
             })?;
 
-        let Some(existing_identity) = maybe_existing_identity else {
-            let err = IdentityNotFoundError::new(state_transition.identity_id);
-
-            result.add_error(err);
-
-            return Ok(result);
-        };
+        let existing_identity = maybe_existing_identity
+            .ok_or(IdentityNotFoundError::new(state_transition.identity_id).into())?;
 
         if existing_identity.get_balance() < state_transition.amount {
             let err = IdentityInsufficientBalanceError {
@@ -66,7 +65,7 @@ where
 
             result.add_error(err);
 
-            return Ok(result);
+            return Err(result);
         }
 
         // Check revision
@@ -76,9 +75,29 @@ where
                 current_revision: existing_identity.get_revision(),
             });
 
-            return Ok(result);
+            return Err(result);
         }
 
-        Ok(result)
+        document_id = generate_document_id::generate_document_id(
+            &withdrawals_contract::CONTRACT_ID,
+            &state_transition.identity_id,
+            &document_type,
+            state_transition.output_script.as_bytes(),
+        );
+
+        let withdrawal_document = Document {
+            id: Default::default(),
+            owner_id: state_transition.identity_id,
+            properties: Default::default(),
+            revision: None,
+            created_at: None,
+            updated_at: None,
+        };
+
+        Ok(IdentityCreditWithdrawalTransitionAction {
+            version: IdentityCreditWithdrawalTransitionAction::current_version(),
+            identity_id: state_transition.identity_id,
+            prepared_withdrawal_document: withdrawal_document,
+        })
     }
 }

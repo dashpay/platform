@@ -966,7 +966,7 @@ async fn validation_should_be_successful() {
         .await
         .expect("validation result should be returned");
 
-    assert!(result.is_valid(), "{:?}", result.errors);
+    assert!(result.is_valid(), "{:?}", result.consensus_errors);
 }
 
 #[tokio::test]

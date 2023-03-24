@@ -1,6 +1,7 @@
 use crate::identity::TimestampMillis;
 use crate::prelude::Revision;
 use platform_value::{Identifier, Value};
+use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 
 /// Documents contain the data that goes into data contracts.

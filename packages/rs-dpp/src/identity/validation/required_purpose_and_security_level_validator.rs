@@ -17,10 +17,7 @@ struct PurposeKey {
 pub struct RequiredPurposeAndSecurityLevelValidator {}
 
 impl TPublicKeysValidator for RequiredPurposeAndSecurityLevelValidator {
-    fn validate_keys(
-        &self,
-        raw_public_keys: &[Value],
-    ) -> Result<ValidationResult<()>, NonConsensusError> {
+    fn validate_keys(&self, raw_public_keys: &[Value]) -> Result<(), ValidationResult<()>> {
         let mut result = ValidationResult::default();
 
         let mut key_purposes_and_levels_count: HashMap<PurposeKey, usize> = HashMap::new();
@@ -57,9 +54,10 @@ impl TPublicKeysValidator for RequiredPurposeAndSecurityLevelValidator {
         };
         if key_purposes_and_levels_count.get(&master_key).is_none() {
             result.add_error(MissingMasterPublicKeyError {});
+            Err(result)
+        } else {
+            Ok(())
         }
-
-        Ok(result)
     }
 }
 

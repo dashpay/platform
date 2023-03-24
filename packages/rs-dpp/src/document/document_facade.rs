@@ -120,6 +120,6 @@ where
             .validator
             .validate_extended(raw_extended_document, data_contract)?;
 
-        Ok(ValidationResult::new(Some(result.errors)))
+        Ok(ValidationResult::new(Some(result.consensus_errors)))
     }
 }

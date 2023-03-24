@@ -32,6 +32,7 @@ impl From<DocumentReplaceTransition> for DocumentReplaceTransitionAction {
         DocumentReplaceTransitionAction {
             base: base.into(),
             revision,
+            created_at: None,
             updated_at,
             data: data.unwrap_or_default(),
         }

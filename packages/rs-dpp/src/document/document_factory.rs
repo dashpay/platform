@@ -300,7 +300,7 @@ where
         if !result.is_valid() {
             return Err(ProtocolError::Document(Box::new(
                 DocumentError::InvalidDocumentError {
-                    errors: result.errors,
+                    errors: result.consensus_errors,
                     raw_document: raw_document.clone(),
                 },
             )));
@@ -316,7 +316,7 @@ where
             if !result.is_valid() {
                 return Err(ProtocolError::Document(Box::new(
                     DocumentError::InvalidDocumentError {
-                        errors: result.errors,
+                        errors: result.consensus_errors,
                         raw_document: raw_document.clone(),
                     },
                 )));

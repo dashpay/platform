@@ -16,7 +16,7 @@ use crate::identity::validation::PublicKeysValidator;
 
 use crate::state_repository::StateRepositoryLike;
 use crate::state_transition::{
-    StateTransition, StateTransitionFactory, StateTransitionFactoryOptions,
+    StateTransition, StateTransitionAction, StateTransitionFactory, StateTransitionFactoryOptions,
 };
 
 use crate::state_transition::state_transition_execution_context::StateTransitionExecutionContext;
@@ -27,7 +27,7 @@ use crate::state_transition::validation::validate_state_transition_identity_sign
 use crate::state_transition::validation::validate_state_transition_key_signature::StateTransitionKeySignatureValidator;
 use crate::state_transition::validation::validate_state_transition_state::StateTransitionStateValidator;
 use crate::validation::{
-    AsyncDataValidator, AsyncDataValidatorWithContext, SimpleValidationResult,
+    AsyncDataValidatorWithContext, AsyncStateTransitionDataValidator, SimpleValidationResult,
 };
 use crate::version::ProtocolVersionValidator;
 
@@ -395,7 +395,7 @@ where
     pub async fn validate_state(
         &self,
         state_transition: &StateTransition,
-    ) -> Result<SimpleValidationResult, ProtocolError> {
+    ) -> Result<StateTransitionAction, SimpleValidationResult> {
         self.state_validator.validate(state_transition).await
     }
 }

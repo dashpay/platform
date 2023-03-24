@@ -42,6 +42,9 @@ use grovedb::batch::KeyInfoPath;
 use grovedb::GroveDb;
 #[cfg(feature = "full")]
 use grovedb::{EstimatedLayerInformation, Transaction, TransactionArg};
+use dpp::data_contract::DataContract;
+use dpp::ProtocolError;
+use dpp::system_data_contracts::{load_system_data_contract, SystemDataContract};
 
 #[cfg(feature = "full")]
 use object_size_info::DocumentAndContractInfo;
@@ -113,6 +116,8 @@ mod test_utils;
 /// Contains a set of useful grovedb proof verification functions
 #[cfg(any(feature = "full", feature = "verify"))]
 pub mod verify;
+#[cfg(feature = "full")]
+mod system_contracts_cache;
 
 #[cfg(feature = "full")]
 use crate::drive::block_info::BlockInfo;
@@ -127,6 +132,19 @@ use crate::fee::result::FeeResult;
 #[cfg(feature = "full")]
 use crate::fee_pools::epochs::Epoch;
 
+pub struct SystemContracts {
+    /// Withdrawal contract
+    pub withdrawal_contract: DataContract,
+}
+
+impl SystemContracts {
+    pub fn load_system_contracts() -> Result<Self, Error> {
+        Ok(SystemContracts {
+            withdrawal_contract : load_system_data_contract(data_contracts::SystemDataContract::Withdrawals)?
+        })
+    }
+}
+
 /// Drive struct
 #[cfg(any(feature = "full", feature = "verify"))]
 pub struct Drive {
@@ -134,6 +152,9 @@ pub struct Drive {
     pub grove: GroveDb,
     /// Drive config
     pub config: DriveConfig,
+    /// Main contracts in the system
+    #[cfg(feature = "full")]
+    pub system_contracts: SystemContracts,
     /// Drive Cache
     pub cache: RefCell<DriveCache>,
 }
@@ -295,6 +316,7 @@ impl Drive {
                 Ok(Drive {
                     grove,
                     config,
+                    system_contracts: Drive::load_system_data_contract(SystemDataContract::Withdrawals)?,
                     cache: RefCell::new(DriveCache {
                         cached_contracts: DataContractCache::new(
                             data_contracts_global_cache_size,

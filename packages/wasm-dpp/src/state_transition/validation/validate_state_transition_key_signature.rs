@@ -5,7 +5,7 @@ use dpp::identity::state_transition::asset_lock_proof::{
     AssetLockPublicKeyHashFetcher, AssetLockTransactionOutputFetcher,
 };
 use dpp::state_transition::validation::validate_state_transition_key_signature::StateTransitionKeySignatureValidator;
-use dpp::validation::AsyncDataValidator;
+use dpp::validation::AsyncStateTransitionDataValidator;
 use std::sync::Arc;
 use wasm_bindgen::prelude::wasm_bindgen;
 use wasm_bindgen::JsValue;

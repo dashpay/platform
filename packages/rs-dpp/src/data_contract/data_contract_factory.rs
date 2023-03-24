@@ -153,7 +153,7 @@ impl DataContractFactory {
 
             if !result.is_valid() {
                 return Err(ProtocolError::InvalidDataContractError(
-                    InvalidDataContractError::new(result.errors, data_contract_object),
+                    InvalidDataContractError::new(result.consensus_errors, data_contract_object),
                 ));
             }
         }

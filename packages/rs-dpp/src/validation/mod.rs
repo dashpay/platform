@@ -9,6 +9,7 @@ use serde_json::Value as JsonValue;
 pub use json_schema_validator::JsonSchemaValidator;
 pub use validation_result::{SimpleValidationResult, ValidationResult};
 
+use crate::state_transition::StateTransitionAction;
 use crate::{
     state_transition::state_transition_execution_context::StateTransitionExecutionContext,
     ProtocolError,
@@ -24,6 +25,18 @@ pub trait DataValidator {
     // TODO, when GAT is available remove the reference in method and use: `type Item<'a>`
     type Item;
     fn validate(&self, data: &Self::Item) -> Result<SimpleValidationResult, ProtocolError>;
+}
+
+/// Async validator validates data of given type
+#[async_trait(?Send)]
+pub trait AsyncStateTransitionDataValidator {
+    // TODO, when GAT is available remove the reference in method and use: `type Item<'a>`
+    type StateTransition;
+    type StateTransitionAction;
+    async fn validate(
+        &self,
+        data: &Self::StateTransition,
+    ) -> Result<StateTransitionAction, SimpleValidationResult>;
 }
 
 /// Async validator validates data of given type

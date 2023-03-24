@@ -151,8 +151,8 @@ mod test {
         );
         let mut result = validate(&schema, &[byte_array_has_no_items_as_parent_validator]);
         assert_eq!(2, result.errors().len());
-        let first_error = get_basic_error(result.errors.pop().unwrap());
-        let second_error = get_basic_error(result.errors.pop().unwrap());
+        let first_error = get_basic_error(result.consensus_errors.pop().unwrap());
+        let second_error = get_basic_error(result.consensus_errors.pop().unwrap());
 
         assert!(matches!(
             first_error,
@@ -200,7 +200,10 @@ mod test {
 
         });
         let result = validate(&schema, &[pattern_is_valid_regex_validator]);
-        let consensus_error = result.errors.get(0).expect("the error should be returned");
+        let consensus_error = result
+            .consensus_errors
+            .get(0)
+            .expect("the error should be returned");
 
         match consensus_error {
             ConsensusError::IncompatibleRe2PatternError(err) => {
@@ -228,7 +231,10 @@ mod test {
             platform_value!("^((?!-|_)[a-zA-Z0-9-_]{0,62}[a-zA-Z0-9])$");
 
         let result = validate(&schema, &[pattern_is_valid_regex_validator]);
-        let consensus_error = result.errors.get(0).expect("the error should be returned");
+        let consensus_error = result
+            .consensus_errors
+            .get(0)
+            .expect("the error should be returned");
 
         match consensus_error {
             ConsensusError::IncompatibleRe2PatternError(err) => {
@@ -253,7 +259,10 @@ mod test {
             platform_value!("^((?!-|_)[a-zA-Z0-9-_]{0,62}[a-zA-Z0-9])$");
 
         let result = validate(&schema, &[pattern_is_valid_regex_validator]);
-        let consensus_error = result.errors.get(0).expect("the error should be returned");
+        let consensus_error = result
+            .consensus_errors
+            .get(0)
+            .expect("the error should be returned");
 
         match consensus_error {
             ConsensusError::IncompatibleRe2PatternError(err) => {

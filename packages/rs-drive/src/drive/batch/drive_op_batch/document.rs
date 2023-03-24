@@ -87,6 +87,11 @@ pub enum DocumentOperationType<'a> {
         /// Should we override the document if one already exists?
         override_document: bool,
     },
+    /// Adds a withdrawal document.
+    AddWithdrawalDocument {
+        /// The document and contract info, also may contain the owner_id
+        owned_document_info: OwnedDocumentInfo<'a>,
+    },
     /// Adds a document to a contract.
     AddDocumentForContract {
         /// The document and contract info, also may contain the owner_id
@@ -554,6 +559,33 @@ impl DriveLowLevelOperationConverter for DocumentOperationType<'_> {
                 };
                 drive.update_document_for_contract_operations(
                     document_and_contract_info,
+                    block_info,
+                    &mut None,
+                    estimated_costs_only_with_layer_info,
+                    transaction)
+            }
+            DocumentOperationType::AddWithdrawalDocument { owned_document_info } => {
+                let contract_fetch_info = drive
+                    .get_contract_with_fetch_info_and_add_to_operations(
+                        contract_id.into_buffer(),
+                        Some(&block_info.epoch),
+                        transaction,
+                        &mut drive_operations,
+                    )?
+                    .ok_or(Error::Document(DocumentError::ContractNotFound))?;
+
+                let contract = &contract_fetch_info.contract;
+
+                let document_type = contract.document_type_for_name(document_type_name)?;
+
+                let document_and_contract_info = DocumentAndContractInfo {
+                    owned_document_info,
+                    contract,
+                    document_type,
+                };
+                drive.add_document_for_contract_operations(
+                    document_and_contract_info,
+                    override_document,
                     block_info,
                     &mut None,
                     estimated_costs_only_with_layer_info,

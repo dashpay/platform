@@ -385,7 +385,10 @@ mod test {
         let result = document_validator
             .validate_extended(&raw_document, &data_contract)
             .expect("the validator should return the validation result");
-        let validation_error = result.errors.get(0).expect("should return an error");
+        let validation_error = result
+            .consensus_errors
+            .get(0)
+            .expect("should return an error");
         assert!(
             matches!(validation_error,  ConsensusError::BasicError(basic_error) if basic_error.to_string() == "$type is not present")
         );
@@ -409,7 +412,10 @@ mod test {
         let result = document_validator
             .validate_extended(&raw_document, &data_contract)
             .expect("the validator should return the validation result");
-        let validation_error = result.errors.get(0).expect("the error should exist");
+        let validation_error = result
+            .consensus_errors
+            .get(0)
+            .expect("the error should exist");
         assert_eq!(1024, validation_error.get_code());
     }
 
@@ -575,7 +581,7 @@ mod test {
 
     fn get_first_schema_error(result: &ValidationResult<()>) -> &JsonSchemaError {
         result
-            .errors
+            .consensus_errors
             .get(0)
             .expect("the error should be returned in validation result")
             .json_schema_error()

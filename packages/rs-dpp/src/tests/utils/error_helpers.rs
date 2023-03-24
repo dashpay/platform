@@ -12,7 +12,7 @@ use crate::{
 
 pub fn get_schema_error(result: &ValidationResult<()>, number: usize) -> &JsonSchemaError {
     result
-        .errors
+        .consensus_errors
         .get(number)
         .expect("the error should be returned in validation result")
         .json_schema_error()
@@ -41,14 +41,14 @@ pub fn get_state_error_from_result(
     error_number: usize,
 ) -> &StateError {
     match result
-        .errors
+        .consensus_errors
         .get(error_number)
         .expect("error should be found")
     {
         ConsensusError::StateError(state_error) => state_error,
         _ => panic!(
             "error '{:?}' isn't a state error",
-            result.errors[error_number]
+            result.consensus_errors[error_number]
         ),
     }
 }
@@ -58,14 +58,14 @@ pub fn get_basic_error_from_result(
     error_number: usize,
 ) -> &BasicError {
     match result
-        .errors
+        .consensus_errors
         .get(error_number)
         .expect("basic error should be found")
     {
         ConsensusError::BasicError(basic_error) => basic_error,
         _ => panic!(
             "error '{:?}' isn't a Basic error",
-            result.errors[error_number]
+            result.consensus_errors[error_number]
         ),
     }
 }
@@ -75,14 +75,14 @@ pub fn get_signature_error_from_result<K: Clone>(
     error_number: usize,
 ) -> &SignatureError {
     match result
-        .errors
+        .consensus_errors
         .get(error_number)
         .expect("error should be found")
     {
         ConsensusError::SignatureError(signature_error) => signature_error,
         _ => panic!(
             "error '{:?}' isn't a Signature error",
-            result.errors[error_number]
+            result.consensus_errors[error_number]
         ),
     }
 }
@@ -92,14 +92,14 @@ pub fn get_fee_error_from_result<K: Clone>(
     error_number: usize,
 ) -> &FeeError {
     match result
-        .errors
+        .consensus_errors
         .get(error_number)
         .expect("error should be found")
     {
         ConsensusError::FeeError(signature_error) => signature_error,
         _ => panic!(
             "error '{:?}' isn't a Fee error",
-            result.errors[error_number]
+            result.consensus_errors[error_number]
         ),
     }
 }

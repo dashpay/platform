@@ -16,7 +16,7 @@ use crate::fee_pools::epochs::Epoch;
 impl DriveHighLevelOperationConverter for IdentityCreditWithdrawalTransitionAction {
     fn to_high_level_drive_operations(self, epoch: &Epoch) -> Result<Vec<DriveOperation>, Error> {
         let IdentityCreditWithdrawalTransitionAction {
-            version, identity_id, amount, core_fee_per_byte, pooling, output_script, revision
+            version, identity_id, prepared_withdrawal_document,
         } = self;
 
         let data_contract_id = *withdrawals_contract::CONTRACT_ID;
@@ -112,8 +112,8 @@ impl DriveHighLevelOperationConverter for IdentityCreditWithdrawalTransitionActi
             )
         );
 
-        drive_operations.push(IdentityOperation(IdentityOperationType::RemoveFromIdentityBalance { identity_id: self.identity_id, balance_to_remove: self.amount }));
-        drive_operations.push(DriveOperation::SystemOperation(crate::drive::batch::SystemOperationType::RemoveFromSystemCredits { amount: self.amount }));
+        // drive_operations.push(IdentityOperation(IdentityOperationType::RemoveFromIdentityBalance { identity_id: identity_id.to_buffer(), balance_to_remove: self.amount }));
+        // drive_operations.push(DriveOperation::SystemOperation(crate::drive::batch::SystemOperationType::RemoveFromSystemCredits { amount: self.amount }));
 
         Ok(drive_operations)
     }
