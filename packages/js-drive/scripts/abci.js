@@ -54,13 +54,6 @@ console.log(chalk.hex('#008de4')(banner));
   });
 
   /**
-   * Initialize DPP
-   */
-
-  await dpp.initialize();
-  await transactionalDpp.initialize();
-
-  /**
    * Make sure Core is synced
    */
 

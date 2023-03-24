@@ -8,6 +8,8 @@ const {
 
 const fs = require('fs');
 
+const findMyWay = require('find-my-way');
+
 const { AsyncLocalStorage } = require('node:async_hooks');
 
 const Long = require('long');

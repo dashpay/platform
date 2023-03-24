@@ -6,7 +6,7 @@ const Long = require('long');
 const identityUpdateTransitionSchema = require('@dashevo/dpp/schema/identity/stateTransition/identityUpdate.json');
 
 const generateRandomIdentifier = require('@dashevo/dpp/lib/test/utils/generateRandomIdentifier');
-const getInstantAssetLockProofFixture = require('@dashevo/dpp/lib/test/fixtures/getInstantAssetLockProofFixture');
+const getInstantAssetLockProofFixture = require('@dashevo/wasm-dpp/lib/test/fixtures/getInstantAssetLockProofFixture');
 
 const PrivateKey = require('@dashevo/dashcore-lib/lib/privatekey');
 

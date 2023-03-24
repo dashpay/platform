@@ -1,4 +1,35 @@
 # syntax = docker/dockerfile:1.3
+# Build wasm-dpp
+FROM rust as builder
+
+RUN --mount=type=cache,target=/var/cache/apt \
+    apt-get update && apt-get install -y clang
+
+WORKDIR /platform
+
+COPY .cargo /platform/.cargo
+COPY Cargo.lock rust-toolchain.toml ./
+# Use Cargo.toml.template instead of Cargo.toml from project root to avoid copying unnecessary Rust packages
+COPY packages/js-drive/Cargo.toml.template ./Cargo.toml
+
+COPY packages/rs-platform-value packages/rs-platform-value
+COPY packages/withdrawals-contract packages/withdrawals-contract
+COPY packages/masternode-reward-shares-contract packages/masternode-reward-shares-contract
+COPY packages/dashpay-contract packages/dashpay-contract
+COPY packages/feature-flags-contract packages/feature-flags-contract
+COPY packages/dpns-contract packages/dpns-contract
+COPY packages/data-contracts packages/data-contracts
+COPY packages/rs-dpp packages/rs-dpp
+COPY packages/wasm-dpp packages/wasm-dpp
+
+RUN --mount=type=cache,target=target \
+    --mount=type=cache,target=$CARGO_HOME/git \
+    --mount=type=cache,target=$CARGO_HOME/registry \
+    rustup target add wasm32-unknown-unknown
+
+# Build Rust part of wasm-dpp
+RUN cd packages/wasm-dpp && ./scripts/build.sh
+
 FROM node:16-alpine3.16 as builder
 
 ARG NODE_ENV=production
@@ -77,6 +108,7 @@ COPY packages/feature-flags-contract packages/feature-flags-contract
 COPY packages/masternode-reward-shares-contract packages/masternode-reward-shares-contract
 COPY packages/withdrawals-contract packages/withdrawals-contract
 COPY packages/data-contracts packages/data-contracts
+COPY --from=0 /platform/packages/wasm-dpp packages/wasm-dpp
 
 # Build RS Drive Node.JS binding
 RUN --mount=type=cache,target=target \
@@ -88,6 +120,8 @@ RUN --mount=type=cache,target=target \
 # node_modules directory to reuse built binaries
 RUN --mount=type=cache,target=/tmp/unplugged \
     cp -R /tmp/unplugged /platform/.yarn/ && \
+    yarn workspaces focus @dashevo/wasm-dpp && \
+    yarn workspace @dashevo/wasm-dpp webpack && \
     yarn workspaces focus --production @dashevo/drive && \
     cp -R /platform/.yarn/unplugged /tmp/
 
