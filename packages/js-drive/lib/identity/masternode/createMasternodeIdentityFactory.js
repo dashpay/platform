@@ -9,6 +9,7 @@ const InvalidMasternodeIdentityError = require('./errors/InvalidMasternodeIdenti
  * @return {createMasternodeIdentity}
  */
 function createMasternodeIdentityFactory(
+  dpp,
   dppWasm,
   identityRepository,
   // getWithdrawPubKeyTypeFromPayoutScript,
@@ -55,7 +56,7 @@ function createMasternodeIdentityFactory(
     // }
 
     const identity = new dppWasm.Identity({
-      protocolVersion: dppWasm.getProtocolVersion(),
+      protocolVersion: dpp.getProtocolVersion(),
       id: identifier.toBuffer(),
       publicKeys,
       balance: 0,
