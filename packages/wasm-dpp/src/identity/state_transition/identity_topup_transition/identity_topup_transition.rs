@@ -21,8 +21,8 @@ use crate::{
 use crate::bls_adapter::{BlsAdapter, JsBlsAdapter};
 
 use crate::errors::from_dpp_err;
-use dpp::platform_value::string_encoding;
 use dpp::platform_value::string_encoding::Encoding;
+use dpp::platform_value::{string_encoding, BinaryData};
 use dpp::state_transition::StateTransitionConvert;
 use dpp::{
     identifier::Identifier,
@@ -291,5 +291,10 @@ impl IdentityTopUpTransitionWasm {
     #[wasm_bindgen(js_name=getSignature)]
     pub fn get_signature(&self) -> Buffer {
         Buffer::from_bytes(self.0.get_signature().as_slice())
+    }
+
+    #[wasm_bindgen(js_name=setSignature)]
+    pub fn set_signature(&mut self, signature: Option<Vec<u8>>) {
+        self.0.signature = BinaryData::new(signature.unwrap_or(vec![]))
     }
 }
