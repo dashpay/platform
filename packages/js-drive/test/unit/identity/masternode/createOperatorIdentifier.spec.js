@@ -1,10 +1,12 @@
-const Identifier = require('@dashevo/dpp/lib/identifier/Identifier');
 const createOperatorIdentifier = require('../../../../lib/identity/masternode/createOperatorIdentifier');
 
-describe('createOperatorIdentifier', () => {
+describe('createOperatorIdentifier', function test() {
   let smlEntry;
+  let Identifier;
 
-  beforeEach(() => {
+  beforeEach(function beforeEach() {
+    ({ Identifier } = this.dppWasm);
+
     smlEntry = {
       proRegTxHash: '5557273f5922d9925e2327908ddb128bcf8e055a04d86e23431809bedd077060',
       confirmedHash: '0000003da09fd100c60ad5743c44257bb9220ad8162a9b6cae9d005c8e465dba',
@@ -15,8 +17,8 @@ describe('createOperatorIdentifier', () => {
     };
   });
 
-  it('should return operator identifier from smlEntry', () => {
-    const identifier = createOperatorIdentifier(smlEntry);
+  it('should return operator identifier from smlEntry', function test() {
+    const identifier = createOperatorIdentifier(this.dppWasm, smlEntry);
 
     expect(identifier).to.deep.equal(Identifier.from('EwLi1FgGwvmLQ9nkfnttpXzv4SfC7XGBvs61QBCtnHEL'));
   });

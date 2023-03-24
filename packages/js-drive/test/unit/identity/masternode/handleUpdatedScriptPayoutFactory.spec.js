@@ -1,8 +1,8 @@
-const IdentityPublicKey = require('@dashevo/dpp/lib/identity/IdentityPublicKey');
-const getIdentityFixture = require('@dashevo/dpp/lib/test/fixtures/getIdentityFixture');
-const Identity = require('@dashevo/dpp/lib/identity/Identity');
-const Script = require('@dashevo/dashcore-lib/lib/script');
+// TODO: should we take it from other place?
 const identitySchema = require('@dashevo/dpp/schema/identity/identity.json');
+const getIdentityFixture = require('@dashevo/dpp/lib/test/fixtures/getIdentityFixture');
+
+const Script = require('@dashevo/dashcore-lib/lib/script');
 const handleUpdatedScriptPayoutFactory = require('../../../../lib/identity/masternode/handleUpdatedScriptPayoutFactory');
 const BlockInfo = require('../../../../lib/blockExecution/BlockInfo');
 const StorageResult = require('../../../../lib/storage/StorageResult');
@@ -15,6 +15,15 @@ describe('handleUpdatedScriptPayoutFactory', () => {
   let blockInfo;
   let identityRepositoryMock;
   let identityPublicKeyRepositoryMock;
+  let IdentityPublicKey;
+  let Identity;
+  let KeyPurpose;
+  let KeyType;
+  let KeySecurityLevel;
+
+  before(function before() {
+    ({ Identity, IdentityPublicKey, KeyPurpose, KeyType, KeySecurityLevel } = this.dppWasm);
+  });
 
   beforeEach(function beforeEach() {
     identity = getIdentityFixture();
@@ -22,7 +31,7 @@ describe('handleUpdatedScriptPayoutFactory', () => {
     blockInfo = new BlockInfo(1, 0, Date.now());
 
     getWithdrawPubKeyTypeFromPayoutScriptMock = this.sinon.stub().returns(
-      IdentityPublicKey.TYPES.ECDSA_HASH160,
+      KeyType.ECDSA_HASH160,
     );
 
     getPublicKeyFromPayoutScriptMock = this.sinon.stub().returns(Buffer.alloc(20, '0'));
@@ -38,6 +47,7 @@ describe('handleUpdatedScriptPayoutFactory', () => {
     };
 
     handleUpdatedScriptPayout = handleUpdatedScriptPayoutFactory(
+      this.dppWasm,
       identityRepositoryMock,
       identityPublicKeyRepositoryMock,
       getWithdrawPubKeyTypeFromPayoutScriptMock,
@@ -82,11 +92,11 @@ describe('handleUpdatedScriptPayoutFactory', () => {
 
     const newWithdrawalIdentityPublicKey = new IdentityPublicKey()
       .setId(2)
-      .setType(IdentityPublicKey.TYPES.ECDSA_HASH160)
+      .setType(KeyType.ECDSA_HASH160)
       .setData(Buffer.from(newPubKeyData))
       .setReadOnly(true)
-      .setPurpose(IdentityPublicKey.PURPOSES.WITHDRAW)
-      .setSecurityLevel(IdentityPublicKey.SECURITY_LEVELS.MASTER);
+      .setPurpose(KeyPurpose.WITHDRAW)
+      .setSecurityLevel(KeySecurityLevel.MASTER);
 
     expect(identityRepositoryMock.updateRevision).to.be.calledOnceWithExactly(
       identity.getId(),
@@ -127,11 +137,11 @@ describe('handleUpdatedScriptPayoutFactory', () => {
 
     const newWithdrawalIdentityPublicKey = new IdentityPublicKey()
       .setId(2)
-      .setType(IdentityPublicKey.TYPES.ECDSA_HASH160)
+      .setType(KeyType.ECDSA_HASH160)
       .setData(Buffer.from(newPubKeyData))
       .setReadOnly(true)
-      .setPurpose(IdentityPublicKey.PURPOSES.WITHDRAW)
-      .setSecurityLevel(IdentityPublicKey.SECURITY_LEVELS.MASTER);
+      .setPurpose(KeyPurpose.WITHDRAW)
+      .setSecurityLevel(KeySecurityLevel.MASTER);
 
     expect(identityRepositoryMock.updateRevision).to.be.calledOnceWithExactly(
       identity.getId(),

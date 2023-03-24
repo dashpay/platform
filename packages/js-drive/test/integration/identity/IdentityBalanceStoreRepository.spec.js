@@ -1,8 +1,11 @@
 const fs = require('fs');
 const Drive = require('@dashevo/rs-drive');
 const { FeeResult } = require('@dashevo/rs-drive');
+
+// TODO: should we take it from other place?
 const decodeProtocolEntityFactory = require('@dashevo/dpp/lib/decodeProtocolEntityFactory');
 const getIdentityFixture = require('@dashevo/dpp/lib/test/fixtures/getIdentityFixture');
+
 const GroveDBStore = require('../../../lib/storage/GroveDBStore');
 const IdentityBalanceStoreRepository = require('../../../lib/identity/IdentityBalanceStoreRepository');
 const IdentityStoreRepository = require('../../../lib/identity/IdentityStoreRepository');

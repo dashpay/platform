@@ -1,9 +1,11 @@
 const rimraf = require('rimraf');
 const Drive = require('@dashevo/rs-drive');
+// TODO: What should we do with it?
 const decodeProtocolEntityFactory = require('@dashevo/dpp/lib/decodeProtocolEntityFactory');
+
 const getDataContractFixture = require('@dashevo/dpp/lib/test/fixtures/getDataContractFixture');
-const DataContract = require('@dashevo/dpp/lib/dataContract/DataContract');
 const generateRandomIdentifier = require('@dashevo/dpp/lib/test/utils/generateRandomIdentifier');
+
 const GroveDBStore = require('../../../lib/storage/GroveDBStore');
 const DataContractStoreRepository = require('../../../lib/dataContract/DataContractStoreRepository');
 const noopLogger = require('../../../lib/util/noopLogger');
@@ -17,6 +19,11 @@ describe('DataContractStoreRepository', () => {
   let decodeProtocolEntity;
   let dataContract;
   let blockInfo;
+  let DataContract;
+
+  before(function before() {
+    ({ DataContract } = this.dppWasm);
+  });
 
   beforeEach(async () => {
     rsDrive = new Drive('./db/grovedb_test', {
@@ -409,8 +416,8 @@ describe('DataContractStoreRepository', () => {
 
       const notFoundDataContractResult = await repository.prove(
         [dataContract.getId(), dataContract2.getId()], {
-          useTransaction: false,
-        },
+        useTransaction: false,
+      },
       );
 
       expect(notFoundDataContractResult.getValue()).to.be.null();

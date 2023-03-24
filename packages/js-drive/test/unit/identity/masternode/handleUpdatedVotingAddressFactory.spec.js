@@ -1,6 +1,5 @@
 const getIdentityFixture = require('@dashevo/dpp/lib/test/fixtures/getIdentityFixture');
-const IdentityPublicKey = require('@dashevo/dpp/lib/identity/IdentityPublicKey');
-const Identifier = require('@dashevo/dpp/lib/identifier/Identifier');
+
 const handleUpdatedVotingAddressFactory = require('../../../../lib/identity/masternode/handleUpdatedVotingAddressFactory');
 const StorageResult = require('../../../../lib/storage/StorageResult');
 const BlockInfo = require('../../../../lib/blockExecution/BlockInfo');
@@ -14,6 +13,13 @@ describe('handleUpdatedVotingAddressFactory', () => {
   let transactionFixture;
   let identityRepositoryMock;
   let blockInfo;
+  let IdentityPublicKey;
+  let Identifier;
+  let KeyType;
+
+  before(function before() {
+    ({ Identifier, IdentityPublicKey, KeyType } = this.dppWasm);
+  });
 
   beforeEach(function beforeEach() {
     smlEntry = {
@@ -50,6 +56,7 @@ describe('handleUpdatedVotingAddressFactory', () => {
       identityRepositoryMock,
       createMasternodeIdentityMock,
       fetchTransactionMock,
+      this.dppWasm,
     );
   });
 
@@ -67,7 +74,7 @@ describe('handleUpdatedVotingAddressFactory', () => {
       blockInfo,
       Identifier.from('G1p14MYdpNRLNWuKgQ9SjJUPxfuaJMTwYjdRWu9sLzvL'),
       Buffer.from('8fd1a9502c58ab103792693e951bf39f10ee46a9', 'hex'),
-      IdentityPublicKey.TYPES.ECDSA_HASH160,
+      KeyType.ECDSA_HASH160,
     );
     expect(fetchTransactionMock).to.be.calledWithExactly(smlEntry.proRegTxHash);
   });

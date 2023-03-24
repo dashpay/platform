@@ -3,9 +3,9 @@ const {
 } = require('awilix');
 
 const SimplifiedMNListEntry = require('@dashevo/dashcore-lib/lib/deterministicmnlist/SimplifiedMNListEntry');
+
+// TODO: should we take it from other place?
 const { hash } = require('@dashevo/dpp/lib/util/hash');
-const Identifier = require('@dashevo/dpp/lib/identifier/Identifier');
-const IdentityPublicKey = require('@dashevo/dpp/lib/identity/IdentityPublicKey');
 
 const Address = require('@dashevo/dashcore-lib/lib/address');
 const Script = require('@dashevo/dashcore-lib/lib/script');
@@ -20,6 +20,7 @@ const getSystemIdentityPublicKeysFixture = require('../../../../lib/test/fixture
  * @param {IdentityPublicKeyStoreRepository} identityPublicKeyRepository
  * @param {getWithdrawPubKeyTypeFromPayoutScript} getWithdrawPubKeyTypeFromPayoutScript
  * @param {getPublicKeyFromPayoutScript} getPublicKeyFromPayoutScript
+ * @param {WebAssembly.Instance} dppWasm
  * @returns {expectOperatorIdentity}
  */
 function expectOperatorIdentityFactory(
@@ -27,6 +28,7 @@ function expectOperatorIdentityFactory(
   identityPublicKeyRepository,
   getWithdrawPubKeyTypeFromPayoutScript,
   getPublicKeyFromPayoutScript,
+  dppWasm,
 ) {
   /**
    * @typedef {expectOperatorIdentity}
@@ -40,9 +42,11 @@ function expectOperatorIdentityFactory(
     previousPayoutAddress,
     payoutAddress,
   ) {
+    const { IdentityPublicKey } = dppWasm;
     // Validate operator identity
 
-    const operatorIdentifier = createOperatorIdentifier(smlEntry);
+    const operatorIdentifier = createOperatorIdentifier(dppWasm, smlEntry);
+
 
     const operatorIdentityResult = await identityRepository.fetch(
       operatorIdentifier,
@@ -73,7 +77,7 @@ function expectOperatorIdentityFactory(
     const firstOperatorMasternodePublicKey = operatorIdentity.getPublicKeyById(0);
     expect(firstOperatorMasternodePublicKey.getType())
       .to
-      .equal(IdentityPublicKey.TYPES.BLS12_381);
+      .equal(dppWasm.KeyType.BLS12_381);
     expect(firstOperatorMasternodePublicKey.getData())
       .to
       .deep
@@ -101,7 +105,7 @@ function expectOperatorIdentityFactory(
       const payoutPublicKey = operatorIdentity.getPublicKeyById(i);
       expect(payoutPublicKey.getType()).to.equal(publicKeyType);
       expect(payoutPublicKey.getData()).to.deep.equal(
-        getPublicKeyFromPayoutScript(payoutScript, publicKeyType),
+        getPublicKeyFromPayoutScript(payoutScript, publicKeyType, dppWasm),
       );
 
       const masternodeIdentityByPayoutPublicKeyHashResult = await identityPublicKeyRepository
@@ -123,7 +127,7 @@ function expectOperatorIdentityFactory(
       const payoutPublicKey = operatorIdentity.getPublicKeyById(i);
       expect(payoutPublicKey.getType()).to.equal(publicKeyType);
       expect(payoutPublicKey.getData()).to.deep.equal(
-        getPublicKeyFromPayoutScript(payoutScript, publicKeyType),
+        getPublicKeyFromPayoutScript(payoutScript, publicKeyType, dppWasm),
       );
 
       const masternodeIdentityByPayoutPublicKeyHashResult = await identityRepository
@@ -143,10 +147,12 @@ function expectOperatorIdentityFactory(
 
 /**
  * @param {IdentityStoreRepository} identityRepository
+ * @param {Object} dppWasm
  * @returns {expectVotingIdentity}
  */
 function expectVotingIdentityFactory(
   identityRepository,
+  dppWasm,
 ) {
   /**
    * @typedef {expectVotingIdentity}
@@ -159,8 +165,9 @@ function expectVotingIdentityFactory(
     proRegTx,
   ) {
     // Validate voting identity
+    const { IdentityPublicKey } = dppWasm;
 
-    const votingIdentifier = createVotingIdentifier(smlEntry);
+    const votingIdentifier = createVotingIdentifier(smlEntry, dppWas);
 
     const votingIdentityResult = await identityRepository.fetch(votingIdentifier, {
       useTransaction: true,
@@ -180,7 +187,7 @@ function expectVotingIdentityFactory(
       .lengthOf(1);
 
     const masternodePublicKey = votingIdentity.getPublicKeyById(0);
-    expect(masternodePublicKey.getType()).to.equal(IdentityPublicKey.TYPES.ECDSA_HASH160);
+    expect(masternodePublicKey.getType()).to.equal(dppWasm.KeyType.ECDSA_HASH160);
     expect(masternodePublicKey.getData()).to.deep.equal(
       Buffer.from(proRegTx.extraPayload.keyIDVoting, 'hex').reverse(),
     );
@@ -205,6 +212,7 @@ function expectVotingIdentityFactory(
  * @param {IdentityPublicKeyStoreRepository} identityPublicKeyRepository
  * @param {getWithdrawPubKeyTypeFromPayoutScript} getWithdrawPubKeyTypeFromPayoutScript
  * @param {getPublicKeyFromPayoutScript} getPublicKeyFromPayoutScript
+ * @param {Object} dppWasm
  * @returns {expectMasternodeIdentity}
  */
 function expectMasternodeIdentityFactory(
@@ -212,6 +220,7 @@ function expectMasternodeIdentityFactory(
   identityPublicKeyRepository,
   getWithdrawPubKeyTypeFromPayoutScript,
   getPublicKeyFromPayoutScript,
+  dppWasm,
 ) {
   /**
    * @typedef {expectMasternodeIdentity}
@@ -227,6 +236,8 @@ function expectMasternodeIdentityFactory(
     previousPayoutAddress,
     payoutAddress,
   ) {
+    const { Identifier, IdentityPublicKey } = dppWasm;
+
     const masternodeIdentifier = Identifier.from(
       Buffer.from(smlEntry.proRegTxHash, 'hex'),
     );
@@ -252,7 +263,7 @@ function expectMasternodeIdentityFactory(
     expect(masternodeIdentity.getPublicKeys()).to.have.lengthOf(publicKeysNum);
 
     const masternodePublicKey = masternodeIdentity.getPublicKeyById(0);
-    expect(masternodePublicKey.getType()).to.equal(IdentityPublicKey.TYPES.ECDSA_HASH160);
+    expect(masternodePublicKey.getType()).to.equal(dppWasm.KeyType.ECDSA_HASH160);
     expect(masternodePublicKey.getData()).to.deep.equal(
       Buffer.from(proRegTx.extraPayload.keyIDOwner, 'hex').reverse(),
     );
@@ -276,7 +287,7 @@ function expectMasternodeIdentityFactory(
       const payoutPublicKey = masternodeIdentity.getPublicKeyById(i);
       expect(payoutPublicKey.getType()).to.equal(publicKeyType);
       expect(payoutPublicKey.getData()).to.deep.equal(
-        getPublicKeyFromPayoutScript(payoutScript, publicKeyType),
+        getPublicKeyFromPayoutScript(payoutScript, publicKeyType, dppWasm),
       );
 
       const masternodeIdentityByPayoutPublicKeyHashResult = await identityRepository
@@ -298,7 +309,7 @@ function expectMasternodeIdentityFactory(
       const payoutPublicKey = masternodeIdentity.getPublicKeyById(i);
       expect(payoutPublicKey.getType()).to.equal(publicKeyType);
       expect(payoutPublicKey.getData()).to.deep.equal(
-        getPublicKeyFromPayoutScript(payoutScript, publicKeyType),
+        getPublicKeyFromPayoutScript(payoutScript, publicKeyType, dppWasm),
       );
 
       const masternodeIdentityByPayoutPublicKeyHashResult = await identityRepository
@@ -362,13 +373,18 @@ describe.skip('synchronizeMasternodeIdentitiesFactory', function main() {
   let expectDeterministicAppHash;
   let firstSyncAppHash;
   let blockInfo;
+  let Identifier;
+
+  before(function before() {
+    ({ Identifier } = this.dppWasm);
+  });
 
   beforeEach(async function beforeEach() {
     coreHeight = 3;
     firstSyncAppHash = 'c55de453e3ea4481f20225efdc12d671f715f0618cf3084bb32e56e75123bfdd';
     blockInfo = new BlockInfo(10, 0, 1668702100799);
 
-    container = await createTestDIContainer();
+    container = await createTestDIContainer(this.dppWasm);
 
     // Mock Core RPC
 
@@ -496,10 +512,12 @@ describe.skip('synchronizeMasternodeIdentitiesFactory', function main() {
       identityPublicKeyRepository,
       getWithdrawPubKeyTypeFromPayoutScript,
       getPublicKeyFromPayoutScript,
+      this.dppWasm,
     );
 
     expectVotingIdentity = expectVotingIdentityFactory(
       identityRepository,
+      this.dppWasm,
     );
 
     expectMasternodeIdentity = expectMasternodeIdentityFactory(
@@ -507,6 +525,7 @@ describe.skip('synchronizeMasternodeIdentitiesFactory', function main() {
       identityPublicKeyRepository,
       getWithdrawPubKeyTypeFromPayoutScript,
       getPublicKeyFromPayoutScript,
+      this.dppWasm,
     );
 
     expectDeterministicAppHash = expectDeterministicAppHashFactory(
@@ -560,7 +579,7 @@ describe.skip('synchronizeMasternodeIdentitiesFactory', function main() {
       Buffer.from(smlFixture[0].proRegTxHash, 'hex'),
     );
 
-    const firstOperatorIdentifier = createOperatorIdentifier(smlFixture[0]);
+    const firstOperatorIdentifier = createOperatorIdentifier(this.dppWasm, smlFixture[0]);
 
     let documentsResult = await documentRepository.find(
       rewardsDataContract,
@@ -692,7 +711,7 @@ describe.skip('synchronizeMasternodeIdentitiesFactory', function main() {
     expect(fetchSimplifiedMNListMock).to.have.been.calledOnceWithExactly(1, coreHeight);
   });
 
-  it('should create masternode identities if new masternode appeared', async () => {
+  it('should create masternode identities if new masternode appeared', async function test() {
     // Sync initial list
 
     const result = await synchronizeMasternodeIdentities(coreHeight, blockInfo);
@@ -749,7 +768,7 @@ describe.skip('synchronizeMasternodeIdentitiesFactory', function main() {
       Buffer.from(newSmlFixture[0].proRegTxHash, 'hex'),
     );
 
-    const newOperatorIdentifier = createOperatorIdentifier(newSmlFixture[0]);
+    const newOperatorIdentifier = createOperatorIdentifier(this.dppWasm, newSmlFixture[0]);
 
     const documentsResult = await documentRepository.find(
       rewardsDataContract,
@@ -897,7 +916,7 @@ describe.skip('synchronizeMasternodeIdentitiesFactory', function main() {
     expect(documents).to.have.lengthOf(0);
   });
 
-  it('should create operator identity and reward shares if PubKeyOperator was changed', async () => {
+  it('should create operator identity and reward shares if PubKeyOperator was changed', async function test() {
     // Initial sync
 
     await synchronizeMasternodeIdentities(coreHeight, blockInfo);
@@ -972,12 +991,12 @@ describe.skip('synchronizeMasternodeIdentitiesFactory', function main() {
 
     const [document] = documents;
 
-    const newOperatorIdentifier = createOperatorIdentifier(changedSmlEntry);
+    const newOperatorIdentifier = createOperatorIdentifier(this.dppWasm, changedSmlEntry);
 
     expect(document.get('payToId')).to.deep.equal(newOperatorIdentifier);
   });
 
-  it('should handle changed payout, voting and operator payout addresses', async () => {
+  it('should handle changed payout, voting and operator payout addresses', async function test() {
     // Sync initial list
 
     await synchronizeMasternodeIdentities(coreHeight, blockInfo);
@@ -1061,12 +1080,12 @@ describe.skip('synchronizeMasternodeIdentitiesFactory', function main() {
 
     const [document] = documents;
 
-    const newOperatorIdentifier = createOperatorIdentifier(changedSmlEntry);
+    const newOperatorIdentifier = createOperatorIdentifier(this.dppWasm, changedSmlEntry);
 
     expect(document.get('payToId')).to.deep.equal(newOperatorIdentifier);
   });
 
-  it('should not create voting Identity if owner and voting keys are the same', async () => {
+  it('should not create voting Identity if owner and voting keys are the same', async function test() {
     transaction1 = {
       extraPayload: {
         operatorReward: 100,
@@ -1081,7 +1100,7 @@ describe.skip('synchronizeMasternodeIdentitiesFactory', function main() {
 
     await synchronizeMasternodeIdentities(coreHeight, blockInfo);
     await expectDeterministicAppHash('7a5729e3511c5cc98e8452faa6132f0d600e04fef85df0f95f56e59c776de170');
-    const votingIdentifier = createVotingIdentifier(smlFixture[0]);
+    const votingIdentifier = createVotingIdentifier(smlFixture[0], this.dppWasm);
 
     const votingIdentityResult = await identityRepository.fetch(
       votingIdentifier,

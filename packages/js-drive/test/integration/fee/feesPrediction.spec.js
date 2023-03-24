@@ -2,16 +2,13 @@ const crypto = require('crypto');
 
 const Long = require('long');
 
-const IdentityPublicKey = require('@dashevo/dpp/lib/identity/IdentityPublicKey');
-const Identity = require('@dashevo/dpp/lib/identity/Identity');
-const generateRandomIdentifier = require('@dashevo/dpp/lib/test/utils/generateRandomIdentifier');
-
-const getInstantAssetLockProofFixture = require('@dashevo/dpp/lib/test/fixtures/getInstantAssetLockProofFixture');
+// TODO: should we take it from other place?
 const identityUpdateTransitionSchema = require('@dashevo/dpp/schema/identity/stateTransition/identityUpdate.json');
-const StateTransitionExecutionContext = require('@dashevo/dpp/lib/stateTransition/StateTransitionExecutionContext');
-const PrivateKey = require('@dashevo/dashcore-lib/lib/privatekey');
 
-const BlsSignatures = require('@dashevo/dpp/lib/bls/bls');
+const generateRandomIdentifier = require('@dashevo/dpp/lib/test/utils/generateRandomIdentifier');
+const getInstantAssetLockProofFixture = require('@dashevo/wasm-dpp/lib/test/fixtures/getInstantAssetLockProofFixture');
+
+const PrivateKey = require('@dashevo/dashcore-lib/lib/privatekey');
 
 const getBiggestPossibleIdentity = require('../../../lib/test/mock/getBiggestPossibleIdentity');
 
@@ -42,64 +39,73 @@ async function validateStateTransition(dpp, stateTransition) {
 }
 
 /**
- * @param {DashPlatformProtocol} dpp
- * @param {GroveDBStore} groveDBStore
- * @param {AbstractStateTransition} stateTransition
- * @return {Promise<void>}
+ * @param {Object} dppWasm
+ * @returns expectPredictedFeeHigherOrEqualThanActual
  */
-async function expectPredictedFeeHigherOrEqualThanActual(dpp, groveDBStore, stateTransition) {
-  // Execute state transition without dry run
+function expectPredictedFeeHigherOrEqualThanActualFactory(dppWasm) {
+  /**
+   * @param {DashPlatformProtocol} dpp
+   * @param {GroveDBStore} groveDBStore
+   * @param {AbstractStateTransition} stateTransition
+   * @return {Promise<void>}
+   */
+  async function expectPredictedFeeHigherOrEqualThanActual(dpp, groveDBStore, stateTransition) {
+    const { StateTransitionExecutionContext } = dppWasm;
+    // Execute state transition without dry run
 
-  const actualExecutionContext = new StateTransitionExecutionContext();
+    const actualExecutionContext = new StateTransitionExecutionContext();
 
-  stateTransition.setExecutionContext(actualExecutionContext);
+    stateTransition.setExecutionContext(actualExecutionContext);
 
-  await validateStateTransition(dpp, stateTransition);
+    await validateStateTransition(dpp, stateTransition);
 
-  // Execute state transition with dry run enabled
+    // Execute state transition with dry run enabled
 
-  const predictedExecutionContext = new StateTransitionExecutionContext();
+    const predictedExecutionContext = new StateTransitionExecutionContext();
 
-  predictedExecutionContext.enableDryRun();
+    predictedExecutionContext.enableDryRun();
 
-  stateTransition.setExecutionContext(predictedExecutionContext);
+    stateTransition.setExecutionContext(predictedExecutionContext);
 
-  const initialAppHash = await groveDBStore.getRootHash();
+    const initialAppHash = await groveDBStore.getRootHash();
 
-  await validateStateTransition(dpp, stateTransition);
+    await validateStateTransition(dpp, stateTransition);
 
-  // AppHash shouldn't be changed after dry run
-  const appHashAfterDryRun = await groveDBStore.getRootHash();
+    // AppHash shouldn't be changed after dry run
+    const appHashAfterDryRun = await groveDBStore.getRootHash();
 
-  expect(appHashAfterDryRun).to.deep.equal(initialAppHash);
+    expect(appHashAfterDryRun).to.deep.equal(initialAppHash);
 
-  // Compare operations
+    // Compare operations
 
-  // TODO: Processing fees are disabled for v0.23
-  // const actualOperations = actualExecutionContext.getOperations();
-  // const predictedOperations = predictedExecutionContext.getOperations();
+    // TODO: Processing fees are disabled for v0.23
+    // const actualOperations = actualExecutionContext.getOperations();
+    // const predictedOperations = predictedExecutionContext.getOperations();
 
-  // expect(predictedOperations).to.have.lengthOf(actualOperations.length);
+    // expect(predictedOperations).to.have.lengthOf(actualOperations.length);
 
-  // Compare fees
+    // Compare fees
 
-  // stateTransition.setExecutionContext(actualExecutionContext);
-  // const actualFees = calculateStateTransitionFee(stateTransition);
-  //
-  // stateTransition.setExecutionContext(predictedExecutionContext);
-  // const predictedFees = calculateStateTransitionFee(stateTransition);
-  //
-  // expect(predictedFees).to.be.greaterThanOrEqual(actualFees);
-  //
-  // predictedOperations.forEach((predictedOperation, i) => {
-  //   expect(predictedOperation.getStorageCost()).to.be.greaterThanOrEqual(
-  //     actualOperations[i].getStorageCost(),
-  //   );
-  //
-  //   expect(predictedOperation.getProcessingCost()).to.be.greaterThanOrEqual(
-  //     actualOperations[i].getProcessingCost(),
-  //   );
-  // });
+    // stateTransition.setExecutionContext(actualExecutionContext);
+    // const actualFees = calculateStateTransitionFee(stateTransition);
+    //
+    // stateTransition.setExecutionContext(predictedExecutionContext);
+    // const predictedFees = calculateStateTransitionFee(stateTransition);
+    //
+    // expect(predictedFees).to.be.greaterThanOrEqual(actualFees);
+    //
+    // predictedOperations.forEach((predictedOperation, i) => {
+    //   expect(predictedOperation.getStorageCost()).to.be.greaterThanOrEqual(
+    //     actualOperations[i].getStorageCost(),
+    //   );
+    //
+    //   expect(predictedOperation.getProcessingCost()).to.be.greaterThanOrEqual(
+    //     actualOperations[i].getProcessingCost(),
+    //   );
+    // });
+  }
+
+  return expectPredictedFeeHigherOrEqualThanActual;
 }
 
 describe('feesPrediction', () => {
@@ -109,9 +115,26 @@ describe('feesPrediction', () => {
   let identity;
   let groveDBStore;
   let blockInfo;
+  let IdentityPublicKey;
+  let Identity;
+  let BlsSignatures;
+  let expectPredictedFeeHigherOrEqualThanActual;
+  let KeyPurpose;
+  let KeyType;
+  let KeySecurityLevel;
+
+  before(function before() {
+    ({
+      IdentityPublicKey, Identity, BlsSignatures, KeyPurpose, KeyType, KeySecurityLevel
+    } = this.dppWasm);
+
+    expectPredictedFeeHigherOrEqualThanActual = expectPredictedFeeHigherOrEqualThanActualFactory(
+      this.dppWasm,
+    );
+  });
 
   beforeEach(async function beforeEach() {
-    container = await createTestDIContainer();
+    container = await createTestDIContainer(this.dppWasm);
 
     const latestBlockExecutionContext = container.resolve('latestBlockExecutionContext');
 
@@ -152,7 +175,7 @@ describe('feesPrediction', () => {
 
       instantAssetLockProof = getInstantAssetLockProofFixture(assetLockPrivateKey);
 
-      identity = getBiggestPossibleIdentity();
+      identity = getBiggestPossibleIdentity(this.dppWasm);
       identity.id = instantAssetLockProof.createIdentifier();
       identity.setAssetLockProof(instantAssetLockProof);
 
@@ -189,7 +212,7 @@ describe('feesPrediction', () => {
         for (let i = 0; i < publicKeys.length; i++) {
           await stateTransition.signByPrivateKey(
             privateKeys[i],
-            IdentityPublicKey.TYPES.BLS12_381,
+            KeyType.BLS12_381,
           );
 
           publicKeys[i].setSignature(stateTransition.getSignature());
@@ -200,7 +223,7 @@ describe('feesPrediction', () => {
         // Sign state transition
         await stateTransition.signByPrivateKey(
           assetLockPrivateKey,
-          IdentityPublicKey.TYPES.ECDSA_SECP256K1,
+          KeyType.ECDSA_SECP256K1,
         );
 
         await expectPredictedFeeHigherOrEqualThanActual(dpp, groveDBStore, stateTransition);
@@ -218,7 +241,7 @@ describe('feesPrediction', () => {
 
         await stateTransition.signByPrivateKey(
           assetLockPrivateKey,
-          IdentityPublicKey.TYPES.ECDSA_SECP256K1,
+          KeyType.ECDSA_SECP256K1,
         );
 
         await expectPredictedFeeHigherOrEqualThanActual(dpp, groveDBStore, stateTransition);
@@ -246,11 +269,11 @@ describe('feesPrediction', () => {
           newIdentityPublicKeys.push(
             new IdentityPublicKey({
               id: i + identity.getPublicKeys().length,
-              type: IdentityPublicKey.TYPES.BLS12_381,
+              type: KeyType.BLS12_381,
               data: publicKeyBuffer,
-              purpose: IdentityPublicKey.PURPOSES.AUTHENTICATION,
+              purpose: KeyPurpose.AUTHENTICATION,
               securityLevel: i === 0
-                ? IdentityPublicKey.SECURITY_LEVELS.MASTER : IdentityPublicKey.SECURITY_LEVELS.HIGH,
+                ? KeySecurityLevel.MASTER : KeySecurityLevel.HIGH,
               readOnly: false,
             }),
           );
@@ -317,17 +340,17 @@ describe('feesPrediction', () => {
         publicKeys: [
           {
             id: 0,
-            type: IdentityPublicKey.TYPES.BLS12_381,
-            purpose: IdentityPublicKey.PURPOSES.AUTHENTICATION,
-            securityLevel: IdentityPublicKey.SECURITY_LEVELS.MASTER,
+            type: KeyType.BLS12_381,
+            purpose: KeyPurpose.AUTHENTICATION,
+            securityLevel: KeySecurityLevel.MASTER,
             readOnly: false,
             data: Buffer.alloc(48).fill(255),
           },
           {
             id: 1,
-            type: IdentityPublicKey.TYPES.ECDSA_SECP256K1,
-            purpose: IdentityPublicKey.PURPOSES.AUTHENTICATION,
-            securityLevel: IdentityPublicKey.SECURITY_LEVELS.HIGH,
+            type: KeyType.ECDSA_SECP256K1,
+            purpose: KeyPurpose.AUTHENTICATION,
+            securityLevel: KeySecurityLevel.HIGH,
             readOnly: false,
             data: privateKey.toPublicKey().toBuffer(),
           },
@@ -423,17 +446,17 @@ describe('feesPrediction', () => {
         publicKeys: [
           {
             id: 0,
-            type: IdentityPublicKey.TYPES.BLS12_381,
-            purpose: IdentityPublicKey.PURPOSES.AUTHENTICATION,
-            securityLevel: IdentityPublicKey.SECURITY_LEVELS.MASTER,
+            type: KeyType.BLS12_381,
+            purpose: KeyPurpose.AUTHENTICATION,
+            securityLevel: KeySecurityLevel.MASTER,
             readOnly: false,
             data: Buffer.alloc(48).fill(255),
           },
           {
             id: 1,
-            type: IdentityPublicKey.TYPES.ECDSA_SECP256K1,
-            purpose: IdentityPublicKey.PURPOSES.AUTHENTICATION,
-            securityLevel: IdentityPublicKey.SECURITY_LEVELS.HIGH,
+            type: KeyType.ECDSA_SECP256K1,
+            purpose: KeyPurpose.AUTHENTICATION,
+            securityLevel: KeySecurityLevel.HIGH,
             readOnly: false,
             data: privateKey.toPublicKey().toBuffer(),
           },

@@ -9,8 +9,10 @@ const {
 
 const Long = require('long');
 
+// TODO: should we load it from other place?
 const { hash } = require('@dashevo/dpp/lib/util/hash');
 const getDataContractFixture = require('@dashevo/dpp/lib/test/fixtures/getDataContractFixture');
+
 const finalizeBlockHandlerFactory = require('../../../../lib/abci/handlers/finalizeBlockHandlerFactory');
 const LoggerMock = require('../../../../lib/test/mock/LoggerMock');
 const BlockExecutionContextMock = require('../../../../lib/test/mock/BlockExecutionContextMock');

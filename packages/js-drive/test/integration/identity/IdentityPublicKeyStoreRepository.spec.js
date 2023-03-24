@@ -1,6 +1,8 @@
 const fs = require('fs');
 const Drive = require('@dashevo/rs-drive');
 const getIdentityFixture = require('@dashevo/dpp/lib/test/fixtures/getIdentityFixture');
+
+// TODO: should we take it from other place?
 const decodeProtocolEntityFactory = require('@dashevo/dpp/lib/decodeProtocolEntityFactory');
 const IdentityPublicKeyStoreRepository = require('../../../lib/identity/IdentityPublicKeyStoreRepository');
 const GroveDBStore = require('../../../lib/storage/GroveDBStore');

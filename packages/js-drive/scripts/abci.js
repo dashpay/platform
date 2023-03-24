@@ -4,6 +4,8 @@ const graceful = require('node-graceful');
 
 const chalk = require('chalk');
 
+const { default: loadWasmDpp } = require('@dashevo/wasm-dpp');
+
 const ZMQClient = require('../lib/core/ZmqClient');
 
 const createDIContainer = require('../lib/createDIContainer');
@@ -11,18 +13,19 @@ const createDIContainer = require('../lib/createDIContainer');
 const { version: driveVersion } = require('../package.json');
 
 const banner = '\n ____       ______      ____        __  __                 ____       ____        ______      __  __     ____      \n'
-+ '/\\  _`\\    /\\  _  \\    /\\  _`\\     /\\ \\/\\ \\               /\\  _`\\    /\\  _`\\     /\\__  _\\    /\\ \\/\\ \\   /\\  _`\\    \n'
-+ '\\ \\ \\/\\ \\  \\ \\ \\L\\ \\   \\ \\,\\L\\_\\   \\ \\ \\_\\ \\              \\ \\ \\/\\ \\  \\ \\ \\L\\ \\   \\/_/\\ \\/    \\ \\ \\ \\ \\  \\ \\ \\L\\_\\  \n'
-+ ' \\ \\ \\ \\ \\  \\ \\  __ \\   \\/_\\__ \\    \\ \\  _  \\              \\ \\ \\ \\ \\  \\ \\ ,  /      \\ \\ \\     \\ \\ \\ \\ \\  \\ \\  _\\L  \n'
-+ '  \\ \\ \\_\\ \\  \\ \\ \\/\\ \\    /\\ \\L\\ \\   \\ \\ \\ \\ \\              \\ \\ \\_\\ \\  \\ \\ \\\\ \\      \\_\\ \\__   \\ \\ \\_/ \\  \\ \\ \\L\\ \\\n'
-+ '   \\ \\____/   \\ \\_\\ \\_\\   \\ `\\____\\   \\ \\_\\ \\_\\              \\ \\____/   \\ \\_\\ \\_\\    /\\_____\\   \\ `\\___/   \\ \\____/\n'
-+ '    \\/___/     \\/_/\\/_/    \\/_____/    \\/_/\\/_/               \\/___/     \\/_/\\/ /    \\/_____/    `\\/__/     \\/___/\n\n\n';
+  + '/\\  _`\\    /\\  _  \\    /\\  _`\\     /\\ \\/\\ \\               /\\  _`\\    /\\  _`\\     /\\__  _\\    /\\ \\/\\ \\   /\\  _`\\    \n'
+  + '\\ \\ \\/\\ \\  \\ \\ \\L\\ \\   \\ \\,\\L\\_\\   \\ \\ \\_\\ \\              \\ \\ \\/\\ \\  \\ \\ \\L\\ \\   \\/_/\\ \\/    \\ \\ \\ \\ \\  \\ \\ \\L\\_\\  \n'
+  + ' \\ \\ \\ \\ \\  \\ \\  __ \\   \\/_\\__ \\    \\ \\  _  \\              \\ \\ \\ \\ \\  \\ \\ ,  /      \\ \\ \\     \\ \\ \\ \\ \\  \\ \\  _\\L  \n'
+  + '  \\ \\ \\_\\ \\  \\ \\ \\/\\ \\    /\\ \\L\\ \\   \\ \\ \\ \\ \\              \\ \\ \\_\\ \\  \\ \\ \\\\ \\      \\_\\ \\__   \\ \\ \\_/ \\  \\ \\ \\L\\ \\\n'
+  + '   \\ \\____/   \\ \\_\\ \\_\\   \\ `\\____\\   \\ \\_\\ \\_\\              \\ \\____/   \\ \\_\\ \\_\\    /\\_____\\   \\ `\\___/   \\ \\____/\n'
+  + '    \\/___/     \\/_/\\/_/    \\/_____/    \\/_/\\/_/               \\/___/     \\/_/\\/ /    \\/_____/    `\\/__/     \\/___/\n\n\n';
 
 // eslint-disable-next-line no-console
 console.log(chalk.hex('#008de4')(banner));
 
 (async function main() {
-  const container = createDIContainer(process.env);
+  const dppWasm = await loadWasmDpp();
+  const container = createDIContainer(dppWasm, process.env);
   const logger = container.resolve('logger');
   const dpp = container.resolve('dpp');
   const transactionalDpp = container.resolve('transactionalDpp');
@@ -49,13 +52,6 @@ console.log(chalk.hex('#008de4')(banner));
 
     await container.dispose();
   });
-
-  /**
-   * Initialize DPP
-   */
-
-  await dpp.initialize();
-  await transactionalDpp.initialize();
 
   /**
    * Make sure Core is synced

@@ -16,8 +16,8 @@ describe('proveDocumentsFactory', () => {
   let container;
   let blockInfo;
 
-  beforeEach(async () => {
-    container = await createTestDIContainer();
+  beforeEach(async function beforeEach() {
+    container = await createTestDIContainer(this.dppWasm);
 
     dataContractRepository = container.resolve('dataContractRepository');
     documentRepository = container.resolve('documentRepository');
