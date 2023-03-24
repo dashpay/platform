@@ -1,28 +1,27 @@
-const IdentifierError = require('@dashevo/dpp/lib/identifier/errors/IdentifierError');
-const Identifier = require('@dashevo/dpp/lib/identifier/Identifier');
-
 const InvalidQueryError = require('./errors/InvalidQueryError');
 
 /**
  * @param {DataContractStoreRepository} dataContractRepository
+ * @param {WebAssembly.Instance} dppWasm
  * @returns {fetchDocuments}
  */
 function fetchDataContractFactory(
   dataContractRepository,
+  dppWasm,
 ) {
   /**
    * Fetch Data Contract by Contract ID and type
    *
    * @typedef {Promise} fetchDataContract
-   * @param {Buffer|Identifier} contractId
+   * @param {Buffer|dppWasm.Identifier} contractId
    * @returns {Promise<StorageResult<DataContract>>}
    */
   async function fetchDataContract(contractId) {
     let contractIdIdentifier;
     try {
-      contractIdIdentifier = new Identifier(contractId);
+      contractIdIdentifier = new dppWasm.Identifier(contractId);
     } catch (e) {
-      if (e instanceof IdentifierError) {
+      if (e instanceof dppWasm.IdentifierError) {
         throw new InvalidQueryError(`invalid data contract ID: ${e.message}`);
       }
 

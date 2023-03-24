@@ -26,7 +26,7 @@ describe('waitForCoreSyncFactory', function main() {
     }
   });
 
-  it('should wait until Dash Core in regtest mode with peers is synced', async () => {
+  it('should wait until Dash Core in regtest mode with peers is synced', async function it() {
     firstDashCore = await startDashCore();
     const { result: randomAddress } = await firstDashCore.getApi().getNewAddress({ wallet: 'main' });
     await firstDashCore.getApi().generateToAddress(1000, randomAddress);
@@ -34,10 +34,10 @@ describe('waitForCoreSyncFactory', function main() {
     secondDashCore = await startDashCore();
     await secondDashCore.connect(firstDashCore);
 
-    container = await createTestDIContainer(secondDashCore);
+    container = await createTestDIContainer(this.dppWasm, secondDashCore);
     waitForCoreSync = container.resolve('waitForCoreSync');
 
-    await waitForCoreSync(() => {});
+    await waitForCoreSync(() => { });
 
     const secondApi = secondDashCore.getApi();
 

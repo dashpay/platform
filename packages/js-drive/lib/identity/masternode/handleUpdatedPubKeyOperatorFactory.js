@@ -1,5 +1,3 @@
-const Identifier = require('@dashevo/dpp/lib/identifier/Identifier');
-const IdentityPublicKey = require('@dashevo/dpp/lib/identity/IdentityPublicKey');
 const Address = require('@dashevo/dashcore-lib/lib/address');
 const Script = require('@dashevo/dashcore-lib/lib/script');
 const createOperatorIdentifier = require('./createOperatorIdentifier');
@@ -13,6 +11,7 @@ const createOperatorIdentifier = require('./createOperatorIdentifier');
  * @param {DocumentRepository} documentRepository
  * @param {IdentityStoreRepository} identityRepository
  * @param {fetchTransaction} fetchTransaction
+ * @param {WebAssembly.Instance} dppWasm
  * @return {handleUpdatedPubKeyOperator}
  */
 function handleUpdatedPubKeyOperatorFactory(
@@ -23,6 +22,7 @@ function handleUpdatedPubKeyOperatorFactory(
   documentRepository,
   identityRepository,
   fetchTransaction,
+  dppWasm,
 ) {
   /**
    * @typedef handleUpdatedPubKeyOperator
@@ -57,7 +57,7 @@ function handleUpdatedPubKeyOperatorFactory(
     const proRegTxHash = Buffer.from(masternodeEntry.proRegTxHash, 'hex');
     const operatorPublicKey = Buffer.from(masternodeEntry.pubKeyOperator, 'hex');
 
-    const operatorIdentifier = createOperatorIdentifier(masternodeEntry);
+    const operatorIdentifier = createOperatorIdentifier(dppWasm, masternodeEntry);
 
     const operatorIdentityResult = await identityRepository.fetch(
       operatorIdentifier,
@@ -77,7 +77,7 @@ function handleUpdatedPubKeyOperatorFactory(
           blockInfo,
           operatorIdentifier,
           operatorPublicKey,
-          IdentityPublicKey.TYPES.BLS12_381,
+          dppWasm.KeyType.BLS12_381,
           operatorPayoutPubKey,
         ),
       );
@@ -86,7 +86,7 @@ function handleUpdatedPubKeyOperatorFactory(
     // Create a document in rewards data contract with percentage defined
     // in corresponding ProRegTx
 
-    const masternodeIdentifier = Identifier.from(
+    const masternodeIdentifier = dppWasm.Identifier.from(
       proRegTxHash,
     );
 
@@ -105,7 +105,7 @@ function handleUpdatedPubKeyOperatorFactory(
     // Delete document from reward shares data contract with ID corresponding to the
     // masternode identity (ownerId) and previous operator identity (payToId)
 
-    const previousOperatorIdentifier = createOperatorIdentifier(previousMasternodeEntry);
+    const previousOperatorIdentifier = createOperatorIdentifier(dppWasm, previousMasternodeEntry);
 
     const previousDocumentsResult = await documentRepository.find(
       dataContract,

@@ -9,6 +9,8 @@ const chaiAsPromised = require('chai-as-promised');
 const chaiString = require('chai-string');
 const DashCoreOptions = require('@dashevo/dp-services-ctl/lib/services/dashCore/DashCoreOptions');
 
+const { default: loadWasmDpp } = require('@dashevo/wasm-dpp');
+
 use(sinonChai);
 use(chaiAsPromised);
 use(chaiString);
@@ -61,6 +63,10 @@ DashCoreOptions.setDefaultCustomOptions({
   container: {
     image: 'dashpay/dashd:18.1.0-rc.1',
   },
+});
+
+before(async function before() {
+  this.dppWasm = await loadWasmDpp();
 });
 
 beforeEach(function beforeEach() {
