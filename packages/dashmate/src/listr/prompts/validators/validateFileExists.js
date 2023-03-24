@@ -1,13 +1,18 @@
 const fs = require('fs');
 
+/**
+ * @param {string} value
+ * @returns {boolean}
+ */
 function validateFileExists(value) {
-  // TODO: We should make sure that file is accessable
-  // TODO: We should make sure it's a file not a directory
-  if (fs.existsSync(value)) {
-    return true;
-  }
+  try {
+    // eslint-disable-next-line no-bitwise
+    fs.accessSync(value, fs.constants.R_OK | fs.constants.W_OK);
 
-  return 'File doesn\'t exist';
+    return true;
+  } catch (e) {
+    return false;
+  }
 }
 
 module.exports = validateFileExists;
