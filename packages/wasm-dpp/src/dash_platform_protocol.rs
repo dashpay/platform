@@ -7,7 +7,7 @@ use crate::document_facade::DocumentFacadeWasm;
 use crate::fetch_and_validate_data_contract::DataContractFetcherAndValidatorWasm;
 use crate::identity_facade::IdentityFacadeWasm;
 use crate::state_repository::{ExternalStateRepositoryLike, ExternalStateRepositoryLikeWrapper};
-use crate::{DataContractFacadeWasm};
+use crate::DataContractFacadeWasm;
 use crate::{DocumentFactoryWASM, DocumentValidatorWasm};
 use dpp::identity::validation::PublicKeysValidator;
 
