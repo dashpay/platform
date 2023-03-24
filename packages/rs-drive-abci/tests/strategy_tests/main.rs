@@ -33,7 +33,7 @@
 use crate::DocumentAction::{DocumentActionDelete, DocumentActionInsert};
 use drive::common::helpers::identities::create_test_masternode_identities_with_rng;
 use drive::contract::{Contract, CreateRandomDocument, DocumentType};
-use drive::dpp::document::document_stub::DocumentStub;
+use drive::dpp::document::Document;
 use drive::dpp::identity::{Identity, KeyID, PartialIdentity};
 use drive::dpp::util::deserializer::ProtocolVersion;
 use drive::drive::batch::{
@@ -233,7 +233,7 @@ impl Strategy {
                                 .clone()
                                 .into_partial_identity_info();
 
-                            document.owner_id = identity.id.to_buffer();
+                            document.owner_id = identity.id;
                             let storage_flags = StorageFlags::new_single_epoch(
                                 block_info.epoch.index,
                                 Some(identity.id.to_buffer()),
@@ -263,23 +263,27 @@ impl Strategy {
                             DriveQuery::any_item_query(&op.contract, &op.document_type);
                         let mut items = platform
                             .drive
-                            .query_documents(any_item_query, Some(&block_info.epoch), None)
+                            .query_documents_as_serialized(
+                                any_item_query,
+                                Some(&block_info.epoch),
+                                None,
+                            )
                             .expect("expect to execute query")
                             .items;
 
                         if !items.is_empty() {
                             let first_item = items.remove(0);
                             let document =
-                                DocumentStub::from_bytes(first_item.as_slice(), &op.document_type)
+                                Document::from_bytes(first_item.as_slice(), &op.document_type)
                                     .expect("expected to deserialize document");
                             let identity = platform
                                 .drive
-                                .fetch_identity_with_balance(document.owner_id, None)
+                                .fetch_identity_with_balance(document.owner_id.to_buffer(), None)
                                 .expect("expected to be able to get identity")
                                 .expect("expected to get an identity");
                             let delete_op = DriveOperationType::DocumentOperation(
                                 DocumentOperationType::DeleteDocumentForContract {
-                                    document_id: document.id,
+                                    document_id: document.id.to_buffer(),
                                     contract: &op.contract,
                                     document_type: &op.document_type,
                                     owner_id: None,
@@ -984,7 +988,7 @@ mod tests {
         let day_in_ms = 1000 * 60 * 60 * 24;
         let block_count = 30;
         let outcome = run_chain_for_strategy(block_count, day_in_ms, strategy, config, 15);
-        assert_eq!(outcome.identities.len() as u64, 464);
+        assert_eq!(outcome.identities.len() as u64, 398);
         assert_eq!(outcome.masternode_identity_balances.len(), 100);
         let balance_count = outcome
             .masternode_identity_balances

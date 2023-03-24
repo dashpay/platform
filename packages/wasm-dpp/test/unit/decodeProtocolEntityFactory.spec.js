@@ -1,20 +1,17 @@
 const varint = require('varint');
-const decodeProtocolEntityFactory = require('@dashevo/dpp/lib/decodeProtocolEntityFactory');
-const ProtocolVersionParsingError = require('@dashevo/dpp/lib/errors/consensus/basic/decode/ProtocolVersionParsingError');
-const SerializedObjectParsingError = require('@dashevo/dpp/lib/errors/consensus/basic/decode/SerializedObjectParsingError');
-
 const { encode } = require('@dashevo/dpp/lib/util/serializer');
 
+let { decodeProtocolEntity, ProtocolVersionParsingError, SerializedObjectParsingError } = require('../..');
+const { default: loadWasmDpp } = require('../..');
+
 describe('decodeProtocolEntityFactory', () => {
-  let decodeProtocolEntity;
-  let versionCompatibilityMap;
   let parsedProtocolVersion;
   let entityBuffer;
   let protocolVersionBuffer;
   let rawEntity;
   let buffer;
 
-  beforeEach(() => {
+  beforeEach(async () => {
     parsedProtocolVersion = 0;
 
     protocolVersionBuffer = Buffer.from(varint.encode(parsedProtocolVersion));
@@ -24,14 +21,11 @@ describe('decodeProtocolEntityFactory', () => {
 
     buffer = Buffer.concat([protocolVersionBuffer, entityBuffer]);
 
-    versionCompatibilityMap = {
-      0: 0,
-      1: 0,
-    };
-
-    decodeProtocolEntity = decodeProtocolEntityFactory(
-      versionCompatibilityMap,
-    );
+    ({
+      decodeProtocolEntity,
+      ProtocolVersionParsingError,
+      SerializedObjectParsingError,
+    } = await loadWasmDpp());
   });
 
   it('should throw ProtocolVersionParsingError if can\'t parse protocol version', () => {
@@ -50,7 +44,7 @@ describe('decodeProtocolEntityFactory', () => {
   });
 
   it('should throw SerializedObjectParsingError if entity decoding fails', () => {
-    entityBuffer = Buffer.alloc(5).fill(1);
+    entityBuffer = Buffer.from('invalid');
 
     buffer = Buffer.concat([protocolVersionBuffer, entityBuffer]);
 

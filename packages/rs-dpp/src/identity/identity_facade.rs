@@ -1,18 +1,18 @@
 use dashcore::{InstantLock, Transaction};
-use serde_json::Value;
+use platform_value::Value;
 use std::collections::BTreeMap;
 use std::sync::Arc;
 
-use crate::identifier::Identifier;
 use crate::identity::factory::IdentityFactory;
 use crate::identity::state_transition::asset_lock_proof::chain::ChainAssetLockProof;
 use crate::identity::state_transition::asset_lock_proof::{AssetLockProof, InstantAssetLockProof};
 use crate::identity::state_transition::identity_create_transition::IdentityCreateTransition;
-use crate::identity::state_transition::identity_public_key_transitions::IdentityPublicKeyCreateTransition;
+use crate::identity::state_transition::identity_public_key_transitions::IdentityPublicKeyWithWitness;
 use crate::identity::state_transition::identity_topup_transition::IdentityTopUpTransition;
 use crate::identity::state_transition::identity_update_transition::identity_update_transition::IdentityUpdateTransition;
 use crate::identity::validation::{IdentityValidator, PublicKeysValidator};
 use crate::identity::{Identity, IdentityPublicKey, KeyID, TimestampMillis};
+use crate::prelude::Identifier;
 
 use crate::validation::ValidationResult;
 use crate::version::ProtocolVersionValidator;
@@ -71,9 +71,10 @@ where
 
     pub fn validate(
         &self,
-        identity_json: &serde_json::Value,
+        identity_object: &Value,
     ) -> Result<ValidationResult<()>, NonConsensusError> {
-        self.identity_validator.validate_identity(identity_json)
+        self.identity_validator
+            .validate_identity_object(identity_object)
     }
 
     pub fn create_instant_lock_proof(
@@ -114,7 +115,7 @@ where
     pub fn create_identity_update_transition(
         &self,
         identity: Identity,
-        add_public_keys: Option<Vec<IdentityPublicKeyCreateTransition>>,
+        add_public_keys: Option<Vec<IdentityPublicKeyWithWitness>>,
         public_key_ids_to_disable: Option<Vec<KeyID>>,
         // Pass disable time as argument because SystemTime::now() does not work for wasm target
         // https://github.com/rust-lang/rust/issues/48564

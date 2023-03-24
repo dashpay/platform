@@ -1,29 +1,29 @@
-use serde_json::{json, Value as JsonValue};
+use platform_value::Value;
 
 use crate::{
     consensus::{basic::BasicError, ConsensusError},
     data_contract::DataContract,
     document::{
-        Document,
         document_transition::{Action, DocumentTransitionObjectLike},
         state_transition::documents_batch_transition::validation::basic::validate_partial_compound_indices::*,
     },
     tests::fixtures::{
-        get_data_contract_fixture, get_document_transitions_fixture, get_documents_fixture,
+        get_data_contract_fixture, get_document_transitions_fixture,
     },
-    util::json_value::JsonValueExt,
     validation::ValidationResult,
 };
+use crate::document::ExtendedDocument;
+use crate::tests::fixtures::get_extended_documents_fixture;
 
 struct TestData {
     data_contract: DataContract,
-    documents: Vec<Document>,
+    documents: Vec<ExtendedDocument>,
 }
 
 fn setup_test() -> TestData {
     let data_contract = get_data_contract_fixture(None);
     let documents =
-        get_documents_fixture(data_contract.clone()).expect("documents should be created");
+        get_extended_documents_fixture(data_contract.clone()).expect("documents should be created");
 
     TestData {
         data_contract,
@@ -39,12 +39,12 @@ fn should_return_invalid_result_if_compound_index_contains_not_all_fields() {
     } = setup_test();
     let mut document = documents.remove(9);
     document
-        .data
+        .properties_as_mut()
         .remove("lastName")
         .expect("lastName property should exist and be removed");
 
     let documents_for_transition = vec![document];
-    let raw_document_transitions: Vec<JsonValue> =
+    let raw_document_transitions: Vec<Value> =
         get_document_transitions_fixture([(Action::Create, documents_for_transition)])
             .into_iter()
             .map(|dt| {
@@ -88,10 +88,10 @@ fn should_return_valid_result_if_compound_index_contains_nof_fields() {
         mut documents,
     } = setup_test();
     let mut document = documents.remove(8);
-    document.data = json!({});
+    document.properties_as_mut().clear();
 
     let documents_for_transition = vec![document];
-    let raw_document_transitions: Vec<JsonValue> =
+    let raw_document_transitions: Vec<Value> =
         get_document_transitions_fixture([(Action::Create, documents_for_transition)])
             .into_iter()
             .map(|dt| {
@@ -112,7 +112,7 @@ fn should_return_valid_result_if_compound_index_contains_all_fields() {
     } = setup_test();
     let document = documents.remove(8);
     let documents_for_transition = vec![document];
-    let raw_document_transitions: Vec<JsonValue> =
+    let raw_document_transitions: Vec<Value> =
         get_document_transitions_fixture([(Action::Create, documents_for_transition)])
             .into_iter()
             .map(|dt| {

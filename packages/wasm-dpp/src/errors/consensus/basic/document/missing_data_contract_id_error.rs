@@ -1,15 +1,15 @@
-use dpp::document::document_transition::document_base_transition::JsonValue;
+use dpp::platform_value::Value;
 use serde::Serialize;
 use wasm_bindgen::prelude::*;
 
 #[wasm_bindgen(js_name=MissingDataContractIdError)]
 pub struct MissingDataContractIdErrorWasm {
-    raw_document_transition: JsonValue,
+    raw_document_transition: Value,
     code: u32,
 }
 
 impl MissingDataContractIdErrorWasm {
-    pub fn new(raw_document_transition: JsonValue, code: u32) -> Self {
+    pub fn new(raw_document_transition: Value, code: u32) -> Self {
         MissingDataContractIdErrorWasm {
             raw_document_transition,
             code,

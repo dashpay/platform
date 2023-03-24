@@ -1,4 +1,4 @@
-use crate::utils::ToSerdeJSONExt;
+use crate::utils::{ToSerdeJSONExt, WithJsError};
 
 use std::convert::TryInto;
 use std::default::Default;
@@ -19,16 +19,17 @@ use crate::{
 };
 
 use crate::bls_adapter::{BlsAdapter, JsBlsAdapter};
-use crate::errors::from_dpp_err;
 
+use crate::errors::from_dpp_err;
+use dpp::platform_value::string_encoding;
+use dpp::platform_value::string_encoding::Encoding;
+use dpp::state_transition::StateTransitionConvert;
 use dpp::{
     identifier::Identifier,
     identity::state_transition::{
         asset_lock_proof::AssetLockProof, identity_topup_transition::IdentityTopUpTransition,
     },
     state_transition::StateTransitionLike,
-    util::string_encoding,
-    util::string_encoding::Encoding,
 };
 
 #[wasm_bindgen(js_name=IdentityTopUpTransition)]
@@ -51,7 +52,7 @@ impl From<IdentityTopUpTransitionWasm> for IdentityTopUpTransition {
 impl IdentityTopUpTransitionWasm {
     #[wasm_bindgen(constructor)]
     pub fn new(raw_parameters: JsValue) -> Result<IdentityTopUpTransitionWasm, JsValue> {
-        let raw_state_transition = raw_parameters.with_serde_to_json_value()?;
+        let raw_state_transition = raw_parameters.with_serde_to_platform_value()?;
 
         let identity_topup_transition =
             IdentityTopUpTransition::from_raw_object(raw_state_transition)
@@ -161,10 +162,26 @@ impl IdentityTopUpTransitionWasm {
         js_sys::Reflect::set(
             &js_object,
             &"identityId".to_owned().into(),
-            &Buffer::from_bytes(object.identity_id.buffer.as_slice()),
+            &Buffer::from_bytes(object.identity_id.to_buffer().as_slice()),
         )?;
 
         Ok(js_object.into())
+    }
+
+    #[wasm_bindgen(js_name=toBuffer)]
+    pub fn to_buffer(&self, options: JsValue) -> Result<JsValue, JsValue> {
+        let opts: super::to_object::ToObjectOptions = if options.is_object() {
+            with_js_error!(serde_wasm_bindgen::from_value(options))?
+        } else {
+            Default::default()
+        };
+
+        let buffer = self
+            .0
+            .to_buffer(opts.skip_signature.unwrap_or(false))
+            .map_err(from_dpp_err)?;
+
+        Ok(Buffer::from_bytes(&buffer).into())
     }
 
     #[wasm_bindgen(js_name=toJSON)]
@@ -268,7 +285,7 @@ impl IdentityTopUpTransitionWasm {
 
         self.0
             .sign_by_private_key(private_key.as_slice(), key_type, &bls_adapter)
-            .map_err(from_dpp_err)
+            .with_js_error()
     }
 
     #[wasm_bindgen(js_name=getSignature)]

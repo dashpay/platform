@@ -1,6 +1,5 @@
+use platform_value::Value;
 use std::sync::Arc;
-
-use serde_json::Value;
 
 use crate::errors::consensus::ConsensusError;
 use crate::identity::validation::{IdentityValidator, PublicKeysValidator, PUBLIC_KEY_SCHEMA};
@@ -31,14 +30,17 @@ pub mod protocol_version {
     use crate::assert_consensus_errors;
     use crate::consensus::ConsensusError;
     use crate::tests::identity::validation::identity_validator_spec::setup_test;
-    use crate::tests::utils::{serde_remove, serde_set};
 
     #[test]
     pub fn should_be_present() {
         let (mut identity, identity_validator) = setup_test();
-        identity = serde_remove(identity, "protocolVersion");
+        identity
+            .remove("protocolVersion")
+            .expect("expected to remove protocol version");
 
-        let result = identity_validator.validate_identity(&identity).unwrap();
+        let result = identity_validator
+            .validate_identity_object(&identity)
+            .unwrap();
 
         let errors = assert_consensus_errors!(&result, ConsensusError::JsonSchemaError, 1);
         let error = errors.first().unwrap();
@@ -57,9 +59,11 @@ pub mod protocol_version {
     #[test]
     pub fn should_be_an_integer() {
         let (mut identity, identity_validator) = setup_test();
-        identity = serde_set(identity, "protocolVersion", "1");
+        identity.set_into_value("protocolVersion", "1").unwrap();
 
-        let result = identity_validator.validate_identity(&identity).unwrap();
+        let result = identity_validator
+            .validate_identity_object(&identity)
+            .unwrap();
 
         let errors = assert_consensus_errors!(&result, ConsensusError::JsonSchemaError, 1);
         let error = errors.first().unwrap();
@@ -71,9 +75,11 @@ pub mod protocol_version {
     #[test]
     pub fn should_be_valid() {
         let (mut identity, identity_validator) = setup_test();
-        identity = serde_set(identity, "protocolVersion", -1);
+        identity.set_into_value("protocolVersion", -1i32).unwrap();
 
-        let result = identity_validator.validate_identity(&identity).unwrap();
+        let result = identity_validator
+            .validate_identity_object(&identity)
+            .unwrap();
 
         let errors = assert_consensus_errors!(&result, ConsensusError::JsonSchemaError, 1);
         let error = errors.first().unwrap();
@@ -85,19 +91,20 @@ pub mod protocol_version {
 
 pub mod id {
     use jsonschema::error::ValidationErrorKind;
-    use serde_json::Value;
+    use platform_value::Value;
 
     use crate::assert_consensus_errors;
     use crate::consensus::ConsensusError;
     use crate::tests::identity::validation::identity_validator_spec::setup_test;
-    use crate::tests::utils::{serde_remove, serde_set};
 
     #[test]
     pub fn should_be_present() {
         let (mut identity, identity_validator) = setup_test();
-        identity = serde_remove(identity, "id");
+        identity.remove("id").expect("expected to remove id");
 
-        let result = identity_validator.validate_identity(&identity).unwrap();
+        let result = identity_validator
+            .validate_identity_object(&identity)
+            .unwrap();
 
         let errors = assert_consensus_errors!(&result, ConsensusError::JsonSchemaError, 1);
         let error = errors.first().unwrap();
@@ -116,9 +123,13 @@ pub mod id {
     #[test]
     pub fn should_be_a_byte_array() {
         let (mut identity, identity_validator) = setup_test();
-        identity = serde_set(identity, "id", vec![Value::from("string"); 32]);
+        identity
+            .set_into_value("id", vec![Value::from("string"); 32])
+            .unwrap();
 
-        let result = identity_validator.validate_identity(&identity).unwrap();
+        let result = identity_validator
+            .validate_identity_object(&identity)
+            .unwrap();
         let errors = assert_consensus_errors!(&result, ConsensusError::JsonSchemaError, 32);
 
         for (i, err) in errors.iter().enumerate() {
@@ -130,9 +141,13 @@ pub mod id {
     #[test]
     pub fn should_not_be_less_than_32_bytes() {
         let (mut identity, identity_validator) = setup_test();
-        identity = serde_set(identity, "id", vec![Value::from(15); 31]);
+        identity
+            .set_into_value("id", vec![Value::from(15); 31])
+            .unwrap();
 
-        let result = identity_validator.validate_identity(&identity).unwrap();
+        let result = identity_validator
+            .validate_identity_object(&identity)
+            .unwrap();
 
         let errors = assert_consensus_errors!(&result, ConsensusError::JsonSchemaError, 1);
         let error = errors.first().unwrap();
@@ -144,9 +159,13 @@ pub mod id {
     #[test]
     pub fn should_not_be_more_than_32_bytes() {
         let (mut identity, identity_validator) = setup_test();
-        identity = serde_set(identity, "id", vec![Value::from(15); 33]);
+        identity
+            .set_into_value("id", vec![Value::from(15); 33])
+            .unwrap();
 
-        let result = identity_validator.validate_identity(&identity).unwrap();
+        let result = identity_validator
+            .validate_identity_object(&identity)
+            .unwrap();
 
         let errors = assert_consensus_errors!(&result, ConsensusError::JsonSchemaError, 1);
         let error = errors.first().unwrap();
@@ -162,14 +181,17 @@ pub mod balance {
     use crate::assert_consensus_errors;
     use crate::errors::consensus::ConsensusError;
     use crate::tests::identity::validation::identity_validator_spec::setup_test;
-    use crate::tests::utils::{serde_remove, serde_set};
 
     #[test]
     pub fn should_be_present() {
         let (mut identity, identity_validator) = setup_test();
-        identity = serde_remove(identity, "balance");
+        identity
+            .remove("balance")
+            .expect("expected to remove balance");
 
-        let result = identity_validator.validate_identity(&identity).unwrap();
+        let result = identity_validator
+            .validate_identity_object(&identity)
+            .unwrap();
 
         let errors = assert_consensus_errors!(&result, ConsensusError::JsonSchemaError, 1);
         let error = errors.first().unwrap();
@@ -188,9 +210,11 @@ pub mod balance {
     #[test]
     pub fn should_be_an_integer() {
         let (mut identity, identity_validator) = setup_test();
-        identity = serde_set(identity, "balance", 1.2);
+        identity.set_into_value("balance", 1.2).unwrap();
 
-        let result = identity_validator.validate_identity(&identity).unwrap();
+        let result = identity_validator
+            .validate_identity_object(&identity)
+            .unwrap();
 
         let errors = assert_consensus_errors!(&result, ConsensusError::JsonSchemaError, 1);
         let error = errors.first().unwrap();
@@ -202,9 +226,11 @@ pub mod balance {
     #[test]
     pub fn should_be_greater_or_equal_0() {
         let (mut identity, identity_validator) = setup_test();
-        identity = serde_set(identity, "balance", -1);
+        identity.set_into_value("balance", -1i64).unwrap();
 
-        let result = identity_validator.validate_identity(&identity).unwrap();
+        let result = identity_validator
+            .validate_identity_object(&identity)
+            .unwrap();
 
         let errors = assert_consensus_errors!(&result, ConsensusError::JsonSchemaError, 1);
         let error = errors.first().unwrap();
@@ -212,28 +238,32 @@ pub mod balance {
         assert_eq!(error.keyword().unwrap(), "minimum");
         assert_eq!(error.instance_path().to_string(), "/balance");
 
-        identity = serde_set(identity, "balance", 0);
-        let result = identity_validator.validate_identity(&identity).unwrap();
+        identity.set_into_value("balance", 0u64).unwrap();
+        let result = identity_validator
+            .validate_identity_object(&identity)
+            .unwrap();
 
         assert!(result.is_valid());
     }
 }
 
 pub mod public_keys {
-    use jsonschema::error::ValidationErrorKind;
-    use serde_json::Value;
-
     use crate::assert_consensus_errors;
     use crate::errors::consensus::ConsensusError;
     use crate::tests::identity::validation::identity_validator_spec::setup_test;
-    use crate::tests::utils::{serde_remove, serde_set};
+    use jsonschema::error::ValidationErrorKind;
+    use platform_value::Value;
 
     #[test]
     pub fn should_be_present() {
         let (mut identity, identity_validator) = setup_test();
-        identity = serde_remove(identity, "publicKeys");
+        identity
+            .remove("publicKeys")
+            .expect("expected to remove public keys");
 
-        let result = identity_validator.validate_identity(&identity).unwrap();
+        let result = identity_validator
+            .validate_identity_object(&identity)
+            .unwrap();
 
         let errors = assert_consensus_errors!(&result, ConsensusError::JsonSchemaError, 1);
         let error = errors.first().unwrap();
@@ -252,9 +282,11 @@ pub mod public_keys {
     #[test]
     pub fn should_be_an_array() {
         let (mut identity, identity_validator) = setup_test();
-        identity = serde_set(identity, "publicKeys", 1);
+        identity.set_into_value("publicKeys", 1u64).unwrap();
 
-        let result = identity_validator.validate_identity(&identity).unwrap();
+        let result = identity_validator
+            .validate_identity_object(&identity)
+            .unwrap();
 
         let errors = assert_consensus_errors!(&result, ConsensusError::JsonSchemaError, 1);
         let error = errors.first().unwrap();
@@ -266,9 +298,13 @@ pub mod public_keys {
     #[test]
     pub fn should_not_be_empty() {
         let (mut identity, identity_validator) = setup_test();
-        identity = serde_set(identity, "publicKeys", Value::Array(vec![]));
+        identity
+            .set_into_value("publicKeys", Value::Array(vec![]))
+            .unwrap();
 
-        let result = identity_validator.validate_identity(&identity).unwrap();
+        let result = identity_validator
+            .validate_identity_object(&identity)
+            .unwrap();
 
         let errors = assert_consensus_errors!(&result, ConsensusError::JsonSchemaError, 1);
         let error = errors.first().unwrap();
@@ -282,21 +318,22 @@ pub mod public_keys {
         let (mut identity, identity_validator) = setup_test();
 
         let public_key = identity
-            .get("publicKeys")
-            .unwrap()
-            .as_array()
+            .get_array_slice("publicKeys")
             .unwrap()
             .get(0)
             .unwrap()
             .clone();
 
-        identity = serde_set(
-            identity,
-            "publicKeys",
-            Value::Array(vec![public_key.clone(), public_key]),
-        );
+        identity
+            .set_into_value(
+                "publicKeys",
+                Value::Array(vec![public_key.clone(), public_key]),
+            )
+            .unwrap();
 
-        let result = identity_validator.validate_identity(&identity).unwrap();
+        let result = identity_validator
+            .validate_identity_object(&identity)
+            .unwrap();
 
         let errors = assert_consensus_errors!(&result, ConsensusError::JsonSchemaError, 1);
         let error = errors.first().unwrap();
@@ -310,17 +347,19 @@ pub mod public_keys {
         let (mut identity, identity_validator) = setup_test();
 
         let public_key = identity
-            .get("publicKeys")
-            .unwrap()
-            .as_array()
+            .get_array_slice("publicKeys")
             .unwrap()
             .get(0)
             .unwrap()
             .clone();
 
-        identity = serde_set(identity, "publicKeys", Value::Array(vec![public_key; 101]));
+        identity
+            .set_into_value("publicKeys", Value::Array(vec![public_key; 101]))
+            .unwrap();
 
-        let result = identity_validator.validate_identity(&identity).unwrap();
+        let result = identity_validator
+            .validate_identity_object(&identity)
+            .unwrap();
 
         let errors = assert_consensus_errors!(&result, ConsensusError::JsonSchemaError, 2);
         let error = errors.first().unwrap();
@@ -336,15 +375,18 @@ pub mod revision {
     use crate::assert_consensus_errors;
     use crate::errors::consensus::ConsensusError;
     use crate::tests::identity::validation::identity_validator_spec::setup_test;
-    use crate::tests::utils::{serde_remove, serde_set};
 
     // revision tests
     #[test]
     pub fn should_be_present() {
         let (mut identity, identity_validator) = setup_test();
-        identity = serde_remove(identity, "revision");
+        identity
+            .remove("protocolVersion")
+            .expect("expected to remove revision");
 
-        let result = identity_validator.validate_identity(&identity).unwrap();
+        let result = identity_validator
+            .validate_identity_object(&identity)
+            .unwrap();
 
         let errors = assert_consensus_errors!(&result, ConsensusError::JsonSchemaError, 1);
         let error = errors.first().unwrap();
@@ -354,7 +396,7 @@ pub mod revision {
 
         match error.kind() {
             ValidationErrorKind::Required { property } => {
-                assert_eq!(property.to_string(), "\"revision\"");
+                assert_eq!(property.to_string(), "\"protocolVersion\"");
             }
             _ => panic!("Expected to be missing property"),
         }
@@ -364,9 +406,11 @@ pub mod revision {
     pub fn should_be_an_integer() {
         let (mut identity, identity_validator) = setup_test();
 
-        identity = serde_set(identity, "revision", 1.2);
+        identity.set_into_value("revision", 1.2).unwrap();
 
-        let result = identity_validator.validate_identity(&identity).unwrap();
+        let result = identity_validator
+            .validate_identity_object(&identity)
+            .unwrap();
         let errors = assert_consensus_errors!(&result, ConsensusError::JsonSchemaError, 1);
 
         let error = errors
@@ -381,9 +425,11 @@ pub mod revision {
     pub fn should_should_be_greater_or_equal_0() {
         let (mut identity, identity_validator) = setup_test();
 
-        identity = serde_set(identity, "revision", -1);
+        identity.set_into_value("revision", -1i32).unwrap();
 
-        let result = identity_validator.validate_identity(&identity).unwrap();
+        let result = identity_validator
+            .validate_identity_object(&identity)
+            .unwrap();
         let errors = assert_consensus_errors!(&result, ConsensusError::JsonSchemaError, 1);
 
         let error = errors
@@ -393,9 +439,11 @@ pub mod revision {
         assert_eq!(error.keyword().unwrap(), "minimum");
         assert_eq!(error.instance_path().to_string(), "/revision");
 
-        identity = serde_set(identity, "revision", 0);
+        identity.set_into_value("revision", 0).unwrap();
 
-        let result = identity_validator.validate_identity(&identity).unwrap();
+        let result = identity_validator
+            .validate_identity_object(&identity)
+            .unwrap();
 
         assert!(result.is_valid());
     }
@@ -405,7 +453,9 @@ pub mod revision {
 pub fn should_return_valid_result_if_a_raw_identity_is_valid() {
     let (identity, identity_validator) = setup_test();
 
-    let result = identity_validator.validate_identity(&identity).unwrap();
+    let result = identity_validator
+        .validate_identity_object(&identity)
+        .unwrap();
     assert_consensus_errors!(&result, ConsensusError::JsonSchemaError, 0);
 
     assert!(result.is_valid());

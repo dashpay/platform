@@ -11,8 +11,8 @@ const InvalidMasternodeIdentityError = require('./errors/InvalidMasternodeIdenti
 function createMasternodeIdentityFactory(
   dpp,
   identityRepository,
-  getWithdrawPubKeyTypeFromPayoutScript,
-  getPublicKeyFromPayoutScript,
+  //getWithdrawPubKeyTypeFromPayoutScript,
+  //getPublicKeyFromPayoutScript,
   dppWasm,
 ) {
   /**
@@ -29,7 +29,7 @@ function createMasternodeIdentityFactory(
     identifier,
     pubKeyData,
     pubKeyType,
-    payoutScript,
+    // payoutScript,
   ) {
     const publicKeys = [{
       id: 0,
@@ -41,18 +41,19 @@ function createMasternodeIdentityFactory(
       data: Buffer.from(pubKeyData),
     }];
 
-    if (payoutScript) {
-      const withdrawPubKeyType = getWithdrawPubKeyTypeFromPayoutScript(payoutScript);
-
-      publicKeys.push({
-        id: 1,
-        type: withdrawPubKeyType,
-        purpose: dppWasm.KeyPurpose.WITHDRAW,
-        securityLevel: dppWasm.KeySecurityLevel.CRITICAL,
-        readOnly: false,
-        data: getPublicKeyFromPayoutScript(dppWasm, payoutScript, withdrawPubKeyType),
-      });
-    }
+    // TODO: Enable keys when we have support of non unique keys in DPP
+    // if (payoutScript) {
+    //   const withdrawPubKeyType = getWithdrawPubKeyTypeFromPayoutScript(payoutScript);
+    //
+    //   publicKeys.push({
+    //     id: 1,
+    //     type: withdrawPubKeyType,
+    //     purpose: IdentityPublicKey.PURPOSES.WITHDRAW,
+    //     securityLevel: IdentityPublicKey.SECURITY_LEVELS.CRITICAL,
+    //     readOnly: false,
+    //     data: getPublicKeyFromPayoutScript(payoutScript, withdrawPubKeyType),
+    //   });
+    // }
 
     const identity = new dppWasm.Identity({
       protocolVersion: dpp.getProtocolVersion(),

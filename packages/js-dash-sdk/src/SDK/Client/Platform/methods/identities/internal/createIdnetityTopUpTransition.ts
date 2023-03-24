@@ -23,19 +23,20 @@ export async function createIdentityTopUpTransition(
   const platform = this;
   await platform.initialize();
 
-  const { dpp } = platform;
+  const { wasmDpp } = platform;
 
   // @ts-ignore
-  const identityTopUpTransition = dpp.identity.createIdentityTopUpTransition(
+  const identityTopUpTransition = wasmDpp.identity.createIdentityTopUpTransition(
     identityId, assetLockProof,
   );
 
   await identityTopUpTransition
-    .signByPrivateKey(assetLockPrivateKey, IdentityPublicKey.TYPES.ECDSA_SECP256K1);
+    .signByPrivateKey(assetLockPrivateKey.toBuffer(), IdentityPublicKey.TYPES.ECDSA_SECP256K1);
 
-  const result = await dpp.stateTransition.validateBasic(identityTopUpTransition);
+  const result = await wasmDpp.stateTransition.validateBasic(identityTopUpTransition);
 
   if (!result.isValid()) {
+    // TODO(wasm): pretty print errors. JSON stringify is not handling wasm errors well
     throw new Error(`StateTransition is invalid - ${JSON.stringify(result.getErrors())}`);
   }
 

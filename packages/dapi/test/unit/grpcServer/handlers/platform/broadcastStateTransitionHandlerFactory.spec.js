@@ -13,8 +13,8 @@ const {
   },
 } = require('@dashevo/dapi-grpc');
 
-const DashPlatformProtocol = require('@dashevo/dpp');
-const getDataContractFixture = require('@dashevo/dpp/lib/test/fixtures/getDataContractFixture');
+const { default: loadWasmDpp } = require('@dashevo/wasm-dpp');
+const getDataContractFixture = require('@dashevo/wasm-dpp/lib/test/fixtures/getDataContractFixture');
 
 const GrpcErrorCodes = require('@dashevo/grpc-common/lib/server/error/GrpcErrorCodes');
 const NotFoundGrpcError = require('@dashevo/grpc-common/lib/server/error/NotFoundGrpcError');
@@ -34,12 +34,16 @@ describe('broadcastStateTransitionHandlerFactory', () => {
   let log;
   let code;
   let createGrpcErrorFromDriveResponseMock;
+  let DashPlatformProtocol;
+
+  before(async () => {
+    ({ DashPlatformProtocol } = await loadWasmDpp());
+  });
 
   beforeEach(async function beforeEach() {
-    const dpp = new DashPlatformProtocol();
-    await dpp.initialize();
+    const dpp = new DashPlatformProtocol({}, null, null);
 
-    const dataContractFixture = getDataContractFixture();
+    const dataContractFixture = await getDataContractFixture();
     stateTransitionFixture = dpp.dataContract.createDataContractCreateTransition(
       dataContractFixture,
     );

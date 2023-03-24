@@ -56,12 +56,12 @@ impl ChainAssetLockProofStructureValidatorWasm {
         raw_asset_lock_proof: JsValue,
         execution_context: &StateTransitionExecutionContextWasm,
     ) -> Result<ValidationResultWasm, JsValue> {
-        let asset_lock_proof_json = raw_asset_lock_proof.with_serde_to_json_value()?;
+        let asset_lock_proof_object = raw_asset_lock_proof.with_serde_to_platform_value()?;
 
         let context: &StateTransitionExecutionContext = execution_context.into();
         let validation_result = self
             .0
-            .validate(&asset_lock_proof_json, context)
+            .validate(&asset_lock_proof_object, context)
             .await
             .map_err(|e| from_dpp_err(e.into()))?;
 

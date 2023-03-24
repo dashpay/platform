@@ -1,4 +1,3 @@
-use serde_json::Value as JsonValue;
 use thiserror::Error;
 
 use crate::consensus::basic::state_transition::InvalidStateTransitionTypeError;
@@ -17,7 +16,8 @@ use crate::{
     CompatibleProtocolVersionIsNotDefinedError, DashPlatformProtocolInitError, NonConsensusError,
     SerdeParsingError,
 };
-use platform_value::Error as ValueError;
+
+use platform_value::{Error as ValueError, Value};
 
 #[derive(Error, Debug)]
 pub enum ProtocolError {
@@ -38,6 +38,8 @@ pub enum ProtocolError {
     DecodingError(String),
     #[error("File not found Error - {0}")]
     FileNotFound(String),
+    #[error("unknown protocol version error {0}")]
+    UnknownProtocolVersionError(String),
     #[error("Not included or invalid protocol version")]
     NoProtocolVersionError,
     #[error("Parsing error: {0}")]
@@ -131,7 +133,7 @@ pub enum ProtocolError {
     #[error("Invalid Identity: {errors:?}")]
     InvalidIdentityError {
         errors: Vec<ConsensusError>,
-        raw_identity: JsonValue,
+        raw_identity: Value,
     },
 
     #[error("Public key generation error {0}")]

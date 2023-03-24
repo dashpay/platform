@@ -7,6 +7,7 @@ use dashcore::InstantLock;
 use mockall::{automock, predicate::*};
 use serde_json::Value as JsonValue;
 
+use crate::document::Document;
 use crate::identity::KeyID;
 use crate::{
     prelude::*,
@@ -32,12 +33,14 @@ pub struct FetchTransactionResponse {
     type FetchIdentity=Identity;
     type FetchTransaction=FetchTransactionResponse;
     type FetchDocument=Document;
+    type FetchExtendedDocument=ExtendedDocument;
 ))]
 #[async_trait(?Send)]
 pub trait StateRepositoryLike: Sync {
     type ConversionError: Into<ProtocolError>;
     type FetchDataContract: TryInto<DataContract, Error = Self::ConversionError> + Send;
     type FetchDocument: TryInto<Document, Error = Self::ConversionError>;
+    type FetchExtendedDocument: TryInto<ExtendedDocument, Error = Self::ConversionError>;
     type FetchIdentity: TryInto<Identity, Error = Self::ConversionError>;
     type FetchTransaction: TryInto<FetchTransactionResponse, Error = Self::ConversionError>
         + Send
@@ -68,17 +71,27 @@ pub trait StateRepositoryLike: Sync {
         execution_context: &StateTransitionExecutionContext,
     ) -> AnyResult<Vec<Self::FetchDocument>>;
 
+    /// Fetch Documents by Data Contract Id and type
+    /// By default, the method should return data as bytes (`Vec<u8>`), but the deserialization to [`ExtendedDocument`] should be also possible
+    async fn fetch_extended_documents(
+        &self,
+        contract_id: &Identifier,
+        data_contract_type: &str,
+        where_query: JsonValue,
+        execution_context: &StateTransitionExecutionContext,
+    ) -> AnyResult<Vec<Self::FetchExtendedDocument>>;
+
     /// Create Document
     async fn create_document(
         &self,
-        document: &Document,
+        document: &ExtendedDocument,
         execution_context: &StateTransitionExecutionContext,
     ) -> AnyResult<()>;
 
     /// Update Document
     async fn update_document(
         &self,
-        document: &Document,
+        document: &ExtendedDocument,
         execution_context: &StateTransitionExecutionContext,
     ) -> AnyResult<()>;
 

@@ -61,6 +61,7 @@ use crate::errors::consensus::state::identity::{
     InvalidIdentityPublicKeyIdErrorWasm, InvalidIdentityRevisionErrorWasm,
     MaxIdentityPublicKeyLimitReachedErrorWasm,
 };
+use crate::errors::value_error::PlatformValueErrorWasm;
 use dpp::errors::DataTriggerError;
 
 use super::consensus::basic::data_contract::{
@@ -190,6 +191,9 @@ pub fn from_consensus_error_ref(e: &DPPConsensusError) -> JsValue {
         DPPConsensusError::SignatureError(e) => from_signature_error(e),
         DPPConsensusError::StateError(state_error) => from_state_error(state_error),
         DPPConsensusError::BasicError(basic_error) => from_basic_error(basic_error),
+        DPPConsensusError::ValueError(value_error) => {
+            PlatformValueErrorWasm::new(value_error.clone()).into()
+        }
     }
 }
 

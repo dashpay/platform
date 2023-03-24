@@ -1,11 +1,12 @@
 use dpp::DashPlatformProtocolInitError;
-
 use wasm_bindgen::JsValue;
 
 use dpp::errors::ProtocolError;
 
 use crate::data_contract::errors::from_data_contract_to_js_error;
 use crate::document::errors::from_document_to_js_error;
+use crate::errors::value_error::PlatformValueErrorWasm;
+use crate::identifier::errors::IdentifierErrorWasm;
 
 use super::consensus_error::from_consensus_error;
 use super::data_contract_not_present_error::DataContractNotPresentNotConsensusErrorWasm;
@@ -30,6 +31,8 @@ pub fn from_dpp_err(pe: ProtocolError) -> JsValue {
         ProtocolError::DataContractNotPresentError(err) => {
             DataContractNotPresentNotConsensusErrorWasm::new(err.data_contract_id()).into()
         }
+        ProtocolError::ValueError(value_error) => PlatformValueErrorWasm::new(value_error).into(),
+        ProtocolError::IdentifierError(err) => IdentifierErrorWasm::new(err).into(),
         _ => JsValue::from_str(&format!("Error conversion not implemented: {pe:#}",)),
     }
 }

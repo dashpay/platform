@@ -1,4 +1,5 @@
 use integer_encoding::VarIntWriter;
+use serde::ser;
 
 use crate::errors::ProtocolError;
 
@@ -6,8 +7,8 @@ use crate::errors::ProtocolError;
 
 pub const MAX_ENCODED_KBYTE_LENGTH: usize = 16;
 
-pub fn value_to_cbor(
-    value: serde_json::Value,
+pub fn serializable_value_to_cbor<T: ?Sized + ser::Serialize>(
+    value: &T,
     protocol_version: Option<u32>,
 ) -> Result<Vec<u8>, ProtocolError> {
     let mut buffer: Vec<u8> = Vec::new();
@@ -18,7 +19,7 @@ pub fn value_to_cbor(
     }
     let size_with_protocol = buffer.len();
 
-    ciborium::ser::into_writer(&value, &mut buffer)
+    ciborium::ser::into_writer(value, &mut buffer)
         .map_err(|e| ProtocolError::EncodingError(e.to_string()))?;
 
     if (buffer.len() - size_with_protocol) >= MAX_ENCODED_KBYTE_LENGTH * 1024 {

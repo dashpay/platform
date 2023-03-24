@@ -118,7 +118,7 @@ impl Drive {
 
         // We insert the identity tree
         let inserted = self.batch_insert_empty_tree_if_not_exists(
-            PathFixedSizeKey((identity_tree_path, id.to_buffer_vec())),
+            PathFixedSizeKey((identity_tree_path, id.to_vec())),
             Some(&storage_flags),
             apply_type,
             transaction,
@@ -190,7 +190,7 @@ mod tests {
             .expect("expected to insert identity");
 
         let fetched_identity = drive
-            .fetch_full_identity(identity.id.buffer, Some(&transaction))
+            .fetch_full_identity(identity.id.to_buffer(), Some(&transaction))
             .expect("should fetch an identity")
             .expect("should have an identity");
 

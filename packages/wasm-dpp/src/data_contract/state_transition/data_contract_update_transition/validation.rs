@@ -1,6 +1,8 @@
 use std::{collections::BTreeMap, sync::Arc};
 
-use dpp::validation::AsyncDataValidatorWithContext;
+use dpp::data_contract::state_transition::data_contract_update_transition::DataContractUpdateTransition;
+
+use dpp::validation::{AsyncDataValidatorWithContext, SimpleValidationResult};
 use dpp::{
     data_contract::state_transition::data_contract_update_transition::validation::{
         basic::{
@@ -9,13 +11,15 @@ use dpp::{
         },
         state::validate_data_contract_update_transition_state::validate_data_contract_update_transition_state as dpp_validate_data_contract_update_transition_state,
     },
+    platform_value,
     version::ProtocolVersionValidator,
 };
 use wasm_bindgen::prelude::*;
 
+use crate::utils::WithJsError;
 use crate::{
     data_contract::state_transition::data_contract_update_transition::DataContractUpdateTransitionParameters,
-    errors::{from_dpp_err, protocol_error::from_protocol_error},
+    errors::protocol_error::from_protocol_error,
     state_repository::{ExternalStateRepositoryLike, ExternalStateRepositoryLikeWrapper},
     validation::ValidationResultWasm,
     DataContractUpdateTransitionWasm, StateTransitionExecutionContextWasm,
@@ -32,7 +36,7 @@ pub async fn validate_data_contract_update_transition_state(
         &state_transition.into(),
     )
     .await
-    .map_err(from_dpp_err)?;
+    .with_js_error()?;
 
     Ok(result.map(|_| JsValue::undefined()).into())
 }
@@ -65,18 +69,24 @@ pub async fn validate_data_contract_update_transition_basic(
     let parameters: DataContractUpdateTransitionParameters =
         serde_wasm_bindgen::from_value(raw_parameters)?;
 
+    let mut value = platform_value::to_value(&parameters)?;
+    let mut validation_result = SimpleValidationResult::default();
+    if let Some(err) = DataContractUpdateTransition::clean_value(&mut value).err() {
+        validation_result.add_error(err);
+        return Ok(validation_result.map(|_| JsValue::undefined()).into());
+    }
+
     let validator: DataContractUpdateTransitionBasicValidator<ExternalStateRepositoryLikeWrapper> =
         DataContractUpdateTransitionBasicValidator::new(
             Arc::new(ExternalStateRepositoryLikeWrapper::new(state_repository)),
             Arc::new(ProtocolVersionValidator::default()),
         )?;
 
-    let validation_result = validator
-        .validate(
-            &serde_json::to_value(&parameters)?,
-            &execution_context.into(),
-        )
-        .await?;
+    validation_result.merge(
+        validator
+            .validate(&value, &execution_context.into())
+            .await?,
+    );
 
     Ok(validation_result.map(|_| JsValue::undefined()).into())
 }

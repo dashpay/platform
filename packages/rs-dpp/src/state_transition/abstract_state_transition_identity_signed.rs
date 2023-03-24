@@ -43,7 +43,7 @@ where
 
                 if public_key_compressed.to_vec() != identity_public_key.data {
                     return Err(ProtocolError::InvalidSignaturePublicKeyError(
-                        InvalidSignaturePublicKeyError::new(identity_public_key.data.to_owned()),
+                        InvalidSignaturePublicKeyError::new(identity_public_key.data.to_vec()),
                     ));
                 }
 
@@ -55,7 +55,7 @@ where
 
                 if pub_key_hash != identity_public_key.data {
                     return Err(ProtocolError::InvalidSignaturePublicKeyError(
-                        InvalidSignaturePublicKeyError::new(identity_public_key.data.to_owned()),
+                        InvalidSignaturePublicKeyError::new(identity_public_key.data.to_vec()),
                     ));
                 }
                 self.sign_by_private_key(private_key, identity_public_key.key_type, bls)
@@ -65,7 +65,7 @@ where
 
                 if public_key != identity_public_key.data {
                     return Err(ProtocolError::InvalidSignaturePublicKeyError(
-                        InvalidSignaturePublicKeyError::new(identity_public_key.data.to_owned()),
+                        InvalidSignaturePublicKeyError::new(identity_public_key.data.to_vec()),
                     ));
                 }
                 self.sign_by_private_key(private_key, identity_public_key.key_type, bls)
@@ -187,13 +187,13 @@ pub fn get_compressed_public_ec_key(private_key: &[u8]) -> Result<[u8; 33], Prot
 mod test {
     use bls_signatures::Serialize as BlsSerialize;
     use chrono::Utc;
+    use platform_value::{BinaryData, Value};
     use serde::{Deserialize, Serialize};
     use serde_json::json;
     use std::convert::TryInto;
 
     use crate::document::DocumentsBatchTransition;
     use crate::state_transition::state_transition_execution_context::StateTransitionExecutionContext;
-    use crate::util::string_encoding::Encoding;
     use crate::{
         assert_error_contains,
         identity::{KeyID, SecurityLevel},
@@ -203,6 +203,7 @@ mod test {
         util::hash::ripemd160_sha256,
         NativeBlsModule,
     };
+    use platform_value::string_encoding::Encoding;
 
     use super::StateTransitionIdentitySigned;
     use super::*;
@@ -211,7 +212,7 @@ mod test {
     #[serde(rename_all = "camelCase")]
     struct ExampleStateTransition {
         pub protocol_version: u32,
-        pub signature: Vec<u8>,
+        pub signature: BinaryData,
         pub signature_public_key_id: KeyID,
         pub transition_type: StateTransitionType,
         pub owner_id: Identifier,
@@ -229,6 +230,10 @@ mod test {
         fn signature_property_paths() -> Vec<&'static str> {
             vec!["signature", "signaturePublicKeyId"]
         }
+
+        fn to_cleaned_object(&self, _skip_signature: bool) -> Result<Value, ProtocolError> {
+            todo!()
+        }
     }
 
     impl From<ExampleStateTransition> for StateTransition {
@@ -245,10 +250,10 @@ mod test {
         fn get_type(&self) -> StateTransitionType {
             StateTransitionType::DocumentsBatch
         }
-        fn get_signature(&self) -> &Vec<u8> {
+        fn get_signature(&self) -> &BinaryData {
             &self.signature
         }
-        fn set_signature(&mut self, signature: Vec<u8>) {
+        fn set_signature(&mut self, signature: BinaryData) {
             self.signature = signature
         }
         fn get_execution_context(&self) -> &StateTransitionExecutionContext {
@@ -261,6 +266,10 @@ mod test {
 
         fn set_execution_context(&mut self, execution_context: StateTransitionExecutionContext) {
             self.execution_context = execution_context
+        }
+
+        fn set_signature_bytes(&mut self, signature: Vec<u8>) {
+            self.signature = BinaryData::new(signature)
         }
 
         fn get_modified_data_ids(&self) -> Vec<Identifier> {
@@ -333,7 +342,7 @@ mod test {
             key_type: KeyType::ECDSA_SECP256K1,
             purpose: Purpose::AUTHENTICATION,
             security_level: SecurityLevel::HIGH,
-            data: ec_public_compressed_bytes.try_into().unwrap(),
+            data: BinaryData::new(ec_public_compressed_bytes.try_into().unwrap()),
             read_only: false,
             disabled_at: None,
         };
@@ -354,10 +363,15 @@ mod test {
         let st = get_mock_state_transition();
         let st_object = st.to_object(false).unwrap();
 
-        assert_eq!(st_object["protocolVersion"].as_i64().unwrap(), 1);
-        assert_eq!(st_object["transitionType"].as_u64().unwrap(), 1);
-        assert_eq!(st_object["signaturePublicKeyId"].as_u64().unwrap(), 1);
-        assert!(st_object["signature"].as_array().unwrap().is_empty());
+        assert_eq!(st_object["protocolVersion"].to_integer::<u32>().unwrap(), 1);
+        assert_eq!(st_object["transitionType"].to_integer::<u8>().unwrap(), 1);
+        assert_eq!(
+            st_object["signaturePublicKeyId"]
+                .to_integer::<u32>()
+                .unwrap(),
+            1
+        );
+        assert!(st_object["signature"].as_bytes().unwrap().is_empty());
     }
 
     #[test]
@@ -365,10 +379,10 @@ mod test {
         let st = get_mock_state_transition();
         let st_object = st.to_object(true).unwrap();
 
-        assert_eq!(st_object["protocolVersion"].as_i64().unwrap(), 1);
-        assert_eq!(st_object["transitionType"].as_u64().unwrap(), 1);
-        assert!(st_object.get("signaturePublicKeyId").is_none());
-        assert!(st_object.get("signature").is_none());
+        assert_eq!(st_object["protocolVersion"].to_integer::<u32>().unwrap(), 1);
+        assert_eq!(st_object["transitionType"].to_integer::<u8>().unwrap(), 1);
+        assert!(!st_object.has("signaturePublicKeyId").unwrap());
+        assert!(!st_object.has("signature").unwrap());
     }
 
     #[test]
@@ -392,7 +406,7 @@ mod test {
         let st = get_mock_state_transition();
         let hash = st.hash(false).unwrap();
         assert_eq!(
-            "b067b5f84b748080684f3b203b07227a3b2db9f745815e3449113ac9e5619523",
+            "208afc16722df887c6e2935d1a0c13c56c5a91318beec4089cad6919be18debc",
             hex::encode(hash)
         )
     }
@@ -403,8 +417,7 @@ mod test {
         let hash = st.to_buffer(false).unwrap();
         let result = hex::encode(hash);
 
-        assert_eq!(210, result.len());
-        assert!(result.starts_with("01"))
+        assert_eq!("01a4676f776e6572496458208d6e06cac6cd2c4b9020806a3f1a4ec48fc90defd314330a5ce7d8548dfc2524697369676e617475726540747369676e61747572655075626c69634b65794964016e7472616e736974696f6e5479706501", result.as_str());
     }
 
     #[test]
@@ -413,7 +426,7 @@ mod test {
         let hash = st.to_buffer(true).unwrap();
         let result = hex::encode(hash);
 
-        assert_eq!("01a26e7472616e736974696f6e5479706501676f776e65724964782c4158356f323241525746595a45394a5a5441355353657976707274657442637662514c53425a376352374777", result);
+        assert_eq!("01a2676f776e6572496458208d6e06cac6cd2c4b9020806a3f1a4ec48fc90defd314330a5ce7d8548dfc25246e7472616e736974696f6e5479706501", result);
     }
 
     #[test]
@@ -441,7 +454,8 @@ mod test {
         let mut st = get_mock_state_transition();
         let mut keys = get_test_keys();
         keys.identity_public_key.key_type = KeyType::ECDSA_HASH160;
-        keys.identity_public_key.data = ripemd160_sha256(&keys.identity_public_key.data);
+        keys.identity_public_key.data =
+            BinaryData::new(ripemd160_sha256(keys.identity_public_key.data.as_slice()));
 
         st.sign(&keys.identity_public_key, &keys.ec_private, &bls)
             .unwrap();
@@ -459,7 +473,7 @@ mod test {
         let mut rng = dashcore::secp256k1::rand::thread_rng();
         let (_, public_key) = secp.generate_keypair(&mut rng);
 
-        keys.identity_public_key.data = public_key.serialize().to_vec();
+        keys.identity_public_key.data = BinaryData::new(public_key.serialize().to_vec());
 
         let sign_result = st.sign(&keys.identity_public_key, &keys.ec_private, &bls);
         assert_error_contains!(sign_result, "Invalid signature public key");
@@ -513,7 +527,7 @@ mod test {
         let mut st = get_mock_state_transition();
         let mut keys = get_test_keys();
         keys.identity_public_key.key_type = KeyType::BLS12_381;
-        keys.identity_public_key.data = keys.bls_public.clone();
+        keys.identity_public_key.data = BinaryData::new(keys.bls_public.clone());
 
         st.sign(&keys.identity_public_key, &keys.bls_private, &bls)
             .expect("validation should be successful");
@@ -542,7 +556,7 @@ mod test {
         let st = get_mock_state_transition();
         let mut keys = get_test_keys();
         keys.identity_public_key.key_type = KeyType::BLS12_381;
-        keys.identity_public_key.data = keys.bls_public.clone();
+        keys.identity_public_key.data = BinaryData::new(keys.bls_public.clone());
 
         let verify_error = st
             .verify_signature(&keys.identity_public_key, &bls)
@@ -559,8 +573,8 @@ mod test {
     fn set_signature() {
         let mut st = get_mock_state_transition();
         let signature = "some_signature";
-        st.set_signature(signature.as_bytes().to_owned());
-        assert_eq!(signature.as_bytes(), st.get_signature());
+        st.set_signature(BinaryData::new(signature.as_bytes().to_owned()));
+        assert_eq!(signature.as_bytes(), st.get_signature().as_slice());
     }
 
     #[test]

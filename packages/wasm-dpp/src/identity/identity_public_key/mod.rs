@@ -1,12 +1,14 @@
 use dpp::dashcore::anyhow;
+use dpp::document::document_transition::document_base_transition::JsonValue;
 pub use serde::{Deserialize, Serialize};
 use std::convert::{TryFrom, TryInto};
 use wasm_bindgen::prelude::*;
 
-use crate::errors::from_dpp_err;
-use crate::utils::Inner;
-use crate::{buffer::Buffer, utils};
+use crate::utils::{Inner, WithJsError};
+use crate::{buffer::Buffer, utils, with_js_error};
 use dpp::identity::{IdentityPublicKey, KeyID};
+use dpp::platform_value::BinaryData;
+use dpp::Convertible;
 
 mod purpose;
 pub use purpose::*;
@@ -16,6 +18,7 @@ pub use security_level::*;
 
 mod key_type;
 
+use crate::errors::from_dpp_err;
 pub use key_type::*;
 
 #[wasm_bindgen(js_name=IdentityPublicKey)]
@@ -27,10 +30,11 @@ impl IdentityPublicKeyWasm {
     #[wasm_bindgen(constructor)]
     pub fn new(raw_public_key: JsValue) -> Result<IdentityPublicKeyWasm, JsValue> {
         let data_string = utils::stringify(&raw_public_key)?;
-        let pk: IdentityPublicKeyWasm =
-            serde_json::from_str(&data_string).map_err(|e| e.to_string())?;
+        let value: JsonValue = serde_json::from_str(&data_string).map_err(|e| e.to_string())?;
 
-        Ok(pk)
+        let pk = IdentityPublicKey::from_json_object(value).with_js_error()?;
+
+        Ok(IdentityPublicKeyWasm(pk))
     }
 
     #[wasm_bindgen(js_name=getId)]
@@ -58,13 +62,13 @@ impl IdentityPublicKeyWasm {
 
     #[wasm_bindgen(js_name=setData)]
     pub fn set_data(&mut self, data: Vec<u8>) -> Result<(), JsValue> {
-        self.0.data = data;
+        self.0.data = BinaryData::new(data);
         Ok(())
     }
 
     #[wasm_bindgen(js_name=getData)]
     pub fn get_data(&self) -> Vec<u8> {
-        self.0.data.clone()
+        self.0.data.to_vec()
     }
 
     #[wasm_bindgen(js_name=setPurpose)]
@@ -116,7 +120,7 @@ impl IdentityPublicKeyWasm {
 
     #[wasm_bindgen(js_name=hash)]
     pub fn hash(&self) -> Result<Vec<u8>, JsValue> {
-        self.0.hash().map_err(from_dpp_err)
+        self.0.hash().with_js_error()
     }
 
     #[wasm_bindgen(js_name=isMaster)]
@@ -126,22 +130,19 @@ impl IdentityPublicKeyWasm {
 
     #[wasm_bindgen(js_name=toJSON)]
     pub fn to_json(&self) -> Result<JsValue, JsValue> {
-        let val = self.0.to_json().map_err(|e| from_dpp_err(e.into()))?;
+        let val = self.0.to_json().map_err(from_dpp_err)?;
         let json = val.to_string();
         js_sys::JSON::parse(&json)
     }
 
     #[wasm_bindgen(js_name=toObject)]
     pub fn to_object(&self) -> Result<JsValue, JsValue> {
-        let val = self
-            .0
-            .to_raw_json_object()
-            .map_err(|e| from_dpp_err(e.into()))?;
+        let value = self.0.to_cleaned_object().with_js_error()?;
 
         let data_buffer = Buffer::from_bytes(self.0.data.as_slice());
 
-        let json = val.to_string();
-        let js_object = js_sys::JSON::parse(&json)?;
+        let serializer = serde_wasm_bindgen::Serializer::json_compatible();
+        let js_object = with_js_error!(value.serialize(&serializer))?;
 
         js_sys::Reflect::set(
             &js_object,
@@ -187,9 +188,7 @@ impl TryFrom<JsValue> for IdentityPublicKeyWasm {
     fn try_from(value: JsValue) -> Result<Self, Self::Error> {
         let str = String::from(js_sys::JSON::stringify(&value)?);
         let val = serde_json::from_str(&str).map_err(|e| from_dpp_err(e.into()))?;
-        Ok(Self(
-            IdentityPublicKey::from_raw_object(val).map_err(from_dpp_err)?,
-        ))
+        Ok(Self(IdentityPublicKey::from_value(val).with_js_error()?))
     }
 }
 

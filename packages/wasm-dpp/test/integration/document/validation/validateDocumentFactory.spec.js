@@ -72,7 +72,7 @@ describe('validateDocumentFactory', () => {
           documentValidator.validate(rawDocument, dataContract);
         } catch (e) {
           // TODO - fix error when conversion errors are enabled
-          expect(e).to.equal('Error conversion not implemented: unable convert -1 to u64');
+          expect(e.getMessage()).to.equal('integer out of bounds');
         }
       });
     });
@@ -149,7 +149,7 @@ describe('validateDocumentFactory', () => {
         } catch (e) {
           // TODO - fix error when conversion errors are enabled
           // expect(error.getCode()).to.equal(1028);
-          expect(e).to.startsWith("the property '$type' doesn't exist");
+          expect(e.getMessage()).to.be.equal('structure error: $type not found in map');
         }
       });
 

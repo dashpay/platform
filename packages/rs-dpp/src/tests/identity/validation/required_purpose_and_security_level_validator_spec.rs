@@ -1,38 +1,37 @@
-use crate::{
-    identity::{
-        validation::{RequiredPurposeAndSecurityLevelValidator, TPublicKeysValidator},
-        KeyType, Purpose, SecurityLevel,
-    },
-    util::string_encoding::{decode, Encoding},
+use crate::identity::{
+    validation::{RequiredPurposeAndSecurityLevelValidator, TPublicKeysValidator},
+    KeyType, Purpose, SecurityLevel,
 };
-use serde_json::json;
+use platform_value::platform_value;
+use platform_value::string_encoding::{decode, Encoding};
+use platform_value::BinaryData;
 
 #[test]
 fn should_return_invalid_result_if_state_transition_does_not_contain_master_key() {
     let validator = RequiredPurposeAndSecurityLevelValidator {};
     let raw_public_keys = vec![
-        json!({
-                    "id": 0,
-                    "type" : KeyType::ECDSA_SECP256K1,
-                    "purpose" : Purpose::AUTHENTICATION,
-                    "securityLevel"  : SecurityLevel::CRITICAL,
-                    "data": decode("AuryIuMtRrl/VviQuyLD1l4nmxi9ogPzC9LT7tdpo0di", Encoding::Base64).unwrap(),
+        platform_value!({
+                    "id": 0u32,
+                    "type" : KeyType::ECDSA_SECP256K1 as u8,
+                    "purpose" : Purpose::AUTHENTICATION as u8,
+                    "securityLevel"  : SecurityLevel::CRITICAL as u8,
+                    "data": BinaryData::new(decode("AuryIuMtRrl/VviQuyLD1l4nmxi9ogPzC9LT7tdpo0di", Encoding::Base64).unwrap()),
                     "readOnly" : false,
         }),
         // this key must be filtered out
-        json!({
-                    "id": 0,
-                    "type" : KeyType::ECDSA_SECP256K1,
-                    "purpose": Purpose::AUTHENTICATION,
-                    "securityLevel" : SecurityLevel::CRITICAL,
+        platform_value!({
+                    "id": 0u32,
+                    "type" : KeyType::ECDSA_SECP256K1 as u8,
+                    "purpose": Purpose::AUTHENTICATION as u8,
+                    "securityLevel" : SecurityLevel::CRITICAL as u8,
                     "disabledAt" : 42,
-                    "data": decode("AuryIuMtRrl/VviQuyLD1l4nmxi9ogPzC9LT7tdpo0di", Encoding::Base64).unwrap(),
+                    "data": BinaryData::new(decode("AuryIuMtRrl/VviQuyLD1l4nmxi9ogPzC9LT7tdpo0di", Encoding::Base64).unwrap()),
                     "readOnly" : false,
         }),
     ];
 
     let result = validator
-        .validate_keys(&raw_public_keys)
+        .validate_keys(raw_public_keys.as_slice())
         .expect("validation result should be returned");
 
     assert!(matches!(
@@ -46,22 +45,22 @@ fn should_return_invalid_result_if_state_transition_does_not_contain_master_key(
 fn should_return_valid_result() {
     let validator = RequiredPurposeAndSecurityLevelValidator {};
     let raw_public_keys = vec![
-        json!({
-                    "id": 0,
-                    "type" : KeyType::ECDSA_SECP256K1,
-                    "purpose" : Purpose::AUTHENTICATION,
-                    "securityLevel"  : SecurityLevel::MASTER,
-                    "data": decode("AuryIuMtRrl/VviQuyLD1l4nmxi9ogPzC9LT7tdpo0di", Encoding::Base64).unwrap(),
+        platform_value!({
+                    "id": 0u32,
+                    "type" : KeyType::ECDSA_SECP256K1 as u8,
+                    "purpose" : Purpose::AUTHENTICATION as u8,
+                    "securityLevel"  : SecurityLevel::MASTER as u8,
+                    "data": BinaryData::new(decode("AuryIuMtRrl/VviQuyLD1l4nmxi9ogPzC9LT7tdpo0di", Encoding::Base64).unwrap()),
                     "readOnly" : false,
         }),
         // this key must be filtered out
-        json!({
-                    "id": 0,
-                    "type" : KeyType::ECDSA_SECP256K1,
-                    "purpose": Purpose::AUTHENTICATION,
-                    "securityLevel" : SecurityLevel::CRITICAL,
-                    "disabledAt" : 42,
-                    "data": decode("AuryIuMtRrl/VviQuyLD1l4nmxi9ogPzC9LT7tdpo0di", Encoding::Base64).unwrap(),
+        platform_value!({
+                    "id": 0u32,
+                    "type" : KeyType::ECDSA_SECP256K1 as u8,
+                    "purpose": Purpose::AUTHENTICATION as u8,
+                    "securityLevel" : SecurityLevel::CRITICAL as u8,
+                    "disabledAt" : 42u64,
+                    "data": BinaryData::new(decode("AuryIuMtRrl/VviQuyLD1l4nmxi9ogPzC9LT7tdpo0di", Encoding::Base64).unwrap()),
                     "readOnly" : false,
         }),
     ];

@@ -49,7 +49,7 @@ pub mod prelude {
     pub use crate::data_contract::DataContract;
     pub use crate::data_trigger::DataTrigger;
     pub use crate::document::document_transition::DocumentTransition;
-    pub use crate::document::Document;
+    pub use crate::document::ExtendedDocument;
     pub use crate::errors::ProtocolError;
     pub use crate::identifier::Identifier;
     pub use crate::identity::Identity;

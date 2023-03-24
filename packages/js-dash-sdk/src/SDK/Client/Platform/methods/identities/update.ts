@@ -21,14 +21,20 @@ export async function update(
   publicKeys: { add?: IdentityPublicKey[]; disable?: IdentityPublicKey[] },
   privateKeys: { string, any },
 ): Promise<any> {
+  this.logger.debug(`[Identity#update] Update identity ${identity.getId().toString()}`, {
+    addKeys: publicKeys.add ? publicKeys.add.length : 0,
+    disableKeys: publicKeys.disable ? publicKeys.disable.map((key) => key.getId()).join(', ') : 'none',
+  });
   await this.initialize();
 
-  const { dpp } = this;
+  const { wasmDpp } = this;
 
-  const identityUpdateTransition = dpp.identity.createIdentityUpdateTransition(
+  const identityUpdateTransition = wasmDpp.identity.createIdentityUpdateTransition(
     identity,
     publicKeys,
   );
+
+  this.logger.silly('[Identity#update] Created IdentityUpdateTransition');
 
   const signerKeyIndex = 0;
 
@@ -41,6 +47,7 @@ export async function update(
 
     const starterPromise = Promise.resolve(null);
 
+    const updatedPublicKeys: any[] = [];
     await identityUpdateTransition.getPublicKeysToAdd().reduce(
       (previousPromise, publicKey) => previousPromise.then(async () => {
         const privateKey = privateKeys[publicKey.getId()];
@@ -51,27 +58,38 @@ export async function update(
 
         identityUpdateTransition.setSignaturePublicKeyId(signerKey.getId());
 
-        await identityUpdateTransition.signByPrivateKey(privateKey, publicKey.getType());
+        await identityUpdateTransition.signByPrivateKey(privateKey.toBuffer(), publicKey.getType());
 
         publicKey.setSignature(identityUpdateTransition.getSignature());
+        updatedPublicKeys.push(publicKey);
 
         identityUpdateTransition.setSignature(undefined);
         identityUpdateTransition.setSignaturePublicKeyId(undefined);
       }),
       starterPromise,
     );
+
+    // Update public keys in transition to include signatures
+    identityUpdateTransition.setPublicKeysToAdd(updatedPublicKeys);
   }
 
   await signStateTransition(this, identityUpdateTransition, identity, signerKeyIndex);
+  this.logger.silly('[Identity#update] Signed IdentityUpdateTransition');
 
-  const result = await dpp.stateTransition.validateBasic(identityUpdateTransition);
+  const result = await wasmDpp.stateTransition.validateBasic(identityUpdateTransition);
 
   if (!result.isValid()) {
+    // TODO(wasm): pretty print errors. JSON.stringify is not enough
     throw new Error(`StateTransition is invalid - ${JSON.stringify(result.getErrors())}`);
   }
+  this.logger.silly('[Identity#update] Validated IdentityUpdateTransition');
 
+  // TODO: add skipValidation flag?
+  //  Basic validation already happening above
   // Broadcast ST
   await broadcastStateTransition(this, identityUpdateTransition);
+
+  this.logger.silly('[Identity#update] Broadcasted IdentityUpdateTransition');
 
   return true;
 }
