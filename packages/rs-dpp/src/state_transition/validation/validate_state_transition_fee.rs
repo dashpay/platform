@@ -4,7 +4,7 @@ use std::convert::TryInto;
 use crate::consensus::basic::state_transition::InvalidStateTransitionTypeError;
 use crate::data_contract::errors::IdentityNotPresentError;
 use crate::state_transition::fee::calculate_state_transition_fee_factory::calculate_state_transition_fee;
-use crate::state_transition::fee::FeeResult;
+use crate::state_transition::fee::{Credits, FeeResult};
 use crate::state_transition::StateTransitionType;
 use crate::{
     consensus::fee::FeeError,
@@ -53,7 +53,9 @@ where
         let mut result = SimpleValidationResult::default();
 
         let execution_context = state_transition.get_execution_context();
-        let balance_with_possible_debt: i128 = match state_transition {
+        let required_fee = calculate_state_transition_fee_fn(state_transition);
+
+        let balance = match state_transition {
             StateTransition::IdentityCreate(st) => {
                 let output = self
                     .asset_lock_transition_output_fetcher
@@ -65,7 +67,7 @@ where
                             st.get_asset_lock_proof()
                         )
                     })?;
-                convert_satoshi_to_credits(output.value) as i128
+                convert_satoshi_to_credits(output.value)
             }
             StateTransition::IdentityTopUp(st) => {
                 let output = self
@@ -94,30 +96,40 @@ where
                     return Ok(result);
                 }
 
-                // TODO fixme: remove i128. what if identity_balance is negative and absolute value is
-                // TODO greater than  balance (which is u64)
-                balance as i128 + identity_balance as i128
+                if identity_balance.is_negative() && identity_balance.unsigned_abs() > balance {
+                    result.add_error(FeeError::BalanceIsNotEnoughError {
+                        balance: 0,
+                        fee: required_fee.desired_amount,
+                    });
+                    return Ok(result);
+                }
+
+                if identity_balance.is_negative() {
+                    balance - identity_balance.unsigned_abs()
+                } else {
+                    balance + identity_balance as Credits
+                }
             }
             StateTransition::DataContractCreate(st) => {
                 let balance = self.get_identity_owner_balance(st).await?;
                 if execution_context.is_dry_run() {
                     return Ok(result);
                 }
-                balance as i128
+                balance
             }
             StateTransition::DataContractUpdate(st) => {
                 let balance = self.get_identity_owner_balance(st).await?;
                 if execution_context.is_dry_run() {
                     return Ok(result);
                 }
-                balance as i128
+                balance
             }
             StateTransition::DocumentsBatch(st) => {
                 let balance = self.get_identity_owner_balance(st).await?;
                 if execution_context.is_dry_run() {
                     return Ok(result);
                 }
-                balance as i128
+                balance
             }
 
             StateTransition::IdentityUpdate(st) => {
@@ -125,7 +137,7 @@ where
                 if execution_context.is_dry_run() {
                     return Ok(result);
                 }
-                balance as i128
+                balance
             }
             StateTransition::IdentityCreditWithdrawal(_) => {
                 return Err(ProtocolError::InvalidStateTransitionTypeError(
@@ -140,13 +152,11 @@ where
             return Ok(result);
         }
 
-        let fee = calculate_state_transition_fee_fn(state_transition);
-
         // ? make sure Fee cannot be negative and refunds are handled differently
-        if (balance_with_possible_debt) < fee.desired_amount as i128 {
+        if balance < required_fee.desired_amount {
             result.add_error(FeeError::BalanceIsNotEnoughError {
-                balance: balance_with_possible_debt as u64,
-                fee: fee.desired_amount,
+                balance,
+                fee: required_fee.desired_amount,
             })
         }
 
@@ -213,7 +223,6 @@ mod test {
         processing_cost: Credits,
     ) -> StateTransitionExecutionContext {
         let ctx = StateTransitionExecutionContext::default();
-        // TODO fixme
         ctx.add_operation(Operation::PreCalculated(PreCalculatedOperation::new(
             storage_cost,
             processing_cost,
