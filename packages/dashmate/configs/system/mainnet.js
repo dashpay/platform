@@ -26,6 +26,9 @@ const mainnetConfig = lodashMerge({}, baseConfig, {
     indexes: false,
   },
   network: NETWORK_MAINNET,
+  platform: {
+    enable: false,
+  },
 });
 
 delete mainnetConfig.platform;

@@ -30,7 +30,6 @@ pub fn get_contact_request_document_fixture(
         LATEST_VERSION,
         get_document_validator_fixture(),
         data_contract_fetcher_and_validator,
-        None,
     );
 
     let mut data = platform_value! ({

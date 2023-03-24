@@ -30,7 +30,6 @@ pub fn get_documents_fixture_with_owner_id_from_contract(
         LATEST_VERSION,
         get_document_validator_fixture(),
         data_contract_fetcher_and_validator,
-        None,
     );
     let owner_id = data_contract.owner_id;
 
@@ -53,7 +52,6 @@ pub fn get_extended_documents_fixture(
         LATEST_VERSION,
         get_document_validator_fixture(),
         data_contract_fetcher_and_validator,
-        None,
     );
     let owner_id = gen_owner_id();
 
