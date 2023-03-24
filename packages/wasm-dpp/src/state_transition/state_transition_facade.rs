@@ -1,4 +1,4 @@
-use crate::bls_adapter::{BlsAdapter, JsBlsAdapter};
+use crate::bls_adapter::BlsAdapter;
 
 use crate::state_repository::{ExternalStateRepositoryLike, ExternalStateRepositoryLikeWrapper};
 use crate::state_transition_factory::StateTransitionFactoryWasm;
@@ -23,16 +23,14 @@ pub struct StateTransitionFacadeWasm(
 impl StateTransitionFacadeWasm {
     pub fn new(
         state_repository: ExternalStateRepositoryLike,
-        bls_adapter: JsBlsAdapter,
+        bls_adapter: BlsAdapter,
         protocol_version_validator: Arc<ProtocolVersionValidator>,
     ) -> Result<StateTransitionFacadeWasm, JsValue> {
         let state_repository_wrapper = ExternalStateRepositoryLikeWrapper::new(state_repository);
 
-        let adapter = BlsAdapter(bls_adapter);
-
         let state_transition_facade = StateTransitionFacade::new(
             state_repository_wrapper,
-            adapter,
+            bls_adapter,
             protocol_version_validator,
         )
         .with_js_error()?;
