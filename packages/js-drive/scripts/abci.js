@@ -4,6 +4,8 @@ const graceful = require('node-graceful');
 
 const chalk = require('chalk');
 
+const loadBLS = require('@dashevo/bls');
+
 const { default: loadWasmDpp } = require('@dashevo/wasm-dpp');
 
 const ZMQClient = require('../lib/core/ZmqClient');
@@ -25,7 +27,9 @@ console.log(chalk.hex('#008de4')(banner));
 
 (async function main() {
   const dppWasm = await loadWasmDpp();
-  const container = createDIContainer(dppWasm, process.env);
+  const blsSignatures = await loadBLS();
+
+  const container = createDIContainer(blsSignatures, dppWasm, process.env);
   const logger = container.resolve('logger');
   const dpp = container.resolve('dpp');
   const transactionalDpp = container.resolve('transactionalDpp');
