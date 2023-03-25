@@ -1,7 +1,5 @@
 const { Listr } = require('listr2');
 
-const chalk = require('chalk');
-
 const BlsSignatures = require('@dashevo/bls');
 
 const {

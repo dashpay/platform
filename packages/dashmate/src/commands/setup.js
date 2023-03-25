@@ -74,6 +74,7 @@ class SetupCommand extends BaseCommand {
             }
 
             if (isAlreadyConfigured) {
+              // eslint-disable-next-line no-param-reassign
               task.output = chalk`Preset {bold ${ctx.preset}} already configured.
 
   To set up a node with this preset from scratch use {bold.cyanBright dashmate reset --config ${ctx.preset} --hard}.
@@ -85,6 +86,7 @@ class SetupCommand extends BaseCommand {
             } else {
               // eslint-disable-next-line no-param-reassign
 
+              // eslint-disable-next-line no-param-reassign
               task.output = ctx.preset;
             }
           }
