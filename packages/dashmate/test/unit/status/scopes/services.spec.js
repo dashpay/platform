@@ -13,7 +13,7 @@ describe('getServicesScopeFactory', () => {
       config = {
         get: this.sinon.stub(),
         toEnvs: this.sinon.stub(),
-        isPlatformEnabled: this.sinon.stub()
+        isPlatformEnabled: this.sinon.stub(),
       };
 
       getServicesScope = getServicesScopeFactory(mockDockerCompose);

@@ -20,7 +20,7 @@ describe('getOverviewScopeFactory', () => {
       config = {
         get: this.sinon.stub(),
         toEnvs: this.sinon.stub(),
-        isPlatformEnabled: this.sinon.stub()
+        isPlatformEnabled: this.sinon.stub(),
       };
 
       getOverviewScope = getOverviewScopeFactory(mockGetCoreScope,
