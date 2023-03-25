@@ -136,6 +136,10 @@ module.exports = lodashMerge({}, baseConfig, {
       masterPublicKey: '0211234327aed200b2771788aec1c7d6a799f534d02dd6766c6de53e3fd7152dfc',
       secondPublicKey: '035655d53d061275314535b74bfbbfb74cf640023a5cc466283e83881876cb9a3f',
     },
+    withdrawals: {
+      masterPublicKey: '0211234327aed200b2771788aec1c7d6a799f5343a5cfab7b7ca8135d6e06b5ec2',
+      secondPublicKey: '03aff4e943e005a2549757fdd3fbbfb74cf640023a5cc466283e83881876cb9a3f',
+    },
   },
   network: NETWORK_TESTNET,
 });
