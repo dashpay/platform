@@ -12,7 +12,7 @@ Distribution package for Dash Masternode installation
 - [Update](#update)
 - [Usage](#usage)
   - [Command line interface](#cli)
-  - [Setup node](#setup-node)
+  - [Set up node](#set-up-node)
   - [Configure node](#configure-node)
   - [Start node](#start-node)
   - [Stop node](#stop-node)
@@ -77,12 +77,12 @@ The package contains a CLI, Docker Compose and configuration files.
 
 The CLI can be used to perform routine tasks. Invoke the CLI with `dashmate` if linked during installation, or with `node bin/dashmate` if not linked. To list available commands, either run `dashmate` with no parameters or execute `dashmate help`. To list the help on any command just execute the command, followed by the `--help` option.
 
-### Setup node
+### Set up node
 
 The `setup` command is used to quickly configure common node configurations. Arguments may be provided as options, otherwise they will be queried interactively with sensible values suggested.
 
 ```
-Setup a new Dash node
+Set up a new Dash node
 
 USAGE
   $ dashmate setup [PRESET] [-v] [-d] [-c <value>] [-m <value>]
@@ -91,20 +91,20 @@ ARGUMENTS
   PRESET  (mainnet|testnet|local) Node configuration preset
 
 FLAGS
-  -c, --node-count=<value>      number of nodes to setup
+  -c, --node-count=<value>      number of nodes to set up
   -d, --[no-]debug-logs         enable debug logs
   -m, --miner-interval=<value>  interval between blocks
   -v, --verbose                 use verbose mode for output
 
 DESCRIPTION
-  Setup a new Dash node
+  Set up a new Dash node
 ```
 
 Supported presets:
  * `testnet` - a masternode or full node for testnet
  * `local` - a node group to run a local dash network with the specified number of masternodes. To operate a group of nodes, use the [group commands](#node-groups)
 
-To setup a testnet masternode:
+To set up a testnet masternode:
 ```bash
 $ dashmate setup testnet masternode
 ```
@@ -243,7 +243,7 @@ $ dashmate reset
 ```
 
 #### Hard reset
-With the hard reset mode enabled, the corresponding config will be reset in addition to the platform data. After a hard reset, it is necessary to run the node [setup](#setup-node) to proceed.
+With the hard reset mode enabled, the corresponding config will be reset in addition to the platform data. After a hard reset, it is necessary to run the node [setup](#set-up-node) to proceed.
 ```bash
 $ dashmate reset --hard
 ```
@@ -289,11 +289,11 @@ dashmate config set core.masternode.enable false
 
 ### Node groups
 
-CLI allows to [setup](#setup-node) and operate multiple nodes. Only the `local` preset is supported at the moment.
+CLI allows to [setup](#set-up-node) and operate multiple nodes. Only the `local` preset is supported at the moment.
 
 #### Default group
 
-The [setup](#setup-node) command set corresponding group as default. To output the current default group or set another one as default use `group:default` command.
+The [setup](#set-up-node) command set corresponding group as default. To output the current default group or set another one as default use `group:default` command.
 
 ```
 USAGE
@@ -392,7 +392,7 @@ DESCRIPTION
   Reset group nodes
 ```
 
-With the hard reset mode enabled, corresponding configs will be reset as well. To proceed, running the node [setup](#setup-node) is required.
+With the hard reset mode enabled, corresponding configs will be reset as well. To proceed, running the node [setup](#set-up-node) is required.
 
 #### Create config group
 
