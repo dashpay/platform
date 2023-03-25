@@ -110,7 +110,7 @@ module.exports = lodashMerge({}, baseConfig, {
               pro_tx_hash: 'F3D506822A24E7E4BE318A6ED7371CC1E1527880A594FE04629F50A1618DB8E7',
             },
           ],
-          threshold_public_key: {
+          validator_quorum_threshold_public_key: {
             type: 'tendermint/PubKeyBLS12381',
             value: 'imxjukh5hRY91Mvm/sfhQp6iSnICyvKMMdhY5Sq6Ej0QJyB3vtN4UfYwvmxdzOVM',
           },
