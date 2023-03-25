@@ -27,8 +27,8 @@ class PlatformStatusCommand extends ConfigBaseCommand {
     config,
     getPlatformScope,
   ) {
-    if (config.get('network') === 'mainnet') {
-      throw new Error('Platform is not supported on mainnet yet!');
+    if (!config.isPlatformEnabled()) {
+      throw new Error('Platform is not supported for this node type and network');
     }
 
     if (!(await dockerCompose.isServiceRunning(config.toEnvs(), 'drive_tenderdash'))) {

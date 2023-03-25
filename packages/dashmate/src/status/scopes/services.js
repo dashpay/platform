@@ -25,7 +25,7 @@ function getServicesScopeFactory(dockerCompose) {
       });
     }
 
-    if (config.get('network') !== 'mainnet') {
+    if (config.isPlatformEnabled()) {
       Object.assign(serviceHumanNames, {
         drive_abci: 'Drive ABCI',
         drive_tenderdash: 'Drive Tenderdash',
