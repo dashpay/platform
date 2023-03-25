@@ -70,7 +70,7 @@ function obtainZeroSSLCertificateTaskFactory(
             } catch (e) {
               retry = await task.prompt({
                 type: 'toggle',
-                header: chalk`An error occurred during verification: {red ${e.message}}
+                header: chalk`An error occurred during IP address verification: ${e.message}
                 
               Please make sure that your IP address ${config.get('externalIp')} and port 80 are accessible from internet`,
                 message: 'Try again?',

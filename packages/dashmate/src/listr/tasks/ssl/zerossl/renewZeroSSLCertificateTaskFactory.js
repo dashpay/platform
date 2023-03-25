@@ -1,5 +1,7 @@
 const { Listr } = require('listr2');
 
+const chalk = require('chalk');
+
 /**
  *
  * @param {createZeroSSLCertificate} createZeroSSLCertificate
@@ -63,7 +65,29 @@ function renewZeroSSLCertificateTaskFactory(
       },
       {
         title: 'Verify IP',
-        task: async (ctx) => verifyDomain(ctx.response.id, config.get('platform.dapi.envoy.ssl.providerConfigs.zerossl.apiKey')),
+        task: async (ctx, task) => {
+          let retry;
+          do {
+            try {
+              await verifyDomain(ctx.response.id, config.get('platform.dapi.envoy.ssl.providerConfigs.zerossl.apiKey'));
+            } catch (e) {
+              retry = await task.prompt({
+                type: 'toggle',
+                header: chalk`An error occurred during IP address verification: ${e.message}
+                
+              Please make sure that your IP address ${config.get('externalIp')} and port 80 are accessible from internet`,
+                message: 'Try again?',
+                enabled: 'Yes',
+                disabled: 'No',
+                initial: true,
+              });
+
+              if (!retry) {
+                throw e;
+              }
+            }
+          } while (retry);
+        },
       },
       {
         title: 'Download certificate',
