@@ -473,11 +473,22 @@ module.exports = {
   },
   '0.24.0-dev.17': (configFile) => {
     Object.entries(configFile.configs)
-      .forEach(([, config]) => {
+      .forEach(([name , config]) => {
         if (config.platform) {
-          config.platform.enable = true;
+          config.platform.enable = name !== 'mainnet';
         }
       });
+
+    if (configFile.configs.testnet.platform) {
+      configFile.configs.testnet.platform.dapi.envoy.http.port = systemConfigs.testnet
+        .platform.dapi.envoy.http.port;
+
+      configFile.configs.testnet.platform.drive.tenderdash.p2p.port = systemConfigs.testnet
+        .platform.drive.tenderdash.p2p.port;
+    }
+
+    configFile.configs.base.platform.dapi.envoy.http.port = systemConfigs.base
+      .platform.dapi.envoy.http.port;
 
     return configFile;
   },
