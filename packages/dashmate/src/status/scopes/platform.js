@@ -128,9 +128,6 @@ function getPlatformScopeFactory(dockerCompose,
       } catch (e) {
         if (e.name === 'FetchError') {
           platform.tenderdash.serviceStatus = ServiceStatusEnum.error;
-
-          // eslint-disable-next-line no-console
-          console.error(e);
         } else {
           throw e;
         }

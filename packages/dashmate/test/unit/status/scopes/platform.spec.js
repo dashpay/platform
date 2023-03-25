@@ -37,7 +37,12 @@ describe('getPlatformScopeFactory', () => {
       mockFetch = this.sinon.stub(fetch, 'Promise');
       mockGetConnectionHost = this.sinon.stub();
 
-      config = { get: this.sinon.stub(), toEnvs: this.sinon.stub() };
+      config = {
+        get: this.sinon.stub(),
+        toEnvs: this.sinon.stub(),
+        isPlatformEnabled: this.sinon.stub()
+      };
+
       getPlatformScope = getPlatformScopeFactory(mockDockerCompose,
         mockCreateRpcClient, mockGetConnectionHost);
     });
@@ -112,7 +117,7 @@ describe('getPlatformScopeFactory', () => {
       mockDetermineDockerStatus.returns(DockerStatusEnum.running);
       mockRpcClient.mnsync.returns({ result: { IsSynced: true } });
       mockMNOWatchProvider.returns(Promise.resolve('OPEN'));
-      mockFetch.returns(Promise.reject(new FetchError()));
+      mockFetch.returns(Promise.reject(new FetchError('test')));
       mockDockerCompose.execCommand.returns({ exitCode: 0, out: '' });
 
       const scope = await getPlatformScope(config);
