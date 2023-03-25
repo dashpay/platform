@@ -30,7 +30,7 @@ function configureSSLCertificateTaskFactory(
         task: async (ctx, task) => {
           const form = await task.prompt({
             type: 'form',
-            message: 'Provide paths to your certificate files',
+            message: 'Specify paths to your certificate files',
             choices: [
               {
                 name: 'chainFile',
@@ -39,7 +39,7 @@ function configureSSLCertificateTaskFactory(
               },
               {
                 name: 'privateFile',
-                message: 'Path to private file',
+                message: 'Path to certificate key file',
                 validate: validateFileExists,
               },
             ],
