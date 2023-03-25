@@ -473,7 +473,7 @@ module.exports = {
   },
   '0.24.0-dev.17': (configFile) => {
     Object.entries(configFile.configs)
-      .forEach(([name , config]) => {
+      .forEach(([name, config]) => {
         if (config.platform) {
           config.platform.enable = name !== 'mainnet';
         }
