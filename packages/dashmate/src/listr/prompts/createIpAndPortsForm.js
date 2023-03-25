@@ -24,21 +24,29 @@ async function createIpAndPortsForm(network, options = {}) {
   const mainnetCfg = systemConfigs[PRESET_MAINNET];
 
   function validateCoreP2PPort(value) {
+    if (!validatePort(value)) {
+      return false;
+    }
+
     if (network !== PRESET_MAINNET
       && value === mainnetCfg.core.p2p.port.toString()) {
       return false;
     }
 
-    return validatePort(value);
+    return true;
   }
 
   function validatePlatformP2PPort(value) {
+    if (!validatePort(value)) {
+      return false;
+    }
+
     if (network !== PRESET_MAINNET
       && value === mainnetCfg.platform.drive.tenderdash.p2p.port.toString()) {
       return 'this port is reserved for mainnet';
     }
 
-    return validatePort(value);
+    return true;
   }
 
   function validatePlatformHTTPPort(value) {
@@ -120,6 +128,19 @@ async function createIpAndPortsForm(network, options = {}) {
       platformP2PPort,
       platformHTTPPort,
     }) => {
+      const areAllFieldsValid = validateIPv4(ip) && validateCoreP2PPort(coreP2PPort)
+        && (
+          !options.isHPMN
+          || (
+            validatePlatformP2PPort(platformP2PPort)
+            && validatePlatformHTTPPort(platformHTTPPort)
+          )
+        );
+
+      if (!areAllFieldsValid) {
+        return false;
+      }
+
       if (options.isHPMN) {
         if (coreP2PPort === platformP2PPort
           || coreP2PPort === platformHTTPPort
@@ -128,14 +149,7 @@ async function createIpAndPortsForm(network, options = {}) {
         }
       }
 
-      return validateIPv4(ip) && validateCoreP2PPort(coreP2PPort)
-        && (
-          !options.isHPMN
-          || (
-            validatePlatformP2PPort(platformP2PPort)
-            && validatePlatformHTTPPort(platformHTTPPort)
-          )
-        );
+      return true;
     },
   };
 }

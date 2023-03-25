@@ -33,23 +33,32 @@ function configureSSLCertificateTaskFactory(
             message: 'Specify paths to your certificate files',
             choices: [
               {
-                name: 'chainFile',
+                name: 'chainFilePath',
                 message: 'Path to certificate chain file',
                 validate: validateFileExists,
               },
               {
-                name: 'privateFile',
+                name: 'privateFilePath',
                 message: 'Path to certificate key file',
                 validate: validateFileExists,
               },
             ],
-            validate: ({ chainFile, privateFile }) => validateFileExists(chainFile)
-              && validateFileExists(privateFile),
+            validate: ({ chainFilePath, privateFilePath }) => () => {
+              if (!validateFileExists(chainFilePath) || !validateFileExists(privateFilePath)) {
+                return false;
+              }
+
+              if (chainFilePath === privateFilePath) {
+                return 'the same path for both files';
+              }
+
+              return true;
+            },
           });
 
-          ctx.certificate = fs.readFileSync(form.chainFile, 'utf8');
+          ctx.certificate = fs.readFileSync(form.chainFilePath, 'utf8');
           ctx.keyPair = {
-            privateKey: fs.readFileSync(form.privateFile, 'utf8'),
+            privateKey: fs.readFileSync(form.privateFilePath, 'utf8'),
           };
 
           return saveCertificateTask(ctx.config);

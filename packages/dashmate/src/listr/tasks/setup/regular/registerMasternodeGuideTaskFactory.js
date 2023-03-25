@@ -146,13 +146,17 @@ function registerMasternodeGuideTaskFactory() {
                   },
                 ],
                 validate: ({ ownerAddress, votingAddress, payoutAddress }) => {
+                  if (!validateAddressWithNetwork(ownerAddress)
+                    || !validateAddressWithNetwork(votingAddress)
+                    || !validateAddressWithNetwork(payoutAddress)) {
+                    return false;
+                  }
+
                   if (ownerAddress === payoutAddress || votingAddress === payoutAddress) {
                     return 'The payout address may not be the same as the owner or voting address';
                   }
 
-                  return validateAddressWithNetwork(ownerAddress)
-                    && validateAddressWithNetwork(votingAddress)
-                    && validateAddressWithNetwork(payoutAddress);
+                  return true;
                 },
               },
               {
