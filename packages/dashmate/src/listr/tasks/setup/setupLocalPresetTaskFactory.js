@@ -6,6 +6,8 @@ const {
   PRESET_LOCAL,
   HOME_DIR_PATH,
 } = require('../../../constants');
+const generateTenderdashNodeKey = require('../../../tenderdash/generateTenderdashNodeKey');
+const deriveTenderdashNodeId = require('../../../tenderdash/deriveTenderdashNodeId');
 
 /**
  * @param {ConfigFile} configFile
@@ -15,7 +17,6 @@ const {
  * @param {resolveDockerHostIp} resolveDockerHostIp
  * @param {configFileRepository} configFileRepository
  * @param {generateHDPrivateKeys} generateHDPrivateKeys
- * @param {generateTenderdashNodeKeyAndId} generateTenderdashNodeKeyAndId
  */
 function setupLocalPresetTaskFactory(
   configFile,
@@ -25,7 +26,6 @@ function setupLocalPresetTaskFactory(
   resolveDockerHostIp,
   configFileRepository,
   generateHDPrivateKeys,
-  generateTenderdashNodeKeyAndId,
 ) {
   /**
    * @typedef {setupLocalPresetTask}
@@ -189,14 +189,12 @@ function setupLocalPresetTaskFactory(
                   config.set('core.miner.enable', true);
 
                   // Disable platform for the seed node
-                  config.set('platform', undefined);
+                  config.remove('platform');
                 } else {
                   config.set('description', `local node #${nodeIndex}`);
 
-                  const {
-                    id,
-                    key,
-                  } = generateTenderdashNodeKeyAndId();
+                  const key = generateTenderdashNodeKey();
+                  const id = deriveTenderdashNodeId(key);
 
                   config.set('platform.drive.tenderdash.node.id', id);
                   config.set('platform.drive.tenderdash.node.key', key);

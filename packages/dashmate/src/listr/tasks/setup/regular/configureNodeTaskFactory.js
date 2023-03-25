@@ -12,7 +12,7 @@ const {
 const validateBLSPrivateKeyFactory = require('../../../prompts/validators/validateBLSPrivateKeyFactory');
 const createPlatformNodeKeyInput = require('../../../prompts/createPlatformNodeKeyInput');
 const createIpAndPortsForm = require('../../../prompts/createIpAndPortsForm');
-const createTenderdashNodeId = require('../../../../tenderdash/createTenderdashNodeId');
+const deriveTenderdashNodeId = require('../../../../tenderdash/deriveTenderdashNodeId');
 const getConfigurationOutputFromContext = require('./getConfigurationOutputFromContext');
 
 function configureNodeTaskFactory() {
@@ -55,7 +55,7 @@ function configureNodeTaskFactory() {
               skipInitial: ctx.nodeType === NODE_TYPE_MASTERNODE,
             }));
 
-            ctx.config.set('platform.drive.tenderdash.node.id', createTenderdashNodeId(platformNodeKey));
+            ctx.config.set('platform.drive.tenderdash.node.id', deriveTenderdashNodeId(platformNodeKey));
             ctx.config.set('platform.drive.tenderdash.node.key', platformNodeKey);
           }
 

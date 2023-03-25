@@ -89,7 +89,6 @@ const generateKeyPair = require('./ssl/generateKeyPair');
 const createSelfSignedCertificate = require('./ssl/selfSigned/createCertificate');
 
 const scheduleRenewZeroSslCertificateFactory = require('./helper/scheduleRenewZeroSslCertificateFactory');
-const generateTenderdashNodeKeyAndId = require('./tenderdash/createTenderdashNodeId');
 const registerMasternodeGuideTaskFactory = require('./listr/tasks/setup/regular/registerMasternodeGuideTaskFactory');
 const configureNodeTaskFactory = require('./listr/tasks/setup/regular/configureNodeTaskFactory');
 const configureSSLCertificateTaskFactory = require('./listr/tasks/setup/regular/configureSSLCertificateTaskFactory');
@@ -195,7 +194,6 @@ async function createDIContainer() {
    */
   container.register({
     createTenderdashRpcClient: asValue(createTenderdashRpcClient),
-    generateTenderdashNodeKeyAndId: asValue(generateTenderdashNodeKeyAndId),
   });
 
   /**

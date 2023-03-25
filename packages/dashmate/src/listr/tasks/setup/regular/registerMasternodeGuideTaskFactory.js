@@ -21,7 +21,7 @@ const generateBlsKeys = require('../../../../core/generateBlsKeys');
 const validateBLSPrivateKeyFactory = require('../../../prompts/validators/validateBLSPrivateKeyFactory');
 const createPlatformNodeKeyInput = require('../../../prompts/createPlatformNodeKeyInput');
 const createIpAndPortsForm = require('../../../prompts/createIpAndPortsForm');
-const createTenderdashNodeId = require('../../../../tenderdash/createTenderdashNodeId');
+const deriveTenderdashNodeId = require('../../../../tenderdash/deriveTenderdashNodeId');
 const getConfigurationOutputFromContext = require('./getConfigurationOutputFromContext');
 const getBLSPublicKeyFromPrivateKeyHex = require('../../../../core/getBLSPublicKeyFromPrivateKeyHex');
 
@@ -225,7 +225,7 @@ function registerMasternodeGuideTaskFactory() {
                     ${state.keys.votingAddress}
                     ${state.operator.rewardShare}
                     ${state.keys.payoutAddress}
-                    ${createTenderdashNodeId(state.platformNodeKey)}
+                    ${deriveTenderdashNodeId(state.platformNodeKey)}
                     ${platformP2PPort}
                     ${platformHTTPPort}`;
             } else {
@@ -262,7 +262,7 @@ function registerMasternodeGuideTaskFactory() {
           ctx.config.set('core.p2p.port', state.ipAndPorts.coreP2PPort);
 
           if (ctx.isHP) {
-            ctx.config.set('platform.drive.tenderdash.node.id', createTenderdashNodeId(state.platformNodeKey));
+            ctx.config.set('platform.drive.tenderdash.node.id', deriveTenderdashNodeId(state.platformNodeKey));
             ctx.config.set('platform.drive.tenderdash.node.key', state.platformNodeKey);
 
             ctx.config.set('platform.dapi.envoy.http.port', state.ipAndPorts.platformHTTPPort);
