@@ -60,6 +60,7 @@ function obtainZeroSSLCertificateTaskFactory(
         title: 'Start verification server',
         task: async () => verificationServer.start(),
       },
+      // TODO: Duplicate tasks
       {
         title: 'Verify IP',
         task: async (ctx, task) => {

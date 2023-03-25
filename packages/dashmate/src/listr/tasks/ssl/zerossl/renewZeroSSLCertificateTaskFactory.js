@@ -63,6 +63,7 @@ function renewZeroSSLCertificateTaskFactory(
         title: 'Start verification server',
         task: async () => verificationServer.start(),
       },
+      // TODO: Duplicate tasks
       {
         title: 'Verify IP',
         task: async (ctx, task) => {
@@ -73,9 +74,13 @@ function renewZeroSSLCertificateTaskFactory(
             } catch (e) {
               retry = await task.prompt({
                 type: 'toggle',
-                header: chalk`An error occurred during IP address verification: ${e.message}
-                
-              Please make sure that your IP address ${config.get('externalIp')} and port 80 are accessible from internet`,
+                header: chalk`  An error occurred during verification: {red ${e.message}}
+
+  Please ensure that port 80 on your public IP address ${config.get('externalIp')} is open
+  for incoming HTTP connections. You may need to configure your firewall to
+  ensure this port is accessible from the public internet. If you are using
+  Network Address Translation (NAT), please enable port forwarding for port 80
+  and all Dash service ports listed above.`,
                 message: 'Try again?',
                 enabled: 'Yes',
                 disabled: 'No',
