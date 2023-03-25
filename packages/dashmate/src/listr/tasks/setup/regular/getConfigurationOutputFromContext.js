@@ -15,10 +15,6 @@ async function getConfigurationOutputFromContext(ctx) {
   }
 
   if (ctx.isHP) {
-    // TODO: Pretty sure we don't need this, because we are adding \n\n above already
-    // if (output !== '') {
-    //   output += '\n\n';
-    // }
     output += chalk`Platform Node ID: ${ctx.config.get('platform.drive.tenderdash.node.id')}
                     Platform Node key: ******** - view with {bold.cyanBright dashmate config get platform.drive.tenderdash.node.key}\n\n`;
   }
