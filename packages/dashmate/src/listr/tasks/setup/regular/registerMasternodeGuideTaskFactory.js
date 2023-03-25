@@ -169,7 +169,6 @@ function registerMasternodeGuideTaskFactory() {
                   {
                     name: 'privateKey',
                     message: 'BLS private key',
-                    hint: 'HEX encoded',
                     initial: state.operator.privateKey || initialOperatorPrivateKey,
                     validate: validateBLSPrivateKey,
                   },

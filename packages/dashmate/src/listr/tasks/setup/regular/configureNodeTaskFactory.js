@@ -42,7 +42,6 @@ function configureNodeTaskFactory() {
   in the DMT configuration tool, or in the safe location in which you stored it
   when initially configuring your masternode.\n`,
               message: 'BLS private key',
-              hint: 'HEX encoded',
               validate: validateBLSPrivateKey,
             });
 
