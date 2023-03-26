@@ -2,11 +2,15 @@ use std::convert::TryInto;
 use std::sync::Arc;
 
 use anyhow::Result;
+use dashcore::{consensus, BlockHeader};
+use platform_value::platform_value;
 
 use crate::consensus::signature::IdentityNotFoundError;
 use crate::contracts::withdrawals_contract;
 use crate::document::{generate_document_id, Document};
-use crate::identity::state_transition::identity_credit_withdrawal_transition::IdentityCreditWithdrawalTransitionAction;
+use crate::identity::state_transition::identity_credit_withdrawal_transition::{
+    IdentityCreditWithdrawalTransitionAction, Pooling,
+};
 use crate::system_data_contracts::load_system_data_contract;
 use crate::{
     consensus::basic::identity::IdentityInsufficientBalanceError,
@@ -81,14 +85,34 @@ where
         let document_id = generate_document_id::generate_document_id(
             &withdrawals_contract::CONTRACT_ID,
             &state_transition.identity_id,
-            &document_type,
+            withdrawals_contract::document_types::WITHDRAWAL,
             state_transition.output_script.as_bytes(),
         );
+
+        let latest_platform_block_header_bytes: Vec<u8> = self
+            .state_repository
+            .fetch_latest_platform_block_header()
+            .await?;
+
+        let latest_platform_block_header: BlockHeader =
+            consensus::deserialize(&latest_platform_block_header_bytes)?;
+
+        let document_created_at_millis: i64 = latest_platform_block_header.time as i64 * 1000i64;
+
+        let document_data = platform_value!({
+            withdrawals_contract::property_names::AMOUNT: state_transition.amount,
+            withdrawals_contract::property_names::CORE_FEE_PER_BYTE: state_transition.core_fee_per_byte,
+            withdrawals_contract::property_names::POOLING: Pooling::Never,
+            withdrawals_contract::property_names::OUTPUT_SCRIPT: state_transition.output_script.as_bytes(),
+            withdrawals_contract::property_names::STATUS: withdrawals_contract::WithdrawalStatus::QUEUED,
+            withdrawals_contract::property_names::CREATED_AT: document_created_at_millis,
+            withdrawals_contract::property_names::UPDATED_AT: document_created_at_millis,
+        });
 
         let withdrawal_document = Document {
             id: document_id,
             owner_id: state_transition.identity_id,
-            properties: Default::default(),
+            properties: document_data.into_btree_string_map().unwrap(),
             revision: None,
             created_at: None,
             updated_at: None,

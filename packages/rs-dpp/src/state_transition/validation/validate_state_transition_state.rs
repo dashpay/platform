@@ -10,6 +10,7 @@ use crate::identity::state_transition::identity_update_transition::validate_iden
 use crate::identity::state_transition::identity_update_transition::validate_public_keys::IdentityUpdatePublicKeysValidator;
 use crate::ProtocolError;
 use crate::state_transition::{StateTransition, StateTransitionAction};
+use crate::state_transition::StateTransitionAction::{DataContractCreateAction, DataContractUpdateAction, DocumentsBatchAction, IdentityCreateAction, IdentityCreditWithdrawalAction, IdentityTopUpAction, IdentityUpdateAction};
 use crate::validation::{AsyncStateTransitionDataValidator, SimpleValidationResult};
 
 pub struct StateTransitionStateValidator<SR>
@@ -68,27 +69,33 @@ where
         state_transition: &StateTransition,
     ) -> Result<StateTransitionAction, SimpleValidationResult> {
         match state_transition {
-            StateTransition::DataContractCreate(st) => {
-                self.data_contract_create_validator.validate(st).await
-            }
-            StateTransition::DataContractUpdate(st) => {
-                self.data_contract_update_validator.validate(st).await
-            }
-            StateTransition::IdentityCreate(st) => {
-                self.identity_create_validator.validate(st).await
-            }
-            StateTransition::IdentityUpdate(st) => self
-                .identity_update_validator
-                .validate(st)
-                .await
-                .map_err(|e| ProtocolError::from(e)),
-            StateTransition::IdentityTopUp(st) => self.identity_top_up_validator.validate(st).await,
-            StateTransition::IdentityCreditWithdrawal(st) => self
-                .identity_credit_withdrawal_validator
-                .validate_identity_credit_withdrawal_transition_state(st)
-                .await
-                .map_err(|e| ProtocolError::from(e)),
-            StateTransition::DocumentsBatch(st) => self.document_batch_validator.validate(st).await,
+            StateTransition::DataContractCreate(st) => Ok(DataContractCreateAction(
+                self.data_contract_create_validator.validate(st).await?,
+            )),
+            StateTransition::DataContractUpdate(st) => Ok(DataContractUpdateAction(
+                self.data_contract_update_validator.validate(st).await?,
+            )),
+            StateTransition::IdentityCreate(st) => Ok(IdentityCreateAction(
+                self.identity_create_validator.validate(st).await?,
+            )),
+            StateTransition::IdentityUpdate(st) => Ok(IdentityUpdateAction(
+                self.identity_update_validator
+                    .validate(st)
+                    .await
+                    .map_err(|e| ProtocolError::from(e))?,
+            )),
+            StateTransition::IdentityTopUp(st) => Ok(IdentityTopUpAction(
+                self.identity_top_up_validator.validate(st).await?,
+            )),
+            StateTransition::IdentityCreditWithdrawal(st) => Ok(IdentityCreditWithdrawalAction(
+                self.identity_credit_withdrawal_validator
+                    .validate_identity_credit_withdrawal_transition_state(st)
+                    .await
+                    .map_err(|e| ProtocolError::from(e))?,
+            )),
+            StateTransition::DocumentsBatch(st) => Ok(DocumentsBatchAction(
+                self.document_batch_validator.validate(st).await?,
+            )),
         }
     }
 }

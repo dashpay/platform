@@ -82,7 +82,7 @@ impl DriveHighLevelOperationConverter for IdentityCreditWithdrawalTransitionActi
         document_properties.insert(withdrawals_contract::property_names::POOLING, Pooling::Never);
         document_properties.insert(withdrawals_contract::property_names::OUTPUT_SCRIPT, self.output_script.as_bytes());
         document_properties.insert(withdrawals_contract::property_names::STATUS, withdrawals_contract::WithdrawalStatus::QUEUED);
-        document_properties.insert(withdrawals_contract::property_names::CREATE_AT, document_created_at_millis);
+        document_properties.insert(withdrawals_contract::property_names::CREATED_AT, document_created_at_millis);
         document_properties.insert(withdrawals_contract::property_names::UPDATED_AT, document_created_at_millis);
 
         let document = DocumentStub {

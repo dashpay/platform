@@ -103,16 +103,6 @@ impl From<ConsensusError> for ValidationResult<()> {
     }
 }
 
-impl From<ConsensusError> for ValidationResult<()> {
-    fn from(value: ConsensusError) -> Self {
-        ValidationResult {
-            system_error: None,
-            consensus_errors: vec![value],
-            data: None,
-        }
-    }
-}
-
 impl From<anyhow::Error> for ValidationResult<()> {
     fn from(value: anyhow::Error) -> Self {
         ValidationResult {
@@ -122,4 +112,3 @@ impl From<anyhow::Error> for ValidationResult<()> {
         }
     }
 }
-

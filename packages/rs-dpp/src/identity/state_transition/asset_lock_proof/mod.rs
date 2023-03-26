@@ -1,7 +1,8 @@
 use std::convert::{TryFrom, TryInto};
 
-use dashcore::{OutPoint, Transaction, TxOut};
+use dashcore::consensus::Decodable;
 use dashcore::hashes::hex::ToHex;
+use dashcore::{OutPoint, Transaction, TxOut};
 use serde::de::Error as DeError;
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 
@@ -13,12 +14,12 @@ pub use chain::*;
 pub use instant::*;
 use platform_value::Value;
 
+use crate::identity::errors::{AssetLockOutputNotFoundError, AssetLockTransactionIsNotFoundError};
 use crate::identity::state_transition::asset_lock_proof::chain::ChainAssetLockProof;
 use crate::prelude::Identifier;
-use crate::{DPPError, NonConsensusError, ProtocolError, SerdeParsingError};
-use crate::identity::errors::{AssetLockOutputNotFoundError, AssetLockTransactionIsNotFoundError};
 use crate::state_repository::StateRepositoryLike;
 use crate::state_transition::state_transition_execution_context::StateTransitionExecutionContext;
+use crate::{DPPError, NonConsensusError, ProtocolError, SerdeParsingError};
 
 mod asset_lock_proof_validator;
 mod asset_lock_public_key_hash_fetcher;
@@ -68,12 +69,18 @@ impl AssetLockProof {
                     .map_err(|e| DPPError::CoreMessageCorruption(e.toString()))?;
 
                 if let Some(raw_transaction) = transaction_data.data {
-                    let transaction = Transaction::deserialize(&raw_transaction)
-                        .map_err(|e| DPPError::CoreMessageCorruption(e.toString))?;
+                    let transaction = Transaction::consensus_decode(raw_transaction.as_slice())
+                        .map_err(|e| {
+                            DPPError::CoreMessageCorruption(format!(
+                                "could not decode transaction {:?}",
+                                e
+                            ))
+                        })?;
 
                     transaction
                         .output
-                        .get(output_index).cloned()
+                        .get(output_index)
+                        .cloned()
                         .ok_or_else(|| AssetLockOutputNotFoundError::new().into())
                 } else {
                     Err(DPPError::from(AssetLockTransactionIsNotFoundError::new(
@@ -287,16 +294,18 @@ mod test {
             .return_once(|_, _| Ok(FetchTransactionResponse::default()));
         execution_context.enable_dry_run();
 
-        let result = asset_lock_proof.fetch_asset_lock_transaction_output(&state_repository_mock, &execution_context).await
-            .expect("the transaction output should be returned");;
+        let result = asset_lock_proof
+            .fetch_asset_lock_transaction_output(&state_repository_mock, &execution_context)
+            .await
+            .expect("the transaction output should be returned");
 
         let result = fetch_asset_lock_transaction_output(
             &state_repository_mock,
             asset_lock_proof,
             &execution_context,
         )
-            .await
-            .expect("the transaction output should be returned");
+        .await
+        .expect("the transaction output should be returned");
 
         assert_eq!(
             TxOut {
@@ -307,4 +316,3 @@ mod test {
         );
     }
 }
-
