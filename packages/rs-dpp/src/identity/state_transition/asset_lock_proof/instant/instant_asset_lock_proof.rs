@@ -2,6 +2,7 @@ use std::convert::{TryFrom, TryInto};
 
 use dashcore::consensus::{Decodable, Encodable};
 use dashcore::{InstantLock, Transaction, TxOut};
+use dashcore::blockdata::transaction::special_transaction::TransactionPayload::{AssetLockPayloadType, AssetUnlockPayloadType};
 use platform_value::{BinaryData, Value};
 use serde::de::Error as DeError;
 use serde::ser::Error as SerError;

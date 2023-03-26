@@ -220,12 +220,10 @@ pub async fn fetch_asset_lock_transaction_output(
     let state_repository_wrapper =
         Arc::new(ExternalStateRepositoryLikeWrapper::new(state_repository));
 
-    let fetcher = AssetLockTransactionOutputFetcher::new(state_repository_wrapper);
-
-    let fetch_result = fetcher
-        .fetch(&asset_lock_proof, execution_context.into())
-        .await
+    let fetch_result = asset_lock_proof.fetch_asset_lock_transaction_output(state_repository, execution_context.into()).await
         .map_err(|e| from_dpp_error_ref(&e))?;
+
+    let fetcher = AssetLockTransactionOutputFetcher::new(state_repository_wrapper);
 
     let tx_out = js_sys::Object::new();
 

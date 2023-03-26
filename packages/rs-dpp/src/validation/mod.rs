@@ -36,7 +36,7 @@ pub trait AsyncStateTransitionDataValidator {
     async fn validate(
         &self,
         data: &Self::StateTransition,
-    ) -> Result<StateTransitionAction, SimpleValidationResult>;
+    ) -> Result<Self::StateTransitionAction, SimpleValidationResult>;
 }
 
 /// Async validator validates data of given type

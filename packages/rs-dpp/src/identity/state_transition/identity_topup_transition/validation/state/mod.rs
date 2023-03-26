@@ -7,6 +7,7 @@ use crate::validation::{
 };
 use crate::{NonConsensusError, ProtocolError};
 use async_trait::async_trait;
+use crate::state_transition::state_transition_execution_context::StateTransitionExecutionContext;
 
 pub struct IdentityTopUpTransitionStateValidator<SR>
 where
@@ -55,8 +56,10 @@ where
 /// 2. Verify ownership proof signature, as it requires special transaction to be implemented
 pub async fn validate_identity_topup_transition_state(
     state_transition: &IdentityTopUpTransition,
-    _state_repository: &impl StateRepositoryLike,
+    state_repository: &impl StateRepositoryLike,
+    execution_context: &StateTransitionExecutionContext,
 ) -> Result<IdentityTopUpTransitionAction, ValidationResult<()>> {
-    //todo: I think we need to validate that identity actually exists
-    Ok(state_transition.into())
+    //todo: I think we need to validate that the identity actually exists
+    let top_up_balance_amount = state_transition.asset_lock_proof.fetch_asset_lock_transaction_output(state_repository,execution_context).await?;
+    Ok(IdentityTopUpTransitionAction::from_borrowed(state_transition, top_up_balance_amount.value))
 }

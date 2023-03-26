@@ -28,7 +28,7 @@ where
     async fn validate(
         &self,
         data: &IdentityCreateTransition,
-    ) -> Result<IdentityCreateTransitionAction, SimpleValidationResult> {
+    ) -> Result<Self::StateTransitionAction, SimpleValidationResult> {
         validate_identity_create_transition_state(&self.state_repository, data)
             .await
             .map_err(|err| err.into())

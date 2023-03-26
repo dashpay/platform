@@ -1,11 +1,7 @@
-use crate::data_contract::DriveContractExt;
 use crate::document::document_transition::document_base_transition_action::DocumentBaseTransitionAction;
 use crate::document::document_transition::DocumentCreateTransition;
-use crate::document::Document;
 use crate::identity::TimestampMillis;
-use crate::ProtocolError;
-use platform_value::{Identifier, Value};
-use serde::{Deserialize, Serialize};
+use platform_value::Value;
 use std::collections::BTreeMap;
 
 #[derive(Debug, Clone, Default)]

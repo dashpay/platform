@@ -14,7 +14,6 @@ use crate::{
     state_repository::StateRepositoryLike,
     state_transition::StateTransitionLike,
     validation::{AsyncStateTransitionDataValidator, SimpleValidationResult, ValidationResult},
-    ProtocolError,
 };
 
 pub struct DataContractUpdateTransitionStateValidator<SR>

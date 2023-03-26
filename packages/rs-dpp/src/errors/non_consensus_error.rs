@@ -20,6 +20,8 @@ pub enum NonConsensusError {
     InvalidVectorSizeError(InvalidVectorSizeError),
     #[error("StateRepositoryFetchError: {0}")]
     StateRepositoryFetchError(String),
+    #[error("WithdrawalError: {0}")]
+    WithdrawalError(String),
     #[error("IdentifierCreateError: {0}")]
     IdentifierCreateError(String),
     #[error("IdentityPublicKeyCreateError: {0}")]

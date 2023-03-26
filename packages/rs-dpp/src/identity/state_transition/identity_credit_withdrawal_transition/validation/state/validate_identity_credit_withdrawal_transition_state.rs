@@ -78,7 +78,7 @@ where
             return Err(result);
         }
 
-        document_id = generate_document_id::generate_document_id(
+        let document_id = generate_document_id::generate_document_id(
             &withdrawals_contract::CONTRACT_ID,
             &state_transition.identity_id,
             &document_type,
@@ -86,7 +86,7 @@ where
         );
 
         let withdrawal_document = Document {
-            id: Default::default(),
+            id: document_id,
             owner_id: state_transition.identity_id,
             properties: Default::default(),
             revision: None,

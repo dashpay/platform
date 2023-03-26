@@ -159,7 +159,7 @@ pub async fn validate_document_transitions(
     )
     .await
     .map_err(|e| {
-        result.merge(validation_result);
+        result.merge(e);
         result
     })?;
 

@@ -1,5 +1,5 @@
 use crate::errors::consensus::ConsensusError;
-use crate::{NonConsensusError, ProtocolError};
+use crate::ProtocolError;
 
 pub type SimpleValidationResult = ValidationResult<()>;
 
@@ -102,3 +102,24 @@ impl From<ConsensusError> for ValidationResult<()> {
         }
     }
 }
+
+impl From<ConsensusError> for ValidationResult<()> {
+    fn from(value: ConsensusError) -> Self {
+        ValidationResult {
+            system_error: None,
+            consensus_errors: vec![value],
+            data: None,
+        }
+    }
+}
+
+impl From<anyhow::Error> for ValidationResult<()> {
+    fn from(value: anyhow::Error) -> Self {
+        ValidationResult {
+            system_error: value.into(),
+            consensus_errors: vec![],
+            data: None,
+        }
+    }
+}
+
