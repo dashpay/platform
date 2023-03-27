@@ -271,7 +271,7 @@ rm -rf ~/.dashmate/
 
 The `core reindex` command rebuilds the blockchain index using the downloaded block data. It modifies the configuration to start the core container in `reindex=1` mode, waits until it completes a full resync, and returns it to normal mode.
 
-The process is displays interactive progress and can be interrupted at any time, but you cannot start your configuration until the resync is fully complete.
+The process displays interactive progress and can be interrupted at any time, but you cannot start your configuration until the resync is fully complete.
 
 The `core reindex` command works for regular and local configurations.
 
