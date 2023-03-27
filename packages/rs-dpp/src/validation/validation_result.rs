@@ -12,7 +12,7 @@ pub struct ValidationResult<TData: Clone> {
 }
 
 impl<TData: Clone> ValidationResult<TData> {
-    pub fn split_result(self) -> Result< ValidationResult<TData>, ProtocolError> {
+    pub fn split_result(self) -> Result<ValidationResult<TData>, ProtocolError> {
         if let Some(protocol_error) = self.system_error {
             Err(protocol_error)
         } else {
@@ -21,7 +21,7 @@ impl<TData: Clone> ValidationResult<TData> {
     }
 
     //todo: This is a hack until we have an overhaul of the error system
-    pub fn split_non_consensus_result(self) -> Result< ValidationResult<TData>, NonConsensusError> {
+    pub fn split_non_consensus_result(self) -> Result<ValidationResult<TData>, NonConsensusError> {
         if let Some(ProtocolError::NonConsensusError(non_consensus_error)) = self.system_error {
             Err(non_consensus_error)
         } else {

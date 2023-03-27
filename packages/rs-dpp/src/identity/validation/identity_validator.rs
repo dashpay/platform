@@ -63,7 +63,6 @@ impl<T: TPublicKeysValidator> IdentityValidator<T> {
             validation_result.merge(v);
         }
 
-
         Ok(validation_result)
     }
 }

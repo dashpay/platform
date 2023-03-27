@@ -20,7 +20,10 @@ pub struct DocumentReplaceTransitionAction {
 }
 
 impl DocumentReplaceTransitionAction {
-    pub fn from_document_replace_transition(document_replace_transition: &DocumentReplaceTransition, originally_created_at: Option<TimestampMillis>) -> Self {
+    pub fn from_document_replace_transition(
+        document_replace_transition: &DocumentReplaceTransition,
+        originally_created_at: Option<TimestampMillis>,
+    ) -> Self {
         let DocumentReplaceTransition {
             base,
             revision,

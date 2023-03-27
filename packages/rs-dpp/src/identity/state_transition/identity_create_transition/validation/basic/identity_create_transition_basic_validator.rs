@@ -96,11 +96,10 @@ impl<
             .get_array_slice("publicKeys")
             .map_err(NonConsensusError::ValueError)?;
         if let Err(validation_result) = self.public_keys_validator.validate_keys(public_keys) {
-
-        }
-        result.merge();
-        if !result.is_valid() {
-            return Ok(result);
+            let validation_result = validation_result.split_non_consensus_result()?;
+            if !validation_result.is_valid() {
+                return Ok(validation_result);
+            }
         }
 
         result.merge(
@@ -111,10 +110,15 @@ impl<
             return Ok(result);
         }
 
-        result.merge(
-            self.public_keys_in_identity_transition_validator
-                .validate_keys(public_keys)?,
-        );
+        if let Err(validation_result) = self
+            .public_keys_in_identity_transition_validator
+            .validate_keys(public_keys)
+        {
+            let validation_result = validation_result.split_non_consensus_result()?;
+            if !validation_result.is_valid() {
+                return Ok(validation_result);
+            }
+        }
 
         if !result.is_valid() {
             return Ok(result);

@@ -19,17 +19,12 @@ lazy_static! {
 
 pub struct IdentityUpdatePublicKeysValidator {}
 impl TPublicKeysValidator for IdentityUpdatePublicKeysValidator {
-    fn validate_keys(
-        &self,
-        raw_public_keys: &[Value],
-    ) -> Result<(), SimpleValidationResult> {
+    fn validate_keys(&self, raw_public_keys: &[Value]) -> Result<(), SimpleValidationResult> {
         validate_public_keys(raw_public_keys)
     }
 }
 
-pub fn validate_public_keys(
-    raw_public_keys: &[Value],
-) -> Result<(), SimpleValidationResult> {
+pub fn validate_public_keys(raw_public_keys: &[Value]) -> Result<(), SimpleValidationResult> {
     let mut validation_result = SimpleValidationResult::default();
 
     let maybe_max_items = IDENTITY_JSON_SCHEMA.get_value("properties.publicKeys.maxItems")?;

@@ -6,13 +6,18 @@ use dashcore::{consensus, BlockHeader};
 use platform_value::platform_value;
 
 use crate::consensus::signature::IdentityNotFoundError;
+use crate::consensus::ConsensusError;
 use crate::contracts::withdrawals_contract;
 use crate::document::{generate_document_id, Document};
 use crate::identity::state_transition::identity_credit_withdrawal_transition::{
     IdentityCreditWithdrawalTransitionAction, Pooling,
 };
-use crate::{consensus::basic::identity::IdentityInsufficientBalanceError, identity::state_transition::identity_credit_withdrawal_transition::IdentityCreditWithdrawalTransition, state_repository::StateRepositoryLike, state_transition::StateTransitionLike, validation::ValidationResult, NonConsensusError, StateError, ProtocolError};
-use crate::consensus::ConsensusError;
+use crate::{
+    consensus::basic::identity::IdentityInsufficientBalanceError,
+    identity::state_transition::identity_credit_withdrawal_transition::IdentityCreditWithdrawalTransition,
+    state_repository::StateRepositoryLike, state_transition::StateTransitionLike,
+    validation::ValidationResult, NonConsensusError, ProtocolError, StateError,
+};
 
 pub struct IdentityCreditWithdrawalTransitionValidator<SR>
 where
@@ -53,8 +58,9 @@ where
                 ))
             })?;
 
-        let existing_identity = maybe_existing_identity
-            .ok_or::<ConsensusError>(IdentityNotFoundError::new(state_transition.identity_id).into())?;
+        let existing_identity = maybe_existing_identity.ok_or::<ConsensusError>(
+            IdentityNotFoundError::new(state_transition.identity_id).into(),
+        )?;
 
         if existing_identity.get_balance() < state_transition.amount {
             let err = IdentityInsufficientBalanceError {
@@ -90,7 +96,8 @@ where
             .await?;
 
         let latest_platform_block_header: BlockHeader =
-            consensus::deserialize(&latest_platform_block_header_bytes).map_err(ProtocolError::DashCoreError)?;
+            consensus::deserialize(&latest_platform_block_header_bytes)
+                .map_err(ProtocolError::DashCoreError)?;
 
         let document_created_at_millis: i64 = latest_platform_block_header.time as i64 * 1000i64;
 

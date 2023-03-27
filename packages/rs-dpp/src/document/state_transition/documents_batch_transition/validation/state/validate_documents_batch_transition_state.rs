@@ -5,8 +5,12 @@ use futures::future::join_all;
 use itertools::Itertools;
 
 use crate::data_contract::errors::DataContractNotPresentError;
-use crate::document::document_transition::{DocumentReplaceTransitionAction, DocumentTransitionAction};
-use crate::document::state_transition::documents_batch_transition::{DOCUMENTS_BATCH_TRANSITION_ACTION_VERSION, DocumentsBatchTransitionAction};
+use crate::document::document_transition::{
+    DocumentReplaceTransitionAction, DocumentTransitionAction,
+};
+use crate::document::state_transition::documents_batch_transition::{
+    DocumentsBatchTransitionAction, DOCUMENTS_BATCH_TRANSITION_ACTION_VERSION,
+};
 use crate::document::Document;
 use crate::validation::{AsyncStateTransitionDataValidator, SimpleValidationResult};
 use crate::{
@@ -28,8 +32,7 @@ use crate::{
 };
 
 use super::{
-    execute_data_triggers::execute_data_triggers,
-    fetch_documents::fetch_documents,
+    execute_data_triggers::execute_data_triggers, fetch_documents::fetch_documents,
     validate_documents_uniqueness_by_indices::validate_documents_uniqueness_by_indices,
 };
 
@@ -81,26 +84,28 @@ pub async fn validate_document_batch_transition_state(
         .into_group_map_by(|t| &t.base().data_contract_id);
 
     let mut futures = vec![];
-    for (data_contract_id, transitions) in transitions_by_data_contract_id.into_iter() {
+    for (data_contract_id, transitions) in transitions_by_data_contract_id.iter() {
         futures.push(validate_document_transitions(
             state_repository,
             data_contract_id,
             owner_id,
-            transitions.as_slice(),
+            transitions,
             state_transition.get_execution_context(),
         ))
     }
 
-
-    let state_transition_actions = join_all(futures).await.into_iter().filter_map(|execution_result| {
-        match execution_result {
+    let state_transition_actions = join_all(futures)
+        .await
+        .into_iter()
+        .filter_map(|execution_result| match execution_result {
             Ok(state_transition) => Some(state_transition),
             Err(validation_result) => {
                 result.merge(validation_result);
                 None
             }
-        }
-    }).flatten().collect::<Vec<DocumentTransitionAction>>();
+        })
+        .flatten()
+        .collect::<Vec<DocumentTransitionAction>>();
 
     if result.is_valid() {
         let batch_transition_action = DocumentsBatchTransitionAction {
@@ -150,21 +155,24 @@ pub async fn validate_document_transitions(
     let last_header_time_millis = state_repository.fetch_latest_platform_block_time().await?;
 
     let document_transition_actions = if !execution_context.is_dry_run() {
-        let document_transition_actions = document_transitions.iter().filter_map(|transition| {
-            let validation_result = validate_transition(
-                transition.as_ref(),
-                &fetched_documents,
-                last_header_time_millis,
-                &owner_id,
-            );
-            match validation_result {
-                Ok(document_transition_action) => Some(document_transition_action),
-                Err(validation_errors) => {
-                    result.merge(validation_errors);
-                    None
+        let document_transition_actions = document_transitions
+            .iter()
+            .filter_map(|transition| {
+                let validation_result = validate_transition(
+                    transition.as_ref(),
+                    &fetched_documents,
+                    last_header_time_millis,
+                    &owner_id,
+                );
+                match validation_result {
+                    Ok(document_transition_action) => Some(document_transition_action),
+                    Err(validation_errors) => {
+                        result.merge(validation_errors);
+                        None
+                    }
                 }
-            }
-        }).collect::<Vec<DocumentTransitionAction>>();
+            })
+            .collect::<Vec<DocumentTransitionAction>>();
         if !result.is_valid() {
             return Err(result);
         }
@@ -176,14 +184,17 @@ pub async fn validate_document_transitions(
     if let Err(e) = validate_documents_uniqueness_by_indices(
         state_repository,
         &owner_id,
-        document_transitions.iter()
-            .filter(|d| d.as_transition_delete().is_none()).cloned(),
+        document_transitions
+            .iter()
+            .filter(|d| d.as_transition_delete().is_none())
+            .cloned(),
         &data_contract,
         execution_context,
     )
-    .await {
-            result.merge(e);
-            return Err(result);
+    .await
+    {
+        result.merge(e);
+        return Err(result);
     }
 
     let data_trigger_execution_context = DataTriggerExecutionContext {
@@ -239,7 +250,9 @@ fn validate_transition(
             result.merge(validation_result);
 
             if result.is_valid() {
-                Ok(DocumentTransitionAction::CreateAction(document_create_transition.into()))
+                Ok(DocumentTransitionAction::CreateAction(
+                    document_create_transition.into(),
+                ))
             } else {
                 Err(result)
             }
@@ -265,12 +278,17 @@ fn validate_transition(
             result.merge(validation_result);
 
             if result.is_valid() {
-                Ok(DocumentTransitionAction::ReplaceAction(DocumentReplaceTransitionAction::from_document_replace_transition(document_replace_transition, original_document.created_at)))
+                Ok(DocumentTransitionAction::ReplaceAction(
+                    DocumentReplaceTransitionAction::from_document_replace_transition(
+                        document_replace_transition,
+                        original_document.created_at,
+                    ),
+                ))
             } else {
                 Err(result)
             }
         }
-        DocumentTransition::Delete(document_delete_transition)  => {
+        DocumentTransition::Delete(document_delete_transition) => {
             let validation_result = check_if_document_can_be_found(transition, fetched_documents);
             let original_document = match validation_result {
                 Ok(document) => document,
@@ -284,7 +302,9 @@ fn validate_transition(
             result.merge(validation_result);
 
             if result.is_valid() {
-                Ok(DocumentTransitionAction::DeleteAction(document_delete_transition.into()))
+                Ok(DocumentTransitionAction::DeleteAction(
+                    document_delete_transition.into(),
+                ))
             } else {
                 Err(result)
             }
@@ -374,11 +394,12 @@ fn check_if_document_can_be_found<'a>(
         .iter()
         .find(|d| d.id == document_transition.base().id);
 
-    maybe_fetched_document.ok_or(ConsensusError::StateError(Box::new(
-        StateError::DocumentNotFoundError {
+    maybe_fetched_document.ok_or(
+        ConsensusError::StateError(Box::new(StateError::DocumentNotFoundError {
             document_id: document_transition.base().id,
-        },
-    )).into())
+        }))
+        .into(),
+    )
 }
 
 fn check_if_timestamps_are_equal(document_transition: &DocumentTransition) -> ValidationResult<()> {

@@ -1,7 +1,9 @@
 use platform_value::Error as ValueError;
 use thiserror::Error;
 
-use crate::{CompatibleProtocolVersionIsNotDefinedError, DPPError, InvalidVectorSizeError, SerdeParsingError};
+use crate::{
+    CompatibleProtocolVersionIsNotDefinedError, DPPError, InvalidVectorSizeError, SerdeParsingError,
+};
 
 #[derive(Debug, Error)]
 pub enum NonConsensusError {

@@ -36,7 +36,8 @@ impl TPublicKeysValidator for RequiredPurposeAndSecurityLevelValidator {
             })
             .collect::<Result<Vec<_>, NonConsensusError>>()?
         {
-            let public_key: IdentityPublicKey = platform_value::from_value(raw_public_key.clone()).map_err(ProtocolError::ValueError)?;
+            let public_key: IdentityPublicKey = platform_value::from_value(raw_public_key.clone())
+                .map_err(ProtocolError::ValueError)?;
             let combo = PurposeKey {
                 purpose: public_key.purpose,
                 security_level: public_key.security_level,

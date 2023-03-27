@@ -26,7 +26,9 @@ use crate::state_transition::validation::validate_state_transition_fee::StateTra
 use crate::state_transition::validation::validate_state_transition_identity_signature::validate_state_transition_identity_signature;
 use crate::state_transition::validation::validate_state_transition_key_signature::StateTransitionKeySignatureValidator;
 use crate::state_transition::validation::validate_state_transition_state::StateTransitionStateValidator;
-use crate::validation::{AsyncDataValidator, AsyncDataValidatorWithContext, SimpleValidationResult};
+use crate::validation::{
+    AsyncDataValidator, AsyncDataValidatorWithContext, SimpleValidationResult,
+};
 use crate::version::ProtocolVersionValidator;
 
 #[derive(Clone)]

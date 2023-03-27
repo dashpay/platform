@@ -6,8 +6,8 @@ use crate::state_transition::state_transition_execution_context::StateTransition
 use crate::validation::{
     AsyncStateTransitionDataValidator, SimpleValidationResult, ValidationResult,
 };
-use async_trait::async_trait;
 use crate::NonConsensusError;
+use async_trait::async_trait;
 
 pub struct IdentityTopUpTransitionStateValidator<SR>
 where
@@ -30,7 +30,7 @@ where
     ) -> Result<IdentityTopUpTransitionAction, SimpleValidationResult> {
         //todo: pass the execution context
         let execution_context = StateTransitionExecutionContext::default();
-        validate_identity_topup_transition_state( &self.state_repository,data, &execution_context)
+        validate_identity_topup_transition_state(&self.state_repository, data, &execution_context)
             .await
             .map(|result| result.into())
             .map_err(|err| err.into())
@@ -65,7 +65,8 @@ pub async fn validate_identity_topup_transition_state(
     let top_up_balance_amount = state_transition
         .asset_lock_proof
         .fetch_asset_lock_transaction_output(state_repository, execution_context)
-        .await.map_err(Into::<NonConsensusError>::into)?;
+        .await
+        .map_err(Into::<NonConsensusError>::into)?;
     Ok(IdentityTopUpTransitionAction::from_borrowed(
         state_transition,
         top_up_balance_amount.value,

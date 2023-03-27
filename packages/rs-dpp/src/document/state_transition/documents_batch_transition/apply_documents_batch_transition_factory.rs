@@ -43,10 +43,11 @@ pub async fn apply_documents_batch_transition(
     state_repository: &impl StateRepositoryLike,
     state_transition: &DocumentsBatchTransition,
 ) -> Result<(), ProtocolError> {
-    let replace_transitions : Vec<_> = state_transition
+    let replace_transitions: Vec<_> = state_transition
         .get_transitions_slice()
         .into_iter()
-        .filter(|dt| dt.base().action == Action::Replace).collect();
+        .filter(|dt| dt.base().action == Action::Replace)
+        .collect();
 
     let fetched_documents = fetch_extended_documents(
         state_repository,

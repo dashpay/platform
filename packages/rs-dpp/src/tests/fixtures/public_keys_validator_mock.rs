@@ -7,8 +7,7 @@ use crate::validation::ValidationResult;
 #[cfg(feature = "fixtures-and-mocks")]
 pub struct PublicKeysValidatorMock {
     returns: Mutex<Result<(), ValidationResult<()>>>,
-    returns_fn:
-        Mutex<Option<Box<dyn Fn() -> Result<(), ValidationResult<()>> + 'static>>>,
+    returns_fn: Mutex<Option<Box<dyn Fn() -> Result<(), ValidationResult<()>> + 'static>>>,
     called_with: Mutex<Vec<Value>>,
 }
 
@@ -25,10 +24,7 @@ impl PublicKeysValidatorMock {
         *self.returns.lock().unwrap() = result;
     }
 
-    pub fn returns_fun(
-        &self,
-        func: impl Fn() -> Result<(), ValidationResult<()>> + 'static,
-    ) {
+    pub fn returns_fun(&self, func: impl Fn() -> Result<(), ValidationResult<()>> + 'static) {
         *self.returns_fn.lock().unwrap() = Some(Box::new(func))
     }
 
@@ -38,10 +34,7 @@ impl PublicKeysValidatorMock {
 }
 
 impl TPublicKeysValidator for PublicKeysValidatorMock {
-    fn validate_keys(
-        &self,
-        raw_public_keys: &[Value],
-    ) -> Result<(), ValidationResult<()>> {
+    fn validate_keys(&self, raw_public_keys: &[Value]) -> Result<(), ValidationResult<()>> {
         *self.called_with.lock().unwrap() = Vec::from(raw_public_keys);
         let guard = self.returns_fn.lock().unwrap();
         let fun = guard.as_ref().unwrap();

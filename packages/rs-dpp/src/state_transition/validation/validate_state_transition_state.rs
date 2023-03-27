@@ -78,9 +78,7 @@ where
                 self.identity_create_validator.validate(st).await?,
             )),
             StateTransition::IdentityUpdate(st) => Ok(IdentityUpdateAction(
-                self.identity_update_validator
-                    .validate(st)
-                    .await?,
+                self.identity_update_validator.validate(st).await?,
             )),
             StateTransition::IdentityTopUp(st) => Ok(IdentityTopUpAction(
                 self.identity_top_up_validator.validate(st).await?,

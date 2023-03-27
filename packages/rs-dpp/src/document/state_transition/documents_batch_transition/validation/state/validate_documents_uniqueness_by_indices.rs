@@ -49,7 +49,6 @@ where
             continue;
         }
 
-
         // 2. Fetch Document by indexed properties
         let document_index_queries =
             generate_document_index_queries(&document_indices, transition, owner_id);
@@ -69,7 +68,6 @@ where
 
         let (futures, futures_meta) = unzip_iter_and_collect(queries);
         let results = join_all(futures).await;
-
 
         // 3. Create errors if duplicates found
         let result = validate_uniqueness(futures_meta, results)?;

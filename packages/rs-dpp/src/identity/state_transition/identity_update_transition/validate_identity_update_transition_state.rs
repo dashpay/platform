@@ -164,8 +164,7 @@ where
             .map(|pk| pk.try_into().map_err(NonConsensusError::ValueError))
             .collect::<Result<Vec<Value>, NonConsensusError>>()?;
 
-        self
-            .public_keys_validator
+        self.public_keys_validator
             .validate_keys(raw_public_keys.as_slice())?;
 
         let validator = RequiredPurposeAndSecurityLevelValidator {};
