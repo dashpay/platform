@@ -45,7 +45,7 @@ describe('DocumentFacade', () => {
     stateRepositoryMock.fetchDataContract.resolves(dataContract);
 
     blsAdapter = await getBlsAdapterMock();
-    dpp = new DashPlatformProtocol({}, blsAdapter, stateRepositoryMock);
+    dpp = new DashPlatformProtocol(blsAdapter, stateRepositoryMock, 1);
 
     documentsJs = getDocumentsFixture(dataContractJs);
     documents = documentsJs.map((d) => {

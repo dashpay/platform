@@ -12,11 +12,11 @@ use crate::identity::state_transition::identity_credit_withdrawal_transition::va
 use crate::identity::state_transition::identity_topup_transition::validation::basic::IdentityTopUpTransitionBasicValidator;
 use crate::identity::state_transition::identity_update_transition::validate_identity_update_transition_basic::ValidateIdentityUpdateTransitionBasic;
 use crate::identity::state_transition::validate_public_key_signatures::PublicKeysSignaturesValidator;
-use crate::identity::validation::PublicKeysValidator;
+use crate::identity::validation::{PUBLIC_KEY_SCHEMA_FOR_TRANSITION, PublicKeysValidator};
 
 use crate::state_repository::StateRepositoryLike;
 use crate::state_transition::{
-    StateTransition, StateTransitionFactory, StateTransitionFactoryOptions,
+    StateTransition, StateTransitionConvert, StateTransitionFactory, StateTransitionFactoryOptions,
 };
 
 use crate::state_transition::state_transition_execution_context::StateTransitionExecutionContext;
@@ -59,80 +59,16 @@ where
     ) -> Result<Self, ProtocolError> {
         let wrapped_state_repository = Arc::new(state_repository.clone());
 
-        let state_transition_factory = {
-            let pk_validator =
-                Arc::new(PublicKeysValidator::new(adapter.clone()).map_err(ProtocolError::from)?);
-            let pk_sig_validator = Arc::new(PublicKeysSignaturesValidator::new(adapter.clone()));
-
-            let asset_lock_tx_validator = Arc::new(AssetLockTransactionValidator::new(
-                wrapped_state_repository.clone(),
-            ));
-
-            let asset_lock_validator = Arc::new(AssetLockProofValidator::new(
-                InstantAssetLockProofStructureValidator::new(
-                    wrapped_state_repository.clone(),
-                    asset_lock_tx_validator.clone(),
-                )
-                .map_err(ProtocolError::from)?,
-                ChainAssetLockProofStructureValidator::new(
-                    wrapped_state_repository.clone(),
-                    asset_lock_tx_validator,
-                )
-                .map_err(ProtocolError::from)?,
-            ));
-
-            StateTransitionFactory::new(
-                wrapped_state_repository.clone(),
-                StateTransitionBasicValidator::new(
-                    wrapped_state_repository.clone(),
-                    StateTransitionByTypeValidator::new(
-                        DataContractCreateTransitionBasicValidator::new(
-                            protocol_version_validator.clone(),
-                        )?,
-                        DataContractUpdateTransitionBasicValidator::new(
-                            wrapped_state_repository.clone(),
-                            protocol_version_validator.clone(),
-                        )
-                        .map_err(ProtocolError::from)?,
-                        IdentityCreateTransitionBasicValidator::new(
-                            protocol_version_validator.deref().clone(),
-                            pk_validator.clone(),
-                            pk_validator.clone(),
-                            asset_lock_validator.clone(),
-                            adapter.clone(),
-                            pk_sig_validator.clone(),
-                        )
-                        .map_err(ProtocolError::from)?,
-                        ValidateIdentityUpdateTransitionBasic::new(
-                            ProtocolVersionValidator::default(),
-                            pk_validator,
-                            pk_sig_validator,
-                        )?,
-                        IdentityTopUpTransitionBasicValidator::new(
-                            ProtocolVersionValidator::default(),
-                            asset_lock_validator,
-                        )
-                        .map_err(ProtocolError::from)?,
-                        IdentityCreditWithdrawalTransitionBasicValidator::new(
-                            protocol_version_validator.clone(),
-                        )
-                        .map_err(ProtocolError::from)?,
-                        DocumentBatchTransitionBasicValidator::new(
-                            wrapped_state_repository.clone(),
-                            protocol_version_validator.clone(),
-                        ),
-                    ),
-                ),
-            )
-        };
-
         let state_transition_basic_validator = {
-            let protocol_version_validator = Arc::new(ProtocolVersionValidator::default());
-
-            let pk_validator =
-                Arc::new(PublicKeysValidator::new(adapter.clone()).map_err(|_| {
+            let pk_validator = Arc::new(
+                PublicKeysValidator::new_with_schema(
+                    PUBLIC_KEY_SCHEMA_FOR_TRANSITION.clone(),
+                    adapter.clone(),
+                )
+                .map_err(|_| {
                     ProtocolError::Generic(String::from("Unable to initialize PublicKeysValidator"))
-                })?);
+                })?,
+            );
             let pk_sig_validator = Arc::new(PublicKeysSignaturesValidator::new(adapter.clone()));
 
             let asset_lock_tx_validator = Arc::new(AssetLockTransactionValidator::new(
@@ -160,7 +96,7 @@ where
                 })?,
             ));
 
-            StateTransitionBasicValidator::new(
+            let validator = StateTransitionBasicValidator::new(
                 wrapped_state_repository.clone(),
                 StateTransitionByTypeValidator::new(
                     DataContractCreateTransitionBasicValidator::new(
@@ -215,8 +151,15 @@ where
                         protocol_version_validator.clone(),
                     ),
                 ),
-            )
+            );
+
+            Arc::new(validator)
         };
+
+        let state_transition_factory = StateTransitionFactory::new(
+            wrapped_state_repository.clone(),
+            state_transition_basic_validator.clone(),
+        );
 
         let state_transition_key_signature_validator = {
             let asset_lock_transaction_output_fetcher =
@@ -241,7 +184,7 @@ where
         Ok(Self {
             state_repository: wrapped_state_repository,
             factory: Arc::new(state_transition_factory),
-            basic_validator: Arc::new(state_transition_basic_validator),
+            basic_validator: state_transition_basic_validator,
             key_signature_validator: Arc::new(state_transition_key_signature_validator),
             fee_validator: Arc::new(state_transition_fee_validator),
             state_validator: Arc::new(state_transition_state_validator),
@@ -278,18 +221,15 @@ where
     pub async fn validate(
         &self,
         state_transition: &StateTransition,
-        // TODO: revisit after https://github.com/dashpay/platform/pull/809 is merged
-        //  we need to pass state_transition_json here because `StateTransition#to_object` output
-        //  does not pass basic validation, and we use other means of producing JSON value for validation
-        state_transition_json: &Value,
         execution_context: &StateTransitionExecutionContext,
         options: ValidateOptions,
     ) -> Result<SimpleValidationResult, ProtocolError> {
         let mut result = SimpleValidationResult::default();
 
         if options.basic {
+            let state_transition_cleaned = state_transition.to_cleaned_object(false)?;
             result.merge(
-                self.validate_basic(state_transition_json, execution_context)
+                self.validate_basic(&state_transition_cleaned, execution_context)
                     .await?,
             );
         }
