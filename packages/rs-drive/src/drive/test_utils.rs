@@ -16,7 +16,7 @@ impl TestEntropyGenerator {
 }
 
 impl EntropyGenerator for TestEntropyGenerator {
-    fn generate(&self) -> [u8; 32] {
-        self.rng.borrow_mut().gen()
+    fn generate(&self) -> Result<[u8; 32], dpp::dashcore::anyhow::Error> {
+        Ok(self.rng.borrow_mut().gen())
     }
 }

@@ -3,14 +3,15 @@ use std::convert::TryFrom;
 use anyhow::anyhow;
 use dpp::{
     identity::KeyType,
-    state_transition::fee::operations::{
-        OperationLike,  SignatureVerificationOperation,
-    },
+    state_transition::fee::operations::{OperationLike, SignatureVerificationOperation},
 };
-use js_sys::BigInt;
+use js_sys::{Array, BigInt};
 use wasm_bindgen::prelude::*;
 
-use crate::utils::{Inner, WithJsError};
+use crate::{
+    fee::refunds::RefundsWasm,
+    utils::{Inner, WithJsError},
+};
 
 #[wasm_bindgen(js_name = "SignatureVerificationOperation")]
 #[derive(Clone)]
@@ -41,6 +42,20 @@ impl SignatureVerificationOperationWasm {
     #[wasm_bindgen(js_name=getStorageCost)]
     pub fn get_storage_cost(&self) -> BigInt {
         BigInt::from(self.0.get_storage_cost())
+    }
+
+    #[wasm_bindgen(getter)]
+    pub fn refunds(&self) -> Option<Array> {
+        let array_refunds = Array::new();
+        if let Some(refunds) = self.0.get_refunds() {
+            for refund in refunds {
+                let refund_wasm: RefundsWasm = refund.into();
+                array_refunds.push(&refund_wasm.into());
+            }
+            Some(array_refunds)
+        } else {
+            None
+        }
     }
 }
 

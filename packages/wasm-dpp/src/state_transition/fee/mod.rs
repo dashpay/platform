@@ -1,15 +1,13 @@
-use dpp::state_transition::fee::{
-    calculate_operations_fees, operations::Operation, DummyFeesResult,
-};
+use dpp::state_transition::fee::operations::Operation;
 use wasm_bindgen::prelude::*;
 
 use crate::utils::Inner;
 mod calculate_operation_fees;
 mod calculate_state_transition_fee;
+mod dummy_fee_result;
+mod fee_result;
 mod operations;
-
-#[wasm_bindgen(js_name=Fees)]
-pub struct FeesWasm(DummyFeesResult);
+mod refunds;
 
 #[wasm_bindgen(js_name=Operation)]
 #[derive(Clone)]
@@ -18,12 +16,6 @@ pub struct OperationWasm(Operation);
 impl From<Operation> for OperationWasm {
     fn from(value: Operation) -> Self {
         OperationWasm(value)
-    }
-}
-
-impl From<DummyFeesResult> for FeesWasm {
-    fn from(value: DummyFeesResult) -> Self {
-        FeesWasm(value)
     }
 }
 

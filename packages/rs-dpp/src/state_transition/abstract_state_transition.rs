@@ -18,7 +18,6 @@ use crate::{
     BlsModule,
 };
 
-use super::fee::Credits;
 use super::{
     state_transition_execution_context::StateTransitionExecutionContext, StateTransition,
     StateTransitionType,
@@ -53,7 +52,7 @@ pub trait StateTransitionLike:
     /// returns the signature as a byte-array
     fn get_signature(&self) -> &BinaryData;
     /// set a new signature
-    fn set_signature(&mut self, signature: Vec<u8>);
+    fn set_signature(&mut self, signature: BinaryData);
     /// get modified ids list
     fn get_modified_data_ids(&self) -> Vec<Identifier>;
 
