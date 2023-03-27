@@ -291,7 +291,7 @@ CLI allows [setup](#set-up-node) and operation of multiple nodes. Only the `loca
 
 #### Default group
 
-The [setup](#set-up-node) command set corresponding group as default. To output the current default group or set another one as default use `group:default` command.
+The [setup](#set-up-node) command sets the corresponding group as default. To output the current default group or set another one as default use the `group:default` command.
 
 ```
 USAGE
