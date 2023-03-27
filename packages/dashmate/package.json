@@ -122,6 +122,9 @@
     "macos": {
       "identifier": "org.dash.dashmate"
     },
+    "deb": {
+      "dependencies": "docker-ce (>= 20.10.0)"
+    },
     "plugins": [
       "@oclif/plugin-help"
     ],
