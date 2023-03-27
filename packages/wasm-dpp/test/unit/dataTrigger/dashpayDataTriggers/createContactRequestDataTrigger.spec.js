@@ -7,9 +7,9 @@ const DataTriggerConditionError = require('@dashevo/dpp/lib/errors/consensus/sta
 const createStateRepositoryMock = require('@dashevo/dpp/lib/test/mocks/createStateRepositoryMock');
 const getDocumentTransitionFixture = require('@dashevo/dpp/lib/test/fixtures/getDocumentTransitionsFixture');
 
-const getDashPayContractFixture = require('@dashevo/dpp/lib/test/fixtures/getDashPayContractFixture');
-const { getContactRequestDocumentFixture } = require('@dashevo/dpp/lib/test/fixtures/getDashPayDocumentFixture');
 const StateTransitionExecutionContext = require('@dashevo/dpp/lib/stateTransition/StateTransitionExecutionContext');
+const getDashPayContractFixture = require('../../../../lib/test/fixtures/getDashPayContractFixture');
+const { getContactRequestDocumentFixture } = require('../../../../lib/test/fixtures/getDashPayDocumentFixture');
 
 describe('createContactRequestDataTrigger', () => {
   let context;
