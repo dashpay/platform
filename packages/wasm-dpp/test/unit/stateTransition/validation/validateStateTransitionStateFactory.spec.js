@@ -12,7 +12,6 @@ let {
 } = require('../../../..');
 
 describe('validateStateTransitionStateFactory', () => {
-  let validateDataContractSTDataMock;
   let stateTransition;
   let dpp;
   let stateRepositoryMock;
@@ -33,8 +32,6 @@ describe('validateStateTransitionStateFactory', () => {
     dpp = new DashPlatformProtocol(blsMock, stateRepositoryMock);
 
     stateTransition = dpp.dataContract.createDataContractCreateTransition(dataContract);
-
-    validateDataContractSTDataMock = this.sinonSandbox.stub();
   });
 
   it('should return invalid result if State Transition type is invalid', async () => {
@@ -55,8 +52,6 @@ describe('validateStateTransitionStateFactory', () => {
     } catch (e) {
       expect(e).to.be.instanceOf(InvalidStateTransitionTypeError);
       expect(e.getType()).to.equal(stateTransition.getType());
-
-      expect(validateDataContractSTDataMock).to.not.be.called();
     }
   });
 
