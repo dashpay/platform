@@ -723,7 +723,7 @@ function createDIContainer(blsSignatures, dppWasm, options) {
     ) => unserializeStateTransitionFactory(transactionalDpp, noopLogger)).singleton(),
 
     dpp: asFunction((DashPlatformProtocol, stateRepository, dppOptions, blsSignatures) => (
-      new DashPlatformProtocol(blsSignatures, stateRepository, dppOptions)
+      new DashPlatformProtocol(blsSignatures, stateRepository)
     )).singleton(),
 
     transactionalDpp: asFunction((
@@ -732,7 +732,7 @@ function createDIContainer(blsSignatures, dppWasm, options) {
       dppOptions,
       blsSignatures,
     ) => (
-      new DashPlatformProtocol(blsSignatures, transactionalStateRepository, dppOptions)
+      new DashPlatformProtocol(blsSignatures, transactionalStateRepository)
     )).singleton(),
   });
 
