@@ -287,7 +287,7 @@ dashmate config set core.masternode.enable false
 
 ### Node groups
 
-CLI allows to [setup](#set-up-node) and operate multiple nodes. Only the `local` preset is supported at the moment.
+CLI allows [setup](#set-up-node) and operation of multiple nodes. Only the `local` preset is supported at the moment.
 
 #### Default group
 
