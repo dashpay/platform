@@ -7,47 +7,41 @@
 # - build - actual build process
 # - release - final image
 #
-# We use Debian as base, because Alpine causes segmentation fault in git2 rust crate.
+
+ARG ALPINE_VERSION=3.17
 
 #
 # DEPS: INSTALL AND CACHE DEPENDENCIES
 #
-FROM rust:bullseye as deps
-
-LABEL maintainer="Dash Developers <dev@dash.org>"
-LABEL description="Drive ABCI Rust"
-
-RUN --mount=type=cache,sharing=locked,target=/var/lib/apt/lists \
-    --mount=type=cache,sharing=locked,target=/var/cache/apt \
-    rm -f /etc/apt/apt.conf.d/docker-clean \
-    && apt-get update \
-    && apt-get install --yes \
-        build-essential \
-        libclang-dev \
-        libssl-dev \
-        protobuf-compiler \
-        git \
-        wget \
-        unzip \
-        bash
-
-SHELL ["/bin/bash", "-c"]
-
-#
-# Install sccache - build cache for Rust
-#
-ARG SCCACHE_URL="https://github.com/mozilla/sccache/releases/download/v0.4.0/sccache-v0.4.0-x86_64-unknown-linux-musl.tar.gz"
-RUN wget -q -O /tmp/sccache.tar.gz ${SCCACHE_URL} \
-    && mkdir -p /tmp/sccache \
-    && tar -z -C /tmp/sccache -xf /tmp/sccache.tar.gz \
-    && cp /tmp/sccache/sccache*/sccache /usr/bin/sccache \
-    && rm -r /tmp/sccache.tar.gz /tmp/sccache
+FROM rust:alpine${ALPINE_VERSION} as deps
 
 #
 # Update Rust runtime
 #
 ARG CARGO_BUILD_PROFILE=debug
 RUN rustup install stable
+
+RUN apk add --no-cache \
+        alpine-sdk \
+        bash \
+        clang-dev \
+        git \
+        linux-headers \
+        openssl-dev \
+        perl \
+        sccache \
+        unzip \
+        wget
+
+SHELL ["/bin/bash", "-c"]
+
+# Install protoc - protobuf compiler
+# The one shipped with Alpine does not work
+ARG PROTOC_ARCH=x86_64
+RUN wget -q -O /tmp/protoc.zip https://github.com/protocolbuffers/protobuf/releases/download/v22.2/protoc-22.2-linux-${PROTOC_ARCH}.zip && \
+    unzip -qd /opt/protoc /tmp/protoc.zip && \
+    rm /tmp/protoc.zip && \
+    ln -s /opt/protoc/bin/protoc /usr/bin/
 
 #
 # EXECUTE BUILD
@@ -61,7 +55,6 @@ COPY . .
 #
 # Configure sccache
 #
-
 # Set RUSTC_WRAPPER=/usr/bin/sccache to enable `sccache` caching.
 ARG RUSTC_WRAPPER=/usr/bin/sccache
 # Set args below to use Github Actions cache; see https://github.com/mozilla/sccache/blob/main/docs/GHA.md
@@ -94,7 +87,10 @@ RUN --mount=type=cache,sharing=shared,target=/root/.cache/sccache \
 #
 # FINAL IMAGE
 #
-FROM debian:bullseye-slim AS release
+FROM alpine:${ALPINE_VERSION} AS release
+
+LABEL maintainer="Dash Developers <dev@dash.org>"
+LABEL description="Drive ABCI Rust"
 
 VOLUME /var/lib/platform
 
@@ -114,9 +110,9 @@ COPY --from=build /usr/src/platform/packages/rs-drive-abci/.env.example /var/lib
 ARG USERNAME=platform
 ARG USER_UID=1000
 ARG USER_GID=$USER_UID
-RUN groupadd --gid $USER_GID $USERNAME \
-    && useradd --uid $USER_UID --gid $USER_GID --home /var/lib/platform/rs-drive-abci --create-home $USERNAME \
-    && chown -R $USER_UID:$USER_GID /var/lib/platform/rs-drive-abci 
+RUN addgroup -g $USER_GID $USERNAME && \
+    adduser -D -u $USER_UID -G $USERNAME -h /var/lib/platform/rs-drive-abci $USERNAME && \
+    chown -R $USER_UID:$USER_GID /var/lib/platform/rs-drive-abci 
 
 USER $USERNAME
 
