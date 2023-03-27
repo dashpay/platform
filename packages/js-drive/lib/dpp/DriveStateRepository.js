@@ -585,6 +585,8 @@ class DriveStateRepository {
       smlStore.getTipHeight() - offset + 1,
     );
 
+    // below is a fix for DIP 24
+    // see https://github.com/dashpay/dash/pull/5158
     const llmqType = instantlockSML.getInstantSendLLMQType();
 
     if (instantlockSML.isLLMQTypeRotated(llmqType)) {
