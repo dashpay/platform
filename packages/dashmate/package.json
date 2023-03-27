@@ -123,7 +123,7 @@
       "identifier": "org.dash.dashmate"
     },
     "deb": {
-      "dependencies": "docker-ce (>= 20.10.0)"
+      "dependencies": "docker-ce (>= 20.10.0) | docker (>= 20.10.0) | docker.io (>= 20.10.0) | docker-engine (>= 20.10.0)"
     },
     "plugins": [
       "@oclif/plugin-help"
