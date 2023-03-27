@@ -90,7 +90,7 @@
     "table": "^5.4.6"
   },
   "devDependencies": {
-    "@dashevo/oclif": "^1.0.0",
+    "@dashevo/oclif": "github:dashpay/oclif#8526b2c2ef90330bee6d860ec8a5ddd05ab1d17c",
     "chai": "^4.3.4",
     "chai-as-promised": "^7.1.1",
     "dirty-chai": "^2.0.1",
