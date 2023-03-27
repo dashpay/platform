@@ -297,7 +297,7 @@ The CLI allows [setup](#node-setup) and operation of multiple nodes. Only the `l
 
 #### Default group
 
-The [setup](#node-setup) command sets the corresponding group as default. To output the current default group or set another one as default use the `group:default` command.
+The [setup](#node-setup) command sets the corresponding group as default. To output the current default group or set another one as default, use the `group:default` command.
 
 ```
 USAGE
