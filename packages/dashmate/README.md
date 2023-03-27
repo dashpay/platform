@@ -101,7 +101,7 @@ DESCRIPTION
 ```
 
 Supported presets:
- * `mainnet` - a node connected to Dash main network
+ * `mainnet` - a node connected to the Dash main network
  * `testnet` - a node connected to the Dash test network
  * `local` - a full network environment on your machine for local development. To operate a group of nodes, use the [group commands](#node-groups)
 
