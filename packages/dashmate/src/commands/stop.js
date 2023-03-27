@@ -55,7 +55,7 @@ StopCommand.flags = {
   ...ConfigBaseCommand.flags,
   force: Flags.boolean({
     char: 'f',
-    description: 'force stop even if service is running',
+    description: 'force stop even if any service is running',
     default: false,
   }),
 };
