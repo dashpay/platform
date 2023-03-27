@@ -1,3 +1,7 @@
+/**
+ * @param {string} value
+ * @returns {boolean}
+ */
 function validatePercentage(value) {
   const reminder = value.split('.')[1];
 

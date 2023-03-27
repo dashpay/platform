@@ -1,3 +1,7 @@
+/**
+ * @param blsSignatures
+ * @returns {validateBLSPrivateKey}
+ */
 function validateBLSPrivateKeyFactory(blsSignatures) {
   /**
    * @typedef validateBLSPrivateKey

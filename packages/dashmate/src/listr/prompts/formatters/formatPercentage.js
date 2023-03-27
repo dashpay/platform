@@ -1,5 +1,10 @@
 const placeholder = require('enquirer/lib/placeholder');
 
+/**
+ * @param {string} input
+ * @param {Object} choice
+ * @returns {*}
+ */
 function formatPercentage(input, choice) {
   let str;
 
