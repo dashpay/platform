@@ -1,7 +1,7 @@
 const { PrivateKey } = require('@dashevo/dashcore-lib');
 
 const createStateRepositoryMock = require('@dashevo/dpp/lib/test/mocks/createStateRepositoryMock');
-const getIdentityCreateTransitionFixture = require('../../../../../../../lib/test/fixtures/getIdentityCreateTransitionFixture');
+const getIdentityCreateTransitionFixture = require('@dashevo/dpp/lib/test/fixtures/getIdentityCreateTransitionFixture');
 
 const { expectValidationError, expectJsonSchemaError } = require('../../../../../../../lib/test/expect/expectError');
 const { default: loadWasmDpp } = require('../../../../../../../dist');
