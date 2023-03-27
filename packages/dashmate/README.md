@@ -4,7 +4,7 @@
 [![Release Date](https://img.shields.io/github/release-date/dashpay/platform)](https://github.com/dashpay/platform/releases/latest)
 [![standard-readme compliant](https://img.shields.io/badge/readme%20style-standard-brightgreen.svg)](https://github.com/RichardLitt/standard-readme)
 
-Distribution package for Dash Masternode installation
+Distribution package for Dash node installation
 
 ## Table of Contents
 
@@ -33,7 +33,7 @@ Distribution package for Dash Masternode installation
 * [Docker](https://docs.docker.com/engine/installation/) (v20.10+)
 * [Node.js](https://nodejs.org/en/download/) (v16, NPM v8.0+)
 
-For Linux installations you may optionally wish to follow the [post-installation steps](https://docs.docker.com/engine/install/linux-postinstall/) to manage Docker as a non-root user, otherwise you will have to run CLI and Docker commands with `sudo`.
+For Linux installations you may optionally wish to follow the Docker [post-installation steps](https://docs.docker.com/engine/install/linux-postinstall/) to manage Docker as a non-root user, otherwise you will have to run CLI and Docker commands with `sudo`.
 
 ### Distribution package
 
@@ -54,9 +54,9 @@ $ dashmate start
 
 In some cases, you must also additionally reset platform data:
 
-* Upgrade contains non-compatible changes (f.e. switching between v22/v23)
-* Command ``dashmate setup`` finished with errors or interrupted in the process
-* Platform layer has been wiped in the network
+* Upgrade contains non-compatible changes (e.g. switching between v22/v23)
+* The ``dashmate setup`` command exited with errors or was interrupted
+* The platform layer was wiped on the network
 
 ```bash
 $ dashmate stop
@@ -67,7 +67,7 @@ $ dashmate setup
 $ dashmate start
 ```
 
-Before applying an upgrade, local network should be stopped and reset via ``dashmate reset --hard``. 
+Before applying an upgrade, the local network should be stopped and reset with ``dashmate reset --hard``. 
 
 ## Usage
 
@@ -75,7 +75,7 @@ The package contains a CLI, Docker Compose and configuration files.
 
 ### CLI
 
-The CLI can be used to perform routine tasks. Invoke the CLI with `dashmate` if linked during installation, or with `node bin/dashmate` if not linked. To list available commands, either run `dashmate` with no parameters or execute `dashmate help`. To list the help on any command just execute the command, followed by the `--help` option.
+The CLI can be used to perform routine tasks. Invoke the CLI with `dashmate`. To list available commands, either run `dashmate` with no parameters or execute `dashmate help`. To list the help on any command execute the command, followed by the `--help` option.
 
 ### Set up node
 
@@ -247,7 +247,7 @@ $ dashmate reset --hard
 ```
 
 #### Manual reset
-Manual reset is used when local setup corrupts and hard reset does not fix it. This could happen, when dashmate configuration becomes incompatible after a major upgrade, making you unable to execute any commands.
+Manual reset can be used if the local setup is corrupted and a hard reset does not fix it. This could happen due to dashmate configuration incompatibilities after a major upgrade, leaving you unable to execute any commands.
 ```bash
 docker stop $(docker ps -q)
 docker system prune
@@ -258,16 +258,13 @@ rm -rf ~/.dashmate/
 
 ### Reindex dashcore chain data
 
-The `reindex` command rebuilds the block chain index using the downloaded block data.
+The `reindex` command rebuilds the blockchain index using the downloaded block data. It modifies the configuration to start the core container in `reindex=1` mode, waits until it completes a full resync, and returns it to normal mode.
 
-It modifies the configuration, runs the core container in `reindex=1` mode, waits until it fully resynces, and returns it to the normal mode.
-
-The process is interactive (shows progress) and can be interrupted any time, but you cannot start your configuration until the resync is fully complete.
+The process is displays interactive progress and can be interrupted at any time, but you cannot start your configuration until the resync is fully complete.
 
 The `reindex` command works for regular and local configurations.
 
 ```
-Reindex Core
 USAGE
   $ dashmate core reindex [-v] [--config <value>]
 FLAGS
@@ -287,7 +284,7 @@ dashmate config set core.masternode.enable false
 
 ### Node groups
 
-CLI allows [setup](#set-up-node) and operation of multiple nodes. Only the `local` preset is supported at the moment.
+The CLI allows [setup](#set-up-node) and operation of multiple nodes. Only the `local` preset is supported at the moment.
 
 #### Default group
 
@@ -390,11 +387,11 @@ DESCRIPTION
   Reset group nodes
 ```
 
-With the hard reset mode enabled, corresponding configs will be reset as well. To proceed, running the node [setup](#set-up-node) is required.
+With hard reset mode enabled, the corresponding node configs will be reset as well. It will be necessary to run node [setup](#set-up-node) again from scratch to start a new local node group.
 
 #### Create config group
 
-To group nodes together, set a group name to `group` option in corresponding configs.
+To group nodes together, set a group name using the `group` option with the corresponding configs.
 
 Create a group of two testnet nodes:
 ```bash
@@ -409,17 +406,17 @@ dashmate config set --config=testnet_2 group testnet
 dashmate group default testnet
 ```
 
-To start the group of nodes, ports and other required options need to be updated.
+Ports and other required options need to be updated to avoid port collisions before starting the group of nodes.
 
 ### Development
 
-To start a local dash network, the `setup` command with the `local` preset can be used to generate configs, mine some dash, register masternodes and populate the nodes with the data required for local development.
+To start a local dash network, the `setup` command with the `local` preset can be used to generate configs, mine some tDash, register masternodes and populate the nodes with the data required for local development.
 
-To allow developers quickly test changes to DAPI and Drive, a local path for this repository may be specified via the `platform.sourcePath` config options. A Docker image will be built from the provided path and then used by Dashmate.
+To allow developers to quickly test changes to DAPI and Drive, a local path for this repository may be specified using the `platform.sourcePath` config options. A Docker image will be built from the provided path and then used by Dashmate.
 
 ### Docker Compose
 
-If you want to use Docker Compose directly, you will need to pass a configuration as a dotenv file. You can output a config to a dotenv file for Docker Compose as follows:
+If you want to use Docker Compose directly, you will need to pass in configuration as a dotenv file. You can output a config to a dotenv file for Docker Compose as follows:
 
 ```bash
 $ dashmate config envs --config=testnet --output-file .env.testnet
@@ -440,17 +437,17 @@ One of your nodes is not running, you may retry with the --force option:
 `dashmate group:stop --force` to stop group of nodes (local)
 
 #### Running services detected. Please ensure all services are stopped for this config before starting
-Some nodes are still running and preventing dashmate to make a proper start, that might be left after unsuccessful close. Try to stop them forcibly with --force option before trying to start
+Some nodes are still running and preventing dashmate from starting properly. This may occur after a command exits with an error. Try to stop force stop the nodes using the `--force` option before trying to run the `start` command again.
 
 `dashmate stop --force` to stop single node (fullnode / masternode)
 
 `dashmate group:stop --force` to stop group of nodes (local)
 
 #### externalIp option is not set in base config
-This may happen when you switch between multiple major versions, so your config became incompatible. In this case, do a manual reset and run setup again
+This may happen when you switch back and forth between major versions, making config incompatible. In this case, do a manual reset and run setup again
 
 #### TypeError Plugin: dashmate: Cannot read properties of undefined (reading 'dash')
-This could happen if you have other .yarnrc and node_modules in your upper directories. Check your home directory for any .yarnrc and node_modules, wipe them all and try again
+This can occur if other `.yarnrc` and `node_modules` directories exist in parent directories. Check your home directory for any `.yarnrc` and `node_modules`, delete them all and try again.
 
 
 
