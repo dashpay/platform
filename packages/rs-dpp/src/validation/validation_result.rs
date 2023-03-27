@@ -1,5 +1,5 @@
 use crate::errors::consensus::ConsensusError;
-use crate::ProtocolError;
+use crate::{NonConsensusError, ProtocolError};
 
 pub type SimpleValidationResult = ValidationResult<()>;
 
@@ -12,6 +12,23 @@ pub struct ValidationResult<TData: Clone> {
 }
 
 impl<TData: Clone> ValidationResult<TData> {
+    pub fn split_result(self) -> Result< ValidationResult<TData>, ProtocolError> {
+        if let Some(protocol_error) = self.system_error {
+            Err(protocol_error)
+        } else {
+            Ok(self)
+        }
+    }
+
+    //todo: This is a hack until we have an overhaul of the error system
+    pub fn split_non_consensus_result(self) -> Result< ValidationResult<TData>, NonConsensusError> {
+        if let Some(ProtocolError::NonConsensusError(non_consensus_error)) = self.system_error {
+            Err(non_consensus_error)
+        } else {
+            Ok(self)
+        }
+    }
+
     pub fn new(errors: Option<Vec<ConsensusError>>) -> Self {
         Self {
             system_error: None,
@@ -55,7 +72,7 @@ impl<TData: Clone> ValidationResult<TData> {
     }
 
     pub fn is_valid(&self) -> bool {
-        self.errors().is_empty()
+        self.errors().is_empty() && self.system_error.is_none()
     }
 
     pub fn first_error(&self) -> Option<&ConsensusError> {
@@ -103,10 +120,30 @@ impl From<ConsensusError> for ValidationResult<()> {
     }
 }
 
+impl From<NonConsensusError> for ValidationResult<()> {
+    fn from(value: NonConsensusError) -> Self {
+        ValidationResult {
+            system_error: Some(ProtocolError::NonConsensusError(value)),
+            consensus_errors: vec![],
+            data: None,
+        }
+    }
+}
+
+impl From<platform_value::Error> for ValidationResult<()> {
+    fn from(value: platform_value::Error) -> Self {
+        ValidationResult {
+            system_error: Some(ProtocolError::ValueError(value)),
+            consensus_errors: vec![],
+            data: None,
+        }
+    }
+}
+
 impl From<anyhow::Error> for ValidationResult<()> {
     fn from(value: anyhow::Error) -> Self {
         ValidationResult {
-            system_error: value.into(),
+            system_error: Some(ProtocolError::Error(value)),
             consensus_errors: vec![],
             data: None,
         }

@@ -17,6 +17,8 @@ use crate::{
     SerdeParsingError,
 };
 
+use dashcore::consensus::encode::Error as DashCoreError;
+
 use platform_value::{Error as ValueError, Value};
 
 #[derive(Error, Debug)]
@@ -83,9 +85,8 @@ pub enum ProtocolError {
     #[error(transparent)]
     InvalidSignaturePublicKeyError(InvalidSignaturePublicKeyError),
 
-    // TODO decide if it should be a string
-    #[error("Non-Consensus error: {0}")]
-    NonConsensusError(String),
+    #[error(transparent)]
+    NonConsensusError(#[from] NonConsensusError),
 
     #[error(transparent)]
     CompatibleProtocolVersionIsNotDefinedError(#[from] CompatibleProtocolVersionIsNotDefinedError),
@@ -130,6 +131,10 @@ pub enum ProtocolError {
     #[error("value error: {0}")]
     ValueError(#[from] ValueError),
 
+    /// Dash core error
+    #[error("dash core error: {0}")]
+    DashCoreError(#[from] DashCoreError),
+
     #[error("Invalid Identity: {errors:?}")]
     InvalidIdentityError {
         errors: Vec<ConsensusError>,
@@ -138,12 +143,6 @@ pub enum ProtocolError {
 
     #[error("Public key generation error {0}")]
     PublicKeyGenerationError(String),
-}
-
-impl From<NonConsensusError> for ProtocolError {
-    fn from(e: NonConsensusError) -> Self {
-        Self::NonConsensusError(e.to_string())
-    }
 }
 
 impl From<&str> for ProtocolError {

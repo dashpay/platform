@@ -26,9 +26,7 @@ use crate::state_transition::validation::validate_state_transition_fee::StateTra
 use crate::state_transition::validation::validate_state_transition_identity_signature::validate_state_transition_identity_signature;
 use crate::state_transition::validation::validate_state_transition_key_signature::StateTransitionKeySignatureValidator;
 use crate::state_transition::validation::validate_state_transition_state::StateTransitionStateValidator;
-use crate::validation::{
-    AsyncDataValidatorWithContext, AsyncStateTransitionDataValidator, SimpleValidationResult,
-};
+use crate::validation::{AsyncDataValidator, AsyncDataValidatorWithContext, SimpleValidationResult};
 use crate::version::ProtocolVersionValidator;
 
 #[derive(Clone)]
@@ -284,41 +282,25 @@ where
         state_transition_json: &Value,
         execution_context: &StateTransitionExecutionContext,
         options: ValidateOptions,
-    ) -> Result<SimpleValidationResult, ProtocolError> {
-        let mut result = SimpleValidationResult::default();
-
+    ) -> Result<Option<StateTransitionAction>, SimpleValidationResult> {
         if options.basic {
-            result.merge(
-                self.validate_basic(state_transition_json, execution_context)
-                    .await?,
-            );
-        }
-
-        if !result.is_valid() {
-            return Ok(result);
+            self.validate_basic(state_transition_json, execution_context)
+                .await?;
         }
 
         if options.signature {
-            result.merge(self.validate_signature(state_transition.clone()).await?);
-        }
-
-        if !result.is_valid() {
-            return Ok(result);
+            self.validate_signature(state_transition.clone()).await?;
         }
 
         if options.fee {
-            result.merge(self.validate_fee(state_transition).await?);
-        }
-
-        if !result.is_valid() {
-            return Ok(result);
+            self.validate_fee(state_transition).await?;
         }
 
         if options.state {
-            result.merge(self.validate_state(state_transition).await?);
+            self.validate_state(state_transition).await.map(Some)
+        } else {
+            Ok(None)
         }
-
-        Ok(result)
     }
 
     pub async fn validate_basic(

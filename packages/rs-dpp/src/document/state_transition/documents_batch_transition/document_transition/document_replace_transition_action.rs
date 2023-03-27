@@ -3,7 +3,6 @@ use crate::document::document_transition::DocumentReplaceTransition;
 use crate::identity::TimestampMillis;
 use crate::prelude::Revision;
 use platform_value::Value;
-use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 
 #[derive(Debug, Clone, Default)]
@@ -20,37 +19,19 @@ pub struct DocumentReplaceTransitionAction {
     pub data: BTreeMap<String, Value>,
 }
 
-impl From<DocumentReplaceTransition> for DocumentReplaceTransitionAction {
-    fn from(value: DocumentReplaceTransition) -> Self {
+impl DocumentReplaceTransitionAction {
+    pub fn from_document_replace_transition(document_replace_transition: &DocumentReplaceTransition, originally_created_at: Option<TimestampMillis>) -> Self {
         let DocumentReplaceTransition {
             base,
             revision,
             updated_at,
             data,
             ..
-        } = value;
-        DocumentReplaceTransitionAction {
-            base: base.into(),
-            revision,
-            created_at: None,
-            updated_at,
-            data: data.unwrap_or_default(),
-        }
-    }
-}
-
-impl From<&DocumentReplaceTransition> for DocumentReplaceTransitionAction {
-    fn from(value: &DocumentReplaceTransition) -> Self {
-        let DocumentReplaceTransition {
-            base,
-            revision,
-            updated_at,
-            data,
-            ..
-        } = value;
+        } = document_replace_transition;
         DocumentReplaceTransitionAction {
             base: base.into(),
             revision: *revision,
+            created_at: originally_created_at,
             updated_at: updated_at.clone(),
             data: data.clone().unwrap_or_default(),
         }

@@ -8,7 +8,6 @@ use crate::identity::state_transition::identity_credit_withdrawal_transition::va
 use crate::identity::state_transition::identity_topup_transition::validation::state::IdentityTopUpTransitionStateValidator;
 use crate::identity::state_transition::identity_update_transition::validate_identity_update_transition_state::IdentityUpdateTransitionStateValidator;
 use crate::identity::state_transition::identity_update_transition::validate_public_keys::IdentityUpdatePublicKeysValidator;
-use crate::ProtocolError;
 use crate::state_transition::{StateTransition, StateTransitionAction};
 use crate::state_transition::StateTransitionAction::{DataContractCreateAction, DataContractUpdateAction, DocumentsBatchAction, IdentityCreateAction, IdentityCreditWithdrawalAction, IdentityTopUpAction, IdentityUpdateAction};
 use crate::validation::{AsyncStateTransitionDataValidator, SimpleValidationResult};
@@ -81,8 +80,7 @@ where
             StateTransition::IdentityUpdate(st) => Ok(IdentityUpdateAction(
                 self.identity_update_validator
                     .validate(st)
-                    .await
-                    .map_err(|e| ProtocolError::from(e))?,
+                    .await?,
             )),
             StateTransition::IdentityTopUp(st) => Ok(IdentityTopUpAction(
                 self.identity_top_up_validator.validate(st).await?,
@@ -90,8 +88,7 @@ where
             StateTransition::IdentityCreditWithdrawal(st) => Ok(IdentityCreditWithdrawalAction(
                 self.identity_credit_withdrawal_validator
                     .validate_identity_credit_withdrawal_transition_state(st)
-                    .await
-                    .map_err(|e| ProtocolError::from(e))?,
+                    .await?,
             )),
             StateTransition::DocumentsBatch(st) => Ok(DocumentsBatchAction(
                 self.document_batch_validator.validate(st).await?,

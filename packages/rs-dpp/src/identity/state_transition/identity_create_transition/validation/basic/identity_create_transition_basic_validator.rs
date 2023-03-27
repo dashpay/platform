@@ -95,7 +95,10 @@ impl<
         let public_keys = transition_object
             .get_array_slice("publicKeys")
             .map_err(NonConsensusError::ValueError)?;
-        result.merge(self.public_keys_validator.validate_keys(public_keys)?);
+        if let Err(validation_result) = self.public_keys_validator.validate_keys(public_keys) {
+
+        }
+        result.merge();
         if !result.is_valid() {
             return Ok(result);
         }

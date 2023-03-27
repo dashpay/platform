@@ -9,9 +9,7 @@ use crate::errors::consensus::basic::identity::{
 };
 use crate::identity::{IdentityPublicKey, KeyID, KeyType};
 use crate::validation::{JsonSchemaValidator, ValidationResult};
-use crate::{
-    BlsModule, DashPlatformProtocolInitError, NonConsensusError, PublicKeyValidationError,
-};
+use crate::{BlsModule, DashPlatformProtocolInitError, NonConsensusError, ProtocolError, PublicKeyValidationError};
 
 use crate::identity::security_level::ALLOWED_SECURITY_LEVELS;
 #[cfg(test)]
@@ -33,7 +31,7 @@ pub trait TPublicKeysValidator {
     fn validate_keys(
         &self,
         raw_public_keys: &[Value],
-    ) -> Result<ValidationResult<()>, NonConsensusError>;
+    ) -> Result<(), ValidationResult<()>>;
 }
 
 pub struct PublicKeysValidator<T: BlsModule> {
@@ -45,7 +43,7 @@ impl<T: BlsModule> TPublicKeysValidator for PublicKeysValidator<T> {
     fn validate_keys(
         &self,
         raw_public_keys: &[Value],
-    ) -> Result<ValidationResult<()>, NonConsensusError> {
+    ) -> Result<(), ValidationResult<()>> {
         let mut result = ValidationResult::new(None);
 
         // TODO: convert buffers to arrays?
@@ -55,13 +53,13 @@ impl<T: BlsModule> TPublicKeysValidator for PublicKeysValidator<T> {
         }
 
         if !result.is_valid() {
-            return Ok(result);
+            return Err(result);
         }
 
         // Public keys already passed json schema validation at this point
         let mut public_keys = Vec::<IdentityPublicKey>::with_capacity(raw_public_keys.len());
         for raw_public_key in raw_public_keys {
-            let pk: IdentityPublicKey = platform_value::from_value(raw_public_key.clone())?;
+            let pk: IdentityPublicKey = platform_value::from_value(raw_public_key.clone()).map_err(ProtocolError::ValueError)?;
             public_keys.push(pk);
         }
 
@@ -84,7 +82,7 @@ impl<T: BlsModule> TPublicKeysValidator for PublicKeysValidator<T> {
         for public_key in public_keys.iter() {
             validation_error = match public_key.key_type {
                 KeyType::ECDSA_SECP256K1 => {
-                    let key_bytes = &public_key.as_ecdsa_array()?;
+                    let key_bytes = &public_key.as_ecdsa_array().map_err(NonConsensusError::InvalidVectorSizeError)?;
                     match PublicKey::from_slice(key_bytes) {
                         Ok(_) => None,
                         Err(e) => Some(PublicKeyValidationError::new(e.to_string())),
@@ -142,7 +140,11 @@ impl<T: BlsModule> TPublicKeysValidator for PublicKeysValidator<T> {
             }
         }
 
-        Ok(result)
+        if result.is_valid() {
+            Ok(())
+        } else {
+            Err(result)
+        }
     }
 }
 

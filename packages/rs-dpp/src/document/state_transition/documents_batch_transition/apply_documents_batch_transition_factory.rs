@@ -9,7 +9,7 @@ use crate::{
 
 use super::{
     document_transition::{Action, DocumentReplaceTransition, DocumentTransition},
-    validation::state::fetch_extended_documents::fetch_extended_documents,
+    validation::state::fetch_documents::fetch_extended_documents,
     DocumentsBatchTransition,
 };
 
@@ -43,14 +43,14 @@ pub async fn apply_documents_batch_transition(
     state_repository: &impl StateRepositoryLike,
     state_transition: &DocumentsBatchTransition,
 ) -> Result<(), ProtocolError> {
-    let replace_transitions = state_transition
-        .get_transitions()
-        .iter()
-        .filter(|dt| dt.base().action == Action::Replace);
+    let replace_transitions : Vec<_> = state_transition
+        .get_transitions_slice()
+        .into_iter()
+        .filter(|dt| dt.base().action == Action::Replace).collect();
 
     let fetched_documents = fetch_extended_documents(
         state_repository,
-        replace_transitions,
+        replace_transitions.as_slice(),
         &state_transition.execution_context,
     )
     .await?;

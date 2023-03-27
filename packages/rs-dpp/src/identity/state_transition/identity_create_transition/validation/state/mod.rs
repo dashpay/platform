@@ -7,7 +7,7 @@ use crate::state_transition::StateTransitionLike;
 use crate::validation::{
     AsyncStateTransitionDataValidator, SimpleValidationResult, ValidationResult,
 };
-use crate::{NonConsensusError, ProtocolError};
+use crate::{NonConsensusError};
 use async_trait::async_trait;
 
 pub struct IdentityCreateTransitionStateValidator<SR>
@@ -73,14 +73,14 @@ pub async fn validate_identity_create_transition_state(
         })?;
 
     if state_transition.get_execution_context().is_dry_run() {
-        return Ok(state_transition.into());
+        return Ok(IdentityCreateTransitionAction::from_borrowed(state_transition, 0));
     }
 
-    if balance.is_some() {
+    if let Some(balance) = balance {
+        return Ok(IdentityCreateTransitionAction::from_borrowed(state_transition, balance));
+    } else {
         result.add_error(IdentityAlreadyExistsError::new(identity_id.to_buffer()));
         Err(result)
-    } else {
-        Ok(state_transition.into())
     }
 }
 

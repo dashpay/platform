@@ -1,8 +1,5 @@
 use std::convert::{TryFrom, TryInto};
 
-use dashcore::blockdata::transaction::special_transaction::TransactionPayload::{
-    AssetLockPayloadType, AssetUnlockPayloadType,
-};
 use dashcore::consensus::{Decodable, Encodable};
 use dashcore::{InstantLock, Transaction, TxOut};
 use platform_value::{BinaryData, Value};

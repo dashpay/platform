@@ -260,6 +260,10 @@ impl DocumentsBatchTransition {
         &self.transitions
     }
 
+    pub fn get_transitions_slice(&self) -> &[DocumentTransition] {
+        self.transitions.as_slice()
+    }
+
     pub fn clean_value(value: &mut Value) -> Result<(), platform_value::Error> {
         value.replace_at_paths(IDENTIFIER_FIELDS, ReplacementType::Identifier)?;
         value.replace_integer_type_at_paths(U32_FIELDS, IntegerReplacementType::U32)?;

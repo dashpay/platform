@@ -5,7 +5,7 @@ use crate::consensus::basic::identity::MissingMasterPublicKeyError;
 use crate::identity::validation::TPublicKeysValidator;
 use crate::identity::{IdentityPublicKey, Purpose, SecurityLevel};
 use crate::validation::ValidationResult;
-use crate::{DashPlatformProtocolInitError, NonConsensusError};
+use crate::{DashPlatformProtocolInitError, NonConsensusError, ProtocolError};
 
 #[derive(Eq, Hash, PartialEq)]
 struct PurposeKey {
@@ -36,7 +36,7 @@ impl TPublicKeysValidator for RequiredPurposeAndSecurityLevelValidator {
             })
             .collect::<Result<Vec<_>, NonConsensusError>>()?
         {
-            let public_key: IdentityPublicKey = platform_value::from_value(raw_public_key.clone())?;
+            let public_key: IdentityPublicKey = platform_value::from_value(raw_public_key.clone()).map_err(ProtocolError::ValueError)?;
             let combo = PurposeKey {
                 purpose: public_key.purpose,
                 security_level: public_key.security_level,

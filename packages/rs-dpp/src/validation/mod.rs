@@ -9,7 +9,6 @@ use serde_json::Value as JsonValue;
 pub use json_schema_validator::JsonSchemaValidator;
 pub use validation_result::{SimpleValidationResult, ValidationResult};
 
-use crate::state_transition::StateTransitionAction;
 use crate::{
     state_transition::state_transition_execution_context::StateTransitionExecutionContext,
     ProtocolError,

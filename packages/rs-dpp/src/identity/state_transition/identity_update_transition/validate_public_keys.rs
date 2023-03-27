@@ -8,7 +8,7 @@ use crate::{
     prelude::IdentityPublicKey,
     util::json_value::JsonValueExt,
     validation::SimpleValidationResult,
-    ProtocolError, StateError,
+    StateError,
 };
 
 lazy_static! {
@@ -22,15 +22,14 @@ impl TPublicKeysValidator for IdentityUpdatePublicKeysValidator {
     fn validate_keys(
         &self,
         raw_public_keys: &[Value],
-    ) -> Result<SimpleValidationResult, crate::NonConsensusError> {
+    ) -> Result<(), SimpleValidationResult> {
         validate_public_keys(raw_public_keys)
-            .map_err(|e| crate::NonConsensusError::SerdeJsonError(e.to_string()))
     }
 }
 
 pub fn validate_public_keys(
     raw_public_keys: &[Value],
-) -> Result<SimpleValidationResult, ProtocolError> {
+) -> Result<(), SimpleValidationResult> {
     let mut validation_result = SimpleValidationResult::default();
 
     let maybe_max_items = IDENTITY_JSON_SCHEMA.get_value("properties.publicKeys.maxItems")?;
@@ -42,7 +41,7 @@ pub fn validate_public_keys(
     if raw_public_keys.len() > max_items {
         validation_result
             .add_error(StateError::MaxIdentityPublicKeyLimitReachedError { max_items });
-        return Ok(validation_result);
+        return Err(validation_result);
     }
 
     let public_keys: Vec<IdentityPublicKey> = raw_public_keys
@@ -56,7 +55,7 @@ pub fn validate_public_keys(
     if !duplicated_ids.is_empty() {
         validation_result
             .add_error(StateError::DuplicatedIdentityPublicKeyIdError { duplicated_ids });
-        return Ok(validation_result);
+        return Err(validation_result);
     }
 
     // Check that there's no duplicated keys
@@ -67,5 +66,9 @@ pub fn validate_public_keys(
         });
     }
 
-    Ok(validation_result)
+    if validation_result.is_valid() {
+        Ok(())
+    } else {
+        Err(validation_result)
+    }
 }

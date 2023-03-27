@@ -5,7 +5,6 @@ use itertools::Itertools;
 use platform_value::string_encoding::Encoding;
 use serde_json::{json, Value as JsonValue};
 
-use crate::document::document_transition::DocumentTransitionAction;
 use crate::document::Document;
 use crate::{
     document::document_transition::{Action, DocumentTransition, DocumentTransitionExt},
@@ -27,7 +26,7 @@ struct QueryDefinition<'a> {
 pub async fn validate_documents_uniqueness_by_indices<SR>(
     state_repository: &SR,
     owner_id: &Identifier,
-    document_transitions: impl IntoIterator<Item = impl AsRef<DocumentTransition>>,
+    document_transitions: impl Iterator<Item = &DocumentTransition>,
     data_contract: &DataContract,
     execution_context: &StateTransitionExecutionContext,
 ) -> Result<(), ValidationResult<()>>
@@ -35,6 +34,10 @@ where
     SR: StateRepositoryLike,
 {
     let mut validation_result = ValidationResult::default();
+
+    if execution_context.is_dry_run() {
+        return Ok(());
+    }
 
     // 1. Prepare fetchDocuments queries from indexed properties
     for t in document_transitions {
@@ -45,6 +48,7 @@ where
         if document_indices.is_empty() {
             continue;
         }
+
 
         // 2. Fetch Document by indexed properties
         let document_index_queries =
@@ -66,9 +70,6 @@ where
         let (futures, futures_meta) = unzip_iter_and_collect(queries);
         let results = join_all(futures).await;
 
-        if execution_context.is_dry_run() {
-            return Err(t.into());
-        }
 
         // 3. Create errors if duplicates found
         let result = validate_uniqueness(futures_meta, results)?;

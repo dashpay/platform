@@ -66,7 +66,7 @@ impl AssetLockProof {
 
                 let transaction_data = transaction_data
                     .try_into()
-                    .map_err(|e| DPPError::CoreMessageCorruption(e.toString()))?;
+                    .map_err(|e| DPPError::CoreMessageCorruption(format!("{:?}",e.into())))?;
 
                 if let Some(raw_transaction) = transaction_data.data {
                     let transaction = Transaction::consensus_decode(raw_transaction.as_slice())

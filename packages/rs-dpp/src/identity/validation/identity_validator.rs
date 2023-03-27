@@ -59,7 +59,10 @@ impl<T: TPublicKeysValidator> IdentityValidator<T> {
         }
 
         let raw_public_keys = identity_object.get_array_slice("publicKeys")?;
-        validation_result.merge(self.public_keys_validator.validate_keys(raw_public_keys)?);
+        if let Err(v) = self.public_keys_validator.validate_keys(raw_public_keys) {
+            validation_result.merge(v);
+        }
+
 
         Ok(validation_result)
     }

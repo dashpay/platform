@@ -11,13 +11,8 @@ use crate::document::{generate_document_id, Document};
 use crate::identity::state_transition::identity_credit_withdrawal_transition::{
     IdentityCreditWithdrawalTransitionAction, Pooling,
 };
-use crate::system_data_contracts::load_system_data_contract;
-use crate::{
-    consensus::basic::identity::IdentityInsufficientBalanceError,
-    identity::state_transition::identity_credit_withdrawal_transition::IdentityCreditWithdrawalTransition,
-    state_repository::StateRepositoryLike, state_transition::StateTransitionLike,
-    validation::ValidationResult, NonConsensusError, StateError,
-};
+use crate::{consensus::basic::identity::IdentityInsufficientBalanceError, identity::state_transition::identity_credit_withdrawal_transition::IdentityCreditWithdrawalTransition, state_repository::StateRepositoryLike, state_transition::StateTransitionLike, validation::ValidationResult, NonConsensusError, StateError, ProtocolError};
+use crate::consensus::ConsensusError;
 
 pub struct IdentityCreditWithdrawalTransitionValidator<SR>
 where
@@ -59,7 +54,7 @@ where
             })?;
 
         let existing_identity = maybe_existing_identity
-            .ok_or(IdentityNotFoundError::new(state_transition.identity_id).into())?;
+            .ok_or::<ConsensusError>(IdentityNotFoundError::new(state_transition.identity_id).into())?;
 
         if existing_identity.get_balance() < state_transition.amount {
             let err = IdentityInsufficientBalanceError {
@@ -95,7 +90,7 @@ where
             .await?;
 
         let latest_platform_block_header: BlockHeader =
-            consensus::deserialize(&latest_platform_block_header_bytes)?;
+            consensus::deserialize(&latest_platform_block_header_bytes).map_err(ProtocolError::DashCoreError)?;
 
         let document_created_at_millis: i64 = latest_platform_block_header.time as i64 * 1000i64;
 

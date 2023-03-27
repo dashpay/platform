@@ -19,7 +19,7 @@ use crate::{
         state_transition_execution_context::StateTransitionExecutionContext,
         StateTransition, StateTransitionConvert, StateTransitionLike,
     },
-    validation::{AsyncStateTransitionDataValidator, SimpleValidationResult, ValidationResult},
+    validation::{SimpleValidationResult, ValidationResult},
     ProtocolError,
 };
 
