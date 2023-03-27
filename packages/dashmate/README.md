@@ -463,7 +463,7 @@ One of your nodes is not running, you may retry with the --force option:
 `dashmate group:stop --force` to stop group of nodes (local)
 
 #### Running services detected. Please ensure all services are stopped for this config before starting
-Some nodes are still running and preventing dashmate from starting properly. This may occur after a command exits with an error. Try to stop force stop the nodes using the `--force` option before trying to run the `start` command again.
+Some nodes are still running and preventing dashmate from starting properly. This may occur after a command exits with an error. Try to force stop the nodes using the `--force` option before trying to run the `start` command again.
 
 `dashmate stop --force` to stop single node (fullnode / masternode)
 
