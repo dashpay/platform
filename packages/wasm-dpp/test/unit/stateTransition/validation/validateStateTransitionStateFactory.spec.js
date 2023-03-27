@@ -1,42 +1,47 @@
-const stateTransitionTypes = require('@dashevo/dpp/lib/stateTransition/stateTransitionTypes');
+const createStateRepositoryMock = require('../../../../lib/test/mocks/createStateRepositoryMock');
+const getBlsMock = require('../../../../lib/test/mocks/getBlsAdapterMock');
+const getDataContractFixture = require('../../../../lib/test/fixtures/getDataContractFixture');
+const { expectValidationError } = require('../../../../lib/test/expect/expectError');
 
-const validateStateTransitionStateFactory = require('@dashevo/dpp/lib/stateTransition/validation/validateStateTransitionStateFactory');
-
-const { expectValidationError } = require('@dashevo/dpp/lib/test/expect/expectError');
-
-const getDataContractFixture = require('@dashevo/dpp/lib/test/fixtures/getDataContractFixture');
-
-const ValidationResult = require('@dashevo/dpp/lib/validation/ValidationResult');
-
-const DataContractFactory = require('@dashevo/dpp/lib/dataContract/DataContractFactory');
-
-const InvalidStateTransitionTypeError = require('@dashevo/dpp/lib/stateTransition/errors/InvalidStateTransitionTypeError');
-const createDPPMock = require('@dashevo/dpp/lib/test/mocks/createDPPMock');
-const SomeConsensusError = require('@dashevo/dpp/lib/test/mocks/SomeConsensusError');
+const { default: loadWasmDpp } = require('../../../..');
+let {
+  DashPlatformProtocol,
+  InvalidStateTransitionTypeError,
+  ValidationResult,
+  DataContractAlreadyPresentError,
+} = require('../../../..');
 
 describe('validateStateTransitionStateFactory', () => {
   let validateDataContractSTDataMock;
-  let validateStateTransitionState;
   let stateTransition;
+  let dpp;
+  let stateRepositoryMock;
 
-  beforeEach(function beforeEach() {
+  beforeEach(async function beforeEach() {
+    ({
+      DashPlatformProtocol,
+      InvalidStateTransitionTypeError,
+      ValidationResult,
+      DataContractAlreadyPresentError,
+    } = await loadWasmDpp());
+    const dataContract = await getDataContractFixture();
+
+    stateRepositoryMock = createStateRepositoryMock(this.sinonSandbox);
+    stateRepositoryMock.fetchDataContract.resolves();
+    const blsMock = getBlsMock();
+
+    dpp = new DashPlatformProtocol(blsMock, stateRepositoryMock);
+
+    stateTransition = dpp.dataContract.createDataContractCreateTransition(dataContract);
+
     validateDataContractSTDataMock = this.sinonSandbox.stub();
-
-    const dataContractFactory = new DataContractFactory(createDPPMock(), undefined);
-
-    const dataContract = getDataContractFixture();
-    stateTransition = dataContractFactory.createDataContractCreateTransition(dataContract);
-
-    validateStateTransitionState = validateStateTransitionStateFactory({
-      [stateTransitionTypes.DATA_CONTRACT_CREATE]: validateDataContractSTDataMock,
-    });
   });
 
   it('should return invalid result if State Transition type is invalid', async () => {
     const rawStateTransition = {};
     stateTransition = {
       getType() {
-        return 4343;
+        return 234;
       },
       toObject() {
         return rawStateTransition;
@@ -44,7 +49,7 @@ describe('validateStateTransitionStateFactory', () => {
     };
 
     try {
-      await validateStateTransitionState(stateTransition);
+      await dpp.stateTransition.validateState(stateTransition);
 
       expect.fail('should throw InvalidStateTransitionTypeError');
     } catch (e) {
@@ -56,34 +61,23 @@ describe('validateStateTransitionStateFactory', () => {
   });
 
   it('should return invalid result if Data Contract State Transition is not valid', async () => {
-    const dataContractError = new SomeConsensusError('test');
-    const dataContractResult = new ValidationResult([
-      dataContractError,
-    ]);
+    stateRepositoryMock.fetchDataContract.resolves(await getDataContractFixture());
 
-    validateDataContractSTDataMock.resolves(dataContractResult);
+    const result = await dpp.stateTransition.validateState(stateTransition);
 
-    const result = await validateStateTransitionState(stateTransition);
-
-    expectValidationError(result);
+    await expectValidationError(result);
 
     const [error] = result.getErrors();
 
-    expect(error).to.equal(dataContractError);
+    expect(error).to.be.instanceOf(DataContractAlreadyPresentError);
 
-    expect(validateDataContractSTDataMock).to.be.calledOnceWith(stateTransition);
+    expect(stateRepositoryMock.fetchDataContract).to.be.calledOnce();
   });
 
   it('should return valid result', async () => {
-    const dataContractResult = new ValidationResult();
-
-    validateDataContractSTDataMock.resolves(dataContractResult);
-
-    const result = await validateStateTransitionState(stateTransition);
+    const result = await dpp.stateTransition.validateState(stateTransition);
 
     expect(result).to.be.an.instanceOf(ValidationResult);
     expect(result.isValid()).to.be.true();
-
-    expect(validateDataContractSTDataMock).to.be.calledOnceWith(stateTransition);
   });
 });
