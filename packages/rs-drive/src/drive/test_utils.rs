@@ -1,8 +1,8 @@
 use std::cell::RefCell;
 
+use dpp::dashcore::anyhow;
 use dpp::util::entropy_generator::EntropyGenerator;
 use rand::{rngs::SmallRng, Rng, SeedableRng};
-use dpp::dashcore::anyhow;
 
 pub(crate) struct TestEntropyGenerator {
     rng: RefCell<SmallRng>,

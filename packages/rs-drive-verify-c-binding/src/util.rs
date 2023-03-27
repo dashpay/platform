@@ -82,14 +82,11 @@ pub(crate) fn build_c_metadata_struct(identity: &DppIdentity) -> *const MetaData
     }
 }
 
-pub(crate) fn extract_vector_from_pointer<T>(
-    ptr: *const *const u8,
-    count: usize,
-) -> Vec<T> {
+pub(crate) fn extract_vector_from_pointer<T>(ptr: *const *const u8, count: usize) -> Vec<T> {
     let mut result = Vec::new();
     let inner_pointers = unsafe { slice::from_raw_parts(ptr, count) };
     for i in 0..count {
-        let inner_item: T = unsafe { std::ptr::read(inner_pointers[i] as *const T )};
+        let inner_item: T = unsafe { std::ptr::read(inner_pointers[i] as *const T) };
         result.push(inner_item);
     }
     result
