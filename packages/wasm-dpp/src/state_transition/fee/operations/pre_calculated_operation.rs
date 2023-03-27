@@ -1,4 +1,3 @@
-
 use crate::{fee::dummy_fee_result::DummyFeesResultWasm, utils::Inner};
 use dpp::state_transition::fee::{
     operations::{OperationLike, PreCalculatedOperation},

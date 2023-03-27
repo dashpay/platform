@@ -4,7 +4,8 @@ use dpp::state_transition::fee::{
 use wasm_bindgen::prelude::*;
 
 use crate::{
-    utils::{Inner, IntoWasm}, fee::dummy_fee_result::DummyFeesResultWasm,
+    fee::dummy_fee_result::DummyFeesResultWasm,
+    utils::{Inner, IntoWasm},
 };
 
 use super::OperationWasm;
