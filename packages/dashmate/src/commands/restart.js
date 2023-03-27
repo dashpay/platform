@@ -50,10 +50,7 @@ class RestartCommand extends ConfigBaseCommand {
   }
 }
 
-RestartCommand.description = `Restart node
-...
-Restart node
-`;
+RestartCommand.description = `Restart node`;
 
 RestartCommand.flags = {
   ...ConfigBaseCommand.flags,

@@ -99,7 +99,7 @@ class PlatformStatusCommand extends ConfigBaseCommand {
   }
 }
 
-PlatformStatusCommand.description = 'Show platform status details';
+PlatformStatusCommand.description = 'Show Platform status details';
 
 PlatformStatusCommand.flags = {
   ...ConfigBaseCommand.flags,

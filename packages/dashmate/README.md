@@ -12,7 +12,7 @@ Distribution package for Dash node installation
 - [Update](#update)
 - [Usage](#usage)
   - [Command line interface](#cli)
-  - [Set up node](#set-up-node)
+  - [Node setup](#node-setup)
   - [Configure node](#configure-node)
   - [Start node](#start-node)
   - [Stop node](#stop-node)
@@ -45,6 +45,18 @@ $ npm install -g dashmate
 ## Update
 
 The `update` command is used to quickly get the latest patches for dashmate components. It is necessary to restart the node after the update is complete.
+
+```
+USAGE
+  $ dashmate update [-v] [--config <value>]
+
+FLAGS
+  -v, --verbose     use verbose mode for output
+  --config=<value>  configuration name to use
+```
+
+Example usage:
+
 ```bash
 $ dashmate stop
 $ npm update -g dashmate
@@ -77,13 +89,11 @@ The package contains a CLI, Docker Compose and configuration files.
 
 The CLI can be used to perform routine tasks. Invoke the CLI with `dashmate`. To list available commands, either run `dashmate` with no parameters or execute `dashmate help`. To list the help on any command execute the command, followed by the `--help` option.
 
-### Set up node
+### Node setup
 
 The `setup` command is used to quickly configure common node configurations. Arguments may be provided as options, otherwise they will be queried interactively with sensible values suggested.
 
 ```
-Set up a new Dash node
-
 USAGE
   $ dashmate setup [PRESET] [-v] [-d] [-c <value>] [-m <value>]
 
@@ -123,14 +133,14 @@ You can modify and use the system configs directly, or create your own. You can 
 
 ```
 USAGE
-  $ dashmate config
+  $ dashmate config [-v] [--config <value>]
 
-OPTIONS
-  -v, --verbose    use verbose mode for output
-  --config=config  configuration name to use
+FLAGS
+  -v, --verbose     use verbose mode for output
+  --config=<value>  configuration name to use
 
 DESCRIPTION
-  Display configuration options for default config
+  Show default config
 
 COMMANDS
   config create   Create config
@@ -148,12 +158,12 @@ The `start` command is used to start a node with the default or specified config
 
 ```
 USAGE
-  $ dashmate start
+  $ dashmate start [-v] [--config <value>] [-w]
 
-OPTIONS
+FLAGS
   -v, --verbose             use verbose mode for output
   -w, --wait-for-readiness  wait for nodes to be ready
-  --config=config           configuration name to use
+  --config=<value>          configuration name to use
 ```
 
 To start a masternode:
@@ -167,12 +177,12 @@ The `stop` command is used to stop a running node.
 
 ```
 USAGE
-  $ dashmate stop
+  $ dashmate stop [-v] [--config <value>] [-f]
 
-OPTIONS
-  -f, --force      force stop nodes (skips running check)
-  -v, --verbose    use verbose mode for output
-  --config=config  configuration name to use
+FLAGS
+  -f, --force       force stop even if any is running
+  -v, --verbose     use verbose mode for output
+  --config=<value>  configuration name to use
 ```
 
 To stop a node:
@@ -186,11 +196,11 @@ The `restart` command is used to restart a node with the default or specified co
 
 ```
 USAGE
-  $ dashmate restart
+  $ dashmate restart [-v] [--config <value>]
 
-OPTIONS
-  -v, --verbose    use verbose mode for output
-  --config=config  configuration name to use
+FLAGS
+  -v, --verbose     use verbose mode for output
+  --config=<value>  configuration name to use
 ```
 
 ### Show node status
@@ -199,11 +209,13 @@ The `status` command outputs status information relating to either the host, mas
 
 ```
 USAGE
-  $ dashmate status
+  $ dashmate status [-v] [--config <value>] [--format json|plain]
 
-OPTIONS
-  -v, --verbose    use verbose mode for output
-  --config=config  configuration name to use
+FLAGS
+  -v, --verbose      use verbose mode for output
+  --config=<value>   configuration name to use
+  --format=<option>  [default: plain] display output format
+                     <options: json|plain>
 
 COMMANDS
   status core        Show core status details
@@ -224,15 +236,14 @@ The `reset` command removes all data corresponding to the specified config and a
 
 ```
 USAGE
-  $ dashmate reset [--config <value>] [-v] [-h] [-f] [-p]
+  $ dashmate reset [-v] [--config <value>] [-h] [-f] [-p]
+
 FLAGS
   -f, --force          skip running services check
   -h, --hard           reset config as well as data
   -p, --platform-only  reset platform data only
   -v, --verbose        use verbose mode for output
   --config=<value>     configuration name to use
-DESCRIPTION
-  Reset node data
 ```
 
 To reset a node:
@@ -241,7 +252,7 @@ $ dashmate reset
 ```
 
 #### Hard reset
-With the hard reset mode enabled, the corresponding config will be reset in addition to the platform data. After a hard reset, it is necessary to run the node [setup](#set-up-node) to proceed.
+With the hard reset mode enabled, the corresponding config will be reset in addition to the platform data. After a hard reset, it is necessary to run the node [setup](#node-setup) to proceed.
 ```bash
 $ dashmate reset --hard
 ```
@@ -258,21 +269,19 @@ rm -rf ~/.dashmate/
 
 ### Reindex dashcore chain data
 
-The `reindex` command rebuilds the blockchain index using the downloaded block data. It modifies the configuration to start the core container in `reindex=1` mode, waits until it completes a full resync, and returns it to normal mode.
+The `core reindex` command rebuilds the blockchain index using the downloaded block data. It modifies the configuration to start the core container in `reindex=1` mode, waits until it completes a full resync, and returns it to normal mode.
 
 The process is displays interactive progress and can be interrupted at any time, but you cannot start your configuration until the resync is fully complete.
 
-The `reindex` command works for regular and local configurations.
+The `core reindex` command works for regular and local configurations.
 
 ```
 USAGE
   $ dashmate core reindex [-v] [--config <value>]
+
 FLAGS
   -v, --verbose     use verbose mode for output
   --config=<value>  configuration name to use
-DESCRIPTION
-  Reindex Core
-  Reindex Core data
 ```
 
 ### Full node
@@ -284,20 +293,20 @@ dashmate config set core.masternode.enable false
 
 ### Node groups
 
-The CLI allows [setup](#set-up-node) and operation of multiple nodes. Only the `local` preset is supported at the moment.
+The CLI allows [setup](#node-setup) and operation of multiple nodes. Only the `local` preset is supported at the moment.
 
 #### Default group
 
-The [setup](#set-up-node) command sets the corresponding group as default. To output the current default group or set another one as default use the `group:default` command.
+The [setup](#node-setup) command sets the corresponding group as default. To output the current default group or set another one as default use the `group:default` command.
 
 ```
 USAGE
-  $ dashmate group default [GROUP]
+  $ dashmate group default [GROUP] [-v]
 
 ARGUMENTS
   GROUP  group name
 
-OPTIONS
+FLAGS
   -v, --verbose  use verbose mode for output
 ```
 
@@ -307,11 +316,11 @@ The `group list` command outputs a list of group configs.
 
 ```
 USAGE
-  $ dashmate group list
+  $ dashmate group list [-v] [--group <value>]
 
-OPTIONS
-  -v, --verbose  use verbose mode for output
-  --group=group  group name to use
+FLAGS
+  -v, --verbose    use verbose mode for output
+  --group=<value>  group name to use
 ```
 
 #### Start group nodes
@@ -320,12 +329,12 @@ The `group start` command is used to start a group of nodes belonging to the def
 
 ```
 USAGE
-  $ dashmate group start
+  $ dashmate group start [-v] [--group <value>] [-w]
 
-OPTIONS
+FLAGS
   -v, --verbose             use verbose mode for output
   -w, --wait-for-readiness  wait for nodes to be ready
-  --group=group             group name to use
+  --group=<value>           group name to use
 ```
 
 #### Stop group nodes
@@ -334,12 +343,12 @@ The `group stop` command is used to stop group nodes belonging to the default gr
 
 ```
 USAGE
-  $ dashmate group stop
+  $ dashmate group stop [-v] [--group <value>] [-f]
 
-OPTIONS
-  -f, --force    force stop nodes (skips running check)
-  -v, --verbose  use verbose mode for output
-  --group=group  group name to use
+FLAGS
+  -f, --force      force stop even if any is running
+  -v, --verbose    use verbose mode for output
+  --group=<value>  group name to use
 ```
 
 #### Restart group nodes
@@ -348,11 +357,11 @@ The `group restart` command is used to restart group nodes belonging to the defa
 
 ```
 USAGE
-  $ dashmate group restart
+  $ dashmate group restart [-v] [--group <value>]
 
-OPTIONS
-  -v, --verbose  use verbose mode for output
-  --group=group  group name to use
+FLAGS
+  -v, --verbose    use verbose mode for output
+  --group=<value>  group name to use
 ```
 
 #### Show group status
@@ -361,11 +370,13 @@ The `group status` command outputs group status information.
 
 ```
 USAGE
-  $ dashmate group status
+  $ dashmate group status [-v] [--group <value>] [--format json|plain]
 
-OPTIONS
-  -v, --verbose  use verbose mode for output
-  --group=group  group name to use
+FLAGS
+  -v, --verbose      use verbose mode for output
+  --format=<option>  [default: plain] display output format
+                     <options: json|plain>
+  --group=<value>    group name to use
 ```
 
 #### Reset group nodes
@@ -374,7 +385,7 @@ The `group reset` command removes all data corresponding to the specified group 
 
 ```
 USAGE
-  $ dashmate group reset [--group <value>] [-v] [--hard] [-f] [-p]
+  $ dashmate group reset [-v] [--group <value>] [--hard] [-f] [-p]
 
 FLAGS
   -f, --force          reset even running node
@@ -382,12 +393,9 @@ FLAGS
   -v, --verbose        use verbose mode for output
   --group=<value>      group name to use
   --hard               reset config as well as data
-
-DESCRIPTION
-  Reset group nodes
 ```
 
-With hard reset mode enabled, the corresponding node configs will be reset as well. It will be necessary to run node [setup](#set-up-node) again from scratch to start a new local node group.
+With hard reset mode enabled, the corresponding node configs will be reset as well. It will be necessary to run node [setup](#node-setup) again from scratch to start a new local node group.
 
 #### Create config group
 
@@ -427,6 +435,7 @@ Then specify the created dotenv file as an option for the `docker compose` comma
 ```bash
 $ docker compose --env-file=.env.testnet up -d
 ```
+
 ## Troubleshooting
 
 #### [FAILED] Node is not running
@@ -448,8 +457,6 @@ This may happen when you switch back and forth between major versions, making co
 
 #### TypeError Plugin: dashmate: Cannot read properties of undefined (reading 'dash')
 This can occur if other `.yarnrc` and `node_modules` directories exist in parent directories. Check your home directory for any `.yarnrc` and `node_modules`, delete them all and try again.
-
-
 
 
 ## Contributing

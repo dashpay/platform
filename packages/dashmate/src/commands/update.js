@@ -48,10 +48,7 @@ class UpdateCommand extends ConfigBaseCommand {
   }
 }
 
-UpdateCommand.description = `Update node
-
-Download and update node software
-`;
+UpdateCommand.description = `Update node software`;
 
 UpdateCommand.flags = {
   ...ConfigBaseCommand.flags,

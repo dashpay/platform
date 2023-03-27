@@ -49,16 +49,13 @@ class StopCommand extends ConfigBaseCommand {
   }
 }
 
-StopCommand.description = `Stop node
-
-Stop node
-`;
+StopCommand.description = `Stop node`;
 
 StopCommand.flags = {
   ...ConfigBaseCommand.flags,
   force: Flags.boolean({
     char: 'f',
-    description: 'force stop even if any is running',
+    description: 'force stop even if service is running',
     default: false,
   }),
 };

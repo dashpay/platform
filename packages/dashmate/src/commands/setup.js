@@ -79,7 +79,7 @@ class SetupCommand extends BaseCommand {
 
   To set up a node with this preset from scratch use {bold.cyanBright dashmate reset --config ${ctx.preset} --hard}.
   Previous data and configuration for this preset will be lost.
-  
+
   If you want to keep the existing data and configuration, please use the {bold.cyanBright dashmate config create}
   command to create a new configuration for this preset.`;
               throw new Error(`Preset ${ctx.preset} already configured`);
@@ -146,10 +146,7 @@ I will assist you with setting up a Dash node on mainnet or testnet. I can also 
   }
 }
 
-SetupCommand.description = `Setup a new Dash node
-
-Setup a new Dash node
-`;
+SetupCommand.description = `Set up a new Dash node`;
 
 SetupCommand.args = [{
   name: 'preset',
