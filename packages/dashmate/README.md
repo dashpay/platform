@@ -470,7 +470,7 @@ Some nodes are still running and preventing dashmate from starting properly. Thi
 `dashmate group:stop --force` to stop group of nodes (local)
 
 #### externalIp option is not set in base config
-This may happen when you switch back and forth between major versions, making config incompatible. In this case, do a manual reset and run setup again
+This may happen when you switch back and forth between major versions, making config incompatible. In this case, do a manual reset and run setup again.
 
 #### TypeError Plugin: dashmate: Cannot read properties of undefined (reading 'dash')
 This can occur if other `.yarnrc` and `node_modules` directories exist in parent directories. Check your home directory for any `.yarnrc` and `node_modules`, delete them all and try again.
