@@ -55,6 +55,7 @@ pub mod prelude {
     pub use crate::identity::Identity;
     pub use crate::identity::IdentityPublicKey;
     pub use crate::validation::ValidationResult;
+    pub use crate::identity::state_transition::asset_lock_proof::AssetLockProof;
 
     pub use super::convertible::Convertible;
     pub type TimestampMillis = u64;
