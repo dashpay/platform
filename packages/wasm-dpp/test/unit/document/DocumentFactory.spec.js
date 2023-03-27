@@ -6,8 +6,6 @@ const createDPPMock = require('@dashevo/dpp/lib/test/mocks/createDPPMock');
 const DocumentFactoryJS = require('@dashevo/dpp/lib/document/DocumentFactory');
 
 const getDataContractFixtureJs = require('@dashevo/dpp/lib/test/fixtures/getDataContractFixture');
-const getDataContractFixture = require('../../../lib/test/fixtures/getDataContractFixture');
-const getDocumentsFixture = require('../../../lib/test/fixtures/getDocumentsFixture');
 const getDocumentsFixtureJs = require('@dashevo/dpp/lib/test/fixtures/getDocumentsFixture');
 const createStateRepositoryMock = require('../../../lib/test/mocks/createStateRepositoryMock');
 const generateRandomIdentifierAsync = require('../../../lib/test/utils/generateRandomIdentifierAsync');
@@ -64,7 +62,7 @@ describe('DocumentFactory', () => {
     const protocolValidator = new ProtocolVersionValidator();
     documentValidator = new DocumentValidator(protocolValidator);
 
-    ({ ownerId: ownerIdJs } = getDocumentsFixtureJs()[0]);
+    ([{ ownerId: ownerIdJs }] = getDocumentsFixtureJs());
     ownerId = Identifier.from(ownerIdJs);
 
     dataContractJs = getDataContractFixtureJs();
