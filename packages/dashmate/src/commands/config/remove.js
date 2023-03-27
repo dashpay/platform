@@ -27,7 +27,7 @@ class ConfigRemoveCommand extends BaseCommand {
   }
 }
 
-ConfigRemoveCommand.description = `Remove config`;
+ConfigRemoveCommand.description = 'Remove config';
 
 ConfigRemoveCommand.args = [{
   name: 'config',

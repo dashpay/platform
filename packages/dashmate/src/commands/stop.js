@@ -49,7 +49,7 @@ class StopCommand extends ConfigBaseCommand {
   }
 }
 
-StopCommand.description = `Stop node`;
+StopCommand.description = 'Stop node';
 
 StopCommand.flags = {
   ...ConfigBaseCommand.flags,

@@ -146,7 +146,7 @@ I will assist you with setting up a Dash node on mainnet or testnet. I can also 
   }
 }
 
-SetupCommand.description = `Set up a new Dash node`;
+SetupCommand.description = 'Set up a new Dash node';
 
 SetupCommand.args = [{
   name: 'preset',

@@ -22,7 +22,7 @@ class ConfigCreateCommand extends BaseCommand {
   }
 }
 
-ConfigCreateCommand.description = `Create new config`;
+ConfigCreateCommand.description = 'Create new config';
 
 ConfigCreateCommand.args = [{
   name: 'config',

@@ -60,7 +60,7 @@ class StartCommand extends ConfigBaseCommand {
   }
 }
 
-StartCommand.description = `Start node`;
+StartCommand.description = 'Start node';
 
 StartCommand.flags = {
   ...ConfigBaseCommand.flags,

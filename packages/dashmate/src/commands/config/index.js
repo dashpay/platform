@@ -24,7 +24,7 @@ class ConfigCommand extends ConfigBaseCommand {
   }
 }
 
-ConfigCommand.description = `Show default config`;
+ConfigCommand.description = 'Show default config';
 
 ConfigCommand.flags = {
   ...ConfigBaseCommand.flags,

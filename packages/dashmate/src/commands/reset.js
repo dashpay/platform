@@ -65,7 +65,7 @@ class ResetCommand extends ConfigBaseCommand {
   }
 }
 
-ResetCommand.description = `Reset node data`;
+ResetCommand.description = 'Reset node data';
 
 ResetCommand.flags = {
   ...ConfigBaseCommand.flags,

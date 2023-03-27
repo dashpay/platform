@@ -56,7 +56,7 @@ class FeatureFlagCommand extends ConfigBaseCommand {
   }
 }
 
-FeatureFlagCommand.description = `Register feature flags`;
+FeatureFlagCommand.description = 'Register feature flags';
 
 FeatureFlagCommand.args = [{
   name: 'name',
