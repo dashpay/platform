@@ -435,7 +435,7 @@ Ports and other required options need to be updated to avoid port collisions bef
 
 ### Development
 
-To start a local dash network, the `setup` command with the `local` preset can be used to generate configs, mine some tDash, register masternodes and populate the nodes with the data required for local development.
+To start a local dash network, the `setup` command with the `local` preset can be used to generate configs, mine some tDash, register masternodes, and populate the nodes with the data required for local development.
 
 To allow developers to quickly test changes to DAPI and Drive, a local path for this repository may be specified using the `platform.sourcePath` config options. A Docker image will be built from the provided path and then used by Dashmate.
 
