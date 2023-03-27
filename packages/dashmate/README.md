@@ -87,7 +87,7 @@ The package contains a CLI, Docker Compose and configuration files.
 
 ### CLI
 
-The CLI can be used to perform routine tasks. Invoke the CLI with `dashmate`. To list available commands, either run `dashmate` with no parameters or execute `dashmate help`. To list the help on any command execute the command, followed by the `--help` option.
+The CLI can be used to perform routine tasks. Invoke the CLI with `dashmate`. To list available commands, either run `dashmate` with no parameters or execute `dashmate help`. To list the help on any command, execute the command followed by the `--help` option.
 
 ### Node setup
 
