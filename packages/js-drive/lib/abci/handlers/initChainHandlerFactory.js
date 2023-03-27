@@ -84,27 +84,27 @@ function initChainHandlerFactory(
       timeMs,
     );
 
-    const synchronizeMasternodeIdentitiesResult = await synchronizeMasternodeIdentities(
-      initialCoreChainLockedHeight,
-      blockInfo,
-    );
+    // const synchronizeMasternodeIdentitiesResult = await synchronizeMasternodeIdentities(
+    //   initialCoreChainLockedHeight,
+    //   blockInfo,
+    // );
 
-    const {
-      createdEntities, updatedEntities, removedEntities, fromHeight, toHeight,
-    } = synchronizeMasternodeIdentitiesResult;
+    // const {
+    //   createdEntities, updatedEntities, removedEntities, fromHeight, toHeight,
+    // } = synchronizeMasternodeIdentitiesResult;
 
-    contextLogger.info(
-      `Masternode identities are synced for heights from ${fromHeight} to ${toHeight}: ${createdEntities.length} created, ${updatedEntities.length} updated, ${removedEntities.length} removed`,
-    );
+    // contextLogger.info(
+    //   `Masternode identities are synced for heights from ${fromHeight} to ${toHeight}: ${createdEntities.length} created, ${updatedEntities.length} updated, ${removedEntities.length} removed`,
+    // );
 
-    contextLogger.trace(
-      {
-        createdEntities: createdEntities.map((item) => item.toJSON()),
-        updatedEntities: updatedEntities.map((item) => item.toJSON()),
-        removedEntities: removedEntities.map((item) => item.toJSON()),
-      },
-      'Synchronized masternode identities',
-    );
+    // contextLogger.trace(
+    //   {
+    //     createdEntities: createdEntities.map((item) => item.toJSON()),
+    //     updatedEntities: updatedEntities.map((item) => item.toJSON()),
+    //     removedEntities: removedEntities.map((item) => item.toJSON()),
+    //   },
+    //   'Synchronized masternode identities',
+    // );
 
     // Set initial validator set
 
