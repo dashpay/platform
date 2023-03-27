@@ -430,14 +430,16 @@ impl Drive {
     }
 
     /// Adds a document using bincode serialization
-    pub fn add_document(&self, owned_document_info: OwnedDocumentInfo,
-                        data_contract_id : Identifier,
-                        document_type_name : &str,
-                        override_document: bool,
-                        block_info: BlockInfo,
-                        apply: bool,
-                        transaction: TransactionArg) -> Result<FeeResult, Error> {
-
+    pub fn add_document(
+        &self,
+        owned_document_info: OwnedDocumentInfo,
+        data_contract_id: Identifier,
+        document_type_name: &str,
+        override_document: bool,
+        block_info: BlockInfo,
+        apply: bool,
+        transaction: TransactionArg,
+    ) -> Result<FeeResult, Error> {
         let mut drive_operations: Vec<LowLevelDriveOperation> = vec![];
 
         let contract_fetch_info = self

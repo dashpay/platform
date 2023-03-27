@@ -6,17 +6,17 @@ use crate::drive::object_size_info::DocumentInfo::{
 };
 use crate::drive::object_size_info::{DocumentAndContractInfo, OwnedDocumentInfo};
 use crate::drive::Drive;
+use crate::error::document::DocumentError;
 use crate::error::Error;
 use crate::fee::op::LowLevelDriveOperation;
 use dpp::data_contract::document_type::DocumentType;
 use dpp::data_contract::{DataContract as Contract, DriveContractExt};
 use dpp::document::Document;
+use dpp::prelude::Identifier;
 use grovedb::batch::KeyInfoPath;
 use grovedb::{EstimatedLayerInformation, TransactionArg};
 use std::borrow::{Borrow, Cow};
 use std::collections::HashMap;
-use dpp::prelude::Identifier;
-use crate::error::document::DocumentError;
 
 /// A wrapper for a document operation
 #[derive(Clone, Debug)]
@@ -279,7 +279,12 @@ impl DriveLowLevelOperationConverter for DocumentOperationType<'_> {
                     transaction,
                 )
             }
-            DocumentOperationType::AddDocument { owned_document_info, contract_id, document_type_name, override_document } => {
+            DocumentOperationType::AddDocument {
+                owned_document_info,
+                contract_id,
+                document_type_name,
+                override_document,
+            } => {
                 let contract_fetch_info = drive
                     .get_contract_with_fetch_info_and_add_to_operations(
                         contract_id.into_buffer(),
@@ -304,7 +309,8 @@ impl DriveLowLevelOperationConverter for DocumentOperationType<'_> {
                     block_info,
                     &mut None,
                     estimated_costs_only_with_layer_info,
-                    transaction)
+                    transaction,
+                )
             }
             DocumentOperationType::AddDocumentForContract {
                 document_and_contract_info,
@@ -538,7 +544,11 @@ impl DriveLowLevelOperationConverter for DocumentOperationType<'_> {
                 }
                 Ok(drive_operations)
             }
-            DocumentOperationType::UpdateDocument { owned_document_info, contract_id, document_type_name } => {
+            DocumentOperationType::UpdateDocument {
+                owned_document_info,
+                contract_id,
+                document_type_name,
+            } => {
                 let contract_fetch_info = drive
                     .get_contract_with_fetch_info_and_add_to_operations(
                         contract_id.into_buffer(),
@@ -562,9 +572,12 @@ impl DriveLowLevelOperationConverter for DocumentOperationType<'_> {
                     block_info,
                     &mut None,
                     estimated_costs_only_with_layer_info,
-                    transaction)
+                    transaction,
+                )
             }
-            DocumentOperationType::AddWithdrawalDocument { owned_document_info } => {
+            DocumentOperationType::AddWithdrawalDocument {
+                owned_document_info,
+            } => {
                 let contract_fetch_info = drive
                     .get_contract_with_fetch_info_and_add_to_operations(
                         contract_id.into_buffer(),
@@ -589,7 +602,8 @@ impl DriveLowLevelOperationConverter for DocumentOperationType<'_> {
                     block_info,
                     &mut None,
                     estimated_costs_only_with_layer_info,
-                    transaction)
+                    transaction,
+                )
             }
         }
     }

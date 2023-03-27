@@ -1,26 +1,39 @@
-use std::borrow::Cow;
-use dpp::data_contract::DriveContractExt;
-use dpp::document::Document;
-use dpp::document::document_transition::document_base_transition::DocumentBaseTransition;
-use dpp::document::document_transition::{DocumentBaseTransitionAction, DocumentReplaceTransition, DocumentReplaceTransitionAction};
-use dpp::prelude::Identifier;
-use crate::drive::batch::{DocumentOperationType, DriveOperation};
-use crate::drive::batch::DriveOperation::DocumentOperation;
 use crate::drive::batch::transitions::document::DriveHighLevelDocumentOperationConverter;
+use crate::drive::batch::DriveOperation::DocumentOperation;
+use crate::drive::batch::{DocumentOperationType, DriveOperation};
 use crate::drive::flags::StorageFlags;
-use crate::drive::object_size_info::{DocumentAndContractInfo, OwnedDocumentInfo};
 use crate::drive::object_size_info::DocumentInfo::DocumentWithoutSerialization;
+use crate::drive::object_size_info::{DocumentAndContractInfo, OwnedDocumentInfo};
 use crate::error::Error;
 use crate::fee_pools::epochs::Epoch;
+use dpp::data_contract::DriveContractExt;
+use dpp::document::document_transition::document_base_transition::DocumentBaseTransition;
+use dpp::document::document_transition::{
+    DocumentBaseTransitionAction, DocumentReplaceTransition, DocumentReplaceTransitionAction,
+};
+use dpp::document::Document;
+use dpp::prelude::Identifier;
+use std::borrow::Cow;
 
 impl DriveHighLevelDocumentOperationConverter for DocumentReplaceTransitionAction {
-    fn to_high_level_document_drive_operations(self, epoch: &Epoch, owner_id: Identifier) -> Result<Vec<DriveOperation>, Error> {
+    fn into_high_level_document_drive_operations(
+        self,
+        epoch: &Epoch,
+        owner_id: Identifier,
+    ) -> Result<Vec<DriveOperation>, Error> {
         let DocumentReplaceTransitionAction {
-            base, revision, created_at, updated_at, data
+            base,
+            revision,
+            created_at,
+            updated_at,
+            data,
         } = self;
 
         let DocumentBaseTransitionAction {
-            id, document_type_name, data_contract_id, data_contract
+            id,
+            document_type_name,
+            data_contract_id,
+            data_contract,
         } = base;
 
         let document = Document {
@@ -36,7 +49,13 @@ impl DriveHighLevelDocumentOperationConverter for DocumentReplaceTransitionActio
 
         let mut drive_operations = vec![];
         drive_operations.push(DocumentOperation(DocumentOperationType::UpdateDocument {
-            owned_document_info: OwnedDocumentInfo { document_info: DocumentWithoutSerialization((document, Some(Cow::Owned(storage_flags)))), owner_id: Some(owner_id.into_buffer()) },
+            owned_document_info: OwnedDocumentInfo {
+                document_info: DocumentWithoutSerialization((
+                    document,
+                    Some(Cow::Owned(storage_flags)),
+                )),
+                owner_id: Some(owner_id.into_buffer()),
+            },
             contract_id: data_contract_id,
             document_type_name: document_type_name.as_str(),
         }));

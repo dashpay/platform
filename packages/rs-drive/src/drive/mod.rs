@@ -34,17 +34,17 @@ use std::collections::HashMap;
 #[cfg(feature = "full")]
 use std::path::Path;
 
+use dpp::data_contract::DataContract;
 #[cfg(feature = "full")]
 use dpp::data_contract::DriveContractExt;
+use dpp::system_data_contracts::{load_system_data_contract, SystemDataContract};
+use dpp::ProtocolError;
 #[cfg(feature = "full")]
 use grovedb::batch::KeyInfoPath;
 #[cfg(any(feature = "full", feature = "verify"))]
 use grovedb::GroveDb;
 #[cfg(feature = "full")]
 use grovedb::{EstimatedLayerInformation, Transaction, TransactionArg};
-use dpp::data_contract::DataContract;
-use dpp::ProtocolError;
-use dpp::system_data_contracts::{load_system_data_contract, SystemDataContract};
 
 #[cfg(feature = "full")]
 use object_size_info::DocumentAndContractInfo;
@@ -113,11 +113,11 @@ mod system;
 #[cfg(test)]
 mod test_utils;
 
+#[cfg(feature = "full")]
+mod system_contracts_cache;
 /// Contains a set of useful grovedb proof verification functions
 #[cfg(any(feature = "full", feature = "verify"))]
 pub mod verify;
-#[cfg(feature = "full")]
-mod system_contracts_cache;
 
 #[cfg(feature = "full")]
 use crate::drive::block_info::BlockInfo;
@@ -140,7 +140,7 @@ pub struct SystemContracts {
 impl SystemContracts {
     pub fn load_system_contracts() -> Result<Self, Error> {
         Ok(SystemContracts {
-            withdrawal_contract : load_system_data_contract(data_contracts::SystemDataContract::Withdrawals)?
+            withdrawal_contract: load_system_data_contract(SystemDataContract::Withdrawals)?,
         })
     }
 }
@@ -316,7 +316,9 @@ impl Drive {
                 Ok(Drive {
                     grove,
                     config,
-                    system_contracts: Drive::load_system_data_contract(SystemDataContract::Withdrawals)?,
+                    system_contracts: Drive::load_system_data_contract(
+                        SystemDataContract::Withdrawals,
+                    )?,
                     cache: RefCell::new(DriveCache {
                         cached_contracts: DataContractCache::new(
                             data_contracts_global_cache_size,

@@ -32,31 +32,45 @@
 //! This module defines general, commonly used functions in Drive.
 //!
 
+mod contract;
 mod document;
 mod identity;
-mod contract;
 
 use crate::drive::batch::DriveOperation;
 use crate::error::Error;
-use dpp::state_transition::StateTransitionAction;
 use crate::fee_pools::epochs::Epoch;
+use dpp::state_transition::StateTransitionAction;
 
 /// A converter that will get High Level Drive Operations from State transitions
 pub trait DriveHighLevelOperationConverter {
     /// This will get a list of atomic drive operations from a high level operations
-    fn to_high_level_drive_operations(&self, epoch: &Epoch) -> Result<Vec<DriveOperation>, Error>;
+    fn into_high_level_drive_operations(self, epoch: &Epoch) -> Result<Vec<DriveOperation>, Error>;
 }
 
 impl DriveHighLevelOperationConverter for StateTransitionAction {
-    fn to_high_level_drive_operations(&self, epoch: &Epoch) -> Result<Vec<DriveOperation>, Error> {
+    fn into_high_level_drive_operations(self, epoch: &Epoch) -> Result<Vec<DriveOperation>, Error> {
         match self {
-            StateTransitionAction::DataContractCreateAction(data_contract_create_transition) => data_contract_create_transition.to_high_level_drive_operations(),
-            StateTransitionAction::DataContractUpdateAction(data_contract_update_transition) => data_contract_update_transition.to_high_level_drive_operations(),
-            StateTransitionAction::DocumentsBatchAction(documents_batch_transition) => documents_batch_transition.to_high_level_drive_operations(),
-            StateTransitionAction::IdentityCreateAction(identity_create_transition) => identity_create_transition.to_high_level_drive_operations(),
-            StateTransitionAction::IdentityTopUpAction(identity_top_up_transition) => identity_top_up_transition.to_high_level_drive_operations(),
-            StateTransitionAction::IdentityCreditWithdrawalAction(identity_credit_withdrawal_transition) => identity_credit_withdrawal_transition.to_high_level_drive_operations(),
-            StateTransitionAction::IdentityUpdateAction(identity_update_transition) => identity_update_transition.to_high_level_drive_operations(),
+            StateTransitionAction::DataContractCreateAction(data_contract_create_transition) => {
+                data_contract_create_transition.into_high_level_drive_operations(epoch)
+            }
+            StateTransitionAction::DataContractUpdateAction(data_contract_update_transition) => {
+                data_contract_update_transition.into_high_level_drive_operations(epoch)
+            }
+            StateTransitionAction::DocumentsBatchAction(documents_batch_transition) => {
+                documents_batch_transition.into_high_level_drive_operations(epoch)
+            }
+            StateTransitionAction::IdentityCreateAction(identity_create_transition) => {
+                identity_create_transition.into_high_level_drive_operations(epoch)
+            }
+            StateTransitionAction::IdentityTopUpAction(identity_top_up_transition) => {
+                identity_top_up_transition.into_high_level_drive_operations(epoch)
+            }
+            StateTransitionAction::IdentityCreditWithdrawalAction(
+                identity_credit_withdrawal_transition,
+            ) => identity_credit_withdrawal_transition.into_high_level_drive_operations(epoch),
+            StateTransitionAction::IdentityUpdateAction(identity_update_transition) => {
+                identity_update_transition.into_high_level_drive_operations(epoch)
+            }
         }
     }
 }

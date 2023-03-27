@@ -2,11 +2,11 @@ use self::drive::DriveError;
 use crate::error::proof::ProofError;
 use crate::error::storage_flags::StorageFlagsError;
 use document::DocumentError;
+use dpp::platform_value::Error as ValueError;
 use dpp::ProtocolError;
 use fee::FeeError;
 use identity::IdentityError;
 use query::QueryError;
-use dpp::platform_value::Error as ValueError;
 
 /// Document module
 pub mod document;
