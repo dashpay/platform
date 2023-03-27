@@ -45,9 +45,9 @@ class RenewCommand extends ConfigBaseCommand {
   }
 }
 
-RenewCommand.description = `Renew SSL Cert
-...
-Renew SSL Cert using ZeroSLL API Key
+RenewCommand.description = `Renew SSL certificate
+
+Renew SSL certificate using ZeroSSL API Key
 `;
 
 RenewCommand.flags = {

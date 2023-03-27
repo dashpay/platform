@@ -59,20 +59,20 @@ class MintCommand extends ConfigBaseCommand {
   }
 }
 
-MintCommand.description = `Mint dash
-...
-Mint specified amount of dash to a new address or specified one
+MintCommand.description = `Mint tDash
+
+Mint given amount of tDash to a new or specified address
 `;
 
 MintCommand.flags = {
   ...ConfigBaseCommand.flags,
-  address: Flags.string({ char: 'a', description: 'recipient address instead of a new one', default: null }),
+  address: Flags.string({ char: 'a', description: 'use recipient address instead of creating new', default: null }),
 };
 
 MintCommand.args = [{
   name: 'amount',
   required: true,
-  description: 'amount of dash to be generated to address',
+  description: 'amount of tDash to be generated to address',
   parse: (input) => parseInt(input, 10),
 }];
 

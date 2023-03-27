@@ -1,7 +1,7 @@
 {
   "name": "dashmate",
   "version": "0.24.0-dev.16",
-  "description": "Distribution package for Dash Masternode installation",
+  "description": "Distribution package for Dash node installation",
   "scripts": {
     "lint": "eslint .",
     "postpack": "rm -f oclif.manifest.json",
@@ -126,14 +126,26 @@
       "@oclif/plugin-help"
     ],
     "topics": {
-      "group": {
-        "description": "Orchestrate group of nodes"
+      "config": {
+        "description": "Manage configs"
       },
-      "wallet": {
-        "description": "Wallet related commands"
+      "core": {
+        "description": "Manage Core"
+      },
+      "group": {
+        "description": "Orchestrate a group of nodes"
+      },
+      "platform": {
+        "description": "Manage Platform"
+      },
+      "ssl": {
+        "description": "Manage SSL"
       },
       "status": {
         "description": "Show node status details"
+      },
+      "wallet": {
+        "description": "Wallet related commands"
       }
     },
     "topicSeparator": " "
