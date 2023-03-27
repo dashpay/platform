@@ -1,13 +1,16 @@
 mod from_raw_object {
     use bls_signatures::Serialize;
     use dashcore::PublicKey;
+    use platform_value::platform_value;
+    use platform_value::BinaryData;
     use serde_json::json;
+    use std::convert::TryInto;
 
     use crate::identity::{KeyType, Purpose, SecurityLevel};
     use crate::prelude::IdentityPublicKey;
 
     #[test]
-    pub fn should_parse_raw_key() {
+    pub fn should_parse_raw_json_key() {
         let public_key_json = json!({
             "id": 0,
             "type": 0,
@@ -25,7 +28,7 @@ mod from_raw_object {
         assert_eq!(public_key.security_level, SecurityLevel::MASTER);
         assert!(!public_key.read_only);
         assert_eq!(
-            public_key.data,
+            public_key.data.to_vec(),
             [
                 2, 234, 242, 34, 227, 45, 70, 185, 127, 86, 248, 144, 187, 34, 195, 214, 94, 39,
                 155, 24, 189, 162, 3, 243, 11, 210, 211, 238, 215, 105, 163, 71, 98
@@ -86,7 +89,9 @@ mod from_raw_object {
             \"securityLevel\":0, \
             \"readOnly\":false \
         }";
-        let public_key: IdentityPublicKey = serde_json::from_str(pk_str).unwrap();
+        let public_key: IdentityPublicKey = pk_str
+            .try_into()
+            .expect("expected to convert to IdentityPublicKey");
 
         // let public_key = IdentityPublicKey::from_raw_object(public_key_json).unwrap();
 
@@ -96,7 +101,7 @@ mod from_raw_object {
         assert_eq!(public_key.security_level, SecurityLevel::MASTER);
         assert!(!public_key.read_only);
         assert_eq!(
-            public_key.data,
+            public_key.data.to_vec(),
             [
                 2, 234, 242, 34, 227, 45, 70, 185, 127, 86, 248, 144, 187, 34, 195, 214, 94, 39,
                 155, 24, 189, 162, 3, 243, 11, 210, 211, 238, 215, 105, 163, 71, 98
@@ -149,16 +154,16 @@ mod from_raw_object {
             .unwrap()
             .to_bytes();
 
-        let public_key_json = json!({
-            "id": 0,
-            "type": KeyType::ECDSA_SECP256K1,
-            "purpose": Purpose::AUTHENTICATION,
-            "securityLevel": SecurityLevel::MASTER,
-            "data": public_key,
+        let public_key_json = platform_value!({
+            "id": 0u32,
+            "type": KeyType::ECDSA_SECP256K1 as u8,
+            "purpose": Purpose::AUTHENTICATION as u8,
+            "securityLevel": SecurityLevel::MASTER as u8,
+            "data": BinaryData::new(public_key),
             "readOnly": false
         });
 
-        let public_key = IdentityPublicKey::from_raw_object(public_key_json)
+        let public_key = IdentityPublicKey::from_value(public_key_json)
             .expect("the public key should be created");
         assert_eq!(public_key.key_type, KeyType::ECDSA_SECP256K1);
         assert_eq!(
@@ -177,16 +182,16 @@ mod from_raw_object {
             .public_key()
             .as_bytes();
 
-        let public_key_json = json!({
-            "id": 0,
-            "type": KeyType::BLS12_381,
-            "purpose": Purpose::AUTHENTICATION,
-            "securityLevel": SecurityLevel::MASTER,
-            "data": bls_public_key,
+        let public_key_json = platform_value!({
+            "id": 0u32,
+            "type": KeyType::BLS12_381 as u8,
+            "purpose": Purpose::AUTHENTICATION as u8,
+            "securityLevel": SecurityLevel::MASTER as u8,
+            "data": BinaryData::new(bls_public_key),
             "readOnly": false
         });
 
-        let public_key = IdentityPublicKey::from_raw_object(public_key_json)
+        let public_key = IdentityPublicKey::from_value(public_key_json)
             .expect("the public key should be created");
         assert_eq!(public_key.key_type, KeyType::BLS12_381);
         assert_eq!(

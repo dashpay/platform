@@ -24,6 +24,6 @@ pub fn get_dashpay_contract_fixture(owner_id: Option<Identifier>) -> DataContrac
     let owner_id = owner_id.unwrap_or_else(generate_random_identifier_struct);
 
     factory
-        .create(owner_id, dpns_schema, None)
+        .create(owner_id, dpns_schema.into(), None, None)
         .expect("data in fixture should be correct")
 }

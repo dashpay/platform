@@ -1,5 +1,5 @@
 use dpp::{
-    document::validation::state::fetch_documents, prelude::DocumentTransition,
+    document::validation::state::fetch_extended_documents, prelude::DocumentTransition,
     state_transition::state_transition_execution_context::StateTransitionExecutionContext,
 };
 use js_sys::Array;
@@ -9,11 +9,11 @@ use crate::{
     document_batch_transition::document_transition::DocumentTransitionWasm,
     state_repository::{ExternalStateRepositoryLike, ExternalStateRepositoryLikeWrapper},
     utils::{IntoWasm, WithJsError},
-    DocumentWasm, StateTransitionExecutionContextWasm,
+    ExtendedDocumentWasm, StateTransitionExecutionContextWasm,
 };
 
-#[wasm_bindgen(js_name = fetchDocuments)]
-pub async fn fetch_documents_wasm(
+#[wasm_bindgen(js_name = fetchExtendedDocuments)]
+pub async fn fetch_extended_documents_wasm(
     state_repository: ExternalStateRepositoryLike,
     js_document_transitions: Array,
     js_execution_context: &StateTransitionExecutionContextWasm,
@@ -26,7 +26,7 @@ pub async fn fetch_documents_wasm(
     }
     let execution_context: StateTransitionExecutionContext = js_execution_context.into();
 
-    let documents = fetch_documents::fetch_documents(
+    let documents = fetch_extended_documents::fetch_extended_documents(
         &wrapped_state_repository,
         document_transitions,
         &execution_context,
@@ -35,7 +35,7 @@ pub async fn fetch_documents_wasm(
     .with_js_error()?;
 
     let array = js_sys::Array::new();
-    for document in documents.into_iter().map(DocumentWasm::from) {
+    for document in documents.into_iter().map(ExtendedDocumentWasm::from) {
         array.push(&document.into());
     }
 

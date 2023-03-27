@@ -4,15 +4,11 @@ use std::{
     convert::{TryFrom, TryInto},
 };
 
-use anyhow::anyhow;
 use ciborium::value::Value as CborValue;
+
 use serde::Serialize;
 
-use crate::{
-    prelude::Identifier,
-    util::{json_value::ReplaceWith, string_encoding::Encoding},
-    ProtocolError,
-};
+use crate::ProtocolError;
 
 use super::{
     convert::convert_to, get_from_cbor_map, to_path_of_cbors, FieldType, ReplacePaths,
@@ -77,48 +73,11 @@ impl CborCanonicalMap {
         }
     }
 
-    pub fn replace_values<I, C>(&mut self, keys: I, with: ReplaceWith)
-    where
-        I: IntoIterator<Item = C>,
-        C: Into<CborValue>,
-    {
-        for key in keys.into_iter() {
-            self.replace_value(key, with);
-        }
-    }
-
     pub fn replace_path(&mut self, path: &str, from: FieldType, to: FieldType) -> Option<()> {
         let cbor_value = self.get_path_mut(path)?;
         let replace_with = convert_to(cbor_value, from, to)?;
 
         *cbor_value = replace_with;
-
-        Some(())
-    }
-
-    pub fn replace_value(&mut self, key: impl Into<CborValue>, with: ReplaceWith) -> Option<()> {
-        let k = key.into();
-
-        let cbor_value = self.get_mut(&k)?;
-        let replace_with = match with {
-            ReplaceWith::Base58 => {
-                let data_bytes = cbor_value.as_bytes()?;
-                CborValue::Text(bs58::encode(data_bytes).into_string())
-            }
-            ReplaceWith::Base64 => {
-                let data_bytes = cbor_value.as_bytes()?;
-                CborValue::Text(base64::encode(data_bytes))
-            }
-            ReplaceWith::Bytes => {
-                let data_string = String::from(cbor_value.as_text()?);
-                let identifier = Identifier::from_string(&data_string, Encoding::Base58)
-                    .ok()?
-                    .to_buffer();
-                CborValue::Bytes(identifier.to_vec())
-            }
-        };
-
-        self.set(&k, replace_with);
 
         Some(())
     }
@@ -336,35 +295,6 @@ fn recursively_sort_canonical_cbor_map(cbor_map: &mut [(CborValue, CborValue)]) 
             Ordering::Greater => Ordering::Greater,
         }
     });
-}
-
-pub fn replace_binary(to_replace: &mut CborValue, with: ReplaceWith) -> Result<(), anyhow::Error> {
-    let mut cbor_value = CborValue::Null;
-    std::mem::swap(to_replace, &mut cbor_value);
-    match with {
-        ReplaceWith::Base58 => {
-            let data_bytes = cbor_value
-                .as_bytes()
-                .ok_or_else(|| anyhow!("expect value to be bytes"))?;
-            *to_replace = CborValue::Text(bs58::encode(data_bytes).into_string());
-        }
-        ReplaceWith::Base64 => {
-            let data_bytes = cbor_value
-                .as_bytes()
-                .ok_or_else(|| anyhow!("expect value to be bytes"))?;
-            *to_replace = CborValue::Text(base64::encode(data_bytes));
-        }
-        ReplaceWith::Bytes => {
-            let data_string = String::from(
-                cbor_value
-                    .as_text()
-                    .ok_or_else(|| anyhow!("expect value to be string"))?,
-            );
-            let identifier = Identifier::from_string(&data_string, Encoding::Base58)?.to_buffer();
-            *to_replace = CborValue::Bytes(identifier.to_vec());
-        }
-    }
-    Ok(())
 }
 
 //todo: explain why this returns an option?

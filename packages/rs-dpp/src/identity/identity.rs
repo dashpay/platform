@@ -1,9 +1,11 @@
 use std::collections::BTreeMap;
+use std::convert::{TryFrom, TryInto};
 
 use ciborium::value::Value as CborValue;
 use integer_encoding::VarInt;
+use platform_value::{ReplacementType, Value};
 use serde::{Deserialize, Serialize};
-use serde_json::{Value as JsonValue, Value};
+use serde_json::Value as JsonValue;
 
 use crate::identity::identity_public_key;
 use crate::identity::state_transition::asset_lock_proof::AssetLockProof;
@@ -11,10 +13,8 @@ use crate::prelude::Revision;
 use crate::util::cbor_value::{CborBTreeMapHelper, CborCanonicalMap};
 use crate::util::deserializer;
 use crate::util::deserializer::SplitProtocolVersionOutcome;
-use crate::util::json_value::{JsonValueExt, ReplaceWith};
 use crate::{
-    errors::ProtocolError, identifier::Identifier, metadata::Metadata, util::hash,
-    SerdeParsingError,
+    errors::ProtocolError, identifier::Identifier, metadata::Metadata, util::hash, Convertible,
 };
 
 use super::{IdentityPublicKey, KeyID};
@@ -83,6 +83,43 @@ mod public_key_serialization {
             seq.serialize_element(element)?;
         }
         seq.end()
+    }
+}
+
+impl Convertible for Identity {
+    fn to_object(&self) -> Result<Value, ProtocolError> {
+        platform_value::to_value(self).map_err(ProtocolError::ValueError)
+    }
+
+    fn to_cleaned_object(&self) -> Result<Value, ProtocolError> {
+        //same as object for Identities
+        let mut value = self.to_object()?;
+        if let Some(keys) = value.get_optional_array_mut_ref(property_names::PUBLIC_KEYS)? {
+            for key in keys.iter_mut() {
+                key.remove_optional_value_if_null("disabledAt")?;
+            }
+        }
+        Ok(value)
+    }
+
+    fn into_object(self) -> Result<Value, ProtocolError> {
+        platform_value::to_value(self).map_err(ProtocolError::ValueError)
+    }
+
+    fn to_json_object(&self) -> Result<JsonValue, ProtocolError> {
+        self.to_cleaned_object()?
+            .try_into_validating_json()
+            .map_err(ProtocolError::ValueError)
+    }
+
+    fn to_json(&self) -> Result<JsonValue, ProtocolError> {
+        self.to_cleaned_object()?
+            .try_into()
+            .map_err(ProtocolError::ValueError)
+    }
+
+    fn to_buffer(&self) -> Result<Vec<u8>, ProtocolError> {
+        self.to_cbor()
     }
 }
 
@@ -197,11 +234,6 @@ impl Identity {
         self.public_keys.keys().copied().max().unwrap_or_default()
     }
 
-    /// Converts the identity to a cbor buffer (same as to_cbor)
-    pub fn to_buffer(&self) -> Result<Vec<u8>, ProtocolError> {
-        self.to_cbor()
-    }
-
     /// Converts the identity to a cbor buffer
     pub fn to_cbor(&self) -> Result<Vec<u8>, ProtocolError> {
         // Prepend protocol version to the result
@@ -226,25 +258,6 @@ impl Identity {
         buf.append(&mut identity_cbor);
 
         Ok(buf)
-    }
-
-    pub fn to_object(&self) -> Result<Value, ProtocolError> {
-        let mut identity_json: JsonValue = serde_json::to_value(self)?;
-
-        identity_json.replace_identifier_paths(IDENTIFIER_FIELDS_RAW_OBJECT, ReplaceWith::Bytes)?;
-
-        let pk_values = self
-            .public_keys
-            .iter()
-            .map(|(_, pk)| pk.to_raw_json_object())
-            .collect::<Result<Vec<JsonValue>, SerdeParsingError>>()?;
-
-        identity_json.insert(
-            property_names::PUBLIC_KEYS.to_string(),
-            JsonValue::Array(pk_values),
-        )?;
-
-        Ok(identity_json)
     }
 
     pub fn from_buffer(b: impl AsRef<[u8]>) -> Result<Self, ProtocolError> {
@@ -296,44 +309,35 @@ impl Identity {
     }
 
     /// Creates an identity from a json structure
-    pub fn from_json(mut json_object: JsonValue) -> Result<Identity, ProtocolError> {
-        if let Some(public_keys_value) = json_object.get_mut("publicKeys") {
-            if let Some(public_keys_array) = public_keys_value.as_array_mut() {
-                for public_key in public_keys_array.iter_mut() {
-                    public_key.replace_binary_paths(
-                        identity_public_key::BINARY_DATA_FIELDS,
-                        ReplaceWith::Bytes,
-                    )?;
-                }
+    pub fn from_json(json_object: JsonValue) -> Result<Identity, ProtocolError> {
+        let mut platform_value: Value = json_object.into();
+
+        platform_value
+            .replace_at_paths(IDENTIFIER_FIELDS_RAW_OBJECT, ReplacementType::Identifier)?;
+
+        if let Some(public_keys_array) = platform_value.get_optional_array_mut_ref("publicKeys")? {
+            for public_key in public_keys_array.iter_mut() {
+                public_key.replace_at_paths(
+                    identity_public_key::BINARY_DATA_FIELDS,
+                    ReplacementType::BinaryBytes,
+                )?;
             }
         }
 
-        let identity: Identity = serde_json::from_value(json_object)?;
+        let identity: Identity = platform_value::from_value(platform_value)?;
 
         Ok(identity)
     }
 
     /// Creates an identity from a raw object
-    pub fn from_raw_object(mut raw_object: JsonValue) -> Result<Identity, ProtocolError> {
-        raw_object.replace_identifier_paths(IDENTIFIER_FIELDS_RAW_OBJECT, ReplaceWith::Base58)?;
-
-        let identity: Identity = serde_json::from_value(raw_object)?;
-
-        Ok(identity)
+    pub fn from_object(raw_object: Value) -> Result<Identity, ProtocolError> {
+        raw_object.try_into()
     }
 
     /// Creates an identity from a json object
     pub fn from_json_object(raw_object: JsonValue) -> Result<Identity, ProtocolError> {
-        let pks = raw_object.get("publicKeys").unwrap().as_array().unwrap();
-
-        for pk in pks {
-            let _pkd: IdentityPublicKey = serde_json::from_value(pk.clone())
-                .map_err(|_e| ProtocolError::Generic(format!("Can't parse public key: {}", pk)))?;
-        }
-
-        let identity: Identity = serde_json::from_value(raw_object)?;
-
-        Ok(identity)
+        let value: Value = raw_object.into();
+        value.try_into()
     }
 
     /// Computes the hash of an identity
@@ -356,5 +360,21 @@ impl Identity {
             balance: Some(balance),
             revision: Some(revision),
         }
+    }
+}
+
+impl TryFrom<Value> for Identity {
+    type Error = ProtocolError;
+
+    fn try_from(value: Value) -> Result<Self, Self::Error> {
+        platform_value::from_value(value).map_err(ProtocolError::ValueError)
+    }
+}
+
+impl TryFrom<&Value> for Identity {
+    type Error = ProtocolError;
+
+    fn try_from(value: &Value) -> Result<Self, Self::Error> {
+        platform_value::from_value(value.clone()).map_err(ProtocolError::ValueError)
     }
 }

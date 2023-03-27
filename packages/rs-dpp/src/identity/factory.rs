@@ -1,24 +1,23 @@
-use crate::consensus::ConsensusError;
 use crate::decode_protocol_entity_factory::DecodeProtocolEntity;
-use crate::identifier::Identifier;
 use crate::identity::identity_public_key::factory::KeyCount;
 use crate::identity::state_transition::asset_lock_proof::chain::ChainAssetLockProof;
 use crate::identity::state_transition::asset_lock_proof::{AssetLockProof, InstantAssetLockProof};
 use crate::identity::state_transition::identity_create_transition::IdentityCreateTransition;
-use crate::identity::state_transition::identity_public_key_transitions::IdentityPublicKeyCreateTransition;
+use crate::identity::state_transition::identity_public_key_transitions::IdentityPublicKeyWithWitness;
 use crate::identity::state_transition::identity_topup_transition::IdentityTopUpTransition;
 use crate::identity::state_transition::identity_update_transition::identity_update_transition::IdentityUpdateTransition;
 use crate::identity::validation::{IdentityValidator, PublicKeysValidator};
 use crate::identity::{Identity, IdentityPublicKey, KeyID, TimestampMillis};
+use crate::prelude::Identifier;
 
 use crate::{BlsModule, ProtocolError};
-use anyhow::anyhow;
+
 use dashcore::{InstantLock, Transaction};
 use rand::rngs::StdRng;
 use rand::{Rng, SeedableRng};
-use serde_json::{Number, Value};
 use std::collections::BTreeMap;
 
+use platform_value::Value;
 use std::sync::Arc;
 
 pub const IDENTITY_PROTOCOL_VERSION: u32 = 1;
@@ -123,7 +122,9 @@ where
         skip_validation: bool,
     ) -> Result<Identity, ProtocolError> {
         if !skip_validation {
-            let result = self.identity_validator.validate_identity(&raw_identity)?;
+            let result = self
+                .identity_validator
+                .validate_identity_object(&raw_identity)?;
 
             if !result.is_valid() {
                 return Err(ProtocolError::InvalidIdentityError {
@@ -133,7 +134,7 @@ where
             }
         }
 
-        Identity::from_raw_object(raw_identity)
+        Identity::from_object(raw_identity)
     }
 
     pub fn create_from_buffer(
@@ -143,19 +144,11 @@ where
     ) -> Result<Identity, ProtocolError> {
         let (protocol_version, mut raw_identity) =
             DecodeProtocolEntity::decode_protocol_entity(buffer)?;
+        raw_identity
+            .set_value("protocolVersion", Value::U32(protocol_version))
+            .map_err(ProtocolError::ValueError)?;
 
-        match raw_identity {
-            Value::Object(ref mut m) => m.insert(
-                String::from("protocolVersion"),
-                Value::Number(Number::from(protocol_version)),
-            ),
-            _ => {
-                return Err(ConsensusError::SerializedObjectParsingError {
-                    parsing_error: anyhow!("the '{:?}' is not a map", raw_identity),
-                }
-                .into())
-            }
-        };
+        // TODO: the error originates here due to id having a wrong type - should be a base58 for the schema
 
         self.create_from_object(raw_identity, skip_validation)
     }
@@ -186,7 +179,7 @@ where
             .get_public_keys()
             .iter()
             .map(|(_, public_key)| public_key.into())
-            .collect::<Vec<IdentityPublicKeyCreateTransition>>();
+            .collect::<Vec<IdentityPublicKeyWithWitness>>();
         identity_create_transition.set_public_keys(public_keys);
 
         let asset_lock_proof = identity.get_asset_lock_proof().ok_or_else(|| {
@@ -219,7 +212,7 @@ where
     pub fn create_identity_update_transition(
         &self,
         identity: Identity,
-        add_public_keys: Option<Vec<IdentityPublicKeyCreateTransition>>,
+        add_public_keys: Option<Vec<IdentityPublicKeyWithWitness>>,
         public_key_ids_to_disable: Option<Vec<KeyID>>,
         // Pass disable time as argument because SystemTime::now() does not work for wasm target
         // https://github.com/rust-lang/rust/issues/48564

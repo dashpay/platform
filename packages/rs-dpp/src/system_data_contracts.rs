@@ -34,7 +34,12 @@ fn create_data_contract(
     let id = Identifier::from(id_bytes);
     let owner_id = Identifier::from(owner_id_bytes);
 
-    let mut data_contract = factory.create(owner_id, document_schemas, definitions)?;
+    let mut data_contract = factory.create(
+        owner_id,
+        document_schemas.into(),
+        None,
+        definitions.map(|def| def.into()),
+    )?;
 
     data_contract.id = id;
 

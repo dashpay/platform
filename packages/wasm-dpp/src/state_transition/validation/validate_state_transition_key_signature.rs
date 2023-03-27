@@ -1,5 +1,5 @@
-use crate::errors::from_dpp_err;
 use crate::state_repository::{ExternalStateRepositoryLike, ExternalStateRepositoryLikeWrapper};
+use crate::utils::WithJsError;
 use crate::validation::ValidationResultWasm;
 use dpp::identity::state_transition::asset_lock_proof::{
     AssetLockPublicKeyHashFetcher, AssetLockTransactionOutputFetcher,
@@ -52,11 +52,7 @@ impl StateTransitionKeySignatureValidatorWasm {
                 &state_transition,
             )?;
 
-        let validation_result = self
-            .0
-            .validate(&state_transition)
-            .await
-            .map_err(from_dpp_err)?;
+        let validation_result = self.0.validate(&state_transition).await.with_js_error()?;
         Ok(validation_result.map(|_| JsValue::undefined()).into())
     }
 }

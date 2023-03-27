@@ -1,12 +1,14 @@
-use crate::bls_adapter::{BlsAdapter, JsBlsAdapter};
-use crate::errors::from_dpp_err;
+use crate::bls_adapter::BlsAdapter;
+
 use crate::state_repository::{ExternalStateRepositoryLike, ExternalStateRepositoryLikeWrapper};
 use crate::state_transition_factory::StateTransitionFactoryWasm;
-use crate::utils::ToSerdeJSONExt;
+use crate::utils::{ToSerdeJSONExt, WithJsError};
 use crate::validation::ValidationResultWasm;
 use crate::with_js_error;
 use dpp::state_transition::state_transition_execution_context::StateTransitionExecutionContext;
-use dpp::state_transition::{StateTransitionFacade, StateTransitionLike, ValidateOptions};
+use dpp::state_transition::{
+    StateTransitionConvert, StateTransitionFacade, StateTransitionLike, ValidateOptions,
+};
 use dpp::version::ProtocolVersionValidator;
 use serde::Deserialize;
 
@@ -23,19 +25,17 @@ pub struct StateTransitionFacadeWasm(
 impl StateTransitionFacadeWasm {
     pub fn new(
         state_repository: ExternalStateRepositoryLike,
-        bls_adapter: JsBlsAdapter,
+        bls_adapter: BlsAdapter,
         protocol_version_validator: Arc<ProtocolVersionValidator>,
     ) -> Result<StateTransitionFacadeWasm, JsValue> {
         let state_repository_wrapper = ExternalStateRepositoryLikeWrapper::new(state_repository);
 
-        let adapter = BlsAdapter(bls_adapter);
-
         let state_transition_facade = StateTransitionFacade::new(
             state_repository_wrapper,
-            adapter,
+            bls_adapter,
             protocol_version_validator,
         )
-        .map_err(from_dpp_err)?;
+        .with_js_error()?;
 
         Ok(StateTransitionFacadeWasm(state_transition_facade))
     }
@@ -55,7 +55,7 @@ impl StateTransitionFacadeWasm {
             Default::default()
         };
 
-        let raw_state_transition = raw_state_transition.with_serde_to_json_value()?;
+        let raw_state_transition = raw_state_transition.with_serde_to_platform_value()?;
 
         let result = self
             .0
@@ -103,43 +103,28 @@ impl StateTransitionFacadeWasm {
             Default::default()
         };
 
-        let (state_transition, state_transition_json, execution_context) =
-            if let Ok(state_transition) =
-                super::super::conversion::create_state_transition_from_wasm_instance(
-                    &raw_state_transition,
-                )
-            {
-                let execution_context = state_transition.get_execution_context().to_owned();
-                // TODO: revisit after https://github.com/dashpay/platform/pull/809 is merged
-                //  we use this workaround to produce JSON value for validation because
-                //  state_transition.to_object() returns value that does not pass basic validation
-                let state_transition_json =
-                    super::super::conversion::state_transition_wasm_to_object(
-                        &raw_state_transition,
-                    )?
-                    .with_serde_to_json_value()?;
-                (state_transition, state_transition_json, execution_context)
-            } else {
-                let state_transition_json = raw_state_transition.with_serde_to_json_value()?;
-                let execution_context = StateTransitionExecutionContext::default();
-                let state_transition = self
-                    .0
-                    .create_from_object(state_transition_json.clone(), true)
-                    .await
-                    .map_err(from_dpp_err)?;
-                (state_transition, state_transition_json, execution_context)
-            };
+        let (state_transition, execution_context) = if let Ok(state_transition) =
+            super::super::conversion::create_state_transition_from_wasm_instance(
+                &raw_state_transition,
+            ) {
+            let execution_context = state_transition.get_execution_context().to_owned();
+            (state_transition, execution_context)
+        } else {
+            let state_transition_json = raw_state_transition.with_serde_to_platform_value()?;
+            let execution_context = StateTransitionExecutionContext::default();
+            let state_transition = self
+                .0
+                .create_from_object(state_transition_json.clone(), true)
+                .await
+                .with_js_error()?;
+            (state_transition, execution_context)
+        };
 
         let validation_result = self
             .0
-            .validate(
-                &state_transition,
-                &state_transition_json,
-                &execution_context,
-                options.into(),
-            )
+            .validate(&state_transition, &execution_context, options.into())
             .await
-            .map_err(from_dpp_err)?;
+            .with_js_error()?;
 
         Ok(validation_result.map(|_| JsValue::undefined()).into())
     }
@@ -158,14 +143,9 @@ impl StateTransitionFacadeWasm {
             )
         {
             execution_context = state_transition.get_execution_context().to_owned();
-            // TODO: revisit after https://github.com/dashpay/platform/pull/809 is merged
-            //  we use this workaround to produce JSON value for validation because
-            //  state_transition.to_object() returns value that does not pass basic validation
-            state_transition_json =
-                super::super::conversion::state_transition_wasm_to_object(&raw_state_transition)?
-                    .with_serde_to_json_value()?;
+            state_transition_json = state_transition.to_cleaned_object(false).with_js_error()?;
         } else {
-            state_transition_json = raw_state_transition.with_serde_to_json_value()?;
+            state_transition_json = raw_state_transition.with_serde_to_platform_value()?;
             execution_context = StateTransitionExecutionContext::default();
         }
 
@@ -173,7 +153,7 @@ impl StateTransitionFacadeWasm {
             .0
             .validate_basic(&state_transition_json, &execution_context)
             .await
-            .map_err(from_dpp_err)?;
+            .with_js_error()?;
 
         Ok(validation_result.map(|_| JsValue::undefined()).into())
     }
@@ -192,7 +172,7 @@ impl StateTransitionFacadeWasm {
             .0
             .validate_signature(state_transition)
             .await
-            .map_err(from_dpp_err)?;
+            .with_js_error()?;
 
         Ok(validation_result.map(|_| JsValue::undefined()).into())
     }
@@ -211,7 +191,7 @@ impl StateTransitionFacadeWasm {
             .0
             .validate_fee(&state_transition)
             .await
-            .map_err(from_dpp_err)?;
+            .with_js_error()?;
 
         Ok(validation_result.map(|_| JsValue::undefined()).into())
     }
@@ -230,7 +210,7 @@ impl StateTransitionFacadeWasm {
             .0
             .validate_state(&state_transition)
             .await
-            .map_err(from_dpp_err)?;
+            .with_js_error()?;
 
         Ok(validation_result.map(|_| JsValue::undefined()).into())
     }

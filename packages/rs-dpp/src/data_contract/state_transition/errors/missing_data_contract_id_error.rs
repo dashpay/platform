@@ -1,22 +1,21 @@
 use crate::consensus::basic::BasicError;
+use platform_value::Value;
 use thiserror::Error;
 
-use crate::document::document_transition::document_base_transition::JsonValue;
-
-#[derive(Error, Debug, Clone, PartialEq, Eq)]
+#[derive(Error, Debug, Clone)]
 #[error("$dataContractId is not present")]
 pub struct MissingDataContractIdError {
-    raw_document_transition: JsonValue,
+    raw_document_transition: Value,
 }
 
 impl MissingDataContractIdError {
-    pub fn new(raw_document_transition: JsonValue) -> Self {
+    pub fn new(raw_document_transition: Value) -> Self {
         Self {
             raw_document_transition,
         }
     }
 
-    pub fn raw_document_transition(&self) -> JsonValue {
+    pub fn raw_document_transition(&self) -> Value {
         self.raw_document_transition.clone()
     }
 }

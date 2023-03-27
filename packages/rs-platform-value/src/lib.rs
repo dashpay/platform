@@ -5,20 +5,44 @@
 //! Forked from ciborium value
 //!
 //!
+extern crate core;
+
 pub mod btreemap_extensions;
 pub mod converter;
 pub mod display;
+mod eq;
 mod error;
+mod index;
+mod inner_array_value;
 pub mod inner_value;
-mod integer;
+mod inner_value_at_path;
+mod macros;
+pub mod patch;
+mod pointer;
+mod replace;
+pub mod string_encoding;
 pub mod system_bytes;
-pub mod value_map;
+mod types;
+mod value_map;
+mod value_serialization;
 
+pub use crate::value_map::{ValueMap, ValueMapHelper};
 pub use error::Error;
-pub use integer::Integer;
+use std::collections::BTreeMap;
 
-pub type ValueMap = Vec<(Value, Value)>;
 pub type Hash256 = [u8; 32];
+
+pub use btreemap_extensions::btreemap_field_replacement::{
+    IntegerReplacementType, ReplacementType,
+};
+pub use types::binary_data::BinaryData;
+pub use types::bytes_32::Bytes32;
+pub use types::bytes_36::Bytes36;
+pub use types::identifier::{Identifier, IDENTIFIER_MEDIA_TYPE};
+
+pub use value_serialization::{from_value, to_value};
+
+pub use patch::{patch, Patch};
 
 /// A representation of a dynamic value that can handled dynamically
 #[non_exhaustive]
@@ -54,11 +78,25 @@ pub enum Value {
     /// A i8 integer
     I8(i8),
 
-    // Todo: add this in
-    // /// A 256 bit hash
-    // Hash256(Hash256),
     /// Bytes
     Bytes(Vec<u8>),
+
+    /// Bytes 32
+    Bytes32([u8; 32]),
+
+    /// Bytes 36 : Useful for outpoints
+    Bytes36([u8; 36]),
+
+    /// An enumeration of u8
+    EnumU8(Vec<u8>),
+
+    /// An enumeration of strings
+    EnumString(Vec<String>),
+
+    /// Identifier
+    /// The identifier is very similar to bytes, however it is serialized to Base58 when converted
+    /// to a JSON Value
+    Identifier(Hash256),
 
     /// A float
     Float(f64),
@@ -71,9 +109,6 @@ pub enum Value {
 
     /// Null
     Null,
-
-    /// Tag
-    Tag(u64, Box<Value>),
 
     /// An array
     Array(Vec<Value>),
@@ -93,19 +128,19 @@ impl Value {
     /// assert!(value.is_integer());
     /// ```
     pub fn is_integer(&self) -> bool {
-        match self {
+        matches!(
+            self,
             Value::U128(_)
-            | Value::I128(_)
-            | Value::U64(_)
-            | Value::I64(_)
-            | Value::U32(_)
-            | Value::I32(_)
-            | Value::U16(_)
-            | Value::I16(_)
-            | Value::U8(_)
-            | Value::I8(_) => true,
-            _ => false,
-        }
+                | Value::I128(_)
+                | Value::U64(_)
+                | Value::I64(_)
+                | Value::U32(_)
+                | Value::I32(_)
+                | Value::U16(_)
+                | Value::I16(_)
+                | Value::U8(_)
+                | Value::I8(_)
+        )
     }
 
     /// If the `Value` is a `Integer`, returns a reference to the associated `Integer` data.
@@ -152,7 +187,7 @@ impl Value {
     /// Returns `Err(Error::Structure("reason"))` otherwise.
     ///
     /// ```
-    /// # use platform_value::{Value, Integer, Error};
+    /// # use platform_value::{Value, Error};
     /// #
     /// let value = Value::U64(17);
     /// let r_value : Result<u64,Error> = value.into_integer();
@@ -194,7 +229,7 @@ impl Value {
     /// Returns `Err(Error::Structure("reason"))` otherwise.
     ///
     /// ```
-    /// # use platform_value::{Value, Integer, Error};
+    /// # use platform_value::{Value, Error};
     /// #
     /// let value = Value::U64(17);
     /// let r_value : Result<u64,Error> = value.to_integer();
@@ -202,7 +237,7 @@ impl Value {
     ///
     /// let value = Value::Bool(true);
     /// let r_value : Result<u64,Error> = value.to_integer();
-    /// assert_eq!(r_value, Err(Error::StructureError("value is not an integer".to_string())));
+    /// assert_eq!(r_value, Err(Error::StructureError("value is not an integer, found bool true".to_string())));
     /// ```
     pub fn to_integer<T>(&self) -> Result<T, Error>
     where
@@ -228,7 +263,84 @@ impl Value {
             Value::I16(int) => (*int).try_into().map_err(|_| Error::IntegerSizeError),
             Value::U8(int) => (*int).try_into().map_err(|_| Error::IntegerSizeError),
             Value::I8(int) => (*int).try_into().map_err(|_| Error::IntegerSizeError),
-            _other => Err(Error::StructureError("value is not an integer".to_string())),
+            other => Err(Error::StructureError(format!(
+                "value is not an integer, found {}",
+                other
+            ))),
+        }
+    }
+
+    /// If the `Value` is an `Integer`, a `String` or a `Float` or even a `Bool`, returns the
+    /// associated `Integer` data as `Ok`.
+    /// Returns `Err(Error::Structure("reason"))` otherwise.
+    ///
+    /// ```
+    /// # use platform_value::{Value, Error};
+    /// #
+    /// let value = Value::U64(17);
+    /// let r_value : Result<u64,Error> = value.to_integer_broad_conversion();
+    /// assert_eq!(r_value, Ok(17));
+    ///
+    /// let value = Value::Text("17".to_string());
+    /// let r_value : Result<u64,Error> = value.to_integer_broad_conversion();
+    /// assert_eq!(r_value, Ok(17));
+    ///
+    /// let value = Value::Bool(true);
+    /// let r_value : Result<u64,Error> = value.to_integer_broad_conversion();
+    /// assert_eq!(r_value, Ok(1));
+    /// ```
+    pub fn to_integer_broad_conversion<T>(&self) -> Result<T, Error>
+    where
+        T: TryFrom<i128>
+            + TryFrom<u128>
+            + TryFrom<u64>
+            + TryFrom<i64>
+            + TryFrom<u32>
+            + TryFrom<i32>
+            + TryFrom<u16>
+            + TryFrom<i16>
+            + TryFrom<u8>
+            + TryFrom<i8>,
+    {
+        match self {
+            Value::U128(int) => (*int).try_into().map_err(|_| Error::IntegerSizeError),
+            Value::I128(int) => (*int).try_into().map_err(|_| Error::IntegerSizeError),
+            Value::U64(int) => (*int).try_into().map_err(|_| Error::IntegerSizeError),
+            Value::I64(int) => (*int).try_into().map_err(|_| Error::IntegerSizeError),
+            Value::U32(int) => (*int).try_into().map_err(|_| Error::IntegerSizeError),
+            Value::I32(int) => (*int).try_into().map_err(|_| Error::IntegerSizeError),
+            Value::U16(int) => (*int).try_into().map_err(|_| Error::IntegerSizeError),
+            Value::I16(int) => (*int).try_into().map_err(|_| Error::IntegerSizeError),
+            Value::U8(int) => (*int).try_into().map_err(|_| Error::IntegerSizeError),
+            Value::I8(int) => (*int).try_into().map_err(|_| Error::IntegerSizeError),
+            Value::Float(float) => {
+                let max_f64 = u128::MAX as f64;
+                let min_f64 = i128::MIN as f64;
+                if *float > 0f64 && *float < max_f64 {
+                    (*float as u128)
+                        .try_into()
+                        .map_err(|_| Error::IntegerSizeError)
+                } else if *float > min_f64 && *float < 0f64 {
+                    (*float as i128)
+                        .try_into()
+                        .map_err(|_| Error::IntegerSizeError)
+                } else {
+                    Err(Error::IntegerSizeError)
+                }
+            }
+            Value::Bool(bool) => {
+                let i: u8 = (*bool).into();
+                i.try_into().map_err(|_| Error::IntegerSizeError)
+            }
+            Value::Text(text) => text
+                .parse::<i128>()
+                .map_err(|_| Error::IntegerSizeError)?
+                .try_into()
+                .map_err(|_| Error::IntegerSizeError),
+            other => Err(Error::StructureError(format!(
+                "value can not be converted to an integer, found {}",
+                other
+            ))),
         }
     }
 
@@ -243,6 +355,34 @@ impl Value {
     /// ```
     pub fn is_bytes(&self) -> bool {
         self.as_bytes().is_some()
+    }
+
+    /// Returns true if the `Value` is a `Bytes`. Returns false otherwise.
+    ///
+    /// ```
+    /// # use platform_value::Value;
+    /// #
+    /// let value = Value::Bytes(vec![104, 101, 108, 108, 111]);
+    ///
+    /// assert!(value.is_any_bytes_type());
+    ///
+    /// let value = Value::Identifier([1u8;32]);
+    ///
+    /// assert!(value.is_any_bytes_type());
+    ///
+    /// let value = Value::Bytes32([1u8;32]);
+    ///
+    /// assert!(value.is_any_bytes_type());
+    ///
+    /// let value = Value::Bytes36([1u8;36]);
+    ///
+    /// assert!(value.is_any_bytes_type());
+    /// ```
+    pub fn is_any_bytes_type(&self) -> bool {
+        match self {
+            Value::Bytes(_) | Value::Bytes32(_) | Value::Bytes36(_) | Value::Identifier(_) => true,
+            _ => false,
+        }
     }
 
     /// If the `Value` is a `Bytes`, returns a reference to the associated bytes vector.
@@ -295,6 +435,13 @@ impl Value {
     pub fn into_bytes(self) -> Result<Vec<u8>, Error> {
         match self {
             Value::Bytes(vec) => Ok(vec),
+            Value::Bytes32(vec) => Ok(vec.to_vec()),
+            Value::Bytes36(vec) => Ok(vec.to_vec()),
+            Value::Identifier(vec) => Ok(vec.to_vec()),
+            Value::Array(array) => Ok(array
+                .into_iter()
+                .map(|byte| byte.into_integer())
+                .collect::<Result<Vec<u8>, Error>>()?),
             _other => Err(Error::StructureError("value are not bytes".to_string())),
         }
     }
@@ -309,11 +456,50 @@ impl Value {
     /// assert_eq!(value.to_bytes(), Ok(vec![104, 101, 108, 108, 111]));
     ///
     /// let value = Value::Bool(true);
-    /// assert_eq!(value.to_bytes(), Err(Error::StructureError("ref value are not bytes found true instead".to_string())));
+    /// assert_eq!(value.to_bytes(), Err(Error::StructureError("ref value are not bytes found bool true instead".to_string())));
     /// ```
     pub fn to_bytes(&self) -> Result<Vec<u8>, Error> {
         match self {
             Value::Bytes(vec) => Ok(vec.clone()),
+            Value::Bytes32(vec) => Ok(vec.to_vec()),
+            Value::Bytes36(vec) => Ok(vec.to_vec()),
+            Value::Identifier(vec) => Ok(vec.to_vec()),
+            Value::Array(array) => Ok(array
+                .iter()
+                .map(|byte| byte.to_integer())
+                .collect::<Result<Vec<u8>, Error>>()?),
+            other => Err(Error::StructureError(format!(
+                "ref value are not bytes found {} instead",
+                other
+            ))),
+        }
+    }
+
+    /// If the `Value` is a ref to `Bytes`, returns a the associated `BinaryData` data as `Ok`.
+    /// BinaryData wraps Vec<u8>
+    /// Returns `Err(Error::Structure("reason"))` otherwise.
+    ///
+    /// ```
+    /// # use platform_value::{BinaryData, Error, Value};
+    /// #
+    /// let value = Value::Bytes(vec![104, 101, 108, 108, 111]);
+    /// assert_eq!(value.to_binary_data(), Ok(BinaryData::new(vec![104, 101, 108, 108, 111])));
+    ///
+    /// let value = Value::Bool(true);
+    /// assert_eq!(value.to_binary_data(), Err(Error::StructureError("ref value are not bytes found bool true instead".to_string())));
+    /// ```
+    pub fn to_binary_data(&self) -> Result<BinaryData, Error> {
+        match self {
+            Value::Bytes(vec) => Ok(BinaryData::new(vec.clone())),
+            Value::Bytes32(vec) => Ok(BinaryData::new(vec.to_vec())),
+            Value::Bytes36(vec) => Ok(BinaryData::new(vec.to_vec())),
+            Value::Identifier(vec) => Ok(BinaryData::new(vec.to_vec())),
+            Value::Array(array) => Ok(BinaryData::new(
+                array
+                    .iter()
+                    .map(|byte| byte.to_integer())
+                    .collect::<Result<Vec<u8>, Error>>()?,
+            )),
             other => Err(Error::StructureError(format!(
                 "ref value are not bytes found {} instead",
                 other
@@ -336,6 +522,9 @@ impl Value {
     pub fn as_bytes_slice(&self) -> Result<&[u8], Error> {
         match self {
             Value::Bytes(vec) => Ok(vec),
+            Value::Bytes32(vec) => Ok(vec.as_slice()),
+            Value::Bytes36(vec) => Ok(vec.as_slice()),
+            Value::Identifier(vec) => Ok(vec.as_slice()),
             _other => Err(Error::StructureError(
                 "ref value are not bytes slice".to_string(),
             )),
@@ -528,6 +717,25 @@ impl Value {
         }
     }
 
+    /// If the `Value` is a `String`, returns a the associated `&str` data as `Ok`.
+    /// Returns `Err(Error::Structure("reason"))` otherwise.
+    ///
+    /// ```
+    /// # use platform_value::{Error, Value};
+    /// #
+    /// let value = Value::Text(String::from("hello"));
+    /// assert_eq!(value.to_str(), Ok("hello"));
+    ///
+    /// let value = Value::Bool(true);
+    /// assert_eq!(value.to_str(), Err(Error::StructureError("value is not a string".to_string())));
+    /// ```
+    pub fn to_str(&self) -> Result<&str, Error> {
+        match self {
+            Value::Text(s) => Ok(s),
+            _other => Err(Error::StructureError("value is not a string".to_string())),
+        }
+    }
+
     /// If the `Value` is a `String`, returns a reference to the associated `String` data as `Ok`.
     /// Returns `Err(Error::Structure("reason"))` otherwise.
     ///
@@ -535,15 +743,15 @@ impl Value {
     /// # use platform_value::{Error, Value};
     /// #
     /// let value = Value::Text(String::from("hello"));
-    /// assert_eq!(value.as_str(), Ok("hello"));
+    /// assert_eq!(value.as_str(), Some("hello"));
     ///
     /// let value = Value::Bool(true);
-    /// assert_eq!(value.as_str(), Err(Error::StructureError("value is not a string".to_string())));
+    /// assert_eq!(value.as_str(), None);
     /// ```
-    pub fn as_str(&self) -> Result<&str, Error> {
+    pub fn as_str(&self) -> Option<&str> {
         match self {
-            Value::Text(s) => Ok(s),
-            _other => Err(Error::StructureError("value is not a string".to_string())),
+            Value::Text(s) => Some(s),
+            _ => None,
         }
     }
 
@@ -596,6 +804,25 @@ impl Value {
         }
     }
 
+    /// If the `Value` is a `Bool`, returns a the associated `bool` data as `Ok`.
+    /// Returns `Err(Error::Structure("reason"))` otherwise.
+    ///
+    /// ```
+    /// # use platform_value::{Error, Value};
+    /// #
+    /// let value = Value::Bool(false);
+    /// assert_eq!(value.to_bool(), Ok(false));
+    ///
+    /// let value = Value::Float(17.);
+    /// assert_eq!(value.to_bool(), Err(Error::StructureError("value is not a bool".to_string())));
+    /// ```
+    pub fn to_bool(&self) -> Result<bool, Error> {
+        match self {
+            Value::Bool(b) => Ok(*b),
+            _other => Err(Error::StructureError("value is not a bool".to_string())),
+        }
+    }
+
     /// Returns true if the `Value` is a `Null`. Returns false otherwise.
     ///
     /// ```
@@ -607,78 +834,6 @@ impl Value {
     /// ```
     pub fn is_null(&self) -> bool {
         matches!(self, Value::Null)
-    }
-
-    /// Returns true if the `Value` is a `Tag`. Returns false otherwise.
-    ///
-    /// ```
-    /// # use platform_value::Value;
-    /// #
-    /// let value = Value::Tag(61, Box::from(Value::Null));
-    ///
-    /// assert!(value.is_tag());
-    /// ```
-    pub fn is_tag(&self) -> bool {
-        self.as_tag().is_some()
-    }
-
-    /// If the `Value` is a `Tag`, returns the associated tag value and a reference to the tag `Value`.
-    /// Returns None otherwise.
-    ///
-    /// ```
-    /// # use platform_value::Value;
-    /// #
-    /// let value = Value::Tag(61, Box::from(Value::Bytes(vec![104, 101, 108, 108, 111])));
-    ///
-    /// let (tag, data) = value.as_tag().unwrap();
-    /// assert_eq!(tag, 61);
-    /// assert_eq!(data, &Value::Bytes(vec![104, 101, 108, 108, 111]));
-    /// ```
-    pub fn as_tag(&self) -> Option<(u64, &Value)> {
-        match self {
-            Value::Tag(tag, data) => Some((*tag, data)),
-            _ => None,
-        }
-    }
-
-    /// If the `Value` is a `Tag`, returns the associated tag value and a mutable reference
-    /// to the tag `Value`. Returns None otherwise.
-    ///
-    /// ```
-    /// # use platform_value::Value;
-    /// #
-    /// let mut value = Value::Tag(61, Box::from(Value::Bytes(vec![104, 101, 108, 108, 111])));
-    ///
-    /// let (tag, mut data) = value.as_tag_mut().unwrap();
-    /// data.as_bytes_mut().unwrap().clear();
-    /// assert_eq!(tag, &61);
-    /// assert_eq!(data, &Value::Bytes(vec![]));
-    /// ```
-    pub fn as_tag_mut(&mut self) -> Option<(&mut u64, &mut Value)> {
-        match self {
-            Value::Tag(tag, data) => Some((tag, data.as_mut())),
-            _ => None,
-        }
-    }
-
-    /// If the `Value` is a `Tag`, returns a the associated pair of `u64` and `Box<value>` data as `Ok`.
-    /// Returns `Err(Error::Structure("reason"))` otherwise.
-    ///
-    /// ```
-    /// # use platform_value::Value;
-    /// # use platform_value::Error;
-    /// #
-    /// let value = Value::Tag(7, Box::new(Value::Float(12.)));
-    /// assert_eq!(value.into_tag(), Ok((7, Box::new(Value::Float(12.)))));
-    ///
-    /// let value = Value::Bool(true);
-    /// assert_eq!(value.into_tag(), Err(Error::StructureError("value is not a tag".to_string())));
-    /// ```
-    pub fn into_tag(self) -> Result<(u64, Box<Value>), Error> {
-        match self {
-            Value::Tag(tag, value) => Ok((tag, value)),
-            _other => Err(Error::StructureError("value is not a tag".to_string())),
-        }
     }
 
     /// Returns true if the `Value` is an Array. Returns false otherwise.
@@ -745,11 +900,118 @@ impl Value {
         }
     }
 
+    /// If the `Value` is an Array, returns a mutable reference to the associated vector.
+    /// Returns None otherwise.
+    ///
+    /// ```
+    /// # use platform_value::Value;
+    /// #
+    /// let mut value = Value::Array(
+    ///     vec![
+    ///         Value::Text(String::from("foo")),
+    ///         Value::Text(String::from("bar"))
+    ///     ]
+    /// );
+    ///
+    /// value.to_array_mut().unwrap().clear();
+    /// assert_eq!(value, Value::Array(vec![]));
+    /// ```
+    pub fn to_array_mut(&mut self) -> Result<&mut Vec<Value>, Error> {
+        match self {
+            Value::Array(vec) => Ok(vec),
+            other => Err(Error::StructureError(format!(
+                "value is not a mut array got {}",
+                other
+            ))),
+        }
+    }
+
+    /// If the `Value` is a `Array`, returns a the associated `&[Value]` slice as `Ok`.
+    /// Returns `Err(Error::Structure("reason"))` otherwise.
+    ///
+    /// ```
+    /// # use platform_value::{Value, Error};
+    /// #
+    /// let mut value = Value::Array(
+    ///     vec![
+    ///         Value::U64(17),
+    ///         Value::Float(18.),
+    ///     ]
+    /// );
+    /// assert_eq!(value.to_array_slice(), Ok(vec![Value::U64(17), Value::Float(18.)].as_slice()));
+    ///
+    /// let value = Value::Bool(true);
+    /// assert_eq!(value.to_array_slice(), Err(Error::StructureError("value is not an array got bool true".to_string())));
+    /// ```
+    pub fn to_array_slice(&self) -> Result<&[Value], Error> {
+        match self {
+            Value::Array(vec) => Ok(vec.as_slice()),
+            other => Err(Error::StructureError(format!(
+                "value is not an array got {}",
+                other
+            ))),
+        }
+    }
+
+    /// If the `Value` is a `Array`, returns a the associated `Vec<&Value>` array as `Ok`.
+    /// Returns `Err(Error::Structure("reason"))` otherwise.
+    ///
+    /// ```
+    /// # use platform_value::{Value, Error};
+    /// #
+    /// let mut value = Value::Array(
+    ///     vec![
+    ///         Value::U64(17),
+    ///         Value::Float(18.),
+    ///     ]
+    /// );
+    /// assert_eq!(value.to_array_ref(), Ok(&vec![Value::U64(17), Value::Float(18.)]));
+    ///
+    /// let value = Value::Bool(true);
+    /// assert_eq!(value.to_array_ref(), Err(Error::StructureError("value is not an array got bool true".to_string())));
+    /// ```
+    pub fn to_array_ref(&self) -> Result<&Vec<Value>, Error> {
+        match self {
+            Value::Array(vec) => Ok(vec),
+            other => Err(Error::StructureError(format!(
+                "value is not an array got {}",
+                other
+            ))),
+        }
+    }
+
     /// If the `Value` is a `Array`, returns a the associated `Vec<Value>` data as `Ok`.
     /// Returns `Err(Error::Structure("reason"))` otherwise.
     ///
     /// ```
-    /// # use platform_value::{Value, Integer, Error};
+    /// # use platform_value::{Value, Error};
+    /// #
+    /// let mut value = Value::Array(
+    ///     vec![
+    ///         Value::U64(17),
+    ///         Value::Float(18.),
+    ///     ]
+    /// );
+    /// assert_eq!(value.to_array_owned(), Ok(vec![Value::U64(17), Value::Float(18.)]));
+    ///
+    /// let value = Value::Bool(true);
+    /// assert_eq!(value.to_array_owned(), Err(Error::StructureError("value is not an owned array got bool true".to_string())));
+    /// ```
+    pub fn to_array_owned(&self) -> Result<Vec<Value>, Error> {
+        match self {
+            Value::Array(vec) => Ok(vec.clone()),
+            other => Err(Error::StructureError(format!(
+                "value is not an owned array got {}",
+                other
+            ))),
+        }
+    }
+
+    /// If the `Value` is a `Array`, returns a the associated `Vec<Value>` data as `Ok`.
+    /// Returns `Err(Error::Structure("reason"))` otherwise.
+    ///
+    /// ```
+    /// # use platform_value::{Value, Error};
     /// #
     /// let mut value = Value::Array(
     ///     vec![
@@ -760,12 +1022,15 @@ impl Value {
     /// assert_eq!(value.into_array(), Ok(vec![Value::U64(17), Value::Float(18.)]));
     ///
     /// let value = Value::Bool(true);
-    /// assert_eq!(value.into_array(), Err(Error::StructureError("value is not an array".to_string())));
+    /// assert_eq!(value.into_array(), Err(Error::StructureError("value is not an array (into) got bool true".to_string())));
     /// ```
     pub fn into_array(self) -> Result<Vec<Value>, Error> {
         match self {
             Value::Array(vec) => Ok(vec),
-            _other => Err(Error::StructureError("value is not an array".to_string())),
+            other => Err(Error::StructureError(format!(
+                "value is not an array (into) got {}",
+                other
+            ))),
         }
     }
 
@@ -773,7 +1038,7 @@ impl Value {
     /// Returns `Err(Error::Structure("reason"))` otherwise.
     ///
     /// ```
-    /// # use platform_value::{Value, Integer, Error};
+    /// # use platform_value::{Value, Error};
     /// #
     /// let mut value = Value::Array(
     ///     vec![
@@ -784,12 +1049,15 @@ impl Value {
     /// assert_eq!(value.as_slice(), Ok(vec![Value::U64(17), Value::Float(18.)].as_slice()));
     ///
     /// let value = Value::Bool(true);
-    /// assert_eq!(value.as_slice(), Err(Error::StructureError("value is not an array".to_string())));
+    /// assert_eq!(value.as_slice(), Err(Error::StructureError("value is not a slice got bool true".to_string())));
     /// ```
     pub fn as_slice(&self) -> Result<&[Value], Error> {
         match self {
             Value::Array(vec) => Ok(vec),
-            _other => Err(Error::StructureError("value is not an array".to_string())),
+            other => Err(Error::StructureError(format!(
+                "value is not a slice got {}",
+                other
+            ))),
         }
     }
 
@@ -861,6 +1129,29 @@ impl Value {
         }
     }
 
+    /// If the `Value` is a Map, returns a mutable reference to the associated Map Data.
+    /// Returns Err otherwise.
+    ///
+    /// ```
+    /// # use platform_value::Value;
+    /// #
+    /// let mut value = Value::Map(
+    ///     vec![
+    ///         (Value::Text(String::from("foo")), Value::Text(String::from("bar")))
+    ///     ]
+    /// );
+    ///
+    /// value.to_map_mut().unwrap().clear();
+    /// assert_eq!(value, Value::Map(vec![]));
+    /// assert_eq!(value.as_map().unwrap().len(), 0);
+    /// ```
+    pub fn to_map_mut(&mut self) -> Result<&mut ValueMap, Error> {
+        match *self {
+            Value::Map(ref mut map) => Ok(map),
+            _ => Err(Error::StructureError("value is not a map".to_string())),
+        }
+    }
+
     /// If the `Value` is a `Map`, returns a the associated ValueMap which is a `Vec<(Value, Value)>`
     /// data as `Ok`.
     /// Returns `Err(Error::Structure("reason"))` otherwise.
@@ -879,6 +1170,30 @@ impl Value {
     /// assert_eq!(value.into_map(), Err(Error::StructureError("value is not a map".to_string())))
     /// ```
     pub fn into_map(self) -> Result<ValueMap, Error> {
+        match self {
+            Value::Map(map) => Ok(map),
+            _other => Err(Error::StructureError("value is not a map".to_string())),
+        }
+    }
+
+    /// If the `Value` is a `Map`, returns a the associated ValueMap which is a `Vec<(Value, Value)>`
+    /// data as `Ok`.
+    /// Returns `Err(Error::Structure("reason"))` otherwise.
+    ///
+    /// ```
+    /// # use platform_value::{Error, Value};
+    /// #
+    /// let mut value = Value::Map(
+    ///     vec![
+    ///         (Value::Text(String::from("key")), Value::Float(18.)),
+    ///     ]
+    /// );
+    /// assert_eq!(value.to_map(), Ok(&vec![(Value::Text(String::from("key")), Value::Float(18.))]));
+    ///
+    /// let value = Value::Bool(true);
+    /// assert_eq!(value.to_map(), Err(Error::StructureError("value is not a map".to_string())))
+    /// ```
+    pub fn to_map(&self) -> Result<&ValueMap, Error> {
         match self {
             Value::Map(map) => Ok(map),
             _other => Err(Error::StructureError("value is not a map".to_string())),
@@ -908,6 +1223,30 @@ impl Value {
             _other => Err(Error::StructureError("value is not a map".to_string())),
         }
     }
+
+    /// If the `Value` is a `Map`, returns the associated ValueMap ref which is a `&Vec<(Value, Value)>`
+    /// data as `Ok`.
+    /// Returns `Err(Error::Structure("reason"))` otherwise.
+    ///
+    /// ```
+    /// # use platform_value::{Error, Value};
+    /// #
+    /// let mut value = Value::Map(
+    ///     vec![
+    ///         (Value::Text(String::from("key")), Value::Float(18.)),
+    ///     ]
+    /// );
+    /// assert_eq!(value.as_map_mut_ref(), Ok(&mut vec![(Value::Text(String::from("key")), Value::Float(18.))]));
+    ///
+    /// let mut value = Value::Bool(true);
+    /// assert_eq!(value.as_map_mut_ref(), Err(Error::StructureError("value is not a map".to_string())))
+    /// ```
+    pub fn as_map_mut_ref(&mut self) -> Result<&mut ValueMap, Error> {
+        match self {
+            Value::Map(map) => Ok(map),
+            _other => Err(Error::StructureError("value is not a map".to_string())),
+        }
+    }
 }
 
 macro_rules! implfrom {
@@ -921,6 +1260,33 @@ macro_rules! implfrom {
             }
         )+
     };
+}
+
+macro_rules! impltryinto {
+    ($($t:ty),+ $(,)?) => {
+        $(
+            impl TryInto<$t> for Value {
+                type Error = Error;
+                #[inline]
+                fn try_into(self) -> Result<$t, Self::Error> {
+                    self.to_integer()
+                }
+            }
+        )+
+    };
+}
+
+impltryinto! {
+    u128,
+    i128,
+    u64,
+    i64,
+    u32,
+    i32,
+    u16,
+    i16,
+    u8,
+    i8,
 }
 
 implfrom! {
@@ -937,6 +1303,7 @@ implfrom! {
 
     Bytes(Vec<u8>),
     Bytes(&[u8]),
+    Bytes32([u8;32]),
 
     Float(f64),
     Float(f32),
@@ -953,11 +1320,133 @@ implfrom! {
     Map(Vec<(Value, Value)>),
 }
 
+impl<const N: usize> From<[(Value, Value); N]> for Value {
+    /// Converts a `[(Value, Value); N]` into a `Value`.
+    ///
+    /// ```
+    /// use platform_value::Value;
+    ///
+    /// let map1 = Value::from([(Value::from(1), Value::from(2)), (Value::from(3), Value::from(4))]);
+    /// let map2: Value = [(Value::from(1), Value::from(2)), (Value::from(3), Value::from(4))].into();
+    /// assert_eq!(map1, map2);
+    /// ```
+    fn from(arr: [(Value, Value); N]) -> Self {
+        if N == 0 {
+            return Value::Map(vec![]);
+        }
+
+        Value::Map(arr.into_iter().collect())
+    }
+}
+
+impl<const N: usize> From<[(String, Value); N]> for Value {
+    /// Converts a `[(String, Value); N]` into a `Value`.
+    ///
+    /// ```
+    /// use platform_value::Value;
+    ///
+    /// let map1 = Value::from([("1".to_string(), Value::from(2)), ("3".to_string(), Value::from(4))]);
+    /// let map2: Value = [("1".to_string(), Value::from(2)), ("3".to_string(), Value::from(4))].into();
+    /// assert_eq!(map1, map2);
+    /// ```
+    fn from(mut arr: [(String, Value); N]) -> Self {
+        if N == 0 {
+            return Value::Map(vec![]);
+        }
+
+        // use stable sort to preserve the insertion order.
+        arr.sort_by(|a, b| a.0.cmp(&b.0));
+        Value::Map(arr.into_iter().map(|(k, v)| (k.into(), v)).collect())
+    }
+}
+
+impl<const N: usize> From<[(&str, Value); N]> for Value {
+    /// Converts a `[($str, Value); N]` into a `Value`.
+    ///
+    /// ```
+    /// use platform_value::Value;
+    ///
+    /// let map1 = Value::from([("1", Value::from(2)), ("3", Value::from(4))]);
+    /// let map2: Value = [("1", Value::from(2)), ("3", Value::from(4))].into();
+    /// assert_eq!(map1, map2);
+    /// ```
+    fn from(mut arr: [(&str, Value); N]) -> Self {
+        if N == 0 {
+            return Value::Map(vec![]);
+        }
+
+        // use stable sort to preserve the insertion order.
+        arr.sort_by(|a, b| a.0.cmp(b.0));
+        Value::Map(arr.into_iter().map(|(k, v)| (k.into(), v)).collect())
+    }
+}
+
+impl<T> From<BTreeMap<T, &Value>> for Value
+where
+    T: Into<Value>,
+{
+    fn from(value: BTreeMap<T, &Value>) -> Self {
+        Value::Map(
+            value
+                .into_iter()
+                .map(|(key, value)| (key.into(), value.clone()))
+                .collect(),
+        )
+    }
+}
+
+impl<T> From<BTreeMap<T, Value>> for Value
+where
+    T: Into<Value>,
+{
+    fn from(value: BTreeMap<T, Value>) -> Self {
+        Value::Map(
+            value
+                .into_iter()
+                .map(|(key, value)| (key.into(), value))
+                .collect(),
+        )
+    }
+}
+
 impl From<char> for Value {
     #[inline]
     fn from(value: char) -> Self {
         let mut v = String::with_capacity(1);
         v.push(value);
         Value::Text(v)
+    }
+}
+
+impl From<Vec<&str>> for Value {
+    fn from(value: Vec<&str>) -> Self {
+        Value::Array(value.into_iter().map(|string| string.into()).collect())
+    }
+}
+
+impl From<&[&str]> for Value {
+    fn from(value: &[&str]) -> Self {
+        Value::Array(
+            value
+                .iter()
+                .map(|string| string.to_owned().into())
+                .collect(),
+        )
+    }
+}
+
+impl TryInto<Vec<u8>> for Value {
+    type Error = Error;
+
+    fn try_into(self) -> Result<Vec<u8>, Self::Error> {
+        self.to_bytes()
+    }
+}
+
+impl TryInto<String> for Value {
+    type Error = Error;
+
+    fn try_into(self) -> Result<String, Self::Error> {
+        self.into_text()
     }
 }

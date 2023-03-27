@@ -1,7 +1,6 @@
 pub mod errors;
 
 use dpp::prelude::Identifier;
-use dpp::util::string_encoding::Encoding;
 use itertools::Itertools;
 pub use serde::{Deserialize, Serialize};
 use serde_json::Value;
@@ -10,12 +9,12 @@ use wasm_bindgen::JsCast;
 
 use crate::bail_js;
 use crate::buffer::Buffer;
-use crate::errors::from_dpp_err;
 use crate::identifier::errors::IdentifierErrorWasm;
 use crate::utils::Inner;
 use crate::utils::ToSerdeJSONExt;
 use crate::utils::WithJsError;
-use dpp::identifier;
+use dpp::platform_value::string_encoding::Encoding;
+use dpp::{identifier, ProtocolError};
 
 #[derive(Serialize, Deserialize, PartialEq, Eq)]
 enum IdentifierSource {
@@ -40,6 +39,14 @@ pub struct IdentifierWrapper {
 impl std::convert::From<identifier::Identifier> for IdentifierWrapper {
     fn from(s: identifier::Identifier) -> Self {
         IdentifierWrapper { wrapped: s }
+    }
+}
+
+impl std::convert::From<[u8; 32]> for IdentifierWrapper {
+    fn from(s: [u8; 32]) -> Self {
+        IdentifierWrapper {
+            wrapped: Identifier::new(s),
+        }
     }
 }
 
@@ -68,7 +75,9 @@ impl IdentifierWrapper {
 
         let vec = js_value.dyn_into::<js_sys::Uint8Array>()?.to_vec();
 
-        let identifier = identifier::Identifier::from_bytes(&vec).map_err(from_dpp_err)?;
+        let identifier = Identifier::from_bytes(&vec)
+            .map_err(ProtocolError::ValueError)
+            .with_js_error()?;
 
         Ok(IdentifierWrapper {
             wrapped: identifier,
@@ -104,7 +113,7 @@ impl IdentifierWrapper {
 
     #[wasm_bindgen(js_name=toBuffer)]
     pub fn to_buffer(&self) -> Buffer {
-        Buffer::from_bytes(&self.wrapped.buffer)
+        Buffer::from_bytes_owned(self.wrapped.to_vec())
     }
 
     #[wasm_bindgen(js_name=toJSON)]
@@ -125,12 +134,12 @@ impl IdentifierWrapper {
 
     #[wasm_bindgen(getter)]
     pub fn length(&self) -> usize {
-        self.wrapped.buffer.len()
+        self.wrapped.to_buffer().len()
     }
 
     #[wasm_bindgen(js_name=toBytes)]
     pub fn to_bytes(&self) -> Vec<u8> {
-        self.wrapped.buffer.to_vec()
+        self.wrapped.to_vec()
     }
 
     #[wasm_bindgen(js_name=clone)]
@@ -167,9 +176,13 @@ pub(crate) fn identifier_from_js_value(js_value: &JsValue) -> Result<Identifier,
     match value {
         Value::Array(arr) => {
             let bytes: Vec<u8> = arr.into_iter().map(value_to_u8).try_collect()?;
-            Identifier::from_bytes(&bytes).with_js_error()
+            Identifier::from_bytes(&bytes)
+                .map_err(ProtocolError::ValueError)
+                .with_js_error()
         }
-        Value::String(string) => Identifier::from_string(&string, Encoding::Base58).with_js_error(),
+        Value::String(string) => Identifier::from_string(&string, Encoding::Base58)
+            .map_err(ProtocolError::ValueError)
+            .with_js_error(),
         _ => {
             bail_js!("Invalid ID. Expected array or string")
         }

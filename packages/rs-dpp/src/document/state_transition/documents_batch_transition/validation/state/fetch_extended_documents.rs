@@ -5,29 +5,29 @@ use std::{
 
 use futures::future::join_all;
 use itertools::Itertools;
+use platform_value::string_encoding::Encoding;
 use serde_json::json;
 
+use crate::document::ExtendedDocument;
 use crate::{
-    document::{document_transition::DocumentTransition, Document},
-    get_from_transition,
+    document::document_transition::DocumentTransition, get_from_transition,
     state_repository::StateRepositoryLike,
     state_transition::state_transition_execution_context::StateTransitionExecutionContext,
-    util::string_encoding::Encoding,
     ProtocolError,
 };
 
-pub async fn fetch_documents(
+pub async fn fetch_extended_documents(
     state_repository: &impl StateRepositoryLike,
     document_transitions: impl IntoIterator<Item = impl AsRef<DocumentTransition>>,
     execution_context: &StateTransitionExecutionContext,
-) -> Result<Vec<Document>, anyhow::Error> {
+) -> Result<Vec<ExtendedDocument>, anyhow::Error> {
     let mut transitions_by_contracts_and_types: HashMap<String, Vec<&DocumentTransition>> =
         HashMap::new();
     let collected_transitions: Vec<_> = document_transitions.into_iter().collect();
 
     for dt in collected_transitions.iter() {
         let document_transition = dt.as_ref();
-        let document_type = get_from_transition!(document_transition, document_type);
+        let document_type = get_from_transition!(document_transition, document_type_name);
         let data_contract_id = get_from_transition!(document_transition, data_contract_id);
         let unique_key = format!("{}{}", data_contract_id, document_type);
 
@@ -51,11 +51,11 @@ pub async fn fetch_documents(
             "orderBy" : [[ "$id", "asc"]],
         });
 
-        let future = state_repository.fetch_documents(
+        let future = state_repository.fetch_extended_documents(
             get_from_transition!(dts[0], data_contract_id),
-            get_from_transition!(dts[0], document_type),
+            get_from_transition!(dts[0], document_type_name),
             options,
-            execution_context,
+            Some(execution_context),
         );
 
         fetch_documents_futures.push(future);
@@ -65,7 +65,7 @@ pub async fn fetch_documents(
     let mut documents = vec![];
     for result in results.into_iter() {
         let result = result?;
-        let documents_from_fetch: Vec<Document> = result
+        let documents_from_fetch: Vec<ExtendedDocument> = result
             .into_iter()
             .map(|d| d.try_into().map_err(Into::<ProtocolError>::into))
             .try_collect()?;

@@ -1,13 +1,14 @@
 const DocumentJs = require('@dashevo/dpp/lib/document/Document');
 
+const { generate: generateEntropy } = require('@dashevo/dpp/lib/util/entropyGenerator');
 const getDataContractFixture = require('@dashevo/dpp/lib/test/fixtures/getDataContractFixture');
 const getDocumentsFixture = require('@dashevo/dpp/lib/test/fixtures/getDocumentsFixture');
-const getDocumentTransitionsFixture = require('@dashevo/dpp/lib/test/fixtures/getDocumentTransitionsFixture');
+const getDocumentTransitionsFixture = require('../../../../../../../lib/test/fixtures/getDocumentTransitionsFixture');
 
-const { generate: generateEntropy } = require('@dashevo/dpp/lib/util/entropyGenerator');
 const { default: loadWasmDpp } = require('../../../../../../../dist');
 
 let DataContract;
+let Identifier;
 let findDuplicatesByIndices;
 
 describe('findDuplicatesByIndices', () => {
@@ -20,14 +21,14 @@ describe('findDuplicatesByIndices', () => {
     ({
       DataContract,
       findDuplicatesByIndices,
+      Identifier,
     } = await loadWasmDpp());
     contractJs = getDataContractFixture();
     contractJs.setDocumentSchema('nonUniqueIndexDocument', {
       indices: [
         {
-          name: 'ownerIdLastName',
+          name: 'lastName',
           properties: [
-            { $ownerId: 'asc' },
             { lastName: 'asc' },
           ],
           unique: false,
@@ -109,12 +110,13 @@ describe('findDuplicatesByIndices', () => {
     const [, , , , leon] = documents;
 
     leon.set('lastName', 'Birkin');
+    const ownerId = Identifier.from(leon.ownerId);
 
     documentTransitions = getDocumentTransitionsFixture({
       create: documents,
     }).map((t) => t.toObject());
 
-    const duplicates = findDuplicatesByIndices(documentTransitions, contract);
+    const duplicates = findDuplicatesByIndices(documentTransitions, contract, ownerId);
 
     expect(duplicates.length).to.equal(2);
     expect(duplicates).to.have.deep.members(
@@ -126,7 +128,9 @@ describe('findDuplicatesByIndices', () => {
   });
 
   it('should return an empty array of there are no duplicates - Rust', () => {
-    const duplicates = findDuplicatesByIndices(documentTransitions, contract);
+    const [, , , , leon] = documents;
+    const ownerId = Identifier.from(leon.ownerId);
+    const duplicates = findDuplicatesByIndices(documentTransitions, contract, ownerId);
 
     expect(duplicates.length).to.equal(0);
   });

@@ -1,7 +1,5 @@
 use std::{ops::Deref, sync::Arc};
 
-use serde_json::Value as JsonValue;
-
 use dpp::{state_transition::{
     validation::{
         validate_state_transition_basic::StateTransitionBasicValidator,
@@ -10,8 +8,9 @@ use dpp::{state_transition::{
     StateTransitionFactory, StateTransitionFactoryOptions, StateTransition, errors::StateTransitionError,
 }, version::ProtocolVersionValidator, data_contract::state_transition::{data_contract_create_transition::validation::state::validate_data_contract_create_transition_basic::DataContractCreateTransitionBasicValidator, data_contract_update_transition::validation::basic::DataContractUpdateTransitionBasicValidator}, identity::{state_transition::{identity_create_transition::validation::basic::IdentityCreateTransitionBasicValidator, validate_public_key_signatures::{PublicKeysSignaturesValidator}, asset_lock_proof::{AssetLockProofValidator, ChainAssetLockProofStructureValidator, InstantAssetLockProofStructureValidator, AssetLockTransactionValidator}, identity_topup_transition::validation::basic::IdentityTopUpTransitionBasicValidator, identity_credit_withdrawal_transition::validation::basic::validate_identity_credit_withdrawal_transition_basic::IdentityCreditWithdrawalTransitionBasicValidator, identity_update_transition::validate_identity_update_transition_basic::ValidateIdentityUpdateTransitionBasic}, validation::PublicKeysValidator}, document::validation::basic::validate_documents_batch_transition_basic::DocumentBatchTransitionBasicValidator, ProtocolError};
 use wasm_bindgen::{prelude::wasm_bindgen, JsValue};
+use dpp::platform_value::Value;
 
-use crate::utils::ToSerdeJSONExt;
+use crate::utils::{ToSerdeJSONExt, WithJsError};
 use crate::{
     bls_adapter::{BlsAdapter, JsBlsAdapter},
     errors::{from_dpp_err, from_dpp_init_error},
@@ -113,50 +112,50 @@ impl StateTransitionFactoryWasm {
             .map_err(from_dpp_init_error)?,
         ));
 
-        let factory = StateTransitionFactory::new(
+        let state_transition_basic_validator = StateTransitionBasicValidator::new(
             state_repository_wrapper.clone(),
-            StateTransitionBasicValidator::new(
-                state_repository_wrapper.clone(),
-                StateTransitionByTypeValidator::new(
-                    DataContractCreateTransitionBasicValidator::new(
-                        protocol_version_validator.clone(),
-                    )
-                    .map_err(from_dpp_err)?,
-                    DataContractUpdateTransitionBasicValidator::new(
-                        state_repository_wrapper.clone(),
-                        protocol_version_validator.clone(),
-                    )
-                    .map_err(from_dpp_init_error)?,
-                    IdentityCreateTransitionBasicValidator::new(
-                        protocol_version_validator.deref().clone(),
-                        pk_validator.clone(),
-                        pk_validator.clone(),
-                        asset_lock_validator.clone(),
-                        adapter,
-                        pk_sig_validator.clone(),
-                    )
-                    .map_err(from_dpp_init_error)?,
-                    ValidateIdentityUpdateTransitionBasic::new(
-                        ProtocolVersionValidator::default(),
-                        pk_validator,
-                        pk_sig_validator,
-                    )
-                    .map_err(from_dpp_err)?,
-                    IdentityTopUpTransitionBasicValidator::new(
-                        ProtocolVersionValidator::default(),
-                        asset_lock_validator,
-                    )
-                    .map_err(from_dpp_init_error)?,
-                    IdentityCreditWithdrawalTransitionBasicValidator::new(
-                        protocol_version_validator.clone(),
-                    )
-                    .map_err(from_dpp_init_error)?,
-                    DocumentBatchTransitionBasicValidator::new(
-                        state_repository_wrapper,
-                        protocol_version_validator.clone(),
-                    ),
+            StateTransitionByTypeValidator::new(
+                DataContractCreateTransitionBasicValidator::new(protocol_version_validator.clone())
+                    .with_js_error()?,
+                DataContractUpdateTransitionBasicValidator::new(
+                    state_repository_wrapper.clone(),
+                    protocol_version_validator.clone(),
+                )
+                .map_err(from_dpp_init_error)?,
+                IdentityCreateTransitionBasicValidator::new(
+                    protocol_version_validator.deref().clone(),
+                    pk_validator.clone(),
+                    pk_validator.clone(),
+                    asset_lock_validator.clone(),
+                    adapter,
+                    pk_sig_validator.clone(),
+                )
+                .map_err(from_dpp_init_error)?,
+                ValidateIdentityUpdateTransitionBasic::new(
+                    ProtocolVersionValidator::default(),
+                    pk_validator,
+                    pk_sig_validator,
+                )
+                .with_js_error()?,
+                IdentityTopUpTransitionBasicValidator::new(
+                    ProtocolVersionValidator::default(),
+                    asset_lock_validator,
+                )
+                .map_err(from_dpp_init_error)?,
+                IdentityCreditWithdrawalTransitionBasicValidator::new(
+                    protocol_version_validator.clone(),
+                )
+                .map_err(from_dpp_init_error)?,
+                DocumentBatchTransitionBasicValidator::new(
+                    state_repository_wrapper.clone(),
+                    protocol_version_validator.clone(),
                 ),
             ),
+        );
+
+        let factory = StateTransitionFactory::new(
+            state_repository_wrapper,
+            Arc::new(state_transition_basic_validator),
         );
 
         Ok(factory.into())
@@ -174,7 +173,7 @@ impl StateTransitionFactoryWasm {
             Default::default()
         };
 
-        let raw_state_transition: JsonValue = state_transition_object.with_serde_to_json_value()?;
+        let raw_state_transition: Value = state_transition_object.with_serde_to_platform_value()?;
 
         let result = self
             .0

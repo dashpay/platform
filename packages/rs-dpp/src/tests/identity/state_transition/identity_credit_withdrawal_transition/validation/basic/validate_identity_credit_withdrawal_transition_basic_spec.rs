@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use serde_json::Value;
+use platform_value::Value;
 
 use crate::{identity::state_transition::identity_credit_withdrawal_transition::validation::basic::validate_identity_credit_withdrawal_transition_basic::IdentityCreditWithdrawalTransitionBasicValidator, tests::fixtures::identity_credit_withdrawal_transition_fixture_raw_object, version::ProtocolVersionValidator};
 
@@ -21,7 +21,6 @@ mod validate_identity_credit_withdrawal_transition_basic_factory {
 
     use crate::assert_consensus_errors;
     use crate::consensus::ConsensusError;
-    use crate::tests::utils::SerdeTestExtension;
     use crate::NonConsensusError;
     use jsonschema::error::ValidationErrorKind;
 
@@ -32,7 +31,7 @@ mod validate_identity_credit_withdrawal_transition_basic_factory {
         async fn should_be_present() {
             let (mut raw_state_transition, validator) = setup_test();
 
-            raw_state_transition.remove_key("protocolVersion");
+            raw_state_transition.remove("protocolVersion").unwrap();
 
             let result = validator.validate(&raw_state_transition).await.unwrap();
 
@@ -54,7 +53,9 @@ mod validate_identity_credit_withdrawal_transition_basic_factory {
         async fn should_be_integer() {
             let (mut raw_state_transition, validator) = setup_test();
 
-            raw_state_transition.set_key_value("protocolVersion", "1");
+            raw_state_transition
+                .set_into_value("protocolVersion", "1")
+                .unwrap();
 
             let result = validator.validate(&raw_state_transition).await.unwrap();
 
@@ -70,7 +71,9 @@ mod validate_identity_credit_withdrawal_transition_basic_factory {
         async fn should_be_valid() {
             let (mut raw_state_transition, validator) = setup_test();
 
-            raw_state_transition.set_key_value("protocolVersion", -1);
+            raw_state_transition
+                .set_into_value("protocolVersion", -1i32)
+                .unwrap();
 
             let result = validator.validate(&raw_state_transition).await;
 
@@ -79,11 +82,11 @@ mod validate_identity_credit_withdrawal_transition_basic_factory {
                     panic!("Expected error");
                 }
                 Err(e) => match e {
-                    NonConsensusError::SerdeParsingError(e) => {
-                        assert_eq!(e.message(), "Expected protocolVersion to be a uint");
+                    NonConsensusError::ValueError(e) => {
+                        assert_eq!(e.to_string(), "integer out of bounds");
                     }
-                    _ => {
-                        panic!("Expected version parsing error");
+                    other => {
+                        panic!("Expected version parsing error, got {}", other);
                     }
                 },
             }
@@ -97,7 +100,7 @@ mod validate_identity_credit_withdrawal_transition_basic_factory {
         async fn should_be_present() {
             let (mut raw_state_transition, validator) = setup_test();
 
-            raw_state_transition.remove_key("type");
+            raw_state_transition.remove("type").unwrap();
 
             let result = validator.validate(&raw_state_transition).await.unwrap();
 
@@ -120,7 +123,7 @@ mod validate_identity_credit_withdrawal_transition_basic_factory {
         async fn should_be_integer() {
             let (mut raw_state_transition, validator) = setup_test();
 
-            raw_state_transition.set_key_value("type", "1");
+            raw_state_transition.set_into_value("type", "1").unwrap();
 
             let result = validator.validate(&raw_state_transition).await.unwrap();
 
@@ -136,7 +139,7 @@ mod validate_identity_credit_withdrawal_transition_basic_factory {
         async fn should_be_equal_to_6() {
             let (mut raw_state_transition, validator) = setup_test();
 
-            raw_state_transition.set_key_value("type", 42);
+            raw_state_transition.set_into_value("type", 42).unwrap();
 
             let result = validator.validate(&raw_state_transition).await.unwrap();
 
@@ -155,7 +158,7 @@ mod validate_identity_credit_withdrawal_transition_basic_factory {
         pub async fn should_be_present() {
             let (mut raw_state_transition, validator) = setup_test();
 
-            raw_state_transition.remove_key("identityId");
+            raw_state_transition.remove("identityId").unwrap();
 
             let result = validator.validate(&raw_state_transition).await.unwrap();
 
@@ -178,7 +181,9 @@ mod validate_identity_credit_withdrawal_transition_basic_factory {
         pub async fn should_be_a_byte_array() {
             let (mut raw_state_transition, validator) = setup_test();
 
-            raw_state_transition.set_key_value("identityId", vec!["string"; 32]);
+            raw_state_transition
+                .set_into_value("identityId", vec!["string"; 32])
+                .unwrap();
 
             let result = validator.validate(&raw_state_transition).await.unwrap();
 
@@ -194,7 +199,9 @@ mod validate_identity_credit_withdrawal_transition_basic_factory {
         pub async fn should_be_not_shorter_than_32_bytes() {
             let (mut raw_state_transition, validator) = setup_test();
 
-            raw_state_transition.set_key_value("identityId", vec![0; 30]);
+            raw_state_transition
+                .set_into_value("identityId", vec![0; 30])
+                .unwrap();
 
             let result = validator.validate(&raw_state_transition).await.unwrap();
 
@@ -210,7 +217,9 @@ mod validate_identity_credit_withdrawal_transition_basic_factory {
         pub async fn should_be_not_longer_than_32_bytes() {
             let (mut raw_state_transition, validator) = setup_test();
 
-            raw_state_transition.set_key_value("identityId", vec![0; 33]);
+            raw_state_transition
+                .set_into_value("identityId", vec![0; 33])
+                .unwrap();
 
             let result = validator.validate(&raw_state_transition).await.unwrap();
 
@@ -230,7 +239,7 @@ mod validate_identity_credit_withdrawal_transition_basic_factory {
         async fn should_be_present() {
             let (mut raw_state_transition, validator) = setup_test();
 
-            raw_state_transition.remove_key("amount");
+            raw_state_transition.remove("amount").unwrap();
 
             let result = validator.validate(&raw_state_transition).await.unwrap();
 
@@ -253,7 +262,7 @@ mod validate_identity_credit_withdrawal_transition_basic_factory {
         async fn should_be_integer() {
             let (mut raw_state_transition, validator) = setup_test();
 
-            raw_state_transition.set_key_value("amount", "1");
+            raw_state_transition.set_into_value("amount", "1").unwrap();
 
             let result = validator.validate(&raw_state_transition).await.unwrap();
 
@@ -269,7 +278,7 @@ mod validate_identity_credit_withdrawal_transition_basic_factory {
         pub async fn should_be_not_less_than_1() {
             let (mut raw_state_transition, validator) = setup_test();
 
-            raw_state_transition.set_key_value("amount", 900);
+            raw_state_transition.set_into_value("amount", 900).unwrap();
 
             let result = validator.validate(&raw_state_transition).await.unwrap();
 
@@ -289,7 +298,7 @@ mod validate_identity_credit_withdrawal_transition_basic_factory {
         async fn should_be_present() {
             let (mut raw_state_transition, validator) = setup_test();
 
-            raw_state_transition.remove_key("coreFeePerByte");
+            raw_state_transition.remove("coreFeePerByte").unwrap();
 
             let result = validator.validate(&raw_state_transition).await.unwrap();
 
@@ -312,7 +321,9 @@ mod validate_identity_credit_withdrawal_transition_basic_factory {
         async fn should_be_integer() {
             let (mut raw_state_transition, validator) = setup_test();
 
-            raw_state_transition.set_key_value("coreFeePerByte", "1");
+            raw_state_transition
+                .set_into_value("coreFeePerByte", "1")
+                .unwrap();
 
             let result = validator.validate(&raw_state_transition).await.unwrap();
 
@@ -328,7 +339,9 @@ mod validate_identity_credit_withdrawal_transition_basic_factory {
         pub async fn should_be_not_less_than_1() {
             let (mut raw_state_transition, validator) = setup_test();
 
-            raw_state_transition.set_key_value("coreFeePerByte", -1);
+            raw_state_transition
+                .set_into_value("coreFeePerByte", -1)
+                .unwrap();
 
             let result = validator.validate(&raw_state_transition).await.unwrap();
 
@@ -344,7 +357,9 @@ mod validate_identity_credit_withdrawal_transition_basic_factory {
         pub async fn should_be_not_more_than_u32_max() {
             let (mut raw_state_transition, validator) = setup_test();
 
-            raw_state_transition.set_key_value("coreFeePerByte", u32::MAX as u64 + 1u64);
+            raw_state_transition
+                .set_into_value("coreFeePerByte", u32::MAX as u64 + 1u64)
+                .unwrap();
 
             let result = validator.validate(&raw_state_transition).await.unwrap();
 
@@ -360,7 +375,9 @@ mod validate_identity_credit_withdrawal_transition_basic_factory {
         pub async fn should_be_in_a_fibonacci_sequence() {
             let (mut raw_state_transition, validator) = setup_test();
 
-            raw_state_transition.set_key_value("coreFeePerByte", 6);
+            raw_state_transition
+                .set_into_value("coreFeePerByte", 6)
+                .unwrap();
 
             let result = validator.validate(&raw_state_transition).await.unwrap();
 
@@ -383,7 +400,7 @@ mod validate_identity_credit_withdrawal_transition_basic_factory {
         async fn should_be_present() {
             let (mut raw_state_transition, validator) = setup_test();
 
-            raw_state_transition.remove_key("pooling");
+            raw_state_transition.remove("pooling").unwrap();
 
             let result = validator.validate(&raw_state_transition).await.unwrap();
 
@@ -406,7 +423,7 @@ mod validate_identity_credit_withdrawal_transition_basic_factory {
         async fn should_be_integer() {
             let (mut raw_state_transition, validator) = setup_test();
 
-            raw_state_transition.set_key_value("pooling", "1");
+            raw_state_transition.set_into_value("pooling", "1").unwrap();
 
             let result = validator.validate(&raw_state_transition).await.unwrap();
 
@@ -422,7 +439,7 @@ mod validate_identity_credit_withdrawal_transition_basic_factory {
         async fn should_be_valid_enum_variant() {
             let (mut raw_state_transition, validator) = setup_test();
 
-            raw_state_transition.set_key_value("pooling", 3);
+            raw_state_transition.set_into_value("pooling", 3).unwrap();
 
             let result = validator.validate(&raw_state_transition).await.unwrap();
 
@@ -438,7 +455,7 @@ mod validate_identity_credit_withdrawal_transition_basic_factory {
         async fn should_constraint_variant_to_0() {
             let (mut raw_state_transition, validator) = setup_test();
 
-            raw_state_transition.set_key_value("pooling", 2);
+            raw_state_transition.set_into_value("pooling", 2).unwrap();
 
             let result = validator.validate(&raw_state_transition).await.unwrap();
 
@@ -456,13 +473,14 @@ mod validate_identity_credit_withdrawal_transition_basic_factory {
 
     mod output_script {
         use crate::identity::core_script::CoreScript;
+        use crate::identity::state_transition::properties::PROPERTY_OUTPUT_SCRIPT;
 
         use super::*;
 
         pub async fn should_be_present() {
             let (mut raw_state_transition, validator) = setup_test();
 
-            raw_state_transition.remove_key("outputScript");
+            raw_state_transition.remove(PROPERTY_OUTPUT_SCRIPT).unwrap();
 
             let result = validator.validate(&raw_state_transition).await.unwrap();
 
@@ -485,7 +503,9 @@ mod validate_identity_credit_withdrawal_transition_basic_factory {
         pub async fn should_be_a_byte_array() {
             let (mut raw_state_transition, validator) = setup_test();
 
-            raw_state_transition.set_key_value("outputScript", vec!["string"; 23]);
+            raw_state_transition
+                .set_into_value(PROPERTY_OUTPUT_SCRIPT, vec!["string"; 23])
+                .unwrap();
 
             let result = validator.validate(&raw_state_transition).await.unwrap();
 
@@ -501,7 +521,9 @@ mod validate_identity_credit_withdrawal_transition_basic_factory {
         pub async fn should_be_not_shorter_than_23_bytes() {
             let (mut raw_state_transition, validator) = setup_test();
 
-            raw_state_transition.set_key_value("outputScript", vec![0; 9]);
+            raw_state_transition
+                .set_into_value(PROPERTY_OUTPUT_SCRIPT, vec![0; 9])
+                .unwrap();
 
             let result = validator.validate(&raw_state_transition).await.unwrap();
 
@@ -517,7 +539,9 @@ mod validate_identity_credit_withdrawal_transition_basic_factory {
         pub async fn should_be_not_longer_than_25_bytes() {
             let (mut raw_state_transition, validator) = setup_test();
 
-            raw_state_transition.set_key_value("outputScript", vec![0; 10018]);
+            raw_state_transition
+                .set_into_value(PROPERTY_OUTPUT_SCRIPT, vec![0; 10018])
+                .unwrap();
 
             let result = validator.validate(&raw_state_transition).await.unwrap();
 
@@ -533,7 +557,9 @@ mod validate_identity_credit_withdrawal_transition_basic_factory {
         pub async fn should_be_of_a_proper_type() {
             let (mut raw_state_transition, validator) = setup_test();
 
-            raw_state_transition.set_key_value("outputScript", vec![6; 23]);
+            raw_state_transition
+                .set_into_value(PROPERTY_OUTPUT_SCRIPT, vec![6; 23])
+                .unwrap();
 
             let result = validator.validate(&raw_state_transition).await.unwrap();
 
@@ -555,7 +581,7 @@ mod validate_identity_credit_withdrawal_transition_basic_factory {
         pub async fn should_be_present() {
             let (mut raw_state_transition, validator) = setup_test();
 
-            raw_state_transition.remove_key("signature");
+            raw_state_transition.remove("signature").unwrap();
 
             let result = validator.validate(&raw_state_transition).await.unwrap();
 
@@ -578,7 +604,9 @@ mod validate_identity_credit_withdrawal_transition_basic_factory {
         pub async fn should_be_a_byte_array() {
             let (mut raw_state_transition, validator) = setup_test();
 
-            raw_state_transition.set_key_value("signature", vec!["string"; 65]);
+            raw_state_transition
+                .set_into_value("signature", vec!["string"; 65])
+                .unwrap();
 
             let result = validator.validate(&raw_state_transition).await.unwrap();
 
@@ -594,7 +622,9 @@ mod validate_identity_credit_withdrawal_transition_basic_factory {
         pub async fn should_be_not_shorter_than_65_bytes() {
             let (mut raw_state_transition, validator) = setup_test();
 
-            raw_state_transition.set_key_value("signature", vec![0; 64]);
+            raw_state_transition
+                .set_into_value("signature", vec![0; 64])
+                .unwrap();
 
             let result = validator.validate(&raw_state_transition).await.unwrap();
 
@@ -610,7 +640,9 @@ mod validate_identity_credit_withdrawal_transition_basic_factory {
         pub async fn should_be_not_longer_than_65_bytes() {
             let (mut raw_state_transition, validator) = setup_test();
 
-            raw_state_transition.set_key_value("signature", vec![0; 66]);
+            raw_state_transition
+                .set_into_value("signature", vec![0; 66])
+                .unwrap();
 
             let result = validator.validate(&raw_state_transition).await.unwrap();
 
@@ -630,7 +662,7 @@ mod validate_identity_credit_withdrawal_transition_basic_factory {
         async fn should_be_present() {
             let (mut raw_state_transition, validator) = setup_test();
 
-            raw_state_transition.remove_key("signaturePublicKeyId");
+            raw_state_transition.remove("signaturePublicKeyId").unwrap();
 
             let result = validator.validate(&raw_state_transition).await.unwrap();
 
@@ -653,7 +685,9 @@ mod validate_identity_credit_withdrawal_transition_basic_factory {
         async fn should_be_integer() {
             let (mut raw_state_transition, validator) = setup_test();
 
-            raw_state_transition.set_key_value("signaturePublicKeyId", "1");
+            raw_state_transition
+                .set_into_value("signaturePublicKeyId", "1")
+                .unwrap();
 
             let result = validator.validate(&raw_state_transition).await.unwrap();
 
@@ -669,7 +703,9 @@ mod validate_identity_credit_withdrawal_transition_basic_factory {
         pub async fn should_be_not_less_than_0() {
             let (mut raw_state_transition, validator) = setup_test();
 
-            raw_state_transition.set_key_value("signaturePublicKeyId", -1);
+            raw_state_transition
+                .set_into_value("signaturePublicKeyId", -1)
+                .unwrap();
 
             let result = validator.validate(&raw_state_transition).await.unwrap();
 

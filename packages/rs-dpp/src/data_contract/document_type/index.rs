@@ -2,7 +2,7 @@ use crate::data_contract::errors::{DataContractError, StructureError};
 use crate::ProtocolError;
 use anyhow::bail;
 
-use platform_value::Value;
+use platform_value::{Value, ValueMap};
 use rand::distributions::{Alphanumeric, DistString};
 use serde::{Deserialize, Serialize};
 use std::{collections::BTreeMap, convert::TryFrom};
@@ -13,6 +13,25 @@ pub struct Index {
     pub name: String,
     pub properties: Vec<IndexProperty>,
     pub unique: bool,
+}
+
+impl Index {
+    /// Check to see if two objects are conflicting
+    pub fn objects_are_conflicting(&self, object1: &ValueMap, object2: &ValueMap) -> bool {
+        if !self.unique {
+            return false;
+        }
+        self.properties.iter().all(|property| {
+            //if either or both are null then there can not be an overlap
+            let Some(value1) = Value::get_optional_from_map(object1,property.name.as_str()) else {
+                return false;
+            };
+            let Some(value2) = Value::get_optional_from_map(object2,property.name.as_str()) else {
+                return false;
+            };
+            value1 == value2
+        })
+    }
 }
 
 #[derive(Clone, Serialize, Deserialize, Debug, PartialEq, Eq, Hash)]
@@ -179,7 +198,7 @@ impl TryFrom<&[(Value, Value)]> for Index {
         let mut index_properties: Vec<IndexProperty> = Vec::new();
 
         for (key_value, value_value) in index_type_value_map {
-            let key = key_value.as_str().map_err(ProtocolError::ValueError)?;
+            let key = key_value.to_str().map_err(ProtocolError::ValueError)?;
 
             match key {
                 "name" => {

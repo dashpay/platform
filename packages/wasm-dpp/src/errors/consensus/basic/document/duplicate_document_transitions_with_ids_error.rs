@@ -4,12 +4,12 @@ use wasm_bindgen::prelude::*;
 
 #[wasm_bindgen(js_name=DuplicateDocumentTransitionsWithIdsError)]
 pub struct DuplicateDocumentTransitionsWithIdsErrorWasm {
-    references: Vec<(String, Vec<u8>)>,
+    references: Vec<(String, [u8; 32])>,
     code: u32,
 }
 
 impl DuplicateDocumentTransitionsWithIdsErrorWasm {
-    pub fn new(references: Vec<(String, Vec<u8>)>, code: u32) -> Self {
+    pub fn new(references: Vec<(String, [u8; 32])>, code: u32) -> Self {
         DuplicateDocumentTransitionsWithIdsErrorWasm { references, code }
     }
 }
@@ -23,7 +23,7 @@ impl DuplicateDocumentTransitionsWithIdsErrorWasm {
             .map(|v| {
                 js_sys::Array::from_iter(vec![
                     JsValue::from(v.0.clone()),
-                    JsValue::from(Buffer::from_bytes(&v.1)),
+                    JsValue::from(Buffer::from_bytes(v.1.as_ref())),
                 ])
             })
             .collect()

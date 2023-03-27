@@ -4,6 +4,7 @@ const createStateRepositoryMock = require('@dashevo/dpp/lib/test/mocks/createSta
 const getInstantAssetLockProofFixture = require('@dashevo/dpp/lib/test/fixtures/getInstantAssetLockProofFixture');
 const getChainAssetLockProofFixture = require('@dashevo/dpp/lib/test/fixtures/getChainAssetLockProofFixture');
 const IdentityPublicKey = require('@dashevo/dpp/lib/identity/IdentityPublicKey');
+const getBlsAdapterMock = require('../../../lib/test/mocks/getBlsAdapterMock');
 
 const { default: loadWasmDpp } = require('../../../dist');
 
@@ -42,9 +43,7 @@ describe('IdentityFacade', () => {
       height: 42,
     });
 
-    dpp = new DashPlatformProtocol({
-      stateRepository: stateRepositoryMock,
-    });
+    dpp = new DashPlatformProtocol(getBlsAdapterMock(), stateRepositoryMock, 1);
 
     const chainAssetLockProofJS = getChainAssetLockProofFixture();
     const instantAssetLockProofJS = getInstantAssetLockProofFixture();
@@ -86,8 +85,13 @@ describe('IdentityFacade', () => {
   });
 
   describe('#createFromBuffer', () => {
-    it('should create Identity from string', () => {
-      const result = dpp.identity.createFromBuffer(identity.toBuffer());
+    it('should create Identity from a Buffer', () => {
+      let result;
+      try {
+        result = dpp.identity.createFromBuffer(identity.toBuffer());
+      } catch (e) {
+        console.dir(e.getErrors()[0].toString());
+      }
 
       expect(result).to.be.an.instanceOf(Identity);
 
