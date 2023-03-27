@@ -101,17 +101,14 @@ DESCRIPTION
 ```
 
 Supported presets:
- * `testnet` - a masternode or full node for testnet
- * `local` - a node group to run a local dash network with the specified number of masternodes. To operate a group of nodes, use the [group commands](#node-groups)
+ * `mainnet` - a node connected to Dash main network
+ * `testnet` - a node connected to the Dash test network
+ * `local` - a full network environment on your machine for local development. To operate a group of nodes, use the [group commands](#node-groups)
 
-To set up a testnet masternode:
+To set up a testnet node:
 ```bash
-$ dashmate setup testnet masternode
+$ dashmate setup testnet
 ```
-
-#### Masternode registration
-
-If a funding private key is provided with the `--funding-private-key` option, the tool will automatically register your node on the network as a masternode. This functionality is only available when using the `testnet` preset.
 
 ### Configure node
 
@@ -120,6 +117,7 @@ The `config` command is used to manage your node configuration before starting t
  - base - basic config for use as template
  - local - template for local node configs
  - testnet - testnet node configuration
+ - mainnet - mainnet node configuration
 
 You can modify and use the system configs directly, or create your own. You can base your own configs on one of the system configs using the `dashmate config create CONFIG [FROM]` command. You must set a default config with `dashmate config default CONFIG` or specify a config with the `--config=<config>` option when running commands. The `base` config is initially set as default.
 
