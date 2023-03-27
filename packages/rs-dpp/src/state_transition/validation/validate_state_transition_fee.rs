@@ -223,7 +223,6 @@ mod test {
         processing_cost: Credits,
     ) -> StateTransitionExecutionContext {
         let ctx = StateTransitionExecutionContext::default();
-        // TODO fixme
         ctx.add_operation(Operation::PreCalculated(PreCalculatedOperation::new(
             storage_cost,
             processing_cost,
