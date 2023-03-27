@@ -397,6 +397,23 @@ FLAGS
 
 With hard reset mode enabled, the corresponding node configs will be reset as well. It will be necessary to run node [setup](#node-setup) again from scratch to start a new local node group.
 
+#### Mint tDash
+
+The `wallet mint` command can be used to generate an arbitrary amount of tDash to a new or specified recipient address on a local network. The network must be stopped before running this command.
+
+```
+USAGE
+  $ dashmate wallet mint [AMOUNT] [-v] [--config <value>] [-a <value>]
+
+ARGUMENTS
+  AMOUNT  amount of tDash to be generated to address
+
+FLAGS
+  -a, --address=<value>  use recipient address instead of creating new
+  -v, --verbose          use verbose mode for output
+  --config=<value>       configuration name to use
+```
+
 #### Create config group
 
 To group nodes together, set a group name using the `group` option with the corresponding configs.
