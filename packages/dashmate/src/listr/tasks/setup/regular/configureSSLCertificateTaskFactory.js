@@ -113,7 +113,8 @@ function configureSSLCertificateTaskFactory(
   browsers, and must therefore be issued by a well-known Certificate Authority
   (CA). Dashmate offers three options to configure this certificate:
 
-    ZeroSSL      - Provide a (free) ZeroSSL API key and let dashmate configure the certificate (https://zerossl.com)
+    ZeroSSL      - Provide a ZeroSSL API key and let dashmate configure the certificate
+                   https://zerossl.com/documentation/api/ ("Access key" section)
     File on disk - Provide your own certificate to dashmate
     Self-signed  - Generate your own self-signed certificate (testnet only)\n`,
             message: 'How do you want to configure SSL?',
