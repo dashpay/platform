@@ -35,6 +35,6 @@ yarn oclif pack $COMMAND
 cd ..  || exit 1
 rm package.tgz
 cp -R package/dist "$ROOT_PATH/packages/dashmate"
-rm -rf package
+rm -rf package || true
 
 echo "Done"
