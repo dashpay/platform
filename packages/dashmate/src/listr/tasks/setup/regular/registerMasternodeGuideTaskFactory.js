@@ -124,7 +124,7 @@ function registerMasternodeGuideTaskFactory() {
                 header: `  Dashmate needs to collect details about the owner, voting and payout addresses
   to use in the masternode registration transaction. These are regular Dash
   addresses, encoded in base58 format.\n`,
-                message: 'Enter DIP3 masternode addresses:',
+                message: 'Enter masternode addresses:',
                 choices: [
                   {
                     name: 'ownerAddress',

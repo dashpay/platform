@@ -101,7 +101,7 @@ DESCRIPTION
 ```
 
 Supported presets:
- * `mainnet` - a node connected to Dash main network
+ * `mainnet` - a node connected to the Dash main network
  * `testnet` - a node connected to the Dash test network
  * `local` - a full network environment on your machine for local development. To operate a group of nodes, use the [group commands](#node-groups)
 
@@ -287,11 +287,11 @@ dashmate config set core.masternode.enable false
 
 ### Node groups
 
-CLI allows to [setup](#set-up-node) and operate multiple nodes. Only the `local` preset is supported at the moment.
+CLI allows [setup](#set-up-node) and operation of multiple nodes. Only the `local` preset is supported at the moment.
 
 #### Default group
 
-The [setup](#set-up-node) command set corresponding group as default. To output the current default group or set another one as default use `group:default` command.
+The [setup](#set-up-node) command sets the corresponding group as default. To output the current default group or set another one as default use the `group:default` command.
 
 ```
 USAGE
