@@ -1,8 +1,8 @@
 const { promisify } = require('util');
 const cbor = require('cbor');
-const Document = require('@dashevo/dpp/lib/document/Document');
-const DataContract = require('@dashevo/dpp/lib/dataContract/DataContract');
-const Identity = require('@dashevo/dpp/lib/identity/Identity');
+// const Document = require('@dashevo/dpp/lib/document/Document');
+// const DataContract = require('@dashevo/dpp/lib/dataContract/DataContract');
+// const Identity = require('@dashevo/dpp/lib/identity/Identity');
 const decodeProtocolEntityFactory = require('@dashevo/dpp/lib/decodeProtocolEntityFactory');
 
 // This file is crated when run `npm run build`. The actual source file that
@@ -118,9 +118,10 @@ class Drive {
    * @param {number} config.dataContractsGlobalCacheSize
    * @param {number} config.dataContractsBlockCacheSize
    */
-  constructor(dbPath, config) {
+  constructor(dbPath, config, dppWasm) {
     this.drive = driveOpen(dbPath, config);
     this.groveDB = new GroveDB(this.drive);
+    this.dppWasm = dppWasm;
   }
 
   /**
@@ -169,7 +170,7 @@ class Drive {
 
         rawDataContract.protocolVersion = protocolVersion;
 
-        dataContract = new DataContract(rawDataContract);
+        dataContract = new this.dppWasm.DataContract(rawDataContract);
       }
 
       const result = [dataContract];
@@ -314,6 +315,8 @@ class Drive {
   ) {
     const encodedQuery = await cbor.encodeAsync(query);
 
+    console.log('encoded query', encodedQuery.toString('hex'));
+    console.log('dc id', dataContract.getId().toBuffer());
     const [encodedDocuments, , processingFee] = await driveQueryDocumentsAsync.call(
       this.drive,
       encodedQuery,
@@ -328,7 +331,7 @@ class Drive {
 
       rawDocument.$protocolVersion = protocolVersion;
 
-      return new Document(rawDocument, dataContract);
+      return new this.dppWasm.Document(rawDocument, dataContract);
     });
 
     return [
@@ -404,7 +407,7 @@ class Drive {
 
       rawIdentity.protocolVersion = protocolVersion;
 
-      return new Identity(rawIdentity);
+      return new this.dppWasm.Identity(rawIdentity);
     });
   }
 
@@ -514,7 +517,7 @@ class Drive {
 
         rawIdentity.protocolVersion = protocolVersion;
 
-        identity = new Identity(rawIdentity);
+        identity = new this.dppWasm.Identity(rawIdentity);
       }
 
       return [identity, new FeeResult(innerFeeResult)];
@@ -629,7 +632,7 @@ class Drive {
 
         rawIdentity.protocolVersion = protocolVersion;
 
-        return new Identity(rawIdentity);
+        return new this.dppWasm.Identity(rawIdentity);
       })
     ));
   }

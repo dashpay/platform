@@ -479,6 +479,7 @@ function createDIContainer(blsSignatures, dppWasm, options) {
       coreJsonRpcPort,
       coreJsonRpcUsername,
       coreJsonRpcPassword,
+      dppWasm,
     ) => new RSDrive(groveDBLatestFile, {
       drive: {
         dataContractsGlobalCacheSize,
@@ -491,7 +492,7 @@ function createDIContainer(blsSignatures, dppWasm, options) {
           password: coreJsonRpcPassword,
         },
       },
-    }))
+    }, dppWasm))
       .disposer(async (rsDrive) => {
         // Flush data on disk
         await rsDrive.getGroveDB().flush();

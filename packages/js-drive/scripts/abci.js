@@ -27,6 +27,13 @@ console.log(chalk.hex('#008de4')(banner));
 
 (async function main() {
   const dppWasm = await loadWasmDpp();
+
+  const originalToBuffer = dppWasm.Identifier.prototype.toBuffer;
+
+  dppWasm.Identifier.prototype.toBuffer = function toBuffer() {
+    return Buffer.from(originalToBuffer.call(this));
+  };
+
   const blsSignatures = await getBlsAdapter();
 
   const container = createDIContainer(blsSignatures, dppWasm, process.env);
