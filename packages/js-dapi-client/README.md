@@ -50,7 +50,7 @@ const DAPIClient = require('@dashevo/dapi-client');
 var client = new DAPIClient({
   seeds: [{
      host: 'seed-1.evonet.networks.dash.org',
-     port: 3000,
+     port: 443,
   }],
 });
 
@@ -70,8 +70,8 @@ const DAPIClient = require('@dashevo/dapi-client');
 
 var client = new DAPIClient({
   dapiAddresses: [
-    '127.0.0.1:3000',
-    '127.0.0.2:3000',
+    '127.0.0.1:443',
+    '127.0.0.2:443',
   ],
 });
 

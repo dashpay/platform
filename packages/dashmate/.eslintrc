@@ -1,5 +1,9 @@
 {
   "extends": "airbnb-base",
+  "parserOptions": {
+    // Required for certain syntax usages
+    "ecmaVersion": 2020
+  },
   "env": {
     "commonjs": true,
     "node": true

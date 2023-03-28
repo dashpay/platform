@@ -1,47 +1,42 @@
-mod delete_operation;
-
-pub use delete_operation::*;
-
 mod precalculated_operation;
 pub use precalculated_operation::*;
 
 mod read_operation;
 pub use read_operation::*;
 
-mod write_operation;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
-pub use write_operation::*;
 
 mod signature_verification_operation;
 pub use signature_verification_operation::*;
 
+use super::{Credits, Refunds};
+
 pub const STORAGE_CREDIT_PER_BYTE: i64 = 5000;
 pub const STORAGE_PROCESSING_CREDIT_PER_BYTE: i64 = 5000;
 
-#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(tag = "type", rename_all = "camelCase")]
 pub enum Operation {
     Read(ReadOperation),
-    Write(WriteOperation),
-    Delete(DeleteOperation),
     PreCalculated(PreCalculatedOperation),
     SignatureVerification(SignatureVerificationOperation),
 }
 
 pub trait OperationLike {
     /// Get CPU cost of the operation
-    fn get_processing_cost(&self) -> i64;
+    fn get_processing_cost(&self) -> Credits;
     /// Get storage cost of the operation
-    fn get_storage_cost(&self) -> i64;
+    fn get_storage_cost(&self) -> Credits;
+
+    /// Get refunds
+    fn get_refunds(&self) -> Option<&Vec<Refunds>>;
 }
 
 macro_rules! call_method {
     ($operation_type:expr, $method:ident ) => {
         match $operation_type {
             Operation::Read(op) => op.$method(),
-            Operation::Write(op) => op.$method(),
-            Operation::Delete(op) => op.$method(),
             Operation::PreCalculated(op) => op.$method(),
             Operation::SignatureVerification(op) => op.$method(),
         }
@@ -49,12 +44,16 @@ macro_rules! call_method {
 }
 
 impl OperationLike for Operation {
-    fn get_processing_cost(&self) -> i64 {
+    fn get_processing_cost(&self) -> Credits {
         call_method!(self, get_processing_cost)
     }
 
-    fn get_storage_cost(&self) -> i64 {
+    fn get_storage_cost(&self) -> Credits {
         call_method!(self, get_storage_cost)
+    }
+
+    fn get_refunds(&self) -> Option<&Vec<Refunds>> {
+        call_method!(self, get_refunds)
     }
 }
 
@@ -82,11 +81,8 @@ impl Operation {
 
 #[cfg(test)]
 mod test {
-    use super::{
-        DeleteOperation, Operation, PreCalculatedOperation, ReadOperation,
-        SignatureVerificationOperation,
-    };
-    use crate::{identity::KeyType, state_transition::fee::operations::WriteOperation};
+    use super::{Operation, PreCalculatedOperation, ReadOperation, SignatureVerificationOperation};
+    use crate::identity::KeyType;
     use serde_json::json;
 
     struct TestCase {
@@ -112,35 +108,15 @@ mod test {
             },
             TestCase {
                 json_str: json_string!({
-                    "type": "write",
-                    "keySize" : 65,
-                    "valueSize" : 321,
-                }),
-                operation: Operation::Write(WriteOperation {
-                    key_size: 65,
-                    value_size: 321,
-                }),
-            },
-            TestCase {
-                json_str: json_string!({
-                    "type": "delete",
-                    "keySize" : 65,
-                    "valueSize" : 123,
-                }),
-                operation: Operation::Delete(DeleteOperation {
-                    key_size: 65,
-                    value_size: 123,
-                }),
-            },
-            TestCase {
-                json_str: json_string!({
                     "type": "preCalculated",
                     "storageCost" : 12357,
                     "processingCost" : 468910,
+                    "feeRefunds" :  [],
                 }),
                 operation: Operation::PreCalculated(PreCalculatedOperation {
                     storage_cost: 12357,
                     processing_cost: 468910,
+                    fee_refunds: vec![],
                 }),
             },
             TestCase {
