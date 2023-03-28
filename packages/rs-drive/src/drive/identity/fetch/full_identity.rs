@@ -37,7 +37,7 @@ impl Drive {
     //     identity_ids: Vec<[u8; 32]>,
     //     transaction: TransactionArg,
     // ) -> Result<BTreeMap<[u8; 32], Option<Identity>>, Error> {
-    //     let mut drive_operations: Vec<DriveOperation> = vec![];
+    //     let mut drive_operations: Vec<LowLevelDriveOperation> = vec![];
     //     let query = Self::full_identities_query(identity_ids)?;
     //     let result =
     //         self.grove_get_path_query_with_optional(&query, transaction, &mut drive_operations)?;

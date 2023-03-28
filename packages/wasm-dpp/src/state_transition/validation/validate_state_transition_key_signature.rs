@@ -8,6 +8,7 @@ use dpp::state_transition::validation::validate_state_transition_key_signature::
 use std::sync::Arc;
 use wasm_bindgen::prelude::wasm_bindgen;
 use wasm_bindgen::JsValue;
+use dpp::validation::AsyncDataValidator;
 
 #[wasm_bindgen(js_name=StateTransitionKeySignatureValidator)]
 pub struct StateTransitionKeySignatureValidatorWasm(

@@ -1492,7 +1492,7 @@ impl Drive {
             push_drive_operation_result(delete_operation, drive_operations)?
         {
             // we also add the actual delete operation
-            drive_operations.push(LowLevelDriveOperation::GroveOperation(delete_operation))
+            drive_operations.push(GroveOperation(delete_operation))
         }
 
         Ok(())
@@ -1554,7 +1554,7 @@ impl Drive {
         let delete_operations = push_drive_operation_result(cost_context, drive_operations)?;
         delete_operations
             .into_iter()
-            .for_each(|op| drive_operations.push(LowLevelDriveOperation::GroveOperation(op)));
+            .for_each(|op| drive_operations.push(GroveOperation(op)));
 
         Ok(())
     }

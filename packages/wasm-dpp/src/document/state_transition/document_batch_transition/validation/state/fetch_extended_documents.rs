@@ -28,7 +28,7 @@ pub async fn fetch_extended_documents_wasm(
 
     let documents = fetch_documents::fetch_extended_documents(
         &wrapped_state_repository,
-        document_transitions,
+        document_transitions.iter().collect::<Vec<_>>().as_slice(),
         &execution_context,
     )
     .await

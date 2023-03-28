@@ -558,7 +558,7 @@ mod tests {
                 negative_amount,
             )];
 
-            let mut drive_operations: Vec<DriveOperation> = vec![];
+            let mut drive_operations: Vec<LowLevelDriveOperation> = vec![];
             drive
                 .apply_batch_low_level_drive_operations(None, None, batch, &mut drive_operations)
                 .expect("should apply batch");
@@ -621,7 +621,7 @@ mod tests {
                 negative_amount,
             )];
 
-            let mut drive_operations: Vec<DriveOperation> = vec![];
+            let mut drive_operations: Vec<LowLevelDriveOperation> = vec![];
             drive
                 .apply_batch_low_level_drive_operations(None, None, batch, &mut drive_operations)
                 .expect("should apply batch");
@@ -874,14 +874,14 @@ mod tests {
                 [
                     _,
                     _,
-                    DriveOperation::GroveOperation(grovedb::batch::GroveDbOp {
+                    LowLevelDriveOperation::GroveOperation(grovedb::batch::GroveDbOp {
                         op: Op::Replace {
                             element: Element::SumItem(refund_amount, None),
                         },
                         ..
                     }),
                     ..,
-                    DriveOperation::GroveOperation(grovedb::batch::GroveDbOp {
+                    LowLevelDriveOperation::GroveOperation(grovedb::batch::GroveDbOp {
                         op: Op::Replace {
                             element: Element::SumItem(other_refund_amount, None),
                         },
@@ -923,7 +923,7 @@ mod tests {
                 negative_amount,
             )];
 
-            let mut drive_operations: Vec<DriveOperation> = vec![];
+            let mut drive_operations: Vec<LowLevelDriveOperation> = vec![];
             drive
                 .apply_batch_low_level_drive_operations(None, None, batch, &mut drive_operations)
                 .expect("should apply batch");
@@ -951,13 +951,13 @@ mod tests {
                 [
                     _,
                     _,
-                    DriveOperation::GroveOperation(grovedb::batch::GroveDbOp {
+                    LowLevelDriveOperation::GroveOperation(grovedb::batch::GroveDbOp {
                         op: Op::Replace {
                             element: Element::SumItem(refund_amount, None),
                         },
                     ..
                     }),
-                    DriveOperation::GroveOperation(grovedb::batch::GroveDbOp {
+                    LowLevelDriveOperation::GroveOperation(grovedb::batch::GroveDbOp {
                         op: Op::Replace {
                             element: Element::Item(debt_bytes, None),
                         },
@@ -984,7 +984,7 @@ mod tests {
                 negative_amount,
             )];
 
-            let mut drive_operations: Vec<DriveOperation> = vec![];
+            let mut drive_operations: Vec<LowLevelDriveOperation> = vec![];
             drive
                 .apply_batch_low_level_drive_operations(None, None, batch, &mut drive_operations)
                 .expect("should apply batch");
@@ -1012,7 +1012,7 @@ mod tests {
                 [
                     _,
                     _,
-                    DriveOperation::GroveOperation(grovedb::batch::GroveDbOp {
+                    LowLevelDriveOperation::GroveOperation(grovedb::batch::GroveDbOp {
                         op: Op::Replace {
                             element: Element::Item(debt_bytes, None),
                         },
@@ -1061,7 +1061,7 @@ mod tests {
 
             assert!(matches!(
                 drive_operations[..],
-                [_, DriveOperation::GroveOperation(grovedb::batch::GroveDbOp {
+                [_, LowLevelDriveOperation::GroveOperation(grovedb::batch::GroveDbOp {
                     op: Op::Replace {
                         element: Element::SumItem(balance, None),
                     },
@@ -1112,13 +1112,13 @@ mod tests {
                 &drive_operations[..],
                 [
                     _,
-                    DriveOperation::GroveOperation(grovedb::batch::GroveDbOp {
+                    LowLevelDriveOperation::GroveOperation(grovedb::batch::GroveDbOp {
                         op: Op::Replace {
                             element: Element::SumItem(balance, None),
                         },
                         ..
                     }),
-                    DriveOperation::GroveOperation(grovedb::batch::GroveDbOp {
+                    LowLevelDriveOperation::GroveOperation(grovedb::batch::GroveDbOp {
                         op: Op::Replace {
                             element: Element::Item(debt_bytes, None),
                         },
