@@ -127,23 +127,11 @@ use crate::drive::cache::DataContractCache;
 use crate::drive::cache::DriveCache;
 #[cfg(feature = "full")]
 use crate::drive::object_size_info::OwnedDocumentInfo;
+use crate::drive::system_contracts_cache::SystemContracts;
 #[cfg(feature = "full")]
 use crate::fee::result::FeeResult;
 #[cfg(feature = "full")]
 use crate::fee_pools::epochs::Epoch;
-
-pub struct SystemContracts {
-    /// Withdrawal contract
-    pub withdrawal_contract: DataContract,
-}
-
-impl SystemContracts {
-    pub fn load_system_contracts() -> Result<Self, Error> {
-        Ok(SystemContracts {
-            withdrawal_contract: load_system_data_contract(SystemDataContract::Withdrawals)?,
-        })
-    }
-}
 
 /// Drive struct
 #[cfg(any(feature = "full", feature = "verify"))]
@@ -316,9 +304,7 @@ impl Drive {
                 Ok(Drive {
                     grove,
                     config,
-                    system_contracts: Drive::load_system_data_contract(
-                        SystemDataContract::Withdrawals,
-                    )?,
+                    system_contracts: SystemContracts::load_system_contracts()?,
                     cache: RefCell::new(DriveCache {
                         cached_contracts: DataContractCache::new(
                             data_contracts_global_cache_size,

@@ -33,13 +33,14 @@ impl DriveHighLevelDocumentOperationConverter for DocumentReplaceTransitionActio
             id,
             document_type_name,
             data_contract_id,
-            data_contract,
+            //todo: should we use the contract?
+            ..
         } = base;
 
         let document = Document {
             id,
             owner_id,
-            properties: data.into_btree_string_map()?,
+            properties: data,
             revision: Some(revision),
             created_at,
             updated_at,
@@ -57,7 +58,7 @@ impl DriveHighLevelDocumentOperationConverter for DocumentReplaceTransitionActio
                 owner_id: Some(owner_id.into_buffer()),
             },
             contract_id: data_contract_id,
-            document_type_name: document_type_name.as_str(),
+            document_type_name: Cow::Owned(document_type_name),
         }));
 
         Ok(drive_operations)

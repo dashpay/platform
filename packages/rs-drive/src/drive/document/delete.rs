@@ -686,6 +686,7 @@ impl Drive {
         )
     }
 
+    //todo: remove owner_id?
     /// Prepares the operations for deleting a document.
     pub(crate) fn delete_document_for_contract_operations(
         &self,

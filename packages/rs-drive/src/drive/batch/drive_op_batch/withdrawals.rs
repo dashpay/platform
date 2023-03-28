@@ -50,7 +50,7 @@ pub enum WithdrawalOperationType<'a> {
 }
 
 impl DriveLowLevelOperationConverter for WithdrawalOperationType<'_> {
-    fn to_low_level_drive_operations(
+    fn into_low_level_drive_operations(
         self,
         drive: &Drive,
         _estimated_costs_only_with_layer_info: &mut Option<

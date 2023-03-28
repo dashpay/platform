@@ -1,3 +1,4 @@
+use std::borrow::Cow;
 use crate::drive::batch::transitions::document::DriveHighLevelDocumentOperationConverter;
 use crate::drive::batch::transitions::DriveHighLevelOperationConverter;
 use crate::drive::batch::DriveOperation::DocumentOperation;
@@ -7,18 +8,18 @@ use crate::error::Error;
 use crate::fee_pools::epochs::Epoch;
 use dpp::data_contract::DriveContractExt;
 use dpp::document::document_transition::document_base_transition::DocumentBaseTransition;
-use dpp::document::document_transition::{DocumentCreateTransition, DocumentDeleteTransition};
+use dpp::document::document_transition::{DocumentBaseTransitionAction, DocumentCreateTransition, DocumentDeleteTransition, DocumentDeleteTransitionAction};
 use dpp::identifier::Identifier;
 
-impl DriveHighLevelDocumentOperationConverter for DocumentDeleteTransition {
+impl DriveHighLevelDocumentOperationConverter for DocumentDeleteTransitionAction {
     fn into_high_level_document_drive_operations(
         self,
-        epoch: &Epoch,
-        owner_id: Identifier,
+        _epoch: &Epoch,
+        _owner_id: Identifier,
     ) -> Result<Vec<DriveOperation>, Error> {
-        let DocumentDeleteTransition { base } = self;
+        let DocumentDeleteTransitionAction { base } = self;
 
-        let DocumentBaseTransition {
+        let DocumentBaseTransitionAction {
             id,
             document_type_name,
             data_contract_id,
@@ -30,7 +31,7 @@ impl DriveHighLevelDocumentOperationConverter for DocumentDeleteTransition {
             DocumentOperationType::DeleteDocumentOfNamedTypeForContractId {
                 document_id: id.to_buffer(),
                 contract_id: data_contract_id.to_buffer(),
-                document_type_name,
+                document_type_name: Cow::Owned(document_type_name),
                 owner_id: None,
             },
         ));

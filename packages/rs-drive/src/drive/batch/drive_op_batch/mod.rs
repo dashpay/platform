@@ -59,7 +59,7 @@ use std::collections::{BTreeMap, HashMap};
 /// A converter that will get Drive Operations from High Level Operations
 pub trait DriveLowLevelOperationConverter {
     /// This will get a list of atomic drive operations from a high level operations
-    fn to_low_level_drive_operations(
+    fn into_low_level_drive_operations(
         self,
         drive: &Drive,
         estimated_costs_only_with_layer_info: &mut Option<
@@ -92,7 +92,7 @@ pub enum DriveOperation<'a> {
 }
 
 impl DriveLowLevelOperationConverter for DriveOperation<'_> {
-    fn to_low_level_drive_operations(
+    fn into_low_level_drive_operations(
         self,
         drive: &Drive,
         estimated_costs_only_with_layer_info: &mut Option<
@@ -103,21 +103,21 @@ impl DriveLowLevelOperationConverter for DriveOperation<'_> {
     ) -> Result<Vec<LowLevelDriveOperation>, Error> {
         match self {
             DriveOperation::ContractOperation(contract_operation_type) => contract_operation_type
-                .to_low_level_drive_operations(
+                .into_low_level_drive_operations(
                     drive,
                     estimated_costs_only_with_layer_info,
                     block_info,
                     transaction,
                 ),
             DriveOperation::DocumentOperation(document_operation_type) => document_operation_type
-                .to_low_level_drive_operations(
+                .into_low_level_drive_operations(
                     drive,
                     estimated_costs_only_with_layer_info,
                     block_info,
                     transaction,
                 ),
             DriveOperation::WithdrawalOperation(withdrawal_operation_type) => {
-                withdrawal_operation_type.to_low_level_drive_operations(
+                withdrawal_operation_type.into_low_level_drive_operations(
                     drive,
                     estimated_costs_only_with_layer_info,
                     block_info,
@@ -125,14 +125,14 @@ impl DriveLowLevelOperationConverter for DriveOperation<'_> {
                 )
             }
             DriveOperation::IdentityOperation(identity_operation_type) => identity_operation_type
-                .to_low_level_drive_operations(
+                .into_low_level_drive_operations(
                     drive,
                     estimated_costs_only_with_layer_info,
                     block_info,
                     transaction,
                 ),
             DriveOperation::SystemOperation(system_operation_type) => system_operation_type
-                .to_low_level_drive_operations(
+                .into_low_level_drive_operations(
                     drive,
                     estimated_costs_only_with_layer_info,
                     block_info,
@@ -153,7 +153,7 @@ impl Drive {
         let ops = drive_batch_operations
             .into_iter()
             .map(|drive_op| {
-                let inner_drive_operations = drive_op.to_low_level_drive_operations(
+                let inner_drive_operations = drive_op.into_low_level_drive_operations(
                     self,
                     &mut None,
                     block_info,
@@ -185,7 +185,7 @@ impl Drive {
             Some(HashMap::new())
         };
         for drive_op in operations {
-            low_level_operations.append(&mut drive_op.to_low_level_drive_operations(
+            low_level_operations.append(&mut drive_op.into_low_level_drive_operations(
                 self,
                 &mut estimated_costs_only_with_layer_info,
                 block_info,

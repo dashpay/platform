@@ -83,7 +83,7 @@ pub enum DocumentOperationType<'a> {
         /// Contract
         contract_id: Identifier,
         /// Document type
-        document_type_name: &'a str,
+        document_type_name: Cow<'a, String>,
         /// Should we override the document if one already exists?
         override_document: bool,
     },
@@ -111,7 +111,7 @@ pub enum DocumentOperationType<'a> {
         /// The contract id
         contract_id: [u8; 32],
         /// The name of the document type
-        document_type_name: &'a str,
+        document_type_name: Cow<'a, String>,
         /// The owner id, if none is specified will try to recover from serialized document
         owner_id: Option<[u8; 32]>,
     },
@@ -182,7 +182,7 @@ pub enum DocumentOperationType<'a> {
         /// Contract
         contract_id: Identifier,
         /// Document type
-        document_type_name: &'a str,
+        document_type_name: Cow<'a, String>,
     },
     /// Updates a document and returns the associated fee.
     UpdateDocumentForContract {
@@ -202,7 +202,7 @@ pub enum DocumentOperationType<'a> {
 }
 
 impl DriveLowLevelOperationConverter for DocumentOperationType<'_> {
-    fn to_low_level_drive_operations(
+    fn into_low_level_drive_operations(
         self,
         drive: &Drive,
         estimated_costs_only_with_layer_info: &mut Option<
@@ -285,6 +285,7 @@ impl DriveLowLevelOperationConverter for DocumentOperationType<'_> {
                 document_type_name,
                 override_document,
             } => {
+                let mut drive_operations: Vec<LowLevelDriveOperation> = vec![];
                 let contract_fetch_info = drive
                     .get_contract_with_fetch_info_and_add_to_operations(
                         contract_id.into_buffer(),
@@ -296,7 +297,30 @@ impl DriveLowLevelOperationConverter for DocumentOperationType<'_> {
 
                 let contract = &contract_fetch_info.contract;
 
-                let document_type = contract.document_type_for_name(document_type_name)?;
+                let document_type = contract.document_type_for_name(document_type_name.as_str())?;
+
+                let document_and_contract_info = DocumentAndContractInfo {
+                    owned_document_info,
+                    contract,
+                    document_type,
+                };
+                let mut operations = drive.add_document_for_contract_operations(
+                    document_and_contract_info,
+                    override_document,
+                    block_info,
+                    &mut None,
+                    estimated_costs_only_with_layer_info,
+                    transaction,
+                )?;
+                drive_operations.append(&mut operations);
+                Ok(drive_operations)
+            }
+            DocumentOperationType::AddWithdrawalDocument {
+                owned_document_info,
+            } => {
+                let contract = &drive.system_contracts.withdrawal_contract;
+
+                let document_type = contract.document_type_for_name(dpp::contracts::withdrawals_contract::document_types::WITHDRAWAL)?;
 
                 let document_and_contract_info = DocumentAndContractInfo {
                     owned_document_info,
@@ -305,7 +329,7 @@ impl DriveLowLevelOperationConverter for DocumentOperationType<'_> {
                 };
                 drive.add_document_for_contract_operations(
                     document_and_contract_info,
-                    override_document,
+                    false,
                     block_info,
                     &mut None,
                     estimated_costs_only_with_layer_info,
@@ -345,7 +369,7 @@ impl DriveLowLevelOperationConverter for DocumentOperationType<'_> {
             } => drive.delete_document_for_contract_id_with_named_type_operations(
                 document_id,
                 contract_id,
-                document_type_name,
+                document_type_name.as_str(),
                 owner_id,
                 &block_info.epoch,
                 None,
@@ -549,6 +573,7 @@ impl DriveLowLevelOperationConverter for DocumentOperationType<'_> {
                 contract_id,
                 document_type_name,
             } => {
+                let mut drive_operations = vec![];
                 let contract_fetch_info = drive
                     .get_contract_with_fetch_info_and_add_to_operations(
                         contract_id.into_buffer(),
@@ -560,50 +585,22 @@ impl DriveLowLevelOperationConverter for DocumentOperationType<'_> {
 
                 let contract = &contract_fetch_info.contract;
 
-                let document_type = contract.document_type_for_name(document_type_name)?;
+                let document_type = contract.document_type_for_name(document_type_name.as_str())?;
 
                 let document_and_contract_info = DocumentAndContractInfo {
                     owned_document_info,
                     contract,
                     document_type,
                 };
-                drive.update_document_for_contract_operations(
+                let mut operations = drive.update_document_for_contract_operations(
                     document_and_contract_info,
                     block_info,
                     &mut None,
                     estimated_costs_only_with_layer_info,
                     transaction,
-                )
-            }
-            DocumentOperationType::AddWithdrawalDocument {
-                owned_document_info,
-            } => {
-                let contract_fetch_info = drive
-                    .get_contract_with_fetch_info_and_add_to_operations(
-                        contract_id.into_buffer(),
-                        Some(&block_info.epoch),
-                        transaction,
-                        &mut drive_operations,
-                    )?
-                    .ok_or(Error::Document(DocumentError::ContractNotFound))?;
-
-                let contract = &contract_fetch_info.contract;
-
-                let document_type = contract.document_type_for_name(document_type_name)?;
-
-                let document_and_contract_info = DocumentAndContractInfo {
-                    owned_document_info,
-                    contract,
-                    document_type,
-                };
-                drive.add_document_for_contract_operations(
-                    document_and_contract_info,
-                    override_document,
-                    block_info,
-                    &mut None,
-                    estimated_costs_only_with_layer_info,
-                    transaction,
-                )
+                )?;
+                drive_operations.append(&mut operations);
+                Ok(drive_operations)
             }
         }
     }

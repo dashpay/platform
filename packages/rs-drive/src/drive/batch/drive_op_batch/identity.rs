@@ -59,7 +59,7 @@ pub enum IdentityOperationType {
 }
 
 impl DriveLowLevelOperationConverter for IdentityOperationType {
-    fn to_low_level_drive_operations(
+    fn into_low_level_drive_operations(
         self,
         drive: &Drive,
         estimated_costs_only_with_layer_info: &mut Option<

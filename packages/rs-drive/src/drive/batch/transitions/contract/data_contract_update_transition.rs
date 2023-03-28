@@ -13,7 +13,7 @@ impl DriveHighLevelOperationConverter for DataContractUpdateTransitionAction {
     ) -> Result<Vec<DriveOperation>, Error> {
         let DataContractUpdateTransitionAction { data_contract, .. } = self;
         let mut drive_operations = vec![];
-        /// We must create the contract
+        // We must create the contract
         drive_operations.push(ContractOperation(ContractOperationType::ApplyContract {
             contract: Cow::Owned(data_contract),
             storage_flags: None,

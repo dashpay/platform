@@ -436,7 +436,7 @@ impl Drive {
         data_contract_id: Identifier,
         document_type_name: &str,
         override_document: bool,
-        block_info: BlockInfo,
+        block_info: &BlockInfo,
         apply: bool,
         transaction: TransactionArg,
     ) -> Result<FeeResult, Error> {
@@ -464,7 +464,7 @@ impl Drive {
         self.add_document_for_contract_apply_and_add_to_operations(
             document_and_contract_info,
             override_document,
-            &block_info,
+            block_info,
             true,
             apply,
             transaction,

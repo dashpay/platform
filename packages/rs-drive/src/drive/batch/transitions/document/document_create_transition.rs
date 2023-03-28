@@ -3,11 +3,10 @@ use crate::drive::batch::DriveOperation::DocumentOperation;
 use crate::drive::batch::{DocumentOperationType, DriveOperation};
 use crate::drive::flags::StorageFlags;
 use crate::drive::object_size_info::DocumentInfo::DocumentWithoutSerialization;
-use crate::drive::object_size_info::{DocumentAndContractInfo, OwnedDocumentInfo};
+use crate::drive::object_size_info::OwnedDocumentInfo;
 use crate::error::Error;
 use crate::fee_pools::epochs::Epoch;
 use dpp::data_contract::DriveContractExt;
-use dpp::document::document_transition::document_base_transition::DocumentBaseTransition;
 use dpp::document::document_transition::{
     DocumentBaseTransitionAction, DocumentCreateTransitionAction,
 };
@@ -58,7 +57,7 @@ impl DriveHighLevelDocumentOperationConverter for DocumentCreateTransitionAction
                 owner_id: Some(owner_id.into_buffer()),
             },
             contract_id: data_contract_id,
-            document_type_name: document_type_name.as_str(),
+            document_type_name: Cow::Owned(document_type_name),
             override_document: false,
         }));
 
