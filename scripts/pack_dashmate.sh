@@ -35,6 +35,12 @@ yarn oclif pack $COMMAND
 cd ..  || exit 1
 rm package.tgz
 cp -R package/dist "$ROOT_PATH/packages/dashmate"
+
+# fix for deb package build
+sudo chown -R $USER "$ROOT_PATH/packages/dashmate/package" || true
+sudo chgrp -R $USER "$ROOT_PATH/packages/dashmate/package" || true
+
+# remove build folder
 rm -rf package || true
 
 echo "Done"
