@@ -21,7 +21,8 @@ impl DriveHighLevelDocumentOperationConverter for DocumentTransitionAction {
                     .into_high_level_document_drive_operations(epoch, owner_id)
             }
             DocumentTransitionAction::DeleteAction(document_delete_transition) => {
-                document_delete_transition.into_high_level_document_drive_operations(epoch, owner_id)
+                document_delete_transition
+                    .into_high_level_document_drive_operations(epoch, owner_id)
             }
         }
     }

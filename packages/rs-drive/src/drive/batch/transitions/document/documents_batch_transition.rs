@@ -14,9 +14,10 @@ impl DriveHighLevelOperationConverter for DocumentsBatchTransitionAction {
         } = self;
         Ok(transitions
             .into_iter()
-            .map(|transition| {
-                transition.into_high_level_document_drive_operations(epoch, owner_id)
-            })
-            .collect::<Result<Vec<Vec<DriveOperation>>, Error>>()?.into_iter().flatten().collect())
+            .map(|transition| transition.into_high_level_document_drive_operations(epoch, owner_id))
+            .collect::<Result<Vec<Vec<DriveOperation>>, Error>>()?
+            .into_iter()
+            .flatten()
+            .collect())
     }
 }

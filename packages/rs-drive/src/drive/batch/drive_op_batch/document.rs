@@ -320,7 +320,9 @@ impl DriveLowLevelOperationConverter for DocumentOperationType<'_> {
             } => {
                 let contract = &drive.system_contracts.withdrawal_contract;
 
-                let document_type = contract.document_type_for_name(dpp::contracts::withdrawals_contract::document_types::WITHDRAWAL)?;
+                let document_type = contract.document_type_for_name(
+                    dpp::contracts::withdrawals_contract::document_types::WITHDRAWAL,
+                )?;
 
                 let document_and_contract_info = DocumentAndContractInfo {
                     owned_document_info,

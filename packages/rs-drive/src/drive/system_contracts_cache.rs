@@ -1,6 +1,6 @@
+use crate::error::Error;
 use dpp::data_contract::DataContract;
 use dpp::system_data_contracts::{load_system_data_contract, SystemDataContract};
-use crate::error::Error;
 
 pub struct SystemContracts {
     /// Withdrawal contract
