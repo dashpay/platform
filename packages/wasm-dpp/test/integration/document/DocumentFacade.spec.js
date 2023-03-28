@@ -2,7 +2,7 @@ const generateRandomIdentifier = require('@dashevo/dpp/lib/test/utils/generateRa
 const createStateRepositoryMock = require('@dashevo/dpp/lib/test/mocks/createStateRepositoryMock');
 const getDataContractFixture = require('@dashevo/dpp/lib/test/fixtures/getDataContractFixture');
 const getDocumentsFixture = require('@dashevo/dpp/lib/test/fixtures/getDocumentsFixture');
-const getDocumentTransitionsFixture = require('@dashevo/dpp/lib/test/fixtures/getDocumentTransitionsFixture');
+const getDocumentTransitionsFixture = require('../../../lib/test/fixtures/getDocumentTransitionsFixture');
 
 const { default: loadWasmDpp } = require('../../../dist');
 const getBlsAdapterMock = require('../../../lib/test/mocks/getBlsAdapterMock');
@@ -45,7 +45,7 @@ describe('DocumentFacade', () => {
     stateRepositoryMock.fetchDataContract.resolves(dataContract);
 
     blsAdapter = await getBlsAdapterMock();
-    dpp = new DashPlatformProtocol({}, blsAdapter, stateRepositoryMock);
+    dpp = new DashPlatformProtocol(blsAdapter, stateRepositoryMock, 1);
 
     documentsJs = getDocumentsFixture(dataContractJs);
     documents = documentsJs.map((d) => {

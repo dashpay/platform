@@ -5,6 +5,7 @@ const nodePath = require('path');
 const lodashGet = require('lodash/get');
 const lodashSet = require('lodash/set');
 const lodashCloneDeep = require('lodash/cloneDeep');
+const lodashIsEqual = require('lodash/isEqual');
 
 const addFormats = require('ajv-formats');
 const configJsonSchema = require('../../configs/schema/configJsonSchema');
@@ -104,6 +105,16 @@ class Config {
   }
 
   /**
+   * Remove by path
+   *
+   * @param {string} path
+   * @returns {Config}
+   */
+  remove(path) {
+    return this.set(path, undefined);
+  }
+
+  /**
    * Get options
    *
    * @return {Object}
@@ -140,6 +151,16 @@ class Config {
   }
 
   /**
+   * Compare two configs
+   *
+   * @param {Config} config
+   * @returns {boolean}
+   */
+  isEqual(config) {
+    return lodashIsEqual(this.getOptions(), config.getOptions());
+  }
+
+  /**
    *
    * @return {{CONFIG_NAME: string, COMPOSE_PROJECT_NAME: string}}
    */
@@ -150,7 +171,7 @@ class Config {
       dockerComposeFiles.push('docker-compose.sentinel.yml');
     }
 
-    if (this.has('platform')) {
+    if (this.isPlatformEnabled()) {
       dockerComposeFiles.push('docker-compose.platform.yml');
 
       if (this.get('platform.sourcePath') !== null) {
@@ -167,7 +188,7 @@ class Config {
       ...convertObjectToEnvs(this.getOptions()),
     };
 
-    if (this.has('platform')) {
+    if (this.isPlatformEnabled()) {
       envs = {
         ...envs,
 
@@ -190,6 +211,14 @@ class Config {
     }
 
     return envs;
+  }
+
+  /**
+   *
+   * @returns {boolean}
+   */
+  isPlatformEnabled() {
+    return this.has('platform') && this.get('platform.enable');
   }
 }
 

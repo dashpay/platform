@@ -2416,7 +2416,6 @@ mod tests {
             1,
             document_validator,
             DataContractFetcherAndValidator::new(Arc::new(MockStateRepositoryLike::new())),
-            None,
         );
 
         // Create a document

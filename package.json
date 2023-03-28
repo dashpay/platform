@@ -1,6 +1,6 @@
 {
   "name": "@dashevo/platform",
-  "version": "0.24.0-dev.15",
+  "version": "0.24.0-dev.16",
   "private": true,
   "scripts": {
     "setup": "yarn install && yarn run build && yarn run configure",
@@ -25,12 +25,8 @@
     "test:wallet-lib": "ultra -r --filter \"packages/@(wallet-lib|js-dash-sdk|platform-test-suite)\" test",
     "build": "ultra --recursive $* --build",
     "lint": "ultra --recursive $* lint",
-    "configure:dashmate": "yarn exec ./scripts/configure_dashmate.sh",
-    "configure:network": "yarn exec ./scripts/setup_local_network.sh",
-    "configure:tests": "yarn exec ./scripts/configure_test_suite.sh",
-    "configure:dotenv": "yarn exec ./scripts/configure_dotenv.sh",
     "configure:tests:network": "yarn exec scripts/configure_test_suite_network.sh",
-    "configure": "yarn run configure:dashmate && yarn run configure:network && yarn run configure:tests && yarn run configure:dotenv",
+    "configure": "yarn exec ./scripts/configure.sh",
     "clean:data": "yarn run dashmate group reset --verbose --group=local --hard",
     "clean": "yarn run clean:data && yarn run build",
     "dashmate": "yarn exec packages/dashmate/bin/run",

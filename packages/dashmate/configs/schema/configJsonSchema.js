@@ -319,7 +319,7 @@ module.exports = {
                     },
                     provider: {
                       type: 'string',
-                      enum: ['zerossl', 'selfSigned', 'manual'],
+                      enum: ['zerossl', 'selfSigned', 'file'],
                     },
                     providerConfigs: {
                       type: 'object',
@@ -646,8 +646,11 @@ module.exports = {
           required: ['contract', 'masterPublicKey', 'secondPublicKey'],
           additionalProperties: false,
         },
+        enable: {
+          type: 'boolean',
+        },
       },
-      required: ['dapi', 'drive', 'dpns', 'dashpay', 'featureFlags', 'sourcePath', 'masternodeRewardShares', 'withdrawals'],
+      required: ['dapi', 'drive', 'dpns', 'dashpay', 'featureFlags', 'sourcePath', 'masternodeRewardShares', 'withdrawals', 'enable'],
       additionalProperties: false,
     },
     dashmate: {

@@ -53,7 +53,7 @@ impl AssetLockProof {
                 let transaction_hash = out_point.txid;
 
                 let transaction_data = state_repository
-                    .fetch_transaction(&transaction_hash.to_hex(), execution_context)
+                    .fetch_transaction(&transaction_hash.to_hex(), Some(execution_context))
                     .await
                     .map_err(|_| DPPError::InvalidAssetLockTransaction)?;
 

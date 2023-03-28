@@ -1,9 +1,9 @@
 /* eslint-disable camelcase */
-const DockerStatusEnum = require('../../enums/dockerStatus');
+const DockerStatusEnum = require('../enums/dockerStatus');
 const determineStatus = require('../determineStatus');
 const providers = require('../providers');
 const extractCoreVersion = require('../../core/extractCoreVersion');
-const ServiceStatusEnum = require('../../enums/serviceStatus');
+const ServiceStatusEnum = require('../enums/serviceStatus');
 const ServiceIsNotRunningError = require('../../docker/errors/ServiceIsNotRunningError');
 
 /**

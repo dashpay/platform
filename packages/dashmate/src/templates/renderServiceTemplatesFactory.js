@@ -24,7 +24,7 @@ function renderServiceTemplatesFactory() {
       .sync(`${templatesPath}/**/*.dot`)
       // Do not render platform templates if it's not configured
       .filter((templatePath) => (
-        !templatePath.includes('templates/platform') || config.has('platform')
+        !templatePath.includes('templates/platform') || config.isPlatformEnabled()
       ));
 
     const configFiles = {};

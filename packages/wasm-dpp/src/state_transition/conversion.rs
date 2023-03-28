@@ -1,24 +1,17 @@
+use crate::errors::consensus_error::from_consensus_error;
 use crate::utils::generic_of_js_val;
 use crate::{
     DataContractCreateTransitionWasm, DataContractUpdateTransitionWasm,
     DocumentsBatchTransitionWasm, IdentityCreateTransitionWasm, IdentityTopUpTransitionWasm,
     IdentityUpdateTransitionWasm,
 };
+use dpp::consensus::basic::state_transition::InvalidStateTransitionTypeError;
+use dpp::consensus::basic::BasicError;
+use dpp::consensus::ConsensusError;
 use dpp::state_transition::{StateTransition, StateTransitionType};
 use std::convert::TryInto;
 use wasm_bindgen::__rt::Ref;
 use wasm_bindgen::{JsCast, JsError, JsValue};
-
-pub fn state_transition_wasm_to_object(state_transition: &JsValue) -> Result<JsValue, JsValue> {
-    let to_object_value = js_sys::Reflect::get(state_transition, &JsValue::from_str("toObject"))
-        .map_err(|_| JsError::new("No 'toObject' property present in state transition"))?;
-
-    let to_object_function: &js_sys::Function = to_object_value
-        .dyn_ref::<js_sys::Function>()
-        .ok_or_else(|| JsError::new("'toObject' is not a function"))?;
-
-    to_object_function.call0(state_transition)
-}
 
 pub fn create_state_transition_from_wasm_instance(
     js_value: &JsValue,
@@ -38,10 +31,11 @@ pub fn create_state_transition_from_wasm_instance(
 
     let state_transition_type: StateTransitionType =
         raw_state_transition_type.try_into().map_err(|_| {
-            JsError::new(&format!(
-                "Unknown state transition type: {}",
-                raw_state_transition_type
-            ))
+            from_consensus_error(ConsensusError::BasicError(Box::new(
+                BasicError::InvalidStateTransitionTypeError(InvalidStateTransitionTypeError::new(
+                    raw_state_transition_type,
+                )),
+            )))
         })?;
 
     match state_transition_type {

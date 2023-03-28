@@ -60,7 +60,7 @@ where
                         &data_contract.id,
                         query.document_type,
                         json!( { "where": query.where_query}),
-                        execution_context,
+                        Some(execution_context),
                     ),
                     (query.index_definition, query.document_transition),
                 )

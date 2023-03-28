@@ -39,7 +39,6 @@ where
             protocol_version,
             document_validator.clone(),
             data_contract_fetcher_and_validator.clone(),
-            None,
         );
 
         Self {

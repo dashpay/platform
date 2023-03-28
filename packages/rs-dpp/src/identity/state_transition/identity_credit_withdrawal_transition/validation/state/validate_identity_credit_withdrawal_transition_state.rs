@@ -46,7 +46,7 @@ where
             .state_repository
             .fetch_identity(
                 &state_transition.identity_id,
-                state_transition.get_execution_context(),
+                Some(state_transition.get_execution_context()),
             )
             .await?
             .map(TryInto::try_into)

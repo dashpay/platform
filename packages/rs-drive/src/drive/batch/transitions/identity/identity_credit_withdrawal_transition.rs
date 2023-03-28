@@ -15,7 +15,6 @@ use dpp::identity::state_transition::identity_credit_withdrawal_transition::{
     IdentityCreditWithdrawalTransition, IdentityCreditWithdrawalTransitionAction, Pooling,
 };
 use dpp::system_data_contracts::load_system_data_contract;
-use dpp::util::entropy_generator::generate;
 
 impl DriveHighLevelOperationConverter for IdentityCreditWithdrawalTransitionAction {
     fn into_high_level_drive_operations(self, epoch: &Epoch) -> Result<Vec<DriveOperation>, Error> {

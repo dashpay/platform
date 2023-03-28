@@ -6,7 +6,7 @@ const GroupBaseCommand = require('../../oclif/command/GroupBaseCommand');
 const printObject = require('../../printers/printObject');
 const printArrayOfObjects = require('../../printers/printArrayOfObjects');
 const colors = require('../../status/colors');
-const ServiceStatusEnum = require('../../enums/serviceStatus');
+const ServiceStatusEnum = require('../../status/enums/serviceStatus');
 
 class GroupStatusCommand extends GroupBaseCommand {
   /**
