@@ -1,15 +1,13 @@
 use crate::drive::batch::transitions::document::DriveHighLevelDocumentOperationConverter;
-use crate::drive::batch::transitions::DriveHighLevelOperationConverter;
+
 use crate::drive::batch::DriveOperation::DocumentOperation;
 use crate::drive::batch::{DocumentOperationType, DriveOperation};
-use crate::drive::object_size_info::{DocumentAndContractInfo, OwnedDocumentInfo};
+
 use crate::error::Error;
 use crate::fee_pools::epochs::Epoch;
-use dpp::data_contract::DriveContractExt;
-use dpp::document::document_transition::document_base_transition::DocumentBaseTransition;
+
 use dpp::document::document_transition::{
-    DocumentBaseTransitionAction, DocumentCreateTransition, DocumentDeleteTransition,
-    DocumentDeleteTransitionAction,
+    DocumentBaseTransitionAction, DocumentDeleteTransitionAction,
 };
 use dpp::identifier::Identifier;
 use std::borrow::Cow;

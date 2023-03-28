@@ -1,19 +1,18 @@
 use crate::drive::batch::transitions::DriveHighLevelOperationConverter;
-use crate::drive::batch::DriveOperation::{DocumentOperation, IdentityOperation, SystemOperation};
-use crate::drive::batch::{
-    DocumentOperationType, DriveOperation, IdentityOperationType, SystemOperationType,
-};
+use crate::drive::batch::DriveOperation::{IdentityOperation, SystemOperation};
+use crate::drive::batch::{DriveOperation, IdentityOperationType, SystemOperationType};
 use crate::drive::defaults::PROTOCOL_VERSION;
-use crate::drive::object_size_info::{DocumentAndContractInfo, OwnedDocumentInfo};
+
 use crate::error::Error;
 use crate::fee_pools::epochs::Epoch;
-use dpp::identity::state_transition::identity_create_transition::{
-    IdentityCreateTransition, IdentityCreateTransitionAction,
-};
+use dpp::identity::state_transition::identity_create_transition::IdentityCreateTransitionAction;
 use dpp::prelude::Identity;
 
 impl DriveHighLevelOperationConverter for IdentityCreateTransitionAction {
-    fn into_high_level_drive_operations(self, epoch: &Epoch) -> Result<Vec<DriveOperation>, Error> {
+    fn into_high_level_drive_operations(
+        self,
+        _epoch: &Epoch,
+    ) -> Result<Vec<DriveOperation>, Error> {
         let IdentityCreateTransitionAction {
             public_keys,
             initial_balance_amount,

@@ -34,11 +34,9 @@ use std::collections::HashMap;
 #[cfg(feature = "full")]
 use std::path::Path;
 
-use dpp::data_contract::DataContract;
 #[cfg(feature = "full")]
 use dpp::data_contract::DriveContractExt;
-use dpp::system_data_contracts::{load_system_data_contract, SystemDataContract};
-use dpp::ProtocolError;
+
 #[cfg(feature = "full")]
 use grovedb::batch::KeyInfoPath;
 #[cfg(any(feature = "full", feature = "verify"))]

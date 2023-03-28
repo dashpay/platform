@@ -16,7 +16,8 @@ use crate::identity::validation::{PUBLIC_KEY_SCHEMA_FOR_TRANSITION, PublicKeysVa
 
 use crate::state_repository::StateRepositoryLike;
 use crate::state_transition::{
-    StateTransition, StateTransitionConvert, StateTransitionAction, StateTransitionFactory, StateTransitionFactoryOptions,
+    StateTransition, StateTransitionAction, StateTransitionConvert, StateTransitionFactory,
+    StateTransitionFactoryOptions,
 };
 
 use crate::state_transition::state_transition_execution_context::StateTransitionExecutionContext;
@@ -238,9 +239,7 @@ where
         }
 
         if options.signature {
-            result.merge(
-            self.validate_signature(state_transition.clone()).await?
-            );
+            result.merge(self.validate_signature(state_transition.clone()).await?);
 
             if !result.is_valid() {
                 return Ok(result);
@@ -248,9 +247,7 @@ where
         }
 
         if options.fee {
-            result.merge(
-            self.validate_fee(state_transition).await?
-            );
+            result.merge(self.validate_fee(state_transition).await?);
 
             if !result.is_valid() {
                 return Ok(result);

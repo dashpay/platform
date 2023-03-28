@@ -165,7 +165,7 @@ where
             .map(|pk| pk.try_into().map_err(NonConsensusError::ValueError))
             .collect::<Result<Vec<Value>, NonConsensusError>>()?;
 
-        let mut result = self
+        let result = self
             .public_keys_validator
             .validate_keys(raw_public_keys.as_slice())?;
         if !result.is_valid() {
@@ -174,7 +174,7 @@ where
         }
 
         let validator = RequiredPurposeAndSecurityLevelValidator {};
-        let mut result = validator.validate_keys(&raw_public_keys)?;
+        let result = validator.validate_keys(&raw_public_keys)?;
         if !result.is_valid() {
             validation_result.add_errors(result.errors);
             return Ok(validation_result);

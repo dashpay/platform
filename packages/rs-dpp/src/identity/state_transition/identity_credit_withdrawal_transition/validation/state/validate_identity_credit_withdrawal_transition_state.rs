@@ -6,7 +6,7 @@ use dashcore::{consensus, BlockHeader};
 use platform_value::platform_value;
 
 use crate::consensus::signature::IdentityNotFoundError;
-use crate::consensus::ConsensusError;
+
 use crate::contracts::withdrawals_contract;
 use crate::document::{generate_document_id, Document};
 use crate::identity::state_transition::identity_credit_withdrawal_transition::{

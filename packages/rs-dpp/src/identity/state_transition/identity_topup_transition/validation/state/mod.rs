@@ -2,7 +2,7 @@ use crate::identity::state_transition::identity_topup_transition::{
     IdentityTopUpTransition, IdentityTopUpTransitionAction,
 };
 use crate::state_repository::StateRepositoryLike;
-use crate::state_transition::state_transition_execution_context::StateTransitionExecutionContext;
+
 use crate::validation::{AsyncDataValidator, ValidationResult};
 use crate::{NonConsensusError, ProtocolError};
 use async_trait::async_trait;

@@ -74,7 +74,7 @@ use crate::error::fee::FeeError;
 use crate::error::Error;
 use crate::fee::calculate_fee;
 use crate::fee::op::LowLevelDriveOperation;
-use crate::fee::op::LowLevelDriveOperation::PreCalculatedFeeResult;
+
 use crate::fee::result::FeeResult;
 use crate::fee_pools::epochs::Epoch;
 
