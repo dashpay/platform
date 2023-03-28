@@ -4,9 +4,9 @@ const { FetchError } = fetch;
 
 const getPlatformScopeFactory = require('../../../../src/status/scopes/platform');
 const determineStatus = require('../../../../src/status/determineStatus');
-const DockerStatusEnum = require('../../../../src/enums/dockerStatus');
+const DockerStatusEnum = require('../../../../src/status/enums/dockerStatus');
 const providers = require('../../../../src/status/providers');
-const ServiceStatusEnum = require('../../../../src/enums/serviceStatus');
+const ServiceStatusEnum = require('../../../../src/status/enums/serviceStatus');
 
 describe('getPlatformScopeFactory', () => {
   describe('#getPlatformScope', () => {
@@ -37,7 +37,12 @@ describe('getPlatformScopeFactory', () => {
       mockFetch = this.sinon.stub(fetch, 'Promise');
       mockGetConnectionHost = this.sinon.stub();
 
-      config = { get: this.sinon.stub(), toEnvs: this.sinon.stub() };
+      config = {
+        get: this.sinon.stub(),
+        toEnvs: this.sinon.stub(),
+        isPlatformEnabled: this.sinon.stub(),
+      };
+
       getPlatformScope = getPlatformScopeFactory(mockDockerCompose,
         mockCreateRpcClient, mockGetConnectionHost);
     });
@@ -112,7 +117,7 @@ describe('getPlatformScopeFactory', () => {
       mockDetermineDockerStatus.returns(DockerStatusEnum.running);
       mockRpcClient.mnsync.returns({ result: { IsSynced: true } });
       mockMNOWatchProvider.returns(Promise.resolve('OPEN'));
-      mockFetch.returns(Promise.reject(new FetchError()));
+      mockFetch.returns(Promise.reject(new FetchError('test')));
       mockDockerCompose.execCommand.returns({ exitCode: 0, out: '' });
 
       const scope = await getPlatformScope(config);
