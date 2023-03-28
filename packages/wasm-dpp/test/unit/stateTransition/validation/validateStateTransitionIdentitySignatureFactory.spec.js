@@ -1,5 +1,5 @@
 const validateStateTransitionSignatureFactory = require('@dashevo/dpp/lib/stateTransition/validation/validateStateTransitionIdentitySignatureFactory');
-const ValidationResult = require('@dashevo/dpp/lib/validation/ValidationResult');
+// const ValidationResult = require('@dashevo/dpp/lib/validation/ValidationResult');
 const IdentityPublicKey = require('@dashevo/dpp/lib/identity/IdentityPublicKey');
 const InvalidStateTransitionSignatureError = require('@dashevo/dpp/lib/errors/consensus/signature/InvalidStateTransitionSignatureError');
 const MissingPublicKeyError = require('@dashevo/dpp/lib/errors/consensus/signature/MissingPublicKeyError');
@@ -18,8 +18,19 @@ const PublicKeySecurityLevelNotMetError = require('@dashevo/dpp/lib/stateTransit
 const WrongPublicKeyPurposeError = require('@dashevo/dpp/lib/stateTransition/errors/WrongPublicKeyPurposeError');
 const PublicKeyIsDisabledError = require('@dashevo/dpp/lib/stateTransition/errors/PublicKeyIsDisabledError');
 const DPPError = require('@dashevo/dpp/lib/errors/DPPError');
-const createStateRepositoryMock = require('@dashevo/dpp/lib/test/mocks/createStateRepositoryMock');
+// const createStateRepositoryMock = require('@dashevo/dpp/lib/test/mocks/createStateRepositoryMock');
 const IdentityNotFoundError = require('@dashevo/dpp/lib/errors/consensus/signature/IdentityNotFoundError');
+
+const { default: loadWasmDpp } = require('../../../..');
+let {
+  DashPlatformProtocol,
+  // InvalidStateTransitionTypeError,
+  ValidationResult,
+  // DataContractAlreadyPresentError,
+} = require('../../../..');
+// const getDataContractFixture = require("../../../../lib/test/fixtures/getDataContractFixture");
+const getBlsMock = require('../../../../lib/test/mocks/getBlsAdapterMock');
+const createStateRepositoryMock = require('../../../../lib/test/mocks/createStateRepositoryMock');
 
 describe('validateStateTransitionIdentitySignatureFactory', () => {
   let validateStateTransitionIdentitySignature;
@@ -30,8 +41,21 @@ describe('validateStateTransitionIdentitySignatureFactory', () => {
   let publicKeyId;
   let executionContext;
   let stateRepositoryMock;
+  let dpp;
 
-  beforeEach(function beforeEach() {
+  beforeEach(async function beforeEach() {
+    ({
+      DashPlatformProtocol,
+      // InvalidStateTransitionTypeError,
+      ValidationResult,
+      // DataContractAlreadyPresentError,
+    } = await loadWasmDpp());
+    stateRepositoryMock = createStateRepositoryMock(this.sinonSandbox);
+    stateRepositoryMock.fetchDataContract.resolves();
+    const blsMock = getBlsMock();
+
+    dpp = new DashPlatformProtocol(blsMock, stateRepositoryMock);
+
     executionContext = new StateTransitionExecutionContext();
 
     ownerId = generateRandomIdentifier();
@@ -67,7 +91,7 @@ describe('validateStateTransitionIdentitySignatureFactory', () => {
   });
 
   it('should pass properly signed state transition', async () => {
-    const result = await validateStateTransitionIdentitySignature(
+    const result = await dpp.stateTransition.validateStateTransitionIdentitySignature(
       stateTransition,
     );
 
