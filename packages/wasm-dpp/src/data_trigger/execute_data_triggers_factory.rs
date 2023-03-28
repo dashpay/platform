@@ -1,8 +1,8 @@
 use dpp::document::validation::state::execute_data_triggers::execute_data_triggers_with_custom_list;
+use dpp::prelude::{DataTrigger, DocumentTransition};
 use itertools::Itertools;
 use js_sys::Array;
 use wasm_bindgen::prelude::*;
-use dpp::prelude::{DataTrigger, DocumentTransition};
 
 use crate::{
     document_batch_transition::document_transition::DocumentTransitionWasm,

@@ -59,9 +59,13 @@ where
                 ))
             })?;
 
-        let existing_identity = maybe_existing_identity.ok_or::<ConsensusError>(
-            IdentityNotFoundError::new(state_transition.identity_id).into(),
-        )?;
+        let Some(existing_identity) = maybe_existing_identity else {
+            let err = IdentityNotFoundError::new(state_transition.identity_id);
+
+            result.add_error(err);
+
+            return Ok(result);
+        };
 
         if existing_identity.get_balance() < state_transition.amount {
             let err = IdentityInsufficientBalanceError {

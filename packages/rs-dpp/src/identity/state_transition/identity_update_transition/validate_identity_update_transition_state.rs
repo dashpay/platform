@@ -165,11 +165,21 @@ where
             .map(|pk| pk.try_into().map_err(NonConsensusError::ValueError))
             .collect::<Result<Vec<Value>, NonConsensusError>>()?;
 
-        self.public_keys_validator
+        let mut result = self
+            .public_keys_validator
             .validate_keys(raw_public_keys.as_slice())?;
+        if !result.is_valid() {
+            validation_result.add_errors(result.errors);
+            return Ok(validation_result);
+        }
 
         let validator = RequiredPurposeAndSecurityLevelValidator {};
-        validator.validate_keys(&raw_public_keys)?;
+        let mut result = validator.validate_keys(&raw_public_keys)?;
+        if !result.is_valid() {
+            validation_result.add_errors(result.errors);
+            return Ok(validation_result);
+        }
+
         let action: IdentityUpdateTransitionAction = state_transition.into();
         Ok(action.into())
     }
