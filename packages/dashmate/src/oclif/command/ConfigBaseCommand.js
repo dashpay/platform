@@ -27,7 +27,7 @@ class ConfigBaseCommand extends BaseCommand {
         
 You probably need to set up a node with the 'dashmate setup' command first.
 
-You also can use the '--config' option or set the default config with 'dashmate config default'`);
+You can also use the '--config' option, or set the default config with 'dashmate config default'`);
       }
 
       if (!configFile.isConfigExists(defaultConfigName)) {
