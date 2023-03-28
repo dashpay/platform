@@ -12,11 +12,12 @@ use crate::document::{generate_document_id, Document};
 use crate::identity::state_transition::identity_credit_withdrawal_transition::{
     IdentityCreditWithdrawalTransitionAction, Pooling,
 };
+use crate::validation::ValidationResult;
 use crate::{
     consensus::basic::identity::IdentityInsufficientBalanceError,
     identity::state_transition::identity_credit_withdrawal_transition::IdentityCreditWithdrawalTransition,
     state_repository::StateRepositoryLike, state_transition::StateTransitionLike,
-    validation::ValidationResult, NonConsensusError, ProtocolError, StateError,
+    NonConsensusError, ProtocolError, StateError,
 };
 
 pub struct IdentityCreditWithdrawalTransitionValidator<SR>
@@ -37,8 +38,8 @@ where
     pub async fn validate_identity_credit_withdrawal_transition_state(
         &self,
         state_transition: &IdentityCreditWithdrawalTransition,
-    ) -> Result<IdentityCreditWithdrawalTransitionAction, ValidationResult<()>> {
-        let mut result: ValidationResult<()> = ValidationResult::default();
+    ) -> Result<ValidationResult<IdentityCreditWithdrawalTransitionAction>, ProtocolError> {
+        let mut result = ValidationResult::default();
 
         // TODO: Use fetchIdentityBalance
         let maybe_existing_identity = self
@@ -70,7 +71,7 @@ where
 
             result.add_error(err);
 
-            return Err(result);
+            return Ok(result);
         }
 
         // Check revision
@@ -80,7 +81,7 @@ where
                 current_revision: existing_identity.get_revision(),
             });
 
-            return Err(result);
+            return Ok(result);
         }
 
         let document_id = generate_document_id::generate_document_id(
@@ -124,6 +125,7 @@ where
             version: IdentityCreditWithdrawalTransitionAction::current_version(),
             identity_id: state_transition.identity_id,
             prepared_withdrawal_document: withdrawal_document,
-        })
+        }
+        .into())
     }
 }

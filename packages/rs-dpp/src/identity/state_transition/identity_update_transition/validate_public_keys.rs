@@ -8,7 +8,7 @@ use crate::{
     prelude::IdentityPublicKey,
     util::json_value::JsonValueExt,
     validation::SimpleValidationResult,
-    StateError,
+    ProtocolError, StateError,
 };
 
 lazy_static! {
@@ -19,12 +19,18 @@ lazy_static! {
 
 pub struct IdentityUpdatePublicKeysValidator {}
 impl TPublicKeysValidator for IdentityUpdatePublicKeysValidator {
-    fn validate_keys(&self, raw_public_keys: &[Value]) -> Result<(), SimpleValidationResult> {
+    fn validate_keys(
+        &self,
+        raw_public_keys: &[Value],
+    ) -> Result<SimpleValidationResult, crate::NonConsensusError> {
         validate_public_keys(raw_public_keys)
+            .map_err(|e| crate::NonConsensusError::SerdeJsonError(e.to_string()))
     }
 }
 
-pub fn validate_public_keys(raw_public_keys: &[Value]) -> Result<(), SimpleValidationResult> {
+pub fn validate_public_keys(
+    raw_public_keys: &[Value],
+) -> Result<SimpleValidationResult, ProtocolError> {
     let mut validation_result = SimpleValidationResult::default();
 
     let maybe_max_items = IDENTITY_JSON_SCHEMA.get_value("properties.publicKeys.maxItems")?;
@@ -36,7 +42,7 @@ pub fn validate_public_keys(raw_public_keys: &[Value]) -> Result<(), SimpleValid
     if raw_public_keys.len() > max_items {
         validation_result
             .add_error(StateError::MaxIdentityPublicKeyLimitReachedError { max_items });
-        return Err(validation_result);
+        return Ok(validation_result);
     }
 
     let public_keys: Vec<IdentityPublicKey> = raw_public_keys
@@ -50,7 +56,7 @@ pub fn validate_public_keys(raw_public_keys: &[Value]) -> Result<(), SimpleValid
     if !duplicated_ids.is_empty() {
         validation_result
             .add_error(StateError::DuplicatedIdentityPublicKeyIdError { duplicated_ids });
-        return Err(validation_result);
+        return Ok(validation_result);
     }
 
     // Check that there's no duplicated keys
@@ -61,9 +67,5 @@ pub fn validate_public_keys(raw_public_keys: &[Value]) -> Result<(), SimpleValid
         });
     }
 
-    if validation_result.is_valid() {
-        Ok(())
-    } else {
-        Err(validation_result)
-    }
+    Ok(validation_result)
 }

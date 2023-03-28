@@ -4,8 +4,8 @@ use std::collections::HashMap;
 use crate::consensus::basic::identity::MissingMasterPublicKeyError;
 use crate::identity::validation::TPublicKeysValidator;
 use crate::identity::{IdentityPublicKey, Purpose, SecurityLevel};
-use crate::validation::ValidationResult;
-use crate::{DashPlatformProtocolInitError, NonConsensusError, ProtocolError};
+use crate::validation::SimpleValidationResult;
+use crate::{DashPlatformProtocolInitError, NonConsensusError};
 
 #[derive(Eq, Hash, PartialEq)]
 struct PurposeKey {
@@ -17,8 +17,11 @@ struct PurposeKey {
 pub struct RequiredPurposeAndSecurityLevelValidator {}
 
 impl TPublicKeysValidator for RequiredPurposeAndSecurityLevelValidator {
-    fn validate_keys(&self, raw_public_keys: &[Value]) -> Result<(), ValidationResult<()>> {
-        let mut result = ValidationResult::default();
+    fn validate_keys(
+        &self,
+        raw_public_keys: &[Value],
+    ) -> Result<SimpleValidationResult, NonConsensusError> {
+        let mut result = SimpleValidationResult::default();
 
         let mut key_purposes_and_levels_count: HashMap<PurposeKey, usize> = HashMap::new();
 
@@ -36,8 +39,7 @@ impl TPublicKeysValidator for RequiredPurposeAndSecurityLevelValidator {
             })
             .collect::<Result<Vec<_>, NonConsensusError>>()?
         {
-            let public_key: IdentityPublicKey = platform_value::from_value(raw_public_key.clone())
-                .map_err(ProtocolError::ValueError)?;
+            let public_key: IdentityPublicKey = platform_value::from_value(raw_public_key.clone())?;
             let combo = PurposeKey {
                 purpose: public_key.purpose,
                 security_level: public_key.security_level,
@@ -55,10 +57,9 @@ impl TPublicKeysValidator for RequiredPurposeAndSecurityLevelValidator {
         };
         if key_purposes_and_levels_count.get(&master_key).is_none() {
             result.add_error(MissingMasterPublicKeyError {});
-            Err(result)
-        } else {
-            Ok(())
         }
+
+        Ok(result)
     }
 }
 

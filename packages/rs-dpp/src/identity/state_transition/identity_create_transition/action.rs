@@ -6,7 +6,7 @@ use serde::{Deserialize, Serialize};
 
 pub const IDENTITY_CREATE_TRANSITION_ACTION_VERSION: u32 = 0;
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Default, Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct IdentityCreateTransitionAction {
     pub version: u32,

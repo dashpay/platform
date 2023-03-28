@@ -8,9 +8,10 @@ use crate::identity::state_transition::identity_credit_withdrawal_transition::va
 use crate::identity::state_transition::identity_topup_transition::validation::state::IdentityTopUpTransitionStateValidator;
 use crate::identity::state_transition::identity_update_transition::validate_identity_update_transition_state::IdentityUpdateTransitionStateValidator;
 use crate::identity::state_transition::identity_update_transition::validate_public_keys::IdentityUpdatePublicKeysValidator;
+use crate::ProtocolError;
 use crate::state_transition::{StateTransition, StateTransitionAction};
 use crate::state_transition::StateTransitionAction::{DataContractCreateAction, DataContractUpdateAction, DocumentsBatchAction, IdentityCreateAction, IdentityCreditWithdrawalAction, IdentityTopUpAction, IdentityUpdateAction};
-use crate::validation::{AsyncStateTransitionDataValidator, SimpleValidationResult};
+use crate::validation::{AsyncDataValidator, ValidationResult};
 
 pub struct StateTransitionStateValidator<SR>
 where
@@ -66,31 +67,44 @@ where
     pub async fn validate(
         &self,
         state_transition: &StateTransition,
-    ) -> Result<StateTransitionAction, SimpleValidationResult> {
+    ) -> Result<ValidationResult<StateTransitionAction>, ProtocolError> {
         match state_transition {
-            StateTransition::DataContractCreate(st) => Ok(DataContractCreateAction(
-                self.data_contract_create_validator.validate(st).await?,
-            )),
-            StateTransition::DataContractUpdate(st) => Ok(DataContractUpdateAction(
-                self.data_contract_update_validator.validate(st).await?,
-            )),
-            StateTransition::IdentityCreate(st) => Ok(IdentityCreateAction(
-                self.identity_create_validator.validate(st).await?,
-            )),
-            StateTransition::IdentityUpdate(st) => Ok(IdentityUpdateAction(
-                self.identity_update_validator.validate(st).await?,
-            )),
-            StateTransition::IdentityTopUp(st) => Ok(IdentityTopUpAction(
-                self.identity_top_up_validator.validate(st).await?,
-            )),
-            StateTransition::IdentityCreditWithdrawal(st) => Ok(IdentityCreditWithdrawalAction(
-                self.identity_credit_withdrawal_validator
-                    .validate_identity_credit_withdrawal_transition_state(st)
-                    .await?,
-            )),
-            StateTransition::DocumentsBatch(st) => Ok(DocumentsBatchAction(
-                self.document_batch_validator.validate(st).await?,
-            )),
+            StateTransition::DataContractCreate(st) => Ok(self
+                .data_contract_create_validator
+                .validate(st)
+                .await?
+                .map(DataContractCreateAction)),
+
+            StateTransition::DataContractUpdate(st) => Ok(self
+                .data_contract_update_validator
+                .validate(st)
+                .await?
+                .map(DataContractUpdateAction)),
+            StateTransition::IdentityCreate(st) => Ok(self
+                .identity_create_validator
+                .validate(st)
+                .await?
+                .map(IdentityCreateAction)),
+            StateTransition::IdentityUpdate(st) => Ok(self
+                .identity_update_validator
+                .validate(st)
+                .await?
+                .map(IdentityUpdateAction)),
+            StateTransition::IdentityTopUp(st) => Ok(self
+                .identity_top_up_validator
+                .validate(st)
+                .await?
+                .map(IdentityTopUpAction)),
+            StateTransition::IdentityCreditWithdrawal(st) => Ok(self
+                .identity_credit_withdrawal_validator
+                .validate_identity_credit_withdrawal_transition_state(st)
+                .await?
+                .map(IdentityCreditWithdrawalAction)),
+            StateTransition::DocumentsBatch(st) => Ok(self
+                .document_batch_validator
+                .validate(st)
+                .await?
+                .map(DocumentsBatchAction)),
         }
     }
 }

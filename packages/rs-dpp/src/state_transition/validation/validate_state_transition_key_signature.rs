@@ -19,7 +19,7 @@ use crate::{
         state_transition_execution_context::StateTransitionExecutionContext,
         StateTransition, StateTransitionConvert, StateTransitionLike,
     },
-    validation::{SimpleValidationResult, ValidationResult},
+    validation::SimpleValidationResult,
     ProtocolError,
 };
 
@@ -34,6 +34,8 @@ where
     SR: StateRepositoryLike,
 {
     type Item = StateTransition;
+    type ResultItem = ();
+
     async fn validate(&self, data: &Self::Item) -> Result<SimpleValidationResult, ProtocolError> {
         validate_state_transition_key_signature(
             self.state_repository.as_ref(),
@@ -63,7 +65,7 @@ pub async fn validate_state_transition_key_signature<SR: StateRepositoryLike>(
     state_repository: &impl StateRepositoryLike,
     asset_lock_public_key_hash_fetcher: &AssetLockPublicKeyHashFetcher<SR>,
     state_transition: &StateTransition,
-) -> Result<ValidationResult<()>, ProtocolError> {
+) -> Result<SimpleValidationResult, ProtocolError> {
     let mut result = SimpleValidationResult::default();
 
     let execution_context = state_transition.get_execution_context();

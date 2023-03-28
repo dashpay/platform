@@ -10,7 +10,7 @@ use crate::{
     identity::validation::{RequiredPurposeAndSecurityLevelValidator, TPublicKeysValidator},
     state_repository::StateRepositoryLike,
     state_transition::StateTransitionLike,
-    validation::SimpleValidationResult,
+    validation::ValidationResult,
     NonConsensusError, StateError,
 };
 
@@ -36,8 +36,8 @@ where
     pub async fn validate(
         &self,
         state_transition: &IdentityUpdateTransition,
-    ) -> Result<IdentityUpdateTransitionAction, SimpleValidationResult> {
-        let mut validation_result = SimpleValidationResult::default();
+    ) -> Result<ValidationResult<IdentityUpdateTransitionAction>, NonConsensusError> {
+        let mut validation_result = ValidationResult::default();
 
         let maybe_stored_identity = self
             .state_repository
@@ -57,7 +57,8 @@ where
             })?;
 
         if state_transition.get_execution_context().is_dry_run() {
-            return Ok(state_transition.into());
+            let action: IdentityUpdateTransitionAction = state_transition.into();
+            return Ok(action.into());
         }
 
         let stored_identity = match maybe_stored_identity {
@@ -65,7 +66,7 @@ where
                 validation_result.add_error(SignatureError::IdentityNotFoundError(
                     IdentityNotFoundError::new(state_transition.get_identity_id().to_owned()),
                 ));
-                return Err(validation_result);
+                return Ok(validation_result);
             }
             Some(identity) => identity,
         };
@@ -79,7 +80,7 @@ where
                 identity_id: state_transition.get_identity_id().to_owned(),
                 current_revision: identity.get_revision(),
             });
-            return Err(validation_result);
+            return Ok(validation_result);
         }
 
         for key_id in state_transition.get_public_key_ids_to_disable().iter() {
@@ -103,7 +104,7 @@ where
             }
         }
         if !validation_result.is_valid() {
-            return Err(validation_result);
+            return Ok(validation_result);
         }
 
         if !state_transition.get_public_key_ids_to_disable().is_empty() {
@@ -134,7 +135,7 @@ where
                         time_window_end: window_validation_result.time_window_end,
                     },
                 );
-                return Err(validation_result);
+                return Ok(validation_result);
             }
 
             // Keys can only be disabled if another valid key is enabled in the same security level
@@ -169,6 +170,7 @@ where
 
         let validator = RequiredPurposeAndSecurityLevelValidator {};
         validator.validate_keys(&raw_public_keys)?;
-        Ok(state_transition.into())
+        let action: IdentityUpdateTransitionAction = state_transition.into();
+        Ok(action.into())
     }
 }

@@ -14,6 +14,7 @@ use crate::consensus::ConsensusError;
 use crate::data_contract::state_transition::errors::MissingDataContractIdError;
 use crate::document::state_transition::documents_batch_transition::property_names;
 use crate::document::validation::basic::find_duplicates_by_id::find_duplicates_by_id;
+use crate::validation::SimpleValidationResult;
 use crate::{
     consensus::basic::BasicError,
     data_contract::{
@@ -26,7 +27,7 @@ use crate::{
     prelude::Identifier,
     state_repository::StateRepositoryLike,
     state_transition::state_transition_execution_context::StateTransitionExecutionContext,
-    validation::{JsonSchemaValidator, ValidationResult},
+    validation::JsonSchemaValidator,
     version::ProtocolVersionValidator,
     ProtocolError,
 };
@@ -62,7 +63,7 @@ lazy_static! {
 }
 
 pub trait Validator {
-    fn validate(&self, data: JsonValue) -> Result<ValidationResult<()>, ProtocolError>;
+    fn validate(&self, data: JsonValue) -> Result<SimpleValidationResult, ProtocolError>;
 }
 
 pub struct DocumentBatchTransitionBasicValidator<SR> {
@@ -88,7 +89,7 @@ where
         &self,
         raw_state_transition: &Value,
         execution_context: &StateTransitionExecutionContext,
-    ) -> Result<ValidationResult<()>, ProtocolError> {
+    ) -> Result<SimpleValidationResult, ProtocolError> {
         // TODO: move validation code into function body to avoid cloning of state_repository
         validate_documents_batch_transition_basic(
             &self.protocol_version_validator,
@@ -105,8 +106,8 @@ pub async fn validate_documents_batch_transition_basic(
     raw_state_transition: &Value,
     state_repository: Arc<impl StateRepositoryLike>,
     execution_context: &StateTransitionExecutionContext,
-) -> Result<ValidationResult<()>, ProtocolError> {
-    let mut result = ValidationResult::default();
+) -> Result<SimpleValidationResult, ProtocolError> {
+    let mut result = SimpleValidationResult::default();
     let validator =
         JsonSchemaValidator::new(DOCUMENTS_BATCH_TRANSITIONS_SCHEMA.clone()).map_err(|e| {
             anyhow!(
@@ -205,8 +206,8 @@ fn validate_document_transitions<'a>(
     data_contract: &DataContract,
     owner_id: Identifier,
     raw_document_transitions: impl IntoIterator<Item = BTreeMap<String, &'a Value>>,
-) -> Result<ValidationResult<()>, ProtocolError> {
-    let mut result = ValidationResult::default();
+) -> Result<SimpleValidationResult, ProtocolError> {
+    let mut result = SimpleValidationResult::default();
     let enriched_contracts_by_action = get_enriched_contracts_by_action(data_contract)?;
 
     let validation_result = validate_raw_transitions(
@@ -253,8 +254,8 @@ fn validate_raw_transitions<'a>(
     raw_document_transitions: impl IntoIterator<Item = BTreeMap<String, &'a Value>>,
     enriched_contracts_by_action: &HashMap<Action, DataContract>,
     owner_id: Identifier,
-) -> Result<ValidationResult<()>, ProtocolError> {
-    let mut result = ValidationResult::default();
+) -> Result<SimpleValidationResult, ProtocolError> {
+    let mut result = SimpleValidationResult::default();
     let mut raw_document_transitions_as_value: Vec<Value> = vec![];
     let owner_id_value: Value = owner_id.into();
     for mut raw_document_transition in raw_document_transitions {

@@ -125,6 +125,7 @@ mod test {
 
     use super::StateTransitionBasicValidator;
 
+    use crate::validation::SimpleValidationResult;
     use crate::{
         consensus::basic::BasicError,
         data_contract::{
@@ -137,7 +138,6 @@ mod test {
             StateTransitionConvert, StateTransitionLike,
         },
         tests::{fixtures::get_data_contract_fixture, utils::get_basic_error_from_result},
-        validation::ValidationResult,
         version::{ProtocolVersionValidator, COMPATIBILITY_MAP, LATEST_VERSION},
         NativeBlsModule,
     };
@@ -307,7 +307,7 @@ mod test {
         let mut validate_by_type_mock = MockValidatorByStateTransitionType::new();
         validate_by_type_mock
             .expect_validate()
-            .returning(|_, _, _| Ok(ValidationResult::<()>::default()));
+            .returning(|_, _, _| Ok(SimpleValidationResult::default()));
 
         for i in 0..500 {
             let document_type_name = format!("anotherDocument{}", i);
@@ -352,7 +352,7 @@ mod test {
         let mut validate_by_type_mock = MockValidatorByStateTransitionType::new();
         validate_by_type_mock
             .expect_validate()
-            .returning(|_, _, _| Ok(ValidationResult::<()>::default()));
+            .returning(|_, _, _| Ok(SimpleValidationResult::default()));
 
         let validator = StateTransitionBasicValidator::new(
             Arc::new(state_repository_mock),

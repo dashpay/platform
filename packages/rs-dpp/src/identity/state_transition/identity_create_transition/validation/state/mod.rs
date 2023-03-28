@@ -4,10 +4,8 @@ use crate::identity::state_transition::identity_create_transition::{
 };
 use crate::state_repository::StateRepositoryLike;
 use crate::state_transition::StateTransitionLike;
-use crate::validation::{
-    AsyncStateTransitionDataValidator, SimpleValidationResult, ValidationResult,
-};
-use crate::NonConsensusError;
+use crate::validation::{AsyncDataValidator, ValidationResult};
+use crate::{NonConsensusError, ProtocolError};
 use async_trait::async_trait;
 
 pub struct IdentityCreateTransitionStateValidator<SR>
@@ -18,17 +16,17 @@ where
 }
 
 #[async_trait(?Send)]
-impl<SR> AsyncStateTransitionDataValidator for IdentityCreateTransitionStateValidator<SR>
+impl<SR> AsyncDataValidator for IdentityCreateTransitionStateValidator<SR>
 where
     SR: StateRepositoryLike,
 {
-    type StateTransition = IdentityCreateTransition;
-    type StateTransitionAction = IdentityCreateTransitionAction;
+    type Item = IdentityCreateTransition;
+    type ResultItem = IdentityCreateTransitionAction;
 
     async fn validate(
         &self,
         data: &IdentityCreateTransition,
-    ) -> Result<Self::StateTransitionAction, SimpleValidationResult> {
+    ) -> Result<ValidationResult<Self::ResultItem>, ProtocolError> {
         validate_identity_create_transition_state(&self.state_repository, data)
             .await
             .map_err(|err| err.into())
@@ -57,8 +55,7 @@ where
 pub async fn validate_identity_create_transition_state(
     state_repository: &impl StateRepositoryLike,
     state_transition: &IdentityCreateTransition,
-) -> Result<IdentityCreateTransitionAction, ValidationResult<()>> {
-    // TODO: refactor to return ProtocolError?
+) -> Result<ValidationResult<IdentityCreateTransitionAction>, ProtocolError> {
     let mut result = ValidationResult::default();
 
     let identity_id = state_transition.get_identity_id();
@@ -73,20 +70,14 @@ pub async fn validate_identity_create_transition_state(
         })?;
 
     if state_transition.get_execution_context().is_dry_run() {
-        return Ok(IdentityCreateTransitionAction::from_borrowed(
-            state_transition,
-            0,
-        ));
+        return Ok(IdentityCreateTransitionAction::from_borrowed(state_transition, 0).into());
     }
 
     if let Some(balance) = balance {
-        return Ok(IdentityCreateTransitionAction::from_borrowed(
-            state_transition,
-            balance,
-        ));
+        return Ok(IdentityCreateTransitionAction::from_borrowed(state_transition, balance).into());
     } else {
         result.add_error(IdentityAlreadyExistsError::new(identity_id.to_buffer()));
-        Err(result)
+        Ok(result)
     }
 }
 

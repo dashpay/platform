@@ -1,3 +1,4 @@
+use crate::validation::{SimpleValidationResult, ValidationResult};
 use crate::{
     consensus::{
         basic::{BasicError, IndexError, JsonSchemaError},
@@ -6,13 +7,12 @@ use crate::{
         ConsensusError,
     },
     data_trigger::DataTriggerExecutionResult,
-    validation::ValidationResult,
     DataTriggerError, StateError,
 };
 
-pub fn get_schema_error(result: &ValidationResult<()>, number: usize) -> &JsonSchemaError {
+pub fn get_schema_error(result: &SimpleValidationResult, number: usize) -> &JsonSchemaError {
     result
-        .consensus_errors
+        .errors
         .get(number)
         .expect("the error should be returned in validation result")
         .json_schema_error()
@@ -36,36 +36,36 @@ pub fn get_index_error(consensus_error: &ConsensusError) -> &IndexError {
     }
 }
 
-pub fn get_state_error_from_result(
-    result: &ValidationResult<()>,
+pub fn get_state_error_from_result<TData: Clone>(
+    result: &ValidationResult<TData>,
     error_number: usize,
 ) -> &StateError {
     match result
-        .consensus_errors
+        .errors
         .get(error_number)
         .expect("error should be found")
     {
         ConsensusError::StateError(state_error) => state_error,
         _ => panic!(
             "error '{:?}' isn't a state error",
-            result.consensus_errors[error_number]
+            result.errors[error_number]
         ),
     }
 }
 
 pub fn get_basic_error_from_result(
-    result: &ValidationResult<()>,
+    result: &SimpleValidationResult,
     error_number: usize,
 ) -> &BasicError {
     match result
-        .consensus_errors
+        .errors
         .get(error_number)
         .expect("basic error should be found")
     {
         ConsensusError::BasicError(basic_error) => basic_error,
         _ => panic!(
             "error '{:?}' isn't a Basic error",
-            result.consensus_errors[error_number]
+            result.errors[error_number]
         ),
     }
 }
@@ -75,14 +75,14 @@ pub fn get_signature_error_from_result<K: Clone>(
     error_number: usize,
 ) -> &SignatureError {
     match result
-        .consensus_errors
+        .errors
         .get(error_number)
         .expect("error should be found")
     {
         ConsensusError::SignatureError(signature_error) => signature_error,
         _ => panic!(
             "error '{:?}' isn't a Signature error",
-            result.consensus_errors[error_number]
+            result.errors[error_number]
         ),
     }
 }
@@ -92,14 +92,14 @@ pub fn get_fee_error_from_result<K: Clone>(
     error_number: usize,
 ) -> &FeeError {
     match result
-        .consensus_errors
+        .errors
         .get(error_number)
         .expect("error should be found")
     {
         ConsensusError::FeeError(signature_error) => signature_error,
         _ => panic!(
             "error '{:?}' isn't a Fee error",
-            result.consensus_errors[error_number]
+            result.errors[error_number]
         ),
     }
 }

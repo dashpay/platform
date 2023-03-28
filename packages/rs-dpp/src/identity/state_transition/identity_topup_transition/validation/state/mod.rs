@@ -3,10 +3,8 @@ use crate::identity::state_transition::identity_topup_transition::{
 };
 use crate::state_repository::StateRepositoryLike;
 use crate::state_transition::state_transition_execution_context::StateTransitionExecutionContext;
-use crate::validation::{
-    AsyncStateTransitionDataValidator, SimpleValidationResult, ValidationResult,
-};
-use crate::NonConsensusError;
+use crate::validation::{AsyncDataValidator, ValidationResult};
+use crate::{NonConsensusError, ProtocolError};
 use async_trait::async_trait;
 
 pub struct IdentityTopUpTransitionStateValidator<SR>
@@ -17,17 +15,17 @@ where
 }
 
 #[async_trait(?Send)]
-impl<SR> AsyncStateTransitionDataValidator for IdentityTopUpTransitionStateValidator<SR>
+impl<SR> AsyncDataValidator for IdentityTopUpTransitionStateValidator<SR>
 where
     SR: StateRepositoryLike,
 {
-    type StateTransition = IdentityTopUpTransition;
-    type StateTransitionAction = IdentityTopUpTransitionAction;
+    type Item = IdentityTopUpTransition;
+    type ResultItem = IdentityTopUpTransitionAction;
 
     async fn validate(
         &self,
         data: &IdentityTopUpTransition,
-    ) -> Result<IdentityTopUpTransitionAction, SimpleValidationResult> {
+    ) -> Result<ValidationResult<IdentityTopUpTransitionAction>, ProtocolError> {
         //todo: pass the execution context
         let execution_context = StateTransitionExecutionContext::default();
         validate_identity_topup_transition_state(&self.state_repository, data, &execution_context)
@@ -60,15 +58,15 @@ pub async fn validate_identity_topup_transition_state(
     state_repository: &impl StateRepositoryLike,
     state_transition: &IdentityTopUpTransition,
     execution_context: &StateTransitionExecutionContext,
-) -> Result<IdentityTopUpTransitionAction, ValidationResult<()>> {
+) -> Result<ValidationResult<IdentityTopUpTransitionAction>, NonConsensusError> {
     //todo: I think we need to validate that the identity actually exists
     let top_up_balance_amount = state_transition
         .asset_lock_proof
         .fetch_asset_lock_transaction_output(state_repository, execution_context)
         .await
         .map_err(Into::<NonConsensusError>::into)?;
-    Ok(IdentityTopUpTransitionAction::from_borrowed(
-        state_transition,
-        top_up_balance_amount.value,
-    ))
+    Ok(
+        IdentityTopUpTransitionAction::from_borrowed(state_transition, top_up_balance_amount.value)
+            .into(),
+    )
 }

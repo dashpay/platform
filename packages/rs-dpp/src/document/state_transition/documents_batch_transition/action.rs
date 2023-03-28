@@ -3,7 +3,7 @@ use crate::identifier::Identifier;
 
 pub const DOCUMENTS_BATCH_TRANSITION_ACTION_VERSION: u32 = 0;
 
-#[derive(Debug, Clone)]
+#[derive(Default, Debug, Clone)]
 pub struct DocumentsBatchTransitionAction {
     /// The version of the transition
     pub version: u32,

@@ -4,7 +4,7 @@ use serde::{Deserialize, Serialize};
 
 pub const IDENTITY_CREDIT_WITHDRAWAL_TRANSITION_VERSION: u32 = 0;
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Default, Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct IdentityCreditWithdrawalTransitionAction {
     pub version: u32,

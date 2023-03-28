@@ -104,9 +104,9 @@ where
             .validate(&tx_json_uint_array, output_index, execution_context)
             .await?;
 
-        let validation_result_data = if validate_asset_lock_transaction_result.is_valid() {
+        let validation_result_data = if validate_asset_lock_transaction_result.has_data() {
             validate_asset_lock_transaction_result
-                .data()
+                .into_data()
                 .expect("This can not happen due to the logic above")
                 .clone()
         } else {

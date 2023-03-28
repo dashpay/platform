@@ -143,6 +143,9 @@ pub enum ProtocolError {
 
     #[error("Public key generation error {0}")]
     PublicKeyGenerationError(String),
+
+    #[error("corrupted code execution: {0}")]
+    CorruptedCodeExecution(String),
 }
 
 impl From<&str> for ProtocolError {

@@ -83,16 +83,18 @@ where
 
         match maybe_raw_public_keys {
             Some(raw_public_keys) => {
-                if let Err(err) = self.public_keys_validator.validate_keys(raw_public_keys) {
-                    let result = err.split_non_consensus_result()?;
-                    if !result.is_valid() {
-                        return Ok(result);
-                    }
+                let result = self.public_keys_validator.validate_keys(raw_public_keys)?;
+                if !result.is_valid() {
+                    return Ok(result);
                 }
 
                 let result = self
                     .public_keys_signatures_validator
                     .validate_public_key_signatures(raw_state_transition, raw_public_keys)?;
+                if !result.is_valid() {
+                    return Ok(result);
+                }
+
                 Ok(result)
             }
             None => Ok(result),

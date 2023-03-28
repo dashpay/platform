@@ -8,13 +8,14 @@ use serde_json::Value as JsonValue;
 use crate::consensus::basic::document::InvalidDocumentTypeError;
 use crate::data_contract::document_type::DocumentType;
 use crate::data_contract::DriveContractExt;
+use crate::validation::SimpleValidationResult;
 use crate::{
     consensus::basic::BasicError,
     data_contract::{
         enrich_data_contract_with_base_schema::enrich_data_contract_with_base_schema,
         enrich_data_contract_with_base_schema::PREFIX_BYTE_0, DataContract,
     },
-    validation::{JsonSchemaValidator, ValidationResult},
+    validation::JsonSchemaValidator,
     version::ProtocolVersionValidator,
     ProtocolError,
 };
@@ -49,8 +50,8 @@ impl DocumentValidator {
         raw_document: &JsonValue,
         data_contract: &DataContract,
         document_type: &DocumentType,
-    ) -> Result<ValidationResult<()>, ProtocolError> {
-        let mut result = ValidationResult::default();
+    ) -> Result<SimpleValidationResult, ProtocolError> {
+        let mut result = SimpleValidationResult::default();
         let enriched_data_contract = enrich_data_contract_with_base_schema(
             data_contract,
             &BASE_DOCUMENT_SCHEMA,
@@ -86,8 +87,8 @@ impl DocumentValidator {
         &self,
         raw_document: &Value,
         data_contract: &DataContract,
-    ) -> Result<ValidationResult<()>, ProtocolError> {
-        let mut result = ValidationResult::default();
+    ) -> Result<SimpleValidationResult, ProtocolError> {
+        let mut result = SimpleValidationResult::default();
 
         let Some(document_type_name) = raw_document.get_optional_str(PROPERTY_DOCUMENT_TYPE).map_err(ProtocolError::ValueError)? else {
             result.add_error(BasicError::MissingDocumentTypeError);
@@ -154,12 +155,12 @@ mod test {
     use test_case::test_case;
 
     use crate::tests::fixtures::get_extended_documents_fixture;
+    use crate::validation::SimpleValidationResult;
     use crate::{
         codes::ErrorWithCode,
         consensus::{basic::JsonSchemaError, ConsensusError},
         data_contract::DataContract,
         tests::fixtures::get_data_contract_fixture,
-        validation::ValidationResult,
         version::{ProtocolVersionValidator, COMPATIBILITY_MAP, LATEST_VERSION},
     };
 
@@ -385,10 +386,7 @@ mod test {
         let result = document_validator
             .validate_extended(&raw_document, &data_contract)
             .expect("the validator should return the validation result");
-        let validation_error = result
-            .consensus_errors
-            .get(0)
-            .expect("should return an error");
+        let validation_error = result.errors.get(0).expect("should return an error");
         assert!(
             matches!(validation_error,  ConsensusError::BasicError(basic_error) if basic_error.to_string() == "$type is not present")
         );
@@ -412,10 +410,7 @@ mod test {
         let result = document_validator
             .validate_extended(&raw_document, &data_contract)
             .expect("the validator should return the validation result");
-        let validation_error = result
-            .consensus_errors
-            .get(0)
-            .expect("the error should exist");
+        let validation_error = result.errors.get(0).expect("the error should exist");
         assert_eq!(1024, validation_error.get_code());
     }
 
@@ -579,9 +574,9 @@ mod test {
         assert!(result.is_valid())
     }
 
-    fn get_first_schema_error(result: &ValidationResult<()>) -> &JsonSchemaError {
+    fn get_first_schema_error(result: &SimpleValidationResult) -> &JsonSchemaError {
         result
-            .consensus_errors
+            .errors
             .get(0)
             .expect("the error should be returned in validation result")
             .json_schema_error()

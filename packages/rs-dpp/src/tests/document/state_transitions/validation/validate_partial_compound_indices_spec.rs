@@ -10,10 +10,10 @@ use crate::{
     tests::fixtures::{
         get_data_contract_fixture, get_document_transitions_fixture,
     },
-    validation::ValidationResult,
 };
 use crate::document::ExtendedDocument;
 use crate::tests::fixtures::get_extended_documents_fixture;
+use crate::validation::ValidationResult;
 
 struct TestData {
     data_contract: DataContract,
@@ -58,7 +58,7 @@ fn should_return_invalid_result_if_compound_index_contains_not_all_fields() {
     let basic_error = get_basic_error(&result, 0);
 
     assert!(!result.is_valid());
-    assert_eq!(1021, result.consensus_errors[0].code());
+    assert_eq!(1021, result.errors[0].code());
     match basic_error {
         BasicError::InconsistentCompoundIndexDataError(err) => {
             assert_eq!(
@@ -125,16 +125,19 @@ fn should_return_valid_result_if_compound_index_contains_all_fields() {
     assert!(result.is_valid());
 }
 
-fn get_basic_error(result: &ValidationResult<()>, error_number: usize) -> &BasicError {
+fn get_basic_error<TData: Clone>(
+    result: &ValidationResult<TData>,
+    error_number: usize,
+) -> &BasicError {
     match result
-        .consensus_errors
+        .errors
         .get(error_number)
         .expect("error should be found")
     {
-        ConsensusError::BasicError(basic_error) => basic_error,
+        ConsensusError::BasicError(basic_error) => &*basic_error,
         _ => panic!(
             "error '{:?}' isn't a basic error",
-            result.consensus_errors[error_number]
+            result.errors[error_number]
         ),
     }
 }

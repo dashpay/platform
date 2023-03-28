@@ -2,16 +2,14 @@ use platform_value::Value;
 use regex::Regex;
 
 use crate::consensus::basic::data_contract::IncompatibleRe2PatternError;
-use crate::{
-    consensus::{basic::BasicError, ConsensusError},
-    validation::ValidationResult,
-};
+use crate::consensus::{basic::BasicError, ConsensusError};
+use crate::validation::SimpleValidationResult;
 
 pub type SubValidator =
-    fn(path: &str, key: &str, parent: &Value, value: &Value, result: &mut ValidationResult<()>);
+    fn(path: &str, key: &str, parent: &Value, value: &Value, result: &mut SimpleValidationResult);
 
-pub fn validate(raw_data_contract: &Value, validators: &[SubValidator]) -> ValidationResult<()> {
-    let mut result = ValidationResult::default();
+pub fn validate(raw_data_contract: &Value, validators: &[SubValidator]) -> SimpleValidationResult {
+    let mut result = SimpleValidationResult::default();
     let mut values_queue: Vec<(&Value, String)> = vec![(raw_data_contract, String::from(""))];
 
     while let Some((value, path)) = values_queue.pop() {
@@ -52,7 +50,7 @@ pub fn pattern_is_valid_regex_validator(
     key: &str,
     _parent: &Value,
     value: &Value,
-    result: &mut ValidationResult<()>,
+    result: &mut SimpleValidationResult,
 ) {
     if key == "pattern" {
         if let Some(pattern) = value.as_str() {
@@ -79,7 +77,7 @@ pub fn pattern_is_valid_regex_validator(
 
 fn unwrap_error_to_result<'a, 'b>(
     v: Result<Option<&'a Value>, ConsensusError>,
-    result: &'b mut ValidationResult<()>,
+    result: &'b mut SimpleValidationResult,
 ) -> Option<&'a Value> {
     match v {
         Ok(v) => v,
@@ -95,7 +93,7 @@ pub fn byte_array_has_no_items_as_parent_validator(
     key: &str,
     parent: &Value,
     value: &Value,
-    result: &mut ValidationResult<()>,
+    result: &mut SimpleValidationResult,
 ) {
     if key == "byteArray"
         && value.is_bool()
@@ -150,9 +148,9 @@ mod test {
               }
         );
         let mut result = validate(&schema, &[byte_array_has_no_items_as_parent_validator]);
-        assert_eq!(2, result.errors().len());
-        let first_error = get_basic_error(result.consensus_errors.pop().unwrap());
-        let second_error = get_basic_error(result.consensus_errors.pop().unwrap());
+        assert_eq!(2, result.errors.len());
+        let first_error = get_basic_error(result.errors.pop().unwrap());
+        let second_error = get_basic_error(result.errors.pop().unwrap());
 
         assert!(matches!(
             first_error,
@@ -200,10 +198,7 @@ mod test {
 
         });
         let result = validate(&schema, &[pattern_is_valid_regex_validator]);
-        let consensus_error = result
-            .consensus_errors
-            .get(0)
-            .expect("the error should be returned");
+        let consensus_error = result.errors.get(0).expect("the error should be returned");
 
         match consensus_error {
             ConsensusError::IncompatibleRe2PatternError(err) => {
@@ -231,10 +226,7 @@ mod test {
             platform_value!("^((?!-|_)[a-zA-Z0-9-_]{0,62}[a-zA-Z0-9])$");
 
         let result = validate(&schema, &[pattern_is_valid_regex_validator]);
-        let consensus_error = result
-            .consensus_errors
-            .get(0)
-            .expect("the error should be returned");
+        let consensus_error = result.errors.get(0).expect("the error should be returned");
 
         match consensus_error {
             ConsensusError::IncompatibleRe2PatternError(err) => {
@@ -259,10 +251,7 @@ mod test {
             platform_value!("^((?!-|_)[a-zA-Z0-9-_]{0,62}[a-zA-Z0-9])$");
 
         let result = validate(&schema, &[pattern_is_valid_regex_validator]);
-        let consensus_error = result
-            .consensus_errors
-            .get(0)
-            .expect("the error should be returned");
+        let consensus_error = result.errors.get(0).expect("the error should be returned");
 
         match consensus_error {
             ConsensusError::IncompatibleRe2PatternError(err) => {

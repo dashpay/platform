@@ -281,7 +281,7 @@ async fn should_pass_when_adding_public_key() {
         .validate(&state_transition)
         .await
         .expect("the validation result should be returned");
-    assert!(result.is_valid(), "{:?}", result.consensus_errors);
+    assert!(result.is_valid(), "{:?}", result.errors);
 }
 
 #[tokio::test]
@@ -353,7 +353,7 @@ async fn should_validate_purpose_and_security_level() {
         .expect("the validation result should be returned");
 
     assert!(matches!(
-        result.consensus_errors[0],
+        result.errors[0],
         ConsensusError::MissingMasterPublicKeyError(_)
     ));
 }
@@ -367,7 +367,7 @@ async fn should_validate_pubic_keys_to_add() {
     } = setup_test();
     let mut validate_public_keys_mock = MockTPublicKeysValidator::new();
     let some_consensus_error = ConsensusError::TestConsensusError(TestConsensusError::new("test"));
-    let validation_result = SimpleValidationResult::new(Some(vec![some_consensus_error]));
+    let validation_result = SimpleValidationResult::new_with_errors(vec![some_consensus_error]);
     validate_public_keys_mock
         .expect_validate_keys()
         .return_once(|_| Ok(validation_result));
@@ -382,7 +382,7 @@ async fn should_validate_pubic_keys_to_add() {
         .expect("the validation result should be returned");
 
     assert!(matches!(
-        result.consensus_errors[0],
+        result.errors[0],
         ConsensusError::TestConsensusError(_)
     ));
 }

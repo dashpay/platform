@@ -160,9 +160,9 @@ where
                 .validate(&raw_tx, output_index as usize, execution_context)
                 .await?;
 
-            let validation_result_data = if validate_asset_lock_transaction_result.is_valid() {
+            let validation_result_data = if validate_asset_lock_transaction_result.has_data() {
                 validate_asset_lock_transaction_result
-                    .data()
+                    .into_data()
                     .expect("This can not happen due to the logic above")
                     .clone()
             } else {

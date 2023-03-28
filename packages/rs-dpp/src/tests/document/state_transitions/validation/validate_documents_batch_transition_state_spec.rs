@@ -22,11 +22,12 @@ use crate::{
             get_data_contract_fixture, get_document_transitions_fixture,
         },
         utils::{generate_random_identifier_struct},
-    }, validation::ValidationResult,
+    },
 };
 use crate::document::{Document, ExtendedDocument};
 use crate::identity::TimestampMillis;
 use crate::tests::fixtures::get_extended_documents_fixture;
+use crate::validation::ValidationResult;
 
 struct TestData {
     owner_id: Identifier,
@@ -86,16 +87,19 @@ fn setup_test() -> TestData {
     }
 }
 
-fn get_state_error(result: &ValidationResult<()>, error_number: usize) -> &StateError {
+fn get_state_error<TData: Clone>(
+    result: &ValidationResult<TData>,
+    error_number: usize,
+) -> &StateError {
     match result
-        .consensus_errors
+        .errors
         .get(error_number)
         .expect("error should be found")
     {
-        ConsensusError::StateError(state_error) => state_error,
+        ConsensusError::StateError(state_error) => &*state_error,
         _ => panic!(
             "error '{:?}' isn't a basic error",
-            result.consensus_errors[error_number]
+            result.errors[error_number]
         ),
     }
 }
@@ -132,7 +136,7 @@ async fn should_throw_error_if_data_contract_was_not_found() {
         &state_repository_mock,
         &data_contract.id,
         owner_id,
-        document_transitions,
+        document_transitions.iter().collect::<Vec<_>>().as_slice(),
         &Default::default(),
     )
     .await

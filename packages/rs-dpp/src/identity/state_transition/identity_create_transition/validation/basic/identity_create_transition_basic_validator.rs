@@ -10,7 +10,7 @@ use crate::identity::state_transition::validate_public_key_signatures::TPublicKe
 use crate::identity::validation::TPublicKeysValidator;
 use crate::state_repository::StateRepositoryLike;
 use crate::state_transition::state_transition_execution_context::StateTransitionExecutionContext;
-use crate::validation::{JsonSchemaValidator, ValidationResult};
+use crate::validation::{JsonSchemaValidator, SimpleValidationResult};
 use crate::version::ProtocolVersionValidator;
 use crate::{BlsModule, DashPlatformProtocolInitError, NonConsensusError};
 
@@ -70,7 +70,7 @@ impl<
         &self,
         transition_object: &Value,
         execution_context: &StateTransitionExecutionContext,
-    ) -> Result<ValidationResult<()>, NonConsensusError> {
+    ) -> Result<SimpleValidationResult, NonConsensusError> {
         let mut result = self.json_schema_validator.validate(
             &transition_object
                 .try_to_validating_json()
@@ -95,11 +95,9 @@ impl<
         let public_keys = transition_object
             .get_array_slice("publicKeys")
             .map_err(NonConsensusError::ValueError)?;
-        if let Err(validation_result) = self.public_keys_validator.validate_keys(public_keys) {
-            let validation_result = validation_result.split_non_consensus_result()?;
-            if !validation_result.is_valid() {
-                return Ok(validation_result);
-            }
+        result.merge(self.public_keys_validator.validate_keys(public_keys)?);
+        if !result.is_valid() {
+            return Ok(result);
         }
 
         result.merge(
@@ -110,15 +108,10 @@ impl<
             return Ok(result);
         }
 
-        if let Err(validation_result) = self
-            .public_keys_in_identity_transition_validator
-            .validate_keys(public_keys)
-        {
-            let validation_result = validation_result.split_non_consensus_result()?;
-            if !validation_result.is_valid() {
-                return Ok(validation_result);
-            }
-        }
+        result.merge(
+            self.public_keys_in_identity_transition_validator
+                .validate_keys(public_keys)?,
+        );
 
         if !result.is_valid() {
             return Ok(result);

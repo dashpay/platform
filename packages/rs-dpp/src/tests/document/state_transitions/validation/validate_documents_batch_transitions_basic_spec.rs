@@ -472,7 +472,7 @@ async fn property_should_should_exist_with_code(property_name: &str, error_code:
         .await
         .expect("validation result should be returned");
 
-    let error = &result.errors()[0];
+    let error = &result.errors[0];
     assert_eq!(error_code, error.code());
 }
 
@@ -534,7 +534,7 @@ async fn data_contract_id_should_be_byte_array() {
         .await
         .expect("validation result should be returned");
 
-    let error = &result.errors()[0];
+    let error = &result.errors[0];
     assert_eq!(5000, error.code());
 }
 
@@ -629,7 +629,7 @@ async fn data_contract_should_exist_in_the_state() {
         .await
         .expect("validation result should be returned");
 
-    let error = &result.errors()[0];
+    let error = &result.errors[0];
     assert_eq!(1018, error.code());
 }
 
@@ -654,7 +654,7 @@ async fn type_should_be_defined_in_data_contract() {
         .await
         .expect("validation result should be returned");
 
-    let error = &result.errors()[0];
+    let error = &result.errors[0];
     assert_eq!(1024, error.code());
 }
 
@@ -679,7 +679,7 @@ async fn should_throw_invalid_document_transaction_action_error_if_action_is_not
         .await
         .expect("validation result should be returned");
 
-    let error = &result.errors()[0];
+    let error = &result.errors[0];
     assert_eq!(1022, error.code());
 }
 
@@ -705,7 +705,7 @@ async fn id_should_be_valid_generated_id() {
         .await
         .expect("validation result should be returned");
 
-    let error = &result.errors()[0];
+    let error = &result.errors[0];
     assert_eq!(1023, error.code());
 }
 
@@ -966,7 +966,7 @@ async fn validation_should_be_successful() {
         .await
         .expect("validation result should be returned");
 
-    assert!(result.is_valid(), "{:?}", result.consensus_errors);
+    assert!(result.is_valid(), "{:?}", result.errors);
 }
 
 #[tokio::test]

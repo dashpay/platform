@@ -46,18 +46,24 @@ fn init() {
         .try_init();
 }
 
-fn get_schema_error(result: &ValidationResult<()>, number: usize) -> &JsonSchemaError {
+fn get_schema_error<TData: Clone>(
+    result: &ValidationResult<TData>,
+    number: usize,
+) -> &JsonSchemaError {
     result
-        .consensus_errors
+        .errors
         .get(number)
         .expect("the error should be returned in validation result")
         .json_schema_error()
         .expect("the error should be json schema error")
 }
 
-fn get_value_error(result: &ValidationResult<()>, number: usize) -> &platform_value::Error {
+fn get_value_error<TData: Clone>(
+    result: &ValidationResult<TData>,
+    number: usize,
+) -> &platform_value::Error {
     result
-        .consensus_errors
+        .errors
         .get(number)
         .expect("the error should be returned in validation result")
         .value_error()
@@ -81,8 +87,8 @@ fn get_index_error(consensus_error: &ConsensusError) -> &IndexError {
     }
 }
 
-fn print_json_schema_errors(result: &ValidationResult<()>) {
-    for (i, e) in result.consensus_errors.iter().enumerate() {
+fn print_json_schema_errors<TData: Clone>(result: &ValidationResult<TData>) {
+    for (i, e) in result.errors.iter().enumerate() {
         let schema_error = e.json_schema_error().unwrap();
         println!(
             "error_{}:  {:>30} -({:>20?}-{:>20?}) -  {}",
@@ -858,7 +864,7 @@ mod documents {
                 .expect("validation result should be returned");
             let schema_error = get_schema_error(&result, 0);
 
-            assert_eq!(4, result.consensus_errors.len());
+            assert_eq!(4, result.errors.len());
             assert_eq!(
                 "/documents/niceDocument/properties/something/properties",
                 schema_error.instance_path().to_string()
@@ -1392,7 +1398,7 @@ mod documents {
             .validate(&raw_data_contract)
             .expect("validation result should be returned");
         let pattern_error = result
-            .consensus_errors
+            .errors
             .get(0)
             .expect("the error in result should exist");
 
@@ -1503,10 +1509,7 @@ mod byte_array {
         let result = data_contract_validator
             .validate(&raw_data_contract)
             .expect("validation result should be returned");
-        let validation_error = result
-            .consensus_errors
-            .get(0)
-            .expect("validation error should exist");
+        let validation_error = result.errors.get(0).expect("validation error should exist");
 
         assert_eq!(1004, validation_error.code());
     }
@@ -1660,7 +1663,7 @@ mod indices {
             .validate(&raw_data_contract)
             .expect("validation result should be returned");
         let validation_error = result
-            .consensus_errors
+            .errors
             .get(0)
             .expect("the validation error should be returned");
         let index_error = get_index_error(validation_error);
@@ -1697,7 +1700,7 @@ mod indices {
             .validate(&raw_data_contract)
             .expect("validation result should be returned");
         let validation_error = result
-            .consensus_errors
+            .errors
             .get(0)
             .expect("the validation error should be returned");
         let basic_error = get_basic_error(validation_error);
@@ -2029,10 +2032,7 @@ mod indices {
         let result = data_contract_validator
             .validate(&raw_data_contract)
             .expect("validation result should be returned");
-        let error = result
-            .consensus_errors
-            .get(0)
-            .expect("the error should be present");
+        let error = result.errors.get(0).expect("the error should be present");
         let index_error = get_index_error(error);
 
         assert_eq!(1017, index_error.get_code());
@@ -2076,10 +2076,7 @@ mod indices {
         let result = data_contract_validator
             .validate(&raw_data_contract)
             .expect("validation result should be returned");
-        let error = result
-            .consensus_errors
-            .get(0)
-            .expect("the error should be present");
+        let error = result.errors.get(0).expect("the error should be present");
         let index_error = get_index_error(error);
 
         assert_eq!(1015, index_error.get_code());
@@ -2116,10 +2113,7 @@ mod indices {
         let result = data_contract_validator
             .validate(&raw_data_contract)
             .expect("validation result should be returned");
-        let error = result
-            .consensus_errors
-            .get(0)
-            .expect("the error should be present");
+        let error = result.errors.get(0).expect("the error should be present");
         let index_error = get_index_error(error);
 
         assert_eq!(1016, index_error.get_code());
@@ -2170,10 +2164,7 @@ mod indices {
         let result = data_contract_validator
             .validate(&raw_data_contract)
             .expect("validation result should be returned");
-        let error = result
-            .consensus_errors
-            .get(0)
-            .expect("the error should be present");
+        let error = result.errors.get(0).expect("the error should be present");
         let index_error = get_index_error(error);
 
         assert_eq!(1013, index_error.get_code());
@@ -2228,10 +2219,7 @@ mod indices {
         let result = data_contract_validator
             .validate(&raw_data_contract)
             .expect("validation result should be returned");
-        let error = result
-            .consensus_errors
-            .get(0)
-            .expect("the error should be present");
+        let error = result.errors.get(0).expect("the error should be present");
         let index_error = get_index_error(error);
 
         assert_eq!(1013, index_error.get_code());
@@ -2441,10 +2429,7 @@ mod indices {
         let result = data_contract_validator
             .validate(&raw_data_contract)
             .expect("validation result should be returned");
-        let error = result
-            .consensus_errors
-            .get(0)
-            .expect("the error should be present");
+        let error = result.errors.get(0).expect("the error should be present");
         let index_error = get_index_error(error);
 
         assert_eq!(1013, index_error.get_code());
@@ -2480,10 +2465,7 @@ mod indices {
         let result = data_contract_validator
             .validate(&raw_data_contract)
             .expect("validation result should be returned");
-        let error = result
-            .consensus_errors
-            .get(0)
-            .expect("the error should be present");
+        let error = result.errors.get(0).expect("the error should be present");
         let index_error = get_index_error(error);
 
         assert_eq!(1010, index_error.get_code());
@@ -2581,7 +2563,7 @@ mod indices {
                 .validate(&cloned_data_contract)
                 .expect("should return validation result");
 
-            let index_error = get_index_error(&result.errors()[0]);
+            let index_error = get_index_error(&result.errors[0]);
             assert_eq!(1016, index_error.get_code());
             match index_error {
                 IndexError::UndefinedIndexPropertyError(err) => {
@@ -2860,7 +2842,7 @@ fn should_return_invalid_result_with_circular_ref_pointer() {
         .validate(&raw_data_contract)
         .expect("validation result should be returned");
     let validation_error = result
-        .consensus_errors
+        .errors
         .get(0)
         .expect("the validation error should exist");
     let basic_error = get_basic_error(validation_error);
@@ -2894,7 +2876,7 @@ fn should_return_invalid_result_if_indexed_string_property_missing_max_length_co
         .expect("validation result should be returned");
 
     let validation_error = result
-        .consensus_errors
+        .errors
         .get(0)
         .expect("the validation error should exist");
     let index_error = get_index_error(validation_error);
@@ -2998,7 +2980,7 @@ mod indexed_array {
             .validate(&raw_data_contract)
             .expect("validation result should be returned");
         let validation_error = result
-            .consensus_errors
+            .errors
             .get(0)
             .expect("the validation error should exist");
         let index_error = get_index_error(validation_error);
@@ -3032,7 +3014,7 @@ mod indexed_array {
             .validate(&raw_data_contract)
             .expect("validation result should be returned");
         let validation_error = result
-            .consensus_errors
+            .errors
             .get(0)
             .expect("the validation error should exist");
         let index_error = get_index_error(validation_error);

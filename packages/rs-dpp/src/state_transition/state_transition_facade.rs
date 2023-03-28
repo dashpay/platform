@@ -27,7 +27,7 @@ use crate::state_transition::validation::validate_state_transition_identity_sign
 use crate::state_transition::validation::validate_state_transition_key_signature::StateTransitionKeySignatureValidator;
 use crate::state_transition::validation::validate_state_transition_state::StateTransitionStateValidator;
 use crate::validation::{
-    AsyncDataValidator, AsyncDataValidatorWithContext, SimpleValidationResult,
+    AsyncDataValidator, AsyncDataValidatorWithContext, SimpleValidationResult, ValidationResult,
 };
 use crate::version::ProtocolVersionValidator;
 
@@ -284,7 +284,7 @@ where
         state_transition_json: &Value,
         execution_context: &StateTransitionExecutionContext,
         options: ValidateOptions,
-    ) -> Result<Option<StateTransitionAction>, SimpleValidationResult> {
+    ) -> Result<ValidationResult<Option<StateTransitionAction>>, ProtocolError> {
         if options.basic {
             self.validate_basic(state_transition_json, execution_context)
                 .await?;
@@ -299,9 +299,9 @@ where
         }
 
         if options.state {
-            self.validate_state(state_transition).await.map(Some)
+            Ok(self.validate_state(state_transition).await?.map(Some))
         } else {
-            Ok(None)
+            Ok(ValidationResult::default())
         }
     }
 
@@ -379,7 +379,7 @@ where
     pub async fn validate_state(
         &self,
         state_transition: &StateTransition,
-    ) -> Result<StateTransitionAction, SimpleValidationResult> {
+    ) -> Result<ValidationResult<StateTransitionAction>, ProtocolError> {
         self.state_validator.validate(state_transition).await
     }
 }

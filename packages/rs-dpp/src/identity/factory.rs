@@ -128,7 +128,7 @@ where
 
             if !result.is_valid() {
                 return Err(ProtocolError::InvalidIdentityError {
-                    errors: result.consensus_errors,
+                    errors: result.errors,
                     raw_identity,
                 });
             }

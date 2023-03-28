@@ -299,14 +299,6 @@ mod test {
             .await
             .expect("the transaction output should be returned");
 
-        let result = fetch_asset_lock_transaction_output(
-            &state_repository_mock,
-            asset_lock_proof,
-            &execution_context,
-        )
-        .await
-        .expect("the transaction output should be returned");
-
         assert_eq!(
             TxOut {
                 value: 1000,
