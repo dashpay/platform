@@ -8,6 +8,8 @@ const {
 
 const fs = require('fs');
 
+const crypto = require('crypto');
+
 const findMyWay = require('find-my-way');
 
 const { AsyncLocalStorage } = require('node:async_hooks');
@@ -724,7 +726,7 @@ function createDIContainer(blsSignatures, dppWasm, options) {
     ) => unserializeStateTransitionFactory(transactionalDpp, noopLogger)).singleton(),
 
     dpp: asFunction((DashPlatformProtocol, stateRepository, dppOptions, blsSignatures) => (
-      new DashPlatformProtocol(blsSignatures, stateRepository)
+      new DashPlatformProtocol(blsSignatures, stateRepository, { generate: () => Buffer.alloc(32) })
     )).singleton(),
 
     transactionalDpp: asFunction((
@@ -733,7 +735,7 @@ function createDIContainer(blsSignatures, dppWasm, options) {
       dppOptions,
       blsSignatures,
     ) => (
-      new DashPlatformProtocol(blsSignatures, transactionalStateRepository)
+      new DashPlatformProtocol(blsSignatures, transactionalStateRepository, { generate: () =>  Buffer.alloc(32) })
     )).singleton(),
   });
 
