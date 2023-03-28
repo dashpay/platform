@@ -435,14 +435,18 @@ module.exports = {
     return configFile;
   },
   '0.24.0-dev.14': (configFile) => {
-    configFile.configs.base.platform.drive.tenderdash.genesis = systemConfigs.base.platform
-      .drive.tenderdash.genesis;
+    if (configFile.configs.base) {
+      configFile.configs.base.platform.drive.tenderdash.genesis = systemConfigs.base.platform
+        .drive.tenderdash.genesis;
 
-    configFile.configs.base.platform.drive.tenderdash.genesis = systemConfigs.base.platform
-      .drive.tenderdash.genesis;
+      configFile.configs.base.platform.drive.tenderdash.genesis = systemConfigs.base.platform
+        .drive.tenderdash.genesis;
+    }
 
-    configFile.configs.local.platform.drive.abci.validatorSet.llmqType = systemConfigs.local
-      .platform.drive.abci.validatorSet.llmqType;
+    if (configFile.configs.local) {
+      configFile.configs.local.platform.drive.abci.validatorSet.llmqType = systemConfigs.local
+        .platform.drive.abci.validatorSet.llmqType;
+    }
 
     Object.entries(configFile.configs)
       .forEach(([, config]) => {
