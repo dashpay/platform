@@ -19,7 +19,6 @@ use crate::{
 };
 
 use super::{
-    fee::calculate_state_transition_fee::calculate_state_transition_fee,
     state_transition_execution_context::StateTransitionExecutionContext, StateTransition,
     StateTransitionType,
 };
@@ -54,10 +53,6 @@ pub trait StateTransitionLike:
     fn get_signature(&self) -> &BinaryData;
     /// set a new signature
     fn set_signature(&mut self, signature: BinaryData);
-    /// Calculates the ST fee in credits
-    fn calculate_fee(&self) -> i64 {
-        calculate_state_transition_fee(self)
-    }
     /// get modified ids list
     fn get_modified_data_ids(&self) -> Vec<Identifier>;
 

@@ -329,11 +329,6 @@ impl DocumentsBatchTransitionWasm {
         self.0.set_signature(BinaryData::new(signature))
     }
 
-    #[wasm_bindgen(js_name=calculateFee)]
-    pub fn calculate_fee(&self) -> i64 {
-        self.0.calculate_fee()
-    }
-
     #[wasm_bindgen(js_name=isDocumentStateTransition)]
     pub fn is_document_state_transition(&self) -> bool {
         self.0.is_document_state_transition()
