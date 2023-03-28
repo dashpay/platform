@@ -23,7 +23,11 @@ class ConfigBaseCommand extends BaseCommand {
       const defaultConfigName = configFile.getDefaultConfigName();
 
       if (defaultConfigName === null) {
-        throw new Error('Default config is not set. Please use \'--config\' option or set default config');
+        throw new Error(`Default config is not set.
+        
+You probably need to setup a node with the 'dashmate setup' command first.
+
+You also can use the '--config' option or set the default config with 'dashmate config default'`);
       }
 
       if (!configFile.isConfigExists(defaultConfigName)) {
