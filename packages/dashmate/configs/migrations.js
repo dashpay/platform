@@ -477,18 +477,23 @@ module.exports = {
         if (config.platform) {
           config.platform.enable = name !== 'mainnet';
         }
+
+        if (systemConfigs[name]) {
+          config.core.p2p.port = systemConfigs[name].core.p2p.port;
+          config.core.rpc.port = systemConfigs[name].core.rpc.port;
+
+          if (config.platform) {
+            config.platform.dapi.envoy.http.port = systemConfigs[name]
+              .platform.dapi.envoy.http.port;
+
+            config.platform.drive.tenderdash.p2p.port = systemConfigs[name]
+              .platform.drive.tenderdash.p2p.port;
+
+            config.platform.drive.tenderdash.rpc.port = systemConfigs[name]
+              .platform.drive.tenderdash.rpc.port;
+          }
+        }
       });
-
-    if (configFile.configs.testnet.platform) {
-      configFile.configs.testnet.platform.dapi.envoy.http.port = systemConfigs.testnet
-        .platform.dapi.envoy.http.port;
-
-      configFile.configs.testnet.platform.drive.tenderdash.p2p.port = systemConfigs.testnet
-        .platform.drive.tenderdash.p2p.port;
-    }
-
-    configFile.configs.base.platform.dapi.envoy.http.port = systemConfigs.base
-      .platform.dapi.envoy.http.port;
 
     return configFile;
   },

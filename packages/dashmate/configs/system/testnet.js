@@ -61,6 +61,9 @@ module.exports = lodashMerge({}, baseConfig, {
           ],
           port: 36656,
         },
+        rpc: {
+          port: 36657,
+        },
         genesis: {
           genesis_time: '2021-07-22T12:57:05.429Z',
           chain_id: 'dash-testnet-17',

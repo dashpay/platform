@@ -164,8 +164,8 @@ function setupLocalPresetTaskFactory(
                 const nodeIndex = i + 1;
 
                 config.set('group', 'local');
-                config.set('core.p2p.port', 20001 + (i * 100));
-                config.set('core.rpc.port', 20002 + (i * 100));
+                config.set('core.p2p.port', config.get('core.p2p.port') + (i * 100));
+                config.set('core.rpc.port', config.get('core.rpc.port') + (i * 100));
                 config.set('externalIp', hostDockerInternalIp);
 
                 config.set('docker.network.subnet', `172.24.${nodeIndex}.0/24`);
@@ -199,9 +199,9 @@ function setupLocalPresetTaskFactory(
                   config.set('platform.drive.tenderdash.node.id', id);
                   config.set('platform.drive.tenderdash.node.key', key);
 
-                  config.set('platform.dapi.envoy.http.port', 3000 + (i * 100));
-                  config.set('platform.drive.tenderdash.p2p.port', 26656 + (i * 100));
-                  config.set('platform.drive.tenderdash.rpc.port', 26657 + (i * 100));
+                  config.set('platform.dapi.envoy.http.port', config.get('platform.dapi.envoy.http.port') + (i * 100));
+                  config.set('platform.drive.tenderdash.p2p.port', config.get('platform.drive.tenderdash.p2p.port') + (i * 100));
+                  config.set('platform.drive.tenderdash.rpc.port', config.get('platform.drive.tenderdash.rpc.port') + (i * 100));
                   config.set('platform.drive.tenderdash.moniker', config.name);
 
                   // Setup logs

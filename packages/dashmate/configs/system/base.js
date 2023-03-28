@@ -40,11 +40,11 @@ module.exports = {
       image: 'dashpay/dashd:19.0.0-rc.7',
     },
     p2p: {
-      port: 20001,
+      port: 9999,
       seeds: [],
     },
     rpc: {
-      port: 20002,
+      port: 9998,
       user: 'dashrpc',
       password: 'rpcpassword',
       allowIps: [
