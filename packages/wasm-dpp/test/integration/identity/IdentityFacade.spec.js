@@ -1,3 +1,4 @@
+const crypto = require('crypto');
 const getIdentityFixture = require('@dashevo/dpp/lib/test/fixtures/getIdentityFixture');
 
 const createStateRepositoryMock = require('@dashevo/dpp/lib/test/mocks/createStateRepositoryMock');
@@ -43,7 +44,12 @@ describe('IdentityFacade', () => {
       height: 42,
     });
 
-    dpp = new DashPlatformProtocol(getBlsAdapterMock(), stateRepositoryMock, 1);
+    dpp = new DashPlatformProtocol(
+      getBlsAdapterMock(),
+      stateRepositoryMock,
+      { generate: () => crypto.randomBytes(32) },
+      1,
+    );
 
     const chainAssetLockProofJS = getChainAssetLockProofFixture();
     const instantAssetLockProofJS = getInstantAssetLockProofFixture();

@@ -1,33 +1,37 @@
-use std::borrow::Borrow;
+use std::collections::HashMap;
 
-use self::{
-    constants::FEE_MULTIPLIER,
-    operations::{Operation, OperationLike},
-};
+use serde::{Deserialize, Serialize};
 
-pub mod calculate_state_transition_fee;
+use crate::prelude::Identifier;
+
+pub mod calculate_operation_fees;
+pub mod calculate_state_transition_fee_factory;
+pub mod calculate_state_transition_fee_from_operations_factory;
 pub mod constants;
 pub mod operations;
 
-#[derive(Default)]
-pub struct Fees {
-    storage: i64,
-    processing: i64,
+pub type Credits = u64;
+
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
+pub struct FeeResult {
+    pub storage_fee: Credits,
+    pub processing_fee: Credits,
+    pub fee_refunds: Vec<Refunds>,
+    pub total_refunds: Credits,
+    pub desired_amount: Credits,
+    pub required_amount: Credits,
 }
 
-pub fn calculate_operations_fees(
-    operations: impl IntoIterator<Item = impl Borrow<Operation>>,
-) -> Fees {
-    let mut fees = Fees::default();
+#[derive(Default)]
+pub struct DummyFeesResult {
+    storage: Credits,
+    processing: Credits,
+    fee_refunds: Vec<Refunds>,
+}
 
-    for operation in operations.into_iter() {
-        let operation = operation.borrow();
-        fees.processing += operation.get_processing_cost();
-        fees.storage += operation.get_storage_cost();
-    }
-
-    fees.storage *= FEE_MULTIPLIER;
-    fees.processing *= FEE_MULTIPLIER;
-
-    fees
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename = "camelCase")]
+pub struct Refunds {
+    pub identifier: Identifier,
+    pub credits_per_epoch: HashMap<String, Credits>,
 }

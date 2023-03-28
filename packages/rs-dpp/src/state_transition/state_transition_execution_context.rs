@@ -47,8 +47,10 @@ impl StateTransitionExecutionContext {
         inner
             .actual_operations
             .iter()
-            .copied()
-            .chain(inner.dry_run_operations.iter().copied())
+            // TODO remove cloning
+            .cloned()
+            // TODO remove cloning
+            .chain(inner.dry_run_operations.iter().cloned())
             .collect()
     }
 
