@@ -1,10 +1,10 @@
 const DocumentJs = require('@dashevo/dpp/lib/document/Document');
 
+const { generate: generateEntropy } = require('@dashevo/dpp/lib/util/entropyGenerator');
 const getDataContractFixture = require('@dashevo/dpp/lib/test/fixtures/getDataContractFixture');
 const getDocumentsFixture = require('@dashevo/dpp/lib/test/fixtures/getDocumentsFixture');
-const getDocumentTransitionsFixture = require('@dashevo/dpp/lib/test/fixtures/getDocumentTransitionsFixture');
+const getDocumentTransitionsFixture = require('../../../../../../../lib/test/fixtures/getDocumentTransitionsFixture');
 
-const { generate: generateEntropy } = require('@dashevo/dpp/lib/util/entropyGenerator');
 const { default: loadWasmDpp } = require('../../../../../../../dist');
 
 let DataContract;

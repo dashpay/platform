@@ -70,7 +70,9 @@ highsubsidyblocks=500
 highsubsidyfactor=10
 llmqchainlocks=llmq_devnet
 llmqinstantsend=llmq_devnet
-llmqinstantsenddip0024=llmq_devnet_dip0024{{?}}
+llmqinstantsenddip0024=llmq_devnet_dip0024
+llmqplatform=llmq_devnet_platform{{?}}
+
 
 {{~it.core.p2p.seeds :seed}}
 addnode={{=seed.host}}:{{=seed.port}}{{~}}
