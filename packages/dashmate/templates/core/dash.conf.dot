@@ -22,8 +22,10 @@ rpcthreads=16
 listen=1
 dnsseed=0
 allowprivatenet=0
+{{?it.externalIp }}
 externalip={{=it.externalIp}}
-{{? it.network === 'local'}}
+{{?}}
+{{? it.network === 'local' && it.externalIp }}
 whitelist={{=it.externalIp}}
 {{?}}
 
