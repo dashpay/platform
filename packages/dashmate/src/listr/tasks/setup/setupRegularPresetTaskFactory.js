@@ -1,18 +1,22 @@
 const { Listr } = require('listr2');
-const fs = require('fs');
 
-const publicIp = require('public-ip');
-
-const BlsSignatures = require('@dashevo/bls');
-
-const { PrivateKey } = require('@dashevo/dashcore-lib');
+const chalk = require('chalk');
 
 const {
-  SSL_PROVIDERS,
-  NODE_TYPES,
   NODE_TYPE_MASTERNODE,
-  PRESET_MAINNET,
+  NODE_TYPE_HPMN,
+  NODE_TYPE_FULLNODE,
 } = require('../../../constants');
+
+const systemConfigs = require('../../../../configs/system');
+
+const {
+  NODE_TYPE_NAMES,
+  getNodeTypeByName,
+  isNodeTypeNameHighPerformance,
+} = require('./nodeTypes');
+
+const Config = require('../../../config/Config');
 
 /**
  * @param {ConfigFile} configFile
@@ -23,6 +27,9 @@ const {
  * @param {obtainZeroSSLCertificateTask} obtainZeroSSLCertificateTask
  * @param {saveCertificateTask} saveCertificateTask
  * @param {listCertificates} listCertificates
+ * @param {registerMasternodeGuideTask} registerMasternodeGuideTask
+ * @param {configureNodeTask} configureNodeTask
+ * @param {configureSSLCertificateTask} configureSSLCertificateTask
  */
 function setupRegularPresetTaskFactory(
   configFile,
@@ -33,6 +40,9 @@ function setupRegularPresetTaskFactory(
   obtainZeroSSLCertificateTask,
   saveCertificateTask,
   listCertificates,
+  registerMasternodeGuideTask,
+  configureNodeTask,
+  configureSSLCertificateTask,
 ) {
   /**
    * @typedef {setupRegularPresetTask}
@@ -41,204 +51,109 @@ function setupRegularPresetTaskFactory(
   function setupRegularPresetTask() {
     return new Listr([
       {
-        task: (ctx) => {
-          ctx.config = configFile.getConfig(ctx.preset);
-        },
-      },
-      {
-        title: 'Set node type',
+        title: 'Node type',
         task: async (ctx, task) => {
-          if (ctx.nodeType === undefined) {
-            ctx.nodeType = await task.prompt([
-              {
-                type: 'select',
-                message: 'Select node type',
-                choices: NODE_TYPES,
-                initial: NODE_TYPE_MASTERNODE,
-              },
-            ]);
+          const nodeTypeName = await task.prompt([
+            {
+              type: 'select',
+              // Keep this order, because each item references the text in the previous item
+              header: `  The Dash network consists of several different node types:
+    Full node                   - Host the full Dash blockchain (no collateral)
+    Masternode                  - Full node features, plus Core services such as
+                                  ChainLocks and InstantSend (1000 DASH collateral)
+    High-performance full node  - Full node features, plus host a full copy of the
+                                  Platform blockchain (no collateral)
+    High-performance masternode - Masternode features, plus Platform services such
+                                  as DAPI and Drive (4000 DASH collateral)\n`,
+              message: 'Select node type',
+              choices: [
+                { name: NODE_TYPE_NAMES.FULLNODE },
+                { name: NODE_TYPE_NAMES.MASTERNODE, hint: '1000 DASH collateral' },
+                { name: NODE_TYPE_NAMES.HP_FULLNODE },
+                { name: NODE_TYPE_NAMES.HP_MASTERNODE, hint: '4000 DASH collateral' },
+              ],
+              initial: NODE_TYPE_NAMES.MASTERNODE,
+            },
+          ]);
+
+          ctx.nodeType = getNodeTypeByName(nodeTypeName);
+          ctx.isHP = isNodeTypeNameHighPerformance(nodeTypeName);
+
+          ctx.config = new Config(ctx.preset, systemConfigs[ctx.preset]);
+
+          if (!ctx.isHP) {
+            delete ctx.config.remove('platform');
           }
 
           ctx.config.set('core.masternode.enable', ctx.nodeType === NODE_TYPE_MASTERNODE);
 
           // eslint-disable-next-line no-param-reassign
-          task.output = `Selected ${ctx.nodeType} type\n`;
+          task.output = nodeTypeName;
         },
-        options: { persistentOutput: true },
+        options: {
+          persistentOutput: true,
+        },
       },
       {
-        title: 'Configure external IP address',
-        task: async (ctx, task) => {
-          if (ctx.externalIp === undefined) {
-            ctx.externalIp = await task.prompt([
-              {
-                type: 'input',
-                message: 'Enter node public IP (Enter to accept detected IP)',
-                initial: () => publicIp.v4(),
-              },
-            ]);
-          }
-
-          ctx.config.set('externalIp', ctx.externalIp);
-
-          // eslint-disable-next-line no-param-reassign
-          task.output = `${ctx.externalIp} is set\n`;
-        },
-        options: { persistentOutput: true },
-      },
-      {
-        title: 'Set masternode operator private key',
         enabled: (ctx) => ctx.nodeType === NODE_TYPE_MASTERNODE,
         task: async (ctx, task) => {
-          if (ctx.operatorBlsPrivateKey === undefined) {
-            const { privateKey: generatedPrivateKeyHex } = await generateBlsKeys();
-
-            ctx.operatorBlsPrivateKey = await task.prompt([
-              {
-                type: 'input',
-                message: 'Enter operator BLS private key (Enter to accept generated key)',
-                initial: generatedPrivateKeyHex,
-              },
-            ]);
+          let header;
+          if (ctx.isHP === NODE_TYPE_HPMN) {
+            header = `  If your HP masternode is already registered, we will import your masternode
+  operator and platform node keys to configure an HP masternode. Please make
+  sure your IP address has not changed, otherwise you will need to create a
+  provider update service transaction.\n
+  If you are registering a new HP masternode, dashmate will provide more
+  information and help you to generate the necessary keys.\n`;
+          } else {
+            header = `  If your masternode is already registered, we will import your masternode
+  operator key to configure a masternode. Please make sure your IP address has
+  not changed, otherwise you will need to create a provider update service
+  transaction.\n
+  If you are registering a new masternode, dashmate will provide more
+  information and help you to generate the necessary keys.\n`;
           }
 
-          const operatorBlsPrivateKeyBuffer = Buffer.from(ctx.operatorBlsPrivateKey, 'hex');
-
-          const blsSignatures = await BlsSignatures();
-          const { PrivateKey: BlsPrivateKey } = blsSignatures;
-
-          const privateKey = BlsPrivateKey.fromBytes(operatorBlsPrivateKeyBuffer, true);
-          const publicKey = privateKey.getG1();
-          const publicKeyHex = Buffer.from(publicKey.serialize()).toString('hex');
-
-          ctx.config.set('core.masternode.operator.privateKey', ctx.operatorBlsPrivateKey);
-
-          ctx.operator = {
-            publicKey: publicKeyHex,
-          };
-
-          privateKey.delete();
-          publicKey.delete();
-
-          // eslint-disable-next-line no-param-reassign
-          task.output = `BLS public key: ${publicKeyHex}\nBLS private key: ${ctx.operatorBlsPrivateKey}`;
+          ctx.isMasternodeRegistered = await task.prompt({
+            type: 'toggle',
+            header,
+            message: 'Is your masternode already registered?',
+            enabled: 'Yes',
+            disabled: 'No',
+          });
         },
-        options: { persistentOutput: true },
       },
       {
-        title: 'Register masternode',
-        enabled: (ctx) => (
-          ctx.nodeType === NODE_TYPE_MASTERNODE
-          && ctx.fundingPrivateKeyString !== undefined
-        ),
-        task: (ctx) => {
-          if (ctx.preset === PRESET_MAINNET) {
-            throw new Error('For your own security, this tool will not process mainnet private keys. You should consider the private key you entered to be compromised.');
-          }
-
-          const fundingPrivateKey = new PrivateKey(ctx.fundingPrivateKeyString, ctx.preset);
-          ctx.fundingAddress = fundingPrivateKey.toAddress(ctx.preset).toString();
-
-          // Write configs
-          const configFiles = renderServiceTemplates(ctx.config);
-          writeServiceConfigs(ctx.config.getName(), configFiles);
-
-          return registerMasternodeTask(ctx.config);
-        },
-        options: { persistentOutput: true },
+        enabled: (ctx) => !ctx.isMasternodeRegistered && ctx.nodeType === NODE_TYPE_MASTERNODE,
+        task: () => registerMasternodeGuideTask(),
       },
       {
-        title: 'Set default config',
+        enabled: (ctx) => ctx.isMasternodeRegistered || ctx.nodeType === NODE_TYPE_FULLNODE,
+        task: () => configureNodeTask(),
+      },
+      {
+        enabled: (ctx) => ctx.config && ctx.config.isPlatformEnabled(),
+        task: () => configureSSLCertificateTask(),
+      },
+      {
         task: (ctx, task) => {
+          configFile.setConfig(ctx.config);
           configFile.setDefaultConfigName(ctx.preset);
 
           // eslint-disable-next-line no-param-reassign
-          task.output = `${ctx.config.getName()} set as default config\n`;
+          task.output = chalk`Node configuration completed successfully!
+
+            You can now run {bold.cyanBright dashmate start} to start your node, followed by
+            {bold.cyanBright dashmate status} for a node health status overview.
+
+            Run {bold.cyanBright dashmate --help} or {bold.cyanBright dashmate <command> --help} for quick help on how
+            to use dashmate to manage your node.\n`;
         },
-      },
-      {
-        title: 'Set SSL certificate',
-        enabled: (ctx) => !ctx.certificateProvider && ctx.config.isPlatformEnabled(),
-        task: async (ctx, task) => {
-          const sslProviders = [...SSL_PROVIDERS].filter((item) => item !== 'selfSigned');
-
-          ctx.certificateProvider = await task.prompt({
-            type: 'select',
-            message: 'Select SSL certificate provider',
-            choices: sslProviders,
-            initial: sslProviders[0],
-          });
-
-          ctx.config.set('platform.dapi.envoy.ssl.provider', ctx.certificateProvider);
-        },
-      },
-      {
-        title: 'Obtain ZeroSSL certificate',
-        enabled: (ctx) => ctx.certificateProvider === 'zerossl' && ctx.config.isPlatformEnabled(),
-        task: async (ctx, task) => {
-          let apiKey = ctx.zeroSslApiKey;
-
-          if (!apiKey) {
-            apiKey = await task.prompt({
-              type: 'input',
-              message: 'Enter ZeroSSL API key',
-              validate: async (state) => {
-                try {
-                  await listCertificates(state);
-
-                  return true;
-                } catch (e) {
-                  // do nothing
-                }
-
-                return 'Please enter a valid ZeroSSL API key';
-              },
-            });
-          }
-
-          ctx.config.set('platform.dapi.envoy.ssl.providerConfigs.zerossl.apiKey', apiKey);
-
-          return obtainZeroSSLCertificateTask(ctx.config);
-        },
-      },
-      {
-        title: 'Set SSL certificate',
-        enabled: (ctx) => ctx.certificateProvider === 'manual' && ctx.config.isPlatformEnabled(),
-        task: async (ctx, task) => {
-          if (!ctx.sslCertificateFilePath) {
-            ctx.sslCertificateFilePath = await task.prompt({
-              type: 'input',
-              message: 'Enter the path to your certificate chain file',
-              validate: (state) => {
-                if (fs.existsSync(state)) {
-                  return true;
-                }
-
-                return 'Please enter a valid path to your certificate chain file';
-              },
-            });
-          }
-
-          if (!ctx.sslCertificatePrivateKeyFilePath) {
-            ctx.sslCertificatePrivateKeyFilePath = await task.prompt({
-              type: 'input',
-              message: 'Enter the path to your private key file',
-              validate: (state) => {
-                if (fs.existsSync(state)) {
-                  return true;
-                }
-
-                return 'Please enter a valid path to your private key file';
-              },
-            });
-          }
-
-          ctx.certificate = fs.readFileSync(ctx.sslCertificateFilePath, 'utf8');
-          ctx.keyPair = {
-            privateKey: fs.readFileSync(ctx.sslCertificatePrivateKeyFilePath, 'utf8'),
-          };
-
-          return saveCertificateTask(ctx.config);
+        options: {
+          persistentOutput: true,
+          rendererOptions: {
+            bottomBar: true,
+          },
         },
       },
     ]);

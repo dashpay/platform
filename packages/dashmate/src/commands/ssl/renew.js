@@ -10,12 +10,7 @@ class RenewCommand extends ConfigBaseCommand {
    * @param {Object} args
    * @param {Object} flags
    * @param {Config} config
-   * @param {createCertificate} createCertificate
-   * @param {verifyDomain} verifyDomain
-   * @param {downloadCertificate} downloadCertificate
-   * @param {listCertificates} listCertificates
-   * @param {saveCertificateTask} saveCertificateTask
-   * @param {VerificationServer} verificationServer
+   * @param {renewZeroSSLCertificateTask} renewZeroSSLCertificateTask
    * @return {Promise<void>}
    */
   async runWithDependencies(
@@ -50,9 +45,9 @@ class RenewCommand extends ConfigBaseCommand {
   }
 }
 
-RenewCommand.description = `Renew SSL Cert
-...
-Renew SSL Cert using ZeroSLL API Key
+RenewCommand.description = `Renew SSL certificate
+
+Renew SSL certificate using ZeroSSL API Key
 `;
 
 RenewCommand.flags = {

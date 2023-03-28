@@ -1,7 +1,7 @@
 const getOverviewScopeFactory = require('../../../../src/status/scopes/overview');
-const MasternodeStateEnum = require('../../../../src/enums/masternodeState');
-const DockerStatusEnum = require('../../../../src/enums/dockerStatus');
-const ServiceStatusEnum = require('../../../../src/enums/serviceStatus');
+const MasternodeStateEnum = require('../../../../src/status/enums/masternodeState');
+const DockerStatusEnum = require('../../../../src/status/enums/dockerStatus');
+const ServiceStatusEnum = require('../../../../src/status/enums/serviceStatus');
 
 describe('getOverviewScopeFactory', () => {
   describe('#getOverviewScope', () => {
@@ -17,7 +17,11 @@ describe('getOverviewScopeFactory', () => {
       mockGetMasternodeScope = this.sinon.stub();
       mockGetPlatformScope = this.sinon.stub();
 
-      config = { get: this.sinon.stub(), toEnvs: this.sinon.stub() };
+      config = {
+        get: this.sinon.stub(),
+        toEnvs: this.sinon.stub(),
+        isPlatformEnabled: this.sinon.stub(),
+      };
 
       getOverviewScope = getOverviewScopeFactory(mockGetCoreScope,
         mockGetMasternodeScope, mockGetPlatformScope);
@@ -70,6 +74,7 @@ describe('getOverviewScopeFactory', () => {
     });
 
     it('should not load if masternode or platform disabled ', async () => {
+      config.isPlatformEnabled.returns(false);
       config.get.withArgs('core.masternode.enable').returns(false);
       config.get.withArgs('network').returns('mainnet');
 

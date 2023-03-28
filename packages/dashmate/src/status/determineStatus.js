@@ -1,6 +1,6 @@
-const DockerStatusEnum = require('../enums/dockerStatus');
-const ServiceStatusEnum = require('../enums/serviceStatus');
-const MasternodeSyncAssetEnum = require('../enums/masternodeSyncAsset');
+const DockerStatusEnum = require('./enums/dockerStatus');
+const ServiceStatusEnum = require('./enums/serviceStatus');
+const MasternodeSyncAssetEnum = require('./enums/masternodeSyncAsset');
 
 module.exports = {
   /**
