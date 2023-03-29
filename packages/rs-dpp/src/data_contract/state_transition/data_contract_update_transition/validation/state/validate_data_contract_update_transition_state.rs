@@ -16,6 +16,7 @@ use crate::{
     state_transition::StateTransitionLike,
     ProtocolError,
 };
+use crate::data_contract::errors::DataContractNotPresentError;
 
 pub struct DataContractUpdateTransitionStateValidator<SR>
 where
@@ -73,9 +74,7 @@ pub async fn validate_data_contract_update_transition_state(
 
     let existing_data_contract: DataContract = match maybe_existing_data_contract {
         None => {
-            let err = BasicError::DataContractNotPresent {
-                data_contract_id: state_transition.data_contract.id,
-            };
+            let err = BasicError::DataContractNotPresent(DataContractNotPresentError::new(state_transition.data_contract.id));
             result.add_error(err);
             return Ok(result);
         }

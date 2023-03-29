@@ -11,6 +11,7 @@ use crate::{
     state_transition::state_transition_execution_context::StateTransitionExecutionContext,
     ProtocolError,
 };
+use crate::data_contract::errors::DataContractNotPresentError;
 
 use crate::document::extended_document::property_names;
 use crate::validation::ValidationResult;
@@ -85,9 +86,7 @@ pub async fn fetch_and_validate_data_contract(
         validation_result.set_data(data_contract);
     } else {
         let consensus_error =
-            ConsensusError::BasicError(Box::new(BasicError::DataContractNotPresent {
-                data_contract_id,
-            }));
+            ConsensusError::BasicError(Box::new(BasicError::DataContractNotPresent(DataContractNotPresentError::new(data_contract_id))));
         validation_result.add_error(consensus_error);
     }
 

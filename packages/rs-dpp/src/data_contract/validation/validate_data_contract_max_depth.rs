@@ -4,6 +4,7 @@ use std::collections::BTreeSet;
 use crate::consensus::basic::data_contract::InvalidJsonSchemaRefError;
 use crate::validation::SimpleValidationResult;
 use crate::{consensus::basic::BasicError, ProtocolError};
+use crate::consensus::basic::data_contract_max_depth_exceed_error::DataContractMaxDepthExceedError;
 
 const MAX_DEPTH: usize = 500;
 
@@ -18,7 +19,7 @@ pub fn validate_data_contract_max_depth(data_contract_object: &Value) -> SimpleV
     };
 
     if schema_depth > MAX_DEPTH {
-        result.add_error(BasicError::DataContractMaxDepthExceedError(MAX_DEPTH));
+        result.add_error(BasicError::DataContractMaxDepthExceedError(DataContractMaxDepthExceedError::new(MAX_DEPTH)));
     }
     result
 }

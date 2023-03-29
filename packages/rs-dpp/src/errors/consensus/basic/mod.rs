@@ -19,3 +19,4 @@ pub mod basic_error;
 pub mod invalid_data_contract_version_error;
 pub mod invalid_identifier_error;
 pub mod state_transition;
+pub mod data_contract_max_depth_exceed_error;
