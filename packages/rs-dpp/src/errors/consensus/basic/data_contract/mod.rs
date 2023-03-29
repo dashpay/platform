@@ -1,6 +1,8 @@
 mod data_contract_have_new_unique_index_error;
 mod data_contract_immutable_properties_update_error;
 mod data_contract_invalid_index_definition_update_error;
+pub mod data_contract_max_depth_exceed_error;
+mod data_contract_not_present_error;
 mod data_contract_unique_indices_changed_error;
 mod duplicate_index_error;
 mod duplicate_index_name_error;
@@ -14,7 +16,6 @@ mod invalid_json_schema_ref_error;
 mod system_property_index_already_present_error;
 mod undefined_index_property_error;
 mod unique_indices_limit_reached_error;
-mod data_contract_not_present_error;
 
 pub use data_contract_have_new_unique_index_error::*;
 pub use data_contract_immutable_properties_update_error::*;

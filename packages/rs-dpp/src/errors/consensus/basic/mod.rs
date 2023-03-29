@@ -12,7 +12,6 @@ pub mod json_schema_error;
 pub mod unsupported_protocol_version_error;
 
 pub mod basic_error;
-pub mod data_contract_max_depth_exceed_error;
 pub mod invalid_data_contract_version_error;
 pub mod invalid_identifier_error;
 pub mod state_transition;
