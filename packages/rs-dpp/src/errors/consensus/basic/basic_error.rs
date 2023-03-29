@@ -1,3 +1,4 @@
+use jsonschema::ValidationError;
 use thiserror::Error;
 
 use crate::consensus::basic::data_contract::{
@@ -24,11 +25,9 @@ use crate::consensus::basic::identity::{
     IdentityAssetLockTransactionOutputNotFoundError, InvalidAssetLockProofCoreChainHeightError,
     InvalidAssetLockProofTransactionHeightError, InvalidAssetLockTransactionOutputReturnSizeError,
     InvalidIdentityAssetLockTransactionError, InvalidIdentityAssetLockTransactionOutputError,
-    InvalidIdentityCreditWithdrawalTransitionCoreFeeError,
-    InvalidIdentityCreditWithdrawalTransitionOutputScriptError, InvalidIdentityKeySignatureError,
-    InvalidIdentityPublicKeyDataError, InvalidIdentityPublicKeySecurityLevelError,
-    InvalidInstantAssetLockProofError, InvalidInstantAssetLockProofSignatureError,
-    MissingMasterPublicKeyError, NotImplementedIdentityCreditWithdrawalTransitionPoolingError,
+    InvalidIdentityKeySignatureError, InvalidIdentityPublicKeyDataError,
+    InvalidIdentityPublicKeySecurityLevelError, InvalidInstantAssetLockProofError,
+    InvalidInstantAssetLockProofSignatureError, MissingMasterPublicKeyError,
 };
 use crate::consensus::basic::invalid_data_contract_version_error::InvalidDataContractVersionError;
 use crate::consensus::basic::invalid_identifier_error::InvalidIdentifierError;
@@ -38,9 +37,10 @@ use crate::consensus::basic::state_transition::{
 use crate::consensus::basic::{
     IncompatibleProtocolVersionError, JsonSchemaError, UnsupportedProtocolVersionError,
 };
+use crate::consensus::ConsensusError;
+
 use crate::data_contract::errors::DataContractNotPresentError;
 use crate::data_contract::state_transition::errors::MissingDataContractIdError;
-use crate::prelude::*;
 
 #[derive(Error, Debug)]
 pub enum BasicError {
@@ -202,4 +202,112 @@ pub enum BasicError {
 
     #[error(transparent)]
     InvalidDataContractIdError(InvalidDataContractIdError),
+}
+
+impl From<IdentityAssetLockTransactionOutPointAlreadyExistsError> for BasicError {
+    fn from(err: IdentityAssetLockTransactionOutPointAlreadyExistsError) -> Self {
+        Self::IdentityAssetLockTransactionOutPointAlreadyExistsError(err)
+    }
+}
+
+impl From<InvalidIdentityAssetLockTransactionOutputError> for BasicError {
+    fn from(err: InvalidIdentityAssetLockTransactionOutputError) -> Self {
+        Self::InvalidIdentityAssetLockTransactionOutputError(err)
+    }
+}
+
+impl From<InvalidAssetLockTransactionOutputReturnSizeError> for BasicError {
+    fn from(err: InvalidAssetLockTransactionOutputReturnSizeError) -> Self {
+        Self::InvalidAssetLockTransactionOutputReturnSize(err)
+    }
+}
+
+impl From<IdentityAssetLockTransactionOutputNotFoundError> for BasicError {
+    fn from(err: IdentityAssetLockTransactionOutputNotFoundError) -> Self {
+        Self::IdentityAssetLockTransactionOutputNotFoundError(err)
+    }
+}
+
+impl From<InvalidIdentityAssetLockTransactionError> for BasicError {
+    fn from(err: InvalidIdentityAssetLockTransactionError) -> Self {
+        Self::InvalidIdentityAssetLockTransactionError(err)
+    }
+}
+
+impl From<InvalidInstantAssetLockProofError> for BasicError {
+    fn from(err: InvalidInstantAssetLockProofError) -> Self {
+        Self::InvalidInstantAssetLockProofError(err)
+    }
+}
+
+impl From<InvalidInstantAssetLockProofSignatureError> for BasicError {
+    fn from(err: InvalidInstantAssetLockProofSignatureError) -> Self {
+        Self::InvalidInstantAssetLockProofSignatureError(err)
+    }
+}
+
+impl From<IdentityAssetLockProofLockedTransactionMismatchError> for BasicError {
+    fn from(err: IdentityAssetLockProofLockedTransactionMismatchError) -> Self {
+        Self::IdentityAssetLockProofLockedTransactionMismatchError(err)
+    }
+}
+
+impl<'a> From<ValidationError<'a>> for BasicError {
+    fn from(validation_error: ValidationError<'a>) -> Self {
+        Self::JsonSchemaError(JsonSchemaError::from(validation_error))
+    }
+}
+
+impl From<JsonSchemaError> for BasicError {
+    fn from(json_schema_error: JsonSchemaError) -> Self {
+        Self::JsonSchemaError(json_schema_error)
+    }
+}
+
+impl From<UnsupportedProtocolVersionError> for BasicError {
+    fn from(error: UnsupportedProtocolVersionError) -> Self {
+        Self::UnsupportedProtocolVersionError(error)
+    }
+}
+
+impl From<IncompatibleProtocolVersionError> for BasicError {
+    fn from(error: IncompatibleProtocolVersionError) -> Self {
+        Self::IncompatibleProtocolVersionError(error)
+    }
+}
+
+impl From<DuplicatedIdentityPublicKeyIdError> for BasicError {
+    fn from(error: DuplicatedIdentityPublicKeyIdError) -> Self {
+        Self::DuplicatedIdentityPublicKeyBasicIdError(error)
+    }
+}
+
+impl From<InvalidIdentityPublicKeyDataError> for BasicError {
+    fn from(error: InvalidIdentityPublicKeyDataError) -> Self {
+        Self::InvalidIdentityPublicKeyDataError(error)
+    }
+}
+
+impl From<InvalidIdentityPublicKeySecurityLevelError> for BasicError {
+    fn from(error: InvalidIdentityPublicKeySecurityLevelError) -> Self {
+        Self::InvalidIdentityPublicKeySecurityLevelError(error)
+    }
+}
+
+impl From<DuplicatedIdentityPublicKeyError> for BasicError {
+    fn from(error: DuplicatedIdentityPublicKeyError) -> Self {
+        Self::DuplicatedIdentityPublicKeyBasicError(error)
+    }
+}
+
+impl From<MissingMasterPublicKeyError> for BasicError {
+    fn from(error: MissingMasterPublicKeyError) -> Self {
+        Self::MissingMasterPublicKeyError(error)
+    }
+}
+
+impl From<BasicError> for ConsensusError {
+    fn from(se: BasicError) -> Self {
+        Self::BasicError(Box::new(se))
+    }
 }

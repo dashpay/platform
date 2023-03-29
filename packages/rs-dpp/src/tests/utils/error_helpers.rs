@@ -2,7 +2,7 @@ use crate::validation::{SimpleValidationResult, ValidationResult};
 use crate::{
     consensus::{
         basic::{BasicError, IndexError, JsonSchemaError},
-        fee::FeeError,
+        fee_error::FeeError,
         signature::SignatureError,
         ConsensusError,
     },

@@ -1,5 +1,6 @@
+use crate::consensus::fee::fee_error::FeeError;
+use crate::consensus::signature::signature_error::SignatureError;
 use crate::consensus::state::state_error::StateError;
-use crate::consensus::{fee::FeeError, signature::SignatureError};
 use platform_value::Value;
 
 use crate::errors::{consensus::basic::BasicError, consensus::ConsensusError};
@@ -17,6 +18,7 @@ impl ErrorWithCode for ConsensusError {
             Self::SignatureError(e) => e.code(),
             Self::FeeError(e) => e.code(),
 
+            // TODO: What is that?
             #[cfg(test)]
             ConsensusError::TestConsensusError(_) => 1000,
             ConsensusError::ValueError(_) => 5000,

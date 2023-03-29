@@ -6,6 +6,7 @@ use crate::consensus::basic::identity::{
     NotImplementedIdentityCreditWithdrawalTransitionPoolingError,
 };
 use crate::consensus::state::identity::IdentityAlreadyExistsError;
+use crate::consensus::ConsensusError;
 use crate::prelude::{DocumentTransition, Revision};
 use crate::{identity::KeyID, prelude::Identifier};
 
@@ -140,4 +141,22 @@ pub enum StateError {
         document_transition: Option<DocumentTransition>,
         owner_id: Option<Identifier>,
     },
+}
+
+impl From<StateError> for ConsensusError {
+    fn from(se: StateError) -> Self {
+        Self::StateError(Box::new(se))
+    }
+}
+
+impl From<IdentityAlreadyExistsError> for StateError {
+    fn from(err: IdentityAlreadyExistsError) -> Self {
+        Self::IdentityAlreadyExistsError(err)
+    }
+}
+
+impl From<IdentityInsufficientBalanceError> for StateError {
+    fn from(err: IdentityInsufficientBalanceError) -> Self {
+        Self::IdentityInsufficientBalanceError(err)
+    }
 }

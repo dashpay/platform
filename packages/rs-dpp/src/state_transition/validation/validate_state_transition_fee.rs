@@ -7,7 +7,7 @@ use crate::state_transition::fee::calculate_state_transition_fee_factory::calcul
 use crate::state_transition::fee::{Credits, FeeResult};
 use crate::state_transition::StateTransitionType;
 use crate::{
-    consensus::fee::FeeError,
+    consensus::fee_error::FeeError,
     identity::{
         convert_satoshi_to_credits,
         state_transition::asset_lock_proof::AssetLockTransactionOutputFetcher,
@@ -194,7 +194,7 @@ mod test {
     use crate::state_transition::StateTransition;
     use crate::ProtocolError;
     use crate::{
-        consensus::fee::FeeError,
+        consensus::fee_error::FeeError,
         document::{document_transition::Action, DocumentsBatchTransition},
         identity::state_transition::identity_credit_withdrawal_transition::IdentityCreditWithdrawalTransition,
         state_repository::MockStateRepositoryLike,

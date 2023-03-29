@@ -184,7 +184,7 @@ pub fn from_consensus_error_ref(e: &DPPConsensusError) -> JsValue {
                 .into()
         }
         DPPConsensusError::FeeError(e) => match e {
-            dpp::consensus::fee::FeeError::BalanceIsNotEnoughError { balance, fee } => {
+            dpp::consensus::fee_error::FeeError::BalanceIsNotEnoughError { balance, fee } => {
                 BalanceIsNotEnoughErrorWasm::new(*balance, *fee, code).into()
             }
         },

@@ -1,7 +1,8 @@
-use thiserror::Error;
-use platform_value::Identifier;
-use crate::consensus::fee::FeeError;
+use crate::consensus::fee::fee_error::FeeError;
+use crate::consensus::fee_error::FeeError;
 use crate::state_transition::fee::Credits;
+use platform_value::Identifier;
+use thiserror::Error;
 
 #[derive(Error, Debug, Clone, PartialEq, Eq)]
 #[error("Current credits balance {balance} is not enough to pay {fee} fee")]
@@ -11,11 +12,8 @@ pub struct BalanceIsNotEnoughError {
 }
 
 impl BalanceIsNotEnoughError {
-    pub fn new( balance: Credits, fee: Credits,) -> Self {
-        Self {
-            balance,
-            fee,
-        }
+    pub fn new(balance: Credits, fee: Credits) -> Self {
+        Self { balance, fee }
     }
 
     pub fn balance(&self) -> Credits {
