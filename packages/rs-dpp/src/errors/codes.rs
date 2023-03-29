@@ -180,3 +180,5 @@ impl ErrorWithCode for FeeError {
         }
     }
 }
+
+fn create_consenus_error() {}
