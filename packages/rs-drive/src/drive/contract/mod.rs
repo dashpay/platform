@@ -99,9 +99,9 @@ use crate::error::Error;
 #[cfg(feature = "full")]
 use crate::fee::calculate_fee;
 #[cfg(feature = "full")]
-use crate::fee::op::DriveOperation;
+use crate::fee::op::LowLevelDriveOperation;
 #[cfg(feature = "full")]
-use crate::fee::op::DriveOperation::{CalculatedCostOperation, PreCalculatedFeeResult};
+use crate::fee::op::LowLevelDriveOperation::{CalculatedCostOperation, PreCalculatedFeeResult};
 #[cfg(any(feature = "full", feature = "verify"))]
 use crate::fee::result::FeeResult;
 #[cfg(feature = "full")]
@@ -141,7 +141,7 @@ impl Drive {
         estimated_costs_only_with_layer_info: &mut Option<
             HashMap<KeyInfoPath, EstimatedLayerInformation>,
         >,
-        insert_operations: &mut Vec<DriveOperation>,
+        insert_operations: &mut Vec<LowLevelDriveOperation>,
     ) -> Result<(), Error> {
         let contract_root_path = paths::contract_root_path(contract.id.as_bytes());
         if contract.keeps_history() {
@@ -217,7 +217,7 @@ impl Drive {
         apply: bool,
         transaction: TransactionArg,
     ) -> Result<FeeResult, Error> {
-        let mut drive_operations: Vec<DriveOperation> = vec![];
+        let mut drive_operations: Vec<LowLevelDriveOperation> = vec![];
 
         let contract = <Contract as DriveContractExt>::from_cbor(&contract_cbor, contract_id)?;
 
@@ -256,7 +256,7 @@ impl Drive {
         block_info: &BlockInfo,
         apply: bool,
         transaction: TransactionArg,
-        drive_operations: &mut Vec<DriveOperation>,
+        drive_operations: &mut Vec<LowLevelDriveOperation>,
     ) -> Result<(), Error> {
         let mut estimated_costs_only_with_layer_info = if apply {
             None::<HashMap<KeyInfoPath, EstimatedLayerInformation>>
@@ -269,7 +269,7 @@ impl Drive {
             block_info,
             &mut estimated_costs_only_with_layer_info,
         )?;
-        self.apply_batch_drive_operations(
+        self.apply_batch_low_level_drive_operations(
             estimated_costs_only_with_layer_info,
             transaction,
             batch_operations,
@@ -288,7 +288,7 @@ impl Drive {
         estimated_costs_only_with_layer_info: &mut Option<
             HashMap<KeyInfoPath, EstimatedLayerInformation>,
         >,
-        drive_operations: &mut Vec<DriveOperation>,
+        drive_operations: &mut Vec<LowLevelDriveOperation>,
     ) -> Result<(), Error> {
         let batch_operations = self.insert_contract_operations(
             contract_element,
@@ -311,8 +311,8 @@ impl Drive {
         estimated_costs_only_with_layer_info: &mut Option<
             HashMap<KeyInfoPath, EstimatedLayerInformation>,
         >,
-    ) -> Result<Vec<DriveOperation>, Error> {
-        let mut batch_operations: Vec<DriveOperation> = vec![];
+    ) -> Result<Vec<LowLevelDriveOperation>, Error> {
+        let mut batch_operations: Vec<LowLevelDriveOperation> = vec![];
 
         let storage_flags = StorageFlags::map_some_element_flags_ref(contract_element.get_flags())?;
 
@@ -415,7 +415,7 @@ impl Drive {
                 transaction,
             );
         }
-        let mut drive_operations: Vec<DriveOperation> = vec![];
+        let mut drive_operations: Vec<LowLevelDriveOperation> = vec![];
 
         let contract = <Contract as DriveContractExt>::from_cbor(&contract_cbor, contract_id)?;
 
@@ -487,7 +487,7 @@ impl Drive {
         original_contract: &Contract,
         block_info: &BlockInfo,
         transaction: TransactionArg,
-        drive_operations: &mut Vec<DriveOperation>,
+        drive_operations: &mut Vec<LowLevelDriveOperation>,
     ) -> Result<(), Error> {
         let mut estimated_costs_only_with_layer_info =
             None::<HashMap<KeyInfoPath, EstimatedLayerInformation>>;
@@ -499,7 +499,7 @@ impl Drive {
             &mut estimated_costs_only_with_layer_info,
             transaction,
         )?;
-        self.apply_batch_drive_operations(
+        self.apply_batch_low_level_drive_operations(
             estimated_costs_only_with_layer_info,
             transaction,
             batch_operations,
@@ -518,7 +518,7 @@ impl Drive {
             HashMap<KeyInfoPath, EstimatedLayerInformation>,
         >,
         transaction: TransactionArg,
-        drive_operations: &mut Vec<DriveOperation>,
+        drive_operations: &mut Vec<LowLevelDriveOperation>,
     ) -> Result<(), Error> {
         let batch_operations = self.update_contract_operations(
             contract_element,
@@ -543,8 +543,8 @@ impl Drive {
             HashMap<KeyInfoPath, EstimatedLayerInformation>,
         >,
         transaction: TransactionArg,
-    ) -> Result<Vec<DriveOperation>, Error> {
-        let mut batch_operations: Vec<DriveOperation> = vec![];
+    ) -> Result<Vec<LowLevelDriveOperation>, Error> {
+        let mut batch_operations: Vec<LowLevelDriveOperation> = vec![];
         if original_contract.readonly() {
             return Err(Error::Drive(DriveError::UpdatingReadOnlyImmutableContract(
                 "contract is readonly",
@@ -724,7 +724,7 @@ impl Drive {
         epoch: Option<&Epoch>,
         transaction: TransactionArg,
     ) -> Result<(Option<FeeResult>, Option<Arc<ContractFetchInfo>>), Error> {
-        let mut drive_operations: Vec<DriveOperation> = Vec::new();
+        let mut drive_operations: Vec<LowLevelDriveOperation> = Vec::new();
 
         let contract_fetch_info = self.get_contract_with_fetch_info_and_add_to_operations(
             contract_id,
@@ -744,7 +744,7 @@ impl Drive {
         contract_id: [u8; 32],
         epoch: Option<&Epoch>,
         transaction: TransactionArg,
-        drive_operations: &mut Vec<DriveOperation>,
+        drive_operations: &mut Vec<LowLevelDriveOperation>,
     ) -> Result<Option<Arc<ContractFetchInfo>>, Error> {
         let mut cache = self.cache.borrow_mut();
 
@@ -806,7 +806,7 @@ impl Drive {
         contract_id: [u8; 32],
         epoch: Option<&Epoch>,
         transaction: TransactionArg,
-        drive_operations: &mut Vec<DriveOperation>,
+        drive_operations: &mut Vec<LowLevelDriveOperation>,
     ) -> Result<Option<Arc<ContractFetchInfo>>, Error> {
         let mut cost = OperationCost::default();
 
@@ -932,8 +932,8 @@ impl Drive {
             storage_flags,
             transaction,
         )?;
-        let fetch_cost = DriveOperation::combine_cost_operations(&batch_operations);
-        self.apply_batch_drive_operations(
+        let fetch_cost = LowLevelDriveOperation::combine_cost_operations(&batch_operations);
+        self.apply_batch_low_level_drive_operations(
             estimated_costs_only_with_layer_info,
             transaction,
             batch_operations,
@@ -956,7 +956,7 @@ impl Drive {
         >,
         storage_flags: Option<Cow<StorageFlags>>,
         transaction: TransactionArg,
-    ) -> Result<Vec<DriveOperation>, Error> {
+    ) -> Result<Vec<LowLevelDriveOperation>, Error> {
         //todo: change this from cbor
         let serialized_contract = contract.to_cbor().map_err(Error::Protocol)?;
         self.apply_contract_with_serialization_operations(
@@ -982,8 +982,8 @@ impl Drive {
         >,
         storage_flags: Option<Cow<StorageFlags>>,
         transaction: TransactionArg,
-    ) -> Result<Vec<DriveOperation>, Error> {
-        let mut drive_operations: Vec<DriveOperation> = vec![];
+    ) -> Result<Vec<LowLevelDriveOperation>, Error> {
+        let mut drive_operations: Vec<LowLevelDriveOperation> = vec![];
 
         // overlying structure
         let mut already_exists = false;

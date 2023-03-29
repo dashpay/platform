@@ -2,6 +2,7 @@ use self::drive::DriveError;
 use crate::error::proof::ProofError;
 use crate::error::storage_flags::StorageFlagsError;
 use document::DocumentError;
+use dpp::platform_value::Error as ValueError;
 use dpp::ProtocolError;
 use fee::FeeError;
 use identity::IdentityError;
@@ -52,4 +53,7 @@ pub enum Error {
     /// Document error
     #[error("document: {0}")]
     Document(#[from] DocumentError),
+    /// Value error
+    #[error("value: {0}")]
+    Value(#[from] ValueError),
 }

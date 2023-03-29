@@ -2,7 +2,8 @@ use crate::data_contract::contract_config::ContractConfig;
 use crate::data_contract::validation::data_contract_validator::DataContractValidator;
 use crate::data_contract::{DataContract, DataContractFactory};
 
-use crate::prelude::{Identifier, ValidationResult};
+use crate::prelude::Identifier;
+use crate::validation::SimpleValidationResult;
 use crate::version::ProtocolVersionValidator;
 use crate::ProtocolError;
 use platform_value::Value;
@@ -87,7 +88,7 @@ impl DataContractFacade {
     pub async fn validate(
         &self,
         data_contract: Value,
-    ) -> Result<ValidationResult<()>, ProtocolError> {
+    ) -> Result<SimpleValidationResult, ProtocolError> {
         self.data_contract_validator.validate(&data_contract)
     }
 }

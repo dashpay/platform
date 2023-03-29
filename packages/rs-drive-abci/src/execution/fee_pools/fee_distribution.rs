@@ -39,7 +39,7 @@ use crate::abci::messages::BlockFees;
 use crate::error::Error;
 use crate::platform::Platform;
 use drive::drive::batch::drive_op_batch::IdentityOperationType::AddToIdentityBalance;
-use drive::drive::batch::DriveOperationType::IdentityOperation;
+use drive::drive::batch::DriveOperation::IdentityOperation;
 use drive::drive::batch::GroveDbOpBatch;
 use drive::drive::block_info::BlockInfo;
 use drive::error::fee::FeeError;

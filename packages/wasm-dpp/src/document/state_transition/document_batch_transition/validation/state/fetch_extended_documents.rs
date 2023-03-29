@@ -1,5 +1,5 @@
 use dpp::{
-    document::validation::state::fetch_extended_documents, prelude::DocumentTransition,
+    document::validation::state::fetch_documents, prelude::DocumentTransition,
     state_transition::state_transition_execution_context::StateTransitionExecutionContext,
 };
 use js_sys::Array;
@@ -26,9 +26,9 @@ pub async fn fetch_extended_documents_wasm(
     }
     let execution_context: StateTransitionExecutionContext = js_execution_context.into();
 
-    let documents = fetch_extended_documents::fetch_extended_documents(
+    let documents = fetch_documents::fetch_extended_documents(
         &wrapped_state_repository,
-        document_transitions,
+        document_transitions.iter().collect::<Vec<_>>().as_slice(),
         &execution_context,
     )
     .await

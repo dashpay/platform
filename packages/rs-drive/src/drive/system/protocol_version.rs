@@ -7,7 +7,7 @@ use crate::drive::system::misc_tree_constants::{
 use crate::drive::Drive;
 use crate::error::drive::DriveError;
 use crate::error::Error;
-use crate::fee::op::DriveOperation;
+use crate::fee::op::LowLevelDriveOperation;
 
 use dpp::util::deserializer::ProtocolVersion;
 use grovedb::{Element, TransactionArg};
@@ -37,7 +37,7 @@ impl Drive {
         &self,
         protocol_version: ProtocolVersion,
         transaction: TransactionArg,
-        drive_operations: &mut Vec<DriveOperation>,
+        drive_operations: &mut Vec<LowLevelDriveOperation>,
     ) -> Result<(), Error> {
         self.batch_insert_if_changed_value(
             PathKeyElementInfo::PathFixedSizeKeyRefElement((
@@ -75,7 +75,7 @@ impl Drive {
         &self,
         protocol_version: ProtocolVersion,
         transaction: TransactionArg,
-        drive_operations: &mut Vec<DriveOperation>,
+        drive_operations: &mut Vec<LowLevelDriveOperation>,
     ) -> Result<(), Error> {
         self.batch_insert_if_changed_value(
             PathKeyElementInfo::PathFixedSizeKeyRefElement((

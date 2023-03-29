@@ -21,7 +21,7 @@ describe('IdentityFacade', () => {
   let IdentityCreateTransition;
   let IdentityTopUpTransition;
   let IdentityUpdateTransition;
-  let IdentityPublicKeyCreateTransition;
+  let IdentityPublicKeyWithWitness;
   let ChainAssetLockProof;
   let DashPlatformProtocol;
   let ValidationResult;
@@ -29,7 +29,7 @@ describe('IdentityFacade', () => {
   before(async () => {
     ({
       Identity, InstantAssetLockProof, ChainAssetLockProof, IdentityUpdateTransition,
-      IdentityCreateTransition, IdentityTopUpTransition, IdentityPublicKeyCreateTransition,
+      IdentityCreateTransition, IdentityTopUpTransition, IdentityPublicKeyWithWitness,
       DashPlatformProtocol, ValidationResult,
     } = await loadWasmDpp());
   });
@@ -183,7 +183,7 @@ describe('IdentityFacade', () => {
   describe('#createIdentityUpdateTransition', () => {
     it('should create IdentityUpdateTransition from identity id and public keys', () => {
       const publicKeys = {
-        add: [new IdentityPublicKeyCreateTransition({
+        add: [new IdentityPublicKeyWithWitness({
           id: 3,
           type: IdentityPublicKey.TYPES.ECDSA_SECP256K1,
           data: Buffer.from('AuryIuMtRrl/VviQuyLD1l4nmxi9ogPzC9LT7tdpo0di', 'base64'),
