@@ -22,4 +22,3 @@ pub mod errors;
 
 mod data_trigger;
 mod dpp_error;
-mod protocol;
