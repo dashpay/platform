@@ -32,7 +32,7 @@ class ResetCommand extends ConfigBaseCommand {
       throw new Error(`Cannot hard reset non-system config "${config.getName()}"`);
     }
 
-    if (!config.isPlatformEnabled() && isPlatformOnlyReset) {
+    if (!config.get('platform.enable') && isPlatformOnlyReset) {
       throw new Error('Cannot reset platform only if platform services are not enabled in config');
     }
 

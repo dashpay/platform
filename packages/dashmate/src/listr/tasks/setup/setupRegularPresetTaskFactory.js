@@ -81,10 +81,7 @@ function setupRegularPresetTaskFactory(
 
           ctx.config = new Config(ctx.preset, systemConfigs[ctx.preset]);
 
-          if (!ctx.isHP) {
-            delete ctx.config.remove('platform');
-          }
-
+          ctx.config.set('platform.enable', ctx.isHP);
           ctx.config.set('core.masternode.enable', ctx.nodeType === NODE_TYPE_MASTERNODE);
 
           // eslint-disable-next-line no-param-reassign
@@ -132,7 +129,7 @@ function setupRegularPresetTaskFactory(
         task: () => configureNodeTask(),
       },
       {
-        enabled: (ctx) => ctx.config && ctx.config.isPlatformEnabled(),
+        enabled: (ctx) => ctx.config && ctx.config.get('platform.enable'),
         task: () => configureSSLCertificateTask(),
       },
       {

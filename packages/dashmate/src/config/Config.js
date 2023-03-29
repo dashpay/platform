@@ -105,16 +105,6 @@ class Config {
   }
 
   /**
-   * Remove by path
-   *
-   * @param {string} path
-   * @returns {Config}
-   */
-  remove(path) {
-    return this.set(path, undefined);
-  }
-
-  /**
    * Get options
    *
    * @return {Object}
@@ -171,7 +161,7 @@ class Config {
       dockerComposeFiles.push('docker-compose.sentinel.yml');
     }
 
-    if (this.isPlatformEnabled()) {
+    if (this.get('platform.enable')) {
       dockerComposeFiles.push('docker-compose.platform.yml');
 
       if (this.get('platform.sourcePath') !== null) {
@@ -188,7 +178,7 @@ class Config {
       ...convertObjectToEnvs(this.getOptions()),
     };
 
-    if (this.isPlatformEnabled()) {
+    if (this.get('platform.enable')) {
       envs = {
         ...envs,
 
@@ -211,14 +201,6 @@ class Config {
     }
 
     return envs;
-  }
-
-  /**
-   *
-   * @returns {boolean}
-   */
-  isPlatformEnabled() {
-    return this.has('platform') && this.get('platform.enable');
   }
 }
 
