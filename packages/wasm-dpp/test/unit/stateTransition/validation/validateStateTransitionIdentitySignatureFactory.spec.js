@@ -2,11 +2,6 @@ const IdentityPublicKey = require('@dashevo/dpp/lib/identity/IdentityPublicKey')
 
 const PublicKeyIsDisabledConsensusError = require('@dashevo/dpp/lib/errors/consensus/signature/PublicKeyIsDisabledError');
 const WrongPublicKeyPurposeConsensusError = require('@dashevo/dpp/lib/errors/consensus/signature/WrongPublicKeyPurposeError');
-const PublicKeySecurityLevelNotMetConsensusError = require('@dashevo/dpp/lib/errors/consensus/signature/PublicKeySecurityLevelNotMetError');
-const InvalidSignaturePublicKeySecurityLevelConsensusError = require('@dashevo/dpp/lib/errors/consensus/signature/InvalidSignaturePublicKeySecurityLevelError');
-const InvalidSignaturePublicKeySecurityLevelError = require('@dashevo/dpp/lib/stateTransition/errors/InvalidSignaturePublicKeySecurityLevelError');
-const PublicKeySecurityLevelNotMetError = require('@dashevo/dpp/lib/stateTransition/errors/PublicKeySecurityLevelNotMetError');
-const WrongPublicKeyPurposeError = require('@dashevo/dpp/lib/stateTransition/errors/WrongPublicKeyPurposeError');
 const PublicKeyIsDisabledError = require('@dashevo/dpp/lib/stateTransition/errors/PublicKeyIsDisabledError');
 const DPPError = require('@dashevo/dpp/lib/errors/DPPError');
 
@@ -25,6 +20,9 @@ let {
   MissingPublicKeyError,
   InvalidIdentityPublicKeyTypeError,
   InvalidStateTransitionSignatureError,
+  InvalidSignaturePublicKeySecurityLevelError,
+  PublicKeySecurityLevelNotMetError,
+  WrongPublicKeyPurposeError,
 } = require('../../../..');
 const getBlsMock = require('../../../../lib/test/mocks/getBlsAdapterMock');
 const createStateRepositoryMock = require('../../../../lib/test/mocks/createStateRepositoryMock');
@@ -51,6 +49,9 @@ describe('validateStateTransitionIdentitySignatureFactory', () => {
       MissingPublicKeyError,
       InvalidIdentityPublicKeyTypeError,
       InvalidStateTransitionSignatureError,
+      InvalidSignaturePublicKeySecurityLevelError,
+      PublicKeySecurityLevelNotMetError,
+      WrongPublicKeyPurposeError,
     } = await loadWasmDpp());
     stateRepositoryMock = createStateRepositoryMock(this.sinonSandbox);
     stateRepositoryMock.fetchDataContract.resolves();
@@ -212,9 +213,9 @@ describe('validateStateTransitionIdentitySignatureFactory', () => {
 
   describe('Consensus errors', () => {
     it('should return InvalidSignaturePublicKeySecurityLevelConsensusError if InvalidSignaturePublicKeySecurityLevelError was thrown', async () => {
-      const e = new InvalidSignaturePublicKeySecurityLevelError(1, 0);
-
-      stateTransition.verifySignature.throws(e);
+      const publicKeys = identity.getPublicKeys();
+      publicKeys[2].setSecurityLevel(IdentityPublicKey.SECURITY_LEVELS.MASTER);
+      identity.setPublicKeys(publicKeys);
 
       const result = await validateStateTransitionIdentitySignature(
         stateTransition,
@@ -227,15 +228,18 @@ describe('validateStateTransitionIdentitySignatureFactory', () => {
       expect(result.getErrors()).to.have.lengthOf(1);
 
       const [error] = result.getErrors();
-      expect(error).to.be.instanceOf(InvalidSignaturePublicKeySecurityLevelConsensusError);
-      expect(error.getPublicKeySecurityLevel()).to.equal(1);
-      expect(error.getKeySecurityLevelRequirement()).to.equal(0);
+
+      console.log(error);
+
+      expect(error).to.be.instanceOf(InvalidSignaturePublicKeySecurityLevelError);
+      expect(error.getPublicKeySecurityLevel()).to.equal(IdentityPublicKey.SECURITY_LEVELS.MASTER);
+      expect(error.getKeySecurityLevelRequirement()).to.equal(2);
     });
 
     it('should return PublicKeySecurityLevelNotMetConsensusError if PublicKeySecurityLevelNotMetError was thrown', async () => {
-      const e = new PublicKeySecurityLevelNotMetError(1, 2);
-
-      stateTransition.verifySignature.throws(e);
+      const publicKeys = identity.getPublicKeys();
+      publicKeys[2].setSecurityLevel(IdentityPublicKey.SECURITY_LEVELS.MEDIUM);
+      identity.setPublicKeys(publicKeys);
 
       const result = await validateStateTransitionIdentitySignature(
         stateTransition,
@@ -248,15 +252,15 @@ describe('validateStateTransitionIdentitySignatureFactory', () => {
       expect(result.getErrors()).to.have.lengthOf(1);
 
       const [error] = result.getErrors();
-      expect(error).to.be.instanceOf(PublicKeySecurityLevelNotMetConsensusError);
-      expect(error.getPublicKeySecurityLevel()).to.equal(1);
+      expect(error).to.be.instanceOf(PublicKeySecurityLevelNotMetError);
+      expect(error.getPublicKeySecurityLevel()).to.equal(3);
       expect(error.getKeySecurityLevelRequirement()).to.equal(2);
     });
 
     it('should return WrongPublicKeyPurposeConsensusError if WrongPublicKeyPurposeError was thrown', async () => {
-      const e = new WrongPublicKeyPurposeError(4, 2);
-
-      stateTransition.verifySignature.throws(e);
+      const publicKeys = identity.getPublicKeys();
+      publicKeys[2].setPurpose(4);
+      identity.setPublicKeys(publicKeys);
 
       const result = await validateStateTransitionIdentitySignature(
         stateTransition,
@@ -269,7 +273,8 @@ describe('validateStateTransitionIdentitySignatureFactory', () => {
       expect(result.getErrors()).to.have.lengthOf(1);
 
       const [error] = result.getErrors();
-      expect(error).to.be.instanceOf(WrongPublicKeyPurposeConsensusError);
+      console.log(error);
+      expect(error).to.be.instanceOf(WrongPublicKeyPurposeError);
 
       expect(error.getPublicKeyPurpose()).to.equal(4);
       expect(error.getKeyPurposeRequirement()).to.equal(2);

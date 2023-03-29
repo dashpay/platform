@@ -31,8 +31,8 @@ impl PublicKeySecurityLevelNotMetErrorWasm {
         self.public_key_security_level as u8
     }
 
-    #[wasm_bindgen(js_name=getRequiredSecurityLevel)]
-    pub fn get_required_security_level(&self) -> u8 {
+    #[wasm_bindgen(js_name=getKeySecurityLevelRequirement)]
+    pub fn get_key_security_level_requirement(&self) -> u8 {
         self.required_security_level as u8
     }
 
