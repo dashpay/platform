@@ -52,8 +52,10 @@ pub enum BasicError {
 
     #[error(transparent)]
     JsonSchemaError(JsonSchemaError),
+
     #[error(transparent)]
     UnsupportedProtocolVersionError(UnsupportedProtocolVersionError),
+
     #[error(transparent)]
     IncompatibleProtocolVersionError(IncompatibleProtocolVersionError),
 
@@ -62,32 +64,43 @@ pub enum BasicError {
 
     #[error(transparent)]
     MissingMasterPublicKeyError(MissingMasterPublicKeyError),
+
     #[error(transparent)]
     IdentityAssetLockTransactionOutPointAlreadyExistsError(
         IdentityAssetLockTransactionOutPointAlreadyExistsError,
     ),
+
     #[error(transparent)]
     InvalidIdentityAssetLockTransactionOutputError(InvalidIdentityAssetLockTransactionOutputError),
+
     #[error(transparent)]
     InvalidAssetLockTransactionOutputReturnSize(InvalidAssetLockTransactionOutputReturnSizeError),
+
     #[error(transparent)]
     IdentityAssetLockTransactionOutputNotFoundError(
         IdentityAssetLockTransactionOutputNotFoundError,
     ),
+
     #[error(transparent)]
     InvalidIdentityAssetLockTransactionError(InvalidIdentityAssetLockTransactionError),
+
     #[error(transparent)]
     InvalidInstantAssetLockProofError(InvalidInstantAssetLockProofError),
+
     #[error(transparent)]
     InvalidInstantAssetLockProofSignatureError(InvalidInstantAssetLockProofSignatureError),
+
     #[error(transparent)]
     IdentityAssetLockProofLockedTransactionMismatchError(
         IdentityAssetLockProofLockedTransactionMismatchError,
     ),
+
     #[error(transparent)]
     IdentityAssetLockTransactionIsNotFoundError(IdentityAssetLockTransactionIsNotFoundError),
+
     #[error(transparent)]
     InvalidAssetLockProofCoreChainHeightError(InvalidAssetLockProofCoreChainHeightError),
+
     #[error(transparent)]
     InvalidAssetLockProofTransactionHeightError(InvalidAssetLockProofTransactionHeightError),
 
@@ -96,10 +109,13 @@ pub enum BasicError {
 
     #[error(transparent)]
     DuplicatedIdentityPublicKeyBasicIdError(DuplicatedIdentityPublicKeyIdError),
+
     #[error(transparent)]
     InvalidIdentityPublicKeyDataError(InvalidIdentityPublicKeyDataError),
+
     #[error(transparent)]
     InvalidIdentityPublicKeySecurityLevelError(InvalidIdentityPublicKeySecurityLevelError),
+
     #[error(transparent)]
     DuplicatedIdentityPublicKeyBasicError(DuplicatedIdentityPublicKeyError),
 
@@ -109,7 +125,6 @@ pub enum BasicError {
     #[error(transparent)]
     DataContractMaxDepthExceedError(DataContractMaxDepthExceedError),
 
-    // Document
     #[error(transparent)]
     InvalidDocumentTypeError(InvalidDocumentTypeError),
 

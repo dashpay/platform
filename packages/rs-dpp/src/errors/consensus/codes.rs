@@ -1,9 +1,9 @@
-use crate::consensus::fee::fee_error::FeeError;
-use crate::consensus::signature::signature_error::SignatureError;
-use crate::consensus::state::state_error::StateError;
 use platform_value::Value;
 
-use crate::errors::{consensus::basic::BasicError, consensus::ConsensusError};
+use crate::errors::consensus::{
+    basic::BasicError, fee::fee_error::FeeError, signature::signature_error::SignatureError,
+    state::state_error::StateError, ConsensusError,
+};
 
 pub trait ErrorWithCode {
     // Returns the Error Code
