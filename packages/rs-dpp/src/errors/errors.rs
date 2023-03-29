@@ -20,8 +20,6 @@ use crate::{
 use dashcore::consensus::encode::Error as DashCoreError;
 
 use platform_value::{Error as ValueError, Value};
-use crate::errors::protocol::invalid_identity_error::InvalidIdentityError;
-use crate::errors::protocol::max_encoded_bytes_reached_error::MaxEncodedBytesReachedError;
 
 #[derive(Error, Debug)]
 pub enum ProtocolError {
@@ -31,8 +29,11 @@ pub enum ProtocolError {
     StringDecodeError(String),
     #[error("Public key data is not set")]
     EmptyPublicKeyDataError,
-    #[error(transparent)]
-    MaxEncodedBytesReachedError(MaxEncodedBytesReachedError),
+    #[error("Payload reached a {max_size_kbytes}KB limit")]
+    MaxEncodedBytesReachedError {
+        payload: Vec<u8>,
+        max_size_kbytes: usize,
+    },
     #[error("Encoding Error - {0}")]
     EncodingError(String),
     #[error("Decoding Error - {0}")]
@@ -134,8 +135,11 @@ pub enum ProtocolError {
     #[error("dash core error: {0}")]
     DashCoreError(#[from] DashCoreError),
 
-    #[error(transparent)]
-    InvalidIdentityError(InvalidIdentityError),
+    #[error("Invalid Identity: {errors:?}")]
+    InvalidIdentityError {
+        errors: Vec<ConsensusError>,
+        raw_identity: Value,
+    },
 
     #[error("Public key generation error {0}")]
     PublicKeyGenerationError(String),

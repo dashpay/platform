@@ -20,4 +20,3 @@ mod serde_parsing_error;
 pub mod errors;
 
 mod dpp_error;
-mod protocol;

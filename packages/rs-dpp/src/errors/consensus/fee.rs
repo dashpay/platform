@@ -1,9 +1,10 @@
 use thiserror::Error;
+use crate::consensus::balance_is_not_enough_error::BalanceIsNotEnoughError;
 
 use crate::state_transition::fee::Credits;
 
 #[derive(Error, Debug)]
 pub enum FeeError {
-    #[error("Current credits balance {balance} is not enough to pay {fee} fee")]
-    BalanceIsNotEnoughError { balance: Credits, fee: Credits },
+    #[error(transparent)]
+    BalanceIsNotEnoughError(BalanceIsNotEnoughError),
 }

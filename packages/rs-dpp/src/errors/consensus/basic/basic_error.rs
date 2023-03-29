@@ -37,6 +37,7 @@ use crate::consensus::basic::state_transition::{
 use crate::consensus::basic::{
     IncompatibleProtocolVersionError, JsonSchemaError, UnsupportedProtocolVersionError,
 };
+use crate::data_contract::errors::DataContractNotPresentError;
 use crate::data_contract::state_transition::errors::MissingDataContractIdError;
 use crate::prelude::*;
 
@@ -55,8 +56,8 @@ pub enum BasicError {
     #[error(transparent)]
     IncompatibleProtocolVersionError(IncompatibleProtocolVersionError),
 
-    #[error("Data Contract {data_contract_id} is not present")]
-    DataContractNotPresent { data_contract_id: Identifier },
+    #[error(transparent)]
+    DataContractNotPresent(DataContractNotPresentError),
 
     #[error(transparent)]
     MissingMasterPublicKeyError(MissingMasterPublicKeyError),
