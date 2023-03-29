@@ -18,6 +18,7 @@ use crate::{
     ProtocolError,
 };
 use std::sync::Arc;
+use crate::consensus::balance_is_not_enough_error::BalanceIsNotEnoughError;
 
 pub struct StateTransitionFeeValidator<SR: StateRepositoryLike> {
     state_repository: Arc<SR>,
@@ -97,10 +98,7 @@ where
                 }
 
                 if identity_balance.is_negative() && identity_balance.unsigned_abs() > balance {
-                    result.add_error(FeeError::BalanceIsNotEnoughError {
-                        balance: 0,
-                        fee: required_fee.desired_amount,
-                    });
+                    result.add_error(FeeError::BalanceIsNotEnoughError(BalanceIsNotEnoughError::new(0, required_fee.desired_amount)));
                     return Ok(result);
                 }
 
@@ -154,10 +152,7 @@ where
 
         // ? make sure Fee cannot be negative and refunds are handled differently
         if balance < required_fee.desired_amount {
-            result.add_error(FeeError::BalanceIsNotEnoughError {
-                balance,
-                fee: required_fee.desired_amount,
-            })
+            result.add_error(FeeError::BalanceIsNotEnoughError(BalanceIsNotEnoughError::new(balance, required_fee.desired_amount)))
         }
 
         Ok(result)
@@ -271,7 +266,7 @@ mod test {
 
         let fee_error = get_fee_error_from_result(&result, 0);
         assert!(
-            matches!(fee_error, FeeError::BalanceIsNotEnoughError { balance, fee: _ } if {
+            matches!(fee_error, FeeError::BalanceIsNotEnoughError(BalanceIsNotEnoughError::new(balance, _)) if {
                 *balance == 1
             })
         );
@@ -332,7 +327,7 @@ mod test {
 
         let fee_error = get_fee_error_from_result(&result, 0);
         assert!(
-            matches!(fee_error, FeeError::BalanceIsNotEnoughError { balance, .. } if {
+            matches!(fee_error, FeeError::BalanceIsNotEnoughError(BalanceIsNotEnoughError::new(balance, ..)) if {
                 *balance == 1
             })
         );
@@ -422,7 +417,7 @@ mod test {
         let fee_error = get_fee_error_from_result(&result, 0);
 
         assert!(
-            matches!(fee_error, FeeError::BalanceIsNotEnoughError { balance, .. } if {
+            matches!(fee_error, FeeError::BalanceIsNotEnoughError(BalanceIsNotEnoughError::new(balance, ..)) if {
                 *balance == output_amount
             })
         );
@@ -476,7 +471,7 @@ mod test {
 
         let fee_error = get_fee_error_from_result(&result, 0);
         assert!(
-            matches!(fee_error, FeeError::BalanceIsNotEnoughError { balance, .. } if {
+            matches!(fee_error, FeeError::BalanceIsNotEnoughError(BalanceIsNotEnoughError::new(balance, ..)) if {
                 *balance == output_amount + 1
             })
         );

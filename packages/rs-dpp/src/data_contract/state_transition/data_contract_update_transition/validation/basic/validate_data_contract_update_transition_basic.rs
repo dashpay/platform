@@ -28,6 +28,7 @@ use platform_value::patch::PatchOperation;
 use platform_value::Value;
 use serde_json::{json, Value as JsonValue};
 use std::sync::Arc;
+use crate::data_contract::errors::DataContractNotPresentError;
 
 use super::schema_compatibility_validator::validate_schema_compatibility;
 use super::schema_compatibility_validator::DiffVAlidatorError;
@@ -139,7 +140,7 @@ where
             Some(data_contract) => data_contract,
             None => {
                 validation_result
-                    .add_error(BasicError::DataContractNotPresent { data_contract_id });
+                    .add_error(BasicError::DataContractNotPresent(DataContractNotPresentError::new(data_contract_id)));
                 return Ok(validation_result);
             }
         };

@@ -2,7 +2,7 @@ use crate::consensus::basic::BasicError;
 use thiserror::Error;
 
 #[derive(Error, Debug, Clone, PartialEq, Eq)]
-#[error("JSON Schema depth is greater than {0}")]
+#[error("JSON Schema depth is greater than {max_depth:?}")]
 pub struct DataContractMaxDepthExceedError {
     max_depth: usize
 }
