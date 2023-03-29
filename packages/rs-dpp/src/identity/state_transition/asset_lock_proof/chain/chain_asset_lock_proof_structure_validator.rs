@@ -160,15 +160,16 @@ where
                 .validate(&raw_tx, output_index as usize, execution_context)
                 .await?;
 
-            let validation_result_data = if validate_asset_lock_transaction_result.has_data() {
-                validate_asset_lock_transaction_result
-                    .into_data()
-                    .expect("This can not happen due to the logic above")
-                    .clone()
-            } else {
-                result.merge(validate_asset_lock_transaction_result);
-                return Ok(result);
-            };
+            let validation_result_data =
+                if validate_asset_lock_transaction_result.is_valid_with_data() {
+                    validate_asset_lock_transaction_result
+                        .into_data()
+                        .expect("This can not happen due to the logic above")
+                        .clone()
+                } else {
+                    result.merge(validate_asset_lock_transaction_result);
+                    return Ok(result);
+                };
 
             let public_key_hash = validation_result_data.public_key_hash;
 

@@ -163,7 +163,7 @@ pub async fn validate_document_transitions(
             .iter()
             .filter_map(|transition| {
                 let validation_result = validate_transition(
-                    transition.as_ref(),
+                    transition,
                     &fetched_documents,
                     last_header_time_millis,
                     &owner_id,
@@ -226,11 +226,11 @@ pub async fn validate_document_transitions(
         }
     }
 
-    return if !result.is_valid() {
+    if !result.is_valid() {
         Ok(result)
     } else {
         Ok(document_transition_actions.into())
-    };
+    }
 }
 
 fn validate_transition(

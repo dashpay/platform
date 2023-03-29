@@ -60,6 +60,10 @@ impl<TData: Clone> ValidationResult<TData> {
         }
     }
 
+    pub fn is_valid_with_data(&self) -> bool {
+        self.is_valid() && self.data.is_some()
+    }
+
     pub fn has_data(&self) -> bool {
         self.data.is_some()
     }
