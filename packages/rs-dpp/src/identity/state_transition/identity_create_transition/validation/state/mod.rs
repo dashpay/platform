@@ -80,10 +80,15 @@ pub async fn validate_identity_create_transition_state(
     } else {
         let tx_out = state_transition
             .asset_lock_proof
-            .fetch_asset_lock_transaction_output(state_repository, &state_transition.execution_context)
+            .fetch_asset_lock_transaction_output(
+                state_repository,
+                &state_transition.execution_context,
+            )
             .await
             .map_err(Into::<NonConsensusError>::into)?;
-        return Ok(IdentityCreateTransitionAction::from_borrowed(state_transition, tx_out.value).into());
+        return Ok(
+            IdentityCreateTransitionAction::from_borrowed(state_transition, tx_out.value).into(),
+        );
     }
 }
 
