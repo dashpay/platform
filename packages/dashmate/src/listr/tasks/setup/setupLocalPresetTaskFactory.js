@@ -189,7 +189,7 @@ function setupLocalPresetTaskFactory(
                   config.set('core.miner.enable', true);
 
                   // Disable platform for the seed node
-                  config.remove('platform');
+                  config.set('platform.enable', false);
                 } else {
                   config.set('description', `local node #${nodeIndex}`);
 

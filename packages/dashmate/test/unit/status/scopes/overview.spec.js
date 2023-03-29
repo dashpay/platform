@@ -20,7 +20,6 @@ describe('getOverviewScopeFactory', () => {
       config = {
         get: this.sinon.stub(),
         toEnvs: this.sinon.stub(),
-        isPlatformEnabled: this.sinon.stub(),
       };
 
       getOverviewScope = getOverviewScopeFactory(mockGetCoreScope,
@@ -74,7 +73,7 @@ describe('getOverviewScopeFactory', () => {
     });
 
     it('should not load if masternode or platform disabled ', async () => {
-      config.isPlatformEnabled.returns(false);
+      config.get.withArgs('platform.enable').returns(false);
       config.get.withArgs('core.masternode.enable').returns(false);
       config.get.withArgs('network').returns('mainnet');
 
