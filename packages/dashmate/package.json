@@ -90,7 +90,7 @@
     "table": "^5.4.6"
   },
   "devDependencies": {
-    "@dashevo/oclif": "^1.0.0",
+    "@dashevo/oclif": "^1.0.1",
     "chai": "^4.3.4",
     "chai-as-promised": "^7.1.1",
     "dirty-chai": "^2.0.1",
@@ -121,6 +121,9 @@
     "bin": "dashmate",
     "macos": {
       "identifier": "org.dash.dashmate"
+    },
+    "deb": {
+      "dependencies": "docker-ce (>= 20.10.0) | docker.io (>= 20.10.0)"
     },
     "plugins": [
       "@oclif/plugin-help"

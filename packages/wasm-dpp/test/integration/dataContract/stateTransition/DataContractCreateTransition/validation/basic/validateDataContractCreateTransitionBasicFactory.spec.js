@@ -127,7 +127,6 @@ describe('validateDataContractCreateTransitionBasicFactory', () => {
 
     it('should be valid', async () => {
       const result = await validateDataContractCreateTransitionBasic(rawStateTransition);
-      console.log(result.errorsText());
       expect(result).to.be.an.instanceOf(ValidationResult);
       expect(result.isValid()).to.be.true();
     });

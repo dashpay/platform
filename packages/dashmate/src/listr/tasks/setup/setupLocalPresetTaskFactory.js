@@ -5,6 +5,7 @@ const path = require('path');
 const {
   PRESET_LOCAL,
   HOME_DIR_PATH,
+  SSL_PROVIDERS,
 } = require('../../../constants');
 const generateTenderdashNodeKey = require('../../../tenderdash/generateTenderdashNodeKey');
 const deriveTenderdashNodeId = require('../../../tenderdash/deriveTenderdashNodeId');
@@ -189,7 +190,7 @@ function setupLocalPresetTaskFactory(
                   config.set('core.miner.enable', true);
 
                   // Disable platform for the seed node
-                  config.remove('platform');
+                  config.set('platform.enable', false);
                 } else {
                   config.set('description', `local node #${nodeIndex}`);
 
@@ -277,7 +278,20 @@ function setupLocalPresetTaskFactory(
       },
       {
         title: 'Configure SSL certificates',
-        task: (ctx) => obtainSelfSignedCertificateTask(ctx.configGroup),
+        task: (ctx) => {
+          const platformConfigs = ctx.configGroup.filter((config) => config.get('platform.enable'));
+
+          const subTasks = platformConfigs.map((config) => {
+            config.set('platform.dapi.envoy.ssl.provider', SSL_PROVIDERS.SELF_SIGNED);
+
+            return {
+              title: `Generate certificate for ${config.getName()}`,
+              task: async () => obtainSelfSignedCertificateTask(config),
+            };
+          });
+
+          return new Listr(subTasks);
+        },
       },
     ]);
   }

@@ -27,7 +27,7 @@ class PlatformStatusCommand extends ConfigBaseCommand {
     config,
     getPlatformScope,
   ) {
-    if (!config.isPlatformEnabled()) {
+    if (!config.get('platform.enable')) {
       throw new Error('Platform is not supported for this node type and network');
     }
 

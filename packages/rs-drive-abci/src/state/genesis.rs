@@ -45,7 +45,7 @@ use drive::dpp::identity::{
 use dpp::platform_value::string_encoding::{encode, Encoding};
 use drive::dpp::system_data_contracts::{load_system_data_contract, SystemDataContract};
 use drive::drive::batch::{
-    ContractOperationType, DocumentOperationType, DriveOperationType, IdentityOperationType,
+    ContractOperationType, DocumentOperationType, DriveOperation, IdentityOperationType,
 };
 use drive::drive::block_info::BlockInfo;
 use drive::drive::defaults::PROTOCOL_VERSION;
@@ -172,10 +172,10 @@ impl Platform {
     fn register_system_data_contract_operations(
         &self,
         data_contract: DataContract,
-        operations: &mut Vec<DriveOperationType>,
+        operations: &mut Vec<DriveOperation>,
     ) {
         let serialization = data_contract.to_cbor().unwrap();
-        operations.push(DriveOperationType::ContractOperation(
+        operations.push(DriveOperation::ContractOperation(
             //todo: remove cbor
             ContractOperationType::ApplyContractWithSerialization {
                 contract: Cow::Owned(data_contract),
@@ -188,9 +188,9 @@ impl Platform {
     fn register_system_identity_operations(
         &self,
         identity: Identity,
-        operations: &mut Vec<DriveOperationType>,
+        operations: &mut Vec<DriveOperation>,
     ) {
-        operations.push(DriveOperationType::IdentityOperation(
+        operations.push(DriveOperation::IdentityOperation(
             IdentityOperationType::AddNewIdentity { identity },
         ))
     }
@@ -198,7 +198,7 @@ impl Platform {
     fn register_dpns_top_level_domain_operations<'a>(
         &self,
         contract: &'a DataContract,
-        operations: &mut Vec<DriveOperationType<'a>>,
+        operations: &mut Vec<DriveOperation<'a>>,
     ) -> Result<(), Error> {
         let domain = "dash";
 
@@ -266,7 +266,7 @@ impl Platform {
         let document_type = contract.document_type_for_name("domain")?;
 
         let operation =
-            DriveOperationType::DocumentOperation(DocumentOperationType::AddDocumentForContract {
+            DriveOperation::DocumentOperation(DocumentOperationType::AddDocumentForContract {
                 document_and_contract_info: DocumentAndContractInfo {
                     owned_document_info: OwnedDocumentInfo {
                         //todo: remove cbor and use DocumentInfo::DocumentWithoutSerialization((document, None))

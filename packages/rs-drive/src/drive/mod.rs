@@ -36,6 +36,7 @@ use std::path::Path;
 
 #[cfg(feature = "full")]
 use dpp::data_contract::DriveContractExt;
+
 #[cfg(feature = "full")]
 use grovedb::batch::KeyInfoPath;
 #[cfg(any(feature = "full", feature = "verify"))]
@@ -57,9 +58,9 @@ use crate::drive::config::DriveConfig;
 #[cfg(feature = "full")]
 use crate::error::Error;
 #[cfg(feature = "full")]
-use crate::fee::op::DriveOperation;
+use crate::fee::op::LowLevelDriveOperation;
 #[cfg(feature = "full")]
-use crate::fee::op::DriveOperation::GroveOperation;
+use crate::fee::op::LowLevelDriveOperation::GroveOperation;
 
 #[cfg(any(feature = "full", feature = "verify"))]
 pub mod balances;
@@ -110,6 +111,8 @@ mod system;
 #[cfg(test)]
 mod test_utils;
 
+#[cfg(feature = "full")]
+mod system_contracts_cache;
 /// Contains a set of useful grovedb proof verification functions
 #[cfg(any(feature = "full", feature = "verify"))]
 pub mod verify;
@@ -123,6 +126,8 @@ use crate::drive::cache::DriveCache;
 #[cfg(feature = "full")]
 use crate::drive::object_size_info::OwnedDocumentInfo;
 #[cfg(feature = "full")]
+use crate::drive::system_contracts_cache::SystemContracts;
+#[cfg(feature = "full")]
 use crate::fee::result::FeeResult;
 #[cfg(feature = "full")]
 use crate::fee_pools::epochs::Epoch;
@@ -134,6 +139,9 @@ pub struct Drive {
     pub grove: GroveDb,
     /// Drive config
     pub config: DriveConfig,
+    /// Main contracts in the system
+    #[cfg(feature = "full")]
+    pub system_contracts: SystemContracts,
     /// Drive Cache
     pub cache: RefCell<DriveCache>,
 }
@@ -295,6 +303,7 @@ impl Drive {
                 Ok(Drive {
                     grove,
                     config,
+                    system_contracts: SystemContracts::load_system_contracts()?,
                     cache: RefCell::new(DriveCache {
                         cached_contracts: DataContractCache::new(
                             data_contracts_global_cache_size,
@@ -341,16 +350,17 @@ impl Drive {
     }
 
     /// Applies a batch of Drive operations to groveDB.
-    fn apply_batch_drive_operations(
+    fn apply_batch_low_level_drive_operations(
         &self,
         estimated_costs_only_with_layer_info: Option<
             HashMap<KeyInfoPath, EstimatedLayerInformation>,
         >,
         transaction: TransactionArg,
-        batch_operations: Vec<DriveOperation>,
-        drive_operations: &mut Vec<DriveOperation>,
+        batch_operations: Vec<LowLevelDriveOperation>,
+        drive_operations: &mut Vec<LowLevelDriveOperation>,
     ) -> Result<(), Error> {
-        let grove_db_operations = DriveOperation::grovedb_operations_batch(&batch_operations);
+        let grove_db_operations =
+            LowLevelDriveOperation::grovedb_operations_batch(&batch_operations);
         self.apply_batch_grovedb_operations(
             estimated_costs_only_with_layer_info,
             transaction,
@@ -372,7 +382,7 @@ impl Drive {
         >,
         transaction: TransactionArg,
         batch_operations: GroveDbOpBatch,
-        drive_operations: &mut Vec<DriveOperation>,
+        drive_operations: &mut Vec<LowLevelDriveOperation>,
     ) -> Result<(), Error> {
         if let Some(estimated_layer_info) = estimated_costs_only_with_layer_info {
             // Leave this for future debugging

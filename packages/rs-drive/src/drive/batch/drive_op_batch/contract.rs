@@ -1,9 +1,9 @@
-use crate::drive::batch::drive_op_batch::DriveOperationConverter;
+use crate::drive::batch::drive_op_batch::DriveLowLevelOperationConverter;
 use crate::drive::block_info::BlockInfo;
 use crate::drive::flags::StorageFlags;
 use crate::drive::Drive;
 use crate::error::Error;
-use crate::fee::op::DriveOperation;
+use crate::fee::op::LowLevelDriveOperation;
 use dpp::data_contract::{DataContract as Contract, DriveContractExt};
 use grovedb::batch::KeyInfoPath;
 use grovedb::{EstimatedLayerInformation, TransactionArg};
@@ -46,8 +46,8 @@ pub enum ContractOperationType<'a> {
     },
 }
 
-impl DriveOperationConverter for ContractOperationType<'_> {
-    fn to_drive_operations(
+impl DriveLowLevelOperationConverter for ContractOperationType<'_> {
+    fn into_low_level_drive_operations(
         self,
         drive: &Drive,
         estimated_costs_only_with_layer_info: &mut Option<
@@ -55,7 +55,7 @@ impl DriveOperationConverter for ContractOperationType<'_> {
         >,
         block_info: &BlockInfo,
         transaction: TransactionArg,
-    ) -> Result<Vec<DriveOperation>, Error> {
+    ) -> Result<Vec<LowLevelDriveOperation>, Error> {
         match self {
             ContractOperationType::ApplyContractCbor {
                 contract_cbor,

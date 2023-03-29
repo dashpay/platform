@@ -46,9 +46,9 @@ use crate::error::Error;
 #[cfg(feature = "full")]
 use crate::fee::credits::{Creditable, Credits, SignedCredits, MAX_CREDITS};
 #[cfg(feature = "full")]
-use crate::fee::op::DriveOperation;
+use crate::fee::op::LowLevelDriveOperation;
 #[cfg(feature = "full")]
-use crate::fee::op::DriveOperation::GroveOperation;
+use crate::fee::op::LowLevelDriveOperation::GroveOperation;
 #[cfg(feature = "full")]
 use grovedb::batch::{GroveDbOp, KeyInfoPath};
 #[cfg(feature = "full")]
@@ -165,7 +165,8 @@ impl Drive {
         let mut drive_operations = vec![];
         let batch_operations =
             self.add_to_system_credits_operation(amount, &mut None, transaction)?;
-        let grove_db_operations = DriveOperation::grovedb_operations_batch(&batch_operations);
+        let grove_db_operations =
+            LowLevelDriveOperation::grovedb_operations_batch(&batch_operations);
         self.grove_apply_batch_with_add_costs(
             grove_db_operations,
             false,
@@ -182,7 +183,7 @@ impl Drive {
             HashMap<KeyInfoPath, EstimatedLayerInformation>,
         >,
         transaction: TransactionArg,
-    ) -> Result<Vec<DriveOperation>, Error> {
+    ) -> Result<Vec<LowLevelDriveOperation>, Error> {
         let mut drive_operations = vec![];
         if let Some(estimated_costs_only_with_layer_info) = estimated_costs_only_with_layer_info {
             Self::add_estimation_costs_for_total_system_credits_update(
@@ -226,7 +227,8 @@ impl Drive {
         let mut drive_operations = vec![];
         let batch_operations =
             self.remove_from_system_credits_operations(amount, &mut None, transaction)?;
-        let grove_db_operations = DriveOperation::grovedb_operations_batch(&batch_operations);
+        let grove_db_operations =
+            LowLevelDriveOperation::grovedb_operations_batch(&batch_operations);
         self.grove_apply_batch_with_add_costs(
             grove_db_operations,
             false,
@@ -244,7 +246,7 @@ impl Drive {
             HashMap<KeyInfoPath, EstimatedLayerInformation>,
         >,
         transaction: TransactionArg,
-    ) -> Result<Vec<DriveOperation>, Error> {
+    ) -> Result<Vec<LowLevelDriveOperation>, Error> {
         let mut drive_operations = vec![];
         if let Some(estimated_costs_only_with_layer_info) = estimated_costs_only_with_layer_info {
             Self::add_estimation_costs_for_total_system_credits_update(

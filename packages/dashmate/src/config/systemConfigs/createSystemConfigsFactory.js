@@ -21,7 +21,7 @@ function createSystemConfigsFactory(systemConfigs) {
     return new ConfigFile(
       configs,
       packageJson.version,
-      'base',
+      null,
       null,
     );
   }

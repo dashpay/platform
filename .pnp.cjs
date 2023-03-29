@@ -2775,10 +2775,10 @@ function $$SETUP_STATE(hydrateRuntimeState, basePath) {
         }]\
       ]],\
       ["@dashevo/oclif", [\
-        ["npm:1.0.0", {\
-          "packageLocation": "./.yarn/cache/@dashevo-oclif-npm-1.0.0-66914dc9c1-f095f30dcc.zip/node_modules/@dashevo/oclif/",\
+        ["npm:1.0.1", {\
+          "packageLocation": "./.yarn/cache/@dashevo-oclif-npm-1.0.1-f30fea1a8a-1a9b7871f8.zip/node_modules/@dashevo/oclif/",\
           "packageDependencies": [\
-            ["@dashevo/oclif", "npm:1.0.0"],\
+            ["@dashevo/oclif", "npm:1.0.1"],\
             ["@oclif/core", "npm:1.22.0"],\
             ["@oclif/plugin-help", "npm:5.1.20"],\
             ["@oclif/plugin-not-found", "npm:2.3.11"],\
@@ -2794,8 +2794,8 @@ function $$SETUP_STATE(hydrateRuntimeState, basePath) {
             ["normalize-package-data", "npm:3.0.3"],\
             ["semver", "npm:7.3.8"],\
             ["tslib", "npm:2.4.1"],\
-            ["yeoman-environment", "virtual:66914dc9c12d11e7cc47e518d9eb484a35535fd67f14538e19689b2c9890a5b81be03af53a5a0a64a0b50b82a112e3448c82bce40a722f57a2d286a7a3eb830a#npm:3.13.0"],\
-            ["yeoman-generator", "virtual:66914dc9c12d11e7cc47e518d9eb484a35535fd67f14538e19689b2c9890a5b81be03af53a5a0a64a0b50b82a112e3448c82bce40a722f57a2d286a7a3eb830a#npm:5.6.1"],\
+            ["yeoman-environment", "virtual:f30fea1a8a1e96cd95aaa42203f6e54f27d334aca599a6a058bdf580a493e4506d84d23c55f845dc694b6895d6ebbf513119b16b84b915ea59e5faf03cf40f96#npm:3.13.0"],\
+            ["yeoman-generator", "virtual:f30fea1a8a1e96cd95aaa42203f6e54f27d334aca599a6a058bdf580a493e4506d84d23c55f845dc694b6895d6ebbf513119b16b84b915ea59e5faf03cf40f96#npm:5.6.1"],\
             ["yosay", "npm:2.0.2"]\
           ],\
           "linkType": "HARD"\
@@ -8011,7 +8011,7 @@ function $$SETUP_STATE(hydrateRuntimeState, basePath) {
             ["@dashevo/dpp", "workspace:packages/js-dpp"],\
             ["@dashevo/feature-flags-contract", "workspace:packages/feature-flags-contract"],\
             ["@dashevo/masternode-reward-shares-contract", "workspace:packages/masternode-reward-shares-contract"],\
-            ["@dashevo/oclif", "npm:1.0.0"],\
+            ["@dashevo/oclif", "npm:1.0.1"],\
             ["@dashevo/wallet-lib", "workspace:packages/wallet-lib"],\
             ["@dashevo/withdrawals-contract", "workspace:packages/withdrawals-contract"],\
             ["@oclif/core", "npm:1.22.0"],\
@@ -13103,10 +13103,10 @@ function $$SETUP_STATE(hydrateRuntimeState, basePath) {
           ],\
           "linkType": "SOFT"\
         }],\
-        ["virtual:8047c0357343f93e35a05296445e93b7165657a67381d4dcb85270ee12dc2829349826ce81d157d77eb10cf65ea864099989fed3ef30ee2814cd402d8a0f094b#npm:9.4.0", {\
-          "packageLocation": "./.yarn/__virtual__/mem-fs-editor-virtual-3d752ce26b/0/cache/mem-fs-editor-npm-9.4.0-97c608fb01-427b71d59a.zip/node_modules/mem-fs-editor/",\
+        ["virtual:d57a3bd532041f95d204482eda0a956044e32c7f872cadfef73b29f820fc5c3d8536a7bada8e0e465272cceec08d4ac9da54258525d634de10eba0af9cc6dfe1#npm:9.4.0", {\
+          "packageLocation": "./.yarn/__virtual__/mem-fs-editor-virtual-96decfce1f/0/cache/mem-fs-editor-npm-9.4.0-97c608fb01-427b71d59a.zip/node_modules/mem-fs-editor/",\
           "packageDependencies": [\
-            ["mem-fs-editor", "virtual:8047c0357343f93e35a05296445e93b7165657a67381d4dcb85270ee12dc2829349826ce81d157d77eb10cf65ea864099989fed3ef30ee2814cd402d8a0f094b#npm:9.4.0"],\
+            ["mem-fs-editor", "virtual:d57a3bd532041f95d204482eda0a956044e32c7f872cadfef73b29f820fc5c3d8536a7bada8e0e465272cceec08d4ac9da54258525d634de10eba0af9cc6dfe1#npm:9.4.0"],\
             ["@types/mem-fs", null],\
             ["binaryextensions", "npm:4.18.0"],\
             ["commondir", "npm:1.0.1"],\
@@ -19468,10 +19468,10 @@ function $$SETUP_STATE(hydrateRuntimeState, basePath) {
           ],\
           "linkType": "SOFT"\
         }],\
-        ["virtual:66914dc9c12d11e7cc47e518d9eb484a35535fd67f14538e19689b2c9890a5b81be03af53a5a0a64a0b50b82a112e3448c82bce40a722f57a2d286a7a3eb830a#npm:3.13.0", {\
-          "packageLocation": "./.yarn/__virtual__/yeoman-environment-virtual-8047c03573/0/cache/yeoman-environment-npm-3.13.0-f7ad653f8e-2d622d18d2.zip/node_modules/yeoman-environment/",\
+        ["virtual:f30fea1a8a1e96cd95aaa42203f6e54f27d334aca599a6a058bdf580a493e4506d84d23c55f845dc694b6895d6ebbf513119b16b84b915ea59e5faf03cf40f96#npm:3.13.0", {\
+          "packageLocation": "./.yarn/__virtual__/yeoman-environment-virtual-d57a3bd532/0/cache/yeoman-environment-npm-3.13.0-f7ad653f8e-2d622d18d2.zip/node_modules/yeoman-environment/",\
           "packageDependencies": [\
-            ["yeoman-environment", "virtual:66914dc9c12d11e7cc47e518d9eb484a35535fd67f14538e19689b2c9890a5b81be03af53a5a0a64a0b50b82a112e3448c82bce40a722f57a2d286a7a3eb830a#npm:3.13.0"],\
+            ["yeoman-environment", "virtual:f30fea1a8a1e96cd95aaa42203f6e54f27d334aca599a6a058bdf580a493e4506d84d23c55f845dc694b6895d6ebbf513119b16b84b915ea59e5faf03cf40f96#npm:3.13.0"],\
             ["@npmcli/arborist", "npm:4.3.1"],\
             ["@types/mem-fs", null],\
             ["@types/mem-fs-editor", null],\
@@ -19496,7 +19496,7 @@ function $$SETUP_STATE(hydrateRuntimeState, basePath) {
             ["lodash", "npm:4.17.21"],\
             ["log-symbols", "npm:4.1.0"],\
             ["mem-fs", "npm:2.2.1"],\
-            ["mem-fs-editor", "virtual:8047c0357343f93e35a05296445e93b7165657a67381d4dcb85270ee12dc2829349826ce81d157d77eb10cf65ea864099989fed3ef30ee2814cd402d8a0f094b#npm:9.4.0"],\
+            ["mem-fs-editor", "virtual:d57a3bd532041f95d204482eda0a956044e32c7f872cadfef73b29f820fc5c3d8536a7bada8e0e465272cceec08d4ac9da54258525d634de10eba0af9cc6dfe1#npm:9.4.0"],\
             ["minimatch", "npm:3.1.2"],\
             ["npmlog", "npm:5.0.1"],\
             ["p-queue", "npm:6.6.2"],\
@@ -19526,10 +19526,10 @@ function $$SETUP_STATE(hydrateRuntimeState, basePath) {
           ],\
           "linkType": "SOFT"\
         }],\
-        ["virtual:66914dc9c12d11e7cc47e518d9eb484a35535fd67f14538e19689b2c9890a5b81be03af53a5a0a64a0b50b82a112e3448c82bce40a722f57a2d286a7a3eb830a#npm:5.6.1", {\
-          "packageLocation": "./.yarn/__virtual__/yeoman-generator-virtual-89e21a6e1b/0/cache/yeoman-generator-npm-5.6.1-a49b7654c4-ef036210b6.zip/node_modules/yeoman-generator/",\
+        ["virtual:f30fea1a8a1e96cd95aaa42203f6e54f27d334aca599a6a058bdf580a493e4506d84d23c55f845dc694b6895d6ebbf513119b16b84b915ea59e5faf03cf40f96#npm:5.6.1", {\
+          "packageLocation": "./.yarn/__virtual__/yeoman-generator-virtual-ad9d192e11/0/cache/yeoman-generator-npm-5.6.1-a49b7654c4-ef036210b6.zip/node_modules/yeoman-generator/",\
           "packageDependencies": [\
-            ["yeoman-generator", "virtual:66914dc9c12d11e7cc47e518d9eb484a35535fd67f14538e19689b2c9890a5b81be03af53a5a0a64a0b50b82a112e3448c82bce40a722f57a2d286a7a3eb830a#npm:5.6.1"],\
+            ["yeoman-generator", "virtual:f30fea1a8a1e96cd95aaa42203f6e54f27d334aca599a6a058bdf580a493e4506d84d23c55f845dc694b6895d6ebbf513119b16b84b915ea59e5faf03cf40f96#npm:5.6.1"],\
             ["@types/yeoman-environment", null],\
             ["chalk", "npm:4.1.2"],\
             ["dargs", "npm:7.0.0"],\
@@ -19544,7 +19544,7 @@ function $$SETUP_STATE(hydrateRuntimeState, basePath) {
             ["shelljs", "npm:0.8.5"],\
             ["sort-keys", "npm:4.2.0"],\
             ["text-table", "npm:0.2.0"],\
-            ["yeoman-environment", "virtual:66914dc9c12d11e7cc47e518d9eb484a35535fd67f14538e19689b2c9890a5b81be03af53a5a0a64a0b50b82a112e3448c82bce40a722f57a2d286a7a3eb830a#npm:3.13.0"]\
+            ["yeoman-environment", "virtual:f30fea1a8a1e96cd95aaa42203f6e54f27d334aca599a6a058bdf580a493e4506d84d23c55f845dc694b6895d6ebbf513119b16b84b915ea59e5faf03cf40f96#npm:3.13.0"]\
           ],\
           "packagePeers": [\
             "@types/yeoman-environment",\
