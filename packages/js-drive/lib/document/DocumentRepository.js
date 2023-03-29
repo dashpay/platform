@@ -2,7 +2,6 @@ const { createHash } = require('crypto');
 
 const lodashCloneDeep = require('lodash/cloneDeep');
 
-const PreCalculatedOperation = require('@dashevo/dpp/lib/stateTransition/fee/operations/PreCalculatedOperation');
 const DummyFeeResult = require('@dashevo/dpp/lib/stateTransition/fee/DummyFeeResult');
 const InvalidQueryError = require('./errors/InvalidQueryError');
 const StorageResult = require('../storage/StorageResult');
@@ -12,13 +11,16 @@ class DocumentRepository {
   /**
    *
    * @param {GroveDBStore} groveDBStore
+   * @param {WebAssembly.Instance} dppWasm
    * @param {BaseLogger} [logger]
    */
   constructor(
     groveDBStore,
+    dppWasm,
     logger = undefined,
   ) {
     this.storage = groveDBStore;
+    this.dppWasm = dppWasm;
     this.logger = logger;
   }
 
@@ -62,7 +64,7 @@ class DocumentRepository {
     return new StorageResult(
       undefined,
       [
-        new PreCalculatedOperation(feeResult),
+        new this.dppWasm.PreCalculatedOperation(feeResult),
       ],
     );
   }
@@ -107,7 +109,7 @@ class DocumentRepository {
     return new StorageResult(
       undefined,
       [
-        new PreCalculatedOperation(feeResult),
+        new this.dppWasm.PreCalculatedOperation(feeResult),
       ],
     );
   }
@@ -170,7 +172,7 @@ class DocumentRepository {
       return new StorageResult(
         documents,
         [
-          new PreCalculatedOperation(new DummyFeeResult(0, processingCost, [])),
+          new this.dppWasm.PreCalculatedOperation(new DummyFeeResult(0, processingCost, [])),
         ],
       );
     } catch (e) {
@@ -219,7 +221,7 @@ class DocumentRepository {
       return new StorageResult(
         undefined,
         [
-          new PreCalculatedOperation(feeResult),
+          new this.dppWasm.PreCalculatedOperation(feeResult),
         ],
       );
     } finally {
@@ -273,7 +275,7 @@ class DocumentRepository {
       return new StorageResult(
         prove,
         [
-          new PreCalculatedOperation(new DummyFeeResult(0, processingCost, [])),
+          new this.dppWasm.PreCalculatedOperation(new DummyFeeResult(0, processingCost, [])),
         ],
       );
     } catch (e) {

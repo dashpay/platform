@@ -595,7 +595,8 @@ function createDIContainer(blsSignatures, dppWasm, options) {
     dataContractRepository: asFunction((
       groveDBStore,
       decodeProtocolEntity,
-    ) => new DataContractStoreRepository(groveDBStore, decodeProtocolEntity)).singleton(),
+      dppWasm,
+    ) => new DataContractStoreRepository(groveDBStore, decodeProtocolEntity, dppWasm)).singleton(),
   });
 
   /**
@@ -604,7 +605,8 @@ function createDIContainer(blsSignatures, dppWasm, options) {
   container.register({
     documentRepository: asFunction((
       groveDBStore,
-    ) => new DocumentRepository(groveDBStore)).singleton(),
+      dppWasm,
+    ) => new DocumentRepository(groveDBStore, dppWasm)).singleton(),
 
     fetchDocuments: asFunction(fetchDocumentsFactory).singleton(),
     fetchDataContract: asFunction(fetchDataContractFactory).singleton(),
@@ -650,6 +652,7 @@ function createDIContainer(blsSignatures, dppWasm, options) {
       latestBlockExecutionContext,
       simplifiedMasternodeList,
       rsDrive,
+      dppWasm,
     ) => {
       const stateRepository = new DriveStateRepository(
         identityRepository,
