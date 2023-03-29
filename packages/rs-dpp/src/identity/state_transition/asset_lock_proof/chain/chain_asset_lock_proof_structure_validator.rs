@@ -96,7 +96,7 @@ where
             .state_repository
             .fetch_latest_platform_core_chain_locked_height()
             .await
-            .map_err(|e| NonConsensusError::StateRepositoryFetchError(format!("state repository fetch current core chain locked height for chain asset lock proof verification error: {}",e.to_string())))?
+            .map_err(|e| NonConsensusError::StateRepositoryFetchError(format!("state repository fetch current core chain locked height for chain asset lock proof verification error: {}", e)))?
             .unwrap_or(0);
 
         if current_core_chain_locked_height < proof_core_chain_locked_height {
@@ -122,7 +122,7 @@ where
             .map_err(|e| {
                 NonConsensusError::StateRepositoryFetchError(format!(
                     "transaction fetching error for chain lock: {}",
-                    e.to_string()
+                    e
                 ))
             })?;
 
@@ -132,7 +132,7 @@ where
             .map_err(|e| {
                 NonConsensusError::StateRepositoryFetchError(format!(
                     "transaction decoding error: {}",
-                    e.to_string()
+                    e
                 ))
             })?;
 
@@ -165,7 +165,6 @@ where
                     validate_asset_lock_transaction_result
                         .into_data()
                         .expect("This can not happen due to the logic above")
-                        .clone()
                 } else {
                     result.merge(validate_asset_lock_transaction_result);
                     return Ok(result);

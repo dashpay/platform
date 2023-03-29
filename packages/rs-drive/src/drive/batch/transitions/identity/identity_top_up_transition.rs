@@ -17,17 +17,15 @@ impl DriveHighLevelOperationConverter for IdentityTopUpTransitionAction {
             ..
         } = self;
 
-        let mut drive_operations = vec![];
-
-        drive_operations.push(IdentityOperation(
-            IdentityOperationType::AddToIdentityBalance {
+        let mut drive_operations = vec![
+            IdentityOperation(IdentityOperationType::AddToIdentityBalance {
                 identity_id: identity_id.to_buffer(),
                 added_balance: top_up_balance_amount,
-            },
-        ));
-        drive_operations.push(SystemOperation(SystemOperationType::AddToSystemCredits {
-            amount: top_up_balance_amount,
-        }));
+            }),
+            SystemOperation(SystemOperationType::AddToSystemCredits {
+                amount: top_up_balance_amount,
+            }),
+        ];
         Ok(drive_operations)
     }
 }

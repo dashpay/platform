@@ -17,9 +17,7 @@ impl DriveHighLevelOperationConverter for IdentityCreditWithdrawalTransitionActi
             ..
         } = self;
 
-        let mut drive_operations = vec![];
-
-        drive_operations.push(DocumentOperation(
+        let mut drive_operations = vec![DocumentOperation(
             DocumentOperationType::AddWithdrawalDocument {
                 owned_document_info: OwnedDocumentInfo {
                     document_info: DocumentInfo::DocumentWithoutSerialization((
@@ -29,7 +27,7 @@ impl DriveHighLevelOperationConverter for IdentityCreditWithdrawalTransitionActi
                     owner_id: None,
                 },
             },
-        ));
+        )];
 
         Ok(drive_operations)
     }

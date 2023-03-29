@@ -86,7 +86,7 @@ where
             .map_err(|e| {
                 NonConsensusError::StateRepositoryFetchError(format!(
                     "state repository verify instant send lock error: {}",
-                    e.to_string()
+                    e
                 ))
             })?;
 
@@ -109,7 +109,6 @@ where
             validate_asset_lock_transaction_result
                 .into_data()
                 .expect("This can not happen due to the logic above")
-                .clone()
         } else {
             result.merge(validate_asset_lock_transaction_result);
             return Ok(result);

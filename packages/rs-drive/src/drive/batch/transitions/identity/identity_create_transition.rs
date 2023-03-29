@@ -20,24 +20,23 @@ impl DriveHighLevelOperationConverter for IdentityCreateTransitionAction {
             ..
         } = self;
 
-        let mut drive_operations = vec![];
-        /// We must create the contract
-        drive_operations.push(IdentityOperation(IdentityOperationType::AddNewIdentity {
-            identity: Identity {
-                //todo: deal with protocol version
-                protocol_version: PROTOCOL_VERSION,
-                id: identity_id,
-                public_keys: public_keys.into_iter().map(|key| (key.id, key)).collect(),
-                balance: initial_balance_amount,
-                revision: 0,
-                asset_lock_proof: None,
-                metadata: None,
-            },
-        }));
-        drive_operations.push(SystemOperation(SystemOperationType::AddToSystemCredits {
-            amount: initial_balance_amount,
-        }));
-
+        let drive_operations = vec![
+            IdentityOperation(IdentityOperationType::AddNewIdentity {
+                identity: Identity {
+                    //todo: deal with protocol version
+                    protocol_version: PROTOCOL_VERSION,
+                    id: identity_id,
+                    public_keys: public_keys.into_iter().map(|key| (key.id, key)).collect(),
+                    balance: initial_balance_amount,
+                    revision: 0,
+                    asset_lock_proof: None,
+                    metadata: None,
+                },
+            }),
+            SystemOperation(SystemOperationType::AddToSystemCredits {
+                amount: initial_balance_amount,
+            }),
+        ];
         Ok(drive_operations)
     }
 }
