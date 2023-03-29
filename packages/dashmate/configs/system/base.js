@@ -74,16 +74,18 @@ module.exports = {
         image: 'dashpay/sentinel:1.7.1',
       },
     },
+    devnet: {
+      name: null,
+      minimumDifficultyBlocks: 0,
+      powTargetSpacing: 150,
+    },
     debug: 0,
     logIps: 0,
     indexes: true,
-    minimumDifficultyBlocks: 0,
-    powTargetSpacing: 150,
     reindex: {
       enable: false,
       containerId: null,
     },
-    devnetName: null,
   },
   platform: {
     dapi: {
