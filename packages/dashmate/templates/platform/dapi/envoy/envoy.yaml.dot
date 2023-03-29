@@ -150,7 +150,7 @@ static_resources:
         socket_address:
           address: 0.0.0.0
           port_value: 10000
-      {{? it.platform.dapi.envoy.ssl.provider === 'selfSigned'}}
+      {{? it.platform.dapi.envoy.ssl.provider === 'self-signed'}}
       listener_filters:
         - name: envoy.filters.listener.tls_inspector
           typed_config:
