@@ -440,19 +440,19 @@ function createDIContainer(blsSignatures, dppWasm, options) {
       logJsonFileLevel,
       logJsonFileStream,
     ) => [
-        {
-          level: logStdoutLevel,
-          stream: logStdoutStream,
-        },
-        {
-          level: logPrettyFileLevel,
-          stream: logPrettyFileStream,
-        },
-        {
-          level: logJsonFileLevel,
-          stream: logJsonFileStream,
-        },
-      ]),
+      {
+        level: logStdoutLevel,
+        stream: logStdoutStream,
+      },
+      {
+        level: logPrettyFileLevel,
+        stream: logPrettyFileStream,
+      },
+      {
+        level: logJsonFileLevel,
+        stream: logJsonFileStream,
+      },
+    ]),
 
     logger: asFunction(
       (loggerStreams) => pino({
@@ -663,6 +663,7 @@ function createDIContainer(blsSignatures, dppWasm, options) {
         latestBlockExecutionContext,
         simplifiedMasternodeList,
         rsDrive,
+        dppWasm,
       );
 
       return new CachedStateRepositoryDecorator(
@@ -696,6 +697,7 @@ function createDIContainer(blsSignatures, dppWasm, options) {
         proposalBlockExecutionContext,
         simplifiedMasternodeList,
         rsDrive,
+        dppWasm,
         {
           useTransaction: true,
         },
@@ -735,7 +737,7 @@ function createDIContainer(blsSignatures, dppWasm, options) {
       dppOptions,
       blsSignatures,
     ) => (
-      new DashPlatformProtocol(blsSignatures, transactionalStateRepository, { generate: () =>  Buffer.alloc(32) })
+      new DashPlatformProtocol(blsSignatures, transactionalStateRepository, { generate: () => Buffer.alloc(32) })
     )).singleton(),
   });
 

@@ -572,7 +572,7 @@ class DriveStateRepository {
 
     if (executionContext) {
       executionContext.addOperation(
-        new SignatureVerificationOperation(this.dppWasm.KeyTypes.ECDSA_SECP256K1),
+        new SignatureVerificationOperation(this.dppWasm.KeyType.ECDSA_SECP256K1),
       );
 
       if (executionContext.isDryRun()) {
