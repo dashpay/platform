@@ -73,11 +73,22 @@ pub async fn validate_identity_create_transition_state(
         return Ok(IdentityCreateTransitionAction::from_borrowed(state_transition, 0).into());
     }
 
-    if let Some(balance) = balance {
-        return Ok(IdentityCreateTransitionAction::from_borrowed(state_transition, balance).into());
-    } else {
+    // Balance is here to check if the identity does already exist
+    if balance.is_some() {
         result.add_error(IdentityAlreadyExistsError::new(identity_id.to_buffer()));
         Ok(result)
+    } else {
+        let tx_out = state_transition
+            .asset_lock_proof
+            .fetch_asset_lock_transaction_output(
+                state_repository,
+                &state_transition.execution_context,
+            )
+            .await
+            .map_err(Into::<NonConsensusError>::into)?;
+        return Ok(
+            IdentityCreateTransitionAction::from_borrowed(state_transition, tx_out.value).into(),
+        );
     }
 }
 
