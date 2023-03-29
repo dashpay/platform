@@ -23,6 +23,12 @@ impl From<SignatureVerificationOperation> for SignatureVerificationOperationWasm
     }
 }
 
+impl From<SignatureVerificationOperationWasm> for SignatureVerificationOperation {
+    fn from(value: SignatureVerificationOperationWasm) -> Self {
+        value.0
+    }
+}
+
 #[wasm_bindgen(js_class=SignatureVerificationOperation)]
 impl SignatureVerificationOperationWasm {
     #[wasm_bindgen(constructor)]
