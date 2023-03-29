@@ -497,6 +497,15 @@ module.exports = {
               .platform.drive.tenderdash.rpc.port;
           }
         }
+
+        config.core.devnet.name = config.core.devnetName;
+        delete config.core.devnetName;
+
+        config.core.devnet.powTargetSpacing = config.core.powTargetSpacing;
+        delete config.core.powTargetSpacing;
+
+        config.core.devnet.minimumDifficultyBlocks = config.core.minimumDifficultyBlocks;
+        delete config.core.minimumDifficultyBlocks;
       });
 
     return configFile;
