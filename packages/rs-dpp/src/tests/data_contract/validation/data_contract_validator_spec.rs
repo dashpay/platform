@@ -6,8 +6,8 @@ use platform_value::{platform_value, Value};
 use serde_json::Value as JsonValue;
 use test_case::test_case;
 
+use crate::errors::consensus::codes::ErrorWithCode;
 use crate::{
-    codes::ErrorWithCode,
     consensus::{basic::JsonSchemaError, ConsensusError},
     data_contract::validation::data_contract_validator::DataContractValidator,
     errors::consensus::basic::{BasicError, IndexError},

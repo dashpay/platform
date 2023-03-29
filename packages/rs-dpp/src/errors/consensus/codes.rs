@@ -1,6 +1,7 @@
 use crate::consensus::{basic::IndexError, fee::FeeError, signature::SignatureError};
+use platform_value::Value;
 
-use super::{
+use crate::errors::{
     abstract_state_error::StateError, consensus::basic::BasicError, consensus::ConsensusError,
     DataTriggerError,
 };
@@ -181,4 +182,124 @@ impl ErrorWithCode for FeeError {
     }
 }
 
-fn create_consenus_error() {}
+fn create_consensus_error(code: u32, args: Value) -> ConsensusError {
+    /*
+        // Decoding
+    1000: ProtocolVersionParsingError,
+    1001: SerializedObjectParsingError,
+
+    // General
+    1002: UnsupportedProtocolVersionError,
+    1003: IncompatibleProtocolVersionError,
+    1004: JsonSchemaCompilationError,
+    1005: JsonSchemaError,
+    1006: InvalidIdentifierError,
+
+    // Data Contract
+    1007: DataContractMaxDepthExceedError,
+    1008: DuplicateIndexError,
+    1009: IncompatibleRe2PatternError,
+    1010: InvalidCompoundIndexError,
+    1011: InvalidDataContractIdError,
+    1012: InvalidIndexedPropertyConstraintError,
+    1013: InvalidIndexPropertyTypeError,
+    1014: InvalidJsonSchemaRefError,
+    1015: SystemPropertyIndexAlreadyPresentError,
+    1016: UndefinedIndexPropertyError,
+    1017: UniqueIndicesLimitReachedError,
+    1048: DuplicateIndexNameError,
+    1050: InvalidDataContractVersionError,
+    1051: IncompatibleDataContractSchemaError,
+    1052: DataContractImmutablePropertiesUpdateError,
+    1053: DataContractUniqueIndicesChangedError,
+    1054: DataContractInvalidIndexDefinitionUpdateError,
+    1055: DataContractHaveNewUniqueIndexError,
+
+    // Document
+    1018: DataContractNotPresentError,
+    1019: DuplicateDocumentTransitionsWithIdsError,
+    1020: DuplicateDocumentTransitionsWithIndicesError,
+    1021: InconsistentCompoundIndexDataError,
+    1022: InvalidDocumentTransitionActionError,
+    1023: InvalidDocumentTransitionIdError,
+    1024: InvalidDocumentTypeError,
+    1025: MissingDataContractIdError,
+    1026: MissingDocumentTransitionActionError,
+    1027: MissingDocumentTransitionTypeError,
+    1028: MissingDocumentTypeError,
+
+    // Identity
+    1029: DuplicatedIdentityPublicKeyError,
+    1030: DuplicatedIdentityPublicKeyIdError,
+    1031: IdentityAssetLockProofLockedTransactionMismatchError,
+    1032: IdentityAssetLockTransactionIsNotFoundError,
+    1033: IdentityAssetLockTransactionOutPointAlreadyExistsError,
+    1034: IdentityAssetLockTransactionOutputNotFoundError,
+    1035: InvalidAssetLockProofCoreChainHeightError,
+    1036: InvalidAssetLockProofTransactionHeightError,
+    1037: InvalidAssetLockTransactionOutputReturnSizeError,
+    1038: InvalidIdentityAssetLockTransactionError,
+    1039: InvalidIdentityAssetLockTransactionOutputError,
+    1040: InvalidIdentityPublicKeyDataError,
+    1041: InvalidInstantAssetLockProofError,
+    1042: InvalidInstantAssetLockProofSignatureError,
+    1046: MissingMasterPublicKeyError,
+    1047: InvalidIdentityPublicKeySecurityLevelError,
+    1056: InvalidIdentityKeySignatureError,
+
+    // State Transition
+    1043: InvalidStateTransitionTypeError,
+    1044: MissingStateTransitionTypeError,
+    1045: StateTransitionMaxSizeExceededError,
+
+    /**
+     * Signature
+     */
+
+    2000: IdentityNotFoundError,
+    2001: InvalidIdentityPublicKeyTypeError,
+    2002: InvalidStateTransitionSignatureError,
+    2003: MissingPublicKeyError,
+    2004: InvalidSignaturePublicKeySecurityLevelError,
+    2005: WrongPublicKeyPurposeError,
+    2006: PublicKeyIsDisabledError,
+    2007: PublicKeySecurityLevelNotMetError,
+
+    /**
+     * Fee
+     */
+
+    3000: BalanceIsNotEnoughError,
+
+    /**
+     * State
+     */
+
+    // Data Contract
+    4000: DataContractAlreadyPresentError,
+    4001: DataTriggerConditionError,
+    4002: DataTriggerExecutionError,
+    4003: DataTriggerInvalidResultError,
+
+    // Document
+    4004: DocumentAlreadyPresentError,
+    4005: DocumentNotFoundError,
+    4006: DocumentOwnerIdMismatchError,
+    4007: DocumentTimestampsMismatchError,
+    4008: DocumentTimestampWindowViolationError,
+    4009: DuplicateUniqueIndexError,
+    4010: InvalidDocumentRevisionError,
+
+    // Identity
+    4011: IdentityAlreadyExistsError,
+    4012: IdentityPublicKeyDisabledAtWindowViolationError,
+    4017: IdentityPublicKeyIsReadOnlyError,
+    4018: InvalidIdentityPublicKeyIdError,
+    4019: InvalidIdentityRevisionError,
+    4020: StateMaxIdentityPublicKeyLimitReachedError,
+    4021: DuplicatedIdentityPublicKeyStateError,
+    4022: DuplicatedIdentityPublicKeyIdStateError,
+    4023: IdentityPublicKeyIsDisabledError,
+       */
+    match code {}
+}
