@@ -72,7 +72,9 @@ class DriveStateRepository {
     );
 
     if (executionContext) {
-      executionContext.addOperation(...result.getOperations());
+      for (const operation of result.getOperations()) {
+        executionContext.addOperation(operation);
+      }
     }
 
     return result.getValue();
@@ -96,7 +98,9 @@ class DriveStateRepository {
     );
 
     if (executionContext) {
-      executionContext.addOperation(...result.getOperations());
+      for (const operation of result.getOperations()) {
+        executionContext.addOperation(operation);
+      }
     }
   }
 
@@ -119,7 +123,9 @@ class DriveStateRepository {
     );
 
     if (executionContext) {
-      executionContext.addOperation(...result.getOperations());
+      for (const operation of result.getOperations()) {
+        executionContext.addOperation(operation);
+      }
     }
   }
 
@@ -142,7 +148,9 @@ class DriveStateRepository {
     );
 
     if (executionContext) {
-      executionContext.addOperation(...result.getOperations());
+      for (const operation of result.getOperations()) {
+        executionContext.addOperation(operation);
+      }
     }
 
     return result.getValue();
@@ -165,7 +173,9 @@ class DriveStateRepository {
     );
 
     if (executionContext) {
-      executionContext.addOperation(...result.getOperations());
+      for (const operation of result.getOperations()) {
+        executionContext.addOperation(operation);
+      }
     }
 
     return result.getValue();
@@ -190,7 +200,9 @@ class DriveStateRepository {
     );
 
     if (executionContext) {
-      executionContext.addOperation(...result.getOperations());
+      for (const operation of result.getOperations()) {
+        executionContext.addOperation(operation);
+      }
     }
   }
 
@@ -233,7 +245,9 @@ class DriveStateRepository {
     );
 
     if (executionContext) {
-      executionContext.addOperation(...result.getOperations());
+      for (const operation of result.getOperations()) {
+        executionContext.addOperation(operation);
+      }
     }
   }
 
@@ -256,7 +270,9 @@ class DriveStateRepository {
     );
 
     if (executionContext) {
-      executionContext.addOperation(...result.getOperations());
+      for (const operation of result.getOperations()) {
+        executionContext.addOperation(operation);
+      }
     }
   }
 
@@ -275,7 +291,9 @@ class DriveStateRepository {
     );
 
     if (executionContext) {
-      executionContext.addOperation(...result.getOperations());
+      for (const operation of result.getOperations()) {
+        executionContext.addOperation(operation);
+      }
     }
   }
 
@@ -294,7 +312,9 @@ class DriveStateRepository {
     );
 
     if (executionContext) {
-      executionContext.addOperation(...result.getOperations());
+      for (const operation of result.getOperations()) {
+        executionContext.addOperation(operation);
+      }
     }
 
     return !result.isNull();
@@ -323,7 +343,9 @@ class DriveStateRepository {
     );
 
     if (executionContext) {
-      executionContext.addOperation(...result.getOperations());
+      for (const operation of result.getOperations()) {
+        executionContext.addOperation(operation);
+      }
     }
 
     return result.getValue();
@@ -347,7 +369,9 @@ class DriveStateRepository {
     );
 
     if (executionContext) {
-      executionContext.addOperation(...result.getOperations());
+      for (const operation of result.getOperations()) {
+        executionContext.addOperation(operation);
+      }
     }
   }
 
@@ -369,7 +393,9 @@ class DriveStateRepository {
     );
 
     if (executionContext) {
-      executionContext.addOperation(...result.getOperations());
+      for (const operation of result.getOperations()) {
+        executionContext.addOperation(operation);
+      }
     }
   }
 
@@ -397,7 +423,9 @@ class DriveStateRepository {
     );
 
     if (executionContext) {
-      executionContext.addOperation(...result.getOperations());
+      for (const operation of result.getOperations()) {
+        executionContext.addOperation(operation);
+      }
     }
 
     return result.getValue();
@@ -421,7 +449,9 @@ class DriveStateRepository {
     );
 
     if (executionContext) {
-      executionContext.addOperation(...result.getOperations());
+      for (const operation of result.getOperations()) {
+        executionContext.addOperation(operation);
+      }
     }
   }
 
@@ -443,7 +473,9 @@ class DriveStateRepository {
     );
 
     if (executionContext) {
-      executionContext.addOperation(...result.getOperations());
+      for (const operation of result.getOperations()) {
+        executionContext.addOperation(operation);
+      }
     }
   }
 
@@ -469,7 +501,9 @@ class DriveStateRepository {
     );
 
     if (executionContext) {
-      executionContext.addOperation(...result.getOperations());
+      for (const operation of result.getOperations()) {
+        executionContext.addOperation(operation);
+      }
     }
   }
 
