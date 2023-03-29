@@ -4,6 +4,7 @@ const createStateRepositoryMock = require('@dashevo/dpp/lib/test/mocks/createSta
 const getInstantAssetLockProofFixture = require('@dashevo/dpp/lib/test/fixtures/getInstantAssetLockProofFixture');
 const getChainAssetLockProofFixture = require('@dashevo/dpp/lib/test/fixtures/getChainAssetLockProofFixture');
 const IdentityPublicKey = require('@dashevo/dpp/lib/identity/IdentityPublicKey');
+const getBlsAdapterMock = require('../../../lib/test/mocks/getBlsAdapterMock');
 
 const { default: loadWasmDpp } = require('../../../dist');
 
@@ -20,7 +21,7 @@ describe('IdentityFacade', () => {
   let IdentityCreateTransition;
   let IdentityTopUpTransition;
   let IdentityUpdateTransition;
-  let IdentityPublicKeyCreateTransition;
+  let IdentityPublicKeyWithWitness;
   let ChainAssetLockProof;
   let DashPlatformProtocol;
   let ValidationResult;
@@ -28,7 +29,7 @@ describe('IdentityFacade', () => {
   before(async () => {
     ({
       Identity, InstantAssetLockProof, ChainAssetLockProof, IdentityUpdateTransition,
-      IdentityCreateTransition, IdentityTopUpTransition, IdentityPublicKeyCreateTransition,
+      IdentityCreateTransition, IdentityTopUpTransition, IdentityPublicKeyWithWitness,
       DashPlatformProtocol, ValidationResult,
     } = await loadWasmDpp());
   });
@@ -42,9 +43,7 @@ describe('IdentityFacade', () => {
       height: 42,
     });
 
-    dpp = new DashPlatformProtocol({
-      stateRepository: stateRepositoryMock,
-    });
+    dpp = new DashPlatformProtocol(getBlsAdapterMock(), stateRepositoryMock, 1);
 
     const chainAssetLockProofJS = getChainAssetLockProofFixture();
     const instantAssetLockProofJS = getInstantAssetLockProofFixture();
@@ -86,8 +85,13 @@ describe('IdentityFacade', () => {
   });
 
   describe('#createFromBuffer', () => {
-    it('should create Identity from string', () => {
-      const result = dpp.identity.createFromBuffer(identity.toBuffer());
+    it('should create Identity from a Buffer', () => {
+      let result;
+      try {
+        result = dpp.identity.createFromBuffer(identity.toBuffer());
+      } catch (e) {
+        console.dir(e.getErrors()[0].toString());
+      }
 
       expect(result).to.be.an.instanceOf(Identity);
 
@@ -179,7 +183,7 @@ describe('IdentityFacade', () => {
   describe('#createIdentityUpdateTransition', () => {
     it('should create IdentityUpdateTransition from identity id and public keys', () => {
       const publicKeys = {
-        add: [new IdentityPublicKeyCreateTransition({
+        add: [new IdentityPublicKeyWithWitness({
           id: 3,
           type: IdentityPublicKey.TYPES.ECDSA_SECP256K1,
           data: Buffer.from('AuryIuMtRrl/VviQuyLD1l4nmxi9ogPzC9LT7tdpo0di', 'base64'),

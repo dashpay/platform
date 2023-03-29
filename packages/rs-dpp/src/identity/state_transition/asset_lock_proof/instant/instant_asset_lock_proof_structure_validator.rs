@@ -3,7 +3,8 @@ use std::sync::Arc;
 use dashcore::consensus;
 use dashcore::InstantLock;
 use lazy_static::lazy_static;
-use serde_json::Value;
+use platform_value::Value;
+use serde_json::Value as JsonValue;
 
 use crate::consensus::basic::identity::{
     IdentityAssetLockProofLockedTransactionMismatchError, InvalidInstantAssetLockProofError,
@@ -12,12 +13,11 @@ use crate::consensus::basic::identity::{
 use crate::identity::state_transition::asset_lock_proof::AssetLockTransactionValidator;
 use crate::state_repository::StateRepositoryLike;
 use crate::state_transition::state_transition_execution_context::StateTransitionExecutionContext;
-use crate::util::json_value::JsonValueExt;
 use crate::validation::{JsonSchemaValidator, ValidationResult};
-use crate::{DashPlatformProtocolInitError, NonConsensusError, SerdeParsingError};
+use crate::{DashPlatformProtocolInitError, NonConsensusError};
 
 lazy_static! {
-    static ref INSTANT_ASSET_LOCK_PROOF_SCHEMA: Value = serde_json::from_str(include_str!(
+    static ref INSTANT_ASSET_LOCK_PROOF_SCHEMA: JsonValue = serde_json::from_str(include_str!(
         "../../../../schema/identity/stateTransition/assetLockProof/instantAssetLockProof.json"
     ))
     .unwrap();
@@ -54,35 +54,21 @@ where
 
     pub async fn validate(
         &self,
-        raw_asset_lock_proof: &Value,
+        asset_lock_proof_object: &Value,
         execution_context: &StateTransitionExecutionContext,
     ) -> Result<ValidationResult<PublicKeyHash>, NonConsensusError> {
         let mut result = ValidationResult::default();
 
-        result.merge(self.json_schema_validator.validate(raw_asset_lock_proof)?);
+        result.merge(
+            self.json_schema_validator
+                .validate(&asset_lock_proof_object.try_to_validating_json()?)?,
+        );
 
         if !result.is_valid() {
             return Ok(result);
         }
 
-        let raw_is_lock: Vec<u8> = raw_asset_lock_proof
-            .as_object()
-            .ok_or_else(|| SerdeParsingError::new("Expected raw asset lock proof to be an object"))?
-            .get("instantLock")
-            .ok_or_else(|| {
-                SerdeParsingError::new("Expected raw asset lock to have property 'instantLock'")
-            })?
-            .as_array()
-            .ok_or_else(|| SerdeParsingError::new("Expected 'instantLock' to be an array"))?
-            .iter()
-            .map(|val| {
-                val.as_u64()
-                    .ok_or_else(|| SerdeParsingError::new("Expected 'instantLock' to be an array"))
-            })
-            .collect::<Result<Vec<u64>, SerdeParsingError>>()?
-            .into_iter()
-            .map(|n| n as u8)
-            .collect();
+        let raw_is_lock = asset_lock_proof_object.get_bytes("instantLock")?;
 
         let instant_lock = match consensus::deserialize::<InstantLock>(&raw_is_lock) {
             Ok(instant_lock) => instant_lock,
@@ -95,43 +81,34 @@ where
 
         let is_signature_verified = self
             .state_repository
-            .verify_instant_lock(&instant_lock, execution_context)
+            .verify_instant_lock(&instant_lock, Some(execution_context))
             .await
-            .map_err(|err| NonConsensusError::StateRepositoryFetchError(err.to_string()))?;
+            .map_err(|e| {
+                NonConsensusError::StateRepositoryFetchError(format!(
+                    "state repository verify instant send lock error: {}",
+                    e
+                ))
+            })?;
 
         if !is_signature_verified {
             result.add_error(InvalidInstantAssetLockProofSignatureError::new());
             return Ok(result);
         }
 
-        let tx_json_uint_array = raw_asset_lock_proof
-            .get_bytes("transaction")
-            .map_err(|err| SerdeParsingError::new(err.to_string()))?;
+        let tx_json_uint_array = asset_lock_proof_object.get_bytes("transaction")?;
 
-        let output_index = raw_asset_lock_proof
-            .as_object()
-            .ok_or_else(|| SerdeParsingError::new("Expected asset lock to be an object"))?
-            .get("outputIndex")
-            .ok_or_else(|| {
-                SerdeParsingError::new("Expect asset lock to have a 'transaction field'")
-            })?
-            .as_u64()
-            .ok_or_else(|| SerdeParsingError::new("Expect outputIndex to be a number"))?;
+        let output_index = asset_lock_proof_object.get_integer("outputIndex")?;
 
         let validate_asset_lock_transaction_result = self
             .asset_lock_transaction_validator
-            .validate(
-                &tx_json_uint_array,
-                output_index as usize,
-                execution_context,
-            )
+            .validate(&tx_json_uint_array, output_index, execution_context)
             .await?;
 
-        let validation_result_data = if validate_asset_lock_transaction_result.is_valid() {
+        let validation_result_data = if validate_asset_lock_transaction_result.is_valid_with_data()
+        {
             validate_asset_lock_transaction_result
-                .data()
+                .into_data()
                 .expect("This can not happen due to the logic above")
-                .clone()
         } else {
             result.merge(validate_asset_lock_transaction_result);
             return Ok(result);

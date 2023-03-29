@@ -1,94 +1,93 @@
-const bs58 = require('bs58');
-const AbstractDocumentTransition = require('@dashevo/dpp/lib/document/stateTransition/DocumentsBatchTransition/documentTransition/AbstractDocumentTransition');
-
-const generateRandomIdentifier = require('@dashevo/dpp/lib/test/utils/generateRandomIdentifier');
-
-const DataTrigger = require('@dashevo/dpp/lib/dataTrigger/DataTrigger');
-const DataTriggerExecutionResult = require('@dashevo/dpp/lib/dataTrigger/DataTriggerExecutionResult');
-const DataTriggerExecutionContext = require('@dashevo/dpp/lib/dataTrigger/DataTriggerExecutionContext');
+const createStateRepositoryMock = require('@dashevo/dpp/lib/test/mocks/createStateRepositoryMock');
+const dpnsSystemIds = require('@dashevo/dpns-contract/lib/systemIds');
 const getDpnsContractFixture = require('@dashevo/dpp/lib/test/fixtures/getDpnsContractFixture');
 const dpnsDocumentFixture = require('@dashevo/dpp/lib/test/fixtures/getDpnsDocumentFixture');
 const getDocumentsFixture = require('@dashevo/dpp/lib/test/fixtures/getDocumentsFixture');
 const getDocumentTransitionsFixture = require('@dashevo/dpp/lib/test/fixtures/getDocumentTransitionsFixture');
 const getDataContractFixture = require('@dashevo/dpp/lib/test/fixtures/getDataContractFixture');
 
-const dpnsCreateDomainDataTrigger = require('@dashevo/dpp/lib/dataTrigger/dpnsTriggers/createDomainDataTrigger');
-const dpnsDeleteDomainDataTrigger = require('@dashevo/dpp/lib/dataTrigger/dpnsTriggers/createDomainDataTrigger');
-const dpnsUpdateDomainDataTrigger = require('@dashevo/dpp/lib/dataTrigger/dpnsTriggers/createDomainDataTrigger');
+const IdentifierJs = require('@dashevo/dpp/lib/identifier/Identifier');
 
-const executeDataTriggersFactory = require('@dashevo/dpp/lib/document/stateTransition/DocumentsBatchTransition/validation/state/executeDataTriggersFactory');
+const { default: loadWasmDpp } = require('../../../../../../../dist');
 
-const Identifier = require('@dashevo/dpp/lib/identifier/Identifier');
+let DataContract;
+let DocumentTransition;
+let DocumentCreateTransition;
+let DataTriggerExecutionContext;
+let Document;
+let DataTriggerExecutionResult;
+let StateTransitionExecutionContext;
+let getAllDataTriggers;
 
 describe('executeDataTriggersFactory', () => {
+  let childDocumentJs;
   let childDocument;
   let contractMock;
-
-  let dpnsTriggers;
-
-  let domainDocumentType;
-
-  let stateTransitionHeaderMock;
+  let stateTransitionExecutionContext;
   let context;
   let documentTransitions;
-  let dpnsCreateDomainDataTriggerMock;
-  let dpnsUpdateDomainDataTriggerMock;
-  let dpnsDeleteDomainDataTriggerMock;
-  let getDataTriggersMock;
 
   let executeDataTriggers;
+  let dataContractJs;
   let dataContract;
+  let stateRepositoryMock;
 
-  beforeEach(function beforeEach() {
-    dataContract = getDataContractFixture();
+  beforeEach(async function beforeEach() {
+    ({
+      DataContract,
+      DocumentTransition,
+      DocumentCreateTransition,
+      DataTriggerExecutionContext,
+      Document,
+      DataTriggerExecutionResult,
+      StateTransitionExecutionContext,
+      executeDataTriggers,
+      getAllDataTriggers,
+    } = await loadWasmDpp());
 
-    domainDocumentType = 'domain';
+    dataContractJs = getDataContractFixture();
+    dataContract = new DataContract(dataContractJs.toObject());
 
-    dpnsTriggers = [
-      dpnsCreateDomainDataTrigger,
-      dpnsDeleteDomainDataTrigger,
-      dpnsUpdateDomainDataTrigger,
-    ];
+    contractMock = new DataContract(getDpnsContractFixture().toObject());
 
-    contractMock = getDpnsContractFixture();
-
-    childDocument = dpnsDocumentFixture.getChildDocumentFixture();
-
-    dpnsCreateDomainDataTriggerMock = { execute: this.sinonSandbox.stub() };
-    dpnsUpdateDomainDataTriggerMock = { execute: this.sinonSandbox.stub() };
-    dpnsDeleteDomainDataTriggerMock = { execute: this.sinonSandbox.stub() };
-
-    dpnsCreateDomainDataTriggerMock
-      .execute.resolves(new DataTriggerExecutionResult());
-
-    dpnsUpdateDomainDataTriggerMock
-      .execute.resolves(new DataTriggerExecutionResult());
-
-    dpnsDeleteDomainDataTriggerMock
-      .execute.resolves(new DataTriggerExecutionResult());
-
-    const ownerId = bs58.decode('5zcXZpTLWFwZjKjq3ME5KVavtZa9YUaZESVzrndehBhq');
-
-    context = new DataTriggerExecutionContext(
-      null, ownerId, contractMock,
+    childDocumentJs = dpnsDocumentFixture.getChildDocumentFixture();
+    childDocument = new Document(
+      childDocumentJs.toObject(),
+      dataContract.clone(),
+      childDocumentJs.getType(),
     );
 
-    documentTransitions = getDocumentTransitionsFixture({
-      create: [childDocument],
+    stateRepositoryMock = createStateRepositoryMock(this.sinonSandbox);
+
+    contractMock.setId(dpnsSystemIds.contractId);
+    stateRepositoryMock = createStateRepositoryMock(this.sinonSandbox);
+    stateRepositoryMock.fetchDocuments.resolves([childDocument]);
+
+    stateTransitionExecutionContext = new StateTransitionExecutionContext();
+    stateTransitionExecutionContext.disableDryRun();
+
+    context = new DataTriggerExecutionContext(
+      stateRepositoryMock,
+      childDocument.getOwnerId(),
+      contractMock.clone(),
+      stateTransitionExecutionContext,
+    );
+
+    const documentTransitionsJs = getDocumentTransitionsFixture({
+      create: [childDocumentJs],
     });
 
-    getDataTriggersMock = this.sinonSandbox.stub();
-
-    getDataTriggersMock.returns([
-      dpnsCreateDomainDataTriggerMock,
-    ]);
-
-    executeDataTriggers = executeDataTriggersFactory(getDataTriggersMock);
+    documentTransitions = documentTransitionsJs.map((transition) => {
+      const transitionCreate = new DocumentCreateTransition(
+        transition.toObject(), dataContract.clone(),
+      );
+      return DocumentTransition.fromTransitionCreate(transitionCreate);
+    });
   });
 
-  it('should return an array of DataTriggerExecutionResult', async () => {
+  it('should return an array of DataTriggerExecutionResult - Rust', async () => {
     const dataTriggerExecutionResults = await executeDataTriggers(
-      documentTransitions, context,
+      documentTransitions, context, getAllDataTriggers(),
     );
 
     expect(dataTriggerExecutionResults).to.have.a.lengthOf(1);
@@ -100,195 +99,97 @@ describe('executeDataTriggersFactory', () => {
     expect(result.isOk()).to.be.true();
   });
 
-  it('should execute multiple data triggers if there is more than one data trigger for'
-    + ' the same document and action in the contract', async () => {
-    getDataTriggersMock.returns([
-      dpnsCreateDomainDataTriggerMock,
-      dpnsCreateDomainDataTriggerMock,
-      dpnsCreateDomainDataTriggerMock,
-    ]);
+  it('should return multiple data triggers if there is more than one data trigger for'
+    + ' the same document and action in the contract - Rust', async () => {
+    const dataTriggersList = getAllDataTriggers();
+    const dataTriggerListWithDuplicates = [
+      dataTriggersList[0],
+      dataTriggersList[0],
+      dataTriggersList[0],
+    ];
 
     const expectedTriggersCount = 3;
-    expect(dpnsTriggers.length).to.equal(expectedTriggersCount);
-
     const dataTriggerExecutionResults = await executeDataTriggers(
-      documentTransitions, context,
+      documentTransitions, context, dataTriggerListWithDuplicates,
     );
 
     expect(dataTriggerExecutionResults).to.have.a.lengthOf(expectedTriggersCount);
-
-    dataTriggerExecutionResults.forEach((dataTriggerExecutionResult) => {
-      expect(dataTriggerExecutionResult.getErrors()).to.have.a.lengthOf(0);
-    });
   });
 
-  it('should return a result for each passed document with success or error', async function test() {
-    const doc1 = getDocumentsFixture(dataContract)[0];
-    const doc2 = getDocumentsFixture(dataContract)[1];
+  it('should return a result for each passed document with success or error - Rust', async () => {
+    const documentTransition = documentTransitions[0];
+    const rawDocumentTransition = documentTransition.toObject();
+    rawDocumentTransition.normalizedLabel = 'a'.repeat(257);
 
-    documentTransitions = getDocumentTransitionsFixture({
-      create: [doc1, doc1],
-      replace: [doc2],
-    });
-
-    const passingExecutionResult = new DataTriggerExecutionResult();
-    const executionResultWithErrors = new DataTriggerExecutionResult();
-
-    executionResultWithErrors.addError(new Error('Trigger error'));
-
-    const passingTriggerMockFunction = this.sinonSandbox.stub()
-      .resolves(passingExecutionResult);
-    const throwingTriggerMockFunction = this.sinonSandbox.stub()
-      .resolves(executionResultWithErrors);
-
-    const passingDataTriggerMock = new DataTrigger(
-      contractMock.getId(),
-      doc1.getType(),
-      AbstractDocumentTransition.ACTIONS.CREATE,
-      passingTriggerMockFunction,
+    const invalidDocumentCreateTransition = new DocumentCreateTransition(
+      rawDocumentTransition, dataContract.clone(),
     );
-
-    const throwingDataTriggerMock = new DataTrigger(
-      contractMock.getId(),
-      doc2.getType(),
-      AbstractDocumentTransition.ACTIONS.REPLACE,
-      throwingTriggerMockFunction,
-    );
-
-    getDataTriggersMock
-      .withArgs(contractMock.getId(), doc1.getType(), AbstractDocumentTransition.ACTIONS.CREATE)
-      .returns([passingDataTriggerMock]);
-
-    getDataTriggersMock
-      .withArgs(contractMock.getId(), doc2.getType(), AbstractDocumentTransition.ACTIONS.REPLACE)
-      .returns([throwingDataTriggerMock]);
-
-    context = new DataTriggerExecutionContext(
-      null, generateRandomIdentifier(), contractMock, stateTransitionHeaderMock,
+    const invalidDocumentTransition = DocumentTransition.fromTransitionCreate(
+      invalidDocumentCreateTransition,
     );
 
     const dataTriggerExecutionResults = await executeDataTriggers(
-      documentTransitions, context,
+      [documentTransition, invalidDocumentTransition], context, getAllDataTriggers(),
     );
 
-    const expectedResultsCount = 3;
+    expect(dataTriggerExecutionResults).to.have.a.lengthOf(2);
 
-    expect(documentTransitions.length).to.equal(expectedResultsCount);
-    expect(dataTriggerExecutionResults.length).to.equal(expectedResultsCount);
-
-    const passingResults = dataTriggerExecutionResults.filter((result) => result.isOk());
-    const failingResults = dataTriggerExecutionResults.filter((result) => !result.isOk());
-
-    expect(passingResults).to.have.a.lengthOf(2);
-    expect(failingResults).to.have.a.lengthOf(1);
-
-    expect(failingResults[0].getErrors()).to.have.a.lengthOf(1);
-    expect(failingResults[0].getErrors()[0].message).to
-      .equal('Trigger error');
-
-    expect(passingTriggerMockFunction.callCount).to.equal(2);
-    expect(throwingTriggerMockFunction.callCount).to.equal(1);
+    const [validResult, invalidResult] = dataTriggerExecutionResults;
+    expect(validResult.isOk()).to.be.true();
+    expect(invalidResult.isOk()).to.be.false();
   });
 
-  it("should not call any triggers if documents have no triggers associated with it's type or action", async () => {
-    getDataTriggersMock
-      .withArgs(
-        contractMock.getId(),
-        domainDocumentType,
-        AbstractDocumentTransition.ACTIONS.CREATE,
-      )
-      .returns([])
-      .withArgs(
-        contractMock.getId(),
-        domainDocumentType,
-        AbstractDocumentTransition.ACTIONS.DELETE,
-      )
-      .returns([dpnsDeleteDomainDataTriggerMock])
-      .withArgs(
-        contractMock.getId(),
-        domainDocumentType,
-        AbstractDocumentTransition.ACTIONS.REPLACE,
-      )
-      .returns([dpnsUpdateDomainDataTriggerMock]);
+  it("should not call any triggers if documents have no triggers associated with it's type or action - Rust", async () => {
+    const dataTriggers = [getAllDataTriggers()[1]];
+    const dataTriggerExecutionResults = await executeDataTriggers(
+      documentTransitions, context, dataTriggers,
+    );
 
-    await executeDataTriggers(documentTransitions, context);
-
-    expect(dpnsDeleteDomainDataTriggerMock.execute).not.to.be.called();
-    expect(dpnsUpdateDomainDataTriggerMock.execute).not.to.be.called();
+    expect(dataTriggerExecutionResults).to.have.a.lengthOf(0);
   });
 
-  it("should call only one trigger if there's one document with a trigger and one without", async () => {
+  it("should call only one trigger if there's one document with a trigger and one without - Rust", async () => {
     const dataContractId = getDataContractFixture().getId();
-    childDocument.dataContractId = dataContractId;
-    childDocument.dataContract.id = dataContractId;
-    childDocument.ownerId = Identifier.from(
+    childDocumentJs.dataContractId = dataContractId;
+    childDocumentJs.dataContract.id = dataContractId;
+    childDocumentJs.ownerId = IdentifierJs.from(
       getDocumentsFixture.ownerId,
     );
 
-    documentTransitions = getDocumentTransitionsFixture({
-      create: [childDocument].concat(getDocumentsFixture(dataContract)),
+    const documentTransitionsJs = getDocumentTransitionsFixture({
+      create: [childDocumentJs].concat(getDocumentsFixture(dataContractJs)),
     });
 
-    getDataTriggersMock.resetBehavior();
-    getDataTriggersMock
-      .returns([])
-      .withArgs(
-        contractMock.getId(),
-        domainDocumentType,
-        AbstractDocumentTransition.ACTIONS.CREATE,
-      )
-      .returns([dpnsCreateDomainDataTriggerMock])
-      .withArgs(
-        contractMock.getId(),
-        domainDocumentType,
-        AbstractDocumentTransition.ACTIONS.DELETE,
-      )
-      .returns([dpnsDeleteDomainDataTriggerMock])
-      .withArgs(
-        contractMock.getId(),
-        domainDocumentType,
-        AbstractDocumentTransition.ACTIONS.REPLACE,
-      )
-      .returns([dpnsUpdateDomainDataTriggerMock]);
+    documentTransitions = documentTransitionsJs.map((transition) => {
+      const transitionCreate = new DocumentCreateTransition(
+        transition.toObject(), dataContract.clone(),
+      );
+      return DocumentTransition.fromTransitionCreate(transitionCreate);
+    });
 
-    await executeDataTriggers(documentTransitions, context);
+    const dataTriggerExecutionResults = await executeDataTriggers(
+      documentTransitions, context, getAllDataTriggers(),
+    );
 
-    expect(dpnsCreateDomainDataTriggerMock.execute).to.be.calledOnce();
-    expect(dpnsDeleteDomainDataTriggerMock.execute).not.to.be.called();
-    expect(dpnsUpdateDomainDataTriggerMock.execute).not.to.be.called();
+    expect(dataTriggerExecutionResults).to.have.a.lengthOf(1);
   });
 
-  it("should not call any triggers if there's no triggers in the contract", async () => {
-    documentTransitions = getDocumentTransitionsFixture({
-      create: getDocumentsFixture(dataContract),
+  it("should not call any triggers if there's no triggers in the contract - Rust", async () => {
+    const documentTransitionsJs = getDocumentTransitionsFixture({
+      create: getDocumentsFixture(dataContractJs),
     });
 
-    getDataTriggersMock.resetBehavior();
-    getDataTriggersMock
-      .returns([])
-      .withArgs(
-        contractMock.getId(),
-        domainDocumentType,
-        AbstractDocumentTransition.ACTIONS.CREATE,
-      )
-      .returns([dpnsCreateDomainDataTriggerMock])
-      .withArgs(
-        contractMock.getId(),
-        domainDocumentType,
-        AbstractDocumentTransition.ACTIONS.DELETE,
-      )
-      .returns([dpnsDeleteDomainDataTriggerMock])
-      .withArgs(
-        contractMock.getId(),
-        domainDocumentType,
-        AbstractDocumentTransition.ACTIONS.REPLACE,
-      )
-      .returns([dpnsUpdateDomainDataTriggerMock]);
+    documentTransitions = documentTransitionsJs.map((transition) => {
+      const transitionCreate = new DocumentCreateTransition(
+        transition.toObject(), dataContract.clone(),
+      );
+      return DocumentTransition.fromTransitionCreate(transitionCreate);
+    });
 
-    await executeDataTriggers(documentTransitions, context);
+    const dataTriggerExecutionResults = await executeDataTriggers(
+      documentTransitions, context, getAllDataTriggers(),
+    );
 
-    expect(dpnsCreateDomainDataTriggerMock.execute).not.to.be.called();
-    expect(dpnsDeleteDomainDataTriggerMock.execute).not.to.be.called();
-    expect(dpnsUpdateDomainDataTriggerMock.execute).not.to.be.called();
+    expect(dataTriggerExecutionResults).to.have.a.lengthOf(0);
   });
 });

@@ -1,10 +1,15 @@
 const BufferWriter = require('@dashevo/dashcore-lib/lib/encoding/bufferwriter');
 const Hash = require('@dashevo/dashcore-lib/lib/crypto/hash');
+const { LLMQ_TYPES } = require('@dashevo/dashcore-lib/lib/constants');
 const QuorumsNotFoundError = require('./errors/QuorumsNotFoundError');
 const ValidatorSet = require('../validator/ValidatorSet');
-const llmqMap = require('./llmqMap');
 
 const MIN_QUORUM_VALID_MEMBERS = 90;
+
+const LLMQ_TYPE_TO_NAME = Object
+  .fromEntries(Object
+    .entries(LLMQ_TYPES)
+    .map(([key, value]) => [value, key.toLowerCase().replace('type_', '')]));
 
 /**
  * Calculates scores for validator quorum selection
@@ -52,7 +57,7 @@ function getRandomQuorumFactory(coreRpcClient) {
     const { result: allValidatorQuorumsExtendedInfo } = await coreRpcClient.quorum('listextended', coreHeight);
 
     // convert to object
-    const validatorQuorumsInfo = allValidatorQuorumsExtendedInfo[llmqMap[quorumType]]
+    const validatorQuorumsInfo = allValidatorQuorumsExtendedInfo[LLMQ_TYPE_TO_NAME[quorumType]]
       .reduce(
         (obj, item) => ({
           ...obj,

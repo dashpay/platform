@@ -32,7 +32,7 @@ class ResetCommand extends ConfigBaseCommand {
       throw new Error(`Cannot hard reset non-system config "${config.getName()}"`);
     }
 
-    if (!config.has('platform') && isPlatformOnlyReset) {
+    if (!config.get('platform.enable') && isPlatformOnlyReset) {
       throw new Error('Cannot reset platform only if platform services are not enabled in config');
     }
 
@@ -65,10 +65,7 @@ class ResetCommand extends ConfigBaseCommand {
   }
 }
 
-ResetCommand.description = `Reset node data
-
-Reset node data
-`;
+ResetCommand.description = 'Reset node data';
 
 ResetCommand.flags = {
   ...ConfigBaseCommand.flags,

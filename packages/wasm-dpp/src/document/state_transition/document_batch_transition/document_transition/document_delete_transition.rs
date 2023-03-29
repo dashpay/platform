@@ -21,6 +21,12 @@ impl From<DocumentDeleteTransition> for DocumentDeleteTransitionWasm {
     }
 }
 
+impl From<DocumentDeleteTransitionWasm> for DocumentDeleteTransition {
+    fn from(v: DocumentDeleteTransitionWasm) -> Self {
+        v.inner
+    }
+}
+
 #[wasm_bindgen(js_class=DocumentDeleteTransition)]
 impl DocumentDeleteTransitionWasm {
     #[wasm_bindgen(js_name=getAction)]
@@ -31,7 +37,7 @@ impl DocumentDeleteTransitionWasm {
     #[wasm_bindgen(js_name=toObject)]
     pub fn to_object(&self, options: &JsValue) -> Result<JsValue, JsValue> {
         to_object(
-            &self.inner,
+            self.inner.to_object().with_js_error()?,
             options,
             document_delete_transition::IDENTIFIER_FIELDS,
             [],
@@ -49,12 +55,12 @@ impl DocumentDeleteTransitionWasm {
     // AbstractDocumentTransition
     #[wasm_bindgen(js_name=getId)]
     pub fn id(&self) -> IdentifierWrapper {
-        self.inner.base.id.clone().into()
+        self.inner.base.id.into()
     }
 
     #[wasm_bindgen(js_name=getType)]
     pub fn document_type(&self) -> String {
-        self.inner.base.document_type.clone()
+        self.inner.base.document_type_name.clone()
     }
 
     #[wasm_bindgen(js_name=getDataContract)]
@@ -64,7 +70,7 @@ impl DocumentDeleteTransitionWasm {
 
     #[wasm_bindgen(js_name=getDataContractId)]
     pub fn data_contract_id(&self) -> IdentifierWrapper {
-        self.inner.base.data_contract.id.clone().into()
+        self.inner.base.data_contract.id.into()
     }
 
     #[wasm_bindgen(js_name=get)]

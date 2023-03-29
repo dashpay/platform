@@ -1,21 +1,24 @@
 import { expect } from 'chai';
-import getResponseMetadataFixture from '../../test/fixtures/getResponseMetadataFixture';
-import { Client } from "./index";
-import 'mocha';
-import { Transaction, BlockHeader } from "@dashevo/dashcore-lib";
-import { createFakeInstantLock } from "../../utils/createFakeIntantLock";
+import { Transaction, BlockHeader } from '@dashevo/dashcore-lib';
 import stateTransitionTypes from '@dashevo/dpp/lib/stateTransition/stateTransitionTypes';
+import getResponseMetadataFixture from '../../test/fixtures/getResponseMetadataFixture';
+import { Client } from './index';
+import 'mocha';
+
+import { createFakeInstantLock } from '../../utils/createFakeIntantLock';
+
 import { StateTransitionBroadcastError } from '../../errors/StateTransitionBroadcastError';
+
+import { createIdentityFixtureInAccount } from '../../test/fixtures/createIdentityFixtureInAccount';
+
+import { createAndAttachTransportMocksToClient } from '../../test/mocks/createAndAttachTransportMocksToClient';
+import { createTransactionInAccount } from '../../test/fixtures/createTransactionFixtureInAccount';
 
 // @ts-ignore
 const getDocumentsFixture = require('@dashevo/dpp/lib/test/fixtures/getDocumentsFixture');
 // @ts-ignore
 const getDataContractFixture = require('@dashevo/dpp/lib/test/fixtures/getDataContractFixture');
-const GetDataContractResponse = require("@dashevo/dapi-client/lib/methods/platform/getDataContract/GetDataContractResponse");
-
-import { createIdentityFixtureInAccount } from '../../test/fixtures/createIdentityFixtureInAccount';
-import { createTransactionInAccount } from '../../test/fixtures/createTransactionFixtureInAccount';
-import { createAndAttachTransportMocksToClient } from '../../test/mocks/createAndAttachTransportMocksToClient';
+const GetDataContractResponse = require('@dashevo/dapi-client/lib/methods/platform/getDataContract/GetDataContractResponse');
 
 const blockHeaderFixture = '00000020e2bddfb998d7be4cc4c6b126f04d6e4bd201687523ded527987431707e0200005520320b4e263bec33e08944656f7ce17efbc2c60caab7c8ed8a73d413d02d3a169d555ecdd6021e56d000000203000500010000000000000000000000000000000000000000000000000000000000000000ffffffff050219250102ffffffff0240c3609a010000001976a914ecfd5aaebcbb8f4791e716e188b20d4f0183265c88ac40c3609a010000001976a914ecfd5aaebcbb8f4791e716e188b20d4f0183265c88ac0000000046020019250000476416132511031b71167f4bb7658eab5c3957d79636767f83e0e18e2b9ed7f8000000000000000000000000000000000000000000000000000000000000000003000600000000000000fd4901010019250000010001d02e9ee1b14c022ad6895450f3375a8e9a87f214912d4332fa997996d2000000320000000000000032000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000';
 
@@ -23,12 +26,10 @@ describe('Dash - Client', function suite() {
   this.timeout(30000);
 
   let testMnemonic;
-  let txStreamMock;
   let transportMock;
   let testHDKey;
   let client;
   let account;
-  let walletTransaction;
   let dapiClientMock;
   let identityFixture;
   let documentsFixture;
@@ -36,20 +37,23 @@ describe('Dash - Client', function suite() {
 
   beforeEach(async function beforeEach() {
     testMnemonic = 'agree country attract master mimic ball load beauty join gentle turtle hover';
-    testHDKey = "tprv8ZgxMBicQKsPeGi4CikhacVPz6UmErenu1PoD3S4XcEDSPP8auRaS8hG3DQtsQ2i9HACgohHwF5sgMVJNksoKqYoZbis8o75Pp1koCme2Yo";
+    testHDKey = 'tprv8ZgxMBicQKsPeGi4CikhacVPz6UmErenu1PoD3S4XcEDSPP8auRaS8hG3DQtsQ2i9HACgohHwF5sgMVJNksoKqYoZbis8o75Pp1koCme2Yo';
 
     client = new Client({
       wallet: {
         HDPrivateKey: testHDKey,
-      }
+      },
     });
 
-    ({ txStreamMock, transportMock, dapiClientMock } = await createAndAttachTransportMocksToClient(client, this.sinon));
+    ({
+      transportMock,
+      dapiClientMock,
+    } = await createAndAttachTransportMocksToClient(client, this.sinon));
 
     account = await client.getWalletAccount();
 
     // add fake tx to the wallet so it will be able to create transactions
-    walletTransaction = await createTransactionInAccount(account);
+    await createTransactionInAccount(account);
     // create an identity in the account so we can sign state transitions
     identityFixture = createIdentityFixtureInAccount(account);
     dataContractFixture = getDataContractFixture();
@@ -65,34 +69,38 @@ describe('Dash - Client', function suite() {
     });
 
     transportMock.getBlockHeaderByHash
-        .returns(BlockHeader.fromString(blockHeaderFixture));
+      .returns(BlockHeader.fromString(blockHeaderFixture));
 
-    dapiClientMock.platform.getDataContract.resolves(new GetDataContractResponse(dataContractFixture.toBuffer(), getResponseMetadataFixture()));
+    dapiClientMock.platform.getDataContract
+      .resolves(new GetDataContractResponse(
+        dataContractFixture.toBuffer(),
+        getResponseMetadataFixture(),
+      ));
   });
 
-  it('should provide expected class', function () {
+  it('should provide expected class', () => {
     expect(Client.name).to.be.equal('Client');
     expect(Client.constructor.name).to.be.equal('Function');
   });
 
-  it('should be instantiable', function () {
-    const client = new Client();
+  it('should be instantiable', () => {
+    client = new Client();
     expect(client).to.exist;
     expect(client.network).to.be.equal('testnet');
     expect(client.getDAPIClient().constructor.name).to.be.equal('DAPIClient');
   });
 
-  it('should not initiate wallet lib without mnemonic', function () {
-    const client = new Client();
+  it('should not initiate wallet lib without mnemonic', () => {
+    client = new Client();
     expect(client.wallet).to.be.equal(undefined);
   });
 
-  it('should initiate wallet-lib with a mnemonic', async ()=>{
-    const client = new Client({
+  it('should initiate wallet-lib with a mnemonic', async () => {
+    client = new Client({
       wallet: {
         mnemonic: testMnemonic,
         offlineMode: true,
-      }
+      },
     });
     expect(client.wallet).to.exist;
     expect(client.wallet!.offlineMode).to.be.equal(true);
@@ -100,12 +108,13 @@ describe('Dash - Client', function suite() {
     await client.wallet?.storage.stopWorker();
     await client.wallet?.disconnect();
 
-    const account = await client.getWalletAccount();
+    account = await client.getWalletAccount();
     await account.disconnect();
   });
 
   it('should throw an error if client and wallet have different networks', async () => {
     try {
+      // eslint-disable-next-line
       new Client({
         network: 'testnet',
         wallet: {
@@ -130,7 +139,8 @@ describe('Dash - Client', function suite() {
       expect(identity).to.be.not.null;
 
       const serializedSt = dapiClientMock.platform.broadcastStateTransition.getCall(0).args[0];
-      const interceptedIdentityStateTransition = await client.platform.dpp.stateTransition.createFromBuffer(serializedSt);
+      const interceptedIdentityStateTransition = await client
+        .platform.dpp.stateTransition.createFromBuffer(serializedSt);
       const interceptedAssetLockProof = interceptedIdentityStateTransition.getAssetLockProof();
 
       const transaction = new Transaction(transportMock.sendTransaction.getCall(0).args[0]);
@@ -143,7 +153,8 @@ describe('Dash - Client', function suite() {
       const importedIdentityIds = account.identities.getIdentityIds();
       // Check that we've imported identities properly
       expect(importedIdentityIds.length).to.be.equal(accountIdentitiesCountBeforeTest + 1);
-      expect(importedIdentityIds[1]).to.be.equal(interceptedIdentityStateTransition.getIdentityId().toString());
+      expect(importedIdentityIds[1]).to.be
+        .equal(interceptedIdentityStateTransition.getIdentityId().toString());
     });
 
     it('should throw TransitionBroadcastError when transport resolves error', async () => {
@@ -152,9 +163,9 @@ describe('Dash - Client', function suite() {
       const errorResponse = {
         error: {
           code: 2,
-          message: "Error happened",
+          message: 'Error happened',
           data: {},
-        }
+        },
       };
 
       dapiClientMock.platform.waitForStateTransitionResult.resolves(errorResponse);
@@ -186,10 +197,12 @@ describe('Dash - Client', function suite() {
       expect(identity).to.be.not.null;
 
       const serializedSt = dapiClientMock.platform.broadcastStateTransition.getCall(1).args[0];
-      const interceptedIdentityStateTransition = await client.platform.dpp.stateTransition.createFromBuffer(serializedSt);
+      const interceptedIdentityStateTransition = await client
+        .platform.dpp.stateTransition.createFromBuffer(serializedSt);
       const interceptedAssetLockProof = interceptedIdentityStateTransition.getAssetLockProof();
 
-      expect(interceptedIdentityStateTransition.getType()).to.be.equal(stateTransitionTypes.IDENTITY_TOP_UP);
+      expect(interceptedIdentityStateTransition.getType())
+        .to.be.equal(stateTransitionTypes.IDENTITY_TOP_UP);
 
       const transaction = new Transaction(transportMock.sendTransaction.getCall(1).args[0]);
       const isLock = createFakeInstantLock(transaction.hash);
@@ -205,9 +218,9 @@ describe('Dash - Client', function suite() {
       const errorResponse = {
         error: {
           code: 2,
-          message: "Error happened",
+          message: 'Error happened',
           data: {},
-        }
+        },
       };
 
       dapiClientMock.platform.waitForStateTransitionResult.resolves(errorResponse);
@@ -231,9 +244,9 @@ describe('Dash - Client', function suite() {
       const errorResponse = {
         error: {
           code: 2,
-          message: "Error happened",
+          message: 'Error happened',
           data: {},
-        }
+        },
       };
 
       dapiClientMock.platform.waitForStateTransitionResult.resolves(errorResponse);
@@ -254,8 +267,8 @@ describe('Dash - Client', function suite() {
 
     it('should broadcast documents', async () => {
       const proofResponse = {
-        proof: { }
-      }
+        proof: { },
+      };
 
       dapiClientMock.platform.waitForStateTransitionResult.resolves(proofResponse);
 
@@ -264,10 +277,13 @@ describe('Dash - Client', function suite() {
       }, identityFixture);
 
       const serializedSt = dapiClientMock.platform.broadcastStateTransition.getCall(0).args[0];
-      const interceptedSt = await client.platform.dpp.stateTransition.createFromBuffer(serializedSt);
+      const interceptedSt = await client
+        .platform.dpp.stateTransition.createFromBuffer(serializedSt);
 
       // .to.be.true() doesn't work after TS compilation in Chrome
-      expect(await interceptedSt.verifySignature(identityFixture.getPublicKeyById(1))).to.be.equal(true);
+      expect(await interceptedSt.verifySignature(
+        identityFixture.getPublicKeyById(1),
+      )).to.be.equal(true);
 
       const documentTransitions = interceptedSt.getTransitions();
 
@@ -281,9 +297,9 @@ describe('Dash - Client', function suite() {
       const errorResponse = {
         error: {
           code: 2,
-          message: "Error happened",
+          message: 'Error happened',
           data: {},
-        }
+        },
       };
 
       dapiClientMock.platform.waitForStateTransitionResult.resolves(errorResponse);
@@ -302,18 +318,22 @@ describe('Dash - Client', function suite() {
 
     it('should broadcast data contract', async () => {
       dapiClientMock.platform.waitForStateTransitionResult.resolves({
-        proof: {  }
+        proof: { },
       });
 
       await client.platform.contracts.publish(dataContractFixture, identityFixture);
 
       const serializedSt = dapiClientMock.platform.broadcastStateTransition.getCall(0).args[0];
-      const interceptedSt = await client.platform.dpp.stateTransition.createFromBuffer(serializedSt);
+      const interceptedSt = await client
+        .platform.dpp.stateTransition.createFromBuffer(serializedSt);
 
       // .to.be.true() doesn't work after TS compilation in Chrome
-      expect(await interceptedSt.verifySignature(identityFixture.getPublicKeyById(1))).to.be.equal(true);
+      expect(await interceptedSt.verifySignature(
+        identityFixture.getPublicKeyById(1),
+      )).to.be.equal(true);
       expect(interceptedSt.getEntropy()).to.be.deep.equal(dataContractFixture.entropy);
-      expect(interceptedSt.getDataContract().toObject()).to.be.deep.equal(dataContractFixture.toObject());
+      expect(interceptedSt.getDataContract().toObject())
+        .to.be.deep.equal(dataContractFixture.toObject());
     });
   });
 });

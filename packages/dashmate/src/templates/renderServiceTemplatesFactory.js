@@ -22,30 +22,10 @@ function renderServiceTemplatesFactory() {
 
     const templatePaths = glob
       .sync(`${templatesPath}/**/*.dot`)
-      .filter((templatePath) => {
-        // Do not render platform templates if it's not configured
-        if (templatePath.includes('templates/platform') && !config.has('platform')) {
-          return false;
-        }
-
-        // Don't create blank tenderdash configs
-        if (templatePath.includes('templates/platform/drive/tenderdash')) {
-          const skipEmpty = {
-            genesis: 'genesis',
-            node_key: 'nodeKey',
-          };
-
-          for (const [configName, optionName] of Object.entries(skipEmpty)) {
-            const option = config.get(`platform.drive.tenderdash.${optionName}`);
-
-            if (templatePath.includes(configName) && Object.values(option).length === 0) {
-              return false;
-            }
-          }
-        }
-
-        return true;
-      });
+      // Do not render platform templates if it's not configured
+      .filter((templatePath) => (
+        !templatePath.includes('templates/platform') || config.get('platform.enable')
+      ));
 
     const configFiles = {};
     for (const templatePath of templatePaths) {

@@ -1,22 +1,26 @@
 mod apply;
 mod validation;
 
+use std::collections::HashMap;
+
 pub use apply::*;
 pub use validation::*;
 
-use dpp::identity::KeyID;
 use dpp::{
-    data_contract::state_transition::DataContractUpdateTransition,
+    data_contract::state_transition::data_contract_update_transition::DataContractUpdateTransition,
+    platform_value,
     state_transition::{
         StateTransitionConvert, StateTransitionIdentitySigned, StateTransitionLike,
     },
+    ProtocolError,
 };
 use serde::{Deserialize, Serialize};
 use wasm_bindgen::prelude::*;
 
+use crate::utils::WithJsError;
 use crate::{
-    buffer::Buffer, errors::from_dpp_err, identifier::IdentifierWrapper, with_js_error,
-    DataContractParameters, DataContractWasm, StateTransitionExecutionContextWasm,
+    buffer::Buffer, errors::protocol_error::from_protocol_error, identifier::IdentifierWrapper,
+    with_js_error, DataContractParameters, DataContractWasm, StateTransitionExecutionContextWasm,
 };
 
 #[derive(Clone)]
@@ -38,15 +42,14 @@ impl From<DataContractUpdateTransitionWasm> for DataContractUpdateTransition {
 #[derive(Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct DataContractUpdateTransitionParameters {
-    protocol_version: u32,
     #[serde(skip_serializing_if = "Option::is_none", default)]
     data_contract: Option<DataContractParameters>,
     #[serde(skip_serializing_if = "Option::is_none", default)]
     entropy: Option<Vec<u8>>,
     #[serde(skip_serializing_if = "Option::is_none", default)]
-    signature_public_key_id: Option<KeyID>,
-    #[serde(skip_serializing_if = "Option::is_none", default)]
     signature: Option<Vec<u8>>,
+    #[serde(flatten)]
+    extra: HashMap<String, serde_json::Value>,
 }
 
 #[wasm_bindgen(js_class=DataContractUpdateTransition)]
@@ -55,11 +58,12 @@ impl DataContractUpdateTransitionWasm {
     pub fn new(raw_parameters: JsValue) -> Result<DataContractUpdateTransitionWasm, JsValue> {
         let parameters: DataContractUpdateTransitionParameters =
             with_js_error!(serde_wasm_bindgen::from_value(raw_parameters))?;
-        DataContractUpdateTransition::from_raw_object(
-            serde_json::to_value(parameters).expect("the struct will be a valid json"),
-        )
-        .map(Into::into)
-        .map_err(from_dpp_err)
+        let raw_data_contract_update_transition = platform_value::to_value(parameters)
+            .map_err(ProtocolError::ValueError)
+            .with_js_error()?;
+        DataContractUpdateTransition::from_raw_object(raw_data_contract_update_transition)
+            .map(Into::into)
+            .with_js_error()
     }
 
     #[wasm_bindgen(js_name=getDataContract)]
@@ -74,7 +78,7 @@ impl DataContractUpdateTransitionWasm {
 
     #[wasm_bindgen(js_name=getEntropy)]
     pub fn get_entropy(&self) -> Buffer {
-        Buffer::from_bytes(&self.0.data_contract.entropy)
+        Buffer::from_bytes_owned(self.0.data_contract.entropy.to_vec())
     }
 
     #[wasm_bindgen(js_name=getOwnerId)]
@@ -93,7 +97,7 @@ impl DataContractUpdateTransitionWasm {
         Ok(self
             .0
             .to_json(skip_signature.unwrap_or(false))
-            .map_err(from_dpp_err)?
+            .with_js_error()?
             .serialize(&serializer)
             .expect("JSON is a valid object"))
     }
@@ -103,7 +107,7 @@ impl DataContractUpdateTransitionWasm {
         let bytes = self
             .0
             .to_buffer(skip_signature.unwrap_or(false))
-            .map_err(from_dpp_err)?;
+            .with_js_error()?;
         Ok(Buffer::from_bytes(&bytes))
     }
 
@@ -112,7 +116,7 @@ impl DataContractUpdateTransitionWasm {
         self.0
             .get_modified_data_ids()
             .into_iter()
-            .map(|identifier| Into::<IdentifierWrapper>::into(*identifier).into())
+            .map(|identifier| Into::<IdentifierWrapper>::into(identifier).into())
             .collect()
     }
 
@@ -141,7 +145,18 @@ impl DataContractUpdateTransitionWasm {
         let bytes = self
             .0
             .hash(skip_signature.unwrap_or(false))
-            .map_err(from_dpp_err)?;
+            .with_js_error()?;
         Ok(Buffer::from_bytes(&bytes))
+    }
+
+    #[wasm_bindgen(js_name=toObject)]
+    pub fn to_object(&self, skip_signature: Option<bool>) -> Result<JsValue, JsValue> {
+        let serde_object = self
+            .0
+            .to_object(skip_signature.unwrap_or(false))
+            .map_err(from_protocol_error)?;
+        serde_object
+            .serialize(&serde_wasm_bindgen::Serializer::json_compatible())
+            .map_err(|e| e.into())
     }
 }

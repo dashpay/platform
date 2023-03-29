@@ -37,7 +37,7 @@ use crate::error::fee::FeeError;
 #[cfg(feature = "full")]
 use crate::error::Error;
 #[cfg(feature = "full")]
-use crate::fee::op::{BaseOp, DriveOperation};
+use crate::fee::op::{BaseOp, LowLevelDriveOperation};
 #[cfg(feature = "full")]
 use crate::fee::result::FeeResult;
 #[cfg(feature = "full")]
@@ -62,7 +62,7 @@ pub const DEFAULT_ORIGINAL_FEE_MULTIPLIER: f64 = 2.0;
 #[cfg(feature = "full")]
 pub fn calculate_fee(
     base_operations: Option<EnumMap<BaseOp, u64>>,
-    drive_operations: Option<Vec<DriveOperation>>,
+    drive_operations: Option<Vec<LowLevelDriveOperation>>,
     epoch: &Epoch,
 ) -> Result<FeeResult, Error> {
     let mut aggregate_fee_result = FeeResult::default();
@@ -80,7 +80,7 @@ pub fn calculate_fee(
 
     if let Some(drive_operations) = drive_operations {
         // println!("{:#?}", drive_operations);
-        for drive_fee_result in DriveOperation::consume_to_fees(drive_operations, epoch)? {
+        for drive_fee_result in LowLevelDriveOperation::consume_to_fees(drive_operations, epoch)? {
             aggregate_fee_result.checked_add_assign(drive_fee_result)?;
         }
     }

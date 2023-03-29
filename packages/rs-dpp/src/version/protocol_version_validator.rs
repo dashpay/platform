@@ -7,8 +7,7 @@ use crate::errors::consensus::basic::{
     IncompatibleProtocolVersionError, UnsupportedProtocolVersionError,
 };
 use crate::errors::CompatibleProtocolVersionIsNotDefinedError;
-use crate::validation::DataValidator;
-use crate::validation::ValidationResult;
+use crate::validation::{DataValidator, SimpleValidationResult};
 use crate::version::{COMPATIBILITY_MAP, LATEST_VERSION};
 
 #[derive(Clone)]
@@ -58,8 +57,8 @@ impl ProtocolVersionValidator {
     pub fn validate(
         &self,
         protocol_version: u32,
-    ) -> Result<ValidationResult<()>, CompatibleProtocolVersionIsNotDefinedError> {
-        let mut result = ValidationResult::new(None);
+    ) -> Result<SimpleValidationResult, CompatibleProtocolVersionIsNotDefinedError> {
+        let mut result = SimpleValidationResult::default();
 
         // Parsed protocol version must be equal or lower than latest protocol version
         if protocol_version > self.latest_protocol_version {

@@ -1,3 +1,4 @@
+use crate::consensus::basic::document::InvalidDocumentTypeError;
 use thiserror::Error;
 
 use crate::data_contract::DataContract;
@@ -14,11 +15,8 @@ pub enum DataContractError {
         raw_data_contract: DataContract,
     },
 
-    #[error("Data Contract doesn't define document with type {doc_type}")]
-    InvalidDocumentTypeError {
-        doc_type: String,
-        data_contract: DataContract,
-    },
+    #[error(transparent)]
+    InvalidDocumentTypeError(InvalidDocumentTypeError),
 
     #[error("missing required key: {0}")]
     MissingRequiredKey(&'static str),

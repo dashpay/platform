@@ -6,20 +6,23 @@ use std::collections::HashMap;
 pub use apply::*;
 pub use validation::*;
 
-use dpp::identity::KeyID;
 use dpp::{
-    data_contract::state_transition::DataContractCreateTransition,
+    data_contract::state_transition::data_contract_create_transition::DataContractCreateTransition,
+    platform_value,
     state_transition::{
         StateTransitionConvert, StateTransitionIdentitySigned, StateTransitionLike,
     },
+    ProtocolError,
 };
 use serde::{Deserialize, Serialize};
 use wasm_bindgen::prelude::*;
 
+use crate::bls_adapter::{BlsAdapter, JsBlsAdapter};
 use crate::errors::protocol_error::from_protocol_error;
+use crate::utils::WithJsError;
 use crate::{
-    buffer::Buffer, errors::from_dpp_err, identifier::IdentifierWrapper, with_js_error,
-    DataContractParameters, DataContractWasm, StateTransitionExecutionContextWasm,
+    buffer::Buffer, identifier::IdentifierWrapper, with_js_error, DataContractParameters,
+    DataContractWasm, IdentityPublicKeyWasm, StateTransitionExecutionContextWasm,
 };
 
 #[derive(Clone)]
@@ -57,11 +60,12 @@ impl DataContractCreateTransitionWasm {
     pub fn new(raw_parameters: JsValue) -> Result<DataContractCreateTransitionWasm, JsValue> {
         let parameters: DataContractCreateTransitionParameters =
             with_js_error!(serde_wasm_bindgen::from_value(raw_parameters))?;
-        DataContractCreateTransition::from_raw_object(
-            serde_json::to_value(parameters).expect("the struct will be a valid json"),
-        )
-        .map(Into::into)
-        .map_err(from_dpp_err)
+        let transition_object = platform_value::to_value(parameters)
+            .map_err(ProtocolError::ValueError)
+            .with_js_error()?;
+        DataContractCreateTransition::from_raw_object(transition_object)
+            .map(Into::into)
+            .with_js_error()
     }
 
     #[wasm_bindgen(js_name=getDataContract)]
@@ -76,7 +80,7 @@ impl DataContractCreateTransitionWasm {
 
     #[wasm_bindgen(js_name=getEntropy)]
     pub fn get_entropy(&self) -> Buffer {
-        Buffer::from_bytes(&self.0.entropy)
+        Buffer::from_bytes_owned(self.0.entropy.to_vec())
     }
 
     #[wasm_bindgen(js_name=getOwnerId)]
@@ -95,7 +99,7 @@ impl DataContractCreateTransitionWasm {
         Ok(self
             .0
             .to_json(skip_signature.unwrap_or(false))
-            .map_err(from_dpp_err)?
+            .with_js_error()?
             .serialize(&serializer)
             .expect("JSON is a valid object"))
     }
@@ -105,7 +109,7 @@ impl DataContractCreateTransitionWasm {
         let bytes = self
             .0
             .to_buffer(skip_signature.unwrap_or(false))
-            .map_err(from_dpp_err)?;
+            .with_js_error()?;
         Ok(Buffer::from_bytes(&bytes))
     }
 
@@ -114,7 +118,7 @@ impl DataContractCreateTransitionWasm {
         self.0
             .get_modified_data_ids()
             .into_iter()
-            .map(|identifier| Into::<IdentifierWrapper>::into(*identifier).into())
+            .map(|identifier| Into::<IdentifierWrapper>::into(identifier).into())
             .collect()
     }
 
@@ -142,10 +146,27 @@ impl DataContractCreateTransitionWasm {
     pub fn to_object(&self, skip_signature: Option<bool>) -> Result<JsValue, JsValue> {
         let serde_object = self
             .0
-            .to_object(skip_signature.unwrap_or(false))
+            .to_cleaned_object(skip_signature.unwrap_or(false))
             .map_err(from_protocol_error)?;
         serde_object
             .serialize(&serde_wasm_bindgen::Serializer::json_compatible())
             .map_err(|e| e.into())
+    }
+
+    #[wasm_bindgen]
+    pub fn sign(
+        &mut self,
+        identity_public_key: &IdentityPublicKeyWasm,
+        private_key: Vec<u8>,
+        bls: JsBlsAdapter,
+    ) -> Result<(), JsValue> {
+        let bls_adapter = BlsAdapter(bls);
+        self.0
+            .sign(
+                &identity_public_key.to_owned().into(),
+                &private_key,
+                &bls_adapter,
+            )
+            .with_js_error()
     }
 }

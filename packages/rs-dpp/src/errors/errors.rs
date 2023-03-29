@@ -1,14 +1,25 @@
-use serde_json::Value as JsonValue;
 use thiserror::Error;
 
+use crate::consensus::basic::state_transition::InvalidStateTransitionTypeError;
+use crate::consensus::signature::InvalidSignaturePublicKeySecurityLevelError;
 use crate::consensus::ConsensusError;
 use crate::data_contract::errors::*;
+use crate::data_contract::state_transition::errors::MissingDataContractIdError;
+use crate::data_contract::state_transition::errors::PublicKeyIsDisabledError;
 use crate::document::errors::*;
-use crate::identity::{IdentityPublicKey, KeyType, Purpose, SecurityLevel};
-use crate::prelude::Identifier;
-use crate::state_transition::StateTransition;
-use crate::{CompatibleProtocolVersionIsNotDefinedError, NonConsensusError, SerdeParsingError};
-use platform_value::Error as ValueError;
+use crate::state_transition::errors::{
+    InvalidIdentityPublicKeyTypeError, InvalidSignaturePublicKeyError, PublicKeyMismatchError,
+    PublicKeySecurityLevelNotMetError, StateTransitionError, StateTransitionIsNotSignedError,
+    WrongPublicKeyPurposeError,
+};
+use crate::{
+    CompatibleProtocolVersionIsNotDefinedError, DashPlatformProtocolInitError, NonConsensusError,
+    SerdeParsingError,
+};
+
+use dashcore::consensus::encode::Error as DashCoreError;
+
+use platform_value::{Error as ValueError, Value};
 
 #[derive(Error, Debug)]
 pub enum ProtocolError {
@@ -29,6 +40,8 @@ pub enum ProtocolError {
     DecodingError(String),
     #[error("File not found Error - {0}")]
     FileNotFound(String),
+    #[error("unknown protocol version error {0}")]
+    UnknownProtocolVersionError(String),
     #[error("Not included or invalid protocol version")]
     NoProtocolVersionError,
     #[error("Parsing error: {0}")]
@@ -44,6 +57,9 @@ pub enum ProtocolError {
     DataContractError(#[from] DataContractError),
 
     #[error(transparent)]
+    StateTransitionError(#[from] StateTransitionError),
+
+    #[error(transparent)]
     StructureError(#[from] StructureError),
 
     #[error(transparent)]
@@ -56,34 +72,21 @@ pub enum ProtocolError {
     Generic(String),
 
     // State Transition Errors
-    #[error("Invalid signature type")]
-    InvalidIdentityPublicKeyTypeError { public_key_type: KeyType },
-    #[error("State Transition is not signed")]
-    StateTransitionIsNotIsSignedError { state_transition: StateTransition },
-    #[error(
-        "Invalid key security level: {public_key_security_level}. The state transition requires at least: {required_security_level}"
-    )]
-    PublicKeySecurityLevelNotMetError {
-        public_key_security_level: SecurityLevel,
-        required_security_level: SecurityLevel,
-    },
-    #[error("Invalid identity key purpose {public_key_purpose}. This state transition requires {key_purpose_requirement}")]
-    WrongPublicKeyPurposeError {
-        public_key_purpose: Purpose,
-        key_purpose_requirement: Purpose,
-    },
-    #[error("Public key generation error {0}")]
-    PublicKeyGenerationError(String),
+    #[error(transparent)]
+    InvalidIdentityPublicKeyTypeError(InvalidIdentityPublicKeyTypeError),
+    #[error(transparent)]
+    StateTransitionIsNotSignedError(StateTransitionIsNotSignedError),
+    #[error(transparent)]
+    PublicKeySecurityLevelNotMetError(PublicKeySecurityLevelNotMetError),
+    #[error(transparent)]
+    WrongPublicKeyPurposeError(WrongPublicKeyPurposeError),
+    #[error(transparent)]
+    PublicKeyMismatchError(PublicKeyMismatchError),
+    #[error(transparent)]
+    InvalidSignaturePublicKeyError(InvalidSignaturePublicKeyError),
 
-    #[error("Public key mismatched")]
-    PublicKeyMismatchError { public_key: IdentityPublicKey },
-
-    #[error("Invalid signature public key")]
-    InvalidSignaturePublicKeyError { public_key: Vec<u8> },
-
-    // TODO decide if it should be a string
-    #[error("Non-Consensus error: {0}")]
-    NonConsensusError(String),
+    #[error(transparent)]
+    NonConsensusError(#[from] NonConsensusError),
 
     #[error(transparent)]
     CompatibleProtocolVersionIsNotDefinedError(#[from] CompatibleProtocolVersionIsNotDefinedError),
@@ -92,32 +95,29 @@ pub enum ProtocolError {
     #[error("Data Contract already exists")]
     DataContractAlreadyExistsError,
 
-    #[error("Invalid Data Contract: {errors:?}")]
-    InvalidDataContractError {
-        errors: Vec<ConsensusError>,
-        raw_data_contract: JsonValue,
-    },
+    #[error(transparent)]
+    InvalidDataContractError(InvalidDataContractError),
 
-    #[error("Data Contract is not present")]
-    DataContractNotPresentError { data_contract_id: Identifier },
+    #[error(transparent)]
+    InvalidDocumentTypeError(InvalidDocumentTypeError),
 
-    #[error("Invalid public key security level {public_key_security_level}. This state transition requires {required_security_level}")]
-    InvalidSignaturePublicKeySecurityLevelError {
-        public_key_security_level: SecurityLevel,
-        required_security_level: SecurityLevel,
-    },
+    #[error(transparent)]
+    DataContractNotPresentError(DataContractNotPresentError),
 
-    #[error("State Transition type is not present")]
-    InvalidStateTransitionTypeError,
+    #[error(transparent)]
+    InvalidSignaturePublicKeySecurityLevelError(InvalidSignaturePublicKeySecurityLevelError),
 
-    #[error("$dataContractId is not present")]
-    MissingDataContractIdError { raw_document_transition: JsonValue },
+    #[error(transparent)]
+    InvalidStateTransitionTypeError(InvalidStateTransitionTypeError),
 
-    #[error("Public key is disabled")]
-    PublicKeyIsDisabledError { public_key: IdentityPublicKey },
+    #[error(transparent)]
+    MissingDataContractIdError(MissingDataContractIdError),
 
-    #[error("Identity is not present")]
-    IdentityNotPresentError { id: Identifier },
+    #[error(transparent)]
+    PublicKeyIsDisabledError(PublicKeyIsDisabledError),
+
+    #[error(transparent)]
+    IdentityNotPresentError(IdentityNotPresentError),
 
     /// Error
     #[error("overflow error: {0}")]
@@ -131,17 +131,21 @@ pub enum ProtocolError {
     #[error("value error: {0}")]
     ValueError(#[from] ValueError),
 
+    /// Dash core error
+    #[error("dash core error: {0}")]
+    DashCoreError(#[from] DashCoreError),
+
     #[error("Invalid Identity: {errors:?}")]
     InvalidIdentityError {
         errors: Vec<ConsensusError>,
-        raw_identity: JsonValue,
+        raw_identity: Value,
     },
-}
 
-impl From<NonConsensusError> for ProtocolError {
-    fn from(e: NonConsensusError) -> Self {
-        Self::NonConsensusError(e.to_string())
-    }
+    #[error("Public key generation error {0}")]
+    PublicKeyGenerationError(String),
+
+    #[error("corrupted code execution: {0}")]
+    CorruptedCodeExecution(String),
 }
 
 impl From<&str> for ProtocolError {
@@ -171,5 +175,11 @@ impl From<DocumentError> for ProtocolError {
 impl From<SerdeParsingError> for ProtocolError {
     fn from(e: SerdeParsingError) -> Self {
         ProtocolError::ParsingError(e.to_string())
+    }
+}
+
+impl From<DashPlatformProtocolInitError> for ProtocolError {
+    fn from(e: DashPlatformProtocolInitError) -> Self {
+        ProtocolError::Generic(e.to_string())
     }
 }

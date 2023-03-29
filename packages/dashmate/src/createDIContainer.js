@@ -8,8 +8,8 @@ const {
 
 const Docker = require('dockerode');
 
-const ensureHomeDirFactory = require('./ensureHomeDirFactory');
-const getConnectionHostFactory = require('./getConnectionHostFactory');
+const ensureHomeDirFactory = require('./config/ensureHomeDirFactory');
+const getConnectionHostFactory = require('./docker/getConnectionHostFactory');
 const ConfigFileJsonRepository = require('./config/configFile/ConfigFileJsonRepository');
 const createSystemConfigsFactory = require('./config/systemConfigs/createSystemConfigsFactory');
 const isSystemConfigFactory = require('./config/systemConfigs/isSystemConfigFactory');
@@ -55,11 +55,9 @@ const getHostScopeFactory = require('./status/scopes/host');
 const generateToAddressTaskFactory = require('./listr/tasks/wallet/generateToAddressTaskFactory');
 const registerMasternodeTaskFactory = require('./listr/tasks/registerMasternodeTaskFactory');
 const featureFlagTaskFactory = require('./listr/tasks/platform/featureFlagTaskFactory');
-const tenderdashInitTaskFactory = require('./listr/tasks/platform/tenderdashInitTaskFactory');
 const startNodeTaskFactory = require('./listr/tasks/startNodeTaskFactory');
 
 const createTenderdashRpcClient = require('./tenderdash/createTenderdashRpcClient');
-const initializeTenderdashNodeFactory = require('./tenderdash/initializeTenderdashNodeFactory');
 const setupLocalPresetTaskFactory = require('./listr/tasks/setup/setupLocalPresetTaskFactory');
 const setupRegularPresetTaskFactory = require('./listr/tasks/setup/setupRegularPresetTaskFactory');
 const stopNodeTaskFactory = require('./listr/tasks/stopNodeTaskFactory');
@@ -91,6 +89,9 @@ const generateKeyPair = require('./ssl/generateKeyPair');
 const createSelfSignedCertificate = require('./ssl/selfSigned/createCertificate');
 
 const scheduleRenewZeroSslCertificateFactory = require('./helper/scheduleRenewZeroSslCertificateFactory');
+const registerMasternodeGuideTaskFactory = require('./listr/tasks/setup/regular/registerMasternodeGuideTaskFactory');
+const configureNodeTaskFactory = require('./listr/tasks/setup/regular/configureNodeTaskFactory');
+const configureSSLCertificateTaskFactory = require('./listr/tasks/setup/regular/configureSSLCertificateTaskFactory');
 
 async function createDIContainer() {
   const container = createAwilixContainer({
@@ -193,7 +194,6 @@ async function createDIContainer() {
    */
   container.register({
     createTenderdashRpcClient: asValue(createTenderdashRpcClient),
-    initializeTenderdashNode: asFunction(initializeTenderdashNodeFactory).singleton(),
   });
 
   /**
@@ -205,7 +205,6 @@ async function createDIContainer() {
     generateToAddressTask: asFunction(generateToAddressTaskFactory).singleton(),
     registerMasternodeTask: asFunction(registerMasternodeTaskFactory).singleton(),
     featureFlagTask: asFunction(featureFlagTaskFactory).singleton(),
-    tenderdashInitTask: asFunction(tenderdashInitTaskFactory).singleton(),
     startNodeTask: asFunction(startNodeTaskFactory).singleton(),
     stopNodeTask: asFunction(stopNodeTaskFactory).singleton(),
     restartNodeTask: asFunction(restartNodeTaskFactory).singleton(),
@@ -216,6 +215,7 @@ async function createDIContainer() {
     configureTenderdashTask: asFunction(configureTenderdashTaskFactory).singleton(),
     waitForNodeToBeReadyTask: asFunction(waitForNodeToBeReadyTaskFactory).singleton(),
     enableCoreQuorumsTask: asFunction(enableCoreQuorumsTaskFactory).singleton(),
+    registerMasternodeGuideTask: asFunction(registerMasternodeGuideTaskFactory).singleton(),
     obtainZeroSSLCertificateTask: asFunction(obtainZeroSSLCertificateTaskFactory).singleton(),
     renewZeroSSLCertificateTask: asFunction(renewZeroSSLCertificateTaskFactory).singleton(),
     obtainSelfSignedCertificateTask: asFunction(obtainSelfSignedCertificateTaskFactory).singleton(),
@@ -227,6 +227,8 @@ async function createDIContainer() {
     getOverviewScope: asFunction(getOverviewScopeFactory).singleton(),
     getServicesScope: asFunction(getServicesScopeFactory).singleton(),
     getHostScope: asFunction(getHostScopeFactory).singleton(),
+    configureNodeTask: asFunction(configureNodeTaskFactory).singleton(),
+    configureSSLCertificateTask: asFunction(configureSSLCertificateTaskFactory).singleton(),
   });
 
   /**

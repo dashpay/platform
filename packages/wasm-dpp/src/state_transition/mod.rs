@@ -1,12 +1,20 @@
 use dpp::state_transition::state_transition_execution_context::StateTransitionExecutionContext;
+
 use wasm_bindgen::prelude::*;
 
+pub mod errors;
+pub mod state_transition_facade;
+pub mod state_transition_factory;
+
+pub mod fee;
 pub mod validation;
+use crate::utils::Inner;
 pub use validation::*;
 
 pub(crate) mod conversion;
 
 #[wasm_bindgen(js_name=StateTransitionExecutionContext)]
+#[derive(Clone)]
 pub struct StateTransitionExecutionContextWasm(StateTransitionExecutionContext);
 
 impl From<StateTransitionExecutionContext> for StateTransitionExecutionContextWasm {
@@ -60,5 +68,21 @@ impl StateTransitionExecutionContextWasm {
     #[wasm_bindgen(js_name=disableDryRun)]
     pub fn disable_dry_run(&self) {
         self.0.disable_dry_run();
+    }
+}
+
+impl Inner for StateTransitionExecutionContextWasm {
+    type InnerItem = StateTransitionExecutionContext;
+
+    fn into_inner(self) -> Self::InnerItem {
+        self.0
+    }
+
+    fn inner(&self) -> &Self::InnerItem {
+        &self.0
+    }
+
+    fn inner_mut(&mut self) -> &mut Self::InnerItem {
+        &mut self.0
     }
 }

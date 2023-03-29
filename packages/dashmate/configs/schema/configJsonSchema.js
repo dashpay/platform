@@ -224,17 +224,24 @@ module.exports = {
           required: ['docker'],
           additionalProperties: false,
         },
-        minimumDifficultyBlocks: {
-          type: 'integer',
-          minimum: 0,
-        },
-        powTargetSpacing: {
-          type: 'integer',
-          minimum: 1,
-        },
-        devnetName: {
-          type: ['string', 'null'],
-          minLength: 1,
+        devnet: {
+          type: 'object',
+          properties: {
+            name: {
+              type: ['string', 'null'],
+              minLength: 1,
+            },
+            minimumDifficultyBlocks: {
+              type: 'integer',
+              minimum: 0,
+            },
+            powTargetSpacing: {
+              type: 'integer',
+              minimum: 1,
+            },
+          },
+          additionalProperties: false,
+          required: ['name', 'minimumDifficultyBlocks', 'powTargetSpacing'],
         },
         debug: {
           type: 'integer',
@@ -263,8 +270,8 @@ module.exports = {
           additionalProperties: false,
         },
       },
-      required: ['docker', 'p2p', 'rpc', 'spork', 'masternode', 'miner', 'devnetName',
-        'debug', 'reindex', 'minimumDifficultyBlocks', 'powTargetSpacing', 'logIps', 'indexes'],
+      required: ['docker', 'p2p', 'rpc', 'spork', 'masternode', 'miner', 'devnet',
+        'debug', 'reindex', 'logIps', 'indexes'],
       additionalProperties: false,
     },
     platform: {
@@ -319,7 +326,7 @@ module.exports = {
                     },
                     provider: {
                       type: 'string',
-                      enum: ['zerossl', 'selfSigned', 'manual'],
+                      enum: ['zerossl', 'selfSigned', 'file'],
                     },
                     providerConfigs: {
                       type: 'object',
@@ -401,7 +408,7 @@ module.exports = {
                     llmqType: {
                       type: 'number',
                       // https://github.com/dashevo/dashcore-lib/blob/286c33a9d29d33f05d874c47a9b33764a0be0cf1/lib/constants/index.js#L42-L57
-                      enum: [1, 2, 3, 4, 100, 101, 102],
+                      enum: [1, 2, 3, 4, 100, 101, 102, 106, 107],
                     },
                   },
                   additionalProperties: false,
@@ -478,8 +485,17 @@ module.exports = {
                   required: ['port'],
                   additionalProperties: false,
                 },
-                nodeKey: {
+                node: {
                   type: 'object',
+                  properties: {
+                    id: {
+                      type: ['string', 'null'],
+                    },
+                    key: {
+                      type: ['string', 'null'],
+                    },
+                  },
+                  additionalProperties: false,
                 },
                 moniker: {
                   type: ['string', 'null'],
@@ -487,12 +503,8 @@ module.exports = {
                 genesis: {
                   type: 'object',
                 },
-                nodeId: {
-                  type: ['string', 'null'],
-                },
               },
-              required: ['docker', 'p2p', 'rpc', 'consensus',
-                'nodeKey', 'moniker', 'genesis', 'nodeId'],
+              required: ['docker', 'p2p', 'rpc', 'consensus', 'node', 'moniker', 'genesis'],
               additionalProperties: false,
             },
           },
@@ -641,8 +653,11 @@ module.exports = {
           required: ['contract', 'masterPublicKey', 'secondPublicKey'],
           additionalProperties: false,
         },
+        enable: {
+          type: 'boolean',
+        },
       },
-      required: ['dapi', 'drive', 'dpns', 'dashpay', 'featureFlags', 'sourcePath', 'masternodeRewardShares', 'withdrawals'],
+      required: ['dapi', 'drive', 'dpns', 'dashpay', 'featureFlags', 'sourcePath', 'masternodeRewardShares', 'withdrawals', 'enable'],
       additionalProperties: false,
     },
     dashmate: {

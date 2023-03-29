@@ -1,11 +1,9 @@
-const { BlockHeader } = require('@dashevo/dashcore-lib');
-
 const identitySchema = require('@dashevo/dpp/schema/identity/identity.json');
 const createStateRepositoryMock = require('@dashevo/dpp/lib/test/mocks/createStateRepositoryMock');
-const getIdentityUpdateTransitionFixture = require('@dashevo/dpp/lib/test/fixtures/getIdentityUpdateTransitionFixture');
 const getIdentityFixture = require('@dashevo/dpp/lib/test/fixtures/getIdentityFixture');
 const ValidationResult = require('@dashevo/dpp/lib/validation/ValidationResult');
 const SomeConsensusError = require('@dashevo/dpp/lib/test/mocks/SomeConsensusError');
+const getIdentityUpdateTransitionFixture = require('../../../../../../../lib/test/fixtures/getIdentityUpdateTransitionFixture');
 
 const { default: loadWasmDpp } = require('../../../../../../../dist');
 const { expectValidationError } = require('../../../../../../../lib/test/expect/expectError');
@@ -24,7 +22,6 @@ describe('validateIdentityUpdateTransitionStateFactory', () => {
 
   let Identity;
   let IdentityPublicKey;
-  let IdentityUpdateTransition;
   let InvalidIdentityRevisionError;
   let IdentityPublicKeyIsReadOnlyError;
   let IdentityPublicKeyIsDisabledError;
@@ -39,7 +36,6 @@ describe('validateIdentityUpdateTransitionStateFactory', () => {
     ({
       Identity,
       IdentityPublicKey,
-      IdentityUpdateTransition,
       InvalidIdentityRevisionError,
       IdentityPublicKeyIsReadOnlyError,
       IdentityPublicKeyIsDisabledError,
@@ -62,32 +58,15 @@ describe('validateIdentityUpdateTransitionStateFactory', () => {
     stateRepositoryMock.fetchIdentity.resolves(identity);
 
     blockTime = Date.now();
-
-    const blockTimeSeconds = Math.round(blockTime / 1000);
     const blsAdapter = await getBlsAdapterMock();
-    const header = new BlockHeader({
-      version: 536870913,
-      prevHash: '0000000000000000000000000000000000000000000000000000000000000000',
-      merkleRoot: 'c4970326400177ce67ec582425a698b85ae03cae2b0d168e87eed697f1388e4b',
-      time: blockTimeSeconds,
-      timestamp: blockTimeSeconds,
-      bits: 0,
-      nonce: 1449878271,
-    });
 
-    // TODO: This method is deprecated and removed from JS DPP. Update to new methods:
-    //  fetchLatestPlatformBlockHeight, fetchLatestPlatformCoreChainLockedHeight,
-    //  fetchLatestPlatformBlockTime
-    stateRepositoryMock.fetchLatestPlatformBlockHeader = this.sinonSandbox.stub();
-
-    stateRepositoryMock.fetchLatestPlatformBlockHeader.resolves(header.toBuffer());
+    stateRepositoryMock.fetchLatestPlatformBlockTime = this.sinonSandbox.stub();
+    stateRepositoryMock.fetchLatestPlatformBlockTime.resolves(blockTime);
 
     const validator = new IdentityUpdateTransitionStateValidator(stateRepositoryMock, blsAdapter);
     validateIdentityUpdateTransitionState = (st) => validator.validate(st);
 
-    stateTransition = new IdentityUpdateTransition(
-      getIdentityUpdateTransitionFixture().toObject(),
-    );
+    stateTransition = await getIdentityUpdateTransitionFixture();
 
     stateTransition.setRevision(identity.getRevision() + 1);
     stateTransition.setPublicKeyIdsToDisable(undefined);
@@ -199,7 +178,7 @@ describe('validateIdentityUpdateTransitionStateFactory', () => {
         match.instanceOf(StateTransitionExecutionContext),
       );
 
-    expect(stateRepositoryMock.fetchLatestPlatformBlockHeader)
+    expect(stateRepositoryMock.fetchLatestPlatformBlockTime)
       .to.be.calledOnce();
   });
 
@@ -218,7 +197,7 @@ describe('validateIdentityUpdateTransitionStateFactory', () => {
         match.instanceOf(StateTransitionExecutionContext),
       );
 
-    expect(stateRepositoryMock.fetchLatestPlatformBlockHeader)
+    expect(stateRepositoryMock.fetchLatestPlatformBlockTime)
       .to.not.be.called();
   });
 
@@ -237,7 +216,7 @@ describe('validateIdentityUpdateTransitionStateFactory', () => {
         match.instanceOf(StateTransitionExecutionContext),
       );
 
-    expect(stateRepositoryMock.fetchLatestPlatformBlockHeader)
+    expect(stateRepositoryMock.fetchLatestPlatformBlockTime)
       .to.be.calledOnce();
   });
 
@@ -294,7 +273,7 @@ describe('validateIdentityUpdateTransitionStateFactory', () => {
     stateTransition.setPublicKeysDisabledAt(new Date());
 
     // Make code that executes after dry run check to fail
-    stateRepositoryMock.fetchLatestPlatformBlockHeader.resolves({});
+    stateRepositoryMock.fetchLatestPlatformBlockTime.resolves({});
 
     stateTransition.getExecutionContext().enableDryRun();
     const result = await validateIdentityUpdateTransitionState(stateTransition);
@@ -310,7 +289,7 @@ describe('validateIdentityUpdateTransitionStateFactory', () => {
         match.instanceOf(StateTransitionExecutionContext),
       );
 
-    expect(stateRepositoryMock.fetchLatestPlatformBlockHeader)
+    expect(stateRepositoryMock.fetchLatestPlatformBlockTime)
       .to.not.be.called();
   });
 });

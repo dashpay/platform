@@ -27,10 +27,10 @@ impl IdentityCreateTransitionStateValidator {
     ) -> Result<ValidationResultWasm, JsValue> {
         let validation_result = validate_identity_create_transition_state(
             &self.state_repository,
-            state_transition.to_owned().into(),
+            &state_transition.to_owned().into(),
         )
         .await
-        .map_err(|e| from_dpp_err(e.into()))?;
+        .map_err(from_dpp_err)?;
 
         Ok(validation_result.map(|_| JsValue::undefined()).into())
     }

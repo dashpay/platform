@@ -1,3 +1,4 @@
+use crate::validation::{SimpleValidationResult, ValidationResult};
 use crate::{
     consensus::{
         basic::{BasicError, IndexError, JsonSchemaError},
@@ -5,11 +6,11 @@ use crate::{
         signature::SignatureError,
         ConsensusError,
     },
-    validation::ValidationResult,
-    StateError,
+    data_trigger::DataTriggerExecutionResult,
+    DataTriggerError, StateError,
 };
 
-pub fn get_schema_error(result: &ValidationResult<()>, number: usize) -> &JsonSchemaError {
+pub fn get_schema_error(result: &SimpleValidationResult, number: usize) -> &JsonSchemaError {
     result
         .errors
         .get(number)
@@ -35,8 +36,8 @@ pub fn get_index_error(consensus_error: &ConsensusError) -> &IndexError {
     }
 }
 
-pub fn get_state_error_from_result(
-    result: &ValidationResult<()>,
+pub fn get_state_error_from_result<TData: Clone>(
+    result: &ValidationResult<TData>,
     error_number: usize,
 ) -> &StateError {
     match result
@@ -53,7 +54,7 @@ pub fn get_state_error_from_result(
 }
 
 pub fn get_basic_error_from_result(
-    result: &ValidationResult<()>,
+    result: &SimpleValidationResult,
     error_number: usize,
 ) -> &BasicError {
     match result
@@ -98,6 +99,23 @@ pub fn get_fee_error_from_result<K: Clone>(
         ConsensusError::FeeError(signature_error) => signature_error,
         _ => panic!(
             "error '{:?}' isn't a Fee error",
+            result.errors[error_number]
+        ),
+    }
+}
+
+pub fn get_data_trigger_error_from_execution_result(
+    result: &DataTriggerExecutionResult,
+    error_number: usize,
+) -> &DataTriggerError {
+    match result
+        .errors
+        .get(error_number)
+        .expect("basic error should be found")
+    {
+        StateError::DataTriggerError(error) => error,
+        _ => panic!(
+            "error '{:?}' isn't a Data Trigger error",
             result.errors[error_number]
         ),
     }

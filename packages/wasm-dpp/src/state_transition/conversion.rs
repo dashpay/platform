@@ -1,9 +1,13 @@
+use crate::errors::consensus_error::from_consensus_error;
 use crate::utils::generic_of_js_val;
 use crate::{
     DataContractCreateTransitionWasm, DataContractUpdateTransitionWasm,
-    DocumentsBatchTransitionWASM, IdentityCreateTransitionWasm, IdentityTopUpTransitionWasm,
+    DocumentsBatchTransitionWasm, IdentityCreateTransitionWasm, IdentityTopUpTransitionWasm,
     IdentityUpdateTransitionWasm,
 };
+use dpp::consensus::basic::state_transition::InvalidStateTransitionTypeError;
+use dpp::consensus::basic::BasicError;
+use dpp::consensus::ConsensusError;
 use dpp::state_transition::{StateTransition, StateTransitionType};
 use std::convert::TryInto;
 use wasm_bindgen::__rt::Ref;
@@ -27,10 +31,11 @@ pub fn create_state_transition_from_wasm_instance(
 
     let state_transition_type: StateTransitionType =
         raw_state_transition_type.try_into().map_err(|_| {
-            JsError::new(&format!(
-                "Unknown state transition type: {}",
-                raw_state_transition_type
-            ))
+            from_consensus_error(ConsensusError::BasicError(Box::new(
+                BasicError::InvalidStateTransitionTypeError(InvalidStateTransitionTypeError::new(
+                    raw_state_transition_type,
+                )),
+            )))
         })?;
 
     match state_transition_type {
@@ -44,8 +49,8 @@ pub fn create_state_transition_from_wasm_instance(
             Ok(StateTransition::DataContractCreate(st.clone().into()))
         }
         StateTransitionType::DocumentsBatch => {
-            let st: Ref<DocumentsBatchTransitionWASM> = generic_of_js_val::<
-                DocumentsBatchTransitionWASM,
+            let st: Ref<DocumentsBatchTransitionWasm> = generic_of_js_val::<
+                DocumentsBatchTransitionWasm,
             >(
                 js_value, "DocumentsBatchTransition"
             )?;

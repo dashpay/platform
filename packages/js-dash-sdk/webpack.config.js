@@ -1,7 +1,7 @@
 const path = require('path');
-const webpackBaseConfig = require("./webpack.base.config");
+const webpackBaseConfig = require('./webpack.base.config');
 
-const webConfig =  {
+const webConfig = {
   ...webpackBaseConfig,
   entry: './build/src/index.js',
   devtool: 'source-map',
@@ -11,12 +11,12 @@ const webConfig =  {
     path: path.resolve(__dirname, 'dist'),
     library: {
       name: 'Dash',
-      type: 'umd'
+      type: 'umd',
     },
     filename: 'dash.min.js',
     // fixes ReferenceError: window is not defined
-    globalObject: "(typeof self !== 'undefined' ? self : this)"
+    globalObject: "(typeof self !== 'undefined' ? self : this)",
   },
-}
+};
 
 module.exports = [webConfig];

@@ -1,9 +1,8 @@
-import { Logger, Logform } from "winston";
+import { Logger, Logform } from 'winston';
 
 export type ConfigurableLogger = Logger & {
   getForId: (id: string) => ConfigurableLogger
-}
-
+};
 
 const util = require('util');
 const winston = require('winston');
@@ -41,7 +40,7 @@ const createLogger = (formats: Logform.Format[] = []): ConfigurableLogger => win
       ),
     }),
   ],
-})
+});
 
 const logger = createLogger();
 

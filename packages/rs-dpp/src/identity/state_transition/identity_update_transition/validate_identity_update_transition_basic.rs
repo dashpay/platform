@@ -1,5 +1,6 @@
 use anyhow::anyhow;
 use lazy_static::lazy_static;
+use platform_value::Value;
 use serde_json::Value as JsonValue;
 use std::sync::Arc;
 
@@ -8,7 +9,6 @@ use crate::{
         state_transition::validate_public_key_signatures::TPublicKeysSignaturesValidator,
         validation::TPublicKeysValidator,
     },
-    util::json_value::JsonValueExt,
     validation::{JsonSchemaValidator, SimpleValidationResult},
     version::ProtocolVersionValidator,
     NonConsensusError, ProtocolError,
@@ -27,8 +27,7 @@ pub struct ValidateIdentityUpdateTransitionBasic<KV, SV> {
     protocol_version_validator: ProtocolVersionValidator,
     json_schema_validator: JsonSchemaValidator,
     public_keys_validator: Arc<KV>,
-
-    public_keys_signatures_validator: SV,
+    public_keys_signatures_validator: Arc<SV>,
 }
 
 impl<KV, SV> ValidateIdentityUpdateTransitionBasic<KV, SV>
@@ -39,7 +38,7 @@ where
     pub fn new(
         protocol_version_validator: ProtocolVersionValidator,
         public_keys_validator: Arc<KV>,
-        public_keys_signatures_validator: SV,
+        public_keys_signatures_validator: Arc<SV>,
     ) -> Result<Self, ProtocolError> {
         let json_schema_validator = JsonSchemaValidator::new(IDENTITY_UPDATE_SCHEMA.clone())
             .map_err(|e| {
@@ -58,44 +57,40 @@ where
 
     pub fn validate(
         &self,
-        raw_state_transition: &JsonValue,
+        raw_state_transition: &Value,
     ) -> Result<SimpleValidationResult, NonConsensusError> {
-        let result = self.json_schema_validator.validate(raw_state_transition)?;
+        let result = self.json_schema_validator.validate(
+            &raw_state_transition
+                .try_to_validating_json()
+                .map_err(NonConsensusError::ValueError)?,
+        )?;
         if !result.is_valid() {
             return Ok(result);
         }
 
         let protocol_version = raw_state_transition
-            .get_u64(property_names::PROTOCOL_VERSION)
-            .map_err(|e| NonConsensusError::SerdeJsonError(e.to_string()))?;
+            .get_integer(property_names::PROTOCOL_VERSION)
+            .map_err(NonConsensusError::ValueError)?;
 
-        let result = self
-            .protocol_version_validator
-            .validate(protocol_version as u32)?;
+        let result = self.protocol_version_validator.validate(protocol_version)?;
         if !result.is_valid() {
             return Ok(result);
         }
 
-        let maybe_raw_public_keys = raw_state_transition.get(property_names::ADD_PUBLIC_KEYS);
+        let maybe_raw_public_keys = raw_state_transition
+            .get_optional_array_slice(property_names::ADD_PUBLIC_KEYS)
+            .map_err(NonConsensusError::ValueError)?;
 
         match maybe_raw_public_keys {
             Some(raw_public_keys) => {
-                let raw_public_keys_list = raw_public_keys.as_array().ok_or_else(|| {
-                    NonConsensusError::SerdeJsonError(format!(
-                        "'{}' property isn't an array",
-                        property_names::ADD_PUBLIC_KEYS
-                    ))
-                })?;
-                let result = self
-                    .public_keys_validator
-                    .validate_keys(raw_public_keys_list)?;
+                let result = self.public_keys_validator.validate_keys(raw_public_keys)?;
                 if !result.is_valid() {
                     return Ok(result);
                 }
 
                 let result = self
                     .public_keys_signatures_validator
-                    .validate_public_key_signatures(raw_state_transition, raw_public_keys_list)?;
+                    .validate_public_key_signatures(raw_state_transition, raw_public_keys)?;
                 if !result.is_valid() {
                     return Ok(result);
                 }

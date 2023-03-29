@@ -2,6 +2,7 @@ use dpp::prelude::Identifier;
 use wasm_bindgen::prelude::*;
 
 use crate::buffer::Buffer;
+use crate::identifier::IdentifierWrapper;
 
 #[wasm_bindgen(js_name=InvalidDocumentTypeError)]
 pub struct InvalidDocumentTypeErrorWasm {
@@ -22,7 +23,20 @@ impl InvalidDocumentTypeErrorWasm {
 
 #[wasm_bindgen(js_class=InvalidDocumentTypeError)]
 impl InvalidDocumentTypeErrorWasm {
-    #[wasm_bindgen(js_name=getDocumentType)]
+    #[wasm_bindgen(constructor)]
+    pub fn constructor(
+        document_type: String,
+        data_contract_id: IdentifierWrapper,
+        code: u32,
+    ) -> Self {
+        Self {
+            document_type,
+            data_contract_id: data_contract_id.into(),
+            code,
+        }
+    }
+
+    #[wasm_bindgen(js_name=getType)]
     pub fn get_document_type(&self) -> String {
         self.document_type.clone()
     }

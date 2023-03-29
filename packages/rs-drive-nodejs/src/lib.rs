@@ -12,8 +12,9 @@ use crate::fee::result::FeeResultWrapper;
 
 use drive::dpp::identity::{KeyID, TimestampMillis};
 use drive::dpp::prelude::Revision;
+use drive::dpp::Convertible;
 use drive::drive::flags::StorageFlags;
-use drive::drive::query::QueryDocumentsOutcome;
+use drive::drive::query::QuerySerializedDocumentsOutcome;
 use drive::error::Error;
 use drive::fee::credits::Credits;
 use drive::fee_pools::epochs::Epoch;
@@ -2149,7 +2150,7 @@ impl PlatformWrapper {
                     let callback = js_callback.into_inner(&mut task_context);
                     let this = task_context.undefined();
                     let callback_arguments: Vec<Handle<JsValue>> = match result {
-                        Ok(QueryDocumentsOutcome {
+                        Ok(QuerySerializedDocumentsOutcome {
                             items,
                             skipped,
                             cost,

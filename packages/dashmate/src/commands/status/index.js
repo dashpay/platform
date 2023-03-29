@@ -3,9 +3,9 @@ const { OUTPUT_FORMATS } = require('../../constants');
 
 const ConfigBaseCommand = require('../../oclif/command/ConfigBaseCommand');
 const printObject = require('../../printers/printObject');
-const MasternodeStateEnum = require('../../enums/masternodeState');
+const MasternodeStateEnum = require('../../status/enums/masternodeState');
 const colors = require('../../status/colors');
-const ServiceStatusEnum = require('../../enums/serviceStatus');
+const ServiceStatusEnum = require('../../status/enums/serviceStatus');
 
 class StatusCommand extends ConfigBaseCommand {
   /**

@@ -7,8 +7,9 @@
  * @param {string} ownerAddress
  * @param {string} operatorPublicKey
  * @param {string} fundSourceAddress
- * @param {number} operatorReward
+ * @param {string} operatorReward
  * @param {Config} config
+ * @param {boolean} [hp=false]
  * @return {Promise<string>}
  */
 async function registerMasternode(
@@ -19,6 +20,7 @@ async function registerMasternode(
   fundSourceAddress,
   operatorReward,
   config,
+  hp = false,
 ) {
   // get collateral index
   const { result: masternodeOutputs } = await coreService.getRpcClient().masternode('outputs', { wallet: 'main' });
@@ -29,8 +31,8 @@ async function registerMasternode(
 
   const ipAndPort = `${config.get('externalIp', true)}:${config.get('core.p2p.port')}`;
 
-  const { result: proRegTxId } = await coreService.getRpcClient().protx(
-    'register',
+  const proTxArgs = [
+    hp ? 'register_hpmn' : 'register',
     collateralHash, // The txid of the 1000 Dash collateral funding transaction
     parseInt(collateralOutputIndex, 10), // The output index of the 1000 Dash funding transaction
     ipAndPort, // Masternode IP address and port, in the format x.x.x.x:yyyy
@@ -39,6 +41,20 @@ async function registerMasternode(
     ownerAddress, // The new Dash address, or the address of a delegate, used for proposal voting
     operatorReward, // The percentage of the block reward allocated to the operator as payment
     fundSourceAddress, // A new or existing Dash address to receive the owner’s masternode rewards
+  ];
+
+  if (hp) {
+    const platformNodeId = config.get('platform.drive.tenderdash.node.id');
+    const platformP2PPort = config.get('platform.drive.tenderdash.p2p.port');
+    const platformHttpPort = config.get('platform.dapi.envoy.http.port');
+
+    proTxArgs.push(platformNodeId);
+    proTxArgs.push(platformP2PPort.toString());
+    proTxArgs.push(platformHttpPort.toString());
+  }
+
+  const { result: proRegTxId } = await coreService.getRpcClient().protx(
+    ...proTxArgs,
     { wallet: 'main' },
   );
 

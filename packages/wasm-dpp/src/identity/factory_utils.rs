@@ -1,9 +1,9 @@
 use crate::errors::RustConversionError;
-use crate::identity::identity_public_key_transitions::IdentityPublicKeyCreateTransitionWasm;
-use crate::utils::{generic_of_js_val, to_vec_of_serde_values};
+use crate::identity::identity_public_key_transitions::IdentityPublicKeyWithWitnessWasm;
+use crate::utils::{generic_of_js_val, to_vec_of_platform_values};
 use crate::{create_asset_lock_proof_from_wasm_instance, IdentityPublicKeyWasm};
 use dpp::identity::state_transition::asset_lock_proof::AssetLockProof;
-use dpp::identity::state_transition::identity_public_key_transitions::IdentityPublicKeyCreateTransition;
+use dpp::identity::state_transition::identity_public_key_transitions::IdentityPublicKeyWithWitness;
 use dpp::identity::{IdentityPublicKey, KeyID};
 use std::collections::BTreeMap;
 use wasm_bindgen::__rt::Ref;
@@ -15,18 +15,18 @@ pub fn parse_create_args(
 ) -> Result<(AssetLockProof, BTreeMap<KeyID, IdentityPublicKey>), JsValue> {
     let asset_lock_proof = create_asset_lock_proof_from_wasm_instance(&asset_lock_proof)?;
 
-    let raw_public_keys = to_vec_of_serde_values(public_keys.iter())?;
+    let raw_public_keys = to_vec_of_platform_values(public_keys.iter())?;
 
     let public_keys = raw_public_keys
         .into_iter()
-        .map(|v| IdentityPublicKey::from_raw_object(v).map(|key| (key.id, key)))
+        .map(|v| IdentityPublicKey::from_value(v).map(|key| (key.id, key)))
         .collect::<Result<_, _>>()
         .map_err(|e| format!("converting to collection of IdentityPublicKeys failed: {e:#}"))?;
 
     Ok((asset_lock_proof, public_keys))
 }
 
-type AddPublicKeys = Option<Vec<IdentityPublicKeyCreateTransition>>;
+type AddPublicKeys = Option<Vec<IdentityPublicKeyWithWitness>>;
 type DisablePublicKeys = Option<Vec<KeyID>>;
 
 pub fn parse_create_identity_update_transition_keys(
@@ -44,18 +44,18 @@ pub fn parse_create_identity_update_transition_keys(
                     .to_js_value()
             })?;
 
-        let keys: Vec<IdentityPublicKeyCreateTransition> = add_public_keys_array
+        let keys: Vec<IdentityPublicKeyWithWitness> = add_public_keys_array
             .iter()
             .map(|key| {
-                let public_key: Ref<IdentityPublicKeyCreateTransitionWasm> =
-                    generic_of_js_val::<IdentityPublicKeyCreateTransitionWasm>(
+                let public_key: Ref<IdentityPublicKeyWithWitnessWasm> =
+                    generic_of_js_val::<IdentityPublicKeyWithWitnessWasm>(
                         &key,
-                        "IdentityPublicKeyCreateTransition",
+                        "IdentityPublicKeyWithWitness",
                     )?;
 
                 Ok(public_key.clone().into())
             })
-            .collect::<Result<Vec<IdentityPublicKeyCreateTransition>, JsValue>>()?;
+            .collect::<Result<Vec<IdentityPublicKeyWithWitness>, JsValue>>()?;
 
         add_public_keys = Some(keys)
     }

@@ -13,23 +13,25 @@ use crate::{
     identity::state_transition::asset_lock_proof::{
         ChainAssetLockProofWasm, InstantAssetLockProofWasm,
     },
-    identity::state_transition::identity_public_key_transitions::IdentityPublicKeyCreateTransitionWasm,
+    identity::state_transition::identity_public_key_transitions::IdentityPublicKeyWithWitnessWasm,
     state_transition::StateTransitionExecutionContextWasm,
     with_js_error,
 };
 
 use crate::bls_adapter::{BlsAdapter, JsBlsAdapter};
 use crate::errors::from_dpp_err;
-use crate::utils::{generic_of_js_val, ToSerdeJSONExt};
+use dpp::state_transition::StateTransitionConvert;
+
+use crate::utils::{generic_of_js_val, ToSerdeJSONExt, WithJsError};
+use dpp::platform_value::string_encoding::Encoding;
+use dpp::platform_value::{string_encoding, BinaryData};
 use dpp::{
     identifier::Identifier,
     identity::state_transition::{
         asset_lock_proof::AssetLockProof, identity_create_transition::IdentityCreateTransition,
-        identity_public_key_transitions::IdentityPublicKeyCreateTransition,
+        identity_public_key_transitions::IdentityPublicKeyWithWitness,
     },
     state_transition::StateTransitionLike,
-    util::string_encoding,
-    util::string_encoding::Encoding,
 };
 
 #[wasm_bindgen(js_name=IdentityCreateTransition)]
@@ -52,8 +54,8 @@ impl From<IdentityCreateTransitionWasm> for IdentityCreateTransition {
 impl IdentityCreateTransitionWasm {
     #[wasm_bindgen(constructor)]
     pub fn new(raw_parameters: JsValue) -> Result<IdentityCreateTransitionWasm, JsValue> {
-        let raw_state_transition = raw_parameters.with_serde_to_json_value()?;
-
+        let mut raw_state_transition = raw_parameters.with_serde_to_platform_value()?;
+        IdentityCreateTransition::clean_value(&mut raw_state_transition).with_js_error()?;
         let identity_create_transition = IdentityCreateTransition::new(raw_state_transition)
             .map_err(|e| RustConversionError::Error(e.to_string()).to_js_value())?;
 
@@ -95,14 +97,14 @@ impl IdentityCreateTransitionWasm {
         let public_keys = public_keys
             .iter()
             .map(|value| {
-                let public_key: Ref<IdentityPublicKeyCreateTransitionWasm> =
-                    generic_of_js_val::<IdentityPublicKeyCreateTransitionWasm>(
+                let public_key: Ref<IdentityPublicKeyWithWitnessWasm> =
+                    generic_of_js_val::<IdentityPublicKeyWithWitnessWasm>(
                         value,
-                        "IdentityPublicKeyCreateTransition",
+                        "IdentityPublicKeyWithWitness",
                     )?;
                 Ok(public_key.clone().into())
             })
-            .collect::<Result<Vec<IdentityPublicKeyCreateTransition>, JsValue>>()?;
+            .collect::<Result<Vec<IdentityPublicKeyWithWitness>, JsValue>>()?;
 
         self.0.set_public_keys(public_keys);
 
@@ -114,14 +116,14 @@ impl IdentityCreateTransitionWasm {
         let mut public_keys = public_keys
             .iter()
             .map(|value| {
-                let public_key: Ref<IdentityPublicKeyCreateTransitionWasm> =
-                    generic_of_js_val::<IdentityPublicKeyCreateTransitionWasm>(
+                let public_key: Ref<IdentityPublicKeyWithWitnessWasm> =
+                    generic_of_js_val::<IdentityPublicKeyWithWitnessWasm>(
                         value,
-                        "IdentityPublicKeyCreateTransition",
+                        "IdentityPublicKeyWithWitness",
                     )?;
                 Ok(public_key.clone().into())
             })
-            .collect::<Result<Vec<IdentityPublicKeyCreateTransition>, JsValue>>()?;
+            .collect::<Result<Vec<IdentityPublicKeyWithWitness>, JsValue>>()?;
 
         self.0.add_public_keys(&mut public_keys);
 
@@ -133,8 +135,8 @@ impl IdentityCreateTransitionWasm {
         self.0
             .get_public_keys()
             .iter()
-            .map(IdentityPublicKeyCreateTransition::to_owned)
-            .map(IdentityPublicKeyCreateTransitionWasm::from)
+            .map(IdentityPublicKeyWithWitness::to_owned)
+            .map(IdentityPublicKeyWithWitnessWasm::from)
             .map(JsValue::from)
             .collect()
     }
@@ -216,13 +218,29 @@ impl IdentityCreateTransitionWasm {
         let keys_objects = object
             .public_keys
             .into_iter()
-            .map(IdentityPublicKeyCreateTransitionWasm::from)
+            .map(IdentityPublicKeyWithWitnessWasm::from)
             .map(|key| key.to_object(options.clone()))
             .collect::<Result<js_sys::Array, _>>()?;
 
         js_sys::Reflect::set(&js_object, &"publicKeys".to_owned().into(), &keys_objects)?;
 
         Ok(js_object.into())
+    }
+
+    #[wasm_bindgen(js_name=toBuffer)]
+    pub fn to_buffer(&self, options: JsValue) -> Result<JsValue, JsValue> {
+        let opts: super::to_object::ToObjectOptions = if options.is_object() {
+            with_js_error!(serde_wasm_bindgen::from_value(options))?
+        } else {
+            Default::default()
+        };
+
+        let buffer = self
+            .0
+            .to_buffer(opts.skip_signature.unwrap_or(false))
+            .map_err(from_dpp_err)?;
+
+        Ok(Buffer::from_bytes(&buffer).into())
     }
 
     #[wasm_bindgen(js_name=toJSON)]
@@ -270,7 +288,7 @@ impl IdentityCreateTransitionWasm {
         let keys_objects = object
             .public_keys
             .into_iter()
-            .map(IdentityPublicKeyCreateTransitionWasm::from)
+            .map(IdentityPublicKeyWithWitnessWasm::from)
             .map(|key| key.to_json())
             .collect::<Result<js_sys::Array, _>>()?;
 
@@ -284,7 +302,7 @@ impl IdentityCreateTransitionWasm {
         let ids = self.0.get_modified_data_ids();
 
         ids.into_iter()
-            .map(|id| <IdentifierWrapper as std::convert::From<Identifier>>::from(*id).into())
+            .map(|id| <IdentifierWrapper as std::convert::From<Identifier>>::from(id).into())
             .collect()
     }
 
@@ -327,11 +345,15 @@ impl IdentityCreateTransitionWasm {
 
         self.0
             .sign_by_private_key(private_key.as_slice(), key_type, &bls_adapter)
-            .map_err(from_dpp_err)
+            .with_js_error()
     }
 
     #[wasm_bindgen(js_name=getSignature)]
     pub fn get_signature(&self) -> Buffer {
-        Buffer::from_bytes(self.0.get_signature())
+        Buffer::from_bytes_owned(self.0.get_signature().to_vec())
+    }
+    #[wasm_bindgen(js_name=setSignature)]
+    pub fn set_signature(&mut self, signature: Option<Vec<u8>>) {
+        self.0.signature = BinaryData::new(signature.unwrap_or(vec![]))
     }
 }

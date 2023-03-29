@@ -1,6 +1,8 @@
-use serde_json::Value;
+use platform_value::Value;
 
-use crate::identity::state_transition::identity_public_key_transitions::IdentityPublicKeyCreateTransition;
+use crate::consensus::basic::identity::InvalidIdentityKeySignatureError;
+use crate::consensus::basic::state_transition::InvalidStateTransitionTypeError;
+use crate::identity::state_transition::identity_public_key_transitions::IdentityPublicKeyWithWitness;
 use crate::{
     consensus::{basic::BasicError, ConsensusError},
     object_names,
@@ -83,10 +85,10 @@ pub fn validate_public_key_signatures<'a, T: BlsModule>(
             }
         };
 
-    let add_public_key_transitions: Vec<IdentityPublicKeyCreateTransition> = raw_public_keys
+    let add_public_key_transitions: Vec<IdentityPublicKeyWithWitness> = raw_public_keys
         .into_iter()
         .map(|k| {
-            IdentityPublicKeyCreateTransition::from_raw_object(k.to_owned())
+            IdentityPublicKeyWithWitness::from_raw_object(k.to_owned())
                 .map_err(|e| NonConsensusError::IdentityPublicKeyCreateError(format!("{:#}", e)))
         })
         .collect::<Result<_, _>>()?;
@@ -94,9 +96,9 @@ pub fn validate_public_key_signatures<'a, T: BlsModule>(
     let maybe_invalid_public_key_transition =
         find_invalid_public_key(&mut state_transition, add_public_key_transitions, bls);
     if let Some(invalid_key_transition) = maybe_invalid_public_key_transition {
-        validation_result.add_error(BasicError::InvalidIdentityKeySignatureError {
-            public_key_id: invalid_key_transition.id,
-        })
+        validation_result.add_error(BasicError::InvalidIdentityKeySignatureError(
+            InvalidIdentityKeySignatureError::new(invalid_key_transition.id),
+        ))
     }
 
     Ok(validation_result)
@@ -104,19 +106,21 @@ pub fn validate_public_key_signatures<'a, T: BlsModule>(
 
 fn invalid_state_transition_type_error(transition_type: u8) -> ProtocolError {
     ProtocolError::AbstractConsensusError(Box::new(ConsensusError::BasicError(Box::new(
-        BasicError::InvalidStateTransitionTypeError { transition_type },
+        BasicError::InvalidStateTransitionTypeError(InvalidStateTransitionTypeError::new(
+            transition_type,
+        )),
     ))))
 }
 
 fn find_invalid_public_key<T: BlsModule>(
     state_transition: &mut impl StateTransitionLike,
-    public_keys: impl IntoIterator<Item = IdentityPublicKeyCreateTransition>,
+    public_keys: impl IntoIterator<Item = IdentityPublicKeyWithWitness>,
     bls: &T,
-) -> Option<IdentityPublicKeyCreateTransition> {
+) -> Option<IdentityPublicKeyWithWitness> {
     for public_key in public_keys {
         state_transition.set_signature(public_key.signature.clone());
         if state_transition
-            .verify_by_public_key(&public_key.data, public_key.key_type, bls)
+            .verify_by_public_key(public_key.data.as_slice(), public_key.key_type, bls)
             .is_err()
         {
             return Some(public_key);

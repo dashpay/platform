@@ -1,20 +1,18 @@
+use std::convert::TryInto;
+
 use futures::future::join_all;
 use itertools::Itertools;
+use platform_value::string_encoding::Encoding;
 use serde_json::{json, Value as JsonValue};
 
+use crate::document::Document;
+use crate::validation::SimpleValidationResult;
 use crate::{
-    document::{
-        document_transition::{Action, DocumentTransition, DocumentTransitionExt},
-        Document,
-    },
+    document::document_transition::{Action, DocumentTransition, DocumentTransitionExt},
     prelude::{DataContract, Identifier},
     state_repository::StateRepositoryLike,
     state_transition::state_transition_execution_context::StateTransitionExecutionContext,
-    util::{
-        json_schema::{Index, JsonSchemaExt},
-        string_encoding::Encoding,
-    },
-    validation::ValidationResult,
+    util::json_schema::{Index, JsonSchemaExt},
     ProtocolError, StateError,
 };
 
@@ -28,20 +26,24 @@ struct QueryDefinition<'a> {
 pub async fn validate_documents_uniqueness_by_indices<SR>(
     state_repository: &SR,
     owner_id: &Identifier,
-    document_transitions: impl IntoIterator<Item = impl AsRef<DocumentTransition>>,
+    document_transitions: impl Iterator<Item = &DocumentTransition>,
     data_contract: &DataContract,
     execution_context: &StateTransitionExecutionContext,
-) -> Result<ValidationResult<()>, ProtocolError>
+) -> Result<SimpleValidationResult, ProtocolError>
 where
     SR: StateRepositoryLike,
 {
-    let mut validation_result = ValidationResult::default();
+    let mut validation_result = SimpleValidationResult::default();
+
+    if execution_context.is_dry_run() {
+        return Ok(validation_result);
+    }
 
     // 1. Prepare fetchDocuments queries from indexed properties
     for t in document_transitions {
         let transition = t.as_ref();
         let document_schema =
-            data_contract.get_document_schema(&transition.base().document_type)?;
+            data_contract.get_document_schema(&transition.base().document_type_name)?;
         let document_indices = document_schema.get_indices::<Vec<_>>()?;
         if document_indices.is_empty() {
             continue;
@@ -54,21 +56,18 @@ where
             .filter(|query| !query.where_query.is_empty())
             .map(|query| {
                 (
-                    state_repository.fetch_documents::<Document>(
+                    state_repository.fetch_documents(
                         &data_contract.id,
                         query.document_type,
                         json!( { "where": query.where_query}),
-                        execution_context,
+                        Some(execution_context),
                     ),
                     (query.index_definition, query.document_transition),
                 )
             });
+
         let (futures, futures_meta) = unzip_iter_and_collect(queries);
         let results = join_all(futures).await;
-
-        if execution_context.is_dry_run() {
-            return Ok(validation_result);
-        }
 
         // 3. Create errors if duplicates found
         let result = validate_uniqueness(futures_meta, results)?;
@@ -89,7 +88,7 @@ fn generate_document_index_queries<'a>(
         .map(move |index| {
             let where_query = build_query_for_index_definition(index, transition, owner_id);
             QueryDefinition {
-                document_type: &transition.base().document_type,
+                document_type: &transition.base().document_type_name,
                 index_definition: index,
                 document_transition: transition,
                 where_query,
@@ -140,11 +139,17 @@ fn build_query_for_index_definition(
 
 fn validate_uniqueness<'a>(
     futures_meta: Vec<(&'a Index, &'a DocumentTransition)>,
-    results: Vec<Result<Vec<Document>, anyhow::Error>>,
-) -> Result<ValidationResult<()>, ProtocolError> {
-    let mut validation_result = ValidationResult::default();
+    results: Vec<
+        Result<Vec<impl TryInto<Document, Error = impl Into<ProtocolError>>>, anyhow::Error>,
+    >,
+) -> Result<SimpleValidationResult, ProtocolError> {
+    let mut validation_result = SimpleValidationResult::default();
     for (i, result) in results.into_iter().enumerate() {
-        let documents = result?;
+        let documents: Vec<Document> = result?
+            .into_iter()
+            .map(|d| d.try_into().map_err(Into::<ProtocolError>::into))
+            .try_collect()?;
+
         let only_origin_document =
             documents.len() == 1 && documents[0].id == futures_meta[i].1.base().id;
         if documents.is_empty() || only_origin_document {

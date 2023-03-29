@@ -8,9 +8,10 @@ use super::{
 use crate::data_contract::document_type::{property_names, ArrayFieldType};
 use crate::data_contract::errors::{DataContractError, StructureError};
 
-use crate::util::cbor_value::CborBTreeMapHelper;
+use crate::document::document_transition::INITIAL_REVISION;
+use crate::prelude::Revision;
 use crate::ProtocolError;
-use platform_value::btreemap_extensions::BTreeValueMapHelper;
+use platform_value::btreemap_extensions::{BTreeValueMapHelper, BTreeValueRemoveFromMapHelper};
 use platform_value::Value;
 use serde::{Deserialize, Serialize};
 
@@ -29,6 +30,7 @@ pub const MAX_INDEX_SIZE: usize = 255;
 pub const STORAGE_FLAGS_SIZE: usize = 2;
 
 #[derive(Serialize, Deserialize, Debug, PartialEq, Default, Clone)]
+#[serde(rename_all = "camelCase")]
 pub struct DocumentType {
     pub name: String,
     pub indices: Vec<Index>,
@@ -142,7 +144,9 @@ impl DocumentType {
     ) -> Result<Vec<u8>, ProtocolError> {
         match key {
             "$ownerId" | "$id" => {
-                let bytes = value.to_system_bytes().map_err(ProtocolError::ValueError)?;
+                let bytes = value
+                    .to_identifier_bytes()
+                    .map_err(ProtocolError::ValueError)?;
                 if bytes.len() != DEFAULT_HASH_SIZE {
                     Err(ProtocolError::DataContractError(
                         DataContractError::FieldRequirementUnmet(
@@ -182,16 +186,20 @@ impl DocumentType {
 
         // Do documents of this type keep history? (Overrides contract value)
         let documents_keep_history: bool =
-            Value::inner_bool_value(document_type_value_map, "documentsKeepHistory")
+            Value::inner_optional_bool_value(document_type_value_map, "documentsKeepHistory")
+                .map_err(ProtocolError::ValueError)?
                 .unwrap_or(default_keeps_history);
 
         // Are documents of this type mutable? (Overrides contract value)
         let documents_mutable: bool =
-            Value::inner_bool_value(document_type_value_map, "documentsMutable")
+            Value::inner_optional_bool_value(document_type_value_map, "documentsMutable")
+                .map_err(ProtocolError::ValueError)?
                 .unwrap_or(default_mutability);
 
-        let index_values =
-            Value::inner_array_slice_value(document_type_value_map, property_names::INDICES)?;
+        let index_values = Value::inner_optional_array_slice_value(
+            document_type_value_map,
+            property_names::INDICES,
+        )?;
         let indices: Vec<Index> = index_values
             .map(|index_values| {
                 index_values
@@ -214,17 +222,14 @@ impl DocumentType {
 
         // Extract the properties
         let property_values =
-            Value::inner_btree_map(document_type_value_map, property_names::PROPERTIES)?.ok_or(
-                {
-                    ProtocolError::DataContractError(DataContractError::InvalidContractStructure(
-                        "unable to get document properties from the contract",
-                    ))
-                },
-            )?;
-
-        let mut required_fields =
-            Value::inner_array_of_strings(document_type_value_map, property_names::REQUIRED)
+            Value::inner_optional_btree_map(document_type_value_map, property_names::PROPERTIES)?
                 .unwrap_or_default();
+
+        let mut required_fields = Value::inner_optional_array_of_strings(
+            document_type_value_map,
+            property_names::REQUIRED,
+        )
+        .unwrap_or_default();
 
         // Based on the property name, determine the type
         for (property_key, property_value) in property_values {
@@ -334,6 +339,14 @@ impl DocumentType {
     pub fn field_can_be_null(&self, name: &str) -> bool {
         !self.required_fields.contains(name)
     }
+
+    pub fn initial_revision(&self) -> Option<Revision> {
+        if self.documents_mutable {
+            Some(INITIAL_REVISION)
+        } else {
+            None
+        }
+    }
 }
 
 pub fn string_to_field_type(field_type_name: &str) -> Option<DocumentFieldType> {
@@ -362,7 +375,7 @@ fn insert_values(
             None => property_key,
             Some(prefix) => [prefix, property_key].join(".").to_owned(),
         };
-        let mut inner_properties = property_value.to_btree_ref_map()?;
+        let mut inner_properties = property_value.to_btree_ref_string_map()?;
         let type_value = inner_properties
             .remove_optional_string(property_names::TYPE)
             .map_err(ProtocolError::ValueError)?;
@@ -422,28 +435,28 @@ fn insert_values(
                 );
             }
             "object" => {
-                let properties = inner_properties
-                    .get(property_names::PROPERTIES)
-                    .ok_or(ProtocolError::StructureError(
-                        StructureError::KeyValueMustExist("object must have properties"),
-                    ))?
-                    .as_map()
-                    .ok_or(ProtocolError::StructureError(
-                        StructureError::ValueWrongType("properties must be a map"),
-                    ))?;
+                if let Some(properties_as_value) = inner_properties.get(property_names::PROPERTIES)
+                {
+                    let properties =
+                        properties_as_value
+                            .as_map()
+                            .ok_or(ProtocolError::StructureError(
+                                StructureError::ValueWrongType("properties must be a map"),
+                            ))?;
 
-                for (object_property_key, object_property_value) in properties.iter() {
-                    let object_property_string = object_property_key
-                        .as_text()
-                        .ok_or(ProtocolError::StructureError(StructureError::KeyWrongType(
-                            "property key must be a string",
-                        )))?
-                        .to_string();
-                    to_visit.push((
-                        Some(prefixed_property_key.clone()),
-                        object_property_string,
-                        object_property_value,
-                    ));
+                    for (object_property_key, object_property_value) in properties.iter() {
+                        let object_property_string = object_property_key
+                            .as_text()
+                            .ok_or(ProtocolError::StructureError(StructureError::KeyWrongType(
+                                "property key must be a string",
+                            )))?
+                            .to_string();
+                        to_visit.push((
+                            Some(prefixed_property_key.clone()),
+                            object_property_string,
+                            object_property_value,
+                        ));
+                    }
                 }
             }
 

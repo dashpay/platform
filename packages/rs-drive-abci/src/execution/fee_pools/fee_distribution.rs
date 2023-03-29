@@ -39,7 +39,7 @@ use crate::abci::messages::BlockFees;
 use crate::error::Error;
 use crate::platform::Platform;
 use drive::drive::batch::drive_op_batch::IdentityOperationType::AddToIdentityBalance;
-use drive::drive::batch::DriveOperationType::IdentityOperation;
+use drive::drive::batch::DriveOperation::IdentityOperation;
 use drive::drive::batch::GroveDbOpBatch;
 use drive::drive::block_info::BlockInfo;
 use drive::error::fee::FeeError;
@@ -1305,7 +1305,7 @@ mod tests {
 
             let share_identities = share_identities_and_documents
                 .iter()
-                .map(|(identity, _)| identity.id.buffer)
+                .map(|(identity, _)| identity.id.to_buffer())
                 .collect();
 
             let refetched_share_identities_balances = platform

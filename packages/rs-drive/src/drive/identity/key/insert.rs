@@ -14,7 +14,7 @@ use crate::drive::Drive;
 
 use crate::error::Error;
 
-use crate::fee::op::DriveOperation;
+use crate::fee::op::LowLevelDriveOperation;
 use dpp::identity::{IdentityPublicKey, Purpose, SecurityLevel};
 
 use grovedb::batch::KeyInfoPath;
@@ -34,7 +34,7 @@ impl Drive {
         identity_id: [u8; 32],
         identity_key: &IdentityPublicKey,
         key_id_bytes: &[u8],
-        drive_operations: &mut Vec<DriveOperation>,
+        drive_operations: &mut Vec<LowLevelDriveOperation>,
     ) -> Result<(), Error> {
         let serialized_identity_key = identity_key.serialize().map_err(Error::Protocol)?;
         // Now lets insert the public key
@@ -58,13 +58,13 @@ impl Drive {
         identity_key: &IdentityPublicKey,
         key_id_bytes: &[u8],
         change_in_bytes: i32,
-        drive_operations: &mut Vec<DriveOperation>,
+        drive_operations: &mut Vec<LowLevelDriveOperation>,
     ) -> Result<(), Error> {
         let serialized_identity_key = identity_key.serialize().map_err(Error::Protocol)?;
         // Now lets insert the public key
         let identity_key_tree = identity_key_tree_path_vec(identity_id);
 
-        drive_operations.push(DriveOperation::patch_for_known_path_key_element(
+        drive_operations.push(LowLevelDriveOperation::patch_for_known_path_key_element(
             identity_key_tree,
             key_id_bytes.to_vec(),
             Element::new_item_with_flags(serialized_identity_key, None),
@@ -83,7 +83,7 @@ impl Drive {
             HashMap<KeyInfoPath, EstimatedLayerInformation>,
         >,
         transaction: TransactionArg,
-        drive_operations: &mut Vec<DriveOperation>,
+        drive_operations: &mut Vec<LowLevelDriveOperation>,
     ) -> Result<(), Error> {
         let purpose = identity_key.purpose;
         let security_level = identity_key.security_level;
@@ -173,7 +173,7 @@ impl Drive {
             HashMap<KeyInfoPath, EstimatedLayerInformation>,
         >,
         transaction: TransactionArg,
-        drive_operations: &mut Vec<DriveOperation>,
+        drive_operations: &mut Vec<LowLevelDriveOperation>,
     ) -> Result<(), Error> {
         drive_operations.append(&mut self.insert_reference_to_key_operations(
             identity_id,
@@ -217,14 +217,14 @@ impl Drive {
             HashMap<KeyInfoPath, EstimatedLayerInformation>,
         >,
         transaction: TransactionArg,
-    ) -> Result<Vec<DriveOperation>, Error> {
+    ) -> Result<Vec<LowLevelDriveOperation>, Error> {
         if let Some(estimated_costs_only_with_layer_info) = estimated_costs_only_with_layer_info {
             Self::add_estimation_costs_for_keys_for_identity_id(
                 identity_id,
                 estimated_costs_only_with_layer_info,
             );
         }
-        let mut batch_operations: Vec<DriveOperation> = vec![];
+        let mut batch_operations: Vec<LowLevelDriveOperation> = vec![];
         let identity_path = identity_path(identity_id.as_slice());
         self.batch_insert_empty_tree(
             identity_path,
@@ -268,7 +268,7 @@ impl Drive {
         estimated_costs_only_with_layer_info: &mut Option<
             HashMap<KeyInfoPath, EstimatedLayerInformation>,
         >,
-        drive_operations: &mut Vec<DriveOperation>,
+        drive_operations: &mut Vec<LowLevelDriveOperation>,
     ) -> Result<(), Error> {
         let identity_query_key_tree = identity_query_keys_tree_path(identity_id.as_slice());
 

@@ -17,17 +17,12 @@ const mainnetConfig = lodashMerge({}, baseConfig, {
     docker: {
       image: 'dashpay/dashd:18.1.0-rc.1',
     },
-    p2p: {
-      port: 9999,
-    },
-    rpc: {
-      port: 9998,
-    },
     indexes: false,
   },
   network: NETWORK_MAINNET,
+  platform: {
+    enable: false,
+  },
 });
-
-delete mainnetConfig.platform;
 
 module.exports = mainnetConfig;
