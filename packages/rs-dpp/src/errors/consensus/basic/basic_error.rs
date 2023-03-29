@@ -9,8 +9,8 @@ use crate::consensus::basic::data_contract::{
     InvalidJsonSchemaRefError, SystemPropertyIndexAlreadyPresentError, UndefinedIndexPropertyError,
     UniqueIndicesLimitReachedError,
 };
-use crate::consensus::basic::decode::ProtocolVersionParsingError;
 use crate::consensus::basic::data_contract_max_depth_exceed_error::DataContractMaxDepthExceedError;
+use crate::consensus::basic::decode::ProtocolVersionParsingError;
 use crate::consensus::basic::document::{
     DuplicateDocumentTransitionsWithIdsError, DuplicateDocumentTransitionsWithIndicesError,
     InconsistentCompoundIndexDataError, InvalidDocumentTransitionActionError,
