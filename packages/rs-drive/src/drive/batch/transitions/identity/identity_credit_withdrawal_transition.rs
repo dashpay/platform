@@ -17,7 +17,7 @@ impl DriveHighLevelOperationConverter for IdentityCreditWithdrawalTransitionActi
             ..
         } = self;
 
-        let mut drive_operations = vec![DocumentOperation(
+        let drive_operations = vec![DocumentOperation(
             DocumentOperationType::AddWithdrawalDocument {
                 owned_document_info: OwnedDocumentInfo {
                     document_info: DocumentInfo::DocumentWithoutSerialization((

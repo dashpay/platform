@@ -17,7 +17,7 @@ impl DriveHighLevelOperationConverter for IdentityTopUpTransitionAction {
             ..
         } = self;
 
-        let mut drive_operations = vec![
+        let drive_operations = vec![
             IdentityOperation(IdentityOperationType::AddToIdentityBalance {
                 identity_id: identity_id.to_buffer(),
                 added_balance: top_up_balance_amount,
