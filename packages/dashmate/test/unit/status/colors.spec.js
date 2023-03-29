@@ -1,7 +1,7 @@
 const chalk = require('chalk');
 const colors = require('../../../src/status/colors');
-const ServiceStatusEnum = require('../../../src/enums/serviceStatus');
-const DockerStatusEnum = require('../../../src/enums/dockerStatus');
+const ServiceStatusEnum = require('../../../src/status/enums/serviceStatus');
+const DockerStatusEnum = require('../../../src/status/enums/dockerStatus');
 
 describe('colors.js', () => {
   describe('#portState', () => {

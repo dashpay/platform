@@ -16,7 +16,6 @@ function getOverviewScopeFactory(getCoreScope,
    */
   async function getOverviewScope(config) {
     const masternodeEnabled = config.get('core.masternode.enable');
-    const platformEnabled = config.get('network') !== 'mainnet' && config.name !== 'local_seed';
 
     const {
       serviceStatus, dockerStatus, verificationProgress,
@@ -45,7 +44,7 @@ function getOverviewScopeFactory(getCoreScope,
     };
 
     const platform = {
-      enabled: platformEnabled,
+      enabled: config.get('platform.enable'),
       tenderdash: null,
     };
 
@@ -60,7 +59,7 @@ function getOverviewScopeFactory(getCoreScope,
       masternode.nodeState = nodeState;
     }
 
-    if (platformEnabled) {
+    if (config.get('platform.enable')) {
       const { tenderdash } = await getPlatformScope(config);
 
       platform.tenderdash = tenderdash;
