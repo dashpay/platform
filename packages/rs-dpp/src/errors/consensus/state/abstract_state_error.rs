@@ -3,7 +3,7 @@ use thiserror::Error;
 use crate::prelude::Revision;
 use crate::{identity::KeyID, prelude::Identifier};
 
-use super::DataTriggerError;
+use super::data_trigger::DataTriggerError;
 
 #[derive(Error, Debug)]
 pub enum StateError {
