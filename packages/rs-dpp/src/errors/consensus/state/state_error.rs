@@ -9,8 +9,6 @@ use crate::consensus::state::identity::IdentityAlreadyExistsError;
 use crate::prelude::{DocumentTransition, Revision};
 use crate::{identity::KeyID, prelude::Identifier};
 
-use super::data_trigger::DataTriggerError;
-
 #[derive(Error, Debug)]
 pub enum StateError {
     #[error(transparent)]
@@ -76,9 +74,6 @@ pub enum StateError {
 
     #[error("Data Contract {data_contract_id} is already present")]
     DataContractAlreadyPresentError { data_contract_id: Identifier },
-
-    #[error(transparent)]
-    DataTriggerError(Box<DataTriggerError>),
 
     #[error(
         "Identity {identity_id} has invalid revision. The current revision is {current_revision}"

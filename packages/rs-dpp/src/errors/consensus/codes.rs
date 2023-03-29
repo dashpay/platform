@@ -1,4 +1,3 @@
-use crate::consensus::state::data_trigger::DataTriggerError;
 use crate::consensus::state::state_error::StateError;
 use crate::consensus::{fee::FeeError, signature::SignatureError};
 use platform_value::Value;
@@ -33,6 +32,7 @@ impl ErrorWithCode for BasicError {
             Self::SerializedObjectParsingError { .. } => 1001,
             Self::UnsupportedProtocolVersionError(_) => 1002,
             Self::IncompatibleProtocolVersionError(_) => 1003,
+            Self::JsonSchemaCompilationError(..) => 1004,
             Self::JsonSchemaError(_) => 1005,
             Self::InvalidIdentifierError { .. } => 1006,
 
@@ -44,10 +44,30 @@ impl ErrorWithCode for BasicError {
             Self::InvalidDataContractIdError { .. } => 1011,
             Self::InvalidIndexedPropertyConstraintError { .. } => 1012,
             Self::InvalidIndexPropertyTypeError { .. } => 1013,
+            Self::InvalidJsonSchemaRefError { .. } => 1014,
             Self::SystemPropertyIndexAlreadyPresentError { .. } => 1015,
             Self::UndefinedIndexPropertyError { .. } => 1016,
-
             Self::UniqueIndicesLimitReachedError { .. } => 1017,
+            Self::DuplicateIndexNameError { .. } => 1048,
+            Self::InvalidDataContractVersionError { .. } => 1050,
+            Self::IncompatibleDataContractSchemaError { .. } => 1051,
+            Self::DataContractImmutablePropertiesUpdateError { .. } => 1052,
+            Self::DataContractUniqueIndicesChangedError { .. } => 1053,
+            Self::DataContractInvalidIndexDefinitionUpdateError { .. } => 1054,
+            Self::DataContractHaveNewUniqueIndexError { .. } => 1055,
+
+            // Document
+            Self::DataContractNotPresent { .. } => 1018,
+            Self::DuplicateDocumentTransitionsWithIdsError { .. } => 1019,
+            Self::DuplicateDocumentTransitionsWithIndicesError { .. } => 1020,
+            Self::InconsistentCompoundIndexDataError { .. } => 1021,
+            Self::InvalidDocumentTransitionActionError { .. } => 1022,
+            Self::InvalidDocumentTransitionIdError { .. } => 1023,
+            Self::InvalidDocumentTypeError { .. } => 1024,
+            Self::MissingDataContractIdError { .. } => 1025,
+            Self::MissingDocumentTransitionActionError { .. } => 1026,
+            Self::MissingDocumentTransitionTypeError { .. } => 1027,
+            Self::MissingDocumentTypeError => 1028,
 
             // Identity
             Self::DuplicatedIdentityPublicKeyBasicError(_) => 1029,
@@ -66,87 +86,13 @@ impl ErrorWithCode for BasicError {
             Self::InvalidInstantAssetLockProofSignatureError(_) => 1042,
             Self::MissingMasterPublicKeyError(_) => 1046,
             Self::InvalidIdentityPublicKeySecurityLevelError(_) => 1047,
-
-            // Document
-            Self::DataContractNotPresent { .. } => 1018,
-            Self::InvalidDocumentTypeError { .. } => 1024,
-            Self::MissingDocumentTransitionTypeError { .. } => 1027,
-            Self::MissingDocumentTransitionActionError { .. } => 1026,
-            Self::MissingDocumentTypeError => 1028,
-            Self::InvalidDocumentTransitionIdError { .. } => 1023,
-            Self::InvalidDocumentTransitionActionError { .. } => 1022,
-
-            Self::DuplicateDocumentTransitionsWithIdsError { .. } => 1019,
-            Self::DuplicateDocumentTransitionsWithIndicesError { .. } => 1020,
-            Self::MissingDataContractIdError { .. } => 1025,
-
-            // Data contract
-            Self::InvalidDataContractVersionError { .. } => 1050,
-            Self::DuplicateIndexNameError { .. } => 1048,
-            Self::InvalidJsonSchemaRefError { .. } => 1014,
-            Self::InconsistentCompoundIndexDataError { .. } => 1021,
-            Self::DataContractImmutablePropertiesUpdateError { .. } => 1052,
-            Self::IncompatibleDataContractSchemaError { .. } => 1051,
-
-            Self::DataContractUniqueIndicesChangedError { .. } => 1053,
-            // TODO  -  they don't have error codes in  https://github.com/dashevo/platform/blob/25ab6d8a38880eaff6ac119126b2ee5991b2a5aa/packages/js-dpp/lib/errors/consensus/codes.js
-            Self::DataContractHaveNewUniqueIndexError { .. } => 0,
-            Self::DataContractInvalidIndexDefinitionUpdateError { .. } => 0,
-            Self::IndexError(ref e) => e.get_code(),
+            Self::InvalidIdentityKeySignatureError { .. } => 1056,
 
             // State Transition
             Self::InvalidStateTransitionTypeError { .. } => 1043,
             Self::MissingStateTransitionTypeError => 1044,
             Self::StateTransitionMaxSizeExceededError { .. } => 1045,
-
-            // Identity
-            Self::InvalidIdentityKeySignatureError { .. } => 1056,
         }
-    }
-}
-
-impl ErrorWithCode for StateError {
-    fn code(&self) -> u32 {
-        match *self {
-            // Data Contract - Data Trigger
-            Self::DataTriggerConditionError { .. } => 4001,
-            Self::DataTriggerExecutionError { .. } => 4002,
-            Self::DataTriggerInvalidResultError { .. } => 4003,
-
-            // Document
-            Self::DocumentAlreadyPresentError { .. } => 4004,
-            Self::DocumentNotFoundError { .. } => 4005,
-            Self::DocumentOwnerIdMismatchError { .. } => 4006,
-            Self::DocumentTimestampsMismatchError { .. } => 4007,
-            Self::DocumentTimestampWindowViolationError { .. } => 4008,
-            Self::DuplicateUniqueIndexError { .. } => 4009,
-            Self::InvalidDocumentRevisionError { .. } => 4010,
-            // Data contract
-            Self::DataContractAlreadyPresentError { .. } => 4000,
-            Self::DataTriggerError(ref e) => e.code(),
-            Self::IdentityAlreadyExistsError(_) => 4011,
-
-            Self::IdentityInsufficientBalanceError(_) => 4024,
-            Self::InvalidIdentityCreditWithdrawalTransitionCoreFeeError(_) => 4025,
-            Self::InvalidIdentityCreditWithdrawalTransitionOutputScriptError(_) => 4026,
-            Self::NotImplementedIdentityCreditWithdrawalTransitionPoolingError(_) => 4027,
-
-            // Identity
-            Self::IdentityPublicKeyDisabledAtWindowViolationError { .. } => 4012,
-            Self::IdentityPublicKeyIsReadOnlyError { .. } => 4017,
-            Self::InvalidIdentityPublicKeyIdError { .. } => 4018,
-            Self::InvalidIdentityRevisionError { .. } => 4019,
-            Self::MaxIdentityPublicKeyLimitReachedError { .. } => 4020,
-            Self::DuplicatedIdentityPublicKeyError { .. } => 4021,
-            Self::DuplicatedIdentityPublicKeyIdError { .. } => 4022,
-            Self::IdentityPublicKeyIsDisabledError { .. } => 4023,
-        }
-    }
-}
-
-impl ErrorWithCode for DataTriggerError {
-    fn code(&self) -> u32 {
-        match *self {}
     }
 }
 
@@ -169,6 +115,44 @@ impl ErrorWithCode for FeeError {
     fn code(&self) -> u32 {
         match *self {
             Self::BalanceIsNotEnoughError { .. } => 3000,
+        }
+    }
+}
+
+impl ErrorWithCode for StateError {
+    fn code(&self) -> u32 {
+        match *self {
+            // Data contract
+            Self::DataContractAlreadyPresentError { .. } => 4000,
+
+            // Data Trigger
+            Self::DataTriggerConditionError { .. } => 4001,
+            Self::DataTriggerExecutionError { .. } => 4002,
+            Self::DataTriggerInvalidResultError { .. } => 4003,
+
+            // Document
+            Self::DocumentAlreadyPresentError { .. } => 4004,
+            Self::DocumentNotFoundError { .. } => 4005,
+            Self::DocumentOwnerIdMismatchError { .. } => 4006,
+            Self::DocumentTimestampsMismatchError { .. } => 4007,
+            Self::DocumentTimestampWindowViolationError { .. } => 4008,
+            Self::DuplicateUniqueIndexError { .. } => 4009,
+            Self::InvalidDocumentRevisionError { .. } => 4010,
+
+            // Identity
+            Self::IdentityAlreadyExistsError(_) => 4011,
+            Self::IdentityPublicKeyDisabledAtWindowViolationError { .. } => 4012,
+            Self::IdentityPublicKeyIsReadOnlyError { .. } => 4017,
+            Self::InvalidIdentityPublicKeyIdError { .. } => 4018,
+            Self::InvalidIdentityRevisionError { .. } => 4019,
+            Self::MaxIdentityPublicKeyLimitReachedError { .. } => 4020,
+            Self::DuplicatedIdentityPublicKeyError { .. } => 4021,
+            Self::DuplicatedIdentityPublicKeyIdError { .. } => 4022,
+            Self::IdentityPublicKeyIsDisabledError { .. } => 4023,
+            Self::IdentityInsufficientBalanceError(_) => 4024,
+            Self::InvalidIdentityCreditWithdrawalTransitionCoreFeeError(_) => 4025,
+            Self::InvalidIdentityCreditWithdrawalTransitionOutputScriptError(_) => 4026,
+            Self::NotImplementedIdentityCreditWithdrawalTransitionPoolingError(_) => 4027,
         }
     }
 }
