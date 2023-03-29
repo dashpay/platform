@@ -20,13 +20,14 @@ use crate::consensus::basic::invalid_identifier_error::InvalidIdentifierError;
 use crate::consensus::basic::state_transition::{
     InvalidStateTransitionTypeError, StateTransitionMaxSizeExceededError,
 };
+use crate::data_contract::errors::DataContractNotPresentError;
 use crate::data_contract::state_transition::errors::MissingDataContractIdError;
 use crate::prelude::*;
 
 #[derive(Error, Debug)]
 pub enum BasicError {
-    #[error("Data Contract {data_contract_id} is not present")]
-    DataContractNotPresent { data_contract_id: Identifier },
+    #[error(transparent)]
+    DataContractNotPresent(DataContractNotPresentError),
 
     #[error(transparent)]
     InvalidDataContractVersionError(InvalidDataContractVersionError),

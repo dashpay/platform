@@ -6,3 +6,5 @@ pub mod codes;
 pub mod fee;
 pub mod signature;
 pub mod state;
+pub mod balance_is_not_enough_error;
+
