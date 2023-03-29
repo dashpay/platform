@@ -480,6 +480,8 @@ module.exports = {
       .forEach(([name, config]) => {
         if (config.platform) {
           config.platform.enable = name !== 'mainnet';
+        } else {
+          config.platform = (systemConfigs[name] || systemConfigs.base).platform;
         }
 
         if (systemConfigs[name]) {

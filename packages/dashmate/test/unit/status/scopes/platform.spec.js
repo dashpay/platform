@@ -40,7 +40,6 @@ describe('getPlatformScopeFactory', () => {
       config = {
         get: this.sinon.stub(),
         toEnvs: this.sinon.stub(),
-        isPlatformEnabled: this.sinon.stub(),
       };
 
       getPlatformScope = getPlatformScopeFactory(mockDockerCompose,
