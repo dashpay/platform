@@ -1,6 +1,7 @@
-use crate::consensus::basic::BasicError;
 use thiserror::Error;
 use platform_value::Identifier;
+use crate::consensus::fee::FeeError;
+use crate::state_transition::fee::Credits;
 
 #[derive(Error, Debug, Clone, PartialEq, Eq)]
 #[error("Current credits balance {balance} is not enough to pay {fee} fee")]
@@ -26,7 +27,7 @@ impl BalanceIsNotEnoughError {
     }
 }
 
-impl From<BalanceIsNotEnoughError> for BasicError {
+impl From<BalanceIsNotEnoughError> for FeeError {
     fn from(err: BalanceIsNotEnoughError) -> Self {
         Self::BalanceIsNotEnoughError(err)
     }

@@ -9,6 +9,7 @@ use crate::consensus::basic::data_contract::{
     SystemPropertyIndexAlreadyPresentError, UndefinedIndexPropertyError,
     UniqueIndicesLimitReachedError,
 };
+use crate::consensus::basic::data_contract_max_depth_exceed_error::DataContractMaxDepthExceedError;
 use crate::consensus::basic::document::{
     DuplicateDocumentTransitionsWithIdsError, DuplicateDocumentTransitionsWithIndicesError,
     InconsistentCompoundIndexDataError, InvalidDocumentTransitionActionError,
@@ -32,8 +33,8 @@ pub enum BasicError {
     #[error(transparent)]
     InvalidDataContractVersionError(InvalidDataContractVersionError),
 
-    #[error("JSON Schema depth is greater than {0}")]
-    DataContractMaxDepthExceedError(usize),
+    #[error(transparent)]
+    DataContractMaxDepthExceedError(DataContractMaxDepthExceedError),
 
     // Document
     #[error(transparent)]
