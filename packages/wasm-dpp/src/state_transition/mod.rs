@@ -6,6 +6,7 @@ pub mod errors;
 pub mod state_transition_facade;
 pub mod state_transition_factory;
 
+pub mod fee;
 pub mod validation;
 use crate::utils::Inner;
 pub use validation::*;
