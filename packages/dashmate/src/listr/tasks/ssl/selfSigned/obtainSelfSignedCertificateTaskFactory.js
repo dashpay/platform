@@ -21,13 +21,10 @@ function obtainSelfSignedCertificateTaskFactory(
   function obtainSelfSignedCertificateTask(config) {
     return new Listr([
       {
-        title: `Create certificate for ${config.getName()}`,
         task: async (ctx) => {
           ctx.keyPair = await generateKeyPair();
           ctx.csr = await generateCsr(ctx.keyPair, config.get('externalIp', true));
           ctx.certificate = await createSelfSignedCertificate(ctx.keyPair, ctx.csr);
-
-          config.set('platform.dapi.envoy.ssl.provider', 'selfSigned');
 
           return saveCertificateTask(config);
         },

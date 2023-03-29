@@ -5,6 +5,7 @@ const path = require('path');
 const {
   PRESET_LOCAL,
   HOME_DIR_PATH,
+  SSL_PROVIDERS,
 } = require('../../../constants');
 const generateTenderdashNodeKey = require('../../../tenderdash/generateTenderdashNodeKey');
 const deriveTenderdashNodeId = require('../../../tenderdash/deriveTenderdashNodeId');
@@ -280,9 +281,14 @@ function setupLocalPresetTaskFactory(
         task: (ctx) => {
           const platformConfigs = ctx.configGroup.filter((config) => config.get('platform.enable'));
 
-          const subTasks = platformConfigs.map((config) => ({
-            task: async () => obtainSelfSignedCertificateTask(config),
-          }));
+          const subTasks = platformConfigs.map((config) => {
+            config.set('platform.dapi.envoy.ssl.provider', SSL_PROVIDERS.SELF_SIGNED);
+
+            return {
+              title: `Generate certificate for ${config.getName()}`,
+              task: async () => obtainSelfSignedCertificateTask(config),
+            };
+          });
 
           return new Listr(subTasks);
         },

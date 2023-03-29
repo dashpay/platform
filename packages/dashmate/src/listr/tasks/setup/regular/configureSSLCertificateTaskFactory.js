@@ -5,6 +5,7 @@ const { Listr } = require('listr2');
 const {
   PRESET_MAINNET,
   SSL_PROVIDERS,
+  NODE_TYPE_FULLNODE,
 } = require('../../../../constants');
 
 const listCertificates = require('../../../../ssl/zerossl/listCertificates');
@@ -93,7 +94,7 @@ function configureSSLCertificateTaskFactory(
         },
       },
       [SSL_PROVIDERS.SELF_SIGNED]: {
-        title: 'Create self-signed certificate',
+        title: 'Generate self-signed certificate',
         task: async (ctx) => obtainSelfSignedCertificateTask(ctx.config),
       },
     };
@@ -107,13 +108,10 @@ function configureSSLCertificateTaskFactory(
             { name: SSL_PROVIDERS.FILE, message: 'File on disk' },
           ];
 
-          if (ctx.preset !== PRESET_MAINNET) {
-            choices.push({ name: SSL_PROVIDERS.SELF_SIGNED, message: 'Self-signed' });
-          }
+          const isSelfSignedEnabled = ctx.preset !== PRESET_MAINNET
+            || ctx.nodeType === NODE_TYPE_FULLNODE;
 
-          ctx.certificateProvider = await task.prompt({
-            type: 'select',
-            header: `  High-performance masternodes are required use TLS encryption on the DAPI
+          let header = `  High-performance masternodes are required use TLS encryption on the DAPI
   endpoint through which they service the network. This encryption is achieved
   by loading an SSL certificate signed against the IP address specified in the
   registration transaction. The certificate should be recognized by common web
@@ -122,8 +120,17 @@ function configureSSLCertificateTaskFactory(
 
     ZeroSSL      - Provide a ZeroSSL API key and let dashmate configure the certificate
                    https://zerossl.com/documentation/api/ ("Access key" section)
-    File on disk - Provide your own certificate to dashmate
-    Self-signed  - Generate your own self-signed certificate (testnet only)\n`,
+    File on disk - Provide your own certificate to dashmate\n`;
+
+          if (isSelfSignedEnabled) {
+            header += '    Self-signed  - Generate your own self-signed certificate\n';
+
+            choices.push({ name: SSL_PROVIDERS.SELF_SIGNED, message: 'Self-signed' });
+          }
+
+          ctx.certificateProvider = await task.prompt({
+            type: 'select',
+            header,
             message: 'How do you want to configure SSL?',
             choices,
             initial: SSL_PROVIDERS.ZEROSSL,
