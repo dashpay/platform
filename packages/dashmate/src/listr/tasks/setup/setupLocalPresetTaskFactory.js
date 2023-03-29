@@ -277,7 +277,15 @@ function setupLocalPresetTaskFactory(
       },
       {
         title: 'Configure SSL certificates',
-        task: (ctx) => obtainSelfSignedCertificateTask(ctx.configGroup),
+        task: (ctx) => {
+          const platformConfigs = ctx.configGroup.filter((config) => config.get('platform.enable'));
+
+          const subTasks = platformConfigs.map((config) => ({
+            task: async () => obtainSelfSignedCertificateTask(config),
+          }));
+
+          return new Listr(subTasks);
+        },
       },
     ]);
   }

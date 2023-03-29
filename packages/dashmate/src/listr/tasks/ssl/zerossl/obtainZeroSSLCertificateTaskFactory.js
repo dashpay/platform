@@ -23,7 +23,7 @@ function obtainZeroSSLCertificateTaskFactory(
 ) {
   /**
    * @typedef {obtainZeroSSLCertificateTask}
-   * @param config
+   * @param {Config} config
    * @return {Promise<Listr>}
    */
   async function obtainZeroSSLCertificateTask(config) {

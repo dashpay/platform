@@ -15,29 +15,21 @@ function obtainSelfSignedCertificateTaskFactory(
 ) {
   /**
    * @typedef {obtainSelfSignedCertificateTask}
-   * @param {Config[]} configGroup
+   * @param {Config} config
    * @return {Listr}
    */
-  function obtainSelfSignedCertificateTask(configGroup) {
+  function obtainSelfSignedCertificateTask(config) {
     return new Listr([
       {
+        title: `Create certificate for ${config.getName()}`,
         task: async (ctx) => {
-          const platformConfigs = configGroup.filter((config) => config.get('platform.enable'));
+          ctx.keyPair = await generateKeyPair();
+          ctx.csr = await generateCsr(ctx.keyPair, config.get('externalIp', true));
+          ctx.certificate = await createSelfSignedCertificate(ctx.keyPair, ctx.csr);
 
-          const subTasks = platformConfigs.map((config) => ({
-            title: `Create certificate for ${config.getName()}`,
-            task: async () => {
-              ctx.keyPair = await generateKeyPair();
-              ctx.csr = await generateCsr(ctx.keyPair, config.get('externalIp', true));
-              ctx.certificate = await createSelfSignedCertificate(ctx.keyPair, ctx.csr);
+          config.set('platform.dapi.envoy.ssl.provider', 'selfSigned');
 
-              config.set('platform.dapi.envoy.ssl.provider', 'selfSigned');
-
-              return saveCertificateTask(config);
-            },
-          }));
-
-          return new Listr(subTasks);
+          return saveCertificateTask(config);
         },
       },
     ]);

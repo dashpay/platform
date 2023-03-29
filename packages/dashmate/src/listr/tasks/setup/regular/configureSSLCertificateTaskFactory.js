@@ -12,11 +12,15 @@ const listCertificates = require('../../../../ssl/zerossl/listCertificates');
 const validateFileExists = require('../../../prompts/validators/validateFileExists');
 
 /**
+ * @param {saveCertificateTask} saveCertificateTask
+ * @param {obtainZeroSSLCertificateTask} obtainZeroSSLCertificateTask
+ * @param {obtainSelfSignedCertificateTask} obtainSelfSignedCertificateTask
  * @returns {configureSSLCertificateTask}
  */
 function configureSSLCertificateTaskFactory(
   saveCertificateTask,
   obtainZeroSSLCertificateTask,
+  obtainSelfSignedCertificateTask,
 ) {
   /**
    * @typedef configureSSLCertificateTask
@@ -87,6 +91,10 @@ function configureSSLCertificateTaskFactory(
 
           return obtainZeroSSLCertificateTask(ctx.config);
         },
+      },
+      [SSL_PROVIDERS.SELF_SIGNED]: {
+        title: 'Create self-signed certificate',
+        task: async (ctx) => obtainSelfSignedCertificateTask(ctx.config),
       },
     };
 
