@@ -125,6 +125,7 @@ use crate::drive::cache::DataContractCache;
 use crate::drive::cache::DriveCache;
 #[cfg(feature = "full")]
 use crate::drive::object_size_info::OwnedDocumentInfo;
+#[cfg(feature = "full")]
 use crate::drive::system_contracts_cache::SystemContracts;
 #[cfg(feature = "full")]
 use crate::fee::result::FeeResult;
