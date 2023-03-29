@@ -48,9 +48,13 @@ function configureSSLCertificateTaskFactory(
                 validate: validateFileExists,
               },
             ],
-            validate: ({ chainFilePath, privateFilePath }) => () => {
-              if (!validateFileExists(chainFilePath) || !validateFileExists(privateFilePath)) {
-                return false;
+            validate: ({ chainFilePath, privateFilePath }) => {
+              if (!validateFileExists(chainFilePath)) {
+                return 'certificate chain file path is not valid';
+              }
+
+              if (!validateFileExists(privateFilePath)) {
+                return 'certificate key file path is not valid';
               }
 
               if (chainFilePath === privateFilePath) {
