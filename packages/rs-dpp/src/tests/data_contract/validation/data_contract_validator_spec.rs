@@ -1402,7 +1402,7 @@ mod documents {
             .get(0)
             .expect("the error in result should exist");
 
-        assert_eq!(1009, pattern_error.get_code());
+        assert_eq!(1009, pattern_error.code());
 
         match pattern_error {
             ConsensusError::IncompatibleRe2PatternError(err) => {
@@ -1705,7 +1705,7 @@ mod indices {
             .expect("the validation error should be returned");
         let basic_error = get_basic_error(validation_error);
 
-        assert_eq!(1048, basic_error.get_code());
+        assert_eq!(1048, basic_error.code());
         match basic_error {
             BasicError::DuplicateIndexNameError(err) => {
                 assert_eq!(err.document_type(), "indexedDocument".to_string());
@@ -2847,7 +2847,7 @@ fn should_return_invalid_result_with_circular_ref_pointer() {
         .expect("the validation error should exist");
     let basic_error = get_basic_error(validation_error);
 
-    assert_eq!(1014, validation_error.get_code());
+    assert_eq!(1014, validation_error.code());
     match basic_error {
         BasicError::InvalidJsonSchemaRefError(err) => {
             assert_eq!(

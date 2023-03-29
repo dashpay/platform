@@ -1,12 +1,39 @@
 use thiserror::Error;
 
-use crate::prelude::Revision;
+use crate::consensus::basic::identity::{
+    IdentityInsufficientBalanceError, InvalidIdentityCreditWithdrawalTransitionCoreFeeError,
+    InvalidIdentityCreditWithdrawalTransitionOutputScriptError,
+    NotImplementedIdentityCreditWithdrawalTransitionPoolingError,
+};
+use crate::consensus::state::identity::IdentityAlreadyExistsError;
+use crate::prelude::{DocumentTransition, Revision};
 use crate::{identity::KeyID, prelude::Identifier};
 
 use super::data_trigger::DataTriggerError;
 
 #[derive(Error, Debug)]
 pub enum StateError {
+    #[error(transparent)]
+    IdentityAlreadyExistsError(IdentityAlreadyExistsError),
+
+    #[error(transparent)]
+    IdentityInsufficientBalanceError(IdentityInsufficientBalanceError),
+
+    #[error(transparent)]
+    InvalidIdentityCreditWithdrawalTransitionCoreFeeError(
+        InvalidIdentityCreditWithdrawalTransitionCoreFeeError,
+    ),
+
+    #[error(transparent)]
+    InvalidIdentityCreditWithdrawalTransitionOutputScriptError(
+        InvalidIdentityCreditWithdrawalTransitionOutputScriptError,
+    ),
+
+    #[error("{0}")]
+    NotImplementedIdentityCreditWithdrawalTransitionPoolingError(
+        NotImplementedIdentityCreditWithdrawalTransitionPoolingError,
+    ),
+
     // Document Errors
     #[error("Document {document_id} is already present")]
     DocumentAlreadyPresentError { document_id: Identifier },
@@ -87,10 +114,35 @@ pub enum StateError {
 
     #[error("Identity Public Key #{public_key_index} is disabled")]
     IdentityPublicKeyIsDisabledError { public_key_index: KeyID },
-}
 
-impl From<DataTriggerError> for StateError {
-    fn from(v: DataTriggerError) -> Self {
-        StateError::DataTriggerError(Box::new(v))
-    }
+    #[error("{message}")]
+    DataTriggerConditionError {
+        data_contract_id: Identifier,
+        document_transition_id: Identifier,
+        message: String,
+
+        document_transition: Option<DocumentTransition>,
+        owner_id: Option<Identifier>,
+    },
+
+    #[error("{message}")]
+    DataTriggerExecutionError {
+        data_contract_id: Identifier,
+        document_transition_id: Identifier,
+        message: String,
+        // ? maybe we should replace with source
+        execution_error: anyhow::Error,
+
+        document_transition: Option<DocumentTransition>,
+        owner_id: Option<Identifier>,
+    },
+
+    #[error("Data trigger have not returned any result")]
+    DataTriggerInvalidResultError {
+        data_contract_id: Identifier,
+        document_transition_id: Identifier,
+
+        document_transition: Option<DocumentTransition>,
+        owner_id: Option<Identifier>,
+    },
 }

@@ -411,7 +411,7 @@ mod test {
             .validate_extended(&raw_document, &data_contract)
             .expect("the validator should return the validation result");
         let validation_error = result.errors.get(0).expect("the error should exist");
-        assert_eq!(1024, validation_error.get_code());
+        assert_eq!(1024, validation_error.code());
     }
 
     #[test]

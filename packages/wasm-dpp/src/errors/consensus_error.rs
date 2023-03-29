@@ -335,7 +335,7 @@ pub fn from_state_error(state_error: &StateError) -> JsValue {
 }
 
 fn from_basic_error(basic_error: &BasicError) -> JsValue {
-    let code = basic_error.get_code();
+    let code = basic_error.code();
 
     match basic_error.deref() {
         BasicError::DataContractNotPresent { data_contract_id } => {
@@ -525,7 +525,7 @@ fn from_basic_error(basic_error: &BasicError) -> JsValue {
 }
 
 fn from_signature_error(signature_error: &SignatureError) -> JsValue {
-    let code = signature_error.get_code();
+    let code = signature_error.code();
 
     match signature_error.deref() {
         SignatureError::MissingPublicKeyError(err) => {

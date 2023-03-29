@@ -37,6 +37,6 @@ impl InvalidIdentityPublicKeySecurityLevelErrorWasm {
 
     #[wasm_bindgen(js_name=getCode)]
     pub fn code(&self) -> u32 {
-        DPPConsensusError::from(self.inner.clone()).get_code()
+        DPPConsensusError::from(self.inner.clone()).code()
     }
 }

@@ -37,85 +37,10 @@ use super::signature::SignatureError;
 //#[cfg_attr(test, derive(Clone))]
 pub enum ConsensusError {
     #[error(transparent)]
-    JsonSchemaError(JsonSchemaError),
-    #[error(transparent)]
-    UnsupportedProtocolVersionError(UnsupportedProtocolVersionError),
-    #[error(transparent)]
-    IncompatibleProtocolVersionError(IncompatibleProtocolVersionError),
-    #[error(transparent)]
-    DuplicatedIdentityPublicKeyBasicIdError(DuplicatedIdentityPublicKeyIdError),
-    #[error(transparent)]
-    InvalidIdentityPublicKeyDataError(InvalidIdentityPublicKeyDataError),
-    #[error(transparent)]
-    InvalidIdentityPublicKeySecurityLevelError(InvalidIdentityPublicKeySecurityLevelError),
-    #[error(transparent)]
-    DuplicatedIdentityPublicKeyBasicError(DuplicatedIdentityPublicKeyError),
-    #[error(transparent)]
-    MissingMasterPublicKeyError(MissingMasterPublicKeyError),
-    #[error(transparent)]
-    IdentityAssetLockTransactionOutPointAlreadyExistsError(
-        IdentityAssetLockTransactionOutPointAlreadyExistsError,
-    ),
-    #[error(transparent)]
-    InvalidIdentityAssetLockTransactionOutputError(InvalidIdentityAssetLockTransactionOutputError),
-    #[error(transparent)]
-    InvalidAssetLockTransactionOutputReturnSize(InvalidAssetLockTransactionOutputReturnSizeError),
-    #[error(transparent)]
-    IdentityAssetLockTransactionOutputNotFoundError(
-        IdentityAssetLockTransactionOutputNotFoundError,
-    ),
-    #[error(transparent)]
-    InvalidIdentityAssetLockTransactionError(InvalidIdentityAssetLockTransactionError),
-    #[error(transparent)]
-    InvalidInstantAssetLockProofError(InvalidInstantAssetLockProofError),
-    #[error(transparent)]
-    InvalidInstantAssetLockProofSignatureError(InvalidInstantAssetLockProofSignatureError),
-    #[error(transparent)]
-    IdentityAssetLockProofLockedTransactionMismatchError(
-        IdentityAssetLockProofLockedTransactionMismatchError,
-    ),
-    #[error(transparent)]
-    IdentityAssetLockTransactionIsNotFoundError(IdentityAssetLockTransactionIsNotFoundError),
-    #[error(transparent)]
-    InvalidAssetLockProofCoreChainHeightError(InvalidAssetLockProofCoreChainHeightError),
-    #[error(transparent)]
-    InvalidAssetLockProofTransactionHeightError(InvalidAssetLockProofTransactionHeightError),
-
-    #[error(transparent)]
-    InvalidIdentityCreditWithdrawalTransitionCoreFeeError(
-        InvalidIdentityCreditWithdrawalTransitionCoreFeeError,
-    ),
-
-    #[error(transparent)]
-    InvalidIdentityCreditWithdrawalTransitionOutputScriptError(
-        InvalidIdentityCreditWithdrawalTransitionOutputScriptError,
-    ),
-
-    #[error("{0}")]
-    NotImplementedIdentityCreditWithdrawalTransitionPoolingError(
-        NotImplementedIdentityCreditWithdrawalTransitionPoolingError,
-    ),
-
-    #[error(transparent)]
     StateError(Box<StateError>),
 
     #[error(transparent)]
     BasicError(Box<BasicError>),
-
-    #[error("Parsing of serialized object failed due to: {parsing_error}")]
-    SerializedObjectParsingError { parsing_error: anyhow::Error },
-
-    #[error(transparent)]
-    ProtocolVersionParsingError(ProtocolVersionParsingError),
-
-    #[error(transparent)]
-    IncompatibleRe2PatternError(IncompatibleRe2PatternError),
-
-    #[error(transparent)]
-    IdentityInsufficientBalanceError(IdentityInsufficientBalanceError),
-
-    #[error(transparent)]
-    IdentityAlreadyExistsError(IdentityAlreadyExistsError),
 
     #[error(transparent)]
     SignatureError(SignatureError),
@@ -148,42 +73,15 @@ impl ConsensusError {
 
     pub fn code(&self) -> u32 {
         match self {
-            // Decoding
-            ConsensusError::ProtocolVersionParsingError { .. } => 1000,
-            ConsensusError::SerializedObjectParsingError { .. } => 1001,
-            // Data Contract
-            ConsensusError::IncompatibleRe2PatternError { .. } => 1009,
-
-            ConsensusError::JsonSchemaError(_) => 1005,
-            ConsensusError::UnsupportedProtocolVersionError(_) => 1002,
-            ConsensusError::IncompatibleProtocolVersionError(_) => 1003,
-
-            // Identity
-            ConsensusError::DuplicatedIdentityPublicKeyBasicError(_) => 1029,
-            ConsensusError::DuplicatedIdentityPublicKeyBasicIdError(_) => 1030,
-            ConsensusError::IdentityAssetLockProofLockedTransactionMismatchError(_) => 1031,
-            ConsensusError::IdentityAssetLockTransactionIsNotFoundError(_) => 1032,
-            ConsensusError::IdentityAssetLockTransactionOutPointAlreadyExistsError(_) => 1033,
-            ConsensusError::IdentityAssetLockTransactionOutputNotFoundError(_) => 1034,
-            ConsensusError::InvalidAssetLockProofCoreChainHeightError(_) => 1035,
-            ConsensusError::InvalidAssetLockProofTransactionHeightError(_) => 1036,
-            ConsensusError::InvalidAssetLockTransactionOutputReturnSize(_) => 1037,
-            ConsensusError::InvalidIdentityAssetLockTransactionError(_) => 1038,
-            ConsensusError::InvalidIdentityAssetLockTransactionOutputError(_) => 1039,
-            ConsensusError::InvalidIdentityPublicKeyDataError(_) => 1040,
-            ConsensusError::InvalidInstantAssetLockProofError(_) => 1041,
-            ConsensusError::InvalidInstantAssetLockProofSignatureError(_) => 1042,
-            ConsensusError::MissingMasterPublicKeyError(_) => 1046,
-            ConsensusError::InvalidIdentityPublicKeySecurityLevelError(_) => 1047,
             ConsensusError::IdentityInsufficientBalanceError(_) => 4024,
             ConsensusError::InvalidIdentityCreditWithdrawalTransitionCoreFeeError(_) => 4025,
             ConsensusError::InvalidIdentityCreditWithdrawalTransitionOutputScriptError(_) => 4026,
             ConsensusError::NotImplementedIdentityCreditWithdrawalTransitionPoolingError(_) => 4027,
 
             ConsensusError::StateError(e) => e.get_code(),
-            ConsensusError::BasicError(e) => e.get_code(),
-            ConsensusError::SignatureError(e) => e.get_code(),
-            ConsensusError::FeeError(e) => e.get_code(),
+            ConsensusError::BasicError(e) => e.code(),
+            ConsensusError::SignatureError(e) => e.code(),
+            ConsensusError::FeeError(e) => e.code(),
 
             ConsensusError::IdentityAlreadyExistsError(_) => 4011,
 
