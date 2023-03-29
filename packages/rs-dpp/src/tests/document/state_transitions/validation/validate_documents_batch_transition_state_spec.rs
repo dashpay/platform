@@ -5,7 +5,6 @@ use chrono::Utc;
 use platform_value::Value;
 
 use crate::{
-    codes::ErrorWithCode,
     consensus::ConsensusError,
     data_contract::DataContract,
     document::{
@@ -21,10 +20,11 @@ use crate::{
         fixtures::{
             get_data_contract_fixture, get_document_transitions_fixture,
         },
-        utils::{generate_random_identifier_struct},
+        utils::generate_random_identifier_struct,
     },
 };
 use crate::document::{Document, ExtendedDocument};
+use crate::errors::consensus::codes::ErrorWithCode;
 use crate::identity::TimestampMillis;
 use crate::tests::fixtures::get_extended_documents_fixture;
 use crate::validation::ValidationResult;

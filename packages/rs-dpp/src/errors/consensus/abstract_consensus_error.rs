@@ -1,7 +1,6 @@
 use jsonschema::ValidationError;
 use thiserror::Error;
 
-use crate::codes::ErrorWithCode;
 use crate::consensus::basic::data_contract::IncompatibleRe2PatternError;
 use crate::consensus::basic::decode::ProtocolVersionParsingError;
 use crate::consensus::basic::identity::{
@@ -22,6 +21,7 @@ use crate::errors::consensus::basic::TestConsensusError;
 use crate::errors::consensus::basic::{
     BasicError, IncompatibleProtocolVersionError, JsonSchemaError, UnsupportedProtocolVersionError,
 };
+use crate::errors::consensus::codes::ErrorWithCode;
 use crate::errors::StateError;
 use platform_value::Error as ValueError;
 

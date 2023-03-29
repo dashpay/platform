@@ -1,6 +1,6 @@
 use crate::errors::PublicKeyValidationErrorWasm;
-use dpp::codes::ErrorWithCode;
 use dpp::consensus::basic::identity::InvalidIdentityPublicKeyDataError;
+use dpp::errors::consensus::codes::ErrorWithCode;
 
 use dpp::errors::consensus::ConsensusError as DPPConsensusError;
 use wasm_bindgen::prelude::*;

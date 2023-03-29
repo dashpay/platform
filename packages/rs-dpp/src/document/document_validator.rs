@@ -154,10 +154,10 @@ mod test {
     use serde_json::Value as JsonValue;
     use test_case::test_case;
 
+    use crate::errors::consensus::codes::ErrorWithCode;
     use crate::tests::fixtures::get_extended_documents_fixture;
     use crate::validation::SimpleValidationResult;
     use crate::{
-        codes::ErrorWithCode,
         consensus::{basic::JsonSchemaError, ConsensusError},
         data_contract::DataContract,
         tests::fixtures::get_data_contract_fixture,

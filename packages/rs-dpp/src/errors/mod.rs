@@ -18,7 +18,6 @@ mod public_key_validation_error;
 mod serde_parsing_error;
 
 mod abstract_state_error;
-pub mod codes;
 pub mod errors;
 
 mod data_trigger;

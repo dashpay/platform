@@ -25,9 +25,9 @@ use crate::errors::consensus::basic::identity::{
 use crate::errors::consensus::state::identity::{
     DuplicatedIdentityPublicKeyIdStateErrorWasm, DuplicatedIdentityPublicKeyStateErrorWasm,
 };
-use dpp::codes::ErrorWithCode;
 use dpp::consensus::basic::BasicError;
 use dpp::consensus::signature::SignatureError;
+use dpp::errors::consensus::codes::ErrorWithCode;
 use dpp::StateError;
 use wasm_bindgen::JsValue;
 
