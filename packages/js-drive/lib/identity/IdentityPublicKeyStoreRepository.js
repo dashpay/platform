@@ -1,4 +1,3 @@
-const PreCalculatedOperation = require('@dashevo/dpp/lib/stateTransition/fee/operations/PreCalculatedOperation');
 const StorageResult = require('../storage/StorageResult');
 
 class IdentityPublicKeyStoreRepository {
@@ -6,10 +5,12 @@ class IdentityPublicKeyStoreRepository {
    *
    * @param {GroveDBStore} groveDBStore
    * @param {decodeProtocolEntity} decodeProtocolEntity
+   * @param {WebAssembly.Instance} dppWasm
    */
-  constructor(groveDBStore, decodeProtocolEntity) {
+  constructor(groveDBStore, decodeProtocolEntity, dppWasm) {
     this.storage = groveDBStore;
     this.decodeProtocolEntity = decodeProtocolEntity;
+    this.dppWasm = dppWasm;
   }
 
   /**
@@ -42,7 +43,7 @@ class IdentityPublicKeyStoreRepository {
       return new StorageResult(
         undefined,
         [
-          new PreCalculatedOperation(feeResult),
+          new this.dppWasm.PreCalculatedOperation(feeResult),
         ],
       );
     } finally {
@@ -89,7 +90,7 @@ class IdentityPublicKeyStoreRepository {
       return new StorageResult(
         undefined,
         [
-          new PreCalculatedOperation(feeResult),
+          new this.dppWasm.PreCalculatedOperation(feeResult),
         ],
       );
     } finally {

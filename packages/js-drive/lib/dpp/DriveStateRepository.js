@@ -1,5 +1,3 @@
-const ReadOperation = require('@dashevo/dpp/lib/stateTransition/fee/operations/ReadOperation');
-const SignatureVerificationOperation = require('@dashevo/dpp/lib/stateTransition/fee/operations/SignatureVerificationOperation');
 const BlockInfo = require('../blockExecution/BlockInfo');
 
 /**
@@ -487,7 +485,7 @@ class DriveStateRepository {
     if (executionContext && executionContext.isDryRun()) {
       executionContext.addOperation(
         // TODO: Revisit this value
-        new ReadOperation(512),
+        new this.dppWasm.ReadOperation(512),
       );
 
       return {
@@ -503,7 +501,7 @@ class DriveStateRepository {
 
       if (executionContext) {
         executionContext.addOperation(
-          new ReadOperation(data.length),
+          new this.dppWasm.ReadOperation(data.length),
         );
       }
 
@@ -572,7 +570,7 @@ class DriveStateRepository {
 
     if (executionContext) {
       executionContext.addOperation(
-        new SignatureVerificationOperation(this.dppWasm.KeyType.ECDSA_SECP256K1),
+        new this.dppWasm.SignatureVerificationOperation(this.dppWasm.KeyType.ECDSA_SECP256K1),
       );
 
       if (executionContext.isDryRun()) {
