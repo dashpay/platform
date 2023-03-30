@@ -7,7 +7,15 @@
 # - build - actual build process
 # - release - final image
 #
-
+# The following build arguments can be provided using --build-arg:
+# - CARGO_BUILD_PROFILE - set to `release` to build final binary, without debugging information
+# - SCCACHE_GHA_ENABLED, ACTIONS_CACHE_URL, ACTIONS_RUNTIME_TOKEN - store sccache caches inside github actions
+#   cache instead of Docker cache mounts (not tested yet)
+# - PROTOC_ARCH - select architecture of protobuf compiler; one of: `x86_64` (default), `aarch_64`
+# - ALPINE_VERSION - use different version of Alpine base image; requires also rust:apline... 
+#   image to be available
+# - USERNAME, USER_UID, USER_GID - specification of user used to run the binary
+#
 ARG ALPINE_VERSION=3.17
 
 #
