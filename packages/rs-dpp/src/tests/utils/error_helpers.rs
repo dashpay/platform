@@ -1,22 +1,26 @@
+use crate::consensus::fee::fee_error::FeeError;
+use crate::consensus::signature::signature_error::SignatureError;
+use crate::consensus::state::data_trigger::data_trigger_error::DataTriggerError;
+use crate::consensus::state::state_error::StateError;
 use crate::validation::{SimpleValidationResult, ValidationResult};
 use crate::{
     consensus::{
-        basic::{BasicError, IndexError, JsonSchemaError},
+        basic::{BasicError, JsonSchemaError},
         fee_error::FeeError,
-        signature::SignatureError,
         ConsensusError,
     },
     data_trigger::DataTriggerExecutionResult,
-    DataTriggerError, StateError,
+    StateError,
 };
+use platform_value::Error as ValueError;
 
 pub fn get_schema_error(result: &SimpleValidationResult, number: usize) -> &JsonSchemaError {
-    result
-        .errors
-        .get(number)
-        .expect("the error should be returned in validation result")
-        .json_schema_error()
-        .expect("the error should be json schema error")
+    json_schema_error(
+        result
+            .errors
+            .get(number)
+            .expect("the error should be returned in validation result"),
+    )
 }
 
 pub fn get_basic_error(consensus_error: &ConsensusError) -> &BasicError {
@@ -26,13 +30,18 @@ pub fn get_basic_error(consensus_error: &ConsensusError) -> &BasicError {
     }
 }
 
-pub fn get_index_error(consensus_error: &ConsensusError) -> &IndexError {
+// TODO: Not sure it should be here. Looks more like a test helper
+pub fn json_schema_error(consensus_error: &ConsensusError) -> &JsonSchemaError {
     match consensus_error {
-        ConsensusError::BasicError(basic_error) => match &**basic_error {
-            BasicError::IndexError(index_error) => index_error,
-            _ => panic!("error '{:?}' isn't a index error", consensus_error),
-        },
-        _ => panic!("error '{:?}' isn't a basic error", consensus_error),
+        Self::BasicError(BasicError::JsonSchemaError(err)) => err,
+        _ => panic!("error '{:?}' isn't a json schema error", consensus_error),
+    }
+}
+
+pub fn value_error(consensus_error: &ConsensusError) -> &ValueError {
+    match consensus_error {
+        ConsensusError::ValueError(err) => err,
+        _ => panic!("error '{:?}' isn't a value error", consensus_error),
     }
 }
 

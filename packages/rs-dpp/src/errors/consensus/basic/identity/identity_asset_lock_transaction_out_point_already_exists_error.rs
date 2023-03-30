@@ -1,3 +1,5 @@
+use crate::consensus::basic::BasicError;
+use crate::consensus::ConsensusError;
 use dashcore::Txid;
 use thiserror::Error;
 
@@ -22,5 +24,11 @@ impl IdentityAssetLockTransactionOutPointAlreadyExistsError {
 
     pub fn transaction_id(&self) -> Txid {
         self.transaction_id
+    }
+}
+
+impl From<IdentityAssetLockTransactionOutPointAlreadyExistsError> for ConsensusError {
+    fn from(err: IdentityAssetLockTransactionOutPointAlreadyExistsError) -> Self {
+        Self::BasicError(BasicError::IdentityAssetLockTransactionOutPointAlreadyExistsError(err))
     }
 }

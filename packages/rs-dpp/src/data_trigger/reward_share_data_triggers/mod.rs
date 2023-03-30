@@ -145,6 +145,8 @@ mod test {
 
     use platform_value::Value;
 
+    use crate::consensus::state::data_trigger::data_trigger_error::DataTriggerError;
+    use crate::consensus::ConsensusError::StateError;
     use crate::document::{Document, ExtendedDocument};
     use crate::identity::Identity;
     use crate::{

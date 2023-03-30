@@ -11,6 +11,8 @@ use crate::{consensus::ConsensusError, data_contract::DataContract, document::{
     },
     utils::generate_random_identifier_struct,
 }};
+use crate::consensus::codes::ErrorWithCode;
+use crate::consensus::state::state_error::StateError;
 use crate::document::{Document, ExtendedDocument};
 use crate::tests::fixtures::get_extended_documents_fixture;
 use crate::validation::ValidationResult;

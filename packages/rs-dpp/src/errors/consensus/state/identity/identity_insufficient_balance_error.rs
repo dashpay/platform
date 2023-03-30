@@ -1,3 +1,5 @@
+use crate::consensus::state::state_error::StateError;
+use crate::consensus::ConsensusError;
 use thiserror::Error;
 
 use crate::prelude::Identifier;
@@ -23,5 +25,10 @@ impl IdentityInsufficientBalanceError {
 
     pub fn balance(&self) -> u64 {
         self.balance
+    }
+}
+impl From<IdentityInsufficientBalanceError> for ConsensusError {
+    fn from(err: IdentityInsufficientBalanceError) -> Self {
+        Self::StateError(StateError::IdentityInsufficientBalanceError(err))
     }
 }

@@ -1,3 +1,5 @@
+use crate::consensus::basic::BasicError;
+use crate::consensus::ConsensusError;
 use thiserror::Error;
 
 #[derive(Error, Debug, Clone, PartialEq, Eq)]
@@ -11,5 +13,11 @@ impl InvalidInstantAssetLockProofError {
         Self {
             message: message.into(),
         }
+    }
+}
+
+impl From<InvalidInstantAssetLockProofError> for ConsensusError {
+    fn from(err: InvalidInstantAssetLockProofError) -> Self {
+        Self::BasicError(BasicError::InvalidInstantAssetLockProofError(err))
     }
 }

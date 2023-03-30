@@ -1,3 +1,5 @@
+use crate::consensus::basic::BasicError;
+use crate::consensus::ConsensusError;
 use thiserror::Error;
 
 #[derive(Error, Debug, Clone, PartialEq, Eq, Default)]
@@ -9,5 +11,10 @@ pub struct MissingMasterPublicKeyError {}
 impl MissingMasterPublicKeyError {
     pub fn new() -> Self {
         Self::default()
+    }
+}
+impl From<MissingMasterPublicKeyError> for ConsensusError {
+    fn from(err: MissingMasterPublicKeyError) -> Self {
+        Self::BasicError(BasicError::MissingMasterPublicKeyError(err))
     }
 }

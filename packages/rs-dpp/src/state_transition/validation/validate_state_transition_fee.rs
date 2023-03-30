@@ -2,12 +2,13 @@ use anyhow::Context;
 use std::convert::TryInto;
 
 use crate::consensus::basic::state_transition::InvalidStateTransitionTypeError;
+use crate::consensus::fee::balance_is_not_enough_error::BalanceIsNotEnoughError;
+use crate::consensus::fee::fee_error::FeeError;
 use crate::data_contract::errors::IdentityNotPresentError;
 use crate::state_transition::fee::calculate_state_transition_fee_factory::calculate_state_transition_fee;
 use crate::state_transition::fee::{Credits, FeeResult};
 use crate::state_transition::StateTransitionType;
 use crate::{
-    consensus::fee_error::FeeError,
     identity::{
         convert_satoshi_to_credits,
         state_transition::asset_lock_proof::AssetLockTransactionOutputFetcher,
@@ -18,7 +19,6 @@ use crate::{
     ProtocolError,
 };
 use std::sync::Arc;
-use crate::consensus::balance_is_not_enough_error::BalanceIsNotEnoughError;
 
 pub struct StateTransitionFeeValidator<SR: StateRepositoryLike> {
     state_repository: Arc<SR>,
@@ -98,7 +98,8 @@ where
                 }
 
                 if identity_balance.is_negative() && identity_balance.unsigned_abs() > balance {
-                    result.add_error(FeeError::BalanceIsNotEnoughError(BalanceIsNotEnoughError::new(0, required_fee.desired_amount)));
+                    result.add_error(BalanceIsNotEnoughError::new(0, required_fee.desired_amount));
+
                     return Ok(result);
                 }
 
@@ -152,7 +153,9 @@ where
 
         // ? make sure Fee cannot be negative and refunds are handled differently
         if balance < required_fee.desired_amount {
-            result.add_error(FeeError::BalanceIsNotEnoughError(BalanceIsNotEnoughError::new(balance, required_fee.desired_amount)))
+            result.add_error(FeeError::BalanceIsNotEnoughError(
+                BalanceIsNotEnoughError::new(balance, required_fee.desired_amount),
+            ))
         }
 
         Ok(result)
@@ -180,6 +183,7 @@ where
 
 #[cfg(test)]
 mod test {
+    use super::*;
     use crate::tests::fixtures::{
         identity_create_transition_fixture, identity_topup_transition_fixture,
     };
@@ -194,7 +198,6 @@ mod test {
     use crate::state_transition::StateTransition;
     use crate::ProtocolError;
     use crate::{
-        consensus::fee_error::FeeError,
         document::{document_transition::Action, DocumentsBatchTransition},
         identity::state_transition::identity_credit_withdrawal_transition::IdentityCreditWithdrawalTransition,
         state_repository::MockStateRepositoryLike,

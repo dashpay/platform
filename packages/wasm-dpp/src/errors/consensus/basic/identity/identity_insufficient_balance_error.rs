@@ -1,5 +1,6 @@
 use crate::buffer::Buffer;
-use dpp::consensus::basic::identity::IdentityInsufficientBalanceError;
+use dpp::consensus::codes::ErrorWithCode;
+use dpp::consensus::state::identity::IdentityInsufficientBalanceError;
 use dpp::consensus::ConsensusError;
 use wasm_bindgen::prelude::*;
 

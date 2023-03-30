@@ -1,3 +1,4 @@
+use crate::consensus::test_consensus_error::TestConsensusError;
 use crate::identity::state_transition::validate_public_key_signatures::PublicKeysSignaturesValidator;
 use crate::{
     consensus::{basic::TestConsensusError, ConsensusError},

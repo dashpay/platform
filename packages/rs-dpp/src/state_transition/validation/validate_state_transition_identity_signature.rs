@@ -4,13 +4,14 @@ use std::{collections::HashSet, convert::TryInto};
 use anyhow::Context;
 use lazy_static::lazy_static;
 
+use crate::consensus::signature::signature_error::SignatureError;
 use crate::consensus::signature::{
     IdentityNotFoundError, InvalidIdentityPublicKeyTypeError, MissingPublicKeyError,
     PublicKeyIsDisabledError, PublicKeySecurityLevelNotMetError,
 };
 use crate::validation::SimpleValidationResult;
 use crate::{
-    consensus::{signature::SignatureError, ConsensusError},
+    consensus::ConsensusError,
     identity::KeyType,
     state_repository::StateRepositoryLike,
     state_transition::{

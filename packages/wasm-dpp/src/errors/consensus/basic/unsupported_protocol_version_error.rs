@@ -1,4 +1,5 @@
 use dpp::consensus::basic::UnsupportedProtocolVersionError;
+use dpp::consensus::codes::ErrorWithCode;
 use dpp::consensus::ConsensusError;
 use wasm_bindgen::prelude::*;
 

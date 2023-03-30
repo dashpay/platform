@@ -4,6 +4,7 @@ use async_trait::async_trait;
 use futures::future::join_all;
 use itertools::Itertools;
 
+use crate::consensus::state::state_error::StateError;
 use crate::data_contract::errors::DataContractNotPresentError;
 use crate::document::document_transition::{
     DocumentCreateTransitionAction, DocumentDeleteTransitionAction,
@@ -29,7 +30,7 @@ use crate::{
         StateTransitionIdentitySigned, StateTransitionLike,
     },
     validation::ValidationResult,
-    ProtocolError, StateError,
+    ProtocolError,
 };
 
 use super::{
@@ -338,13 +339,13 @@ fn check_ownership(
 ) -> SimpleValidationResult {
     let mut result = SimpleValidationResult::default();
     if fetched_document.owner_id != owner_id {
-        result.add_error(ConsensusError::StateError(Box::new(
+        result.add_error(ConsensusError::StateError(
             StateError::DocumentOwnerIdMismatchError {
                 document_id: document_transition.base().id,
                 document_owner_id: owner_id.to_owned(),
                 existing_document_owner_id: fetched_document.owner_id,
             },
-        )));
+        ));
     }
     result
 }
@@ -366,22 +367,22 @@ fn check_revision(
         None => return result,
     };
     let Some(previous_revision) =  fetched_document.revision else {
-        result.add_error(ConsensusError::StateError(Box::new(
+        result.add_error(ConsensusError::StateError(
             StateError::InvalidDocumentRevisionError {
                 document_id: document_transition.base().id,
                 current_revision: None,
             },
-        )));
+        ));
         return result;
     };
     let expected_revision = previous_revision + 1;
     if revision != expected_revision {
-        result.add_error(ConsensusError::StateError(Box::new(
+        result.add_error(ConsensusError::StateError(
             StateError::InvalidDocumentRevisionError {
                 document_id: document_transition.base().id,
                 current_revision: Some(previous_revision),
             },
-        )))
+        ))
     }
     result
 }
@@ -396,11 +397,11 @@ fn check_if_document_is_already_present(
         .find(|d| d.id == document_transition.base().id);
 
     if maybe_fetched_document.is_some() {
-        result.add_error(ConsensusError::StateError(Box::new(
+        result.add_error(ConsensusError::StateError(
             StateError::DocumentAlreadyPresentError {
                 document_id: document_transition.base().id,
             },
-        )))
+        ))
     }
     result
 }
@@ -416,11 +417,11 @@ fn check_if_document_can_be_found<'a>(
     if let Some(document) = maybe_fetched_document {
         ValidationResult::new_with_data(document)
     } else {
-        ValidationResult::new_with_errors(vec![ConsensusError::StateError(Box::new(
+        ValidationResult::new_with_errors(vec![ConsensusError::StateError(
             StateError::DocumentNotFoundError {
                 document_id: document_transition.base().id,
             },
-        ))])
+        )])
     }
 }
 
@@ -432,11 +433,11 @@ fn check_if_timestamps_are_equal(
     let updated_at = document_transition.get_updated_at();
 
     if created_at.is_some() && updated_at.is_some() && updated_at.unwrap() != created_at.unwrap() {
-        result.add_error(ConsensusError::StateError(Box::new(
+        result.add_error(ConsensusError::StateError(
             StateError::DocumentTimestampsMismatchError {
                 document_id: document_transition.base().id,
             },
-        )));
+        ));
     }
 
     result
@@ -454,7 +455,7 @@ fn check_created_inside_time_window(
 
     let window_validation = validate_time_in_block_time_window(last_block_ts_millis, created_at);
     if !window_validation.is_valid() {
-        result.add_error(ConsensusError::StateError(Box::new(
+        result.add_error(ConsensusError::StateError(
             StateError::DocumentTimestampWindowViolationError {
                 timestamp_name: String::from("createdAt"),
                 document_id: document_transition.base().id,
@@ -462,7 +463,7 @@ fn check_created_inside_time_window(
                 time_window_start: window_validation.time_window_start as i64,
                 time_window_end: window_validation.time_window_end as i64,
             },
-        )));
+        ));
     }
     result
 }
@@ -479,7 +480,7 @@ fn check_updated_inside_time_window(
 
     let window_validation = validate_time_in_block_time_window(last_block_ts_millis, updated_at);
     if !window_validation.is_valid() {
-        result.add_error(ConsensusError::StateError(Box::new(
+        result.add_error(ConsensusError::StateError(
             StateError::DocumentTimestampWindowViolationError {
                 timestamp_name: String::from("updatedAt"),
                 document_id: document_transition.base().id,
@@ -487,7 +488,7 @@ fn check_updated_inside_time_window(
                 time_window_start: window_validation.time_window_start as i64,
                 time_window_end: window_validation.time_window_end as i64,
             },
-        )));
+        ));
     }
     result
 }

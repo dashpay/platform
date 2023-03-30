@@ -1,3 +1,5 @@
+use crate::consensus::basic::BasicError;
+use crate::consensus::ConsensusError;
 use dashcore::Txid;
 use thiserror::Error;
 
@@ -22,5 +24,10 @@ impl IdentityAssetLockProofLockedTransactionMismatchError {
 
     pub fn asset_lock_transaction_id(&self) -> Txid {
         self.asset_lock_transaction_id
+    }
+}
+impl From<IdentityAssetLockProofLockedTransactionMismatchError> for ConsensusError {
+    fn from(err: IdentityAssetLockProofLockedTransactionMismatchError) -> Self {
+        Self::BasicError(BasicError::IdentityAssetLockProofLockedTransactionMismatchError(err))
     }
 }

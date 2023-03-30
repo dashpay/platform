@@ -1,3 +1,5 @@
+use crate::consensus::basic::BasicError;
+use crate::consensus::ConsensusError;
 use thiserror::Error;
 
 #[derive(Error, Debug, Clone, PartialEq, Eq)]
@@ -13,5 +15,13 @@ impl IdentityAssetLockTransactionOutputNotFoundError {
 
     pub fn output_index(&self) -> usize {
         self.output_index
+    }
+}
+
+impl From<IdentityAssetLockTransactionOutputNotFoundError> for ConsensusError {
+    fn from(err: IdentityAssetLockTransactionOutputNotFoundError) -> Self {
+        Self::BasicError(BasicError::IdentityAssetLockTransactionOutputNotFoundError(
+            err,
+        ))
     }
 }

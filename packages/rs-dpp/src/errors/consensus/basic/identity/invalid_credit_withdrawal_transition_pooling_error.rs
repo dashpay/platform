@@ -1,3 +1,4 @@
+use crate::consensus::basic::BasicError;
 use thiserror::Error;
 
 use crate::consensus::ConsensusError;
@@ -22,6 +23,8 @@ impl NotImplementedIdentityCreditWithdrawalTransitionPoolingError {
 
 impl From<NotImplementedIdentityCreditWithdrawalTransitionPoolingError> for ConsensusError {
     fn from(err: NotImplementedIdentityCreditWithdrawalTransitionPoolingError) -> Self {
-        Self::NotImplementedIdentityCreditWithdrawalTransitionPoolingError(err)
+        Self::BasicError(
+            BasicError::NotImplementedIdentityCreditWithdrawalTransitionPoolingError(err),
+        )
     }
 }

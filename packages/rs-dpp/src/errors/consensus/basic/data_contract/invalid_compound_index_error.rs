@@ -1,4 +1,4 @@
-use crate::consensus::basic::{BasicError, IndexError};
+use crate::consensus::basic::BasicError;
 use thiserror::Error;
 
 use crate::consensus::ConsensusError;
@@ -29,8 +29,6 @@ impl InvalidCompoundIndexError {
 
 impl From<InvalidCompoundIndexError> for ConsensusError {
     fn from(err: InvalidCompoundIndexError) -> Self {
-        Self::BasicError(BasicError::IndexError(
-            BasicError::InvalidCompoundIndexError(err),
-        ))
+        Self::BasicError(BasicError::InvalidCompoundIndexError(err))
     }
 }

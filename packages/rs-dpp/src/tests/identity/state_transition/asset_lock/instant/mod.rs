@@ -23,7 +23,7 @@ mod validate_instant_asset_lock_proof_structure_factory {
     use crate::tests::fixtures::{
         instant_asset_lock_is_lock_fixture, instant_asset_lock_proof_transaction_fixture,
     };
-
+    use dpp::consensus::codes::ErrorWithCode;
     struct TestData {
         pub validate_instant_asset_lock_proof_structure:
             InstantAssetLockProofStructureValidator<MockStateRepositoryLike>,
@@ -127,6 +127,7 @@ mod validate_instant_asset_lock_proof_structure_factory {
 
     mod instant_lock {
         use super::*;
+        use crate::consensus::codes::ErrorWithCode;
 
         #[tokio::test]
         async fn should_be_present() {
@@ -301,6 +302,7 @@ mod validate_instant_asset_lock_proof_structure_factory {
 
     mod transaction {
         use super::*;
+        use crate::consensus::codes::ErrorWithCode;
 
         #[tokio::test]
         async fn should_be_present() {

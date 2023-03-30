@@ -5,6 +5,7 @@ use std::{
     sync::Arc,
 };
 
+use crate::consensus::basic::data_contract::DataContractNotPresentError;
 use crate::consensus::basic::document::{
     DuplicateDocumentTransitionsWithIdsError, DuplicateDocumentTransitionsWithIndicesError,
     InvalidDocumentTransitionActionError, InvalidDocumentTransitionIdError,
@@ -37,7 +38,6 @@ use platform_value::btreemap_extensions::BTreeValueMapHelper;
 use platform_value::converter::serde_json::BTreeValueRefJsonConverter;
 use platform_value::Value;
 use serde_json::Value as JsonValue;
-use crate::data_contract::errors::DataContractNotPresentError;
 
 use super::{
     find_duplicates_by_indices::find_duplicates_by_indices,
@@ -189,7 +189,7 @@ pub async fn validate_documents_batch_transition_basic(
 
         let data_contract = match maybe_data_contract {
             None => {
-                result.add_error(BasicError::DataContractNotPresent(DataContractNotPresentError::new(data_contract_id)));
+                result.add_error(DataContractNotPresentError::new(data_contract_id));
                 continue;
             }
             Some(data_contract) => data_contract,

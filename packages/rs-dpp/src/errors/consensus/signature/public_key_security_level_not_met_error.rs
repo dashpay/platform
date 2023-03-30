@@ -1,6 +1,6 @@
 use thiserror::Error;
 
-use crate::consensus::signature::SignatureError;
+use crate::consensus::signature::signature_error::SignatureError;
 use crate::consensus::ConsensusError;
 use crate::identity::SecurityLevel;
 

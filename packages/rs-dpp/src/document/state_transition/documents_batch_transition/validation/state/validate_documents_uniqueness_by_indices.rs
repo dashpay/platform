@@ -5,6 +5,7 @@ use itertools::Itertools;
 use platform_value::string_encoding::Encoding;
 use serde_json::{json, Value as JsonValue};
 
+use crate::consensus::state::state_error::StateError;
 use crate::document::Document;
 use crate::validation::SimpleValidationResult;
 use crate::{
@@ -13,7 +14,7 @@ use crate::{
     state_repository::StateRepositoryLike,
     state_transition::state_transition_execution_context::StateTransitionExecutionContext,
     util::json_schema::{Index, JsonSchemaExt},
-    ProtocolError, StateError,
+    ProtocolError,
 };
 
 struct QueryDefinition<'a> {

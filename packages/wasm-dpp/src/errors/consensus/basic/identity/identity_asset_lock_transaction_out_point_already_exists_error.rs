@@ -1,4 +1,5 @@
 use dpp::consensus::basic::identity::IdentityAssetLockTransactionOutPointAlreadyExistsError;
+use dpp::consensus::codes::ErrorWithCode;
 use dpp::consensus::ConsensusError;
 use dpp::dashcore::hashes::Hash;
 use wasm_bindgen::prelude::*;

@@ -1,4 +1,5 @@
-use crate::consensus::basic::IndexError;
+use crate::consensus::basic::BasicError;
+use crate::consensus::ConsensusError;
 use thiserror::Error;
 
 use crate::data_contract::document_type::Index;
@@ -31,8 +32,8 @@ impl UndefinedIndexPropertyError {
     }
 }
 
-impl From<UndefinedIndexPropertyError> for IndexError {
+impl From<UndefinedIndexPropertyError> for ConsensusError {
     fn from(err: UndefinedIndexPropertyError) -> Self {
-        Self::UndefinedIndexPropertyError(err)
+        Self::BasicError(BasicError::UndefinedIndexPropertyError(err))
     }
 }

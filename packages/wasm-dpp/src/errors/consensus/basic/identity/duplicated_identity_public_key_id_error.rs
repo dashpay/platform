@@ -1,14 +1,15 @@
-use dpp::consensus::basic::identity::DuplicatedIdentityPublicKeyIdError;
+use dpp::consensus::basic::identity::DuplicatedIdentityPublicKeyIdBasicError;
+use dpp::consensus::codes::ErrorWithCode;
 use dpp::consensus::ConsensusError;
 use wasm_bindgen::prelude::*;
 
 #[wasm_bindgen(js_name=DuplicatedIdentityPublicKeyIdError)]
 pub struct DuplicatedIdentityPublicKeyIdErrorWasm {
-    inner: DuplicatedIdentityPublicKeyIdError,
+    inner: DuplicatedIdentityPublicKeyIdBasicError,
 }
 
-impl From<&DuplicatedIdentityPublicKeyIdError> for DuplicatedIdentityPublicKeyIdErrorWasm {
-    fn from(e: &DuplicatedIdentityPublicKeyIdError) -> Self {
+impl From<&DuplicatedIdentityPublicKeyIdBasicError> for DuplicatedIdentityPublicKeyIdErrorWasm {
+    fn from(e: &DuplicatedIdentityPublicKeyIdBasicError) -> Self {
         Self { inner: e.clone() }
     }
 }

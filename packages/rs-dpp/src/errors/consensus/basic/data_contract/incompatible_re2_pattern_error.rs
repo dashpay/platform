@@ -1,3 +1,4 @@
+use crate::consensus::basic::BasicError;
 use thiserror::Error;
 
 use crate::consensus::ConsensusError;
@@ -34,6 +35,6 @@ impl IncompatibleRe2PatternError {
 
 impl From<IncompatibleRe2PatternError> for ConsensusError {
     fn from(err: IncompatibleRe2PatternError) -> Self {
-        Self::IncompatibleRe2PatternError(err)
+        Self::BasicError(BasicError::IncompatibleRe2PatternError(err))
     }
 }

@@ -1,4 +1,4 @@
-use crate::consensus::basic::{BasicError, IndexError};
+use crate::consensus::basic::BasicError;
 use thiserror::Error;
 
 use crate::consensus::ConsensusError;
@@ -44,8 +44,6 @@ impl InvalidIndexPropertyTypeError {
 
 impl From<InvalidIndexPropertyTypeError> for ConsensusError {
     fn from(err: InvalidIndexPropertyTypeError) -> Self {
-        Self::BasicError(BasicError::IndexError(
-            BasicError::InvalidIndexPropertyTypeError(err),
-        ))
+        Self::BasicError(BasicError::InvalidIndexPropertyTypeError(err))
     }
 }

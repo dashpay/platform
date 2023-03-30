@@ -1,10 +1,11 @@
 use anyhow::{anyhow, bail};
 use platform_value::btreemap_extensions::BTreeValueMapHelper;
 
+use crate::consensus::state::data_trigger::data_trigger_error::DataTriggerError;
 use crate::data_trigger::dashpay_data_triggers::property_names::CORE_HEIGHT_CREATED_AT;
 use crate::{
-    document::document_transition::DocumentTransition, errors::DataTriggerError,
-    get_from_transition, prelude::Identifier, state_repository::StateRepositoryLike, ProtocolError,
+    document::document_transition::DocumentTransition, get_from_transition, prelude::Identifier,
+    state_repository::StateRepositoryLike, ProtocolError,
 };
 
 use super::{DataTriggerExecutionContext, DataTriggerExecutionResult};

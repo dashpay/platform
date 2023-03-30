@@ -1,3 +1,4 @@
+use crate::consensus::basic::BasicError;
 use thiserror::Error;
 
 use crate::consensus::ConsensusError;
@@ -28,6 +29,6 @@ impl InvalidAssetLockProofCoreChainHeightError {
 
 impl From<InvalidAssetLockProofCoreChainHeightError> for ConsensusError {
     fn from(err: InvalidAssetLockProofCoreChainHeightError) -> Self {
-        Self::InvalidAssetLockProofCoreChainHeightError(err)
+        Self::BasicError(BasicError::InvalidAssetLockProofCoreChainHeightError(err))
     }
 }

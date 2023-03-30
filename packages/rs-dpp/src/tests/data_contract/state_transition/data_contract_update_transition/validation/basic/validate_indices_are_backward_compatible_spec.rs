@@ -4,6 +4,7 @@ use crate::{
 };
 use std::collections::BTreeMap;
 
+use crate::consensus::codes::ErrorWithCode;
 use crate::validation::SimpleValidationResult;
 use crate::{
     consensus::ConsensusError, data_contract::DataContract,

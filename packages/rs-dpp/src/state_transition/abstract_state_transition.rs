@@ -8,7 +8,6 @@ use serde_json::Value as JsonValue;
 
 use crate::consensus::signature::signature_error::SignatureError;
 use crate::consensus::ConsensusError;
-use crate::errors::consensus::signature::SignatureError;
 use crate::state_transition::errors::{
     InvalidIdentityPublicKeyTypeError, StateTransitionIsNotSignedError,
 };

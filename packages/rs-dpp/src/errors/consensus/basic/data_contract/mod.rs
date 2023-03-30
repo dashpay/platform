@@ -20,6 +20,7 @@ mod unique_indices_limit_reached_error;
 pub use data_contract_have_new_unique_index_error::*;
 pub use data_contract_immutable_properties_update_error::*;
 pub use data_contract_invalid_index_definition_update_error::*;
+pub use data_contract_not_present_error::*;
 pub use data_contract_unique_indices_changed_error::*;
 pub use duplicate_index_error::*;
 pub use duplicate_index_name_error::*;

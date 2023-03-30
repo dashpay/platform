@@ -1,14 +1,16 @@
+use crate::util::json_value::JsonValueExt;
 use anyhow::anyhow;
 use lazy_static::lazy_static;
 use platform_value::Value;
 use serde_json::Value as JsonValue;
 
+use crate::consensus::state::state_error::StateError;
+
 use crate::{
     identity::validation::{duplicated_key_ids, duplicated_keys, TPublicKeysValidator},
     prelude::IdentityPublicKey,
-    util::json_value::JsonValueExt,
     validation::SimpleValidationResult,
-    ProtocolError, StateError,
+    ProtocolError,
 };
 
 lazy_static! {
@@ -55,14 +57,14 @@ pub fn validate_public_keys(
     let duplicated_ids = duplicated_key_ids(&public_keys);
     if !duplicated_ids.is_empty() {
         validation_result
-            .add_error(StateError::DuplicatedIdentityPublicKeyIdError { duplicated_ids });
+            .add_error(StateError::DuplicatedIdentityPublicKeyIdStateError { duplicated_ids });
         return Ok(validation_result);
     }
 
     // Check that there's no duplicated keys
     let duplicated_key_ids = duplicated_keys(&public_keys);
     if !duplicated_key_ids.is_empty() {
-        validation_result.add_error(StateError::DuplicatedIdentityPublicKeyError {
+        validation_result.add_error(StateError::DuplicatedIdentityPublicKeyStateError {
             duplicated_public_key_ids: duplicated_key_ids,
         });
     }

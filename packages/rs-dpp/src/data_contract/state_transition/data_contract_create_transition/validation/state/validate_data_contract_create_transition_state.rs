@@ -3,6 +3,7 @@ use std::convert::TryInto;
 use anyhow::Result;
 use async_trait::async_trait;
 
+use crate::consensus::state::state_error::StateError;
 use crate::data_contract::state_transition::data_contract_create_transition::DataContractCreateTransitionAction;
 use crate::validation::ValidationResult;
 use crate::{
@@ -10,7 +11,6 @@ use crate::{
         state_transition::data_contract_create_transition::DataContractCreateTransition,
         DataContract,
     },
-    errors::StateError,
     state_repository::StateRepositoryLike,
     state_transition::StateTransitionLike,
     validation::AsyncDataValidator,

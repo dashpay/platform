@@ -1,4 +1,5 @@
-use crate::consensus::basic::IndexError;
+use crate::consensus::basic::BasicError;
+use crate::consensus::ConsensusError;
 use thiserror::Error;
 
 #[derive(Error, Debug, Clone, PartialEq, Eq)]
@@ -24,8 +25,8 @@ impl UniqueIndicesLimitReachedError {
     }
 }
 
-impl From<UniqueIndicesLimitReachedError> for IndexError {
+impl From<UniqueIndicesLimitReachedError> for ConsensusError {
     fn from(err: UniqueIndicesLimitReachedError) -> Self {
-        Self::UniqueIndicesLimitReachedError(err)
+        Self::BasicError(BasicError::UniqueIndicesLimitReachedError(err))
     }
 }

@@ -3,7 +3,9 @@ use platform_value::Value;
 use std::convert::TryInto;
 use std::sync::Arc;
 
-use crate::consensus::signature::{IdentityNotFoundError, SignatureError};
+use crate::consensus::signature::signature_error::SignatureError;
+use crate::consensus::signature::IdentityNotFoundError;
+use crate::consensus::state::state_error::StateError;
 use crate::identity::state_transition::identity_update_transition::IdentityUpdateTransitionAction;
 use crate::{
     block_time_window::validate_time_in_block_time_window::validate_time_in_block_time_window,
@@ -11,7 +13,7 @@ use crate::{
     state_repository::StateRepositoryLike,
     state_transition::StateTransitionLike,
     validation::ValidationResult,
-    NonConsensusError, StateError,
+    NonConsensusError,
 };
 
 use super::identity_update_transition::{property_names, IdentityUpdateTransition};

@@ -55,21 +55,17 @@ pub fn pattern_is_valid_regex_validator(
     if key == "pattern" {
         if let Some(pattern) = value.as_str() {
             if let Err(err) = Regex::new(pattern) {
-                result.add_error(ConsensusError::IncompatibleRe2PatternError(
-                    IncompatibleRe2PatternError::new(
-                        String::from(pattern),
-                        path.to_string(),
-                        err.to_string(),
-                    ),
+                result.add_error(IncompatibleRe2PatternError::new(
+                    String::from(pattern),
+                    path.to_string(),
+                    err.to_string(),
                 ));
             }
         } else {
-            result.add_error(ConsensusError::IncompatibleRe2PatternError(
-                IncompatibleRe2PatternError::new(
-                    String::new(),
-                    path.to_string(),
-                    format!("{} is not a string", path),
-                ),
+            result.add_error(IncompatibleRe2PatternError::new(
+                String::new(),
+                path.to_string(),
+                format!("{} is not a string", path),
             ));
         }
     }
@@ -119,6 +115,7 @@ pub fn byte_array_has_no_items_as_parent_validator(
 
 #[cfg(test)]
 mod test {
+    use crate::consensus::codes::ErrorWithCode;
     use platform_value::platform_value;
 
     use super::*;

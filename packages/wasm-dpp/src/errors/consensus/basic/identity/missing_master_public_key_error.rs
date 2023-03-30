@@ -1,4 +1,5 @@
 use dpp::consensus::basic::identity::MissingMasterPublicKeyError;
+use dpp::consensus::codes::ErrorWithCode;
 use dpp::consensus::ConsensusError;
 use wasm_bindgen::prelude::*;
 

@@ -1,4 +1,5 @@
 use crate::buffer::Buffer;
+use dpp::consensus::codes::ErrorWithCode;
 use dpp::consensus::state::identity::IdentityAlreadyExistsError;
 use dpp::consensus::ConsensusError;
 use wasm_bindgen::prelude::*;

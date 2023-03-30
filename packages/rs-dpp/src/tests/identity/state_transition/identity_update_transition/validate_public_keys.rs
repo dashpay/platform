@@ -1,3 +1,4 @@
+use crate::consensus::codes::ErrorWithCode;
 use crate::{
     identity::state_transition::identity_update_transition::validate_public_keys::{
         validate_public_keys, IDENTITY_JSON_SCHEMA,

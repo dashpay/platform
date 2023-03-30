@@ -22,6 +22,7 @@ use crate::{
 use std::collections::BTreeMap;
 use std::sync::Arc;
 
+use crate::consensus::codes::ErrorWithCode;
 use crate::document::document_transition::document_base_transition::JsonValue;
 use crate::tests::utils::generate_random_identifier_struct;
 use jsonschema::error::ValidationErrorKind;

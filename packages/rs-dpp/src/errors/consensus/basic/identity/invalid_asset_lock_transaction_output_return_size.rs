@@ -1,3 +1,5 @@
+use crate::consensus::basic::BasicError;
+use crate::consensus::ConsensusError;
 use thiserror::Error;
 
 #[derive(Error, Debug, Clone, PartialEq, Eq)]
@@ -15,5 +17,11 @@ impl InvalidAssetLockTransactionOutputReturnSizeError {
 
     pub fn output_index(&self) -> usize {
         self.output_index
+    }
+}
+
+impl From<InvalidAssetLockTransactionOutputReturnSizeError> for ConsensusError {
+    fn from(err: InvalidAssetLockTransactionOutputReturnSizeError) -> Self {
+        Self::BasicError(BasicError::InvalidAssetLockTransactionOutputReturnSizeError(err))
     }
 }

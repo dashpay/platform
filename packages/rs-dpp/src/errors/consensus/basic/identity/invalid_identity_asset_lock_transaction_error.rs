@@ -1,3 +1,5 @@
+use crate::consensus::basic::BasicError;
+use crate::consensus::ConsensusError;
 use dashcore;
 use dashcore::consensus::encode::Error;
 use thiserror::Error;
@@ -23,5 +25,10 @@ impl InvalidIdentityAssetLockTransactionError {
 
     pub fn validation_error(&self) -> Option<&Error> {
         self.validation_error.as_ref()
+    }
+}
+impl From<InvalidIdentityAssetLockTransactionError> for ConsensusError {
+    fn from(err: InvalidIdentityAssetLockTransactionError) -> Self {
+        Self::BasicError(BasicError::InvalidIdentityAssetLockTransactionError(err))
     }
 }

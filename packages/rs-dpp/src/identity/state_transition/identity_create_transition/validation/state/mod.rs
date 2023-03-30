@@ -76,6 +76,7 @@ pub async fn validate_identity_create_transition_state(
     // Balance is here to check if the identity does already exist
     if balance.is_some() {
         result.add_error(IdentityAlreadyExistsError::new(identity_id.to_buffer()));
+
         Ok(result)
     } else {
         let tx_out = state_transition

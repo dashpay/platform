@@ -8,8 +8,9 @@ use crate::consensus::signature::signature_error::SignatureError;
 #[cfg(test)]
 use crate::consensus::test_consensus_error::TestConsensusError;
 
-use crate::errors::consensus::basic::{BasicError, JsonSchemaError};
 use platform_value::Error as ValueError;
+
+use crate::errors::consensus::basic::BasicError;
 
 #[derive(Error, Debug)]
 pub enum ConsensusError {
@@ -31,29 +32,6 @@ pub enum ConsensusError {
     #[cfg(test)]
     #[cfg_attr(test, error(transparent))]
     TestConsensusError(TestConsensusError),
-}
-
-impl ConsensusError {
-    // TODO: Not sure it should be here. Looks more like a test helper
-    pub fn json_schema_error(&self) -> Option<&JsonSchemaError> {
-        match self {
-            Self::BasicError(BasicError::JsonSchemaError(err)) => Some(err),
-            _ => None,
-        }
-    }
-
-    pub fn value_error(&self) -> Option<&ValueError> {
-        match self {
-            ConsensusError::ValueError(err) => Some(err),
-            _ => None,
-        }
-    }
-}
-
-impl From<FeeError> for ConsensusError {
-    fn from(err: FeeError) -> Self {
-        Self::FeeError(err)
-    }
 }
 
 impl From<ValueError> for ConsensusError {

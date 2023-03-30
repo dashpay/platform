@@ -1,3 +1,4 @@
+use crate::consensus::state::data_trigger::data_trigger_error::DataTriggerError;
 use platform_value::Value;
 
 use crate::errors::consensus::{
@@ -28,7 +29,7 @@ impl ErrorWithCode for ConsensusError {
 
 impl ErrorWithCode for BasicError {
     fn code(&self) -> u32 {
-        match *self {
+        match self {
             // Decoding
             Self::ProtocolVersionParsingError { .. } => 1000,
             Self::SerializedObjectParsingError { .. } => 1001,
@@ -59,7 +60,7 @@ impl ErrorWithCode for BasicError {
             Self::DataContractHaveNewUniqueIndexError { .. } => 1055,
 
             // Document
-            Self::DataContractNotPresent { .. } => 1018,
+            Self::DataContractNotPresentError { .. } => 1018,
             Self::DuplicateDocumentTransitionsWithIdsError { .. } => 1019,
             Self::DuplicateDocumentTransitionsWithIndicesError { .. } => 1020,
             Self::InconsistentCompoundIndexDataError { .. } => 1021,
@@ -73,14 +74,14 @@ impl ErrorWithCode for BasicError {
 
             // Identity
             Self::DuplicatedIdentityPublicKeyBasicError(_) => 1029,
-            Self::DuplicatedIdentityPublicKeyBasicIdError(_) => 1030,
+            Self::DuplicatedIdentityPublicKeyIdBasicError(_) => 1030,
             Self::IdentityAssetLockProofLockedTransactionMismatchError(_) => 1031,
             Self::IdentityAssetLockTransactionIsNotFoundError(_) => 1032,
             Self::IdentityAssetLockTransactionOutPointAlreadyExistsError(_) => 1033,
             Self::IdentityAssetLockTransactionOutputNotFoundError(_) => 1034,
             Self::InvalidAssetLockProofCoreChainHeightError(_) => 1035,
             Self::InvalidAssetLockProofTransactionHeightError(_) => 1036,
-            Self::InvalidAssetLockTransactionOutputReturnSize(_) => 1037,
+            Self::InvalidAssetLockTransactionOutputReturnSizeError(_) => 1037,
             Self::InvalidIdentityAssetLockTransactionError(_) => 1038,
             Self::InvalidIdentityAssetLockTransactionOutputError(_) => 1039,
             Self::InvalidIdentityPublicKeyDataError(_) => 1040,
@@ -89,6 +90,9 @@ impl ErrorWithCode for BasicError {
             Self::MissingMasterPublicKeyError(_) => 1046,
             Self::InvalidIdentityPublicKeySecurityLevelError(_) => 1047,
             Self::InvalidIdentityKeySignatureError { .. } => 1056,
+            Self::InvalidIdentityCreditWithdrawalTransitionOutputScriptError(_) => 1057,
+            Self::InvalidIdentityCreditWithdrawalTransitionCoreFeeError(_) => 1058,
+            Self::NotImplementedIdentityCreditWithdrawalTransitionPoolingError(_) => 1059,
 
             // State Transition
             Self::InvalidStateTransitionTypeError { .. } => 1043,
@@ -100,7 +104,7 @@ impl ErrorWithCode for BasicError {
 
 impl ErrorWithCode for SignatureError {
     fn code(&self) -> u32 {
-        match *self {
+        match self {
             Self::IdentityNotFoundError { .. } => 2000,
             Self::InvalidIdentityPublicKeyTypeError { .. } => 2001,
             Self::InvalidStateTransitionSignatureError => 2002,
@@ -115,7 +119,7 @@ impl ErrorWithCode for SignatureError {
 
 impl ErrorWithCode for FeeError {
     fn code(&self) -> u32 {
-        match *self {
+        match self {
             Self::BalanceIsNotEnoughError { .. } => 3000,
         }
     }
@@ -123,14 +127,11 @@ impl ErrorWithCode for FeeError {
 
 impl ErrorWithCode for StateError {
     fn code(&self) -> u32 {
-        match *self {
+        match self {
             // Data contract
             Self::DataContractAlreadyPresentError { .. } => 4000,
 
-            // Data Trigger
-            Self::DataTriggerConditionError { .. } => 4001,
-            Self::DataTriggerExecutionError { .. } => 4002,
-            Self::DataTriggerInvalidResultError { .. } => 4003,
+            Self::DataTriggerError(ref e) => e.code(),
 
             // Document
             Self::DocumentAlreadyPresentError { .. } => 4004,
@@ -148,18 +149,26 @@ impl ErrorWithCode for StateError {
             Self::InvalidIdentityPublicKeyIdError { .. } => 4018,
             Self::InvalidIdentityRevisionError { .. } => 4019,
             Self::MaxIdentityPublicKeyLimitReachedError { .. } => 4020,
-            Self::DuplicatedIdentityPublicKeyError { .. } => 4021,
-            Self::DuplicatedIdentityPublicKeyIdError { .. } => 4022,
+            Self::DuplicatedIdentityPublicKeyStateError { .. } => 4021,
+            Self::DuplicatedIdentityPublicKeyIdStateError { .. } => 4022,
             Self::IdentityPublicKeyIsDisabledError { .. } => 4023,
             Self::IdentityInsufficientBalanceError(_) => 4024,
-            Self::InvalidIdentityCreditWithdrawalTransitionCoreFeeError(_) => 4025,
-            Self::InvalidIdentityCreditWithdrawalTransitionOutputScriptError(_) => 4026,
-            Self::NotImplementedIdentityCreditWithdrawalTransitionPoolingError(_) => 4027,
         }
     }
 }
 
-fn create_consensus_error(code: u32, args: Value) -> ConsensusError {
+impl ErrorWithCode for DataTriggerError {
+    fn code(&self) -> u32 {
+        match self {
+            Self::DataTriggerConditionError { .. } => 4001,
+            Self::DataTriggerExecutionError { .. } => 4002,
+            Self::DataTriggerInvalidResultError { .. } => 4003,
+        }
+    }
+}
+
+fn create_consensus_error(code: u32, args: Value) /*-> ConsensusError*/
+{
     /*
         // Decoding
     1000: ProtocolVersionParsingError,
@@ -278,5 +287,5 @@ fn create_consensus_error(code: u32, args: Value) -> ConsensusError {
     4022: DuplicatedIdentityPublicKeyIdStateError,
     4023: IdentityPublicKeyIsDisabledError,
        */
-    match code {}
+    // match code {}
 }

@@ -79,6 +79,8 @@ mod test {
 
     use super::*;
 
+    use crate::tests::utils::SerdeTestExtension;
+
     #[test]
     fn test_get_system_properties() {
         let schema = get_schema();

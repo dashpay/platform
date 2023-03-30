@@ -2,11 +2,9 @@ pub use data_trigger_execution_context::*;
 pub use data_trigger_execution_result::*;
 pub use reject_data_trigger::*;
 
+use crate::consensus::state::data_trigger::data_trigger_error::DataTriggerError;
 use crate::document::document_transition::{Action, DocumentCreateTransition, DocumentTransition};
-use crate::{
-    errors::DataTriggerError, get_from_transition, prelude::Identifier,
-    state_repository::StateRepositoryLike,
-};
+use crate::{get_from_transition, prelude::Identifier, state_repository::StateRepositoryLike};
 
 use self::dashpay_data_triggers::create_contact_request_data_trigger;
 use self::dpns_triggers::create_domain_data_trigger;

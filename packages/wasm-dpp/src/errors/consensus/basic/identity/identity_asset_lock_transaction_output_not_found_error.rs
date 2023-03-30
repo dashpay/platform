@@ -1,4 +1,5 @@
 use dpp::consensus::basic::identity::IdentityAssetLockTransactionOutputNotFoundError;
+use dpp::consensus::codes::ErrorWithCode;
 use dpp::consensus::ConsensusError;
 use wasm_bindgen::prelude::*;
 

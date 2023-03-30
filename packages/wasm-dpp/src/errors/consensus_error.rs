@@ -26,11 +26,29 @@ use crate::errors::consensus::state::identity::{
     DuplicatedIdentityPublicKeyIdStateErrorWasm, DuplicatedIdentityPublicKeyStateErrorWasm,
 };
 use dpp::consensus::basic::BasicError;
+use dpp::consensus::basic::BasicError::{
+    DuplicatedIdentityPublicKeyBasicError, DuplicatedIdentityPublicKeyIdBasicError,
+    IdentityAssetLockProofLockedTransactionMismatchError,
+    IdentityAssetLockTransactionIsNotFoundError,
+    IdentityAssetLockTransactionOutPointAlreadyExistsError,
+    IdentityAssetLockTransactionOutputNotFoundError, IncompatibleProtocolVersionError,
+    IncompatibleRe2PatternError, InvalidAssetLockProofCoreChainHeightError,
+    InvalidAssetLockProofTransactionHeightError, InvalidAssetLockTransactionOutputReturnSizeError,
+    InvalidIdentityAssetLockTransactionError, InvalidIdentityAssetLockTransactionOutputError,
+    InvalidIdentityCreditWithdrawalTransitionCoreFeeError,
+    InvalidIdentityCreditWithdrawalTransitionOutputScriptError, InvalidIdentityPublicKeyDataError,
+    InvalidIdentityPublicKeySecurityLevelError, InvalidInstantAssetLockProofError,
+    InvalidInstantAssetLockProofSignatureError, JsonSchemaError, MissingMasterPublicKeyError,
+    NotImplementedIdentityCreditWithdrawalTransitionPoolingError, ProtocolVersionParsingError,
+    SerializedObjectParsingError, UnsupportedProtocolVersionError,
+};
+use dpp::consensus::fee::balance_is_not_enough_error::BalanceIsNotEnoughError;
+use dpp::consensus::fee::fee_error::FeeError;
 use dpp::consensus::signature::signature_error::SignatureError;
-use dpp::consensus::signature::SignatureError;
+use dpp::consensus::state::data_trigger::data_trigger_error::DataTriggerError;
 use dpp::consensus::state::state_error::StateError;
 use dpp::errors::consensus::codes::ErrorWithCode;
-use dpp::StateError;
+use dpp::ProtocolError;
 use wasm_bindgen::JsValue;
 
 use crate::errors::consensus::basic::data_contract::{
@@ -64,7 +82,6 @@ use crate::errors::consensus::state::identity::{
     MaxIdentityPublicKeyLimitReachedErrorWasm,
 };
 use crate::errors::value_error::PlatformValueErrorWasm;
-use dpp::errors::DataTriggerError;
 
 use super::consensus::basic::data_contract::{
     DataContractMaxDepthExceedErrorWasm, DuplicateIndexErrorWasm, DuplicateIndexNameErrorWasm,
@@ -97,97 +114,9 @@ pub fn from_consensus_error_ref(e: &DPPConsensusError) -> JsValue {
     let code = e.code();
 
     match e {
-        DPPConsensusError::JsonSchemaError(e) => JsonSchemaErrorWasm::new(e, code).into(),
-        DPPConsensusError::UnsupportedProtocolVersionError(e) => {
-            UnsupportedProtocolVersionErrorWasm::from(e).into()
-        }
-        DPPConsensusError::IncompatibleProtocolVersionError(e) => {
-            IncompatibleProtocolVersionErrorWasm::from(e).into()
-        }
-        DPPConsensusError::DuplicatedIdentityPublicKeyBasicIdError(e) => {
-            DuplicatedIdentityPublicKeyIdErrorWasm::from(e).into()
-        }
-        DPPConsensusError::InvalidIdentityPublicKeyDataError(e) => {
-            InvalidIdentityPublicKeyDataErrorWasm::from(e).into()
-        }
-        DPPConsensusError::InvalidIdentityPublicKeySecurityLevelError(e) => {
-            InvalidIdentityPublicKeySecurityLevelErrorWasm::from(e).into()
-        }
-        DPPConsensusError::DuplicatedIdentityPublicKeyBasicError(e) => {
-            DuplicatedIdentityPublicKeyErrorWasm::from(e).into()
-        }
-        DPPConsensusError::MissingMasterPublicKeyError(e) => {
-            MissingMasterPublicKeyErrorWasm::from(e).into()
-        }
-        DPPConsensusError::IdentityAssetLockTransactionOutPointAlreadyExistsError(e) => {
-            IdentityAssetLockTransactionOutPointAlreadyExistsErrorWasm::from(e).into()
-        }
-        DPPConsensusError::InvalidIdentityAssetLockTransactionOutputError(e) => {
-            InvalidIdentityAssetLockTransactionOutputErrorWasm::from(e).into()
-        }
-        DPPConsensusError::InvalidAssetLockTransactionOutputReturnSize(e) => {
-            InvalidAssetLockTransactionOutputReturnSizeErrorWasm::from(e).into()
-        }
-        DPPConsensusError::IdentityAssetLockTransactionOutputNotFoundError(e) => {
-            IdentityAssetLockTransactionOutputNotFoundErrorWasm::from(e).into()
-        }
-        DPPConsensusError::InvalidIdentityAssetLockTransactionError(e) => {
-            InvalidIdentityAssetLockTransactionErrorWasm::from(e).into()
-        }
-        DPPConsensusError::InvalidInstantAssetLockProofError(e) => {
-            InvalidInstantAssetLockProofErrorWasm::from(e).into()
-        }
-        DPPConsensusError::InvalidInstantAssetLockProofSignatureError(e) => {
-            InvalidInstantAssetLockProofSignatureErrorWasm::from(e).into()
-        }
-        DPPConsensusError::IdentityAssetLockProofLockedTransactionMismatchError(e) => {
-            IdentityAssetLockProofLockedTransactionMismatchErrorWasm::from(e).into()
-        }
-        DPPConsensusError::IdentityAssetLockTransactionIsNotFoundError(e) => {
-            IdentityAssetLockTransactionIsNotFoundErrorWasm::from(e).into()
-        }
-        DPPConsensusError::InvalidAssetLockProofCoreChainHeightError(e) => {
-            InvalidAssetLockProofCoreChainHeightErrorWasm::from(e).into()
-        }
-        DPPConsensusError::InvalidAssetLockProofTransactionHeightError(e) => {
-            InvalidAssetLockProofTransactionHeightErrorWasm::from(e).into()
-        }
-        DPPConsensusError::InvalidIdentityCreditWithdrawalTransitionCoreFeeError(e) => {
-            InvalidIdentityCreditWithdrawalTransitionCoreFeeErrorWasm::from(e).into()
-        }
-        DPPConsensusError::InvalidIdentityCreditWithdrawalTransitionOutputScriptError(e) => {
-            InvalidIdentityCreditWithdrawalTransitionOutputScriptErrorWasm::from(e).into()
-        }
-        DPPConsensusError::NotImplementedIdentityCreditWithdrawalTransitionPoolingError(e) => {
-            NotImplementedIdentityCreditWithdrawalTransitionPoolingErrorWasm::from(e).into()
-        }
-        DPPConsensusError::IdentityInsufficientBalanceError(e) => {
-            IdentityInsufficientBalanceErrorWasm::from(e).into()
-        }
-        DPPConsensusError::IdentityAlreadyExistsError(e) => {
-            IdentityAlreadyExistsErrorWasm::from(e).into()
-        }
-        DPPConsensusError::SerializedObjectParsingError { parsing_error } => {
-            SerializedObjectParsingErrorWasm::new(
-                wasm_bindgen::JsError::new(parsing_error.to_string().as_ref()),
-                code,
-            )
-            .into()
-        }
-        DPPConsensusError::ProtocolVersionParsingError(err) => {
-            ProtocolVersionParsingErrorWasm::new(
-                wasm_bindgen::JsError::new(err.parsing_error.to_string().as_ref()),
-                code,
-            )
-            .into()
-        }
-        DPPConsensusError::IncompatibleRe2PatternError(err) => {
-            IncompatibleRe2PatternErrorWasm::new(err.pattern(), err.path(), err.message(), code)
-                .into()
-        }
         DPPConsensusError::FeeError(e) => match e {
-            dpp::consensus::fee_error::FeeError::BalanceIsNotEnoughError { balance, fee } => {
-                BalanceIsNotEnoughErrorWasm::new(*balance, *fee, code).into()
+            FeeError::BalanceIsNotEnoughError(e) => {
+                BalanceIsNotEnoughErrorWasm::new(e.balance(), e.fee(), code).into()
             }
         },
         DPPConsensusError::SignatureError(e) => from_signature_error(e),
@@ -196,17 +125,21 @@ pub fn from_consensus_error_ref(e: &DPPConsensusError) -> JsValue {
         DPPConsensusError::ValueError(value_error) => {
             PlatformValueErrorWasm::new(value_error.clone()).into()
         }
+        #[cfg(test)]
+        ConsensusError::TestConsensusError(e) => {
+            unimplemented!("test consensus is not implemented")
+        }
     }
 }
-
+// TODO: Refactor this shit
 pub fn from_state_error(state_error: &StateError) -> JsValue {
-    let code = state_error.get_code();
+    let code = state_error.code();
 
     match state_error.deref() {
-        StateError::DuplicatedIdentityPublicKeyIdError { duplicated_ids } => {
+        StateError::DuplicatedIdentityPublicKeyIdStateError { duplicated_ids } => {
             DuplicatedIdentityPublicKeyIdStateErrorWasm::new(duplicated_ids.clone(), code).into()
         }
-        StateError::DuplicatedIdentityPublicKeyError {
+        StateError::DuplicatedIdentityPublicKeyStateError {
             duplicated_public_key_ids,
         } => {
             DuplicatedIdentityPublicKeyStateErrorWasm::new(duplicated_public_key_ids.clone(), code)
@@ -333,6 +266,14 @@ pub fn from_state_error(state_error: &StateError) -> JsValue {
             )
             .into(),
         },
+        StateError::IdentityAlreadyExistsError(e) => {
+            let wasm_error: IdentityAlreadyExistsErrorWasm = e.into();
+            wasm_error.into()
+        }
+        StateError::IdentityInsufficientBalanceError(e) => {
+            let wasm_error: IdentityInsufficientBalanceErrorWasm = e.into();
+            wasm_error.into()
+        }
     }
 }
 
@@ -341,7 +282,7 @@ fn from_basic_error(basic_error: &BasicError) -> JsValue {
     let code = basic_error.code();
 
     match basic_error.deref() {
-        BasicError::DataContractNotPresent(err) => {
+        BasicError::DataContractNotPresentError(err) => {
             DataContractNotPresentErrorWasm::new(err.data_contract_id(), code).into()
         }
         BasicError::InvalidDataContractVersionError(err) => {
@@ -362,67 +303,52 @@ fn from_basic_error(basic_error: &BasicError) -> JsValue {
         BasicError::InvalidJsonSchemaRefError(err) => {
             InvalidJsonSchemaRefErrorWasm::new(err.ref_error(), code).into()
         }
-        BasicError::IndexError(index_error) => match index_error {
-            dpp::consensus::basic::IndexError::UniqueIndicesLimitReachedError(err) => {
-                UniqueIndicesLimitReachedErrorWasm::new(
-                    err.document_type(),
-                    err.index_limit(),
-                    code,
-                )
+        BasicError::UniqueIndicesLimitReachedError(err) => {
+            UniqueIndicesLimitReachedErrorWasm::new(err.document_type(), err.index_limit(), code)
                 .into()
-            }
-            dpp::consensus::basic::IndexError::SystemPropertyIndexAlreadyPresentError(err) => {
-                SystemPropertyIndexAlreadyPresentErrorWasm::new(
-                    err.document_type(),
-                    err.index_definition(),
-                    err.property_name(),
-                    code,
-                )
+        }
+        BasicError::SystemPropertyIndexAlreadyPresentError(err) => {
+            SystemPropertyIndexAlreadyPresentErrorWasm::new(
+                err.document_type(),
+                err.index_definition(),
+                err.property_name(),
+                code,
+            )
+            .into()
+        }
+        BasicError::UndefinedIndexPropertyError(err) => UndefinedIndexPropertyErrorWasm::new(
+            err.document_type(),
+            err.index_definition(),
+            err.property_name(),
+            code,
+        )
+        .into(),
+        BasicError::InvalidIndexPropertyTypeError(err) => InvalidIndexPropertyTypeErrorWasm::new(
+            err.document_type(),
+            err.index_definition(),
+            err.property_name(),
+            err.property_type(),
+            code,
+        )
+        .into(),
+        BasicError::InvalidIndexedPropertyConstraintError(err) => {
+            InvalidIndexedPropertyConstraintErrorWasm::new(
+                err.document_type(),
+                err.index_definition(),
+                err.property_name(),
+                err.constraint_name(),
+                err.reason(),
+                code,
+            )
+            .into()
+        }
+        BasicError::InvalidCompoundIndexError(err) => {
+            InvalidCompoundIndexErrorWasm::new(err.document_type(), err.index_definition(), code)
                 .into()
-            }
-            dpp::consensus::basic::IndexError::UndefinedIndexPropertyError(err) => {
-                UndefinedIndexPropertyErrorWasm::new(
-                    err.document_type(),
-                    err.index_definition(),
-                    err.property_name(),
-                    code,
-                )
-                .into()
-            }
-            dpp::consensus::basic::IndexError::InvalidIndexPropertyTypeError(err) => {
-                InvalidIndexPropertyTypeErrorWasm::new(
-                    err.document_type(),
-                    err.index_definition(),
-                    err.property_name(),
-                    err.property_type(),
-                    code,
-                )
-                .into()
-            }
-            dpp::consensus::basic::IndexError::InvalidIndexedPropertyConstraintError(err) => {
-                InvalidIndexedPropertyConstraintErrorWasm::new(
-                    err.document_type(),
-                    err.index_definition(),
-                    err.property_name(),
-                    err.constraint_name(),
-                    err.reason(),
-                    code,
-                )
-                .into()
-            }
-            dpp::consensus::basic::IndexError::InvalidCompoundIndexError(err) => {
-                InvalidCompoundIndexErrorWasm::new(
-                    err.document_type(),
-                    err.index_definition(),
-                    code,
-                )
-                .into()
-            }
-            dpp::consensus::basic::IndexError::DuplicateIndexError(err) => {
-                DuplicateIndexErrorWasm::new(err.document_type(), err.index_definition(), code)
-                    .into()
-            }
-        },
+        }
+        BasicError::DuplicateIndexError(err) => {
+            DuplicateIndexErrorWasm::new(err.document_type(), err.index_definition(), code).into()
+        }
         BasicError::JsonSchemaCompilationError(error) => {
             JsonSchemaCompilationErrorWasm::new(error.clone(), code).into()
         }
@@ -441,7 +367,6 @@ fn from_basic_error(basic_error: &BasicError) -> JsValue {
         BasicError::MissingDocumentTransitionActionError => {
             MissingDocumentTransitionActionErrorWasm::new(code).into()
         }
-
         BasicError::InvalidDocumentTransitionActionError(err) => {
             InvalidDocumentTransitionActionErrorWasm::new(err.action(), code).into()
         }
@@ -523,6 +448,78 @@ fn from_basic_error(basic_error: &BasicError) -> JsValue {
         }
         BasicError::InvalidDataContractIdError(err) => {
             InvalidDataContractIdErrorWasm::new(err.expected_id(), err.invalid_id(), code).into()
+        }
+        ProtocolVersionParsingError(e) => ProtocolVersionParsingErrorWasm::new(
+            wasm_bindgen::JsError::new(e.parsing_error.to_string().as_ref()),
+            code,
+        )
+        .into(),
+        SerializedObjectParsingError { parsing_error } => SerializedObjectParsingErrorWasm::new(
+            wasm_bindgen::JsError::new(parsing_error.to_string().as_ref()),
+            code,
+        )
+        .into(),
+        JsonSchemaError(e) => JsonSchemaErrorWasm::new(e, code).into(),
+        UnsupportedProtocolVersionError(e) => UnsupportedProtocolVersionErrorWasm::from(e).into(),
+        IncompatibleProtocolVersionError(e) => IncompatibleProtocolVersionErrorWasm::from(e).into(),
+        DuplicatedIdentityPublicKeyIdBasicError(e) => {
+            DuplicatedIdentityPublicKeyIdErrorWasm::from(e).into()
+        }
+        InvalidIdentityPublicKeyDataError(e) => {
+            InvalidIdentityPublicKeyDataErrorWasm::from(e).into()
+        }
+        InvalidIdentityPublicKeySecurityLevelError(e) => {
+            InvalidIdentityPublicKeySecurityLevelErrorWasm::from(e).into()
+        }
+        DuplicatedIdentityPublicKeyBasicError(e) => {
+            DuplicatedIdentityPublicKeyErrorWasm::from(e).into()
+        }
+        MissingMasterPublicKeyError(e) => MissingMasterPublicKeyErrorWasm::from(e).into(),
+        IdentityAssetLockTransactionOutPointAlreadyExistsError(e) => {
+            IdentityAssetLockTransactionOutPointAlreadyExistsErrorWasm::from(e).into()
+        }
+        InvalidIdentityAssetLockTransactionOutputError(e) => {
+            InvalidIdentityAssetLockTransactionOutputErrorWasm::from(e).into()
+        }
+        InvalidAssetLockTransactionOutputReturnSizeError(e) => {
+            InvalidAssetLockTransactionOutputReturnSizeErrorWasm::from(e).into()
+        }
+        IdentityAssetLockTransactionOutputNotFoundError(e) => {
+            IdentityAssetLockTransactionOutputNotFoundErrorWasm::from(e).into()
+        }
+        InvalidIdentityAssetLockTransactionError(e) => {
+            InvalidIdentityAssetLockTransactionErrorWasm::from(e).into()
+        }
+        InvalidInstantAssetLockProofError(e) => {
+            InvalidInstantAssetLockProofErrorWasm::from(e).into()
+        }
+        InvalidInstantAssetLockProofSignatureError(e) => {
+            InvalidInstantAssetLockProofSignatureErrorWasm::from(e).into()
+        }
+        IdentityAssetLockProofLockedTransactionMismatchError(e) => {
+            IdentityAssetLockProofLockedTransactionMismatchErrorWasm::from(e).into()
+        }
+        IdentityAssetLockTransactionIsNotFoundError(e) => {
+            IdentityAssetLockTransactionIsNotFoundErrorWasm::from(e).into()
+        }
+        InvalidAssetLockProofCoreChainHeightError(e) => {
+            InvalidAssetLockProofCoreChainHeightErrorWasm::from(e).into()
+        }
+        InvalidAssetLockProofTransactionHeightError(e) => {
+            InvalidAssetLockProofTransactionHeightErrorWasm::from(e).into()
+        }
+        InvalidIdentityCreditWithdrawalTransitionCoreFeeError(e) => {
+            InvalidIdentityCreditWithdrawalTransitionCoreFeeErrorWasm::from(e).into()
+        }
+        InvalidIdentityCreditWithdrawalTransitionOutputScriptError(e) => {
+            InvalidIdentityCreditWithdrawalTransitionOutputScriptErrorWasm::from(e).into()
+        }
+        NotImplementedIdentityCreditWithdrawalTransitionPoolingError(e) => {
+            NotImplementedIdentityCreditWithdrawalTransitionPoolingErrorWasm::from(e).into()
+        }
+        IncompatibleRe2PatternError(err) => {
+            IncompatibleRe2PatternErrorWasm::new(err.pattern(), err.path(), err.message(), code)
+                .into()
         }
     }
 }

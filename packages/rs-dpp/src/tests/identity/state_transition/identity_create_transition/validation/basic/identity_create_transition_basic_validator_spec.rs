@@ -21,7 +21,7 @@ impl TPublicKeysSignaturesValidator for SignaturesValidatorMock {
         &self,
         _raw_state_transition: &Value,
         _raw_public_keys: impl IntoIterator<Item = &'a Value>,
-    ) -> Result<crate::validation::SimpleValidationResult, crate::NonConsensusError> {
+    ) -> Result<SimpleValidationResult, crate::NonConsensusError> {
         Ok(SimpleValidationResult::default())
     }
 }
@@ -355,6 +355,7 @@ mod validate_identity_create_transition_basic_factory {
 
         use crate::assert_consensus_errors;
         use crate::consensus::basic::TestConsensusError;
+        use crate::consensus::test_consensus_error::TestConsensusError;
         use crate::consensus::ConsensusError;
         use crate::identity::validation::RequiredPurposeAndSecurityLevelValidator;
         use crate::state_repository::MockStateRepositoryLike;

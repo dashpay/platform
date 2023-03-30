@@ -60,7 +60,7 @@ where
         let Ok(state_transition_type) = raw_state_transition.get_integer("type") else {
             result.add_error(
                 ConsensusError::BasicError(
-                    Box::new(BasicError::MissingStateTransitionTypeError)
+                    BasicError::MissingStateTransitionTypeError
                 )
             );
 
@@ -70,9 +70,7 @@ where
         let Ok(state_transition_type) = StateTransitionType::try_from(state_transition_type) else {
             result.add_error(
                 ConsensusError::BasicError(
-                    Box::new(
                         BasicError::InvalidStateTransitionTypeError(InvalidStateTransitionTypeError::new(state_transition_type))
-                    )
                 )
             );
 

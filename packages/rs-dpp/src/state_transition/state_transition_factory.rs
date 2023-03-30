@@ -6,9 +6,11 @@ use std::{
 
 use crate::consensus::basic::state_transition::InvalidStateTransitionTypeError;
 
+use crate::consensus::basic::BasicError::SerializedObjectParsingError;
 use crate::data_contract::errors::DataContractNotPresentError;
 use crate::data_contract::state_transition::errors::MissingDataContractIdError;
 use crate::identity::state_transition::identity_update_transition::identity_update_transition::IdentityUpdateTransition;
+use crate::state_transition::errors::StateTransitionError;
 use crate::{
     consensus::{basic::BasicError, ConsensusError},
     data_contract::{
@@ -90,7 +92,7 @@ where
 
             if !validation_result.is_valid() {
                 return Err(ProtocolError::StateTransitionError(
-                    super::errors::StateTransitionError::InvalidStateTransitionError {
+                    StateTransitionError::InvalidStateTransitionError {
                         errors: validation_result.errors,
                         raw_state_transition,
                     },
@@ -115,10 +117,17 @@ where
                 Value::U32(protocol_version),
             ),
             _ => {
-                return Err(ConsensusError::SerializedObjectParsingError {
+                let consensus_error = ConsensusError::BasicError(SerializedObjectParsingError {
                     parsing_error: anyhow!("the '{:?}' is not a map", raw_state_transition),
-                }
-                .into())
+                });
+
+                return Err(ProtocolError::StateTransitionError(
+                    StateTransitionError::InvalidStateTransitionError {
+                        errors: vec![consensus_error],
+                        raw_state_transition,
+                    },
+                )
+                .into());
             }
         };
 
@@ -223,9 +232,9 @@ pub fn try_get_transition_type(
 }
 
 fn missing_state_transition_error() -> ProtocolError {
-    ProtocolError::ConsensusError(Box::new(ConsensusError::BasicError(Box::new(
+    ProtocolError::ConsensusError(Box::new(ConsensusError::BasicError(
         BasicError::MissingStateTransitionTypeError,
-    ))))
+    )))
 }
 
 #[cfg(test)]

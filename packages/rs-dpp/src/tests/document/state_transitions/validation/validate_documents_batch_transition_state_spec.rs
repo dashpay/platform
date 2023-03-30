@@ -23,6 +23,7 @@ use crate::{
         utils::generate_random_identifier_struct,
     },
 };
+use crate::consensus::state::state_error::StateError;
 use crate::document::{Document, ExtendedDocument};
 use crate::errors::consensus::codes::ErrorWithCode;
 use crate::identity::TimestampMillis;

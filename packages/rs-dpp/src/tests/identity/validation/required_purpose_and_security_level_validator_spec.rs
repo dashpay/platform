@@ -1,3 +1,4 @@
+use crate::consensus::codes::ErrorWithCode;
 use crate::identity::{
     validation::{RequiredPurposeAndSecurityLevelValidator, TPublicKeysValidator},
     KeyType, Purpose, SecurityLevel,

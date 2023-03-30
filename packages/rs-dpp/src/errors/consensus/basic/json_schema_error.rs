@@ -1,3 +1,5 @@
+use crate::consensus::basic::BasicError;
+use crate::consensus::ConsensusError;
 use jsonschema::error::ValidationErrorKind;
 use jsonschema::paths::{JSONPointer, PathChunk};
 use jsonschema::ValidationError;
@@ -38,6 +40,14 @@ impl<'a> From<ValidationError<'a>> for JsonSchemaError {
             instance_path: validation_error.instance_path,
             schema_path: validation_error.schema_path,
         }
+    }
+}
+
+impl<'a> From<ValidationError<'a>> for ConsensusError {
+    fn from(validation_error: ValidationError<'a>) -> Self {
+        Self::BasicError(BasicError::JsonSchemaError(JsonSchemaError::from(
+            validation_error,
+        )))
     }
 }
 

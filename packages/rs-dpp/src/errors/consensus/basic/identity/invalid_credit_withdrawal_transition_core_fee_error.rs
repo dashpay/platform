@@ -1,3 +1,4 @@
+use crate::consensus::basic::BasicError;
 use thiserror::Error;
 
 use crate::consensus::ConsensusError;
@@ -20,6 +21,6 @@ impl InvalidIdentityCreditWithdrawalTransitionCoreFeeError {
 
 impl From<InvalidIdentityCreditWithdrawalTransitionCoreFeeError> for ConsensusError {
     fn from(err: InvalidIdentityCreditWithdrawalTransitionCoreFeeError) -> Self {
-        Self::InvalidIdentityCreditWithdrawalTransitionCoreFeeError(err)
+        Self::BasicError(BasicError::InvalidIdentityCreditWithdrawalTransitionCoreFeeError(err))
     }
 }

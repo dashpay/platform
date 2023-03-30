@@ -7,6 +7,8 @@ use platform_value::platform_value;
 
 use crate::consensus::signature::IdentityNotFoundError;
 
+use crate::consensus::state::identity::IdentityInsufficientBalanceError;
+use crate::consensus::state::state_error::StateError;
 use crate::contracts::withdrawals_contract;
 use crate::document::{generate_document_id, Document};
 use crate::identity::state_transition::identity_credit_withdrawal_transition::{
@@ -14,10 +16,9 @@ use crate::identity::state_transition::identity_credit_withdrawal_transition::{
 };
 use crate::validation::ValidationResult;
 use crate::{
-    consensus::basic::identity::IdentityInsufficientBalanceError,
     identity::state_transition::identity_credit_withdrawal_transition::IdentityCreditWithdrawalTransition,
     state_repository::StateRepositoryLike, state_transition::StateTransitionLike,
-    NonConsensusError, ProtocolError, StateError,
+    NonConsensusError, ProtocolError,
 };
 
 pub struct IdentityCreditWithdrawalTransitionValidator<SR>

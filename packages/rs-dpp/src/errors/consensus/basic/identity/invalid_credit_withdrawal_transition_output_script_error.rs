@@ -1,5 +1,6 @@
 use thiserror::Error;
 
+use crate::consensus::basic::BasicError;
 use crate::{consensus::ConsensusError, identity::core_script::CoreScript};
 
 #[derive(Error, Debug, Clone, PartialEq, Eq)]
@@ -20,6 +21,8 @@ impl InvalidIdentityCreditWithdrawalTransitionOutputScriptError {
 
 impl From<InvalidIdentityCreditWithdrawalTransitionOutputScriptError> for ConsensusError {
     fn from(err: InvalidIdentityCreditWithdrawalTransitionOutputScriptError) -> Self {
-        Self::InvalidIdentityCreditWithdrawalTransitionOutputScriptError(err)
+        Self::BasicError(
+            BasicError::InvalidIdentityCreditWithdrawalTransitionOutputScriptError(err),
+        )
     }
 }

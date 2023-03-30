@@ -1,3 +1,5 @@
+use crate::consensus::basic::BasicError;
+use crate::consensus::ConsensusError;
 use thiserror::Error;
 
 #[derive(Error, Debug, Clone, PartialEq, Eq)]
@@ -21,5 +23,10 @@ impl IncompatibleProtocolVersionError {
 
     pub fn minimal_protocol_version(&self) -> u32 {
         self.minimal_protocol_version
+    }
+}
+impl From<IncompatibleProtocolVersionError> for ConsensusError {
+    fn from(err: IncompatibleProtocolVersionError) -> Self {
+        Self::BasicError(BasicError::IncompatibleProtocolVersionError(err))
     }
 }

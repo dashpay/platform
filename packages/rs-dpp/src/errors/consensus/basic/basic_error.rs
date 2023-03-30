@@ -4,11 +4,12 @@ use thiserror::Error;
 use crate::consensus::basic::data_contract::data_contract_max_depth_exceed_error::DataContractMaxDepthExceedError;
 use crate::consensus::basic::data_contract::{
     DataContractHaveNewUniqueIndexError, DataContractImmutablePropertiesUpdateError,
-    DataContractInvalidIndexDefinitionUpdateError, DataContractUniqueIndicesChangedError,
-    DuplicateIndexError, DuplicateIndexNameError, IncompatibleDataContractSchemaError,
-    IncompatibleRe2PatternError, InvalidCompoundIndexError, InvalidDataContractIdError,
-    InvalidIndexPropertyTypeError, InvalidIndexedPropertyConstraintError,
-    InvalidJsonSchemaRefError, SystemPropertyIndexAlreadyPresentError, UndefinedIndexPropertyError,
+    DataContractInvalidIndexDefinitionUpdateError, DataContractNotPresentError,
+    DataContractUniqueIndicesChangedError, DuplicateIndexError, DuplicateIndexNameError,
+    IncompatibleDataContractSchemaError, IncompatibleRe2PatternError, InvalidCompoundIndexError,
+    InvalidDataContractIdError, InvalidIndexPropertyTypeError,
+    InvalidIndexedPropertyConstraintError, InvalidJsonSchemaRefError,
+    SystemPropertyIndexAlreadyPresentError, UndefinedIndexPropertyError,
     UniqueIndicesLimitReachedError,
 };
 use crate::consensus::basic::decode::ProtocolVersionParsingError;
@@ -18,16 +19,18 @@ use crate::consensus::basic::document::{
     InvalidDocumentTransitionIdError, InvalidDocumentTypeError,
 };
 use crate::consensus::basic::identity::{
-    DuplicatedIdentityPublicKeyError, DuplicatedIdentityPublicKeyIdError,
+    DuplicatedIdentityPublicKeyBasicError, DuplicatedIdentityPublicKeyIdBasicError,
     IdentityAssetLockProofLockedTransactionMismatchError,
     IdentityAssetLockTransactionIsNotFoundError,
     IdentityAssetLockTransactionOutPointAlreadyExistsError,
     IdentityAssetLockTransactionOutputNotFoundError, InvalidAssetLockProofCoreChainHeightError,
     InvalidAssetLockProofTransactionHeightError, InvalidAssetLockTransactionOutputReturnSizeError,
     InvalidIdentityAssetLockTransactionError, InvalidIdentityAssetLockTransactionOutputError,
-    InvalidIdentityKeySignatureError, InvalidIdentityPublicKeyDataError,
-    InvalidIdentityPublicKeySecurityLevelError, InvalidInstantAssetLockProofError,
-    InvalidInstantAssetLockProofSignatureError, MissingMasterPublicKeyError,
+    InvalidIdentityCreditWithdrawalTransitionCoreFeeError,
+    InvalidIdentityCreditWithdrawalTransitionOutputScriptError, InvalidIdentityKeySignatureError,
+    InvalidIdentityPublicKeyDataError, InvalidIdentityPublicKeySecurityLevelError,
+    InvalidInstantAssetLockProofError, InvalidInstantAssetLockProofSignatureError,
+    MissingMasterPublicKeyError, NotImplementedIdentityCreditWithdrawalTransitionPoolingError,
 };
 use crate::consensus::basic::invalid_data_contract_version_error::InvalidDataContractVersionError;
 use crate::consensus::basic::invalid_identifier_error::InvalidIdentifierError;
@@ -39,7 +42,6 @@ use crate::consensus::basic::{
 };
 use crate::consensus::ConsensusError;
 
-use crate::data_contract::errors::DataContractNotPresentError;
 use crate::data_contract::state_transition::errors::MissingDataContractIdError;
 
 #[derive(Error, Debug)]
@@ -60,7 +62,7 @@ pub enum BasicError {
     IncompatibleProtocolVersionError(IncompatibleProtocolVersionError),
 
     #[error(transparent)]
-    DataContractNotPresent(DataContractNotPresentError),
+    DataContractNotPresentError(DataContractNotPresentError),
 
     #[error(transparent)]
     MissingMasterPublicKeyError(MissingMasterPublicKeyError),
@@ -74,7 +76,9 @@ pub enum BasicError {
     InvalidIdentityAssetLockTransactionOutputError(InvalidIdentityAssetLockTransactionOutputError),
 
     #[error(transparent)]
-    InvalidAssetLockTransactionOutputReturnSize(InvalidAssetLockTransactionOutputReturnSizeError),
+    InvalidAssetLockTransactionOutputReturnSizeError(
+        InvalidAssetLockTransactionOutputReturnSizeError,
+    ),
 
     #[error(transparent)]
     IdentityAssetLockTransactionOutputNotFoundError(
@@ -108,7 +112,7 @@ pub enum BasicError {
     IncompatibleRe2PatternError(IncompatibleRe2PatternError),
 
     #[error(transparent)]
-    DuplicatedIdentityPublicKeyBasicIdError(DuplicatedIdentityPublicKeyIdError),
+    DuplicatedIdentityPublicKeyIdBasicError(DuplicatedIdentityPublicKeyIdBasicError),
 
     #[error(transparent)]
     InvalidIdentityPublicKeyDataError(InvalidIdentityPublicKeyDataError),
@@ -117,7 +121,7 @@ pub enum BasicError {
     InvalidIdentityPublicKeySecurityLevelError(InvalidIdentityPublicKeySecurityLevelError),
 
     #[error(transparent)]
-    DuplicatedIdentityPublicKeyBasicError(DuplicatedIdentityPublicKeyError),
+    DuplicatedIdentityPublicKeyBasicError(DuplicatedIdentityPublicKeyBasicError),
 
     #[error(transparent)]
     InvalidDataContractVersionError(InvalidDataContractVersionError),
@@ -217,6 +221,21 @@ pub enum BasicError {
 
     #[error(transparent)]
     InvalidDataContractIdError(InvalidDataContractIdError),
+
+    #[error(transparent)]
+    InvalidIdentityCreditWithdrawalTransitionOutputScriptError(
+        InvalidIdentityCreditWithdrawalTransitionOutputScriptError,
+    ),
+
+    #[error(transparent)]
+    InvalidIdentityCreditWithdrawalTransitionCoreFeeError(
+        InvalidIdentityCreditWithdrawalTransitionCoreFeeError,
+    ),
+
+    #[error(transparent)]
+    NotImplementedIdentityCreditWithdrawalTransitionPoolingError(
+        NotImplementedIdentityCreditWithdrawalTransitionPoolingError,
+    ),
 }
 
 impl From<IdentityAssetLockTransactionOutPointAlreadyExistsError> for BasicError {
@@ -233,7 +252,7 @@ impl From<InvalidIdentityAssetLockTransactionOutputError> for BasicError {
 
 impl From<InvalidAssetLockTransactionOutputReturnSizeError> for BasicError {
     fn from(err: InvalidAssetLockTransactionOutputReturnSizeError) -> Self {
-        Self::InvalidAssetLockTransactionOutputReturnSize(err)
+        Self::InvalidAssetLockTransactionOutputReturnSizeError(err)
     }
 }
 
@@ -246,12 +265,6 @@ impl From<IdentityAssetLockTransactionOutputNotFoundError> for BasicError {
 impl From<InvalidIdentityAssetLockTransactionError> for BasicError {
     fn from(err: InvalidIdentityAssetLockTransactionError) -> Self {
         Self::InvalidIdentityAssetLockTransactionError(err)
-    }
-}
-
-impl From<InvalidInstantAssetLockProofError> for BasicError {
-    fn from(err: InvalidInstantAssetLockProofError) -> Self {
-        Self::InvalidInstantAssetLockProofError(err)
     }
 }
 
@@ -291,9 +304,9 @@ impl From<IncompatibleProtocolVersionError> for BasicError {
     }
 }
 
-impl From<DuplicatedIdentityPublicKeyIdError> for BasicError {
-    fn from(error: DuplicatedIdentityPublicKeyIdError) -> Self {
-        Self::DuplicatedIdentityPublicKeyBasicIdError(error)
+impl From<DuplicatedIdentityPublicKeyIdBasicError> for BasicError {
+    fn from(error: DuplicatedIdentityPublicKeyIdBasicError) -> Self {
+        Self::DuplicatedIdentityPublicKeyIdBasicError(error)
     }
 }
 
@@ -309,8 +322,8 @@ impl From<InvalidIdentityPublicKeySecurityLevelError> for BasicError {
     }
 }
 
-impl From<DuplicatedIdentityPublicKeyError> for BasicError {
-    fn from(error: DuplicatedIdentityPublicKeyError) -> Self {
+impl From<DuplicatedIdentityPublicKeyBasicError> for BasicError {
+    fn from(error: DuplicatedIdentityPublicKeyBasicError) -> Self {
         Self::DuplicatedIdentityPublicKeyBasicError(error)
     }
 }

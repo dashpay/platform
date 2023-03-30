@@ -1,4 +1,4 @@
-use crate::consensus::basic::{BasicError, IndexError};
+use crate::consensus::basic::BasicError;
 use thiserror::Error;
 
 use crate::consensus::ConsensusError;
@@ -50,8 +50,6 @@ impl InvalidIndexedPropertyConstraintError {
 
 impl From<InvalidIndexedPropertyConstraintError> for ConsensusError {
     fn from(err: InvalidIndexedPropertyConstraintError) -> Self {
-        Self::BasicError(BasicError::IndexError(
-            BasicError::InvalidIndexedPropertyConstraintError(err),
-        ))
+        Self::BasicError(BasicError::InvalidIndexedPropertyConstraintError(err))
     }
 }

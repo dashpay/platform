@@ -1,4 +1,5 @@
-use crate::consensus::basic::IndexError;
+use crate::consensus::basic::BasicError;
+use crate::consensus::ConsensusError;
 use thiserror::Error;
 
 use crate::data_contract::document_type::Index;
@@ -31,8 +32,8 @@ impl SystemPropertyIndexAlreadyPresentError {
     }
 }
 
-impl From<SystemPropertyIndexAlreadyPresentError> for IndexError {
+impl From<SystemPropertyIndexAlreadyPresentError> for ConsensusError {
     fn from(err: SystemPropertyIndexAlreadyPresentError) -> Self {
-        Self::SystemPropertyIndexAlreadyPresentError(err)
+        Self::BasicError(BasicError::SystemPropertyIndexAlreadyPresentError(err))
     }
 }

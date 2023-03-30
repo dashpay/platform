@@ -1,5 +1,6 @@
 use std::fmt::{Display, Formatter};
 
+use crate::consensus::basic::BasicError;
 use dashcore::hashes::hex::ToHex;
 use thiserror::Error;
 
@@ -30,7 +31,7 @@ impl IdentityAssetLockTransactionIsNotFoundError {
 
 impl From<IdentityAssetLockTransactionIsNotFoundError> for ConsensusError {
     fn from(err: IdentityAssetLockTransactionIsNotFoundError) -> Self {
-        Self::IdentityAssetLockTransactionIsNotFoundError(err)
+        Self::BasicError(BasicError::IdentityAssetLockTransactionIsNotFoundError(err))
     }
 }
 

@@ -4,11 +4,11 @@ use anyhow::{bail, Context};
 use async_trait::async_trait;
 use dashcore::signer::verify_hash_signature;
 
+use crate::consensus::signature::signature_error::SignatureError;
 use crate::consensus::signature::IdentityNotFoundError;
 use crate::consensus::ConsensusError;
 use crate::validation::AsyncDataValidator;
 use crate::{
-    consensus::signature::SignatureError,
     identity::{
         state_transition::asset_lock_proof::{AssetLockProof, AssetLockPublicKeyHashFetcher},
         KeyType,

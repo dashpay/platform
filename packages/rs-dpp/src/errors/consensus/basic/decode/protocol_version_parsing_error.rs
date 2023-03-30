@@ -1,3 +1,4 @@
+use crate::consensus::basic::BasicError;
 use thiserror::Error;
 
 use crate::consensus::ConsensusError;
@@ -17,6 +18,6 @@ impl ProtocolVersionParsingError {
 
 impl From<ProtocolVersionParsingError> for ConsensusError {
     fn from(err: ProtocolVersionParsingError) -> Self {
-        Self::ProtocolVersionParsingError(err)
+        Self::BasicError(BasicError::ProtocolVersionParsingError(err))
     }
 }

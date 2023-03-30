@@ -1,4 +1,4 @@
-use crate::consensus::basic::{BasicError, IndexError};
+use crate::consensus::basic::BasicError;
 use thiserror::Error;
 
 use crate::consensus::ConsensusError;
@@ -30,6 +30,6 @@ impl DuplicateIndexError {
 
 impl From<DuplicateIndexError> for ConsensusError {
     fn from(err: DuplicateIndexError) -> Self {
-        Self::BasicError(BasicError::DuplicateIndexError(err)))
+        Self::BasicError(BasicError::DuplicateIndexError(err))
     }
 }

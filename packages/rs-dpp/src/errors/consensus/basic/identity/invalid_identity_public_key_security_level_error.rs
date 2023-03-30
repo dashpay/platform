@@ -1,3 +1,5 @@
+use crate::consensus::basic::BasicError;
+use crate::consensus::ConsensusError;
 use thiserror::Error;
 
 use crate::identity::{KeyID, Purpose, SecurityLevel};
@@ -37,5 +39,11 @@ impl InvalidIdentityPublicKeySecurityLevelError {
 
     pub fn security_level(&self) -> SecurityLevel {
         self.security_level
+    }
+}
+
+impl From<InvalidIdentityPublicKeySecurityLevelError> for ConsensusError {
+    fn from(err: InvalidIdentityPublicKeySecurityLevelError) -> Self {
+        Self::BasicError(BasicError::InvalidIdentityPublicKeySecurityLevelError(err))
     }
 }
