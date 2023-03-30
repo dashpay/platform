@@ -1,4 +1,5 @@
 use crate::consensus::basic::BasicError;
+use crate::consensus::basic::BasicError;
 use crate::consensus::codes::ErrorWithCode;
 use std::collections::HashMap;
 
