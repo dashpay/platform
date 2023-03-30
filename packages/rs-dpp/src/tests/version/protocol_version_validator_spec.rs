@@ -1,5 +1,6 @@
 use crate::consensus::codes::ErrorWithCode;
 use std::collections::HashMap;
+use crate::consensus::basic::BasicError;
 
 use crate::errors::consensus::ConsensusError;
 use crate::version::ProtocolVersionValidator;
@@ -33,7 +34,12 @@ pub fn should_throw_unsupported_protocol_version_error_if_protocol_version_is_hi
     let consensus_error = result.first_error().unwrap();
 
     let error = match consensus_error {
-        ConsensusError::UnsupportedProtocolVersionError(err) => err,
+      ConsensusError::BasicError(basic_error) => match basic_error {
+          BasicError::UnsupportedProtocolVersionError(err) => err,
+          _ => {
+              panic!("Expected UnsupportedProtocolVersionError")
+          }
+      },
         _ => {
             panic!("Expected UnsupportedProtocolVersionError")
         }
@@ -84,7 +90,12 @@ pub fn should_throw_incompatible_protocol_version_error_if_parsed_version_is_low
     let result = validator.validate(protocol_version).unwrap();
     let consensus_error = result.first_error().unwrap();
     let error = match consensus_error {
-        ConsensusError::IncompatibleProtocolVersionError(err) => err,
+      ConsensusError::BasicError(basic_error) => match basic_error {
+          BasicError::IncompatibleProtocolVersionError(err) => err,
+          _ => {
+              panic!("Expected IncompatibleProtocolVersionError")
+          }
+      },
         _ => {
             panic!("Expected IncompatibleProtocolVersionError")
         }
