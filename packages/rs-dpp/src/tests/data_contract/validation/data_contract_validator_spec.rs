@@ -8,7 +8,7 @@ use test_case::test_case;
 
 use crate::consensus::basic::BasicError;
 use crate::errors::consensus::codes::ErrorWithCode;
-use crate::tests::utils::json_schema_error;
+use crate::tests::utils::{json_schema_error, value_error};
 use crate::{
     consensus::{basic::JsonSchemaError, ConsensusError},
     data_contract::validation::data_contract_validator::DataContractValidator,
@@ -63,12 +63,12 @@ fn get_value_error<TData: Clone>(
     result: &ValidationResult<TData>,
     number: usize,
 ) -> &platform_value::Error {
-    result
-        .errors
-        .get(number)
-        .expect("the error should be returned in validation result")
-        .value_error()
-        .expect("the error should be a value error")
+    value_error(
+        result
+            .errors
+            .get(number)
+            .expect("the error should be returned in validation result"),
+    )
 }
 
 fn get_basic_error(consensus_error: &ConsensusError) -> &BasicError {
@@ -80,7 +80,7 @@ fn get_basic_error(consensus_error: &ConsensusError) -> &BasicError {
 
 fn print_json_schema_errors<TData: Clone>(result: &ValidationResult<TData>) {
     for (i, e) in result.errors.iter().enumerate() {
-        let schema_error = e.json_schema_error().unwrap();
+        let schema_error = json_schema_error(e);
         println!(
             "error_{}:  {:>30} -({:>20?}-{:>20?}) -  {}",
             i,
@@ -2563,7 +2563,7 @@ mod indices {
 
             let index_error = get_basic_error(&result.errors[0]);
 
-            assert_eq!(1016, index_error.get_code());
+            assert_eq!(1016, index_error.code());
 
             match index_error {
                 BasicError::UndefinedIndexPropertyError(err) => {
@@ -2986,7 +2986,7 @@ mod indexed_array {
             .expect("the validation error should exist");
         let index_error = get_basic_error(validation_error);
 
-        assert_eq!(1012, index_error.get_code());
+        assert_eq!(1012, index_error.code());
 
         match index_error {
             BasicError::InvalidIndexedPropertyConstraintError(err) => {
@@ -3021,7 +3021,7 @@ mod indexed_array {
             .expect("the validation error should exist");
         let index_error = get_basic_error(validation_error);
 
-        assert_eq!(1012, index_error.get_code());
+        assert_eq!(1012, index_error.code());
         match index_error {
             BasicError::InvalidIndexedPropertyConstraintError(err) => {
                 assert_eq!(err.property_name(), "byteArrayField".to_string());
