@@ -198,7 +198,7 @@ mod test {
         let consensus_error = result.errors.get(0).expect("the error should be returned");
 
         match consensus_error {
-            ConsensusError::IncompatibleRe2PatternError(err) => {
+            BasicError::IncompatibleRe2PatternError(err) => {
                 assert_eq!(err.path(), "/properties/bar".to_string());
                 assert_eq!(
                     err.pattern(),
@@ -226,7 +226,7 @@ mod test {
         let consensus_error = result.errors.get(0).expect("the error should be returned");
 
         match consensus_error {
-            ConsensusError::IncompatibleRe2PatternError(err) => {
+            BasicError::IncompatibleRe2PatternError(err) => {
                 assert_eq!(
                     err.path(),
                     "/properties/arrayOfObject/items/properties/simple".to_string()
@@ -251,7 +251,7 @@ mod test {
         let consensus_error = result.errors.get(0).expect("the error should be returned");
 
         match consensus_error {
-            ConsensusError::IncompatibleRe2PatternError(err) => {
+            BasicError::IncompatibleRe2PatternError(err) => {
                 assert_eq!(
                     err.path(),
                     "/properties/arrayOfObjects/items/[0]/properties/simple".to_string()
@@ -348,7 +348,7 @@ mod test {
 
     fn get_basic_error(error: ConsensusError) -> BasicError {
         if let ConsensusError::BasicError(err) = error {
-            return *err;
+            return err;
         }
         panic!("the error: {:?} isn't a BasicError", error)
     }
