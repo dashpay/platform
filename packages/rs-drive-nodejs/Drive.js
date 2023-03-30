@@ -622,7 +622,7 @@ class Drive {
   async fetchIdentitiesByPublicKeyHashes(hashes, useTransaction = false) {
     return driveFetchIdentitiesByPublicKeyHashesAsync.call(
       this.drive,
-      hashes.map((h) => h.toBuffer()),
+      hashes.map((h) => Buffer.from(h)),
       useTransaction,
     ).then((encodedIdentities) => (
       encodedIdentities.map((encodedIdentity) => {
@@ -646,7 +646,7 @@ class Drive {
   async proveIdentitiesByPublicKeyHashes(hashes, useTransaction = false) {
     return driveProveIdentitiesByPublicKeyHashesAsync.call(
       this.drive,
-      hashes.map((h) => h.toBuffer()),
+      hashes.map((h) => Buffer.from(h)),
       useTransaction,
     );
   }
