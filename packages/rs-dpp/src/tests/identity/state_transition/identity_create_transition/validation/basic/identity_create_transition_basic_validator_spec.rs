@@ -98,7 +98,7 @@ mod validate_identity_create_transition_basic_factory {
         use crate::identity::validation::RequiredPurposeAndSecurityLevelValidator;
         use crate::state_repository::MockStateRepositoryLike;
         use crate::tests::fixtures::get_public_keys_validator_for_transition;
-        use crate::{assert_consensus_errors, NonConsensusError};
+        use crate::{assert_basic_consensus_errors, NonConsensusError};
 
         use super::setup_test;
 
@@ -117,7 +117,7 @@ mod validate_identity_create_transition_basic_factory {
                 .await
                 .unwrap();
 
-            let errors = assert_consensus_errors!(result, BasicError::JsonSchemaError, 1);
+            let errors = assert_basic_consensus_errors!(result, BasicError::JsonSchemaError, 1);
 
             let error = errors.first().unwrap();
 
@@ -147,7 +147,7 @@ mod validate_identity_create_transition_basic_factory {
                 .await
                 .unwrap();
 
-            let errors = assert_consensus_errors!(result, BasicError::JsonSchemaError, 1);
+            let errors = assert_basic_consensus_errors!(result, BasicError::JsonSchemaError, 1);
 
             let error = errors.first().unwrap();
 
@@ -193,7 +193,7 @@ mod validate_identity_create_transition_basic_factory {
 
         use jsonschema::error::ValidationErrorKind;
 
-        use crate::assert_consensus_errors;
+        use crate::assert_basic_consensus_errors;
         use crate::identity::validation::RequiredPurposeAndSecurityLevelValidator;
         use crate::state_repository::MockStateRepositoryLike;
         use crate::tests::fixtures::get_public_keys_validator_for_transition;
@@ -213,7 +213,7 @@ mod validate_identity_create_transition_basic_factory {
                 .await
                 .unwrap();
 
-            let errors = assert_consensus_errors!(result, BasicError::JsonSchemaError, 1);
+            let errors = assert_basic_consensus_errors!(result, BasicError::JsonSchemaError, 1);
 
             let error = errors.first().unwrap();
 
@@ -242,7 +242,7 @@ mod validate_identity_create_transition_basic_factory {
                 .await
                 .unwrap();
 
-            let errors = assert_consensus_errors!(result, BasicError::JsonSchemaError, 1);
+            let errors = assert_basic_consensus_errors!(result, BasicError::JsonSchemaError, 1);
 
             let error = errors.first().unwrap();
 
@@ -265,7 +265,7 @@ mod validate_identity_create_transition_basic_factory {
 
         use jsonschema::error::ValidationErrorKind;
 
-        use crate::assert_consensus_errors;
+        use crate::assert_basic_consensus_errors;
         use crate::consensus::ConsensusError;
         use crate::identity::validation::RequiredPurposeAndSecurityLevelValidator;
         use crate::state_repository::MockStateRepositoryLike;
@@ -287,7 +287,7 @@ mod validate_identity_create_transition_basic_factory {
                 .await
                 .unwrap();
 
-            let errors = assert_consensus_errors!(result, BasicError::JsonSchemaError, 1);
+            let errors = assert_basic_consensus_errors!(result, BasicError::JsonSchemaError, 1);
 
             let error = errors.first().unwrap();
 
@@ -318,7 +318,7 @@ mod validate_identity_create_transition_basic_factory {
                 .await
                 .unwrap();
 
-            let errors = assert_consensus_errors!(result, BasicError::JsonSchemaError, 1);
+            let errors = assert_basic_consensus_errors!(result, BasicError::JsonSchemaError, 1);
 
             let error = errors.first().unwrap();
 
@@ -345,7 +345,7 @@ mod validate_identity_create_transition_basic_factory {
                 .validate(&raw_state_transition, &Default::default())
                 .await
                 .unwrap();
-            let errors = assert_consensus_errors!(result, BasicError::JsonSchemaError, 1);
+            let errors = assert_basic_consensus_errors!(result, BasicError::JsonSchemaError, 1);
 
             let error = errors.first().unwrap();
 
@@ -361,7 +361,7 @@ mod validate_identity_create_transition_basic_factory {
         use jsonschema::error::ValidationErrorKind;
         use platform_value::Value;
 
-        use crate::assert_consensus_errors;
+        use crate::assert_basic_consensus_errors;
         use crate::consensus::test_consensus_error::TestConsensusError;
         use crate::consensus::ConsensusError;
         use crate::identity::validation::RequiredPurposeAndSecurityLevelValidator;
@@ -387,7 +387,7 @@ mod validate_identity_create_transition_basic_factory {
                 .await
                 .unwrap();
 
-            let errors = assert_consensus_errors!(result, BasicError::JsonSchemaError, 1);
+            let errors = assert_basic_consensus_errors!(result, BasicError::JsonSchemaError, 1);
 
             let error = errors.first().unwrap();
 
@@ -418,7 +418,7 @@ mod validate_identity_create_transition_basic_factory {
                 .await
                 .unwrap();
 
-            let errors = assert_consensus_errors!(result, BasicError::JsonSchemaError, 1);
+            let errors = assert_basic_consensus_errors!(result, BasicError::JsonSchemaError, 1);
 
             let error = errors.first().unwrap();
 
@@ -448,7 +448,7 @@ mod validate_identity_create_transition_basic_factory {
                 .await
                 .unwrap();
 
-            let errors = assert_consensus_errors!(result, BasicError::JsonSchemaError, 2);
+            let errors = assert_basic_consensus_errors!(result, BasicError::JsonSchemaError, 2);
 
             let error = errors.first().unwrap();
 
@@ -475,7 +475,7 @@ mod validate_identity_create_transition_basic_factory {
                 .await
                 .unwrap();
 
-            let errors = assert_consensus_errors!(result, BasicError::JsonSchemaError, 1);
+            let errors = assert_basic_consensus_errors!(result, BasicError::JsonSchemaError, 1);
 
             let error = errors.first().unwrap();
 
@@ -504,7 +504,8 @@ mod validate_identity_create_transition_basic_factory {
                 .await
                 .unwrap();
 
-            let errors = assert_consensus_errors!(result, ConsensusError::TestConsensusError, 1);
+            let errors =
+                assert_basic_consensus_errors!(result, ConsensusError::TestConsensusError, 1);
 
             let error = errors.first().unwrap();
 
@@ -537,7 +538,8 @@ mod validate_identity_create_transition_basic_factory {
                 .await
                 .unwrap();
 
-            let errors = assert_consensus_errors!(result, ConsensusError::TestConsensusError, 1);
+            let errors =
+                assert_basic_consensus_errors!(result, ConsensusError::TestConsensusError, 1);
             let error = errors.first().unwrap();
 
             assert_eq!(error, &&pk_error);
@@ -556,7 +558,7 @@ mod validate_identity_create_transition_basic_factory {
 
         use jsonschema::error::ValidationErrorKind;
 
-        use crate::assert_consensus_errors;
+        use crate::assert_basic_consensus_errors;
         use crate::consensus::ConsensusError;
         use crate::identity::validation::RequiredPurposeAndSecurityLevelValidator;
         use crate::state_repository::MockStateRepositoryLike;
@@ -578,7 +580,7 @@ mod validate_identity_create_transition_basic_factory {
                 .await
                 .unwrap();
 
-            let errors = assert_consensus_errors!(result, BasicError::JsonSchemaError, 1);
+            let errors = assert_basic_consensus_errors!(result, BasicError::JsonSchemaError, 1);
 
             let error = errors.first().unwrap();
 
@@ -609,7 +611,7 @@ mod validate_identity_create_transition_basic_factory {
                 .await
                 .unwrap();
 
-            let errors = assert_consensus_errors!(result, BasicError::JsonSchemaError, 65);
+            let errors = assert_basic_consensus_errors!(result, BasicError::JsonSchemaError, 65);
 
             let error = errors.first().unwrap();
 
@@ -633,7 +635,7 @@ mod validate_identity_create_transition_basic_factory {
                 .await
                 .unwrap();
 
-            let errors = assert_consensus_errors!(result, BasicError::JsonSchemaError, 1);
+            let errors = assert_basic_consensus_errors!(result, BasicError::JsonSchemaError, 1);
 
             let error = errors.first().unwrap();
 
@@ -657,7 +659,7 @@ mod validate_identity_create_transition_basic_factory {
                 .await
                 .unwrap();
 
-            let errors = assert_consensus_errors!(result, BasicError::JsonSchemaError, 1);
+            let errors = assert_basic_consensus_errors!(result, BasicError::JsonSchemaError, 1);
 
             let error = errors.first().unwrap();
 
