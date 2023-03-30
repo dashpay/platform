@@ -6,6 +6,8 @@ use drive_abci::config::{FromEnv, PlatformConfig};
 use std::path::PathBuf;
 use tracing::warn;
 use tracing_subscriber::prelude::*;
+use drive_abci::platform::Platform;
+use drive_abci::rpc::core::DefaultCoreRPC;
 
 // struct aaa {}
 
@@ -60,7 +62,14 @@ pub fn main() {
     install_panic_hook();
 
     match cli.command {
-        Commands::Start {} => drive_abci::abci::start(&config).unwrap(),
+        Commands::Start {} => {
+            let core_rpc = DefaultCoreRPC::open(
+                config.core.rpc.url().as_str(),
+                config.core.rpc.username.clone(),
+                config.core.rpc.password.clone(),
+            ).unwrap();
+            drive_abci::abci::start(&config, core_rpc).unwrap()
+        },
         Commands::Config {} => dump_config(&config),
     }
 }
