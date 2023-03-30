@@ -1,10 +1,11 @@
 use platform_value::Value;
 use std::sync::Arc;
 
+use crate::errors::consensus::basic::BasicError;
 use crate::errors::consensus::ConsensusError;
 use crate::identity::validation::{IdentityValidator, PublicKeysValidator, PUBLIC_KEY_SCHEMA};
 use crate::version::ProtocolVersionValidator;
-use crate::{assert_consensus_errors, NativeBlsModule};
+use crate::{assert_basic_consensus_errors, assert_consensus_errors, NativeBlsModule};
 
 fn setup_test() -> (
     Value,
@@ -25,11 +26,14 @@ fn setup_test() -> (
 }
 
 pub mod protocol_version {
+    use super::*;
+
     use jsonschema::error::ValidationErrorKind;
 
-    use crate::assert_consensus_errors;
+    use crate::consensus::basic::BasicError;
     use crate::consensus::ConsensusError;
     use crate::tests::identity::validation::identity_validator_spec::setup_test;
+    use crate::{assert_basic_consensus_errors, assert_consensus_errors};
 
     #[test]
     pub fn should_be_present() {
@@ -42,7 +46,7 @@ pub mod protocol_version {
             .validate_identity_object(&identity)
             .unwrap();
 
-        let errors = assert_consensus_errors!(&result, ConsensusError::JsonSchemaError, 1);
+        let errors = assert_basic_consensus_errors!(result, BasicError::JsonSchemaError, 1);
         let error = errors.first().unwrap();
 
         assert_eq!(error.keyword().unwrap(), "required");
@@ -65,7 +69,7 @@ pub mod protocol_version {
             .validate_identity_object(&identity)
             .unwrap();
 
-        let errors = assert_consensus_errors!(&result, ConsensusError::JsonSchemaError, 1);
+        let errors = assert_basic_consensus_errors!(result, BasicError::JsonSchemaError, 1);
         let error = errors.first().unwrap();
 
         assert_eq!(error.keyword().unwrap(), "type");
@@ -81,7 +85,7 @@ pub mod protocol_version {
             .validate_identity_object(&identity)
             .unwrap();
 
-        let errors = assert_consensus_errors!(&result, ConsensusError::JsonSchemaError, 1);
+        let errors = assert_basic_consensus_errors!(result, BasicError::JsonSchemaError, 1);
         let error = errors.first().unwrap();
 
         assert_eq!(error.keyword().unwrap(), "minimum");
@@ -90,6 +94,8 @@ pub mod protocol_version {
 }
 
 pub mod id {
+    use super::*;
+
     use jsonschema::error::ValidationErrorKind;
     use platform_value::Value;
 
@@ -106,7 +112,7 @@ pub mod id {
             .validate_identity_object(&identity)
             .unwrap();
 
-        let errors = assert_consensus_errors!(&result, ConsensusError::JsonSchemaError, 1);
+        let errors = assert_basic_consensus_errors!(result, BasicError::JsonSchemaError, 1);
         let error = errors.first().unwrap();
 
         assert_eq!(error.keyword().unwrap(), "required");
@@ -130,7 +136,7 @@ pub mod id {
         let result = identity_validator
             .validate_identity_object(&identity)
             .unwrap();
-        let errors = assert_consensus_errors!(&result, ConsensusError::JsonSchemaError, 32);
+        let errors = assert_basic_consensus_errors!(result, BasicError::JsonSchemaError, 32);
 
         for (i, err) in errors.iter().enumerate() {
             assert_eq!(err.instance_path().to_string(), format!("/id/{}", i));
@@ -149,7 +155,7 @@ pub mod id {
             .validate_identity_object(&identity)
             .unwrap();
 
-        let errors = assert_consensus_errors!(&result, ConsensusError::JsonSchemaError, 1);
+        let errors = assert_basic_consensus_errors!(result, BasicError::JsonSchemaError, 1);
         let error = errors.first().unwrap();
 
         assert_eq!(error.keyword().unwrap(), "minItems");
@@ -167,7 +173,7 @@ pub mod id {
             .validate_identity_object(&identity)
             .unwrap();
 
-        let errors = assert_consensus_errors!(&result, ConsensusError::JsonSchemaError, 1);
+        let errors = assert_basic_consensus_errors!(result, BasicError::JsonSchemaError, 1);
         let error = errors.first().unwrap();
 
         assert_eq!(error.keyword().unwrap(), "maxItems");
@@ -176,6 +182,8 @@ pub mod id {
 }
 
 pub mod balance {
+    use super::*;
+
     use jsonschema::error::ValidationErrorKind;
 
     use crate::assert_consensus_errors;
@@ -193,7 +201,7 @@ pub mod balance {
             .validate_identity_object(&identity)
             .unwrap();
 
-        let errors = assert_consensus_errors!(&result, ConsensusError::JsonSchemaError, 1);
+        let errors = assert_basic_consensus_errors!(result, BasicError::JsonSchemaError, 1);
         let error = errors.first().unwrap();
 
         assert_eq!(error.keyword().unwrap(), "required");
@@ -216,7 +224,7 @@ pub mod balance {
             .validate_identity_object(&identity)
             .unwrap();
 
-        let errors = assert_consensus_errors!(&result, ConsensusError::JsonSchemaError, 1);
+        let errors = assert_basic_consensus_errors!(result, BasicError::JsonSchemaError, 1);
         let error = errors.first().unwrap();
 
         assert_eq!(error.keyword().unwrap(), "type");
@@ -232,7 +240,7 @@ pub mod balance {
             .validate_identity_object(&identity)
             .unwrap();
 
-        let errors = assert_consensus_errors!(&result, ConsensusError::JsonSchemaError, 1);
+        let errors = assert_basic_consensus_errors!(result, BasicError::JsonSchemaError, 1);
         let error = errors.first().unwrap();
 
         assert_eq!(error.keyword().unwrap(), "minimum");
@@ -248,6 +256,8 @@ pub mod balance {
 }
 
 pub mod public_keys {
+    use super::*;
+
     use crate::assert_consensus_errors;
     use crate::errors::consensus::ConsensusError;
     use crate::tests::identity::validation::identity_validator_spec::setup_test;
@@ -265,7 +275,7 @@ pub mod public_keys {
             .validate_identity_object(&identity)
             .unwrap();
 
-        let errors = assert_consensus_errors!(&result, ConsensusError::JsonSchemaError, 1);
+        let errors = assert_basic_consensus_errors!(result, BasicError::JsonSchemaError, 1);
         let error = errors.first().unwrap();
 
         assert_eq!(error.keyword().unwrap(), "required");
@@ -288,7 +298,7 @@ pub mod public_keys {
             .validate_identity_object(&identity)
             .unwrap();
 
-        let errors = assert_consensus_errors!(&result, ConsensusError::JsonSchemaError, 1);
+        let errors = assert_basic_consensus_errors!(result, BasicError::JsonSchemaError, 1);
         let error = errors.first().unwrap();
 
         assert_eq!(error.keyword().unwrap(), "type");
@@ -306,7 +316,7 @@ pub mod public_keys {
             .validate_identity_object(&identity)
             .unwrap();
 
-        let errors = assert_consensus_errors!(&result, ConsensusError::JsonSchemaError, 1);
+        let errors = assert_basic_consensus_errors!(result, BasicError::JsonSchemaError, 1);
         let error = errors.first().unwrap();
 
         assert_eq!(error.keyword().unwrap(), "minItems");
@@ -335,7 +345,7 @@ pub mod public_keys {
             .validate_identity_object(&identity)
             .unwrap();
 
-        let errors = assert_consensus_errors!(&result, ConsensusError::JsonSchemaError, 1);
+        let errors = assert_basic_consensus_errors!(result, BasicError::JsonSchemaError, 1);
         let error = errors.first().unwrap();
 
         assert_eq!(error.keyword().unwrap(), "uniqueItems");
@@ -361,7 +371,7 @@ pub mod public_keys {
             .validate_identity_object(&identity)
             .unwrap();
 
-        let errors = assert_consensus_errors!(&result, ConsensusError::JsonSchemaError, 2);
+        let errors = assert_basic_consensus_errors!(result, BasicError::JsonSchemaError, 2);
         let error = errors.first().unwrap();
 
         assert_eq!(error.keyword().unwrap(), "maxItems");
@@ -370,11 +380,13 @@ pub mod public_keys {
 }
 
 pub mod revision {
+    use super::*;
+
     use jsonschema::error::ValidationErrorKind;
 
-    use crate::assert_consensus_errors;
     use crate::errors::consensus::ConsensusError;
     use crate::tests::identity::validation::identity_validator_spec::setup_test;
+    use crate::{assert_basic_consensus_errors, assert_consensus_errors};
 
     // revision tests
     #[test]
@@ -388,7 +400,7 @@ pub mod revision {
             .validate_identity_object(&identity)
             .unwrap();
 
-        let errors = assert_consensus_errors!(&result, ConsensusError::JsonSchemaError, 1);
+        let errors = assert_basic_consensus_errors!(result, BasicError::JsonSchemaError, 1);
         let error = errors.first().unwrap();
 
         assert_eq!(error.keyword().unwrap(), "required");
@@ -411,7 +423,7 @@ pub mod revision {
         let result = identity_validator
             .validate_identity_object(&identity)
             .unwrap();
-        let errors = assert_consensus_errors!(&result, ConsensusError::JsonSchemaError, 1);
+        let errors = assert_basic_consensus_errors!(result, BasicError::JsonSchemaError, 1);
 
         let error = errors
             .first()
@@ -430,7 +442,7 @@ pub mod revision {
         let result = identity_validator
             .validate_identity_object(&identity)
             .unwrap();
-        let errors = assert_consensus_errors!(&result, ConsensusError::JsonSchemaError, 1);
+        let errors = assert_basic_consensus_errors!(result, BasicError::JsonSchemaError, 1);
 
         let error = errors
             .first()
@@ -456,7 +468,7 @@ pub fn should_return_valid_result_if_a_raw_identity_is_valid() {
     let result = identity_validator
         .validate_identity_object(&identity)
         .unwrap();
-    assert_consensus_errors!(&result, ConsensusError::JsonSchemaError, 0);
+    assert_basic_consensus_errors!(result, BasicError::JsonSchemaError, 0);
 
     assert!(result.is_valid());
 }
