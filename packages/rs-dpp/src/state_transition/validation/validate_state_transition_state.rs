@@ -81,13 +81,13 @@ where
                 .identity_update_validator
                 .validate(st)
                 .await
-                .map_err(|e| ProtocolError::from(e)),
+                .map_err(ProtocolError::from),
             StateTransition::IdentityTopUp(st) => self.identity_top_up_validator.validate(st).await,
             StateTransition::IdentityCreditWithdrawal(st) => self
                 .identity_credit_withdrawal_validator
                 .validate_identity_credit_withdrawal_transition_state(st)
                 .await
-                .map_err(|e| ProtocolError::from(e)),
+                .map_err(ProtocolError::from),
             StateTransition::DocumentsBatch(st) => self.document_batch_validator.validate(st).await,
         }
     }

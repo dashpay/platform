@@ -86,7 +86,7 @@ where
             .map_err(|e| {
                 NonConsensusError::StateRepositoryFetchError(format!(
                     "state repository verify instant send lock error: {}",
-                    e.to_string()
+                    e
                 ))
             })?;
 

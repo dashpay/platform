@@ -24,7 +24,7 @@ where
     ) -> Result<SimpleValidationResult, ProtocolError> {
         validate_identity_topup_transition_state(data, &self.state_repository)
             .await
-            .map(|result| result.into())
+            .map(|result| result)
             .map_err(|err| err.into())
     }
 }

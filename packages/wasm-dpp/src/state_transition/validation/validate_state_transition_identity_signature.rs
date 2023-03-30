@@ -2,7 +2,7 @@ use crate::bls_adapter::{BlsAdapter, JsBlsAdapter};
 use crate::state_repository::{ExternalStateRepositoryLike, ExternalStateRepositoryLikeWrapper};
 use crate::utils::WithJsError;
 use crate::validation::ValidationResultWasm;
-use dpp::prelude::ValidationResult;
+
 use dpp::state_transition::validation::validate_state_transition_identity_signature::validate_state_transition_identity_signature;
 use dpp::state_transition::{StateTransition, StateTransitionIdentitySigned};
 use std::sync::Arc;
@@ -31,7 +31,7 @@ impl StValidator {
         .await
         .with_js_error()?;
         Ok(ValidationResultWasm::from(
-            result.map(|v| JsValue::undefined()),
+            result.map(|_v| JsValue::undefined()),
         ))
     }
 }
@@ -52,7 +52,7 @@ pub async fn validate_state_transition_identity_signature_wasm(
         state_repository,
     };
 
-    let mut state_transition =
+    let state_transition =
         super::super::conversion::create_state_transition_from_wasm_instance(js_state_transition)?;
 
     match state_transition {
@@ -65,14 +65,14 @@ pub async fn validate_state_transition_identity_signature_wasm(
         StateTransition::DocumentsBatch(mut state_transition) => {
             validator.validate(&mut state_transition).await
         }
-        StateTransition::IdentityCreate(mut state_transition) => {
+        StateTransition::IdentityCreate(state_transition) => {
             Err(from_consensus_error(ConsensusError::BasicError(Box::new(
                 BasicError::InvalidStateTransitionTypeError(InvalidStateTransitionTypeError::new(
                     state_transition.transition_type as u8,
                 )),
             ))))
         }
-        StateTransition::IdentityTopUp(mut state_transition) => {
+        StateTransition::IdentityTopUp(state_transition) => {
             Err(from_consensus_error(ConsensusError::BasicError(Box::new(
                 BasicError::InvalidStateTransitionTypeError(InvalidStateTransitionTypeError::new(
                     state_transition.transition_type as u8,
