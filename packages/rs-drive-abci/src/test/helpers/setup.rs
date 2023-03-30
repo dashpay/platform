@@ -39,11 +39,13 @@ use crate::test::fixture::abci::static_system_identity_public_keys;
 use crate::{config::PlatformConfig, rpc::core::DefaultCoreRPC};
 use tempfile::TempDir;
 
+/// A test for the platform builder
 pub struct TestPlatformBuilder<C> {
     platform: Platform<C>,
 }
 
 impl TestPlatformBuilder<DefaultCoreRPC> {
+    /// Create a new test platform builder from a default core rpc
     pub fn new(config: Option<PlatformConfig>) -> Self {
         let tmp_dir = TempDir::new().unwrap();
         let platform = Platform::<DefaultCoreRPC>::open(tmp_dir, config)
@@ -54,6 +56,7 @@ impl TestPlatformBuilder<DefaultCoreRPC> {
 }
 
 impl TestPlatformBuilder<MockCoreRPCLike> {
+    /// Create a new test platform builder from a mock core rpc
     pub fn new(config: Option<PlatformConfig>) -> Self {
         let tmp_dir = TempDir::new().unwrap();
         let platform = Platform::<MockCoreRPCLike>::open(tmp_dir, config)
@@ -71,7 +74,7 @@ impl<C> TestPlatformBuilder<C> {
             .create_initial_state_structure(None)
             .expect("should create root tree successfully");
 
-        &mut self
+        self
     }
 
     /// Sets Platform to genesis state.
@@ -84,9 +87,10 @@ impl<C> TestPlatformBuilder<C> {
             )
             .expect("should create root tree successfully");
 
-        &mut self
+        self
     }
 
+    /// Make Platform
     pub fn build(self) -> Platform<C> {
         self.platform
     }

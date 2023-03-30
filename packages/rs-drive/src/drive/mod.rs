@@ -326,7 +326,7 @@ impl Drive {
         let genesis_time_ms = self.config.default_genesis_time;
         let data_contracts_global_cache_size = self.config.data_contracts_global_cache_size;
         let data_contracts_block_cache_size = self.config.data_contracts_block_cache_size;
-        let mut cache =  self.cache.write().unwrap();
+        let mut cache = self.cache.write().unwrap();
         cache.cached_contracts = DataContractCache::new(
             data_contracts_global_cache_size,
             data_contracts_block_cache_size,

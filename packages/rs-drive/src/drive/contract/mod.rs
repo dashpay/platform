@@ -844,7 +844,8 @@ impl Drive {
         transaction: TransactionArg,
     ) -> Option<Arc<ContractFetchInfo>> {
         self.cache
-            .read().unwrap()
+            .read()
+            .unwrap()
             .cached_contracts
             .get(contract_id, transaction.is_some())
             .map(|fetch_info| Arc::clone(&fetch_info))

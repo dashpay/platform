@@ -28,7 +28,7 @@ impl<CoreRPCLike : Sync> StateRepositoryLike for Platform<CoreRPCLike> {
         data_contract_id: &Identifier,
         execution_context: Option<&'a StateTransitionExecutionContext>,
     ) -> AnyResult<Option<Self::FetchDataContract>> {
-        self.drive.fetch_contract()
+        todo!()
     }
 
     async fn store_data_contract<'a>(

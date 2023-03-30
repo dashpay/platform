@@ -201,7 +201,7 @@ impl<C> TenderdashAbci for Platform<C> where C: CoreRPCLike {
             .epoch_info
             .is_epoch_change_but_not_genesis()
         {
-            let state = self.state.write().unwrap();
+            let mut state = self.state.write().unwrap();
             // Set current protocol version to the version from upcoming epoch
             state.current_protocol_version_in_consensus = state.next_epoch_protocol_version;
 

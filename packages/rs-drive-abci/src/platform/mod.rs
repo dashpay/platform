@@ -102,7 +102,7 @@ impl Platform<MockCoreRPCLike> {
         path: P,
         config: Option<PlatformConfig>,
     ) -> Result<Platform<MockCoreRPCLike>, Error> {
-        let core_rpc_mock = MockCoreRPCLike::new();
+        let mut core_rpc_mock = MockCoreRPCLike::new();
 
         core_rpc_mock.expect_get_block_hash().returning(|_| {
             Ok(BlockHash::from_hex(
