@@ -3,11 +3,11 @@
 //! RS-Drive-ABCI server starts a single-threaded server and listens to connections from Tenderdash.
 use clap::{Parser, Subcommand};
 use drive_abci::config::{FromEnv, PlatformConfig};
+use drive_abci::platform::Platform;
+use drive_abci::rpc::core::DefaultCoreRPC;
 use std::path::PathBuf;
 use tracing::warn;
 use tracing_subscriber::prelude::*;
-use drive_abci::platform::Platform;
-use drive_abci::rpc::core::DefaultCoreRPC;
 
 // struct aaa {}
 
@@ -67,9 +67,10 @@ pub fn main() {
                 config.core.rpc.url().as_str(),
                 config.core.rpc.username.clone(),
                 config.core.rpc.password.clone(),
-            ).unwrap();
+            )
+            .unwrap();
             drive_abci::abci::start(&config, core_rpc).unwrap()
-        },
+        }
         Commands::Config {} => dump_config(&config),
     }
 }

@@ -51,7 +51,7 @@ use serde_json::json;
 mod state_repository;
 
 /// Platform
-pub struct Platform<C> {
+pub struct Platform<'a, C> {
     /// Drive
     pub drive: Drive,
     /// State
@@ -59,23 +59,23 @@ pub struct Platform<C> {
     /// Configuration
     pub config: PlatformConfig,
     /// Block execution context
-    pub block_execution_context: RwLock<Option<BlockExecutionContext>>,
+    pub block_execution_context: RwLock<Option<BlockExecutionContext<'a>>>,
     /// Core RPC Client
     pub core_rpc: C,
 }
 
-impl<C> std::fmt::Debug for Platform<C> {
+impl<'a, C> std::fmt::Debug for Platform<'a, C> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("Platform").finish()
     }
 }
 
-impl Platform<DefaultCoreRPC> {
+impl<'a> Platform<'a, DefaultCoreRPC> {
     /// Open Platform with Drive and block execution context and default core rpc.
     pub fn open<P: AsRef<Path>>(
         path: P,
         config: Option<PlatformConfig>,
-    ) -> Result<Platform<DefaultCoreRPC>, Error> {
+    ) -> Result<Platform<'a, DefaultCoreRPC>, Error> {
         let config = config.unwrap_or_default();
         let core_rpc = DefaultCoreRPC::open(
             config.core.rpc.url().as_str(),
@@ -91,12 +91,12 @@ impl Platform<DefaultCoreRPC> {
     }
 }
 
-impl Platform<MockCoreRPCLike> {
+impl<'a> Platform<'a, MockCoreRPCLike> {
     /// Open Platform with Drive and block execution context and mock core rpc.
     pub fn open<P: AsRef<Path>>(
         path: P,
         config: Option<PlatformConfig>,
-    ) -> Result<Platform<MockCoreRPCLike>, Error> {
+    ) -> Result<Platform<'a, MockCoreRPCLike>, Error> {
         let mut core_rpc_mock = MockCoreRPCLike::new();
 
         core_rpc_mock.expect_get_block_hash().returning(|_| {
@@ -115,13 +115,13 @@ impl Platform<MockCoreRPCLike> {
     }
 }
 
-impl<C> Platform<C> {
+impl<'a, C> Platform<'a, C> {
     /// Open Platform with Drive and block execution context.
     pub fn open_with_client<P: AsRef<Path>>(
         path: P,
         config: Option<PlatformConfig>,
         core_rpc: C,
-    ) -> Result<Platform<C>, Error> {
+    ) -> Result<Platform<'a, C>, Error> {
         let config = config.unwrap_or_default();
         let drive = Drive::open(path, config.drive.clone()).map_err(Error::Drive)?;
 
@@ -136,6 +136,8 @@ impl<C> Platform<C> {
 
         let state = PlatformState {
             last_block_info: None,
+            //todo: put current epoch
+            current_epoch: Default::default(),
             current_protocol_version_in_consensus,
             next_epoch_protocol_version,
         };

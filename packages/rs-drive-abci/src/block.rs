@@ -28,6 +28,7 @@
 //
 
 use dpp::util::vec::vec_to_array;
+use drive::grovedb::{Transaction, TransactionArg};
 use tenderdash_abci::proto::abci as proto;
 use tenderdash_abci::proto::serializers::timestamp::ToMilis;
 
@@ -76,7 +77,9 @@ impl BlockStateInfo {
     }
 }
 /// Block execution context
-pub struct BlockExecutionContext {
+pub struct BlockExecutionContext<'a> {
+    /// Current Transaction
+    pub current_transaction: Transaction<'a>,
     /// Block info
     pub block_info: BlockStateInfo,
     /// Epoch info

@@ -2,17 +2,19 @@ use crate::constants::PROTOCOL_VERSION_UPGRADE_PERCENTAGE_NEEDED;
 use crate::error::execution::ExecutionError;
 use crate::error::Error;
 use crate::platform::Platform;
+use crate::state::PlatformState;
 use drive::dpp::util::deserializer::ProtocolVersion;
-use drive::grovedb::TransactionArg;
+use drive::grovedb::{Transaction, TransactionArg};
 
-impl<CoreRPCLike> Platform<CoreRPCLike> {
+impl<'a, CoreRPCLike> Platform<'a, CoreRPCLike> {
     /// checks for a network upgrade and resets activation window
     /// this should only be called on epoch change
     /// this will change backing state, but does not change drive cache
     pub fn check_for_desired_protocol_upgrade(
         &self,
         total_hpmns: u32,
-        transaction: TransactionArg,
+        platform_state: &PlatformState,
+        transaction: &Transaction,
     ) -> Result<Option<ProtocolVersion>, Error> {
         let required_upgraded_hpns = 1
             + (total_hpmns as u64)
@@ -55,9 +57,9 @@ impl<CoreRPCLike> Platform<CoreRPCLike> {
             // we also drop all protocol version votes information
             self.drive
                 .change_to_new_version_and_clear_version_information(
-                    self.state.read().unwrap().current_protocol_version_in_consensus,
+                    platform_state.current_protocol_version_in_consensus,
                     new_version,
-                    transaction,
+                    Some(transaction),
                 )
                 .map_err(Error::Drive)?;
 
@@ -65,7 +67,7 @@ impl<CoreRPCLike> Platform<CoreRPCLike> {
         } else {
             // we need to drop all version information
             self.drive
-                .clear_version_information(transaction)
+                .clear_version_information(Some(transaction))
                 .map_err(Error::Drive)?;
 
             Ok(None)

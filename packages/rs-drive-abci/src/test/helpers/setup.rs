@@ -47,8 +47,8 @@ pub struct TestPlatformBuilder {
 }
 
 /// Platform wrapper that takes care of temporary directory.
-pub struct TempPlatform<C> {
-    platform: Platform<C>,
+pub struct TempPlatform<'a, C> {
+    platform: Platform<'a, C>,
     _tempdir: TempDir,
 }
 
@@ -71,7 +71,7 @@ impl TestPlatformBuilder {
 
 impl TestPlatformBuilder {
     /// Create a new temp platform with a mock core rpc
-    pub fn build_with_mock_rpc(self) -> TempPlatform<MockCoreRPCLike> {
+    pub fn build_with_mock_rpc<'a>(self) -> TempPlatform<'a, MockCoreRPCLike> {
         let platform = Platform::<MockCoreRPCLike>::open(self.tempdir.path(), self.config)
             .expect("should open Platform successfully");
 
@@ -82,7 +82,7 @@ impl TestPlatformBuilder {
     }
 
     /// Create a new temp platform with a default core rpc
-    pub fn build_with_default_rpc(self) -> TempPlatform<DefaultCoreRPC> {
+    pub fn build_with_default_rpc<'a>(self) -> TempPlatform<'a, DefaultCoreRPC> {
         let platform = Platform::<DefaultCoreRPC>::open(self.tempdir.path(), self.config)
             .expect("should open Platform successfully");
 
@@ -93,7 +93,7 @@ impl TestPlatformBuilder {
     }
 }
 
-impl<C> TempPlatform<C> {
+impl<'a, C> TempPlatform<'a, C> {
     /// A function which sets initial state structure for Platform.
     pub fn set_initial_state_structure(self) -> Self {
         self.platform
@@ -118,15 +118,15 @@ impl<C> TempPlatform<C> {
     }
 }
 
-impl<C> Deref for TempPlatform<C> {
-    type Target = Platform<C>;
+impl<'a, C> Deref for TempPlatform<'a, C> {
+    type Target = Platform<'a, C>;
 
     fn deref(&self) -> &Self::Target {
         &self.platform
     }
 }
 
-impl<C> DerefMut for TempPlatform<C> {
+impl<'a, C> DerefMut for TempPlatform<'a, C> {
     fn deref_mut(&mut self) -> &mut Self::Target {
         &mut self.platform
     }

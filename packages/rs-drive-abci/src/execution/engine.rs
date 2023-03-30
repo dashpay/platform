@@ -18,7 +18,7 @@ use drive::error::Error::GroveDB;
 use drive::fee::result::FeeResult;
 use drive::grovedb::Transaction;
 
-impl<C> Platform<C>
+impl<'a, C> Platform<'a, C>
 where
     C: CoreRPCLike,
 {
@@ -126,14 +126,12 @@ where
 
         // println!("Block #{}", block_info.height);
 
-        let _block_begin_response = self
-            .block_begin(block_begin_request, Some(&transaction))
-            .unwrap_or_else(|e| {
-                panic!(
-                    "should begin process block #{} at time #{} : {e}",
-                    block_info.height, block_info.time_ms
-                )
-            });
+        let _block_begin_response = self.block_begin(block_begin_request).unwrap_or_else(|e| {
+            panic!(
+                "should begin process block #{} at time #{} : {e}",
+                block_info.height, block_info.time_ms
+            )
+        });
 
         // println!("{:#?}", block_begin_response);
 
@@ -143,22 +141,14 @@ where
 
         let block_end_request = BlockEndRequest { fees };
 
-        let _block_end_response = self
-            .block_end(block_end_request, Some(&transaction))
-            .unwrap_or_else(|e| {
-                panic!(
-                    "engine should end process block #{} at time #{} : {}",
-                    block_info.height, block_info.time_ms, e
-                )
-            });
+        let _block_end_response = self.block_end(block_end_request).unwrap_or_else(|e| {
+            panic!(
+                "engine should end process block #{} at time #{} : {}",
+                block_info.height, block_info.time_ms, e
+            )
+        });
 
         // println!("{:#?}", block_end_response);
-
-        self.drive
-            .grove
-            .commit_transaction(transaction)
-            .unwrap()
-            .map_err(|e| Error::Drive(GroveDB(e)))?;
 
         let after_finalize_block_request = AfterFinalizeBlockRequest {
             updated_data_contract_ids: Vec::new(),

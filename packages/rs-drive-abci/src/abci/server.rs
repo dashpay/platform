@@ -22,7 +22,7 @@ use tenderdash_abci::proto::{
 /// AbciApp implements logic that should be triggered when Tenderdash performs various operations, like
 /// creating new proposal or finalizing new block.
 pub struct AbciApplication<'a, C> {
-    platform: std::sync::Mutex<&'a Platform<C>>,
+    platform: std::sync::Mutex<&'a Platform<'a, C>>,
     transaction: TransactionArg<'a, 'a>,
     config: AbciConfig,
 }
@@ -58,7 +58,7 @@ impl<'a, C> AbciApplication<'a, C> {
     /// Create new ABCI app
     pub fn new(
         config: AbciConfig,
-        platform: &'a Platform<C>,
+        platform: &'a Platform<'a, C>,
     ) -> Result<AbciApplication<'a, C>, Error> {
         let app = AbciApplication {
             platform: std::sync::Mutex::new(platform),
@@ -70,7 +70,7 @@ impl<'a, C> AbciApplication<'a, C> {
     }
 
     /// Return locked Platform object
-    fn platform(&self) -> MutexGuard<&'a Platform<C>> {
+    fn platform(&self) -> MutexGuard<&'a Platform<'a, C>> {
         self.platform
             .lock()
             .expect("cannot acquire lock on platform")

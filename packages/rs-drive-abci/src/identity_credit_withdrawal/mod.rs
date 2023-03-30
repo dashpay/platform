@@ -17,6 +17,7 @@ use drive::dpp::identifier::Identifier;
 use drive::dpp::identity::convert_credits_to_satoshi;
 use drive::dpp::util::hash;
 use drive::drive::identity::withdrawals::WithdrawalTransactionIdAndBytes;
+use drive::grovedb::Transaction;
 use drive::{
     drive::{batch::DriveOperation, block_info::BlockInfo},
     fee_pools::epochs::Epoch,
@@ -24,6 +25,7 @@ use drive::{
 };
 use serde_json::Value as JsonValue;
 
+use crate::block::BlockExecutionContext;
 use crate::{
     error::{execution::ExecutionError, Error},
     platform::Platform,
@@ -33,7 +35,7 @@ use crate::{
 const WITHDRAWAL_TRANSACTIONS_QUERY_LIMIT: u16 = 16;
 const NUMBER_OF_BLOCKS_BEFORE_EXPIRED: u32 = 48;
 
-impl<C> Platform<C>
+impl<'a, C> Platform<'a, C>
 where
     C: CoreRPCLike,
 {
@@ -297,16 +299,9 @@ where
     /// Pool withdrawal documents into transactions
     pub fn pool_withdrawals_into_transactions_queue(
         &self,
-        transaction: TransactionArg,
+        block_execution_context: &BlockExecutionContext,
     ) -> Result<(), Error> {
-        // Retrieve block execution context
-        let block_execution_context = self.block_execution_context.read().unwrap();
-        let block_execution_context = block_execution_context.as_ref().ok_or(Error::Execution(
-            ExecutionError::CorruptedCodeExecution(
-                "block execution context must be set in block begin handler",
-            ),
-        ))?;
-
+        let transaction = &block_execution_context.current_transaction;
         let block_info = BlockInfo {
             time_ms: block_execution_context.block_info.block_time_ms,
             height: block_execution_context.block_info.block_height,
@@ -318,7 +313,7 @@ where
         let (_, Some(contract_fetch_info)) = self.drive.get_contract_with_fetch_info(
             data_contract_id.to_buffer(),
             None,
-            transaction,
+            Some(&transaction),
         )? else {
             return Err(Error::Execution(
                 ExecutionError::CorruptedCodeExecution("can't fetch withdrawal data contract"),
@@ -327,7 +322,7 @@ where
 
         let mut documents = self.drive.fetch_withdrawal_documents_by_status(
             withdrawals_contract::WithdrawalStatus::QUEUED.into(),
-            transaction,
+            Some(&transaction),
         )?;
 
         if documents.is_empty() {
@@ -339,7 +334,7 @@ where
         let withdrawal_transactions = self.build_withdrawal_transactions_from_documents(
             &documents,
             &mut drive_operations,
-            transaction,
+            Some(&transaction),
         )?;
 
         for document in documents.iter_mut() {
@@ -400,8 +395,12 @@ where
             &mut drive_operations,
         );
 
-        self.drive
-            .apply_drive_operations(drive_operations, true, &block_info, transaction)?;
+        self.drive.apply_drive_operations(
+            drive_operations,
+            true,
+            &block_info,
+            Some(transaction),
+        )?;
 
         Ok(())
     }
@@ -622,7 +621,10 @@ mod tests {
 
             platform.core_rpc = mock_rpc_client;
 
+            let transaction = platform.drive.grove.start_transaction();
+
             platform.block_execution_context = RwLock::new(Some(BlockExecutionContext {
+                current_transaction: transaction,
                 block_info: BlockStateInfo {
                     block_height: 1,
                     block_time_ms: 1,
@@ -640,8 +642,6 @@ mod tests {
                 },
                 hpmn_count: 100,
             }));
-
-            let transaction = platform.drive.grove.start_transaction();
 
             let data_contract = load_system_data_contract(SystemDataContract::Withdrawals)
                 .expect("to load system data contract");
@@ -767,7 +767,10 @@ mod tests {
                 .build_with_mock_rpc()
                 .set_initial_state_structure();
 
+            let transaction = platform.drive.grove.start_transaction();
+
             platform.block_execution_context = RwLock::new(Some(BlockExecutionContext {
+                current_transaction: transaction,
                 block_info: BlockStateInfo {
                     block_height: 1,
                     block_time_ms: 1,
@@ -785,8 +788,6 @@ mod tests {
                 },
                 hpmn_count: 100,
             }));
-
-            let transaction = platform.drive.grove.start_transaction();
 
             let data_contract = load_system_data_contract(SystemDataContract::Withdrawals)
                 .expect("to load system data contract");
@@ -845,8 +846,10 @@ mod tests {
                 Some(&transaction),
             );
 
+            let block_execution_context = platform.block_execution_context.write().unwrap();
+
             platform
-                .pool_withdrawals_into_transactions_queue(Some(&transaction))
+                .pool_withdrawals_into_transactions_queue(block_execution_context.as_ref().unwrap())
                 .expect("to pool withdrawal documents into transactions");
 
             let updated_documents = platform

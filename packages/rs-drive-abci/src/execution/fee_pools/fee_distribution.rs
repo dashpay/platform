@@ -49,7 +49,7 @@ use drive::fee_pools::epochs::Epoch;
 use drive::fee_pools::{
     update_storage_fee_distribution_pool_operation, update_unpaid_epoch_index_operation,
 };
-use drive::grovedb::TransactionArg;
+use drive::grovedb::{Transaction, TransactionArg};
 use drive::{error, grovedb};
 
 /// Struct containing the number of proposers to be paid and the index of the epoch
@@ -95,7 +95,7 @@ impl UnpaidEpoch {
     }
 }
 
-impl<CoreRPCLike> Platform<CoreRPCLike> {
+impl<'a, CoreRPCLike> Platform<'a, CoreRPCLike> {
     /// Adds operations to the op batch which distribute fees
     /// from the oldest unpaid epoch pool to proposers.
     ///
@@ -104,13 +104,13 @@ impl<CoreRPCLike> Platform<CoreRPCLike> {
         &self,
         current_epoch_index: u16,
         cached_current_epoch_start_block_height: Option<u64>,
-        transaction: TransactionArg,
+        transaction: &Transaction,
         batch: &mut GroveDbOpBatch,
     ) -> Result<Option<ProposersPayouts>, Error> {
         let unpaid_epoch = self.find_oldest_epoch_needing_payment(
             current_epoch_index,
             cached_current_epoch_start_block_height,
-            transaction,
+            Some(transaction),
         )?;
 
         if unpaid_epoch.is_none() {
@@ -442,7 +442,7 @@ mod tests {
                 .add_distribute_fees_from_oldest_unpaid_epoch_pool_to_proposers_operations(
                     current_epoch_index,
                     None,
-                    Some(&transaction),
+                    &transaction,
                     &mut batch,
                 )
                 .expect("should distribute fees");
@@ -507,7 +507,7 @@ mod tests {
                 .add_distribute_fees_from_oldest_unpaid_epoch_pool_to_proposers_operations(
                     current_epoch_index,
                     None,
-                    Some(&transaction),
+                    &transaction,
                     &mut batch,
                 )
                 .expect("should distribute fees");
@@ -598,7 +598,7 @@ mod tests {
                 .add_distribute_fees_from_oldest_unpaid_epoch_pool_to_proposers_operations(
                     current_epoch_index,
                     None,
-                    Some(&transaction),
+                    &transaction,
                     &mut batch,
                 )
                 .expect("should distribute fees");
@@ -705,7 +705,7 @@ mod tests {
                 .add_distribute_fees_from_oldest_unpaid_epoch_pool_to_proposers_operations(
                     current_epoch_index,
                     None,
-                    Some(&transaction),
+                    &transaction,
                     &mut batch,
                 )
                 .expect("should distribute fees");
@@ -778,7 +778,7 @@ mod tests {
                 .add_distribute_fees_from_oldest_unpaid_epoch_pool_to_proposers_operations(
                     current_epoch.index,
                     None,
-                    Some(&transaction),
+                    &transaction,
                     &mut batch,
                 )
                 .expect("should distribute fees");
@@ -878,7 +878,7 @@ mod tests {
                 .add_distribute_fees_from_oldest_unpaid_epoch_pool_to_proposers_operations(
                     current_epoch.index,
                     None,
-                    Some(&transaction),
+                    &transaction,
                     &mut batch,
                 )
                 .expect("should distribute fees");
@@ -912,7 +912,7 @@ mod tests {
                 .add_distribute_fees_from_oldest_unpaid_epoch_pool_to_proposers_operations(
                     current_epoch.index,
                     None,
-                    Some(&transaction),
+                    &transaction,
                     &mut batch,
                 )
                 .expect("should distribute fees");

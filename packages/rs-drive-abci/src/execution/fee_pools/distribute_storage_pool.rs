@@ -51,7 +51,7 @@ pub struct StorageFeeDistributionOutcome {
     pub refunded_epochs_count: u16,
 }
 
-impl<CoreRPCLike> Platform<CoreRPCLike> {
+impl<'a, CoreRPCLike> Platform<'a, CoreRPCLike> {
     /// Adds operations to the GroveDB op batch which distribute storage fees
     /// from the distribution pool and subtract pending refunds
     /// Returns distribution leftovers

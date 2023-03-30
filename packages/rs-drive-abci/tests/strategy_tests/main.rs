@@ -50,7 +50,6 @@ use drive::drive::Drive;
 use drive::fee::credits::Credits;
 use drive::fee_pools::epochs::Epoch;
 use drive::query::DriveQuery;
-use drive_abci::{config::PlatformConfig, test::helpers::setup::TempPlatform};
 use drive_abci::execution::execution_event::ExecutionEvent;
 use drive_abci::execution::fee_pools::epoch::{EpochInfo, EPOCH_CHANGE_TIME_MS};
 use drive_abci::platform::Platform;
@@ -59,6 +58,7 @@ use drive_abci::{
     abci::handlers::TenderdashAbci, rpc::core::DefaultCoreRPC,
     test::helpers::setup::TestPlatformBuilder,
 };
+use drive_abci::{config::PlatformConfig, test::helpers::setup::TempPlatform};
 use rand::rngs::StdRng;
 use rand::seq::SliceRandom;
 use rand::{Rng, SeedableRng};

@@ -1,6 +1,7 @@
 use mockall::predicate;
 use platform_value::string_encoding::Encoding;
 use serde_json::json;
+use platform_value::platform_value;
 
 use crate::{consensus::ConsensusError, data_contract::DataContract, document::{
     document_transition::{Action, DocumentTransition},
@@ -91,7 +92,7 @@ async fn should_return_valid_result_if_document_has_unique_indices_and_there_are
         .with(
             predicate::eq(data_contract.id),
             predicate::eq("indexedDocument"),
-            predicate::eq(json!({
+            predicate::eq(platform_value!({
                "where" : [
                 ["$ownerId", "==", owner_id_base58 ],
                 ["firstName", "==", william_doc.get("firstName").unwrap()],
@@ -107,7 +108,7 @@ async fn should_return_valid_result_if_document_has_unique_indices_and_there_are
         .with(
             predicate::eq(data_contract.id),
             predicate::eq("indexedDocument"),
-            predicate::eq(json!({
+            predicate::eq(platform_value!({
                "where" : [
                 ["$ownerId", "==", owner_id_base58 ],
                 ["lastName", "==", william_doc.get("lastName").unwrap()],
@@ -152,7 +153,7 @@ async fn should_return_invalid_result_if_document_has_unique_indices_and_there_a
         .with(
             predicate::eq(data_contract.id),
             predicate::eq("indexedDocument"),
-            predicate::eq(json!({
+            predicate::eq(platform_value!({
                "where" : [
                 ["$ownerId", "==", owner_id_base58 ],
                 ["firstName", "==", william_doc.get("firstName").unwrap()],
@@ -168,7 +169,7 @@ async fn should_return_invalid_result_if_document_has_unique_indices_and_there_a
         .with(
             predicate::eq(data_contract.id),
             predicate::eq("indexedDocument"),
-            predicate::eq(json!({
+            predicate::eq(platform_value!({
                "where" : [
                 ["$ownerId", "==", owner_id_base58 ],
                 ["lastName", "==", william_doc.get("lastName").unwrap()],
@@ -184,7 +185,7 @@ async fn should_return_invalid_result_if_document_has_unique_indices_and_there_a
         .with(
             predicate::eq(data_contract.id),
             predicate::eq("indexedDocument"),
-            predicate::eq(json!({
+            predicate::eq(platform_value!({
                "where" : [
                 ["$ownerId", "==", owner_id_base58 ],
                 ["firstName", "==", leon_doc.get("firstName").unwrap()],
@@ -200,7 +201,7 @@ async fn should_return_invalid_result_if_document_has_unique_indices_and_there_a
         .with(
             predicate::eq(data_contract.id),
             predicate::eq("indexedDocument"),
-            predicate::eq(json!({
+            predicate::eq(platform_value!({
                "where" : [
                 ["$ownerId", "==", owner_id_base58 ],
                 ["lastName", "==", leon_doc.get("lastName").unwrap()],
@@ -260,7 +261,7 @@ async fn should_return_valid_result_in_dry_run_if_document_has_unique_indices_an
         .with(
             predicate::eq(data_contract.id),
             predicate::eq("indexedDocument"),
-            predicate::eq(json!({
+            predicate::eq(platform_value!({
                "where" : [
                 ["$ownerId", "==", owner_id_base58 ],
                 ["firstName", "==", william_doc.get("firstName").unwrap()],
@@ -276,7 +277,7 @@ async fn should_return_valid_result_in_dry_run_if_document_has_unique_indices_an
         .with(
             predicate::eq(data_contract.id),
             predicate::eq("indexedDocument"),
-            predicate::eq(json!({
+            predicate::eq(platform_value!({
                "where" : [
                 ["$ownerId", "==", owner_id_base58 ],
                 ["lastName", "==", william_doc.get("lastName").unwrap()],
@@ -292,7 +293,7 @@ async fn should_return_valid_result_in_dry_run_if_document_has_unique_indices_an
         .with(
             predicate::eq(data_contract.id),
             predicate::eq("indexedDocument"),
-            predicate::eq(json!({
+            predicate::eq(platform_value!({
                "where" : [
                 ["$ownerId", "==", owner_id_base58 ],
                 ["firstName", "==", leon_doc.get("firstName").unwrap()],
@@ -308,7 +309,7 @@ async fn should_return_valid_result_in_dry_run_if_document_has_unique_indices_an
         .with(
             predicate::eq(data_contract.id),
             predicate::eq("indexedDocument"),
-            predicate::eq(json!({
+            predicate::eq(platform_value!({
                "where" : [
                 ["$ownerId", "==", owner_id_base58 ],
                 ["lastName", "==", leon_doc.get("lastName").unwrap()],
@@ -353,7 +354,7 @@ async fn should_return_valid_result_if_document_has_undefined_field_from_index()
         .with(
             predicate::eq(data_contract.id),
             predicate::eq("indexedDocument"),
-            predicate::eq(json!({
+            predicate::eq(platform_value!({
                "where" : [
                 ["$ownerId", "==", owner_id_base58 ],
                 ["firstName", "==", indexed_document.get("firstName").unwrap()],
@@ -369,7 +370,7 @@ async fn should_return_valid_result_if_document_has_undefined_field_from_index()
         .with(
             predicate::eq(data_contract.id),
             predicate::eq("indexedDocument"),
-            predicate::eq(json!({
+            predicate::eq(platform_value!({
                "where" : [
                 ["$ownerId", "==", owner_id_base58 ],
                 ["lastName", "==", indexed_document.get("lastName").unwrap()],
@@ -411,7 +412,7 @@ async fn should_return_valid_result_if_document_being_created_and_has_created_at
             .with(
                 predicate::eq(data_contract.id),
                 predicate::eq("uniqueDates"),
-                predicate::eq(json!({
+                predicate::eq(platform_value!({
                    "where" : [
                     ["$createdAt", "==", unique_dates_doc.created_at().expect("createdAt should be present") ],
                     ["$updatedAt", "==", unique_dates_doc.created_at().expect("createdAt should be present") ],

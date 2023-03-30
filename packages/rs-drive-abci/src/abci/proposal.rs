@@ -25,7 +25,10 @@ pub trait Proposal {
     ) -> Result<proto::ResponsePrepareProposal, ResponseException>;
 }
 
-impl<C> Proposal for Platform<C> where C: CoreRPCLike {
+impl<'a, C> Proposal for Platform<'a, C>
+where
+    C: CoreRPCLike,
+{
     fn prepare_proposal(
         &self,
         request: &proto::RequestPrepareProposal,
@@ -85,7 +88,10 @@ impl<C> Proposal for Platform<C> where C: CoreRPCLike {
         // };
         let last_synced_core_height = block_execution_context.block_info.core_chain_locked_height;
 
-        self.block_execution_context.write().unwrap().replace(block_execution_context);
+        self.block_execution_context
+            .write()
+            .unwrap()
+            .replace(block_execution_context);
 
         self.update_broadcasted_withdrawal_transaction_statuses(
             last_synced_core_height,

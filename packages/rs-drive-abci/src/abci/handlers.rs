@@ -41,7 +41,9 @@ use crate::{
     },
     rpc::core::CoreRPCLike,
 };
-use drive::grovedb::TransactionArg;
+use drive::error::drive::DriveError;
+use drive::error::Error::GroveDB;
+use drive::grovedb::{Transaction, TransactionArg};
 
 use crate::error::execution::ExecutionError;
 use crate::error::Error;
@@ -51,27 +53,15 @@ use crate::platform::Platform;
 pub trait TenderdashAbci {
     /// Called with JS drive on init chain
     #[deprecated = "use abci::server module"]
-    fn init_chain(
-        &self,
-        request: InitChainRequest,
-        transaction: TransactionArg,
-    ) -> Result<InitChainResponse, Error>;
+    fn init_chain(&self, request: InitChainRequest) -> Result<InitChainResponse, Error>;
 
     /// Called with JS Drive on block begin
     #[deprecated = "use abci::server mod, prepare_proposal or process_proposal"]
-    fn block_begin(
-        &self,
-        request: BlockBeginRequest,
-        transaction: TransactionArg,
-    ) -> Result<BlockBeginResponse, Error>;
+    fn block_begin(&self, request: BlockBeginRequest) -> Result<BlockBeginResponse, Error>;
 
     /// Called with JS Drive on block end
     #[deprecated = "use abci::server finalize_block"]
-    fn block_end(
-        &self,
-        request: BlockEndRequest,
-        transaction: TransactionArg,
-    ) -> Result<BlockEndResponse, Error>;
+    fn block_end(&self, request: BlockEndRequest) -> Result<BlockEndResponse, Error>;
 
     /// Called with JS Drive after the current block db transaction is committed
     #[deprecated = "use abci::server finalize_block"]
@@ -81,21 +71,22 @@ pub trait TenderdashAbci {
     ) -> Result<AfterFinalizeBlockResponse, Error>;
 }
 
-impl<C> TenderdashAbci for Platform<C>
+impl<'a, C> TenderdashAbci for Platform<'a, C>
 where
     C: CoreRPCLike,
 {
     /// Creates initial state structure and returns response
-    fn init_chain(
-        &self,
-        request: InitChainRequest,
-        transaction: TransactionArg,
-    ) -> Result<InitChainResponse, Error> {
+    fn init_chain(&self, request: InitChainRequest) -> Result<InitChainResponse, Error> {
+        let transaction = self.drive.grove.start_transaction();
         self.create_genesis_state(
             request.genesis_time_ms,
             request.system_identity_public_keys,
-            transaction,
+            Some(&transaction),
         )?;
+
+        transaction
+            .commit()
+            .map_err(|e| Error::Drive(GroveDB(e.into())))?;
 
         let response = InitChainResponse {};
 
@@ -103,11 +94,9 @@ where
     }
 
     /// Set genesis time, block info, and epoch info, and returns response
-    fn block_begin(
-        &self,
-        request: BlockBeginRequest,
-        transaction: TransactionArg,
-    ) -> Result<BlockBeginResponse, Error> {
+    fn block_begin(&self, request: BlockBeginRequest) -> Result<BlockBeginResponse, Error> {
+        let transaction = self.drive.grove.start_transaction();
+
         // TODO: If genesis time is not set in genesis config then it set on the first block
         //  which is great but we still need time on init chain. Having two genesis times is not great at all.
 
@@ -118,7 +107,7 @@ where
         } else {
             //todo: lazy load genesis time
             self.drive
-                .get_genesis_time(transaction)
+                .get_genesis_time(Some(&transaction))
                 .map_err(Error::Drive)?
                 .ok_or(Error::Execution(ExecutionError::DriveIncoherence(
                     "the genesis time must be set",
@@ -131,7 +120,7 @@ where
         self.drive.update_validator_proposed_app_version(
             request.proposer_pro_tx_hash,
             proposed_app_version,
-            transaction,
+            Some(&transaction),
         )?;
 
         // Init block execution context
@@ -140,6 +129,7 @@ where
         let epoch_info = EpochInfo::from_genesis_time_and_block_info(genesis_time_ms, &block_info)?;
 
         let block_execution_context = BlockExecutionContext {
+            current_transaction: transaction,
             block_info,
             epoch_info: epoch_info.clone(),
             hpmn_count: request.total_hpmns,
@@ -169,7 +159,7 @@ where
         let unsigned_withdrawal_transaction_bytes = self
             .fetch_and_prepare_unsigned_withdrawal_transactions(
                 request.validator_set_quorum_hash,
-                transaction,
+                Some(&transaction),
             )?;
 
         let response = BlockBeginResponse {
@@ -181,43 +171,37 @@ where
     }
 
     /// Processes block fees and returns response
-    fn block_end(
-        &self,
-        request: BlockEndRequest,
-        transaction: TransactionArg,
-    ) -> Result<BlockEndResponse, Error> {
+    fn block_end(&self, request: BlockEndRequest) -> Result<BlockEndResponse, Error> {
         // Retrieve block execution context
-        let block_execution_context = self.block_execution_context.write().unwrap();
-        let block_execution_context = block_execution_context.as_ref().ok_or(Error::Execution(
+        let mut block_execution_context = self.block_execution_context.write().unwrap();
+        let block_execution_context = block_execution_context.take().ok_or(Error::Execution(
             ExecutionError::CorruptedCodeExecution(
                 "block execution context must be set in block begin handler",
             ),
         ))?;
 
-        self.pool_withdrawals_into_transactions_queue(transaction)?;
+        self.pool_withdrawals_into_transactions_queue(&block_execution_context)?;
+
+        let BlockExecutionContext {
+            current_transaction,
+            block_info,
+            epoch_info,
+            hpmn_count,
+        } = block_execution_context;
 
         // Process fees
-        let process_block_fees_outcome = self.process_block_fees(
-            &block_execution_context.block_info,
-            &block_execution_context.epoch_info,
-            request.fees,
-            transaction,
-        )?;
+        let process_block_fees_outcome =
+            self.process_block_fees(&block_info, &epoch_info, request.fees, &current_transaction)?;
 
         // Determine a new protocol version if enough proposers voted
-        let changed_protocol_version = if block_execution_context
-            .epoch_info
-            .is_epoch_change_but_not_genesis()
-        {
+        let changed_protocol_version = if epoch_info.is_epoch_change_but_not_genesis() {
             let mut state = self.state.write().unwrap();
             // Set current protocol version to the version from upcoming epoch
             state.current_protocol_version_in_consensus = state.next_epoch_protocol_version;
 
             // Determine new protocol version based on votes for the next epoch
-            let maybe_new_protocol_version = self.check_for_desired_protocol_upgrade(
-                block_execution_context.hpmn_count,
-                transaction,
-            )?;
+            let maybe_new_protocol_version =
+                self.check_for_desired_protocol_upgrade(hpmn_count, &state, &current_transaction)?;
             if let Some(new_protocol_version) = maybe_new_protocol_version {
                 state.next_epoch_protocol_version = new_protocol_version;
             } else {
@@ -228,6 +212,12 @@ where
         } else {
             None
         };
+
+        self.drive
+            .grove
+            .commit_transaction(current_transaction)
+            .unwrap()
+            .map_err(|e| Error::Drive(GroveDB(e)))?;
 
         Ok(BlockEndResponse::from_outcomes(
             &process_block_fees_outcome,
@@ -313,13 +303,11 @@ mod tests {
 
             platform.core_rpc = core_rpc_mock;
 
-            let transaction = platform.drive.grove.start_transaction();
-
             // init chain
             let init_chain_request = static_init_chain_request();
 
             platform
-                .init_chain(init_chain_request, Some(&transaction))
+                .init_chain(init_chain_request)
                 .expect("should init chain");
 
             let data_contract = load_system_data_contract(SystemDataContract::Withdrawals)
@@ -453,7 +441,7 @@ mod tests {
                     };
 
                     let block_begin_response = platform
-                        .block_begin(block_begin_request, Some(&transaction))
+                        .block_begin(block_begin_request)
                         .unwrap_or_else(|e| {
                             panic!(
                                 "should begin process block #{} for day #{} : {}",

@@ -308,15 +308,23 @@ impl<'a> DriveQuery<'a> {
         contract: &'a Contract,
         document_type: &'a DocumentType,
     ) -> Result<Self, Error> {
-        let query_document_cbor: BTreeMap<String, ciborium::Value> =
+        let query_document_value : Value =
             ciborium::de::from_reader(query_cbor).map_err(|_| {
                 Error::Query(QueryError::DeserializationError(
                     "unable to decode query from cbor",
                 ))
             })?;
-        let mut query_document: BTreeMap<String, Value> =
-            Value::convert_from_cbor_map(query_document_cbor)
-                .map_err(|e| Error::Protocol(ProtocolError::ValueError(e)))?;
+        Self::from_value(query_document_value, contract, document_type)
+    }
+
+    #[cfg(any(feature = "full", feature = "verify"))]
+    /// Converts a query Value to a `DriveQuery`.
+    pub fn from_value(
+        query_value: Value,
+        contract: &'a Contract,
+        document_type: &'a DocumentType,
+    ) -> Result<Self, Error> {
+        let mut query_document: BTreeMap<String, Value> = query_value.into_btree_string_map()?;
 
         let maybe_limit: Option<u16> = query_document
             .remove_optional_integer("limit")
