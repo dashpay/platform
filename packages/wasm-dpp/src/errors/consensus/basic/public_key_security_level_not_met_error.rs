@@ -43,9 +43,11 @@ impl PublicKeySecurityLevelNotMetErrorWasm {
 
     #[wasm_bindgen(js_name=toString)]
     pub fn to_string(&self) -> Result<JsValue, JsValue> {
-        let json_string = serde_json::ser::to_string(self).map_err(|e| JsValue::from(e.to_string()))?;
-        Ok(JsValue::from(
-            format!("PublicKeySecurityLevelNotMetError: {}", json_string),
-        ))
+        let json_string =
+            serde_json::ser::to_string(self).map_err(|e| JsValue::from(e.to_string()))?;
+        Ok(JsValue::from(format!(
+            "PublicKeySecurityLevelNotMetError: {}",
+            json_string
+        )))
     }
 }

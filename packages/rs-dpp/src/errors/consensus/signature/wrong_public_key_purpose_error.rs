@@ -36,9 +36,11 @@ impl From<WrongPublicKeyPurposeError> for ConsensusError {
 // This is a separate error of the same name, but from ProtocolError
 impl From<crate::state_transition::errors::WrongPublicKeyPurposeError> for ConsensusError {
     fn from(value: crate::state_transition::errors::WrongPublicKeyPurposeError) -> Self {
-        Self::SignatureError(SignatureError::WrongPublicKeyPurposeError(WrongPublicKeyPurposeError::new(
-            value.public_key_purpose(),
-            value.key_purpose_requirement(),
-        )))
+        Self::SignatureError(SignatureError::WrongPublicKeyPurposeError(
+            WrongPublicKeyPurposeError::new(
+                value.public_key_purpose(),
+                value.key_purpose_requirement(),
+            ),
+        ))
     }
 }

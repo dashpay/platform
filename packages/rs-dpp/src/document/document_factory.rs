@@ -7,7 +7,6 @@ use itertools::Itertools;
 use platform_value::btreemap_extensions::BTreeValueMapReplacementPathHelper;
 use platform_value::{Bytes32, ReplacementType, Value};
 
-
 use serde::{Deserialize, Serialize};
 
 use crate::consensus::basic::document::InvalidDocumentTypeError;
