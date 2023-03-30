@@ -1,9 +1,5 @@
 use thiserror::Error;
 
-use crate::consensus::state::identity::{
-    IdentityAlreadyExistsError, IdentityInsufficientBalanceError,
-};
-use crate::consensus::ConsensusError;
 use crate::consensus::state::data_contract::data_contract_already_present_error::DataContractAlreadyPresentError;
 use crate::consensus::state::data_contract::data_trigger::data_trigger_error::DataTriggerError;
 use crate::consensus::state::document::document_already_present_error::DocumentAlreadyPresentError;
@@ -21,6 +17,10 @@ use crate::consensus::state::identity::identity_public_key_is_read_only_error::I
 use crate::consensus::state::identity::invalid_identity_public_key_id_error::InvalidIdentityPublicKeyIdError;
 use crate::consensus::state::identity::invalid_identity_revision_error::InvalidIdentityRevisionError;
 use crate::consensus::state::identity::max_identity_public_key_limit_reached_error::MaxIdentityPublicKeyLimitReachedError;
+use crate::consensus::state::identity::{
+    IdentityAlreadyExistsError, IdentityInsufficientBalanceError,
+};
+use crate::consensus::ConsensusError;
 
 #[derive(Error, Debug)]
 pub enum StateError {
@@ -65,7 +65,9 @@ pub enum StateError {
     DuplicatedIdentityPublicKeyIdStateError(DuplicatedIdentityPublicKeyIdStateError),
 
     #[error(transparent)]
-    IdentityPublicKeyDisabledAtWindowViolationError(IdentityPublicKeyDisabledAtWindowViolationError),
+    IdentityPublicKeyDisabledAtWindowViolationError(
+        IdentityPublicKeyDisabledAtWindowViolationError,
+    ),
 
     #[error(transparent)]
     IdentityPublicKeyIsReadOnlyError(IdentityPublicKeyIsReadOnlyError),
@@ -86,17 +88,5 @@ pub enum StateError {
 impl From<StateError> for ConsensusError {
     fn from(error: StateError) -> Self {
         Self::StateError(error)
-    }
-}
-
-impl From<IdentityAlreadyExistsError> for StateError {
-    fn from(err: IdentityAlreadyExistsError) -> Self {
-        Self::IdentityAlreadyExistsError(err)
-    }
-}
-
-impl From<IdentityInsufficientBalanceError> for StateError {
-    fn from(err: IdentityInsufficientBalanceError) -> Self {
-        Self::IdentityInsufficientBalanceError(err)
     }
 }
