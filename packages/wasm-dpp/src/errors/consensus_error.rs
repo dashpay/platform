@@ -47,7 +47,7 @@ use dpp::consensus::signature::signature_error::SignatureError;
 use dpp::consensus::state::state_error::StateError;
 use dpp::errors::consensus::codes::ErrorWithCode;
 use wasm_bindgen::JsValue;
-use dpp::consensus::state::data_contract::data_trigger::data_trigger_error::DataTriggerError;
+use dpp::consensus::state::data_trigger::data_trigger_error::DataTriggerError;
 
 use crate::errors::consensus::basic::data_contract::{
     DataContractHaveNewUniqueIndexErrorWasm, DataContractImmutablePropertiesUpdateErrorWasm,
@@ -186,48 +186,30 @@ pub fn from_state_error(state_error: &StateError) -> JsValue {
             IdentityPublicKeyIsDisabledErrorWasm::new(e.public_key_index(), code).into()
         }
         StateError::DataTriggerError(data_trigger_error) => match data_trigger_error.deref() {
-            DataTriggerError::DataTriggerConditionError {
-                data_contract_id,
-                document_transition_id,
-                message,
-                document_transition,
-                owner_id,
-            } => DataTriggerConditionErrorWasm::new(
-                *data_contract_id,
-                *document_transition_id,
-                message.clone(),
-                document_transition.clone(),
-                *owner_id,
+            DataTriggerError::DataTriggerConditionError(e) => DataTriggerConditionErrorWasm::new(
+                *e.data_contract_id(),
+                *e.document_transition_id(),
+                e.message().clone(),
+                e.document_transition().clone(),
+                *e.owner_id(),
                 code,
             )
             .into(),
-            DataTriggerError::DataTriggerExecutionError {
-                data_contract_id,
-                document_transition_id,
-                message,
-                execution_error,
-                document_transition,
-                owner_id,
-            } => DataTriggerExecutionErrorWasm::new(
-                *data_contract_id,
-                *document_transition_id,
-                message.clone(),
-                wasm_bindgen::JsError::new(execution_error.to_string().as_ref()),
-                document_transition.clone(),
-                *owner_id,
+            DataTriggerError::DataTriggerExecutionError(e) => DataTriggerExecutionErrorWasm::new(
+                *e.data_contract_id(),
+                *e.document_transition_id(),
+                e.message().clone(),
+                wasm_bindgen::JsError::new(e.execution_error().to_string().as_ref()),
+                e.document_transition().clone(),
+                *e.owner_id(),
                 code,
             )
             .into(),
-            DataTriggerError::DataTriggerInvalidResultError {
-                data_contract_id,
-                document_transition_id,
-                document_transition,
-                owner_id,
-            } => DataTriggerInvalidResultErrorWasm::new(
-                *data_contract_id,
-                *document_transition_id,
-                document_transition.clone(),
-                *owner_id,
+            DataTriggerError::DataTriggerInvalidResultError(e) => DataTriggerInvalidResultErrorWasm::new(
+                *e.data_contract_id(),
+                *e.document_transition_id(),
+                e.document_transition().clone(),
+                *e.owner_id(),
                 code,
             )
             .into(),

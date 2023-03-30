@@ -4,7 +4,9 @@ pub use reject_data_trigger::*;
 
 use crate::document::document_transition::{Action, DocumentCreateTransition, DocumentTransition};
 use crate::{get_from_transition, prelude::Identifier, state_repository::StateRepositoryLike};
-use crate::consensus::state::data_contract::data_trigger::data_trigger_error::DataTriggerError;
+use crate::consensus::state::data_trigger::data_trigger_condition_error::DataTriggerConditionError;
+use crate::consensus::state::data_trigger::data_trigger_error::DataTriggerError;
+use crate::consensus::state::data_trigger::data_trigger_execution_error::DataTriggerExecutionError;
 
 use self::dashpay_data_triggers::create_contact_request_data_trigger;
 use self::dpns_triggers::create_domain_data_trigger;
@@ -33,6 +35,7 @@ pub enum DataTriggerKind {
     CrateFeatureFlag,
     DeleteWithdrawal,
 }
+
 impl From<DataTriggerKind> for &str {
     fn from(value: DataTriggerKind) -> Self {
         match value {
@@ -78,8 +81,8 @@ impl DataTrigger {
         document_transition: &DocumentTransition,
         context: &DataTriggerExecutionContext<'a, SR>,
     ) -> DataTriggerExecutionResult
-    where
-        SR: StateRepositoryLike,
+        where
+            SR: StateRepositoryLike,
     {
         let mut result = DataTriggerExecutionResult::default();
         // TODO remove the clone
@@ -91,18 +94,20 @@ impl DataTrigger {
             context,
             self.top_level_identity.as_ref(),
         )
-        .await;
+            .await;
 
         match maybe_execution_result {
             Err(err) => {
-                let consensus_error = DataTriggerError::DataTriggerExecutionError {
-                    data_contract_id,
-                    document_transition_id: *get_from_transition!(document_transition, id),
-                    message: err.to_string(),
-                    execution_error: err,
-                    document_transition: None,
-                    owner_id: None,
-                };
+                let consensus_error = DataTriggerError::DataTriggerExecutionError(
+                    DataTriggerExecutionError::new(
+                        data_contract_id,
+                        *get_from_transition!(document_transition, id),
+                        err.to_string(),
+                        err,
+                        None,
+                        None,
+                    )
+                );
                 result.add_error(consensus_error.into());
                 result
             }
@@ -118,8 +123,8 @@ async fn execute_trigger<'a, SR>(
     context: &DataTriggerExecutionContext<'a, SR>,
     identifier: Option<&Identifier>,
 ) -> Result<DataTriggerExecutionResult, anyhow::Error>
-where
-    SR: StateRepositoryLike,
+    where
+        SR: StateRepositoryLike,
 {
     match trigger_kind {
         DataTriggerKind::CreateDataContractRequest => {
@@ -149,14 +154,15 @@ fn create_error<SR>(
     dt_create: &DocumentCreateTransition,
     msg: String,
 ) -> DataTriggerError
-where
-    SR: StateRepositoryLike,
+    where
+        SR: StateRepositoryLike,
 {
-    DataTriggerError::DataTriggerConditionError {
-        data_contract_id: context.data_contract.id,
-        document_transition_id: dt_create.base.id,
-        message: msg,
-        owner_id: Some(*context.owner_id),
-        document_transition: Some(DocumentTransition::Create(dt_create.clone())),
-    }
+    DataTriggerError::DataTriggerConditionError(
+        DataTriggerConditionError::new(context.data_contract.id,
+                                       dt_create.base.id,
+                                       msg,
+                                       Some(DocumentTransition::Create(dt_create.clone())),
+                                       Some(*context.owner_id),
+        )
+    )
 }

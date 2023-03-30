@@ -163,7 +163,7 @@ mod test {
             utils::generate_random_identifier_struct,
         },
     };
-    use crate::consensus::state::data_contract::data_trigger::data_trigger_error::DataTriggerError;
+    use crate::consensus::state::data_trigger::data_trigger_error::DataTriggerError;
 
     struct TestData {
         top_level_identifier: Identifier,

@@ -10,7 +10,7 @@ use crate::{
     data_trigger::DataTriggerExecutionResult,
 };
 use platform_value::Error as ValueError;
-use crate::consensus::state::data_contract::data_trigger::data_trigger_error::DataTriggerError;
+use crate::consensus::state::data_trigger::data_trigger_error::DataTriggerError;
 
 pub fn get_schema_error(result: &SimpleValidationResult, number: usize) -> &JsonSchemaError {
     json_schema_error(

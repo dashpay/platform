@@ -1,2 +1,1 @@
 pub mod data_contract_already_present_error;
-pub mod data_trigger;
