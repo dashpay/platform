@@ -55,14 +55,15 @@ COPY . .
 #
 # Configure sccache
 #
-# Set RUSTC_WRAPPER=/usr/bin/sccache to enable `sccache` caching.
-ARG RUSTC_WRAPPER=/usr/bin/sccache
 # Set args below to use Github Actions cache; see https://github.com/mozilla/sccache/blob/main/docs/GHA.md
 ARG SCCACHE_GHA_ENABLED
 ARG ACTIONS_CACHE_URL
 ARG ACTIONS_RUNTIME_TOKEN
+
+# Activate sccache for Rust code
+ENV RUSTC_WRAPPER=/usr/bin/sccache
 # Disable incremental buildings, not supported by sccache
-ARG CARGO_INCREMENTAL=false
+ENV CARGO_INCREMENTAL=false
 
 # Run the build, with extensive caching.
 # 
@@ -73,8 +74,6 @@ ARG CARGO_INCREMENTAL=false
 # see https://github.com/rust-lang/cargo/issues/10781#issuecomment-1441071052
 # 3. To preserve space on github cache, we call `cargo clean`.
 RUN --mount=type=cache,sharing=shared,target=/root/.cache/sccache \
-    --mount=type=cache,sharing=shared,target=${CARGO_HOME}/.crates.toml \
-    --mount=type=cache,sharing=shared,target=${CARGO_HOME}/.crates2.json \
     --mount=type=cache,sharing=shared,target=${CARGO_HOME}/registry/index \
     --mount=type=cache,sharing=shared,target=${CARGO_HOME}/registry/cache \
     --mount=type=cache,sharing=shared,target=${CARGO_HOME}/git/db \
