@@ -1,10 +1,3 @@
-const IdentityPublicKey = require('@dashevo/dpp/lib/identity/IdentityPublicKey');
-
-const PublicKeyIsDisabledConsensusError = require('@dashevo/dpp/lib/errors/consensus/signature/PublicKeyIsDisabledError');
-const WrongPublicKeyPurposeConsensusError = require('@dashevo/dpp/lib/errors/consensus/signature/WrongPublicKeyPurposeError');
-const PublicKeyIsDisabledError = require('@dashevo/dpp/lib/stateTransition/errors/PublicKeyIsDisabledError');
-const DPPError = require('@dashevo/dpp/lib/errors/DPPError');
-
 const { expectValidationError } = require('../../../../lib/test/expect/expectError');
 const getDataContractFixture = require('../../../../lib/test/fixtures/getDataContractFixture');
 const getIdentityFixture = require('../../../../lib/test/fixtures/getIdentityFixture');
@@ -23,6 +16,8 @@ let {
   InvalidSignaturePublicKeySecurityLevelError,
   PublicKeySecurityLevelNotMetError,
   WrongPublicKeyPurposeError,
+  PublicKeyIsDisabledError,
+  IdentityPublicKey,
 } = require('../../../..');
 const getBlsMock = require('../../../../lib/test/mocks/getBlsAdapterMock');
 const createStateRepositoryMock = require('../../../../lib/test/mocks/createStateRepositoryMock');
@@ -52,6 +47,8 @@ describe('validateStateTransitionIdentitySignatureFactory', () => {
       InvalidSignaturePublicKeySecurityLevelError,
       PublicKeySecurityLevelNotMetError,
       WrongPublicKeyPurposeError,
+      PublicKeyIsDisabledError,
+      IdentityPublicKey,
     } = await loadWasmDpp());
     stateRepositoryMock = createStateRepositoryMock(this.sinonSandbox);
     stateRepositoryMock.fetchDataContract.resolves();
@@ -259,7 +256,7 @@ describe('validateStateTransitionIdentitySignatureFactory', () => {
 
     it('should return WrongPublicKeyPurposeConsensusError if WrongPublicKeyPurposeError was thrown', async () => {
       const publicKeys = identity.getPublicKeys();
-      publicKeys[2].setPurpose(4);
+      publicKeys[2].setPurpose(IdentityPublicKey.PURPOSES.ENCRYPTION);
       identity.setPublicKeys(publicKeys);
 
       const result = await validateStateTransitionIdentitySignature(
@@ -273,17 +270,16 @@ describe('validateStateTransitionIdentitySignatureFactory', () => {
       expect(result.getErrors()).to.have.lengthOf(1);
 
       const [error] = result.getErrors();
-      console.log(error);
       expect(error).to.be.instanceOf(WrongPublicKeyPurposeError);
 
-      expect(error.getPublicKeyPurpose()).to.equal(4);
-      expect(error.getKeyPurposeRequirement()).to.equal(2);
+      expect(error.getPublicKeyPurpose()).to.equal(IdentityPublicKey.PURPOSES.ENCRYPTION);
+      expect(error.getKeyPurposeRequirement()).to.equal(IdentityPublicKey.PURPOSES.AUTHENTICATION);
     });
 
     it('should return PublicKeyIsDisabledConsensusError if PublicKeyIsDisabledError was thrown', async () => {
-      const e = new PublicKeyIsDisabledError(identityPublicKey);
-
-      stateTransition.verifySignature.throws(e);
+      const publicKeys = identity.getPublicKeys();
+      publicKeys[2].setDisabledAt(Date.now());
+      identity.setPublicKeys(publicKeys);
 
       const result = await validateStateTransitionIdentitySignature(
         stateTransition,
@@ -296,14 +292,14 @@ describe('validateStateTransitionIdentitySignatureFactory', () => {
       expect(result.getErrors()).to.have.lengthOf(1);
 
       const [error] = result.getErrors();
-      expect(error).to.be.instanceOf(PublicKeyIsDisabledConsensusError);
+      expect(error).to.be.instanceOf(PublicKeyIsDisabledError);
       expect(error.getPublicKeyId()).to.deep.equal(publicKeyId);
     });
 
     it('should return InvalidStateTransitionSignatureError if DPPError was thrown', async () => {
-      const e = new DPPError('Dpp error');
-
-      stateTransition.verifySignature.throws(e);
+      const publicKeys = identity.getPublicKeys();
+      publicKeys[2].setData(Buffer.from('00'.repeat(32), 'hex'));
+      identity.setPublicKeys(publicKeys);
 
       const result = await validateStateTransitionIdentitySignature(
         stateTransition,
@@ -319,26 +315,11 @@ describe('validateStateTransitionIdentitySignatureFactory', () => {
       expect(error).to.be.instanceOf(InvalidStateTransitionSignatureError);
     });
 
-    it('should throw unknown error', async () => {
-      const e = new Error('unknown error');
-
-      stateTransition.verifySignature.throws(e);
-
-      try {
-        await validateStateTransitionIdentitySignature(
-          stateTransition,
-        );
-
-        expect.fail('should throw an error');
-      } catch (error) {
-        expect(error).to.equal(e);
-      }
-    });
-
     it('should not verify signature on dry run', async () => {
-      const e = new DPPError('Dpp error');
-
-      stateTransition.verifySignature.throws(e);
+      // This will produce an error during signature validation
+      const publicKeys = identity.getPublicKeys();
+      publicKeys[2].setDisabledAt(Date.now());
+      identity.setPublicKeys(publicKeys);
 
       executionContext.enableDryRun();
 
