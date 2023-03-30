@@ -181,7 +181,6 @@ describe('validateStateTransitionIdentitySignatureFactory', () => {
   });
 
   it('should return InvalidStateTransitionSignatureError if signature is invalid', async () => {
-    // stateTransition.verifySignature.resolves(false);
     const publicKeys = identity.getPublicKeys();
     publicKeys[2].setData(Buffer.from('00'.repeat(32), 'hex'));
     identity.setPublicKeys(publicKeys);
@@ -225,8 +224,6 @@ describe('validateStateTransitionIdentitySignatureFactory', () => {
       expect(result.getErrors()).to.have.lengthOf(1);
 
       const [error] = result.getErrors();
-
-      console.log(error);
 
       expect(error).to.be.instanceOf(InvalidSignaturePublicKeySecurityLevelError);
       expect(error.getPublicKeySecurityLevel()).to.equal(IdentityPublicKey.SECURITY_LEVELS.MASTER);
