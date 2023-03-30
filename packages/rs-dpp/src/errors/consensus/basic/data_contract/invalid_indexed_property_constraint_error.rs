@@ -50,8 +50,8 @@ impl InvalidIndexedPropertyConstraintError {
 
 impl From<InvalidIndexedPropertyConstraintError> for ConsensusError {
     fn from(err: InvalidIndexedPropertyConstraintError) -> Self {
-        Self::BasicError(Box::new(BasicError::IndexError(
-            IndexError::InvalidIndexedPropertyConstraintError(err),
-        )))
+        Self::BasicError(BasicError::IndexError(
+            BasicError::InvalidIndexedPropertyConstraintError(err),
+        ))
     }
 }

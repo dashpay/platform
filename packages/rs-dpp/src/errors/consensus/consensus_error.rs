@@ -4,20 +4,20 @@ use crate::consensus::state::state_error::StateError;
 
 use crate::consensus::fee::fee_error::FeeError;
 use crate::consensus::signature::signature_error::SignatureError;
+
 #[cfg(test)]
-use crate::errors::consensus::basic::TestConsensusError;
+use crate::consensus::test_consensus_error::TestConsensusError;
+
 use crate::errors::consensus::basic::{BasicError, JsonSchemaError};
 use platform_value::Error as ValueError;
 
 #[derive(Error, Debug)]
-//#[cfg_attr(test, derive(Clone))]
 pub enum ConsensusError {
-    // TODO: Why do we use Box?
     #[error(transparent)]
-    StateError(Box<StateError>),
+    StateError(StateError),
 
     #[error(transparent)]
-    BasicError(Box<BasicError>),
+    BasicError(BasicError),
 
     #[error(transparent)]
     SignatureError(SignatureError),
@@ -37,10 +37,7 @@ impl ConsensusError {
     // TODO: Not sure it should be here. Looks more like a test helper
     pub fn json_schema_error(&self) -> Option<&JsonSchemaError> {
         match self {
-            Self::BasicError(e) => match **e {
-                BasicError::JsonSchemaError(err) => Some(&err),
-                _ => None,
-            },
+            Self::BasicError(BasicError::JsonSchemaError(err)) => Some(err),
             _ => None,
         }
     }

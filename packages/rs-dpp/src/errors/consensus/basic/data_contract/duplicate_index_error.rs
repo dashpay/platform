@@ -30,8 +30,6 @@ impl DuplicateIndexError {
 
 impl From<DuplicateIndexError> for ConsensusError {
     fn from(err: DuplicateIndexError) -> Self {
-        Self::BasicError(Box::new(BasicError::IndexError(
-            IndexError::DuplicateIndexError(err),
-        )))
+        Self::BasicError(BasicError::DuplicateIndexError(err)))
     }
 }

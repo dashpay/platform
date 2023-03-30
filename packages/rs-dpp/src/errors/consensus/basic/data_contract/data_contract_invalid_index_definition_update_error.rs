@@ -29,8 +29,8 @@ impl DataContractInvalidIndexDefinitionUpdateError {
 
 impl From<DataContractInvalidIndexDefinitionUpdateError> for ConsensusError {
     fn from(err: DataContractInvalidIndexDefinitionUpdateError) -> Self {
-        Self::BasicError(Box::new(
-            BasicError::DataContractInvalidIndexDefinitionUpdateError(err),
+        Self::BasicError(BasicError::DataContractInvalidIndexDefinitionUpdateError(
+            err,
         ))
     }
 }

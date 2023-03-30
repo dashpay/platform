@@ -6,11 +6,11 @@ use platform_value::{platform_value, Value};
 use serde_json::Value as JsonValue;
 use test_case::test_case;
 
+use crate::consensus::basic::BasicError;
 use crate::errors::consensus::codes::ErrorWithCode;
 use crate::{
     consensus::{basic::JsonSchemaError, ConsensusError},
     data_contract::validation::data_contract_validator::DataContractValidator,
-    errors::consensus::basic::{BasicError, IndexError},
     prelude::*,
     tests::fixtures::get_data_contract_fixture,
     version::{ProtocolVersionValidator, COMPATIBILITY_MAP, LATEST_VERSION},
@@ -73,16 +73,6 @@ fn get_value_error<TData: Clone>(
 fn get_basic_error(consensus_error: &ConsensusError) -> &BasicError {
     match consensus_error {
         ConsensusError::BasicError(basic_error) => basic_error,
-        _ => panic!("error '{:?}' isn't a basic error", consensus_error),
-    }
-}
-
-fn get_index_error(consensus_error: &ConsensusError) -> &IndexError {
-    match consensus_error {
-        ConsensusError::BasicError(basic_error) => match &**basic_error {
-            BasicError::IndexError(index_error) => index_error,
-            _ => panic!("error '{:?}' isn't a index error", consensus_error),
-        },
         _ => panic!("error '{:?}' isn't a basic error", consensus_error),
     }
 }
@@ -1405,7 +1395,7 @@ mod documents {
         assert_eq!(1009, pattern_error.code());
 
         match pattern_error {
-            ConsensusError::IncompatibleRe2PatternError(err) => {
+            ConsensusError::BasicError(BasicError::IncompatibleRe2PatternError(err)) => {
                 assert_eq!(
                     err.path(),
                     "/documents/indexedDocument/properties/something".to_string()
@@ -1590,7 +1580,6 @@ mod identifier {
 }
 
 mod indices {
-
     use super::*;
 
     #[test]
@@ -1666,13 +1655,14 @@ mod indices {
             .errors
             .get(0)
             .expect("the validation error should be returned");
-        let index_error = get_index_error(validation_error);
 
-        match index_error {
-            IndexError::DuplicateIndexError(err) => {
+        let basic_error = get_basic_error(validation_error);
+
+        match basic_error {
+            BasicError::DuplicateIndexError(err) => {
                 assert_eq!(err.document_type(), "indexedDocument".to_string());
             }
-            _ => panic!("Expected DuplicateIndexError, got {}", index_error),
+            _ => panic!("Expected DuplicateIndexError, got {}", basic_error),
         }
     }
 
@@ -2033,18 +2023,19 @@ mod indices {
             .validate(&raw_data_contract)
             .expect("validation result should be returned");
         let error = result.errors.get(0).expect("the error should be present");
-        let index_error = get_index_error(error);
+        let basic_error = get_basic_error(error);
 
-        assert_eq!(1017, index_error.get_code());
-        match index_error {
-            IndexError::UniqueIndicesLimitReachedError(err) => {
+        assert_eq!(1017, basic_error.code());
+
+        match basic_error {
+            BasicError::UniqueIndicesLimitReachedError(err) => {
                 assert_eq!(err.document_type(), "indexedDocument".to_string());
                 assert_eq!(err.index_limit(), 3);
                 // assert_eq!(err.property_type(), "array".to_string());
             }
             _ => panic!(
                 "Expected UniqueIndicesLimitReachedError, got {}",
-                index_error
+                basic_error
             ),
         }
     }
@@ -2077,17 +2068,17 @@ mod indices {
             .validate(&raw_data_contract)
             .expect("validation result should be returned");
         let error = result.errors.get(0).expect("the error should be present");
-        let index_error = get_index_error(error);
+        let basic_error = get_basic_error(error);
 
-        assert_eq!(1015, index_error.get_code());
-        match index_error {
-            IndexError::SystemPropertyIndexAlreadyPresentError(err) => {
+        assert_eq!(1015, basic_error.code());
+        match basic_error {
+            BasicError::SystemPropertyIndexAlreadyPresentError(err) => {
                 assert_eq!(err.document_type(), "indexedDocument".to_string());
                 assert_eq!(err.property_name(), "$id".to_string());
             }
             _ => panic!(
                 "Expected SystemPropertyIndexAlreadyPresentError, got {}",
-                index_error
+                basic_error
             ),
         }
     }
@@ -2114,15 +2105,16 @@ mod indices {
             .validate(&raw_data_contract)
             .expect("validation result should be returned");
         let error = result.errors.get(0).expect("the error should be present");
-        let index_error = get_index_error(error);
+        let basic_error = get_basic_error(error);
 
-        assert_eq!(1016, index_error.get_code());
-        match index_error {
-            IndexError::UndefinedIndexPropertyError(err) => {
+        assert_eq!(1016, basic_error.code());
+
+        match basic_error {
+            BasicError::UndefinedIndexPropertyError(err) => {
                 assert_eq!(err.document_type(), "indexedDocument".to_string());
                 assert_eq!(err.property_name(), "missingProperty".to_string());
             }
-            _ => panic!("Expected UndefinedIndexPropertyError, got {}", index_error),
+            _ => panic!("Expected UndefinedIndexPropertyError, got {}", basic_error),
         }
     }
 
@@ -2165,18 +2157,19 @@ mod indices {
             .validate(&raw_data_contract)
             .expect("validation result should be returned");
         let error = result.errors.get(0).expect("the error should be present");
-        let index_error = get_index_error(error);
+        let basic_error = get_basic_error(error);
 
-        assert_eq!(1013, index_error.get_code());
-        match index_error {
-            IndexError::InvalidIndexPropertyTypeError(err) => {
+        assert_eq!(1013, basic_error.code());
+
+        match basic_error {
+            BasicError::InvalidIndexPropertyTypeError(err) => {
                 assert_eq!(err.document_type(), "indexedDocument".to_string());
                 assert_eq!(err.property_name(), "objectProperty".to_string());
                 assert_eq!(err.property_type(), "object".to_string());
             }
             _ => panic!(
                 "Expected InvalidIndexPropertyTypeError, got {}",
-                index_error
+                basic_error
             ),
         }
     }
@@ -2220,18 +2213,19 @@ mod indices {
             .validate(&raw_data_contract)
             .expect("validation result should be returned");
         let error = result.errors.get(0).expect("the error should be present");
-        let index_error = get_index_error(error);
+        let basic_error = get_basic_error(error);
 
-        assert_eq!(1013, index_error.get_code());
-        match index_error {
-            IndexError::InvalidIndexPropertyTypeError(err) => {
+        assert_eq!(1013, basic_error.code());
+
+        match basic_error {
+            BasicError::InvalidIndexPropertyTypeError(err) => {
                 assert_eq!(err.document_type(), "indexedArray".to_string());
                 assert_eq!(err.property_name(), "mentions".to_string());
                 assert_eq!(err.property_type(), "array".to_string());
             }
             _ => panic!(
                 "Expected InvalidIndexPropertyTypeError, got {}",
-                index_error
+                basic_error
             ),
         }
     }
@@ -2430,11 +2424,12 @@ mod indices {
             .validate(&raw_data_contract)
             .expect("validation result should be returned");
         let error = result.errors.get(0).expect("the error should be present");
-        let index_error = get_index_error(error);
+        let index_error = get_basic_error(error);
 
-        assert_eq!(1013, index_error.get_code());
+        assert_eq!(1013, index_error.code());
+
         match index_error {
-            IndexError::InvalidIndexPropertyTypeError(err) => {
+            BasicError::InvalidIndexPropertyTypeError(err) => {
                 assert_eq!(err.document_type(), "indexedDocument".to_string());
                 assert_eq!(err.property_name(), "arrayProperty");
                 assert_eq!(err.property_type(), "array".to_string());
@@ -2466,11 +2461,13 @@ mod indices {
             .validate(&raw_data_contract)
             .expect("validation result should be returned");
         let error = result.errors.get(0).expect("the error should be present");
-        let index_error = get_index_error(error);
 
-        assert_eq!(1010, index_error.get_code());
+        let index_error = get_basic_error(error);
+
+        assert_eq!(1010, index_error.code());
+
         match index_error {
-            IndexError::InvalidCompoundIndexError(err) => {
+            BasicError::InvalidCompoundIndexError(err) => {
                 assert_eq!(
                     err.document_type(),
                     "optionalUniqueIndexedDocument".to_string()
@@ -2563,10 +2560,12 @@ mod indices {
                 .validate(&cloned_data_contract)
                 .expect("should return validation result");
 
-            let index_error = get_index_error(&result.errors[0]);
+            let index_error = get_basic_error(&result.errors[0]);
+
             assert_eq!(1016, index_error.get_code());
+
             match index_error {
-                IndexError::UndefinedIndexPropertyError(err) => {
+                BasicError::UndefinedIndexPropertyError(err) => {
                     assert_eq!(err.property_name(), invalid_name.to_string());
                 }
                 _ => panic!("Expected UndefinedIndexPropertyError, got {}", index_error),
@@ -2879,11 +2878,12 @@ fn should_return_invalid_result_if_indexed_string_property_missing_max_length_co
         .errors
         .get(0)
         .expect("the validation error should exist");
-    let index_error = get_index_error(validation_error);
+    let index_error = get_basic_error(validation_error);
 
-    assert_eq!(1012, index_error.get_code());
+    assert_eq!(1012, index_error.code());
+
     match index_error {
-        IndexError::InvalidIndexedPropertyConstraintError(err) => {
+        BasicError::InvalidIndexedPropertyConstraintError(err) => {
             assert_eq!(err.property_name(), "firstName".to_string());
             assert_eq!(err.constraint_name(), "maxLength".to_string());
             assert_eq!(err.reason(), "should be less or equal than 63".to_string());
@@ -2983,11 +2983,12 @@ mod indexed_array {
             .errors
             .get(0)
             .expect("the validation error should exist");
-        let index_error = get_index_error(validation_error);
+        let index_error = get_basic_error(validation_error);
 
         assert_eq!(1012, index_error.get_code());
+
         match index_error {
-            IndexError::InvalidIndexedPropertyConstraintError(err) => {
+            BasicError::InvalidIndexedPropertyConstraintError(err) => {
                 assert_eq!(err.property_name(), "byteArrayField".to_string());
                 assert_eq!(err.constraint_name(), "maxItems".to_string());
                 assert_eq!(err.reason(), "should be less or equal 255".to_string());
@@ -3017,11 +3018,11 @@ mod indexed_array {
             .errors
             .get(0)
             .expect("the validation error should exist");
-        let index_error = get_index_error(validation_error);
+        let index_error = get_basic_error(validation_error);
 
         assert_eq!(1012, index_error.get_code());
         match index_error {
-            IndexError::InvalidIndexedPropertyConstraintError(err) => {
+            BasicError::InvalidIndexedPropertyConstraintError(err) => {
                 assert_eq!(err.property_name(), "byteArrayField".to_string());
                 assert_eq!(err.constraint_name(), "maxItems".to_string());
                 assert_eq!(err.reason(), "should be less or equal 255".to_string());

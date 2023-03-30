@@ -1,6 +1,7 @@
 use jsonschema::ValidationError;
 use thiserror::Error;
 
+use crate::consensus::basic::data_contract::data_contract_max_depth_exceed_error::DataContractMaxDepthExceedError;
 use crate::consensus::basic::data_contract::{
     DataContractHaveNewUniqueIndexError, DataContractImmutablePropertiesUpdateError,
     DataContractInvalidIndexDefinitionUpdateError, DataContractUniqueIndicesChangedError,
@@ -10,7 +11,6 @@ use crate::consensus::basic::data_contract::{
     InvalidJsonSchemaRefError, SystemPropertyIndexAlreadyPresentError, UndefinedIndexPropertyError,
     UniqueIndicesLimitReachedError,
 };
-use crate::consensus::basic::data_contract_max_depth_exceed_error::DataContractMaxDepthExceedError;
 use crate::consensus::basic::decode::ProtocolVersionParsingError;
 use crate::consensus::basic::document::{
     DuplicateDocumentTransitionsWithIdsError, DuplicateDocumentTransitionsWithIndicesError,
@@ -322,7 +322,7 @@ impl From<MissingMasterPublicKeyError> for BasicError {
 }
 
 impl From<BasicError> for ConsensusError {
-    fn from(se: BasicError) -> Self {
-        Self::BasicError(Box::new(se))
+    fn from(error: BasicError) -> Self {
+        Self::BasicError(error)
     }
 }

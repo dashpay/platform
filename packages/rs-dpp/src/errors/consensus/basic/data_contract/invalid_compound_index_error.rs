@@ -29,8 +29,8 @@ impl InvalidCompoundIndexError {
 
 impl From<InvalidCompoundIndexError> for ConsensusError {
     fn from(err: InvalidCompoundIndexError) -> Self {
-        Self::BasicError(Box::new(BasicError::IndexError(
-            IndexError::InvalidCompoundIndexError(err),
-        )))
+        Self::BasicError(BasicError::IndexError(
+            BasicError::InvalidCompoundIndexError(err),
+        ))
     }
 }

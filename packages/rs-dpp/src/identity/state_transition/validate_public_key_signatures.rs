@@ -105,7 +105,7 @@ pub fn validate_public_key_signatures<'a, T: BlsModule>(
 }
 
 fn invalid_state_transition_type_error(transition_type: u8) -> ProtocolError {
-    ProtocolError::AbstractConsensusError(Box::new(ConsensusError::BasicError(Box::new(
+    ProtocolError::ConsensusError(Box::new(ConsensusError::BasicError(Box::new(
         BasicError::InvalidStateTransitionTypeError(InvalidStateTransitionTypeError::new(
             transition_type,
         )),

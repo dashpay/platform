@@ -223,7 +223,7 @@ pub fn try_get_transition_type(
 }
 
 fn missing_state_transition_error() -> ProtocolError {
-    ProtocolError::AbstractConsensusError(Box::new(ConsensusError::BasicError(Box::new(
+    ProtocolError::ConsensusError(Box::new(ConsensusError::BasicError(Box::new(
         BasicError::MissingStateTransitionTypeError,
     ))))
 }

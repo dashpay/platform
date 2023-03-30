@@ -29,8 +29,6 @@ impl DataContractUniqueIndicesChangedError {
 
 impl From<DataContractUniqueIndicesChangedError> for ConsensusError {
     fn from(err: DataContractUniqueIndicesChangedError) -> Self {
-        Self::BasicError(Box::new(BasicError::DataContractUniqueIndicesChangedError(
-            err,
-        )))
+        Self::BasicError(BasicError::DataContractUniqueIndicesChangedError(err))
     }
 }

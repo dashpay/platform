@@ -13,9 +13,7 @@ use super::data_contract_not_present_error::DataContractNotPresentNotConsensusEr
 
 pub fn from_dpp_err(pe: ProtocolError) -> JsValue {
     match pe {
-        ProtocolError::AbstractConsensusError(consensus_error) => {
-            from_consensus_error(*consensus_error)
-        }
+        ProtocolError::ConsensusError(consensus_error) => from_consensus_error(*consensus_error),
         ProtocolError::DataContractError(e) => from_data_contract_to_js_error(e),
 
         ProtocolError::Document(e) => from_document_to_js_error(*e),

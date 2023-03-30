@@ -29,6 +29,6 @@ impl DuplicateIndexNameError {
 
 impl From<DuplicateIndexNameError> for ConsensusError {
     fn from(err: DuplicateIndexNameError) -> Self {
-        Self::BasicError(Box::new(BasicError::DuplicateIndexNameError(err)))
+        Self::BasicError(BasicError::DuplicateIndexNameError(err))
     }
 }

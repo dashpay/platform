@@ -26,7 +26,9 @@ use crate::errors::consensus::state::identity::{
     DuplicatedIdentityPublicKeyIdStateErrorWasm, DuplicatedIdentityPublicKeyStateErrorWasm,
 };
 use dpp::consensus::basic::BasicError;
+use dpp::consensus::signature::signature_error::SignatureError;
 use dpp::consensus::signature::SignatureError;
+use dpp::consensus::state::state_error::StateError;
 use dpp::errors::consensus::codes::ErrorWithCode;
 use dpp::StateError;
 use wasm_bindgen::JsValue;
@@ -334,19 +336,20 @@ pub fn from_state_error(state_error: &StateError) -> JsValue {
     }
 }
 
+// TODO: Move as From/TryInto trait implementation to wasm error modules
 fn from_basic_error(basic_error: &BasicError) -> JsValue {
     let code = basic_error.code();
 
     match basic_error.deref() {
-        BasicError::DataContractNotPresent { data_contract_id } => {
-            DataContractNotPresentErrorWasm::new(*data_contract_id, code).into()
+        BasicError::DataContractNotPresent(err) => {
+            DataContractNotPresentErrorWasm::new(err.data_contract_id(), code).into()
         }
         BasicError::InvalidDataContractVersionError(err) => {
             InvalidDataContractVersionErrorWasm::new(err.expected_version(), err.version(), code)
                 .into()
         }
-        BasicError::DataContractMaxDepthExceedError(depth) => {
-            DataContractMaxDepthExceedErrorWasm::new(*depth, code).into()
+        BasicError::DataContractMaxDepthExceedError(err) => {
+            DataContractMaxDepthExceedErrorWasm::new(err.max_depth(), code).into()
         }
         BasicError::InvalidDocumentTypeError(err) => {
             InvalidDocumentTypeErrorWasm::new(err.document_type(), err.data_contract_id(), code)

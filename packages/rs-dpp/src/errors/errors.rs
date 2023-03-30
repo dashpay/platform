@@ -63,7 +63,7 @@ pub enum ProtocolError {
     StructureError(#[from] StructureError),
 
     #[error(transparent)]
-    AbstractConsensusError(Box<ConsensusError>),
+    ConsensusError(Box<ConsensusError>),
 
     #[error(transparent)]
     Document(Box<DocumentError>),
@@ -162,7 +162,7 @@ impl From<String> for ProtocolError {
 
 impl From<ConsensusError> for ProtocolError {
     fn from(e: ConsensusError) -> Self {
-        ProtocolError::AbstractConsensusError(Box::new(e))
+        ProtocolError::ConsensusError(Box::new(e))
     }
 }
 

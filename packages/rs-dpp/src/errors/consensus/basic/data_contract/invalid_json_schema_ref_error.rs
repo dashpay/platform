@@ -21,6 +21,6 @@ impl InvalidJsonSchemaRefError {
 
 impl From<InvalidJsonSchemaRefError> for ConsensusError {
     fn from(err: InvalidJsonSchemaRefError) -> Self {
-        Self::BasicError(Box::new(BasicError::InvalidJsonSchemaRefError(err)))
+        Self::BasicError(BasicError::InvalidJsonSchemaRefError(err))
     }
 }

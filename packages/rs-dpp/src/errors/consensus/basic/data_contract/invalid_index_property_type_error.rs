@@ -44,8 +44,8 @@ impl InvalidIndexPropertyTypeError {
 
 impl From<InvalidIndexPropertyTypeError> for ConsensusError {
     fn from(err: InvalidIndexPropertyTypeError) -> Self {
-        Self::BasicError(Box::new(BasicError::IndexError(
-            IndexError::InvalidIndexPropertyTypeError(err),
-        )))
+        Self::BasicError(BasicError::IndexError(
+            BasicError::InvalidIndexPropertyTypeError(err),
+        ))
     }
 }

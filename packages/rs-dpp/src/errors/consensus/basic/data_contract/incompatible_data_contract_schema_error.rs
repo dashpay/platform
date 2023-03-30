@@ -52,8 +52,8 @@ impl IncompatibleDataContractSchemaError {
 
 impl From<IncompatibleDataContractSchemaError> for ConsensusError {
     fn from(err: IncompatibleDataContractSchemaError) -> Self {
-        Self::BasicError(Box::new(BasicError::IncompatibleDataContractSchemaError(
+        Self::BasicError(BasicError::IncompatibleDataContractSchemaError(
             err,
-        )))
+        )
     }
 }

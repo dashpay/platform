@@ -42,8 +42,6 @@ impl DataContractImmutablePropertiesUpdateError {
 
 impl From<DataContractImmutablePropertiesUpdateError> for ConsensusError {
     fn from(err: DataContractImmutablePropertiesUpdateError) -> Self {
-        Self::BasicError(Box::new(
-            BasicError::DataContractImmutablePropertiesUpdateError(err),
-        ))
+        Self::BasicError(BasicError::DataContractImmutablePropertiesUpdateError(err))
     }
 }
