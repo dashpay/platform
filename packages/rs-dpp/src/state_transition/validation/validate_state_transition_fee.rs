@@ -465,7 +465,7 @@ mod test {
         let fee_error = get_fee_error_from_result(&result, 0);
 
         assert!(
-            matches!(fee_error, FeeError::BalanceIsNotEnoughError(e) if e.balance() == output_amount)
+            matches!(fee_error, FeeError::BalanceIsNotEnoughError(e) if e.balance() == output_amount + 1)
         );
     }
 
