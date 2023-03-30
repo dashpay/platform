@@ -24,12 +24,19 @@ use drive::{
 };
 use serde_json::Value as JsonValue;
 
-use crate::{error::{execution::ExecutionError, Error}, platform::Platform, rpc::core::CoreRPCLike};
+use crate::{
+    error::{execution::ExecutionError, Error},
+    platform::Platform,
+    rpc::core::CoreRPCLike,
+};
 
 const WITHDRAWAL_TRANSACTIONS_QUERY_LIMIT: u16 = 16;
 const NUMBER_OF_BLOCKS_BEFORE_EXPIRED: u32 = 48;
 
-impl<C> Platform<C> where C: CoreRPCLike {
+impl<C> Platform<C>
+where
+    C: CoreRPCLike,
+{
     /// Update statuses for broadcasted withdrawals
     pub fn update_broadcasted_withdrawal_transaction_statuses(
         &self,
@@ -547,10 +554,9 @@ mod tests {
     };
 
     mod update_withdrawal_statuses {
-        use std::cell::RefCell;
+        use std::sync::RwLock;
 
-        use crate::block::BlockStateInfo;
-        use crate::test::helpers::setup::setup_platform_with_initial_state_structure;
+        use crate::{block::BlockStateInfo, test::helpers::setup::TestPlatformBuilder};
         use dpp::identity::core_script::CoreScript;
         use dpp::platform_value::platform_value;
         use dpp::{
@@ -564,7 +570,9 @@ mod tests {
 
         #[test]
         fn test_statuses_are_updated() {
-            let mut platform = setup_platform_with_initial_state_structure(None);
+            let mut platform = TestPlatformBuilder::<MockCoreRPCLike>::new(None)
+                .set_initial_state_structure()
+                .build();
 
             let mut mock_rpc_client = MockCoreRPCLike::new();
 
@@ -612,7 +620,7 @@ mod tests {
                     }))
                 });
 
-            platform.core_rpc = Box::new(mock_rpc_client);
+            platform.core_rpc = mock_rpc_client;
 
             let transaction = platform.drive.grove.start_transaction();
 
@@ -683,7 +691,7 @@ mod tests {
                 Some(&transaction),
             );
 
-            platform.block_execution_context = RefCell::new(Some(BlockExecutionContext {
+            platform.block_execution_context = RwLock::new(Some(BlockExecutionContext {
                 block_info: BlockStateInfo {
                     block_height: 1,
                     block_time_ms: 1,
@@ -737,7 +745,7 @@ mod tests {
     }
 
     mod pool_withdrawals_into_transactions {
-        use std::cell::RefCell;
+        use std::sync::RwLock;
 
         use dpp::data_contract::DriveContractExt;
         use dpp::identity::core_script::CoreScript;
@@ -749,14 +757,15 @@ mod tests {
         use drive::dpp::contracts::withdrawals_contract;
         use drive::tests::helpers::setup::setup_system_data_contract;
 
-        use crate::block::BlockStateInfo;
-        use crate::test::helpers::setup::setup_platform_with_initial_state_structure;
+        use crate::{block::BlockStateInfo, test::helpers::setup::TestPlatformBuilder};
 
         use super::*;
 
         #[test]
         fn test_pooling() {
-            let mut platform = setup_platform_with_initial_state_structure(None);
+            let mut platform = TestPlatformBuilder::<MockCoreRPCLike>::new(None)
+                .set_initial_state_structure()
+                .build();
 
             let transaction = platform.drive.grove.start_transaction();
 
@@ -817,7 +826,7 @@ mod tests {
                 Some(&transaction),
             );
 
-            platform.block_execution_context = RefCell::new(Some(BlockExecutionContext {
+            platform.block_execution_context = RwLock::new(Some(BlockExecutionContext {
                 block_info: BlockStateInfo {
                     block_height: 1,
                     block_time_ms: 1,
@@ -869,12 +878,15 @@ mod tests {
     }
 
     mod fetch_core_block_transactions {
+        use crate::test::helpers::setup::TestPlatformBuilder;
+
         use super::*;
-        use crate::test::helpers::setup::setup_platform_with_initial_state_structure;
 
         #[test]
         fn test_fetches_core_transactions() {
-            let mut platform = setup_platform_with_initial_state_structure(None);
+            let mut platform = TestPlatformBuilder::<MockCoreRPCLike>::new(None)
+                .set_initial_state_structure()
+                .build();
 
             let mut mock_rpc_client = MockCoreRPCLike::new();
 
@@ -922,7 +934,7 @@ mod tests {
                     }))
                 });
 
-            platform.core_rpc = Box::new(mock_rpc_client);
+            platform.core_rpc = mock_rpc_client;
 
             let transactions = platform
                 .fetch_core_block_transactions(1, 2)
@@ -934,7 +946,6 @@ mod tests {
     }
 
     mod build_withdrawal_transactions_from_documents {
-        use crate::test::helpers::setup::setup_platform_with_initial_state_structure;
         use dpp::data_contract::DriveContractExt;
         use dpp::document::Document;
         use dpp::identity::core_script::CoreScript;
@@ -947,11 +958,15 @@ mod tests {
         use drive::tests::helpers::setup::setup_system_data_contract;
         use itertools::Itertools;
 
+        use crate::test::helpers::setup::TestPlatformBuilder;
+
         use super::*;
 
         #[test]
         fn test_build() {
-            let platform = setup_platform_with_initial_state_structure(None);
+            let platform = TestPlatformBuilder::<MockCoreRPCLike>::new(None)
+                .set_initial_state_structure()
+                .build();
 
             let transaction = platform.drive.grove.start_transaction();
 

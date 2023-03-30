@@ -37,7 +37,7 @@ dashcore-rpc = { git = "https://github.com/jawid-h/rust-dashcore-rpc", branch = 
 dpp = { path = "../rs-dpp", features = ["fixtures-and-mocks"] }
 rust_decimal = "1.2.5"
 rust_decimal_macros = "1.25.0"
-mockall = { version = "0.11", optional = true }
+mockall = { version = "0.11" }
 bytes = { version = "1.4.0", default-features = false }
 prost = { version = "0.11.6", default-features = false }
 tracing = { version = "0.1.37", default-features = false, features = [] }
@@ -59,8 +59,7 @@ anyhow = { version = "1.0.70" }
 itertools = { version = "0.10.5" }
 
 [features]
-default = ["fixtures-and-mocks", "server"]
-fixtures-and-mocks = ["mockall"]
+default = ["server"]
 server = ["tenderdash-abci", "clap", "dotenvy", "tracing-subscriber", "atty"]
 
 [[bin]]

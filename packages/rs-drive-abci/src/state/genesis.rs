@@ -64,7 +64,7 @@ const DPNS_DASH_TLD_PREORDER_SALT: [u8; 32] = [
     227, 199, 153, 234, 158, 115, 123, 79, 154, 162, 38,
 ];
 
-impl<CoreRPCLike> Platform<CoreRPCLike> {
+impl<C> Platform<C> {
     /// Creates trees and populates them with necessary identities, contracts and documents
     pub fn create_genesis_state(
         &self,
@@ -292,11 +292,14 @@ impl<CoreRPCLike> Platform<CoreRPCLike> {
 #[cfg(test)]
 mod tests {
     mod create_genesis_state {
-        use crate::test::helpers::setup::setup_platform_with_genesis_state;
+        use crate::rpc::core::MockCoreRPCLike;
+        use crate::test::helpers::setup::TestPlatformBuilder;
 
         #[test]
         pub fn should_create_genesis_state_deterministically() {
-            let platform = setup_platform_with_genesis_state(None);
+            let platform = TestPlatformBuilder::<MockCoreRPCLike>::new(None)
+                .set_genesis_state()
+                .build();
 
             let root_hash = platform
                 .drive

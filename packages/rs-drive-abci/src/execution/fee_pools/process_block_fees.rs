@@ -253,11 +253,14 @@ mod tests {
     use super::*;
 
     use crate::execution::fee_pools::epoch::EPOCH_CHANGE_TIME_MS;
-    use crate::test::helpers::setup::setup_platform_with_initial_state_structure;
+    use crate::rpc::core::MockCoreRPCLike;
+
     use chrono::Utc;
     use rust_decimal::prelude::ToPrimitive;
 
     mod add_process_epoch_change_operations {
+        use crate::test::helpers::setup::TestPlatformBuilder;
+
         use super::*;
 
         mod helpers {
@@ -265,8 +268,8 @@ mod tests {
             use drive::fee::epoch::CreditsPerEpoch;
 
             /// Process and validate an epoch change
-            pub fn process_and_validate_epoch_change(
-                platform: &Platform,
+            pub fn process_and_validate_epoch_change<C>(
+                platform: &Platform<C>,
                 genesis_time_ms: u64,
                 epoch_index: u16,
                 block_height: u64,
@@ -383,7 +386,9 @@ mod tests {
 
         #[test]
         fn test_processing_epoch_change_for_epoch_0_1_and_4() {
-            let platform = setup_platform_with_initial_state_structure(None);
+            let platform = TestPlatformBuilder::<MockCoreRPCLike>::new(None)
+                .set_initial_state_structure()
+                .build();
             let transaction = platform.drive.grove.start_transaction();
 
             let genesis_time_ms = Utc::now()
@@ -453,7 +458,7 @@ mod tests {
     mod process_block_fees {
         use super::*;
 
-        use crate::config::PlatformConfig;
+        use crate::{config::PlatformConfig, test::helpers::setup::TestPlatformBuilder};
         use drive::common::helpers::identities::create_test_masternode_identities;
 
         mod helpers {
@@ -461,8 +466,8 @@ mod tests {
             use drive::fee::epoch::CreditsPerEpoch;
 
             /// Process and validate block fees
-            pub fn process_and_validate_block_fees(
-                platform: &Platform,
+            pub fn process_and_validate_block_fees<C>(
+                platform: &Platform<C>,
                 genesis_time_ms: u64,
                 epoch_index: u16,
                 block_height: u64,
@@ -557,10 +562,10 @@ mod tests {
         fn test_process_3_block_fees_from_different_epochs() {
             // We are not adding to the overall platform credits so we can't verify
             // the sum trees
-            let platform = setup_platform_with_initial_state_structure(Some(PlatformConfig {
+            let platform = TestPlatformBuilder::<MockCoreRPCLike>::new(Some(PlatformConfig {
                 verify_sum_trees: false,
                 ..Default::default()
-            }));
+            })).set_initial_state_structure().build();
             let transaction = platform.drive.grove.start_transaction();
 
             platform.create_mn_shares_contract(Some(&transaction));

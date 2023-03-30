@@ -1,11 +1,10 @@
 use dashcore::{Block, BlockHash};
 use dashcore_rpc::{Auth, Client, Error, RpcApi};
-#[cfg(feature = "fixtures-and-mocks")]
 use mockall::{automock, predicate::*};
 use serde_json::Value;
 
 /// Core RPC interface
-#[cfg_attr(feature = "fixtures-and-mocks", automock)]
+#[automock]
 pub trait CoreRPCLike {
     /// Get block hash by height
     fn get_block_hash(&self, height: u32) -> Result<BlockHash, Error>;

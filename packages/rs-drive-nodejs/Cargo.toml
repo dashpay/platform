@@ -11,7 +11,7 @@ crate-type = ["cdylib"]
 
 [dependencies]
 drive = { path = "../rs-drive", features = ["fixtures-and-mocks"] }
-drive-abci = { path = "../rs-drive-abci", features = ["fixtures-and-mocks"] }
+drive-abci = { path = "../rs-drive-abci" }
 num = "0.4.0"
 
 [dependencies.neon]

@@ -43,13 +43,9 @@ use std::cell::RefCell;
 use std::path::Path;
 use std::sync::RwLock;
 
-#[cfg(feature = "fixtures-and-mocks")]
 use crate::rpc::core::MockCoreRPCLike;
-#[cfg(feature = "fixtures-and-mocks")]
 use dashcore::hashes::hex::FromHex;
-#[cfg(feature = "fixtures-and-mocks")]
 use dashcore::BlockHash;
-#[cfg(feature = "fixtures-and-mocks")]
 use serde_json::json;
 
 mod state_repository;
@@ -95,7 +91,6 @@ impl Platform<DefaultCoreRPC> {
     }
 }
 
-#[cfg(feature = "fixtures-and-mocks")]
 impl Platform<MockCoreRPCLike> {
     /// Open Platform with Drive and block execution context and mock core rpc.
     pub fn open<P: AsRef<Path>>(

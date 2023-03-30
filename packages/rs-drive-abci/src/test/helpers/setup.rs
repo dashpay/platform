@@ -33,7 +33,6 @@
 //!
 
 use crate::platform::Platform;
-#[cfg(feature = "fixtures-and-mocks")]
 use crate::rpc::core::MockCoreRPCLike;
 use crate::test::fixture::abci::static_system_identity_public_keys;
 use crate::{config::PlatformConfig, rpc::core::DefaultCoreRPC};
@@ -68,7 +67,7 @@ impl TestPlatformBuilder<MockCoreRPCLike> {
 
 impl<C> TestPlatformBuilder<C> {
     /// A function which sets initial state structure for Platform.
-    pub fn set_initial_state_structure(&mut self) -> &mut Self {
+    pub fn set_initial_state_structure(self) -> Self {
         self.platform
             .drive
             .create_initial_state_structure(None)
@@ -78,7 +77,7 @@ impl<C> TestPlatformBuilder<C> {
     }
 
     /// Sets Platform to genesis state.
-    pub fn set_genesis_state(&mut self) -> &mut Self {
+    pub fn set_genesis_state(self) -> Self {
         self.platform
             .create_genesis_state(
                 Default::default(),

@@ -108,7 +108,6 @@ impl<CoreRPCLike> Platform<CoreRPCLike> {
 mod tests {
     use super::*;
 
-    use crate::test::helpers::setup::setup_platform_with_initial_state_structure;
     use drive::common::helpers::epoch::get_storage_credits_for_distribution_for_epochs_in_range;
 
     mod add_distribute_storage_fee_to_epochs_operations {
@@ -118,11 +117,16 @@ mod tests {
         use drive::fee_pools::epochs::Epoch;
         use drive::fee_pools::update_storage_fee_distribution_pool_operation;
 
+        use crate::test::helpers::setup::TestPlatformBuilder;
+        use crate::rpc::core::MockCoreRPCLike;
+
         use super::*;
 
         #[test]
         fn should_add_operations_to_distribute_distribution_storage_pool_and_refunds() {
-            let platform = setup_platform_with_initial_state_structure(None);
+            let platform = TestPlatformBuilder::<MockCoreRPCLike>::new(None)
+                .set_initial_state_structure()
+                .build();
             let transaction = platform.drive.grove.start_transaction();
 
             /*

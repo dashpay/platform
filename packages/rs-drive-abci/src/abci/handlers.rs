@@ -32,12 +32,15 @@
 //! This module defines the `TenderdashAbci` trait and implements it for type `Platform`.
 //!
 
-use crate::{abci::messages::{
-    AfterFinalizeBlockRequest, AfterFinalizeBlockResponse, BlockBeginRequest, BlockBeginResponse,
-    BlockEndRequest, BlockEndResponse, InitChainRequest, InitChainResponse,
-}, rpc::core::CoreRPCLike};
 use crate::block::{BlockExecutionContext, BlockStateInfo};
 use crate::execution::fee_pools::epoch::EpochInfo;
+use crate::{
+    abci::messages::{
+        AfterFinalizeBlockRequest, AfterFinalizeBlockResponse, BlockBeginRequest,
+        BlockBeginResponse, BlockEndRequest, BlockEndResponse, InitChainRequest, InitChainResponse,
+    },
+    rpc::core::CoreRPCLike,
+};
 use drive::grovedb::TransactionArg;
 
 use crate::error::execution::ExecutionError;
@@ -78,7 +81,10 @@ pub trait TenderdashAbci {
     ) -> Result<AfterFinalizeBlockResponse, Error>;
 }
 
-impl<C> TenderdashAbci for Platform<C> where C: CoreRPCLike {
+impl<C> TenderdashAbci for Platform<C>
+where
+    C: CoreRPCLike,
+{
     /// Creates initial state structure and returns response
     fn init_chain(
         &self,
@@ -149,7 +155,9 @@ impl<C> TenderdashAbci for Platform<C> where C: CoreRPCLike {
         };
 
         self.block_execution_context
-            .write().unwrap().replace(block_execution_context);
+            .write()
+            .unwrap()
+            .replace(block_execution_context);
 
         // TODO: This code is not stable and blocking WASM-DPP integration and v0.24 testing
         //   Must be enabled and accomplished when we come back to withdrawals
@@ -273,16 +281,17 @@ mod tests {
         };
         use crate::test::fixture::abci::static_init_chain_request;
         use crate::test::helpers::fee_pools::create_test_masternode_share_identities_and_documents;
-        use crate::test::helpers::setup::setup_platform_raw;
+        use crate::test::helpers::setup::TestPlatformBuilder;
 
         // TODO: Should we remove this test in favor of strategy tests?
 
         #[test]
         fn test_abci_flow() {
-            let mut platform = setup_platform_raw(Some(PlatformConfig {
+            let mut platform = TestPlatformBuilder::<MockCoreRPCLike>::new(Some(PlatformConfig {
                 verify_sum_trees: false,
                 ..Default::default()
-            }));
+            }))
+            .build();
 
             let mut core_rpc_mock = MockCoreRPCLike::new();
 
@@ -407,7 +416,7 @@ mod tests {
                 // .times(total_days)
                 .returning(|_| Ok(json!({})));
 
-            platform.core_rpc = Box::new(core_rpc_mock);
+            platform.core_rpc = core_rpc_mock;
 
             // process blocks
             for day in 0..total_days {
@@ -563,10 +572,11 @@ mod tests {
         fn test_chain_halt_for_36_days() {
             // TODO refactor to remove code duplication
 
-            let mut platform = setup_platform_raw(Some(PlatformConfig {
+            let mut platform = TestPlatformBuilder::<MockCoreRPCLike>::new(Some(PlatformConfig {
                 verify_sum_trees: false,
                 ..Default::default()
-            }));
+            }))
+            .build();
 
             let mut core_rpc_mock = MockCoreRPCLike::new();
 
@@ -585,7 +595,7 @@ mod tests {
                 // .times(1) // TODO: investigate why it always n + 1
                 .returning(|_| Ok(json!({})));
 
-            platform.core_rpc = Box::new(core_rpc_mock);
+            platform.core_rpc = core_rpc_mock;
 
             let transaction = platform.drive.grove.start_transaction();
 

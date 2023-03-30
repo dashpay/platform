@@ -50,13 +50,15 @@ use drive::drive::Drive;
 use drive::fee::credits::Credits;
 use drive::fee_pools::epochs::Epoch;
 use drive::query::DriveQuery;
-use drive_abci::abci::handlers::TenderdashAbci;
 use drive_abci::config::PlatformConfig;
 use drive_abci::execution::execution_event::ExecutionEvent;
 use drive_abci::execution::fee_pools::epoch::{EpochInfo, EPOCH_CHANGE_TIME_MS};
 use drive_abci::platform::Platform;
 use drive_abci::test::fixture::abci::static_init_chain_request;
-use drive_abci::test::helpers::setup::setup_platform_raw;
+use drive_abci::{
+    abci::handlers::TenderdashAbci, rpc::core::DefaultCoreRPC,
+    test::helpers::setup::TestPlatformBuilder,
+};
 use rand::rngs::StdRng;
 use rand::seq::SliceRandom;
 use rand::{Rng, SeedableRng};
@@ -211,7 +213,7 @@ impl Strategy {
 
     fn document_operations_for_block(
         &self,
-        platform: &Platform,
+        platform: &Platform<DefaultCoreRPC>,
         block_info: &BlockInfo,
         current_identities: &Vec<Identity>,
         rng: &mut StdRng,
@@ -300,7 +302,7 @@ impl Strategy {
 
     fn state_transitions_for_block_with_new_identities(
         &self,
-        platform: &Platform,
+        platform: &Platform<DefaultCoreRPC>,
         block_info: &BlockInfo,
         current_identities: &mut Vec<Identity>,
         rng: &mut StdRng,
@@ -375,7 +377,7 @@ fn create_identities_operations<'a>(
 }
 
 pub struct ChainExecutionOutcome {
-    pub platform: Platform,
+    pub platform: Platform<DefaultCoreRPC>,
     pub masternode_identity_balances: BTreeMap<[u8; 32], Credits>,
     pub identities: Vec<Identity>,
     pub proposers: Vec<[u8; 32]>,
@@ -410,7 +412,7 @@ pub(crate) fn run_chain_for_strategy(
     seed: u64,
 ) -> ChainExecutionOutcome {
     let quorum_size = config.quorum_size;
-    let platform = setup_platform_raw(Some(config.clone()));
+    let platform = TestPlatformBuilder::<DefaultCoreRPC>::new(Some(config.clone())).build();
     let mut rng = StdRng::seed_from_u64(seed);
     // init chain
     let init_chain_request = static_init_chain_request();
@@ -451,7 +453,7 @@ pub(crate) fn run_chain_for_strategy(
 }
 
 pub(crate) fn continue_chain_for_strategy(
-    platform: Platform,
+    platform: Platform<DefaultCoreRPC>,
     chain_execution_parameters: ChainExecutionParameters,
     strategy: Strategy,
     config: PlatformConfig,
@@ -492,7 +494,8 @@ pub(crate) fn continue_chain_for_strategy(
             current_time_ms,
             platform
                 .state
-                .borrow()
+                .read()
+                .expect("lock is poisoned")
                 .last_block_info
                 .as_ref()
                 .map(|block_info| block_info.time_ms),
@@ -560,8 +563,10 @@ pub(crate) fn continue_chain_for_strategy(
 
     let end_epoch_index = platform
         .block_execution_context
-        .take()
-        .expect("expected block execution context")
+        .read()
+        .expect("lock is poisoned")
+        .as_ref()
+        .unwrap()
         .epoch_info
         .current_epoch_index;
 
