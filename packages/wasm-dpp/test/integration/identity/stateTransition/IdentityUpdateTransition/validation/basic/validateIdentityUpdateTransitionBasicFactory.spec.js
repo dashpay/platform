@@ -12,7 +12,7 @@ describe('validateIdentityUpdateTransitionBasicFactory', () => {
   let publicKeyToAdd;
 
   let IdentityPublicKey;
-  let IdentityPublicKeyWithWitness;
+  let IdentityPublicKeyCreateTransition;
   let UnsupportedProtocolVersionError;
   let InvalidIdentityKeySignatureError;
   let DuplicatedIdentityPublicKeyIdStateError;
@@ -24,7 +24,7 @@ describe('validateIdentityUpdateTransitionBasicFactory', () => {
       InvalidIdentityKeySignatureError,
       DuplicatedIdentityPublicKeyIdStateError,
       IdentityPublicKey,
-      IdentityPublicKeyWithWitness,
+      IdentityPublicKeyCreateTransition,
       IdentityUpdateTransitionBasicValidator,
     } = await loadWasmDpp());
   });
@@ -49,7 +49,7 @@ describe('validateIdentityUpdateTransitionBasicFactory', () => {
       readOnly: false,
     });
 
-    let identityPublicKeyCreateTransition = new IdentityPublicKeyWithWitness({
+    let identityPublicKeyCreateTransition = new IdentityPublicKeyCreateTransition({
       ...identityPublicKey.toObject(),
       signature: Buffer.alloc(0),
     });
@@ -312,7 +312,7 @@ describe('validateIdentityUpdateTransitionBasicFactory', () => {
       const privateKey = new PrivateKey();
       const publicKey = privateKey.toPublicKey();
 
-      const identityPublicKeyCreateTransition = new IdentityPublicKeyWithWitness(
+      const identityPublicKeyCreateTransition = new IdentityPublicKeyCreateTransition(
         publicKeyToAdd,
       );
       identityPublicKeyCreateTransition.setData(publicKey.toBuffer());
@@ -384,8 +384,8 @@ describe('validateIdentityUpdateTransitionBasicFactory', () => {
       const keyWithDupeId = { ...publicKeyToAdd, data: Buffer.alloc(33) };
 
       stateTransition.setPublicKeysToAdd([
-        new IdentityPublicKeyWithWitness(publicKeyToAdd),
-        new IdentityPublicKeyWithWitness(keyWithDupeId),
+        new IdentityPublicKeyCreateTransition(publicKeyToAdd),
+        new IdentityPublicKeyCreateTransition(keyWithDupeId),
       ]);
 
       rawStateTransition = stateTransition.toObject();

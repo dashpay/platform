@@ -23,6 +23,8 @@ describe('findDuplicatesById', () => {
   it('should return duplicated Documents', () => {
     rawDocumentTransitions.push(rawDocumentTransitions[0]);
 
+    console.dir(rawDocumentTransitions[0]);
+
     const result = findDuplicatesById(rawDocumentTransitions);
 
     expect(result).to.be.an('array');

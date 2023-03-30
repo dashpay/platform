@@ -30,7 +30,7 @@ impl IdentityCreateTransitionStateValidator {
             &state_transition.to_owned().into(),
         )
         .await
-        .map_err(from_dpp_err)?;
+        .map_err(|e| from_dpp_err(e.into()))?;
 
         Ok(validation_result.map(|_| JsValue::undefined()).into())
     }

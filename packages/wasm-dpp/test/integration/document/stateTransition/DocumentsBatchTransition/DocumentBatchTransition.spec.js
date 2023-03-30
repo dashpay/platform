@@ -31,6 +31,7 @@ describe('DocumentBatchTransition', () => {
       DocumentValidator,
     } = await loadWasmDpp());
 
+    console.log(ExtendedDocument);
     const dataContractFixtureJs = getDataContractFixture();
 
     dataContractFixtureJs.documents.niceDocument

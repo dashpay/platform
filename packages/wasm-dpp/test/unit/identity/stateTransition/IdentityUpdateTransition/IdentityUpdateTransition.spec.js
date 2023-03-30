@@ -15,13 +15,13 @@ describe('IdentityUpdateTransition', () => {
 
   let IdentityPublicKey;
   let Identifier;
-  let IdentityPublicKeyWithWitness;
+  let IdentityPublicKeyCreateTransition;
 
   before(async () => {
     ({
       IdentityPublicKey,
       Identifier,
-      IdentityPublicKeyWithWitness,
+      IdentityPublicKeyCreateTransition,
     } = await loadWasmDpp());
   });
 
@@ -81,14 +81,14 @@ describe('IdentityUpdateTransition', () => {
       expect(stateTransition.getPublicKeysToAdd().map((key) => key.toObject()))
         .to.deep.equal(
           rawStateTransition.addPublicKeys
-            .map((rawPublicKey) => new IdentityPublicKeyWithWitness(rawPublicKey).toObject()),
+            .map((rawPublicKey) => new IdentityPublicKeyCreateTransition(rawPublicKey).toObject()),
         );
     });
   });
 
   describe('#setPublicKeysToAdd', () => {
     it('should set public keys to add', () => {
-      const publicKeys = [new IdentityPublicKeyWithWitness({
+      const publicKeys = [new IdentityPublicKeyCreateTransition({
         id: 0,
         type: IdentityPublicKey.TYPES.BLS12_381,
         purpose: 0,

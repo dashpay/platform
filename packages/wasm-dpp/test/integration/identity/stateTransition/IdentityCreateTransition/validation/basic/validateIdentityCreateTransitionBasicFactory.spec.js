@@ -12,7 +12,7 @@ describe('validateIdentityCreateTransitionBasicFactory', () => {
   let stateTransition;
 
   let stateRepositoryMock;
-  let mockIdentityPublicKeyWithWitness;
+  let mockIdentityPublicKeyCreateTransition;
   let executionContext;
 
   let validateIdentityCreateTransitionBasic;
@@ -26,7 +26,7 @@ describe('validateIdentityCreateTransitionBasicFactory', () => {
   let InvalidIdentityPublicKeyDataError;
   let InvalidIdentityKeySignatureError;
   let IdentityCreateTransitionBasicValidator;
-  let IdentityPublicKeyWithWitness;
+  let IdentityPublicKeyCreateTransition;
 
   before(async () => {
     ({
@@ -37,13 +37,13 @@ describe('validateIdentityCreateTransitionBasicFactory', () => {
       InvalidIdentityPublicKeySecurityLevelError,
       InvalidIdentityPublicKeyDataError,
       InvalidIdentityKeySignatureError,
-      IdentityPublicKeyWithWitness,
+      IdentityPublicKeyCreateTransition,
       IdentityCreateTransitionBasicValidator,
       IdentityPublicKey,
     } = await loadWasmDpp());
 
-    mockIdentityPublicKeyWithWitness = (publicKey, opts = {}) => (
-      new IdentityPublicKeyWithWitness({
+    mockIdentityPublicKeyCreateTransition = (publicKey, opts = {}) => (
+      new IdentityPublicKeyCreateTransition({
         id: 0,
         type: IdentityPublicKey.TYPES.ECDSA_SECP256K1,
         data: publicKey,
@@ -74,7 +74,7 @@ describe('validateIdentityCreateTransitionBasicFactory', () => {
     const privateKey = new PrivateKey('9b67f852093bc61cea0eeca38599dbfba0de28574d2ed9b99d10d33dc1bde7b2');
     const publicKey = privateKey.toPublicKey();
 
-    const identityPublicKey = mockIdentityPublicKeyWithWitness(publicKey.toBuffer());
+    const identityPublicKey = mockIdentityPublicKeyCreateTransition(publicKey.toBuffer());
 
     stateTransition.setPublicKeys([identityPublicKey]);
 
@@ -299,7 +299,7 @@ describe('validateIdentityCreateTransitionBasicFactory', () => {
       const privateKey = new PrivateKey();
 
       // Mess up public key
-      const identityPublicKey = mockIdentityPublicKeyWithWitness(Buffer.alloc(33));
+      const identityPublicKey = mockIdentityPublicKeyCreateTransition(Buffer.alloc(33));
 
       stateTransition.setPublicKeys([identityPublicKey]);
       await stateTransition.signByPrivateKey(
@@ -323,7 +323,7 @@ describe('validateIdentityCreateTransitionBasicFactory', () => {
       const privateKey = new PrivateKey();
 
       // Mess up public key's purpose
-      const identityPublicKey = mockIdentityPublicKeyWithWitness(
+      const identityPublicKey = mockIdentityPublicKeyCreateTransition(
         privateKey.toPublicKey().toBuffer(),
       );
 

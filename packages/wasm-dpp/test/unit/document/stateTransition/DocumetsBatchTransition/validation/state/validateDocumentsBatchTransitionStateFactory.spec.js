@@ -106,7 +106,6 @@ describe('validateDocumentsBatchTransitionStateFactory', () => {
     stateRepositoryMock.fetchLatestPlatformBlockTime.resolves(blockTime);
 
     stateRepositoryMock.fetchExtendedDocuments.resolves([]);
-    stateRepositoryMock.fetchDocuments.resolves([]);
 
     executeDataTriggersMock = this.sinonSandbox.stub();
     validateDocumentsUniquenessByIndicesMock = this.sinonSandbox.stub();
@@ -139,7 +138,7 @@ describe('validateDocumentsBatchTransitionStateFactory', () => {
   });
 
   it('should return invalid result if document transition with action "create" is already present  - Rust', async () => {
-    stateRepositoryMock.fetchDocuments.resolves([documents[0].getDocument()]);
+    stateRepositoryMock.fetchExtendedDocuments.resolves([documents[0]]);
 
     const result = await validateDocumentsBatchTransitionState(
       stateRepositoryMock, stateTransition,
@@ -183,7 +182,7 @@ describe('validateDocumentsBatchTransitionStateFactory', () => {
     const [fetchDataContractId] = stateRepositoryMock.fetchDataContract.getCall(0).args;
     expect(fetchDataContractId.toBuffer()).to.deep.equal(dataContract.getId().toBuffer());
 
-    expect(stateRepositoryMock.fetchDocuments)
+    expect(stateRepositoryMock.fetchExtendedDocuments)
       .to.have.been.callCount(documentTransitionsJs.length);
   });
 
@@ -214,7 +213,7 @@ describe('validateDocumentsBatchTransitionStateFactory', () => {
     const [fetchDataContractId] = stateRepositoryMock.fetchDataContract.getCall(0).args;
     expect(fetchDataContractId.toBuffer()).to.deep.equal(dataContract.getId().toBuffer());
 
-    expect(stateRepositoryMock.fetchDocuments).to.have.been
+    expect(stateRepositoryMock.fetchExtendedDocuments).to.have.been
       .callCount(documentTransitionsJs.length);
   });
 
@@ -234,7 +233,7 @@ describe('validateDocumentsBatchTransitionStateFactory', () => {
     }, [dataContract]);
 
     documents[0].setCreatedAt(replaceDocument.getCreatedAt().getMilliseconds());
-    stateRepositoryMock.fetchDocuments.resolves([documents[0].getDocument()]);
+    stateRepositoryMock.fetchExtendedDocuments.resolves([documents[0]]);
 
     const result = await validateDocumentsBatchTransitionState(
       stateRepositoryMock, stateTransition,
@@ -253,7 +252,7 @@ describe('validateDocumentsBatchTransitionStateFactory', () => {
     const [fetchDataContractId] = stateRepositoryMock.fetchDataContract.getCall(0).args;
     expect(fetchDataContractId.toBuffer()).to.deep.equal(dataContract.getId().toBuffer());
 
-    expect(stateRepositoryMock.fetchDocuments).to.have.been
+    expect(stateRepositoryMock.fetchExtendedDocuments).to.have.been
       .callCount(documentTransitionsJs.length);
   });
 
@@ -275,7 +274,7 @@ describe('validateDocumentsBatchTransitionStateFactory', () => {
       transitions: documentTransitionsJs.map((t) => t.toObject()),
     }, [dataContract]);
 
-    stateRepositoryMock.fetchDocuments.resolves([fetchedDocument.getDocument()]);
+    stateRepositoryMock.fetchExtendedDocuments.resolves([fetchedDocument]);
 
     const result = await validateDocumentsBatchTransitionState(
       stateRepositoryMock,
@@ -296,7 +295,7 @@ describe('validateDocumentsBatchTransitionStateFactory', () => {
     const [fetchDataContractId] = stateRepositoryMock.fetchDataContract.getCall(0).args;
     expect(fetchDataContractId.toBuffer()).to.deep.equal(dataContract.getId().toBuffer());
 
-    expect(stateRepositoryMock.fetchDocuments).to.have.been
+    expect(stateRepositoryMock.fetchExtendedDocuments).to.have.been
       .callCount(documentTransitionsJs.length);
   });
 
@@ -599,11 +598,11 @@ describe('validateDocumentsBatchTransitionStateFactory', () => {
 
   it('should return valid result if document transitions are valid - Rust', async () => {
     const fetchedDocuments = [
-      new ExtendedDocument(documentsJs[1].toObject(), dataContract).getDocument(),
-      new ExtendedDocument(documentsJs[2].toObject(), dataContract).getDocument(),
+      new ExtendedDocument(documentsJs[1].toObject(), dataContract),
+      new ExtendedDocument(documentsJs[2].toObject(), dataContract),
     ];
 
-    stateRepositoryMock.fetchDocuments.resolves(fetchedDocuments);
+    stateRepositoryMock.fetchExtendedDocuments.resolves(fetchedDocuments);
 
     documentsJs[1].setRevision(1);
     documentsJs[2].setRevision(1);
@@ -631,16 +630,16 @@ describe('validateDocumentsBatchTransitionStateFactory', () => {
     const [fetchDataContractId] = stateRepositoryMock.fetchDataContract.getCall(0).args;
     expect(fetchDataContractId.toBuffer()).to.deep.equal(dataContract.getId().toBuffer());
 
-    expect(stateRepositoryMock.fetchDocuments).to.have.been.calledOnce();
+    expect(stateRepositoryMock.fetchExtendedDocuments).to.have.been.calledOnce();
   });
 
   it('should return valid result if document transitions are valid - Rust', async () => {
     const fetchedDocuments = [
-      new ExtendedDocument(documentsJs[1].toObject(), dataContract).getDocument(),
-      new ExtendedDocument(documentsJs[2].toObject(), dataContract).getDocument(),
+      new ExtendedDocument(documentsJs[1].toObject(), dataContract),
+      new ExtendedDocument(documentsJs[2].toObject(), dataContract),
     ];
 
-    stateRepositoryMock.fetchDocuments.resolves(fetchedDocuments);
+    stateRepositoryMock.fetchExtendedDocuments.resolves(fetchedDocuments);
 
     documentsJs[1].setRevision(1);
     documentsJs[2].setRevision(1);
@@ -668,6 +667,6 @@ describe('validateDocumentsBatchTransitionStateFactory', () => {
     const [fetchDataContractId] = stateRepositoryMock.fetchDataContract.getCall(0).args;
     expect(fetchDataContractId.toBuffer()).to.deep.equal(dataContract.getId().toBuffer());
 
-    expect(stateRepositoryMock.fetchDocuments).to.have.been.calledOnce();
+    expect(stateRepositoryMock.fetchExtendedDocuments).to.have.been.calledOnce();
   });
 });

@@ -36,7 +36,7 @@ pub async fn validate_uniqueness_by_indices_wasm(
         validate_documents_uniqueness_by_indices::validate_documents_uniqueness_by_indices(
             &wrapped_state_repository,
             &owner_id,
-            document_transitions.iter(),
+            document_transitions,
             js_data_contract.inner(),
             &execution_context,
         )

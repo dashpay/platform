@@ -116,8 +116,8 @@ impl IdentityFacadeWasm {
     }
 
     #[wasm_bindgen]
-    pub fn validate(&self, identity: IdentityWasm) -> Result<ValidationResultWasm, JsValue> {
-        let identity: Identity = identity.into();
+    pub fn validate(&self, identity: &IdentityWasm) -> Result<ValidationResultWasm, JsValue> {
+        let identity: Identity = identity.to_owned().into();
         let identity_json = identity.to_cleaned_object().with_js_error()?;
 
         let validation_result = self

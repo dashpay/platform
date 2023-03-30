@@ -4,7 +4,7 @@ use crate::utils::{ToSerdeJSONExt, WithJsError};
 
 use crate::validation::ValidationResultWasm;
 
-use crate::identity::state_transition::identity_public_key_transitions::IdentityPublicKeyWithWitnessWasm;
+use crate::identity::state_transition::identity_public_key_transitions::IdentityPublicKeyCreateTransitionWasm;
 
 use dpp::identity::state_transition::validate_public_key_signatures::{
     PublicKeysSignaturesValidator, TPublicKeysSignaturesValidator,
@@ -45,7 +45,7 @@ impl PublicKeysSignaturesValidatorWasm {
             .into_iter()
             .map(|raw_key| {
                 let parsed_key: IdentityPublicKeyWithWitness =
-                    IdentityPublicKeyWithWitnessWasm::new(raw_key)?.into();
+                    IdentityPublicKeyCreateTransitionWasm::new(raw_key)?.into();
                 parsed_key.to_raw_object(false).with_js_error()
             })
             .collect::<Result<Vec<Value>, JsValue>>()?;

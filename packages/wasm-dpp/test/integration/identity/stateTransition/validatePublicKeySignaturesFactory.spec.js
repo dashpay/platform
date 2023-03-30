@@ -18,7 +18,7 @@ describe('validatePublicKeySignaturesFactory', () => {
 
   let IdentityCreateTransition;
   let IdentityPublicKey;
-  let IdentityPublicKeyWithWitness;
+  let IdentityPublicKeyCreateTransition;
   let InvalidIdentityKeySignatureError;
   let ValidationResult;
   let PublicKeysSignaturesValidator;
@@ -28,7 +28,7 @@ describe('validatePublicKeySignaturesFactory', () => {
     ({
       IdentityCreateTransition,
       IdentityPublicKey,
-      IdentityPublicKeyWithWitness,
+      IdentityPublicKeyCreateTransition,
       InvalidIdentityKeySignatureError,
       PublicKeysSignaturesValidator,
       ValidationResult,
@@ -43,7 +43,7 @@ describe('validatePublicKeySignaturesFactory', () => {
     const privateKey1 = new PrivateKey('17e0b1703e226204c557bce68b0871683ea409ae90c7a733b72a33f7c129c959');
     const publicKey1 = privateKey1.toPublicKey();
 
-    const identityPublicKey1 = new IdentityPublicKeyWithWitness({
+    const identityPublicKey1 = new IdentityPublicKeyCreateTransition({
       id: 0,
       type: IdentityPublicKey.TYPES.ECDSA_SECP256K1,
       data: publicKey1.toBuffer(),
@@ -56,7 +56,7 @@ describe('validatePublicKeySignaturesFactory', () => {
     const privateKey2 = new PrivateKey('afc20afac882f676af5a268a2eca9c763996c36dbeb3660648df2108006820c7');
     const publicKey2 = privateKey2.toPublicKey();
 
-    const identityPublicKey2 = new IdentityPublicKeyWithWitness({
+    const identityPublicKey2 = new IdentityPublicKeyCreateTransition({
       id: 1,
       type: IdentityPublicKey.TYPES.ECDSA_HASH160,
       data: Hash.sha256ripemd160(publicKey2.toBuffer()),
@@ -75,7 +75,7 @@ describe('validatePublicKeySignaturesFactory', () => {
     const privateKey3 = BasicSchemeMPL.keyGen(randomBytes);
     const publicKey3 = privateKey3.getG1();
 
-    const identityPublicKey3 = new IdentityPublicKeyWithWitness({
+    const identityPublicKey3 = new IdentityPublicKeyCreateTransition({
       id: 2,
       type: IdentityPublicKey.TYPES.BLS12_381,
       data: Buffer.from(publicKey3.serialize()),

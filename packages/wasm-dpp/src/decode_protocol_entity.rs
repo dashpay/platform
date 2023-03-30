@@ -17,7 +17,7 @@ pub fn decode_protocol_entity(buffer: Vec<u8>) -> Result<Array, JsValue> {
         .try_to_validating_json()
         .map_err(|e| from_protocol_error(ProtocolError::ValueError(e)))?
         .serialize(&serializer)
-        .map_err(|e| from_protocol_error(ProtocolError::EncodingError(e.to_string())))?;
+        .map_err(|e| from_protocol_error(ProtocolError::NonConsensusError(e.to_string())))?;
     Ok(Array::from_iter(vec![
         JsValue::from(protocol_version),
         js_value,

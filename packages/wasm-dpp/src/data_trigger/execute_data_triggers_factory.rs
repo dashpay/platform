@@ -1,5 +1,5 @@
 use dpp::document::validation::state::execute_data_triggers::execute_data_triggers_with_custom_list;
-use dpp::prelude::{DataTrigger, DocumentTransition};
+use itertools::Itertools;
 use js_sys::Array;
 use wasm_bindgen::prelude::*;
 
@@ -26,24 +26,24 @@ pub async fn execute_data_triggers_wasm(
     let st_wrapper =
         ExternalStateRepositoryLikeWrapper::new_with_arc(js_context.state_repository());
     let context = data_trigger_context_from_wasm(&js_context, &st_wrapper);
-    let document_transitions = js_document_transitions
+    let document_transitions: Vec<_> = js_document_transitions
         .iter()
         .map(|v| {
             v.to_wasm::<DocumentTransitionWasm>("DocumentTransition")
-                .map(|v| v.to_owned().into_inner())
+                .map(|v| v.to_owned())
         })
-        .collect::<Result<Vec<DocumentTransition>, JsValue>>()?;
+        .try_collect()?;
 
-    let data_triggers = js_data_triggers
+    let data_triggers: Vec<_> = js_data_triggers
         .iter()
         .map(|v| {
             v.to_wasm::<DataTriggerWasm>("DataTrigger")
                 .map(|v| v.to_owned().into_inner())
         })
-        .collect::<Result<Vec<DataTrigger>, JsValue>>()?;
+        .try_collect()?;
 
     let results = execute_data_triggers_with_custom_list(
-        document_transitions.iter().collect::<Vec<_>>().as_slice(),
+        document_transitions.iter().map(|v| v.inner()),
         &context,
         data_triggers,
     )
