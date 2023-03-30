@@ -34,7 +34,13 @@ class IdentityBalanceStoreRepository {
 
       return new StorageResult(
         balance,
-        [new this.dppWasm.PreCalculatedOperation(feeResult)],
+        [
+          new this.dppWasm.PreCalculatedOperation(
+            feeResult.storageFee(),
+            feeResult.processingFee(),
+            feeResult.feeRefunds(),
+          ),
+        ],
       );
     }
 
@@ -73,7 +79,13 @@ class IdentityBalanceStoreRepository {
 
     return new StorageResult(
       balance,
-      [new this.dppWasm.PreCalculatedOperation(feeResult)],
+      [
+        new this.dppWasm.PreCalculatedOperation(
+          feeResult.storageFee(),
+          feeResult.processingFee(),
+          feeResult.feeRefunds(),
+        ),
+      ],
     );
   }
 
@@ -102,7 +114,11 @@ class IdentityBalanceStoreRepository {
       return new StorageResult(
         undefined,
         [
-          new this.dppWasm.PreCalculatedOperation(feeResult),
+          new this.dppWasm.PreCalculatedOperation(
+            feeResult.storageFee(),
+            feeResult.processingFee(),
+            feeResult.feeRefunds(),
+          ),
         ],
       );
     } finally {
@@ -183,7 +199,11 @@ class IdentityBalanceStoreRepository {
       return new StorageResult(
         undefined,
         [
-          new this.dppWasm.PreCalculatedOperation(feeResult),
+          new this.dppWasm.PreCalculatedOperation(
+            feeResult.storageFee(),
+            feeResult.processingFee(),
+            feeResult.feeRefunds(),
+          ),
         ],
       );
     } finally {

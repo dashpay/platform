@@ -41,7 +41,13 @@ class IdentityStoreRepository {
 
       return new StorageResult(
         identity,
-        [new this.dppWasm.PreCalculatedOperation(feeResult)],
+        [
+          new this.dppWasm.PreCalculatedOperation(
+            feeResult.storageFee(),
+            feeResult.processingFee(),
+            feeResult.feeRefunds(),
+          ),
+        ],
       );
     }
 
@@ -172,7 +178,11 @@ class IdentityStoreRepository {
       return new StorageResult(
         undefined,
         [
-          new this.dppWasm.PreCalculatedOperation(feeResult),
+          new this.dppWasm.PreCalculatedOperation(
+            feeResult.storageFee(),
+            feeResult.processingFee(),
+            feeResult.feeRefunds(),
+          ),
         ],
       );
     } finally {
@@ -216,7 +226,11 @@ class IdentityStoreRepository {
       return new StorageResult(
         undefined,
         [
-          new this.dppWasm.PreCalculatedOperation(feeResult),
+          new this.dppWasm.PreCalculatedOperation(
+            feeResult.storageFee(),
+            feeResult.processingFee(),
+            feeResult.feeRefunds(),
+          ),
         ],
       );
     } finally {

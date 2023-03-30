@@ -43,7 +43,11 @@ class IdentityPublicKeyStoreRepository {
       return new StorageResult(
         undefined,
         [
-          new this.dppWasm.PreCalculatedOperation(feeResult),
+          new this.dppWasm.PreCalculatedOperation(
+            feeResult.storageFee(),
+            feeResult.processingFee(),
+            feeResult.feeRefunds(),
+          ),
         ],
       );
     } finally {
@@ -90,7 +94,11 @@ class IdentityPublicKeyStoreRepository {
       return new StorageResult(
         undefined,
         [
-          new this.dppWasm.PreCalculatedOperation(feeResult),
+          new this.dppWasm.PreCalculatedOperation(
+            feeResult.storageFee(),
+            feeResult.processingFee(),
+            feeResult.feeRefunds(),
+          ),
         ],
       );
     } finally {

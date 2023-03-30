@@ -64,7 +64,11 @@ class DocumentRepository {
     return new StorageResult(
       undefined,
       [
-        new this.dppWasm.PreCalculatedOperation(feeResult),
+        new this.dppWasm.PreCalculatedOperation(
+          feeResult.storageFee(),
+          feeResult.processingFee(),
+          feeResult.feeRefunds(),
+        ),
       ],
     );
   }
@@ -109,7 +113,11 @@ class DocumentRepository {
     return new StorageResult(
       undefined,
       [
-        new this.dppWasm.PreCalculatedOperation(feeResult),
+        new this.dppWasm.PreCalculatedOperation(
+          feeResult.storageFee(),
+          feeResult.processingFee(),
+          feeResult.feeRufunds(),
+        ),
       ],
     );
   }
@@ -172,7 +180,7 @@ class DocumentRepository {
       return new StorageResult(
         documents,
         [
-          new this.dppWasm.PreCalculatedOperation(new DummyFeeResult(0, processingCost, [])),
+          new this.dppWasm.PreCalculatedOperation(0, processingCost, []),
         ],
       );
     } catch (e) {
@@ -221,7 +229,11 @@ class DocumentRepository {
       return new StorageResult(
         undefined,
         [
-          new this.dppWasm.PreCalculatedOperation(feeResult),
+          new this.dppWasm.PreCalculatedOperation(
+            feeResult.storageFee(),
+            feeResult.processingFee(),
+            feeResult.feeRefunds(),
+          ),
         ],
       );
     } finally {
@@ -275,7 +287,7 @@ class DocumentRepository {
       return new StorageResult(
         prove,
         [
-          new this.dppWasm.PreCalculatedOperation(new DummyFeeResult(0, processingCost, [])),
+          new this.dppWasm.PreCalculatedOperation(0, processingCost, []),
         ],
       );
     } catch (e) {
