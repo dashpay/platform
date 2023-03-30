@@ -189,7 +189,6 @@ mod test {
     };
     use std::sync::Arc;
 
-    use crate::consensus::ConsensusError;
     use crate::data_contract::state_transition::data_contract_create_transition::DataContractCreateTransition;
     use crate::identity::state_transition::asset_lock_proof::AssetLockProof;
     use crate::identity::state_transition::identity_create_transition::IdentityCreateTransition;

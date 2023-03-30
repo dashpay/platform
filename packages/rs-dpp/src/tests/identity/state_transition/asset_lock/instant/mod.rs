@@ -12,8 +12,6 @@ mod validate_instant_asset_lock_proof_structure_factory {
     use jsonschema::error::ValidationErrorKind;
     use platform_value::Value;
 
-    use crate::assert_consensus_errors;
-    use crate::consensus::codes::ErrorWithCode;
     use crate::consensus::ConsensusError;
     use crate::identity::state_transition::asset_lock_proof::{
         AssetLockProof, InstantAssetLockProof,
@@ -82,7 +80,7 @@ mod validate_instant_asset_lock_proof_structure_factory {
 
     mod asset_lock_type {
         use super::*;
-        use crate::{assert_basic_consensus_errors, assert_state_consensus_errors};
+        use crate::{assert_basic_consensus_errors};
 
         #[tokio::test]
         async fn should_be_present() {
