@@ -42,13 +42,11 @@ use dpp::consensus::basic::BasicError::{
     NotImplementedIdentityCreditWithdrawalTransitionPoolingError, ProtocolVersionParsingError,
     SerializedObjectParsingError, UnsupportedProtocolVersionError,
 };
-use dpp::consensus::fee::balance_is_not_enough_error::BalanceIsNotEnoughError;
 use dpp::consensus::fee::fee_error::FeeError;
 use dpp::consensus::signature::signature_error::SignatureError;
 use dpp::consensus::state::data_trigger::data_trigger_error::DataTriggerError;
 use dpp::consensus::state::state_error::StateError;
 use dpp::errors::consensus::codes::ErrorWithCode;
-use dpp::ProtocolError;
 use wasm_bindgen::JsValue;
 
 use crate::errors::consensus::basic::data_contract::{

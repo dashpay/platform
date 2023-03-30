@@ -3,6 +3,8 @@ mod validate_instant_asset_lock_proof_structure_factory {
     use std::str::FromStr;
     use std::sync::Arc;
 
+    use crate::consensus::basic::BasicError;
+
     use dashcore::hashes::sha256d::Hash as Sha256;
     use dashcore::hashes::Hash;
     use dashcore::Txid;
@@ -80,7 +82,6 @@ mod validate_instant_asset_lock_proof_structure_factory {
 
     mod asset_lock_type {
         use super::*;
-        use crate::consensus::basic::BasicError;
 
         #[tokio::test]
         async fn should_be_present() {

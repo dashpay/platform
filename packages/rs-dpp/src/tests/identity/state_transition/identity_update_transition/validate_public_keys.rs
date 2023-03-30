@@ -1,4 +1,5 @@
 use crate::consensus::codes::ErrorWithCode;
+use crate::errors::consensus::state::state_error::StateError;
 use crate::{
     identity::state_transition::identity_update_transition::validate_public_keys::{
         validate_public_keys, IDENTITY_JSON_SCHEMA,
@@ -44,7 +45,7 @@ fn should_return_invalid_result_if_there_are_duplicate_key_ids() {
 
     assert!(matches!(
         state_error,
-        StateError::DuplicatedIdentityPublicKeyIdError { duplicated_ids }
+        StateError::DuplicatedIdentityPublicKeyIdStateError { duplicated_ids }
         if duplicated_ids == &vec![0]
     ));
     assert_eq!(4022, result.errors[0].code());

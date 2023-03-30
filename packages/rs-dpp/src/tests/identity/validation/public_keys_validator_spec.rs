@@ -4,6 +4,7 @@ use crate::identity::validation::TPublicKeysValidator;
 use crate::identity::{KeyID, KeyType, Purpose, SecurityLevel};
 use crate::tests::fixtures::get_public_keys_validator;
 
+use crate::consensus::basic::BasicError;
 use crate::consensus::codes::ErrorWithCode;
 use crate::{assert_consensus_errors, NativeBlsModule};
 use platform_value::BinaryData;
@@ -339,7 +340,7 @@ pub fn should_return_invalid_result_if_there_are_duplicate_key_ids() {
 
     let errors = assert_consensus_errors!(
         result,
-        ConsensusError::BasicError(DuplicatedIdentityPublicKeyIdBasicError),
+        BasicError::DuplicatedIdentityPublicKeyIdBasicError,
         1
     );
     let consensus_error = result.errors.first().unwrap();
