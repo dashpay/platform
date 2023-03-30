@@ -18,7 +18,7 @@ use drive::dpp::identity::convert_credits_to_satoshi;
 use drive::dpp::util::hash;
 use drive::drive::identity::withdrawals::WithdrawalTransactionIdAndBytes;
 use drive::{
-    drive::{batch::DriveOperationType, block_info::BlockInfo},
+    drive::{batch::DriveOperation, block_info::BlockInfo},
     fee_pools::epochs::Epoch,
     query::TransactionArg,
 };
@@ -75,7 +75,7 @@ impl Platform {
             transaction,
         )?;
 
-        let mut drive_operations: Vec<DriveOperationType> = vec![];
+        let mut drive_operations: Vec<DriveOperation> = vec![];
 
         // Collecting only documents that have been updated
         let documents_to_update: Vec<Document> = broadcasted_withdrawal_documents
@@ -199,7 +199,7 @@ impl Platform {
             ));
         };
 
-        let mut drive_operations: Vec<DriveOperationType> = vec![];
+        let mut drive_operations: Vec<DriveOperation> = vec![];
 
         // Get 16 latest withdrawal transactions from the queue
         let untied_withdrawal_transactions = self.drive.dequeue_withdrawal_transactions(
@@ -447,7 +447,7 @@ impl Platform {
     pub fn build_withdrawal_transactions_from_documents(
         &self,
         documents: &[Document],
-        drive_operation_types: &mut Vec<DriveOperationType>,
+        drive_operation_types: &mut Vec<DriveOperation>,
         transaction: TransactionArg,
     ) -> Result<HashMap<Identifier, WithdrawalTransactionIdAndBytes>, Error> {
         let mut withdrawals: HashMap<Identifier, WithdrawalTransactionIdAndBytes> = HashMap::new();

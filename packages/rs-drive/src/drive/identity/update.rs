@@ -5,7 +5,7 @@ use crate::drive::Drive;
 use crate::error::drive::DriveError;
 use crate::error::Error;
 use crate::fee::calculate_fee;
-use crate::fee::op::DriveOperation;
+use crate::fee::op::LowLevelDriveOperation;
 use grovedb::batch::KeyInfoPath;
 
 use crate::drive::identity::key::fetch::{
@@ -44,9 +44,9 @@ impl Drive {
             &mut estimated_costs_only_with_layer_info,
         )];
 
-        let mut drive_operations: Vec<DriveOperation> = vec![];
+        let mut drive_operations: Vec<LowLevelDriveOperation> = vec![];
 
-        self.apply_batch_drive_operations(
+        self.apply_batch_low_level_drive_operations(
             estimated_costs_only_with_layer_info,
             transaction,
             batch_operations,
@@ -64,10 +64,10 @@ impl Drive {
         &self,
         identity_id: [u8; 32],
         revision: Revision,
-    ) -> DriveOperation {
+    ) -> LowLevelDriveOperation {
         let identity_path = identity_path_vec(identity_id.as_slice());
         let revision_bytes = revision.to_be_bytes().to_vec();
-        DriveOperation::insert_for_known_path_key_element(
+        LowLevelDriveOperation::insert_for_known_path_key_element(
             identity_path,
             Into::<&[u8; 1]>::into(IdentityRootStructure::IdentityTreeRevision).to_vec(),
             Element::new_item(revision_bytes),
@@ -83,7 +83,7 @@ impl Drive {
         estimated_costs_only_with_layer_info: &mut Option<
             HashMap<KeyInfoPath, EstimatedLayerInformation>,
         >,
-    ) -> DriveOperation {
+    ) -> LowLevelDriveOperation {
         if let Some(estimated_costs_only_with_layer_info) = estimated_costs_only_with_layer_info {
             Self::add_estimation_costs_for_update_revision(
                 identity_id,
@@ -92,7 +92,7 @@ impl Drive {
         }
         let identity_path = identity_path_vec(identity_id.as_slice());
         let revision_bytes = revision.to_be_bytes().to_vec();
-        DriveOperation::replace_for_known_path_key_element(
+        LowLevelDriveOperation::replace_for_known_path_key_element(
             identity_path,
             Into::<&[u8; 1]>::into(IdentityRootStructure::IdentityTreeRevision).to_vec(),
             Element::new_item(revision_bytes),
@@ -123,9 +123,9 @@ impl Drive {
             transaction,
         )?;
 
-        let mut drive_operations: Vec<DriveOperation> = vec![];
+        let mut drive_operations: Vec<LowLevelDriveOperation> = vec![];
 
-        self.apply_batch_drive_operations(
+        self.apply_batch_low_level_drive_operations(
             estimated_costs_only_with_layer_info,
             transaction,
             batch_operations,
@@ -146,7 +146,7 @@ impl Drive {
             HashMap<KeyInfoPath, EstimatedLayerInformation>,
         >,
         transaction: TransactionArg,
-    ) -> Result<Vec<DriveOperation>, Error> {
+    ) -> Result<Vec<LowLevelDriveOperation>, Error> {
         let mut drive_operations = vec![];
 
         let key_ids_len = key_ids.len();
@@ -221,8 +221,8 @@ impl Drive {
             &mut estimated_costs_only_with_layer_info,
             transaction,
         )?;
-        let mut drive_operations: Vec<DriveOperation> = vec![];
-        self.apply_batch_drive_operations(
+        let mut drive_operations: Vec<LowLevelDriveOperation> = vec![];
+        self.apply_batch_low_level_drive_operations(
             estimated_costs_only_with_layer_info,
             transaction,
             batch_operations,
@@ -242,8 +242,8 @@ impl Drive {
             HashMap<KeyInfoPath, EstimatedLayerInformation>,
         >,
         transaction: TransactionArg,
-    ) -> Result<Vec<DriveOperation>, Error> {
-        let mut drive_operations: Vec<DriveOperation> = vec![];
+    ) -> Result<Vec<LowLevelDriveOperation>, Error> {
+        let mut drive_operations: Vec<LowLevelDriveOperation> = vec![];
         if let Some(estimated_costs_only_with_layer_info) = estimated_costs_only_with_layer_info {
             Self::add_estimation_costs_for_keys_for_identity_id(
                 identity_id,

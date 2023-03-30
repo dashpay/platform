@@ -1,11 +1,11 @@
-use anyhow::anyhow;
 use platform_value::Value;
 use std::sync::Arc;
 
 use crate::document::ExtendedDocument;
+use crate::validation::ValidationResult;
 use crate::{
     data_contract::DataContract, prelude::Identifier, state_repository::StateRepositoryLike,
-    validation::ValidationResult, version::ProtocolVersionValidator, ProtocolError,
+    version::ProtocolVersionValidator, ProtocolError,
 };
 
 use super::{
@@ -90,20 +90,21 @@ where
     }
 
     /// Creates Documents State Transition
-    pub async fn validate_document(
+    pub async fn validate_extended_document(
         &self,
         extended_document: &ExtendedDocument,
     ) -> Result<ValidationResult<DataContract>, ProtocolError> {
         let raw_extended_document = extended_document.to_value()?;
-        self.validate_raw_document(&raw_extended_document).await
+        self.validate_raw_extended_document(&raw_extended_document)
+            .await
     }
 
     /// Creates Documents State Transition
-    pub async fn validate_raw_document(
+    pub async fn validate_raw_extended_document(
         &self,
         raw_extended_document: &Value,
     ) -> Result<ValidationResult<DataContract>, ProtocolError> {
-        let result = self
+        let mut result = self
             .data_contract_fetcher_and_validator
             .validate_extended(raw_extended_document)
             .await?;
@@ -112,13 +113,13 @@ where
             return Ok(result);
         }
 
-        let data_contract = result
-            .data()
-            .ok_or_else(|| anyhow!("Data Contract for document not present"))?;
-        let result = self
+        let data_contract = result.data()?;
+        let validation_result = self
             .validator
             .validate_extended(raw_extended_document, data_contract)?;
 
-        Ok(ValidationResult::new(Some(result.errors)))
+        result.add_errors(validation_result.errors);
+
+        Ok(result)
     }
 }

@@ -326,7 +326,7 @@ module.exports = {
                     },
                     provider: {
                       type: 'string',
-                      enum: ['zerossl', 'selfSigned', 'file'],
+                      enum: ['zerossl', 'self-signed', 'file'],
                     },
                     providerConfigs: {
                       type: 'object',

@@ -8,7 +8,7 @@ use grovedb::{
 use crate::drive::identity::withdrawals::WithdrawalTransactionIdAndBytes;
 use crate::{
     drive::{
-        batch::{drive_op_batch::WithdrawalOperationType, DriveOperationType},
+        batch::{drive_op_batch::WithdrawalOperationType, DriveOperation},
         Drive,
     },
     error::{drive::DriveError, Error},
@@ -21,10 +21,10 @@ impl Drive {
     pub fn add_enqueue_withdrawal_transaction_operations<'a>(
         &self,
         withdrawals: &'a [WithdrawalTransactionIdAndBytes],
-        drive_operation_types: &mut Vec<DriveOperationType<'a>>,
+        drive_operation_types: &mut Vec<DriveOperation<'a>>,
     ) {
         if !withdrawals.is_empty() {
-            drive_operation_types.push(DriveOperationType::WithdrawalOperation(
+            drive_operation_types.push(DriveOperation::WithdrawalOperation(
                 WithdrawalOperationType::InsertTransactions {
                     withdrawal_transactions: withdrawals,
                 },
@@ -37,7 +37,7 @@ impl Drive {
         &self,
         max_amount: u16,
         transaction: TransactionArg,
-        drive_operation_types: &mut Vec<DriveOperationType>,
+        drive_operation_types: &mut Vec<DriveOperation>,
     ) -> Result<Vec<WithdrawalTransactionIdAndBytes>, Error> {
         let mut query = Query::new();
 
@@ -77,7 +77,7 @@ impl Drive {
 
         if !withdrawals.is_empty() {
             for (id, _) in withdrawals.iter() {
-                drive_operation_types.push(DriveOperationType::WithdrawalOperation(
+                drive_operation_types.push(DriveOperation::WithdrawalOperation(
                     WithdrawalOperationType::DeleteWithdrawalTransaction { id: id.clone() },
                 ));
             }
@@ -90,7 +90,7 @@ impl Drive {
 #[cfg(test)]
 mod tests {
     use crate::{
-        drive::{batch::DriveOperationType, block_info::BlockInfo},
+        drive::{batch::DriveOperation, block_info::BlockInfo},
         fee_pools::epochs::Epoch,
         tests::helpers::setup::setup_drive_with_initial_state_structure,
     };
@@ -111,7 +111,7 @@ mod tests {
             epoch: Epoch::new(1),
         };
 
-        let mut drive_operations: Vec<DriveOperationType> = vec![];
+        let mut drive_operations: Vec<DriveOperation> = vec![];
 
         drive.add_enqueue_withdrawal_transaction_operations(&withdrawals, &mut drive_operations);
 
@@ -119,7 +119,7 @@ mod tests {
             .apply_drive_operations(drive_operations, true, &block_info, Some(&transaction))
             .expect("to apply batch");
 
-        let mut drive_operations: Vec<DriveOperationType> = vec![];
+        let mut drive_operations: Vec<DriveOperation> = vec![];
 
         let withdrawals = drive
             .dequeue_withdrawal_transactions(16, Some(&transaction), &mut drive_operations)
@@ -131,7 +131,7 @@ mod tests {
 
         assert_eq!(withdrawals.len(), 16);
 
-        let mut drive_operations: Vec<DriveOperationType> = vec![];
+        let mut drive_operations: Vec<DriveOperation> = vec![];
 
         let withdrawals = drive
             .dequeue_withdrawal_transactions(16, Some(&transaction), &mut drive_operations)
@@ -143,7 +143,7 @@ mod tests {
 
         assert_eq!(withdrawals.len(), 1);
 
-        let mut drive_operations: Vec<DriveOperationType> = vec![];
+        let mut drive_operations: Vec<DriveOperation> = vec![];
 
         drive
             .dequeue_withdrawal_transactions(16, Some(&transaction), &mut drive_operations)

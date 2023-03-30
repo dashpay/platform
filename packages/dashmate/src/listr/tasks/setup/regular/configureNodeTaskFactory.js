@@ -5,6 +5,7 @@ const BlsSignatures = require('@dashevo/bls');
 const {
   NODE_TYPE_MASTERNODE,
   PRESET_MAINNET,
+  NODE_TYPE_FULLNODE,
 } = require('../../../../constants');
 
 const validateBLSPrivateKeyFactory = require('../../../prompts/validators/validateBLSPrivateKeyFactory');
@@ -57,13 +58,19 @@ function configureNodeTaskFactory() {
           }
 
           // IP and ports
-          if (ctx.nodeType === NODE_TYPE_MASTERNODE) {
+          if (
+            ctx.nodeType === NODE_TYPE_MASTERNODE
+            || (ctx.nodeType === NODE_TYPE_FULLNODE && ctx.isHP)
+          ) {
+            const showEmptyPort = ctx.preset !== PRESET_MAINNET
+              && ctx.nodeType !== NODE_TYPE_FULLNODE;
+
             const form = await task.prompt(await createIpAndPortsForm(ctx.preset, {
               isHPMN: ctx.isHP,
               initialIp: '',
-              initialCoreP2PPort: ctx.preset !== PRESET_MAINNET ? '' : undefined,
-              initialPlatformHTTPPort: ctx.preset !== PRESET_MAINNET ? '' : undefined,
-              initialPlatformP2PPort: ctx.preset !== PRESET_MAINNET ? '' : undefined,
+              initialCoreP2PPort: showEmptyPort ? '' : undefined,
+              initialPlatformHTTPPort: showEmptyPort ? '' : undefined,
+              initialPlatformP2PPort: showEmptyPort ? '' : undefined,
             }));
 
             ctx.config.set('externalIp', form.ip);

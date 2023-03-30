@@ -5,7 +5,7 @@ use crate::drive::identity::{identity_contract_info_root_path_vec, identity_path
 use crate::drive::object_size_info::PathKeyInfo;
 use crate::drive::Drive;
 use crate::error::Error;
-use crate::fee::op::DriveOperation;
+use crate::fee::op::LowLevelDriveOperation;
 use crate::fee_pools::epochs::Epoch;
 use dpp::identity::IdentityPublicKey;
 use grovedb::batch::KeyInfoPath;
@@ -26,8 +26,8 @@ impl Drive {
             HashMap<KeyInfoPath, EstimatedLayerInformation>,
         >,
         transaction: TransactionArg,
-    ) -> Result<Vec<DriveOperation>, Error> {
-        let mut batch_operations: Vec<DriveOperation> = vec![];
+    ) -> Result<Vec<LowLevelDriveOperation>, Error> {
+        let mut batch_operations: Vec<LowLevelDriveOperation> = vec![];
         let storage_flags = StorageFlags::SingleEpoch(epoch.index);
         let identity_path = identity_path_vec(identity_id.as_slice());
         // we insert the contract root tree if it doesn't exist already

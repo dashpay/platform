@@ -1,3 +1,4 @@
+use crate::validation::{SimpleValidationResult, ValidationResult};
 use crate::{
     consensus::{
         basic::{BasicError, IndexError, JsonSchemaError},
@@ -6,11 +7,10 @@ use crate::{
         ConsensusError,
     },
     data_trigger::DataTriggerExecutionResult,
-    validation::ValidationResult,
     DataTriggerError, StateError,
 };
 
-pub fn get_schema_error(result: &ValidationResult<()>, number: usize) -> &JsonSchemaError {
+pub fn get_schema_error(result: &SimpleValidationResult, number: usize) -> &JsonSchemaError {
     result
         .errors
         .get(number)
@@ -36,8 +36,8 @@ pub fn get_index_error(consensus_error: &ConsensusError) -> &IndexError {
     }
 }
 
-pub fn get_state_error_from_result(
-    result: &ValidationResult<()>,
+pub fn get_state_error_from_result<TData: Clone>(
+    result: &ValidationResult<TData>,
     error_number: usize,
 ) -> &StateError {
     match result
@@ -54,7 +54,7 @@ pub fn get_state_error_from_result(
 }
 
 pub fn get_basic_error_from_result(
-    result: &ValidationResult<()>,
+    result: &SimpleValidationResult,
     error_number: usize,
 ) -> &BasicError {
     match result

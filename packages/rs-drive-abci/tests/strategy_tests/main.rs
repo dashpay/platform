@@ -37,7 +37,7 @@ use drive::dpp::document::Document;
 use drive::dpp::identity::{Identity, KeyID, PartialIdentity};
 use drive::dpp::util::deserializer::ProtocolVersion;
 use drive::drive::batch::{
-    ContractOperationType, DocumentOperationType, DriveOperationType, IdentityOperationType,
+    ContractOperationType, DocumentOperationType, DriveOperation, IdentityOperationType,
     SystemOperationType,
 };
 use drive::drive::block_info::BlockInfo;
@@ -187,7 +187,7 @@ impl Strategy {
     fn identity_operations_for_block(
         &self,
         rng: &mut StdRng,
-    ) -> Vec<(Identity, Vec<DriveOperationType>)> {
+    ) -> Vec<(Identity, Vec<DriveOperation>)> {
         let frequency = &self.identities_inserts;
         if frequency.check_hit(rng) {
             let count = frequency.events(rng);
@@ -197,11 +197,11 @@ impl Strategy {
         }
     }
 
-    fn contract_operations(&self) -> Vec<DriveOperationType> {
+    fn contract_operations(&self) -> Vec<DriveOperation> {
         self.contracts
             .iter()
             .map(|contract| {
-                DriveOperationType::ContractOperation(ContractOperationType::ApplyContract {
+                DriveOperation::ContractOperation(ContractOperationType::ApplyContract {
                     contract: Cow::Borrowed(contract),
                     storage_flags: None,
                 })
@@ -215,7 +215,7 @@ impl Strategy {
         block_info: &BlockInfo,
         current_identities: &Vec<Identity>,
         rng: &mut StdRng,
-    ) -> Vec<(PartialIdentity, DriveOperationType)> {
+    ) -> Vec<(PartialIdentity, DriveOperation)> {
         let mut operations = vec![];
         for (op, frequency) in &self.operations {
             if frequency.check_hit(rng) {
@@ -239,7 +239,7 @@ impl Strategy {
                                 Some(identity.id.to_buffer()),
                             );
 
-                            let insert_op = DriveOperationType::DocumentOperation(
+                            let insert_op = DriveOperation::DocumentOperation(
                                 DocumentOperationType::AddDocumentForContract {
                                     document_and_contract_info: DocumentAndContractInfo {
                                         owned_document_info: OwnedDocumentInfo {
@@ -281,7 +281,7 @@ impl Strategy {
                                 .fetch_identity_with_balance(document.owner_id.to_buffer(), None)
                                 .expect("expected to be able to get identity")
                                 .expect("expected to get an identity");
-                            let delete_op = DriveOperationType::DocumentOperation(
+                            let delete_op = DriveOperation::DocumentOperation(
                                 DocumentOperationType::DeleteDocumentForContract {
                                     document_id: document.id.to_buffer(),
                                     contract: &op.contract,
@@ -354,17 +354,17 @@ fn create_identities_operations<'a>(
     count: u16,
     key_count: KeyID,
     rng: &mut StdRng,
-) -> Vec<(Identity, Vec<DriveOperationType<'a>>)> {
+) -> Vec<(Identity, Vec<DriveOperation<'a>>)> {
     let identities = Identity::random_identities_with_rng(count, key_count, rng);
     identities
         .into_iter()
         .map(|identity| {
             let insert_op =
-                DriveOperationType::IdentityOperation(IdentityOperationType::AddNewIdentity {
+                DriveOperation::IdentityOperation(IdentityOperationType::AddNewIdentity {
                     identity: identity.clone(),
                 });
             let system_credits_op =
-                DriveOperationType::SystemOperation(SystemOperationType::AddToSystemCredits {
+                DriveOperation::SystemOperation(SystemOperationType::AddToSystemCredits {
                     amount: identity.balance,
                 });
             let ops = vec![insert_op, system_credits_op];
