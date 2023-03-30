@@ -1,6 +1,6 @@
-const MasternodeSyncAssetEnum = require('../../../src/enums/masternodeSyncAsset');
-const ServiceStatusEnum = require('../../../src/enums/serviceStatus');
-const DockerStatusEnum = require('../../../src/enums/dockerStatus');
+const MasternodeSyncAssetEnum = require('../../../src/status/enums/masternodeSyncAsset');
+const ServiceStatusEnum = require('../../../src/status/enums/serviceStatus');
+const DockerStatusEnum = require('../../../src/status/enums/dockerStatus');
 const determineStatus = require('../../../src/status/determineStatus');
 
 describe('determineStatus', () => {

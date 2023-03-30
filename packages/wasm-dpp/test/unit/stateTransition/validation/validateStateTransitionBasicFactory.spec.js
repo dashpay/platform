@@ -34,7 +34,7 @@ describe('validateStateTransitionBasicFactory', () => {
     const stateRepositoryMock = createStateRepositoryMock(this.sinonSandbox);
     const blsMock = getBlsMock();
 
-    dpp = new DashPlatformProtocol(stateRepositoryMock, blsMock);
+    dpp = new DashPlatformProtocol(blsMock, stateRepositoryMock);
 
     dataContract = await getDataContractFixture();
 

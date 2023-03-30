@@ -206,6 +206,15 @@ class ConfigFile {
   }
 
   /**
+   * Set config
+   *
+   * @param {Config} config
+   */
+  setConfig(config) {
+    this.configsMap[config.getName()] = config;
+  }
+
+  /**
    * Get config file as plain object
    *
    * @return {{
