@@ -1,6 +1,5 @@
 use dpp::dashcore::anyhow::Context;
 use dpp::prelude::{DataContract, Identifier};
-use dpp::util::json_schema::JsonSchemaExt;
 
 use anyhow::anyhow;
 use serde::{Deserialize, Serialize};
@@ -33,7 +32,7 @@ use dpp::document::{Document, EXTENDED_DOCUMENT_IDENTIFIER_FIELDS, IDENTIFIER_FI
 pub use extended_document::ExtendedDocumentWasm;
 
 use dpp::document::extended_document::property_names;
-use dpp::platform_value::btreemap_extensions::BTreeValueMapReplacementPathHelper;
+
 use dpp::platform_value::converter::serde_json::BTreeValueJsonConverter;
 use dpp::platform_value::ReplacementType;
 use dpp::platform_value::Value;
