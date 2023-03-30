@@ -189,6 +189,7 @@ mod test {
     };
     use std::sync::Arc;
 
+    use crate::consensus::ConsensusError;
     use crate::data_contract::state_transition::data_contract_create_transition::DataContractCreateTransition;
     use crate::identity::state_transition::asset_lock_proof::AssetLockProof;
     use crate::identity::state_transition::identity_create_transition::IdentityCreateTransition;
@@ -268,11 +269,7 @@ mod test {
             .expect("the validation result should be returned");
 
         let fee_error = get_fee_error_from_result(&result, 0);
-        assert!(
-            matches!(fee_error, FeeError::BalanceIsNotEnoughError(BalanceIsNotEnoughError::new(balance, _)) if {
-                *balance == 1
-            })
-        );
+        assert!(matches!(fee_error, FeeError::BalanceIsNotEnoughError(e) if e.balance() == 1));
     }
 
     #[tokio::test]
@@ -329,11 +326,7 @@ mod test {
             .expect("the validation result should be returned");
 
         let fee_error = get_fee_error_from_result(&result, 0);
-        assert!(
-            matches!(fee_error, FeeError::BalanceIsNotEnoughError(BalanceIsNotEnoughError::new(balance, ..)) if {
-                *balance == 1
-            })
-        );
+        assert!(matches!(fee_error, FeeError::BalanceIsNotEnoughError(e) if e.balance() == 1));
     }
 
     #[tokio::test]
@@ -420,7 +413,7 @@ mod test {
         let fee_error = get_fee_error_from_result(&result, 0);
 
         assert!(
-            matches!(fee_error, FeeError::BalanceIsNotEnoughError(BalanceIsNotEnoughError::new(balance, ..)) if {
+            matches!(fee_error, ConsensusError::FeeError(FeeError::BalanceIsNotEnoughError(BalanceIsNotEnoughError::new(balance, ..))) if {
                 *balance == output_amount
             })
         );

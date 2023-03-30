@@ -156,6 +156,7 @@ mod test {
 
     use crate::errors::consensus::codes::ErrorWithCode;
     use crate::tests::fixtures::get_extended_documents_fixture;
+    use crate::tests::utils::json_schema_error;
     use crate::validation::SimpleValidationResult;
     use crate::{
         consensus::{basic::JsonSchemaError, ConsensusError},
@@ -575,11 +576,11 @@ mod test {
     }
 
     fn get_first_schema_error(result: &SimpleValidationResult) -> &JsonSchemaError {
-        result
-            .errors
-            .get(0)
-            .expect("the error should be returned in validation result")
-            .json_schema_error()
-            .expect("the error should be json schema error")
+        json_schema_error(
+            result
+                .errors
+                .get(0)
+                .expect("the error should be returned in validation result"),
+        )
     }
 }

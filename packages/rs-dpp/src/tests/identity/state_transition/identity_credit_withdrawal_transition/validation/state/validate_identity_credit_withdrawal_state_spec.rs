@@ -36,7 +36,6 @@ mod validate_identity_credit_withdrawal_transition_state_factory {
     use crate::assert_consensus_errors;
     use crate::consensus::codes::ErrorWithCode;
     use crate::consensus::signature::signature_error::SignatureError;
-    use crate::consensus::state::identity::IdentityInsufficientBalanceError;
     use crate::consensus::state::state_error::StateError;
     use crate::consensus::ConsensusError;
     use crate::prelude::{Identifier, Identity};

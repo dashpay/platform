@@ -19,9 +19,10 @@ pub fn setup_test() -> (Value, IdentityCreditWithdrawalTransitionBasicValidator)
 mod validate_identity_credit_withdrawal_transition_basic_factory {
     use super::*;
 
-    use crate::assert_consensus_errors;
+    use crate::assert_basic_consensus_errors;
     use crate::consensus::basic::BasicError;
-    use crate::consensus::ConsensusError;
+    use crate::errors::consensus::ConsensusError;
+
     use crate::NonConsensusError;
     use jsonschema::error::ValidationErrorKind;
 
@@ -36,7 +37,7 @@ mod validate_identity_credit_withdrawal_transition_basic_factory {
 
             let result = validator.validate(&raw_state_transition).await.unwrap();
 
-            let errors = assert_consensus_errors!(result, BasicError::JsonSchemaError, 1);
+            let errors = assert_basic_consensus_errors!(result, BasicError::JsonSchemaError, 1);
 
             let error = errors.first().unwrap();
 
@@ -60,7 +61,7 @@ mod validate_identity_credit_withdrawal_transition_basic_factory {
 
             let result = validator.validate(&raw_state_transition).await.unwrap();
 
-            let errors = assert_consensus_errors!(result, BasicError::JsonSchemaError, 1);
+            let errors = assert_basic_consensus_errors!(result, BasicError::JsonSchemaError, 1);
 
             let error = errors.first().unwrap();
 
@@ -96,6 +97,7 @@ mod validate_identity_credit_withdrawal_transition_basic_factory {
 
     mod type_property {
         use super::*;
+        use crate::consensus::ConsensusError;
 
         #[tokio::test]
         async fn should_be_present() {
@@ -105,7 +107,7 @@ mod validate_identity_credit_withdrawal_transition_basic_factory {
 
             let result = validator.validate(&raw_state_transition).await.unwrap();
 
-            let errors = assert_consensus_errors!(result, BasicError::JsonSchemaError, 1);
+            let errors = assert_basic_consensus_errors!(result, BasicError::JsonSchemaError, 1);
 
             let error = errors.first().unwrap();
 
@@ -128,7 +130,7 @@ mod validate_identity_credit_withdrawal_transition_basic_factory {
 
             let result = validator.validate(&raw_state_transition).await.unwrap();
 
-            let errors = assert_consensus_errors!(result, BasicError::JsonSchemaError, 2);
+            let errors = assert_basic_consensus_errors!(result, BasicError::JsonSchemaError, 2);
 
             let error = errors.first().unwrap();
 
@@ -144,7 +146,7 @@ mod validate_identity_credit_withdrawal_transition_basic_factory {
 
             let result = validator.validate(&raw_state_transition).await.unwrap();
 
-            let errors = assert_consensus_errors!(result, BasicError::JsonSchemaError, 1);
+            let errors = assert_basic_consensus_errors!(result, BasicError::JsonSchemaError, 1);
 
             let error = errors.first().unwrap();
 
@@ -155,6 +157,8 @@ mod validate_identity_credit_withdrawal_transition_basic_factory {
 
     mod identity_id {
         use super::*;
+        use crate::assert_basic_consensus_errors;
+        use crate::consensus::ConsensusError;
 
         pub async fn should_be_present() {
             let (mut raw_state_transition, validator) = setup_test();
@@ -163,7 +167,7 @@ mod validate_identity_credit_withdrawal_transition_basic_factory {
 
             let result = validator.validate(&raw_state_transition).await.unwrap();
 
-            let errors = assert_consensus_errors!(result, BasicError::JsonSchemaError, 1);
+            let errors = assert_basic_consensus_errors!(result, BasicError::JsonSchemaError, 1);
 
             let error = errors.first().unwrap();
 
@@ -188,7 +192,7 @@ mod validate_identity_credit_withdrawal_transition_basic_factory {
 
             let result = validator.validate(&raw_state_transition).await.unwrap();
 
-            let errors = assert_consensus_errors!(result, BasicError::JsonSchemaError, 32);
+            let errors = assert_basic_consensus_errors!(result, BasicError::JsonSchemaError, 32);
 
             let error = errors.first().unwrap();
 
@@ -206,7 +210,7 @@ mod validate_identity_credit_withdrawal_transition_basic_factory {
 
             let result = validator.validate(&raw_state_transition).await.unwrap();
 
-            let errors = assert_consensus_errors!(result, BasicError::JsonSchemaError, 1);
+            let errors = assert_basic_consensus_errors!(result, BasicError::JsonSchemaError, 1);
 
             let error = errors.first().unwrap();
 
@@ -224,7 +228,7 @@ mod validate_identity_credit_withdrawal_transition_basic_factory {
 
             let result = validator.validate(&raw_state_transition).await.unwrap();
 
-            let errors = assert_consensus_errors!(result, BasicError::JsonSchemaError, 1);
+            let errors = assert_basic_consensus_errors!(result, BasicError::JsonSchemaError, 1);
 
             let error = errors.first().unwrap();
 
@@ -235,6 +239,7 @@ mod validate_identity_credit_withdrawal_transition_basic_factory {
 
     mod amount {
         use super::*;
+        use crate::consensus::ConsensusError;
 
         #[tokio::test]
         async fn should_be_present() {
@@ -244,7 +249,7 @@ mod validate_identity_credit_withdrawal_transition_basic_factory {
 
             let result = validator.validate(&raw_state_transition).await.unwrap();
 
-            let errors = assert_consensus_errors!(result, BasicError::JsonSchemaError, 1);
+            let errors = assert_basic_consensus_errors!(result, BasicError::JsonSchemaError, 1);
 
             let error = errors.first().unwrap();
 
@@ -267,7 +272,7 @@ mod validate_identity_credit_withdrawal_transition_basic_factory {
 
             let result = validator.validate(&raw_state_transition).await.unwrap();
 
-            let errors = assert_consensus_errors!(result, BasicError::JsonSchemaError, 1);
+            let errors = assert_basic_consensus_errors!(result, BasicError::JsonSchemaError, 1);
 
             let error = errors.first().unwrap();
 
@@ -283,7 +288,7 @@ mod validate_identity_credit_withdrawal_transition_basic_factory {
 
             let result = validator.validate(&raw_state_transition).await.unwrap();
 
-            let errors = assert_consensus_errors!(result, BasicError::JsonSchemaError, 1);
+            let errors = assert_basic_consensus_errors!(result, BasicError::JsonSchemaError, 1);
 
             let error = errors.first().unwrap();
 
@@ -303,7 +308,7 @@ mod validate_identity_credit_withdrawal_transition_basic_factory {
 
             let result = validator.validate(&raw_state_transition).await.unwrap();
 
-            let errors = assert_consensus_errors!(result, BasicError::JsonSchemaError, 1);
+            let errors = assert_basic_consensus_errors!(result, BasicError::JsonSchemaError, 1);
 
             let error = errors.first().unwrap();
 
@@ -328,7 +333,7 @@ mod validate_identity_credit_withdrawal_transition_basic_factory {
 
             let result = validator.validate(&raw_state_transition).await.unwrap();
 
-            let errors = assert_consensus_errors!(result, BasicError::JsonSchemaError, 1);
+            let errors = assert_basic_consensus_errors!(result, BasicError::JsonSchemaError, 1);
 
             let error = errors.first().unwrap();
 
@@ -346,7 +351,7 @@ mod validate_identity_credit_withdrawal_transition_basic_factory {
 
             let result = validator.validate(&raw_state_transition).await.unwrap();
 
-            let errors = assert_consensus_errors!(result, BasicError::JsonSchemaError, 1);
+            let errors = assert_basic_consensus_errors!(result, BasicError::JsonSchemaError, 1);
 
             let error = errors.first().unwrap();
 
@@ -364,7 +369,7 @@ mod validate_identity_credit_withdrawal_transition_basic_factory {
 
             let result = validator.validate(&raw_state_transition).await.unwrap();
 
-            let errors = assert_consensus_errors!(result, BasicError::JsonSchemaError, 1);
+            let errors = assert_basic_consensus_errors!(result, BasicError::JsonSchemaError, 1);
 
             let error = errors.first().unwrap();
 
@@ -382,7 +387,7 @@ mod validate_identity_credit_withdrawal_transition_basic_factory {
 
             let result = validator.validate(&raw_state_transition).await.unwrap();
 
-            let errors = assert_consensus_errors!(
+            let errors = assert_basic_consensus_errors!(
                 result,
                 BasicError::InvalidIdentityCreditWithdrawalTransitionCoreFeeError,
                 1
@@ -405,7 +410,7 @@ mod validate_identity_credit_withdrawal_transition_basic_factory {
 
             let result = validator.validate(&raw_state_transition).await.unwrap();
 
-            let errors = assert_consensus_errors!(result, BasicError::JsonSchemaError, 1);
+            let errors = assert_basic_consensus_errors!(result, BasicError::JsonSchemaError, 1);
 
             let error = errors.first().unwrap();
 
@@ -428,7 +433,7 @@ mod validate_identity_credit_withdrawal_transition_basic_factory {
 
             let result = validator.validate(&raw_state_transition).await.unwrap();
 
-            let errors = assert_consensus_errors!(result, BasicError::JsonSchemaError, 2);
+            let errors = assert_basic_consensus_errors!(result, BasicError::JsonSchemaError, 2);
 
             let error = errors.first().unwrap();
 
@@ -444,7 +449,7 @@ mod validate_identity_credit_withdrawal_transition_basic_factory {
 
             let result = validator.validate(&raw_state_transition).await.unwrap();
 
-            let errors = assert_consensus_errors!(result, BasicError::JsonSchemaError, 1);
+            let errors = assert_basic_consensus_errors!(result, BasicError::JsonSchemaError, 1);
 
             let error = errors.first().unwrap();
 
@@ -460,7 +465,7 @@ mod validate_identity_credit_withdrawal_transition_basic_factory {
 
             let result = validator.validate(&raw_state_transition).await.unwrap();
 
-            let errors = assert_consensus_errors!(
+            let errors = assert_basic_consensus_errors!(
                 result,
                 BasicError::NotImplementedIdentityCreditWithdrawalTransitionPoolingError,
                 1
@@ -473,6 +478,7 @@ mod validate_identity_credit_withdrawal_transition_basic_factory {
     }
 
     mod output_script {
+        use crate::consensus::ConsensusError;
         use crate::identity::core_script::CoreScript;
         use crate::identity::state_transition::properties::PROPERTY_OUTPUT_SCRIPT;
 
@@ -485,7 +491,7 @@ mod validate_identity_credit_withdrawal_transition_basic_factory {
 
             let result = validator.validate(&raw_state_transition).await.unwrap();
 
-            let errors = assert_consensus_errors!(result, BasicError::JsonSchemaError, 1);
+            let errors = assert_basic_consensus_errors!(result, BasicError::JsonSchemaError, 1);
 
             let error = errors.first().unwrap();
 
@@ -510,7 +516,7 @@ mod validate_identity_credit_withdrawal_transition_basic_factory {
 
             let result = validator.validate(&raw_state_transition).await.unwrap();
 
-            let errors = assert_consensus_errors!(result, BasicError::JsonSchemaError, 23);
+            let errors = assert_basic_consensus_errors!(result, BasicError::JsonSchemaError, 23);
 
             let error = errors.first().unwrap();
 
@@ -528,7 +534,7 @@ mod validate_identity_credit_withdrawal_transition_basic_factory {
 
             let result = validator.validate(&raw_state_transition).await.unwrap();
 
-            let errors = assert_consensus_errors!(result, BasicError::JsonSchemaError, 1);
+            let errors = assert_basic_consensus_errors!(result, BasicError::JsonSchemaError, 1);
 
             let error = errors.first().unwrap();
 
@@ -546,7 +552,7 @@ mod validate_identity_credit_withdrawal_transition_basic_factory {
 
             let result = validator.validate(&raw_state_transition).await.unwrap();
 
-            let errors = assert_consensus_errors!(result, BasicError::JsonSchemaError, 1);
+            let errors = assert_basic_consensus_errors!(result, BasicError::JsonSchemaError, 1);
 
             let error = errors.first().unwrap();
 
@@ -564,7 +570,7 @@ mod validate_identity_credit_withdrawal_transition_basic_factory {
 
             let result = validator.validate(&raw_state_transition).await.unwrap();
 
-            let errors = assert_consensus_errors!(
+            let errors = assert_basic_consensus_errors!(
                 result,
                 BasicError::InvalidIdentityCreditWithdrawalTransitionOutputScriptError,
                 1
@@ -578,6 +584,7 @@ mod validate_identity_credit_withdrawal_transition_basic_factory {
 
     mod signature {
         use super::*;
+        use crate::assert_basic_consensus_errors;
 
         pub async fn should_be_present() {
             let (mut raw_state_transition, validator) = setup_test();
@@ -586,7 +593,7 @@ mod validate_identity_credit_withdrawal_transition_basic_factory {
 
             let result = validator.validate(&raw_state_transition).await.unwrap();
 
-            let errors = assert_consensus_errors!(result, BasicError::JsonSchemaError, 1);
+            let errors = assert_basic_consensus_errors!(result, BasicError::JsonSchemaError, 1);
 
             let error = errors.first().unwrap();
 
@@ -611,7 +618,7 @@ mod validate_identity_credit_withdrawal_transition_basic_factory {
 
             let result = validator.validate(&raw_state_transition).await.unwrap();
 
-            let errors = assert_consensus_errors!(result, BasicError::JsonSchemaError, 65);
+            let errors = assert_basic_consensus_errors!(result, BasicError::JsonSchemaError, 65);
 
             let error = errors.first().unwrap();
 
@@ -629,7 +636,7 @@ mod validate_identity_credit_withdrawal_transition_basic_factory {
 
             let result = validator.validate(&raw_state_transition).await.unwrap();
 
-            let errors = assert_consensus_errors!(result, BasicError::JsonSchemaError, 1);
+            let errors = assert_basic_consensus_errors!(result, BasicError::JsonSchemaError, 1);
 
             let error = errors.first().unwrap();
 
@@ -647,7 +654,7 @@ mod validate_identity_credit_withdrawal_transition_basic_factory {
 
             let result = validator.validate(&raw_state_transition).await.unwrap();
 
-            let errors = assert_consensus_errors!(result, BasicError::JsonSchemaError, 1);
+            let errors = assert_basic_consensus_errors!(result, BasicError::JsonSchemaError, 1);
 
             let error = errors.first().unwrap();
 
@@ -667,7 +674,7 @@ mod validate_identity_credit_withdrawal_transition_basic_factory {
 
             let result = validator.validate(&raw_state_transition).await.unwrap();
 
-            let errors = assert_consensus_errors!(result, BasicError::JsonSchemaError, 1);
+            let errors = assert_basic_consensus_errors!(result, BasicError::JsonSchemaError, 1);
 
             let error = errors.first().unwrap();
 
@@ -692,7 +699,7 @@ mod validate_identity_credit_withdrawal_transition_basic_factory {
 
             let result = validator.validate(&raw_state_transition).await.unwrap();
 
-            let errors = assert_consensus_errors!(result, BasicError::JsonSchemaError, 1);
+            let errors = assert_basic_consensus_errors!(result, BasicError::JsonSchemaError, 1);
 
             let error = errors.first().unwrap();
 
@@ -710,7 +717,7 @@ mod validate_identity_credit_withdrawal_transition_basic_factory {
 
             let result = validator.validate(&raw_state_transition).await.unwrap();
 
-            let errors = assert_consensus_errors!(result, BasicError::JsonSchemaError, 1);
+            let errors = assert_basic_consensus_errors!(result, BasicError::JsonSchemaError, 1);
 
             let error = errors.first().unwrap();
 

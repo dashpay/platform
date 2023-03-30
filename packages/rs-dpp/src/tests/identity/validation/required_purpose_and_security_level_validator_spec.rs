@@ -1,3 +1,4 @@
+use crate::consensus::basic::BasicError;
 use crate::consensus::codes::ErrorWithCode;
 use crate::identity::{
     validation::{RequiredPurposeAndSecurityLevelValidator, TPublicKeysValidator},
@@ -37,7 +38,7 @@ fn should_return_invalid_result_if_state_transition_does_not_contain_master_key(
 
     assert!(matches!(
         result.errors[0],
-        crate::consensus::ConsensusError::MissingMasterPublicKeyError(..)
+        BasicError::MissingMasterPublicKeyError(..)
     ));
     assert_eq!(1046, result.errors[0].code())
 }

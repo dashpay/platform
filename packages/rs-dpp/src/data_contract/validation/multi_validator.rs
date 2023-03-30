@@ -198,7 +198,7 @@ mod test {
         let consensus_error = result.errors.get(0).expect("the error should be returned");
 
         match consensus_error {
-            BasicError::IncompatibleRe2PatternError(err) => {
+            ConsensusError::BasicError(BasicError::IncompatibleRe2PatternError(err)) => {
                 assert_eq!(err.path(), "/properties/bar".to_string());
                 assert_eq!(
                     err.pattern(),
@@ -226,7 +226,7 @@ mod test {
         let consensus_error = result.errors.get(0).expect("the error should be returned");
 
         match consensus_error {
-            BasicError::IncompatibleRe2PatternError(err) => {
+            ConsensusError::BasicError(BasicError::IncompatibleRe2PatternError(err)) => {
                 assert_eq!(
                     err.path(),
                     "/properties/arrayOfObject/items/properties/simple".to_string()
@@ -251,7 +251,7 @@ mod test {
         let consensus_error = result.errors.get(0).expect("the error should be returned");
 
         match consensus_error {
-            BasicError::IncompatibleRe2PatternError(err) => {
+            ConsensusError::BasicError(BasicError::IncompatibleRe2PatternError(err)) => {
                 assert_eq!(
                     err.path(),
                     "/properties/arrayOfObjects/items/[0]/properties/simple".to_string()
