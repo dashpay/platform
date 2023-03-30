@@ -231,7 +231,7 @@ mod validate_instant_asset_lock_proof_structure_factory {
 
             assert_consensus_errors!(result, ConsensusError::InvalidInstantAssetLockProofError, 1);
 
-            let consensus_error = result.first_error().unwrap();
+            let consensus_error = result.errors().first().unwrap();
             assert_eq!(consensus_error.code(), 1041);
         }
 
@@ -263,7 +263,7 @@ mod validate_instant_asset_lock_proof_structure_factory {
             );
 
             let error = errors.first().unwrap();
-            let consensus_error = result.first_error().unwrap();
+            let consensus_error = result.errors().first().unwrap();
             assert_eq!(consensus_error.code(), 1031);
             assert_eq!(
                 error.instant_lock_transaction_id(),
@@ -294,7 +294,7 @@ mod validate_instant_asset_lock_proof_structure_factory {
                 1
             );
 
-            let consensus_error = result.first_error().unwrap();
+            let consensus_error = result.errors().first().unwrap();
             assert_eq!(consensus_error.code(), 1042);
         }
     }
@@ -409,7 +409,7 @@ mod validate_instant_asset_lock_proof_structure_factory {
                 1
             );
 
-            let consensus_error = result.first_error().unwrap();
+            let consensus_error = result.errors().first().unwrap();
             assert_eq!(consensus_error.code(), 1038);
         }
     }
@@ -495,9 +495,6 @@ mod validate_instant_asset_lock_proof_structure_factory {
             .unwrap();
 
         assert!(result.is_valid());
-        assert_eq!(
-            result.data().expect("expected data").to_vec(),
-            test_data.public_key_hash
-        );
+        assert_eq!(result.data().unwrap().to_vec(), test_data.public_key_hash);
     }
 }

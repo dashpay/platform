@@ -96,7 +96,7 @@ where
             .state_repository
             .fetch_latest_platform_core_chain_locked_height()
             .await
-            .map_err(|e| NonConsensusError::StateRepositoryFetchError(format!("state repository fetch current core chain locked height for chain asset lock proof verification error: {}", e)))?
+            .map_err(|e| NonConsensusError::StateRepositoryFetchError(format!("state repository fetch current core chain locked height for chain asset lock proof verification error: {}",e.to_string())))?
             .unwrap_or(0);
 
         if current_core_chain_locked_height < proof_core_chain_locked_height {
@@ -122,7 +122,7 @@ where
             .map_err(|e| {
                 NonConsensusError::StateRepositoryFetchError(format!(
                     "transaction fetching error for chain lock: {}",
-                    e
+                    e.to_string()
                 ))
             })?;
 
@@ -132,7 +132,7 @@ where
             .map_err(|e| {
                 NonConsensusError::StateRepositoryFetchError(format!(
                     "transaction decoding error: {}",
-                    e
+                    e.to_string()
                 ))
             })?;
 
@@ -160,15 +160,15 @@ where
                 .validate(&raw_tx, output_index as usize, execution_context)
                 .await?;
 
-            let validation_result_data =
-                if validate_asset_lock_transaction_result.is_valid_with_data() {
-                    validate_asset_lock_transaction_result
-                        .into_data()
-                        .expect("This can not happen due to the logic above")
-                } else {
-                    result.merge(validate_asset_lock_transaction_result);
-                    return Ok(result);
-                };
+            let validation_result_data = if validate_asset_lock_transaction_result.is_valid() {
+                validate_asset_lock_transaction_result
+                    .data()
+                    .expect("This can not happen due to the logic above")
+                    .clone()
+            } else {
+                result.merge(validate_asset_lock_transaction_result);
+                return Ok(result);
+            };
 
             let public_key_hash = validation_result_data.public_key_hash;
 

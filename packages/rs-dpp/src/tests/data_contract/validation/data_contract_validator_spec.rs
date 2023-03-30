@@ -46,10 +46,7 @@ fn init() {
         .try_init();
 }
 
-fn get_schema_error<TData: Clone>(
-    result: &ValidationResult<TData>,
-    number: usize,
-) -> &JsonSchemaError {
+fn get_schema_error(result: &ValidationResult<()>, number: usize) -> &JsonSchemaError {
     result
         .errors
         .get(number)
@@ -58,10 +55,7 @@ fn get_schema_error<TData: Clone>(
         .expect("the error should be json schema error")
 }
 
-fn get_value_error<TData: Clone>(
-    result: &ValidationResult<TData>,
-    number: usize,
-) -> &platform_value::Error {
+fn get_value_error(result: &ValidationResult<()>, number: usize) -> &platform_value::Error {
     result
         .errors
         .get(number)
@@ -87,7 +81,7 @@ fn get_index_error(consensus_error: &ConsensusError) -> &IndexError {
     }
 }
 
-fn print_json_schema_errors<TData: Clone>(result: &ValidationResult<TData>) {
+fn print_json_schema_errors(result: &ValidationResult<()>) {
     for (i, e) in result.errors.iter().enumerate() {
         let schema_error = e.json_schema_error().unwrap();
         println!(
@@ -2563,7 +2557,7 @@ mod indices {
                 .validate(&cloned_data_contract)
                 .expect("should return validation result");
 
-            let index_error = get_index_error(&result.errors[0]);
+            let index_error = get_index_error(&result.errors()[0]);
             assert_eq!(1016, index_error.get_code());
             match index_error {
                 IndexError::UndefinedIndexPropertyError(err) => {

@@ -6,7 +6,6 @@ use dashcore::signer::verify_hash_signature;
 
 use crate::consensus::signature::IdentityNotFoundError;
 use crate::consensus::ConsensusError;
-use crate::validation::AsyncDataValidator;
 use crate::{
     consensus::signature::SignatureError,
     identity::{
@@ -19,7 +18,7 @@ use crate::{
         state_transition_execution_context::StateTransitionExecutionContext,
         StateTransition, StateTransitionConvert, StateTransitionLike,
     },
-    validation::SimpleValidationResult,
+    validation::{AsyncDataValidator, SimpleValidationResult, ValidationResult},
     ProtocolError,
 };
 
@@ -34,8 +33,6 @@ where
     SR: StateRepositoryLike,
 {
     type Item = StateTransition;
-    type ResultItem = ();
-
     async fn validate(&self, data: &Self::Item) -> Result<SimpleValidationResult, ProtocolError> {
         validate_state_transition_key_signature(
             self.state_repository.as_ref(),
@@ -65,7 +62,7 @@ pub async fn validate_state_transition_key_signature<SR: StateRepositoryLike>(
     state_repository: &impl StateRepositoryLike,
     asset_lock_public_key_hash_fetcher: &AssetLockPublicKeyHashFetcher<SR>,
     state_transition: &StateTransition,
-) -> Result<SimpleValidationResult, ProtocolError> {
+) -> Result<ValidationResult<()>, ProtocolError> {
     let mut result = SimpleValidationResult::default();
 
     let execution_context = state_transition.get_execution_context();

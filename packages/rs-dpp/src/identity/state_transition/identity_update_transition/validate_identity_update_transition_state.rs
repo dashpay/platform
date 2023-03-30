@@ -4,13 +4,12 @@ use std::convert::TryInto;
 use std::sync::Arc;
 
 use crate::consensus::signature::{IdentityNotFoundError, SignatureError};
-use crate::identity::state_transition::identity_update_transition::IdentityUpdateTransitionAction;
 use crate::{
     block_time_window::validate_time_in_block_time_window::validate_time_in_block_time_window,
     identity::validation::{RequiredPurposeAndSecurityLevelValidator, TPublicKeysValidator},
     state_repository::StateRepositoryLike,
     state_transition::StateTransitionLike,
-    validation::ValidationResult,
+    validation::SimpleValidationResult,
     NonConsensusError, StateError,
 };
 
@@ -36,8 +35,8 @@ where
     pub async fn validate(
         &self,
         state_transition: &IdentityUpdateTransition,
-    ) -> Result<ValidationResult<IdentityUpdateTransitionAction>, NonConsensusError> {
-        let mut validation_result = ValidationResult::default();
+    ) -> Result<SimpleValidationResult, NonConsensusError> {
+        let mut validation_result = SimpleValidationResult::default();
 
         let maybe_stored_identity = self
             .state_repository
@@ -57,8 +56,7 @@ where
             })?;
 
         if state_transition.get_execution_context().is_dry_run() {
-            let action: IdentityUpdateTransitionAction = state_transition.into();
-            return Ok(action.into());
+            return Ok(validation_result);
         }
 
         let stored_identity = match maybe_stored_identity {
@@ -169,18 +167,10 @@ where
             .public_keys_validator
             .validate_keys(raw_public_keys.as_slice())?;
         if !result.is_valid() {
-            validation_result.add_errors(result.errors);
-            return Ok(validation_result);
+            return Ok(result);
         }
 
         let validator = RequiredPurposeAndSecurityLevelValidator {};
-        let result = validator.validate_keys(&raw_public_keys)?;
-        if !result.is_valid() {
-            validation_result.add_errors(result.errors);
-            return Ok(validation_result);
-        }
-
-        let action: IdentityUpdateTransitionAction = state_transition.into();
-        Ok(action.into())
+        validator.validate_keys(&raw_public_keys)
     }
 }

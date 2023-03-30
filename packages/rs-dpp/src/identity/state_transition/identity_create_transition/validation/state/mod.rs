@@ -1,10 +1,8 @@
 use crate::consensus::state::identity::IdentityAlreadyExistsError;
-use crate::identity::state_transition::identity_create_transition::{
-    IdentityCreateTransition, IdentityCreateTransitionAction,
-};
+use crate::identity::state_transition::identity_create_transition::IdentityCreateTransition;
 use crate::state_repository::StateRepositoryLike;
 use crate::state_transition::StateTransitionLike;
-use crate::validation::{AsyncDataValidator, ValidationResult};
+use crate::validation::{AsyncDataValidator, SimpleValidationResult, ValidationResult};
 use crate::{NonConsensusError, ProtocolError};
 use async_trait::async_trait;
 
@@ -21,12 +19,11 @@ where
     SR: StateRepositoryLike,
 {
     type Item = IdentityCreateTransition;
-    type ResultItem = IdentityCreateTransitionAction;
 
     async fn validate(
         &self,
         data: &IdentityCreateTransition,
-    ) -> Result<ValidationResult<Self::ResultItem>, ProtocolError> {
+    ) -> Result<SimpleValidationResult, ProtocolError> {
         validate_identity_create_transition_state(&self.state_repository, data)
             .await
             .map_err(|err| err.into())
@@ -55,7 +52,8 @@ where
 pub async fn validate_identity_create_transition_state(
     state_repository: &impl StateRepositoryLike,
     state_transition: &IdentityCreateTransition,
-) -> Result<ValidationResult<IdentityCreateTransitionAction>, ProtocolError> {
+) -> Result<ValidationResult<()>, NonConsensusError> {
+    // TODO: refactor to return ProtocolError?
     let mut result = ValidationResult::default();
 
     let identity_id = state_transition.get_identity_id();
@@ -70,26 +68,14 @@ pub async fn validate_identity_create_transition_state(
         })?;
 
     if state_transition.get_execution_context().is_dry_run() {
-        return Ok(IdentityCreateTransitionAction::from_borrowed(state_transition, 0).into());
+        return Ok(result);
     }
 
-    // Balance is here to check if the identity does already exist
     if balance.is_some() {
         result.add_error(IdentityAlreadyExistsError::new(identity_id.to_buffer()));
-        Ok(result)
-    } else {
-        let tx_out = state_transition
-            .asset_lock_proof
-            .fetch_asset_lock_transaction_output(
-                state_repository,
-                &state_transition.execution_context,
-            )
-            .await
-            .map_err(Into::<NonConsensusError>::into)?;
-        return Ok(
-            IdentityCreateTransitionAction::from_borrowed(state_transition, tx_out.value).into(),
-        );
     }
+
+    Ok(result)
 }
 
 #[cfg(test)]

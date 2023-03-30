@@ -86,7 +86,7 @@ where
             .map_err(|e| {
                 NonConsensusError::StateRepositoryFetchError(format!(
                     "state repository verify instant send lock error: {}",
-                    e
+                    e.to_string()
                 ))
             })?;
 
@@ -104,11 +104,11 @@ where
             .validate(&tx_json_uint_array, output_index, execution_context)
             .await?;
 
-        let validation_result_data = if validate_asset_lock_transaction_result.is_valid_with_data()
-        {
+        let validation_result_data = if validate_asset_lock_transaction_result.is_valid() {
             validate_asset_lock_transaction_result
-                .into_data()
+                .data()
                 .expect("This can not happen due to the logic above")
+                .clone()
         } else {
             result.merge(validate_asset_lock_transaction_result);
             return Ok(result);

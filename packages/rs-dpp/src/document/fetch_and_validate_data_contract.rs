@@ -9,11 +9,11 @@ use crate::{
     prelude::Identifier,
     state_repository::StateRepositoryLike,
     state_transition::state_transition_execution_context::StateTransitionExecutionContext,
+    validation::ValidationResult,
     ProtocolError,
 };
 
 use crate::document::extended_document::property_names;
-use crate::validation::ValidationResult;
 
 pub struct DataContractFetcherAndValidator<ST> {
     state_repository: Arc<ST>,

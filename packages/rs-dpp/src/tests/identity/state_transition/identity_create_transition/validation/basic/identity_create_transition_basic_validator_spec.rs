@@ -480,9 +480,9 @@ mod validate_identity_create_transition_basic_factory {
             let pk_validator_mock = Arc::new(PublicKeysValidatorMock::new());
             let pk_error = TestConsensusError::new("test");
             pk_validator_mock.returns_fun(move || {
-                Ok(ValidationResult::new_with_errors(vec![
-                    ConsensusError::from(TestConsensusError::new("test")),
-                ]))
+                Ok(ValidationResult::new(Some(vec![ConsensusError::from(
+                    TestConsensusError::new("test"),
+                )])))
             });
 
             let (raw_state_transition, validator) = setup_test(
@@ -513,9 +513,9 @@ mod validate_identity_create_transition_basic_factory {
             let pk_validator_mock = Arc::new(PublicKeysValidatorMock::new());
             let pk_error = TestConsensusError::new("test");
             pk_validator_mock.returns_fun(move || {
-                Ok(ValidationResult::new_with_errors(vec![
-                    ConsensusError::from(TestConsensusError::new("test")),
-                ]))
+                Ok(ValidationResult::new(Some(vec![ConsensusError::from(
+                    TestConsensusError::new("test"),
+                )])))
             });
 
             let (raw_state_transition, validator) = setup_test(

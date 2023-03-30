@@ -2,14 +2,16 @@ use platform_value::Value;
 use regex::Regex;
 
 use crate::consensus::basic::data_contract::IncompatibleRe2PatternError;
-use crate::consensus::{basic::BasicError, ConsensusError};
-use crate::validation::SimpleValidationResult;
+use crate::{
+    consensus::{basic::BasicError, ConsensusError},
+    validation::ValidationResult,
+};
 
 pub type SubValidator =
-    fn(path: &str, key: &str, parent: &Value, value: &Value, result: &mut SimpleValidationResult);
+    fn(path: &str, key: &str, parent: &Value, value: &Value, result: &mut ValidationResult<()>);
 
-pub fn validate(raw_data_contract: &Value, validators: &[SubValidator]) -> SimpleValidationResult {
-    let mut result = SimpleValidationResult::default();
+pub fn validate(raw_data_contract: &Value, validators: &[SubValidator]) -> ValidationResult<()> {
+    let mut result = ValidationResult::default();
     let mut values_queue: Vec<(&Value, String)> = vec![(raw_data_contract, String::from(""))];
 
     while let Some((value, path)) = values_queue.pop() {
@@ -50,7 +52,7 @@ pub fn pattern_is_valid_regex_validator(
     key: &str,
     _parent: &Value,
     value: &Value,
-    result: &mut SimpleValidationResult,
+    result: &mut ValidationResult<()>,
 ) {
     if key == "pattern" {
         if let Some(pattern) = value.as_str() {
@@ -77,7 +79,7 @@ pub fn pattern_is_valid_regex_validator(
 
 fn unwrap_error_to_result<'a, 'b>(
     v: Result<Option<&'a Value>, ConsensusError>,
-    result: &'b mut SimpleValidationResult,
+    result: &'b mut ValidationResult<()>,
 ) -> Option<&'a Value> {
     match v {
         Ok(v) => v,
@@ -93,7 +95,7 @@ pub fn byte_array_has_no_items_as_parent_validator(
     key: &str,
     parent: &Value,
     value: &Value,
-    result: &mut SimpleValidationResult,
+    result: &mut ValidationResult<()>,
 ) {
     if key == "byteArray"
         && value.is_bool()
@@ -148,7 +150,7 @@ mod test {
               }
         );
         let mut result = validate(&schema, &[byte_array_has_no_items_as_parent_validator]);
-        assert_eq!(2, result.errors.len());
+        assert_eq!(2, result.errors().len());
         let first_error = get_basic_error(result.errors.pop().unwrap());
         let second_error = get_basic_error(result.errors.pop().unwrap());
 

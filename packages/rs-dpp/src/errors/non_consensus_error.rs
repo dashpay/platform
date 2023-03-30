@@ -2,7 +2,7 @@ use platform_value::Error as ValueError;
 use thiserror::Error;
 
 use crate::{
-    CompatibleProtocolVersionIsNotDefinedError, DPPError, InvalidVectorSizeError, SerdeParsingError,
+    CompatibleProtocolVersionIsNotDefinedError, InvalidVectorSizeError, SerdeParsingError,
 };
 
 #[derive(Debug, Error)]
@@ -20,8 +20,6 @@ pub enum NonConsensusError {
     InvalidVectorSizeError(InvalidVectorSizeError),
     #[error("StateRepositoryFetchError: {0}")]
     StateRepositoryFetchError(String),
-    #[error("WithdrawalError: {0}")]
-    WithdrawalError(String),
     #[error("IdentifierCreateError: {0}")]
     IdentifierCreateError(String),
     #[error("IdentityPublicKeyCreateError: {0}")]
@@ -40,9 +38,6 @@ pub enum NonConsensusError {
         object_name: &'static str,
         details: String,
     },
-
-    #[error(transparent)]
-    DPPError(#[from] DPPError),
 
     #[error(transparent)]
     Error(#[from] anyhow::Error),

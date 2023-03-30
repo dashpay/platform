@@ -20,12 +20,8 @@ use crate::{
 
 use super::property_names::*;
 
-mod action;
 pub mod apply_data_contract_update_transition_factory;
 pub mod validation;
-pub use action::{
-    DataContractUpdateTransitionAction, DATA_CONTRACT_UPDATE_TRANSITION_ACTION_VERSION,
-};
 
 pub mod property_names {
     pub const PROTOCOL_VERSION: &str = "protocolVersion";

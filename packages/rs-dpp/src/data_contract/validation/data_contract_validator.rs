@@ -11,7 +11,6 @@ use crate::consensus::basic::data_contract::{
     SystemPropertyIndexAlreadyPresentError, UndefinedIndexPropertyError,
     UniqueIndicesLimitReachedError,
 };
-use crate::validation::{SimpleValidationResult, ValidationResult};
 use crate::{
     consensus::basic::{BasicError, IndexError},
     data_contract::{
@@ -23,7 +22,7 @@ use crate::{
         json_schema::{Index, JsonSchemaExt},
         json_value::JsonValueExt,
     },
-    validation::{DataValidator, JsonSchemaValidator},
+    validation::{DataValidator, JsonSchemaValidator, ValidationResult},
     version::ProtocolVersionValidator,
     ProtocolError,
 };
@@ -72,7 +71,7 @@ impl DataContractValidator {
     pub fn validate(
         &self,
         raw_data_contract: &Value,
-    ) -> Result<SimpleValidationResult, ProtocolError> {
+    ) -> Result<ValidationResult<()>, ProtocolError> {
         let mut result = ValidationResult::default();
 
         trace!("validating against data contract meta validator");
@@ -170,7 +169,7 @@ fn validate_index_definitions(
     indices: &[Index],
     document_type: &str,
     document_schema: &JsonValue,
-) -> (SimpleValidationResult, bool) {
+) -> (ValidationResult<()>, bool) {
     let mut result = ValidationResult::default();
     let mut indices_fingerprints: Vec<String> = vec![];
 
@@ -263,8 +262,8 @@ fn validate_property_definition(
     maybe_property_definition: Option<&JsonValue>,
     document_type: &str,
     index_definition: &Index,
-) -> SimpleValidationResult {
-    let mut result = SimpleValidationResult::default();
+) -> ValidationResult<()> {
+    let mut result = ValidationResult::default();
 
     // we are allowed to use unwrap as we return if some of the properties definitions is None
     let property_definition = maybe_property_definition.unwrap();
@@ -384,8 +383,8 @@ fn validate_not_defined_properties(
     properties: &HashMap<&String, Option<&JsonValue>>,
     index_definition: &Index,
     document_type: &str,
-) -> SimpleValidationResult {
-    let mut result = SimpleValidationResult::default();
+) -> ValidationResult<()> {
+    let mut result = ValidationResult::default();
     for (property_name, definition) in properties {
         if definition.is_none() {
             result.add_error(BasicError::IndexError(
@@ -404,8 +403,8 @@ fn validate_not_defined_properties(
 fn validate_index_naming_duplicates(
     indices: &[Index],
     document_type: &str,
-) -> SimpleValidationResult {
-    let mut result = SimpleValidationResult::default();
+) -> ValidationResult<()> {
+    let mut result = ValidationResult::default();
     for duplicate_index in indices.iter().map(|i| &i.name).duplicates() {
         result.add_error(BasicError::DuplicateIndexNameError(
             DuplicateIndexNameError::new(document_type.to_owned(), duplicate_index.to_owned()),
@@ -415,8 +414,8 @@ fn validate_index_naming_duplicates(
 }
 
 /// checks the limit of unique indexes defined in the data contract
-fn validate_max_unique_indices(indices: &[Index], document_type: &str) -> SimpleValidationResult {
-    let mut result = SimpleValidationResult::default();
+fn validate_max_unique_indices(indices: &[Index], document_type: &str) -> ValidationResult<()> {
+    let mut result = ValidationResult::default();
     if indices.iter().filter(|i| i.unique).count() > UNIQUE_INDEX_LIMIT {
         result.add_error(BasicError::IndexError(
             IndexError::UniqueIndicesLimitReachedError(UniqueIndicesLimitReachedError::new(
@@ -433,8 +432,8 @@ fn validate_max_unique_indices(indices: &[Index], document_type: &str) -> Simple
 fn validate_no_system_indices(
     index_definition: &Index,
     document_type: &str,
-) -> SimpleValidationResult {
-    let mut result = SimpleValidationResult::default();
+) -> ValidationResult<()> {
+    let mut result = ValidationResult::default();
 
     for property in index_definition.properties.iter() {
         if NOT_ALLOWED_SYSTEM_PROPERTIES.contains(&property.name.as_str()) {

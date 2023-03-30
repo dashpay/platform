@@ -10,7 +10,7 @@ use crate::data_contract::document_type::IndexProperty;
 use crate::util::json_schema::Index;
 use crate::util::json_schema::JsonSchemaExt;
 use crate::util::json_value::JsonValueExt;
-use crate::validation::SimpleValidationResult;
+use crate::validation::ValidationResult;
 use crate::ProtocolError;
 use anyhow::anyhow;
 
@@ -21,8 +21,8 @@ type JsonSchema = serde_json::Value;
 pub fn validate_indices_are_backward_compatible<'a>(
     existing_documents: impl IntoIterator<Item = (&'a DocumentType, &'a JsonSchema)>,
     new_documents: impl IntoIterator<Item = (&'a DocumentType, &'a JsonSchema)>,
-) -> Result<SimpleValidationResult, ProtocolError> {
-    let mut result = SimpleValidationResult::default();
+) -> Result<ValidationResult<()>, ProtocolError> {
+    let mut result = ValidationResult::default();
     let new_documents_by_type: HashMap<&DocumentType, &JsonSchema> =
         new_documents.into_iter().collect();
 

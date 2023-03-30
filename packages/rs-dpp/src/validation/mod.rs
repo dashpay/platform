@@ -29,12 +29,9 @@ pub trait DataValidator {
 /// Async validator validates data of given type
 #[async_trait(?Send)]
 pub trait AsyncDataValidator {
+    // TODO, when GAT is available remove the reference in method and use: `type Item<'a>`
     type Item;
-    type ResultItem: Clone;
-    async fn validate(
-        &self,
-        data: &Self::Item,
-    ) -> Result<ValidationResult<Self::ResultItem>, ProtocolError>;
+    async fn validate(&self, data: &Self::Item) -> Result<SimpleValidationResult, ProtocolError>;
 }
 
 /// Validator takes additionally an execution context and generates fee

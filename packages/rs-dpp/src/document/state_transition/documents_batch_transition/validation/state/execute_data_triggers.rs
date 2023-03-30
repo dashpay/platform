@@ -9,7 +9,7 @@ use crate::{
 };
 
 pub async fn execute_data_triggers<'a, SR>(
-    document_transitions: &[&DocumentTransition],
+    document_transitions: impl IntoIterator<Item = impl AsRef<DocumentTransition>>,
     context: &DataTriggerExecutionContext<'a, SR>,
 ) -> Result<Vec<DataTriggerExecutionResult>, ProtocolError>
 where
@@ -20,7 +20,7 @@ where
 }
 
 pub async fn execute_data_triggers_with_custom_list<'a, SR>(
-    document_transitions: &[&DocumentTransition],
+    document_transitions: impl IntoIterator<Item = impl AsRef<DocumentTransition>>,
     context: &DataTriggerExecutionContext<'a, SR>,
     data_triggers_list: impl IntoIterator<Item = DataTrigger>,
 ) -> Result<Vec<DataTriggerExecutionResult>, ProtocolError>

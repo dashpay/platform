@@ -8,10 +8,9 @@ use crate::{
     state_transition::{
         state_transition_execution_context::StateTransitionExecutionContext, StateTransitionType,
     },
-    validation::{AsyncDataValidatorWithContext, DataValidatorWithContext, SimpleValidationResult},
-    ProtocolError, BlsModule, state_repository::StateRepositoryLike, data_contract::state_transition::{data_contract_update_transition::validation::basic::DataContractUpdateTransitionBasicValidator, data_contract_create_transition::validation::state::validate_data_contract_create_transition_basic::DataContractCreateTransitionBasicValidator}, identity::{state_transition::{identity_create_transition::validation::basic::IdentityCreateTransitionBasicValidator, validate_public_key_signatures::PublicKeysSignaturesValidator, identity_update_transition::validate_identity_update_transition_basic::ValidateIdentityUpdateTransitionBasic, identity_topup_transition::validation::basic::IdentityTopUpTransitionBasicValidator, identity_credit_withdrawal_transition::validation::basic::validate_identity_credit_withdrawal_transition_basic::IdentityCreditWithdrawalTransitionBasicValidator}, validation::PublicKeysValidator}, document::validation::basic::validate_documents_batch_transition_basic::DocumentBatchTransitionBasicValidator,
+    validation::{AsyncDataValidatorWithContext, DataValidatorWithContext, SimpleValidationResult, ValidationResult},
+    ProtocolError,  BlsModule, state_repository::StateRepositoryLike, data_contract::state_transition::{data_contract_update_transition::validation::basic::DataContractUpdateTransitionBasicValidator, data_contract_create_transition::validation::state::validate_data_contract_create_transition_basic::DataContractCreateTransitionBasicValidator}, identity::{state_transition::{identity_create_transition::validation::basic::IdentityCreateTransitionBasicValidator, validate_public_key_signatures::PublicKeysSignaturesValidator, identity_update_transition::validate_identity_update_transition_basic::ValidateIdentityUpdateTransitionBasic, identity_topup_transition::validation::basic::IdentityTopUpTransitionBasicValidator, identity_credit_withdrawal_transition::validation::basic::validate_identity_credit_withdrawal_transition_basic::IdentityCreditWithdrawalTransitionBasicValidator}, validation::PublicKeysValidator}, document::validation::basic::validate_documents_batch_transition_basic::DocumentBatchTransitionBasicValidator,
 };
-use crate::validation::ValidationResult;
 
 #[cfg_attr(test, automock)]
 #[async_trait(?Send)]

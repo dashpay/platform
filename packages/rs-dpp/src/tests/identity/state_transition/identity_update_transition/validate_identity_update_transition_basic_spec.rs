@@ -529,9 +529,9 @@ fn add_public_keys_should_be_valid() {
     validate_public_keys_mock
         .expect_validate_keys()
         .return_once(|_| {
-            Ok(SimpleValidationResult::new_with_errors(vec![
+            Ok(SimpleValidationResult::new(Some(vec![
                 ConsensusError::TestConsensusError(TestConsensusError::new("test")),
-            ]))
+            ])))
         });
 
     let _ = raw_state_transition.remove(property_names::DISABLE_PUBLIC_KEYS);

@@ -6,13 +6,13 @@ use platform_value::string_encoding::Encoding;
 use serde_json::{json, Value as JsonValue};
 
 use crate::document::Document;
-use crate::validation::SimpleValidationResult;
 use crate::{
     document::document_transition::{Action, DocumentTransition, DocumentTransitionExt},
     prelude::{DataContract, Identifier},
     state_repository::StateRepositoryLike,
     state_transition::state_transition_execution_context::StateTransitionExecutionContext,
     util::json_schema::{Index, JsonSchemaExt},
+    validation::ValidationResult,
     ProtocolError, StateError,
 };
 
@@ -26,18 +26,14 @@ struct QueryDefinition<'a> {
 pub async fn validate_documents_uniqueness_by_indices<SR>(
     state_repository: &SR,
     owner_id: &Identifier,
-    document_transitions: impl Iterator<Item = &DocumentTransition>,
+    document_transitions: impl IntoIterator<Item = impl AsRef<DocumentTransition>>,
     data_contract: &DataContract,
     execution_context: &StateTransitionExecutionContext,
-) -> Result<SimpleValidationResult, ProtocolError>
+) -> Result<ValidationResult<()>, ProtocolError>
 where
     SR: StateRepositoryLike,
 {
-    let mut validation_result = SimpleValidationResult::default();
-
-    if execution_context.is_dry_run() {
-        return Ok(validation_result);
-    }
+    let mut validation_result = ValidationResult::default();
 
     // 1. Prepare fetchDocuments queries from indexed properties
     for t in document_transitions {
@@ -68,6 +64,10 @@ where
 
         let (futures, futures_meta) = unzip_iter_and_collect(queries);
         let results = join_all(futures).await;
+
+        if execution_context.is_dry_run() {
+            return Ok(validation_result);
+        }
 
         // 3. Create errors if duplicates found
         let result = validate_uniqueness(futures_meta, results)?;
@@ -142,8 +142,8 @@ fn validate_uniqueness<'a>(
     results: Vec<
         Result<Vec<impl TryInto<Document, Error = impl Into<ProtocolError>>>, anyhow::Error>,
     >,
-) -> Result<SimpleValidationResult, ProtocolError> {
-    let mut validation_result = SimpleValidationResult::default();
+) -> Result<ValidationResult<()>, ProtocolError> {
+    let mut validation_result = ValidationResult::default();
     for (i, result) in results.into_iter().enumerate() {
         let documents: Vec<Document> = result?
             .into_iter()

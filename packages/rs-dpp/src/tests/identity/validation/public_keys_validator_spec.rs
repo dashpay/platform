@@ -341,7 +341,7 @@ pub fn should_return_invalid_result_if_there_are_duplicate_key_ids() {
         ConsensusError::DuplicatedIdentityPublicKeyBasicIdError,
         1
     );
-    let consensus_error = result.errors.first().unwrap();
+    let consensus_error = result.errors().first().unwrap();
     let error = errors.first().unwrap();
 
     let expected_ids = vec![raw_public_keys
@@ -369,7 +369,7 @@ pub fn should_return_invalid_result_if_there_are_duplicate_keys() {
         1
     );
 
-    let consensus_error = result.errors.first().unwrap();
+    let consensus_error = result.errors().first().unwrap();
     let error = errors.get(0).unwrap();
 
     let expected_ids = vec![raw_public_keys
@@ -398,7 +398,7 @@ pub fn should_return_invalid_result_if_key_data_is_not_a_valid_der() {
         1
     );
 
-    let consensus_error = result.errors.first().unwrap();
+    let consensus_error = result.errors().first().unwrap();
     let error = errors.first().unwrap();
 
     assert_eq!(consensus_error.code(), 1040);
@@ -434,7 +434,7 @@ pub fn should_return_invalid_result_if_key_has_an_invalid_combination_of_purpose
         ConsensusError::InvalidIdentityPublicKeySecurityLevelError,
         1
     );
-    let consensus_error = result.errors.first().unwrap();
+    let consensus_error = result.errors().first().unwrap();
     let error = errors.first().unwrap();
 
     assert_eq!(consensus_error.code(), 1047);
@@ -480,7 +480,7 @@ pub fn should_pass_valid_bls12_381_public_key() {
     let raw_public_keys = raw_public_keys_json.as_array().unwrap();
     let result = validator.validate_keys(raw_public_keys).unwrap();
 
-    for err in &result.errors {
+    for err in result.errors() {
         println!("{:?}", err);
     }
 
@@ -525,7 +525,7 @@ pub fn should_return_invalid_result_if_bls12_381_public_key_is_invalid() {
         ConsensusError::InvalidIdentityPublicKeyDataError,
         1
     );
-    let consensus_error = result.errors.first().unwrap();
+    let consensus_error = result.errors().first().unwrap();
     let error = errors.first().unwrap();
 
     assert_eq!(consensus_error.code(), 1040);

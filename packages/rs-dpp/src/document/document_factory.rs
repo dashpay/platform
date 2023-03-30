@@ -6,7 +6,8 @@ use itertools::Itertools;
 
 use platform_value::btreemap_extensions::BTreeValueMapReplacementPathHelper;
 use platform_value::{Bytes32, ReplacementType, Value};
-
+use rand::rngs::StdRng;
+use rand::SeedableRng;
 use serde::{Deserialize, Serialize};
 
 use crate::consensus::basic::document::InvalidDocumentTypeError;
@@ -308,7 +309,7 @@ where
         raw_document: &Value,
         options: FactoryOptions,
     ) -> Result<DataContract, ProtocolError> {
-        let result = self
+        let mut result = self
             .data_contract_fetcher_and_validator
             .validate_extended(raw_document)
             .await?;
@@ -322,7 +323,7 @@ where
             )));
         }
         let data_contract = result
-            .into_data()
+            .take_data()
             .context("Validator didn't return Data Contract. This shouldn't happen")?;
 
         if !options.skip_validation {

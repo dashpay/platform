@@ -7,7 +7,6 @@ mod document;
 
 pub mod document_facade;
 pub mod document_factory;
-mod document_patch;
 pub mod document_validator;
 pub mod errors;
 pub mod extended_document;

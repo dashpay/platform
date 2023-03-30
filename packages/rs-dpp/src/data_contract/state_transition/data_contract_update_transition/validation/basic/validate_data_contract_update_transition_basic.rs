@@ -96,11 +96,11 @@ where
             match raw_state_transition.get_integer(property_names::PROTOCOL_VERSION) {
                 Ok(v) => v,
                 Err(parsing_error) => {
-                    return Ok(SimpleValidationResult::new_with_errors(vec![
+                    return Ok(SimpleValidationResult::new(Some(vec![
                         ConsensusError::ProtocolVersionParsingError(
                             ProtocolVersionParsingError::new(parsing_error.into()),
                         ),
-                    ]))
+                    ])))
                 }
             };
 
