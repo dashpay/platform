@@ -6,11 +6,9 @@ use crate::validation::{SimpleValidationResult, ValidationResult};
 use crate::{
     consensus::{
         basic::{BasicError, JsonSchemaError},
-        fee_error::FeeError,
         ConsensusError,
     },
     data_trigger::DataTriggerExecutionResult,
-    StateError,
 };
 use platform_value::Error as ValueError;
 
@@ -33,7 +31,7 @@ pub fn get_basic_error(consensus_error: &ConsensusError) -> &BasicError {
 // TODO: Not sure it should be here. Looks more like a test helper
 pub fn json_schema_error(consensus_error: &ConsensusError) -> &JsonSchemaError {
     match consensus_error {
-        Self::BasicError(BasicError::JsonSchemaError(err)) => err,
+        ConsensusError::BasicError(BasicError::JsonSchemaError(err)) => err,
         _ => panic!("error '{:?}' isn't a json schema error", consensus_error),
     }
 }

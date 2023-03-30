@@ -136,12 +136,13 @@ fn get_asset_lock_proof(
 
 #[cfg(test)]
 mod test {
+    use super::*;
+
     use dashcore::{secp256k1::SecretKey, Network, PrivateKey};
     use platform_value::BinaryData;
     use std::sync::Arc;
 
     use crate::{
-        consensus::signature::SignatureError,
         document::DocumentsBatchTransition,
         identity::{
             state_transition::{

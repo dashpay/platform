@@ -126,7 +126,7 @@ pub fn from_consensus_error_ref(e: &DPPConsensusError) -> JsValue {
             PlatformValueErrorWasm::new(value_error.clone()).into()
         }
         #[cfg(test)]
-        ConsensusError::TestConsensusError(e) => {
+        DPPConsensusError::TestConsensusError(e) => {
             unimplemented!("test consensus is not implemented")
         }
     }

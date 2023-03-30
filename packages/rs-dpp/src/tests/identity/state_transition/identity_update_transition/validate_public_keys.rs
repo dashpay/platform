@@ -5,7 +5,6 @@ use crate::{
     },
     prelude::Identity,
     tests::{fixtures::identity_fixture, utils::get_state_error_from_result},
-    StateError,
 };
 use platform_value::Value;
 use std::convert::TryInto;

@@ -123,6 +123,8 @@ where
 
 #[cfg(test)]
 mod test {
+    use super::*;
+
     use platform_value::btreemap_extensions::BTreeValueMapHelper;
     use platform_value::platform_value;
 
@@ -139,7 +141,6 @@ mod test {
             },
             utils::get_data_trigger_error_from_execution_result,
         },
-        DataTriggerError,
     };
 
     #[tokio::test]

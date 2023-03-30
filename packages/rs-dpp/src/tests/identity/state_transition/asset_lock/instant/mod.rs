@@ -11,6 +11,7 @@ mod validate_instant_asset_lock_proof_structure_factory {
     use platform_value::Value;
 
     use crate::assert_consensus_errors;
+    use crate::consensus::codes::ErrorWithCode;
     use crate::consensus::ConsensusError;
     use crate::identity::state_transition::asset_lock_proof::{
         AssetLockProof, InstantAssetLockProof,
@@ -23,7 +24,6 @@ mod validate_instant_asset_lock_proof_structure_factory {
     use crate::tests::fixtures::{
         instant_asset_lock_is_lock_fixture, instant_asset_lock_proof_transaction_fixture,
     };
-    use dpp::consensus::codes::ErrorWithCode;
     struct TestData {
         pub validate_instant_asset_lock_proof_structure:
             InstantAssetLockProofStructureValidator<MockStateRepositoryLike>,
@@ -80,6 +80,7 @@ mod validate_instant_asset_lock_proof_structure_factory {
 
     mod asset_lock_type {
         use super::*;
+        use crate::consensus::basic::BasicError;
 
         #[tokio::test]
         async fn should_be_present() {
@@ -92,7 +93,7 @@ mod validate_instant_asset_lock_proof_structure_factory {
                 .await
                 .unwrap();
 
-            let errors = assert_consensus_errors!(result, ConsensusError::JsonSchemaError, 1);
+            let errors = assert_consensus_errors!(result, BasicError::JsonSchemaError, 1);
             let error = errors.first().unwrap();
 
             assert_eq!(error.instance_path().to_string(), "");
@@ -116,7 +117,7 @@ mod validate_instant_asset_lock_proof_structure_factory {
                 .await
                 .unwrap();
 
-            let errors = assert_consensus_errors!(result, ConsensusError::JsonSchemaError, 1);
+            let errors = assert_consensus_errors!(result, BasicError::JsonSchemaError, 1);
 
             let error = errors.first().unwrap();
 
@@ -127,6 +128,7 @@ mod validate_instant_asset_lock_proof_structure_factory {
 
     mod instant_lock {
         use super::*;
+        use crate::consensus::basic::BasicError;
         use crate::consensus::codes::ErrorWithCode;
 
         #[tokio::test]
@@ -140,7 +142,7 @@ mod validate_instant_asset_lock_proof_structure_factory {
                 .await
                 .unwrap();
 
-            let errors = assert_consensus_errors!(result, ConsensusError::JsonSchemaError, 1);
+            let errors = assert_consensus_errors!(result, BasicError::JsonSchemaError, 1);
             let error = errors.first().unwrap();
 
             assert_eq!(error.instance_path().to_string(), "");
@@ -167,7 +169,7 @@ mod validate_instant_asset_lock_proof_structure_factory {
                 .await
                 .unwrap();
 
-            let errors = assert_consensus_errors!(result, ConsensusError::JsonSchemaError, 165);
+            let errors = assert_consensus_errors!(result, BasicError::JsonSchemaError, 165);
             let error = errors.first().unwrap();
 
             assert_eq!(error.instance_path().to_string(), "/instantLock/0");
@@ -188,7 +190,7 @@ mod validate_instant_asset_lock_proof_structure_factory {
                 .await
                 .unwrap();
 
-            let errors = assert_consensus_errors!(result, ConsensusError::JsonSchemaError, 1);
+            let errors = assert_consensus_errors!(result, BasicError::JsonSchemaError, 1);
             let error = errors.first().unwrap();
 
             assert_eq!(error.instance_path().to_string(), "/instantLock");
@@ -209,7 +211,7 @@ mod validate_instant_asset_lock_proof_structure_factory {
                 .await
                 .unwrap();
 
-            let errors = assert_consensus_errors!(result, ConsensusError::JsonSchemaError, 1);
+            let errors = assert_consensus_errors!(result, BasicError::JsonSchemaError, 1);
             let error = errors.first().unwrap();
 
             assert_eq!(error.instance_path().to_string(), "/instantLock");
@@ -315,7 +317,7 @@ mod validate_instant_asset_lock_proof_structure_factory {
                 .await
                 .unwrap();
 
-            let errors = assert_consensus_errors!(result, ConsensusError::JsonSchemaError, 1);
+            let errors = assert_consensus_errors!(result, BasicError::JsonSchemaError, 1);
             let error = errors.first().unwrap();
 
             assert_eq!(error.instance_path().to_string(), "");
@@ -342,7 +344,7 @@ mod validate_instant_asset_lock_proof_structure_factory {
                 .await
                 .unwrap();
 
-            let errors = assert_consensus_errors!(result, ConsensusError::JsonSchemaError, 66);
+            let errors = assert_consensus_errors!(result, BasicError::JsonSchemaError, 66);
             let error = errors.first().unwrap();
 
             assert_eq!(error.instance_path().to_string(), "/instantLock/0");
@@ -363,7 +365,7 @@ mod validate_instant_asset_lock_proof_structure_factory {
                 .await
                 .unwrap();
 
-            let errors = assert_consensus_errors!(result, ConsensusError::JsonSchemaError, 1);
+            let errors = assert_consensus_errors!(result, BasicError::JsonSchemaError, 1);
             let error = errors.first().unwrap();
 
             assert_eq!(error.instance_path().to_string(), "/instantLock");
@@ -384,7 +386,7 @@ mod validate_instant_asset_lock_proof_structure_factory {
                 .await
                 .unwrap();
 
-            let errors = assert_consensus_errors!(result, ConsensusError::JsonSchemaError, 1);
+            let errors = assert_consensus_errors!(result, BasicError::JsonSchemaError, 1);
             let error = errors.first().unwrap();
 
             assert_eq!(error.instance_path().to_string(), "/instantLock");
@@ -430,7 +432,7 @@ mod validate_instant_asset_lock_proof_structure_factory {
                 .await
                 .unwrap();
 
-            let errors = assert_consensus_errors!(result, ConsensusError::JsonSchemaError, 1);
+            let errors = assert_consensus_errors!(result, BasicError::JsonSchemaError, 1);
             let error = errors.first().unwrap();
 
             assert_eq!(error.instance_path().to_string(), "");
@@ -457,7 +459,7 @@ mod validate_instant_asset_lock_proof_structure_factory {
                 .await
                 .unwrap();
 
-            let errors = assert_consensus_errors!(result, ConsensusError::JsonSchemaError, 1);
+            let errors = assert_consensus_errors!(result, BasicError::JsonSchemaError, 1);
             let error = errors.first().unwrap();
 
             assert_eq!(error.instance_path().to_string(), "/outputIndex");
@@ -478,7 +480,7 @@ mod validate_instant_asset_lock_proof_structure_factory {
                 .await
                 .unwrap();
 
-            let errors = assert_consensus_errors!(result, ConsensusError::JsonSchemaError, 1);
+            let errors = assert_consensus_errors!(result, BasicError::JsonSchemaError, 1);
             let error = errors.first().unwrap();
 
             assert_eq!(error.instance_path().to_string(), "/outputIndex");

@@ -2,10 +2,11 @@ use std::sync::Arc;
 
 use chrono::Utc;
 
+use crate::consensus::basic::BasicError;
 use crate::consensus::test_consensus_error::TestConsensusError;
 use crate::{
     block_time_window::validate_time_in_block_time_window::BLOCK_TIME_WINDOW_MILLIS,
-    consensus::{basic::TestConsensusError, ConsensusError},
+    consensus::ConsensusError,
     identity::{
         state_transition::identity_update_transition::{
             identity_update_transition::IdentityUpdateTransition,
@@ -22,7 +23,7 @@ use crate::{
         utils::get_state_error_from_result,
     },
     validation::SimpleValidationResult,
-    NativeBlsModule, StateError,
+    NativeBlsModule,
 };
 
 struct TestData {
@@ -355,7 +356,7 @@ async fn should_validate_purpose_and_security_level() {
 
     assert!(matches!(
         result.errors[0],
-        ConsensusError::MissingMasterPublicKeyError(_)
+        BasicError::MissingMasterPublicKeyError(_)
     ));
 }
 

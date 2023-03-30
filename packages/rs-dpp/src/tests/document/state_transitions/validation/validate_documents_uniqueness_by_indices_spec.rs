@@ -5,7 +5,7 @@ use serde_json::json;
 use crate::{consensus::ConsensusError, data_contract::DataContract, document::{
     document_transition::{Action, DocumentTransition},
     state_transition::documents_batch_transition::validation::state::validate_documents_uniqueness_by_indices::*,
-}, prelude::Identifier, state_repository::MockStateRepositoryLike, state_transition::state_transition_execution_context::StateTransitionExecutionContext, StateError, tests::{
+}, prelude::Identifier, state_repository::MockStateRepositoryLike, state_transition::state_transition_execution_context::StateTransitionExecutionContext, tests::{
     fixtures::{
         get_data_contract_fixture, get_document_transitions_fixture,
     },

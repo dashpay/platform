@@ -15,7 +15,6 @@ use crate::{
     prelude::ProtocolError,
     state_repository::MockStateRepositoryLike,
     state_transition::StateTransitionLike,
-    StateError,
     tests::{
         fixtures::{
             get_data_contract_fixture, get_document_transitions_fixture,
@@ -192,7 +191,7 @@ async fn should_return_invalid_result_if_document_transition_with_action_delete_
             .expect("validation result should be returned");
 
     let state_error = get_state_error(&validation_result, 0);
-    assert_eq!(4005, state_error.get_code());
+    assert_eq!(4005, state_error.code());
     assert!(matches!(
         state_error,
         StateError::DocumentNotFoundError { document_id } if document_id == &transition_id
@@ -265,7 +264,7 @@ async fn should_return_invalid_result_if_document_transition_with_action_replace
             .expect("validation result should be returned");
     let state_error = get_state_error(&validation_result, 0);
 
-    assert_eq!(4010, state_error.get_code());
+    assert_eq!(4010, state_error.code());
     assert!(matches!(
         state_error,
         StateError::InvalidDocumentRevisionError { document_id, current_revision }  if  {
@@ -341,7 +340,7 @@ async fn should_return_invalid_result_if_document_transition_with_action_replace
             .await
             .expect("validation result should be returned");
     let state_error = get_state_error(&validation_result, 0);
-    assert_eq!(4006, state_error.get_code());
+    assert_eq!(4006, state_error.code());
     assert!(matches!(
         state_error,
         StateError::DocumentOwnerIdMismatchError { document_id, document_owner_id, existing_document_owner_id } if  {
@@ -416,7 +415,7 @@ async fn should_return_invalid_result_if_timestamps_mismatch() {
             .expect("validation result should be returned");
 
     let state_error = get_state_error(&validation_result, 0);
-    assert_eq!(4007, state_error.get_code());
+    assert_eq!(4007, state_error.code());
     assert!(matches!(
         state_error,
         StateError::DocumentTimestampsMismatchError { document_id }  if  {
@@ -476,7 +475,7 @@ async fn should_return_invalid_result_if_crated_at_has_violated_time_window() {
             .expect("validation result should be returned");
 
     let state_error = get_state_error(&validation_result, 0);
-    assert_eq!(4008, state_error.get_code());
+    assert_eq!(4008, state_error.code());
     assert!(matches!(
         state_error,
         StateError::DocumentTimestampWindowViolationError { timestamp_name, document_id, .. }   if  {
@@ -590,7 +589,7 @@ async fn should_return_invalid_result_if_updated_at_has_violated_time_window() {
             .expect("validation result should be returned");
 
     let state_error = get_state_error(&validation_result, 0);
-    assert_eq!(4008, state_error.get_code());
+    assert_eq!(4008, state_error.code());
     assert!(matches!(
         state_error,
         StateError::DocumentTimestampWindowViolationError { timestamp_name, document_id, .. }   if  {
