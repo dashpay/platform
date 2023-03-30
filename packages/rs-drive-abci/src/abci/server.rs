@@ -3,18 +3,23 @@
 use super::config::AbciConfig;
 use crate::{abci::proposal::Proposal, config::PlatformConfig, error::Error, platform::Platform};
 use dpp::identity::TimestampMillis;
+use dpp::state_transition::StateTransition;
 use drive::query::TransactionArg;
 use std::{fmt::Debug, sync::MutexGuard};
+use tenderdash_abci::proto::abci::{
+    RequestCheckTx, RequestProcessProposal, ResponseCheckTx, ResponseProcessProposal,
+};
 use tenderdash_abci::proto::{
     abci::{self as proto, ResponseException},
     serializers::timestamp::ToMilis,
 };
+
 /// AbciApp is an implementation of ABCI Application, as defined by Tenderdash.
 ///
 /// AbciApp implements logic that should be triggered when Tenderdash performs various operations, like
 /// creating new proposal or finalizing new block.
-pub struct AbciApplication<'a> {
-    platform: std::sync::Mutex<&'a Platform>,
+pub struct AbciApplication<'a, CoreRPCLike> {
+    platform: std::sync::Mutex<&'a Platform<CoreRPCLike>>,
     transaction: TransactionArg<'a, 'a>,
     config: AbciConfig,
 }
@@ -22,11 +27,11 @@ pub struct AbciApplication<'a> {
 /// Start ABCI server and process incoming connections.
 ///
 /// Should never return.
-pub fn start(config: &PlatformConfig) -> Result<(), Error> {
+pub fn start<CoreRPCLike>(config: &PlatformConfig, core_rpc : CoreRPCLike) -> Result<(), Error> {
     let bind_address = config.abci.bind_address.clone();
     let abci_config = config.abci.clone();
 
-    let platform: Platform = Platform::open(&config.db_path, Some(config.clone()))?;
+    let platform: Platform<CoreRPCLike> = Platform::open(&config.db_path, Some(config.clone()), core_rpc)?;
 
     let abci = AbciApplication::new(abci_config, &platform)?;
 
@@ -45,9 +50,9 @@ pub fn start(config: &PlatformConfig) -> Result<(), Error> {
     }
 }
 
-impl<'a> AbciApplication<'a> {
+impl<'a, CoreRPCLike> AbciApplication<'a, CoreRPCLike> {
     /// Create new ABCI app
-    pub fn new(config: AbciConfig, platform: &'a Platform) -> Result<AbciApplication<'a>, Error> {
+    pub fn new(config: AbciConfig, platform: &'a Platform<CoreRPCLike>) -> Result<AbciApplication<'a, CoreRPCLike>, Error> {
         let app = AbciApplication {
             platform: std::sync::Mutex::new(platform),
             transaction: None,
@@ -58,7 +63,7 @@ impl<'a> AbciApplication<'a> {
     }
 
     /// Return locked Platform object
-    fn platform(&self) -> MutexGuard<&'a Platform> {
+    fn platform(&self) -> MutexGuard<&'a Platform<CoreRPCLike>> {
         self.platform
             .lock()
             .expect("cannot acquire lock on platform")
@@ -71,13 +76,13 @@ impl<'a> AbciApplication<'a> {
     }
 }
 
-impl<'a> Debug for AbciApplication<'a> {
+impl<'a, CoreRPCLike> Debug for AbciApplication<'a, CoreRPCLike> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "<AbciApp>")
     }
 }
 
-impl<'a> tenderdash_abci::Application for AbciApplication<'a> {
+impl<'a, CoreRPCLike> tenderdash_abci::Application for AbciApplication<'a, CoreRPCLike> {
     fn info(&self, request: proto::RequestInfo) -> Result<proto::ResponseInfo, ResponseException> {
         if !tenderdash_abci::check_version(&request.abci_version) {
             return Err(ResponseException::from(format!(
@@ -137,4 +142,35 @@ impl<'a> tenderdash_abci::Application for AbciApplication<'a> {
         );
         Ok(response)
     }
+    //
+    // fn process_proposal(
+    //     &self,
+    //     _request: RequestProcessProposal,
+    // ) -> Result<ResponseProcessProposal, ResponseException> {
+    //     let platform = self.platform();
+    //     let transaction = self.transaction();
+    //     let response = platform.prepare_proposal(&request, transaction)?;
+    //
+    //     tracing::info!(
+    //         method = "prepare_proposal",
+    //         height = request.height,
+    //         "prepare proposal executed",
+    //     );
+    //     Ok(response)
+    // }
+    //
+    // fn check_tx(&self, request: RequestCheckTx) -> Result<ResponseCheckTx, ResponseException> {
+    //     let RequestCheckTx { tx, .. } = request;
+    //     let state_transition = StateTransition::from(tx);
+    //
+    //     ResponseCheckTx {
+    //         code: 0,
+    //         data: vec![],
+    //         info: "".to_string(),
+    //         gas_wanted: 0,
+    //         codespace: "".to_string(),
+    //         sender: "".to_string(),
+    //         priority: 0,
+    //     }
+    // }
 }

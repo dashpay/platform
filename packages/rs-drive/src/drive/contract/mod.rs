@@ -470,7 +470,7 @@ impl Drive {
                 "contract should exist",
             )))?;
 
-        let mut drive_cache = self.cache.borrow_mut();
+        let mut drive_cache = self.cache.write().unwrap();
 
         drive_cache
             .cached_contracts
@@ -746,7 +746,7 @@ impl Drive {
         transaction: TransactionArg,
         drive_operations: &mut Vec<LowLevelDriveOperation>,
     ) -> Result<Option<Arc<ContractFetchInfo>>, Error> {
-        let mut cache = self.cache.borrow_mut();
+        let cache = self.cache.read().unwrap();
 
         match cache
             .cached_contracts
@@ -762,6 +762,8 @@ impl Drive {
 
                 // Store a contract in cache if present
                 if let Some(contract_fetch_info) = &maybe_contract_fetch_info {
+                    drop(cache);
+                    let mut cache = self.cache.write().unwrap();
                     cache
                         .cached_contracts
                         .insert(Arc::clone(contract_fetch_info), transaction.is_some());
@@ -785,7 +787,8 @@ impl Drive {
                             cost: contract_fetch_info.cost.clone(),
                             fee: Some(fee.clone()),
                         });
-
+                        drop(cache);
+                        let mut cache = self.cache.write().unwrap();
                         // we override the cache for the contract as the fee is now calculated
                         cache
                             .cached_contracts
@@ -841,7 +844,7 @@ impl Drive {
         transaction: TransactionArg,
     ) -> Option<Arc<ContractFetchInfo>> {
         self.cache
-            .borrow()
+            .read().unwrap()
             .cached_contracts
             .get(contract_id, transaction.is_some())
             .map(|fetch_info| Arc::clone(&fetch_info))
@@ -1532,7 +1535,7 @@ mod tests {
             // Commit transaction and merge block (transactional) cache to global cache
             transaction.commit().expect("expected to commit");
 
-            let mut drive_cache = drive.cache.borrow_mut();
+            let mut drive_cache = drive.cache.write().unwrap();
             drive_cache.cached_contracts.merge_block_cache();
             drop(drive_cache);
 

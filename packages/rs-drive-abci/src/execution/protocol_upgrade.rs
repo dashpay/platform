@@ -5,7 +5,7 @@ use crate::platform::Platform;
 use drive::dpp::util::deserializer::ProtocolVersion;
 use drive::grovedb::TransactionArg;
 
-impl Platform {
+impl<CoreRPCLike> Platform<CoreRPCLike> {
     /// checks for a network upgrade and resets activation window
     /// this should only be called on epoch change
     /// this will change backing state, but does not change drive cache
@@ -23,7 +23,7 @@ impl Platform {
                 )))?;
         // if we are at an epoch change, check to see if over 75% of blocks of previous epoch
         // were on the future version
-        let mut cache = self.drive.cache.borrow_mut();
+        let mut cache = self.drive.cache.write().unwrap();
         let mut versions_passing_threshold = cache
             .protocol_versions_counter
             .take()
@@ -55,7 +55,7 @@ impl Platform {
             // we also drop all protocol version votes information
             self.drive
                 .change_to_new_version_and_clear_version_information(
-                    self.state.borrow().current_protocol_version_in_consensus,
+                    self.state.read().unwrap().current_protocol_version_in_consensus,
                     new_version,
                     transaction,
                 )

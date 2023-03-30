@@ -5,7 +5,7 @@ edition = "2018"
 authors = ["Anton Suprunchuk <anton.suprunchuk@gmail.com>"]
 
 [dependencies]
-anyhow = { version = "1.0"}
+anyhow = { version = "1.0.70"}
 async-trait = { version = "0.1"}
 base64 = "0.20.0"
 bls-signatures = { version = "0.13.0" }

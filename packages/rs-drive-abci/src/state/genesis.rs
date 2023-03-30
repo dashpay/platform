@@ -64,7 +64,7 @@ const DPNS_DASH_TLD_PREORDER_SALT: [u8; 32] = [
     227, 199, 153, 234, 158, 115, 123, 79, 154, 162, 38,
 ];
 
-impl Platform {
+impl<CoreRPCLike> Platform<CoreRPCLike> {
     /// Creates trees and populates them with necessary identities, contracts and documents
     pub fn create_genesis_state(
         &self,

@@ -7,6 +7,7 @@ use futures::future::join_all;
 use itertools::Itertools;
 use platform_value::string_encoding::Encoding;
 use serde_json::json;
+use platform_value::platform_value;
 
 use crate::document::{Document, ExtendedDocument};
 use crate::{
@@ -44,7 +45,7 @@ pub async fn fetch_documents(
             .map(|dt| get_from_transition!(dt, id).to_string(Encoding::Base58))
             .collect();
 
-        let options = json!({
+        let options = platform_value!({
             "where" : [["$id", "in", ids ]],
             "orderBy" : [[ "$id", "asc"]],
         });
@@ -101,7 +102,7 @@ pub async fn fetch_extended_documents(
             .map(|dt| get_from_transition!(dt, id).to_string(Encoding::Base58))
             .collect();
 
-        let options = json!({
+        let options = platform_value!({
             "where" : [["$id", "in", ids ]],
             "orderBy" : [[ "$id", "asc"]],
         });

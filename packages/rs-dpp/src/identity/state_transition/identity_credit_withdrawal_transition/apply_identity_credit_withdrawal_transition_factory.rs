@@ -4,7 +4,7 @@ use lazy_static::__Deref;
 use std::collections::BTreeMap;
 use std::convert::TryInto;
 
-use platform_value::{Bytes32, Value};
+use platform_value::{Bytes32, platform_value, Value};
 use serde_json::json;
 
 use crate::contracts::withdrawals_contract::property_names;
@@ -110,7 +110,7 @@ where
                 .fetch_documents(
                     withdrawals_contract::CONTRACT_ID.deref(),
                     withdrawals_contract::document_types::WITHDRAWAL,
-                    json!({
+                    platform_value!({
                         "where": [
                             ["$id", "==", document_id],
                         ],

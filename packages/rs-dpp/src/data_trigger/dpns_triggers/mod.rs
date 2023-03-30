@@ -5,6 +5,7 @@ use anyhow::{anyhow, bail};
 use platform_value::btreemap_extensions::BTreeValueMapHelper;
 use platform_value::btreemap_extensions::BTreeValueMapPathHelper;
 use serde_json::json;
+use platform_value::platform_value;
 
 use crate::document::Document;
 use crate::util::hash::hash;
@@ -157,7 +158,7 @@ where
             .fetch_documents(
                 &context.data_contract.id,
                 &dt_create.base.document_type_name,
-                json!({
+                platform_value!({
                     "where" : [
                         ["normalizedParentDomainName", "==", grand_parent_domain_name],
                         ["normalizedLabel", "==", parent_domain_label]
@@ -219,7 +220,7 @@ where
         .fetch_documents(
             &context.data_contract.id,
             "preorder",
-            json!({
+            platform_value!({
                 //? should this be a base64 encoded
                 "where" : [["saltedDomainHash", "==", salted_domain_hash]]
             }),

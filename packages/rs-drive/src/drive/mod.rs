@@ -33,6 +33,7 @@ use std::cell::RefCell;
 use std::collections::HashMap;
 #[cfg(feature = "full")]
 use std::path::Path;
+use std::sync::{Arc, RwLock};
 
 #[cfg(feature = "full")]
 use dpp::data_contract::DriveContractExt;
@@ -43,6 +44,7 @@ use grovedb::batch::KeyInfoPath;
 use grovedb::GroveDb;
 #[cfg(feature = "full")]
 use grovedb::{EstimatedLayerInformation, Transaction, TransactionArg};
+use moka::sync::Cache;
 
 #[cfg(feature = "full")]
 use object_size_info::DocumentAndContractInfo;
@@ -123,6 +125,7 @@ use crate::drive::block_info::BlockInfo;
 use crate::drive::cache::DataContractCache;
 #[cfg(any(feature = "full", feature = "verify"))]
 use crate::drive::cache::DriveCache;
+use crate::drive::contract::ContractFetchInfo;
 #[cfg(feature = "full")]
 use crate::drive::object_size_info::OwnedDocumentInfo;
 #[cfg(feature = "full")]
@@ -143,7 +146,7 @@ pub struct Drive {
     #[cfg(feature = "full")]
     pub system_contracts: SystemContracts,
     /// Drive Cache
-    pub cache: RefCell<DriveCache>,
+    pub cache: RwLock<DriveCache>,
 }
 
 // The root tree structure is very important!
@@ -304,7 +307,7 @@ impl Drive {
                     grove,
                     config,
                     system_contracts: SystemContracts::load_system_contracts()?,
-                    cache: RefCell::new(DriveCache {
+                    cache: RwLock::new(DriveCache {
                         cached_contracts: DataContractCache::new(
                             data_contracts_global_cache_size,
                             data_contracts_block_cache_size,
@@ -323,14 +326,13 @@ impl Drive {
         let genesis_time_ms = self.config.default_genesis_time;
         let data_contracts_global_cache_size = self.config.data_contracts_global_cache_size;
         let data_contracts_block_cache_size = self.config.data_contracts_block_cache_size;
-        self.cache.replace(DriveCache {
-            cached_contracts: DataContractCache::new(
-                data_contracts_global_cache_size,
-                data_contracts_block_cache_size,
-            ),
-            genesis_time_ms,
-            protocol_versions_counter: None,
-        });
+        let mut cache =  self.cache.write().unwrap();
+        cache.cached_contracts = DataContractCache::new(
+            data_contracts_global_cache_size,
+            data_contracts_block_cache_size,
+        );
+        cache.genesis_time_ms = genesis_time_ms;
+        cache.protocol_versions_counter = None;
     }
 
     /// Commits a transaction.

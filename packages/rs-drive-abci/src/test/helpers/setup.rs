@@ -36,22 +36,27 @@ use crate::config::PlatformConfig;
 use crate::platform::Platform;
 use crate::test::fixture::abci::static_system_identity_public_keys;
 use tempfile::TempDir;
+#[cfg(feature = "fixtures-and-mocks")]
+use crate::rpc::core::MockCoreRPCLike;
+#[cfg(not(feature = "fixtures-and-mocks"))]
+use crate::rpc::core::DefaultCoreRPC;
 
 /// A function which sets up Platform.
-pub fn setup_platform_raw(config: Option<PlatformConfig>) -> Platform {
+pub fn setup_platform_raw<CoreRPCLike>(config: Option<PlatformConfig>) -> Platform<CoreRPCLike> {
     let tmp_dir = TempDir::new().unwrap();
 
-    let mut platform: Platform =
-        Platform::open(tmp_dir, config).expect("should open Platform successfully");
-
+    #[cfg(not(feature = "fixtures-and-mocks"))]
+        let mut platform: Platform<DefaultCoreRPC> =
+            Platform::open_with_default_core_rpc(tmp_dir, config).expect("should open Platform successfully");
     #[cfg(feature = "fixtures-and-mocks")]
-    platform.mock_core_rpc_client();
+        let mut platform: Platform<MockCoreRPCLike> =
+        Platform::open_with_mock_core_rpc(tmp_dir, config).expect("should open Platform successfully");
 
     platform
 }
 
 /// A function which sets up Platform with its initial state structure.
-pub fn setup_platform_with_initial_state_structure(config: Option<PlatformConfig>) -> Platform {
+pub fn setup_platform_with_initial_state_structure<CoreRPCLike>(config: Option<PlatformConfig>) -> Platform<CoreRPCLike> {
     let mut platform = setup_platform_raw(config);
 
     platform
@@ -66,7 +71,7 @@ pub fn setup_platform_with_initial_state_structure(config: Option<PlatformConfig
 }
 
 /// A function which sets up Platform with its genesis state
-pub fn setup_platform_with_genesis_state(config: Option<PlatformConfig>) -> Platform {
+pub fn setup_platform_with_genesis_state<CoreRPCLike>(config: Option<PlatformConfig>) -> Platform<CoreRPCLike> {
     let platform = setup_platform_raw(config);
 
     platform

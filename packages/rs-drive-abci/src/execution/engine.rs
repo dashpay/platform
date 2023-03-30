@@ -9,65 +9,16 @@ use drive::dpp::identity::PartialIdentity;
 use drive::dpp::util::deserializer::ProtocolVersion;
 use drive::drive::batch::DriveOperation;
 use drive::drive::block_info::BlockInfo;
+use drive::drive::Drive;
 use drive::error::Error::GroveDB;
 use drive::fee::result::FeeResult;
 use drive::grovedb::Transaction;
+use crate::block::BlockExecutionContext;
+use crate::execution::execution_event::ExecutionEvent;
+use crate::rpc::core::CoreRPCLike;
+use crate::state::PlatformState;
 
-/// An execution event
-pub enum ExecutionEvent<'a> {
-    /// A drive event that is paid by an identity
-    PaidDriveEvent {
-        /// The identity requesting the event
-        identity: PartialIdentity,
-        /// Verify with dry run
-        verify_balance_with_dry_run: bool,
-        /// the operations that the identity is requesting to perform
-        operations: Vec<DriveOperation<'a>>,
-    },
-    /// A drive event that is free
-    FreeDriveEvent {
-        /// the operations that should be performed
-        operations: Vec<DriveOperation<'a>>,
-    },
-}
-
-impl<'a> ExecutionEvent<'a> {
-    /// Creates a new identity Insertion Event
-    pub fn new_document_operation(
-        identity: PartialIdentity,
-        operation: DriveOperation<'a>,
-    ) -> Self {
-        Self::PaidDriveEvent {
-            identity,
-            verify_balance_with_dry_run: true,
-            operations: vec![operation],
-        }
-    }
-    /// Creates a new identity Insertion Event
-    pub fn new_contract_operation(
-        identity: PartialIdentity,
-        operation: DriveOperation<'a>,
-    ) -> Self {
-        Self::PaidDriveEvent {
-            identity,
-            verify_balance_with_dry_run: true,
-            operations: vec![operation],
-        }
-    }
-    /// Creates a new identity Insertion Event
-    pub fn new_identity_insertion(
-        identity: PartialIdentity,
-        operations: Vec<DriveOperation<'a>>,
-    ) -> Self {
-        Self::PaidDriveEvent {
-            identity,
-            verify_balance_with_dry_run: true,
-            operations,
-        }
-    }
-}
-
-impl Platform {
+impl<CoreRPCLike> Platform<CoreRPCLike> {
     fn run_events(
         &self,
         events: Vec<ExecutionEvent>,
@@ -157,7 +108,7 @@ impl Platform {
             block_time_ms: block_info.time_ms,
             previous_block_time_ms: self
                 .state
-                .borrow()
+                .read().unwrap()
                 .last_block_info
                 .as_ref()
                 .map(|block_info| block_info.time_ms),
@@ -218,10 +169,7 @@ impl Platform {
             });
 
         // TODO: Move to `after_finalize_block` so it will be called by JS Drive too
-        self.state.replace_with(|platform_state| {
-            platform_state.last_block_info = Some(block_info.clone());
-            platform_state.clone()
-        });
+        self.state.write().unwrap().last_block_info = Some(block_info.clone());
 
         Ok(())
     }

@@ -4,6 +4,7 @@ use futures::future::join_all;
 use itertools::Itertools;
 use platform_value::string_encoding::Encoding;
 use serde_json::{json, Value as JsonValue};
+use platform_value::platform_value;
 
 use crate::document::Document;
 use crate::validation::SimpleValidationResult;
@@ -59,7 +60,7 @@ where
                     state_repository.fetch_documents(
                         &data_contract.id,
                         query.document_type,
-                        json!( { "where": query.where_query}),
+                        platform_value!( { "where": query.where_query}),
                         Some(execution_context),
                     ),
                     (query.index_definition, query.document_transition),

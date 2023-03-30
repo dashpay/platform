@@ -78,7 +78,7 @@ pub trait TenderdashAbci {
     ) -> Result<AfterFinalizeBlockResponse, Error>;
 }
 
-impl TenderdashAbci for Platform {
+impl<CoreRPCLike> TenderdashAbci for Platform<CoreRPCLike> {
     /// Creates initial state structure and returns response
     fn init_chain(
         &self,
@@ -149,7 +149,7 @@ impl TenderdashAbci for Platform {
         };
 
         self.block_execution_context
-            .replace(Some(block_execution_context));
+            .write().unwrap().replace(block_execution_context);
 
         // TODO: This code is not stable and blocking WASM-DPP integration and v0.24 testing
         //   Must be enabled and accomplished when we come back to withdrawals
@@ -179,7 +179,7 @@ impl TenderdashAbci for Platform {
         transaction: TransactionArg,
     ) -> Result<BlockEndResponse, Error> {
         // Retrieve block execution context
-        let block_execution_context = self.block_execution_context.borrow();
+        let block_execution_context = self.block_execution_context.write().unwrap();
         let block_execution_context = block_execution_context.as_ref().ok_or(Error::Execution(
             ExecutionError::CorruptedCodeExecution(
                 "block execution context must be set in block begin handler",
@@ -201,29 +201,22 @@ impl TenderdashAbci for Platform {
             .epoch_info
             .is_epoch_change_but_not_genesis()
         {
+            let state = self.state.write().unwrap();
             // Set current protocol version to the version from upcoming epoch
-            self.state.replace_with(|state| {
-                state.current_protocol_version_in_consensus = state.next_epoch_protocol_version;
-
-                state.clone()
-            });
+            state.current_protocol_version_in_consensus = state.next_epoch_protocol_version;
 
             // Determine new protocol version based on votes for the next epoch
             let maybe_new_protocol_version = self.check_for_desired_protocol_upgrade(
                 block_execution_context.hpmn_count,
                 transaction,
             )?;
+            if let Some(new_protocol_version) = maybe_new_protocol_version {
+                state.next_epoch_protocol_version = new_protocol_version;
+            } else {
+                state.next_epoch_protocol_version = state.current_protocol_version_in_consensus;
+            }
 
-            self.state.replace_with(|state| {
-                if let Some(new_protocol_version) = maybe_new_protocol_version {
-                    state.next_epoch_protocol_version = new_protocol_version;
-                } else {
-                    state.next_epoch_protocol_version = state.current_protocol_version_in_consensus;
-                }
-                state.clone()
-            });
-
-            Some(self.state.borrow().current_protocol_version_in_consensus)
+            Some(state.current_protocol_version_in_consensus)
         } else {
             None
         };
@@ -238,7 +231,7 @@ impl TenderdashAbci for Platform {
         &self,
         _: AfterFinalizeBlockRequest,
     ) -> Result<AfterFinalizeBlockResponse, Error> {
-        let mut drive_cache = self.drive.cache.borrow_mut();
+        let mut drive_cache = self.drive.cache.write().unwrap();
 
         drive_cache.cached_contracts.clear_block_cache();
 

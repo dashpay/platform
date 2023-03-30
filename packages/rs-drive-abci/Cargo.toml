@@ -53,6 +53,7 @@ tracing-subscriber = { version = "0.3.16", default-features = false, features = 
 atty = { version = "0.2.14", optional = true }
 tenderdash-abci = { git = "https://github.com/dashpay/rs-tenderdash-abci", branch = "master", optional = true }
 # tenderdash-abci = { path = "/home/lklimek/git/lklimek/tenderdash-abci-rs/abci", optional = true }
+anyhow = { version = "1.0.70" }
 
 [dev-dependencies]
 itertools = { version = "0.10.5" }

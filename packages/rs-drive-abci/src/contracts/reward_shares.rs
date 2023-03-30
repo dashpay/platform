@@ -59,7 +59,7 @@ pub const MN_REWARD_SHARES_CONTRACT_ID: [u8; 32] = [
 /// Masternode reward shares document type
 pub const MN_REWARD_SHARES_DOCUMENT_TYPE: &str = "rewardShare";
 
-impl Platform {
+impl<CoreRPCLike> Platform<CoreRPCLike> {
     /// A function to retrieve a list of the masternode reward shares documents for a list of masternode IDs.
     pub(crate) fn get_reward_shares_list_for_masternode(
         &self,

@@ -5,6 +5,7 @@ use platform_value::btreemap_extensions::BTreeValueMapHelper;
 
 use platform_value::string_encoding::Encoding;
 use serde_json::json;
+use platform_value::platform_value;
 
 use crate::document::Document;
 use crate::{
@@ -94,7 +95,7 @@ where
         .fetch_documents(
             &context.data_contract.id,
             &document_create_transition.base.document_type_name,
-            json!({
+            platform_value!({
                 "where" : [ [ "$owner_id", "==", owner_id ]]
             }),
             Some(context.state_transition_execution_context),

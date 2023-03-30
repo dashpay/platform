@@ -233,7 +233,7 @@ impl Drive {
         transaction: TransactionArg,
         drive_operations: &mut Vec<LowLevelDriveOperation>,
     ) -> Result<bool, Error> {
-        let mut cache = self.cache.borrow_mut();
+        let mut cache = self.cache.write().unwrap();
         let version_counter = cache
             .protocol_versions_counter
             .get_or_insert(self.fetch_versions_with_counter(transaction)?);

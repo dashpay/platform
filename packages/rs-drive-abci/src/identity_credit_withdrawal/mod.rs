@@ -32,7 +32,7 @@ use crate::{
 const WITHDRAWAL_TRANSACTIONS_QUERY_LIMIT: u16 = 16;
 const NUMBER_OF_BLOCKS_BEFORE_EXPIRED: u32 = 48;
 
-impl Platform {
+impl<CoreRPCLike> Platform<CoreRPCLike> {
     /// Update statuses for broadcasted withdrawals
     pub fn update_broadcasted_withdrawal_transaction_statuses(
         &self,
@@ -40,7 +40,7 @@ impl Platform {
         transaction: TransactionArg,
     ) -> Result<(), Error> {
         // Retrieve block execution context
-        let block_execution_context = self.block_execution_context.borrow();
+        let block_execution_context = self.block_execution_context.read().unwrap();
         let block_execution_context = block_execution_context.as_ref().ok_or(Error::Execution(
             ExecutionError::CorruptedCodeExecution(
                 "block execution context must be set in block begin handler",
@@ -174,7 +174,7 @@ impl Platform {
         transaction: TransactionArg,
     ) -> Result<Vec<Vec<u8>>, Error> {
         // Retrieve block execution context
-        let block_execution_context = self.block_execution_context.borrow();
+        let block_execution_context = self.block_execution_context.read().unwrap();
         let block_execution_context = block_execution_context.as_ref().ok_or(Error::Execution(
             ExecutionError::CorruptedCodeExecution(
                 "block execution context must be set in block begin handler",
@@ -296,7 +296,7 @@ impl Platform {
         transaction: TransactionArg,
     ) -> Result<(), Error> {
         // Retrieve block execution context
-        let block_execution_context = self.block_execution_context.borrow();
+        let block_execution_context = self.block_execution_context.read().unwrap();
         let block_execution_context = block_execution_context.as_ref().ok_or(Error::Execution(
             ExecutionError::CorruptedCodeExecution(
                 "block execution context must be set in block begin handler",

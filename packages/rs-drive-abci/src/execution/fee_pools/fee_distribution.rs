@@ -95,7 +95,7 @@ impl UnpaidEpoch {
     }
 }
 
-impl Platform {
+impl<CoreRPCLike> Platform <CoreRPCLike> {
     /// Adds operations to the op batch which distribute fees
     /// from the oldest unpaid epoch pool to proposers.
     ///
