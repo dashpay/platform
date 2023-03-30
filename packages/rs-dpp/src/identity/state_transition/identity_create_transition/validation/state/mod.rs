@@ -86,9 +86,7 @@ pub async fn validate_identity_create_transition_state(
             )
             .await
             .map_err(Into::<NonConsensusError>::into)?;
-        Ok(
-            IdentityCreateTransitionAction::from_borrowed(state_transition, tx_out.value).into(),
-        )
+        Ok(IdentityCreateTransitionAction::from_borrowed(state_transition, tx_out.value).into())
     }
 }
 
