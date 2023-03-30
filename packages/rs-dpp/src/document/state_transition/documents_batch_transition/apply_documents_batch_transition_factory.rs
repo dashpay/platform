@@ -45,7 +45,7 @@ pub async fn apply_documents_batch_transition(
 ) -> Result<(), ProtocolError> {
     let replace_transitions: Vec<_> = state_transition
         .get_transitions_slice()
-        .into_iter()
+        .iter()
         .filter(|dt| dt.base().action == Action::Replace)
         .collect();
 

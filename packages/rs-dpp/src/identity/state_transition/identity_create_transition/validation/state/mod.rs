@@ -29,7 +29,7 @@ where
     ) -> Result<ValidationResult<Self::ResultItem>, ProtocolError> {
         validate_identity_create_transition_state(&self.state_repository, data)
             .await
-            .map_err(|err| err.into())
+            .map_err(|err| err)
     }
 }
 
@@ -65,7 +65,7 @@ pub async fn validate_identity_create_transition_state(
         .map_err(|e| {
             NonConsensusError::StateRepositoryFetchError(format!(
                 "state repository fetch identity balance error: {}",
-                e.to_string()
+                e
             ))
         })?;
 
@@ -86,9 +86,9 @@ pub async fn validate_identity_create_transition_state(
             )
             .await
             .map_err(Into::<NonConsensusError>::into)?;
-        return Ok(
+        Ok(
             IdentityCreateTransitionAction::from_borrowed(state_transition, tx_out.value).into(),
-        );
+        )
     }
 }
 

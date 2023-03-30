@@ -46,8 +46,8 @@ impl From<&DocumentCreateTransition> for DocumentCreateTransitionAction {
         } = value;
         DocumentCreateTransitionAction {
             base: base.into(),
-            created_at: created_at.clone(),
-            updated_at: updated_at.clone(),
+            created_at: *created_at,
+            updated_at: *updated_at,
             data: data.clone().unwrap_or_default(),
         }
     }

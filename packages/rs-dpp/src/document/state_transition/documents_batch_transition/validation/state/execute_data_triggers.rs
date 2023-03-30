@@ -32,7 +32,7 @@ where
     let data_triggers: Vec<DataTrigger> = data_triggers_list.into_iter().collect();
 
     for dt in document_transitions {
-        let document_transition = dt.as_ref();
+        let document_transition = dt;
         let document_type = &document_transition.base().document_type_name;
         let transition_action = document_transition.base().action;
 

@@ -41,7 +41,7 @@ where
 
     // 1. Prepare fetchDocuments queries from indexed properties
     for t in document_transitions {
-        let transition = t.as_ref();
+        let transition = t;
         let document_schema =
             data_contract.get_document_schema(&transition.base().document_type_name)?;
         let document_indices = document_schema.get_indices::<Vec<_>>()?;
