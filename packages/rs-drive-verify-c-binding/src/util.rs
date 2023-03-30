@@ -1,5 +1,5 @@
 use crate::types::{
-    AssetLockProof, IdPublicKeyMap, Identity, IdentityPublicKey, MetaData, PublicKeyHash,
+    AssetLockProof, IdPublicKeyMap, Identity, IdentityPublicKey, MetaData,
 };
 use crate::{DppAssetLockProof, DppIdentity};
 use std::{mem, slice};
@@ -27,7 +27,7 @@ pub(crate) fn build_c_public_keys_struct(identity: &DppIdentity) -> *const *cons
     let mut id_public_key_map_as_vec: Vec<*const IdPublicKeyMap> = vec![];
     for (key_id, identity_public_key) in &identity.public_keys {
         id_public_key_map_as_vec.push(Box::into_raw(Box::from(IdPublicKeyMap {
-            key: key_id.clone(),
+            key: *key_id,
             public_key: Box::into_raw(Box::from(IdentityPublicKey {
                 id: identity_public_key.id,
                 purpose: identity_public_key.purpose as u8,

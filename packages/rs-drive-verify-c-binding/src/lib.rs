@@ -9,13 +9,13 @@ use crate::types::{
 };
 use crate::util::{build_c_identity_struct, extract_vector_from_pointer, vec_to_pointer};
 use drive::drive::verify::Identity as DppIdentity;
-use drive::drive::verify::{AssetLockProof as DppAssetLockProof, RootHash};
+use drive::drive::verify::{AssetLockProof as DppAssetLockProof};
 use drive::drive::Drive;
 use std::collections::BTreeMap;
-use std::{mem, slice};
+use std::{slice};
 
 #[no_mangle]
-pub extern "C" fn verify_full_identity_by_public_key_hash(
+pub unsafe extern "C" fn verify_full_identity_by_public_key_hash(
     proof_array: *const u8,
     proof_len: usize,
     public_key_hash: *const PublicKeyHash,
@@ -38,7 +38,7 @@ pub extern "C" fn verify_full_identity_by_public_key_hash(
 }
 
 #[no_mangle]
-pub extern "C" fn verify_full_identities_by_public_key_hashes(
+pub unsafe extern "C" fn verify_full_identities_by_public_key_hashes(
     proof_array: *const u8,
     proof_len: usize,
     public_key_hashes_c: *const *const u8,
@@ -78,7 +78,7 @@ pub extern "C" fn verify_full_identities_by_public_key_hashes(
 }
 
 #[no_mangle]
-pub extern "C" fn verify_full_identity_by_identity_id(
+pub unsafe extern "C" fn verify_full_identity_by_identity_id(
     proof_array: *const u8,
     proof_len: usize,
     is_proof_subset: bool,
@@ -100,7 +100,7 @@ pub extern "C" fn verify_full_identity_by_identity_id(
 }
 
 #[no_mangle]
-pub extern "C" fn verify_identity_id_by_public_key_hash(
+pub unsafe extern "C" fn verify_identity_id_by_public_key_hash(
     proof_array: *const u8,
     proof_len: usize,
     is_proof_subset: bool,
@@ -129,7 +129,7 @@ pub extern "C" fn verify_identity_id_by_public_key_hash(
 }
 
 #[no_mangle]
-pub extern "C" fn verify_identity_balances_by_identity_ids(
+pub unsafe extern "C" fn verify_identity_balances_by_identity_ids(
     proof_array: *const u8,
     proof_len: usize,
     is_proof_subset: bool,
@@ -152,7 +152,7 @@ pub extern "C" fn verify_identity_balances_by_identity_ids(
                         identity_id: vec_to_pointer(identity_id.to_vec()),
                         id_size: 32,
                         has_balance: maybe_balance.is_some(),
-                        balance: maybe_balance.map(|b| b).unwrap_or(0),
+                        balance: maybe_balance.unwrap_or(0),
                     },
                 )));
             }
@@ -170,7 +170,7 @@ pub extern "C" fn verify_identity_balances_by_identity_ids(
 }
 
 #[no_mangle]
-pub extern "C" fn verify_identity_ids_by_public_key_hashes(
+pub unsafe extern "C" fn verify_identity_ids_by_public_key_hashes(
     proof_array: *const u8,
     proof_len: usize,
     is_proof_subset: bool,
@@ -212,8 +212,6 @@ pub extern "C" fn verify_identity_ids_by_public_key_hashes(
         Err(..) => Box::into_raw(Box::from(MultipleIdentityIdVerificationResult::default())),
     }
 }
-
-// TODO: handle memory deallocation
 
 #[cfg(test)]
 mod tests {
@@ -602,7 +600,7 @@ mod tests {
             68, 99, 161, 169, 148, 213, 4, 14, 105, 192, 144, 182, 152, 93, 122, 242, 149, 191,
             209, 26,
         ];
-        let (root_hash, proved_identity) =
+        let (_root_hash, proved_identity) =
             Drive::verify_full_identity_by_public_key_hash(proof, key_hash).expect("should verify");
         // verify part of the identity, make sure it's the correct one
         assert!(proved_identity.is_some());
@@ -659,7 +657,7 @@ mod tests {
         ];
 
         let (_, proved_identities): ([u8; 32], BTreeMap<PublicKeyHash, Option<DppIdentity>>) =
-            Drive::verify_full_identities_by_public_key_hashes(proof, &key_hashes)
+            Drive::verify_full_identities_by_public_key_hashes(proof, key_hashes)
                 .expect("expect that this be verified");
         assert_eq!(proved_identities.len(), 10);
         dbg!(proved_identities.values());
@@ -673,7 +671,7 @@ mod tests {
             39, 25, 156, 146, 35, 108, 99, 133, 34, 187, 243, 162,
         ];
         dbg!(hex::encode(identity_id));
-        let (root_hash, maybe_identity) =
+        let (_root_hash, maybe_identity) =
             Drive::verify_full_identity_by_identity_id(proof, true, identity_id)
                 .expect("verification failed");
         let identity = maybe_identity.expect("couldn't get identity");
@@ -688,7 +686,7 @@ mod tests {
         let public_key_hash: PublicKeyHash = [
             31, 8, 21, 38, 154, 252, 1, 45, 228, 66, 96, 206, 178, 138, 68, 150, 211, 24, 65, 132,
         ];
-        let (root_hash, maybe_identity_id) =
+        let (_root_hash, maybe_identity_id) =
             Drive::verify_identity_id_by_public_key_hash(proof, true, public_key_hash)
                 .expect("should verify");
         let expected_identity_id: [u8; 32] = [
@@ -708,7 +706,7 @@ mod tests {
             62, 171, 130, 51, 233, 19, 45, 191, 194, 183, 0, 171, 182, 77, 93, 70, 216, 67, 22, 47,
             39, 25, 156, 146, 35, 108, 99, 133, 34, 187, 243, 162,
         ];
-        let (root_hash, maybe_balance) =
+        let (_root_hash, maybe_balance) =
             Drive::verify_identity_balance_for_identity_id(proof, identity_id)
                 .expect("should verify");
         let actual_balance = maybe_balance.expect("should have balance");
