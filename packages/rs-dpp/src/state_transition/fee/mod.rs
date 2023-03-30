@@ -22,11 +22,11 @@ pub struct FeeResult {
     pub required_amount: Credits,
 }
 
-#[derive(Default)]
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub struct DummyFeesResult {
-    storage: Credits,
-    processing: Credits,
-    fee_refunds: Vec<Refunds>,
+    pub storage: Credits,
+    pub processing: Credits,
+    pub fee_refunds: Vec<Refunds>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]

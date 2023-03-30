@@ -64,10 +64,7 @@ class GroupReindexCommand extends GroupBaseCommand {
   }
 }
 
-GroupReindexCommand.description = `Reindex group of Core services
-
-Reindex group Core data
-`;
+GroupReindexCommand.description = 'Reindex group Core data';
 
 GroupReindexCommand.flags = {
   ...GroupBaseCommand.flags,

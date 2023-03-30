@@ -224,17 +224,24 @@ module.exports = {
           required: ['docker'],
           additionalProperties: false,
         },
-        minimumDifficultyBlocks: {
-          type: 'integer',
-          minimum: 0,
-        },
-        powTargetSpacing: {
-          type: 'integer',
-          minimum: 1,
-        },
-        devnetName: {
-          type: ['string', 'null'],
-          minLength: 1,
+        devnet: {
+          type: 'object',
+          properties: {
+            name: {
+              type: ['string', 'null'],
+              minLength: 1,
+            },
+            minimumDifficultyBlocks: {
+              type: 'integer',
+              minimum: 0,
+            },
+            powTargetSpacing: {
+              type: 'integer',
+              minimum: 1,
+            },
+          },
+          additionalProperties: false,
+          required: ['name', 'minimumDifficultyBlocks', 'powTargetSpacing'],
         },
         debug: {
           type: 'integer',
@@ -263,8 +270,8 @@ module.exports = {
           additionalProperties: false,
         },
       },
-      required: ['docker', 'p2p', 'rpc', 'spork', 'masternode', 'miner', 'devnetName',
-        'debug', 'reindex', 'minimumDifficultyBlocks', 'powTargetSpacing', 'logIps', 'indexes'],
+      required: ['docker', 'p2p', 'rpc', 'spork', 'masternode', 'miner', 'devnet',
+        'debug', 'reindex', 'logIps', 'indexes'],
       additionalProperties: false,
     },
     platform: {
@@ -319,7 +326,7 @@ module.exports = {
                     },
                     provider: {
                       type: 'string',
-                      enum: ['zerossl', 'selfSigned', 'manual'],
+                      enum: ['zerossl', 'self-signed', 'file'],
                     },
                     providerConfigs: {
                       type: 'object',

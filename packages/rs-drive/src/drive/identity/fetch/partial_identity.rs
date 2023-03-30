@@ -2,7 +2,7 @@ use crate::drive::identity::key::fetch::{IdentityKeysRequest, KeyIDIdentityPubli
 use crate::drive::Drive;
 use crate::error::Error;
 use crate::fee::default_costs::KnownCostItem::FetchIdentityBalanceProcessingCost;
-use crate::fee::op::DriveOperation;
+use crate::fee::op::LowLevelDriveOperation;
 use crate::fee::result::FeeResult;
 use crate::fee_pools::epochs::Epoch;
 use dpp::identifier::Identifier;
@@ -17,7 +17,7 @@ impl Drive {
         identity_id: [u8; 32],
         transaction: TransactionArg,
     ) -> Result<Option<PartialIdentity>, Error> {
-        let mut drive_operations: Vec<DriveOperation> = vec![];
+        let mut drive_operations: Vec<LowLevelDriveOperation> = vec![];
         Ok(self
             .fetch_identity_balance_operations(
                 identity_id,
@@ -46,7 +46,7 @@ impl Drive {
         if !apply {
             return Ok((None, FeeResult::new_from_processing_fee(balance_cost)));
         }
-        let mut drive_operations: Vec<DriveOperation> = vec![];
+        let mut drive_operations: Vec<LowLevelDriveOperation> = vec![];
         Ok((
             self.fetch_identity_balance_operations(
                 identity_id,

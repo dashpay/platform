@@ -637,7 +637,6 @@ describe('validateDocumentsBatchTransitionBasicFactory', () => {
             );
 
             const [error] = result.getErrors();
-            console.log(error.toString());
 
             await expectValidationError(result, InvalidDocumentTransitionIdError);
 

@@ -40,11 +40,11 @@ module.exports = {
       image: 'dashpay/dashd:19.0.0-rc.7',
     },
     p2p: {
-      port: 20001,
+      port: 9999,
       seeds: [],
     },
     rpc: {
-      port: 20002,
+      port: 9998,
       user: 'dashrpc',
       password: 'rpcpassword',
       allowIps: [
@@ -74,16 +74,18 @@ module.exports = {
         image: 'dashpay/sentinel:1.7.1',
       },
     },
+    devnet: {
+      name: null,
+      minimumDifficultyBlocks: 0,
+      powTargetSpacing: 150,
+    },
     debug: 0,
     logIps: 0,
     indexes: true,
-    minimumDifficultyBlocks: 0,
-    powTargetSpacing: 150,
     reindex: {
       enable: false,
       containerId: null,
     },
-    devnetName: null,
   },
   platform: {
     dapi: {
@@ -92,7 +94,7 @@ module.exports = {
           image: 'dashpay/envoy:0.24-dev',
         },
         http: {
-          port: 3000,
+          port: 443,
         },
         rateLimiter: {
           maxTokens: 300,

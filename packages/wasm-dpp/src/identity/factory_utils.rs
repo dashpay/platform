@@ -1,5 +1,5 @@
 use crate::errors::RustConversionError;
-use crate::identity::identity_public_key_transitions::IdentityPublicKeyCreateTransitionWasm;
+use crate::identity::identity_public_key_transitions::IdentityPublicKeyWithWitnessWasm;
 use crate::utils::{generic_of_js_val, to_vec_of_platform_values};
 use crate::{create_asset_lock_proof_from_wasm_instance, IdentityPublicKeyWasm};
 use dpp::identity::state_transition::asset_lock_proof::AssetLockProof;
@@ -47,10 +47,10 @@ pub fn parse_create_identity_update_transition_keys(
         let keys: Vec<IdentityPublicKeyWithWitness> = add_public_keys_array
             .iter()
             .map(|key| {
-                let public_key: Ref<IdentityPublicKeyCreateTransitionWasm> =
-                    generic_of_js_val::<IdentityPublicKeyCreateTransitionWasm>(
+                let public_key: Ref<IdentityPublicKeyWithWitnessWasm> =
+                    generic_of_js_val::<IdentityPublicKeyWithWitnessWasm>(
                         &key,
-                        "IdentityPublicKeyCreateTransition",
+                        "IdentityPublicKeyWithWitness",
                     )?;
 
                 Ok(public_key.clone().into())

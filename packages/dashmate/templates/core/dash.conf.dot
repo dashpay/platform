@@ -22,8 +22,10 @@ rpcthreads=16
 listen=1
 dnsseed=0
 allowprivatenet=0
+{{?it.externalIp }}
 externalip={{=it.externalIp}}
-{{? it.network === 'local'}}
+{{?}}
+{{? it.network === 'local' && it.externalIp }}
 whitelist={{=it.externalIp}}
 {{?}}
 
@@ -56,14 +58,14 @@ regtest=1
 {{? it.core.miner.mediantime}}mocktime={{=it.core.miner.mediantime}}{{?}}
 
 {{?? it.network === 'devnet'}}
-devnet={{=it.core.devnetName}}
+devnet={{=it.core.devnet.name}}
 [devnet]
 {{? it.core.spork.address}}sporkaddr={{=it.core.spork.address}}{{?}}
 {{? it.core.spork.privateKey}}sporkkey={{=it.core.spork.privateKey}}{{?}}
 
 # devnet-specific
-powtargetspacing={{=it.core.powTargetSpacing}}
-minimumdifficultyblocks={{=it.core.minimumDifficultyBlocks}}
+powtargetspacing={{=it.core.devnet.powTargetSpacing}}
+minimumdifficultyblocks={{=it.core.devnet.minimumDifficultyBlocks}}
 highsubsidyblocks=500
 highsubsidyfactor=10
 llmqchainlocks=llmq_devnet

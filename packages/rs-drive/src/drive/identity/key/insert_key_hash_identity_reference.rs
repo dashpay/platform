@@ -13,8 +13,8 @@ use crate::drive::{
 use crate::error::drive::DriveError;
 use crate::error::identity::IdentityError;
 use crate::error::Error;
-use crate::fee::op::DriveOperation::FunctionOperation;
-use crate::fee::op::{DriveOperation, FunctionOp, HashFunction};
+use crate::fee::op::LowLevelDriveOperation::FunctionOperation;
+use crate::fee::op::{FunctionOp, HashFunction, LowLevelDriveOperation};
 use dpp::identity::IdentityPublicKey;
 use grovedb::batch::KeyInfoPath;
 use grovedb::EstimatedLayerCount::{ApproximateElements, PotentiallyAtMaxElements};
@@ -35,7 +35,7 @@ impl Drive {
             HashMap<KeyInfoPath, EstimatedLayerInformation>,
         >,
         transaction: TransactionArg,
-    ) -> Result<Vec<DriveOperation>, Error> {
+    ) -> Result<Vec<LowLevelDriveOperation>, Error> {
         let mut drive_operations = vec![];
         let hash_vec = identity_key.hash()?;
         let key_hash = hash_vec.as_slice().try_into().map_err(|_| {
@@ -119,7 +119,7 @@ impl Drive {
             HashMap<KeyInfoPath, EstimatedLayerInformation>,
         >,
         transaction: TransactionArg,
-    ) -> Result<Vec<DriveOperation>, Error> {
+    ) -> Result<Vec<LowLevelDriveOperation>, Error> {
         let mut drive_operations = vec![];
 
         let already_exists = self.has_unique_public_key_hash_operations(
@@ -178,7 +178,7 @@ impl Drive {
             HashMap<KeyInfoPath, EstimatedLayerInformation>,
         >,
         transaction: TransactionArg,
-    ) -> Result<Vec<DriveOperation>, Error> {
+    ) -> Result<Vec<LowLevelDriveOperation>, Error> {
         let mut drive_operations = vec![];
 
         let mut key_already_present_in_another_identity = false;

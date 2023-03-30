@@ -9,8 +9,9 @@ use crate::identity::state_transition::identity_topup_transition::validation::st
 use crate::identity::state_transition::identity_update_transition::validate_identity_update_transition_state::IdentityUpdateTransitionStateValidator;
 use crate::identity::state_transition::identity_update_transition::validate_public_keys::IdentityUpdatePublicKeysValidator;
 use crate::ProtocolError;
-use crate::state_transition::StateTransition;
-use crate::validation::{AsyncDataValidator, SimpleValidationResult};
+use crate::state_transition::{StateTransition, StateTransitionAction};
+use crate::state_transition::StateTransitionAction::{DataContractCreateAction, DataContractUpdateAction, DocumentsBatchAction, IdentityCreateAction, IdentityCreditWithdrawalAction, IdentityTopUpAction, IdentityUpdateAction};
+use crate::validation::{AsyncDataValidator, ValidationResult};
 
 pub struct StateTransitionStateValidator<SR>
 where
@@ -66,29 +67,44 @@ where
     pub async fn validate(
         &self,
         state_transition: &StateTransition,
-    ) -> Result<SimpleValidationResult, ProtocolError> {
+    ) -> Result<ValidationResult<StateTransitionAction>, ProtocolError> {
         match state_transition {
-            StateTransition::DataContractCreate(st) => {
-                self.data_contract_create_validator.validate(st).await
-            }
-            StateTransition::DataContractUpdate(st) => {
-                self.data_contract_update_validator.validate(st).await
-            }
-            StateTransition::IdentityCreate(st) => {
-                self.identity_create_validator.validate(st).await
-            }
-            StateTransition::IdentityUpdate(st) => self
+            StateTransition::DataContractCreate(st) => Ok(self
+                .data_contract_create_validator
+                .validate(st)
+                .await?
+                .map(DataContractCreateAction)),
+
+            StateTransition::DataContractUpdate(st) => Ok(self
+                .data_contract_update_validator
+                .validate(st)
+                .await?
+                .map(DataContractUpdateAction)),
+            StateTransition::IdentityCreate(st) => Ok(self
+                .identity_create_validator
+                .validate(st)
+                .await?
+                .map(IdentityCreateAction)),
+            StateTransition::IdentityUpdate(st) => Ok(self
                 .identity_update_validator
                 .validate(st)
-                .await
-                .map_err(ProtocolError::from),
-            StateTransition::IdentityTopUp(st) => self.identity_top_up_validator.validate(st).await,
-            StateTransition::IdentityCreditWithdrawal(st) => self
+                .await?
+                .map(IdentityUpdateAction)),
+            StateTransition::IdentityTopUp(st) => Ok(self
+                .identity_top_up_validator
+                .validate(st)
+                .await?
+                .map(IdentityTopUpAction)),
+            StateTransition::IdentityCreditWithdrawal(st) => Ok(self
                 .identity_credit_withdrawal_validator
                 .validate_identity_credit_withdrawal_transition_state(st)
-                .await
-                .map_err(ProtocolError::from),
-            StateTransition::DocumentsBatch(st) => self.document_batch_validator.validate(st).await,
+                .await?
+                .map(IdentityCreditWithdrawalAction)),
+            StateTransition::DocumentsBatch(st) => Ok(self
+                .document_batch_validator
+                .validate(st)
+                .await?
+                .map(DocumentsBatchAction)),
         }
     }
 }

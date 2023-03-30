@@ -39,7 +39,7 @@ class ListDAPIAddressProvider {
       liveAddress.protocol = 'https';
       liveAddress.host = '127.0.0.1';
       liveAddress.allowSelfSignedCertificate = true;
-      liveAddress.port = 3000 + randomNodeIndex * 100;
+      liveAddress.port = 2443 + randomNodeIndex * 100;
     }
 
     return liveAddress;

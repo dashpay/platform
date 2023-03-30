@@ -7,10 +7,12 @@ use crate::identity::errors::{AssetLockOutputNotFoundError, AssetLockTransaction
 pub enum DPPError {
     AssetLockOutputNotFoundError(AssetLockOutputNotFoundError),
     AssetLockTransactionIsNotFoundError(AssetLockTransactionIsNotFoundError),
-    #[error("Expected public key hash to be 20 bytes")]
+    #[error("expected public key hash to be 20 bytes")]
     WrongPublicKeyHashSize,
-    #[error("Expected output type to be OP_RETURN output")]
+    #[error("expected output type to be OP_RETURN output")]
     WrongBurnOutputType,
-    #[error("Invalid transaction")]
+    #[error("invalid transaction")]
     InvalidAssetLockTransaction,
+    #[error("core message corruption {0}")]
+    CoreMessageCorruption(String),
 }

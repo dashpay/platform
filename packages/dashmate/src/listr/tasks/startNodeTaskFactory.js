@@ -36,16 +36,18 @@ function startNodeTaskFactory(
     }
 
     // Check external IP is set
-    config.get('externalIp', true);
+    if (config.get('core.masternode.enable')) {
+      config.get('externalIp', true);
+    }
 
     const isMinerEnabled = config.get('core.miner.enable');
 
     if (isMinerEnabled === true && config.get('network') !== NETWORK_LOCAL) {
-      throw new Error(`'core.miner.enabled' option only works with local network. Your network is ${config.get('network')}.`);
+      throw new Error(`'core.miner.enable' option only works with local network. Your network is ${config.get('network')}.`);
     }
 
     // Check Drive log files are created
-    if (config.isPlatformEnabled()) {
+    if (config.get('platform.enable')) {
       const prettyFilePath = config.get('platform.drive.abci.log.prettyFile.path');
 
       // Remove directory that could potentially be created by Docker mount
@@ -82,7 +84,7 @@ function startNodeTaskFactory(
       },
       {
         enabled: (ctx) => !ctx.skipBuildServices
-          && config.has('platform.sourcePath')
+          && config.get('platform.enable')
           && config.get('platform.sourcePath') !== null,
         task: () => buildServicesTask(config),
       },

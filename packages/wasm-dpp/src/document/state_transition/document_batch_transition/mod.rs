@@ -1,4 +1,5 @@
 use dpp::identity::KeyID;
+use dpp::state_transition::fee::calculate_state_transition_fee_factory::calculate_state_transition_fee;
 use dpp::{
     document::{
         document_transition::document_base_transition,

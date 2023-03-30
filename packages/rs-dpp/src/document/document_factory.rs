@@ -308,7 +308,7 @@ where
         raw_document: &Value,
         options: FactoryOptions,
     ) -> Result<DataContract, ProtocolError> {
-        let mut result = self
+        let result = self
             .data_contract_fetcher_and_validator
             .validate_extended(raw_document)
             .await?;
@@ -322,7 +322,7 @@ where
             )));
         }
         let data_contract = result
-            .take_data()
+            .into_data()
             .context("Validator didn't return Data Contract. This shouldn't happen")?;
 
         if !options.skip_validation {
