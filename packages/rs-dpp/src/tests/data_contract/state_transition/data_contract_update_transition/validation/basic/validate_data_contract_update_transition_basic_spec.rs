@@ -151,7 +151,9 @@ async fn protocol_version_should_be_valid() {
 
     assert!(matches!(
         result.errors.first(),
-        Some(ConsensusError::ProtocolVersionParsingError { .. })
+        Some(ConsensusError::BasicError(
+            BasicError::ProtocolVersionParsingError { .. }
+        ))
     ));
 }
 

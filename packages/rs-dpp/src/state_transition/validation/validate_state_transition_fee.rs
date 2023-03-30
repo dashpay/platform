@@ -413,9 +413,7 @@ mod test {
         let fee_error = get_fee_error_from_result(&result, 0);
 
         assert!(
-            matches!(fee_error, ConsensusError::FeeError(FeeError::BalanceIsNotEnoughError(BalanceIsNotEnoughError::new(balance, ..))) if {
-                *balance == output_amount
-            })
+            matches!(fee_error, FeeError::BalanceIsNotEnoughError(e) if e.balance() == output_amount)
         );
     }
 
@@ -466,10 +464,9 @@ mod test {
             .expect("the validation result should be returned");
 
         let fee_error = get_fee_error_from_result(&result, 0);
+
         assert!(
-            matches!(fee_error, FeeError::BalanceIsNotEnoughError(BalanceIsNotEnoughError::new(balance, ..)) if {
-                *balance == output_amount + 1
-            })
+            matches!(fee_error, FeeError::BalanceIsNotEnoughError(e) if e.balance() == output_amount)
         );
     }
 

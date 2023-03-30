@@ -8,6 +8,7 @@ use test_case::test_case;
 
 use crate::consensus::basic::BasicError;
 use crate::errors::consensus::codes::ErrorWithCode;
+use crate::tests::utils::json_schema_error;
 use crate::{
     consensus::{basic::JsonSchemaError, ConsensusError},
     data_contract::validation::data_contract_validator::DataContractValidator,
@@ -50,12 +51,12 @@ fn get_schema_error<TData: Clone>(
     result: &ValidationResult<TData>,
     number: usize,
 ) -> &JsonSchemaError {
-    result
-        .errors
-        .get(number)
-        .expect("the error should be returned in validation result")
-        .json_schema_error()
-        .expect("the error should be json schema error")
+    json_schema_error(
+        result
+            .errors
+            .get(number)
+            .expect("the error should be returned in validation result"),
+    )
 }
 
 fn get_value_error<TData: Clone>(
