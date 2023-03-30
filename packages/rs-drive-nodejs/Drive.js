@@ -157,7 +157,7 @@ class Drive {
   async fetchContract(id, epochIndex = undefined, useTransaction = false) {
     return driveFetchContractAsync.call(
       this.drive,
-      Buffer.from(id),
+      id.toBuffer(),
       epochIndex,
       useTransaction,
     ).then(([encodedDataContract, innerFeeResult]) => {
@@ -394,7 +394,7 @@ class Drive {
   async fetchIdentity(id, useTransaction = false) {
     return driveFetchIdentityAsync.call(
       this.drive,
-      Buffer.from(id),
+      id.toBuffer(),
       useTransaction,
     ).then((encodedIdentity) => {
       if (encodedIdentity === null) {
@@ -420,7 +420,7 @@ class Drive {
   async fetchIdentityBalance(id, useTransaction = false) {
     return driveFetchIdentityBalanceAsync.call(
       this.drive,
-      Buffer.from(id),
+      id.toBuffer(),
       useTransaction,
     );
   }
@@ -436,7 +436,7 @@ class Drive {
   async fetchIdentityBalanceWithCosts(id, blockInfo, useTransaction = false, dryRun = false) {
     return driveFetchIdentityBalanceWithCostsAsync.call(
       this.drive,
-      Buffer.from(id),
+      id.toBuffer(),
       blockInfo,
       !dryRun,
       useTransaction,
@@ -459,7 +459,7 @@ class Drive {
   ) {
     return driveFetchIdentityBalanceIncludeDebtWithCostsAsync.call(
       this.drive,
-      Buffer.from(id),
+      id.toBuffer(),
       blockInfo,
       !dryRun,
       useTransaction,
@@ -475,7 +475,7 @@ class Drive {
   async proveIdentity(id, useTransaction = false) {
     return driveFetchProvedIdentityAsync.call(
       this.drive,
-      Buffer.from(id),
+      id.toBuffer(),
       useTransaction,
     );
   }
@@ -489,7 +489,7 @@ class Drive {
   async proveManyIdentities(ids, useTransaction = false) {
     return driveFetchManyProvedIdentitiesAsync.call(
       this.drive,
-      ids.map((id) => Buffer.from(id)),
+      ids.map((id) => id.toBuffer()),
       useTransaction,
     );
   }
@@ -504,7 +504,7 @@ class Drive {
   async fetchIdentityWithCosts(id, epochIndex, useTransaction = false) {
     return driveFetchIdentityWithCostsAsync.call(
       this.drive,
-      Buffer.from(id),
+      id.toBuffer(),
       epochIndex,
       useTransaction,
     ).then(([encodedIdentity, innerFeeResult]) => {
@@ -622,7 +622,7 @@ class Drive {
   async fetchIdentitiesByPublicKeyHashes(hashes, useTransaction = false) {
     return driveFetchIdentitiesByPublicKeyHashesAsync.call(
       this.drive,
-      hashes.map((h) => Buffer.from(h)),
+      hashes.map((h) => h.toBuffer()),
       useTransaction,
     ).then((encodedIdentities) => (
       encodedIdentities.map((encodedIdentity) => {
@@ -646,7 +646,7 @@ class Drive {
   async proveIdentitiesByPublicKeyHashes(hashes, useTransaction = false) {
     return driveProveIdentitiesByPublicKeyHashesAsync.call(
       this.drive,
-      hashes.map((h) => Buffer.from(h)),
+      hashes.map((h) => h.toBuffer()),
       useTransaction,
     );
   }
