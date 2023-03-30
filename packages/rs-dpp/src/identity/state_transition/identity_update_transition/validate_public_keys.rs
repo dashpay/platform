@@ -14,6 +14,7 @@ use crate::{
 };
 use crate::consensus::state::identity::duplicated_identity_public_key_id_state_error::DuplicatedIdentityPublicKeyIdStateError;
 use crate::consensus::state::identity::duplicated_identity_public_key_state_error::DuplicatedIdentityPublicKeyStateError;
+use crate::consensus::state::identity::max_identity_public_key_limit_reached_error::MaxIdentityPublicKeyLimitReachedError;
 
 lazy_static! {
     pub static ref IDENTITY_JSON_SCHEMA: JsonValue =
@@ -45,7 +46,9 @@ pub fn validate_public_keys(
 
     if raw_public_keys.len() > max_items {
         validation_result
-            .add_error(StateError::MaxIdentityPublicKeyLimitReachedError { max_items });
+            .add_error(StateError::MaxIdentityPublicKeyLimitReachedError(
+                MaxIdentityPublicKeyLimitReachedError::new(max_items)
+            ));
         return Ok(validation_result);
     }
 

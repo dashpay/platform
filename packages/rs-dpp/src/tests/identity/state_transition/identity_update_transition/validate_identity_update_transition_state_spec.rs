@@ -139,9 +139,7 @@ async fn should_return_identity_public_key_is_read_only_error_if_disabling_publi
 
     assert!(matches!(
         state_error,
-        StateError::IdentityPublicKeyIsReadOnlyError {
-            public_key_index
-        } if   public_key_index == &0
+        StateError::IdentityPublicKeyIsReadOnlyError(e) if   e.public_key_index() == 0
     ));
 }
 
@@ -175,9 +173,7 @@ async fn should_return_error_if_disabling_public_key_is_already_disabled() {
 
     assert!(matches!(
         state_error,
-        StateError::IdentityPublicKeyIsDisabledError {
-            public_key_index
-        } if   public_key_index == &0
+        StateError::IdentityPublicKeyIsDisabledError(e) if   e.public_key_index() == 0
     ));
 }
 
@@ -234,8 +230,8 @@ async fn should_throw_invalid_identity_public_key_id_error_if_identity_does_not_
 
     assert!(matches!(
         state_error,
-        StateError::InvalidIdentityPublicKeyIdError { id } if  {
-            id == &3
+        StateError::InvalidIdentityPublicKeyIdError(e) if  {
+            e.id() == 3
         }
     ));
 }

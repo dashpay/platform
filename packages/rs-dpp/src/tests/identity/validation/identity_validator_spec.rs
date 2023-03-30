@@ -383,7 +383,7 @@ pub mod revision {
 
     use crate::errors::consensus::ConsensusError;
     use crate::tests::identity::validation::identity_validator_spec::setup_test;
-    use crate::{assert_basic_consensus_errors, assert_consensus_errors};
+    use crate::{assert_basic_consensus_errors};
 
     // revision tests
     #[test]

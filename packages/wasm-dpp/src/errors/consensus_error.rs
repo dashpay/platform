@@ -166,28 +166,24 @@ pub fn from_state_error(state_error: &StateError) -> JsValue {
             .into(),
         StateError::InvalidDocumentRevisionError(e) => InvalidDocumentRevisionErrorWasm::new(*e.document_id(), *e.current_revision(), code).into(),
         StateError::InvalidIdentityRevisionError(e) => InvalidIdentityRevisionErrorWasm::new(*e.identity_id(), *e.current_revision(), code).into(),
-        StateError::IdentityPublicKeyDisabledAtWindowViolationError {
-            disabled_at,
-            time_window_start,
-            time_window_end,
-        } => IdentityPublicKeyDisabledAtWindowViolationErrorWasm::new(
-            *disabled_at,
-            *time_window_start,
-            *time_window_end,
+        StateError::IdentityPublicKeyDisabledAtWindowViolationError(e) => IdentityPublicKeyDisabledAtWindowViolationErrorWasm::new(
+            e.disabled_at(),
+            e.time_window_start(),
+            e.time_window_end(),
             code,
         )
         .into(),
-        StateError::IdentityPublicKeyIsReadOnlyError { public_key_index } => {
-            IdentityPublicKeyIsReadOnlyErrorWasm::new(*public_key_index, code).into()
+        StateError::IdentityPublicKeyIsReadOnlyError(e) => {
+            IdentityPublicKeyIsReadOnlyErrorWasm::new(e.public_key_index(), code).into()
         }
-        StateError::InvalidIdentityPublicKeyIdError { id } => {
-            InvalidIdentityPublicKeyIdErrorWasm::new(*id, code).into()
+        StateError::InvalidIdentityPublicKeyIdError(e) => {
+            InvalidIdentityPublicKeyIdErrorWasm::new(e.id(), code).into()
         }
-        StateError::MaxIdentityPublicKeyLimitReachedError { max_items } => {
-            MaxIdentityPublicKeyLimitReachedErrorWasm::new(*max_items, code).into()
+        StateError::MaxIdentityPublicKeyLimitReachedError(e) => {
+            MaxIdentityPublicKeyLimitReachedErrorWasm::new(e.max_items(), code).into()
         }
-        StateError::IdentityPublicKeyIsDisabledError { public_key_index } => {
-            IdentityPublicKeyIsDisabledErrorWasm::new(*public_key_index, code).into()
+        StateError::IdentityPublicKeyIsDisabledError(e) => {
+            IdentityPublicKeyIsDisabledErrorWasm::new(e.public_key_index(), code).into()
         }
         StateError::DataTriggerError(data_trigger_error) => match data_trigger_error.deref() {
             DataTriggerError::DataTriggerConditionError {

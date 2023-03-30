@@ -3,8 +3,6 @@ use crate::consensus::ConsensusError;
 use thiserror::Error;
 use crate::identity::KeyID;
 
-use crate::prelude::{Revision};
-
 #[derive(Error, Debug, Clone, PartialEq, Eq)]
 #[error("Duplicated public keys ids {duplicated_ids:?} found")]
 pub struct DuplicatedIdentityPublicKeyIdStateError {

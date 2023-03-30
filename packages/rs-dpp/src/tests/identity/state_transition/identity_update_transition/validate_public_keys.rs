@@ -107,8 +107,8 @@ fn should_return_invalid_result_if_number_of_public_keys_is_bigger_than_32() {
 
     assert!(matches!(
         state_error,
-        StateError::MaxIdentityPublicKeyLimitReachedError { max_items }
-        if max_items == &32
+        StateError::MaxIdentityPublicKeyLimitReachedError(e)
+        if e.max_items() == 32
     ));
     assert_eq!(4020, result.errors[0].code());
 }

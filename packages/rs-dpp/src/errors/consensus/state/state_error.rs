@@ -5,7 +5,6 @@ use crate::consensus::state::identity::{
     IdentityAlreadyExistsError, IdentityInsufficientBalanceError,
 };
 use crate::consensus::ConsensusError;
-use crate::{identity::KeyID};
 use crate::consensus::state::document::data_contract_already_present_error::DataContractAlreadyPresentError;
 use crate::consensus::state::document::document_already_present_error::DocumentAlreadyPresentError;
 use crate::consensus::state::document::document_not_found_error::DocumentNotFoundError;
@@ -16,7 +15,12 @@ use crate::consensus::state::document::duplicate_unique_index_error::DuplicateUn
 use crate::consensus::state::document::invalid_document_revision_error::InvalidDocumentRevisionError;
 use crate::consensus::state::identity::duplicated_identity_public_key_id_state_error::DuplicatedIdentityPublicKeyIdStateError;
 use crate::consensus::state::identity::duplicated_identity_public_key_state_error::DuplicatedIdentityPublicKeyStateError;
+use crate::consensus::state::identity::identity_public_key_disabled_at_window_violation_error::IdentityPublicKeyDisabledAtWindowViolationError;
+use crate::consensus::state::identity::identity_public_key_is_disabled_error::IdentityPublicKeyIsDisabledError;
+use crate::consensus::state::identity::identity_public_key_is_read_only_error::IdentityPublicKeyIsReadOnlyError;
+use crate::consensus::state::identity::invalid_identity_public_key_id_error::InvalidIdentityPublicKeyIdError;
 use crate::consensus::state::identity::invalid_identity_revision_error::InvalidIdentityRevisionError;
+use crate::consensus::state::identity::max_identity_public_key_limit_reached_error::MaxIdentityPublicKeyLimitReachedError;
 
 #[derive(Error, Debug)]
 pub enum StateError {
@@ -60,24 +64,20 @@ pub enum StateError {
     #[error(transparent)]
     DuplicatedIdentityPublicKeyIdStateError(DuplicatedIdentityPublicKeyIdStateError),
 
-    #[error("Identity public keys disabled time ({disabled_at}) is out of block time window from {time_window_start} and {time_window_end}" )]
-    IdentityPublicKeyDisabledAtWindowViolationError {
-        disabled_at: u64,
-        time_window_start: u64,
-        time_window_end: u64,
-    },
+    #[error(transparent)]
+    IdentityPublicKeyDisabledAtWindowViolationError(IdentityPublicKeyDisabledAtWindowViolationError),
 
-    #[error("Identity Public Key #{public_key_index} is read only")]
-    IdentityPublicKeyIsReadOnlyError { public_key_index: KeyID },
+    #[error(transparent)]
+    IdentityPublicKeyIsReadOnlyError(IdentityPublicKeyIsReadOnlyError),
 
-    #[error("Identity Public Key with Id {id} does not exist")]
-    InvalidIdentityPublicKeyIdError { id: KeyID },
+    #[error(transparent)]
+    InvalidIdentityPublicKeyIdError(InvalidIdentityPublicKeyIdError),
 
-    #[error("Identity cannot contain more than {max_items} public keys")]
-    MaxIdentityPublicKeyLimitReachedError { max_items: usize },
+    #[error(transparent)]
+    MaxIdentityPublicKeyLimitReachedError(MaxIdentityPublicKeyLimitReachedError),
 
-    #[error("Identity Public Key #{public_key_index} is disabled")]
-    IdentityPublicKeyIsDisabledError { public_key_index: KeyID },
+    #[error(transparent)]
+    IdentityPublicKeyIsDisabledError(IdentityPublicKeyIsDisabledError),
 
     #[error(transparent)]
     DataTriggerError(DataTriggerError),

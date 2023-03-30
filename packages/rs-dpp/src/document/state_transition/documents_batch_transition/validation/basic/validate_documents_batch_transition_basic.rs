@@ -11,7 +11,6 @@ use crate::consensus::basic::document::{
     InvalidDocumentTransitionActionError, InvalidDocumentTransitionIdError,
     InvalidDocumentTypeError,
 };
-use crate::consensus::ConsensusError;
 use crate::data_contract::state_transition::errors::MissingDataContractIdError;
 use crate::document::state_transition::documents_batch_transition::property_names;
 use crate::document::validation::basic::find_duplicates_by_id::find_duplicates_by_id;
