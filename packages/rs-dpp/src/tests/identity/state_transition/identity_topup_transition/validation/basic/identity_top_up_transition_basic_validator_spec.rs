@@ -52,6 +52,9 @@ pub fn setup_test(
 mod validate_identity_topup_transition_basic {
     pub use super::*;
 
+    use crate::assert_basic_consensus_errors;
+    use crate::errors::consensus::basic::BasicError;
+
     mod protocol_version {
         use super::*;
 
@@ -66,7 +69,7 @@ mod validate_identity_topup_transition_basic {
                 .await
                 .unwrap();
 
-            let errors = assert_consensus_errors!(result, ConsensusError::JsonSchemaError, 1);
+            let errors = assert_basic_consensus_errors!(result, BasicError::JsonSchemaError, 1);
 
             let error = errors.first().unwrap();
 
@@ -92,7 +95,7 @@ mod validate_identity_topup_transition_basic {
                 .await
                 .unwrap();
 
-            let errors = assert_consensus_errors!(result, ConsensusError::JsonSchemaError, 1);
+            let errors = assert_basic_consensus_errors!(result, BasicError::JsonSchemaError, 1);
 
             let error = errors.first().unwrap();
 
@@ -139,7 +142,7 @@ mod validate_identity_topup_transition_basic {
                 .await
                 .unwrap();
 
-            let errors = assert_consensus_errors!(result, ConsensusError::JsonSchemaError, 1);
+            let errors = assert_basic_consensus_errors!(result, BasicError::JsonSchemaError, 1);
 
             let error = errors.first().unwrap();
 
@@ -164,7 +167,7 @@ mod validate_identity_topup_transition_basic {
                 .await
                 .unwrap();
 
-            let errors = assert_consensus_errors!(result, ConsensusError::JsonSchemaError, 1);
+            let errors = assert_basic_consensus_errors!(result, BasicError::JsonSchemaError, 1);
 
             let error = errors.first().unwrap();
 
@@ -193,7 +196,7 @@ mod validate_identity_topup_transition_basic {
                 .await
                 .unwrap();
 
-            let errors = assert_consensus_errors!(result, ConsensusError::JsonSchemaError, 1);
+            let errors = assert_basic_consensus_errors!(result, BasicError::JsonSchemaError, 1);
 
             let error = errors.first().unwrap();
 
@@ -220,7 +223,7 @@ mod validate_identity_topup_transition_basic {
                 .await
                 .unwrap();
 
-            let errors = assert_consensus_errors!(result, ConsensusError::JsonSchemaError, 1);
+            let errors = assert_basic_consensus_errors!(result, BasicError::JsonSchemaError, 1);
 
             let error = errors.first().unwrap();
 
@@ -244,7 +247,7 @@ mod validate_identity_topup_transition_basic {
                 .await
                 .unwrap();
 
-            let errors = assert_consensus_errors!(result, ConsensusError::JsonSchemaError, 1);
+            let errors = assert_basic_consensus_errors!(result, BasicError::JsonSchemaError, 1);
 
             let error = errors.first().unwrap();
 
@@ -265,7 +268,7 @@ mod validate_identity_topup_transition_basic {
                 .await
                 .unwrap();
 
-            let errors = assert_consensus_errors!(result, ConsensusError::JsonSchemaError, 1);
+            let errors = assert_basic_consensus_errors!(result, BasicError::JsonSchemaError, 1);
 
             let error = errors.first().unwrap();
 
@@ -312,7 +315,7 @@ mod validate_identity_topup_transition_basic {
                 .await
                 .unwrap();
 
-            let errors = assert_consensus_errors!(result, ConsensusError::JsonSchemaError, 1);
+            let errors = assert_basic_consensus_errors!(result, BasicError::JsonSchemaError, 1);
 
             let error = errors.first().unwrap();
 
@@ -332,7 +335,7 @@ mod validate_identity_topup_transition_basic {
                 .await
                 .unwrap();
 
-            let errors = assert_consensus_errors!(result, ConsensusError::JsonSchemaError, 1);
+            let errors = assert_basic_consensus_errors!(result, BasicError::JsonSchemaError, 1);
 
             let error = errors.first().unwrap();
 
