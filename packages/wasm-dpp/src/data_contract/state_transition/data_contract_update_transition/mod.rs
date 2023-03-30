@@ -9,17 +9,22 @@ pub use validation::*;
 use dpp::consensus::ConsensusError::SignatureError as ConsensusSignatureErrorVariant;
 
 use dpp::{
+    consensus::signature::SignatureError,
     data_contract::state_transition::data_contract_update_transition::DataContractUpdateTransition,
     platform_value,
     state_transition::{
         StateTransitionConvert, StateTransitionIdentitySigned, StateTransitionLike,
     },
-    ProtocolError, consensus::signature::SignatureError,
+    ProtocolError,
 };
 use serde::{Deserialize, Serialize};
 use wasm_bindgen::prelude::*;
 
-use crate::{utils::WithJsError, IdentityPublicKeyWasm, bls_adapter::{JsBlsAdapter, BlsAdapter}};
+use crate::{
+    bls_adapter::{BlsAdapter, JsBlsAdapter},
+    utils::WithJsError,
+    IdentityPublicKeyWasm,
+};
 use crate::{
     buffer::Buffer, errors::protocol_error::from_protocol_error, identifier::IdentifierWrapper,
     with_js_error, DataContractParameters, DataContractWasm, StateTransitionExecutionContextWasm,
