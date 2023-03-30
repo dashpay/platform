@@ -16,6 +16,9 @@ pub mod abci;
 /// Block module
 mod block;
 
+/// Validation module
+pub mod validation;
+
 /// Contracts module
 pub mod contracts;
 
