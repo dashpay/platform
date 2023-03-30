@@ -313,25 +313,6 @@ impl ExtendedDocumentWasm {
     }
 }
 
-impl ExtendedDocumentWasm {
-    fn get_binary_type_of_path(&self, path: &String) -> BinaryType {
-        let maybe_binary_properties = self
-            .0
-            .data_contract
-            .get_binary_properties(&self.0.document_type_name);
-
-        if let Ok(binary_properties) = maybe_binary_properties {
-            if let Some(data) = binary_properties.get(path) {
-                if data.is_type_of_identifier() {
-                    return BinaryType::Identifier;
-                }
-                return BinaryType::Buffer;
-            }
-        }
-        BinaryType::None
-    }
-}
-
 impl From<ExtendedDocument> for ExtendedDocumentWasm {
     fn from(d: ExtendedDocument) -> Self {
         ExtendedDocumentWasm(d)

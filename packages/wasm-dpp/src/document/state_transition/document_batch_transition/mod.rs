@@ -16,7 +16,6 @@ use dpp::{
 use js_sys::{Array, Reflect};
 use serde::{Deserialize, Serialize};
 
-use dpp::platform_value::btreemap_extensions::BTreeValueMapReplacementPathHelper;
 use dpp::platform_value::{BinaryData, ReplacementType};
 use wasm_bindgen::prelude::*;
 

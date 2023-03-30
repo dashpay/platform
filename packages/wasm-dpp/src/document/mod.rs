@@ -305,52 +305,6 @@ impl DocumentWasm {
     }
 }
 
-impl DocumentWasm {
-    fn get_binary_type_of_path(
-        &self,
-        path: &String,
-        data_contract: &DataContractWasm,
-        document_type_name: String,
-    ) -> BinaryType {
-        let maybe_binary_properties = data_contract
-            .0
-            .get_binary_properties(document_type_name.as_str());
-
-        if let Ok(binary_properties) = maybe_binary_properties {
-            if let Some(data) = binary_properties.get(path) {
-                if data.is_type_of_identifier() {
-                    return BinaryType::Identifier;
-                }
-                return BinaryType::Buffer;
-            }
-        }
-        BinaryType::None
-    }
-}
-
-/// document's dynamic data, regardless they are identifiers or binary, they should
-/// be stored as arrays of int
-pub(crate) fn document_data_to_bytes(
-    document: &mut Document,
-    contract: &DataContract,
-    document_type: &str,
-) -> Result<(), JsValue> {
-    let (identifier_paths, binary_paths): (Vec<_>, Vec<_>) = contract
-        .get_identifiers_and_binary_paths_owned(document_type)
-        .with_js_error()?;
-    document
-        .properties
-        .replace_at_paths(identifier_paths, ReplacementType::Identifier)
-        .map_err(ProtocolError::ValueError)
-        .with_js_error()?;
-    document
-        .properties
-        .replace_at_paths(binary_paths, ReplacementType::BinaryBytes)
-        .map_err(ProtocolError::ValueError)
-        .with_js_error()?;
-    Ok(())
-}
-
 pub(crate) fn raw_document_from_js_value(
     js_raw_document: &JsValue,
     data_contract: &DataContract,
