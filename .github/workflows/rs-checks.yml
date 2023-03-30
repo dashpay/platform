@@ -9,7 +9,7 @@ on:
         required: true
       clippy-fail:
         description: Fail clippy checks if any warnings detected
-        type: bool
+        type: boolean
         required: false
 
 jobs:
